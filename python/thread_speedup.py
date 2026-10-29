@@ -63,6 +63,16 @@ $CHUNK_BUILD_ROOT, else $CHUNK_BUILD_REP (scripts/site_env.sh), else the
 repository; the executable is looked up under
 <root>/cmake-build-<target>/<dir ending with this machine's arch>/examples/shrink_bench/.
 
+--pool ID (shrink_gui's "Nœuds" field: one batch job per node, the same
+command plus --pool=<the submission>): the runs given the same ID share the
+executable list, as compile_all.sh --pool shares its configurations. Each walks
+it in order and measures an executable only if it is the first to claim it
+(an atomic mkdir in the pool directory, shared by the nodes: <out base>/.pools/
+<ID>, or ID itself when it holds a /); the load balances itself. A run measures
+its executables one after the other, each with its repetitions interleaved over
+the thread counts. Each run writes its own output directory (the curves of its
+executables); shrink_gui draws and sums up the pool's runs together.
+
 Python 3.6 or later, standard library only (matplotlib optional).
 """
 import argparse
@@ -277,6 +287,88 @@ class Events:
             pass
 
 
+POOL_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+class Pool:
+    """--pool: the executables shared between the runs given the same id, as
+    compile_all.sh's configurations (functions_for_compile.sh, __pool_claim).
+    A claim is the directory <pool>/<exe>, made by os.mkdir -- atomic on the
+    cluster's shared file systems, NFS and Lustre included --; its owner file
+    names the run (host, pid, Slurm job). Without --pool, every claim succeeds."""
+
+    def __init__(self, pool_id, out_base):
+        self.id = pool_id
+        self.me = "%s.%d%s" % (socket.gethostname().split(".")[0], os.getpid(),
+                               ".job" + os.environ["SLURM_JOB_ID"] if os.environ.get("SLURM_JOB_ID") else "")
+        self.dir = None
+        self.mine, self.others = [], []
+        if not pool_id:
+            return
+        self.dir = os.path.abspath(pool_id) if os.sep in pool_id else os.path.join(out_base, ".pools", pool_id)
+
+    def open(self):
+        """Create the pool directory (a pool that cannot be written to would
+        read as "every executable taken"), and drop the pools a week old."""
+        if not self.dir:
+            return
+        try:
+            os.makedirs(self.dir, exist_ok=True)
+        except OSError as e:
+            sys.exit("--pool %s: cannot create %s (%s)" % (self.id, self.dir, e))
+        if not os.access(self.dir, os.W_OK):
+            sys.exit("--pool %s: cannot write %s" % (self.id, self.dir))
+        parent = os.path.dirname(self.dir)
+        if os.path.basename(parent) == ".pools":
+            old = time.time() - 7 * 86400
+            for d in glob.glob(os.path.join(parent, "*")):
+                try:
+                    if d != self.dir and os.path.isdir(d) and os.path.getmtime(d) < old:
+                        import shutil
+                        shutil.rmtree(d, ignore_errors=True)
+                except OSError:
+                    pass
+        print("[pool] %s: executables shared with the other runs of the pool (%s); this run is %s"
+              % (self.id, self.dir, self.me), flush=True)
+
+    def claim(self, name):
+        """True: this run measures @p name; False: another run of the pool does."""
+        if not self.dir:
+            return True
+        c = os.path.join(self.dir, name)
+        try:
+            os.mkdir(c)
+        except FileExistsError:
+            try:
+                who = open(os.path.join(c, "owner")).read().strip()
+            except OSError:
+                who = ""            # not written yet: another run's all the same
+            if who == self.me:
+                return True
+            self.others.append(name)
+            print("[pool] %s: taken by %s, skipped here" % (name, who or "another run"), flush=True)
+            return False
+        with open(os.path.join(c, "owner"), "w") as f:
+            f.write(self.me + "\n")
+        self.mine.append(name)
+        print("[pool] %s: claimed by this run" % name, flush=True)
+        return True
+
+
+def own_out_dir(path):
+    """@p path, or path_2, path_3... the first that this run creates: the runs
+    of a pool start together, on nodes whose names may not tell them apart
+    (and with --out, they are given the same one)."""
+    k = 1
+    while True:
+        cand = path if k == 1 else "%s_%d" % (path, k)
+        try:
+            os.makedirs(cand)
+            return cand
+        except FileExistsError:
+            k += 1
+
+
 def fmt_hms(s):
     s = int(s)
     return "%dh%02dm" % (s // 3600, s % 3600 // 60) if s >= 3600 else "%dm%02ds" % (s // 60, s % 60)
@@ -406,7 +498,7 @@ def draw_png(outdir, a, summary, tmin):
     for ax in (ax1, ax2):
         try:
             ax.set_xscale("log", base=2)
-        except TypeError:                 # matplotlib < 3.3
+        except (TypeError, ValueError):   # matplotlib < 3.3 (ValueError in 2.x)
             ax.set_xscale("log", basex=2)
         ax.set_xticks(ts)
         ax.set_xticklabels([str(t) for t in ts])
@@ -414,7 +506,7 @@ def draw_png(outdir, a, summary, tmin):
         ax.grid(True, alpha=0.3)
     try:                                  # the ideal line stays a straight line
         ax1.set_yscale("log", base=2)
-    except TypeError:
+    except (TypeError, ValueError):
         ax1.set_yscale("log", basey=2)
     from matplotlib.ticker import ScalarFormatter
     ax1.yaxis.set_major_formatter(ScalarFormatter())
@@ -477,6 +569,10 @@ def parse_args(argv=None):
                    help="holds cmake-build-<target>/ (default $CHUNK_BUILD_ROOT, $CHUNK_BUILD_REP, "
                         "the repository)")
     p.add_argument("--out", default=None, help="output directory (default <CCC work or ~>/thread_speedup/speedup_<target>_<host>_<date>)")
+    p.add_argument("--pool", default=None, metavar="ID",
+                   help="share the executables with the other runs given the same ID (one batch job per node, "
+                        "as compile_all.sh --pool): each measures those it claims first; ID: a name, or a "
+                        "directory shared by the nodes (default <out base>/.pools/ID)")
     p.add_argument("--allow-oversubscribe", action="store_true",
                    help="keep the thread counts above the usable cores (dropped by default)")
     p.add_argument("--dry-run", action="store_true", help="print the runs and exit")
@@ -505,6 +601,8 @@ def parse_args(argv=None):
         p.error("--reps must be >= 1")
     if a.multiply <= 0:
         p.error("--multiply must be > 0")
+    if a.pool is not None and os.sep not in a.pool and not POOL_ID_RE.match(a.pool):
+        p.error("--pool %s: a name of letters, digits, '.', '_', '-', or a directory" % a.pool)
     return a
 
 
@@ -561,19 +659,30 @@ def main(argv=None):
     host = socket.gethostname().split(".")[0]
     outdir = os.path.abspath(a.out or os.path.join(
         default_out_base(), "speedup_%s_%s_%s" % (target, host, datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))))
+    pool = Pool(a.pool, os.path.dirname(outdir) if a.out else default_out_base())
     plan = [(r, t, name, exe) for r in range(1, a.reps + 1) for t in ts for name, exe in execs]
     print("%s on %s (%s, %d usable cores): %d run(s) -- threads %s, %s"
           % (target, host, cpu_model(), cores, len(plan), ts, " ".join(n for n, _ in execs)))
     print("args: " + " ".join(shlex.quote(x) for x in bench_args) + ("   numactl: auto" if a.numa == "auto" else ""))
     if a.dry_run:
+        if pool.dir:
+            print("[pool] %s: --dry-run, nothing claimed (every run is printed)" % pool.id)
         for r, t, name, exe in plan:
             print("rep %d  %4d threads  %s" % (r, t, exe))
         return 0
+    if pool.dir:
+        pool.open()
+        outdir = own_out_dir(outdir)
+        # The executables one after the other, each claimed when the run
+        # reaches it: a plan made up front would claim them all at once.
+        plan = None
     logs = os.path.join(outdir, "logs")
     os.makedirs(logs, exist_ok=True)
     print("📁 Outputs in %s" % outdir, flush=True)       # what shrink_gui reads (out_re)
     ev = Events()
-    ev.emit("start", total_runs=len(plan), target=target, execs=[n for n, _ in execs], threads=ts)
+    per_exe = a.reps * len(ts)
+    total = len(execs) * per_exe
+    ev.emit("start", total_runs=total, target=target, execs=[n for n, _ in execs], threads=ts)
     ev.emit("phase_start", phase="speedup")
     errors_log = os.path.join(outdir, "errors.log")
     open(errors_log, "w").close()
@@ -587,17 +696,36 @@ def main(argv=None):
                    "bench_args": bench_args, "mode": a.mode, "cwd": a.workdir, "metric": a.metric,
                    "numa": a.numa,
                    "slurm_job": os.environ.get("SLURM_JOB_ID"),
+                   **({"pool": a.pool, "pool_dir": pool.dir} if pool.dir else {}),
                    "date": datetime.datetime.now().isoformat(timespec="seconds")}, f, indent=1)
     rows, t_start, n_fail = [], time.time(), 0
     interrupted = False
+
+    def runs():
+        """(rep, threads, name, exe) in order; with --pool, an executable's
+        runs once this run has claimed it (the total drops by the others')."""
+        nonlocal total
+        if plan is not None:
+            yield from plan
+            return
+        for name, exe in execs:
+            if not pool.claim(name):
+                total -= per_exe
+                continue
+            for r in range(1, a.reps + 1):
+                for t in ts:
+                    yield (r, t, name, exe)
+        if pool.others:
+            ev.emit("progress", phase="speedup", done=len(rows), total=total)
+
     try:
-        for i, (rep, t, name, exe) in enumerate(plan, 1):
+        for i, (rep, t, name, exe) in enumerate(runs(), 1):
             log = os.path.join(logs, "%s__omp%d__r%d.log" % (name, t, rep))
             r = run_one(exe, t, bench_args, a, log)
             r.update(exe=name, threads=t, rep=rep)
             rows.append(r)
             done = time.time() - t_start
-            eta = done / i * (len(plan) - i)
+            eta = done / i * (total - i)
             tm = r["compute_s"] if a.metric == "compute_s" and r["compute_s"] is not None else r["wall_s"]
             status = ("%8.3f s" % tm) if r["rc"] == 0 else "FAIL rc=%s %s" % (r["rc"], why(r["rc"]) if isinstance(r["rc"], int) else "")
             if r["rc"] != 0:
@@ -610,9 +738,9 @@ def main(argv=None):
                     f.write(head.rstrip() + "\n" + ("  " + r["error"] + "\n" if r["error"] else "")
                             + "  full output: %s\n" % log)
                 ev.emit("error", phase="speedup", error_kind="RUN_FAIL", summary=head.rstrip()[:300])
-            ev.emit("progress", phase="speedup", done=i, total=len(plan))
+            ev.emit("progress", phase="speedup", done=i, total=total)
             print("[%d/%d] rep %d %4d th  %-28s %s%s   ETA %s (%d s)"
-                  % (i, len(plan), rep, t, name.replace("shrink_bench_", ""), status,
+                  % (i, total, rep, t, name.replace("shrink_bench_", ""), status,
                      "  %.0f Mo" % r["mem_mo"] if r["mem_mo"] else "", fmt_hms(eta), eta), flush=True)
             write_csvs(outdir, a, rows, summarize(rows, a.metric, ts[0]))   # usable even if stopped
     except KeyboardInterrupt:
@@ -623,6 +751,10 @@ def main(argv=None):
     ev.emit("end", errors=n_fail, interrupted=interrupted, minutes=round((time.time() - t_start) / 60, 2))
     summary = summarize(rows, a.metric, ts[0])
     write_csvs(outdir, a, rows, summary)
+    if pool.dir:
+        execs = [e for e in execs if e[0] in pool.mine]
+        print("[pool] %d executable(s) measured by this run, %d by the other runs of pool %s"
+              % (len(pool.mine), len(pool.others), pool.id))
     write_gnuplot(outdir, a, [n for n, _ in execs], ts[0], ts[-1])
     png = draw_png(outdir, a, summary, ts[0])
     print("\n%-28s %7s %10s %10s %8s %6s" % ("exe", "threads", "best s", "median s", "speedup", "eff."))

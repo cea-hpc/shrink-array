@@ -34,7 +34,6 @@
 #include "chunk/PMP_CHUNK.h" // CHUNK_PMP_THREAD_RANK / _RANK_BOUND / _NUM_THREADS, chunk_rank_cache, pmp::team, current_team
 
 #include "chunk/internal/deferred_op_pool.h" // for reset_all
-#include "chunk/internal/env_parse.h"        // env_number (CHUNK_RECLAIM_PHASE_KEEP)
 #include "chunk/internal/phase_guard.h"      // check-build guard of the phase protocol
 #include "chunk/manage_ompt.h"               // the declarations of the five phase functions below
 #include "chunk/param_chunk.h"               // ParamChunk::init_indexes (ensure_ready)
@@ -389,20 +388,6 @@ void AllTypeChunk::compress_chunk_to_compress_potentially(bool apply) const
         }
     }
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);
-
-    // CHUNK_RECLAIM_PHASE_KEEP=K (unset: off): the pass's freed buffers
-    // went back to their slabs, which stay resident until a sweep. Give
-    // the empty ones back now, keeping K per allocator instance for the
-    // next phase's materialisations (fewer madvise / fault-in round
-    // trips). Serial and quiescent here: the pass's region has joined.
-    static const long phase_keep = env_number<long>("CHUNK_RECLAIM_PHASE_KEEP", -1L);
-    if (phase_keep >= 0)
-    {
-        for (auto* elm : work)
-        {
-            (void)elm->sweep_empty_slabs_int(static_cast<std::size_t>(phase_keep));
-        }
-    }
 }
 
 bool AllTypeChunk::have_chunk_to_compress_potentially() const

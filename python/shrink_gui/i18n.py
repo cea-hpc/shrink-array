@@ -355,18 +355,24 @@ EN = {
     # start conditions and build check (Démarrage / Builds à jour)
     "Démarrage": "Start", "Builds à jour": "Builds up to date", "pas avant": "not before",
     "Nœuds": "Nodes", "la soumission": "the submission",
-    "Nombre de jobs batch d'un nœud chacun entre lesquels la compilation est partagée "
-    "(compile_all.sh --pool, ccc_msub seulement).\n\n"
-    "Chaque job reçoit la même commande et les mêmes directives ; il construit les configurations qu'il "
-    "réclame le premier, dans l'ordre habituel, et laisse les autres aux autres jobs : la charge s'équilibre "
-    "seule. Un job qui démarre quand tout est déjà pris finit aussitôt (code 0).\n\n"
-    "« Démarrage : après » propose ensuite la soumission entière : on attend tous ses jobs.":
-        "Number of batch jobs of one node each that share the compilation "
-        "(compile_all.sh --pool, ccc_msub only).\n\n"
-        "Each job gets the same command and directives; it builds the configurations it claims first, in "
-        "the usual order, and leaves the others to the other jobs: the load balances itself. A job that "
-        "starts when everything is already taken ends at once (code 0).\n\n"
-        "\"Start: after\" then offers the whole submission: all its jobs are waited for.",
+    "Nombre de jobs batch d'un nœud chacun entre lesquels le travail est partagé "
+    "(--pool, ccc_msub seulement) : les configurations de compile_all.sh, les exécutables "
+    "de thread_speedup.py.\n\n"
+    "Chaque job reçoit la même commande et les mêmes directives ; il traite ce qu'il "
+    "réclame le premier, dans l'ordre habituel, et laisse le reste aux autres jobs : la "
+    "charge s'équilibre seule. Un job qui démarre quand tout est déjà pris finit aussitôt "
+    "(code 0).\n\n"
+    "thread_speedup.py : les onglets Graphique et Résumé d'un de ces jobs réunissent ceux "
+    "de tous.\n\n"
+    "« Démarrage : après » propose ensuite une compilation entière : on attend tous ses jobs.":
+        "Number of batch jobs of one node each that share the work "
+        "(--pool, ccc_msub only): compile_all.sh's configurations, thread_speedup.py's "
+        "executables.\n\n"
+        "Each job gets the same command and directives; it handles what it claims first, in the usual "
+        "order, and leaves the rest to the other jobs: the load balances itself. A job that starts when "
+        "everything is already taken ends at once (code 0).\n\n"
+        "thread_speedup.py: the Chart and Summary tabs of any of these jobs gather them all.\n\n"
+        "\"Start: after\" then offers a whole compilation: all its jobs are waited for.",
     "dès la soumission": "on submission", "si elle réussit": "if it succeeds",
     "quelle que soit son issue": "whatever its result",
     "refuser de démarrer si un build n'est pas à jour": "refuse to start if a build is not up to date",
@@ -626,6 +632,10 @@ EN_RE = [(re.compile(a), b) for a, b in (
     (r"^pas encore de (\S+) \(écrit à la fin du run\)$", r"no \1 yet (written at the end of the run)"),
     (r"— (\d+) ligne\(s\), les 1000 dernières", r"— \1 row(s), the last 1000"),
     (r"— (\d+) ligne\(s\)", r"— \1 row(s)"),
+    (r"— (\d+) nœuds sur (\d+)", r"— \1 of \2 nodes"),
+    (r"^(\S+) \((\d+) nœuds\)$", r"\1 (\2 nodes)"),
+    (r", (\d+) nœuds\)", r", \1 nodes)"),
+    (r"^pas encore de summary\.csv dans les (\d+) jobs$", r"no summary.csv yet in the \1 jobs"),
     (r"nom de run invalide", "invalid run name"), (r"n'est pas un run", "is not a run"),
     (r"ni ccc_mdel ni scancel n'ont pu annuler le job", "neither ccc_mdel nor scancel could cancel job"),
     (r"(\S+(?: / \S+)*) : le job (\S+) n'a pas pu être annulé", r"\1: job \2 could not be cancelled"),

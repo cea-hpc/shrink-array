@@ -25,9 +25,9 @@ Part 1 -- A/B on the rebuild's state (always). shrink_bench_zero_1024
                    afterwards. (The slice count, the rebuild's schedule and
                    its slab recycling are fixed now: CHUNK_RECHUNK_SLICES,
                    CHUNK_RECHUNK_SCHEDULE and CHUNK_RECHUNK_RECYCLE are gone,
-                   with dyn_1slice, dyn_static1 and dyn_norecycle.)
-    dyn_lazy       CHUNK_ALLOC_AFFINITY_EAGER=0  per-array slab sets at the
-                   first re-chunk, not at creation
+                   with dyn_1slice, dyn_static1 and dyn_norecycle, and the
+                   affinity mode with dyn_lazy: CHUNK_ALLOC_AFFINITY_EAGER is
+                   gone too.)
     dyn_dryrun     --rechunk_dry_run         the advisor analyses, never moves
     dyn_noadvisor  --advisor_period 0        no advisor (stays at 64)
                    these two have no re-chunk: compare them with each other
@@ -77,7 +77,6 @@ FREEPATH_RE = re.compile(r"\[FREEPATH\] (\S+)\s+freed=(\d+)\s+parked_own=(\d+)\s
 CONFIGS = [
     ("static", "shrink_bench_zero_1024", {}, []),
     ("dyn", "shrink_bench_zero_dyn", {}, []),
-    ("dyn_lazy", "shrink_bench_zero_dyn", {"CHUNK_ALLOC_AFFINITY_EAGER": "0"}, []),
     # the advisor's own share: analyses without any re-chunk, and none at all
     ("dyn_dryrun", "shrink_bench_zero_dyn", {}, ["--rechunk_dry_run"]),
     ("dyn_noadvisor", "shrink_bench_zero_dyn", {}, ["--advisor_period", "0"]),
@@ -235,6 +234,10 @@ def main():
     if "--iter_max" not in args:
         args += ["--iter_max", "2000"]
     wanted = set(a.configs.split(","))
+    missing = sorted({exe for name, exe, *_ in CONFIGS if name in wanted and not (bindir / exe).is_file()})
+    if missing:
+        print(f"error: not found in {bindir}: {', '.join(missing)}", file=sys.stderr)
+        return 1
     summary = [f"# {time.strftime('%Y-%m-%d %H:%M:%S')}  threads={a.threads}  args='{' '.join(args)}'  "
                f"OMP_PROC_BIND={os.environ.get('OMP_PROC_BIND', 'close')} "
                f"OMP_PLACES={os.environ.get('OMP_PLACES', 'cores')}  host={os.uname().nodename}"]

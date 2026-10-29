@@ -348,6 +348,23 @@ reset_compiler_modules() {
     done
 }
 
+# The gcc whose libstdc++ clang / icpx / nvc++ / aocc use: gcc/15.2.0 where it
+# exists (inti), else the newest gcc/<ver> module. A hard-coded gcc/15.2.0 on a
+# machine without it failed to load, and the llvm module, which needs a gcc,
+# failed after it: clang++ then came from the system PATH, the wrong llvm.
+# Empty without modules: the families then skip the load.
+if module is-avail gcc/15.2.0 >/dev/null 2>&1 ||
+    module -t avail gcc/15.2.0 2>&1 | grep -qE '^gcc/15\.2\.0(\(.*\))?$'; then
+    gcc_module=gcc/15.2.0
+else
+    gcc_module=$(chunk_newest_module gcc)
+fi
+[ "$CHUNK_HAVE_MODULES" = false ] && gcc_module=""
+load_gcc_module() {
+    [ -n "$gcc_module" ] && run_cmd "module load $gcc_module"
+    return 0
+}
+
 
 
 run_cmd "module load ninja"
@@ -482,10 +499,10 @@ if [ "$enable_oneapi" = true ] && [ "$is_arm" = false ]; then
 
 set_build_header 'Compiling oneapi openmp:'
 
-# Use GCC 15.2.0 so icpx finds <format> (libstdc++)
+# gcc 15.2.0 (else the newest gcc module) so icpx finds <format> (libstdc++)
 
 reset_compiler_modules
-run_cmd "module load gcc/15.2.0"
+load_gcc_module
 run_cmd "module load inteloneapi/26.0.0"
 run_cmd "module load ninja"
 
@@ -566,7 +583,8 @@ latest_nvhpc=$(module -t av nvhpc 2>&1 | tr -s '[:space:]' '\n' | grep -oE 'nvhp
 if [ -n "$latest_nvhpc" ]; then
     reset_compiler_modules
     if [ "$latest_nvhpc" = local ] || run_cmd "module load $latest_nvhpc"; then
-        run_cmd "module load gcc/15.2.0"
+        load_gcc_module
+        [ "$DRYRUN" = true ] || [ "$latest_nvhpc" = local ] || chunk_check_binutils nvhpc warn
         if [ "$latest_nvhpc" = local ]; then nvcxx="$CHUNK_NVCXX"; else nvcxx="$(command -v nvc++ 2>/dev/null)"; fi
     [ -z "$nvcxx" ] && nvcxx="nvc++"  # same dry-run fallback as clangxx
         if [ -n "$nvcxx" ]; then
@@ -621,9 +639,18 @@ echo "Using $latest_llvm (latest available)"
 # Without modules latest_llvm is "clang++-N (PATH)", a label, not a module:
 # eval'ed by run_cmd, its parenthesis is a shell syntax error.
 if [ "$CHUNK_HAVE_MODULES" = true ]; then
-    run_cmd "module load $latest_llvm"
+    # gcc first: the llvm module needs one loaded. A failed llvm load stops
+    # here -- going on would build with the system clang++.
+    load_gcc_module
+    if ! run_cmd "module load $latest_llvm"; then
+        echo "ERROR: module load $latest_llvm failed (gcc: ${gcc_module:-none}); not building with the system clang++" >&2
+        echo "       what $latest_llvm requires:" >&2
+        module show "$latest_llvm" 2>&1 | grep -E 'prereq|depends-on|module load|conflict' | sed 's/^/         /' >&2
+        exit 1
+    fi
     # Reload ninja in case loading LLVM unloaded it
     run_cmd "module load ninja"
+    [ "$DRYRUN" = true ] || chunk_check_binutils llvm warn
 fi
 
 if [ "$CHUNK_HAVE_MODULES" = true ]; then
@@ -641,7 +668,6 @@ if [ -z "$clangxx" ]; then
 fi
 LLVM_CXX_OPT="-DCMAKE_CXX_COMPILER=$clangxx"
 
-run_cmd "module load gcc/15.2.0"
 LLVM_STDLIB_OPT="-DUSE_LIBCXX=OFF $(chunk_gcc_toolchain_opt cmake)"
 echo "llvm → libstdc++ from ${CHUNK_GCC_TOOLCHAIN_DIR:-the default gcc} (USE_LIBCXX=OFF)"
 
@@ -936,7 +962,7 @@ else
 
     # AOCC provides its own clang front-end but relies on the system libstdc++;
     # point it at the gcc toolchain, exactly like the llvm section does.
-    run_cmd "module load gcc/15.2.0"
+    load_gcc_module
     AOCC_STDLIB_OPT="-DUSE_LIBCXX=OFF $(chunk_gcc_toolchain_opt cmake)"
     echo "aocc → libstdc++ from ${CHUNK_GCC_TOOLCHAIN_DIR:-the default gcc} (USE_LIBCXX=OFF)"
 

@@ -61,9 +61,8 @@ void ParamChunkParallelInterface<true, AllT>::init_thread_structures()
 {
     if constexpr (build_config::use_fast_alloc)
     {
-        std::println(
-            "Using \"fast allocator\" for chunks  [build: reclaim_empty_slabs={}, alloc_affinity_min_bytes={}MiB]",
-            build_config::reclaim_empty_slabs ? "ON" : "OFF", build_config::alloc_affinity_min_bytes >> 20U);
+        std::println("Using \"fast allocator\" for chunks  [build: alloc_affinity_min_bytes={}MiB]",
+                     build_config::alloc_affinity_min_bytes >> 20U);
     }
 }
 

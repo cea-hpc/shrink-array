@@ -76,13 +76,6 @@ std::size_t EmptySlabSweep<Slab>::flush() noexcept
     items_.erase(std::unique(items_.begin(), items_.end(),
                              [](const Item& lhs, const Item& rhs) { return lhs.slab == rhs.slab; }),
                  items_.end());
-    // CHUNK_RECLAIM_MIN_SLABS: madvise syscalls against the pages they
-    // return, decided by how many slabs this sweep empties at once.
-    if (items_.size() < alloc_config::reclaim_min_empty_slabs())
-    {
-        items_.clear();
-        return 0;
-    }
     for (Item& it : items_)
     {
         it.len   = detail::reclaimable_bytes(it.slab);

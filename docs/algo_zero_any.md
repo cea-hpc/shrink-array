@@ -116,8 +116,8 @@ each element with the first element of the chunk):
   `clear_int_st` installs by CAS as the chunk's `values` pointer.
 
 The freed buffer joins the thread's reuse list. The trigger threshold is
-`somme_chunk_create / (50 × number of threads)`, with a floor of 500 candidates (default
-compression level, `CHUNK2A_COMPRESS_LEVEL=0`, in `zero_any_chunk_def.h`).
+`somme_chunk_create / (50 × number of threads)`, with a floor of 500 candidates (constants of
+`zero_any_chunk_def.h`).
 
 ## 6. The write
 

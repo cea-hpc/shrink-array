@@ -29,34 +29,30 @@ option(CHUNK_FORCE_LEDGER "Keep the pool ledger active under OpenMP (off by defa
 # An emptied slab would otherwise keep its resident pages: the allocator never
 # unmaps a value slab (see the op/value aliasing note in tc_allocator.h), so the
 # peak of a re-chunk -- where the old and the new geometry are both materialised
-# -- would stay in RSS afterwards. This madvise()s those pages away while
-# keeping the slab mapped and reusable.
-#
-# ON by default since it was measured to be free. rechunk_validation_zero_dyn
+# -- would stay in RSS afterwards. The sweeps (a re-chunk, a teardown,
+# trim_reuse_pools) madvise() those pages away while keeping the slab mapped and
+# reusable, always: it was measured to be free. rechunk_validation_zero_dyn
 # 200000 128 3, peak RSS, best of 3: 129.9 -> 88.3 MB at one thread and
 # 104.8 -> 87.9 MB at four, with the wall time unchanged (16.79 -> 16.60 s and
 # 16.22 -> 16.06 s). The syscall cost does not register: 99 madvise calls over
 # the whole run, 29 microseconds in total, because a slab only empties at a
 # geometry change or at teardown -- never in steady state.
 #
-# It is safe by construction rather than by care: the only call site is
-# TCTypeCAllocator::reclaim_empty_slabs_now(), the VALUE family, on a set the
-# caller knows abandoned (a re-chunk's old geometry, a teardown). Its free list
-# lives in the heap-allocated tab_firstFree and its metadata in the slab header
-# object -- both outside the pages being dropped -- and it makes no promise
-# about element contents (callers initialise what they get), so the zero pages
-# MADV_DONTNEED brings back are as good as any. The op/ctx family
-# threads its free list THROUGH the freed elements and would be corrupted by
-# this; its on_kept is an empty lambda and it is never madvised.
+# It is safe by construction rather than by care: only a sweep advises, on the
+# VALUE family, on a set the caller knows abandoned (a re-chunk's old geometry,
+# a teardown). Its free list lives in the heap-allocated tab_firstFree and its
+# metadata in the slab header object -- both outside the pages being dropped --
+# and it makes no promise about element contents (callers initialise what they
+# get), so the zero pages MADV_DONTNEED brings back are as good as any. The
+# op/ctx family threads its free list THROUGH the freed elements and would be
+# corrupted by this; its on_kept is an empty lambda and it is never madvised.
 #
-# Turn it OFF if a profile ever shows page faults from slabs that empty and
-# refill in a loop; "strace -c -e trace=madvise" gives the call count directly.
-#
-# Recorded, like every option the headers read, in the generated
-# chunk/build_options.h and fast_allocators/build_options.h, installed with the
-# libraries: a project using the installed package compiles the inline
-# allocator code with the library's value, whatever it defines itself.
-option(CHUNK_RECLAIM_EMPTY_SLABS "Release an emptied slab's pages with madvise instead of keeping them resident" ON)
+# CHUNK_RECLAIM_EMPTY_SLABS=OFF, which kept them resident, is no longer an
+# option: a cache that still has it is warned about.
+if (DEFINED CHUNK_RECLAIM_EMPTY_SLABS AND NOT CHUNK_RECLAIM_EMPTY_SLABS)
+  message(WARNING "CHUNK_RECLAIM_EMPTY_SLABS=OFF is ignored: the option is gone, emptied slabs are always "
+                  "given back. A CMakeCache.txt from an older configure? (compile_all.sh --fresh-cache)")
+endif()
 
 # Reinforced debug level for fast_allocators' slab lists: on a Debug build,
 # every insert / remove also walks the whole list (sl_check, sl_contains) --

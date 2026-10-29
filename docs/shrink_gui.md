@@ -69,7 +69,7 @@ runs again by itself.
 | Submission | `ccc_msub` (batch, the default) or `ccc_mprun` detached from the login node |
 | Max time (-T) | takes `2 d`, `1 h 30`, `90 min`, `1-00:00:00` |
 | QoS (-Q) | "auto" picks the QoS from the duration, by the limits `ccc_mqinfo` reports |
-| Nodes | `compile_all.sh` in batch mode: the number of one-node jobs that share the compilation (below) |
+| Nodes | `compile_all.sh` and `thread_speedup.py` in batch mode: the number of one-node jobs that share the work (below) |
 | Start | after a `compile_all.sh` run not finished yet (Slurm dependency `afterok`/`afterany`), and/or not before a given time |
 | Builds up to date | before the command, `ninja -n` on the builds used: refuse (code 96), warn, or skip |
 | Directives, Launcher (job) | the `#MSUB` lines and the launcher on the node; per partition, remembered |
@@ -109,8 +109,8 @@ everything ends at once, with code 0. Each log ends with
 "Start: after" then offers the submission as one entry, "after `<id>` (N nodes)": the job waits
 for all N (`--dependency=afterok:j1:…:jN`). "Reuse its options" makes a new pool: the form's
 values never hold the `--pool` the window added. The field is hidden in detached mode and for
-the other programs. `--pool` can also be given by hand, to a `compile_all.sh` run from a shell
-(`--help`).
+the programs that cannot share their work. `--pool` can also be given by hand, to a
+`compile_all.sh` run from a shell (`--help`).
 
 `thread_speedup.py` (thread speedup curves of shrink_bench executables on one target, whatever
 runs the threads -- OpenMP, the std::thread backend or TBB; formerly `omp_speedup.py`: `--target`,
@@ -122,6 +122,19 @@ dash-dot line = the TBB bench, which `--all-exec` takes too when the build has i
 "Compare with" overlays another run (another compiler, another commit) and gives the B / A
 ratio. Its outputs go to `$CCCWORKDIR/thread_speedup/` (else `~/thread_speedup/`); the runs
 recorded under the old name are read as its own.
+
+**Speedup curves on several nodes.** "Nodes" N > 1 works for `thread_speedup.py` as for
+`compile_all.sh`: N one-node jobs, `thread_speedup.py [k/N]`, the same command plus
+`--pool=<id>`. The jobs share the executable list: each walks it in order and measures an
+executable only if it is the first to claim it (an atomic `mkdir` in
+`$CCCWORKDIR/thread_speedup/.pools/<id>/`), with its repetitions interleaved over the thread
+counts. Each job writes its own output directory (`speedup_<target>_<host>_<date>`, plus `_2`,
+`_3`… when two jobs start in the same second on hosts of the same name), and its log ends with
+`[pool] n executable(s) measured by this run, m by the other runs of pool <id>`. The Chart and
+the Summary of any of the N jobs gather them all, one set of curves ("2 of 2 nodes" in the
+note); "Compare with" offers another submission over several nodes as one entry and never the
+submission itself. The speedup of an executable is measured on one node only, so the N nodes
+must be of the same kind (one partition). `--pool` can be given by hand too (`--help`).
 
 ### The runs
 
@@ -271,10 +284,11 @@ They are skipped when PySide6 is not installed.
 - A prototype, written for the TGCC machines; another site writes its site file (§6). The
   scheduler must be Slurm underneath (`squeue`, `--dependency`, `--begin`).
 - One connection at a time. The interface does not open the master connection itself.
-- Several nodes (§3): the build directory `$CHUNK_BUILD_REP` must be on a file system that all
-  the nodes share (the claims are directories there). Every job asks for the same time
-  (-T) as one would. A job that fails lets the others go on; its configurations are not
-  taken back by them.
+- Several nodes (§3): the build directory `$CHUNK_BUILD_REP` (`compile_all.sh`) and
+  `$CCCWORKDIR/thread_speedup/` (`thread_speedup.py`) must be on a file system that all the
+  nodes share (the claims are directories there). Every job asks for the same time
+  (-T) as one would. A job that fails lets the others go on; its configurations (its
+  executables) are not taken back by them.
 - This machine from Windows (`wsl.exe`) is not covered by the tests (they run on Linux).
   WSL may stop a distribution once no window of it is left open: keep one open while a
   run goes.

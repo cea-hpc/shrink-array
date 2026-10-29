@@ -156,14 +156,17 @@ The price: one partly used slab per (rank, array, size) triple. With the 1 MiB s
 former sixteen-page floor (64 KiB pages), this was ~780 MiB over the 16 arrays of the benchmark at
 64 threads; the slabs are 256 KiB there now, a quarter of it.
 
-Hence two modes, whose default depends on the variant:
+Hence two modes, fixed per variant:
 
 | mode | when an array gets its key | default for | why |
 |---|---|---|---|
 | **lazy** | at its first rechunk | `zero_one_value`, `zero_any` | they are mostly made of metadata: a start without per-array sets uses exactly as much as the static build (`zero_any`: 11,590 MB after initialisation, against 12,435 MB in eager mode) |
 | **eager** | at its creation | `zero` | `zero` is mostly made of data, and its slice-by-slice rebuild only returns memory progressively if the old storage has its own slabs. In lazy mode, the first rechunk starts from shared slabs, which mix the blocks of several arrays and do not empty: +6.0 GB on 39.3 GB. `zero` peak: 41.2 GB in eager mode, 45.6 GB in lazy mode, for the same end memory |
 
-`CHUNK_ALLOC_AFFINITY_EAGER=0` or `=1` forces one of the modes.
+The choice was measured against the other mode (Milan, `shrink_bench` int64 dyn, 64 threads,
+three runs each, October 2026): `zero` in lazy mode takes +9.8% of time, +14.6% at the peak and
++11.8% at the end; `zero_any` in eager mode +7.4% at the peak; `zero_one_value` is the same either
+way. The mode is no longer an environment variable (`CHUNK_ALLOC_AFFINITY_EAGER` is gone).
 
 ## 6. What must disappear with the old storage
 

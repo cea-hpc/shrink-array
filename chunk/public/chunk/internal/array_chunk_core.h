@@ -44,7 +44,6 @@
 #include <atomic>      // std::atomic (next_alloc_key_)
 #include <cstddef>     // std::size_t
 #include <cstdint>     // std::uint64_t
-#include <cstdlib>     // std::getenv (CHUNK_ALLOC_AFFINITY_EAGER)
 #include <memory>      // std::construct_at (construct_chunk)
 #include <string>      // std::string (debug_name_)
 #include <type_traits> // std::conditional_t
@@ -65,21 +64,15 @@ namespace alloc_affinity_detail
 {
 /// Eager (an allocator set per large array at creation) or lazy (only the
 /// storage a re-chunk builds gets one, see assign_alloc_key()) -- eager by
-/// default for zero, lazy for zero_one_value / zero_any. CHUNK_ALLOC_AFFINITY_EAGER
-/// (read once), when set, decides: =0 lazy, anything else eager.
+/// default for zero, lazy for zero_one_value / zero_any, fixed at build time.
 /// zero's memory is mostly data and its rebuild is sliced: from the shared pool,
 /// whose slabs mix several arrays' blocks, no slab empties during the first
-/// re-chunk, so eager lowers its peak by about a tenth. zero_one_value / zero_any are not
-/// sliced and are metadata-heavy: lazy saves them the per-array slabs.
-inline const bool g_eager = []() noexcept
-{
-    const char* env = std::getenv("CHUNK_ALLOC_AFFINITY_EAGER");
-    if (env == nullptr || env[0] == '\0')
-    {
-        return chunk_config::use_zero; // the variant's default
-    }
-    return env[0] != '0';
-}();
+/// re-chunk, so eager lowers its peak. zero_one_value / zero_any are not sliced and
+/// are metadata-heavy: lazy saves them the per-array slabs. Measured on Milan
+/// (shrink_bench int64 dyn, 64 threads, three runs each, October 2026): zero lazy
+/// costs +9.8% of time, +14.6% at the peak and +11.8% at the end; zero_any eager
+/// +7.4% at the peak; zero_one_value is the same either way.
+inline constexpr bool g_eager = chunk_config::use_zero;
 
 /// True while rechunk_to() constructs its new storage (tmp): the storage that
 /// assign_alloc_key() gives an allocator set of its own. Set and reset at a

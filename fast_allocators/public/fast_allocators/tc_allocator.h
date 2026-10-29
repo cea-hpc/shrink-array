@@ -609,8 +609,8 @@ void sl_insert(Node*& list, Node* node) noexcept
  * @warning A slab that empties is not thereby reclaimed. With
  *          @p nb_max_block_empty negative (what the chunk layer passes, so a
  *          freed value slab's address is never reobtained by the op pool) its
- *          pages stay resident unless @p on_kept releases them. See
- *          alloc_config::reclaim_empty_slabs.
+ *          pages stay resident unless @p on_kept releases them, or a sweep
+ *          (fast_alloc::EmptySlabSweep) gives them back.
  */
 template <typename Node, class Count, class OnKept, class OnEvict>
 void sl_manage_full_empty(Node*&  block,
@@ -1146,27 +1146,18 @@ class alignas(64) TCTypeCAllocator : public TCSlabPool<TCTypeCAllocator<ElemT>, 
     ///        ones found), for its next allocations: a sweep between two
     ///        phases that keeps a few does not give back, then fault in again,
     ///        the slabs the next phase allocates.
-    /// @return Number of slabs handed over. The CHUNK_RECLAIM_MIN_SLABS floor
-    ///         is applied by the sweep, to all instances together.
+    /// @return Number of slabs handed over.
     std::size_t collect_empty_slabs([[maybe_unused]] SlabSweep&  sweep,
                                     [[maybe_unused]] std::size_t keep_empty = 0) noexcept;
 
     /**
      * @brief The slabs of this instance that are still in use, at a sweep:
-     *        re-chain them fullest first (CHUNK_SLAB_FULLEST_FIRST), then give
-     *        back their free pages (CHUNK_RECLAIM_PARTIAL,
-     *        TCSlab::advise_free_pages()).
+     *        give back their free pages (TCSlab::advise_free_pages()).
      * @details The empty slabs are collect_empty_slabs()'s; call this first, at
      *          the same serial, quiescent point (ManagerChunk::sweep_empty_slabs).
      * @return The bytes given back.
      */
     std::size_t tidy_slabs_in_use() noexcept;
-
-  private:
-    /// @brief Re-chain #block by decreasing occupancy (nn_ref), stable: alloc()
-    ///        takes the head, so the dense slabs fill and the sparse ones drain.
-    ///        Leaves the order as it was if the scratch vector cannot be had.
-    void order_fullest_first() noexcept;
 };
 
 #endif
