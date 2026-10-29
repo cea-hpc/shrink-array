@@ -3,7 +3,7 @@
 > French version: [shrink_gui_fr.md](shrink_gui_fr.md).
 
 > October 2026, `shrink_gui` 0.14 (prototype). A window on the laptop to submit
-> `compile_all.sh`, `bench_and_test.py`, `multi_launch_stress.py` and `omp_speedup.py` on the cluster, or to
+> `compile_all.sh`, `bench_and_test.py`, `multi_launch_stress.py` and `thread_speedup.py` on the cluster, or to
 > run them on the laptop itself (§3, "This machine"), follow
 > their log, read their summary and fetch their results. The code is described in the
 > docstring of `python/shrink_gui/__init__.py`.
@@ -86,7 +86,7 @@ bold; an option left at its default is not put on the command line. "Save as def
 replaces this program's defaults on this architecture. "Command" shows exactly what will run.
 
 Before submitting an argparse script, the window has the script itself check the command on
-the cluster: its module-level `parse_args(argv)` function when it has one (`omp_speedup.py`:
+the cluster: its module-level `parse_args(argv)` function when it has one (`thread_speedup.py`:
 its own checks included, without running `main`), else its `parse_args()` call. An unknown
 option, an invalid value or one of the script's checks refuses the submission in the status
 bar, instead of a job that stops at once on a usage error. `"validate": False` in `PROGRAMS`
@@ -112,13 +112,15 @@ values never hold the `--pool` the window added. The field is hidden in detached
 the other programs. `--pool` can also be given by hand, to a `compile_all.sh` run from a shell
 (`--help`).
 
-`omp_speedup.py` (OpenMP speedup curves of shrink_bench executables on one target: `--target`,
+`thread_speedup.py` (thread speedup curves of shrink_bench executables on one target, whatever
+runs the threads -- OpenMP, the std::thread backend or TBB; formerly `omp_speedup.py`: `--target`,
 `--exec` or `--all-exec`, `--min-threads`, `--max-threads`, `--multiply`) likewise runs as a
 batch job only, with the same "Choose…" buttons. Its progress and errors show as
 `bench_and_test.py`'s do; the Summary gives its `summary.csv`, and the Chart its curves
 (speedup with the ideal line, efficiency or time; colour = the variant, shape = the size).
 "Compare with" overlays another run (another compiler, another commit) and gives the B / A
-ratio. Its outputs go to `$CCCWORKDIR/omp_speedup/` (else `~/omp_speedup/`).
+ratio. Its outputs go to `$CCCWORKDIR/thread_speedup/` (else `~/thread_speedup/`); the runs
+recorded under the old name are read as its own.
 
 ### The runs
 

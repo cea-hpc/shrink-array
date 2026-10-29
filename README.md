@@ -289,7 +289,7 @@ accesses absorbs part of it.
 
 Thread scaling, at three times the size (`--multiply 3`, 3·10⁹ elements: the 64-bit index
 builds `shrink_bench_*_int64_*`), clang/libomp, Grace (288 cores), compute time against 1
-thread ([python/omp_speedup.py](python/omp_speedup.py)): every variant follows the ideal line
+thread ([python/thread_speedup.py](python/thread_speedup.py)): every variant follows the ideal line
 up to 16 threads (a speedup of 14 there, 26 to 28 at 32), reaches 48 to 70 at 128 threads and
 stays between 43 and 66 up to 288, where `std::vector` falls back to about 26.
 

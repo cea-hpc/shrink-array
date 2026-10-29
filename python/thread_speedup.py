@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
-"""omp_speedup.py -- OpenMP speedup curves of shrink_bench executables on one
-build target (Grace, Milan, or this machine).
+"""thread_speedup.py -- thread speedup curves of shrink_bench executables on one
+build target (Grace, Milan, or this machine), whatever runs the threads: OpenMP
+(omp-* targets), the std::thread backend (std-*), or TBB (shrink_bench_tbb_*,
+by full name). The thread count is OMP_NUM_THREADS, which the std backend and
+the TBB bench read too (CHUNK_NUM_THREADS, which they would read first, is taken
+out of the runs' environment). Formerly omp_speedup.py, which still runs this one.
 
 For each executable and each thread count from --min-threads to --max-threads
 (powers of two, plus the max), --reps runs of
@@ -19,9 +23,9 @@ Time measured: "Elapsed time computation" printed by shrink_bench (--metric
 compute, the default: the parallel loops, without the array creation and the
 fill), or the wall time of the process (--metric wall).
 
-Output, in --out (default $CCCWORKDIR/omp_speedup/
+Output, in --out (default $CCCWORKDIR/thread_speedup/
 speedup_<target>_<host>_<date>/ when that work area exists, else
-~/omp_speedup/speedup_<target>_<host>_<date>/):
+~/thread_speedup/speedup_<target>_<host>_<date>/):
   results.csv   one row per run: target, exe, threads, rep, wall_s, compute_s,
                 mem_mo, rc
   summary.csv   one row per (exe, threads): best and median times, speedup,
@@ -34,9 +38,9 @@ speedup_<target>_<host>_<date>/ when that work area exists, else
   logs/         the full output of every run
 
 Examples (from python/, on a compute node):
-  python3 omp_speedup.py --target omp-llvm --min-threads 1 --max-threads 72 \\
+  python3 thread_speedup.py --target omp-llvm --min-threads 1 --max-threads 72 \\
       --exec shrink_bench_vector_perf shrink_bench_zero_any_dyn --multiply 2
-  python3 omp_speedup.py --target omp-gnu --min-threads 4 --max-threads 128 \\
+  python3 thread_speedup.py --target omp-gnu --min-threads 4 --max-threads 128 \\
       --exec zero@dyn zero_any@1024 --threads 4 8 16 32 64 96 128 --reps 5
 
 --exec takes a full name (shrink_bench_zero_any_dyn), or base@size
@@ -143,10 +147,10 @@ def all_execs(root, target, a):
 
 def default_out_base():
     """Where the output directories go without --out: the CCC work area
-    ($CCCWORKDIR) when there is one, else ~/omp_speedup -- never the source tree
+    ($CCCWORKDIR) when there is one, else ~/thread_speedup -- never the source tree
     (shrink_gui runs it from python/)."""
     work = os.environ.get("CCCWORKDIR", "")
-    return os.path.join(work if work and os.path.isdir(work) else os.path.expanduser("~"), "omp_speedup")
+    return os.path.join(work if work and os.path.isdir(work) else os.path.expanduser("~"), "thread_speedup")
 
 
 def default_oracle_dir(target):
@@ -277,6 +281,9 @@ def run_one(exe, threads, bench_args, a, log_path):
     env = dict(os.environ, OMP_NUM_THREADS=str(threads),
                OMP_PROC_BIND=os.environ.get("OMP_PROC_BIND", "close"),
                OMP_PLACES=os.environ.get("OMP_PLACES", "cores"))
+    # The std backend (and the TBB bench) read CHUNK_NUM_THREADS before
+    # OMP_NUM_THREADS: left in the environment, it would pin every point.
+    env.pop("CHUNK_NUM_THREADS", None)
     cmd = numa_prefix(a.numa, threads) + [exe] + bench_args
     t0 = time.time()
     try:
@@ -285,7 +292,7 @@ def run_one(exe, threads, bench_args, a, log_path):
         out, rc = p.stdout, p.returncode
     except subprocess.TimeoutExpired as e:
         out = e.stdout if isinstance(e.stdout, str) else (e.stdout or b"").decode("utf-8", "replace")
-        out += "\n[omp_speedup] TIMEOUT after %ss\n" % a.timeout
+        out += "\n[thread_speedup] TIMEOUT after %ss\n" % a.timeout
         rc = "timeout"
     wall = time.time() - t0
     with open(log_path, "w") as f:
@@ -462,7 +469,7 @@ def parse_args(argv=None):
     p.add_argument("--build-root", default=None,
                    help="holds cmake-build-<target>/ (default $CHUNK_BUILD_ROOT, $CHUNK_BUILD_REP, "
                         "the repository)")
-    p.add_argument("--out", default=None, help="output directory (default <CCC work or ~>/omp_speedup/speedup_<target>_<host>_<date>)")
+    p.add_argument("--out", default=None, help="output directory (default <CCC work or ~>/thread_speedup/speedup_<target>_<host>_<date>)")
     p.add_argument("--allow-oversubscribe", action="store_true",
                    help="keep the thread counts above the usable cores (dropped by default)")
     p.add_argument("--dry-run", action="store_true", help="print the runs and exit")

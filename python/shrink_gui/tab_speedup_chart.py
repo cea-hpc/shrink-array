@@ -1,6 +1,6 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
-"""The Graphique tab of omp_speedup.py: its summary.csv as one line per
+"""The Graphique tab of thread_speedup.py: its summary.csv as one line per
 executable against threads -- speedup (with the ideal line), efficiency or
 time. Colour = the variant (vector, zero, zero_one_value, zero_any), marker =
 the size (dyn, 1024, 256, 64): with --all-exec a run has a dozen curves, and
@@ -19,7 +19,7 @@ from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QBrush, QColor, QPen
 from PySide6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
-from shrink_gui.config import VIZ
+from shrink_gui.config import VIZ, program_of
 from shrink_gui.remote_helper import normalize_variant
 from shrink_gui.i18n import T, tip
 from shrink_gui.widgets import ScatterView, TLabel
@@ -40,8 +40,9 @@ METRICS = {
 
 
 def is_speedup_chart(meta):
-    """Drawn as omp_speedup.py's (meta "chart", set from PROGRAMS)."""
-    return meta.get("chart") == "speedup" or meta.get("program") == "omp_speedup.py"
+    """Drawn as thread_speedup.py's (meta "chart", set from PROGRAMS; an old run
+    under its former name, omp_speedup.py, too)."""
+    return meta.get("chart") == "speedup" or program_of(meta) == "thread_speedup.py"
 
 
 def exe_key(exe):
@@ -62,7 +63,7 @@ def _shape(size):
 
 class SpeedupChart:
     def build_speedup_page(self):
-        """The omp_speedup.py page of the Graphique tab."""
+        """The thread_speedup.py page of the Graphique tab."""
         self.sc_data = None
         self.sc_data_b = None
         self.sc_metric = QComboBox()
@@ -79,7 +80,7 @@ class SpeedupChart:
         self.sc_size.currentIndexChanged.connect(self.draw_speedup)
         self.sc_cmp = QComboBox()
         self.sc_cmp.setMinimumContentsLength(24)
-        self.sc_cmp.setToolTip(tip("Superpose un autre run de omp_speedup.py de la même architecture "
+        self.sc_cmp.setToolTip(tip("Superpose un autre run de thread_speedup.py de la même architecture "
                                    "(en pointillés) -- un autre compilateur, un autre commit -- et donne le "
                                    "rapport B / A sur leurs points communs"))
         self.sc_cmp.currentIndexChanged.connect(self.load_speedup_points)
@@ -108,7 +109,7 @@ class SpeedupChart:
         return w
 
     def fill_speedup_compare(self):
-        """The other omp_speedup.py runs of the current one's architecture."""
+        """The other thread_speedup.py runs of the current one's architecture."""
         if not hasattr(self, "sc_cmp"):
             return
         cur = next((x for x in self.runs if x["id"] == self.current), None)

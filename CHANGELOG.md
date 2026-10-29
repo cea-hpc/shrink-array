@@ -119,6 +119,11 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- `python/omp_speedup.py` is `python/thread_speedup.py`: its curves are not OpenMP's only, the
+  std::thread backend's (`std-*` targets) and the TBB bench's (`shrink_bench_tbb_*`) too. Its
+  default output directory is `$CCCWORKDIR/thread_speedup/` (else `~/thread_speedup/`).
+  shrink_gui offers it under the new name and reads the runs recorded under the old one as its
+  own (reuse, outputs, Chart).
 - `zero` re-chunk: the recycled slabs the last slice of the rebuild did not take stay resident
   for the next allocations, instead of being given back to the system (the former
   `CHUNK_RECHUNK_KEEP_RECYCLED=1`, now the only behaviour). Milan, `zero_dyn`, 64 threads, three
@@ -268,8 +273,11 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `thread_speedup.py` (formerly `omp_speedup.py`) takes `CHUNK_NUM_THREADS` out of the runs'
+  environment: the std backend and the TBB bench read it before `OMP_NUM_THREADS`, so a value
+  left in the shell pinned every point of a `std-*` run to one thread count.
 - shrink_gui: the legends of the Graphique tab are readable again. Set in one row at the top,
-  they cut every label short -- with `omp_speedup.py --all-exec` (a dozen executables, twice
+  they cut every label short -- with `thread_speedup.py --all-exec` (a dozen executables, twice
   over in a comparison) no label was left. They sit on the right now, one entry a line, with the
   full label on hover; the speedup chart has one entry per executable, its marker (colour: the
   variant, shape: the size), B's dashed twin of an A curve adding none.

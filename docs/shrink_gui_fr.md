@@ -3,7 +3,7 @@
 > English version: [shrink_gui.md](shrink_gui.md).
 
 > Octobre 2026, `shrink_gui` 0.14 (prototype). Une fenêtre sur le portable pour soumettre
-> `compile_all.sh`, `bench_and_test.py`, `multi_launch_stress.py` et `omp_speedup.py` sur le calculateur, ou
+> `compile_all.sh`, `bench_and_test.py`, `multi_launch_stress.py` et `thread_speedup.py` sur le calculateur, ou
 > pour les lancer sur le portable lui-même (§3, « Cette machine »), suivre
 > leur log, lire leur résumé et rapatrier leurs résultats. Le détail du code est dans la
 > docstring de `python/shrink_gui/__init__.py`.
@@ -88,7 +88,7 @@ cette architecture. « Commande » montre exactement ce qui sera exécuté.
 
 Avant de soumettre un script argparse, la fenêtre fait vérifier la commande par le script
 lui-même sur le calculateur : sa fonction `parse_args(argv)` quand il en a une au niveau du
-module (`omp_speedup.py` : ses propres contrôles compris, sans lancer `main`), sinon son appel
+module (`thread_speedup.py` : ses propres contrôles compris, sans lancer `main`), sinon son appel
 à `parse_args()`. Une option inconnue, une valeur invalide ou un contrôle du script refuse la
 soumission dans la barre d'état, au lieu d'un job qui s'arrête aussitôt sur une erreur d'usage.
 `"validate": False` dans `PROGRAMS` désactive cette vérification pour un programme.
@@ -114,14 +114,17 @@ crée un nouveau pool : les valeurs du formulaire ne contiennent jamais le `--po
 fenêtre. Le champ est masqué en mode détaché et pour les autres programmes. `--pool` peut aussi
 se donner à la main, à un `compile_all.sh` lancé depuis un shell (`--help`).
 
-`omp_speedup.py` (courbes de speedup OpenMP d'exécutables shrink_bench sur une cible :
+`thread_speedup.py` (courbes de speedup en threads d'exécutables shrink_bench sur une cible,
+quoi qui fasse tourner les threads -- OpenMP, le backend std::thread ou TBB ; anciennement
+`omp_speedup.py` :
 `--target`, `--exec` ou `--all-exec`, `--min-threads`, `--max-threads`, `--multiply`) se lance
 de même en batch seulement, avec les mêmes boutons « Choisir… ». Son avancement et ses erreurs
 s'affichent comme ceux de `bench_and_test.py` ; le Résumé donne son `summary.csv`, et le
 Graphique ses courbes (speedup avec la droite idéale, efficacité ou temps ; couleur = la
 variante, forme = la taille). « Comparer avec » superpose un autre run (un autre compilateur,
 un autre commit) et donne le rapport B / A. Ses sorties vont dans
-`$CCCWORKDIR/omp_speedup/` (sinon `~/omp_speedup/`).
+`$CCCWORKDIR/thread_speedup/` (sinon `~/thread_speedup/`) ; les runs enregistrés sous
+l'ancien nom sont lus comme les siens.
 
 ### Les runs
 
