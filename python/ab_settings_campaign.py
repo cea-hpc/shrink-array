@@ -27,18 +27,14 @@ mixes them anyway). --report-only rewrites the report from the results.
 
 The points (--points selects some, by name or family):
     base         the defaults
-    eager0/1     CHUNK_ALLOC_AFFINITY_EAGER: the per-array allocator sets from
-                 the creation (1) or from the first re-chunk (0). The point equal
-                 to the variant's default (1 for zero, 0 for the others) is
-                 base itself and is not run.
-    nopartial    CHUNK_RECLAIM_PARTIAL=0     sweeps give back empty slabs only
-    nofullest    CHUNK_SLAB_FULLEST_FIRST=0  sweeps leave the slab order as is
-    share25/100  CHUNK_REUSE_SHARE_DIV       the reuse budget's divisor (50)
-    floor0/4m    CHUNK_REUSE_FLOOR_KB        no floor / 4 MiB per rank (500 buffers)
-    minslabs16   CHUNK_RECLAIM_MIN_SLABS=16  a sweep gives back 16 slabs or none (0)
     rthr0        CHUNK_RECLAIM_THREADS=0     madvise from every thread (1)
-    keep0/4      CHUNK_RECLAIM_PHASE_KEEP    a sweep after every compression pass,
-                 keeping 0 / 4 empty slabs per allocator (unset: none)
+    pool16/256   CHUNK_DEFERRED_POOL_KB      deferred-write pool slabs of 16 / 256 KiB (64)
+
+The first campaign (Milan, October 2026) measured eleven points; the settings it
+fixed are gone with their points (CHANGELOG.md, Removed). CHUNK_RECLAIM_THREADS
+stays at 1 until it is measured on Grace, where 288 threads would issue the
+sweep's madvise calls, and CHUNK_DEFERRED_POOL_KB was never measured: run this
+script there. Add a Point to POINTS to measure a new setting.
 
 Every variable of the list is removed from the environment of the runs it does
 not set, whatever the calling shell has: base is the defaults. CHUNK_LOG is
@@ -81,18 +77,9 @@ class Point:
 
 POINTS = [
     Point("base", "base", {}, "the defaults"),
-    Point("eager0", "affinity", {"CHUNK_ALLOC_AFFINITY_EAGER": "0"}, "per-array allocators from the first re-chunk"),
-    Point("eager1", "affinity", {"CHUNK_ALLOC_AFFINITY_EAGER": "1"}, "per-array allocators from the creation"),
-    Point("nopartial", "partial", {"CHUNK_RECLAIM_PARTIAL": "0"}, "sweeps give back empty slabs only"),
-    Point("nofullest", "fullest", {"CHUNK_SLAB_FULLEST_FIRST": "0"}, "sweeps keep the slab order"),
-    Point("share25", "share", {"CHUNK_REUSE_SHARE_DIV": "25"}, "reuse budget doubled"),
-    Point("share100", "share", {"CHUNK_REUSE_SHARE_DIV": "100"}, "reuse budget halved"),
-    Point("floor0", "floor", {"CHUNK_REUSE_FLOOR_KB": "0"}, "no reuse floor"),
-    Point("floor4m", "floor", {"CHUNK_REUSE_FLOOR_KB": "4096"}, "reuse floor of 4 MiB per rank"),
-    Point("minslabs16", "minslabs", {"CHUNK_RECLAIM_MIN_SLABS": "16"}, "give back 16 empty slabs or none"),
     Point("rthr0", "rthreads", {"CHUNK_RECLAIM_THREADS": "0"}, "madvise from every thread"),
-    Point("keep0", "phasekeep", {"CHUNK_RECLAIM_PHASE_KEEP": "0"}, "sweep after every pass, keep none"),
-    Point("keep4", "phasekeep", {"CHUNK_RECLAIM_PHASE_KEEP": "4"}, "sweep after every pass, keep 4"),
+    Point("pool16", "pool", {"CHUNK_DEFERRED_POOL_KB": "16"}, "deferred-write slabs of 16 KiB"),
+    Point("pool256", "pool", {"CHUNK_DEFERRED_POOL_KB": "256"}, "deferred-write slabs of 256 KiB"),
 ]
 
 # Every variable a point sets: removed from the environment of the others.
@@ -100,21 +87,12 @@ CAMPAIGN_VARS = sorted({k for p in POINTS for k in p.env})
 # The other settings that would bias the runs if the calling shell had them.
 CLEARED_VARS = CAMPAIGN_VARS + [
     "CHUNK_LOG", "CHUNK_LOG_FILE", "CHUNK_ARENA_REPORT", "CHUNK_LEDGER_REPORT", "CHUNK_OMPT_STATS",
-    "CHUNK_DEFERRED_POOL_KB", "CHUNK_AGGRESSIVE_COMPRESSION", "CHUNK_CST2_PROBE", "CHUNK_CST2_RECLAIM",
+    "CHUNK_AGGRESSIVE_COMPRESSION", "CHUNK_CST2_PROBE", "CHUNK_CST2_RECLAIM",
     "SHRINK_BENCH_EXACT_RSS", "SHRINK_BENCH_RSS_SAMPLE_MS", "SHRINK_BENCH_MALLOC_TRIM", "SHRINK_BENCH_KEEP_POOLS",
 ]
 
-# CHUNK_ALLOC_AFFINITY_EAGER's default per variant (array_chunk_core.h: eager for zero only).
-EAGER_DEFAULT = {"zero": "1", "zero_one_value": "0", "zero_any": "0"}
-
 VARIANTS = ["zero", "zero_any", "zero_one_value"]
 DEFAULT_ARGS = "--mode perf --no_io --multiply 2 --iter_max 500"  # bench_recycle.sh's workload
-
-
-def is_redundant(point: Point, variant: str) -> bool:
-    """True for the eager point equal to the variant's default: it is base."""
-    value = point.env.get("CHUNK_ALLOC_AFFINITY_EAGER")
-    return value is not None and EAGER_DEFAULT.get(variant) == value
 
 
 def select_points(spec: str | None) -> list[Point]:
@@ -375,7 +353,7 @@ def main() -> int:
     for rep in range(1, args.reps + 1):
         rng = random.Random(args.seed * 1000 + rep)
         for v in variants:
-            order = [p for p in points if not is_redundant(p, v)]
+            order = list(points)
             rng.shuffle(order)
             plan += [(v, p, rep) for p in order]
 

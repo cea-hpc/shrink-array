@@ -38,13 +38,16 @@ class Tooltips:
                  "ccc_mprun détaché : le lancement attend le code de retour de ce run.\n\n"
                  "« si elle réussit » : une compilation en échec, et le run ne démarre jamais "
                  "(en batch il reste en attente : à arrêter).",
-        "nodes": "Nombre de jobs batch d'un nœud chacun entre lesquels la compilation est partagée "
-                 "(compile_all.sh --pool, ccc_msub seulement).\n\n"
-                 "Chaque job reçoit la même commande et les mêmes directives ; il construit les configurations "
-                 "qu'il réclame le premier, dans l'ordre habituel, et laisse les autres aux autres jobs : la "
+        "nodes": "Nombre de jobs batch d'un nœud chacun entre lesquels le travail est partagé "
+                 "(--pool, ccc_msub seulement) : les configurations de compile_all.sh, les exécutables "
+                 "de thread_speedup.py.\n\n"
+                 "Chaque job reçoit la même commande et les mêmes directives ; il traite ce qu'il "
+                 "réclame le premier, dans l'ordre habituel, et laisse le reste aux autres jobs : la "
                  "charge s'équilibre seule. Un job qui démarre quand tout est déjà pris finit aussitôt "
                  "(code 0).\n\n"
-                 "« Démarrage : après » propose ensuite la soumission entière : on attend tous ses jobs.",
+                 "thread_speedup.py : les onglets Graphique et Résumé d'un de ces jobs réunissent ceux "
+                 "de tous.\n\n"
+                 "« Démarrage : après » propose ensuite une compilation entière : on attend tous ses jobs.",
         "delay_on": "Ne pas démarrer avant ce délai, compté depuis la soumission "
                     "(ccc_msub : --begin de Slurm ; ccc_mprun détaché : une attente avant le lancement).",
         "check_builds": "Avant la commande, sur le nœud : ninja -n sur les exécutables déjà construits "

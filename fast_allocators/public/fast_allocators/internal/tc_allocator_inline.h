@@ -20,7 +20,7 @@
 // file at its end.
 
 #include <sys/mman.h> // madvise, MADV_DONTNEED (advise_free_pages)
-#include <algorithm>  // std::min, std::stable_sort (order_fullest_first)
+#include <algorithm>  // std::min
 #include <bit>        // std::bit_width, the element-size shift
 #include <cstddef>    // std::ptrdiff_t, the element offsets; std::byte (the blocks)
 #include <cstdint>    // std::uintptr_t
@@ -575,7 +575,7 @@ void TCSlabPool<Derived, ElemT, Slab>::manage_full_empty(Slab* slab) noexcept
         block, block_full, block_empty_.data(), nb_block_empty_, nb_max_block_empty_, slab,
         [](Slab* kept) noexcept
         {
-            // NO madvise here, whatever reclaim_empty_slabs says. On this hot
+            // NO madvise here: only a sweep gives slabs back. On this hot
             // path nn_ref == 0 is the ONLY evidence the slab holds nothing
             // live, and a mis-accounted block (a buffer parked or released
             // twice, two threads on one counter) falsifies it: MADV_DONTNEED
@@ -643,14 +643,12 @@ template <typename ElemT>
 std::size_t TCTypeCAllocator<ElemT>::collect_empty_slabs([[maybe_unused]] SlabSweep&  sweep,
                                                          [[maybe_unused]] std::size_t keep_empty) noexcept
 {
-    if constexpr (alloc_config::use_std_alloc || !alloc_config::reclaim_empty_slabs)
+    if constexpr (alloc_config::use_std_alloc)
     {
         return 0;
     }
     else
     {
-        // No CHUNK_RECLAIM_MIN_SLABS test here: the floor is the sweep's
-        // (EmptySlabSweep::flush).
         std::size_t collected = 0;
         for (auto* node : {this->block, this->block_full})
         {
@@ -682,62 +680,17 @@ std::size_t TCTypeCAllocator<ElemT>::tidy_slabs_in_use() noexcept
     }
     else
     {
-        if (alloc_config::slab_fullest_first())
-        {
-            order_fullest_first();
-        }
-        if constexpr (!alloc_config::reclaim_empty_slabs)
-        {
-            return 0; // CHUNK_RECLAIM_EMPTY_SLABS=OFF: nothing is given back
-        }
-        else
-        {
-            if (!alloc_config::reclaim_partial_slabs())
-            {
-                return 0;
-            }
-            const std::size_t          page = detail::reclaim_page_size();
-            std::vector<unsigned char> scratch;
-            std::size_t                advised = 0;
-            // Only #block: a full slab has no free element, an empty one is
-            // collect_empty_slabs()'s.
-            for (auto* p = this->block; p != nullptr; p = p->next)
-            {
-                advised += p->advise_free_pages(page, scratch);
-            }
-            return advised;
-        }
-    }
-}
-
-template <typename ElemT>
-void TCTypeCAllocator<ElemT>::order_fullest_first() noexcept
-{
-    std::vector<TCCAllocator*> slabs;
-    try
-    {
+        const std::size_t          page = detail::reclaim_page_size();
+        std::vector<unsigned char> scratch;
+        std::size_t                advised = 0;
+        // Only #block: a full slab has no free element, an empty one is
+        // collect_empty_slabs()'s.
         for (auto* p = this->block; p != nullptr; p = p->next)
         {
-            slabs.push_back(p);
+            advised += p->advise_free_pages(page, scratch);
         }
+        return advised;
     }
-    catch (...)
-    {
-        return; // the order stays as it was
-    }
-    if (slabs.size() < 2)
-    {
-        return;
-    }
-    std::stable_sort(slabs.begin(), slabs.end(),
-                     [](const TCCAllocator* a, const TCCAllocator* b) noexcept { return a->nn_ref > b->nn_ref; });
-    for (std::size_t i = 0; i < slabs.size(); ++i)
-    {
-        slabs[i]->prev = i > 0 ? slabs[i - 1] : nullptr;
-        slabs[i]->next = i + 1 < slabs.size() ? slabs[i + 1] : nullptr;
-    }
-    this->block = slabs.front();
-    FAST_ALLOC_SL_LIST_CHECK(sl_check(this->block));
 }
 
 #endif // FAST_ALLOC_PMP_THREADED

@@ -420,15 +420,13 @@ compressions. Un tampon libéré par un autre rang que son propriétaire est mis
 (« parked ») puis rendu à sa réserve d'origine. Les tableaux assez gros (au-delà de
 `alloc_affinity_min_bytes`, 16 Mio par défaut) peuvent avoir leur propre jeu d'allocateurs
 (clé d'affinité), ce qui permet de restituer leur mémoire d'un bloc quand ils sont
-reconstruits ou détruits ; les slabs vides sont alors rendus au système (sauf build
-`CHUNK_RECLAIM_EMPTY_SLABS=OFF`).
+reconstruits ou détruits ; les slabs vides sont alors rendus au système.
 
 Pour `zero_one_value`, ce jeu n'est créé qu'au **premier rechunk** du tableau (affinité paresseuse) :
 chaque jeu coûte un slab entamé par rang et par taille, soit ~780 Mio sur les 16 tableaux de
 `shrink_bench` à 64 threads, et un tableau jamais reconstruit n'en tire aucun bénéfice. Un
 run dynamique consomme ainsi, au départ, exactement comme le statique à la même taille
-(`zero_one_value` : 19 999 contre 20 009 Mo après l'initialisation). `CHUNK_ALLOC_AFFINITY_EAGER=1`
-crée le jeu dès la création. Détails et mesures : [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) §5.
+(`zero_one_value` : 19 999 contre 20 009 Mo après l'initialisation). Détails et mesures : [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) §5.
 
 ### 9.2 Le rechunk (géométrie dynamique)
 
@@ -579,7 +577,6 @@ La liste complète, avec les macros et les options CMake, est dans
 | `CHUNK_OMPT_STATS=1` | statistiques des régions de synchronisation (build OMPT) |
 | `shrink_bench --rechunk_dry_run` | le décideur analyse et journalise, mais n'applique aucun rechunk (mesurer le coût des analyses ; `RechunkPolicy::dry_run`) |
 | `shrink_bench --rechunk_max_coarsen <n>` | facteur maximal d'un grossissement (4 par défaut ; `RechunkPolicy::max_coarsen_factor`) |
-| `CHUNK_ALLOC_AFFINITY_EAGER=1` | jeu d'allocateurs par tableau dès sa création (paresseux par défaut pour `zero_one_value`) |
 
 Pour la validation, le crochet de test « écritures différées forcées »
 (`chunk/internal/test_hooks.h`, compilé avec les harnesses) envoie une écriture sur N

@@ -30,21 +30,17 @@ programme renseigne les champs, et `shrink_bench` les expose en options (§4). V
 
 | variable | défaut | effet |
 |---|---|---|
-| `CHUNK_ALLOC_AFFINITY_EAGER` | selon la variante | `1` : chaque gros tableau a son jeu d'allocateurs dès sa création (défaut de `zero`) ; `0` : seulement au premier rechunk (défaut de `zero_one_value` et `zero_any`). Voir [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) §5 |
-| `CHUNK_RECLAIM_MIN_SLABS` | 0 | un balayage ne rend les slabs vides au système que s'il y en a au moins autant |
-| `CHUNK_RECLAIM_THREADS` | 1 | threads qui émettent les `madvise` d'un balayage ; `0` : `omp_get_max_threads()` |
-| `CHUNK_RECLAIM_PARTIAL` | 1 | un balayage (`trim_reuse_pools`, `CHUNK_RECLAIM_PHASE_KEEP`) rend aussi les pages libres des slabs de valeurs encore utilisés, comme `malloc_trim` dans les tas de glibc (la dernière page de chaque slab, son pointeur arrière, est gardée) ; `0` : seulement les slabs vides, comme avant. `CHUNK_ARENA_REPORT` les compte sur sa ligne `partial` |
-| `CHUNK_SLAB_FULLEST_FIRST` | 1 | un balayage rechaîne les slabs de valeurs qui ont de la place du plus plein au moins plein : les allocations suivantes remplissent les slabs denses et les clairsemés se vident ; `0` : l'ordre est laissé tel quel |
-| `CHUNK_REUSE_SHARE_DIV` | 50 | allocateur rapide : un rang garde de côté jusqu'à chunks / (ce nombre × threads) tampons libérés par type d'élément (par tableau pour un tableau qui a ses propres allocateurs) ; les chunks comptés incluent les compressés |
-| `CHUNK_REUSE_FLOOR_KB` | non défini | plancher de ce budget en Kio par rang, converti en tampons selon la taille de chunk ; non défini : 500 tampons (100 pour un tableau qui a ses propres allocateurs), quelle que soit leur taille ; `0` : pas de plancher |
-| `CHUNK_RECLAIM_PHASE_KEEP` | non défini | `K` : après chaque passe de compression, rendre au système (`madvise`) les slabs vides, en gardant `K` par instance d'allocateur ; non défini : seulement au rechunk, à la destruction, à `shrink_to_fit()` |
+| `CHUNK_RECLAIM_THREADS` | 1 | threads qui émettent les `madvise` d'un balayage ; `0` : `omp_get_max_threads()`. Sur Milan (64 threads), `0` est 3,5 % plus rapide pour `zero_one_value` et identique pour les autres variantes ; il reste à 1 tant qu'il n'est pas mesuré sur Grace, où 288 threads les émettraient |
+| `CHUNK_CST_VAL2_ID_LIMIT` | non défini | crochet de test : abaisse le nombre d'identifiants du registre des secondes valeurs de `zero_any` (sinon la capacité de la région), pour qu'un harnais atteigne la limite du registre avec quelques valeurs (`cst2_registry_validation`, `cst2_reclaim_validation`) ; ne peut que l'abaisser |
 | `CHUNK_DEFERRED_POOL_KB` | 64 | taille des slabs des pools d'écritures différées, en Kio (les slabs d'opérations ne sont jamais rendus : plus gros, moins d'appels à l'allocateur mais plus de mémoire résidente) |
 
-Ces réglages sont à figer par la mesure, puis à retirer : `python/ab_settings_campaign.py`
-compare chacun d'eux aux défauts (temps de calcul, mémoire au pic et en fin de run) sur `zero`,
-`zero_any` et `zero_one_value` en dyn, un point par valeur essayée, trois runs chacun par défaut,
-entrelacés ; à lancer dans une allocation de job (`--help` liste les points), et à relancer avec
-le même `--out` pour reprendre une campagne interrompue.
+`python/ab_settings_campaign.py` mesure un tel réglage contre les défauts (temps de calcul,
+mémoire au pic et en fin de run) sur `zero`, `zero_any` et `zero_one_value` en dyn, trois runs
+par point, entrelacés ; à lancer dans une allocation de job (`--help` liste les points), et à
+relancer avec le même `--out` pour reprendre une campagne interrompue. Sa première campagne
+(Milan, octobre 2026) a figé les réglages de l'allocateur qui se lisaient ici auparavant : le mode
+d'affinité par variante, la restitution partielle des slabs en service, le budget de réemploi, et
+pas de balayage après les passes de compression (CHANGELOG.md, Removed).
 
 ## 2. Traces et diagnostics
 
@@ -53,7 +49,7 @@ Les traces sont des messages du journal de la bibliothèque, choisis par `CHUNK_
 traces (`CHUNK_RECHUNK_TRACE`, `CHUNK_RECHUNK_TRACE_SLICES`, `CHUNK_RECHUNK_MEMTRACE`,
 `CHUNK_RECHUNK_TRACE_MEM`, `CHUNK_AFFINITY_TRACE`, `CHUNK_RECYCLE_TRACE`) ne sont plus lues ;
 seule `FAST_ALLOC_TRACE` règle encore le niveau qui lui correspond, avec un avertissement de
-dépréciation.
+dépréciation. *Retrait prévu : 31/12/2026.*
 
 | réglage | ce qu'il affiche |
 |---|---|
@@ -66,7 +62,7 @@ dépréciation.
 | `CHUNK_LOG=advisor=debug` (autrefois `CHUNK_ADVISOR_TABLE`) | en plus, la table complète de l'advisor de chaque tableau analysé, à chaque passage |
 | `CHUNK_LOG=affinity=debug` (autrefois `CHUNK_AFFINITY_TRACE`) | chaque jeu d'allocateurs par tableau créé (clé, taille, budget) |
 | `CHUNK_LOG=compress=info` | builds de vérification : les blocs restant à compresser après le dernier vidage, et les blocs constants de `zero_any` jamais mis en file ; le résidu de compression d'un audit (`compress()` sur zero_one_value::Array / zero_any::Array) ; `compress=debug` ajoute le détail par chunk de zero_one_value::Array |
-| `CHUNK_ARENA_REPORT` | le bilan de l'arène des tampons (slabs distribués, rendus au système) ; un rapport : écrit quel que soit `CHUNK_LOG` (canal `arena`) |
+| `CHUNK_ARENA_REPORT` | le bilan de l'arène des tampons (slabs distribués, rendus au système ; sa ligne `partial`, les pages libres rendues des slabs encore utilisés) ; un rapport : écrit quel que soit `CHUNK_LOG` (canal `arena`) |
 | `CHUNK_LOG=recycle=debug` / `recycle=trace` (autrefois `CHUNK_RECYCLE_TRACE`) | builds de vérification : les blocs étrangers que le pool des écritures différées abandonne, à intervalles doublants / une ligne par bloc |
 | `CHUNK_LEDGER_REPORT` (*définie*) | le rapport du registre des blocs (builds avec registre), à la sortie ; un rapport : écrit quel que soit `CHUNK_LOG` (canal `ledger`) |
 | `CHUNK_OMPT_STATS` | statistiques des régions de synchronisation (builds OMPT), à la sortie ; un rapport : écrit quel que soit `CHUNK_LOG` (canal `ompt`) |
@@ -136,9 +132,8 @@ dans [variables_environnement_fr.md](variables_environnement_fr.md) §3.
 | `CHUNK_TEST_READ_DELAY_EVERY=<n>`, `CHUNK_TEST_READ_DELAY_US=<µs>` | crochet de test : une lecture sur N d'un thread qui l'a demandé attend (50 µs), pour élargir la fenêtre lecteur / récupération (`read_reclaim_validation`) |
 | `CHUNK_TEST_PASS_DELAY_EVERY=<n>`, `CHUNK_TEST_PASS_DELAY_US=<µs>` | crochet de test : délai (200 µs) dans une passe de compression sur N |
 
-Et une macro propre à `zero_any` : `CHUNK2A_COMPRESS_LEVEL=<0|1|2|3>` (0 par défaut) choisit le
-jeu de seuils de déclenchement des passes de compression (`zero_any_chunk_def.h`). Seul le niveau 0 est
-construit et testé. *Retrait des niveaux 1 à 3 prévu : 31/12/2026.*
+Les seuils des passes de compression de `zero_any` sont des constantes de `zero_any_chunk_def.h`
+(les niveaux 1 à 3 de l'ancienne `CHUNK2A_COMPRESS_LEVEL` n'ont jamais été construits ni testés).
 
 ## 6. Options CMake
 
@@ -158,7 +153,6 @@ Les options de [variables_environnement_fr.md](variables_environnement_fr.md) §
 | `CHUNK_DEBUG_INFO` | `auto` | informations de débogage des builds optimisés : `full` (`-g`), `lines` (`-g1` : noms de fonctions et tables de lignes, assez pour perf et les backtraces gdb, pas pour les variables locales), `none` ; `auto` : `full` avec `CHECK_OPTIM` ou un sanitizer, `lines` sinon. Le code machine est le même ; `lines` compile 20 à 27 % plus vite avec 40 % de mémoire de pointe en moins. Les builds Debug ont toujours `-g` |
 | `CHUNK_VALIDATION_UNITY` | `ON` | les harnesses de validation regroupés en un exécutable par variante et géométrie (unity build) ; `OFF` : un exécutable par harness |
 | `CHUNK_BUILD_VALIDATION` | selon le build | compiler les harnesses de `examples/validation`, et avec eux les crochets de test (`CHUNK_TEST_HOOKS`) ; par défaut `ON` en Debug, avec `CHECK_OPTIM` ou un sanitizer, `OFF` ailleurs (non mis en cache : suit la configuration courante) |
-| `CHUNK_RECLAIM_EMPTY_SLABS` | `ON` | rendre au système (`madvise`) les slabs vidés aux balayages explicites (rechunk, destruction) ; `OFF` les garde résidents. *Retrait prévu : 31/12/2026.* |
 | `FAST_ALLOC_CHECK_LISTS` | `OFF` | niveau de debug renforcé des listes de slabs : en Debug, vérification complète de la liste à chaque insertion et retrait (lent) ; un Debug ordinaire garde les vérifications légères |
 | `HAVE_AGGRESSIVE_COMPRESSION` | `OFF` | défaut de la compression « agressive », un réglage d'exécution : `CHUNK_AGGRESSIVE_COMPRESSION=1` (ou `0`) la fixe pour un lancement. La passe entre deux phases est sautée, et toute la compression se fait pendant les régions parallèles, à des instants imprévisibles. Plus lent, mais sollicite les chemins concurrents : un mode de validation, qui n'a plus besoin d'un build à lui |
 | `CHUNK_FORCE_LEDGER` | `OFF` | garde le registre des blocs (`pool_ledger.h`) actif sous OpenMP, où il est éteint par défaut : son mutex global sérialise chaque allocation et libération. Détecte double libération et remise illégale en réserve |

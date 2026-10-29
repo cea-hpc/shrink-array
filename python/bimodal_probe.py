@@ -26,7 +26,7 @@ perf stat counts the events in user space (`:u`, allowed with
 perf_event_paranoid <= 2); an event the CPU does not have reads as empty.
 
 Usage (from a compute node, the binary's usual environment):
-  bimodal_probe.py --runs 12 [--mode "CHUNK_ALLOC_AFFINITY_EAGER=0"] [--mode ""] \\
+  bimodal_probe.py --runs 12 [--mode "CHUNK_RECLAIM_THREADS=0"] [--mode ""] \\
       [--csv out.csv] -- $BIN --mode perf --no_io
 Several --mode: the runs alternate between them (A/B in the same time window).
 A mode is a space-separated list of VAR=value, and may start with `numactl ...`

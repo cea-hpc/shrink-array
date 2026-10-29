@@ -776,16 +776,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @warning Bypasses the write proxy: valid only where the chunk is known to
      *          be materialised. Prefer operator[] otherwise.
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE T& operator()(this Derived& self, IndType index) noexcept
-    {
-        const int num_chunk = self.chunk_index_of(index);
-        const int num       = self.offset_in_chunk(index);
-        auto&     chunk_t   = self.chunk_list_[num_chunk];
-
-        self.sync_chunk(chunk_t, num_chunk, num);
-
-        return chunk_t(num);
-    }
+    CHUNK_FLATTEN CHUNK_FORCE_INLINE T& operator()(this Derived& self, IndType index) noexcept;
 
     /**
      * @brief Unchecked read access (hot path).

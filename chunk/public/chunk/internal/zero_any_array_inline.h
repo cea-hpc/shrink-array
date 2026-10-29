@@ -536,7 +536,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
     // An array with its own slab affinity gives its memory back NOW: every
     // buffer parked above (own rank) or by another rank (foreign, under this
     // array's key) goes home to its allocator set, whose slabs hold nothing
-    // else and so empty -- and reclaim_empty_slabs madvises them away.
+    // else and so empty -- and the sweep madvises them away.
     // Sequential point (destructor / rechunk_to); the drain opens its own
     // region. Key 0 (shared pool): nothing to give back per array.
     if (this->alloc_key_ != 0 && !CHUNK_PMP_IN_PARALLEL_REGION)

@@ -52,15 +52,6 @@ inline constexpr bool chunk_dynamic = false;
 inline constexpr std::size_t alloc_affinity_min_bytes =
     CHUNK_ALLOC_AFFINITY_MIN_BYTES; // -D to override (0 = off; tiny = every array, for tests)
 
-/// @brief Mirror of alloc_config::reclaim_empty_slabs, from the same CMake option
-///        (CHUNK_RECLAIM_EMPTY_SLABS, recorded in both generated build_options.h).
-///
-/// Duplicated deliberately: alloc_config.h is not included by a std-alloc build, and
-/// `if constexpr (build_config::use_fast_alloc)` does NOT hide alloc_config:: (a
-/// non-dependent name is looked up at template definition). This mirror lets such a site
-/// be a plain `if constexpr` with no \#ifdef.
-inline constexpr bool reclaim_empty_slabs = CHUNK_OPT_RECLAIM_EMPTY_SLABS != 0;
-
 // build_options.h refuses a file whose OpenMP setting is not the library's.
 inline constexpr bool use_openmp = CHUNK_OPT_OPENMP != 0;
 

@@ -21,7 +21,7 @@
 // (ChunkT, T) the consumer uses auto-instantiates at its use site.
 
 #include <atomic>        // std::atomic, std::memory_order
-#include <algorithm>     // std::max, std::ranges::sort, std::ranges::push_heap, std::find
+#include <algorithm>     // std::max, std::ranges::sort, std::ranges::push_heap, std::ranges::contains
 #include <functional>    // std::less
 #include <tuple>         // std::tuple (the memory estimate)
 #include <type_traits>   // std::decay_t, std::conditional_t
@@ -1136,7 +1136,7 @@ bool ManagerChunk<ChunkT, T>::register_alloc_key([[maybe_unused]] unsigned int k
         register_free_list_key(key, size, capacity);
         // The array's own share per rank, where the global budget uses the
         // process-wide somme_chunk_create.
-        set_size_buffer_reuse(key, static_cast<int>(nb_chunk / (reuse_share_div() * max_thr)), size);
+        set_size_buffer_reuse(key, static_cast<int>(nb_chunk / (reuse_share_div() * max_thr)));
         CHUNK_LOG(debug, affinity, "key={} size={} nb_chunk={} budget={} threads={}", key, size, nb_chunk,
                   get_size_buffer_reuse(key), max_thr);
         return true;
@@ -1153,11 +1153,9 @@ bool ManagerChunk<ChunkT, T>::register_alloc_key([[maybe_unused]] unsigned int k
 template <template <typename> typename ChunkT, typename T>
 void ManagerChunk<ChunkT, T>::compute_size_buffer_reuse()
 {
-    // zero_any::ChunkDef's reuse constants serve every variant (zero_any_chunk_def.h);
-    // CHUNK_REUSE_SHARE_DIV / CHUNK_REUSE_FLOOR_KB override them.
+    // zero_any::ChunkDef's reuse constants serve every variant (zero_any_chunk_def.h).
     size_buffer_reuse = static_cast<int>(somme_chunk_create / (reuse_share_div() * CHUNK_PMP_MAX_THREADS));
-    size_buffer_reuse = std::max(size_buffer_reuse,
-                                 reuse_floor_buffers(alloc_chunk_count(), zero_any::ChunkDef::size_min_buffer_reuse));
+    size_buffer_reuse = std::max(size_buffer_reuse, zero_any::ChunkDef::size_min_buffer_reuse);
 }
 
 // compute_size_max_number_of_chunk_to_check_compress (documented in
@@ -1190,18 +1188,6 @@ void ManagerChunk<ChunkT, T>::compute_size_max_number_of_chunk_to_check_compress
 // ---------------------------------------------------------------------------
 // shrink_array::ManagerChunk<ChunkT, T>
 // ---------------------------------------------------------------------------
-
-template <template <typename> class ChunkT, typename T>
-[[nodiscard]] int ManagerChunk<ChunkT, T>::reuse_floor_buffers(unsigned int size, int legacy_floor) noexcept
-{
-    static const long floor_kb = env_number<long>("CHUNK_REUSE_FLOOR_KB", -1L);
-    if (floor_kb < 0)
-    {
-        return legacy_floor;
-    }
-    const long block_bytes = std::max(1L, static_cast<long>(sizeof(T) * ChunkT<T>::storage_units(size)));
-    return static_cast<int>(std::min(floor_kb * 1024L / block_bytes, 1L << 30));
-}
 
 template <template <typename> class ChunkT, typename T>
 void ManagerChunk<ChunkT, T>::register_free_list_size([[maybe_unused]] unsigned int size, [[maybe_unused]] int max_thr)
@@ -1287,7 +1273,7 @@ std::size_t ManagerChunk<ChunkT, T>::trim_reuse_pools(std::size_t keep_per_threa
             return 0;
         }
         const std::size_t freed = release_parked_buffers(keep_per_thread);
-        (void)sweep_empty_slabs(0);
+        (void)sweep_empty_slabs();
         return freed;
     }
     else
@@ -1402,7 +1388,7 @@ std::size_t ManagerChunk<ChunkT, T>::release_parked_buffers([[maybe_unused]] std
 }
 
 template <template <typename> class ChunkT, typename T>
-std::size_t ManagerChunk<ChunkT, T>::sweep_empty_slabs([[maybe_unused]] std::size_t keep_empty) noexcept
+std::size_t ManagerChunk<ChunkT, T>::sweep_empty_slabs() noexcept
 {
     std::size_t collected = 0;
     // OpenMP builds only, like the re-chunk's sweep: the serial
@@ -1444,17 +1430,16 @@ std::size_t ManagerChunk<ChunkT, T>::sweep_empty_slabs([[maybe_unused]] std::siz
             for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
             {
                 auto& allocator = ChunkT<T>::get_chunk_allocator(r, key);
-                // The slabs still in use: fullest first, free pages given back
-                // (CHUNK_SLAB_FULLEST_FIRST, CHUNK_RECLAIM_PARTIAL). Once per
+                // The slabs still in use: their free pages given back. Once per
                 // instance: an unregistered (key, size) routes to key 0.
-                if (std::find(tidied.begin(), tidied.end(), &allocator) == tidied.end())
+                if (!std::ranges::contains(tidied, &allocator))
                 {
                     tidied.push_back(&allocator);
                     (void)allocator.tidy_slabs_in_use();
                 }
                 // An unregistered (key, size) routes to key 0: the sweep
                 // drops the slabs reached twice.
-                collected += allocator.collect_empty_slabs(sweep, keep_empty);
+                collected += allocator.collect_empty_slabs(sweep);
             }
         }
         sweep.flush();
