@@ -74,11 +74,11 @@ class ChartTab:
         ptl.addWidget(self.pt_note)
         ptl.addWidget(self.pt_view, 1)
         # page 0: multi_launch_stress.py, page 1: bench_and_test.py (tab_bench_chart),
-        # page 2: omp_speedup.py (tab_speedup_chart)
+        # page 2: thread_speedup.py (tab_speedup_chart)
         self.pt_stack = QStackedWidget()
         self.pt_stack.addWidget(ptw)
         self.pt_stack.addWidget(self.build_bench_page())
-        self.pt_stack.addWidget(self.build_speedup_page())      # page 2: omp_speedup.py
+        self.pt_stack.addWidget(self.build_speedup_page())      # page 2: thread_speedup.py
         return self.pt_stack
 
     def fill_compare(self):
@@ -222,7 +222,10 @@ class ChartTab:
         chart.setTitle(("Comparaison — " if rb else "") + "temps par run selon le nombre de threads — " + what)
         chart.setTitleBrush(QBrush(QColor(V["ink"])))
         chart.legend().setLabelColor(QColor(V["ink2"]))
-        chart.legend().setAlignment(Qt.AlignTop)
+        # On the right, one entry a line (as the speedup chart): in one row at
+        # the top the labels are cut short. Hover gives a label cut all the same.
+        chart.legend().setAlignment(Qt.AlignRight)
+        chart.legend().setShowToolTips(True)
         chart.legend().setMarkerShape(QLegend.MarkerShapeFromSeries)   # dot, triangle, line
 
         def scatter(name, pts, color, size, shape, alpha=170, ring=True):

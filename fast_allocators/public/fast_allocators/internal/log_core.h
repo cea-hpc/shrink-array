@@ -394,9 +394,8 @@ struct Spec
 /// @brief What a program logs with CHUNK_LOG unset: every channel at warn,
 ///        rechunk at info -- the line of each re-chunk the decider applies
 ///        (one per move, a sequential point), as before the log existed. The
-///        channel's other info lines need their switch (CHUNK_RECHUNK_CHURN) or
-///        their policy field (RechunkPolicy::force_size). A bare level in
-///        CHUNK_LOG sets rechunk too.
+///        channel's other info lines need their policy field
+///        (RechunkPolicy::force_size). A bare level in CHUNK_LOG sets rechunk too.
 inline constexpr std::array<Level, n_channels> default_max = []
 {
     std::array<Level, n_channels> levels{};
@@ -599,7 +598,8 @@ inline void report_bad_items(const Spec& spec, std::string_view who) noexcept
 
 /// @brief An environment switch that raises a channel to a level: a trace
 ///        of before the log (deprecated: its use is warned about), or a
-///        setting whose point is what it logs (CHUNK_RECHUNK_CHURN).
+///        setting whose point is what it logs (none left: the decider's
+///        CHUNK_RECHUNK_CHURN is now CHUNK_LOG=rechunk=debug).
 struct LegacySwitch
 {
     std::string_view name;
@@ -611,8 +611,7 @@ struct LegacySwitch
 /// @brief The switches, applied after CHUNK_LOG and raising only: setting
 ///        one shows what it showed before, whatever CHUNK_LOG says.
 ///        Set = non-empty and not starting with '0'.
-inline constexpr std::array<LegacySwitch, 2> legacy_switches{{
-    {"CHUNK_RECHUNK_CHURN", Channel::rechunk, Level::info, false},
+inline constexpr std::array<LegacySwitch, 1> legacy_switches{{
     {"FAST_ALLOC_TRACE", Channel::alloc, Level::trace, true},
 }};
 

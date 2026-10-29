@@ -88,7 +88,7 @@ Modules:
     tab_summary.py      the Résumé tab
     tab_chart.py        the Graphique tab (multi_launch_stress.py)
     tab_bench_chart.py  ... its bench_and_test.py page
-    tab_speedup_chart.py ... its omp_speedup.py page
+    tab_speedup_chart.py ... its thread_speedup.py page
     tab_errors.py       the Erreurs tab, the replay of failures
     tooltips.py         the tooltip texts
 """

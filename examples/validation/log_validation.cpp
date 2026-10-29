@@ -215,9 +215,12 @@ void check_environment()
     check(!logging::enabled(Channel::pool, Level::info), "env: pool stops at warn");
     check(logging::enabled(Channel::alloc, Level::trace), "env: FAST_ALLOC_TRACE=1 raises alloc to trace");
     const auto& switches = logging::detail::legacy_switches;
-    const auto  churn =
-        std::ranges::find(switches, std::string_view{"CHUNK_RECHUNK_CHURN"}, &logging::detail::LegacySwitch::name);
-    check(churn != switches.end() && !logging::detail::is_set(*churn), "env: CHUNK_RECHUNK_CHURN=0 is not set");
+    const auto  trace =
+        std::ranges::find(switches, std::string_view{"FAST_ALLOC_TRACE"}, &logging::detail::LegacySwitch::name);
+    check(trace != switches.end() && logging::detail::is_set(*trace), "env: FAST_ALLOC_TRACE=1 is set");
+    check(std::ranges::find(switches, std::string_view{"CHUNK_RECHUNK_CHURN"}, &logging::detail::LegacySwitch::name) ==
+              switches.end(),
+          "env: CHUNK_RECHUNK_CHURN is no longer a switch (CHUNK_LOG=rechunk=debug)");
 
     CHUNK_LOG(warn, general, "first line through the default sink");
     const auto lines             = read_lines(g_log_path);
@@ -648,7 +651,7 @@ int main(int argc, char** argv)
     std::remove(g_log_path.c_str());
     setenv("CHUNK_LOG", "warn, rechunk=debug, verbose", 1);
     setenv("FAST_ALLOC_TRACE", "1", 1);    // a deprecated legacy switch: raises alloc to trace
-    setenv("CHUNK_RECHUNK_CHURN", "0", 1); // "0": not set
+    setenv("CHUNK_RECHUNK_CHURN", "1", 1); // no longer read: CHUNK_LOG=rechunk=debug
     setenv("CHUNK_LOG_FILE", (dir + "/shrink_log_validation.%p.log").c_str(), 1);
 
     check_environment();

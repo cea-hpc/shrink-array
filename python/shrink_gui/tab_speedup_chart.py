@@ -1,6 +1,6 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
-"""The Graphique tab of omp_speedup.py: its summary.csv as one line per
+"""The Graphique tab of thread_speedup.py: its summary.csv as one line per
 executable against threads -- speedup (with the ideal line), efficiency or
 time. Colour = the variant (vector, zero, zero_one_value, zero_any), marker =
 the size (dyn, 1024, 256, 64): with --all-exec a run has a dozen curves, and
@@ -19,7 +19,7 @@ from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QBrush, QColor, QPen
 from PySide6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
-from shrink_gui.config import VIZ
+from shrink_gui.config import VIZ, program_of
 from shrink_gui.remote_helper import normalize_variant
 from shrink_gui.i18n import T, tip
 from shrink_gui.widgets import ScatterView, TLabel
@@ -28,7 +28,8 @@ from shrink_gui.widgets import ScatterView, TLabel
 VARIANT_SLOT = {"zero": 0, "zero_one_value": 1, "zero_any": 2}
 SIZE_SHAPES = ["dyn", "1024", "256", "64"]
 # The old names too (shrink_bench_chunk2a_dyn), read as the new ones; longest first.
-EXE_RE = re.compile(r"^shrink_bench_(vector|std_alloc|zero_any|zero_one_value|zero|chunk2a|chunk2|chunk)"
+# The TBB bench (shrink_bench_tbb_zero_any_1024) is its variant and size, drawn dash-dot.
+EXE_RE = re.compile(r"^shrink_bench_(?:tbb_)?(vector|std_alloc|zero_any|zero_one_value|zero|chunk2a|chunk2|chunk)"
                     r"(?:_int64)?(?:_(\w+))?$")
 
 # What the y axis shows: (row index in speedup_points, axis title, log scale by default).
@@ -40,8 +41,14 @@ METRICS = {
 
 
 def is_speedup_chart(meta):
-    """Drawn as omp_speedup.py's (meta "chart", set from PROGRAMS)."""
-    return meta.get("chart") == "speedup" or meta.get("program") == "omp_speedup.py"
+    """Drawn as thread_speedup.py's (meta "chart", set from PROGRAMS; an old run
+    under its former name, omp_speedup.py, too)."""
+    return meta.get("chart") == "speedup" or program_of(meta) == "thread_speedup.py"
+
+
+def is_tbb(exe):
+    """The TBB bench's executable (shrink_bench_tbb_<variant>_<size>)."""
+    return exe.startswith("shrink_bench_tbb_")
 
 
 def exe_key(exe):
@@ -62,7 +69,7 @@ def _shape(size):
 
 class SpeedupChart:
     def build_speedup_page(self):
-        """The omp_speedup.py page of the Graphique tab."""
+        """The thread_speedup.py page of the Graphique tab."""
         self.sc_data = None
         self.sc_data_b = None
         self.sc_metric = QComboBox()
@@ -79,7 +86,7 @@ class SpeedupChart:
         self.sc_size.currentIndexChanged.connect(self.draw_speedup)
         self.sc_cmp = QComboBox()
         self.sc_cmp.setMinimumContentsLength(24)
-        self.sc_cmp.setToolTip(tip("Superpose un autre run de omp_speedup.py de la même architecture "
+        self.sc_cmp.setToolTip(tip("Superpose un autre run de thread_speedup.py de la même architecture "
                                    "(en pointillés) -- un autre compilateur, un autre commit -- et donne le "
                                    "rapport B / A sur leurs points communs"))
         self.sc_cmp.currentIndexChanged.connect(self.load_speedup_points)
@@ -108,7 +115,7 @@ class SpeedupChart:
         return w
 
     def fill_speedup_compare(self):
-        """The other omp_speedup.py runs of the current one's architecture."""
+        """The other thread_speedup.py runs of the current one's architecture."""
         if not hasattr(self, "sc_cmp"):
             return
         cur = next((x for x in self.runs if x["id"] == self.current), None)
@@ -196,7 +203,10 @@ class SpeedupChart:
         chart.setTitle(("Comparaison — " if rb else "") + title + " — " + (info.get("target") or ""))
         chart.setTitleBrush(QBrush(QColor(V["ink"])))
         chart.legend().setLabelColor(QColor(V["ink2"]))
-        chart.legend().setAlignment(Qt.AlignTop)
+        # On the right, one entry a line: a dozen executables in one row at the
+        # top left no room for any label. Hover gives a label cut all the same.
+        chart.legend().setAlignment(Qt.AlignRight)
+        chart.legend().setShowToolTips(True)
         chart.legend().setMarkerShape(QLegend.MarkerShapeFromSeries)
 
         va = {k: v for k, v in self.speedup_values(r, col).items() if self._speedup_keep(k[0])}
@@ -213,6 +223,7 @@ class SpeedupChart:
             ideal.append([QPointF(x, x / tmin if metric == "speedup" else 1.0) for x in xs])
             chart.addSeries(ideal)
 
+        execs_a = {k[0] for k in va}
         for dset, vals, dashed in ((r, va, False), (rb, vb, True)):
             if not dset:
                 continue
@@ -224,14 +235,19 @@ class SpeedupChart:
                 pts = sorted((k[1], v) for k, v in vals.items() if k[0] == exe)
                 short = exe.replace("shrink_bench_", "")
                 ln = QLineSeries()
-                ln.setName(short + ((" · B" if dashed else " · A") if rb else ""))
                 pen = QPen(color, 2)
-                if dashed:
+                if is_tbb(exe):
+                    pen.setStyle(Qt.DashDotDotLine if dashed else Qt.DashDotLine)
+                elif dashed:
                     pen.setStyle(Qt.DashLine)
                 ln.setPen(pen)
                 ln.append([QPointF(x, y) for x, y in pts])
                 chart.addSeries(ln)
                 dots = QScatterSeries()
+                # The legend entry is the marker, colour and shape, which say the
+                # variant and the size; one entry per executable: B's dashed twin
+                # of an A curve adds none (the note says A solid, B dashed).
+                dots.setName(short + (" · B" if dashed else ""))
                 dots.setMarkerShape(_shape(size))
                 dots.setMarkerSize(9)
                 dots.setColor(QColor(V["surface"]) if dashed else color)    # B: hollow markers
@@ -239,8 +255,11 @@ class SpeedupChart:
                 dots.setPen(QPen(color, 1.5))
                 dots.append([QPointF(x, y) for x, y in pts])
                 chart.addSeries(dots)
-                for m in chart.legend().markers(dots):
+                for m in chart.legend().markers(ln):
                     m.setVisible(False)
+                if dashed and exe in execs_a:
+                    for m in chart.legend().markers(dots):
+                        m.setVisible(False)
                 other = va if dashed else vb
                 for th, v in pts:
                     k = (exe, th)
@@ -308,4 +327,7 @@ class SpeedupChart:
         notes.insert(0, head)
         notes.append("couleur : la variante (vector en gris) · forme : la taille (rond dyn, carré 1024, "
                      "triangle 256, losange 64)")
+        if any(is_tbb(k[0]) for k in list(va) + list(vb)):
+            notes.append("trait mixte : le bench TBB (shrink_bench_tbb_*), tiret-point-point pour B" if rb
+                         else "trait mixte : le bench TBB (shrink_bench_tbb_*)")
         self.sc_note.setText("\n".join(T(n) for n in notes))

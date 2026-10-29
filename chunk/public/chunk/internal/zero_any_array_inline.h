@@ -17,6 +17,7 @@
 #pragma once
 
 #include <atomic>      // std::memory_order (the missed-compression audit)
+#include <chrono>      // std::chrono::steady_clock (rechunk=debug: the registry release time)
 #include <cstddef>     // std::size_t
 #include <array>       // std::array (the residual's sample)
 #include <ostream>     // print_compression_stats(std::ostream&)
@@ -44,6 +45,7 @@
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 #include "chunk/internal/parallel_storage_init.h"       // for_each_chunk
 #include "chunk/internal/pool_ledger.h"                 // CHUNK_LEDGER_* (check builds)
+#include "chunk/internal/teardown_probe.h"              // teardown_probe (rechunk=debug: the tmp teardown split)
 
 namespace shrink_array
 {
@@ -215,6 +217,23 @@ void zero_any::ArrayImpl<Derived>::clear()
 }
 
 template <typename Derived>
+void zero_any::ArrayImpl<Derived>::destroy_storage()
+{
+    clear();
+    ProxyType::share_info_array->erase(this->registry_key());
+    // rechunk=debug, tmp teardown only (armed by rechunk_to): free chunk_list_'s
+    // buffer here rather than with the member, so that the split can time it.
+    // The array is being destroyed: the same release, a few instructions earlier.
+    auto& probe = internal::teardown_probe();
+    if (probe.on)
+    {
+        probe.mark(internal::TeardownStep::erase);
+        typename Base::ChunkListType().swap(chunk_list_);
+        probe.mark(internal::TeardownStep::list_unmap);
+    }
+}
+
+template <typename Derived>
 void zero_any::ArrayImpl<Derived>::clear_core()
 {
     // Pin the ambient size to THIS array's own geometry before the sweep
@@ -224,6 +243,9 @@ void zero_any::ArrayImpl<Derived>::clear_core()
     {
         set_thread_chunk_size(static_cast<unsigned int>(this->size_policy_.size()));
     }
+    // rechunk=debug, tmp teardown only (armed by rechunk_to): the split's marks.
+    auto& probe = internal::teardown_probe();
+    probe.mark(internal::TeardownStep::entry);
 
     // Drain any deferred write still targeting this array's chunks before
     // chunk_list_ is freed below. force=true (see
@@ -234,6 +256,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
     // non-constant buffer, and the chunk is under-counted as still-compressed.
     // zero_any carries far more deferred traffic than zero/zero_one_value, so it exposes this first.
     this->flush_pending_deferred_ops(/*force=*/true);
+    probe.mark(internal::TeardownStep::flush);
 
     // Per-array compression stats: read after the flush (before it, in-flight
     // async compression moves the written() state, a thread-count-dependent
@@ -259,6 +282,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
             static_cast<const void*>(chunk_list_.data()),
             static_cast<const void*>(chunk_list_.data() + chunk_list_.size()));
     }
+    probe.mark(internal::TeardownStep::candidates);
 
     if (!nb_chunk_)
     {
@@ -371,6 +395,8 @@ void zero_any::ArrayImpl<Derived>::clear_core()
         }
     }
 
+    probe.mark(internal::TeardownStep::terminal);
+
     if constexpr (build_config::not_threaded)
     {
         for (int j = 0; j < nb_chunk_; ++j)
@@ -402,6 +428,10 @@ void zero_any::ArrayImpl<Derived>::clear_core()
     }
     else
     {
+        // rechunk=debug: the registry release's own time, measured by whichever
+        // thread runs the single below and read after the region's join.
+        const bool time_registry = probe.on;
+        double     registry_ms   = 0.0;
         // acc[0]: the second values the registry release counted (one thread's).
         const int nb_val2 = pmp::team_sum<int, 1>(
             pmp::Options{},
@@ -472,11 +502,21 @@ void zero_any::ArrayImpl<Derived>::clear_core()
                         // Only the reference this array took (acquire_cst2_registry).
                         if (holds_cst2_registry_)
                         {
+                            const auto r0 = time_registry ? std::chrono::steady_clock::now()
+                                                          : std::chrono::steady_clock::time_point{};
                             ChunkType::Holder::clear(acc[0]);
                             holds_cst2_registry_ = false;
+                            if (time_registry)
+                            {
+                                registry_ms =
+                                    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - r0)
+                                        .count();
+                            }
                         }
                     });
             })[0];
+        probe.mark(internal::TeardownStep::park);
+        probe.transfer(internal::TeardownStep::park, internal::TeardownStep::registry, registry_ms);
 
         if (nb_val2 != 0)
         {
@@ -491,6 +531,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
     ProxyType::clear_tab_is_int(num_tab_);
 
     nb_chunk_ = 0;
+    probe.mark(internal::TeardownStep::tables);
 
     // An array with its own slab affinity gives its memory back NOW: every
     // buffer parked above (own rank) or by another rank (foreign, under this
@@ -502,6 +543,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
     {
         ManagerChunk2A::drain_reuse_list_for_size(this->size_policy_.size());
     }
+    probe.mark(internal::TeardownStep::key_drain);
 }
 
 template <typename Derived>

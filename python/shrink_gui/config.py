@@ -103,15 +103,15 @@ PROGRAMS = {
         "own_outputs": ["bench_output.log", "bench_errors.log", "failed_cases.jsonl", "bench_summary.csv",
                         "run_logs", "runs"],
     },
-    "omp_speedup.py": {
+    "thread_speedup.py": {
         "time_s": 14400,  # default -T (4 h); then remembered per program
-        "script": "python/omp_speedup.py", "cwd": "python",
+        "script": "python/thread_speedup.py", "cwd": "python",
         "interp": "python3", "scan": "argparse",
         # On a compute node only (it measures it): batch, or this machine.
         "msub_only": True,
         # "Choisir…" beside these fields, as compile_all.sh's.
         "pickers": {"target": "configs", "execs": "execs"},
-        # Its own output directory per run (under <work>/omp_speedup/).
+        # Its own output directory per run (under <work>/thread_speedup/).
         "out_re": r"Outputs in (\S+)",
         "out_files": ["summary.csv", "results.csv", "errors.log", "plot.gp", "speedup.png", "meta.json"],
         # Progress, Erreurs column, first-error notice: its events.jsonl.
@@ -150,6 +150,17 @@ PROGRAMS = {
         "fail_re": r"^\[FAIL\] .*→ (\S+)\s*$",
     },
 }
+
+# Programs renamed since runs were recorded: an old run's meta "program" is
+# read under the new name (reuse, its outputs, its chart). omp_speedup.py's
+# curves are not OpenMP's only (std::thread backend, TBB bench).
+RENAMED_PROGRAMS = {"omp_speedup.py": "thread_speedup.py"}
+
+
+def program_of(meta):
+    """The program of a run's meta, under its current name."""
+    p = meta.get("program")
+    return RENAMED_PROGRAMS.get(p, p)
 
 # Built-in defaults per (program, arch), by argparse dest. A string is the
 # option's value (shell variables such as $USER are expanded on inti), True/

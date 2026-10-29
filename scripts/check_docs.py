@@ -82,6 +82,7 @@ ALLOWED = {
     "CHUNK_FORCE_RECHUNK_AT", "CHUNK_FORCE_RECHUNK_TOGGLE", "CHUNK_FORCE_RECHUNK_ALT", "CHUNK_ADVISOR_PERIOD",
     "SHRINK_BENCH_ADVISE_ALL", "CHUNK_RECHUNK_TRACE", "CHUNK_RECHUNK_TRACE_SLICES", "CHUNK_RECHUNK_MEMTRACE",
     "CHUNK_RECHUNK_TRACE_MEM", "CHUNK_AFFINITY_TRACE", "ArrayChunkCore::spare_chunk_list_",
+    "CHUNK_RECHUNK_CHURN", "CHUNK_ADVISOR_TABLE",
     # renamed to PascalCase (ChunkTemplateOf, ForEachTypeImpl, ...), which CHANGELOG.md records
     "index_type", "cst_val1_type", "chunk_template_of", "for_each_type_impl",
     # former class names the CHANGELOG cites (now SecondValue*Base, zero_any::ChunkThreadPolicy, ...)

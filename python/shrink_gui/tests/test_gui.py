@@ -624,10 +624,10 @@ def _fake_speedup_build(site):
     return site.home / "br"
 
 
-def test_omp_speedup_submitted_from_the_window(gui, site):
+def test_thread_speedup_submitted_from_the_window(gui, site):
     w, pump = gui
     br = _fake_speedup_build(site)
-    w.program.setCurrentText("omp_speedup.py")
+    w.program.setCurrentText("thread_speedup.py")
     assert pump(lambda: w.form.schema is not None and "all_exec" in w.form.widgets)
     from PySide6.QtWidgets import QPushButton
     assert w.findChild(QPushButton, "pick_execs") is not None and w.findChild(QPushButton, "pick_target")
@@ -679,15 +679,28 @@ def test_duration_column(gui, site):
     import time
     w.clock_skew = 0.0
     run = {"id": "r8", "status": "en cours", "code": None, "times": [int(time.time()) - 125, None],
-           "meta": {"program": "omp_speedup.py", "mode": "msub", "time_s": 14400}}
+           "meta": {"program": "thread_speedup.py", "mode": "msub", "time_s": 14400}}
     assert w.duration_text(run) in ("0:02:05", "0:02:06")
     assert "en cours depuis" in w.duration_tip(run) and "4:00:00" in w.duration_tip(run)
     assert w.duration_text(dict(run, status="en attente", times=[None, None])) == ""
 
 
-def test_omp_speedup_refused_without_exec(gui, site):
+def test_runs_of_omp_speedup_read_as_thread_speedup():
+    """omp_speedup.py was renamed thread_speedup.py: a run recorded under the
+    old name is the new program's -- reused, its outputs, its chart."""
+    from shrink_gui import remote_helper
+    from shrink_gui.config import PROGRAMS, program_of
+    from shrink_gui.tab_speedup_chart import is_speedup_chart
+    old = {"program": "omp_speedup.py", "mode": "msub"}
+    assert program_of(old) == "thread_speedup.py" and program_of(old) in PROGRAMS
+    assert "omp_speedup.py" not in PROGRAMS
+    assert is_speedup_chart(old) and remote_helper.is_speedup_chart(old)
+    assert program_of({"program": "bench_and_test.py"}) == "bench_and_test.py"
+
+
+def test_thread_speedup_refused_without_exec(gui, site):
     w, pump = gui
-    w.program.setCurrentText("omp_speedup.py")
+    w.program.setCurrentText("thread_speedup.py")
     assert pump(lambda: w.form.schema is not None and "all_exec" in w.form.widgets)
     w.form.set_values({"target": "omp-llvm", "min_threads": "1", "max_threads": "8",
                        "size": "dyn,1024", "int64": True})
@@ -695,18 +708,18 @@ def test_omp_speedup_refused_without_exec(gui, site):
     w.launch()
     assert "--exec ou --all-exec" in w.last_error and "--size, --int64" in w.last_error
     assert len(w.runs) == n
-    assert w.missing_options("omp_speedup.py")
+    assert w.missing_options("thread_speedup.py")
     w.form.set_values({"target": "omp-llvm", "min_threads": "1", "max_threads": "8", "all_exec": True})
-    assert w.missing_options("omp_speedup.py") is None
+    assert w.missing_options("thread_speedup.py") is None
     w.form.set_values({"target": "omp-llvm", "min_threads": "1", "max_threads": "8"})
     w.extra.setText("--exec zero_any@dyn")
-    assert w.missing_options("omp_speedup.py") is None
+    assert w.missing_options("thread_speedup.py") is None
     w.extra.setText("")
 
 
 def test_options_checked_by_the_script_before_submitting(gui, site):
     w, pump = gui
-    w.program.setCurrentText("omp_speedup.py")
+    w.program.setCurrentText("thread_speedup.py")
     assert pump(lambda: w.form.schema is not None and "all_exec" in w.form.widgets)
     w.form.set_values({"target": "omp-llvm", "execs": "*_dyn", "mode": "check", "multiply": "3",
                        "min_threads": "1", "max_threads": "8"})

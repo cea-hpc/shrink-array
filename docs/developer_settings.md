@@ -38,6 +38,12 @@ fields, and `shrink_bench` exposes them as options (§4). See
 | `CHUNK_RECLAIM_PHASE_KEEP` | unset | `K`: after every compression pass, give the empty slabs back to the system (`madvise`), keeping `K` per allocator instance; unset: only at a re-chunk, a destruction, `shrink_to_fit()` |
 | `CHUNK_DEFERRED_POOL_KB` | 64 | slab size of the deferred-write pools, in KiB (the operation slabs are never given back: larger means fewer allocator calls but more resident memory) |
 
+These settings are to be fixed by measurement, then removed: `python/ab_settings_campaign.py`
+compares each of them with the defaults (computation time, peak and end memory) on
+`zero`, `zero_any` and `zero_one_value` at dyn, one point per value tried, three runs each by
+default, interleaved; run it inside a job allocation (`--help` lists the points), and again with
+the same `--out` to resume an interrupted campaign.
+
 ## 2. Traces and diagnostics
 
 The traces are messages of the library's log, chosen by `CHUNK_LOG` (see
@@ -49,13 +55,12 @@ The traces are messages of the library's log, chosen by `CHUNK_LOG` (see
 | setting | what it prints |
 |---|---|
 | `CHUNK_LOG=rechunk=info` | the decider's moves (`decide <array>: re-chunk S=.. -> S'=.. ... [APPLIED]`, or `[dry-run] would re-chunk`) |
-| `CHUNK_LOG=rechunk=debug` (formerly `CHUNK_RECHUNK_TRACE`) | in addition, the verdicts that wait, and for each rechunk the duration of the phases and of the slices |
+| `CHUNK_LOG=rechunk=debug` (formerly `CHUNK_RECHUNK_TRACE`, and `CHUNK_RECHUNK_CHURN` for the churn) | in addition, the verdicts that wait, for each rechunk the duration of the phases and of the slices, and at each pass, per array analysed, the materialisations since the previous pass and an estimate of the transient cost they imply (`churn` line); for zero_any (and pattern), a `teardown split` line divides each rechunk's `tmp teardown` phase into its steps (flush, candidates, terminal sweep, park region, registry release, metadata tables, key drain, registry erase, `chunk_list_` unmap, rest) |
 | `CHUNK_LOG=rechunk=trace` (formerly `CHUNK_RECHUNK_TRACE_SLICES`) | in addition, memory at each slice of the `zero` rebuild |
 | `CHUNK_LOG=memory=info` (formerly `CHUNK_RECHUNK_MEMTRACE`) | at each advisor pass: exact memory, including the resident part of the buffer arena |
 | `CHUNK_LOG=memory=debug` (formerly `CHUNK_RECHUNK_TRACE_MEM`) | in addition, the memory side of the rechunk trace: exact memory at each step (`rss` line), occupancy of the new geometry, chunks folded, refused and installed directly, allocator census. Costly (seconds per run at tens of GB): a channel apart from the timings |
 | `CHUNK_LOG=advisor=info` | check builds: at an array's destruction, the chunk size that would have used the least memory, when it saves at least 10 % |
-| `CHUNK_ADVISOR_TABLE` | `1` or `=name`: the full advisor table at each pass (all arrays or a single one) |
-| `CHUNK_RECHUNK_CHURN` | `1` or `=name`: materialisations per pass and an estimate of the transient cost they imply (level info of channel rechunk, which it switches on) |
+| `CHUNK_LOG=advisor=debug` (formerly `CHUNK_ADVISOR_TABLE`) | in addition, the full advisor table of each array analysed, at each pass |
 | `CHUNK_LOG=affinity=debug` (formerly `CHUNK_AFFINITY_TRACE`) | each per-array set of allocators created (key, size, budget) |
 | `CHUNK_LOG=compress=info` | check builds: the blocks left to compress after the final flush, and `zero_any`'s constant blocks never queued; the compression residual of an audit (`compress()` on zero_one_value::Array / zero_any::Array); `compress=debug` adds zero_one_value::Array's per-chunk detail |
 | `CHUNK_ARENA_REPORT` | the summary of the buffer arena (slabs handed out, given back to the system); a report: written whatever `CHUNK_LOG` says (channel `arena`) |
@@ -66,6 +71,10 @@ The traces are messages of the library's log, chosen by `CHUNK_LOG` (see
 | `CHUNK_CST2_RECLAIM` | `zero_any`, `N`: every N iterations, frees the second values no chunk uses any more (`reclaim_second_values()`) and prints how many, then each type's identifiers in use against the capacity, free, reclaims and refusals (`second_value_stats()`) (benchmark, any build) |
 | `ALLOC_TOKEN_REPORT` | `SANITIZER=token` builds always print, on exit, the allocations per token (the 40 largest); this sets how many: `0` none, `N` the N largest, `all` every token |
 | `CHUNK_LOG=alloc=trace` (formerly `FAST_ALLOC_TRACE`) | one `munmap` line per emptied slab that a pool's reserve does not keep and that is freed |
+
+The per-array traces (the `churn` line, the advisor table) cover every array the decider
+analyses; `RechunkPolicy::trace_array` (`shrink_bench --rechunk_trace_array <name>`) keeps them
+to one, as the former `=name` values of `CHUNK_RECHUNK_CHURN` and `CHUNK_ADVISOR_TABLE` did.
 
 ## 3. Forced rechunks (tests)
 
@@ -90,6 +99,7 @@ The traces are messages of the library's log, chosen by `CHUNK_LOG` (see
 | `--rechunk_coarsen_min_meta_mb <x>` | minimum metadata gain of a coarsening, in MB (`coarsen_min_meta_gain_bytes`, 1; 0 removes it) |
 | `--rechunk_coarsen_min_meta_rate <x>` | minimum metadata gain per second of estimated rebuild time, in MB/s (`coarsen_min_meta_rate`, 250; 0 removes it) |
 | `--rechunk_backoff_max <n>` | longest back-off of a settled array, in passes (`max_backoff_ticks`, 8; 0 or 1 disables it) |
+| `--rechunk_trace_array <name>` | the decider's per-array traces (`churn` line of `CHUNK_LOG=rechunk=debug`, advisor table of `CHUNK_LOG=advisor=debug`) for this array only (`trace_array`; default: every array) |
 | `SHRINK_BENCH_EXACT_RSS` | `1`: all memory lines are exact (expensive) |
 | `SHRINK_BENCH_RSS_SAMPLE_MS` | sampling period of the exact peak, in ms (disabled by default) |
 | `CHUNK_BENCH_MEM_PERIOD` | period of the memory line, in iterations |

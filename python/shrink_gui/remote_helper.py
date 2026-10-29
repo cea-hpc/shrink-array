@@ -400,7 +400,7 @@ def act_validate(a):
     message} (what the job would have stopped on: an argparse error or a
     check of the script's), or {"skipped": why} (the check could not run: the
     submission goes on). A script with a module-level parse_args(argv)
-    function (omp_speedup.py) is checked by it -- its own checks included --
+    function (thread_speedup.py) is checked by it -- its own checks included --
     without running main; otherwise the script runs up to its parse_args()
     call, as for "options"."""
     import argparse, inspect, runpy
@@ -968,11 +968,12 @@ def summary_row(g, statistics):
             "%.2f" % max(w), "%d–%d" % (min(g["th"]), max(g["th"]))]
 
 def is_speedup_chart(meta):
-    """The run is drawn as omp_speedup.py's (meta "chart", from PROGRAMS)."""
-    return meta.get("chart") == "speedup" or meta.get("program") == "omp_speedup.py"
+    """The run is drawn as thread_speedup.py's (meta "chart", from PROGRAMS; an old
+    run under its former name, omp_speedup.py, too)."""
+    return meta.get("chart") == "speedup" or meta.get("program") in ("thread_speedup.py", "omp_speedup.py")
 
 def speedup_points(d, meta):
-    """The Graphique tab of omp_speedup.py: its summary.csv, in the output
+    """The Graphique tab of thread_speedup.py: its summary.csv, in the output
     directory of its own the log announces. {"execs", "rows": [exe, threads,
     best s, speedup or None, efficiency or None, peak Mo or None, ok runs],
     "info": its meta.json (target, multiply, mode, metric...)}."""
@@ -1072,7 +1073,7 @@ def act_points(a):
         print(json.dumps(bench_points(d, meta)))
         return
     if meta.get("summary") != "multi_launch":
-        print(json.dumps({"note": "graphique disponible pour multi_launch_stress.py, bench_and_test.py et omp_speedup.py seulement"}))
+        print(json.dumps({"note": "graphique disponible pour multi_launch_stress.py, bench_and_test.py et thread_speedup.py seulement"}))
         return
     od = out_dir(d, meta)
     path = os.path.join(od, meta["summary_file"]) if od else None
