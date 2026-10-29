@@ -262,6 +262,25 @@ void finalize_parallel_phase()
         fast_alloc::report_all_arenas("finalize_phase");
 #endif
     }
+    else if constexpr (chunk_config::is_shrink_enabled)
+    {
+        // Serial build: nothing is deferred, but the zero_any family queues its
+        // candidates as a threaded build does, and the in-loop trigger
+        // (perform_compression()) only runs a pass past half the list maximum.
+        // A backlog below that waits for ever: chunks written for the last
+        // time stay materialised to the end of the run -- the constants as
+        // well as pattern's motifs. Drain it here, as the threaded branch does,
+        // with the pass that trigger runs (make_block_compression(), through
+        // force_chunk_to_compress(); a no-op on an empty list).
+        // Neither have_chunk_to_compress_potentially() as the gate nor
+        // compress_chunk_to_compress_potentially() as the drain: both are
+        // use_fast_block_compression code, which a serial build compiles out
+        // (the gate always says "nothing").
+        if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
+        {
+            SingletonChk<AllTypeChunk>::get_ref().force_chunk_to_compress();
+        }
+    }
 }
 
 bool finalize_barrier_phase()

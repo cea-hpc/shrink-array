@@ -293,6 +293,20 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- Serial builds (no OpenMP, no std backend): `finalize_parallel_phase()` did not drain the
+  `zero_any` family's compression candidates. The in-loop pass only runs past half the list
+  maximum, so a backlog below it waited to the end of the run, and chunks written for the last
+  time stayed materialised. The end-of-run census hid it for the constants, which it classifies
+  on content, but not for `pattern`'s motifs: `shrink_bench_zero_any_256` (`--divisor 100
+  --iter_max 2000`, seed 42) left 206 of `tab_conn`'s 1217 chunks materialised in serial, and
+  0 under OpenMP, and the seq/omp compare of bench_and_test.py reported it as
+  `SEQ_OMP_COMPARE_MISMATCH` (539706 against 539912). The phase end now runs the same pass as
+  the in-loop trigger.
+- bench_and_test.py's scalability guard: an OOM kill ends its curve, since the next thread
+  counts have arrays of the same size and would be killed the same way. For the `vector`
+  reference it is a note rather than an error: it holds the uncompressed arrays, so it is the
+  first not to fit a job sized for the compressed ones. Before, `vector` at `--multiply 2`
+  logged four `SCALING_RUN_FAIL` per config on a node without the memory for it.
 - `thread_speedup.py` (formerly `omp_speedup.py`) takes `CHUNK_NUM_THREADS` out of the runs'
   environment: the std backend and the TBB bench read it before `OMP_NUM_THREADS`, so a value
   left in the shell pinned every point of a `std-*` run to one thread count.
