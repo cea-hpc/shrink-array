@@ -38,10 +38,7 @@
 #include "chunk/internal/immortal.h"             // Immortal: statics safe for global arrays
 #include "chunk/internal/invariant_check.h"      // CHUNK_INVARIANT_FAILED
 
-namespace shrink_array
-{
-
-namespace pattern
+namespace shrink_array::pattern
 {
 
 /**
@@ -346,8 +343,6 @@ class MotifRegion
         generations_storage_{}; ///< Every index generation since the last rebuild.
 };
 
-} // namespace pattern
-
-} // namespace shrink_array
+} // namespace shrink_array::pattern
 
 #include "chunk/internal/motif_region_inline.h" // the template bodies

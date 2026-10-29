@@ -17,10 +17,7 @@
 #pragma once
 
 #include "chunk/config.h" // chunk_config::tuning_level
-namespace shrink_array
-{
-
-namespace zero_one_value
+namespace shrink_array::zero_one_value
 {
 
 /**
@@ -64,6 +61,4 @@ struct ChunkDef
     }();
 };
 
-} // namespace zero_one_value
-
-} // namespace shrink_array
+} // namespace shrink_array::zero_one_value

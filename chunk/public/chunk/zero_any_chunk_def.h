@@ -16,10 +16,7 @@
 
 #pragma once
 
-namespace shrink_array
-{
-
-namespace zero_any
+namespace shrink_array::zero_any
 {
 
 /// @brief Compile-time settings of zero_any: compression-list and buffer-reuse thresholds.
@@ -91,6 +88,4 @@ class ChunkDef
         factor_div_somme_chunk_buffer_reuse;
 };
 
-} // namespace zero_any
-
-} // namespace shrink_array
+} // namespace shrink_array::zero_any

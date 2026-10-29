@@ -313,7 +313,7 @@ class ChunkThreadPolicy<T, Derived, false> : public SecondValueChunkBase<T, Deri
 {
   public:
     using Base           = SecondValueChunkBase<T, Derived>;
-    using ManagerChunk2A = typename ChunkTraits<Derived>::ManagerType;
+    using ManagerChunk2A = ChunkTraits<Derived>::ManagerType;
 
     using Base::is_bool;
     using Base::is_not_bool;
@@ -384,12 +384,12 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>, public TabCstVal2Holder<
   public:
     using Base         = SecondValueChunkBase<T, Derived>;                      ///< The CRTP chunk base.
     using ThreadPolicy = ChunkThreadPolicy<T, Derived, build_config::threaded>; ///< This build's thread-model policy.
-    using ProxyType    = typename Base::ProxyType;                              ///< The member's write proxy.
+    using ProxyType    = Base::ProxyType;                                       ///< The member's write proxy.
 
     friend class SecondValueChunkBase<T, Derived>;
     friend ProxyType;
 
-    using ManagerChunk2A = typename ChunkTraits<Derived>::ManagerType;
+    using ManagerChunk2A = ChunkTraits<Derived>::ManagerType;
     // Same tuple as TChunk.h's VectorTuple4ChunkInt2 (the manager storage).
     using VecTupleChunkA2pInt2  = std::vector<std::tuple<Derived*, int, int, ChunkElems>>;
     using VecTupleChunkA2pTint2 = std::vector<std::tuple<Derived*, T, int, int, ChunkElems>>;

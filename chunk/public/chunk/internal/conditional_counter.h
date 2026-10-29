@@ -73,7 +73,7 @@ class ConditionalCounter
         }
     }
 
-    operator CounterValueT() const noexcept
+    explicit operator CounterValueT() const noexcept
     {
         if constexpr (Enabled)
         {
