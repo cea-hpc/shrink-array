@@ -15,6 +15,8 @@
  */
 
 #pragma once
+#include <ranges> // std::views::reverse (the recycled list, from the back)
+
 #include "fast_allocators/slab_arena.h" // the class these bodies belong to
 
 namespace fast_alloc
@@ -307,9 +309,8 @@ inline std::size_t SlabArena::advise_recycled(std::size_t keep_bytes) noexcept
             auto& list = lists.by_rank[r];
             // Newest last: pop_recycled() takes from the back, so a rank
             // keeps from the back.
-            for (auto rit = list.rbegin(); rit != list.rend(); ++rit)
+            for (Recycled& entry : std::views::reverse(list))
             {
-                Recycled& entry = *rit;
                 if (entry.advised)
                 {
                     continue;

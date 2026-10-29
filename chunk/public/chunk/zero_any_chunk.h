@@ -224,7 +224,7 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>, public ChunkC
 {
   public:
     using Base                   = SecondValueChunkBase<T, Derived>;
-    using ManagerChunk2A         = typename ChunkTraits<Derived>::ManagerType;
+    using ManagerChunk2A         = ChunkTraits<Derived>::ManagerType;
     using CompressionManagerType = CompressionManager<T, Derived>;
 
     using Base::derived;

@@ -131,10 +131,10 @@ namespace internal
  *          the callers name nothing the lambdas did not already name first.
  */
 template <typename Arr>
-[[nodiscard]] const typename Arr::value_type* motif_chunk_data(const Arr& tab, int64_t idx, int which)
+[[nodiscard]] const Arr::value_type* motif_chunk_data(const Arr& tab, int64_t idx, int which)
 {
-    using ChunkT = typename Arr::ChunkType;
-    using T      = typename Arr::value_type;
+    using ChunkT = Arr::ChunkType;
+    using T      = Arr::value_type;
     static thread_local std::array<std::vector<T>, 2> buffers;
     std::vector<T>&                                   scratch = buffers[static_cast<std::size_t>(which)];
     const T* const                                    vals    = tab.chunk_list_[idx].values_load();
@@ -457,11 +457,7 @@ struct ChunkSizeAdvisor
                 team.single(
                     [&]
                     {
-                        n_parts = static_cast<int64_t>(CHUNK_PMP_NUM_THREADS) * 4;
-                        if (n_parts > nc)
-                        {
-                            n_parts = nc;
-                        }
+                        n_parts = std::min<int64_t>(static_cast<int64_t>(CHUNK_PMP_NUM_THREADS) * 4, nc);
                         part_mat.assign(static_cast<std::size_t>(n_parts), 0);
                         part_first.assign(static_cast<std::size_t>(n_parts), Seg{0, 0, -1, nullptr});
                         part_last.assign(static_cast<std::size_t>(n_parts), Seg{0, 0, -1, nullptr});

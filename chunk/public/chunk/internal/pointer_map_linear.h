@@ -52,7 +52,7 @@ class PointerMapLinear
 {
   public:
     /// @brief The key: an ArrayKey, the first member of Storage's pairs.
-    using Key = typename Storage::value_type::first_type;
+    using Key = Storage::value_type::first_type;
 
     /**
      * @brief Remove the entry for @p key, if present.

@@ -258,7 +258,7 @@ static T value_of(Kind kind, long num_chunk, long j, long round, std::uint64_t& 
 template <typename Arr>
 static bool is_motif_chunk(const Arr& arr, long c)
 {
-    using ChunkT = typename Arr::ChunkType;
+    using ChunkT = Arr::ChunkType;
     if constexpr (has_motif_state_v<ChunkT>)
     {
         return ChunkT::is_motif_ptr(arr.get_chunk_list()[static_cast<std::size_t>(c)].values_load());

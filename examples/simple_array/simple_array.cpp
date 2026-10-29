@@ -14,17 +14,18 @@
  * limitations under the License.
  */
 
-#include <bit>      // std::bit_cast (calculate_checksum)
-#include <cassert>  // assert
-#include <chrono>   // std::chrono::steady_clock
-#include <cmath>    // std::cos, std::sin, std::sqrt
-#include <cstdint>  // std::int64_t, uint64_t
-#include <cstdlib>  // std::abort
-#include <iostream> // std::cout, std::cerr
-#include <random>   // std::mt19937, std::uniform_int_distribution
-#include <array>    // std::array
-#include <fstream>  // std::ifstream, std::ofstream
-#include <string>   // std::string, std::to_string
+#include <algorithm> // std::min
+#include <bit>       // std::bit_cast (calculate_checksum)
+#include <cassert>   // assert
+#include <chrono>    // std::chrono::steady_clock
+#include <cmath>     // std::cos, std::sin, std::sqrt
+#include <cstdint>   // std::int64_t, uint64_t
+#include <cstdlib>   // std::abort
+#include <iostream>  // std::cout, std::cerr
+#include <random>    // std::mt19937, std::uniform_int_distribution
+#include <array>     // std::array
+#include <fstream>   // std::ifstream, std::ofstream
+#include <string>    // std::string, std::to_string
 
 #include <iomanip>        // std::setprecision, std::fixed
 #include <type_traits>    // std::conditional_t (Array)
@@ -302,10 +303,7 @@ int main()
 
         int end0 = start0 + size;
 
-        if (end0 > sz)
-        {
-            end0 = sz;
-        }
+        end0 = std::min(end0, sz);
 
         if (k != 0 && k % freq_raz == 0)
         {

@@ -71,8 +71,8 @@ void zero_one_value::FastBlockSupport<Derived, true>::make_block_compression()
         // Sequential point: outside a region only.
         if constexpr (Derived::is_not_bool)
         {
-            using ProxyT   = typename Traits::ProxyType;
-            using ManagerT = typename Traits::ManagerType;
+            using ProxyT   = Traits::ProxyType;
+            using ManagerT = Traits::ManagerType;
 
             const int  num_tab  = ProxyT::share_info_array->get_num_tab(self().registry_key());
             const auto inf      = self().get_info_second_value();

@@ -185,7 +185,7 @@ class PointerMap
 
   public:
     /// @brief The key: the array's identity.
-    using Key = typename Linear::Key;
+    using Key = Linear::Key;
 
   private:
     /// @brief Policy carrying the fast-block-compression-only inf_array map.

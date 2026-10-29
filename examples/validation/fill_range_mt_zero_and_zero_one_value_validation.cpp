@@ -95,7 +95,7 @@ static long materialised(const Arr& arr, long nchunks)
     long       count    = 0;
     for (long j = 0; j < nchunks; ++j)
     {
-        count += arr.written(static_cast<typename Arr::IndType>(j * chunk_sz)) ? 1 : 0;
+        count += arr.written(static_cast<Arr::IndType>(j * chunk_sz)) ? 1 : 0;
     }
     return count;
 }
@@ -128,7 +128,7 @@ static int run_case(const char* name, Arr& arr, long nchunks, double value, long
     const long count    = nchunks * chunk_sz;
     const long half     = chunk_sz / 2;
 
-    phase(count, [&](long i) { arr[static_cast<typename Arr::IndType>(i)] = plain(i); });
+    phase(count, [&](long i) { arr[static_cast<Arr::IndType>(i)] = plain(i); });
     const long before = materialised(arr, nchunks);
 
     // Two spans per chunk, adjacent iterations: with schedule(static, 1) they
@@ -145,7 +145,7 @@ static int run_case(const char* name, Arr& arr, long nchunks, double value, long
     long bad = 0;
     for (long i = 0; i < count; ++i)
     {
-        const double got = arr[static_cast<typename Arr::IndType>(i)];
+        const double got = arr[static_cast<Arr::IndType>(i)];
         if (got != value)
         {
             if (bad < 3)
