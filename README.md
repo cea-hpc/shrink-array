@@ -295,12 +295,13 @@ stays between 43 and 66 up to 288, where `std::vector` falls back to about 26.
 
 ![OpenMP speedup of the int64 builds on Grace, omp-llvm, --multiply 3](docs/images/speedup_grace_omp-llvm_int64_x3.png)
 
-On x86, AMD EPYC 7763 (Milan, 2 sockets × 64 cores), Intel oneAPI, at the reference size
-(`--multiply 1`): the same picture. Every variant stays on the ideal line up to 16 threads
-and reaches 46 to 80 at 128, while `std::vector` peaks near 32 at 64 threads and falls back
-to about 20 at 128.
+On x86, AMD EPYC 7763 (Milan, 2 sockets × 64 cores), Intel oneAPI with the std::thread backend
+(`CHUNK_THREADS=std`), at the reference size (`--multiply 1`): every variant stays close to
+the ideal line up to 16 threads (12 to 15 there) and reaches 29 to 46 at 128, while
+`std::vector`, below them from 4 threads on, peaks near 23 at 64 threads and falls back to
+about 17 at 128.
 
-![OpenMP speedup on AMD EPYC 7763 (Milan, 2 × 64 cores), omp-oneapi, --multiply 1](docs/images/speedup_milan_omp-oneapi_x1.png)
+![Speedup of the std::thread backend on AMD EPYC 7763 (Milan, 2 × 64 cores), std-oneapi, --multiply 1](docs/images/speedup_milan_std-oneapi_x1.png)
 
 **A fair baseline.** The `std::vector` of these runs (`shrink_bench_vector_*`) is a real
 `std::vector` whose zeroing is parallel

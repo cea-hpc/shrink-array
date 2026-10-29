@@ -304,12 +304,13 @@ droite idéale jusqu'à 16 threads (un speedup de 14, puis 26 à 28 à 32), atte
 
 ![Speedup OpenMP des builds int64 sur Grace, omp-llvm, --multiply 3](docs/images/speedup_grace_omp-llvm_int64_x3.png)
 
-Sur x86, AMD EPYC 7763 (Milan, 2 sockets × 64 cœurs), Intel oneAPI, à la taille de référence
-(`--multiply 1`) : même tableau. Toutes les variantes restent sur la droite idéale jusqu'à 16
-threads et atteignent 46 à 80 à 128, là où `std::vector` plafonne vers 32 à 64 threads et
-retombe vers 20 à 128.
+Sur x86, AMD EPYC 7763 (Milan, 2 sockets × 64 cœurs), Intel oneAPI avec le backend
+std::thread (`CHUNK_THREADS=std`), à la taille de référence (`--multiply 1`) : toutes les
+variantes restent proches de la droite idéale jusqu'à 16 threads (12 à 15 à ce point) et
+atteignent 29 à 46 à 128, là où `std::vector`, en dessous dès 4 threads, plafonne vers 23 à 64
+threads et retombe vers 17 à 128.
 
-![Speedup OpenMP sur AMD EPYC 7763 (Milan, 2 × 64 cœurs), omp-oneapi, --multiply 1](docs/images/speedup_milan_omp-oneapi_x1.png)
+![Speedup du backend std::thread sur AMD EPYC 7763 (Milan, 2 × 64 cœurs), std-oneapi, --multiply 1](docs/images/speedup_milan_std-oneapi_x1.png)
 
 **Une référence équitable.** Le `std::vector` de ces mesures (`shrink_bench_vector_*`) est un
 vrai `std::vector`, dont la mise à zéro est parallèle
