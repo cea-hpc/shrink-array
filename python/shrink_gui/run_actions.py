@@ -15,7 +15,7 @@ import tarfile
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QCheckBox, QLabel, QMessageBox, QVBoxLayout
 
-from shrink_gui.config import PROGRAMS
+from shrink_gui.config import PROGRAMS, program_of
 from shrink_gui.i18n import T
 from shrink_gui.widgets import ask
 
@@ -28,8 +28,8 @@ class RunActions:
 
     def reuse_run(self, run):
         m = run["meta"]
-        if m.get("program") in PROGRAMS:
-            self.program.setCurrentText(m["program"])
+        if program_of(m) in PROGRAMS:
+            self.program.setCurrentText(program_of(m))
         i = self.preset.findData(m.get("partition"))
         if i >= 0:
             self.preset.setCurrentIndex(i)
@@ -171,7 +171,7 @@ class RunActions:
         if not runs:
             self.error("les runs sélectionnés sont encore actifs : arrêtez-les d'abord")
             return
-        own = {r["id"]: PROGRAMS.get(r["meta"].get("program"), {}).get("own_outputs") for r in runs}
+        own = {r["id"]: PROGRAMS.get(program_of(r["meta"]), {}).get("own_outputs") for r in runs}
         local = {r["id"]: self.local_copy(r) for r in runs}
         ok, with_out, with_local = self.delete_many_dialog(runs, sum(1 for v in own.values() if v),
                                                            sum(1 for v in local.values() if v))
@@ -226,7 +226,7 @@ class RunActions:
         if run["status"] in self.ACTIVE or run["status"].startswith("en attente"):
             self.error("arrêtez d'abord ce run (il est encore actif)")
             return
-        own = PROGRAMS.get(run["meta"].get("program"), {}).get("own_outputs")
+        own = PROGRAMS.get(program_of(run["meta"]), {}).get("own_outputs")
         local = os.path.join(os.path.expanduser(self.local_dir.text().strip()), run["id"])
         local = local if os.path.isdir(local) else None
         ok, with_out, with_local = self.delete_dialog(run, own, local)

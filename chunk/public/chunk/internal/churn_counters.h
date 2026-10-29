@@ -25,7 +25,8 @@
  * a constant chunk materialises the whole chunk until the phase-end
  * compression, and its pages stay with the process: a transient proportional
  * to the chunk size. These counters give its per-phase rate
- * (CHUNK_RECHUNK_CHURN trace; nothing decides on them yet).
+ * (the churn trace of the decider, CHUNK_LOG=rechunk=debug; nothing decides
+ * on them yet).
  *
  * phase_ends(): process-wide count of compression phases. Materialisations<T>:
  * per element type, allocation key and rank -- rank-local increments, summed

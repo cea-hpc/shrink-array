@@ -215,6 +215,10 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `CHUNK_LOG=rechunk=debug`: a `teardown split` line after each re-chunk's phases divides the
+  `tmp teardown` phase (the old storage's destruction) into its steps, for zero_any and pattern;
+  `scripts/rechunk_trace_summary.py` sums it. Measured on Milan, this phase was 56 % of the
+  re-chunk time of `shrink_bench_zero_any_dyn`.
 - `CHUNK_SLAB_MIN_PAGES` (developer setting): a floor in pages for the value slabs' size; `16`
   restores the former default, for an A/B (see Changed).
 - Fast allocator: a sweep (`trim_reuse_pools()`, `CHUNK_RECLAIM_PHASE_KEEP`) also gives back the
@@ -282,6 +286,15 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- `thread_speedup.py --all-exec` takes the TBB bench too (`shrink_bench_tbb_<variant>_<size>`,
+  after the other executables, in the std builds made with oneTBB; none with `--int64`, it has
+  no 64-bit declination). shrink_gui's speedup chart reads its names: the colour of its variant,
+  the shape of its size, a dash-dot line (dash-dot-dot for B) -- they were grey stars.
+- `python/omp_speedup.py` is `python/thread_speedup.py`: its curves are not OpenMP's only, the
+  std::thread backend's (`std-*` targets) and the TBB bench's (`shrink_bench_tbb_*`) too. Its
+  default output directory is `$CCCWORKDIR/thread_speedup/` (else `~/thread_speedup/`).
+  shrink_gui offers it under the new name and reads the runs recorded under the old one as its
+  own (reuse, outputs, Chart).
 - `zero` re-chunk: the recycled slabs the last slice of the rebuild did not take stay resident
   for the next allocations, instead of being given back to the system (the former
   `CHUNK_RECHUNK_KEEP_RECYCLED=1`, now the only behaviour). Milan, `zero_dyn`, 64 threads, three
@@ -296,6 +309,13 @@ the tag's checksum to the recipe.
   `--force_rechunk`, `--force_rechunk_at`, `--force_rechunk_toggle`, `--force_rechunk_alt`, plus
   `--advisor_period` and `--advise_five` for its own schedule. `bench_and_test.py`'s re-chunk
   phase and `diag_zero_rechunk_slowdown.py` pass them.
+- The decider's two per-array traces are log levels, no longer environment variables: the churn
+  line (materialisations per pass, the transient they imply) is `CHUNK_LOG=rechunk=debug`
+  (it was `rechunk=info`, switched on by `CHUNK_RECHUNK_CHURN`), and the advisor's full table at
+  each pass is `CHUNK_LOG=advisor=debug`, written to the log (`CHUNK_LOG_FILE`) instead of
+  stdout. The former `=<name>` form is the new `RechunkPolicy::trace_array` (empty: every array;
+  `shrink_bench --rechunk_trace_array <name>`). `ChunkSizeAdvisor<T>::log()` writes a report to
+  the log as `print()` does to stdout. The decider reads no environment variable any more.
 - `shrink_bench`: `tab_conn` holds about `sz / 32` ints by default, `--conn_scale <x>` sets it
   (`x × sz`, whole rows). At `sz` its dense gather and renumbering took ~87% of a run (zero_any,
   8 threads, `--divisor 2`: 64.8 s with it, 8.4 s without with GCC 16, 140 s against 19 s with
@@ -382,6 +402,8 @@ the tag's checksum to the recipe.
 
 ### Deprecated
 
+- `python/omp_speedup.py`: runs `thread_speedup.py` with the same arguments (one line on stderr
+  says so), for the commands and job scripts that call it; to be removed in a later release.
 - `ArrayChunk`, `ArrayChunk2` and `ArrayChunk2A`: alias templates of the classes above, with a
   `[[deprecated]]` attribute, until 1.0.
 - `chunk/array_chunk.h`, `chunk/array_chunk2.h` and `chunk/array_chunk2A.h`: they include the
@@ -424,6 +446,9 @@ the tag's checksum to the recipe.
   `CHUNK_RECHUNK_MEMTRACE`, `CHUNK_RECHUNK_TRACE_MEM`, `CHUNK_AFFINITY_TRACE` and
   `CHUNK_RECYCLE_TRACE`: `CHUNK_LOG` (`rechunk=debug`, `rechunk=trace`, `memory=info`,
   `memory=debug`, `affinity=debug`, `recycle=trace`). `FAST_ALLOC_TRACE` stays, deprecated.
+- `CHUNK_RECHUNK_CHURN` and `CHUNK_ADVISOR_TABLE`: `CHUNK_LOG=rechunk=debug` and
+  `CHUNK_LOG=advisor=debug`, with `RechunkPolicy::trace_array` for a single array (see Changed).
+  Set, they are ignored without a message.
 - `CHUNK_RECHUNK_REUSE_LIST` and the chunk list buffer a re-chunk kept for the next one
   (`ArrayChunkCore::spare_chunk_list_`): see Fixed.
 - Two internal headers nothing included: `chunk/internal/diag_mutex.h` (the lock of the
@@ -431,6 +456,28 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- Serial builds (no OpenMP, no std backend): `finalize_parallel_phase()` did not drain the
+  `zero_any` family's compression candidates. The in-loop pass only runs past half the list
+  maximum, so a backlog below it waited to the end of the run, and chunks written for the last
+  time stayed materialised. The end-of-run census hid it for the constants, which it classifies
+  on content, but not for `pattern`'s motifs: `shrink_bench_zero_any_256` (`--divisor 100
+  --iter_max 2000`, seed 42) left 206 of `tab_conn`'s 1217 chunks materialised in serial, and
+  0 under OpenMP, and the seq/omp compare of bench_and_test.py reported it as
+  `SEQ_OMP_COMPARE_MISMATCH` (539706 against 539912). The phase end now runs the same pass as
+  the in-loop trigger.
+- bench_and_test.py's scalability guard: an OOM kill ends its curve, since the next thread
+  counts have arrays of the same size and would be killed the same way. For the `vector`
+  reference it is a note rather than an error: it holds the uncompressed arrays, so it is the
+  first not to fit a job sized for the compressed ones. Before, `vector` at `--multiply 2`
+  logged four `SCALING_RUN_FAIL` per config on a node without the memory for it.
+- `thread_speedup.py` (formerly `omp_speedup.py`) takes `CHUNK_NUM_THREADS` out of the runs'
+  environment: the std backend and the TBB bench read it before `OMP_NUM_THREADS`, so a value
+  left in the shell pinned every point of a `std-*` run to one thread count.
+- shrink_gui: the legends of the Graphique tab are readable again. Set in one row at the top,
+  they cut every label short -- with `thread_speedup.py --all-exec` (a dozen executables, twice
+  over in a comparison) no label was left. They sit on the right now, one entry a line, with the
+  full label on hover; the speedup chart has one entry per executable, its marker (colour: the
+  variant, shape: the size), B's dashed twin of an A curve adding none.
 - The teardown verbs (`release_chunk_pools()`, `destroy_block_chunk()`, `delete_chunk_allocator()`,
   `clear_all_list_block_free_thr()`, `delete_list_block_chunk_free_itself()`) and
   `shrink_to_fit()`'s pool trim refused a call from inside a parallel region in check builds

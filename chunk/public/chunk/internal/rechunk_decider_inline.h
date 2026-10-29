@@ -20,12 +20,10 @@
 // includes this file after the class). Only the one-liners stay in the class.
 
 #include <algorithm> // std::max
-#include <array>     // std::array (CHUNK_ADVISOR_TABLE title)
 #include <cstddef>   // std::size_t
-#include <cstdio>    // std::fprintf, std::fflush (the advisor table, print_rechunk_log)
-#include <cstdlib>   // std::getenv -- CHUNK_RECHUNK_CHURN, CHUNK_ADVISOR_TABLE
-#include <cstring>   // std::strcmp (CHUNK_ADVISOR_TABLE)
-#include <format>    // std::format (CHUNK_ADVISOR_TABLE title)
+#include <cstdio>    // std::fprintf ([RECHUNK-LEARN], print_rechunk_log)
+#include <cstring>   // std::strcmp (the settled verdicts)
+#include <format>    // std::format (the advisor table's title)
 #include <string>    // std::string
 
 #include "chunk/rechunk_decider.h"             // the declarations these bodies belong to
@@ -33,7 +31,7 @@
 #include "chunk/config.h"                      // build_config::chunk_dynamic
 #include "chunk/log.h"                         // CHUNK_LOG, logging::enabled
 #include "chunk/PMP_CHUNK.h"                   // CHUNK_PMP_MAX_THREADS (the rebuild's team, for its cost)
-#include "chunk/internal/churn_counters.h"     // CHUNK_RECHUNK_CHURN
+#include "chunk/internal/churn_counters.h"     // the churn trace (rechunk=debug)
 #include "chunk/internal/exact_rss.h"          // exact_rss_kib (memory=info, per tick)
 #include "chunk/internal/values_arena_bytes.h" // the values arena, if the build has one (memory=info)
 
@@ -377,12 +375,13 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
         opt.grid_bits              = pol_.advisor_grid_bits;
         const ChunkSizeReport& rep = ChunkSizeAdvisor<T>::analyze(arr, opt);
 
-        // CHUNK_RECHUNK_CHURN=1 (every array) or =<name>: the per-phase
-        // transient the snapshot above cannot see (churn_counters.h).
+        // The per-array traces: every array, or only RechunkPolicy::trace_array.
+        const bool traced = pol_.trace_array.empty() || pol_.trace_array == name;
+
+        // CHUNK_LOG=rechunk=debug: the per-phase transient the snapshot above
+        // cannot see (churn_counters.h).
         {
-            static const char* const churn_env = std::getenv("CHUNK_RECHUNK_CHURN");
-            if (churn_env != nullptr && churn_env[0] != '\0' && churn_env[0] != '0' &&
-                (std::strcmp(churn_env, "1") == 0 || std::strcmp(churn_env, name) == 0) && rep.cur >= 0)
+            if (traced && rep.cur >= 0 && logging::enabled(logging::Channel::rechunk, logging::Level::debug))
             {
                 Hist&          hist     = hist_[&arr];
                 const unsigned key      = arr.alloc_key();
@@ -399,7 +398,7 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
                         static_cast<double>(d_creates - (growth > 0 ? growth : 0)) / static_cast<double>(d_phases);
                     const double mb_s   = transient * cur_size * sizeof(T) / 1e6;
                     const double mb_64s = transient * 64. * sizeof(T) / 1e6; // same chunk count at 64
-                    CHUNK_LOG(info, rechunk,
+                    CHUNK_LOG(debug, rechunk,
                               "churn {} S={}: {} materialisations over {} phases since the last tick ({:.0f}/phase), "
                               "resident materialised {} -> {}: transient ~{:.0f} chunks/phase = {:.1f} MB at S={}; at "
                               "S=64: {:.1f} MB if scattered, {:.1f} MB if grouped",
@@ -408,7 +407,7 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
                 }
                 else
                 {
-                    CHUNK_LOG(info, rechunk, "churn {} S={}: baseline (key {})", name, cur_size, key);
+                    CHUNK_LOG(debug, rechunk, "churn {} S={}: baseline (key {})", name, cur_size, key);
                 }
                 hist.churn_key     = key;
                 hist.churn_creates = creates;
@@ -417,15 +416,12 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
             }
         }
 
-        // CHUNK_ADVISOR_TABLE=1 (every array) or =<name> (that one): the whole
-        // table this tick's decision is taken from -- the finer rows too.
+        // CHUNK_LOG=advisor=debug: the whole table this tick's decision is
+        // taken from -- the finer rows too.
         {
-            static const char* const table_env = std::getenv("CHUNK_ADVISOR_TABLE");
-            if (table_env != nullptr && table_env[0] != '\0' && table_env[0] != '0' &&
-                (std::strcmp(table_env, "1") == 0 || std::strcmp(table_env, name) == 0))
+            if (traced && logging::enabled(logging::Channel::advisor, logging::Level::debug))
             {
-                ChunkSizeAdvisor<T>::print(rep, std::format("{} tick {} iter {}", name, tick, iter).c_str());
-                std::fflush(stdout);
+                ChunkSizeAdvisor<T>::log(rep, std::format("{} tick {} iter {}", name, tick, iter).c_str());
             }
         }
 

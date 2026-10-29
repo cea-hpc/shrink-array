@@ -73,14 +73,17 @@ EN = {
     "speedup vs le premier nombre de threads": "speedup vs the first thread count",
     "efficacité (speedup × min / threads)": "efficiency (speedup × min / threads)",
     "meilleur temps (s)": "best time (s)",
-    "Superpose un autre run de omp_speedup.py de la même architecture (en pointillés) -- un autre "
+    "Superpose un autre run de thread_speedup.py de la même architecture (en pointillés) -- un autre "
     "compilateur, un autre commit -- et donne le rapport B / A sur leurs points communs":
-        "Overlays another omp_speedup.py run of the same architecture (dashed) -- another compiler, another "
+        "Overlays another thread_speedup.py run of the same architecture (dashed) -- another compiler, another "
         "commit -- and gives the B / A ratio over their common points",
     "tailles ou modes différents : comparer les speedups, pas les temps":
         "different sizes or modes: compare the speedups, not the times",
     "couleur : la variante (vector en gris) · forme : la taille (rond dyn, carré 1024, triangle 256, losange 64)":
         "colour: the variant (vector in grey) · shape: the size (dot dyn, square 1024, triangle 256, diamond 64)",
+    "trait mixte : le bench TBB (shrink_bench_tbb_*), tiret-point-point pour B":
+        "dash-dot line: the TBB bench (shrink_bench_tbb_*), dash-dot-dot for B",
+    "trait mixte : le bench TBB (shrink_bench_tbb_*)": "dash-dot line: the TBB bench (shrink_bench_tbb_*)",
     "Superpose un autre run de bench_and_test.py de la même architecture (en pointillés) et donne le "
     "rapport B / A sur leurs points communs":
         "Overlays another bench_and_test.py run of the same architecture (dashed) and gives the "
@@ -618,8 +621,8 @@ EN_RE = [(re.compile(a), b) for a, b in (
     (r"graphique disponible pour multi_launch_stress\.py seulement", "chart available for multi_launch_stress.py only"),
     (r"graphique disponible pour multi_launch_stress\.py et bench_and_test\.py seulement",
      "chart available for multi_launch_stress.py and bench_and_test.py only"),
-    (r"graphique disponible pour multi_launch_stress\.py, bench_and_test\.py et omp_speedup\.py seulement",
-     "chart available for multi_launch_stress.py, bench_and_test.py and omp_speedup.py only"),
+    (r"graphique disponible pour multi_launch_stress\.py, bench_and_test\.py et thread_speedup\.py seulement",
+     "chart available for multi_launch_stress.py, bench_and_test.py and thread_speedup.py only"),
     (r"^pas encore de (\S+) \(écrit à la fin du run\)$", r"no \1 yet (written at the end of the run)"),
     (r"— (\d+) ligne\(s\), les 1000 dernières", r"— \1 row(s), the last 1000"),
     (r"— (\d+) ligne\(s\)", r"— \1 row(s)"),

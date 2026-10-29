@@ -15,6 +15,10 @@ import signal
 
 _NO_LIMIT = 1 << 60       # v1 writes "no limit" as a huge number
 
+# The words explain() opens an OOM kill's sentence with: a caller that must
+# act on an OOM kill (the scalability guard stops a curve there) tests for it.
+OOM_KILL_MARK = "KILLED BY THE OUT-OF-MEMORY KILLER"
+
 _HINTS = {
     signal.SIGSEGV: "invalid memory access: see its full output, or rerun it under gdb / ASan",
     signal.SIGABRT: "abort(): a failed assert, std::terminate, or a sanitizer report",
@@ -125,7 +129,7 @@ def explain(returncode, before, after):
     if hit:
         lim = next((x for x in (_limit(d) for d in hit) if x), None)
         where = hit[0]
-        return (f"KILLED BY THE OUT-OF-MEMORY KILLER (SIGKILL): the memory cgroup counted an OOM kill "
+        return (f"{OOM_KILL_MARK} (SIGKILL): the memory cgroup counted an OOM kill "
                 f"during this run{f' (limit {_gib(lim)})' if lim else ''} [{where}].\n"
                 "Too much memory for the job: fewer threads or a smaller size, or more memory "
                 "(more cores for the job, or #MSUB -M / --mem).")

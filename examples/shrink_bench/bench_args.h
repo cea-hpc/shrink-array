@@ -25,6 +25,8 @@
 
 #pragma once
 
+#include <string> // std::string (--rechunk_trace_array)
+
 #include "bench_int.h" // Int: the sizes this struct carries
 
 /// @brief Everything the command line can set.
@@ -105,6 +107,10 @@ struct BenchArgs
     Int rechunk_grid_bits = -1;
     /// --rechunk_backoff_max: longest back-off, in ticks (0 or 1: none); < 0: the policy's.
     Int rechunk_backoff_max = -1;
+    /// --rechunk_trace_array <name>: the decider's per-array traces (churn,
+    /// CHUNK_LOG=rechunk=debug; advisor table, CHUNK_LOG=advisor=debug) for
+    /// this array only; empty: every array.
+    std::string rechunk_trace_array;
     /// --force_rechunk <size>: every advised array re-chunked to this size,
     /// whatever the advisor says (tests); 0: never.
     Int  force_rechunk        = 0;
