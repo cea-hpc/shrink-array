@@ -72,9 +72,12 @@ fi
 # Environment Modules: absent on a workstation. A stand-in that fails quietly
 # keeps every `module load x || ...` and `if run_cmd "module load x"` of the
 # scripts on their "not available" path; the tools are then taken from PATH.
-# A local site never takes its compilers from modules, even where the command
-# exists (AlmaLinux ships Environment Modules with no compiler module).
-if [ "$CHUNK_SITE" = cea ] && type module >/dev/null 2>&1; then
+# A local site takes its compilers from modules only where a gcc module exists:
+# AlmaLinux ships Environment Modules with no compiler module (the stand-in),
+# a machine with a module tree of its own (gcc/16) loads it as CEA does --
+# stubbed, its loads changed nothing and the broken gcc-toolset-14 was taken.
+if type module >/dev/null 2>&1 &&
+    { [ "$CHUNK_SITE" = cea ] || module -t av gcc 2>&1 | grep -qE '^gcc/[0-9]'; }; then
     CHUNK_HAVE_MODULES=true
 else
     CHUNK_HAVE_MODULES=false
