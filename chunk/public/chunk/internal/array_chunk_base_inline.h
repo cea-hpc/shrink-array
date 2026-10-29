@@ -87,24 +87,26 @@ ArrayChunkBase<Derived>::try_set_chunk_size([[maybe_unused]] unsigned int new_ch
     // of bounds. Refused, geometry kept. A static build has its compiled size only.
     if constexpr (build_config::chunk_dynamic)
     {
-        if (const auto ok = check_chunk_size(new_chunk_size); !ok) [[unlikely]]
+        // As try_set_active_chunk_size(): the size set only when accepted.
+        return check_chunk_size(new_chunk_size)
+            .transform(
+                [this, new_chunk_size]
+                {
+                    size_policy_.set_size(new_chunk_size);
+                    // Ensure the allocators for this size exist (sequential, idempotent) and
+                    // make it this thread's active size, so its allocations route there.
+                    register_runtime_chunk_size(new_chunk_size);
+                    set_thread_chunk_size(new_chunk_size);
+                });
+    }
+    else
+    {
+        if (new_chunk_size != static_chunk_size)
         {
-            return ok;
+            return std::unexpected(ChunkSizeError::fixed_geometry);
         }
+        return {}; // the compiled size, already the array's (StaticChunkSize)
     }
-    else if (new_chunk_size != static_chunk_size)
-    {
-        return std::unexpected(ChunkSizeError::fixed_geometry);
-    }
-    size_policy_.set_size(new_chunk_size); // no-op under StaticChunkSize
-    if constexpr (build_config::chunk_dynamic)
-    {
-        // Ensure the allocators for this size exist (sequential, idempotent) and
-        // make it this thread's active size, so its allocations route there.
-        register_runtime_chunk_size(new_chunk_size);
-        set_thread_chunk_size(new_chunk_size);
-    }
-    return {};
 }
 
 template <typename Derived>
@@ -588,6 +590,23 @@ ArrayChunkBase<Derived>::operator()(this const Derived& self, IndType index) noe
 }
 
 template <typename Derived>
+CHUNK_FLATTEN CHUNK_FORCE_INLINE ArrayChunkBase<Derived>::T& ArrayChunkBase<Derived>::operator()(this Derived& self,
+                                                                                                 IndType index) noexcept
+{
+    const int num_chunk = self.chunk_index_of(index);
+    const int num       = self.offset_in_chunk(index);
+    // As operator[] const: 0 <= num_chunk, 0 <= num <= modulo by construction.
+    [[maybe_unused]] const int chunk_mod = static_cast<int>(self.size_policy_.modulo());
+    CHUNK_ASSUME(num_chunk >= 0);
+    CHUNK_ASSUME(num >= 0 && num <= chunk_mod);
+    auto& chunk_t = self.chunk_list_[num_chunk];
+
+    self.sync_chunk(chunk_t, num_chunk, num);
+
+    return chunk_t(num);
+}
+
+template <typename Derived>
 CHUNK_FLATTEN CHUNK_FORCE_INLINE ArrayChunkBase<Derived>::T
 ArrayChunkBase<Derived>::operator[](this const Derived& self, IndType index) noexcept
 {
@@ -631,10 +650,14 @@ template <typename Derived>
 CHUNK_FLATTEN CHUNK_FORCE_INLINE ArrayChunkBase<Derived>::ProxyType
 ArrayChunkBase<Derived>::element_proxy(this Derived& self, IndType index) noexcept
 {
-    const int        num_chunk = self.chunk_index_of(index);
-    auto&            chunk_t   = self.chunk_list_[num_chunk];
-    const int        num       = self.offset_in_chunk(index);
-    const ProxyType& val       = chunk_t[num];
+    const int num_chunk = self.chunk_index_of(index);
+    const int num       = self.offset_in_chunk(index);
+    // As operator[] const: 0 <= num_chunk, 0 <= num <= modulo by construction.
+    [[maybe_unused]] const int chunk_mod = static_cast<int>(self.size_policy_.modulo());
+    CHUNK_ASSUME(num_chunk >= 0);
+    CHUNK_ASSUME(num >= 0 && num <= chunk_mod);
+    auto&            chunk_t = self.chunk_list_[num_chunk];
+    const ProxyType& val     = chunk_t[num];
 
     // Arm ptr_on_array / num_chunk in ALL modes, not only under fast block
     // compression: in non-OpenMP builds too, set_num_tab() and

@@ -1369,6 +1369,7 @@ template <typename T, typename Derived>
 template <bool Relaxed>
 [[nodiscard]] T ChunkBase<T, Derived>::load_at(const T* vals, int offset) noexcept
 {
+    CHUNK_ASSUME(offset >= 0); // an offset in the chunk: the address needs no sign extension
     if constexpr (is_packed)
     {
         // raw-read: load_at, called by element_at_unguarded only

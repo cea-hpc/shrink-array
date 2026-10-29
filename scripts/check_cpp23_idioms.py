@@ -39,6 +39,9 @@ Rules, on chunk/, fast_allocators/ and examples/ (.h, .hpp, .cpp), comment and
 7. No std::ostringstream / std::stringstream to build text: std::format.
    Exceptions: the rule-1 files, and element_ref_validation.cpp, which checks
    that `os << a[i]` compiles.
+8. No find-then-compare to test membership, `std::ranges::find(r, x) != r.end()`
+   (or std::find): std::ranges::contains(r, x). A find whose iterator is used
+   stays.
 
 Usage: scripts/check_cpp23_idioms.py [repo root]   (exit 1 on a violation)
 """
@@ -75,6 +78,8 @@ C_PRINTF = re.compile(r"(?<![\w:])(std::)?v?printf\s*\(")
 C_SPRINTF = re.compile(r"(?<![\w:])(std::)?v?s(n)?printf\s*\(")
 SSTREAM = re.compile(r"\bstd::(ostringstream|stringstream)\b")
 SSTREAM_FILES = IOSTREAM_FILES | {"examples/validation/element_ref_validation.cpp"}
+# find(...) compared with an end(): a membership test (rule 8).
+FIND_NE_END = re.compile(r"\b(?:std::ranges::find|std::find)\s*\(.*\)\s*[!=]=\s*[\w.>-]*\bend\(\)")
 C_PRINTF_FILES = {"examples/validation/element_ref_validation.cpp"}
 
 LEFTOVER = re.compile(r"(\.sa|\.orig|\.rej|\.bak|~)$")
@@ -118,6 +123,8 @@ def check(root: pathlib.Path):
                 bad.append(f"{f}:{n}: snprintf / sprintf: use std::format (std::format_to_n for a fixed buffer)")
             if SSTREAM.search(code) and f not in SSTREAM_FILES:
                 bad.append(f"{f}:{n}: {SSTREAM.search(code).group(0)}: use std::format")
+            if FIND_NE_END.search(code):
+                bad.append(f"{f}:{n}: find(...) compared with end(): use std::ranges::contains")
             if DERIVED_CALL.search(code):
                 bad.append(f"{f}:{n}: derived(): take `this Derived& self` instead")
             if DOWNCAST.search(code) and f not in DOWNCAST_FILES:

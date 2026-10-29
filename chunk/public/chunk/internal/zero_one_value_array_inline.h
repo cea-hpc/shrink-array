@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include <algorithm>   // std::ranges::find (the healed-chunk report), std::min (the birth size of bits)
+#include <algorithm>   // std::ranges::contains (the healed-chunk report), std::min (the birth size of bits)
 #include <array>       // std::array (the residual's sample)
 #include <atomic>      // std::memory_order
 #include <cstddef>     // std::size_t
@@ -983,7 +983,7 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
     // skipped and a queued compression looks the same, so the report says which.
     {
         // Left to their pass: neither healed here nor a miss.
-        const auto to_pass = [&](int jj) { return std::ranges::find(left_to_pass, jj) != left_to_pass.end(); };
+        const auto to_pass = [&](int jj) { return std::ranges::contains(left_to_pass, jj); };
         std::erase_if(tab_nb1, to_pass);
         std::erase_if(tab_nb2, to_pass);
         const auto       scanned1      = tab_nb1.size();
@@ -1026,7 +1026,7 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
                 int         shown = 0;
                 for (const int num_chunk : scanned)
                 {
-                    if (std::ranges::find(kept, num_chunk) != kept.end())
+                    if (std::ranges::contains(kept, num_chunk))
                     {
                         continue;
                     }

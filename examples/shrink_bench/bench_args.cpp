@@ -17,7 +17,7 @@
 /// @file bench_args.cpp
 /// @brief Command-line parsing. See bench_args.h.
 
-#include <algorithm> // std::ranges::find
+#include <algorithm> // std::ranges::contains
 #include <cmath>     // std::isfinite
 #include <cstdlib>   // std::exit, std::strtod
 #include <exception> // std::exception (the stoi guard below)
@@ -135,7 +135,7 @@ BenchArgs parse_bench_args(int argc, char* argv[])
             return argv[++i];
         };
 
-        if (std::ranges::find(valid_args, arg) != valid_args.end())
+        if (std::ranges::contains(valid_args, arg))
         {
             if (arg == "--no_io")
             {

@@ -21,7 +21,7 @@
 // (ChunkT, T) the consumer uses auto-instantiates at its use site.
 
 #include <atomic>        // std::atomic, std::memory_order
-#include <algorithm>     // std::max, std::ranges::sort, std::ranges::push_heap, std::find
+#include <algorithm>     // std::max, std::ranges::sort, std::ranges::push_heap, std::ranges::contains
 #include <functional>    // std::less
 #include <tuple>         // std::tuple (the memory estimate)
 #include <type_traits>   // std::decay_t, std::conditional_t
@@ -1447,7 +1447,7 @@ std::size_t ManagerChunk<ChunkT, T>::sweep_empty_slabs([[maybe_unused]] std::siz
                 // The slabs still in use: fullest first, free pages given back
                 // (CHUNK_SLAB_FULLEST_FIRST, CHUNK_RECLAIM_PARTIAL). Once per
                 // instance: an unregistered (key, size) routes to key 0.
-                if (std::find(tidied.begin(), tidied.end(), &allocator) == tidied.end())
+                if (!std::ranges::contains(tidied, &allocator))
                 {
                     tidied.push_back(&allocator);
                     (void)allocator.tidy_slabs_in_use();
