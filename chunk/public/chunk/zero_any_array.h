@@ -224,11 +224,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
      *          arrays, e.g. rechunk_to()'s @c tmp) would inherit the stale num_tab
      *          (get_num_tab() returns the FIRST match) and corrupt another tab's metadata.
      */
-    void destroy_storage()
-    {
-        clear();
-        ProxyType::share_info_array->erase(this->registry_key());
-    }
+    void destroy_storage();
 
   public:
     /**

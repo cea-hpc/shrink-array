@@ -52,6 +52,10 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `CHUNK_LOG=rechunk=debug`: a `teardown split` line after each re-chunk's phases divides the
+  `tmp teardown` phase (the old storage's destruction) into its steps, for zero_any and pattern;
+  `scripts/rechunk_trace_summary.py` sums it. Measured on Milan, this phase was 56 % of the
+  re-chunk time of `shrink_bench_zero_any_dyn`.
 - `CHUNK_SLAB_MIN_PAGES` (developer setting): a floor in pages for the value slabs' size; `16`
   restores the former default, for an A/B (see Changed).
 - Fast allocator: a sweep (`trim_reuse_pools()`, `CHUNK_RECLAIM_PHASE_KEEP`) also gives back the

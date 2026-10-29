@@ -52,6 +52,7 @@
 #include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size / set_active_chunk_size
 #include "chunk/bit.h"                          // is_bool_like_v (refill bulk read gate)
 #include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED (refill bulk read check)
+#include "chunk/internal/teardown_probe.h"      // teardown_probe (rechunk=debug: the tmp teardown split)
 
 namespace shrink_array::internal
 {
@@ -353,9 +354,21 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         // census: tmp's death is not an exit (ArrayChunkBase::exit_census_).
         tmp.exit_census_ = false;
         // Its chunk_list_ (the OLD geometry's) is freed with it.
+        // rechunk=debug: split tmp's teardown into its steps (teardown_probe.h).
+        if (trace_phases)
+        {
+            internal::teardown_probe().start();
+        }
     }
     const auto t5 = t_now(); // tmp destroyed
-    r_teardown    = rss_now();
+    // The rest of tmp's destruction after the last mark: the remaining members
+    // and the bases (or all of it, for a variant that sets no mark).
+    double teardown_rest_ms = 0.0;
+    if (trace_phases)
+    {
+        teardown_rest_ms = t_ms(internal::teardown_probe().stop(), t5);
+    }
+    r_teardown = rss_now();
 
     // Free the OLD-geometry blocks tmp just parked into the old-size reuse
     // list. Nothing pops them again (the array has moved off old_size), so
@@ -458,6 +471,21 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
                   old_size, new_size, t_ms(t0, t1_out), t_ms(t1_out, t2_out), t_ms(t2_out, t3_out),
                   internal::g_slice_drain_ms, internal::g_slice_collect_ms, internal::g_slice_madvise_ms,
                   t_ms(t3_out, t4_out), t_ms(t4_out, t5), t_ms(t5, t5b), t_ms(t5b, t6), t_ms(t0, t6));
+        {
+            // The tmp teardown phase above, split (teardown_probe.h; the step
+            // names are internal::teardown_step_names, in this order).
+            using internal::TeardownStep;
+            const auto& td = internal::teardown_probe().ms;
+            const auto  at = [&](TeardownStep step) { return td[static_cast<std::size_t>(step)]; };
+            CHUNK_LOG(debug, rechunk,
+                      "{} -> {} teardown split (ms): entry {:.1f} | flush {:.1f} | candidates {:.1f} | terminal "
+                      "{:.1f} | park {:.1f} | registry {:.1f} | tables {:.1f} | key drain {:.1f} | erase {:.1f} | "
+                      "list unmap {:.1f} | rest {:.1f}",
+                      old_size, new_size, at(TeardownStep::entry), at(TeardownStep::flush),
+                      at(TeardownStep::candidates), at(TeardownStep::terminal), at(TeardownStep::park),
+                      at(TeardownStep::registry), at(TeardownStep::tables), at(TeardownStep::key_drain),
+                      at(TeardownStep::erase), at(TeardownStep::list_unmap), teardown_rest_ms);
+        }
         if (internal::g_slice_count > 0)
         {
             CHUNK_LOG(debug, rechunk,
