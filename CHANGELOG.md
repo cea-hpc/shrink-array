@@ -215,6 +215,11 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `python/ab_settings_campaign.py`: the A/B campaign of the developer settings still read from the
+  environment (`CHUNK_ALLOC_AFFINITY_EAGER`, `CHUNK_RECLAIM_*`, `CHUNK_SLAB_FULLEST_FIRST`,
+  `CHUNK_REUSE_*`): each value against the defaults, computation time and peak / end memory of
+  `shrink_bench` on the three variants at dyn, resumable, with a report of the deviations and
+  of the noise (`docs/developer_settings.md` §1).
 - `CHUNK_LOG=rechunk=debug`: a `teardown split` line after each re-chunk's phases divides the
   `tmp teardown` phase (the old storage's destruction) into its steps, for zero_any and pattern;
   `scripts/rechunk_trace_summary.py` sums it. Measured on Milan, this phase was 56 % of the
