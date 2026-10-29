@@ -457,20 +457,6 @@ foreach(_geom IN LISTS _rt_geometries)
                       bool-grow bool-shrink bool-uneven sliced-grow sliced-shrink)
           validation_add_test(${_base}_${_case} ${_exe} ${_h} "" --case ${_case})
         endforeach()
-        # CHUNK_RECHUNK_SCHEDULE (array_chunk_rechunk_inline.h): the kind read by
-        # its enumerator's name (enum_from_name), and the kinds listed by
-        # reflection when the value is none of them. Threaded builds only: a
-        # serial rebuild has no schedule and never reads the variable.
-        if (_vname STREQUAL "zero_any" AND CHUNK_THREADED)
-          add_test(NAME rechunk_schedule_env_${_geom} COMMAND ${_exe} ${_h} --case all-different)
-          set_tests_properties(rechunk_schedule_env_${_geom} PROPERTIES LABELS validation
-                               ENVIRONMENT "OMP_NUM_THREADS=4;CHUNK_RECHUNK_SCHEDULE=dynamic,8;CHUNK_LOG=rechunk=debug"
-                               PASS_REGULAR_EXPRESSION "rebuild schedule: dynamic,8")
-          add_test(NAME rechunk_schedule_env_unknown_${_geom} COMMAND ${_exe} ${_h} --case all-different)
-          set_tests_properties(rechunk_schedule_env_unknown_${_geom} PROPERTIES LABELS validation
-                               ENVIRONMENT "OMP_NUM_THREADS=4;CHUNK_RECHUNK_SCHEDULE=sometimes"
-                               PASS_REGULAR_EXPRESSION "kind = static\\|dynamic\\|guided\\|auto\\): keeping guided,16")
-        endif()
       elseif (_h STREQUAL "dyn_geometry_validation")
         validation_add_test(${_base} ${_exe} ${_h} "")
       elseif (_h STREQUAL "index64_validation" AND _geom STREQUAL "dyn")

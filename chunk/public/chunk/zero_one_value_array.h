@@ -16,10 +16,7 @@
 
 #pragma once
 
-#include <iostream>    // for cout, ostream
-#include <type_traits> // for is_same_v
-#include <vector>      // for vector
-
+#include <iostream>         // for cout, ostream
 #include <initializer_list> // the {a, b, c} constructor
 #include <iterator>         // std::forward_iterator, std::distance -- the (first, last) constructor
 

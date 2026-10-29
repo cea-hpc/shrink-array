@@ -46,10 +46,7 @@
 #include "chunk/internal/pattern_proxy.h" // pattern::Proxy (the only include of it: Array's ProxyType must be complete)
 #include "chunk/zero_any_array.h"         // zero_any::ArrayImpl
 
-namespace shrink_array
-{
-
-namespace pattern
+namespace shrink_array::pattern
 {
 
 /**
@@ -168,8 +165,6 @@ class Array : public zero_any::ArrayImpl<Array<T, IntType>>
     static std::size_t reclaim_motifs();
 };
 
-} // namespace pattern
-
-} // namespace shrink_array
+} // namespace shrink_array::pattern
 
 #include "chunk/internal/pattern_array_inline.h" // the template bodies

@@ -33,10 +33,7 @@
 #include "chunk/config.h"                               // build_config::threaded
 #include "chunk/internal/array_chunk_parallel_common.h" // ParallelSupportCommon, ParallelSupportCommonSerial
 
-namespace shrink_array
-{
-
-namespace zero_any
+namespace shrink_array::zero_any
 {
 
 /**
@@ -69,6 +66,4 @@ struct ParallelSupport<Derived, false> : public ParallelSupportCommonSerial<Deri
 {
 };
 
-} // namespace zero_any
-
-} // namespace shrink_array
+} // namespace shrink_array::zero_any

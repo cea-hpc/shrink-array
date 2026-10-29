@@ -32,9 +32,7 @@
  *          Integers only.
  */
 
-#include <atomic>      // std::atomic_ref (the offset's release store)
 #include <cstddef>     // std::size_t
-#include <cstdint>     // std::uint64_t (the motif hash)
 #include <tuple>       // std::tuple (the motif candidates)
 #include <type_traits> // std::is_integral_v, std::is_same_v, std::make_unsigned_t
 #include <vector>      // std::vector (the motif candidates, the scan buffer)
@@ -50,10 +48,7 @@
 #include "chunk/config.h"                       // build_config::threaded, chunk_dynamic
 #include "chunk/zero_any_chunk.h"               // zero_any::ChunkImpl
 
-namespace shrink_array
-{
-
-namespace pattern
+namespace shrink_array::pattern
 {
 
 /**
@@ -186,8 +181,6 @@ class Chunk : public zero_any::ChunkImpl<T, Chunk<T>>
     static inline thread_local std::vector<T>              motif_scratch_;    ///< The scan's normalised motif.
 };
 
-} // namespace pattern
-
-} // namespace shrink_array
+} // namespace shrink_array::pattern
 
 #include "chunk/internal/pattern_chunk_inline.h" // the template bodies

@@ -32,7 +32,6 @@
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 #include "chunk/config.h"                               // build_config::threaded
 #include "chunk/internal/write_compress_sync_policy.h"  // WriteCompressSyncPolicy
-#include "chunk/internal/in_t.h"                        // InT<T>: resize's fill value
 #include "chunk/internal/zero_proxy.h"                  // Proxy<T>: the element proxy and its registry
 
 namespace shrink_array
@@ -53,8 +52,8 @@ namespace zero
  */
 template <ArrayChunkElement T, typename IntType>
 class Array : public ArrayChunkBase<Array<T, IntType>>,
-              public zero::ParallelSupport<Array<T, IntType>>,
-              public zero::FastBlockSupport<Array<T, IntType>>,
+              public ParallelSupport<Array<T, IntType>>,
+              public FastBlockSupport<Array<T, IntType>>,
               public RechunkHooks<Array<T, IntType>>
 {
   private:

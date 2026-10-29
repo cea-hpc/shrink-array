@@ -127,7 +127,7 @@ struct RebuildSchedule
 /// @brief The rebuild loop's schedule (see RebuildSchedule).
 inline const RebuildSchedule& rebuild_schedule() noexcept
 {
-    static const RebuildSchedule schedule{};
+    static constexpr RebuildSchedule schedule{};
     return schedule;
 }
 } // namespace shrink_array::internal

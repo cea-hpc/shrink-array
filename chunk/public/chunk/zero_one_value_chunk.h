@@ -19,7 +19,6 @@
 #include <algorithm>   // std::fill_n
 #include <array>       // std::array
 #include <deque>       // tab_m_ptr_cst_val2: grows without moving its arrays
-#include <atomic>      // std::memory_order_acquire, std::memory_order_release
 #include <cstddef>     // std::size_t
 #include <tuple>       // the candidate-list entries
 #include <type_traits> // std::is_same_v, std::conditional_t
@@ -234,7 +233,7 @@ class ChunkCounterPolicy
     /// @return true if nb_val_eq_second_value_ == size.
     [[nodiscard]] bool is_full_second_value(unsigned int size = static_chunk_size) const noexcept
     {
-        return nb_val_eq_second_value_ == size;
+        return static_cast<CounterValueT>(nb_val_eq_second_value_) == size;
     }
 
     /// @brief Increment the second-value counter (one more element now
@@ -284,21 +283,21 @@ class ChunkCounterPolicy
     /// @return true if nb_val_eq_first_value_ == size.
     [[nodiscard]] bool is_full_first_value(unsigned int size = static_chunk_size) const noexcept
     {
-        return nb_val_eq_first_value_ == size;
+        return static_cast<CounterValueT>(nb_val_eq_first_value_) == size;
     }
 
     /// @brief Current first-value counter.
     /// @return Number of elements currently equal to the first constant.
     [[nodiscard]] CounterValueT get_nb_first_value() const noexcept
     {
-        return nb_val_eq_first_value_;
+        return static_cast<CounterValueT>(nb_val_eq_first_value_);
     }
 
     /// @brief Current second-value counter.
     /// @return Number of elements currently equal to the second constant.
     [[nodiscard]] CounterValueT get_nb_second_value() const noexcept
     {
-        return nb_val_eq_second_value_;
+        return static_cast<CounterValueT>(nb_val_eq_second_value_);
     }
 
   private:

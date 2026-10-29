@@ -292,7 +292,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     static void init_indexes(bool big_chunk_block)
     {
         init_indexes(big_chunk_block); // the process-wide setup first: the managers need its block size
-        SingletonChk<AllTypeChunk>::get_ref().template initialize<Types>();
+        SingletonChk<AllTypeChunk>::get_ref().initialize<Types>();
     }
 
     /**
