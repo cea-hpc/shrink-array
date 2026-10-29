@@ -83,6 +83,11 @@ ALLOWED = {
     "SHRINK_BENCH_ADVISE_ALL", "CHUNK_RECHUNK_TRACE", "CHUNK_RECHUNK_TRACE_SLICES", "CHUNK_RECHUNK_MEMTRACE",
     "CHUNK_RECHUNK_TRACE_MEM", "CHUNK_AFFINITY_TRACE", "ArrayChunkCore::spare_chunk_list_",
     "CHUNK_RECHUNK_CHURN", "CHUNK_ADVISOR_TABLE",
+    # the allocator settings fixed by the first ab_settings_campaign.py campaign, and their code
+    "CHUNK_ALLOC_AFFINITY_EAGER", "CHUNK_RECLAIM_PARTIAL", "CHUNK_SLAB_FULLEST_FIRST", "CHUNK_RECLAIM_PHASE_KEEP",
+    "CHUNK_REUSE_SHARE_DIV", "CHUNK_REUSE_FLOOR_KB", "CHUNK_RECLAIM_MIN_SLABS",
+    "TCTypeCAllocator::order_fullest_first", "ManagerChunk::sweep_empty_slabs_int",
+    "ManagerChunk::reuse_floor_buffers",
     # renamed to PascalCase (ChunkTemplateOf, ForEachTypeImpl, ...), which CHANGELOG.md records
     "index_type", "cst_val1_type", "chunk_template_of", "for_each_type_impl",
     # former class names the CHANGELOG cites (now SecondValue*Base, zero_any::ChunkThreadPolicy, ...)

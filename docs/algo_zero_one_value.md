@@ -427,8 +427,7 @@ For `zero_one_value`, this set is only created at the array's **first rechunk** 
 each set costs one started slab per rank and per size, i.e. ~780 MiB over the 16 arrays of
 `shrink_bench` at 64 threads, and an array that is never rebuilt gets no benefit from it. A
 dynamic run thus consumes, at the start, exactly like the static one at the same size
-(`zero_one_value`: 19,999 vs 20,009 MB after initialisation). `CHUNK_ALLOC_AFFINITY_EAGER=1`
-creates the set at creation. Details and measurements: [adaptive_rechunk.md](adaptive_rechunk.md) §5.
+(`zero_one_value`: 19,999 vs 20,009 MB after initialisation). Details and measurements: [adaptive_rechunk.md](adaptive_rechunk.md) §5.
 
 ### 9.2 Rechunk (dynamic geometry)
 
@@ -560,7 +559,6 @@ The full list, with the macros and the CMake options, is in
 | `CHUNK_OMPT_STATS=1` | statistics of synchronisation regions (OMPT build) |
 | `shrink_bench --rechunk_dry_run` | the decider analyses and logs, but applies no rechunk (to measure the cost of the analyses; `RechunkPolicy::dry_run`) |
 | `shrink_bench --rechunk_max_coarsen <n>` | maximum coarsening factor (4 by default; `RechunkPolicy::max_coarsen_factor`) |
-| `CHUNK_ALLOC_AFFINITY_EAGER=1` | per-array allocator set from its creation (lazy by default for `zero_one_value`) |
 
 For validation, the "forced deferred writes" test hook
 (`chunk/internal/test_hooks.h`, compiled with the harnesses) sends one write in N

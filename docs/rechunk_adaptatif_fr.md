@@ -156,14 +156,17 @@ Le prix : un slab entamé par couple (rang, tableau, taille). Avec les slabs de 
 plancher de seize pages (pages de 64 Kio), c'était ~780 Mio sur les 16 tableaux du banc à 64 threads ;
 les slabs y font maintenant 256 Kio, le quart.
 
-D'où deux modes, dont le choix par défaut dépend de la variante :
+D'où deux modes, fixés par variante :
 
 | mode | quand un tableau reçoit sa clé | défaut pour | pourquoi |
 |---|---|---|---|
 | **paresseux** | à son premier rechunk | `zero_one_value`, `zero_any` | ils sont surtout faits de métadonnées : un départ sans jeux par tableau consomme exactement comme le statique (`zero_any` : 11 590 Mo après l'initialisation, contre 12 435 Mo en mode immédiat) |
 | **immédiat** | à sa création | `zero` | `zero` est surtout fait de données, et sa reconstruction par tranches ne rend la mémoire au fil de l'eau que si l'ancien stockage a ses propres slabs. En mode paresseux, le premier rechunk part de slabs partagés, qui mêlent les blocs de plusieurs tableaux et ne se vident pas : +6,0 Go sur 39,3 Go. Pic de `zero` : 41,2 Go en immédiat, 45,6 Go en paresseux, pour la même mémoire de fin |
 
-`CHUNK_ALLOC_AFFINITY_EAGER=0` ou `=1` impose l'un des modes.
+Ce choix a été mesuré contre l'autre mode (Milan, `shrink_bench` int64 dyn, 64 threads, trois
+runs chacun, octobre 2026) : `zero` en mode paresseux prend +9,8 % de temps, +14,6 % au pic et
++11,8 % en fin ; `zero_any` en mode immédiat +7,4 % au pic ; `zero_one_value` est identique dans
+les deux. Le mode n'est plus une variable d'environnement (`CHUNK_ALLOC_AFFINITY_EAGER` a disparu).
 
 ## 6. Ce qui doit disparaître avec l'ancien stockage
 

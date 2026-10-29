@@ -94,7 +94,6 @@ in fresh directories with the same configuration, alternate, and be wary.
 | compare… | switch |
 |---|---|
 | without advisor / analyses only / with rechunks | `--advisor_period 0` / `--rechunk_dry_run` / nothing |
-| lazy / eager affinity | `CHUNK_ALLOC_AFFINITY_EAGER=0` / `=1` |
 | maximum size of a coarsening step | `--rechunk_max_coarsen <n>` |
 
 The full list is in [developer_settings.md](developer_settings.md).
@@ -161,7 +160,7 @@ runs the same binary N times and records, for each run, the pages per NUMA node,
 the free memory and free top-order blocks of each node before the run, and the perf counters
 per thousand instructions (TLB walks, L1D / L2 refills, remote accesses). It splits the runs at
 the largest time gap and says which quantities separate the two groups. `--mode` alternates
-environments (`--mode "" --mode "CHUNK_ALLOC_AFFINITY_EAGER=0"`, `--mode "numactl --membind=0"`).
+environments (`--mode "" --mode "CHUNK_RECLAIM_THREADS=0"`, `--mode "numactl --membind=0"`).
 
 ```
 python3 python/bimodal_probe.py --runs 12 -- $BIN --mode perf --no_io

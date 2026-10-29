@@ -30,21 +30,16 @@ programme renseigne les champs, et `shrink_bench` les expose en options (§4). V
 
 | variable | défaut | effet |
 |---|---|---|
-| `CHUNK_ALLOC_AFFINITY_EAGER` | selon la variante | `1` : chaque gros tableau a son jeu d'allocateurs dès sa création (défaut de `zero`) ; `0` : seulement au premier rechunk (défaut de `zero_one_value` et `zero_any`). Voir [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) §5 |
-| `CHUNK_RECLAIM_MIN_SLABS` | 0 | un balayage ne rend les slabs vides au système que s'il y en a au moins autant |
-| `CHUNK_RECLAIM_THREADS` | 1 | threads qui émettent les `madvise` d'un balayage ; `0` : `omp_get_max_threads()` |
-| `CHUNK_RECLAIM_PARTIAL` | 1 | un balayage (`trim_reuse_pools`, `CHUNK_RECLAIM_PHASE_KEEP`) rend aussi les pages libres des slabs de valeurs encore utilisés, comme `malloc_trim` dans les tas de glibc (la dernière page de chaque slab, son pointeur arrière, est gardée) ; `0` : seulement les slabs vides, comme avant. `CHUNK_ARENA_REPORT` les compte sur sa ligne `partial` |
-| `CHUNK_SLAB_FULLEST_FIRST` | 1 | un balayage rechaîne les slabs de valeurs qui ont de la place du plus plein au moins plein : les allocations suivantes remplissent les slabs denses et les clairsemés se vident ; `0` : l'ordre est laissé tel quel |
-| `CHUNK_REUSE_SHARE_DIV` | 50 | allocateur rapide : un rang garde de côté jusqu'à chunks / (ce nombre × threads) tampons libérés par type d'élément (par tableau pour un tableau qui a ses propres allocateurs) ; les chunks comptés incluent les compressés |
-| `CHUNK_REUSE_FLOOR_KB` | non défini | plancher de ce budget en Kio par rang, converti en tampons selon la taille de chunk ; non défini : 500 tampons (100 pour un tableau qui a ses propres allocateurs), quelle que soit leur taille ; `0` : pas de plancher |
-| `CHUNK_RECLAIM_PHASE_KEEP` | non défini | `K` : après chaque passe de compression, rendre au système (`madvise`) les slabs vides, en gardant `K` par instance d'allocateur ; non défini : seulement au rechunk, à la destruction, à `shrink_to_fit()` |
+| `CHUNK_RECLAIM_THREADS` | 1 | threads qui émettent les `madvise` d'un balayage ; `0` : `omp_get_max_threads()`. Sur Milan (64 threads), `0` est 3,5 % plus rapide pour `zero_one_value` et identique pour les autres variantes ; il reste à 1 tant qu'il n'est pas mesuré sur Grace, où 288 threads les émettraient |
 | `CHUNK_DEFERRED_POOL_KB` | 64 | taille des slabs des pools d'écritures différées, en Kio (les slabs d'opérations ne sont jamais rendus : plus gros, moins d'appels à l'allocateur mais plus de mémoire résidente) |
 
-Ces réglages sont à figer par la mesure, puis à retirer : `python/ab_settings_campaign.py`
-compare chacun d'eux aux défauts (temps de calcul, mémoire au pic et en fin de run) sur `zero`,
-`zero_any` et `zero_one_value` en dyn, un point par valeur essayée, trois runs chacun par défaut,
-entrelacés ; à lancer dans une allocation de job (`--help` liste les points), et à relancer avec
-le même `--out` pour reprendre une campagne interrompue.
+`python/ab_settings_campaign.py` mesure un tel réglage contre les défauts (temps de calcul,
+mémoire au pic et en fin de run) sur `zero`, `zero_any` et `zero_one_value` en dyn, trois runs
+par point, entrelacés ; à lancer dans une allocation de job (`--help` liste les points), et à
+relancer avec le même `--out` pour reprendre une campagne interrompue. Sa première campagne
+(Milan, octobre 2026) a figé les réglages de l'allocateur qui se lisaient ici auparavant : le mode
+d'affinité par variante, la restitution partielle des slabs en service, le budget de réemploi, et
+pas de balayage après les passes de compression (CHANGELOG.md, Removed).
 
 ## 2. Traces et diagnostics
 
@@ -66,7 +61,7 @@ dépréciation.
 | `CHUNK_LOG=advisor=debug` (autrefois `CHUNK_ADVISOR_TABLE`) | en plus, la table complète de l'advisor de chaque tableau analysé, à chaque passage |
 | `CHUNK_LOG=affinity=debug` (autrefois `CHUNK_AFFINITY_TRACE`) | chaque jeu d'allocateurs par tableau créé (clé, taille, budget) |
 | `CHUNK_LOG=compress=info` | builds de vérification : les blocs restant à compresser après le dernier vidage, et les blocs constants de `zero_any` jamais mis en file ; le résidu de compression d'un audit (`compress()` sur zero_one_value::Array / zero_any::Array) ; `compress=debug` ajoute le détail par chunk de zero_one_value::Array |
-| `CHUNK_ARENA_REPORT` | le bilan de l'arène des tampons (slabs distribués, rendus au système) ; un rapport : écrit quel que soit `CHUNK_LOG` (canal `arena`) |
+| `CHUNK_ARENA_REPORT` | le bilan de l'arène des tampons (slabs distribués, rendus au système ; sa ligne `partial`, les pages libres rendues des slabs encore utilisés) ; un rapport : écrit quel que soit `CHUNK_LOG` (canal `arena`) |
 | `CHUNK_LOG=recycle=debug` / `recycle=trace` (autrefois `CHUNK_RECYCLE_TRACE`) | builds de vérification : les blocs étrangers que le pool des écritures différées abandonne, à intervalles doublants / une ligne par bloc |
 | `CHUNK_LEDGER_REPORT` (*définie*) | le rapport du registre des blocs (builds avec registre), à la sortie ; un rapport : écrit quel que soit `CHUNK_LOG` (canal `ledger`) |
 | `CHUNK_OMPT_STATS` | statistiques des régions de synchronisation (builds OMPT), à la sortie ; un rapport : écrit quel que soit `CHUNK_LOG` (canal `ompt`) |

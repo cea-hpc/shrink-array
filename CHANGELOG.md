@@ -53,26 +53,24 @@ the tag's checksum to the recipe.
 ### Added
 
 - `python/ab_settings_campaign.py`: the A/B campaign of the developer settings still read from the
-  environment (`CHUNK_ALLOC_AFFINITY_EAGER`, `CHUNK_RECLAIM_*`, `CHUNK_SLAB_FULLEST_FIRST`,
-  `CHUNK_REUSE_*`): each value against the defaults, computation time and peak / end memory of
+  environment: each value against the defaults, computation time and peak / end memory of
   `shrink_bench` on the three variants at dyn, resumable, with a report of the deviations and
-  of the noise (`docs/developer_settings.md` §1).
+  of the noise (`docs/developer_settings.md` §1). Its first campaign fixed seven settings (see
+  Removed); `CHUNK_RECLAIM_THREADS` is its only point left, for Grace.
 - `CHUNK_LOG=rechunk=debug`: a `teardown split` line after each re-chunk's phases divides the
   `tmp teardown` phase (the old storage's destruction) into its steps, for zero_any and pattern;
   `scripts/rechunk_trace_summary.py` sums it. Measured on Milan, this phase was 56 % of the
   re-chunk time of `shrink_bench_zero_any_dyn`.
 - `CHUNK_SLAB_MIN_PAGES` (developer setting): a floor in pages for the value slabs' size; `16`
   restores the former default, for an A/B (see Changed).
-- Fast allocator: a sweep (`trim_reuse_pools()`, `CHUNK_RECLAIM_PHASE_KEEP`) also gives back the
+- Fast allocator: a sweep (`trim_reuse_pools()`, a re-chunk, a destruction) also gives back the
   free pages of the value slabs still in use (`TCSlab::advise_free_pages`), as `malloc_trim`
   does inside glibc's heaps: a slab no longer stays resident whole for its last few live buffers.
   The value slabs keep their free-list links aside, so a free element is never written to; the
-  last page, the back-pointer's, is kept. `CHUNK_RECLAIM_PARTIAL=0` turns it off; the
-  `CHUNK_ARENA_REPORT` `partial` line counts it.
-- Fast allocator: the same sweep re-chains the value slabs with room fullest first
-  (`TCTypeCAllocator::order_fullest_first`), so the next allocations fill the dense slabs and
-  the sparse ones drain, to be given back whole. `CHUNK_SLAB_FULLEST_FIRST=0` turns it off.
-- fast_allocators 2.3.0 (the two above); `CHUNK_FAST_ALLOCATORS_VERSION` follows.
+  last page, the back-pointer's, is kept. The `CHUNK_ARENA_REPORT` `partial` line counts it.
+  Measured on Milan (64 threads, three runs each): without it, the end memory is 7.5% higher for
+  `zero_any` and 1% for `zero_one_value`, at the same time.
+- fast_allocators 2.3.0 (the one above); `CHUNK_FAST_ALLOCATORS_VERSION` follows.
 - shrink_gui runs on PySide6 6.2 and 6.3: QFormLayout's setRowVisible() / isRowVisible() came
   with Qt 6.4, and the window stopped at start-up without them (AttributeError in
   machine_panel). `widgets.RowVisibleFormLayout` provides them on every 6.x -- Qt's own from
@@ -262,6 +260,27 @@ the tag's checksum to the recipe.
 
 ### Removed
 
+- The developer settings fixed by the first `ab_settings_campaign.py` campaign (Milan,
+  `shrink_bench` int64 dyn, `zero`, `zero_any` and `zero_one_value`, 64 threads, three
+  interleaved runs per point; noise 0.3%, 1.1% and 2.5% of the time):
+  - `CHUNK_ALLOC_AFFINITY_EAGER`: the mode is fixed per variant, as its default was -- eager for
+    `zero` (lazy: +9.8% of time, +14.6% at the peak, +11.8% at the end), lazy for `zero_any`
+    (eager: +7.4% at the peak) and `zero_one_value` (the same either way).
+  - `CHUNK_RECLAIM_PARTIAL`: the free pages of the slabs in use are always given back (without
+    it, +7.5% of end memory for `zero_any`, +1% for `zero_one_value`, no time saved).
+  - `CHUNK_SLAB_FULLEST_FIRST`, with the re-chaining of the slabs by occupancy
+    (`TCTypeCAllocator::order_fullest_first`): no effect on time or memory, on any variant.
+  - `CHUNK_RECLAIM_PHASE_KEEP`, with the sweep after every compression pass it switched on
+    (`ManagerChunk::sweep_empty_slabs_int`): +74% to +251% of time for no memory saved, whatever
+    the number of slabs kept.
+  - `CHUNK_REUSE_SHARE_DIV` (50), `CHUNK_REUSE_FLOOR_KB` (500 buffers, 100 for an array with
+    its own allocators) and `CHUNK_RECLAIM_MIN_SLABS` (0): within the noise at 25 and 100, at no
+    floor and 4 MiB per rank, at 16 slabs.
+
+  `ManagerChunk::reuse_floor_buffers()` goes with `CHUNK_REUSE_FLOOR_KB`, and the `keep_empty`
+  argument of `ManagerChunk::sweep_empty_slabs()` with the per-pass sweep.
+  `diag_zero_rechunk_slowdown.py` loses its `dyn_lazy` run. `CHUNK_RECLAIM_THREADS` stays
+  (1) until it is measured on Grace: `0` was 3.5% faster for `zero_one_value` on Milan.
 - Developer settings measured on Milan (64 threads, `zero`, `zero_any` and `zero_one_value`
   dyn, three runs each) and fixed at the value that won or that changed nothing:
   `CHUNK_RECHUNK_RECYCLE` (recycling is always on: 29% slower without),

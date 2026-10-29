@@ -28,21 +28,16 @@ fields, and `shrink_bench` exposes them as options (§4). See
 
 | variable | default | effect |
 |---|---|---|
-| `CHUNK_ALLOC_AFFINITY_EAGER` | depends on the variant | `1`: each large array has its own set of allocators from its creation (default for `zero`); `0`: only from its first rechunk (default for `zero_one_value` and `zero_any`). See [adaptive_rechunk.md](adaptive_rechunk.md) §5 |
-| `CHUNK_RECLAIM_MIN_SLABS` | 0 | a sweep gives empty slabs back to the system only if there are at least this many |
-| `CHUNK_RECLAIM_THREADS` | 1 | threads issuing a sweep's `madvise` calls; `0`: `omp_get_max_threads()` |
-| `CHUNK_RECLAIM_PARTIAL` | 1 | a sweep (`trim_reuse_pools`, `CHUNK_RECLAIM_PHASE_KEEP`) also gives back the free pages of the value slabs still in use, as `malloc_trim` does in glibc's heaps (the last page of each slab, its back-pointer, is kept); `0`: only the empty slabs, as before. `CHUNK_ARENA_REPORT` prints them on its `partial` line |
-| `CHUNK_SLAB_FULLEST_FIRST` | 1 | a sweep re-chains the value slabs with room fullest first, so the next allocations fill the dense slabs and the sparse ones drain; `0`: the order is left as it is |
-| `CHUNK_REUSE_SHARE_DIV` | 50 | fast allocator: a rank keeps parked for reuse up to chunks / (this × threads) freed buffers per element type (per array for an array with its own allocators); the chunks counted include the compressed ones |
-| `CHUNK_REUSE_FLOOR_KB` | unset | floor of that budget in KiB per rank, converted to buffers at the chunk size; unset: 500 buffers (100 for an array with its own allocators), whatever their size; `0`: no floor |
-| `CHUNK_RECLAIM_PHASE_KEEP` | unset | `K`: after every compression pass, give the empty slabs back to the system (`madvise`), keeping `K` per allocator instance; unset: only at a re-chunk, a destruction, `shrink_to_fit()` |
+| `CHUNK_RECLAIM_THREADS` | 1 | threads issuing a sweep's `madvise` calls; `0`: `omp_get_max_threads()`. On Milan (64 threads), `0` is 3.5% faster for `zero_one_value` and the same for the other variants; it stays at 1 until it is measured on Grace, where 288 threads would issue them |
 | `CHUNK_DEFERRED_POOL_KB` | 64 | slab size of the deferred-write pools, in KiB (the operation slabs are never given back: larger means fewer allocator calls but more resident memory) |
 
-These settings are to be fixed by measurement, then removed: `python/ab_settings_campaign.py`
-compares each of them with the defaults (computation time, peak and end memory) on
-`zero`, `zero_any` and `zero_one_value` at dyn, one point per value tried, three runs each by
-default, interleaved; run it inside a job allocation (`--help` lists the points), and again with
-the same `--out` to resume an interrupted campaign.
+`python/ab_settings_campaign.py` measures such a setting against the defaults (computation
+time, peak and end memory) on `zero`, `zero_any` and `zero_one_value` at dyn, three runs per
+point, interleaved; run it inside a job allocation (`--help` lists the points), and again with
+the same `--out` to resume an interrupted campaign. Its first campaign (Milan, October 2026)
+fixed the allocator settings that were read here before: the affinity mode per variant, the
+partial reclaim of the slabs in use, the reuse budget, and no sweep after the compression
+passes (CHANGELOG.md, Removed).
 
 ## 2. Traces and diagnostics
 
@@ -63,7 +58,7 @@ The traces are messages of the library's log, chosen by `CHUNK_LOG` (see
 | `CHUNK_LOG=advisor=debug` (formerly `CHUNK_ADVISOR_TABLE`) | in addition, the full advisor table of each array analysed, at each pass |
 | `CHUNK_LOG=affinity=debug` (formerly `CHUNK_AFFINITY_TRACE`) | each per-array set of allocators created (key, size, budget) |
 | `CHUNK_LOG=compress=info` | check builds: the blocks left to compress after the final flush, and `zero_any`'s constant blocks never queued; the compression residual of an audit (`compress()` on zero_one_value::Array / zero_any::Array); `compress=debug` adds zero_one_value::Array's per-chunk detail |
-| `CHUNK_ARENA_REPORT` | the summary of the buffer arena (slabs handed out, given back to the system); a report: written whatever `CHUNK_LOG` says (channel `arena`) |
+| `CHUNK_ARENA_REPORT` | the summary of the buffer arena (slabs handed out, given back to the system; its `partial` line, the free pages given back from the slabs still in use); a report: written whatever `CHUNK_LOG` says (channel `arena`) |
 | `CHUNK_LOG=recycle=debug` / `recycle=trace` (formerly `CHUNK_RECYCLE_TRACE`) | check builds: the foreign blocks the deferred-write pool drops, on a doubling schedule / one line per block |
 | `CHUNK_LEDGER_REPORT` (*set*) | the report of the block registry (builds with the registry), at exit; a report: written whatever `CHUNK_LOG` says (channel `ledger`) |
 | `CHUNK_OMPT_STATS` | statistics of the synchronisation regions (OMPT builds), at exit; a report: written whatever `CHUNK_LOG` says (channel `ompt`) |

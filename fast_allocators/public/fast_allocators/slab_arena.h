@@ -137,7 +137,7 @@ inline std::atomic<std::size_t>& reclaim_entered() noexcept
 ///@}
 
 /// @brief Free pages given back from slabs still in use
-///        (TCSlab::advise_free_pages, CHUNK_RECLAIM_PARTIAL): bytes, madvise()
+///        (TCSlab::advise_free_pages): bytes, madvise()
 ///        calls, and slabs in use scanned.
 ///@{
 inline std::atomic<std::size_t>& reclaim_partial_bytes() noexcept
@@ -377,8 +377,7 @@ bool advise_one_slab(Slab* slab) noexcept
  *
  *          add() only records the slab. flush() drops duplicates (the same slab
  *          reached through two routes, e.g. an unregistered key falling back to
- *          key 0), applies the CHUNK_RECLAIM_MIN_SLABS floor to the WHOLE
- *          sweep, runs detail::reclaimable_bytes() on each slab
+ *          key 0), runs detail::reclaimable_bytes() on each slab
  *          (bumping the same counters), sorts by address, merges runs whose
  *          bytes touch exactly, sets backptr_dropped on every slab of a run,
  *          then advises the run. A slab whose advisable length is shorter than
@@ -417,10 +416,8 @@ class EmptySlabSweep
     ///        detail::reclaimable_bytes() for the checks).
     void add(Slab* slab) noexcept;
 
-    /// @brief Advise every collected slab away, one madvise() per run -- or
-    ///        none of them if the sweep holds fewer distinct slabs than
-    ///        CHUNK_RECLAIM_MIN_SLABS.
-    /// @details Serial part: sort, drop duplicates, floor, checks, runs
+    /// @brief Advise every collected slab away, one madvise() per run.
+    /// @details Serial part: sort, drop duplicates, checks, runs
     ///          (merging adjacent slabs), every backptr_dropped flag and the
     ///          counters. Then the madvise calls, from CHUNK_RECLAIM_THREADS
     ///          threads (serial by default): every flag is set before the first

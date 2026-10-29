@@ -20,7 +20,7 @@
 // file at its end.
 
 #include <sys/mman.h> // madvise, MADV_DONTNEED (advise_free_pages)
-#include <algorithm>  // std::min, std::stable_sort (order_fullest_first)
+#include <algorithm>  // std::min
 #include <bit>        // std::bit_width, the element-size shift
 #include <cstddef>    // std::ptrdiff_t, the element offsets; std::byte (the blocks)
 #include <cstdint>    // std::uintptr_t
@@ -649,8 +649,6 @@ std::size_t TCTypeCAllocator<ElemT>::collect_empty_slabs([[maybe_unused]] SlabSw
     }
     else
     {
-        // No CHUNK_RECLAIM_MIN_SLABS test here: the floor is the sweep's
-        // (EmptySlabSweep::flush).
         std::size_t collected = 0;
         for (auto* node : {this->block, this->block_full})
         {
@@ -682,20 +680,12 @@ std::size_t TCTypeCAllocator<ElemT>::tidy_slabs_in_use() noexcept
     }
     else
     {
-        if (alloc_config::slab_fullest_first())
-        {
-            order_fullest_first();
-        }
         if constexpr (!alloc_config::reclaim_empty_slabs)
         {
             return 0; // CHUNK_RECLAIM_EMPTY_SLABS=OFF: nothing is given back
         }
         else
         {
-            if (!alloc_config::reclaim_partial_slabs())
-            {
-                return 0;
-            }
             const std::size_t          page = detail::reclaim_page_size();
             std::vector<unsigned char> scratch;
             std::size_t                advised = 0;
@@ -708,36 +698,6 @@ std::size_t TCTypeCAllocator<ElemT>::tidy_slabs_in_use() noexcept
             return advised;
         }
     }
-}
-
-template <typename ElemT>
-void TCTypeCAllocator<ElemT>::order_fullest_first() noexcept
-{
-    std::vector<TCCAllocator*> slabs;
-    try
-    {
-        for (auto* p = this->block; p != nullptr; p = p->next)
-        {
-            slabs.push_back(p);
-        }
-    }
-    catch (...)
-    {
-        return; // the order stays as it was
-    }
-    if (slabs.size() < 2)
-    {
-        return;
-    }
-    std::stable_sort(slabs.begin(), slabs.end(),
-                     [](const TCCAllocator* a, const TCCAllocator* b) noexcept { return a->nn_ref > b->nn_ref; });
-    for (std::size_t i = 0; i < slabs.size(); ++i)
-    {
-        slabs[i]->prev = i > 0 ? slabs[i - 1] : nullptr;
-        slabs[i]->next = i + 1 < slabs.size() ? slabs[i + 1] : nullptr;
-    }
-    this->block = slabs.front();
-    FAST_ALLOC_SL_LIST_CHECK(sl_check(this->block));
 }
 
 #endif // FAST_ALLOC_PMP_THREADED

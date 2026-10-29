@@ -94,7 +94,6 @@ dans des répertoires neufs avec la même configuration, alterner, et se méfier
 | comparer… | interrupteur |
 |---|---|
 | sans advisor / analyses seules / avec rechunks | `--advisor_period 0` / `--rechunk_dry_run` / rien |
-| affinité paresseuse / immédiate | `CHUNK_ALLOC_AFFINITY_EAGER=0` / `=1` |
 | taille maximale d'un pas de grossissement | `--rechunk_max_coarsen <n>` |
 
 La liste complète est dans [reglages_developpeur_fr.md](reglages_developpeur_fr.md).
@@ -161,7 +160,7 @@ que `zero`, après son rechunk, n'occupait plus que ~40 cœurs au lieu de ~52.
 nœud NUMA, AnonHugePages, la mémoire libre et les blocs libres d'ordre maximal de chaque nœud
 avant le run, et les compteurs perf pour mille instructions (parcours de TLB, recharges L1D / L2,
 accès distants). Il coupe les runs au plus grand écart de temps et dit quelles grandeurs séparent
-les deux groupes. `--mode` alterne des environnements (`--mode "" --mode "CHUNK_ALLOC_AFFINITY_EAGER=0"`,
+les deux groupes. `--mode` alterne des environnements (`--mode "" --mode "CHUNK_RECLAIM_THREADS=0"`,
 `--mode "numactl --membind=0"`).
 
 ```

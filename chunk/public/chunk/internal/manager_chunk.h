@@ -32,7 +32,6 @@
 #include "chunk/zero_any_chunk_def.h"         // zero_any::ChunkDef: the reuse budget constants
 #include "chunk/config.h"                     // build_config::threaded, chunk_config::chunk_dynamic
 #include "chunk/internal/chunk_size_policy.h" // thread_chunk_size, set_thread_chunk_size
-#include "chunk/internal/env_parse.h"         // env_number (CHUNK_REUSE_SHARE_DIV, CHUNK_REUSE_FLOOR_KB)
 #include "chunk/log.h"                        // CHUNK_LOG_ALWAYS (pool breakdown)
 #include "chunk/internal/TChunk.h"            // TChunkComp, TChunk2CompMap, TChunk2AComp
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_THREAD_CAPACITY (max_thr), pmp::team
@@ -263,9 +262,6 @@ struct ManagerChunkInt : public virtual ManagerChunkDynInterface<>, public virtu
     [[nodiscard]] virtual std::size_t reuse_pool_bytes_int() const = 0;
     /// @brief Return the pools' excess; see ManagerChunk::trim_reuse_pools.
     virtual std::size_t trim_reuse_pools_int(std::size_t keep_per_thread) = 0;
-    /// @brief Give the empty slabs back to the system; see
-    ///        ManagerChunk::sweep_empty_slabs.
-    virtual std::size_t sweep_empty_slabs_int(std::size_t keep_empty) = 0;
     /// @brief Print the pools' breakdown by geometry; see
     ///        ManagerChunk::print_reuse_pool_breakdown.
     virtual void print_reuse_pool_breakdown_int(const char* label) const = 0;
@@ -415,44 +411,34 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     {
         return trim_reuse_pools(keep);
     }
-    std::size_t sweep_empty_slabs_int(std::size_t keep_empty) override
-    {
-        return sweep_empty_slabs(keep_empty);
-    }
     void print_reuse_pool_breakdown_int(const char* label) const override
     {
         print_reuse_pool_breakdown(label);
     }
 
     /// @brief Per-key reuse budget (sequential: at array creation / rechunk),
-    ///        floored by reuse_floor_buffers() at the key's chunk @p size.
-    static void set_size_buffer_reuse(unsigned int key, int budget, unsigned int size)
+    ///        floored at zero::ChunkDef::size_min_buffer_reuse buffers.
+    static void set_size_buffer_reuse(unsigned int key, int budget)
     {
         if (key != 0)
         {
-            (*size_buffer_reuse_by_key_)[key] =
-                std::max(budget, reuse_floor_buffers(size, zero::ChunkDef::size_min_buffer_reuse));
+            (*size_buffer_reuse_by_key_)[key] = std::max(budget, zero::ChunkDef::size_min_buffer_reuse);
         }
     }
 
     /// @brief Divisor of the proportional reuse budget: a rank parks up to
-    ///        chunks / (this * threads) buffers. CHUNK_REUSE_SHARE_DIV, by
-    ///        default zero_any::ChunkDef::factor_div_somme_chunk_buffer_reuse.
+    ///        chunks / (this * threads) buffers
+    ///        (zero_any::ChunkDef::factor_div_somme_chunk_buffer_reuse).
     /// @details The chunks counted are all the chunks created, compressed
-    ///          ones included: at 99 % compression the default parks about
-    ///          twice the buffers actually materialised.
-    [[nodiscard]] static long reuse_share_div() noexcept
+    ///          ones included: at 99 % compression this parks about twice the
+    ///          buffers actually materialised. Halved or doubled, and with the
+    ///          floors removed or set to 4 MiB per rank, it changed neither time
+    ///          nor memory (Milan, three variants at dyn, 64 threads, October
+    ///          2026): the former CHUNK_REUSE_SHARE_DIV and CHUNK_REUSE_FLOOR_KB.
+    [[nodiscard]] static constexpr long reuse_share_div() noexcept
     {
-        static const long div =
-            std::max(1L, env_number<long>("CHUNK_REUSE_SHARE_DIV",
-                                          static_cast<long>(zero_any::ChunkDef::factor_div_somme_chunk_buffer_reuse)));
-        return div;
+        return static_cast<long>(zero_any::ChunkDef::factor_div_somme_chunk_buffer_reuse);
     }
-
-    /// @brief Floor of a reuse budget, in buffers of @p size elements:
-    ///        @p legacy_floor buffers, or CHUNK_REUSE_FLOOR_KB KiB per rank when
-    ///        set (the same memory whatever the chunk size; 0 = no floor).
-    [[nodiscard]] static int reuse_floor_buffers(unsigned int size, int legacy_floor) noexcept;
 
     /// @brief Size the legacy (unsized) reuse list to @p max_thr threads.
     static void resize_list_block_free_thr(int max_thr)
@@ -546,9 +532,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
 
     /**
      * @brief Fast allocator: give back to the system (madvise) the slabs of
-     *        this type that hold no block, beyond the first @p keep_empty of
-     *        each allocator instance -- every rank, the shared pool (key 0) and
-     *        every keyed set, at every registered geometry, into ONE sweep.
+     *        this type that hold no block -- every rank, the shared pool
+     *        (key 0) and every keyed set, at every registered geometry, into
+     *        ONE sweep.
      * @details Freed buffers return to their slab, and a slab is only given
      *          back by a sweep: without one, the memory of a compression stays
      *          resident until the next re-chunk or destruction. Serial, at a
@@ -557,7 +543,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      *          parallel region, and in a build without OpenMP.
      * @return Number of slabs handed to the sweep.
      */
-    static std::size_t sweep_empty_slabs([[maybe_unused]] std::size_t keep_empty) noexcept;
+    static std::size_t sweep_empty_slabs() noexcept;
 
     /// @brief Set the candidate-list length that triggers a compression pass.
     /// @details Decides when trigger_compression_if_needed() flags a rank's
