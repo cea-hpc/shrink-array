@@ -64,7 +64,8 @@ septembre 2026, chaque analyse allouait un octet et un pointeur par chunk (140 M
 tableau de 15,6 millions de chunks), et les analyses coûtaient 1 à 2 s sur un run de 6,5 s.
 Elles coûtent maintenant ~0,7 s sur un run de `zero_one_value` de 8,4 s.
 
-`CHUNK_ADVISOR_TABLE=1` (ou `=nom_du_tableau`) affiche la table complète à chaque passage.
+`CHUNK_LOG=advisor=debug` écrit la table complète de chaque tableau analysé à chaque passage
+(celle d'un seul tableau avec `RechunkPolicy::trace_array`, `--rechunk_trace_array <nom>` dans le banc).
 
 ## 3. Le décideur : quand et vers où
 
@@ -89,6 +90,7 @@ champs ; le banc les expose en options (entre parenthèses) :
 | `dry_run` | `true` | ne rien appliquer (le banc le met à `false` ; `--rechunk_dry_run` le garde) |
 | `max_backoff_ticks` | 8 | un tableau dont le verdict est un « pas de mouvement » établi (déjà optimal, gain sous le seuil) n'est réanalysé qu'après 2, 4, puis jusqu'à 8 passages ; tout autre verdict le ramène à chaque passage (`--rechunk_backoff_max`, 0 ou 1 désactive) |
 | `advisor_grid_bits` | 2 | les tailles candidates de l'advisor entre les puissances de deux, voir §2 (`--rechunk_grid_bits`) |
+| `trace_array` | vide | les traces par tableau (ligne `churn` de `CHUNK_LOG=rechunk=debug`, table de l'advisor de `CHUNK_LOG=advisor=debug`) pour ce tableau seulement ; vide : tous les tableaux (`--rechunk_trace_array`) |
 | `force_size`, `force_at`, `force_toggle`, `force_alt` | 0, 0, non, 64 | tests : rechunk de chaque tableau vers `force_size` à partir de l'itération `force_at`, quoi que dise l'advisor ; `force_toggle` alterne avec `force_alt` à chaque passage (`--force_rechunk`, `--force_rechunk_at`, `--force_rechunk_toggle`, `--force_rechunk_alt`) |
 
 Un grossissement est accepté si **l'une** des deux branches passe : la branche
@@ -225,7 +227,7 @@ se limite aux reconstructions.
   aucun), encore inexpliqué.
 - **Le modèle est statique.** L'advisor juge sur l'état présent des chunks, pas sur les
   écritures à venir. Sur ce banc, les matérialisations passagères mesurées ne pèsent pas
-  (`CHUNK_RECHUNK_CHURN=1`), mais une charge qui écrit beaucoup dans des zones constantes
+  (la ligne `churn` de `CHUNK_LOG=rechunk=debug`), mais une charge qui écrit beaucoup dans des zones constantes
   pourrait faire regretter un grossissement : c'est le rôle de l'apprentissage
   (`coarsen_trust_ratio`) et de l'anti-retour.
 - **Le rechunk des tableaux de booléens** n'est validé que pour `ArrayChunkBits`

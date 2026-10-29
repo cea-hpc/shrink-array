@@ -801,6 +801,7 @@ int main(int argc, char* argv[])
         {
             pol.max_backoff_ticks = static_cast<int>(bench_args.rechunk_backoff_max);
         }
+        pol.trace_array  = bench_args.rechunk_trace_array;
         pol.force_size   = static_cast<unsigned>(bench_args.force_rechunk);
         pol.force_at     = static_cast<int>(bench_args.force_rechunk_at);
         pol.force_alt    = static_cast<unsigned>(bench_args.force_rechunk_alt);

@@ -262,6 +262,10 @@ BenchArgs parse_bench_args(int argc, char* argv[])
             {
                 args.rechunk_backoff_max = parse_int_at_least_arg("--rechunk_backoff_max", next_value(), 0);
             }
+            else if (arg == "--rechunk_trace_array")
+            {
+                args.rechunk_trace_array = next_value();
+            }
             else if (arg == "--force_rechunk")
             {
                 args.force_rechunk = parse_int_at_least_arg("--force_rechunk", next_value(), 0);

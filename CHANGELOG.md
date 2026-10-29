@@ -138,6 +138,13 @@ the tag's checksum to the recipe.
   `--force_rechunk`, `--force_rechunk_at`, `--force_rechunk_toggle`, `--force_rechunk_alt`, plus
   `--advisor_period` and `--advise_five` for its own schedule. `bench_and_test.py`'s re-chunk
   phase and `diag_zero_rechunk_slowdown.py` pass them.
+- The decider's two per-array traces are log levels, no longer environment variables: the churn
+  line (materialisations per pass, the transient they imply) is `CHUNK_LOG=rechunk=debug`
+  (it was `rechunk=info`, switched on by `CHUNK_RECHUNK_CHURN`), and the advisor's full table at
+  each pass is `CHUNK_LOG=advisor=debug`, written to the log (`CHUNK_LOG_FILE`) instead of
+  stdout. The former `=<name>` form is the new `RechunkPolicy::trace_array` (empty: every array;
+  `shrink_bench --rechunk_trace_array <name>`). `ChunkSizeAdvisor<T>::log()` writes a report to
+  the log as `print()` does to stdout. The decider reads no environment variable any more.
 - `shrink_bench`: `tab_conn` holds about `sz / 32` ints by default, `--conn_scale <x>` sets it
   (`x × sz`, whole rows). At `sz` its dense gather and renumbering took ~87% of a run (zero_any,
   8 threads, `--divisor 2`: 64.8 s with it, 8.4 s without with GCC 16, 140 s against 19 s with
@@ -268,6 +275,9 @@ the tag's checksum to the recipe.
   `CHUNK_RECHUNK_MEMTRACE`, `CHUNK_RECHUNK_TRACE_MEM`, `CHUNK_AFFINITY_TRACE` and
   `CHUNK_RECYCLE_TRACE`: `CHUNK_LOG` (`rechunk=debug`, `rechunk=trace`, `memory=info`,
   `memory=debug`, `affinity=debug`, `recycle=trace`). `FAST_ALLOC_TRACE` stays, deprecated.
+- `CHUNK_RECHUNK_CHURN` and `CHUNK_ADVISOR_TABLE`: `CHUNK_LOG=rechunk=debug` and
+  `CHUNK_LOG=advisor=debug`, with `RechunkPolicy::trace_array` for a single array (see Changed).
+  Set, they are ignored without a message.
 - `CHUNK_RECHUNK_REUSE_LIST` and the chunk list buffer a re-chunk kept for the next one
   (`ArrayChunkCore::spare_chunk_list_`): see Fixed.
 - Two internal headers nothing included: `chunk/internal/diag_mutex.h` (the lock of the

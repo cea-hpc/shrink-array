@@ -64,7 +64,8 @@ September 2026, each analysis allocated one byte and one pointer per chunk (140 
 array of 15.6 million chunks), and the analyses cost 1 to 2 s on a 6.5 s run.
 They now cost ~0.7 s on an 8.4 s `zero_one_value` run.
 
-`CHUNK_ADVISOR_TABLE=1` (or `=array_name`) prints the full table at each tick.
+`CHUNK_LOG=advisor=debug` writes the full table of each array analysed at each tick (only one
+array's with `RechunkPolicy::trace_array`, `--rechunk_trace_array <name>` in the benchmark).
 
 ## 3. The decider: when and where to
 
@@ -89,6 +90,7 @@ them as options (in brackets):
 | `dry_run` | `true` | apply nothing (the benchmark sets it to `false`; `--rechunk_dry_run` keeps it) |
 | `max_backoff_ticks` | 8 | an array whose verdict is a settled "no move" (already optimal, gain below the threshold) is analysed again after 2, 4, then up to 8 ticks; any other verdict brings it back to every tick (`--rechunk_backoff_max`, 0 or 1 disables) |
 | `advisor_grid_bits` | 2 | the advisor's candidate sizes between the powers of two, see §2 (`--rechunk_grid_bits`) |
+| `trace_array` | empty | the per-array traces (`churn` line of `CHUNK_LOG=rechunk=debug`, advisor table of `CHUNK_LOG=advisor=debug`) for this array only; empty: every array (`--rechunk_trace_array`) |
 | `force_size`, `force_at`, `force_toggle`, `force_alt` | 0, 0, off, 64 | tests: re-chunk every array to `force_size` from iteration `force_at`, whatever the advisor says; `force_toggle` alternates with `force_alt` at every tick (`--force_rechunk`, `--force_rechunk_at`, `--force_rechunk_toggle`, `--force_rechunk_alt`) |
 
 A coarsening is accepted if **either** of two branches passes: the
@@ -224,7 +226,7 @@ is limited to the rebuilds.
   against none), not yet explained.
 - **The model is static.** The advisor judges on the present state of the chunks, not on
   future writes. On this benchmark, the transient materialisations measured do not matter
-  (`CHUNK_RECHUNK_CHURN=1`), but a workload that writes a lot into constant regions
+  (the `churn` line of `CHUNK_LOG=rechunk=debug`), but a workload that writes a lot into constant regions
   could make a coarsening regrettable: this is the role of learning
   (`coarsen_trust_ratio`) and of the anti-reversal rule.
 - **Rechunking boolean arrays** is validated for `ArrayChunkBits` only

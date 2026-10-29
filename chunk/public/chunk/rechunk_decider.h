@@ -112,6 +112,11 @@ struct RechunkPolicy
                                         ///< powers of two (ChunkSizeAdvisor::Options::
                                         ///< grid_bits): the multiples of 64 whose C/64 has
                                         ///< at most this many significant bits; 0: none.
+    /// The per-array traces of consider(): the churn line (CHUNK_LOG=rechunk=debug)
+    /// and the advisor's full table (CHUNK_LOG=advisor=debug), written at each
+    /// tick for every array analysed, or only for the array of this name when
+    /// it is not empty (shrink_bench --rechunk_trace_array).
+    std::string trace_array{};
 
     /// @name Forced re-chunks (tests)
     /// Exercise the re-chunk path whatever the advisor says: with force_size != 0,
@@ -195,8 +200,8 @@ class RechunkDecider
             return ticks;
         }();
         int visited_head = 0; // next write slot (ring)
-        // CHUNK_RECHUNK_CHURN: the previous tick's counters (the baseline is
-        // reset when the key changes, i.e. after a re-chunk of this array).
+        // The churn trace (rechunk=debug): the previous tick's counters (the baseline
+        // is reset when the key changes, i.e. after a re-chunk of this array).
         unsigned churn_key     = 0;
         long     churn_creates = -1;
         long     churn_phases  = 0;

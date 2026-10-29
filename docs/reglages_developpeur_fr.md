@@ -52,13 +52,12 @@ dépréciation.
 | réglage | ce qu'il affiche |
 |---|---|
 | `CHUNK_LOG=rechunk=info` | les décisions du décideur (`decide <tableau>: re-chunk S=.. -> S'=.. ... [APPLIED]`, ou `[dry-run] would re-chunk`) |
-| `CHUNK_LOG=rechunk=debug` (autrefois `CHUNK_RECHUNK_TRACE`) | en plus, les verdicts d'attente, et pour chaque rechunk la durée des phases et des tranches |
+| `CHUNK_LOG=rechunk=debug` (autrefois `CHUNK_RECHUNK_TRACE`, et `CHUNK_RECHUNK_CHURN` pour le churn) | en plus, les verdicts d'attente, pour chaque rechunk la durée des phases et des tranches, et à chaque passage, par tableau analysé, les matérialisations depuis le passage précédent et une estimation du coût passager qu'elles impliquent (ligne `churn`) |
 | `CHUNK_LOG=rechunk=trace` (autrefois `CHUNK_RECHUNK_TRACE_SLICES`) | en plus, la mémoire à chaque tranche de la reconstruction de `zero` |
 | `CHUNK_LOG=memory=info` (autrefois `CHUNK_RECHUNK_MEMTRACE`) | à chaque passage de l'advisor : mémoire exacte, dont la part résidente de l'arène des tampons |
 | `CHUNK_LOG=memory=debug` (autrefois `CHUNK_RECHUNK_TRACE_MEM`) | en plus, le côté mémoire de la trace des rechunks : mémoire exacte à chaque étape (ligne `rss`), occupation de la nouvelle géométrie, chunks repliés, refusés et installés directement, recensement des allocateurs. Coûteux (des secondes par run à des dizaines de Go) : un canal à part des mesures de temps |
 | `CHUNK_LOG=advisor=info` | builds de vérification : à la destruction d'un tableau, la taille de chunk qui aurait pris le moins de mémoire, quand elle en économise au moins 10 % |
-| `CHUNK_ADVISOR_TABLE` | `1` ou `=nom` : la table complète de l'advisor à chaque passage (tous les tableaux ou un seul) |
-| `CHUNK_RECHUNK_CHURN` | `1` ou `=nom` : matérialisations par passage et estimation du coût passager qu'elles impliquent (niveau info du canal rechunk, qu'elle active) |
+| `CHUNK_LOG=advisor=debug` (autrefois `CHUNK_ADVISOR_TABLE`) | en plus, la table complète de l'advisor de chaque tableau analysé, à chaque passage |
 | `CHUNK_LOG=affinity=debug` (autrefois `CHUNK_AFFINITY_TRACE`) | chaque jeu d'allocateurs par tableau créé (clé, taille, budget) |
 | `CHUNK_LOG=compress=info` | builds de vérification : les blocs restant à compresser après le dernier vidage, et les blocs constants de `zero_any` jamais mis en file ; le résidu de compression d'un audit (`compress()` sur zero_one_value::Array / zero_any::Array) ; `compress=debug` ajoute le détail par chunk de zero_one_value::Array |
 | `CHUNK_ARENA_REPORT` | le bilan de l'arène des tampons (slabs distribués, rendus au système) ; un rapport : écrit quel que soit `CHUNK_LOG` (canal `arena`) |
@@ -69,6 +68,11 @@ dépréciation.
 | `CHUNK_CST2_RECLAIM` | `zero_any`, `N` : toutes les N itérations, libère les secondes valeurs qu'aucun chunk n'utilise plus (`reclaim_second_values()`) et affiche leur nombre, puis pour chaque type les identifiants en usage face à la capacité, libres, les libérations et les refus (`second_value_stats()`) (banc, tout build) |
 | `ALLOC_TOKEN_REPORT` | les builds `SANITIZER=token` impriment toujours, à la sortie, les allocations par jeton (les 40 plus grosses) ; elle en fixe le nombre : `0` aucune, `N` les N plus grosses, `all` toutes |
 | `CHUNK_LOG=alloc=trace` (autrefois `FAST_ALLOC_TRACE`) | une ligne `munmap` par slab vidé que la réserve d'un pool ne garde pas et qui est libéré |
+
+Les traces par tableau (la ligne `churn`, la table de l'advisor) couvrent tous les tableaux que
+le décideur analyse ; `RechunkPolicy::trace_array` (`shrink_bench --rechunk_trace_array <nom>`)
+les limite à un seul, comme le faisaient les valeurs `=nom` des anciennes `CHUNK_RECHUNK_CHURN`
+et `CHUNK_ADVISOR_TABLE`.
 
 ## 3. Rechunks forcés (tests)
 
@@ -93,6 +97,7 @@ dépréciation.
 | `--rechunk_coarsen_min_meta_mb <x>` | gain minimal de métadonnées d'un grossissement, en Mo (`coarsen_min_meta_gain_bytes`, 1 ; 0 le supprime) |
 | `--rechunk_coarsen_min_meta_rate <x>` | gain de métadonnées minimal par seconde de reconstruction estimée, en Mo/s (`coarsen_min_meta_rate`, 250 ; 0 le supprime) |
 | `--rechunk_backoff_max <n>` | plus long espacement des analyses d'un tableau stabilisé, en passages (`max_backoff_ticks`, 8 ; 0 ou 1 le désactive) |
+| `--rechunk_trace_array <nom>` | les traces par tableau du décideur (ligne `churn` de `CHUNK_LOG=rechunk=debug`, table de l'advisor de `CHUNK_LOG=advisor=debug`) pour ce tableau seulement (`trace_array` ; par défaut : tous les tableaux) |
 | `SHRINK_BENCH_EXACT_RSS` | `1` : toutes les lignes de mémoire sont exactes (coûteux) |
 | `SHRINK_BENCH_RSS_SAMPLE_MS` | période d'échantillonnage du pic exact, en ms (désactivé par défaut) |
 | `CHUNK_BENCH_MEM_PERIOD` | période de la ligne de mémoire, en itérations |
