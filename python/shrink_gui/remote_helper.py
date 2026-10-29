@@ -872,6 +872,28 @@ def out_dir(d, meta):
     m = re.search(meta["out_re"], read(os.path.join(d, "out.log"), "")[:400000])
     return m.group(1) if m else None
 
+def pool_members(d, meta):
+    """[(dir, meta)] of the runs whose outputs make this one's results: the
+    jobs <pool>-n1..nN of a submission over several nodes (meta "pool"; for
+    thread_speedup.py each measured the executables it claimed first), else
+    the run alone. Those not created yet are left out."""
+    pool, n = meta.get("pool"), meta.get("nodes")
+    if not pool or not isinstance(n, int) or n < 2:
+        return [(d, meta)]
+    out = []
+    for k in range(1, n + 1):
+        dk = os.path.join(os.path.dirname(d), "%s-n%d" % (pool, k))
+        if dk == d:
+            out.append((d, meta))
+            continue
+        try:
+            mk = json.loads(read(os.path.join(dk, "meta.json"), "") or "null")
+        except ValueError:
+            mk = None
+        if isinstance(mk, dict):
+            out.append((dk, mk))
+    return out
+
 def act_summary(a):
     """The Résumé tab: multi_launch_stress's timings_summary.csv aggregated per
     build, or the last rows of another program's summary CSV as they are."""
@@ -886,8 +908,14 @@ def act_summary(a):
         else:
             print(json.dumps({"note": "pas de résumé pour ce programme"}))
         return
-    od = out_dir(d, meta)
-    path = own_copy(d, name) or (os.path.join(od, name) if od else None)
+    members = pool_members(d, meta) if kind != "multi_launch" else [(d, meta)]
+    paths = []
+    for dk, mk in members:
+        od = out_dir(dk, mk)
+        pk = own_copy(dk, name) or (os.path.join(os.path.expanduser(od), name) if od else None)
+        if pk and os.path.isfile(pk):
+            paths.append(pk)
+    path = paths[0] if paths else None
     if not path or not os.path.isfile(path):
         if phases:
             print(json.dumps({"sections": [phases, {"title": name, "note": "pas encore de %s" % name,
@@ -901,10 +929,16 @@ def act_summary(a):
         print(json.dumps({"note": "%s est vide" % name}))
         return
     head, body = rows[0], rows[1:]
+    for pk in paths[1:]:            # the other jobs of the pool: the same columns
+        with text_open(pk) as f:
+            more = list(csv.reader(f))
+        if more and more[0] == head:
+            body += more[1:]
     if kind != "multi_launch":
+        pooled = " — %d nœuds sur %d" % (len(paths), meta.get("nodes") or len(members)) if len(members) > 1 else ""
         table = {"title": name, "columns": head, "rows": body[-1000:],
-                 "note": "%s — %d ligne(s)%s" % (name, len(body),
-                         ", les 1000 dernières" if len(body) > 1000 else "")}
+                 "note": "%s — %d ligne(s)%s%s" % (name, len(body),
+                         ", les 1000 dernières" if len(body) > 1000 else "", pooled)}
         print(json.dumps({"sections": [phases, table]} if phases else table))
         return
     col = {h: i for i, h in enumerate(head)}
@@ -978,40 +1012,58 @@ def speedup_points(d, meta):
     best s, speedup or None, efficiency or None, peak Mo or None, ok runs],
     "info": its meta.json (target, multiply, mode, metric...)}."""
     import csv
-    od = out_dir(d, meta)
-    if not od:
-        return {"note": "pas encore de dossier de sortie annoncé dans le log"}
-    od = os.path.expanduser(od)
-    path = os.path.join(od, meta.get("summary_file") or "summary.csv")
-    if not os.path.isfile(path):
-        return {"note": "pas encore de summary.csv"}
     def num(v):
         try:
             return float(v)
         except (TypeError, ValueError):
             return None
-    execs, rows = [], []
-    with text_open(path) as f:
-        rd = csv.reader(f)
-        col = {h: i for i, h in enumerate(next(rd, []))}
-        for r in rd:
-            try:
-                e, th = r[col["exe"]], int(r[col["threads"]])
-            except (KeyError, ValueError, IndexError):
-                continue
-            get = lambda k: num(r[col[k]]) if k in col and len(r) > col[k] else None
-            if e not in execs:
-                execs.append(e)
-            rows.append([e, th, get("best_s"), get("speedup"), get("efficiency"), get("peak_mem_mo"),
-                         int(get("ok_runs") or 0)])
-    info = {}
-    try:
-        info = json.loads(read(os.path.join(od, "meta.json"), "{}") or "{}")
-    except ValueError:
-        pass
-    return {"kind": "speedup", "execs": execs, "rows": rows,
-            "info": {k: info.get(k) for k in ("target", "multiply", "mode", "metric", "host", "cpu",
-                                               "threads", "reps")}}
+    # A submission over several nodes: the executables each job claimed, one
+    # set of curves (an executable is in one job's summary only).
+    members = pool_members(d, meta)
+    execs, rows, info, hosts, found = [], [], {}, [], 0
+    for dk, mk in members:
+        od = out_dir(dk, mk)
+        if not od:
+            continue
+        od = os.path.expanduser(od)
+        path = os.path.join(od, meta.get("summary_file") or "summary.csv")
+        if not os.path.isfile(path):
+            continue
+        found += 1
+        mine = []
+        with text_open(path) as f:
+            rd = csv.reader(f)
+            col = {h: i for i, h in enumerate(next(rd, []))}
+            for r in rd:
+                try:
+                    e, th = r[col["exe"]], int(r[col["threads"]])
+                except (KeyError, ValueError, IndexError):
+                    continue
+                if e in execs and e not in mine:
+                    continue        # measured by an earlier job (a claim given twice)
+                get = lambda k: num(r[col[k]]) if k in col and len(r) > col[k] else None
+                if e not in mine:
+                    mine.append(e)
+                rows.append([e, th, get("best_s"), get("speedup"), get("efficiency"), get("peak_mem_mo"),
+                             int(get("ok_runs") or 0)])
+        execs += [e for e in mine if e not in execs]
+        try:
+            ik = json.loads(read(os.path.join(od, "meta.json"), "{}") or "{}")
+        except ValueError:
+            ik = {}
+        info = info or ik
+        if ik.get("host") and ik["host"] not in hosts:
+            hosts.append(ik["host"])
+    if not found:
+        if len(members) > 1:
+            return {"note": "pas encore de summary.csv dans les %d jobs" % len(members)}
+        if not out_dir(d, meta):
+            return {"note": "pas encore de dossier de sortie annoncé dans le log"}
+        return {"note": "pas encore de summary.csv"}
+    out = {k: info.get(k) for k in ("target", "multiply", "mode", "metric", "host", "cpu", "threads", "reps")}
+    if meta.get("pool"):
+        out.update(host=", ".join(hosts) or out.get("host"), nodes=meta.get("nodes"), nodes_found=found)
+    return {"kind": "speedup", "execs": execs, "rows": rows, "info": out}
 
 def is_bench_chart(meta):
     """The run is drawn as bench_and_test.py's (meta "chart", set from

@@ -120,6 +120,10 @@ PROGRAMS = {
         "chart": "speedup",
         "errors_files": ["errors.log"],
         "builds_opt": {"root": "build_root", "builds": "target"},
+        # "Nœuds" N > 1: N batch jobs of one node, the same command plus
+        # --pool=<the submission>; each executable is measured by the first
+        # job that claims it, and the Graphique / Résumé tabs gather the jobs.
+        "pool_opt": "--pool",
         "own_outputs": "dir",
         # Checked before submitting (its own parse_args test, which the
         # option scan cannot see): at least one of these options, else the

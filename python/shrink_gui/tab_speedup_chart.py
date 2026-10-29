@@ -124,9 +124,19 @@ class SpeedupChart:
         self.sc_cmp.blockSignals(True)
         self.sc_cmp.clear()
         self.sc_cmp.addItem(T("(aucun)"), None)
+        # A submission over several nodes is one entry (any of its jobs gives
+        # the whole set of curves), and never compared with itself.
+        own_pool = cur["meta"].get("pool") if cur else None
+        pools = set()
         for r in self.runs:
             if r["id"] != self.current and is_speedup_chart(r["meta"]) and r["meta"].get("arch") == arch:
-                self.sc_cmp.addItem(f"{r['id']}  [{T(r['status'])}]", r["id"])
+                pool = r["meta"].get("pool")
+                if not pool:
+                    self.sc_cmp.addItem(f"{r['id']}  [{T(r['status'])}]", r["id"])
+                elif pool != own_pool and pool not in pools:
+                    pools.add(pool)
+                    n = r["meta"].get("nodes", "?")
+                    self.sc_cmp.addItem(f"{T(f'{pool} ({n} nœuds)')}  [{T(r['status'])}]", r["id"])
         i = self.sc_cmp.findData(keep) if keep else 0
         self.sc_cmp.setCurrentIndex(max(0, i))
         self.sc_cmp.blockSignals(False)
@@ -183,7 +193,8 @@ class SpeedupChart:
     def _run_text(d):
         i = d.get("info") or {}
         mult = "%g" % i["multiply"] if isinstance(i.get("multiply"), (int, float)) else "?"
-        return f"{d['id']} ({i.get('target') or '?'}, --multiply {mult}, {i.get('mode') or '?'})"
+        nodes = f", {i['nodes']} nœuds" if i.get("nodes") else ""
+        return f"{d['id']} ({i.get('target') or '?'}, --multiply {mult}, {i.get('mode') or '?'}{nodes})"
 
     def draw_speedup(self, *_):
         r = self.sc_data

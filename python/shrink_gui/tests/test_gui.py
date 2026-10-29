@@ -664,6 +664,46 @@ def test_thread_speedup_submitted_from_the_window(gui, site):
     assert w.err_note.text().startswith("4 erreur(s)")
 
 
+def test_thread_speedup_over_several_nodes(gui, site):
+    """"Nœuds" 2 on thread_speedup.py: two jobs share the executables
+    (--pool=<the submission>), each measures those it claims first, in its own
+    output directory; the Graphique and Résumé tabs of either show them all."""
+    w, pump = gui
+    br = _fake_speedup_build(site)
+    w.program.setCurrentText("thread_speedup.py")
+    assert pump(lambda: w.form.schema is not None and "pool" in w.form.widgets)
+    w.mode.setCurrentIndex(w.mode.findData("msub"))
+    assert w.where.isRowVisible(w.nodes)
+    w.nodes.setValue(2)
+    assert "--pool=<la soumission>" in w.preview.toPlainText() and "2 jobs" in w.preview.toPlainText()
+    n = len(w.runs)
+    w.form.set_values({"target": "omp-llvm", "execs": "vector,zero_any@dyn", "min_threads": "1",
+                       "max_threads": "2", "reps": "1", "build_root": str(br)})
+    time.sleep(1.05)
+    w.launch()
+    assert pump(lambda: len(w.runs) == n + 2, 30)
+    jobs = sorted((r for r in w.runs if r["meta"].get("pool")), key=lambda r: r["meta"]["node"])
+    pool = jobs[0]["meta"]["pool"]
+    assert [r["id"] for r in jobs] == [f"{pool}-n{k}" for k in (1, 2)]
+    for r in jobs:
+        assert _wait_status(w, pump, r["id"], "fini", 60)
+    logs = [(site.runs / r["id"] / "out.log").read_text() for r in jobs]
+    claimed = [re.findall(r"\[pool\] (\S+): claimed by this run", t) for t in logs]
+    assert sorted(sum(claimed, [])) == ["shrink_bench_vector_perf", "shrink_bench_zero_any_dyn"]
+    outs = [re.search(r"Outputs in (\S+)", t).group(1) for t in logs]
+    assert outs[0] != outs[1]                                    # the same host, the same second
+    row = next(i for i, r in enumerate(w.runs) if r["id"] == jobs[1]["id"])
+    assert w.table.item(row, 1).text() == "thread_speedup.py [2/2]"
+    w.table.selectRow(next(i for i, r in enumerate(w.runs) if r["id"] == jobs[0]["id"]))
+    w.tabs.setCurrentIndex(w.TAB_CHART)
+    assert pump(lambda: w.pt_stack.currentIndex() == 2 and len(w.sc_view.points) == 4, 10)
+    assert w.sc_cmp.findData(jobs[1]["id"]) < 0                  # never compared with itself
+    w.tabs.setCurrentIndex(w.TAB_SUMMARY)
+    assert pump(lambda: w.sum_view.count() == 2, 10)
+    w.sum_view.setCurrentIndex(1)
+    assert w.sum_table.rowCount() == 4 and "2 nœuds sur 2" in w.sum_note.text()
+
+
 def test_duration_column(gui, site):
     w, pump = gui
     assert w.fmt_elapsed(14390) == "3:59:50" and w.fmt_elapsed(90061) == "1 j 01:01:01"

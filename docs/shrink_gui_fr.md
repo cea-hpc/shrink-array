@@ -69,7 +69,7 @@ connexion, la vérification complète est refaite d'elle-même.
 | Soumission | `ccc_msub` (batch, le défaut) ou `ccc_mprun` détaché depuis le nœud de login |
 | Durée max (-T) | accepte `2 j`, `1 h 30`, `90 min`, `1-00:00:00` |
 | QoS (-Q) | « auto » choisit la QoS d'après la durée, selon les limites lues par `ccc_mqinfo` |
-| Nœuds | `compile_all.sh` en batch : le nombre de jobs d'un nœud qui se partagent la compilation (ci-dessous) |
+| Nœuds | `compile_all.sh` et `thread_speedup.py` en batch : le nombre de jobs d'un nœud qui se partagent le travail (ci-dessous) |
 | Démarrage | après un run `compile_all.sh` pas encore fini (dépendance Slurm `afterok`/`afterany`), et/ou pas avant une heure donnée |
 | Builds à jour | avant la commande, `ninja -n` sur les builds utilisés : refuser (code 96), avertir, ou ne pas vérifier |
 | Directives, Lanceur (job) | les lignes `#MSUB` et le lanceur sur le nœud ; propres à la partition et mémorisés |
@@ -111,8 +111,9 @@ réclamé finit aussitôt, avec le code 0. Chaque log se termine par
 « Démarrage : après » propose ensuite la soumission en une seule entrée, « après `<id>`
 (N nœuds) » : le job attend les N (`--dependency=afterok:j1:…:jN`). « Reprendre ses options »
 crée un nouveau pool : les valeurs du formulaire ne contiennent jamais le `--pool` ajouté par la
-fenêtre. Le champ est masqué en mode détaché et pour les autres programmes. `--pool` peut aussi
-se donner à la main, à un `compile_all.sh` lancé depuis un shell (`--help`).
+fenêtre. Le champ est masqué en mode détaché et pour les programmes qui ne savent pas partager
+leur travail. `--pool` peut aussi se donner à la main, à un `compile_all.sh` lancé depuis un
+shell (`--help`).
 
 `thread_speedup.py` (courbes de speedup en threads d'exécutables shrink_bench sur une cible,
 quoi qui fasse tourner les threads -- OpenMP, le backend std::thread ou TBB ; anciennement
@@ -126,6 +127,21 @@ build l'a). « Comparer avec » superpose un autre run (un autre compilateur,
 un autre commit) et donne le rapport B / A. Ses sorties vont dans
 `$CCCWORKDIR/thread_speedup/` (sinon `~/thread_speedup/`) ; les runs enregistrés sous
 l'ancien nom sont lus comme les siens.
+
+**Courbes de speedup sur plusieurs nœuds.** « Nœuds » N > 1 marche pour `thread_speedup.py`
+comme pour `compile_all.sh` : N jobs d'un nœud, `thread_speedup.py [k/N]`, la même commande
+plus `--pool=<id>`. Les jobs se partagent la liste des exécutables : chacun la parcourt dans
+l'ordre et ne mesure un exécutable que s'il est le premier à le réclamer (un `mkdir` atomique
+dans `$CCCWORKDIR/thread_speedup/.pools/<id>/`), ses répétitions entrelacées sur les nombres
+de threads. Chaque job écrit son propre dossier de sortie (`speedup_<cible>_<hôte>_<date>`,
+plus `_2`, `_3`… quand deux jobs démarrent dans la même seconde sur des hôtes de même nom), et
+son log se termine par
+`[pool] n executable(s) measured by this run, m by the other runs of pool <id>`. Le Graphique
+et le Résumé de n'importe lequel des N jobs les réunissent tous, un seul jeu de courbes
+(« 2 nœuds sur 2 » dans la note) ; « Comparer avec » propose une autre soumission sur
+plusieurs nœuds en une seule entrée, et jamais la soumission elle-même. Le speedup d'un
+exécutable est mesuré sur un seul nœud : les N nœuds doivent être de même type (une
+partition). `--pool` peut aussi se donner à la main (`--help`).
 
 ### Les runs
 
@@ -280,10 +296,11 @@ Ils sont sautés si PySide6 n'est pas installé.
 - C'est un prototype, écrit pour les machines du TGCC ; un autre site écrit son fichier de
   site (§6). L'ordonnanceur doit être Slurm en dessous (`squeue`, `--dependency`, `--begin`).
 - Une seule connexion à la fois. L'interface n'ouvre pas la connexion maître elle-même.
-- Plusieurs nœuds (§3) : le dossier des builds `$CHUNK_BUILD_REP` doit être sur un système de
-  fichiers partagé par tous les nœuds (les réservations y sont des dossiers). Chaque job
+- Plusieurs nœuds (§3) : le dossier des builds `$CHUNK_BUILD_REP` (`compile_all.sh`) et
+  `$CCCWORKDIR/thread_speedup/` (`thread_speedup.py`) doivent être sur un système de fichiers
+  partagé par tous les nœuds (les réservations y sont des dossiers). Chaque job
   demande la même durée (-T) qu'un job seul. Un job qui échoue laisse les autres continuer ;
-  ses configurations ne sont pas reprises par eux.
+  ses configurations (ses exécutables) ne sont pas reprises par eux.
 - « Cette machine » depuis Windows (`wsl.exe`) n'est pas couverte par les tests (ils tournent
   sous Linux). WSL peut arrêter une distribution quand plus aucune de ses fenêtres n'est
   ouverte : en garder une ouverte pendant un run.

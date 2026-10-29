@@ -52,6 +52,11 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `thread_speedup.py --pool=<id>` and shrink_gui's "Nodes" field for it: N one-node batch jobs
+  share the executable list, as `compile_all.sh --pool` shares its configurations; each job
+  measures the executables it claims first (an atomic `mkdir` in
+  `<out base>/.pools/<id>/`), in its own output directory. The Chart and Summary tabs of any
+  of the jobs gather the whole submission; "Compare with" lists such a submission once.
 - `python/ab_settings_campaign.py`: the A/B campaign of the developer settings still read from the
   environment: each value against the defaults, computation time and peak / end memory of
   `shrink_bench` on the three variants at dyn, resumable, with a report of the deviations and
