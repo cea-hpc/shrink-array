@@ -564,8 +564,6 @@ static void motif_state(const char* tname, long nch)
     }
 }
 
-/// @brief Cases M to P on pattern::Array<T> (see the file comment): the
-///        compression to motifs, by the write path and the pass.
 /// @brief fill_range over motif chunks: a motif chunk is no constant, whatever
 ///        its values pointer resembles. Each one filled -- part of it with its
 ///        own first element, all of it with the value of a uniform chunk
@@ -625,6 +623,8 @@ static void fill_over_motifs(const char* tname, long nch)
     expect_same("M  after a pass", arr, ref);
 }
 
+/// @brief Cases M to P on pattern::Array<T> (see the file comment): the
+///        compression to motifs, by the write path and the pass.
 template <typename T>
 static void motif_compression(const char* tname, long nch)
 {
