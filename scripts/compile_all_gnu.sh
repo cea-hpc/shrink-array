@@ -141,8 +141,12 @@ pool_init
 # --- Architecture detection & compiler/flags selection ---
 if [ "$(uname -m)" = "aarch64" ]; then
     echo "[ARM/aarch64 detected] Loading gcc/16.1.0 with C++23 & -mcpu=native"
-    module load binutils/2.43
+    # binutils/2.43 where it exists, else the newest binutils module; the
+    # check stops here if the system one (RHEL 9: 2.35) is still the one used.
+    newest_binutils=$(chunk_newest_module binutils)
+    [ -n "$newest_binutils" ] && chunk_module_load_first binutils/2.43 "$newest_binutils"
     module load gcc/16.1.0
+    chunk_check_binutils gnu || exit 1
     ARCH_FLAGS="-DCMAKE_CXX_FLAGS=-mcpu=native -DCMAKE_CXX_STANDARD=23"
 else
     # Same compiler as aarch64. The g++-16 x86_64 -O3 ICEs have their

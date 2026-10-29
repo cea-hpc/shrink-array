@@ -141,6 +141,38 @@ if [ "$CHUNK_HAVE_MODULES" = false ]; then
     export CHUNK_GXX CHUNK_CLANGXX CHUNK_ONEAPI_SETVARS CHUNK_NVCXX
 fi
 
+# chunk_newest_module <name>: the highest <name>/<ver> module available, or
+# nothing (no such module, no modules).
+chunk_newest_module() {
+    module -t av "$1" 2>&1 | tr -s '[:space:]' '\n' | grep -oE "^$1/[0-9]+(\.[0-9]+)*" | sort -V -u | tail -1
+}
+
+# chunk_check_binutils <label> [warn]: print the as / ld the compiler will use
+# and fail when, on aarch64 with modules, they are the system ones (warn: say
+# so and go on -- clang assembles itself, only gcc needs the new as). RHEL 9's
+# binutils is 2.35, too old for gcc 16 -mcpu=native on Grace: a binutils module
+# that did not load left /usr/bin/as in PATH, and the build only died later on
+# instructions the assembler does not know. Nothing checked off aarch64 (the
+# x86 builds never loaded a binutils) or without modules (the system one is
+# the only one).
+chunk_check_binutils() {
+    local as_path ld_path
+    as_path=$(command -v as 2>/dev/null)
+    ld_path=$(command -v ld 2>/dev/null)
+    echo "[INFO] $1 binutils: as ${as_path:-none} ($(as --version 2>/dev/null | head -1)), ld ${ld_path:-none} ($(ld --version 2>/dev/null | head -1))"
+    [ "$(uname -m)" = aarch64 ] && [ "$CHUNK_HAVE_MODULES" = true ] || return 0
+    case "$as_path" in
+        ''|/usr/bin/*|/bin/*)
+            if [ "${2:-}" = warn ]; then
+                echo "[WARN] $1: the system binutils (${as_path:-none}), no binutils module loaded"
+                return 0
+            fi
+            echo "ERROR: $1: no binutils module loaded, the system assembler (${as_path:-none}) is too old for gcc 16 on aarch64" >&2
+            echo "       binutils modules here: $(module -t av binutils 2>&1 | grep -oE '^binutils/[0-9.]+' | tr '\n' ' ')" >&2
+            return 1 ;;
+    esac
+}
+
 # chunk_gcc_toolchain_opt <form>: the libstdc++ option for clang-like drivers,
 # or nothing when no toolchain dir is set (local: the driver's default).
 #   flags -> -DCMAKE_CXX_FLAGS=--gcc-toolchain=<dir>   (icpx, nvc++)

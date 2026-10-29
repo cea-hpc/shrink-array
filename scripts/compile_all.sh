@@ -351,7 +351,7 @@ if module is-avail gcc/15.2.0 >/dev/null 2>&1 ||
     module -t avail gcc/15.2.0 2>&1 | grep -qE '^gcc/15\.2\.0(\(.*\))?$'; then
     gcc_module=gcc/15.2.0
 else
-    gcc_module=$(module -t av gcc 2>&1 | tr -s '[:space:]' '\n' | grep -oE '^gcc/[0-9]+(\.[0-9]+)*' | sort -V -u | tail -1)
+    gcc_module=$(chunk_newest_module gcc)
 fi
 [ "$CHUNK_HAVE_MODULES" = false ] && gcc_module=""
 load_gcc_module() {
@@ -578,6 +578,7 @@ if [ -n "$latest_nvhpc" ]; then
     reset_compiler_modules
     if [ "$latest_nvhpc" = local ] || run_cmd "module load $latest_nvhpc"; then
         load_gcc_module
+        [ "$DRYRUN" = true ] || [ "$latest_nvhpc" = local ] || chunk_check_binutils nvhpc warn
         if [ "$latest_nvhpc" = local ]; then nvcxx="$CHUNK_NVCXX"; else nvcxx="$(command -v nvc++ 2>/dev/null)"; fi
     [ -z "$nvcxx" ] && nvcxx="nvc++"  # same dry-run fallback as clangxx
         if [ -n "$nvcxx" ]; then
@@ -643,6 +644,7 @@ if [ "$CHUNK_HAVE_MODULES" = true ]; then
     fi
     # Reload ninja in case loading LLVM unloaded it
     run_cmd "module load ninja"
+    [ "$DRYRUN" = true ] || chunk_check_binutils llvm warn
 fi
 
 if [ "$CHUNK_HAVE_MODULES" = true ]; then

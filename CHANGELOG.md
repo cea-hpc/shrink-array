@@ -334,6 +334,11 @@ the tag's checksum to the recipe.
   15.2.0 the gcc load failed, then the llvm module, which needs a gcc, failed too, and the llvm
   builds silently used the system `clang++`. The gcc is now loaded before llvm, and a failed
   `module load llvm/<ver>` stops the script with what the module requires (`module show`).
+- `compile_all_gnu.sh` on aarch64 loads `binutils/2.43` where it exists, else the newest binutils
+  module, and stops if the assembler is still the system one (RHEL 9: 2.35, too old for gcc 16
+  `-mcpu=native`): a missing or conflicting binutils module used to go unnoticed until the build
+  died on unknown instructions. The llvm and nvhpc sections of `compile_all.sh` print the `as` /
+  `ld` they use and warn on aarch64 when it is the system one.
 - Serial builds (no OpenMP, no std backend): `finalize_parallel_phase()` did not drain the
   `zero_any` family's compression candidates. The in-loop pass only runs past half the list
   maximum, so a backlog below it waited to the end of the run, and chunks written for the last
