@@ -38,6 +38,12 @@ fields, and `shrink_bench` exposes them as options (§4). See
 | `CHUNK_RECLAIM_PHASE_KEEP` | unset | `K`: after every compression pass, give the empty slabs back to the system (`madvise`), keeping `K` per allocator instance; unset: only at a re-chunk, a destruction, `shrink_to_fit()` |
 | `CHUNK_DEFERRED_POOL_KB` | 64 | slab size of the deferred-write pools, in KiB (the operation slabs are never given back: larger means fewer allocator calls but more resident memory) |
 
+These settings are to be fixed by measurement, then removed: `python/ab_settings_campaign.py`
+compares each of them with the defaults (computation time, peak and end memory) on
+`zero`, `zero_any` and `zero_one_value` at dyn, one point per value tried, three runs each by
+default, interleaved; run it inside a job allocation (`--help` lists the points), and again with
+the same `--out` to resume an interrupted campaign.
+
 ## 2. Traces and diagnostics
 
 The traces are messages of the library's log, chosen by `CHUNK_LOG` (see
