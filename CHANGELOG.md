@@ -224,6 +224,8 @@ the tag's checksum to the recipe.
 
 ### Deprecated
 
+- `python/omp_speedup.py`: runs `thread_speedup.py` with the same arguments (one line on stderr
+  says so), for the commands and job scripts that call it; to be removed in a later release.
 - `ArrayChunk`, `ArrayChunk2` and `ArrayChunk2A`: alias templates of the classes above, with a
   `[[deprecated]]` attribute, until 1.0.
 - `chunk/array_chunk.h`, `chunk/array_chunk2.h` and `chunk/array_chunk2A.h`: they include the
