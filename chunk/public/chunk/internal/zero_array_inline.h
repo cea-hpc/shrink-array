@@ -288,7 +288,7 @@ void zero::Array<T, IntType>::clear_core()
 
     // An array with its own slab affinity gives its memory back NOW: its parked
     // buffers go home to its allocator set, whose slabs then empty (and
-    // reclaim_empty_slabs madvises them). Sequential point; the drain opens its
+    // the sweep madvises them). Sequential point; the drain opens its
     // own region. Key 0: nothing to give back per array.
     if (this->alloc_key_ != 0 && !CHUNK_PMP_IN_PARALLEL_REGION)
     {

@@ -56,13 +56,12 @@ the tag's checksum to the recipe.
   environment: each value against the defaults, computation time and peak / end memory of
   `shrink_bench` on the three variants at dyn, resumable, with a report of the deviations and
   of the noise (`docs/developer_settings.md` §1). Its first campaign fixed seven settings (see
-  Removed); `CHUNK_RECLAIM_THREADS` is its only point left, for Grace.
+  Removed); its points left, for Grace, are `CHUNK_RECLAIM_THREADS` and
+  `CHUNK_DEFERRED_POOL_KB`.
 - `CHUNK_LOG=rechunk=debug`: a `teardown split` line after each re-chunk's phases divides the
   `tmp teardown` phase (the old storage's destruction) into its steps, for zero_any and pattern;
   `scripts/rechunk_trace_summary.py` sums it. Measured on Milan, this phase was 56 % of the
   re-chunk time of `shrink_bench_zero_any_dyn`.
-- `CHUNK_SLAB_MIN_PAGES` (developer setting): a floor in pages for the value slabs' size; `16`
-  restores the former default, for an A/B (see Changed).
 - Fast allocator: a sweep (`trim_reuse_pools()`, a re-chunk, a destruction) also gives back the
   free pages of the value slabs still in use (`TCSlab::advise_free_pages`), as `malloc_trim`
   does inside glibc's heaps: a slab no longer stays resident whole for its last few live buffers.
@@ -242,6 +241,8 @@ the tag's checksum to the recipe.
 
 ### Deprecated
 
+- `FAST_ALLOC_TRACE` (it sets `CHUNK_LOG=alloc=trace`, with a warning): removal planned for
+  2026-12-31.
 - `python/omp_speedup.py`: runs `thread_speedup.py` with the same arguments (one line on stderr
   says so), for the commands and job scripts that call it; to be removed in a later release.
 - `ArrayChunk`, `ArrayChunk2` and `ArrayChunk2A`: alias templates of the classes above, with a
@@ -260,6 +261,17 @@ the tag's checksum to the recipe.
 
 ### Removed
 
+- The levels 1 to 3 of `CHUNK2A_COMPRESS_LEVEL` (zero_any's compression thresholds), never built
+  or tested, and the macro with them: the thresholds are constants of `zero_any_chunk_def.h`
+  (500 and 50, the former level 0). Their removal was planned for 2026-12-31.
+- The CMake option `CHUNK_RECLAIM_EMPTY_SLABS` (and `FAST_ALLOC_OPT_RECLAIM_EMPTY_SLABS`,
+  `CHUNK_OPT_RECLAIM_EMPTY_SLABS`, `alloc_config::reclaim_empty_slabs`,
+  `build_config::reclaim_empty_slabs`): the sweeps always give emptied slabs back, as the default
+  did; `OFF` was measured costlier in memory for no time saved, and its removal was planned for
+  2026-12-31. A cache that still sets it `OFF` gets a configure warning. The fast allocator's
+  start-up line no longer prints it.
+- `scripts/diag_zero_rechunk_slowdown.py`, a copy of `python/diag_zero_rechunk_slowdown.py`
+  that had drifted from it; the one kept gains the copy's check of the missing executables.
 - The developer settings fixed by the first `ab_settings_campaign.py` campaign (Milan,
   `shrink_bench` int64 dyn, `zero`, `zero_any` and `zero_one_value`, 64 threads, three
   interleaved runs per point; noise 0.3%, 1.1% and 2.5% of the time):

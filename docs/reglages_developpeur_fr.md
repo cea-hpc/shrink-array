@@ -31,6 +31,7 @@ programme renseigne les champs, et `shrink_bench` les expose en options (§4). V
 | variable | défaut | effet |
 |---|---|---|
 | `CHUNK_RECLAIM_THREADS` | 1 | threads qui émettent les `madvise` d'un balayage ; `0` : `omp_get_max_threads()`. Sur Milan (64 threads), `0` est 3,5 % plus rapide pour `zero_one_value` et identique pour les autres variantes ; il reste à 1 tant qu'il n'est pas mesuré sur Grace, où 288 threads les émettraient |
+| `CHUNK_CST_VAL2_ID_LIMIT` | non défini | crochet de test : abaisse le nombre d'identifiants du registre des secondes valeurs de `zero_any` (sinon la capacité de la région), pour qu'un harnais atteigne la limite du registre avec quelques valeurs (`cst2_registry_validation`, `cst2_reclaim_validation`) ; ne peut que l'abaisser |
 | `CHUNK_DEFERRED_POOL_KB` | 64 | taille des slabs des pools d'écritures différées, en Kio (les slabs d'opérations ne sont jamais rendus : plus gros, moins d'appels à l'allocateur mais plus de mémoire résidente) |
 
 `python/ab_settings_campaign.py` mesure un tel réglage contre les défauts (temps de calcul,
@@ -48,7 +49,7 @@ Les traces sont des messages du journal de la bibliothèque, choisis par `CHUNK_
 traces (`CHUNK_RECHUNK_TRACE`, `CHUNK_RECHUNK_TRACE_SLICES`, `CHUNK_RECHUNK_MEMTRACE`,
 `CHUNK_RECHUNK_TRACE_MEM`, `CHUNK_AFFINITY_TRACE`, `CHUNK_RECYCLE_TRACE`) ne sont plus lues ;
 seule `FAST_ALLOC_TRACE` règle encore le niveau qui lui correspond, avec un avertissement de
-dépréciation.
+dépréciation. *Retrait prévu : 31/12/2026.*
 
 | réglage | ce qu'il affiche |
 |---|---|
@@ -131,9 +132,8 @@ dans [variables_environnement_fr.md](variables_environnement_fr.md) §3.
 | `CHUNK_TEST_READ_DELAY_EVERY=<n>`, `CHUNK_TEST_READ_DELAY_US=<µs>` | crochet de test : une lecture sur N d'un thread qui l'a demandé attend (50 µs), pour élargir la fenêtre lecteur / récupération (`read_reclaim_validation`) |
 | `CHUNK_TEST_PASS_DELAY_EVERY=<n>`, `CHUNK_TEST_PASS_DELAY_US=<µs>` | crochet de test : délai (200 µs) dans une passe de compression sur N |
 
-Et une macro propre à `zero_any` : `CHUNK2A_COMPRESS_LEVEL=<0|1|2|3>` (0 par défaut) choisit le
-jeu de seuils de déclenchement des passes de compression (`zero_any_chunk_def.h`). Seul le niveau 0 est
-construit et testé. *Retrait des niveaux 1 à 3 prévu : 31/12/2026.*
+Les seuils des passes de compression de `zero_any` sont des constantes de `zero_any_chunk_def.h`
+(les niveaux 1 à 3 de l'ancienne `CHUNK2A_COMPRESS_LEVEL` n'ont jamais été construits ni testés).
 
 ## 6. Options CMake
 
@@ -153,7 +153,6 @@ Les options de [variables_environnement_fr.md](variables_environnement_fr.md) §
 | `CHUNK_DEBUG_INFO` | `auto` | informations de débogage des builds optimisés : `full` (`-g`), `lines` (`-g1` : noms de fonctions et tables de lignes, assez pour perf et les backtraces gdb, pas pour les variables locales), `none` ; `auto` : `full` avec `CHECK_OPTIM` ou un sanitizer, `lines` sinon. Le code machine est le même ; `lines` compile 20 à 27 % plus vite avec 40 % de mémoire de pointe en moins. Les builds Debug ont toujours `-g` |
 | `CHUNK_VALIDATION_UNITY` | `ON` | les harnesses de validation regroupés en un exécutable par variante et géométrie (unity build) ; `OFF` : un exécutable par harness |
 | `CHUNK_BUILD_VALIDATION` | selon le build | compiler les harnesses de `examples/validation`, et avec eux les crochets de test (`CHUNK_TEST_HOOKS`) ; par défaut `ON` en Debug, avec `CHECK_OPTIM` ou un sanitizer, `OFF` ailleurs (non mis en cache : suit la configuration courante) |
-| `CHUNK_RECLAIM_EMPTY_SLABS` | `ON` | rendre au système (`madvise`) les slabs vidés aux balayages explicites (rechunk, destruction) ; `OFF` les garde résidents. *Retrait prévu : 31/12/2026.* |
 | `FAST_ALLOC_CHECK_LISTS` | `OFF` | niveau de debug renforcé des listes de slabs : en Debug, vérification complète de la liste à chaque insertion et retrait (lent) ; un Debug ordinaire garde les vérifications légères |
 | `HAVE_AGGRESSIVE_COMPRESSION` | `OFF` | défaut de la compression « agressive », un réglage d'exécution : `CHUNK_AGGRESSIVE_COMPRESSION=1` (ou `0`) la fixe pour un lancement. La passe entre deux phases est sautée, et toute la compression se fait pendant les régions parallèles, à des instants imprévisibles. Plus lent, mais sollicite les chemins concurrents : un mode de validation, qui n'a plus besoin d'un build à lui |
 | `CHUNK_FORCE_LEDGER` | `OFF` | garde le registre des blocs (`pool_ledger.h`) actif sous OpenMP, où il est éteint par défaut : son mutex global sérialise chaque allocation et libération. Détecte double libération et remise illégale en réserve |

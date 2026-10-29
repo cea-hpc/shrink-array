@@ -64,14 +64,6 @@ inline constexpr bool is_debug = FAST_ALLOC_OPT_DEBUG != 0;
 ///        Linear per operation: a plain Debug build does not.
 inline constexpr bool check_slab_lists = FAST_ALLOC_OPT_DEBUG != 0 && FAST_ALLOC_OPT_CHECK_LISTS != 0;
 
-/**
- * @brief An emptied slab gets MADV_DONTNEED instead of staying resident.
- * @details On by default (CMake `CHUNK_RECLAIM_EMPTY_SLABS=OFF` turns it off), recorded in
- *          the generated build_options.h. Useful only once slabs reach nn_ref == 0 -- see
- *          ManagerChunk::drain_reuse_list_for_size (empties the old geometry's slabs).
- */
-inline constexpr bool reclaim_empty_slabs = FAST_ALLOC_OPT_RECLAIM_EMPTY_SLABS != 0;
-
 /// @brief int_alloc / int_free go through the aligned allocation (-DFAST_ALLOC_ALIGN).
 inline constexpr bool alloc_align =
 #ifdef FAST_ALLOC_ALIGN

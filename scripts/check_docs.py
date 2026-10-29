@@ -88,6 +88,10 @@ ALLOWED = {
     "CHUNK_REUSE_SHARE_DIV", "CHUNK_REUSE_FLOOR_KB", "CHUNK_RECLAIM_MIN_SLABS",
     "TCTypeCAllocator::order_fullest_first", "ManagerChunk::sweep_empty_slabs_int",
     "ManagerChunk::reuse_floor_buffers",
+    # removed at (or before) their planned date: zero_any's compression levels, the reclaim option
+    "CHUNK2A_COMPRESS_LEVEL", "CHUNK_RECLAIM_EMPTY_SLABS", "FAST_ALLOC_OPT_RECLAIM_EMPTY_SLABS",
+    "CHUNK_OPT_RECLAIM_EMPTY_SLABS", "alloc_config::reclaim_empty_slabs", "build_config::reclaim_empty_slabs",
+    "scripts/diag_zero_rechunk_slowdown.py",
     # renamed to PascalCase (ChunkTemplateOf, ForEachTypeImpl, ...), which CHANGELOG.md records
     "index_type", "cst_val1_type", "chunk_template_of", "for_each_type_impl",
     # former class names the CHANGELOG cites (now SecondValue*Base, zero_any::ChunkThreadPolicy, ...)

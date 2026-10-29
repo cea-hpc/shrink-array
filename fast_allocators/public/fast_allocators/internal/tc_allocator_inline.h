@@ -575,7 +575,7 @@ void TCSlabPool<Derived, ElemT, Slab>::manage_full_empty(Slab* slab) noexcept
         block, block_full, block_empty_.data(), nb_block_empty_, nb_max_block_empty_, slab,
         [](Slab* kept) noexcept
         {
-            // NO madvise here, whatever reclaim_empty_slabs says. On this hot
+            // NO madvise here: only a sweep gives slabs back. On this hot
             // path nn_ref == 0 is the ONLY evidence the slab holds nothing
             // live, and a mis-accounted block (a buffer parked or released
             // twice, two threads on one counter) falsifies it: MADV_DONTNEED
@@ -643,7 +643,7 @@ template <typename ElemT>
 std::size_t TCTypeCAllocator<ElemT>::collect_empty_slabs([[maybe_unused]] SlabSweep&  sweep,
                                                          [[maybe_unused]] std::size_t keep_empty) noexcept
 {
-    if constexpr (alloc_config::use_std_alloc || !alloc_config::reclaim_empty_slabs)
+    if constexpr (alloc_config::use_std_alloc)
     {
         return 0;
     }
@@ -680,23 +680,16 @@ std::size_t TCTypeCAllocator<ElemT>::tidy_slabs_in_use() noexcept
     }
     else
     {
-        if constexpr (!alloc_config::reclaim_empty_slabs)
+        const std::size_t          page = detail::reclaim_page_size();
+        std::vector<unsigned char> scratch;
+        std::size_t                advised = 0;
+        // Only #block: a full slab has no free element, an empty one is
+        // collect_empty_slabs()'s.
+        for (auto* p = this->block; p != nullptr; p = p->next)
         {
-            return 0; // CHUNK_RECLAIM_EMPTY_SLABS=OFF: nothing is given back
+            advised += p->advise_free_pages(page, scratch);
         }
-        else
-        {
-            const std::size_t          page = detail::reclaim_page_size();
-            std::vector<unsigned char> scratch;
-            std::size_t                advised = 0;
-            // Only #block: a full slab has no free element, an empty one is
-            // collect_empty_slabs()'s.
-            for (auto* p = this->block; p != nullptr; p = p->next)
-            {
-                advised += p->advise_free_pages(page, scratch);
-            }
-            return advised;
-        }
+        return advised;
     }
 }
 

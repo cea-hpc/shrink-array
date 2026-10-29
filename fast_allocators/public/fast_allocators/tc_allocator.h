@@ -607,8 +607,8 @@ void sl_insert(Node*& list, Node* node) noexcept
  * @warning A slab that empties is not thereby reclaimed. With
  *          @p nb_max_block_empty negative (what the chunk layer passes, so a
  *          freed value slab's address is never reobtained by the op pool) its
- *          pages stay resident unless @p on_kept releases them. See
- *          alloc_config::reclaim_empty_slabs.
+ *          pages stay resident unless @p on_kept releases them, or a sweep
+ *          (fast_alloc::EmptySlabSweep) gives them back.
  */
 template <typename Node, class Count, class OnKept, class OnEvict>
 void sl_manage_full_empty(Node*&  block,

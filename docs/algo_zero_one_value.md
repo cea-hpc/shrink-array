@@ -420,8 +420,7 @@ compressions. A buffer freed by a rank other than its owner is set aside
 ("parked") then returned to its original pool. Large enough arrays (above
 `alloc_affinity_min_bytes`, 16 MiB by default) can have their own set of allocators
 (affinity key), which makes it possible to release their memory in one block when they are
-rebuilt or destroyed; empty slabs are then returned to the system (except in a
-`CHUNK_RECLAIM_EMPTY_SLABS=OFF` build).
+rebuilt or destroyed; empty slabs are then returned to the system.
 
 For `zero_one_value`, this set is only created at the array's **first rechunk** (lazy affinity):
 each set costs one started slab per rank and per size, i.e. ~780 MiB over the 16 arrays of

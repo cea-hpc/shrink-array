@@ -115,8 +115,8 @@ chaque élément au premier élément du chunk) :
   `clear_int_st` installe par CAS comme pointeur `values` du chunk.
 
 Le tampon libéré rejoint la liste de réutilisation du thread. Le seuil de déclenchement vaut
-`somme_chunk_create / (50 × nombre de threads)`, avec un plancher de 500 candidats (niveau de
-compression par défaut, `CHUNK2A_COMPRESS_LEVEL=0`, dans `zero_any_chunk_def.h`).
+`somme_chunk_create / (50 × nombre de threads)`, avec un plancher de 500 candidats (constantes de
+`zero_any_chunk_def.h`).
 
 ## 6. L'écriture
 

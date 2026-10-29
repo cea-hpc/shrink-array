@@ -116,7 +116,7 @@ inline constexpr bool have_bzip2 = false;
 //   - a NON-dependent name is looked up when the template is DEFINED, discarded
 //     branch or not. `if constexpr (build_config::use_fast_alloc)` does not let
 //     you write alloc_config::x in a std-alloc build; the fix is a mirror that
-//     exists everywhere (build_config::reclaim_empty_slabs).
+//     exists everywhere, in chunk/config.h (build_config::use_fast_alloc itself).
 //   - `&&` short-circuits EVALUATION, never NAME LOOKUP. `if constexpr (A &&
 //     Derived::m)` is ill-formed for a Derived without `m` even when A is false
 //     -- NEST the two tests instead (array_chunk_rechunk_inline.h).

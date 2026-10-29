@@ -234,6 +234,10 @@ def main():
     if "--iter_max" not in args:
         args += ["--iter_max", "2000"]
     wanted = set(a.configs.split(","))
+    missing = sorted({exe for name, exe, *_ in CONFIGS if name in wanted and not (bindir / exe).is_file()})
+    if missing:
+        print(f"error: not found in {bindir}: {', '.join(missing)}", file=sys.stderr)
+        return 1
     summary = [f"# {time.strftime('%Y-%m-%d %H:%M:%S')}  threads={a.threads}  args='{' '.join(args)}'  "
                f"OMP_PROC_BIND={os.environ.get('OMP_PROC_BIND', 'close')} "
                f"OMP_PLACES={os.environ.get('OMP_PLACES', 'cores')}  host={os.uname().nodename}"]

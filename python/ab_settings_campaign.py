@@ -28,12 +28,13 @@ mixes them anyway). --report-only rewrites the report from the results.
 The points (--points selects some, by name or family):
     base         the defaults
     rthr0        CHUNK_RECLAIM_THREADS=0     madvise from every thread (1)
+    pool16/256   CHUNK_DEFERRED_POOL_KB      deferred-write pool slabs of 16 / 256 KiB (64)
 
 The first campaign (Milan, October 2026) measured eleven points; the settings it
 fixed are gone with their points (CHANGELOG.md, Removed). CHUNK_RECLAIM_THREADS
 stays at 1 until it is measured on Grace, where 288 threads would issue the
-sweep's madvise calls: run this script there. Add a Point to POINTS to measure a
-new setting.
+sweep's madvise calls, and CHUNK_DEFERRED_POOL_KB was never measured: run this
+script there. Add a Point to POINTS to measure a new setting.
 
 Every variable of the list is removed from the environment of the runs it does
 not set, whatever the calling shell has: base is the defaults. CHUNK_LOG is
@@ -77,6 +78,8 @@ class Point:
 POINTS = [
     Point("base", "base", {}, "the defaults"),
     Point("rthr0", "rthreads", {"CHUNK_RECLAIM_THREADS": "0"}, "madvise from every thread"),
+    Point("pool16", "pool", {"CHUNK_DEFERRED_POOL_KB": "16"}, "deferred-write slabs of 16 KiB"),
+    Point("pool256", "pool", {"CHUNK_DEFERRED_POOL_KB": "256"}, "deferred-write slabs of 256 KiB"),
 ]
 
 # Every variable a point sets: removed from the environment of the others.
@@ -84,7 +87,7 @@ CAMPAIGN_VARS = sorted({k for p in POINTS for k in p.env})
 # The other settings that would bias the runs if the calling shell had them.
 CLEARED_VARS = CAMPAIGN_VARS + [
     "CHUNK_LOG", "CHUNK_LOG_FILE", "CHUNK_ARENA_REPORT", "CHUNK_LEDGER_REPORT", "CHUNK_OMPT_STATS",
-    "CHUNK_DEFERRED_POOL_KB", "CHUNK_AGGRESSIVE_COMPRESSION", "CHUNK_CST2_PROBE", "CHUNK_CST2_RECLAIM",
+    "CHUNK_AGGRESSIVE_COMPRESSION", "CHUNK_CST2_PROBE", "CHUNK_CST2_RECLAIM",
     "SHRINK_BENCH_EXACT_RSS", "SHRINK_BENCH_RSS_SAMPLE_MS", "SHRINK_BENCH_MALLOC_TRIM", "SHRINK_BENCH_KEEP_POOLS",
 ]
 
