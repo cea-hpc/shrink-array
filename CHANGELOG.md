@@ -317,6 +317,11 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `compile_all.sh` no longer loads a hard-coded `gcc/15.2.0`: it loads `gcc/15.2.0` where it exists,
+  else the newest `gcc/<ver>` module, for llvm, oneapi, nvhpc and aocc. On a machine without
+  15.2.0 the gcc load failed, then the llvm module, which needs a gcc, failed too, and the llvm
+  builds silently used the system `clang++`. The gcc is now loaded before llvm, and a failed
+  `module load llvm/<ver>` stops the script with what the module requires (`module show`).
 - Serial builds (no OpenMP, no std backend): `finalize_parallel_phase()` did not drain the
   `zero_any` family's compression candidates. The in-loop pass only runs past half the list
   maximum, so a backlog below it waited to the end of the run, and chunks written for the last
