@@ -58,6 +58,10 @@ if [ "$san" = "tsan" ]; then
 fi
 
 B="$WORK/cmake-build-$name/$arch"
+# The bench executable: its name carries the threading backend of the build
+# (shrink_bench_<backend>_..., examples/shrink_bench/CMakeLists.txt), omp here,
+# every configuration of this script being configured with -DOMP=ON below.
+bench=shrink_bench_omp_zero_any_dyn
 
 # ── 2) configure ─────────────────────────────────────────────────────────────
 step "cmake configure  (build dir: $B)"
@@ -74,13 +78,13 @@ echo "         configure OK"
 # ── 3) build (timed) ─────────────────────────────────────────────────────────
 step "cmake build  (compiling, be patient...)"
 t0=$(date +%s)
-if ! cmake --build "$B" --target shrink_bench_zero_any_dyn -j >/tmp/build_$name.log 2>&1; then
+if ! cmake --build "$B" --target "$bench" -j >/tmp/build_$name.log 2>&1; then
   echo "  !! BUILD FAILED:"; tail -25 /tmp/build_$name.log; exit 1
 fi
 echo "         build OK in $(( $(date +%s)-t0 ))s"
 # Every target carries its size (_256, _1024, _dyn); the perf mode is a
 # run-time flag (--mode), not part of the name.
-exe="$B/examples/shrink_bench/shrink_bench_zero_any_dyn"
+exe="$B/examples/shrink_bench/$bench"
 [ -x "$exe" ] || { echo "  !! no executable"; exit 1; }
 if [ "$san" = "tsan" ]; then
   echo "         TSan instrumentation: $(nm "$exe" 2>/dev/null | grep -c __tsan_func_entry) __tsan symbols (must be > 0)"
@@ -93,10 +97,10 @@ c=0 races=0 T0=$(date +%s)
 for i in $(seq 1 "$runs"); do
   r0=$(date +%s)
   if [ "$san" = "tsan" ]; then
-    TSAN_OPTIONS="history_size=7:halt_on_error=0" OMP_NUM_THREADS=64 ./shrink_bench_zero_any_dyn --mode perf >/tmp/${name}_$i.log 2>&1
+    TSAN_OPTIONS="history_size=7:halt_on_error=0" OMP_NUM_THREADS=64 "./$bench" --mode perf >/tmp/${name}_$i.log 2>&1
     nr=$(grep -c "data race" /tmp/${name}_$i.log); races=$((races+nr)); st="races=$nr"
   else
-    OMP_NUM_THREADS=64 ./shrink_bench_zero_any_dyn --mode perf >/dev/null 2>&1 && st="ok" || { st="CRASH"; c=$((c+1)); }
+    OMP_NUM_THREADS=64 "./$bench" --mode perf >/dev/null 2>&1 && st="ok" || { st="CRASH"; c=$((c+1)); }
   fi
   el=$(( $(date +%s)-T0 )); rt=$(( $(date +%s)-r0 ))
   # rough ETA

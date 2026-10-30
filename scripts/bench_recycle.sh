@@ -9,7 +9,9 @@
 #   python dir: found next to this script, in ../python or in build_root/python if omitted
 # Environment (defaults in brackets):
 #   THREADS ["32 64 128"]  CONFIGS ["omp-llvm omp-gnu"]
-#   VARIANTS ["zero@dyn"]: base@size, run as shrink_bench_<base>_int64_<size>
+#   VARIANTS ["zero@dyn"]: base@size, run as shrink_bench_<backend>_<base>_int64_<size>,
+#            <backend> the one the config was built with (omp, std or serial: each
+#            name is tried, a build dir holding one; never the old name without it)
 #            (zero_one_value@1024, zero_any@dyn, ...). The rebuild's slab recycling, this
 #            script's first purpose, is always on now (CHUNK_RECHUNK_RECYCLE is gone).
 #   MULTIPLY [2]: --multiply of the workload
@@ -60,9 +62,12 @@ for c in $CONFIGS; do
  cfg=cmake-build-${c#cmake-build-}
  for v in $VARIANTS; do
   [[ "$v" == *@* ]] || { echo "VARIANTS: base@size, not '$v'" >&2; exit 1; }
-  name=shrink_bench_${v%@*}_int64_${v#*@}
-  exe=$(ls "$ROOT/$cfg"/*/examples/shrink_bench/$name 2>/dev/null | grep "$(uname -m)" | head -1)
-  [ -x "$exe" ] || { echo "missing $name in $cfg" >&2; continue; }
+  rest=${v%@*}_int64_${v#*@}; exe=
+  for b in omp std serial; do
+    exe=$(ls "$ROOT/$cfg"/*/examples/shrink_bench/shrink_bench_${b}_$rest 2>/dev/null | grep "$(uname -m)" | head -1)
+    [ -x "$exe" ] && break
+  done
+  [ -x "$exe" ] || { echo "missing shrink_bench_{omp,std,serial}_$rest in $cfg" >&2; continue; }
   # one label per config and variant; zero@dyn alone keeps the bare config name
   lab0=${cfg#cmake-build-}; [ "$VARIANTS" = zero@dyn ] || lab0=$lab0:$v
   for es in $ENVS; do

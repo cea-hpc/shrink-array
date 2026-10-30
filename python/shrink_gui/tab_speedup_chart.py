@@ -27,9 +27,13 @@ from shrink_gui.widgets import ScatterView, TLabel
 # Colour follows the variant, never its rank; vector is the reference, in ink.
 VARIANT_SLOT = {"zero": 0, "zero_one_value": 1, "zero_any": 2}
 SIZE_SHAPES = ["dyn", "1024", "256", "64"]
-# The old names too (shrink_bench_chunk2a_dyn), read as the new ones; longest first.
-# The TBB bench (shrink_bench_tbb_zero_any_1024) is its variant and size, drawn dash-dot.
-EXE_RE = re.compile(r"^shrink_bench_(?:tbb_)?(vector|std_alloc|zero_any|zero_one_value|zero|chunk2a|chunk2|chunk)"
+# shrink_bench_<backend>_<variant>... (<backend> omp / std / serial, config.EXE_RE);
+# the old names too (shrink_bench_zero_any_dyn without a backend, shrink_bench_chunk2a_dyn),
+# read as the new ones; longest first. The TBB bench (shrink_bench_tbb_zero_any_1024) is
+# its variant and size, drawn dash-dot. An old std_alloc name (shrink_bench_std_alloc_256)
+# is still std_alloc: the regex backtracks out of the std_ backend for it.
+EXE_RE = re.compile(r"^shrink_bench_(?:(?:omp|std|serial)_)?(?:tbb_)?"
+                    r"(vector|std_alloc|zero_any|zero_one_value|zero|chunk2a|chunk2|chunk)"
                     r"(?:_int64)?(?:_(\w+))?$")
 
 # What the y axis shows: (row index in speedup_points, axis title, log scale by default).
@@ -52,8 +56,8 @@ def is_tbb(exe):
 
 
 def exe_key(exe):
-    """shrink_bench_zero_any_int64_dyn -> ("zero_any", "dyn") (shrink_bench_chunk2a_int64_dyn
-    too); vector_perf -> ("vector", "")."""
+    """shrink_bench_omp_zero_any_int64_dyn -> ("zero_any", "dyn") (shrink_bench_zero_any_int64_dyn,
+    shrink_bench_chunk2a_int64_dyn too); vector_perf -> ("vector", "")."""
     m = EXE_RE.match(exe)
     if not m:
         return exe, ""

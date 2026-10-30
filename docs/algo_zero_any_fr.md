@@ -104,7 +104,7 @@ Ces deux cas sont filtrés par une **condition nécessaire** (`may_become_unifor
 autres éléments du chunk (le premier et le dernier, ou leurs voisins si l'un d'eux est
 l'élément écrit) contiennent déjà la valeur écrite. Sans ce filtre, un chunk de données variées
 était mis en liste, relu, trouvé non uniforme, retiré, puis remis en liste par l'écriture
-suivante : ~3 µs par écriture sur `shrink_bench_zero_any_256` à 64 threads.
+suivante : ~3 µs par écriture sur `shrink_bench_omp_zero_any_256` à 64 threads.
 
 ## 5. La passe de compression
 
@@ -130,7 +130,7 @@ de sa constante le matérialise, pré-rempli avec **cette constante**.
 
 Le proxy trouve les lignes de métadonnées du chunk par le numéro du tableau. Une variante
 « armée », où l'`operator[]` d'écriture donnait directement au proxy les adresses des lignes,
-a été retirée : son gain (~0,4 % sur `shrink_bench_zero_any_256` à 64 threads) ne justifiait pas
+a été retirée : son gain (~0,4 % sur `shrink_bench_omp_zero_any_256` à 64 threads) ne justifiait pas
 l'invariant de resynchronisation qu'elle imposait à chaque réallocation des lignes.
 
 ## 7. Ce que `zero_any` fait autrement pendant un rechunk

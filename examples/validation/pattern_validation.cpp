@@ -258,7 +258,7 @@ static T value_of(Kind kind, long num_chunk, long j, long round, std::uint64_t& 
 template <typename Arr>
 static bool is_motif_chunk(const Arr& arr, long c)
 {
-    using ChunkT = typename Arr::ChunkType;
+    using ChunkT = Arr::ChunkType;
     if constexpr (has_motif_state_v<ChunkT>)
     {
         return ChunkT::is_motif_ptr(arr.get_chunk_list()[static_cast<std::size_t>(c)].values_load());
@@ -564,8 +564,6 @@ static void motif_state(const char* tname, long nch)
     }
 }
 
-/// @brief Cases M to P on pattern::Array<T> (see the file comment): the
-///        compression to motifs, by the write path and the pass.
 /// @brief fill_range over motif chunks: a motif chunk is no constant, whatever
 ///        its values pointer resembles. Each one filled -- part of it with its
 ///        own first element, all of it with the value of a uniform chunk
@@ -625,6 +623,8 @@ static void fill_over_motifs(const char* tname, long nch)
     expect_same("M  after a pass", arr, ref);
 }
 
+/// @brief Cases M to P on pattern::Array<T> (see the file comment): the
+///        compression to motifs, by the write path and the pass.
 template <typename T>
 static void motif_compression(const char* tname, long nch)
 {

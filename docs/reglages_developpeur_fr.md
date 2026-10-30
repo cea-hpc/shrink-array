@@ -195,7 +195,7 @@ transmettant les options communes. `--help` donne la liste complète.
 | `--with-ledger` | ajouter `cmake-build-omp-gnu-debug-ledger` (Debug OpenMP avec `CHUNK_FORCE_LEDGER=ON`), désactivé par défaut ; un `--target` qui le sélectionne le construit aussi |
 | `--with-token-sanitizer` | ajouter `cmake-build-omp-llvm-debug-std-alloc-token-sanitizer` (`SANITIZER=token`), désactivé par défaut ; un `--target` qui le sélectionne le construit aussi ; `--no-sanitizers` l'en retire |
 | `--target=<glob>` | seulement les configurations dont le nom correspond (`omp-llvm`, ou un motif du shell entre apostrophes) ; un motif qui ne correspond à rien est une erreur |
-| `--exec=<glob>` | seulement les cibles Ninja correspondantes dans chaque build (`shrink_bench_zero_64`, ou un motif du shell entre apostrophes) |
+| `--exec=<glob>` | seulement les cibles Ninja correspondantes dans chaque build (`shrink_bench_omp_zero_256`, ou un motif du shell entre apostrophes : `'shrink_bench_*_zero_256'` la prend quel que soit le backend) |
 | `--jobs=<n>` | nombre de configurations compilées en même temps (4 par défaut) ; le budget de cœurs est partagé entre elles |
 | `--no-hardening` | sans `CHUNK_GLIBCXX_ASSERTIONS` ni `CHUNK_UBSAN` sur les builds Debug et sanitizer |
 | `--llvm-cs=<n>` | ajouter un build LLVM avec `CHUNK_SIZE=n` |
@@ -208,7 +208,9 @@ les builds sous sanitizer).
 Le backend de threads std (`CHUNK_THREADS=std`) a ses propres builds : `std-gnu`,
 `std-gnu-check` et un build ThreadSanitizer pour `compile_all_gnu.sh`, `std-llvm`,
 `std-llvm-check` et un build ThreadSanitizer pour `compile_all.sh`. Ils allongent la
-compilation (`--target='omp-*'` les écarte, `--target='std-*'` les construit seuls). Le banc
+compilation (`--target='omp-*'` les écarte, `--target='std-*'` les construit seuls). Leurs
+exécutables de banc le disent dans leur nom, `shrink_bench_std_*` (`shrink_bench_omp_*` dans les
+builds OpenMP, `shrink_bench_serial_*` dans les builds série) : aucun n'utilise OpenMP. Le banc
 TBB (`shrink_bench_tbb_*`) et `tbb_validation` demandent oneTBB dans ces builds : les scripts
 ajoutent `CHUNK_WITH_TBB=ON` quand `TBBROOT` est défini (par le script d'environnement de oneAPI
 ou `spack load intel-oneapi-tbb`) ou quand `CHUNK_WITH_TBB=1`, et le disent au début ;

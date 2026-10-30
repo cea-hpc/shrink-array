@@ -132,10 +132,14 @@ ALLOWED = {
 
 # Names the build GENERATES, so that they appear nowhere whole in the sources:
 # the variant libraries (chunk_zero_any_256, chunk::chunk_zero_any_dyn, ...) and the
-# per-variant executables (shrink_bench_zero_any_256, validation_zero_dyn, ...).
+# per-variant executables (shrink_bench_omp_zero_any_256, validation_zero_dyn, ...). The
+# shrink_bench ones carry the threading backend of their build (omp, std, serial) or the
+# TBB bench's tbb; the unprefixed form stays accepted, a measured run citing an old name.
 GENERATED = re.compile(r"^(chunk::)?chunk_(zero|zero_one_value|zero_any|v1|v2|v2a)(_(\d+|dyn))?$"
                        r"|^(shrink_bench|validation|variant_compare|rechunk_validation|dyn_geometry_validation)"
-                       r"_(zero|zero_one_value|zero_any|chunk|chunk2|chunk2a|vector)(_\w+)?$")
+                       r"_(zero|zero_one_value|zero_any|chunk|chunk2|chunk2a|vector)(_\w+)?$"
+                       r"|^shrink_bench_(omp|std|serial|tbb)_(zero|zero_one_value|zero_any|vector|std_alloc)"
+                       r"(_\w+)?$")
 
 CODE_SPAN = re.compile(r"`([^`\n]+)`")
 LINK = re.compile(r"\]\(([^)\s]+)\)")

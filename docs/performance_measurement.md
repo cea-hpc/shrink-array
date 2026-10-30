@@ -15,7 +15,7 @@
 `VmRSS` (`/proc/self/status`), `/proc/self/statm` and `ru_maxrss` (`getrusage`) read the
 kernel's resident memory counters. These counters are kept **per thread**, and only folded
 into the process total from time to time. With 64 threads taking page
-faults, the total lags behind. Measured on `shrink_bench_zero_any_dyn`:
+faults, the total lags behind. Measured on `shrink_bench_omp_zero_any_dyn`:
 
 | point | `VmRSS` | exact (`smaps_rollup`) | lag |
 |---|---|---|---|

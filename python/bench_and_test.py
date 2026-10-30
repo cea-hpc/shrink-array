@@ -5,12 +5,14 @@
 bench_and_test.py — Benchmark + correctness stress runner for shrink-array.
 
 Supported layout (the CEA cluster one):
-    $build_root/{config}/$arch/examples/shrink_bench/shrink_bench_{var}_{stage}
+    $build_root/{config}/$arch/examples/shrink_bench/shrink_bench_<backend>_{var}_{stage}
+(<backend> omp, std or serial, the one {config} was built with: each is tried,
+see bench_runner/settings.py's bench_exe_names.)
 
 Example:
     $CCCWORKDIR/shrink-array/
-      ├── cmake-build-omp-gnu/RHEL_9__aarch64/examples/shrink_bench/shrink_bench_zero_one_value_dyn
-      ├── cmake-build-omp-gnu-have-aggressive-compression/.../shrink_bench_zero_one_value_dyn
+      ├── cmake-build-omp-gnu/RHEL_9__aarch64/examples/shrink_bench/shrink_bench_omp_zero_one_value_dyn
+      ├── cmake-build-omp-gnu-have-aggressive-compression/.../shrink_bench_omp_zero_one_value_dyn
       ├── cmake-build-omp-gnu-std-alloc/...
       ├── cmake-build-omp-llvm/...
       └── ...

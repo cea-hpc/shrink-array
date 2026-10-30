@@ -27,7 +27,6 @@
 //
 // Mechanism: a magic word stamped at construction, verified at the *top* of
 // write_body() before ctx->chunk is touched, and poisoned at destruction.
-// An `executed` flag additionally catches a double-flush (same op run twice).
 //
 // All checks compile away when build_config::any_check is false.
 // ============================================================================

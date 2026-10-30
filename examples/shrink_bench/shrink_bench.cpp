@@ -546,14 +546,10 @@ int main(int argc, char* argv[])
     // holds -- at --mask_scale 8, the size tab_mask was created with, 8 x 10^9
     // wrapped a 32-bit Int to -589934592 and zero_any::Array<bool, int> threw
     // std::length_error. The int64 builds take the full size.
-    long long mask_want = std::llround(mask_scale * static_cast<double>(sz));
-    if (mask_want < 1)
-    {
-        mask_want = 1;
-    }
-    const Int mask_sz = mask_want > static_cast<long long>(std::numeric_limits<Int>::max())
-                            ? static_cast<Int>(static_cast<long long>(std::numeric_limits<Int>::max()) & ~0x3FFLL)
-                            : static_cast<Int>(mask_want);
+    const long long mask_want = std::max(std::llround(mask_scale * static_cast<double>(sz)), 1LL);
+    const Int       mask_sz = mask_want > static_cast<long long>(std::numeric_limits<Int>::max())
+                                  ? static_cast<Int>(static_cast<long long>(std::numeric_limits<Int>::max()) & ~0x3FFLL)
+                                  : static_cast<Int>(mask_want);
     if (!no_mask && static_cast<long long>(mask_sz) != mask_want)
     {
         std::println("Note: tab_mask capped at {} elements ({} requested; Int is 32-bit here, the int64 build "
@@ -857,7 +853,7 @@ int main(int argc, char* argv[])
             {
                 if (!no_mask)
                 {
-                    rechunk_decider.consider<typename BenchMaskArray::value_type>(tab_mask, tick, iter, "tab_mask");
+                    rechunk_decider.consider<BenchMaskArray::value_type>(tab_mask, tick, iter, "tab_mask");
                 }
             }
             if constexpr (chunk_config::use_zero_any)
@@ -981,10 +977,7 @@ int main(int argc, char* argv[])
 
         Int end0 = start0 + size;
 
-        if (end0 > sz)
-        {
-            end0 = sz;
-        }
+        end0 = std::min(end0, sz);
 
         if constexpr (test_captur_bug)
         {

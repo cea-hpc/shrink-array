@@ -7,7 +7,7 @@ import platform as _platform
 from pathlib import Path
 
 from .settings import (COMPRESSION_INSENSITIVE_VARIANTS, COMPRESSION_ONLY_CONFIG_MARKERS, SHRINK_VARIANTS,
-                       is_tbb_variant, virtual_base)
+                       bench_exe_names, find_bench_exe, is_tbb_variant, virtual_base)
 from .term import dim
 
 
@@ -37,8 +37,8 @@ def _variant_base(var):
 
 def int64_variant(var):
     """The int64 declination of a --variants entry, spelled for resolve_exe:
-    "zero_any@1024" -> "zero_any_int64@1024" (shrink_bench_zero_any_int64_1024),
-    "vector" -> "vector_int64" (with stage perf: shrink_bench_vector_int64_perf).
+    "zero_any@1024" -> "zero_any_int64@1024" (shrink_bench_<backend>_zero_any_int64_1024),
+    "vector" -> "vector_int64" (with stage perf: shrink_bench_<backend>_vector_int64_perf).
     Built on the release OpenMP configs only, for 1024 and dyn (see
     examples/shrink_bench/CMakeLists.txt, SHRINK_BENCH_INT64)."""
     if "@" in var:
@@ -100,19 +100,23 @@ def physical_config(build_root, config):
 
 def resolve_exe(build_root, config, var, stage):
     """
-    Look up the executable for (config, var, stage) under several layouts:
-      1. $build_root/$config/<arch>/examples/shrink_bench/shrink_bench_{var}_{stage}
+    Look up the executable for (config, var, stage) under several layouts,
+    <exe> being shrink_bench_<backend>_{var}_{stage} (settings.bench_exe_names:
+    each backend's name is tried, a build directory holding one):
+      1. $build_root/$config/<arch>/examples/shrink_bench/<exe>
          (CEA layout with $arch sub-directory — filtered on the current arch)
-      2. $build_root/$config/examples/shrink_bench/shrink_bench_{var}_{stage}
+      2. $build_root/$config/examples/shrink_bench/<exe>
          (build without the $arch level)
-      3. $build_root/$config/shrink_bench_{var}_{stage}
+      3. $build_root/$config/<exe>
          (config = flat directory)
-      4. $build_root/shrink_bench_{var}_{stage}_{config}
+      4. $build_root/<exe>_{config}
          (old flat convention)
     Returns the absolute path of the first hit, or None.
     """
     # A variant may carry a size declination as "base@size" (e.g. "zero_any@dyn",
-    # "zero_one_value@256"). The executable name is then shrink_bench_{base}_{size}.
+    # "zero_one_value@256"). The executable name is then
+    # shrink_bench_<backend>_{base}_{size} (shrink_bench_tbb_{variant}_{size}
+    # for the TBB bench, its one name).
     #
     # No {stage} in that name any more: check and perf are ONE binary, the mode
     # being a run-time flag (--mode, added by run_with_rebuild_retry and by the
@@ -122,36 +126,33 @@ def resolve_exe(build_root, config, var, stage):
     # stay separate executables and keep the staged name.
     if "@" in var:
         base, size = var.split("@", 1)
-        exe_name = f"shrink_bench_{base}_{size}"
+        rest = f"{base}_{size}"
     else:
-        exe_name = f"shrink_bench_{var}_{stage}"
+        rest = f"{var}_{stage}"
     config = physical_config(build_root, config)  # a run-time mode runs its base build
     root = Path(build_root)
 
     # Layout 1: glob over the $arch level, but ONLY the current arch.
-    for exe in sorted((root / config).glob(f"*/{EXE_SUBPATH}/{exe_name}")):
-        # exe = .../{config}/{arch_dir}/examples/shrink_bench/{exe_name}
-        # go up 3 levels to get the arch directory name.
-        arch_dir = exe.parents[2].name
-        if not _arch_matches_current(arch_dir):
+    for arch_dir in sorted((root / config).glob(f"*/{EXE_SUBPATH}")):
+        # arch_dir = .../{config}/{arch_dir}/examples/shrink_bench: go up 2
+        # levels to get the arch directory name.
+        if not _arch_matches_current(arch_dir.parents[1].name):
             continue
-        if exe.is_file() and os.access(exe, os.X_OK):
-            return str(exe.resolve())
+        exe = find_bench_exe(str(arch_dir), rest)
+        if exe:
+            return str(Path(exe).resolve())
 
-    # Layout 2: no $arch level
-    candidate = root / config / EXE_SUBPATH / exe_name
-    if candidate.is_file() and os.access(candidate, os.X_OK):
-        return str(candidate.resolve())
-
-    # Layout 3: flat executable inside config
-    candidate = root / config / exe_name
-    if candidate.is_file() and os.access(candidate, os.X_OK):
-        return str(candidate.resolve())
+    # Layout 2: no $arch level; layout 3: flat executable inside config.
+    for directory in (root / config / EXE_SUBPATH, root / config):
+        exe = find_bench_exe(str(directory), rest)
+        if exe:
+            return str(Path(exe).resolve())
 
     # Layout 4: old convention
-    candidate = root / f"{exe_name}_{config}"
-    if candidate.is_file() and os.access(candidate, os.X_OK):
-        return str(candidate.resolve())
+    for exe_name in bench_exe_names(rest):
+        candidate = root / f"{exe_name}_{config}"
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate.resolve())
 
     return None
 

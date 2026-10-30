@@ -42,7 +42,8 @@
 #include <vector>  // std::vector
 #include <utility> // std::pair
 
-#include "fast_allocators/internal/pmp_loops.h" // fast_alloc::pmp::team, Team, options, WaitMode
+#include "fast_allocators/internal/pmp_loops.h"   // fast_alloc::pmp::team, Team, options, WaitMode
+#include "fast_allocators/internal/pmp_runtime.h" // fast_alloc::pmp::BackendKind
 
 namespace pmp = fast_alloc::pmp;
 

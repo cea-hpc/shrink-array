@@ -62,6 +62,11 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# The executables carry the backend of their build (shrink_bench_<backend>_...):
+# bench_runner's lookup tries the three, a build directory holding one.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from bench_runner.settings import find_bench_exe  # noqa: E402
+
 # ---------------------------------------------------------------------------
 # The plan
 # ---------------------------------------------------------------------------
@@ -115,21 +120,23 @@ def select_points(spec: str | None) -> list[Point]:
 
 
 def exe_name(variant: str, size: str, index: str) -> str:
-    return f"shrink_bench_{variant}_int64_{size}" if index == "int64" else f"shrink_bench_{variant}_{size}"
+    """The executable's name after its shrink_bench_<backend>_ (find_bench_exe adds it)."""
+    return f"{variant}_int64_{size}" if index == "int64" else f"{variant}_{size}"
 
 
 def find_exe(args, variant: str) -> Path | None:
     name = exe_name(variant, args.size, args.index)
     if args.bindir:
-        cand = [Path(args.bindir) / name]
+        dirs = [Path(args.bindir)]
     else:
         cfg = Path(args.build_root) / ("cmake-build-" + args.config.removeprefix("cmake-build-"))
         arch = platform.machine()
-        cand = sorted(p for p in cfg.glob(f"*/examples/shrink_bench/{name}") if arch in str(p))
-        cand += [cfg / "examples" / "shrink_bench" / name]
-    for c in cand:
-        if c.is_file() and os.access(c, os.X_OK):
-            return c.resolve()
+        dirs = sorted(d for d in cfg.glob("*/examples/shrink_bench") if arch in str(d))
+        dirs += [cfg / "examples" / "shrink_bench"]
+    for d in dirs:
+        exe = find_bench_exe(str(d), name)
+        if exe:
+            return Path(exe).resolve()
     return None
 
 
@@ -312,8 +319,8 @@ def main() -> int:
     ap.add_argument("--variants", default=",".join(VARIANTS), help="among " + ", ".join(VARIANTS))
     ap.add_argument("--size", default="dyn", help="chunk-size declination of the executables (dyn)")
     ap.add_argument("--index", choices=["int64", "int32"], default="int64",
-                    help="int64: shrink_bench_<v>_int64_<size> (SHRINK_BENCH_INT64=ON, the default); "
-                         "int32: shrink_bench_<v>_<size>")
+                    help="int64: shrink_bench_<backend>_<v>_int64_<size> (SHRINK_BENCH_INT64=ON, the "
+                         "default); int32: shrink_bench_<backend>_<v>_<size>")
     ap.add_argument("--points", help="comma-separated point names or families (default: all)")
     ap.add_argument("--args", dest="bench_args", default=DEFAULT_ARGS, help=f"shrink_bench arguments ({DEFAULT_ARGS})")
     ap.add_argument("--numa", choices=["auto", "off"], default="auto", help="numactl --interleave (auto)")
@@ -344,7 +351,7 @@ def main() -> int:
         exe = find_exe(args, v)
         if exe is None:
             where_ = args.bindir or f"{args.build_root}/cmake-build-{args.config}"
-            sys.exit(f"{exe_name(v, args.size, args.index)} not found under {where_} "
+            sys.exit(f"shrink_bench_{{omp,std,serial}}_{exe_name(v, args.size, args.index)} not found under {where_} "
                      f"(int64 executables need SHRINK_BENCH_INT64=ON; --index int32 takes the others)")
         exes[v] = exe
 

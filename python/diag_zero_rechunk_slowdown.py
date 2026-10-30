@@ -15,8 +15,8 @@ shrink_bench runs in --mode perf (large sizes, --iter_max iterations; the
 default check mode stops at 33 iterations of a small problem and never
 re-chunks) unless --args names a --mode.
 
-Part 1 -- A/B on the rebuild's state (always). shrink_bench_zero_1024
-(static) and shrink_bench_zero_dyn under:
+Part 1 -- A/B on the rebuild's state (always). shrink_bench_<backend>_zero_1024
+(static) and shrink_bench_<backend>_zero_dyn under:
     dyn            the default
                    The rebuild slices the array in 16 and spreads each slice
                    over ALL ranks (guided,16): a new chunk's buffer is
@@ -68,18 +68,24 @@ import threading
 import time
 from pathlib import Path
 
+# The executables carry the backend of their build (shrink_bench_<backend>_zero_dyn):
+# bench_runner's lookup tries the three, the --bindir holding one.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from bench_runner.settings import find_bench_exe  # noqa: E402
+
 ITER_RE = re.compile(r"^iter (\d+) : time : ")
 # The re-chunk's phase line, as the log writes it (rechunk=debug) and as it was printed before.
 RECHUNK_RE = re.compile(r"^(?:\[RECHUNK\]|\[shrink_array\]\[rechunk\]\[D\]\[\d+\]) (\d+) -> (\d+) phases")
 FREEPATH_RE = re.compile(r"\[FREEPATH\] (\S+)\s+freed=(\d+)\s+parked_own=(\d+)\s+parked_foreign=(\d+)")
 
-# (name, executable, environment, extra shrink_bench arguments)
+# (name, executable after its shrink_bench_<backend>_, environment, extra
+# shrink_bench arguments)
 CONFIGS = [
-    ("static", "shrink_bench_zero_1024", {}, []),
-    ("dyn", "shrink_bench_zero_dyn", {}, []),
+    ("static", "zero_1024", {}, []),
+    ("dyn", "zero_dyn", {}, []),
     # the advisor's own share: analyses without any re-chunk, and none at all
-    ("dyn_dryrun", "shrink_bench_zero_dyn", {}, ["--rechunk_dry_run"]),
-    ("dyn_noadvisor", "shrink_bench_zero_dyn", {}, ["--advisor_period", "0"]),
+    ("dyn_dryrun", "zero_dyn", {}, ["--rechunk_dry_run"]),
+    ("dyn_noadvisor", "zero_dyn", {}, ["--advisor_period", "0"]),
 ]
 
 
@@ -214,7 +220,7 @@ def stat_summary(run):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--bindir", required=True, help="directory holding shrink_bench_zero_dyn and _1024")
+    ap.add_argument("--bindir", required=True, help="directory holding shrink_bench_<backend>_zero_dyn and _1024")
     ap.add_argument("--threads", type=int, default=64)
     ap.add_argument("--out", required=True, help="output directory (put it in your work space)")
     ap.add_argument("--args", default="", help="extra shrink_bench arguments (default adds --mode perf --iter_max 2000)")
@@ -234,7 +240,9 @@ def main():
     if "--iter_max" not in args:
         args += ["--iter_max", "2000"]
     wanted = set(a.configs.split(","))
-    missing = sorted({exe for name, exe, *_ in CONFIGS if name in wanted and not (bindir / exe).is_file()})
+    path_of = {exe: find_bench_exe(str(bindir), exe) for name, exe, *_ in CONFIGS}
+    missing = sorted({f"shrink_bench_{{omp,std,serial}}_{exe}" for name, exe, *_ in CONFIGS
+                      if name in wanted and path_of[exe] is None})
     if missing:
         print(f"error: not found in {bindir}: {', '.join(missing)}", file=sys.stderr)
         return 1
@@ -249,7 +257,7 @@ def main():
             if name not in wanted:
                 continue
             print(f"[part 1] {name} (rep {rep + 1}/{a.reps})", flush=True)
-            r = Run(f"{name}_r{rep}", str(bindir / exe), env, args + extra, out, a.threads).run()
+            r = Run(f"{name}_r{rep}", path_of[exe], env, args + extra, out, a.threads).run()
             if r.rc != 0:
                 print(f"  {name}: exit code {r.rc}, see {r.dir / 'run.log'}", file=sys.stderr)
             runs.setdefault(name, []).append(r)
@@ -301,14 +309,14 @@ def main():
         for name in ("static", "dyn"):
             exe, env, extra = next((e, v, x) for n_, e, v, x in CONFIGS if n_ == name)
             print(f"[part 2] {name}: probes", flush=True)
-            r = Run(f"{name}_probe", str(bindir / exe), env, args + extra, out, a.threads, probe_iter,
+            r = Run(f"{name}_probe", path_of[exe], env, args + extra, out, a.threads, probe_iter,
                     ["numastat", "stat", "c2c", "record"], a.window).run()
             perf_reports(r)
             summary.append(f"{name:8s} {stat_summary(r) or '(no perf stat)'}   -> {r.dir}")
             print(f"[part 2] {name}: allocator counters (CHUNK_ARENA_REPORT=1)", flush=True)
             env2 = dict(env)
             env2["CHUNK_ARENA_REPORT"] = "1"
-            r2 = Run(f"{name}_freepath", str(bindir / exe), env2, args + extra, out, a.threads).run()
+            r2 = Run(f"{name}_freepath", path_of[exe], env2, args + extra, out, a.threads).run()
             if r2.freepath:
                 # cumulative counters: take the per-iteration increase of parked_foreign
                 per_iter = {}

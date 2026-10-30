@@ -46,7 +46,7 @@ void pattern::Chunk<T>::classify_motif(int num_chunk, int num_tab, ChunkElems si
 template <typename T>
 void pattern::Chunk<T>::compress_motif_candidates(int thr)
 {
-    using ProxyT = typename ChunkTraits<Chunk>::ProxyType;
+    using ProxyT = ChunkTraits<Chunk>::ProxyType;
     for (const auto& [chunk, motif, offset, num_chunk, num_tab, size] : motif_candidates_)
     {
         // Per-chunk geometry pin, as make_block_compression() for the constants: the

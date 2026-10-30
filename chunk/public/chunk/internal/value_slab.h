@@ -52,8 +52,8 @@ template <typename T>
     constexpr int     per_word = std::max(static_cast<int>(8 / sizeof(T)), 1);
     static const long page     = ::sysconf(_SC_PAGESIZE);
 
-    std::size_t bytes = static_cast<std::size_t>(block_size / per_word);
-    bytes             = std::max(bytes, page > 0 ? static_cast<std::size_t>(page) : std::size_t{4096});
+    auto bytes = static_cast<std::size_t>(block_size / per_word);
+    bytes      = std::max(bytes, page > 0 ? static_cast<std::size_t>(page) : std::size_t{4096});
     return std::max(bytes, max_element_bytes + sizeof(void*));
 }
 

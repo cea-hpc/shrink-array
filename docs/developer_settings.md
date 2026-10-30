@@ -192,7 +192,7 @@ the common options. `--help` gives the full list.
 | `--with-ledger` | add `cmake-build-omp-gnu-debug-ledger` (OpenMP Debug with `CHUNK_FORCE_LEDGER=ON`), disabled by default; a `--target` that selects it also builds it |
 | `--with-token-sanitizer` | add `cmake-build-omp-llvm-debug-std-alloc-token-sanitizer` (`SANITIZER=token`), disabled by default; a `--target` that selects it also builds it; `--no-sanitizers` skips it |
 | `--target=<glob>` | only the configurations whose name matches (`omp-llvm`, or a quoted shell glob); a pattern that matches nothing is an error |
-| `--exec=<glob>` | only the matching Ninja targets in each build (`shrink_bench_zero_64`, or a quoted shell glob) |
+| `--exec=<glob>` | only the matching Ninja targets in each build (`shrink_bench_omp_zero_256`, or a quoted shell glob: `'shrink_bench_*_zero_256'` takes it whatever the backend) |
 | `--jobs=<n>` | number of configurations compiled at the same time (4 by default); the core budget is shared between them |
 | `--no-hardening` | without `CHUNK_GLIBCXX_ASSERTIONS` or `CHUNK_UBSAN` on the Debug and sanitizer builds |
 | `--llvm-cs=<n>` | add an LLVM build with `CHUNK_SIZE=n` |
@@ -205,7 +205,9 @@ sanitizer builds).
 The std threading backend (`CHUNK_THREADS=std`) has its own builds: `std-gnu`, `std-gnu-check`
 and a ThreadSanitizer one from `compile_all_gnu.sh`, `std-llvm`, `std-llvm-check` and a
 ThreadSanitizer one from `compile_all.sh`. They lengthen the compilation (`--target='omp-*'`
-leaves them out, `--target='std-*'` makes them alone). The TBB bench (`shrink_bench_tbb_*`) and
+leaves them out, `--target='std-*'` makes them alone). Their bench executables say so in their
+name, `shrink_bench_std_*` (`shrink_bench_omp_*` in the OpenMP builds, `shrink_bench_serial_*`
+in the serial ones): none of them uses OpenMP. The TBB bench (`shrink_bench_tbb_*`) and
 `tbb_validation` need oneTBB in those builds: the scripts add `CHUNK_WITH_TBB=ON` when `TBBROOT`
 is set (by oneAPI's environment script or `spack load intel-oneapi-tbb`) or when `CHUNK_WITH_TBB=1`, and say
 so at the start; `CHUNK_WITH_TBB=0` leaves TBB out. The ThreadSanitizer std builds take TBB

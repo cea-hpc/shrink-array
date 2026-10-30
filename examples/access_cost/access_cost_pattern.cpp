@@ -62,7 +62,6 @@
 #include <utility>   // std::as_const
 #include <vector>    // std::vector
 
-#include "chunk/pattern_chunk.h"      // pattern::Chunk
 #include "chunk/chunk_traits.h"       // the IntType = int default of the arrays
 #include "chunk/zero_any_array.h"     // zero_any::Array
 #include "chunk/pattern_array.h"      // pattern::Array, pattern::MotifRegion
