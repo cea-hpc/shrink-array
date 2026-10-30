@@ -74,7 +74,7 @@ your program the phase calls of §5.
 cmake_minimum_required(VERSION 3.20)
 project(my_app LANGUAGES CXX)
 
-find_package(chunk 0.1 REQUIRED)        # -DCMAKE_PREFIX_PATH=<install prefix>
+find_package(chunk 0.2 REQUIRED)        # -DCMAKE_PREFIX_PATH=<install prefix>
 
 add_executable(my_app main.cpp)
 target_link_libraries(my_app PRIVATE chunk::chunk_zero_any)

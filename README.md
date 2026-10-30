@@ -162,7 +162,7 @@ Partitioners and `task_arena`s work as with TBB itself; an arena wider than the 
 the program links it.
 
 ```cmake
-find_package(chunk 0.1 REQUIRED)
+find_package(chunk 0.2 REQUIRED)
 find_package(TBB REQUIRED)
 target_link_libraries(my_app PRIVATE chunk::chunk_zero_any TBB::tbb)
 ```
@@ -346,7 +346,7 @@ cmake --install build
 Then, in your project:
 
 ```cmake
-find_package(chunk 0.1 REQUIRED)            # -DCMAKE_PREFIX_PATH=<install prefix>
+find_package(chunk 0.2 REQUIRED)            # -DCMAKE_PREFIX_PATH=<install prefix>
 target_link_libraries(my_app PRIVATE chunk::chunk_zero_any)
 ```
 

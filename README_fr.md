@@ -165,7 +165,7 @@ dans le corps prend `sa::tbb::phase_body(inner)`. L'en-tête est fourni avec la 
 ne dépend pas de TBB : c'est au programme de se lier à TBB.
 
 ```cmake
-find_package(chunk 0.1 REQUIRED)
+find_package(chunk 0.2 REQUIRED)
 find_package(TBB REQUIRED)
 target_link_libraries(my_app PRIVATE chunk::chunk_zero_any TBB::tbb)
 ```
@@ -357,7 +357,7 @@ cmake --install build
 Puis, dans votre projet :
 
 ```cmake
-find_package(chunk 0.1 REQUIRED)            # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
+find_package(chunk 0.2 REQUIRED)            # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
 target_link_libraries(my_app PRIVATE chunk::chunk_zero_any)
 ```
 
