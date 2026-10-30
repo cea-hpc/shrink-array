@@ -25,15 +25,25 @@ HEAD = ["Config", "Variant", "Threads", "AvgTime_s", "PeakMem_Mo", "Speedup_vs_b
 
 # ── the helper's side: two fake members of a pool ───────────────────────────
 
-def _bench_job(runs, out, pool, k, nodes, configs, errors=0):
+def _bench_job(runs, out, pool, k, nodes, configs, errors=0, layout="jobs"):
     """Job <pool>-n<k>: its run dir (meta, log announcing its own output
     directory <arch>/pool_<pool>/n<k>, events.jsonl) and, there, the
     bench_summary.csv of @p configs, @p errors CHECK_FAIL entries each with
-    its full log under run_logs/."""
-    d = runs / f"{pool}-n{k}"
-    d.mkdir(parents=True)
-    meta = dict(FAKE_BENCH, program="bench_and_test.py", pool=pool, node=k, nodes=nodes)
-    (d / "meta.json").write_text(json.dumps(meta))
+    its full log under run_logs/. @p layout "job": node <k> of the one job
+    <pool> of @p nodes nodes instead, its directory <pool>/n<k> (no meta.json
+    there: the run's)."""
+    if layout == "job":
+        top = runs / pool
+        top.mkdir(parents=True, exist_ok=True)
+        (top / "meta.json").write_text(json.dumps(dict(FAKE_BENCH, program="bench_and_test.py", pool=pool,
+                                                       nodes=nodes, layout="job")))
+        d = top / f"n{k}"
+        d.mkdir()
+    else:
+        d = runs / f"{pool}-n{k}"
+        d.mkdir(parents=True)
+        meta = dict(FAKE_BENCH, program="bench_and_test.py", pool=pool, node=k, nodes=nodes)
+        (d / "meta.json").write_text(json.dumps(meta))
     od = out / "x86_64" / f"pool_{pool}" / f"n{k}"
     (od / "run_logs").mkdir(parents=True)
     (d / "out.log").write_text(f"📁 Run outputs → {od}  (arch: x86_64)\n"
@@ -75,14 +85,18 @@ def _b64(obj):
     return base64.b64encode(json.dumps(obj).encode()).decode()
 
 
-def test_pooled_bench_summary_points_errors(tmp_path, capsys):
+@pytest.mark.parametrize("layout", ["jobs", "job"])
+def test_pooled_bench_summary_points_errors(tmp_path, capsys, layout):
+    """Two jobs of one node P-n1 / P-n2, or the two nodes of one job P (its
+    nodes in P/n1, P/n2): the same results from the run's tabs."""
     from shrink_gui import remote_helper as rh
     runs, out = tmp_path / "runs", tmp_path / "out"
     # Job 1 did llvm, job 2 gnu and gnu-aggressive (one unit) with 2 failures.
-    _bench_job(runs, out, "P", 1, 2, ["llvm"])
-    d2, od2 = _bench_job(runs, out, "P", 2, 2, ["gnu", "gnu-have-aggressive-compression"], errors=2)
+    _bench_job(runs, out, "P", 1, 2, ["llvm"], layout=layout)
+    d2, od2 = _bench_job(runs, out, "P", 2, 2, ["gnu", "gnu-have-aggressive-compression"], errors=2, layout=layout)
+    one, two = ("P", "P") if layout == "job" else ("P-n1", "P-n2")
 
-    s = _call(rh, capsys, "summary", str(runs), "P-n1")
+    s = _call(rh, capsys, "summary", str(runs), one)
     phases, table = s["sections"]
     assert phases["columns"][0] == "nœud" and [r[0] for r in phases["rows"]] == ["n1", "n2"]
     assert phases["fail_rows"] == [1] and "2 fini(s), 2 erreur(s)" in phases["note"]
@@ -90,30 +104,32 @@ def test_pooled_bench_summary_points_errors(tmp_path, capsys):
     # The rows of both jobs, in one job's order (config, variant, threads).
     assert [r[0] for r in table["rows"]][::4] == ["gnu", "gnu-have-aggressive-compression", "llvm"]
 
-    p = _call(rh, capsys, "points", str(runs), "P-n2")
+    p = _call(rh, capsys, "points", str(runs), two)
     assert p["kind"] == "bench" and sorted(p["configs"]) == ["gnu", "gnu-have-aggressive-compression", "llvm"]
     assert len(p["rows"]) == 12 and p["own"] and (p["nodes"], p["nodes_found"]) == (2, 2)
 
     opts = {"files": ["bench_errors.log"], "cases": "failed_cases.jsonl", "full_logs": "run_logs"}
-    e = _call(rh, capsys, "errors", str(runs), "P-n1", _b64(opts))
+    e = _call(rh, capsys, "errors", str(runs), one, _b64(opts))
     assert sorted(f["name"] for f in e["files"]) == ["n1/bench_errors.log", "n2/bench_errors.log"]
     assert e["count"] == 2 and e["dir"] == str(out / "x86_64" / "pool_P") and e["newer"] is None
     assert [c["summary"][:14] for c in e["cases"]] == ["n2: CHECK_FAIL"] * 2
     assert e["cases"][0]["logs"] == ["n2/run_logs/shrink_bench_omp_zero_256__omp1__00001__rc4.log"]
     # The complete output of a failure of job 2, opened from job 1's tab.
-    f = _call(rh, capsys, "errfile", str(runs), "P-n1", _b64({"paths": e["cases"][1]["logs"]}))
+    f = _call(rh, capsys, "errfile", str(runs), one, _b64({"paths": e["cases"][1]["logs"]}))
     assert f["files"][0]["data"] == "no oracle (job n2, failure 1)\n"
-    assert _call(rh, capsys, "errfile", str(runs), "P-n1", _b64({"paths": ["../x"]}))["files"][0]["missing"]
+    assert _call(rh, capsys, "errfile", str(runs), one, _b64({"paths": ["../x"]}))["files"][0]["missing"]
 
     # The Erreurs column of either job: the pool's count, the newest error.
-    meta1 = json.loads((runs / "P-n1" / "meta.json").read_text())
-    assert rh.errors_of(str(runs / "P-n1"), meta1, "fini", rh.read_events(str(runs / "P-n1"))) == \
+    meta1 = json.loads((runs / one / "meta.json").read_text())
+    assert rh.errors_of(str(runs / one), meta1, "fini", rh.read_events(str(runs / one))) == \
         [2, "CHECK_FAIL: gnu-have-aggressive-compression zero@256 iter=2 code=4"]
     # Outside a pool, the job's own events and files, as before.
+    if layout == "job":
+        return
     alone = dict(meta1)
     alone.pop("pool")
-    assert rh.errors_of(str(runs / "P-n1"), alone, "fini", rh.read_events(str(runs / "P-n1"))) == [0, None]
-    assert rh.pooled_bench(str(runs / "P-n1"), alone) is None
+    assert rh.errors_of(str(runs / one), alone, "fini", rh.read_events(str(runs / one))) == [0, None]
+    assert rh.pooled_bench(str(runs / one), alone) is None
 
 
 # ── bench_runner/share.py: the oracle wait ──────────────────────────────────

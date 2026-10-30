@@ -69,7 +69,7 @@ runs again by itself.
 | Submission | `ccc_msub` (batch, the default) or `ccc_mprun` detached from the login node |
 | Max time (-T) | accepts `2 d`, `1 h 30`, `90 min`, `1-00:00:00` |
 | QoS (-Q) | "auto" picks the QoS from the duration, according to the limits `ccc_mqinfo` reports |
-| Nodes | `compile_all.sh` and `thread_speedup.py` in batch mode: the number of one-node jobs that share the work (below) |
+| Nodes | the pooled programs in batch mode: the number of nodes that share the work, as one job of N nodes or N one-node jobs (below) |
 | Start | after a `compile_all.sh` run that has not finished yet (Slurm dependency `afterok`/`afterany`), and/or not before a given time |
 | Builds up to date | before the command, `ninja -n` on the builds used: refuse (code 96), warn, or skip |
 | Directives, Launcher (job) | the `#MSUB` lines and the launcher on the node; per partition, remembered |
@@ -98,7 +98,7 @@ turns this check off for a program.
 `--exec` fields have a "Choose…" button listing the configurations and executables found on
 the cluster.
 
-**Compiling on several nodes.** With "Nodes" N > 1, "Submit" creates N batch jobs, one node
+**Compiling on several nodes.** With "Nodes" N > 1 and "N jobs of one node", "Submit" creates N batch jobs, one node
 each, with the same directives and the same command plus `--pool=<the submission's id>`.
 They appear in the table as `compile_all.sh [k/N]`, runs `<id>-n1` to `<id>-nN`. Each job walks
 the configurations in the usual order and builds a configuration only if it is the first to
@@ -113,6 +113,20 @@ for all N (`--dependency=afterok:j1:…:jN`). "Reuse its options" makes a new po
 values never include the `--pool` the window added. The field is hidden in detached mode and for
 the programs that cannot share their work. `--pool` can also be given by hand, to a
 `compile_all.sh` run from a shell (`--help`).
+
+**One job of N nodes.** The default beside "Nodes" is "one job of N nodes": a single
+submission whose directives ask N nodes and N tasks (`-N N -n N`, `-c` kept: a node's cores per
+task). `run.sh` prints its banner and makes the build check once, on the job's first node, then
+starts `node.sh` on every node through the partition's launcher or, without one, the site's
+`[batch] step` command (`ccc_mprun` on inti, `srun` by default), made `-N N -n N -c <cores>`.
+Node K (the task's rank + 1) works in `<id>/n<K>`: its own `out.log` (node 1's is also in the
+run's log), `events.jsonl`, kept copies and `exit_code`; the scripts name it `n<K>` from
+`CHUNK_BENCH_KEEP_DIR`. The run (`compile_all.sh [×N]`) fails when a node fails; its Summary,
+Chart, Errors and Errors column gather its nodes as for N jobs. On inti a user's jobs beyond
+24 h (`xlong`) share 128 cores: N one-node jobs then run one after another (the QoS line says
+so) and a job of N nodes must fit `normal` (24 h at most), its QoS checked on N × a node's cores.
+Changing "Nodes" from N1 to N2 multiplies the duration by N1 / N2 (rounded up to the quarter
+hour, 30 min at least) until the duration is typed by hand.
 
 `thread_speedup.py` (thread speedup curves of shrink_bench executables on one target, regardless of what
 runs the threads -- OpenMP, the std::thread backend or TBB; formerly `omp_speedup.py`: `--target`,

@@ -355,7 +355,7 @@ EN = {
     # start conditions and build check (Démarrage / Builds à jour)
     "Démarrage": "Start", "Builds à jour": "Builds up to date", "pas avant": "not before",
     "Nœuds": "Nodes", "la soumission": "the submission",
-    "Nombre de jobs batch d'un nœud chacun entre lesquels le travail est partagé "
+    "Nombre de nœuds entre lesquels le travail est partagé "
     "(--pool, ccc_msub seulement) : les configurations de compile_all.sh, les exécutables "
     "de thread_speedup.py, les --runs de multi_launch_stress.py, les couples (phase, "
     "configuration) de bench_and_test.py.\n\n"
@@ -371,7 +371,7 @@ EN = {
     "écrit dans son dossier pool_<id>/n<K> ; Résumé, Graphique et Erreurs réunissent les "
     "jobs.\n\n"
     "« Démarrage : après » propose ensuite une compilation entière : on attend tous ses jobs.":
-        "Number of batch jobs of one node each that share the work "
+        "Number of nodes that share the work "
         "(--pool, ccc_msub only): compile_all.sh's configurations, thread_speedup.py's "
         "executables, multi_launch_stress.py's --runs, bench_and_test.py's (phase, configuration) "
         "pairs.\n\n"
@@ -385,6 +385,29 @@ EN = {
         "job goes on; each job writes to its own pool_<id>/n<K> directory; Summary, Chart and Errors "
         "gather the jobs.\n\n"
         "\"Start: after\" then offers a whole compilation: all its jobs are waited for.",
+    "un job de N nœuds": "one job of N nodes", "N jobs d'un nœud": "N jobs of one node",
+    "Comment les N nœuds sont demandés.\n\n"
+    "« un job de N nœuds » : une seule soumission de N nœuds ; run.sh vérifie les "
+    "builds une fois, puis lance une tâche par nœud (node.sh, dossier n<K> du run, "
+    "son propre out.log). Une seule entrée dans la file : le choix quand la QoS "
+    "longue ne laisse qu'un job à la fois. Sa QoS est vérifiée sur N × les cœurs "
+    "d'un nœud.\n\n"
+    "« N jobs d'un nœud » : N soumissions <id>-n1..nN, chacune vérifiée sur ses "
+    "propres cœurs ; elles passent l'une après l'autre si la QoS plafonne les cœurs "
+    "de tous vos jobs (prévenu dans la barre d'état).\n\n"
+    "Changer « Nœuds » de N1 à N2 multiplie la durée max par N1 / N2 (arrondie au "
+    "quart d'heure supérieur, 30 min au moins), tant que vous ne l'avez pas tapée "
+    "vous-même.":
+        "How the N nodes are requested.\n\n"
+        "\"one job of N nodes\": a single submission of N nodes; run.sh checks the builds once, "
+        "then starts one task per node (node.sh, the run's n<K> directory, its own out.log). A "
+        "single entry in the queue: the choice when the long QoS lets one job run at a time. Its "
+        "QoS is checked on N × a node's cores.\n\n"
+        "\"N jobs of one node\": N submissions <id>-n1..nN, each checked on its own cores; they "
+        "run one after another when the QoS caps the cores of all your jobs (said in the status "
+        "bar).\n\n"
+        "Changing \"Nodes\" from N1 to N2 multiplies the maximum duration by N1 / N2 (rounded up "
+        "to the quarter hour, 30 min at least), as long as you did not type it yourself.",
     "dès la soumission": "on submission", "si elle réussit": "if it succeeds",
     "quelle que soit son issue": "whatever its result",
     "refuser de démarrer si un build n'est pas à jour": "refuse to start if a build is not up to date",
@@ -435,6 +458,14 @@ EN_RE = [(re.compile(a), b) for a, b in (
     (r"^après (\S+) \((\d+) nœuds\)$", r"after \1 (\2 nodes)"),
     (r"^après (\S+)$", r"after \1"),
     (r"^(\d+) jobs, un nœud chacun$", r"\1 jobs, one node each"),
+    (r"^un job de (\d+) nœuds$", r"one job of \1 nodes"),
+    (r"^durée max par nœud ≈ total / (\d+)$", r"max duration per node ≈ total / \1"),
+    (r"^soumis : job (\S+) de (\d+) nœuds$", r"submitted: job \1 of \2 nodes"),
+    (r"^soumis : (\d+) jobs, un nœud chacun — ", r"submitted: \1 jobs, one node each — "),
+    (r"^QoS (\S+) : (\d+) cores au plus pour tous vos jobs, les (\d+) jobs passeront l'un après l'autre$",
+     r"QoS \1: at most \2 cores for all your jobs, the \3 jobs will run one after another"),
+    (r" — QoS (\S+) : (\d+) cores au plus pour tous vos jobs, les (\d+) jobs passeront l'un après l'autre$",
+     r" — QoS \1: at most \2 cores for all your jobs, the \3 jobs will run one after another"),
     (r"^soumis : (\d+) jobs, un nœud chacun$", r"submitted: \1 jobs, one node each"),
     (r"^(\S+) est ajouté par le champ « Nœuds » : retirez-le de la commande$",
      r'\1 is added by the "Nodes" field: remove it from the command'),
@@ -446,7 +477,7 @@ EN_RE = [(re.compile(a), b) for a, b in (
     (r"^(.+) dépasse le maximum de la QoS (\S+) sur (\S+) \((.+)\)$", r"\1 exceeds the maximum of QoS \2 on \3 (\4)"),
     (r"^(\d+) cœurs dépassent le maximum de la QoS (\S+) sur (\S+) \((\d+)\)$",
      r"\1 cores exceed the maximum of QoS \2 on \3 (\4)"),
-    (r"^aucune QoS n'accepte (.+?) sur (\S+)", r"no QoS accepts \1 on \2"), (r" \(au plus (.+)\)$", r" (\1 at most)"),
+    (r"^aucune QoS n'accepte (.+?) sur (\S+)", r"no QoS accepts \1 on \2"), (r" pour (\d+) cores\b", r" for \1 cores"), (r" \(au plus (.+)\)$", r" (\1 at most)"),
     (r"^(\d+) job\(s\) soumis au plus$", r"at most \1 submitted job(s)"),
     (r"(\d+) j (\d\d) h", r"\1 d \2 h"),
     (r"^configurée, (\d+) exécutable\(s\), ", r"configured, \1 executable(s), "),

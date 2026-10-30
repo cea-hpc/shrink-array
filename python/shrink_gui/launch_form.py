@@ -21,7 +21,8 @@ from PySide6.QtWidgets import QMessageBox
 from shrink_gui import qos
 from shrink_gui.config import ARCH_DEFAULTS, BATCH, BUILD_REP, DEFAULTS, DETACHED, PROGRAMS, SITE
 from shrink_gui.i18n import T
-from shrink_gui.runscripts import make_launch_sh, make_local_launch_sh, make_run_sh
+from shrink_gui.runscripts import (directive_cores, make_launch_sh, make_local_launch_sh, make_node_sh,
+                                   make_run_sh, node_launch, nodes_directives)
 from shrink_gui.widgets import PickerDialog, ask, families, split_list, unique_globs
 
 
@@ -30,6 +31,7 @@ class LaunchForm:
         prog = self.program.currentText()
         self.time_s.setValue(int(self.settings.value(f"time_s/{prog}",
                                                      PROGRAMS[prog].get("time_s", DEFAULTS["time_s"]))))
+        self.rescale_armed = True        # the program's duration: "Nœuds" may rescale it
         cached = self.settings.value(f"schema/{self.program.currentText()}")
         self.form.pickers = {d: self.pick for d in PROGRAMS[prog].get("pickers", {})}
         self.check_builds.setEnabled("builds_opt" in PROGRAMS[prog])
@@ -100,13 +102,15 @@ class LaunchForm:
                     self.after.addItem(T(f"après {r['id']}"), r["id"])
                 elif pool not in pools:
                     pools.add(pool)
-                    self.after.addItem(T(f"après {pool} ({len(self.pool_runs(pool))} nœuds)"), pool)
+                    n = r["meta"].get("nodes") or len(self.pool_runs(pool))
+                    self.after.addItem(T(f"après {pool} ({n} nœuds)"), pool)
         self.after.setCurrentIndex(max(0, self.after.findData(keep)))
         self.after.blockSignals(False)
         self.after_cond.setEnabled(bool(self.after.currentData()))
 
     def pool_runs(self, pool):
-        """The run ids of the jobs of submission @p pool, first node first."""
+        """The run ids of the jobs of submission @p pool, first node first (a
+        job of N nodes: itself alone, its id is the pool's)."""
         return sorted((r["id"] for r in self.runs if r["meta"].get("pool") == pool),
                       key=lambda rid: next(r["meta"].get("node", 0) for r in self.runs if r["id"] == rid))
 
@@ -129,12 +133,66 @@ class LaunchForm:
         return PROGRAMS.get(self.program.currentText(), {}).get("pool_opt")
 
     def nodes_wanted(self):
-        """How many batch jobs a submission makes: the "Nœuds" field, or 1."""
+        """How many nodes a submission takes: the "Nœuds" field, or 1."""
         return self.nodes.value() if hasattr(self, "nodes") and self.pool_opt() else 1
+
+    def one_job(self):
+        """Over several nodes, one batch job of N nodes (a task per node,
+        runscripts.make_node_sh) rather than N jobs of one node: the choice
+        beside "Nœuds". A site's queue policy decides: on inti a user's
+        long jobs run one at a time, N jobs of one node one after another."""
+        return self.nodes_wanted() > 1 and self.nodes_layout.currentData() == "job"
 
     def update_nodes_row(self):
         if hasattr(self, "nodes") and hasattr(self, "where"):
-            self.where.setRowVisible(self.nodes, bool(self.pool_opt()))
+            self.where.setRowVisible(self.nodes_row, bool(self.pool_opt()))
+            self.update_nodes_hint()
+
+    def update_nodes_hint(self):
+        n = self.nodes_wanted()
+        self.nodes_layout.setEnabled(n > 1)
+        self.nodes_hint.setText(T(f"durée max par nœud ≈ total / {n}") if n > 1 else "")
+
+    def job_directives(self):
+        """The directive lines the job is submitted with: the partition's, made
+        for N nodes when the submission is one job of N nodes (its QoS is then
+        checked on its N × cores: qos.job_cpus reads -n × -c)."""
+        d = self.directives.toPlainText()
+        return nodes_directives(d, self.nodes_wanted(), BATCH["directive"]) if self.one_job() else d
+
+    # A duration rescaled by "Nœuds": rounded up to this step, never below the minimum.
+    RESCALE_STEP_S, RESCALE_MIN_S = 900, 1800
+
+    def nodes_changed(self, n):
+        """"Nœuds" from N1 to N2: the duration times N1 / N2 (the work is
+        shared, the node-time stays), rounded up to RESCALE_STEP_S, at least
+        RESCALE_MIN_S. Only while the duration is not one typed by hand: a
+        change of the duration field other than this rescale disarms it
+        (time_changed), choosing a program re-arms it (its remembered
+        duration) -- what one typed is never changed behind one's back."""
+        old, self.nodes_prev = getattr(self, "nodes_prev", n), n
+        if self.pool_opt() and old != n and getattr(self, "rescale_armed", True):
+            t = -(-self.time_s.value() * old // n)            # ceil
+            t = max(self.RESCALE_MIN_S, -(-t // self.RESCALE_STEP_S) * self.RESCALE_STEP_S)
+            self.rescaling = True
+            try:
+                self.time_s.setValue(t)
+            finally:
+                self.rescaling = False
+        self.update_nodes_hint()
+        self.update_qos()
+        self.update_preview()
+
+    def set_nodes(self, n):
+        """"Nœuds" set by the window (the options of a run taken back), the
+        duration left as it is."""
+        self.nodes.blockSignals(True)
+        self.nodes.setValue(n)
+        self.nodes.blockSignals(False)
+        self.nodes_prev = self.nodes.value()
+        self.update_nodes_hint()
+        self.update_qos()
+        self.update_preview()
 
     def form_value(self, dest):
         """The value option @p dest will have: the form's, else the script's
@@ -212,8 +270,9 @@ class LaunchForm:
         self.apply_time_by_mode()
         if hasattr(self, "preview"):
             n = self.nodes_wanted()
+            how = T(f"un job de {n} nœuds") if self.one_job() else T(f"{n} jobs, un nœud chacun")
             self.preview.setPlainText(self.command() + (
-                f" {self.pool_opt()}=<{T('la soumission')}>\n# {T(f'{n} jobs, un nœud chacun')}" if n > 1 else ""))
+                f" {self.pool_opt()}=<{T('la soumission')}>\n# {how}" if n > 1 else ""))
 
     def time_by_mode(self):
         """The -T the program's "time_by_mode" gives for the chosen mode and
@@ -243,6 +302,7 @@ class LaunchForm:
             self._time_mode_key = key
             if self.time_s.value() != t:
                 self.time_s.setValue(t)
+            self.rescale_armed = True        # computed, not typed: "Nœuds" may rescale it
 
     # ---------------------------------------------- --target / --exec pickers
     def arch_suffix(self):
@@ -399,7 +459,12 @@ class LaunchForm:
         if nodes > 1 and re.search(r"(^|\s)%s(=|\s|$)" % re.escape(self.pool_opt()), cmd):
             self.error(f"{self.pool_opt()} est ajouté par le champ « Nœuds » : retirez-le de la commande")
             return
-        if nodes > 1:
+        if nodes > 1 and self.one_job():
+            # One batch job of N nodes, a task per node (node.sh), each running
+            # the command plus --pool=<rid> in <rid>/n<K>: the same sharing,
+            # one entry in the queue.
+            jobs = [(rid, f"{cmd} {self.pool_opt()}={rid}", {"pool": rid, "nodes": nodes, "layout": "job"})]
+        elif nodes > 1:
             # One batch job per node, the same command and --pool=<rid>: the
             # program shares its work between them (compile_all.sh: each
             # configuration built by the first job that claims it). The form's
@@ -427,7 +492,10 @@ class LaunchForm:
                 blob = base64.b64encode(json.dumps(spec).encode()).decode()
                 self.remote.helper("launch", [self.runs_dir.text().strip(), job_rid, blob], next_job)
                 return
-            self.info(f"soumis : {len(submitted)} jobs, un nœud chacun" if len(submitted) > 1 else
+            note = self.serial_note(qname) if len(submitted) > 1 else None
+            self.info(f"soumis : {len(submitted)} jobs, un nœud chacun" + (f" — {note}" if note else "")
+                      if len(submitted) > 1 else
+                      f"soumis : job {r['jobid']} de {nodes} nœuds" if "jobid" in r and nodes > 1 else
                       f"soumis : job {r['jobid']}" if "jobid" in r else f"lancé : {r['run_dir']}")
             self.current, self.offset = submitted[0], -1     # -1: the end of the log first (act_tail)
             self.log.clear()
@@ -447,13 +515,28 @@ class LaunchForm:
 
     def job_spec(self, prog, pkey, mode, qname, cmd, extra, rerun_of, after, delay_s, check, job_meta):
         """What remote_helper's launch needs for one job; @p job_meta: what the
-        job of a submission over several nodes adds to its meta.json."""
-        name = f"{prog.split('.')[0]}_{pkey}" + (f"_{job_meta['node']}" if job_meta else "")
+        job of a submission over several nodes adds to its meta.json ("node":
+        one of N jobs of one node; "layout": "job", one job of N nodes)."""
+        name = f"{prog.split('.')[0]}_{pkey}" + (f"_{job_meta['node']}" if "node" in job_meta else
+                                                 f"_N{job_meta['nodes']}" if job_meta else "")
+        repo, cwd = self.repo.text().strip(), PROGRAMS[prog]["cwd"]
+        launcher = self.launcher.text().strip() if mode in ("msub", "local") else ""
+        node_sh, nodes = None, None
+        if job_meta.get("layout") == "job":
+            # run.sh runs in the job's shell, on its first node (the checks,
+            # once), and starts node.sh on every node through the partition's
+            # launcher -- or the site's step command -- made for N tasks.
+            nodes = {"n": job_meta["nodes"],
+                     "launch": node_launch(launcher, BATCH.get("step"), job_meta["nodes"],
+                                           directive_cores(self.directives.toPlainText()))}
+            node_sh = make_node_sh(repo, cwd, cmd)
+            launcher = nodes["launch"]
         return {
             "mode": mode,
-            "run.sh": make_run_sh(self.repo.text().strip(), PROGRAMS[prog]["cwd"], cmd, check),
-            "msub": self.directives.toPlainText() if mode == "msub" else "",
-            "launcher": self.launcher.text().strip() if mode == "msub" else "",
+            "run.sh": make_run_sh(repo, cwd, cmd, check, nodes),
+            **({"node.sh": node_sh} if node_sh else {}),
+            "msub": self.job_directives() if mode == "msub" else "",
+            "launcher": "" if nodes else launcher if mode == "msub" else "",
             "launch.sh": make_launch_sh(SITE.detached_options(self.directives.toPlainText(),
                                                               self.time_s.value(), qname),
                                         after, delay_s, command=DETACHED["command"])
@@ -466,11 +549,11 @@ class LaunchForm:
             "name": re.sub(r"[^A-Za-z0-9_.-]", "_", name)[:40],
             "time_s": self.time_s.value(),
             "meta": {"program": prog, "partition": pkey, "arch": self.arch(), "mode": mode,
-                     "launcher": self.launcher.text().strip() if mode in ("msub", "local") else "",
+                     "launcher": launcher,
                      "command": cmd, "values": self.form.values(),
                      "extra": extra if extra is not None else self.extra.text(),
                      "repo": self.repo.text().strip(), "time_s": self.time_s.value(),
-                     "qos": "" if mode == "local" else qname or qos.explicit_qos(self.directives.toPlainText()) or "",
+                     "qos": "" if mode == "local" else qname or qos.explicit_qos(self.job_directives()) or "",
                      "qos_wanted": self.qos.currentData(),
                      "after": after, "delay_s": delay_s,
                      "check_builds": check["mode"] if check else "off",

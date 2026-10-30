@@ -313,7 +313,7 @@ class ErrorsTab:
             # --pool=<id>, with which bench_and_test.py --rerun-failed replays
             # the failures of every job of that pool, in one job (the list of
             # each is in its own directory) -- one job, then, not "Nœuds" again.
-            self.nodes.setValue(1)
+            self.set_nodes(1)
         old = self.time_s.value()
         self.time_s.blockSignals(True)          # not remembered as the program's duration
         self.time_s.setValue(time_s)

@@ -1,6 +1,26 @@
 #!/bin/bash
-# Fake ccc_mprun [options] <command...>: drops the options, runs the command.
+# Fake ccc_mprun [options] <command...>: drops the options, runs the command --
+# -n N (N > 1, a job of several nodes): N times at once, as N tasks, each with
+# its SLURM_PROCID / SLURM_NODEID (0..N-1); the exit code is the last non-zero
+# one of the tasks, as srun's.
 echo "[fake ccc_mprun] options: ${*%% bash *}"
-while [ $# -gt 0 ] && [ "$1" != bash ]; do shift; done
+n=1
+while [ $# -gt 0 ] && [ "$1" != bash ]; do
+    case "$1" in
+        -n) n="$2"; shift ;;
+        -n[0-9]*) n="${1#-n}" ;;
+    esac
+    shift
+done
+if [ "$n" -gt 1 ] 2>/dev/null; then
+    pids=()
+    trap 'kill "${pids[@]}" 2>/dev/null; exit 143' TERM
+    for ((r = 0; r < n; r++)); do
+        SLURM_PROCID=$r SLURM_NODEID=$r "$@" & pids+=($!)
+    done
+    code=0
+    for p in "${pids[@]}"; do wait "$p" || code=$?; done
+    exit $code
+fi
 trap 'kill $child 2>/dev/null; exit 143' TERM
 "$@" & child=$!; wait $child

@@ -99,7 +99,7 @@ ALLOWED = {
     "Chunk2Base", "Proxy2Base", "ArrayChunk2Base", "Chunk2AOmpPolicy", "RechunkHooks2", "Chunk2Def",
     "ChunkOmpPolicy", "CompressionManagerOmpPolicy",
     # files a shrink_gui run writes in its directory on the cluster (docs/shrink_gui.md)
-    "run.sh", "job.sh", "launch.sh",
+    "run.sh", "job.sh", "launch.sh", "node.sh",
     # C++ standard library, compiler, language
     "std", "size_t", "int64_t", "uint32_t", "operator", "noexcept", "constexpr", "seq_cst",
     "memory_order_seq_cst", "memory_order_relaxed", "memory_order_acquire", "memory_order_release",

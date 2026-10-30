@@ -1,8 +1,8 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 """--pool: the work shared between the batch jobs given the same pool id
-(shrink_gui's "Nœuds" field submits N one-node jobs <id>-n1..nN, the same
-command plus --pool=<id>). The approach of thread_speedup.py's class Pool and
+(shrink_gui's "Nœuds" field submits N one-node jobs <id>-n1..nN, or one job
+<id> of N nodes running a task per node, the same command plus --pool=<id>). The approach of thread_speedup.py's class Pool and
 compile_all.sh's __pool_claim (functions_for_compile.sh): a claim is the
 directory <pool>/<name>, made by os.mkdir -- atomic on the cluster's shared
 file systems, NFS and Lustre included --, and its owner file names the job
@@ -45,11 +45,16 @@ class Pool:
     @staticmethod
     def _tag(pool_id, host):
         """A short name of this job for its file and directory names: n<K>
-        when shrink_gui ran it (run.sh exports CHUNK_BENCH_KEEP_DIR, the run
-        directory <id>-n<K> of the job), else <host>.<pid> -- unique, if longer."""
-        keep = os.path.basename(os.path.normpath(os.environ.get("CHUNK_BENCH_KEEP_DIR") or ""))
+        when shrink_gui ran it, from CHUNK_BENCH_KEEP_DIR -- the run directory
+        <id>-n<K> of the job (N jobs of one node, run.sh), or the directory
+        <id>/n<K> of the node in the run <id> (one job of N nodes, node.sh)
+        --, else <host>.<pid>: unique, if longer."""
+        keep = os.path.normpath(os.environ.get("CHUNK_BENCH_KEEP_DIR") or "")
         if pool_id and keep:
-            m = re.match(r"^%s-n(\d+)$" % re.escape(os.path.basename(os.path.normpath(pool_id))), keep)
+            name = re.escape(os.path.basename(os.path.normpath(pool_id)))
+            m = (re.match(r"^%s-n(\d+)$" % name, os.path.basename(keep))
+                 or (re.match(r"^n(\d+)$", os.path.basename(keep))
+                     if re.match(r"^%s$" % name, os.path.basename(os.path.dirname(keep))) else None))
             if m:
                 return "n" + m.group(1)
         return "%s.%d" % (host, os.getpid())

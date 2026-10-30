@@ -102,11 +102,22 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
         qrow.addWidget(self.qos_note, 1)
         # Nodes: a program that can share its work (PROGRAMS[...]["pool_opt"]:
         # compile_all.sh / thread_speedup.py / multi_launch_stress.py /
-        # bench_and_test.py --pool) submitted as that many batch jobs of one node.
+        # bench_and_test.py --pool) submitted over that many nodes: one batch
+        # job of N nodes (the default: a site may run a user's long jobs one
+        # at a time), or N batch jobs of one node.
         self.nodes = QSpinBox()
         self.nodes.setRange(1, 32)
         self.nodes.setValue(int(self.settings.value("nodes", 1)))
-        self.nodes.valueChanged.connect(self.update_preview)
+        self.nodes_prev = self.nodes.value()
+        self.nodes_layout = QComboBox()
+        self.nodes_layout.addItem("un job de N nœuds", "job")
+        self.nodes_layout.addItem("N jobs d'un nœud", "jobs")
+        self.nodes_layout.setCurrentIndex(max(0, self.nodes_layout.findData(self.settings.value("nodes_layout", "job"))))
+        self.nodes_hint = TLabel("")
+        self.nodes_row = QHBoxLayout()
+        self.nodes_row.addWidget(self.nodes)
+        self.nodes_row.addWidget(self.nodes_layout)
+        self.nodes_row.addWidget(self.nodes_hint, 1)
         # Start: after a compile run (Slurm dependency, or a wait in the
         # detached mode), not before a delay; the builds checked on the node.
         self.after = QComboBox()
@@ -148,7 +159,7 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
         where.addRow("Durée max (-T)", self.time_s)
         self.qos_row = qrow
         where.addRow("QoS (-Q)", qrow)
-        where.addRow("Nœuds", self.nodes)
+        where.addRow("Nœuds", self.nodes_row)
         where.addRow("Démarrage", arow)
         where.addRow("Builds à jour", self.check_builds)
         where.addRow("Directives", self.directives)
@@ -384,6 +395,8 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
         self.preset_changed()
         self.program_changed()
         self.time_s.valueChanged.connect(self.time_changed)
+        self.nodes.valueChanged.connect(self.nodes_changed)
+        self.nodes_layout.currentIndexChanged.connect(lambda *_: (self.update_qos(), self.update_preview()))
         self.qos.currentIndexChanged.connect(self.update_qos)
         self.directives.textChanged.connect(self.update_qos)
         self.update_qos()
@@ -437,7 +450,7 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
                 w.setPlaceholderText(T(w.placeholderText()))
         for i in range(self.tabs.count()):
             self.tabs.setTabText(i, T(self.tabs.tabText(i)))
-        for c in (self.preset, self.mode, self.after_cond, self.check_builds):
+        for c in (self.preset, self.mode, self.after_cond, self.check_builds, self.nodes_layout):
             for i in range(c.count()):
                 c.setItemText(i, T(c.itemText(i)))
 
@@ -456,6 +469,7 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
         self.settings.setValue("delay_s", self.delay.value())
         self.settings.setValue("check_builds", self.check_builds.currentData())
         self.settings.setValue("nodes", self.nodes.value())
+        self.settings.setValue("nodes_layout", self.nodes_layout.currentData())
         if not self.is_local():      # this machine has a single partition and mode
             self.settings.setValue("preset", self.preset.currentData())
             self.settings.setValue("mode", self.mode.currentData())
@@ -578,6 +592,8 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
         nodes says which (compile_all.sh [2/3])."""
         meta = run["meta"]
         prog = meta.get("program", "")
+        if meta.get("layout") == "job":      # one job of N nodes
+            return f"{prog} [×{meta['nodes']}]"
         return f"{prog} [{meta['node']}/{meta['nodes']}]" if meta.get("nodes") else prog
 
     def selected_runs(self):

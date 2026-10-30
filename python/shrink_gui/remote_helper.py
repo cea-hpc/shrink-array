@@ -534,6 +534,8 @@ def act_launch(a):
             return
     os.makedirs(d)
     write(os.path.join(d, "run.sh"), spec["run.sh"])
+    if spec.get("node.sh"):      # a job of several nodes: what each of its nodes runs
+        write(os.path.join(d, "node.sh"), spec["node.sh"])
     # The code the run is submitted on; run.sh records the one it STARTS on
     # (git_start): a pending job can start after a git pull.
     spec["meta"]["git"] = git_info(spec["meta"].get("repo", "~"))
@@ -655,6 +657,21 @@ def progress_of(path, meta, ev=None):
         for e in re.finditer(meta["eta_re"], t):
             eta = float(e.group(1))
     return [int(m.group(1)), int(m.group(2)), eta]
+
+def run_progress(d, meta, ev):
+    """The Progression column: progress_of the run's log -- a job of N nodes
+    (is_job_layout): the most advanced of its nodes' (the work is shared,
+    their counts are not added: each script counts its own way, the runs of
+    multi_launch_stress.py by their global index)."""
+    if is_job_layout(meta):
+        best = None
+        for dk, mk in pool_members(d, meta):
+            p = progress_of(os.path.join(dk, "out.log"), mk)
+            if p and (best is None or (p[0] or 0) > (best[0] or 0)):
+                best = p
+        if best is not None:
+            return best
+    return progress_of(os.path.join(d, "out.log"), meta, ev)
 
 def errors_from_events(ev):
     """[count, last error's first line] of a bench_and_test.py run: its end
@@ -802,7 +819,7 @@ def act_list(a):
             runs.append({"id": rid, "meta": meta, "status": st, "code": code,
                          "errors": errors_of(d, meta, st, ev),
                          "jobid": (read(os.path.join(d, "jobid")) or "").strip(),
-                         "progress": progress_of(os.path.join(d, "out.log"), meta, ev),
+                         "progress": run_progress(d, meta, ev),
                          "git_start": (read(os.path.join(d, "git_start")) or "").strip(),
                          "times": run_times(d, st in ("fini", "arrêté", "interrompu")
                                             or st.startswith("terminé")),
@@ -900,14 +917,27 @@ def out_dir(d, meta):
     m = re.search(meta["out_re"], read(os.path.join(d, "out.log"), "")[:400000])
     return m.group(1) if m else None
 
+def is_job_layout(meta):
+    """A submission over several nodes made as ONE batch job of N nodes (meta
+    "layout": "job"): its nodes work in <run>/n<K>, each with its own out.log,
+    events.jsonl, kept copies and exit_code (runscripts.make_node_sh). The
+    other layout, N jobs of one node, has no "layout" (the runs before it
+    neither): sibling runs <pool>-n<K>, each with "node"."""
+    return meta.get("layout") == "job"
+
 def pool_members(d, meta):
     """[(dir, meta)] of the runs whose outputs make this one's results: the
     jobs <pool>-n1..nN of a submission over several nodes (meta "pool"; for
-    thread_speedup.py each measured the executables it claimed first), else
-    the run alone. Those not created yet are left out."""
+    thread_speedup.py each measured the executables it claimed first) or,
+    one job of N nodes (is_job_layout), its node directories <run>/n1..nN,
+    each with the run's meta plus its "node"; else the run alone. Those not
+    created yet are left out (a job of N nodes still queued: none)."""
     pool, n = meta.get("pool"), meta.get("nodes")
     if not pool or not isinstance(n, int) or n < 2:
         return [(d, meta)]
+    if is_job_layout(meta):
+        return [(os.path.join(d, "n%d" % k), dict(meta, node=k)) for k in range(1, n + 1)
+                if os.path.isdir(os.path.join(d, "n%d" % k))]
     out = []
     for k in range(1, n + 1):
         dk = os.path.join(os.path.dirname(d), "%s-n%d" % (pool, k))
@@ -1331,9 +1361,8 @@ def outputs_to_delete(base, rid, d, meta, own):
         return [od], None
     # A shared directory: what this run wrote, i.e. after it was submitted
     # (meta.json) -- run_logs/ also holds the older runs' logs, kept.
-    try:
-        t0 = os.path.getmtime(os.path.join(d, "meta.json"))
-    except OSError:
+    t0 = submitted_at(d)
+    if t0 is None:
         return None, "date de soumission de %s illisible : rien supprimé" % rid
     out = []
     for name in own:
@@ -1403,9 +1432,18 @@ def delete_run(base, rid, opts, keep_others=False):
     paths = []
     meta = {}
     kept = None
+    members = [(d, meta)]
     if opts.get("own"):
         meta = json.loads(read(os.path.join(d, "meta.json"), "{}") or "{}")
-        paths, err = outputs_to_delete(base, rid, d, meta, opts["own"])
+        # A job of N nodes: each node's output directory (bench_and_test.py
+        # and thread_speedup.py write one per node), checked one by one.
+        members = pool_members(d, meta) if is_job_layout(meta) else [(d, meta)]
+        paths, err = [], None
+        for dk, mk in members:
+            pk, err = outputs_to_delete(base, rid, dk, mk, opts["own"])
+            if err:
+                break
+            paths += [p for p in pk if p not in paths]
         if err and not keep_others:
             return {"error": err}
         if err:
@@ -1421,11 +1459,12 @@ def delete_run(base, rid, opts, keep_others=False):
                 continue
         removed.append(p)
     if isinstance(opts.get("own"), list):
-        od = out_dir(d, meta)
-        for name in opts["own"]:
-            sub = os.path.join(os.path.expanduser(od), name) if od and os.sep not in name else None
-            if sub and os.path.isdir(sub) and not os.path.islink(sub):
-                prune_empty(sub)      # emptied by this run's files only
+        for dk, mk in members:
+            od = out_dir(dk, mk)
+            for name in opts["own"]:
+                sub = os.path.join(os.path.expanduser(od), name) if od and os.sep not in name else None
+                if sub and os.path.isdir(sub) and not os.path.islink(sub):
+                    prune_empty(sub)      # emptied by this run's files only
     shutil.rmtree(d)
     return dict({"ok": True, "removed": removed}, **({"kept": kept} if kept else {}))
 
@@ -1452,7 +1491,10 @@ def act_errors(a):
         # No error file: the log of each failure, named by the run's own
         # output (compile_all.sh: "[FAIL] <build> ... → <its log>").
         logs = []
-        for m in re.finditer(opts["fail_re"], read(os.path.join(d, "out.log"), ""), re.M):
+        text = read(os.path.join(d, "out.log"), "")
+        if is_job_layout(meta):      # node n1's output is in the run's log too, the others' not
+            text = "\n".join(read(os.path.join(dk, "out.log"), "") for dk, _mk in pool_members(d, meta))
+        for m in re.finditer(opts["fail_re"], text, re.M):
             p = os.path.expanduser(m.group(1))
             if os.path.isfile(p) and p not in logs:
                 logs.append(p)
@@ -1646,6 +1688,16 @@ def failed_cases(od, name, d=None):
                         "replayable": bool(runs), "logs": logs})
     return out
 
+def submitted_at(d):
+    """When run dir @p d was submitted (its meta.json's time) -- a node
+    directory of a job of N nodes: its run's --, or None."""
+    for p in (os.path.join(d, "meta.json"), os.path.join(os.path.dirname(d), "meta.json")):
+        try:
+            return os.path.getmtime(p)
+        except OSError:
+            continue
+    return None
+
 def run_started(d):
     """When run dir @p d started, by the cluster's clock: its "start" event,
     else None."""
@@ -1663,9 +1715,8 @@ def failure_logs(base, rid, d, meta, od, sub):
     ld = inside(od, sub)
     if not ld or not os.path.isdir(ld):
         return []
-    try:
-        t0 = os.path.getmtime(os.path.join(d, "meta.json"))
-    except OSError:
+    t0 = submitted_at(d)
+    if t0 is None:
         return []
     t1 = None
     for _other, od2, _m2 in runs_sharing(base, rid, od):

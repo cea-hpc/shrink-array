@@ -69,7 +69,7 @@ connexion, la vérification complète est refaite d'elle-même.
 | Soumission | `ccc_msub` (batch, le défaut) ou `ccc_mprun` détaché depuis le nœud de login |
 | Durée max (-T) | accepte `2 j`, `1 h 30`, `90 min`, `1-00:00:00` |
 | QoS (-Q) | « auto » choisit la QoS d'après la durée, selon les limites lues par `ccc_mqinfo` |
-| Nœuds | `compile_all.sh` et `thread_speedup.py` en batch : le nombre de jobs d'un nœud qui se partagent le travail (ci-dessous) |
+| Nœuds | les programmes qui partagent leur travail, en batch : le nombre de nœuds qui se le partagent, en un job de N nœuds ou N jobs d'un nœud (ci-dessous) |
 | Démarrage | après un run `compile_all.sh` pas encore fini (dépendance Slurm `afterok`/`afterany`), et/ou pas avant une heure donnée |
 | Builds à jour | avant la commande, `ninja -n` sur les builds utilisés : refuser (code 96), avertir, ou ne pas vérifier |
 | Directives, Lanceur (job) | les lignes `#MSUB` et le lanceur sur le nœud ; propres à la partition et mémorisés |
@@ -99,7 +99,7 @@ soumission, avec un message dans la barre d'état, au lieu d'un job qui s'arrêt
 et `--exec` ont un bouton « Choisir… » qui liste les configurations et les exécutables
 trouvés sur le calculateur.
 
-**Compiler sur plusieurs nœuds.** Avec « Nœuds » N > 1, « Soumettre » crée N jobs batch d'un
+**Compiler sur plusieurs nœuds.** Avec « Nœuds » N > 1 et « N jobs d'un nœud », « Soumettre » crée N jobs batch d'un
 nœud chacun, avec les mêmes directives et la même commande plus `--pool=<l'id de la
 soumission>`. Ils apparaissent dans le tableau comme `compile_all.sh [k/N]`, runs `<id>-n1` à
 `<id>-nN`. Chaque job parcourt les configurations dans l'ordre habituel et ne construit une
@@ -116,6 +116,22 @@ crée un nouveau pool : les valeurs du formulaire ne contiennent jamais le `--po
 fenêtre. Le champ est masqué en mode détaché et pour les programmes qui ne savent pas partager
 leur travail. `--pool` peut aussi se donner à la main, à un `compile_all.sh` lancé depuis un
 shell (`--help`).
+
+**Un job de N nœuds.** Le choix par défaut à côté de « Nœuds » est « un job de N nœuds » : une
+seule soumission dont les directives demandent N nœuds et N tâches (`-N N -n N`, `-c` gardé : les
+cœurs d'un nœud par tâche). `run.sh` écrit son en-tête et vérifie les builds une fois, sur le
+premier nœud du job, puis lance `node.sh` sur chaque nœud par le lanceur de la partition ou, sans
+lanceur, la commande `[batch] step` du site (`ccc_mprun` sur inti, `srun` par défaut), avec
+`-N N -n N -c <cœurs>`. Le nœud K (le rang de la tâche + 1) travaille dans `<id>/n<K>` : son
+propre `out.log` (celui du nœud 1 est aussi dans le log du run), `events.jsonl`, copies gardées
+et `exit_code` ; les scripts le nomment `n<K>` d'après `CHUNK_BENCH_KEEP_DIR`. Le run
+(`compile_all.sh [×N]`) échoue si un nœud échoue ; ses onglets Résumé, Graphique, Erreurs et sa
+colonne Erreurs réunissent ses nœuds comme pour N jobs. Sur inti, les jobs d'un utilisateur
+au-delà de 24 h (`xlong`) se partagent 128 cœurs : N jobs d'un nœud passent alors l'un après
+l'autre (la ligne QoS le dit) et un job de N nœuds doit tenir dans `normal` (24 h au plus), sa
+QoS vérifiée sur N × les cœurs d'un nœud. Changer « Nœuds » de N1 à N2 multiplie la durée par
+N1 / N2 (arrondie au quart d'heure supérieur, 30 min au moins) tant qu'elle n'a pas été tapée à
+la main.
 
 `thread_speedup.py` (courbes de speedup en threads d'exécutables shrink_bench sur une cible,
 quel que soit ce qui fait tourner les threads -- OpenMP, le backend std::thread ou TBB ; anciennement
