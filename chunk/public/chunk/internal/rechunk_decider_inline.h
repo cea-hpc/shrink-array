@@ -21,7 +21,7 @@
 
 #include <algorithm> // std::max
 #include <cstddef>   // std::size_t
-#include <cstdio>    // std::fprintf ([RECHUNK-LEARN], print_rechunk_log)
+#include <cstdio>    // std::fprintf (print_rechunk_log)
 #include <cstring>   // std::strcmp (the settled verdicts)
 #include <format>    // std::format (the advisor table's title)
 #include <string>    // std::string
@@ -460,11 +460,10 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
                     if (predicted > 0. && measured < pol_.coarsen_trust_ratio * predicted)
                     {
                         hist_[&arr].coarsen_banned = true;
-                        std::fprintf(stdout,
-                                     "[RECHUNK-LEARN] %s: coarsening %u -> %u freed %.1f MB "
-                                     "of the %.1f MB predicted -- coarsening disabled for "
-                                     "this array\n",
-                                     ev.name.c_str(), ev.old_size, ev.new_size, measured / 1e6, predicted / 1e6);
+                        CHUNK_LOG(info, rechunk,
+                                  "learn {}: coarsening {} -> {} freed {:.1f} MB of the {:.1f} MB predicted -- "
+                                  "coarsening disabled for this array",
+                                  ev.name, ev.old_size, ev.new_size, measured / 1e6, predicted / 1e6);
                     }
                 }
             }
