@@ -29,8 +29,8 @@ All names are in namespace `shrink_array`, `build_config` and `chunk_config` inc
 | `zero_any::Array<T, IntType = int>` | `chunk/zero_any_array.h` | `T{}` or any value, per chunk |
 | `ArrayChunkBits` | `chunk/array_chunk_bits.h` | `bool`, stored one bit per element (`zero_one_value` builds) |
 
-`IntType` is the index type: `long` for more than 2³¹ elements. The variant compiled in is the
-one of the library linked (`chunk::chunk_zero_any`, ...); `chunk_config::use_zero`,
+`IntType` is the index type: `long` for more than 2³¹ elements. The variant compiled in is
+that of the linked library (`chunk::chunk_zero_any`, ...); `chunk_config::use_zero`,
 `chunk_config::use_zero_one_value` and `chunk_config::use_zero_any` tell which, at compile time.
 
 ## 3. Container operations
@@ -58,11 +58,11 @@ outside any parallel region, and it invalidates the array's proxies.
 
 **`reclaim_second_values()`: a precondition over the whole type.** The other **(S)** operations
 concern one array; this one is static and frees second values for every `zero_any::Array<T>` of the
-program, whatever their index type. While it runs, **no thread may write to or compress any
-`zero_any::Array<T>`**, not only the arrays the caller owns: in a code where several modules keep
+program, regardless of their index type. While it runs, **no thread may write to or compress any
+`zero_any::Array<T>`**, not only the arrays the caller owns: in a program where several modules keep
 their own `zero_any::Array<double>`, the sequential point must hold for all of them.
 
-- *Out of contract, the error is silent*: a chunk compressed while the reclaim runs can keep an
+- *Outside the contract, the error is silent*: a chunk compressed while the reclaim runs can keep an
   identifier that the reclaim frees and then hands to another value; that chunk then reads the
   other value, with no crash and no message.
 - *What is refused, in every build*: a call inside a parallel region of the calling thread,
@@ -81,7 +81,7 @@ their own `zero_any::Array<double>`, the sequential point must hold for all of t
   reclaim is refused and the identifiers only grow). Sampled at the application's checkpoints,
   `in_use()` / `capacity` is the early warning.
 
-Not there: `data()`, mutable iterators, `insert` / `erase` in the middle, an in-place sort.
+Not provided: `data()`, mutable iterators, `insert` / `erase` in the middle, an in-place sort.
 
 ## 4. The write proxy
 
@@ -175,7 +175,7 @@ Every message of both libraries goes through one log (`chunk/log.h`, namespace
 `shrink_array::logging`): a level (`error`, `warn`, `info`, `debug`, `trace`) and a channel
 (`general`, `env`, `alloc`, `arena`, `pool`, `rechunk`, `drain`, `compress`, `recycle`, `ledger`,
 `ompt`, `affinity`, `advisor`, `memory`). By default the warnings and errors are written, one line
-each, on stderr:
+each, to stderr:
 
 ```
 [shrink_array][rechunk][W][12345] rechunk_to(48) refused: a chunk size must be a power of two or a multiple of 64
@@ -186,11 +186,11 @@ each, on stderr:
 | `CHUNK_LOG=warn,rechunk=info` | the levels: a bare level for every channel, `channel=level` for one, left to right; `off` writes nothing but the fatal failures |
 | `CHUNK_LOG_FILE=path` | the file the lines are appended to instead of stderr (`%p`: the process id) |
 | `logging::configure("warn,rechunk=debug")` | the same specification from the code, on top of `CHUNK_LOG`; returns the number of items not understood |
-| `logging::set_sink(fn, user)` | hands every record (level, channel, message, source location) to `fn` -- the program's own logger -- instead of stderr; `nullptr` goes back. A record can arrive at exit: the sink must outlive it, or be removed first |
+| `logging::set_sink(fn, user)` | hands every record (level, channel, message, source location) to `fn` -- the program's own logger -- instead of stderr; `nullptr` restores stderr. A record can arrive at exit: the sink must outlive it, or be removed first |
 
 What a program asks for explicitly -- `print_all_reuse_pool_breakdown()`, `gc_mark_report()` -- is
-written whatever `CHUNK_LOG` says, through the same sink. The reports of the library are levels of
-their channel: `arena=info` (the buffer arena), `ledger=info` (the block registry, at exit),
+written regardless of what `CHUNK_LOG` says, through the same sink. The library's reports are levels of
+their channels: `arena=info` (the buffer arena), `ledger=info` (the block registry, at exit),
 `ompt=info` (the synchronisation regions, at exit). A broken invariant or a fatal allocator failure always stops the program: a block on
 stderr headed `[CRITICAL_FAILURE]` (`[DEBUG_INVARIANT_FAILURE]` in a debug build), the
 backtrace, then the record (level fatal) to the sink or `CHUNK_LOG_FILE`. The channels'

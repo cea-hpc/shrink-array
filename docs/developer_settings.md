@@ -2,7 +2,7 @@
 
 > French version: [reglages_developpeur_fr.md](reglages_developpeur_fr.md).
 
-> Status: October 2026. The switches of the library's developers: tuning of the decider and of
+> Status: October 2026. The switches for the library's developers: tuning of the decider and of
 > the allocators, traces, forced rechunks, the benchmark, compilation macros, debugging and build
 > options, the build scripts. They are **development tools**: not covered by the versioning policy
 > of [CHANGELOG.md](../CHANGELOG.md), they can change or disappear in any release. What a user of
@@ -36,13 +36,13 @@ fields, and `shrink_bench` exposes them as options (§4). See
 time, peak and end memory) on `zero`, `zero_any` and `zero_one_value` at dyn, three runs per
 point, interleaved; run it inside a job allocation (`--help` lists the points), and again with
 the same `--out` to resume an interrupted campaign. Its first campaign (Milan, October 2026)
-fixed the allocator settings that were read here before: the affinity mode per variant, the
+settled the allocator settings formerly read here: the affinity mode per variant, the
 partial reclaim of the slabs in use, the reuse budget, and no sweep after the compression
 passes (CHANGELOG.md, Removed).
 
 ## 2. Traces and diagnostics
 
-The traces are messages of the library's log, chosen by `CHUNK_LOG` (see
+The traces are messages in the library's log, chosen by `CHUNK_LOG` (see
 [environment_variables.md](environment_variables.md)). The variables of the former traces
 (`CHUNK_RECHUNK_TRACE`, `CHUNK_RECHUNK_TRACE_SLICES`, `CHUNK_RECHUNK_MEMTRACE`,
 `CHUNK_RECHUNK_TRACE_MEM`, `CHUNK_AFFINITY_TRACE`, `CHUNK_RECYCLE_TRACE`) are no longer read;
@@ -58,7 +58,7 @@ arena's and OMPT's counters with them, which cost a little time.
 | `CHUNK_LOG=rechunk=debug` (formerly `CHUNK_RECHUNK_TRACE`, and `CHUNK_RECHUNK_CHURN` for the churn) | in addition, the verdicts that wait, for each rechunk the duration of the phases and of the slices, and at each pass, per array analysed, the materialisations since the previous pass and an estimate of the transient cost they imply (`churn` line); for zero_any (and pattern), a `teardown split` line divides each rechunk's `tmp teardown` phase into its steps (flush, candidates, terminal sweep, park region, registry release, metadata tables, key drain, registry erase, `chunk_list_` unmap, rest) |
 | `CHUNK_LOG=rechunk=trace` (formerly `CHUNK_RECHUNK_TRACE_SLICES`) | in addition, memory at each slice of the `zero` rebuild |
 | `CHUNK_LOG=memory=info` (formerly `CHUNK_RECHUNK_MEMTRACE`) | at each advisor pass: exact memory, including the resident part of the buffer arena |
-| `CHUNK_LOG=memory=debug` (formerly `CHUNK_RECHUNK_TRACE_MEM`) | in addition, the memory side of the rechunk trace: exact memory at each step (`rss` line), occupancy of the new geometry, chunks folded, refused and installed directly, allocator census. Costly (seconds per run at tens of GB): a channel apart from the timings |
+| `CHUNK_LOG=memory=debug` (formerly `CHUNK_RECHUNK_TRACE_MEM`) | in addition, the memory side of the rechunk trace: exact memory at each step (`rss` line), occupancy of the new geometry, chunks folded, refused and installed directly, allocator census. Costly (seconds per run at tens of GB): hence a channel separate from the timings |
 | `CHUNK_LOG=advisor=info` | check builds: at an array's destruction, the chunk size that would have used the least memory, when it saves at least 10 % |
 | `CHUNK_LOG=advisor=debug` (formerly `CHUNK_ADVISOR_TABLE`) | in addition, the full advisor table of each array analysed, at each pass |
 | `CHUNK_LOG=affinity=debug` (formerly `CHUNK_AFFINITY_TRACE`) | each per-array set of allocators created (key, size, budget) |
@@ -73,7 +73,7 @@ arena's and OMPT's counters with them, which cost a little time.
 | `CHUNK_LOG=alloc=trace` (formerly `FAST_ALLOC_TRACE`) | one `munmap` line per emptied slab that a pool's reserve does not keep and that is freed |
 
 The per-array traces (the `churn` line, the advisor table) cover every array the decider
-analyses; `RechunkPolicy::trace_array` (`shrink_bench --rechunk_trace_array <name>`) keeps them
+analyses; `RechunkPolicy::trace_array` (`shrink_bench --rechunk_trace_array <name>`) restricts them
 to one, as the former `=name` values of `CHUNK_RECHUNK_CHURN` and `CHUNK_ADVISOR_TABLE` did.
 
 ## 3. Forced rechunks (tests)
@@ -117,7 +117,7 @@ to one, as the former `=name` values of `CHUNK_RECHUNK_CHURN` and `CHUNK_ADVISOR
 
 ## 5. Compilation macros
 
-Tuning values the headers give a default, and test hooks. The variant and geometry macros,
+Tuning values for which the headers give a default, and test hooks. The variant and geometry macros,
 and how the shared options reach the headers, are in
 [environment_variables.md](environment_variables.md) §3.
 
@@ -125,8 +125,8 @@ and how the shared options reach the headers, are in
 |---|---|
 | `CHUNK_DYN_MAX_SIZE=<n>` | dynamic geometry: largest chunk size a rechunk can reach, a power of two (4096); sizes the shared buffers of the constant values, `cst_buffer_size × sizeof(T)` per distinct second value |
 | `CHUNK_ALLOC_AFFINITY_MIN_BYTES=<bytes>` | metadata threshold above which an array can have its own allocators (16 MiB; 0 = never) |
-| `CHUNK_COMPRESS_MAX_YIELDS=<n>` | wait of a parked compressor before giving up its pass (10,000 *yields*; 0: give up at the first writer seen). See [synchronisation_dekker.md](synchronisation_dekker.md) |
-| `CHUNK_WRITE_WAIT_MAX_YIELDS=<n>` | wait of a writer facing a compressor before deferring its write (64 *yields*) |
+| `CHUNK_COMPRESS_MAX_YIELDS=<n>` | how long a parked compressor waits before giving up its pass (10,000 *yields*; 0: give up at the first writer seen). See [synchronisation_dekker.md](synchronisation_dekker.md) |
+| `CHUNK_WRITE_WAIT_MAX_YIELDS=<n>` | how long a writer facing a compressor waits before deferring its write (64 *yields*) |
 | `CHUNK_READ_RECLAIM_SLOTS=<n>` | number of reader threads tracked individually by the buffer reclamation (1,024) |
 | `CHUNK_STATS_MAX_THR=<n>` | number of ranks of the `CHUNK_STATS` counters (1,024) |
 | `CHUNK_TEST_READ_DELAY_EVERY=<n>`, `CHUNK_TEST_READ_DELAY_US=<µs>` | test hook: one read in N by a thread that requested it waits (50 µs), to widen the reader / reclamation window (`read_reclaim_validation`) |
@@ -195,7 +195,7 @@ the common options. `--help` gives the full list.
 | `--with-ledger` | add `cmake-build-omp-gnu-debug-ledger` (OpenMP Debug with `CHUNK_FORCE_LEDGER=ON`), disabled by default; a `--target` that selects it also builds it |
 | `--with-token-sanitizer` | add `cmake-build-omp-llvm-debug-std-alloc-token-sanitizer` (`SANITIZER=token`), disabled by default; a `--target` that selects it also builds it; `--no-sanitizers` skips it |
 | `--target=<glob>` | only the configurations whose name matches (`omp-llvm`, or a quoted shell glob); a pattern that matches nothing is an error |
-| `--exec=<glob>` | only the matching Ninja targets in each build (`shrink_bench_omp_zero_256`, or a quoted shell glob: `'shrink_bench_*_zero_256'` takes it whatever the backend) |
+| `--exec=<glob>` | only the matching Ninja targets in each build (`shrink_bench_omp_zero_256`, or a quoted shell glob: `'shrink_bench_*_zero_256'` matches it regardless of the backend) |
 | `--jobs=<n>` | number of configurations compiled at the same time (4 by default); the core budget is shared between them |
 | `--no-hardening` | without `CHUNK_GLIBCXX_ASSERTIONS` or `CHUNK_UBSAN` on the Debug and sanitizer builds |
 | `--llvm-cs=<n>` | add an LLVM build with `CHUNK_SIZE=n` |
@@ -208,7 +208,7 @@ sanitizer builds).
 The std threading backend (`CHUNK_THREADS=std`) has its own builds: `std-gnu`, `std-gnu-check`
 and a ThreadSanitizer one from `compile_all_gnu.sh`, `std-llvm`, `std-llvm-check` and a
 ThreadSanitizer one from `compile_all.sh`. They lengthen the compilation (`--target='omp-*'`
-leaves them out, `--target='std-*'` makes them alone). Their bench executables say so in their
+leaves them out, `--target='std-*'` builds only them). Their bench executables say so in their
 name, `shrink_bench_std_*` (`shrink_bench_omp_*` in the OpenMP builds, `shrink_bench_serial_*`
 in the serial ones): none of them uses OpenMP. The TBB bench (`shrink_bench_tbb_*`) and
 `tbb_validation` need oneTBB in those builds: the scripts add `CHUNK_WITH_TBB=ON` when `TBBROOT`

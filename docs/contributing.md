@@ -39,11 +39,11 @@ The whole matrix (GNU, LLVM, oneAPI, AOCC, NVHPC, sanitizers, statistics, std-al
 only those. `python/bench_and_test.py` runs them over a set of builds, with the benchmark in
 check mode and the performance sweep (see `docs/example_bench_test.txt`).
 
-The defects of this library are mostly **rare races**. A change to a concurrent path is not
+This library's defects are mostly **rare races**. A change to a concurrent path is not
 tested until it has run under ThreadSanitizer, at several thread counts, and many times: use
 `python/multi_launch_stress.py` (see `docs/example_multi_launch_stress.txt`).
 
-What to run, by what the change touches:
+What to run, depending on what the change touches:
 
 | change | run at least |
 |---|---|
@@ -65,7 +65,7 @@ The source checks run with the others (`ctest -R check_`):
 | `check_inline_bodies` | no member function body longer than 5 lines inside a class of `chunk/` or `fast_allocators/`: the body is in the header's `<header>_inline.h` companion |
 | `check_headers` | every C++ file opens with the Apache license header (years up to date) and carries no IDE `Created by` stamp; scripts and build files (`.py`, `.sh`, `.cmake`, `CMakeLists.txt`) carry `# Copyright ... CEA` and `# SPDX-License-Identifier: Apache-2.0`; the vendored headers, their upstream SPDX line; `scripts/check_headers.py --fix` repairs |
 | `check_raw_reads` | every raw read of a chunk buffer in the library says why it is safe |
-| `check_tracked` | every file the sources name (a quoted `#include`, a relative Python import, a CMake source or harness, a Markdown link) is tracked by git, not only present on the disk |
+| `check_tracked` | every file the sources name (a quoted `#include`, a relative Python import, a CMake source or harness, a Markdown link) is tracked by git, not only present on disk |
 | `check_docs` | links, code names cited in the documents, English/French pairs, no history markers in comments, the files cited in comments exist |
 
 ## 3. Code rules
@@ -88,7 +88,7 @@ The source checks run with the others (`ctest -R check_`):
   | macros | UPPER_CASE | `CHUNK_SIZE` |
 
   UPPER_CASE is for macros only: a constant or an enumerator spelled like one reads as one, and
-  may meet one. The standard library's shapes keep their spelling: the member types of its
+  may collide with one. The standard library's shapes keep their spelling: the member types of its
   protocols (`value_type`, `size_type`, ...; our own member types are PascalCase, `ChunkType`),
   the traits and tags (`is_cplx`, `rebind`). Inside a snake_case name the variant is `zero_any`, as in the file names (`zero_any_array.h`).
   Globals take a `g_` prefix; no name starts with `__` (reserved). A public name
@@ -133,4 +133,4 @@ well above the noise (10% on the 64-thread dynamic benchmarks) is a result.
 - A new environment variable, macro or CMake option goes into
   [environment_variables.md](environment_variables.md) if a user of the library has to set it,
   into [developer_settings.md](developer_settings.md) otherwise. A switch that keeps an old
-  behaviour for an A/B gets its removal date there when it is added.
+  behaviour for an A/B comparison gets its removal date there when it is added.

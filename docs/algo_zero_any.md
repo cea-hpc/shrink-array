@@ -44,14 +44,14 @@ With the CMake option **`CHUNK_SECOND_VALUE_INDEXED`** (disabled by default), th
 slot of types larger than 4 bytes holds the **identifier** of the registry array
 (4 bytes) instead of the value (8 for a `double`, 16 for a complex): −3.8% memory
 on the reference run of 50 million chunks, but +3% write time (one more dependent
-read on each write to a materialised chunk). Keep it for workloads limited
+read on each write to a materialised chunk). Reserve it for workloads limited
 by memory rather than by write throughput.
 
 These rows make `zero_any` the variant with the most expensive metadata per chunk (16 bytes
 of object, plus 2 bytes and `sizeof(T)`), and therefore the one that gains the most from growing its chunks:
 see [adaptive_rechunk.md](adaptive_rechunk.md).
 
-When a storage is destroyed (end of life of the array, or old storage of a rechunk), its
+When a storage is destroyed (the array's end of life, or the old storage of a rechunk), its
 three rows are **freed** (`zero_any::Proxy::clear_tab_is_int`), not just emptied. Until
 September 2026, `clear()` kept their capacity, and each rechunk left the rows of
 the old storage behind: 3.5 GB on the benchmark, with 15 rechunked arrays.
@@ -93,7 +93,7 @@ its own:
   second value; this is how it discovers one;
 - **departure**: a write that **leaves** the chunk's second value for a value that
   is neither zero nor this second value. The chunk may be becoming uniform at
-  a third value; without this case, a chunk compressed once at V, then become uniform at W,
+  a third value; without this case, a chunk compressed once at V that then became uniform at W
   was never put back in the list (100 out of 100 in a probe from September 2026).
 
 Both cases are filtered by a **necessary condition** (`may_become_uniform`): two
@@ -119,10 +119,10 @@ The freed buffer joins the thread's reuse list. The trigger threshold is
 
 ## 6. The write
 
-The write path is the one of `zero_one_value` (§6 of [algo_zero_one_value.md](algo_zero_one_value.md)), with
+The write path is that of `zero_one_value` (§6 of [algo_zero_one_value.md](algo_zero_one_value.md)), with
 one difference: the second value to compare against is **the chunk's**, read from its metadata
-row, and not the array's. Writing into a compressed chunk a value different
-from its constant materialises it, pre-filled with **this constant**.
+row, and not the array's. Writing a value different from its constant into a
+compressed chunk materialises it, pre-filled with **this constant**.
 
 The proxy finds the chunk's metadata rows through the array number. An
 "armed" variant, where the write `operator[]` gave the proxy the row addresses directly,
@@ -132,7 +132,7 @@ the resynchronisation invariant it imposed on each reallocation of the rows.
 ## 7. What `zero_any` does differently during a rechunk
 
 The general sequence is the one in [adaptive_rechunk.md](adaptive_rechunk.md) §4, with
-three specifics:
+three differences:
 
 - **the advisor counts as compressible** any uniform sub-block, at any value,
   since each chunk can register its own. With the rule of the other variants
@@ -148,7 +148,7 @@ three specifics:
 ## 8. Results
 
 On `shrink_bench` (64 threads), dynamic `zero_any`, with all arrays handed to the
-decider, ends at **6.0 GB**, against 7.3 GB for static 256 and 12.7 GB for static
+decider, ends at **6.0 GB**, compared with 7.3 GB for static 256 and 12.7 GB for static
 64, whose memory it has at the start. It is the variant that benefits the most from the dynamic
 geometry: its per-chunk metadata is the heaviest, and its chunks compressed to
 varied values make the fine sizes useful at the start.

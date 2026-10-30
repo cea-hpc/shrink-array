@@ -97,9 +97,9 @@ in fresh directories with the same configuration, alternate, and be wary.
 | maximum size of a coarsening step | `--rechunk_max_coarsen <n>` |
 
 The full list is in [developer_settings.md](developer_settings.md).
-The decider's settings are `shrink_bench` options (the library reads them from no variable).
+The decider's settings are `shrink_bench` options (the library does not read them from any variable).
 Beware: `--rechunk_min_gain_mb 1000000` no longer blocks coarsenings since the
-"gain per cost" criterion; use `--rechunk_dry_run`.
+"gain per cost" criterion was introduced; use `--rechunk_dry_run`.
 
 ## 3. Recipes
 

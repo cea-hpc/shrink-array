@@ -24,7 +24,7 @@ that are **compressed** as soon as all their elements equal one of **two constan
 A compressed chunk has no buffer of its own: it points to a shared constant buffer.
 That is where the memory saving comes from.
 
-The three variants of the library differ by what they can compress:
+The three variants of the library differ in what they can compress:
 
 | variant | compressible constants | second value metadata |
 |---|---|---|
@@ -59,7 +59,7 @@ The interface is close to a `std::vector`: `size()`, `resize()`, `at()`, constan
 - **`set_second_value()` must be called outside a parallel region**, before the writes: it
   records the second value in the registry and creates the compression candidate
   lists for this value. An array that never declares a second value
-  behaves like an `zero::Array` (compression to 0 only).
+  behaves like a `zero::Array` (compression to 0 only).
 - **Range operations** (`fill_range`, `copy_range`, `fill_range_mt` in
   `array_chunk_range_ops.h`) write a range with one decision per chunk, and
   `fill_range_mt` can be called by several threads at once (section 10).
@@ -105,7 +105,7 @@ concerned. Their size is `cst_buffer_size` (the chunk size in fixed geometry,
 `chunk_dyn_max_size` in dynamic geometry). There is one `cst_val2` buffer per declared second
 value, identified by an **index** `ind`.
 
-> Warning: `zero_one_value::Chunk::written()` **without argument** is reserved for `bool` and returns `false`
+> Warning: `zero_one_value::Chunk::written()` **without an argument** is reserved for `bool` and returns `false`
 > for any other type. To know whether a non-boolean chunk is materialised, you need
 > `written(ind)` with the index of the array's second value
 > (`zero_one_value::Array::chunk_written(j)` does it).
@@ -183,7 +183,7 @@ ProxyType operator[](IndType i) noexcept
 ```
 
 The proxy therefore knows, without any lookup, **which array**, **which chunk**, **which
-position** and **which second value triplet** it concerns. Above all, it makes it possible to know
+position** and **which second value triplet** it concerns. In particular, it makes it possible to know
 **the written value before deciding**: if it is a constant the chunk already holds,
 there is nothing to do, and above all nothing to allocate.
 
@@ -248,7 +248,7 @@ while a compressor steals it and returns it to the reuse list. The engine applie
 a **Dekker**-style handshake between writers and compressors
 (`WriteCompressSyncPolicy`), without any lock:
 
-- **writer side (frequent, light)**: the thread publishes the address of the chunk it writes in
+- **writer side (frequent, light)**: the thread publishes the address of the chunk it is writing to in
   its flag (`announce_write`: a relaxed store followed by a plain compiler
   barrier), **re-checks** that the chunk is not reserved by a pass (its
   `steal_mark_` mark, read with *acquire*), writes, then lowers its flag (`end_write`). If the chunk
@@ -306,8 +306,8 @@ At the end of the phase, each array's "dirty bitset" (the read barrier filter,
 section 5) is reset to zero. Each bitset carries an extra word, "at least one bit has
 been set", which only the queuing of a deferred write sets: an array without a deferred
 write during the phase is not rewritten. Without this word, the reset rewrote one 128-byte
-line per group of 64 chunks of each array, serially on the master, at each end
-of phase: ~21 s of a ~30 s run on AMD Milan (GNU, 64 threads).
+line per group of 64 chunks of each array, serially on the master, at the end
+of each phase: ~21 s of a ~30 s run on AMD Milan (GNU, 64 threads).
 
 ### 7.4 OMPT callbacks
 
@@ -334,7 +334,7 @@ for (long i = 0; i < n; ++i)
 At construction, all chunks are at `cst_val1`. The first write to each chunk
 **materialises** it (it then holds `1 0 0 0 …`). Without compression during execution, the
 loop would end with **the whole array allocated**, although every chunk has become uniform again.
-In-flight compression returns these chunks to `cst_val2` as the loop goes.
+In-flight compression returns these chunks to `cst_val2` as the loop proceeds.
 
 ### 8.2 Candidate lists
 
@@ -345,19 +345,19 @@ ManagerChunk2::map_chunk2_to_compress_potentially_thr[rang][second_value]
 ```
 
 Each entry holds `(chunk, num_chunk, num_tab, number of elements)`. The number of elements
-is the one of the array's geometry **at the time of queuing**: the thread that
+is that of the array's geometry **at the time of queuing**: the thread that
 processes the entry may have another "ambient" size (after a rechunk).
 
 **Queuing** (`mark_for_compression_if_needed`, in the write body): a chunk
 enters the list when the write **turns an element into one of the two constants**
 (`old != first && new == first`, or `old != second && new == second`), with two filters
-placed before:
+applied first:
 
 - a cheap **pre-check** (`pre_check_mark_for_compression_strict`): the
-  written value is **one of the two constants, whatever the state of the chunk**. Until
+  written value is **one of the two constants, regardless of the chunk's state**. Until
   September 2026, it only accepted writing a constant on a chunk already at
   the other constant; a chunk materialised by an arbitrary value then rewritten element
-  by element to a constant was then never queued, and stayed materialised.
+  by element to a constant was never queued, and stayed materialised.
   The cost of the widening is only paid by writes of a constant: one
   read of the old value, one comparison and, on the first one of each pass, the CAS
   on the flag;
@@ -428,13 +428,13 @@ rebuilt or destroyed; empty slabs are then returned to the system.
 For `zero_one_value`, this set is only created at the array's **first rechunk** (lazy affinity):
 each set costs one started slab per rank and per size, i.e. ~780 MiB over the 16 arrays of
 `shrink_bench` at 64 threads, and an array that is never rebuilt gets no benefit from it. A
-dynamic run thus consumes, at the start, exactly like the static one at the same size
+dynamic run thus consumes, at the start, exactly as much as the static one at the same size
 (`zero_one_value`: 19,999 vs 20,009 MB after initialisation). Details and measurements: [adaptive_rechunk.md](adaptive_rechunk.md) §5.
 
 ### 9.2 Rechunk (dynamic geometry)
 
-`rechunk_to(new_size)` changes the chunk size of an existing array, for example on a
-decision of the **decider** (`ChunkSizeAdvisor::analyze`, which estimates the memory at each size
+`rechunk_to(new_size)` changes the chunk size of an existing array, for example following a
+decision by the **decider** (`ChunkSizeAdvisor::analyze`, which estimates the memory at each size
 from the state of the chunks). The steps:
 
 1. at the old geometry: flush the array's deferred writes, then **compress its
@@ -463,7 +463,7 @@ everything indexed by it must be **freed**, not just emptied. For `zero_one_valu
 the "in compression list" indicators (one byte per chunk), freed at the end of
 `clear_core()`, after the candidates are purged. The threshold that triggers compression
 passes and the pool budget, which depend on the total number of chunks, are
-recomputed on destruction as on creation. The decider, its criteria and the measured
+recomputed on destruction as well as on creation. The decider, its criteria and the measured
 results are described in [adaptive_rechunk.md](adaptive_rechunk.md).
 
 `CHUNK_LOG=rechunk=debug` prints the time of each phase, `CHUNK_LOG=memory=debug` the folding
@@ -482,15 +482,15 @@ They are **sequential**: no concurrent writer or compression on the array.
 The rechunk uses `copy_range` to rebuild the new array.
 
 `fill_range_mt(a, first, last, v)` can be called **by several threads at once**, on
-disjoint indices (a chunk may be shared): it repeats, once per piece of
-chunk, the steps of the write engine (section 7.2):
+disjoint indices (a chunk may be shared): it repeats, once per chunk
+piece, the steps of the write engine (section 7.2):
 
 1. deferred operations pending on the chunk → this piece goes through the element-by-element
    path;
 2. compressor running on the chunk → bounded wait, before announcing itself;
 3. announcement as a writer (Dekker);
-4. re-check (compressor, pending operations, chunk still materialised); at the
-   slightest doubt, withdrawal and element-by-element path;
+4. re-check (compressor, pending operations, chunk still materialised); if
+   in any doubt, withdrawal and element-by-element path;
 5. direct write into the buffer;
 6. withdrawal;
 7. queuing if the chunk may be uniform.
@@ -512,7 +512,7 @@ can compress (a fill is such a piece, so the rule is `fill_range_mt`'s).
 keeping it on the element-by-element path:
 
 - the test "is this chunk materialised?" must call `written(ind)` with the array's second
-  value index (`internal::materialised(a, ch, ind2)`): `written()` without argument
+  value index (`internal::materialised(a, ch, ind2)`): `written()` without an argument
   is reserved for `bool` and returns `false` for other types;
 - queuing (`internal::queue_for_compression`) must **load the second value** before
   adding the chunk (`set_info_on_chunk()`), since `zero_one_value`'s lists are indexed by
@@ -535,7 +535,7 @@ single-threaded forms (`fill_range`, `copy_range`) read those three elements pla
 (`may_be_uniform`): no other thread writes the array during the call.
 
 **The wrong values of September 2026.** With the direct path open to `zero_one_value`,
-`bench_and_test.py` reported on Grace wrong values **after compression**:
+`bench_and_test.py` reported wrong values on Grace **after compression**:
 `rechunk_validation_zero_one_value_dyn` (`scale-64-to-tgt`, POST-FAIL) and the check mode of
 `shrink_bench_zero_one_value_256` ("is_cst_val2 should be not"). Not a race between threads:
 the re-chunk test fails identically on a single core in the serial Debug build, and the
@@ -573,7 +573,7 @@ CMake options related to benchmark performance:
 | option | effect |
 |---|---|
 | `SHRINK_INTEL_LIBM` (ON) | x86-64, not icpx: links the executables against Intel's libm (`libimf`) if it is found (`INTEL_LIBM_DIR`, `$CMPLR_ROOT/lib`, or next to `icpx`). AMD Milan, GNU: 15.7 s → 12.4 s on `shrink_bench_omp_zero_any_256` |
-| `SHRINK_ARM_LIBM` (OFF) | aarch64, GNU/Clang: links ArmPL's `libamath` (`ARMPL_LIBM_DIR`). No gain measured on Grace (RHEL 9.6); kept to redo the measurement (`-DSHRINK_ARM_LIBM=ON -DARMPL_LIBM_DIR=<dir>`) |
+| `SHRINK_ARM_LIBM` (OFF) | aarch64, GNU/Clang: links ArmPL's `libamath` (`ARMPL_LIBM_DIR`). No gain measured on Grace (RHEL 9.6); kept so that the measurement can be redone (`-DSHRINK_ARM_LIBM=ON -DARMPL_LIBM_DIR=<dir>`) |
 
 ---
 

@@ -23,7 +23,7 @@ every access is slower.
 
 Three variants, chosen when you link:
 
-| variant | class | a chunk is compressed when it is uniform at… |
+| variant | class | a chunk is compressed when all its elements equal… |
 |---|---|---|
 | `zero` | `zero::Array<T>` | `T{}` (zero) only |
 | `zero_one_value` | `zero_one_value::Array<T>` | `T{}`, or **one** second value per array, declared with `set_second_value()` |
@@ -61,8 +61,8 @@ The options that matter to a user:
 
 The first build compiles the examples and the benchmark too, which takes a while. To build
 only the libraries, configure with `-DSHRINK_ARRAY_BUILD_EXAMPLES=OFF`, or give
-`cmake --build` their targets (`--target chunk_zero_any_256 ...`) before `cmake --install`. Taken
-into another project with `add_subdirectory` or `FetchContent`, the libraries alone are built.
+`cmake --build` their targets (`--target chunk_zero_any_256 ...`) before `cmake --install`. Pulled
+into another project with `add_subdirectory` or `FetchContent`, it builds only the libraries.
 
 With Clang or oneAPI, an OpenMP build also uses the runtime's **OMPT** interface, which spares
 your program the phase calls of §5.
@@ -95,9 +95,9 @@ as the library did.
 
 Link **one** variant library per program, and write **that variant's class**:
 `zero_any::Array<T>` with `chunk::chunk_zero_any`. The class you write is what you get -- a program
-naming `zero_any::Array` keeps it whatever it links -- and an array of another variant than the
+naming `zero_any::Array` keeps it regardless of what it links -- and an array of a variant other than the
 library's is not supported: depending on the calls, it does not compile or it crashes.
-To let the link choose, write the arrays through an alias on the variant the library
+To let the link choose, write the arrays through an alias for the variant the library
 defines (`examples/shrink_bench` and `examples/simple_array` do so):
 
 ```cpp
@@ -182,7 +182,7 @@ int main()
    returns a *proxy* (§6).
 5. **`shrink_to_fit()`** runs a full compression pass, outside any parallel region. You do not
    need to call it: chunks are compressed as the program runs. It is there for when you want
-   the memory back at a precise point.
+   the memory back at a specific point.
 6. **Destroying the array** gives its buffers back. The library prints one line per array at
    that point, with its compression ratio.
 7. **The shutdown pair**, at the end of the program, after the last array. Optional too: the
@@ -256,11 +256,11 @@ end. Without it (GCC's libgomp), your program does:
 shrink_array::finalize_parallel_phase();      // once, after the region
 ```
 
-Forget them and nothing fails at once. With the same team from region to region the values
+Forget them and nothing fails right away. With the same team from region to region the values
 still come out right, but the compression passes between regions do not run: memory stays
 higher than it should. When the team size changes from one region to the next, a forgotten
 `finalize_parallel_phase()` replays a deferred write that was already freed, and with both
-calls forgotten values come out wrong, silently. The program stops, in every build, on a
+calls forgotten, values come out wrong, silently. The program stops, in every build, on a
 `begin_parallel_phase()` with no `finalize_parallel_phase()` since the previous region; check
 builds (Debug, `CHECK_OPTIM`) also stop on a deferred write by a thread that skipped
 `begin_parallel_phase()`.
@@ -285,7 +285,7 @@ found first), the phases never happen. The library prints a warning on stderr;
 With OMPT you may also write no phase at all: plain `#pragma omp parallel for` loops, the same
 code as on a `std::vector`.
 [`examples/getting_started/getting_started_ompt.cpp`](../examples/getting_started/getting_started_ompt.cpp)
-is the program of §4 written that way: one function fills a `std::vector<double>` and an
+is the program of §4 written that way: one function fills a `std::vector<double>` and a
 `zero_any::Array<double>`, and the program checks that they read back the same. It refuses to
 compile against a library without OMPT; its test runs with `CHUNK_REQUIRE_OMPT=1`.
 
@@ -304,7 +304,7 @@ program with a message.
 **Next to other components.** The library keeps its state per process, not per array: the
 element-type registries, the allocators, `zero_any`'s second-value registry, the per-thread
 structures and their capacity, the log settings, and the phase. Two parts of a program that use
-it without knowing of each other -- your code and a library built on shrink-array, say -- share
+it without knowing about each other -- your code and a library built on shrink-array, say -- share
 all of it. What that asks of them:
 
 - **One phase at a time.** The per-thread queues are indexed by the rank in the team, and the

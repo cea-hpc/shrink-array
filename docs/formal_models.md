@@ -55,7 +55,7 @@ Nothing in `formal/` is built into the library or installed.
 `formal/writer_compressor.c` is sections 5.1 to 5.3 and 5.6 of the synchronisation document:
 NWRITERS writers (2 by default) each write one element of one chunk once, while one compression
 pass marks the chunk, opens its window, scans it and steals its buffer if it is all zero. Each
-name of the model stands for one place of the source, with the same memory order:
+name in the model stands for one place in the source, with the same memory order:
 
 | model | source (`chunk/public/chunk/internal/`) |
 |---|---|
@@ -190,7 +190,7 @@ element 1 NREADS times (up to 3) under a `ReadSection`, as `element_at(offset, s
 writer materialising the chunk from its motif and writing both elements; one pass compressing the
 buffer to its TARGET -- another motif, the same motif (the pointer comes back: an ABA), the first
 or the second constant -- by the slot store then the CAS, then waiting the grace period out and
-recycling the buffer. The writer and the pass never work on the chunk at once: that is handshake
+recycling the buffer. The writer and the pass never work on the chunk at the same time: that is handshake
 1, taken as given (the pass waits for the writer's mark). The property: a reader returns a value
 element 1 held at some point, and never accesses the slot through a racing non-atomic store; the
 read sections and the buffer's free are checked as in section 6.
@@ -216,7 +216,7 @@ read sections and the buffer's free are checked as in section 6.
 | `MUT_NO_GRACE`: the buffer freed without the grace period (calibration) | fail | access to freed memory | 1 |
 
 The same verdicts under IMM. The design note's argument for this hazard did not hold (section
-8.6): the model found it in two executions, and the source was changed before the variant is
+8.6): the model found it in two executions, and the source was changed before the variant was
 announced.
 
 ## 8. Findings
@@ -245,7 +245,7 @@ finding, and `synchronisation_dekker.md` section 5.3 keeps a line on it.
 
 ### 8.2 F2: a materialising writer and a parked compressor waited for each other (fixed)
 
-The comment of `wait_before_materialise()` said it was "a no-op in practice: a fast-path writer
+The comment on `wait_before_materialise()` said it was "a no-op in practice: a fast-path writer
 never gets here with the chunk marked (the gate stopped it)". The model shows the window the
 sentence skipped: the mark can land **between** check no. 2 and `wait_before_materialise()`. A writer passes
 check no. 2 on a compressed chunk, finds `values` at the constant, and enters `create_value()`;
@@ -297,8 +297,8 @@ instead of relaxed -- an `stlr` instead of an `str` on the read path of AArch64 
 `MUT_WAIT_FOR_EVEN`, the pass waiting for an even value, free on the read path and the stall the
 design refused. The first was measured on Grace with `examples/access_cost`, two builds of the
 same tree alternated over 5 rounds x 5 repetitions (the vector's times, the same code in both,
-within 0.6 %): at 1 thread `read-varied` +1.9 % with a 2-3 % spread, `read-constant` +0.6 %,
-`read-random` +0.0 %, the writes within their spread; at 64 threads nothing measurable. **Applied**:
+within 0.6%): at 1 thread `read-varied` +1.9% with a 2-3% spread, `read-constant` +0.6%,
+`read-random` +0.0%, the writes within their spread; at 64 threads nothing measurable. **Applied**:
 the entry store is release, the library is right by the standard for at most two percent on the
 worst read case, and `MUT_ENTER_RELAXED` is the store as it was.
 
@@ -310,7 +310,7 @@ RMW followed by an acquire load is not a Dekker announce in C11: nothing puts th
 pass's fence in one order with the two loads, and the checker finds the store-buffering execution
 -- the reader loads the old buffer while the pass reads the counter at zero and frees it. On
 AArch64 an `ldaddal` keeps a later `ldar` behind it and on x86 a locked RMW is a full barrier, so,
-as F3, the hole is the standard's; unlike F3 the fix is free: `light_fence()` after the increment,
+like F3, the hole is the standard's; unlike F3 the fix is free: `light_fence()` after the increment,
 as on the slot path (a compiler barrier under `membarrier()`, a fence otherwise, on a path a
 program takes only with more than a thousand reader threads). Applied; `MUT_OVERFLOW_NO_FENCE` is
 the line as it was.
@@ -353,7 +353,7 @@ slot is stable there.
 
 ### 8.7 F6: a chunk made constant during a pass's hand-back is never queued (open)
 
-The model is `formal/queue_handback.c`; it checks no memory ordering, but a protocol: the "queued"
+The model is `formal/queue_handback.c`; it checks a protocol, not a memory ordering: the "queued"
 flag of a chunk (`tab_is_inside_chunk_list_to_compress`) and the pass's mark. A pass hands each
 candidate back with `steal_unmark()`, then resets its flag to 0 (the end of
 `make_block_compression()`; the order is the source's on purpose, see its comment). Between the
@@ -368,7 +368,7 @@ constant again needs no other condition.
 The model has one chunk of two elements, 0 and 7, a candidate of one pass; W writes the 7 to 0
 (deferred while the mark is up, then replayed); with `-DWITH_W2` a second writer stores a plain
 value into the other element, the exclusion check (the pass must neither lose it nor let it reach a
-returned buffer). The property Q1: a materialised chunk whose content is constant is listed; Q2:
+returned buffer). The properties are Q1: a materialised chunk whose content is constant is listed; Q2:
 the flag is up exactly when the chunk is listed, once.
 
 | case | expected | verdict | executions |
@@ -399,7 +399,7 @@ variants' passes (`zero`, `zero_one_value`, `zero_any` and `pattern`'s motif com
   readers and 3 reads each for handshake 3; 3 readers, or 2 readers of 2 reads, and one
   materialisation then one compression for handshake 4), one chunk, one pass, one write each (5 writers with
   materialisation: 9,637 executions, 7 s). A bug that needs two passes or
-  a chunk recycled twice is outside.
+  a chunk recycled twice is out of scope.
 - **`membarrier()`.** No language memory model has it. The checker verifies the symmetric shape;
   the asymmetric one rests on section 4.2 and on `membarrier(2)`'s contract. GenMC also treats
   `atomic_signal_fence()` as a thread fence, so the compiler barrier of the asymmetric shape is
