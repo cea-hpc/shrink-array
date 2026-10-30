@@ -1,9 +1,9 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 """The Graphique tab of bench_and_test.py: bench_summary.csv as one line per
-variant (chunk, chunk2, chunk2a) against threads, for one config; "Comparer
-avec" overlays another run of the same architecture, dashed, and gives the
-ratio B / A over their common points.
+variant (zero, zero_one_value, zero_any) against threads, for one config;
+"Comparer avec" overlays another run of the same architecture, dashed, and
+gives the ratio B / A over their common points.
 
 A mixin of the main window (app.Main): its methods use the window's
 attributes. The data come from remote_helper bench_points."""
@@ -20,7 +20,7 @@ from shrink_gui.i18n import T, tip
 from shrink_gui.widgets import ScatterView, TLabel
 
 # Colour follows the variant, never its rank (config.COLOR_BY "Variante").
-VARIANTS = ["chunk", "chunk2", "chunk2a"]
+VARIANTS = ["zero", "zero_one_value", "zero_any"]
 
 # What the y axis shows: (row index in bench_points, axis title, unit, lower is better).
 METRICS = {
@@ -91,10 +91,21 @@ class BenchChart:
         self.bc_cmp.blockSignals(True)
         self.bc_cmp.clear()
         self.bc_cmp.addItem(T("(aucun)"), None)
+        # A submission over several nodes is one entry (any of its jobs gives
+        # the summary of all, remote_helper.bench_points), and never compared
+        # with itself -- as the speedup chart's list.
+        own_pool = cur["meta"].get("pool") if cur else None
+        pools = set()
         for r in self.runs:
             if r["id"] != self.current and is_bench_chart(r["meta"]) and r["meta"].get("arch") == arch \
                     and not r["meta"].get("rerun_of"):
-                self.bc_cmp.addItem(f"{r['id']}  [{T(r['status'])}]", r["id"])
+                pool = r["meta"].get("pool")
+                if not pool:
+                    self.bc_cmp.addItem(f"{r['id']}  [{T(r['status'])}]", r["id"])
+                elif pool != own_pool and pool not in pools:
+                    pools.add(pool)
+                    n = r["meta"].get("nodes", "?")
+                    self.bc_cmp.addItem(f"{T(f'{pool} ({n} nœuds)')}  [{T(r['status'])}]", r["id"])
         i = self.bc_cmp.findData(keep) if keep else 0
         self.bc_cmp.setCurrentIndex(max(0, i))
         self.bc_cmp.blockSignals(False)
@@ -205,7 +216,10 @@ class BenchChart:
         chart.setTitle(("Comparaison — " if rb else "") + title + " selon le nombre de threads — " + (config or ""))
         chart.setTitleBrush(QBrush(QColor(V["ink"])))
         chart.legend().setLabelColor(QColor(V["ink2"]))
-        chart.legend().setAlignment(Qt.AlignTop)
+        # On the right, one entry a line (as the speedup chart): in one row at
+        # the top the labels are cut short. Hover gives a label cut all the same.
+        chart.legend().setAlignment(Qt.AlignRight)
+        chart.legend().setShowToolTips(True)
         chart.legend().setMarkerShape(QLegend.MarkerShapeFromSeries)
 
         drawn = []

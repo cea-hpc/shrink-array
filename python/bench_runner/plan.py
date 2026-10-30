@@ -6,17 +6,18 @@ import os
 import sys
 from pathlib import Path
 
+from . import share
 from .builds import (
     CURRENT_MACHINE, ORACLE_MARKER, config_dir_present, exe_fingerprint, is_compression_only_config,
-    is_omp_config, oracle_dir, oracle_exe_fingerprint, resolve_exe, short_config_label,
+    is_threaded_config, oracle_dir, oracle_exe_fingerprint, purge_oracle, resolve_exe, short_config_label,
     size_not_built, skip_variant_on_config,
 )
 from .phases.fuzz import FUZZ_THREADS
 from .phases.stl import stl_representative_exes
 from .settings import (
-    DEFAULT_CONFIGS, DEFAULT_SEQ_OMP_THREADS, DEFAULT_THREADS_CHECK, MODE_PRESETS,
+    DEFAULT_CONFIGS, DEFAULT_SEQ_OMP_THREADS, DEFAULT_VARIANTS, DEFAULT_THREADS_CHECK, MODE_PRESETS,
     PERF_EXCLUDED_CONFIGS, REFERENCE_THREADS, SANITIZER_CONFIGS, SANITIZER_REPS, sanitizer_skip_reason,
-    SANITIZER_THREADS, fit_threads, is_stats_config, machine_cpus,
+    SANITIZER_THREADS, fit_threads, is_stats_config, is_tbb_variant, machine_cpus,
 )
 from .term import bold, cyan, dim, red, yellow
 
@@ -76,12 +77,16 @@ def resolve_run_parameters(args):
         print(yellow(f"⚠️  Thread count(s) {over} passed explicitly exceed the {cap} usable CPUs: "
                      "those runs are oversubscribed"))
     # --- Expand variants across the requested size declinations -----------
-    # Shrink variants (chunk/chunk2/chunk2a/std_alloc) gain a "@<size>" suffix
+    # Shrink variants (zero/zero_one_value/zero_any/std_alloc) gain a "@<size>" suffix
     # so each (variant, size) pair is handled independently by the existing
     # machinery (resolve_exe decodes "base@size"). "vector" has no chunk
     # geometry and is left as-is. light_variants get the same treatment so a
     # light variant like std_alloc still resolves to real per-size binaries.
     SIZE_AGNOSTIC = {"vector"}
+    # The TBB bench is part of the default variants but only exists where
+    # oneTBB was found at compile time: a missing one is a note, not a warning,
+    # unless the variants were named on the command line.
+    args.tbb_implicit = args.variants == DEFAULT_VARIANTS
 
     def _expand_with_sizes(variant_list):
         out = []
@@ -125,11 +130,11 @@ def reduce_matrix(args):
                           f"({', '.join(dropped)}) — ≈ release on this workload"))
             args.configs = kept
         args.light_variants = sorted(set(args.light_variants) | {"std_alloc"})
-        # No rule demoting chunk/chunk2/chunk2a on a -std-alloc config to a
+        # No rule demoting zero/zero_one_value/zero_any on a -std-alloc config to a
         # light smoke run: the allocator moves the numbers well outside
-        # smoke-test territory -- on aarch64, chunk@1024 at 64 threads is
+        # smoke-test territory -- on aarch64, zero@1024 at 64 threads is
         # 14.53 s under gnu and 12.60 s under gnu-std-alloc (+15%), and
-        # chunk@dyn 56.4 s vs 40.3 s (+40%). Those are results, not duplicates.
+        # zero@dyn 56.4 s vs 40.3 s (+40%). Those are results, not duplicates.
         # (Any such test must compare _variant_base(var): `var` carries its
         # @<size> declination.)
         #
@@ -140,7 +145,7 @@ def reduce_matrix(args):
         #    3h29 of a 5 h run, to time a single-threaded build whose numbers do
         #    not move between campaigns. `--mode normal` and `--mode full` still
         #    measure them.
-        _serial = [c for c in args.configs if not is_omp_config(c)]
+        _serial = [c for c in args.configs if not is_threaded_config(c)]
         if _serial:
             perf_excluded |= set(_serial)
             print(dim(f"   fast: skipping the PERF phase of the serial configs "
@@ -220,6 +225,7 @@ def discover_binaries(args, perf_excluded):
     # running the vector variant on it.
     baseline_check_exe_of = {}
     missing_perf, missing_check = [], []
+    no_tbb_cfgs = []      # std-backend configs without the TBB bench (default variants only)
     sizes_not_built = {}  # config -> sizes it does not build (CHUNK_STATIC_SIZES)
 
     for cfg in args.configs:
@@ -236,6 +242,14 @@ def discover_binaries(args, perf_excluded):
                 # e.g. @1024 on a Debug or sanitizer build: 256 alone by default.
                 sizes_not_built.setdefault(cfg, set()).add(var.split("@", 1)[1])
                 continue
+            if is_tbb_variant(var) and getattr(args, "tbb_implicit", False):
+                # Asked for by default, not by name: a std build made without
+                # oneTBB has no TBB bench, which is not a defect. One note per
+                # config; any other config of the run is unaffected.
+                if not resolve_exe(args.build_root, cfg, var, "check"):
+                    if cfg not in no_tbb_cfgs:
+                        no_tbb_cfgs.append(cfg)
+                    continue
             if cfg in perf_excluded:
                 pass  # kept in CHECK, dropped from PERF (redundant with gnu-std-alloc)
             else:
@@ -259,6 +273,10 @@ def discover_binaries(args, perf_excluded):
     def _fmt(cfg, var):
         return f"[{short_config_label(cfg):40} / {var:10}]"
 
+    for cfg in no_tbb_cfgs:
+        print(dim(f"   ℹ️  {short_config_label(cfg)}: no TBB bench (shrink_bench_tbb_*) built there "
+                  f"-- oneTBB was not found when it was compiled (TBBROOT, CHUNK_WITH_TBB=1); "
+                  f"the tbb_* variants are skipped"))
     for cfg, sizes in sorted(sizes_not_built.items()):
         print(dim(f"   ℹ️  {short_config_label(cfg)}: size(s) {', '.join(sorted(sizes))} "
                   f"not built there (CHUNK_STATIC_SIZES), skipped"))
@@ -334,20 +352,18 @@ def prepare_oracles(args, check_exes, baseline_check_exe_of):
     def _oracle_files(d):
         return [f for f in _glob.glob(os.path.join(d, "data_tab*")) if not f.endswith(".marker")]
 
-    def _purge_oracle(d):
-        n = 0
-        for f in _glob.glob(os.path.join(d, "data_tab*")):
-            try:
-                os.remove(f)
-                n += 1
-            except OSError:
-                pass
-        return n
+    # --pool: the oracles are shared by the jobs, and another one may be
+    # generating one right now (its files there, its marker not yet): nothing
+    # is purged here. A configuration whose oracle must be (re)made is only
+    # marked so; the job that claims its generation (phases/check.py) purges
+    # and regenerates it, the others wait for it (share.wait_oracle).
+    pooled = share.active()
+    root = share.oracle_root(args)
 
     # A legacy single oracle (data_tab*) in output_dir itself is read by
     # nothing; say so once rather than silently keeping it around.
-    if not args.skip_check and os.path.isfile(os.path.join(args.output_dir, ORACLE_MARKER)):
-        print(f"ℹ️  A legacy single oracle sits in {args.output_dir} (data_tab*): it is no "
+    if not args.skip_check and os.path.isfile(os.path.join(root, ORACLE_MARKER)):
+        print(f"ℹ️  A legacy single oracle sits in {root} (data_tab*): it is no "
               f"longer used -- each config now has its own under oracle/<config>/. "
               f"Delete it when convenient.")
 
@@ -355,7 +371,7 @@ def prepare_oracles(args, check_exes, baseline_check_exe_of):
     oracle_needed = {}
     configs_checked = sorted({cfg for (cfg, _v) in check_exes})
     for cfg in configs_checked if not args.skip_check else []:
-        d = oracle_dir(args.output_dir, cfg)
+        d = oracle_dir(root, cfg)
         marker = os.path.join(d, ORACLE_MARKER)
         files = _oracle_files(d)
         # The oracle counts as present ONLY if the completeness marker exists
@@ -363,12 +379,20 @@ def prepare_oracles(args, check_exes, baseline_check_exe_of):
         # without it are an interrupted generation, purged and regenerated.
         present = os.path.isfile(marker) and bool(files)
         if files and not present:
-            _purge_oracle(d)
-            print(f"⚠️  Partial oracle for {short_config_label(cfg)} in {d} "
-                  f"({len(files)} file(s), no completeness marker) → purged, regenerating.")
+            if pooled:
+                print(f"ℹ️  Oracle for {short_config_label(cfg)} in {d}: {len(files)} file(s), no "
+                      f"completeness marker (an interrupted generation, or another job's in "
+                      f"progress) → regenerated by the job that claims it.")
+            else:
+                purge_oracle(d)
+                print(f"⚠️  Partial oracle for {short_config_label(cfg)} in {d} "
+                      f"({len(files)} file(s), no completeness marker) → purged, regenerating.")
         if args.regen_ref and (present or files):
-            n = _purge_oracle(d)
-            print(f"ℹ️  --regen-ref: removed {n} file(s) in {d} → regenerating.")
+            if pooled:
+                print(f"ℹ️  --regen-ref: the oracle in {d} is regenerated by the job that claims it.")
+            else:
+                n = purge_oracle(d)
+                print(f"ℹ️  --regen-ref: removed {n} file(s) in {d} → regenerating.")
             present = False
         # Stale oracle: the config's vector binary is not the one that wrote
         # it (rebuilt with other flags, another compiler...). Without this the
@@ -379,11 +403,12 @@ def prepare_oracles(args, check_exes, baseline_check_exe_of):
             recorded = oracle_exe_fingerprint(marker)
             current  = exe_fingerprint(baseline_check_exe_of[cfg])
             if recorded != current:
-                n = _purge_oracle(d)
+                n = 0 if pooled else purge_oracle(d)
                 why = ("no binary fingerprint in its marker (older run)" if recorded is None
                        else "the vector binary changed since it was generated")
                 print(f"ℹ️  Oracle for {short_config_label(cfg)}: {why} → "
-                      f"removed {n} file(s), regenerating.")
+                      + ("regenerated by the job that claims it." if pooled
+                         else f"removed {n} file(s), regenerating."))
                 present = False
         if present:
             print(f"ℹ️  Oracle for {short_config_label(cfg)} present in {d} → "
@@ -443,13 +468,13 @@ class Plan:
         args = self.args
         if self.is_light(var, cfg):
             return [args.light_threads]
-        # A build without OpenMP ignores OMP_NUM_THREADS, so sweeping it just
-        # runs the SAME measurement N times. It showed: in the aarch64 fast
+        # A serial build (neither OpenMP nor the std backend) ignores
+        # OMP_NUM_THREADS, so sweeping it just runs the SAME measurement N times. It showed: in the aarch64 fast
         # campaign, gnu-noomp vector came out at 109.154 / 108.772 / 109.094 s
         # for 16 / 64 / 128 threads, and the two noomp configs alone took 3h29
         # of a 5h run -- two thirds of it for nothing. Keep one count, preferring
         # the reference one so the noomp rows line up with the OMP rows.
-        if not is_omp_config(cfg):
+        if not is_threaded_config(cfg):
             if self.full_reps_tc:
                 for tc in args.threads:
                     if tc in self.full_reps_tc:
@@ -465,7 +490,7 @@ class Plan:
         # yields identical timings, so one run is enough (and saves a lot of
         # wall time — a noomp chunk run can be minutes). OMP configs keep the
         # full repetition count (scheduling / NUMA / contention add real noise).
-        if not is_omp_config(cfg):
+        if not is_threaded_config(cfg):
             return 1
         if var == args.baseline_variant:
             return 1
@@ -477,7 +502,7 @@ class Plan:
         # Non-OMP builds are single-threaded and deterministic: one CHECK run is
         # enough (repeating gives identical results). OMP configs keep the full
         # reps_check count, where scheduling/contention make repetition useful.
-        if not is_omp_config(cfg):
+        if not is_threaded_config(cfg):
             return 1
         return self.args.reps_check
 

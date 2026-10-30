@@ -74,19 +74,19 @@ void decompress_file(const std::string& source_file, const std::string& dest_fil
 template <typename Sink, typename Fmt, typename T>
 static void log_values_compacted(Sink&& sink, Fmt&& fmt, const T* values, UInt count)
 {
-    UInt p = 0;
-    while (p < count)
+    UInt pos = 0;
+    while (pos < count)
     {
-        const T    current_val = values[p];
-        const UInt start_idx   = p;
+        const T    current_val = values[pos];
+        const UInt start_idx   = pos;
 
         // Count how many identical consecutive values follow
-        while (p < count && values[p] == current_val)
+        while (pos < count && values[pos] == current_val)
         {
-            ++p;
+            ++pos;
         }
 
-        const UInt        run_length = p - start_idx;
+        const UInt        run_length = pos - start_idx;
         const std::string val_str    = fmt(current_val);
         if (run_length > 2)
         {
@@ -144,10 +144,7 @@ void write_binary_file(const std::string& filename,
                 std::cerr << std::format("Error open file : {}\n", filename_check_sum);
                 std::abort();
             }
-#pragma omp critical
-            {
-                std::cout << std::format("Write : {} (checksum only)\n", filename_check_sum);
-            }
+            bench_par::critical([&] { std::cout << std::format("Write : {} (checksum only)\n", filename_check_sum); });
             file_check_sum.write(reinterpret_cast<const char*>(&checksum), sizeof(uint64_t));
             file_check_sum.close();
             unlink(filename.c_str());
@@ -171,11 +168,12 @@ void write_binary_file(const std::string& filename,
         }
         const size_t size = data.size();
 
-#pragma omp critical
-        {
-            std::cout << std::format("Write : {}\n", filename_check_sum);
-            std::cout << std::format("Write : {}\n", filename);
-        }
+        bench_par::critical(
+            [&]
+            {
+                std::cout << std::format("Write : {}\n", filename_check_sum);
+                std::cout << std::format("Write : {}\n", filename);
+            });
 
         file_check_sum.write(reinterpret_cast<const char*>(&checksum), sizeof(uint64_t));
         file_check_sum.close();
@@ -222,10 +220,7 @@ void write_binary_file(const std::string& filename,
     if constexpr (have_bzip2)
     {
         compress_file(filename, filename_gz);
-#pragma omp critical
-        {
-            std::cout << std::format("Compression : {} -> {}\n", filename, filename_gz);
-        }
+        bench_par::critical([&] { std::cout << std::format("Compression : {} -> {}\n", filename, filename_gz); });
         unlink(filename.c_str());
     }
 }
@@ -260,10 +255,7 @@ void read_check_binary_file(Int                ind,
     const std::string filename_check_sum = filename + "_check_sum";
 
     uint64_t lchs_read = 0;
-#pragma omp critical
-    {
-        std::cout << std::format("Read : {}\n", filename_check_sum);
-    }
+    bench_par::critical([&] { std::cout << std::format("Read : {}\n", filename_check_sum); });
     std::ifstream file_check_sum(filename_check_sum, std::ios::binary);
     if (!file_check_sum)
     {
@@ -275,41 +267,34 @@ void read_check_binary_file(Int                ind,
 
     if (lchs_read == lchs && !read_trace)
     {
-#pragma omp critical
-        {
-            std::cout << tab_name << " Checksum OK !\n";
-        }
+        bench_par::critical([&] { std::cout << tab_name << " Checksum OK !\n"; });
         return;
     }
-    else
+    if (!read_trace)
     {
-        if (!read_trace)
-        {
-            std::cerr << tab_name << "\nError checksum ! checksum read : " << lchs_read
-                      << " checksum calculate : " << lchs;
-        }
-
-        if (!no_compress)
-        {
-            std::cerr << " --> we decompress and read the file : " << tab_name;
-        }
-        std::cerr << "\n";
+        std::cerr << tab_name << "\nError checksum ! checksum read : " << lchs_read << " checksum calculate : " << lchs;
     }
 
+    if (!no_compress)
+    {
+        std::cerr << " --> we decompress and read the file : " << tab_name;
+    }
+    std::cerr << "\n";
     // A reference written with --checksum_only has no data to compare against:
     // the miss cannot be located, so stop here with a clear message rather than
     // through a missing-file error further down.
     if (::access(filename.c_str(), F_OK) != 0 && ::access(filename_gz.c_str(), F_OK) != 0)
     {
-#pragma omp critical
-        {
-            std::cerr << std::format(
-                "{}: iteration {}: elements cannot be compared (checksum read {}, calculated {}): the reference "
-                "has no data file ({} / {}): it was written with --checksum_only. Regenerate a "
-                "full reference (vector baseline without --checksum_only) to locate the "
-                "diverging element.\n",
-                tab_name, ind, lchs_read, lchs, filename, filename_gz);
-        }
+        bench_par::critical(
+            [&]
+            {
+                std::cerr << std::format(
+                    "{}: iteration {}: elements cannot be compared (checksum read {}, calculated {}): the reference "
+                    "has no data file ({} / {}): it was written with --checksum_only. Regenerate a "
+                    "full reference (vector baseline without --checksum_only) to locate the "
+                    "diverging element.\n",
+                    tab_name, ind, lchs_read, lchs, filename, filename_gz);
+            });
         std::abort();
     }
 
@@ -334,10 +319,7 @@ void read_check_binary_file(Int                ind,
             bin_is_temp = true;
         }
     }
-#pragma omp critical
-    {
-        std::cout << "Read : " << filename << std::endl;
-    }
+    bench_par::critical([&] { std::cout << "Read : " << filename << std::endl; });
     std::ifstream file(filename, std::ios::binary);
     if (!file)
     {
@@ -370,7 +352,7 @@ void read_check_binary_file(Int                ind,
     // branch, and an explicit capture that the std::vector instantiation
     // never reads draws -Wunused-lambda-capture from clang.
     [[maybe_unused]]
-    const auto lbd_check_trace = [&](std::ifstream& trace_file, Int k, auto& value)
+    const auto lbd_check_trace = [&](std::ifstream& trace_file, Int index, auto& value)
     {
         // The body as a whole, not statement by statement: everything below
         // reads data_check, whose type is the DEPENDENT template parameter, so
@@ -407,12 +389,12 @@ void read_check_binary_file(Int                ind,
             std::getline(trace_file, line);
             std::getline(trace_file, line);
 
-            const Int num_chunk = k / static_cast<Int>(data_check.chunk_size());
-            const Int num       = k % static_cast<Int>(data_check.chunk_size());
+            const Int num_chunk = index / static_cast<Int>(data_check.chunk_size());
+            const Int num       = index % static_cast<Int>(data_check.chunk_size());
 
             bool                  is_values   = false;
             bool                  is_cst_val1 = false;
-            [[maybe_unused]] bool is_cst_val2 = false; // read only by the chunk2 / chunk2a traces
+            [[maybe_unused]] bool is_cst_val2 = false; // read only by the zero_one_value / zero_any traces
             while (std::getline(trace_file, line))
             {
                 if (line.find("is_values") != std::string::npos)
@@ -428,7 +410,7 @@ void read_check_binary_file(Int                ind,
                 // Pure text search on the trace line -- no variant API at all -- and the
                 // enclosing lambda is generic, so the guard was never more than an
                 // `if constexpr` written with the preprocessor.
-                if constexpr (chunk_config::use_chunk2or2a)
+                if constexpr (chunk_config::use_second_value)
                 {
                     if (line.find("is_cst_val2") != std::string::npos)
                     {
@@ -442,9 +424,12 @@ void read_check_binary_file(Int                ind,
 
             const bool is_val1 = chunk_t.is_cst_val1();
 
-            // false everywhere but CHUNK2, exactly as the #else branch gave.
+            // false everywhere but zero_one_value, exactly as the #else branch gave --
+            // and for a zero_any-family array in a zero_one_value build (tab_conn's
+            // pattern::Array): as in a zero_any build.
             bool is_val2 = false;
-            if constexpr (chunk_config::use_chunk2)
+            if constexpr (chunk_config::use_zero_one_value &&
+                          !shrink_array::is_zero_any_family_v<std::remove_cvref_t<decltype(chunk_t)>>)
             {
                 static constexpr bool is_bool     = shrink_array::is_bool_like_v<T>; // bool, Bit
                 static constexpr bool is_not_bool = !is_bool;
@@ -466,7 +451,7 @@ void read_check_binary_file(Int                ind,
                 std::cerr << "number inside chunk : " << num << "\n";
                 std::cerr << "is values           : " << is_values << "\n";
                 std::cerr << "is_cst_val1         : " << is_val1 << "\n";
-                if constexpr (chunk_config::use_chunk2or2a)
+                if constexpr (chunk_config::use_second_value)
                 {
                     std::cerr << "is_cst_val2         : " << is_val2 << "\n";
                 }
@@ -492,7 +477,7 @@ void read_check_binary_file(Int                ind,
                 exit(0);
             }
 
-            if constexpr (chunk_config::use_chunk2or2a)
+            if constexpr (chunk_config::use_second_value)
             {
                 if (is_cst_val2)
                 {
@@ -514,11 +499,11 @@ void read_check_binary_file(Int                ind,
                 {
                     std::cerr << "\nwas values it is\n";
                     lbd_print();
-                    constexpr T v{}; // T{}: the struct elements have no conversion from 0
+                    constexpr T value{}; // T{}: the struct elements have no conversion from 0
                     bool        te = true;
                     for (UInt p = 0; p < data_check.chunk_size(); ++p)
                     {
-                        if (chunk_t.values_[p] != v)
+                        if (chunk_t.values_[p] != value)
                         {
                             te = false;
                             break;
@@ -551,7 +536,7 @@ void read_check_binary_file(Int                ind,
                         {
                             std::cerr << "All values of chunk (compacted):\n";
                             const T* vals = chunk_t.values_; // atomic<T*> implicit load or plain ptr
-                            log_values_compacted([](const std::string& m) { std::cerr << m; }, format_val, vals,
+                            log_values_compacted([](const std::string& msg) { std::cerr << msg; }, format_val, vals,
                                                  data_check.chunk_size());
                         }
                     }
@@ -656,7 +641,7 @@ void read_check_binary_file(Int                ind,
                             " != " + std::to_string(data_check[k]) + "\n");
 
                 std::cerr << "iteration: " + std::to_string(ind) + "\n";
-                // One `if constexpr` over both former blocks: the CHUNK2 one below
+                // One `if constexpr` over both former blocks: the zero_one_value one below
                 // reads chunk_t, declared here, so they cannot be split.
                 if constexpr (chunk_config::is_shrink_enabled)
                 {
@@ -693,7 +678,7 @@ void read_check_binary_file(Int                ind,
                     log_message("value  = " + std::to_string(val) + "\n");
                     log_message("address values[" + std::to_string(num) + "] : " + s1 + "\n");
 
-                    if constexpr (chunk_config::use_chunk2)
+                    if constexpr (chunk_config::use_zero_one_value)
                     {
                         if (chunk_t.is_cst_val1())
                         {
@@ -731,6 +716,9 @@ void read_check_binary_file(Int                ind,
         constexpr T zero{};
 
         constexpr bool is_complex = std::is_same_v<T, ComplexDouble>;
+        // Only these types accept a value within a relative tolerance (ok3); for the
+        // others ok3 stays false and nn 0, so its branches are compiled out.
+        constexpr bool has_tolerance = std::is_same_v<T, double> || std::is_same_v<T, float> || is_complex;
 
         for (Int k = 0; k < sz; ++k)
         {
@@ -812,17 +800,17 @@ void read_check_binary_file(Int                ind,
                 // on tab_char would print a control byte instead of the number.
                 // Promote the narrow types to a wide integer for display only;
                 // every other T prints as is.
-                const auto printable = [](const auto& v)
+                const auto printable = [](const auto& value)
                 {
-                    using V = std::remove_cvref_t<decltype(v)>;
+                    using V = std::remove_cvref_t<decltype(value)>;
                     if constexpr (std::is_same_v<V, unsigned char> || std::is_same_v<V, signed char> ||
                                   std::is_same_v<V, char>)
                     {
-                        return static_cast<int>(v);
+                        return static_cast<int>(value);
                     }
                     else
                     {
-                        return v;
+                        return value;
                     }
                 };
 
@@ -886,7 +874,7 @@ void read_check_binary_file(Int                ind,
                     }
                 }
 
-                if constexpr (chunk_config::use_chunk2or2a)
+                if constexpr (chunk_config::use_second_value)
                 {
                     // num_chunk is recomputed rather than hoisted out of the block
                     // above: the ratio report sitting between the two must keep
@@ -908,8 +896,10 @@ void read_check_binary_file(Int                ind,
                     else if (
                         [&]
                         {
-                            // bool / Bit: one second value, no index.
-                            if constexpr (chunk_config::use_chunk2 && !shrink_array::is_bool_like_v<T>)
+                            // bool / Bit: one second value, no index; a zero_any-family
+                            // array (tab_conn's pattern::Array) has none either.
+                            if constexpr (chunk_config::use_zero_one_value && !shrink_array::is_bool_like_v<T> &&
+                                          !shrink_array::is_zero_any_family_v<std::remove_cvref_t<decltype(chunk_t)>>)
                             {
                                 return chunk_t.is_cst_val2(data_check.get_ind_second_value());
                             }
@@ -921,8 +911,7 @@ void read_check_binary_file(Int                ind,
                     {
                         log_message("\n[Debug] is_cst_val2 should be not !\n");
 
-                        constexpr T zero{};
-                        bool        test_zero = true;
+                        bool test_zero = true;
 
                         for (UInt p = 0; p < data_check.chunk_size(); p++)
                         {
@@ -945,7 +934,7 @@ void read_check_binary_file(Int                ind,
                             log_message("\n[Info] should be cst_val1 (all zero)!\n");
                         }
 
-                        if constexpr (chunk_config::use_chunk2a)
+                        if constexpr (chunk_config::use_zero_any)
                         {
                             const T* m_ptr_cst_values = chunk_t.values_load(); // a cst2 chunk reads from its array
                             log_message("\nm_ptr_cst_val2 contain : ");
@@ -987,19 +976,24 @@ void read_check_binary_file(Int                ind,
                 trace_file_write.close();
                 std::abort();
             }
-            else if (!ok1 && ok3)
+            else if constexpr (has_tolerance)
             {
-                nn++;
+                if (!ok1 && ok3)
+                {
+                    nn++;
+                }
             }
         }
 
-        if (nn)
+        if constexpr (has_tolerance)
         {
-            std::cerr << nn << " : values are not perfectly equal ! : error max = ";
-            std::cerr << std::scientific << ratio_max << "\n";
-            std::cerr << std::defaultfloat;
+            if (nn)
+            {
+                // std::format, not std::scientific: leaves std::cerr's flags alone
+                std::cerr << std::format("{} : values are not perfectly equal ! : error max = {:e}\n", nn, ratio_max);
+            }
         }
-        else if (!read_trace)
+        if (nn == 0 && !read_trace)
         {
             std::cout << "no data error (but checksum error...)\n";
         }

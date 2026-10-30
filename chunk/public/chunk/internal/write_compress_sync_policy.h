@@ -19,7 +19,6 @@
 #include <vector>  // std::vector
 #include <atomic>  // std::atomic, std::atomic_thread_fence, std::memory_order
 #include <cstdint> // uint32_t (the ring_log payloads)
-#include <mutex>   // std::once_flag / std::call_once — NOT just std::mutex; do not remove again
 
 #include "chunk/config.h"            // chunk_config::asymmetric_dekker, chunk_config::ring_log_debug
 #include "chunk/PMP_CHUNK.h"         // CHUNK_PMP_THREAD_CAPACITY
@@ -49,7 +48,7 @@ inline constexpr int membarrier_cmd_register_private_expedited = 1 << 4; // MEMB
  *          (an IPI, or the barrier a context switch implies) and returns only
  *          once all have. Cost: some tens of microseconds at 64 threads, paid
  *          on the rare side only; chunk_config::asymmetric_dekker explains the
- *          trade, print_chunk_stats() counts the calls (gate start / flush /
+ *          trade, ParamChunk::chunk_stats() counts the calls (gate start / flush /
  *          driver).
  *
  *          The expedited command must be registered once, before use;
@@ -66,7 +65,7 @@ namespace dekker
 /// Written once, before the parallel regions, by register_membarrier();
 /// atomic so the readers need no other ordering (a relaxed load is a plain
 /// load on every target).
-inline std::atomic<bool> membarrier_ready{false};
+inline std::atomic membarrier_ready{false};
 
 /// @brief Register MEMBARRIER_CMD_PRIVATE_EXPEDITED for this process.
 /// @return true if heavy_barrier() will use it; idempotent.
@@ -128,7 +127,7 @@ inline void heavy_barrier() noexcept
     }
 }
 
-/// @brief What print_chunk_stats() reports as the handshake in use.
+/// @brief What ParamChunk::chunk_stats() reports as the handshake in use.
 [[nodiscard]] inline const char* protocol_name() noexcept
 {
     if constexpr (!chunk_config::asymmetric_dekker)
@@ -176,18 +175,18 @@ inline void heavy_barrier() noexcept
  *          site can announce without its ordering -- see announce_write() for
  *          both proofs, and docs/synchronisation_dekker_fr.md.
  *
- *          This class owns ONLY the write/flush handshake state. The slow-path
- *          driver counter lives in CompressionManager::state_, packed with
- *          its hard `inflight` count.
+ *          This class owns ONLY the write/flush handshake state. The
+ *          compressors' own counts (hard_inflight_, stealing_inflight_) live in
+ *          CompressionManager.
  *
  *          The whole policy is OpenMP-only; the serial build gets the empty
  *          specialisation below, since a single thread cannot race with itself.
  *
  * @tparam ProxyT    proxy type the policy is instantiated for -- it keys the static
  *                 state, giving one independent handshake per (variant, T)
- * @tparam Enabled build_config::use_openmp; never pass it explicitly
+ * @tparam Enabled build_config::threaded; never pass it explicitly
  */
-template <typename ProxyT, bool Enabled = build_config::use_openmp>
+template <typename ProxyT, bool Enabled = build_config::threaded>
 class WriteCompressSyncPolicy
 {
   public:
@@ -225,20 +224,7 @@ class WriteCompressSyncPolicy
      *       num_thread_flushing is zero.
      * @note Idempotent (std::call_once); callers may invoke it freely.
      */
-    static void ensure_initialized()
-    {
-        static std::once_flag flag;
-        std::call_once(flag,
-                       []
-                       {
-                           per_thread_writing =
-                               std::vector<WritingFlag>(static_cast<std::size_t>(CHUNK_PMP_THREAD_CAPACITY));
-                           num_thread_flushing.store(0, std::memory_order_relaxed);
-                           // Process-wide and idempotent; done here so it precedes
-                           // the first parallel write of this variant.
-                           dekker::register_membarrier();
-                       });
-    }
+    static void ensure_initialized();
 
     /**
      * @brief Writer-side Dekker announce: raise the flag, then order it before
@@ -289,21 +275,7 @@ class WriteCompressSyncPolicy
      */
     // always_inline: otherwise gcc -O3 may outline it (the fallback branch
     // tips its heuristic), a call on every element write.
-    [[gnu::always_inline]] static void announce_write(int thr, const void* chunk) noexcept
-    {
-        if (dekker::asymmetric_active()) [[likely]]
-        {
-            if constexpr (chunk_config::ring_log_debug)
-            {
-                ring_log(get_tid(), ev_policy_begin_write, static_cast<uint32_t>(thr));
-            }
-            per_thread_writing[thr].v.store(chunk, std::memory_order_relaxed);
-            std::atomic_signal_fence(std::memory_order_seq_cst); // compiler: keep the store before the loads
-            return;
-        }
-        begin_write(thr, chunk);
-        std::atomic_thread_fence(std::memory_order_seq_cst);
-    }
+    [[gnu::always_inline]] static void announce_write(int thr, const void* chunk) noexcept;
 
     /**
      * @brief Lower this thread's writer flag, ending its critical section.
@@ -313,7 +285,7 @@ class WriteCompressSyncPolicy
     {
         if constexpr (chunk_config::ring_log_debug)
         {
-            ring_log(get_tid(), ev_policy_end_write, static_cast<uint32_t>(thr));
+            ring_log(get_tid(), EventCode::policy_end_write, static_cast<uint32_t>(thr));
         }
 
         per_thread_writing[thr].v.store(nullptr, std::memory_order_release);
@@ -333,18 +305,7 @@ class WriteCompressSyncPolicy
      *       its write returns, and chunks die outside parallel regions only.
      */
     template <typename ChunkT>
-    static bool any_thread_writing_on_marked(int max_thr) noexcept
-    {
-        for (int i = 0; i < max_thr; ++i)
-        {
-            const auto* chunk = static_cast<const ChunkT*>(per_thread_writing[i].v.load(std::memory_order_acquire));
-            if (chunk != nullptr && chunk->steal_marked())
-            {
-                return true;
-            }
-        }
-        return false;
-    }
+    static bool any_thread_writing_on_marked(int max_thr) noexcept;
 
     /**
      * @brief Is rank @p thr currently inside its write critical section?
@@ -431,17 +392,7 @@ class WriteCompressSyncPolicy
      * @note O(max_thr). Acceptable because only the rare flush/compress side
      *       calls it; the hot write path never does.
      */
-    static bool any_thread_writing(int max_thr) noexcept
-    {
-        for (int i = 0; i < max_thr; ++i)
-        {
-            if (per_thread_writing[i].v.load(std::memory_order_acquire) != nullptr)
-            {
-                return true;
-            }
-        }
-        return false;
-    }
+    static bool any_thread_writing(int max_thr) noexcept;
 
   private:
     /**
@@ -456,7 +407,7 @@ class WriteCompressSyncPolicy
     {
         if constexpr (chunk_config::ring_log_debug)
         {
-            ring_log(get_tid(), ev_policy_begin_write, static_cast<uint32_t>(thr));
+            ring_log(get_tid(), EventCode::policy_begin_write, static_cast<uint32_t>(thr));
         }
 
         per_thread_writing[thr].v.store(chunk, std::memory_order_seq_cst);
@@ -505,3 +456,5 @@ class WriteCompressSyncPolicy<ProxyT, false>
 };
 
 } // namespace shrink_array
+
+#include "chunk/internal/write_compress_sync_policy_inline.h" // the template bodies

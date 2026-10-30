@@ -19,31 +19,58 @@
 namespace shrink_array
 {
 
+namespace zero
+{
+
 // Forward declarations of chunk types
 template <typename T>
 class Chunk;
-template <typename T>
-class Chunk2;
-template <typename T>
-class Chunk2A;
 
-template <typename ChunkType>
+} // namespace zero
+
+namespace zero_one_value
+{
+
+template <typename T>
+class Chunk;
+
+} // namespace zero_one_value
+
+namespace zero_any
+{
+
+template <typename T>
+class Chunk;
+
+} // namespace zero_any
+
+template <typename ChunkT>
 class ArrayChunkCore;
 
 /**
- * @brief What a proxy of @p ChunkType may cast its type-erased ptr_on_array to.
+ * @brief The array type a proxy of @p ChunkT knows its array as.
  * @details The index-independent core of the array, never the array itself: a
- *          chunk type has one array type per index type (`ArrayChunk2A<T, int>`,
- *          `ArrayChunk2A<T, long>`), and ptr_on_array is the address of the core
- *          (ArrayChunkCore::registry_key()) for all of them.
+ *          chunk type has one array type per index type (`zero_any::Array<T, int>`,
+ *          `zero_any::Array<T, long>`), and they all share this core.
  */
-template <typename ChunkType>
+template <typename ChunkT>
 struct ArrayChunkFor
 {
-    using type = ArrayChunkCore<ChunkType>;
+    using type = ArrayChunkCore<ChunkT>;
 };
 
-template <typename ChunkType>
-using ArrayChunkForT = ArrayChunkFor<ChunkType>::type;
+/**
+ * @brief The identity of an array of @p ChunkT: the proxies' ptr_on_array_,
+ *        the deferred contexts' ptr_on_array, every share_info_array key.
+ * @details The address of the array's core (ArrayChunkCore::registry_key()),
+ *          typed: a key reads the array back with no cast, and the derived
+ *          array's `this` -- a different address in check builds
+ *          (RegistryKeyCanary) -- or any other pointer does not convert to it.
+ */
+template <typename ChunkT>
+using ArrayKey = const ArrayChunkCore<ChunkT>*;
+
+template <typename ChunkT>
+using ArrayChunkForT = ArrayChunkFor<ChunkT>::type;
 
 } // namespace shrink_array

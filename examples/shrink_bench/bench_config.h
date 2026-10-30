@@ -34,19 +34,17 @@
 #include "bench_prelude.h"            // Int, build_config::, CHUNK_PMP_MAX_THREADS
 #include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
 
-// PRINT_MEM is enabled by default.
-#ifndef PRINT_MEM
-    #define PRINT_MEM
-#endif
-
 // Bench-level compile-time flags, exposed as `inline constexpr bool` so
 // that `if constexpr (...)` can be used in shrink_bench.cpp instead of
 // `#ifdef` around runtime code.
-#ifdef PRINT_MEM
-inline constexpr bool print_mem = true;
-#else
-inline constexpr bool print_mem = false;
+
+// BENCH_PRINT_MEM: the memory lines of a run ("after init", every
+// freq_conso_mem iterations, "after compress"). Set by the CMake option SHRINK_BENCH_PRINT_MEM (ON by
+// default) as 1 or 0; 1 when a build sets nothing.
+#ifndef BENCH_PRINT_MEM
+    #define BENCH_PRINT_MEM 1
 #endif
+inline constexpr bool print_mem = BENCH_PRINT_MEM != 0;
 
 #ifdef TEST_CAPTUR_BUG
 inline constexpr bool test_captur_bug = true;
@@ -89,7 +87,7 @@ inline constexpr bool have_bzip2 = false;
 // NOT mirrored here, on purpose -- chunk/config.h already exposes them, and a
 // second spelling would be one more thing to keep in step:
 //   SHRINK_ARRAY    -> chunk_config::is_shrink_enabled
-//   CHUNK_VARIANT_V1/_V2/_V2A -> chunk_config::use_chunk / use_chunk2 / use_chunk2a
+//   CHUNK_VARIANT_ZERO* -> chunk_config::use_zero / use_zero_one_value / use_zero_any
 //   CHUNK_OPT_RING_LOG_DEBUG  -> chunk_config::ring_log_debug
 //   CHUNK_DYNAMIC             -> build_config::chunk_dynamic
 //   CHUNK_OPT_OPENMP          -> build_config::use_openmp (and CHUNK_PMP_MAX_THREADS)
@@ -118,7 +116,7 @@ inline constexpr bool have_bzip2 = false;
 //   - a NON-dependent name is looked up when the template is DEFINED, discarded
 //     branch or not. `if constexpr (build_config::use_fast_alloc)` does not let
 //     you write alloc_config::x in a std-alloc build; the fix is a mirror that
-//     exists everywhere (build_config::reclaim_empty_slabs).
+//     exists everywhere, in chunk/config.h (build_config::use_fast_alloc itself).
 //   - `&&` short-circuits EVALUATION, never NAME LOOKUP. `if constexpr (A &&
 //     Derived::m)` is ill-formed for a Derived without `m` even when A is false
 //     -- NEST the two tests instead (array_chunk_rechunk_inline.h).
@@ -162,20 +160,20 @@ inline bool mode_perf  = false; ///< g_bench_mode == perf
 
 /**
  * @brief Select the bench mode. Call once, from argument parsing.
- * @param m the mode --mode asked for.
+ * @param mode the mode --mode asked for.
  * @warning Must run BEFORE the first get_ or have_ accessor call: their callers
  *          treat them as fixed for the whole run.
  */
-inline void set_bench_mode(BenchMode m)
+inline void set_bench_mode(BenchMode mode)
 {
     // An int64 build (BENCH_INT64) checks against the same data_tab* files as
     // the 32-bit one: they hold element values and a checksum, nothing sized by
     // Int, and the index type changes no value the bench computes. A mismatch
     // there is a real 32/64-bit divergence -- in the library's index path, or
     // an index expression of the bench that overflows at 32 bits.
-    g_bench_mode = m;
-    mode_check   = (m == BenchMode::check);
-    mode_perf    = (m == BenchMode::perf);
+    g_bench_mode = mode;
+    mode_check   = (mode == BenchMode::check);
+    mode_perf    = (mode == BenchMode::perf);
 }
 
 /// @brief I/O mode of the run.
@@ -260,7 +258,7 @@ inline Int get_size_data(double multiplier = 1.0, double divisor = 1.0)
  *              size <= interval);
  *            - i + 2 * k in the compute phase (i < sz, k < iter_max);
  *            - end0 + 256, the tail loop;
- *            - the library's Int indices (ind_type = Int): the element count,
+ *            - the library's Int indices (IntType = Int): the element count,
  *              and chunk count x chunk size, up to sz + one chunk (65536
  *              covers any geometry the rechunk reaches).
  *          Beyond that the bench and the library need 64-bit indices, which
@@ -273,11 +271,11 @@ inline Int get_size_data(double multiplier = 1.0, double divisor = 1.0)
 inline void check_size_limits(double multiplier, double divisor, Int iter_max)
 {
     // %.10g: the default stream precision printed 1.9999999 as "2".
-    const auto real = [](double v)
+    const auto real = [](double value)
     {
-        char b[32];
-        std::snprintf(b, sizeof b, "%.10g", v);
-        return std::string(b);
+        char buf[32];
+        std::snprintf(buf, sizeof buf, "%.10g", value);
+        return std::string(buf);
     };
     if (!std::isfinite(multiplier) || multiplier <= 0.0 || !std::isfinite(divisor) || divisor <= 0.0)
     {
@@ -300,10 +298,10 @@ inline void check_size_limits(double multiplier, double divisor, Int iter_max)
     }
 
     const long long margin = std::max({2LL * iter_max, 65536LL});
-    const auto      reach  = [&](double m)
+    const auto      reach  = [&](double target)
     {
-        const long long sz_m = scaled_size(base_data, m, divisor);
-        return std::max((2 * sz_m) + 65536LL, sz_m + std::max(scaled_size(base_itv, m, divisor), margin));
+        const long long sz_m = scaled_size(base_data, target, divisor);
+        return std::max((2 * sz_m) + 65536LL, sz_m + std::max(scaled_size(base_itv, target, divisor), margin));
     };
 
     constexpr long long int_max = std::numeric_limits<Int>::max();
@@ -316,11 +314,11 @@ inline void check_size_limits(double multiplier, double divisor, Int iter_max)
     //   2 * sz + 65536   <= int_max  ->  m <= (int_max - 65536) * d / (2 * base_data)
     //   sz + margin      <= int_max  ->  m <= (int_max - margin) * d / base_data
     //   sz + interval    <= int_max  ->  m <= int_max * d / (base_data + base_itv)
-    const double d     = divisor;
+    const double div   = divisor;
     const double top   = static_cast<double>(int_max); // 2^63 in the int64 build: the loop below re-checks exactly
-    double       m_max = std::min({(top - 65536.0) * d / (2.0 * static_cast<double>(base_data)),
-                                   (top - static_cast<double>(margin)) * d / static_cast<double>(base_data),
-                                   top * d / static_cast<double>(base_data + base_itv)});
+    double       m_max = std::min({(top - 65536.0) * div / (2.0 * static_cast<double>(base_data)),
+                                   (top - static_cast<double>(margin)) * div / static_cast<double>(base_data),
+                                   top * div / static_cast<double>(base_data + base_itv)});
     m_max              = std::floor(m_max * 1e6) / 1e6; // printed to 6 decimals: round DOWN
     while (m_max > 0.0 && reach(m_max) > int_max)
     {
@@ -341,9 +339,9 @@ inline void check_size_limits(double multiplier, double divisor, Int iter_max)
     {
         std::cerr << "       No --multiply fits with --divisor " << real(divisor) << ": raise --divisor.\n";
     }
-    std::cerr << "       Beyond that the bench and the library (ind_type = Int) need 64-bit indices:\n"
+    std::cerr << "       Beyond that the bench and the library (IntType = Int) need 64-bit indices:\n"
                  "       rebuild with -DSHRINK_BENCH_INT64=ON and run the int64 executable\n"
-                 "       (shrink_bench_<variant>_int64_<1024|dyn>, perf only).\n";
+                 "       (shrink_bench_<backend>_<variant>_int64_<1024|dyn>, perf only).\n";
     std::exit(1);
 }
 
@@ -356,7 +354,7 @@ inline Int get_iter_stop(Int iter_max)
     {
         return 33;
     }
-    else if (mode_perf)
+    if (mode_perf)
     {
         return iter_max;
     }
@@ -372,7 +370,7 @@ inline Int get_freq_raz(Int iter_max)
     {
         return 4;
     }
-    else if (mode_perf)
+    if (mode_perf)
     {
         Int ret = iter_max / 10;
         if (ret == 0)
@@ -393,15 +391,15 @@ inline Int get_freq_conso_mem()
     // whatever the mode. =1 turns the ten iterations before an advisor tick
     // from a blind spot into a curve, which is what locating a transient
     // peak needs. Decided once at startup, like every other CONSTEXPR site.
-    if (const Int n = shrink_array::env_number<Int>("CHUNK_BENCH_MEM_PERIOD", 0); n > 0)
+    if (const Int period = shrink_array::env_number<Int>("CHUNK_BENCH_MEM_PERIOD", 0); period > 0)
     {
-        return n;
+        return period;
     }
     if (mode_check)
     {
         return 1;
     }
-    else if (mode_perf)
+    if (mode_perf)
     {
         return 10;
     }
@@ -415,7 +413,7 @@ inline bool have_stats()
     {
         return true;
     }
-    else if (mode_perf)
+    if (mode_perf)
     {
         return false;
     }

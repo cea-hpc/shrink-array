@@ -23,10 +23,10 @@
  *
  * @details flush_pending_deferred_ops() must run before anything frees or
  *          re-points chunk storage (clear(), resize(), rechunk_to(), swap());
- *          it is the same for ArrayChunk, ArrayChunk2 and ArrayChunk2A, so it
+ *          it is the same for zero::Array, zero_one_value::Array and zero_any::Array, so it
  *          lives here once, under the per-variant mixins
- *          (array_chunk_parallel.h, array_chunk2_parallel.h,
- *          array_chunk2A_parallel.h). The serial counterpart is a no-op.
+ *          (zero_array_parallel.h, zero_one_value_array_parallel.h,
+ *          zero_any_array_parallel.h). The serial counterpart is a no-op.
  *
  * @see array_chunk_parallel_common_inline.h for the body
  */
@@ -39,17 +39,17 @@ namespace shrink_array
 /**
  * @brief The OpenMP machinery shared by the three array variants.
  *
- * @tparam Derived the concrete array type (ArrayChunk, ArrayChunk2 or
- *         ArrayChunk2A). Only reached through the per-variant mixin.
+ * @tparam Derived the concrete array type (zero::Array, zero_one_value::Array or
+ *         zero_any::Array). Only reached through the per-variant mixin.
  */
 template <typename Derived>
 class ParallelSupportCommon
 {
   public:
-    using Traits       = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
-    using value_type   = Traits::value_type;        ///< Stored element type.
-    using chunk_type   = Traits::chunk_type;        ///< Chunk type held in the array's chunk_list.
-    using manager_type = Traits::manager_type;      ///< Per-type manager owning the free-lists.
+    using Traits      = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
+    using value_type  = Traits::value_type;        ///< Stored element type.
+    using ChunkType   = Traits::ChunkType;         ///< Chunk type held in the array's chunk_list_.
+    using ManagerType = Traits::ManagerType;       ///< Per-type manager owning the free-lists.
 
     /**
      * @brief Drain the deferred writes still queued on this array's chunks.

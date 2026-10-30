@@ -18,8 +18,8 @@
 
 #include <vector> // std::vector (the per-rank reuse lists)
 
-#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_RANK_BOUND
-#include "chunk/chunk_std.h" // self-contained: needs Chunk<T>::manager_chunk
+#include "chunk/PMP_CHUNK.h"  // CHUNK_PMP_RANK_BOUND
+#include "chunk/zero_chunk.h" // self-contained: needs Chunk<T>::manager_chunk
 
 // Function templates over the per-thread reuse lists, instantiated only by the
 // OpenMP manager (ManagerChunkParallelImpl<..., true>); every list access is a
@@ -42,7 +42,7 @@ bool need_load_balance_list_block_free_thr()
 
     int lg = 0;
 
-    for (const auto& elm : Chunk<T>::Manager::get_list_block_free_thr())
+    for (const auto& elm : zero::Chunk<T>::Manager::get_list_block_free_thr())
     {
         lg += elm.list.size();
     }
@@ -56,7 +56,7 @@ bool need_load_balance_list_block_free_thr()
 
     for (int thr_rank = 0; thr_rank < max_thr; ++thr_rank)
     {
-        const int sz = Chunk<T>::Manager::get_list_block_free_thr_size(thr_rank);
+        const int sz = zero::Chunk<T>::Manager::get_list_block_free_thr_size(thr_rank);
         if (sz < 0.9 * lg || sz > 1.1 * lg)
         {
             return true;
@@ -78,7 +78,7 @@ void load_balance_list_block_free_thr()
 
     for (int thr_rank = 0; thr_rank < max_thr; ++thr_rank)
     {
-        lg += Chunk<T>::Manager::get_list_block_free_thr(thr_rank).size();
+        lg += zero::Chunk<T>::Manager::get_list_block_free_thr(thr_rank).size();
     }
 
     if (lg < max_thr) // also covers lg == 0: max_thr >= 1
@@ -92,7 +92,7 @@ void load_balance_list_block_free_thr()
 
     for (int thr_rank = 0; thr_rank < max_thr; ++thr_rank)
     {
-        auto& lbf = Chunk<T>::Manager::get_list_block_free_thr(thr_rank);
+        auto& lbf = zero::Chunk<T>::Manager::get_list_block_free_thr(thr_rank);
 
         const int sz = lbf.size();
 
@@ -115,7 +115,7 @@ void load_balance_list_block_free_thr()
 
     for (int thr_rank = 0; thr_rank < max_thr; ++thr_rank)
     {
-        auto& lbf = Chunk<T>::Manager::get_list_block_free_thr(thr_rank);
+        auto& lbf = zero::Chunk<T>::Manager::get_list_block_free_thr(thr_rank);
 
         const int sz = lbf.size();
 
@@ -147,7 +147,7 @@ void load_balance_list_block_free_thr()
     {
         for (unsigned int i = 0; i < ll.size(); ++i)
         {
-            Chunk<T>::Manager::get_list_block_free_thr(0).emplace_back(ll[i]);
+            zero::Chunk<T>::Manager::get_list_block_free_thr(0).emplace_back(ll[i]);
         }
     }
 }

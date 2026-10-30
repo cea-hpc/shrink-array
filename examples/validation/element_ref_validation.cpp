@@ -33,28 +33,30 @@
 // Run by ctest; the variant comes from the CHUNK_VARIANT_* macro of the target.
 
 #include <complex>     // std::complex<double>
-#include <cstdio>      // std::printf
+#include <cstdio>      // std::printf, std::fprintf
+#include <exception>   // std::exception (main)
 #include <sstream>     // std::ostringstream (os << a[i])
 #include <type_traits> // std::conditional_t, std::is_same_v
 #include <utility>     // std::move
 #include <vector>      // std::vector (push_back / emplace_back)
 
-#include "chunk/array_chunk.h"    // ArrayChunk
-#include "chunk/array_chunk2.h"   // ArrayChunk2
-#include "chunk/array_chunk2A.h"  // ArrayChunk2A
-#include "chunk/config.h"         // chunk_config::use_chunk2*, build_config::strict_element_ref
-#include "chunk/param_chunk.h"    // ParamChunk::init_indexes
-#include "chunk/chunk_std.h"      // release_chunk_pools, destroy_block_chunk
-#include "chunk/internal/print.h" // shrink_array::println
+#include "chunk/zero_array.h"           // zero::Array
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#include "chunk/zero_any_array.h"       // zero_any::Array
+#include "chunk/config.h"               // chunk_config::use_zero_one_value*, build_config::strict_element_ref
+#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
+#include "chunk/zero_chunk.h"           // release_chunk_pools, destroy_block_chunk
+#include "chunk/internal/print.h"       // shrink_array::println
 
 using namespace shrink_array;
 
 namespace
 {
 template <typename T>
-using Array = std::conditional_t<chunk_config::use_chunk2a,
-                                 ArrayChunk2A<T>,
-                                 std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T>, ArrayChunk<T>>>;
+using Array =
+    std::conditional_t<chunk_config::use_zero_any,
+                       zero_any::Array<T>,
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 int fails = 0;
 
@@ -71,81 +73,81 @@ void expect(const char* what, const T& got, const T& want)
 #ifndef ELEMENT_REF_CASE
 int usage()
 {
-    static_assert(std::is_same_v<Array<double>::reference, ElementRef<Array<double>::proxy_type, double>> ||
+    static_assert(std::is_same_v<Array<double>::reference, ElementRef<Array<double>::ProxyType, double>> ||
                       !build_config::strict_element_ref,
                   "operator[] returns an ElementRef (the bare proxy with -DCHUNK_LOOSE_ELEMENT_REF)");
-    constexpr int n = 1000;
-    Array<double> a(n);
-    Array<double> b(n);
+    constexpr int count = 1000;
+    Array<double> arr(count);
+    Array<double> other(count);
 
-    a[1] = 2.0;
-    expect("a[1] = 2.0", static_cast<double>(a[1]), 2.0);
-    a[2] = a[1]; // proxy-to-proxy, same array
-    expect("a[2] = a[1]", static_cast<double>(a[2]), 2.0);
-    b[3] = a[2]; // proxy-to-proxy, another array
-    expect("b[3] = a[2]", static_cast<double>(b[3]), 2.0);
-    a[4] += 1.5;
-    a[4] *= 2.0;
-    expect("a[4] += 1.5; *= 2", static_cast<double>(a[4]), 3.0);
-    const double x = a[1] + a[4];
-    expect("a[1] + a[4]", x, 5.0);
-    const double y = -a[4] * 2.0;
-    expect("-a[4] * 2", y, -6.0);
-    ++a[5];
-    a[5]++;
-    --a[5];
-    expect("++ / -- on a[5]", static_cast<double>(a[5]), 1.0);
-    const double r = (a[6] += 4.0); // a compound result read as a value
-    expect("(a[6] += 4) read", r, 4.0);
-    expect("a[1] == 2", a[1] == 2.0, true);
-    expect("2 == a[1]", 2.0 == a[1], true);
-    expect("a[1] != a[4]", a[1] != a[4], true);
-    expect("a[1] == b[3]", a[1] == b[3], true);
+    arr[1] = 2.0;
+    expect("a[1] = 2.0", static_cast<double>(arr[1]), 2.0);
+    arr[2] = arr[1]; // proxy-to-proxy, same array
+    expect("a[2] = a[1]", static_cast<double>(arr[2]), 2.0);
+    other[3] = arr[2]; // proxy-to-proxy, another array
+    expect("b[3] = a[2]", static_cast<double>(other[3]), 2.0);
+    arr[4] += 1.5;
+    arr[4] *= 2.0;
+    expect("a[4] += 1.5; *= 2", static_cast<double>(arr[4]), 3.0);
+    const double sum = arr[1] + arr[4];
+    expect("a[1] + a[4]", sum, 5.0);
+    const double neg = -arr[4] * 2.0;
+    expect("-a[4] * 2", neg, -6.0);
+    ++arr[5];
+    arr[5]++;
+    --arr[5];
+    expect("++ / -- on a[5]", static_cast<double>(arr[5]), 1.0);
+    const double result = (arr[6] += 4.0); // a compound result read as a value
+    expect("(a[6] += 4) read", result, 4.0);
+    expect("a[1] == 2", arr[1] == 2.0, true);
+    expect("2 == a[1]", 2.0 == arr[1], true);
+    expect("a[1] != a[4]", arr[1] != arr[4], true);
+    expect("a[1] == b[3]", arr[1] == other[3], true);
 
-    std::vector<double> v;
-    v.push_back(a[1]);
-    v.emplace_back(a[4]);
-    expect("push_back / emplace_back", v[0] + v[1], 5.0);
+    std::vector<double> vec;
+    vec.push_back(arr[1]);
+    vec.emplace_back(arr[4]);
+    expect("push_back / emplace_back", vec[0] + vec[1], 5.0);
 
     std::ostringstream os;
-    os << a[1];
+    os << arr[1];
     expect("os << a[1]", os.str() == "2", true);
 
-    a.at(7)   = 7.0;
-    a.front() = 1.0;
-    a.back()  = 9.0;
-    expect("at / front / back", static_cast<double>(a[7]) + a[0] + a[n - 1], 17.0);
+    arr.at(7)   = 7.0;
+    arr.front() = 1.0;
+    arr.back()  = 9.0;
+    expect("at / front / back", static_cast<double>(arr[7]) + arr[0] + arr[count - 1], 17.0);
 
-    auto&& kept     = a[8]; // a proxy kept on purpose
+    auto&& kept     = arr[8]; // a proxy kept on purpose
     std::move(kept) = 8.0;
-    expect("std::move(kept) = 8", static_cast<double>(a[8]), 8.0);
-    auto p = a.element_proxy(9); // the proxy itself, in every build
-    p      = 9.0;
-    expect("element_proxy(9) = 9", static_cast<double>(a[9]), 9.0);
+    expect("std::move(kept) = 8", static_cast<double>(arr[8]), 8.0);
+    auto proxy = arr.element_proxy(9); // the proxy itself, in every build
+    proxy      = 9.0;
+    expect("element_proxy(9) = 9", static_cast<double>(arr[9]), 9.0);
 
-    Array<std::complex<double>> c(100);
-    c[1] = std::complex<double>(1.0, 2.0);
-    c[2] = -c[1];
-    c[3] = 2.0 * c[1];
-    c[4] = std::complex<double>(0.0, 1.0) * c[1];
-    c[5] = c[1];
+    Array<std::complex<double>> cplx(100);
+    cplx[1] = std::complex<double>(1.0, 2.0);
+    cplx[2] = -cplx[1];
+    cplx[3] = 2.0 * cplx[1];
+    cplx[4] = std::complex<double>(0.0, 1.0) * cplx[1];
+    cplx[5] = cplx[1];
     expect("complex -c, 2*c, i*c, c = c",
-           std::complex<double>(c[2]) + std::complex<double>(c[3]) + std::complex<double>(c[4]) +
-               std::complex<double>(c[5]),
+           std::complex<double>(cplx[2]) + std::complex<double>(cplx[3]) + std::complex<double>(cplx[4]) +
+               std::complex<double>(cplx[5]),
            std::complex<double>(0.0, 5.0)); // (-1-2i) + (2+4i) + (-2+i) + (1+2i)
 
-    Array<int> k(100);
-    k[1] = 7;
-    k[2] = k[1] % 3;
-    k[3] = ~k[1];
-    k[4] = 1;
-    k[4] <<= 3;
-    expect("int %, ~, <<=", k[2] + k[3] + k[4], 1 - 8 + 8);
+    Array<int> ints(100);
+    ints[1] = 7;
+    ints[2] = ints[1] % 3;
+    ints[3] = ~ints[1];
+    ints[4] = 1;
+    ints[4] <<= 3;
+    expect("int %, ~, <<=", ints[2] + ints[3] + ints[4], 1 - 8 + 8);
 
-    Array<bool> t(100);
-    t[1]          = true;
-    t[2]          = t[1];
-    const bool tb = t[2];
+    Array<bool> bools(100);
+    bools[1]      = true;
+    bools[2]      = bools[1];
+    const bool tb = bools[2];
     expect("bool t[2] = t[1]", tb, true);
 
     if (fails == 0)
@@ -158,39 +160,39 @@ int usage()
 // One misuse per build: each must fail to compile with the ElementRef message.
 void misuse()
 {
-    Array<double> a(10);
+    Array<double> arr(10);
     #if ELEMENT_REF_CASE == 1
-    auto   v = a[0]; // conversion
-    double d = v;
-    (void)d;
+    auto   elem = arr[0]; // conversion
+    double read = elem;
+    (void)read;
     #elif ELEMENT_REF_CASE == 2
-    auto v = a[0]; // assignment
-    v      = 3.0;
+    auto elem = arr[0]; // assignment
+    elem      = 3.0;
     #elif ELEMENT_REF_CASE == 3
-    auto v = a[0]; // arithmetic
-    println("{:g}", v + 1.0);
+    auto elem = arr[0]; // arithmetic
+    println("{:g}", elem + 1.0);
     #elif ELEMENT_REF_CASE == 4
-    auto   v = (a[0] += 1.0); // a compound result kept
-    double d = v;
-    (void)d;
+    auto   elem = (arr[0] += 1.0); // a compound result kept
+    double read = elem;
+    (void)read;
     #elif ELEMENT_REF_CASE == 5
-    auto v = a[0]; // as the right-hand side of an assignment
-    a[1]   = v;
+    auto elem = arr[0]; // as the right-hand side of an assignment
+    arr[1]    = elem;
     #elif ELEMENT_REF_CASE == 6
-    auto v = a.at(0); // at() too
-    ++v;
+    auto elem = arr.at(0); // at() too
+    ++elem;
     #elif ELEMENT_REF_CASE == 7
-    auto v = a[0]; // comparison
-    if (v == 1.0)
+    auto elem = arr[0]; // comparison
+    if (elem == 1.0)
     {
         println("1");
     }
     #elif ELEMENT_REF_CASE == 8
-    auto v = a[0]; // a copy
-    auto w = v;
-    (void)w;
+    auto elem = arr[0]; // a copy
+    auto copy = elem;
+    (void)copy;
     #elif ELEMENT_REF_CASE == 9
-    std::printf("%f\n", a[0]); // the proxy through `...`, not the value (GCC: -Werror=conditionally-supported)
+    std::printf("%f\n", arr[0]); // the proxy through `...`, not the value (GCC: -Werror=conditionally-supported)
     #else
         #error "ELEMENT_REF_CASE: 1..9"
     #endif
@@ -200,11 +202,18 @@ void misuse()
 
 #ifndef ELEMENT_REF_CASE
 int main()
+try
 {
     ParamChunk::init_indexes(true);
     const int rc = usage();
     release_chunk_pools();
     destroy_block_chunk();
     return rc;
+}
+catch (const std::exception& e)
+{
+    // A failed std::format or a bad argument: said, not std::terminate().
+    std::fprintf(stderr, "element_ref_validation: %s\n", e.what());
+    return 1;
 }
 #endif

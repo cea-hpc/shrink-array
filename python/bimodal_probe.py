@@ -4,7 +4,7 @@
 """bimodal_probe.py -- what tells a slow run from a fast one, run after run.
 
 The same binary, run N times, sometimes falls in a slow mode set at start-up
-(docs/performance_measurement.md, 2.1: +18%, ~+40% on Chunk2; same frequency,
+(docs/performance_measurement.md, 2.1: +18%, ~+40% on zero_one_value; same frequency,
 same instructions, same LLC misses, lower IPC, more cycles stalled on memory).
 Each candidate cause leaves its own trace, which this script records per run:
 
@@ -26,7 +26,7 @@ perf stat counts the events in user space (`:u`, allowed with
 perf_event_paranoid <= 2); an event the CPU does not have reads as empty.
 
 Usage (from a compute node, the binary's usual environment):
-  bimodal_probe.py --runs 12 [--mode "CHUNK_THP=never"] [--mode ""] \\
+  bimodal_probe.py --runs 12 [--mode "CHUNK_RECLAIM_THREADS=0"] [--mode ""] \\
       [--csv out.csv] -- $BIN --mode perf --no_io
 Several --mode: the runs alternate between them (A/B in the same time window).
 A mode is a space-separated list of VAR=value, and may start with `numactl ...`

@@ -14,17 +14,18 @@
  * limitations under the License.
  */
 
-#include <bit>      // std::bit_cast (calculate_checksum)
-#include <cassert>  // assert
-#include <chrono>   // std::chrono::steady_clock
-#include <cmath>    // std::cos, std::sin, std::sqrt
-#include <cstdint>  // std::int64_t, uint64_t
-#include <cstdlib>  // std::abort
-#include <iostream> // std::cout, std::cerr
-#include <random>   // std::mt19937, std::uniform_int_distribution
-#include <array>    // std::array
-#include <fstream>  // std::ifstream, std::ofstream
-#include <string>   // std::string, std::to_string
+#include <algorithm> // std::min
+#include <bit>       // std::bit_cast (calculate_checksum)
+#include <cassert>   // assert
+#include <chrono>    // std::chrono::steady_clock
+#include <cmath>     // std::cos, std::sin, std::sqrt
+#include <cstdint>   // std::int64_t, uint64_t
+#include <cstdlib>   // std::abort
+#include <iostream>  // std::cout, std::cerr
+#include <random>    // std::mt19937, std::uniform_int_distribution
+#include <array>     // std::array
+#include <fstream>   // std::ifstream, std::ofstream
+#include <string>    // std::string, std::to_string
 
 #include <iomanip>        // std::setprecision, std::fixed
 #include <type_traits>    // std::conditional_t (Array)
@@ -32,24 +33,24 @@
 #include <sys/resource.h> // getrusage
 
 // Both executables have the chunk headers: simple_array_vector links
-// chunk_vector, simple_array_chunk chunk_v1.
+// chunk_vector, simple_array_chunk chunk_zero.
 #include "chunk/param_chunk.h"                // ParamChunk
-#include "chunk/array_chunk.h"                // ArrayChunk
+#include "chunk/zero_array.h"                 // zero::Array
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS
-#include "chunk/chunk_def.h"                  // ChunkDef
-#include "chunk/chunk_std.h"                  // destroy_block_chunk
-#include "chunk/config.h"                     // chunk_config::use_chunk*, stats
+#include "chunk/zero_chunk_def.h"             // ChunkDef
+#include "chunk/zero_chunk.h"                 // destroy_block_chunk
+#include "chunk/config.h"                     // chunk_config::use_zero*, stats
 #include "chunk/internal/chunk_size_config.h" // static_chunk_size
 
 
 /// @brief splitmix64's finaliser: a bijection on 64 bits that spreads every
 ///        input bit over the whole output.
-constexpr uint64_t checksum_mix(uint64_t x) noexcept
+constexpr uint64_t checksum_mix(uint64_t value) noexcept
 {
-    x += 0x9E3779B97F4A7C15ULL;
-    x = (x ^ (x >> 30U)) * 0xBF58476D1CE4E5B9ULL;
-    x = (x ^ (x >> 27U)) * 0x94D049BB133111EBULL;
-    return x ^ (x >> 31U);
+    value += 0x9E3779B97F4A7C15ULL;
+    value = (value ^ (value >> 30U)) * 0xBF58476D1CE4E5B9ULL;
+    value = (value ^ (value >> 27U)) * 0x94D049BB133111EBULL;
+    return value ^ (value >> 31U);
 }
 
 /// @brief Checksum of the non-zero elements of @p vec, the same for ANY
@@ -163,21 +164,21 @@ void initialize_rng(std::mt19937& rng, const std::string& seed_file_name)
 
 using namespace shrink_array;
 
-/// simple_array_chunk (CHUNK_VARIANT_V1, or _V2) runs on ArrayChunk, simple_array_vector
+/// simple_array_chunk (CHUNK_VARIANT_ZERO, or _ZERO_ONE_VALUE) runs on zero::Array, simple_array_vector
 /// on std::vector.
-constexpr bool use_chunk_array = chunk_config::use_chunk || chunk_config::use_chunk2;
-using Array                    = std::conditional_t<use_chunk_array, ArrayChunk<double>, std::vector<double>>;
+constexpr bool use_chunk_array = chunk_config::use_zero || chunk_config::use_zero_one_value;
+using Array                    = std::conditional_t<use_chunk_array, zero::Array<double>, std::vector<double>>;
 
-/// @brief Calls @p f on @p arrays in simple_array_chunk only. @p f is a generic
-///        lambda using ArrayChunk's members (compress, stats): its body is then
-///        instantiated with ArrayChunk alone. The same call in a discarded branch
+/// @brief Calls @p func on @p arrays in simple_array_chunk only. @p func is a generic
+///        lambda using zero::Array's members (compress, stats): its body is then
+///        instantiated with zero::Array alone. The same call in a discarded branch
 ///        of main(), which is not a template, would be compiled for std::vector.
 template <typename F, typename... A>
-void if_chunk(F&& f, A&... arrays)
+void if_chunk(F&& func, A&... arrays)
 {
     if constexpr (use_chunk_array)
     {
-        f(arrays...);
+        func(arrays...);
     }
 }
 
@@ -187,7 +188,7 @@ int main()
     {
         constexpr int chunk_size = static_cast<int>(shrink_array::static_chunk_size);
 
-        assert(chunk_size <= ChunkDef::size_max);
+        assert(chunk_size <= zero::ChunkDef::size_max);
 
 
         if constexpr (chunk_size == 0)
@@ -210,7 +211,9 @@ int main()
         ParamChunk::init_indexes(true);
     }
 
-    constexpr int sz = 1000000000;
+    // 3 arrays of sz doubles: 2.4 GB for std::vector. 1e9 (24 GB at once) made
+    // the ctest fail with bad_alloc on a 30 GB workstation with anything else running.
+    constexpr int sz = 100000000;
     //  constexpr int sz = 100000;
     constexpr int iter_max = 10000;
 
@@ -291,7 +294,7 @@ int main()
     start           = end;
     std::cout << "\nElapsed time distribution : " << elapsed_seconds.count() << "s\n";
 
-    double v = 0;
+    double value = 0;
 
     for (int k = 0; k < iter_max; ++k)
     {
@@ -300,10 +303,7 @@ int main()
 
         int end0 = start0 + size;
 
-        if (end0 > sz)
-        {
-            end0 = sz;
-        }
+        end0 = std::min(end0, sz);
 
         if (k != 0 && k % freq_raz == 0)
         {
@@ -332,7 +332,7 @@ int main()
         }
         else
         {
-#pragma omp parallel reduction(+ : v)
+#pragma omp parallel reduction(+ : value)
             {
                 // To simulate comportement of a code where we read more than we write
 #pragma omp for schedule(static) nowait
@@ -356,13 +356,13 @@ int main()
 #pragma omp for schedule(static) nowait
                     for (int i = start0; i < end0; ++i)
                     {
-                        v += std::cos(tab1[i]) + std::sin(tab2[i]) + std::atan(tab3[i]) + std::cos(val);
+                        value += std::cos(tab1[i]) + std::sin(tab2[i]) + std::atan(tab3[i]) + std::cos(val);
                     }
                 }
             }
         }
 
-        std::cout << "k : " << k << " v = " << v << '\n';
+        std::cout << "k : " << k << " v = " << value << '\n';
 
         if (k % freq_check_sum == 0)
         {
@@ -383,7 +383,7 @@ int main()
         }
     }
 
-    std::cout << "\nv = " << v << '\n';
+    std::cout << "\nv = " << value << '\n';
 
     end             = std::chrono::steady_clock::now();
     elapsed_seconds = end - start;

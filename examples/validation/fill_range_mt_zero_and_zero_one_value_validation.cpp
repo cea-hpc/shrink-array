@@ -1,0 +1,225 @@
+/*
+ * Copyright 2026 CEA (www.cea.fr)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/**
+ * @file fill_range_mt_zero_and_zero_one_value_validation.cpp
+ * @brief fill_range_mt() in a build that holds TWO variants (chunk_zero_and_zero_one_value:
+ *        CHUNK_VARIANT_ZERO=1;CHUNK_VARIANT_ZERO_ONE_VALUE=1), on a zero::Array and a zero_one_value::Array side by
+ * side.
+ *
+ * @details The range ops once chose their per-variant behaviour from the build
+ *          flags (chunk_config::use_zero / use_zero_one_value) instead of the array's
+ *          type. In a build with both flags set, that sent a zero_one_value::Array down
+ *          zero's paths -- a fill_range_mt() of its SECOND value was never queued
+ *          for compression, its chunks stayed materialised -- and a zero::Array
+ *          down zero_one_value's, which did not even compile. This harness is that
+ *          build: compiling it is the first half of the test, the second is
+ *          what each fill leaves behind.
+ *
+ *          Every chunk is first materialised with non-uniform content, then
+ *          refilled from every thread at once by fill_range_mt(), in two
+ *          half-chunk spans that different threads take -- so each call covers
+ *          only part of a materialised chunk and the raw session path decides
+ *          the queueing by value. After the phase (flush + compression pass):
+ *
+ *            array         fill value              chunks left materialised
+ *            zero::Array    first value (0)         none
+ *            zero::Array    anything else           all  (zero has one constant)
+ *            zero_one_value::Array   first value (0)         none
+ *            zero_one_value::Array   its second value (9)    none  <- the regression
+ *            zero_one_value::Array   an undeclared value     all
+ *
+ *          and every element reads back the value written. The counts are
+ *          asserted in OpenMP builds only: a serial build has no fill session
+ *          (fill_range_mt is the element loop there), so only the values are.
+ *
+ *          The library variant is built without the OMPT tool (NO_OMPT_TOOL),
+ *          as multi-mat uses it: this program defines the switch the library
+ *          reads, and makes the phase calls itself.
+ *
+ *          Usage: fill_range_mt_zero_and_zero_one_value_validation [chunks]
+ */
+
+
+#include <cstdio>    // std::fprintf (main)
+#include <exception> // std::exception (main)
+
+#include "chunk/zero_array.h"            // zero::Array
+#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/array_chunk_range_ops.h" // fill_range_mt
+#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
+#include "chunk/config.h"                // OmptSuspendCounter, chunk_config::use_zero / use_zero_one_value
+#include "chunk/PMP_CHUNK.h"             // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"           // begin_parallel_phase, finalize_parallel_phase_only_flush / _after_flush
+#include "chunk/internal/env_parse.h"    // arg_number (checked, not atoi)
+#include "chunk/internal/print.h"        // shrink_array::println
+
+
+/// The suspension counter read by chunk_config::OMPTcc: non-zero, no OMPT
+/// callback exists in this binary (chunk_zero_and_zero_one_value is built without the tool).
+shrink_array::OmptSuspendCounter shrink_array::g_ompt_suspended{1};
+
+using namespace shrink_array;
+
+static_assert(chunk_config::use_zero && chunk_config::use_zero_one_value,
+              "fill_range_mt_zero_and_zero_one_value_validation is the two-variant build: link "
+              "chunk_zero_and_zero_one_value_<size>");
+
+constexpr double second_value = 9.0; ///< the zero_one_value::Array's declared second value
+constexpr double other_value  = 5.0; ///< a value neither array can compress to
+
+/// @brief Non-uniform content: two values alternating, so no chunk compresses.
+static double plain(long index)
+{
+    return (index % 2) ? 2.5 : 3.5;
+}
+
+/// @brief Chunks of @p arr still holding a buffer.
+template <typename Arr>
+static long materialised(const Arr& arr, long nchunks)
+{
+    const long chunk_sz = static_cast<long>(arr.chunk_size());
+    long       count    = 0;
+    for (long j = 0; j < nchunks; ++j)
+    {
+        count += arr.written(static_cast<Arr::IndType>(j * chunk_sz)) ? 1 : 0;
+    }
+    return count;
+}
+
+/// @brief One parallel phase running @p body over [0, @p count), then the flush and
+///        the compression pass -- the manual phase calls of manage_ompt.h.
+template <typename Fn>
+static void phase(long count, Fn&& body)
+{
+#pragma omp parallel
+    {
+        shrink_array::begin_parallel_phase();
+#pragma omp for schedule(static, 1)
+        for (long k = 0; k < count; ++k)
+        {
+            body(k);
+        }
+        shrink_array::finalize_parallel_phase_only_flush();
+    }
+    shrink_array::finalize_parallel_phase_after_flush();
+}
+
+/// @brief Materialise every chunk of @p arr, refill it with @p value by half-chunk
+///        fill_range_mt() spans, and check the values and the chunks left
+///        materialised against @p expect_materialised (-1: not asserted).
+template <typename Arr>
+static int run_case(const char* name, Arr& arr, long nchunks, double value, long expect_materialised)
+{
+    const long chunk_sz = static_cast<long>(arr.chunk_size());
+    const long count    = nchunks * chunk_sz;
+    const long half     = chunk_sz / 2;
+
+    phase(count, [&](long i) { arr[static_cast<Arr::IndType>(i)] = plain(i); });
+    const long before = materialised(arr, nchunks);
+
+    // Two spans per chunk, adjacent iterations: with schedule(static, 1) they
+    // go to different threads, so each call covers half a chunk that another
+    // thread is filling at the same time.
+    phase(2 * nchunks,
+          [&](long k)
+          {
+              const long lo = (k / 2) * chunk_sz + (k % 2) * half;
+              const long hi = (k % 2) ? (k / 2 + 1) * chunk_sz : lo + half;
+              fill_range_mt(arr, static_cast<std::size_t>(lo), static_cast<std::size_t>(hi), value);
+          });
+
+    long bad = 0;
+    for (long i = 0; i < count; ++i)
+    {
+        const double got = arr[static_cast<Arr::IndType>(i)];
+        if (got != value)
+        {
+            if (bad < 3)
+            {
+                println("  [{}] arr[{}] = {:g}, expected {:g}", name, i, got, value);
+            }
+            ++bad;
+        }
+    }
+    const long after = materialised(arr, nchunks);
+
+    const bool counts_ok = expect_materialised < 0 || after == expect_materialised;
+    println("{:<44} materialised {:4} -> {:4} / {}{}{}", name, before, after, nchunks,
+            expect_materialised < 0 ? "  (not asserted)" : "", counts_ok ? "" : "  <-- WRONG");
+    if (before != nchunks)
+    {
+        println("  [{}] setup: {} chunk(s) not materialised by the plain content", name, nchunks - before);
+    }
+    return (bad != 0 || !counts_ok || before != nchunks) ? 1 : 0;
+}
+
+int main(int argc, char** argv)
+try
+{
+    const long nchunks = argc > 1 ? shrink_array::arg_number<long>(argv[1], 64, "chunks") : 64;
+    ParamChunk::init_indexes(true);
+
+    constexpr bool omp = build_config::use_openmp;
+    println("=== fill_range_mt_zero_and_zero_one_value_validation  chunks={}  threads={}  ({}) ===", nchunks,
+            CHUNK_PMP_MAX_THREADS, omp ? "OpenMP: counts asserted" : "serial: values only");
+
+    // One array per case: every case starts from fresh chunks.
+    int fails = 0;
+    {
+        zero::Array<double> arr(0);
+        arr.resize(static_cast<zero::Array<double>::IndType>(nchunks * arr.chunk_size()));
+        fails += run_case("zero::Array,  fill first value (0)", arr, nchunks, 0.0, omp ? 0 : -1);
+        arr.clear();
+    }
+    {
+        zero::Array<double> arr(0);
+        arr.resize(static_cast<zero::Array<double>::IndType>(nchunks * arr.chunk_size()));
+        fails += run_case("zero::Array,  fill other value (5)", arr, nchunks, other_value, omp ? nchunks : -1);
+        arr.clear();
+    }
+    {
+        zero_one_value::Array<double> arr(0);
+        arr.resize(static_cast<zero_one_value::Array<double>::IndType>(nchunks * arr.chunk_size()));
+        arr.set_second_value(second_value, false);
+        fails += run_case("zero_one_value::Array, fill first value (0)", arr, nchunks, 0.0, omp ? 0 : -1);
+        arr.clear();
+    }
+    {
+        zero_one_value::Array<double> arr(0);
+        arr.resize(static_cast<zero_one_value::Array<double>::IndType>(nchunks * arr.chunk_size()));
+        arr.set_second_value(second_value, false);
+        fails += run_case("zero_one_value::Array, fill second value (9)", arr, nchunks, second_value, omp ? 0 : -1);
+        arr.clear();
+    }
+    {
+        zero_one_value::Array<double> arr(0);
+        arr.resize(static_cast<zero_one_value::Array<double>::IndType>(nchunks * arr.chunk_size()));
+        arr.set_second_value(second_value, false);
+        fails +=
+            run_case("zero_one_value::Array, fill undeclared value (5)", arr, nchunks, other_value, omp ? nchunks : -1);
+        arr.clear();
+    }
+
+    println("=== {} ===", fails ? "FILL_RANGE_MT_V1V2 FAILED" : "FILL_RANGE_MT_V1V2 OK");
+    return fails ? 1 : 0;
+}
+catch (const std::exception& e)
+{
+    // A failed std::format or a bad argument: said, not std::terminate().
+    std::fprintf(stderr, "fill_range_mt_zero_and_zero_one_value_validation: %s\n", e.what());
+    return 1;
+}

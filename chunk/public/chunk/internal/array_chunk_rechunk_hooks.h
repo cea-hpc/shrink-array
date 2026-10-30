@@ -18,21 +18,21 @@
 
 /**
  * @file array_chunk_rechunk_hooks.h
- * @brief The re-chunk hooks of ArrayChunk (v1) and ArrayChunk2A — a
+ * @brief The re-chunk hooks of zero::Array and zero_any::Array — a
  *        CHUNK_DYNAMIC-only concern, isolated in its own mixin so they vanish
  *        from a static-geometry build.
  *
  * @details RechunkSupport (array_chunk_rechunk.h) carries the shared re-chunk
  *          algorithm and calls back into the concrete array through the
- *          rechunk_* hooks; v1 and 2A provide three of them and inherit the
+ *          rechunk_* hooks; zero and zero_any provide three of them and inherit the
  *          base defaults for the other three. Those three only ever run under
  *          RechunkSupport<Derived, true>::rechunk_to(), which does not exist in
  *          a static-geometry build.
  *
- *          v1 and 2A share them: both keep num_tab as a member, in step with
+ *          zero and zero_any share them: both keep num_tab as a member, in step with
  *          the registry, and queue their compression candidates in the
  *          manager's per-rank lists. They differ only in which lists, the
- *          compress() call of a candidate, where num_tab is read, and v1's
+ *          compress() call of a candidate, where num_tab is read, and zero's
  *          flush tripwire (see rechunk_drop_candidates()).
  *
  *          RechunkHooks<Derived, chunk_dynamic> splits them the same way as the
@@ -40,7 +40,7 @@
  *          bodies, the static one keeps the signatures as no-ops so the
  *          arrays' using-declarations stay valid in both modes.
  *
- * @note ArrayChunk2 keeps its own hooks (RechunkHooks2): a per-value candidate
+ * @note zero_one_value::Array keeps its own hooks (zero_one_value::RechunkHooks): a per-value candidate
  *       map, a second value to carry over, and an identity that must NOT be
  *       swapped.
  *
@@ -48,19 +48,19 @@
  * @see array_chunk_rechunk_hooks_inline.h for the bodies
  */
 
-#include <type_traits> // std::is_same_v (v1 or 2A)
+#include <type_traits> // std::is_same_v (zero or zero_any)
 
 #include "chunk/config.h"       // build_config::chunk_dynamic
-#include "chunk/chunk_traits.h" // ArrayChunkTraits
+#include "chunk/chunk_traits.h" // ArrayChunkTraits, is_zero_any_family_v
 
 namespace shrink_array
 {
 
 /**
- * @brief The re-chunk hooks of ArrayChunk and ArrayChunk2A, present only when
+ * @brief The re-chunk hooks of zero::Array and zero_any::Array, present only when
  *        the geometry is a runtime value.
  *
- * @tparam Derived the concrete array type (ArrayChunk or ArrayChunk2A).
+ * @tparam Derived the concrete array type (zero::Array or zero_any::Array).
  * @tparam Dynamic defaulted to build_config::chunk_dynamic; never pass it
  *         explicitly outside of tests.
  */
@@ -69,20 +69,21 @@ class RechunkHooks;
 
 // ── CHUNK_DYNAMIC build: the real hooks ──────────────────────────────────────
 /**
- * @brief Dynamic specialisation: the three hooks v1 and 2A actually override.
+ * @brief Dynamic specialisation: the three hooks zero and zero_any actually override.
  * @copydetails RechunkHooks
  */
 template <typename Derived>
 class RechunkHooks<Derived, true>
 {
   public:
-    using Traits       = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
-    using value_type   = Traits::value_type;        ///< Stored element type.
-    using proxy_type   = Traits::proxy_type;        ///< Proxy type owning the per-type array registry.
-    using manager_type = Traits::manager_type;      ///< Per-type manager owning the candidate store.
+    using Traits      = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
+    using value_type  = Traits::value_type;        ///< Stored element type.
+    using ProxyType   = Traits::ProxyType;         ///< Proxy type owning the per-type array registry.
+    using ManagerType = Traits::ManagerType;       ///< Per-type manager owning the candidate store.
 
-    /// @brief ArrayChunk2A (otherwise ArrayChunk, v1): selects the candidate lists and the compress() call.
-    static constexpr bool is_chunk2a = std::is_same_v<typename Traits::chunk_type, Chunk2A<value_type>>;
+    /// @brief An array of the zero_any family (otherwise zero::Array): selects the candidate lists and the
+    ///        compress() call.
+    static constexpr bool is_zero_any_family = is_zero_any_family_v<typename Traits::ChunkType>;
 
     /**
      * @brief Compress, then drop, this array's queued compression candidates, by num_tab.
@@ -96,7 +97,10 @@ class RechunkHooks<Derived, true>
      * @param new_size the chunk size the array is moving to
      * @details The buffers parked there were sized for an older geometry.
      */
-    void rechunk_drain_reuse_list(unsigned int new_size);
+    void rechunk_drain_reuse_list(unsigned int new_size)
+    {
+        ManagerType::drain_reuse_list_for_size(new_size);
+    }
 
     /**
      * @brief Swap registry identity with the fresh array built at the new geometry.
@@ -123,41 +127,11 @@ class RechunkHooks<Derived, true>
 
   private:
     /// @brief The manager's per-rank candidate lists of this variant (OpenMP builds).
-    [[nodiscard]] static auto& candidate_lists_thr() noexcept
-    {
-        if constexpr (is_chunk2a)
-        {
-            return manager_type::chunk2a_to_compress_potentially_thr;
-        }
-        else
-        {
-            return manager_type::chunk_to_compress_potentially_thr;
-        }
-    }
+    [[nodiscard]] static auto& candidate_lists_thr() noexcept;
     /// @brief The manager's single candidate list of this variant (serial builds).
-    [[nodiscard]] static auto& candidate_list() noexcept
-    {
-        if constexpr (is_chunk2a)
-        {
-            return manager_type::chunk2a_to_compress_potentially;
-        }
-        else
-        {
-            return manager_type::chunk_to_compress_potentially;
-        }
-    }
+    [[nodiscard]] static auto& candidate_list() noexcept;
     /// @brief Remove every candidate of the array @p num_tab from this variant's lists.
-    static void remove_candidates_of_tab(int num_tab) noexcept
-    {
-        if constexpr (is_chunk2a)
-        {
-            manager_type::remove_from_compress_list_chunk2a_by_num_tab(num_tab);
-        }
-        else
-        {
-            manager_type::remove_from_compress_list_chunk_by_num_tab(num_tab);
-        }
-    }
+    static void remove_candidates_of_tab(int num_tab) noexcept;
 };
 
 // ── Static-geometry build: nothing to hook ───────────────────────────────────

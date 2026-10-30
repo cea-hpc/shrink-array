@@ -7,7 +7,7 @@ cmake_minimum_required(VERSION 3.20)
 if(POLICY CMP0126)
     cmake_policy(SET CMP0126 NEW)
 endif()
-project(shrink_array VERSION 0.1.3 LANGUAGES CXX)
+project(shrink_array VERSION 0.2.0 LANGUAGES CXX)
 
 # Built on its own, or consumed by another project (add_subdirectory,
 # FetchContent)? PROJECT_IS_TOP_LEVEL says it from CMake 3.21; this is the same
@@ -29,34 +29,30 @@ option(CHUNK_FORCE_LEDGER "Keep the pool ledger active under OpenMP (off by defa
 # An emptied slab would otherwise keep its resident pages: the allocator never
 # unmaps a value slab (see the op/value aliasing note in tc_allocator.h), so the
 # peak of a re-chunk -- where the old and the new geometry are both materialised
-# -- would stay in RSS afterwards. This madvise()s those pages away while
-# keeping the slab mapped and reusable.
-#
-# ON by default since it was measured to be free. rechunk_validation_chunk_dyn
+# -- would stay in RSS afterwards. The sweeps (a re-chunk, a teardown,
+# trim_reuse_pools) madvise() those pages away while keeping the slab mapped and
+# reusable, always: it was measured to be free. rechunk_validation_zero_dyn
 # 200000 128 3, peak RSS, best of 3: 129.9 -> 88.3 MB at one thread and
 # 104.8 -> 87.9 MB at four, with the wall time unchanged (16.79 -> 16.60 s and
 # 16.22 -> 16.06 s). The syscall cost does not register: 99 madvise calls over
 # the whole run, 29 microseconds in total, because a slab only empties at a
 # geometry change or at teardown -- never in steady state.
 #
-# It is safe by construction rather than by care: the only call site is
-# TCTypeCAllocator::reclaim_empty_slabs_now(), the VALUE family, on a set the
-# caller knows abandoned (a re-chunk's old geometry, a teardown). Its free list
-# lives in the heap-allocated tab_firstFree and its metadata in the slab header
-# object -- both outside the pages being dropped -- and it makes no promise
-# about element contents (callers initialise what they get), so the zero pages
-# MADV_DONTNEED brings back are as good as any. The op/ctx family
-# threads its free list THROUGH the freed elements and would be corrupted by
-# this; its on_kept is an empty lambda and it is never madvised.
+# It is safe by construction rather than by care: only a sweep advises, on the
+# VALUE family, on a set the caller knows abandoned (a re-chunk's old geometry,
+# a teardown). Its free list lives in the heap-allocated tab_firstFree and its
+# metadata in the slab header object -- both outside the pages being dropped --
+# and it makes no promise about element contents (callers initialise what they
+# get), so the zero pages MADV_DONTNEED brings back are as good as any. The
+# op/ctx family threads its free list THROUGH the freed elements and would be
+# corrupted by this; its on_kept is an empty lambda and it is never madvised.
 #
-# Turn it OFF if a profile ever shows page faults from slabs that empty and
-# refill in a loop; "strace -c -e trace=madvise" gives the call count directly.
-#
-# Recorded, like every option the headers read, in the generated
-# chunk/build_options.h and fast_allocators/build_options.h, installed with the
-# libraries: a project using the installed package compiles the inline
-# allocator code with the library's value, whatever it defines itself.
-option(CHUNK_RECLAIM_EMPTY_SLABS "Release an emptied slab's pages with madvise instead of keeping them resident" ON)
+# CHUNK_RECLAIM_EMPTY_SLABS=OFF, which kept them resident, is no longer an
+# option: a cache that still has it is warned about.
+if (DEFINED CHUNK_RECLAIM_EMPTY_SLABS AND NOT CHUNK_RECLAIM_EMPTY_SLABS)
+  message(WARNING "CHUNK_RECLAIM_EMPTY_SLABS=OFF is ignored: the option is gone, emptied slabs are always "
+                  "given back. A CMakeCache.txt from an older configure? (compile_all.sh --fresh-cache)")
+endif()
 
 # Reinforced debug level for fast_allocators' slab lists: on a Debug build,
 # every insert / remove also walks the whole list (sl_check, sl_contains) --
@@ -71,17 +67,17 @@ option(FAST_ALLOC_CHECK_LISTS "Debug builds: check every slab list in full on ea
 # write) remains for TSan builds, non-Linux, and any run whose membarrier
 # registration fails; config.h has the numbers behind the choice.
 
-# Chunk2A's per-chunk second-value table holds a 4-byte identifier instead of
+# zero_any's per-chunk second-value table holds a 4-byte identifier instead of
 # the value for types wider than 4 bytes (double, long, complex<double>):
 # 4 bytes per chunk instead of 8 or 16, -3.8% RSS on the 50 M-chunk reference
 # run, for one more dependent load on every write of a materialised chunk --
 # +3% CPU on the perf bench. Off by default; see SecondValueTraits in
 # chunk/internal/tab_cst_val2_holder.h.
-option(CHUNK_SECOND_VALUE_INDEXED "Chunk2A: store second values as 4-byte identifiers (less memory, +3% write CPU)" OFF)
+option(CHUNK_SECOND_VALUE_INDEXED "zero_any: store second values as 4-byte identifiers (less memory, +3% write CPU)" OFF)
 # CHECK_OPTIM (option above) turns build_config::any_check on in a release
 # build (chunk/build_options.h).
 
-# CHUNK_MM_PROTECT: Chunk/Chunk2's shared constant buffers (cst_val1, the cst_val2
+# CHUNK_MM_PROTECT: zero/zero_one_value's shared constant buffers (cst_val1, the cst_val2
 # region) are mprotect'ed read-only, so a stray write into a compressed chunk
 # faults at the culprit instead of corrupting a value shared by thousands of
 # chunks. A debugging build: one mprotect per buffer, and page-rounded slots.
@@ -99,10 +95,63 @@ set_property(CACHE SANITIZER PROPERTY STRINGS none thread address token)
 
 message(STATUS "Sanitizer: ${SANITIZER}")
 
+# ── Threading backend ─────────────────────────────────────────────────────────
+# CHUNK_THREADS picks the backend the library runs its threads on
+# (docs/threading_backends.md): openmp, std (std::jthread workers of the
+# library's own, no OpenMP: OMP is set OFF) or serial. Empty (the default):
+# from OMP, as before -- the scripts pass -DOMP=ON. Set, it wins and sets OMP
+# to match.
+set(CHUNK_THREADS "" CACHE STRING "Threading backend: openmp, std, serial (empty: openmp when OMP=ON, serial otherwise)")
+set_property(CACHE CHUNK_THREADS PROPERTY STRINGS "" openmp std serial)
+if(NOT CHUNK_THREADS STREQUAL "")
+    if(CHUNK_THREADS STREQUAL "std")
+        set(OMP OFF CACHE BOOL "Build with OpenMP (the parallel library and examples)" FORCE)
+    elseif(CHUNK_THREADS STREQUAL "openmp")
+        set(OMP ON CACHE BOOL "Build with OpenMP (the parallel library and examples)" FORCE)
+    elseif(CHUNK_THREADS STREQUAL "serial")
+        set(OMP OFF CACHE BOOL "Build with OpenMP (the parallel library and examples)" FORCE)
+    else()
+        message(FATAL_ERROR "CHUNK_THREADS='${CHUNK_THREADS}': expected openmp, std or serial")
+    endif()
+endif()
+
 # ── OpenMP ────────────────────────────────────────────────────────────────────
 # Read by every target of the tree; the scripts pass -DOMP=ON. OFF (as an
 # undeclared variable read) builds the serial library.
 option(OMP "Build with OpenMP (the parallel library and examples)" OFF)
+if(OMP)
+    set(CHUNK_THREADS_BACKEND openmp)
+elseif(CHUNK_THREADS STREQUAL "std")
+    set(CHUNK_THREADS_BACKEND std)
+else()
+    set(CHUNK_THREADS_BACKEND serial)
+endif()
+# The library runs threads (build_config::threaded, alloc_config::threaded):
+# every backend but serial.
+if(CHUNK_THREADS_BACKEND STREQUAL "serial")
+    set(CHUNK_THREADED OFF)
+else()
+    set(CHUNK_THREADED ON)
+endif()
+message(STATUS "Threading backend: ${CHUNK_THREADS_BACKEND}")
+
+# ── oneTBB (optional) ─────────────────────────────────────────────────────────
+# CHUNK_WITH_TBB: build what needs oneTBB, i.e. the validation of the TBB
+# adaptor (chunk/tbb_adaptor.h, shrink_array::tbb::parallel_for). The adaptor
+# is header-only and installed with the other headers: the library never
+# links TBB, the program that includes the adaptor does. The adaptor serves
+# the std and serial backends (an OpenMP build refuses it), so the harness is
+# registered there only. Off by default: no new dependency for the default
+# build.
+option(CHUNK_WITH_TBB "Build the TBB adaptor's validation (needs oneTBB; the library does not link it)" OFF)
+if(CHUNK_WITH_TBB)
+    find_package(TBB REQUIRED)
+    if(CHUNK_THREADS_BACKEND STREQUAL "openmp")
+        message(STATUS "oneTBB ${TBB_VERSION}: the TBB adaptor's validation is not built (OpenMP backend)")
+    else()
+        message(STATUS "oneTBB ${TBB_VERSION}: the TBB adaptor's validation is built")
+    endif()
+endif()
 if(OMP)
     find_package(OpenMP 4.5 REQUIRED)
     set(CMAKE_LIBRARY_PATH /usr/local/lib/x86_64-unknown-linux-gnu ${CMAKE_LIBRARY_PATH})
@@ -161,8 +210,11 @@ if(OMP)
 endif()
 
 # ── Compiler-specific flags ───────────────────────────────────────────────────
+# The flags of one C++ compiler are for C++ only: the C targets (formal/) build
+# with the system cc when only CXX is set (compile_all.sh: CXX=icpx, nvc++...),
+# and GCC rejects -fp-model=precise, -tp=host, -xHost...
 if(CMAKE_CXX_COMPILER_ID MATCHES "PGI")
-    add_compile_options(-Kieee)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Kieee>)
 endif()
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -275,8 +327,8 @@ if(NOT DEFINED CHUNK_DEBUG)
 endif()
 
 # Debug information of the optimised builds (Release, RelWithDebInfo). Measured on
-# shrink_bench_chunk2a_256 (gcc, -O3): -g 157 s and 3.9 GB peak, -g1 116 s and
-# 2.5 GB; validation_chunk2a_256: 236 s / 5.1 GB against 192 s / 3.0 GB; and the
+# shrink_bench_zero_any_256 (gcc, -O3): -g 157 s and 3.9 GB peak, -g1 116 s and
+# 2.5 GB; validation_zero_any_256: 236 s / 5.1 GB against 192 s / 3.0 GB; and the
 # same machine code bit for bit (debug information does not change code
 # generation). -g1 keeps the function names and the line tables: perf, gdb
 # backtraces and crash reports, not the locals.
@@ -395,24 +447,24 @@ option(ONEAPI_NO_INTEL_LIBS "icpx: link no Intel runtime library (no libirc, no 
 # campaigns measured before -- the check is then expected to fail.
 option(ONEAPI_FAST_FP "icpx: keep the default -fp-model=fast (the vector oracle check then fails)" OFF)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM" AND NOT ONEAPI_FAST_FP)
-    add_compile_options(-fp-model=precise)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fp-model=precise>)
     if(NOT ONEAPI_NO_INTEL_LIBS)
-        add_compile_options(-fimf-use-svml=true)
+        add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fimf-use-svml=true>)
     endif()
 endif()
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
     if(CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
-        add_compile_options(-tp=host)
+        add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-tp=host>)
     elseif(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
         if(ONEAPI_XHOST)
-            add_compile_options(-xHost)
+            add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-xHost>)
         else()
             add_compile_options(-march=native)
         endif()
         if(ONEAPI_NO_INTEL_LIBS)
-            add_compile_options(-no-intel-lib -fveclib=none)
-            add_link_options(-no-intel-lib)
+            add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-no-intel-lib;-fveclib=none>")
+            add_link_options($<$<LINK_LANGUAGE:CXX>:-no-intel-lib>)
         endif()
     else()
         # GCC et Clang
@@ -552,7 +604,9 @@ if(NOT USE_MOLD STREQUAL "OFF")
             string(JOIN " " _mold_opts_text ${_mold_link_opts})
             message(STATUS "Linker: mold (${_mold_ver}) — ${MOLD_EXECUTABLE} "
                            "via ${_mold_opts_text}${_mold_note}")
-            add_link_options(${_mold_link_opts})
+            # C++ links only: -fno-link-libatomic is a Clang option, and the C
+            # targets may link with the system cc (see the compiler flags above).
+            add_link_options("$<$<LINK_LANGUAGE:CXX>:${_mold_link_opts}>")
             if(_mold_atomic_libs)
                 string(APPEND CMAKE_CXX_STANDARD_LIBRARIES " ${_mold_atomic_libs}")
             endif()
@@ -658,7 +712,7 @@ endif()
 
 # ── Intel libm for GNU / Clang builds on x86-64 ─────────────────────────────
 # RHEL 8's glibc libm is old and slow on cos/sin/atan/tan, which the benches'
-# compute phases live in: AMD Milan, GNU, shrink_bench_chunk2a_256, 64 threads,
+# compute phases live in: AMD Milan, GNU, shrink_bench_omp_zero_any_256, 64 threads,
 # 15.70 s -> 12.41 s with libimf (same seed, same long_val_sum). icpx links
 # libimf itself; other compilers get it here when it is found. Every
 # executable of the build uses the same libm, so check-mode comparisons within
@@ -678,7 +732,7 @@ if(SHRINK_INTEL_LIBM AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
     # An icpx installed but not loaded: the llvm builds of compile_all.sh
     # reset the compiler modules, so neither icpx nor CMPLR_ROOT is visible
     # there, and the omp-llvm build on Milan silently linked glibc's libm
-    # (34.6% of the chunk2a_256 profile). INTEL_ICPX names one; otherwise the
+    # (34.6% of the zero_any_256 profile). INTEL_ICPX names one; otherwise the
     # newest match of INTEL_ICPX_GLOB is taken.
     set(INTEL_ICPX "" CACHE FILEPATH "icpx whose libimf to link when icpx is not in PATH (default: newest match of INTEL_ICPX_GLOB)")
     set(INTEL_ICPX_GLOB "/ccc/products/icx-*/system/default/*/bin/icpx" CACHE STRING
@@ -744,11 +798,11 @@ endif()
 # ── ArmPL's libamath for GNU / Clang builds on aarch64 ──────────────────────
 # Arm's optimised libm (armpl module, free), linked ahead of glibc's: the
 # benches' compute phases live in cos/sin/atan/tan (the x86-64 counterpart,
-# libimf, took shrink_bench_chunk2a_256 from 15.70 s to 12.41 s on AMD Milan,
+# libimf, took shrink_bench_omp_zero_any_256 from 15.70 s to 12.41 s on AMD Milan,
 # GNU). NVHPC is left alone: it links its own optimised math library.
 # SHRINK_ARM_LIBM is OFF by default: measured on Grace (clang 22, 64 threads,
-# same seed, RHEL 9.6 glibc vs armpl 25.07), chunk2a_dyn 8.30 -> 8.12 s,
-# chunk2a_256 6.20 -> 6.23 s, chunk2_256 5.76 -> 5.75 s -- noise; RHEL 9's
+# same seed, RHEL 9.6 glibc vs armpl 25.07), zero_any_dyn 8.30 -> 8.12 s,
+# zero_any_256 6.20 -> 6.23 s, zero_one_value_256 5.76 -> 5.75 s -- noise; RHEL 9's
 # aarch64 libm is on par with ArmPL's for these calls. Kept for re-measuring:
 # -DSHRINK_ARM_LIBM=ON -DARMPL_LIBM_DIR=<dir of libamath.so>; the executables
 # then carry an rpath and run without the module.
@@ -826,6 +880,8 @@ add_subdirectory(chunk)
 
 if(NOT CHUNK_STD_ALLOC)
     set(ALLOCATORS_OMP ${OMP})
+    set(ALLOCATORS_THREADED ${CHUNK_THREADED})
+    set(ALLOCATORS_THREADS_BACKEND ${CHUNK_THREADS_BACKEND})
     add_subdirectory(fast_allocators)
 endif()
 
@@ -861,6 +917,11 @@ if(SHRINK_ARRAY_BUILD_TESTS AND BUILD_TESTING AND Python3_Interpreter_FOUND)
     add_test(NAME check_naming
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_naming.py ${PROJECT_SOURCE_DIR})
     set_property(TEST check_naming PROPERTY LABELS validation)
+    # A member function body longer than 5 lines is defined out of class, in the
+    # header's _inline.h companion (scripts/check_inline_bodies.py; apply moves them).
+    add_test(NAME check_inline_bodies
+             COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_inline_bodies.py --check ${PROJECT_SOURCE_DIR})
+    set_property(TEST check_inline_bodies PROPERTY LABELS validation)
     # Every source file carries its license: the Apache block for C++, SPDX
     # lines for scripts and build files, the upstream SPDX line for the vendored
     # headers (scripts/check_headers.py; --fix repairs).
@@ -878,6 +939,15 @@ if(SHRINK_ARRAY_BUILD_TESTS AND BUILD_TESTING AND Python3_Interpreter_FOUND)
     add_test(NAME check_docs
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_docs.py ${PROJECT_SOURCE_DIR})
     set_property(TEST check_docs PROPERTY LABELS "validation;docs")
+    # Every C++ source as clang-format 23 leaves it (scripts/check_format.py),
+    # where that version is installed: another one formats differently.
+    find_program(CHUNK_CLANG_FORMAT_23 clang-format-23)
+    if (CHUNK_CLANG_FORMAT_23)
+      add_test(NAME check_format
+               COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_format.py ${PROJECT_SOURCE_DIR})
+      set_property(TEST check_format PROPERTY LABELS validation)
+      set_property(TEST check_format PROPERTY ENVIRONMENT CLANG_FORMAT=${CHUNK_CLANG_FORMAT_23})
+    endif()
     # The Doxygen documentation builds without a warning (scripts/check_doxygen.py),
     # when Doxygen is installed: find_package(Doxygen) above, for the doc target.
     if (DOXYGEN_FOUND)

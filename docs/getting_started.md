@@ -23,14 +23,14 @@ every access is slower.
 
 Three variants, chosen when you link:
 
-| variant | class | a chunk is compressed when it is uniform at… |
+| variant | class | a chunk is compressed when all its elements equal… |
 |---|---|---|
-| Chunk (v1) | `ArrayChunk<T>` | `T{}` (zero) only |
-| Chunk2 | `ArrayChunk2<T>` | `T{}`, or **one** second value per array, declared with `set_second_value()` |
-| Chunk2A | `ArrayChunk2A<T>` | `T{}`, or **any** value, chunk by chunk, with nothing to declare |
+| `zero` | `zero::Array<T>` | `T{}` (zero) only |
+| `zero_one_value` | `zero_one_value::Array<T>` | `T{}`, or **one** second value per array, declared with `set_second_value()` |
+| `zero_any` | `zero_any::Array<T>` | `T{}`, or **any** value, chunk by chunk, with nothing to declare |
 
-Chunk2A compresses the most and is the one to try first. Chunk2 has lighter metadata when
-the data has a single dominant non-zero value, and Chunk (v1) is the simplest when only zeros
+`zero_any` compresses the most and is the one to try first. `zero_one_value` has lighter metadata when
+the data has a single dominant non-zero value, and `zero` is the simplest when only zeros
 matter. [variants.md](variants.md) compares them on a real workload.
 
 ## 2. Install
@@ -54,14 +54,15 @@ The options that matter to a user:
 | option | default | effect |
 |---|---|---|
 | `OMP` | `OFF` | build with OpenMP. A program that uses the arrays from OpenMP regions needs a library built with it |
+| `CHUNK_THREADS` | empty | threading backend of the library: `openmp`, `std` (`std::jthread` workers of its own, no OpenMP) or `serial`; empty: `openmp` with `OMP=ON`, `serial` otherwise. Set, it sets `OMP` to match |
 | `CHUNK_STATIC_SIZES` | `auto` | the compile-time chunk sizes built, one library per size and variant; `auto`: `256;1024`, but `256` alone in a Debug or sanitizer build of this project (not of a project that includes it) |
 | `CHUNK_BUILD_DYN` | `ON` | also build the libraries whose chunk size is chosen at run time, and can change (`_dyn`) |
 | `CHUNK_STD_ALLOC` | `OFF` | allocate the chunk buffers with the standard allocator instead of the bundled `fast_allocators` (useful under AddressSanitizer) |
 
 The first build compiles the examples and the benchmark too, which takes a while. To build
 only the libraries, configure with `-DSHRINK_ARRAY_BUILD_EXAMPLES=OFF`, or give
-`cmake --build` their targets (`--target chunk_v2a_256 ...`) before `cmake --install`. Taken
-into another project with `add_subdirectory` or `FetchContent`, the libraries alone are built.
+`cmake --build` their targets (`--target chunk_zero_any_256 ...`) before `cmake --install`. Pulled
+into another project with `add_subdirectory` or `FetchContent`, it builds only the libraries.
 
 With Clang or oneAPI, an OpenMP build also uses the runtime's **OMPT** interface, which spares
 your program the phase calls of §5.
@@ -72,46 +73,46 @@ your program the phase calls of §5.
 cmake_minimum_required(VERSION 3.20)
 project(my_app LANGUAGES CXX)
 
-find_package(chunk 0.1 REQUIRED)        # -DCMAKE_PREFIX_PATH=<install prefix>
+find_package(chunk 0.2 REQUIRED)        # -DCMAKE_PREFIX_PATH=<install prefix>
 
 add_executable(my_app main.cpp)
-target_link_libraries(my_app PRIVATE chunk::chunk_v2a)
+target_link_libraries(my_app PRIVATE chunk::chunk_zero_any)
 ```
 
 The library you link **chooses the variant and the chunk size**. The headers are the same
 for all of them, and the library brings the compile definitions that select its own
-(`CHUNK_VARIANT_V2A=1`, `CHUNK_SIZE=256` or `CHUNK_DYNAMIC`), together with C++20,
+(`CHUNK_VARIANT_ZERO_ANY=1`, `CHUNK_SIZE=256` or `CHUNK_DYNAMIC`), together with C++20,
 `-fopenmp` when it was built with OpenMP, and its dependencies. The other options it was built
 with are in the installed `chunk/build_options.h`, which the headers read: a program compiles them
 as the library did.
 
 | target | variant | chunk size |
 |---|---|---|
-| `chunk::chunk_v1`, `chunk::chunk_v2`, `chunk::chunk_v2a` | v1, Chunk2, Chunk2A | the first of `CHUNK_STATIC_SIZES` (256) |
-| `chunk::chunk_v2a_1024`, … | | that compile-time size |
-| `chunk::chunk_v2a_dyn`, … | | chosen at run time, per array (can be changed with `rechunk_to()` or by the adaptive decider) |
+| `chunk::chunk_zero`, `chunk::chunk_zero_one_value`, `chunk::chunk_zero_any` | `zero`, `zero_one_value`, `zero_any` | the first of `CHUNK_STATIC_SIZES` (256) |
+| `chunk::chunk_zero_any_1024`, … | | that compile-time size |
+| `chunk::chunk_zero_any_dyn`, … | | chosen at run time, per array (can be changed with `rechunk_to()` or by the adaptive decider) |
 | `chunk::chunk_vector` | none: the arrays are `std::vector` | — |
 
 Link **one** variant library per program, and write **that variant's class**:
-`ArrayChunk2A<T>` with `chunk::chunk_v2a`. The class you write is what you get -- a program
-naming `ArrayChunk2A` keeps it whatever it links -- and an array of another variant than the
+`zero_any::Array<T>` with `chunk::chunk_zero_any`. The class you write is what you get -- a program
+naming `zero_any::Array` keeps it regardless of what it links -- and an array of a variant other than the
 library's is not supported: depending on the calls, it does not compile or it crashes.
-To let the link choose, write the arrays through an alias on the variant the library
+To let the link choose, write the arrays through an alias for the variant the library
 defines (`examples/shrink_bench` and `examples/simple_array` do so):
 
 ```cpp
 #include <type_traits>
 #include <vector>
-#include "chunk/array_chunk.h"
-#include "chunk/array_chunk2.h"
-#include "chunk/array_chunk2A.h"
+#include "chunk/zero_array.h"
+#include "chunk/zero_one_value_array.h"
+#include "chunk/zero_any_array.h"
 #include "chunk/config.h"
 
 namespace sa = shrink_array;
 template <typename T>
-using Array = std::conditional_t<sa::chunk_config::use_chunk2a, sa::ArrayChunk2A<T>,
-              std::conditional_t<sa::chunk_config::use_chunk2, sa::ArrayChunk2<T>,
-              std::conditional_t<sa::chunk_config::use_chunk, sa::ArrayChunk<T>, std::vector<T>>>>;
+using Array = std::conditional_t<sa::chunk_config::use_zero_any, sa::zero_any::Array<T>,
+              std::conditional_t<sa::chunk_config::use_zero_one_value, sa::zero_one_value::Array<T>,
+              std::conditional_t<sa::chunk_config::use_zero, sa::zero::Array<T>, std::vector<T>>>>;
 ```
 
 With it, `chunk::chunk_vector` builds the same program on plain `std::vector`s, which is the
@@ -121,7 +122,7 @@ easiest way to compare memory and time.
 `chunk_OPENMP`, `chunk_OMPT` and `chunk_STD_ALLOC`, for a project that wants to check what the
 installation holds.
 
-## 4. A first program
+## 4. A first program, parallel and multi-threaded
 
 This is [`examples/getting_started/getting_started.cpp`](../examples/getting_started/getting_started.cpp),
 shortened. The directory also has the `CMakeLists.txt` of §3: it builds against an install as
@@ -131,8 +132,8 @@ well as inside the tree.
 #include <cstdio>
 #include <utility>                 // std::as_const
 
-#include "chunk/array_chunk2A.h"   // shrink_array::ArrayChunk2A
-#include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_any_array.h"   // shrink_array::zero_any::Array
+#include "chunk/zero_chunk.h"       // release_chunk_pools, destroy_block_chunk
 #include "chunk/manage_ompt.h"     // parallel_phase
 #include "chunk/param_chunk.h"     // ParamChunk::init_indexes
 
@@ -144,7 +145,7 @@ int main()
 
     {
         const int n = 1 << 24;                   // 16 M doubles: 128 MiB as a std::vector
-        sa::ArrayChunk2A<double> a(n);           // (2) all 0.0, nothing allocated yet
+        sa::zero_any::Array<double> a(n);           // (2) all 0.0, nothing allocated yet
 
         sa::parallel_phase([&] {                 // (3) a parallel region, phases marked
 #pragma omp for
@@ -181,7 +182,7 @@ int main()
    returns a *proxy* (§6).
 5. **`shrink_to_fit()`** runs a full compression pass, outside any parallel region. You do not
    need to call it: chunks are compressed as the program runs. It is there for when you want
-   the memory back at a precise point.
+   the memory back at a specific point.
 6. **Destroying the array** gives its buffers back. The library prints one line per array at
    that point, with its compression ratio.
 7. **The shutdown pair**, at the end of the program, after the last array. Optional too: the
@@ -192,7 +193,7 @@ int main()
 Expected output: about 12 % of the chunks hold a buffer. A `std::vector` would hold all of
 them.
 
-## 5. OpenMP: the rules
+## 5. Threads: the rules
 
 **What you can do without synchronisation.** As with a `std::vector`, different threads can
 read and write **different elements** at the same time, even elements of the same chunk:
@@ -209,7 +210,7 @@ phase call. Linked as in §3, with `OpenMP::OpenMP_CXX` too:
 #include <utility>                 // std::as_const
 #include <vector>
 
-#include "chunk/array_chunk2A.h"   // shrink_array::ArrayChunk2A
+#include "chunk/zero_any_array.h"   // shrink_array::zero_any::Array
 
 namespace sa = shrink_array;
 
@@ -226,7 +227,7 @@ int main()
     const int n = 1 << 24;
 
     std::vector<double>      v(n);
-    sa::ArrayChunk2A<double> a(n);
+    sa::zero_any::Array<double> a(n);
     fill(v, n);                          // the reference
     fill(a, n);                          // the same loop: no parallel_phase(), no phase calls
 
@@ -255,11 +256,11 @@ end. Without it (GCC's libgomp), your program does:
 shrink_array::finalize_parallel_phase();      // once, after the region
 ```
 
-Forget them and nothing fails at once. With the same team from region to region the values
+Forget them and nothing fails right away. With the same team from region to region the values
 still come out right, but the compression passes between regions do not run: memory stays
 higher than it should. When the team size changes from one region to the next, a forgotten
 `finalize_parallel_phase()` replays a deferred write that was already freed, and with both
-calls forgotten values come out wrong, silently. The program stops, in every build, on a
+calls forgotten, values come out wrong, silently. The program stops, in every build, on a
 `begin_parallel_phase()` with no `finalize_parallel_phase()` since the previous region; check
 builds (Debug, `CHECK_OPTIM`) also stop on a deferred write by a thread that skipped
 `begin_parallel_phase()`.
@@ -284,24 +285,26 @@ found first), the phases never happen. The library prints a warning on stderr;
 With OMPT you may also write no phase at all: plain `#pragma omp parallel for` loops, the same
 code as on a `std::vector`.
 [`examples/getting_started/getting_started_ompt.cpp`](../examples/getting_started/getting_started_ompt.cpp)
-is the program of §4 written that way: one function fills a `std::vector<double>` and an
-`ArrayChunk2A<double>`, and the program checks that they read back the same. It refuses to
+is the program of §4 written that way: one function fills a `std::vector<double>` and a
+`zero_any::Array<double>`, and the program checks that they read back the same. It refuses to
 compile against a library without OMPT; its test runs with `CHUNK_REQUIRE_OMPT=1`.
 
 **Sequential points.** Everything that rebuilds an array's storage must be called outside any
 parallel region: `resize()`, `reserve()`, `push_back()` beyond the capacity, `clear()`,
 `assign()`, `swap()`, assignment, `shrink_to_fit()`, `compress()`, `rechunk_to()`, and, for
-Chunk2, `set_second_value()`.
+`zero_one_value`, `set_second_value()`.
 
 **Threads.** The per-thread structures are sized once for `max(omp_get_max_threads(), number
-of cores, 256)` threads (about 1 KiB per element type and per thread). A program that runs
+of cores, 256)` threads (in a std build, the team size -- `CHUNK_NUM_THREADS`, else
+`OMP_NUM_THREADS` -- stands for `omp_get_max_threads()`; about 1 KiB per element type and per
+thread). A program that runs
 more threads than that sets `CHUNK_THREAD_CAPACITY=<n>`; a thread beyond the capacity stops the
 program with a message.
 
 **Next to other components.** The library keeps its state per process, not per array: the
-element-type registries, the allocators, Chunk2A's second-value registry, the per-thread
+element-type registries, the allocators, `zero_any`'s second-value registry, the per-thread
 structures and their capacity, the log settings, and the phase. Two parts of a program that use
-it without knowing of each other -- your code and a library built on shrink-array, say -- share
+it without knowing about each other -- your code and a library built on shrink-array, say -- share
 all of it. What that asks of them:
 
 - **One phase at a time.** The per-thread queues are indexed by the rank in the team, and the
@@ -326,6 +329,42 @@ all of it. What that asks of them:
   all. `reclaim_second_values()` covers every array of a type; `CHUNK_LOG` and
   `logging::set_sink()` are one setting for all.
 
+**Without OpenMP: your own threads, TBB.** A library built with `CHUNK_THREADS=std` runs its own
+work on a pool of `std::jthread`s and takes writes from any thread of the program: `std::thread`,
+TBB, a thread pool of your own. The phases are then always explicit: every thread that writes
+calls `begin_parallel_phase()` before its first write, and **one** thread calls
+`finalize_parallel_phase()` once every writer has stopped (after the `join()`):
+
+```cpp
+std::vector<std::thread> workers;
+for (int t = 0; t < nt; ++t)
+    workers.emplace_back([&, t] {
+        sa::begin_parallel_phase();               // every thread that writes
+        for (long i = t; i < n; i += nt)
+            a[i] = f(i);
+    });
+for (auto& w : workers)
+    w.join();
+sa::finalize_parallel_phase();                    // once, after the join
+```
+
+A TBB program uses `shrink_array::tbb::parallel_for` (`chunk/tbb_adaptor.h`): the arguments of
+`oneapi::tbb::parallel_for`, both calls made for you. The header comes with the library; the
+program links TBB itself (`TBB::tbb`), the library does not:
+
+```cpp
+#include "chunk/tbb_adaptor.h"
+sa::tbb::parallel_for(oneapi::tbb::blocked_range<long>(0, n), [&](const auto& r) {
+    for (long i = r.begin(); i != r.end(); ++i)
+        a[i] = f(i);
+});
+```
+
+Between `begin` and `finalize` the library counts the program's threads as a parallel region
+(the sequential points above must not be called there, as inside an OpenMP region), and each of them
+holds one of the per-thread slots while it is alive. An OpenMP build numbers only OpenMP's
+threads: for the others, use the std backend.
+
 ## 6. Pitfalls
 
 - **`auto` keeps a proxy.** On a non-const array, `tab[i]` returns a write proxy. `T v = tab[i];`
@@ -345,14 +384,14 @@ all of it. What that asks of them:
   library's own state is built at its first use and never destroyed, so the order of the
   static initialisations does not matter.
 - **Indices are `int` by default.** For more than 2³¹ elements, use the second template
-  parameter: `ArrayChunk2A<double, long>`.
+  parameter: `zero_any::Array<double, long>`.
 - **Element types**: anything trivially copyable, `==`-comparable and default-constructible
   (arithmetic types, `bool`, `std::complex`, enums, `std::array` and aggregates of those). A
-  type that owns a resource (`std::string`) is refused at compile time. Chunk2 also needs an
+  type that owns a resource (`std::string`) is refused at compile time. `zero_one_value` also needs an
   order on the second value: a struct of doubles declares `auto operator<=>(const T&) const =
   default;`.
-- **Chunk2 compresses only to its declared second value.** Without `set_second_value()`, a
-  Chunk2 array compresses to zero only.
+- **`zero_one_value` compresses only to its declared second value.** Without `set_second_value()`, a
+  `zero_one_value` array compresses to zero only.
 - **Measure memory with the right tool.** `VmRSS` lags behind on many threads; see
   [performance_measurement.md](performance_measurement.md).
 
@@ -364,5 +403,5 @@ all of it. What that asks of them:
 | choosing a variant on your data | [variants.md](variants.md), and `examples/variant_compare` |
 | letting the chunk size adapt at run time | [adaptive_rechunk.md](adaptive_rechunk.md) (`_dyn` libraries) |
 | every tuning variable and build option | [environment_variables.md](environment_variables.md) |
-| how it works inside | [algo_chunk2.md](algo_chunk2.md), [synchronisation_dekker.md](synchronisation_dekker.md) |
+| how it works inside | [algo_zero_one_value.md](algo_zero_one_value.md), [synchronisation_dekker.md](synchronisation_dekker.md) |
 | a larger example: multi-material fields, loops written once for both containers | `examples/multi-mat` |

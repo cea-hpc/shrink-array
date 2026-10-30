@@ -27,9 +27,9 @@
  *          per-chunk gate. Both the marking and the testing exist only under
  *          OpenMP — in a serial build there is no deferred path, sync_chunk
  *          compiles to nothing and the flush loops are behind
- *          `if constexpr (build_config::use_openmp)`.
+ *          `if constexpr (build_config::threaded)`.
  *
- *          Splitting it into DirtyBitsetSupport<Derived, use_openmp> makes the
+ *          Splitting it into DirtyBitsetSupport<Derived, threaded> makes the
  *          serial version an empty class (no member, no allocation, zero bytes
  *          via the empty-base optimisation) whose verbs are no-ops the
  *          optimiser deletes -- a serial array would otherwise pay one heap
@@ -46,7 +46,8 @@
 #include <utility>   // std::swap
 #include <vector>    // std::vector
 
-#include "chunk/config.h"                         // build_config::use_openmp
+#include "chunk/config.h"                         // build_config::threaded
+#include "chunk/internal/array_chunk_for.h"       // ArrayKey (clear_all_dirty_bitsets)
 #include "chunk/internal/parallel_storage_init.h" // NoInitVector, make_filled: the words built by a team
 
 namespace shrink_array
@@ -73,14 +74,14 @@ static_assert(sizeof(PaddedDirtyWord) == build_config::dirty_word_align,
 /**
  * @brief Per-chunk dirty bitset, present only when the build has OpenMP.
  *
- * @tparam Derived the array core that owns it, ArrayChunkCore<chunk_type>
+ * @tparam Derived the array core that owns it, ArrayChunkCore<ChunkType>
  *         (needed by clear_all_dirty_bitsets to walk the per-type registry,
  *         whose keys are addresses of that core).
- * @tparam Enabled defaulted to build_config::use_openmp; never pass it
+ * @tparam Enabled defaulted to build_config::threaded; never pass it
  *         explicitly outside of tests — the point of the parameter is that the
  *         two specialisations below are selected by the build mode.
  */
-template <typename Derived, bool Enabled = build_config::use_openmp>
+template <typename Derived, bool Enabled = build_config::threaded>
 class DirtyBitsetSupport;
 
 // ── OpenMP build: the real bitset ────────────────────────────────────────────
@@ -107,23 +108,7 @@ class DirtyBitsetSupport<Derived, true>
      *       bit is a pre-filter only -- the op itself is published by the
      *       chunk's pending counter (increm_chunk_gate_deferred), after this.
      */
-    void mark_chunk_dirty(int chunk_idx) noexcept
-    {
-        const int      word_idx = chunk_idx >> word_shift;
-        const uint64_t bit_mask = 1ULL << (chunk_idx & bit_in_word_mask);
-        auto&          word     = bitset_[word_idx].word;
-        if ((word.load(std::memory_order_relaxed) & bit_mask) == 0)
-        {
-            word.fetch_or(bit_mask, std::memory_order_acq_rel);
-        }
-        // Raise the "some bit was set" flag (read first: raised once per phase,
-        // then every later mark is a plain load).
-        auto& any = any_marked_word();
-        if (any.load(std::memory_order_relaxed) == 0)
-        {
-            any.store(1, std::memory_order_release);
-        }
-    }
+    void mark_chunk_dirty(int chunk_idx) noexcept;
 
     /**
      * @brief Checks if a chunk is marked as dirty.
@@ -146,19 +131,7 @@ class DirtyBitsetSupport<Derived, true>
      *          clear_dirty_bitset() on each. Quiescent point only (the reset is
      *          not synchronised against concurrent marks).
      */
-    static void clear_all_dirty_bitsets()
-    {
-        using proxy_type = Derived::proxy_type;
-        proxy_type::share_info_array->for_each_key(
-            [](const void* key)
-            {
-                if (key)
-                {
-                    auto* arr = static_cast<Derived*>(const_cast<void*>(key));
-                    arr->clear_dirty_bitset();
-                }
-            });
-    }
+    static void clear_all_dirty_bitsets();
 
   protected:
     /**
@@ -181,36 +154,7 @@ class DirtyBitsetSupport<Derived, true>
      * @param old_nb_chunk chunk count the current bitset was sized for
      * @param new_nb_chunk chunk count to size the new bitset for
      */
-    void reallocate_dirty_bitset(int old_nb_chunk, int new_nb_chunk)
-    {
-        if (new_nb_chunk == old_nb_chunk)
-        {
-            return;
-        }
-
-        const int old_nb_words = words_for(old_nb_chunk);
-        const int new_nb_words = words_for(new_nb_chunk);
-
-        auto new_bitset =
-            parallel_storage_init::make_filled<PaddedDirtyWord>(static_cast<std::size_t>(new_nb_words) + 1);
-
-        if (!bitset_.empty())
-        {
-            const auto words_to_copy = static_cast<std::size_t>(std::min(old_nb_words, new_nb_words));
-            for (std::size_t i = 0; i < words_to_copy; ++i)
-            {
-                const uint64_t val = bitset_[i].word.load(std::memory_order_relaxed);
-                new_bitset[i].word.store(val, std::memory_order_relaxed);
-            }
-            // Carry the "some bit was set" flag (conservatively: it may now
-            // cover only bits that were cut off, which costs one useless clear).
-            new_bitset[static_cast<std::size_t>(new_nb_words)].word.store(
-                bitset_[static_cast<std::size_t>(old_nb_words)].word.load(std::memory_order_relaxed),
-                std::memory_order_relaxed);
-        }
-        bitset_   = std::move(new_bitset);
-        nb_words_ = new_nb_words;
-    }
+    void reallocate_dirty_bitset(int old_nb_chunk, int new_nb_chunk);
 
     /**
      * @brief Zero the whole dirty bitset.
@@ -220,27 +164,7 @@ class DirtyBitsetSupport<Derived, true>
      *       at a quiescent point (-Wclass-memaccess), and with one word per
      *       padded line a memset would touch the same lines anyway.
      */
-    void clear_dirty_bitset() noexcept
-    {
-        if (bitset_.empty())
-        {
-            return;
-        }
-        // Nothing marked since the last clear: the words are already zero.
-        // The common case (only the deferred-enqueue path marks), and do not
-        // drop it: clear_all_dirty_bitsets() runs serially at every phase end
-        // of a non-OMPT build, and rewriting every line of every array then
-        // dominates the run time of a benchmark.
-        if (any_marked_word().exchange(0, std::memory_order_acq_rel) == 0)
-        {
-            return;
-        }
-        PaddedDirtyWord* const words = bitset_.data();
-        for (int i = 0; i < nb_words_; ++i)
-        {
-            words[i].word.store(0, std::memory_order_relaxed);
-        }
-    }
+    void clear_dirty_bitset() noexcept;
 
     /**
      * @brief Exchange bitsets with another array, as part of an O(1) container swap.
@@ -289,7 +213,7 @@ class DirtyBitsetSupport<Derived, true>
  * @brief Serial specialisation: an empty class with the same verbs, all inert.
  *
  * @details Nothing in a serial build ever queries a dirty bit — sync_chunk is
- *          behind `if constexpr (build_config::use_openmp)` and every
+ *          behind `if constexpr (build_config::threaded)` and every
  *          flush_pending_deferred_ops() body is too — so is_chunk_dirty() can
  *          answer false unconditionally and the array carries no bitset at all.
  *          The verbs are kept (rather than compiled out at every call site) so
@@ -300,7 +224,10 @@ class DirtyBitsetSupport<Derived, false>
 {
   public:
     /// @brief No-op: no bitset in this mode.
-    static void mark_chunk_dirty(int /*chunk_idx*/) noexcept {}
+    static void mark_chunk_dirty(int /*chunk_idx*/) noexcept
+    {
+        // no bitset in this mode: nothing to mark, size or clear
+    }
     /// @brief Never dirty: no deferred write can exist in this mode.
     [[nodiscard]] static bool is_chunk_dirty(int /*chunk_idx*/) noexcept
     {
@@ -308,18 +235,35 @@ class DirtyBitsetSupport<Derived, false>
     }
 
     /// @brief No-op: no bitset in this mode.
-    static void clear_all_dirty_bitsets() noexcept {}
+    static void clear_all_dirty_bitsets() noexcept
+    {
+        // no bitset in this mode: nothing to mark, size or clear
+    }
 
   protected:
     /// @name No-op verbs (no bitset in this mode)
     /// @{
-    static void alloc_dirty_bitset(int /*nb_chunk*/) noexcept {}
-    static void reallocate_dirty_bitset(int /*old_nb_chunk*/, int /*new_nb_chunk*/) noexcept {}
-    static void clear_dirty_bitset() noexcept {}
+    static void alloc_dirty_bitset(int /*nb_chunk*/) noexcept
+    {
+        // no bitset in this mode: nothing to mark, size or clear
+    }
+    static void reallocate_dirty_bitset(int /*old_nb_chunk*/, int /*new_nb_chunk*/) noexcept
+    {
+        // no bitset in this mode: nothing to mark, size or clear
+    }
+    static void clear_dirty_bitset() noexcept
+    {
+        // no bitset in this mode: nothing to mark, size or clear
+    }
 
-    static void swap_dirty_bitset(DirtyBitsetSupport& /*other*/) noexcept {}
+    static void swap_dirty_bitset(DirtyBitsetSupport& /*other*/) noexcept
+    {
+        // no bitset in this mode: nothing to mark, size or clear
+    }
 
     /// @}
 };
 
 } // namespace shrink_array
+
+#include "chunk/internal/array_chunk_dirty_bitset_inline.h" // the template bodies

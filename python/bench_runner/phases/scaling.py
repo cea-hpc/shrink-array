@@ -3,6 +3,7 @@
 """Phase 4: scalability guard (omp-llvm, omp-gnu)."""
 import sys
 
+from .. import killinfo, share
 from ..builds import (
     _run_dir, int64_variant, resolve_exe, short_config_label, skip_variant_on_config,
 )
@@ -30,8 +31,8 @@ def run_scaling_phase(args, extra_ldpath, errors):
     of the curve legitimately plateaus, and on a hybrid machine the points past
     the performance cores are genuinely slower -- a serialised pass shows up as
     1.5x and beyond). Each variant is its own curve: a regression confined to
-    one container (a lock only chunk2 takes, a pass only v1 runs) is exactly
-    what a single-variant guard would miss.
+    one container (a lock only zero_one_value takes, a pass only zero runs) is
+    exactly what a single-variant guard would miss.
 
     Everything it needs is a constant at the top of this file, deliberately:
     seven knobs for a guard that either says "still scales" or names the point
@@ -55,6 +56,14 @@ def run_scaling_phase(args, extra_ldpath, errors):
     oversubscribed run. The runs never go through numactl --interleave
     (SCALING_NUMA_INTERLEAVE): the guard measures the library, not a memory
     placement imposed from outside.
+
+    An OOM kill ends its curve: the arrays are the same size at every thread
+    count, so the next points would be killed the same way, each one reported
+    -- four lines for one fact. A shrink variant killed so is one error (its
+    memory is the library's business); the reference, vector, is not an error
+    at all: it holds the uncompressed arrays, so it is the first not to fit a
+    job sized for the compressed ones. Its curve is reported missing and the
+    others are still guarded, each against its own best point.
     """
     print(cyan(bold("\n📈 Scalability guard — "
                     + ", ".join(short_config_label(c) for c in SCALING_CONFIGS))))
@@ -88,10 +97,15 @@ def run_scaling_phase(args, extra_ldpath, errors):
     n_pass = n_total = 0
     n_curves = 0
     failed_vars = []
+    oom_reference = []  # labels of the configs whose reference curve did not fit
     for config in getattr(args, "scaling_configs", None) or SCALING_CONFIGS:
         label = short_config_label(config)
         if config not in args.configs:
             print(dim(f"   ({label} not in --configs -- skipped)"))
+            continue
+        # --pool: the unit is scaling/<config>, all its curves (each one is
+        # read against its own best point, nothing crosses configurations).
+        if not share.take("scaling", config, label):
             continue
 
         candidates = [v for v in scaling_vars if not skip_variant_on_config(v, config)]
@@ -145,12 +159,30 @@ def run_scaling_phase(args, extra_ldpath, errors):
                     extra_ld_library_path=extra_ldpath, cwd=rdir, numa_mode=SCALING_NUMA_INTERLEAVE)
 
                 if not ok:
+                    oom = killinfo.OOM_KILL_MARK in (err_tail or "")
+                    rest = threads[threads.index(tc) + 1:]
+                    if oom and var == SCALING_REFERENCE_VARIANT:
+                        # The reference does not fit the job: not the library's
+                        # failure, and every later point would be killed too.
+                        v_total -= 1
+                        oom_reference.append(label)
+                        sys.stdout.write("\r" + lead + yellow(
+                            "killed by the OOM killer: the uncompressed reference does not fit the job's "
+                            "memory -- curve skipped" + (f" ({', '.join(map(str, rest))}th not run)" if rest else ""))
+                            + "\n")
+                        sys.stdout.flush()
+                        break
                     sys.stdout.write("\r" + lead + red("FAIL") + f" (code {code})\n")
                     _entry = (f"SCALING_RUN_FAIL: {exe} {' '.join(bench_args)} threads={tc} code={code}\n"
                               f"  stderr_tail:\n    " + err_tail.replace('\n', '\n    '))
+                    if oom and rest:
+                        _entry += (f"\n  the arrays are the same size at every thread count: "
+                                   f"{', '.join(map(str, rest))} threads not run")
                     errors.append(_entry)
                     _append_error_now(args.errors_log, _entry)
                     sys.stdout.flush()
+                    if oom:
+                        break
                     continue
 
                 if first_dur is None:
@@ -181,6 +213,10 @@ def run_scaling_phase(args, extra_ldpath, errors):
             if v_pass != v_total:
                 failed_vars.append(f"{label}/{var}")
 
+    if oom_reference:
+        print(yellow(f"   {SCALING_REFERENCE_VARIANT} (reference) did not fit the job's memory on "
+                     f"{', '.join(oom_reference)}: no reference curve there (more memory for the job: "
+                     "#MSUB -M / --mem)"))
     if n_total == 0:
         tag = yellow("nothing to run")
     elif n_pass == n_total:

@@ -42,14 +42,14 @@
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::as_const
 
-#include "chunk/chunk_traits.h"   // forward decls + default ind_type = int
-#include "chunk/array_chunk.h"    // ArrayChunk
-#include "chunk/array_chunk2.h"   // ArrayChunk2
-#include "chunk/array_chunk2A.h"  // ArrayChunk2A
-#include "chunk/param_chunk.h"    // ParamChunk::init_indexes
-#include "chunk/config.h"         // chunk_config::use_chunk*
-#include "chunk/PMP_CHUNK.h"      // CHUNK_PMP_MAX_THREADS
-#include "chunk/internal/print.h" // shrink_array::println
+#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
+#include "chunk/zero_array.h"           // zero::Array
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#include "chunk/zero_any_array.h"       // zero_any::Array
+#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
+#include "chunk/config.h"               // chunk_config::use_zero*
+#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/print.h"       // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
 
@@ -61,33 +61,34 @@ using namespace shrink_array;
 namespace
 {
 
-using Arr = std::conditional_t<chunk_config::use_chunk2a,
-                               ArrayChunk2A<double>,
-                               std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<double>, ArrayChunk<double>>>;
+using Arr = std::conditional_t<
+    chunk_config::use_zero_any,
+    zero_any::Array<double>,
+    std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<double>, zero::Array<double>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
-/// @brief Elements of [b, e) that do not read @p want.
-long mismatches(const Arr& a, int b, int e, double want)
+/// @brief Elements of [@p first, @p last) that do not read @p want.
+long mismatches(const Arr& arr, int first, int last, double want)
 {
     long bad = 0;
-    for (int i = b; i < e; ++i)
+    for (int i = first; i < last; ++i)
     {
-        if (static_cast<double>(std::as_const(a)[i]) != want)
+        if (static_cast<double>(std::as_const(arr)[i]) != want)
         {
             ++bad;
         }
@@ -98,57 +99,57 @@ long mismatches(const Arr& a, int b, int e, double want)
 /// @brief An array to grow and the one whose written chunks are counted.
 struct Arrays
 {
-    explicit Arrays(int n) : a(n), w(n) {}
+    explicit Arrays(int count) : a(count), w(count) {}
     Arr a;
     Arr w;
 };
 
 /**
- * @brief The storage life of an array created at @p n, on the calling thread:
+ * @brief The storage life of an array created at @p count, on the calling thread:
  *        grown with and without a value, shrunk after writes, grown again (the
  *        regrown range must read 0); and the written-chunk count of @p arr.w.
  * @return the number of elements (or counts) that came out wrong
  */
-long life_of_one_array(Arrays& arr, int n)
+long life_of_one_array(Arrays& arr, int count)
 {
-    long bad = 0;
-    Arr& a   = arr.a;
+    long bad   = 0;
+    Arr& arr_a = arr.a;
 
-    bad += mismatches(a, 0, n, 0.0); // as created (rebuild_storage)
+    bad += mismatches(arr_a, 0, count, 0.0); // as created (rebuild_storage)
 
-    a.resize(2 * n); // growth: new chunks constructed and initialised
-    bad += mismatches(a, 0, 2 * n, 0.0);
+    arr_a.resize(2 * count); // growth: new chunks constructed and initialised
+    bad += mismatches(arr_a, 0, 2 * count, 0.0);
 
-    a.resize(3 * n, 2.5); // growth with a value: [2n, 3n) at 2.5
-    bad += mismatches(a, 0, 2 * n, 0.0);
-    bad += mismatches(a, 2 * n, 3 * n, 2.5);
+    arr_a.resize(3 * count, 2.5); // growth with a value: [2n, 3n) at 2.5
+    bad += mismatches(arr_a, 0, 2 * count, 0.0);
+    bad += mismatches(arr_a, 2 * count, 3 * count, 2.5);
 
-    for (int i = 0; i < 3 * n; ++i) // every element non-zero
+    for (int i = 0; i < 3 * count; ++i) // every element non-zero
     {
-        a[i] = 1.0 + i;
+        arr_a[i] = 1.0 + i;
     }
-    a.resize(n / 3 + 1); // shrink inside a chunk
-    a.resize(2 * n);     // regrown range: zeros, not the old values
-    bad += mismatches(a, n / 3 + 1, 2 * n, 0.0);
+    arr_a.resize(count / 3 + 1); // shrink inside a chunk
+    arr_a.resize(2 * count);     // regrown range: zeros, not the old values
+    bad += mismatches(arr_a, count / 3 + 1, 2 * count, 0.0);
 
     // One element written in each of the first m chunks: m chunks written.
-    Arr&      w   = arr.w;
-    const int csz = static_cast<int>(w.chunk_size());
-    const int m   = (n / csz) / 2;
-    for (int c = 0; c < m; ++c)
+    Arr&      arr_w = arr.w;
+    const int csz   = static_cast<int>(arr_w.chunk_size());
+    const int half  = (count / csz) / 2;
+    for (int c = 0; c < half; ++c)
     {
-        w[c * csz] = 7.0;
+        arr_w[c * csz] = 7.0;
     }
-    if (w.get_nb_chunk_written() != m)
+    if (arr_w.get_nb_chunk_written() != half)
     {
         ++bad;
     }
     return bad;
 }
 
-int report(const char* what, int n, long bad)
+int report(const char* what, int count, long bad)
 {
-    println("[{}/region-storage] {:<22} n={:7} : {}", variant_name(), what, n, bad ? "FAIL" : "ok");
+    println("[{}/region-storage] {:<22} n={:7} : {}", variant_name(), what, count, bad ? "FAIL" : "ok");
     if (bad)
     {
         println("  {} wrong element(s) or count(s)", bad);
@@ -166,11 +167,11 @@ int run(int /*argc*/, char** /*argv*/)
     int fails = 0;
     // Below and above the 500-chunk threshold of the init loops, at any
     // geometry this suite builds (64 to 1024 elements per chunk).
-    for (const int n : {20000, 700000})
+    for (const int count : {20000, 700000})
     {
         {
-            Arrays arr(n);
-            fails += report("serial", n, life_of_one_array(arr, n));
+            Arrays arr(count);
+            fails += report("serial", count, life_of_one_array(arr, count));
         }
 
         long bad_single = 0;
@@ -178,22 +179,22 @@ int run(int /*argc*/, char** /*argv*/)
         {
 #pragma omp single
             {
-                Arrays arr(n); // one thread of the team creates and uses it
-                bad_single = life_of_one_array(arr, n);
+                Arrays arr(count); // one thread of the team creates and uses it
+                bad_single = life_of_one_array(arr, count);
             }
         }
-        fails += report("omp single", n, bad_single);
+        fails += report("omp single", count, bad_single);
 
         long bad_masked = 0;
 #pragma omp parallel
         {
 #pragma omp masked
             {
-                Arrays arr(n); // the primary thread; the others go to the region's end
-                bad_masked = life_of_one_array(arr, n);
+                Arrays arr(count); // the primary thread; the others go to the region's end
+                bad_masked = life_of_one_array(arr, count);
             }
         }
-        fails += report("omp masked", n, bad_masked);
+        fails += report("omp masked", count, bad_masked);
     }
 
     println("{}", fails ? "region_storage_validation: FAILED" : "region_storage_validation: OK");

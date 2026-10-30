@@ -15,7 +15,7 @@
 `VmRSS` (`/proc/self/status`), `/proc/self/statm` and `ru_maxrss` (`getrusage`) read the
 kernel's resident memory counters. These counters are kept **per thread**, and only folded
 into the process total from time to time. With 64 threads taking page
-faults, the total lags behind. Measured on `shrink_bench_chunk2a_dyn`:
+faults, the total lags behind. Measured on `shrink_bench_omp_zero_any_dyn`:
 
 | point | `VmRSS` | exact (`smaps_rollup`) | lag |
 |---|---|---|---|
@@ -47,7 +47,7 @@ In the library: `shrink_array::exact_rss_kib()` (`internal/exact_rss.h`). In the
 | question | tool |
 |---|---|
 | how much in chunk buffers, how much elsewhere? | `CHUNK_LOG=memory=info`: at each advisor tick, the exact memory, including the resident part of the buffer arena (`mincore`) |
-| what are the slabs doing? | `CHUNK_ARENA_REPORT=1` (slabs handed out, returned to the system) |
+| what are the slabs doing? | `CHUNK_LOG=warn,rechunk=info,arena=info` (slabs handed out, returned to the system) |
 | which area of the address space is growing? | two `pmap -x <pid>` at two points in time, compared area by area |
 | what does each rechunk return? | `CHUNK_LOG=memory=debug`: `rss` line (memory at each step, `end-entry`) |
 
@@ -67,7 +67,7 @@ the next, to within a megabyte. A single run is enough.
   6.4-6.8 s and three at 7.7-8.0 s (+18%). `perf stat`: same frequency (3.26 GHz), same number
   of instructions, same last-level cache misses, but an IPC of 3.45 instead of
   3.95 and +10 points of cycles stalled on memory. Each memory access costs more,
-  probably depending on the physical layout of the pages received at start-up. Chunk2 has an even
+  probably depending on the physical layout of the pages received at start-up. `zero_one_value` has an even
   more pronounced slow mode (~+40%, runs at 16 s instead of 11).
 - **Drift between time windows.** The same binary, with no recompilation at all: 10.75 to
   11.53 s in one window, 9.49 to 10.08 s an hour later.
@@ -93,14 +93,13 @@ in fresh directories with the same configuration, alternate, and be wary.
 
 | compare… | switch |
 |---|---|
-| without advisor / analyses only / with rechunks | `CHUNK_ADVISOR_PERIOD=0` / `CHUNK_RECHUNK_DRY_RUN=1` / nothing |
-| lazy / eager affinity | `CHUNK_ALLOC_AFFINITY_EAGER=0` / `=1` |
-| maximum size of a coarsening step | `CHUNK_RECHUNK_MAX_COARSEN=<n>` |
-| scheduling of the rebuild | `CHUNK_RECHUNK_SCHEDULE=…` |
+| without advisor / analyses only / with rechunks | `--advisor_period 0` / `--rechunk_dry_run` / nothing |
+| maximum size of a coarsening step | `--rechunk_max_coarsen <n>` |
 
 The full list is in [developer_settings.md](developer_settings.md).
-Beware: `CHUNK_ADVISOR_MIN_GAIN_MB=1000000` no longer blocks coarsenings since the
-"gain per cost" criterion; use `CHUNK_RECHUNK_DRY_RUN=1`.
+The decider's settings are `shrink_bench` options (the library does not read them from any variable).
+Beware: `--rechunk_min_gain_mb 1000000` no longer blocks coarsenings since the
+"gain per cost" criterion was introduced; use `--rechunk_dry_run`.
 
 ## 3. Recipes
 
@@ -109,8 +108,13 @@ Beware: `CHUNK_ADVISOR_MIN_GAIN_MB=1000000` no longer blocks coarsenings since t
 ```
 rm -f /tmp/modes.txt
 for r in 1 2 3; do
-  for mode in "CHUNK_ADVISOR_PERIOD=0" "CHUNK_RECHUNK_DRY_RUN=1" "X_NORMAL=1"; do
-    t=$(env $mode OMP_NUM_THREADS=64 OMP_PROC_BIND=close OMP_PLACES=cores $BIN --mode perf --no_io 2>/dev/null \
+  for mode in no_advisor dry_run normal; do
+    case $mode in
+      no_advisor) opt="--advisor_period 0" ;;
+      dry_run)    opt="--rechunk_dry_run" ;;
+      normal)     opt="" ;;
+    esac
+    t=$(OMP_NUM_THREADS=64 OMP_PROC_BIND=close OMP_PLACES=cores $BIN --mode perf --no_io $opt 2>/dev/null \
         | grep -oE "Elapsed time computation : [0-9.]+" | awk '{print $NF}')
     echo "$mode $t" >> /tmp/modes.txt
   done
@@ -143,7 +147,7 @@ perf stat -I 1000 -x, -e task-clock,cycles:u,instructions:u,stall_backend_mem:u 
 ```
 
 The number of busy cores is `task-clock / 1000` for each second. This is what showed
-that v1, after its rechunk, only kept ~40 cores busy instead of ~52.
+that `zero`, after its rechunk, only kept ~40 cores busy instead of ~52.
 
 **User time, system time, page faults**:
 `/usr/bin/time -f "%e s real, %U s user, %S s system, %R minor faults" $BIN …`.
@@ -156,7 +160,7 @@ runs the same binary N times and records, for each run, the pages per NUMA node,
 the free memory and free top-order blocks of each node before the run, and the perf counters
 per thousand instructions (TLB walks, L1D / L2 refills, remote accesses). It splits the runs at
 the largest time gap and says which quantities separate the two groups. `--mode` alternates
-environments (`--mode "" --mode "CHUNK_THP=never"`, `--mode "numactl --membind=0"`).
+environments (`--mode "" --mode "CHUNK_RECLAIM_THREADS=0"`, `--mode "numactl --membind=0"`).
 
 ```
 python3 python/bimodal_probe.py --runs 12 -- $BIN --mode perf --no_io
@@ -175,5 +179,12 @@ python3 python/bimodal_probe.py --runs 12 -- $BIN --mode perf --no_io
   OpenMP runs on a single core. Check `ldd $BIN | grep gomp`.
 - **The assembler is too old** for `-mcpu=native` with GCC 16 ("unknown architecture"):
   load recent `binutils`.
+- **A `std::vector` baseline initialised on one thread**: `std::vector<T> v(n)` writes its
+  zeros from the constructing thread, so the creation is serial and every page sits on that
+  thread's NUMA node; the parallel loops that follow read remote memory, and the chunked
+  arrays, which allocate nothing at creation, look faster than they are. `shrink_bench`'s
+  baseline zeroes in parallel instead (`examples/shrink_bench/baseline_vector.h`): keep it
+  when you add a phase or a type, and do not compare its creation times with runs made before
+  that change.
 - **An array size computed as `int`**: 8 × 10⁹ overflows and becomes negative. The
   targets with 64-bit indices (`_int64`) do not have this problem.

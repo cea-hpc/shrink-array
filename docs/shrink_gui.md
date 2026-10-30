@@ -2,8 +2,8 @@
 
 > French version: [shrink_gui_fr.md](shrink_gui_fr.md).
 
-> October 2026, `shrink_gui` 0.13 (prototype). A window on the laptop to submit
-> `compile_all.sh`, `bench_and_test.py`, `multi_launch_stress.py` and `omp_speedup.py` on the cluster, or to
+> October 2026, `shrink_gui` 0.15 (prototype). A window on the laptop to submit
+> `compile_all.sh`, `bench_and_test.py`, `multi_launch_stress.py` and `thread_speedup.py` on the cluster, or to
 > run them on the laptop itself (§3, "This machine"), follow
 > their log, read their summary and fetch their results. The code is described in the
 > docstring of `python/shrink_gui/__init__.py`.
@@ -12,7 +12,7 @@
 
 ## 1. How it works
 
-Everything goes through `ssh <cluster>`, so through the master connection (ControlMaster) you
+Everything goes through `ssh <cluster>`, and therefore through the master connection (ControlMaster) you
 open yourself: the interface never handles a password. Nothing is installed on the cluster.
 Each call sends a small Python program (`remote_helper.py`, Python 3.6 compatible) on ssh's
 standard input, run by the login node's `python3`.
@@ -27,13 +27,14 @@ A **run** is a directory on the cluster, `<runs directory>/<id>/`:
 | `launch.sh` | detached mode: `ccc_mprun <options> bash run.sh` |
 | `out.log` | everything the job printed |
 | `jobid` | (`ccc_msub`) the batch id, for `squeue` and `ccc_mdel` |
+| `submit.log` | (`ccc_msub`) the submission command (`$ ccc_msub job.sh`) and what the batch system answered |
 | `start_time` | when the run started on the node (seconds since the epoch), for the Duration column |
 | `exit_code` | written when the command returns |
 | `events.jsonl` | (`bench_and_test.py`) structured progress: phases, k/N |
 
 ## 2. Requirements and start
 
-- On the laptop: Python 3.9 or later and **PySide6** (`pip install PySide6`).
+- On the laptop: Python 3.9 or later and **PySide6** 6.2 or later (`pip install PySide6`).
 - On the cluster: Python 3.6 or later, the shrink-array repository cloned, and the site's
   submit command for the batch mode (`ccc_msub` on inti; see §6).
 - An ssh master connection, opened once per session:
@@ -48,7 +49,7 @@ Then, on the laptop:
 cd shrink-array/python && python3 -m shrink_gui     # or, from the root: python3 python/shrink_gui
 ```
 
-At start the interface checks the connection. The top line shows the node, its Python
+At startup the interface checks the connection. The top line shows the node, its Python
 version, and the commit of the cluster's repository, compared with your local clone's if you
 gave one ("Local repository"). Without a master connection it shows the `ssh -fNM` command to
 run.
@@ -64,11 +65,12 @@ runs again by itself.
 
 | field | role |
 |---|---|
-| Partition | `gh200-bxi` (ARM, 288 cores) or `milan-bxi` (x86, 64 cores); also sets the architecture of the defaults |
+| Partition | `gh200-bxi` (ARM, 288 cores) or `milan-bxi` (x86, 64 cores), then the other partitions `ccc_mpinfo` lists at the connection check (below); also sets the architecture of the defaults |
 | Submission | `ccc_msub` (batch, the default) or `ccc_mprun` detached from the login node |
-| Max time (-T) | takes `2 d`, `1 h 30`, `90 min`, `1-00:00:00` |
-| QoS (-Q) | "auto" picks the QoS from the duration, by the limits `ccc_mqinfo` reports |
-| Start | after a `compile_all.sh` run not finished yet (Slurm dependency `afterok`/`afterany`), and/or not before a given time |
+| Max time (-T) | accepts `2 d`, `1 h 30`, `90 min`, `1-00:00:00` |
+| QoS (-Q) | "auto" picks the QoS from the duration, according to the limits `ccc_mqinfo` reports |
+| Nodes | the pooled programs in batch mode: the number of nodes that share the work, as one job of N nodes or N one-node jobs (below) |
+| Start | after a `compile_all.sh` run that has not finished yet (Slurm dependency `afterok`/`afterany`), and/or not before a given time |
 | Builds up to date | before the command, `ninja -n` on the builds used: refuse (code 96), warn, or skip |
 | Directives, Launcher (job) | the `#MSUB` lines and the launcher on the node; per partition, remembered |
 | Repository (inti), Runs (inti) | the shrink-array repository and the runs directory, on the cluster |
@@ -79,60 +81,108 @@ runs again by itself.
 
 The program to run, and its options **read from the script itself** on the cluster ("Read
 options"): the Python scripts' `argparse`, `compile_all.sh`'s `usage()`. An option added to a
-script therefore appears in the form without touching the interface. Changed options are in
+script therefore appears in the form without touching the interface. The options are in
+alphabetical order (dashes and case aside), after the positional arguments, kept in the
+script's order. Changed options are in
 bold; an option left at its default is not put on the command line. "Save as defaults"
 replaces this program's defaults on this architecture. "Command" shows exactly what will run.
 
 Before submitting an argparse script, the window has the script itself check the command on
-the cluster: its module-level `parse_args(argv)` function when it has one (`omp_speedup.py`:
-its own checks included, without running `main`), else its `parse_args()` call. An unknown
-option, an invalid value or one of the script's checks refuses the submission in the status
-bar, instead of a job that stops at once on a usage error. `"validate": False` in `PROGRAMS`
+the cluster: its module-level `parse_args(argv)` function when it has one (`thread_speedup.py`:
+its own checks included, without running `main`), otherwise its `parse_args()` call. An unknown
+option, an invalid value or a failed check of the script blocks the submission, with the reason in the status
+bar, instead of a job that stops immediately on a usage error. `"validate": False` in `PROGRAMS`
 turns this check off for a program.
 
 `compile_all.sh` only runs as a batch job, never on the login node. Its `--target` and
 `--exec` fields have a "Choose…" button listing the configurations and executables found on
 the cluster.
 
-`omp_speedup.py` (OpenMP speedup curves of shrink_bench executables on one target: `--target`,
+**Compiling on several nodes.** With "Nodes" N > 1 and "N jobs of one node", "Submit" creates N batch jobs, one node
+each, with the same directives and the same command plus `--pool=<the submission's id>`.
+They appear in the table as `compile_all.sh [k/N]`, runs `<id>-n1` to `<id>-nN`. Each job walks
+the configurations in the usual order and builds a configuration only if it is the first to
+claim it (an atomic `mkdir` in `$CHUNK_BUILD_REP/.pools/<id>/`); it skips those another job
+claimed. The load balances itself: a job claims its next configuration once its node has a build slot
+for the one before (one claimed ahead at most), however much the builds cost, and nothing needs to
+know beforehand which configurations this architecture builds. A job that starts once the others have claimed
+everything ends immediately, with code 0. Each log ends with
+`[POOL] n configuration(s) built by this run, m by the other runs of pool <id>`.
+"Start: after" then offers the submission as one entry, "after `<id>` (N nodes)": the job waits
+for all N (`--dependency=afterok:j1:…:jN`). "Reuse its options" makes a new pool: the form's
+values never include the `--pool` the window added. The field is hidden in detached mode and for
+the programs that cannot share their work. `--pool` can also be given by hand, to a
+`compile_all.sh` run from a shell (`--help`).
+
+**One job of N nodes.** The default beside "Nodes" is "one job of N nodes": a single
+submission whose directives ask N nodes and N tasks (`-N N -n N`, `-c` kept: a node's cores per
+task). `run.sh` prints its banner and makes the build check once, on the job's first node, then
+starts `node.sh` on every node through the partition's launcher or, without one, the site's
+`[batch] step` command (`ccc_mprun` on inti, `srun` by default), made `-N N -n N -c <cores>`.
+Node K (the task's rank + 1) works in `<id>/n<K>`: its own `out.log` (node 1's is also in the
+run's log), `events.jsonl`, kept copies and `exit_code`; the scripts name it `n<K>` from
+`CHUNK_BENCH_KEEP_DIR`. The run (`compile_all.sh [×N]`) fails when a node fails; its Summary,
+Chart, Errors and Errors column gather its nodes as for N jobs. On inti a user's jobs beyond
+24 h (`xlong`) share 128 cores: N one-node jobs then run one after another (the QoS line says
+so) and a job of N nodes must fit `normal` (24 h at most), its QoS checked on N × a node's cores.
+Changing "Nodes" from N1 to N2 multiplies the duration by N1 / N2 (rounded up to the quarter
+hour, 30 min at least) until the duration is typed by hand.
+
+`thread_speedup.py` (thread speedup curves of shrink_bench executables on one target, regardless of what
+runs the threads -- OpenMP, the std::thread backend or TBB; formerly `omp_speedup.py`: `--target`,
 `--exec` or `--all-exec`, `--min-threads`, `--max-threads`, `--multiply`) likewise runs as a
-batch job only, with the same "Choose…" buttons. Its progress and errors show as
-`bench_and_test.py`'s do; the Summary gives its `summary.csv`, and the Chart its curves
-(speedup with the ideal line, efficiency or time; colour = the variant, shape = the size).
+batch job only, with the same "Choose…" buttons. Its progress and errors are shown as
+`bench_and_test.py`'s are; the Summary gives its `summary.csv`, and the Chart its curves
+(speedup with the ideal line, efficiency or time; colour = the variant, shape = the size, a
+dash-dot line = the TBB bench, which `--all-exec` includes too when the build has it).
 "Compare with" overlays another run (another compiler, another commit) and gives the B / A
-ratio. Its outputs go to `$CCCWORKDIR/omp_speedup/` (else `~/omp_speedup/`).
+ratio. Its outputs go to `$CCCWORKDIR/thread_speedup/` (else `~/thread_speedup/`); the runs
+recorded under the old name are read as its own.
+
+**Speedup curves on several nodes.** "Nodes" N > 1 works for `thread_speedup.py` as for
+`compile_all.sh`: N one-node jobs, `thread_speedup.py [k/N]`, the same command plus
+`--pool=<id>`. The jobs share the executable list: each walks it in order and measures an
+executable only if it is the first to claim it (an atomic `mkdir` in
+`$CCCWORKDIR/thread_speedup/.pools/<id>/`), with its repetitions interleaved over the thread
+counts. Each job writes its own output directory (`speedup_<target>_<host>_<date>`, plus `_2`,
+`_3`… when two jobs start in the same second on hosts of the same name), and its log ends with
+`[pool] n executable(s) measured by this run, m by the other runs of pool <id>`. The Chart and
+the Summary of any of the N jobs gather them all, one set of curves ("2 of 2 nodes" in the
+note); "Compare with" offers another submission over several nodes as one entry and never the
+submission itself. The speedup of an executable is measured on one node only, so the N nodes
+must be of the same kind (one partition). `--pool` can be given by hand too (`--help`).
 
 ### The runs
 
-The table lists the runs of the runs directory, refreshed every 15 s: program, partition,
+The table lists the runs in the runs directory, refreshed every 15 s: program, partition,
 commit, job, status, progress (k/N and time left when the program reports them), errors (live
 for `bench_and_test.py`, failed runs for `multi_launch_stress.py`), duration (since the start on
-the node, by the second while the run runs, then its total once over; the tooltip gives the
+the node, updated every second while the run is in progress, then its total once it is over; the tooltip gives the
 start, the end and the max time asked), last line of the log. A
-notification announces a run that ends, and the first error of a running one.
+notification announces when a run ends, and the first error of a running one.
 
 Several runs can be selected at once: Ctrl / Shift + click, Ctrl+A, or the "Selection" button
 (all, finished runs, failed runs, none). "Stop" then stops all the active ones, "Delete"
 deletes all the finished ones after a single confirmation (in one call on the cluster; the
 active ones are left alone), "Fetch results" copies them one after the other. With "also the
 outputs", the outputs that are not a run's own (no directory announced in its log, or a shared
-directory a newer run rewrote) are kept and its run directory deleted all the same; the status
+directory a newer run rewrote) are kept and its run directory is deleted anyway; the status
 bar's tooltip says which and why. The same goes for a single run. The log and the
 tabs follow the current row.
 
 | tab | contents |
 |---|---|
-| Log | the selected run's log, followed live; search with Ctrl+F |
+| Log | the selected run's log, followed live; search with Ctrl+F. At submission, before the job's own log exists, the run directory, the program's command line and the submission command (`cd <run> && ccc_msub job.sh`, with the batch system's answer) |
 | Summary | `multi_launch_stress.py`: per build (runs, failures, times); `bench_and_test.py`: its phases (duration, errors) or its `bench_summary.csv` |
 | Chart | `multi_launch_stress.py`: each run's time against the thread count, filtered by build and variant; "Compare with" overlays another run. `bench_and_test.py`: its `bench_summary.csv`, one line per variant against the thread count for one config (time, peak memory or speedup); "Compare with" overlays another run of the same architecture, dashed, and gives the B / A ratio (geometric mean over the common points, and the worst point) |
-| Errors | the error log read in the output directory: `bench_errors.log` for `bench_and_test.py` (one entry per failure, as soon as it happens), the failed runs' `error_*.txt` for `multi_launch_stress.py`; the tab turns red when there are errors. For `bench_and_test.py`, the list on the left gives each failure (`failed_cases.jsonl`); a click shows its complete output (`run_logs/`). "Rerun failures…" submits a `--rerun-failed --rerun-repeat N` run of the run shown, same partition and options, its logs apart in `run_logs/rerun-<date>` |
+| Errors | the error log read in the output directory: `bench_errors.log` for `bench_and_test.py` (one entry per failure, as soon as it happens), the failed runs' `error_*.txt` for `multi_launch_stress.py`; the tab turns red when there are errors. For `bench_and_test.py`, the list on the left gives each failure (`failed_cases.jsonl`); a click shows its complete output (`run_logs/`). "Rerun failures…" submits a `--rerun-failed --rerun-repeat N` run of the run shown, same partition and options, with its logs kept separately in `run_logs/rerun-<date>` |
 
 | button | effect |
 |---|---|
 | Stop | `ccc_mdel` of the job, or stops `ccc_mprun` in detached mode |
 | Fetch results | copies to "Results (local)" the run directory and the program's summary files (CSV, log, errors; never the `output_*`) |
 | Reuse its options | puts the run's program, partition and options back in the form |
-| Delete | deletes the run directory (finished runs only); optionally also the outputs that are this run's own (in a shared output directory, `bench_results/<arch>`: the files it wrote, never the older runs' ones nor `oracle/`), and the local copy |
+| Delete | deletes the run directory (finished runs only); optionally also the outputs that are this run's own (in a shared output directory, `bench_results/<arch>`: the files it wrote, never those of older runs, nor `oracle/`), and the local copy |
 
 ### This machine
 
@@ -143,13 +193,13 @@ not depend on the window: closing it leaves the run going, as a batch job would.
 
 - **Partition**: a single one, "this machine", with the architecture, core count and memory
   the connection check found. Its defaults are its own (`ARCH_DEFAULTS[(program, "local")]`).
-  The QoS and the directives are the scheduler's: hidden.
+  The QoS and directive fields belong to the scheduler, so they are hidden.
 - **Submission**: "in the background on this machine". `launch.sh` runs `run.sh`, under
-  `timeout` when a maximum duration is set (exit code 124 past it).
+  `timeout` when a maximum duration is set (exit code 124 once it is exceeded).
 - **Launcher**: a prefix of `run.sh`, remembered. To cap the memory of a run, and keep an
   out-of-memory run from bringing WSL down:
   `systemd-run --user --scope -q -p MemoryMax=16G -p MemorySwapMax=0`.
-- **Repository, Runs**: kept apart from the cluster's (by default `~/shrink-array` and
+- **Repository, Runs**: kept separate from the cluster's (by default `~/shrink-array` and
   `~/shrink_runs` of this machine); switching back and forth keeps both.
 - **Start, Builds up to date, Stop, Fetch, Delete**: as on the cluster. "Start: after" waits
   for a `compile_all.sh` run of this machine; "Stop" ends the run's process group.
@@ -157,19 +207,24 @@ not depend on the window: closing it leaves the run going, as a batch job would.
 
 ## 4. Examples
 
-**Build, then test once the build succeeded.** Program `compile_all.sh`, mode `ccc_msub`,
+**Build, then test once the build has succeeded.** Program `compile_all.sh`, mode `ccc_msub`,
 "Submit". Then program `bench_and_test.py`, "Start: after" that build run, "if it succeeds",
 "Submit". The second job waits for the first in the Slurm queue; if the first fails, the
 second stays pending and the interface says so.
 
+**Build on three nodes, then test.** Program `compile_all.sh`, mode `ccc_msub`, "Nodes" 3,
+"Submit": three jobs share the configurations. Then `bench_and_test.py`, "Start: after"
+the submission ("after `<id>` (3 nodes)"), "if it succeeds", "Submit": the bench starts when
+the three jobs have ended without a failure.
+
 **A stress campaign on x86.** Partition `milan-bxi`, program `multi_launch_stress.py`,
 "Architecture defaults" (8 to 64 threads, the builds of `build_x86_64.txt`), "Submit". The
-Chart tab fills in as the runs come.
+Chart tab fills in as the runs come in.
 
 **Build and test on the laptop.** Tick "this machine", program `compile_all.sh` with its
 `--target`, "Submit"; then `bench_and_test.py`, "Start: after" that run, "Submit". With a
 launcher `systemd-run --user --scope -q -p MemoryMax=16G -p MemorySwapMax=0`, a run that
-needs more memory is killed alone.
+needs more memory is killed on its own.
 
 The equivalent command lines, without the interface, are in
 [example_bench_test.txt](example_bench_test.txt) and
@@ -190,13 +245,13 @@ the last `fetch`; a `git pull` brings them up to date.
 
 ## 6. Adapting it to a site
 
-What depends on the site is in a TOML file, the first found of:
+What depends on the site is in a TOML file, the first one found among:
 
 1. the file named by the `SHRINK_GUI_SITE` environment variable;
 2. `~/.config/shrink_gui/site.toml` (`$XDG_CONFIG_HOME/shrink_gui/site.toml`);
 3. `python/shrink_gui/sites/cea_inti.toml`, CEA's inti, the default.
 
-To start one, copy an example to `~/.config/shrink_gui/site.toml` and edit it:
+To create one, copy an example to `~/.config/shrink_gui/site.toml` and edit it:
 `sites/cea_inti.toml` (`ccc_msub`, `#MSUB`, `ccc_mprun`; every key commented) or
 `sites/slurm_example.toml` (plain Slurm: `sbatch`, `#SBATCH`, `scancel`, no detached mode).
 
@@ -207,7 +262,13 @@ To start one, copy an example to `~/.config/shrink_gui/site.toml` and edit it:
 | `[detached]` | the detached mode's command and its time and QoS options; left out when the site has none |
 | `[qos]` | the QoS limits used until the connection check reads them |
 | `[partitions.<name>]` | label, architecture, directives, launcher, detached options |
+| `[discovered]` | the templates of the partitions `[batch] partition_info` lists (`ccc_mpinfo`, `sinfo -o '%P %c %D %a'`) that `[partitions]` does not describe: directives, launcher and detached options with `{name}` and `{cores}` (the cores of one node), a pattern on the name for the ARM ones (`arm`, the others are x86) and one for those not to offer (`skip`) |
 | `[defaults."<program>".<arch>]` | the option defaults per program and architecture (`{build_root}` is the site's) |
+
+The partitions the machine lists are read at each connection check and remembered for the next
+start; a partition both in the table and in `[partitions]` keeps the site file's entry. What the
+window will read can be checked on the cluster, from the repository's `python/` directory:
+`ccc_mpinfo | python3 -m shrink_gui.partitions`.
 
 A file that cannot be used (syntax, unknown or missing key, unknown template field) stops the
 window with a message naming the file and the key. The file is read with `tomllib`
@@ -235,16 +296,21 @@ cd python && python3 -m pytest shrink_gui/tests -q
 ```
 
 The tests run without a display (`QT_QPA_PLATFORM=offscreen`) against a fake local cluster:
-fake `ssh`, `ccc_msub`, `squeue`, `ccc_mdel`, `ccc_mprun` and `ccc_mqinfo` (`tests/fakes`), with
-the inti site file whatever `~/.config` holds; `test_site.py` also runs a plain Slurm site
+fake `ssh`, `ccc_msub`, `squeue`, `ccc_mdel`, `ccc_mprun`, `ccc_mqinfo` and `ccc_mpinfo` (`tests/fakes`), with
+the inti site file regardless of what `~/.config` holds; `test_site.py` also runs a plain Slurm site
 (fake `sbatch` and `scancel`).
 They are skipped when PySide6 is not installed.
 
 ## 8. Limits
 
-- A prototype, written for the TGCC machines; another site writes its site file (§6). The
+- A prototype, written for the TGCC machines; another site needs to write its own site file (§6). The
   scheduler must be Slurm underneath (`squeue`, `--dependency`, `--begin`).
 - One connection at a time. The interface does not open the master connection itself.
+- Several nodes (§3): the build directory `$CHUNK_BUILD_REP` (`compile_all.sh`) and
+  `$CCCWORKDIR/thread_speedup/` (`thread_speedup.py`) must be on a file system that all the
+  nodes share (the claims are directories there). Every job asks for the same time
+  (-T) as a single job would. A job that fails lets the others go on; its configurations (its
+  executables) are not taken back by them.
 - This machine from Windows (`wsl.exe`) is not covered by the tests (they run on Linux).
-  WSL may stop a distribution once no window of it is left open: keep one open while a
-  run goes.
+  WSL may stop a distribution once none of its windows is left open: keep one open while a
+  run is in progress.

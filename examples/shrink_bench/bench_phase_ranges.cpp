@@ -30,7 +30,7 @@
 
 #include "bench_phases.h" // bench_phase_range_* (defined here), BenchArrays
 
-void bench_phase_range_a(BenchArrays& bench_arr, Int beg, Int i)
+void bench_phase_range_a(BenchArrays& bench_arr, Int beg, Int iter)
 {
     // Aliases so the body below is VERBATIM (see bench_phase_fill.cpp).
     auto& tab1 = bench_arr.tab1;
@@ -49,39 +49,42 @@ void bench_phase_range_a(BenchArrays& bench_arr, Int beg, Int i)
     auto& tab_long      = bench_arr.tab_long;
     auto& tab_ulong     = bench_arr.tab_ulong;
 
-#pragma omp parallel
-    {
-        begin_parallel_phase_g();
-        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (Int j = beg; j < i; ++j)
+    bench_par::region(
+        [&]([[maybe_unused]] bench_par::Team& team)
         {
-            tab1[j] = 0;
-            tab2[j] = second_value_d;
-            tab3[j] = 0;
-            tab4[j] = 0;
-            tab5[j] = second_value_d2;
+            begin_parallel_phase_g();
+            team.for_static<Int>(
+                beg, iter,
+                [&](const Int j) __attribute__((always_inline))
+                {
+                    tab1[j] = 0;
+                    tab2[j] = second_value_d;
+                    tab3[j] = 0;
+                    tab4[j] = 0;
+                    tab5[j] = second_value_d2;
 
-            tab_float[j] = second_value_f0;
-            tab_char[j]  = 0;
-            tab_short[j] = 0;
+                    tab_float[j] = second_value_f0;
+                    tab_char[j]  = 0;
+                    tab_short[j] = 0;
 
-            tab_int[j]       = 0;
-            tab_bool[j]      = false;
-            tab_bool_bits[j] = false;
+                    tab_int[j]       = 0;
+                    tab_bool[j]      = false;
+                    tab_bool_bits[j] = false;
 
-            tab_complex[j] = zero_complex;
+                    tab_complex[j] = zero_complex;
 
-            tab_long[j]  = 0L;
-            tab_ulong[j] = 0UL;
-        }
+                    tab_long[j]  = 0L;
+                    tab_ulong[j] = 0UL;
+                },
+                bench_par::nowait);
 
-        finalize_parallel_phase_only_flush_g();
-    }
+            finalize_parallel_phase_only_flush_g();
+        });
 
     finalize_parallel_phase_after_flush_g();
 }
 
-void bench_phase_range_b(BenchArrays& bench_arr, Int beg, Int i)
+void bench_phase_range_b(BenchArrays& bench_arr, Int beg, Int iter)
 {
     // Aliases so the body below is VERBATIM (see bench_phase_fill.cpp).
     auto& tab1 = bench_arr.tab1;
@@ -100,36 +103,39 @@ void bench_phase_range_b(BenchArrays& bench_arr, Int beg, Int i)
     auto& tab_long      = bench_arr.tab_long;
     auto& tab_ulong     = bench_arr.tab_ulong;
 
-#pragma omp parallel
-    {
-        begin_parallel_phase_g();
-        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (Int j = beg; j < i; ++j)
+    bench_par::region(
+        [&]([[maybe_unused]] bench_par::Team& team)
         {
-            tab1[j] = second_value_d;
+            begin_parallel_phase_g();
+            team.for_static<Int>(
+                beg, iter,
+                [&](const Int j) __attribute__((always_inline))
+                {
+                    tab1[j] = second_value_d;
 
-            tab2[j] = second_value_d;
-            tab3[j] = second_value_d;
+                    tab2[j] = second_value_d;
+                    tab3[j] = second_value_d;
 
-            tab4[j] = second_value_d1;
-            tab5[j] = second_value_d2;
+                    tab4[j] = second_value_d1;
+                    tab5[j] = second_value_d2;
 
-            tab_float[j] = second_value_f1;
-            tab_short[j] = second_value_s1;
-            tab_char[j]  = second_value_c1;
+                    tab_float[j] = second_value_f1;
+                    tab_short[j] = second_value_s1;
+                    tab_char[j]  = second_value_c1;
 
-            tab_int[j]       = second_value_i;
-            tab_bool[j]      = second_value_b;
-            tab_bool_bits[j] = second_value_b;
+                    tab_int[j]       = second_value_i;
+                    tab_bool[j]      = second_value_b;
+                    tab_bool_bits[j] = second_value_b;
 
-            tab_complex[j] = second_value_c;
+                    tab_complex[j] = second_value_c;
 
-            tab_long[j]  = second_value_l;
-            tab_ulong[j] = second_value_ul;
-        }
+                    tab_long[j]  = second_value_l;
+                    tab_ulong[j] = second_value_ul;
+                },
+                bench_par::nowait);
 
-        finalize_parallel_phase_only_flush_g();
-    }
+            finalize_parallel_phase_only_flush_g();
+        });
 
     finalize_parallel_phase_after_flush_g();
 }
@@ -153,35 +159,38 @@ void bench_phase_range_c(BenchArrays& bench_arr, Int beg, Int seg_end)
     auto& tab_long      = bench_arr.tab_long;
     auto& tab_ulong     = bench_arr.tab_ulong;
 
-#pragma omp parallel
-    {
-        begin_parallel_phase_g();
-        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (Int j = beg; j < seg_end; ++j)
+    bench_par::region(
+        [&]([[maybe_unused]] bench_par::Team& team)
         {
-            tab1[j] = second_value_d0;
+            begin_parallel_phase_g();
+            team.for_static<Int>(
+                beg, seg_end,
+                [&](const Int j) __attribute__((always_inline))
+                {
+                    tab1[j] = second_value_d0;
 
-            tab2[j] = second_value_d0;
-            tab3[j] = second_value_d0;
-            tab4[j] = 2 * second_value_d0;
-            tab5[j] = 3 * second_value_d0;
+                    tab2[j] = second_value_d0;
+                    tab3[j] = second_value_d0;
+                    tab4[j] = 2 * second_value_d0;
+                    tab5[j] = 3 * second_value_d0;
 
-            tab_float[j] = second_value_f0;
-            tab_short[j] = 3 * second_value_s0;
-            tab_char[j]  = 4 * second_value_c0;
+                    tab_float[j] = second_value_f0;
+                    tab_short[j] = 3 * second_value_s0;
+                    tab_char[j]  = 4 * second_value_c0;
 
-            tab_int[j]       = other_second_value_i;
-            tab_bool[j]      = second_value_b;
-            tab_bool_bits[j] = second_value_b;
+                    tab_int[j]       = other_second_value_i;
+                    tab_bool[j]      = second_value_b;
+                    tab_bool_bits[j] = second_value_b;
 
-            tab_complex[j] = other_second_value_c;
+                    tab_complex[j] = other_second_value_c;
 
-            tab_long[j]  = 2L * second_value_l;
-            tab_ulong[j] = 2UL * second_value_ul;
-        }
+                    tab_long[j]  = 2L * second_value_l;
+                    tab_ulong[j] = 2UL * second_value_ul;
+                },
+                bench_par::nowait);
 
-        finalize_parallel_phase_only_flush_g();
-    }
+            finalize_parallel_phase_only_flush_g();
+        });
 
     finalize_parallel_phase_after_flush_g();
 }
@@ -205,39 +214,42 @@ void bench_phase_range_d(BenchArrays& bench_arr, Int beg, Int seg_end)
     auto& tab_long      = bench_arr.tab_long;
     auto& tab_ulong     = bench_arr.tab_ulong;
 
-#pragma omp parallel
-    {
-        begin_parallel_phase_g();
-        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (Int j = beg; j < seg_end; ++j)
+    bench_par::region(
+        [&]([[maybe_unused]] bench_par::Team& team)
         {
-            tab1[j] = second_value_d;
-            tab2[j] = second_value_d;
-            tab3[j] = second_value_d;
-            tab4[j] = 2 * second_value_d0;
-            tab5[j] = 3 * second_value_d0;
+            begin_parallel_phase_g();
+            team.for_static<Int>(
+                beg, seg_end,
+                [&](const Int j) __attribute__((always_inline))
+                {
+                    tab1[j] = second_value_d;
+                    tab2[j] = second_value_d;
+                    tab3[j] = second_value_d;
+                    tab4[j] = 2 * second_value_d0;
+                    tab5[j] = 3 * second_value_d0;
 
-            tab_float[j] = second_value_f0;
-            tab_short[j] = 3 * second_value_s0;
-            tab_char[j]  = 4 * second_value_c0;
+                    tab_float[j] = second_value_f0;
+                    tab_short[j] = 3 * second_value_s0;
+                    tab_char[j]  = 4 * second_value_c0;
 
-            tab_int[j]       = second_value_i;
-            tab_bool[j]      = second_value_b;
-            tab_bool_bits[j] = second_value_b;
+                    tab_int[j]       = second_value_i;
+                    tab_bool[j]      = second_value_b;
+                    tab_bool_bits[j] = second_value_b;
 
-            tab_complex[j] = second_value_c;
+                    tab_complex[j] = second_value_c;
 
-            tab_long[j]  = second_value_l;
-            tab_ulong[j] = second_value_ul;
-        }
+                    tab_long[j]  = second_value_l;
+                    tab_ulong[j] = second_value_ul;
+                },
+                bench_par::nowait);
 
-        finalize_parallel_phase_only_flush_g();
-    }
+            finalize_parallel_phase_only_flush_g();
+        });
 
     finalize_parallel_phase_after_flush_g();
 }
 
-void bench_phase_raz_sweep(BenchArrays& bench_arr, Int k, Int size, Int start0, Int end0)
+void bench_phase_raz_sweep(BenchArrays& bench_arr, Int iter, Int size, Int start0, Int end0)
 {
     // Aliases so the body below is VERBATIM (see bench_phase_fill.cpp). Only
     // tab1 is scanned here; the four range fills reach the rest through `a`,
@@ -248,51 +260,51 @@ void bench_phase_raz_sweep(BenchArrays& bench_arr, Int k, Int size, Int start0, 
 
     std::cout << "interval " << ": [" << start0 << ", " << end0 << "]" << " size : " << size << "\n";
 
-    Int i = start0;
+    Int pos = start0;
 
-    for (; i < sz; ++i)
+    for (; pos < sz; ++pos)
     {
-        if (tab1[i] != 0)
+        if (tab1[pos] != 0)
         {
             break;
         }
     }
 
-    const Int deb = i;
+    const Int deb = pos;
 
-    if (k % 4 == 0)
+    if (iter % 4 == 0)
     {
-        if (k % 8 == 0)
+        if (iter % 8 == 0)
         {
-            const Int beg = i;
-            while (i < sz && tab1[i] != 0 && tab1[i] != second_value_d)
+            const Int beg = pos;
+            while (pos < sz && tab1[pos] != 0 && tab1[pos] != second_value_d)
             {
-                i++;
+                pos++;
             }
 
-            bench_phase_range_a(bench_arrays, beg, i);
-            std::cout << "set : " << i - beg << " values to : 0" << "\n";
+            bench_phase_range_a(bench_arrays, beg, pos);
+            std::cout << "set : " << pos - beg << " values to : 0" << "\n";
         }
-        else if (k % 16 == 0)
+        else if (iter % 16 == 0)
         {
-            const Int beg = i;
-            while (i < sz && tab1[i] != 0 && tab1[i] != second_value_d)
+            const Int beg = pos;
+            while (pos < sz && tab1[pos] != 0 && tab1[pos] != second_value_d)
             {
-                i++;
+                pos++;
             }
 
-            bench_phase_range_b(bench_arrays, beg, i);
+            bench_phase_range_b(bench_arrays, beg, pos);
 
-            std::cout << "set : " << i - beg << " values to : " << second_value_d << "\n";
+            std::cout << "set : " << pos - beg << " values to : " << second_value_d << "\n";
         }
         else
         {
-            const Int beg = i;
-            while (i < sz && tab1[i] != 0 && tab1[i] != second_value_d0)
+            const Int beg = pos;
+            while (pos < sz && tab1[pos] != 0 && tab1[pos] != second_value_d0)
             {
-                i++;
+                pos++;
             }
-            const Int seg_end = i;
+            const Int seg_end = pos;
 
             bench_phase_range_c(bench_arrays, beg, seg_end);
 
@@ -301,13 +313,13 @@ void bench_phase_raz_sweep(BenchArrays& bench_arr, Int k, Int size, Int start0, 
     }
     else
     {
-        const Int beg = i;
-        while (i < sz && tab1[i] != 0)
+        const Int beg = pos;
+        while (pos < sz && tab1[pos] != 0)
         {
-            i++;
+            pos++;
         }
 
-        const Int seg_end = i;
+        const Int seg_end = pos;
 
         bench_phase_range_d(bench_arrays, beg, seg_end);
 
@@ -315,7 +327,7 @@ void bench_phase_raz_sweep(BenchArrays& bench_arr, Int k, Int size, Int start0, 
     }
 }
 
-void bench_phase_range_mt(BenchArrays& bench_arr, Int k, Int beg_s, Int end_s)
+void bench_phase_range_mt(BenchArrays& bench_arr, Int iter, Int beg_s, Int end_s)
 {
     auto& tab1          = bench_arr.tab1;
     auto& tab2          = bench_arr.tab2;
@@ -333,41 +345,44 @@ void bench_phase_range_mt(BenchArrays& bench_arr, Int k, Int beg_s, Int end_s)
     }
 
     // Smaller than a chunk at every geometry: several threads per chunk.
-    constexpr Int blk = 64;
+    constexpr Int blk  = 64;
     const Int     nblk = (end_s - beg_s + blk - 1) / blk;
     // Every other run swaps the constants, so the same chunks go from one
     // constant to the other (and back) across the run.
-    const bool swap = ((k / 5) & 1) != 0;
+    const bool swap = ((iter / 5) & 1) != 0;
 
-#pragma omp parallel
-    {
-        begin_parallel_phase_g();
-#pragma omp for schedule(static, 1) nowait
-        for (Int b = 0; b < nblk; ++b)
+    bench_par::region(
+        [&]([[maybe_unused]] bench_par::Team& team)
         {
-            const auto lo = static_cast<std::size_t>(beg_s + (b * blk));
-            const auto hi = static_cast<std::size_t>(std::min(beg_s + ((b + 1) * blk), end_s));
+            begin_parallel_phase_g();
+            team.for_static_chunks<Int>(
+                0, nblk, 1,
+                [&](const Int b) __attribute__((always_inline))
+                {
+                    const auto lo = static_cast<std::size_t>(beg_s + (b * blk));
+                    const auto hi = static_cast<std::size_t>(std::min(beg_s + ((b + 1) * blk), end_s));
 
-            // shrink_array:: spelled out: this file has no using-directive, and
-            // the std::vector baseline resolves to vector_range_ops.h.
-            shrink_array::fill_range_mt(tab1, lo, hi, swap ? 0. : second_value_d);
-            shrink_array::fill_range_mt(tab2, lo, hi, swap ? second_value_d : 0.);
-            // A plain value alternating between neighbouring blocks: chunks
-            // stay materialised, and are NOT queued (they cannot be uniform).
-            shrink_array::fill_range_mt(tab3, lo, hi, (b & 1) ? 3.5 : 2.5);
-            shrink_array::fill_range_mt(tab_int, lo, hi, swap ? 0 : second_value_i);
-            shrink_array::fill_range_mt(tab_float, lo, hi, swap ? second_value_f1 : second_value_f0);
-            shrink_array::fill_range_mt(tab_long, lo, hi, swap ? 0L : second_value_l);
-            shrink_array::fill_range_mt(tab_complex, lo, hi, swap ? zero_complex : second_value_c);
-            // bool: the element path on every variant; tab_bool_bits is
-            // bit-packed in a chunk2 build. The baseline's two are
-            // std::vector<short>.
-            shrink_array::fill_range_mt(tab_bool, lo, hi, !swap);
-            shrink_array::fill_range_mt(tab_bool_bits, lo, hi, !swap);
-        }
+                    // shrink_array:: spelled out: this file has no using-directive, and
+                    // the std::vector baseline resolves to vector_range_ops.h.
+                    shrink_array::fill_range_mt(tab1, lo, hi, swap ? 0. : second_value_d);
+                    shrink_array::fill_range_mt(tab2, lo, hi, swap ? second_value_d : 0.);
+                    // A plain value alternating between neighbouring blocks: chunks
+                    // stay materialised, and are NOT queued (they cannot be uniform).
+                    shrink_array::fill_range_mt(tab3, lo, hi, (b & 1) ? 3.5 : 2.5);
+                    shrink_array::fill_range_mt(tab_int, lo, hi, swap ? 0 : second_value_i);
+                    shrink_array::fill_range_mt(tab_float, lo, hi, swap ? second_value_f1 : second_value_f0);
+                    shrink_array::fill_range_mt(tab_long, lo, hi, swap ? 0L : second_value_l);
+                    shrink_array::fill_range_mt(tab_complex, lo, hi, swap ? zero_complex : second_value_c);
+                    // bool: the element path on every variant; tab_bool_bits is
+                    // bit-packed in a zero_one_value build. The baseline's two are
+                    // std::vector<short>.
+                    shrink_array::fill_range_mt(tab_bool, lo, hi, !swap);
+                    shrink_array::fill_range_mt(tab_bool_bits, lo, hi, !swap);
+                },
+                bench_par::nowait);
 
-        finalize_parallel_phase_only_flush_g();
-    }
+            finalize_parallel_phase_only_flush_g();
+        });
 
     finalize_parallel_phase_after_flush_g();
 }

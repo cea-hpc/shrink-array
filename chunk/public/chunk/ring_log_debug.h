@@ -17,7 +17,6 @@
 #pragma once
 
 #include <cstdint> // uint8_t (EventCode underlying type)
-#include <cstdio>  // std::fprintf/std::snprintf — used HERE, not via includers
 
 #include "chunk/config.h"                   // chunk_config::ring_log_debug, CHUNK_RING_LOG_ANY
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (Manual mode: end() not called)
@@ -26,39 +25,39 @@ namespace shrink_array
 {
 
 // ----------------------------- Simple ring log for debugging (lock-free-ish) -----------------------------
-enum EventCode : uint8_t
+enum class EventCode : std::uint8_t
 {
-    ev_begin_slow_path = 1,
-    ev_end_slow_path,
-    ev_begin_fast_path,
-    ev_end_fast_path,
-    ev_compress_attempt,
-    ev_compress_started,
-    ev_compress_aborted,
-    ev_compress_finished,
+    begin_slow_path = 1,
+    end_slow_path,
+    begin_fast_path,
+    end_fast_path,
+    compress_attempt,
+    compress_started,
+    compress_aborted,
+    compress_finished,
     // ─── cst_val transitions ────────────────────────────────────────
-    ev_cas_values_to_cst,   // info = chunk_idx, sub-value = which cst (1 or 2)
-    ev_cas_values_from_cst, // info = chunk_idx (create_value success)
-    ev_cas_values_fail,     // info = chunk_idx (create_value failed = recup)
-    ev_flush_begin,         // info = chunk_idx
-    ev_flush_end,           // info = chunk_idx
-    ev_lambda_async_assign, // info = chunk_idx (in lambda exec)
-    ev_lambda_async_arith,  // info = chunk_idx
-    ev_values_load_is_cst,  // info = chunk_idx (RACE DETECTOR if observed in lambda)
-    ev_store_value,         // info = (chunk_idx << 8) | num
-    ev_policy_begin_write,  // info = thr_rank (entered begin_write)
-    ev_policy_end_write,    // info = thr_rank (entered end_write)
+    cas_values_to_cst,   // info = chunk_idx, sub-value = which cst (1 or 2)
+    cas_values_from_cst, // info = chunk_idx (create_value success)
+    cas_values_fail,     // info = chunk_idx (create_value failed = recup)
+    flush_begin,         // info = chunk_idx
+    flush_end,           // info = chunk_idx
+    lambda_async_assign, // info = chunk_idx (in lambda exec)
+    lambda_async_arith,  // info = chunk_idx
+    values_load_is_cst,  // info = chunk_idx (RACE DETECTOR if observed in lambda)
+    store_value,         // info = (chunk_idx << 8) | num
+    policy_begin_write,  // info = thr_rank (entered begin_write)
+    policy_end_write,    // info = thr_rank (entered end_write)
     // ─── thread-ops bitmap tracking ──────────────────────────────────
-    ev_mark_thread_has_ops,  // info = thr_rank
-    ev_clear_thread_has_ops, // info = thr_rank
+    mark_thread_has_ops,  // info = thr_rank
+    clear_thread_has_ops, // info = thr_rank
     // ─── op lifecycle (use-after-free via op_map) ────────────────────
-    ev_op_alloc,     // info = num ; track op storage alloc
-    ev_op_enqueue,   // info = (chunk_idx << 8) | num ; put in op_map
-    ev_op_free,      // info = num ; op block recycled (free_op)
-    ev_op_flush_one, // info = num ; about to write_body this op
+    op_alloc,     // info = num ; track op storage alloc
+    op_enqueue,   // info = (chunk_idx << 8) | num ; put in op_map
+    op_free,      // info = num ; op block recycled (free_op)
+    op_flush_one, // info = num ; about to write_body this op
     // ─── chunk VALUE storage (op/value address aliasing) ─────────────
-    ev_value_alloc, // a chunk values buffer was allocated at addr
-    ev_value_free,  // a chunk values buffer was freed at addr
+    value_alloc, // a chunk values buffer was allocated at addr
+    value_free,  // a chunk values buffer was freed at addr
 };
 
 #ifdef CHUNK_RING_LOG_ANY
@@ -163,42 +162,11 @@ class ScopedRingLog
 {
   public:
     /// @param payload_value Optional payload. 0 means no payload.
-    explicit ScopedRingLog(uint32_t payload_value = 0) noexcept
-    {
-        if constexpr (chunk_config::ring_log_debug)
-        {
-            tid_     = get_tid();
-            payload_ = payload_value;
-            ended_   = false;
-            ring_log_start(tid_, BeginEvent, payload_);
-        }
-    }
+    explicit ScopedRingLog(uint32_t payload_value = 0) noexcept;
 
     /// @brief Emit EndEvent unless in Manual mode; in Manual mode, check builds print a message on stderr when
     ///        end() was not called.
-    ~ScopedRingLog() noexcept
-    {
-        if constexpr (chunk_config::ring_log_debug)
-        {
-            if constexpr (!Manual)
-            {
-                ring_log_end(tid_, EndEvent, payload_); // end, not start
-            }
-            else
-            {
-                // Manual mode: stop (in check builds only) if the user forgot to call .end()
-                if constexpr (build_config::any_check)
-                {
-                    if (!ended_)
-                    {
-                        CHUNK_INVARIANT_FAILED("ScopedRingLog<Manual>: end() not called before destruction "
-                                               "(BEGIN_EVENT={})",
-                                               static_cast<int>(BeginEvent));
-                    }
-                }
-            }
-        }
-    }
+    ~ScopedRingLog() noexcept;
 
     // Non-copyable, non-movable: a scoped logger should not migrate scopes
     ScopedRingLog(const ScopedRingLog&)            = delete;
@@ -207,17 +175,7 @@ class ScopedRingLog
     ScopedRingLog& operator=(ScopedRingLog&&)      = delete;
 
     /// Explicit end. For Manual mode. Idempotent: calling twice is OK.
-    void end() noexcept
-    {
-        if constexpr (chunk_config::ring_log_debug && Manual)
-        {
-            if (!ended_)
-            {
-                ring_log_end(tid_, EndEvent, payload_);
-                ended_ = true;
-            }
-        }
-    }
+    void end() noexcept;
 
   private:
     [[maybe_unused]] uint32_t tid_;
@@ -231,3 +189,5 @@ using ScopedRingLogManualEnd = ScopedRingLog<BeginEvent, EndEvent, /*Manual=*/tr
 
 
 } // namespace shrink_array
+
+#include "chunk/internal/ring_log_debug_inline.h" // the template bodies

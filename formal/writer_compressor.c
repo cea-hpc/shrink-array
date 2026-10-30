@@ -36,10 +36,10 @@
  *   heavy_barrier()               write_compress_sync_policy.h  dekker::heavy_barrier()
  *   mark / steal_mark*()          chunk_base.h                  steal_mark_, steal_mark(), steal_marked(), steal_unmark()
  *   values, values_load()         chunk_base.h                  values, values_load()
- *   materialise()                 chunk2A_std_inline.h          create_value() + wait_before_materialise()
+ *   materialise()                 zero_any_chunk_inline.h          create_value() + wait_before_materialise()
  *   cas_install()                 chunk_base.h                  compare_and_swap_gen()
- *   steal()                       chunk2A_std.h                 try_mark_cst_and_get_old()
- *   scan                          chunk2A_std_inline.h          fill_list_to_compress() / scan_constants
+ *   steal()                       zero_any_chunk.h                 try_mark_cst_and_get_old()
+ *   scan                          zero_any_chunk_inline.h          fill_list_to_compress() / scan_constants
  *   element store / load          relaxed_element.h             store_element_relaxed / load_element_relaxed
  *   writer()                      proxy_base_inline.h           write_with_optional_lock_impl()
  *
@@ -322,7 +322,7 @@ static void* writer(void* arg)                          /* write_with_optional_l
 
 /* ───────────────────────── the compressor ───────────────────────── */
 
-static bool compressor_start(void)                      /* CompressionManagerOmpPolicy::start() */
+static bool compressor_start(void)                      /* CompressionManagerThreadPolicy::start() */
 {
     atomic_fetch_add_explicit(&hard_inflight, 1, memory_order_seq_cst);   /* parked */
     /* (flush early-out: handshake 2, not modelled here) */
@@ -346,7 +346,7 @@ static bool compressor_start(void)                      /* CompressionManagerOmp
     return true;
 }
 
-static void compressor_finish(void)                     /* CompressionManagerOmpPolicy::finish() */
+static void compressor_finish(void)                     /* CompressionManagerThreadPolicy::finish() */
 {
     atomic_fetch_sub_explicit(&stealing_inflight, 1, memory_order_seq_cst);
     atomic_fetch_sub_explicit(&hard_inflight, 1, memory_order_seq_cst);

@@ -44,10 +44,14 @@ bool debug_flag = false;
 // "--test_stl" must be listed here: the filter below (ranges::find over
 // valid_args) runs FIRST and rejects an unknown flag, so a flag missing from
 // this list never reaches main()'s branch for it.
-const std::vector<std::string> valid_args = {"--no_io",      "--compress",      "--write_trace", "--read_trace",
-                                             "--multiply",   "--divisor",       "--iter_max",    "--mode",
-                                             "--test_stl",   "--test_prealloc", "--no_struct",   "--no_mask",
-                                             "--mask_scale", "--checksum_only", "--help"};
+const std::vector<std::string> valid_args = {
+    "--no_io", "--compress", "--write_trace", "--read_trace", "--multiply", "--divisor", "--iter_max", "--mode",
+    "--test_stl", "--test_prealloc", "--no_struct", "--no_mask", "--mask_scale", "--no_conn", "--conn_scale",
+    "--checksum_only", "--help",
+    // The adaptive re-chunk (dyn builds), bench_args.h.
+    "--advisor_period", "--advise_five", "--rechunk_dry_run", "--rechunk_min_gain_mb", "--rechunk_coarsen_min_meta_mb",
+    "--rechunk_coarsen_min_meta_rate", "--rechunk_max_coarsen", "--rechunk_grid_bits", "--rechunk_backoff_max",
+    "--rechunk_trace_array", "--force_rechunk", "--force_rechunk_at", "--force_rechunk_alt", "--force_rechunk_toggle"};
 
 // -----------------------------------------------------------------------------
 // Seed persistence.
@@ -120,8 +124,8 @@ static shrink_array::RssPeakSampler& bench_rss_sampler()
     static shrink_array::RssPeakSampler sampler(
         []
         {
-            const char* e = std::getenv("SHRINK_BENCH_RSS_SAMPLE_MS");
-            return e != nullptr ? std::atoi(e) : 0;
+            const char* env = std::getenv("SHRINK_BENCH_RSS_SAMPLE_MS");
+            return env != nullptr ? std::atoi(env) : 0;
         }());
     return sampler;
 }
@@ -192,7 +196,7 @@ void memory_consumption(const std::string& msg)
         // SHRINK_BENCH_EXACT_RSS=1. Not on the periodic lines by default: in
         // --mode perf they run every 10 iterations INSIDE the timed loop, and
         // smaps_rollup walks the page tables of the whole process at each read
-        // (~200 reads cost ~3 s on the 64-thread chunk2a_dyn bench). statm
+        // (~200 reads cost ~3 s on the 64-thread zero_any_dyn bench). statm
         // above lags at many threads (exact_rss.h) but costs nothing.
         static const bool exact_every_line = shrink_array::env_flag("SHRINK_BENCH_EXACT_RSS");
         if (exact_every_line || checkpoint)
@@ -279,28 +283,28 @@ void memory_consumption(const std::string& msg)
 // -----------------------------------------------------------------------------
 // Correlation shapes used to generate synthetic values.
 // -----------------------------------------------------------------------------
-Int linear_correlation(Int i, Int sz, Int sz1)
+Int linear_correlation(Int index, Int sz, Int sz1)
 {
-    return static_cast<Int>((static_cast<double>(sz1) / static_cast<double>(sz)) * static_cast<double>(i));
+    return static_cast<Int>((static_cast<double>(sz1) / static_cast<double>(sz)) * static_cast<double>(index));
 }
 
-Int exponential_correlation(Int i, Int sz, Int sz1, double p)
+Int exponential_correlation(Int index, Int sz, Int sz1, double rate)
 {
-    return static_cast<Int>(static_cast<double>(sz1) * pow(static_cast<double>(i) / static_cast<double>(sz), p));
+    return static_cast<Int>(static_cast<double>(sz1) * pow(static_cast<double>(index) / static_cast<double>(sz), rate));
 }
 
-Int interpolation(Int i, Int sz, Int sz1)
+Int interpolation(Int index, Int sz, Int sz1)
 {
-    return static_cast<Int>(static_cast<double>(sz1) * sqrt(static_cast<double>(i) / static_cast<double>(sz)));
+    return static_cast<Int>(static_cast<double>(sz1) * sqrt(static_cast<double>(index) / static_cast<double>(sz)));
 }
 
 // -----------------------------------------------------------------------------
 // CLI helpers.
 // -----------------------------------------------------------------------------
-Int levenshtein(const std::string& a, const std::string& b)
+Int levenshtein(const std::string& lhs, const std::string& rhs)
 {
-    const size_t len_a = a.size();
-    const size_t len_b = b.size();
+    const size_t len_a = lhs.size();
+    const size_t len_b = rhs.size();
     std::vector  dp(len_a + 1, std::vector<Int>(len_b + 1));
 
     for (size_t i = 0; i <= len_a; ++i)
@@ -317,7 +321,7 @@ Int levenshtein(const std::string& a, const std::string& b)
             }
             else
             {
-                const Int subst = (a[i - 1] != b[j - 1]) ? 1 : 0;
+                const Int subst = (lhs[i - 1] != rhs[j - 1]) ? 1 : 0;
                 dp[i][j]        = std::min({dp[i - 1][j - 1] + subst, dp[i - 1][j] + 1, dp[i][j - 1] + 1});
             }
         }

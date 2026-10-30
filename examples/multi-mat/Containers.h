@@ -24,9 +24,9 @@
 
 #include <vector> // std::vector
 
-#include "chunk/array_chunk.h"  // shrink_array::ArrayChunk
-#include "chunk/array_chunk2.h" // shrink_array::ArrayChunk2
-#include "Dispatch.h"           // Dispatch (extern dispatch)
+#include "chunk/zero_array.h"           // shrink_array::zero::Array
+#include "chunk/zero_one_value_array.h" // shrink_array::zero_one_value::Array
+#include "Dispatch.h"                   // Dispatch (extern dispatch)
 
 extern Dispatch dispatch;
 
@@ -43,9 +43,9 @@ class VectCom
     virtual ~VectCom() = default;
 
     /// @brief The material this array belongs to.
-    void set_ind(int i)
+    void set_ind(int index)
     {
-        ind_ = i;
+        ind_ = index;
     }
 
   private:
@@ -54,7 +54,7 @@ class VectCom
 
 /// @brief A field of a "chunk" material: compressed where it is zero.
 template <typename T>
-struct VectChunk : public VectCom<T>, public shrink_array::ArrayChunk<T>
+struct VectChunk : public VectCom<T>, public shrink_array::zero::Array<T>
 {
     /// @brief @p mesh_size elements, all zero -- compressed.
     void create(int mesh_size)
@@ -67,12 +67,12 @@ struct VectChunk : public VectCom<T>, public shrink_array::ArrayChunk<T>
  * @brief The presence fraction of a "chunk" material, in [0, 1]: 0 where
  *        the material is absent, 1 where the cell is pure, in between at the
  *        interfaces.
- * @details Chunk2 compresses the chunks that are all 0 (the first constant)
+ * @details zero_one_value compresses the chunks that are all 0 (the first constant)
  *          AND the ones that are all 1 (the array's second value), so only
  *          the interface chunks are ever materialised.
  */
 template <typename T>
-struct VectChunk2 : public VectCom<T>, public shrink_array::ArrayChunk2<T>
+struct VectChunk2 : public VectCom<T>, public shrink_array::zero_one_value::Array<T>
 {
     /// @brief The fraction of a pure cell, the second constant of the array.
     static constexpr T full = 1;
@@ -140,10 +140,10 @@ class MultiArray : public std::vector<VectCom<T>*>
     /// @brief Delete every array and empty the vector.
     void release() noexcept
     {
-        for (VectCom<T>*& p : *this)
+        for (VectCom<T>*& vec : *this)
         {
-            delete p;
-            p = nullptr;
+            delete vec;
+            vec = nullptr;
         }
         BaseClass::clear();
     }
@@ -159,17 +159,17 @@ void MultiArray<T, VecChunk>::create(int nbmat, int mesh_size)
     {
         if (dispatch.is_chunk(k))
         {
-            auto* v = new VecChunk;
-            v->set_ind(k);
-            v->create(mesh_size);
-            (*this)[k] = v;
+            auto* vec = new VecChunk;
+            vec->set_ind(k);
+            vec->create(mesh_size);
+            (*this)[k] = vec;
         }
         else
         {
-            auto* v = new VecDir;
-            v->set_ind(k);
-            v->create(mesh_size);
-            (*this)[k] = v;
+            auto* vec = new VecDir;
+            vec->set_ind(k);
+            vec->create(mesh_size);
+            (*this)[k] = vec;
         }
     }
 }

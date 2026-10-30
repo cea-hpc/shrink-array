@@ -15,8 +15,8 @@
  */
 
 // ============================================================================
-// Marking-path harness. Variant-agnostic: chunk / chunk2 / chunk2a follow the
-// compile-time macro (CHUNK_VARIANT_V1 / _V2 / _V2A), like the other harnesses here.
+// Marking-path harness. Variant-agnostic: zero / zero_one_value / zero_any follow the
+// compile-time macro (CHUNK_VARIANT_ZERO*), like the other harnesses here.
 // ============================================================================
 //
 // Guards ONE property: a chunk whose elements are ALL written back to a
@@ -36,7 +36,7 @@
 //
 //   A  plain values everywhere (2.5 / 3.5 alternating), then the first constant (0)
 //      everywhere. The chunk was materialised by a value that is NEITHER
-//      constant (nor uniform: chunk2a would take a uniform run as its
+//      constant (nor uniform: zero_any would take a uniform run as its
 //      second value), and no write ever moved it from one constant to the other.
 //      A pre-check accepting only the constant-to-constant transition
 //      leaves this chunk materialised for the run.
@@ -48,12 +48,12 @@
 //
 //   C  an array that has declared NO second value, after another array
 //      declared 7.0: a plain value, then 0; then 7.0 -- the OTHER array's
-//      second value, which must not compress here on chunk2 -- then 0, and a
+//      second value, which must not compress here on zero_one_value -- then 0, and a
 //      read-back of every element. The first 0 written over a materialised
 //      chunk of such an array must find its candidate list.
 //
-//   What is expected depends on the variant: chunk (v1) has no second
-//   constant, so its runs of 1.0 or 7.0 stay materialised; chunk2a picks a
+//   What is expected depends on the variant: zero has no second
+//   constant, so its runs of 1.0 or 7.0 stay materialised; zero_any picks a
 //   second value per chunk, so its runs of 7.0 compress even with nothing
 //   declared. The table is in expect_after().
 //
@@ -72,16 +72,16 @@
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::as_const
 
-#include "chunk/chunk_traits.h"   // forward decls + default ind_type = int
-#include "chunk/array_chunk.h"    // ArrayChunk
-#include "chunk/array_chunk2.h"   // ArrayChunk2
-#include "chunk/array_chunk2A.h"  // ArrayChunk2A
-#include "chunk/param_chunk.h"    // ParamChunk::init_indexes
-#include "chunk/chunk_std.h"      // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"         // chunk_config::use_chunk*
-#include "chunk/PMP_CHUNK.h"      // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"    // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/internal/print.h" // shrink_array::println
+#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
+#include "chunk/zero_array.h"           // zero::Array
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#include "chunk/zero_any_array.h"       // zero_any::Array
+#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
+#include "chunk/zero_chunk.h"           // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"               // chunk_config::use_zero*
+#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"          // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/print.h"       // shrink_array::println
 
 // Defined by every executable of the library (the fast allocator reads it).
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
@@ -108,84 +108,85 @@ static void end_phase()
 }
 
 template <typename T>
-using Array = std::conditional_t<chunk_config::use_chunk2a,
-                                 ArrayChunk2A<T>,
-                                 std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T>, ArrayChunk<T>>>;
+using Array =
+    std::conditional_t<chunk_config::use_zero_any,
+                       zero_any::Array<T>,
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
-// set_second_value only exists on chunk2 / chunk2a; no-op elsewhere.
+// set_second_value only exists on zero_one_value / zero_any; no-op elsewhere.
 template <typename Arr, typename Val>
-void maybe_set_second_value(Arr& a, const Val& v)
+void maybe_set_second_value(Arr& arr, const Val& value)
 {
-    if constexpr (requires(Arr x) { x.set_second_value(v); })
+    if constexpr (requires(Arr probe) { probe.set_second_value(value); })
     {
-        a.set_second_value(v);
+        arr.set_second_value(value);
     }
 }
 
 constexpr int n_chunks = 100;
 
 /// @brief The "plain" content: two values alternating, so that no chunk is
-///        uniform -- chunk2a takes any uniform run as a second constant of
+///        uniform -- zero_any takes any uniform run as a second constant of
 ///        its own, and a single plain value everywhere would compress there.
-static double plain(int i)
+static double plain(int index)
 {
-    return (i % 2) ? 2.5 : 3.5;
+    return (index % 2) ? 2.5 : 3.5;
 }
 
 /// @brief The chunks of @p arr still holding a buffer, out of the n_chunks
 ///        written (the array has one more, empty, that no phase touches).
 static int materialised(const Array<double>& arr)
 {
-    const int s = static_cast<int>(arr.chunk_size());
-    int       n = 0;
+    const int chunk_sz = static_cast<int>(arr.chunk_size());
+    int       count    = 0;
     for (int j = 0; j < n_chunks; ++j)
     {
-        n += arr.written(j * s);
+        count += arr.written(j * chunk_sz);
     }
-    return n;
+    return count;
 }
 
 /// @brief One region writing every element, then the between-region pass.
 ///
-/// A serial chunk2a has no between-region pass at all (there is no region):
+/// A serial zero_any has no between-region pass at all (there is no region):
 /// its candidates queue until make_block_compression() -- the pass a writer
 /// runs once its list is long enough, and resize() runs -- consumes them,
 /// and a hundred candidates never reach that length. The harness runs that
 /// pass itself there: it consumes the candidate lists, so a chunk the write
 /// path failed to queue still shows as materialised, which is the property
-/// here. Every OpenMP build compresses at finalize_parallel_phase(), chunk2a
-/// included (Chunk2A::compress_chunk_to_compress runs the writers' pass rank
+/// here. Every OpenMP build compresses at finalize_parallel_phase(), zero_any
+/// included (zero_any::Chunk::compress_chunk_to_compress runs the writers' pass rank
 /// by rank when no OMPT callback does it).
 template <typename Fn>
-static void phase(Array<double>& arr, int n, Fn&& body)
+static void phase(Array<double>& arr, int count, Fn&& body)
 {
 #pragma omp parallel
     {
         begin_phase();
 #pragma omp for schedule(static)
-        for (int i = 0; i < n; ++i)
+        for (int i = 0; i < count; ++i)
         {
             body(i);
         }
     }
     end_phase();
-    if constexpr (chunk_config::use_chunk2a && !build_config::use_openmp)
+    if constexpr (chunk_config::use_zero_any && !build_config::use_openmp)
     {
         arr.make_block_compression();
     }
@@ -193,8 +194,8 @@ static void phase(Array<double>& arr, int n, Fn&& body)
 
 /// @brief What a constant written everywhere must leave materialised, per
 ///        variant: `first` compresses everywhere; `declared` (the array's
-///        declared second value) compresses on chunk2 / chunk2a; `other`
-///        (a value the array never declared) compresses on chunk2a alone,
+///        declared second value) compresses on zero_one_value / zero_any; `other`
+///        (a value the array never declared) compresses on zero_any alone,
 ///        which discovers its second value per chunk.
 enum class Kind : std::uint8_t
 {
@@ -204,26 +205,26 @@ enum class Kind : std::uint8_t
     plain
 };
 
-static int expect_after(Kind k)
+static int expect_after(Kind kind)
 {
-    switch (k)
+    switch (kind)
     {
         case Kind::first:
             return 0;
         case Kind::declared:
-            return chunk_config::use_chunk2or2a ? 0 : n_chunks;
+            return chunk_config::use_second_value ? 0 : n_chunks;
         case Kind::other:
-            return chunk_config::use_chunk2a ? 0 : n_chunks;
+            return chunk_config::use_zero_any ? 0 : n_chunks;
         case Kind::plain:
             return n_chunks;
     }
     return -1;
 }
 
-static int check(const char* scenario, const char* step, const Array<double>& arr, Kind k)
+static int check(const char* scenario, const char* step, const Array<double>& arr, Kind kind)
 {
     const int got = materialised(arr);
-    const int exp = expect_after(k);
+    const int exp = expect_after(kind);
     if (got != exp)
     {
         println("[{}/{}] FAIL after '{}': {} chunk(s) materialised, expected {}", variant_name(), scenario, step, got,
@@ -239,65 +240,65 @@ int run(int /*argc*/, char** /*argv*/)
     ParamChunk::init_indexes(true);
 
     // The geometry this build runs at, read off a throwaway array.
-    const int s = static_cast<int>(Array<double>(1).chunk_size());
-    const int n = n_chunks * s;
+    const int chunk_sz = static_cast<int>(Array<double>(1).chunk_size());
+    const int count    = n_chunks * chunk_sz;
 
-    println("=== mark_path_validation [variant = {}]  chunk_size={}  chunks={}  threads={} ===", variant_name(), s,
-            n_chunks, CHUNK_PMP_MAX_THREADS);
+    println("=== mark_path_validation [variant = {}]  chunk_size={}  chunks={}  threads={} ===", variant_name(),
+            chunk_sz, n_chunks, CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
 
     // A: materialised by a plain value, then the first constant everywhere.
     {
-        Array<double> a(n);
-        maybe_set_second_value(a, 1.0);
-        phase(a, n, [&](int i) { a[i] = plain(i); });
-        fails += check("A", "plain", a, Kind::plain);
-        phase(a, n, [&](int i) { a[i] = 0.0; });
-        fails += check("A", "first", a, Kind::first);
-        a.clear();
+        Array<double> arr_a(count);
+        maybe_set_second_value(arr_a, 1.0);
+        phase(arr_a, count, [&](int i) { arr_a[i] = plain(i); });
+        fails += check("A", "plain", arr_a, Kind::plain);
+        phase(arr_a, count, [&](int i) { arr_a[i] = 0.0; });
+        fails += check("A", "first", arr_a, Kind::first);
+        arr_a.clear();
     }
 
     // B: the second constant, a plain value, the second constant, the first.
     {
-        Array<double> b(n);
-        maybe_set_second_value(b, 1.0);
-        phase(b, n, [&](int i) { b[i] = 1.0; });
-        fails += check("B", "second", b, Kind::declared);
-        phase(b, n, [&](int i) { b[i] = plain(i); });
-        fails += check("B", "plain", b, Kind::plain);
-        phase(b, n, [&](int i) { b[i] = 1.0; });
-        fails += check("B", "second", b, Kind::declared);
-        phase(b, n, [&](int i) { b[i] = 0.0; });
-        fails += check("B", "first", b, Kind::first);
-        b.clear();
+        Array<double> arr_b(count);
+        maybe_set_second_value(arr_b, 1.0);
+        phase(arr_b, count, [&](int i) { arr_b[i] = 1.0; });
+        fails += check("B", "second", arr_b, Kind::declared);
+        phase(arr_b, count, [&](int i) { arr_b[i] = plain(i); });
+        fails += check("B", "plain", arr_b, Kind::plain);
+        phase(arr_b, count, [&](int i) { arr_b[i] = 1.0; });
+        fails += check("B", "second", arr_b, Kind::declared);
+        phase(arr_b, count, [&](int i) { arr_b[i] = 0.0; });
+        fails += check("B", "first", arr_b, Kind::first);
+        arr_b.clear();
     }
 
     // C: no second value declared, next to an array that declared 7.0.
     {
-        Array<double> other(n);
+        Array<double> other(count);
         maybe_set_second_value(other, 7.0);
-        Array<double> c(n);
-        phase(c, n, [&](int i) { c[i] = plain(i); });
-        fails += check("C", "plain", c, Kind::plain);
-        phase(c, n, [&](int i) { c[i] = 0.0; });
-        fails += check("C", "first", c, Kind::first);
-        phase(c, n, [&](int i) { c[i] = 7.0; });
-        fails += check("C", "other", c, Kind::other);
-        phase(c, n, [&](int i) { c[i] = 0.0; });
-        fails += check("C", "first", c, Kind::first);
+        Array<double> arr_c(count);
+        phase(arr_c, count, [&](int i) { arr_c[i] = plain(i); });
+        fails += check("C", "plain", arr_c, Kind::plain);
+        phase(arr_c, count, [&](int i) { arr_c[i] = 0.0; });
+        fails += check("C", "first", arr_c, Kind::first);
+        phase(arr_c, count, [&](int i) { arr_c[i] = 7.0; });
+        fails += check("C", "other", arr_c, Kind::other);
+        phase(arr_c, count, [&](int i) { arr_c[i] = 0.0; });
+        fails += check("C", "first", arr_c, Kind::first);
 
         long bad = 0;
-        for (int i = 0; i < n; ++i)
+        for (int i = 0; i < count; ++i)
         {
-            bad += (std::as_const(c)[i] != 0.0);
+            bad += (std::as_const(arr_c)[i] != 0.0);
         }
         if (bad)
         {
             println("[{}/C] FAIL: {} element(s) do not read back 0", variant_name(), bad);
             ++fails;
         }
-        c.clear();
+        arr_c.clear();
         other.clear();
     }
 

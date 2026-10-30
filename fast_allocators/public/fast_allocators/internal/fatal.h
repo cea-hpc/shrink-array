@@ -37,10 +37,16 @@
  *   allocator that fails, or a process out of memory, still says what
  *   happened. The backtrace itself allocates (backtrace_symbols, the
  *   demangling): it is printed after the message for that reason.
+ * - Under a debugger (gdb, lldb, gdbserver: break_on_failure()), the
+ *   reporting thread, the report written, raises SIGTRAP: the debugger stops
+ *   there, on the failing thread's live frames, rather than leaving only the
+ *   post-mortem; continuing aborts as without one. CHUNK_BREAK_ON_FAILURE
+ *   (docs/environment_variables.md) forces it on (1) or off (0).
  */
 
 #include <array>           // std::array (the backtrace frames)
 #include <atomic>          // std::atomic_flag (one thread reports)
+#include <csignal>         // std::raise, SIGTRAP (break_on_failure)
 #include <cstddef>         // std::size_t
 #include <cstdio>          // std::fprintf, std::fputs, std::fwrite, std::fflush
 #include <cstdlib>         // std::abort, std::free
@@ -51,7 +57,8 @@
 #include <utility>         // std::forward
 #include <cxxabi.h>        // abi::__cxa_demangle
 #include <execinfo.h>      // backtrace, backtrace_symbols
-#include <unistd.h>        // pause
+#include <fcntl.h>         // open, O_RDONLY, O_CLOEXEC (read_small_file)
+#include <unistd.h>        // pause, read, write, close
 
 #include "fast_allocators/internal/log_core.h" // format_message, emit_fatal, FmtArgT
 
@@ -126,6 +133,141 @@ namespace detail
 ///        wait for it to abort the process, so the reports of a race seen by
 ///        several threads at once do not interleave.
 inline std::atomic_flag fatal_reporting{};
+
+/**
+ * @brief The pid after "TracerPid:" in @p status, the text of a
+ *        /proc/<pid>/status: the process tracing this one, 0 when none (or
+ *        when the line is missing, or cut off by the buffer it was read into).
+ *
+ * The line is looked for after a newline: it is never the first one (Name
+ * is), and a process may be called "TracerPid:".
+ */
+[[nodiscard]] constexpr long tracer_pid(std::string_view status) noexcept
+{
+    constexpr std::string_view key = "\nTracerPid:";
+    std::size_t                pos = status.find(key);
+    if (pos == std::string_view::npos)
+    {
+        return 0;
+    }
+    pos += key.size();
+    while (pos < status.size() && (status[pos] == '\t' || status[pos] == ' '))
+    {
+        ++pos;
+    }
+    long pid = 0;
+    for (; pos < status.size() && status[pos] >= '0' && status[pos] <= '9'; ++pos)
+    {
+        pid = pid * 10 + (status[pos] - '0');
+    }
+    return pid;
+}
+
+/**
+ * @brief True when @p comm, the text of a /proc/<pid>/comm (newline
+ *        included), names a debugger: gdb, cuda-gdb, gdbserver, lldb,
+ *        lldb-server (the process lldb traces through on Linux).
+ *
+ * Only these: strace, ltrace, perf, rr and the like trace a process too, and
+ * a SIGTRAP there, which none of them stops on, would kill it with SIGTRAP
+ * where it should abort. TotalView (tvdsvr, tvdsvrmain, totalview) and
+ * Linaro DDT / Forge are not detected either: they use SIGTRAP for their own
+ * breakpoints, and how they take a foreign one is not known; they stop on
+ * SIGABRT already, the failing frames live a few frames up from abort.
+ * CHUNK_BREAK_ON_FAILURE=1 forces the stop under them if wanted. The kernel
+ * cuts comm to 15 characters: every name of the list is shorter, so the
+ * comparison is exact, and a longer name (a wrapper) never matches.
+ */
+[[nodiscard]] constexpr bool is_debugger_name(std::string_view comm) noexcept
+{
+    while (!comm.empty() && (comm.back() == '\n' || comm.back() == '\0'))
+    {
+        comm.remove_suffix(1);
+    }
+    return comm == "gdb" || comm == "cuda-gdb" || comm == "gdbserver" || comm == "lldb" || comm == "lldb-server";
+}
+
+/// @brief Read up to @p cap bytes of file @p path into @p buf, with the
+///        system calls alone (no allocation, no stdio); the bytes read, 0 on
+///        any failure.
+inline std::size_t read_small_file(const char* path, char* buf, std::size_t cap) noexcept
+{
+    const int fd = ::open(path, O_RDONLY | O_CLOEXEC);
+    if (fd < 0)
+    {
+        return 0;
+    }
+    std::size_t used = 0;
+    while (used < cap)
+    {
+        const auto got = ::read(fd, buf + used, cap - used);
+        if (got <= 0)
+        {
+            break; // end of file, or an error (EINTR included: the file is read again at the next failure)
+        }
+        used += static_cast<std::size_t>(got);
+    }
+    ::close(fd);
+    return used;
+}
+
+/**
+ * @brief True when a debugger traces the process: Linux's TracerPid in
+ *        /proc/self/status, then that process's name (is_debugger_name()).
+ *        Read with the system calls into the stack, as the rest of the
+ *        report: the failure may be an allocator's. False elsewhere than on
+ *        Linux, and when either file cannot be read.
+ */
+[[nodiscard]] inline bool debugger_attached() noexcept
+{
+#if defined(__linux__)
+    char       status[4096]; // ~1.5 KiB; TracerPid is on its eighth line
+    const long tracer =
+        tracer_pid(std::string_view{status, read_small_file("/proc/self/status", status, sizeof(status))});
+    if (tracer <= 0)
+    {
+        return false;
+    }
+    char       path[48];
+    const auto res = std::format_to_n(path, sizeof(path) - 1, "/proc/{}/comm", tracer);
+    *res.out       = '\0';
+    char comm[64];
+    return is_debugger_name(std::string_view{comm, read_small_file(path, comm, sizeof(comm))});
+#else
+    return false;
+#endif
+}
+
+/**
+ * @brief Stop the reporting thread under a debugger: say so on stderr, then
+ *        raise SIGTRAP, after which the debugger shows the failure's frames
+ *        live; continued, fatal_report() aborts as without one.
+ *
+ * CHUNK_BREAK_ON_FAILURE decides: 0, never; 1, always -- without a debugger,
+ * SIGTRAP then kills the process, unless the program handles it; anything
+ * else, or unset, when debugger_attached().
+ */
+inline void break_on_failure() noexcept
+{
+    const char* env = std::getenv("CHUNK_BREAK_ON_FAILURE"); // NOLINT(concurrency-mt-unsafe): the reporting thread only
+    const bool  forced = env != nullptr && env[0] == '1' && env[1] == '\0';
+    if (env != nullptr && env[0] == '0' && env[1] == '\0')
+    {
+        return;
+    }
+    if (!forced && !debugger_attached())
+    {
+        return;
+    }
+    const std::string_view line =
+        forced ? "[shrink_array] CHUNK_BREAK_ON_FAILURE=1: stopping on SIGTRAP; continue to abort\n"
+               : "[shrink_array] debugger attached: stopping on SIGTRAP; continue to abort\n";
+    if (::write(STDERR_FILENO, line.data(), line.size()) < 0)
+    {
+        // Nothing to do: the stop does not depend on the line.
+    }
+    std::raise(SIGTRAP);
+}
 } // namespace detail
 
 /**
@@ -160,25 +302,25 @@ fatal_report(std::string_view prefix, const std::source_location& loc, std::stri
     // 1. Location and message, in one write. A template's function name can
     //    run to kilobytes: the block is cut (with "...") past 8 KiB.
     char        block[8192];
-    std::size_t n = 0;
+    std::size_t len = 0;
     try
     {
         const auto res =
             std::format_to_n(block, sizeof(block) - 1, "{0}In file '{1}' at line {2}\nInside function: {3}\n{0}{4}",
                              prefix, loc.file_name(), loc.line(), loc.function_name(), msg);
-        n = static_cast<std::size_t>(res.size);
-        if (n > sizeof(block) - 1)
+        len = static_cast<std::size_t>(res.size);
+        if (len > sizeof(block) - 1)
         {
-            n = sizeof(block) - 1;
-            std::memcpy(block + n - 3, "...", 3);
+            len = sizeof(block) - 1;
+            std::memcpy(block + len - 3, "...", 3);
         }
     }
     catch (...)
     {
-        n = 0;
+        len = 0;
     }
-    block[n++] = '\n';
-    std::fwrite(block, 1, n, stderr);
+    block[len++] = '\n';
+    std::fwrite(block, 1, len, stderr);
 
     // 2. The execution backtrace, for the post-mortem.
     std::fputs("\n--- Execution Backtrace ---\n", stderr);
@@ -188,6 +330,9 @@ fatal_report(std::string_view prefix, const std::source_location& loc, std::stri
 
     // 3. The program's sink, or CHUNK_LOG_FILE.
     detail::emit_fatal(Record{Level::fatal, Channel::general, msg, loc});
+
+    // 4. Under a debugger, the report complete: stop here, the failing frames live.
+    detail::break_on_failure();
 
     std::abort();
 }

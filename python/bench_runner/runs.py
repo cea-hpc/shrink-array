@@ -55,7 +55,7 @@ def _why_failed(returncode, oom_before, stdout_text, err_tail):
 def _write_full_log(cmd, child_env, returncode, stdout_text, stderr_text, status=None):
     """When --full-log-dir is set, dump one child run's COMPLETE stdout+stderr to
     its own file. The name encodes binary, OMP thread count, a global run counter
-    and the status, so each execution is identifiable (chunk2 vs chunk2a, which run
+    and the status, so each execution is identifiable (zero_one_value vs zero_any, which run
     re-chunked / crashed). No-op when off. Never raises: logging must not break the
     bench. The path is kept for _note_run (_take_full_log)."""
     state._LAST_FULL_LOG.path = None
@@ -438,19 +438,27 @@ def _append_error_now(errors_log, entry):
 
 def run_rerun_failed(args):
     """--rerun-failed: replay the recorded failed runs; returns the exit code."""
-    src = args.rerun_failed or _failed_cases_path(args.errors_log)
-    if not os.path.isfile(src):
-        print(red(f"--rerun-failed: {src} not found (no failed run recorded there)"))
+    # --pool: the lists of every job of the pool (cli.setup_outputs sets
+    # args.rerun_sources), read one after the other.
+    srcs = getattr(args, "rerun_sources", None)
+    if args.rerun_failed or srcs is None:
+        srcs = [args.rerun_failed or _failed_cases_path(args.errors_log)]
+    found = [p for p in srcs if os.path.isfile(p)]
+    if not found:
+        print(red(f"--rerun-failed: {', '.join(srcs) or 'no other job of the pool'} not found "
+                  "(no failed run recorded there)"))
         return 2
+    src = found[0] if len(found) == 1 else f"{len(found)} jobs of the pool"
     cases = []
-    with open(src) as f:
-        for ln in f:
-            ln = ln.strip()
-            if ln:
-                try:
-                    cases.append(json.loads(ln))
-                except ValueError:
-                    pass
+    for p in found:
+        with open(p) as f:
+            for ln in f:
+                ln = ln.strip()
+                if ln:
+                    try:
+                        cases.append(json.loads(ln))
+                    except ValueError:
+                        pass
     reps = max(1, args.rerun_repeat)
     print(cyan(bold(f"\n🔁 Re-running the failed cases of {src}  ({len(cases)} case(s), x{reps})")))
     still, n_ok, n_fail, n_skip = [], 0, 0, 0

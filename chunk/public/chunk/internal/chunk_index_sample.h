@@ -35,19 +35,20 @@ template <std::size_t N, typename I>
 [[nodiscard]] std::string_view
 chunk_index_sample(std::array<char, N>& buf, const std::vector<int>& idx, I chunk_size, std::size_t max = 10) noexcept
 {
-    std::size_t       n     = 0;
+    std::size_t       count = 0;
     const std::size_t shown = idx.size() < max ? idx.size() : max;
-    for (std::size_t k = 0; k < shown && n < N; ++k)
+    for (std::size_t k = 0; k < shown && count < N; ++k)
     {
-        const auto j = idx[k];
-        n += static_cast<std::size_t>(
-            std::format_to_n(buf.data() + n, N - n, "{}{}@{}", k == 0 ? "" : " ", j, static_cast<I>(j) * chunk_size)
-                .size);
+        const auto num_chunk = idx[k];
+        count += static_cast<std::size_t>(std::format_to_n(buf.data() + count, N - count, "{}{}@{}", k == 0 ? "" : " ",
+                                                           num_chunk, static_cast<I>(num_chunk) * chunk_size)
+                                              .size);
     }
-    if (idx.size() > shown && n < N)
+    if (idx.size() > shown && count < N)
     {
-        n += static_cast<std::size_t>(std::format_to_n(buf.data() + n, N - n, " (+{} more)", idx.size() - shown).size);
+        count += static_cast<std::size_t>(
+            std::format_to_n(buf.data() + count, N - count, " (+{} more)", idx.size() - shown).size);
     }
-    return {buf.data(), n < N ? n : N};
+    return {buf.data(), count < N ? count : N};
 }
 } // namespace shrink_array::internal

@@ -25,7 +25,7 @@ namespace
 {
 /// @brief tab.compress() in a shrink build, nothing in the std::vector baseline.
 ///
-/// compress() exists on the ArrayChunk* alone, and `if constexpr` in a plain
+/// compress() exists on the zero::Array* alone, and `if constexpr` in a plain
 /// function still type-checks its discarded branch -- but the body of a
 /// TEMPLATE is genuinely not instantiated, so routing the thirteen calls through
 /// one abbreviated function template lets the guard below be `if constexpr`.
@@ -72,13 +72,14 @@ void bench_phase_compress_all(BenchArrays& bench_arr)
         auto& tab_point     = bench_arr.tab_point;
         auto& tab_cell      = bench_arr.tab_cell;
         auto& tab_mask      = bench_arr.tab_mask;
+        auto& tab_conn      = bench_arr.tab_conn;
 
         // Compress the queued candidates first, from outside the region: each
         // compress() below runs in an `omp single`, where compress_int cannot
         // drain (it would nest a parallel region), so a candidate still queued
         // by the serial writes of the iteration (fill_range / copy_range) was
         // reported as a miss its self-heal had to compress.
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
             {
@@ -90,68 +91,73 @@ void bench_phase_compress_all(BenchArrays& bench_arr)
             }
         }
 
-#pragma omp parallel
+        // Every array's pass, each announced by say(name). Team regions (OpenMP,
+        // std): every thread of the region calls compress(), a team-wide pass
+        // that shares the chunks out, and one of them prints. TBB tasks are no
+        // team of the library: each array is compressed once, at this serial
+        // point, where its pass runs on the library's own team.
+        const auto all = [&](auto&& say)
         {
-#pragma omp single nowait
-            std::cout << "  tab1" << std::endl;
+            say("  tab1");
             compress_one(tab1);
-#pragma omp single nowait
-            std::cout << "  tab2" << std::endl;
+            say("  tab2");
             compress_one(tab2);
-#pragma omp single nowait
-            std::cout << "  tab3" << std::endl;
+            say("  tab3");
             compress_one(tab3);
-#pragma omp single nowait
-            std::cout << "  tab4" << std::endl;
+            say("  tab4");
             compress_one(tab4);
-#pragma omp single nowait
-            std::cout << "  tab5" << std::endl;
+            say("  tab5");
             compress_one(tab5);
-#pragma omp single nowait
-            std::cout << "  tab_int" << std::endl;
+            say("  tab_int");
             compress_one(tab_int);
-#pragma omp single nowait
-            std::cout << "  tab_bool" << std::endl;
+            say("  tab_bool");
             compress_one(tab_bool);
-#pragma omp single nowait
-            std::cout << "  tab_bool_bits" << std::endl;
+            say("  tab_bool_bits");
             compress_one(tab_bool_bits);
-#pragma omp single nowait
-            std::cout << " tab_complex" << std::endl;
+            say(" tab_complex");
             compress_one(tab_complex);
-#pragma omp single nowait
-            std::cout << " tab_float" << std::endl;
+            say(" tab_float");
             compress_one(tab_float);
-#pragma omp single nowait
-            std::cout << " tab_char" << std::endl;
+            say(" tab_char");
             compress_one(tab_char);
-#pragma omp single nowait
-            std::cout << " tab_short" << std::endl;
+            say(" tab_short");
             compress_one(tab_short);
-#pragma omp single nowait
-            std::cout << " tab_long" << std::endl;
+            say(" tab_long");
             compress_one(tab_long);
-#pragma omp single nowait
-            std::cout << " tab_ulong" << std::endl;
+            say(" tab_ulong");
             compress_one(tab_ulong);
-#pragma omp single nowait
-            std::cout << " tab_quant" << std::endl;
+            say(" tab_quant");
             compress_one(tab_quant);
             if (bench_arr.with_struct) // --no_struct
             {
-#pragma omp single nowait
-                std::cout << " tab_point" << std::endl;
+                say(" tab_point");
                 compress_one(tab_point);
-#pragma omp single nowait
-                std::cout << " tab_cell" << std::endl;
+                say(" tab_cell");
                 compress_one(tab_cell);
             }
             if (bench_arr.with_mask) // --no_mask
             {
-#pragma omp single nowait
-                std::cout << " tab_mask" << std::endl;
+                say(" tab_mask");
                 compress_one(tab_mask);
             }
+            if (bench_arr.with_conn) // --no_conn
+            {
+                say(" tab_conn");
+                compress_one(tab_conn);
+            }
+        };
+        if constexpr (bench_par::team_regions)
+        {
+            bench_par::region(
+                [&]([[maybe_unused]] bench_par::Team& team)
+                {
+                    all([&](const char* name)
+                        { team.single([&] { std::cout << name << std::endl; }, bench_par::nowait); });
+                });
+        }
+        else
+        {
+            all([](const char* name) { std::cout << name << std::endl; });
         }
 
         chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);

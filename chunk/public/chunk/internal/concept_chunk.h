@@ -18,41 +18,59 @@
 
 #include <type_traits> // std::is_same_v
 
+#include "chunk/chunk_traits.h" // is_zero_any_family_v
+
 namespace shrink_array
+{
+
+namespace zero
 {
 
 template <typename T>
 class Chunk;
 
-template <typename T>
-class Chunk2;
+} // namespace zero
+
+namespace zero_one_value
+{
 
 template <typename T>
-class Chunk2A;
+class Chunk;
+
+} // namespace zero_one_value
+
+namespace zero_any
+{
+
+template <typename T>
+class Chunk;
+
+} // namespace zero_any
 
 /// @brief ChunkT<T> is Chunk<T>.
 template <template <typename> typename ChunkT, typename T>
-concept IsChunk = std::is_same_v<ChunkT<T>, Chunk<T>>;
+concept IsChunk = std::is_same_v<ChunkT<T>, zero::Chunk<T>>;
 
-/// @brief ChunkT<T> is Chunk2A<T>.
+/// @brief ChunkT<T> is built on zero_any's machinery: zero_any::Chunk<T>, or
+///        a variant built from it (ZeroAnyFamily, chunk_traits.h).
 template <template <typename> typename ChunkT, typename T>
-concept IsChunk2A = std::is_same_v<ChunkT<T>, Chunk2A<T>>;
+concept IsZeroAnyFamily = is_zero_any_family_v<ChunkT<T>>;
 
-/// @brief ChunkT<T> is Chunk2<T>.
+/// @brief ChunkT<T> is zero_one_value::Chunk<T>.
 template <template <typename> typename ChunkT, typename T>
-concept IsChunk2 = std::is_same_v<ChunkT<T>, Chunk2<T>>;
+concept IsChunk2 = std::is_same_v<ChunkT<T>, zero_one_value::Chunk<T>>;
 
-/// @brief ChunkT<T> is Chunk2<T> or Chunk2A<T>.
+/// @brief ChunkT<T> is zero_one_value::Chunk<T> or of the zero_any family.
 template <template <typename> typename ChunkT, typename T>
-concept IsChunk2Or2A = IsChunk2<ChunkT, T> || IsChunk2A<ChunkT, T>;
+concept IsChunk2OrZeroAnyFamily = IsChunk2<ChunkT, T> || IsZeroAnyFamily<ChunkT, T>;
 
 /// @brief The chunk template of a chunk type (specialised below).
 template <typename>
-struct chunk_template_of;
+struct ChunkTemplateOf;
 
 /// @brief For ChunkTemplate\<T\>, type\<U\> names ChunkTemplate\<U\>.
 template <template <typename> typename ChunkTemplate, typename T>
-struct chunk_template_of<ChunkTemplate<T>>
+struct ChunkTemplateOf<ChunkTemplate<T>>
 {
     template <typename U>
     using type = ChunkTemplate<U>;

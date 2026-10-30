@@ -40,6 +40,7 @@
 //
 // Exit 0 = every check holds.
 
+#include <cstddef> // std::size_t
 #include <cstdint> // std::uintptr_t
 #include <format>  // std::format
 #include <string>  // std::string
@@ -53,9 +54,9 @@ namespace
 {
 
 /// What printf's %p printed (glibc): "(nil)" for a null pointer, 0x... otherwise.
-static std::string ptr_text(const void* p)
+std::string ptr_text(const void* ptr)
 {
-    return p ? std::format("{}", p) : std::string("(nil)");
+    return ptr ? std::format("{}", ptr) : std::string("(nil)");
 }
 
 int check_pair(int small_bytes, int large_bytes, std::uintptr_t budget)
@@ -66,21 +67,21 @@ int check_pair(int small_bytes, int large_bytes, std::uintptr_t budget)
     a_large.init(static_cast<size_t>(large_bytes), budget, -1);
 
     int bad = 0;
-    for (auto* a : {&a_small, &a_large})
+    for (auto* alloc : {&a_small, &a_large})
     {
-        const auto* const         other = (a == &a_small) ? &a_large : &a_small;
-        const char*               p     = a->alloc();
-        fast_alloc::TCCAllocator* own   = a->slab_of(p);
-        fast_alloc::TCCAllocator* seen  = other->slab_of(p);
-        const bool                ok    = own != nullptr && seen == own && own->owner == static_cast<const void*>(a);
+        const auto* const         other = (alloc == &a_small) ? &a_large : &a_small;
+        const char*               block = alloc->alloc();
+        fast_alloc::TCCAllocator* own   = alloc->slab_of(block);
+        fast_alloc::TCCAllocator* seen  = other->slab_of(block);
+        const bool                ok = own != nullptr && seen == own && own->owner == static_cast<const void*>(alloc);
         if (!ok)
         {
             println("FAIL budget {}: {}-byte block, slab {} from its allocator, {} through the {}-byte one",
-                    static_cast<std::size_t>(budget), a == &a_small ? small_bytes : large_bytes, ptr_text(own),
-                    ptr_text(seen), a == &a_small ? large_bytes : small_bytes);
+                    static_cast<std::size_t>(budget), alloc == &a_small ? small_bytes : large_bytes, ptr_text(own),
+                    ptr_text(seen), alloc == &a_small ? large_bytes : small_bytes);
             ++bad;
         }
-        a->free_elt_pow2(p);
+        alloc->free_elt_pow2(block);
     }
     if (!bad)
     {

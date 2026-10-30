@@ -49,16 +49,16 @@ namespace shrink_array
 // Representative sites templated on U that keep `const U&` or a plain `U`
 // (illustrative; grep `template <typename U>` in the Proxy hierarchy):
 //
-//     Proxy::operator=/+=/-=/*=//=/%=                 (proxy.h)
-//     Proxy2::operator=                               (proxy2.h)
-//     Proxy2A::operator=                              (proxy2A.h)
-//     Proxy2Base::operator*=///=/%=                   (proxy2_base.h)
+//     Proxy::operator=/+=/-=/*=//=/%=                 (zero_proxy.h)
+//     zero_one_value::Proxy::operator=                (zero_one_value_proxy.h)
+//     zero_any::Proxy::operator=                      (zero_any_proxy.h)
+//     SecondValueProxyBase::operator*=///=/%=         (second_value_proxy_base.h)
 //     ProxyBase::operator+=/-=/&=/|=/^=/<<=/>>=       (proxy_base.h)
 //     ProxyBase::enqueue_async_arithmetic             (proxy_base.h)
 //     ProxyBase::apply_atomic_op (U parameter)        (proxy_base.h)
 //     ProxyOperators::friend +,-,*,/                  (proxy_operators.h)
 //     increm_chunk_write<V>(V v)                      (chunk_stats.h)
-//     Proxy::is_cst_val_and_v_equal_zero              (proxy.h)
+//     Proxy::is_cst_val_and_v_equal_zero              (zero_proxy.h)
 //
 // The engines those operators call -- assign_impl (the three proxies),
 // ProxyBase::arithmetic_assign / bitwise_assign, Proxy::apply_compound_operation
@@ -86,9 +86,9 @@ namespace shrink_array
 // large user T could introduce one:
 //
 //     TabCstVal2Holder::alloc_chunk(T val)            (tab_cst_val2_holder.h)
-//     ArrayChunk2::set_second_value(T)                (array_chunk2.h and
-//                                                       array_chunk2_inline.h)
-//     Chunk2FastCompPolicy::have_chunk_to_compress(T) (chunk2_std.h)
+//     zero_one_value::Array::set_second_value(T)                (zero_one_value_array.h and
+//                                                       zero_one_value_array_inline.h)
+//     zero_one_value::ChunkFastCompPolicy::have_chunk_to_compress(T) (zero_one_value_chunk.h)
 //
 // ─── COROLLARY FOR LOCAL VARIABLES ───────────────────────────────────────────
 //

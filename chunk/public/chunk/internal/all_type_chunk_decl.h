@@ -23,7 +23,8 @@
 #include <span>    // std::span
 #include <vector>  // std::vector
 
-#include "chunk/config.h" // build_config:: mirrors that select the policies below
+#include "chunk/config.h"                 // build_config:: mirrors that select the policies below
+#include "chunk/internal/for_each_type.h" // for_each_type, for fill_manager_chunk
 
 /**
  * @file all_type_chunk_decl.h
@@ -33,9 +34,9 @@
  * @details For a header that must name AllTypeChunk while a variant's array
  *          class is still being defined: array_chunk_base_inline.h, whose
  *          ArrayChunkBase::create() calls ensure_manager(). The bodies
- *          (all_type_chunk_inline.h) reach the managers, then Chunk2A and
- *          array_chunk2A.h -- included from there, inside array_chunk2_base.h,
- *          they closed a cycle and ArrayChunk2Base was not yet declared. They
+ *          (all_type_chunk_inline.h) reach the managers, then zero_any and
+ *          zero_any_array.h -- included from there, inside second_value_array_base.h,
+ *          they closed a cycle and SecondValueArrayBase was not yet declared. They
  *          come with all_type_chunk.h, which each variant's _inline.h
  *          includes after its class.
  *
@@ -53,6 +54,9 @@ namespace shrink_array
 {
 
 struct ManagerChunkInt;
+
+template <template <typename> class ChunkT, typename T>
+class ManagerChunk; // manager_chunk.h; named by fill_manager_chunk, complete where it is instantiated
 
 // ===========================================================================
 // Build-dependent halves of the registry's surface.
@@ -76,9 +80,9 @@ struct ManagerChunkInt;
 /**
  * @brief The threading-dependent half of the registry.
  * @tparam Derived AllTypeChunk (CRTP, for get_list_type_chunk()).
- * @tparam Enabled build_config::use_openmp.
+ * @tparam Enabled build_config::threaded.
  */
-template <typename Derived, bool Enabled = build_config::use_openmp>
+template <typename Derived, bool Enabled = build_config::threaded>
 class AllTypeChunkParallelInterface; // primary left undefined: only the 2 specializations exist
 
 /// @brief OpenMP builds: per-thread allocators, per-thread free lists, and a
@@ -206,8 +210,8 @@ struct AllTypeChunkDynInterface<Derived, false>
 /**
  * @brief Process-wide registry of the per-type chunk managers, reached as a singleton.
  *
- * A ManagerChunk is parameterised by both a chunk template (Chunk / Chunk2 /
- * Chunk2A) and an element type, so there is one manager per combination and no
+ * A ManagerChunk is parameterised by both a chunk template (zero / zero_one_value /
+ * zero_any) and an element type, so there is one manager per combination and no
  * single type can name them all. AllTypeChunk owns them behind
  * ManagerChunkInt pointers and offers the "do it for every type" operations the
  * rest of the library needs: allocator setup, deferred-write flush,
@@ -301,7 +305,7 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
      *
      * @param apply true: every candidate found constant is compressed -- what
      *        the between-region passes want; false: the lists are walked,
-     *        their flags reset and (chunk2) emptied, and NOTHING is
+     *        their flags reset and (zero_one_value) emptied, and NOTHING is
      *        compressed -- the terminal sweep of a dying array uses it to
      *        purge its chunks from the lists. false does NOT drain: a
      *        caller counting "misses" after it sees only what it un-queued.
@@ -358,7 +362,7 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
      * @brief The manager of @p ManagerT exists after this call -- registered
      *        now if this is the first array of its type, a no-op otherwise.
      *
-     * Called by the arrays' create() with their ArrayChunkTraits::manager_type.
+     * Called by the arrays' create() with their ArrayChunkTraits::ManagerType.
      * One function-local static per instantiation: the first call of a type
      * registers under the mutex, every later one costs a guard load; two
      * threads constructing the first arrays of the same type at once are
@@ -426,7 +430,11 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
      * @tparam Types   Type tuple owned by the consumer (e.g. MyChunkTypes).
      */
     template <template <typename> class ChunkT, typename Types>
-    void fill_manager_chunk();
+    void fill_manager_chunk()
+    {
+        // One ManagerChunk per T of Types (a std::tuple).
+        for_each_type<Types>([this]<typename T> { this->register_manager<ManagerChunk<ChunkT, T>>(); });
+    }
 
     /// Resizes every manager's compression-candidate list to the current thread count.
     void resize_chunk_to_compress_potentially() const;
@@ -490,10 +498,9 @@ bool set_max_malloc_arenas(int max_arenas);
 /**
  * @brief Print every manager's reuse pools, broken down by geometry.
  *
- * @details Free function so a caller can reach it without pulling AllTypeChunk's
- *          full definition -- array_chunk_rechunk_inline.h cannot include that
- *          header without closing an include cycle through array_chunk2A.h.
- *          Defined in all_type_chunk.cpp.
+ * @details A free function: the caller needs neither AllTypeChunk's singleton
+ *          nor its full definition (docs/api.md, the reports a program asks
+ *          for). Defined in all_type_chunk.cpp.
  *
  * @param label prefix for the printed lines, e.g. "before drain"
  */

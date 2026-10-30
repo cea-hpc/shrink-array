@@ -124,6 +124,62 @@ class LogView(QPlainTextEdit):
         if at_end:
             bar.setValue(bar.maximum())
 
+class RowVisibleFormLayout(QFormLayout):
+    """A QFormLayout with setRowVisible() / isRowVisible() on every PySide6 6.x.
+
+    Qt has them from 6.4, and they are used as they are there. Before (PySide6
+    6.2, 6.3) the row's widgets -- its label, its field, the widgets of a field
+    that is a layout -- are shown or hidden one by one: the row then takes no
+    room but its vertical spacing (6 px per hidden row with the default
+    style). @p row is a row number, a widget or a layout of the row, as for
+    Qt's own."""
+
+    NATIVE = hasattr(QFormLayout, "setRowVisible")
+
+    def _row_of(self, row):
+        if isinstance(row, int):
+            return row
+        if isinstance(row, QWidget):
+            return self.getWidgetPosition(row)[0]
+        return self.getLayoutPosition(row)[0]
+
+    @staticmethod
+    def _item_widgets(item):
+        """The widgets of a layout item: itself, or those of its layout, nested."""
+        if item is None:
+            return []
+        if item.widget() is not None:
+            return [item.widget()]
+        lay = item.layout()
+        if lay is None:
+            return []
+        out = []
+        for i in range(lay.count()):
+            out += RowVisibleFormLayout._item_widgets(lay.itemAt(i))
+        return out
+
+    def _row_widgets(self, r):
+        out = []
+        for role in (QFormLayout.LabelRole, QFormLayout.FieldRole, QFormLayout.SpanningRole):
+            out += self._item_widgets(self.itemAt(r, role))
+        return out
+
+    def setRowVisible(self, row, on):  # noqa: N802 -- Qt's name
+        if self.NATIVE:
+            QFormLayout.setRowVisible(self, row, on)
+            return
+        r = self._row_of(row)
+        if r >= 0:
+            for w in self._row_widgets(r):
+                w.setVisible(on)
+
+    def isRowVisible(self, row):  # noqa: N802 -- Qt's name
+        if self.NATIVE:
+            return QFormLayout.isRowVisible(self, row)
+        r = self._row_of(row)
+        # isHidden(): hidden explicitly, whatever the window's own state.
+        return r >= 0 and any(not w.isHidden() for w in self._row_widgets(r))
+
 class TLabel(QLabel):
     """A QLabel whose setText() translates (status lines set at run time)."""
 
@@ -140,7 +196,7 @@ class OptionsForm(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.lay = QFormLayout(self)
+        self.lay = RowVisibleFormLayout(self)
         self.lay.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
         self.widgets = {}   # dest -> (action, widget, label)
         self.schema = None
@@ -162,8 +218,8 @@ class OptionsForm(QWidget):
                 lab.setStyleSheet("color: #c0392b;")
             self.lay.addRow(lab)
             return
-        for ac in schema["actions"]:
-            flag = (max(ac["flags"], key=len) if ac["flags"] else ac["dest"])
+        for ac in self.display_order(schema["actions"]):
+            flag = self.label_of(ac)
             help_txt = ((ac["help"] or "(pas d'aide dans le script)") + f"\n\noption : {flag}"
                         + (f"\ndéfaut du script : {ac['default']}" if ac["default"] not in (None, False) else ""))
             if ac["kind"] in BOOL_KINDS:
@@ -197,6 +253,22 @@ class OptionsForm(QWidget):
                 row.addWidget(b)
             self.lay.addRow(lab, field)
             self.widgets[ac["dest"]] = (ac, w, lab)
+
+    @staticmethod
+    def label_of(ac):
+        """The name a field is shown under: its longest flag, or its dest for a
+        positional argument."""
+        return max(ac["flags"], key=len) if ac["flags"] else ac["dest"]
+
+    @classmethod
+    def display_order(cls, actions):
+        """@p actions in the form's order: the positional arguments first, in the
+        script's order (args() puts them on the command line in this order), then
+        the options alphabetically by their shown name, dashes and case aside
+        (--iter_max, --mode, --no_io), ties by the full name."""
+        pos = [ac for ac in actions if not ac["flags"]]
+        opts = [ac for ac in actions if ac["flags"]]
+        return pos + sorted(opts, key=lambda ac: (cls.label_of(ac).lstrip("-").lower(), cls.label_of(ac)))
 
     def filter(self, text):
         """Show only the options whose flag or help contains @p text."""
@@ -289,7 +361,7 @@ def split_list(value):
 
 def families(names, sep):
     """Globs naming at least two of @p names, from their last and first
-    @p sep-separated component: shrink_bench_chunk_64, shrink_bench_chunk2_64
+    @p sep-separated component: shrink_bench_omp_zero_64, shrink_bench_omp_zero_one_value_64
     -> "*_64"; omp-llvm, omp-llvm-debug -> "omp-llvm*". {glob: count}."""
     out = {}
     for n in names:

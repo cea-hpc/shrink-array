@@ -5,7 +5,7 @@
 > Status: early October 2026. This document explains how writers, compressors,
 > deferred-write flushes and readers exclude each other **without a lock on the
 > write path**. The overall machinery (proxies, deferred writes, in-flight
-> compression) is described in [algo_chunk2.md](algo_chunk2.md) §7 and §8. The names used
+> compression) is described in [algo_zero_one_value.md](algo_zero_one_value.md) §7 and §8. The names used
 > are those of the current tree; when in doubt, the code is the reference, in particular the
 > comments in `internal/write_compress_sync_policy.h`, which carry the ordering proof.
 
@@ -56,7 +56,7 @@ if (flag_B == 0)     // (2) look     if (flag_A == 0)
 flag_A = 0;                           flag_B = 0;
 ```
 
-Each thread first **announces** its intent, then **looks** whether the other has announced.
+Each thread first **announces** its intent, then **looks** to see whether the other has announced.
 The argument is simple: whichever of the two writes its flag second necessarily sees the
 first one's flag when it reads it afterwards. So it is **impossible for both to enter**.
 It is possible, however, that neither enters (both see each other): the full algorithm
@@ -114,8 +114,8 @@ the compressor's announce: the writer takes the slow path. Never both.
 
 **The cost.** On AArch64, the writer pays `stlr` + `dmb ish` + `ldar` on **every** element
 write (an `mfence` on x86): about 70% of the time of `write_with_optional_lock_impl`
-in the profiles. Measured on `shrink_bench` chunk2a_256 with 6 threads on x86: +7% total time
-compared with an engine without a handshake, against −7% for the asymmetric version.
+in the profiles. Measured on `shrink_bench` zero_any_256 with 6 threads on x86: +7% total time
+compared with an engine without a handshake, versus −7% for the asymmetric version.
 
 The symmetric form remains the one used by **ThreadSanitizer** builds (TSan does not model
 `membarrier` and would report races that do not exist) and by non-Linux
@@ -222,7 +222,7 @@ flush, try to compress, with an announce each time) would turn the
 `membarrier` calls into a feedback loop: 4.7 s → 76 s on the benchmark. Hence several choices in the
 library that have no other reason to exist:
 
-- `start()` first looks, **before** its heavy barrier, whether a flush is in progress, and
+- `start()` first checks, **before** its heavy barrier, whether a flush is in progress, and
   gives up straight away if so (during massive initialisation phases, this is
   96% of attempts: doing the `membarrier` first meant a storm of interrupts for
   compressions that did not happen);
@@ -303,7 +303,7 @@ pushed aside to open the window at 64 threads: 350,000 waits of about forty
 *yields* per reference run.
 
 Each flag sits alone on its cache line (`alignas(128)`): a shared writer
-counter, modified on every write, caused a storm of cache lines between cores.
+counter, modified on every write, made cache lines bounce between cores.
 
 ### 5.3 The compressor side: parked, then stealing
 
@@ -314,14 +314,14 @@ counter, modified on every write, caused a storm of cache lines between cores.
    (`block_pass_yields_to_flush`, `block_pass_precheck.h`);
 2. **mark** each candidate (`steal_mark()`, *release* store);
 3. `start()`: `hard_inflight_++` (`seq_cst`): the compressor is **parked**;
-4. if a flush has announced itself in the meantime, give up (first look, with no proof value);
+4. if a flush has announced itself in the meantime, give up (first look, irrelevant to the proof);
 5. `heavy_barrier()`: fence, then `membarrier`;
 6. wait, **in a bounded way**, until no writer flag points to a marked chunk. Beyond
    `CHUNK_COMPRESS_MAX_YIELDS` (10,000 *yields*), give up: the candidates stay in the list,
    they will be picked up by the next pass or by the pass between two regions, which runs with no
    concurrent writer. Giving up loses no compression;
 7. `stealing_inflight_++`, fence: the compressor becomes **stealing**;
-8. look again whether a flush is in progress (§5.4); if so, undo everything and give up;
+8. check again whether a flush is in progress (§5.4); if so, undo everything and give up;
 9. scan each chunk, steal its buffer by CAS (`values` → constant), return it, unmark
    the chunk (`steal_unmark()`, *release*: a writer that then reads 0 sees the new state);
 10. `finish()`: `stealing_inflight_--`, then `hard_inflight_--`.
@@ -369,12 +369,12 @@ compressors:
 
 It is this **second look** that forms the Dekker pair with the flush. The first one, taken
 while the compressor was only parked, protects against nothing: a flush announced just after
-saw `stealing_inflight_ == 0` and is already replaying. Without the second look, the compressor scanned
+sees `stealing_inflight_ == 0` and is already replaying. Without the second look, the compressor scanned
 the constant from before the replay, the replay wrote, then the CAS put the chunk back on the
-constant: the replayed write was lost (a wrong second value at one index of Chunk2A,
+constant: the replayed write was lost (a wrong second value at one index of `zero_any`,
 once in ~2,300 runs).
 
-Between flushes, the exclusion is more classical: each rank has a lock (`xflush_lock_rank`),
+Between flushes, the exclusion is more conventional: each rank has a lock (`xflush_lock_rank`),
 taken by any thread that replays that rank's operations. A writer that writes directly
 into a chunk where **its own** operations are pending takes its rank's lock
 during its write: no concurrent replay of its operations can then get through, and they
@@ -397,15 +397,15 @@ period** (the technique of RCU and epoch-based schemes):
   value;
 - **reclaimer** (`PassScope`, around a pass inside a region): the returned buffers are
   **collected** instead of being freed. At the end of the pass, `heavy_barrier()`, then a read of
-  each number: an even reader finished before, or will load `values` after the barrier and see
+  each number: an even reader either finished before, or will load `values` after the barrier and see
   the constant; an odd reader may hold an old pointer, and the reclaimer waits until
   its number changes. Then the buffers are returned, as before. (The entry store is a release
   too: a number that has moved to the next read's odd value must order the previous read's load
-  before the release of the buffer, and by C++20 a relaxed store after a release store of the
+  before the release of the buffer, and under C++20 a relaxed store after a release store of the
   same thread would not -- [formal_models.md](formal_models.md), F3.)
 
 One `membarrier` per **pass**, not per chunk; the wait only covers reads already in
-flight (a few nanoseconds, barring preemption). Passes made between two regions do not
+flight (a few nanoseconds, barring preemption). Passes run between two regions do not
 need it: no user read is running then. Beyond `CHUNK_READ_RECLAIM_SLOTS`
 (1,024) reader threads, the following ones share a `seq_cst` counter, slower but correct.
 
@@ -439,9 +439,9 @@ runs out ([formal_models.md](formal_models.md), F2).
   mark.
 - **The rare side must stay rare.** Any change that multiplies compressor or flush
   announces multiplies the `membarrier` calls.
-- **After any change**, rerun in a check build and under TSan the harnesses
-  `deferred_path_validation` (forced deferred writes) and `read_reclaim_validation` (with
-  and without `CHUNK_TEST_READ_DELAY_EVERY`, and under ASan with std-alloc), then a
+- **After any change**, rerun the harnesses `deferred_path_validation` (forced deferred
+  writes) and `read_reclaim_validation` (with and without `CHUNK_TEST_READ_DELAY_EVERY`, and
+  under ASan with std-alloc) in a check build and under TSan, then a
   `multi_launch_stress.py` series: defects in this code show up once in thousands of
   runs.
 - **The reduced model of the handshake** ([formal_models.md](formal_models.md), `formal/`) must
@@ -458,7 +458,7 @@ is a protocol violation.
 
 | macro (`-D…`) | default | role |
 |---|---|---|
-| `CHUNK_WRITE_WAIT_MAX_YIELDS` | 64 | how long a writer waits in front of a compressor before deferring its write |
+| `CHUNK_WRITE_WAIT_MAX_YIELDS` | 64 | how long a writer waits for a compressor before deferring its write |
 | `CHUNK_COMPRESS_MAX_YIELDS` | 10,000 | how long a parked compressor waits before giving up its pass (0: give up at the first writer seen) |
 | `CHUNK_DEFERRED_DRAIN_THRESHOLD` | 4,096 | number of deferred writes of a rank beyond which it flushes its own queue |
 | `CHUNK_READ_RECLAIM_SLOTS` | 1,024 | number of reader threads that each have their own sequence number |
@@ -476,5 +476,5 @@ together with the form of the protocol that ran.
 | the writer side | `internal/proxy_base_inline.h` (`write_with_optional_lock_impl`) |
 | the compressor side, the counters | `internal/compression_manager.h`, `internal/compression_manager_inline.h` (`start`, `finish`, `wait_out_compressor`) |
 | per-chunk marks | `internal/chunk_base.h` (`steal_mark_`) |
-| the compression pass | `internal/chunk2_std_inline.h`, `internal/chunk2A_std_inline.h`, `internal/chunk_std_inline.h` (`make_block_compression*`), `internal/block_pass_precheck.h` |
+| the compression pass | `internal/zero_one_value_chunk_inline.h`, `internal/zero_any_chunk_inline.h`, `internal/zero_chunk_inline.h` (`make_block_compression*`), `internal/block_pass_precheck.h` |
 | readers and reclamation | `internal/read_reclaim.h` |

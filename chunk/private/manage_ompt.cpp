@@ -32,9 +32,9 @@
  */
 
 #include <array>       // std::array
-#include <algorithm>   // std::min (CHUNK_OMPT_STATS report)
+#include <algorithm>   // std::min (the ompt=info report)
 #include <atomic>      // std::atomic, std::memory_order
-#include <chrono>      // CHUNK_OMPT_STATS: time spent flushing
+#include <chrono>      // the ompt=info report: time spent flushing
 #include <cstdint>     // std::uint64_t
 #include <cstdlib>     // std::getenv (CHUNK_REQUIRE_OMPT)
 #include <cstring>     // std::strlen (the refused callbacks' list)
@@ -44,7 +44,7 @@
 #include "chunk/config.h"                   // g_ompt_suspended (defined here), chunk_config::is_shrink_enabled
 #include "chunk/singleton.h"                // SingletonChk
 #include "chunk/manage_ompt.h"              // begin_parallel_phase, finalize_parallel_phase, finalize_barrier_phase
-#include "chunk/PMP_CHUNK.h"                // g_fast_omp_rank
+#include "chunk/PMP_CHUNK.h"                // g_fast_omp_rank, CHUNK_PMP_IN_PARALLEL_REGION, CHUNK_PMP_MAX_THREADS
 #include "chunk/log.h"                      // CHUNK_LOG, CHUNK_LOG_ALWAYS
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (CHUNK_REQUIRE_OMPT)
 #include "chunk/internal/phase_guard.h"     // phase_guard::teams (one top-level team at a time)
@@ -61,7 +61,6 @@
 // sit in. A build without OMPT compiles only the stand-ins of the #else branch.
 #if CHUNK_OPT_OMPT
 
-    #include <omp.h> // omp_in_parallel: the allocator flush runs outside any active region
     // Directive, like all_type_chunk.cpp's: a std-alloc build does not put
     // fast_allocators/public on the include path at all.
     #if !CHUNK_OPT_STD_ALLOC
@@ -90,9 +89,9 @@ std::atomic<int> g_ompt_tool_state{0};
 char g_ompt_refused[128] = "";
 } // namespace
 
-// ── CHUNK_OMPT_STATS: what the sync-region callback does, counted ───────────
+// ── ompt=info: what the sync-region callback does, counted ───────────────────
 //
-// Measurement only. Off unless CHUNK_OMPT_STATS is set (read once, in
+// Measurement only. Off unless CHUNK_LOG sets ompt to info (read once, in
 // ompt_initialize, before any team exists): one load of a plain bool per
 // callback. On: each thread owns one 128-byte-aligned slot, claimed once, and
 // is its only writer -- no shared cache line, no read-modify-write, and no
@@ -118,8 +117,8 @@ struct alignas(128) OmptSyncSlot
 };
 
 std::array<OmptSyncSlot, ompt_max_slots> g_ompt_slots;
-std::atomic<int>                        g_ompt_next_slot{0};
-thread_local OmptSyncSlot*              t_ompt_slot = nullptr;
+std::atomic<int>                         g_ompt_next_slot{0};
+thread_local OmptSyncSlot*               t_ompt_slot = nullptr;
 
 OmptSyncSlot* ompt_my_slot() noexcept
 {
@@ -136,14 +135,14 @@ OmptSyncSlot* ompt_my_slot() noexcept
 }
 
 /// Single-writer increment: the slot belongs to the calling thread.
-void ompt_bump(std::atomic<std::uint64_t>& counter, std::uint64_t v = 1) noexcept
+void ompt_bump(std::atomic<std::uint64_t>& counter, std::uint64_t delta = 1) noexcept
 {
-    counter.store(counter.load(std::memory_order_relaxed) + v, std::memory_order_relaxed);
+    counter.store(counter.load(std::memory_order_relaxed) + delta, std::memory_order_relaxed);
 }
 
-const char* ompt_kind_name(int k) noexcept
+const char* ompt_kind_name(int kind) noexcept
 {
-    switch (k)
+    switch (kind)
     {
         case 1:
             return "barrier";
@@ -176,7 +175,7 @@ void ompt_finalize(ompt_data_t*)
     {
         return;
     }
-    // CHUNK_OMPT_STATS asked for it: a report, written whatever CHUNK_LOG says.
+    // ompt=info asked for it: a report, written in full.
     const int nslots = std::min(g_ompt_next_slot.load(std::memory_order_acquire), ompt_max_slots);
     CHUNK_LOG_ALWAYS(ompt, "sync: {} threads seen. Per sync-region kind and endpoint, summed over threads:", nslots);
     CHUNK_LOG_ALWAYS(ompt, "sync: {:<27} {:<5} {:>12} {:>12} {:>12} {:>12} {:>10} {:>10}", "kind", "end", "calls",
@@ -337,7 +336,7 @@ void parallel_end_chunk_work()
 void flush_allocator_free_batches()
 {
     #if !CHUNK_OPT_STD_ALLOC
-    if (omp_in_parallel() == 0)
+    if (!CHUNK_PMP_IN_PARALLEL_REGION)
     {
         fast_alloc::StaticConstArray::clear_info_free_elt();
     }
@@ -392,7 +391,7 @@ void on_parallel_end(ompt_data_t* parallel_data, ompt_data_t*, int, const void*)
 //
 // The signature is the runtime's ompt_callback_sync_region_t. The runtime
 // calls this at BOTH the begin and the end of EVERY sync region, whatever its
-// kind (barriers, taskwait, taskgroup, reductions). CHUNK_OMPT_STATS counts them.
+// kind (barriers, taskwait, taskgroup, reductions). CHUNK_LOG=ompt=info counts them.
 void on_barrier_end(ompt_sync_region_t    kind,
                     ompt_scope_endpoint_t endpoint,
                     ompt_data_t*          parallel_data,
@@ -404,17 +403,17 @@ void on_barrier_end(ompt_sync_region_t    kind,
         return;
     }
 
-    OmptSyncSlot* slot = nullptr;
-    int           k    = 0;
-    int           ep   = 0;
+    OmptSyncSlot* slot  = nullptr;
+    int           count = 0;
+    int           ep    = 0;
     if (g_ompt_stats) [[unlikely]]
     {
-        slot = ompt_my_slot();
-        k    = (static_cast<int>(kind) > 0 && static_cast<int>(kind) < ompt_kinds) ? static_cast<int>(kind) : 0;
-        ep   = endpoint == ompt_scope_begin ? 0 : 1;
+        slot  = ompt_my_slot();
+        count = (static_cast<int>(kind) > 0 && static_cast<int>(kind) < ompt_kinds) ? static_cast<int>(kind) : 0;
+        ep    = endpoint == ompt_scope_begin ? 0 : 1;
         if (slot)
         {
-            ompt_bump(slot->calls[k][ep]);
+            ompt_bump(slot->calls[count][ep]);
         }
     }
 
@@ -448,12 +447,12 @@ void on_barrier_end(ompt_sync_region_t    kind,
             const auto t0      = std::chrono::steady_clock::now();
             const bool flushed = shrink_array::finalize_barrier_phase();
             const auto dt      = std::chrono::steady_clock::now() - t0;
-            ompt_bump(slot->flush_calls[k][ep]);
+            ompt_bump(slot->flush_calls[count][ep]);
             if (flushed)
             {
-                ompt_bump(slot->flushed[k][ep]);
+                ompt_bump(slot->flushed[count][ep]);
             }
-            ompt_bump(slot->flush_ns[k][ep],
+            ompt_bump(slot->flush_ns[count][ep],
                       static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(dt).count()));
         }
         else
@@ -465,7 +464,7 @@ void on_barrier_end(ompt_sync_region_t    kind,
     {
         // Skipped because ANOTHER thread's flush_all_deferred() had cleared
         // the flag for the duration of its own pass.
-        ompt_bump(slot->skipped_flag[k][ep]);
+        ompt_bump(slot->skipped_flag[count][ep]);
     }
 }
 
@@ -482,10 +481,9 @@ void on_barrier_end(ompt_sync_region_t    kind,
  */
 int ompt_initialize(ompt_function_lookup_t lookup, int, ompt_data_t*)
 {
-    {
-        const char* env = std::getenv("CHUNK_OMPT_STATS");
-        g_ompt_stats    = env != nullptr && env[0] != '\0' && env[0] != '0'; // before any team: no race
-    }
+    // CHUNK_LOG=ompt=info: read before any team exists, so no race.
+    namespace logging = ::fast_alloc::logging;
+    g_ompt_stats      = logging::enabled(logging::Channel::ompt, logging::Level::info);
 
     auto ompt_set_callback = (ompt_set_callback_t)lookup("ompt_set_callback");
     if (ompt_set_callback)
@@ -528,7 +526,7 @@ int ompt_initialize(ompt_function_lookup_t lookup, int, ompt_data_t*)
  * @brief OMPT entry point looked up by the OpenMP runtime at program start.
  *
  * Advertises ompt_initialize() as the tool initialiser and ompt_finalize() as
- * its finaliser (the CHUNK_OMPT_STATS report; the tool allocates nothing).
+ * its finaliser (the ompt=info report; the tool allocates nothing).
  *
  * @return Pointer to a function-local static result, valid for the whole run.
  */
@@ -549,7 +547,7 @@ void shrink_array::check_ompt_tool_loaded()
     [[maybe_unused]] static const bool checked = []
     {
         // The runtime loads its tool while it initialises: make sure it has.
-        (void)omp_get_max_threads();
+        (void)CHUNK_PMP_MAX_THREADS;
         const int state = g_ompt_tool_state.load(std::memory_order_acquire);
         if (state == 1)
         {

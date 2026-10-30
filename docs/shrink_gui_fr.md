@@ -2,8 +2,8 @@
 
 > English version: [shrink_gui.md](shrink_gui.md).
 
-> Octobre 2026, `shrink_gui` 0.13 (prototype). Une fenêtre sur le portable pour soumettre
-> `compile_all.sh`, `bench_and_test.py`, `multi_launch_stress.py` et `omp_speedup.py` sur le calculateur, ou
+> Octobre 2026, `shrink_gui` 0.15 (prototype). Une fenêtre sur le portable pour soumettre
+> `compile_all.sh`, `bench_and_test.py`, `multi_launch_stress.py` et `thread_speedup.py` sur le calculateur, ou
 > pour les lancer sur le portable lui-même (§3, « Cette machine »), suivre
 > leur log, lire leur résumé et rapatrier leurs résultats. Le détail du code est dans la
 > docstring de `python/shrink_gui/__init__.py`.
@@ -27,13 +27,14 @@ Un **run** est un dossier sur le calculateur, `<dossier des runs>/<id>/` :
 | `launch.sh` | mode détaché : `ccc_mprun <options> bash run.sh` |
 | `out.log` | tout ce que le job a écrit |
 | `jobid` | (`ccc_msub`) l'identifiant batch, pour `squeue` et `ccc_mdel` |
+| `submit.log` | (`ccc_msub`) la commande de soumission (`$ ccc_msub job.sh`) et la réponse du système batch |
 | `start_time` | l'heure de démarrage sur le nœud (secondes depuis l'époque), pour la colonne Durée |
 | `exit_code` | écrit quand la commande se termine |
 | `events.jsonl` | (`bench_and_test.py`) l'avancement structuré : phases, k/N |
 
 ## 2. Prérequis et lancement
 
-- Sur le portable : Python 3.9 ou plus récent et **PySide6** (`pip install PySide6`).
+- Sur le portable : Python 3.9 ou plus récent et **PySide6** 6.2 ou plus récent (`pip install PySide6`).
 - Sur le calculateur : Python 3.6 ou plus récent, le dépôt shrink-array cloné, et la commande de
   soumission du site pour le mode batch (`ccc_msub` sur inti ; voir §6).
 - Une connexion maître ssh ouverte, une fois par session :
@@ -64,10 +65,11 @@ connexion, la vérification complète est refaite d'elle-même.
 
 | champ | rôle |
 |---|---|
-| Partition | `gh200-bxi` (ARM, 288 cœurs) ou `milan-bxi` (x86, 64 cœurs) ; fixe aussi l'architecture des valeurs par défaut |
+| Partition | `gh200-bxi` (ARM, 288 cœurs) ou `milan-bxi` (x86, 64 cœurs), puis les autres partitions que `ccc_mpinfo` liste à la vérification de la connexion (ci-dessous) ; fixe aussi l'architecture des valeurs par défaut |
 | Soumission | `ccc_msub` (batch, le défaut) ou `ccc_mprun` détaché depuis le nœud de login |
 | Durée max (-T) | accepte `2 j`, `1 h 30`, `90 min`, `1-00:00:00` |
 | QoS (-Q) | « auto » choisit la QoS d'après la durée, selon les limites lues par `ccc_mqinfo` |
+| Nœuds | les programmes qui partagent leur travail, en batch : le nombre de nœuds qui se le partagent, en un job de N nœuds ou N jobs d'un nœud (ci-dessous) |
 | Démarrage | après un run `compile_all.sh` pas encore fini (dépendance Slurm `afterok`/`afterany`), et/ou pas avant une heure donnée |
 | Builds à jour | avant la commande, `ninja -n` sur les builds utilisés : refuser (code 96), avertir, ou ne pas vérifier |
 | Directives, Lanceur (job) | les lignes `#MSUB` et le lanceur sur le nœud ; propres à la partition et mémorisés |
@@ -80,29 +82,84 @@ connexion, la vérification complète est refaite d'elle-même.
 Le programme à lancer, et ses options **lues dans le script lui-même** sur le calculateur
 (« Lire les options ») : l'`argparse` des scripts Python, l'`usage()` de `compile_all.sh`. Une
 option ajoutée au script apparaît donc dans le formulaire sans toucher à l'interface. Les options
+y sont classées par ordre alphabétique (tirets et casse ignorés), après les arguments positionnels,
+laissés dans l'ordre du script. Les options
 modifiées sont en gras ; une option laissée à sa valeur par défaut n'est pas mise sur la ligne de
 commande. « Enregistrer comme défauts » remplace les valeurs par défaut de ce programme sur
 cette architecture. « Commande » montre exactement ce qui sera exécuté.
 
 Avant de soumettre un script argparse, la fenêtre fait vérifier la commande par le script
 lui-même sur le calculateur : sa fonction `parse_args(argv)` quand il en a une au niveau du
-module (`omp_speedup.py` : ses propres contrôles compris, sans lancer `main`), sinon son appel
-à `parse_args()`. Une option inconnue, une valeur invalide ou un contrôle du script refuse la
-soumission dans la barre d'état, au lieu d'un job qui s'arrête aussitôt sur une erreur d'usage.
+module (`thread_speedup.py` : ses propres contrôles compris, sans lancer `main`), sinon son appel
+à `parse_args()`. Une option inconnue, une valeur invalide ou un contrôle du script en échec bloque la
+soumission, avec un message dans la barre d'état, au lieu d'un job qui s'arrête aussitôt sur une erreur d'usage.
 `"validate": False` dans `PROGRAMS` désactive cette vérification pour un programme.
 
 `compile_all.sh` ne se lance qu'en batch, jamais sur le nœud de login. Ses champs `--target`
 et `--exec` ont un bouton « Choisir… » qui liste les configurations et les exécutables
 trouvés sur le calculateur.
 
-`omp_speedup.py` (courbes de speedup OpenMP d'exécutables shrink_bench sur une cible :
+**Compiler sur plusieurs nœuds.** Avec « Nœuds » N > 1 et « N jobs d'un nœud », « Soumettre » crée N jobs batch d'un
+nœud chacun, avec les mêmes directives et la même commande plus `--pool=<l'id de la
+soumission>`. Ils apparaissent dans le tableau comme `compile_all.sh [k/N]`, runs `<id>-n1` à
+`<id>-nN`. Chaque job parcourt les configurations dans l'ordre habituel et ne construit une
+configuration que s'il est le premier à la réclamer (un `mkdir` atomique dans
+`$CHUNK_BUILD_REP/.pools/<id>/`) ; il saute celles qu'un autre job a réclamées. La charge
+s'équilibre seule : un job ne réclame sa configuration suivante qu'une fois la précédente lancée
+sur une place de build de son nœud (une seule réclamée d'avance), quel que soit le coût des builds, et rien n'a besoin de savoir d'avance quelles
+configurations cette architecture construit. Un job qui démarre quand les autres ont tout
+réclamé finit aussitôt, avec le code 0. Chaque log se termine par
+`[POOL] n configuration(s) built by this run, m by the other runs of pool <id>`.
+« Démarrage : après » propose ensuite la soumission en une seule entrée, « après `<id>`
+(N nœuds) » : le job attend les N (`--dependency=afterok:j1:…:jN`). « Reprendre ses options »
+crée un nouveau pool : les valeurs du formulaire ne contiennent jamais le `--pool` ajouté par la
+fenêtre. Le champ est masqué en mode détaché et pour les programmes qui ne savent pas partager
+leur travail. `--pool` peut aussi se donner à la main, à un `compile_all.sh` lancé depuis un
+shell (`--help`).
+
+**Un job de N nœuds.** Le choix par défaut à côté de « Nœuds » est « un job de N nœuds » : une
+seule soumission dont les directives demandent N nœuds et N tâches (`-N N -n N`, `-c` gardé : les
+cœurs d'un nœud par tâche). `run.sh` écrit son en-tête et vérifie les builds une fois, sur le
+premier nœud du job, puis lance `node.sh` sur chaque nœud par le lanceur de la partition ou, sans
+lanceur, la commande `[batch] step` du site (`ccc_mprun` sur inti, `srun` par défaut), avec
+`-N N -n N -c <cœurs>`. Le nœud K (le rang de la tâche + 1) travaille dans `<id>/n<K>` : son
+propre `out.log` (celui du nœud 1 est aussi dans le log du run), `events.jsonl`, copies gardées
+et `exit_code` ; les scripts le nomment `n<K>` d'après `CHUNK_BENCH_KEEP_DIR`. Le run
+(`compile_all.sh [×N]`) échoue si un nœud échoue ; ses onglets Résumé, Graphique, Erreurs et sa
+colonne Erreurs réunissent ses nœuds comme pour N jobs. Sur inti, les jobs d'un utilisateur
+au-delà de 24 h (`xlong`) se partagent 128 cœurs : N jobs d'un nœud passent alors l'un après
+l'autre (la ligne QoS le dit) et un job de N nœuds doit tenir dans `normal` (24 h au plus), sa
+QoS vérifiée sur N × les cœurs d'un nœud. Changer « Nœuds » de N1 à N2 multiplie la durée par
+N1 / N2 (arrondie au quart d'heure supérieur, 30 min au moins) tant qu'elle n'a pas été tapée à
+la main.
+
+`thread_speedup.py` (courbes de speedup en threads d'exécutables shrink_bench sur une cible,
+quel que soit ce qui fait tourner les threads -- OpenMP, le backend std::thread ou TBB ; anciennement
+`omp_speedup.py` :
 `--target`, `--exec` ou `--all-exec`, `--min-threads`, `--max-threads`, `--multiply`) se lance
 de même en batch seulement, avec les mêmes boutons « Choisir… ». Son avancement et ses erreurs
 s'affichent comme ceux de `bench_and_test.py` ; le Résumé donne son `summary.csv`, et le
 Graphique ses courbes (speedup avec la droite idéale, efficacité ou temps ; couleur = la
-variante, forme = la taille). « Comparer avec » superpose un autre run (un autre compilateur,
+variante, forme = la taille, trait mixte = le bench TBB, que `--all-exec` prend aussi quand le
+build l'a). « Comparer avec » superpose un autre run (un autre compilateur,
 un autre commit) et donne le rapport B / A. Ses sorties vont dans
-`$CCCWORKDIR/omp_speedup/` (sinon `~/omp_speedup/`).
+`$CCCWORKDIR/thread_speedup/` (sinon `~/thread_speedup/`) ; les runs enregistrés sous
+l'ancien nom sont lus comme les siens.
+
+**Courbes de speedup sur plusieurs nœuds.** « Nœuds » N > 1 marche pour `thread_speedup.py`
+comme pour `compile_all.sh` : N jobs d'un nœud, `thread_speedup.py [k/N]`, la même commande
+plus `--pool=<id>`. Les jobs se partagent la liste des exécutables : chacun la parcourt dans
+l'ordre et ne mesure un exécutable que s'il est le premier à le réclamer (un `mkdir` atomique
+dans `$CCCWORKDIR/thread_speedup/.pools/<id>/`), ses répétitions entrelacées sur les nombres
+de threads. Chaque job écrit son propre dossier de sortie (`speedup_<cible>_<hôte>_<date>`,
+plus `_2`, `_3`… quand deux jobs démarrent dans la même seconde sur des hôtes de même nom), et
+son log se termine par
+`[pool] n executable(s) measured by this run, m by the other runs of pool <id>`. Le Graphique
+et le Résumé de n'importe lequel des N jobs les réunissent tous, un seul jeu de courbes
+(« 2 nœuds sur 2 » dans la note) ; « Comparer avec » propose une autre soumission sur
+plusieurs nœuds en une seule entrée, et jamais la soumission elle-même. Le speedup d'un
+exécutable est mesuré sur un seul nœud : les N nœuds doivent être de même type (une
+partition). `--pool` peut aussi se donner à la main (`--help`).
 
 ### Les runs
 
@@ -125,7 +182,7 @@ barre d'état dit lesquelles et pourquoi. Il en va de même pour un run seul. Le
 
 | onglet | contenu |
 |---|---|
-| Log | le log du run sélectionné, suivi en direct ; recherche avec Ctrl+F |
+| Log | le log du run sélectionné, suivi en direct ; recherche avec Ctrl+F. À la soumission, avant que le log du job existe, le répertoire du run, la ligne de commande du programme et la commande de soumission (`cd <run> && ccc_msub job.sh`, avec la réponse du système batch) |
 | Résumé | `multi_launch_stress.py` : par build (runs, échecs, temps) ; `bench_and_test.py` : ses phases (durée, erreurs) ou son `bench_summary.csv` |
 | Graphique | `multi_launch_stress.py` : le temps de chaque run selon le nombre de threads, filtrable par build et par variante ; « Comparer avec » superpose un autre run. `bench_and_test.py` : son `bench_summary.csv`, une courbe par variante selon le nombre de threads pour une config (temps, mémoire pic ou speedup) ; « Comparer avec » superpose un autre run de la même architecture en pointillés et donne le rapport B / A (moyenne géométrique sur les points communs, et le pire point) |
 | Erreurs | le log d'erreurs lu dans le dossier de sortie : `bench_errors.log` pour `bench_and_test.py` (une entrée par échec, dès qu'il survient), les `error_*.txt` des runs en échec pour `multi_launch_stress.py` ; l'onglet passe en rouge s'il y a des erreurs. Pour `bench_and_test.py`, la liste à gauche donne chaque échec (`failed_cases.jsonl`) ; un clic affiche sa sortie complète (`run_logs/`). « Relancer les échecs… » soumet un run `--rerun-failed --rerun-repeat N` du run affiché, même partition et mêmes options, ses logs à part dans `run_logs/rerun-<date>` |
@@ -167,6 +224,11 @@ Il ne dépend pas de la fenêtre : la fermer laisse le run continuer, comme un j
 `ccc_msub`, « Soumettre ». Puis programme `bench_and_test.py`, « Démarrage : après » ce run
 de compilation, « si elle réussit », « Soumettre ». Le second job attend le premier dans la
 file Slurm ; s'il échoue, le second reste en attente et l'interface le signale.
+
+**Compiler sur trois nœuds, puis tester.** Programme `compile_all.sh`, mode `ccc_msub`,
+« Nœuds » 3, « Soumettre » : trois jobs se partagent les configurations. Puis
+`bench_and_test.py`, « Démarrage : après » la soumission (« après `<id>` (3 nœuds) »), « si
+elle réussit », « Soumettre » : le bench démarre quand les trois jobs ont fini sans échec.
 
 **Une campagne de stress sur x86.** Partition `milan-bxi`, programme
 `multi_launch_stress.py`, « Défauts de l'architecture » (8 à 64 threads, builds de
@@ -213,7 +275,13 @@ Pour en écrire un, copier un exemple dans `~/.config/shrink_gui/site.toml` et l
 | `[detached]` | la commande du mode détaché et ses options de durée et de QoS ; absente si le site n'en a pas |
 | `[qos]` | les limites des QoS en attendant que la vérification de la connexion les lise |
 | `[partitions.<nom>]` | libellé, architecture, directives, lanceur, options du mode détaché |
+| `[discovered]` | les gabarits des partitions que liste `[batch] partition_info` (`ccc_mpinfo`, `sinfo -o '%P %c %D %a'`) et que `[partitions]` ne décrit pas : directives, lanceur et options du mode détaché avec `{name}` et `{cores}` (les cœurs d'un nœud), un motif sur le nom pour les partitions ARM (`arm`, les autres sont x86) et un pour celles à ne pas proposer (`skip`) |
 | `[defaults."<programme>".<arch>]` | les valeurs par défaut des options par programme et architecture (`{build_root}` est celle du site) |
+
+Les partitions que liste la machine sont lues à chaque vérification de la connexion et mémorisées
+pour le démarrage suivant ; une partition à la fois dans la table et dans `[partitions]` garde
+l'entrée du fichier de site. Ce que la fenêtre lira se vérifie sur le calculateur, depuis le
+répertoire `python/` du dépôt : `ccc_mpinfo | python3 -m shrink_gui.partitions`.
 
 Un fichier inutilisable (syntaxe, clé inconnue ou manquante, champ de gabarit inconnu) arrête
 la fenêtre avec un message qui nomme le fichier et la clé. Le fichier est lu par `tomllib`
@@ -242,7 +310,7 @@ cd python && python3 -m pytest shrink_gui/tests -q
 ```
 
 Les tests tournent sans écran (`QT_QPA_PLATFORM=offscreen`) contre un faux calculateur local :
-de faux `ssh`, `ccc_msub`, `squeue`, `ccc_mdel`, `ccc_mprun` et `ccc_mqinfo` (`tests/fakes`), avec
+de faux `ssh`, `ccc_msub`, `squeue`, `ccc_mdel`, `ccc_mprun`, `ccc_mqinfo` et `ccc_mpinfo` (`tests/fakes`), avec
 le fichier de site d'inti quel que soit le contenu de `~/.config` ; `test_site.py` fait aussi
 tourner un site Slurm standard (faux `sbatch` et `scancel`).
 Ils sont sautés si PySide6 n'est pas installé.
@@ -252,6 +320,11 @@ Ils sont sautés si PySide6 n'est pas installé.
 - C'est un prototype, écrit pour les machines du TGCC ; un autre site écrit son fichier de
   site (§6). L'ordonnanceur doit être Slurm en dessous (`squeue`, `--dependency`, `--begin`).
 - Une seule connexion à la fois. L'interface n'ouvre pas la connexion maître elle-même.
+- Plusieurs nœuds (§3) : le dossier des builds `$CHUNK_BUILD_REP` (`compile_all.sh`) et
+  `$CCCWORKDIR/thread_speedup/` (`thread_speedup.py`) doivent être sur un système de fichiers
+  partagé par tous les nœuds (les réservations y sont des dossiers). Chaque job
+  demande la même durée (-T) qu'un job seul. Un job qui échoue laisse les autres continuer ;
+  ses configurations (ses exécutables) ne sont pas reprises par eux.
 - « Cette machine » depuis Windows (`wsl.exe`) n'est pas couverte par les tests (ils tournent
   sous Linux). WSL peut arrêter une distribution quand plus aucune de ses fenêtres n'est
   ouverte : en garder une ouverte pendant un run.

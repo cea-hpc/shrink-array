@@ -13,7 +13,7 @@ from .term import _hms, dim, green
 # ("llvm-have-aggressive-compression" = 31) with one space of slack, so nothing
 # is truncated (the old [:30] chopped the trailing 'n' off "...compression").
 CONFIG_W = 32
-VARIANT_W = 14  # longest label is "std_alloc@1024" (14); avoids truncating "chunk2a@256"
+VARIANT_W = 23  # longest label is "tbb_zero_one_value@1024" (23): no variant is truncated
 
 # Fixed-width column widths for the live progress line, shared by every phase
 # (CHECK / SAN / PERF / STL) so their columns line up vertically. Any phase that
@@ -69,3 +69,11 @@ class RunCounter:
     def idx(self, value):
         self._idx = value
         events.progress(value, self.total)
+
+    def skip(self, n):
+        """--pool: @p n runs of the total left to another job (a unit it
+        claimed). Taken off the total rather than counted as done: the bar
+        and the ETA are this job's own, and it ends at 100%."""
+        if n > 0:
+            self.total = max(self._idx, self.total - n)
+            events.progress(self._idx, self.total)

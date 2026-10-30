@@ -43,6 +43,7 @@
 #include <vector>  // std::vector
 
 #include "fast_allocators/internal/static_const_array.h" // BlkAllocator, StaticConstArray
+#include "fast_allocators/internal/svalloc.h"            // fast_alloc::alignment
 #include "chunk/internal/print.h"                        // shrink_array::println
 
 using shrink_array::println;
@@ -50,29 +51,30 @@ using shrink_array::println;
 namespace
 {
 
-constexpr std::size_t test_sizes[] = {1,   3,   4,    5,    8,    16,    24,    63,    64,    65,     100,
-                                  512, 513, 1000, 4096, 4097, 32768, 65535, 65536, 65537, 100000, std::size_t{1} << 20};
+constexpr std::size_t test_sizes[] = {
+    1,   3,   4,    5,    8,    16,    24,    63,    64,    65,     100,
+    512, 513, 1000, 4096, 4097, 32768, 65535, 65536, 65537, 100000, std::size_t{1} << 20};
 
-unsigned char pattern(std::size_t id, std::size_t k)
+unsigned char pattern(std::size_t id, std::size_t offset)
 {
-    return static_cast<unsigned char>((id * 131u + k * 7u + 1u) & 0xFFu);
+    return static_cast<unsigned char>((id * 131u + offset * 7u + 1u) & 0xFFu);
 }
 
-void fill(void* p, std::size_t n, std::size_t id)
+void fill(void* ptr, std::size_t size, std::size_t id)
 {
-    auto* b = static_cast<unsigned char*>(p);
-    for (std::size_t k = 0; k < n; ++k)
+    auto* bytes = static_cast<unsigned char*>(ptr);
+    for (std::size_t k = 0; k < size; ++k)
     {
-        b[k] = pattern(id, k);
+        bytes[k] = pattern(id, k);
     }
 }
 
-bool intact(const void* p, std::size_t n, std::size_t id)
+bool intact(const void* ptr, std::size_t size, std::size_t id)
 {
-    const auto* b = static_cast<const unsigned char*>(p);
-    for (std::size_t k = 0; k < n; ++k)
+    const auto* bytes = static_cast<const unsigned char*>(ptr);
+    for (std::size_t k = 0; k < size; ++k)
     {
-        if (b[k] != pattern(id, k))
+        if (bytes[k] != pattern(id, k))
         {
             return false;
         }
@@ -99,27 +101,27 @@ void check_sizes()
     bool aligned = true;
     for (std::size_t i = 0; i < std::size(test_sizes); ++i)
     {
-        const std::size_t n = test_sizes[i];
-        void*             p = fast_alloc::BlkAllocator::alloc_block(n);
-        if (p == nullptr)
+        const std::size_t size = test_sizes[i];
+        void*             ptr  = fast_alloc::BlkAllocator::alloc_block(size);
+        if (ptr == nullptr)
         {
             ok_blk = false;
             continue;
         }
-        fill(p, n, i);
-        ok_blk = ok_blk && intact(p, n, i);
-        fast_alloc::BlkAllocator::free_block(p, n);
+        fill(ptr, size, i);
+        ok_blk = ok_blk && intact(ptr, size, i);
+        fast_alloc::BlkAllocator::free_block(ptr, size);
 
-        void* t = fast_alloc::BlkAllocator::alloc_tab(n);
-        if (t == nullptr)
+        void* tab = fast_alloc::BlkAllocator::alloc_tab(size);
+        if (tab == nullptr)
         {
             ok_tab = false;
             continue;
         }
-        aligned = aligned && (reinterpret_cast<std::uintptr_t>(t) % fast_alloc::alignment) == 0;
-        fill(t, n, i + 1000);
-        ok_tab = ok_tab && intact(t, n, i + 1000);
-        fast_alloc::BlkAllocator::free_tab(t);
+        aligned = aligned && (reinterpret_cast<std::uintptr_t>(tab) % fast_alloc::alignment) == 0;
+        fill(tab, size, i + 1000);
+        ok_tab = ok_tab && intact(tab, size, i + 1000);
+        fast_alloc::BlkAllocator::free_tab(tab);
     }
     expect(ok_blk, "alloc_block/free_block: 1 B to 1 MiB, on, between and past the buckets");
     expect(ok_tab, "alloc_tab/free_tab: same sizes, size read back from the header");
@@ -142,27 +144,27 @@ void check_huge()
     constexpr std::size_t window  = 4096; // bytes checked at each end
     const std::size_t     sizes[] = {2 * gib - 64, 2 * gib + 64, 4 * gib + 64};
 
-    const auto ends_ok = [](void* p, std::size_t n, std::size_t id)
+    const auto ends_ok = [](void* ptr, std::size_t size, std::size_t id)
     {
-        auto* b = static_cast<unsigned char*>(p);
-        fill(b, window, id);
-        fill(b + n - window, window, id + 1);
-        return intact(b, window, id) && intact(b + n - window, window, id + 1);
+        auto* bytes = static_cast<unsigned char*>(ptr);
+        fill(bytes, window, id);
+        fill(bytes + size - window, window, id + 1);
+        return intact(bytes, window, id) && intact(bytes + size - window, window, id + 1);
     };
 
     bool ok_blk = true;
     bool ok_tab = true;
     for (std::size_t i = 0; i < std::size(sizes); ++i)
     {
-        const std::size_t n = sizes[i];
+        const std::size_t size = sizes[i];
 
-        void* p = fast_alloc::BlkAllocator::alloc_block(n);
-        ok_blk  = ok_blk && p != nullptr && ends_ok(p, n, 10 * i);
-        fast_alloc::BlkAllocator::free_block(p, n);
+        void* ptr = fast_alloc::BlkAllocator::alloc_block(size);
+        ok_blk    = ok_blk && ptr != nullptr && ends_ok(ptr, size, 10 * i);
+        fast_alloc::BlkAllocator::free_block(ptr, size);
 
-        void* t = fast_alloc::BlkAllocator::alloc_tab(n);
-        ok_tab  = ok_tab && t != nullptr && ends_ok(t, n, 10 * i + 5);
-        fast_alloc::BlkAllocator::free_tab(t);
+        void* tab = fast_alloc::BlkAllocator::alloc_tab(size);
+        ok_tab    = ok_tab && tab != nullptr && ends_ok(tab, size, 10 * i + 5);
+        fast_alloc::BlkAllocator::free_tab(tab);
     }
     expect(ok_blk, "alloc_block/free_block: 2 GiB - 64, 2 GiB + 64, 4 GiB + 64");
     expect(ok_tab, "alloc_tab/free_tab: same sizes, size_t header");
@@ -206,24 +208,24 @@ void check_parallel()
     long bad = 0;
 #pragma omp parallel reduction(+ : bad)
     {
-        std::vector<void*> live;
         for (int it = 0; it < 2000; ++it)
         {
-            const std::size_t n  = test_sizes[static_cast<std::size_t>(it) % 20];
-            const std::size_t id = static_cast<std::size_t>(it) * 97u;
-            void* p = (it % 2) ? fast_alloc::BlkAllocator::alloc_tab(n) : fast_alloc::BlkAllocator::alloc_block(n);
-            fill(p, n, id);
-            if (!intact(p, n, id))
+            const std::size_t size = test_sizes[static_cast<std::size_t>(it) % 20];
+            const std::size_t id   = static_cast<std::size_t>(it) * 97u;
+            void*             ptr =
+                (it % 2) ? fast_alloc::BlkAllocator::alloc_tab(size) : fast_alloc::BlkAllocator::alloc_block(size);
+            fill(ptr, size, id);
+            if (!intact(ptr, size, id))
             {
                 ++bad;
             }
             if (it % 2)
             {
-                fast_alloc::BlkAllocator::free_tab(p);
+                fast_alloc::BlkAllocator::free_tab(ptr);
             }
             else
             {
-                fast_alloc::BlkAllocator::free_block(p, n);
+                fast_alloc::BlkAllocator::free_block(ptr, size);
             }
         }
     }
@@ -245,17 +247,17 @@ void check_inside_caller_critical()
     {
         for (int it = 0; it < 200; ++it)
         {
-            const std::size_t n  = test_sizes[static_cast<std::size_t>(it) % 20];
-            const std::size_t id = static_cast<std::size_t>(it) * 131u;
+            const std::size_t size = test_sizes[static_cast<std::size_t>(it) % 20];
+            const std::size_t id   = static_cast<std::size_t>(it) * 131u;
 #pragma omp critical
             {
-                void* p = fast_alloc::BlkAllocator::alloc_block(n);
-                fill(p, n, id);
-                if (!intact(p, n, id))
+                void* ptr = fast_alloc::BlkAllocator::alloc_block(size);
+                fill(ptr, size, id);
+                if (!intact(ptr, size, id))
                 {
                     ++bad;
                 }
-                fast_alloc::BlkAllocator::free_block(p, n);
+                fast_alloc::BlkAllocator::free_block(ptr, size);
             }
         }
     }

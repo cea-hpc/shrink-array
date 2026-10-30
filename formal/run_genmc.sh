@@ -105,4 +105,45 @@ run ok    "MUT_ENTER_RELAXED, 1 read: the hole needs back-to-back reads" -- -DMU
 run ok    "MUT_WAIT_FOR_EVEN, 2 reads (the pass-side way out, not taken)" --check-liveness -- -DNREADS=2 -DMUT_WAIT_FOR_EVEN $M3
 run error "MUT_OVERFLOW_NO_FENCE (F4, before)"               -- -DOVERFLOW_READER -DMUT_OVERFLOW_NO_FENCE $M3
 
+M4=motif_offset.c
+echo "== handshake 4: motif readers <-> rewrites of the offset slot ($M4) =="
+run ok    "source, another motif"                            --check-liveness -- $M4
+run ok    "source, the same motif (ABA)"                     --check-liveness -- -DTARGET_SAME_MOTIF $M4
+run ok    "source, first constant"                           --check-liveness -- -DTARGET_CST1 $M4
+run ok    "source, second constant"                          --check-liveness -- -DTARGET_CST2 $M4
+run ok    "source, 3 reads"                                  --check-liveness -- -DNREADS=3 $M4
+run ok    "source, 2 readers x 2 reads"                      --check-liveness -- -DNREADERS=2 -DNREADS=2 $M4
+run ok    "source, 3 readers"                                --check-liveness -- -DNREADERS=3 $M4
+echo "-- mutations: each must be refused --"
+run error "MUT_SLOT_LOAD_RELAXED (the re-check needs acquire)" -- -DMUT_SLOT_LOAD_RELAXED $M4
+run error "MUT_SLOT_STORE_RELAXED (the pass's store must be release)" -- -DMUT_SLOT_STORE_RELAXED $M4
+run error "MUT_CAS_BEFORE_SLOT (algo_pattern.md section 6: the slot first)" -- -DMUT_CAS_BEFORE_SLOT $M4
+run error "MUT_NO_GRACE (calibration)"                       -- -DMUT_NO_GRACE $M4
+echo "-- the behaviours the model changed in the source (F5) --"
+run error "MUT_NO_RECHECK, another motif (F5, before)"       -- -DMUT_NO_RECHECK $M4
+run error "MUT_NO_RECHECK, first constant (F5, before)"      -- -DMUT_NO_RECHECK -DTARGET_CST1 $M4
+run error "MUT_NO_RECHECK, second constant (F5, before)"     -- -DMUT_NO_RECHECK -DTARGET_CST2 $M4
+run ok    "MUT_NO_RECHECK, the same motif: harmless"         -- -DMUT_NO_RECHECK -DTARGET_SAME_MOTIF $M4
+run error "MUT_SLOT_STORE_PLAIN, first constant (F5, before: reset())" -- -DMUT_SLOT_STORE_PLAIN -DTARGET_CST1 $M4
+run error "MUT_SLOT_STORE_PLAIN, second constant (F5, before: set_from_array())" -- -DMUT_SLOT_STORE_PLAIN -DTARGET_CST2 $M4
+
+M5=queue_handback.c
+
+echo "== the pass's hand-back <-> candidate marking ($M5) =="
+run ok    "source: the flag handed back (1 -> 2 -> 0/3)"        --check-liveness -- $M5
+run ok    "source, W2 too (exclusion)"                          --check-liveness -- -DWITH_W2 $M5
+echo "-- mutations: each must be refused --"
+run error "MUT_OLD_HANDBACK (F6, before: unmark, then reset)"   -- -DMUT_OLD_HANDBACK $M5
+run error "MUT_HANDBACK_AFTER_UNMARK (the window is back)"      -- -DMUT_HANDBACK_AFTER_UNMARK $M5
+run error "MUT_WRITER_IGNORES_2 (nobody notes the write)"       -- -DMUT_WRITER_IGNORES_2 $M5
+
+M6=range_edges.c
+
+echo "== fill_range_mt's queueing filter: two ends of one chunk ($M6) =="
+run ok    "source: a look, then fence and second look on a no"  -- $M6
+echo "-- mutations: each must be refused --"
+run error "MUT_ONE_LOOK (F7, before: store buffering)"          -- -DMUT_ONE_LOOK $M6
+run error "MUT_FENCE_ONE_SIDE (both sides need the fence)"      -- -DMUT_FENCE_ONE_SIDE $M6
+run error "MUT_RECHECK_NO_FENCE (the second look alone)"        -- -DMUT_RECHECK_NO_FENCE $M6
+
 exit $fail

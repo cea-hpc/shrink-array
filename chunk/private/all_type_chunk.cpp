@@ -15,24 +15,24 @@
  */
 
 #include <algorithm> // std::ranges::find (the registered sizes), std::copy_n (the registry table),
-                     // std::ranges::any_of (the manager fan-outs)
-#include <cstddef>   // std::size_t (the reuse-pool byte counts)
-#include <mutex>     // std::mutex, std::scoped_lock
-#include <atomic>    // for atomic_thread_fence, memory_order_seq_cst, atomic
-#include <memory>    // for unique_ptr
-#include <optional>  // SerialFlushOwnership
-#include <utility>   // std::move
-#include <vector>    // for vector
-#include <malloc.h>  // malloc_trim, mallopt
+// std::ranges::any_of (the manager fan-outs)
+#include <cstddef>  // std::size_t (the reuse-pool byte counts)
+#include <mutex>    // std::mutex, std::scoped_lock
+#include <atomic>   // for atomic_thread_fence, memory_order_seq_cst, atomic
+#include <memory>   // for unique_ptr
+#include <optional> // SerialFlushOwnership
+#include <utility>  // std::move
+#include <vector>   // for vector
+#include <malloc.h> // malloc_trim, mallopt
 
-#include "chunk/config.h"                    // build_config::use_openmp, chunk_config
-#include "chunk/singleton.h"                 // SingletonChk
-#include "chunk/internal/manager_chunk.h"    // ManagerChunkInt, ManagerChunkParallelImpl
-#include "chunk/all_type_chunk.h"            // the declarations defined here
-#include "chunk/internal/churn_counters.h"   // churn::note_phase_end
-#include "chunk/PMP_CHUNK.h"                 // CHUNK_PMP_THREAD_RANK / _RANK_BOUND / _NUM_THREADS, g_fast_omp_rank
+#include "chunk/config.h"                  // build_config::threaded / use_openmp, chunk_config
+#include "chunk/singleton.h"               // SingletonChk
+#include "chunk/internal/manager_chunk.h"  // ManagerChunkInt, ManagerChunkParallelImpl
+#include "chunk/all_type_chunk.h"          // the declarations defined here
+#include "chunk/internal/churn_counters.h" // churn::note_phase_end
+#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_THREAD_RANK / _RANK_BOUND / _NUM_THREADS, chunk_rank_cache, pmp::team, current_team
+
 #include "chunk/internal/deferred_op_pool.h" // for reset_all
-#include "chunk/internal/env_parse.h"        // env_number (CHUNK_RECLAIM_PHASE_KEEP)
 #include "chunk/internal/phase_guard.h"      // check-build guard of the phase protocol
 #include "chunk/manage_ompt.h"               // the declarations of the five phase functions below
 #include "chunk/param_chunk.h"               // ParamChunk::init_indexes (ensure_ready)
@@ -59,6 +59,7 @@ AllTypeChunk::AllTypeChunk()
 void AllTypeChunk::ensure_ready()
 {
     static std::once_flag once;
+
     std::call_once(once,
                    []
                    {
@@ -131,9 +132,13 @@ struct SerialFlushOwnership
 
 void begin_parallel_phase()
 {
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
-        g_fast_omp_rank = CHUNK_PMP_THREAD_RANK;
+        // Std backend, from a thread in no team of the std backend (an application
+        // thread): the application phase opens -- in_parallel() true, no team
+        // of the std backend -- until finalize_parallel_phase(). Nothing otherwise.
+        pmp::enter_application_phase();
+        chunk_rank_cache() = CHUNK_PMP_THREAD_RANK;
     }
     phase_guard::check_begin(); // finalize forgotten before this region: stops, in every build
     // One top-level team at a time (phase_guard::teams): each thread of a
@@ -157,16 +162,18 @@ void finalize_parallel_phase_only_flush()
     {
         churn::note_phase_end();
     }
+    // use_openmp, not threaded: the barrier is the application's team's,
+    // which only OpenMP gives the library (the phase contract, manage_ompt.h).
     if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
     {
         // Barrier + flush must both happen inside the same enclosing
-        // #pragma omp parallel region:
+        // parallel region (the application's team, hence OpenMP only):
         //  - barrier: all threads finish enqueueing deferred ops before any
         //    thread starts flushing (required because the surrounding
         //    #pragma omp for are typically `nowait`)
         //  - flush: each thread drains its OWN queue using its own rank,
         //    which is stable inside the current parallel region
-#pragma omp barrier
+        pmp::current_team().barrier();
 
         auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
         ens_type_chunk.flush_all_deferred(true);
@@ -185,18 +192,17 @@ void finalize_parallel_phase_after_flush()
     {
         phase_guard::next_phase();
     }
+    // use_openmp: a shape of the phase contract only OpenMP has (manage_ompt.h).
     if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
     {
         const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
         ens_type_chunk.destroy_after_flush(false);
 
         reset_all();
-        if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
+        if (!chunk_config::aggressive_compression() && ens_type_chunk.have_chunk_to_compress_potentially())
+        // run-time switch: chunk/config.h
         {
-            if (ens_type_chunk.have_chunk_to_compress_potentially())
-            {
-                ens_type_chunk.compress_chunk_to_compress_potentially(true);
-            }
+            ens_type_chunk.compress_chunk_to_compress_potentially(true);
         }
         // Empirically load-bearing (see the note in
         // finalize_parallel_phase_only_flush). Do NOT remove.
@@ -213,31 +219,40 @@ void finalize_parallel_phase()
     // a component that knows nothing of it -- the enclosing phase is not over:
     // its other threads may still be writing, and the flush below drains every
     // rank's queue without a lock. The enclosing phase's own end finalizes
-    // (manage_ompt.h; nested_region_validation D).
-    if (CHUNK_PMP_IN_PARALLEL_REGION)
+    // (manage_ompt.h; nested_region_validation D). A team, not
+    // CHUNK_PMP_IN_PARALLEL_REGION: the std backend's application phase is
+    // in_parallel() too, and this is where it closes.
+    if (pmp::active_level() > 0)
     {
         return;
     }
     phase_guard::teams::manual_end(); // the phase is over: the next one may be any team's
+    // The application's threads stopped writing (the contract): close its
+    // phase first, so the flush and the compression below run on teams of
+    // the std backend (nothing otherwise).
+    pmp::leave_application_phase();
+
     if constexpr (phase_guard::tracked)
     {
         phase_guard::next_phase();
     }
-    if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
+    if constexpr (build_config::threaded && chunk_config::is_shrink_enabled)
     {
         auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
         ens_type_chunk.flush_all_deferred(false);
 
         reset_all();
+        // Std backend: the op pools of the application threads that exited
+        // in this phase; their ops were just replayed (deferred_op_pool.h).
+        retire_exited_thread_pools();
 
-        if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
+        if (!chunk_config::aggressive_compression() && ens_type_chunk.have_chunk_to_compress_potentially())
+        // run-time switch: chunk/config.h
         {
             // Drain the deferred-compression backlog here, between parallel
             // phases: parallel, with no concurrent writers (no start() barrier).
-            if (ens_type_chunk.have_chunk_to_compress_potentially())
-            {
-                ens_type_chunk.compress_chunk_to_compress_potentially(true);
-            }
+
+            ens_type_chunk.compress_chunk_to_compress_potentially(true);
         }
         // Empirically load-bearing (see the note in
         // finalize_parallel_phase_only_flush). Do NOT remove.
@@ -246,10 +261,30 @@ void finalize_parallel_phase()
         fast_alloc::report_all_arenas("finalize_phase");
 #endif
     }
+    else if constexpr (chunk_config::is_shrink_enabled)
+    {
+        // Serial build: nothing is deferred, but the zero_any family queues its
+        // candidates as a threaded build does, and the in-loop trigger
+        // (perform_compression()) only runs a pass past half the list maximum.
+        // A backlog below that waits for ever: chunks written for the last
+        // time stay materialised to the end of the run -- the constants as
+        // well as pattern's motifs. Drain it here, as the threaded branch does,
+        // with the pass that trigger runs (make_block_compression(), through
+        // force_chunk_to_compress(); a no-op on an empty list).
+        // Neither have_chunk_to_compress_potentially() as the gate nor
+        // compress_chunk_to_compress_potentially() as the drain: both are
+        // use_fast_block_compression code, which a serial build compiles out
+        // (the gate always says "nothing").
+        if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
+        {
+            SingletonChk<AllTypeChunk>::get_ref().force_chunk_to_compress();
+        }
+    }
 }
 
 bool finalize_barrier_phase()
 {
+    // use_openmp: a shape of the phase contract only OpenMP has (manage_ompt.h).
     if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
     {
         // NOT const: flush_all_deferred() mutates the managers it drains.
@@ -315,7 +350,7 @@ void AllTypeChunk::compress_chunk_to_compress_potentially(bool apply) const
     }
 
     // ONE region for every type (precedent: clear_list_block_free_thr), not
-    // one per type -- and per second value for Chunk2. Each thread runs every
+    // one per type -- and per second value for zero_one_value. Each thread runs every
     // type's per-rank body for its own rank; those touch rank-local lists
     // only, so the types need no barrier between them. Then the serial mop-up
     // of the ranks past the team, for the variants whose pass had one.
@@ -326,18 +361,21 @@ void AllTypeChunk::compress_chunk_to_compress_potentially(bool apply) const
 
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
     int team = 0;
-#pragma omp parallel
-    {
-        const int thr = CHUNK_PMP_THREAD_RANK;
-        if (thr == 0)
-        {
-            team = CHUNK_PMP_NUM_THREADS;
-        }
-        for (auto* elm : work)
-        {
-            elm->sweep_rank(thr, apply);
-        }
-    }
+
+    pmp::team(pmp::Options{},
+              [&](pmp::Team& /*team*/)
+              {
+                  const int thr = CHUNK_PMP_THREAD_RANK;
+                  if (thr == 0)
+                  {
+                      team = CHUNK_PMP_NUM_THREADS;
+                  }
+                  for (auto* elm : work)
+                  {
+                      elm->sweep_rank(thr, apply);
+                  }
+              });
+
     for (auto* elm : work)
     {
         if (elm->sweep_mops_up(apply))
@@ -349,20 +387,6 @@ void AllTypeChunk::compress_chunk_to_compress_potentially(bool apply) const
         }
     }
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);
-
-    // CHUNK_RECLAIM_PHASE_KEEP=K (unset: off): the pass's freed buffers
-    // went back to their slabs, which stay resident until a sweep. Give
-    // the empty ones back now, keeping K per allocator instance for the
-    // next phase's materialisations (fewer madvise / fault-in round
-    // trips). Serial and quiescent here: the pass's region has joined.
-    static const long phase_keep = env_number<long>("CHUNK_RECLAIM_PHASE_KEEP", -1L);
-    if (phase_keep >= 0)
-    {
-        for (auto* elm : work)
-        {
-            (void)elm->sweep_empty_slabs_int(static_cast<std::size_t>(phase_keep));
-        }
-    }
 }
 
 bool AllTypeChunk::have_chunk_to_compress_potentially() const
@@ -372,7 +396,6 @@ bool AllTypeChunk::have_chunk_to_compress_potentially() const
     return std::ranges::any_of(get_list_type_chunk(),
                                [max_thr](const auto* elm) { return elm->have_chunk_to_compress_potentially(max_thr); });
 }
-
 
 template <typename Derived>
 void AllTypeChunkParallelInterface<Derived, true>::destroy_after_flush(bool in_parallel) const
@@ -551,34 +574,35 @@ void AllTypeChunkParallelInterface<Derived, true>::clear_list_block_free_thr()
         nb_buckets.push_back(elm->clear_list_block_free_prepare());
     }
 
-#pragma omp parallel
-    {
-        const int thr_rank = CHUNK_PMP_THREAD_RANK;
-        const int nthr     = CHUNK_PMP_NUM_THREADS; // 1 without OpenMP
+    pmp::team(pmp::Options{},
+              [&](pmp::Team& team)
+              {
+                  const int thr_rank = CHUNK_PMP_THREAD_RANK;
+                  const int nthr     = CHUNK_PMP_NUM_THREADS; // 1 without OpenMP
 
-        const auto for_each_bucket = [&](auto&& phase)
-        {
-            for (std::size_t i = 0; i < types.size(); ++i)
-            {
-                for (auto b = static_cast<std::size_t>(thr_rank); b < nb_buckets[i];
-                     b += static_cast<std::size_t>(nthr))
-                {
-                    phase(types[i], static_cast<int>(b));
-                }
-            }
-        };
+                  const auto for_each_bucket = [&](auto&& phase)
+                  {
+                      for (std::size_t i = 0; i < types.size(); ++i)
+                      {
+                          for (auto b = static_cast<std::size_t>(thr_rank); b < nb_buckets[i];
+                               b += static_cast<std::size_t>(nthr))
+                          {
+                              phase(types[i], static_cast<int>(b));
+                          }
+                      }
+                  };
 
-        for_each_bucket([](const auto& elm, int bucket) { elm->clear_list_block_free_screen(bucket); });
-#pragma omp barrier
-        for_each_bucket([](const auto& elm, int bucket) { elm->clear_list_block_free_sort(bucket); });
-#pragma omp barrier
-        for (const auto& elm : types)
-        {
-            elm->clear_list_block_free_dedup(thr_rank, nthr);
-        }
-#pragma omp barrier
-        for_each_bucket([](const auto& elm, int bucket) { elm->clear_list_block_free_thr(bucket); });
-    }
+                  for_each_bucket([](const auto& elm, int bucket) { elm->clear_list_block_free_screen(bucket); });
+                  team.barrier();
+                  for_each_bucket([](const auto& elm, int bucket) { elm->clear_list_block_free_sort(bucket); });
+                  team.barrier();
+                  for (const auto& elm : types)
+                  {
+                      elm->clear_list_block_free_dedup(thr_rank, nthr);
+                  }
+                  team.barrier();
+                  for_each_bucket([](const auto& elm, int bucket) { elm->clear_list_block_free_thr(bucket); });
+              });
 }
 
 template <typename Derived>
@@ -664,6 +688,6 @@ bool set_max_malloc_arenas(int max_arenas)
 // Instantiate exactly the specialisation this build selected. The other one is
 // never named, so its bodies are never instantiated -- which is what lets the
 // OpenMP versions call manager virtuals that a serial build does not declare.
-template class AllTypeChunkParallelInterface<AllTypeChunk, build_config::use_openmp>;
+template class AllTypeChunkParallelInterface<AllTypeChunk, build_config::threaded>;
 template struct AllTypeChunkDynInterface<AllTypeChunk, build_config::chunk_dynamic>;
 } // namespace shrink_array

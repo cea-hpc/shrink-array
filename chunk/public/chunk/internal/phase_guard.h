@@ -66,8 +66,8 @@
  * finalize. Such a program is outside the protocol anyway (manage_ompt.h).
  */
 
-#include <atomic>    // std::atomic, std::memory_order_relaxed
-#include <cstddef>   // std::size_t (teams::rank_holders)
+#include <atomic>  // std::atomic, std::memory_order_relaxed
+#include <cstddef> // std::size_t (teams::rank_holders)
 
 #include "chunk/PMP_CHUNK.h"                // CHUNK_PMP_*, chunk_pmp_team_rank
 #include "chunk/config.h"                   // build_config::any_check, build_config::has_not_ompt
@@ -101,7 +101,7 @@ inline void next_phase() noexcept
 
 /// @brief The protocol is manual in this build (OpenMP without OMPT): the
 ///        generations are kept and the finalize check runs, in every build type.
-inline constexpr bool tracked = build_config::use_openmp && build_config::has_not_ompt;
+inline constexpr bool tracked = build_config::threaded && build_config::has_not_ompt;
 
 /// @brief ... and it is a check build: the begin check (check_write) runs too.
 inline constexpr bool active = tracked && build_config::any_check;
@@ -109,17 +109,25 @@ inline constexpr bool active = tracked && build_config::any_check;
 /// @brief begin_parallel_phase(): fail if the calling thread already began in
 ///        this phase (finalize forgotten), then stamp it.
 /// @details Outside any region (level 0) it does nothing: there is no region
-///          to bracket. In a nested region it only stamps (see the file).
+///          to bracket -- except during an application phase of the std
+///          backend (pmp::in_application_phase()), where the application's
+///          threads, in no team, are the region's threads: it stamps them,
+///          and a second begin of the same thread in the phase is allowed
+///          (same rank, same queue, its writes stay in program order; the
+///          phase has no region whose end could have been forgotten). In a
+///          nested region it only stamps (see the file); so does a team of
+///          the std backend opened during an application phase, nested in it.
 inline void check_begin() noexcept
 {
     if constexpr (tracked)
     {
-        const int level = CHUNK_PMP_LEVEL;
-        if (level == 0)
+        const int  level  = CHUNK_PMP_LEVEL;
+        const bool in_app = pmp::in_application_phase();
+        if (level == 0 && !in_app)
         {
             return;
         }
-        if (level == 1 && armed()) [[unlikely]]
+        if (level == 1 && !in_app && armed()) [[unlikely]]
         {
             CHUNK_INVARIANT_FAILED(
                 "[PHASE PROTOCOL] begin_parallel_phase() twice in the same phase on thread {}: the region before "

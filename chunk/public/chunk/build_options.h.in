@@ -30,6 +30,8 @@
 
 // clang-format off
 #define CHUNK_OPT_OPENMP                   @CHUNK_OPT_OPENMP@
+#define CHUNK_OPT_THREADED                 @CHUNK_OPT_THREADED@
+#define CHUNK_OPT_STD_THREADS                     @CHUNK_OPT_STD_THREADS@
 #define CHUNK_OPT_STD_ALLOC                @CHUNK_OPT_STD_ALLOC@
 #define CHUNK_OPT_FAST_ALLOC               @CHUNK_OPT_FAST_ALLOC@
 #define CHUNK_OPT_OMPT                     @CHUNK_OPT_OMPT@
@@ -38,7 +40,6 @@
 #define CHUNK_OPT_STATS                    @CHUNK_OPT_STATS@
 #define CHUNK_OPT_MM_PROTECT               @CHUNK_OPT_MM_PROTECT@
 #define CHUNK_OPT_SECOND_VALUE_INDEXED     @CHUNK_OPT_SECOND_VALUE_INDEXED@
-#define CHUNK_OPT_RECLAIM_EMPTY_SLABS      @CHUNK_OPT_RECLAIM_EMPTY_SLABS@
 #define CHUNK_OPT_AGGRESSIVE_COMPRESSION   @CHUNK_OPT_AGGRESSIVE_COMPRESSION@
 #define CHUNK_OPT_DEFERRED_DRAIN_THRESHOLD @CHUNK_OPT_DEFERRED_DRAIN_THRESHOLD@
 #define CHUNK_OPT_FORCE_DEFER_EVERY        @CHUNK_OPT_FORCE_DEFER_EVERY@
@@ -56,4 +57,10 @@
     #error "the chunk library was built with OpenMP: compile this file with OpenMP as well (-fopenmp, -fiopenmp, -mp), or link a library built without it"
 #elif !CHUNK_OPT_OPENMP && defined(_OPENMP)
     #error "the chunk library was built without OpenMP: compile this file without OpenMP, or link a library built with it"
+#endif
+
+#if CHUNK_OPT_STD_THREADS && !(defined(FAST_ALLOC_PMP_STD) && FAST_ALLOC_PMP_STD)
+    #error "the chunk library was built with the std backend (CHUNK_THREADS=std): compile this file with -DFAST_ALLOC_PMP_STD=1 (the chunk:: targets add it)"
+#elif !CHUNK_OPT_STD_THREADS && defined(FAST_ALLOC_PMP_STD) && FAST_ALLOC_PMP_STD
+    #error "the chunk library was built without the std backend: compile this file without FAST_ALLOC_PMP_STD"
 #endif

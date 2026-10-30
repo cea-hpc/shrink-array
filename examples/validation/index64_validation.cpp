@@ -15,15 +15,15 @@
  */
 
 // ============================================================================
-// 64-bit index harness. Variant-agnostic: tests chunk / chunk2 / chunk2a
-// depending on the compile-time macro (CHUNK_VARIANT_V1 / _V2 / _V2A), like the
+// 64-bit index harness. Variant-agnostic: tests zero / zero_one_value / zero_any
+// depending on the compile-time macro (CHUNK_VARIANT_ZERO*), like the
 // other harnesses here.
 // ============================================================================
 //
-// The arrays take their index type as a template parameter (ind_type, `int`
+// The arrays take their index type as a template parameter (IntType, `int`
 // by default). Guards the two things a `long` index needs:
 //
-//   past-int-max  one ArrayChunk*<char, long> of more than INT_MAX elements,
+//   past-int-max  one zero::Array*<char, long> of more than INT_MAX elements,
 //                 written on both sides of 2^31 (sequentially, then from a
 //                 parallel region), read back, zeroed and compressed. Almost
 //                 every chunk stays at the first constant, so the array costs
@@ -54,13 +54,13 @@
 #include <utility>     // std::as_const
 #include <vector>      // std::vector
 
-#include "chunk/chunk_traits.h"               // forward decls + default ind_type = int
-#include "chunk/array_chunk.h"                // ArrayChunk
-#include "chunk/array_chunk2.h"               // ArrayChunk2
-#include "chunk/array_chunk2A.h"              // ArrayChunk2A
+#include "chunk/chunk_traits.h"               // forward decls + default IntType = int
+#include "chunk/zero_array.h"                 // zero::Array
+#include "chunk/zero_one_value_array.h"       // zero_one_value::Array
+#include "chunk/zero_any_array.h"             // zero_any::Array
 #include "chunk/param_chunk.h"                // ParamChunk::register_chunk_size, init_indexes
-#include "chunk/chunk_std.h"                  // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"                     // chunk_config::use_chunk*, build_config::chunk_dynamic / has_not_ompt
+#include "chunk/zero_chunk.h"                 // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"                     // chunk_config::use_zero*, build_config::chunk_dynamic / has_not_ompt
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
@@ -77,27 +77,28 @@ using namespace shrink_array;
 namespace
 {
 
-static_assert(chunk_config::use_chunk || chunk_config::use_chunk2 || chunk_config::use_chunk2a,
-              "index64_validation must be built with CHUNK_VARIANT_V1, _V2 or _V2A");
+static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
+              "index64_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_ONE_VALUE or _ZERO_ANY");
 
 template <typename T, typename I>
-using Array = std::conditional_t<chunk_config::use_chunk2a,
-                                 ArrayChunk2A<T, I>,
-                                 std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T, I>, ArrayChunk<T, I>>>;
+using Array = std::conditional_t<
+    chunk_config::use_zero_any,
+    zero_any::Array<T, I>,
+    std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T, I>, zero::Array<T, I>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
@@ -117,25 +118,25 @@ void end_phase()
     }
 }
 
-/// Chunk2 compresses to the second value only once the array declared one.
+/// zero_one_value compresses to the second value only once the array declared one.
 template <typename Arr, typename Val>
-void maybe_set_second_value(Arr& a, const Val& v)
+void maybe_set_second_value(Arr& arr, const Val& value)
 {
-    if constexpr (requires(Arr x) { x.set_second_value(v); })
+    if constexpr (requires(Arr probe) { probe.set_second_value(value); })
     {
-        a.set_second_value(v);
+        arr.set_second_value(value);
     }
 }
 
 /// The compression pass, driven the way the bench drives it: from a region.
 template <typename Arr>
-void compress_in_region(Arr& a)
+void compress_in_region(Arr& arr)
 {
 #pragma omp parallel
     {
         begin_phase();
 #pragma omp single
-        a.compress();
+        arr.compress();
     }
     end_phase();
 }
@@ -150,27 +151,40 @@ int check_past_int_max()
 
     // Three chunks' worth past INT_MAX at the largest geometry (4096), and an
     // odd tail so the last chunk is partial.
-    const long n = static_cast<long>(INT_MAX) + (3L * 4096) + 5;
-    Big        big(n);
+    const long count = static_cast<long>(INT_MAX) + (3L * 4096) + 5;
+    Big        big(count);
     maybe_set_second_value(big, char(9));
-    const long s = static_cast<long>(big.chunk_size());
+    const long chunk_sz = static_cast<long>(big.chunk_size());
 
     int bad = 0;
-    if (big.size() != n)
+    if (big.size() != count)
     {
-        println("[{}/{}] FAIL: size() = {}, expected {}", variant_name(), label, static_cast<long>(big.size()), n);
+        println("[{}/{}] FAIL: size() = {}, expected {}", variant_name(), label, static_cast<long>(big.size()), count);
         ++bad;
     }
-    if (big.capacity() < static_cast<std::size_t>(n))
+    if (big.capacity() < static_cast<std::size_t>(count))
     {
-        println("[{}/{}] FAIL: capacity() = {} < {}", variant_name(), label, big.capacity(), n);
+        println("[{}/{}] FAIL: capacity() = {} < {}", variant_name(), label, big.capacity(), count);
         ++bad;
     }
 
     // Both sides of 2^31, and the chunk boundaries around it.
-    const long              i = INT_MAX;
-    const std::vector<long> pos{0,     1,         s - 1, s,           i - s,     i - 1, i,    i + 1,
-                                i + 2, i + s - 1, i + s, i + (2 * s), n - s - 1, n - 2, n - 1};
+    const long              huge = INT_MAX;
+    const std::vector<long> pos{0,
+                                1,
+                                chunk_sz - 1,
+                                chunk_sz,
+                                huge - chunk_sz,
+                                huge - 1,
+                                huge,
+                                huge + 1,
+                                huge + 2,
+                                huge + chunk_sz - 1,
+                                huge + chunk_sz,
+                                huge + (2 * chunk_sz),
+                                count - chunk_sz - 1,
+                                count - 2,
+                                count - 1};
     const auto              value_at = [](std::size_t k) { return static_cast<char>(1 + (k % 7)); };
 
     // (1) sequential writes
@@ -198,23 +212,23 @@ int check_past_int_max()
                 ++nbad;
             }
             // The neighbours nobody wrote are still the first constant.
-            for (const long q : {pos[k] - 2, pos[k] + 2})
+            for (const long probe_pos : {pos[k] - 2, pos[k] + 2})
             {
-                if (q < 0 || q >= n)
+                if (probe_pos < 0 || probe_pos >= count)
                 {
                     continue;
                 }
                 bool written = false;
-                for (const long p : pos)
+                for (const long position : pos)
                 {
-                    written = written || p == q;
+                    written = written || position == probe_pos;
                 }
-                if (!written && cbig[q] != char(0))
+                if (!written && cbig[probe_pos] != char(0))
                 {
                     if (nbad < 5)
                     {
-                        println("[{}/{}] FAIL {}: untouched [{}] = {}", variant_name(), label, step, q,
-                                static_cast<int>(cbig[q]));
+                        println("[{}/{}] FAIL {}: untouched [{}] = {}", variant_name(), label, step, probe_pos,
+                                static_cast<int>(cbig[probe_pos]));
                     }
                     ++nbad;
                 }
@@ -240,17 +254,17 @@ int check_past_int_max()
     bad += verify("parallel", [&](std::size_t k) { return value_at(k + 3); });
 
     // (3) back to the first constant, then a compression pass
-    for (const long p : pos)
+    for (const long position : pos)
     {
-        big[p] = char(0);
+        big[position] = char(0);
     }
     compress_in_region(big);
     bad += verify("zeroed+compressed", [](std::size_t) { return char(0); });
 
     if (!bad)
     {
-        println("[{}/{}] OK: N={} (INT_MAX + {}), {} positions across 2^31, chunk_size={}", variant_name(), label, n,
-                n - i, pos.size(), s);
+        println("[{}/{}] OK: N={} (INT_MAX + {}), {} positions across 2^31, chunk_size={}", variant_name(), label,
+                count, count - huge, pos.size(), chunk_sz);
     }
     return bad ? 1 : 0;
 }
@@ -261,28 +275,28 @@ int check_past_int_max()
 
 /// Whole chunks of one value, so that the compression pass has constant
 /// chunks to fold (to the first value, and to the second where one exists).
-double pattern(int which, long i, long s)
+double pattern(int which, long index, long chunk_sz)
 {
-    const long c = i / s;
+    const long num_chunk = index / chunk_sz;
     switch (which)
     {
         case 0:
-            return (c % 3 == 0) ? 0.0 : (c % 3 == 1) ? 1.0 : 1.0 + static_cast<double>(i % 97);
+            return (num_chunk % 3 == 0) ? 0.0 : (num_chunk % 3 == 1) ? 1.0 : 1.0 + static_cast<double>(index % 97);
         case 1:
-            return (c % 4 == 0) ? 0.0 : (c % 4 == 1) ? 100.0 : 100.0 + static_cast<double>(i % 89);
+            return (num_chunk % 4 == 0) ? 0.0 : (num_chunk % 4 == 1) ? 100.0 : 100.0 + static_cast<double>(index % 89);
         default:
-            return (c % 2 == 0) ? 7.0 : static_cast<double>(i % 5);
+            return (num_chunk % 2 == 0) ? 7.0 : static_cast<double>(index % 5);
     }
 }
 
 template <typename Arr>
-int verify_mixed(const char* label, const char* step, const Arr& a, int which, long m, long s)
+int verify_mixed(const char* label, const char* step, const Arr& arr, int which, long count, long chunk_sz)
 {
     int nbad = 0;
-    for (long i = 0; i < m; ++i)
+    for (long i = 0; i < count; ++i)
     {
-        const double want = pattern(which, i, s);
-        const double got  = a[static_cast<Arr::ind_type>(i)];
+        const double want = pattern(which, i, chunk_sz);
+        const double got  = arr[static_cast<Arr::IndType>(i)];
         if (got != want)
         {
             if (nbad < 5)
@@ -301,17 +315,17 @@ int check_mixed()
     const char* label = "mixed";
 
     // Built alternately, so the per-T numbering is shared: <int>, <long>, <int>.
-    Array<double, int>  a;
-    Array<double, long> b;
-    Array<double, int>  c;
-    const long          s = static_cast<long>(a.chunk_size());
-    const long          m = (50 * s) + 7;
-    a.resize(static_cast<int>(m));
-    b.resize(m);
-    c.resize(static_cast<int>(m));
-    maybe_set_second_value(a, 1.0);
-    maybe_set_second_value(b, 100.0);
-    maybe_set_second_value(c, 7.0);
+    Array<double, int>  int_arr;
+    Array<double, long> long_arr;
+    Array<double, int>  int_arr2;
+    const long          chunk_sz = static_cast<long>(int_arr.chunk_size());
+    const long          count    = (50 * chunk_sz) + 7;
+    int_arr.resize(static_cast<int>(count));
+    long_arr.resize(count);
+    int_arr2.resize(static_cast<int>(count));
+    maybe_set_second_value(int_arr, 1.0);
+    maybe_set_second_value(long_arr, 100.0);
+    maybe_set_second_value(int_arr2, 7.0);
 
     const auto fill = [&](long round)
     {
@@ -319,11 +333,11 @@ int check_mixed()
         {
             begin_phase();
 #pragma omp for schedule(static, 1)
-            for (long i = 0; i < m; ++i)
+            for (long i = 0; i < count; ++i)
             {
-                a[static_cast<int>(i)] = pattern(0, i, s) + static_cast<double>(round);
-                b[i]                   = pattern(1, i, s) + static_cast<double>(round);
-                c[static_cast<int>(i)] = pattern(2, i, s) + static_cast<double>(round);
+                int_arr[static_cast<int>(i)]  = pattern(0, i, chunk_sz) + static_cast<double>(round);
+                long_arr[i]                   = pattern(1, i, chunk_sz) + static_cast<double>(round);
+                int_arr2[static_cast<int>(i)] = pattern(2, i, chunk_sz) + static_cast<double>(round);
             }
         }
         end_phase();
@@ -334,21 +348,22 @@ int check_mixed()
     fill(0);
 
     int bad = 0;
-    bad += verify_mixed(label, "written", std::as_const(a), 0, m, s);
-    bad += verify_mixed(label, "written", std::as_const(b), 1, m, s);
-    bad += verify_mixed(label, "written", std::as_const(c), 2, m, s);
+    bad += verify_mixed(label, "written", std::as_const(int_arr), 0, count, chunk_sz);
+    bad += verify_mixed(label, "written", std::as_const(long_arr), 1, count, chunk_sz);
+    bad += verify_mixed(label, "written", std::as_const(int_arr2), 2, count, chunk_sz);
 
-    compress_in_region(a);
-    compress_in_region(b);
-    compress_in_region(c);
-    bad += verify_mixed(label, "compressed", std::as_const(a), 0, m, s);
-    bad += verify_mixed(label, "compressed", std::as_const(b), 1, m, s);
-    bad += verify_mixed(label, "compressed", std::as_const(c), 2, m, s);
+    compress_in_region(int_arr);
+    compress_in_region(long_arr);
+    compress_in_region(int_arr2);
+    bad += verify_mixed(label, "compressed", std::as_const(int_arr), 0, count, chunk_sz);
+    bad += verify_mixed(label, "compressed", std::as_const(long_arr), 1, count, chunk_sz);
+    bad += verify_mixed(label, "compressed", std::as_const(int_arr2), 2, count, chunk_sz);
 
     if constexpr (build_config::chunk_dynamic)
     {
         // One walk of the per-T registry, which holds both index types.
-        const unsigned int tgt = (s >= 1024) ? static_cast<unsigned int>(s / 2) : static_cast<unsigned int>(s * 2);
+        const unsigned int tgt =
+            (chunk_sz >= 1024) ? static_cast<unsigned int>(chunk_sz / 2) : static_cast<unsigned int>(chunk_sz * 2);
         Array<double, int>::rechunk_all_to(tgt);
         // rechunk_all_to() leaves the active geometry as it found it: the
         // caller moves it, once, before the next writes.
@@ -356,7 +371,7 @@ int check_mixed()
         set_thread_chunk_size(tgt);
         ParamChunk::register_chunk_size(tgt);
 
-        for (const unsigned int got : {a.chunk_size(), b.chunk_size(), c.chunk_size()})
+        for (const unsigned int got : {int_arr.chunk_size(), long_arr.chunk_size(), int_arr2.chunk_size()})
         {
             if (got != tgt)
             {
@@ -364,22 +379,22 @@ int check_mixed()
                 ++bad;
             }
         }
-        bad += verify_mixed(label, "rechunked", std::as_const(a), 0, m, s);
-        bad += verify_mixed(label, "rechunked", std::as_const(b), 1, m, s);
-        bad += verify_mixed(label, "rechunked", std::as_const(c), 2, m, s);
+        bad += verify_mixed(label, "rechunked", std::as_const(int_arr), 0, count, chunk_sz);
+        bad += verify_mixed(label, "rechunked", std::as_const(long_arr), 1, count, chunk_sz);
+        bad += verify_mixed(label, "rechunked", std::as_const(int_arr2), 2, count, chunk_sz);
 
         // And the arrays still take writes and compress at the new geometry.
         fill(0);
-        compress_in_region(b);
-        bad += verify_mixed(label, "rechunked+rewritten", std::as_const(a), 0, m, s);
-        bad += verify_mixed(label, "rechunked+rewritten", std::as_const(b), 1, m, s);
-        bad += verify_mixed(label, "rechunked+rewritten", std::as_const(c), 2, m, s);
+        compress_in_region(long_arr);
+        bad += verify_mixed(label, "rechunked+rewritten", std::as_const(int_arr), 0, count, chunk_sz);
+        bad += verify_mixed(label, "rechunked+rewritten", std::as_const(long_arr), 1, count, chunk_sz);
+        bad += verify_mixed(label, "rechunked+rewritten", std::as_const(int_arr2), 2, count, chunk_sz);
     }
 
     if (!bad)
     {
         println("[{}/{}] OK: <double,int> x2 and <double,long> x1, M={}, written in parallel, compressed{}",
-                variant_name(), label, m, build_config::chunk_dynamic ? ", rechunked together" : "");
+                variant_name(), label, count, build_config::chunk_dynamic ? ", rechunked together" : "");
     }
     return bad ? 1 : 0;
 }

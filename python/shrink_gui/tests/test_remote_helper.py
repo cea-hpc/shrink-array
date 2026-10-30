@@ -189,9 +189,9 @@ def test_msub_qos_directive(site):
 
 def _fake_build_rep(site):
     br = site.home / "br"
-    for name, arch, exes in (("omp-llvm", "RHEL_9.4__aarch64", ["shrink_bench_chunk_64", "shrink_bench_chunk_dyn"]),
-                             ("omp-gnu-debug", "RHEL_9.4__aarch64", ["shrink_bench_chunk_64"]),
-                             ("omp-llvm", "RHEL_8.10__x86_64", ["shrink_bench_chunk_256"])):
+    for name, arch, exes in (("omp-llvm", "RHEL_9.4__aarch64", ["shrink_bench_omp_zero_64", "shrink_bench_omp_zero_dyn"]),
+                             ("omp-gnu-debug", "RHEL_9.4__aarch64", ["shrink_bench_omp_zero_64"]),
+                             ("omp-llvm", "RHEL_8.10__x86_64", ["shrink_bench_omp_zero_256"])):
         d = br / f"cmake-build-{name}" / arch
         d.mkdir(parents=True)
         rules = "".join(f"build bin/{e}: CXX_EXECUTABLE_LINKER__{e}_Release obj.o\n" for e in exes)
@@ -207,7 +207,7 @@ def test_build_targets(site):
         assert "omp-llvm" in r["configs"] and not any("$" in c for c in r["configs"])
     dirs = {d["name"]: d for d in r["dirs"]}
     assert set(dirs) == {"omp-llvm", "omp-gnu-debug", "omp-aocc"}            # x86_64 left out
-    assert dirs["omp-llvm"]["execs"] == ["shrink_bench_chunk_64", "shrink_bench_chunk_dyn"]
+    assert dirs["omp-llvm"]["execs"] == ["shrink_bench_omp_zero_64", "shrink_bench_omp_zero_dyn"]
     assert dirs["omp-aocc"]["configured"] is False
 
 
@@ -384,7 +384,7 @@ def test_errors_log(site):
     r = site.helper("errors", "~/shrink_runs", "b1", _files("bench_errors.log"))
     assert r["files"] == [] and r["note"].startswith("aucun fichier bench_errors.log")
     (od / "bench_errors.log").write_text(
-        "CHECK_FAIL: chunk2a t=4 code=-11\n  stderr_tail:\n    Segmentation fault\n"
+        "CHECK_FAIL: zero_any t=4 code=-11\n  stderr_tail:\n    Segmentation fault\n"
         "PERF_FAIL: chunk t=8 timeout\n  stderr_tail:\n    \n")
     r = site.helper("errors", "~/shrink_runs", "b1", _files("bench_errors.log"))
     assert r["count"] == 2 and r["newer"] is None
@@ -421,23 +421,23 @@ def test_errors_failures_and_their_logs(site):
     logs = od / "run_logs"
     logs.mkdir(parents=True)
     _bench_run(site, "f1", "2026-10-13 10:00:00", od)
-    crash = logs / "shrink_bench_chunk2a__omp4__00003__ok.log"     # a sanitizer hit exits 0
+    crash = logs / "shrink_bench_omp_zero_any__omp4__00003__ok.log"     # a sanitizer hit exits 0
     crash.write_text("ERROR: AddressSanitizer\n")
-    (logs / "shrink_bench_chunk__omp4__00001__ok.log").write_text("fine\n")
+    (logs / "shrink_bench_omp_zero__omp4__00001__ok.log").write_text("fine\n")
     (od / "failed_cases.jsonl").write_text(
-        json.dumps({"kind": "CHECK_FAIL", "summary": "CHECK_FAIL: chunk2a", "runs": [{"log": str(crash)}]}) + "\n"
+        json.dumps({"kind": "CHECK_FAIL", "summary": "CHECK_FAIL: zero_any", "runs": [{"log": str(crash)}]}) + "\n"
         + json.dumps({"kind": "MEM_GUARD", "summary": "MEM_GUARD: x", "runs": []}) + "\n"
         + json.dumps({"kind": "X", "summary": "outside", "runs": [{"log": "/etc/passwd"}]}) + "\n{partial")
     opts = base64.b64encode(json.dumps({"files": ["bench_errors.log"], "cases": "failed_cases.jsonl",
                                         "full_logs": "run_logs"}).encode()).decode()
     r = site.helper("errors", "~/shrink_runs", "f1", opts)
     assert [(c["kind"], c["replayable"], c["logs"]) for c in r["cases"]] == [
-        ("CHECK_FAIL", True, ["run_logs/shrink_bench_chunk2a__omp4__00003__ok.log"]),
+        ("CHECK_FAIL", True, ["run_logs/shrink_bench_omp_zero_any__omp4__00003__ok.log"]),
         ("MEM_GUARD", False, []), ("X", True, [])]
     # the failed executions of the run, for an older bench_runner: never __ok
-    (logs / "shrink_bench_chunk2__omp8__00002__timeout.log").write_text("hung\n")
+    (logs / "shrink_bench_omp_zero_one_value__omp8__00002__timeout.log").write_text("hung\n")
     assert site.helper("errors", "~/shrink_runs", "f1", opts)["logs"] == [
-        "run_logs/shrink_bench_chunk2__omp8__00002__timeout.log"]
+        "run_logs/shrink_bench_omp_zero_one_value__omp8__00002__timeout.log"]
     f = site.helper("errfile", "~/shrink_runs", "f1", base64.b64encode(json.dumps(
         {"paths": r["cases"][0]["logs"] + ["../../../../etc/passwd"]}).encode()).decode())["files"]
     assert "AddressSanitizer" in f[0]["data"] and f[1].get("missing") and f[1]["data"] == ""
@@ -480,22 +480,51 @@ def test_errors_column(site):
     assert _status(site, "b0") is None
 
 
+def test_old_variant_labels_read_as_the_new_ones():
+    import shrink_gui.remote_helper as rh
+    from shrink_gui.config import exe_parts
+    assert [rh.normalize_variant(v) for v in ("chunk", "chunk2", "chunk2a@256", "chunk_int64@dyn",
+                                              "tbb_chunk2a", "zero_any", "vector", "std_alloc@1024")] == [
+        "zero", "zero_one_value", "zero_any@256", "zero_int64@dyn", "tbb_zero_any", "zero_any", "vector",
+        "std_alloc@1024"]
+    assert exe_parts("shrink_bench_chunk2a_dyn") == exe_parts("shrink_bench_zero_any_dyn") == ("zero_any", "dyn")
+    assert exe_parts("./shrink_bench_zero_1024") == ("zero", "1024")
+    assert exe_parts("shrink_bench_zero_one_value") == ("zero_one_value", "default")
+
+
+def test_exe_names_carry_the_backend():
+    # shrink_bench_<backend>_<variant>_<size> (and the TBB bench's tbb_) parse as
+    # the old names did; bench_runner looks an executable up under the three
+    # backend names, never under the old one.
+    from shrink_gui.config import exe_parts
+    assert exe_parts("shrink_bench_omp_zero_any_dyn") == ("zero_any", "dyn")
+    assert exe_parts("./shrink_bench_std_zero_1024") == ("zero", "1024")
+    assert exe_parts("shrink_bench_serial_zero_one_value_256") == ("zero_one_value", "256")
+    assert exe_parts("shrink_bench_tbb_zero_any_256") == ("zero_any", "256")
+    import sys
+    sys.path.insert(0, str(REPO / "python"))
+    from bench_runner.settings import bench_exe_names
+    assert bench_exe_names("zero_any_256") == ["shrink_bench_omp_zero_any_256", "shrink_bench_std_zero_any_256",
+                                               "shrink_bench_serial_zero_any_256"]
+    assert bench_exe_names("tbb_zero_any_dyn") == ["shrink_bench_tbb_zero_any_dyn"]
+
+
 def test_own_copies_win_over_the_shared_directory(site):
     od = site.home / "bench_results" / "aarch64"
     od.mkdir(parents=True)
     head = "Config,Variant,Threads,AvgTime_s,PeakMem_Mo,Speedup_vs_baseline\n"
-    (od / "bench_summary.csv").write_text(head + "omp-gnu,chunk,4,9.0,100,\n")      # a later run's
+    (od / "bench_summary.csv").write_text(head + "omp-gnu,chunk,4,9.0,100,\n")      # a later run's, old label
     (od / "bench_errors.log").write_text("CHECK_FAIL: later\n")
     _bench_run(site, "k1", "2026-10-13 10:00:00", od)
     _bench_run(site, "k2", "2026-10-13 11:00:00", od)
     p = site.helper("points", "~/shrink_runs", "k1")
-    assert p["own"] is False and p["rows"] == [["omp-gnu", "chunk", 4, 9.0, 100.0, None]]
+    assert p["own"] is False and p["rows"] == [["omp-gnu", "zero", 4, 9.0, 100.0, None]]
     d = site.runs / "k1"
-    (d / "bench_summary.csv").write_text(head + "omp-gnu,chunk,4,2.0,100,\nomp-gnu,chunk2a,4,1.0,,2.000\n")
+    (d / "bench_summary.csv").write_text(head + "omp-gnu,zero,4,2.0,100,\nomp-gnu,chunk2a,4,1.0,,2.000\n")
     (d / "bench_errors.log").write_text("CHECK_FAIL: mine\n")
     p = site.helper("points", "~/shrink_runs", "k1")
-    assert p["own"] is True and p["configs"] == ["omp-gnu"] and p["variants"] == ["chunk", "chunk2a"]
-    assert p["rows"][1] == ["omp-gnu", "chunk2a", 4, 1.0, None, 2.0]
+    assert p["own"] is True and p["configs"] == ["omp-gnu"] and p["variants"] == ["zero", "zero_any"]
+    assert p["rows"][1] == ["omp-gnu", "zero_any", 4, 1.0, None, 2.0]
     s = site.helper("summary", "~/shrink_runs", "k1")
     assert [r[3] for r in s["rows"]] == ["2.0", "1.0"]
     e = site.helper("errors", "~/shrink_runs", "k1", _files("bench_errors.log"))

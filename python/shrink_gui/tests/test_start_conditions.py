@@ -74,6 +74,36 @@ def test_after_already_finished(site):
     assert "n'existe pas" in r["error"]
 
 
+def test_after_the_jobs_of_a_submission_over_several_nodes(site):
+    j1 = _compile(site, "c7-n1", 1, 0)
+    j2 = _compile(site, "c7-n2", 3, 0)
+    after = {"run": "c7-n1", "runs": ["c7-n1", "c7-n2"], "cond": "ok"}
+    r = _launch(site, "b7", _spec("true", after=after))
+    assert r.get("jobid"), r
+    assert f'#MSUB -E "--dependency=afterok:{j1}:{j2}"' in (site.runs / "b7" / "job.sh").read_text()
+    assert site.wait(lambda: _run(site, "c7-n1")["status"] == "fini", 20)
+    assert _run(site, "b7")["status"] == "en attente"            # c7-n2 still runs
+    assert site.wait(lambda: _run(site, "b7")["status"] == "fini", 30)
+    # One job failed: nothing submitted once it is over, pending for ever before.
+    _compile(site, "c8-n1", 0, 0)
+    _compile(site, "c8-n2", 0, 5)
+    assert site.wait(lambda: _run(site, "c8-n2")["status"] == "fini", 20)
+    r = _launch(site, "b8", _spec("true", after={"run": "c8-n1", "runs": ["c8-n1", "c8-n2"], "cond": "ok"}))
+    assert "c8-n2 a échoué (code 5)" in r["error"]
+
+
+def test_mprun_waits_for_all_the_jobs(site):
+    site.env["SHRINK_GUI_POLL"] = "0.2"
+    _compile(site, "c9-n1", 1, 0)
+    _compile(site, "c9-n2", 2, 6)
+    _launch(site, "m9", _spec("echo STARTED", mode="mprun",
+                              after={"run": "c9-n1", "runs": ["c9-n1", "c9-n2"], "cond": "ok"}))
+    assert site.wait(lambda: _run(site, "m9")["status"] == "fini", 30)
+    log = _log(site, "m9")
+    assert _run(site, "m9")["code"] == 95
+    assert "run c9-n1 ended (exit code 0)" in log and "c9-n2 failed: not started" in log and "STARTED" not in log
+
+
 def test_delay(site):
     _launch(site, "d1", _spec("true", delay_s=2))
     assert '#MSUB -E "--begin=now+2"' in (site.runs / "d1" / "job.sh").read_text()
@@ -121,7 +151,7 @@ def _build(site, name, stale):
     d = site.home / "br" / f"cmake-build-{name}" / f"RHEL_9.4__{platform.machine()}"
     (d / "examples" / "shrink_bench").mkdir(parents=True)
     (d / "build.ninja").write_text("")
-    exe = d / "examples" / "shrink_bench" / "shrink_bench_chunk_dyn"
+    exe = d / "examples" / "shrink_bench" / "shrink_bench_omp_zero_dyn"
     exe.write_text("")
     exe.chmod(0o755)
     if stale:

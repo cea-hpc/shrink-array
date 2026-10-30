@@ -15,8 +15,8 @@
  */
 
 // ============================================================================
-// Dynamic-geometry validation harness. Variant-agnostic: tests chunk / chunk2 /
-// chunk2a depending on the compile-time macro (CHUNK_VARIANT_V1 / _V2 / _V2A), like
+// Dynamic-geometry validation harness. Variant-agnostic: tests zero / zero_one_value /
+// zero_any depending on the compile-time macro (CHUNK_VARIANT_ZERO*), like
 // rechunk_validation.cpp and shrink_bench.cpp.
 // ============================================================================
 //
@@ -53,62 +53,63 @@
 #include <type_traits> // std::conditional_t
 #include <vector>      // std::vector
 
-#include "chunk/chunk_traits.h"               // forward decls + default ind_type = int
-#include "chunk/array_chunk.h"                // ArrayChunk
-#include "chunk/array_chunk2.h"               // ArrayChunk2
-#include "chunk/array_chunk2A.h"              // ArrayChunk2A
+#include "chunk/chunk_traits.h"               // forward decls + default IntType = int
+#include "chunk/zero_array.h"                 // zero::Array
+#include "chunk/zero_one_value_array.h"       // zero_one_value::Array
+#include "chunk/zero_any_array.h"             // zero_any::Array
 #include "chunk/param_chunk.h"                // ParamChunk::register_chunk_size, init_indexes
 #include "chunk/internal/chunk_size_policy.h" // cst_buffer_size, set_active_chunk_size, set_thread_chunk_size
-#include "chunk/config.h"                     // chunk_config::use_chunk*
+#include "chunk/config.h"                     // chunk_config::use_zero*
 #include "chunk/internal/env_parse.h"         // env_number / arg_number (checked, not atoi)
 #include "chunk/internal/print.h"             // shrink_array::println
 
 using namespace shrink_array;
 
-#include "chunk/chunk_std.h"    // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::dyn_geometry_validation
 {
 
 // --- Active variant selection (same shape as rechunk_validation.cpp) ---------
-static_assert(chunk_config::use_chunk || chunk_config::use_chunk2 || chunk_config::use_chunk2a,
-              "dyn_geometry_validation must be built with CHUNK_VARIANT_V1, _V2 or _V2A");
+static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
+              "dyn_geometry_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_ONE_VALUE or _ZERO_ANY");
 
 static_assert(build_config::chunk_dynamic,
               "dyn_geometry_validation is meaningless without CHUNK_DYNAMIC: with the "
               "static geometry there is only ever one chunk size to get right");
 
 template <typename T>
-using Array = std::conditional_t<chunk_config::use_chunk2a,
-                                 ArrayChunk2A<T>,
-                                 std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T>, ArrayChunk<T>>>;
+using Array =
+    std::conditional_t<chunk_config::use_zero_any,
+                       zero_any::Array<T>,
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
-// set_second_value only exists on chunk2 / chunk2a; no-op elsewhere. Required on
-// chunk2 before any write (its candidate list is keyed by second_value), so it
+// set_second_value only exists on zero_one_value / zero_any; no-op elsewhere. Required on
+// zero_one_value before any write (its candidate list is keyed by second_value), so it
 // is done here for the same reason rechunk_validation does it.
 template <typename Arr, typename Val>
-void maybe_set_second_value(Arr& a, const Val& v)
+void maybe_set_second_value(Arr& arr, const Val& value)
 {
-    if constexpr (requires(Arr x) { x.set_second_value(v); })
+    if constexpr (requires(Arr probe) { probe.set_second_value(value); })
     {
-        a.set_second_value(v);
+        arr.set_second_value(value);
     }
 }
 
@@ -116,16 +117,16 @@ void maybe_set_second_value(Arr& a, const Val& v)
 // constant/materialised transitions are exercised) while making a wrong read
 // obvious — a mis-sized buffer returns the value of a DIFFERENT run, not a
 // neighbouring one.
-static double pattern(long i)
+static double pattern(long index)
 {
-    return double((i / 5000) % 3);
+    return double((index / 5000) % 3);
 }
 
 /**
  * @brief Write a whole array at chunk size @p csz, read it back, compare.
  * @return 0 if every element round-trips, 1 otherwise (details on stdout).
  */
-static int round_trip_at(unsigned int csz, long n)
+static int round_trip_at(unsigned int csz, long count)
 {
     // BOTH halves are needed, and this is the property under test: the array
     // side (set_active_chunk_size) and the allocator side (register_chunk_size).
@@ -133,7 +134,7 @@ static int round_trip_at(unsigned int csz, long n)
     set_thread_chunk_size(csz);
     ParamChunk::register_chunk_size(csz);
 
-    Array<double> arr(n);
+    Array<double> arr(count);
     maybe_set_second_value(arr, 2.0);
 
     if (arr.chunk_size() != csz)
@@ -142,17 +143,17 @@ static int round_trip_at(unsigned int csz, long n)
         return 1;
     }
 
-    std::vector<double> ref(n);
-    for (long i = 0; i < n; ++i)
+    std::vector<double> ref(count);
+    for (long i = 0; i < count; ++i)
     {
-        const double v = pattern(i);
-        arr[i]         = v;
-        ref[i]         = v;
+        const double value = pattern(i);
+        arr[i]             = value;
+        ref[i]             = value;
     }
 
     long bad   = 0;
     long first = -1;
-    for (long i = 0; i < n; ++i)
+    for (long i = 0; i < count; ++i)
     {
         if (arr[i] != ref[i])
         {
@@ -170,22 +171,22 @@ static int round_trip_at(unsigned int csz, long n)
         // the buffer actually had, which names the geometry the allocator used.
         println("[{}/size={}] FAIL: {}/{} mismatches, first at i={} "
                 "(chunk #{}, offset {}) got={:g} expected={:g}",
-                variant_name(), csz, bad, n, first, first / (long)csz, first % (long)csz, (double)arr[first],
+                variant_name(), csz, bad, count, first, first / (long)csz, first % (long)csz, (double)arr[first],
                 ref[first]);
         return 1;
     }
 
-    println("[{}/size={}] OK: {} elements round-trip", variant_name(), csz, n);
+    println("[{}/size={}] OK: {} elements round-trip", variant_name(), csz, count);
     return 0;
 }
 
 static int run_body(int argc, char** argv)
 {
-    const long n = argc > 1 ? shrink_array::arg_number<long>(argv[1], 200000L, "N") : 200000L;
+    const long count = argc > 1 ? shrink_array::arg_number<long>(argv[1], 200000L, "N") : 200000L;
 
     ParamChunk::init_indexes(true);
 
-    println("=== dyn_geometry_validation [variant = {}]  N={} ===", variant_name(), n);
+    println("=== dyn_geometry_validation [variant = {}]  N={} ===", variant_name(), count);
 
     int fails = 0;
 
@@ -194,7 +195,7 @@ static int run_body(int argc, char** argv)
     // size here would test the refusal, not the round-trip.
     for (unsigned int csz = 64; csz <= shrink_array::cst_buffer_size; csz <<= 1)
     {
-        fails += round_trip_at(csz, n);
+        fails += round_trip_at(csz, count);
     }
 
     println("\n[{}] {}", variant_name(),

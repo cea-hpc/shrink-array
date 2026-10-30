@@ -32,7 +32,7 @@
  *   any_flushing()                write_compress_sync_policy.h  any_thread_flushing() (seq_cst)
  *   first look / second look      compression_manager_inline.h  start(): the early-out, the re-check
  *   flush_deferred()              compression_manager_inline.h  flush_deferred()
- *   replay()                      proxy2A_inline.h              assign_impl(): lbd_equal_asynch
+ *   replay()                      zero_any_proxy_inline.h              assign_impl(): lbd_equal_asynch
  *   queued op                     the rank's deferred map (one op here)
  *
  * PROPERTIES (asserted):
@@ -101,7 +101,7 @@ static _Atomic(int*) returned_buffer;
 
 /* ───────────────────────── elements: plain int, two access kinds ───────────────────────── */
 
-/* Chunk2A's direct store / scan load: relaxed atomics on the element (relaxed_element.h). */
+/* zero_any's direct store / scan load: relaxed atomics on the element (relaxed_element.h). */
 static void elem_store_relaxed(int* p, int v) { __atomic_store_n(p, v, __ATOMIC_RELAXED); }
 static int  elem_load_relaxed(const int* p) { return __atomic_load_n(p, __ATOMIC_RELAXED); }
 

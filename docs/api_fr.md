@@ -1,9 +1,9 @@
-# L'API en un coup d'œil
+# Aperçu de l'API
 
 > English version: [api.md](api.md).
 
-> Octobre 2026. Une page pour ce qu'un programme appelle, regroupé par tâche. Les détails (paramètres, préconditions, complexité) sont dans la référence Doxygen
-> (`cmake --build build --target doc`), où l'on peut chercher ces noms. L'usage en contexte :
+> Octobre 2026. Ce qu'un programme appelle, sur une seule page, regroupé par tâche. Les détails (paramètres, préconditions, complexité) sont dans la référence Doxygen
+> (`cmake --build build --target doc`), où l'on peut chercher ces noms. L'utilisation en situation :
 > [getting_started_fr.md](getting_started_fr.md).
 
 ***
@@ -15,8 +15,8 @@ Tous les noms sont dans l'espace de noms `shrink_array`, `build_config` et `chun
 | appel | en-tête | quand |
 |---|---|---|
 | `ParamChunk::init_indexes(true)` | `chunk/param_chunk.h` | facultatif, une fois, avant le premier tableau, pour choisir les blocs (`true` : gros blocs d'allocation) ; sans lui, le premier tableau lance `init_indexes(true)` |
-| `release_chunk_pools()` | `chunk/chunk_std.h` | facultatif, une fois, à la fin ; tant qu'un tableau vit encore (global ou `static`), il ne fait que vider les listes libres |
-| `destroy_block_chunk()` | `chunk/chunk_std.h` | facultatif, juste après `release_chunk_pools()` ; sans effet tant qu'un tableau vit |
+| `release_chunk_pools()` | `chunk/zero_chunk.h` | facultatif, une fois, à la fin ; tant qu'un tableau vit encore (global ou `static`), il ne fait que vider les listes libres |
+| `destroy_block_chunk()` | `chunk/zero_chunk.h` | facultatif, juste après `release_chunk_pools()` ; sans effet tant qu'un tableau vit |
 | `ParamChunk::force_compression()` | `chunk/param_chunk.h` | pour compresser maintenant tous les candidats en attente, pour une mesure ou un point de reprise |
 | `ParamChunk::chunk_stats()` | `chunk/param_chunk.h` | affiche les compteurs `CHUNK_STATS` (sans effet dans les autres builds) |
 
@@ -24,19 +24,19 @@ Tous les noms sont dans l'espace de noms `shrink_array`, `build_config` et `chun
 
 | classe | en-tête | compresse les chunks uniformes à… |
 |---|---|---|
-| `ArrayChunk<T, ind_type = int>` | `chunk/array_chunk.h` | `T{}` |
-| `ArrayChunk2<T, ind_type = int>` | `chunk/array_chunk2.h` | `T{}` ou la seconde valeur du tableau |
-| `ArrayChunk2A<T, ind_type = int>` | `chunk/array_chunk2A.h` | `T{}` ou n'importe quelle valeur, chunk par chunk |
-| `ArrayChunkBits` | `chunk/array_chunk_bits.h` | `bool`, stocké sur un bit par élément (builds Chunk2) |
+| `zero::Array<T, IntType = int>` | `chunk/zero_array.h` | `T{}` |
+| `zero_one_value::Array<T, IntType = int>` | `chunk/zero_one_value_array.h` | `T{}` ou la seconde valeur du tableau |
+| `zero_any::Array<T, IntType = int>` | `chunk/zero_any_array.h` | `T{}` ou n'importe quelle valeur, chunk par chunk |
+| `ArrayChunkBits` | `chunk/array_chunk_bits.h` | `bool`, stocké sur un bit par élément (builds `zero_one_value`) |
 
-`ind_type` est le type d'indice : `long` pour plus de 2³¹ éléments. La variante compilée est
-celle de la bibliothèque liée (`chunk::chunk_v2a`, ...) ; `chunk_config::use_chunk`,
-`chunk_config::use_chunk2` et `chunk_config::use_chunk2a` indiquent laquelle, à la compilation.
+`IntType` est le type d'indice : `long` pour plus de 2³¹ éléments. La variante compilée est
+celle de la bibliothèque liée (`chunk::chunk_zero_any`, ...) ; `chunk_config::use_zero`,
+`chunk_config::use_zero_one_value` et `chunk_config::use_zero_any` indiquent laquelle, à la compilation.
 
 ## 3. Opérations du conteneur
 
-Ce qu'a un `std::vector`, avec les différences qui comptent. **(S)** marque un point séquentiel :
-hors de toute région parallèle, et il invalide les proxys du tableau.
+Les opérations d'un `std::vector`, avec les différences importantes. **(S)** marque un point
+séquentiel : à appeler hors de toute région parallèle ; il invalide les proxys du tableau.
 
 | opération | membres | remarques |
 |---|---|---|
@@ -49,38 +49,40 @@ hors de toute région parallèle, et il invalide les proxys du tableau.
 | ajout | `push_back(v)`, `emplace_back(...)`, `pop_back()` | **(S)** seulement quand il faut un nouveau chunk |
 | remplacement **(S)** | `assign(n, v)`, `assign(first, last)`, `swap(other)`, `operator=` | |
 | itération | `begin()`, `end()`, `cbegin()`, `rbegin()`, `rend()` | itérateurs const à accès aléatoire, par valeur |
-| compression **(S)** | `compress()` | une passe de compression complète, immédiate (`ArrayChunk`, `ArrayChunk2`, `ArrayChunk2A`) |
-| libérer les secondes valeurs **(S)** | `reclaim_second_values()` (statique) | libère les secondes valeurs qu'aucun chunk d'aucun `ArrayChunk2A<T>` n'utilise plus, pour que leurs identifiants soient réutilisés ; renvoie leur nombre (`ArrayChunk2A`) ; un point séquentiel sur **tous** les tableaux du type, voir plus bas |
+| compression **(S)** | `compress()` | une passe de compression complète, immédiate (`zero::Array`, `zero_one_value::Array`, `zero_any::Array`) |
+| libérer les secondes valeurs **(S)** | `reclaim_second_values()` (statique) | libère les secondes valeurs qu'aucun chunk d'aucun `zero_any::Array<T>` n'utilise plus, pour que leurs identifiants soient réutilisés ; renvoie leur nombre (`zero_any::Array`) ; un point séquentiel sur **tous** les tableaux du type, voir plus bas |
 | statistiques | `stats()`, `get_nb_chunk_written()` | pourcentage et nombre de chunks qui détiennent un tampon (chaque tableau imprime aussi une ligne à sa destruction) |
 | géométrie | `chunk_size()`, `rechunk_to(n)` **(S)** | `rechunk_to()` seulement dans les bibliothèques `_dyn` (sans effet dans les statiques) |
 
-Chunk2 seulement : `set_second_value(v)` **(S)**, avant les écritures, et `get_second_value()`.
+`zero_one_value` seulement : `set_second_value(v)` **(S)**, avant les écritures, et `get_second_value()`.
 
 **`reclaim_second_values()` : une précondition sur tout le type.** Les autres opérations **(S)**
 concernent un tableau ; celle-ci est statique et libère les secondes valeurs de tous les
-`ArrayChunk2A<T>` du programme, quel que soit leur type d'index. Pendant qu'elle s'exécute,
-**aucun thread ne doit écrire dans un `ArrayChunk2A<T>` ni le compresser**, pas seulement dans
+`zero_any::Array<T>` du programme, quel que soit leur type d'index. Pendant qu'elle s'exécute,
+**aucun thread ne doit écrire dans un `zero_any::Array<T>` ni le compresser**, pas seulement dans
 les tableaux de l'appelant : dans un code où plusieurs modules ont leurs propres
-`ArrayChunk2A<double>`, le point séquentiel doit valoir pour tous.
+`zero_any::Array<double>`, le point séquentiel doit valoir pour tous.
 
 - *Hors contrat, l'erreur est silencieuse* : un chunk compressé pendant la libération peut
   garder un identifiant qu'elle libère puis attribue à une autre valeur ; ce chunk lit alors
   l'autre valeur, sans plantage ni message.
 - *Ce qui est refusé, dans tous les builds* : un appel dans une région parallèle du thread
   appelant, pendant un re-chunk, ou quand l'index des secondes valeurs est dégradé (elle renvoie
-  0). Les threads que l'appel ne voit pas ne sont pas détectés : un pool `std::thread` ou TBB,
-  ou une équipe OpenMP lancée par un autre thread hôte.
+  0). Les threads que l'appel ne voit pas ne sont pas détectés : un pool `std::thread` ou TBB
+  hors du contrat de phase, ou une équipe OpenMP lancée par un autre thread hôte. Sous le
+  backend std, les threads de l'application sont vus entre `begin_parallel_phase()` et
+  `finalize_parallel_phase()` : l'appel y est refusé.
 - *Ce qui le détecte* : les builds de contrôle (Debug, `CHECK_OPTIM`) s'arrêtent sur toute
   recherche ou tout enregistrement de seconde valeur qui chevauche une libération. Faites
   tourner l'application une fois dans un build de contrôle avec ses appels de libération ; les
   builds release ne paient rien et ne vérifient rien.
-- *Surveiller les identifiants* : `ArrayChunk2A<T>::second_value_stats()` (statique, à tout
+- *Surveiller les identifiants* : `zero_any::Array<T>::second_value_stats()` (statique, à tout
   moment, depuis tout thread) renvoie les identifiants en usage face à la capacité -- les épuiser
   arrête le run --, les libres, les libérations faites et ce qu'elles ont libéré, les libérations
   refusées par cause (un appel refusé renvoie 0 comme un appel qui n'a rien à libérer) et si
   l'index est dégradé (toute libération est alors refusée et les identifiants ne font que
-  croître). Échantillonné aux points de contrôle de l'application, `in_use()` / `capacity` est
-  l'alerte précoce.
+  croître). Relevé aux points de contrôle de l'application, le rapport `in_use()` / `capacity` sert
+  d'alerte précoce.
 
 Absents : `data()`, les itérateurs mutables, `insert` / `erase` au milieu, un tri en place.
 
@@ -133,11 +135,18 @@ effet sinon, et dans les builds séquentiels.
 | `finalize_parallel_phase_only_flush()` + `finalize_parallel_phase_after_flush()` | la même chose, en deux : la première dans la région (elle émet une barrière), la seconde après |
 | `finalize_barrier_phase()` | dans une région, après un `omp barrier` explicite : rend les écritures d'avant visibles après |
 | `parallel_phase([n,] body)` | à la place des deux premiers : une région parallèle (`n` threads, ou ceux du runtime) qui exécute `body` sur chaque thread, avec `begin_parallel_phase()` avant et `finalize_parallel_phase()` après la région ; le partage du travail (`omp for`) va dans `body` |
+| `tbb::parallel_for(...)` | un programme TBB, backend std ou série (`chunk/tbb_adaptor.h`) : les arguments de `oneapi::tbb::parallel_for`, avec `begin_parallel_phase()` avant chaque morceau et `finalize_parallel_phase()` après l'appel |
 
 Un `begin_parallel_phase()` sans `finalize_parallel_phase()` depuis la région précédente arrête
 le programme, dans tous les builds. Les builds de contrôle (Debug, `CHECK_OPTIM`) s'arrêtent
 aussi sur une écriture différée dans une région par un thread qui n'a pas appelé
 `begin_parallel_phase()`.
+
+Les threads créés par l'application (`std::thread`, TBB) demandent le backend std
+(`CHUNK_THREADS=std`) : chaque thread qui écrit appelle `begin_parallel_phase()` avant sa
+première écriture, et un seul thread appelle `finalize_parallel_phase()` une fois qu'ils se sont
+arrêtés. `shrink_array::tbb::parallel_for` fait les deux appels pour une boucle TBB ; l'en-tête
+est installé avec les autres, et le programme lie TBB lui-même (la bibliothèque, non).
 
 ## 7. Taille de chunk adaptative (bibliothèques `_dyn`)
 
@@ -156,9 +165,10 @@ La politique, ses valeurs par défaut et les résultats mesurés : [rechunk_adap
 | nom | signification |
 |---|---|
 | `build_config::use_openmp` | construit avec OpenMP |
+| `build_config::threaded` | la bibliothèque fait tourner des threads (`CHUNK_THREADS` `openmp` ou `std`) |
 | `build_config::has_ompt`, `build_config::has_not_ompt` | construit avec l'outil OMPT, ou non |
 | `build_config::chunk_dynamic` | géométrie dynamique (bibliothèque `_dyn`) |
-| `chunk_config::use_chunk`, `chunk_config::use_chunk2`, `chunk_config::use_chunk2a` | la variante |
+| `chunk_config::use_zero`, `chunk_config::use_zero_one_value`, `chunk_config::use_zero_any` | la variante |
 | `chunk_config::stats` | build `CHUNK_STATS` |
 
 Variables d'environnement et options de build : [variables_environnement_fr.md](variables_environnement_fr.md).
@@ -179,12 +189,13 @@ noms `shrink_array::logging`) : un niveau (`error`, `warn`, `info`, `debug`, `tr
 |---|---|
 | `CHUNK_LOG=warn,rechunk=info` | les niveaux : un niveau seul pour tous les canaux, `canal=niveau` pour un seul, de gauche à droite ; `off` n'écrit que les échecs fatals |
 | `CHUNK_LOG_FILE=chemin` | le fichier où les lignes sont ajoutées au lieu de stderr (`%p` : le numéro du processus) |
-| `logging::configure("warn,rechunk=debug")` | la même spécification depuis le code, par-dessus `CHUNK_LOG` ; renvoie le nombre d'éléments non compris |
-| `logging::set_sink(fn, user)` | confie chaque enregistrement (niveau, canal, message, emplacement dans le source) à `fn` -- le logger du programme -- au lieu de stderr ; `nullptr` revient au défaut. Un enregistrement peut arriver à la sortie : le sink doit lui survivre, ou être retiré avant |
+| `logging::configure("warn,rechunk=debug")` | la même spécification depuis le code, par-dessus `CHUNK_LOG` ; renvoie le nombre d'éléments non reconnus |
+| `logging::set_sink(fn, user)` | confie chaque enregistrement (niveau, canal, message, emplacement dans le source) à `fn` -- le logger du programme -- au lieu de stderr ; `nullptr` revient au défaut. Un enregistrement peut arriver pendant la sortie du programme : le sink doit lui survivre, ou être retiré avant |
 
 Ce qu'un programme demande explicitement -- `print_all_reuse_pool_breakdown()`,
-`CHUNK_ARENA_REPORT`, `CHUNK_LEDGER_REPORT`, `CHUNK_OMPT_STATS` -- est écrit quel que soit
-`CHUNK_LOG`, par le même sink. Une violation d'invariant ou un échec fatal de l'allocateur arrête
+`gc_mark_report()` -- est écrit quel que soit `CHUNK_LOG`, par le même sink. Les rapports de la
+bibliothèque sont des niveaux de leur canal : `arena=info` (l'arène des tampons), `ledger=info` (le
+registre des blocs, à la sortie), `ompt=info` (les régions de synchronisation, à la sortie). Une violation d'invariant ou un échec fatal de l'allocateur arrête
 toujours le programme : un bloc sur stderr commençant par `[CRITICAL_FAILURE]`
 (`[DEBUG_INVARIANT_FAILURE]` dans un build debug), la backtrace, puis l'enregistrement (niveau
 fatal) vers le sink ou `CHUNK_LOG_FILE`. Le contenu des canaux :

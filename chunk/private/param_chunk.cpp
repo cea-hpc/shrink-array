@@ -34,9 +34,8 @@
 #include <iostream>  // std::cout
 #include <mutex>     // std::scoped_lock (CHUNK_STATS report only: the size distribution)
 #include <utility>   // std::cmp_greater
-#include <unistd.h>  // sysconf(_SC_PAGESIZE): page-aware slab floor
 
-#include "chunk/config.h"                              // build_config::chunk_dynamic, use_openmp
+#include "chunk/config.h"                              // build_config::chunk_dynamic, threaded
 #include "chunk/singleton.h"                           // SingletonChk
 #include "chunk/internal/chunk_size_config.h"          // static_chunk_size
 #include "chunk/internal/chunk_size_policy.h"          // active_chunk_size
@@ -64,20 +63,21 @@ void ParamChunkParallelInterface<true, AllT>::init_thread_structures()
     if constexpr (build_config::use_fast_alloc)
     {
         std::cout << "Using \"fast allocator\" for chunks"
-                  << "  [build: reclaim_empty_slabs=" << (build_config::reclaim_empty_slabs ? "ON" : "OFF")
-                  << ", alloc_affinity_min_bytes=" << (build_config::alloc_affinity_min_bytes >> 20U) << "MiB]\n";
+                  << "  [build: alloc_affinity_min_bytes=" << (build_config::alloc_affinity_min_bytes >> 20U)
+                  << "MiB]\n";
     }
 }
 
 // The one instantiation: the other thread model's body stays uninstantiated
 // (as AllTypeChunkParallelInterface in all_type_chunk.cpp).
-template struct ParamChunkParallelInterface<build_config::use_openmp, AllTypeChunk>;
+template struct ParamChunkParallelInterface<build_config::threaded, AllTypeChunk>;
 
 /**
  * @copydoc ParamChunk::init_indexes
  *
  * @details Block size = 2 MiB (15 MiB with @p big_chunk_block) divided by the
- *          thread count, floored at 240 KiB and at sixteen pages.
+ *          thread count, floored at 240 KiB. Each element type scales it to its
+ *          width and floors it at one page (value_slab_request).
  *
  * @warning A chunk larger than one block cannot be allocated; only a warning,
  *          as the caller cannot fix the compile-time geometry at run time.
@@ -97,14 +97,14 @@ void ParamChunk::init_indexes(bool big_chunk_block)
     sz /= CHUNK_PMP_MAX_THREADS; // taking into account the number of threads
 
     sz = std::max(sz_min, sz);
-    // Page-aware floor. An emptied slab keeps its last page (trailing
-    // back-pointer), so with few pages per slab the retained share is large
-    // (a quarter with 256 KiB slabs on 64 KiB pages). Sixteen pages cap it at
-    // ~6%; the cost is one partly-filled slab per (rank, array, size).
-    if (const long ps = ::sysconf(_SC_PAGESIZE); ps > 0)
-    {
-        sz = std::max(sz, static_cast<int>(16 * ps));
-    }
+    // No floor in pages by default. There was one, at sixteen pages, while an
+    // emptied slab kept its last page (the trailing back-pointer): it capped
+    // that retained share at ~6%. A sweep now gives the slab back whole
+    // (EmptySlabSweep), so the floor only cost memory -- on 64 KiB pages it
+    // made the slabs 1 MiB at 64 threads instead of 256 KiB: a partly-used
+    // slab per (rank, element type, array, size), and a slab kept resident by
+    // its last few live buffers. (The A/B switch CHUNK_SLAB_MIN_PAGES is gone:
+    // on x86 a floor of 16 pages changed nothing measurable.)
 
     set_block_size(sz);
 
@@ -138,13 +138,10 @@ void ParamChunk::init_indexes(bool big_chunk_block)
 /// @copydoc ParamChunk::force_compression
 void ParamChunk::force_compression()
 {
-    // Declared in every build; a no-op without fast block compression.
-    if constexpr (chunk_config::use_fast_block_compression)
-    {
-        const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
-
-        ens_type_chunk.force_chunk_to_compress();
-    }
+    // Every build: a serial zero_any queues its candidates too (see
+    // compress_now_and_trim_pools()).
+    const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
+    ens_type_chunk.force_chunk_to_compress();
 }
 
 #if CHUNK_OPT_STATS
@@ -170,6 +167,8 @@ void ParamChunk::chunk_stats()
         all.read_cst += stats.read_cst;
         all.read_sync += stats.read_sync;
         all.read_sync_cross += stats.read_sync_cross;
+        all.dirty_gate += stats.dirty_gate;
+        all.dirty_open += stats.dirty_open;
         all.create += stats.create;
         all.list += stats.list;
         all.bytes_alloc += stats.bytes_alloc;
@@ -201,7 +200,7 @@ void ParamChunk::chunk_stats()
     }
 
     std::cout << "\n===== CHUNK_STATS (instrumentation counters, -DCHUNK_STATS) =====\n";
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         std::cout << "  write/compress handshake : " << dekker::protocol_name() << "\n";
     }
@@ -228,6 +227,13 @@ void ParamChunk::chunk_stats()
                      "                 path (deferred ops had to be flushed first)\n"
                      "    cross-rank   of those, the ones that needed the expensive walk\n"
                      "                 across every rank rather than just their own\n";
+    }
+    if (all.dirty_gate != 0)
+    {
+        std::cout << "   dirty         accesses on a chunk whose dirty bit was set, so the\n"
+                     "                 precise read gate was tested\n"
+                     "    open         of those, the gate open: no deferred op left on the\n"
+                     "                 chunk, the bit stayed set (it is cleared per phase)\n";
     }
     std::cout << "  read/write     reads per write: the access profile of the run\n"
                  "  create         chunks materialised (a buffer was attached)\n"
@@ -281,8 +287,8 @@ void ParamChunk::chunk_stats()
         const bool any = stats.alloc != 0 || stats.write != 0 || stats.read != 0 || stats.read_cst != 0 ||
                          stats.create != 0 || stats.list != 0 || stats.teardown_clear != 0 || stats.compress != 0 ||
                          stats.compress_attempt != 0 || stats.rechunk != 0 || stats.read_sync != 0 ||
-                         stats.mark_ok != 0 || stats.mark_refused != 0 || stats.gate_start != 0 ||
-                         stats.gate_flush != 0 || stats.gate_driver != 0;
+                         stats.dirty_gate != 0 || stats.mark_ok != 0 || stats.mark_refused != 0 ||
+                         stats.gate_start != 0 || stats.gate_flush != 0 || stats.gate_driver != 0;
         if (!any)
         {
             continue;
@@ -343,6 +349,22 @@ void ParamChunk::chunk_stats()
             std::cout << "     cross-rank  = " << stats.read_sync_cross << "  (" << std::fixed << std::setprecision(1)
                       << 100.0 * static_cast<double>(stats.read_sync_cross) / static_cast<double>(stats.read_sync)
                       << "% of sync)\n"
+                      << std::defaultfloat;
+        }
+        // Accesses on a dirty chunk, and of those the ones its sticky bit cost for nothing.
+        if (stats.dirty_gate != 0)
+        {
+            std::cout << "    dirty        = " << stats.dirty_gate;
+            if (reads_all != 0)
+            {
+                std::cout << "  (" << std::fixed << std::setprecision(1)
+                          << 100.0 * static_cast<double>(stats.dirty_gate) / static_cast<double>(reads_all)
+                          << "% of reads)" << std::defaultfloat;
+            }
+            std::cout << "\n";
+            std::cout << "     open        = " << stats.dirty_open << "  (" << std::fixed << std::setprecision(1)
+                      << 100.0 * static_cast<double>(stats.dirty_open) / static_cast<double>(stats.dirty_gate)
+                      << "% of dirty)\n"
                       << std::defaultfloat;
         }
         if (stats.write != 0)

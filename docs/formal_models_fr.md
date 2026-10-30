@@ -4,10 +4,11 @@
 
 [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md) explique les trois protocoles de la
 bibliothèque et argumente leur correction sur le papier. `formal/` contient les mêmes protocoles
-sous forme de **modèles réduits** : de petits programmes C11, un par protocole, qui ne gardent
+sous forme de **modèles réduits** : de petits programmes C11, un par protocole (et un quatrième,
+la case d'offset de pattern::Array, section 7), qui ne gardent
 que les atomiques du source avec leurs ordres mémoire exacts, et qu'un vérificateur de modèles --
 [GenMC](https://github.com/MPI-SWS/genmc) -- explore exhaustivement sous le modèle mémoire C11
-(RC11, et IMM en second avis). Ce document dit ce que sont les modèles, comment les lancer, ce
+(RC11, et IMM en contre-vérification). Ce document dit ce que sont les modèles, comment les lancer, ce
 qu'ils ont prouvé et ce qu'ils ont trouvé.
 
 ## 1. Ce qu'un modèle prouve, et ce qu'il ne prouve pas
@@ -20,9 +21,9 @@ les séries de `multi_launch_stress.py` trouvent un défaut une fois sur des mil
 vérificateur le trouve à la première exécution qui le montre, en une fraction de seconde, et dit
 « aucun » sinon.
 
-Ce que « aucun » veut dire a des limites, listées en section 8 : le modèle est une réduction (la
-fidélité est le risque), il est borné (jusqu'à 5 écrivains), et C11 n'a pas de `membarrier()`. La
-façon de faire confiance à un modèle est de le **calibrer** : lui donner les bugs que la
+Ce que « aucun » veut dire a des limites, listées en section 9 : le modèle est une réduction (la
+fidélité est le risque), il est borné (jusqu'à 5 écrivains), et C11 n'a pas de `membarrier()`. Pour
+pouvoir se fier à un modèle, il faut le **calibrer** : lui donner les bugs que la
 bibliothèque a vraiment eus, sous forme de mutations du modèle, et vérifier que le vérificateur
 les refuse tous. La section 4 est cette calibration.
 
@@ -55,10 +56,10 @@ faible pour le protocole. Rien de `formal/` n'entre dans la bibliothèque ni n'e
 
 ## 3. Le modèle du protocole 1 : écrivain contre compresseur
 
-`formal/writer_compressor.c` est les sections 5.1 à 5.3 et 5.6 du document de synchronisation :
+`formal/writer_compressor.c` transcrit les sections 5.1 à 5.3 et 5.6 du document de synchronisation :
 NWRITERS écrivains (2 par défaut) écrivent chacun une fois un élément d'un chunk, pendant qu'une
 passe de compression marque le chunk, ouvre sa fenêtre, le parcourt et vole son tampon s'il est
-tout à zéro. Chaque nom du modèle tient lieu d'un endroit du source, avec le même ordre mémoire :
+tout à zéro. Chaque nom du modèle correspond à un endroit du source, avec le même ordre mémoire :
 
 | modèle | source (`chunk/public/chunk/internal/`) |
 |---|---|
@@ -67,11 +68,11 @@ tout à zéro. Chaque nom du modèle tient lieu d'un endroit du source, avec le 
 | `hard_inflight`, `stealing_inflight`, `must_defer_write()`, `is_stealing()` | `compression_manager.h` : `hard_inflight_`, `stealing_inflight_`, `must_defer_write()`, `is_hard_compression_inflight()` |
 | `compressor_start()`, `compressor_finish()`, `heavy_barrier()` | `compression_manager_inline.h` : `start()`, `finish()` ; `dekker::heavy_barrier()` |
 | `mark`, `steal_mark()`, `steal_marked()`, `steal_unmark()` | `chunk_base.h` : `steal_mark_` et ses trois verbes |
-| `values`, `values_load()`, `cas_install()`, `steal()` | `chunk_base.h` : `values`, `values_load()`, `compare_and_swap_gen()` ; `chunk2A_std.h` : `try_mark_cst_and_get_old()` |
-| `materialise()`, le parcours, l'écriture d'élément | `chunk2A_std_inline.h` : `create_value()`, `wait_before_materialise()`, `fill_list_to_compress()` ; `relaxed_element.h` |
+| `values`, `values_load()`, `cas_install()`, `steal()` | `chunk_base.h` : `values`, `values_load()`, `compare_and_swap_gen()` ; `zero_any_chunk.h` : `try_mark_cst_and_get_old()` |
+| `materialise()`, le parcours, l'écriture d'élément | `zero_any_chunk_inline.h` : `create_value()`, `wait_before_materialise()`, `fill_list_to_compress()` ; `relaxed_element.h` |
 | `writer()` | `proxy_base_inline.h` : `write_with_optional_lock_impl()` |
 
-Trois propriétés sont affirmées : **P1**, un écrivain n'écrit jamais dans un tampon que la passe a
+Le modèle vérifie trois propriétés : **P1**, un écrivain n'écrit jamais dans un tampon que la passe a
 rendu (le modèle le libère, et GenMC signale tout accès ultérieur) ; **P2**, une écriture qui a
 pris le chemin direct est dans le chunk quand tous les threads ont fini, et une écriture différée
 est comptée -- une écriture n'est jamais perdue en silence ; **P3**, avec `--check-liveness`,
@@ -110,10 +111,10 @@ RC11 et sous IMM (identiques). « Exécutions » est le nombre d'exécutions com
 
 Toutes les mutations sont refusées, et le protocole du source passe dans toutes ses
 configurations. Les deux dernières lignes sont le comportement que ce travail a changé dans le
-source (section 7, F2) : la bibliothèque d'avant est refusée, la bibliothèque d'aujourd'hui passe. Le verdict sur `MUT_RELAXED_MARK` mérite un mot : la section 5.3 dit que
+source (section 8, F2) : la bibliothèque d'avant est refusée, la bibliothèque d'aujourd'hui passe. Le verdict sur `MUT_RELAXED_MARK` mérite un mot : la section 5.3 dit que
 la marque « a besoin de sa propre paire release/acquire » et qu'une lecture relaxed a été
 « confirmée par TSan » -- TSan ne modélise pas les barrières, cette confirmation seule aurait pu
-être un artefact du build symétrique. Le vérificateur tranche : l'acquire *est* porteur, et la
+être un artefact du build symétrique. Le vérificateur tranche : l'acquire est *indispensable*, et la
 trace montre comment. Un écrivain lit la marque à zéro **après** `steal_unmark()` ; avec une
 lecture relaxed, rien ne l'ordonne après le CAS de la passe, donc son `values_load()` peut rendre
 l'ancien tampon -- celui que la passe vient de rendre -- et l'écriture tombe dans une mémoire
@@ -136,15 +137,15 @@ courses de GenMC).
 | cas | attendu | verdict | exécutions |
 |---|---|---|---|
 | source, 1 écrivain ; 2 écrivains ; 3 écrivains (vivacité vérifiée) | passe | passe | 12 ; 403 ; 25 810 |
-| `MUT_NO_SECOND_LOOK` : le bug du 5.4 (1 et 2 écrivains) | échoue | **course**, et détection de courses coupée l'**application perdue** elle-même | 1 |
+| `MUT_NO_SECOND_LOOK` : le bug du 5.4 (1 et 2 écrivains) | échoue | **course** ; avec la détection de courses coupée, l'**application perdue** elle-même | 1 |
 | `MUT_NO_SECOND_LOOK` + `MUT_NO_POSTCHECK` | échoue | application perdue | 1 |
 | `MUT_FLUSH_NO_DRAIN` : le flush applique sans attendre la fin des voleurs | échoue | application perdue | 1 |
 | `MUT_NO_FIRST_LOOK` : la sortie anticipée retirée (1 et 2 écrivains) | passe | passe | 10 ; 357 |
 | `MUT_NO_POSTCHECK` : la confirmation après écriture retirée (1 et 2 écrivains) | passe | passe | 12 ; 403 |
 
-Trois choses que la table dit. Le **second regard** est la paire : sans lui le premier
+La table montre trois choses. Le **second regard** est la paire : sans lui le premier
 contre-exemple du vérificateur est le bug de l'historique, ligne pour ligne -- l'écrivain diffère
-sur la marque ; le flush annonce, trouve `stealing_inflight_` à zéro (la passe est parquée),
+sur la marque ; le flush annonce, trouve `stealing_inflight_` à zéro (la passe est garée),
 applique l'écriture, sa confirmation après écriture passe ; la passe ouvre alors sa fenêtre, entre en vol,
 parcourt les zéros d'avant l'application, remet le chunk sur la constante par CAS et rend le tampon ;
 l'écriture appliquée a disparu. Le **premier regard** « ne s'apparie avec rien », comme le dit la
@@ -155,7 +156,7 @@ tomber après la lecture de la confirmation).
 
 ## 6. Le modèle du protocole 3 : lecteurs contre réemploi des tampons
 
-`formal/reader_reclaim.c` est la section 5.5 (`internal/read_reclaim.h`). Un chunk tenant un
+`formal/reader_reclaim.c` transcrit la section 5.5 (`internal/read_reclaim.h`). Un chunk tenant un
 tampon tout à zéro ; NREADERS lecteurs (2 par défaut, 3 vérifiés) faisant chacun NREADS lectures
 pures (1 par défaut ; 2 et 3 exercent la règle « attendre que la séquence bouge, pas qu'elle soit
 paire »), à travers `ReadSection` comme `element_at()` : l'écriture impaire d'entrée et la
@@ -183,12 +184,55 @@ lit jamais une valeur que le chunk n'a jamais tenue, et la période de grâce se
 | `MUT_OVERFLOW_NO_FENCE` : l'annonce de débordement telle qu'elle était -- **F4** | échoue | accès à une mémoire libérée | -- |
 
 Le protocole tient, toutes les mutations sont refusées, et les deux lignes marquées F3 et F4 sont
-la bibliothèque telle qu'elle était avant ce travail (section 7) : refusée telle qu'elle était,
-passante telle qu'elle est.
+la bibliothèque telle qu'elle était avant ce travail (section 8) : refusée telle qu'elle était,
+acceptée telle qu'elle est.
 
-## 7. Constats
+## 7. Le modèle du protocole 4 : lecteurs d'un motif contre réécritures de la case d'offset
 
-### 7.1 F1 : la porte du build sans marques lisait `hard_inflight_` en relaxed (clos : le build a été retiré)
+`formal/motif_offset.c` transcrit la section 6 de [algo_pattern_fr.md](algo_pattern_fr.md). Un chunk de
+`pattern::Array` compressé vers un **motif** pointe sur un motif partagé, enregistré, et garde son
+**offset** dans sa case de seconde valeur : l'élément `j` vaut `motif[j] + offset`, deux mots, le
+pointeur et la case, lus l'un après l'autre. La case est réécrite par une passe de compression,
+avant qu'elle ne bascule le pointeur : vers le nouvel offset quand la passe compresse le chunk
+vers un motif, vers la seconde valeur de `zero_any` -- ou remise à 0 -- quand elle le compresse
+vers une constante. Le modèle a un chunk de deux éléments au motif A plus 10 ; NREADERS lecteurs
+(1, 2 et 3 vérifiés) lisant chacun l'élément 1 NREADS fois (jusqu'à 3) sous une `ReadSection`,
+comme `element_at(offset, slot)` ; un écrivain qui matérialise le chunk depuis son motif et écrit
+les deux éléments ; une passe qui compresse le tampon vers sa CIBLE -- un autre motif, le même
+motif (le pointeur revient : un ABA), la première ou la seconde constante -- par l'écriture de la
+case puis le CAS, puis attend la période de grâce et recycle le tampon. L'écrivain et la passe ne
+travaillent jamais en même temps sur le chunk : c'est le protocole 1, supposé acquis (la passe
+attend la marque de l'écrivain). La propriété : un lecteur rend une valeur que l'élément 1 a tenue
+à un moment, et n'accède jamais à la case en course avec une écriture non atomique ; les sections
+de lecture et la libération du tampon sont vérifiées comme en section 6.
+
+| modèle | source (`chunk/public/chunk/`) |
+|---|---|
+| `values`, `slot` | `internal/chunk_base.h` `ChunkBase::values_` ; la `SecondValueRef<T>::slot` du chunk |
+| `read_element()` | `internal/chunk_base_inline.h` `element_at_unguarded(offset, slot)`, `read_block()`, `read_block_or_constant()` ; `internal/proxy_base_inline.h` `read_values_at()` ; `pattern_chunk.h` `Chunk::motif_offset()` |
+| `writer()` | `internal/zero_any_chunk_inline.h` `create_value()`, la branche motif |
+| `pass()`, un motif | `internal/pattern_chunk_inline.h` `block_clear_motif()` |
+| `pass()`, une constante | `internal/second_value_chunk_base_inline.h` `block_clear_common()` (`reset_release()`) ; `internal/zero_any_chunk_inline.h` `find_or_set_ind_cst_val2_release()` |
+
+| cas | attendu | verdict | exécutions |
+|---|---|---|---|
+| source : un autre motif ; le même motif ; première constante ; seconde constante | passe | passe | 23 chacun |
+| source, 3 lectures ; 2 lecteurs × 2 lectures ; 3 lecteurs | passe | passe | 287 ; 10 201 ; 12 167 |
+| `MUT_NO_RECHECK` : le lecteur tel que l'étape 2 l'a laissé -- **F5**, un autre motif ; première constante ; seconde constante | échoue | **violation de sûreté** (une valeur que le chunk n'a jamais tenue) | 2 |
+| `MUT_NO_RECHECK`, le même motif : la case tient alors l'offset du nouvel état | passe | passe | 11 |
+| `MUT_SLOT_STORE_PLAIN` : l'écriture de la passe comme `reset()` et `set_from_array()` de `zero_any` -- **F5** | échoue | **course non atomique** | -- |
+| `MUT_SLOT_LOAD_RELAXED` : la relecture avec une lecture relaxed de la case | échoue | violation de sûreté | 17 |
+| `MUT_SLOT_STORE_RELAXED` : l'écriture de la case par la passe en relaxed | échoue | violation de sûreté | 17 |
+| `MUT_CAS_BEFORE_SLOT` : le pointeur basculé avant la réécriture de la case | échoue | violation de sûreté | 6 |
+| `MUT_NO_GRACE` : le tampon libéré sans période de grâce (calibration) | échoue | accès à une mémoire libérée | 1 |
+
+Les mêmes verdicts sous IMM. L'argument de la note de conception contre ce danger ne tenait pas
+(section 8.6) : le modèle l'a trouvé en deux exécutions, et le source a été corrigé avant que la
+variante ne soit annoncée.
+
+## 8. Constats
+
+### 8.1 F1 : la porte du build sans marques lisait `hard_inflight_` en relaxed (clos : le build a été retiré)
 
 Le build `SHRINK_SMALL_CHUNK` -- chunks de 8 octets, pas de marque par chunk, une porte globale --
 avait `CompressionManager::must_defer_write()` égal à `hard_inflight_.load(relaxed) > 0`. Le
@@ -205,50 +249,50 @@ après un `ldar` ultérieur de `values` ; sur x86 les deux lectures restent dans
 est fermé par le matériel.
 
 Le correctif tenait en un mot, `memory_order_acquire` sur cette lecture, et le vérificateur
-l'acceptait à 2 et 3 écrivains. Le build a ensuite été **retiré** (CHANGELOG, *Removed*) : un
-define `-D` qu'aucun test ni script de build n'exerçait, qui échouait ses propres harnais, et un
+l'acceptait à 2 et 3 écrivains. Le build a ensuite été **retiré** (CHANGELOG, *Removed*) : une
+macro `-D` qu'aucun test ni script de build n'utilisait, qui faisait échouer ses propres tests, et un
 second protocole d'écriture à garder correct. Tout build parallèle a désormais les marques
 (`chunk_config::use_chunk_steal_mark`), et la configuration du build retiré a quitté le modèle
 avec lui : cette section est le compte rendu du constat, et la section 5.3 de
 `synchronisation_dekker_fr.md` en garde une ligne.
 
-### 7.2 F2 : un écrivain qui matérialise et un compresseur parqué s'attendaient (corrigé)
+### 8.2 F2 : un écrivain qui matérialise et un compresseur garé s'attendaient (corrigé)
 
 Le commentaire de `wait_before_materialise()` disait qu'elle « est un no-op en pratique : un
 écrivain du chemin rapide n'arrive jamais ici avec le chunk marqué (la porte l'a arrêté) ». Le
-modèle montre la fenêtre que la phrase sautait : la marque peut arriver **entre** le regard n° 2 et
+modèle montre la fenêtre que la phrase oubliait : la marque peut arriver **entre** le regard n° 2 et
 `wait_before_materialise()`. Un écrivain passe le regard n° 2 sur un chunk comprimé, trouve
-`values` à la constante et entre dans `create_value()` ; la passe marque le chunk et se parque dans
+`values` à la constante et entre dans `create_value()` ; la passe marque le chunk et se gare dans
 `start()`, à attendre les drapeaux qui pointent vers un chunk marqué -- celui de cet écrivain.
 L'écrivain tourne sur la marque, le compresseur sur le drapeau. Dans la bibliothèque l'attente du
 compresseur est bornée (`CHUNK_COMPRESS_MAX_YIELDS`, 10 000 yields de 1 000 pauses) : pas un
 interblocage, mais un arrêt des deux threads pendant tout ce budget, après quoi la passe est
 abandonnée (le compteur de porte des abandons sur attente trop longue, dans le rapport
 `CHUNK_STATS`, les compte). Il faut un chunk à une constante tout en étant dans une liste de
-candidats -- le cas dont `fill_list_to_compress()` se garde avec `is_not_cst_val1()` -- donc c'est
+candidats -- le cas contre lequel `fill_list_to_compress()` se prémunit avec `is_not_cst_val1()` -- donc c'est
 rare, pas impossible.
 
 Le correctif découle du protocole lui-même : un écrivain du chemin rapide tient son drapeau et a
 passé le regard n° 2, donc une marque qu'il voit maintenant appartient à un compresseur
-**parqué** sur ce drapeau ; rien ne peut voler le chunk avant `end_write()`, et l'attente ne
+**garé** sur ce drapeau ; rien ne peut voler le chunk avant `end_write()`, et l'attente ne
 protège rien. `wait_before_materialise()` prend désormais le rang de l'appelant et rend la main
 aussitôt quand le drapeau de ce rang est sur le chunk (`WriteCompressSyncPolicy::is_thread_writing_on()`,
-une lecture relaxed du propre drapeau du thread). Les appelants sans drapeau -- `alloc_chunk()`,
+une lecture relaxed du drapeau du thread lui-même). Les appelants sans drapeau -- `alloc_chunk()`,
 le point d'entrée de préallocation utilisable depuis une région parallèle, et l'application d'un flush --
 gardent l'attente, que le modèle ne couvre pas (protocole 2). Avec le correctif, le vérificateur
 prouve sûreté et vivacité même avec une attente **non bornée** du compresseur (26 et 191
 exécutions) ; `MUT_MATERIALISE_WAIT_UNDER_FLAG` est l'attente telle qu'elle était.
 
-### 7.3 Ce que le vérificateur a confirmé
+### 8.3 Ce que le vérificateur a confirmé
 
 Les règles de la section 6 du document de synchronisation tiennent dans le modèle : les deux
 compteurs doivent rester deux (`MUT_WAIT_ON_HARD` est le triangle, trouvé comme violation de
 vivacité en 5 exécutions) ; la barrière du compresseur et le regard de l'écrivain après son
-annonce sont chacun porteurs ; la forme asymétrique n'est pas sûre sans `membarrier()` ; et le
+annonce sont chacun indispensables ; la forme asymétrique n'est pas sûre sans `membarrier()` ; et le
 protocole tel que livré est correct, avec les marques par chunk, à 2 et 3 écrivains, que le chunk
 parte comprimé ou matérialisé.
 
-### 7.4 F3 : lectures enchaînées et la release sequence de C++20 (corrigé)
+### 8.4 F3 : lectures enchaînées et la release sequence de C++20 (corrigé)
 
 Ayant vu un slot impair, la passe attend qu'il **bouge**, à dessein : attendre qu'il soit pair
 bloquerait derrière un lecteur dont les lectures se suivent. La valeur qu'elle lit alors peut être
@@ -267,15 +311,15 @@ toute écriture est un release. Le code était donc juste sur toutes les cibles 
 faux au regard du standard. Deux façons de le rendre juste au regard du standard, toutes deux
 acceptées par le vérificateur : l'écriture impaire d'entrée en release au lieu de relaxed -- un
 `stlr` au lieu d'un `str` sur le chemin de lecture d'AArch64 -- ou `MUT_WAIT_FOR_EVEN`, la passe
-attendant une valeur paire, gratuit sur le chemin de lecture et le stall que la conception a
-refusé. La première a été mesurée sur Grace avec `examples/access_cost`, deux builds du même arbre
+attendant une valeur paire, gratuit sur le chemin de lecture, mais c'est le blocage que la conception
+a refusé. La première a été mesurée sur Grace avec `examples/access_cost`, deux builds du même arbre
 alternés sur 5 tours × 5 répétitions (les temps du vector, même code des deux côtés, à 0,6 % près) :
-à 1 thread `read-varied` +1,9 % pour un spread de 2-3 %, `read-constant` +0,6 %, `read-random`
-+0,0 %, les écritures dans leur spread ; à 64 threads rien de mesurable. **Appliqué** : l'écriture
+à 1 thread `read-varied` +1,9 % pour une dispersion de 2-3 %, `read-constant` +0,6 %, `read-random`
++0,0 %, les écritures dans leur dispersion ; à 64 threads rien de mesurable. **Appliqué** : l'écriture
 d'entrée est release, la bibliothèque est juste au regard du standard pour au plus deux pour cent
 sur le pire cas de lecture, et `MUT_ENTER_RELAXED` est l'écriture telle qu'elle était.
 
-### 7.5 F4 : le lecteur en débordement annonçait sans sa barrière (corrigé)
+### 8.5 F4 : le lecteur en débordement annonçait sans sa barrière (corrigé)
 
 Un lecteur au-delà de `CHUNK_READ_RECLAIM_SLOTS` annonce par `g_overflow_readers.fetch_add(seq_cst)`
 puis charge `values` ; la passe, après sa barrière, charge le compteur en acquire. Un RMW seq_cst
@@ -289,14 +333,145 @@ verrouillé est une barrière complète, donc, comme F3, le trou est celui du st
 n'emprunte qu'avec plus d'un millier de threads lecteurs). Appliqué ; `MUT_OVERFLOW_NO_FENCE` est la
 ligne telle qu'elle était.
 
-## 8. Limites
+### 8.6 F5 : un lecteur de motif pouvait ajouter à son motif la case d'un autre état (corrigé avant publication)
+
+Un lecteur d'un chunk motif de `pattern::Array` lit le pointeur des valeurs -- le motif A -- puis
+l'offset dans la case. Entre les deux lectures, un écrivain peut matérialiser le chunk (un tampon
+rempli depuis A et l'offset, la case intacte) et y écrire, et une passe peut recompresser le
+tampon : elle réécrit d'abord la case -- l'offset d'un autre motif B, ou la seconde valeur d'une
+constante -- puis bascule le pointeur. Le lecteur rend alors `A[j]` plus la nouvelle valeur de la
+case : une valeur que le chunk n'a jamais tenue. Le vérificateur l'a trouvé en deux exécutions (le
+lecteur lit A, puis l'offset 20 de la passe, et rend 5 + 20 = 25 là où le chunk a tenu 15, puis
+27). La note de conception de `pattern::Array` (sa section 6, aujourd'hui la section 6 de [algo_pattern_fr.md](algo_pattern_fr.md)) écartait ce danger : la case « n'est réécrite que dans
+cette passe, après cette attente ». Ce n'est pas le cas -- la période de grâce de `PassScope`
+protège le tampon que la passe libère, après le CAS, pas la case qu'elle réécrit avant. Un second
+défaut venait avec : pour les deux constantes, la passe réécrit la case par
+`SecondValueRef::reset()` et `set_from_array()`, des écritures ordinaires, pendant que le lecteur
+la lit par un `atomic_ref` : une course de données, un comportement indéfini quel que soit l'usage
+de la valeur (`MUT_SLOT_STORE_PLAIN`).
+
+La correction, acceptée par le vérificateur pour toutes les cibles, jusqu'à 3 lecteurs et 3
+lectures : le lecteur lit la case en **acquire** puis relit le pointeur des valeurs ; inchangé,
+l'offset est celui de l'état que les deux lectures encadrent, et la valeur est
+`motif[j] + offset` ; changé, il recommence (`Chunk::motif_offset()`, utilisée par
+`element_at_unguarded(offset, slot)`, `read_block()`, `read_block_or_constant()` et
+`read_values_at()`). Les écritures de la case par la passe sont des écritures atomiques
+**release** pour un membre à état motif (`reset_release()`, `set_from_array_release()`, et
+l'écriture de `block_clear_motif()`, déjà release) ; elles s'apparient à la lecture acquire du
+lecteur et portent ce que la passe a vu du tampon matérialisé, si bien qu'un lecteur qui voit la
+nouvelle case ne peut plus revoir l'ancien pointeur de motif (`MUT_SLOT_LOAD_RELAXED`,
+`MUT_SLOT_STORE_RELAXED`). L'ABA -- la passe qui recompresse vers le même motif -- est sans danger,
+avec ou sans relecture : le pointeur et la case décrivent alors ensemble le nouvel état. La case
+d'abord, le pointeur ensuite (section 6 de la note) reste indispensable (`MUT_CAS_BEFORE_SLOT`).
+
+Coût : sur le chemin de lecture d'un chunk motif seulement, une lecture acquire au lieu d'une
+relaxed et une seconde lecture du pointeur des valeurs, dans la ligne de cache que la première a
+amenée ; le code de `zero_any` est intact (`if constexpr` sur l'état motif ; le code machine de
+ses bibliothèques, exemples et programmes de validation comparé fonction par fonction). La
+matérialisation lit la case une fois, en relaxed : `wait_before_materialise()` tient la passe à
+l'écart du chunk (protocole 1), la case y est donc stable.
+
+### 8.7 F6 : un chunk rendu constant pendant la restitution d'une passe n'était jamais mis en file (corrigé)
+
+Le modèle est `formal/queue_handback.c` ; il ne vérifie aucun ordre mémoire, mais un protocole :
+le drapeau « en file » d'un chunk (`tab_is_inside_chunk_list_to_compress`) et la marque de la
+passe. Une passe restitue chaque candidat par `steal_unmark()`, puis remet son drapeau (la fin de
+`make_block_compression()` ; l'ordre est gardé exprès : une fois le drapeau baissé, une autre passe
+peut mettre le chunk en file et le marquer, et une levée de marque tardive effacerait sa
+réservation). Elle le remettait à 0. Entre les deux, un écrivain trouve la marque baissée et écrit
+en direct ; si son écriture fait passer le dernier élément à la constante, la CAS 0 -> 1 du
+marquage trouvait le drapeau encore levé et renonçait, puis la remise à 0 retirait le chunk de
+toutes les listes. Un chunk constant restait matérialisé jusqu'à sa prochaine écriture. Aucune
+valeur n'était fausse : le coût était de la mémoire, et le décompte de fin de run, qui classe un
+chunk écrit sur son contenu, ne le voyait pas. La fenêtre dépassait la dernière boucle : un chunk
+que la passe comprime est démarqué juste après son effacement.
+
+Le correctif (`chunk/internal/queue_flag.h`) : dès que la passe a parcouru un candidat, et tant
+que sa marque tient encore les écrivains à l'écart, le drapeau du candidat passe de 1 à 2,
+« restitué » (`queue_flag::hand_back` ; dans le parcours même pour `zero` et `zero_one_value`,
+dont les parcours lèvent la marque d'un chunk qu'ils écartent, après tous les parcours pour
+`zero_any`) ; un écrivain dont le marquage trouve 2 le change
+en 3, « écrit entre-temps », au lieu de renoncer (`queue_flag::try_queue`, à chaque site
+d'écrivain : `add_to_compression_list()`, sa forme asynchrone, les écritures par plage qui y
+passent) ; la passe remet ensuite 2 -> 0 par CAS et, sur un 3, remet elle-même le chunk dans la
+liste de son rang (`queue_flag::release`). Dans les passes de `zero`, `zero_one_value` et
+`zero_any` (avec la validation des motifs de `pattern`), builds threadés ; le build série n'a pas
+de passe concurrente. 2 et 3 n'existent qu'à l'intérieur d'une passe : en dehors, le drapeau vaut
+0 ou 1 et « 1 <=> en liste » tient. Coût : sur le chemin d'un écrivain, une comparaison de plus,
+sur le marquage refusé seulement ; dans la passe, un échange et une CAS par candidat au lieu d'une
+écriture. Les builds check vérifient le protocole (`hand_back` sur un drapeau à 1, `release` sur
+2 ou 3).
+
+Le modèle a un chunk de deux éléments, 0 et 7, candidat d'une passe ; W écrit 0 à la place du 7
+(différé tant que la marque est levée, puis rejoué) ; avec `-DWITH_W2`, un second écrivain range
+une valeur quelconque dans l'autre élément, la vérification d'exclusion (la passe ne doit ni la
+perdre ni la laisser atteindre un tampon rendu). La propriété Q1 : un chunk matérialisé dont le
+contenu est constant est en liste ; Q2 : le drapeau est levé exactement quand le chunk est en
+liste, une fois.
+
+| cas | attendu | verdict | exécutions |
+|---|---|---|---|
+| source : le drapeau restitué | succès | succès | 7 |
+| source, avec W2 | succès | succès | 28 |
+| `MUT_OLD_HANDBACK` : `steal_unmark()`, puis la remise à 0 du drapeau -- **F6**, avant | échec | **violation de sûreté** (Q1) | -- |
+| `MUT_HANDBACK_AFTER_UNMARK` : le drapeau mis à 2 après la baisse de la marque | échec | violation de sûreté | -- |
+| `MUT_WRITER_IGNORES_2` : l'écrivain renonce sur un 2 comme sur un 1 | échec | violation de sûreté | -- |
+
+Les mêmes verdicts sous IMM. Dans la bibliothèque, le mode `remark` de `read_reclaim_validation`
+(des passes avec un délai dans la fenêtre de restitution, des écrivains sur les mêmes chunks) est
+passé par la nouvelle branche -- une écriture notée sur un drapeau restitué, le chunk remis en
+file par sa passe -- 267 536 fois pour `zero_any` et 1 849 pour `zero_one_value` en 8 s à 4
+threads, autant de mises en file que l'ancien code perdait.
+
+Mesuré avant le correctif : l'audit des builds check (« never queued for compression ») comptait
+d'abord 34 à 140 chunks de ce genre par run de `shrink_bench`, à 1 thread aussi -- ce que F6 ne
+peut pas être : ils venaient d'un autre trou, les tranches partielles de `fill_range_mt()` sur
+`std::complex<double>` (corrigé, voir CHANGELOG.md). Avec ce correctif et celui de F7 (section
+8.8), l'audit n'en comptait aucun sur Milan jusqu'à 128 threads (`zero_any` en géométrie 256,
+1024 et dynamique, trois graines chacune) : F6 était réel mais rare dans ce bench.
+
+### 8.8 F7 : deux threads remplissant les deux bouts d'un chunk pouvaient le laisser tous deux hors file (corrigé)
+
+`formal/range_edges.c`. `fill_range_mt()` (et `copy_range_mt()`, `transform_range_mt()`) sur des
+éléments `zero_any` à accès relâché range sa tranche, puis décide sur trois éléments du chunk --
+0, S/2, S-1, lectures relâchées -- si le chunk peut être uniforme et doit être mis en file
+(`may_be_uniform_relaxed()`, étape 7 de `store_range_mt()`). Deux threads remplissant les deux
+bouts d'un même chunk avec la même constante rangent chacun leur moitié, puis lisent le bord de
+l'autre : une forme de store buffering, que permettent le relaxé de C11, x86-TSO et AArch64. Les
+deux lisent l'ancien bord, aucun ne met le chunk en file, et un chunk uniforme reste
+matérialisé. L'audit des builds check l'a compté sur Milan une fois corrigé le trou des tranches
+partielles des agrégats : 6 à 52 blocs par run de `shrink_bench` de 16 à 128 threads, tous sur
+`tab1` et `tab2` (`double`, remplis par `fill_range_mt()` à 0 ou à la seconde valeur), aucun sur
+les types d'éléments sans ce filtre. Le chunk du modèle a 4 éléments ; il a trouvé le trou tout de
+suite, et une exécution native sur x86 le rencontre en quelques centaines de milliers d'essais.
+
+Le correctif : quand le premier regard dit « pas uniforme », une barrière seq_cst et un second
+regard. Avec la barrière des deux côtés, le second regard de l'un des threads voit les écritures
+de l'autre ; un premier regard qui dit « uniforme » n'a besoin ni de l'une ni de l'autre. Coût :
+une barrière par tranche dont le chunk ne paraît pas uniforme.
+
+| cas | attendu | verdict | exécutions |
+|---|---|---|---|
+| source : un regard, puis une barrière et un second regard sur un « non » | succès | succès | 21 |
+| `MUT_ONE_LOOK` : un regard, sans barrière -- **F7**, avant | échec | **violation de sûreté** | -- |
+| `MUT_FENCE_ONE_SIDE` : la barrière dans un seul thread | échec | violation de sûreté | -- |
+| `MUT_RECHECK_NO_FENCE` : le second regard sans la barrière | échec | violation de sûreté | -- |
+
+Les mêmes verdicts sous IMM. Le filtre propre au chemin élément, `zero_any::Proxy::may_become_uniform()`,
+a la même forme, et son commentaire le dit, mais il ne filtre que les écritures d'une troisième
+valeur (les clauses « discover » et « leave ») : une écriture de l'une des deux constantes est
+mise en file sans lui. Une barrière sur son « non » serait payée par chaque écriture de données
+variées ; il est laissé tel quel.
+
+## 9. Limites
 
 - **Fidélité.** Le modèle est une réduction écrite à la main depuis le source : une ligne que le
   modèle simplifie est une ligne que le vérificateur ne voit pas. La table de correspondance de la
-  section 3 est ce qu'il faut relire quand le source change, et les mutations sont la garde contre
+  section 3 est ce qu'il faut relire quand le source change, et les mutations sont le garde-fou contre
   un modèle qui ne prouve rien.
 - **Bornes.** Jusqu'à 5 écrivains (protocole 1 ; 3 pour le protocole 2, chacun avec son flush ;
-  3 lecteurs et 3 lectures chacun pour le protocole 3), un chunk, une passe, une écriture chacun
+  3 lecteurs et 3 lectures chacun pour le protocole 3 ; 3 lecteurs, ou 2 lecteurs de 2 lectures,
+  et une matérialisation puis une compression pour le protocole 4), un chunk, une passe, une écriture chacun
   (5 écrivains avec matérialisation : 9 637 exécutions, 7 s). Un bug qui demande deux
   passes ou un chunk recyclé deux fois est hors champ.
 - **`membarrier()`.** Aucun modèle mémoire de langage ne l'a. Le vérificateur vérifie la forme
@@ -309,7 +484,7 @@ ligne telle qu'elle était.
   tout processeur conformes ; une exécution qu'ils autorisent peut être observable ou non sur
   Grace.
 
-## 9. Prochaines étapes
+## 10. Prochaines étapes
 
 - Dartagnan sur les trois mêmes fichiers, sous le modèle AArch64 officiel : la dernière limite
   ci-dessus tombe pour la machine que vise la bibliothèque.

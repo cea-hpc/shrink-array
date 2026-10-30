@@ -40,6 +40,8 @@
 #include <utility>     // std::forward
 #include <vector>      // std::vector: BaselineVector's base
 
+#include "chunk/PMP_CHUNK.h" // pmp::parallel_for (zero_from)
+
 namespace shrink_array
 {
 
@@ -66,18 +68,18 @@ class DefaultInitAllocator : public A
 
     using A::A;
 
-    /// @brief Default-initialise *p: no write for a trivial U.
+    /// @brief Default-initialise *ptr: no write for a trivial U.
     template <class U>
-    void construct(U* p) noexcept(std::is_nothrow_default_constructible_v<U>)
+    void construct(U* ptr) noexcept(std::is_nothrow_default_constructible_v<U>)
     {
-        ::new (static_cast<void*>(p)) U;
+        ::new (static_cast<void*>(ptr)) U;
     }
 
-    /// @brief Construct *p from @p args, as the underlying allocator does.
+    /// @brief Construct *ptr from @p args, as the underlying allocator does.
     template <class U, class... Args>
-    void construct(U* p, Args&&... args)
+    void construct(U* ptr, Args&&... args)
     {
-        Traits::construct(static_cast<A&>(*this), p, std::forward<Args>(args)...);
+        Traits::construct(static_cast<A&>(*this), ptr, std::forward<Args>(args)...);
     }
 };
 
@@ -104,18 +106,18 @@ class BaselineVector : public std::vector<T, DefaultInitAllocator<T>>
 
     BaselineVector() = default;
 
-    /// @brief @p n elements reading T{}, zeroed in parallel.
-    explicit BaselineVector(size_type n) : Base(n)
+    /// @brief @p count elements reading T{}, zeroed in parallel.
+    explicit BaselineVector(size_type count) : Base(count)
     {
         zero_from(0);
     }
 
-    /// @brief Resize to @p n; new elements read T{}, zeroed in parallel.
-    void resize(size_type n)
+    /// @brief Resize to @p count; new elements read T{}, zeroed in parallel.
+    void resize(size_type count)
     {
         const size_type old = this->size();
-        Base::resize(n);
-        if (n > old)
+        Base::resize(count);
+        if (count > old)
         {
             zero_from(old);
         }
@@ -130,14 +132,13 @@ class BaselineVector : public std::vector<T, DefaultInitAllocator<T>>
     {
         if constexpr (std::is_trivially_default_constructible_v<T> && !std::is_same_v<T, bool>)
         {
-            T* const             p = this->data();
-            const std::ptrdiff_t b = static_cast<std::ptrdiff_t>(first);
-            const std::ptrdiff_t e = static_cast<std::ptrdiff_t>(this->size());
-#pragma omp parallel for schedule(static) if (static_cast<std::size_t>(e - b) >= parallel_min)
-            for (std::ptrdiff_t i = b; i < e; ++i)
-            {
-                p[i] = T{};
-            }
+            T* const             ptr       = this->data();
+            const std::ptrdiff_t first_idx = static_cast<std::ptrdiff_t>(first);
+            const std::ptrdiff_t last      = static_cast<std::ptrdiff_t>(this->size());
+            // `omp parallel for schedule(static) if (...)` with OpenMP.
+            pmp::parallel_for(first_idx, last,
+                              pmp::Options{.use_team = static_cast<std::size_t>(last - first_idx) >= parallel_min},
+                              [ptr](std::ptrdiff_t i) { ptr[i] = T{}; });
         }
     }
 };

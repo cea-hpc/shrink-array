@@ -21,16 +21,16 @@
 #include <type_traits> // std::has_unique_object_representations_v
 #include <utility>     // std::unreachable, __cpp_lib_unreachable
 
-#include "chunk/chunk_def.h"             // ComplexType
+#include "chunk/zero_chunk_def.h"        // ComplexType
 #include "chunk/internal/complex_less.h" // ComplexLess
 #include "chunk/internal/in_t.h"         // InT<T>: the compared values
 
 namespace shrink_array
 {
 /**
- * @brief The strict weak order chunk2 keys its second-value tables with.
+ * @brief The strict weak order zero_one_value keys its second-value tables with.
  *
- * chunk2 keys a std::map of candidate tables by second value, so it needs an
+ * zero_one_value keys a std::map of candidate tables by second value, so it needs an
  * ordering the value type may not provide. In order of preference:
  *  - std::complex: ComplexLess, real then imaginary (no operator< in std);
  *  - a type with operator<: that one (arithmetic, enum, std::array, a struct
@@ -42,7 +42,7 @@ namespace shrink_array
  *    at compile time: its padding or NaN bits would make two equal values two
  *    keys. Declaring `auto operator<=>(const T&) const = default;` is the fix.
  *
- * chunk (v1) and chunk2a do not order values (chunk2a finds each chunk's
+ * zero and zero_any do not order values (zero_any finds each chunk's
  * second value by scanning); the element contract there is == and T{} only.
  */
 template <typename T>
@@ -67,7 +67,7 @@ struct ValueLess
         else
         {
             static_assert(std::totally_ordered<T>,
-                          "chunk2 orders second values: this element type needs an operator< "
+                          "zero_one_value orders second values: this element type needs an operator< "
                           "(a defaulted operator<=> will do), or no padding and no floating point");
         }
         // Unreachable (the static_assert fires). For nvc++ (EDG), which does not prune

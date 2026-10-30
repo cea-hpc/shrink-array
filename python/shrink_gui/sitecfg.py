@@ -215,7 +215,9 @@ class Site:
     """A checked site file. Attributes: path, name, host, repo, runs_dir,
     build_root, partition (the default one), batch (dict), detached (dict
     or None), qos_fallback (str), partitions {key: {label, arch, directives,
-    launcher, detached}}, defaults {(program, arch): {dest: value}}."""
+    launcher, detached}}, discovered (dict, or None: the templates of the
+    partitions batch["partition_info"] lists, see partitions.py), defaults
+    {(program, arch): {dest: value}}."""
 
     def __init__(self, data, path):
         self.path = str(path)
@@ -234,7 +236,12 @@ class Site:
             "jobid_re": chk.regex(b, "batch", "jobid_re", r"\b(\d{2,})\b"),
             "cancel": chk.commands(b, "batch", "cancel", ["scancel"]),
             "qos_info": chk.text(b, "batch", "qos_info", ""),
+            # Prints the machine's partitions (partitions.parse); "" when there is none.
+            "partition_info": chk.text(b, "batch", "partition_info", ""),
             "directive": chk.text(b, "batch", "directive"),
+            # Inside a batch job of several nodes: what starts one task per
+            # node (runscripts.node_launch), when the partition has no launcher.
+            "step": chk.command(b, "batch", "step") if "step" in b else "srun",
         }
         for k, default, fields in (("name", "", ("name",)), ("time", None, ("seconds", "minutes", "hms")),
                                    ("output", None, ("log",)), ("error", "", ("log",)),
@@ -269,6 +276,22 @@ class Site:
                 "detached": chk.text(p, where, "detached", ""),
             }
             chk.unknown(p, where, ("label", "arch", "directives", "launcher", "detached"))
+        # The partitions the machine lists, beside these: the templates of their entries.
+        disc = chk.table("discovered", required=False)
+        self.discovered = None
+        if disc is not None:
+            fields = ("name", "cores")
+            self.discovered = {
+                "directives": chk.template(disc, "discovered", "directives", None, fields),
+                "launcher": chk.template(disc, "discovered", "launcher", "", fields),
+                "detached": chk.template(disc, "discovered", "detached", "", fields),
+                "arm": chk.pattern(disc, "discovered", "arm", ""),
+                "skip": chk.pattern(disc, "discovered", "skip", ""),
+            }
+            chk.unknown(disc, "discovered", tuple(self.discovered))
+        if self.batch["partition_info"] and self.discovered is None:
+            chk.fail("discovered", "table manquante : batch.partition_info lit les partitions de la machine, "
+                                   "[discovered] dit comment les soumettre")
         self.partition = chk.text(s, "site", "partition", next(iter(self.partitions)))
         if self.partition not in self.partitions:
             chk.fail("site.partition", "« %s » n'est pas dans [partitions]" % self.partition)
@@ -293,7 +316,7 @@ class Site:
         if d is not None:
             chk.unknown(d, "detached", tuple(self.detached))
         chk.unknown(q, "qos", ("fallback",))
-        chk.unknown(data, "", ("site", "batch", "detached", "qos", "partitions", "defaults"))
+        chk.unknown(data, "", ("site", "batch", "detached", "qos", "partitions", "discovered", "defaults"))
 
     def detached_options(self, options, seconds, qos):
         """The detached command's options: the partition's @p options, then
@@ -315,6 +338,8 @@ class Site:
              "#MSUB": self.batch["directive"]}
         if self.batch["qos_info"]:
             w["ccc_mqinfo"] = shlex.split(self.batch["qos_info"])[0]
+        if self.batch["partition_info"]:
+            w["ccc_mpinfo"] = shlex.split(self.batch["partition_info"])[0]
         if self.detached:
             w["ccc_mprun"] = shlex.split(self.detached["command"])[0]
         return w
@@ -368,6 +393,14 @@ class _Checker:
         try:
             if re.compile(v).groups < 1:
                 self.fail("%s.%s" % (where, key), "un groupe (...) autour du numéro de job")
+        except re.error as e:
+            self.fail("%s.%s" % (where, key), "expression invalide : %s" % e)
+        return v
+
+    def pattern(self, t, where, key, default):
+        v = self.text(t, where, key, default)
+        try:
+            re.compile(v)
         except re.error as e:
             self.fail("%s.%s" % (where, key), "expression invalide : %s" % e)
         return v

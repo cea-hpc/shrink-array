@@ -66,7 +66,7 @@
 #include <thread>    // std::this_thread::yield
 #include <vector>    // std::vector
 
-#include "chunk/config.h"                              // build_config::use_openmp
+#include "chunk/config.h"                              // build_config::threaded
 #include "chunk/internal/chunk_size_policy.h"          // t_active_chunk_size / t_alloc_key, restored per released block
 #include "chunk/internal/cpu_pause.h"                  // CHUNK_CPU_PAUSE
 #include "chunk/internal/write_compress_sync_policy.h" // dekker::heavy_barrier / asymmetric_active
@@ -79,7 +79,7 @@ namespace shrink_array::read_reclaim
 {
 
 /// @brief The protocol is compiled in: OpenMP builds only.
-inline constexpr bool enabled = build_config::use_openmp;
+inline constexpr bool enabled = build_config::threaded;
 
 /// @brief Reader slots: one per thread that has ever read, a cache line each.
 inline constexpr int slot_count = CHUNK_READ_RECLAIM_SLOTS;
@@ -91,7 +91,7 @@ struct alignas(64) ReaderSlot
 };
 
 inline std::array<ReaderSlot, slot_count> g_slots;     ///< The reader slots, claimed in order.
-inline std::atomic<int>               g_nslots{0}; ///< Slots claimed so far (may exceed slot_count).
+inline std::atomic<int>                   g_nslots{0}; ///< Slots claimed so far (may exceed slot_count).
 /// @brief Readers past slot_count: counted in one shared RMW (seq_cst), slow but
 ///        correct. A program with more reader threads than slot_count raises
 ///        CHUNK_READ_RECLAIM_SLOTS.
@@ -106,10 +106,10 @@ inline ReaderSlot* claim_slot() noexcept
     {
         return nullptr;
     }
-    const int i = g_nslots.fetch_add(1, std::memory_order_acq_rel);
-    if (i < slot_count) [[likely]]
+    const int slot_idx = g_nslots.fetch_add(1, std::memory_order_acq_rel);
+    if (slot_idx < slot_count) [[likely]]
     {
-        t_slot = &g_slots[i];
+        t_slot = &g_slots[slot_idx];
         return t_slot;
     }
     t_overflow = true;
@@ -137,58 +137,9 @@ class ReadSection
 {
   public:
     /// @brief Enter: the slot's sequence goes odd, then the light fence.
-    ReadSection() noexcept
-    {
-        if constexpr (enabled)
-        {
-            ReaderSlot* s = t_slot;
-            if (s == nullptr) [[unlikely]]
-            {
-                s = claim_slot();
-            }
-            if (s != nullptr) [[likely]]
-            {
-                slot_ = s;
-                seq_  = s->seq.load(std::memory_order_relaxed) + 1; // odd
-                // RELEASE, not relaxed: the reclaimer, having seen this slot odd, waits
-                // for it to MOVE, and the value it then reads may be THIS store -- the
-                // next read's entry. Release orders the previous read's element load
-                // before it; relaxed, by C++20 (no release sequence through a later
-                // relaxed store of the same thread), it would order nothing, and only
-                // the AArch64 / x86 mappings would keep that load before the free. An
-                // stlr instead of an str: +1.9 % on access_cost's worst read case at 1
-                // thread on Grace, within its spread, nothing measurable at 64
-                // (formal/reader_reclaim.c, MUT_ENTER_RELAXED; docs/formal_models.md F3).
-                s->seq.store(seq_, std::memory_order_release);
-                light_fence();
-            }
-            else
-            {
-                g_overflow_readers.fetch_add(1, std::memory_order_seq_cst);
-                // The announce needs its light side like the slot path: a seq_cst
-                // RMW followed by the acquire load of `values` is not a Dekker
-                // announce in C11 (store buffering against the reclaimer's acquire
-                // load of the counter), though it is on the AArch64 and x86
-                // mappings (formal/reader_reclaim.c, MUT_OVERFLOW_NO_FENCE).
-                light_fence();
-            }
-        }
-    }
+    ReadSection() noexcept;
     /// @brief Leave: the sequence goes even, released after the element load.
-    ~ReadSection()
-    {
-        if constexpr (enabled)
-        {
-            if (slot_ != nullptr) [[likely]]
-            {
-                slot_->seq.store(seq_ + 1, std::memory_order_release); // even: the element load is done
-            }
-            else
-            {
-                g_overflow_readers.fetch_sub(1, std::memory_order_release);
-            }
-        }
-    }
+    ~ReadSection();
     // A scope: neither copied nor moved.
     ReadSection(const ReadSection&)            = delete;
     ReadSection& operator=(const ReadSection&) = delete;
@@ -208,20 +159,20 @@ class ReadSection
 inline void wait_for_readers() noexcept
 {
     dekker::heavy_barrier(); // seq_cst fence + membarrier: orders the CASes before the slot reads
-    const int         n    = std::min(g_nslots.load(std::memory_order_acquire), slot_count);
-    const ReaderSlot* mine = t_slot;
-    for (int i = 0; i < n; ++i)
+    const int         nslots = std::min(g_nslots.load(std::memory_order_acquire), slot_count);
+    const ReaderSlot* mine   = t_slot;
+    for (int i = 0; i < nslots; ++i)
     {
         if (&g_slots[i] == mine)
         {
             continue;
         }
-        const std::uint64_t v = g_slots[i].seq.load(std::memory_order_acquire);
-        if ((v & 1U) == 0U)
+        const std::uint64_t seq = g_slots[i].seq.load(std::memory_order_acquire);
+        if ((seq & 1U) == 0U)
         {
             continue;
         }
-        for (int spins = 0; g_slots[i].seq.load(std::memory_order_acquire) == v;)
+        for (int spins = 0; g_slots[i].seq.load(std::memory_order_acquire) == seq;)
         {
             CHUNK_CPU_PAUSE();
             if (++spins == 1000)
@@ -270,47 +221,9 @@ class PassScope
 {
   public:
     /// @brief Open the batch, unless an enclosing scope already did.
-    PassScope() noexcept
-    {
-        if constexpr (enabled)
-        {
-            if (t_batch == nullptr)
-            {
-                owner_ = true;
-                storage().clear();
-                t_batch = &storage();
-            }
-        }
-    }
+    PassScope() noexcept;
     /// @brief The outermost scope: wait for the readers, then release the batch.
-    ~PassScope()
-    {
-        if constexpr (enabled)
-        {
-            if (!owner_)
-            {
-                return;
-            }
-            t_batch     = nullptr;
-            auto& batch = storage();
-            if (batch.empty())
-            {
-                return;
-            }
-            wait_for_readers();
-            const unsigned int saved_size = t_active_chunk_size;
-            const unsigned int saved_key  = t_alloc_key;
-            for (const Deferred& d : batch)
-            {
-                t_active_chunk_size = d.chunk_size;
-                t_alloc_key         = d.alloc_key;
-                d.release(d.chunk, d.thr, d.block);
-            }
-            t_active_chunk_size = saved_size;
-            t_alloc_key         = saved_key;
-            batch.clear();
-        }
-    }
+    ~PassScope();
     // A scope: neither copied nor moved.
     PassScope(const PassScope&)            = delete;
     PassScope& operator=(const PassScope&) = delete;
@@ -321,8 +234,8 @@ class PassScope
     /// @brief Per-thread, reused: a pass does not allocate its batch afresh.
     static std::vector<Deferred>& storage() noexcept
     {
-        thread_local std::vector<Deferred> v;
-        return v;
+        thread_local std::vector<Deferred> batch;
+        return batch;
     }
     bool owner_ = false;
 };
@@ -333,14 +246,14 @@ inline bool defer_release(void (*release)(void*, int, void*) noexcept, void* chu
 {
     if constexpr (enabled)
     {
-        if (std::vector<Deferred>* b = t_batch; b != nullptr) [[unlikely]]
+        if (std::vector<Deferred>* batch = t_batch; batch != nullptr) [[unlikely]]
         {
-            b->push_back(Deferred{.release    = release,
-                                  .chunk      = chunk,
-                                  .block      = block,
-                                  .thr        = thr,
-                                  .chunk_size = t_active_chunk_size,
-                                  .alloc_key  = t_alloc_key});
+            batch->push_back(Deferred{.release    = release,
+                                      .chunk      = chunk,
+                                      .block      = block,
+                                      .thr        = thr,
+                                      .chunk_size = t_active_chunk_size,
+                                      .alloc_key  = t_alloc_key});
             return true;
         }
     }
@@ -348,3 +261,5 @@ inline bool defer_release(void (*release)(void*, int, void*) noexcept, void* chu
 }
 
 } // namespace shrink_array::read_reclaim
+
+#include "chunk/internal/read_reclaim_inline.h" // the template bodies

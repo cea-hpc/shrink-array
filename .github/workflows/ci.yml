@@ -1,17 +1,23 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 #
-# The per-push CI: the source checks, then gcc 14 in an OpenMP and a serial
-# build with the check-mode switches (CHECK_OPTIM), the validation harnesses at
-# chunk size 256 (`check` target: ctest -L validation) and the native runs of
-# the GenMC models (ctest -L formal). The long builds -- sanitizers, _dyn,
-# clang, AArch64, GenMC itself -- belong to a nightly workflow, not here.
+# The per-push CI: the source checks (clang-format 23 included), then gcc 14 in
+# an OpenMP, a serial and a std-threads (+ oneTBB) build with the check-mode
+# switches (CHECK_OPTIM), the validation harnesses at chunk size 256 (`check`
+# target: ctest -L validation), the examples (ctest -L examples), the library
+# installed and getting_started built against it (find_package), the native runs
+# of the GenMC models (ctest -L formal) and the std backend under
+# ThreadSanitizer. The OpenMP build runs on AArch64 as well (ubuntu-24.04-arm,
+# Neoverse): the lock-free handshakes were written for that weak memory model,
+# and x86 cannot see them fail. The long builds -- the other sanitizers, _dyn,
+# clang, GenMC itself, the AArch64 ThreadSanitizer and _dyn builds -- belong to
+# nightly.yml, not here.
 
 name: CI
 
 on:
   push:
-    branches: [main, develop, threads, cpp23]
+    branches: [main, develop, threads, cpp23, cpp26]
   pull_request:
     branches: [main, develop]
   workflow_dispatch:
@@ -31,10 +37,19 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
+      # check_format needs clang-format 23 exactly (another version formats
+      # differently): apt.llvm.org's, the runner has an older one.
+      - name: clang-format 23
+        run: |
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null
+          echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-23 main" | sudo tee /etc/apt/sources.list.d/llvm-23.list
+          sudo apt-get update -q
+          sudo apt-get install -y -q clang-format-23
+          clang-format-23 --version
       - name: check_* scripts
         run: |
           status=0
-          for s in check_docs check_tracked check_raw_reads check_includes check_naming check_headers; do
+          for s in check_docs check_tracked check_raw_reads check_includes check_naming check_headers check_format; do
             echo "::group::$s"
             python3 scripts/$s.py . || status=1
             echo "::endgroup::"
@@ -83,14 +98,44 @@ jobs:
           fi
           echo "no fixup commit in $range"
 
+  # cpp26 needs C++26 static reflection and contracts: GCC 16, which the
+  # runners do not have (gcc16-cpp26 below builds it); GCC 14 stops at its
+  # configure step. This file is the same on every branch -- it reaches cpp23
+  # and cpp26 through the merges -- so the branch is told apart here.
   build-test:
-    name: gcc 14, OMP=${{ matrix.omp }}
-    runs-on: ubuntu-24.04
+    if: github.ref_name != 'cpp26'
+    name: gcc 14, ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        omp: [ON, OFF]
+        include:
+          - name: OpenMP
+            runner: ubuntu-24.04
+            cmake_args: -DOMP=ON
+            formal: true
+            install: true
+          # The same build on AArch64 (4 Neoverse cores, 16 GB, like the x86
+          # runner): the writer/compressor, compressor/flush and reader/reclaim
+          # handshakes on the memory model they were modelled for. The CMake
+          # arch flag is -mcpu=native there (-march=native on x86).
+          - name: AArch64 OpenMP
+            runner: ubuntu-24.04-arm
+            cmake_args: -DOMP=ON
+            formal: true
+            install: true
+          - name: serial
+            runner: ubuntu-24.04
+            cmake_args: -DOMP=OFF
+            formal: true
+            install: true
+          # The std backend (the library's own std::jthread team, no OpenMP) and
+          # the TBB adaptor: std_thread_validation and tbb_validation.
+          - name: std + TBB
+            runner: ubuntu-24.04
+            cmake_args: -DCHUNK_THREADS=std -DCHUNK_WITH_TBB=ON
+            tbb: true
     env:
       CC: gcc-14
       CXX: g++-14
@@ -102,21 +147,135 @@ jobs:
       - name: Toolchain
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev
+          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev ${{ matrix.tbb && 'libtbb-dev' || '' }}
           g++-14 --version
           cmake --version
       - name: Configure
         run: >
           cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          -DOMP=${{ matrix.omp }}
+          ${{ matrix.cmake_args }}
           -DCHECK_OPTIM=ON
           -DCHUNK_STATIC_SIZES=256
           -DCHUNK_BUILD_DYN=OFF
       - name: Build and run the validation harnesses (check target)
         run: cmake --build build --target check
+      # check builds only the executables of the directories that call
+      # shrink_stamp_directory_targets() (validation, variant_compare, ...), not
+      # the programs behind the `examples` label: they are built here.
+      - name: Examples (ctest -L examples)
+        run: |
+          cmake --build build --target getting_started simple_array_chunk multi-mat test_vecto_chunk
+          ctest --test-dir build -L examples --output-on-failure
+      # What a user project does: the library alone, installed, and
+      # examples/getting_started configured on its own with find_package(chunk).
+      - name: Install, then getting_started against the install
+        if: matrix.install
+        run: |
+          cmake -S . -B build-lib -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo ${{ matrix.cmake_args }} \
+            -DCHUNK_STATIC_SIZES=256 -DCHUNK_BUILD_DYN=OFF \
+            -DSHRINK_ARRAY_BUILD_EXAMPLES=OFF -DSHRINK_ARRAY_BUILD_TESTS=OFF
+          cmake --build build-lib
+          cmake --install build-lib --prefix "$RUNNER_TEMP/prefix"
+          cmake -S examples/getting_started -B build-gs -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/prefix"
+          cmake --build build-gs
+          OMP_NUM_THREADS=4 ./build-gs/getting_started
       - name: GenMC models, native runs
+        if: matrix.formal
         run: |
           targets=$(ninja -C build -t targets all | sed -n 's/^\(formal_native_[a-z_]*\):.*/\1/p' | sort -u)
           cmake --build build --target $targets
           ctest --test-dir build -L formal --output-on-failure
+
+  # The std backend runs its own threads (std::jthread team, thread-rank registry,
+  # the TBB adaptor on top): ThreadSanitizer sees those as it does not see OpenMP's.
+  # The check target builds and runs std_thread_validation and tbb_validation too.
+  std-tsan:
+    if: github.ref_name != 'cpp26'
+    name: std backend, ThreadSanitizer
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      CC: gcc-14
+      CXX: g++-14
+      # The runner's 4 vCPUs: the build is most of the job (30 min at 2). The
+      # unity harnesses, the ones that take gigabytes under ThreadSanitizer, two
+      # at a time (the heavy pool, Configure): four of them at once exhausted the
+      # runner's 16 GB -- the build killed (exit 143), or the runner lost.
+      CMAKE_BUILD_PARALLEL_LEVEL: 4
+      TSAN_OPTIONS: halt_on_error=1 second_deadlock_stack=1
+    steps:
+      - uses: actions/checkout@v5
+      - name: Toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev libtbb-dev
+          # ThreadSanitizer aborts on the runners' default address-space randomization.
+          sudo sysctl vm.mmap_rnd_bits=28
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCHUNK_THREADS=std
+          -DCHUNK_WITH_TBB=ON
+          -DSANITIZER=thread
+          -DCHECK_OPTIM=ON
+          -DCHUNK_STATIC_SIZES=256
+          -DCHUNK_BUILD_DYN=OFF
+          -DCHUNK_CHECK_EXCLUDE=_1thr$
+          -DCMAKE_JOB_POOLS=heavy=2
+          -DCHUNK_HEAVY_JOB_POOL=heavy
+      # Two steps, so the job's timings tell the build from the tests.
+      - name: Build the validation harnesses (check_build target)
+        run: cmake --build build --target check_build
+      # The _1thr tests run in the other jobs: one thread, no race for
+      # ThreadSanitizer to see, and its cost all the same.
+      - name: Run the validation harnesses (check target)
+        run: cmake --build build --target check
+
+  # The cpp26 branch, in the official gcc image: GCC 16 (-freflection, the
+  # contracts) on Debian. OpenMP and serial only: ThreadSanitizer needs the
+  # host's vm.mmap_rnd_bits lowered, which a container cannot do, and the
+  # other jobs' targets (AArch64, std + TBB, GenMC) have nothing of C++26 to
+  # check that develop and cpp23 do not already cover.
+  gcc16-cpp26:
+    if: github.ref_name == 'cpp26'
+    name: gcc 16, cpp26, ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    container: gcc:16.2.0-trixie
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: OpenMP
+            cmake_args: -DOMP=ON
+          - name: serial
+            cmake_args: -DOMP=OFF
+    env:
+      # The unity harnesses, as build-test: two at a time fit the runner's 16 GB.
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - uses: actions/checkout@v5
+      - name: Toolchain
+        run: |
+          apt-get update -q
+          apt-get install -y -q cmake ninja-build libbz2-dev
+          g++ --version
+          cmake --version
+          # The container runs as root, the checkout belongs to the runner's
+          # user: without this, git refuses the tree and the build stamp
+          # (git describe) has no revision.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          ${{ matrix.cmake_args }}
+          -DCHECK_OPTIM=ON
+          -DCHUNK_STATIC_SIZES=256
+          -DCHUNK_BUILD_DYN=OFF
+      - name: Build and run the validation harnesses (check target)
+        run: cmake --build build --target check

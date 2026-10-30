@@ -22,18 +22,16 @@
 // the heavy includes below (compression manager, stats) stay out of the
 // container declaration itself.
 
-#include <algorithm>   // std::min / std::max (CHUNK_RECHUNK_SLICES)
-#include <array>       // std::array (CHUNK_RECHUNK_SCHEDULE text buffers)
+#include <algorithm>   // std::min / std::max (the slice count)
+#include <array>       // std::array (the rebuild schedule's text)
 #include <atomic>      // std::atomic<long> n_folded (the memory census)
 #include <chrono>      // the rechunk=debug phase timers
 #include <ratio>       // std::milli (the same timers)
 #include <cstddef>     // std::size_t
-#include <format>      // std::format_to_n (CHUNK_RECHUNK_SCHEDULE text)
 #include <cstring>     // std::memcpy / std::memcmp (refill bulk read)
-#include <cstdlib>     // std::getenv (CHUNK_RECHUNK_RECYCLE, CHUNK_RECHUNK_SCHEDULE)
 #include <optional>    // the affinity scope around tmp
-#include <type_traits> // std::is_same_v, the v1 bool guard
-#include <string_view> // CHUNK_RECHUNK_SCHEDULE parsing
+#include <type_traits> // std::is_same_v, the zero bool guard
+#include <string_view> // the rebuild schedule's text, in the trace
 #include <utility>     // std::swap (the array swap)
 #include <vector>      // the refill buffers
 
@@ -43,21 +41,22 @@
 #include "chunk/internal/array_chunk_rechunk.h" // RechunkSupport, the class these bodies belong to
 #include "chunk/array_chunk_range_ops.h"        // copy_range -- the public bulk fill
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_rechunk* (CHUNK_STATS)
+#include "chunk/internal/cst_slot.h"            // CstSlot (zero_any's type-of-constant slot)
 #include "chunk/internal/compression_manager.h" // CompressionManager<>::FlushReplayGuard in rechunk_refill
-#include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast
-#include "chunk/internal/env_parse.h"           // env_number / env_flag (checked, not atoi)
+#include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast, pmp::team
 #include "chunk/log.h"                          // CHUNK_LOG, logging::enabled (the traces)
 #include "chunk/internal/exact_rss.h"           // exact_rss_kib (rss_mib_now)
 #include "chunk/vector_range_ops.h"             // assume_drained
-#include "chunk/config.h"                       // build_config::use_openmp, chunk_config::use_chunk2a
-#include "chunk/chunk_traits.h"                 // Proxy2A<T>
+#include "chunk/config.h"                       // build_config::threaded, chunk_config::use_zero*
+#include "chunk/chunk_traits.h"                 // is_zero_any_family_v
 #include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size / set_active_chunk_size
 #include "chunk/bit.h"                          // is_bool_like_v (refill bulk read gate)
 #include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED (refill bulk read check)
+#include "chunk/internal/teardown_probe.h"      // teardown_probe (rechunk=debug: the tmp teardown split)
 
 namespace shrink_array::internal
 {
-/// @brief CHUNK_LOG=rechunk=debug (or CHUNK_RECHUNK_TRACE): the per-phase
+/// @brief CHUNK_LOG=rechunk=debug: the per-phase
 ///        timings of every re-chunk, its rebuild schedule and the split of the
 ///        slice regions' wall time. Read by each re-chunk, at its start.
 [[nodiscard]] inline bool rechunk_trace_on() noexcept
@@ -65,7 +64,7 @@ namespace shrink_array::internal
     return logging::enabled(logging::Channel::rechunk, logging::Level::debug);
 }
 
-/// @brief CHUNK_LOG=memory=debug (or CHUNK_RECHUNK_TRACE_MEM): the MEMORY side
+/// @brief CHUNK_LOG=memory=debug: the MEMORY side
 ///        of the trace -- exact RSS at the phase boundaries (a page-table walk
 ///        per read), the new geometry's occupancy, the allocator census. A
 ///        channel of its own so the phase times are not measured with these
@@ -75,60 +74,14 @@ namespace shrink_array::internal
     return logging::enabled(logging::Channel::memory, logging::Level::debug);
 }
 
-/// CHUNK_RECHUNK_RECYCLE (default on; 0 = off): at the v1 refill's slice
-/// boundaries, hand the slabs the old geometry has just emptied to the value
-/// arena for the next slice (TCSlabPool::recycle_empty_slabs), instead of
-/// madvise'ing them. Off = plain madvise sweep, for comparison.
-inline const bool g_rechunk_recycle = []() noexcept
-{
-    const char* env = std::getenv("CHUNK_RECHUNK_RECYCLE");
-    return env == nullptr || env[0] == '\0' || env[0] != '0';
-}();
-
-/// CHUNK_RECHUNK_KEEP_RECYCLED (default off; 1 = on): at the end of the v1
-/// refill, KEEP the recycled slabs no slice took on the arena's recycled lists,
-/// resident, instead of advising them away (SlabArena::advise_recycled: one
-/// MADV_DONTNEED per run, in practice per 1 MiB slab). SlabArena::allocate()
-/// takes them first, so the next re-chunk and the next writes reuse their pages
-/// instead of faulting fresh ones -- at 128 threads on Grace a fault costs ~4x
-/// what it does at 64. Cost: those slabs stay in the RSS until reused.
-inline const bool g_rechunk_keep_recycled = []() noexcept
-{
-    const char* env = std::getenv("CHUNK_RECHUNK_KEEP_RECYCLED");
-    const bool  on  = env != nullptr && env[0] != '\0' && env[0] != '0';
-    if (on)
-    {
-        CHUNK_LOG(info, env, "CHUNK_RECHUNK_KEEP_RECYCLED=1: the refill's leftover recycled slabs stay resident");
-    }
-    return on;
-}();
-
-/// CHUNK_RECHUNK_KEEP_RECYCLED_MB (default 0; MiB): the bounded form of
-/// CHUNK_RECHUNK_KEEP_RECYCLED -- at the end of the v1 refill, leave up to this
-/// much of the leftover recycled slabs resident per arena, split evenly over the
-/// ranks, and advise the rest away as before (SlabArena::advise_recycled).
-/// 0 = advise them all. Ignored when CHUNK_RECHUNK_KEEP_RECYCLED=1 (keep all).
-inline const std::size_t g_rechunk_keep_recycled_bytes = []() noexcept
-{
-    const auto mb = env_number<std::size_t>("CHUNK_RECHUNK_KEEP_RECYCLED_MB", 0);
-    if (mb != 0)
-    {
-        CHUNK_LOG(info, env,
-                  "CHUNK_RECHUNK_KEEP_RECYCLED_MB={}: up to {} MiB of the refill's leftover recycled slabs stay "
-                  "resident per arena",
-                  mb, mb);
-    }
-    return mb << 20U;
-}();
-
-/// rechunk_trace_on(): the v1 refill's inter-slice costs for the re-chunk in
+/// rechunk_trace_on(): the zero refill's inter-slice costs for the re-chunk in
 /// progress (ms), reset by rechunk_to() and printed in its phases line.
 /// Written by the master between the slice regions only.
 inline double g_slice_drain_ms   = 0.0;
 inline double g_slice_collect_ms = 0.0;
 inline double g_slice_madvise_ms = 0.0;
 
-/// rechunk_trace_on(): where the v1 refill's slice regions spend their wall
+/// rechunk_trace_on(): where the zero refill's slice regions spend their wall
 /// time, summed over the slices of the re-chunk in progress (ms), reset by
 /// rechunk_to() and printed on its "slices" line. Instants on steady_clock
 /// (one system-wide counter), relative to the master just before the region:
@@ -159,73 +112,23 @@ inline long rss_mib_now() noexcept
     return kib >= 0 ? kib / 1024 : -1;
 }
 
-/// @brief The rebuild loop's schedule: CHUNK_RECHUNK_SCHEDULE="kind[,chunk]"
-///        (static|dynamic|guided|auto, chunk >= 1 or omitted), read once;
-///        guided,16 when unset or malformed (slightly faster than dynamic,64;
-///        large dynamic chunks are much slower on small re-chunks).
-///        Serial builds parse it too; chunk_pmp_set_schedule() is then a no-op.
+/// @brief The rebuild loop's schedule: guided,16. Slightly faster than
+///        dynamic,64 on Grace, and large dynamic chunks are much slower on
+///        small re-chunks; on Milan (64 threads) guided,16, static and
+///        dynamic,64 are within 1% for zero and zero_any, static is 7.6%
+///        slower for zero_one_value. Fixed: the former CHUNK_RECHUNK_SCHEDULE
+///        is gone. A serial build ignores it (chunk_pmp_set_schedule() is then
+///        a no-op).
 struct RebuildSchedule
 {
     ChunkPmpSchedule     schedule{.kind = ChunkPmpSched::sched_guided, .chunk = 16};
     std::array<char, 32> text{"guided,16"};
 };
 
-/// @brief The rebuild loop's schedule, parsed once from CHUNK_RECHUNK_SCHEDULE ("kind[,chunk]").
-/// @return The parsed schedule, or the default guided,16 when the variable is unset or not understood.
+/// @brief The rebuild loop's schedule (see RebuildSchedule).
 inline const RebuildSchedule& rebuild_schedule() noexcept
 {
-    static const RebuildSchedule schedule = []
-    {
-        RebuildSchedule parsed;
-        const char*     env = std::getenv("CHUNK_RECHUNK_SCHEDULE");
-        if (env == nullptr || env[0] == '\0')
-        {
-            return parsed;
-        }
-        // "kind" or "kind,chunk": the chunk, when given, must be ALL of what
-        // follows the comma (parse_number: std::from_chars, no trailing text).
-        const std::string_view spec(env);
-        const std::size_t      comma = spec.find(',');
-        const std::string_view kv    = spec.substr(0, comma);
-        int                    chunk = 0;
-        ChunkPmpSched          k     = ChunkPmpSched::sched_static;
-        bool ok = comma == std::string_view::npos || (parse_number(env + comma + 1, chunk) && chunk >= 0);
-        if (ok)
-        {
-            if (kv == "static")
-            {
-                k = ChunkPmpSched::sched_static;
-            }
-            else if (kv == "dynamic")
-            {
-                k = ChunkPmpSched::sched_dynamic;
-            }
-            else if (kv == "guided")
-            {
-                k = ChunkPmpSched::sched_guided;
-            }
-            else if (kv == "auto")
-            {
-                k = ChunkPmpSched::sched_auto;
-            }
-            else
-            {
-                ok = false;
-            }
-        }
-        if (!ok)
-        {
-            CHUNK_LOG(warn, env,
-                      "CHUNK_RECHUNK_SCHEDULE=\"{}\" not understood (kind[,chunk], kind = static|dynamic|guided|auto): "
-                      "keeping guided,16",
-                      env);
-            return parsed;
-        }
-        parsed.schedule    = {.kind = k, .chunk = chunk}; // chunk 0: the runtime's default for this kind
-        const auto written = std::format_to_n(parsed.text.data(), parsed.text.size() - 1, "{},{}", kv, chunk);
-        *written.out       = '\0';
-        return parsed;
-    }();
+    static constexpr RebuildSchedule schedule{};
     return schedule;
 }
 } // namespace shrink_array::internal
@@ -250,9 +153,9 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     // shared constant buffers (cst_val1 / cst_val2) are that wide, and a wider
     // chunk would read them out of bounds (chunk_size_error). Refused, with a
     // message in EVERY build: a caller bug, on a cold path.
-    if (const auto e = chunk_size_error(new_size)) [[unlikely]]
+    if (const auto err = chunk_size_error(new_size)) [[unlikely]]
     {
-        warn_chunk_size_refused("rechunk_to", new_size, *e);
+        warn_chunk_size_refused("rechunk_to", new_size, *err);
         return;
     }
 
@@ -260,7 +163,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     // (allocator_pool_serial_) routes each allocation to the right size, so the
     // old and new geometries coexist during the refill.
 
-    const ind_type total = self().m_size_;
+    const IndType total = self().m_size_;
     if (total <= 0)
     {
         self().set_chunk_size(new_size); // legal on an empty array
@@ -322,8 +225,8 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
 
     // No dense O(n) snapshot: the refill streams old -> new chunk by chunk.
 
-    // Variant state captured BEFORE the geometry switch (Chunk2's
-    // array-level second_value; T{} / ignored for Chunk & Chunk2A).
+    // Variant state captured BEFORE the geometry switch (zero_one_value's
+    // array-level second_value; T{} / ignored for zero & zero_any).
     const InT<T> state = self().rechunk_capture_state();
 
     // 2) build the fresh array at S'. Set the active geometry around its
@@ -350,7 +253,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         t_birth_at_active_size = false;
         affinity_scope.reset();
 
-        // Seed variant state into tmp BEFORE refill (Chunk2 second_value,
+        // Seed variant state into tmp BEFORE refill (zero_one_value second_value,
         // so its compression decisions use the same value).
         tmp.rechunk_seed_fresh(state);
 
@@ -359,7 +262,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         //    constant (only materialised chunks are written).
         // CHUNK_STATS: one geometry change, plus the per-chunk work it costs
         // (counted inside rebuild_one below).
-        increm_chunk_rechunk<chunk_type>();
+        increm_chunk_rechunk<ChunkType>();
         t2_out = t_now();
         self().rechunk_refill(tmp, old_size, new_size);
         t3_out   = t_now();
@@ -369,7 +272,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
 
         // tmp's refill CANDIDATES are deliberately KEPT. Dropped, every rebuilt
         // chunk holding a constant stays materialised until teardown (a
-        // Chunk2/2A chunk only re-enters the list on a write that transitions
+        // zero_one_value/zero_any chunk only re-enters the list on a write that transitions
         // it to a constant) -- a large memory cost per re-chunk.
         //
         // No geometry-mismatch hazard: every candidate tuple carries the
@@ -377,20 +280,20 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         // variants scan and compress at that size.
         //
         // What makes keeping them correct across the swap below:
-        //  - the tuples point into tmp.chunk_list's storage, which the
+        //  - the tuples point into tmp.chunk_list_'s storage, which the
         //    std::swap hands to *this unchanged (buffer swap, no move);
         //  - they carry tmp's num_tab, and rechunk_swap_identity() makes that
-        //    *this's identity (member swap for Chunk/Chunk2A, registry swap for
-        //    Chunk2), so the sweep's reset_tab_inside_list_to_compress(num_tab,
+        //    *this's identity (member swap for zero/zero_any, registry swap for
+        //    zero_one_value), so the sweep's reset_tab_inside_list_to_compress(num_tab,
         //    num_chunk) lands on the row allocated for tmp at new_size;
         //  - tmp's own destruction removes candidates by ITS post-swap num_tab
         //    (= *this's old identity, already emptied by rechunk_drop_candidates()
-        //    above) and, for 2A, by the OLD chunk_list's pointer range --
+        //    above) and, for zero_any, by the OLD chunk_list_'s pointer range --
         //    neither touches these.
         // The next end-of-phase sweep folds the constant ones back.
 
         // Re-drain THIS array's deferred ops before swapping storage out.
-        // FORCED: the ops are keyed by the OLD chunk_list's addresses, about to
+        // FORCED: the ops are keyed by the OLD chunk_list_'s addresses, about to
         // be destroyed with tmp, and any_pending_ops() can read 0 while ops are
         // still queued -- left behind, they would be replayed against a
         // recycled, wrong-size chunk. Flush while the old geometry is in place.
@@ -398,7 +301,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
 
         // 4) SWAP the common storage. nb_tab is static and NOT swapped.
         //    num_tab + registry (+ any variant members) go through the
-        //    identity hook: Chunk / Chunk2A swap the num_tab member, Chunk2
+        //    identity hook: zero / zero_any swap the num_tab member, zero_one_value
         //    resolves num_tab from the registry and must NOT swap it.
         using std::swap;
         swap(self().chunk_list_, tmp.chunk_list_);
@@ -426,8 +329,8 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         }
         (void)ok;
 
-        // Variant finalisation after the swap (Chunk2 re-owns its
-        // map_inf_array entry so it does not dangle when tmp dies).
+        // Variant finalisation after the swap (zero_one_value re-owns its
+        // map_inf_array_ entry so it does not dangle when tmp dies).
         self().rechunk_reown_after_swap(tmp, state);
 
         // Restore the active geometry BEFORE tmp is destroyed, so tmp (now
@@ -435,7 +338,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         //
         // t_active is restored to old_size, NOT to a value saved at entry:
         // every write path re-sets t_active to ITS OWN array's chunk_size()
-        // right before materialising (see Proxy2::ensure_writable_storage()),
+        // right before materialising (see zero_one_value::Proxy::ensure_writable_storage()),
         // so a value saved at entry may belong to an unrelated array and would
         // route free_elt_pow2() (via get_chunk_allocator(), keyed on the
         // ambient) to the WRONG size pool. old_size comes from this array's
@@ -450,13 +353,22 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         // and parks its OLD-geometry blocks by size. Without the end-of-life
         // census: tmp's death is not an exit (ArrayChunkBase::exit_census_).
         tmp.exit_census_ = false;
-        // ... and its chunk_list buffer becomes the next re-chunk's (see
-        // ArrayChunkCore::release_chunk_list), reset right after the brace.
-        alloc_affinity_detail::g_releasing_rechunk_storage = true;
+        // Its chunk_list_ (the OLD geometry's) is freed with it.
+        // rechunk=debug: split tmp's teardown into its steps (teardown_probe.h).
+        if (trace_phases)
+        {
+            internal::teardown_probe().start();
+        }
     }
-    alloc_affinity_detail::g_releasing_rechunk_storage = false;
-    const auto t5                                      = t_now(); // tmp destroyed
-    r_teardown                                         = rss_now();
+    const auto t5 = t_now(); // tmp destroyed
+    // The rest of tmp's destruction after the last mark: the remaining members
+    // and the bases (or all of it, for a variant that sets no mark).
+    double teardown_rest_ms = 0.0;
+    if (trace_phases)
+    {
+        teardown_rest_ms = t_ms(internal::teardown_probe().stop(), t5);
+    }
+    r_teardown = rss_now();
 
     // Free the OLD-geometry blocks tmp just parked into the old-size reuse
     // list. Nothing pops them again (the array has moved off old_size), so
@@ -479,21 +391,21 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     // re-chunk, with no concurrent free in flight, so an empty slab is empty.
     // Emptiness is the whole claim -- a key-0 slab mixes several arrays'
     // blocks and no ownership is assumed.
-    if constexpr (build_config::use_fast_alloc && build_config::use_openmp)
+    if constexpr (build_config::use_fast_alloc && build_config::threaded)
     {
         const unsigned int saved_sz = thread_chunk_size();
         set_thread_chunk_size(old_size);
         // Every rank, both keys, into ONE sweep: the abandoned set's slabs were
         // carved back to back across ranks, so one madvise per contiguous run
         // instead of one per slab (each one a TLB shootdown on every CPU).
-        typename std::remove_reference_t<decltype(chunk_type::get_chunk_allocator(0, 0u))>::SlabSweep sweep;
+        typename std::remove_reference_t<decltype(ChunkType::get_chunk_allocator(0, 0u))>::SlabSweep sweep;
         for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
         {
             if (old_key != 0)
             {
-                chunk_type::get_chunk_allocator(r, old_key).collect_empty_slabs(sweep);
+                ChunkType::get_chunk_allocator(r, old_key).collect_empty_slabs(sweep);
             }
-            chunk_type::get_chunk_allocator(r, 0u).collect_empty_slabs(sweep);
+            ChunkType::get_chunk_allocator(r, 0u).collect_empty_slabs(sweep);
         }
         sweep.flush();
         set_thread_chunk_size(saved_sz);
@@ -508,13 +420,13 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         // cannot empty on one array's re-chunk.
         const auto scan = [&](unsigned int key, std::size_t& slabs, std::size_t& live, std::size_t& empty)
         {
-            if constexpr (build_config::use_fast_alloc && build_config::use_openmp)
+            if constexpr (build_config::use_fast_alloc && build_config::threaded)
             {
                 const unsigned int saved = thread_chunk_size();
                 set_thread_chunk_size(old_size);
                 for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
                 {
-                    const auto& allocator = chunk_type::get_chunk_allocator(r, key);
+                    const auto& allocator = ChunkType::get_chunk_allocator(r, key);
                     for (const auto* node : {allocator.block, allocator.block_full})
                     {
                         for (; node != nullptr; node = node->next)
@@ -559,6 +471,21 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
                   old_size, new_size, t_ms(t0, t1_out), t_ms(t1_out, t2_out), t_ms(t2_out, t3_out),
                   internal::g_slice_drain_ms, internal::g_slice_collect_ms, internal::g_slice_madvise_ms,
                   t_ms(t3_out, t4_out), t_ms(t4_out, t5), t_ms(t5, t5b), t_ms(t5b, t6), t_ms(t0, t6));
+        {
+            // The tmp teardown phase above, split (teardown_probe.h; the step
+            // names are internal::teardown_step_names, in this order).
+            using internal::TeardownStep;
+            const auto& td = internal::teardown_probe().ms;
+            const auto  at = [&](TeardownStep step) { return td[static_cast<std::size_t>(step)]; };
+            CHUNK_LOG(debug, rechunk,
+                      "{} -> {} teardown split (ms): entry {:.1f} | flush {:.1f} | candidates {:.1f} | terminal "
+                      "{:.1f} | park {:.1f} | registry {:.1f} | tables {:.1f} | key drain {:.1f} | erase {:.1f} | "
+                      "list unmap {:.1f} | rest {:.1f}",
+                      old_size, new_size, at(TeardownStep::entry), at(TeardownStep::flush),
+                      at(TeardownStep::candidates), at(TeardownStep::terminal), at(TeardownStep::park),
+                      at(TeardownStep::registry), at(TeardownStep::tables), at(TeardownStep::key_drain),
+                      at(TeardownStep::erase), at(TeardownStep::list_unmap), teardown_rest_ms);
+        }
         if (internal::g_slice_count > 0)
         {
             CHUNK_LOG(debug, rechunk,
@@ -591,13 +518,13 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
     // chunk variant.
     // Materialisation is tracked with is_cst_val1() (values == the cst1
     // sentinel), universal and index-free -- unlike written()/is_cst_val() on
-    // chunk2, which need the second_value index. While filled, a chunk only
+    // zero_one_value, which need the second_value index. While filled, a chunk only
     // goes cst1 -> real buffer (never cst2, a compression result), so "still
     // cst1" == "not yet materialised" for every variant.
-    if constexpr (chunk_config::use_chunk || chunk_config::use_chunk2 || chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any)
     {
-        const ind_type total = self().m_size_;
-        const int      n_new = tmp.nb_chunk_;
+        const IndType total = self().m_size_;
+        const int     n_new = tmp.nb_chunk_;
         // Geometry is per-array (this.size_=old, tmp.size_=new), so operator[]
         // maps correctly without the global. Only alloc_chunk_count()
         // (= thread_chunk_size(), TLS) needs the size, set per thread below.
@@ -617,24 +544,25 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         // path partitions allocator/compression state by thread rank — so this
         // is safe to run concurrently over disjoint c.
         std::atomic<long> n_folded{0};    // spans the rebuild tried to fold back
-        std::atomic<long> n_installed{0}; // ... of which 2A installed directly (no buffer)
+        std::atomic<long> n_installed{0}; // ... of which zero_any installed directly (no buffer)
         std::atomic<long> n_refused{0};   // ... of which compress() declined: the span
                                           // merged constants that DIFFER, so no
                                           // single-constant form can hold it
-        // Chunk2's cst2 predicate and its compress() both need the array's
+        // zero_one_value's cst2 predicate and its compress() both need the array's
         // second-value registry entry; the lookup is hoisted here, once per
         // re-chunk. `ind_old2` selects the SOURCE array's second value (the scan
         // reads *this), `inf_new2` the fresh array's (the fold writes tmp;
         // rechunk_seed_fresh() has already declared it on tmp).
-        // Deduced, not named: only ArrayChunk2 has InfArrayT, and the
+        // Deduced, not named: only zero_one_value::Array has InfArrayT, and the
         // discarded branch of an `if constexpr` inside the immediately-invoked
         // lambda is never instantiated.
-        // NESTED, not `use_chunk2 && Derived::is_not_bool`: `&&` short-circuits
-        // EVALUATION, never NAME LOOKUP, so a v1 build (ArrayChunk has no
+        // NESTED, not `use_zero_one_value && Derived::is_not_bool`: `&&` short-circuits
+        // EVALUATION, never NAME LOOKUP, so a zero build (zero::Array has no
         // is_not_bool) would fail to compile the condition itself.
         [[maybe_unused]] const int ind_old2 = [&]
         {
-            if constexpr (chunk_config::use_chunk2)
+            // A zero_any-family array in a zero_one_value build (pattern::Array): no index.
+            if constexpr (chunk_config::use_zero_one_value && !is_zero_any_family_v<ChunkType>)
             {
                 if constexpr (Derived::is_not_bool)
                 {
@@ -652,7 +580,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         }();
         [[maybe_unused]] const auto inf_new2 = [&]
         {
-            if constexpr (chunk_config::use_chunk2)
+            if constexpr (chunk_config::use_zero_one_value && !is_zero_any_family_v<ChunkType>)
             {
                 if constexpr (Derived::is_not_bool)
                 {
@@ -668,12 +596,12 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 return 0;
             }
         }();
-        // v1, OpenMP: how many new chunks have finished with each old chunk --
+        // zero, OpenMP: how many new chunks have finished with each old chunk --
         // see the release below. Not needed when the new size is a multiple
         // of the old one: every old chunk then lies inside one new chunk.
         [[maybe_unused]] const bool                    aligned_coarsening = new_size % old_size == 0;
         [[maybe_unused]] std::vector<std::atomic<int>> old_done;
-        if constexpr (chunk_config::use_chunk && build_config::use_openmp)
+        if constexpr (chunk_config::use_zero && build_config::threaded)
         {
             if (!aligned_coarsening)
             {
@@ -687,28 +615,28 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         {
             long folded    = 0;
             long refused   = 0;
-            long installed = 0; // 2A: constant installed without a buffer
+            long installed = 0; // zero_any: constant installed without a buffer
         };
         const auto rebuild_one = [&](int new_chunk, std::vector<T>& buf, RebuildTally& tally)
         {
-            const ind_type base = static_cast<ind_type>(new_chunk) * static_cast<ind_type>(new_size);
+            const IndType base = static_cast<IndType>(new_chunk) * static_cast<IndType>(new_size);
             if (base >= total)
             {
                 return;
             }
-            const ind_type end = (base + new_size) < total ? (base + new_size) : total;
-            const ind_type len = end - base;
+            const IndType end = (base + new_size) < total ? (base + new_size) : total;
+            const IndType len = end - base;
 
             const int old_first = static_cast<int>(base / old_size);
             const int old_last  = static_cast<int>((end - 1) / old_size);
             bool      all_cst1  = true;
-            // 2A: every source chunk is a compressed constant (cst1 or cst2), so
+            // zero_any: every source chunk is a compressed constant (cst1 or cst2), so
             // the new chunk, once filled, holds only constants and can be folded
             // back immediately (see below). Not tracked for the other variants:
-            // Chunk2's is_cst_val2() needs the second-value index, v1 has cst1
+            // zero_one_value's is_cst_val2() needs the second-value index, zero has cst1
             // only (covered by all_cst1).
             bool all_folded = true;
-            // 2A: every source is cst2 at the SAME shared array (same value):
+            // zero_any: every source is cst2 at the SAME shared array (same value):
             // the new chunk is that constant, known without filling it.
             [[maybe_unused]] bool     any_cst1_src = false;
             [[maybe_unused]] bool     same_cst2    = true;
@@ -716,7 +644,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             for (int oc = old_first; oc <= old_last; ++oc)
             {
                 const auto& och = self().chunk_list_[static_cast<std::size_t>(oc)];
-                if constexpr (chunk_config::use_chunk2a)
+                if constexpr (is_zero_any_family_v<ChunkType>)
                 {
                     if (och.is_cst_val1())
                     {
@@ -726,8 +654,17 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 if (!och.is_cst_val1())
                 {
                     all_cst1 = false;
-                    if constexpr (chunk_config::use_chunk2a)
+                    if constexpr (is_zero_any_family_v<ChunkType>)
                     {
+                        if constexpr (has_motif_state_v<ChunkType>)
+                        {
+                            // A motif chunk (pattern::Array): is_cst_val2() for the write
+                            // engine, but no constant -- its elements are motif + offset.
+                            if (ChunkType::is_motif_ptr(och.values_load()))
+                            {
+                                all_folded = false;
+                            }
+                        }
                         if (!och.is_cst_val2())
                         {
                             all_folded = false;
@@ -741,13 +678,13 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                             same_cst2 = false;
                         }
                     }
-                    else if constexpr (chunk_config::use_chunk2)
+                    else if constexpr (chunk_config::use_zero_one_value)
                     {
                         // Nested for the same reason as ind_old2 above.
                         if constexpr (Derived::is_not_bool)
                         {
-                            // Same test as 2A, with the second-value index
-                            // Chunk2 needs and 2A carries implicitly.
+                            // Same test as zero_any, with the second-value index
+                            // zero_one_value needs and zero_any carries implicitly.
                             if (!och.is_cst_val2(ind_old2))
                             {
                                 all_folded = false;
@@ -768,32 +705,32 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             {
                 // Nothing to rebuild: the whole span was still the compressible
                 // constant, so the new chunk stays compressed (work avoided).
-                increm_chunk_rechunk_skipped<chunk_type>();
+                increm_chunk_rechunk_skipped<ChunkType>();
                 return; // fresh cst1, leave it
             }
-            increm_chunk_rechunk_rebuilt<chunk_type>();
+            increm_chunk_rechunk_rebuilt<ChunkType>();
 
-            // 2A: all sources are the same second constant -> install it.
+            // zero_any: all sources are the same second constant -> install it.
             // Filling a buffer and folding it back (below) gives the same state,
             // but the pages those allocations touch stay with the process. This
             // is what a type-2 compression commits (find_or_set on the chunk's
             // second-value slot, type table, values pointer), minus the buffer;
             // tmp's chunk is reachable by no other thread until the swap, so no
             // CAS.
-            if constexpr (chunk_config::use_chunk2a && !std::is_same_v<T, bool>)
+            if constexpr (is_zero_any_family_v<ChunkType> && !std::is_same_v<T, bool>)
             {
                 if (all_folded && same_cst2 && !any_cst1_src && cst2_src != nullptr)
                 {
                     set_thread_chunk_size(old_size);
                     // auto: SecondValueRef is not declared in every TU that
-                    // instantiates this file (array_chunk2.cpp), and the name
+                    // instantiates this file (zero_one_value_array.cpp), and the name
                     // would be looked up even in a discarded branch.
-                    const T    v   = static_cast<T>(std::as_const(self())[base]);
-                    auto&      nch = tmp.chunk_list_[static_cast<std::size_t>(new_chunk)];
-                    const auto psv = Proxy2A<T>::BaseSpec::get_tab_second_value(tmp.num_tab_, new_chunk);
-                    char*      ptc = &Proxy2A<T>::tab_type_cst_val[tmp.num_tab_][new_chunk];
-                    (void)nch.find_or_set_ind_cst_val2(v, psv);
-                    chunk_type::set_cst_val_to_cst_val2(ptc);
+                    const T    value = static_cast<T>(std::as_const(self())[base]);
+                    auto&      nch   = tmp.chunk_list_[static_cast<std::size_t>(new_chunk)];
+                    const auto psv   = ProxyType::BaseSpec::get_tab_second_value(tmp.num_tab_, new_chunk);
+                    CstSlot*   ptc   = &ProxyType::tab_type_cst_val[tmp.num_tab_][new_chunk];
+                    (void)nch.find_or_set_ind_cst_val2(value, psv);
+                    ChunkType::set_cst_val_to_cst_val2(ptc);
                     nch.init_values_cst_val(ptc, psv);
                     ++tally.folded;
                     ++tally.installed;
@@ -806,7 +743,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             // Bulk read, one values_load() per SOURCE chunk instead of the full
             // read protocol per element (const operator[]: index split,
             // sync_chunk, a ReadSection with its light_fence -- a full seq_cst
-            // fence without asymmetric Dekker --, acquire load, 2A range test;
+            // fence without asymmetric Dekker --, acquire load, zero_any range test;
             // none of it vectorises).
             //
             // Sound because the source is QUIESCENT for the whole refill:
@@ -814,42 +751,57 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             // pull) and dropped its compression candidates
             // (rechunk_drop_candidates), and nobody writes *this meanwhile, so
             // no pass can claim, compress or release one of its chunks -- what
-            // the ReadSection guards against. The only release is v1's
+            // the ReadSection guards against. The only release is zero's
             // release_st below, coordinated by old_done: a source chunk is
             // freed once every span reading it is done.
             //
             // Per source chunk, the same decision element_at_unguarded() makes
-            // per element, on the same single load: a 2A cst2 pointer names an
+            // per element, on the same single load: a zero_any cst2 pointer names an
             // identifier region that was never written -> fill with the
             // constant; anything else (materialised buffer, cst1 sentinel,
-            // Chunk2's filled cst2 array) is readable as is -> memcpy.
+            // zero_one_value's filled cst2 array) is readable as is -> memcpy.
             // bool / Bit keep the per-element path (bit-packed storage).
             if constexpr (std::is_trivially_copyable_v<T> && !is_bool_like_v<T>)
             {
-                std::size_t k = 0;
+                std::size_t pos = 0;
                 for (int oc = old_first; oc <= old_last; ++oc)
                 {
                     const auto&    och     = self().chunk_list_[static_cast<std::size_t>(oc)];
-                    const ind_type oc_base = static_cast<ind_type>(oc) * static_cast<ind_type>(old_size);
-                    const ind_type lo      = base > oc_base ? base : oc_base;
-                    const ind_type oc_end  = oc_base + static_cast<ind_type>(old_size);
-                    const ind_type hi      = end < oc_end ? end : oc_end;
-                    const auto     n       = static_cast<std::size_t>(hi - lo);
+                    const IndType  oc_base = static_cast<IndType>(oc) * static_cast<IndType>(old_size);
+                    const IndType  lo      = base > oc_base ? base : oc_base;
+                    const IndType  oc_end  = oc_base + static_cast<IndType>(old_size);
+                    const IndType  hi      = end < oc_end ? end : oc_end;
+                    const auto     src_len = static_cast<std::size_t>(hi - lo);
                     const auto     off     = static_cast<std::size_t>(lo - oc_base);
                     const T* const vals    = och.values_load();
-                    if constexpr (chunk_config::use_chunk2a)
+                    if constexpr (is_zero_any_family_v<ChunkType>)
                     {
                         if (och.is_cst_val2_ptr_of(vals))
                         {
-                            std::fill_n(buf.begin() + static_cast<std::ptrdiff_t>(k), n,
+                            std::fill_n(buf.begin() + static_cast<std::ptrdiff_t>(pos), src_len,
                                         och.second_value_from_ptr(vals));
-                            k += n;
+                            pos += src_len;
+                            continue;
+                        }
+                    }
+                    if constexpr (has_motif_state_v<ChunkType>)
+                    {
+                        // A motif chunk: motif + its offset, from its second-value slot
+                        // (quiescent source: the slot is stable, no re-check needed).
+                        if (ChunkType::is_motif_ptr(vals))
+                        {
+                            const T offset = internal::load_element_relaxed(self().motif_offset_slot(oc));
+                            for (std::size_t k = 0; k < src_len; ++k)
+                            {
+                                buf[pos + k] = ChunkType::motif_value(vals, static_cast<int>(off + k), offset);
+                            }
+                            pos += src_len;
                             continue;
                         }
                     }
                     // raw-read: refill bulk read -- quiescent source, see above
-                    std::memcpy(buf.data() + k, vals + off, n * sizeof(T));
-                    k += n;
+                    std::memcpy(buf.data() + pos, vals + off, src_len * sizeof(T));
+                    pos += src_len;
                 }
                 // Check builds: the bulk read must agree with the per-element
                 // path. Sampled (first, last, every 64th): this is a check, not
@@ -859,24 +811,24 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 if constexpr (build_config::any_check &&
                               (!std::is_class_v<T> || std::has_unique_object_representations_v<T>))
                 {
-                    if (k != static_cast<std::size_t>(len)) [[unlikely]]
+                    if (pos != static_cast<std::size_t>(len)) [[unlikely]]
                     {
                         CHUNK_INVARIANT_FAILED("rechunk refill bulk read: new chunk {} copied {} elements, span is {}",
-                                               new_chunk, k, static_cast<std::size_t>(len));
+                                               new_chunk, pos, static_cast<std::size_t>(len));
                     }
-                    const auto check_at = [&](ind_type j)
+                    const auto check_at = [&](IndType index)
                     {
-                        const T ref = static_cast<T>(std::as_const(self())[base + j]);
-                        if (std::memcmp(&ref, &buf[static_cast<std::size_t>(j)], sizeof(T)) != 0) [[unlikely]]
+                        const T ref = static_cast<T>(std::as_const(self())[base + index]);
+                        if (std::memcmp(&ref, &buf[static_cast<std::size_t>(index)], sizeof(T)) != 0) [[unlikely]]
                         {
                             CHUNK_INVARIANT_FAILED(
                                 "rechunk refill bulk read: new chunk {} element {} (global {}) differs "
                                 "from the per-element read ({} -> {})",
-                                new_chunk, static_cast<long long>(j), static_cast<long long>(base + j), old_size,
-                                new_size);
+                                new_chunk, static_cast<long long>(index), static_cast<long long>(base + index),
+                                old_size, new_size);
                         }
                     };
-                    for (ind_type j = 0; j < len; j += 64)
+                    for (IndType j = 0; j < len; j += 64)
                     {
                         check_at(j);
                     }
@@ -885,7 +837,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             }
             else
             {
-                for (ind_type k = 0; k < len; ++k)
+                for (IndType k = 0; k < len; ++k)
                 {
                     buf[static_cast<std::size_t>(k)] = static_cast<T>(std::as_const(self())[base + k]);
                 }
@@ -910,27 +862,27 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             // Released while the TLS is still old_size, deliberately:
             // free_block_to_pool() routes by the AMBIENT geometry, so freeing a
             // S-sized buffer under S' would park it in the wrong pool.
-            // v1 only: Chunk2/Chunk2A's clear_st() take the variant's compression
+            // zero only: zero_one_value/zero_any's clear_st() take the variant's compression
             // state (num_compress_value, ptr_type_cst, ptr_second_value), which
             // this loop has no business synthesising -- releasing their buffers
             // early would need the matching teardown of that state. Chunk<T>'s
             // clear_st(thr, n_elems) frees the buffer and marks the chunk cst1,
             // which is exactly what "already transcribed" means here.
-            if constexpr (chunk_config::use_chunk && build_config::use_openmp)
+            if constexpr (chunk_config::use_zero && build_config::threaded)
             {
                 const int thr = get_thr_rank_fast();
                 for (int oc = old_first; oc <= old_last; ++oc)
                 {
-                    const ind_type oc_base = static_cast<ind_type>(oc) * static_cast<ind_type>(old_size);
-                    const ind_type oc_end  = oc_base + static_cast<ind_type>(old_size);
+                    const IndType oc_base = static_cast<IndType>(oc) * static_cast<IndType>(old_size);
+                    const IndType oc_end  = oc_base + static_cast<IndType>(old_size);
                     if (!aligned_coarsening)
                     {
                         // Old chunk oc's readers: the new chunks overlapping its
                         // elements [oc_base, min(oc_end, total)). Release it with
                         // the last of them to finish, whoever that is.
-                        const ind_type last_elem = (oc_end < total ? oc_end : total) - 1;
-                        const auto     readers   = static_cast<int>((last_elem / static_cast<ind_type>(new_size)) -
-                                                                    (oc_base / static_cast<ind_type>(new_size)) + 1);
+                        const IndType last_elem = (oc_end < total ? oc_end : total) - 1;
+                        const auto    readers   = static_cast<int>((last_elem / static_cast<IndType>(new_size)) -
+                                                                   (oc_base / static_cast<IndType>(new_size)) + 1);
                         if (old_done[static_cast<std::size_t>(oc)].fetch_add(1, std::memory_order_acq_rel) + 1 !=
                             readers)
                         {
@@ -985,10 +937,10 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             // is_not_cst_val1(); the scan on a cst2 chunk re-derives the same
             // state).
             //
-            // Wired for 2A (compress() by num_chunk, num_tab) and Chunk2 (by the
+            // Wired for zero_any (compress() by num_chunk, num_tab) and zero_one_value (by the
             // array's inf_array record). bool registers no second value
             // (get_ind_second_value aborts) and is bit-packed: never this path.
-            if constexpr (chunk_config::use_chunk2a)
+            if constexpr (is_zero_any_family_v<ChunkType>)
             {
                 if (all_folded)
                 {
@@ -1005,22 +957,22 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                     }
                 }
             }
-            // No v1 branch: v1's one constant (zero) spans already took the
+            // No zero branch: zero's one constant (zero) spans already took the
             // early return above, and scanning every other rebuilt chunk for
             // zeros folds almost none for a full buffer scan each; the
             // end-of-phase sweep handles chunks that actually became zero.
             // Chunk<T>::compress() keeps the guard that a second visit to a
             // cst1 chunk must not park the zero sentinel -- load-bearing for
             // the sweep regardless of this loop.
-            else if constexpr (chunk_config::use_chunk2)
+            else if constexpr (chunk_config::use_zero_one_value)
             {
                 // Nested for the same reason as ind_old2 above; bool has no
                 // second value to fold to, so it simply does nothing here.
                 //
                 // AND gated on use_fast_block_compression: this four-argument
-                // compress() lives in Chunk2FastCompPolicy<..., Enabled>, which
-                // Chunk2 inherits with Enabled = use_fast_block_compression
-                // (= use_openmp): a SERIAL build has no such overload. There,
+                // compress() lives in zero_one_value::ChunkFastCompPolicy<..., Enabled>, which
+                // zero_one_value inherits with Enabled = use_fast_block_compression
+                // (= threaded): a SERIAL build has no such overload. There,
                 // copy_range() above already folded every chunk it left uniform,
                 // through the counters (internal::fold_if_full).
                 if constexpr (chunk_config::use_fast_block_compression && Derived::is_not_bool)
@@ -1051,7 +1003,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         // array (it corrupts grow regions that span several old chunks).
         // rechunk_to flushes at a quiescent point after the refill.
         //
-        // SLICED rebuild. Inside one region v1 releases each source chunk as
+        // SLICED rebuild. Inside one region zero releases each source chunk as
         // soon as it is transcribed (release_st in rebuild_one), but a block
         // freed by a rank that does not own its slab is only parked in that
         // rank's reuse list (walking the owner's slab chains from inside a
@@ -1063,21 +1015,23 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         // their pages back BEFORE the next slice materialises: peak ~ old +
         // new/slices.
         //
-        // CHUNK_RECHUNK_SLICES sets the count (default 16; 1 = one pass). v1 +
-        // fast alloc + OpenMP only: Chunk2/Chunk2A do not release their source
+        // 16 slices, zero + fast alloc + OpenMP only: zero_one_value/zero_any do not release their source
         // chunks during the copy (their clear_st carries compression state this
         // loop has no business synthesising), so they have nothing to give back
         // between slices and the extra regions would be pure cost.
         int n_slices = 1;
-        if constexpr (chunk_config::use_chunk && build_config::use_fast_alloc && build_config::use_openmp)
+        if constexpr (chunk_config::use_zero && build_config::use_fast_alloc && build_config::threaded)
         {
             // 16: cuts the peak above the pre-re-chunk level about fourfold;
             // more slices gain little. The remainder is the two geometries
             // coexisting at slab granularity, insensitive to slicing. Index
             // order is already nearly slab-local (slab-order rebuild gains
-            // nothing).
+            // nothing). Measured on Milan (zero_dyn, recycled slabs kept, five
+            // runs each): at 64 threads 32, 64 and 128 slices are 1.3%, 5.2%
+            // and 6.5% slower, 8 is 1.8% faster but +0.5% of memory; at 32
+            // threads all are within 0.7%, 64 excepted (+1.7%). Fixed: the
+            // former CHUNK_RECHUNK_SLICES is gone.
             n_slices = 16;
-            n_slices = std::max(1, shrink_array::env_number<int>("CHUNK_RECHUNK_SLICES", n_slices));
             // Not worth slicing an array too small to empty a slab per slice.
             n_slices = std::min(n_slices, std::max(1, n_new / 4096));
         }
@@ -1088,17 +1042,17 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
 
         // Slice boundaries run INSIDE the slice's region (see the loop): the
         // team drain's scratch lives across them, and so do the trace timers.
-        using ManagerT = Traits::manager_type;
+        using ManagerT = Traits::ManagerType;
         typename ManagerT::TeamDrainScratch team_drain;
-        // Slab recycling at the slice boundaries (internal::g_rechunk_recycle):
+        // Slab recycling at the slice boundaries:
         // the ranks the team holds (each recycles its own slabs, one thread
         // the others'), and an address buffer per rank, reused. Sized at the
         // first boundary.
         std::vector<unsigned char>      recycle_held;
         std::vector<std::vector<void*>> recycle_scratch;
         using SliceClock    = std::chrono::steady_clock;
-        const auto slice_ms = [](SliceClock::time_point a, SliceClock::time_point b)
-        { return std::chrono::duration<double, std::milli>(b - a).count(); };
+        const auto slice_ms = [](SliceClock::time_point from, SliceClock::time_point to)
+        { return std::chrono::duration<double, std::milli>(to - from).count(); };
         SliceClock::time_point slice_t0{}; // written by the master, read after barriers
         SliceClock::time_point slice_t1{}; // written in a single, read after its barrier
 
@@ -1110,7 +1064,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         // the slices. See internal::rebuild_schedule(). Both calls are
         // no-ops in a serial build (PMP_CHUNK.h).
         const ChunkPmpSchedule caller_schedule = chunk_pmp_get_schedule();
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             const auto& rs = internal::rebuild_schedule();
             chunk_pmp_set_schedule(rs.schedule);
@@ -1141,12 +1095,12 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             std::atomic<long long> setup_max{0};
             std::atomic<int>       n{0};
         } sp;
-        const auto sp_ns = [](SliceClock::time_point a, SliceClock::time_point b) noexcept -> long long
-        { return std::chrono::duration_cast<std::chrono::nanoseconds>(b - a).count(); };
-        const auto sp_max = [](std::atomic<long long>& a, long long v) noexcept
+        const auto sp_ns = [](SliceClock::time_point from, SliceClock::time_point to) noexcept -> long long
+        { return std::chrono::duration_cast<std::chrono::nanoseconds>(to - from).count(); };
+        const auto sp_max = [](std::atomic<long long>& slot, long long value) noexcept
         {
-            long long cur = a.load(std::memory_order_relaxed);
-            while (v > cur && !a.compare_exchange_weak(cur, v, std::memory_order_relaxed))
+            long long cur = slot.load(std::memory_order_relaxed);
+            while (value > cur && !slot.compare_exchange_weak(cur, value, std::memory_order_relaxed))
             {
             }
         };
@@ -1171,209 +1125,176 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 sp.n.store(0, std::memory_order_relaxed);
                 sp_a = SliceClock::now();
             }
-#pragma omp parallel
-            {
-                const SliceClock::time_point sp_e = sp_on ? SliceClock::now() : SliceClock::time_point{};
-                // Apply the rebuild's arming writes DIRECTLY, never via the
-                // deferred path: deferred arming writes would fill tmp's op map,
-                // and a rehash frees bucket storage an enqueued op still targets
-                // (use-after-free at the flush). Under in_flush_replay each
-                // write goes straight through write_body (materialise + store,
-                // no enqueue). Safe: each thread rebuilds DISJOINT new chunks,
-                // so the bypassed gate guards nothing. Per-thread
-                // (thread_local), so it lives inside the region.
-                const typename CompressionManager<T, chunk_type>::FlushReplayGuard rechunk_replay_guard;
-                std::vector<T>                buf(static_cast<std::size_t>(new_size));
-                RebuildTally                  tally; // this thread's fold counts for this slice
-                                                     // schedule(runtime): CHUNK_RECHUNK_SCHEDULE, default guided,16
-                                                     // (internal::rebuild_schedule).
-                const SliceClock::time_point sp_w0 = sp_on ? SliceClock::now() : SliceClock::time_point{};
-                // nowait + the explicit barrier below: the same closing barrier,
-                // with each thread's loop end observable (rechunk=debug).
-#pragma omp for schedule(runtime) nowait
-                for (int c = c0; c < c1; ++c)
-                {
-                    rebuild_one(c, buf, tally);
-                }
-                if (sp_on)
-                {
-                    const auto sp_w1 = SliceClock::now();
-                    sp_max(sp.entry_max, sp_ns(sp_a, sp_e));
-                    sp_max(sp.loop_end_max, sp_ns(sp_a, sp_w1));
-                    sp_max(sp.work_max, sp_ns(sp_w0, sp_w1));
-                    sp_max(sp.setup_max, sp_ns(sp_e, sp_w0));
-                    sp.work_sum.fetch_add(sp_ns(sp_w0, sp_w1), std::memory_order_relaxed);
-                    sp.n.fetch_add(1, std::memory_order_relaxed);
-                }
-                // One RMW per thread and slice, not one per folded chunk; and
-                // none at all unless the [RECHUNK] census, their only reader,
-                // is on.
-                if (trace_mem_on)
-                {
-                    n_folded.fetch_add(tally.folded, std::memory_order_relaxed);
-                    n_refused.fetch_add(tally.refused, std::memory_order_relaxed);
-                    n_installed.fetch_add(tally.installed, std::memory_order_relaxed);
-                }
-#pragma omp barrier
-#pragma omp masked
-                {
-                    if (sp_on)
-                    {
-                        sp_b = SliceClock::now();
-                    }
-                }
+            pmp::team(pmp::Options{},
+                      [&](pmp::Team& team)
+                      {
+                          const SliceClock::time_point sp_e = sp_on ? SliceClock::now() : SliceClock::time_point{};
+                          // Apply the rebuild's arming writes DIRECTLY, never via the
+                          // deferred path: deferred arming writes would fill tmp's op map,
+                          // and a rehash frees bucket storage an enqueued op still targets
+                          // (use-after-free at the flush). Under in_flush_replay each
+                          // write goes straight through write_body (materialise + store,
+                          // no enqueue). Safe: each thread rebuilds DISJOINT new chunks,
+                          // so the bypassed gate guards nothing. Per-thread
+                          // (thread_local), so it lives inside the region.
+                          const typename CompressionManager<T, ChunkType>::FlushReplayGuard rechunk_replay_guard;
+                          std::vector<T>               buf(static_cast<std::size_t>(new_size));
+                          RebuildTally                 tally; // this thread's fold counts for this slice
+                                                              // schedule(runtime): guided,16
+                                                              // (internal::rebuild_schedule).
+                          const SliceClock::time_point sp_w0 = sp_on ? SliceClock::now() : SliceClock::time_point{};
+                          // nowait + the explicit barrier below: the same closing barrier,
+                          // with each thread's loop end observable (rechunk=debug).
+                          team.for_runtime<int>(c0, c1, [&](int c) { rebuild_one(c, buf, tally); }, pmp::nowait);
+                          if (sp_on)
+                          {
+                              const auto sp_w1 = SliceClock::now();
+                              sp_max(sp.entry_max, sp_ns(sp_a, sp_e));
+                              sp_max(sp.loop_end_max, sp_ns(sp_a, sp_w1));
+                              sp_max(sp.work_max, sp_ns(sp_w0, sp_w1));
+                              sp_max(sp.setup_max, sp_ns(sp_e, sp_w0));
+                              sp.work_sum.fetch_add(sp_ns(sp_w0, sp_w1), std::memory_order_relaxed);
+                              sp.n.fetch_add(1, std::memory_order_relaxed);
+                          }
+                          // One RMW per thread and slice, not one per folded chunk; and
+                          // none at all unless the [RECHUNK] census, their only reader,
+                          // is on.
+                          if (trace_mem_on)
+                          {
+                              n_folded.fetch_add(tally.folded, std::memory_order_relaxed);
+                              n_refused.fetch_add(tally.refused, std::memory_order_relaxed);
+                              n_installed.fetch_add(tally.installed, std::memory_order_relaxed);
+                          }
+                          team.barrier();
+                          team.masked(
+                              [&]
+                              {
+                                  if (sp_on)
+                                  {
+                                      sp_b = SliceClock::now();
+                                  }
+                              });
 
-                // Slice boundary, INSIDE the region (the omp for's barrier has
-                // closed the slice): send this slice's parked old-geometry
-                // blocks home, then give back the slabs they just emptied. Only
-                // blocks already released by release_st are touched -- the
-                // source chunks the remaining slices still have to read are
-                // untouched. The whole team drains (each rank its own list and
-                // its own slabs) and one thread sweeps: master-only boundaries
-                // between two regions add up over a re-chunk. n_slices > 1 only
-                // in these builds (see above).
-                if constexpr (build_config::use_fast_alloc && build_config::use_openmp)
-                {
-                    if (sl + 1 < n_slices)
-                    {
-#pragma omp masked
-                        {
-                            if (trace_on)
-                            {
-                                slice_t0 = SliceClock::now();
-                            }
-                        }
-                        ManagerT::drain_reuse_list_for_size_team(static_cast<unsigned int>(old_size), team_drain);
-                        if (internal::g_rechunk_recycle)
-                        {
-                            // The slabs this drain emptied go to the value
-                            // arena for the next slice, which allocates about
-                            // as much at the new size (same slab size): their
-                            // resident pages are reused, where a madvise gave
-                            // them to the kernel and the next slice faulted
-                            // fresh zero pages back. Each rank recycles its
-                            // own slabs -- the drain's owner discipline -- and
-                            // the arena hands a rank its own back first (NUMA).
-                            // The set and the safety argument are the sweep's
-                            // (the else branch): the old storage's set, a
-                            // quiescent point, a slab found empty is empty.
-                            // The trace books the recycling as "collect" and
-                            // the leftovers' madvise as "madvise".
-#pragma omp single
-                            {
-                                const auto sc0 = trace_on ? SliceClock::now() : SliceClock::time_point{};
-                                if (trace_on)
-                                {
-                                    internal::g_slice_drain_ms += slice_ms(slice_t0, sc0);
-                                }
-                                const auto n_ranks = static_cast<std::size_t>(CHUNK_PMP_RANK_BOUND);
-                                if (recycle_held.size() != n_ranks)
-                                {
-                                    recycle_held.assign(n_ranks, 0);
-                                    recycle_scratch.resize(n_ranks);
-                                }
-                                std::ranges::fill(recycle_held, static_cast<unsigned char>(0));
-                                // The previous boundary's slabs this slice did
-                                // not take wait for the end of the refill (one
-                                // pass, below the slice loop): they hold memory
-                                // the OLD geometry released, so the RSS bound is
-                                // the same as advising them between slices, and
-                                // the per-slice serial madvise passes (a TLB
-                                // shootdown on every CPU each) become one.
-                                if (trace_on)
-                                {
-                                    slice_t1 = SliceClock::now();
-                                    internal::g_slice_madvise_ms += slice_ms(sc0, slice_t1);
-                                }
-                            } // implicit barrier: recycle_held is clear
-                            {
-                                // Each thread unlinks its own rank's empty
-                                // slabs, in parallel and without the arena's
-                                // lock; the single below hands them over (do
-                                // not call recycle_batch() from every thread:
-                                // the whole team queues on that one mutex).
-                                const int me = CHUNK_PMP_THREAD_RANK;
-                                if (me >= 0 && static_cast<std::size_t>(me) < recycle_held.size())
-                                {
-                                    recycle_held[static_cast<std::size_t>(me)] = 1;
-                                    const unsigned int saved_sz =
-                                        thread_chunk_size(); // this thread's, as the slice left it
-                                    set_thread_chunk_size(static_cast<unsigned int>(old_size));
-                                    chunk_type::get_chunk_allocator(me, old_key_refill)
-                                        .detach_empty_slabs(recycle_scratch[static_cast<std::size_t>(me)]);
-                                    set_thread_chunk_size(saved_sz);
-                                }
-                            }
-#pragma omp barrier
-#pragma omp single
-                            {
-                                set_thread_chunk_size(static_cast<unsigned int>(old_size));
-                                for (std::size_t r = 0; r < recycle_held.size(); ++r)
-                                {
-                                    auto& allocator =
-                                        chunk_type::get_chunk_allocator(static_cast<int>(r), old_key_refill);
-                                    if (recycle_held[r] == 0)
-                                    {
-                                        // A rank no team member holds (a
-                                        // smaller team than the rank bound).
-                                        allocator.detach_empty_slabs(recycle_scratch[r]);
-                                    }
-                                    // One uncontended lock per rank, each
-                                    // rank's slabs under its own rank (NUMA).
-                                    allocator.recycle_detached(recycle_scratch[r]);
-                                }
-                                set_thread_chunk_size(static_cast<unsigned int>(new_size));
-                                if (trace_on)
-                                {
-                                    internal::g_slice_collect_ms += slice_ms(slice_t1, SliceClock::now());
-                                }
-                            } // implicit barrier: the next slice allocates from the recycled slabs
-                        }
-                        else
-                        {
-#pragma omp single
-                            {
-                                const auto sc0 = trace_on ? SliceClock::now() : SliceClock::time_point{};
-                                if (trace_on)
-                                {
-                                    internal::g_slice_drain_ms += slice_ms(slice_t0, sc0);
-                                }
-                                set_thread_chunk_size(static_cast<unsigned int>(old_size));
-                                // The old storage's allocator set -- the shared
-                                // pool (key 0) too when it lives there, which is
-                                // every first re-chunk under lazy affinity
-                                // (skipped, every released block's slab stays
-                                // until the final sweep). Safe for the final
-                                // sweep's reason: a serial, quiescent point, so
-                                // a slab found empty is empty.
-                                // One sweep across ranks: one madvise per
-                                // contiguous run.
-                                typename std::remove_reference_t<decltype(chunk_type::get_chunk_allocator(
-                                    0, 0u))>::SlabSweep sweep;
-                                for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
-                                {
-                                    chunk_type::get_chunk_allocator(r, old_key_refill).collect_empty_slabs(sweep);
-                                }
-                                const auto sc1 = trace_on ? SliceClock::now() : SliceClock::time_point{};
-                                sweep.flush();
-                                if (trace_on)
-                                {
-                                    internal::g_slice_collect_ms += slice_ms(sc0, sc1);
-                                    internal::g_slice_madvise_ms += slice_ms(sc1, SliceClock::now());
-                                }
-                                set_thread_chunk_size(static_cast<unsigned int>(new_size));
-                            } // implicit barrier: the next slice starts on emptied slabs
-                        }
-                    }
-                }
-#pragma omp masked
-                {
-                    if (sp_on)
-                    {
-                        sp_d = SliceClock::now();
-                    }
-                }
-            }
+                          // Slice boundary, INSIDE the region (the omp for's barrier has
+                          // closed the slice): send this slice's parked old-geometry
+                          // blocks home, then give back the slabs they just emptied. Only
+                          // blocks already released by release_st are touched -- the
+                          // source chunks the remaining slices still have to read are
+                          // untouched. The whole team drains (each rank its own list and
+                          // its own slabs) and one thread sweeps: master-only boundaries
+                          // between two regions add up over a re-chunk. n_slices > 1 only
+                          // in these builds (see above).
+                          if constexpr (build_config::use_fast_alloc && build_config::threaded)
+                          {
+                              if (sl + 1 < n_slices)
+                              {
+                                  team.masked(
+                                      [&]
+                                      {
+                                          if (trace_on)
+                                          {
+                                              slice_t0 = SliceClock::now();
+                                          }
+                                      });
+                                  ManagerT::drain_reuse_list_for_size_team(team, static_cast<unsigned int>(old_size),
+                                                                           team_drain);
+                                  // The slabs this drain emptied go to the value
+                                  // arena for the next slice, which allocates about
+                                  // as much at the new size (same slab size): their
+                                  // resident pages are reused, where a madvise gave
+                                  // them to the kernel and the next slice faulted
+                                  // fresh zero pages back. Each rank recycles its
+                                  // own slabs -- the drain's owner discipline -- and
+                                  // the arena hands a rank its own back first (NUMA).
+                                  // The set and the safety argument are the final
+                                  // sweep's (rechunk_to()): the old storage's set, a
+                                  // quiescent point, a slab found empty is empty.
+                                  // The trace books the recycling as "collect".
+                                  // Always on: without it (the former
+                                  // CHUNK_RECHUNK_RECYCLE=0, a madvise sweep per
+                                  // boundary) zero_dyn ran 29% slower on Milan.
+                                  team.single(
+                                      [&]
+                                      {
+                                          const auto sc0 = trace_on ? SliceClock::now() : SliceClock::time_point{};
+                                          if (trace_on)
+                                          {
+                                              internal::g_slice_drain_ms += slice_ms(slice_t0, sc0);
+                                          }
+                                          const auto n_ranks = static_cast<std::size_t>(CHUNK_PMP_RANK_BOUND);
+                                          if (recycle_held.size() != n_ranks)
+                                          {
+                                              recycle_held.assign(n_ranks, 0);
+                                              recycle_scratch.resize(n_ranks);
+                                          }
+                                          std::ranges::fill(recycle_held, static_cast<unsigned char>(0));
+                                          // The previous boundary's slabs this slice did
+                                          // not take wait for the end of the refill (one
+                                          // pass, below the slice loop): they hold memory
+                                          // the OLD geometry released, so the RSS bound is
+                                          // the same as advising them between slices, and
+                                          // the per-slice serial madvise passes (a TLB
+                                          // shootdown on every CPU each) become one.
+                                          if (trace_on)
+                                          {
+                                              slice_t1 = SliceClock::now();
+                                              internal::g_slice_madvise_ms += slice_ms(sc0, slice_t1);
+                                          }
+                                      }); // implicit barrier: recycle_held is clear
+                                  {
+                                      // Each thread unlinks its own rank's empty
+                                      // slabs, in parallel and without the arena's
+                                      // lock; the single below hands them over (do
+                                      // not call recycle_batch() from every thread:
+                                      // the whole team queues on that one mutex).
+                                      const int me = CHUNK_PMP_THREAD_RANK;
+                                      if (me >= 0 && static_cast<std::size_t>(me) < recycle_held.size())
+                                      {
+                                          recycle_held[static_cast<std::size_t>(me)] = 1;
+                                          const unsigned int saved_sz =
+                                              thread_chunk_size(); // this thread's, as the slice left it
+                                          set_thread_chunk_size(static_cast<unsigned int>(old_size));
+                                          ChunkType::get_chunk_allocator(me, old_key_refill)
+                                              .detach_empty_slabs(recycle_scratch[static_cast<std::size_t>(me)]);
+                                          set_thread_chunk_size(saved_sz);
+                                      }
+                                  }
+                                  team.barrier();
+                                  team.single(
+                                      [&]
+                                      {
+                                          set_thread_chunk_size(static_cast<unsigned int>(old_size));
+                                          for (std::size_t r = 0; r < recycle_held.size(); ++r)
+                                          {
+                                              auto& allocator =
+                                                  ChunkType::get_chunk_allocator(static_cast<int>(r), old_key_refill);
+                                              if (recycle_held[r] == 0)
+                                              {
+                                                  // A rank no team member holds (a
+                                                  // smaller team than the rank bound).
+                                                  allocator.detach_empty_slabs(recycle_scratch[r]);
+                                              }
+                                              // One uncontended lock per rank, each
+                                              // rank's slabs under its own rank (NUMA).
+                                              allocator.recycle_detached(recycle_scratch[r]);
+                                          }
+                                          set_thread_chunk_size(static_cast<unsigned int>(new_size));
+                                          if (trace_on)
+                                          {
+                                              internal::g_slice_collect_ms += slice_ms(slice_t1, SliceClock::now());
+                                          }
+                                      }); // implicit barrier: the next slice allocates from the recycled slabs
+                              }
+                          }
+                          team.masked(
+                              [&]
+                              {
+                                  if (sp_on)
+                                  {
+                                      sp_d = SliceClock::now();
+                                  }
+                              });
+                      });
             if (sp_on)
             {
                 const auto   sp_post = SliceClock::now();
@@ -1405,25 +1326,13 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             CHUNK_LOG(trace, rechunk, "slice {}/{} end         rss={} MB  ({:+} since start)", n_slices, n_slices,
                       rss_mib, rss_mib - rss_start);
         }
-        if constexpr (build_config::use_fast_alloc && build_config::use_openmp)
-        {
-            // The last boundary's recycled slabs the last slice did not take:
-            // back to the kernel, as the sweep would have done.
-            // CHUNK_RECHUNK_KEEP_RECYCLED: leave them on the recycled lists, resident,
-            // for the next allocations (SlabArena::allocate() takes them first).
-            if (internal::g_rechunk_recycle && n_slices > 1 && !internal::g_rechunk_keep_recycled)
-            {
-                const auto a0 = trace_on ? SliceClock::now() : SliceClock::time_point{};
-                set_thread_chunk_size(static_cast<unsigned int>(old_size));
-                chunk_type::get_chunk_allocator(0, old_key_refill)
-                    .advise_recycled_slabs(internal::g_rechunk_keep_recycled_bytes);
-                set_thread_chunk_size(static_cast<unsigned int>(new_size));
-                if (trace_on)
-                {
-                    internal::g_slice_madvise_ms += slice_ms(a0, SliceClock::now());
-                }
-            }
-        }
+        // The last boundary's recycled slabs the last slice did not take stay
+        // on the arena's recycled lists, resident: SlabArena::allocate() takes
+        // them first, so the next writes and the next re-chunk reuse their
+        // pages instead of faulting fresh ones. Measured on Milan (zero_dyn,
+        // 64 threads): 11% faster than advising them away, for +0.1% of
+        // memory at the end of the run. (The former CHUNK_RECHUNK_KEEP_RECYCLED
+        // and _MB chose between the two.)
         g_in_rechunk_rebuild.store(false, std::memory_order_release);
         chunk_pmp_set_schedule(caller_schedule); // the caller's, untouched
         if (trace_mem_on)                        // a serial count inside the refill phase
@@ -1439,21 +1348,21 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             //    materialised. That cost is real and belongs in the decider's
             //    data term.
             //  - many folded, few materialised -> the residue is not in the
-            //    chunks; look at the pools (CHUNK_ARENA_REPORT=1).
+            //    chunks; look at the pools (CHUNK_LOG=arena=info).
             long n_mat = 0;
             for (int c = 0; c < n_new; ++c)
             {
                 const auto& ch         = tmp.chunk_list_[static_cast<std::size_t>(c)];
                 bool        compressed = ch.is_cst_val1();
-                if constexpr (chunk_config::use_chunk2a)
+                if constexpr (is_zero_any_family_v<ChunkType>)
                 {
                     compressed = compressed || ch.is_cst_val2();
                 }
-                else if constexpr (chunk_config::use_chunk2)
+                else if constexpr (chunk_config::use_zero_one_value)
                 {
                     // Nested, like the four sites above: `&&` short-circuits
                     // evaluation, never name lookup, so Derived::is_not_bool is
-                    // still looked up for a v1 Derived that has no such member.
+                    // still looked up for a zero Derived that has no such member.
                     if constexpr (Derived::is_not_bool)
                     {
                         compressed = compressed || ch.is_cst_val2(inf_new2.ind);
@@ -1475,27 +1384,48 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
     {
         // bool chunks (bit-packed) and anything not covered above: tiled
         // element transcription through the proxy (no raw-fill).
-        const ind_type     total = self().m_size;
-        constexpr ind_type tile  = ind_type{1} << 20;
-        const ind_type     bsz   = total < tile ? total : tile;
-        std::vector<T>     buf(static_cast<std::size_t>(bsz));
-        for (ind_type base = 0; base < total; base += bsz)
+        const IndType     total = self().m_size;
+        constexpr IndType tile  = IndType{1} << 20;
+        const IndType     bsz   = total < tile ? total : tile;
+        std::vector<T>    buf(static_cast<std::size_t>(bsz));
+        for (IndType base = 0; base < total; base += bsz)
         {
-            const ind_type len = (total - base) < bsz ? (total - base) : bsz;
+            const IndType len = (total - base) < bsz ? (total - base) : bsz;
             set_active_chunk_size(old_size);
             set_thread_chunk_size(old_size);
-            for (ind_type k = 0; k < len; ++k)
+            for (IndType k = 0; k < len; ++k)
             {
                 buf[static_cast<std::size_t>(k)] = static_cast<T>(self()[base + k]);
             }
             set_active_chunk_size(new_size);
             set_thread_chunk_size(new_size);
-            for (ind_type k = 0; k < len; ++k)
+            for (IndType k = 0; k < len; ++k)
             {
                 tmp[base + k] = static_cast<T>(buf[static_cast<std::size_t>(k)]);
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// shrink_array::RechunkSupport<Derived, true>
+// ---------------------------------------------------------------------------
+
+template <typename Derived>
+void RechunkSupport<Derived, true>::rechunk_all_to(unsigned int new_size)
+{
+    ProxyType::share_info_array->for_each_key(
+        [new_size](ArrayKey<ChunkType> key)
+        {
+            if (key != nullptr)
+            {
+                // The key is an array's core, and the arrays of this
+                // element type may differ in index type: reach each one's
+                // own rechunk_to() through the core (the registry hands out
+                // const keys; a re-chunk rebuilds the array).
+                const_cast<ArrayChunkCore<ChunkType>*>(key)->rechunk_erased(new_size);
+            }
+        });
 }
 
 } // namespace shrink_array

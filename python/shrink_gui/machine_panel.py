@@ -11,7 +11,7 @@ import json
 
 from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 
-from shrink_gui import i18n, qos
+from shrink_gui import config, i18n, qos
 from shrink_gui.config import BATCH, DETACHED, LOCAL, LOCAL_DEFAULTS, PRESETS, SITE
 from shrink_gui.i18n import T
 
@@ -23,6 +23,11 @@ class MachinePanel:
         """The settings key of the QoS table last read: the CEA site keeps the
         historical key, another site its own."""
         return "mqinfo" if SITE.name == "inti" else f"mqinfo/{SITE.name}"
+
+    @staticmethod
+    def mpinfo_key():
+        """The settings key of the partition table last read, per site."""
+        return f"mpinfo/{SITE.name}"
 
     @staticmethod
     def batch_arg():
@@ -73,6 +78,27 @@ class MachinePanel:
             self.mode.setCurrentIndex(max(0, self.mode.findData(self._get("mode"))))
         for c in (self.preset, self.mode):
             c.blockSignals(False)
+
+    def refresh_partitions(self, text):
+        """The partition table @p text the connection check read
+        (config.set_discovered): the list is filled again, the partition
+        selected stays (the first one if it is gone), and it is remembered
+        for the next start."""
+        if not config.set_discovered(text) or self.is_local():
+            return
+        self.settings.setValue(self.mpinfo_key(), text)
+        keep = self.preset.currentData()
+        self.preset.blockSignals(True)
+        self.preset.clear()
+        for key, p in PRESETS.items():
+            if not p.get("local"):
+                self.preset.addItem(T(p["label"]), key)
+        i = self.preset.findData(keep)
+        self.preset.setCurrentIndex(max(0, i))
+        self.preset.blockSignals(False)
+        self.set_tooltips()
+        if i < 0:
+            self.preset_changed()
 
     def local_label(self):
         """This machine's "partition": what the check found there."""
@@ -146,6 +172,7 @@ class MachinePanel:
             "-p MemoryMax=16G -p MemorySwapMax=0" if self.mode.currentData() == "local"
             else "vide : la commande tourne directement dans le job"))
         self.apply_arch_defaults()
+        self.update_nodes_row()
         if hasattr(self, "qos_note"):
             self.update_qos()
 
@@ -163,12 +190,15 @@ class MachinePanel:
         """The duration is remembered per program (compile_all.sh is short,
         multi_launch_stress.py long)."""
         self.settings.setValue(f"time_s/{self.program.currentText()}", v)
+        if not getattr(self, "rescaling", False):
+            self.rescale_armed = False   # a duration of one's own: "Nœuds" leaves it (nodes_changed)
         self.update_qos()
 
     def qos_choice(self):
         """(qos to add with -Q or None, its row, error or None). A -Q already in
-        the directives wins over the list: it is only checked."""
-        directives = self.directives.toPlainText()
+        the directives wins over the list: it is only checked. The cores are
+        the job's: one job of N nodes, N × the node's (job_directives)."""
+        directives = self.job_directives() if hasattr(self, "nodes_layout") else self.directives.toPlainText()
         if not BATCH["qos"] or not self.qos_rows:    # no QoS known: the scheduler's default
             return None, None, None
         fixed = qos.explicit_qos(directives)
@@ -191,10 +221,27 @@ class MachinePanel:
             bits.append(T("prioritaire"))
         if row["max_sub"] and row["max_sub"] <= 10:     # test: 2; normal/long: 100, not worth a word
             bits.append(T(f"{row['max_sub']} job(s) soumis au plus"))
+        serial = self.serial_note(name, row)
+        if serial:
+            bits.append(f"<span style='color:#c0392b'>{html.escape(T(serial), quote=False)}</span>")
         fixed = T(" (fixée dans les directives)") if qos.explicit_qos(self.directives.toPlainText()) else ""
         self.qos_note.setText(f"→ <b>{html.escape(name)}</b>{fixed} : " + ", ".join(bits)
                               if i18n.LANG == "fr" else
                               f"→ <b>{html.escape(name)}</b>{fixed}: " + ", ".join(bits))
+
+    def serial_note(self, name, row=None):
+        """N jobs of one node whose QoS @p name caps a user's cores below N ×
+        theirs (qos.serializes): they will run one after another -- the
+        sentence, else None."""
+        if not hasattr(self, "nodes_layout") or self.nodes_wanted() < 2 or self.one_job():
+            return None
+        if row is None:
+            name, row, _err = self.qos_choice()
+        n, cpus = self.nodes_wanted(), qos.job_cpus(self.directives.toPlainText())
+        if not qos.serializes(row, cpus, n):
+            return None
+        return (f"QoS {name or qos.explicit_qos(self.directives.toPlainText()) or '?'} : {row['sum_cpus']} cœurs au plus pour tous vos jobs, "
+                f"les {n} jobs passeront l'un après l'autre")
 
     # ----------------------------------------------------------- connection
     def check(self):
@@ -235,6 +282,7 @@ class MachinePanel:
                 self.qos_rows = rows
                 self.fill_qos(self.qos.currentData())
                 self.update_qos()
+            self.refresh_partitions(r.get("mpinfo") or "")
             self.inti_git = r.get("git")
             self.show_git_state()
             if self.inti_git:

@@ -22,7 +22,7 @@
  *        initialisation loop.
  *
  * @details rebuild_storage() of the three variants sizes per-chunk vectors
- *          (chunk_list; for Chunk2A also the second-value and type-of-constant
+ *          (chunk_list_; for zero_any also the second-value and type-of-constant
  *          rows), then runs one init per chunk. Sizing a fresh vector serially
  *          costs as much as the init loop itself, mostly page faults, and puts
  *          every page on one NUMA node.
@@ -30,7 +30,7 @@
  *          So the per-chunk vectors are NoInitVector: NoInitAllocator leaves
  *          a default-inserted element unconstructed, and make_filled() /
  *          resize_filled() construct the new elements from a team, static
- *          schedule, where the per-chunk loops will use them. The atomic rows
+ *          schedule (pmp::parallel_for), where the per-chunk loops will use them. The atomic rows
  *          are built the same way (an atomic is not movable). No extra byte per
  *          chunk nor in the vector.
  *
@@ -47,15 +47,51 @@
 
 #include <cstddef>     // std::size_t
 #include <memory>      // std::allocator, std::construct_at
+#include <new>         // std::bad_alloc
 #include <type_traits> // std::is_trivially_destructible_v
 #include <utility>     // std::forward
 #include <vector>      // std::vector
+#include <sys/mman.h>  // mmap, munmap: the large per-chunk vectors
+#include <unistd.h>    // sysconf(_SC_PAGESIZE)
 
-#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS / CHUNK_PMP_IN_PARALLEL_REGION
-#include "chunk/config.h"    // build_config::use_openmp
+#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS / CHUNK_PMP_IN_PARALLEL_REGION, pmp loops
+#include "chunk/config.h"    // build_config::threaded
 
 namespace shrink_array
 {
+namespace no_init_alloc_detail
+{
+/// @brief From this many bytes, NoInitAllocator maps the storage itself.
+/// @details glibc serves an allocation below its mmap threshold from its heap,
+///          and that threshold grows (up to 32 MiB) each time a mapped block is
+///          freed: after a re-chunk freed one list, the next lists of up to
+///          32 MiB went to the heap, and the heap kept them resident once freed
+///          (zero_any_dyn at --divisor 10: ~580 MB still resident at the end of
+///          the run that a fixed glibc threshold gave back). Mapped here, a
+///          per-chunk vector's pages always return to the system when it is
+///          freed. Below this size the heap's retention is negligible and a
+///          mapping per vector not worth it.
+inline constexpr std::size_t mapped_min_bytes = std::size_t{1} << 20U;
+
+/// @brief The system page size, read once.
+[[nodiscard]] inline std::size_t page_bytes() noexcept
+{
+    static const std::size_t page = []
+    {
+        const long size = ::sysconf(_SC_PAGESIZE);
+        return size > 0 ? static_cast<std::size_t>(size) : std::size_t{4096};
+    }();
+    return page;
+}
+
+/// @brief @p bytes rounded up to whole pages: the length mapped and unmapped.
+[[nodiscard]] inline std::size_t mapped_length(std::size_t bytes) noexcept
+{
+    const std::size_t page = page_bytes();
+    return (bytes + page - 1) / page * page;
+}
+} // namespace no_init_alloc_detail
+
 /**
  * @brief std::allocator whose argument-less construct() does nothing.
  * @details A default-inserted element is left unconstructed, for the thread
@@ -70,6 +106,58 @@ template <typename T>
 struct NoInitAllocator : std::allocator<T>
 {
     using value_type = T; ///< Element type.
+
+    /// @brief Whether @p n elements are mapped (mmap) rather than taken from the heap.
+    /// @details Decided by the size alone, so deallocate() takes the same path as
+    ///          allocate() did. The mapping is page-aligned; an element type
+    ///          aligned beyond a page stays on the heap.
+    [[nodiscard]] static bool mapped(std::size_t n) noexcept
+    {
+        return alignof(T) <= no_init_alloc_detail::page_bytes() &&
+               n >= no_init_alloc_detail::mapped_min_bytes / sizeof(T);
+    }
+
+    /// @brief Storage for @p n elements: mapped from mapped_min_bytes on (see
+    ///        no_init_alloc_detail::mapped_min_bytes), from the heap below.
+    /// @details The pages are not touched here: the first write -- the caller's
+    ///          init loop -- places them (NUMA), as glibc's own large blocks.
+    /// @throws std::bad_alloc when the mapping fails.
+    [[nodiscard]] T* allocate(std::size_t n)
+    {
+        if (!mapped(n))
+        {
+            return std::allocator<T>::allocate(n);
+        }
+        void* const ptr = ::mmap(nullptr, no_init_alloc_detail::mapped_length(n * sizeof(T)), PROT_READ | PROT_WRITE,
+                                 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (ptr == MAP_FAILED)
+        {
+            throw std::bad_alloc{};
+        }
+        return static_cast<T*>(ptr);
+    }
+
+#if defined(__cpp_lib_allocate_at_least)
+    /// @brief C++23: std::allocator's allocate_at_least() would take the heap
+    ///        path whatever the size, and deallocate() then unmap a heap block.
+    ///        Exactly @p n, through allocate().
+    [[nodiscard]] std::allocation_result<T*, std::size_t> allocate_at_least(std::size_t n)
+    {
+        return {allocate(n), n};
+    }
+#endif
+
+    /// @brief Release what allocate(@p n) returned: unmapped, its pages back to
+    ///        the system at once, or returned to the heap.
+    void deallocate(T* ptr, std::size_t n) noexcept
+    {
+        if (!mapped(n))
+        {
+            std::allocator<T>::deallocate(ptr, n);
+            return;
+        }
+        (void)::munmap(ptr, no_init_alloc_detail::mapped_length(n * sizeof(T)));
+    }
 
     NoInitAllocator() noexcept = default;
     /// @brief Rebinding copy (allocator requirements).
@@ -86,9 +174,9 @@ struct NoInitAllocator : std::allocator<T>
 
     /// @brief Any other construction (copy, move): as std::allocator.
     template <typename U, typename A0, typename... Args>
-    void construct(U* p, A0&& a0, Args&&... args)
+    void construct(U* ptr, A0&& a0, Args&&... args)
     {
-        std::construct_at(p, std::forward<A0>(a0), std::forward<Args>(args)...);
+        std::construct_at(ptr, std::forward<A0>(a0), std::forward<Args>(args)...);
     }
 };
 } // namespace shrink_array
@@ -115,42 +203,38 @@ inline constexpr int parallel_init_min_chunks = 500;
 ///        with at least two threads available.
 inline bool can_open_team() noexcept
 {
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         return CHUNK_PMP_MAX_THREADS >= 2 && !CHUNK_PMP_IN_PARALLEL_REGION;
     }
     return false;
 }
 
-/// @brief Does a loop over @p n chunks take a team of its own? At least
+/// @brief Does a loop over @p count chunks take a team of its own? At least
 ///        parallel_init_min_chunks of them, and can_open_team().
-inline bool use_own_team(long n) noexcept
+inline bool use_own_team(long count) noexcept
 {
-    return n >= parallel_init_min_chunks && can_open_team();
+    return count >= parallel_init_min_chunks && can_open_team();
 }
 
 /**
- * @brief Run @p init(i) for every chunk index i in [0, @p n): on a team of its
- *        own when use_own_team(@p n), on the calling thread otherwise.
- * @param n    chunk count
+ * @brief Run @p init(i) for every chunk index i in [0, @p count): on a team of its
+ *        own when use_own_team(@p count), on the calling thread otherwise.
+ * @param count    chunk count
  * @param init callable `void(int)`; iterations must be independent
  */
 template <typename Init>
-void for_each_chunk(int n, Init&& init)
+void for_each_chunk(int count, Init&& init)
 {
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
-        if (use_own_team(n))
+        if (use_own_team(count))
         {
-#pragma omp parallel for schedule(static)
-            for (int i = 0; i < n; ++i)
-            {
-                init(i);
-            }
+            pmp::parallel_for(0, count, pmp::Options{}, init);
             return;
         }
     }
-    for (int i = 0; i < n; ++i)
+    for (int i = 0; i < count; ++i)
     {
         init(i);
     }
@@ -175,19 +259,11 @@ void for_each_chunk_in(int first, int last, MakeCtx&& make_ctx, Body&& body)
     {
         return;
     }
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         if (use_own_team(static_cast<long>(last) - first))
         {
-#pragma omp parallel
-            {
-                decltype(auto) ctx = make_ctx();
-#pragma omp for schedule(static)
-                for (int j = first; j < last; ++j)
-                {
-                    body(j, ctx);
-                }
-            }
+            pmp::parallel_for_local(first, last, pmp::Options{}, make_ctx, body);
             return;
         }
     }
@@ -208,17 +284,12 @@ void for_each_chunk_in(int first, int last, MakeCtx&& make_ctx, Body&& body)
 template <typename T, typename Make>
 void construct_range(T* base, std::size_t first, std::size_t last, Make&& make)
 {
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::threaded)
     {
         if ((last - first) * sizeof(T) >= first_touch_min_bytes && can_open_team())
         {
-            const long lo = static_cast<long>(first);
-            const long hi = static_cast<long>(last);
-#pragma omp parallel for schedule(static)
-            for (long i = lo; i < hi; ++i)
-            {
-                make(base + i);
-            }
+            pmp::parallel_for(static_cast<long>(first), static_cast<long>(last), pmp::Options{},
+                              [base, &make](long i) { make(base + i); });
             return;
         }
     }
@@ -229,36 +300,36 @@ void construct_range(T* base, std::size_t first, std::size_t last, Make&& make)
 }
 
 /**
- * @brief A vector of @p n elements, each constructed from @p args (none: value-
+ * @brief A vector of @p count elements, each constructed from @p args (none: value-
  *        initialised), by a team when it is large (construct_range).
  * @details For the atomic rows too: an atomic is constructed in place, never
  *          moved (the returned vector is moved whole, its buffer kept).
  */
 template <typename T, typename... Args>
-[[nodiscard]] NoInitVector<T> make_filled(std::size_t n, const Args&... args)
+[[nodiscard]] NoInitVector<T> make_filled(std::size_t count, const Args&... args)
 {
     static_assert(std::is_trivially_destructible_v<T>, "an unconstructed element must be safe to destroy");
-    NoInitVector<T> v(n); // allocates only (NoInitAllocator)
-    construct_range(v.data(), 0, n, [&](T* p) { std::construct_at(p, args...); });
-    return v;
+    NoInitVector<T> vec(count); // allocates only (NoInitAllocator)
+    construct_range(vec.data(), 0, count, [&](T* ptr) { std::construct_at(ptr, args...); });
+    return vec;
 }
 
 /**
- * @brief Resize @p v to @p n; the elements it gains are copies of @p value,
+ * @brief Resize @p vec to @p count; the elements it gains are copies of @p value,
  *        constructed by a team when there are many (construct_range).
- * @details Keeps [0, min(old size, n)), as std::vector::resize(n, value). A
+ * @details Keeps [0, min(old size, count)), as std::vector::resize(count, value). A
  *          reallocation copies the kept elements on the calling thread; a row
  *          filled from empty (every storage build) has none.
  */
 template <typename T>
-void resize_filled(NoInitVector<T>& v, std::size_t n, const T& value)
+void resize_filled(NoInitVector<T>& vec, std::size_t count, const T& value)
 {
     static_assert(std::is_trivially_destructible_v<T>, "an unconstructed element must be safe to destroy");
-    const std::size_t held = v.size();
-    v.resize(n); // the new tail is allocated, not constructed (NoInitAllocator)
-    if (n > held)
+    const std::size_t held = vec.size();
+    vec.resize(count); // the new tail is allocated, not constructed (NoInitAllocator)
+    if (count > held)
     {
-        construct_range(v.data(), held, n, [&](T* p) { std::construct_at(p, value); });
+        construct_range(vec.data(), held, count, [&](T* ptr) { std::construct_at(ptr, value); });
     }
 }
 

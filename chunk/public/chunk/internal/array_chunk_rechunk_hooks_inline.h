@@ -16,16 +16,16 @@
 
 #pragma once
 
-// Out-of-line bodies of the re-chunk hooks of ArrayChunk and ArrayChunk2A
-// (RechunkHooks<Derived, true>). Included at the end of array_chunk.h and of
-// array_chunk2A.h, after the class, so the CRTP self() down-cast sees a complete
+// Out-of-line bodies of the re-chunk hooks of zero::Array and zero_any::Array
+// (RechunkHooks<Derived, true>). Included at the end of zero_array.h and of
+// zero_any_array.h, after the class, so the CRTP self() down-cast sees a complete
 // Derived and so the manager include stays out of the container declaration itself.
 #include <tuple>   // std::get on candidate tuples
 #include <utility> // std::swap
 
 #include "chunk/internal/array_chunk_rechunk_hooks.h" // RechunkHooks, the class these bodies belong to
-#include "chunk/internal/manager_chunk.h"             // manager_type — candidate store + reuse free-lists
-#include "chunk/config.h"                       // build_config::use_openmp, chunk_config::use_fast_block_compression
+#include "chunk/internal/manager_chunk.h"             // ManagerType — candidate store + reuse free-lists
+#include "chunk/config.h"                       // build_config::threaded, chunk_config::use_fast_block_compression
 #include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast
 #include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size
 #include "chunk/internal/block_pass_precheck.h" // check_no_flush_outside_start
@@ -38,23 +38,23 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates()
 {
     // COMPRESS them first: a candidate dropped here would stay materialised
     // through the rebuild and never be re-queued. compress() is guarded against
-    // an already-compressed chunk (v1: the zero sentinel); each entry carries its
+    // an already-compressed chunk (zero: the zero sentinel); each entry carries its
     // own element count. See RechunkSupport::rechunk_to for why the drop happens
     // at the owning geometry.
     if constexpr (chunk_config::use_fast_block_compression)
     {
         int num_tab = 0;
-        if constexpr (is_chunk2a)
+        if constexpr (is_zero_any_family)
         {
-            num_tab = self().num_tab_; // 2A keys its candidates by the num_tab MEMBER
+            num_tab = self().num_tab_; // zero_any keys its candidates by the num_tab MEMBER
         }
         else
         {
-            // v1 only: this pass bypasses CompressionManager::start(), and v1's
+            // zero only: this pass bypasses CompressionManager::start(), and zero's
             // replay bodies rely on no compressor changing `values` during a flush
-            // drain (see check_no_flush_outside_start, proxy_inline.h).
-            check_no_flush_outside_start<proxy_type>("RechunkHooks::rechunk_drop_candidates");
-            num_tab = proxy_type::share_info_array->get_num_tab(self().registry_key());
+            // drain (see check_no_flush_outside_start, zero_proxy_inline.h).
+            check_no_flush_outside_start<ProxyType>("RechunkHooks::rechunk_drop_candidates");
+            num_tab = ProxyType::share_info_array->get_num_tab(self().registry_key());
         }
         const int thr = get_thr_rank_fast();
         shrink_array::set_thread_chunk_size(self().size_policy_.size());
@@ -64,7 +64,7 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates()
             {
                 if (std::get<2>(tup) == num_tab)
                 {
-                    if constexpr (is_chunk2a)
+                    if constexpr (is_zero_any_family)
                     {
                         std::get<0>(tup)->compress(thr, std::get<1>(tup), num_tab, /*apply=*/true, std::get<3>(tup));
                     }
@@ -75,7 +75,7 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates()
                 }
             }
         };
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
             for (auto& list : candidate_lists_thr())
             {
@@ -91,12 +91,6 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates()
 }
 
 template <typename Derived>
-void RechunkHooks<Derived, true>::rechunk_drain_reuse_list(unsigned int new_size)
-{
-    manager_type::drain_reuse_list_for_size(new_size);
-}
-
-template <typename Derived>
 bool RechunkHooks<Derived, true>::rechunk_swap_identity(Derived& tmp)
 {
     // num_tab is set in pre_create_hook and indexes the per-array metadata, so
@@ -104,7 +98,50 @@ bool RechunkHooks<Derived, true>::rechunk_swap_identity(Derived& tmp)
     // -> the new row).
     using std::swap;
     swap(self().num_tab_, tmp.num_tab_);
-    return proxy_type::share_info_array->swap_keys(self().registry_key(), tmp.registry_key());
+    return ProxyType::share_info_array->swap_keys(self().registry_key(), tmp.registry_key());
+}
+
+// ---------------------------------------------------------------------------
+// shrink_array::RechunkHooks<Derived, true>
+// ---------------------------------------------------------------------------
+
+template <typename Derived>
+[[nodiscard]] auto& RechunkHooks<Derived, true>::candidate_lists_thr() noexcept
+{
+    if constexpr (is_zero_any_family)
+    {
+        return ManagerType::chunk2a_to_compress_potentially_thr;
+    }
+    else
+    {
+        return ManagerType::chunk_to_compress_potentially_thr;
+    }
+}
+
+template <typename Derived>
+[[nodiscard]] auto& RechunkHooks<Derived, true>::candidate_list() noexcept
+{
+    if constexpr (is_zero_any_family)
+    {
+        return ManagerType::chunk2a_to_compress_potentially;
+    }
+    else
+    {
+        return ManagerType::chunk_to_compress_potentially;
+    }
+}
+
+template <typename Derived>
+void RechunkHooks<Derived, true>::remove_candidates_of_tab(int num_tab) noexcept
+{
+    if constexpr (is_zero_any_family)
+    {
+        ManagerType::remove_from_compress_list_chunk2a_by_num_tab(num_tab);
+    }
+    else
+    {
+        ManagerType::remove_from_compress_list_chunk_by_num_tab(num_tab);
+    }
 }
 
 } // namespace shrink_array

@@ -21,8 +21,8 @@
  * @brief Element i of a chunk buffer, whatever its layout: `values[i]` for
  *        every element type, a bit of a 64-bit word for Bit (bit.h).
  *
- * @details The chunk2 code reads and writes elements through these rather
- *          than indexing the buffer, so that Chunk2<Bit> -- whose buffer is
+ * @details The zero_one_value code reads and writes elements through these rather
+ *          than indexing the buffer, so that zero_one_value::Chunk<Bit> -- whose buffer is
  *          words of bits -- runs the same code. For every other T they are
  *          `values[i]`, inlined: no cost, no change.
  *
@@ -35,7 +35,7 @@
 #include <cstddef> // std::size_t
 
 #include "chunk/bit.h"                // Bit, is_packed_bit_v
-#include "chunk/config.h"             // build_config::use_openmp
+#include "chunk/config.h"             // build_config::threaded
 #include "chunk/internal/bit_words.h" // bits::WordT, bits::get_bit, bits::set_bit_atomic
 
 namespace shrink_array
@@ -45,79 +45,79 @@ namespace internal
 {
 /// @brief A packed buffer seen as its words.
 template <typename T>
-[[nodiscard]] inline const bits::WordT* as_words(const T* v) noexcept
+[[nodiscard]] inline const bits::WordT* as_words(const T* buf) noexcept
 {
-    return reinterpret_cast<const bits::WordT*>(v);
+    return reinterpret_cast<const bits::WordT*>(buf);
 }
 /// @copydoc as_words(const T*)
 template <typename T>
-[[nodiscard]] inline bits::WordT* as_words(T* v) noexcept
+[[nodiscard]] inline bits::WordT* as_words(T* buf) noexcept
 {
-    return reinterpret_cast<bits::WordT*>(v);
+    return reinterpret_cast<bits::WordT*>(buf);
 }
 } // namespace internal
 
-/// @brief Read element @p i of the buffer @p v.
+/// @brief Read element @p index of the buffer @p buf.
 template <typename T>
-[[nodiscard]] inline T elem_get(const T* v, std::size_t i) noexcept
+[[nodiscard]] inline T elem_get(const T* buf, std::size_t index) noexcept
 {
     if constexpr (is_packed_bit_v<T>)
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
-            return T{bits::get_bit_relaxed(internal::as_words(v), i)};
+            return T{bits::get_bit_relaxed(internal::as_words(buf), index)};
         }
         else
         {
-            return T{bits::get_bit(internal::as_words(v), i)};
+            return T{bits::get_bit(internal::as_words(buf), index)};
         }
     }
     else
     {
-        return v[i];
+        return buf[index];
     }
 }
 
-/// @brief Write @p x at element @p i of the buffer @p v.
+/// @brief Write @p value at element @p index of the buffer @p buf.
 template <typename T>
-inline void elem_set(T* v, std::size_t i, T x) noexcept
+inline void elem_set(T* buf, std::size_t index, T value) noexcept
 {
     if constexpr (is_packed_bit_v<T>)
     {
-        if constexpr (build_config::use_openmp)
+        if constexpr (build_config::threaded)
         {
-            bits::set_bit_atomic(internal::as_words(v), i, static_cast<bool>(x));
+            bits::set_bit_atomic(internal::as_words(buf), index, static_cast<bool>(value));
         }
         else
         {
-            bits::set_bit(internal::as_words(v), i, static_cast<bool>(x));
+            bits::set_bit(internal::as_words(buf), index, static_cast<bool>(value));
         }
     }
     else
     {
-        v[i] = x;
+        buf[index] = value;
     }
 }
 
 /**
- * @brief Apply @p op (a callable taking T&) to element @p i in place.
+ * @brief Apply @p op (a callable taking T&) to element @p index in place.
  * @details The element itself for every T; for Bit, a copy that is written
  *          back -- a bit has no address. Either way the update is one
  *          element's load-modify-store, not an atomic operation on it: two
  *          threads updating the SAME element race as on a plain T.
  */
 template <typename T, typename Op>
-inline void elem_update(T* v, std::size_t i, Op&& op)
+inline void elem_update(T* buf, std::size_t index, Op&& op)
 {
     if constexpr (is_packed_bit_v<T>)
     {
-        T tmp = elem_get(v, i);
+        T tmp = elem_get(buf, index);
         op(tmp);
-        elem_set(v, i, tmp);
+        elem_set(buf, index, tmp);
     }
     else
     {
-        op(v[i]);
+        op(buf[index]);
     }
 }
 

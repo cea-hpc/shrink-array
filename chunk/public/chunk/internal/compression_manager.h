@@ -52,9 +52,9 @@ namespace shrink_array
  *          and have already drained the hard compressors, so no compressor can
  *          steal values during the replay.
  *
- *          One base for the two CompressionManagerOmpPolicy specialisations:
- *          the OpenMP policy's own drains set the flag, and the serial build
- *          still consults it from execute_operation(). Keyed by (T, ChunkType)
+ *          One base for the two CompressionManagerThreadPolicy specialisations:
+ *          the threaded policy's own drains set the flag, and the serial build
+ *          still consults it from execute_operation(). Keyed by (T, ChunkT)
  *          like the policy, so each manager has its own flag.
  *
  * @warning Without it, a replayed op hitting the gate would re-enqueue itself:
@@ -62,9 +62,9 @@ namespace shrink_array
  *          flush.
  *
  * @tparam T         Element type
- * @tparam ChunkType Chunk variant the manager coordinates
+ * @tparam ChunkT Chunk variant the manager coordinates
  */
-template <typename T, typename ChunkType>
+template <typename T, typename ChunkT>
 struct FlushReplayState
 {
     /// @brief RAII bracket marking this thread as replaying flushed ops.
@@ -102,22 +102,22 @@ struct FlushReplayState
  *          pending counters, dangerous-list tracking and the start()/finish()
  *          session verbs exist only when there are threads to coordinate (same
  *          split as ChunkFastCompPolicy, ChunkDeferredOpsPolicy,
- *          Proxy2FastCompPolicy), so the serial build carries no such state.
+ *          zero_one_value::ProxyFastCompPolicy), so the serial build carries no such state.
  *
  *          The serial specialisation is (nearly) empty: every call site of a
  *          member below sits in a branch discarded by `if constexpr` there.
  *
  * @tparam T         Element type
- * @tparam ChunkType Chunk variant the manager coordinates
- * @tparam Enabled   build_config::use_openmp; false leaves the policy empty
+ * @tparam ChunkT Chunk variant the manager coordinates
+ * @tparam Enabled   build_config::threaded; false leaves the policy empty
  */
-template <typename T, typename ChunkType, bool Enabled = build_config::use_openmp>
-class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
+template <typename T, typename ChunkT, bool Enabled = build_config::threaded>
+class CompressionManagerThreadPolicy : public FlushReplayState<T, ChunkT>
 {
   public:
     // Dependent base: the drains in compression_manager_inline.h name the guard
     // unqualified, so bring it into scope here.
-    using FlushReplayGuard = FlushReplayState<T, ChunkType>::FlushReplayGuard; // C++20: no typename in an alias
+    using FlushReplayGuard = FlushReplayState<T, ChunkT>::FlushReplayGuard; // C++20: no typename in an alias
 
     /**
      * @brief Base of every deferred write this manager can replay.
@@ -161,15 +161,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
         DeferredOperation& operator=(DeferredOperation&&)      = delete;
 
         /// @brief Destroy the context object, if any, without freeing its memory, and null ctx.
-        ~DeferredOperation() override
-        {
-            // Destroy context object (but do NOT free memory)
-            if (ctx_)
-            {
-                std::destroy_at(ctx_);
-                ctx_ = nullptr;
-            }
-        }
+        ~DeferredOperation() override;
 
       private:
         /**
@@ -177,109 +169,13 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
          * @details Under any_check, first verifies the op is still alive and has
          *          not already run -- the two ways a double flush shows up.
          */
-        void write_body() override
-        {
-            if constexpr (build_config::any_check)
-            {
-                const int flusher_rank = get_thr_rank_fast();
-
-                // (1) This op must still be alive. A poisoned magic means the op
-                //     was already destroy()'d — i.e. we are flushing it twice.
-                if (magic_ != deferred_lifecycle::op_alive_magic)
-                {
-                    CHUNK_INVARIANT_FAILED("[DEFERRED_LIFECYCLE] op magic corrupt/poisoned "
-                                           "(op={}, magic={:#x}, executed={}, enqueue_rank={}, flusher_rank={})",
-                                           static_cast<const void*>(this), magic_, executed_, this->thread_rank_,
-                                           flusher_rank);
-                }
-
-                // (2) This op must not have run before (double-flush guard).
-                if (executed_)
-                {
-                    CHUNK_INVARIANT_FAILED("[DEFERRED_LIFECYCLE] op executed twice "
-                                           "(op={}, enqueue_rank={}, flusher_rank={})",
-                                           static_cast<const void*>(this), this->thread_rank_, flusher_rank);
-                }
-
-                // (3) The captured ctx must still be alive. A poisoned or absent
-                //     ctx_alive_magic means the ctx was destroyed/recycled while
-                //     this op still referenced it (the root use-after-recycle).
-                if (ctx_ == nullptr)
-                {
-                    CHUNK_INVARIANT_FAILED("[DEFERRED_LIFECYCLE] op has null ctx at write_body "
-                                           "(op={}, enqueue_rank={}, flusher_rank={})",
-                                           static_cast<const void*>(this), this->thread_rank_, flusher_rank);
-                }
-
-                if (ctx_->magic != deferred_lifecycle::ctx_alive_magic)
-                {
-                    CHUNK_INVARIANT_FAILED("[DEFERRED_LIFECYCLE] ctx not alive at write_body "
-                                           "(op={}, ctx={}, ctx_magic={:#x}, enqueue_rank={}, flusher_rank={})",
-                                           static_cast<const void*>(this), static_cast<const void*>(ctx_), ctx_->magic,
-                                           this->thread_rank_, flusher_rank);
-                }
-
-                executed_ = true;
-            }
-
-            // ── Per-op geometry pin ───────────────────────────────────────
-            // The replay may run on a thread whose ambient geometry
-            // (t_active_chunk_size) now belongs to another array, and
-            // create_value() sizes the buffer from it: `values[num]` would run
-            // off a buffer of the wrong width. Pin the enqueue-time geometry
-            // (ctx->chunk_size_frozen, as the proxy's chunk_size_frozen_) and
-            // alloc key, and restore both exactly, including the "unset" 0.
-            if constexpr (build_config::chunk_dynamic)
-            {
-                const unsigned int saved     = t_active_chunk_size;
-                const unsigned int saved_key = t_alloc_key;
-                if (ctx_->chunk_size_frozen != 0U)
-                {
-                    set_thread_chunk_size(ctx_->chunk_size_frozen);
-                }
-                set_thread_alloc_key(ctx_->alloc_key_frozen); // the array's slabs, not the caller's
-
-                fn_();
-
-                t_active_chunk_size = saved;
-                t_alloc_key         = saved_key;
-            }
-            else
-            {
-                fn_();
-            }
-        }
+        void write_body() override;
 
         /**
          * @brief Release the context and the op itself, exactly once.
-         * @see destroyed for why the once-only guarantee is required
+         * @see destroyed_ for why the once-only guarantee is required
          */
-        void destroy() noexcept override
-        {
-            // Teardown exactly once, even if two flush paths call destroy() on
-            // the same op concurrently: the first caller wins.
-            if (destroyed_.exchange(true, std::memory_order_acq_rel))
-            {
-                return;
-            }
-
-            if (ctx_)
-            {
-                std::destroy_at(ctx_); // poisons ctx->magic via ~BaseArithmeticContext
-                free_ctx(ctx_);
-                ctx_ = nullptr;
-            }
-
-            // DEFERRED_LIFECYCLE: poison before recycling so a later
-            // double-flush observes op_dead_magic instead of op_alive_magic.
-            if constexpr (build_config::any_check)
-            {
-                magic_ = deferred_lifecycle::op_dead_magic;
-            }
-
-            std::destroy_at(this);
-            free_op(this); // recycle the raw memory
-        }
+        void destroy() noexcept override;
 
         Ctx*    ctx_; ///< frozen target metadata, owned until destroy()
         WriteFn fn_;  ///< the write to replay
@@ -307,7 +203,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     };
 
     /// @brief One rank's set of chunks with deferred ops queued.
-    using UnorderedSetDeferredChunks = ankerl::unordered_dense::set<ChunkType*>;
+    using UnorderedSetDeferredChunks = ankerl::unordered_dense::set<ChunkT*>;
 
     /**
      * @brief One rank's pending-deferred-op count, padded to its own line.
@@ -322,34 +218,26 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     /// @brief Nothing to build: constexpr, so that the compression_mgr of each
     ///        proxy is constant-initialised (chunk/internal/immortal.h). The
     ///        per-rank structures are sized by ensure_initialised().
-    constexpr CompressionManagerOmpPolicy() = default;
+    constexpr CompressionManagerThreadPolicy() = default;
 
     /**
      * @brief Size the per-rank tracking structures this policy owns, once.
-     * @details Called when the manager of (T, ChunkType) is registered
+     * @details Called when the manager of (T, ChunkT) is registered
      *          (AllTypeChunk::register_manager): before the first array of the
      *          type, and before any fan-out can reach these structures. Not by
      *          the constructor of a static: that runs at an unspecified point
      *          of the static initialisation, possibly after a global array's
      *          construction.
      */
-    static void ensure_initialised()
-    {
-        std::call_once(init_once_,
-                       []
-                       {
-                           init_dangerous_lists_tracking();
-                           init_deferred_queues();
-                       });
-    }
+    static void ensure_initialised();
 
-    ~CompressionManagerOmpPolicy() = default;
+    ~CompressionManagerThreadPolicy() = default;
 
-    CompressionManagerOmpPolicy(const CompressionManagerOmpPolicy&)            = delete;
-    CompressionManagerOmpPolicy& operator=(const CompressionManagerOmpPolicy&) = delete;
+    CompressionManagerThreadPolicy(const CompressionManagerThreadPolicy&)            = delete;
+    CompressionManagerThreadPolicy& operator=(const CompressionManagerThreadPolicy&) = delete;
 
-    CompressionManagerOmpPolicy(CompressionManagerOmpPolicy&&)            = delete;
-    CompressionManagerOmpPolicy& operator=(CompressionManagerOmpPolicy&&) = delete;
+    CompressionManagerThreadPolicy(CompressionManagerThreadPolicy&&)            = delete;
+    CompressionManagerThreadPolicy& operator=(CompressionManagerThreadPolicy&&) = delete;
 
     /**
      * @brief Open a compression window: the compressor's side of the Dekker
@@ -367,14 +255,14 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      *          false: the candidates stay queued, nothing is lost.
      *          docs/synchronisation_dekker_fr.md §5.3 explains each step.
      *
-     * @tparam ProxyType proxy whose WriteCompressSyncPolicy is consulted for the
+     * @tparam ProxyT proxy whose WriteCompressSyncPolicy is consulted for the
      *                   Dekker handshake against writers and flushers
      * @return true if the caller may scan and steal its marked chunks, and must
      *         then call finish(); false if it gave up
      *
      * @pre OpenMP build; the caller has marked its candidates (steal_mark())
      */
-    template <typename ProxyType>
+    template <typename ProxyT>
     bool start();
 
     /**
@@ -384,11 +272,11 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      *          hard_inflight_; the last compressor out marks its rank's
      *          candidate list safe again.
      *
-     * @tparam ProxyType same proxy type the matching start() was called with
+     * @tparam ProxyT same proxy type the matching start() was called with
      * @note Handles a negative remaining count explicitly: see hard_inflight_'s
      *       signed-counter contract for why that state is tolerated.
      */
-    template <typename ProxyType>
+    template <typename ProxyT>
     void finish();
 
     /**
@@ -397,7 +285,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      * @details Takes the same per-rank, owner-recursive shard lock the drains
      *          use: a pairwise exclusion per rank. A global back-off here
      *          convoys every enqueuer.
-     * @note Public on purpose, so to_be_queued() can bracket its insert; the raw
+     * @note Public on purpose, so to_be_queued_for_deferred_processing() can bracket its insert; the raw
      *       acquire/release stay private to the drain paths.
      */
     static void enqueue_lock(int thr_rank) noexcept
@@ -450,20 +338,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     /// @brief Does any rank hold an unflushed deferred op?
     /// @return true if the summed shards are non-zero, meaning the caller must
     ///         take the rare scan path
-    [[nodiscard]] static bool any_pending_ops() noexcept
-    {
-        if (pending_ops_shard.empty())
-        {
-            return false;
-        }
-        const int max_thr = CHUNK_PMP_RANK_BOUND;
-        int64_t   total   = 0;
-        for (int i = 0; i < max_thr; ++i)
-        {
-            total += pending_ops_shard[i].v.load(std::memory_order_acquire);
-        }
-        return total > 0;
-    }
+    [[nodiscard]] static bool any_pending_ops() noexcept;
 
     /**
      * @brief Register that @p chunk now has a deferred op queued on @p thr_rank.
@@ -472,39 +347,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      * @post The chunk joins this rank's deferred set and the rank is flagged as
      *       possibly holding ops.
      */
-    static void record_enqueue_deferred(int thr_rank, ChunkType& chunk) noexcept
-    {
-        // Insert UNDER rank thr_rank's shard lock (the one to_be_queued()
-        // already holds): flush_chunk_all_ranks() erases from this set under
-        // it, and an unlocked insert races that erase on the table's storage.
-        //
-        // A flush replay applies its writes directly (FlushReplayGuard): an
-        // enqueue from inside one is a write path ignoring in_flush_replay.
-        if constexpr (build_config::any_check)
-        {
-            if (FlushReplayState<T, ChunkType>::in_flush_replay) [[unlikely]]
-            {
-                CHUNK_INVARIANT_FAILED("record_enqueue_deferred: op enqueued during a flush replay (rank {}, chunk {})",
-                                       thr_rank, static_cast<const void*>(&chunk));
-            }
-        }
-        enqueue_lock(thr_rank);
-        // The insert allocates, and ankerl throws on a bucket overflow; the
-        // writers calling this are noexcept: fail with the context instead of
-        // a silent std::terminate.
-        try
-        {
-            deferred_chunk_per_thread[thr_rank].insert(&chunk);
-        }
-        catch (const std::exception& e)
-        {
-            CHUNK_INVARIANT_FAILED("record_enqueue_deferred: insert failed: {} (rank {}, chunk {})", e.what(), thr_rank,
-                                   static_cast<const void*>(&chunk));
-        }
-        enqueue_unlock(thr_rank);
-
-        mark_thread_has_ops(thr_rank);
-    }
+    static void record_enqueue_deferred(int thr_rank, ChunkT& chunk) noexcept;
 
     /**
      * @brief Replay and clear every deferred op queued on rank @p thr.
@@ -530,7 +373,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      *       this very chunk" -- hence the two-stage logic in
      *       wait_for_availability().
      */
-    static bool flush_chunk_all_ranks(ChunkType* chunk, bool self_only = false) noexcept;
+    static bool flush_chunk_all_ranks(ChunkT* chunk, bool self_only = false) noexcept;
 
     /**
      * @brief WAW guard: discard a superseded same-offset op on the OWN rank.
@@ -549,7 +392,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      * @warning Resolves only same-thread W(defer) -> W(direct). Cross-thread
      *          unsynchronised WAW stays non-deterministic, by design.
      */
-    static void erase_own_rank_op(int thr, ChunkType* chunk, int num) noexcept;
+    static void erase_own_rank_op(int thr, ChunkT* chunk, int num) noexcept;
 
     /**
      * @brief Might the calling rank hold deferred ops?
@@ -587,26 +430,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      *       AFTER the write, whether this thread drives a compression
      *       (write_with_optional_lock_impl).
      */
-    [[nodiscard]] static bool must_defer_write(const ChunkType& chunk) noexcept __attribute__((always_inline))
-    {
-        if constexpr (chunk_config::use_chunk_steal_mark)
-        {
-            // Acquire, paired with steal_mark()'s release: a writer that sees
-            // the mark clear here is ordered before the claim, and one that
-            // sees it set takes the slow path. A relaxed pair would let a
-            // writer miss a mark already set.
-            return chunk.steal_marked();
-        }
-        else
-        {
-            // Serial build only (no marks without OpenMP): no concurrent
-            // compressor. Acquire, paired with finish()'s seq_cst decrement,
-            // as when the SHRINK_SMALL_CHUNK build ran this gate under threads
-            // (docs/formal_models.md, F1): a writer that sees a pass OVER also
-            // sees the `values` that pass installed.
-            return hard_inflight_.load(std::memory_order_acquire) > 0;
-        }
-    }
+    [[nodiscard]] static bool must_defer_write(const ChunkT& chunk) noexcept __attribute__((always_inline));
 
     /**
      * @brief Run @p fn as the slow-path compression driver.
@@ -621,7 +445,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     template <typename F>
     static void run_slow_path(F&& fn)
     {
-        increm_chunk_gate_driver<ChunkType>();
+        increm_chunk_gate_driver<ChunkT>();
         std::forward<F>(fn)();
     }
 
@@ -654,10 +478,10 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      */
     static void mark_list_dangerous_for_thread(int thr_rank) noexcept
     {
-        auto& v = dangerous_lists_per_thread[thr_rank].value;
-        if (v.load(std::memory_order_relaxed) == 0)
+        auto& lists = dangerous_lists_per_thread[thr_rank].value;
+        if (lists.load(std::memory_order_relaxed) == 0)
         {
-            v.store(1, std::memory_order_release);
+            lists.store(1, std::memory_order_release);
         }
     }
 
@@ -701,7 +525,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      * @note Spin discipline of the library: CHUNK_CPU_PAUSE, a yield every 1000,
      *       CHUNK_WRITE_WAIT_MAX_YIELDS yields at most (-D tunable).
      */
-    static void wait_out_compressor(const ChunkType& chunk) noexcept;
+    static void wait_out_compressor(const ChunkT& chunk) noexcept;
 
   private:
     /**
@@ -805,7 +629,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     {
         if constexpr (chunk_config::ring_log_debug)
         {
-            ring_log(get_tid(), ev_mark_thread_has_ops, static_cast<uint32_t>(thr_rank));
+            ring_log(get_tid(), EventCode::mark_thread_has_ops, static_cast<uint32_t>(thr_rank));
         }
         get_thread_ops_flag_tls().v = true;
     }
@@ -816,7 +640,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     {
         if constexpr (chunk_config::ring_log_debug)
         {
-            ring_log(get_tid(), ev_clear_thread_has_ops, static_cast<uint32_t>(thr_rank));
+            ring_log(get_tid(), EventCode::clear_thread_has_ops, static_cast<uint32_t>(thr_rank));
         }
         get_thread_ops_flag_tls().v = false;
     }
@@ -834,37 +658,12 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      * @post The chunk sets, pending-op shards and flush locks are all sized to
      *       the thread capacity (CHUNK_PMP_THREAD_CAPACITY) and zero-initialised.
      */
-    static void init_deferred_queues()
-    {
-        // Built whole, never resized: the atomics are not movable. The member
-        // initialisers give the zero counts and the free (-1) locks.
-        const auto max_thr        = static_cast<std::size_t>(CHUNK_PMP_THREAD_CAPACITY);
-        deferred_chunk_per_thread = std::vector<UnorderedSetDeferredChunks>(max_thr);
-        pending_ops_shard         = std::vector<PaddedPendingCounter>(max_thr);
-        // Per-rank flush lock shards (see xflush_lock_rank declaration).
-        xflush_lock_rank = std::vector<PaddedFlushLock>(max_thr);
-    }
+    static void init_deferred_queues();
 
     /// @brief Count @p count drained ops off @p thr_rank.
     /// @param thr_rank rank whose ops were drained
     /// @param count    number of ops drained
-    static void dec_pending_ops(int thr_rank, int64_t count = 1) noexcept
-    {
-        const int64_t before = pending_ops_shard[thr_rank].v.fetch_sub(count, std::memory_order_release);
-        // Never below zero: any_pending_ops() SUMS the ranks, so a rank at -2
-        // hides two real ops on another one and the array-level flush is
-        // skipped. inc_pending_ops() runs under the same shard lock as the
-        // op insert, so a negative count is a double count, not a race.
-        if constexpr (build_config::any_check)
-        {
-            if (before - count < 0) [[unlikely]]
-            {
-                CHUNK_INVARIANT_FAILED("dec_pending_ops: rank {} count {} -> {} (retired {}): more ops retired than "
-                                       "published -- a double count",
-                                       thr_rank, before, before - count, count);
-            }
-        }
-    }
+    static void dec_pending_ops(int thr_rank, int64_t count = 1) noexcept;
 
     /// @brief Enter the hard compression window (start()'s counterpart).
     /// @see hard_inflight_
@@ -965,16 +764,16 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
 /**
  * @brief Serial specialisation: no threads to coordinate, so nothing to hold.
  * @tparam T         Element type
- * @tparam ChunkType Chunk variant the manager coordinates
+ * @tparam ChunkT Chunk variant the manager coordinates
  */
-template <typename T, typename ChunkType>
-class CompressionManagerOmpPolicy<T, ChunkType, false> : public FlushReplayState<T, ChunkType>
+template <typename T, typename ChunkT>
+class CompressionManagerThreadPolicy<T, ChunkT, false> : public FlushReplayState<T, ChunkT>
 {
   public:
     /**
      * @brief Serial builds queue nothing, so no rank can hold deferred ops.
      *
-     * @details Mirrors the OpenMP policy's have_deferred_queue(). The write path
+     * @details Mirrors the threaded policy's have_deferred_queue(). The write path
      *          calls it unconditionally -- see Proxy::apply_compound_operation,
      *          where the guard reads
      *          `v_old != zero || CompressionManagerType::have_deferred_queue()`.
@@ -998,17 +797,17 @@ class CompressionManagerOmpPolicy<T, ChunkType, false> : public FlushReplayState
  *
  * @details Coordinates compression against concurrent writers and flushes. Most
  *          of that coordination only exists under OpenMP and lives in
- *          CompressionManagerOmpPolicy, which this class inherits; what remains
+ *          CompressionManagerThreadPolicy, which this class inherits; what remains
  *          here is what the serial build also needs: the pure predicate
  *          should_mark_for_compression(), and the flush-replay guard consulted
  *          by execute_operation() in both modes.
  *
  * @tparam T         Element type
- * @tparam ChunkType Chunk variant the manager coordinates
+ * @tparam ChunkT Chunk variant the manager coordinates
  * @note Thread safety: All methods are thread-safe
  */
-template <typename T, typename ChunkType>
-struct CompressionManager : public CompressionManagerOmpPolicy<T, ChunkType, build_config::use_openmp>
+template <typename T, typename ChunkT>
+struct CompressionManager : public CompressionManagerThreadPolicy<T, ChunkT, build_config::threaded>
 {
     CompressionManager()  = default;
     ~CompressionManager() = default;

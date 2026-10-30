@@ -56,6 +56,7 @@
 #include "chunk/ring_log_debug.h"     // ring_init/analyze_ring_sweep decls
 #include "chunk/rechunk_decider.h"    // re-chunk decisions (acts in dyn builds only)
 #include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
+#include "chunk/log.h"                // CHUNK_LOG, logging::enabled (the cst2 report at compress=info)
 
 using namespace shrink_array;
 
@@ -76,7 +77,7 @@ namespace shrink_array
 ///        chunked build only. The objects exist in every build so the loop
 ///        reads the same; RechunkDecider::consider() is itself a no-op when
 ///        !chunk_dynamic, and this flag gates the rest with `if constexpr`.
-inline constexpr bool has_advisor = chunk_config::is_shrink_enabled && build_config::chunk_dynamic;
+constexpr bool has_advisor = chunk_config::is_shrink_enabled && build_config::chunk_dynamic;
 
 template <typename T>
 using Array = ActiveArray<T>;
@@ -85,57 +86,58 @@ using Array = ActiveArray<T>;
 // alloc_chunk(i) materialises the chunk holding element i ahead of the loop
 // that writes it: the loop then only stores into buffers that exist, instead
 // of materialising chunks one write at a time inside the parallel region. It
-// exists on the three variants (ArrayChunk, ArrayChunk2, ArrayChunk2A) and had
+// exists on the three variants (zero::Array, zero_one_value::Array, zero_any::Array) and had
 // no caller. The window is PARTIAL (an eighth of the array, from its first
 // quarter): the chunks around it must stay compressed, or preallocating would
-// prove nothing. bool goes through its own materialiser on Chunk2 / Chunk2A.
+// prove nothing. bool goes through its own materialiser on zero_one_value / zero_any.
 
 /// @brief One element type: preallocate the window, check which chunks are
 ///        materialised, run the loop over the window, read everything back
 ///        against a std::vector. @return the number of failures.
 template <typename T>
-static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
+static long prealloc_check(const char* name, Int count, T (*value_at)(Int))
 {
-    Array<T>       a(n);
-    std::vector<T> ref(static_cast<std::size_t>(n), T{});
-    const Int      beg   = n / 4;
-    const Int      end   = beg + (n / 8);
+    Array<T>       arr(count);
+    std::vector<T> ref(static_cast<std::size_t>(count), T{});
+    const Int      beg   = count / 4;
+    const Int      end   = beg + (count / 8);
     long           fails = 0;
 
     if constexpr (requires {
-                      a.alloc_chunk(Int{0});
-                      a.chunk_size();
-                      a.written(Int{0});
+                      arr.alloc_chunk(Int{0});
+                      arr.chunk_size();
+                      arr.written(Int{0});
                   })
     {
-        const Int step = static_cast<Int>(a.chunk_size());
-#pragma omp parallel
-        {
-            begin_parallel_phase_g();
-#pragma omp for schedule(static)
-            for (Int c = beg / step; c <= (end - 1) / step; ++c)
+        const Int step = static_cast<Int>(arr.chunk_size());
+        bench_par::region(
+            [&]([[maybe_unused]] bench_par::Team& team)
             {
-                if constexpr (build_config::use_openmp)
-                {
-                    a.alloc_chunk(c * step, get_thr_rank_fast());
-                }
-                else
-                {
-                    a.alloc_chunk(c * step);
-                }
-            }
-            finalize_parallel_phase_only_flush_g();
-        }
+                begin_parallel_phase_g();
+                bench_par::for_static_vec(team, beg / step, ((end - 1) / step) + 1,
+                                          [&](const Int c) __attribute__((always_inline))
+                                          {
+                                              if constexpr (build_config::threaded)
+                                              {
+                                                  arr.alloc_chunk(c * step, get_thr_rank_fast());
+                                              }
+                                              else
+                                              {
+                                                  arr.alloc_chunk(c * step);
+                                              }
+                                          });
+                finalize_parallel_phase_only_flush_g();
+            });
         finalize_parallel_phase_after_flush_g();
 
         // Materialised exactly over the window: every chunk it touches, and
         // not the chunks around it.
         long in  = 0;
         long out = 0;
-        for (Int c = 0; c * step < n; ++c)
+        for (Int c = 0; c * step < count; ++c)
         {
             const bool in_window = c >= beg / step && c <= (end - 1) / step;
-            const bool written   = a.written(c * step);
+            const bool written   = arr.written(c * step);
             in += in_window && written;
             out += !in_window && written;
             if (written != in_window && fails < 3)
@@ -149,16 +151,14 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
     }
 
     // The loop over the window: stores into chunks that already exist.
-#pragma omp parallel
-    {
-        begin_parallel_phase_g();
-#pragma omp for schedule(static)
-        for (Int i = beg; i < end; ++i)
+    bench_par::region(
+        [&]([[maybe_unused]] bench_par::Team& team)
         {
-            a[i] = value_at(i);
-        }
-        finalize_parallel_phase_only_flush_g();
-    }
+            begin_parallel_phase_g();
+            bench_par::for_static_vec(team, beg, end,
+                                      [&](const Int i) __attribute__((always_inline)) { arr[i] = value_at(i); });
+            finalize_parallel_phase_only_flush_g();
+        });
     finalize_parallel_phase_after_flush_g();
     for (Int i = beg; i < end; ++i)
     {
@@ -166,10 +166,10 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
     }
 
     // Read back through the read operator, window and surroundings.
-    for (Int i = 0; i < n; ++i)
+    for (Int i = 0; i < count; ++i)
     {
-        const T v = a[i];
-        if (!(v == ref[static_cast<std::size_t>(i)]))
+        const T value = arr[i];
+        if (!(value == ref[static_cast<std::size_t>(i)]))
         {
             if (fails < 5)
             {
@@ -182,13 +182,13 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
 }
 
 /// @brief The --test_prealloc checks; exits 1 on a failure.
-static void run_prealloc_checks(Int n)
+static void run_prealloc_checks(Int count)
 {
     long fails = 0;
-    fails +=
-        prealloc_check<double>("double", n, [](Int i) { return i % 5 == 0 ? 0.0 : 0.5 * static_cast<double>(i % 97); });
-    fails += prealloc_check<int>("int", n, [](Int i) { return static_cast<int>(i % 13); });
-    fails += prealloc_check<bool>("bool", n, [](Int i) { return i % 3 != 0; });
+    fails += prealloc_check<double>("double", count,
+                                    [](Int i) { return i % 5 == 0 ? 0.0 : 0.5 * static_cast<double>(i % 97); });
+    fails += prealloc_check<int>("int", count, [](Int i) { return static_cast<int>(i % 13); });
+    fails += prealloc_check<bool>("bool", count, [](Int i) { return i % 3 != 0; });
     if (fails)
     {
         std::cout << "[prealloc] FAILED (" << fails << ")\n";
@@ -209,9 +209,9 @@ int main(int argc, char* argv[])
     // the library -- it depends on the variant, the thread count and how much
     // the workload allocates:
     //
-    //   chunk2a, 64 threads, --divisor 5:  5232 MB -> 2765 MB capped at 1 arena,
+    //   zero_any, 64 threads, --divisor 5: 5232 MB -> 2765 MB capped at 1 arena,
     //                                      no measurable time cost.
-    //   chunk v1 dyn, 64 threads:          4.44s / 51501 MB at glibc's default
+    //   zero dyn, 64 threads:              4.44s / 51501 MB at glibc's default
     //                                     19.63s / 51426 MB capped at 4
     //                                     17.87s / 51565 MB capped at 16
     //                                      4.36s / 51539 MB capped at 64
@@ -248,7 +248,9 @@ int main(int argc, char* argv[])
     const bool      test_stl        = bench_args.test_stl;
     const bool      no_struct       = bench_args.no_struct;
     const bool      no_mask         = bench_args.no_mask;
+    const bool      no_conn         = bench_args.no_conn;
     const double    mask_scale      = bench_args.mask_scale; // tab_mask's size / sz
+    const double    conn_scale      = bench_args.conn_scale; // tab_conn's size / sz
     const double    multiply_factor = bench_args.multiply_factor;
     const double    divisor_factor  = bench_args.divisor_factor;
     const Int       iter_max_arg    = bench_args.iter_max_arg;
@@ -325,7 +327,7 @@ int main(int argc, char* argv[])
                 io_res = std::stoi(data); // Convert string to integer
                 std::cout << "You give : " << io_res << "\n";
             }
-            catch (const std::invalid_argument& e)
+            catch (const std::invalid_argument&)
             {
                 std::cerr << "Error: Conversion failed. The string is not a valid number" << '\n';
             }
@@ -360,9 +362,9 @@ int main(int argc, char* argv[])
     // what a bisection wants).
     const Int freq_ksum = []() -> Int
     {
-        if (const Int n = shrink_array::env_number<Int>("CHUNK_BENCH_KSUM_PERIOD", 0); n > 0)
+        if (const Int period = shrink_array::env_number<Int>("CHUNK_BENCH_KSUM_PERIOD", 0); period > 0)
         {
-            return n;
+            return period;
         }
         return 0; // 0 = follow freq_conso_mem, resolved just below
     }();
@@ -370,20 +372,20 @@ int main(int argc, char* argv[])
     [[maybe_unused]] const Int freq_compress = need_compression ? 1 : std::max<Int>(1, iter_max / 10);
 
     // Period of the DEBUG audit of the inline compression ("Check compression",
-    // ArrayChunk*::compress_int). Not freq_compress: that one is 1 whenever
+    // zero::Array*::compress_int). Not freq_compress: that one is 1 whenever
     // need_compression holds, i.e. in the very builds where the audit exists.
     // Every iteration was a full sweep of every array plus a self-heal that
     // made debug compress more than the inline path alone. SHRINK_BENCH_AUDIT_FREQ
     // overrides (1 = every iteration, the former behaviour).
     [[maybe_unused]] const Int freq_audit = [iter_max]() -> Int
     {
-        if (const char* e = std::getenv("SHRINK_BENCH_AUDIT_FREQ"); e != nullptr && *e != '\0')
+        if (const char* env = std::getenv("SHRINK_BENCH_AUDIT_FREQ"); env != nullptr && *env != '\0')
         {
-            if (Int v = 0; parse_number(e, v))
+            if (Int value = 0; parse_number(env, value))
             {
-                return std::max<Int>(1, v);
+                return std::max<Int>(1, value);
             }
-            warn_invalid_env("SHRINK_BENCH_AUDIT_FREQ", e);
+            warn_invalid_env("SHRINK_BENCH_AUDIT_FREQ", env);
         }
         return std::max<Int>(1, iter_max / 10);
     }();
@@ -405,17 +407,17 @@ int main(int argc, char* argv[])
     std::cout << "Number of threads : " << max_thr << "\n";
     std::cout << "Pid : " << getpid() << std::endl;
 
-    if constexpr (chunk_config::use_chunk)
+    if constexpr (chunk_config::use_zero)
     {
-        std::cout << tc.bold << tc.magenta << "MODE: " << tc.reset << "CHUNK (Single Value)\n";
+        std::cout << tc.bold << tc.magenta << "MODE: " << tc.reset << "zero (Single Value)\n";
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
-        std::cout << tc.bold << tc.magenta << "MODE: " << tc.reset << "CHUNK2 (Dual Value)\n";
+        std::cout << tc.bold << tc.magenta << "MODE: " << tc.reset << "zero_one_value (Dual Value)\n";
     }
-    else if constexpr (chunk_config::use_chunk2a)
+    else if constexpr (chunk_config::use_zero_any)
     {
-        std::cout << tc.bold << tc.magenta << "MODE: " << tc.reset << "CHUNK2A (Advanced Dual Value)\n";
+        std::cout << tc.bold << tc.magenta << "MODE: " << tc.reset << "zero_any (Advanced Dual Value)\n";
     }
     else
     {
@@ -463,16 +465,16 @@ int main(int argc, char* argv[])
             [&](auto... data_types)
             {
                 (
-                    [&](auto t)
+                    [&](auto team)
                     {
                         // Construct the label string: "sizeof(ChunkType<T>)"
-                        const std::string label = "sizeof(" + type_name<ChunkType<decltype(t)>>() + ")";
+                        const std::string label = "sizeof(" + type_name<ChunkType<decltype(team)>>() + ")";
 
                         // Print the line with a dedicated color scheme:
                         // [Label in White] [= in Cyan] [Value in Bold Yellow] [Unit in Green]
                         std::cout << tc.white << std::left << std::setw(static_cast<int>(max_width + 10)) << label
                                   << tc.reset << tc.cyan << " = " << tc.reset << tc.bold << tc.yellow << std::setw(5)
-                                  << sizeof(ChunkType<decltype(t)>) << tc.reset << tc.green << " bytes" << tc.reset
+                                  << sizeof(ChunkType<decltype(team)>) << tc.reset << tc.green << " bytes" << tc.reset
                                   << "\n";
                     }(data_types),
                     ...); // C++17 Fold expression
@@ -480,13 +482,13 @@ int main(int argc, char* argv[])
             type_instances);
     };
 
-    Array<double>         tab1(sz);
-    Array<double>         tab2(sz);
-    Array<double>         tab3(sz);
-    Array<double>         tab4(sz);
-    Array<double>         tab5(sz);
-    Array<int>            tab_int(sz);
-    Array<ComplexDouble>  tab_complex(sz);
+    Array<double>        tab1(sz);
+    Array<double>        tab2(sz);
+    Array<double>        tab3(sz);
+    Array<double>        tab4(sz);
+    Array<double>        tab5(sz);
+    Array<int>           tab_int(sz);
+    Array<ComplexDouble> tab_complex(sz);
 
     Array<float>         tab_float(2 * sz);
     Array<short>         tab_short(sz / 2);
@@ -522,46 +524,42 @@ int main(int argc, char* argv[])
     maybe_set_second_value(tab_point, second_value_p);
     maybe_set_second_value(tab_cell, second_value_cell);
 
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
-        print_chunk_size.operator()<Chunk2A>("CHUNK2A");
+        print_chunk_size.operator()<zero_any::Chunk>("zero_any");
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
-        print_chunk_size.operator()<Chunk2>("CHUNK2");
+        print_chunk_size.operator()<zero_one_value::Chunk>("zero_one_value");
     }
-    else if constexpr (chunk_config::use_chunk)
+    else if constexpr (chunk_config::use_zero)
     {
-        print_chunk_size.operator()<Chunk>("CHUNK");
+        print_chunk_size.operator()<zero::Chunk>("zero");
     }
 
     // Array<bool> in a shrink build, std::vector<short> in the baseline
     // (bench_array.h says why): one alias, where four declarations under
-    // #if defined CHUNK_VARIANT_V1 / _V2 / _V2A stood.
+    // #if defined CHUNK_VARIANT_ZERO* stood.
     BenchBoolArray tab_bool(sz);
     // tab_bool's twin, written with the same values at the same places:
-    // ArrayChunkBits (8 bools per byte) in a chunk2 build, tab_bool's own type
+    // ArrayChunkBits (8 bools per byte) in a zero_one_value build, tab_bool's own type
     // elsewhere (BenchBoolBitsArray). Compare the two in the stats, the
     // chunk filling rates and the pools of a single run.
     BenchBoolBitsArray tab_bool_bits(sz);
 
     // Large and mostly NOT constant: random masks and scattered flags between
     // whole constant segments (bench_phase_mask.cpp). ArrayChunkBits in a
-    // chunk2 build, std::vector<bool> in the baseline (BenchMaskArray).
+    // zero_one_value build, std::vector<bool> in the baseline (BenchMaskArray).
     // Size 1 under --no_mask: its phases are skipped (BenchArrays::with_mask).
     // mask_scale * sz (--mask_scale, default 1/32): computed in 64 bits and
     // capped at the largest whole number of 1024-element blocks the build's Int
     // holds -- at --mask_scale 8, the size tab_mask was created with, 8 x 10^9
-    // wrapped a 32-bit Int to -589934592 and ArrayChunk2A<bool, int> threw
+    // wrapped a 32-bit Int to -589934592 and zero_any::Array<bool, int> threw
     // std::length_error. The int64 builds take the full size.
-    long long mask_want = std::llround(mask_scale * static_cast<double>(sz));
-    if (mask_want < 1)
-    {
-        mask_want = 1;
-    }
-    const Int mask_sz = mask_want > static_cast<long long>(std::numeric_limits<Int>::max())
-                            ? static_cast<Int>(static_cast<long long>(std::numeric_limits<Int>::max()) & ~0x3FFLL)
-                            : static_cast<Int>(mask_want);
+    const long long mask_want = std::max(std::llround(mask_scale * static_cast<double>(sz)), 1LL);
+    const Int       mask_sz = mask_want > static_cast<long long>(std::numeric_limits<Int>::max())
+                                  ? static_cast<Int>(static_cast<long long>(std::numeric_limits<Int>::max()) & ~0x3FFLL)
+                                  : static_cast<Int>(mask_want);
     if (!no_mask && static_cast<long long>(mask_sz) != mask_want)
     {
         std::cout << "Note: tab_mask capped at " << mask_sz << " elements (" << mask_want
@@ -573,12 +571,31 @@ int main(int argc, char* argv[])
         std::cout << "tab_mask: " << mask_sz << " elements (--mask_scale " << mask_scale << ")\n";
     }
 
-    // Handle on the eighteen arrays, passed to the extracted phases. References,
+    // A mesh connectivity (bench_phase_conn.cpp): pattern::Array<int> in the
+    // zero_one_value and zero_any builds, zero::Array<int> in a zero build, a vector
+    // in the baseline (BenchConnArray). About conn_scale * sz ints (--conn_scale,
+    // default 1/32), whole rows of bench_conn_row, computed in 64 bits and capped
+    // at the build's Int as tab_mask; size 1 under --no_conn
+    // (BenchArrays::with_conn) or when that is less than one row.
+    const long long conn_rows_want =
+        std::llround(conn_scale * static_cast<double>(sz)) / static_cast<long long>(bench_conn_row);
+    const long long conn_rows_max = static_cast<long long>(std::numeric_limits<Int>::max()) / bench_conn_row;
+    const Int       conn_sz       = static_cast<Int>((conn_rows_want < conn_rows_max ? conn_rows_want : conn_rows_max) *
+                                                     static_cast<long long>(bench_conn_row));
+    const bool      no_tab_conn   = no_conn || conn_sz == 0;
+    BenchConnArray  tab_conn(no_tab_conn ? 1 : conn_sz);
+    if (!no_tab_conn)
+    {
+        std::cout << "tab_conn: " << conn_sz << " elements (" << conn_sz / bench_conn_row << " rows of "
+                  << bench_conn_nx << " cells, --conn_scale " << conn_scale << ")\n";
+    }
+
+    // Handle on the nineteen arrays, passed to the extracted phases. References,
     // so main() stays the owner -- it builds them and destroys them.
-    BenchArrays bench_arrays{tab1,     tab2,          tab3,        tab4,      tab5,      tab_int,
-                             tab_bool, tab_bool_bits, tab_complex, tab_float, tab_short, tab_char,
-                             tab_long, tab_ulong,     tab_quant,   tab_point, tab_cell,  tab_mask,
-                             sz,       interval,      !no_struct,  !no_mask};
+    BenchArrays bench_arrays{tab1,          tab2,        tab3,        tab4,      tab5,     tab_int,  tab_bool,
+                             tab_bool_bits, tab_complex, tab_float,   tab_short, tab_char, tab_long, tab_ulong,
+                             tab_quant,     tab_point,   tab_cell,    tab_mask,  tab_conn, sz,       interval,
+                             !no_struct,    !no_mask,    !no_tab_conn};
 
     // The end-of-life stats print these next to the table number.
     maybe_set_debug_name(tab1, "tab1");
@@ -599,6 +616,7 @@ int main(int argc, char* argv[])
     maybe_set_debug_name(tab_point, "tab_point");
     maybe_set_debug_name(tab_cell, "tab_cell");
     maybe_set_debug_name(tab_mask, "tab_mask");
+    maybe_set_debug_name(tab_conn, "tab_conn");
 
     SingletonChk<GlobalStatsChunkList>::get_ref().print();
 
@@ -619,6 +637,7 @@ int main(int argc, char* argv[])
     bench_phase_fill(bench_arrays, start, end, elapsed_seconds);
     bench_phase_struct_fill(bench_arrays);
     bench_phase_mask_fill(bench_arrays);
+    bench_phase_conn_fill(bench_arrays);
 
     // Verification pass (writing or reading back the reference files):
     // lbd_check and lbd_check_all, in bench_checks.cpp.
@@ -686,13 +705,14 @@ int main(int argc, char* argv[])
     start           = end;
     std::cout << "\nElapsed time distribution : " << elapsed_seconds.count() << "s\n";
 
-    double         val_sum      = 0;
-    ComplexDouble  cv_val_sum   = zero_complex;
-    long           long_val_sum = 0;
-    double         point_sum    = 0; // the struct arrays' read sweep (bench_phase_struct.cpp)
-    long           mask_count   = 0; // tab_mask's read sweep (bench_phase_mask.cpp)
-    double         v_real       = 0;
-    double         v_im         = 0;
+    double        val_sum      = 0;
+    ComplexDouble cv_val_sum   = zero_complex;
+    long          long_val_sum = 0;
+    double        point_sum    = 0; // the struct arrays' read sweep (bench_phase_struct.cpp)
+    long          mask_count   = 0; // tab_mask's read sweep (bench_phase_mask.cpp)
+    long          conn_sum     = 0; // tab_conn's gather (bench_phase_conn.cpp)
+    double        v_real       = 0;
+    double        v_im         = 0;
 
     // Checksums: bench_stats.cpp.
 
@@ -706,20 +726,20 @@ int main(int argc, char* argv[])
     // `if constexpr`, so a normal build never touches std::random_device -- the
     // statement is compiled, never executed, and r stays -1, which the test at
     // the injection site below rejects.
-    Int r          = -1;
+    Int injection  = -1;
     Int cycle_alea = -1;
     if constexpr (test_captur_bug)
     {
         std::mt19937                       rng0(std::random_device{}());
         std::uniform_int_distribution<Int> dist0(0, 2);
-        r = dist0(rng0);
+        injection = dist0(rng0);
 
         std::uniform_int_distribution<Int> dist1(0, 31);
         cycle_alea = dist1(rng0);
     }
 
-    // ── Chunk-size advisor (STEP 0: observation only, dyn+2A builds) ────────
-    // Every CHUNK_ADVISOR_PERIOD iterations (env, default 500, 0 = disabled),
+    // ── Chunk-size advisor (STEP 0: observation only, dyn+zero_any builds) ──
+    // Every --advisor_period iterations (0 = disabled),
     // estimate each representative array's memory across candidate chunk
     // sizes and print the table + the analysis cost. Runs at this SERIAL
     // point of the loop (quiescent enough for observation; states may still
@@ -736,19 +756,9 @@ int main(int argc, char* argv[])
     // first move lands around a tenth of the way in, where the geometric gains
     // are largest, and the tick count stays bounded. The floor of 10 stops a
     // very short run from examining every other iteration.
-    // CHUNK_ADVISOR_PERIOD overrides; 0 still disables.
-    const Int advisor_period = [iter_max]() -> Int
-    {
-        if (const char* e = std::getenv("CHUNK_ADVISOR_PERIOD"); e != nullptr && *e != '\0')
-        {
-            if (Int v = 0; parse_number(e, v))
-            {
-                return v;
-            }
-            warn_invalid_env("CHUNK_ADVISOR_PERIOD", e);
-        }
-        return std::max<Int>(10, iter_max / 20);
-    }();
+    // --advisor_period overrides; 0 disables.
+    const Int advisor_period =
+        bench_args.advisor_period >= 0 ? bench_args.advisor_period : std::max<Int>(10, iter_max / 20);
     // Phase-3A decider (dry-run): persists across ticks, keyed by array address.
     // `advisor_call` increments once per advisor_tick so cooldown/stability count
     // in ticks, not iterations. Policy defaults: 3 stable ticks, 8 MB deadband,
@@ -757,7 +767,45 @@ int main(int argc, char* argv[])
     // advisor on the array, applies the memory + hysteresis policy, and re-chunks
     // it when worthwhile. dry_run=false makes it act (rechunk is now parallel and
     // cheap, so we gate purely on memory gain + hysteresis, not CPU cost).
-    RechunkDecider rechunk_decider{RechunkPolicy{.dry_run = false}};
+    // The --rechunk_* / --force_rechunk* options set the policy's fields: the
+    // library reads none of them from the environment.
+    const RechunkPolicy rechunk_policy = [&bench_args]
+    {
+        constexpr double mib = 1024.0 * 1024.0;
+        RechunkPolicy    pol;
+        pol.dry_run = bench_args.rechunk_dry_run;
+        if (bench_args.rechunk_min_gain_mb >= 0.0)
+        {
+            pol.min_gain_bytes = static_cast<std::size_t>(bench_args.rechunk_min_gain_mb * mib);
+        }
+        if (bench_args.rechunk_coarsen_min_meta_mb >= 0.0)
+        {
+            pol.coarsen_min_meta_gain_bytes = static_cast<std::size_t>(bench_args.rechunk_coarsen_min_meta_mb * mib);
+        }
+        if (bench_args.rechunk_coarsen_min_meta_rate >= 0.0)
+        {
+            pol.coarsen_min_meta_rate = bench_args.rechunk_coarsen_min_meta_rate;
+        }
+        if (bench_args.rechunk_max_coarsen > 0)
+        {
+            pol.max_coarsen_factor = static_cast<unsigned>(bench_args.rechunk_max_coarsen);
+        }
+        if (bench_args.rechunk_grid_bits >= 0)
+        {
+            pol.advisor_grid_bits = static_cast<int>(bench_args.rechunk_grid_bits);
+        }
+        if (bench_args.rechunk_backoff_max >= 0)
+        {
+            pol.max_backoff_ticks = static_cast<int>(bench_args.rechunk_backoff_max);
+        }
+        pol.trace_array  = bench_args.rechunk_trace_array;
+        pol.force_size   = static_cast<unsigned>(bench_args.force_rechunk);
+        pol.force_at     = static_cast<int>(bench_args.force_rechunk_at);
+        pol.force_alt    = static_cast<unsigned>(bench_args.force_rechunk_alt);
+        pol.force_toggle = bench_args.force_rechunk_toggle;
+        return pol;
+    }();
+    RechunkDecider rechunk_decider{rechunk_policy};
     Int            advisor_call = 0;
     const auto     advisor_tick = [&](Int k_iter)
     {
@@ -781,18 +829,13 @@ int main(int argc, char* argv[])
             }
             // Every other array too, advised by default: a dynamic run then
             // starts like the static S=64 build and ends below the static S=256
-            // one (chunk2a, 64 threads: 6.57 GB against 7.26 GB; with only the
+            // one (zero_any, 64 threads: 6.57 GB against 7.26 GB; with only the
             // five arrays above advised, the other ten stay at S=64, ~12.5 GB).
-            // SHRINK_BENCH_ADVISE_ALL=0 advises only the five, for runs that
-            // must compare with earlier campaigns. tab_bool and tab_bool_bits
-            // excepted: both stay at their birth geometry, so the two bool
-            // containers are compared as they are, not after a re-chunk.
-            static const bool advise_all = []
-            {
-                const char* e = std::getenv("SHRINK_BENCH_ADVISE_ALL");
-                return e == nullptr || e[0] == '\0' || e[0] != '0';
-            }();
-            if (advise_all)
+            // --advise_five advises only the five, for runs that must compare
+            // with earlier campaigns. tab_bool and tab_bool_bits excepted: both
+            // stay at their birth geometry, so the two bool containers are
+            // compared as they are, not after a re-chunk.
+            if (!bench_args.advise_five)
             {
                 rechunk_decider.consider<double>(tab3, tick, iter, "tab3");
                 rechunk_decider.consider<double>(tab4, tick, iter, "tab4");
@@ -807,55 +850,59 @@ int main(int argc, char* argv[])
                 {
                     rechunk_decider.consider<Cell>(tab_cell, tick, iter, "tab_cell");
                 }
+                if (!no_tab_conn)
+                {
+                    rechunk_decider.consider<int>(tab_conn, tick, iter, "tab_conn");
+                }
             }
-            // tab_mask: an ArrayChunkBits in a chunk2 build, whose advisor
+            // tab_mask: an ArrayChunkBits in a zero_one_value build, whose advisor
             // knows the packed layout (the other variants' Array<bool> is not
             // what this array is for).
-            if constexpr (chunk_config::use_chunk2)
+            if constexpr (chunk_config::use_zero_one_value)
             {
                 if (!no_mask)
                 {
-                    rechunk_decider.consider<typename BenchMaskArray::value_type>(tab_mask, tick, iter, "tab_mask");
+                    rechunk_decider.consider<BenchMaskArray::value_type>(tab_mask, tick, iter, "tab_mask");
                 }
             }
-            if constexpr (chunk_config::use_chunk2a)
+            if constexpr (chunk_config::use_zero_any)
             {
-                if (std::getenv("CHUNK_CST2_PROBE")) // only prints when requested
+                // CHUNK_LOG=compress=info: the registry's report at each pass.
+                if (shrink_array::logging::enabled(shrink_array::logging::Channel::compress,
+                                                   shrink_array::logging::Level::info))
                 {
-                    // STEP B — cst2 GC mark report (read-only) : ArrayChunk2A-only API
-                    // (per-chunk cst_val2 pointer registry has no equivalent on CHUNK /
-                    // CHUNK2, which have no per-chunk GC-able registry to report on).
-                    // %ld + a cast: k_iter is Int, which is `long` in the int64
-                    // build and `int` otherwise.
-                    std::fprintf(stderr, "[cst2-gc @ iter %ld]\n", static_cast<long>(k_iter));
+                    // STEP B — cst2 GC mark report (read-only) : zero_any::Array-only API
+                    // (per-chunk cst_val2 pointer registry has no equivalent on zero /
+                    // zero_one_value, which have no per-chunk GC-able registry to report on).
+                    CHUNK_LOG(info, compress, "cst2-gc @ iter {}", k_iter);
                     // Spelled out rather than Array<T>: the enclosing
                     // `if constexpr` is in a plain lambda, so its discarded
-                    // branch is still checked, and Array<T> is ArrayChunk<T> --
-                    // which has no gc_mark_report -- in a v1/v2 build. `Int`
-                    // is what matters here: ArrayChunk2A<double> would take the
-                    // default ind_type (int), a DIFFERENT instantiation from the
+                    // branch is still checked, and Array<T> is zero::Array<T> --
+                    // which has no gc_mark_report -- in a zero/zero_one_value build. `Int`
+                    // is what matters here: zero_any::Array<double> would take the
+                    // default IndType (int), a DIFFERENT instantiation from the
                     // one the bench fills in an int64 build, and the report would
                     // be of an array nothing ever touched.
-                    ArrayChunk2A<double, Int>::gc_mark_report();
-                    ArrayChunk2A<short, Int>::gc_mark_report();
-                    ArrayChunk2A<ComplexDouble, Int>::gc_mark_report();
+                    zero_any::Array<double, Int>::gc_mark_report();
+                    zero_any::Array<short, Int>::gc_mark_report();
+                    zero_any::Array<ComplexDouble, Int>::gc_mark_report();
                 }
             }
         }
     };
-    // CHUNK_CST2_RECLAIM=N: every N iterations, free the Chunk2A second values
+    // CHUNK_CST2_RECLAIM=N: every N iterations, free the zero_any second values
     // no chunk uses any more, for every element type of the bench
     // (reclaim_second_values() covers all the arrays of a type, whatever their
     // index type). Static builds too, unlike the advisor. 0 or unset: never.
     const Int cst2_reclaim_period = []() -> Int
     {
-        if (const char* e = std::getenv("CHUNK_CST2_RECLAIM"); e != nullptr && *e != '\0')
+        if (const char* env = std::getenv("CHUNK_CST2_RECLAIM"); env != nullptr && *env != '\0')
         {
-            if (Int v = 0; parse_number(e, v))
+            if (Int value = 0; parse_number(env, value))
             {
-                return v;
+                return value;
             }
-            warn_invalid_env("CHUNK_CST2_RECLAIM", e);
+            warn_invalid_env("CHUNK_CST2_RECLAIM", env);
         }
         return 0;
     }();
@@ -863,7 +910,7 @@ int main(int argc, char* argv[])
     // not needed (-Wunused-lambda-capture) where the branch below is discarded.
     const auto cst2_reclaim_tick = [&](Int k_iter)
     {
-        if constexpr (chunk_config::use_chunk2a)
+        if constexpr (chunk_config::use_zero_any)
         {
             if (cst2_reclaim_period <= 0 || (k_iter % cst2_reclaim_period) != 0)
             {
@@ -874,16 +921,16 @@ int main(int argc, char* argv[])
             // what decides how often it can run.
             const auto  t0    = std::chrono::steady_clock::now();
             std::size_t freed = 0;
-            freed += ArrayChunk2A<double, Int>::reclaim_second_values();
-            freed += ArrayChunk2A<float, Int>::reclaim_second_values();
-            freed += ArrayChunk2A<int, Int>::reclaim_second_values();
-            freed += ArrayChunk2A<long, Int>::reclaim_second_values();
-            freed += ArrayChunk2A<unsigned long, Int>::reclaim_second_values();
-            freed += ArrayChunk2A<short, Int>::reclaim_second_values();
-            freed += ArrayChunk2A<unsigned char, Int>::reclaim_second_values();
-            freed += ArrayChunk2A<ComplexDouble, Int>::reclaim_second_values();
-            freed += ArrayChunk2A<Point3, Int>::reclaim_second_values();
-            freed += ArrayChunk2A<Cell, Int>::reclaim_second_values();
+            freed += zero_any::Array<double, Int>::reclaim_second_values();
+            freed += zero_any::Array<float, Int>::reclaim_second_values();
+            freed += zero_any::Array<int, Int>::reclaim_second_values();
+            freed += zero_any::Array<long, Int>::reclaim_second_values();
+            freed += zero_any::Array<unsigned long, Int>::reclaim_second_values();
+            freed += zero_any::Array<short, Int>::reclaim_second_values();
+            freed += zero_any::Array<unsigned char, Int>::reclaim_second_values();
+            freed += zero_any::Array<ComplexDouble, Int>::reclaim_second_values();
+            freed += zero_any::Array<Point3, Int>::reclaim_second_values();
+            freed += zero_any::Array<Cell, Int>::reclaim_second_values();
             const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
             std::fprintf(stderr, "[cst2-reclaim @ iter %ld] %zu second value(s) freed in %.3f ms\n",
                          static_cast<long>(k_iter), freed, ms);
@@ -891,28 +938,30 @@ int main(int argc, char* argv[])
             // trend of "in use" against the capacity is the early warning of the
             // exhaustion that stops the run; a refused reclaim freed nothing
             // because it could not run.
-            const auto report = [](const char* name, const SecondValueStats& s)
+            const auto report = [](const char* name, const SecondValueStats& stats)
             {
-                if (s.handed_out == 0 && s.refused() == 0)
+                if (stats.handed_out == 0 && stats.refused() == 0)
                 {
                     return;
                 }
                 std::fprintf(stderr, "  %-14s %zu in use / %zu (%.2f%%), %zu free, %zu reclaim(s), %zu refused%s\n",
-                             name, s.in_use(), s.capacity,
-                             s.capacity != 0 ? 100.0 * static_cast<double>(s.in_use()) / static_cast<double>(s.capacity)
-                                             : 0.0,
-                             s.free, s.reclaims, s.refused(), s.degraded ? "  DEGRADED: reclaims refused" : "");
+                             name, stats.in_use(), stats.capacity,
+                             stats.capacity != 0
+                                 ? 100.0 * static_cast<double>(stats.in_use()) / static_cast<double>(stats.capacity)
+                                 : 0.0,
+                             stats.free, stats.reclaims, stats.refused(),
+                             stats.degraded ? "  DEGRADED: reclaims refused" : "");
             };
-            report("double", ArrayChunk2A<double, Int>::second_value_stats());
-            report("float", ArrayChunk2A<float, Int>::second_value_stats());
-            report("int", ArrayChunk2A<int, Int>::second_value_stats());
-            report("long", ArrayChunk2A<long, Int>::second_value_stats());
-            report("unsigned long", ArrayChunk2A<unsigned long, Int>::second_value_stats());
-            report("short", ArrayChunk2A<short, Int>::second_value_stats());
-            report("unsigned char", ArrayChunk2A<unsigned char, Int>::second_value_stats());
-            report("complex_double", ArrayChunk2A<ComplexDouble, Int>::second_value_stats());
-            report("Point3", ArrayChunk2A<Point3, Int>::second_value_stats());
-            report("Cell", ArrayChunk2A<Cell, Int>::second_value_stats());
+            report("double", zero_any::Array<double, Int>::second_value_stats());
+            report("float", zero_any::Array<float, Int>::second_value_stats());
+            report("int", zero_any::Array<int, Int>::second_value_stats());
+            report("long", zero_any::Array<long, Int>::second_value_stats());
+            report("unsigned long", zero_any::Array<unsigned long, Int>::second_value_stats());
+            report("short", zero_any::Array<short, Int>::second_value_stats());
+            report("unsigned char", zero_any::Array<unsigned char, Int>::second_value_stats());
+            report("complex_double", zero_any::Array<ComplexDouble, Int>::second_value_stats());
+            report("Point3", zero_any::Array<Point3, Int>::second_value_stats());
+            report("Cell", zero_any::Array<Cell, Int>::second_value_stats());
         }
     };
 
@@ -947,14 +996,11 @@ int main(int argc, char* argv[])
 
         Int end0 = start0 + size;
 
-        if (end0 > sz)
-        {
-            end0 = sz;
-        }
+        end0 = std::min(end0, sz);
 
         if constexpr (test_captur_bug)
         {
-            if (r == 0 && k == cycle_alea)
+            if (injection == 0 && k == cycle_alea)
             {
                 std::cout << "Triggering abort()! cycle : " << k << std::endl;
                 std::abort(); // triggers an abrupt program abort
@@ -973,6 +1019,8 @@ int main(int argc, char* argv[])
             bench_phase_struct_compute(bench_arrays, k, start0, end0, tab_nba1, tab_nba2, point_sum);
             // tab_mask's update, its own region (bench_phase_mask.cpp).
             bench_phase_mask_compute(bench_arrays, k, mask_count);
+            // tab_conn's renumbering, its own region (bench_phase_conn.cpp).
+            bench_phase_conn_compute(bench_arrays, k, conn_sum);
         }
 
         // ─── STRESS TESTS ──────────────────────────────────────────────────
@@ -1059,7 +1107,7 @@ int main(int argc, char* argv[])
             // variable). An IDE inspection already erased them once, silently
             // breaking that variant.
             // Constant fills, one per outcome on a chunked array: the second
-            // value (a fully covered chunk goes constant outright on chunk2a),
+            // value (a fully covered chunk goes constant outright on zero_any),
             // the first value (its buffer is released), a plain value
             // (materialised, then raw-stored), an Int and a bool (per-element
             // path: bool keeps its state in the proxy).
@@ -1093,7 +1141,7 @@ int main(int argc, char* argv[])
         //     arrays, every constant outcome plus a plain value alternating
         //     between blocks. Larger than (c) -- interval/2 elements, from
         //     start0/3, unaligned -- since it is parallel and ~8x cheaper per
-        //     element than operator[] on Chunk2A. Same writes in the
+        //     element than operator[] on zero_any. Same writes in the
         //     std::vector build (vector_range_ops.h), so the check builds
         //     compare them like any other.
         if (k % 5 == 1)
@@ -1119,7 +1167,7 @@ int main(int argc, char* argv[])
             {
                 std::cout << "k : " << k << " val_sum = " << val_sum << " long_val_sum = " << long_val_sum
                           << " cv_val_sum = " << cv_val_sum << " point_sum = " << point_sum
-                          << " mask_count = " << mask_count << std::endl;
+                          << " mask_count = " << mask_count << " conn_sum = " << conn_sum << std::endl;
             }
         }
 
@@ -1173,25 +1221,26 @@ int main(int argc, char* argv[])
                 const bool have_to_compress = k % freq_compress == 0;
                 if (have_to_compress)
                 {
-#pragma omp parallel
-                    {
-                        // Compiled in the std::vector build too: a no-op there.
-                        ParamChunk::force_compression();
-                    }
+                    bench_par::region(
+                        [&]([[maybe_unused]] bench_par::Team& team)
+                        {
+                            // Compiled in the std::vector build too: a no-op there.
+                            ParamChunk::force_compression();
+                        });
                 }
             }
 
 
-            // Chunk and Chunk2 always; Chunk2A only with fast block
-            // compression (normally useless for 2 and 2A, whose writes
+            // zero and zero_one_value always; zero_any only with fast block
+            // compression (normally useless for zero_one_value and zero_any, whose writes
             // compress as they go).
             // Periodic, plus the last iteration so no end-of-run miss escapes.
             // A persisting miss stays visible at the next audit: a
             // materialised constant chunk stays so until it is written.
             const bool audit_now = (k % freq_audit == 0) || (k + 1 == iter_max);
 
-            if constexpr (chunk_config::use_chunk || chunk_config::use_chunk2 ||
-                          (chunk_config::use_chunk2a && chunk_config::use_fast_block_compression))
+            if constexpr (chunk_config::use_zero || chunk_config::use_zero_one_value ||
+                          (chunk_config::use_zero_any && chunk_config::use_fast_block_compression))
             {
                 if (audit_now)
                 {
@@ -1222,6 +1271,7 @@ int main(int argc, char* argv[])
     std::cout << "\ncv_val_sum = " << cv_val_sum << std::endl;
     std::cout << "\npoint_sum  = " << point_sum << "\n";
     std::cout << "mask_count = " << mask_count << "\n";
+    std::cout << "conn_sum   = " << conn_sum << "\n";
 
     bench_print_checksums(bench_arrays, check_sum);
 
@@ -1242,7 +1292,7 @@ int main(int argc, char* argv[])
     if constexpr (has_advisor)
     {
         // Full re-chunk report: the advisor/decider runs in every dynamic-chunked
-        // build (CHUNK_VARIANT_V1 / _V2 / _V2A), so rechunk_decider (and its per-event
+        // build (CHUNK_VARIANT_ZERO*), so rechunk_decider (and its per-event
         // log) exists here for all of them.
         std::cout << tc.bold;
         rechunk_decider.print_rechunk_log(stdout);

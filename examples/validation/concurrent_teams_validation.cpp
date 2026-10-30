@@ -15,8 +15,8 @@
  */
 
 // ============================================================================
-// Concurrent-teams harness. Variant-agnostic: chunk / chunk2 / chunk2a by the
-// compile-time macro (CHUNK_VARIANT_V1 / _V2 / _V2A), like the other harnesses.
+// Concurrent-teams harness. Variant-agnostic: zero / zero_one_value / zero_any by the
+// compile-time macro (CHUNK_VARIANT_ZERO*), like the other harnesses.
 // ============================================================================
 //
 // Guards ONE property: two top-level OpenMP teams writing arrays at once stop
@@ -49,17 +49,17 @@
 #include <unistd.h>    // getpid
 #include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
 
-#include "chunk/chunk_traits.h"   // forward decls + default ind_type = int
-#include "chunk/array_chunk.h"    // ArrayChunk
-#include "chunk/array_chunk2.h"   // ArrayChunk2
-#include "chunk/array_chunk2A.h"  // ArrayChunk2A
-#include "chunk/param_chunk.h"    // ParamChunk::init_indexes
-#include "chunk/config.h"         // chunk_config::use_chunk2*, build_config::use_openmp / has_not_ompt
-#include "chunk/PMP_CHUNK.h"      // chunk_pmp_team_rank
-#include "chunk/manage_ompt.h"    // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/internal/print.h" // shrink_array::println
+#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
+#include "chunk/zero_array.h"           // zero::Array
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#include "chunk/zero_any_array.h"       // zero_any::Array
+#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
+#include "chunk/config.h"               // chunk_config::use_zero_one_value*, build_config::use_openmp / has_not_ompt
+#include "chunk/PMP_CHUNK.h"            // chunk_pmp_team_rank
+#include "chunk/manage_ompt.h"          // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/print.h"       // shrink_array::println
 
-#include "chunk/chunk_std.h"    // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::concurrent_teams_validation
@@ -68,38 +68,39 @@ namespace validation::concurrent_teams_validation
 using namespace shrink_array;
 
 template <typename T>
-using Array = std::conditional_t<chunk_config::use_chunk2a,
-                                 ArrayChunk2A<T>,
-                                 std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T>, ArrayChunk<T>>>;
+using Array =
+    std::conditional_t<chunk_config::use_zero_any,
+                       zero_any::Array<T>,
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
 /// The value element i holds after round `round` of host thread `who`.
-static int expected(long i, int round, int who)
+static int expected(long index, int round, int who)
 {
-    return ((i / 2048) + round + who) % 3 == 0 ? 0 : static_cast<int>(((i * 5) + round + who) % 89) + 1;
+    return ((index / 2048) + round + who) % 3 == 0 ? 0 : static_cast<int>(((index * 5) + round + who) % 89) + 1;
 }
 
 /// One host thread's work: `rounds` phases of a team of 2 on its own array.
 /// @p hold, when set, is counted down by rank 0 of every region and waited on:
 /// with two host threads the two teams are then open together.
-static void phases(Array<int>& a, int who, int rounds, std::latch* hold)
+static void phases(Array<int>& arr, int who, int rounds, std::latch* hold)
 {
-    const long N = a.size();
+    const long count = arr.size();
     for (int round = 0; round < rounds; ++round)
     {
 #pragma omp parallel num_threads(2)
@@ -113,9 +114,9 @@ static void phases(Array<int>& a, int who, int rounds, std::latch* hold)
                 hold->arrive_and_wait();
             }
 #pragma omp for schedule(static)
-            for (long i = 0; i < N; ++i)
+            for (long i = 0; i < count; ++i)
             {
-                a[i] = expected(i, round, who);
+                arr[i] = expected(i, round, who);
             }
         }
         if constexpr (build_config::has_not_ompt)
@@ -125,16 +126,17 @@ static void phases(Array<int>& a, int who, int rounds, std::latch* hold)
     }
 }
 
-static long check(const Array<int>& a, int rounds, int who)
+static long check(const Array<int>& arr, int rounds, int who)
 {
     long fails = 0;
-    for (long i = 0; i < a.size(); ++i)
+    for (long i = 0; i < arr.size(); ++i)
     {
-        if (a[i] != expected(i, rounds - 1, who))
+        if (arr[i] != expected(i, rounds - 1, who))
         {
             if (fails < 5)
             {
-                println("  MISMATCH host thread {} i={}  {} (ref {})", who, i, int(a[i]), expected(i, rounds - 1, who));
+                println("  MISMATCH host thread {} i={}  {} (ref {})", who, i, int(arr[i]),
+                        expected(i, rounds - 1, who));
             }
             ++fails;
         }
@@ -150,16 +152,19 @@ static long check(const Array<int>& a, int rounds, int who)
     const std::string cmd    = validation::self_command(self) + " --concurrent > \"" + log + "\" 2>&1";
     const int         status = std::system(cmd.c_str());
     std::string       out;
-    if (FILE* f = std::fopen(log.c_str(), "r"))
+    if (FILE* file = std::fopen(log.c_str(), "r"))
     {
         char buf[4096];
-        for (std::size_t n = 0; (n = std::fread(buf, 1, sizeof buf, f)) > 0;)
+        for (std::size_t n = 0; (n = std::fread(buf, 1, sizeof buf, file)) > 0;)
         {
             out.append(buf, n);
         }
-        std::fclose(f);
+        std::fclose(file);
     }
-    std::remove(log.c_str());
+    if (std::remove(log.c_str()) != 0)
+    {
+        println("[concurrent] note: could not remove {}", log);
+    }
 
     const bool stopped = status != -1 && (!WIFEXITED(status) || WEXITSTATUS(status) != 0);
     const bool message = out.find("top-level") != std::string::npos;
@@ -179,10 +184,10 @@ static int run_body(int argc, char** argv)
 
     ParamChunk::init_indexes(true);
 
-    const long N      = 1L << 16;
+    const long count  = 1L << 16;
     const int  rounds = 3;
-    Array<int> a(N);
-    Array<int> b(N);
+    Array<int> arr(count);
+    Array<int> other(count);
 
     println("=== concurrent_teams_validation [variant = {}]  two host threads, teams of 2, {} ===", variant_name(),
             concurrent ? "AT ONCE (--concurrent)" : "one after the other");
@@ -191,8 +196,8 @@ static int run_body(int argc, char** argv)
     if (concurrent)
     {
         std::latch  hold(2);
-        std::thread ta([&] { phases(a, 0, rounds, &hold); });
-        std::thread tb([&] { phases(b, 1, rounds, &hold); });
+        std::thread ta([&] { phases(arr, 0, rounds, &hold); });
+        std::thread tb([&] { phases(other, 1, rounds, &hold); });
         ta.join();
         tb.join();
         println("[concurrent] two top-level teams ran at once without an invariant failure");
@@ -201,12 +206,12 @@ static int run_body(int argc, char** argv)
 
     // A: one after the other.
     {
-        std::thread ta([&] { phases(a, 0, rounds, nullptr); });
+        std::thread ta([&] { phases(arr, 0, rounds, nullptr); });
         ta.join();
-        std::thread tb([&] { phases(b, 1, rounds, nullptr); });
+        std::thread tb([&] { phases(other, 1, rounds, nullptr); });
         tb.join();
     }
-    long fails = check(a, rounds, 0) + check(b, rounds, 1);
+    long fails = check(arr, rounds, 0) + check(other, rounds, 1);
     println("[sequential] two host threads, one after the other: {} wrong", fails);
 
     if constexpr (build_config::use_openmp)

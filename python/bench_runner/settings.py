@@ -52,11 +52,23 @@ DEFAULT_CONFIGS = [
     "cmake-build-omp-llvm",                            # release LLVM
     "cmake-build-omp-llvm-have-aggressive-compression",
     "cmake-build-omp-llvm-std-alloc",
+    # The std backend (CHUNK_THREADS=std: the library's teams on std::jthread
+    # workers of its own, no OpenMP; OMP_NUM_THREADS still sets the team size).
+    # The release builds carry the TBB bench too (tbb_* variants below) when
+    # oneTBB was there at compile time. The -check builds (CHECK_OPTIM) run the
+    # validation harnesses of that backend -- std_thread_validation,
+    # tbb_validation -- and the check runs; never timed (PERF_EXCLUDED_CONFIGS).
+    "cmake-build-std-gnu",                             # release GNU, std backend
+    "cmake-build-std-llvm",                            # release LLVM, std backend
+    "cmake-build-std-gnu-check",                       # CHECK_OPTIM, std backend
+    "cmake-build-std-llvm-check",
     # x86-64 only: the other two OpenMP compilers compile_all.sh builds there
     # (both OMPT builds). On ARM their directories do not exist and the
     # absent-config step drops them with one note.
     "cmake-build-omp-oneapi",                          # release oneAPI (icpx)
     "cmake-build-omp-aocc",                            # RelWithDebInfo AOCC (AMD clang)
+    "cmake-build-std-oneapi",                          # oneAPI, std backend (+ TBB bench)
+    "cmake-build-std-aocc",                            # AOCC, std backend (+ TBB bench)
     # Non-OpenMP builds — cover the `if constexpr(!use_openmp)` code paths so a
     # serial-path regression is caught. Build them with -DOMP:BOOL=OFF; if the
     # directory is absent it is skipped with a single note (see
@@ -73,7 +85,89 @@ DEFAULT_CONFIGS = [
     "cmake-build-gnu-stats",                           # non-OMP GNU, CHUNK_STATS
 ]
 
-DEFAULT_VARIANTS       = ["vector", "chunk", "chunk2", "chunk2a", "std_alloc"]
+# The TBB bench: the same sources with the regions run as TBB tasks
+# (shrink_bench_tbb_<variant>_<size>, examples/shrink_bench/CMakeLists.txt). It
+# exists only in the std-backend builds made with CHUNK_WITH_TBB, so these
+# variants are looked for there and nowhere else (builds.skip_variant_on_config).
+TBB_VARIANTS = ["tbb_zero", "tbb_zero_one_value", "tbb_zero_any"]
+SHRINK_VARIANTS = ["zero", "zero_one_value", "zero_any"]   # the three array variants
+DEFAULT_VARIANTS       = ["vector"] + SHRINK_VARIANTS + ["std_alloc"] + TBB_VARIANTS
+
+
+def is_tbb_variant(var):
+    """True for a TBB bench variant ("tbb_zero_any", "tbb_zero_any@256")."""
+    return var.split("@", 1)[0] in TBB_VARIANTS
+
+
+# Every shrink_bench executable carries the threading backend of its build in
+# its name (examples/shrink_bench/CMakeLists.txt): shrink_bench_<backend>_<rest>,
+# <backend> one of these, <rest> zero_any_256, zero_int64_dyn, vector_check,
+# std_alloc_1024, ... The build directory's name does not tell the backend
+# (cmake-build-gnu-stats is serial, cmake-build-omp-gnu-stats OpenMP, and a
+# hand-made one says nothing), but a build directory holds ONE backend: so an
+# executable is found by trying the three names, the one built there being the
+# only one present. The TBB bench is the exception, its "tbb" naming what runs
+# its regions: shrink_bench_tbb_<variant>_<size>, one name.
+#
+# No fallback to the unprefixed names the executables had before: a build
+# directory rebuilt since still holds those binaries, stale, and they must not
+# be run in place of the new ones.
+BENCH_BACKENDS = ("omp", "std", "serial")
+
+
+def bench_exe_names(rest):
+    """The names the executable `rest` (its name after "shrink_bench_", without
+    the backend: "zero_any_256", "vector_check", "tbb_zero_any_dyn") may have
+    in a build directory, in the order they are tried. Python 3.6: the
+    standalone scripts that copy it (thread_speedup.py, multi_launch_stress.py)
+    run there."""
+    if rest.startswith("tbb_"):
+        return ["shrink_bench_" + rest]
+    return ["shrink_bench_%s_%s" % (b, rest) for b in BENCH_BACKENDS]
+
+
+def find_bench_exe(directory, rest):
+    """The path of the executable `rest` (bench_exe_names) in `directory`, the
+    first of its names present there as an executable file, or None."""
+    for name in bench_exe_names(rest):
+        path = os.path.join(directory, name)
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return None
+
+
+# The variants were named chunk / chunk2 / chunk2a until they took the name of
+# their namespace. Command lines, perf databases, bench_summary.csv files, JSON
+# logs and CHUNK_STATS tags of older builds still carry the old labels: they
+# are read as their new names until 1.0.
+LEGACY_VARIANTS = {
+    "chunk": "zero", "chunk2": "zero_one_value", "chunk2a": "zero_any",
+    "tbb_chunk": "tbb_zero", "tbb_chunk2": "tbb_zero_one_value",
+    "tbb_chunk2a": "tbb_zero_any",
+}
+
+
+def normalize_variant(label, warn=None):
+    """The current name of a variant label: an old one (chunk2a, chunk2a@256,
+    chunk2a_int64@dyn, tbb_chunk2) becomes its new name (zero_any, zero_any@256,
+    zero_any_int64@dyn, tbb_zero_one_value); anything else comes back unchanged.
+    `warn`: a context string -- when given and the label is an old one, a
+    one-line deprecation note goes to stderr."""
+    if not isinstance(label, str):
+        return label
+    base, at, size = label.partition("@")
+    suffix = ""
+    if base.endswith("_int64"):
+        base, suffix = base[:-len("_int64")], "_int64"
+    new = LEGACY_VARIANTS.get(base)
+    if new is None:
+        return label
+    out = new + suffix + at + size
+    if warn:
+        import sys
+        print(f"note: {warn}: variant '{label}' is the old name of '{out}' "
+              "(accepted until 1.0)", file=sys.stderr)
+    return out
 
 # ── Sanitizer CHECK configs ──────────────────────────────────────────────────
 # Two llvm sanitizer build dirs (created by compile_all.sh) run in the CHECK
@@ -88,6 +182,12 @@ DEFAULT_VARIANTS       = ["vector", "chunk", "chunk2", "chunk2a", "std_alloc"]
 SANITIZER_CONFIGS = [
     "cmake-build-omp-llvm-debug-std-alloc-address-sanitizer",  # ASan + std-alloc (sees what the arenas hide)
     "cmake-build-omp-llvm-debug-thread-sanitizer",             # TSan (ARM race net)
+    # TSan on the std backend, optimised, CHECK_OPTIM: standard C++ all the way
+    # down, so TSan sees every synchronisation of the library's teams (libomp's
+    # annotations are not needed). Its TBB bench only exists when the build was
+    # given an instrumented oneTBB (CHUNK_TBB_TSAN_DIR); the phase skips what is
+    # not built.
+    "cmake-build-std-llvm-relwithdebinfo-check-thread-sanitizer",
 ]
 SANITIZER_THREADS = 8
 # One run per (config, variant): a sanitizer hit is deterministic enough on a
@@ -150,6 +250,10 @@ def sanitizer_skip_reason(config):
 # never timed.
 PERF_EXCLUDED_CONFIGS = [
     "cmake-build-omp-llvm-std-alloc",
+    # CHECK_OPTIM builds of the std backend: there for the checks and the
+    # validation harnesses; the release std builds carry the timings.
+    "cmake-build-std-gnu-check",
+    "cmake-build-std-llvm-check",
     # Instrumented builds: their timings measure the counters, not the library.
     "cmake-build-omp-gnu-stats",
     "cmake-build-gnu-stats",
@@ -179,7 +283,7 @@ DEFAULT_FULL_REPS_THREADS = [64]
 # all three size declinations, a light thread sweep, a quick --divisor.
 DEFAULT_SEQ_OMP_THREADS  = [8, 16, 64]
 DEFAULT_SEQ_OMP_SIZES    = ["256", "1024", "dyn"]
-DEFAULT_SEQ_OMP_VARIANTS = ["chunk", "chunk2", "chunk2a"]
+DEFAULT_SEQ_OMP_VARIANTS = list(SHRINK_VARIANTS)
 DEFAULT_SEQ_OMP_SEED     = 42
 DEFAULT_SEQ_OMP_ITER_MAX = 2000
 DEFAULT_SEQ_OMP_DIVISOR  = 100
@@ -195,7 +299,7 @@ DEFAULT_SEQ_OMP_DIVISOR  = 100
 #   - release GNU, because libgomp has no OMPT: the phase-end path is not the
 #     same (finalize_parallel_phase_after_flush calls destroy_after_flush after
 #     EVERY phase), and that is where the AMD Milan stall was -- ~21 s of a
-#     ~30 s chunk2a run on the master, 63 threads at the barrier -- which
+#     ~30 s zero_any run on the master, 63 threads at the barrier -- which
 #     neither the OMPT builds (LLVM, oneAPI, AOCC) nor this guard on LLVM alone
 #     could see.
 SCALING_CONFIGS  = ["cmake-build-omp-llvm", "cmake-build-omp-gnu"]
@@ -203,7 +307,7 @@ SCALING_CONFIGS  = ["cmake-build-omp-llvm", "cmake-build-omp-gnu"]
 # bend it shares is the machine's, and one only the chunk variants show is ours.
 SCALING_REFERENCE_VARIANT = "vector"
 SCALING_THREADS  = [4, 8, 16, 32, 64, 128]
-# The guard runs the int64 binaries (shrink_bench_<variant>_int64_<size>, see
+# The guard runs the int64 binaries (shrink_bench_<backend>_<variant>_int64_<size>, see
 # int64_variant) at --multiply 2: arrays past INT_MAX elements, so the curves
 # also cover the 64-bit index path at the scale it exists for. --iter_max 500
 # holds each point down; the sizes with no int64 declination (256) are left out.
@@ -228,7 +332,7 @@ SCALING_FALLBACK_ITER_MAX = 200
 SCALING_MAX_SLOWDOWN = 1.25
 # The guard's runs never go through numactl --interleave, whatever
 # --numa-interleave says: interleaving puts half of each thread's slabs on the
-# other socket, where first touch keeps them local. Grace, chunk@dyn int64
+# other socket, where first touch keeps them local. Grace, zero@dyn int64
 # --multiply 2, 128 threads (2 sockets), best of 3 interleaved rounds: llvm
 # 14.57 s interleaved / 13.02 s not, gnu 16.49 / 14.68 (-11%); 64 threads
 # (one socket) unchanged. With it, the 128-thread point failed the guard
@@ -239,10 +343,10 @@ SCALING_NUMA_INTERLEAVE = "off"
 # A few --mode check runs of the int64 binaries against the 32-bit oracle of
 # the same config: the data_tab* files hold element values, independent of the
 # index type, so the int64 build must reproduce them exactly. One per variant,
-# both geometries between them; chunk2a@dyn is the richest path (a second
+# both geometries between them; zero_any@dyn is the richest path (a second
 # value per chunk, re-chunking). Not a sweep: the 32-bit checks cover the
 # rest, and this only asks whether 64-bit indices change a result.
-INT64_CHECK_VARIANTS = ["chunk@1024", "chunk2@1024", "chunk2a@dyn"]
+INT64_CHECK_VARIANTS = ["zero@1024", "zero_one_value@1024", "zero_any@dyn"]
 
 # --- Mode presets --------------------------------------------------------
 # Each preset overrides threads / reps_perf / full_reps_threads unless the user
@@ -275,7 +379,7 @@ MODE_PRESETS = {
     "fast": {
         # One point, the reference: the curve is normal's and full's job, and
         # the 16-thread point was the most expensive run of the sweep (on
-        # aarch64, chunk2a@dyn 100.3 s at 16 threads against 70.3 s at 64).
+        # aarch64, zero_any@dyn 100.3 s at 16 threads against 70.3 s at 64).
         "threads":           [64],
         # 2 runs: enough to see a run that crashed or doubled, not to publish.
         "reps_perf":         2,
@@ -372,4 +476,4 @@ def fit_threads(wanted, cap, machine_points):
     return sorted(kept)
 
 
-DEFAULT_STATS_MARK_RATIO_MIN = {"chunk2": 0.3, "chunk2a": 0.3}
+DEFAULT_STATS_MARK_RATIO_MIN = {"zero_one_value": 0.3, "zero_any": 0.3}

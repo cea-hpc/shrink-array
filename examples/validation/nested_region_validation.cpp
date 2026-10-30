@@ -15,8 +15,8 @@
  */
 
 // ============================================================================
-// Nested-region harness. Variant-agnostic: chunk / chunk2 / chunk2a by the
-// compile-time macro (CHUNK_VARIANT_V1 / _V2 / _V2A), like the other harnesses.
+// Nested-region harness. Variant-agnostic: zero / zero_one_value / zero_any by the
+// compile-time macro (CHUNK_VARIANT_ZERO*), like the other harnesses.
 // ============================================================================
 //
 // Guards ONE property: a thread keeps its own per-rank structures across a
@@ -69,18 +69,18 @@
 #include <unistd.h>    // getpid
 #include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
 
-#include "chunk/chunk_traits.h"        // forward decls + default ind_type = int
-#include "chunk/array_chunk.h"         // ArrayChunk
-#include "chunk/array_chunk2.h"        // ArrayChunk2
-#include "chunk/array_chunk2A.h"       // ArrayChunk2A
-#include "chunk/param_chunk.h"         // ParamChunk::init_indexes
-#include "chunk/config.h"              // chunk_config::use_chunk2*, build_config::use_openmp / has_not_ompt
-#include "chunk/PMP_CHUNK.h"           // chunk_pmp_set_max_active_levels
-#include "chunk/manage_ompt.h"         // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/internal/print.h"      // shrink_array::println
-#include "chunk/internal/test_hooks.h" // force_defer_every, forced_deferrals (C, D)
+#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
+#include "chunk/zero_array.h"           // zero::Array
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#include "chunk/zero_any_array.h"       // zero_any::Array
+#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
+#include "chunk/config.h"               // chunk_config::use_zero_one_value*, build_config::use_openmp / has_not_ompt
+#include "chunk/PMP_CHUNK.h"            // chunk_pmp_set_max_active_levels
+#include "chunk/manage_ompt.h"          // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/print.h"       // shrink_array::println
+#include "chunk/internal/test_hooks.h"  // force_defer_every, forced_deferrals (C, D)
 
-#include "chunk/chunk_std.h"    // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::nested_region_validation
@@ -104,44 +104,45 @@ static void end_phase()
 }
 
 template <typename T>
-using Array = std::conditional_t<chunk_config::use_chunk2a,
-                                 ArrayChunk2A<T>,
-                                 std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T>, ArrayChunk<T>>>;
+using Array =
+    std::conditional_t<chunk_config::use_zero_any,
+                       zero_any::Array<T>,
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
 /// The value element i holds after round `round` (zero runs of 2048 so the
 /// chunks alternate constant and materialised).
-static int expected_before_inner(long i, int round)
+static int expected_before_inner(long index, int round)
 {
-    return ((i / 2048) + round) % 3 == 0 ? 0 : static_cast<int>(((i * 5) + round) % 89) + 1;
+    return ((index / 2048) + round) % 3 == 0 ? 0 : static_cast<int>(((index * 5) + round) % 89) + 1;
 }
 
 /// The nested region's writes: one thread of the inner team adds 3 to every
-/// 7th element of block @p b. A function of its own: an orphaned `omp single`,
+/// 7th element of block @p block. A function of its own: an orphaned `omp single`,
 /// so the compiler does not see it lexically inside the outer `omp for`.
-static void inner_writes(Array<int>& a, long b)
+static void inner_writes(Array<int>& arr, long block)
 {
 #pragma omp single
-    for (long i = b * 1024; i < (b + 1) * 1024; ++i)
+    for (long i = block * 1024; i < (block + 1) * 1024; ++i)
     {
         if (i % 7 == 0)
         {
-            a[i] += 3;
+            arr[i] += 3;
         }
     }
 }
@@ -155,26 +156,26 @@ enum class Inner
 
 /// Scenario A (and B, C, D's body): each thread of the outer team writes its
 /// share, opens a nested region that writes again, then writes after it.
-static long run_nested(Array<int>& a, std::vector<int>& ref, int rounds, Inner inner)
+static long run_nested(Array<int>& arr, std::vector<int>& ref, int rounds, Inner inner)
 {
-    const long n = static_cast<long>(ref.size());
+    const long count = static_cast<long>(ref.size());
     for (int round = 0; round < rounds; ++round)
     {
 #pragma omp parallel num_threads(4)
         {
             begin_phase();
 #pragma omp for schedule(static)
-            for (long i = 0; i < n; ++i)
+            for (long i = 0; i < count; ++i)
             {
-                a[i] = expected_before_inner(i, round);
+                arr[i] = expected_before_inner(i, round);
             }
 
             // A nested region per thread, over this thread's own slice (the
             // static schedule gives the same slice as above).
 #pragma omp for schedule(static)
-            for (long b = 0; b < n / 1024; ++b)
+            for (long b = 0; b < count / 1024; ++b)
             {
-                const auto inner_body = [&] { inner_writes(a, b); };
+                const auto inner_body = [&] { inner_writes(arr, b); };
                 if (inner == Inner::parallel_phase)
                 {
                     shrink_array::parallel_phase(2, inner_body);
@@ -190,16 +191,16 @@ static long run_nested(Array<int>& a, std::vector<int>& ref, int rounds, Inner i
                 // Back in the outer region: writes go to THIS thread's rank.
                 for (long i = b * 1024; i < (b + 1) * 1024; ++i)
                 {
-                    a[i] *= 2;
+                    arr[i] *= 2;
                     if (i % 11 == 0)
                     {
-                        a[i] = 0;
+                        arr[i] = 0;
                     }
                 }
             }
         }
         end_phase();
-        for (long i = 0; i < n; ++i)
+        for (long i = 0; i < count; ++i)
         {
             ref[i] = expected_before_inner(i, round);
             if (i % 7 == 0)
@@ -215,14 +216,14 @@ static long run_nested(Array<int>& a, std::vector<int>& ref, int rounds, Inner i
     }
 
     long fails = 0;
-    for (long i = 0; i < n; ++i)
+    for (long i = 0; i < count; ++i)
     {
-        const int v = a[i];
-        if (v != ref[i])
+        const int value = arr[i];
+        if (value != ref[i])
         {
             if (fails < 5)
             {
-                println("  MISMATCH i={}  {} (ref {})", i, v, ref[i]);
+                println("  MISMATCH i={}  {} (ref {})", i, value, ref[i]);
             }
             ++fails;
         }
@@ -238,14 +239,14 @@ static long run_nested(Array<int>& a, std::vector<int>& ref, int rounds, Inner i
     const std::string cmd    = validation::self_command(self) + " --nested-active > \"" + log + "\" 2>&1";
     const int         status = std::system(cmd.c_str());
     std::string       out;
-    if (FILE* f = std::fopen(log.c_str(), "r"))
+    if (FILE* file = std::fopen(log.c_str(), "r"))
     {
         char buf[4096];
-        for (std::size_t n = 0; (n = std::fread(buf, 1, sizeof buf, f)) > 0;)
+        for (std::size_t n = 0; (n = std::fread(buf, 1, sizeof buf, file)) > 0;)
         {
             out.append(buf, n);
         }
-        std::fclose(f);
+        std::fclose(file);
     }
     std::remove(log.c_str());
 
@@ -268,15 +269,15 @@ static int run_body(int argc, char** argv)
     chunk_pmp_set_max_active_levels(nested_active ? 2 : 1);
     ParamChunk::init_indexes(true);
 
-    const long       n = 1L << 16;
-    Array<int>       a(n);
-    std::vector<int> ref(n, 0);
+    const long       count = 1L << 16;
+    Array<int>       arr(count);
+    std::vector<int> ref(count, 0);
 
     println("=== nested_region_validation [variant = {}]  outer team 4, nested regions {} ===", variant_name(),
             nested_active ? "ACTIVE (--nested-active)" : "serialised");
     std::fflush(stdout);
 
-    long fails = run_nested(a, ref, 3, Inner::pragma);
+    long fails = run_nested(arr, ref, 3, Inner::pragma);
 
     if (nested_active)
     {
@@ -292,13 +293,13 @@ static int run_body(int argc, char** argv)
         for (const Inner inner : {Inner::pragma, Inner::parallel_phase})
         {
             const unsigned long before = test_hooks::forced_deferrals.load();
-            Array<int>          c(n);
-            std::vector<int>    ref_c(n, 0);
-            const long          f      = run_nested(c, ref_c, 3, inner);
+            Array<int>          arr_c(count);
+            std::vector<int>    ref_c(count, 0);
+            const long          nfail  = run_nested(arr_c, ref_c, 3, inner);
             const unsigned long forced = test_hooks::forced_deferrals.load() - before;
             println("[{}] deferred writes queued at the nested ends: {} forced, {} wrong",
-                    inner == Inner::pragma ? "C omp parallel" : "D parallel_phase", forced, f);
-            fails += f;
+                    inner == Inner::pragma ? "C omp parallel" : "D parallel_phase", forced, nfail);
+            fails += nfail;
             if (forced == 0)
             {
                 println("  the forced-deferral hook did not fire: the scenario tested nothing");

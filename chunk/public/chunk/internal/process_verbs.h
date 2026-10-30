@@ -23,7 +23,7 @@
  * @brief The process-wide verbs an array reaches without the manager headers.
  *
  * Declared here, once, because two facades need them and cannot include each
- * other: chunk_std.h (where the definitions' file, chunk_std.cpp, gets them)
+ * other: zero_chunk.h (where the definitions' file, chunk_std.cpp, gets them)
  * and array_chunk_base.h (whose shrink_to_fit() calls the first one).
  */
 namespace shrink_array
@@ -33,7 +33,9 @@ namespace shrink_array
  *        compression candidate now, then give the reuse pools' parked buffers
  *        back (all of them: every array of the process shares those pools).
  * @return The bytes the pools gave back.
- * @note Sequential context. Defined in chunk_std.cpp.
+ * @note Sequential context: from inside a parallel region a check build aborts,
+ *       any other build says so on stderr and returns 0. Defined in
+ *       chunk_std.cpp.
  */
 std::size_t compress_now_and_trim_pools();
 } // namespace shrink_array

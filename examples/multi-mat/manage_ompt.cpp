@@ -39,7 +39,7 @@
  * those inner ends, and the barriers inside them, no-ops.
  *
  * The library ships an equivalent tool (chunk/private/manage_ompt.cpp) in
- * every variant; the variant this example links (chunk_v1v2_<size>) is
+ * every variant; the variant this example links (chunk_zero_and_zero_one_value_<size>) is
  * built without it, so that this file is the one the runtime finds --
  * self-contained, and readable next to the loops it serves. Compiled in
  * the embedded executable alone (CMakeLists.txt); the manual one defines

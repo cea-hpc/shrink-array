@@ -23,7 +23,7 @@ namespace shrink_array
 {
 
 /**
- * @brief What an element type of ArrayChunk / ArrayChunk2 / ArrayChunk2A must be.
+ * @brief What an element type of zero::Array / zero_one_value::Array / zero_any::Array must be.
  *
  * The contract, and why each clause:
  *  - **trivially copyable**: a chunk is raw memory -- its buffer is copied,
@@ -38,7 +38,7 @@ namespace shrink_array
  *
  * That admits arithmetic types, bool, std::complex, enums, std::array of those,
  * and aggregates of them with a defaulted operator==. The proxies' arithmetic
- * and bitwise operators are constrained separately, per operator. chunk2 also
+ * and bitwise operators are constrained separately, per operator. zero_one_value also
  * needs an ordering (operator< for a floating-point aggregate): see ValueLess
  * in value_less.h.
  *

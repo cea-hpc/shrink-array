@@ -32,14 +32,14 @@
  * point for code outside the library.
  *
  * @par Threading
- * A bucket is not thread-safe: every ladder access inside a parallel region is
- * in `omp critical`. To keep frees from serialising, a freed block is batched in
- * a per-thread fast_alloc::InfoFreeElt, released at once when the batch fills.
+ * A bucket is not thread-safe: every ladder access inside a parallel region
+ * holds ladder_mutex(). To keep frees from serialising, a freed block is
+ * batched in a per-thread fast_alloc::InfoFreeElt, released at once when the batch fills.
  *
- * The critical sections all share one NAME (fast_alloc_ladder), so allocation
- * and free exclude each other. Do not make them unnamed: that is the one lock
- * every unnamed `omp critical` shares, so a caller already inside its own
- * unnamed critical would deadlock (not reentrant).
+ * Allocation and free hold the same mutex, so they exclude each other. It is
+ * the ladder's own (it replaced `omp critical(fast_alloc_ladder)`, threads
+ * branch step 2): never shared with a lock of the caller's, and not reentrant
+ * -- nothing that runs under it may allocate from or free to the ladder.
  *
  * @par Configuration
  * The macros are read in alloc_config.h; the bodies branch with `if constexpr`.
@@ -49,10 +49,12 @@
 #include <array>   // std::array
 #include <bit>     // std::bit_width (bucket_index)
 #include <cassert> // TypeAllocator::alloc: the size its free will route by
-#include <cstddef> // std::size_t
+#include <cstddef> // std::size_t, std::byte (the header offset)
+#include <mutex>   // std::mutex (ladder_mutex)
 #include <tuple>   // std::tuple, std::get, std::apply (the ladder)
 
-#include "fast_allocators/internal/svalloc.h" // fast_alloc::alignment
+#include "fast_allocators/internal/raw_memory.h" // load_from_bytes, store_to_bytes
+#include "fast_allocators/internal/svalloc.h"    // fast_alloc::alignment
 #include "fast_allocators/internal/pmp_alloc.h" // FAST_ALLOC_PMP_MAX_THREADS / FAST_ALLOC_PMP_THREAD_RANK / FAST_ALLOC_PMP_IN_PARALLEL_REGION
 
 #include "fast_allocators/internal/int_alloc.h"    // int_alloc, int_free, int_alloc_align, int_free_align
@@ -116,23 +118,7 @@ class InfoFreeElt
      * @note NOT const, like reset(): both mutate the batch, through member
      *       pointers, which is the only reason const would compile.
      */
-    bool push_back(void* ptr, int sz, int thr_rank)
-    {
-        int& ref_compt = compt[thr_rank];
-
-        if ((ref_compt < max_free_elt && somme_sz_[thr_rank] < 4 * 1024 * 1024))
-        {
-            tab_ptr[thr_rank][ref_compt] = ptr;
-            tab_sz[thr_rank][ref_compt]  = sz;
-
-            somme_sz_[thr_rank] += sz;
-
-            ref_compt++;
-            return false;
-        }
-
-        return true;
-    }
+    bool push_back(void* ptr, int sz, int thr_rank);
 
     /// @brief Forget the batch. Call only after its blocks have been released.
     void reset(int thr_rank) noexcept
@@ -172,7 +158,7 @@ class StaticConstArray
 
     /// @brief Flush every thread's batch and reset it.
     /// @warning Quiescent point only: no rank may be freeing meanwhile (no
-    ///          `omp critical` here). Called by the chunk library's OMPT
+    ///          ladder_mutex() here). Called by the chunk library's OMPT
     ///          parallel_end callback, so a region's parked blocks do not
     ///          outlive it.
     static void clear_info_free_elt();
@@ -238,8 +224,8 @@ class StaticConstArray
             return 0;
         }
         // (2^(k-1), 2^k] -> bucket k - 2, the one of 2^k bytes.
-        const auto k = static_cast<std::size_t>(std::bit_width(sz - 1));
-        return k - 2 < n_buckets ? k - 2 : n_buckets - 1;
+        const auto bucket = static_cast<std::size_t>(std::bit_width(sz - 1));
+        return bucket - 2 < n_buckets ? bucket - 2 : n_buckets - 1;
     }
 
   protected:
@@ -273,10 +259,10 @@ class StaticConstArray
     /// @pre @p ptr came from the bucket that @p sz selects.
     static void free_block_with_int(int sz, void* ptr);
 
-    /// @brief Run @p f on bucket @p i of the ladder; its result, if any.
-    /// @pre @p i < n_buckets.
-    template <class F>
-    static decltype(auto) with_bucket(std::size_t i, F&& f);
+    /// @brief Run @p func on bucket @p bucket of the ladder; its result, if any.
+    /// @pre @p bucket < n_buckets.
+    template <typename F>
+    static decltype(auto) with_bucket(std::size_t bucket, F&& func);
 
     /// @brief The per-thread batches. IMMORTAL and built at first use, like the
     ///        ladder: a global array frees through them before main and after
@@ -285,6 +271,15 @@ class StaticConstArray
     {
         static auto* const batches = new InfoFreeElt();
         return *batches;
+    }
+
+    /// @brief The lock of the ladder inside a parallel region (see Threading
+    ///        at the top of this file). IMMORTAL and built at first use, like
+    ///        the ladder it guards, for the same reason.
+    [[nodiscard]] static std::mutex& ladder_mutex()
+    {
+        static auto* const mutex = new std::mutex();
+        return *mutex;
     }
 };
 
@@ -314,54 +309,13 @@ static_assert(StaticConstArray::bucket_index(StaticConstArray::max_const_block_s
 struct BlkAllocator : public StaticConstArray
 {
     /// @brief A block of @p size bytes, from the ladder or from malloc.
-    static void* alloc_block(size_t size)
-    {
-        if constexpr (alloc_config::use_std_alloc)
-        {
-            return int_alloc(size);
-        }
-        else
-        {
-            // Compared in size_t BEFORE narrowing to unsigned int (4 GiB + 64
-            // would become 64).
-            void* ptr = size <= max_const_block_size ? get_block_alloc(static_cast<unsigned int>(size)) : nullptr;
-
-            if (ptr == nullptr)
-            {
-                ptr = int_alloc(size);
-            }
-
-            return ptr;
-        }
-    }
+    static void* alloc_block(size_t size);
 
     /// @brief Give back a block from alloc_block().
     /// @param ptr  The block; null is a no-op.
     /// @param size Must be the size it was allocated with -- that is what decides
     ///        whether it goes to the ladder or to int_free().
-    static void free_block(void* ptr, size_t size)
-    {
-        if (ptr == nullptr)
-        {
-            return;
-        }
-
-        if constexpr (alloc_config::use_std_alloc)
-        {
-            int_free(ptr);
-        }
-        else
-        {
-            // false: not a ladder size, so it came from int_alloc(). Test in
-            // size_t first: static_cast<int> alone turns [2 GiB, 4 GiB) negative.
-            if (size <= max_const_block_size && try_free_block(static_cast<int>(size), ptr))
-            {
-                return;
-            }
-
-            int_free(ptr);
-        }
-    }
+    static void free_block(void* ptr, size_t size);
 
     /**
      * @brief A block of @p size bytes that remembers its own size.
@@ -369,49 +323,10 @@ struct BlkAllocator : public StaticConstArray
      *         so free_tab() needs no size argument. The alignment padding is
      *         what makes the returned pointer suitably aligned.
      */
-    static void* alloc_tab(size_t size)
-    {
-        // size_t header: an int one would wrap past INT_MAX.
-        static_assert(fast_alloc::alignment >= sizeof(std::size_t), "alloc_tab: the header must hold a size_t");
-        // size + header must not wrap: near SIZE_MAX it would route to a small
-        // ladder block that the caller then writes past.
-        if (size > static_cast<std::size_t>(-1) - fast_alloc::alignment) [[unlikely]]
-        {
-            fast_alloc::out_of_memory("alloc_tab", size, 1, 0);
-        }
-        const std::size_t total = size + fast_alloc::alignment;
-
-        auto* ptr = static_cast<std::size_t*>(
-            total <= max_const_block_size ? get_block_alloc(static_cast<unsigned int>(total)) : nullptr);
-
-        if (ptr == nullptr)
-        {
-            ptr = static_cast<std::size_t*>(int_alloc_align(total));
-        }
-
-        ptr[0] = size;
-
-        return reinterpret_cast<char*>(ptr) + fast_alloc::alignment;
-    }
+    static void* alloc_tab(size_t size);
 
     /// @brief Give back an alloc_tab() block, reading its size from its header.
-    static void free_tab(void* user_ptr)
-    {
-        if (user_ptr == nullptr)
-        {
-            return;
-        }
-
-        auto* m_ptr = reinterpret_cast<std::size_t*>(static_cast<char*>(user_ptr) - fast_alloc::alignment);
-
-        const std::size_t total = m_ptr[0] + fast_alloc::alignment;
-
-        // Same routing as alloc_tab(), decided in size_t.
-        if (total > max_const_block_size || !try_free_block(static_cast<int>(total), m_ptr))
-        {
-            int_free_align(m_ptr);
-        }
-    }
+    static void free_tab(void* user_ptr);
 };
 
 /**
@@ -430,49 +345,10 @@ class FixedSizeAllocator : private StaticConstArray
 {
   public:
     /// @brief One block of `sizeof(ElemT)` bytes.
-    static void* alloc_block()
-    {
-        if constexpr (alloc_config::use_std_alloc)
-        {
-            return int_alloc(sizeof(ElemT));
-        }
-        else
-        {
-            void* ptr = get_block_alloc(static_cast<unsigned int>(sizeof(ElemT)));
-
-            if (ptr == nullptr)
-            {
-                return int_alloc(sizeof(ElemT));
-            }
-
-            return ptr;
-        }
-    }
+    static void* alloc_block();
 
     /// @brief Give back a block from alloc_block().
-    static void free_block(void* ptr)
-    {
-        if (ptr == nullptr)
-        {
-            return;
-        }
-
-        if constexpr (alloc_config::use_std_alloc)
-        {
-            int_free(ptr);
-        }
-        else
-        {
-            // try_free_block() returns false for a size the ladder does not serve:
-            // the block came from int_alloc().
-            if (try_free_block(static_cast<int>(sizeof(ElemT)), ptr))
-            {
-                return;
-            }
-
-            int_free(ptr);
-        }
-    }
+    static void free_block(void* ptr);
 };
 
 /**

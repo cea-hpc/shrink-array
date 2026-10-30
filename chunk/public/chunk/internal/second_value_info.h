@@ -19,7 +19,7 @@
 namespace shrink_array
 {
 /**
- * @brief Chunk2's per-array second-value record (its `InfArrayT`): the
+ * @brief zero_one_value's per-array second-value record (its `InfArrayT`): the
  *        second constant, its slot in the cst2 registry, the array's table
  *        number.
  * @details A named aggregate rather than a tuple so the two ints cannot be

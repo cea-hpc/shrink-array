@@ -22,11 +22,79 @@ maybe_wipe_cache() {  # <build-dir>
 
 # ─── 64-bit-index bench executables (SHRINK_BENCH_INT64) ─────────────────────
 # Added to the configure line of the release OpenMP (perf) configurations only:
-# shrink_bench_<variant>_int64_<1024|dyn> and shrink_bench_vector_int64_perf
+# shrink_bench_omp_<variant>_int64_<1024|dyn> and shrink_bench_omp_vector_int64_perf
 # (examples/shrink_bench/CMakeLists.txt). Perf instruments -- no check mode, so
 # the debug, check, stats, sanitizer, std-alloc and serial builds do without.
 # Opt-out: INT64_OPT= ./compile_all.sh (or -DSHRINK_BENCH_INT64=OFF).
 INT64_OPT=${INT64_OPT--DSHRINK_BENCH_INT64=ON}
+
+# ─── C++ standard of the tree (CHUNK_CXX_STANDARD) ───────────────────────────
+# Empty: each configuration keeps its own standard (C++20 at least, through
+# chunk_require_cxx20; C++23 for the gnu builds on aarch64, compile_all_gnu.sh).
+# 20, 23 or 26: every gnu configuration is configured with
+# -DCMAKE_CXX_STANDARD=<N>. At 26, compile_all.sh builds the gnu family only:
+# GCC 16 is, for now, the only compiler with C++26 static reflection (Clang 23
+# has none; oneAPI, AOCC and nvc++ follow Clang or lag behind it).
+# The cpp26 branch sets the default below to 26. The environment
+# (CHUNK_CXX_STANDARD=23 ./compile_all.sh) or compile_all.sh --std=N overrides it.
+: "${CHUNK_CXX_STANDARD:=}"
+case "$CHUNK_CXX_STANDARD" in
+    ''|20|23|26) ;;
+    *) echo "ERROR: CHUNK_CXX_STANDARD=$CHUNK_CXX_STANDARD (expected 20, 23 or 26, or empty)" >&2; exit 2 ;;
+esac
+export CHUNK_CXX_STANDARD
+# True when the tree is built as C++26: the gnu family only.
+chunk_cxx26() { [ -n "$CHUNK_CXX_STANDARD" ] && [ "$CHUNK_CXX_STANDARD" -ge 26 ]; }
+
+# ─── oneTBB for the std-backend builds (CHUNK_THREADS=std) ───────────────────
+# The TBB bench (shrink_bench_tbb_<variant>_<size>, the release std build, for
+# the timings) and the validation of the TBB adaptor (tbb_validation,
+# chunk/tbb_adaptor.h, the check build) need oneTBB. Sets, for the configure
+# lines of the std builds:
+#   TBB_CMAKE_OPT       -DCHUNK_WITH_TBB=ON when oneTBB is in the environment --
+#                       TBBROOT, which oneAPI's vars.sh sets (and `spack load
+#                       intel-oneapi-tbb` through it) -- or when CHUNK_WITH_TBB=1
+#                       forces it (a oneTBB installed system-wide sets no TBBROOT);
+#                       CHUNK_WITH_TBB=0 leaves it out. The library never links TBB.
+#   TBB_TSAN_CMAKE_OPT  the same for the ThreadSanitizer std build, from
+#                       CHUNK_TBB_TSAN_DIR only: the CMake package directory of a
+#                       oneTBB built with TSan (its CMake: -DTBB_SANITIZE=thread;
+#                       <prefix>/lib/cmake/TBB, or lib64). An uninstrumented
+#                       libtbb hides the hand-off of every task from TSan, which
+#                       then reports TBB's own scheduling and every value passed
+#                       from one task to another.
+# Says what it decided (once per run: the child script of compile_all.sh finds
+# CHUNK_TBB_NOTICE_DONE set), so that a std build made without the TBB bench is
+# never a surprise.
+set_tbb_options() {
+    if [ "${CHUNK_WITH_TBB:-}" = "1" ] || { [ -z "${CHUNK_WITH_TBB:-}" ] && [ -n "${TBBROOT:-}" ]; }; then
+        TBB_CMAKE_OPT="-DCHUNK_WITH_TBB=ON"
+    else
+        TBB_CMAKE_OPT=""
+    fi
+    if [ -n "${CHUNK_TBB_TSAN_DIR:-}" ] && [ "${CHUNK_WITH_TBB:-}" != "0" ]; then
+        TBB_TSAN_CMAKE_OPT="-DCHUNK_WITH_TBB=ON -DTBB_DIR=$CHUNK_TBB_TSAN_DIR"
+    else
+        TBB_TSAN_CMAKE_OPT=""
+    fi
+    if [ -z "${CHUNK_TBB_NOTICE_DONE:-}" ]; then
+        if [ -n "$TBB_CMAKE_OPT" ]; then
+            echo "[tbb] oneTBB: the std builds get the TBB bench (shrink_bench_tbb_*) and tbb_validation (${TBBROOT:-CHUNK_WITH_TBB=1})"
+        elif [ "${CHUNK_WITH_TBB:-}" = "0" ]; then
+            echo "[tbb] CHUNK_WITH_TBB=0: the std builds are made WITHOUT the TBB bench and tbb_validation"
+        else
+            echo "[tbb] oneTBB not found (TBBROOT unset): the std builds are made WITHOUT the TBB bench (shrink_bench_tbb_*)"
+            echo "[tbb]   and tbb_validation. Install oneTBB in \$CCCWORKDIR/tbb-\$(uname -m) or ~/opt/tbb (found by site_env.sh), set CHUNK_TBB_DIR,"
+            echo "[tbb]   or load one (oneAPI vars.sh, spack load intel-oneapi-tbb)."
+        fi
+        if [ -n "$TBB_TSAN_CMAKE_OPT" ]; then
+            echo "[tbb] the std ThreadSanitizer build uses the instrumented oneTBB of CHUNK_TBB_TSAN_DIR"
+        elif [ -n "$TBB_CMAKE_OPT" ]; then
+            echo "[tbb] the std ThreadSanitizer build is made without TBB (CHUNK_TBB_TSAN_DIR names an instrumented oneTBB)"
+        fi
+        export CHUNK_TBB_NOTICE_DONE=1
+    fi
+}
 
 # ─── Hardening (CHUNK_GLIBCXX_ASSERTIONS / CHUNK_UBSAN) ──────────────────────
 # Decides, from a cmake configure argument string, which hardening options of
@@ -92,6 +160,14 @@ run_cmd() {
                 __PENDING_HEADER=""   # this block says nothing at all
                 return 0
             fi
+            # --pool: another run configures and builds it (launch_build says so).
+            if [ -n "$_tdir" ] && [ -n "${CHUNK_POOL:-}" ]; then
+                local _pn=${_tdir#"${build_rep:-}"/}; _pn=${_pn%%/*}; _pn=${_pn#cmake-build-}
+                if ! __pool_claim "$_pn"; then
+                    __PENDING_HEADER=""
+                    return 0
+                fi
+            fi
             ;;
     esac
     __flush_header
@@ -103,6 +179,16 @@ run_cmd() {
                 local _bdir
                 _bdir=$(printf '%s' "$*" | sed -nE 's/.* -B[[:space:]]+"?([^"[:space:]]+).*/\1/p')
                 maybe_wipe_cache "$_bdir"
+                ;;
+        esac
+    fi
+    # A cache naming a ninja that does not run here loses it (site_env.sh).
+    if [ "${DRYRUN:-false}" != true ] && [ "${BUILD_ONLY:-false}" != true ]; then
+        case "$*" in
+            *cmake*" -B "*)
+                local _ndir
+                _ndir=$(printf '%s' "$*" | sed -nE 's/.* -B[[:space:]]+"?([^"[:space:]]+).*/\1/p')
+                [ -n "$_ndir" ] && chunk_drop_dead_make_program "$_ndir"
                 ;;
         esac
     fi
@@ -183,6 +269,99 @@ __first_unmatched() {  # <list> <names...>
 __dir_wants() {  # <build-dir> -> 0 build it, 1 skip it
     local __n=${1#"${build_rep:-}"/}; __n=${__n%%/*}; __n=${__n#cmake-build-}
     __target_wants "$__n"
+}
+
+# ─── Shared configuration pool (--pool=<id>) ─────────────────────────────────
+# Several compile_all.sh runs given the same --pool -- one batch job per node,
+# submitted together by shrink_gui -- share ONE list of configurations. Each
+# walks it in the usual order and builds a configuration only if it is the
+# first to claim it, by an atomic mkdir in the pool directory (atomic on a
+# cluster's shared file systems, NFS and Lustre included); the others skip it.
+# The load balances itself: a node claims the next free configuration when it
+# reaches it, which a full slot pool delays (launch_build waits for a slot
+# before the walk goes on), whatever the builds cost. A run whose job starts
+# once the others have claimed everything builds nothing and ends with rc 0.
+#
+# The pool is $build_rep/.pools/<id> for a name, or the directory given when it
+# holds a /. A claim is the directory <pool>/<config>; its owner file names the
+# run that made it (CHUNK_POOL_ME: host and pid of the top-level script,
+# inherited by compile_all_gnu.sh, so that the two count as one run). --dryrun
+# claims nothing. One id per submission: in a pool where everything is
+# claimed, a new run builds nothing.
+# __HOST also tells apart the names this run makes in the shared build_rep
+# (.build-slots.<host>.<pid>, logs/<date>-<host>-<pid>): two nodes can run a
+# script under the same pid at the same second.
+__HOST=$(uname -n | cut -d. -f1)
+: "${CHUNK_POOL_ME:=$__HOST.$$${SLURM_JOB_ID:+.job$SLURM_JOB_ID}}"
+export CHUNK_POOL_ME
+
+__pool_dir() {
+    case "$CHUNK_POOL" in
+        */*) printf '%s' "$CHUNK_POOL" ;;
+        *)   printf '%s' "${build_rep:-$CHUNK_BUILD_REP}/.pools/$CHUNK_POOL" ;;
+    esac
+}
+
+# Checked and created once, after build_rep is known: a pool that cannot be
+# written to would otherwise read as "every configuration taken".
+pool_init() {
+    [ -n "${CHUNK_POOL:-}" ] || return 0
+    case "$CHUNK_POOL" in
+        */*) ;;
+        .|..|*[!A-Za-z0-9._-]*)
+            echo "ERROR: --pool=$CHUNK_POOL (a name of letters, digits, '.', '_', '-', or a directory)" >&2
+            exit 2 ;;
+    esac
+    if [ "${DRYRUN:-false}" = true ]; then
+        [ "${CHUNK_ARGS_CHECKED_BY_PARENT:-}" = 1 ] ||
+            echo "[POOL] $CHUNK_POOL: --dryrun, nothing claimed (every configuration is printed)"
+        return 0
+    fi
+    local p; p="$(__pool_dir)"
+    if ! mkdir -p "$p" 2>/dev/null || [ ! -w "$p" ]; then
+        echo "ERROR: --pool=$CHUNK_POOL: cannot create or write $p" >&2
+        exit 2
+    fi
+    # The pools of earlier submissions: nobody claims there a week later.
+    if [ "${CHUNK_ARGS_CHECKED_BY_PARENT:-}" != 1 ]; then
+        find "${build_rep:-$CHUNK_BUILD_REP}/.pools" -mindepth 1 -maxdepth 1 -type d -mtime +7 \
+             -exec rm -rf {} + 2>/dev/null
+        echo "[POOL] $CHUNK_POOL: configurations shared with the other runs of the pool ($p);" \
+             "this run is $CHUNK_POOL_ME"
+    fi
+}
+
+__pool_claim() {  # <name> [say] -> 0 this run builds it, 1 another run of the pool does
+    [ -n "${CHUNK_POOL:-}" ] || return 0
+    [ "${DRYRUN:-false}" = true ] && return 0
+    local c who
+    c="$(__pool_dir)/$1"
+    if mkdir "$c" 2>/dev/null; then
+        printf '%s\n' "$CHUNK_POOL_ME" > "$c/owner"
+        printf '%s\n' "$1" >> "$(__slot_dir)/pool-mine"
+        echo "[POOL] $1: claimed by this run"
+        return 0
+    fi
+    # Not created here: another run's, even when its owner file is not
+    # written yet (an empty read), unless an earlier call of this run made it.
+    who=$(cat "$c/owner" 2>/dev/null)
+    [ "$who" = "$CHUNK_POOL_ME" ] && return 0
+    if [ -n "${2:-}" ]; then
+        echo "[POOL] $1: taken by ${who:-another run} of pool $CHUNK_POOL, skipped here"
+        printf '%s\n' "$1" >> "$(__slot_dir)/pool-others"
+    fi
+    return 1
+}
+
+# How the configurations were shared, at the end of the top-level script.
+pool_summary() {
+    [ -n "${CHUNK_POOL:-}" ] && [ "${DRYRUN:-false}" != true ] || return 0
+    [ "${CHUNK_ARGS_CHECKED_BY_PARENT:-}" = 1 ] && return 0
+    local d mine=0 others=0; d="$(__slot_dir)"
+    [ -f "$d/pool-mine" ] && mine=$(wc -l < "$d/pool-mine")
+    [ -f "$d/pool-others" ] && others=$(wc -l < "$d/pool-others")
+    printf '[POOL] %d configuration(s) built by this run, %d by the other runs of pool %s\n' \
+           "$mine" "$others" "$CHUNK_POOL"
 }
 
 # Deferred block title. compile_all.sh announces a configuration before it knows
@@ -320,7 +499,12 @@ check_arg_epilogue() {
         echo "       (family disabled by --no-<c>/--only=<c>, --debug-only, or not built on this architecture?)" >&2
         rc=1
     fi
-    if [ -n "${CHUNK_BUILD_EXEC:-}" ] && [ "${DRYRUN:-false}" != true ] && [ ! -f "$d/exec-matched" ]; then
+    if [ -n "${CHUNK_BUILD_EXEC:-}" ] && [ "${DRYRUN:-false}" != true ] && [ ! -f "$d/exec-matched" ] \
+       && [ -s "$d/pool-others" ]; then
+        # The other runs of the pool built the other dirs: theirs is the verdict.
+        echo "[WARN] --exec=$CHUNK_BUILD_EXEC matches no target in the build dirs of this run" \
+             "(the other runs of pool $CHUNK_POOL had the others)"
+    elif [ -n "${CHUNK_BUILD_EXEC:-}" ] && [ "${DRYRUN:-false}" != true ] && [ ! -f "$d/exec-matched" ]; then
         echo "ERROR: --exec=$CHUNK_BUILD_EXEC matches no target in any selected build dir" >&2
         if [ -s "$d/exec-candidates" ]; then
             local _cands=()   # the targets of the dirs where it was looked up
@@ -621,6 +805,10 @@ launch_build() {  # <build-dir> [cmake --build extra args…]
     fi
     __TARGET_KEPT=$(( __TARGET_KEPT + 1 ))
     : > "$(__slot_dir)/target-matched"   # seen by check_arg_epilogue
+    if ! __pool_claim "$name" say; then   # --pool: another run builds it
+        __PENDING_HEADER=""
+        return 0
+    fi
     __flush_header
     if [ "$DRYRUN" = true ]; then
         # Trailing shell comment: the echoed line stays copy-pastable as-is.
@@ -723,7 +911,7 @@ launch_build() {  # <build-dir> [cmake --build extra args…]
     __wait_for_slot
 
     if [ -z "$LOG_DIR" ]; then
-        LOG_DIR="$build_rep/logs/$(date +%Y%m%d-%H%M%S)-$$"
+        LOG_DIR="$build_rep/logs/$(date +%Y%m%d-%H%M%S)-$__HOST-$$"
         mkdir -p "$LOG_DIR"
         echo "[INFO] build logs → $LOG_DIR"
     fi
@@ -929,7 +1117,7 @@ __reap_one() {
 # exported so the child script joins the SAME pool instead of opening its own.
 __slot_dir() {
     if [ -z "${CHUNK_SLOT_DIR:-}" ]; then
-        CHUNK_SLOT_DIR="${build_rep:-/tmp}/.build-slots.$$"
+        CHUNK_SLOT_DIR="${build_rep:-/tmp}/.build-slots.$__HOST.$$"
         export CHUNK_SLOT_DIR
     fi
     mkdir -p "$CHUNK_SLOT_DIR" 2>/dev/null
@@ -946,9 +1134,10 @@ __slot_dir() {
 # still held by a live process keeps the dir.
 if [ -z "${CHUNK_SLOT_DIR:-}" ]; then
     __slot_dir_cleanup() {
-        local d="${CHUNK_SLOT_DIR:-${build_rep:-/tmp}/.build-slots.$$}"
+        local d="${CHUNK_SLOT_DIR:-${build_rep:-/tmp}/.build-slots.$__HOST.$$}"
         [ -d "$d" ] || return 0
-        rm -f "$d/target-matched" "$d/exec-matched" "$d/exec-candidates" 2>/dev/null
+        rm -f "$d/target-matched" "$d/exec-matched" "$d/exec-candidates" \
+              "$d/pool-mine" "$d/pool-others" 2>/dev/null
         # Our own tokens first: still alive here, __slots_gc would keep them.
         local tok
         for tok in "$d"/slot-*; do
@@ -1242,6 +1431,11 @@ compile_with_cmake() {
     if ! __target_wants "$__name"; then
         return 0   # counted and summarised by launch_build / target_filter_summary
     fi
+    # --pool: another run configures and builds it; launch_build counts and says so.
+    if ! __pool_claim "$__name"; then
+        launch_build "$build_dir"
+        return 0
+    fi
 
     echo -e "\nCompiling $build_name:\n"
 
@@ -1262,6 +1456,7 @@ compile_with_cmake() {
 
     if [ "$BUILD_ONLY" = false ]; then
         maybe_wipe_cache "$build_dir"
+        chunk_drop_dead_make_program "$build_dir"
         if ! CXX="${compiler}" cmake -S "$CHUNK_SRC_DIR" -B "$build_dir" $cmake_args -G Ninja; then
             echo "Error configuring CMake for $build_name"
             N_FAILED=$(( N_FAILED + 1 ))  # visible in the final exit code

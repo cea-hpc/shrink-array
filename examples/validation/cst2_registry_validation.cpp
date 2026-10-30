@@ -16,10 +16,10 @@
 
 /**
  * @file cst2_registry_validation.cpp
- * @brief Chunk2A's second-value registry (GlobalVecHolder) is freed by the
+ * @brief zero_any's second-value registry (GlobalVecHolder) is freed by the
  *        last array of EVERY generation, not only the first.
  *
- * @details The registry of a type is shared by every ArrayChunk2A<T> and
+ * @details The registry of a type is shared by every zero_any::Array<T> and
  *          counted: each array takes a reference, and the last one out frees
  *          the second-value arrays, the segments and the region's pages
  *          (clear_if_last). It then reinstalls an empty segment -- through
@@ -27,7 +27,7 @@
  *          went 0 -> 1, the next generation's last one out found 1 left, and
  *          nothing was ever freed again before exit.
  *
- *          Three scenarios, on ArrayChunk2A<double>, each value written over
+ *          Three scenarios, on zero_any::Array<double>, each value written over
  *          whole chunks so that it compresses to a registered second value:
  *
  *            A  three generations one after the other, a different value
@@ -56,10 +56,10 @@
 #include <sys/wait.h> // WIFEXITED, WEXITSTATUS
 #include <unistd.h>   // getpid
 
-#include "chunk/chunk_traits.h"       // forward decls (Chunk2A) + default ind_type = int
-#include "chunk/array_chunk2A.h"      // ArrayChunk2A, Chunk2A complete (its registry types)
+#include "chunk/chunk_traits.h"       // forward decls (zero_any::Chunk) + default IntType = int
+#include "chunk/zero_any_array.h"     // zero_any::Array, zero_any::Chunk complete (its registry types)
 #include "chunk/param_chunk.h"        // ParamChunk::init_indexes
-#include "chunk/config.h"             // chunk_config::use_chunk2a, build_config::has_not_ompt
+#include "chunk/config.h"             // chunk_config::use_zero_any, build_config::has_not_ompt
 #include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"        // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h" // arg_number (checked, not atoi)
@@ -72,10 +72,11 @@ namespace validation::cst2_registry_validation
 
 using namespace shrink_array;
 
-static_assert(chunk_config::use_chunk2a, "cst2_registry_validation is Chunk2A's registry: link chunk_v2a_<size>");
+static_assert(chunk_config::use_zero_any,
+              "cst2_registry_validation is zero_any's registry: link chunk_zero_any_<size>");
 
-using Arr      = ArrayChunk2A<double>;
-using Registry = Chunk2A<double>::Holder::VecHolder;
+using Arr      = zero_any::Array<double>;
+using Registry = zero_any::Chunk<double>::Holder::VecHolder;
 
 static void begin_phase()
 {
@@ -90,37 +91,37 @@ static void end_phase()
     {
         shrink_array::finalize_parallel_phase();
     }
-    // Serial chunk2a has no between-region pass: run the writers' pass.
+    // Serial zero_any has no between-region pass: run the writers' pass.
     if constexpr (!build_config::use_openmp)
     {
         Arr::make_block_compression();
     }
 }
 
-/// @brief Write @p v everywhere in @p a (whole chunks: it compresses to a
+/// @brief Write @p value everywhere in @p arr (whole chunks: it compresses to a
 ///        second value), then the between-region pass.
-static void fill(Arr& a, long n, double v)
+static void fill(Arr& arr, long count, double value)
 {
-    const int ni = static_cast<int>(n);
+    const int ni = static_cast<int>(count);
 #pragma omp parallel
     {
         begin_phase();
 #pragma omp for schedule(static)
         for (int i = 0; i < ni; ++i)
         {
-            a[i] = v;
+            arr[i] = value;
         }
     }
     end_phase();
 }
 
-/// @brief Elements of @p a that do not read @p v back.
-static long mismatches(const Arr& a, long n, double v)
+/// @brief Elements of @p arr that do not read @p value back.
+static long mismatches(const Arr& arr, long count, double value)
 {
     long bad = 0;
-    for (long i = 0; i < n; ++i)
+    for (long i = 0; i < count; ++i)
     {
-        bad += (a[static_cast<int>(i)] != v) ? 1 : 0;
+        bad += (arr[static_cast<int>(i)] != value) ? 1 : 0;
     }
     return bad;
 }
@@ -131,11 +132,11 @@ static int fails = 0;
 ///        @p min_entries: at least that many; -1 for exactly 0.
 static void expect(const char* where, int users, long min_entries)
 {
-    const int  u    = Registry::users();
-    const long e    = static_cast<long>(Registry::count_entries());
-    const bool ok_u = (u == users);
-    const bool ok_e = (min_entries < 0) ? (e == 0) : (e >= min_entries);
-    println("  {:<44} users {} (expect {})  entries {} (expect {}{}){}", where, u, users, e,
+    const int  nusers  = Registry::users();
+    const long entries = static_cast<long>(Registry::count_entries());
+    const bool ok_u    = (nusers == users);
+    const bool ok_e    = (min_entries < 0) ? (entries == 0) : (entries >= min_entries);
+    println("  {:<44} users {} (expect {})  entries {} (expect {}{}){}", where, nusers, users, entries,
             min_entries < 0 ? "" : ">= ", min_entries < 0 ? 0L : min_entries, (ok_u && ok_e) ? "" : "  <-- WRONG");
     if (!ok_u || !ok_e)
     {
@@ -143,12 +144,12 @@ static void expect(const char* where, int users, long min_entries)
     }
 }
 
-static void expect_values(const char* where, const Arr& a, long n, double v)
+static void expect_values(const char* where, const Arr& arr, long count, double value)
 {
-    const long bad = mismatches(a, n, v);
+    const long bad = mismatches(arr, count, value);
     if (bad)
     {
-        println("  {:<44} {} element(s) do not read {:g} back  <-- WRONG", where, bad, v);
+        println("  {:<44} {} element(s) do not read {:g} back  <-- WRONG", where, bad, value);
         ++fails;
     }
 }
@@ -158,16 +159,16 @@ static void expect_values(const char* where, const Arr& a, long n, double v)
 ///        at the 17th registration; returning means it ran on.
 static int run_id_limit_child()
 {
-    const long s  = static_cast<long>(Arr(0).chunk_size());
-    const int  ni = static_cast<int>(40 * s);
-    Arr        a(ni);
+    const long chunk_sz = static_cast<long>(Arr(0).chunk_size());
+    const int  ni       = static_cast<int>(40 * chunk_sz);
+    Arr        arr(ni);
 #pragma omp parallel
     {
         begin_phase();
 #pragma omp for schedule(static)
         for (int i = 0; i < ni; ++i)
         {
-            a[i] = 100. + static_cast<double>(i / s);
+            arr[i] = 100. + static_cast<double>(i / chunk_sz);
         }
     }
     end_phase();
@@ -213,11 +214,11 @@ int run(int argc, char** argv)
 
     ParamChunk::init_indexes(true);
 
-    const long nchunks = argc > 1 ? shrink_array::arg_number<long>(argv[1], 16, "chunks") : 16;
-    const long s       = static_cast<long>(Arr(0).chunk_size()); // empty: no chunk, so no registry reference
-    const long n       = nchunks * s;
+    const long nchunks  = argc > 1 ? shrink_array::arg_number<long>(argv[1], 16, "chunks") : 16;
+    const long chunk_sz = static_cast<long>(Arr(0).chunk_size()); // empty: no chunk, so no registry reference
+    const long count    = nchunks * chunk_sz;
 
-    println("=== cst2_registry_validation  chunks={}  chunk_size={}  threads={} ===", nchunks, s,
+    println("=== cst2_registry_validation  chunks={}  chunk_size={}  threads={} ===", nchunks, chunk_sz,
             CHUNK_PMP_MAX_THREADS);
     expect("start", 0, -1);
 
@@ -225,13 +226,13 @@ int run(int argc, char** argv)
     println("A  successive generations");
     for (int g = 0; g < 3; ++g)
     {
-        const double v = 7. + g;
+        const double value = 7. + g;
         {
-            Arr a(static_cast<int>(n));
-            fill(a, n, v);
-            expect_values("gen alive: values", a, n, v);
+            Arr arr(static_cast<int>(count));
+            fill(arr, count, value);
+            expect_values("gen alive: values", arr, count, value);
             char where[64];
-            std::snprintf(where, sizeof where, "gen %d alive (value %g)", g + 1, v);
+            std::snprintf(where, sizeof where, "gen %d alive (value %g)", g + 1, value);
             expect(where, 1, 1);
         }
         char where[64];
@@ -242,28 +243,28 @@ int run(int argc, char** argv)
     // B: an outer array alive across an inner one's life.
     println("B  overlapping lifetimes");
     {
-        Arr outer(static_cast<int>(n));
-        fill(outer, n, 21.);
+        Arr outer(static_cast<int>(count));
+        fill(outer, count, 21.);
         expect("outer alive", 1, 1);
         {
-            Arr inner(static_cast<int>(n));
-            fill(inner, n, 22.);
+            Arr inner(static_cast<int>(count));
+            fill(inner, count, 22.);
             expect("outer + inner alive", 2, 2);
-            expect_values("inner: values", inner, n, 22.);
+            expect_values("inner: values", inner, count, 22.);
         }
         expect("inner destroyed (outer alive)", 1, 1);
-        expect_values("outer after inner's teardown: values", outer, n, 21.);
-        fill(outer, n, 23.); // the registry is still usable
-        expect_values("outer rewritten: values", outer, n, 23.);
+        expect_values("outer after inner's teardown: values", outer, count, 21.);
+        fill(outer, count, 23.); // the registry is still usable
+        expect_values("outer rewritten: values", outer, count, 23.);
     }
     expect("outer destroyed", 0, -1);
 
     // C: the reinstalled registry works.
     println("C  after the extinctions");
     {
-        Arr a(static_cast<int>(n));
-        fill(a, n, 31.);
-        expect_values("fresh array: values", a, n, 31.);
+        Arr arr(static_cast<int>(count));
+        fill(arr, count, 31.);
+        expect_values("fresh array: values", arr, count, 31.);
         expect("fresh array alive", 1, 1);
     }
     expect("fresh array destroyed", 0, -1);

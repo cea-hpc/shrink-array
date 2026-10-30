@@ -47,7 +47,7 @@
 #include <ostream> // std::ostream
 
 /// Three doubles. The defaulted <=> gives the == every element type needs and
-/// the < chunk2 asks of a floating-point aggregate (value_less.h).
+/// the < zero_one_value asks of a floating-point aggregate (value_less.h).
 struct Point3
 {
     auto operator<=>(const Point3&) const = default;
@@ -64,18 +64,18 @@ struct Cell
     float        fraction;
 };
 
-/// @brief Print @p p as "(x, y, z)".
+/// @brief Print @p point as "(x, y, z)".
 /// @return @p os.
-inline std::ostream& operator<<(std::ostream& os, const Point3& p)
+inline std::ostream& operator<<(std::ostream& os, const Point3& point)
 {
-    return os << "(" << p.x << ", " << p.y << ", " << p.z << ")";
+    return os << "(" << point.x << ", " << point.y << ", " << point.z << ")";
 }
 
-/// @brief Print @p c as "{material, fraction}".
+/// @brief Print @p cell as "{material, fraction}".
 /// @return @p os.
-inline std::ostream& operator<<(std::ostream& os, const Cell& c)
+inline std::ostream& operator<<(std::ostream& os, const Cell& cell)
 {
-    return os << "{" << c.material << ", " << c.fraction << "}";
+    return os << "{" << cell.material << ", " << cell.fraction << "}";
 }
 
 /// @name The second values of the struct arrays

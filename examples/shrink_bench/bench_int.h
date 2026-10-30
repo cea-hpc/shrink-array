@@ -26,7 +26,7 @@
  *          Every size/index/count in the bench is spelled `Int` (or `UInt`):
  *          `int` by default, `long` when the build defines BENCH_INT64 (a "big
  *          multiply" run). `Array<T>` passes `Int` to the library as its
- *          `ind_type`, so the two move together: there is no build where the
+ *          `IntType`, so the two move together: there is no build where the
  *          bench indexes in 64 bits and the array in 32.
  *
  * @note ELEMENT types are NOT affected. `Array<int> tab_int` stays an array of
@@ -41,7 +41,7 @@
  *       (python/bench_and_test.py runs a few, INT64_CHECK_VARIANTS).
  *
  * Enable with `cmake -DSHRINK_BENCH_INT64=ON`, which adds the int64 targets
- * (shrink_bench_<variant>_int64_<size>, for the sizes of
+ * (shrink_bench_<backend>_<variant>_int64_<size>, for the sizes of
  * SHRINK_BENCH_INT64_SIZES and dyn) next to the ordinary ones (both are kept,
  * neither replaces the other).
  */

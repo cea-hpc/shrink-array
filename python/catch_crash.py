@@ -29,7 +29,7 @@ import subprocess
 import sys
 import time
 
-# e.g. <build>/examples/shrink_bench/shrink_bench_chunk2a_dyn (pass --mode perf in --args)
+# e.g. <build>/examples/shrink_bench/shrink_bench_omp_zero_any_dyn (pass --mode perf in --args)
 DEFAULT_EXE = os.environ.get("CATCH_CRASH_EXE", "")
 
 # The gdb commands run in batch. The program is started; if it stops on a

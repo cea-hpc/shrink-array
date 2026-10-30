@@ -21,8 +21,8 @@
  *
  * @details Each variant's `operator new[]` allocates, then points every chunk
  *          at its first constant (in parallel when large enough); only the
- *          per-chunk initialiser differs (`init_values_cst_val()` on v1,
- *          `init_after_constructor()` on chunk2 / chunk2A), which the helper takes.
+ *          per-chunk initialiser differs (`init_values_cst_val()` on zero,
+ *          `init_after_constructor()` on zero_one_value / zero_any), which the helper takes.
  *
  * @note For a PLACEMENT-new array only: `new C[n]` runs the default
  *       constructors afterwards, overwriting it. The library never array-news
@@ -40,7 +40,7 @@ namespace shrink_array::chunk_array_new
 {
 
 /**
- * @brief Run @p init on each of the @p count chunks at @p v, on a team of its
+ * @brief Run @p init on each of the @p count chunks at @p chunks, on a team of its
  *        own from parallel_storage_init::parallel_init_min_chunks chunks on,
  *        outside a region (parallel_storage_init::for_each_chunk()).
  *
@@ -56,14 +56,14 @@ namespace shrink_array::chunk_array_new
  *
  * @tparam C    chunk type
  * @tparam Init callable `void(C&)`
- * @param v    first chunk
+ * @param chunks    first chunk
  * @param count    how many
  * @param init what to run on each
  */
 template <typename C, typename Init>
-void init_chunks(C* v, std::size_t count, Init init) noexcept
+void init_chunks(C* chunks, std::size_t count, Init init) noexcept
 {
-    parallel_storage_init::for_each_chunk(static_cast<int>(count), [v, &init](int k) { init(v[k]); });
+    parallel_storage_init::for_each_chunk(static_cast<int>(count), [chunks, &init](int k) { init(chunks[k]); });
 }
 
 } // namespace shrink_array::chunk_array_new

@@ -52,20 +52,21 @@ inline constexpr bool chunk_dynamic = false;
 inline constexpr std::size_t alloc_affinity_min_bytes =
     CHUNK_ALLOC_AFFINITY_MIN_BYTES; // -D to override (0 = off; tiny = every array, for tests)
 
-/// @brief Mirror of alloc_config::reclaim_empty_slabs, from the same CMake option
-///        (CHUNK_RECLAIM_EMPTY_SLABS, recorded in both generated build_options.h).
-///
-/// Duplicated deliberately: alloc_config.h is not included by a std-alloc build, and
-/// `if constexpr (build_config::use_fast_alloc)` does NOT hide alloc_config:: (a
-/// non-dependent name is looked up at template definition). This mirror lets such a site
-/// be a plain `if constexpr` with no \#ifdef.
-inline constexpr bool reclaim_empty_slabs = CHUNK_OPT_RECLAIM_EMPTY_SLABS != 0;
-
 // build_options.h refuses a file whose OpenMP setting is not the library's.
 inline constexpr bool use_openmp = CHUNK_OPT_OPENMP != 0;
 
 // For call-site readability.
 inline constexpr bool not_use_openmp = !use_openmp;
+
+/// The library runs threads: every threading backend but serial (CMake
+/// CHUNK_THREADS, docs/threading_backends.md). What the per-rank machinery,
+/// the atomics, the deferred queues and the compression passes test.
+/// use_openmp stays for what only OpenMP gives: the application's team (the
+/// split phase end, the barrier transition), OMPT.
+inline constexpr bool threaded = CHUNK_OPT_THREADED != 0;
+
+// For call-site readability.
+inline constexpr bool not_threaded = !threaded;
 
 // ── Read-side visibility ────────────────────────────────────────────────────
 // The deferred-op visibility toll is at the READ entry points: writes do not flush; pure
@@ -82,7 +83,7 @@ inline constexpr std::int64_t deferred_drain_threshold = CHUNK_OPT_DEFERRED_DRAI
 // of every thread down that path, alternating the two exits: check #1 (no writer flag
 // raised) and check #2 (flag raised then dropped). A CHUNK_FORCE_DEFER_EVERY=7 build must
 // pass the file cross-check bit for bit. 0 (default) compiles it out; ignored without OpenMP.
-inline constexpr unsigned force_defer_every = use_openmp ? CHUNK_OPT_FORCE_DEFER_EVERY : 0u;
+inline constexpr unsigned force_defer_every = threaded ? CHUNK_OPT_FORCE_DEFER_EVERY : 0u;
 
 inline constexpr bool use_fast_alloc = CHUNK_OPT_FAST_ALLOC != 0;
 inline constexpr bool use_std_alloc  = !use_fast_alloc;
@@ -141,7 +142,7 @@ inline constexpr bool free_guard = false;
 inline constexpr bool free_guard = true;
 #endif
 
-/// Chunk2A: second values of more than 4 bytes stored as 4-byte identifiers (CHUNK_SECOND_VALUE_INDEXED).
+/// zero_any: second values of more than 4 bytes stored as 4-byte identifiers (CHUNK_SECOND_VALUE_INDEXED).
 inline constexpr bool second_value_indexed = CHUNK_OPT_SECOND_VALUE_INDEXED != 0;
 
 /// Alignment (hence size) of one word of the per-chunk dirty bitset
@@ -181,6 +182,28 @@ extern OmptSuspendCounter g_ompt_suspended;
 } // namespace shrink_array
 
 
+// Former names of the variant macros (CHUNK_VARIANT_V1 / _V2 / _V2A), until 1.0:
+// a program that defines an old one gets the new one, and one that tests an old
+// one finds it defined.
+#if defined(CHUNK_VARIANT_V1) && !defined(CHUNK_VARIANT_ZERO)
+    #define CHUNK_VARIANT_ZERO CHUNK_VARIANT_V1
+#endif
+#if defined(CHUNK_VARIANT_V2) && !defined(CHUNK_VARIANT_ZERO_ONE_VALUE)
+    #define CHUNK_VARIANT_ZERO_ONE_VALUE CHUNK_VARIANT_V2
+#endif
+#if defined(CHUNK_VARIANT_V2A) && !defined(CHUNK_VARIANT_ZERO_ANY)
+    #define CHUNK_VARIANT_ZERO_ANY CHUNK_VARIANT_V2A
+#endif
+#if defined(CHUNK_VARIANT_ZERO) && !defined(CHUNK_VARIANT_V1)
+    #define CHUNK_VARIANT_V1 CHUNK_VARIANT_ZERO
+#endif
+#if defined(CHUNK_VARIANT_ZERO_ONE_VALUE) && !defined(CHUNK_VARIANT_V2)
+    #define CHUNK_VARIANT_V2 CHUNK_VARIANT_ZERO_ONE_VALUE
+#endif
+#if defined(CHUNK_VARIANT_ZERO_ANY) && !defined(CHUNK_VARIANT_V2A)
+    #define CHUNK_VARIANT_V2A CHUNK_VARIANT_ZERO_ANY
+#endif
+
 /**
  * @namespace chunk_config
  * @brief Represents the internal logic of the compression engine (The "How").
@@ -192,34 +215,42 @@ using namespace build_config;
 // --- Array Type Selection ---
 // Per library, from its CMake target (PUBLIC definitions): what a program
 // spells must be what the library it links was built with -- link_check.h.
-/// True with CHUNK_VARIANT_V1: the Chunk variant is the selected array type.
-#ifdef CHUNK_VARIANT_V1
-inline constexpr bool use_chunk = true;
+/// True with CHUNK_VARIANT_ZERO: zero::Array is the selected array type.
+#ifdef CHUNK_VARIANT_ZERO
+inline constexpr bool use_zero = true;
 #else
-inline constexpr bool use_chunk = false;
+inline constexpr bool use_zero = false;
 #endif
 
-/// True with CHUNK_VARIANT_V2: the Chunk2 variant is the selected array type.
-#ifdef CHUNK_VARIANT_V2
-inline constexpr bool use_chunk2 = true;
+/// True with CHUNK_VARIANT_ZERO_ONE_VALUE: zero_one_value::Array is the selected array type.
+#ifdef CHUNK_VARIANT_ZERO_ONE_VALUE
+inline constexpr bool use_zero_one_value = true;
 #else
-inline constexpr bool use_chunk2 = false;
+inline constexpr bool use_zero_one_value = false;
 #endif
 
-/// True with CHUNK_VARIANT_V2A: the Chunk2A variant is the selected array type.
-#ifdef CHUNK_VARIANT_V2A
-inline constexpr bool use_chunk2a = true;
+/// True with CHUNK_VARIANT_ZERO_ANY: zero_any::Array is the selected array type.
+#ifdef CHUNK_VARIANT_ZERO_ANY
+inline constexpr bool use_zero_any = true;
 #else
-inline constexpr bool use_chunk2a = false;
+inline constexpr bool use_zero_any = false;
 #endif
 
-inline constexpr bool is_shrink_enabled = use_chunk || use_chunk2 || use_chunk2a; ///< A chunked variant is selected.
-inline constexpr bool use_chunk2or2a    = use_chunk2 || use_chunk2a;              ///< Chunk2 or Chunk2A is selected.
+inline constexpr bool is_shrink_enabled =
+    use_zero || use_zero_one_value || use_zero_any; ///< A chunked variant is selected.
+inline constexpr bool use_second_value =
+    use_zero_one_value || use_zero_any; ///< zero_one_value or zero_any is selected.
+
+// Former names, until 1.0.
+[[deprecated("use use_zero")]] inline constexpr bool           use_chunk      = use_zero;
+[[deprecated("use use_zero_one_value")]] inline constexpr bool use_chunk2     = use_zero_one_value;
+[[deprecated("use use_zero_any")]] inline constexpr bool       use_chunk2a    = use_zero_any;
+[[deprecated("use use_second_value")]] inline constexpr bool   use_chunk2or2a = use_second_value;
 
 /**
- * @brief Chunk2's second-value index for an array that has declared none.
+ * @brief zero_one_value's second-value index for an array that has declared none.
  *
- * @details An ArrayChunk2 registers (T{}, this index) at construction and
+ * @details A zero_one_value::Array registers (T{}, this index) at construction and
  *          keeps it until set_second_value(). Every consumer of the index
  *          answers "no second constant" for it: get_cst_val2() is nullptr,
  *          is_cst_val2() false, written() reduces to "not cst_val1", and the
@@ -266,14 +297,14 @@ inline constexpr bool aggressive_compression_default = CHUNK_OPT_AGGRESSIVE_COMP
 /**
  * @brief Per-chunk exclusion for the compressor's pass (ChunkBase::steal_mark_).
  *
- * Each chunk of an OpenMP build carries a pending_ops_ counter (std::atomic<int32_t>) and, in
+ * Each chunk of a threaded build carries a pending_ops_ counter (std::atomic<int32_t>) and, in
  * the 4 bytes of padding after it, the steal mark: 8 + 4 + 4, so every chunk is 16 bytes. The
  * read path gates on THIS chunk's pending count, keeping clean-chunk reads off
  * flush_chunk_all_ranks (about 10% faster at high thread counts).
  *
  * A writer is kept off a chunk only while a compressor has it marked, and the compressor's
  * writer window (CompressionManager::start()) waits only for writers whose flag points to a
- * marked chunk -- nothing global on the write path. Without OpenMP neither field exists, and
+ * marked chunk -- nothing global on the write path. In a serial build neither field exists, and
  * the write gate is hard_inflight_, which a single thread never contends.
  *
  * An 8-byte chunk with these gates is not achievable cleanly: a count cannot be bit-packed
@@ -281,7 +312,7 @@ inline constexpr bool aggressive_compression_default = CHUNK_OPT_AGGRESSIVE_COMP
  * the flush side (which only holds the pointer). The 8-byte build without them
  * (SHRINK_SMALL_CHUNK: coarse read gate, global write gate) was removed (CHANGELOG).
  */
-inline constexpr bool use_chunk_steal_mark = build_config::use_openmp;
+inline constexpr bool use_chunk_steal_mark = build_config::threaded;
 
 /**
  * @brief Tuning Levels:
@@ -293,7 +324,7 @@ inline constexpr bool use_chunk_steal_mark = build_config::use_openmp;
     #define CHUNK_TUNING_LEVEL 3 // default: level 3
 #endif
 
-/// CHUNK_TUNING_LEVEL (1, 2 or 3, default 3) as a constexpr; selects Chunk2Def's thresholds.
+/// CHUNK_TUNING_LEVEL (1, 2 or 3, default 3) as a constexpr; selects zero_one_value::ChunkDef's thresholds.
 inline constexpr int tuning_level = CHUNK_TUNING_LEVEL;
 // Debug ring log: two independent switches (CMake options).
 //   CHUNK_RING_LOG_DEBUG -> ALL events, hot path included. Heavy: can mask timing bugs.
@@ -313,7 +344,7 @@ inline constexpr bool ring_log_op_only = CHUNK_OPT_RING_LOG_OP != 0;
  * @brief Block compression with deferred writes: true under OpenMP, the only mode that
  * needs them. The primary compression-mode flag; the two aliases below derive from it.
  */
-inline constexpr bool use_fast_block_compression = use_openmp;
+inline constexpr bool use_fast_block_compression = threaded;
 
 // A ThreadSanitizer build, whichever compiler spells it. TSan does not model
 // membarrier(), so such a build keeps the symmetric handshake below.
@@ -356,7 +387,7 @@ inline constexpr bool tsan_build = false;
  *          feedback loop, an order of magnitude slower. Symmetric only on non-Linux (the
  *          syscall) and under ThreadSanitizer (which does not model membarrier). An
  *          asymmetric build falls back to symmetric AT RUN TIME if membarrier registration
- *          fails (kernel < 4.14, seccomp); print_chunk_stats() says which one ran.
+ *          fails (kernel < 4.14, seccomp); ParamChunk::chunk_stats() says which one ran.
  */
 #if defined(__linux__) && !defined(CHUNK_TSAN_BUILD)
 inline constexpr bool asymmetric_dekker = true;
@@ -428,7 +459,7 @@ struct CheckNaN
     /// @brief No switch to move.
     static void update([[maybe_unused]] bool state) noexcept {}
     /// @brief No check.
-    static void maybe([[maybe_unused]] auto val, [[maybe_unused]] long i) noexcept {}
+    static void maybe([[maybe_unused]] auto val, [[maybe_unused]] long index) noexcept {}
 };
 
 /// @brief The real switch: maybe() checks while it is on.
@@ -441,12 +472,12 @@ class CheckNaN<true>
     {
         check_nan = state;
     }
-    /// @brief global_check_nan(@p val, @p i) if the switch is on.
-    static void maybe(auto val, long i) noexcept
+    /// @brief global_check_nan(@p val, @p index) if the switch is on.
+    static void maybe(auto val, long index) noexcept
     {
         if (check_nan)
         {
-            global_check_nan(val, i);
+            global_check_nan(val, index);
         }
     }
 

@@ -28,6 +28,7 @@
 #include <cstdio>  // std::fprintf, stderr
 #include <cstdlib> // std::getenv
 #include <cstring> // std::strcmp
+#include <string>  // std::string (self_command)
 
 #ifdef __linux__
     #include <sys/prctl.h> // prctl(PR_SET_DUMPABLE)
@@ -93,13 +94,13 @@ int main(int argc, char** argv)
 #endif
     if (argc > 1)
     {
-        for (const Harness& h : harness_table)
+        for (const Harness& harness : harness_table)
         {
-            if (std::strcmp(argv[1], h.name) == 0)
+            if (std::strcmp(argv[1], harness.name) == 0)
             {
-                g_running = h.name;
+                g_running = harness.name;
                 argv[1]   = argv[0]; // the harness sees argv[0] = the executable, then its own arguments
-                return h.run(argc - 1, argv + 1);
+                return harness.run(argc - 1, argv + 1);
             }
         }
     }
@@ -109,9 +110,9 @@ int main(int argc, char** argv)
     }
 
     std::fprintf(stderr, "usage: %s <harness> [args...]\nharnesses:\n", argv[0]);
-    for (const Harness& h : harness_table)
+    for (const Harness& harness : harness_table)
     {
-        std::fprintf(stderr, "  %s\n", h.name);
+        std::fprintf(stderr, "  %s\n", harness.name);
     }
     return 2;
 }

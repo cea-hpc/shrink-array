@@ -1,22 +1,26 @@
 #!/usr/bin/env bash
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
-# shrink_bench int64 binaries (chunk@dyn by default), the scaling guard's workload,
-# with/without slab recycling and numactl --interleave.
+# shrink_bench int64 binaries (zero@dyn by default), the scaling guard's workload,
+# with/without numactl --interleave, and with the environment sets of ENVS.
 # Usage: bench_recycle.sh <build_root> [reps] [dir containing numa_launch.py]
 #    or: bench_recycle.sh <build_root> <python_dir> [reps]
 #   build_root: the directory holding cmake-build-omp-llvm/ and cmake-build-omp-gnu/
 #   python dir: found next to this script, in ../python or in build_root/python if omitted
 # Environment (defaults in brackets):
-#   THREADS ["32 64 128"]  RECYCLE ["1 0"]  CONFIGS ["omp-llvm omp-gnu"]
-#   VARIANTS ["chunk@dyn"]: base@size, run as shrink_bench_<base>_int64_<size>
-#            (chunk2@1024, chunk2a@dyn, ...); CHUNK_RECHUNK_RECYCLE only acts on chunk
+#   THREADS ["32 64 128"]  CONFIGS ["omp-llvm omp-gnu"]
+#   VARIANTS ["zero@dyn"]: base@size, run as shrink_bench_<backend>_<base>_int64_<size>,
+#            <backend> the one the config was built with (omp, std or serial: each
+#            name is tried, a build dir holding one; never the old name without it)
+#            (zero_one_value@1024, zero_any@dyn, ...). The rebuild's slab recycling, this
+#            script's first purpose, is always on now (CHUNK_RECHUNK_RECYCLE is gone).
 #   MULTIPLY [2]: --multiply of the workload
 #   NUMA ["auto"]: auto = numactl --interleave over the nodes the run spans, as
 #                  bench_and_test.py does; off = no numactl; "auto off" = both
 #   ENVS ["-"]: environment sets to compare, each tag:VAR=VAL[,VAR=VAL...] or "-"
 #               for none; the tag (no "_", "@" or ":") is appended to the label.
-#               e.g. ENVS="- coarsen8:CHUNK_RECHUNK_MAX_COARSEN=8 nolist:CHUNK_RECHUNK_REUSE_LIST=0"
+#               e.g. ENVS="- rthr0:CHUNK_RECLAIM_THREADS=0 pool16:CHUNK_DEFERRED_POOL_KB=16"
+#               (the decider's settings are shrink_bench options, not variables)
 set -u
 export LC_ALL=C   # printf %.2f and awk read and write "1.23" whatever the user locale
 usage() { echo "usage: $0 <build_root> [reps=3] [python_dir]" >&2; exit 1; }
@@ -40,8 +44,8 @@ ARGS=(--mode perf --no_io --multiply "${MULTIPLY:-2}" --iter_max 500)
 export OMP_PROC_BIND=close OMP_PLACES=cores
 numa() { python3 -c "import sys; sys.path.insert(0,'$PYDIR'); import numa_launch as n
 print(' '.join(n.interleave_prefix({'OMP_NUM_THREADS':'$1','OMP_PROC_BIND':'close'})))"; }
-THREADS=${THREADS:-32 64 128}; RECYCLE=${RECYCLE:-1 0}; NUMA=${NUMA:-auto}
-CONFIGS=${CONFIGS:-omp-llvm omp-gnu}; VARIANTS=${VARIANTS:-chunk@dyn}
+THREADS=${THREADS:-32 64 128}; NUMA=${NUMA:-auto}
+CONFIGS=${CONFIGS:-omp-llvm omp-gnu}; VARIANTS=${VARIANTS:-zero@dyn}
 for m in $NUMA; do [ "$m" = auto ] || [ "$m" = off ] || { echo "NUMA: auto or off, not '$m'" >&2; exit 1; }; done
 ENVS=${ENVS:--}
 for e in $ENVS; do
@@ -53,31 +57,32 @@ for e in $ENVS; do
     [[ "$kv" =~ ^[A-Za-z_][A-Za-z0-9_]*=.*$ ]] || { echo "ENVS: '$kv' is not VAR=VAL (in '$e')" >&2; exit 1; }
   done
 done
-echo "config threads recycle numa rep seconds" | tee "$OUT/results.txt"
+echo "config threads numa rep seconds" | tee "$OUT/results.txt"
 for c in $CONFIGS; do
  cfg=cmake-build-${c#cmake-build-}
  for v in $VARIANTS; do
   [[ "$v" == *@* ]] || { echo "VARIANTS: base@size, not '$v'" >&2; exit 1; }
-  name=shrink_bench_${v%@*}_int64_${v#*@}
-  exe=$(ls "$ROOT/$cfg"/*/examples/shrink_bench/$name 2>/dev/null | grep "$(uname -m)" | head -1)
-  [ -x "$exe" ] || { echo "missing $name in $cfg" >&2; continue; }
-  # one label per config and variant; chunk@dyn alone keeps the bare config name
-  lab0=${cfg#cmake-build-}; [ "$VARIANTS" = chunk@dyn ] || lab0=$lab0:$v
+  rest=${v%@*}_int64_${v#*@}; exe=
+  for b in omp std serial; do
+    exe=$(ls "$ROOT/$cfg"/*/examples/shrink_bench/shrink_bench_${b}_$rest 2>/dev/null | grep "$(uname -m)" | head -1)
+    [ -x "$exe" ] && break
+  done
+  [ -x "$exe" ] || { echo "missing shrink_bench_{omp,std,serial}_$rest in $cfg" >&2; continue; }
+  # one label per config and variant; zero@dyn alone keeps the bare config name
+  lab0=${cfg#cmake-build-}; [ "$VARIANTS" = zero@dyn ] || lab0=$lab0:$v
   for es in $ENVS; do
   if [ "$es" = - ]; then lab=$lab0; envset=(); else lab=$lab0+${es%%:*}; read -ra envset <<<"$(tr , ' ' <<<"${es#*:}")"; fi
   for t in $THREADS; do
     for r in $(seq "$REPS"); do
       for m in $NUMA; do    # interleaved, so drift hits every side equally
         if [ "$m" = auto ]; then pre=$(numa $t); else pre=; fi
-        for rec in $RECYCLE; do
-          log="$OUT/${lab/@/-}_${t}th_rec${rec}_numa-${m}_r$r.log"
-          s=$(date +%s.%N)
-          ( cd "$OUT" && env ${envset[@]+"${envset[@]}"} OMP_NUM_THREADS=$t CHUNK_RECHUNK_RECYCLE=$rec CHUNK_LOG=warn,rechunk=debug \
-              $pre "$exe" "${ARGS[@]}" ) >"$log" 2>&1 || echo "  FAIL: $log" >&2
-          e=$(date +%s.%N)
-          printf "%s %s %s %s %s %.2f\n" "$lab" $t $rec $m $r \
-            "$(awk -v a=$s -v b=$e 'BEGIN{print b-a}')" | tee -a "$OUT/results.txt"
-        done
+        log="$OUT/${lab/@/-}_${t}th_numa-${m}_r$r.log"
+        s=$(date +%s.%N)
+        ( cd "$OUT" && env ${envset[@]+"${envset[@]}"} OMP_NUM_THREADS=$t CHUNK_LOG=warn,rechunk=debug \
+            $pre "$exe" "${ARGS[@]}" ) >"$log" 2>&1 || echo "  FAIL: $log" >&2
+        e=$(date +%s.%N)
+        printf "%s %s %s %s %.2f\n" "$lab" $t $m $r \
+          "$(awk -v a=$s -v b=$e 'BEGIN{print b-a}')" | tee -a "$OUT/results.txt"
       done
     done
   done
@@ -85,12 +90,11 @@ for c in $CONFIGS; do
  done
 done
 echo; echo "== best of $REPS (s) ==";
-awk 'NR>1{k=$1" "$2"th rec="$3" numa="$4; if(!(k in b)||$6<b[k])b[k]=$6} END{for(k in b)print k, b[k]}' "$OUT/results.txt" | sort -k1,1 -k2,2n -k3,3 -k4,4
+awk 'NR>1{k=$1" "$2"th numa="$3; if(!(k in b)||$5<b[k])b[k]=$5} END{for(k in b)print k, b[k]}' "$OUT/results.txt" | sort -k1,1 -k2,2n -k3,3
 echo "logs (with the rechunk=debug phase times): $OUT"
-# Rechunk phase totals of the first repetition, recycling on when it was run.
+# Rechunk phase totals of the first repetition.
 summ="$(cd "$(dirname "$0")" && pwd)/rechunk_trace_summary.py"
-rec1=$(set -- $RECYCLE; case " $RECYCLE " in *" 1 "*) echo 1;; *) echo "$1";; esac)
-if [ -f "$summ" ] && ls "$OUT"/*_rec${rec1}_*_r1.log >/dev/null 2>&1; then
-  echo; echo "== rechunk phases (rep 1, recycle=$rec1) =="
-  python3 "$summ" $(cd "$OUT" && ls *_rec${rec1}_*_r1.log | sort -t_ -k1,1 -k2,2n -k4,4 | sed "s|^|$OUT/|")
+if [ -f "$summ" ] && ls "$OUT"/*_r1.log >/dev/null 2>&1; then
+  echo; echo "== rechunk phases (rep 1) =="
+  python3 "$summ" $(cd "$OUT" && ls *_r1.log | sort -t_ -k1,1 -k2,2n -k3,3 | sed "s|^|$OUT/|")
 fi

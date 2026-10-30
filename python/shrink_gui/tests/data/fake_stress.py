@@ -24,7 +24,7 @@ os.makedirs(od, exist_ok=True)
 os.chdir(od)
 print("📁 Outputs, CSV and log in %s" % od)
 builds = ["omp-gnu", "omp-llvm", "omp-gnu-std-alloc"]
-exes = ["shrink_bench_%s_%s" % (v, s) for v in ("chunk", "chunk2", "chunk2a") for s in ("256", "1024", "dyn")]
+exes = ["shrink_bench_omp_%s_%s" % (v, s) for v in ("zero", "zero_one_value", "zero_any") for s in ("256", "1024", "dyn")]
 with open("timings_summary.csv", "w", newline="") as f:
     csv.writer(f).writerow(["run_index", "build", "executable", "num_threads", "wall_seconds",
                             "returncode", "stdout_file", "stderr_file"])
@@ -32,7 +32,8 @@ for i in range(a.runs):
     b = builds[i % 3]
     e = random.choice(exes)
     th = random.randint(40, 200)
-    base = {"chunk": 6.0, "chunk2": 4.5, "chunk2a": 4.0}[e.split("_")[2]] * (1.15 if "std" in b else 1.0)
+    var = e[len("shrink_bench_omp_"):].rsplit("_", 1)[0]
+    base = {"zero": 6.0, "zero_one_value": 4.5, "zero_any": 4.0}[var] * (1.15 if "std" in b else 1.0)
     wall = a.speed * base * (0.25 + 40.0 / th) * random.uniform(0.85, 1.25)
     rc = 1 if a.fail_every and (i + 1) % a.fail_every == 0 else (a.rc if i == a.runs - 1 else 0)
     print("⏳ Cycle %d: Elapsed Time: 1.00s | Estimated Time Left: %.2fs" % (i, (a.runs - i) * a.step))

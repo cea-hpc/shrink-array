@@ -24,13 +24,20 @@
 
 // clang-format off
 #define FAST_ALLOC_OPT_OPENMP              @FAST_ALLOC_OPT_OPENMP@
+#define FAST_ALLOC_OPT_THREADED            @FAST_ALLOC_OPT_THREADED@
+#define FAST_ALLOC_OPT_STD_THREADS                @FAST_ALLOC_OPT_STD_THREADS@
 #define FAST_ALLOC_OPT_DEBUG               @FAST_ALLOC_OPT_DEBUG@
 #define FAST_ALLOC_OPT_CHECK_LISTS         @FAST_ALLOC_OPT_CHECK_LISTS@
-#define FAST_ALLOC_OPT_RECLAIM_EMPTY_SLABS @FAST_ALLOC_OPT_RECLAIM_EMPTY_SLABS@
 // clang-format on
 
 #if FAST_ALLOC_OPT_OPENMP && !defined(_OPENMP)
     #error "the fast_allocators library was built with OpenMP: compile this file with OpenMP as well, or link a library built without it"
 #elif !FAST_ALLOC_OPT_OPENMP && defined(_OPENMP)
     #error "the fast_allocators library was built without OpenMP: compile this file without OpenMP, or link a library built with it"
+#endif
+
+#if FAST_ALLOC_OPT_STD_THREADS && !(defined(FAST_ALLOC_PMP_STD) && FAST_ALLOC_PMP_STD)
+    #error "the fast_allocators library was built with the std backend: compile this file with -DFAST_ALLOC_PMP_STD=1 (the fast_allocators target adds it)"
+#elif !FAST_ALLOC_OPT_STD_THREADS && defined(FAST_ALLOC_PMP_STD) && FAST_ALLOC_PMP_STD
+    #error "the fast_allocators library was built without the std backend: compile this file without FAST_ALLOC_PMP_STD"
 #endif

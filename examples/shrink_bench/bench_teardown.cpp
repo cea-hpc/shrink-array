@@ -22,7 +22,7 @@
 #include "bench_config.h"      // check_compression, and chunk_config:: through bench_prelude.h
 #include "bench_phases.h"      // bench_teardown (defined here), BenchArrays
 #include "bench_stl_checks.h"  // run_stl_self_checks
-#include "chunk/chunk_std.h"   // clear_all_list_block_free_thr, delete_chunk_allocator
+#include "chunk/zero_chunk.h"  // clear_all_list_block_free_thr, delete_chunk_allocator
 #include "chunk/param_chunk.h" // ParamChunk::chunk_stats
 
 // As in shrink_bench.cpp, where this body comes from.
@@ -50,6 +50,7 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
     auto& tab_point     = bench_arr.tab_point;
     auto& tab_cell      = bench_arr.tab_cell;
     auto& tab_mask      = bench_arr.tab_mask;
+    auto& tab_conn      = bench_arr.tab_conn;
 
     [[maybe_unused]] auto& bench_arrays = bench_arr;
 
@@ -78,6 +79,7 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
     tab_point.clear();
     tab_cell.clear();
     tab_mask.clear();
+    tab_conn.clear();
 
     // Chunk instrumentation counters (CHUNK_STATS). Printed HERE, after the
     // tab_*.clear() above: clear() runs clear_core(), which is what feeds
@@ -93,26 +95,27 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
 
     // Entries get_info_second_value() scans per call, per element type. It is a
     // library counter like the ones above, so it prints in perf runs too -- the
-    // mode whose profile put 34% of a 64-thread chunk2 run in that function,
+    // mode whose profile put 34% of a 64-thread zero_one_value run in that function,
     // against 0.37% under libgomp.
     //
     // Printed AFTER the tab_*.clear() calls on purpose: `vec` holds one entry
     // per live array, so a count taken mid-run cannot tell five live arrays
     // from five leaked entries. Here every array is gone, and anything left is
     // an entry that outlived the array that put it there -- erase_inf_array_by_ptr()
-    // acts on map_inf_array, and nothing erases from `vec`.
+    // acts on map_inf_array_, and nothing erases from `vec`.
     //
     // A handful: the scan is short and the cost is the CALL RATE, which caching
     // the per-array-invariant result would fix. Hundreds: the list grew.
-    // Chunk2 only -- Chunk2A carries its second value in the pointer and has no
+    // zero_one_value only -- zero_any carries its second value in the pointer and has no
     // such map.
-    if constexpr (chunk_config::use_chunk2)
+    if constexpr (chunk_config::use_zero_one_value)
     {
         std::cout << "\n[share_info] entries still mapped after clear():"
-                  << "  double " << shrink_array::Proxy2<double>::share_info_array->share_info_entries() << "  Int "
-                  << shrink_array::Proxy2<int>::share_info_array->share_info_entries() << "  float "
-                  << shrink_array::Proxy2<float>::share_info_array->share_info_entries() << "  short "
-                  << shrink_array::Proxy2<short>::share_info_array->share_info_entries() << "\n";
+                  << "  double " << shrink_array::zero_one_value::Proxy<double>::share_info_array->share_info_entries()
+                  << "  Int " << shrink_array::zero_one_value::Proxy<int>::share_info_array->share_info_entries()
+                  << "  float " << shrink_array::zero_one_value::Proxy<float>::share_info_array->share_info_entries()
+                  << "  short " << shrink_array::zero_one_value::Proxy<short>::share_info_array->share_info_entries()
+                  << "\n";
     }
 
     // bench_phase_compress_all() is declared in bench_phases.h and defined in
@@ -125,13 +128,13 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
     }
 
     // No #ifdef: both names below are declared unguarded (all_type_chunk.h
-    // and chunk_std.h) and defined in EVERY variant library -- the symbols are
+    // and zero_chunk.h) and defined in EVERY variant library -- the symbols are
     // in libchunk_vector.a too -- so the discarded branch both type-checks and
     // links in the std::vector build.
     if constexpr (chunk_config::is_shrink_enabled)
     {
         // No #ifdef _OPENMP: since ChunkPoolParallelInterface
-        // (chunk_std.h) both verbs exist in every build, each a no-op in the
+        // (zero_chunk.h) both verbs exist in every build, each a no-op in the
         // model where it has nothing to do -- so this pair is EXACTLY what ran
         // before on either side. Deliberately not release_chunk_pools(): that
         // also calls delete_list_block_chunk_free_itself(), which this example

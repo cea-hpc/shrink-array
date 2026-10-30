@@ -21,6 +21,7 @@ module unload fortran/gcc 2>/dev/null || true
 # The newest CMake the modules offer (4.0.3), else 3.31.4, else the default.
 chunk_module_load_first cmake/4.0.3 cmake/3.31.4 cmake
 module load ninja
+chunk_ensure_ninja || exit 1   # an x86 ~/.local/bin/ninja on an ARM node: site_env.sh
 
 # Parse command-line arguments
 DRYRUN=false
@@ -79,9 +80,18 @@ while [[ $# -gt 0 ]]; do
             export CHUNK_BUILD_TARGET="${1#*=}"
             shift
             ;;
+        --pool=*)
+            # Shared with other runs (see --pool in compile_all.sh, pool_init).
+            # Under compile_all.sh it comes through CHUNK_POOL instead.
+            export CHUNK_POOL="${1#*=}"
+            [ -n "$CHUNK_POOL" ] || { echo "ERROR: --pool= (expected a name or a directory)" >&2; exit 2; }
+            shift
+            ;;
         --exec=*)
             # Build only the Ninja target(s) matching it inside each selected
-            # build dir, e.g. --exec=shrink_bench_chunk_64, --exec='*_dyn', or a
+            # build dir, e.g. --exec='shrink_bench_*_zero_256' (the bench
+            # executables carry their backend: shrink_bench_omp_zero_256 in
+            # an OpenMP build, shrink_bench_std_ / _serial_ elsewhere), --exec='*_dyn', or a
             # comma-separated list of both. Combine with
             # --target=<glob> to also restrict WHICH build dirs are configured.
             export CHUNK_BUILD_EXEC="${1#*=}"
@@ -90,7 +100,7 @@ while [[ $# -gt 0 ]]; do
         *)
             # Previously swallowed silently — a --debug_only (underscore) went
             # unnoticed and the intended flag was never applied.
-            echo "ERROR: unknown argument '$1' (expected --dryrun|--build|--debug-only|--fresh-cache|--no-ipa-icf|--no-hardening|--with-ledger|--jobs=<N>|--target=<glob>|--exec=<ninja-target>)" >&2
+            echo "ERROR: unknown argument '$1' (expected --dryrun|--build|--debug-only|--fresh-cache|--no-ipa-icf|--no-hardening|--with-ledger|--jobs=<N>|--target=<glob>|--exec=<ninja-target>|--pool=<id>)" >&2
             exit 2
             ;;
     esac
@@ -129,26 +139,53 @@ check_target_arg $(known_build_names "$0")
 build_rep="$CHUNK_BUILD_REP"
 
 create_build_rep
+pool_init
+
+# The g++ PATH resolves to before the loads below: they decide the compiler
+# only if they change it (see after the block).
+gxx_before_loads="$(command -v g++ 2>/dev/null)"
 
 # --- Architecture detection & compiler/flags selection ---
 if [ "$(uname -m)" = "aarch64" ]; then
     echo "[ARM/aarch64 detected] Loading gcc/16.1.0 with C++23 & -mcpu=native"
-    module load binutils/2.43
+    # binutils/2.43 where it exists, else the newest binutils module; the
+    # check stops here if the system one (RHEL 9: 2.35) is still the one used.
+    newest_binutils=$(chunk_newest_module binutils)
+    [ -n "$newest_binutils" ] && chunk_module_load_first binutils/2.43 "$newest_binutils"
     module load gcc/16.1.0
+    chunk_check_binutils gnu || exit 1
     ARCH_FLAGS="-DCMAKE_CXX_FLAGS=-mcpu=native -DCMAKE_CXX_STANDARD=23"
 else
-    echo "[x86_64 detected] Loading gcc/15.2.0 with -march=native"
-    module load gcc/15.2.0
+    # Same compiler as aarch64. The g++-16 x86_64 -O3 ICEs have their
+    # workarounds in place: -fno-tree-vectorize on shrink_bench.cpp
+    # (examples/shrink_bench/CMakeLists.txt) and the O2 pins of bench_utils.h.
+    echo "[x86_64 detected] Loading gcc/16.1.0 with -march=native"
+    module load gcc/16.1.0
     ARCH_FLAGS="-DCMAKE_CXX_FLAGS=-march=native"
 fi
 
-# Fetch the g++ path from the loaded module (without modules: CHUNK_GXX,
-# the newest g++-N on PATH, see site_env.sh)
-if [ "$CHUNK_HAVE_MODULES" = true ]; then
-    gxx="$(command -v g++ 2>/dev/null)"
-else
+# The standard of the tree, when one is set (CHUNK_CXX_STANDARD, functions_for_compile.sh),
+# replaces the per-architecture one.
+if [ -n "$CHUNK_CXX_STANDARD" ]; then
+    ARCH_FLAGS="${ARCH_FLAGS% -DCMAKE_CXX_STANDARD=*} -DCMAKE_CXX_STANDARD=$CHUNK_CXX_STANDARD"
+    echo "[std] C++$CHUNK_CXX_STANDARD for every gnu configuration (CHUNK_CXX_STANDARD)"
+fi
+
+# The g++ of the loads when they changed what g++ resolves to (a module tree
+# whose gcc/16 now heads PATH), whether or not CHUNK_HAVE_MODULES says modules
+# are there: testing that alone took CHUNK_GXX -- the broken gcc-toolset-14 --
+# over the gcc 16 the loads had just put first. Loads that changed nothing:
+# CHUNK_GXX (the source-built GCC, a gcc-toolset, the newest g++-N, see
+# site_env.sh), else the g++ on PATH.
+gxx_after_loads="$(command -v g++ 2>/dev/null)"
+if [ -n "$gxx_after_loads" ] && [ "$gxx_after_loads" != "$gxx_before_loads" ]; then
+    gxx="$gxx_after_loads"
+    echo "[site] g++ from the loaded modules: $gxx"
+elif [ -n "${CHUNK_GXX:-}" ]; then
     gxx="$(command -v "$CHUNK_GXX" 2>/dev/null)"
-    echo "[site] no modules: gcc is $CHUNK_GXX"
+    echo "[site] the loads left g++ unchanged: gcc is $CHUNK_GXX"
+else
+    gxx="$gxx_after_loads"
 fi
 [ -z "$gxx" ] && gxx="g++"  # dry-run fallback: bare name, resolved at configure time
 export CXX="$gxx"
@@ -161,6 +198,10 @@ arch="$(source /etc/os-release && echo ${ID^^}_${VERSION_ID}__$(uname -m))"
 # launched last; started first, the long ones (the sanitizers, RelWithDebInfo
 # ahead of Debug: ~700 s against 65-480 s for the others on gh200) overlap the
 # short ones instead of trailing behind them. Then the releases, then Debug.
+
+# oneTBB for the std builds (TBB bench and tbb_validation): TBB_CMAKE_OPT and
+# TBB_TSAN_CMAKE_OPT, see set_tbb_options in functions_for_compile.sh.
+set_tbb_options
 
 # Sanitizers on OPTIMISED code (RelWithDebInfo, i.e. -O2 + -g).
 #
@@ -199,6 +240,15 @@ compile_with_cmake "$build_rep/cmake-build-omp-gnu-relwithdebinfo-std-alloc-addr
 compile_with_cmake "$build_rep/cmake-build-omp-gnu-relwithdebinfo-check-thread-sanitizer${ICF_SUFFIX}/$arch" \
   "-DCHECK_OPTIM=ON -DOMP:BOOL=ON -DSANITIZER=thread -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
   "gnu relwithdebinfo openmp check thread sanitizer"
+
+# TSan on the std backend, optimised, CHECK_OPTIM (the validations): unlike
+# libgomp the std backend is standard C++ (std::atomic wait/notify, std::barrier), so
+# TSan sees every synchronisation of the library's teams -- a report here is
+# not a barrier the tool missed. The run for std_thread_validation:
+# OMP_NUM_THREADS=8 (the std backend's team size, and the harness's thread count).
+compile_with_cmake "$build_rep/cmake-build-std-gnu-relwithdebinfo-thread-sanitizer${ICF_SUFFIX}/$arch" \
+  "-DCHUNK_THREADS=std -DCHECK_OPTIM=ON -DSANITIZER=thread -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT $TBB_TSAN_CMAKE_OPT" \
+  "gnu relwithdebinfo std thread sanitizer"
 
 compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-thread-sanitizer${ICF_SUFFIX}/$arch" \
   "-DOMP:BOOL=ON -DSANITIZER=thread -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
@@ -281,6 +331,27 @@ else
       "gnu std allocator (no openmp)"
 fi
 
+# The std backend (CHUNK_THREADS=std, docs/threading_backends.md step 7): the
+# library's teams on std::jthread workers of its own, no OpenMP (it forces
+# OMP OFF). Release, for the OpenMP-vs-std timings, and CHECK_OPTIM, for the
+# validations -- std_thread_validation among them, the arrays driven from the
+# application's own std::threads.
+if skip_release; then
+    echo "[debug-only] skipping gnu std"
+else
+    compile_with_cmake "$build_rep/cmake-build-std-gnu${ICF_SUFFIX}/$arch" \
+      "-DCHUNK_THREADS=std -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT $INT64_OPT $TBB_CMAKE_OPT" \
+      "gnu std (no openmp)"
+fi
+
+if skip_release; then
+    echo "[debug-only] skipping gnu std with check"
+else
+    compile_with_cmake "$build_rep/cmake-build-std-gnu-check${ICF_SUFFIX}/$arch" \
+      "-DCHUNK_THREADS=std -DCHECK_OPTIM=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT $TBB_CMAKE_OPT" \
+      "gnu std with check (no openmp)"
+fi
+
 # Sequential twin of cmake-build-omp-gnu-stats above: same release build, same
 # CHUNK_STATS counters, OpenMP OFF. bench_and_test.py's seq-vs-OMP compare
 # (find_llvm_seq_omp_pairs) derives "cmake-build-gnu-stats" from
@@ -349,6 +420,7 @@ else
     wait_all
 fi
 rc=$?
+pool_summary
 # Standalone run: a --target / --exec that let nothing through is an error
 # (under compile_all.sh the parent gives that verdict for both scripts).
 if ! check_arg_epilogue; then

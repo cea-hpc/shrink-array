@@ -6,7 +6,8 @@ TOML file (sitecfg.py, sites/); what depends on the repository is here."""
 import os
 import re
 
-from shrink_gui import i18n, sitecfg
+from shrink_gui import i18n, partitions, sitecfg
+from shrink_gui.remote_helper import normalize_variant
 
 APP = "shrink_gui"
 
@@ -42,6 +43,32 @@ PRESETS.update({
     },
 })
 
+# The partitions the machine lists (the site's [batch] partition_info, read
+# by the connection check, kept per site): entries of PRESETS too, built from
+# the site's [discovered] templates, for the partitions the site file does not
+# describe. set_discovered() replaces the ones a previous reading added.
+SITE_PARTITIONS = frozenset(SITE.partitions)
+
+
+def set_discovered(text):
+    """Read the partition table @p text (partitions.parse) into PRESETS:
+    the entries of an earlier reading go, those of this one come, after the
+    site file's. Returns the keys added; nothing changes when @p text has no
+    table (the caller keeps what it had)."""
+    if not SITE.discovered:
+        return []
+    rows = partitions.parse(text)
+    if not rows:
+        return []
+    for key in [k for k, p in PRESETS.items() if p.get("discovered")]:
+        del PRESETS[key]
+    found = partitions.presets(rows, SITE.discovered, SITE_PARTITIONS)
+    local = PRESETS.pop(LOCAL)
+    PRESETS.update(found)
+    PRESETS[LOCAL] = local      # this machine stays last
+    return list(found)
+
+
 # Programs: script and working directory relative to the repository, how the
 # options are read, "builds_opt" (the options naming the builds the run uses,
 # for the up-to-date check), "time_s" (default job duration), "msub_only" (refused in the detached ccc_mprun mode), how the
@@ -65,6 +92,11 @@ PROGRAMS = {
         # naming the build root, the one naming the builds (a list, or a file
         # of names one per line, relative to cwd).
         "builds_opt": {"root": "build_root", "builds": "builds"},
+        # "Nœuds" N > 1: N batch jobs of one node, the same command plus
+        # --pool=<the submission>; the jobs share the --runs, each claiming the
+        # next free run index, the first failure stops them all; the Résumé,
+        # Graphique and Erreurs tabs of any of them gather the jobs.
+        "pool_opt": "--pool",
         # What "Supprimer" may also remove ("ses sorties"): "dir" = the output
         # directory the log announces, the run's own; a list = those entries
         # of a SHARED output directory (never the rest of it).
@@ -97,20 +129,29 @@ PROGRAMS = {
         "rerun": {"opt": "--rerun-failed", "repeat": "--rerun-repeat", "log_dir": "--full-log-dir",
                   "drop": ["--no-full-log"]},
         "builds_opt": {"root": "build_root", "builds": "configs"},
+        # "Nœuds" N > 1: N batch jobs of one node, the same command plus
+        # --pool=<the submission>; within each phase, each (phase,
+        # configuration) unit is done by the first job that claims it, each
+        # oracle generated once (the others wait for it), a failed case
+        # recorded and the job going on. Each job writes to its own
+        # bench_results/<arch>/pool_<id>/n<K> (the "Run outputs" line), oracle/
+        # staying shared; the Résumé, Graphique and Erreurs tabs of any of
+        # them gather the jobs.
+        "pool_opt": "--pool",
         # bench_results/<arch> is shared by every run of the architecture and
         # holds the oracles (oracle/): only what each run rewrites goes.
         "own_outputs": ["bench_output.log", "bench_errors.log", "failed_cases.jsonl", "bench_summary.csv",
                         "run_logs", "runs"],
     },
-    "omp_speedup.py": {
+    "thread_speedup.py": {
         "time_s": 14400,  # default -T (4 h); then remembered per program
-        "script": "python/omp_speedup.py", "cwd": "python",
+        "script": "python/thread_speedup.py", "cwd": "python",
         "interp": "python3", "scan": "argparse",
         # On a compute node only (it measures it): batch, or this machine.
         "msub_only": True,
         # "Choisir…" beside these fields, as compile_all.sh's.
         "pickers": {"target": "configs", "execs": "execs"},
-        # Its own output directory per run (under <work>/omp_speedup/).
+        # Its own output directory per run (under <work>/thread_speedup/).
         "out_re": r"Outputs in (\S+)",
         "out_files": ["summary.csv", "results.csv", "errors.log", "plot.gp", "speedup.png", "meta.json"],
         # Progress, Erreurs column, first-error notice: its events.jsonl.
@@ -119,6 +160,10 @@ PROGRAMS = {
         "chart": "speedup",
         "errors_files": ["errors.log"],
         "builds_opt": {"root": "build_root", "builds": "target"},
+        # "Nœuds" N > 1: N batch jobs of one node, the same command plus
+        # --pool=<the submission>; each executable is measured by the first
+        # job that claims it, and the Graphique / Résumé tabs gather the jobs.
+        "pool_opt": "--pool",
         "own_outputs": "dir",
         # Checked before submitting (its own parse_args test, which the
         # option scan cannot see): at least one of these options, else the
@@ -136,6 +181,10 @@ PROGRAMS = {
         # "Choisir…" beside these fields: the configurations / executables
         # compile_all.sh can build, read on inti (see BUILD_REP).
         "pickers": {"target": "configs", "exec": "execs"},
+        # "Nœuds" N > 1: N batch jobs of one node, the same command plus
+        # --pool=<the submission>; each configuration is built by the first
+        # job that claims it (functions_for_compile.sh, pool_init).
+        "pool_opt": "--pool",
         "out_re": None, "out_files": [],
         "progress_re": None, "eta_re": None,
         "summary": None, "summary_file": None,
@@ -145,6 +194,17 @@ PROGRAMS = {
         "fail_re": r"^\[FAIL\] .*→ (\S+)\s*$",
     },
 }
+
+# Programs renamed since runs were recorded: an old run's meta "program" is
+# read under the new name (reuse, its outputs, its chart). omp_speedup.py's
+# curves are not OpenMP's only (std::thread backend, TBB bench).
+RENAMED_PROGRAMS = {"omp_speedup.py": "thread_speedup.py"}
+
+
+def program_of(meta):
+    """The program of a run's meta, under its current name."""
+    p = meta.get("program")
+    return RENAMED_PROGRAMS.get(p, p)
 
 # Built-in defaults per (program, arch), by argparse dest. A string is the
 # option's value (shell variables such as $USER are expanded on inti), True/
@@ -205,17 +265,26 @@ VIZ = {
 
 # Colour follows the entity, never its rank: fixed slots per category.
 COLOR_BY = {
-    "Variante": (lambda exe: exe_parts(exe)[0], ["chunk", "chunk2", "chunk2a"]),
+    "Variante": (lambda exe: exe_parts(exe)[0], ["zero", "zero_one_value", "zero_any"]),
     "Taille": (lambda exe: exe_parts(exe)[1], ["256", "1024", "dyn"]),
     "Aucune": (lambda exe: "runs", ["runs"]),
 }
 
-EXE_RE = re.compile(r"shrink_bench_(chunk2a|chunk2|chunk)(?:_(\w+))?$")
+# shrink_bench_<backend>_<variant>[_<size>], <backend> omp / std / serial (the
+# threading backend of the build), and the TBB bench's shrink_bench_tbb_<variant>_<size>:
+# the variant and the size, whatever the backend. The old names too, read as
+# the new ones: without a backend (shrink_bench_zero_any_dyn, before the
+# executables carried it) and the old labels (shrink_bench_chunk2a_dyn, before
+# the variant rename) -- the results of past runs. Longest first: zero would
+# also match zero_any.
+EXE_RE = re.compile(r"shrink_bench_(?:(?:omp|std|serial|tbb)_)?"
+                    r"(zero_any|zero_one_value|zero|chunk2a|chunk2|chunk)(?:_(\w+))?$")
 
 def exe_parts(exe):
-    """shrink_bench_chunk2a_dyn -> ("chunk2a", "dyn"); no size -> "default"."""
+    """shrink_bench_omp_zero_any_dyn -> ("zero_any", "dyn"), shrink_bench_tbb_zero_any_dyn,
+    shrink_bench_zero_any_dyn and shrink_bench_chunk2a_dyn too; no size -> "default"."""
     m = EXE_RE.search(exe)
-    return (m.group(1), m.group(2) or "default") if m else (exe, "?")
+    return (normalize_variant(m.group(1)), m.group(2) or "default") if m else (exe, "?")
 
 # The batch commands and the detached mode of the site, as the helper takes
 # them (remote_helper.py: act_check, act_launch, act_stop).

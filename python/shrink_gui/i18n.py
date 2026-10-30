@@ -73,14 +73,17 @@ EN = {
     "speedup vs le premier nombre de threads": "speedup vs the first thread count",
     "efficacité (speedup × min / threads)": "efficiency (speedup × min / threads)",
     "meilleur temps (s)": "best time (s)",
-    "Superpose un autre run de omp_speedup.py de la même architecture (en pointillés) -- un autre "
+    "Superpose un autre run de thread_speedup.py de la même architecture (en pointillés) -- un autre "
     "compilateur, un autre commit -- et donne le rapport B / A sur leurs points communs":
-        "Overlays another omp_speedup.py run of the same architecture (dashed) -- another compiler, another "
+        "Overlays another thread_speedup.py run of the same architecture (dashed) -- another compiler, another "
         "commit -- and gives the B / A ratio over their common points",
     "tailles ou modes différents : comparer les speedups, pas les temps":
         "different sizes or modes: compare the speedups, not the times",
     "couleur : la variante (vector en gris) · forme : la taille (rond dyn, carré 1024, triangle 256, losange 64)":
         "colour: the variant (vector in grey) · shape: the size (dot dyn, square 1024, triangle 256, diamond 64)",
+    "trait mixte : le bench TBB (shrink_bench_tbb_*), tiret-point-point pour B":
+        "dash-dot line: the TBB bench (shrink_bench_tbb_*), dash-dot-dot for B",
+    "trait mixte : le bench TBB (shrink_bench_tbb_*)": "dash-dot line: the TBB bench (shrink_bench_tbb_*)",
     "Superpose un autre run de bench_and_test.py de la même architecture (en pointillés) et donne le "
     "rapport B / A sur leurs points communs":
         "Overlays another bench_and_test.py run of the same architecture (dashed) and gives the "
@@ -238,8 +241,8 @@ EN = {
     "reste où vous êtes.":
         "Scrolls the log to the end on every new line. Unchecked, the log stays where you are.",
     "Ne montre que les runs de ce build.": "Shows only the runs of this build.",
-    "Ne montre que les runs de cette variante (chunk, chunk2, chunk2a).":
-        "Shows only the runs of this variant (chunk, chunk2, chunk2a).",
+    "Ne montre que les runs de cette variante (zero, zero_one_value, zero_any).":
+        "Shows only the runs of this variant (zero, zero_one_value, zero_any).",
     "Ce que la couleur distingue : la variante, la taille de chunk, ou rien. Trois "
     "couleurs au plus ; le reste est groupé en gris « autres ».":
         "What the colour tells apart: the variant, the chunk size, or nothing. Three colours "
@@ -351,6 +354,60 @@ EN = {
         "Interface language (applied at once).",
     # start conditions and build check (Démarrage / Builds à jour)
     "Démarrage": "Start", "Builds à jour": "Builds up to date", "pas avant": "not before",
+    "Nœuds": "Nodes", "la soumission": "the submission",
+    "Nombre de nœuds entre lesquels le travail est partagé "
+    "(--pool, ccc_msub seulement) : les configurations de compile_all.sh, les exécutables "
+    "de thread_speedup.py, les --runs de multi_launch_stress.py, les couples (phase, "
+    "configuration) de bench_and_test.py.\n\n"
+    "Chaque job reçoit la même commande et les mêmes directives ; il traite ce qu'il "
+    "réclame le premier, dans l'ordre habituel, et laisse le reste aux autres jobs : la "
+    "charge s'équilibre seule. Un job qui démarre quand tout est déjà pris finit aussitôt "
+    "(code 0).\n\n"
+    "thread_speedup.py : les onglets Graphique et Résumé d'un de ces jobs réunissent ceux "
+    "de tous. multi_launch_stress.py : chaque job prend le prochain run libre, le total "
+    "reste --runs ; le premier échec arrête tous les jobs ; Résumé, Graphique et Erreurs "
+    "réunissent les jobs. bench_and_test.py : chaque oracle est généré une fois, les "
+    "autres jobs l'attendent ; un cas en échec est noté et le job continue ; chaque job "
+    "écrit dans son dossier pool_<id>/n<K> ; Résumé, Graphique et Erreurs réunissent les "
+    "jobs.\n\n"
+    "« Démarrage : après » propose ensuite une compilation entière : on attend tous ses jobs.":
+        "Number of nodes that share the work "
+        "(--pool, ccc_msub only): compile_all.sh's configurations, thread_speedup.py's "
+        "executables, multi_launch_stress.py's --runs, bench_and_test.py's (phase, configuration) "
+        "pairs.\n\n"
+        "Each job gets the same command and directives; it handles what it claims first, in the usual "
+        "order, and leaves the rest to the other jobs: the load balances itself. A job that starts when "
+        "everything is already taken ends at once (code 0).\n\n"
+        "thread_speedup.py: the Chart and Summary tabs of any of these jobs gather them all. "
+        "multi_launch_stress.py: each job takes the next free run, the total stays --runs; the "
+        "first failure stops every job; Summary, Chart and Errors gather the jobs. bench_and_test.py: "
+        "each oracle is generated once, the other jobs wait for it; a failed case is recorded and the "
+        "job goes on; each job writes to its own pool_<id>/n<K> directory; Summary, Chart and Errors "
+        "gather the jobs.\n\n"
+        "\"Start: after\" then offers a whole compilation: all its jobs are waited for.",
+    "un job de N nœuds": "one job of N nodes", "N jobs d'un nœud": "N jobs of one node",
+    "Comment les N nœuds sont demandés.\n\n"
+    "« un job de N nœuds » : une seule soumission de N nœuds ; run.sh vérifie les "
+    "builds une fois, puis lance une tâche par nœud (node.sh, dossier n<K> du run, "
+    "son propre out.log). Une seule entrée dans la file : le choix quand la QoS "
+    "longue ne laisse qu'un job à la fois. Sa QoS est vérifiée sur N × les cœurs "
+    "d'un nœud.\n\n"
+    "« N jobs d'un nœud » : N soumissions <id>-n1..nN, chacune vérifiée sur ses "
+    "propres cœurs ; elles passent l'une après l'autre si la QoS plafonne les cœurs "
+    "de tous vos jobs (prévenu dans la barre d'état).\n\n"
+    "Changer « Nœuds » de N1 à N2 multiplie la durée max par N1 / N2 (arrondie au "
+    "quart d'heure supérieur, 30 min au moins), tant que vous ne l'avez pas tapée "
+    "vous-même.":
+        "How the N nodes are requested.\n\n"
+        "\"one job of N nodes\": a single submission of N nodes; run.sh checks the builds once, "
+        "then starts one task per node (node.sh, the run's n<K> directory, its own out.log). A "
+        "single entry in the queue: the choice when the long QoS lets one job run at a time. Its "
+        "QoS is checked on N × a node's cores.\n\n"
+        "\"N jobs of one node\": N submissions <id>-n1..nN, each checked on its own cores; they "
+        "run one after another when the QoS caps the cores of all your jobs (said in the status "
+        "bar).\n\n"
+        "Changing \"Nodes\" from N1 to N2 multiplies the maximum duration by N1 / N2 (rounded up "
+        "to the quarter hour, 30 min at least), as long as you did not type it yourself.",
     "dès la soumission": "on submission", "si elle réussit": "if it succeeds",
     "quelle que soit son issue": "whatever its result",
     "refuser de démarrer si un build n'est pas à jour": "refuse to start if a build is not up to date",
@@ -398,7 +455,20 @@ EN_RE = [(re.compile(a), b) for a, b in (
      "Fix it, then click \"Read options\". Meanwhile the \"extra arguments\" field passes options as they are."),
     (r"\(pas d'aide dans le script\)", "(no help in the script)"),
     (r"^la QoS (\S+) n'est pas ouverte sur (\S+)$", r"QoS \1 is not open on \2"),
+    (r"^après (\S+) \((\d+) nœuds\)$", r"after \1 (\2 nodes)"),
     (r"^après (\S+)$", r"after \1"),
+    (r"^(\d+) jobs, un nœud chacun$", r"\1 jobs, one node each"),
+    (r"^un job de (\d+) nœuds$", r"one job of \1 nodes"),
+    (r"^durée max par nœud ≈ total / (\d+)$", r"max duration per node ≈ total / \1"),
+    (r"^soumis : job (\S+) de (\d+) nœuds$", r"submitted: job \1 of \2 nodes"),
+    (r"^soumis : (\d+) jobs, un nœud chacun — ", r"submitted: \1 jobs, one node each — "),
+    (r"^QoS (\S+) : (\d+) cores au plus pour tous vos jobs, les (\d+) jobs passeront l'un après l'autre$",
+     r"QoS \1: at most \2 cores for all your jobs, the \3 jobs will run one after another"),
+    (r" — QoS (\S+) : (\d+) cores au plus pour tous vos jobs, les (\d+) jobs passeront l'un après l'autre$",
+     r" — QoS \1: at most \2 cores for all your jobs, the \3 jobs will run one after another"),
+    (r"^soumis : (\d+) jobs, un nœud chacun$", r"submitted: \1 jobs, one node each"),
+    (r"^(\S+) est ajouté par le champ « Nœuds » : retirez-le de la commande$",
+     r'\1 is added by the "Nodes" field: remove it from the command'),
     (r"^en attente sans fin \((\S+) a échoué : à arrêter\)$", r"pending for ever (\1 failed: stop it)"),
     (r"^soumission refusée : ", "submission refused: "),
     (r"^le run (\S+) a échoué \(code (\S+)\) : rien soumis$", r"run \1 failed (code \2): nothing submitted"),
@@ -407,7 +477,7 @@ EN_RE = [(re.compile(a), b) for a, b in (
     (r"^(.+) dépasse le maximum de la QoS (\S+) sur (\S+) \((.+)\)$", r"\1 exceeds the maximum of QoS \2 on \3 (\4)"),
     (r"^(\d+) cœurs dépassent le maximum de la QoS (\S+) sur (\S+) \((\d+)\)$",
      r"\1 cores exceed the maximum of QoS \2 on \3 (\4)"),
-    (r"^aucune QoS n'accepte (.+?) sur (\S+)", r"no QoS accepts \1 on \2"), (r" \(au plus (.+)\)$", r" (\1 at most)"),
+    (r"^aucune QoS n'accepte (.+?) sur (\S+)", r"no QoS accepts \1 on \2"), (r" pour (\d+) cores\b", r" for \1 cores"), (r" \(au plus (.+)\)$", r" (\1 at most)"),
     (r"^(\d+) job\(s\) soumis au plus$", r"at most \1 submitted job(s)"),
     (r"(\d+) j (\d\d) h", r"\1 d \2 h"),
     (r"^configurée, (\d+) exécutable\(s\), ", r"configured, \1 executable(s), "),
@@ -431,6 +501,10 @@ EN_RE = [(re.compile(a), b) for a, b in (
     (r"(\d+) cœurs", r"\1 cores"),
     (r"\noption : ", "\noption: "), (r"\ndéfaut du script : ", "\nscript default: "),
     (r"^défaut : ", "default: "), (r"\nlanceur : ", "\nlauncher: "),
+    (r"\n\nLue sur (\S+) par (\S+) à la vérification de la connexion ; ses directives viennent du "
+     r"modèle \[discovered\] du fichier de site\.",
+     r"\n\nRead from \1 by \2 at the connection check; its directives come from the site file's "
+     r"[discovered] template."),
     (r"^lecture des options de (.*)…$", r"reading the options of \1…"),
     (r"^(\S+) : (\d+) options lues \(python (\S+) sur (.+)\)$", r"\1: \2 options read (python \3 on \4)"),
     (r"^(\S+) : (\d+) options lues$", r"\1: \2 options read"),
@@ -456,6 +530,7 @@ EN_RE = [(re.compile(a), b) for a, b in (
      r"\1 already has an active run on \2 (\3).\nTwo simultaneous runs of one architecture may write "
      r"the same directory (oracles, summary).\n\nSubmit anyway?"),
     (r"^soumis : job (\S+)$", r"submitted: job \1"), (r"^lancé : (.*)$", r"started: \1"),
+    (r"^\[gui\] commande : ", "[gui] command: "), (r"^\[gui\] soumission : ", "[gui] submission: "),
     (r"^options de (\S+) reprises$", r"options of \1 reused"),
     (r"\ble job (\S+) \(ccc_mdel\)", r"job \1 (ccc_mdel)"),
     (r"^Arrêter le run (\S+) \?\n", r"Stop run \1?\n"),
@@ -599,11 +674,15 @@ EN_RE = [(re.compile(a), b) for a, b in (
     (r"graphique disponible pour multi_launch_stress\.py seulement", "chart available for multi_launch_stress.py only"),
     (r"graphique disponible pour multi_launch_stress\.py et bench_and_test\.py seulement",
      "chart available for multi_launch_stress.py and bench_and_test.py only"),
-    (r"graphique disponible pour multi_launch_stress\.py, bench_and_test\.py et omp_speedup\.py seulement",
-     "chart available for multi_launch_stress.py, bench_and_test.py and omp_speedup.py only"),
+    (r"graphique disponible pour multi_launch_stress\.py, bench_and_test\.py et thread_speedup\.py seulement",
+     "chart available for multi_launch_stress.py, bench_and_test.py and thread_speedup.py only"),
     (r"^pas encore de (\S+) \(écrit à la fin du run\)$", r"no \1 yet (written at the end of the run)"),
     (r"— (\d+) ligne\(s\), les 1000 dernières", r"— \1 row(s), the last 1000"),
     (r"— (\d+) ligne\(s\)", r"— \1 row(s)"),
+    (r"— (\d+) nœuds sur (\d+)", r"— \1 of \2 nodes"),
+    (r"^(\S+) \((\d+) nœuds\)$", r"\1 (\2 nodes)"),
+    (r", (\d+) nœuds\)", r", \1 nodes)"),
+    (r"^pas encore de summary\.csv dans les (\d+) jobs$", r"no summary.csv yet in the \1 jobs"),
     (r"nom de run invalide", "invalid run name"), (r"n'est pas un run", "is not a run"),
     (r"ni ccc_mdel ni scancel n'ont pu annuler le job", "neither ccc_mdel nor scancel could cancel job"),
     (r"(\S+(?: / \S+)*) : le job (\S+) n'a pas pu être annulé", r"\1: job \2 could not be cancelled"),

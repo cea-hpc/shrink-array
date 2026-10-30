@@ -23,12 +23,12 @@
 //   1. defines BZIP2 by default (unless already defined by the build system),
 //   2. pulls the base chunk headers in the correct order,
 //   3. derives SHRINK_ARRAY / CHECK_COMPRESSION / NEED_COMPRESSION from the
-//      variant macros (CHUNK_VARIANT_V1 / _V2 / _V2A) and the mode macros
+//      variant macros (CHUNK_VARIANT_ZERO*) and the mode macros
 //      (CHUNK_OPT_DEBUG / CHECK),
 //   4. pulls the variant-specific array_chunk* headers,
 //   5. defines the ComplexDouble alias used across TUs.
 //
-// The variant macros (CHUNK_VARIANT_V1 / _V2 / _V2A) MUST be defined identically
+// The variant macros (CHUNK_VARIANT_ZERO*) MUST be defined identically
 // on every TU of a given executable target. In practice they are defined
 // PUBLIC on the chunk_vN library target so nothing else has to worry.
 
@@ -79,7 +79,9 @@
 #include "chunk/singleton.h"               // SingletonChk (the bench TUs)
 #include "chunk/global_stats_chunk_list.h" // GlobalStatsChunkList (shrink_bench.cpp)
 
-#if (defined CHUNK_VARIANT_V1 || defined CHUNK_VARIANT_V2 || defined CHUNK_VARIANT_V2A)
+#include "bench_par.h" // bench_par::region, BENCH_FOR_* (the phases' regions and loops)
+
+#if (defined CHUNK_VARIANT_ZERO || defined CHUNK_VARIANT_ZERO_ONE_VALUE || defined CHUNK_VARIANT_ZERO_ANY)
     #define SHRINK_ARRAY
 #endif
 
@@ -134,6 +136,38 @@
     #define BENCH_OMP_FOR_STATIC_NOWAIT_RED(...) BENCH_PRAGMA_STR(omp for simd schedule(static) nowait reduction(+ : __VA_ARGS__))
 #endif
 
+namespace bench_par
+{
+/// @brief true on the std::vector baseline: its static loops are
+///        `omp for simd` (Team::for_static_simd); false on a shrink array,
+///        whose loops go through proxies (see above).
+#ifdef SHRINK_ARRAY
+inline constexpr bool simd_loops = false;
+#else
+inline constexpr bool simd_loops = true;
+#endif
+
+/**
+ * @brief A static nowait loop, `simd` on the std::vector baseline only.
+ * @details The choice is made at compile time: a simd loop instantiated over a
+ *          proxy, even never run, would warn (-Wpass-failed) and can leave the
+ *          sibling loops of the same region unvectorised. The call in the
+ *          discarded branch depends on @p Body, so it is not instantiated.
+ */
+template <typename Body>
+void for_static_vec(Team& team, Int first, Int last, Body&& body)
+{
+    if constexpr (simd_loops)
+    {
+        team.for_static_simd<Int>(first, last, std::forward<Body>(body), nowait);
+    }
+    else
+    {
+        team.for_static<Int>(first, last, std::forward<Body>(body), nowait);
+    }
+}
+} // namespace bench_par
+
 // ── Round-robin, chunk-aligned schedule for index-dependent loops ───────────
 //
 // schedule(static) hands each thread ONE contiguous slice, so a loop whose
@@ -151,9 +185,9 @@
 // BENCH_SCHED_BLOCK (environment, read once): unset -> 64; N -> N rounded up
 // to a power of two; 0 -> the previous contiguous slices (no alignment).
 // 64 threads, --mode perf, 5 runs each:
-//                    0 (slices)   64       128      256      512      1024
-//   chunk2_256        18.33 s   9.33 s   9.48 s  10.07 s
-//   chunk2a_dyn                12.02 s  12.10 s  12.56 s  13.69 s  16.12 s
+//                      0 (slices)   64       128      256      512      1024
+//   zero_one_value_256  18.33 s   9.33 s   9.48 s  10.07 s
+//   zero_any_dyn                 12.02 s  12.10 s  12.56 s  13.69 s  16.12 s
 // (the 0 column predates later library fixes; compare within a row.)
 //
 // The macros name a local `sched_blk`; declare it with bench_sched_for().
@@ -169,21 +203,21 @@
 ///        the contiguous slices. Default 64.
 inline Int bench_sched_block_env() noexcept
 {
-    static const Int v = []() -> Int
+    static const Int block = []() -> Int
     {
-        const long b = shrink_array::env_number<long>("BENCH_SCHED_BLOCK", 64L);
-        if (b <= 0)
+        const long requested = shrink_array::env_number<long>("BENCH_SCHED_BLOCK", 64L);
+        if (requested <= 0)
         {
             return 0;
         }
-        long p = 1;
-        while (p < b && p < (1L << 30))
+        long pow2 = 1;
+        while (pow2 < requested && pow2 < (1L << 30))
         {
-            p <<= 1;
+            pow2 <<= 1;
         }
-        return static_cast<Int>(p);
+        return static_cast<Int>(pow2);
     }();
-    return v;
+    return block;
 }
 
 /// @brief Block size and aligned start of a [start, end) worksharing loop.
@@ -197,13 +231,13 @@ struct BenchSched
 ///        region, so that every thread uses the same values.
 inline BenchSched bench_sched_for(Int start, Int end) noexcept
 {
-    const Int b = bench_sched_block_env();
-    if (b > 0)
+    const Int block = bench_sched_block_env();
+    if (block > 0)
     {
-        return {b, start - (start % b)};
+        return {block, start - (start % block)};
     }
-    const Int t = CHUNK_PMP_MAX_THREADS;
-    return {std::max<Int>(1, (end - start + t - 1) / t), start}; // contiguous slices
+    const Int nthreads = CHUNK_PMP_MAX_THREADS;
+    return {std::max<Int>(1, (end - start + nthreads - 1) / nthreads), start}; // contiguous slices
 }
 
 // Not gated on any mode macro: the mode is a runtime flag (--mode, see
@@ -226,13 +260,13 @@ inline BenchSched bench_sched_for(Int start, Int end) noexcept
 namespace build_config = shrink_array::build_config;
 namespace chunk_config = shrink_array::chunk_config;
 
-#if defined CHUNK_VARIANT_V1
-    #include "chunk/array_chunk.h" // ArrayChunk (the CHUNK variant)
-#elif defined CHUNK_VARIANT_V2
-    #include "chunk/array_chunk2.h" // ArrayChunk2 (the CHUNK2 variant)
-#elif defined CHUNK_VARIANT_V2A
-    #include "chunk/array_chunk2.h"  // ArrayChunk2 (tab_bool, see bench_array.h)
-    #include "chunk/array_chunk2A.h" // ArrayChunk2A (the CHUNK2A variant)
+#if defined CHUNK_VARIANT_ZERO
+    #include "chunk/zero_array.h" // zero::Array (the CHUNK variant)
+#elif defined CHUNK_VARIANT_ZERO_ONE_VALUE
+    #include "chunk/zero_one_value_array.h" // zero_one_value::Array (the zero_one_value variant)
+#elif defined CHUNK_VARIANT_ZERO_ANY
+    #include "chunk/zero_one_value_array.h" // zero_one_value::Array (tab_bool, see bench_array.h)
+    #include "chunk/zero_any_array.h"       // zero_any::Array (the zero_any variant)
 #else
     #include <vector> // std::vector (the baseline build)
 #endif

@@ -40,9 +40,10 @@
 #include <cstdint>         // std::uintptr_t
 #include <source_location> // std::source_location
 
-#include "chunk/config.h"                   // build_config::any_check
-#include "chunk/internal/invariant_check.h" // invariant_failed
-#include "chunk/PMP_CHUNK.h"                // get_thr_rank_fast, CHUNK_PMP_*, and <omp.h> with them
+#include "fast_allocators/internal/raw_memory.h" // address_bits
+#include "chunk/config.h"                        // build_config::any_check
+#include "chunk/internal/invariant_check.h"      // invariant_failed
+#include "chunk/PMP_CHUNK.h"                     // get_thr_rank_fast, CHUNK_PMP_*
 
 namespace shrink_array::bad_ptr
 {
@@ -68,7 +69,7 @@ template <typename T>
 {
     if constexpr (build_config::any_check)
     {
-        const auto addr = reinterpret_cast<std::uintptr_t>(ptr);
+        const auto addr = ::fast_alloc::address_bits(ptr);
 
         // nullptr is tolerated — is_written checks handle it explicitly.
         if (ptr == nullptr)

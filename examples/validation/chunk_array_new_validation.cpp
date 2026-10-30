@@ -16,7 +16,7 @@
 
 // ============================================================================
 // operator new[] / init_chunks_cst_val harness. Variant-agnostic: chunk /
-// chunk2 / chunk2a follow the compile-time macro, like the other harnesses
+// zero_one_value / zero_any follow the compile-time macro, like the other harnesses
 // here -- the three carry the same pair of operators, built on the one
 // chunk_array_new::init_chunks (chunk_array_new.h).
 // ============================================================================
@@ -30,7 +30,7 @@
 //
 //   The initialisation splits on a threshold (500 chunks) and on whether a
 //   parallel region is open, and nothing in the library calls it: the arrays
-//   hold a std::vector<chunk_type> and initialise it with their own loops, so
+//   hold a std::vector<ChunkType> and initialise it with their own loops, so
 //   a fault here would surface in no other test. Two hazards:
 //
 //     - the sizes tested below bracket the threshold, where an off-by-one
@@ -52,18 +52,19 @@
 
 #include <type_traits> // std::conditional_t
 
-#include "chunk/chunk_traits.h"   // forward decls + default ind_type = int
-#include "chunk/array_chunk.h"    // Chunk<T> complete (chunk_std.h): its operator new[]
-#include "chunk/array_chunk2.h"   // Chunk2<T> complete (chunk2_std.h): its operator new[]
-#include "chunk/array_chunk2A.h"  // Chunk2A<T> complete (chunk2A_std.h): its operator new[]
-#include "chunk/param_chunk.h"    // ParamChunk::init_indexes
-#include "chunk/config.h"         // chunk_config::use_chunk*
-#include "chunk/PMP_CHUNK.h"      // CHUNK_PMP_MAX_THREADS
-#include "chunk/internal/print.h" // shrink_array::println
+#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
+#include "chunk/zero_array.h"           // zero::Chunk<T> complete (zero_chunk.h): its operator new[]
+#include "chunk/zero_one_value_array.h" // zero_one_value::Chunk<T> complete: its operator new[]
+#include "chunk/zero_any_array.h"       // zero_any::Chunk<T> complete (zero_any_chunk.h): its operator new[]
+#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
+#include "chunk/config.h"               // chunk_config::use_zero*
+#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/print.h"       // shrink_array::println
 
-// The *OmpPolicy serial specialisations declare no array-new, so there is
-// nothing to test without OpenMP; CMake builds this target under OMP alone.
-static_assert(shrink_array::build_config::use_openmp, "OpenMP builds only: the array-new is the *OmpPolicy's");
+// The array-new is the threaded *ThreadPolicy's (the serial specialisations declare
+// none), and the "region" cases call it from an `omp single`: CMake builds this
+// target under OMP alone, so the std backend's array-new is not covered here.
+static_assert(shrink_array::build_config::use_openmp, "OpenMP builds only: the region cases use omp single");
 
 // Defined by every executable of the library (the fast allocator reads it).
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
@@ -77,90 +78,91 @@ namespace
 {
 
 /// The chunk type of this build, as the arrays pick theirs.
-using Ch = std::conditional_t<chunk_config::use_chunk2a,
-                              Chunk2A<double>,
-                              std::conditional_t<chunk_config::use_chunk2, Chunk2<double>, Chunk<double>>>;
+using Ch = std::conditional_t<
+    chunk_config::use_zero_any,
+    zero_any::Chunk<double>,
+    std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Chunk<double>, zero::Chunk<double>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
-/// @brief How many of the @p n chunks hold a buffer (none should).
+/// @brief How many of the @p count chunks hold a buffer (none should).
 /// @note A TEMPLATE, so that the branch `if constexpr` discards is not
-///       type-checked: chunk2's written() takes the second-value index (0 --
-///       nothing else is registered here), v1's and chunk2a's take none, and
+///       type-checked: zero_one_value's written() takes the second-value index (0 --
+///       nothing else is registered here), zero's and zero_any's take none, and
 ///       in a plain function both spellings would have to compile.
 template <typename C>
-int materialised(const C* v, std::size_t n)
+int materialised(const C* chunks, std::size_t count)
 {
     int bad = 0;
-    for (std::size_t k = 0; k < n; ++k)
+    for (std::size_t k = 0; k < count; ++k)
     {
-        if constexpr (requires { v[k].written(0); })
+        if constexpr (requires { chunks[k].written(0); })
         {
-            bad += v[k].written(0);
+            bad += chunks[k].written(0);
         }
         else
         {
-            bad += v[k].written();
+            bad += chunks[k].written();
         }
     }
     return bad;
 }
 
-/// @brief One case: allocate @p n chunks, serially or from an `omp single`
+/// @brief One case: allocate @p count chunks, serially or from an `omp single`
 ///        inside a region, and check every one of them.
-int one_case(std::size_t n, bool in_region)
+int one_case(std::size_t count, bool in_region)
 {
-    void* p = nullptr;
+    void* raw = nullptr;
     if (in_region)
     {
 #pragma omp parallel
         {
 #pragma omp single
-            p = Ch::operator new[](n * sizeof(Ch));
+            raw = Ch::operator new[](count * sizeof(Ch));
         }
     }
     else
     {
-        p = Ch::operator new[](n * sizeof(Ch));
+        raw = Ch::operator new[](count * sizeof(Ch));
     }
 
-    const auto* v   = static_cast<Ch*>(p);
-    const int   bad = materialised(v, n);
-    println("[{}/array-new] {:<6} n={:5} : {}", variant_name(), in_region ? "region" : "serial", n,
+    const auto* chunks = static_cast<Ch*>(raw);
+    const int   bad    = materialised(chunks, count);
+    println("[{}/array-new] {:<6} n={:5} : {}", variant_name(), in_region ? "region" : "serial", count,
             bad ? "FAIL" : "ok, every chunk at the first constant");
     if (bad)
     {
-        println("  {} of {} chunk(s) not initialised", bad, n);
+        println("  {} of {} chunk(s) not initialised", bad, count);
     }
-    Ch::operator delete[](p);
+    Ch::operator delete[](raw);
     return bad ? 1 : 0;
 }
 
 /// @brief The operator's real use: an array built by placement new, where no
 ///        constructor runs to overwrite the initialisation.
-int placement_case(std::size_t n)
+int placement_case(std::size_t count)
 {
-    void*       p = Ch::operator new[](n * sizeof(Ch));
-    const auto* v = static_cast<Ch*>(p);
+    void*       raw    = Ch::operator new[](count * sizeof(Ch));
+    const auto* chunks = static_cast<Ch*>(raw);
 
-    const int bad = materialised(v, n);
-    println("[{}/array-new] placement n={:5} : {}", variant_name(), n,
+    const int bad = materialised(chunks, count);
+    println("[{}/array-new] placement n={:5} : {}", variant_name(), count,
             bad ? "FAIL" : "ok, every chunk at the first constant");
-    Ch::operator delete[](p);
+    Ch::operator delete[](raw);
     return bad ? 1 : 0;
 }
 
@@ -174,11 +176,11 @@ int run(int /*argc*/, char** /*argv*/)
 
     int fails = 0;
     // 1 and 5000 are the plain cases; 499 / 500 / 501 bracket the threshold.
-    for (const std::size_t n :
+    for (const std::size_t count :
          {std::size_t(1), std::size_t(499), std::size_t(500), std::size_t(501), std::size_t(5000)})
     {
-        fails += one_case(n, /*in_region=*/false);
-        fails += one_case(n, /*in_region=*/true);
+        fails += one_case(count, /*in_region=*/false);
+        fails += one_case(count, /*in_region=*/true);
     }
     fails += placement_case(1000);
 

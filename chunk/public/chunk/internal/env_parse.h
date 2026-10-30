@@ -61,25 +61,25 @@ template <typename T>
     if constexpr (std::is_integral_v<T>)
     {
         const char* const end = text + std::strlen(text);
-        T                 v{};
-        const auto [ptr, ec] = std::from_chars(text, end, v);
+        T                 value{};
+        const auto [ptr, ec] = std::from_chars(text, end, value);
         if (ec != std::errc{} || ptr != end)
         {
             return false;
         }
-        out = v;
+        out = value;
         return true;
     }
     else
     {
-        char* end      = nullptr;
-        errno          = 0;
-        const double v = std::strtod(text, &end);
+        char* end           = nullptr;
+        errno               = 0;
+        const double parsed = std::strtod(text, &end);
         if (end == text || *end != '\0' || errno == ERANGE)
         {
             return false;
         }
-        out = static_cast<T>(v);
+        out = static_cast<T>(parsed);
         return true;
     }
 }
@@ -94,7 +94,7 @@ inline void warn_invalid_env(const char* name, const char* value) noexcept
  * @brief The number in environment variable @p name, or @p fallback.
  * @return @p fallback when the variable is unset or empty, and when its value
  *         is not a number of type T (with a warning on the log, channel env:
- *         a typo such as CHUNK_RECHUNK_SLICES=1o does not pass unnoticed).
+ *         a typo such as CHUNK_DEFERRED_POOL_KB=6o does not pass unnoticed).
  */
 template <typename T>
 [[nodiscard]] T env_number(const char* name, T fallback) noexcept
@@ -104,10 +104,10 @@ template <typename T>
     {
         return fallback;
     }
-    T v{};
-    if (parse_number(env, v))
+    T value{};
+    if (parse_number(env, value))
     {
-        return v;
+        return value;
     }
     warn_invalid_env(name, env);
     return fallback;
@@ -120,10 +120,10 @@ template <typename T>
 template <typename T>
 [[nodiscard]] inline T arg_number(const char* text, T fallback, const char* what) noexcept
 {
-    T v{};
-    if (parse_number(text, v))
+    T value{};
+    if (parse_number(text, value))
     {
-        return v;
+        return value;
     }
     CHUNK_LOG(warn, general, "{} \"{}\" is not a valid value: ignored, the default is kept", what,
               text != nullptr ? text : "");

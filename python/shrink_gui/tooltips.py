@@ -38,6 +38,34 @@ class Tooltips:
                  "ccc_mprun détaché : le lancement attend le code de retour de ce run.\n\n"
                  "« si elle réussit » : une compilation en échec, et le run ne démarre jamais "
                  "(en batch il reste en attente : à arrêter).",
+        "nodes": "Nombre de nœuds entre lesquels le travail est partagé "
+                 "(--pool, ccc_msub seulement) : les configurations de compile_all.sh, les exécutables "
+                 "de thread_speedup.py, les --runs de multi_launch_stress.py, les couples (phase, "
+                 "configuration) de bench_and_test.py.\n\n"
+                 "Chaque job reçoit la même commande et les mêmes directives ; il traite ce qu'il "
+                 "réclame le premier, dans l'ordre habituel, et laisse le reste aux autres jobs : la "
+                 "charge s'équilibre seule. Un job qui démarre quand tout est déjà pris finit aussitôt "
+                 "(code 0).\n\n"
+                 "thread_speedup.py : les onglets Graphique et Résumé d'un de ces jobs réunissent ceux "
+                 "de tous. multi_launch_stress.py : chaque job prend le prochain run libre, le total "
+                 "reste --runs ; le premier échec arrête tous les jobs ; Résumé, Graphique et Erreurs "
+                 "réunissent les jobs. bench_and_test.py : chaque oracle est généré une fois, les "
+                 "autres jobs l'attendent ; un cas en échec est noté et le job continue ; chaque job "
+                 "écrit dans son dossier pool_<id>/n<K> ; Résumé, Graphique et Erreurs réunissent les "
+                 "jobs.\n\n"
+                 "« Démarrage : après » propose ensuite une compilation entière : on attend tous ses jobs.",
+        "nodes_layout": "Comment les N nœuds sont demandés.\n\n"
+                        "« un job de N nœuds » : une seule soumission de N nœuds ; run.sh vérifie les "
+                        "builds une fois, puis lance une tâche par nœud (node.sh, dossier n<K> du run, "
+                        "son propre out.log). Une seule entrée dans la file : le choix quand la QoS "
+                        "longue ne laisse qu'un job à la fois. Sa QoS est vérifiée sur N × les cœurs "
+                        "d'un nœud.\n\n"
+                        "« N jobs d'un nœud » : N soumissions <id>-n1..nN, chacune vérifiée sur ses "
+                        "propres cœurs ; elles passent l'une après l'autre si la QoS plafonne les cœurs "
+                        "de tous vos jobs (prévenu dans la barre d'état).\n\n"
+                        "Changer « Nœuds » de N1 à N2 multiplie la durée max par N1 / N2 (arrondie au "
+                        "quart d'heure supérieur, 30 min au moins), tant que vous ne l'avez pas tapée "
+                        "vous-même.",
         "delay_on": "Ne pas démarrer avant ce délai, compté depuis la soumission "
                     "(ccc_msub : --begin de Slurm ; ccc_mprun détaché : une attente avant le lancement).",
         "check_builds": "Avant la commande, sur le nœud : ninja -n sur les exécutables déjà construits "
@@ -67,7 +95,7 @@ class Tooltips:
         "follow": "Fait défiler le log jusqu'à la fin à chaque nouvelle ligne. Décochée, le log "
                   "reste où vous êtes.",
         "pt_build": "Ne montre que les runs de ce build.",
-        "pt_variant": "Ne montre que les runs de cette variante (chunk, chunk2, chunk2a).",
+        "pt_variant": "Ne montre que les runs de cette variante (zero, zero_one_value, zero_any).",
         "pt_color": "Ce que la couleur distingue : la variante, la taille de chunk, ou rien. Trois "
                     "couleurs au plus ; le reste est groupé en gris « autres ».",
         "pt_log": "Axe du temps en échelle logarithmique : utile quand les temps s'étalent sur "
@@ -131,8 +159,10 @@ class Tooltips:
         # the entries of the drop-down lists
         for i in range(self.preset.count()):
             p = PRESETS[self.preset.itemData(i)]
+            read = ("\n\nLue sur inti par ccc_mpinfo à la vérification de la connexion ; ses directives "
+                    "viennent du modèle [discovered] du fichier de site." if p.get("discovered") else "")
             self.preset.setItemData(i, tip(f"{p['label']}\n\n" + p["msub"].strip()
-                                           + (f"\nlanceur : {p['launcher']}" if p.get("launcher") else "")),
+                                           + (f"\nlanceur : {p['launcher']}" if p.get("launcher") else "") + read),
                                     Qt.ToolTipRole)
         prog_tips = {
             "multi_launch_stress.py": "Stress : les binaires de check, en boucle, à un nombre de "

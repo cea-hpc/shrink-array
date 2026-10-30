@@ -23,7 +23,7 @@
  * @details Writers of DIFFERENT elements of one chunk run concurrently by
  *          design, with nothing between them. Two readers look at elements
  *          they do not own:
- *            - Proxy2A::may_become_uniform(), the marking filter: element 0 or
+ *            - zero_any::Proxy::may_become_uniform(), the marking filter: element 0 or
  *              1, and S-1 or S-2;
  *            - fill_range_mt's may_be_uniform(): 0, S/2 and S-1.
  *          Both only take a hint from the value, but plain accesses there are
@@ -41,7 +41,7 @@
 #include <atomic>      // std::atomic_ref, std::memory_order_relaxed
 #include <type_traits> // std::is_same_v, std::is_trivially_copyable_v
 
-#include "chunk/chunk_traits.h" // Chunk2A fwd decl
+#include "chunk/chunk_traits.h" // is_zero_any_family_v
 
 namespace shrink_array::internal
 {
@@ -67,9 +67,9 @@ template <typename T>
 inline constexpr bool relaxed_element_access_v = relaxed_element_access<T>();
 
 /// @brief The element stores of this chunk type must be relaxed atomics: some
-///        reader looks at elements it does not own (Chunk2A only, see above).
-template <typename ChunkType, typename T>
-inline constexpr bool relaxed_element_stores_v = std::is_same_v<ChunkType, Chunk2A<T>> && relaxed_element_access_v<T>;
+///        reader looks at elements it does not own (the zero_any family, see above).
+template <typename ChunkT, typename T>
+inline constexpr bool relaxed_element_stores_v = is_zero_any_family_v<ChunkT> && relaxed_element_access_v<T>;
 
 /// @brief Load @p *ptr through a relaxed std::atomic_ref.
 /// @param ptr Element to read.
@@ -81,36 +81,47 @@ template <typename T>
     return std::atomic_ref<T>(*const_cast<T*>(ptr)).load(std::memory_order_relaxed);
 }
 
-/// @brief Store @p v to @p *ptr through a relaxed std::atomic_ref.
-/// @param ptr Element to write.
-/// @param v Value to store.
+/// @brief Load @p *ptr through an acquire std::atomic_ref: the offset slot of a
+///        pattern::Array motif chunk (docs/formal_models.md, F5).
+/// @param ptr Element to read.
 template <typename T>
-void store_element_relaxed(T* ptr, T v) noexcept
+[[nodiscard]] T load_element_acquire(const T* ptr) noexcept
 {
     static_assert(relaxed_element_access_v<T>);
-    std::atomic_ref<T>(*ptr).store(v, std::memory_order_relaxed);
+    // atomic_ref<const T> is C++26; a load never writes through the reference.
+    return std::atomic_ref<T>(*const_cast<T*>(ptr)).load(std::memory_order_acquire);
+}
+
+/// @brief Store @p value to @p *ptr through a relaxed std::atomic_ref.
+/// @param ptr Element to write.
+/// @param value Value to store.
+template <typename T>
+void store_element_relaxed(T* ptr, T value) noexcept
+{
+    static_assert(relaxed_element_access_v<T>);
+    std::atomic_ref<T>(*ptr).store(value, std::memory_order_relaxed);
 }
 
 /**
  * @brief Run an in-place write body (++, --, the bitwise and compound
- *        operators) on element @p i of the buffer @p ptr.
+ *        operators) on element @p index of the buffer @p ptr.
  * @details The body takes the element by reference. Where the element stores
  *          must be relaxed atomics it works on a copy, stored back relaxed; the
  *          read of the copy stays plain -- the element is this writer's own,
  *          the other threads only read it.
  */
-template <typename ChunkType, typename T, typename Body>
-void modify_element(T* ptr, int i, Body&& body)
+template <typename ChunkT, typename T, typename Body>
+void modify_element(T* ptr, int index, Body&& body)
 {
-    if constexpr (relaxed_element_stores_v<ChunkType, T>)
+    if constexpr (relaxed_element_stores_v<ChunkT, T>)
     {
-        T elem = ptr[i];
+        T elem = ptr[index];
         body(elem);
-        store_element_relaxed(ptr + i, elem);
+        store_element_relaxed(ptr + index, elem);
     }
     else
     {
-        body(ptr[i]);
+        body(ptr[index]);
     }
 }
 

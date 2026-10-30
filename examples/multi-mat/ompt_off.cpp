@@ -20,7 +20,7 @@
  *        says so.
  *
  * The variant of the library this example links carries no tool of its own
- * (chunk_v1v2_<size>, NO_OMPT_TOOL), so the switch has to come from the
+ * (chunk_zero_and_zero_one_value_<size>, NO_OMPT_TOOL), so the switch has to come from the
  * program: manage_ompt.cpp in the embedded executable, this file in the
  * manual one, where the program makes the phase calls itself (config.h).
  */

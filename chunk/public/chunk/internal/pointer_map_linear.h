@@ -20,18 +20,18 @@
  * @file pointer_map_linear.h
  * @brief The linear-scan core shared by the array→metadata registries.
  *
- * @details PointerMapChunk (proxy.h) and PointerMapChunk2 (pointer_map_chunk2.h)
- *          map an array's address to its metadata by walking flat (key, payload)
- *          pairs; the plain scans live here once. Payload: a table number (v1),
- *          a (second_value, ind, num_tab) record (v2).
+ * @details zero::PointerMap (zero_proxy.h) and zero_one_value::PointerMap (zero_one_value_pointer_map.h)
+ *          map an array (its ArrayKey) to its metadata by walking flat (key, payload)
+ *          pairs; the plain scans live here once. Payload: a table number (zero),
+ *          a (second_value, ind, num_tab) record (zero_one_value).
  *
- * @note The CONTAINER is a template parameter on purpose: PointerMapChunk2
+ * @note The CONTAINER is a template parameter on purpose: zero_one_value::PointerMap
  *       needs a std::deque, since a std::vector reallocates as it grows and a
  *       concurrent reader (get_info_second_value, from a deferred compression
- *       body) would read freed memory. See PointerMapChunk2's storage note.
- *       PointerMapChunk uses a std::vector.
+ *       body) would read freed memory. See zero_one_value::PointerMap's storage note.
+ *       zero::PointerMap uses a std::vector.
  *
- * @note NOT used by PointerMapChunk2A (proxy2A.h), whose small vector turns
+ * @note NOT used by zero_any::PointerMap (zero_any_proxy.h), whose small vector turns
  *       into a hash map past a threshold.
  */
 
@@ -51,6 +51,9 @@ template <typename Payload, typename Storage>
 class PointerMapLinear
 {
   public:
+    /// @brief The key: an ArrayKey, the first member of Storage's pairs.
+    using Key = Storage::value_type::first_type;
+
     /**
      * @brief Remove the entry for @p key, if present.
      *
@@ -60,17 +63,7 @@ class PointerMapLinear
      *
      * @param key the array address to drop.
      */
-    void erase(const void* key)
-    {
-        for (auto it = vec_.begin(); it != vec_.end(); ++it)
-        {
-            if (it->first == key)
-            {
-                vec_.erase(it);
-                return;
-            }
-        }
-    }
+    void erase(Key key);
 
     /**
      * @brief Exchange the payloads of two registered keys.
@@ -84,34 +77,13 @@ class PointerMapLinear
      * @return true when both keys were present and their payloads swapped;
      *         false, with nothing changed, when either is missing.
      */
-    bool swap_entries(const void* key_a, const void* key_b) noexcept
-    {
-        Payload* pa = nullptr;
-        Payload* pb = nullptr;
-        for (auto& item : vec_)
-        {
-            if (item.first == key_a)
-            {
-                pa = &item.second;
-            }
-            else if (item.first == key_b)
-            {
-                pb = &item.second;
-            }
-        }
-        if (pa == nullptr || pb == nullptr)
-        {
-            return false;
-        }
-        std::swap(*pa, *pb);
-        return true;
-    }
+    bool swap_entries(Key key_a, Key key_b) noexcept;
 
     /**
      * @brief Whether @p key is currently registered.
      * @param key the array address to test.
      */
-    [[nodiscard]] bool exists(const void* key) const noexcept
+    [[nodiscard]] bool exists(Key key) const noexcept
     {
         return find_payload(key) != nullptr;
     }
@@ -141,17 +113,7 @@ class PointerMapLinear
      *
      * @details FIRST match only, like every lookup here (see erase()).
      */
-    [[nodiscard]] const Payload* find_payload(const void* key) const noexcept
-    {
-        for (const auto& item : vec_)
-        {
-            if (item.first == key)
-            {
-                return &item.second;
-            }
-        }
-        return nullptr;
-    }
+    [[nodiscard]] const Payload* find_payload(Key key) const noexcept;
 
     /// The (key, payload) pairs, in insertion order. Derived registries read it
     /// directly for the lookups that are specific to them.
@@ -159,3 +121,5 @@ class PointerMapLinear
 };
 
 } // namespace shrink_array
+
+#include "chunk/internal/pointer_map_linear_inline.h" // the template bodies

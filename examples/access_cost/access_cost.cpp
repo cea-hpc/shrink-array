@@ -71,40 +71,41 @@
 #include <utility>     // std::as_const
 #include <vector>      // std::vector
 
-#include "chunk/chunk_traits.h"       // the ind_type = int default of the arrays
-#include "chunk/array_chunk.h"        // ArrayChunk
-#include "chunk/array_chunk2.h"       // ArrayChunk2
-#include "chunk/array_chunk2A.h"      // ArrayChunk2A
-#include "chunk/param_chunk.h"        // ParamChunk::init_indexes
-#include "chunk/config.h"             // chunk_config::use_chunk*, build_config::use_openmp / has_not_ompt
-#include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"        // begin_parallel_phase, finalize_parallel_phase
-#include "chunk/internal/env_parse.h" // arg_number (checked, not atoi)
-#include "chunk/internal/print.h"     // shrink_array::println
+#include "chunk/chunk_traits.h"         // the IntType = int default of the arrays
+#include "chunk/zero_array.h"           // zero::Array
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#include "chunk/zero_any_array.h"       // zero_any::Array
+#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
+#include "chunk/config.h"               // chunk_config::use_zero*, build_config::use_openmp / has_not_ompt
+#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"          // begin_parallel_phase, finalize_parallel_phase
+#include "chunk/internal/env_parse.h"   // arg_number (checked, not atoi)
+#include "chunk/internal/print.h"       // shrink_array::println
 
 using namespace shrink_array;
 
-static_assert(chunk_config::use_chunk || chunk_config::use_chunk2 || chunk_config::use_chunk2a,
-              "access_cost: link chunk_v1_*, chunk_v2_* or chunk_v2a_*");
+static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
+              "access_cost: link chunk_zero_*, chunk_zero_one_value_* or chunk_zero_any_*");
 
 template <typename T>
-using Array = std::conditional_t<chunk_config::use_chunk2a,
-                                 ArrayChunk2A<T>,
-                                 std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T>, ArrayChunk<T>>>;
+using Array =
+    std::conditional_t<chunk_config::use_zero_any,
+                       zero_any::Array<T>,
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
@@ -125,8 +126,8 @@ void end_phase(Array<double>& arr)
     {
         shrink_array::finalize_parallel_phase();
     }
-    // Serial chunk2a has no between-region pass: run it (as variant_compare).
-    if constexpr (chunk_config::use_chunk2a && !build_config::use_openmp)
+    // Serial zero_any has no between-region pass: run it (as variant_compare).
+    if constexpr (chunk_config::use_zero_any && !build_config::use_openmp)
     {
         arr.make_block_compression();
     }
@@ -137,32 +138,32 @@ void end_phase(Array<double>& arr)
 }
 
 /// Varied within any chunk of 64 elements or more (period 97): nothing to compress.
-double varied(long i)
+double varied(long index)
 {
-    return static_cast<double>((i % 97) + 1) * 0.5;
+    return static_cast<double>((index % 97) + 1) * 0.5;
 }
 
 /// Another varied value, for the overwrite (period 89, never 0).
-double varied2(long i)
+double varied2(long index)
 {
-    return static_cast<double>((i % 89) + 1) * 0.5;
+    return static_cast<double>((index % 89) + 1) * 0.5;
 }
 
-/// A fixed pseudo-random index sequence (splitmix64), every index in [0, n).
-std::vector<int> random_indices(long n)
+/// A fixed pseudo-random index sequence (splitmix64), every index in [0, count).
+std::vector<int> random_indices(long count)
 {
-    std::vector<int> idx(static_cast<std::size_t>(n));
-    const int        ni = static_cast<int>(n);
+    std::vector<int> idx(static_cast<std::size_t>(count));
+    const int        ni = static_cast<int>(count);
 #pragma omp parallel for schedule(static)
     for (int k = 0; k < ni; ++k)
     {
-        std::uint64_t x = (static_cast<std::uint64_t>(k) + 1) * 0x9E3779B97F4A7C15ULL;
-        x ^= x >> 30;
-        x *= 0xBF58476D1CE4E5B9ULL;
-        x ^= x >> 27;
-        x *= 0x94D049BB133111EBULL;
-        x ^= x >> 31;
-        idx[static_cast<std::size_t>(k)] = static_cast<int>(x % static_cast<std::uint64_t>(n));
+        std::uint64_t state = (static_cast<std::uint64_t>(k) + 1) * 0x9E3779B97F4A7C15ULL;
+        state ^= state >> 30;
+        state *= 0xBF58476D1CE4E5B9ULL;
+        state ^= state >> 27;
+        state *= 0x94D049BB133111EBULL;
+        state ^= state >> 31;
+        idx[static_cast<std::size_t>(k)] = static_cast<int>(state % static_cast<std::uint64_t>(count));
     }
     return idx;
 }
@@ -190,160 +191,160 @@ struct SamplePair
 };
 
 // ── The cases, on a std::vector ──────────────────────────────────────────────
-Sample vec_read(const std::vector<double>& v)
+Sample vec_read(const std::vector<double>& vec)
 {
-    const auto t0  = Clk::now();
-    const int  n   = static_cast<int>(v.size());
-    double     sum = 0.;
+    const auto t0    = Clk::now();
+    const int  count = static_cast<int>(vec.size());
+    double     sum   = 0.;
 #pragma omp parallel for schedule(static) reduction(+ : sum)
-    for (int i = 0; i < n; ++i)
+    for (int i = 0; i < count; ++i)
     {
-        sum += v[static_cast<std::size_t>(i)];
+        sum += vec[static_cast<std::size_t>(i)];
     }
     return {secs_since(t0), sum};
 }
 
-Sample vec_read_random(const std::vector<double>& v, const std::vector<int>& idx)
+Sample vec_read_random(const std::vector<double>& vec, const std::vector<int>& idx)
 {
-    const auto t0  = Clk::now();
-    const int  n   = static_cast<int>(idx.size());
-    double     sum = 0.;
+    const auto t0    = Clk::now();
+    const int  count = static_cast<int>(idx.size());
+    double     sum   = 0.;
 #pragma omp parallel for schedule(static) reduction(+ : sum)
-    for (int k = 0; k < n; ++k)
+    for (int k = 0; k < count; ++k)
     {
-        sum += v[static_cast<std::size_t>(idx[static_cast<std::size_t>(k)])];
+        sum += vec[static_cast<std::size_t>(idx[static_cast<std::size_t>(k)])];
     }
     return {secs_since(t0), sum};
 }
 
 template <typename F>
-Sample vec_write(std::vector<double>& v, F value)
+Sample vec_write(std::vector<double>& vec, F value)
 {
-    const auto t0 = Clk::now();
-    const int  n  = static_cast<int>(v.size());
+    const auto t0    = Clk::now();
+    const int  count = static_cast<int>(vec.size());
 #pragma omp parallel for schedule(static)
-    for (int i = 0; i < n; ++i)
+    for (int i = 0; i < count; ++i)
     {
-        v[static_cast<std::size_t>(i)] = value(i);
+        vec[static_cast<std::size_t>(i)] = value(i);
     }
     return {secs_since(t0), 0.};
 }
 
-Sample vec_rmw(std::vector<double>& v)
+Sample vec_rmw(std::vector<double>& vec)
 {
-    const auto t0 = Clk::now();
-    const int  n  = static_cast<int>(v.size());
+    const auto t0    = Clk::now();
+    const int  count = static_cast<int>(vec.size());
 #pragma omp parallel for schedule(static)
-    for (int i = 0; i < n; ++i)
+    for (int i = 0; i < count; ++i)
     {
-        v[static_cast<std::size_t>(i)] += 0.5;
+        vec[static_cast<std::size_t>(i)] += 0.5;
     }
     return {secs_since(t0), 0.};
 }
 
 // ── The same cases, on the array ─────────────────────────────────────────────
-Sample arr_read(Array<double>& a, int n)
+Sample arr_read(Array<double>& arr, int count)
 {
     const auto  t0  = Clk::now();
     double      sum = 0.;
-    const auto& ca  = std::as_const(a);
+    const auto& ca  = std::as_const(arr);
 #pragma omp parallel
     {
         begin_phase();
 #pragma omp for schedule(static) reduction(+ : sum)
-        for (int i = 0; i < n; ++i)
+        for (int i = 0; i < count; ++i)
         {
             sum += ca[i];
         }
     }
-    end_phase(a);
+    end_phase(arr);
     return {secs_since(t0), sum};
 }
 
-Sample arr_read_random(Array<double>& a, const std::vector<int>& idx)
+Sample arr_read_random(Array<double>& arr, const std::vector<int>& idx)
 {
-    const auto  t0  = Clk::now();
-    const int   n   = static_cast<int>(idx.size());
-    double      sum = 0.;
-    const auto& ca  = std::as_const(a);
+    const auto  t0    = Clk::now();
+    const int   count = static_cast<int>(idx.size());
+    double      sum   = 0.;
+    const auto& ca    = std::as_const(arr);
 #pragma omp parallel
     {
         begin_phase();
 #pragma omp for schedule(static) reduction(+ : sum)
-        for (int k = 0; k < n; ++k)
+        for (int k = 0; k < count; ++k)
         {
             sum += ca[idx[static_cast<std::size_t>(k)]];
         }
     }
-    end_phase(a);
+    end_phase(arr);
     return {secs_since(t0), sum};
 }
 
 template <typename F>
-Sample arr_write(Array<double>& a, int n, F value)
+Sample arr_write(Array<double>& arr, int count, F value)
 {
     const auto t0 = Clk::now();
 #pragma omp parallel
     {
         begin_phase();
 #pragma omp for schedule(static)
-        for (int i = 0; i < n; ++i)
+        for (int i = 0; i < count; ++i)
         {
-            a[i] = value(i);
+            arr[i] = value(i);
         }
     }
-    end_phase(a);
+    end_phase(arr);
     return {secs_since(t0), 0.};
 }
 
-Sample arr_rmw(Array<double>& a, int n)
+Sample arr_rmw(Array<double>& arr, int count)
 {
     const auto t0 = Clk::now();
 #pragma omp parallel
     {
         begin_phase();
 #pragma omp for schedule(static)
-        for (int i = 0; i < n; ++i)
+        for (int i = 0; i < count; ++i)
         {
-            a[i] += 0.5;
+            arr[i] += 0.5;
         }
     }
-    end_phase(a);
+    end_phase(arr);
     return {secs_since(t0), 0.};
 }
 
 /// The sum of the elements, read serially (the --verify / sum check of the writes).
-double arr_sum(const Array<double>& a, int n)
+double arr_sum(const Array<double>& arr, int count)
 {
     double sum = 0.;
-    for (int i = 0; i < n; ++i)
+    for (int i = 0; i < count; ++i)
     {
-        sum += a[i];
+        sum += arr[i];
     }
     return sum;
 }
 
-double vec_sum(const std::vector<double>& v)
+double vec_sum(const std::vector<double>& vec)
 {
     double sum = 0.;
-    for (const double x : v)
+    for (const double value : vec)
     {
-        sum += x;
+        sum += value;
     }
     return sum;
 }
 
-long verify_elements(const char* what, const Array<double>& a, const std::vector<double>& v)
+long verify_elements(const char* what, const Array<double>& arr, const std::vector<double>& vec)
 {
     long bad = 0;
-    for (std::size_t i = 0; i < v.size(); ++i)
+    for (std::size_t i = 0; i < vec.size(); ++i)
     {
-        if (a[static_cast<int>(i)] != v[i])
+        if (arr[static_cast<int>(i)] != vec[i])
         {
             if (bad < 3)
             {
                 std::fprintf(stderr, "access_cost: %s: element %zu is %g, the vector has %g\n", what, i,
-                             a[static_cast<int>(i)], v[i]);
+                             arr[static_cast<int>(i)], vec[i]);
             }
             ++bad;
         }
@@ -351,19 +352,20 @@ long verify_elements(const char* what, const Array<double>& a, const std::vector
     return bad;
 }
 
-double median(std::vector<double> x)
+double median(std::vector<double> samples)
 {
-    std::sort(x.begin(), x.end());
-    const std::size_t m = x.size() / 2;
-    return x.size() % 2 ? x[m] : 0.5 * (x[m - 1] + x[m]);
+    std::sort(samples.begin(), samples.end());
+    const std::size_t mid = samples.size() / 2;
+    return samples.size() % 2 ? samples[mid] : 0.5 * (samples[mid - 1] + samples[mid]);
 }
 
-double minimum(const std::vector<double>& x)
+double minimum(const std::vector<double>& samples)
 {
-    return *std::min_element(x.begin(), x.end());
+    return *std::min_element(samples.begin(), samples.end());
 }
 
-constexpr const char* case_names[] = {"read-varied", "read-constant", "read-random", "write-varied", "write-fresh", "rmw"};
+constexpr const char* case_names[] = {"read-varied",  "read-constant", "read-random",
+                                      "write-varied", "write-fresh",   "rmw"};
 constexpr int         n_cases      = static_cast<int>(sizeof(case_names) / sizeof(case_names[0]));
 } // namespace
 
@@ -372,25 +374,25 @@ int main(int argc, char** argv)
     ParamChunk::init_indexes(true);
 
     long n_elems = 1L << 27;
-    int  reps   = 5;
-    bool csv    = false;
-    bool verify = false;
+    int  reps    = 5;
+    bool csv     = false;
+    bool verify  = false;
     for (int a = 1; a < argc; ++a)
     {
-        const std::string o = argv[a];
-        if (o == "--n" && a + 1 < argc)
+        const std::string opt = argv[a];
+        if (opt == "--n" && a + 1 < argc)
         {
             n_elems = shrink_array::arg_number<long>(argv[++a], n_elems, "--n");
         }
-        else if (o == "--reps" && a + 1 < argc)
+        else if (opt == "--reps" && a + 1 < argc)
         {
             reps = shrink_array::arg_number<int>(argv[++a], reps, "--reps");
         }
-        else if (o == "--csv")
+        else if (opt == "--csv")
         {
             csv = true;
         }
-        else if (o == "--verify")
+        else if (opt == "--verify")
         {
             verify = true;
         }
@@ -405,26 +407,26 @@ int main(int argc, char** argv)
         std::fprintf(stderr, "access_cost: need reps >= 1, 1 <= n < 2^31\n");
         return 2;
     }
-    const int n = static_cast<int>(n_elems);
+    const int count = static_cast<int>(n_elems);
 
     // Read off an EMPTY array: no chunk, no end-of-run stats line of its own.
-    const long S = static_cast<long>(Array<double>(0).chunk_size());
+    const long chunk_sz = static_cast<long>(Array<double>(0).chunk_size());
     if (csv)
     {
         println("variant,chunk_size,threads,n,rep,case,container,seconds,ns_per_elem");
     }
     else
     {
-        println("=== access_cost [{}]  n={}  chunk_size={}  threads={}  reps={} ===", variant_name(), n_elems, S,
+        println("=== access_cost [{}]  n={}  chunk_size={}  threads={}  reps={} ===", variant_name(), n_elems, chunk_sz,
                 CHUNK_PMP_MAX_THREADS, reps);
     }
 
     const std::vector<int> idx = random_indices(n_elems);
-    std::vector<double>    v(static_cast<std::size_t>(n_elems));
+    std::vector<double>    vec(static_cast<std::size_t>(n_elems));
     std::vector<double>    zeros(static_cast<std::size_t>(n_elems), 0.);
 
     // [case][container 0 = vector, 1 = array] -> seconds per repetition
-    std::vector<double> t[n_cases][2];
+    std::vector<double> times[n_cases][2];
     long                sum_mismatch = 0;
     long                bad_elements = 0;
 
@@ -432,17 +434,19 @@ int main(int argc, char** argv)
     {
         if (vs != as)
         {
-            std::fprintf(stderr, "access_cost: %s: the array sums to %.17g, the vector to %.17g\n", case_names[c], as, vs);
+            std::fprintf(stderr, "access_cost: %s: the array sums to %.17g, the vector to %.17g\n", case_names[c], as,
+                         vs);
             ++sum_mismatch;
         }
     };
-    const auto note = [&](int c, int container, int rep, double s)
+    const auto note = [&](int c, int container, int rep, double seconds)
     {
-        t[c][container].push_back(s);
+        times[c][container].push_back(seconds);
         if (csv)
         {
-            println("{},{},{},{},{},{},{},{:.9f},{:.4f}", variant_name(), S, CHUNK_PMP_MAX_THREADS, n_elems, rep,
-                    case_names[c], container ? "array" : "vector", s, s * 1e9 / static_cast<double>(n_elems));
+            println("{},{},{},{},{},{},{},{:.9f},{:.4f}", variant_name(), chunk_sz, CHUNK_PMP_MAX_THREADS, n_elems, rep,
+                    case_names[c], container ? "array" : "vector", seconds,
+                    seconds * 1e9 / static_cast<double>(n_elems));
         }
     };
 
@@ -451,9 +455,9 @@ int main(int argc, char** argv)
         const bool vec_first = (rep % 2) == 0; // alternate who goes first
 
         // The varied array and vector, built outside the timings.
-        Array<double> a(n);
-        arr_write(a, n, varied);
-        vec_write(v, varied);
+        Array<double> arr(count);
+        arr_write(arr, count, varied);
+        vec_write(vec, varied);
 
         // A pair of runs of one case, in the alternating order.
         const auto pair = [&](int c, auto&& run_vec, auto&& run_arr)
@@ -477,49 +481,49 @@ int main(int argc, char** argv)
 
         // read-varied
         {
-            const auto [sv, sa] = pair(0, [&] { return vec_read(v); }, [&] { return arr_read(a, n); });
+            const auto [sv, sa] = pair(0, [&] { return vec_read(vec); }, [&] { return arr_read(arr, count); });
             check_sum(0, sv.sum, sa.sum);
         }
         // read-constant: an array all at 0, a vector of zeros.
         {
-            Array<double> z(n);
-            const auto [sv, sa] = pair(1, [&] { return vec_read(zeros); }, [&] { return arr_read(z, n); });
+            Array<double> zero_arr(count);
+            const auto [sv, sa] = pair(1, [&] { return vec_read(zeros); }, [&] { return arr_read(zero_arr, count); });
             check_sum(1, sv.sum, sa.sum);
         }
         // read-random
         {
             const auto [sv, sa] =
-                pair(2, [&] { return vec_read_random(v, idx); }, [&] { return arr_read_random(a, idx); });
+                pair(2, [&] { return vec_read_random(vec, idx); }, [&] { return arr_read_random(arr, idx); });
             check_sum(2, sv.sum, sa.sum);
         }
         // write-varied: the materialised array overwritten.
         {
-            pair(3, [&] { return vec_write(v, varied2); }, [&] { return arr_write(a, n, varied2); });
-            check_sum(3, vec_sum(v), arr_sum(a, n));
+            pair(3, [&] { return vec_write(vec, varied2); }, [&] { return arr_write(arr, count, varied2); });
+            check_sum(3, vec_sum(vec), arr_sum(arr, count));
             if (verify)
             {
-                bad_elements += verify_elements("write-varied", a, v);
+                bad_elements += verify_elements("write-varied", arr, vec);
             }
         }
         // write-fresh: varied values into an array all at 0 (every chunk
         // materialised by its first write) and into a zeroed vector.
         {
-            Array<double>       f(n);
+            Array<double>       filled(count);
             std::vector<double> fv(static_cast<std::size_t>(n_elems), 0.);
-            pair(4, [&] { return vec_write(fv, varied); }, [&] { return arr_write(f, n, varied); });
-            check_sum(4, vec_sum(fv), arr_sum(f, n));
+            pair(4, [&] { return vec_write(fv, varied); }, [&] { return arr_write(filled, count, varied); });
+            check_sum(4, vec_sum(fv), arr_sum(filled, count));
             if (verify)
             {
-                bad_elements += verify_elements("write-fresh", f, fv);
+                bad_elements += verify_elements("write-fresh", filled, fv);
             }
         }
         // rmw on the (overwritten) varied array and vector.
         {
-            pair(5, [&] { return vec_rmw(v); }, [&] { return arr_rmw(a, n); });
-            check_sum(5, vec_sum(v), arr_sum(a, n));
+            pair(5, [&] { return vec_rmw(vec); }, [&] { return arr_rmw(arr, count); });
+            check_sum(5, vec_sum(vec), arr_sum(arr, count));
             if (verify)
             {
-                bad_elements += verify_elements("rmw", a, v);
+                bad_elements += verify_elements("rmw", arr, vec);
             }
         }
     }
@@ -531,10 +535,10 @@ int main(int argc, char** argv)
         for (int c = 0; c < n_cases; ++c)
         {
             const double per = 1e9 / static_cast<double>(n_elems);
-            const double vm  = median(t[c][0]) * per;
-            const double am  = median(t[c][1]) * per;
-            println("{:<14} {:>14.3f} {:>14.3f} {:>14.3f} {:>14.3f} {:>8.2f}", case_names[c], vm, minimum(t[c][0]) * per,
-                    am, minimum(t[c][1]) * per, vm > 0. ? am / vm : 0.);
+            const double vm  = median(times[c][0]) * per;
+            const double am  = median(times[c][1]) * per;
+            println("{:<14} {:>14.3f} {:>14.3f} {:>14.3f} {:>14.3f} {:>8.2f}", case_names[c], vm,
+                    minimum(times[c][0]) * per, am, minimum(times[c][1]) * per, vm > 0. ? am / vm : 0.);
         }
         println("(ns per element, wall clock / n; ratio = array median / vector median)");
     }

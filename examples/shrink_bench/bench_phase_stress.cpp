@@ -35,28 +35,31 @@ void bench_phase_stress_teams(BenchArrays& bench_arr, [[maybe_unused]] Int team,
     auto& tab_long      = bench_arr.tab_long;
     auto& tab_ulong     = bench_arr.tab_ulong;
 
-#pragma omp parallel num_threads(team - 1)
-    {
-        begin_parallel_phase_g();
-        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (Int j = beg_s; j < end_s; ++j)
-        {
-            tab1[j] = second_value_d;
-            tab2[j] = 0;
-            tab3[j] = second_value_d;
-            tab4[j] = second_value_d1;
-            tab5[j] = second_value_d2;
+    bench_par::region(static_cast<int>(team - 1),
+                      [&]([[maybe_unused]] bench_par::Team& team)
+                      {
+                          begin_parallel_phase_g();
+                          team.for_static<Int>(
+                              beg_s, end_s,
+                              [&](const Int j) __attribute__((always_inline))
+                              {
+                                  tab1[j] = second_value_d;
+                                  tab2[j] = 0;
+                                  tab3[j] = second_value_d;
+                                  tab4[j] = second_value_d1;
+                                  tab5[j] = second_value_d2;
 
-            tab_int[j]       = second_value_i;
-            tab_bool[j]      = second_value_b;
-            tab_bool_bits[j] = second_value_b;
-            tab_complex[j]   = second_value_c;
+                                  tab_int[j]       = second_value_i;
+                                  tab_bool[j]      = second_value_b;
+                                  tab_bool_bits[j] = second_value_b;
+                                  tab_complex[j]   = second_value_c;
 
-            tab_long[j]  = second_value_l;
-            tab_ulong[j] = second_value_ul;
-        }
-        finalize_parallel_phase_only_flush_g();
-    }
+                                  tab_long[j]  = second_value_l;
+                                  tab_ulong[j] = second_value_ul;
+                              },
+                              bench_par::nowait);
+                          finalize_parallel_phase_only_flush_g();
+                      });
     finalize_parallel_phase_after_flush_g();
 }
 
@@ -79,32 +82,35 @@ void bench_phase_stress_dynamic(BenchArrays& bench_arr, [[maybe_unused]] Int gra
     auto& tab_long      = bench_arr.tab_long;
     auto& tab_ulong     = bench_arr.tab_ulong;
 
-#pragma omp parallel
-    {
-        begin_parallel_phase_g();
-#pragma omp for schedule(dynamic, grain) nowait
-        for (Int j = beg_s; j < end_s; ++j)
+    bench_par::region(
+        [&]([[maybe_unused]] bench_par::Team& team)
         {
-            tab1[j] = second_value_d0;
-            tab2[j] = second_value_d0;
-            tab3[j] = second_value_d0;
-            tab4[j] = 2 * second_value_d0;
-            tab5[j] = 3 * second_value_d0;
+            begin_parallel_phase_g();
+            team.for_dynamic(
+                beg_s, end_s, static_cast<int>(grain),
+                [&](Int j)
+                {
+                    tab1[j] = second_value_d0;
+                    tab2[j] = second_value_d0;
+                    tab3[j] = second_value_d0;
+                    tab4[j] = 2 * second_value_d0;
+                    tab5[j] = 3 * second_value_d0;
 
-            tab_float[j] = second_value_f0;
-            tab_short[j] = 3 * second_value_s0;
-            tab_char[j]  = 4 * second_value_c0;
+                    tab_float[j] = second_value_f0;
+                    tab_short[j] = 3 * second_value_s0;
+                    tab_char[j]  = 4 * second_value_c0;
 
-            tab_int[j]       = other_second_value_i;
-            tab_bool[j]      = second_value_b;
-            tab_bool_bits[j] = second_value_b;
+                    tab_int[j]       = other_second_value_i;
+                    tab_bool[j]      = second_value_b;
+                    tab_bool_bits[j] = second_value_b;
 
-            tab_complex[j] = other_second_value_c;
+                    tab_complex[j] = other_second_value_c;
 
-            tab_long[j]  = 2L * second_value_l;
-            tab_ulong[j] = 2UL * second_value_ul;
-        }
-        finalize_parallel_phase_only_flush_g();
-    }
+                    tab_long[j]  = 2L * second_value_l;
+                    tab_ulong[j] = 2UL * second_value_ul;
+                },
+                bench_par::nowait);
+            finalize_parallel_phase_only_flush_g();
+        });
     finalize_parallel_phase_after_flush_g();
 }

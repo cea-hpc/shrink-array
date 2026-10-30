@@ -18,7 +18,7 @@ add_library(fast_allocators)
 add_library(fast_allocators::fast_allocators ALIAS fast_allocators)
 
 set(ALLOCATORS_MAJOR_VERSION 2)  # inc. when incompatible change (reset to 0 others)
-set(ALLOCATORS_MINOR_VERSION 2)  # inc. when compatible change (also reset patch vers.)
+set(ALLOCATORS_MINOR_VERSION 3)  # inc. when compatible change (also reset patch vers.)
 set(ALLOCATORS_PATCH_VERSION 0)  # inc. when just fixing bug
 
 set(ALLOCATORS_VERSION
@@ -37,6 +37,11 @@ set(ALLOCATORS_INTERNAL_HEADERS
   public/fast_allocators/internal/log_core.h
   public/fast_allocators/internal/next_power_of_2.h
   public/fast_allocators/internal/pmp_alloc.h
+  public/fast_allocators/internal/pmp_loops.h
+  public/fast_allocators/internal/pmp_std.h
+  public/fast_allocators/internal/pmp_std_state.h
+  public/fast_allocators/internal/pmp_runtime.h
+  public/fast_allocators/internal/raw_memory.h
   public/fast_allocators/internal/singleton.h
   public/fast_allocators/internal/static_const_array.h
   public/fast_allocators/internal/static_const_array_inline.h
@@ -79,11 +84,16 @@ if (NOT DEFINED CHUNK_DEBUG)
     set(CHUNK_DEBUG OFF)
   endif()
 endif()
-if (NOT DEFINED CHUNK_RECLAIM_EMPTY_SLABS)
-  set(CHUNK_RECLAIM_EMPTY_SLABS ON)
+# The library runs threads: every backend but serial (top level: CHUNK_THREADS).
+if (NOT DEFINED ALLOCATORS_THREADED)
+  set(ALLOCATORS_THREADED ${ALLOCATORS_OMP})
 endif()
-foreach(_fa_opt OPENMP:ALLOCATORS_OMP DEBUG:CHUNK_DEBUG CHECK_LISTS:FAST_ALLOC_CHECK_LISTS
-                RECLAIM_EMPTY_SLABS:CHUNK_RECLAIM_EMPTY_SLABS)
+if ("${ALLOCATORS_THREADS_BACKEND}" STREQUAL "std")
+  set(ALLOCATORS_STD_THREADS ON)
+else()
+  set(ALLOCATORS_STD_THREADS OFF)
+endif()
+foreach(_fa_opt OPENMP:ALLOCATORS_OMP THREADED:ALLOCATORS_THREADED STD_THREADS:ALLOCATORS_STD_THREADS DEBUG:CHUNK_DEBUG CHECK_LISTS:FAST_ALLOC_CHECK_LISTS)
   string(REPLACE ":" ";" _fa_pair ${_fa_opt})
   list(GET _fa_pair 0 _fa_name)
   list(GET _fa_pair 1 _fa_var)
@@ -104,6 +114,14 @@ target_include_directories(fast_allocators
 
 if (ALLOCATORS_OMP)
   target_link_libraries(fast_allocators PUBLIC OpenMP::OpenMP_CXX)
+endif ()
+# The std backend (CHUNK_THREADS=std): selected in the headers by this
+# definition (internal/pmp_runtime.h), PUBLIC as OpenMP is; its workers are
+# std::jthreads.
+if (ALLOCATORS_STD_THREADS)
+  target_compile_definitions(fast_allocators PUBLIC FAST_ALLOC_PMP_STD=1)
+  find_package(Threads REQUIRED)
+  target_link_libraries(fast_allocators PUBLIC Threads::Threads)
 endif ()
 
 include(GNUInstallDirs)

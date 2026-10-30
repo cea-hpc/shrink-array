@@ -25,7 +25,8 @@
  * a constant chunk materialises the whole chunk until the phase-end
  * compression, and its pages stay with the process: a transient proportional
  * to the chunk size. These counters give its per-phase rate
- * (CHUNK_RECHUNK_CHURN trace; nothing decides on them yet).
+ * (the churn trace of the decider, CHUNK_LOG=rechunk=debug; nothing decides
+ * on them yet).
  *
  * phase_ends(): process-wide count of compression phases. Materialisations<T>:
  * per element type, allocation key and rank -- rank-local increments, summed
@@ -74,42 +75,14 @@ class Materialisations
     };
 
     /// @brief One materialisation of array @p key on rank @p thr (rank-local).
-    static void note(int thr, unsigned key) noexcept
-    {
-        ensure();
-        if (thr < 0 || static_cast<std::size_t>(thr) >= slots_.size())
-        {
-            return;
-        }
-        ++slots_[static_cast<std::size_t>(thr)].n[key % key_slots];
-    }
+    static void note(int thr, unsigned key) noexcept;
 
     /// @brief All ranks' materialisations of array @p key (quiescent point).
-    [[nodiscard]] static long total(unsigned key) noexcept
-    {
-        if (key == 0)
-        {
-            return 0;
-        }
-        long s = 0;
-        for (const RankSlot& slot : slots_)
-        {
-            s += slot.n[key % key_slots];
-        }
-        return s;
-    }
+    [[nodiscard]] static long total(unsigned key) noexcept;
 
   private:
     /// @brief Size slots_ once to CHUNK_PMP_MAX_THREADS entries (at least 1), zero-initialised.
-    static void ensure() noexcept
-    {
-        std::call_once(once_,
-                       []
-                       {
-                           const int n = CHUNK_PMP_MAX_THREADS;
-                           slots_.resize(static_cast<std::size_t>(n > 0 ? n : 1)); // value-initialised: 0
-                       });
-    }
+    static void ensure() noexcept;
 
     static inline std::vector<RankSlot> slots_; ///< one per rank, sized once (ensure)
     static inline std::once_flag        once_;  ///< guards the one sizing of slots_
@@ -130,3 +103,5 @@ inline void note_materialisation([[maybe_unused]] int thr, [[maybe_unused]] unsi
 }
 
 } // namespace shrink_array::churn
+
+#include "chunk/internal/churn_counters_inline.h" // the template bodies

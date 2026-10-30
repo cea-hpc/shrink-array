@@ -9,12 +9,13 @@ class ShrinkArray(CMakePackage):
     """Compressed arrays for C++ HPC codes: used like a std::vector, they take
     less memory when large parts of them hold the same value -- zero, or a few
     repeated values. An array is cut into chunks of S elements; a uniform chunk
-    keeps no buffer of its own. OpenMP, arrays of 10^9 elements.
+    keeps no buffer of its own. Arrays of 10^9 elements, written from OpenMP
+    threads -- or, with threads=std, from std::threads or TBB.
 
     Installs one library per variant and chunk size, found with
-    find_package(chunk): chunk::chunk_v1_<S>, chunk::chunk_v2_<S>,
-    chunk::chunk_v2a_<S> (static S), chunk::chunk_v<x>_dyn (runtime S),
-    chunk::chunk_v<x> (the first static size)."""
+    find_package(chunk): chunk::chunk_zero_<S>, chunk::chunk_zero_one_value_<S>,
+    chunk::chunk_zero_any_<S> (static S), chunk::chunk_<variant>_dyn (runtime S),
+    chunk::chunk_<variant> (the first static size)."""
 
     homepage = "https://github.com/cea-hpc/shrink-array"
     git = "https://github.com/cea-hpc/shrink-array.git"
@@ -32,7 +33,21 @@ class ShrinkArray(CMakePackage):
     version("cpp23", branch="cpp23")
     version("develop", branch="develop")
 
-    variant("openmp", default=True, description="Build the parallel (OpenMP) libraries")
+    variant(
+        "threads",
+        default="openmp",
+        values=("openmp", "std", "serial"),
+        multi=False,
+        description="Threading backend of the libraries (CHUNK_THREADS): openmp; std, std::jthread "
+        "workers of the library's own, for programs whose threads are std::threads or TBB; serial",
+    )
+    variant(
+        "tbb",
+        default=False,
+        description="With +examples and threads=std: also the TBB bench and the TBB adaptor's validation "
+        "(CHUNK_WITH_TBB). The libraries never link TBB: a TBB program includes chunk/tbb_adaptor.h "
+        "and links TBB itself",
+    )
     variant(
         "sizes",
         default="256,1024",
@@ -40,13 +55,13 @@ class ShrinkArray(CMakePackage):
         values=lambda x: x.isdigit() and int(x) > 0 and (int(x) % 64 == 0 or int(x) & (int(x) - 1) == 0),
         multi=True,
         description="Static chunk sizes, each a power of two or a multiple of 64: one library per variant "
-        "and size (chunk::chunk_v2a_256, ...); "
-        "the smallest is the one of the bare chunk::chunk_v<x> targets",
+        "and size (chunk::chunk_zero_any_256, ...); "
+        "the smallest is the one of the bare chunk::chunk_<variant> targets",
     )
     variant(
         "dyn",
         default=True,
-        description="Also a runtime-size library per variant (chunk::chunk_v<x>_dyn): adaptive re-chunk",
+        description="Also a runtime-size library per variant (chunk::chunk_<variant>_dyn): adaptive re-chunk",
     )
     variant(
         "fast_alloc",
@@ -57,7 +72,7 @@ class ShrinkArray(CMakePackage):
     variant(
         "second_value_indexed",
         default=False,
-        description="Chunk2A: second values as 4-byte identifiers (less memory, about +3% write time)",
+        description="zero_any: second values as 4-byte identifiers (less memory, about +3% write time)",
     )
     variant(
         "checks",
@@ -72,6 +87,7 @@ class ShrinkArray(CMakePackage):
 
     depends_on("cxx", type="build")
     depends_on("cmake@3.20:", type="build")
+    depends_on("tbb", when="+tbb")
 
     # Linux only: membarrier, madvise, mincore, /proc.
     requires("platform=linux", msg="shrink-array relies on Linux system calls and /proc")
@@ -82,12 +98,19 @@ class ShrinkArray(CMakePackage):
     conflicts("%gcc@:13", when="@cpp23", msg="the cpp23 branch needs GCC 14 or later (C++23)")
     conflicts("%clang@:17", msg="shrink-array needs Clang 18 or later")
     conflicts("%nvhpc", when="@cpp23", msg="nvc++ has no C++23")
+    conflicts("threads=std", when="@:0.1.2", msg="the std backend comes after 0.1.2")
+    conflicts("+tbb", when="~examples", msg="+tbb builds TBB examples only: add +examples")
+    conflicts("+tbb", when="threads=openmp", msg="the TBB examples need threads=std")
+    conflicts("+tbb", when="threads=serial", msg="the TBB examples need threads=std")
 
     def cmake_args(self):
         spec = self.spec
         sizes = sorted(spec.variants["sizes"].value, key=int)
-        return [
-            self.define_from_variant("OMP", "openmp"),
+        threads = spec.variants["threads"].value
+        args = [
+            # OMP for every version; CHUNK_THREADS (which sets OMP to match)
+            # only where the std backend exists.
+            self.define("OMP", threads == "openmp"),
             self.define("CHUNK_STATIC_SIZES", ";".join(sizes)),
             self.define("CHUNK_DEFAULT_SIZE", sizes[0]),
             self.define_from_variant("CHUNK_BUILD_DYN", "dyn"),
@@ -103,3 +126,8 @@ class ShrinkArray(CMakePackage):
             self.define("USE_MOLD", "OFF"),
             self.define("SHRINK_INTEL_LIBM", False),
         ]
+        if threads == "std":
+            args.append(self.define("CHUNK_THREADS", "std"))
+        if spec.satisfies("+tbb"):
+            args.append(self.define("CHUNK_WITH_TBB", True))
+        return args

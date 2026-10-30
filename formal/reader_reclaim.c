@@ -32,7 +32,7 @@
  *   read_enter() / read_leave()   read_reclaim.h  ReadSection ctor / dtor
  *   light_fence()                 read_reclaim.h  light_fence(): the reader's side of the Dekker
  *   wait_for_readers()            read_reclaim.h  wait_for_readers(): heavy barrier, then the slots
- *   steal(), recycle              chunk2A_std.h   try_mark_cst_and_get_old(); PassScope::~PassScope
+ *   steal(), recycle              zero_any_chunk.h   try_mark_cst_and_get_old(); PassScope::~PassScope
  *   reader()                      chunk_base.h    element_at(): values_load() then the element load
  *
  * PROPERTIES (asserted):

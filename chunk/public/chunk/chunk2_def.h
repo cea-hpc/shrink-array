@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2026 CEA (www.cea.fr)
+ * Copyright 2026 CEA (www.cea.fr)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,49 +16,12 @@
 
 #pragma once
 
-#include "chunk/config.h" // chunk_config::tuning_level
-namespace shrink_array
-{
-
 /**
- * @brief Compile-time settings of Chunk2: the compression-list thresholds,
- *        adjusted by chunk_config::tuning_level.
+ * @file chunk2_def.h
+ * @brief Former name of chunk/zero_one_value_chunk_def.h (zero_one_value::ChunkDef), kept until 1.0.
+ * @deprecated Include "chunk/zero_one_value_chunk_def.h".
  */
-struct Chunk2Def
-{
-    // --- Compression List Settings ---
-    // Level 1: Trigger compression every 2 modified chunks (Extreme stress)
-    // Level 3: Chunk2A's floor. At high thread counts the floor IS the threshold: a higher
-    // one keeps threads x floor materialised candidates alive until a rank compresses, and
-    // their slabs stay resident (a few hundred MiB more RSS).
-    /// Floor of the per-thread "to compress" list threshold (entries), by chunk_config::tuning_level.
-    constexpr static int size_min_list_chunk_to_check_compress = []
-    {
-        switch (chunk_config::tuning_level)
-        {
-            case 1:
-                return 2;
-            case 3:
-                return 500;
-            default:
-                return 100;
-        }
-    }();
 
-    // Level 1: Divisor 2000 -> Threshold will be very low even for huge arrays
-    /// List threshold = chunks created / (this * max threads), floored by size_min_list_chunk_to_check_compress.
-    constexpr static int factor_div_nb_chunk_for_compress = []
-    {
-        switch (chunk_config::tuning_level)
-        {
-            case 1:
-                return 2000;
-            case 3:
-                return 50; // Chunk2A's
-            default:
-                return 100;
-        }
-    }();
-};
+#warning "chunk/chunk2_def.h is deprecated: include chunk/zero_one_value_chunk_def.h"
 
-} // namespace shrink_array
+#include "chunk/zero_one_value_chunk_def.h" // zero_one_value::ChunkDef

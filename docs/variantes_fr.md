@@ -1,4 +1,4 @@
-# Les trois variantes : Chunk, Chunk2, Chunk2A
+# Les trois variantes : `zero`, `zero_one_value`, `zero_any`
 
 > English version: [variants.md](variants.md).
 
@@ -6,6 +6,10 @@
 > `OMP_PROC_BIND=close`, `OMP_PLACES=cores`), mémoire mesurée exactement (voir
 > [mesures_performance_fr.md](mesures_performance_fr.md)). En cas de doute, c'est le code qui
 > fait foi.
+
+> Noms dans le code : chaque variante porte le nom de son namespace, `zero::Array`, `zero_one_value::Array`,
+> `zero_any::Array`. Les documents plus anciens les appellent Chunk (ou v1), Chunk2 et Chunk2A (les anciens
+> noms de classe `ArrayChunk`, `ArrayChunk2`, `ArrayChunk2A` sont des alias dépréciés jusqu'à la 1.0).
 
 ***
 
@@ -26,12 +30,17 @@ dynamique. Elles diffèrent par **ce qu'elles savent compresser**.
 
 | variante | bibliothèque (macro qu'elle définit) | un chunk est compressé s'il est uniforme à… | coût d'une constante |
 |---|---|---|---|
-| **Chunk** (v1) | `chunk::chunk_v1` (`CHUNK_VARIANT_V1`) | **zéro** (`T{}`) | rien : un tampon constant partagé |
-| **Chunk2** | `chunk::chunk_v2` (`CHUNK_VARIANT_V2`) | zéro, **ou** une **seconde valeur** propre au tableau (`set_second_value`) | rien au-delà du tableau |
-| **Chunk2A** | `chunk::chunk_v2a` (`CHUNK_VARIANT_V2A`) | zéro, **ou n'importe quelle autre valeur**, choisie chunk par chunk | un tableau du registre des secondes valeurs (`tab_cst_val2_holder.h`) par valeur distincte, partagé par tout le processus |
+| **`zero`** | `chunk::chunk_zero` (`CHUNK_VARIANT_ZERO`) | **zéro** (`T{}`) | rien : un tampon constant partagé |
+| **`zero_one_value`** | `chunk::chunk_zero_one_value` (`CHUNK_VARIANT_ZERO_ONE_VALUE`) | zéro, **ou** une **seconde valeur** propre au tableau (`set_second_value`) | rien au-delà du tableau |
+| **`zero_any`** | `chunk::chunk_zero_any` (`CHUNK_VARIANT_ZERO_ANY`) | zéro, **ou n'importe quelle autre valeur**, choisie chunk par chunk | un tableau du registre des secondes valeurs (`tab_cst_val2_holder.h`) par valeur distincte, partagé par tout le processus |
 
-Les tableaux de booléens des builds Chunk2 peuvent en plus utiliser `ArrayChunkBits`, qui
+Les tableaux de booléens des builds `zero_one_value` peuvent en plus utiliser `ArrayChunkBits`, qui
 range 8 booléens par octet dans un chunk matérialisé.
+
+Les builds `zero_any` fournissent aussi **`pattern::Array`**, pour les entiers : un membre de la
+famille `zero_any` qui compresse, en plus de ses constantes, un chunk égal à un **motif partagé
+plus un offset** -- la forme d'une connectivité de maillage, compressée à environ 1 % d'un vecteur
+sur un maillage structuré. Voir [algo_pattern_fr.md](algo_pattern_fr.md).
 
 ## 3. Ce que coûte un chunk
 
@@ -43,7 +52,7 @@ lecture et d'écriture par chunk). S'y ajoutent, par chunk :
 - deux octets pour le *dirty bitset* du tableau (un bit par chunk, dans des mots de 64 bits
   complétés chacun à 128 octets contre le faux partage), et une part des listes de suivi
   (l'advisor compte environ 3 octets pour l'ensemble) ;
-- pour **Chunk2A** : un octet de type de constante et un emplacement pour la seconde valeur
+- pour **`zero_any`** : un octet de type de constante et un emplacement pour la seconde valeur
   du chunk, de `sizeof(T)` octets (8 pour un `double`), ou de 4 octets avec l'option CMake
   `CHUNK_SECOND_VALUE_INDEXED`.
 
@@ -55,21 +64,21 @@ compressent finement, puis grossir quand les métadonnées dominent.
 
 | les données sont… | variante |
 |---|---|
-| surtout nulles, avec des zones de données quelconques | **Chunk** : la plus simple, et aucune métadonnée de seconde valeur |
-| nulles ou égales à **une** autre valeur dominante, connue du tableau | **Chunk2** |
-| faites de nombreuses **zones uniformes à des valeurs différentes** | **Chunk2A** |
+| surtout nulles, avec des zones de données quelconques | **`zero`** : la plus simple, et aucune métadonnée de seconde valeur |
+| nulles ou égales à **une** autre valeur dominante, connue du tableau | **`zero_one_value`** |
+| faites de nombreuses **zones uniformes à des valeurs différentes** | **`zero_any`** |
 
 Ordre de grandeur sur `shrink_bench` (tableaux de 10⁹ éléments, 64 threads), mémoire en fin
 de run :
 
 | variante | statique 256 | dynamique (départ à 64, tous les tableaux confiés au décideur) |
 |---|---|---|
-| Chunk2A | 7,26 Go | **6,0 Go** |
-| Chunk2 | 17,3 Go | **16,3 Go** |
-| Chunk (v1) | 40,2 Go | 40,3 Go (et 39,7 Go en statique 1 024, la taille qu'il atteint) |
-| `std::vector` (`shrink_bench_vector_perf`) | 125,9 Go | — |
+| `zero_any` | 7,26 Go | **6,0 Go** |
+| `zero_one_value` | 17,3 Go | **16,3 Go** |
+| `zero` | 40,2 Go | 40,3 Go (et 39,7 Go en statique 1 024, la taille qu'il atteint) |
+| `std::vector` (`shrink_bench_omp_vector_perf`) | 125,9 Go | — |
 
-La géométrie dynamique fait gagner nettement Chunk2 et Chunk2A. Pour v1, dont la mémoire est
+La géométrie dynamique fait gagner nettement `zero_one_value` et `zero_any`. Pour `zero`, dont la mémoire est
 surtout faite de données, elle fait jeu égal avec le statique 256 : voir les limites connues
 dans [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md).
 
@@ -77,8 +86,8 @@ dans [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md).
 
 | sujet | document |
 |---|---|
-| lecture, écriture, parallélisme, compression en vol, opérations sur plages | [algo_chunk2_fr.md](algo_chunk2_fr.md) : décrit Chunk2, mais la machinerie de ses §5 à §8 et §10 est commune aux trois variantes |
-| ce que Chunk (v1) et Chunk2A font autrement | [algo_chunk_fr.md](algo_chunk_fr.md), [algo_chunk2a_fr.md](algo_chunk2a_fr.md) |
+| lecture, écriture, parallélisme, compression en vol, opérations sur plages | [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md) : décrit `zero_one_value`, mais la machinerie de ses §5 à §8 et §10 est commune aux trois variantes |
+| ce que `zero` et `zero_any` font autrement | [algo_zero_fr.md](algo_zero_fr.md), [algo_zero_any_fr.md](algo_zero_any_fr.md) |
 | géométrie dynamique et rechunk, pour les trois variantes | [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) |
 | synchronisation sans verrou (Dekker asymétrique) | [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md) |
 | réglages | [variables_environnement_fr.md](variables_environnement_fr.md) |

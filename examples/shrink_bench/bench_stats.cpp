@@ -18,6 +18,7 @@
 /// @brief The value census and filling-rate report. See bench_phases.h.
 
 #include <algorithm>   // std::max (name_padding)
+#include <array>       // std::array (the checksums' names)
 #include <complex>     // operator== on ComplexDouble
 #include <cstddef>     // std::size_t
 #include <iomanip>     // std::setw, std::setprecision
@@ -27,7 +28,7 @@
 #include <type_traits> // std::is_same_v
 
 #include "bench_config.h"  // the CONSTEXPR macro
-#include "bench_prelude.h" // Proxy2<T>::share_info_array (share_info line)
+#include "bench_prelude.h" // zero_one_value::Proxy<T>::share_info_array (share_info line)
 #include "bench_phases.h"  // bench_stats, bench_print_checksums (defined here)
 #include "bench_utils.h"   // calculate_checksum
 
@@ -53,6 +54,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
     auto& tab_point     = bench_arr.tab_point;
     auto& tab_cell      = bench_arr.tab_cell;
     auto& tab_mask      = bench_arr.tab_mask;
+    auto& tab_conn      = bench_arr.tab_conn;
 
     auto lbd_fill_values = [&](const std::string& name, const auto& tab, auto sec_val)
     {
@@ -61,62 +63,66 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         constexpr bool is_complex  = std::is_same_v<value_type, ComplexDouble>;
         constexpr bool is_char     = std::is_same_v<value_type, unsigned char>;
 
-        Int nbz = 0;
-        Int nbv = 0;
-        Int nb  = 0;
-
         const Int ssz = tab.size();
 
-#pragma omp parallel for reduction(+ : nbz, nbv, nb)
-        for (Int k = 0; k < ssz; ++k)
-        {
-            if constexpr (is_complex)
-            {
-                if (tab[k] == zero_complex)
-                {
-                    nbz++;
-                }
-                else if (tab[k] == sec_val)
-                {
-                    nbv++;
-                }
-                else
-                {
-                    nb++;
-                }
-            }
-            else if constexpr (is_not_bool)
-            {
-                // T{}, not 0: the struct element types compare with their own
-                // null element and have no conversion from Int.
-                if (tab[k] == value_type{})
-                {
-                    nbz++;
-                }
-                else if (tab[k] == sec_val)
-                {
-                    nbv++;
-                }
-                else
-                {
-                    nb++;
-                }
-            }
-            else
-            {
-                if (tab[k] == 0)
-                {
-                    nbz++;
-                }
-                else
-                {
-                    nbv++;
-                }
-            }
-        }
+        // `omp parallel for schedule(static) reduction(+ : ...)` with OpenMP.
+        const auto census = shrink_array::pmp::parallel_sum<Int, 3>(Int{0}, ssz, shrink_array::pmp::Options{},
+                                                                    [&](Int k, auto& acc)
+                                                                    {
+                                                                        auto& nbz = acc[0];
+                                                                        auto& nbv = acc[1];
+                                                                        auto& nb  = acc[2];
+                                                                        if constexpr (is_complex)
+                                                                        {
+                                                                            if (tab[k] == zero_complex)
+                                                                            {
+                                                                                nbz++;
+                                                                            }
+                                                                            else if (tab[k] == sec_val)
+                                                                            {
+                                                                                nbv++;
+                                                                            }
+                                                                            else
+                                                                            {
+                                                                                nb++;
+                                                                            }
+                                                                        }
+                                                                        else if constexpr (is_not_bool)
+                                                                        {
+                                                                            // T{}, not 0: the struct element types
+                                                                            // compare with their own null element and
+                                                                            // have no conversion from Int.
+                                                                            if (tab[k] == value_type{})
+                                                                            {
+                                                                                nbz++;
+                                                                            }
+                                                                            else if (tab[k] == sec_val)
+                                                                            {
+                                                                                nbv++;
+                                                                            }
+                                                                            else
+                                                                            {
+                                                                                nb++;
+                                                                            }
+                                                                        }
+                                                                        else
+                                                                        {
+                                                                            if (tab[k] == 0)
+                                                                            {
+                                                                                nbz++;
+                                                                            }
+                                                                            else
+                                                                            {
+                                                                                nbv++;
+                                                                            }
+                                                                        }
+                                                                    });
+        const Int  nbz    = census[0];
+        const Int  nbv    = census[1];
+        const Int  nb     = census[2];
 
         // Over the array's own size: tab_float and tab_char hold 2 * sz
-        // elements, tab_short sz / 2, tab_mask mask_scale * sz.
+        // elements, tab_short sz / 2, tab_mask mask_scale * sz, tab_conn whole rows.
         const double pc  = double(nb) / double(ssz);
         const double pcz = double(nbz) / double(ssz);
         const double pcv = double(nbv) / double(ssz);
@@ -153,9 +159,13 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         oss << "Numbers of ";
 
         if constexpr (is_char)
+        {
             oss << static_cast<int>(sec_val);
+        }
         else
+        {
             oss << sec_val;
+        }
 
         const std::string label = oss.str();
         std::cout << std::setw(label_width) << std::left << label << ":" // Ensures consistent colon alignment
@@ -172,18 +182,18 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
     // bench_double_bands), not one: its census is zeros and the rest.
     auto lbd_fill_quant = [](const std::string& name, const auto& tab)
     {
-        Int       nbz = 0;
         const Int ssz = tab.size();
 
-#pragma omp parallel for reduction(+ : nbz)
-        for (Int k = 0; k < ssz; ++k)
-        {
-            if (tab[k] == 0.0)
-            {
-                nbz++;
-            }
-        }
-        const Int nb = ssz - nbz;
+        // `omp parallel for schedule(static) reduction(+ : nbz)` with OpenMP.
+        const Int nbz = shrink_array::pmp::parallel_sum<Int, 1>(Int{0}, ssz, shrink_array::pmp::Options{},
+                                                                [&](Int k, auto& acc)
+                                                                {
+                                                                    if (tab[k] == 0.0)
+                                                                    {
+                                                                        acc[0]++;
+                                                                    }
+                                                                })[0];
+        const Int nb  = ssz - nbz;
 
         constexpr int name_width   = 20;
         const int     name_padding = std::max<int>(0, (name_width - static_cast<int>(name.length())) / 2);
@@ -241,6 +251,10 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
             {
                 lbd_fill_values("tab_mask", tab_mask, second_value_b);
             }
+            if (bench_arr.with_conn) // --no_conn
+            {
+                lbd_fill_values("tab_conn", tab_conn, second_value_i);
+            }
             if (bench_arr.with_struct) // --no_struct
             {
                 lbd_fill_values("tab_point", tab_point, second_value_p);
@@ -273,6 +287,10 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
                 {
                     lbd_fill_chunk("tab_mask", tab_mask);
                 }
+                if (bench_arr.with_conn)
+                {
+                    lbd_fill_chunk("tab_conn", tab_conn);
+                }
                 if (bench_arr.with_struct)
                 {
                     lbd_fill_chunk("tab_point", tab_point);
@@ -292,8 +310,8 @@ template <typename... Tabs>
 void print_checksums(const char* const* names, const Tabs&... tabs)
 {
     std::cout << std::hex;
-    std::size_t i = 0;
-    ((std::cout << "\n" << names[i++] << " check_sum = " << calculate_checksum(tabs)), ...);
+    std::size_t index = 0;
+    ((std::cout << "\n" << names[index++] << " check_sum = " << calculate_checksum(tabs)), ...);
     std::cout << std::dec << "\n";
 }
 
@@ -320,22 +338,28 @@ void bench_print_checksums(BenchArrays& bench_arr, bool check_sum)
     auto& tab_quant     = bench_arr.tab_quant;
     auto& tab_point     = bench_arr.tab_point;
     auto& tab_cell      = bench_arr.tab_cell;
+    auto& tab_conn      = bench_arr.tab_conn;
 
     const auto lbd_check_sum = [&]
     {
         if CONSTEXPR (check_sum)
         {
-            static const char* const n[] = {"tab1",      "tab2",     "tab3",          "tab4",        "tab5",
-                                            "tab_int",   "tab_bool", "tab_bool_bits", "tab_complex", "tab_float",
-                                            "tab_short", "tab_char", "tab_long",      "tab_ulong",   "tab_quant",
-                                            "tab_point", "tab_cell"};
+            static constexpr std::array<const char*, 17> names{
+                "tab1",     "tab2",          "tab3",        "tab4",      "tab5",      "tab_int",
+                "tab_bool", "tab_bool_bits", "tab_complex", "tab_float", "tab_short", "tab_char",
+                "tab_long", "tab_ulong",     "tab_quant",   "tab_point", "tab_cell"};
             // tab_bool_bits' checksum equals tab_bool's: a Bit is one byte
             // holding 0 or 1, as a bool.
-            print_checksums(n, tab1, tab2, tab3, tab4, tab5, tab_int, tab_bool, tab_bool_bits, tab_complex, tab_float,
-                            tab_short, tab_char, tab_long, tab_ulong, tab_quant);
+            print_checksums(names.data(), tab1, tab2, tab3, tab4, tab5, tab_int, tab_bool, tab_bool_bits, tab_complex,
+                            tab_float, tab_short, tab_char, tab_long, tab_ulong, tab_quant);
             if (bench_arr.with_struct) // --no_struct
             {
-                print_checksums(n + 15, tab_point, tab_cell);
+                print_checksums(names.data() + 15, tab_point, tab_cell);
+            }
+            if (bench_arr.with_conn) // --no_conn
+            {
+                static constexpr std::array<const char*, 1> conn_name{"tab_conn"};
+                print_checksums(conn_name.data(), tab_conn);
             }
         }
     };

@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include <cstddef> // size_t
+#include <cstddef> // size_t, std::byte
 
 #include "fast_allocators/internal/alloc_config.h" // alloc_config::alloc_align
 #include "fast_allocators/internal/svalloc.h"      // svalloc, svalloc_align, svfree, svfree_align
@@ -55,11 +55,11 @@ inline void* int_alloc(size_t size)
 {
     if constexpr (alloc_config::alloc_align)
     {
-        return svalloc_align<char>(size);
+        return svalloc_align<std::byte>(size);
     }
     else
     {
-        return svalloc<char>(size);
+        return svalloc<std::byte>(size);
     }
 }
 
@@ -68,7 +68,7 @@ inline void* int_alloc(size_t size)
 /// @return The buffer; release with int_free_align().
 inline void* int_alloc_align(size_t size)
 {
-    return svalloc_align<char>(size);
+    return svalloc_align<std::byte>(size);
 }
 
 } // namespace fast_alloc

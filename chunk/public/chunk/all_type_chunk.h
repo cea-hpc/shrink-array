@@ -22,7 +22,7 @@
  *
  * @details The declarations (all_type_chunk_decl.h) and the template bodies
  *          (all_type_chunk_inline.h), kept apart so that a header can name
- *          AllTypeChunk without pulling in the full Chunk/Chunk2/Chunk2A
+ *          AllTypeChunk without pulling in the full zero/zero_one_value/zero_any
  *          definitions.
  *
  * @see manager_chunk.h for the ManagerChunkInt interface this class dispatches

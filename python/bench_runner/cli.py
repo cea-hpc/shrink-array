@@ -6,8 +6,9 @@ import sys
 import time
 import argparse
 
-from . import events, state
+from . import events, share, state
 from .builds import CURRENT_MACHINE, short_config_label
+from .pool import Pool
 from .phases.check import run_check_phase
 from .phases.ctest import run_ctest_phase
 from .phases.fuzz import run_fuzz_phase
@@ -28,10 +29,23 @@ from .settings import (
     DEFAULT_SEQ_OMP_VARIANTS, DEFAULT_STATS_MARK_RATIO_MIN, DEFAULT_THREADS_CHECK,
     DEFAULT_TIMEOUT, DEFAULT_TIMEOUT_PER_THREAD, DEFAULT_VARIANTS, INT64_CHECK_VARIANTS,
     MODE_PRESETS, REFERENCE_THREADS, SANITIZER_REPS, SANITIZER_THREADS, SCALING_CONFIGS,
-    SCALING_MAX_SLOWDOWN, SCALING_THREADS,
+    SCALING_MAX_SLOWDOWN, SCALING_THREADS, normalize_variant,
 )
 from .state import _numa, _set_full_log_dir
 from .term import _Tee
+
+
+class _OldOptionName(argparse.Action):
+    """An option's old spelling, hidden from --help: stores into the new
+    option's dest and says so on stderr (accepted until 1.0)."""
+    def __init__(self, option_strings, dest, new_name=None, **kw):
+        self.new_name = new_name
+        super().__init__(option_strings, dest, **kw)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        print(f"note: {option_string} is the old name of {self.new_name} (accepted until 1.0)",
+              file=sys.stderr)
+        setattr(namespace, self.dest, values)
 
 
 def build_parser():
@@ -41,7 +55,7 @@ def build_parser():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--build-root", default=os.environ.get("CHUNK_BUILD_ROOT", "."),
-                        help="Root directory holding the cmake-build-omp-*/ build "
+                        help="Root directory holding the cmake-build-*/ build "
                              "sub-directories. Default: cwd (or $CHUNK_BUILD_ROOT).")
     parser.add_argument("--configs", nargs="+", default=DEFAULT_CONFIGS,
                         help="Build sub-directories to test (in order).")
@@ -53,13 +67,15 @@ def build_parser():
     parser.add_argument("--skip-stl-test", action="store_true",
                         help="Skip the --test_stl STL-interface self-check (2c).")
     parser.add_argument("--variants", nargs="+", default=DEFAULT_VARIANTS,
-                        help="Variants to test.")
+                        help="Variants to test. tbb_zero, tbb_zero_one_value, tbb_zero_any: the TBB "
+                             "bench (shrink_bench_tbb_<variant>_<size>), looked for in the "
+                             "std-backend builds (cmake-build-std-*) only.")
     parser.add_argument("--sizes", nargs="+", default=["256", "1024", "dyn"],
                         help="Chunk-size declinations to test for the shrink "
                              "variants: any of 64/256/1024 (static compile-time "
                              "sizes) and 'dyn' (runtime size). 'vector' is "
                              "size-agnostic and always tested once. Executables "
-                             "are named shrink_bench_<variant>_<stage>_<size>.")
+                             "are named shrink_bench_<backend>_<variant>_<size>.")
     parser.add_argument("--baseline-variant", default=DEFAULT_BASELINE,
                         help="Variant used as the baseline for the speedup computation.")
     # --- Regression guards (compression health + memory) ---
@@ -67,16 +83,20 @@ def build_parser():
                         metavar="TAG=RATIO",
                         help="Per-variant floor on mark/create from the CHUNK_STATS "
                              "block; a run below its floor is a FAIL "
-                             "(default: %s). E.g. --stats-mark-ratio-min chunk2a=0.4 "
-                             "chunk=0.2. Needs a CHUNK_STATS build; silently skipped "
+                             "(default: %s). E.g. --stats-mark-ratio-min zero_any=0.4 "
+                             "zero=0.2. Needs a CHUNK_STATS build; silently skipped "
                              "otherwise." % " ".join(
                                  f"{k}={v}" for k, v in DEFAULT_STATS_MARK_RATIO_MIN.items()))
     parser.add_argument("--no-stats-guard", action="store_true",
                         help="Disable the mark/create compression-health guard.")
-    parser.add_argument("--mem-chunk2a-vs-chunk2-max", type=float, default=1.10,
-                        help="FAIL if chunk2a peak memory exceeds chunk2's by more than "
+    parser.add_argument("--mem-zero-any-vs-zero-one-value-max", type=float, default=1.10,
+                        dest="mem_zero_any_vs_zero_one_value_max",
+                        help="FAIL if zero_any peak memory exceeds zero_one_value's by more than "
                              "this ratio on the same (config, threads, size) "
                              "(default 1.10). Set <= 0 to disable.")
+    parser.add_argument("--mem-chunk2a-vs-chunk2-max", type=float, action=_OldOptionName,
+                        dest="mem_zero_any_vs_zero_one_value_max", default=argparse.SUPPRESS,
+                        new_name="--mem-zero-any-vs-zero-one-value-max", help=argparse.SUPPRESS)
     parser.add_argument("--mem-vs-baseline-max", type=float, default=None,
                         help="FAIL if a chunk variant's peak memory exceeds the baseline "
                              "variant's by more than this ratio (default: off).")
@@ -182,7 +202,7 @@ def build_parser():
     parser.add_argument("--skip-seq-omp-compare", action="store_true",
                         help="Skip the seed-pinned sequential-vs-OpenMP "
                              "compression-classification comparison (LLVM "
-                             "seq/omp config pairs, chunk/chunk2/chunk2a, "
+                             "seq/omp config pairs, zero/zero_one_value/zero_any, "
                              "256/1024/dyn, several thread counts).")
     parser.add_argument("--seq-omp-threads", nargs="+", type=int, default=None,
                         help="OMP thread counts for the seq-vs-omp compare "
@@ -273,12 +293,34 @@ def build_parser():
     parser.add_argument("--no-full-log", action="store_true",
                         help="Disable the default per-run full stdout+stderr "
                              "capture (see --full-log-dir).")
+    parser.add_argument("--pool", default=None, metavar="ID",
+                        help="Share the campaign with the other jobs given the same ID (shrink_gui's "
+                             "\"Nœuds\" field adds it, one job per node): within each phase, each "
+                             "(phase, configuration) unit is done by the first job that claims it in "
+                             "<output-dir>/<arch>/.pools/ID (or ID itself when it holds a /), the others "
+                             "skip it. Each configuration's oracle is generated once, by the job that "
+                             "claims it, the others waiting for it ($CHUNK_POOL_REF_WAIT seconds at "
+                             "most, default 6 h); oracle/ stays shared. Every other output (CSV, errors "
+                             "log, failure list, console log, run_logs/, runs/) goes to the job's own "
+                             "<output-dir>/<arch>/pool_ID/<job> (n<K> under shrink_gui, else "
+                             "<host>.<pid>; an absolute --summary-csv / --errors-log / --full-log-dir "
+                             "gets <job> as a last directory). A failed case is recorded and the job "
+                             "goes on, as without it; an interrupted or crashed job stops them all. "
+                             "With --rerun-failed: replays the failures of every job of the pool, in "
+                             "this job alone.")
     return parser
 
 
 def apply_regression_guards(args, parser):
     """Hand --numa-interleave and the stats-guard floors to the run helpers
-    (state), and return the chunk2a-vs-chunk2 memory ceiling (None: off)."""
+    (state), and return the zero_any-vs-zero_one_value memory ceiling (None: off).
+    The variant options given with an old label (chunk2a, tbb_chunk2...) are
+    read as their new names here, with a note on stderr."""
+    args.variants = [normalize_variant(v, "--variants") for v in args.variants]
+    if args.light_variants is not None:
+        args.light_variants = [normalize_variant(v, "--light-variants") for v in args.light_variants]
+    args.seq_omp_variants = [normalize_variant(v, "--seq-omp-variants") for v in args.seq_omp_variants]
+    args.baseline_variant = normalize_variant(args.baseline_variant, "--baseline-variant")
     # Regression guards: apply CLI overrides to the module-level floor map used
     # inside run_cmd (which has no access to args).
     state._NUMA_MODE = args.numa_interleave
@@ -291,14 +333,32 @@ def apply_regression_guards(args, parser):
                 parser.error(f"--stats-mark-ratio-min expects TAG=RATIO, got {item!r}")
             tag, val = item.split("=", 1)
             try:
-                floors[tag.strip()] = float(val)
+                floors[normalize_variant(tag.strip(), "--stats-mark-ratio-min")] = float(val)
             except ValueError:
                 parser.error(f"--stats-mark-ratio-min: bad ratio in {item!r}")
         state._STATS_MARK_RATIO_MIN = floors
-    mem_c2a_vs_c2 = (args.mem_chunk2a_vs_chunk2_max
-                     if args.mem_chunk2a_vs_chunk2_max and args.mem_chunk2a_vs_chunk2_max > 0
+    mem_za_vs_zov = (args.mem_zero_any_vs_zero_one_value_max
+                     if args.mem_zero_any_vs_zero_one_value_max
+                     and args.mem_zero_any_vs_zero_one_value_max > 0
                      else None)
-    return mem_c2a_vs_c2
+    return mem_za_vs_zov
+
+
+def _open_pool(args, shared_dir):
+    """--pool: this job's Pool (share.pool), its directory <shared_dir>/.pools/<id>
+    made and announced (not under --rerun-failed: a replay claims nothing).
+    Returns the job's tag (n<K> under shrink_gui, else <host>.<pid>), or ""
+    without --pool."""
+    if not args.pool:
+        return ""
+    import re as _re
+    if not _re.match(r"^[A-Za-z0-9._/-]+$", args.pool) or args.pool.strip("/.") == "":
+        sys.exit(f"--pool {args.pool}: letters, digits, '.', '_', '-' (and '/' for a path) only")
+    share.pool = Pool(args.pool, shared_dir)
+    if args.rerun_failed is None:
+        share.pool.open("(phase, configuration) units shared with the other jobs")
+        share.register()
+    return share.pool.tag
 
 
 def setup_outputs(args):
@@ -325,12 +385,52 @@ def setup_outputs(args):
     # current machine keeps each architecture's results (and oracle) isolated.
     out_dir = os.path.join(out_dir, CURRENT_MACHINE)
     os.makedirs(out_dir, exist_ok=True)
+    # The architecture's directory: oracle/ and, under --pool, .pools/. The
+    # same as args.output_dir without --pool.
+    args.shared_dir = out_dir
+    job_tag = _open_pool(args, out_dir)
+    if job_tag:
+        # --pool: the jobs run at the same time on the same architecture, and
+        # each one rewrites its CSV, errors log, failure list and console log
+        # from the start, numbers its run_logs/ files from 1 and runs its
+        # binaries in runs/ and in output_dir itself (memory_mo.txt, the
+        # pinned seed<N>.txt of seq/omp and fuzz): all of that goes to a
+        # directory of the job's own. Only oracle/ (generated once per
+        # configuration, read-only afterwards) and the pool's claims stay in
+        # the shared one. The shared directory's perf seeds are copied in, so
+        # the job's perf runs draw the same data a run without --pool would.
+        out_dir = os.path.join(out_dir, "pool_" + os.path.basename(os.path.normpath(args.pool)), job_tag)
+        os.makedirs(out_dir, exist_ok=True)
+        import glob as _glob
+        import shutil as _shutil
+        for _seed in _glob.glob(os.path.join(args.shared_dir, "seed*.txt")):
+            if not os.path.exists(os.path.join(out_dir, os.path.basename(_seed))):
+                try:
+                    _shutil.copy2(_seed, out_dir)
+                except OSError:
+                    pass
     args.output_dir = out_dir
+    # shrink_gui reads the first path of this line as the run's output
+    # directory (PROGRAMS out_re): under --pool, the job's own.
     print(f"📁 Run outputs → {out_dir}  (arch: {CURRENT_MACHINE})")
-    if not os.path.isabs(args.summary_csv):
-        args.summary_csv = os.path.join(out_dir, args.summary_csv)
-    if not os.path.isabs(args.errors_log):
-        args.errors_log = os.path.join(out_dir, args.errors_log)
+    if job_tag:
+        print(f"📁 Shared by the pool: {args.shared_dir} (oracle/, .pools/)")
+
+    def _own(path):
+        """An absolute path given on the command line, under --pool: the
+        same for every job of the pool, hence made the job's own by a last
+        directory level named after it (and failed_cases.jsonl, beside the
+        errors log, with it)."""
+        if not job_tag:
+            return path
+        d = os.path.join(os.path.dirname(path), job_tag)
+        os.makedirs(d, exist_ok=True)
+        return os.path.join(d, os.path.basename(path))
+
+    args.summary_csv = (_own(args.summary_csv) if os.path.isabs(args.summary_csv)
+                        else os.path.join(out_dir, args.summary_csv))
+    args.errors_log = (_own(args.errors_log) if os.path.isabs(args.errors_log)
+                       else os.path.join(out_dir, args.errors_log))
     # Per-run full-output capture is ON by default, landing in <out_dir>/run_logs
     # (arch-aware: out_dir already ends in bench_results/<arch>). Override the
     # location with --full-log-dir, or switch it off with --no-full-log.
@@ -338,6 +438,8 @@ def setup_outputs(args):
         _fld = args.full_log_dir if args.full_log_dir is not None else "run_logs"
         if not os.path.isabs(_fld):
             _fld = os.path.join(out_dir, _fld)
+        elif job_tag:
+            _fld = os.path.join(_fld, job_tag)
         os.makedirs(_fld, exist_ok=True)
         _set_full_log_dir(_fld)
         print(f"\U0001f5d2  Full per-run logs \u2192 {_fld}")
@@ -360,6 +462,14 @@ def setup_outputs(args):
     # --rerun-failed: replay the recorded failures only, and stop there (the
     # errors log of the failing run is left as it was).
     if args.rerun_failed is not None:
+        if job_tag and not args.rerun_failed:
+            # --pool: the failures of every job of the pool (each recorded its
+            # own, in its directory beside this one's), replayed here alone --
+            # a replay is short, and the list it rewrites is this job's.
+            import glob as _glob
+            mine = os.path.realpath(_failed_cases_path(args.errors_log))
+            args.rerun_sources = [p for p in sorted(_glob.glob(os.path.join(
+                os.path.dirname(out_dir), "*", "failed_cases.jsonl"))) if os.path.realpath(p) != mine]
         sys.exit(run_rerun_failed(args))
     # Truncate the errors log at startup so incremental _append_error_now()
     # writes reflect only THIS run (append mode would otherwise accumulate
@@ -379,7 +489,7 @@ def setup_outputs(args):
 def main():
     parser = build_parser()
     args = parser.parse_args()
-    mem_c2a_vs_c2 = apply_regression_guards(args, parser)
+    mem_za_vs_zov = apply_regression_guards(args, parser)
     setup_outputs(args)
     resolve_run_parameters(args)
     perf_excluded = reduce_matrix(args)
@@ -389,11 +499,14 @@ def main():
     counter = RunCounter(plan.count_runs())
     events.open_file(args.events_file)
     events.emit("start", total_runs=counter.total, configs=list(args.configs),
-                variants=list(args.variants), output_dir=args.output_dir, argv=sys.argv[1:])
+                variants=list(args.variants), output_dir=args.output_dir, argv=sys.argv[1:],
+                **({"pool": args.pool, "node": share.tag(), "shared_dir": args.shared_dir}
+                   if share.active() else {}))
 
     results = {}
     errors  = []
     interrupted = False
+    stopped_by = None       # --pool: another job stopped the pool (its "<job>: <why>")
 
     try:
         # --- Phase 0b: validation harnesses (ctest) ----------------------
@@ -458,16 +571,34 @@ def main():
     except KeyboardInterrupt:
         interrupted = True
         print("\n\n⛔ User interrupt — writing partial results...")
+        # --pool: this job's units left half done, an oracle it was making
+        # never finished: the others stop at their next claim rather than
+        # wait for it (a failed CASE stops nothing: recorded, and the job
+        # goes on, as without --pool).
+        share.stop(f"{share.tag()} interrupted")
+    except share.PoolStopped as e:
+        stopped_by = str(e)
+        print(f"\n\n🛑 [pool] {args.pool}: stopped by {stopped_by}; this job ({share.tag()}) claims "
+              "nothing more — writing its partial results...")
+    except BaseException as e:
+        # A crash of the runner itself (not a failed run): the traceback goes
+        # out as before, the pool is stopped first.
+        share.stop(f"{share.tag()} died: {type(e).__name__}: {e}")
+        raise
 
     total_min = (time.time() - counter.start) / 60
+    if share.active():
+        print(share.summary_line())
     flush_summary(results, errors, args.summary_csv, args.errors_log,
                   total_min, interrupted, baseline_variant=args.baseline_variant,
-                  mem_chunk2a_vs_chunk2_max=mem_c2a_vs_c2,
+                  mem_zero_any_vs_zero_one_value_max=mem_za_vs_zov,
                   mem_vs_baseline_max=args.mem_vs_baseline_max)
 
     events.emit("end", errors=len(errors), interrupted=interrupted, minutes=round(total_min, 2),
-                summary_csv=args.summary_csv, errors_log=args.errors_log)
-    sys.exit(1 if errors else (130 if interrupted else 0))
+                summary_csv=args.summary_csv, errors_log=args.errors_log,
+                **({"stopped_by": stopped_by} if stopped_by else {}))
+    # Stopped by another job of the pool: 1, its share of the campaign not done.
+    sys.exit(1 if errors or stopped_by else (130 if interrupted else 0))
 
 
 if __name__ == "__main__":

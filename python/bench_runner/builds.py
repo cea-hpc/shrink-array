@@ -6,7 +6,8 @@ import os
 import platform as _platform
 from pathlib import Path
 
-from .settings import COMPRESSION_INSENSITIVE_VARIANTS, COMPRESSION_ONLY_CONFIG_MARKERS, virtual_base
+from .settings import (COMPRESSION_INSENSITIVE_VARIANTS, COMPRESSION_ONLY_CONFIG_MARKERS, SHRINK_VARIANTS,
+                       bench_exe_names, find_bench_exe, is_tbb_variant, virtual_base)
 from .term import dim
 
 
@@ -29,15 +30,15 @@ def _arch_matches_current(arch_dirname):
 
 def _variant_base(var):
     """Strip a "@<size>" declination suffix, returning the bare variant name
-    (e.g. "chunk2a@256" -> "chunk2a", "vector" -> "vector"). Used wherever the
+    (e.g. "zero_any@256" -> "zero_any", "vector" -> "vector"). Used wherever the
     logic keys on the variant identity rather than its size."""
     return var.split("@", 1)[0]
 
 
 def int64_variant(var):
     """The int64 declination of a --variants entry, spelled for resolve_exe:
-    "chunk2a@1024" -> "chunk2a_int64@1024" (shrink_bench_chunk2a_int64_1024),
-    "vector" -> "vector_int64" (with stage perf: shrink_bench_vector_int64_perf).
+    "zero_any@1024" -> "zero_any_int64@1024" (shrink_bench_<backend>_zero_any_int64_1024),
+    "vector" -> "vector_int64" (with stage perf: shrink_bench_<backend>_vector_int64_perf).
     Built on the release OpenMP configs only, for 1024 and dyn (see
     examples/shrink_bench/CMakeLists.txt, SHRINK_BENCH_INT64)."""
     if "@" in var:
@@ -87,6 +88,20 @@ def oracle_complete(output_dir, config):
     return os.path.exists(os.path.join(oracle_dir(output_dir, config), ORACLE_MARKER))
 
 
+def purge_oracle(d):
+    """Remove the reference files of oracle directory @p d (data_tab*, its
+    completeness marker included); returns how many went."""
+    import glob
+    n = 0
+    for f in glob.glob(os.path.join(d, "data_tab*")):
+        try:
+            os.remove(f)
+            n += 1
+        except OSError:
+            pass
+    return n
+
+
 def physical_config(build_root, config):
     """The build directory a configuration's binaries come from: its own, or,
     for a run-time mode (settings.VIRTUAL_CONFIG_ENV) with no directory of its
@@ -99,19 +114,23 @@ def physical_config(build_root, config):
 
 def resolve_exe(build_root, config, var, stage):
     """
-    Look up the executable for (config, var, stage) under several layouts:
-      1. $build_root/$config/<arch>/examples/shrink_bench/shrink_bench_{var}_{stage}
+    Look up the executable for (config, var, stage) under several layouts,
+    <exe> being shrink_bench_<backend>_{var}_{stage} (settings.bench_exe_names:
+    each backend's name is tried, a build directory holding one):
+      1. $build_root/$config/<arch>/examples/shrink_bench/<exe>
          (CEA layout with $arch sub-directory — filtered on the current arch)
-      2. $build_root/$config/examples/shrink_bench/shrink_bench_{var}_{stage}
+      2. $build_root/$config/examples/shrink_bench/<exe>
          (build without the $arch level)
-      3. $build_root/$config/shrink_bench_{var}_{stage}
+      3. $build_root/$config/<exe>
          (config = flat directory)
-      4. $build_root/shrink_bench_{var}_{stage}_{config}
+      4. $build_root/<exe>_{config}
          (old flat convention)
     Returns the absolute path of the first hit, or None.
     """
-    # A variant may carry a size declination as "base@size" (e.g. "chunk2a@dyn",
-    # "chunk2@256"). The executable name is then shrink_bench_{base}_{size}.
+    # A variant may carry a size declination as "base@size" (e.g. "zero_any@dyn",
+    # "zero_one_value@256"). The executable name is then
+    # shrink_bench_<backend>_{base}_{size} (shrink_bench_tbb_{variant}_{size}
+    # for the TBB bench, its one name).
     #
     # No {stage} in that name any more: check and perf are ONE binary, the mode
     # being a run-time flag (--mode, added by run_with_rebuild_retry and by the
@@ -121,36 +140,33 @@ def resolve_exe(build_root, config, var, stage):
     # stay separate executables and keep the staged name.
     if "@" in var:
         base, size = var.split("@", 1)
-        exe_name = f"shrink_bench_{base}_{size}"
+        rest = f"{base}_{size}"
     else:
-        exe_name = f"shrink_bench_{var}_{stage}"
+        rest = f"{var}_{stage}"
     config = physical_config(build_root, config)  # a run-time mode runs its base build
     root = Path(build_root)
 
     # Layout 1: glob over the $arch level, but ONLY the current arch.
-    for exe in sorted((root / config).glob(f"*/{EXE_SUBPATH}/{exe_name}")):
-        # exe = .../{config}/{arch_dir}/examples/shrink_bench/{exe_name}
-        # go up 3 levels to get the arch directory name.
-        arch_dir = exe.parents[2].name
-        if not _arch_matches_current(arch_dir):
+    for arch_dir in sorted((root / config).glob(f"*/{EXE_SUBPATH}")):
+        # arch_dir = .../{config}/{arch_dir}/examples/shrink_bench: go up 2
+        # levels to get the arch directory name.
+        if not _arch_matches_current(arch_dir.parents[1].name):
             continue
-        if exe.is_file() and os.access(exe, os.X_OK):
-            return str(exe.resolve())
+        exe = find_bench_exe(str(arch_dir), rest)
+        if exe:
+            return str(Path(exe).resolve())
 
-    # Layout 2: no $arch level
-    candidate = root / config / EXE_SUBPATH / exe_name
-    if candidate.is_file() and os.access(candidate, os.X_OK):
-        return str(candidate.resolve())
-
-    # Layout 3: flat executable inside config
-    candidate = root / config / exe_name
-    if candidate.is_file() and os.access(candidate, os.X_OK):
-        return str(candidate.resolve())
+    # Layout 2: no $arch level; layout 3: flat executable inside config.
+    for directory in (root / config / EXE_SUBPATH, root / config):
+        exe = find_bench_exe(str(directory), rest)
+        if exe:
+            return str(Path(exe).resolve())
 
     # Layout 4: old convention
-    candidate = root / f"{exe_name}_{config}"
-    if candidate.is_file() and os.access(candidate, os.X_OK):
-        return str(candidate.resolve())
+    for exe_name in bench_exe_names(rest):
+        candidate = root / f"{exe_name}_{config}"
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate.resolve())
 
     return None
 
@@ -178,7 +194,7 @@ def built_static_sizes(build_root, config):
 
 
 def size_not_built(build_root, config, var):
-    """True when `var` names a static size ("chunk2a@1024") that `config` does
+    """True when `var` names a static size ("zero_any@1024") that `config` does
     not build: skipped, not MISSING. dyn and variants without a size: False."""
     if "@" not in var:
         return False
@@ -196,8 +212,8 @@ def config_dir_present(build_root, config):
     # Probe both legacy names (vector, or a build without size declinations)
     # and the multi-size names (base@size) so a config built either way is
     # detected. We only need ONE hit to consider the config present.
-    probe_vars = ["vector", "chunk", "chunk2", "chunk2a", "std_alloc"]
-    probe_vars += [f"{v}@{s}" for v in ("chunk", "chunk2", "chunk2a", "std_alloc")
+    probe_vars = ["vector", *SHRINK_VARIANTS, "std_alloc"]
+    probe_vars += [f"{v}@{s}" for v in (*SHRINK_VARIANTS, "std_alloc")
                    for s in ("256", "1024", "dyn")]
     for var in probe_vars:
         for stage in ("perf", "check"):
@@ -210,6 +226,9 @@ def short_config_label(config):
     """Compact label for display / CSV."""
     if config.startswith("cmake-build-omp-"):
         return config[len("cmake-build-omp-"):]  # not removeprefix: Python >= 3.9 only
+    if is_std_config(config):
+        # The std backend runs threads: not a "-noomp" (serial) build.
+        return config[len("cmake-build-"):]
     if config.startswith("cmake-build-"):
         # non-OMP build dirs (cmake-build-gnu, cmake-build-llvm) would otherwise
         # collapse onto the OMP label ("gnu"/"llvm") and look like a duplicate,
@@ -234,6 +253,20 @@ def is_omp_config(config):
     return config.startswith("cmake-build-omp-")
 
 
+def is_std_config(config):
+    """True if this build directory is the std threading backend
+    (CHUNK_THREADS=std: cmake-build-std-*). It runs threads, without OpenMP;
+    OMP_NUM_THREADS still sets its team size."""
+    return config.startswith("cmake-build-std-")
+
+
+def is_threaded_config(config):
+    """True if the build runs threads: OpenMP or the std backend. Only the
+    serial builds ignore OMP_NUM_THREADS, so only they get a single thread
+    count and a single repetition."""
+    return is_omp_config(config) or is_std_config(config)
+
+
 def is_std_alloc_config(config):
     """True if this is a std-allocator build (its dir name ends in -std-alloc).
     The std_alloc *variant* binary is only built there (CHUNK_STD_ALLOC=ON)."""
@@ -249,11 +282,18 @@ def skip_variant_on_config(var, config):
     - The std_alloc variant anywhere except a -std-alloc config: it is only
       built there now (gated on CHUNK_STD_ALLOC in CMake), so looking for it
       elsewhere would just produce spurious MISSING warnings.
+    - The tbb_* variants anywhere except a std-backend (cmake-build-std-*)
+      config: the TBB bench is only built there.
     """
     base = _variant_base(var)
     if base in COMPRESSION_INSENSITIVE_VARIANTS and is_compression_only_config(config):
         return True
     if base == "std_alloc" and not is_std_alloc_config(config):
+        return True
+    # The TBB bench is built in the std-backend builds only (and only when
+    # oneTBB was there at compile time: a missing binary is then reported once,
+    # not skipped here).
+    if is_tbb_variant(var) and not is_std_config(config):
         return True
     return False
 
@@ -279,7 +319,7 @@ def _run_dir(output_dir, *parts):
     The binaries read and write data_<tab>_<k>.bin relative to their cwd, and
     that name carries no variant, no geometry and no compiler -- so two
     binaries sharing a directory silently share reference files. A static
-    chunk_256 writing data_tab_bool_1.bin and a chunk2a_dyn reading it back is
+    zero_256 writing data_tab_bool_1.bin and a zero_any_dyn reading it back is
     a mismatch at element 450159 on iteration 1, which looks like a library bug
     and is not one. One directory per run, and the question cannot arise.
 

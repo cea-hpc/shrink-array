@@ -40,13 +40,14 @@
 #include <mutex>   // std::mutex, std::scoped_lock
 #include <utility> // std::cmp_equal
 
-#include "chunk/config.h"                   // build_config::any_check
-#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
-#include "chunk/log.h"                      // CHUNK_LOG_ALWAYS (the report, the transition trace)
+#include "fast_allocators/internal/raw_memory.h" // address_bits
+#include "chunk/config.h"                        // build_config::any_check
+#include "chunk/internal/invariant_check.h"      // CHUNK_INVARIANT_FAILED
+#include "chunk/log.h"                           // CHUNK_LOG_ALWAYS (the report, the transition trace)
 
 #include "chunk/vendor/ankerl/unordered_dense.h" // the live maps
 
-#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_IN_PARALLEL_REGION / _THREAD_RANK, and <omp.h> with it
+#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_IN_PARALLEL_REGION / _THREAD_RANK
 
 namespace shrink_array::pool_ledger
 {
@@ -116,7 +117,7 @@ inline constexpr bool pool_ledger_enabled = false;
 #elif CHUNK_OPT_FORCE_LEDGER
 inline constexpr bool pool_ledger_enabled = build_config::any_check;
 #else
-inline constexpr bool pool_ledger_enabled = build_config::any_check && !build_config::use_openmp;
+inline constexpr bool pool_ledger_enabled = build_config::any_check && !build_config::threaded;
 #endif
 
 /// @brief Record a ctx block allocation; fails an invariant if @p ptr is already live as ctx or as op.
@@ -222,7 +223,7 @@ inline void on_op_free(void* ptr) noexcept
 }
 
 // ============================================================================
-// BLOCK LEDGER — value-block lifecycle (check builds, Chunk2 / Chunk2A)
+// BLOCK LEDGER — value-block lifecycle (check builds, zero_one_value / zero_any)
 // ----------------------------------------------------------------------------
 // Distinct from the ctx/op ledger above: this one tracks the heap chunk-blocks
 // that flow through allocate_chunk_internal / recup_value / free_block_to_pool.
@@ -284,8 +285,8 @@ inline ankerl::unordered_dense::map<const void*, BRec>& block_live()
 
 /// @brief End-of-run report: every block still in the ledger, by (state, last site).
 // Lists every block still recorded in block_live(), grouped by (state, last
-// site). Enabled only when the ledger is on AND CHUNK_LEDGER_REPORT is set in
-// the environment, so it costs nothing otherwise. It separates the causes a
+// site). Enabled only when the ledger is on AND CHUNK_LOG sets ledger to info,
+// so it costs nothing otherwise. It separates the causes a
 // LeakSanitizer report cannot: a block left LIVE was allocated and never parked
 // nor released (its reference was dropped); a block left parked was parked but
 // not freed by the exit drain; a leaked block absent from the table was never
@@ -354,7 +355,7 @@ inline void report_live_blocks() noexcept
     }
 }
 
-/// @brief Register report_live_blocks() at exit (CHUNK_LEDGER_REPORT), once,
+/// @brief Register report_live_blocks() at exit (CHUNK_LOG=ledger=info), once,
 ///        on the first block the ledger sees.
 //
 // ORDER MATTERS: function-local statics and std::atexit handlers run in the
@@ -367,7 +368,7 @@ inline void maybe_register_live_report() noexcept
     {
         static const bool registered = []
         {
-            if (std::getenv("CHUNK_LEDGER_REPORT") != nullptr)
+            if (logging::enabled(logging::Channel::ledger, logging::Level::info))
             {
                 (void)block_live();                        // construct the map FIRST
                 std::atexit([] { report_live_blocks(); }); // ...then register
@@ -405,7 +406,7 @@ inline void block_transition(const void* block,
         //    still catches a normal-magnitude double (exponent bits 52-62 set).
         //    If hwasan/MTE tagging is ever enabled, strip the top byte first.
         {
-            const auto up = reinterpret_cast<std::uintptr_t>(block);
+            const auto up = ::fast_alloc::address_bits(block);
 #ifdef __aarch64__
             const bool bad_high = (up >> 52U) != 0;
 #else
@@ -413,8 +414,7 @@ inline void block_transition(const void* block,
 #endif
             if (bad_high || (up & 0x7U) != 0)
             {
-                CHUNK_INVARIANT_FAILED("[LEDGER_BADPTR] non-canonical block key {} op={} site={}",
-                                       static_cast<const void*>(block), op, site);
+                CHUNK_INVARIANT_FAILED("[LEDGER_BADPTR] non-canonical block key {} op={} site={}", block, op, site);
             }
         }
 

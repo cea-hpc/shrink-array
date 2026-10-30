@@ -1,0 +1,802 @@
+/*
+ * Copyright 2024-2026 CEA (www.cea.fr)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#pragma once
+
+#include <concepts>   // std::assignable_from
+#include <functional> // std::plus, std::minus, std::multiplies, std::divides
+#include <ostream>    // std::ostream
+#include <utility>    // std::pair
+#include <vector>     // std::vector
+
+#include "chunk/internal/pointer_map_linear.h" // linear scan shared with zero_one_value::PointerMap
+#include "chunk/config.h"                      // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
+#include "chunk/internal/array_chunk_for.h"    // ArrayKey (the registry keys)
+#include "chunk/internal/chunk_size_policy.h"  // set_thread_chunk_size, set_thread_alloc_key
+#include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment, ElementAddable, ElementModulable
+#include "chunk/internal/in_t.h"                         // InT<T>
+#include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
+#include "chunk/internal/conditional_counter.h"          // CounterValueT — resync_nb_val_eq_zero
+#include "chunk/internal/def_force_inline.h"             // CHUNK_FORCE_INLINE
+#include "chunk/internal/proxy_base.h"                   // ProxyBase
+#include "chunk/internal/read_reclaim.h"                 // read_reclaim::ReadSection
+#include "chunk/internal/chunk_stats.h" // increm_chunk_read<> (a dependent call the include tools cannot attribute)
+#include "chunk/internal/immortal.h"    // Immortal / LazyImmortal: statics safe for global arrays
+
+/*---------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*/
+
+namespace shrink_array
+{
+
+template <template <typename> class ChunkT, typename T>
+class ManagerChunk;
+
+namespace zero
+{
+
+/**
+ * @brief Registry mapping array-element keys (pointers) to their table
+ *        number. Unlike zero_one_value::PointerMap, it has no value -> inf_array
+ *        lookup: zero's compression does not group chunks by value.
+ * @tparam T Element type this registry is keyed on.
+ */
+template <typename T>
+class PointerMap : public PointerMapLinear<int, std::vector<std::pair<ArrayKey<Chunk<T>>, int>>>
+{
+  public:
+    /// @brief The key: the array's identity.
+    using Key = ArrayKey<Chunk<T>>;
+
+    /**
+     * @brief Register @p key with table number @p num_tab.
+     * @param key Array address used as the key.
+     * @param num_tab Table number associated with the key.
+     */
+    void insert(Key key, int num_tab)
+    {
+        vec_.emplace_back(key, num_tab);
+    }
+
+    /**
+     * @brief Look up the table number registered for a key.
+     * @param key Key to look up.
+     * @return The registered table number.
+     * @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
+     */
+    [[nodiscard]] int get_num_tab(Key key) const noexcept;
+
+    /**
+     * @brief Swap the table numbers registered for two existing keys.
+     * @details The name the zero / zero_any re-chunk hooks call; zero_one_value calls
+     *          swap_entries(). Same operation.
+     * @param key_a First key (an array address).
+     * @param key_b Second key.
+     * @return false if either key is absent (nothing is changed).
+     */
+    bool swap_keys(Key key_a, Key key_b) noexcept
+    {
+        return this->swap_entries(key_a, key_b);
+    }
+
+    // erase(), swap_entries(), exists(), size() and for_each_key() come from
+    // PointerMapLinear.
+
+  private:
+    /// What a key maps to: its table number.
+    using InfArrayT = int;
+
+    // Storage: a std::vector (zero_one_value::PointerMap uses a std::deque, see there).
+    using Linear = PointerMapLinear<InfArrayT, std::vector<std::pair<Key, InfArrayT>>>;
+    /// Brings the base's storage back into this class's scope (dependent base).
+    using Linear::vec_;
+};
+
+/**
+ * @brief Policy to handle Fast Block Compression specific logic for Proxies.
+ */
+template <typename Derived, typename T, bool Enabled>
+class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
+{
+  public:
+    using ChunkType = Chunk<T>;
+    using Manager   = ManagerChunk<Chunk, T>;
+    using Base      = ProxyBase<Derived, T, ChunkType>;
+
+    using CompressionManagerType = CompressionManager<T, ChunkType>;
+
+    using Base::derived;
+
+    using ValuesTypeRef = Base::AtomicPtrRefT;
+
+    // --- fast-block-compression surface: this policy's Enabled is that axis
+    // (chunk_config::use_fast_block_compression).
+    using Base::num_tab_;
+    using Base::ptr_on_array_;
+    using Base::read_values;
+    using Base::read_values_async;
+    using Base::read_values_at;
+    using Base::tab_is_inside_chunk_list_to_compress;
+
+    using ProxyBase<Derived, T, Chunk<T>>::ProxyBase;
+
+    /**
+     * @brief Access to thread `thr`'s compression-candidate list.
+     * @param thr Thread rank whose candidate list to fetch.
+     * @return Reference to thread thr's candidate list.
+     */
+    auto& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept
+    {
+        return Manager::chunk_to_compress_potentially_thr[thr];
+    }
+
+    /**
+     * @brief Check whether this thread's compression-candidate list has
+     *        grown past the "dangerous" size threshold, and if so, flag it
+     *        (CompressionManagerType::mark_list_dangerous_for_thread()) so
+     *        other machinery reacts (e.g. prioritising a drain).
+     * @param thr_rank Thread whose candidate list to check.
+     */
+    void trigger_compression_if_needed(int thr_rank) noexcept;
+
+    /**
+     * @brief Decide whether NOW is a good time to run a compression pass
+     *        for this thread, and if so, trigger it.
+     * @details Checks the candidate-list size against the trigger
+     *          threshold; if crossed and no deferred queue is already
+     *          active for this thread, activates the slow write-compress
+     *          path (when running multi-threaded) and calls
+     *          Chunk<T>::make_block_compression() directly.
+     */
+    void perform_compression() const noexcept;
+
+    /**
+     * @brief Async-context counterpart of execute_arithmetic_compound_operation().
+     * @tparam Op Binary operator (e.g. std::plus<>, std::minus<>).
+     * @tparam Body Callable used only on the "chunk was not written" fast path.
+     * @tparam U Type of the operand.
+     * @param ctx Async write context.
+     * @param op The operator to apply.
+     * @param operand Operand to combine with the current value.
+     * @param lbd Called (with `op`) when the chunk was not yet written.
+     */
+    template <typename Op, typename Body, typename U>
+    void
+    execute_arithmetic_compound_operation_async(auto* ctx, Op op, [[maybe_unused]] const U& operand, Body lbd) const;
+
+    /**
+     * @brief Resolve and cache this proxy's table number from ptr_on_array.
+     */
+    void set_num_tab() noexcept;
+
+    /**
+     * @brief Post-write entry point for callers that already have both the
+     *        old and new value in hand.
+     * @param old_value Value before the write.
+     * @param new_value Value after the write.
+     */
+    void mark_for_compression_if_needed_with_value(InT<T> old_value, InT<T> new_value) const
+    {
+        // Unconditional: mark_for_compression_impl carries the race check, which
+        // must run on every write.
+        mark_for_compression_impl(old_value, new_value);
+    }
+
+    /**
+     * @brief mark_for_compression_if_needed_with_value() for a write body
+     *        that holds the chunk's values pointer: the race check reads
+     *        through @p vals instead of reloading it.
+     * @param vals Loaded inside the write session (or the replay), after the
+     *        materialisation if there was one -- no compressor can change it
+     *        until the session ends, and no writer either once it is not the
+     *        constant (see Proxy::assign_impl).
+     * @param old_value Value before the write.
+     * @param new_value Value after the write.
+     */
+    void mark_for_compression_if_needed_with_value(InT<T> old_value, InT<T> new_value, const T* vals) const
+    {
+        mark_for_compression_core(old_value, new_value, new_value, vals);
+    }
+
+    /**
+     * @brief Async-context version of the table-number lookup: resolves
+     *        which array a given chunk pointer belongs to.
+     * @param ctx The async context, which holds the table number captured at enqueue.
+     * @param ptr The array the context was enqueued from.
+     * @return The table number @p ptr belongs to.
+     */
+    [[nodiscard]] static int get_num_tab_async(auto* ctx, [[maybe_unused]] ArrayKey<Chunk<T>> ptr) noexcept;
+
+    /**
+     * @brief Async-context counterpart of execute_inplace_operation().
+     * @tparam Lambda Callable performing the actual in-place modification.
+     * @param ctx Async write context.
+     * @param operation The operation to run.
+     */
+    template <typename Lambda>
+    static void execute_inplace_operation_async(auto* ctx, Lambda operation);
+
+    /**
+     * @brief Async-context counterpart of execute_simple_operation():
+     *        materialise the chunk referenced by `ctx` if it is currently
+     *        compressed, then run `operation` on the reloaded values pointer.
+     * @tparam Lambda Callable performing the actual write.
+     * @param ctx Async write context.
+     * @param operation The write to perform.
+     */
+    template <typename Lambda>
+    static void execute_simple_operation_async(auto* ctx, Lambda operation);
+
+    /**
+     * @brief Clear one chunk's "queued for compression" flag, so a later
+     *        write can queue it again.
+     * @param num_tab Which table the chunk belongs to.
+     * @param num_chunk The chunk's index within that table.
+     *
+     * @warning Do not remove in favour of the ProxyBase one it hides: the base
+     *          stores with memory_order_release, this one seq_cst (plain
+     *          assignment). Dropping it would weaken zero's ordering of the flag.
+     */
+    static void reset_tab_inside_list_to_compress(int num_tab, int num_chunk) noexcept
+    {
+        tab_is_inside_chunk_list_to_compress[num_tab][num_chunk] = 0;
+    }
+
+  protected:
+    /**
+     * @brief Register this chunk's table number and compression-list flag
+     *        pointer, so later compression bookkeeping can find its way
+     *        back to this chunk.
+     */
+    void set_info_on_chunk() noexcept
+    {
+        set_num_tab(); // this policy's no-arg overload (above); Proxy's `using Base::set_num_tab` would hide it through
+                       // derived()
+        derived().Base::set_ptr_is_inside_chunk_list_to_compress();
+    }
+
+  private:
+    constexpr static T zero{};
+
+    /**
+     * @brief Core compression-marking logic. Must run on EVERY write, not just
+     *        zero-transitions: it also carries the data-race check.
+     * @details Queues this element as a candidate on a zero-transition OR when
+     *          a race is detected (memory no longer holds `expected_in_memory`).
+     * @param old_value Value before the write.
+     * @param new_value Value after the write.
+     * @param expected_in_memory The value this write expects to still be in
+     *                           memory (mismatch means a concurrent writer
+     *                           raced this one).
+     */
+    void mark_for_compression_core(InT<T> old_value, InT<T> new_value, InT<T> expected_in_memory) const;
+
+    /// @brief mark_for_compression_core() reading memory through @p vals, a
+    ///        values pointer the caller loaded inside the write session.
+    void mark_for_compression_core(InT<T> old_value, InT<T> new_value, InT<T> expected_in_memory, const T* vals) const;
+
+    /**
+     * @brief Post-write wrapper around mark_for_compression_core(), passing
+     *        new_value as both the write result and the expected-in-memory
+     *        value.
+     * @param old_value Value before the write.
+     * @param new_value Value after the write.
+     */
+    void mark_for_compression_impl(InT<T> old_value, InT<T> new_value) const
+    {
+        // Unconditional, every build, EVERY write: see mark_for_compression_core.
+        mark_for_compression_core(old_value, new_value, new_value);
+    }
+
+    /**
+     * @brief Static entry point for async callers holding a proxy reference.
+     * @param proxy Proxy whose compression marking to trigger.
+     * @param old_value Value before the write.
+     * @param new_value Value after the write.
+     */
+    static void
+    mark_for_compression_if_needed_with_value_async(const Derived& proxy, InT<T> old_value, InT<T> new_value)
+    {
+        proxy.mark_for_compression_if_needed_with_value(old_value, new_value);
+    }
+
+    /**
+     * @brief Whether a write transition is a compression candidate (a
+     *        zero-transition: was non-zero, now zero).
+     * @param old_value Value before the write.
+     * @param new_value Value after the write.
+     * @return true if old_value != zero and new_value == zero.
+     */
+    [[nodiscard]] static bool should_mark_for_compression(InT<T> old_value, InT<T> new_value) noexcept
+    {
+        return old_value != zero && new_value == zero;
+    }
+};
+
+/**
+ * @brief Specialization for Disabled Fast Compression (Zero Overhead).
+ */
+template <typename Derived, typename T>
+class ProxyFastCompPolicy<Derived, T, false> : public ProxyBase<Derived, T, Chunk<T>>
+{
+  public:
+    using ProxyBase<Derived, T, Chunk<T>>::ProxyBase;
+    using ProxyBase<Derived, T, Chunk<T>>::chunk_;
+
+  protected:
+    /// @brief Nothing to record on the chunk without fast block compression.
+    static void set_info_on_chunk() {}
+
+    /**
+     * @brief Counter-mode: called when the per-chunk zero-counter reaches
+     *        the chunk size (every element is now zero) -- compresses the
+     *        chunk.
+     * @details Counter mode == !use_fast_block_compression, hence this
+     *          specialisation.
+     */
+    void manage_full_zero() const
+    {
+        chunk_.clear_st();
+    }
+};
+
+#ifdef __clang__
+    #define CHUNK_INHERIT_CTOR_TYPENAME typename
+#else
+    #define CHUNK_INHERIT_CTOR_TYPENAME
+#endif
+
+/*!
+ * \brief Lazy-write proxy returned by Chunk's non-const operator[].
+ *
+ * Lets `chunk[i] = value` skip materialising the chunk when `value` is its
+ * compressible constant: operator= detects it and routes it to the
+ * compression-marking path.
+ */
+
+template <typename T>
+// no move assignment on purpose -- assigning a proxy
+// WRITES the element (see its operator=); a defaulted move would rebind it instead.
+// NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
+class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_block_compression>
+{
+  public:
+    /// @brief Stream output of the element's value (defined below).
+    template <typename U>
+    friend std::ostream& operator<<(std::ostream& os, const Proxy<U>& proxy);
+
+    using ChunkType = Chunk<T>;
+    using Base      = ProxyBase<Proxy, T, Chunk<T>>;
+
+    using CompressionManagerType = CompressionManager<T, ChunkType>;
+    using FastCompPolicy         = ProxyFastCompPolicy<Proxy, T, chunk_config::use_fast_block_compression>;
+
+    friend Base;
+    friend FastCompPolicy;
+
+    using FastCompPolicy::set_info_on_chunk;
+
+    using Base::add_to_compression_list;
+    using Base::set_num_tab;
+
+    using Base::ptr_is_inside_chunk_list_to_compress_; ///< Per-chunk compression flag pointer
+    using Base::tab_is_inside_chunk_list_to_compress;  ///< Global compression tracking array
+
+    /// @brief Functor wrapping operator% for apply_compound_operation().
+    struct modulo
+    {
+        /// @brief Apply operator% to the two operands.
+        /// @return lhs % rhs.
+        constexpr T operator()(InT<T> lhs, InT<T> rhs) const noexcept
+        {
+            return lhs % rhs;
+        }
+    };
+
+  private:
+    using Manager = ManagerChunk<Chunk, T>;
+
+    using Base::read_values;
+    using Base::values_;
+
+    using Base::num_;
+    /// Reference to the associated chunk.
+    ///
+    using Base::chunk_; ///< owning chunk
+
+    using Base::num_tab_; ///< tab index for this array
+
+    using Base::chunk_size_frozen_; ///< non-zero on a proxy rebuilt from a replay context
+    using Base::num_chunk_;         ///< chunk index
+    using Base::ptr_on_array_;      ///< pointer to array (for tab lookup)
+
+    using Base::arithmetic_assign;
+
+    using ValuesTypeRef = Base::AtomicPtrRefT;
+
+    constexpr static T zero{};
+
+    static constexpr bool is_bool     = std::is_same_v<T, bool>;
+    static constexpr bool is_not_bool = !is_bool;
+
+    // reset_tab_inside_list_to_compress(), set_num_tab() and the
+    // mark_for_compression_* family live on ProxyFastCompPolicy<..., true>;
+    // manage_full_zero() on the <..., false> (counter) specialisation.
+
+    /**
+     * @brief Whether the owning chunk is currently compressed to its
+     *        constant.
+     * @return true if the chunk is compressed.
+     */
+    [[nodiscard]] bool is_cst_val() const noexcept
+    {
+        return chunk_.is_cst_val1();
+    }
+
+    /**
+     * @brief Materialise the owning chunk (allocate + init), pinning the
+     *        active chunk size for this array first in dynamic builds.
+     */
+    void create_value() const noexcept;
+
+    /**
+     * @brief Materialise the owning chunk only if `need_alloc` is true (the
+     *        chunk is currently compressed).
+     * @param need_alloc Whether materialisation is actually needed.
+     */
+    void create_value(bool need_alloc) const noexcept
+    {
+        if (need_alloc)
+        {
+            create_value();
+        }
+    }
+
+    /**
+     * @brief Run `write_fn` under the write-synchronisation protocol,
+     *        registering this chunk's compression-tracking info first
+     *        (fast-block-compression builds only).
+     * @tparam WriteFn Callable performing the actual write.
+     * @param write_fn The write to perform.
+     * @return Whatever Base::write_with_optional_lock_impl() returns.
+     */
+    template <typename WriteFn>
+    CHUNK_FORCE_INLINE bool write_with_optional_lock(WriteFn write_fn) noexcept;
+    /**
+     * @brief Perform the actual write: install @p value at this proxy's index,
+     *        materialising the chunk first if it is currently compressed.
+     * @param vals The chunk's values pointer, loaded by the caller inside the
+     *        write session; it decides whether to materialise.
+     * @param value Value to write.
+     * @return The pointer the store went through: @p vals, or the one loaded
+     *         again after the materialisation.
+     */
+    T* perform_core_assignment(T* vals, InT<T> value) const noexcept;
+
+    /**
+     * @brief Shared implementation behind operator+=/operator-=: materialise
+     *        the chunk if needed, then apply `op` in a common high-precision
+     *        type before truncating back to T.
+     * @tparam Op Binary operator (e.g. std::plus<>, std::minus<>).
+     * @tparam Body Callable used only on the "chunk was not written" fast path.
+     * @tparam U Type of the operand being combined with the current value.
+     * @param op The operator to apply.
+     * @param operand Operand to combine with the current value.
+     * @param lbd Called (with `op`) when the chunk was not yet written, right
+     *            after materialising it.
+     */
+    template <typename Op, typename Body, typename U>
+    void execute_arithmetic_compound_operation(Op op, [[maybe_unused]] const U& operand, Body lbd);
+
+    /**
+     * @brief Run an arbitrary in-place operation on this element,
+     *        materialising the chunk first if it is currently compressed,
+     *        and maintaining the counter-mode zero-tracking bookkeeping
+     *        around it.
+     * @tparam Lambda Callable performing the actual in-place modification.
+     * @param operation The operation to run.
+     */
+    template <typename Lambda>
+    void execute_inplace_operation(Lambda operation);
+
+    /**
+     * @brief Early-out check for operator=(): is the chunk already
+     *        compressed AND is the value being assigned the compressible
+     *        constant? If so, the write is a genuine no-op.
+     * @tparam U Type of the value being assigned.
+     * @param value Value being assigned.
+     * @return true if @p value == zero and the chunk is already compressed.
+     * @note Never while the chunk has a deferred op pending (pending_any()):
+     *       that op, older than this write in program order, would replay
+     *       AFTER it -- the engine's WAW guard retires it first, and this
+     *       early-out sits before the engine. Constant-false serially.
+     */
+    template <typename U>
+    [[nodiscard]] bool is_cst_val_and_v_equal_zero(const U& value) const noexcept
+    {
+        return value == zero && is_cst_val() && !chunk_.pending_any();
+    }
+
+    /**
+     * @brief Core of operator=(): writes @p value, with an early-out when the chunk
+     *        is already compressed to it; maintains the zero counter in
+     *        counter-mode builds.
+     * @tparam U Type of the value being assigned.
+     * @param value Value to write.
+     * @return The value that was written.
+     */
+    template <typename U>
+    // InT<U>, not const U&: this is the one frame not inlined into the caller,
+    // so small types cross the call by value. Non-deducible: call assign_impl<U>(v).
+    T assign_impl(InT<U> value) noexcept;
+
+    /**
+     * @brief Run a write on this element, materialising the chunk if needed and
+     *        maintaining the counter-mode bookkeeping (non-OMP path; async
+     *        counterpart: ProxyFastCompPolicy::execute_simple_operation_async).
+     * @tparam Lambda Callable performing the actual write.
+     * @param operation The write to perform.
+     */
+    template <typename Lambda>
+    void execute_simple_operation(Lambda operation);
+
+    /**
+     * @brief Shared implementation behind operator/=, operator*=, and
+     *        operator%=.
+     * @details First pulls any foreign deferred write (chunk.reader_sync()).
+     *          Counter mode: skipped when the value is zero (the result stays
+     *          zero), else execute_arithmetic_compound_operation() then the
+     *          counter update. Deferred/OMP builds: Base::apply_atomic_op(),
+     *          unless the value is zero AND no deferred queue is active for this
+     *          thread.
+     * @tparam U Type of the operand.
+     * @tparam BinaryOp Binary operator to apply (divides/multiplies/modulo).
+     * @param operand Operand to combine with the current value.
+     * @param op The operator to apply.
+     */
+    template <typename U, typename BinaryOp>
+    void apply_compound_operation(InT<U> operand, BinaryOp op); // InT: see assign_impl
+
+  public:
+    using CHUNK_INHERIT_CTOR_TYPENAME FastCompPolicy::ProxyFastCompPolicy;
+
+    /**
+     * @brief Construct a proxy for element `num_` of `chunk_`.
+     * @param values Reference to the chunk's values pointer.
+     * @param num Element offset within the chunk.
+     * @param chunk Owning chunk.
+     */
+    explicit Proxy(ValuesTypeRef values, int num, Chunk<T>& chunk) noexcept : FastCompPolicy(values, num, chunk) {}
+
+    Proxy(const Proxy& other)     = default;
+    Proxy(Proxy&& other) noexcept = default;
+
+    /** @brief Clean path: exact match or safe conversion (small operand, by value). */
+    template <typename U>
+        requires IsCleanAssignment<T, U>
+    T operator=(const U& operand) noexcept
+    {
+        return assign_impl<U>(operand);
+    }
+
+    /** @brief Trap path: risky conversion (e.g. float = double). */
+    template <typename U>
+        requires(!IsCleanAssignment<T, U>) && std::assignable_from<T&, U>
+    [[deprecated("HPC WARNING: Type mismatch in assignment. Use 'f' suffix for floats.")]]
+    T operator=(const U& operand) noexcept
+    {
+        return assign_impl<T>(static_cast<T>(operand));
+    }
+
+    /**
+     * @brief Proxy-to-proxy assignment: read `from`'s current value through
+     *        operator T() (gated read) and write it into this proxy's slot
+     *        through assign_impl() (the full write engine).
+     * @param from Proxy to read the value from.
+     * @return *this.
+     */
+    const Proxy& operator=(const Proxy& from) noexcept;
+
+    /**
+     * @brief Negation of is_cst_val().
+     * @return true if the chunk is materialised (not compressed).
+     */
+    [[nodiscard]] bool is_not_cst_val() const noexcept
+    {
+        return chunk_.is_not_cst_val1();
+    }
+
+    /**
+     * @brief Re-state the owning chunk's zero count after a BULK fill that did
+     *        not go through this write path.
+     *
+     * @details nb_val_eq_zero_ is maintained per write, and manage_full_zero()
+     *          fires on `nb_val_eq_zero_ == chunk_size` exactly. A direct store
+     *          into the buffer leaves the counter wrong, and a later write can
+     *          then compress a chunk that is not all zero. The counter is in a
+     *          private base of Chunk<T> befriending only this proxy, hence the
+     *          verb here. Caller: RechunkSupport::rechunk_refill()'s raw-fill; a
+     *          no-op when counters are compiled out.
+     *
+     * @param n_zeros number of zero cells over the chunk's FULL chunk_size()
+     *        window -- the same window is_full_zero() is asked about, so the
+     *        untouched tail of a partially-filled last chunk counts too.
+     */
+    void resync_nb_val_eq_zero(CounterValueT n_zeros) const noexcept
+    {
+        chunk_.set_nb_val_eq_zero(n_zeros);
+    }
+
+    /**
+     * @brief Counter mode: compress the owning chunk if its zero count says it
+     *        is all zero -- what the write bringing the count to chunk_size()
+     *        does (perform_core_assignment), for a BULK store that bypassed it.
+     *
+     * @details Call after resync_nb_val_eq_zero(). Pins the ambient geometry and
+     *          allocator set the free routes by, as the write path does.
+     *          Always false when counters are compiled out (fast block
+     *          compression: the pass folds the chunk).
+     * @return true when the chunk was folded: its buffer is gone.
+     */
+    [[nodiscard]] bool fold_if_full_zero() const;
+
+    /**
+     * @brief Add @p operand to this element in place.
+     * @tparam U Type of the operand.
+     * @param operand Operand to add.
+     * @return This proxy. Converting it to T reads the resulting value,
+     *         synchronised (operator T() -> read_pure()); discarding it,
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
+    template <typename U>
+        requires ElementAddable<T>
+    Proxy operator+=(const U& operand) noexcept
+    {
+        this->template arithmetic_assign<U>(operand, std::plus<>{});
+        return *this;
+    }
+
+    /**
+     * @brief Subtract @p operand from this element in place.
+     * @tparam U Type of the operand.
+     * @param operand Operand to subtract.
+     * @return This proxy. Converting it to T reads the resulting value,
+     *         synchronised (operator T() -> read_pure()); discarding it,
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
+    template <typename U>
+        requires ElementSubtractable<T>
+    Proxy operator-=(const U& operand) noexcept
+    {
+        this->template arithmetic_assign<U>(operand, std::minus<>{});
+        return *this;
+    }
+
+    /**
+     * @brief Divide this element by @p operand in place.
+     * @tparam U Type of the operand.
+     * @param operand Divisor. Integer element: check builds stop on operand == 0
+     *        (internal::check_integer_divisor); a floating one gives inf/NaN.
+     * @return This proxy. Converting it to T reads the resulting value,
+     *         synchronised (operator T() -> read_pure()); discarding it,
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
+    template <typename U>
+        requires ElementDivisible<T>
+    Proxy operator/=(const U& operand) noexcept
+    {
+        internal::check_integer_divisor<T>(operand, "/=");
+        apply_compound_operation<U>(operand, std::divides<>());
+        return *this;
+    }
+
+    /**
+     * @brief Multiply this element by @p operand in place.
+     * @tparam U Type of the operand.
+     * @param operand Multiplier.
+     * @return This proxy. Converting it to T reads the resulting value,
+     *         synchronised (operator T() -> read_pure()); discarding it,
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
+    template <typename U>
+        requires ElementMultipliable<T>
+    Proxy operator*=(const U& operand) noexcept
+    {
+        apply_compound_operation<U>(operand, std::multiplies<>());
+        return *this;
+    }
+
+    /**
+     * @brief Compute this element modulo @p operand in place. Integral T only; a
+     *        no-op passthrough (the element unchanged) for non-integral T.
+     * @tparam U Type of the operand.
+     * @param operand Modulus. Check builds stop on operand == 0
+     *        (internal::check_integer_divisor).
+     * @return This proxy. Converting it to T reads the resulting value,
+     *         synchronised (operator T() -> read_pure()); discarding it,
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
+    template <typename U>
+        requires ElementModulable<T> || std::is_same_v<T, bool>
+    Proxy operator%=(const U& operand) noexcept
+    {
+        if constexpr (std::is_integral_v<T>)
+        {
+            internal::check_integer_divisor<T>(operand, "%=");
+            apply_compound_operation<U>(operand, typename Base::modulo{});
+            return *this;
+        }
+        else
+        {
+            return *this;
+        }
+    }
+
+    /**
+     * @brief Implicit read conversion: returns the element's current value.
+     *
+     * @details The write entry does not flush, so a read must pull any deferred
+     *          write queued for this offset: a plain values[num] could return a
+     *          superseded value. zero_one_value::Proxy / zero_any::Proxy inherit ProxyBase::operator T()
+     *          (read_pure()).
+     *
+     *          Same pre-filter as ArrayChunkBase::sync_chunk(): the dirty bit is
+     *          set by the deferred-enqueue path, so a clear bit means the fast
+     *          read stands. Folds to constant false in serial builds.
+     */
+    operator T() const noexcept;
+
+    // No address, and do not add operator T&(): `tab[nc] = val` would route
+    // through it and materialise blocks for nothing. Hence foo(T&) rejects a[i].
+    T*       operator&()       = delete;
+    const T* operator&() const = delete;
+
+    /**
+     * @brief The table number of array @p ptr.
+     * @param ptr The array to look up.
+     * @return The table number registered for @p ptr.
+     */
+    [[nodiscard]] static int get_num_tab(ArrayKey<Chunk<T>> ptr) noexcept
+    {
+        return share_info_array->get_num_tab(ptr);
+    }
+
+    /**
+     * @brief This proxy's table number: the armed one (operator[] arms it),
+     *        the registry lookup otherwise.
+     * @param array_ptr This proxy's array (ptr_on_array).
+     * @return The table number of @p array_ptr.
+     */
+    [[nodiscard]] int get_num_tab_cached(ArrayKey<Chunk<T>> array_ptr) const noexcept
+    {
+        return this->num_tab_ >= 0 ? this->num_tab_ : get_num_tab(array_ptr);
+    }
+
+    /// Registry of every zero::Array: array address -> table number.
+    static inline constinit internal::LazyImmortal<PointerMap<T>> share_info_array;
+};
+
+} // namespace zero
+
+/// @brief Write the element's value, read through proxy.read_pure(), to @p os.
+/// @return @p os.
+template <typename T>
+std::ostream& operator<<(std::ostream& os, const zero::Proxy<T>& proxy)
+{
+    // Through the read entry, like operator T(): values[num] is stale while a
+    // deferred op pends on this offset.
+    os << proxy.read_pure();
+    return os;
+}
+
+} // namespace shrink_array
+
+#include "chunk/internal/zero_proxy_inline.h" // the template bodies

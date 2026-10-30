@@ -16,23 +16,24 @@
 
 #pragma once
 
-#include <algorithm>  // std::max (slab sizing)
-#include <bit>        // std::has_single_bit (the FOREIGN-block report schedule)
-#include <cassert>    // assert
-#include <cstddef>    // std::byte, std::size_t
-#include <cstdint>    // std::uintptr_t (the block probe)
-#include <memory>     // std::unique_ptr
-#include <utility>    // std::move
-#include <vector>     // std::vector
-#include <sys/mman.h> // msync / MS_ASYNC (the block probe)
-#include <unistd.h>   // sysconf (same)
+#include <cassert>     // assert
+#include <cstddef>     // std::byte, std::size_t
+#include <cstdint>     // std::uintptr_t (the block probe)
+#include <memory>      // std::unique_ptr
+#include <mutex>       // std::mutex, std::scoped_lock (the pools of exited threads)
+#include <type_traits> // std::conditional_t (DeferredByteAllocSlot)
+#include <utility>     // std::move
+#include <vector>      // std::vector
+#include <sys/mman.h>  // msync / MS_ASYNC (the block probe)
 
+#include "fast_allocators/internal/raw_memory.h" // address_bits
 #include "chunk/config.h"                   // build_config::use_fast_alloc, build_config::deferred_pool_granularity
 #include "chunk/internal/env_parse.h"       // env_number (CHUNK_DEFERRED_POOL_KB)
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (the block probe)
 #include "chunk/internal/pool_ledger.h"     // pool_ledger::on_op_alloc / on_ctx_alloc and the frees
-#include "chunk/ring_log_debug.h"           // ring_log_op, dump_ring_for_addr, ev_op_alloc / ev_op_free
-#include "chunk/log.h"                      // CHUNK_LOG (recycle)
+#include "chunk/ring_log_debug.h"           // ring_log_op, dump_ring_for_addr, EventCode::op_alloc / EventCode::op_free
+#include "fast_allocators/internal/pmp_runtime.h" // fast_alloc::pmp::backend (the pools of exited threads)
+#include "chunk/log.h"                            // CHUNK_LOG (recycle)
 
 #if CHUNK_OPT_FAST_ALLOC
     #include "fast_allocators/slab_arena.h"   // fast_alloc::ArenaKind
@@ -154,6 +155,47 @@ struct FastAllocatorBase
 // ============================================================================
 
 /**
+ * @brief Std backend: the op / ctx pools of a thread outlive it, until the
+ *        next phase end.
+ * @details An application thread under the std backend (a std::thread, docs/
+ *          threading_backends.md step 7c) may exit with writes still queued on
+ *          its rank: the serial contract joins the writers, THEN calls
+ *          finalize_parallel_phase(), which replays them. Its thread_local
+ *          allocator would hand its slabs back to the Op / Ctx arena at the
+ *          exit, where another thread's next slab takes them and overwrites the
+ *          queued ops. So, under the std backend, the allocator lives on the
+ *          heap, an exiting thread hands it to exited_thread_pools(), and
+ *          finalize_parallel_phase() destroys those after its flush
+ *          (retire_exited_thread_pools()). OpenMP's threads live as long as the
+ *          runtime: their pools stay in the thread_local, as before.
+ */
+inline constexpr bool deferred_pools_outlive_thread =
+    build_config::use_fast_alloc && ::fast_alloc::pmp::backend == ::fast_alloc::pmp::BackendKind::std_threads;
+
+namespace detail
+{
+/// @brief The op / ctx byte allocators of the threads that exited since the
+///        last phase end (std backend; see deferred_pools_outlive_thread).
+struct ExitedThreadPools
+{
+    std::mutex                                           mutex; ///< guards list
+    std::vector<fast_alloc::TCTypeAllocator<std::byte>*> list;  ///< owned, destroyed by retire_exited_thread_pools()
+};
+
+/// @brief The process-wide list (immortal: threads add to it from their thread_local destructors).
+[[nodiscard]] inline ExitedThreadPools& exited_thread_pools()
+{
+    static auto* const pools = new ExitedThreadPools; // NOLINT(cppcoreguidelines-owning-memory): immortal
+    return *pools;
+}
+
+/// @brief In place of the inline allocator when it lives on the heap.
+struct NoInlineAlloc
+{
+};
+} // namespace detail
+
+/**
  * @brief Per-element-type storage slot for the byte allocator of allocator().
  *
  * Do not hold a plain `thread_local TCTypeAllocator<std::byte>` in allocator():
@@ -169,9 +211,53 @@ struct FastAllocatorBase
 template <typename T>
 struct DeferredByteAllocSlot
 {
-    fast_alloc::TCTypeAllocator<std::byte> alloc;               ///< this thread's byte allocator for T
-    bool                                   initialized = false; ///< alloc set up (allocator())
+    using Alloc = fast_alloc::TCTypeAllocator<std::byte>;
+    /// deferred_pools_outlive_thread, made dependent on T: the branch not
+    /// taken below is then not checked (it names the other member's type).
+    static constexpr bool on_heap = deferred_pools_outlive_thread && sizeof(T) > 0;
+
+    DeferredByteAllocSlot() = default;
+    // Owns its allocator (inline, or on the heap until the thread exits).
+    DeferredByteAllocSlot(const DeferredByteAllocSlot&)            = delete;
+    DeferredByteAllocSlot& operator=(const DeferredByteAllocSlot&) = delete;
+    DeferredByteAllocSlot(DeferredByteAllocSlot&&)                 = delete;
+    DeferredByteAllocSlot& operator=(DeferredByteAllocSlot&&)      = delete;
+
+    /// Std backend: the thread exits; its allocator waits for the phase end.
+    ~DeferredByteAllocSlot();
+
+    /// @brief This thread's byte allocator for T.
+    [[nodiscard]] Alloc& alloc();
+
+    bool initialized = false; ///< alloc set up (allocator())
+
+  private:
+    /// The allocator, in the thread_local itself (OpenMP, serial).
+    [[no_unique_address]] std::conditional_t<on_heap, detail::NoInlineAlloc, Alloc> inline_{};
+    Alloc* heap_ = nullptr; ///< std backend: the allocator, on the heap
 };
+
+/**
+ * @brief Std backend: destroy the op / ctx allocators of the threads that
+ *        exited (deferred_pools_outlive_thread). At a phase end, after the
+ *        flush: no op of theirs is queued any more. A no-op otherwise.
+ */
+inline void retire_exited_thread_pools()
+{
+    if constexpr (deferred_pools_outlive_thread)
+    {
+        std::vector<fast_alloc::TCTypeAllocator<std::byte>*> retired;
+        {
+            auto&                  ex = detail::exited_thread_pools();
+            const std::scoped_lock lock(ex.mutex);
+            retired.swap(ex.list);
+        }
+        for (auto* alloc : retired)
+        {
+            delete alloc; // NOLINT(cppcoreguidelines-owning-memory): owned by the list
+        }
+    }
+}
 
 /**
  * @brief Per-element-type free-list slot.
@@ -196,16 +282,7 @@ struct DeferredFreeListSlot
     // thread exit). Under fast-alloc `fl` owns nothing: ~TCTypeAllocator frees
     // the slabs. Under CHUNK_POOL_NO_REUSE recycle() deletes at once, `fl` stays
     // empty and this loop is a no-op (no double free).
-    ~DeferredFreeListSlot()
-    {
-        if constexpr (!build_config::use_fast_alloc)
-        {
-            for (T* p : fl)
-            {
-                ::operator delete(static_cast<void*>(p));
-            }
-        }
-    }
+    ~DeferredFreeListSlot();
 
     std::vector<T*> fl; ///< recycled blocks, reused by allocate_raw()
 };
@@ -233,60 +310,12 @@ class FastAllocatorConcrete : public FastAllocatorBase
     // Aliasing check (POOL_LEDGER): identity of this (type,thread) pool -- the
     // byte-slab address under fast-alloc, else the free-list address. Two element
     // types share it iff -fipa-icf folded their allocator()/free_list().
-    [[nodiscard]] const void* slab_addr() const noexcept override
-    {
-        if constexpr (build_config::use_fast_alloc)
-        {
-            return static_cast<const void*>(&allocator());
-        }
-        else
-        {
-            return static_cast<const void*>(&free_list());
-        }
-    }
+    [[nodiscard]] const void* slab_addr() const noexcept override;
 
     /**
      * @brief Allocates raw memory for one object of type T.
      */
-    void* allocate_raw() override
-    {
-        if constexpr (build_config::pool_no_reuse)
-        {
-            // Diagnostic mode (CHUNK_POOL_NO_REUSE): bypass the free-list AND the fast
-            // pool, so recycle() is a real ::operator delete and sanitizers see a
-            // use-after-recycle that the free-list would hide (stale but mapped data).
-            return ::operator new(sizeof(T));
-        }
-        auto& fl = free_list();
-        if (!fl.empty())
-        {
-            T* block = fl.back();
-            fl.pop_back();
-            // Check-build guard: a firing here blames the free-list (a corrupt
-            // recycled pointer), not the slab.
-            if constexpr (build_config::any_check)
-            {
-                probe_returned_block(static_cast<void*>(block), "freelist");
-            }
-            return block;
-        }
-
-        if constexpr (build_config::use_fast_alloc)
-        {
-            std::byte* raw = allocator().alloc();
-            // Check-build guard: a firing here blames TCTypeAllocator itself
-            // (corrupt block/bump state).
-            if constexpr (build_config::any_check)
-            {
-                probe_returned_block(static_cast<void*>(raw), "slab");
-            }
-            return static_cast<void*>(raw);
-        }
-        else
-        {
-            return ::operator new(sizeof(T));
-        }
-    }
+    void* allocate_raw() override;
 
     /**
      * @brief Recycles a raw memory block back into the per-thread free list.
@@ -302,46 +331,7 @@ class FastAllocatorConcrete : public FastAllocatorBase
      * (TCTypeAllocator::is_free_able_elt); a foreign one is dropped -- a bounded
      * leak, its owner still frees the whole slab at teardown.
      */
-    void recycle(void* block) override
-    {
-        if constexpr (build_config::pool_no_reuse)
-        {
-            ::operator delete(block); // CHUNK_POOL_NO_REUSE: real free, visible to sanitizers
-            return;
-        }
-        if constexpr (build_config::use_fast_alloc)
-        {
-            // Foreign block (cross-thread drain): drop it (see above).
-            if (!allocator().is_free_able_elt(static_cast<std::byte*>(block)))
-            {
-                if constexpr (build_config::any_check)
-                {
-                    // Expected, not an anomaly: recycle=debug reports the
-                    // first, then on a doubling schedule with the running total
-                    // (~log2(N) lines per thread); recycle=trace (formerly
-                    // CHUNK_RECYCLE_TRACE) one line per block.
-                    thread_local std::size_t n_foreign = 0;
-                    ++n_foreign;
-                    if (std::has_single_bit(n_foreign))
-                    {
-                        CHUNK_LOG(debug, recycle,
-                                  "dropped FOREIGN block {} (not owned by this thread's slab) -- cross-thread drain, "
-                                  "would be use-after-munmap if recycled; {} on this thread so far",
-                                  block, n_foreign);
-                    }
-                    else
-                    {
-                        CHUNK_LOG(trace, recycle,
-                                  "dropped FOREIGN block {} (not owned by this thread's slab) -- cross-thread drain, "
-                                  "would be use-after-munmap if recycled; {} on this thread so far",
-                                  block, n_foreign);
-                    }
-                }
-                return;
-            }
-        }
-        free_list().push_back(static_cast<T*>(block));
-    }
+    void recycle(void* block) override;
 
     /**
      * @brief Target slab size of the op / ctx pools, in bytes: the build's
@@ -353,53 +343,14 @@ class FastAllocatorConcrete : public FastAllocatorBase
      *          (`always`), where a fresh 2 MiB-aligned slab can fault a whole
      *          huge page in at its first object.
      */
-    [[nodiscard]] static uintptr_t deferred_pool_slab_granularity() noexcept
-    {
-        static const uintptr_t bytes = []
-        {
-            constexpr std::size_t def_kb = build_config::deferred_pool_granularity / 1024;
-            const auto            kb     = shrink_array::env_number<std::size_t>("CHUNK_DEFERRED_POOL_KB", def_kb);
-            return static_cast<uintptr_t>(kb == 0 ? def_kb : kb) * 1024;
-        }();
-        return bytes;
-    }
+    [[nodiscard]] static uintptr_t deferred_pool_slab_granularity() noexcept;
 
     /**
      * @brief Returns the per-thread byte allocator for type T.
      * @details Slabs of deferred_pool_slab_granularity() bytes, at least 64
      *          objects (TCSlabPool rounds the size up to a power of two).
      */
-    static ByteAlloc& allocator()
-    {
-        // T-tagged storage against -fipa-icf folding: see DeferredByteAllocSlot.
-        thread_local DeferredByteAllocSlot<T> slot;
-
-        if (!slot.initialized)
-        {
-            // Op and ctx pools MUST draw from disjoint arenas: a freed ctx slab
-            // reobtained by the op pool would overwrite a live op's vtable.
-            slot.alloc.set_arena(Arena);
-
-            constexpr size_t element_size = sizeof(T);
-            // TCAllocator threads its free list through the freed elements (an
-            // int in each): TCAllocator::init()'s run-time check, at compile time.
-            static_assert(element_size >= sizeof(int) && element_size % alignof(int) == 0,
-                          "deferred-op pool: an object must hold TCAllocator's free-list index");
-
-            // Slab size in BYTES (TCSlabPool::init's second parameter; not an
-            // object count). Never fewer than 64 objects per slab.
-            const uintptr_t slab_request =
-                std::max<uintptr_t>(deferred_pool_slab_granularity(), uintptr_t{64} * element_size);
-
-            // nb_max_block_empty = -1: NEVER munmap an empty slab. A freed op
-            // slab's address could be remapped by fast_alloc::map_anonymous() for
-            // the VALUE pool on another thread and overwrite a still-live op. Op
-            // slabs are small and bounded.
-            slot.alloc.init(element_size, slab_request, -1);
-            slot.initialized = true;
-        }
-        return slot.alloc;
-    }
+    static ByteAlloc& allocator();
 
     /**
      * @brief Per-thread free list of recycled memory blocks.
@@ -416,40 +367,7 @@ class FastAllocatorConcrete : public FastAllocatorBase
     // thread stacks). msync() asks the kernel instead: ENOMEM if unmapped, never faults.
     /// @brief Check-only: fail the invariant if @p ptr, returned by @p path,
     ///        is null, misaligned or not a mapped page.
-    static void probe_returned_block(const void* ptr, const char* path) noexcept
-    {
-        if constexpr (build_config::any_check)
-        {
-            const auto addr = reinterpret_cast<std::uintptr_t>(ptr);
-
-            if (ptr == nullptr)
-            {
-                CHUNK_INVARIANT_FAILED("[ALLOC_PROBE {}] allocate_raw returned NULL for T size={}", path, sizeof(T));
-            }
-
-            if ((addr & (alignof(std::max_align_t) - 1)) != 0 && (addr & 0x7U) != 0)
-            {
-                CHUNK_INVARIANT_FAILED("[ALLOC_PROBE {}] misaligned block p={} (T size={})", path,
-                                       static_cast<const void*>(ptr), sizeof(T));
-            }
-
-            // msync(MS_ASYNC) only reads the VMA table: 0 = mapped, -1/ENOMEM = not.
-            // The object may straddle two pages: check both ends. Page bases by
-            // pointer arithmetic from p, not int -> pointer casts (performance-no-int-to-ptr).
-            const long  pg   = ::sysconf(_SC_PAGESIZE);
-            const auto  mask = static_cast<std::uintptr_t>(pg - 1);
-            const auto* base = static_cast<const char*>(ptr);
-            const void* pg0  = base - (addr & mask);
-            const void* pg1  = base + (sizeof(T) - 1) - ((addr + sizeof(T) - 1) & mask);
-
-            if (::msync(const_cast<void*>(pg0), 1, MS_ASYNC) != 0 || ::msync(const_cast<void*>(pg1), 1, MS_ASYNC) != 0)
-            {
-                CHUNK_INVARIANT_FAILED("[ALLOC_PROBE {}] block NOT MAPPED (wild ptr): p={} T size={} slab={}", path,
-                                       static_cast<const void*>(ptr), sizeof(T),
-                                       build_config::use_fast_alloc ? static_cast<const void*>(&allocator()) : nullptr);
-            }
-        }
-    }
+    static void probe_returned_block(const void* ptr, const char* path) noexcept;
 };
 
 // ============================================================================
@@ -506,18 +424,7 @@ class AllocatorRegistry
     /// @tparam T Object type; allocators are shared between types of the same size.
     /// @return The allocator whose block_size is sizeof(T).
     template <typename T>
-    static FastAllocatorBase* get_or_create()
-    {
-        // Hot (every alloc/release): cached per thread until reset() moves the generation.
-        thread_local CachedAllocatorSlot<Tag, T> cached;
-        if (cached.alloc != nullptr && cached.generation == generation()) [[likely]]
-        {
-            return cached.alloc;
-        }
-        cached.alloc      = find_or_create<T>();
-        cached.generation = generation();
-        return cached.alloc;
-    }
+    static FastAllocatorBase* get_or_create();
 
     /// @brief Destroy this thread's allocators (teardown).
     static void reset()
@@ -530,24 +437,7 @@ class AllocatorRegistry
     /// @brief The registry scan behind get_or_create(): this thread's allocator
     ///        for objects of sizeof(T) bytes, created on first request.
     template <typename T>
-    static FastAllocatorBase* find_or_create()
-    {
-        auto&        v  = allocs();
-        const size_t sz = sizeof(T);
-
-        for (auto& a : v)
-        {
-            if (a->block_size == sz)
-            {
-                return a.get();
-            }
-        }
-
-        auto               ptr = std::make_unique<FastAllocatorConcrete<T, arena_of_tag<Tag>::value>>();
-        FastAllocatorBase* raw = ptr.get();
-        v.push_back(std::move(ptr));
-        return raw;
-    }
+    static FastAllocatorBase* find_or_create();
 
     /// @brief This thread's registry generation: moved on by reset(), it
     ///        invalidates every cached answer of get_or_create().
@@ -556,15 +446,15 @@ class AllocatorRegistry
     ///       rescan.
     static unsigned int& generation()
     {
-        thread_local unsigned int g = 0;
-        return g;
+        thread_local unsigned int gen = 0;
+        return gen;
     }
 
     /// @brief This thread's allocators (one per object size seen so far).
     static std::vector<std::unique_ptr<FastAllocatorBase>>& allocs()
     {
-        thread_local std::vector<std::unique_ptr<FastAllocatorBase>> v;
-        return v;
+        thread_local std::vector<std::unique_ptr<FastAllocatorBase>> allocators;
+        return allocators;
     }
 };
 
@@ -583,7 +473,7 @@ void chunk_align_probe([[maybe_unused]] const char* site, [[maybe_unused]] void*
 {
     if constexpr (build_config::align_check)
     {
-        if ((reinterpret_cast<std::uintptr_t>(mem) & (alignof(T) - 1)) != 0)
+        if ((::fast_alloc::address_bits(mem) & (alignof(T) - 1)) != 0)
         {
             CHUNK_INVARIANT_FAILED("[SLAB MISALIGN] {}: ptr={} alignof={} sizeof={} (block from slab is under-aligned "
                                    "for T)",
@@ -613,7 +503,7 @@ template <typename T, typename... Args>
     // (vptr written).
     if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
     {
-        ring_log_op(get_tid(), ev_op_alloc, 0, mem);
+        ring_log_op(get_tid(), EventCode::op_alloc, 0, mem);
     }
     return constructed;
 }
@@ -649,7 +539,7 @@ void free_op(T* op)
     // can show a free while the op was still referenced by op_map.
     if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
     {
-        ring_log_op(get_tid(), ev_op_free, 0, static_cast<const void*>(op));
+        ring_log_op(get_tid(), EventCode::op_free, 0, static_cast<const void*>(op));
     }
     pool_ledger::on_op_free(static_cast<void*>(op));
     FastAllocatorBase* alloc = OpRegistry::get_or_create<T>();
@@ -700,3 +590,5 @@ inline void reset_all()
 }
 
 } // namespace shrink_array
+
+#include "chunk/internal/deferred_op_pool_inline.h" // the template bodies

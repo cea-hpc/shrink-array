@@ -13,9 +13,9 @@
 ### 1.1 `VmRSS` est faux à plusieurs threads
 
 `VmRSS` (`/proc/self/status`), `/proc/self/statm` et `ru_maxrss` (`getrusage`) lisent les
-compteurs de mémoire résidente du noyau. Ces compteurs sont tenus **par thread**, et reportés
+compteurs de mémoire résidente du noyau. Ces compteurs sont tenus **par thread**, et répercutés
 dans le total du processus seulement de temps en temps. Avec 64 threads qui font des défauts
-de page, le total prend du retard. Mesuré sur `shrink_bench_chunk2a_dyn` :
+de page, le total prend du retard. Mesuré sur `shrink_bench_omp_zero_any_dyn` :
 
 | moment | `VmRSS` | exact (`smaps_rollup`) | retard |
 |---|---|---|---|
@@ -47,7 +47,7 @@ Dans la bibliothèque : `shrink_array::exact_rss_kib()` (`internal/exact_rss.h`)
 | question | outil |
 |---|---|
 | combien dans les tampons de chunks, combien ailleurs ? | `CHUNK_LOG=memory=info` : à chaque passage de l'advisor, la mémoire exacte, dont la part résidente de l'arène des tampons (`mincore`) |
-| que font les slabs ? | `CHUNK_ARENA_REPORT=1` (slabs distribués, rendus au système) |
+| que font les slabs ? | `CHUNK_LOG=warn,rechunk=info,arena=info` (slabs distribués, rendus au système) |
 | quelle zone de l'espace d'adressage grossit ? | deux `pmap -x <pid>` à deux instants, comparés par zone |
 | que rend chaque rechunk ? | `CHUNK_LOG=memory=debug` : ligne `rss` (mémoire à chaque étape, `end-entry`) |
 
@@ -67,7 +67,7 @@ l'autre, au mégaoctet près. Un seul run suffit.
   6,4-6,8 s et trois à 7,7-8,0 s (+18 %). `perf stat` : même fréquence (3,26 GHz), même nombre
   d'instructions, mêmes défauts du dernier niveau de cache, mais un IPC de 3,45 au lieu de
   3,95 et +10 points de cycles bloqués sur la mémoire. Chaque accès mémoire coûte plus cher,
-  sans doute selon la disposition physique des pages reçues au démarrage. Chunk2 a un mode
+  sans doute selon la disposition physique des pages reçues au démarrage. `zero_one_value` a un mode
   lent encore plus marqué (~+40 %, des runs à 16 s au lieu de 11).
 - **La dérive entre fenêtres de temps.** Un même binaire, sans aucune recompilation : 10,75 à
   11,53 s dans une fenêtre, 9,49 à 10,08 s une heure plus tard.
@@ -93,14 +93,13 @@ dans des répertoires neufs avec la même configuration, alterner, et se méfier
 
 | comparer… | interrupteur |
 |---|---|
-| sans advisor / analyses seules / avec rechunks | `CHUNK_ADVISOR_PERIOD=0` / `CHUNK_RECHUNK_DRY_RUN=1` / rien |
-| affinité paresseuse / immédiate | `CHUNK_ALLOC_AFFINITY_EAGER=0` / `=1` |
-| taille maximale d'un pas de grossissement | `CHUNK_RECHUNK_MAX_COARSEN=<n>` |
-| ordonnancement de la reconstruction | `CHUNK_RECHUNK_SCHEDULE=…` |
+| sans advisor / analyses seules / avec rechunks | `--advisor_period 0` / `--rechunk_dry_run` / rien |
+| taille maximale d'un pas de grossissement | `--rechunk_max_coarsen <n>` |
 
 La liste complète est dans [reglages_developpeur_fr.md](reglages_developpeur_fr.md).
-Attention : `CHUNK_ADVISOR_MIN_GAIN_MB=1000000` ne bloque plus les grossissements depuis le
-critère « gain par coût » ; utiliser `CHUNK_RECHUNK_DRY_RUN=1`.
+Les réglages du décideur sont des options de `shrink_bench` (la bibliothèque ne les lit dans
+aucune variable). Attention : `--rechunk_min_gain_mb 1000000` ne bloque plus les grossissements
+depuis le critère « gain par coût » ; utiliser `--rechunk_dry_run`.
 
 ## 3. Recettes
 
@@ -109,8 +108,13 @@ critère « gain par coût » ; utiliser `CHUNK_RECHUNK_DRY_RUN=1`.
 ```
 rm -f /tmp/modes.txt
 for r in 1 2 3; do
-  for mode in "CHUNK_ADVISOR_PERIOD=0" "CHUNK_RECHUNK_DRY_RUN=1" "X_NORMAL=1"; do
-    t=$(env $mode OMP_NUM_THREADS=64 OMP_PROC_BIND=close OMP_PLACES=cores $BIN --mode perf --no_io 2>/dev/null \
+  for mode in no_advisor dry_run normal; do
+    case $mode in
+      no_advisor) opt="--advisor_period 0" ;;
+      dry_run)    opt="--rechunk_dry_run" ;;
+      normal)     opt="" ;;
+    esac
+    t=$(OMP_NUM_THREADS=64 OMP_PROC_BIND=close OMP_PLACES=cores $BIN --mode perf --no_io $opt 2>/dev/null \
         | grep -oE "Elapsed time computation : [0-9.]+" | awk '{print $NF}')
     echo "$mode $t" >> /tmp/modes.txt
   done
@@ -143,7 +147,7 @@ perf stat -I 1000 -x, -e task-clock,cycles:u,instructions:u,stall_backend_mem:u 
 ```
 
 Le nombre de cœurs occupés est `task-clock / 1000` pour chaque seconde. C'est ce qui a montré
-que v1, après son rechunk, n'occupait plus que ~40 cœurs au lieu de ~52.
+que `zero`, après son rechunk, n'occupait plus que ~40 cœurs au lieu de ~52.
 
 **Temps utilisateur, temps système, défauts de page** :
 `/usr/bin/time -f "%e s réel, %U s utilisateur, %S s système, %R défauts mineurs" $BIN …`.
@@ -155,8 +159,8 @@ que v1, après son rechunk, n'occupait plus que ~40 cœurs au lieu de ~52.
 `python/bimodal_probe.py` lance N fois le même binaire et relève, pour chaque run, les pages par
 nœud NUMA, AnonHugePages, la mémoire libre et les blocs libres d'ordre maximal de chaque nœud
 avant le run, et les compteurs perf pour mille instructions (parcours de TLB, recharges L1D / L2,
-accès distants). Il coupe les runs au plus grand écart de temps et dit quelles grandeurs séparent
-les deux groupes. `--mode` alterne des environnements (`--mode "" --mode "CHUNK_THP=never"`,
+accès distants). Il sépare les runs en deux groupes au plus grand écart de temps et indique quelles
+grandeurs les distinguent. `--mode` alterne des environnements (`--mode "" --mode "CHUNK_RECLAIM_THREADS=0"`,
 `--mode "numactl --membind=0"`).
 
 ```
@@ -176,5 +180,12 @@ python3 python/bimodal_probe.py --runs 12 -- $BIN --mode perf --no_io
   OpenMP tourne sur un seul cœur. Vérifier `ldd $BIN | grep gomp`.
 - **L'assembleur trop ancien** pour `-mcpu=native` avec GCC 16 (« unknown architecture ») :
   charger des `binutils` récents.
+- **Une référence `std::vector` initialisée sur un seul thread** : `std::vector<T> v(n)` écrit
+  ses zéros depuis le thread qui le construit, donc la création est séquentielle et toutes les
+  pages sont sur le nœud NUMA de ce thread ; les boucles parallèles qui suivent lisent de la
+  mémoire distante, et les tableaux par chunks, qui n'allouent rien à la création, paraissent
+  plus rapides qu'ils ne sont. La référence de `shrink_bench` met à zéro en parallèle
+  (`examples/shrink_bench/baseline_vector.h`) : la garder en ajoutant une phase ou un type, et
+  ne pas comparer ses temps de création avec des runs antérieurs à ce changement.
 - **La taille d'un tableau calculée en `int`** : 8 × 10⁹ déborde et devient négatif. Les
   cibles à indice 64 bits (`_int64`) n'ont pas ce problème.

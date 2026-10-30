@@ -66,12 +66,12 @@ def test_error_is_an_event(tmp_path, monkeypatch):
     events.open_file(None)
     try:
         with events.phase("check", []):
-            runs._append_error_now(str(tmp_path / "bench_errors.log"), "CHECK_FAIL: chunk2a t=4\n  tail\n")
+            runs._append_error_now(str(tmp_path / "bench_errors.log"), "CHECK_FAIL: zero_any t=4\n  tail\n")
     finally:
         events.open_file("")
     recs = [json.loads(l) for l in p.read_text().splitlines()]
     err = next(r for r in recs if r["kind"] == "error")
-    assert err["phase"] == "check" and err["summary"] == "CHECK_FAIL: chunk2a t=4"
+    assert err["phase"] == "check" and err["summary"] == "CHECK_FAIL: zero_any t=4"
 
 
 def test_keep_run_outputs(tmp_path, monkeypatch):

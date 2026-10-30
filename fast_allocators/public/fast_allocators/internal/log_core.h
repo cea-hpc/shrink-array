@@ -32,7 +32,8 @@
  *     CHUNK_LOG_POW2(warn, recycle, "dropped FOREIGN block {}", ptr);
  *     CHUNK_LOG_ALWAYS(pool, "{} size {}: {} block(s)", label, size, n); // a report asked for
  *
- * - Filtering: CHUNK_LOG=warn (the default), CHUNK_LOG=warn,rechunk=debug,
+ * - Filtering: CHUNK_LOG=warn,rechunk=info (the default: a re-chunk the
+ *   decider applies says so), CHUNK_LOG=warn,rechunk=debug,
  *   CHUNK_LOG=off. Items apply left to right: a bare level sets every
  *   channel, `channel=level` one. Read once, at the first message;
  *   configure() applies a specification on top of it. The switches of the
@@ -49,13 +50,16 @@
  *   (channel, level letter, kernel thread id), so lines from many threads
  *   do not interleave.
  * - Arguments: anything std::format spells, plus std::complex, "(re+imi)",
- *   and any other type as its bytes in hex (fmt_arg): a message can print
- *   an element value of any type.
+ *   a pointer to any object as its address (no static_cast<const void*> at
+ *   the call), and any other type as its bytes in hex (fmt_arg): a message
+ *   can print an element value of any type. A char pointer stays a string.
  * - Traces and reports: a trace is a flow CHUNK_LOG switches on (CHUNK_LOG);
- *   a report is a summary the program asked for explicitly -- a print_*
- *   function it called, a report switch it set (CHUNK_LEDGER_REPORT,
- *   CHUNK_OMPT_STATS), a trace build option -- and is written whatever
- *   CHUNK_LOG says (CHUNK_LOG_ALWAYS, level info), through the same sink.
+ *   a report is a summary -- the arena's (arena=info), the block ledger's
+ *   (ledger=info), the OMPT statistics (ompt=info), a print_* function the
+ *   program called, a trace build option. The level of its channel switches
+ *   a report on (a print_* call, or a build option, is the request itself);
+ *   once on, it is written in full (CHUNK_LOG_ALWAYS, level info), through
+ *   the same sink.
  *   A report can run at exit: a sink installed with set_sink() must outlive
  *   it, or be removed (set_sink(nullptr)) before its state goes.
  * - Not here: the fatal level. An invariant failure is CHUNK_INVARIANT_FAILED
@@ -73,13 +77,14 @@
 #include <cstring>         // std::memcpy
 #include <format>          // std::format_to_n, std::format_string
 #include <mutex>           // std::mutex, std::once_flag, std::call_once, std::scoped_lock
+#include <span>            // std::span, std::as_bytes (BytesArg)
 #include <source_location> // std::source_location
 #include <string_view>     // std::string_view
-#include <type_traits>     // std::remove_cvref_t, std::conditional_t, std::is_lvalue_reference_v
-#include <utility>         // std::forward, std::declval
-#include <sched.h>         // sched_yield (emit_fatal)
-#include <sys/syscall.h>   // SYS_gettid
-#include <unistd.h>        // getpid, syscall
+#include <type_traits> // std::remove_cvref_t, std::conditional_t, std::is_lvalue_reference_v, std::is_pointer_v, std::is_object_v
+#include <utility>       // std::forward, std::declval
+#include <sched.h>       // sched_yield (emit_fatal)
+#include <sys/syscall.h> // SYS_gettid
+#include <unistd.h>      // getpid, syscall
 
 #ifndef CHUNK_LOG_MAX_LEVEL
     #define CHUNK_LOG_MAX_LEVEL 5 // trace: every message compiled in, CHUNK_LOG filters at run time
@@ -130,22 +135,22 @@ inline constexpr std::array<std::string_view, n_channels> channel_names{
 };
 inline constexpr std::array<std::string_view, n_levels> level_names{"fatal", "error", "warn", "info", "debug", "trace"};
 
-/// @brief The name CHUNK_LOG spells channel @p c with.
-[[nodiscard]] constexpr std::string_view name(Channel c) noexcept
+/// @brief The name CHUNK_LOG spells channel @p chan with.
+[[nodiscard]] constexpr std::string_view name(Channel chan) noexcept
 {
-    return channel_names[static_cast<std::size_t>(c)];
+    return channel_names[static_cast<std::size_t>(chan)];
 }
 
-/// @brief The name CHUNK_LOG spells level @p l with.
-[[nodiscard]] constexpr std::string_view name(Level l) noexcept
+/// @brief The name CHUNK_LOG spells level @p lvl with.
+[[nodiscard]] constexpr std::string_view name(Level lvl) noexcept
 {
-    return level_names[static_cast<std::size_t>(l)];
+    return level_names[static_cast<std::size_t>(lvl)];
 }
 
-/// @brief True when messages of level @p l are compiled in (CHUNK_LOG_MAX_LEVEL).
-[[nodiscard]] constexpr bool compiled(Level l) noexcept
+/// @brief True when messages of level @p lvl are compiled in (CHUNK_LOG_MAX_LEVEL).
+[[nodiscard]] constexpr bool compiled(Level lvl) noexcept
 {
-    return static_cast<int>(l) <= CHUNK_LOG_MAX_LEVEL;
+    return static_cast<int>(lvl) <= CHUNK_LOG_MAX_LEVEL;
 }
 
 /// @brief One message, as a sink receives it: @p message has no prefix and no newline.
@@ -188,7 +193,7 @@ inline constexpr bool is_complex<std::complex<T>> = true;
 ///        C++23's std::Formattable: a disabled formatter has no format()).
 template <typename V>
 concept Formattable =
-    requires(std::formatter<V, char> fmt, const V& v, std::format_context& fmt_ctx) { fmt.format(v, fmt_ctx); };
+    requires(std::formatter<V, char> fmt, const V& value, std::format_context& fmt_ctx) { fmt.format(value, fmt_ctx); };
 
 /// @brief A std::complex, formatted "(re+imi)", "(re-imi)" for a negative imaginary part.
 template <typename T>
@@ -205,6 +210,12 @@ struct BytesArg
     const V* v;
 };
 
+/// @brief True for a pointer to an object std::format does not spell -- any
+///        but void* and the character pointers (a string): printed as an address.
+template <typename V>
+inline constexpr bool is_address =
+    std::is_pointer_v<V> && std::is_object_v<std::remove_pointer_t<V>> && !Formattable<V>;
+
 /// @brief The argument std::format sees for @p arg: itself when its type is Formattable.
 template <typename A>
     requires(Formattable<std::remove_cvref_t<A>> && !is_complex<std::remove_cvref_t<A>>)
@@ -216,14 +227,23 @@ constexpr A&& fmt_arg(A&& arg) noexcept
 /// @brief Overload for std::complex.
 template <typename A>
     requires is_complex<std::remove_cvref_t<A>>
-constexpr auto fmt_arg(A&& z) noexcept
+constexpr auto fmt_arg(A&& value) noexcept
 {
-    return ComplexArg<typename std::remove_cvref_t<A>::value_type>{z};
+    return ComplexArg<typename std::remove_cvref_t<A>::value_type>{value};
+}
+
+/// @brief Overload for a pointer to an object: its address, as std::format spells a void*.
+template <typename A>
+    requires is_address<std::remove_cvref_t<A>>
+constexpr const void* fmt_arg(A&& ptr) noexcept
+{
+    return ptr;
 }
 
 /// @brief Overload for a type with no formatter: its bytes.
 template <typename A>
-    requires(!Formattable<std::remove_cvref_t<A>> && !is_complex<std::remove_cvref_t<A>>)
+    requires(!Formattable<std::remove_cvref_t<A>> && !is_complex<std::remove_cvref_t<A>> &&
+             !is_address<std::remove_cvref_t<A>>)
 constexpr auto fmt_arg(A&& arg) noexcept
 {
     return BytesArg<std::remove_cvref_t<A>>{&arg};
@@ -243,17 +263,17 @@ struct Spec
     int                             n_bad = 0;
 };
 
-/// @brief Level named @p s ("off" is fatal: nothing but the fatal level, which is never filtered).
-[[nodiscard]] constexpr bool parse_level(std::string_view s, Level& out) noexcept
+/// @brief Level named @p text ("off" is fatal: nothing but the fatal level, which is never filtered).
+[[nodiscard]] constexpr bool parse_level(std::string_view text, Level& out) noexcept
 {
-    if (s == "off")
+    if (text == "off")
     {
         out = Level::fatal;
         return true;
     }
     for (std::size_t i = 1; i < n_levels; ++i)
     {
-        if (s == level_names[i])
+        if (text == level_names[i])
         {
             out = static_cast<Level>(i);
             return true;
@@ -262,17 +282,17 @@ struct Spec
     return false;
 }
 
-[[nodiscard]] constexpr std::string_view trim(std::string_view s) noexcept
+[[nodiscard]] constexpr std::string_view trim(std::string_view text) noexcept
 {
-    while (!s.empty() && (s.front() == ' ' || s.front() == '\t'))
+    while (!text.empty() && (text.front() == ' ' || text.front() == '\t'))
     {
-        s.remove_prefix(1);
+        text.remove_prefix(1);
     }
-    while (!s.empty() && (s.back() == ' ' || s.back() == '\t'))
+    while (!text.empty() && (text.back() == ' ' || text.back() == '\t'))
     {
-        s.remove_suffix(1);
+        text.remove_suffix(1);
     }
-    return s;
+    return text;
 }
 
 /**
@@ -292,14 +312,14 @@ struct Spec
         if (!item.empty())
         {
             const std::size_t eq = item.find('=');
-            Level             l{};
+            Level             lvl{};
             bool              ok = false;
             if (eq == std::string_view::npos)
             {
-                ok = parse_level(item, l);
+                ok = parse_level(item, lvl);
                 if (ok)
                 {
-                    out.max.fill(l);
+                    out.max.fill(lvl);
                 }
             }
             else
@@ -309,10 +329,10 @@ struct Spec
                 {
                     if (chan == channel_names[c])
                     {
-                        ok = parse_level(trim(item.substr(eq + 1)), l);
+                        ok = parse_level(trim(item.substr(eq + 1)), lvl);
                         if (ok)
                         {
-                            out.max[c] = l;
+                            out.max[c] = lvl;
                         }
                     }
                 }
@@ -335,12 +355,17 @@ struct Spec
     return out;
 }
 
-/// @brief Every channel at warn: what a program logs with CHUNK_LOG unset.
+/// @brief What a program logs with CHUNK_LOG unset: every channel at warn,
+///        rechunk at info -- the line of each re-chunk the decider applies
+///        (one per move, a sequential point), as before the log existed. The
+///        channel's other info lines need their policy field
+///        (RechunkPolicy::force_size). A bare level in CHUNK_LOG sets rechunk too.
 inline constexpr std::array<Level, n_channels> default_max = []
 {
-    std::array<Level, n_channels> m{};
-    m.fill(Level::warn);
-    return m;
+    std::array<Level, n_channels> levels{};
+    levels.fill(Level::warn);
+    levels[static_cast<std::size_t>(Channel::rechunk)] = Level::info;
+    return levels;
 }();
 
 /// @brief Per channel, 2 + the most verbose level let through; 0 until the
@@ -376,28 +401,28 @@ inline void store(const std::array<Level, n_channels>& max) noexcept
     std::array<Level, n_channels> max = default_max;
     for (std::size_t c = 0; c < n_channels; ++c)
     {
-        const unsigned s = thresholds[c].load(std::memory_order_relaxed);
-        if (s >= 2U)
+        const unsigned stored = thresholds[c].load(std::memory_order_relaxed);
+        if (stored >= 2U)
         {
-            max[c] = static_cast<Level>(s - 2U);
+            max[c] = static_cast<Level>(stored - 2U);
         }
     }
     return max;
 }
 
 /// @brief The default sink: prefix, message, newline, in one fwrite.
-inline void default_sink(const Record& r) noexcept
+inline void default_sink(const Record& record) noexcept
 {
     static constexpr std::array<char, n_levels> letter{'F', 'E', 'W', 'I', 'D', 'T'};
     char                                        line[line_max + 64];
-    const auto  res = std::format_to_n(line, sizeof(line) - 1, "[shrink_array][{}][{}][{}] {}", name(r.channel),
-                                       letter[static_cast<std::size_t>(r.level)], thread_id(), r.message);
-    std::size_t n =
+    const auto  res = std::format_to_n(line, sizeof(line) - 1, "[shrink_array][{}][{}][{}] {}", name(record.channel),
+                                       letter[static_cast<std::size_t>(record.level)], thread_id(), record.message);
+    std::size_t len =
         static_cast<std::size_t>(res.size) < sizeof(line) - 1 ? static_cast<std::size_t>(res.size) : sizeof(line) - 1;
-    line[n++]          = '\n';
-    std::FILE* const f = out != nullptr ? out : stderr;
-    std::fwrite(line, 1, n, f);
-    std::fflush(f);
+    line[len++]           = '\n';
+    std::FILE* const file = out != nullptr ? out : stderr;
+    std::fwrite(line, 1, len, file);
+    std::fflush(file);
 }
 
 /// @brief True while the calling thread runs the sink of set_sink().
@@ -408,12 +433,12 @@ inline thread_local bool in_sink = false;
 ///        the failure must not call_once again.
 inline thread_local bool configuring = false;
 
-/// @brief Hand @p r to the sink. A sink that logs reaches the default sink.
-inline void emit(const Record& r) noexcept
+/// @brief Hand @p record to the sink. A sink that logs reaches the default sink.
+inline void emit(const Record& record) noexcept
 {
     if (in_sink)
     {
-        default_sink(r);
+        default_sink(record);
         return;
     }
     try
@@ -421,17 +446,17 @@ inline void emit(const Record& r) noexcept
         const std::scoped_lock lk(sink_mutex);
         if (sink == nullptr)
         {
-            default_sink(r);
+            default_sink(record);
             return;
         }
         in_sink = true;
-        sink(r, sink_user);
+        sink(record, sink_user);
         in_sink = false;
     }
     catch (...) // std::mutex::lock: std::system_error
     {
         in_sink = false;
-        default_sink(r);
+        default_sink(record);
     }
 }
 
@@ -444,7 +469,7 @@ inline void ensure_configured() noexcept;
  *        long: the lock is tried for a while, then given up; a failure inside
  *        the sink skips it.
  */
-inline void emit_fatal(const Record& r) noexcept
+inline void emit_fatal(const Record& record) noexcept
 {
     if (!configuring)
     {
@@ -460,12 +485,12 @@ inline void emit_fatal(const Record& r) noexcept
                 if (sink != nullptr)
                 {
                     in_sink = true;
-                    sink(r, sink_user);
+                    sink(record, sink_user);
                     in_sink = false;
                 }
                 else if (to_file)
                 {
-                    default_sink(r);
+                    default_sink(record);
                 }
                 sink_mutex.unlock();
                 return;
@@ -475,7 +500,7 @@ inline void emit_fatal(const Record& r) noexcept
     }
     if (to_file)
     {
-        default_sink(r);
+        default_sink(record);
     }
 }
 
@@ -503,14 +528,14 @@ std::size_t format_message(char* buf, std::format_string<FmtArgT<Args>...> fmt, 
 
 /// @brief Write @p message as a log record from the configuration code itself
 ///        (no ensure_configured(): it runs inside the call_once).
-inline void emit_direct(Level                       l,
-                        Channel                     c,
+inline void emit_direct(Level                       lvl,
+                        Channel                     chan,
                         std::string_view            message,
                         const std::source_location& loc = std::source_location::current()) noexcept
 {
-    if (static_cast<unsigned>(l) + 1U < thresholds[static_cast<std::size_t>(c)].load(std::memory_order_relaxed))
+    if (static_cast<unsigned>(lvl) + 1U < thresholds[static_cast<std::size_t>(chan)].load(std::memory_order_relaxed))
     {
-        emit(Record{l, c, message, loc});
+        emit(Record{lvl, chan, message, loc});
     }
 }
 
@@ -536,8 +561,10 @@ inline void report_bad_items(const Spec& spec, std::string_view who) noexcept
 }
 
 /// @brief An environment switch that raises a channel to a level: a trace
-///        of before the log (deprecated: its use is warned about), or a
-///        setting whose point is what it logs (CHUNK_RECHUNK_DRY_RUN).
+///        or a report of before the log (deprecated: its use is warned about;
+///        docs/developer_settings.md section 2 dates its removal), or a setting
+///        whose point is what it logs (none left: the decider's
+///        CHUNK_RECHUNK_CHURN is now CHUNK_LOG=rechunk=debug).
 struct LegacySwitch
 {
     std::string_view name;
@@ -549,38 +576,33 @@ struct LegacySwitch
 /// @brief The switches, applied after CHUNK_LOG and raising only: setting
 ///        one shows what it showed before, whatever CHUNK_LOG says.
 ///        Set = non-empty and not starting with '0'.
-inline constexpr std::array<LegacySwitch, 10> legacy_switches{{
-    {"CHUNK_RECHUNK_TRACE", Channel::rechunk, Level::debug, true},
-    {"CHUNK_RECHUNK_TRACE_SLICES", Channel::rechunk, Level::trace, true},
-    {"CHUNK_RECHUNK_TRACE_MEM", Channel::memory, Level::debug, true},
-    {"CHUNK_RECHUNK_MEMTRACE", Channel::memory, Level::info, true},
-    {"CHUNK_RECHUNK_DRY_RUN", Channel::rechunk, Level::info, false},
-    {"CHUNK_RECHUNK_CHURN", Channel::rechunk, Level::info, false},
-    {"CHUNK_FORCE_RECHUNK", Channel::rechunk, Level::info, false},
-    {"CHUNK_AFFINITY_TRACE", Channel::affinity, Level::debug, true},
-    {"CHUNK_RECYCLE_TRACE", Channel::recycle, Level::trace, true},
+inline constexpr std::array<LegacySwitch, 5> legacy_switches{{
     {"FAST_ALLOC_TRACE", Channel::alloc, Level::trace, true},
+    {"CHUNK_ARENA_REPORT", Channel::arena, Level::info, true},
+    {"CHUNK_LEDGER_REPORT", Channel::ledger, Level::info, true},
+    {"CHUNK_OMPT_STATS", Channel::ompt, Level::info, true},
+    {"CHUNK_CST2_PROBE", Channel::compress, Level::info, true},
 }};
 
-/// @brief True when switch @p s is set.
-[[nodiscard]] inline bool is_set(const LegacySwitch& s) noexcept
+/// @brief True when switch @p sw is set.
+[[nodiscard]] inline bool is_set(const LegacySwitch& sw) noexcept
 {
     char name[64];
-    std::memcpy(name, s.name.data(), s.name.size());
-    name[s.name.size()] = '\0';
-    const char* v       = std::getenv(name);
-    return v != nullptr && v[0] != '\0' && v[0] != '0';
+    std::memcpy(name, sw.name.data(), sw.name.size());
+    name[sw.name.size()] = '\0';
+    const char* value    = std::getenv(name);
+    return value != nullptr && value[0] != '\0' && value[0] != '0';
 }
 
 /// @brief Raise @p max by the legacy switches set.
 inline void raise_by_legacy_switches(std::array<Level, n_channels>& max) noexcept
 {
-    for (const LegacySwitch& s : legacy_switches)
+    for (const LegacySwitch& sw : legacy_switches)
     {
-        Level& m = max[static_cast<std::size_t>(s.channel)];
-        if (is_set(s) && m < s.level)
+        Level& level = max[static_cast<std::size_t>(sw.channel)];
+        if (is_set(sw) && level < sw.level)
         {
-            m = s.level;
+            level = sw.level;
         }
     }
 }
@@ -588,14 +610,14 @@ inline void raise_by_legacy_switches(std::array<Level, n_channels>& max) noexcep
 /// @brief Warn, on channel env, about the deprecated switches set.
 inline void warn_deprecated_switches() noexcept
 {
-    for (const LegacySwitch& s : legacy_switches)
+    for (const LegacySwitch& sw : legacy_switches)
     {
-        if (s.deprecated && is_set(s))
+        if (sw.deprecated && is_set(sw))
         {
             char       msg[line_max];
             const auto len =
-                format_message(msg, "{} is deprecated: it means CHUNK_LOG={}={}, which it now sets", s.name,
-                               fast_alloc::logging::name(s.channel), fast_alloc::logging::name(s.level));
+                format_message(msg, "{} is deprecated: it means CHUNK_LOG={}={}, which it now sets", sw.name,
+                               fast_alloc::logging::name(sw.channel), fast_alloc::logging::name(sw.level));
             emit_direct(Level::warn, Channel::env, std::string_view{msg, len});
         }
     }
@@ -614,22 +636,23 @@ inline void read_environment() noexcept
     if (path != nullptr && *path != '\0')
     {
         char        expanded[4096];
-        std::size_t n = 0;
-        for (const char* p = path; *p != '\0' && n + 24 < sizeof(expanded); ++p)
+        std::size_t used = 0;
+        for (const char* p = path; *p != '\0' && used + 24 < sizeof(expanded); ++p)
         {
             if (p[0] == '%' && p[1] == 'p')
             {
-                n += static_cast<std::size_t>(
-                    std::format_to_n(expanded + n, sizeof(expanded) - 1 - n, "{}", static_cast<long>(::getpid())).size);
+                used += static_cast<std::size_t>(
+                    std::format_to_n(expanded + used, sizeof(expanded) - 1 - used, "{}", static_cast<long>(::getpid()))
+                        .size);
                 ++p;
             }
             else
             {
-                expanded[n++] = *p;
+                expanded[used++] = *p;
             }
         }
-        expanded[n] = '\0';
-        out         = std::fopen(expanded, "a");
+        expanded[used] = '\0';
+        out            = std::fopen(expanded, "a");
         if (out == nullptr)
         {
             char       msg[line_max];
@@ -658,30 +681,30 @@ inline void ensure_configured() noexcept // declared above, for emit_fatal
 
 /// @brief Format and emit one message (CHUNK_LOG's slow path, past enabled()).
 template <typename... Args>
-void write(Level                                l,
-           Channel                              c,
+void write(Level                                lvl,
+           Channel                              chan,
            const std::source_location&          loc,
            std::format_string<FmtArgT<Args>...> fmt,
            Args&&... args) noexcept
 {
     char              buf[line_max];
     const std::size_t len = format_message(buf, fmt, std::forward<Args>(args)...);
-    emit(Record{l, c, std::string_view{buf, len}, loc});
+    emit(Record{lvl, chan, std::string_view{buf, len}, loc});
 }
 } // namespace detail
 
-/// @brief True when a message of level @p l on channel @p c gets through.
+/// @brief True when a message of level @p lvl on channel @p chan gets through.
 ///        One relaxed load and a compare once the configuration is read.
-[[nodiscard]] inline bool enabled(Channel c, Level l) noexcept
+[[nodiscard]] inline bool enabled(Channel chan, Level lvl) noexcept
 {
-    auto&    t = detail::thresholds[static_cast<std::size_t>(c)];
-    unsigned s = t.load(std::memory_order_relaxed);
-    if (s == 0U) [[unlikely]]
+    const auto& threshold = detail::thresholds[static_cast<std::size_t>(chan)];
+    unsigned    stored    = threshold.load(std::memory_order_relaxed);
+    if (stored == 0U) [[unlikely]]
     {
         detail::ensure_configured();
-        s = t.load(std::memory_order_relaxed);
+        stored = threshold.load(std::memory_order_relaxed);
     }
-    return static_cast<unsigned>(l) + 1U < s;
+    return static_cast<unsigned>(lvl) + 1U < stored;
 }
 
 /**
@@ -715,6 +738,8 @@ inline void set_sink(Sink sink, void* user = nullptr) noexcept
     }
     catch (...) // std::mutex::lock: std::system_error
     {
+        // The lock could not be taken: the sink in place stays, and a logger
+        // has nowhere better to say so than through that sink.
     }
 }
 } // namespace fast_alloc::logging
@@ -729,9 +754,9 @@ struct std::formatter<fast_alloc::logging::detail::ComplexArg<T>, char>
     }
 
     template <typename Ctx>
-    auto format(const fast_alloc::logging::detail::ComplexArg<T>& a, Ctx& ctx) const
+    auto format(const fast_alloc::logging::detail::ComplexArg<T>& arg, Ctx& ctx) const
     {
-        return std::format_to(ctx.out(), "({}{:+}i)", a.z.real(), a.z.imag());
+        return std::format_to(ctx.out(), "({}{:+}i)", arg.z.real(), arg.z.imag());
     }
 };
 
@@ -745,13 +770,13 @@ struct std::formatter<fast_alloc::logging::detail::BytesArg<V>, char>
     }
 
     template <typename Ctx>
-    auto format(const fast_alloc::logging::detail::BytesArg<V>& a, Ctx& ctx) const
+    auto format(const fast_alloc::logging::detail::BytesArg<V>& arg, Ctx& ctx) const
     {
         constexpr std::string_view hex = "0123456789abcdef";
         auto                       it  = ctx.out();
         *it++                          = '0';
         *it++                          = 'x';
-        const auto* bytes              = reinterpret_cast<const unsigned char*>(a.v);
+        const auto bytes               = std::as_bytes(std::span<const V, 1>(arg.v, 1));
         for (std::size_t i = 0; i < sizeof(V); ++i)
         {
             *it++ = hex[static_cast<unsigned>(bytes[i]) >> 4U];

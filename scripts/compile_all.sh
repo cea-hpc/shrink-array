@@ -23,6 +23,7 @@ module unload ninja 2>/dev/null || true
 # else 3.31.4, else the default module (3.20).
 chunk_module_load_first cmake/4.0.3 cmake/3.31.4 cmake
 module load ninja
+chunk_ensure_ninja || exit 1   # an x86 ~/.local/bin/ninja on an ARM node: site_env.sh
 
 # Default value for dry-run mode
 DRYRUN=false
@@ -142,6 +143,12 @@ Usage: $0 [--dryrun] [--build] [--debug-only]
                 Forwarded to compile_all_gnu.sh.
   --debug-only  Compile only the debug builds (skip release / RelWithDebInfo).
   --only=<c>       Build only compiler <c> (gnu|oneapi|nvhpc|llvm|aocc).
+  --std=<N>        Build the tree as C++<N> (20, 23 or 26): every gnu
+                   configuration gets -DCMAKE_CXX_STANDARD=<N>. Default:
+                   CHUNK_CXX_STANDARD (functions_for_compile.sh; 26 on the cpp26
+                   branch), else each configuration's own. At 26 only the gnu
+                   builds are made (GCC 16: the only compiler with C++26
+                   reflection for now); --only=<other> is then an error.
   --target=<glob>  Build only the config(s) whose name matches <glob>
                    (e.g. omp-llvm, 'omp-llvm*', '*sanitizer*', '*check*'), or
                    any glob of a comma-separated list (omp-llvm,omp-gnu-debug).
@@ -150,11 +157,15 @@ Usage: $0 [--dryrun] [--build] [--debug-only]
                    (exit 2) naming the closest ones, before anything runs.
   --exec=<glob>    Build only the Ninja target(s) matching <glob> inside each
                    selected build dir. A literal name builds one executable,
-                   e.g. --exec=shrink_bench_chunk_64. A pattern builds a
+                   e.g. --exec=shrink_bench_omp_zero_256. The bench
+                   executables carry the threading backend of their build
+                   (shrink_bench_omp_*, shrink_bench_std_*, shrink_bench_serial_*):
+                   --exec='shrink_bench_*_zero_256' builds that one in every
+                   backend. A pattern builds a
                    family, e.g. --exec='*_dyn' (all dynamic exes) or
                    --exec='*_256' (all static-256 exes) or
-                   --exec='shrink_bench_chunk2a_*', or a comma-separated list
-                   of names and patterns (--exec='shrink_bench_chunk_64,*_dyn').
+                   --exec='shrink_bench_*_zero_any_*', or a comma-separated list
+                   of names and patterns (--exec='shrink_bench_*_zero_256,*_dyn').
                    Patterns are matched against
                    the real Ninja target list; quote them so the shell does not
                    expand the glob first. Ninja still builds each target's deps
@@ -183,7 +194,23 @@ Usage: $0 [--dryrun] [--build] [--debug-only]
   --no-hardening   Do not add -DCHUNK_GLIBCXX_ASSERTIONS=ON to Debug/sanitizer builds,
                    nor -DCHUNK_UBSAN=ON to the address-sanitizer builds (default: added).
   --llvm-cs=<N>    Also build an llvm RelWithDebInfo variant with CHUNK_SIZE=N (power of two).
+  --pool=<id>      Share the configurations with the other runs given the same
+                   <id> (one batch job per node; shrink_gui's "Nodes" field):
+                   each run builds those it claims first, in the usual order,
+                   and skips the others' (functions_for_compile.sh, pool_init).
+                   <id>: a name (under \$CHUNK_BUILD_REP/.pools) or a directory
+                   on a file system all the nodes share. A new id per submission.
   -h, --help    Show this help.
+
+The std threading backend (CHUNK_THREADS=std) is built next to the OpenMP one,
+with every compiler: std-llvm, std-llvm-check, std-oneapi, std-aocc (std-nvhpc
+with nvhpc) here, std-gnu, std-gnu-check and the TSan build in
+compile_all_gnu.sh. They lengthen the build; --target='omp-*' leaves them out,
+--target='std-*' makes them alone.
+Their TBB bench (shrink_bench_tbb_*) and tbb_validation need oneTBB: made when
+one is found (site_env.sh: TBBROOT, CHUNK_TBB_DIR, \$CCCWORKDIR/tbb-<arch>) or
+CHUNK_WITH_TBB=1, left out with CHUNK_WITH_TBB=0 (the script says which at the start). The std
+TSan build gets TBB from CHUNK_TBB_TSAN_DIR only (a oneTBB built with TSan).
 EOF
 }
 
@@ -236,10 +263,20 @@ for arg in "$@"; do
             export CHUNK_BUILD_TARGET="${arg#*=}"
             shift
             ;;
+        --pool=*)
+            # Checked and created by pool_init, once build_rep is known.
+            export CHUNK_POOL="${arg#*=}"
+            [ -n "$CHUNK_POOL" ] || { echo "ERROR: --pool= (expected a name or a directory)" >&2; exit 2; }
+            shift
+            ;;
         --exec=*)
             export CHUNK_BUILD_EXEC="${arg#*=}"
             shift
             ;;
+        --std=*)
+            # Checked (20, 23, 26) in functions_for_compile.sh, sourced below.
+            export CHUNK_CXX_STANDARD="${arg#*=}"
+            shift ;;
         --only=*)
             only="${arg#*=}"
             enable_gnu=false; enable_oneapi=false; enable_nvhpc=false; enable_llvm=false; enable_aocc=false
@@ -310,9 +347,27 @@ reset_compiler_modules() {
     done
 }
 
+# The gcc whose libstdc++ clang / icpx / nvc++ / aocc use: gcc/15.2.0 where it
+# exists (inti), else the newest gcc/<ver> module. A hard-coded gcc/15.2.0 on a
+# machine without it failed to load, and the llvm module, which needs a gcc,
+# failed after it: clang++ then came from the system PATH, the wrong llvm.
+# Empty without modules: the families then skip the load.
+if module is-avail gcc/15.2.0 >/dev/null 2>&1 ||
+    module -t avail gcc/15.2.0 2>&1 | grep -qE '^gcc/15\.2\.0(\(.*\))?$'; then
+    gcc_module=gcc/15.2.0
+else
+    gcc_module=$(chunk_newest_module gcc)
+fi
+[ "$CHUNK_HAVE_MODULES" = false ] && gcc_module=""
+load_gcc_module() {
+    [ -n "$gcc_module" ] && run_cmd "module load $gcc_module"
+    return 0
+}
+
 
 
 run_cmd "module load ninja"
+[ "$DRYRUN" = true ] || chunk_ensure_ninja || exit 1
 run_cmd "chunk_module_load_first cmake/4.0.3 cmake/3.31.4 cmake"
 
 source "$CHUNK_SCRIPT_DIR/functions_for_compile.sh"
@@ -320,6 +375,32 @@ source "$CHUNK_SCRIPT_DIR/functions_for_compile.sh"
 # --target=<glob> that matches none of the configurations either script knows:
 # stop here with the closest names, before a single configure runs.
 check_target_arg $(known_build_names "$0" "$CHUNK_SCRIPT_DIR/compile_all_gnu.sh")
+
+# C++26: the gnu family only (chunk_cxx26, functions_for_compile.sh). Decided
+# before anything is configured; the llvm sanitizer, token and -cs builds live
+# inside the llvm section and go with it.
+if chunk_cxx26; then
+    if [ -n "${only:-}" ] && [ "$only" != gnu ]; then
+        echo "ERROR: --only=$only with C++$CHUNK_CXX_STANDARD: only the gnu builds compile C++26 for now (GCC 16)" >&2
+        exit 2
+    fi
+    echo "[INFO] C++$CHUNK_CXX_STANDARD: gnu builds only -- oneapi, nvhpc, llvm and aocc skipped (no C++26 reflection there yet)"
+    enable_oneapi=false
+    enable_nvhpc=false
+    enable_llvm=false
+    enable_aocc=false
+    enable_sanitizers=false
+    llvm_cs_size=""
+    WITH_TOKEN=false
+    if [ "$enable_gnu" = false ]; then
+        echo "[WARN] C++$CHUNK_CXX_STANDARD and --no-gnu: nothing to build"
+    fi
+fi
+
+# oneTBB for the std-backend builds (TBB bench, tbb_validation): TBB_CMAKE_OPT
+# and TBB_TSAN_CMAKE_OPT, see set_tbb_options in functions_for_compile.sh. Said
+# here, once: compile_all_gnu.sh, run below, finds CHUNK_TBB_NOTICE_DONE set.
+set_tbb_options
 
 # Hardening switch, read by hardening_opts_for (functions_for_compile.sh) for
 # every cmake configure issued here, and inherited by compile_all_gnu.sh.
@@ -334,6 +415,7 @@ build_rep="$CHUNK_BUILD_REP"
 run_cmd "echo $build_rep"
 
 run_cmd "create_build_rep"
+pool_init
 
 # The gnu family runs FIRST: nothing of ours is in flight yet, so the drain
 # below waits for nothing, and the builds it leaves running are handed over to
@@ -417,12 +499,13 @@ if [ "$enable_oneapi" = true ] && [ "$is_arm" = false ]; then
 
 set_build_header 'Compiling oneapi openmp:'
 
-# Use GCC 15.2.0 so icpx finds <format> (libstdc++)
+# gcc 15.2.0 (else the newest gcc module) so icpx finds <format> (libstdc++)
 
 reset_compiler_modules
-run_cmd "module load gcc/15.2.0"
+load_gcc_module
 run_cmd "module load inteloneapi/26.0.0"
 run_cmd "module load ninja"
+[ "$DRYRUN" = true ] || chunk_ensure_ninja || exit 1
 
 # Without modules, oneAPI's own setvars.sh puts icpx on PATH.
 if [ "$CHUNK_HAVE_MODULES" = false ] && ! command -v icpx >/dev/null 2>&1 && [ -f "$CHUNK_ONEAPI_SETVARS" ]; then
@@ -446,6 +529,23 @@ else
         run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-oneapi/$arch $ONEAPI_STDLIB_OPT -DOMP:BOOL=OFF -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
     fi
     launch_build "$build_rep/cmake-build-oneapi/$arch" $BUILD_FLAGS
+
+    # The std backend under icpx, with the TBB bench when oneTBB is found
+    # (TBB_CMAKE_OPT, set_tbb_options): TBB's threads against OpenMP's, same compiler.
+    set_build_header 'Compiling oneapi std backend (no openmp):'
+    if [ "$BUILD_ONLY" = false ]; then
+        run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-std-oneapi/$arch $ONEAPI_STDLIB_OPT -DCHUNK_THREADS=std $INT64_OPT $TBB_CMAKE_OPT -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+    fi
+    launch_build "$build_rep/cmake-build-std-oneapi/$arch" $BUILD_FLAGS
+
+    # The std allocator under icpx (CHUNK_STD_ALLOC: every buffer a real
+    # malloc, no fast_allocators pools), the twin of omp-llvm-std-alloc and
+    # omp-gnu-std-alloc: the pool-vs-malloc comparison with this compiler too.
+    set_build_header 'Compiling oneapi openmp std_alloc:'
+    if [ "$BUILD_ONLY" = false ]; then
+        run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-oneapi-std-alloc/$arch $ONEAPI_STDLIB_OPT -DOMP:BOOL=ON -DCHUNK_STD_ALLOC:BOOL=ON $INT64_OPT -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+    fi
+    launch_build "$build_rep/cmake-build-omp-oneapi-std-alloc/$arch" $BUILD_FLAGS
 fi
 
 set_build_header 'Compiling oneapi debug openmp:'
@@ -453,6 +553,21 @@ if [ "$BUILD_ONLY" = false ]; then
     run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-oneapi-debug/$arch $ONEAPI_STDLIB_OPT -DCMAKE_BUILD_TYPE=Debug -DOMP:BOOL=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
 fi
 launch_build "$build_rep/cmake-build-omp-oneapi-debug/$arch" $BUILD_FLAGS
+
+# Debug + std allocator, OpenMP and serial, no sanitizer: the icpx twins of
+# omp-llvm-debug-std-alloc and llvm-debug-std-alloc (gdb / ledger runs of the
+# std-alloc path, without the sanitizers' slowdown and allocator interposition).
+set_build_header 'Compiling oneapi debug openmp std_alloc:'
+if [ "$BUILD_ONLY" = false ]; then
+    run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-oneapi-debug-std-alloc/$arch $ONEAPI_STDLIB_OPT -DCMAKE_BUILD_TYPE=Debug -DOMP:BOOL=ON -DCHUNK_STD_ALLOC:BOOL=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+fi
+launch_build "$build_rep/cmake-build-omp-oneapi-debug-std-alloc/$arch" $BUILD_FLAGS
+
+set_build_header 'Compiling oneapi debug std_alloc (no openmp):'
+if [ "$BUILD_ONLY" = false ]; then
+    run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-oneapi-debug-std-alloc/$arch $ONEAPI_STDLIB_OPT -DCMAKE_BUILD_TYPE=Debug -DOMP:BOOL=OFF -DCHUNK_STD_ALLOC:BOOL=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+fi
+launch_build "$build_rep/cmake-build-oneapi-debug-std-alloc/$arch" $BUILD_FLAGS
 
 else
     echo "[SKIP] oneapi builds disabled (enable_oneapi=$enable_oneapi, is_arm=$is_arm)"
@@ -469,7 +584,8 @@ latest_nvhpc=$(module -t av nvhpc 2>&1 | tr -s '[:space:]' '\n' | grep -oE 'nvhp
 if [ -n "$latest_nvhpc" ]; then
     reset_compiler_modules
     if [ "$latest_nvhpc" = local ] || run_cmd "module load $latest_nvhpc"; then
-        run_cmd "module load gcc/15.2.0"
+        load_gcc_module
+        [ "$DRYRUN" = true ] || [ "$latest_nvhpc" = local ] || chunk_check_binutils nvhpc warn
         if [ "$latest_nvhpc" = local ]; then nvcxx="$CHUNK_NVCXX"; else nvcxx="$(command -v nvc++ 2>/dev/null)"; fi
     [ -z "$nvcxx" ] && nvcxx="nvc++"  # same dry-run fallback as clangxx
         if [ -n "$nvcxx" ]; then
@@ -482,6 +598,12 @@ if [ -n "$latest_nvhpc" ]; then
                     run_cmd "CXX='$nvcxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-nvhpc/$arch -DCMAKE_CXX_COMPILER='$nvcxx' $NVHPC_STDLIB_OPT -DOMP:BOOL=ON $INT64_OPT -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja || echo '[WARN] nvhpc release configure failed'"
                 fi
                 launch_build "$build_rep/cmake-build-omp-nvhpc/$arch" $BUILD_FLAGS
+
+                set_build_header 'Compiling nvhpc std backend (no openmp):'
+                if [ "$BUILD_ONLY" = false ]; then
+                    run_cmd "CXX='$nvcxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-std-nvhpc/$arch -DCMAKE_CXX_COMPILER='$nvcxx' $NVHPC_STDLIB_OPT -DCHUNK_THREADS=std $INT64_OPT $TBB_CMAKE_OPT -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja || echo '[WARN] nvhpc std configure failed'"
+                fi
+                launch_build "$build_rep/cmake-build-std-nvhpc/$arch" $BUILD_FLAGS
             fi
 
             set_build_header 'Compiling nvhpc debug openmp:'
@@ -518,9 +640,39 @@ echo "Using $latest_llvm (latest available)"
 # Without modules latest_llvm is "clang++-N (PATH)", a label, not a module:
 # eval'ed by run_cmd, its parenthesis is a shell syntax error.
 if [ "$CHUNK_HAVE_MODULES" = true ]; then
-    run_cmd "module load $latest_llvm"
+    # gcc first: the llvm module needs one loaded. A failed llvm load stops
+    # here -- going on would build with the system clang++.
+    _chunk_gxx_before=$(command -v g++ 2>/dev/null)
+    load_gcc_module
+    # No toolchain set by the site (a local site with gcc modules): the gcc
+    # module just loaded is clang's libstdc++, when it changed what g++
+    # resolves to. --gcc-toolchain takes the installation prefix, the parent
+    # of its bin/.
+    _chunk_gxx_after=$(command -v g++ 2>/dev/null)
+    if [ -z "${CHUNK_GCC_TOOLCHAIN_DIR:-}" ] && [ -n "$_chunk_gxx_after" ] &&
+        [ "$(readlink -f "$_chunk_gxx_after")" != "$(readlink -f "${_chunk_gxx_before:-/nonexistent}")" ]; then
+        CHUNK_GCC_TOOLCHAIN_DIR=$(dirname "$(dirname "$(readlink -f "$_chunk_gxx_after")")")
+        export CHUNK_GCC_TOOLCHAIN_DIR
+    fi
+    if ! run_cmd "module load $latest_llvm"; then
+        echo "ERROR: module load $latest_llvm failed (gcc: ${gcc_module:-none}); not building with the system clang++" >&2
+        echo "       what $latest_llvm requires:" >&2
+        module show "$latest_llvm" 2>&1 | grep -E 'prereq|depends-on|module load|conflict' | sed 's/^/         /' >&2
+        exit 1
+    fi
     # Reload ninja in case loading LLVM unloaded it
     run_cmd "module load ninja"
+    [ "$DRYRUN" = true ] || chunk_ensure_ninja || exit 1
+    # aarch64 off the CEA site: binutils/2.43 where it exists, else the newest
+    # binutils module, as compile_all_gnu.sh does (the system one, RHEL 9's
+    # 2.35, is too old). Not at CEA: the llvm modules there carry their own
+    # requirements (see the binutils/2.42 conflict of nvhpc above), and the
+    # Inti builds stay as they were.
+    if [ "$(uname -m)" = aarch64 ] && [ "$CHUNK_SITE" != cea ]; then
+        newest_binutils=$(chunk_newest_module binutils)
+        [ -n "$newest_binutils" ] && run_cmd "chunk_module_load_first binutils/2.43 $newest_binutils"
+    fi
+    [ "$DRYRUN" = true ] || chunk_check_binutils llvm warn
 fi
 
 if [ "$CHUNK_HAVE_MODULES" = true ]; then
@@ -538,7 +690,6 @@ if [ -z "$clangxx" ]; then
 fi
 LLVM_CXX_OPT="-DCMAKE_CXX_COMPILER=$clangxx"
 
-run_cmd "module load gcc/15.2.0"
 LLVM_STDLIB_OPT="-DUSE_LIBCXX=OFF $(chunk_gcc_toolchain_opt cmake)"
 echo "llvm → libstdc++ from ${CHUNK_GCC_TOOLCHAIN_DIR:-the default gcc} (USE_LIBCXX=OFF)"
 
@@ -568,6 +719,26 @@ else
       run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-relwithdebinfo-check-thread-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=ON -DCHECK_OPTIM=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DSANITIZER=thread"
    fi
    launch_build "$build_rep/cmake-build-omp-llvm-relwithdebinfo-check-thread-sanitizer/$arch"
+fi
+fi
+
+# TSan on the std backend (CHUNK_THREADS=std), optimised, CHECK_OPTIM: the
+# teams are std::jthreads synchronised with std::atomic wait/notify and
+# std::barrier, all of which TSan instruments, so a report here is not a
+# barrier the tool missed (the libomp twin above relies on Archer's
+# annotations). The bench runs it at OMP_NUM_THREADS=8, which is the team size
+# of that backend too. Its TBB bench is made only with an instrumented oneTBB
+# (CHUNK_TBB_TSAN_DIR): an uninstrumented libtbb hides the hand-off of every
+# task from TSan.
+if [ "$enable_sanitizers" = true ]; then
+set_build_header 'Compiling llvm relwithdebinfo std check thread sanitizer:'
+if skip_release; then
+   echo "[debug-only] skipping llvm relwithdebinfo std check thread-sanitizer build"
+else
+   if [ "$BUILD_ONLY" = false ]; then
+      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-std-llvm-relwithdebinfo-check-thread-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_THREADS=std -DCHECK_OPTIM=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DSANITIZER=thread $TBB_TSAN_CMAKE_OPT"
+   fi
+   launch_build "$build_rep/cmake-build-std-llvm-relwithdebinfo-check-thread-sanitizer/$arch"
 fi
 fi
 
@@ -652,21 +823,6 @@ else
    launch_build "$build_rep/cmake-build-omp-llvm-check/$arch"
 fi
 
-# CHUNK_SECOND_VALUE_INDEXED: Chunk2A's second values stored as 4-byte
-# identifiers, a library-wide option no other build here turns on. CHECK_OPTIM
-# so that the validation harnesses are built and run against it; Chunk2A alone
-# (the option changes nothing in chunk and chunk2, whose binaries would be
-# those of omp-llvm-check), one static size (256) and dyn: all its code paths.
-set_build_header 'Compiling llvm openmp with check, second values indexed (CHUNK_SECOND_VALUE_INDEXED):'
-if skip_release; then
-   echo "[debug-only] skipping llvm openmp with check, second values indexed"
-else
-   if [ "$BUILD_ONLY" = false ]; then
-      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-check-sv-indexed/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHECK_OPTIM=ON -DCHUNK_SECOND_VALUE_INDEXED:BOOL=ON -DCHUNK_VARIANTS=chunk2a -DCHUNK_STATIC_SIZES=256 -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
-   fi
-   launch_build "$build_rep/cmake-build-omp-llvm-check-sv-indexed/$arch"
-fi
-
 set_build_header 'Compiling llvm openmp std_alloc:'
 if skip_release; then
    echo "[debug-only] skipping llvm std_alloc (release) build"
@@ -677,22 +833,38 @@ else
    launch_build "$build_rep/cmake-build-omp-llvm-std-alloc/$arch"
 fi
 
+# The std backend (CHUNK_THREADS=std, docs/threading_backends.md): the library's
+# teams on std::jthread workers of its own, no OpenMP (it forces OMP OFF; the
+# team size is still OMP_NUM_THREADS / CHUNK_NUM_THREADS). Release, for the
+# timings against OpenMP -- with the TBB bench (shrink_bench_tbb_*) when oneTBB
+# is there, see set_tbb_options -- and CHECK_OPTIM, for the validations
+# (std_thread_validation, and tbb_validation with oneTBB). They add two
+# configurations to the matrix and, with TBB, three more bench targets per
+# size: the build takes longer. --target='std-*' makes them alone,
+# --target='omp-*' leaves them out.
+set_build_header 'Compiling llvm std backend (no openmp):'
+if skip_release; then
+   echo "[debug-only] skipping llvm std-backend release build"
+else
+   if [ "$BUILD_ONLY" = false ]; then
+      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-std-llvm/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_THREADS=std $INT64_OPT $TBB_CMAKE_OPT -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+   fi
+   launch_build "$build_rep/cmake-build-std-llvm/$arch"
+fi
+
+set_build_header 'Compiling llvm std backend with check (CHECK_OPTIM):'
+if skip_release; then
+   echo "[debug-only] skipping llvm std-backend with check"
+else
+   if [ "$BUILD_ONLY" = false ]; then
+      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-std-llvm-check/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_THREADS=std -DCHECK_OPTIM=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo $TBB_CMAKE_OPT -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+   fi
+   launch_build "$build_rep/cmake-build-std-llvm-check/$arch"
+fi
+
 # No -have-aggressive-compression build any more: the switch is a run-time one
 # (CHUNK_AGGRESSIVE_COMPRESSION=1, chunk/config.h); bench_and_test.py and
 # multi_launch_stress.py run cmake-build-omp-llvm with it under that name.
-
-# MM_PROTECT: its branches are `if constexpr` in class templates, never
-# instantiated by any other build here, so a change can break them unseen (it
-# did: d0eb79ba..e0ce84e9). Built, not run: running it is a debugging session.
-# Debug only (it was RelWithDebInfo): the point is to compile those branches,
-# which an unoptimised build does for less, and it is the build one would run
-# to debug MM_PROTECT. Without the validation harnesses a Debug build would
-# otherwise add (-DCHUNK_BUILD_VALIDATION=ON by hand to run them under it).
-set_build_header 'Compiling llvm debug openmp with MM_PROTECT (CHUNK_MM_PROTECT):'
-if [ "$BUILD_ONLY" = false ]; then
-   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-debug-mm-protect/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_MM_PROTECT=ON -DCHUNK_BUILD_VALIDATION=OFF -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
-fi
-launch_build "$build_rep/cmake-build-omp-llvm-debug-mm-protect/$arch"
 
 set_build_header 'Compiling llvm debug openmp:'
 if [ "$BUILD_ONLY" = false ]; then
@@ -760,7 +932,7 @@ launch_build "$build_rep/cmake-build-llvm-debug-std-alloc-address-sanitizer/$arc
 
 # Non-OMP llvm RELEASE build. Builds the _check targets (declared
 # unconditionally in CMakeLists; OMP only adds linkage) so bench_and_test can
-# run CHECK on the non-OMP path — the one that showed the Chunk2A type-2
+# run CHECK on the non-OMP path — the one that showed the zero_any type-2
 # divergence. Skipped by --debug-only like other release builds.
 if skip_release; then
     echo "[debug-only] skipping llvm non-omp release build"
@@ -804,6 +976,7 @@ else
     echo "Using $latest_aocc (latest available)"
     run_cmd "module load $latest_aocc"
     run_cmd "module load ninja"
+    [ "$DRYRUN" = true ] || chunk_ensure_ninja || exit 1
 
     # After loading the aocc module, clang++ in PATH is AOCC's clang++.
     aoccxx="$(command -v clang++ 2>/dev/null)"
@@ -812,7 +985,7 @@ else
 
     # AOCC provides its own clang front-end but relies on the system libstdc++;
     # point it at the gcc toolchain, exactly like the llvm section does.
-    run_cmd "module load gcc/15.2.0"
+    load_gcc_module
     AOCC_STDLIB_OPT="-DUSE_LIBCXX=OFF $(chunk_gcc_toolchain_opt cmake)"
     echo "aocc → libstdc++ from ${CHUNK_GCC_TOOLCHAIN_DIR:-the default gcc} (USE_LIBCXX=OFF)"
 
@@ -823,6 +996,12 @@ else
             run_cmd "CXX='$aoccxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-aocc/$arch $AOCC_CXX_OPT $AOCC_STDLIB_OPT -DOMP:BOOL=ON $INT64_OPT -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
         fi
         launch_build "$build_rep/cmake-build-omp-aocc/$arch" $BUILD_FLAGS
+
+        set_build_header 'Compiling aocc std backend (no openmp):'
+        if [ "$BUILD_ONLY" = false ]; then
+            run_cmd "CXX='$aoccxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-std-aocc/$arch $AOCC_CXX_OPT $AOCC_STDLIB_OPT -DCHUNK_THREADS=std $INT64_OPT $TBB_CMAKE_OPT -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+        fi
+        launch_build "$build_rep/cmake-build-std-aocc/$arch" $BUILD_FLAGS
     fi
 
     set_build_header 'Compiling aocc debug openmp:'
@@ -842,6 +1021,7 @@ fi
 echo -e '\n─── Waiting for remaining builds ───\n'
 wait_all
 rc=$?
+pool_summary
 # A --target / --exec that let nothing through is an error, not a quiet "OK".
 if ! check_arg_epilogue; then
     echo -e "\nend — nothing built\n"

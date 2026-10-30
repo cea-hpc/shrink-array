@@ -5,7 +5,7 @@
 > État : début octobre 2026. Ce document explique comment les écrivains, les compresseurs,
 > les vidages d'écritures différées et les lecteurs s'excluent mutuellement **sans verrou sur le
 > chemin d'écriture**. La machinerie d'ensemble (proxys, écritures différées, compression en
-> vol) est décrite dans [algo_chunk2_fr.md](algo_chunk2_fr.md) §7 et §8. Les noms cités sont
+> vol) est décrite dans [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md) §7 et §8. Les noms cités sont
 > ceux de l'arbre actuel ; en cas de doute, c'est le code qui fait foi, et en particulier les
 > commentaires de `internal/write_compress_sync_policy.h`, qui portent la preuve d'ordonnancement.
 
@@ -67,7 +67,7 @@ se voient, chaque côté a une **issue de repli** qui ne bloque pas : l'écrivai
 écriture (§5.2), le compresseur **renonce** à sa passe (§5.3). Il n'y a donc ni tour ni
 attente non bornée.
 
-### 2.2 Pourquoi il casse sur un processeur moderne
+### 2.2 Pourquoi il échoue sur un processeur moderne
 
 La preuve ci-dessus suppose que l'écriture (1) est visible des autres cœurs **avant** que la
 lecture (2) ne s'exécute. Ce n'est pas le cas sur un processeur réel : une écriture part
@@ -91,7 +91,7 @@ ne suffit pas : elle ordonne écriture→écriture et lecture→lecture, pas éc
 
 ## 3. La version symétrique
 
-C'est la forme « manuel » : **les deux côtés** paient une barrière complète.
+C'est la forme « de manuel » : **les deux côtés** paient une barrière complète.
 
 ```cpp
 // écrivain (WriteCompressSyncPolicy::begin_write + announce_write, forme symétrique)
@@ -114,7 +114,7 @@ l'annonce du compresseur : l'écrivain prend le chemin lent. Jamais les deux.
 
 **Le coût.** Sur AArch64, l'écrivain paie `stlr` + `dmb ish` + `ldar` à **chaque** écriture
 d'élément (un `mfence` sur x86) : environ 70 % du temps de `write_with_optional_lock_impl`
-dans les profils. Mesuré sur `shrink_bench` chunk2a_256 à 6 threads x86 : +7 % de temps total
+dans les profils. Mesuré sur `shrink_bench` zero_any_256 à 6 threads x86 : +7 % de temps total
 par rapport à un moteur sans protocole, contre −7 % pour la version asymétrique.
 
 La forme symétrique reste celle des builds **ThreadSanitizer** (TSan ne modélise pas
@@ -372,7 +372,7 @@ C'est ce **second regard** qui forme la paire de Dekker avec le vidage. Le premi
 pendant que le compresseur n'était que garé, ne protège de rien : un vidage annoncé juste après
 a vu `stealing_inflight_ == 0` et applique déjà. Sans le second regard, le compresseur balayait
 la constante d'avant l'application, l'application écrivait, puis le CAS remettait le chunk sur la
-constante : l'écriture appliquée était perdue (une seconde valeur fausse à un indice de Chunk2A,
+constante : l'écriture appliquée était perdue (une seconde valeur fausse à un indice de `zero_any`,
 une fois sur ~2 300 runs).
 
 Entre vidages, l'exclusion est plus classique : chaque rang a un verrou (`xflush_lock_rank`),
@@ -421,7 +421,7 @@ tient pas de drapeau d'écrivain (`alloc_chunk`, l'application d'un flush) : att
 compresseur ne puisse voler **ce** chunk (sa marque, ou `stealing_inflight_` sans marques),
 sans quoi l'allocation pourrait reprendre le bloc qu'une passe est en train de rendre. Un
 écrivain du chemin rapide n'attend pas : une marque qu'il voit après son regard n° 2 appartient
-à une passe **parquée** sur son propre drapeau, qui ne vole rien avant `end_write` ; attendre
+à une passe **garée** sur son propre drapeau, qui ne vole rien avant `end_write` ; attendre
 ferait s'attendre les deux jusqu'à épuisement du budget de yields du compresseur
 ([formal_models_fr.md](formal_models_fr.md), F2).
 
@@ -435,14 +435,14 @@ ferait s'attendre les deux jusqu'à épuisement du budget de yields du compresse
 - **Garder la barrière de compilateur** de la forme asymétrique, et l'ordre du programme
   annonce → regard.
 - **Toutes les attentes sont bornées, et chaque côté a une issue de repli** (différer,
-  renoncer). Le progrès est garanti par la passe entre deux régions et par le vidage de fin de
+  renoncer). La progression est garantie par la passe entre deux régions et par le vidage de fin de
   phase, qui tournent sans concurrence.
 - **Ne jamais attendre `hard_inflight_` (ni un compte des pilotes de passe) depuis un chemin qui peut tenir
   un drapeau d'écrivain ou un verrou de rang** : seulement `stealing_inflight_` ou la marque du
   chunk.
 - **Le côté rare doit rester rare.** Toute modification qui multiplie les annonces de
   compresseur ou de vidage multiplie les `membarrier`.
-- **Après toute modification**, relancer en build de vérification et sous TSan les harnais
+- **Après toute modification**, relancer en build de vérification et sous TSan les tests de validation
   `deferred_path_validation` (écritures différées forcées) et `read_reclaim_validation` (avec
   et sans `CHUNK_TEST_READ_DELAY_EVERY`, et sous ASan en std-alloc), puis une série
   `multi_launch_stress.py` : les défauts de ce code se manifestent une fois sur des milliers de
@@ -479,5 +479,5 @@ avec la forme du protocole qui a tourné.
 | le côté écrivain | `internal/proxy_base_inline.h` (`write_with_optional_lock_impl`) |
 | le côté compresseur, les compteurs | `internal/compression_manager.h`, `internal/compression_manager_inline.h` (`start`, `finish`, `wait_out_compressor`) |
 | les marques par chunk | `internal/chunk_base.h` (`steal_mark_`) |
-| la passe de compression | `internal/chunk2_std_inline.h`, `internal/chunk2A_std_inline.h`, `internal/chunk_std_inline.h` (`make_block_compression*`), `internal/block_pass_precheck.h` |
+| la passe de compression | `internal/zero_one_value_chunk_inline.h`, `internal/zero_any_chunk_inline.h`, `internal/zero_chunk_inline.h` (`make_block_compression*`), `internal/block_pass_precheck.h` |
 | lecteurs et récupération | `internal/read_reclaim.h` |

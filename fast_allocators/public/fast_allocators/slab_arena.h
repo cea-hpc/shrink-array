@@ -44,30 +44,30 @@
 
 #pragma once
 
-#include <sys/mman.h> // mmap, madvise
-#include <unistd.h>   // sysconf(_SC_PAGESIZE)
-#include <algorithm>  // std::max, the high-water mark
-#include <cstddef>    // std::size_t
-#include <cstdint>    // std::uintptr_t, std::uint8_t
-#include <cstdlib>    // std::getenv
-#include <functional> // std::less (the sweep orders slab pointers)
-#include <utility>    // std::cmp_less
-#include <vector>     // std::vector
-#include <mutex>      // std::mutex, std::scoped_lock
-#include <atomic>     // std::atomic, std::memory_order_relaxed
-#include <charconv>   // std::from_chars (CHUNK_RECLAIM_THREADS)
-#include <chrono>     // the sweep timer
-#include <cstring>    // std::strlen
-#ifdef _OPENMP
-    #include <omp.h> // omp_in_parallel, omp_get_max_threads (parallel sweep)
-#endif
+#include <sys/mman.h>    // mmap, madvise
+#include <unistd.h>      // sysconf(_SC_PAGESIZE)
+#include <algorithm>     // std::max, the high-water mark
+#include <bit>           // std::bit_cast (addr_ptr)
+#include <cstddef>       // std::size_t, std::byte (region_base_)
+#include <cstdint>       // std::uintptr_t, std::uint8_t
+#include <cstdlib>       // std::getenv
+#include <functional>    // std::less (the sweep orders slab pointers)
+#include <utility>       // std::cmp_less
+#include <vector>        // std::vector
+#include <mutex>         // std::mutex, std::scoped_lock
+#include <atomic>        // std::atomic, std::memory_order_relaxed
+#include <charconv>      // std::from_chars (CHUNK_RECLAIM_THREADS)
+#include <chrono>        // the sweep timer
+#include <cstring>       // std::strerror
+#include <string_view>   // std::string_view (reclaim_env_number)
 #include <unordered_map> // std::unordered_map
 #include <unordered_set> // std::unordered_set
 #include <system_error>  // std::errc (std::from_chars)
 
-#include "fast_allocators/internal/alloc_config.h" // thp_advise (CHUNK_THP), reclaim_min_empty_slabs
-#include "fast_allocators/internal/fatal.h"        // FAST_ALLOC_FATAL
-#include "fast_allocators/internal/log_core.h"     // CHUNK_LOG, CHUNK_LOG_ALWAYS (CHUNK_ARENA_REPORT)
+#include "fast_allocators/internal/raw_memory.h" // address_bits
+#include "fast_allocators/internal/pmp_alloc.h"  // pmp::parallel_for, pmp::in_parallel, pmp::max_threads (the sweeps)
+#include "fast_allocators/internal/fatal.h"      // FAST_ALLOC_FATAL
+#include "fast_allocators/internal/log_core.h"   // CHUNK_LOG, CHUNK_LOG_ALWAYS, logging::enabled (arena=info)
 
 namespace fast_alloc
 {
@@ -115,30 +115,51 @@ inline std::atomic<std::size_t>& reclaim_sweeps() noexcept
 ///@{
 inline std::atomic<std::size_t>& reclaim_skip_live() noexcept
 {
-    static std::atomic<std::size_t> v{0};
-    return v;
+    static std::atomic<std::size_t> count{0};
+    return count;
 }
 inline std::atomic<std::size_t>& reclaim_skip_unaligned() noexcept
 {
-    static std::atomic<std::size_t> v{0};
-    return v;
+    static std::atomic<std::size_t> count{0};
+    return count;
 }
 inline std::atomic<std::size_t>& reclaim_skip_small() noexcept
 {
-    static std::atomic<std::size_t> v{0};
-    return v;
+    static std::atomic<std::size_t> count{0};
+    return count;
 }
 inline std::atomic<std::size_t>& reclaim_entered() noexcept
 {
-    static std::atomic<std::size_t> v{0};
-    return v;
+    static std::atomic<std::size_t> count{0};
+    return count;
+}
+///@}
+
+/// @brief Free pages given back from slabs still in use
+///        (TCSlab::advise_free_pages): bytes, madvise()
+///        calls, and slabs in use scanned.
+///@{
+inline std::atomic<std::size_t>& reclaim_partial_bytes() noexcept
+{
+    static std::atomic<std::size_t> count{0};
+    return count;
+}
+inline std::atomic<std::size_t>& reclaim_partial_syscalls() noexcept
+{
+    static std::atomic<std::size_t> count{0};
+    return count;
+}
+inline std::atomic<std::size_t>& reclaim_partial_scanned() noexcept
+{
+    static std::atomic<std::size_t> count{0};
+    return count;
 }
 ///@}
 
 /// @brief A global counter alone on its cache lines.
 /// @details Do not use a bare `static std::atomic` for a hot counter: the linker
 ///          packs it next to other globals (e.g. the head of
-///          Proxy2<double>::share_info_array, read by every Chunk2 write) and
+///          zero_one_value::Proxy<double>::share_info_array, read by every zero_one_value write) and
 ///          each fetch_add then invalidates that line on every core (false
 ///          sharing, large at high thread counts). 128, not 64: adjacent-line
 ///          prefetch, and 128-byte lines.
@@ -202,33 +223,33 @@ inline std::size_t reclaim_env_number(const char* name, std::size_t fallback) no
     {
         return fallback;
     }
-    std::size_t v   = 0;
-    const char* end = env + std::strlen(env);
-    const auto  res = std::from_chars(env, end, v);
+    const std::string_view text{env};
+    const char* const      end   = text.data() + text.size();
+    std::size_t            value = 0;
+    const auto             res   = std::from_chars(text.data(), end, value);
     if (res.ec != std::errc{} || res.ptr != end)
     {
         CHUNK_LOG(warn, env, "{}=\"{}\" is not a valid value: ignored, {} kept", name, env, fallback);
         return fallback;
     }
-    return v;
+    return value;
 }
 
 /// @brief CHUNK_RECLAIM_THREADS (default 1 = serial): threads issuing the
-///        sweep's madvise calls; 0 = omp_get_max_threads().
+///        sweep's madvise calls; 0 = the backend's team size (pmp::max_threads(),
+///        1 in a serial build).
 inline int reclaim_sweep_threads() noexcept
 {
-    static const int n = []
+    static const int threads = []
     {
-        const std::size_t v = reclaim_env_number("CHUNK_RECLAIM_THREADS", 1);
-#ifdef _OPENMP
-        if (v == 0)
+        const std::size_t value = reclaim_env_number("CHUNK_RECLAIM_THREADS", 1);
+        if (value == 0)
         {
-            return omp_get_max_threads();
+            return pmp::max_threads();
         }
-#endif
-        return v == 0 ? 1 : static_cast<int>(std::min<std::size_t>(v, 4096));
+        return static_cast<int>(std::min<std::size_t>(value, 4096));
     }();
-    return n;
+    return threads;
 }
 
 /// @brief The system page size, read once.
@@ -242,13 +263,14 @@ inline std::size_t reclaim_page_size() noexcept
     return page;
 }
 
-/// @brief The pointer at address @p addr. The arena keeps its addresses as
-///        integers (cursor, live set, runs) and only turns them back into
-///        pointers for the caller or a syscall (madvise, mincore), here.
+/// @brief Address @p addr as a syscall argument (madvise, mincore). The arena
+///        keeps its addresses as integers (cursor, live set, runs); the kernel
+///        takes them as such, nothing dereferences the result. A block handed
+///        to a caller is a pointer stepped from its region's base instead
+///        (SlabArena::allocate), which keeps its provenance.
 inline void* addr_ptr(std::uintptr_t addr) noexcept
 {
-    // NOLINTNEXTLINE(performance-no-int-to-ptr)
-    return reinterpret_cast<void*>(addr);
+    return std::bit_cast<void*>(addr);
 }
 
 /// @brief The checks before a slab is advised away, without the syscall: how
@@ -277,7 +299,7 @@ std::size_t reclaimable_bytes(const Slab* slab) noexcept
     {
         return 0;
     }
-    if ((reinterpret_cast<std::uintptr_t>(base) % up) != 0)
+    if ((fast_alloc::address_bits(base) % up) != 0)
     {
         reclaim_skip_unaligned().fetch_add(1, std::memory_order_relaxed);
         return 0;
@@ -354,8 +376,7 @@ bool advise_one_slab(Slab* slab) noexcept
  *
  *          add() only records the slab. flush() drops duplicates (the same slab
  *          reached through two routes, e.g. an unregistered key falling back to
- *          key 0), applies the CHUNK_RECLAIM_MIN_SLABS floor to the WHOLE
- *          sweep, runs detail::reclaimable_bytes() on each slab
+ *          key 0), runs detail::reclaimable_bytes() on each slab
  *          (bumping the same counters), sorts by address, merges runs whose
  *          bytes touch exactly, sets backptr_dropped on every slab of a run,
  *          then advises the run. A slab whose advisable length is shorter than
@@ -392,125 +413,17 @@ class EmptySlabSweep
 
     /// @brief Collect @p slab; flush() decides whether it is advised away (see
     ///        detail::reclaimable_bytes() for the checks).
-    void add(Slab* slab) noexcept
-    {
-        if (slab == nullptr)
-        {
-            return;
-        }
-        try
-        {
-            items_.push_back(Item{0, 0, slab});
-        }
-        catch (...)
-        {
-            // Out of memory for the batch: advise this one on its own rather
-            // than leave it resident (the floor is not consulted: it cannot
-            // be, the sweep's size is unknown yet).
-            detail::advise_one_slab(slab);
-        }
-    }
+    void add(Slab* slab) noexcept;
 
-    /// @brief Advise every collected slab away, one madvise() per run -- or
-    ///        none of them if the sweep holds fewer distinct slabs than
-    ///        CHUNK_RECLAIM_MIN_SLABS.
-    /// @details Serial part: sort, drop duplicates, floor, checks, runs
+    /// @brief Advise every collected slab away, one madvise() per run.
+    /// @details Serial part: sort, drop duplicates, checks, runs
     ///          (merging adjacent slabs), every backptr_dropped flag and the
     ///          counters. Then the madvise calls, from CHUNK_RECLAIM_THREADS
     ///          threads (serial by default): every flag is set before the first
     ///          madvise, and the syscalls touch disjoint ranges. Timed
     ///          (reclaim_sweep_ns / reclaim_sweeps).
     /// @return Number of slabs advised.
-    std::size_t flush() noexcept
-    {
-        if (items_.empty())
-        {
-            return 0;
-        }
-        // Whatever path this flush leaves by, it is timed and counted.
-        struct SweepTimer
-        {
-            std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
-            SweepTimer()                                = default;
-            SweepTimer(const SweepTimer&)               = delete;
-            SweepTimer& operator=(const SweepTimer&)    = delete;
-            SweepTimer(SweepTimer&&)                    = delete;
-            SweepTimer& operator=(SweepTimer&&)         = delete;
-            ~SweepTimer()
-            {
-                const auto dt = std::chrono::steady_clock::now() - start;
-                reclaim_sweep_ns().fetch_add(
-                    static_cast<std::size_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(dt).count()),
-                    std::memory_order_relaxed);
-                reclaim_sweeps().fetch_add(1, std::memory_order_relaxed);
-            }
-        } const timer;
-
-        std::sort(items_.begin(), items_.end(),
-                  [](const Item& a, const Item& b) { return std::less<Slab*>{}(a.slab, b.slab); });
-        items_.erase(
-            std::unique(items_.begin(), items_.end(), [](const Item& a, const Item& b) { return a.slab == b.slab; }),
-            items_.end());
-        // CHUNK_RECLAIM_MIN_SLABS: madvise syscalls against the pages they
-        // return, decided by how many slabs this sweep empties at once.
-        if (items_.size() < alloc_config::reclaim_min_empty_slabs())
-        {
-            items_.clear();
-            return 0;
-        }
-        for (Item& it : items_)
-        {
-            it.len   = detail::reclaimable_bytes(it.slab);
-            it.begin = reinterpret_cast<std::uintptr_t>(it.slab->data);
-        }
-        items_.erase(std::remove_if(items_.begin(), items_.end(), [](const Item& it) { return it.len == 0; }),
-                     items_.end());
-        std::sort(items_.begin(), items_.end(), [](const Item& a, const Item& b) { return a.begin < b.begin; });
-
-        std::size_t bytes        = 0;
-        std::size_t inline_calls = 0; // runs advised at once because runs_ could not grow
-        runs_.clear();
-        std::size_t first = 0;
-        while (first < items_.size())
-        {
-            // Extend the run while the next slab starts exactly where this one's
-            // advisable bytes end.
-            std::size_t last = first;
-            while (last + 1 < items_.size() && items_[last].begin + items_[last].len == items_[last + 1].begin)
-            {
-                ++last;
-            }
-            const std::uintptr_t begin = items_[first].begin;
-            const std::uintptr_t end   = items_[last].begin + items_[last].len;
-            // Flag first, for every slab of the run: from here their trailing
-            // back-pointers are not to be trusted, and alloc() puts them back.
-            for (std::size_t i = first; i <= last; ++i)
-            {
-                items_[i].slab->backptr_dropped = true;
-            }
-            try
-            {
-                runs_.push_back(Run{begin, end - begin});
-            }
-            catch (...)
-            {
-                ::madvise(detail::addr_ptr(begin), end - begin, MADV_DONTNEED); // no room: now
-                ++inline_calls;
-            }
-            bytes += end - begin;
-            first = last + 1;
-        }
-        const std::size_t slabs = items_.size();
-        reclaim_calls().fetch_add(slabs, std::memory_order_relaxed);
-        reclaim_syscalls().fetch_add(runs_.size() + inline_calls, std::memory_order_relaxed);
-        reclaim_bytes().fetch_add(bytes, std::memory_order_relaxed);
-
-        advise_runs();
-
-        items_.clear();
-        runs_.clear();
-        return slabs;
-    }
+    std::size_t flush() noexcept;
 
   private:
     struct Item
@@ -525,30 +438,8 @@ class EmptySlabSweep
         std::size_t    len;   ///< bytes, page multiple
     };
 
-    /// @brief madvise every run of runs_, serially or from an OpenMP team.
-    void advise_runs() noexcept
-    {
-        const auto n_runs = static_cast<long>(runs_.size());
-#ifdef _OPENMP
-        const int nthr = detail::reclaim_sweep_threads();
-        // No nested team (the sweep is meant for a quiescent, serial point),
-        // and not for a handful of runs: a team costs more than it saves.
-        if (nthr > 1 && omp_in_parallel() == 0 && n_runs >= 4L * nthr)
-        {
-            const Run* runs = runs_.data();
-    #pragma omp parallel for schedule(dynamic, 16) num_threads(nthr)
-            for (long i = 0; i < n_runs; ++i)
-            {
-                ::madvise(detail::addr_ptr(runs[i].begin), runs[i].len, MADV_DONTNEED);
-            }
-            return;
-        }
-#endif
-        for (long i = 0; i < n_runs; ++i)
-        {
-            ::madvise(detail::addr_ptr(runs_[i].begin), runs_[i].len, MADV_DONTNEED);
-        }
-    }
+    /// @brief madvise every run of runs_, serially or from a team of the backend.
+    void advise_runs() noexcept;
 
     std::vector<Item> items_;
     std::vector<Run>  runs_;
@@ -598,60 +489,7 @@ class SlabArena
      *          slab recycled with blocks in it). Unconditional and fatal on
      *          purpose: cheap here, and silent recovery would hide the bug.
      */
-    void* allocate(std::size_t size, std::size_t align, int rank = -1)
-    {
-        const std::scoped_lock lk(mtx_);
-
-        // A slab a re-chunk gave back (recycle_batch), this rank's first: its
-        // pages are resident, and were first touched by this rank.
-        if (void* block = pop_recycled(size, rank); block != nullptr)
-        {
-            if (live_.contains(reinterpret_cast<std::uintptr_t>(block)))
-            {
-                FAST_ALLOC_FATAL("arena {}: DOUBLE-ALLOC recycled slab {} (size={}): handed out while still live",
-                                 name_, block, size);
-            }
-            live_.insert(reinterpret_cast<std::uintptr_t>(block));
-            bytes_live_ += size;
-            bytes_high_ = std::max(bytes_high_, bytes_live_);
-            ++alloc_calls_;
-            return block;
-        }
-
-        // Reuse a same-size slab from this arena's free-list if available.
-        const auto it = free_lists_.find(size);
-        if (it != free_lists_.end() && !it->second.empty())
-        {
-            void* block = it->second.back();
-            it->second.pop_back();
-            // Impossible by construction (a free-list slab was removed from live_).
-            if (live_.contains(reinterpret_cast<std::uintptr_t>(block)))
-            {
-                FAST_ALLOC_FATAL("arena {}: DOUBLE-ALLOC slab {} (size={}): handed out while still live -- a slab was "
-                                 "recycled with live blocks still in it",
-                                 name_, block, size);
-            }
-            live_.insert(reinterpret_cast<std::uintptr_t>(block));
-            bytes_live_ += size;
-            bytes_high_ = std::max(bytes_high_, bytes_live_);
-            ++alloc_calls_;
-            return block;
-        }
-
-        // Otherwise bump-allocate, growing the reservation if needed.
-        std::uintptr_t aligned = align_up(cursor_, align);
-        if (aligned + size > region_end_)
-        {
-            grow(size + align);
-            aligned = align_up(cursor_, align);
-        }
-        cursor_ = aligned + size;
-        live_.insert(aligned);
-        bytes_live_ += size;
-        bytes_high_ = std::max(bytes_high_, bytes_live_);
-        ++alloc_calls_;
-        return detail::addr_ptr(aligned);
-    }
+    void* allocate(std::size_t size, std::size_t align, int rank = -1);
 
     /**
      * @brief Take a slab back into THIS arena's free list. Never to the OS.
@@ -663,77 +501,27 @@ class SlabArena
      *       bookkeeping is gone (harmless). A live slab handed out again is
      *       fatal, in allocate().
      */
-    void deallocate(void* block, std::size_t size) noexcept
-    {
-        if (block == nullptr)
-        {
-            return;
-        }
-        const std::scoped_lock lk(mtx_);
-        // Not live: warn, do NOT abort (see @note).
-        if (live_.erase(reinterpret_cast<std::uintptr_t>(block)) == 0)
-        {
-            CHUNK_LOG(warn, arena, "{}: double-free/unknown slab {} (size={}) -- ignored", name_, block, size);
-            return; // don't push an unknown slab onto the free-list
-        }
-        bytes_live_ -= size;
-        ++dealloc_calls_;
-        dealloc_bytes_ += size;
-        free_lists_[size].push_back(block);
-    }
+    void deallocate(void* block, std::size_t size) noexcept;
 
     /**
-     * @brief Take back @p n slabs a re-chunk has just emptied, for the next
+     * @brief Take back @p count slabs a re-chunk has just emptied, for the next
      *        allocate() of rank @p rank. One lock for the whole batch.
      * @param blocks The slabs, as returned by allocate(); their headers are
      *        gone (TCSlabPool::recycle_empty_slabs). Null entries are skipped.
-     * @param n Number of entries in @p blocks.
+     * @param count Number of entries in @p blocks.
      * @param size Their allocation size: the key allocate() looks them up by.
      * @param rank The rank that held them (-1 counts as 0): allocate(size, ..,
      *        rank) takes them back first, their pages having been first
      *        touched there.
      * @details Unlike deallocate(), the slabs KEEP their pages: the re-chunk's
      *          next slice allocates about as much at the same slab size, and a
-     *          resident slab costs no page fault nor kernel zeroing. What the next
-     *          slice does not take is given back by advise_recycled().
+     *          resident slab costs no page fault nor kernel zeroing. What the last
+     *          slice does not take stays resident too, for the next allocations
+     *          (the re-chunk no longer calls advise_recycled()).
      * @note An unknown or already-freed slab warns and is dropped, as in
      *       deallocate().
      */
-    void recycle_batch(void* const* blocks, std::size_t n, std::size_t size, int rank) noexcept
-    {
-        if (n == 0)
-        {
-            return;
-        }
-        const std::scoped_lock lk(mtx_);
-        auto&                  lists = recycled_[size];
-        const auto             r     = static_cast<std::size_t>(rank < 0 ? 0 : rank);
-        if (lists.by_rank.size() <= r)
-        {
-            lists.by_rank.resize(r + 1);
-        }
-        auto& mine = lists.by_rank[r];
-        for (std::size_t i = 0; i < n; ++i)
-        {
-            void* const block = blocks[i];
-            if (block == nullptr)
-            {
-                continue;
-            }
-            if (live_.erase(reinterpret_cast<std::uintptr_t>(block)) == 0)
-            {
-                CHUNK_LOG(warn, arena, "{}: recycle of an unknown/free slab {} (size={}) -- ignored", name_, block,
-                          size);
-                continue;
-            }
-            bytes_live_ -= size;
-            ++dealloc_calls_;
-            dealloc_bytes_ += size;
-            mine.push_back(Recycled{.block = block, .advised = false});
-            ++lists.count;
-            ++recycled_in_;
-        }
-    }
+    void recycle_batch(void* const* blocks, std::size_t count, std::size_t size, int rank) noexcept;
 
     /**
      * @brief Give back the pages of every recycled slab nobody took and that
@@ -743,7 +531,6 @@ class SlabArena
      *        Each rank keeps its newest ones -- the end of its list, which
      *        allocate() takes first -- and its resident slabs are moved
      *        behind its advised ones, so they are handed out first.
-     *        CHUNK_RECHUNK_KEEP_RECYCLED_MB sets it for the re-chunk.
      * @return Number of slabs advised.
      * @details The slabs stay on their rank's list, without pages (a later
      *          allocate() still takes them first). Each slab is advised once.
@@ -754,133 +541,7 @@ class SlabArena
      * @pre Meant for a quiescent point (the re-chunk calls it between slices,
      *      for the previous boundary's surplus, and after the last one).
      */
-    std::size_t advise_recycled(std::size_t keep_bytes = 0) noexcept
-    {
-        const std::scoped_lock lk(mtx_);
-        const std::size_t      page = detail::reclaim_page_size();
-        if (page == 0)
-        {
-            return 0;
-        }
-        struct Span
-        {
-            std::uintptr_t begin;
-            std::size_t    len;
-        };
-        std::vector<Span> spans;
-        std::size_t       slabs = 0;
-        // keep_bytes: an even share per rank, of the slabs not advised yet.
-        std::size_t n_ranks = 0;
-        for (const auto& [size, lists] : recycled_)
-        {
-            n_ranks = std::max(n_ranks, lists.by_rank.size());
-        }
-        const std::size_t        per_rank = n_ranks != 0 ? keep_bytes / n_ranks : 0;
-        std::vector<std::size_t> kept;
-        if (per_rank != 0)
-        {
-            try
-            {
-                kept.assign(n_ranks, 0);
-            }
-            catch (...)
-            {
-                // no room for the counters: advise them all, as with keep_bytes = 0
-            }
-        }
-        for (auto& [size, lists] : recycled_)
-        {
-            const std::size_t adv = (size / page) * page;
-            for (std::size_t r = 0; r < lists.by_rank.size(); ++r)
-            {
-                auto& v = lists.by_rank[r];
-                // Newest last: pop_recycled() takes from the back, so a rank
-                // keeps from the back.
-                for (auto rit = v.rbegin(); rit != v.rend(); ++rit)
-                {
-                    Recycled& e = *rit;
-                    if (e.advised)
-                    {
-                        continue;
-                    }
-                    if (!kept.empty() && kept[r] + size <= per_rank)
-                    {
-                        kept[r] += size; // stays resident, for the next allocate()
-                        continue;
-                    }
-                    const auto b = reinterpret_cast<std::uintptr_t>(e.block);
-                    if (adv == 0 || b % page != 0)
-                    {
-                        e.advised = true; // never advisable: do not look again
-                        continue;
-                    }
-                    try
-                    {
-                        spans.push_back(Span{.begin = b, .len = adv});
-                    }
-                    catch (...)
-                    {
-                        ::madvise(e.block, adv, MADV_DONTNEED); // no room for the batch: now
-                        reclaim_syscalls().fetch_add(1, std::memory_order_relaxed);
-                        reclaim_bytes().fetch_add(adv, std::memory_order_relaxed);
-                    }
-                    e.advised = true;
-                    ++slabs;
-                }
-                if (!kept.empty())
-                {
-                    // Resident slabs behind the advised ones: pop_recycled()
-                    // hands out the back first, pages already there.
-                    std::stable_partition(v.begin(), v.end(), [](const Recycled& e) { return e.advised; });
-                }
-            }
-        }
-        std::ranges::sort(spans, [](const Span& a, const Span& b) { return a.begin < b.begin; });
-        // Coalesced in place: spans[0, runs) become the runs.
-        std::size_t runs  = 0;
-        std::size_t bytes = 0;
-        for (std::size_t first = 0; first < spans.size();)
-        {
-            std::size_t last = first;
-            while (last + 1 < spans.size() && spans[last].begin + spans[last].len == spans[last + 1].begin)
-            {
-                ++last;
-            }
-            const std::uintptr_t begin = spans[first].begin;
-            const std::size_t    len   = spans[last].begin + spans[last].len - begin;
-            spans[runs++]              = Span{.begin = begin, .len = len};
-            bytes += len;
-            first = last + 1;
-        }
-        // Serial, or from a team of CHUNK_RECLAIM_THREADS as the slab sweep
-        // (EmptySlabSweep::advise_runs): still under the lock, which the team
-        // does not need, so no allocate() takes a slab mid-advise.
-#ifdef _OPENMP
-        const auto n_runs = static_cast<long>(runs);
-        const int  nthr   = detail::reclaim_sweep_threads();
-        if (nthr > 1 && omp_in_parallel() == 0 && n_runs >= 4L * nthr)
-        {
-            const Span* run = spans.data();
-    #pragma omp parallel for schedule(dynamic, 16) num_threads(nthr)
-            for (long i = 0; i < n_runs; ++i)
-            {
-                ::madvise(detail::addr_ptr(run[i].begin), run[i].len, MADV_DONTNEED);
-            }
-        }
-        else
-#endif
-        {
-            for (std::size_t i = 0; i < runs; ++i)
-            {
-                ::madvise(detail::addr_ptr(spans[i].begin), spans[i].len, MADV_DONTNEED);
-            }
-        }
-        reclaim_calls().fetch_add(slabs, std::memory_order_relaxed);
-        reclaim_syscalls().fetch_add(runs, std::memory_order_relaxed);
-        reclaim_bytes().fetch_add(bytes, std::memory_order_relaxed);
-        recycled_advised_ += slabs;
-        return slabs;
-    }
+    std::size_t advise_recycled(std::size_t keep_bytes = 0) noexcept;
 
     /**
      * @brief Bytes of this arena's mappings resident RIGHT NOW (mincore()).
@@ -889,33 +550,7 @@ class SlabArena
      *          given moment. One mincore() per mapping, one byte of scratch per
      *          page -- meant for a trace point, not a hot path.
      */
-    [[nodiscard]] std::size_t resident_bytes() const noexcept
-    {
-        const std::scoped_lock lk(mtx_);
-        const long             page = ::sysconf(_SC_PAGESIZE);
-        if (page <= 0)
-        {
-            return 0;
-        }
-        const auto                 psz = static_cast<std::size_t>(page);
-        std::size_t                res = 0;
-        std::vector<unsigned char> vec;
-        for (const auto& r : regions_)
-        {
-            const std::size_t len   = r.end - r.begin;
-            const std::size_t pages = (len + psz - 1) / psz;
-            vec.resize(pages);
-            if (::mincore(detail::addr_ptr(r.begin), len, vec.data()) != 0)
-            {
-                continue;
-            }
-            for (const unsigned char v : vec)
-            {
-                res += (v & 1u) != 0u ? psz : 0;
-            }
-        }
-        return res;
-    }
+    [[nodiscard]] std::size_t resident_bytes() const noexcept;
 
     /// @brief Bytes currently handed out (slabs, madvise'd ones included).
     [[nodiscard]] std::size_t live_bytes() const noexcept
@@ -925,16 +560,7 @@ class SlabArena
     }
 
     /// @brief Bytes of address space reserved by this arena (never shrinks).
-    [[nodiscard]] std::size_t mapped_bytes() const noexcept
-    {
-        const std::scoped_lock lk(mtx_);
-        std::size_t            mapped = 0;
-        for (const auto& r : regions_)
-        {
-            mapped += (r.end - r.begin);
-        }
-        return mapped;
-    }
+    [[nodiscard]] std::size_t mapped_bytes() const noexcept;
 
     /**
      * @brief Print one line of arena accounting on stderr.
@@ -949,32 +575,7 @@ class SlabArena
      *          - `freelist` bytes deallocated and recycled internally but still
      *                       RESIDENT. This is the reclaim target.
      */
-    void report(const char* when) const noexcept
-    {
-        const std::scoped_lock lk(mtx_);
-        std::size_t            mapped = 0;
-        for (const auto& r : regions_)
-        {
-            mapped += (r.end - r.begin);
-        }
-        std::size_t freelist = 0;
-        for (const auto& kv : free_lists_)
-        {
-            freelist += kv.first * kv.second.size();
-        }
-        std::size_t recycled = 0;
-        for (const auto& kv : recycled_)
-        {
-            recycled += kv.first * kv.second.count;
-        }
-        // CHUNK_ARENA_REPORT asked for it: a report, written whatever CHUNK_LOG says.
-        CHUNK_LOG_ALWAYS(arena,
-                         "{:<6} {:<16} mapped={:8} KiB  live={:8} KiB  high={:8} KiB  freelist={:8} KiB  regions={}  "
-                         "allocs={}  deallocs={}  deallocMiB={}  recycled={} KiB (in={} out={} foreign={} advised={})",
-                         name_, when, mapped >> 10U, bytes_live_ >> 10U, bytes_high_ >> 10U, freelist >> 10U,
-                         regions_.size(), alloc_calls_, dealloc_calls_, dealloc_bytes_ >> 20U, recycled >> 10U,
-                         recycled_in_, recycled_out_, recycled_foreign_, recycled_advised_);
-    }
+    void report(const char* when) const noexcept;
 
 
   private:
@@ -989,75 +590,26 @@ class SlabArena
     ///        null: rank @p rank's list first, then the following ranks' in
     ///        turn (neighbouring ranks, usually the same socket).
     /// @pre The lock is held.
-    void* pop_recycled(std::size_t size, int rank) noexcept
-    {
-        const auto it = recycled_.find(size);
-        if (it == recycled_.end() || it->second.count == 0)
-        {
-            return nullptr;
-        }
-        auto&             lists = it->second.by_rank;
-        const std::size_t n     = lists.size();
-        const bool        known = rank >= 0 && std::cmp_less(rank, n);
-        const std::size_t start = known ? static_cast<std::size_t>(rank) : 0;
-        for (std::size_t i = 0; i < n; ++i)
-        {
-            auto& v = lists[(start + i) % n];
-            if (!v.empty())
-            {
-                void* const block = v.back().block;
-                v.pop_back();
-                --it->second.count;
-                ++recycled_out_;
-                if (i != 0 || !known)
-                {
-                    ++recycled_foreign_;
-                }
-                return block;
-            }
-        }
-        return nullptr;
-    }
+    void* pop_recycled(std::size_t size, int rank) noexcept;
 
     /// @brief Map a fresh reservation and restart the bump cursor in it.
     /// @param min_bytes Lower bound for the new region; larger than
     ///        #reservation_chunk_ rounds up to a 2 MiB multiple.
     /// @warning Abandons the tail of the current region. @see SlabArena
-    void grow(std::size_t min_bytes)
-    {
-        std::size_t want = reservation_chunk_;
-        if (min_bytes > want)
-        {
-            want = align_up(min_bytes, static_cast<std::size_t>(1) << 21U); // round to 2 MiB
-        }
+    void grow(std::size_t min_bytes);
 
-        void* base = ::mmap(nullptr, want, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-        if (base == MAP_FAILED)
-        {
-            const int err = errno;
-            FAST_ALLOC_FATAL("arena {}: mmap of {} bytes failed ({})", name_, want, std::strerror(err));
-        }
-        // CHUNK_THP: `1` advises huge pages (the slabs are 2 MiB and aligned
-        // on it, a huge page each), `never` forbids them, unset leaves the
-        // kernel's mode. Advice only: a failure is ignored.
-        alloc_config::advise_thp_region(base, want);
-        auto region_begin = reinterpret_cast<std::uintptr_t>(base);
-        regions_.push_back(Region{.begin = region_begin, .end = region_begin + want});
-        cursor_     = region_begin;
-        region_end_ = region_begin + want;
+    /// @brief Round @p value up to a multiple of @p align. @p align must be a power of two.
+    static std::uintptr_t align_up(std::uintptr_t value, std::size_t align) noexcept
+    {
+        return (value + (align - 1)) & ~(static_cast<std::uintptr_t>(align) - 1);
     }
 
-    /// @brief Round @p v up to a multiple of @p alignment. @p alignment must be a power of two.
-    static std::uintptr_t align_up(std::uintptr_t v, std::size_t alignment) noexcept
-    {
-        return (v + (alignment - 1)) & ~(static_cast<std::uintptr_t>(alignment) - 1);
-    }
-
-    const char*         name_;              ///< Diagnostic label only.
-    std::size_t         reservation_chunk_; ///< Size of each new mmap region.
-    std::uintptr_t      cursor_     = 0;    ///< Bump pointer inside the current region.
-    std::uintptr_t      region_end_ = 0;    ///< End of the current region.
-    std::vector<Region> regions_;           ///< Every reservation, for the reports.
+    const char*         name_;                  ///< Diagnostic label only.
+    std::size_t         reservation_chunk_;     ///< Size of each new mmap region.
+    std::byte*          region_base_ = nullptr; ///< The current region's start: allocate() steps from it.
+    std::uintptr_t      cursor_      = 0;       ///< Bump pointer inside the current region.
+    std::uintptr_t      region_end_  = 0;       ///< End of the current region.
+    std::vector<Region> regions_;               ///< Every reservation, for the reports.
 
     /// @brief Recycled slabs, keyed by their exact allocation size.
     std::unordered_map<std::size_t, std::vector<void*>> free_lists_;
@@ -1143,10 +695,10 @@ enum class ArenaKind : std::uint8_t
     value ///< Chunk value buffers.
 };
 
-/// @brief The arena for @p k.
-inline SlabArena& arena_for(ArenaKind k)
+/// @brief The arena for @p kind.
+inline SlabArena& arena_for(ArenaKind kind)
 {
-    switch (k)
+    switch (kind)
     {
         case ArenaKind::ctx:
             return ctx_arena();
@@ -1158,16 +710,13 @@ inline SlabArena& arena_for(ArenaKind k)
     }
 }
 
-/// @brief Is arena reporting switched on?
-/// @details Reads CHUNK_ARENA_REPORT from the environment, ONCE. Setting it
-///          after the first call has no effect.
+/// @brief Is arena reporting switched on (CHUNK_LOG=arena=info)?
+/// @details Read ONCE, at the first call: the free-path counters it gates are
+///          either counted from the start or not at all. A logging::configure()
+///          after the first call has no effect on it.
 inline bool arena_report_enabled() noexcept
 {
-    static const bool on = []
-    {
-        const char* env = std::getenv("CHUNK_ARENA_REPORT");
-        return env && env[0] && env[0] != '0';
-    }();
+    static const bool on = logging::enabled(logging::Channel::arena, logging::Level::info);
     return on;
 }
 
@@ -1197,6 +746,10 @@ inline void report_all_arenas(const char* when) noexcept
         reclaim_skip_small().load(std::memory_order_relaxed),
         static_cast<double>(reclaim_sweep_ns().load(std::memory_order_relaxed)) * 1e-6,
         reclaim_sweeps().load(std::memory_order_relaxed), detail::reclaim_sweep_threads());
+    CHUNK_LOG_ALWAYS(arena, "partial {:<16} madvise_calls={}  advised={} MiB  (slabs in use scanned={})", when,
+                     reclaim_partial_syscalls().load(std::memory_order_relaxed),
+                     reclaim_partial_bytes().load(std::memory_order_relaxed) >> 20U,
+                     reclaim_partial_scanned().load(std::memory_order_relaxed));
     CHUNK_LOG_ALWAYS(arena, "freepath {:<15} freed={}  parked_own={}  parked_foreign={}  kept_no_migrate={}", when,
                      freepath_freed().load(std::memory_order_relaxed),
                      freepath_park_own().load(std::memory_order_relaxed),
@@ -1208,3 +761,5 @@ inline void report_all_arenas(const char* when) noexcept
 }
 
 } // namespace fast_alloc
+
+#include "fast_allocators/internal/slab_arena_inline.h" // the template bodies

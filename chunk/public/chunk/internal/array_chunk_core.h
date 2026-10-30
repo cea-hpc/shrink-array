@@ -20,14 +20,14 @@
  * @file array_chunk_core.h
  * @brief The part of a chunked array that does not depend on its index type.
  *
- * @details ArrayChunk*<T, ind_type> are distinct types for every ind_type, but
+ * @details zero::Array*<T, IntType> are distinct types for every IntType, but
  *          the machinery around them -- proxies, chunks, managers, the per-T
  *          registries (<tt>Proxy*\<T\>\::share_info_array</tt>) -- is templated on T alone
  *          and reaches the array through a type-erased pointer (the proxy's
  *          ptr_on_array, the registries' keys). Do not cast that pointer back to
- *          `ArrayChunk*<T, int>`: on a `<T, long>` array the fields sit elsewhere.
+ *          `zero::Array*<T, int>`: on a `<T, long>` array the fields sit elsewhere.
  *
- *          ArrayChunkCore<chunk_type> is what that code may see: everything it
+ *          ArrayChunkCore<ChunkType> is what that code may see: everything it
  *          reads, laid out identically whatever the index type. The pointer
  *          handed out is the address of THIS subobject (registry_key()), so a
  *          static_cast from the void* back to ArrayChunkCore is well-defined.
@@ -44,18 +44,18 @@
 #include <atomic>      // std::atomic (next_alloc_key_)
 #include <cstddef>     // std::size_t
 #include <cstdint>     // std::uint64_t
-#include <cstdlib>     // std::getenv (CHUNK_ALLOC_AFFINITY_EAGER)
 #include <memory>      // std::construct_at (construct_chunk)
 #include <string>      // std::string (debug_name_)
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::move (set_debug_name)
-#include <vector>      // std::vector (chunk_list)
+#include <vector>      // std::vector (chunk_list_)
 
 #include "chunk/config.h"                            // build_config::alloc_affinity_min_bytes, build_config::any_check
-#include "chunk/chunk_traits.h"                      // ChunkTraits (proxy_type, manager_type)
+#include "chunk/chunk_traits.h"                      // ChunkTraits (ProxyType, ManagerType)
 #include "chunk/internal/chunk_size_policy.h"        // ActiveSizePolicy
 #include "chunk/internal/array_chunk_dirty_bitset.h" // DirtyBitsetSupport
-#include "chunk/internal/parallel_storage_init.h"    // NoInitAllocator (chunk_list)
+#include "chunk/internal/array_chunk_for.h"          // ArrayKey (registry_key)
+#include "chunk/internal/parallel_storage_init.h"    // NoInitAllocator (chunk_list_)
 
 namespace shrink_array
 {
@@ -64,21 +64,15 @@ namespace alloc_affinity_detail
 {
 /// Eager (an allocator set per large array at creation) or lazy (only the
 /// storage a re-chunk builds gets one, see assign_alloc_key()) -- eager by
-/// default for Chunk (v1), lazy for Chunk2 / Chunk2A. CHUNK_ALLOC_AFFINITY_EAGER
-/// (read once), when set, decides: =0 lazy, anything else eager.
-/// v1's memory is mostly data and its rebuild is sliced: from the shared pool,
+/// default for zero, lazy for zero_one_value / zero_any, fixed at build time.
+/// zero's memory is mostly data and its rebuild is sliced: from the shared pool,
 /// whose slabs mix several arrays' blocks, no slab empties during the first
-/// re-chunk, so eager lowers its peak by about a tenth. Chunk2 / Chunk2A are not
-/// sliced and are metadata-heavy: lazy saves them the per-array slabs.
-inline const bool g_eager = []() noexcept
-{
-    const char* e = std::getenv("CHUNK_ALLOC_AFFINITY_EAGER");
-    if (e == nullptr || e[0] == '\0')
-    {
-        return chunk_config::use_chunk; // the variant's default
-    }
-    return e[0] != '0';
-}();
+/// re-chunk, so eager lowers its peak. zero_one_value / zero_any are not sliced and
+/// are metadata-heavy: lazy saves them the per-array slabs. Measured on Milan
+/// (shrink_bench int64 dyn, 64 threads, three runs each, October 2026): zero lazy
+/// costs +9.8% of time, +14.6% at the peak and +11.8% at the end; zero_any eager
+/// +7.4% at the peak; zero_one_value is the same either way.
+inline constexpr bool g_eager = chunk_config::use_zero;
 
 /// True while rechunk_to() constructs its new storage (tmp): the storage that
 /// assign_alloc_key() gives an allocator set of its own. Set and reset at a
@@ -103,39 +97,24 @@ struct RechunkStorageScope
     RechunkStorageScope(RechunkStorageScope&&)                 = delete;
     RechunkStorageScope& operator=(RechunkStorageScope&&)      = delete;
 };
-
-/// CHUNK_RECHUNK_REUSE_LIST (read once, default on; 0 = off): a re-chunk's
-/// dying storage hands its chunk_list buffer to the next re-chunk's new
-/// storage (ArrayChunkCore::acquire_chunk_list / release_chunk_list) instead of
-/// freeing it. Off = a fresh vector per re-chunk.
-inline const bool g_reuse_chunk_list = []() noexcept
-{
-    const char* e = std::getenv("CHUNK_RECHUNK_REUSE_LIST");
-    return e == nullptr || e[0] == '\0' || e[0] != '0';
-}();
-
-/// True while rechunk_to() destroys its temporary, which by then holds the OLD
-/// storage: its clear_core() keeps the chunk_list buffer for the next
-/// re-chunk. Set and reset at a quiescent serial point, around one destructor.
-inline bool g_releasing_rechunk_storage = false;
 } // namespace alloc_affinity_detail
 
-// chunk_list's allocator is NoInitAllocator (parallel_storage_init.h): resize() only
+// chunk_list_'s allocator is NoInitAllocator (parallel_storage_init.h): resize() only
 // reserves, and the init loops construct each chunk (ArrayChunkCore::construct_chunk) on
 // the thread that initialises it -- first touch and NUMA placement there, not a serial
 // value-init sweep on the calling thread. The resize sites and their init loops:
-// ArrayChunk*::create (through acquire_chunk_list) and ArrayChunk*::resize.
+// zero::Array*::create (through acquire_chunk_list) and zero::Array*::resize.
 
-/// @brief The index-type-independent part of a chunked array of ChunkType (see the description at the top of
+/// @brief The index-type-independent part of a chunked array of ChunkT (see the description at the top of
 ///        this file).
-template <typename ChunkType>
-class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
+template <typename ChunkT>
+class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
 {
   public:
-    using chunk_type      = ChunkType;                                            ///< Chunk type held in chunk_list.
-    using chunk_list_type = std::vector<chunk_type, NoInitAllocator<chunk_type>>; ///< chunk_list's type.
-    using proxy_type      = ChunkTraits<ChunkType>::proxy_type;   ///< Proxy type owning the per-T registry.
-    using manager_type    = ChunkTraits<ChunkType>::manager_type; ///< Per-T manager owning the allocators.
+    using ChunkType     = ChunkT;                                             ///< Chunk type held in chunk_list_.
+    using ChunkListType = std::vector<ChunkType, NoInitAllocator<ChunkType>>; ///< chunk_list_'s type.
+    using ProxyType     = ChunkTraits<ChunkT>::ProxyType;                     ///< Proxy type owning the per-T registry.
+    using ManagerType   = ChunkTraits<ChunkT>::ManagerType;                   ///< Per-T manager owning the allocators.
 
     /// @brief The chunk geometry: elements per chunk.
     [[nodiscard]] unsigned int chunk_size() const noexcept
@@ -179,17 +158,17 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
      *          (one decision per chunk, not per element). Everything else goes
      *          through operator[].
      *
-     * @param i chunk index; the caller guarantees 0 <= i < nb_chunk
+     * @param index chunk index; the caller guarantees 0 <= index < nb_chunk
      */
-    [[nodiscard]] chunk_type& chunk_ref(std::size_t i) noexcept
+    [[nodiscard]] ChunkType& chunk_ref(std::size_t index) noexcept
     {
-        return chunk_list_[i];
+        return chunk_list_[index];
     }
 
     /// @brief Const overload of chunk_ref(): the same chunk, read-only.
-    [[nodiscard]] const chunk_type& chunk_ref(std::size_t i) const noexcept
+    [[nodiscard]] const ChunkType& chunk_ref(std::size_t index) const noexcept
     {
-        return chunk_list_[i];
+        return chunk_list_[index];
     }
 
     /**
@@ -205,18 +184,13 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
 
   protected:
     /**
-     * @brief The address under which this array is known outside its own type:
-     *        the proxies' ptr_on_array and every <tt>Proxy*\<T\>\::share_info_array</tt> key.
-     * @details Always this subobject, never the derived array: the readers cast
-     *          it back to ArrayChunkCore, which is only defined from a pointer
-     *          that was an ArrayChunkCore* in the first place.
+     * @brief The identity under which this array is known outside its own type
+     *        (ArrayKey): the proxies' ptr_on_array_ and every
+     *        <tt>Proxy*\<T\>\::share_info_array</tt> key.
+     * @details Always this subobject, never the derived array: the same core
+     *          for every index type of the array.
      */
-    [[nodiscard]] void* registry_key() noexcept
-    {
-        return this;
-    }
-    /// @brief Const overload of registry_key(): the same address.
-    [[nodiscard]] const void* registry_key() const noexcept
+    [[nodiscard]] ArrayKey<ChunkT> registry_key() const noexcept
     {
         return this;
     }
@@ -225,103 +199,50 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
     ///        rank; registers allocators, reuse lists and their budget with the
     ///        manager. Call from rebuild_storage() once nb_chunk is known
     ///        (sequential). Idempotent for an array that already has a key.
-    void assign_alloc_key()
-    {
-        if constexpr (build_config::alloc_affinity_min_bytes == 0 || !build_config::chunk_dynamic ||
-                      !build_config::use_fast_alloc || !build_config::use_openmp)
-        {
-            return;
-        }
-        if (nb_chunk_ <= 0)
-        {
-            return;
-        }
-        // Lazy affinity: only the storage a re-chunk builds takes its own set (an array
-        // already keyed keeps its key). A set costs one partly-filled slab per (rank, size),
-        // for a benefit -- whole slabs emptied by the NEXT re-chunk -- that only a
-        // re-chunked array collects.
-        if (alloc_key_ == 0 && !alloc_affinity_detail::g_eager && !alloc_affinity_detail::g_building_rechunk_storage)
-        {
-            return;
-        }
-        const std::size_t meta_bytes = static_cast<std::size_t>(nb_chunk_) * sizeof(chunk_type);
-        if (meta_bytes < build_config::alloc_affinity_min_bytes)
-        {
-            return;
-        }
-        const unsigned int key =
-            (alloc_key_ != 0) ? alloc_key_ : next_alloc_key_.fetch_add(1, std::memory_order_relaxed);
-        // Keep the key ONLY if the manager built its allocator set: a key with no registered
-        // set makes route_omp_dynamic_alloc fall through to the legacy single allocator,
-        // which is neither this size's nor this array's.
-        alloc_key_ = manager_type::register_alloc_key(key, size_policy_.size(), nb_chunk_) ? key : 0u;
-    }
+    void assign_alloc_key();
 
     /**
-     * @brief Size chunk_list to @p n chunks, from the spare a previous
-     *        re-chunk left when this is a re-chunk's new storage.
+     * @brief Size chunk_list_ to @p count chunks (reserve only: see construct_chunk()).
      *
-     * @details Every re-chunk builds a new chunk_list and frees the old one; at a
-     *          small geometry that is hundreds of MB faulted in, then unmapped (a
-     *          TLB shootdown on every CPU). The spare is the previous old storage's
-     *          buffer, pages still resident: taken when it holds @p n chunks
-     *          without being more than 4x too large. Only for the storage
-     *          rechunk_to() builds (quiescent, serial) and only into an empty list,
-     *          so no live chunk address ever moves.
-     * @param n the chunk count
+     * @details Always a buffer of its own: a re-chunk's new storage no longer takes
+     *          the buffer the previous re-chunk's old storage left. That spare (the
+     *          former CHUNK_RECHUNK_REUSE_LIST) outlived the re-chunk, one per chunk
+     *          type, and a coarsening -- which needs a SMALLER list -- took a buffer
+     *          up to four times too large and kept it resident whole: the old
+     *          geometry's chunk_list_ never came back.
+     * @param count the chunk count
      */
-    void acquire_chunk_list(std::size_t n)
-    {
-        if (alloc_affinity_detail::g_building_rechunk_storage && alloc_affinity_detail::g_reuse_chunk_list &&
-            chunk_list_.capacity() == 0 && spare_chunk_list_.capacity() >= n && spare_chunk_list_.capacity() / 4 <= n)
-        {
-            chunk_list_.swap(spare_chunk_list_); // spare left empty, without a buffer
-        }
-        // Only reserves (NoInitAllocator): the caller's init loop (static schedule) is the
-        // first touch, page faults and NUMA placement included.
-        chunk_list_.resize(n);
-    }
+    void acquire_chunk_list(std::size_t count);
 
     /**
-     * @brief Construct chunk @p i of chunk_list in place, value-initialised.
+     * @brief Construct chunk @p index of chunk_list_ in place, value-initialised.
      * @details For the init loops after a growing resize(), so that the chunk
      *          is first written by the thread that initialises it.
-     * @param i the chunk index, below chunk_list.size()
+     * @param index the chunk index, below chunk_list_.size()
      * @return the chunk
      */
-    chunk_type& construct_chunk(int i) noexcept
+    ChunkType& construct_chunk(int index) noexcept
     {
-        return *std::construct_at(&chunk_list_[static_cast<std::size_t>(i)]);
+        return *std::construct_at(&chunk_list_[static_cast<std::size_t>(index)]);
     }
 
     /**
-     * @brief Empty chunk_list at the end of a teardown; a re-chunk's old storage
-     *        keeps its buffer as the spare for the next re-chunk.
-     * @details The larger of the two buffers is kept (more re-chunks fit in
-     *          it), the other one freed. At most one spare per chunk type.
+     * @brief Empty chunk_list_ at the end of a teardown (its chunks destroyed;
+     *        the buffer goes with the vector).
      */
-    void release_chunk_list()
-    {
-        chunk_list_.clear();
-        if (alloc_affinity_detail::g_releasing_rechunk_storage && alloc_affinity_detail::g_reuse_chunk_list &&
-            chunk_list_.capacity() > spare_chunk_list_.capacity())
-        {
-            chunk_list_.swap(spare_chunk_list_);
-            chunk_list_type().swap(chunk_list_); // frees the smaller one
-        }
-    }
+    void release_chunk_list();
 
     /**
      * @brief Chunk-size policy — the single home for chunk geometry.
      *
      * @details Shared by all containers that derive from ArrayChunkBase
-     *          (ArrayChunk, ArrayChunk2, ArrayChunk2A). Geometry use-sites go
+     *          (zero::Array, zero_one_value::Array, zero_any::Array). Geometry use-sites go
      *          through size_policy_.decalage()/modulo()/size().
      */
     [[no_unique_address]] ActiveSizePolicy size_policy_{};
 
-    chunk_list_type chunk_list_;  ///< The chunks, in index order.
-    int             nb_chunk_{0}; ///< Number of live chunks in `chunk_list`.
+    ChunkListType chunk_list_;  ///< The chunks, in index order.
+    int           nb_chunk_{0}; ///< Number of live chunks in `chunk_list_`.
 
     int num_tab_{0}; ///< Identity of this array in the per-type registries.
     /// @brief Number of arrays of this element type created so far (source of
@@ -337,10 +258,6 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
     /// @brief Source of affinity keys, shared by every array of this element type
     ///        whatever its index type (keys of the per-T manager).
     static inline std::atomic<unsigned int> next_alloc_key_{1};
-
-    /// The chunk_list buffer a re-chunk's old storage left (empty, capacity
-    /// only), for the next re-chunk's new storage. See acquire_chunk_list().
-    static inline chunk_list_type spare_chunk_list_{};
 
     /// @brief The derived array's rechunk_to(), installed by ArrayChunkBase.
     void (*rechunk_fn_)(ArrayChunkCore&, unsigned int) = nullptr;
@@ -370,3 +287,5 @@ struct NoRegistryKeyCanary
 using RegistryKeyCanaryBase = std::conditional_t<build_config::any_check, RegistryKeyCanary, NoRegistryKeyCanary>;
 
 } // namespace shrink_array
+
+#include "chunk/internal/array_chunk_core_inline.h" // the template bodies

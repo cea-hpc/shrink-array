@@ -56,54 +56,61 @@ void bench_phase_struct_fill(BenchArrays& bench_arr)
     const Int sz       = bench_arr.sz;
     const Int interval = bench_arr.interval;
 
-#pragma omp parallel
-    {
-        begin_parallel_phase_g();
-
-        Int begin_i = sz / 2;
-        Int end_i   = sz - (sz / 3);
-
-        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (Int i = begin_i; i < end_i; ++i)
+    bench_par::region(
+        [&]([[maybe_unused]] bench_par::Team& team)
         {
-            tab_point[i] = second_value_p;
-            tab_cell[i]  = second_value_cell;
-        }
+            begin_parallel_phase_g();
 
-        begin_i = end_i;
-        end_i   = sz - (sz / 4);
+            Int begin_i = sz / 2;
+            Int end_i   = sz - (sz / 3);
 
-        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (Int i = begin_i; i < end_i; ++i)
-        {
-            tab_point[i] = Point3{2., 0., 0.};
-            tab_cell[i]  = Cell{2, 1.f};
-        }
+            team.for_static<Int>(
+                begin_i, end_i,
+                [&](const Int i) __attribute__((always_inline))
+                {
+                    tab_point[i] = second_value_p;
+                    tab_cell[i]  = second_value_cell;
+                },
+                bench_par::nowait);
 
-        begin_i = end_i;
-        end_i   = std::min(begin_i + interval, sz);
+            begin_i = end_i;
+            end_i   = sz - (sz / 4);
 
-        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (Int i = begin_i; i < end_i; ++i)
-        {
-            tab_point[i] = Point3{static_cast<double>(i), 0.5, static_cast<double>(i % 7)};
-            tab_cell[i]  = Cell{static_cast<int32_t>(i % 5), static_cast<float>(i % 3) * 0.25f};
-        }
+            team.for_static<Int>(
+                begin_i, end_i,
+                [&](const Int i) __attribute__((always_inline))
+                {
+                    tab_point[i] = Point3{2., 0., 0.};
+                    tab_cell[i]  = Cell{2, 1.f};
+                },
+                bench_par::nowait);
 
-        finalize_parallel_phase_only_flush_g();
-    }
+            begin_i = end_i;
+            end_i   = std::min(begin_i + interval, sz);
+
+            team.for_static<Int>(
+                begin_i, end_i,
+                [&](const Int i) __attribute__((always_inline))
+                {
+                    tab_point[i] = Point3{static_cast<double>(i), 0.5, static_cast<double>(i % 7)};
+                    tab_cell[i]  = Cell{static_cast<int32_t>(i % 5), static_cast<float>(i % 3) * 0.25f};
+                },
+                bench_par::nowait);
+
+            finalize_parallel_phase_only_flush_g();
+        });
     finalize_parallel_phase_after_flush_g();
 }
 
 // ─── Compute ─────────────────────────────────────────────────────────────────
 // On the iteration's window [start0, end0): a run of null elements up to
-// tab_nba1[k], a run of the second value up to tab_nba2[k], and the rest
+// tab_nba1[iter], a run of the second value up to tab_nba2[iter], and the rest
 // updated from its current value -- so that every iteration re-creates runs
 // the pass can take AND overwrites some it took. Then a read-only sweep of
 // the window into point_sum, twice the reads of the writes, as the other
 // compute loops do.
 void bench_phase_struct_compute(BenchArrays&            bench_arr,
-                                Int                     k,
+                                Int                     iter,
                                 Int                     start0,
                                 Int                     end0,
                                 const std::vector<Int>& tab_nba1,
@@ -118,9 +125,9 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
     auto& tab_point = bench_arr.tab_point;
     auto& tab_cell  = bench_arr.tab_cell;
 
-    const Int  nba1 = tab_nba1[k];
-    const Int  nba2 = tab_nba2[k];
-    const auto dk   = static_cast<double>(k % 3);
+    const Int  nba1 = tab_nba1[iter];
+    const Int  nba2 = tab_nba2[iter];
+    const auto dk   = static_cast<double>(iter % 3);
 
     // Shared accumulator of the region, reduced by the loop (bench_prelude.h
     // on why not a `parallel reduction`).
@@ -133,53 +140,57 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
     [[maybe_unused]] const Int sched_blk  = sched.blk;
     const Int                  sched_base = sched.base;
 
-#pragma omp parallel
-    {
-        begin_parallel_phase_g();
-
-        BENCH_OMP_FOR_BLOCK_NOWAIT_SCALAR
-        for (Int i = sched_base; i < end0; ++i)
+    bench_par::region(
+        [&]([[maybe_unused]] bench_par::Team& team)
         {
-            if (i < start0) // alignment head: same trip count in both loops
-            {
-                continue;
-            }
-            if (i < nba1)
-            {
-                tab_point[i] = Point3{};
-                tab_cell[i]  = Cell{};
-            }
-            else if (i < nba2)
-            {
-                tab_point[i] = second_value_p;
-                tab_cell[i]  = second_value_cell;
-            }
-            else
-            {
-                const Point3& p = tab_point[i];
-                const Cell&   c = tab_cell[i];
-                tab_point[i]    = Point3{p.x + (0.5 * dk), (0.5 * p.y) + 1., p.z + p.x};
-                tab_cell[i]     = Cell{(c.material + 1) & 7, (0.5f * c.fraction) + 0.25f};
-            }
-        }
+            begin_parallel_phase_g();
 
-        // No barrier between the two loops: same bounds, same schedule and block
-        // size, so a thread reads back the elements it wrote itself (and a read
-        // of its own deferred write goes through the read gate anyway).
-        BENCH_OMP_FOR_BLOCK_NOWAIT_RED_SCALAR(sum)
-        for (Int i = sched_base; i < end0; ++i)
-        {
-            if (i < start0)
-            {
-                continue;
-            }
-            const Point3& p = tab_point[i];
-            const Cell&   c = tab_cell[i];
-            sum += p.x + (p.y * static_cast<double>(c.fraction)) + p.z + static_cast<double>(c.material);
-        }
+            team.for_static_chunks<Int>(
+                sched_base, end0, bench_par::block(sched_blk),
+                [&](const Int i) __attribute__((always_inline))
+                {
+                    if (i < start0) // alignment head: same trip count in both loops
+                    {
+                        return;
+                    }
+                    if (i < nba1)
+                    {
+                        tab_point[i] = Point3{};
+                        tab_cell[i]  = Cell{};
+                    }
+                    else if (i < nba2)
+                    {
+                        tab_point[i] = second_value_p;
+                        tab_cell[i]  = second_value_cell;
+                    }
+                    else
+                    {
+                        const Point3& point = tab_point[i];
+                        const Cell&   cell  = tab_cell[i];
+                        tab_point[i]        = Point3{point.x + (0.5 * dk), (0.5 * point.y) + 1., point.z + point.x};
+                        tab_cell[i]         = Cell{(cell.material + 1) & 7, (0.5f * cell.fraction) + 0.25f};
+                    }
+                },
+                bench_par::nowait);
 
-        finalize_parallel_phase_only_flush_g();
-    }
+            // No barrier between the two loops: same bounds, same schedule and block
+            // size, so a thread reads back the elements it wrote itself (and a read
+            // of its own deferred write goes through the read gate anyway).
+            bench_par::for_static_chunks_sum(team, sched_base, end0, bench_par::block(sched_blk), sum,
+                                             [&](const Int i, auto& sum_part) __attribute__((always_inline))
+                                             {
+                                                 if (i < start0)
+                                                 {
+                                                     return;
+                                                 }
+                                                 const Point3& point = tab_point[i];
+                                                 const Cell&   cell  = tab_cell[i];
+                                                 sum_part += point.x + (point.y * static_cast<double>(cell.fraction)) +
+                                                             point.z + static_cast<double>(cell.material);
+                                             });
+
+            finalize_parallel_phase_only_flush_g();
+        });
     finalize_parallel_phase_after_flush_g();
 
     point_sum += sum;
@@ -198,18 +209,21 @@ void bench_phase_struct_raz(BenchArrays& bench_arr, Int start0, Int end0)
     auto& tab_point = bench_arr.tab_point;
     auto& tab_cell  = bench_arr.tab_cell;
 
-#pragma omp parallel
-    {
-        begin_parallel_phase_g();
-
-        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (Int i = start0; i < end0; ++i)
+    bench_par::region(
+        [&]([[maybe_unused]] bench_par::Team& team)
         {
-            tab_point[i] = Point3{};
-            tab_cell[i]  = Cell{};
-        }
+            begin_parallel_phase_g();
 
-        finalize_parallel_phase_only_flush_g();
-    }
+            team.for_static<Int>(
+                start0, end0,
+                [&](const Int i) __attribute__((always_inline))
+                {
+                    tab_point[i] = Point3{};
+                    tab_cell[i]  = Cell{};
+                },
+                bench_par::nowait);
+
+            finalize_parallel_phase_only_flush_g();
+        });
     finalize_parallel_phase_after_flush_g();
 }

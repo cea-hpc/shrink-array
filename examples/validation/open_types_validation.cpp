@@ -15,8 +15,8 @@
  */
 
 // ============================================================================
-// Open element types harness. Variant-agnostic: chunk / chunk2 / chunk2a by
-// the compile-time macro (CHUNK_VARIANT_V1 / _V2 / _V2A), like the other harnesses.
+// Open element types harness. Variant-agnostic: zero / zero_one_value / zero_any by
+// the compile-time macro (CHUNK_VARIANT_ZERO*), like the other harnesses.
 // ============================================================================
 //
 // Guards ONE property: an array of a type the library never heard of -- a
@@ -66,17 +66,17 @@
 #include <utility>     // std::as_const
 #include <vector>      // std::vector
 
-#include "chunk/chunk_traits.h"               // forward decls + default ind_type = int
-#include "chunk/array_chunk.h"                // ArrayChunk
-#include "chunk/array_chunk2.h"               // ArrayChunk2
-#include "chunk/array_chunk2A.h"              // ArrayChunk2A
+#include "chunk/chunk_traits.h"               // forward decls + default IntType = int
+#include "chunk/zero_array.h"                 // zero::Array
+#include "chunk/zero_one_value_array.h"       // zero_one_value::Array
+#include "chunk/zero_any_array.h"             // zero_any::Array
 #include "chunk/param_chunk.h"                // ParamChunk::init_indexes, register_chunk_size
-#include "chunk/chunk_std.h"                  // release_chunk_pools, destroy_block_chunk
+#include "chunk/zero_chunk.h"                 // release_chunk_pools, destroy_block_chunk
 #include "chunk/internal/chunk_size_policy.h" // active_chunk_size, set_active_chunk_size, set_thread_chunk_size
-#include "chunk/config.h"                     // chunk_config::use_chunk2*, build_config::chunk_dynamic / has_not_ompt
-#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"                // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/internal/print.h"             // shrink_array::println
+#include "chunk/config.h"         // chunk_config::use_zero_one_value*, build_config::chunk_dynamic / has_not_ompt
+#include "chunk/PMP_CHUNK.h"      // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"    // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/print.h" // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
@@ -88,8 +88,8 @@ using namespace shrink_array;
 // ── The types ───────────────────────────────────────────────────────────────
 
 /// Three doubles, no padding: the mesh-point case. The defaulted <=> is what
-/// chunk2 asks of a floating-point struct (it orders second values, see
-/// value_less.h); chunk and chunk2a need == alone.
+/// zero_one_value asks of a floating-point struct (it orders second values, see
+/// value_less.h); zero and zero_any need == alone.
 struct Point3
 {
     auto operator<=>(const Point3&) const = default;
@@ -120,7 +120,7 @@ enum class Color : int
 using Quad = std::array<float, 4>;
 
 /// Two shorts: a 4-byte element, smaller than a double. No operator<: every
-/// bit is value (no padding, no floating point), chunk2 orders it by bytes.
+/// bit is value (no padding, no floating point), zero_one_value orders it by bytes.
 struct Pair16
 {
     bool operator==(const Pair16&) const = default;
@@ -144,32 +144,33 @@ static void end_phase()
 }
 
 template <typename T>
-using Array = std::conditional_t<chunk_config::use_chunk2a,
-                                 ArrayChunk2A<T>,
-                                 std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T>, ArrayChunk<T>>>;
+using Array =
+    std::conditional_t<chunk_config::use_zero_any,
+                       zero_any::Array<T>,
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
 template <typename Arr, typename Val>
-void maybe_set_second_value(Arr& a, const Val& v)
+void maybe_set_second_value(Arr& arr, const Val& value)
 {
-    if constexpr (requires(Arr x) { x.set_second_value(v); })
+    if constexpr (requires(Arr probe) { probe.set_second_value(value); })
     {
-        a.set_second_value(v);
+        arr.set_second_value(value);
     }
 }
 
@@ -182,7 +183,7 @@ struct Scenario
 {
     T second;
     T refill;
-    T (*varied)(long i);
+    T (*varied)(long index);
 };
 
 /**
@@ -190,24 +191,24 @@ struct Scenario
  * @return 0 if every element reads back as expected, 1 otherwise.
  */
 template <typename T>
-static int round_trip(const char* label, long n, const Scenario<T>& sc)
+static int round_trip(const char* label, long count, const Scenario<T>& sc)
 {
-    Array<T> arr(n);
+    Array<T> arr(count);
     maybe_set_second_value(arr, sc.second);
 
-    std::vector<T> ref(n);
+    std::vector<T> ref(count);
 
 #pragma omp parallel
     {
         begin_phase();
 #pragma omp for
-        for (long i = 0; i < n; ++i)
+        for (long i = 0; i < count; ++i)
         {
             arr[i] = sc.varied(i);
         }
     }
     end_phase();
-    for (long i = 0; i < n; ++i)
+    for (long i = 0; i < count; ++i)
     {
         ref[i] = sc.varied(i);
     }
@@ -216,7 +217,7 @@ static int round_trip(const char* label, long n, const Scenario<T>& sc)
     {
         begin_phase();
 #pragma omp for
-        for (long i = 0; i < n; ++i)
+        for (long i = 0; i < count; ++i)
         {
             const long run = (i / run_len) % 3;
             if (run == 0)
@@ -230,7 +231,7 @@ static int round_trip(const char* label, long n, const Scenario<T>& sc)
         }
     }
     end_phase();
-    for (long i = 0; i < n; ++i)
+    for (long i = 0; i < count; ++i)
     {
         const long run = (i / run_len) % 3;
         if (run == 0)
@@ -254,20 +255,20 @@ static int round_trip(const char* label, long n, const Scenario<T>& sc)
     {
         begin_phase();
 #pragma omp for
-        for (long i = 0; i < n / 4; ++i)
+        for (long i = 0; i < count / 4; ++i)
         {
             arr[i] = sc.refill;
         }
     }
     end_phase();
-    for (long i = 0; i < n / 4; ++i)
+    for (long i = 0; i < count / 4; ++i)
     {
         ref[i] = sc.refill;
     }
 
     long bad   = 0;
     long first = -1;
-    for (long i = 0; i < n; ++i)
+    for (long i = 0; i < count; ++i)
     {
         const T got = arr[i];
         if (!(got == ref[i]))
@@ -284,12 +285,12 @@ static int round_trip(const char* label, long n, const Scenario<T>& sc)
     if (bad)
     {
         println("[{}/{}] FAIL: {}/{} mismatches, first at i={} (chunk #{}, offset {}, run {})", variant_name(), label,
-                bad, n, first, first / csz, first % csz, (first / run_len) % 3);
+                bad, count, first, first / csz, first % csz, (first / run_len) % 3);
     }
     else
     {
-        println("[{}/{}] OK: {} elements of {} bytes round-trip at chunk_size={}", variant_name(), label, n, sizeof(T),
-                csz);
+        println("[{}/{}] OK: {} elements of {} bytes round-trip at chunk_size={}", variant_name(), label, count,
+                sizeof(T), csz);
     }
 
     arr.clear();
@@ -298,13 +299,14 @@ static int round_trip(const char* label, long n, const Scenario<T>& sc)
 
 int run(int argc, char** argv)
 {
-    const long n = argc > 1 ? std::strtol(argv[1], nullptr, 10) : (1L << 19);
+    const long count = argc > 1 ? std::strtol(argv[1], nullptr, 10) : (1L << 19);
 
     // No type list: each array registers its own element type at its
     // construction (AllTypeChunk::ensure_manager). The process-wide setup alone.
     ParamChunk::init_indexes(true);
 
-    println("=== open_types_validation [variant = {}]  N={}  threads={} ===", variant_name(), n, CHUNK_PMP_MAX_THREADS);
+    println("=== open_types_validation [variant = {}]  N={}  threads={} ===", variant_name(), count,
+            CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
 
@@ -336,9 +338,9 @@ int run(int argc, char** argv)
         {-3, 3},
         [](long i) { return Pair16{static_cast<std::int16_t>(i % 1000), static_cast<std::int16_t>(i % 13)}; }};
 
-    fails += round_trip<Point3>("Point3", n, sp);
-    fails += round_trip<Padded>("Padded", n, sd);
-    fails += round_trip<Color>("Color", n, sc);
+    fails += round_trip<Point3>("Point3", count, sp);
+    fails += round_trip<Padded>("Padded", count, sd);
+    fails += round_trip<Color>("Color", count, sc);
 
     // dyn builds: a second geometry declared now, before Quad and Pair16 have
     // ever been seen -- their registration must replay it (register_manager),
@@ -349,8 +351,8 @@ int run(int argc, char** argv)
         ParamChunk::register_chunk_size(2 * base_size);
     }
 
-    fails += round_trip<Quad>("Quad", n, sq);
-    fails += round_trip<Pair16>("Pair16", n, s16);
+    fails += round_trip<Quad>("Quad", count, sq);
+    fails += round_trip<Pair16>("Pair16", count, s16);
 
     // The vector-like surface on a struct element: emplace_back from the
     // members, reserve/capacity, the (first, last) and {...} constructors, a
@@ -405,7 +407,7 @@ int run(int argc, char** argv)
         // And an array of a late type AT that late geometry.
         set_active_chunk_size(2 * base_size);
         set_thread_chunk_size(2 * base_size);
-        fails += round_trip<Pair16>("Pair16@2xsize", n, s16);
+        fails += round_trip<Pair16>("Pair16@2xsize", count, s16);
         set_active_chunk_size(base_size);
         set_thread_chunk_size(base_size);
     }

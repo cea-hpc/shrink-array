@@ -49,6 +49,14 @@ def test_submit_follow_summary_fetch(gui, site):
     w, pump = gui
     _choose_fake(w, pump)
     rid = _submit(w, pump, {"runs": "30", "step": "0.01", "fail_every": "11"}, 0)
+    # The commands, in the Log pane as soon as the job is submitted (the
+    # job's own log starts with the job): the program's and the submission's.
+    assert pump(lambda: "[gui] soumission : " in w.log.toPlainText(), 10)
+    head = w.log.toPlainText()
+    assert f"[gui] run " in head and f"/{rid}" in head
+    assert "[gui] commande : " in head and "fake_stress.py" in head and "fail_every" in head
+    assert "ccc_msub job.sh" in head and "Submitted Batch Session" in head
+    assert (site.runs / rid / "submit.log").read_text().startswith("$ ccc_msub job.sh\n")
     assert _wait_status(w, pump, rid, "fini")
     w.table.selectRow(0)
     assert pump(lambda: "exit code 0" in w.log.toPlainText(), 10)
@@ -223,11 +231,11 @@ def test_target_and_exec_pickers(gui, site, monkeypatch):
     assert sorted(got) == (["omp-gnu-debug", "omp-llvm"] if multi else ["omp-gnu-debug"])   # one glob: the last ticked
     w.form.widgets["target"][1].setText("omp-llvm")
     monkeypatch.setattr(widgets_mod.PickerDialog, "exec",
-                        lambda dlg: fake_exec(dlg, ["shrink_bench_chunk_64", "shrink_bench_chunk_dyn"]))
+                        lambda dlg: fake_exec(dlg, ["shrink_bench_omp_zero_64", "shrink_bench_omp_zero_dyn"]))
     w.pick("exec")
     exes = seen["--exec : exécutables"]
-    assert set(exes) >= {"shrink_bench_chunk_64", "shrink_bench_chunk_dyn"}
-    assert "shrink_bench_chunk_256" not in exes                     # x86_64 build: not on gh200
+    assert set(exes) >= {"shrink_bench_omp_zero_64", "shrink_bench_omp_zero_dyn"}
+    assert "shrink_bench_omp_zero_256" not in exes                     # x86_64 build: not on gh200
     assert ("--exec=" + w.form.widgets["exec"][1].text()) in w.preview.toPlainText().replace("'", "")
 
 
@@ -253,6 +261,132 @@ def test_start_after_a_compile_run(gui, site):
     w.table.selectRow(next(i for i, r in enumerate(w.runs) if r["id"] == rid))
     w.delete()                                                    # still queued: refused
     assert (site.runs / rid).exists()
+
+
+def test_compile_all_over_several_nodes(gui, site, monkeypatch):
+    """"Nœuds" 3: three batch jobs, the same command plus --pool=<the
+    submission>; then "Démarrage : après" waits for all three."""
+    from shrink_gui import config
+    w, pump = gui
+    w.program.setCurrentText("compile_all.sh")
+    assert pump(lambda: w.form.schema is not None and "pool" in w.form.widgets)   # read from its usage()
+    w.mode.setCurrentIndex(w.mode.findData("mprun"))
+    assert not w.where.isRowVisible(w.nodes_row)                    # batch only
+    w.mode.setCurrentIndex(w.mode.findData("msub"))
+    assert w.where.isRowVisible(w.nodes_row)
+    assert w.nodes_layout.currentData() == "job"                 # the default: one job of N nodes
+    w.nodes_layout.setCurrentIndex(w.nodes_layout.findData("jobs"))
+    w.nodes.setValue(3)
+    assert "--pool=<la soumission>" in w.preview.toPlainText() and "3 jobs" in w.preview.toPlainText()
+    # The real compile_all.sh read the options; a stand-in runs in the jobs.
+    stub = site.root / "stub"
+    stub.mkdir()
+    (stub / "compile_all.sh").write_text('echo "args: $*"; sleep 4; exit 0\n')
+    monkeypatch.setitem(config.PROGRAMS["compile_all.sh"], "cwd", str(stub))
+    w.extra.setText("--pool=mine")
+    n = len(w.runs)
+    w.launch()                                                   # a --pool of one's own: refused
+    pump(lambda: False, 1)
+    assert len(w.runs) == n and "Nœuds" in w.statusBar().currentMessage()
+    w.extra.setText("")
+    time.sleep(1.05)
+    w.launch()
+    assert pump(lambda: len(w.runs) == n + 3, 30)
+    jobs = sorted((r for r in w.runs if r["meta"].get("pool")), key=lambda r: r["meta"]["node"])
+    pool = jobs[0]["meta"]["pool"]
+    assert [r["id"] for r in jobs] == [f"{pool}-n{k}" for k in (1, 2, 3)]
+    assert all(r["meta"]["nodes"] == 3 and r["meta"]["command"].endswith(f" --pool={pool}") for r in jobs)
+    assert "--pool" not in json.dumps(jobs[0]["meta"]["values"])  # "Reprendre ses options": a new pool
+    row = next(i for i, r in enumerate(w.runs) if r["id"] == jobs[1]["id"])
+    assert w.table.item(row, 1).text() == "compile_all.sh [2/3]"
+    # One entry for the three jobs, while they run.
+    assert pump(lambda: w.after.findData(pool) >= 0, 10)
+    assert w.after.itemText(w.after.findData(pool)) == f"après {pool} (3 nœuds)"
+    assert all(w.after.findData(r["id"]) < 0 for r in jobs)
+    w.after.setCurrentIndex(w.after.findData(pool))
+    jobids = [(site.runs / r["id"] / "jobid").read_text().strip() for r in jobs]
+    _choose_fake(w, pump)
+    assert not w.where.isRowVisible(w.nodes_row)                    # a program that cannot share its work
+    rid = _submit(w, pump, {"runs": "1"}, len(w.runs))
+    assert f'--dependency=afterok:{":".join(jobids)}' in (site.runs / rid / "job.sh").read_text()
+    assert _wait_status(w, pump, rid, "fini", 60)
+    for r in jobs:
+        assert f"args: --pool={pool}" in (site.runs / r["id"] / "out.log").read_text()
+    w.nodes.setValue(1)
+    w.reuse_run(jobs[2])                                         # back to compile_all.sh over 3 nodes
+    assert w.program.currentText() == "compile_all.sh" and w.nodes.value() == 3
+    assert "--pool=<la soumission>" in w.preview.toPlainText()
+
+
+def test_one_job_of_several_nodes(gui, site, monkeypatch):
+    """"Nœuds" 2, "un job de N nœuds" (the default): one run, its job asks 2
+    nodes, node.sh runs on each (the fake ccc_mprun starts -n 2 tasks). The
+    duration follows "Nœuds" until typed; the QoS is checked on the job's
+    cores; N jobs of one node under a per-user core cap are said to serialize."""
+    from shrink_gui import config
+    w, pump = gui
+    assert pump(lambda: qos_max(w, "test", "gh200-bxi") == 3 * 3600, 10)
+    from test_nodes_job import MQINFO
+    from shrink_gui import qos
+    w.qos_rows = qos.parse_mqinfo(MQINFO)            # inti's real limits (xlong: 128 cores per user)
+    w.fill_qos("auto")
+    w.program.setCurrentText("compile_all.sh")
+    assert pump(lambda: w.form.schema is not None and "pool" in w.form.widgets)
+    w.mode.setCurrentIndex(w.mode.findData("msub"))
+    w.preset.setCurrentIndex(w.preset.findData("milan-bxi"))
+    w.directives.setPlainText("#MSUB -q milan-bxi\n#MSUB -N 1\n#MSUB -n 1\n#MSUB -c 128\n")
+    w.nodes.setValue(1)
+    w.time_s.setValue(48 * 3600)
+    w.program.setCurrentText("fake_stress.py")
+    w.program.setCurrentText("compile_all.sh")            # its remembered duration: "Nœuds" may rescale it
+    assert w.time_s.value() == 48 * 3600 and w.nodes_layout.currentData() == "job"
+    w.nodes.setValue(4)
+    assert w.time_s.value() == 12 * 3600 and w.nodes_hint.text() == "durée max par nœud ≈ total / 4"
+    assert "<b>normal</b>" in w.qos_note.text()                # 4 × 128 cores, 12 h
+    w.nodes.setValue(3)
+    assert w.time_s.value() == 16 * 3600
+    w.nodes.setValue(7)
+    assert w.time_s.value() == 7 * 3600                        # 6 h 51 rounded up to the quarter hour
+    w.nodes.setValue(3)
+    w.time_s.setValue(48 * 3600)                               # typed: kept from now on
+    assert "aucune QoS n'accepte 2 j 00 h sur milan-bxi pour 384 cœurs (au plus 1 j 00 h)" in w.qos_note.text()
+    w.nodes.setValue(2)
+    assert w.time_s.value() == 48 * 3600
+    w.nodes_layout.setCurrentIndex(w.nodes_layout.findData("jobs"))
+    assert "<b>xlong</b>" in w.qos_note.text() and "les 2 jobs passeront l'un après l'autre" in w.qos_note.text()
+    w.nodes_layout.setCurrentIndex(w.nodes_layout.findData("job"))
+    assert "un job de 2 nœuds" in w.preview.toPlainText()
+    w.time_s.setValue(12 * 3600)
+    stub = site.root / "stub"
+    stub.mkdir()
+    (stub / "compile_all.sh").write_text('echo "args: $*"; sleep 3; exit 0\n')
+    monkeypatch.setitem(config.PROGRAMS["compile_all.sh"], "cwd", str(stub))
+    n = len(w.runs)
+    time.sleep(1.05)
+    w.launch()
+    assert pump(lambda: len(w.runs) == n + 1, 30)
+    run = w.runs[0]
+    rid, d = run["id"], site.runs / run["id"]
+    assert run["meta"]["layout"] == "job" and run["meta"]["nodes"] == 2 and run["meta"]["pool"] == rid
+    assert run["meta"]["command"].endswith(f" --pool={rid}") and "node" not in run["meta"]
+    assert run["meta"]["launcher"] == "ccc_mprun -N 2 -n 2 -c 128"
+    job = (d / "job.sh").read_text()
+    assert "#MSUB -N 2\n#MSUB -n 2\n#MSUB -c 128\n" in job and "#MSUB -Q normal" in job
+    assert w.table.item(0, 1).text() == "compile_all.sh [×2]"
+    assert pump(lambda: w.after.findData(rid) >= 0, 10)           # one run to wait for
+    assert w.after.itemText(w.after.findData(rid)) == f"après {rid} (2 nœuds)"
+    w.after.setCurrentIndex(w.after.findData(rid))
+    assert w.after_spec()["runs"] == [rid]
+    w.after.setCurrentIndex(0)
+    assert _wait_status(w, pump, rid, "fini", 60)
+    for k in (1, 2):
+        assert f"args: --pool={rid}" in (d / f"n{k}" / "out.log").read_text()
+    log = (d / "out.log").read_text()
+    assert "[gui] node n2: exit code 0" in log and log.count("[gui] build check") <= 1
+    w.nodes_layout.setCurrentIndex(w.nodes_layout.findData("jobs"))
+    w.nodes.setValue(1)
+    w.reuse_run(next(r for r in w.runs if r["id"] == rid))
+    assert w.nodes.value() == 2 and w.nodes_layout.currentData() == "job" and w.time_s.value() == 12 * 3600
 
 
 def test_build_check_follows_the_options(gui):
@@ -511,9 +645,9 @@ def test_errors_column_and_first_error_notice(gui, site):
     w.notify_changes()
     w.notify_changes()
     w.statusBar().clearMessage()
-    w.runs = [dict(run, errors=[1, "CHECK_FAIL: chunk2a t=4"])]
+    w.runs = [dict(run, errors=[1, "CHECK_FAIL: zero_any t=4"])]
     w.notify_changes()
-    assert w.statusBar().currentMessage() == "r9 : première erreur — CHECK_FAIL: chunk2a t=4"
+    assert w.statusBar().currentMessage() == "r9 : première erreur — CHECK_FAIL: zero_any t=4"
     w.statusBar().clearMessage()
     w.runs = [dict(run, errors=[3, "CHECK_FAIL: x"])]
     w.notify_changes()
@@ -547,30 +681,36 @@ def test_bench_chart_and_comparison(gui, site):
 
 
 def _fake_speedup_build(site):
-    """A build root with fake shrink_bench binaries: vector and chunk2a@dyn
-    scale, chunk@dyn always fails (an error line, rc 1)."""
+    """A build root with fake shrink_bench binaries: vector and zero_any@dyn
+    scale, zero@dyn always fails (an error line, rc 1). Next to them, stale
+    binaries under the names without a backend (a build made before the
+    executables carried it, rebuilt since), which fail: thread_speedup.py must
+    never pick them."""
     import platform
     d = site.home / "br" / "cmake-build-omp-llvm" / f"Linux__{platform.machine()}" / "examples" / "shrink_bench"
     d.mkdir(parents=True)
     body = ('#!/bin/bash\nm=1; while [ $# -gt 0 ]; do [ "$1" = --multiply ] && m=$2; shift; done\n'
             'python3 -c "print(\'Memory consumption (peak): 10.0 Mo\'); '
             'print(\'Elapsed time computation : %%.4fs\' %% (%s * $m / $OMP_NUM_THREADS))"\n')
-    for name, base in (("shrink_bench_vector_perf", 2.0), ("shrink_bench_chunk2a_dyn", 1.5)):
+    for name, base in (("shrink_bench_omp_vector_perf", 2.0), ("shrink_bench_omp_zero_any_dyn", 1.5)):
         (d / name).write_text(body % base)
         (d / name).chmod(0o755)
-    (d / "shrink_bench_chunk_dyn").write_text("#!/bin/bash\necho 'error: no chunk today' >&2\nexit 1\n")
-    (d / "shrink_bench_chunk_dyn").chmod(0o755)
+    (d / "shrink_bench_omp_zero_dyn").write_text("#!/bin/bash\necho 'error: no chunk today' >&2\nexit 1\n")
+    (d / "shrink_bench_omp_zero_dyn").chmod(0o755)
+    for stale in ("shrink_bench_vector_perf", "shrink_bench_zero_any_dyn"):
+        (d / stale).write_text("#!/bin/bash\necho 'error: stale binary run' >&2\nexit 3\n")
+        (d / stale).chmod(0o755)
     return site.home / "br"
 
 
-def test_omp_speedup_submitted_from_the_window(gui, site):
+def test_thread_speedup_submitted_from_the_window(gui, site):
     w, pump = gui
     br = _fake_speedup_build(site)
-    w.program.setCurrentText("omp_speedup.py")
+    w.program.setCurrentText("thread_speedup.py")
     assert pump(lambda: w.form.schema is not None and "all_exec" in w.form.widgets)
     from PySide6.QtWidgets import QPushButton
     assert w.findChild(QPushButton, "pick_execs") is not None and w.findChild(QPushButton, "pick_target")
-    vals = {"target": "omp-llvm", "execs": "vector,chunk2a@dyn", "min_threads": "1", "max_threads": "2",
+    vals = {"target": "omp-llvm", "execs": "vector,zero_any@dyn", "min_threads": "1", "max_threads": "2",
             "reps": "2", "build_root": str(br)}
     a = _submit(w, pump, vals, len(w.runs))
     assert _wait_status(w, pump, a, "fini")
@@ -587,10 +727,10 @@ def test_omp_speedup_submitted_from_the_window(gui, site):
     assert pump(lambda: w.pt_stack.currentIndex() == 2 and len(w.sc_view.points) == 4, 10)
     assert w.sc_note.text().startswith("4 point(s)")
     # B: the same at --multiply 2, plus an executable that fails
-    b = _submit(w, pump, dict(vals, execs="vector,chunk2a@dyn,chunk@dyn", multiply="2"), len(w.runs))
+    b = _submit(w, pump, dict(vals, execs="vector,zero_any@dyn,zero@dyn", multiply="2"), len(w.runs))
     assert _wait_status(w, pump, b, "fini")
     run = next(r for r in w.runs if r["id"] == b)
-    assert run["code"] == 1 and run["errors"][0] == 4 and run["errors"][1].startswith("RUN_FAIL: shrink_bench_chunk_dyn")
+    assert run["code"] == 1 and run["errors"][0] == 4 and run["errors"][1].startswith("RUN_FAIL: shrink_bench_omp_zero_dyn")
     w.table.selectRow(next(i for i, r in enumerate(w.runs) if r["id"] == a))
     w.sc_cmp.setCurrentIndex(w.sc_cmp.findData(b))
     assert pump(lambda: "B / A : ×1.000" in w.sc_note.text(), 10)  # the speedups match
@@ -601,6 +741,47 @@ def test_omp_speedup_submitted_from_the_window(gui, site):
     w.tabs.setCurrentIndex(w.TAB_ERRORS)
     assert pump(lambda: "error: no chunk today" in w.err_view.toPlainText(), 10)
     assert w.err_note.text().startswith("4 erreur(s)")
+
+
+def test_thread_speedup_over_several_nodes(gui, site):
+    """"Nœuds" 2 on thread_speedup.py: two jobs share the executables
+    (--pool=<the submission>), each measures those it claims first, in its own
+    output directory; the Graphique and Résumé tabs of either show them all."""
+    w, pump = gui
+    br = _fake_speedup_build(site)
+    w.program.setCurrentText("thread_speedup.py")
+    assert pump(lambda: w.form.schema is not None and "pool" in w.form.widgets)
+    w.mode.setCurrentIndex(w.mode.findData("msub"))
+    assert w.where.isRowVisible(w.nodes_row)
+    w.nodes_layout.setCurrentIndex(w.nodes_layout.findData("jobs"))
+    w.nodes.setValue(2)
+    assert "--pool=<la soumission>" in w.preview.toPlainText() and "2 jobs" in w.preview.toPlainText()
+    n = len(w.runs)
+    w.form.set_values({"target": "omp-llvm", "execs": "vector,zero_any@dyn", "min_threads": "1",
+                       "max_threads": "2", "reps": "1", "build_root": str(br)})
+    time.sleep(1.05)
+    w.launch()
+    assert pump(lambda: len(w.runs) == n + 2, 30)
+    jobs = sorted((r for r in w.runs if r["meta"].get("pool")), key=lambda r: r["meta"]["node"])
+    pool = jobs[0]["meta"]["pool"]
+    assert [r["id"] for r in jobs] == [f"{pool}-n{k}" for k in (1, 2)]
+    for r in jobs:
+        assert _wait_status(w, pump, r["id"], "fini", 60)
+    logs = [(site.runs / r["id"] / "out.log").read_text() for r in jobs]
+    claimed = [re.findall(r"\[pool\] (\S+): claimed by this run", t) for t in logs]
+    assert sorted(sum(claimed, [])) == ["shrink_bench_omp_vector_perf", "shrink_bench_omp_zero_any_dyn"]
+    outs = [re.search(r"Outputs in (\S+)", t).group(1) for t in logs]
+    assert outs[0] != outs[1]                                    # the same host, the same second
+    row = next(i for i, r in enumerate(w.runs) if r["id"] == jobs[1]["id"])
+    assert w.table.item(row, 1).text() == "thread_speedup.py [2/2]"
+    w.table.selectRow(next(i for i, r in enumerate(w.runs) if r["id"] == jobs[0]["id"]))
+    w.tabs.setCurrentIndex(w.TAB_CHART)
+    assert pump(lambda: w.pt_stack.currentIndex() == 2 and len(w.sc_view.points) == 4, 10)
+    assert w.sc_cmp.findData(jobs[1]["id"]) < 0                  # never compared with itself
+    w.tabs.setCurrentIndex(w.TAB_SUMMARY)
+    assert pump(lambda: w.sum_view.count() == 2, 10)
+    w.sum_view.setCurrentIndex(1)
+    assert w.sum_table.rowCount() == 4 and "2 nœuds sur 2" in w.sum_note.text()
 
 
 def test_duration_column(gui, site):
@@ -618,15 +799,28 @@ def test_duration_column(gui, site):
     import time
     w.clock_skew = 0.0
     run = {"id": "r8", "status": "en cours", "code": None, "times": [int(time.time()) - 125, None],
-           "meta": {"program": "omp_speedup.py", "mode": "msub", "time_s": 14400}}
+           "meta": {"program": "thread_speedup.py", "mode": "msub", "time_s": 14400}}
     assert w.duration_text(run) in ("0:02:05", "0:02:06")
     assert "en cours depuis" in w.duration_tip(run) and "4:00:00" in w.duration_tip(run)
     assert w.duration_text(dict(run, status="en attente", times=[None, None])) == ""
 
 
-def test_omp_speedup_refused_without_exec(gui, site):
+def test_runs_of_omp_speedup_read_as_thread_speedup():
+    """omp_speedup.py was renamed thread_speedup.py: a run recorded under the
+    old name is the new program's -- reused, its outputs, its chart."""
+    from shrink_gui import remote_helper
+    from shrink_gui.config import PROGRAMS, program_of
+    from shrink_gui.tab_speedup_chart import is_speedup_chart
+    old = {"program": "omp_speedup.py", "mode": "msub"}
+    assert program_of(old) == "thread_speedup.py" and program_of(old) in PROGRAMS
+    assert "omp_speedup.py" not in PROGRAMS
+    assert is_speedup_chart(old) and remote_helper.is_speedup_chart(old)
+    assert program_of({"program": "bench_and_test.py"}) == "bench_and_test.py"
+
+
+def test_thread_speedup_refused_without_exec(gui, site):
     w, pump = gui
-    w.program.setCurrentText("omp_speedup.py")
+    w.program.setCurrentText("thread_speedup.py")
     assert pump(lambda: w.form.schema is not None and "all_exec" in w.form.widgets)
     w.form.set_values({"target": "omp-llvm", "min_threads": "1", "max_threads": "8",
                        "size": "dyn,1024", "int64": True})
@@ -634,18 +828,18 @@ def test_omp_speedup_refused_without_exec(gui, site):
     w.launch()
     assert "--exec ou --all-exec" in w.last_error and "--size, --int64" in w.last_error
     assert len(w.runs) == n
-    assert w.missing_options("omp_speedup.py")
+    assert w.missing_options("thread_speedup.py")
     w.form.set_values({"target": "omp-llvm", "min_threads": "1", "max_threads": "8", "all_exec": True})
-    assert w.missing_options("omp_speedup.py") is None
+    assert w.missing_options("thread_speedup.py") is None
     w.form.set_values({"target": "omp-llvm", "min_threads": "1", "max_threads": "8"})
-    w.extra.setText("--exec chunk2a@dyn")
-    assert w.missing_options("omp_speedup.py") is None
+    w.extra.setText("--exec zero_any@dyn")
+    assert w.missing_options("thread_speedup.py") is None
     w.extra.setText("")
 
 
 def test_options_checked_by_the_script_before_submitting(gui, site):
     w, pump = gui
-    w.program.setCurrentText("omp_speedup.py")
+    w.program.setCurrentText("thread_speedup.py")
     assert pump(lambda: w.form.schema is not None and "all_exec" in w.form.widgets)
     w.form.set_values({"target": "omp-llvm", "execs": "*_dyn", "mode": "check", "multiply": "3",
                        "min_threads": "1", "max_threads": "8"})
@@ -759,3 +953,25 @@ def test_connection_watch_times_out(gui, site, monkeypatch):
     got = []
     w.remote.ping(got.append, timeout_ms=500)
     assert pump(lambda: got, 10) and got == [False]
+
+
+def test_options_in_alphabetical_order(gui):
+    """The options form lists the options by their shown name, dashes and case
+    aside; the positional arguments come first, in the script's order (the
+    command line keeps them in it)."""
+    from PySide6.QtWidgets import QFormLayout
+
+    from shrink_gui.widgets import OptionsForm
+
+    w, pump = gui
+    w.program.setCurrentText("multi_launch_stress.py")
+    assert pump(lambda: w.form.schema is not None and "regen_ref" in w.form.widgets)
+    lay = w.form.lay
+    shown = [lay.itemAt(r, QFormLayout.LabelRole).widget().text() for r in range(lay.rowCount())]
+    opts = [s for s in shown if s.startswith("-")]
+    assert len(opts) > 3
+    assert opts == sorted(opts, key=lambda s: (s.lstrip("-").lower(), s))
+
+    acts = [{"flags": [], "dest": "b"}, {"flags": ["--Zed"], "dest": "z"}, {"flags": ["-a", "--alpha"], "dest": "a"},
+            {"flags": [], "dest": "a_pos"}, {"flags": ["--no_io"], "dest": "n"}, {"flags": ["--mode"], "dest": "m"}]
+    assert [ac["dest"] for ac in OptionsForm.display_order(acts)] == ["b", "a_pos", "a", "m", "n", "z"]

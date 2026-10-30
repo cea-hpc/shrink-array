@@ -66,6 +66,31 @@ double parse_positive_real_arg(const char* opt, const char* text)
     std::cerr << "error: " << opt << " expects a real > 0 (got \"" << text << "\")\n";
     std::exit(1);
 }
+
+/// @brief The whole of @p text as a finite real >= 0, or exit(1) naming @p opt.
+double parse_non_negative_real_arg(const char* opt, const char* text)
+{
+    char*        end   = nullptr;
+    const double value = std::strtod(text, &end);
+    if (end != text && *end == '\0' && std::isfinite(value) && value >= 0.0)
+    {
+        return value;
+    }
+    std::cerr << "error: " << opt << " expects a real >= 0 (got \"" << text << "\")\n";
+    std::exit(1);
+}
+
+/// @brief The whole of @p text as an integer >= @p min, or exit(1) naming @p opt.
+Int parse_int_at_least_arg(const char* opt, const char* text, Int min)
+{
+    const Int value = parse_int_arg(opt, text);
+    if (value < min)
+    {
+        std::cerr << "error: " << opt << " expects an integer >= " << min << " (got " << value << ")\n";
+        std::exit(1);
+    }
+    return value;
+}
 } // namespace
 
 BenchArgs parse_bench_args(int argc, char* argv[])
@@ -83,7 +108,9 @@ BenchArgs parse_bench_args(int argc, char* argv[])
     bool   test_prealloc = false;      // --test_prealloc: alloc_chunk before a partial loop
     bool   no_struct     = false;      // --no_struct: no Point3 / Cell arrays (bench_args.h)
     bool   no_mask       = false;      // --no_mask: no tab_mask (bench_args.h)
+    bool   no_conn       = false;      // --no_conn: no tab_conn (bench_args.h)
     double mask_scale    = 1.0 / 32.0; // --mask_scale: tab_mask's size / sz (bench_args.h)
+    double conn_scale    = 1.0 / 32.0; // --conn_scale: tab_conn's size / sz (bench_args.h)
 
     // Nouveaux facteurs
     double multiply_factor = 1.0;
@@ -142,6 +169,14 @@ BenchArgs parse_bench_args(int argc, char* argv[])
             {
                 no_mask = true;
             }
+            else if (arg == "--no_conn")
+            {
+                no_conn = true;
+            }
+            else if (arg == "--conn_scale")
+            {
+                conn_scale = parse_positive_real_arg("--conn_scale", next_value());
+            }
             else if (arg == "--mask_scale")
             {
                 mask_scale = parse_positive_real_arg("--mask_scale", next_value());
@@ -149,18 +184,18 @@ BenchArgs parse_bench_args(int argc, char* argv[])
             else if (arg == "--mode")
             {
                 // check / perf: one binary, the mode chosen here.
-                const std::string m = next_value();
-                if (m == "perf")
+                const std::string mode = next_value();
+                if (mode == "perf")
                 {
                     set_bench_mode(BenchMode::perf);
                 }
-                else if (m == "check")
+                else if (mode == "check")
                 {
                     set_bench_mode(BenchMode::check);
                 }
                 else
                 {
-                    std::cerr << "error: unknown --mode '" << m << "' (expected check or perf)\n";
+                    std::cerr << "error: unknown --mode '" << mode << "' (expected check or perf)\n";
                     // exit, not return: this function returns a BenchArgs,
                     // and the other error paths of this loop already leave
                     // this way.
@@ -187,6 +222,65 @@ BenchArgs parse_bench_args(int argc, char* argv[])
                     std::cerr << "error: --iter_max must be a positive integer (got " << iter_max_arg << ")\n";
                     std::exit(1);
                 }
+            }
+            // The adaptive re-chunk (bench_args.h): written straight into args.
+            else if (arg == "--advisor_period")
+            {
+                args.advisor_period = parse_int_at_least_arg("--advisor_period", next_value(), 0);
+            }
+            else if (arg == "--advise_five")
+            {
+                args.advise_five = true;
+            }
+            else if (arg == "--rechunk_dry_run")
+            {
+                args.rechunk_dry_run = true;
+            }
+            else if (arg == "--rechunk_min_gain_mb")
+            {
+                args.rechunk_min_gain_mb = parse_non_negative_real_arg("--rechunk_min_gain_mb", next_value());
+            }
+            else if (arg == "--rechunk_coarsen_min_meta_mb")
+            {
+                args.rechunk_coarsen_min_meta_mb =
+                    parse_non_negative_real_arg("--rechunk_coarsen_min_meta_mb", next_value());
+            }
+            else if (arg == "--rechunk_coarsen_min_meta_rate")
+            {
+                args.rechunk_coarsen_min_meta_rate =
+                    parse_non_negative_real_arg("--rechunk_coarsen_min_meta_rate", next_value());
+            }
+            else if (arg == "--rechunk_max_coarsen")
+            {
+                args.rechunk_max_coarsen = parse_int_at_least_arg("--rechunk_max_coarsen", next_value(), 1);
+            }
+            else if (arg == "--rechunk_grid_bits")
+            {
+                args.rechunk_grid_bits = parse_int_at_least_arg("--rechunk_grid_bits", next_value(), 0);
+            }
+            else if (arg == "--rechunk_backoff_max")
+            {
+                args.rechunk_backoff_max = parse_int_at_least_arg("--rechunk_backoff_max", next_value(), 0);
+            }
+            else if (arg == "--rechunk_trace_array")
+            {
+                args.rechunk_trace_array = next_value();
+            }
+            else if (arg == "--force_rechunk")
+            {
+                args.force_rechunk = parse_int_at_least_arg("--force_rechunk", next_value(), 0);
+            }
+            else if (arg == "--force_rechunk_at")
+            {
+                args.force_rechunk_at = parse_int_at_least_arg("--force_rechunk_at", next_value(), 0);
+            }
+            else if (arg == "--force_rechunk_alt")
+            {
+                args.force_rechunk_alt = parse_int_at_least_arg("--force_rechunk_alt", next_value(), 1);
+            }
+            else if (arg == "--force_rechunk_toggle")
+            {
+                args.force_rechunk_toggle = true;
             }
             else if (arg == "--help")
             {
@@ -216,7 +310,9 @@ BenchArgs parse_bench_args(int argc, char* argv[])
     args.test_prealloc   = test_prealloc;
     args.no_struct       = no_struct;
     args.no_mask         = no_mask;
+    args.no_conn         = no_conn;
     args.mask_scale      = mask_scale;
+    args.conn_scale      = conn_scale;
     args.multiply_factor = multiply_factor;
     args.divisor_factor  = divisor_factor;
     args.iter_max_arg    = iter_max_arg;

@@ -20,7 +20,7 @@
 #include <iostream> // std::cout
 #include <utility>  // std::cmp_not_equal
 
-#include "chunk/config.h"                     // build_config::use_openmp, chunk_dynamic
+#include "chunk/config.h"                     // build_config::threaded, chunk_dynamic
 #include "chunk/internal/chunk_size_config.h" // static_chunk_size, static_chunk_shift, static_chunk_mask
 #include "chunk/internal/chunk_size_policy.h" // active_chunk_size, chunk_size_error
 #include "chunk/internal/func_p2.h"           // is_power_of_two, log2int
@@ -68,7 +68,7 @@ namespace shrink_array
 
 /**
  * @brief The thread-model half of the startup: one verb, two bodies.
- * @tparam Enabled build_config::use_openmp.
+ * @tparam Enabled build_config::threaded.
  * @tparam AllT    The AllTypeChunk facade. LOAD-BEARING -- see below.
  *
  * @note AllT looks redundant (it is only ever AllTypeChunk) and is not: it keeps the two
@@ -79,7 +79,7 @@ namespace shrink_array
  *       SingletonChk<AllTypeChunk>), or phase-1 lookup rejects the other build's body. Same
  *       reason as the Derived parameter of AllTypeChunkParallelInterface.
  */
-template <bool Enabled = build_config::use_openmp, typename AllT = AllTypeChunk>
+template <bool Enabled = build_config::threaded, typename AllT = AllTypeChunk>
 struct ParamChunkParallelInterface; // primary left undefined: only the 2 specializations exist
 
 /// @brief OpenMP builds: init_thread_structures() prints the allocator / thread-model banner.
@@ -292,7 +292,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     static void init_indexes(bool big_chunk_block)
     {
         init_indexes(big_chunk_block); // the process-wide setup first: the managers need its block size
-        SingletonChk<AllTypeChunk>::get_ref().template initialize<Types>();
+        SingletonChk<AllTypeChunk>::get_ref().initialize<Types>();
     }
 
     /**
@@ -304,9 +304,9 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      *          known point (a measurement, a checkpoint) rather than at whatever
      *          moment the next sweep happens.
      *
-     * @note An empty no-op unless the build has fast block compression
-     *       (chunk_config::use_fast_block_compression, OpenMP builds), so call
-     *       sites need no guard.
+     * @note Every build, so call sites need no guard: the OpenMP builds'
+     *       candidates, and a serial zero_any's (it queues them too); a serial
+     *       zero or zero_one_value compresses on the write and has none.
      */
     static void force_compression();
 
@@ -316,8 +316,8 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      * @tparam T the element type concerned
      * @param second_value the additional value to store as a constant
      * @warning Not implemented: deleted, so a use fails at compile time. A
-     *          placeholder for the second-constant support that ArrayChunk2
-     *          offers per array (ArrayChunk2::set_second_value) and chunk2A per
+     *          placeholder for the second-constant support that zero_one_value::Array
+     *          offers per array (zero_one_value::Array::set_second_value) and zero_any per
      *          chunk.
      */
     template <typename T>
@@ -326,8 +326,8 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     /**
      * @brief Print the instrumentation report accumulated during the run.
      *
-     * @details Reduces the per-thread counters of each variant (chunk, chunk2,
-     *          chunk2a) and prints one block per variant, preceded by a legend;
+     * @details Reduces the per-thread counters of each variant (zero, zero_one_value,
+     *          zero_any) and prints one block per variant, preceded by a legend;
      *          variants that saw no activity are skipped. Reports allocations and
      *          reuse, read/write counts with the share of reads served straight
      *          from the constant (what the compression actually saves), compression
@@ -352,17 +352,17 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      * @details static_chunk_size is a compile-time constant. Warns when asked for a size
      *          the binary was not built with, rather than ignoring it silently.
      *
-     * @param v the chunk size the caller wanted; only compared, never applied
-     * @warning To actually change the geometry, rebuild with `-DCHUNK_SIZE=v`
+     * @param value the chunk size the caller wanted; only compared, never applied
+     * @warning To actually change the geometry, rebuild with `-DCHUNK_SIZE=<value>`
      *          (a power of two or a multiple of 64).
      */
-    static void set_chunk_size(int v)
+    static void set_chunk_size(int value)
     {
-        if (std::cmp_not_equal(v, static_chunk_size))
+        if (std::cmp_not_equal(value, static_chunk_size))
         {
             CHUNK_LOG(warn, general,
-                      "set_chunk_size({}) ignored; built with CHUNK_SIZE={} (rebuild with -DCHUNK_SIZE={})", v,
-                      static_chunk_size, v);
+                      "set_chunk_size({}) ignored; built with CHUNK_SIZE={} (rebuild with -DCHUNK_SIZE={})", value,
+                      static_chunk_size, value);
         }
     }
 
@@ -384,15 +384,15 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      * @details Kept so existing call sites keep compiling; the value is
      *          log2(static_chunk_size), computed at compile time.
      *
-     * @param v the shift the caller wanted; only compared, never applied
+     * @param value the shift the caller wanted; only compared, never applied
      * @warning Warns when asked for a shift the binary was not built with, as
      *          set_chunk_size() does.
      */
-    static void set_decalage_chunk(unsigned int v)
+    static void set_decalage_chunk(unsigned int value)
     {
-        if (v != static_chunk_shift)
+        if (value != static_chunk_shift)
         {
-            CHUNK_LOG(warn, general, "set_decalage_chunk({}) ignored; built with CHUNK_SIZE={} (shift {})", v,
+            CHUNK_LOG(warn, general, "set_decalage_chunk({}) ignored; built with CHUNK_SIZE={} (shift {})", value,
                       static_chunk_size, static_chunk_shift);
         }
     }
@@ -410,14 +410,14 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     /**
      * @brief No-op compatibility shim: the mask is derived from CHUNK_SIZE.
      *
-     * @param v the mask the caller wanted; only compared, never applied
+     * @param value the mask the caller wanted; only compared, never applied
      * @warning Warns rather than ignoring silently. @see set_decalage_chunk
      */
-    static void set_modulo_chunk(int v)
+    static void set_modulo_chunk(int value)
     {
-        if (std::cmp_not_equal(v, static_chunk_mask))
+        if (std::cmp_not_equal(value, static_chunk_mask))
         {
-            CHUNK_LOG(warn, general, "set_modulo_chunk({}) ignored; built with CHUNK_SIZE={} (mask {})", v,
+            CHUNK_LOG(warn, general, "set_modulo_chunk({}) ignored; built with CHUNK_SIZE={} (mask {})", value,
                       static_chunk_size, static_chunk_mask);
         }
     }

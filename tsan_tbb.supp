@@ -1,0 +1,45 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
+#
+# TSan suppressions for oneTBB's partitioners, used by the tbb_validation tests
+# of a SANITIZER=thread build (examples/validation/CMakeLists.txt).
+#
+# A parallel_for task is built by one worker -- the root by the caller, each
+# split-off child by the worker that splits (start_for's constructors: its
+# range, its partitioner state, its copy of the body) -- and run by another
+# that steals it. The spawn and the steal synchronise inside libtbb.so, which
+# is not instrumented: TSan misses that happens-before edge and reports every
+# field of the new task (blocked_range::is_divisible, check_being_stolen's
+# my_divisor, the body's members) as a race with its constructor.
+#
+# A suppression matches when ANY frame of a reported stack matches: this one
+# matches the write side of those reports, the task's construction. The code
+# under test runs in execute() -> run_body(), not under a constructor of
+# start_for (except the body's copy constructor): its races stay visible.
+race:tbb::detail::d1::start_for*::start_for
+
+# The wait tree (partitioner.h): the caller's wait_node and each split's
+# tree_node are built by one thread and folded (fold_tree) by the last child
+# to finish, on another; the root's wait_node sits on the caller's stack, at
+# the same address from one parallel_for to the next. Ordered inside
+# libtbb.so (the wait_context, the reference counts' release), unseen. No
+# body runs there: shrink_array::tbb has no reduction, whose join() fold_tree
+# would call.
+race:tbb::detail::d1::node::node
+race:tbb::detail::d1::fold_tree
+
+# The execution_data of a running task (detail/_task.h), filled in by
+# libtbb.so (the arena's slots, set up in task_arena::initialize) and read
+# inline by the task: no body runs in these readers. (is_stolen also covers
+# partitioner.h's is_stolen_task.)
+race:tbb::detail::d1::original_slot
+race:tbb::detail::d1::affinity_slot
+race:tbb::detail::d1::execution_slot
+race:tbb::detail::d1::is_same_affinity
+race:tbb::detail::d1::is_stolen
+
+# A finished task (start_for::finalize: read my_parent, destroy the task, fold
+# the tree, hand the memory back) and the next task built at the same address:
+# the small_object_allocator's recycling happens inside libtbb.so, unseen. Not
+# start_for::run, which the caller thread runs the body under.
+race:tbb::detail::d1::start_for*::finalize

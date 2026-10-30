@@ -24,7 +24,7 @@
  *     zero included (`4 % 2`, `x * 0`): the chunks that become all zero fold
  *     as on any write. Then `shrink_to_fit()`, read again.
  *   - A floating `x /= 0.0` is IEEE (inf), never refused.
- *   - Chunk2: `set_second_value(T{})` on a fresh array declares nothing (T{}
+ *   - zero_one_value: `set_second_value(T{})` on a fresh array declares nothing (T{}
  *     is already its first constant) and the array reads right.
  *   - Check builds only (build_config::any_check): an integer `/= 0` or
  *     `%= 0` -- undefined behaviour in C++ -- stops the program with an
@@ -41,13 +41,13 @@
 #include <utility>     // std::as_const
 #include <vector>      // the reference
 
-#include "chunk/chunk_traits.h"   // forward decls + default ind_type = int
-#include "chunk/array_chunk.h"    // ArrayChunk
-#include "chunk/array_chunk2.h"   // ArrayChunk2
-#include "chunk/array_chunk2A.h"  // ArrayChunk2A
-#include "chunk/param_chunk.h"    // ParamChunk::init_indexes
-#include "chunk/config.h"         // chunk_config::use_chunk*, build_config::any_check
-#include "chunk/internal/print.h" // shrink_array::println
+#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
+#include "chunk/zero_array.h"           // zero::Array
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#include "chunk/zero_any_array.h"       // zero_any::Array
+#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
+#include "chunk/config.h"               // chunk_config::use_zero*, build_config::any_check
+#include "chunk/internal/print.h"       // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
@@ -60,33 +60,34 @@ namespace
 {
 
 template <typename T>
-using Arr = std::conditional_t<chunk_config::use_chunk2a,
-                               ArrayChunk2A<T>,
-                               std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T>, ArrayChunk<T>>>;
+using Arr =
+    std::conditional_t<chunk_config::use_zero_any,
+                       zero_any::Array<T>,
+                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_any)
     {
-        return "chunk2a";
+        return "zero_any";
     }
-    else if constexpr (chunk_config::use_chunk2)
+    else if constexpr (chunk_config::use_zero_one_value)
     {
-        return "chunk2";
+        return "zero_one_value";
     }
     else
     {
-        return "chunk";
+        return "zero";
     }
 }
 
 template <typename T>
-long mismatches(const Arr<T>& a, const std::vector<T>& ref)
+long mismatches(const Arr<T>& arr, const std::vector<T>& ref)
 {
     long bad = 0;
     for (std::size_t i = 0; i < ref.size(); ++i)
     {
-        bad += static_cast<T>(std::as_const(a)[static_cast<int>(i)]) != ref[i];
+        bad += static_cast<T>(std::as_const(arr)[static_cast<int>(i)]) != ref[i];
     }
     return bad;
 }
@@ -104,112 +105,113 @@ int report(const char* what, long bad)
 /// `*=`, `/=`, `%=` against a std::vector, results on zero included.
 int integer_ops()
 {
-    const int        n = 50000;
-    Arr<int>         a(n);
-    std::vector<int> ref(static_cast<std::size_t>(n), 0);
-    for (int i = 0; i < n; ++i)
+    const int        count = 50000;
+    Arr<int>         arr(count);
+    std::vector<int> ref(static_cast<std::size_t>(count), 0);
+    for (int i = 0; i < count; ++i)
     {
-        const int v                      = (i / 1000) % 3 == 0 ? 0 : 4 + (i % 9);
-        a[i]                             = v;
-        ref[static_cast<std::size_t>(i)] = v;
+        const int value                  = (i / 1000) % 3 == 0 ? 0 : 4 + (i % 9);
+        arr[i]                           = value;
+        ref[static_cast<std::size_t>(i)] = value;
     }
-    for (int i = 0; i < n; ++i)
+    for (int i = 0; i < count; ++i)
     {
-        const auto k = static_cast<std::size_t>(i);
+        const auto pos = static_cast<std::size_t>(i);
         if (i % 2 == 0)
         {
-            a[i] %= 2; // 4 % 2, 6 % 2 ...: zero
-            ref[k] %= 2;
+            arr[i] %= 2; // 4 % 2, 6 % 2 ...: zero
+            ref[pos] %= 2;
         }
         else if (i % 3 == 0)
         {
-            a[i] *= 0;
-            ref[k] *= 0;
+            arr[i] *= 0;
+            ref[pos] *= 0;
         }
         else
         {
-            a[i] /= 3;
-            ref[k] /= 3;
+            arr[i] /= 3;
+            ref[pos] /= 3;
         }
     }
-    long bad = mismatches(a, ref);
-    a.shrink_to_fit();
-    bad += mismatches(a, ref);
+    long bad = mismatches(arr, ref);
+    arr.shrink_to_fit();
+    bad += mismatches(arr, ref);
     return report("int *= /= %= vs std::vector", bad);
 }
 
 /// A floating division by zero is IEEE: +inf, -inf, NaN -- never refused.
 int float_div_by_zero()
 {
-    Arr<double> a(4096);
-    a[1] = 2.0;
-    a[2] = -3.0;
-    a[1] /= 0.0;
-    a[2] /= 0.0;
-    const double p  = std::as_const(a)[1];
-    const double m  = std::as_const(a)[2];
-    const bool   ok = p == std::numeric_limits<double>::infinity() && m == -std::numeric_limits<double>::infinity();
+    Arr<double> arr(4096);
+    arr[1] = 2.0;
+    arr[2] = -3.0;
+    arr[1] /= 0.0;
+    arr[2] /= 0.0;
+    const double pos_inf = std::as_const(arr)[1];
+    const double neg_inf = std::as_const(arr)[2];
+    const bool   ok =
+        pos_inf == std::numeric_limits<double>::infinity() && neg_inf == -std::numeric_limits<double>::infinity();
     return report("double /= 0.0 gives +-inf", ok ? 0 : 1);
 }
 
-/// Chunk2: set_second_value(T{}) on a fresh array declares nothing. A
-/// template, so that the Chunk2-only calls are discarded on the other variants.
+/// zero_one_value: set_second_value(T{}) on a fresh array declares nothing. A
+/// template, so that the zero_one_value-only calls are discarded on the other variants.
 template <typename A = Arr<double>>
 int second_value_zero()
 {
-    if constexpr (chunk_config::use_chunk2 && !chunk_config::use_chunk2a)
+    if constexpr (chunk_config::use_zero_one_value && !chunk_config::use_zero_any)
     {
-        const int           n = 20000;
-        A                   a(n);
-        std::vector<double> ref(static_cast<std::size_t>(n), 0.0);
-        a.set_second_value(0.0, /*message=*/false);
-        long bad = a.get_second_value() != 0.0;
-        for (int i = 0; i < n; i += 3)
+        const int           count = 20000;
+        A                   arr(count);
+        std::vector<double> ref(static_cast<std::size_t>(count), 0.0);
+        arr.set_second_value(0.0, /*message=*/false);
+        long bad = arr.get_second_value() != 0.0;
+        for (int i = 0; i < count; i += 3)
         {
-            a[i]                             = 1.5;
+            arr[i]                           = 1.5;
             ref[static_cast<std::size_t>(i)] = 1.5;
         }
-        a.shrink_to_fit();
-        bad += mismatches<double>(a, ref);
+        arr.shrink_to_fit();
+        bad += mismatches<double>(arr, ref);
         return report("set_second_value(0) is a no-op", bad);
     }
     return 0;
 }
 
 /// Child: the operation that must stop a check build.
-int run_child(int k)
+int run_child(int which)
 {
-    Arr<int> a(1024);
-    a[5]              = 7;
+    Arr<int> arr(1024);
+    arr[5]            = 7;
     volatile int zero = 0; // not a constant the compiler could see
-    if (k == 0)
+    if (which == 0)
     {
-        a[5] /= static_cast<int>(zero);
+        arr[5] /= static_cast<int>(zero);
     }
     else
     {
-        a[5] %= static_cast<int>(zero);
+        arr[5] %= static_cast<int>(zero);
     }
-    println("value {}", static_cast<int>(std::as_const(a)[5]));
+    println("value {}", static_cast<int>(std::as_const(arr)[5]));
     return 0;
 }
 
-int check_stops(const char* self, int k)
+int check_stops(const char* self, int which)
 {
-    const char*       what = k == 0 ? "int /= 0 stops (check build)" : "int %= 0 stops (check build)";
-    const std::string log  = "/tmp/compound_ops_" + std::to_string(getpid()) + "_" + std::to_string(k) + ".log";
+    const char*       what = which == 0 ? "int /= 0 stops (check build)" : "int %= 0 stops (check build)";
+    const std::string log  = "/tmp/compound_ops_" + std::to_string(getpid()) + "_" + std::to_string(which) + ".log";
     const std::string cmd =
-        validation::self_command(self) + " --child " + std::to_string(k) + " > \"" + log + "\" 2>&1";
+        validation::self_command(self) + " --child " + std::to_string(which) + " > \"" + log + "\" 2>&1";
     const int   status = std::system(cmd.c_str());
     std::string out;
-    if (FILE* f = std::fopen(log.c_str(), "r"))
+    if (FILE* file = std::fopen(log.c_str(), "r"))
     {
         char buf[4096];
-        for (std::size_t m = 0; (m = std::fread(buf, 1, sizeof buf, f)) > 0;)
+        for (std::size_t m = 0; (m = std::fread(buf, 1, sizeof buf, file)) > 0;)
         {
             out.append(buf, m);
         }
-        std::fclose(f);
+        std::fclose(file);
     }
     std::remove(log.c_str());
     const bool ran_ok  = status != -1 && WIFEXITED(status) && WEXITSTATUS(status) == 0;
