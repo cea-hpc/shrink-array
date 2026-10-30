@@ -31,11 +31,14 @@
 namespace shrink_array
 {
 // The arguments are those of the log (fast_allocators/internal/log_core.h):
-// anything std::format spells, std::complex as "(re+imi)", any other type as
-// its bytes in hex -- the element values an invariant message prints.
+// anything std::format spells, std::complex as "(re+imi)", a struct member by
+// member, "{a: 1, inner: {x: 2.5}}" (C++26 reflection), any other type -- a
+// union, an enum, a struct holding a union -- as its bytes in hex: the
+// element values an invariant message prints.
 
 /// @brief The value as a string, for the diagnostics written with operator<<:
-///        std::format's rendering when the type has one, the bytes otherwise.
+///        std::format's rendering when the type has one, else its members or
+///        its bytes, as the log spells it.
 template <typename V>
 std::string value_repr(const V& value)
 {
@@ -62,7 +65,7 @@ namespace detail
  * @brief Report a broken invariant -- location, message, backtrace -- and abort.
  * @param loc  Where the check failed (CHUNK_INVARIANT_FAILED passes the caller's).
  * @param fmt  std::format string of the message.
- * @param args Its arguments; one with no formatter is printed as its bytes.
+ * @param args Its arguments; one with no formatter is printed member by member, or as its bytes.
  *
  * The message is formatted on the stack (logging::line_max bytes, "..." when
  * cut): no allocation, so a failure inside an allocator, or out of memory,

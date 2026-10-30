@@ -38,10 +38,18 @@
 //   9. the fatal level, each case in a child (this executable re-run with
 //      --fatal K): CHUNK_INVARIANT_FAILED writes its block and the backtrace
 //      on stderr, the record reaches CHUNK_LOG_FILE or the program's sink,
-//      element values of any type are spelled; 8 threads failing at once
+//      element values of any type are spelled (a struct member by member,
+//      a union as its bytes); 8 threads failing at once
 //      give one report; a failure inside the sink still stops;
 //      CHUNK_CHECK_FAILED stops a check build and logs an error elsewhere;
-//      and fast_allocators' FAST_ALLOC_FATAL gives the same report.
+//      and fast_allocators' FAST_ALLOC_FATAL gives the same report;
+//  10. a value with no formatter (C++26 reflection): a struct -- a base, a
+//      named and an anonymous bit-field, a std::complex, a pointer, a nested
+//      struct, an array of structs, a private member -- printed member by
+//      member, by format_message (the log's stack buffer) and by
+//      value_repr() alike; a union, and a struct holding an anonymous union,
+//      still as their bytes; a type with its own std::formatter through it;
+//      a struct too long for the line cut with "..."; and no allocation.
 //
 // Exit status 0 when every check passes.
 
@@ -49,7 +57,7 @@
 #include <array>       // std::array
 #include <atomic>      // std::atomic
 #include <complex>     // std::complex (check 9)
-#include <cstdint>     // std::uint32_t (check 9)
+#include <cstdint>     // std::uint32_t, std::int32_t (checks 9, 10)
 #include <cstdio>      // std::remove, std::sscanf, std::fflush
 #include <print>       // std::println (the children's stdout)
 #include <cstdlib>     // std::malloc, std::free, setenv
@@ -480,10 +488,16 @@ void check_threads()
 }
 
 // --- 9 ----------------------------------------------------------------------
-struct NoFormatter // an element type with no std::formatter: printed as its bytes
+struct NoFormatter // an element type with no std::formatter: printed member by member
 {
     std::uint32_t a;
     std::uint32_t b;
+};
+
+union Word // a union: which member is active is not recorded, printed as its bytes
+{
+    std::uint32_t u;
+    float         f;
 };
 
 void fatal_sink(const logging::Record& record, void* /*user*/) noexcept
@@ -503,9 +517,9 @@ int run_fatal(int which)
 {
     switch (which)
     {
-        case 0: // block, backtrace, bytes and complex spelled, record in CHUNK_LOG_FILE
-            CHUNK_INVARIANT_FAILED("value {} complex {} bytes {}", 7, std::complex<double>(1.0, -2.0),
-                                   NoFormatter{1, 2});
+        case 0: // block, backtrace, complex, members and bytes spelled, record in CHUNK_LOG_FILE
+            CHUNK_INVARIANT_FAILED("value {} complex {} members {} bytes {}", 7, std::complex<double>(1.0, -2.0),
+                                   NoFormatter{1, 2}, Word{0x01020304U});
         case 1: // 8 threads at once: one report
         {
             std::atomic<int>         ready{0};
@@ -593,8 +607,13 @@ void check_fatal(const char* self)
     check(run.status == abort_status, "fatal: CHUNK_INVARIANT_FAILED aborts");
     check(count(run.out, "In file '") == 1 && run.out.find("Inside function: ") != std::string::npos,
           "fatal: location block on stderr");
-    check(run.out.find("value 7 complex (1-2i) bytes 0x0100000002000000") != std::string::npos,
-          "fatal: int, std::complex and a type with no formatter spelled");
+#if FAST_ALLOC_LOG_HAS_REFLECTION
+    constexpr std::string_view spelled = "value 7 complex (1-2i) members {a: 1, b: 2} bytes 0x04030201";
+#else
+    constexpr std::string_view spelled = "value 7 complex (1-2i) members 0x0100000002000000 bytes 0x04030201";
+#endif
+    check(run.out.find(spelled) != std::string::npos,
+          "fatal: int, std::complex, a struct and a union with no formatter spelled");
     check(run.out.find("--- Execution Backtrace ---") != std::string::npos, "fatal: backtrace on stderr");
     check(run.log.find("[shrink_array][general][F][") != std::string::npos &&
               run.log.find("] value 7 complex") != std::string::npos,
@@ -643,6 +662,123 @@ void check_fatal(const char* self)
     }
 }
 
+// --- 10 ---------------------------------------------------------------------
+struct Tagged // a base: its members come first, inline
+{
+    int id;
+};
+
+struct Point
+{
+    double x;
+    double y;
+};
+
+class Cell : public Tagged
+{
+  public:
+    unsigned flag : 3;
+    unsigned : 5; // no name: skipped
+    std::complex<double> z;
+    const int*           where;
+    Point                at;
+    Point                corners[2];
+
+    explicit Cell(const int* where_) : Tagged{4}, flag{5}, z{1.0, -2.0}, where{where_}, at{0.5, -3.0}, corners{}
+    {
+        corners[1] = Point{1.0, 2.0};
+    }
+
+  private:
+    int secret = 9;
+};
+
+struct WithUnion // an anonymous union among the members: the whole struct as its bytes
+{
+    std::int32_t kind;
+    union
+    {
+        std::int32_t i;
+        float        f;
+    };
+};
+
+struct Empty
+{
+};
+
+struct Celsius // a std::formatter of its own: used, not the members
+{
+    double deg;
+};
+
+struct Wide // longer than a line: cut
+{
+    std::array<Point, 100> pts{};
+};
+
+} // namespace
+
+template <>
+struct std::formatter<Celsius, char>
+{
+    constexpr auto parse(std::format_parse_context& ctx)
+    {
+        return ctx.begin();
+    }
+
+    auto format(const Celsius& temp, std::format_context& ctx) const
+    {
+        return std::format_to(ctx.out(), "{} C", temp.deg);
+    }
+};
+
+namespace
+{
+std::string_view format_line(std::array<char, logging::line_max>& buf, const auto& value)
+{
+    return {buf.data(), logging::detail::format_message(buf.data(), "{}", value)};
+}
+
+void check_members()
+{
+    std::array<char, logging::line_max> buf{};
+
+    // The union and the struct holding one: their bytes, with or without reflection.
+    check(format_line(buf, Word{0x01020304U}) == "0x04030201", "members: a union as its bytes");
+    WithUnion with_union{};
+    with_union.kind = 1;
+    with_union.i    = 2;
+    check(format_line(buf, with_union) == "0x0100000002000000",
+          "members: a struct with an anonymous union as its bytes");
+    check(format_line(buf, Celsius{21.5}) == "21.5 C", "members: a type's own std::formatter comes first");
+
+#if FAST_ALLOC_LOG_HAS_REFLECTION
+    const int              target = 0;
+    const Cell             cell(&target);
+    const std::string      expected = std::format("{{id: 4, flag: 5, z: (1-2i), where: {}, at: {{x: 0.5, y: -3}}, "
+                                                  "corners: [{{x: 0, y: 0}}, {{x: 1, y: 2}}], secret: 9}}",
+                                                  static_cast<const void*>(&target));
+    const std::string_view line     = format_line(buf, cell);
+    check(line == expected, "members: a struct member by member on the log's path");
+    check(shrink_array::value_repr(cell) == expected, "members: value_repr spells it the same");
+    check(format_line(buf, Empty{}) == "{}", "members: an empty struct");
+
+    const Wide             wide{};
+    const std::string_view cut = format_line(buf, wide);
+    check(cut.size() == logging::line_max && cut.starts_with("{pts: [{x: 0, y: 0}, ") && cut.ends_with("..."),
+          "members: a struct longer than the line is cut, line_max bytes ending in ...");
+
+    g_news.store(0);
+    g_counting           = true;
+    const std::size_t n1 = logging::detail::format_message(buf.data(), "cell {} wide {}", cell, wide);
+    const std::size_t n2 = logging::detail::format_message(buf.data(), "{} {}", cell, with_union);
+    g_counting           = false;
+    check(g_news.load() == 0 && n1 == logging::line_max && n2 > 0,
+          "members: no allocation on the log's path for a struct printed member by member");
+#endif
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -672,6 +808,7 @@ int main(int argc, char** argv)
     check_no_allocation();
     check_threads();
     check_fatal(argv[0]);
+    check_members();
 
     std::remove(g_log_path.c_str());
     println("{}", g_fails == 0 ? "PASS" : "FAILED");

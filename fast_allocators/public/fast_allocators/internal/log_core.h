@@ -51,8 +51,10 @@
  *   do not interleave.
  * - Arguments: anything std::format spells, plus std::complex, "(re+imi)",
  *   a pointer to any object as its address (no static_cast<const void*> at
- *   the call), and any other type as its bytes in hex (fmt_arg): a message
- *   can print an element value of any type. A char pointer stays a string.
+ *   the call), with C++26 reflection a struct member by member,
+ *   "{a: 1, inner: {x: 2.5}}", and any other type -- a union, an enum, a
+ *   struct holding a union -- as its bytes in hex (fmt_arg): a message can
+ *   print an element value of any type. A char pointer stays a string.
  * - Traces and reports: a trace is a flow CHUNK_LOG switches on (CHUNK_LOG);
  *   a report is a summary -- the arena's (arena=info), the block ledger's
  *   (ledger=info), the OMPT statistics (ompt=info), a print_* function the
@@ -69,7 +71,7 @@
 // __cpp_lib_reflection comes with <meta>: included first where the language
 // has reflection (the name tables are then checked against the enums).
 #if defined(__cpp_impl_reflection)
-    #include <meta> // std::meta (the names_match check)
+    #include <meta> // std::meta (the names_match check, MembersArg)
 #endif
 #if defined(__cpp_impl_reflection) && defined(__cpp_lib_reflection)
     #define FAST_ALLOC_LOG_HAS_REFLECTION 1
@@ -88,11 +90,12 @@
 #include <cstring>         // std::memcpy
 #include <format>          // std::format_to_n, std::format_string
 #include <mutex>           // std::mutex, std::once_flag, std::call_once, std::scoped_lock
+#include <ranges>          // std::ranges::input_range (MembersArg)
 #include <span>            // std::span, std::as_bytes (BytesArg)
 #include <source_location> // std::source_location
 #include <string_view>     // std::string_view
 #include <type_traits> // std::remove_cvref_t, std::conditional_t, std::is_lvalue_reference_v, std::is_pointer_v, std::is_object_v
-#include <utility>       // std::forward, std::declval
+#include <utility>       // std::forward, std::declval, std::move
 #include <sched.h>       // sched_yield (emit_fatal)
 #include <sys/syscall.h> // SYS_gettid
 #include <unistd.h>      // getpid, syscall
@@ -213,13 +216,18 @@ namespace detail
 // doubles, an enum class, a std::array -- and most of those have no
 // std::formatter. Rather than ask every such type for one, or drop the value
 // from the message, the byte dump is what a type with no better spelling
-// gets: enough to tell two values apart in a post-mortem. std::complex is
+// gets: enough to tell two values apart in a post-mortem. Where the language
+// has static reflection, a class gets better: its members, by name, each
+// spelled by these same rules (MembersArg) -- a struct of doubles reads as
+// numbers, not as their IEEE bytes. std::complex is
 // spelled here too, and not by a std::formatter<std::complex<T>>
 // specialisation: adding one to namespace std is undefined unless it depends
 // on a program-defined type ([namespace.std]), it would leak from this header
 // into every user's code, and it would clash with a standard library that
-// ships one (C++26, P2197). Both are wrappers formatted in place: no
-// allocation.
+// ships one (C++26, P2197). All are wrappers formatted in place, straight
+// into the output of std::format -- with format_message's std::format_to_n,
+// the bounded iterator into the stack buffer: no allocation, and a value too
+// long for the line is cut with the rest of the message.
 
 /// @brief True for std::complex<T>.
 template <typename V>
@@ -278,10 +286,96 @@ constexpr const void* fmt_arg(A&& ptr) noexcept
     return ptr;
 }
 
-/// @brief Overload for a type with no formatter: its bytes.
+#if FAST_ALLOC_LOG_HAS_REFLECTION
+/**
+ * @brief True when the members of class @p type, and of its bases, can all
+ *        be read: none is a union, an array of unions or a variant member
+ *        (an anonymous union, which nonstatic_data_members_of lists as one
+ *        unnamed member of union type). Reading the inactive member of a
+ *        union is undefined, and which one is active is nowhere recorded: a
+ *        class holding one is printed whole as its bytes. A member that is
+ *        itself a class holding a union is fine here -- fmt_arg prints that
+ *        member as its bytes, and the others by name.
+ */
+consteval bool members_readable(std::meta::info type)
+{
+    type = std::meta::dealias(type);
+    if (!std::meta::is_class_type(type) || !std::meta::is_complete_type(type))
+    {
+        return false; // a union is not a class type
+    }
+    const auto ctx = std::meta::access_context::unchecked();
+    for (const std::meta::info base : std::meta::bases_of(type, ctx))
+    {
+        if (!members_readable(std::meta::type_of(base)))
+        {
+            return false;
+        }
+    }
+    for (const std::meta::info member : std::meta::nonstatic_data_members_of(type, ctx))
+    {
+        const std::meta::info held = std::meta::remove_all_extents(std::meta::remove_cvref(std::meta::type_of(member)));
+        if (std::meta::is_union_type(held))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// @brief True for a range std::format does not spell (its elements have no
+///        formatter: a C array or a std::array of structs): printed as a list,
+///        "[e0, e1]", each element through fmt_arg.
+template <typename V>
+inline constexpr bool is_listed = !Formattable<V> && std::ranges::input_range<const V>;
+
+/// @brief True for a value printed member by member (MembersArg): a list, or a
+///        class with no formatter whose members can all be read.
+template <typename V>
+inline constexpr bool is_members =
+    !Formattable<V> && !is_complex<V> && !is_address<V> && (is_listed<V> || members_readable(^^V));
+
+/**
+ * @brief A value printed member by member: `{a: 1, b: 2.5, inner: {x: 3}}`,
+ *        each member through fmt_arg (so a nested struct, a std::complex, a
+ *        pointer, a member with no better spelling in hex), or, for a list,
+ *        `[e0, e1]`.
+ * @details
+ * - Bases first, their members inline, as though declared in the class
+ *   (`{base_member: 1, own_member: 2}`): the names are those the code reads
+ *   on the object; a base's name would be noise in a one-line message, and a
+ *   specialisation has none to give. A member a derived class hides is
+ *   printed twice, the base's first; a virtual base once per path.
+ * - Private and protected members too (access_context::unchecked()): a
+ *   post-mortem wants the whole state.
+ * - A member with no name (an anonymous bit-field, which GCC does not even
+ *   list) is skipped; a named bit-field is read into a copy, a reference
+ *   member prints the object it refers to, an array member as std::format
+ *   spells a range, or as a list when its elements have no formatter.
+ * - An empty class is `{}`.
+ */
+template <typename V>
+struct MembersArg
+{
+    const V* v;
+};
+
+/// @brief Overload for a value printed member by member.
+template <typename A>
+    requires is_members<std::remove_cvref_t<A>>
+constexpr auto fmt_arg(A&& arg) noexcept
+{
+    return MembersArg<std::remove_cvref_t<A>>{&arg};
+}
+#else
+template <typename V>
+inline constexpr bool is_members = false;
+#endif
+
+/// @brief Overload for a type with no formatter and no member-wise spelling: its bytes.
 template <typename A>
     requires(!Formattable<std::remove_cvref_t<A>> && !is_complex<std::remove_cvref_t<A>> &&
-             !is_address<std::remove_cvref_t<A>>)
+             !is_address<std::remove_cvref_t<A>> && !is_members<std::remove_cvref_t<A>>)
 constexpr auto fmt_arg(A&& arg) noexcept
 {
     return BytesArg<std::remove_cvref_t<A>>{&arg};
@@ -823,6 +917,110 @@ struct std::formatter<fast_alloc::logging::detail::BytesArg<V>, char>
         return it;
     }
 };
+
+#if FAST_ALLOC_LOG_HAS_REFLECTION
+namespace fast_alloc::logging::detail
+{
+// The writers of MembersArg's formatter. Each takes and returns the output
+// iterator of the std::format call underway: the text goes straight to it,
+// with no string nor buffer in between.
+
+template <typename Out>
+Out put_text(Out out, std::string_view text)
+{
+    for (const char c : text)
+    {
+        *out++ = c;
+    }
+    return out;
+}
+
+/// @brief One member or element, spelled by fmt_arg (a MembersArg for a nested class).
+template <typename Out, typename M>
+Out put_value(Out out, const M& value)
+{
+    return std::format_to(std::move(out), "{}", fmt_arg(value));
+}
+
+template <typename Out, typename R>
+Out put_list(Out out, const R& range)
+{
+    *out++     = '[';
+    bool first = true;
+    for (const auto& elem : range)
+    {
+        out   = put_text(std::move(out), first ? "" : ", ");
+        first = false;
+        out   = put_value(std::move(out), elem);
+    }
+    *out++ = ']';
+    return out;
+}
+
+/// @brief `name: value` for every member of @p obj, its bases' first; @p first
+///        is true until a member is written (no ", " before it).
+template <typename Out, typename V>
+Out put_fields(Out out, const V& obj, bool& first)
+{
+    constexpr auto ctx = std::meta::access_context::unchecked();
+    template for (constexpr std::meta::info base : std::define_static_array(std::meta::bases_of(^^V, ctx)))
+    {
+        out = put_fields(std::move(out), obj.[:base:], first);
+    }
+    template for (constexpr std::meta::info member :
+                  std::define_static_array(std::meta::nonstatic_data_members_of(^^V, ctx)))
+    {
+        if constexpr (std::meta::has_identifier(member))
+        {
+            constexpr std::string_view name = std::meta::identifier_of(member);
+            out                             = put_text(std::move(out), first ? "" : ", ");
+            first                           = false;
+            out                             = put_text(std::move(out), name);
+            out                             = put_text(std::move(out), ": ");
+            if constexpr (std::meta::is_bit_field(member))
+            {
+                const auto bits = obj.[:member:]; // no reference binds to a bit-field
+                out             = put_value(std::move(out), bits);
+            }
+            else
+            {
+                out = put_value(std::move(out), obj.[:member:]);
+            }
+        }
+    }
+    return out;
+}
+} // namespace fast_alloc::logging::detail
+
+/// @brief fmt_arg's member-wise spelling: `{a: 1, inner: {x: 3}}`, or `[e0, e1]` for a list.
+template <typename V>
+struct std::formatter<fast_alloc::logging::detail::MembersArg<V>, char>
+{
+    constexpr auto parse(std::format_parse_context& ctx)
+    {
+        return ctx.begin();
+    }
+
+    template <typename Ctx>
+    auto format(const fast_alloc::logging::detail::MembersArg<V>& arg, Ctx& ctx) const
+    {
+        namespace detail = fast_alloc::logging::detail;
+        if constexpr (detail::is_listed<V>)
+        {
+            return detail::put_list(ctx.out(), *arg.v);
+        }
+        else
+        {
+            auto out   = ctx.out();
+            *out++     = '{';
+            bool first = true;
+            out        = detail::put_fields(std::move(out), *arg.v, first);
+            *out++     = '}';
+            return out;
+        }
+    }
+};
+#endif
 
 /// @brief Log a message of level @p lvl (error, warn, info, debug, trace) on
 ///        channel @p chan: a std::format string, checked at compile time, and

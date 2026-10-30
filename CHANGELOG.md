@@ -150,6 +150,15 @@ the tag's checksum to the recipe.
 - Every deleted copy / move member under `chunk/` gives its reason
   (`= delete("...")`, C++26): copying `AllTypeChunk`, a scope guard or a
   manager now says why in the compiler error. No behaviour change.
+- The log and the invariant messages (`fmt_arg`, `log_core.h`; `value_repr()`
+  of the `operator<<` diagnostics) print a value with no `std::formatter`
+  member by member, by C++26 reflection, where they printed its bytes in hex:
+  `{id: 4, z: (1-2i), at: {x: 0.5, y: -3}, secret: 9}` -- bases' members
+  first, private ones included, each member by the same rules, an array of
+  structs as `[...]`. Still written straight into the stack buffer: no
+  allocation, cut with `...`. A union, a class holding one (an anonymous union
+  included) and an enum stay in hex; a `std::formatter` of the type's own still
+  comes first. Checked by `log_validation` (check 10).
 
 ### Fixed (cpp26)
 
