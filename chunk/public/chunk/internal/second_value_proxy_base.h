@@ -364,8 +364,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      * @param second_val The second constant value to compare against.
      * @return true if the write is worth the marking path.
      */
-    [[nodiscard]] bool
-    passes_mark_pre_check(InT<T> new_value, InT<T> first_value, InT<T> second_val) const noexcept;
+    [[nodiscard]] bool passes_mark_pre_check(InT<T> new_value, InT<T> first_value, InT<T> second_val) const noexcept;
 
     /**
      * @brief Default pre-check hook (zero_one_value behaviour).
