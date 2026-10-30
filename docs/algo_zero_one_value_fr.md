@@ -566,6 +566,10 @@ les formes `_mt` écrivent dans une session annoncée au compresseur (étapes 3 
 sur `zero_one_value` comme sur les autres variantes. Exclure `zero_one_value` de `internal::raw_fillable_v`, le
 repli envisagé à l'époque, n'est pas nécessaire.
 
+**Octobre 2026 : normalement corrigé.** Les stores directs recomptent les compteurs, les formes
+`_mt` écrivent dans une session annoncée, et `rechunk_validation` comme le mode check du banc
+passent sur les variantes qui échouaient.
+
 ---
 
 ## 11. Variables d'environnement utiles
