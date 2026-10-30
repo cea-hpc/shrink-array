@@ -1,0 +1,171 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
+#
+# The nightly CI: the AArch64 builds too long for a push (ci.yml runs the
+# AArch64 OpenMP check build there). Every night on develop, and on demand on
+# any branch (workflow_dispatch). Two jobs on ubuntu-24.04-arm (4 Neoverse
+# cores, 16 GB), gcc 14, with the check-mode switches:
+#   - the std backend + oneTBB under ThreadSanitizer: the library's own
+#     std::jthread team, the thread-rank registry and the TBB adaptor, seen by
+#     TSan on the weak memory model (ci.yml runs the same on x86);
+#   - the OpenMP _dyn build (run-time chunk sizes, 256 static next to it): the
+#     re-chunk paths, which the per-push builds leave out (CHUNK_BUILD_DYN=OFF).
+# A third job, on x86 (ubuntu-24.04), measures the line coverage of the
+# library (gcov + gcovr): a report, not a gate.
+# The other long builds -- the remaining sanitizers, clang, GenMC itself -- can
+# join here when they are needed.
+
+name: Nightly
+
+on:
+  schedule:
+    # 03:17 UTC, every day: the runs are off the hour (GitHub's queue is
+    # longest on the hour).
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # A schedule runs on the default branch; the development is on develop.
+  # A manual run takes the branch it was started from.
+  NIGHTLY_REF: ${{ github.event_name == 'schedule' && 'develop' || github.ref }}
+
+jobs:
+  # ThreadSanitizer on AArch64. No vm.mmap_rnd_bits sysctl here: the
+  # address-space randomisation TSan refuses is the x86-64 runners' (ci.yml);
+  # the AArch64 kernel's default fits TSan's 48-bit VA layout.
+  arm-std-tsan:
+    name: AArch64, std backend + TBB, ThreadSanitizer
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    env:
+      CC: gcc-14
+      CXX: g++-14
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+      TSAN_OPTIONS: halt_on_error=1 second_deadlock_stack=1
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+      - name: Toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev libtbb-dev
+          g++-14 --version
+          cmake --version
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCHUNK_THREADS=std
+          -DCHUNK_WITH_TBB=ON
+          -DSANITIZER=thread
+          -DCHECK_OPTIM=ON
+          -DCHUNK_STATIC_SIZES=256
+          -DCHUNK_BUILD_DYN=OFF
+      - name: Build and run the validation harnesses (check target)
+        run: cmake --build build --target check
+
+  # The _dyn build under OpenMP on AArch64: the re-chunk paths
+  # (rechunk_validation_*_dyn and the other _dyn harnesses), which the per-push
+  # builds leave out.
+  arm-openmp-dyn:
+    name: AArch64, OpenMP, _dyn
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    env:
+      CC: gcc-14
+      CXX: g++-14
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+      - name: Toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev
+          g++-14 --version
+          cmake --version
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DOMP=ON
+          -DCHECK_OPTIM=ON
+          -DCHUNK_STATIC_SIZES=256
+          -DCHUNK_BUILD_DYN=ON
+      - name: Build and run the validation harnesses (check target)
+        run: cmake --build build --target check
+      - name: GenMC models, native runs
+        run: |
+          targets=$(ninja -C build -t targets all | sed -n 's/^\(formal_native_[a-z_]*\):.*/\1/p' | sort -u)
+          cmake --build build --target $targets
+          ctest --test-dir build -L formal --output-on-failure
+
+  # Line coverage of chunk/ and fast_allocators/ by the validation harnesses:
+  # Debug (-O0, the lines map to the source), OpenMP, 256 + _dyn, gcc 14
+  # --coverage. A report, not a gate: the tests step may fail (under -O0 +
+  # gcov the longest checks -- shrink_bench_*_check, the scale-64-to-tgt
+  # re-chunks -- pass 10 minutes; a test killed on its timeout writes no
+  # .gcda, its lines read uncovered), the report is made all the same.
+  # --merge-lines folds the template instances of a line into one (else a line
+  # counts once per instance); the function count stays per instance.
+  # The summary goes to the run page, the HTML (per file, nested) to an
+  # artifact.
+  coverage:
+    name: x86-64, OpenMP, coverage (gcov)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    env:
+      CC: gcc-14
+      CXX: g++-14
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+      - name: Toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev
+          python3 -m venv "$RUNNER_TEMP/gcovr"
+          "$RUNNER_TEMP/gcovr/bin/pip" install -q gcovr==8.8
+          g++-14 --version
+          cmake --version
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          "-DCMAKE_CXX_FLAGS=--coverage -fprofile-update=atomic"
+          -DCMAKE_EXE_LINKER_FLAGS=--coverage
+          -DOMP=ON
+          -DCHUNK_STATIC_SIZES=256
+          -DCHUNK_BUILD_DYN=ON
+      - name: Build
+        run: cmake --build build
+      - name: Validation harnesses
+        continue-on-error: true
+        run: ctest --test-dir build -j4 -LE examples --timeout 1800 --output-on-failure
+      - name: Coverage report
+        if: always()
+        run: |
+          mkdir -p coverage
+          "$RUNNER_TEMP/gcovr/bin/gcovr" -r . build --gcov-executable gcov-14 -j4 \
+            --merge-lines --merge-mode-functions=separate \
+            --filter 'chunk/' --filter 'fast_allocators/' \
+            --gcov-ignore-errors=no_working_dir_found --gcov-ignore-parse-errors=all \
+            --markdown coverage/coverage.md --html-nested coverage/index.html --txt-summary
+          cat coverage/coverage.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-html
+          path: coverage/
+          retention-days: 14
