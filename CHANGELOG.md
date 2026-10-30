@@ -377,6 +377,14 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `fill_range_mt()`, `copy_range_mt()`, `transform_range_mt()` on a `zero_any` array of an element
+  type without relaxed element access (`std::complex<double>`, the aggregates): a span that did not
+  cover its whole chunk -- the ends of a range off a chunk boundary -- never queued the chunk, even
+  when it completed it uniform, and the chunk stayed materialised for the run. Any uniform span
+  queues it now; the pass drops it if the rest of the chunk differs. The check builds' audit
+  ("never queued for compression") counted 34 to 140 such chunks of `tab_complex` per run of
+  `shrink_bench` at `--divisor 10 --iter_max 1000` on Milan, at every thread count, 1 included;
+  none now. `fill_range_mt_validation` checks the case.
 - `compile_all.sh` no longer loads a hard-coded `gcc/15.2.0`: it loads `gcc/15.2.0` where it exists,
   else the newest `gcc/<ver>` module, for llvm, oneapi, nvhpc and aocc. On a machine without
   15.2.0 the gcc load failed, then the llvm module, which needs a gcc, failed too, and the llvm

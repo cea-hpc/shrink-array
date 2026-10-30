@@ -413,6 +413,12 @@ marquage refusé seulement. Les endroits à changer sont toutes les CAS du drape
 des trois variantes (`zero`, `zero_one_value`, `zero_any` et la validation des motifs de
 `pattern`).
 
+Mesuré : l'audit des builds check (« never queued for compression ») comptait d'abord 34 à
+140 chunks de ce genre par run de `shrink_bench`, à 1 thread aussi -- ce que F6 ne peut pas
+être : ils venaient d'un autre trou, les tranches partielles de `fill_range_mt()` sur
+`std::complex<double>` (corrigé, voir CHANGELOG.md). Sans lui, l'audit n'en compte aucun à 2
+et 4 threads ; les grands nombres de threads restent à mesurer.
+
 ## 9. Limites
 
 - **Fidélité.** Le modèle est une réduction écrite à la main depuis le source : une ligne que le
