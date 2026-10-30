@@ -303,7 +303,7 @@ about 17 at 128.
 
 ![Speedup of the std::thread backend on AMD EPYC 7763 (Milan, 2 × 64 cores), std-oneapi, --multiply 1](docs/images/speedup_milan_std-oneapi_x1.png)
 
-**A fair baseline.** The `std::vector` of these runs (`shrink_bench_vector_*`) is a real
+**A fair baseline.** The `std::vector` of these runs (`shrink_bench_<backend>_vector_*`) is a real
 `std::vector` whose zeroing is parallel
 ([examples/shrink_bench/baseline_vector.h](examples/shrink_bench/baseline_vector.h)). A plain
 `std::vector<T> v(n)` value-initialises its `n` elements on the one thread that constructs it:

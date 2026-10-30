@@ -8,7 +8,9 @@ each run at a random thread count.
 Two ways to name the binaries:
 
   * historical: run it INSIDE a build directory, the binaries are
-    ./shrink_bench_<variant>_<size> in the current directory;
+    ./shrink_bench_<backend>_<variant>_<size> in the current directory
+    (<backend> omp, std or serial, the one the build was made with: the
+    three names are tried, never the old ones without a backend);
 
   * --builds: run it from anywhere (the python/ directory, typically) and give
     it the builds to exercise, either inline or as a file, one name per line:
@@ -61,12 +63,26 @@ except ImportError:
 
     _numa = _types.SimpleNamespace(MODES=("auto", "off"), interleave_prefix=lambda env, mode="auto": [])
 # --exec chunk2a & co.: the old variant labels, read as their new names until 1.0.
+# find_bench_exe: an executable under its name for each backend
+# (shrink_bench_<backend>_<rest>), the one the build holds.
 try:
-    from bench_runner.settings import normalize_variant  # noqa: E402
+    from bench_runner.settings import bench_exe_names, find_bench_exe, normalize_variant  # noqa: E402
 except ImportError:
-    # Copied alone: the new labels only.
+    # Copied alone: the new labels only, and bench_runner's two helpers as they are.
     def normalize_variant(label, warn=None):
         return label
+
+    def bench_exe_names(rest):
+        if rest.startswith("tbb_"):
+            return ["shrink_bench_" + rest]
+        return ["shrink_bench_%s_%s" % (b, rest) for b in ("omp", "std", "serial")]
+
+    def find_bench_exe(directory, rest):
+        for name in bench_exe_names(rest):
+            path = os.path.join(directory, name)
+            if os.path.isfile(path) and os.access(path, os.X_OK):
+                return path
+        return None
     print(f"[{os.path.basename(__file__)}] numa_launch.py not found next to the script: "
           "--numa-interleave has no effect", file=sys.stderr)
 
@@ -165,7 +181,7 @@ parser.add_argument("--only-checksum", action="store_true",
                          "locating the element: rebuild a full reference to diagnose it.")
 
 # ⭐ Selection = VARIANTS x SIZES. Binaries are named
-#   shrink_bench_<variant>[_<size>]  with size in 64/256/1024/dyn, run
+#   shrink_bench_<backend>_<variant>[_<size>]  with size in 64/256/1024/dyn, run
 #   with --mode check,
 #   plus a bare 'default' declination with no suffix (compile-time default).
 # Both options accept a comma-separated list or 'all', so subsets compose:
@@ -309,14 +325,22 @@ if not no_io:
 # unless the whole selection ends up empty).
 # The check mode is no longer in the binary's NAME: check and perf are one
 # executable since they were merged, and the mode is chosen at run time with
-# --mode (see bench_config.h). Hence shrink_bench_<variant>[_<size>] here, and
-# MODE_ARGS added to every launch below.
+# --mode (see bench_config.h). Hence shrink_bench_<backend>_<variant>[_<size>]
+# here, and MODE_ARGS added to every launch below.
 MODE_ARGS = ["--mode", "check"]
 
 
-def _binary_name(variant, size):
+def _binary_rest(variant, size):
+    """The name of a binary after its shrink_bench_<backend>_: <variant>[_<size>]."""
     suffix = "" if size == "default" else f"_{size}"
-    return f"./shrink_bench_{variant}{suffix}"
+    return f"{variant}{suffix}"
+
+
+def _shown(config, rest):
+    """A binary not found, as reported: its names for each backend."""
+    names = bench_exe_names(rest)
+    shown = names[0] if len(names) == 1 else "shrink_bench_{omp,std,serial}_" + rest
+    return f"{config}/{shown}" if config else f"./{shown}"
 
 
 def _read_builds(spec):
@@ -361,17 +385,18 @@ def _select_in_cwd():
     found, missing = [], []
     for v in variants:
         for sz in sizes:
-            exe = _binary_name(v, sz)
-            if os.path.isfile(exe):
+            exe = find_bench_exe(".", _binary_rest(v, sz))
+            if exe:
                 found.append(exe)
             elif v in _TBB_VARIANTS and not _tbb_named:
-                _tbb_absent.append(exe)
+                _tbb_absent.append(_shown("", _binary_rest(v, sz)))
             else:
-                missing.append(exe)
+                missing.append(_shown("", _binary_rest(v, sz)))
     return found, missing
 
 
-VECTOR_CHECK = "./shrink_bench_vector_check"
+# ./shrink_bench_<backend>_vector_check, whichever backend the build has (None: none).
+VECTOR_CHECK = find_bench_exe(".", "vector_check")
 
 
 def _select_in_build(build_root, config):
@@ -385,9 +410,9 @@ def _select_in_build(build_root, config):
             if exe:
                 found.append(exe)
             elif v in _TBB_VARIANTS and not _tbb_named:
-                _tbb_absent.append(f"{config}/shrink_bench_{v}_{sz}")
+                _tbb_absent.append(_shown(config, f"{v}_{sz}"))
             else:
-                missing.append(f"{config}/shrink_bench_{v}_{sz}")
+                missing.append(_shown(config, f"{v}_{sz}"))
     return found, missing
 
 
@@ -443,9 +468,9 @@ else:
     builds = [""]
     executables_of = {"": found}
     ref_dir_of[""] = None  # the current directory
-    vector_of[""] = VECTOR_CHECK if os.path.isfile(VECTOR_CHECK) else None
+    vector_of[""] = VECTOR_CHECK
     if args.regen_ref and vector_of[""] is None:
-        sys.exit(f"❌ --regen-ref: {VECTOR_CHECK} not found in {os.getcwd()}")
+        sys.exit(f"❌ --regen-ref: no ./shrink_bench_{{omp,std,serial}}_vector_check in {os.getcwd()}")
     print(f"🎯 {len(found)} binary(ies) selected: {', '.join(e.lstrip('./') for e in found)}")
     if _tbb_absent:
         print(f"ℹ️ no TBB bench here ({len(_tbb_absent)} tbb_* binary(ies) not built): skipped")

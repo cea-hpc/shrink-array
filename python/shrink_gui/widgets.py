@@ -361,7 +361,7 @@ def split_list(value):
 
 def families(names, sep):
     """Globs naming at least two of @p names, from their last and first
-    @p sep-separated component: shrink_bench_zero_64, shrink_bench_zero_one_value_64
+    @p sep-separated component: shrink_bench_omp_zero_64, shrink_bench_omp_zero_one_value_64
     -> "*_64"; omp-llvm, omp-llvm-debug -> "omp-llvm*". {glob: count}."""
     out = {}
     for n in names:

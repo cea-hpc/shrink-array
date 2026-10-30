@@ -312,7 +312,7 @@ threads et retombe vers 17 à 128.
 
 ![Speedup du backend std::thread sur AMD EPYC 7763 (Milan, 2 × 64 cœurs), std-oneapi, --multiply 1](docs/images/speedup_milan_std-oneapi_x1.png)
 
-**Une référence équitable.** Le `std::vector` de ces mesures (`shrink_bench_vector_*`) est un
+**Une référence équitable.** Le `std::vector` de ces mesures (`shrink_bench_<backend>_vector_*`) est un
 vrai `std::vector`, dont la mise à zéro est parallèle
 ([examples/shrink_bench/baseline_vector.h](examples/shrink_bench/baseline_vector.h)). Un
 `std::vector<T> v(n)` ordinaire initialise ses `n` éléments sur le seul thread qui le

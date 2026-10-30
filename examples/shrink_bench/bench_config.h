@@ -341,7 +341,7 @@ inline void check_size_limits(double multiplier, double divisor, Int iter_max)
     }
     std::cerr << "       Beyond that the bench and the library (IntType = Int) need 64-bit indices:\n"
                  "       rebuild with -DSHRINK_BENCH_INT64=ON and run the int64 executable\n"
-                 "       (shrink_bench_<variant>_int64_<1024|dyn>, perf only).\n";
+                 "       (shrink_bench_<backend>_<variant>_int64_<1024|dyn>, perf only).\n";
     std::exit(1);
 }
 

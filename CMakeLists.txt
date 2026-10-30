@@ -712,7 +712,7 @@ endif()
 
 # ── Intel libm for GNU / Clang builds on x86-64 ─────────────────────────────
 # RHEL 8's glibc libm is old and slow on cos/sin/atan/tan, which the benches'
-# compute phases live in: AMD Milan, GNU, shrink_bench_zero_any_256, 64 threads,
+# compute phases live in: AMD Milan, GNU, shrink_bench_omp_zero_any_256, 64 threads,
 # 15.70 s -> 12.41 s with libimf (same seed, same long_val_sum). icpx links
 # libimf itself; other compilers get it here when it is found. Every
 # executable of the build uses the same libm, so check-mode comparisons within
@@ -798,7 +798,7 @@ endif()
 # ── ArmPL's libamath for GNU / Clang builds on aarch64 ──────────────────────
 # Arm's optimised libm (armpl module, free), linked ahead of glibc's: the
 # benches' compute phases live in cos/sin/atan/tan (the x86-64 counterpart,
-# libimf, took shrink_bench_zero_any_256 from 15.70 s to 12.41 s on AMD Milan,
+# libimf, took shrink_bench_omp_zero_any_256 from 15.70 s to 12.41 s on AMD Milan,
 # GNU). NVHPC is left alone: it links its own optimised math library.
 # SHRINK_ARM_LIBM is OFF by default: measured on Grace (clang 22, 64 threads,
 # same seed, RHEL 9.6 glibc vs armpl 25.07), zero_any_dyn 8.30 -> 8.12 s,

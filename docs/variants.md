@@ -76,7 +76,7 @@ of the run:
 | `zero_any` | 7.26 GB | **6.0 GB** |
 | `zero_one_value` | 17.3 GB | **16.3 GB** |
 | `zero` | 40.2 GB | 40.3 GB (and 39.7 GB in static 1,024, the size it reaches) |
-| `std::vector` (`shrink_bench_vector_perf`) | 125.9 GB | — |
+| `std::vector` (`shrink_bench_omp_vector_perf`) | 125.9 GB | — |
 
 The dynamic geometry gives a clear gain for `zero_one_value` and `zero_any`. For `zero`, whose memory is
 mostly data, it breaks even with static 256: see the known limits

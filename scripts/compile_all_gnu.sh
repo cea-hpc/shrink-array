@@ -88,7 +88,9 @@ while [[ $# -gt 0 ]]; do
             ;;
         --exec=*)
             # Build only the Ninja target(s) matching it inside each selected
-            # build dir, e.g. --exec=shrink_bench_zero_64, --exec='*_dyn', or a
+            # build dir, e.g. --exec='shrink_bench_*_zero_256' (the bench
+            # executables carry their backend: shrink_bench_omp_zero_256 in
+            # an OpenMP build, shrink_bench_std_ / _serial_ elsewhere), --exec='*_dyn', or a
             # comma-separated list of both. Combine with
             # --target=<glob> to also restrict WHICH build dirs are configured.
             export CHUNK_BUILD_EXEC="${1#*=}"
