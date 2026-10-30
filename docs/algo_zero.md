@@ -45,11 +45,39 @@ read from the chunk's buffer or from `cst_val1`, after the read barrier.
 
 The write goes through the `Proxy<T>` proxy:
 
-- writing **zero** into a compressed chunk: nothing to do;
+- writing **zero** into a compressed chunk: nothing to do, unless a deferred write is pending on
+  the chunk (`pending_any()`): the write then goes through the engine;
 - writing **another value** into a compressed chunk: the chunk is **materialised** (a
-  buffer taken from the thread's reuse list or allocated, pre-filled with zeros, published
-  by CAS), then the value is written;
+  buffer taken from the thread's reuse list, already zero since a chunk is only compressed when
+  all-zero, or newly allocated and zero-filled; published by CAS), then the value is written;
 - writing into a materialised chunk: a plain write.
+
+The course of a write in an OpenMP build: the engine steps are those of §7.2 of
+[algo_zero_one_value.md](algo_zero_one_value.md), compressed here; the rest is what `zero` does
+in its own way.
+
+```mermaid
+flowchart TD
+    A["zero::Proxy::assign_impl"] --> B{"0 on a compressed chunk,<br/>no deferred operation pending?<br/>(is_cst_val_and_v_equal_zero)"}
+    B -->|yes| B1["nothing to do"]
+    B -->|no| C["engine of 7.2 (write_with_optional_lock):<br/>set_info_on_chunk, deferred operations,<br/>wait_out_compressor, announce_write"]
+    C --> D{"re-check:<br/>compressor?"}
+    D -->|yes| D1["end_write + DEFERRED write<br/>(lbd_equal_asynch)"]
+    D -->|no| E["body lbd_equal_core: read old_value<br/>BEFORE any materialisation"]
+    E --> F{"chunk at cst_val1?<br/>(perform_core_assignment)"}
+    F -->|yes| G["create_value: buffer from the reuse list,<br/>already zero, or new and zero-filled,<br/>CAS cst_val1 -> buffer, a lost CAS recycles it"]
+    F -->|no| H
+    G --> H["store_value_at"]
+    H --> I{"old != 0 and new == 0, or element<br/>changed by another writer?<br/>(mark_for_compression_core)"}
+    I -->|yes| J["add_to_compression_list:<br/>queue_flag::try_queue, then push"]
+    I -->|no| K
+    J --> K["end_write + housekeeping of 7.2<br/>(trigger_compression_if_needed)"]
+```
+
+In sequential builds there is no engine and no candidate list: `assign_impl` maintains the zero
+counter itself (`inc_nb_val_eq_zero`, `dec_nb_val_eq_zero`), compresses the chunk at once when
+it becomes all-zero (`manage_full_zero`), and otherwise materialises it (`create_value`) and
+stores directly.
 
 ## 4. When a chunk becomes a compression candidate
 
@@ -77,14 +105,40 @@ When a thread's list exceeds the trigger threshold (§6), a
 2. each candidate is **reserved** (`steal_mark`), before the compression window
    opens (`CompressionManager::start()`), whose barrier publishes the reservations;
 3. `fill_list_to_compress` re-reads each candidate and keeps only those that are **entirely
-   zero**;
+   zero**; the others are unmarked at once, and every scanned candidate's queue flag is handed
+   back (`queue_flag::hand_back`);
 4. each of these is compressed (`clear_int_st`: `values` goes back to `cst_val1` by CAS, and
-   the buffer joins the reuse list);
-5. the reservations are released and the "already in list" bytes are reset to zero.
+   the buffer joins the reuse list after the read sections' grace period);
+5. the remaining reservations are released, then the queue flags (`queue_flag::release`): a
+   candidate written meanwhile is queued again, and so is the chunk of the write that triggered
+   the pass if it is materialised.
 
 A candidate list mixes the chunks of **all the arrays** of the same type, which
 can have different sizes after a rechunk: each chunk is compressed with
 **its own** number of elements, carried by the list entry.
+
+The course of the pass, in the style of §8.4 of [algo_zero_one_value.md](algo_zero_one_value.md):
+
+```mermaid
+flowchart TD
+    A["perform_compression: flush_deferred,<br/>then make_block_compression"] --> B{"flush in progress?<br/>(block_pass_yields_to_flush)"}
+    B -->|yes| B1["give up, nothing marked"]
+    B -->|no| C["steal_mark every candidate"]
+    C --> D{"CompressionManager::start"}
+    D -->|declined| D1["steal_unmark all, give up"]
+    D -->|accepted| E["fill_list_to_compress at the entry's n_elems:<br/>written and is_constant_to 0?<br/>then queue_flag::hand_back"]
+    E -->|yes| F["list ll_compt"]
+    E -->|no| G["steal_unmark at once"]
+    F --> H["clear_int_st: CAS values -> cst_val1,<br/>free_block_to_pool after a grace period,<br/>steal_unmark"]
+    H --> I["each candidate: steal_unmark, then queue_flag::release:<br/>written meanwhile -> queued again"]
+    G --> I
+    I --> J["trigger's chunk queued again if materialised,<br/>finish()"]
+```
+
+What differs from `zero_one_value`: one candidate list per rank
+(`chunk_to_compress_potentially_thr`), not one per second value, and a single target constant,
+hence a single output list. Sequential builds have no pass (`make_block_compression` is empty
+there): the zero counter compresses (§4).
 
 ## 6. The trigger threshold
 

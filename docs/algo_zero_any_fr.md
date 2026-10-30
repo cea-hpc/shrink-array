@@ -114,21 +114,90 @@ chaque élément au premier élément du chunk) :
   `find_or_set_ind_cst_val2` enregistre la valeur et rend le tableau partagé, que
   `clear_int_st` installe par CAS comme pointeur `values` du chunk.
 
-Le tampon libéré rejoint la liste de réutilisation du thread. Le seuil de déclenchement vaut
+Le tampon libéré rejoint la liste de réutilisation du thread après la période de grâce des
+sections de lecture. Le seuil de déclenchement vaut
 `somme_chunk_create / (50 × nombre de threads)`, avec un plancher de 500 candidats (constantes de
 `zero_any_chunk_def.h`).
+
+Le déroulé de la passe, dans le style du §8.4 de [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md) :
+
+```mermaid
+flowchart TD
+    A["perform_compression : flush_deferred,<br/>puis make_block_compression"] --> B{"vidage en cours ?<br/>(block_pass_yields_to_flush)"}
+    B -->|oui| B1["renoncer, rien n'est marqué"]
+    B -->|non| C["steal_mark de chaque candidat"]
+    C --> D{"CompressionManager::start"}
+    D -->|refusé| D1["steal_unmark de tous, renoncer"]
+    D -->|accepté| E["fill_list_to_compress à la taille de l'entrée :<br/>scan_constants contre 0 et l'élément 0"]
+    E -->|"tout = 0"| F["liste ll_compt1"]
+    E -->|"tout = élément 0"| G["liste ll_compt2"]
+    E -->|"sinon"| N["steal_unmark tout de suite"]
+    F --> F1["clear_int_st, type 0 : case remise à zéro,<br/>type cst_val1, CAS values -> cst_val1"]
+    G --> G1["find_or_set_ind_cst_val2 : valeur enregistrée,<br/>écrite dans la case, puis clear_int_st, type 1 :<br/>CAS values -> le tableau du registre"]
+    F1 --> R["free_block_to_pool après une période de grâce,<br/>steal_unmark"]
+    G1 --> R
+    R --> K["drapeaux de file : hand_back après le parcours, release à la fin,<br/>écrit entre-temps -> remis en liste,<br/>chunk déclencheur remis en liste, finish()"]
+    N --> K
+```
+
+Ce qui diffère de `zero_one_value` : une liste de candidats par rang
+(`get_chunk2a_to_compress_potentially`), et non une par seconde valeur ; la seconde constante est
+l'élément 0 du chunk, enregistré seulement à ce moment ; les métadonnées du chunk (case, type)
+sont écrites **avant** le CAS (`block_clear_common`). Les builds séquentiels exécutent la même
+passe, sans les marques et sans `start` / `finish`.
 
 ## 6. L'écriture
 
 Le chemin d'écriture est celui de `zero_one_value` (§6 de [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md)), à
-une différence près : la seconde valeur à comparer est celle **du chunk**, lue dans sa ligne
-de métadonnées, et non celle du tableau. Écrire dans un chunk compressé une valeur différente
-de sa constante le matérialise, pré-rempli avec **cette constante**.
+ces différences près :
+
+- la seconde valeur à comparer est celle **du chunk**, lue dans sa ligne de métadonnées, et non
+  celle du tableau ;
+- pas de raccourci de seconde valeur avant le moteur : écrire la seconde valeur du chunk est sans
+  effet dans le corps de l'écriture, quand le chunk y est compressé (`handle_no_bool_assignment`)
+  ou que l'élément la tient déjà (`perform_core_assignment`) ;
+- le chunk est marqué **avant** l'écriture (`mark_for_compression_before_store`), selon les
+  critères du §4 ;
+- écrire dans un chunk compressé une valeur différente de sa constante le matérialise,
+  pré-rempli avec **cette constante**, derrière `wait_before_materialise` ;
+- en build séquentiel, le moteur appelle `perform_compression` après chaque écriture ; elle ne
+  fait rien sous la moitié du seuil de déclenchement.
 
 Le proxy trouve les lignes de métadonnées du chunk par le numéro du tableau. Une variante
 « armée », où l'`operator[]` d'écriture donnait directement au proxy les adresses des lignes,
 a été retirée : son gain (~0,4 % sur `shrink_bench_omp_zero_any_256` à 64 threads) ne justifiait pas
 l'invariant de resynchronisation qu'elle imposait à chaque réallocation des lignes.
+
+Le déroulé d'une écriture dans un build OpenMP : les étapes du moteur sont celles du §7.2 de
+[algo_zero_one_value_fr.md](algo_zero_one_value_fr.md), résumées ici ; le reste est ce en quoi
+`zero_any` diffère (pour `bool`, `handle_bool_assignment` joue le même rôle, avec `true` comme
+seconde valeur).
+
+```mermaid
+flowchart TD
+    A["zero_any::ProxyImpl::assign_impl"] --> B{"0 sur un chunk à cst_val1,<br/>aucune opération différée en attente ?<br/>(is_cst_val1_and_v_equal_first_value)"}
+    B -->|oui| B1["rien à faire"]
+    B -->|non| C["moteur du 7.2 (write_with_optional_lock_with_set_ptr) :<br/>opérations différées, wait_out_compressor,<br/>announce_write"]
+    C --> D{"revérification :<br/>compresseur ?"}
+    D -->|oui| D1["end_write + écriture DIFFÉRÉE<br/>(lbd_equal_asynch)"]
+    D -->|non| E["corps handle_no_bool_assignment :<br/>charger values, armer la case de seconde valeur du chunk"]
+    E --> F{"chunk à sa seconde valeur<br/>et valeur = celle-ci ?"}
+    F -->|oui| F1["rien à faire"]
+    F -->|non| G{"AVANT l'écriture : une constante écrite<br/>sur autre chose, ou découverte / départ<br/>qui passe may_become_uniform ?"}
+    G -->|oui| G1["add_to_compression_list"]
+    G -->|non| H
+    G1 --> H{"perform_core_assignment :<br/>état du chunk ?"}
+    H -->|"élément déjà = valeur = seconde valeur"| K
+    H -->|"cst_val1"| H1["create_value : pré-rempli de 0,<br/>CAS contre cst_val1"]
+    H -->|"seconde valeur"| H2["create_value : pré-rempli avec la seconde<br/>valeur du chunk, CAS contre elle"]
+    H -->|"matérialisé"| I
+    H1 --> I["store_value_at"]
+    H2 --> I
+    I --> K["end_write + entretien du 7.2<br/>(trigger_compression_if_needed)"]
+```
+
+`wait_before_materialise` rend la main tout de suite sur ce chemin (le drapeau de l'écrivain
+lui-même est sur le chunk), et un CAS perdu dans `create_value` recycle le tampon.
 
 ## 7. Ce que `zero_any` fait autrement pendant un rechunk
 
