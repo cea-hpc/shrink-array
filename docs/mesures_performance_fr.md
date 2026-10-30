@@ -13,7 +13,7 @@
 ### 1.1 `VmRSS` est faux à plusieurs threads
 
 `VmRSS` (`/proc/self/status`), `/proc/self/statm` et `ru_maxrss` (`getrusage`) lisent les
-compteurs de mémoire résidente du noyau. Ces compteurs sont tenus **par thread**, et reportés
+compteurs de mémoire résidente du noyau. Ces compteurs sont tenus **par thread**, et répercutés
 dans le total du processus seulement de temps en temps. Avec 64 threads qui font des défauts
 de page, le total prend du retard. Mesuré sur `shrink_bench_omp_zero_any_dyn` :
 
@@ -159,8 +159,8 @@ que `zero`, après son rechunk, n'occupait plus que ~40 cœurs au lieu de ~52.
 `python/bimodal_probe.py` lance N fois le même binaire et relève, pour chaque run, les pages par
 nœud NUMA, AnonHugePages, la mémoire libre et les blocs libres d'ordre maximal de chaque nœud
 avant le run, et les compteurs perf pour mille instructions (parcours de TLB, recharges L1D / L2,
-accès distants). Il coupe les runs au plus grand écart de temps et dit quelles grandeurs séparent
-les deux groupes. `--mode` alterne des environnements (`--mode "" --mode "CHUNK_RECLAIM_THREADS=0"`,
+accès distants). Il sépare les runs en deux groupes au plus grand écart de temps et indique quelles
+grandeurs les distinguent. `--mode` alterne des environnements (`--mode "" --mode "CHUNK_RECLAIM_THREADS=0"`,
 `--mode "numactl --membind=0"`).
 
 ```

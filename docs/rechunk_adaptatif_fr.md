@@ -140,7 +140,7 @@ mesure à données constantes et la possibilité de revenir en arrière.
 **`zero`** reconstruit **par tranches** (16) et libère
 chaque ancien chunk dès qu'il est recopié. Entre deux tranches, les réserves de l'ancienne
 taille sont vidées et les slabs vidés rendus au système, y compris dans la **réserve
-partagée** quand l'ancien stockage s'y trouve : sans ça, la mémoire de l'ancien stockage
+partagée** quand l'ancien stockage s'y trouve : sans cela, la mémoire de l'ancien stockage
 restait acquise jusqu'à la fin de la reconstruction (sur `rechunk_validation`, pic de la
 reconstruction 78 → 22 Mo). Mesuré sur `zero` à 64 threads : pic de +6,9 Go en une passe,
 +1,7 Go avec 16 tranches.
@@ -220,21 +220,21 @@ se limite aux reconstructions.
   2 000 itérations, `diag_zero_rechunk_slowdown.py`) : +17 % par itération après le
   passage à 1 024. Inchangé avec une seule tranche, une reconstruction en
   ordonnancement statique, sans recyclage des slabs, sans réutilisation de
-  `chunk_list_`, en affinité lazy ; le placement NUMA est équilibré comme celui du
+  `chunk_list_`, en affinité paresseuse ; le placement NUMA est équilibré comme celui du
   statique. L'essentiel venait de l'advisor : ses analyses continuaient à chaque
   passage une fois la géométrie stabilisée, et leurs parties séquentielles
   faisaient attendre les autres threads (__kmp_fork_barrier). Avec
   `max_backoff_ticks` (même nœud, `OMP_PROC_BIND=close`, 4 000 itérations, dernier
   rechunk à l'itération 1 700) : +22 % -> **+7 %**. Le reste est un va-et-vient de
-  compression que le statique n'a pas (~15 000 buffers libérés par itération contre
+  compression que le statique n'a pas (~15 000 tampons libérés par itération contre
   aucun), encore inexpliqué.
 - **Le modèle est statique.** L'advisor juge sur l'état présent des chunks, pas sur les
   écritures à venir. Sur ce banc, les matérialisations passagères mesurées ne pèsent pas
-  (la ligne `churn` de `CHUNK_LOG=rechunk=debug`), mais une charge qui écrit beaucoup dans des zones constantes
+  (la ligne `churn` de `CHUNK_LOG=rechunk=debug`), mais un calcul qui écrit beaucoup dans des zones constantes
   pourrait faire regretter un grossissement : c'est le rôle de l'apprentissage
   (`coarsen_trust_ratio`) et de l'anti-retour.
 - **Le rechunk des tableaux de booléens** n'est validé que pour `ArrayChunkBits`
   (`bits_container_validation`, `zero_one_value` en dyn) ; `zero_one_value::Array<bool>` et `zero_any::Array<bool>`
-  n'ont pas de harnais, et le banc ne confie pas `tab_bool` au décideur.
+  n'ont pas de test de validation, et le banc ne confie pas `tab_bool` au décideur.
 - **Le pic reste celui du départ** : un run dynamique qui part de 64 atteint d'abord la
   mémoire du statique 64, puis descend.

@@ -38,7 +38,7 @@ cas réel.
 
 ## 2. Installer
 
-Avec Spack, la recette est dans le dépôt : voir [le README](../README_fr.md#avec-spack)
+Avec Spack, la recette est dans le dépôt : voir [le README](../README_fr.md#installer)
 (`spack install shrink-array`). Depuis les sources, avec un compilateur C++20 (essayé avec
 GCC 13 et 14 et Clang 18 ; les scripts de compilation couvrent aussi oneAPI, AOCC et NVHPC ;
 la branche `cpp23` demande le C++23, GCC 14 ou plus récent ; la branche `cpp26`, GCC 16 et
@@ -53,7 +53,7 @@ cmake --build build
 cmake --install build
 ```
 
-Les options qui comptent pour un utilisateur :
+Les options utiles à l'utilisateur :
 
 | option | défaut | effet |
 |---|---|---|
@@ -66,8 +66,8 @@ Les options qui comptent pour un utilisateur :
 La première compilation construit aussi les exemples et le banc, ce qui prend un moment. Pour
 ne construire que les bibliothèques, configurer avec `-DSHRINK_ARRAY_BUILD_EXAMPLES=OFF`, ou
 donner leurs cibles à `cmake --build` (`--target chunk_zero_any_256 ...`) avant `cmake --install`.
-Intégré à un autre projet par `add_subdirectory` ou `FetchContent`, seules les bibliothèques
-sont construites.
+Quand le projet est intégré à un autre par `add_subdirectory` ou `FetchContent`, seules les
+bibliothèques sont construites.
 
 Avec Clang ou oneAPI, un build OpenMP utilise aussi l'interface **OMPT** du runtime, ce qui
 dispense le programme des appels de phase du §5.
@@ -102,7 +102,7 @@ Lier **une seule** bibliothèque de variante par programme, et écrire **la clas
 variante** : `zero_any::Array<T>` avec `chunk::chunk_zero_any`. La classe écrite est celle que l'on
 obtient -- un programme qui nomme `zero_any::Array` la garde quelle que soit la bibliothèque --,
 et un tableau d'une autre variante que celle de la bibliothèque n'est pas pris en charge :
-selon les appels, il ne compile pas ou il plante. Pour que l'édition de liens choisisse,
+selon les appels, il ne compile pas ou il plante. Pour laisser l'édition de liens choisir,
 passer par un alias sur la variante que la bibliothèque définit (`examples/shrink_bench` et
 `examples/simple_array` le font) :
 
@@ -131,8 +131,8 @@ vérifier ce que contient l'installation.
 ## 4. Un premier programme, parallèle et multi-thread
 
 C'est [`examples/getting_started/getting_started.cpp`](../examples/getting_started/getting_started.cpp),
-raccourci. Le répertoire contient aussi le `CMakeLists.txt` du §3 : il se construit contre une
-installation comme dans l'arbre des sources.
+raccourci. Le répertoire contient aussi le `CMakeLists.txt` du §3 : il se construit aussi bien avec une
+installation que dans l'arbre des sources.
 
 ```cpp
 #include <cstdio>
@@ -183,7 +183,7 @@ int main()
 3. **`parallel_phase()`** ouvre une région parallèle et exécute la lambda sur chaque thread.
    Sans OMPT (§5), il marque aussi la phase pour la bibliothèque : `begin_parallel_phase()` sur
    chaque thread avant la lambda, `finalize_parallel_phase()` après la région. Avec OMPT, et
-   dans un build séquentiel, ces deux appels ne compilent rien.
+   dans un build séquentiel, ces deux appels ne génèrent aucun code.
 4. **La lecture** : sur un tableau `const`, `operator[]` rend un `T`. Sur un tableau non
    constant, il rend un *proxy* (§6).
 5. **`shrink_to_fit()`** lance une passe de compression complète, hors région parallèle. Il
@@ -264,15 +264,15 @@ shrink_array::finalize_parallel_phase();      // une fois, après la région
 
 Si on les oublie, rien n'échoue tout de suite. Avec la même équipe d'une région à l'autre, les
 valeurs restent justes, mais les passes de compression entre régions n'ont pas lieu : la
-mémoire reste plus haute qu'elle ne devrait. Quand la taille de l'équipe change d'une région à
+mémoire reste plus élevée qu'elle ne devrait. Quand la taille de l'équipe change d'une région à
 l'autre, un `finalize_parallel_phase()` oublié applique une écriture différée déjà libérée, et
 si les deux appels sont oubliés, des valeurs sont fausses, sans message. Le programme
 s'arrête, dans tous les builds, sur un `begin_parallel_phase()` sans
 `finalize_parallel_phase()` depuis la région précédente ; les builds de contrôle (Debug,
 `CHECK_OPTIM`) s'arrêtent aussi sur une écriture différée par un thread qui n'a pas appelé
-`begin_parallel_phase()`. Les écrire derrière
-`if constexpr (sa::build_config::has_not_ompt)`, comme ci-dessus, garde un seul source pour les deux
-runtimes.
+`begin_parallel_phase()`. Placer ces appels sous
+`if constexpr (sa::build_config::has_not_ompt)`, comme ci-dessus, permet de garder un seul source
+pour les deux runtimes.
 
 `shrink_array::parallel_phase()` écrit la région et les deux appels à votre place, et les omet
 sous OMPT :
@@ -286,7 +286,7 @@ shrink_array::parallel_phase([&] {            // ou parallel_phase(n_threads, [&
 ```
 
 Avec OMPT, si le runtime n'a pas chargé l'outil de la bibliothèque (`OMP_TOOL=disabled`, un
-autre outil trouvé d'abord), les phases n'ont jamais lieu. La bibliothèque l'écrit sur stderr ;
+autre outil trouvé d'abord), les phases n'ont jamais lieu. La bibliothèque le signale sur stderr ;
 `CHUNK_REQUIRE_OMPT=1` arrête alors le programme.
 
 Avec OMPT, on peut aussi n'écrire aucune phase : de simples boucles `#pragma omp parallel for`,
@@ -311,7 +311,7 @@ un thread au-delà de la capacité arrête le programme avec un message.
 les registres de types d'éléments, les allocateurs, le registre des secondes valeurs de `zero_any`,
 les structures par thread et leur capacité, les réglages du log, et la phase. Deux parties d'un
 programme qui l'utilisent sans se connaître -- votre code et une bibliothèque construite sur
-shrink-array, par exemple -- partagent tout cela. Ce que cela leur demande :
+shrink-array, par exemple -- partagent tout cela, ce qui impose quelques règles :
 
 - **Une phase à la fois.** Les files par thread sont indexées par le rang dans l'équipe, et la
   fin d'une phase vide la file de chaque rang. Deux équipes OpenMP de premier niveau qui écrivent
@@ -334,10 +334,10 @@ shrink-array, par exemple -- partagent tout cela. Ce que cela leur demande :
   laisse intacts les tableaux déjà construits). `release_chunk_pools()` et `destroy_block_chunk()`
   vident les listes libres de tout le monde (un tableau encore vivant garde ce qu'il lui faut) :
   une fois, à la fin du programme, ou pas du tout. `reclaim_second_values()` couvre tous les
-  tableaux d'un type ; `CHUNK_LOG` et `logging::set_sink()` sont un seul réglage pour tous.
+  tableaux d'un type ; `CHUNK_LOG` et `logging::set_sink()` sont des réglages communs à tous.
 
 **Sans OpenMP : vos propres threads, TBB.** Une bibliothèque construite avec
-`CHUNK_THREADS=std` fait tourner son propre travail sur un pool de `std::jthread` et accepte les
+`CHUNK_THREADS=std` exécute son travail interne sur un pool de `std::jthread` et accepte les
 écritures de n'importe quel thread du programme : `std::thread`, TBB, un pool de threads à vous.
 Les phases sont alors toujours explicites : chaque thread qui écrit appelle
 `begin_parallel_phase()` avant sa première écriture, et **un seul** thread appelle
@@ -378,7 +378,7 @@ les threads d'OpenMP : pour les autres, utilisez le backend std.
 - **`auto` garde un proxy.** Sur un tableau non constant, `tab[i]` rend un proxy d'écriture.
   `T v = tab[i];` prend la valeur ; `auto v = tab[i];` garde le proxy, qui suit l'élément s'il
   change ensuite. Dans du code venu d'un `std::vector`, remplacer `auto` par le type de
-  l'élément. Tout build refuse de compiler un usage d'un tel `v`, et le dit.
+  l'élément. Tous les builds refusent de compiler l'utilisation d'un tel `v`, avec un message explicite.
 - **Convertir un élément avant de le transmettre.** `std::printf("%f", tab[i])` passerait le
   proxy, pas la valeur : refusé (GCC par `-Werror=conditionally-supported`, que pose la
   bibliothèque ; clang toujours). `std::format("{}", tab[i])`, `std::max(tab[i], 2.0)` et une
