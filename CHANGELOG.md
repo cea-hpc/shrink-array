@@ -50,6 +50,8 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
+## 0.2.0 -- 2026-10-30
+
 ### Added
 
 - `CHUNK_BREAK_ON_FAILURE`: under a debugger (gdb, cuda-gdb, gdbserver, lldb, lldb-server, read
@@ -144,6 +146,10 @@ the tag's checksum to the recipe.
   all of them (`docs/shrink_gui.md`, section 3).
 
 ### Changed
+
+- The version is 0.2.0. Before 1.0 the installed package declares `SameMinorVersion`:
+  `find_package(chunk 0.1)` does not find it, ask for `find_package(chunk 0.2)` (the README,
+  getting_started and examples/getting_started do).
 
 - The decider's "[RECHUNK-LEARN]" line, written to stdout when a coarsening
   freed less than the model predicted and is disabled for that array, is a
