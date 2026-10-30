@@ -30,7 +30,7 @@
 
 extern Dispatch dispatch;
 
-/// @brief What every per-material array has: its material index.
+/// @brief The common base of the per-material arrays.
 template <typename T>
 class VectCom
 {
@@ -41,15 +41,6 @@ class VectCom
     ///        and the derived classes hold a chunk array or a vector whose
     ///        destructor must run.
     virtual ~VectCom() = default;
-
-    /// @brief The material this array belongs to.
-    void set_ind(int index)
-    {
-        ind_ = index;
-    }
-
-  private:
-    int ind_;
 };
 
 /// @brief A field of a "chunk" material: compressed where it is zero.
@@ -160,14 +151,12 @@ void MultiArray<T, VecChunk>::create(int nbmat, int mesh_size)
         if (dispatch.is_chunk(k))
         {
             auto* vec = new VecChunk;
-            vec->set_ind(k);
             vec->create(mesh_size);
             (*this)[k] = vec;
         }
         else
         {
             auto* vec = new VecDir;
-            vec->set_ind(k);
             vec->create(mesh_size);
             (*this)[k] = vec;
         }

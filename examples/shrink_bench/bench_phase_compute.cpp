@@ -71,7 +71,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                          double&                 v_real_out,
                          double&                 v_im_out)
 {
-    // Aliases so the body below is VERBATIM (see bench_phase_fill.cpp).
+    // Short local names for the arrays (see bench_phase_fill.cpp).
     auto& tab1 = bench_arr.tab1;
     auto& tab2 = bench_arr.tab2;
     auto& tab3 = bench_arr.tab3;

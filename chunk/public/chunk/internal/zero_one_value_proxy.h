@@ -540,7 +540,6 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
     {
         // Intentionally empty, but must exist: zero_one_value::Array::clear_core() calls it in its
         // `if constexpr (use_fast_block_compression)` branch.
-        //  tab_is_inside_chunk_list_to_compress[num_tab].clear();
     }
 
     /**

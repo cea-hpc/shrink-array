@@ -21,7 +21,7 @@
 
 void bench_phase_stress_teams(BenchArrays& bench_arr, [[maybe_unused]] Int team, Int beg_s, Int end_s)
 {
-    // Aliases so the body below is VERBATIM (see bench_phase_fill.cpp).
+    // Short local names for the arrays (see bench_phase_fill.cpp).
     auto& tab1 = bench_arr.tab1;
     auto& tab2 = bench_arr.tab2;
     auto& tab3 = bench_arr.tab3;
@@ -65,7 +65,7 @@ void bench_phase_stress_teams(BenchArrays& bench_arr, [[maybe_unused]] Int team,
 
 void bench_phase_stress_dynamic(BenchArrays& bench_arr, [[maybe_unused]] Int grain, Int beg_s, Int end_s)
 {
-    // Aliases so the body below is VERBATIM (see bench_phase_fill.cpp).
+    // Short local names for the arrays (see bench_phase_fill.cpp).
     auto& tab1 = bench_arr.tab1;
     auto& tab2 = bench_arr.tab2;
     auto& tab3 = bench_arr.tab3;

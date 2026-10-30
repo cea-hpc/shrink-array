@@ -40,19 +40,15 @@ void compress_one(auto& tab)
 
 void bench_phase_compress_all(BenchArrays& bench_arr)
 {
-    // The OMPT bracketing lived in a lambda of main() whose entire body it was,
-    // around this call. It belongs to the compression: a caller cannot forget
-    // what it does not have to write.
-    //
-    // Inline in main(), this block sat under #ifdef NEED_COMPRESSION /
-    // SHRINK_ARRAY depending on the call site. The outer guard is kept -- as an
-    // `if constexpr` now -- so the baseline build still does strictly nothing
-    // here rather than running the parallel region and printing thirteen names.
+    // The OMPT bracketing belongs to the compression: a caller cannot forget
+    // what it does not have to write. The outer guard keeps the baseline build
+    // doing strictly nothing here rather than running the parallel region and
+    // printing thirteen names.
     if constexpr (chunk_config::is_shrink_enabled)
     {
         chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
 
-        // Aliases so the body below is VERBATIM (see bench_phase_fill.cpp).
+        // Short local names for the arrays (see bench_phase_fill.cpp).
         auto& tab1 = bench_arr.tab1;
         auto& tab2 = bench_arr.tab2;
         auto& tab3 = bench_arr.tab3;

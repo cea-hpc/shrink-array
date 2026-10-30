@@ -19,10 +19,8 @@
 ///
 /// Four `omp parallel` regions of ~28 lines, near-identical in shape: write a
 /// fixed pattern over [beg, end) across the thirteen arrays. They differ only by
-/// the values written and by which bound closes the range. Inline in main() they
-/// read as four anonymous walls of assignments; here they are four named calls.
-/// Bodies are VERBATIM, bound names included -- hence the parameter called `i`
-/// on two of them.
+/// the values written and by which bound closes the range. Two of them take
+/// that bound as `i`.
 
 #include <algorithm> // std::min (bench_phase_range_mt)
 #include <cstddef>   // std::size_t (bench_phase_range_mt)
@@ -32,7 +30,7 @@
 
 void bench_phase_range_a(BenchArrays& bench_arr, Int beg, Int iter)
 {
-    // Aliases so the body below is VERBATIM (see bench_phase_fill.cpp).
+    // Short local names for the arrays (see bench_phase_fill.cpp).
     auto& tab1 = bench_arr.tab1;
     auto& tab2 = bench_arr.tab2;
     auto& tab3 = bench_arr.tab3;
@@ -86,7 +84,7 @@ void bench_phase_range_a(BenchArrays& bench_arr, Int beg, Int iter)
 
 void bench_phase_range_b(BenchArrays& bench_arr, Int beg, Int iter)
 {
-    // Aliases so the body below is VERBATIM (see bench_phase_fill.cpp).
+    // Short local names for the arrays (see bench_phase_fill.cpp).
     auto& tab1 = bench_arr.tab1;
     auto& tab2 = bench_arr.tab2;
     auto& tab3 = bench_arr.tab3;
@@ -142,7 +140,7 @@ void bench_phase_range_b(BenchArrays& bench_arr, Int beg, Int iter)
 
 void bench_phase_range_c(BenchArrays& bench_arr, Int beg, Int seg_end)
 {
-    // Aliases so the body below is VERBATIM (see bench_phase_fill.cpp).
+    // Short local names for the arrays (see bench_phase_fill.cpp).
     auto& tab1 = bench_arr.tab1;
     auto& tab2 = bench_arr.tab2;
     auto& tab3 = bench_arr.tab3;
@@ -197,7 +195,7 @@ void bench_phase_range_c(BenchArrays& bench_arr, Int beg, Int seg_end)
 
 void bench_phase_range_d(BenchArrays& bench_arr, Int beg, Int seg_end)
 {
-    // Aliases so the body below is VERBATIM (see bench_phase_fill.cpp).
+    // Short local names for the arrays (see bench_phase_fill.cpp).
     auto& tab1 = bench_arr.tab1;
     auto& tab2 = bench_arr.tab2;
     auto& tab3 = bench_arr.tab3;
@@ -251,9 +249,9 @@ void bench_phase_range_d(BenchArrays& bench_arr, Int beg, Int seg_end)
 
 void bench_phase_raz_sweep(BenchArrays& bench_arr, Int iter, Int size, Int start0, Int end0)
 {
-    // Aliases so the body below is VERBATIM (see bench_phase_fill.cpp). Only
-    // tab1 is scanned here; the four range fills reach the rest through `a`,
-    // which the moved code calls bench_arrays.
+    // Short local names for the arrays (see bench_phase_fill.cpp). Only
+    // tab1 is scanned here; the four range fills reach the rest through
+    // bench_arrays.
     const auto& tab1         = bench_arr.tab1;
     const Int   sz           = bench_arr.sz;
     auto&       bench_arrays = bench_arr;

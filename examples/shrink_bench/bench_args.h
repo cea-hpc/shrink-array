@@ -29,6 +29,23 @@
 
 #include "bench_int.h" // Int: the sizes this struct carries
 
+/// @brief tab_mask's default size, as a fraction of sz (--mask_scale sets it).
+/// @details 1/32. Its per-iteration update writes ~1/16 of the random and
+///          scattered blocks and 1/32 of the constant segments, element by
+///          element through the proxies in a zero / zero_any build: at the
+///          8 x sz it was created with (capped at 2^31 in the 32-bit builds) it
+///          took ~75% of a 43 s zero_any run (64 threads) that is ~7 s without it.
+///          1/32 keeps thousands of 4096-element segments of each kind.
+inline constexpr double bench_mask_default_scale = 1.0 / 32.0;
+
+/// @brief tab_conn's default size, as a fraction of sz (--conn_scale sets it).
+/// @details 1/32. Each iteration gathers and renumbers one band of rows in 16,
+///          dense, through the proxies: at sz (its size when it came in) it
+///          took ~87% of a run -- zero_any, 8 threads, --divisor 2: 64.8 s
+///          with it, 8.4 s without (GCC 16; 140 s against 19 s with icpx) --
+///          and hid every other phase. 1/32 still keeps thousands of rows.
+inline constexpr double bench_conn_default_scale = 1.0 / 32.0;
+
 /// @brief Everything the command line can set.
 struct BenchArgs
 {
@@ -60,13 +77,13 @@ struct BenchArgs
     /// and its phases, check and compression are skipped.
     bool no_mask = false;
     /// --mask_scale: tab_mask holds mask_scale * sz bools (a real factor, like
-    /// --multiply). Default 1/32 (bench_mask_default_scale, bench_array.h);
-    /// 8 is the size tab_mask was created with.
-    double mask_scale = 1.0 / 32.0;
+    /// --multiply). Default bench_mask_default_scale; 8 is the size tab_mask
+    /// was created with.
+    double mask_scale = bench_mask_default_scale;
     /// --conn_scale: tab_conn holds about conn_scale * sz ints, whole rows (a
-    /// real factor). Default 1/32 (bench_conn_default_scale, bench_array.h); 1
-    /// is the size tab_conn came in with.
-    double conn_scale = 1.0 / 32.0;
+    /// real factor). Default bench_conn_default_scale; 1 is the size tab_conn
+    /// came in with.
+    double conn_scale = bench_conn_default_scale;
     /// --no_conn: leave out tab_conn, the mesh connectivity (bench_phase_conn.cpp)
     /// -- for a run that must compare with the campaigns made before it existed.
     /// Its array is then of size 1 and its phases, check and compression are
@@ -123,9 +140,8 @@ struct BenchArgs
 /**
  * @brief Parse argv into a BenchArgs, and select the bench mode.
  *
- * @details Moved VERBATIM out of main(), exit() calls included: --help and an
- *          unknown argument both end the process here, as they always did.
- *          set_bench_mode() is called from inside for --mode, before any
- *          get_ or have_ accessor is read.
+ * @details --help and an unknown argument both end the process here
+ *          (exit()). set_bench_mode() is called from inside for --mode, before
+ *          any get_ or have_ accessor is read.
  */
 BenchArgs parse_bench_args(int argc, char* argv[]);

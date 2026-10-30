@@ -240,8 +240,8 @@ struct Report
         return bad ? 1 : 0;
     }
 
-    const char* step;
-    long        bad = 0;
+    const char* step = "";
+    long        bad  = 0;
 };
 
 /// @brief Chunks folded to a constant: expected at least the first-constant
