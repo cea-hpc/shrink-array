@@ -64,10 +64,10 @@
 #include <unordered_set> // std::unordered_set
 #include <system_error>  // std::errc (std::from_chars)
 
-#include "fast_allocators/internal/raw_memory.h"   // address_bits
-#include "fast_allocators/internal/pmp_alloc.h"    // pmp::parallel_for, pmp::in_parallel, pmp::max_threads (the sweeps)
-#include "fast_allocators/internal/fatal.h"        // FAST_ALLOC_FATAL
-#include "fast_allocators/internal/log_core.h"     // CHUNK_LOG, CHUNK_LOG_ALWAYS, logging::enabled (arena=info)
+#include "fast_allocators/internal/raw_memory.h" // address_bits
+#include "fast_allocators/internal/pmp_alloc.h"  // pmp::parallel_for, pmp::in_parallel, pmp::max_threads (the sweeps)
+#include "fast_allocators/internal/fatal.h"      // FAST_ALLOC_FATAL
+#include "fast_allocators/internal/log_core.h"   // CHUNK_LOG, CHUNK_LOG_ALWAYS, logging::enabled (arena=info)
 
 namespace fast_alloc
 {

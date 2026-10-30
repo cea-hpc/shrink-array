@@ -1150,9 +1150,11 @@ void store_span_relaxed_edges(T* dst, std::size_t o_lo, std::size_t o_hi, std::s
  *          The queueing rule only looks at the span's own values (reading the
  *          elements other threads write is a race, except zero_any's relaxed
  *          ones): zero compresses only to first_value, zero_one_value to first_value or
- *          the array's second value, zero_any aggregates only a span covering
- *          the whole chunk, uniform. A fill is a uniform span of v, so the
- *          rule reduces to fill_range_mt's.
+ *          the array's second value, zero_any (an element type without relaxed
+ *          access: the aggregates) any uniform span, whole chunk or not -- it
+ *          may complete a chunk whose other elements already hold its value,
+ *          and the pass drops the chunk if they do not. A fill is a uniform
+ *          span of v, so the rule reduces to fill_range_mt's.
  *
  * @tparam Constant value_at returns one value for every index (fill_range_mt):
  *                  no buffer
@@ -1385,7 +1387,13 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
                         // the span's values, as the element paths mark: zero
                         // compresses only to first_value, zero_one_value to first_value
                         // or the second value; zero_any aggregates (no lock-free
-                        // atomic_ref): only a whole-chunk uniform span.
+                        // atomic_ref) any uniform span. Not only a whole chunk:
+                        // a partial span -- the ends of a range that does not
+                        // fall on chunk boundaries -- may complete a chunk the
+                        // rest of which already holds its value, and that chunk
+                        // would stay materialised for the run (the check builds'
+                        // audit counted it: "never queued for compression"). The
+                        // pass scans the chunk and drops it if it is not uniform.
                         if constexpr (is_v1_v<Arr>)
                         {
                             uniform = same && static_cast<T>(v0) == static_cast<T>(ChunkType::first_value);
@@ -1397,7 +1405,7 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
                         }
                         else
                         {
-                            uniform = same && lo == c_begin && hi == c_end;
+                            uniform = same;
                         }
                     }
                     done = true;

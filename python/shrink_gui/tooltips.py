@@ -159,8 +159,10 @@ class Tooltips:
         # the entries of the drop-down lists
         for i in range(self.preset.count()):
             p = PRESETS[self.preset.itemData(i)]
+            read = ("\n\nLue sur inti par ccc_mpinfo à la vérification de la connexion ; ses directives "
+                    "viennent du modèle [discovered] du fichier de site." if p.get("discovered") else "")
             self.preset.setItemData(i, tip(f"{p['label']}\n\n" + p["msub"].strip()
-                                           + (f"\nlanceur : {p['launcher']}" if p.get("launcher") else "")),
+                                           + (f"\nlanceur : {p['launcher']}" if p.get("launcher") else "") + read),
                                     Qt.ToolTipRole)
         prog_tips = {
             "multi_launch_stress.py": "Stress : les binaires de check, en boucle, à un nombre de "

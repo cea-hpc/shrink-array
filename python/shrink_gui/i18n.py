@@ -501,6 +501,10 @@ EN_RE = [(re.compile(a), b) for a, b in (
     (r"(\d+) cœurs", r"\1 cores"),
     (r"\noption : ", "\noption: "), (r"\ndéfaut du script : ", "\nscript default: "),
     (r"^défaut : ", "default: "), (r"\nlanceur : ", "\nlauncher: "),
+    (r"\n\nLue sur (\S+) par (\S+) à la vérification de la connexion ; ses directives viennent du "
+     r"modèle \[discovered\] du fichier de site\.",
+     r"\n\nRead from \1 by \2 at the connection check; its directives come from the site file's "
+     r"[discovered] template."),
     (r"^lecture des options de (.*)…$", r"reading the options of \1…"),
     (r"^(\S+) : (\d+) options lues \(python (\S+) sur (.+)\)$", r"\1: \2 options read (python \3 on \4)"),
     (r"^(\S+) : (\d+) options lues$", r"\1: \2 options read"),

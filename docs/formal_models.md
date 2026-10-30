@@ -449,6 +449,11 @@ compare, on the refused marking only. The sites to change are every CAS of the f
 (`add_to_compression_list()` and its async form, the range writes) and the end of the three
 variants' passes (`zero`, `zero_one_value`, `zero_any` and `pattern`'s motif commit).
 
+Measured: the check builds' audit ("never queued for compression") first counted 34 to 140 such
+chunks per `shrink_bench` run, at 1 thread as well -- which F6 cannot be: they came from another
+hole, the partial spans of `fill_range_mt()` on `std::complex<double>` (fixed, see CHANGELOG.md).
+Without it the audit counts none at 2 and 4 threads; the high thread counts are to be measured.
+
 ## 9. Limits
 
 - **Fidelity.** The model is a reduction written by hand from the source: a line the model

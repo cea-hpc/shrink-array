@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QGroupBox, QH
                                QPushButton, QScrollArea, QSpinBox, QSplitter, QStyle, QSystemTrayIcon, QTabWidget,
                                QTableWidget, QTableWidgetItem, QToolButton, QVBoxLayout, QWidget)
 
-from shrink_gui import i18n, qos
+from shrink_gui import config, i18n, qos
 from shrink_gui.config import APP, DEFAULTS, LOCAL, PROGRAMS, QOS_FALLBACK
 from shrink_gui.git_panel import GitPanel
 from shrink_gui.i18n import T, status_short, status_text, tip
@@ -85,6 +85,10 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
         # --- where / how
         self.preset = QComboBox()
         self.mode = QComboBox()
+        # the partitions the machine listed at the last connection check
+        # (config.set_discovered), before the list is filled: the partition
+        # remembered may be one of them
+        config.set_discovered(self.settings.value(self.mpinfo_key(), ""))
         self.fill_machine_lists()
         self.time_s = DurationBox()
         self.time_s.setValue(int(self._get("time_s")))

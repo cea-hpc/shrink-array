@@ -109,11 +109,10 @@ SecondValueProxyBase<Derived, T, ChunkT>::write_with_optional_lock_with_set_ptr(
 }
 
 template <typename Derived, typename T, typename ChunkT>
-[[nodiscard]] bool
-SecondValueProxyBase<Derived, T, ChunkT>::passes_mark_pre_check(this const Derived& self,
-                                                                InT<T>              new_value,
-                                                                InT<T>              first_value,
-                                                                InT<T>              second_val) noexcept
+[[nodiscard]] bool SecondValueProxyBase<Derived, T, ChunkT>::passes_mark_pre_check(this const Derived& self,
+                                                                                   InT<T>              new_value,
+                                                                                   InT<T>              first_value,
+                                                                                   InT<T> second_val) noexcept
 {
     // CRTP dispatch: each variant owns its fast pre-check. zero_one_value keeps the
     // "a constant is written" test below; zero_any widens it (see
