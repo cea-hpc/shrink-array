@@ -21,6 +21,7 @@ module unload fortran/gcc 2>/dev/null || true
 # The newest CMake the modules offer (4.0.3), else 3.31.4, else the default.
 chunk_module_load_first cmake/4.0.3 cmake/3.31.4 cmake
 module load ninja
+chunk_ensure_ninja || exit 1   # an x86 ~/.local/bin/ninja on an ARM node: site_env.sh
 
 # Parse command-line arguments
 DRYRUN=false

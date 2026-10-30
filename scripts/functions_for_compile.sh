@@ -184,6 +184,16 @@ run_cmd() {
                 ;;
         esac
     fi
+    # A cache naming a ninja that does not run here loses it (site_env.sh).
+    if [ "${DRYRUN:-false}" != true ] && [ "${BUILD_ONLY:-false}" != true ]; then
+        case "$*" in
+            *cmake*" -B "*)
+                local _ndir
+                _ndir=$(printf '%s' "$*" | sed -nE 's/.* -B[[:space:]]+"?([^"[:space:]]+).*/\1/p')
+                [ -n "$_ndir" ] && chunk_drop_dead_make_program "$_ndir"
+                ;;
+        esac
+    fi
     # Hardening: every cmake configure that goes through run_cmd (llvm, oneapi,
     # nvhpc sections of compile_all.sh) gets the same flags as the gnu builds.
     local _cmd="$*"
@@ -1448,6 +1458,7 @@ compile_with_cmake() {
 
     if [ "$BUILD_ONLY" = false ]; then
         maybe_wipe_cache "$build_dir"
+        chunk_drop_dead_make_program "$build_dir"
         if ! CXX="${compiler}" cmake -S "$CHUNK_SRC_DIR" -B "$build_dir" $cmake_args -G Ninja; then
             echo "Error configuring CMake for $build_name"
             N_FAILED=$(( N_FAILED + 1 ))  # visible in the final exit code

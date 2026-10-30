@@ -185,6 +185,46 @@ chunk_check_binutils() {
     esac
 }
 
+# chunk_ensure_ninja: make the ninja on PATH one that runs here, after a
+# `module load ninja`. A home shared by the x86 and the ARM nodes (/ccc/home)
+# can hold an x86-64 ~/.local/bin/ninja ahead of the module's: on grace /
+# gh200 every configure then failed with "cannot execute binary file". The
+# first ninja of PATH that answers --version wins (its directory goes first);
+# none: the error, return 1. Nothing changes when the first one already runs,
+# nor when there is no ninja at all (a --dryrun on a workstation; CMake says
+# so at configure time, as before).
+chunk_ensure_ninja() {
+    local n bad="" first
+    first=$(command -v ninja 2>/dev/null)
+    if [ -z "$first" ] || "$first" --version >/dev/null 2>&1; then
+        return 0
+    fi
+    for n in $(type -a -P ninja ninja-build 2>/dev/null | awk '!seen[$0]++'); do
+        if "$n" --version >/dev/null 2>&1; then
+            [ -n "$first" ] && echo "[ninja] $first does not run on $(uname -m) (another architecture's binary?): using $n"
+            PATH="$(dirname "$n"):$PATH"
+            export PATH
+            return 0
+        fi
+        bad="$bad $n"
+    done
+    echo "ERROR: no ninja that runs on $(uname -m) on PATH${bad:+ (not runnable:$bad)}; load a ninja module or install one for this architecture" >&2
+    return 1
+}
+
+# chunk_drop_dead_make_program <build-dir>: a cache that names a ninja which
+# does not run here (configured by the x86 one above, or from another node)
+# loses that entry, and CMake looks ninja up again on PATH.
+chunk_drop_dead_make_program() {
+    local cache="$1/CMakeCache.txt" prog
+    [ -f "$cache" ] || return 0
+    prog=$(sed -n 's/^CMAKE_MAKE_PROGRAM:[A-Z]*=//p' "$cache")
+    [ -n "$prog" ] || return 0
+    "$prog" --version >/dev/null 2>&1 && return 0
+    echo "[ninja] $1: the cached CMAKE_MAKE_PROGRAM ($prog) does not run here: dropped"
+    sed -i '/^CMAKE_MAKE_PROGRAM:/d' "$cache"
+}
+
 # chunk_gcc_toolchain_opt <form>: the libstdc++ option for clang-like drivers,
 # or nothing when no toolchain dir is set (local: the driver's default).
 #   flags -> -DCMAKE_CXX_FLAGS=--gcc-toolchain=<dir>   (icpx, nvc++)
