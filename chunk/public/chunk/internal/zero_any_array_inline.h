@@ -25,7 +25,7 @@
 #include <string_view> // std::string_view (the residual's kind)
 #include <string>      // the type name in print_type_name
 #include <type_traits> // std::remove_reference_t
-#include <utility>     // std::pair (the clear() summary)
+#include <optional>    // std::optional (the clear() summary)
 #include <vector>      // std::vector
 
 #include "chunk/zero_any_array.h"                       // zero_any::ArrayImpl, the class these bodies belong to
@@ -181,8 +181,8 @@ void zero_any::ArrayImpl<Derived>::clear()
         // The scan only feeds the advisor's info line: skipped when it is not shown.
         if (nb_chunk_ > 0 && logging::enabled(logging::Channel::advisor, logging::Level::info))
         {
-            const auto                      csz = static_cast<unsigned int>(this->size_policy_.size());
-            std::vector<std::pair<bool, T>> summary(static_cast<std::size_t>(nb_chunk_));
+            const auto                    csz = static_cast<unsigned int>(this->size_policy_.size());
+            std::vector<std::optional<T>> summary(static_cast<std::size_t>(nb_chunk_));
             pmp::parallel_for(0, nb_chunk_, pmp::Options{.use_team = !CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk_ > 500},
                               [&](int j)
                               {
@@ -194,15 +194,13 @@ void zero_any::ArrayImpl<Derived>::clear()
                                           // A motif chunk is no constant (stage 1: no advice on motifs).
                                           if (ChunkType::is_motif_ptr(ck.values_load()))
                                           {
-                                              summary[static_cast<std::size_t>(j)] = {false, T{}};
-                                              return;
+                                              return; // the slot stays nullopt
                                           }
                                       }
-                                      summary[static_cast<std::size_t>(j)] = {true, ck.read_value_scan(0)};
+                                      summary[static_cast<std::size_t>(j)] = ck.read_value_scan(0);
                                       return;
                                   }
-                                  const auto v0                        = ck.constant_value(csz);
-                                  summary[static_cast<std::size_t>(j)] = {v0.has_value(), v0.value_or(T{})};
+                                  summary[static_cast<std::size_t>(j)] = ck.constant_value(csz);
                               });
             const auto& sh_inf    = *ProxyType::share_info_array;
             const int   tab_index = sh_inf.get_num_tab(this->registry_key());
