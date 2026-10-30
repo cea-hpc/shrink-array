@@ -525,7 +525,7 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> value) noexcept
                 // Deferred replay: pin the frozen per-op geometry so create_value
                 // below materialises at proxy.chunk_size(), not the flushing thread's
                 // ambient thread_chunk_size(). Restored on scope exit. Dynamic only.
-                [[maybe_unused]] const DynChunkSizeGuard sz_guard{proxy.chunk_size()};
+                const DynChunkSizeGuard _{proxy.chunk_size()}; // P2169: unnamed, alive to the end of the scope
 
                 const bool is_cst1 = proxy.is_cst_val1();
                 const bool is_cst2 = proxy.is_cst_val2();

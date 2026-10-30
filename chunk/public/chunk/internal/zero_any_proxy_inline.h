@@ -685,7 +685,7 @@ T zero_any::ProxyImpl<T, Derived, ChunkT>::assign_impl(this Derived& self, InT<U
                 // The flusher's ambient chunk size is unrelated to THIS op's chunk:
                 // pin the frozen per-op geometry, restored on exit for the
                 // flusher's own in-flight write.
-                [[maybe_unused]] const DynChunkSizeGuard sz_guard{proxy.chunk_size()};
+                const DynChunkSizeGuard _{proxy.chunk_size()}; // P2169: unnamed, alive to the end of the scope
 
                 int retry_count = 0;
 
