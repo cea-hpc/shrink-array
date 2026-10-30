@@ -369,6 +369,12 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `CHUNK_BREAK_ON_FAILURE`: under a debugger (gdb, cuda-gdb, gdbserver, lldb, lldb-server, read
+  from `TracerPid` and the tracer's name, without allocating), an invariant failure or a
+  `FAST_ALLOC_FATAL`, its report written, raises `SIGTRAP`: the debugger stops on the failing
+  thread with its frames live, and continuing aborts as before. strace and the other tracers,
+  TotalView and DDT do not stop; without a debugger nothing changes. `0` never stops, `1` always
+  (`docs/environment_variables.md`). `log_break_on_failure` checks it under gdb and strace.
 - shrink_gui 0.15: the partition list also offers the partitions the machine lists at the
   connection check (`[batch] partition_info`: `ccc_mpinfo` on inti, `sinfo -o '%P %c %D %a'` in
   `slurm_example.toml`), beside the site file's `[partitions]`, which win for a name in both. Their
@@ -701,6 +707,13 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `fill_range_mt()`, `copy_range_mt()`, `transform_range_mt()` on `zero_any` elements with relaxed
+  access (`double`, `int`, ...): two threads filling the two ends of one chunk could both read the
+  other's edge before its store (store buffering, allowed on x86 and AArch64) and neither queue
+  the chunk they left uniform. The filter now looks again after a seq_cst fence when its first
+  look says "not uniform". The check builds' audit counted 6 to 52 such chunks per
+  `shrink_bench` run at 16 to 128 threads on Milan. Model: `formal/range_edges.c`
+  (`docs/formal_models.md`, section 8.9, F7).
 - `fill_range_mt()`, `copy_range_mt()`, `transform_range_mt()` on a `zero_any` array of an element
   type without relaxed element access (`std::complex<double>`, the aggregates): a span that did not
   cover its whole chunk -- the ends of a range off a chunk boundary -- never queued the chunk, even

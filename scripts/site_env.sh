@@ -14,7 +14,9 @@
 #   CHUNK_SRC_DIR           the repository (from this script's location)
 #   CHUNK_BUILD_REP         where the cmake-build-<name>/<arch> trees go:
 #                             cea   $CCCWORKDIR/shrink-array (the TGCC work area)
-#                             local the repository itself (as CLion does)
+#                             local $CCCWORKDIR/shrink-array when CCCWORKDIR
+#                                   is set, else the repository itself (as
+#                                   CLion does)
 #   CHUNK_GCC_TOOLCHAIN_DIR the libstdc++ that clang / icpx / nvc++ use:
 #                             cea   /ccc/products/gcc-15.2.0/system/default
 #                             local the newest ~/opt/gcc-X.Y.Z or /opt/gcc-X.Y.Z
@@ -61,7 +63,14 @@ if [ "$CHUNK_SITE" = cea ]; then
     : "${CHUNK_BUILD_REP:=${CCCWORKDIR:?site_env.sh: CCCWORKDIR unset, set CHUNK_BUILD_REP}/shrink-array}"
     : "${CHUNK_GCC_TOOLCHAIN_DIR:=/ccc/products/gcc-15.2.0/system/default}"
 else
-    : "${CHUNK_BUILD_REP:=$CHUNK_SRC_DIR}"
+    # A machine of the TGCC environment off the CEA network (CCCWORKDIR set,
+    # no /ccc/products/gcc-15.2.0) keeps its trees in the work area, as cea
+    # does: the sources in ~ have the quota.
+    if [ -n "${CCCWORKDIR:-}" ]; then
+        : "${CHUNK_BUILD_REP:=$CCCWORKDIR/shrink-array}"
+    else
+        : "${CHUNK_BUILD_REP:=$CHUNK_SRC_DIR}"
+    fi
     # A GCC built from source is both the gnu compiler (CHUNK_GXX below) and
     # the libstdc++ of clang / icpx, as gcc-15.2.0 is at CEA. None: the
     # drivers' own default.
