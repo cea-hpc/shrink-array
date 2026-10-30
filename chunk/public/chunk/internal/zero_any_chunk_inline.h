@@ -16,9 +16,10 @@
 
 #pragma once
 
-#include <algorithm> // std::fill_n (the create_value fills)
-#include <cstdlib>   // std::abort
-#include <optional>  // std::nullopt (the clears)
+#include <algorithm>   // std::fill_n (the create_value fills)
+#include <cstdlib>     // std::abort
+#include <optional>    // std::nullopt (the clears)
+#include <type_traits> // std::remove_cvref_t (the re-queued candidates)
 
 #include "chunk/internal/in_t.h"            // InT<T>: the element snapshots
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (steal-mark check)
@@ -35,6 +36,7 @@
 #include "chunk/chunk_traits.h"                        // ChunkTraits<ChunkT>::ProxyType (wait_before_materialise)
 #include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef
 #include "chunk/internal/test_hooks.h"          // TEST KNOB: test_hooks::maybe_pass_delay
+#include "chunk/internal/queue_flag.h"          // queue_flag::hand_back / release: the pass's hand-back
 
 /**
  * @file zero_any_chunk_inline.h
@@ -267,6 +269,22 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
     // `claimed`: the claim loop runs only with a proxy (without: the resize path).
     fill_list_chunk_to_compress_in_par(thr, ll_compt1, ll_compt2, proxy2a != nullptr);
 
+    // Every candidate scanned, every mark still up: hand the queue flags back before
+    // the first steal_unmark() below (queue_flag.h: a writer of a chunk whose mark is
+    // down notes itself on the flag instead of losing its queueing -- F6).
+    if constexpr (build_config::threaded)
+    {
+        for (int k = 0; k < sz; ++k)
+        {
+            const auto& tup = vec_tuple_to_compress[k];
+            if (std::get<0>(tup) != nullptr && std::get<1>(tup) >= 0)
+            {
+                queue_flag::hand_back(
+                    ProxyType::Base::get_tab_is_inside_list_to_compress(std::get<2>(tup))[std::get<1>(tup)]);
+            }
+        }
+    }
+
     for (auto& tup : ll_compt1)
     {
         const int num_chunk = std::get<1>(tup);
@@ -343,6 +361,10 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
         Derived::compress_motif_candidates(thr);
     }
 
+    // The candidates a writer queued while this pass handed them back: queued again
+    // into this rank's list once it is emptied (queue_flag::release()).
+    std::remove_cvref_t<decltype(vec_tuple_to_compress)> requeued;
+
     for (int k = 0; k < sz; ++k)
     {
         const auto& tup       = vec_tuple_to_compress[k];
@@ -379,12 +401,28 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
         {
             const int num_tab = std::get<2>(tup);
 
-            ProxyType::Base::reset_tab_inside_list_to_compress(num_tab, num_chunk);
+            if (build_config::threaded && std::get<0>(tup) != nullptr)
+            {
+                // The end of the hand-back started above: free, or queued again if a
+                // writer noted itself meanwhile.
+                if (queue_flag::release(ProxyType::Base::get_tab_is_inside_list_to_compress(num_tab)[num_chunk]))
+                {
+                    requeued.push_back(tup);
+                }
+            }
+            else
+            {
+                ProxyType::Base::reset_tab_inside_list_to_compress(num_tab, num_chunk);
+            }
         }
     }
 
     vec_tuple_to_compress.clear();
     vec_tuple_to_compress.reserve((sz / 10) + 1);
+    for (const auto& tup : requeued)
+    {
+        vec_tuple_to_compress.push_back(tup);
+    }
 
     if (proxy2a)
     {

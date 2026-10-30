@@ -65,6 +65,7 @@
 #include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/write_compress_sync_policy.h"   // WriteCompressSyncPolicy
 #include "chunk/internal/test_hooks.h"                   // TEST KNOB: test_hooks::forced_deferral
+#include "chunk/internal/queue_flag.h"                   // queue_flag::try_queue: the writers' side
 
 namespace shrink_array
 {
@@ -182,14 +183,9 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list([[maybe_unused]] aut
                                        &chunk_, num_, num_chunk_, num_tab_);
             }
         }
-        // Test, then test-and-set. The flag is almost always 1, and a CAS takes
-        // the line exclusively even when it fails -- one char per chunk, 64
-        // chunks per line written by different ranks: constant line ping-pong.
-        // The relaxed probe decides nothing by itself: the CAS still does.
-        char expected = 0;
-        if (ptr_is_inside_chunk_list_to_compress_->load(std::memory_order_relaxed) == 0 &&
-            ptr_is_inside_chunk_list_to_compress_->compare_exchange_strong(expected, 1, std::memory_order_acq_rel,
-                                                                           std::memory_order_acquire))
+        // The queue flag's protocol (queue_flag.h): free -> queued pushes; a
+        // flag being handed back by its pass is noted for that pass instead.
+        if (queue_flag::try_queue(*ptr_is_inside_chunk_list_to_compress_))
         {
             if constexpr (build_config::is_debug)
             {
@@ -253,7 +249,8 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list(this const Derived& 
             }
         }
         // CHUNK_STATS: see the vec_tuple overload for reading mark_refused / mark_ok.
-        if (self.ptr_is_inside_chunk_list_to_compress_->load(std::memory_order_relaxed) != 0)
+        // The queue flag's protocol: queue_flag.h (a relaxed probe, then the CAS).
+        if (!queue_flag::try_queue(*self.ptr_is_inside_chunk_list_to_compress_))
         {
             if constexpr (chunk_config::stats)
             {
@@ -262,9 +259,6 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list(this const Derived& 
         }
         else
         {
-            char expected = 0;
-            if (self.ptr_is_inside_chunk_list_to_compress_->compare_exchange_strong(
-                    expected, 1, std::memory_order_acq_rel, std::memory_order_acquire))
             {
                 if constexpr (chunk_config::stats)
                 {
@@ -403,14 +397,8 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::add_to_compression_li
 
     auto& flag = Derived::tab_is_inside_chunk_list_to_compress[num_tab][ctx->num_chunk];
 
-    // Relaxed probe before the CAS: the chunk is usually already marked.
-    if (flag.load(std::memory_order_relaxed) != 0)
-    {
-        return;
-    }
-
-    char expected = 0;
-    if (flag.compare_exchange_strong(expected, 1, std::memory_order_acq_rel, std::memory_order_acquire))
+    // The queue flag's protocol (queue_flag.h): a relaxed probe, then the CAS.
+    if (queue_flag::try_queue(flag))
     {
         const int thr = get_thr_rank_fast();
 

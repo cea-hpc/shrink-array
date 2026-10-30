@@ -411,19 +411,32 @@ switch passes (18 executions), at a cost nobody pays today: two threads writing 
 of a chunk is a data race of the caller's before it is the library's. Recorded here so that a
 future caller that does not own the whole chunk knows what it takes.
 
-### 8.8 F6: a chunk made constant during a pass's hand-back is never queued (open)
+### 8.8 F6: a chunk made constant during a pass's hand-back was never queued (fixed)
 
 The model is `formal/queue_handback.c`; it checks a protocol, not a memory ordering: the "queued"
 flag of a chunk (`tab_is_inside_chunk_list_to_compress`) and the pass's mark. A pass hands each
-candidate back with `steal_unmark()`, then resets its flag to 0 (the end of
-`make_block_compression()`; the order is the source's on purpose, see its comment). Between the
-two, a writer finds the mark down and writes directly; if its write turns the last element into
-the constant, the marking's CAS 0 -> 1 meets the flag still up and gives up, and the reset then
-drops the chunk from every list. A constant chunk stays materialised until it is written again.
-No value is wrong: the cost is memory, and the end-of-run census, which classifies a written chunk
-on its content, does not see it. The window is wider than the last loop: a chunk the pass
-compresses is unmarked right after its clear, and a write that materialises it and makes it
-constant again needs no other condition.
+candidate back with `steal_unmark()`, then resets its flag (the end of `make_block_compression()`;
+the order is kept on purpose: once the flag is down another pass may queue and mark the chunk,
+and a late unmark would erase its claim). It used to reset the flag to 0. Between the two, a
+writer finds the mark down and writes directly; if its write turns the last element into the
+constant, the marking's CAS 0 -> 1 met the flag still up and gave up, and the reset then dropped
+the chunk from every list. A constant chunk stayed materialised until it was written again. No
+value was wrong: the cost was memory, and the end-of-run census, which classifies a written chunk
+on its content, did not see it. The window was wider than the last loop: a chunk the pass
+compresses is unmarked right after its clear.
+
+The fix (`chunk/internal/queue_flag.h`): as soon as the pass has scanned a candidate, and while
+its mark still keeps the writers out, the candidate's flag goes from 1 to 2, "handed back"
+(`queue_flag::hand_back`; in the scan itself for `zero` and `zero_one_value`, whose scans
+release the mark of a chunk they drop, after all the scans for `zero_any`); a writer whose marking finds 2 turns it into 3, "written meanwhile",
+rather than giving up (`queue_flag::try_queue`, every writer's site: `add_to_compression_list()`,
+its async form, the range writes through it); the pass then resets 2 -> 0 by CAS and, on a 3,
+queues the chunk again in its own rank's list (`queue_flag::release`). In the passes of `zero`,
+`zero_one_value` and `zero_any` (with `pattern`'s motif commit), threaded builds; the serial
+build has no concurrent pass. 2 and 3 exist only inside a pass: outside, the flag is 0 or 1 and
+"1 <=> listed" holds. Cost: on a writer's path one compare more, on the refused marking only; in
+the pass, an exchange and a CAS per candidate instead of one store. The check builds assert the
+protocol (`hand_back` on a flag at 1, `release` on 2 or 3).
 
 The model has one chunk of two elements, 0 and 7, a candidate of one pass; W writes the 7 to 0
 (deferred while the mark is up, then replayed); with `-DWITH_W2` a second writer stores a plain
@@ -433,26 +446,23 @@ the flag is up exactly when the chunk is listed, once.
 
 | case | expected | verdict | executions |
 |---|---|---|---|
-| source: `steal_unmark()`, then the flag reset -- **F6** | fail | **safety violation** (Q1) | -- |
-| source, W2 too: W2 keeps the chunk non-constant, the exclusion only | pass | pass | 28 |
-| `FIX_HANDBACK`: the flag handed back (below) | pass | pass | 7 |
-| `FIX_HANDBACK`, W2 too | pass | pass | 28 |
+| source: the flag handed back | pass | pass | 7 |
+| source, W2 too | pass | pass | 28 |
+| `MUT_OLD_HANDBACK`: `steal_unmark()`, then the flag reset to 0 -- **F6**, before | fail | **safety violation** (Q1) | -- |
 | `MUT_HANDBACK_AFTER_UNMARK`: the flag set to 2 after the mark is down | fail | safety violation | -- |
 | `MUT_WRITER_IGNORES_2`: the writer gives up on a 2 as on a 1 | fail | safety violation | -- |
 
-The same verdicts under IMM. The fix the model accepts, not applied yet: once every scan of the
-pass is done, and while the marks still keep the writers out, every candidate's flag goes from 1
-to 2, "handed back"; a writer whose marking finds 2 turns it into 3, "written meanwhile", rather
-than giving up; the pass then resets 2 -> 0 by CAS and, on a 3, queues the chunk again in its own
-rank's list. The order of the hand-back loop is kept. On a writer's path the cost is one more
-compare, on the refused marking only. The sites to change are every CAS of the flag
-(`add_to_compression_list()` and its async form, the range writes) and the end of the three
-variants' passes (`zero`, `zero_one_value`, `zero_any` and `pattern`'s motif commit).
+The same verdicts under IMM. In the library, `read_reclaim_validation`'s `remark` mode (passes
+with a delay in the hand-back window, writers on the same chunks) went through the new branch --
+a write noted on a handed-back flag, the chunk queued again by its pass -- 267,536 times for
+`zero_any` and 1,849 for `zero_one_value` in 8 s at 4 threads, each a queueing the old code lost.
 
-Measured: the check builds' audit ("never queued for compression") first counted 34 to 140 such
-chunks per `shrink_bench` run, at 1 thread as well -- which F6 cannot be: they came from another
-hole, the partial spans of `fill_range_mt()` on `std::complex<double>` (fixed, see CHANGELOG.md).
-Without it the audit counts none at 2 and 4 threads; the high thread counts are to be measured.
+Measured before the fix: the check builds' audit ("never queued for compression") first counted 34
+to 140 such chunks per `shrink_bench` run, at 1 thread as well -- which F6 cannot be: they came
+from another hole, the partial spans of `fill_range_mt()` on `std::complex<double>` (fixed, see
+CHANGELOG.md). With it and F7's fix (section 8.9), the audit counted none on Milan up to 128
+threads (`zero_any` at 256, 1024 and dynamic geometry, three seeds each): F6 was real but rare in
+that benchmark.
 
 ### 8.9 F7: two threads filling the two ends of one chunk could both leave it unqueued (fixed)
 

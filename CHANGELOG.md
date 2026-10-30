@@ -233,10 +233,7 @@ the tag's checksum to the recipe.
   leaves some out. The table read is remembered for the next start.
   `python3 -m shrink_gui.partitions` shows, on the cluster, what the window reads from it.
 - `formal/queue_handback.c`: the end of a compression pass against the candidate marking of a
-  writer. It finds F6 (`docs/formal_models.md`, section 8.8), open: a chunk made constant
-  between `steal_unmark()` and the reset of its "queued" flag is dropped from every list and
-  stays materialised until written again -- memory, no wrong value. The model accepts a fix,
-  the flag handed back (1 -> 2, a writer's 3, re-queued by the pass), not applied yet.
+  writer -- F6 (`docs/formal_models.md`, section 8.8, fixed: see Fixed).
 - `thread_speedup.py --pool=<id>` and shrink_gui's "Nodes" field for it: N one-node batch jobs
   share the executable list, as `compile_all.sh --pool` shares its configurations; each job
   measures the executables it claims first (an atomic `mkdir` in
@@ -563,6 +560,15 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- The compression passes of `zero`, `zero_one_value` and `zero_any` (threaded builds): a write that
+  made a chunk constant while its pass handed it back -- between the pass's `steal_unmark()` and
+  the reset of its "queued" flag -- met the flag still up and did not queue it, and the reset
+  then dropped the chunk from every list: it stayed materialised until written again (memory,
+  no wrong value). The flag now has a "handed back" state the pass sets before it lifts its
+  marks; a writer that finds it notes itself ("written meanwhile") and the pass queues the
+  chunk again (`chunk/internal/queue_flag.h`; F6, `docs/formal_models.md` section 8.8, model
+  `formal/queue_handback.c`). Cost: one compare more on a refused marking, an exchange and a
+  CAS per candidate in a pass.
 - `fill_range_mt()`, `copy_range_mt()`, `transform_range_mt()` on `zero_any` elements with relaxed
   access (`double`, `int`, ...): two threads filling the two ends of one chunk could both read the
   other's edge before its store (store buffering, allowed on x86 and AArch64) and neither queue
