@@ -891,7 +891,7 @@ bool ChunkBase<T, Derived>::read_block_or_constant(this const Derived& self,
     {
         const T* const vals = self.values_load();
         test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
-        if (is_cst_val1(vals))
+        if (self.is_cst_val1(vals))
         {
             // raw-read: read_block_or_constant -- the shared first-constant buffer
             cst = load_at<false>(vals, 0);

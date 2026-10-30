@@ -28,8 +28,9 @@
 // calls report_size_prediction with it, which logs current vs optimal.
 //
 // Method (sizes >= current only, cheap):
-//   1. The array summarises each chunk as {is_constant, value}. A chunk is
-//      constant if compressed (!written()) or if all its elements are equal.
+//   1. The array summarises each chunk as an optional value: its constant, or
+//      nullopt. A chunk is constant if compressed (!written()) or if all its
+//      elements are equal.
 //   2. For k in {1,2,4,8,...} (S' = k * S), a simulated block of k adjacent
 //      chunks is constant iff all k chunks are constant AND share one value
 //      (chunk_list_ is in logical order: chunk j covers [j*S,(j+1)*S)). The last
@@ -44,7 +45,8 @@
 // (advisor=info) -- never in production.
 
 #include <cstddef>   // std::size_t
-#include <utility>   // std::pair
+#include <optional>  // std::optional (the summary: a chunk's constant, or nullopt)
+#include <utility>   // std::cmp_greater
 #include <vector>    // std::vector
 #include <algorithm> // std::min, std::ranges::all_of
 #include <span>      // std::span
@@ -65,10 +67,10 @@ struct PredictorPoint
 
 // Pure aggregation — unit-testable without any array.
 template <typename T>
-[[nodiscard]] PredictorPoint predict_at_multiple(const std::vector<std::pair<bool, T>>& summary,
-                                                 unsigned                               chunk_sz,
-                                                 unsigned                               multiple,
-                                                 std::size_t                            meta_per_block)
+[[nodiscard]] PredictorPoint predict_at_multiple(const std::vector<std::optional<T>>& summary,
+                                                 unsigned                             chunk_sz,
+                                                 unsigned                             multiple,
+                                                 std::size_t                          meta_per_block)
 {
     const unsigned sp       = chunk_sz * multiple;
     int            n_blocks = 0;
@@ -77,14 +79,14 @@ template <typename T>
     // One block of S' = S*multiple per multiple consecutive chunks, the trailing one partial.
     // It is constant when every chunk in it is, all at the same value.
     // (Not views::chunk(multiple): libc++ does not have it yet.)
-    const std::span<const std::pair<bool, T>> all(summary);
+    const std::span<const std::optional<T>> all(summary);
     for (std::size_t base = 0; base < all.size(); base += multiple)
     {
         ++n_blocks;
-        const auto block                   = all.subspan(base, std::min<std::size_t>(multiple, all.size() - base));
-        const auto& [head_const, head_val] = block.front();
-        if (head_const &&
-            std::ranges::all_of(block.subspan(1), [&](const auto& c) { return c.first && c.second == head_val; }))
+        const auto  block = all.subspan(base, std::min<std::size_t>(multiple, all.size() - base));
+        const auto& head  = block.front();
+        // optional == optional: both engaged with equal values (two nullopt never reach it).
+        if (head.has_value() && std::ranges::all_of(block.subspan(1), [&](const auto& c) { return c == head; }))
         {
             ++n_const;
         }
@@ -98,12 +100,12 @@ template <typename T>
 // Predict memory for S' in {S,2S,4S,...} from a summary the array collected,
 // and log current vs predicted-optimal. Log only — no re-chunk.
 template <typename T>
-void report_size_prediction(const std::vector<std::pair<bool, T>>& summary,
-                            unsigned                               chunk_sz,
-                            int                                    num_tab,
-                            const char*                            variant,
-                            std::size_t                            meta_per_block,
-                            unsigned                               max_multiple = 16)
+void report_size_prediction(const std::vector<std::optional<T>>& summary,
+                            unsigned                             chunk_sz,
+                            int                                  num_tab,
+                            const char*                          variant,
+                            std::size_t                          meta_per_block,
+                            unsigned                             max_multiple = 16)
 {
     const int nb_chunk = static_cast<int>(summary.size());
     if (nb_chunk <= 0)
