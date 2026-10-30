@@ -168,11 +168,14 @@ class ScopedRingLog
     ///        end() was not called.
     ~ScopedRingLog() noexcept;
 
-    // Non-copyable, non-movable: a scoped logger should not migrate scopes
-    ScopedRingLog(const ScopedRingLog&)            = delete;
-    ScopedRingLog& operator=(const ScopedRingLog&) = delete;
-    ScopedRingLog(ScopedRingLog&&)                 = delete;
-    ScopedRingLog& operator=(ScopedRingLog&&)      = delete;
+    ScopedRingLog(const ScopedRingLog&) =
+        delete ("a scoped logger: the end event is emitted once, in the scope that began it");
+    ScopedRingLog& operator=(const ScopedRingLog&) =
+        delete ("a scoped logger: the end event is emitted once, in the scope that began it");
+    ScopedRingLog(ScopedRingLog&&) =
+        delete ("a scoped logger: the end event is emitted once, in the scope that began it");
+    ScopedRingLog&
+    operator=(ScopedRingLog&&) = delete ("a scoped logger: the end event is emitted once, in the scope that began it");
 
     /// Explicit end. For Manual mode. Idempotent: calling twice is OK.
     void end() noexcept;

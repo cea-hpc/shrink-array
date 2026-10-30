@@ -117,10 +117,10 @@ inline constexpr bool backend_supported = pmp::backend != pmp::BackendKind::open
 struct PhaseEnd
 {
     PhaseEnd()                           = default;
-    PhaseEnd(const PhaseEnd&)            = delete;
-    PhaseEnd& operator=(const PhaseEnd&) = delete;
-    PhaseEnd(PhaseEnd&&)                 = delete;
-    PhaseEnd& operator=(PhaseEnd&&)      = delete;
+    PhaseEnd(const PhaseEnd&)            = delete ("ends the parallel phase once, when the adaptor call's scope exits");
+    PhaseEnd& operator=(const PhaseEnd&) = delete ("ends the parallel phase once, when the adaptor call's scope exits");
+    PhaseEnd(PhaseEnd&&)                 = delete ("ends the parallel phase once, when the adaptor call's scope exits");
+    PhaseEnd& operator=(PhaseEnd&&)      = delete ("ends the parallel phase once, when the adaptor call's scope exits");
     ~PhaseEnd()
     {
         finalize_parallel_phase();

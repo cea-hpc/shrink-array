@@ -136,10 +136,14 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_deferred(int thr)
         {
             Policy::end_flush();
         }
-        FlushFlagGuard(const FlushFlagGuard&)            = delete;
-        FlushFlagGuard& operator=(const FlushFlagGuard&) = delete;
-        FlushFlagGuard(FlushFlagGuard&&)                 = delete;
-        FlushFlagGuard& operator=(FlushFlagGuard&&)      = delete;
+        FlushFlagGuard(const FlushFlagGuard&) =
+            delete ("a scope guard: the flush announcement is ended once, on scope exit");
+        FlushFlagGuard& operator=(const FlushFlagGuard&) =
+            delete ("a scope guard: the flush announcement is ended once, on scope exit");
+        FlushFlagGuard(FlushFlagGuard&&) =
+            delete ("a scope guard: the flush announcement is ended once, on scope exit");
+        FlushFlagGuard&
+        operator=(FlushFlagGuard&&) = delete ("a scope guard: the flush announcement is ended once, on scope exit");
     };
     const FlushFlagGuard flush_flag_guard;
 

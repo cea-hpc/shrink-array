@@ -60,10 +60,11 @@ union Immortal
     // Never destroys value: the point of the type.
     constexpr ~Immortal() {} // NOLINT(modernize-use-equals-default): = default would destroy value
 
-    Immortal(const Immortal&)            = delete;
-    Immortal& operator=(const Immortal&) = delete;
-    Immortal(Immortal&&)                 = delete;
-    Immortal& operator=(Immortal&&)      = delete;
+    Immortal(const Immortal&) = delete ("never-destroyed static storage: copy its value member, not the storage");
+    Immortal&
+    operator=(const Immortal&)      = delete ("never-destroyed static storage: copy its value member, not the storage");
+    Immortal(Immortal&&)            = delete ("never-destroyed static storage: copy its value member, not the storage");
+    Immortal& operator=(Immortal&&) = delete ("never-destroyed static storage: copy its value member, not the storage");
 
     T value; ///< The object.
 };
@@ -77,10 +78,14 @@ class LazyImmortal
     constexpr LazyImmortal() noexcept = default;
     ~LazyImmortal()                   = default; // never destroys the T (see the top of this file)
 
-    LazyImmortal(const LazyImmortal&)            = delete;
-    LazyImmortal& operator=(const LazyImmortal&) = delete;
-    LazyImmortal(LazyImmortal&&)                 = delete;
-    LazyImmortal& operator=(LazyImmortal&&)      = delete;
+    LazyImmortal(const LazyImmortal&) =
+        delete ("never-destroyed storage built at the first access: copy get(), not the storage");
+    LazyImmortal& operator=(const LazyImmortal&) =
+        delete ("never-destroyed storage built at the first access: copy get(), not the storage");
+    LazyImmortal(LazyImmortal&&) =
+        delete ("never-destroyed storage built at the first access: copy get(), not the storage");
+    LazyImmortal& operator=(LazyImmortal&&) =
+        delete ("never-destroyed storage built at the first access: copy get(), not the storage");
 
     /// @return The object, built now if this is the first access.
     [[nodiscard]] T& get()

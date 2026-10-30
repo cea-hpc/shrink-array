@@ -210,11 +210,14 @@ class WriteCompressSyncPolicy
 
     WriteCompressSyncPolicy() noexcept = default;
 
-    // The state is static: an instance is a handle, neither copied nor moved.
-    WriteCompressSyncPolicy(const WriteCompressSyncPolicy&)            = delete;
-    WriteCompressSyncPolicy& operator=(const WriteCompressSyncPolicy&) = delete;
-    WriteCompressSyncPolicy(WriteCompressSyncPolicy&&)                 = delete;
-    WriteCompressSyncPolicy& operator=(WriteCompressSyncPolicy&&)      = delete;
+    WriteCompressSyncPolicy(const WriteCompressSyncPolicy&) =
+        delete ("the state is static, one per (variant, type): an instance is a handle, not a value");
+    WriteCompressSyncPolicy& operator=(const WriteCompressSyncPolicy&) =
+        delete ("the state is static, one per (variant, type): an instance is a handle, not a value");
+    WriteCompressSyncPolicy(WriteCompressSyncPolicy&&) =
+        delete ("the state is static, one per (variant, type): an instance is a handle, not a value");
+    WriteCompressSyncPolicy& operator=(WriteCompressSyncPolicy&&) =
+        delete ("the state is static, one per (variant, type): an instance is a handle, not a value");
 
     ~WriteCompressSyncPolicy() = default;
 

@@ -92,10 +92,14 @@ struct RechunkStorageScope
     {
         g_building_rechunk_storage = false;
     }
-    RechunkStorageScope(const RechunkStorageScope&)            = delete;
-    RechunkStorageScope& operator=(const RechunkStorageScope&) = delete;
-    RechunkStorageScope(RechunkStorageScope&&)                 = delete;
-    RechunkStorageScope& operator=(RechunkStorageScope&&)      = delete;
+    RechunkStorageScope(const RechunkStorageScope&) =
+        delete ("a scope guard: the re-chunk storage flag is set and reset once per scope");
+    RechunkStorageScope& operator=(const RechunkStorageScope&) =
+        delete ("a scope guard: the re-chunk storage flag is set and reset once per scope");
+    RechunkStorageScope(RechunkStorageScope&&) =
+        delete ("a scope guard: the re-chunk storage flag is set and reset once per scope");
+    RechunkStorageScope& operator=(RechunkStorageScope&&) =
+        delete ("a scope guard: the re-chunk storage flag is set and reset once per scope");
 };
 } // namespace alloc_affinity_detail
 

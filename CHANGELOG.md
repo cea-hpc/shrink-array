@@ -147,6 +147,9 @@ the tag's checksum to the recipe.
 - The atomic maxima (the thread-rank high-water mark, the re-chunk slice
   timings, the RSS peak) use `std::atomic::fetch_max` (C++26) instead of a
   compare-exchange loop; the rank's is still written only when it grows.
+- Every deleted copy / move member under `chunk/` gives its reason
+  (`= delete("...")`, C++26): copying `AllTypeChunk`, a scope guard or a
+  manager now says why in the compiler error. No behaviour change.
 
 ### Fixed (cpp26)
 

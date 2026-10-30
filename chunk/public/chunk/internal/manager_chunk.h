@@ -91,11 +91,14 @@ struct ManagerChunkDynInterface<true>
 {
     ManagerChunkDynInterface()          = default;
     virtual ~ManagerChunkDynInterface() = default;
-    // An interface: never copied or moved (no slicing).
-    ManagerChunkDynInterface(const ManagerChunkDynInterface&)            = delete;
-    ManagerChunkDynInterface& operator=(const ManagerChunkDynInterface&) = delete;
-    ManagerChunkDynInterface(ManagerChunkDynInterface&&)                 = delete;
-    ManagerChunkDynInterface& operator=(ManagerChunkDynInterface&&)      = delete;
+    ManagerChunkDynInterface(const ManagerChunkDynInterface&) =
+        delete ("an abstract interface of the managers: a copy through it would slice the manager");
+    ManagerChunkDynInterface& operator=(const ManagerChunkDynInterface&) =
+        delete ("an abstract interface of the managers: a copy through it would slice the manager");
+    ManagerChunkDynInterface(ManagerChunkDynInterface&&) =
+        delete ("an abstract interface of the managers: a copy through it would slice the manager");
+    ManagerChunkDynInterface& operator=(ManagerChunkDynInterface&&) =
+        delete ("an abstract interface of the managers: a copy through it would slice the manager");
 
     /// @brief Declare a runtime chunk geometry to this type's allocators.
     virtual void register_chunk_size(unsigned int size, int block_size) = 0;
@@ -107,11 +110,14 @@ struct ManagerChunkDynInterface<false>
 {
     ManagerChunkDynInterface()          = default;
     virtual ~ManagerChunkDynInterface() = default;
-    // An interface: never copied or moved (no slicing).
-    ManagerChunkDynInterface(const ManagerChunkDynInterface&)            = delete;
-    ManagerChunkDynInterface& operator=(const ManagerChunkDynInterface&) = delete;
-    ManagerChunkDynInterface(ManagerChunkDynInterface&&)                 = delete;
-    ManagerChunkDynInterface& operator=(ManagerChunkDynInterface&&)      = delete;
+    ManagerChunkDynInterface(const ManagerChunkDynInterface&) =
+        delete ("an abstract interface of the managers: a copy through it would slice the manager");
+    ManagerChunkDynInterface& operator=(const ManagerChunkDynInterface&) =
+        delete ("an abstract interface of the managers: a copy through it would slice the manager");
+    ManagerChunkDynInterface(ManagerChunkDynInterface&&) =
+        delete ("an abstract interface of the managers: a copy through it would slice the manager");
+    ManagerChunkDynInterface& operator=(ManagerChunkDynInterface&&) =
+        delete ("an abstract interface of the managers: a copy through it would slice the manager");
 };
 
 /**
@@ -132,11 +138,14 @@ struct ManagerChunkParallelInterface<true>
 {
     ManagerChunkParallelInterface()          = default;
     virtual ~ManagerChunkParallelInterface() = default;
-    // An interface: never copied or moved (no slicing).
-    ManagerChunkParallelInterface(const ManagerChunkParallelInterface&)            = delete;
-    ManagerChunkParallelInterface& operator=(const ManagerChunkParallelInterface&) = delete;
-    ManagerChunkParallelInterface(ManagerChunkParallelInterface&&)                 = delete;
-    ManagerChunkParallelInterface& operator=(ManagerChunkParallelInterface&&)      = delete;
+    ManagerChunkParallelInterface(const ManagerChunkParallelInterface&) =
+        delete ("an abstract interface of the managers: a copy through it would slice the manager");
+    ManagerChunkParallelInterface& operator=(const ManagerChunkParallelInterface&) =
+        delete ("an abstract interface of the managers: a copy through it would slice the manager");
+    ManagerChunkParallelInterface(ManagerChunkParallelInterface&&) =
+        delete ("an abstract interface of the managers: a copy through it would slice the manager");
+    ManagerChunkParallelInterface& operator=(ManagerChunkParallelInterface&&) =
+        delete ("an abstract interface of the managers: a copy through it would slice the manager");
 
     // --- per-thread allocator and free-list surface ---
     /// @brief Set every rank's allocator geometry, from the calling thread:
@@ -199,11 +208,14 @@ struct ManagerChunkParallelInterface<false>
 {
     ManagerChunkParallelInterface()          = default;
     virtual ~ManagerChunkParallelInterface() = default;
-    // An interface: never copied or moved (no slicing).
-    ManagerChunkParallelInterface(const ManagerChunkParallelInterface&)            = delete;
-    ManagerChunkParallelInterface& operator=(const ManagerChunkParallelInterface&) = delete;
-    ManagerChunkParallelInterface(ManagerChunkParallelInterface&&)                 = delete;
-    ManagerChunkParallelInterface& operator=(ManagerChunkParallelInterface&&)      = delete;
+    ManagerChunkParallelInterface(const ManagerChunkParallelInterface&) =
+        delete ("an abstract interface of the managers: a copy through it would slice the manager");
+    ManagerChunkParallelInterface& operator=(const ManagerChunkParallelInterface&) =
+        delete ("an abstract interface of the managers: a copy through it would slice the manager");
+    ManagerChunkParallelInterface(ManagerChunkParallelInterface&&) =
+        delete ("an abstract interface of the managers: a copy through it would slice the manager");
+    ManagerChunkParallelInterface& operator=(ManagerChunkParallelInterface&&) =
+        delete ("an abstract interface of the managers: a copy through it would slice the manager");
 
     /// @brief Set the single allocator's geometry.
     virtual void init_allocator(int block_size) const = 0;
@@ -223,11 +235,14 @@ struct ManagerChunkInt : public virtual ManagerChunkDynInterface<>, public virtu
 {
     ManagerChunkInt()           = default;
     ~ManagerChunkInt() override = default;
-    // An interface: never copied or moved (no slicing).
-    ManagerChunkInt(const ManagerChunkInt&)            = delete;
-    ManagerChunkInt& operator=(const ManagerChunkInt&) = delete;
-    ManagerChunkInt(ManagerChunkInt&&)                 = delete;
-    ManagerChunkInt& operator=(ManagerChunkInt&&)      = delete;
+    ManagerChunkInt(const ManagerChunkInt&) =
+        delete ("an abstract interface of the managers: a copy through it would slice the manager");
+    ManagerChunkInt& operator=(const ManagerChunkInt&) =
+        delete ("an abstract interface of the managers: a copy through it would slice the manager");
+    ManagerChunkInt(ManagerChunkInt&&) =
+        delete ("an abstract interface of the managers: a copy through it would slice the manager");
+    ManagerChunkInt& operator=(ManagerChunkInt&&) =
+        delete ("an abstract interface of the managers: a copy through it would slice the manager");
 
     // --- present in every build ---
     /// @brief Release this type's allocation blocks.
@@ -665,10 +680,14 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         (void)ChunkT<T>::get_manager(); // built now, outside any parallel region of the type
     }
 
-    ManagerChunk(const ManagerChunk&)            = delete;
-    ManagerChunk& operator=(const ManagerChunk&) = delete;
-    ManagerChunk(ManagerChunk&&)                 = delete;
-    ManagerChunk& operator=(ManagerChunk&&)      = delete;
+    ManagerChunk(const ManagerChunk&) =
+        delete ("one manager per (variant, type), owned by the registry: never copied or moved");
+    ManagerChunk& operator=(const ManagerChunk&) =
+        delete ("one manager per (variant, type), owned by the registry: never copied or moved");
+    ManagerChunk(ManagerChunk&&) =
+        delete ("one manager per (variant, type), owned by the registry: never copied or moved");
+    ManagerChunk& operator=(ManagerChunk&&) =
+        delete ("one manager per (variant, type), owned by the registry: never copied or moved");
 
     void resize_chunk_to_compress_potentially() const override;
 

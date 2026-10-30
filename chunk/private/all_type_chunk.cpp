@@ -112,11 +112,15 @@ std::atomic_flag g_serial_flush_owner{};
 /// Releases g_serial_flush_owner on every exit path of the serial flush.
 struct SerialFlushOwnership
 {
-    SerialFlushOwnership()                                       = default;
-    SerialFlushOwnership(const SerialFlushOwnership&)            = delete;
-    SerialFlushOwnership& operator=(const SerialFlushOwnership&) = delete;
-    SerialFlushOwnership(SerialFlushOwnership&&)                 = delete;
-    SerialFlushOwnership& operator=(SerialFlushOwnership&&)      = delete;
+    SerialFlushOwnership() = default;
+    SerialFlushOwnership(const SerialFlushOwnership&) =
+        delete ("a scope guard: the serial flush has one owner, which releases it once on exit");
+    SerialFlushOwnership& operator=(const SerialFlushOwnership&) =
+        delete ("a scope guard: the serial flush has one owner, which releases it once on exit");
+    SerialFlushOwnership(SerialFlushOwnership&&) =
+        delete ("a scope guard: the serial flush has one owner, which releases it once on exit");
+    SerialFlushOwnership& operator=(SerialFlushOwnership&&) =
+        delete ("a scope guard: the serial flush has one owner, which releases it once on exit");
 
     ~SerialFlushOwnership()
     {

@@ -259,12 +259,15 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
      */
     AllTypeChunk();
 
-    /// Non-copyable: the registry owns the managers and is a singleton.
-    AllTypeChunk(const AllTypeChunk&)            = delete;
-    AllTypeChunk& operator=(const AllTypeChunk&) = delete;
-    AllTypeChunk(AllTypeChunk&&)                 = delete;
-    AllTypeChunk& operator=(AllTypeChunk&&)      = delete;
-    virtual ~AllTypeChunk()                      = default;
+    AllTypeChunk(const AllTypeChunk&) =
+        delete ("the managers' registry is a singleton: use SingletonChk<AllTypeChunk>::get_ref()");
+    AllTypeChunk& operator=(const AllTypeChunk&) =
+        delete ("the managers' registry is a singleton: use SingletonChk<AllTypeChunk>::get_ref()");
+    AllTypeChunk(AllTypeChunk&&) =
+        delete ("the managers' registry is a singleton: use SingletonChk<AllTypeChunk>::get_ref()");
+    AllTypeChunk& operator=(AllTypeChunk&&) =
+        delete ("the managers' registry is a singleton: use SingletonChk<AllTypeChunk>::get_ref()");
+    virtual ~AllTypeChunk() = default;
 
     /// @brief ParamChunk::init_indexes() has set the block size: managers may
     ///        now be registered. Records the block size they are built with.

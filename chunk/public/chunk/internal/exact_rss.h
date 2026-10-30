@@ -119,11 +119,13 @@ class RssPeakSampler
             thread_.join();
         }
     }
-    // Owns the sampling thread, which captured `this`: neither copied nor moved.
-    RssPeakSampler(const RssPeakSampler&)            = delete;
-    RssPeakSampler& operator=(const RssPeakSampler&) = delete;
-    RssPeakSampler(RssPeakSampler&&)                 = delete;
-    RssPeakSampler& operator=(RssPeakSampler&&)      = delete;
+    RssPeakSampler(const RssPeakSampler&) =
+        delete ("owns a sampling thread that captured this: neither copied nor moved");
+    RssPeakSampler&
+    operator=(const RssPeakSampler&) = delete ("owns a sampling thread that captured this: neither copied nor moved");
+    RssPeakSampler(RssPeakSampler&&) = delete ("owns a sampling thread that captured this: neither copied nor moved");
+    RssPeakSampler&
+    operator=(RssPeakSampler&&) = delete ("owns a sampling thread that captured this: neither copied nor moved");
 
     /// @brief Fold in a sample taken elsewhere.
     void note(long kib) noexcept

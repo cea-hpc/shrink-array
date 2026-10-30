@@ -215,10 +215,11 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
 
     // Never copied or moved as such: the final class's copy and move operations
     // build an empty array and then copy the elements or exchange the storage.
-    ArrayImpl(const ArrayImpl&)            = delete;
-    ArrayImpl(ArrayImpl&&)                 = delete;
-    ArrayImpl& operator=(const ArrayImpl&) = delete;
-    ArrayImpl& operator=(ArrayImpl&&)      = delete;
+    ArrayImpl(const ArrayImpl&) = delete ("the implementation base: copy or move the zero_any::Array itself");
+    ArrayImpl(ArrayImpl&&)      = delete ("the implementation base: copy or move the zero_any::Array itself");
+    ArrayImpl&
+    operator=(const ArrayImpl&)       = delete ("the implementation base: copy or move the zero_any::Array itself");
+    ArrayImpl& operator=(ArrayImpl&&) = delete ("the implementation base: copy or move the zero_any::Array itself");
 
   protected:
     // ── What the final class's constructors and destructor are built on ──────

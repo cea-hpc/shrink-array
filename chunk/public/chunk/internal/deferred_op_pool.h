@@ -93,11 +93,14 @@ struct DeferredOperationBase
     DeferredOperationBase()                   = default;
     virtual ~DeferredOperationBase() noexcept = default;
 
-    // Polymorphic, and pool-owned through destroy(): never copied or moved.
-    DeferredOperationBase(const DeferredOperationBase&)            = delete;
-    DeferredOperationBase& operator=(const DeferredOperationBase&) = delete;
-    DeferredOperationBase(DeferredOperationBase&&)                 = delete;
-    DeferredOperationBase& operator=(DeferredOperationBase&&)      = delete;
+    DeferredOperationBase(const DeferredOperationBase&) =
+        delete ("polymorphic, and returned to its pool by destroy(): never copied or moved");
+    DeferredOperationBase& operator=(const DeferredOperationBase&) =
+        delete ("polymorphic, and returned to its pool by destroy(): never copied or moved");
+    DeferredOperationBase(DeferredOperationBase&&) =
+        delete ("polymorphic, and returned to its pool by destroy(): never copied or moved");
+    DeferredOperationBase& operator=(DeferredOperationBase&&) =
+        delete ("polymorphic, and returned to its pool by destroy(): never copied or moved");
 
     /// @brief Replay the write.
     virtual void write_body() = 0;
@@ -134,11 +137,14 @@ struct FastAllocatorBase
     explicit FastAllocatorBase(size_t block_bytes) noexcept : block_size(block_bytes) {}
     virtual ~FastAllocatorBase() = default;
 
-    // Polymorphic, held by unique_ptr in the registry: never copied or moved.
-    FastAllocatorBase(const FastAllocatorBase&)            = delete;
-    FastAllocatorBase& operator=(const FastAllocatorBase&) = delete;
-    FastAllocatorBase(FastAllocatorBase&&)                 = delete;
-    FastAllocatorBase& operator=(FastAllocatorBase&&)      = delete;
+    FastAllocatorBase(const FastAllocatorBase&) =
+        delete ("polymorphic, held by unique_ptr in the allocator registry: never copied or moved");
+    FastAllocatorBase& operator=(const FastAllocatorBase&) =
+        delete ("polymorphic, held by unique_ptr in the allocator registry: never copied or moved");
+    FastAllocatorBase(FastAllocatorBase&&) =
+        delete ("polymorphic, held by unique_ptr in the allocator registry: never copied or moved");
+    FastAllocatorBase& operator=(FastAllocatorBase&&) =
+        delete ("polymorphic, held by unique_ptr in the allocator registry: never copied or moved");
 
     /// @brief Take a block (uninitialised).
     virtual void* allocate_raw() = 0;
@@ -217,11 +223,14 @@ struct DeferredByteAllocSlot
     static constexpr bool on_heap = deferred_pools_outlive_thread && sizeof(T) > 0;
 
     DeferredByteAllocSlot() = default;
-    // Owns its allocator (inline, or on the heap until the thread exits).
-    DeferredByteAllocSlot(const DeferredByteAllocSlot&)            = delete;
-    DeferredByteAllocSlot& operator=(const DeferredByteAllocSlot&) = delete;
-    DeferredByteAllocSlot(DeferredByteAllocSlot&&)                 = delete;
-    DeferredByteAllocSlot& operator=(DeferredByteAllocSlot&&)      = delete;
+    DeferredByteAllocSlot(const DeferredByteAllocSlot&) =
+        delete ("owns this thread's allocator (inline or on the heap): a copy would free it twice");
+    DeferredByteAllocSlot& operator=(const DeferredByteAllocSlot&) =
+        delete ("owns this thread's allocator (inline or on the heap): a copy would free it twice");
+    DeferredByteAllocSlot(DeferredByteAllocSlot&&) =
+        delete ("owns this thread's allocator (inline or on the heap): a copy would free it twice");
+    DeferredByteAllocSlot& operator=(DeferredByteAllocSlot&&) =
+        delete ("owns this thread's allocator (inline or on the heap): a copy would free it twice");
 
     /// Std backend: the thread exits; its allocator waits for the phase end.
     ~DeferredByteAllocSlot();
@@ -272,10 +281,14 @@ struct DeferredFreeListSlot
     DeferredFreeListSlot() = default;
     // Owns the parked blocks in std-alloc builds (see the destructor): a copy
     // would delete them twice.
-    DeferredFreeListSlot(const DeferredFreeListSlot&)            = delete;
-    DeferredFreeListSlot& operator=(const DeferredFreeListSlot&) = delete;
-    DeferredFreeListSlot(DeferredFreeListSlot&&)                 = delete;
-    DeferredFreeListSlot& operator=(DeferredFreeListSlot&&)      = delete;
+    DeferredFreeListSlot(const DeferredFreeListSlot&) =
+        delete ("owns the parked blocks in std-alloc builds: a copy would delete them twice");
+    DeferredFreeListSlot& operator=(const DeferredFreeListSlot&) =
+        delete ("owns the parked blocks in std-alloc builds: a copy would delete them twice");
+    DeferredFreeListSlot(DeferredFreeListSlot&&) =
+        delete ("owns the parked blocks in std-alloc builds: a copy would delete them twice");
+    DeferredFreeListSlot& operator=(DeferredFreeListSlot&&) =
+        delete ("owns the parked blocks in std-alloc builds: a copy would delete them twice");
 
     // std-alloc only: the blocks parked in `fl` come from ::operator new and
     // nothing else owns them, so they are deleted here (else a bounded leak at

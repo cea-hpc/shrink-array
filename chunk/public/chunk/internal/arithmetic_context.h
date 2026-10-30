@@ -90,10 +90,14 @@ struct BaseArithmeticContext
 
     // Built in place in a pool block and owned by one deferred op: a copy
     // would be a second live context for the same write.
-    BaseArithmeticContext(const BaseArithmeticContext&)            = delete;
-    BaseArithmeticContext& operator=(const BaseArithmeticContext&) = delete;
-    BaseArithmeticContext(BaseArithmeticContext&&)                 = delete;
-    BaseArithmeticContext& operator=(BaseArithmeticContext&&)      = delete;
+    BaseArithmeticContext(const BaseArithmeticContext&) =
+        delete ("owned by one deferred op in its pool block: a copy would be a second context for the write");
+    BaseArithmeticContext& operator=(const BaseArithmeticContext&) =
+        delete ("owned by one deferred op in its pool block: a copy would be a second context for the write");
+    BaseArithmeticContext(BaseArithmeticContext&&) =
+        delete ("owned by one deferred op in its pool block: a copy would be a second context for the write");
+    BaseArithmeticContext& operator=(BaseArithmeticContext&&) =
+        delete ("owned by one deferred op in its pool block: a copy would be a second context for the write");
 
     int              num;          ///< index of the element in its chunk
     ChunkT&          chunk;        ///< the chunk written

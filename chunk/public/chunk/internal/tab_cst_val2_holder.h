@@ -194,11 +194,11 @@ struct Sentinel
     {
         GlobalVecHolder<T>::cleanup_all();
     }
-    // One per type, a function-local static: neither copied nor moved.
-    Sentinel(const Sentinel&)            = delete;
-    Sentinel& operator=(const Sentinel&) = delete;
-    Sentinel(Sentinel&&)                 = delete;
-    Sentinel& operator=(Sentinel&&)      = delete;
+    Sentinel(const Sentinel&) = delete ("one per type, a function-local static that frees the registry at exit");
+    Sentinel&
+    operator=(const Sentinel&)      = delete ("one per type, a function-local static that frees the registry at exit");
+    Sentinel(Sentinel&&)            = delete ("one per type, a function-local static that frees the registry at exit");
+    Sentinel& operator=(Sentinel&&) = delete ("one per type, a function-local static that frees the registry at exit");
 };
 
 /**
@@ -419,10 +419,14 @@ class GlobalVecHolder
                 lookups_in_flight.fetch_sub(1, std::memory_order_acq_rel);
             }
         }
-        LookupGuard(const LookupGuard&)            = delete;
-        LookupGuard& operator=(const LookupGuard&) = delete;
-        LookupGuard(LookupGuard&&)                 = delete;
-        LookupGuard& operator=(LookupGuard&&)      = delete;
+        LookupGuard(const LookupGuard&) =
+            delete ("a scope guard: counts one lookup in flight, up to the record of its result");
+        LookupGuard& operator=(const LookupGuard&) =
+            delete ("a scope guard: counts one lookup in flight, up to the record of its result");
+        LookupGuard(LookupGuard&&) =
+            delete ("a scope guard: counts one lookup in flight, up to the record of its result");
+        LookupGuard& operator=(LookupGuard&&) =
+            delete ("a scope guard: counts one lookup in flight, up to the record of its result");
     };
 
     /// @brief Brackets a whole reclaim, mark included. No-op in release.
@@ -444,10 +448,13 @@ class GlobalVecHolder
                 reclaims_running.fetch_sub(1, std::memory_order_release);
             }
         }
-        ReclaimScope(const ReclaimScope&)            = delete;
-        ReclaimScope& operator=(const ReclaimScope&) = delete;
-        ReclaimScope(ReclaimScope&&)                 = delete;
-        ReclaimScope& operator=(ReclaimScope&&)      = delete;
+        ReclaimScope(const ReclaimScope&) =
+            delete ("a scope guard: brackets one reclaim, checked when it starts and ends");
+        ReclaimScope& operator=(const ReclaimScope&) =
+            delete ("a scope guard: brackets one reclaim, checked when it starts and ends");
+        ReclaimScope(ReclaimScope&&) = delete ("a scope guard: brackets one reclaim, checked when it starts and ends");
+        ReclaimScope&
+        operator=(ReclaimScope&&) = delete ("a scope guard: brackets one reclaim, checked when it starts and ends");
 
         /// @brief Fail if a lookup or registration is in flight.
         static void check_no_lookup(const char* when) noexcept;

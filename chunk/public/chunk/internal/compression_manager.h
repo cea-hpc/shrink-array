@@ -83,10 +83,14 @@ struct FlushReplayState
             in_flush_replay = saved_;
         }
 
-        FlushReplayGuard(const FlushReplayGuard&)            = delete;
-        FlushReplayGuard& operator=(const FlushReplayGuard&) = delete;
-        FlushReplayGuard(FlushReplayGuard&&)                 = delete;
-        FlushReplayGuard& operator=(FlushReplayGuard&&)      = delete;
+        FlushReplayGuard(const FlushReplayGuard&) =
+            delete ("a scope guard: the thread's replay flag is set, then restored once on exit");
+        FlushReplayGuard& operator=(const FlushReplayGuard&) =
+            delete ("a scope guard: the thread's replay flag is set, then restored once on exit");
+        FlushReplayGuard(FlushReplayGuard&&) =
+            delete ("a scope guard: the thread's replay flag is set, then restored once on exit");
+        FlushReplayGuard& operator=(FlushReplayGuard&&) =
+            delete ("a scope guard: the thread's replay flag is set, then restored once on exit");
 
       private:
         bool saved_ = in_flush_replay;
@@ -154,11 +158,14 @@ class CompressionManagerThreadPolicy : public FlushReplayState<T, ChunkT>
             this->thread_rank_ = rank;
         }
 
-        // Owns ctx until destroy(): a copy would destroy it twice.
-        DeferredOperation(const DeferredOperation&)            = delete;
-        DeferredOperation& operator=(const DeferredOperation&) = delete;
-        DeferredOperation(DeferredOperation&&)                 = delete;
-        DeferredOperation& operator=(DeferredOperation&&)      = delete;
+        DeferredOperation(const DeferredOperation&) =
+            delete ("owns its context until destroy(): a copy would destroy it twice");
+        DeferredOperation& operator=(const DeferredOperation&) =
+            delete ("owns its context until destroy(): a copy would destroy it twice");
+        DeferredOperation(DeferredOperation&&) =
+            delete ("owns its context until destroy(): a copy would destroy it twice");
+        DeferredOperation&
+        operator=(DeferredOperation&&) = delete ("owns its context until destroy(): a copy would destroy it twice");
 
         /// @brief Destroy the context object, if any, without freeing its memory, and null ctx.
         ~DeferredOperation() override;
@@ -233,11 +240,15 @@ class CompressionManagerThreadPolicy : public FlushReplayState<T, ChunkT>
 
     ~CompressionManagerThreadPolicy() = default;
 
-    CompressionManagerThreadPolicy(const CompressionManagerThreadPolicy&)            = delete;
-    CompressionManagerThreadPolicy& operator=(const CompressionManagerThreadPolicy&) = delete;
+    CompressionManagerThreadPolicy(const CompressionManagerThreadPolicy&) =
+        delete ("the state is static, one per (type, chunk variant): an instance is a handle, not a value");
+    CompressionManagerThreadPolicy& operator=(const CompressionManagerThreadPolicy&) =
+        delete ("the state is static, one per (type, chunk variant): an instance is a handle, not a value");
 
-    CompressionManagerThreadPolicy(CompressionManagerThreadPolicy&&)            = delete;
-    CompressionManagerThreadPolicy& operator=(CompressionManagerThreadPolicy&&) = delete;
+    CompressionManagerThreadPolicy(CompressionManagerThreadPolicy&&) =
+        delete ("the state is static, one per (type, chunk variant): an instance is a handle, not a value");
+    CompressionManagerThreadPolicy& operator=(CompressionManagerThreadPolicy&&) =
+        delete ("the state is static, one per (type, chunk variant): an instance is a handle, not a value");
 
     /**
      * @brief Open a compression window: the compressor's side of the Dekker
@@ -594,10 +605,14 @@ class CompressionManagerThreadPolicy : public FlushReplayState<T, ChunkT>
             rank_flush_release(rank_);
         }
 
-        RankFlushLock(const RankFlushLock&)            = delete;
-        RankFlushLock& operator=(const RankFlushLock&) = delete;
-        RankFlushLock(RankFlushLock&&)                 = delete;
-        RankFlushLock& operator=(RankFlushLock&&)      = delete;
+        RankFlushLock(const RankFlushLock&) =
+            delete ("holds a rank's flush lock: released once, by the scope that acquired it");
+        RankFlushLock& operator=(const RankFlushLock&) =
+            delete ("holds a rank's flush lock: released once, by the scope that acquired it");
+        RankFlushLock(RankFlushLock&&) =
+            delete ("holds a rank's flush lock: released once, by the scope that acquired it");
+        RankFlushLock&
+        operator=(RankFlushLock&&) = delete ("holds a rank's flush lock: released once, by the scope that acquired it");
 
       private:
         int rank_;
@@ -812,10 +827,14 @@ struct CompressionManager : public CompressionManagerThreadPolicy<T, ChunkT, bui
     CompressionManager()  = default;
     ~CompressionManager() = default;
 
-    CompressionManager(const CompressionManager&)            = delete;
-    CompressionManager& operator=(const CompressionManager&) = delete;
-    CompressionManager(CompressionManager&&)                 = delete;
-    CompressionManager& operator=(CompressionManager&&)      = delete;
+    CompressionManager(const CompressionManager&) =
+        delete ("the state is static, one per (type, chunk variant): an instance is a handle, not a value");
+    CompressionManager& operator=(const CompressionManager&) =
+        delete ("the state is static, one per (type, chunk variant): an instance is a handle, not a value");
+    CompressionManager(CompressionManager&&) =
+        delete ("the state is static, one per (type, chunk variant): an instance is a handle, not a value");
+    CompressionManager& operator=(CompressionManager&&) =
+        delete ("the state is static, one per (type, chunk variant): an instance is a handle, not a value");
 
     /**
      * @brief Checks if a value change should trigger compression consideration

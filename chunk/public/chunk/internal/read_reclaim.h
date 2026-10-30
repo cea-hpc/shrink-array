@@ -140,11 +140,12 @@ class ReadSection
     ReadSection() noexcept;
     /// @brief Leave: the sequence goes even, released after the element load.
     ~ReadSection();
-    // A scope: neither copied nor moved.
-    ReadSection(const ReadSection&)            = delete;
-    ReadSection& operator=(const ReadSection&) = delete;
-    ReadSection(ReadSection&&)                 = delete;
-    ReadSection& operator=(ReadSection&&)      = delete;
+    ReadSection(const ReadSection&) = delete ("a read bracket: entered and left once, by the scope that holds it");
+    ReadSection&
+    operator=(const ReadSection&) = delete ("a read bracket: entered and left once, by the scope that holds it");
+    ReadSection(ReadSection&&)    = delete ("a read bracket: entered and left once, by the scope that holds it");
+    ReadSection&
+    operator=(ReadSection&&) = delete ("a read bracket: entered and left once, by the scope that holds it");
 
   private:
     ReaderSlot*   slot_ = nullptr;
@@ -224,11 +225,14 @@ class PassScope
     PassScope() noexcept;
     /// @brief The outermost scope: wait for the readers, then release the batch.
     ~PassScope();
-    // A scope: neither copied nor moved.
-    PassScope(const PassScope&)            = delete;
-    PassScope& operator=(const PassScope&) = delete;
-    PassScope(PassScope&&)                 = delete;
-    PassScope& operator=(PassScope&&)      = delete;
+    PassScope(const PassScope&) =
+        delete ("a pass scope: the outermost one waits for the readers and releases the batch once");
+    PassScope& operator=(const PassScope&) =
+        delete ("a pass scope: the outermost one waits for the readers and releases the batch once");
+    PassScope(PassScope&&) =
+        delete ("a pass scope: the outermost one waits for the readers and releases the batch once");
+    PassScope& operator=(PassScope&&) =
+        delete ("a pass scope: the outermost one waits for the readers and releases the batch once");
 
   private:
     /// @brief Per-thread, reused: a pass does not allocate its batch afresh.

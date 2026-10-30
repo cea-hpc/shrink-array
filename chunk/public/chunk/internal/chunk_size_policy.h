@@ -196,10 +196,14 @@ class DynChunkSizeGuard
             t_active_chunk_size = saved_;
         }
     }
-    DynChunkSizeGuard(const DynChunkSizeGuard&)            = delete;
-    DynChunkSizeGuard& operator=(const DynChunkSizeGuard&) = delete;
-    DynChunkSizeGuard(DynChunkSizeGuard&&)                 = delete;
-    DynChunkSizeGuard& operator=(DynChunkSizeGuard&&)      = delete;
+    DynChunkSizeGuard(const DynChunkSizeGuard&) =
+        delete ("a scope guard: the thread's chunk size is pinned, then restored once on exit");
+    DynChunkSizeGuard& operator=(const DynChunkSizeGuard&) =
+        delete ("a scope guard: the thread's chunk size is pinned, then restored once on exit");
+    DynChunkSizeGuard(DynChunkSizeGuard&&) =
+        delete ("a scope guard: the thread's chunk size is pinned, then restored once on exit");
+    DynChunkSizeGuard& operator=(DynChunkSizeGuard&&) =
+        delete ("a scope guard: the thread's chunk size is pinned, then restored once on exit");
 
   private:
     [[maybe_unused]] unsigned int saved_ = t_active_chunk_size;
