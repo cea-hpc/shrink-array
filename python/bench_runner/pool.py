@@ -8,7 +8,7 @@ directory <pool>/<name>, made by os.mkdir -- atomic on the cluster's shared
 file systems, NFS and Lustre included --, and its owner file names the job
 (host, pid, Slurm job). Whoever makes the directory does the work; the others
 see EEXIST and move on. Used by multi_launch_stress.py (its runs claimed one by
-one); bench_and_test.py is the next one.
+one) and bench_and_test.py (its (phase, configuration) units, bench_runner/share.py).
 
 Python 3.6, standard library only: the scripts run with the cluster's system
 python3."""
@@ -87,10 +87,14 @@ class Pool:
     def claim(self, name):
         """True when this job made <pool>/<name> (or had made it: its owner
         file names this job), False when another one did. Silent: the caller
-        says what the claim was for."""
+        says what the claim was for. A @p name with a slash ("perf/<config>")
+        is a claim in a sub-directory, made on the way (makedirs: every job
+        may create it, only the last mkdir decides)."""
         if not self.dir:
             return True
         c = self.path(name)
+        if os.path.dirname(c) != self.dir:
+            os.makedirs(os.path.dirname(c), exist_ok=True)
         try:
             os.mkdir(c)
         except FileExistsError:

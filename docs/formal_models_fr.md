@@ -371,6 +371,48 @@ ses bibliothèques, exemples et programmes de validation comparé fonction par f
 matérialisation lit la case une fois, en relaxed : `wait_before_materialise()` tient la passe à
 l'écart du chunk (protocole 1), la case y est donc stable.
 
+### 8.7 F6 : un chunk rendu constant pendant la restitution d'une passe n'est jamais mis en file (ouvert)
+
+Le modèle est `formal/queue_handback.c` ; il ne vérifie aucun ordre mémoire, mais un protocole :
+le drapeau « en file » d'un chunk (`tab_is_inside_chunk_list_to_compress`) et la marque de la
+passe. Une passe restitue chaque candidat par `steal_unmark()`, puis remet son drapeau à 0 (la fin
+de `make_block_compression()` ; l'ordre est voulu par la source, voir son commentaire). Entre les
+deux, un écrivain trouve la marque baissée et écrit en direct ; si son écriture fait passer le
+dernier élément à la constante, la CAS 0 -> 1 du marquage trouve le drapeau encore levé et
+renonce, puis la remise à 0 retire le chunk de toutes les listes. Un chunk constant reste
+matérialisé jusqu'à sa prochaine écriture. Aucune valeur n'est fausse : le coût est de la
+mémoire, et le décompte de fin de run, qui classe un chunk écrit sur son contenu, ne le voit pas.
+La fenêtre dépasse la dernière boucle : un chunk que la passe comprime est démarqué juste après
+son effacement, et une écriture qui le matérialise et le rend de nouveau constant n'a besoin
+d'aucune autre condition.
+
+Le modèle a un chunk de deux éléments, 0 et 7, candidat d'une passe ; W écrit 0 à la place du 7
+(différé tant que la marque est levée, puis rejoué) ; avec `-DWITH_W2`, un second écrivain range
+une valeur quelconque dans l'autre élément, la vérification d'exclusion (la passe ne doit ni la
+perdre ni la laisser atteindre un tampon rendu). La propriété Q1 : un chunk matérialisé dont le
+contenu est constant est en liste ; Q2 : le drapeau est levé exactement quand le chunk est en
+liste, une fois.
+
+| cas | attendu | verdict | exécutions |
+|---|---|---|---|
+| source : `steal_unmark()`, puis la remise à 0 du drapeau -- **F6** | échec | **violation de sûreté** (Q1) | -- |
+| source, avec W2 : W2 garde le chunk non constant, l'exclusion seule | succès | succès | 28 |
+| `FIX_HANDBACK` : le drapeau restitué (ci-dessous) | succès | succès | 7 |
+| `FIX_HANDBACK`, avec W2 | succès | succès | 28 |
+| `MUT_HANDBACK_AFTER_UNMARK` : le drapeau mis à 2 après la baisse de la marque | échec | violation de sûreté | -- |
+| `MUT_WRITER_IGNORES_2` : l'écrivain renonce sur un 2 comme sur un 1 | échec | violation de sûreté | -- |
+
+Les mêmes verdicts sous IMM. Le correctif que le modèle accepte, pas encore appliqué : une fois
+tous les parcours de la passe faits, et tant que les marques tiennent encore les écrivains à
+l'écart, le drapeau de chaque candidat passe de 1 à 2, « restitué » ; un écrivain dont le marquage
+trouve 2 le change en 3, « écrit entre-temps », au lieu de renoncer ; la passe remet ensuite 2 -> 0
+par CAS et, sur un 3, remet elle-même le chunk dans la liste de son rang. L'ordre de la boucle de
+restitution est conservé. Sur le chemin d'un écrivain, le coût est une comparaison de plus, sur le
+marquage refusé seulement. Les endroits à changer sont toutes les CAS du drapeau
+(`add_to_compression_list()` et sa forme asynchrone, les écritures par plage) et la fin des passes
+des trois variantes (`zero`, `zero_one_value`, `zero_any` et la validation des motifs de
+`pattern`).
+
 ## 9. Limites
 
 - **Fidélité.** Le modèle est une réduction écrite à la main depuis le source : une ligne que le

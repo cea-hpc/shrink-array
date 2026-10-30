@@ -362,8 +362,11 @@ placed before:
   read of the old value, one comparison and, on the first one of each pass, the CAS
   on the flag;
 - the existence of a **list for this second value on this rank**
-  (`has_candidate_list`): an array that has never called `set_second_value()` has no
-  list, and is never queued.
+  (`has_candidate_list`). Every array has one: an array that has never called
+  `set_second_value()` is queued under the key `T{}`, whose lists its constructor creates
+  (`register_no_second_value_key()`). The test is a guard: it refuses a write before the
+  CAS of the chunk's flag, since a refusal after it would leave the flag set and the chunk
+  never queued again.
 
 An atomic flag per chunk ("already a candidate", `tab_is_inside_chunk_list_to_compress`,
 indexed by `num_tab`) guarantees that a chunk is queued **only once** until the

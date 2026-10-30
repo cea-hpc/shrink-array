@@ -351,6 +351,44 @@ and validation programs compared function by function). The materialisation read
 relaxed: `wait_before_materialise()` keeps the pass away from the chunk (handshake 1), so the
 slot is stable there.
 
+### 8.7 F6: a chunk made constant during a pass's hand-back is never queued (open)
+
+The model is `formal/queue_handback.c`; it checks no memory ordering, but a protocol: the "queued"
+flag of a chunk (`tab_is_inside_chunk_list_to_compress`) and the pass's mark. A pass hands each
+candidate back with `steal_unmark()`, then resets its flag to 0 (the end of
+`make_block_compression()`; the order is the source's on purpose, see its comment). Between the
+two, a writer finds the mark down and writes directly; if its write turns the last element into
+the constant, the marking's CAS 0 -> 1 meets the flag still up and gives up, and the reset then
+drops the chunk from every list. A constant chunk stays materialised until it is written again.
+No value is wrong: the cost is memory, and the end-of-run census, which classifies a written chunk
+on its content, does not see it. The window is wider than the last loop: a chunk the pass
+compresses is unmarked right after its clear, and a write that materialises it and makes it
+constant again needs no other condition.
+
+The model has one chunk of two elements, 0 and 7, a candidate of one pass; W writes the 7 to 0
+(deferred while the mark is up, then replayed); with `-DWITH_W2` a second writer stores a plain
+value into the other element, the exclusion check (the pass must neither lose it nor let it reach a
+returned buffer). The property Q1: a materialised chunk whose content is constant is listed; Q2:
+the flag is up exactly when the chunk is listed, once.
+
+| case | expected | verdict | executions |
+|---|---|---|---|
+| source: `steal_unmark()`, then the flag reset -- **F6** | fail | **safety violation** (Q1) | -- |
+| source, W2 too: W2 keeps the chunk non-constant, the exclusion only | pass | pass | 28 |
+| `FIX_HANDBACK`: the flag handed back (below) | pass | pass | 7 |
+| `FIX_HANDBACK`, W2 too | pass | pass | 28 |
+| `MUT_HANDBACK_AFTER_UNMARK`: the flag set to 2 after the mark is down | fail | safety violation | -- |
+| `MUT_WRITER_IGNORES_2`: the writer gives up on a 2 as on a 1 | fail | safety violation | -- |
+
+The same verdicts under IMM. The fix the model accepts, not applied yet: once every scan of the
+pass is done, and while the marks still keep the writers out, every candidate's flag goes from 1
+to 2, "handed back"; a writer whose marking finds 2 turns it into 3, "written meanwhile", rather
+than giving up; the pass then resets 2 -> 0 by CAS and, on a 3, queues the chunk again in its own
+rank's list. The order of the hand-back loop is kept. On a writer's path the cost is one more
+compare, on the refused marking only. The sites to change are every CAS of the flag
+(`add_to_compression_list()` and its async form, the range writes) and the end of the three
+variants' passes (`zero`, `zero_one_value`, `zero_any` and `pattern`'s motif commit).
+
 ## 9. Limits
 
 - **Fidelity.** The model is a reduction written by hand from the source: a line the model

@@ -53,7 +53,7 @@ void SecondValueProxyBase<Derived, T, ChunkT>::mark_for_compression_core(InT<T> 
 template <typename Derived, typename T, typename ChunkT>
 void SecondValueProxyBase<Derived, T, ChunkT>::mark_for_compression_if_needed(bool new_value) const
 {
-    const bool isv = is_cst_val_new_value_is_other_cst_val(new_value, false, true);
+    const bool isv = passes_mark_pre_check(new_value, false, true);
     // Base::read_values() (qualified: dependent base), never values[num]:
     // it is the write path's read entry and the only one that resolves a
     // compressed chunk's constant (an unbacked identifier slot); indexing
@@ -69,7 +69,7 @@ void SecondValueProxyBase<Derived, T, ChunkT>::mark_for_compression_before_store
 {
     // isv false makes the whole test a no-op: skip the read of the old
     // value too, which mark_for_compression_core() would not look at.
-    if (!is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val))
+    if (!passes_mark_pre_check(new_value, first_value, second_val))
     {
         return;
     }
@@ -107,9 +107,9 @@ SecondValueProxyBase<Derived, T, ChunkT>::write_with_optional_lock_with_set_ptr(
 
 template <typename Derived, typename T, typename ChunkT>
 [[nodiscard]] bool
-SecondValueProxyBase<Derived, T, ChunkT>::is_cst_val_new_value_is_other_cst_val(InT<T> new_value,
-                                                                                InT<T> first_value,
-                                                                                InT<T> second_val) const noexcept
+SecondValueProxyBase<Derived, T, ChunkT>::passes_mark_pre_check(InT<T> new_value,
+                                                                InT<T> first_value,
+                                                                InT<T> second_val) const noexcept
 {
     // CRTP dispatch: each variant owns its fast pre-check. zero_one_value keeps the
     // "a constant is written" test below; zero_any widens it (see

@@ -52,6 +52,11 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `formal/queue_handback.c`: the end of a compression pass against the candidate marking of a
+  writer. It finds F6 (`docs/formal_models.md`, section 8.7), open: a chunk made constant
+  between `steal_unmark()` and the reset of its "queued" flag is dropped from every list and
+  stays materialised until written again -- memory, no wrong value. The model accepts a fix,
+  the flag handed back (1 -> 2, a writer's 3, re-queued by the pass), not applied yet.
 - `thread_speedup.py --pool=<id>` and shrink_gui's "Nodes" field for it: N one-node batch jobs
   share the executable list, as `compile_all.sh --pool` shares its configurations; each job
   measures the executables it claims first (an atomic `mkdir` in
@@ -130,6 +135,12 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- `SecondValueProxyBase::is_cst_val_new_value_is_other_cst_val()` is now
+  `passes_mark_pre_check()` (internal): it has dispatched to the variant's
+  `pre_check_mark_for_compression()` since September, and its name and comment still said the
+  narrow test it replaced ("the chunk at one constant, the other one written"), which invited a
+  fix back to the bug. `docs/algo_zero_one_value.md`: an array without a second value is queued
+  under `T{}`, not never (`has_candidate_list` is a guard before the flag's CAS).
 - The `shrink_bench` executables carry the threading backend of their build in their name:
   `shrink_bench_<backend>_<variant>_<size>` with `<backend>` `omp`, `std` or `serial`
   (`CHUNK_THREADS_BACKEND`), e.g. `shrink_bench_omp_zero_any_256`, `shrink_bench_std_zero_dyn`,
