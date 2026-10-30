@@ -399,7 +399,7 @@ Every call, by task: [docs/api.md](docs/api.md).
 
 ## In progress
 
-Two development branches, not in a release yet:
+Two development branches, not in a release yet, and what comes next:
 
 - **`cpp23` -- C++23 and `mdspan`.** A multidimensional view on any array: `f[i, j]` goes
   through the same write proxy, and a tiled layout (16 x 16 tiles for 256-element chunks) makes
@@ -413,6 +413,10 @@ Two development branches, not in a release yet:
   does not implement. `compile_all.sh` builds the gnu configurations only there
   (`CHUNK_CXX_STANDARD=26`, or `--std=26`). An experiment: the codes the library is meant for
   stay in C++20.
+
+- **GPU -- coming soon.** A backend for NVIDIA and AMD GPUs is being designed: phases rather
+  than handshakes, a device-side chunk format, a staged plan
+  ([docs/conception_gpu_fr.md](docs/conception_gpu_fr.md), in French for now).
 
 `develop` is merged into `cpp23` as it moves, and `cpp23` into `cpp26`; `cpp23` is also a
 Spack version (`spack install shrink-array@cpp23`).

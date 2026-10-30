@@ -413,7 +413,7 @@ Tous les appels, classés par tâche : [docs/api_fr.md](docs/api_fr.md).
 
 ## En cours
 
-Deux branches de développement, pas encore dans une version :
+Deux branches de développement, pas encore dans une version, et la suite :
 
 - **`cpp23` -- C++23 et `mdspan`.** Une vue multidimensionnelle sur n'importe quel tableau :
   `f[i, j]` passe par le même proxy d'écriture, et une disposition en tuiles (tuiles de 16 x 16
@@ -428,6 +428,10 @@ Deux branches de développement, pas encore dans une version :
   lui), et la branche n'utilise rien que GCC 16 n'implémente pas. `compile_all.sh` n'y construit
   que les configurations gnu (`CHUNK_CXX_STANDARD=26`, ou `--std=26`). C'est un essai : les codes
   visés par la bibliothèque restent en C++20.
+
+- **GPU -- bientôt.** Un backend pour les GPU NVIDIA et AMD est en cours de conception : des
+  phases plutôt que des protocoles d'échange, un format de chunk côté device, un plan par étapes
+  ([docs/conception_gpu_fr.md](docs/conception_gpu_fr.md)).
 
 `develop` est fusionnée dans `cpp23` au fil de l'eau, et `cpp23` dans `cpp26` ; `cpp23` est
 aussi une version Spack (`spack install shrink-array@cpp23`).

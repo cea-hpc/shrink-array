@@ -547,6 +547,10 @@ stores recount the counters, and the `_mt` forms write inside a session announce
 compressor (steps 3 to 6 above), on `zero_one_value` as on the other variants. Excluding `zero_one_value` from
 `internal::raw_fillable_v`, the fallback considered at the time, is not needed.
 
+**October 2026: normally fixed.** The direct stores recount the counters, the `_mt` forms write
+inside an announced session, and `rechunk_validation` and the check mode of the bench pass on
+the variants that failed.
+
 ---
 
 ## 11. Useful environment variables
