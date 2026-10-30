@@ -454,6 +454,37 @@ chunks per `shrink_bench` run, at 1 thread as well -- which F6 cannot be: they c
 hole, the partial spans of `fill_range_mt()` on `std::complex<double>` (fixed, see CHANGELOG.md).
 Without it the audit counts none at 2 and 4 threads; the high thread counts are to be measured.
 
+### 8.9 F7: two threads filling the two ends of one chunk could both leave it unqueued (fixed)
+
+`formal/range_edges.c`. `fill_range_mt()` (and `copy_range_mt()`, `transform_range_mt()`) on
+`zero_any` elements with relaxed access stores its span, then decides from three elements of
+the chunk -- 0, S/2, S-1, relaxed loads -- whether the chunk may be uniform and must be queued
+(`may_be_uniform_relaxed()`, step 7 of `store_range_mt()`). Two threads filling the two ends of
+one chunk with the same constant each store their half, then load the other's edge: a
+store-buffering shape, which C11 relaxed, x86-TSO and AArch64 all allow. Both read the old
+edge, neither queues, and a uniform chunk stays materialised. The check builds' audit counted
+it on Milan once the partial-span hole of the aggregates was fixed: 6 to 52 blocks per
+`shrink_bench` run at 16 to 128 threads, all on `tab1` and `tab2` (`double`, filled by
+`fill_range_mt()` with 0 or the second value), none on the element types without the filter.
+The model's chunk has 4 elements; it found the hole at once, and a native run of it on x86 hits
+it in a few hundred thousand tries.
+
+The fix: when the first look says "not uniform", a seq_cst fence and a second look. With the
+fence on both sides, one thread's second look sees the other's stores; a first look that says
+"uniform" needs neither. Cost: one fence per span whose chunk does not look uniform.
+
+| case | expected | verdict | executions |
+|---|---|---|---|
+| source: a look, then a fence and a second look on a "no" | pass | pass | 21 |
+| `MUT_ONE_LOOK`: one look, no fence -- **F7**, before | fail | **safety violation** | -- |
+| `MUT_FENCE_ONE_SIDE`: the fence in one thread only | fail | safety violation | -- |
+| `MUT_RECHECK_NO_FENCE`: the second look without the fence | fail | safety violation | -- |
+
+The same verdicts under IMM. The element path's own filter, `zero_any::Proxy::may_become_uniform()`,
+has the same shape, and says so in its comment, but it only gates the writes of a third value
+(the "discover" and "leave" clauses): a write of one of the two constants is queued without it.
+A fence on its "no" would be paid by every write of varied data; it is left as it is.
+
 ## 9. Limits
 
 - **Fidelity.** The model is a reduction written by hand from the source: a line the model

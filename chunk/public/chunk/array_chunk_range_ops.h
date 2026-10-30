@@ -51,6 +51,7 @@
  */
 
 #include <array>       // std::array (the shared edge offsets)
+#include <atomic>      // std::atomic_thread_fence (the filter's second look)
 #include <algorithm>   // std::min (the range clamps)
 #include <cstddef>     // std::size_t, std::ptrdiff_t
 #include <type_traits> // std::is_same_v, std::conditional_t
@@ -1368,7 +1369,20 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
                         {
                             store_span_relaxed_edges(dst, i - c_begin, hi - c_begin, chunk_sz, at);
                         }
-                        uniform = may_be_uniform_relaxed(dst, chunk_sz); // buffer pinned by the session
+                        // Buffer pinned by the session. Two threads filling the two
+                        // ends of one chunk each store, then load the other's edge:
+                        // store buffering (x86-TSO and AArch64 allow it) lets BOTH
+                        // read the old edge, and neither queue the chunk they left
+                        // uniform. So on a "no", a seq_cst fence and a second look:
+                        // with the fence on both sides, one of them sees the other's
+                        // stores (formal/range_edges.c). Paid only when the first
+                        // look says "no".
+                        uniform = may_be_uniform_relaxed(dst, chunk_sz);
+                        if (!uniform)
+                        {
+                            std::atomic_thread_fence(std::memory_order_seq_cst);
+                            uniform = may_be_uniform_relaxed(dst, chunk_sz);
+                        }
                     }
                     else
                     {
