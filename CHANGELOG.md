@@ -130,6 +130,9 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- shrink_gui: the options form lists the options in alphabetical order (dashes and case aside)
+  rather than in the script's declaration order; the positional arguments stay first, in the
+  script's order, since the command line keeps them in it.
 - `thread_speedup.py --all-exec` takes the TBB bench too (`shrink_bench_tbb_<variant>_<size>`,
   after the other executables, in the std builds made with oneTBB; none with `--int64`, it has
   no 64-bit declination). shrink_gui's speedup chart reads its names: the colour of its variant,

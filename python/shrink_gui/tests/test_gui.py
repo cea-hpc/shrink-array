@@ -873,3 +873,25 @@ def test_connection_watch_times_out(gui, site, monkeypatch):
     got = []
     w.remote.ping(got.append, timeout_ms=500)
     assert pump(lambda: got, 10) and got == [False]
+
+
+def test_options_in_alphabetical_order(gui):
+    """The options form lists the options by their shown name, dashes and case
+    aside; the positional arguments come first, in the script's order (the
+    command line keeps them in it)."""
+    from PySide6.QtWidgets import QFormLayout
+
+    from shrink_gui.widgets import OptionsForm
+
+    w, pump = gui
+    w.program.setCurrentText("multi_launch_stress.py")
+    assert pump(lambda: w.form.schema is not None and "regen_ref" in w.form.widgets)
+    lay = w.form.lay
+    shown = [lay.itemAt(r, QFormLayout.LabelRole).widget().text() for r in range(lay.rowCount())]
+    opts = [s for s in shown if s.startswith("-")]
+    assert len(opts) > 3
+    assert opts == sorted(opts, key=lambda s: (s.lstrip("-").lower(), s))
+
+    acts = [{"flags": [], "dest": "b"}, {"flags": ["--Zed"], "dest": "z"}, {"flags": ["-a", "--alpha"], "dest": "a"},
+            {"flags": [], "dest": "a_pos"}, {"flags": ["--no_io"], "dest": "n"}, {"flags": ["--mode"], "dest": "m"}]
+    assert [ac["dest"] for ac in OptionsForm.display_order(acts)] == ["b", "a_pos", "a", "m", "n", "z"]

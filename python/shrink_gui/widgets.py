@@ -218,8 +218,8 @@ class OptionsForm(QWidget):
                 lab.setStyleSheet("color: #c0392b;")
             self.lay.addRow(lab)
             return
-        for ac in schema["actions"]:
-            flag = (max(ac["flags"], key=len) if ac["flags"] else ac["dest"])
+        for ac in self.display_order(schema["actions"]):
+            flag = self.label_of(ac)
             help_txt = ((ac["help"] or "(pas d'aide dans le script)") + f"\n\noption : {flag}"
                         + (f"\ndéfaut du script : {ac['default']}" if ac["default"] not in (None, False) else ""))
             if ac["kind"] in BOOL_KINDS:
@@ -253,6 +253,22 @@ class OptionsForm(QWidget):
                 row.addWidget(b)
             self.lay.addRow(lab, field)
             self.widgets[ac["dest"]] = (ac, w, lab)
+
+    @staticmethod
+    def label_of(ac):
+        """The name a field is shown under: its longest flag, or its dest for a
+        positional argument."""
+        return max(ac["flags"], key=len) if ac["flags"] else ac["dest"]
+
+    @classmethod
+    def display_order(cls, actions):
+        """@p actions in the form's order: the positional arguments first, in the
+        script's order (args() puts them on the command line in this order), then
+        the options alphabetically by their shown name, dashes and case aside
+        (--iter_max, --mode, --no_io), ties by the full name."""
+        pos = [ac for ac in actions if not ac["flags"]]
+        opts = [ac for ac in actions if ac["flags"]]
+        return pos + sorted(opts, key=lambda ac: (cls.label_of(ac).lstrip("-").lower(), cls.label_of(ac)))
 
     def filter(self, text):
         """Show only the options whose flag or help contains @p text."""
