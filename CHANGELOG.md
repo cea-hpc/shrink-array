@@ -138,6 +138,10 @@ the tag's checksum to the recipe.
 
 ### Changed (cpp23)
 
+- `RechunkDecider::print_rechunk_log(FILE*)` writes its table with
+  `std::println(out, ...)` instead of `std::fprintf`: same columns, same
+  output.
+
 - `copy_range_mt` and `transform_range_mt` (and the tile writes of
   `md::update_tiles` inside a region) store a chunk span in one block copy and
   compare its values in a loop the compiler vectorises: the copy into the

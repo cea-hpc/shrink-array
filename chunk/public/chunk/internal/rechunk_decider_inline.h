@@ -21,9 +21,10 @@
 
 #include <algorithm> // std::max
 #include <cstddef>   // std::size_t
-#include <cstdio>    // std::fprintf (print_rechunk_log)
+#include <cstdio>    // std::FILE (print_rechunk_log)
 #include <cstring>   // std::strcmp (the settled verdicts)
 #include <format>    // std::format (the advisor table's title)
+#include <print>     // std::println (print_rechunk_log)
 #include <string>    // std::string
 
 #include "chunk/rechunk_decider.h"             // the declarations these bodies belong to
@@ -503,25 +504,25 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
 // before -> after (measured), with the advisor's prediction for comparison.
 inline void RechunkDecider::print_rechunk_log(std::FILE* out) const
 {
-    std::fprintf(out, "Re-chunks performed: %zu\n", log_.size());
+    std::println(out, "Re-chunks performed: {}", log_.size());
     for (const RechunkEvent& event : log_)
     {
         const double d_meas = event.mem_before - event.mem_after;
         if (event.mem_after_old >= 0.)
         {
-            std::fprintf(out,
-                         "  iter %-6d %-12s S %5u -> %-5u   mem %7.1f -> %7.1f MB "
-                         "(freed %6.1f MB, %6.1f at unchanged data; advisor predicted %6.1f)\n",
-                         event.iter, event.name.c_str(), event.old_size, event.new_size, event.mem_before / 1e6,
+            std::println(out,
+                         "  iter {:<6} {:<12} S {:5} -> {:<5}   mem {:7.1f} -> {:7.1f} MB "
+                         "(freed {:6.1f} MB, {:6.1f} at unchanged data; advisor predicted {:6.1f})",
+                         event.iter, event.name, event.old_size, event.new_size, event.mem_before / 1e6,
                          event.mem_after / 1e6, d_meas / 1e6, (event.mem_after_old - event.mem_after) / 1e6,
                          (event.mem_before - event.mem_pred) / 1e6);
         }
         else
         {
-            std::fprintf(out,
-                         "  iter %-6d %-12s S %5u -> %-5u   mem %7.1f -> %7.1f MB "
-                         "(freed %6.1f MB; advisor predicted %6.1f)\n",
-                         event.iter, event.name.c_str(), event.old_size, event.new_size, event.mem_before / 1e6,
+            std::println(out,
+                         "  iter {:<6} {:<12} S {:5} -> {:<5}   mem {:7.1f} -> {:7.1f} MB "
+                         "(freed {:6.1f} MB; advisor predicted {:6.1f})",
+                         event.iter, event.name, event.old_size, event.new_size, event.mem_before / 1e6,
                          event.mem_after / 1e6, d_meas / 1e6, (event.mem_before - event.mem_pred) / 1e6);
         }
     }
