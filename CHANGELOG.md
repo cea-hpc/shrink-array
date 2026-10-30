@@ -384,6 +384,13 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `fill_range_mt()`, `copy_range_mt()`, `transform_range_mt()` on `zero_any` elements with relaxed
+  access (`double`, `int`, ...): two threads filling the two ends of one chunk could both read the
+  other's edge before its store (store buffering, allowed on x86 and AArch64) and neither queue
+  the chunk they left uniform. The filter now looks again after a seq_cst fence when its first
+  look says "not uniform". The check builds' audit counted 6 to 52 such chunks per
+  `shrink_bench` run at 16 to 128 threads on Milan. Model: `formal/range_edges.c`
+  (`docs/formal_models.md`, section 8.8, F7).
 - `fill_range_mt()`, `copy_range_mt()`, `transform_range_mt()` on a `zero_any` array of an element
   type without relaxed element access (`std::complex<double>`, the aggregates): a span that did not
   cover its whole chunk -- the ends of a range off a chunk boundary -- never queued the chunk, even

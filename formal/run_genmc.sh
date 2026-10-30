@@ -139,4 +139,13 @@ echo "-- mutations of the fix: each must be refused --"
 run error "MUT_HANDBACK_AFTER_UNMARK (the window is back)"      -- -DFIX_HANDBACK -DMUT_HANDBACK_AFTER_UNMARK $M5
 run error "MUT_WRITER_IGNORES_2 (nobody notes the write)"       -- -DFIX_HANDBACK -DMUT_WRITER_IGNORES_2 $M5
 
+M6=range_edges.c
+
+echo "== fill_range_mt's queueing filter: two ends of one chunk ($M6) =="
+run ok    "source: a look, then fence and second look on a no"  -- $M6
+echo "-- mutations: each must be refused --"
+run error "MUT_ONE_LOOK (F7, before: store buffering)"          -- -DMUT_ONE_LOOK $M6
+run error "MUT_FENCE_ONE_SIDE (both sides need the fence)"      -- -DMUT_FENCE_ONE_SIDE $M6
+run error "MUT_RECHECK_NO_FENCE (the second look alone)"        -- -DMUT_RECHECK_NO_FENCE $M6
+
 exit $fail

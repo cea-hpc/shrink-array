@@ -419,6 +419,39 @@ Mesuré : l'audit des builds check (« never queued for compression ») comptait
 `std::complex<double>` (corrigé, voir CHANGELOG.md). Sans lui, l'audit n'en compte aucun à 2
 et 4 threads ; les grands nombres de threads restent à mesurer.
 
+### 8.8 F7 : deux threads remplissant les deux bouts d'un chunk pouvaient le laisser tous deux hors file (corrigé)
+
+`formal/range_edges.c`. `fill_range_mt()` (et `copy_range_mt()`, `transform_range_mt()`) sur des
+éléments `zero_any` à accès relâché range sa tranche, puis décide sur trois éléments du chunk --
+0, S/2, S-1, lectures relâchées -- si le chunk peut être uniforme et doit être mis en file
+(`may_be_uniform_relaxed()`, étape 7 de `store_range_mt()`). Deux threads remplissant les deux
+bouts d'un même chunk avec la même constante rangent chacun leur moitié, puis lisent le bord de
+l'autre : une forme de store buffering, que permettent le relaxé de C11, x86-TSO et AArch64. Les
+deux lisent l'ancien bord, aucun ne met le chunk en file, et un chunk uniforme reste
+matérialisé. L'audit des builds check l'a compté sur Milan une fois corrigé le trou des tranches
+partielles des agrégats : 6 à 52 blocs par run de `shrink_bench` de 16 à 128 threads, tous sur
+`tab1` et `tab2` (`double`, remplis par `fill_range_mt()` à 0 ou à la seconde valeur), aucun sur
+les types d'éléments sans ce filtre. Le chunk du modèle a 4 éléments ; il a trouvé le trou tout de
+suite, et une exécution native sur x86 le rencontre en quelques centaines de milliers d'essais.
+
+Le correctif : quand le premier regard dit « pas uniforme », une barrière seq_cst et un second
+regard. Avec la barrière des deux côtés, le second regard de l'un des threads voit les écritures
+de l'autre ; un premier regard qui dit « uniforme » n'a besoin ni de l'une ni de l'autre. Coût :
+une barrière par tranche dont le chunk ne paraît pas uniforme.
+
+| cas | attendu | verdict | exécutions |
+|---|---|---|---|
+| source : un regard, puis une barrière et un second regard sur un « non » | succès | succès | 21 |
+| `MUT_ONE_LOOK` : un regard, sans barrière -- **F7**, avant | échec | **violation de sûreté** | -- |
+| `MUT_FENCE_ONE_SIDE` : la barrière dans un seul thread | échec | violation de sûreté | -- |
+| `MUT_RECHECK_NO_FENCE` : le second regard sans la barrière | échec | violation de sûreté | -- |
+
+Les mêmes verdicts sous IMM. Le filtre propre au chemin élément, `zero_any::Proxy::may_become_uniform()`,
+a la même forme, et son commentaire le dit, mais il ne filtre que les écritures d'une troisième
+valeur (les clauses « discover » et « leave ») : une écriture de l'une des deux constantes est
+mise en file sans lui. Une barrière sur son « non » serait payée par chaque écriture de données
+variées ; il est laissé tel quel.
+
 ## 9. Limites
 
 - **Fidélité.** Le modèle est une réduction écrite à la main depuis le source : une ligne que le
