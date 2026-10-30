@@ -23,6 +23,7 @@
 #include <print>           // std::println
 #include <source_location> // std::source_location
 #include <tuple>           // the candidate-list entries
+#include <type_traits>     // std::remove_cvref_t (the re-queued candidates)
 
 #include "chunk/zero_chunk.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
 #include "chunk/config.h"     // build_config::chunk_dynamic, chunk_config::stats
@@ -35,6 +36,7 @@
 #include "chunk/internal/pool_ledger.h"         // CHUNK_LEDGER_*
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
 #include "chunk/internal/test_hooks.h"          // TEST KNOB: test_hooks::maybe_pass_delay
+#include "chunk/internal/queue_flag.h"          // queue_flag::hand_back / release: the pass's hand-back
 
 namespace shrink_array
 {
@@ -78,6 +80,9 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress
         // The chunk's OWN geometry, captured at enqueue -- not the ambient size.
         const auto count = ll_compt.size();
         chunk_t->fill_list_to_compress(ll_compt, num_chunk, num_tab, std::get<3>(tup).count());
+        // Scanned, still marked: hand its queue flag back before the mark can go down,
+        // here for the chunks the scan drops (queue_flag.h, F6).
+        queue_flag::hand_back(zero::Proxy<T>::get_tab_is_inside_list_to_compress(num_tab)[num_chunk]);
         // Not selected by the scan: the writers may have it back now.
         if (ll_compt.size() == count)
         {
@@ -323,6 +328,9 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int 
 
     ll_compt.reserve((sz / 10) + 1);
 
+    // The scan hands every candidate's queue flag back as it goes, before any mark goes
+    // down (fill_list_chunk_to_compress_in_par: queue_flag.h, F6); the loop at the end
+    // releases them.
     fill_list_chunk_to_compress_in_par(thr, ll_compt);
 
     // Geometry: a rank's list mixes chunks of EVERY array, at their own sizes. clear_int_st()
@@ -344,6 +352,9 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int 
     {
         set_thread_chunk_size(saved_sz);
     }
+
+    // The candidates a writer queued while this pass handed them back (queue_flag::release()).
+    std::remove_cvref_t<decltype(vec_tuple_to_compress)> requeued;
 
     for (int k = 0; k < sz; ++k)
     {
@@ -368,11 +379,25 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int 
                                        marked);
             }
         }
-        zero::Proxy<T>::reset_tab_inside_list_to_compress(num_tab, num_chunk);
+        if (build_config::threaded && std::get<0>(tup) != nullptr)
+        {
+            if (queue_flag::release(zero::Proxy<T>::get_tab_is_inside_list_to_compress(num_tab)[num_chunk]))
+            {
+                requeued.push_back(tup);
+            }
+        }
+        else
+        {
+            zero::Proxy<T>::reset_tab_inside_list_to_compress(num_tab, num_chunk);
+        }
     }
 
     vec_tuple_to_compress.clear();
     vec_tuple_to_compress.reserve((sz / 10) + 1);
+    for (const auto& tup : requeued)
+    {
+        vec_tuple_to_compress.push_back(tup);
+    }
 
     if (guarded)
     {

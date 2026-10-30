@@ -358,9 +358,9 @@ placés avant :
   septembre 2026, elle n'admettait que l'écriture d'une constante sur un chunk déjà à
   l'autre constante ; un chunk matérialisé par une valeur quelconque puis réécrit élément
   par élément à une constante n'était alors jamais mis en file, et restait matérialisé.
-  Le coût de l'élargissement n'est payé que par les écritures d'une constante : une
-  lecture de l'ancienne valeur, une comparaison et, à la première de chaque passe, la CAS
-  du drapeau ;
+  Le coût de l'élargissement n'est payé que par les écritures d'une constante : la
+  recherche de la liste du rang (le filtre ci-dessous), une lecture de l'ancienne valeur,
+  une comparaison et, à la première de chaque passe, la CAS du drapeau ;
 - l'existence d'une **liste pour cette seconde valeur sur ce rang**
   (`has_candidate_list`). Tout tableau en a une : un tableau qui n'a jamais appelé
   `set_second_value()` est mis en file sous la clé `T{}`, dont son constructeur crée les
@@ -371,6 +371,13 @@ placés avant :
 Un drapeau atomique par chunk (« déjà candidat », `tab_is_inside_chunk_list_to_compress`,
 indexé par `num_tab`) garantit qu'un chunk n'est mis en file **qu'une fois** jusqu'à la
 passe suivante.
+
+Le drapeau a deux valeurs de plus à l'intérieur d'une passe : dès qu'elle a parcouru un
+candidat, la passe met son drapeau à « restitué », avant que sa marque puisse être levée, et une
+écriture qui rend un chunk constant entre-temps trouve cette valeur et se note sur le drapeau
+(« écrit entre-temps ») au lieu de renoncer ; la passe remet ensuite le chunk en file
+(`chunk/internal/queue_flag.h`). Sans cela, un tel chunk était retiré de toutes les listes et
+restait matérialisé (F6, [formal_models_fr.md](formal_models_fr.md) section 8.8).
 
 ### 8.3 Le déclenchement
 
