@@ -143,12 +143,12 @@ class PointerMapChunk2InfArrayPolicy<T, false>
     using InfArrayT = SecondValueInfo<T>;
 
     /// @brief No registry: always empty.
-    [[nodiscard]] std::vector<InfArrayT*> get_all_inf_array() const
+    [[nodiscard]] static std::vector<InfArrayT*> get_all_inf_array() 
     {
         return {};
     }
     /// @brief No registry: never found.
-    [[nodiscard]] InfArrayT* find_inf_array(InT<T> /*key*/) const
+    [[nodiscard]] static InfArrayT* find_inf_array(InT<T> /*key*/) noexcept
     {
         return nullptr;
     }
