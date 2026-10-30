@@ -308,6 +308,12 @@ class ErrorsTab:
         cmd = rerun_command(run["meta"].get("command", ""), spec, repeat, log_dir)
         extra = rerun_command(run["meta"].get("extra", ""), spec, repeat, log_dir)
         self.reuse_run(run)
+        if run["meta"].get("pool") and hasattr(self, "nodes"):
+            # A job of a submission over several nodes: its command keeps its
+            # --pool=<id>, with which bench_and_test.py --rerun-failed replays
+            # the failures of every job of that pool, in one job (the list of
+            # each is in its own directory) -- one job, then, not "Nœuds" again.
+            self.nodes.setValue(1)
         old = self.time_s.value()
         self.time_s.blockSignals(True)          # not remembered as the program's duration
         self.time_s.setValue(time_s)

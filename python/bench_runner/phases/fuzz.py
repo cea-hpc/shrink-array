@@ -3,6 +3,7 @@
 """Phase 5: randomised parameter sweep (opt-in, --fuzz-cases)."""
 import sys
 
+from .. import share
 from ..builds import _variant_base, resolve_exe, short_config_label, skip_variant_on_config
 from ..parsing import _parse_last_long_val_sum, _write_pinned_seed
 from ..progress import CONFIG_W, VARIANT_W
@@ -79,6 +80,14 @@ def run_fuzz_phase(args, extra_ldpath, errors):
         threads = rng.choice(args.fuzz_threads)
         seed    = rng.randrange(1, 2 ** 31 - 1)
         var     = f"{base}@{size}"
+        # --pool: the unit is a case index, fuzz/case<N>: the --fuzz-cases
+        # are shared, the total over the jobs stays N. Each job draws its own
+        # parameters (its clock seed), so a case is whatever the job that
+        # claims it drew -- a draw no build has a binary for is skipped there,
+        # as without --pool. Drawn before the claim all the same: a job's
+        # cases keep the stream they would have alone.
+        if not share.take("fuzz", f"case{case}"):
+            continue
 
         cfg = next((c for c in args.configs
                     if not skip_variant_on_config(var, c)

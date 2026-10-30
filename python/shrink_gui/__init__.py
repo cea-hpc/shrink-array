@@ -38,14 +38,16 @@ node (the first prototype's way). A run is a directory on inti
 Start conditions ("Démarrage"): after a compile_all.sh run not finished yet
 (ccc_msub: a Slurm dependency, afterok or afterany, passed with -E; detached
 mode: launch.sh waits for that run's exit_code), and/or not before a delay
-(--begin). "Nœuds" (compile_all.sh, thread_speedup.py and multi_launch_stress.py in batch mode,
-PROGRAMS[...]["pool_opt"]): N > 1 submits N one-node jobs <id>-n1..nN, the same
+(--begin). "Nœuds" (compile_all.sh, thread_speedup.py, multi_launch_stress.py and
+bench_and_test.py in batch mode, PROGRAMS[...]["pool_opt"]): N > 1 submits N one-node jobs <id>-n1..nN, the same
 command plus --pool=<id> (meta.json: pool, node, nodes); compile_all.sh builds
 each configuration in the first job that claims it (functions_for_compile.sh,
 pool_init), thread_speedup.py measures each executable there (its Pool class),
 multi_launch_stress.py runs each run index there, the --runs shared
-(bench_runner/pool.py; the first failure stops every job), and the
-Graphique / Résumé tabs of any job gather the pool's
+(bench_runner/pool.py; the first failure stops every job), bench_and_test.py
+each (phase, configuration) unit (bench_runner/share.py; each oracle made
+once, each job's outputs in <arch>/pool_<id>/n<K>), and the
+Graphique / Résumé / Erreurs tabs of any job gather the pool's
 (remote_helper.pool_members). "Démarrage" then offers a compile_all.sh
 submission as one entry and waits for all its jobs (after["runs"];
 afterok:j1:...:jN).

@@ -40,7 +40,8 @@ class Tooltips:
                  "(en batch il reste en attente : à arrêter).",
         "nodes": "Nombre de jobs batch d'un nœud chacun entre lesquels le travail est partagé "
                  "(--pool, ccc_msub seulement) : les configurations de compile_all.sh, les exécutables "
-                 "de thread_speedup.py, les --runs de multi_launch_stress.py.\n\n"
+                 "de thread_speedup.py, les --runs de multi_launch_stress.py, les couples (phase, "
+                 "configuration) de bench_and_test.py.\n\n"
                  "Chaque job reçoit la même commande et les mêmes directives ; il traite ce qu'il "
                  "réclame le premier, dans l'ordre habituel, et laisse le reste aux autres jobs : la "
                  "charge s'équilibre seule. Un job qui démarre quand tout est déjà pris finit aussitôt "
@@ -48,7 +49,10 @@ class Tooltips:
                  "thread_speedup.py : les onglets Graphique et Résumé d'un de ces jobs réunissent ceux "
                  "de tous. multi_launch_stress.py : chaque job prend le prochain run libre, le total "
                  "reste --runs ; le premier échec arrête tous les jobs ; Résumé, Graphique et Erreurs "
-                 "réunissent les jobs.\n\n"
+                 "réunissent les jobs. bench_and_test.py : chaque oracle est généré une fois, les "
+                 "autres jobs l'attendent ; un cas en échec est noté et le job continue ; chaque job "
+                 "écrit dans son dossier pool_<id>/n<K> ; Résumé, Graphique et Erreurs réunissent les "
+                 "jobs.\n\n"
                  "« Démarrage : après » propose ensuite une compilation entière : on attend tous ses jobs.",
         "delay_on": "Ne pas démarrer avant ce délai, compté depuis la soumission "
                     "(ccc_msub : --begin de Slurm ; ccc_mprun détaché : une attente avant le lancement).",

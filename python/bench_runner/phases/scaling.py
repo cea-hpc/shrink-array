@@ -3,7 +3,7 @@
 """Phase 4: scalability guard (omp-llvm, omp-gnu)."""
 import sys
 
-from .. import killinfo
+from .. import killinfo, share
 from ..builds import (
     _run_dir, int64_variant, resolve_exe, short_config_label, skip_variant_on_config,
 )
@@ -102,6 +102,10 @@ def run_scaling_phase(args, extra_ldpath, errors):
         label = short_config_label(config)
         if config not in args.configs:
             print(dim(f"   ({label} not in --configs -- skipped)"))
+            continue
+        # --pool: the unit is scaling/<config>, all its curves (each one is
+        # read against its own best point, nothing crosses configurations).
+        if not share.take("scaling", config, label):
             continue
 
         candidates = [v for v in scaling_vars if not skip_variant_on_config(v, config)]
