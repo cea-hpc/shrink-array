@@ -91,8 +91,8 @@ cette architecture. « Commande » montre exactement ce qui sera exécuté.
 Avant de soumettre un script argparse, la fenêtre fait vérifier la commande par le script
 lui-même sur le calculateur : sa fonction `parse_args(argv)` quand il en a une au niveau du
 module (`thread_speedup.py` : ses propres contrôles compris, sans lancer `main`), sinon son appel
-à `parse_args()`. Une option inconnue, une valeur invalide ou un contrôle du script refuse la
-soumission dans la barre d'état, au lieu d'un job qui s'arrête aussitôt sur une erreur d'usage.
+à `parse_args()`. Une option inconnue, une valeur invalide ou un contrôle du script en échec bloque la
+soumission, avec un message dans la barre d'état, au lieu d'un job qui s'arrête aussitôt sur une erreur d'usage.
 `"validate": False` dans `PROGRAMS` désactive cette vérification pour un programme.
 
 `compile_all.sh` ne se lance qu'en batch, jamais sur le nœud de login. Ses champs `--target`
@@ -118,7 +118,7 @@ leur travail. `--pool` peut aussi se donner à la main, à un `compile_all.sh` l
 shell (`--help`).
 
 `thread_speedup.py` (courbes de speedup en threads d'exécutables shrink_bench sur une cible,
-quoi qui fasse tourner les threads -- OpenMP, le backend std::thread ou TBB ; anciennement
+quel que soit ce qui fait tourner les threads -- OpenMP, le backend std::thread ou TBB ; anciennement
 `omp_speedup.py` :
 `--target`, `--exec` ou `--all-exec`, `--min-threads`, `--max-threads`, `--multiply`) se lance
 de même en batch seulement, avec les mêmes boutons « Choisir… ». Son avancement et ses erreurs

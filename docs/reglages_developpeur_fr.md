@@ -31,7 +31,7 @@ programme renseigne les champs, et `shrink_bench` les expose en options (§4). V
 | variable | défaut | effet |
 |---|---|---|
 | `CHUNK_RECLAIM_THREADS` | 1 | threads qui émettent les `madvise` d'un balayage ; `0` : `omp_get_max_threads()`. Sur Milan (64 threads), `0` est 3,5 % plus rapide pour `zero_one_value` et identique pour les autres variantes ; il reste à 1 tant qu'il n'est pas mesuré sur Grace, où 288 threads les émettraient |
-| `CHUNK_CST_VAL2_ID_LIMIT` | non défini | crochet de test : abaisse le nombre d'identifiants du registre des secondes valeurs de `zero_any` (sinon la capacité de la région), pour qu'un harnais atteigne la limite du registre avec quelques valeurs (`cst2_registry_validation`, `cst2_reclaim_validation`) ; ne peut que l'abaisser |
+| `CHUNK_CST_VAL2_ID_LIMIT` | non défini | crochet de test : abaisse le nombre d'identifiants du registre des secondes valeurs de `zero_any` (sinon la capacité de la région), pour qu'un test de validation atteigne la limite du registre avec quelques valeurs (`cst2_registry_validation`, `cst2_reclaim_validation`) ; ne peut que l'abaisser |
 | `CHUNK_DEFERRED_POOL_KB` | 64 | taille des slabs des pools d'écritures différées, en Kio (les slabs d'opérations ne sont jamais rendus : plus gros, moins d'appels à l'allocateur mais plus de mémoire résidente) |
 
 `python/ab_settings_campaign.py` mesure un tel réglage contre les défauts (temps de calcul,
@@ -108,7 +108,7 @@ et `CHUNK_ADVISOR_TABLE`.
 | `CHUNK_BENCH_ULONG_BANDS` | nombre de secondes valeurs distinctes du tableau `unsigned long` (4 096 ; 0 = sans limite) |
 | `CHUNK_MALLOC_ARENAS` | nombre d'arènes `malloc` de la glibc (0 = inchangé) |
 | `SHRINK_BENCH_MALLOC_TRIM` | `1` : `malloc_trim` à chaque ligne de mémoire, et pas seulement aux points de contrôle (« after init », « end ») ; déforme la courbe et coûte dans la boucle chronométrée |
-| `SHRINK_BENCH_KEEP_POOLS` | `1` : pas de `trim_reuse_pools` aux points de contrôle (les tampons parqués et, avec l'allocateur rapide, les slabs vidés restent résidents) |
+| `SHRINK_BENCH_KEEP_POOLS` | `1` : pas de `trim_reuse_pools` aux points de contrôle (les tampons mis de côté et, avec l'allocateur rapide, les slabs vidés restent résidents) |
 | `BENCH_SCHED_BLOCK` | taille des blocs d'ordonnancement des phases du banc (64 ; 0 = tranches contiguës) |
 | `NO_IO`, `COMPRESS` | équivalents de `--no_io` et `--compress` |
 | `--no_mask`, `--mask_scale <x>` | sans `tab_mask` ; ou sa taille, `x × sz` (défaut 1/32) |
@@ -151,8 +151,8 @@ Les options de [variables_environnement_fr.md](variables_environnement_fr.md) §
 | `SHRINK_BENCH_PRINT_MEM` | `ON` | `shrink_bench` affiche ses lignes de mémoire (après l'init, toutes les `freq_conso_mem` itérations, après une compression) ; `OFF` pour chronométrer un run sans les lectures de RSS qui les produisent |
 | `SHRINK_BENCH_UNITY` | `ON` | chaque exécutable `shrink_bench` compilé en une seule unité (unity build, 3,5 à 4 fois moins de compilation) ; `OFF` pour comparer des temps avec des campagnes antérieures, l'inlining entre fichiers du banc pouvant les changer ; `SHRINK_BENCH_UNITY_BATCH` fichiers par unité (0 = tous) |
 | `CHUNK_DEBUG_INFO` | `auto` | informations de débogage des builds optimisés : `full` (`-g`), `lines` (`-g1` : noms de fonctions et tables de lignes, assez pour perf et les backtraces gdb, pas pour les variables locales), `none` ; `auto` : `full` avec `CHECK_OPTIM` ou un sanitizer, `lines` sinon. Le code machine est le même ; `lines` compile 20 à 27 % plus vite avec 40 % de mémoire de pointe en moins. Les builds Debug ont toujours `-g` |
-| `CHUNK_VALIDATION_UNITY` | `ON` | les harnesses de validation regroupés en un exécutable par variante et géométrie (unity build) ; `OFF` : un exécutable par harness |
-| `CHUNK_BUILD_VALIDATION` | selon le build | compiler les harnesses de `examples/validation`, et avec eux les crochets de test (`CHUNK_TEST_HOOKS`) ; par défaut `ON` en Debug, avec `CHECK_OPTIM` ou un sanitizer, `OFF` ailleurs (non mis en cache : suit la configuration courante) |
+| `CHUNK_VALIDATION_UNITY` | `ON` | les tests de validation regroupés en un exécutable par variante et géométrie (unity build) ; `OFF` : un exécutable par test |
+| `CHUNK_BUILD_VALIDATION` | selon le build | compiler les tests de `examples/validation`, et avec eux les crochets de test (`CHUNK_TEST_HOOKS`) ; par défaut `ON` en Debug, avec `CHECK_OPTIM` ou un sanitizer, `OFF` ailleurs (non mis en cache : suit la configuration courante) |
 | `FAST_ALLOC_CHECK_LISTS` | `OFF` | niveau de debug renforcé des listes de slabs : en Debug, vérification complète de la liste à chaque insertion et retrait (lent) ; un Debug ordinaire garde les vérifications légères |
 | `HAVE_AGGRESSIVE_COMPRESSION` | `OFF` | défaut de la compression « agressive », un réglage d'exécution : `CHUNK_AGGRESSIVE_COMPRESSION=1` (ou `0`) la fixe pour un lancement. La passe entre deux phases est sautée, et toute la compression se fait pendant les régions parallèles, à des instants imprévisibles. Plus lent, mais sollicite les chemins concurrents : un mode de validation, qui n'a plus besoin d'un build à lui |
 | `CHUNK_FORCE_LEDGER` | `OFF` | garde le registre des blocs (`pool_ledger.h`) actif sous OpenMP, où il est éteint par défaut : son mutex global sérialise chaque allocation et libération. Détecte double libération et remise illégale en réserve |
@@ -163,7 +163,7 @@ Les options de [variables_environnement_fr.md](variables_environnement_fr.md) §
 | `CHUNK_DO_CHECK` | `OFF` | chaque valeur écrite vérifiée contre NaN |
 | `CHUNK_RECHUNK_LEDGERTRACE` | `OFF` | tracer chaque transition du registre des blocs |
 | `CHUNK_RING_LOG_DEBUG`, `CHUNK_RING_LOG_OP` | `OFF` | journal circulaire de mise au point de tous les événements (lourd) ; des seuls événements du cycle de vie des opérations (léger) |
-| `CHUNK_GLIBCXX_ASSERTIONS` | `OFF` | assertions de la libstdc++ (`_GLIBCXX_ASSERTIONS`) dans la bibliothèque et ses consommateurs |
+| `CHUNK_GLIBCXX_ASSERTIONS` | `OFF` | assertions de la libstdc++ (`_GLIBCXX_ASSERTIONS`) dans la bibliothèque et les programmes qui l'utilisent |
 | `CHUNK_UBSAN` | `OFF` | UndefinedBehaviorSanitizer (à associer à ASan, pas à TSan) |
 | `CHUNK_ALIGN_CHECK` | `OFF` | arrêt si un bloc de slab est mal aligné pour son type |
 | `CHUNK_NO_IPA_ICF` | `OFF` | désactive `-fipa-icf` (GCC fusionne sinon des fonctions identiques, ce qui brouille les piles d'appels) |

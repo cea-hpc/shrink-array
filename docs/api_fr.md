@@ -1,9 +1,9 @@
-# L'API en un coup d'œil
+# Aperçu de l'API
 
 > English version: [api.md](api.md).
 
-> Octobre 2026. Une page pour ce qu'un programme appelle, regroupé par tâche. Les détails (paramètres, préconditions, complexité) sont dans la référence Doxygen
-> (`cmake --build build --target doc`), où l'on peut chercher ces noms. L'usage en contexte :
+> Octobre 2026. Ce qu'un programme appelle, sur une seule page, regroupé par tâche. Les détails (paramètres, préconditions, complexité) sont dans la référence Doxygen
+> (`cmake --build build --target doc`), où l'on peut chercher ces noms. L'utilisation en situation :
 > [getting_started_fr.md](getting_started_fr.md).
 
 ***
@@ -35,8 +35,8 @@ celle de la bibliothèque liée (`chunk::chunk_zero_any`, ...) ; `chunk_config::
 
 ## 3. Opérations du conteneur
 
-Ce qu'a un `std::vector`, avec les différences qui comptent. **(S)** marque un point séquentiel :
-hors de toute région parallèle, et il invalide les proxys du tableau.
+Les opérations d'un `std::vector`, avec les différences importantes. **(S)** marque un point
+séquentiel : à appeler hors de toute région parallèle ; il invalide les proxys du tableau.
 
 | opération | membres | remarques |
 |---|---|---|
@@ -81,8 +81,8 @@ les tableaux de l'appelant : dans un code où plusieurs modules ont leurs propre
   arrête le run --, les libres, les libérations faites et ce qu'elles ont libéré, les libérations
   refusées par cause (un appel refusé renvoie 0 comme un appel qui n'a rien à libérer) et si
   l'index est dégradé (toute libération est alors refusée et les identifiants ne font que
-  croître). Échantillonné aux points de contrôle de l'application, `in_use()` / `capacity` est
-  l'alerte précoce.
+  croître). Relevé aux points de contrôle de l'application, le rapport `in_use()` / `capacity` sert
+  d'alerte précoce.
 
 Absents : `data()`, les itérateurs mutables, `insert` / `erase` au milieu, un tri en place.
 
@@ -142,7 +142,7 @@ le programme, dans tous les builds. Les builds de contrôle (Debug, `CHECK_OPTIM
 aussi sur une écriture différée dans une région par un thread qui n'a pas appelé
 `begin_parallel_phase()`.
 
-Les threads propres de l'application (`std::thread`, TBB) demandent le backend std
+Les threads créés par l'application (`std::thread`, TBB) demandent le backend std
 (`CHUNK_THREADS=std`) : chaque thread qui écrit appelle `begin_parallel_phase()` avant sa
 première écriture, et un seul thread appelle `finalize_parallel_phase()` une fois qu'ils se sont
 arrêtés. `shrink_array::tbb::parallel_for` fait les deux appels pour une boucle TBB ; l'en-tête
@@ -189,8 +189,8 @@ noms `shrink_array::logging`) : un niveau (`error`, `warn`, `info`, `debug`, `tr
 |---|---|
 | `CHUNK_LOG=warn,rechunk=info` | les niveaux : un niveau seul pour tous les canaux, `canal=niveau` pour un seul, de gauche à droite ; `off` n'écrit que les échecs fatals |
 | `CHUNK_LOG_FILE=chemin` | le fichier où les lignes sont ajoutées au lieu de stderr (`%p` : le numéro du processus) |
-| `logging::configure("warn,rechunk=debug")` | la même spécification depuis le code, par-dessus `CHUNK_LOG` ; renvoie le nombre d'éléments non compris |
-| `logging::set_sink(fn, user)` | confie chaque enregistrement (niveau, canal, message, emplacement dans le source) à `fn` -- le logger du programme -- au lieu de stderr ; `nullptr` revient au défaut. Un enregistrement peut arriver à la sortie : le sink doit lui survivre, ou être retiré avant |
+| `logging::configure("warn,rechunk=debug")` | la même spécification depuis le code, par-dessus `CHUNK_LOG` ; renvoie le nombre d'éléments non reconnus |
+| `logging::set_sink(fn, user)` | confie chaque enregistrement (niveau, canal, message, emplacement dans le source) à `fn` -- le logger du programme -- au lieu de stderr ; `nullptr` revient au défaut. Un enregistrement peut arriver pendant la sortie du programme : le sink doit lui survivre, ou être retiré avant |
 
 Ce qu'un programme demande explicitement -- `print_all_reuse_pool_breakdown()`,
 `CHUNK_ARENA_REPORT`, `CHUNK_LEDGER_REPORT`, `CHUNK_OMPT_STATS` -- est écrit quel que soit

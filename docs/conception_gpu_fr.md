@@ -12,7 +12,7 @@
 ## 1. Objectif et périmètre
 
 **Objectif.** Offrir sur GPU (NVIDIA et AMD) un tableau qui se lit et s'écrit dans un kernel
-comme un tableau plat, `a(i)` / `a(i) = v`, et qui ne paie pas pour ses chunks uniformes --
+comme un tableau plat, `a(i)` / `a(i) = v`, et qui ne stocke pas ses chunks uniformes --
 le même format de données et les mêmes garanties (sans perte, écriture en place, toute valeur
 répétée compressée par `zero_any`) que la version CPU. Le gain visé est d'abord la **mémoire**
 : 80 à 192 Go de HBM, c'est là que « 20 fois moins » change ce qu'un code peut traiter.
@@ -33,24 +33,24 @@ répétée compressée par `zero_any`) que la version CPU. Le gain visé est d'a
 - `bool` compacté bit à bit (`ArrayChunkBits`) ;
 - un backend SYCL/Intel (possible via la couche de portabilité, non visé).
 
-## 2. Ce qui porte, ce qui ne porte pas
+## 2. Ce qui se porte, ce qui ne se porte pas
 
 La bibliothèque CPU a deux couches de natures très différentes :
 
 | couche | contenu | sur GPU |
 |---|---|---|
-| **format** | table de chunks ; un chunk = tampon privé ou constante ; S puissance de 2 ou multiple de 64 ; indice `i >> decalage`, `i & modulo` ; métadonnées par chunk | **porte tel quel**, et s'y trouve même mieux qu'en CPU (section 4) |
-| **sémantique d'accès** | lecture d'un chunk compressé = la constante ; écrire la constante d'un chunk compressé ne fait rien ; écrire autre chose matérialise, pré-rempli de la constante quittée ; compression des chunks redevenus uniformes ; rechunk par `copy_range` | **porte** : c'est la définition du conteneur |
-| **machinerie d'exécution** | Dekker asymétrique et `membarrier`, écritures différées par thread, barrière de lecture et dirty bitset, hazard pointers, OMPT, `thread_local`, `fast_allocators` (slabs par rang, arènes `mmap`), listes de réutilisation par thread, adaptateur TBB, registre des secondes valeurs sans verrou | **ne porte pas**, et est remplacée par le modèle de la section 3 |
+| **format** | table de chunks ; un chunk = tampon privé ou constante ; S puissance de 2 ou multiple de 64 ; indice `i >> decalage`, `i & modulo` ; métadonnées par chunk | **se porte tel quel**, et s'y trouve même mieux qu'en CPU (section 4) |
+| **sémantique d'accès** | lecture d'un chunk compressé = la constante ; écrire la constante d'un chunk compressé ne fait rien ; écrire autre chose matérialise, pré-rempli de la constante quittée ; compression des chunks redevenus uniformes ; rechunk par `copy_range` | **se porte** : c'est la définition du conteneur |
+| **machinerie d'exécution** | Dekker asymétrique et `membarrier`, écritures différées par thread, barrière de lecture et dirty bitset, hazard pointers, OMPT, `thread_local`, `fast_allocators` (slabs par rang, arènes `mmap`), listes de réutilisation par thread, adaptateur TBB, registre des secondes valeurs sans verrou | **ne se porte pas**, et est remplacée par le modèle de la section 3 |
 
-Les raisons, précises, pour lesquelles la troisième couche ne porte pas :
+Les raisons, précises, pour lesquelles la troisième couche ne se porte pas :
 
-- **pas de garantie de progrès entre blocs** : un thread GPU qui attend un autre warp peut
+- **pas de garantie de progression entre blocs** : un thread GPU qui attend un autre warp peut
   attendre un warp qui ne sera jamais ordonnancé tant qu'il occupe la place. Toute attente
   bornée inter-threads (`wait_out_compressor`, l'attente du compresseur sur les drapeaux)
   est interdite dans un kernel ;
 - **pas d'équivalent de `membarrier`** (pas d'interruption inter-processeurs côté device) ;
-  la forme symétrique à `seq_cst` existerait, mais sans le progrès elle ne sert à rien ;
+  la forme symétrique à `seq_cst` existerait, mais sans garantie de progression elle ne sert à rien ;
 - `std::atomic`, `thread_local`, `mmap`, les appels système n'existent pas en code device
   (nvcc) ; les atomiques device ont des **portées** (bloc, device, système) et, sous Kokkos,
   sont *relaxed* par définition ;
@@ -61,7 +61,7 @@ Les raisons, précises, pour lesquelles la troisième couche ne porte pas :
 
 ## 3. Modèle d'exécution : un rôle par kernel
 
-Les trois poignées de main de la version CPU existent parce qu'une région OpenMP fait
+Les trois protocoles d'échange de la version CPU existent parce qu'une région OpenMP fait
 tourner **en même temps** des écrivains, une passe de compression et des flushs, plus des
 lecteurs purs contre le réemploi. Sur GPU l'exclusion est fournie par la **frontière de
 kernel** : un kernel se termine, `fence`, le suivant commence. La conception repose sur un
@@ -126,7 +126,7 @@ le changent. Il est donc partageable avec l'hôte (section 11).
 S est une puissance de 2, **multiple de 64** (la taille d'un wavefront AMD ; 32 chez NVIDIA).
 Les threads consécutifs d'un warp lisent des indices consécutifs : avec S ≥ 64 et des
 tampons alignés, un warp tombe toujours **dans un seul chunk**. Trois propriétés en
-découlent, qui font que le format est mieux chez lui sur GPU qu'en CPU :
+découlent, qui rendent le format mieux adapté au GPU qu'au CPU :
 
 - le descripteur est lu **une fois par warp** (même adresse pour tous les lanes : broadcast
   L1), pas une fois par thread ;
@@ -135,7 +135,7 @@ découlent, qui font que le format est mieux chez lui sur GPU qu'en CPU :
 
 Taille de départ : 256 ou 1024 **(à trancher)**. Le GPU voudrait des chunks plus gros pour
 amortir le descripteur et les atomiques (une matérialisation par chunk), la compression fine
-voudrait petit ; c'est le même arbitrage que la géométrie dynamique CPU (9.3).
+les voudrait petits ; c'est le même arbitrage que la géométrie dynamique CPU (9.3).
 
 ### 4.3 Métadonnées par tableau
 
@@ -192,7 +192,7 @@ __device__ void assign(T v)
 
 Les cas 1 et 3 sont le chemin chaud, uniformes par warp, sans atomique. Les règles de
 `zero_one_value` (« la seconde valeur sur un élément qui la contient déjà ») et de `zero_any`
-(« découverte », « départ », `may_become_uniform`) servaient à nourrir les listes de candidats
+(« découverte », « départ », `may_become_uniform`) servaient à alimenter les listes de candidats
 : elles **disparaissent**, la passe de fin de phase n'a pas besoin de candidats. Il reste à
 prendre en compte `+=` et les autres opérateurs composés, qui lisent avant d'écrire : même
 cas, avec `v` calculée à partir de `d.cst` ou `buf[pos]`.
@@ -375,7 +375,7 @@ réduction, le même que la passe) ; décision sur l'hôte ; reconstruction par 
 `copy_range` vers un nouveau tableau (un bloc par chunk cible, qui vote l'uniformité de ses
 sources et n'alloue qu'en cas contraire : l'« installation directe des constantes » de
 `zero_any`) ; échange ; libération des anciennes arènes. Rien de concurrent : c'est la partie
-de la version CPU qui porte le mieux, parce qu'elle était déjà faite de phases.
+de la version CPU qui se porte le mieux, parce qu'elle était déjà faite de phases.
 
 Elle vient **après** la géométrie fixe dans le plan (section 13).
 
@@ -436,13 +436,13 @@ Elle vient **après** la géométrie fixe dans le plan (section 13).
   CUDA et sur HIP, à la manière de ce que fait `fast_allocators` pour les plateformes CPU.
   Le **prototype est en HIP** (compile pour AMD et NVIDIA) ou en CUDA, au choix de la machine
   disponible. **Kokkos est une façade** livrée en plus (`chunk/device/kokkos_adaptor.h`,
-  comme `tbb_adaptor.h`) : un `Kokkos::View`-like dont `operator()` est le proxy de la
+  comme `tbb_adaptor.h`) : un équivalent de `Kokkos::View` dont `operator()` est le proxy de la
   section 6, et un `parallel_for` qui marque les phases. Cette façade est ce qu'utilisent
   les codes Kokkos ; les codes CUDA/HIP natifs utilisent les en-têtes natifs.
 - Compilateurs : nvcc ≥ 12 (C++20 ; pas C++23, pas de modules ; lent sur le CRTP lourd) ;
   hipcc/clang (C++20 et 23). La branche `cpp26` n'est pas une base GPU ; la cible C++20 des
   applications est la bonne. **(À trancher)** : clang comme compilateur CUDA unique, qui
-  évite nvcc et ses limites, au prix d'un support CUDA en retard d'une version.
+  évite nvcc et ses limites, au prix d'une prise en charge de CUDA en retard d'une version.
 - CMake : une option `CHUNK_DEVICE=none|cuda|hip` (et `CHUNK_DEVICE_KOKKOS=ON` pour la
   façade), des cibles `chunk::chunk_zero_any_device_256`, … ; Spack : une variante `device`.
 
@@ -504,7 +504,7 @@ l'est côté CPU (`docs/getting_started_fr.md` §5).
   front-end sur les concepts ; clang-CUDA est la sortie de secours.
 - **Le registre de motifs** de `pattern` entretenu par l'hôte : détection coûteuse si le
   nombre de motifs candidats est grand ; à borner comme en CPU (un motif par forme).
-- **Qui sont les consommateurs** : codes Kokkos, Arcane, CUDA/HIP natifs ? La réponse
+- **Quels utilisateurs** : codes Kokkos, Arcane, CUDA/HIP natifs ? La réponse
   décide si la façade Kokkos est l'étape 3 ou l'étape 1, et si la couche accélérateur
   d'Arcane doit être une seconde façade.
 - **Les machines de mesure** : le cluster Grace n'a pas de GPU ; l'étape 0 demande un accès
