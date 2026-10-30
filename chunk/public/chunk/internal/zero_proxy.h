@@ -374,9 +374,15 @@ template <typename T>
 class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_block_compression>
 {
   public:
-    /// @brief Stream output of the element's value (defined below).
-    template <typename U>
-    friend std::ostream& operator<<(std::ostream& os, const Proxy<U>& proxy);
+    /// @brief Write the element's value, read through proxy.read_pure(), to @p os.
+    /// @return @p os.
+    friend std::ostream& operator<<(std::ostream& os, const Proxy& proxy)
+    {
+        // Through the read entry, like operator T(): values[num] is stale while a
+        // deferred op pends on this offset.
+        os << proxy.read_pure();
+        return os;
+    }
 
     using ChunkType = Chunk<T>;
     using Base      = ProxyBase<Proxy, T, Chunk<T>>;
@@ -785,17 +791,6 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
 };
 
 } // namespace zero
-
-/// @brief Write the element's value, read through proxy.read_pure(), to @p os.
-/// @return @p os.
-template <typename T>
-std::ostream& operator<<(std::ostream& os, const zero::Proxy<T>& proxy)
-{
-    // Through the read entry, like operator T(): values[num] is stale while a
-    // deferred op pends on this offset.
-    os << proxy.read_pure();
-    return os;
-}
 
 } // namespace shrink_array
 

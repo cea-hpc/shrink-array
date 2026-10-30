@@ -477,10 +477,6 @@ template <typename T, typename Derived, typename ChunkT>
 class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::use_fast_block_compression>
 {
   public:
-    /// @brief Stream output of the element's value (defined below).
-    template <typename U>
-    friend std::ostream& operator<<(std::ostream& os, const Proxy<U>& proxy);
-
     using ChunkType          = ChunkT;
     using Base2              = SecondValueProxyBase<Derived, T, ChunkType>;
     using Base               = ProxyBase<Derived, T, ChunkType>;
@@ -804,6 +800,16 @@ class Proxy : public ProxyImpl<T, Proxy<T>, Chunk<T>>
     using Impl::Impl;
     using Impl::operator=; // the value assignments (clean and trap paths)
 
+    /// @brief Write the element's value, read through proxy.read_values(), to @p os.
+    /// @return @p os.
+    friend std::ostream& operator<<(std::ostream& os, const Proxy& proxy)
+    {
+        // Through the proxy's read entry: values[] directly is wrong for a chunk
+        // compressed to a second constant (an unbacked slot).
+        os << proxy.read_values();
+        return os;
+    }
+
     /// @brief Proxy-to-proxy assignment, `a[i] = b[j]`: a WRITE of @p from's
     ///        value (ProxyImpl::operator=), not a rebinding.
     /// @return *this.
@@ -816,17 +822,6 @@ class Proxy : public ProxyImpl<T, Proxy<T>, Chunk<T>>
 };
 
 } // namespace zero_any
-
-/// @brief Write the element's value, read through proxy.read_values(), to @p os.
-/// @return @p os.
-template <typename T>
-std::ostream& operator<<(std::ostream& os, const zero_any::Proxy<T>& proxy)
-{
-    // Through the proxy's read entry: values[] directly is wrong for a chunk
-    // compressed to a second constant (an unbacked slot).
-    os << proxy.read_values();
-    return os;
-}
 
 } // namespace shrink_array
 

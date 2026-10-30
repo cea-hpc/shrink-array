@@ -52,6 +52,15 @@ class Proxy : public zero_any::ProxyImpl<T, Proxy<T>, Chunk<T>>
     using Impl::Impl;
     using Impl::operator=; // the value assignments (clean and trap paths)
 
+    /// @brief Write the element's value, read through the proxy's gated read
+    ///        (operator T()), to @p os.
+    /// @return @p os.
+    friend std::ostream& operator<<(std::ostream& os, const Proxy& proxy)
+    {
+        os << static_cast<T>(proxy);
+        return os;
+    }
+
     /// @brief Proxy-to-proxy assignment, `a[i] = b[j]`: a WRITE of @p from's
     ///        value (ProxyImpl::operator=), not a rebinding.
     /// @return *this.
@@ -82,15 +91,5 @@ class Proxy : public zero_any::ProxyImpl<T, Proxy<T>, Chunk<T>>
 };
 
 } // namespace pattern
-
-/// @brief Write the element's value, read through the proxy's gated read
-///        (operator T()), to @p os.
-/// @return @p os.
-template <typename T>
-std::ostream& operator<<(std::ostream& os, const pattern::Proxy<T>& proxy)
-{
-    os << static_cast<T>(proxy);
-    return os;
-}
 
 } // namespace shrink_array
