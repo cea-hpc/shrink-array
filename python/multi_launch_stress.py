@@ -453,11 +453,22 @@ if args.builds:
         sys.exit("❌ No build has a selected binary — nothing to run "
                  f"(variants={','.join(variants)} sizes={','.join(sizes)}, root={build_root})")
     print(f"🔁 {len(builds)} build(s), cycled run after run: {', '.join(builds)}")
-    if _tbb_absent:
-        with_tbb = [b for b in builds if any(os.path.basename(e).startswith("shrink_bench_tbb_")
-                                             for e in executables_of[b])]
-        print(f"ℹ️ TBB bench (tbb_*): {'in ' + ', '.join(with_tbb) if with_tbb else 'in no build'}; "
-              "the other builds have none (OpenMP or serial, or a std build made without oneTBB)")
+    # One build per run: a build's binaries, the TBB bench's among them, first
+    # run at its position in the cycle. With the std builds listed after ten
+    # OpenMP ones, no tbb_* binary ran before run 11, which looked like the
+    # TBB bench never being launched: say where each one comes.
+    with_tbb = [b for b in builds if any(os.path.basename(e).startswith("shrink_bench_tbb_")
+                                         for e in executables_of[b])]
+    if with_tbb:
+        runs = ", ".join(f"{b} (run {builds.index(b) + 1})" for b in with_tbb)
+        print(f"ℹ️ TBB bench (tbb_*), in the cycle of {len(builds)}: {runs}"
+              + ("" if len(with_tbb) == len(builds) else
+                 "; the other builds have none (OpenMP or serial, or a std build made without oneTBB)"))
+    elif _tbb_absent:
+        print("ℹ️ TBB bench (tbb_*): in no build (OpenMP or serial, or std builds made without oneTBB)")
+    if n < len(builds):
+        print(f"⚠️ --runs {n} < {len(builds)} builds: {', '.join(builds[n:])} never run"
+              + (", the TBB bench not at all" if with_tbb and builds.index(with_tbb[0]) >= n else ""))
 else:
     found, missing = _select_in_cwd()
     if missing:
