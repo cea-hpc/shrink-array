@@ -16,7 +16,6 @@
 
 #include <algorithm> // std::min
 #include <bit>       // std::bit_cast (calculate_checksum)
-#include <cassert>   // assert
 #include <chrono>    // std::chrono::steady_clock
 #include <cmath>     // std::cos, std::sin, std::sqrt
 #include <cstdint>   // std::int64_t, uint64_t
@@ -188,7 +187,7 @@ int main()
     {
         constexpr int chunk_size = static_cast<int>(shrink_array::static_chunk_size);
 
-        assert(chunk_size <= zero::ChunkDef::size_max);
+        static_assert(chunk_size <= zero::ChunkDef::size_max);
 
 
         if constexpr (chunk_size == 0)

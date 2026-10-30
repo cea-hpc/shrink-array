@@ -568,7 +568,15 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> value) noexcept
                 // Producer traces should fire first; if only this fires, a store site
                 // is missing instrumentation.
                 CHUNK_CHECK_VALUES_PTR_C(values, "deferred.write_body.values_load", &chunk);
+                // The element's value before this write -- the chunk's constant if it
+                // was just materialised -- for the marking below.
+                const InT<T> v_old = Base::read_values_async(ctx);
                 elem_set(values, static_cast<std::size_t>(num), static_cast<T>(ctx->operand));
+
+                // As the compound ops' replay: a replayed write that makes the chunk
+                // uniform queues it, or it waits for the next direct write. After the
+                // store, unlike the direct path: a flush excludes the passes.
+                Base2::mark_for_compression_if_needed_with_value_async(proxy, v_old, static_cast<T>(ctx->operand));
             };
 
             Base::enqueue_deferred_write(ctx, std::move(lbd_equal_asynch));

@@ -15,8 +15,7 @@
  */
 
 // Central prelude first: fixes the chunk/ include order and derives the
-// SHRINK_ARRAY / CHECK_COMPRESSION / NEED_COMPRESSION macros from the
-// build-time variant selector.
+// SHRINK_ARRAY macro from the build-time variant selector.
 #include "bench_prelude.h" // Int, tc, ComplexDouble, SHRINK_ARRAY
 
 #include <algorithm> // std::min, std::max
@@ -59,19 +58,6 @@
 #include "chunk/log.h"                // CHUNK_LOG, logging::enabled (the cst2 report at compress=info)
 
 using namespace shrink_array;
-
-namespace shrink_array
-{
-
-// ActiveArray now lives in bench_array.h, with the `Int` index type it hands
-// to the library: this file carried a second, identical copy of the alias --
-// harmless while both spelled the same thing, a redefinition as soon as one of
-// them gained a template argument.
-
-// chunk_dyn_size now lives in bench_array.h: bench_init.cpp needs it as much
-// as main() does.
-
-} // namespace shrink_array
 
 /// @brief The chunk-size advisor and the re-chunk decider act in a dynamic
 ///        chunked build only. The objects exist in every build so the loop
@@ -529,8 +515,7 @@ int main(int argc, char* argv[])
     }
 
     // Array<bool> in a shrink build, std::vector<short> in the baseline
-    // (bench_array.h says why): one alias, where four declarations under
-    // #if defined CHUNK_VARIANT_ZERO* stood.
+    // (bench_array.h says why).
     BenchBoolArray tab_bool(sz);
     // tab_bool's twin, written with the same values at the same places:
     // ArrayChunkBits (8 bools per byte) in a zero_one_value build, tab_bool's own type
@@ -710,9 +695,6 @@ int main(int argc, char* argv[])
 
     // Value census and filling rates: lbd_fill_values, lbd_fill_chunk and
     // lbd_stats, in bench_stats.cpp.
-
-    // Start iteration loop
-    // #define TEST_CAPTUR_BUG
 
     // Random abort injection (TEST_CAPTUR_BUG). The draws sit inside the
     // `if constexpr`, so a normal build never touches std::random_device -- the

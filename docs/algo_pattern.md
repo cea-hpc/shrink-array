@@ -112,6 +112,31 @@ two constants is read in one block, normalised, hashed and submitted to the admi
 3. the values pointer switched by CAS from the buffer to the motif (acq_rel);
 4. the buffer released to the pool after the grace period, as for a compression to a constant.
 
+The course of the pass; the steps up to the scan are those of `zero_any`
+([algo_zero_any.md](algo_zero_any.md) §5), compressed here:
+
+```mermaid
+flowchart TD
+    A["zero_any's pass up to the scan:<br/>flush check, steal_mark, start"] --> E["fill_list_to_compress at the entry's size:<br/>scan_constants against 0 and element 0"]
+    E -->|"all = 0"| F["type 0: slot reset_release,<br/>CAS values -> cst_val1"]
+    E -->|"all = element 0"| G["type 1: find_or_set_ind_cst_val2_release,<br/>CAS values -> the registry array"]
+    E -->|"neither"| M["classify_motif: read_block,<br/>subtract element 0, hash, find_or_admit"]
+    M -->|"registered motif"| MC["motif_candidates_, claim kept"]
+    M -->|"not admitted"| N["steal_unmark: stays materialised"]
+    MC --> O["compress_motif_candidates, after the constants:<br/>block_clear_motif"]
+    O --> O1["1 offset -> slot, release store<br/>2 type slot = CstSlot::motif<br/>3 CAS buffer -> motif"]
+    F --> R["free_block_to_pool after a grace period,<br/>steal_unmark"]
+    G --> R
+    O1 --> R
+    R --> K["queue flags released as in zero_any,<br/>finish()"]
+    N --> K
+```
+
+`find_or_admit` returns a motif only from its second sighting, by another chunk (§3); the motif
+CAS is made on a claimed chunk, and its failure is an invariant failure. The two constants use
+the release forms of the slot writes (`reset_release`, `find_or_set_ind_cst_val2_release`), for
+the readers of §6.
+
 ## 6. The read, and the rewrites of the slot
 
 A reader loads the pointer, then the offset: two words. The slot is rewritten by a compression
@@ -138,8 +163,40 @@ from the same cache line, on the read of a motif chunk only.
 
 `zero_any`'s write path. A write into a motif chunk **materialises** it: a buffer filled with
 `motif[j] + offset`, published by CAS against the motif pointer (a lost CAS recycles the buffer).
-`wait_before_materialise()` keeps the pass away from the chunk (handshake 1), so the slot is
-stable there and read once. The offset stays in the slot (§2).
+The slot is stable there, and the fill reads it once: the pass that marked the chunk stays
+parked on the writer's flag (handshake 1) until `end_write`. `wait_before_materialise()` returns
+at once on this path; its wait loop serves the callers without a flag (`alloc_chunk`, a flush
+replay). The offset stays in the slot (§2).
+
+The course of a write in an OpenMP build: the engine steps are those of §7.2 of
+[algo_zero_one_value.md](algo_zero_one_value.md), the body that of `zero_any` (§6 of
+[algo_zero_any.md](algo_zero_any.md)), both compressed here; the diagram shows where `pattern`
+differs.
+
+```mermaid
+flowchart TD
+    A["pattern::Proxy: zero_any::ProxyImpl::assign_impl"] --> B{"0 on a cst_val1 chunk,<br/>no deferred operation pending?"}
+    B -->|yes| B1["nothing to do"]
+    B -->|no| C["engine of 7.2<br/>(write_with_optional_lock_with_set_ptr)"]
+    C --> D{"re-check:<br/>compressor?"}
+    D -->|yes| D1["end_write + DEFERRED write"]
+    D -->|no| E["body handle_no_bool_assignment:<br/>load values, arm the slot"]
+    E --> F{"registry constant = value?<br/>(is_cst_val2_ptr_of: never a motif)"}
+    F -->|yes| F1["nothing to do"]
+    F -->|no| G{"first or last element<br/>(is_completion_write),<br/>or a zero_any criterion?"}
+    G -->|yes| G1["add_to_compression_list"]
+    G -->|no| H
+    G1 --> H{"values in the motif region?<br/>(is_motif_ptr)"}
+    H -->|yes| I["create_value: buffer filled with<br/>motif[j] + offset of the slot,<br/>CAS against the motif pointer"]
+    H -->|no| J["zero_any's perform_core_assignment"]
+    I --> K["store_value_at,<br/>the offset stays in the slot"]
+    J --> L["end_write + housekeeping of 7.2"]
+    K --> L
+```
+
+The completion rule widens both the pre-check (`pattern::Proxy::pre_check_mark_for_compression`)
+and the predicate (`should_mark_for_compression`). On a motif chunk the old value the marking
+reads is `motif[num] + offset`, through `Chunk::motif_offset()`.
 
 ## 8. Dynamic geometry: the rechunk and the advisor
 

@@ -92,7 +92,7 @@
 #include <cstring>     // std::memcmp (the return-contract region)
 #include <thread>      // std::this_thread::yield
 #include <type_traits> // std::is_same_v, std::conditional_t, std::is_integral_v
-#include <utility>     // std::forward (the returns lambdas: an element proxy is a temporary)
+#include <utility>     // std::forward (the returns lambdas: an element proxy is a temporary), std::as_const
 #include <vector>      // std::vector
 
 #include "chunk/chunk_traits.h"         // forward decls + default IntType = int
@@ -797,6 +797,94 @@ static int run_resize(const char* label, long count)
     return fails ? 1 : 0;
 }
 
+// ── a replayed write that makes a chunk uniform queues it ───────────────────
+
+/**
+ * @brief Every chunk materialised, then written back to the first constant
+ *        with EVERY write deferred, then one compression pass: no chunk may
+ *        stay materialised.
+ * @details The direct path marks a chunk when a write makes it a candidate;
+ *          a deferred write runs no body on the spot, so only its replay can
+ *          mark it. Without that, the chunks rewritten here by replays alone
+ *          are on no candidate list and the pass never sees them.
+ * @note zero_one_value's compress() is an audit that compresses every constant
+ *       chunk, queued or not: there the count passes either way, and a missed
+ *       mark shows as its self-heal report (CHUNK_LOG=compress=info).
+ * @return 0 if no chunk is left materialised, 1 otherwise.
+ */
+template <typename T>
+static int run_replay_marks(const char* label, long count)
+{
+    if constexpr (!build_config::use_openmp || !test_hooks::force_defer_compiled)
+    {
+        return 0;
+    }
+    Array<T> arr(count);
+
+#pragma omp parallel
+    {
+        begin_phase();
+#pragma omp for
+        for (long i = 0; i < count; ++i)
+        {
+            arr[i] = static_cast<T>(1);
+        }
+    }
+    end_phase();
+    // Drain the candidate lists those writes may have filled: below, only a
+    // replay can put a chunk back on one.
+#pragma omp parallel
+    {
+        begin_phase();
+        arr.compress();
+    }
+    end_phase();
+
+    const unsigned int every      = test_hooks::force_defer_every;
+    test_hooks::force_defer_every = 1U; // every write below takes the deferred exit
+#pragma omp parallel
+    {
+        begin_phase();
+#pragma omp for
+        for (long i = 0; i < count; ++i)
+        {
+            arr[i] = T{};
+        }
+    }
+    end_phase(); // the replays
+    test_hooks::force_defer_every = every;
+
+#pragma omp parallel
+    {
+        begin_phase();
+        arr.compress();
+    }
+    end_phase();
+
+    const long chunk_sz = static_cast<long>(arr.chunk_size());
+    const long n_chunks = (count + chunk_sz - 1) / chunk_sz;
+    const int  ind2     = internal::second_value_index(arr);
+    long       left     = 0;
+    long       wrong    = 0;
+    for (long c = 0; c < n_chunks; ++c)
+    {
+        left += internal::materialised(arr, arr.chunk_ref(static_cast<std::size_t>(c)), ind2) ? 1 : 0;
+    }
+    for (long i = 0; i < count; ++i)
+    {
+        wrong += (static_cast<T>(std::as_const(arr)[i]) != T{}) ? 1 : 0;
+    }
+    arr.clear();
+    if (left != 0 || wrong != 0)
+    {
+        println("[{}/replay-marks] FAIL: {} of {} chunks left materialised, {} wrong values", label, left, n_chunks,
+                wrong);
+        return 1;
+    }
+    println("[{}/replay-marks] ok: {} chunks rewritten by replays alone, all compressed", label, n_chunks);
+    return 0;
+}
+
 int run(int argc, char** argv)
 {
     // The forced-deferral hook (test_hooks.h), on for this harness only: one
@@ -850,6 +938,10 @@ int run(int argc, char** argv)
     fails += run_resize<int>("int", count);
     fails += run_resize<double>("double", count);
     fails += run_resize<bool>("bool", count);
+
+    fails += run_replay_marks<int>("int", count);
+    fails += run_replay_marks<double>("double", count);
+    fails += run_replay_marks<bool>("bool", count);
 
     // The hook really fired, in every build that has it (the deferral count
     // below needs CHUNK_STATS).

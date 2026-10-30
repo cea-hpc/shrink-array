@@ -97,20 +97,19 @@ BenchArgs parse_bench_args(int argc, char* argv[])
 {
     BenchArgs args;
 
-    // The locals the moved body works on, under their original names: the body
-    // stays VERBATIM, and we copy into `args` on the way out.
+    // The parse works on locals, copied into `args` on the way out.
     bool   no_io_v       = false;
     bool   compress_v    = false;
     bool   checksum_only = false;
     bool   write_trace   = false;
     bool   read_trace    = false;
-    bool   test_stl      = false;      // --test_stl: run the STL-interface self-checks
-    bool   test_prealloc = false;      // --test_prealloc: alloc_chunk before a partial loop
-    bool   no_struct     = false;      // --no_struct: no Point3 / Cell arrays (bench_args.h)
-    bool   no_mask       = false;      // --no_mask: no tab_mask (bench_args.h)
-    bool   no_conn       = false;      // --no_conn: no tab_conn (bench_args.h)
-    double mask_scale    = 1.0 / 32.0; // --mask_scale: tab_mask's size / sz (bench_args.h)
-    double conn_scale    = 1.0 / 32.0; // --conn_scale: tab_conn's size / sz (bench_args.h)
+    bool   test_stl      = false;                    // --test_stl: run the STL-interface self-checks
+    bool   test_prealloc = false;                    // --test_prealloc: alloc_chunk before a partial loop
+    bool   no_struct     = false;                    // --no_struct: no Point3 / Cell arrays (bench_args.h)
+    bool   no_mask       = false;                    // --no_mask: no tab_mask (bench_args.h)
+    bool   no_conn       = false;                    // --no_conn: no tab_conn (bench_args.h)
+    double mask_scale    = bench_mask_default_scale; // --mask_scale: tab_mask's size / sz (bench_args.h)
+    double conn_scale    = bench_conn_default_scale; // --conn_scale: tab_conn's size / sz (bench_args.h)
 
     // Nouveaux facteurs
     double multiply_factor = 1.0;

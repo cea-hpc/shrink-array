@@ -32,6 +32,9 @@
 #                           and only a libtbb built for this architecture
 #                           exported with its CMAKE_PREFIX_PATH and
 #                           LD_LIBRARY_PATH entries; CHUNK_WITH_TBB=0: no search
+#   CHUNK_WITH_TBB=1        none of those but the system's (libtbb-dev,
+#                           tbb-devel: <libdir>/cmake/TBB/TBBConfig.cmake),
+#                           which CMake finds alone; CHUNK_SYSTEM_TBB names it
 #
 # Each can be set in the environment first to override. The build names
 # (cmake-build-<name>/<arch>, arch = ID_VERSION__machine from os-release) are
@@ -300,7 +303,19 @@ if [ "${CHUNK_WITH_TBB:-}" != 0 ]; then
         unset _chunk_tbb_lib
     else
         unset TBBROOT
+        # Else the system's oneTBB (libtbb-dev, tbb-devel): CMake finds it in
+        # its default prefixes and ld.so loads it, nothing to export but the
+        # switch itself (set_tbb_options reads CHUNK_WITH_TBB).
+        if [ -z "${CHUNK_WITH_TBB:-}" ]; then
+            for _chunk_tbb_cfg in "/usr/lib/$(uname -m)-linux-gnu" /usr/lib64 /usr/lib; do
+                if [ -f "$_chunk_tbb_cfg/cmake/TBB/TBBConfig.cmake" ] && chunk_tbb_arch_ok "$_chunk_tbb_cfg"; then
+                    export CHUNK_WITH_TBB=1 CHUNK_SYSTEM_TBB="$_chunk_tbb_cfg"
+                    break
+                fi
+            done
+            unset _chunk_tbb_cfg
+        fi
     fi
 fi
 
-echo "[site] $CHUNK_SITE: sources $CHUNK_SRC_DIR, builds under $CHUNK_BUILD_REP, modules $CHUNK_HAVE_MODULES${CHUNK_GCC_TOOLCHAIN_DIR:+, libstdc++ from $CHUNK_GCC_TOOLCHAIN_DIR}${TBBROOT:+, oneTBB $TBBROOT}"
+echo "[site] $CHUNK_SITE: sources $CHUNK_SRC_DIR, builds under $CHUNK_BUILD_REP, modules $CHUNK_HAVE_MODULES${CHUNK_GCC_TOOLCHAIN_DIR:+, libstdc++ from $CHUNK_GCC_TOOLCHAIN_DIR}${TBBROOT:+, oneTBB $TBBROOT}${CHUNK_SYSTEM_TBB:+, oneTBB of the system ($CHUNK_SYSTEM_TBB)}"
