@@ -303,6 +303,14 @@ about 17 at 128.
 
 ![Speedup of the std::thread backend on AMD EPYC 7763 (Milan, 2 × 64 cores), std-oneapi, --multiply 1](docs/images/speedup_milan_std-oneapi_x1.png)
 
+The same build with the bench's loops as TBB tasks (`shrink_bench_tbb_*`, linear scale): the
+arrays are written from TBB's threads, as a TBB program would write them through
+`shrink_array::tbb::parallel_for`. The variants follow the ideal line up to 16 threads, reach
+19 to 26 at 32 and 28 to 52 at 128 (the static sizes 256 and 1024 at 40 to 52, `_dyn` at 28
+to 37), while `std::vector` peaks near 22 at 64 threads and falls back to about 12 at 128.
+
+![Speedup of the TBB bench on AMD EPYC 7763 (Milan, 2 × 64 cores), std-oneapi](docs/images/speedup_milan_std-oneapi_tbb.png)
+
 **A fair baseline.** The `std::vector` of these runs (`shrink_bench_<backend>_vector_*`) is a real
 `std::vector` whose zeroing is parallel
 ([examples/shrink_bench/baseline_vector.h](examples/shrink_bench/baseline_vector.h)). A plain
