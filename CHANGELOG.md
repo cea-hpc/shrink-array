@@ -215,6 +215,12 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `CHUNK_BREAK_ON_FAILURE`: under a debugger (gdb, cuda-gdb, gdbserver, lldb, lldb-server, read
+  from `TracerPid` and the tracer's name, without allocating), an invariant failure or a
+  `FAST_ALLOC_FATAL`, its report written, raises `SIGTRAP`: the debugger stops on the failing
+  thread with its frames live, and continuing aborts as before. strace and the other tracers,
+  TotalView and DDT do not stop; without a debugger nothing changes. `0` never stops, `1` always
+  (`docs/environment_variables.md`). `log_break_on_failure` checks it under gdb and strace.
 - shrink_gui 0.15: the partition list also offers the partitions the machine lists at the
   connection check (`[batch] partition_info`: `ccc_mpinfo` on inti, `sinfo -o '%P %c %D %a'` in
   `slurm_example.toml`), beside the site file's `[partitions]`, which win for a name in both. Their

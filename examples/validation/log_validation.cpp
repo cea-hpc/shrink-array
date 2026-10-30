@@ -41,7 +41,17 @@
 //      element values of any type are spelled; 8 threads failing at once
 //      give one report; a failure inside the sink still stops;
 //      CHUNK_CHECK_FAILED stops a check build and logs an error elsewhere;
-//      and fast_allocators' FAST_ALLOC_FATAL gives the same report.
+//      and fast_allocators' FAST_ALLOC_FATAL gives the same report;
+//      CHUNK_BREAK_ON_FAILURE=1 stops the child on SIGTRAP, after the report;
+//  10. the debugger detection of the fatal level (fatal.h's tracer_pid,
+//      is_debugger_name) on fixed texts of /proc/<pid>/status and comm.
+//
+// With --debugger <gdb> [<strace>] (the test log_break_on_failure), instead:
+// the fatal child of check 9 run under gdb stops on SIGTRAP in the fatal
+// path, the report written, and continued, aborts; with
+// CHUNK_BREAK_ON_FAILURE=0 it only aborts; under strace (which traces the
+// process too, but is no debugger) it aborts, with no SIGTRAP. Exit status 77
+// (skipped) when gdb cannot be run.
 //
 // Exit status 0 when every check passes.
 
@@ -51,6 +61,7 @@
 #include <complex>     // std::complex (check 9)
 #include <cstdint>     // std::uint32_t (check 9)
 #include <cstdio>      // std::remove, std::sscanf, std::fflush
+#include <csignal>     // SIGTRAP, SIGABRT (check 9, --debugger)
 #include <print>       // std::println (the children's stdout)
 #include <cstdlib>     // std::malloc, std::free, setenv
 #include <cstring>     // std::memcpy
@@ -541,11 +552,16 @@ struct FatalRun
     std::string log;         ///< CHUNK_LOG_FILE
 };
 
-FatalRun run_child(const char* self, int which)
+/// @brief Run the child of case @p which, under @p wrapper (a debugger's
+///        command line, or nothing) and with the variables @p env in addition.
+///        CHUNK_BREAK_ON_FAILURE is auto unless @p env sets it: one the user
+///        exported does not change the outcome.
+FatalRun run_child(const char* self, int which, std::string_view env = "", std::string_view wrapper = "")
 {
     const std::string dir  = std::filesystem::temp_directory_path().string();
     const std::string base = dir + "/shrink_log_fatal." + std::to_string(::getpid()) + "." + std::to_string(which);
-    const std::string cmd  = "ulimit -c 0; CHUNK_LOG=warn CHUNK_LOG_FILE=\"" + base + ".log\" timeout 60 \"" +
+    const std::string cmd  = "ulimit -c 0; CHUNK_LOG=warn CHUNK_BREAK_ON_FAILURE=auto CHUNK_LOG_FILE=\"" + base +
+                             ".log\" " + std::string(env) + " timeout 120 " + std::string(wrapper) + " \"" +
                              std::string(self) + "\" --fatal " + std::to_string(which) + " > \"" + base + ".out\" 2>&1";
     FatalRun          run;
     const int         status = std::system(cmd.c_str());
@@ -615,6 +631,16 @@ void check_fatal(const char* self)
               run.log.find("[shrink_array][general][F][") != std::string::npos,
           "FAST_ALLOC_FATAL: the same fatal report (block, backtrace, CHUNK_LOG_FILE)");
 
+    // Forced on, without a debugger: the report, the line that says why, then
+    // SIGTRAP, which nothing handles, kills the child (128 + SIGTRAP).
+    run = run_child(self, 0, "CHUNK_BREAK_ON_FAILURE=1");
+    check(run.status == 128 + SIGTRAP && run.out.find("--- Execution Backtrace ---") != std::string::npos &&
+              run.out.find("CHUNK_BREAK_ON_FAILURE=1: stopping on SIGTRAP") != std::string::npos &&
+              run.out.find("--- Execution Backtrace ---") < run.out.find("stopping on SIGTRAP"),
+          "fatal: CHUNK_BREAK_ON_FAILURE=1 stops on SIGTRAP, after the report");
+    check(run_child(self, 5).out.find("stopping on SIGTRAP") == std::string::npos,
+          "fatal: no stop without a debugger (auto)");
+
     run = run_child(self, 4);
     if constexpr (shrink_array::build_config::any_check)
     {
@@ -631,6 +657,106 @@ void check_fatal(const char* self)
     }
 }
 
+// --- 10. The debugger detection ---------------------------------------------
+
+void check_debugger_detection()
+{
+    namespace fd = fast_alloc::logging::detail;
+    static_assert(fd::tracer_pid("Name:\tgdb\nState:\tS (sleeping)\nTracerPid:\t4242\nUid:\t1\n") == 4242);
+    constexpr std::string_view untraced = "Name:\tlog_validation\nUmask:\t0022\nPPid:\t12\nTracerPid:\t0\nUid:\t1\n";
+    check(fd::tracer_pid(untraced) == 0, "detection: TracerPid 0, no tracer");
+    check(fd::tracer_pid("Name:\tx\nPPid:\t1\nTracerPid:  77") == 77, "detection: spaces, last line with no newline");
+    check(fd::tracer_pid("Name:\tx\nPPid:\t1\n") == 0, "detection: no TracerPid line (other kernel, cut buffer)");
+    check(fd::tracer_pid("TracerPid:\t9\nTracerPid:\t0\n") == 0,
+          "detection: a process named \"TracerPid:\" is not its own tracer");
+    check(fd::tracer_pid("") == 0, "detection: an empty read");
+    check(fd::is_debugger_name("gdb\n") && fd::is_debugger_name("cuda-gdb\n") && fd::is_debugger_name("gdbserver\n") &&
+              fd::is_debugger_name("lldb\n") && fd::is_debugger_name("lldb-server\n") && fd::is_debugger_name("gdb"),
+          "detection: gdb, cuda-gdb, gdbserver, lldb, lldb-server are debuggers");
+    check(
+        !fd::is_debugger_name("strace\n") && !fd::is_debugger_name("ltrace\n") && !fd::is_debugger_name("perf\n") &&
+            !fd::is_debugger_name("rr\n") && !fd::is_debugger_name("tvdsvr\n") &&
+            !fd::is_debugger_name("tvdsvrmain\n") && !fd::is_debugger_name("totalview\n") &&
+            !fd::is_debugger_name("forge-backend\n") && !fd::is_debugger_name("gdb-wrapper\n") &&
+            !fd::is_debugger_name(""),
+        "detection: strace, ltrace, perf, rr, TotalView, DDT, a name merely starting with gdb, an empty read are not");
+#if defined(__linux__)
+    // This process's own file, read as the fatal path reads it: TracerPid is
+    // in it, and with no tracer (ctest's case), no debugger is seen.
+    char              status[4096];
+    const std::size_t len = fd::read_small_file("/proc/self/status", status, sizeof(status));
+    check(len > 0 && std::string_view(status, len).find("\nTracerPid:") != std::string_view::npos,
+          "detection: /proc/self/status read, with its TracerPid line");
+    check(fd::tracer_pid(std::string_view(status, len)) != 0 || !fd::debugger_attached(),
+          "detection: untraced, no debugger");
+#endif
+}
+
+// --- With --debugger: the fatal child under gdb and strace --------------------
+
+/// @brief True when @p a is found in @p text before @p b (both found).
+bool before(const std::string& text, std::string_view a, std::string_view b)
+{
+    const auto pa = text.find(a);
+    const auto pb = text.find(b);
+    return pa != std::string::npos && pb != std::string::npos && pa < pb;
+}
+
+int check_debuggers(const char* self, std::string_view gdb, std::string_view strace)
+{
+    const std::string gdb_q = "\"" + std::string(gdb) + "\"";
+    // The detection is Linux's (TracerPid): elsewhere, no stop to look for.
+    constexpr bool linux_proc =
+#if defined(__linux__)
+        true;
+#else
+        false;
+#endif
+    if (!linux_proc || gdb.empty() || std::system((gdb_q + " -nx -batch -ex quit > /dev/null 2>&1").c_str()) != 0)
+    {
+        println("SKIP: not Linux, or no gdb to run");
+        return 77;
+    }
+    // run, then the frames at the stop, then continue: the abort.
+    const std::string wrapper = gdb_q + " -nx -batch -ex run -ex bt -ex continue -ex kill --args";
+
+    auto run = run_child(self, 0, "", wrapper);
+    check(before(run.out, "--- Execution Backtrace ---", "debugger attached: stopping on SIGTRAP") &&
+              before(run.out, "debugger attached: stopping on SIGTRAP", "received signal SIGTRAP"),
+          "gdb: the report written, the line, then the stop on SIGTRAP");
+    const auto trap  = run.out.find("received signal SIGTRAP");
+    const auto abort = run.out.find("received signal SIGABRT");
+    const auto frame = std::min({run.out.find("break_on_failure", trap), run.out.find("fatal_report", trap),
+                                 run.out.find("invariant_failed", trap)});
+    check(trap != std::string::npos && frame < abort, "gdb: a frame of the fatal path in the backtrace at the stop");
+    check(trap != std::string::npos && abort != std::string::npos && trap < abort, "gdb: continued, it aborts");
+    if (g_fails != 0)
+    {
+        println("---- gdb output ----\n{}--------------------", run.out);
+    }
+
+    run = run_child(self, 0, "CHUNK_BREAK_ON_FAILURE=0", wrapper);
+    check(run.out.find("SIGTRAP") == std::string::npos &&
+              run.out.find("received signal SIGABRT") != std::string::npos &&
+              run.out.find("--- Execution Backtrace ---") != std::string::npos,
+          "gdb, CHUNK_BREAK_ON_FAILURE=0: no stop, the abort");
+
+    if (!strace.empty())
+    {
+        // strace -f exits as its tracee did: 134 for the abort, 133 had it
+        // been a SIGTRAP.
+        run = run_child(self, 0, "", "\"" + std::string(strace) + "\" -f -o /dev/null");
+        check(run.status == 128 + SIGABRT && run.out.find("stopping on SIGTRAP") == std::string::npos,
+              "strace: traced but no debugger, the abort and no SIGTRAP");
+    }
+    else
+    {
+        println("no strace: its check is skipped");
+    }
+    println("{}", g_fails == 0 ? "PASS" : "FAILED");
+    return g_fails == 0 ? 0 : 1;
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -638,6 +764,10 @@ int main(int argc, char** argv)
     if (argc > 2 && std::string_view(argv[1]) == "--fatal")
     {
         return run_fatal(std::atoi(argv[2]));
+    }
+    if (argc > 1 && std::string_view(argv[1]) == "--debugger")
+    {
+        return check_debuggers(argv[0], argc > 2 ? argv[2] : "", argc > 3 ? argv[3] : "");
     }
 
     // Before the first message: the configuration is read at it.
@@ -660,6 +790,7 @@ int main(int argc, char** argv)
     check_no_allocation();
     check_threads();
     check_fatal(argv[0]);
+    check_debugger_detection();
 
     std::remove(g_log_path.c_str());
     println("{}", g_fails == 0 ? "PASS" : "FAILED");

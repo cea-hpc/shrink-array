@@ -645,7 +645,18 @@ echo "Using $latest_llvm (latest available)"
 if [ "$CHUNK_HAVE_MODULES" = true ]; then
     # gcc first: the llvm module needs one loaded. A failed llvm load stops
     # here -- going on would build with the system clang++.
+    _chunk_gxx_before=$(command -v g++ 2>/dev/null)
     load_gcc_module
+    # No toolchain set by the site (a local site with gcc modules): the gcc
+    # module just loaded is clang's libstdc++, when it changed what g++
+    # resolves to. --gcc-toolchain takes the installation prefix, the parent
+    # of its bin/.
+    _chunk_gxx_after=$(command -v g++ 2>/dev/null)
+    if [ -z "${CHUNK_GCC_TOOLCHAIN_DIR:-}" ] && [ -n "$_chunk_gxx_after" ] &&
+        [ "$(readlink -f "$_chunk_gxx_after")" != "$(readlink -f "${_chunk_gxx_before:-/nonexistent}")" ]; then
+        CHUNK_GCC_TOOLCHAIN_DIR=$(dirname "$(dirname "$(readlink -f "$_chunk_gxx_after")")")
+        export CHUNK_GCC_TOOLCHAIN_DIR
+    fi
     if ! run_cmd "module load $latest_llvm"; then
         echo "ERROR: module load $latest_llvm failed (gcc: ${gcc_module:-none}); not building with the system clang++" >&2
         echo "       what $latest_llvm requires:" >&2
@@ -654,6 +665,15 @@ if [ "$CHUNK_HAVE_MODULES" = true ]; then
     fi
     # Reload ninja in case loading LLVM unloaded it
     run_cmd "module load ninja"
+    # aarch64 off the CEA site: binutils/2.43 where it exists, else the newest
+    # binutils module, as compile_all_gnu.sh does (the system one, RHEL 9's
+    # 2.35, is too old). Not at CEA: the llvm modules there carry their own
+    # requirements (see the binutils/2.42 conflict of nvhpc above), and the
+    # Inti builds stay as they were.
+    if [ "$(uname -m)" = aarch64 ] && [ "$CHUNK_SITE" != cea ]; then
+        newest_binutils=$(chunk_newest_module binutils)
+        [ -n "$newest_binutils" ] && run_cmd "chunk_module_load_first binutils/2.43 $newest_binutils"
+    fi
     [ "$DRYRUN" = true ] || chunk_check_binutils llvm warn
 fi
 

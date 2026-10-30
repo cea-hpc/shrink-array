@@ -668,6 +668,24 @@ endif()
 chunk_require_cxx_std(log_validation PRIVATE)
 add_test(NAME log_validation COMMAND log_validation)
 set_property(TEST log_validation PROPERTY LABELS validation)
+# ... and log_break_on_failure: its fatal child under gdb stops on SIGTRAP in
+# the fatal path, after the report, and aborts when continued; with
+# CHUNK_BREAK_ON_FAILURE=0, or under strace (a tracer, not a debugger), it
+# only aborts (fast_allocators/internal/fatal.h, break_on_failure). Skipped
+# (77) without gdb; the strace run, without strace.
+find_program(CHUNK_GDB_PROGRAM gdb)
+find_program(CHUNK_STRACE_PROGRAM strace)
+set(_gdb "")
+set(_strace "")
+if (CHUNK_GDB_PROGRAM)
+  set(_gdb "${CHUNK_GDB_PROGRAM}")
+endif()
+if (CHUNK_STRACE_PROGRAM)
+  set(_strace "${CHUNK_STRACE_PROGRAM}")
+endif()
+add_test(NAME log_break_on_failure COMMAND log_validation --debugger "${_gdb}" "${_strace}")
+set_property(TEST log_break_on_failure PROPERTY LABELS validation)
+set_property(TEST log_break_on_failure PROPERTY SKIP_RETURN_CODE 77)
 
 # --- team_loops_validation: pmp::Team's static loops (for_static,
 # for_static_chunks and their _simd forms, fast_allocators/internal/
