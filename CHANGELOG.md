@@ -148,6 +148,12 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- The decider's "[RECHUNK-LEARN]" line, written to stdout when a coarsening
+  freed less than the model predicted and is disabled for that array, is a
+  log message like its neighbours: `CHUNK_LOG(info, rechunk, "learn ...")`,
+  shown by default (rechunk=info), on the log's stream (stderr, the sink or
+  CHUNK_LOG_FILE) rather than stdout.
+
 - `SecondValueProxyBase::is_cst_val_new_value_is_other_cst_val()` is now
   `passes_mark_pre_check()` (internal): it has dispatched to the variant's
   `pre_check_mark_for_compression()` since September, and its name and comment still said the
