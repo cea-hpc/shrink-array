@@ -18,7 +18,7 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   # Brings chunk::chunk_zero, chunk::chunk_zero_one_value, chunk::chunk_zero_any (default size),
   # chunk::chunk_zero_any_<size>, chunk::chunk_zero_any_dyn, ... and their dependencies
   # (fast_allocators, OpenMP and Threads when the library was built with them).
-  find_package(chunk 0.1 REQUIRED)
+  find_package(chunk 0.2 REQUIRED)
   set(GETTING_STARTED_LIB chunk::chunk_zero_any CACHE STRING "The shrink-array library to link")
 else()
   set(GETTING_STARTED_LIB chunk_zero_any)
