@@ -29,8 +29,16 @@ if(CMAKE_C_COMPILER)
         find_package(Threads REQUIRED)
         target_link_libraries(formal_native_${_m} PRIVATE Threads::Threads)
         # 300 runs: the stress is the point, one run explores one interleaving.
+        # range_edges loops 100000 times in one process already (its window is
+        # a store-buffering one, a few instructions wide): 3 processes are
+        # 300000 runs, where 300 took past ctest's 1500 s on the CI runners.
+        if(_m STREQUAL "range_edges")
+            set(_runs 3)
+        else()
+            set(_runs 300)
+        endif()
         add_test(NAME formal_native_${_m}
-                 COMMAND ${CMAKE_COMMAND} -E env SHRINK_FORMAL_RUNS=300
+                 COMMAND ${CMAKE_COMMAND} -E env SHRINK_FORMAL_RUNS=${_runs}
                          ${CMAKE_CURRENT_SOURCE_DIR}/run_native.sh $<TARGET_FILE:formal_native_${_m}>)
         set_property(TEST formal_native_${_m} PROPERTY LABELS formal)
     endforeach()
