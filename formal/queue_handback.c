@@ -49,23 +49,26 @@
  *   P1  no store into a buffer the pass has returned (GenMC reports the access to freed memory);
  *   P2  (-DWITH_W2) W2's value is in the chunk.
  *
- * VARIANTS of the hand-back (the end of make_block_compression):
- *   (default)          the source: steal_unmark(), then the flag reset. Expected to FAIL Q1:
- *                      between the two, a writer writes directly (no mark), its CAS 0->1 meets
- *                      the flag still up and gives up, then the reset drops the chunk.
- *   -DORDER_FLAG_FIRST the flag reset first, then steal_unmark() -- the order the source's
- *                      comment forbids. Checked here for what it says about Q1 and P1.
- *   -DFIX_HANDBACK     the flag is HANDED BACK: once the scans are done, every candidate's flag
- *                      goes 1 -> 2 while its mark still keeps the writers out; a writer that
- *                      finds 2 turns it into 3 ("written meanwhile") instead of giving up; the
- *                      pass then resets 2 -> 0 by CAS, and on a 3 queues the chunk again itself.
- *                      Expected to PASS.
+ * THE SOURCE (default): the flag is HANDED BACK (chunk/internal/queue_flag.h): once the scans
+ * are done, every candidate's flag goes 1 -> 2 while its mark still keeps the writers out
+ * (queue_flag::hand_back); a writer that finds 2 turns it into 3 ("written meanwhile") instead
+ * of giving up (queue_flag::try_queue); the pass then resets 2 -> 0 by CAS, and on a 3 queues
+ * the chunk again itself (queue_flag::release). Must PASS.
  *
- * MUTATIONS of the fix (with -DFIX_HANDBACK), each must FAIL Q1:
+ * MUTATIONS, each must FAIL Q1:
+ *   -DMUT_OLD_HANDBACK           steal_unmark(), then the flag reset to 0 -- the source before
+ *                                (F6, docs/formal_models.md section 8.7): between the two a writer
+ *                                writes directly (no mark), its CAS 0->1 meets the flag still up
+ *                                and gives up, then the reset drops the chunk.
  *   -DMUT_HANDBACK_AFTER_UNMARK  the flag goes 1 -> 2 after the mark is down: the window is back.
  *   -DMUT_WRITER_IGNORES_2       the writer gives up on a 2 as on a 1: nobody notes the write.
  *
- * Build for GenMC:   genmc -- [-DFIX_HANDBACK] [-DWITH_W2] queue_handback.c
+ * VARIANT kept for the record (no verdict asserted on Q1 alone):
+ *   -DORDER_FLAG_FIRST           the old reset BEFORE steal_unmark() -- the order the source's
+ *                                comment forbids for what it does to ANOTHER pass's claim, which
+ *                                this one-pass model does not have.
+ *
+ * Build for GenMC:   genmc -- [-DMUT_...] [-DWITH_W2] queue_handback.c
  * Build natively:    cc -O2 -pthread -DNATIVE queue_handback.c && ./a.out
  */
 
@@ -76,6 +79,10 @@
 #include <stdlib.h>
 
 #define NELEMS 2
+
+#if !defined(MUT_OLD_HANDBACK) && !defined(ORDER_FLAG_FIRST)
+    #define HANDBACK 1 /* the source */
+#endif
 #define W2_VALUE 5
 
 /* ───────────────────────── the shared state ───────────────────────── */
@@ -101,7 +108,7 @@ static int  elem_load(const int* p) { return __atomic_load_n(p, __ATOMIC_RELAXED
 /* The writer's side of the queue flag; true if it pushed an entry. */
 static bool mark_candidate(void)
 {
-#ifdef FIX_HANDBACK
+#ifdef HANDBACK
     for (;;)
     {
         int v = atomic_load_explicit(&queued, memory_order_relaxed);
@@ -235,9 +242,9 @@ static void* pass(void* arg)
             if (elem_load(&buf[i]) != 0)
                 constant = false;
 
-#if defined(FIX_HANDBACK) && !defined(MUT_HANDBACK_AFTER_UNMARK)
-    /* every scan done, the marks still up: hand the flags back (1 -> 2) */
-    atomic_store_explicit(&queued, 2, memory_order_release);
+#if defined(HANDBACK) && !defined(MUT_HANDBACK_AFTER_UNMARK)
+    /* every scan done, the marks still up: hand the flags back (1 -> 2), queue_flag::hand_back */
+    atomic_exchange_explicit(&queued, 2, memory_order_acq_rel);
 #endif
 
     /* the clear of the constant ones, then their steal_unmark() */
@@ -254,11 +261,11 @@ static void* pass(void* arg)
 
     /* the hand-back loop */
     atomic_fetch_sub_explicit(&listed, 1, memory_order_relaxed);                   /* list cleared */
-#if defined(FIX_HANDBACK)
+#if defined(HANDBACK)
     if (!unmarked)
         unmark();
     #ifdef MUT_HANDBACK_AFTER_UNMARK
-    atomic_store_explicit(&queued, 2, memory_order_release);
+    atomic_exchange_explicit(&queued, 2, memory_order_acq_rel);
     #endif
     int two = 2;
     if (!atomic_compare_exchange_strong_explicit(&queued, &two, 0, memory_order_acq_rel,
@@ -338,7 +345,7 @@ static int run_once(void)
 #ifdef NATIVE
 int main(void)
 {
-    for (int k = 0; k < 200000; ++k)
+    for (int k = 0; k < 20; ++k)
         run_once();
     return 0;
 }

@@ -1608,8 +1608,10 @@ zero_any::ProxyImpl<T, Derived, ChunkT>::should_mark_for_compression(InT<T> old_
     }
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        // Already queued: add_to_compression_list() is a no-op. One relaxed load; the
-        // filter's reads are only paid once the pass has reset the flag.
+        // Flag up: queued (add_to_compression_list() is then a no-op), or being handed
+        // back by its pass (it notes the write: queue_flag.h) -- no need for the filter
+        // either way. One relaxed load; the filter's reads are only paid once the pass
+        // has reset the flag.
         if (this->ptr_is_inside_chunk_list_to_compress_ != nullptr &&
             this->ptr_is_inside_chunk_list_to_compress_->load(std::memory_order_relaxed) != 0)
         {

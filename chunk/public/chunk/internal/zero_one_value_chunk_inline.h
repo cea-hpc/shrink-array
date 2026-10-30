@@ -16,9 +16,10 @@
 
 #pragma once
 
-#include <cassert>  // assert (the candidate-list lookups)
-#include <cstddef>  // std::size_t
-#include <optional> // std::nullopt (the clears)
+#include <cassert>     // assert (the candidate-list lookups)
+#include <cstddef>     // std::size_t
+#include <optional>    // std::nullopt (the clears)
+#include <type_traits> // std::remove_cvref_t (the re-queued candidates)
 
 #include "chunk/config.h"                        // build_config::chunk_dynamic, chunk_config::OMPTcc
 #include "chunk/PMP_CHUNK.h"                     // CHUNK_PMP_*, pmp::team
@@ -30,6 +31,7 @@
 #include "chunk/internal/dependent_false.h"      // dependent_false_v (wrong-type branches)
 #include "chunk/internal/invariant_check.h"      // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/test_hooks.h"           // TEST KNOB: test_hooks::maybe_pass_delay
+#include "chunk/internal/queue_flag.h"           // queue_flag::hand_back / release: the pass's hand-back
 
 /**
  * @file zero_one_value_chunk_inline.h
@@ -521,6 +523,9 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_t
             const auto n1 = ll_compt1.size();
             const auto n2 = ll_compt2.size();
             chunk_t->fill_list_to_compress(ll_compt1, ll_compt2, inf_array, num_chunk, num_tab, n_elems);
+            // Scanned, still marked: hand its queue flag back before the mark can go down,
+            // here for the chunks the scan drops (queue_flag.h, F6).
+            queue_flag::hand_back(zero_one_value::Proxy<T>::get_tab_is_inside_list_to_compress(num_tab)[num_chunk]);
             // Not selected by the scan: the writers may have it back now.
             if (ll_compt1.size() == n1 && ll_compt2.size() == n2)
             {
@@ -548,6 +553,8 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_t
             const auto n1 = ll_compt1.size();
             const auto n2 = ll_compt2.size();
             chunk_t->fill_list_to_compress_bool(ll_compt1, ll_compt2, num_chunk, num_tab, n_elems);
+            // Scanned, still marked: hand its queue flag back first (queue_flag.h, F6).
+            queue_flag::hand_back(zero_one_value::Proxy<T>::get_tab_is_inside_list_to_compress(num_tab)[num_chunk]);
             if (ll_compt1.size() == n1 && ll_compt2.size() == n2)
             {
                 chunk_t->steal_unmark();
@@ -671,6 +678,9 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
     ll_compt1.reserve((sz / 50) + 1);
     ll_compt2.reserve((sz / 50) + 1);
 
+    // The scan hands every candidate's queue flag back as it goes, before any mark goes
+    // down (fill_list_chunk_to_compress_in_par*: queue_flag.h, F6); the loop at the end
+    // releases them.
     fill_func(ll_compt1, ll_compt2);
 
     // Per-chunk geometry pin -- see this function's header comment.
@@ -693,6 +703,9 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
         clear_func(std::get<0>(tup), 1);
         std::get<0>(tup)->steal_unmark();
     }
+
+    // The candidates a writer queued while this pass handed them back (queue_flag::release()).
+    std::remove_cvref_t<decltype(vec_tuple_to_compress)> requeued;
 
     for (int k = 0; k < sz; ++k)
     {
@@ -722,11 +735,25 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
                                        marked);
             }
         }
-        zero_one_value::Proxy<T>::reset_tab_is_inside_list_to_compress(num_tab, num_chunk);
+        if (build_config::threaded && std::get<0>(tup) != nullptr)
+        {
+            if (queue_flag::release(zero_one_value::Proxy<T>::get_tab_is_inside_list_to_compress(num_tab)[num_chunk]))
+            {
+                requeued.push_back(tup);
+            }
+        }
+        else
+        {
+            zero_one_value::Proxy<T>::reset_tab_is_inside_list_to_compress(num_tab, num_chunk);
+        }
     }
 
     vec_tuple_to_compress.clear();
     vec_tuple_to_compress.reserve((sz / 10) + 1);
+    for (const auto& tup : requeued)
+    {
+        vec_tuple_to_compress.push_back(tup);
+    }
 
     if (proxy2)
     {

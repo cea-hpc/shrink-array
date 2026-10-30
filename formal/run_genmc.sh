@@ -130,14 +130,12 @@ run error "MUT_SLOT_STORE_PLAIN, second constant (F5, before: set_from_array())"
 M5=queue_handback.c
 
 echo "== the pass's hand-back <-> candidate marking ($M5) =="
-# F6, open: the source drops a chunk made constant between steal_unmark() and the flag reset.
-run error "source: unmark, then flag reset (F6, open)"          -- $M5
-run ok    "source, W2 too: exclusion only (W2 keeps it non-constant)" -- -DWITH_W2 $M5
-run ok    "FIX_HANDBACK (the flag handed back, 1 -> 2 -> 0/3)"  --check-liveness -- -DFIX_HANDBACK $M5
-run ok    "FIX_HANDBACK, W2 too"                                --check-liveness -- -DFIX_HANDBACK -DWITH_W2 $M5
-echo "-- mutations of the fix: each must be refused --"
-run error "MUT_HANDBACK_AFTER_UNMARK (the window is back)"      -- -DFIX_HANDBACK -DMUT_HANDBACK_AFTER_UNMARK $M5
-run error "MUT_WRITER_IGNORES_2 (nobody notes the write)"       -- -DFIX_HANDBACK -DMUT_WRITER_IGNORES_2 $M5
+run ok    "source: the flag handed back (1 -> 2 -> 0/3)"        --check-liveness -- $M5
+run ok    "source, W2 too (exclusion)"                          --check-liveness -- -DWITH_W2 $M5
+echo "-- mutations: each must be refused --"
+run error "MUT_OLD_HANDBACK (F6, before: unmark, then reset)"   -- -DMUT_OLD_HANDBACK $M5
+run error "MUT_HANDBACK_AFTER_UNMARK (the window is back)"      -- -DMUT_HANDBACK_AFTER_UNMARK $M5
+run error "MUT_WRITER_IGNORES_2 (nobody notes the write)"       -- -DMUT_WRITER_IGNORES_2 $M5
 
 M6=range_edges.c
 

@@ -371,20 +371,36 @@ ses bibliothèques, exemples et programmes de validation comparé fonction par f
 matérialisation lit la case une fois, en relaxed : `wait_before_materialise()` tient la passe à
 l'écart du chunk (protocole 1), la case y est donc stable.
 
-### 8.7 F6 : un chunk rendu constant pendant la restitution d'une passe n'est jamais mis en file (ouvert)
+### 8.7 F6 : un chunk rendu constant pendant la restitution d'une passe n'était jamais mis en file (corrigé)
 
 Le modèle est `formal/queue_handback.c` ; il ne vérifie aucun ordre mémoire, mais un protocole :
 le drapeau « en file » d'un chunk (`tab_is_inside_chunk_list_to_compress`) et la marque de la
-passe. Une passe restitue chaque candidat par `steal_unmark()`, puis remet son drapeau à 0 (la fin
-de `make_block_compression()` ; l'ordre est voulu par la source, voir son commentaire). Entre les
-deux, un écrivain trouve la marque baissée et écrit en direct ; si son écriture fait passer le
-dernier élément à la constante, la CAS 0 -> 1 du marquage trouve le drapeau encore levé et
-renonce, puis la remise à 0 retire le chunk de toutes les listes. Un chunk constant reste
-matérialisé jusqu'à sa prochaine écriture. Aucune valeur n'est fausse : le coût est de la
-mémoire, et le décompte de fin de run, qui classe un chunk écrit sur son contenu, ne le voit pas.
-La fenêtre dépasse la dernière boucle : un chunk que la passe comprime est démarqué juste après
-son effacement, et une écriture qui le matérialise et le rend de nouveau constant n'a besoin
-d'aucune autre condition.
+passe. Une passe restitue chaque candidat par `steal_unmark()`, puis remet son drapeau (la fin de
+`make_block_compression()` ; l'ordre est gardé exprès : une fois le drapeau baissé, une autre passe
+peut mettre le chunk en file et le marquer, et une levée de marque tardive effacerait sa
+réservation). Elle le remettait à 0. Entre les deux, un écrivain trouve la marque baissée et écrit
+en direct ; si son écriture fait passer le dernier élément à la constante, la CAS 0 -> 1 du
+marquage trouvait le drapeau encore levé et renonçait, puis la remise à 0 retirait le chunk de
+toutes les listes. Un chunk constant restait matérialisé jusqu'à sa prochaine écriture. Aucune
+valeur n'était fausse : le coût était de la mémoire, et le décompte de fin de run, qui classe un
+chunk écrit sur son contenu, ne le voyait pas. La fenêtre dépassait la dernière boucle : un chunk
+que la passe comprime est démarqué juste après son effacement.
+
+Le correctif (`chunk/internal/queue_flag.h`) : dès que la passe a parcouru un candidat, et tant
+que sa marque tient encore les écrivains à l'écart, le drapeau du candidat passe de 1 à 2,
+« restitué » (`queue_flag::hand_back` ; dans le parcours même pour `zero` et `zero_one_value`,
+dont les parcours lèvent la marque d'un chunk qu'ils écartent, après tous les parcours pour
+`zero_any`) ; un écrivain dont le marquage trouve 2 le change
+en 3, « écrit entre-temps », au lieu de renoncer (`queue_flag::try_queue`, à chaque site
+d'écrivain : `add_to_compression_list()`, sa forme asynchrone, les écritures par plage qui y
+passent) ; la passe remet ensuite 2 -> 0 par CAS et, sur un 3, remet elle-même le chunk dans la
+liste de son rang (`queue_flag::release`). Dans les passes de `zero`, `zero_one_value` et
+`zero_any` (avec la validation des motifs de `pattern`), builds threadés ; le build série n'a pas
+de passe concurrente. 2 et 3 n'existent qu'à l'intérieur d'une passe : en dehors, le drapeau vaut
+0 ou 1 et « 1 <=> en liste » tient. Coût : sur le chemin d'un écrivain, une comparaison de plus,
+sur le marquage refusé seulement ; dans la passe, un échange et une CAS par candidat au lieu d'une
+écriture. Les builds check vérifient le protocole (`hand_back` sur un drapeau à 1, `release` sur
+2 ou 3).
 
 Le modèle a un chunk de deux éléments, 0 et 7, candidat d'une passe ; W écrit 0 à la place du 7
 (différé tant que la marque est levée, puis rejoué) ; avec `-DWITH_W2`, un second écrivain range
@@ -395,29 +411,24 @@ liste, une fois.
 
 | cas | attendu | verdict | exécutions |
 |---|---|---|---|
-| source : `steal_unmark()`, puis la remise à 0 du drapeau -- **F6** | échec | **violation de sûreté** (Q1) | -- |
-| source, avec W2 : W2 garde le chunk non constant, l'exclusion seule | succès | succès | 28 |
-| `FIX_HANDBACK` : le drapeau restitué (ci-dessous) | succès | succès | 7 |
-| `FIX_HANDBACK`, avec W2 | succès | succès | 28 |
+| source : le drapeau restitué | succès | succès | 7 |
+| source, avec W2 | succès | succès | 28 |
+| `MUT_OLD_HANDBACK` : `steal_unmark()`, puis la remise à 0 du drapeau -- **F6**, avant | échec | **violation de sûreté** (Q1) | -- |
 | `MUT_HANDBACK_AFTER_UNMARK` : le drapeau mis à 2 après la baisse de la marque | échec | violation de sûreté | -- |
 | `MUT_WRITER_IGNORES_2` : l'écrivain renonce sur un 2 comme sur un 1 | échec | violation de sûreté | -- |
 
-Les mêmes verdicts sous IMM. Le correctif que le modèle accepte, pas encore appliqué : une fois
-tous les parcours de la passe faits, et tant que les marques tiennent encore les écrivains à
-l'écart, le drapeau de chaque candidat passe de 1 à 2, « restitué » ; un écrivain dont le marquage
-trouve 2 le change en 3, « écrit entre-temps », au lieu de renoncer ; la passe remet ensuite 2 -> 0
-par CAS et, sur un 3, remet elle-même le chunk dans la liste de son rang. L'ordre de la boucle de
-restitution est conservé. Sur le chemin d'un écrivain, le coût est une comparaison de plus, sur le
-marquage refusé seulement. Les endroits à changer sont toutes les CAS du drapeau
-(`add_to_compression_list()` et sa forme asynchrone, les écritures par plage) et la fin des passes
-des trois variantes (`zero`, `zero_one_value`, `zero_any` et la validation des motifs de
-`pattern`).
+Les mêmes verdicts sous IMM. Dans la bibliothèque, le mode `remark` de `read_reclaim_validation`
+(des passes avec un délai dans la fenêtre de restitution, des écrivains sur les mêmes chunks) est
+passé par la nouvelle branche -- une écriture notée sur un drapeau restitué, le chunk remis en
+file par sa passe -- 267 536 fois pour `zero_any` et 1 849 pour `zero_one_value` en 8 s à 4
+threads, autant de mises en file que l'ancien code perdait.
 
-Mesuré : l'audit des builds check (« never queued for compression ») comptait d'abord 34 à
-140 chunks de ce genre par run de `shrink_bench`, à 1 thread aussi -- ce que F6 ne peut pas
-être : ils venaient d'un autre trou, les tranches partielles de `fill_range_mt()` sur
-`std::complex<double>` (corrigé, voir CHANGELOG.md). Sans lui, l'audit n'en compte aucun à 2
-et 4 threads ; les grands nombres de threads restent à mesurer.
+Mesuré avant le correctif : l'audit des builds check (« never queued for compression ») comptait
+d'abord 34 à 140 chunks de ce genre par run de `shrink_bench`, à 1 thread aussi -- ce que F6 ne
+peut pas être : ils venaient d'un autre trou, les tranches partielles de `fill_range_mt()` sur
+`std::complex<double>` (corrigé, voir CHANGELOG.md). Avec ce correctif et celui de F7 (section
+8.8), l'audit n'en comptait aucun sur Milan jusqu'à 128 threads (`zero_any` en géométrie 256,
+1024 et dynamique, trois graines chacune) : F6 était réel mais rare dans ce bench.
 
 ### 8.8 F7 : deux threads remplissant les deux bouts d'un chunk pouvaient le laisser tous deux hors file (corrigé)
 

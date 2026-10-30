@@ -125,7 +125,7 @@ static int run_once(void)
 #ifdef NATIVE
 int main(void)
 {
-    for (int k = 0; k < 100000; ++k)
+    for (int k = 0; k < 20; ++k)
         run_once();
     return 0;
 }

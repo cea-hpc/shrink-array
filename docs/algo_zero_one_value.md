@@ -358,9 +358,9 @@ applied first:
   September 2026, it only accepted writing a constant on a chunk already at
   the other constant; a chunk materialised by an arbitrary value then rewritten element
   by element to a constant was never queued, and stayed materialised.
-  The cost of the widening is only paid by writes of a constant: one
-  read of the old value, one comparison and, on the first one of each pass, the CAS
-  on the flag;
+  The cost of the widening is only paid by writes of a constant: the lookup of the
+  rank's list (the filter below), one read of the old value, one comparison and, on the
+  first one of each pass, the CAS on the flag;
 - the existence of a **list for this second value on this rank**
   (`has_candidate_list`). Every array has one: an array that has never called
   `set_second_value()` is queued under the key `T{}`, whose lists its constructor creates
@@ -371,6 +371,13 @@ applied first:
 An atomic flag per chunk ("already a candidate", `tab_is_inside_chunk_list_to_compress`,
 indexed by `num_tab`) guarantees that a chunk is queued **only once** until the
 next pass.
+
+The flag has two more values inside a pass: as soon as it has scanned a candidate, the pass
+sets its flag to "handed back", before that candidate's mark can go down, and a write that makes a chunk
+constant in between finds that value and notes itself on the flag ("written meanwhile") instead
+of giving up; the pass then queues the chunk again (`chunk/internal/queue_flag.h`). Without it,
+such a chunk was dropped from every list and stayed materialised (F6,
+[formal_models.md](formal_models.md) section 8.7).
 
 ### 8.3 Triggering
 
