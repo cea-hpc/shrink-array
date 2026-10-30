@@ -724,7 +724,7 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
      *          constant is not a constant-to-constant transition): those chunks
      *          would never be queued and their buffers never reused.
      *
-     *          Invariant (SecondValueProxyBase::is_cst_val_new_value_is_other_cst_val()): the
+     *          Invariant (SecondValueProxyBase::passes_mark_pre_check()): the
      *          pre-check must never reject what the predicate would accept.
      *
      * @param new_value The new value to check.

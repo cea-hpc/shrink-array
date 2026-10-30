@@ -342,8 +342,9 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
      * @brief Report how many cst2 buffers a sweep could reclaim.
      * @details Runs gc_collect_live() and compares the live count with
      *          GlobalVecHolder's total; the difference is the reclaimable set.
-     *          Diagnostic only -- a report (written whatever CHUNK_LOG says,
-     *          channel compress) -- and frees nothing.
+     *          Diagnostic only -- a report the caller asked for (written in
+     *          full whatever CHUNK_LOG says, channel compress; shrink_bench
+     *          calls it at compress=info) -- and frees nothing.
      */
     static void gc_mark_report()
     {

@@ -534,6 +534,8 @@ def act_launch(a):
             return
     os.makedirs(d)
     write(os.path.join(d, "run.sh"), spec["run.sh"])
+    if spec.get("node.sh"):      # a job of several nodes: what each of its nodes runs
+        write(os.path.join(d, "node.sh"), spec["node.sh"])
     # The code the run is submitted on; run.sh records the one it STARTS on
     # (git_start): a pending job can start after a git pull.
     spec["meta"]["git"] = git_info(spec["meta"].get("repo", "~"))
@@ -656,6 +658,21 @@ def progress_of(path, meta, ev=None):
             eta = float(e.group(1))
     return [int(m.group(1)), int(m.group(2)), eta]
 
+def run_progress(d, meta, ev):
+    """The Progression column: progress_of the run's log -- a job of N nodes
+    (is_job_layout): the most advanced of its nodes' (the work is shared,
+    their counts are not added: each script counts its own way, the runs of
+    multi_launch_stress.py by their global index)."""
+    if is_job_layout(meta):
+        best = None
+        for dk, mk in pool_members(d, meta):
+            p = progress_of(os.path.join(dk, "out.log"), mk)
+            if p and (best is None or (p[0] or 0) > (best[0] or 0)):
+                best = p
+        if best is not None:
+            return best
+    return progress_of(os.path.join(d, "out.log"), meta, ev)
+
 def errors_from_events(ev):
     """[count, last error's first line] of a bench_and_test.py run: its end
     record once there, else the errors logged so far (an "error" record each,
@@ -677,35 +694,63 @@ def errors_from_events(ev):
 
 def errors_from_csv(d, meta):
     """[failed runs, None] of multi_launch_stress.py (returncode != 0 in its
-    summary CSV), or None."""
+    summary CSV; a submission over several nodes: in the CSVs of all its jobs,
+    which share the --runs), or None."""
     import csv
-    od = out_dir(d, meta)
-    p = os.path.join(od, meta.get("summary_file") or "") if od else None
-    if not p or not os.path.isfile(p):
+    paths = member_files(d, meta, meta.get("summary_file"))
+    if not paths:
         return None
     n = 0
-    try:
-        with text_open(p) as f:
-            rows = csv.reader(f)
-            head = next(rows, [])
-            if "returncode" not in head:
-                return None
-            i = head.index("returncode")
-            for r in rows:
-                n += len(r) > i and r[i].strip() not in ("0", "")
-    except (IOError, OSError):
-        return None
+    for p in paths:
+        try:
+            with text_open(p) as f:
+                rows = csv.reader(f)
+                head = next(rows, [])
+                if "returncode" not in head:
+                    continue
+                i = head.index("returncode")
+                for r in rows:
+                    n += len(r) > i and r[i].strip() not in ("0", "")
+        except (IOError, OSError):
+            continue
     return [n, None]
+
+def pooled_errors_from_events(d, meta, ev):
+    """errors_from_events over the jobs of a bench_and_test.py submission
+    over several nodes (each its own events.jsonl, its own share of the
+    campaign): the counts added, the newest error's line. None when no job
+    has events yet."""
+    total, last, last_t, seen = 0, None, None, False
+    for dk, _mk in pool_members(d, meta):
+        evk = ev if dk == d else read_events(dk)
+        r = errors_from_events(evk)
+        if r is None:
+            continue
+        seen = True
+        total += r[0]
+        t = max((e.get("t", 0) for e in evk if e.get("kind") == "error"), default=0)
+        if r[1] and (last_t is None or t > last_t):
+            last, last_t = r[1], t
+    return [total, last] if seen else None
 
 def errors_of(d, meta, st, ev):
     """The Erreurs column: errors_from_events, else (multi_launch_stress.py)
     errors_from_csv -- kept in the run directory once the run is over, the
-    CSV no longer changes."""
+    CSV no longer changes. bench_and_test.py over several nodes: the errors
+    of all its jobs (pooled_errors_from_events), as multi_launch_stress.py's."""
+    if is_bench_chart(meta) and len(pool_members(d, meta)) > 1:
+        return pooled_errors_from_events(d, meta, ev)
     r = errors_from_events(ev)
     if r is not None or meta.get("summary") != "multi_launch":
         return r
     cache = os.path.join(d, "errors_count.json")
     final = st not in ("en cours", "en attente", "démarrage") and not st.startswith("en attente")
+    if final and meta.get("pool"):
+        # A pool's count is its jobs' together: final once all of them are
+        # (each wrote its exit code), not when this one alone ended.
+        members = pool_members(d, meta)
+        final = len(members) == meta.get("nodes") and all(
+            os.path.isfile(os.path.join(dk, "exit_code")) for dk, _mk in members)
     if final:
         c = read(cache)
         if c:
@@ -774,7 +819,7 @@ def act_list(a):
             runs.append({"id": rid, "meta": meta, "status": st, "code": code,
                          "errors": errors_of(d, meta, st, ev),
                          "jobid": (read(os.path.join(d, "jobid")) or "").strip(),
-                         "progress": progress_of(os.path.join(d, "out.log"), meta, ev),
+                         "progress": run_progress(d, meta, ev),
                          "git_start": (read(os.path.join(d, "git_start")) or "").strip(),
                          "times": run_times(d, st in ("fini", "arrêté", "interrompu")
                                             or st.startswith("terminé")),
@@ -872,14 +917,27 @@ def out_dir(d, meta):
     m = re.search(meta["out_re"], read(os.path.join(d, "out.log"), "")[:400000])
     return m.group(1) if m else None
 
+def is_job_layout(meta):
+    """A submission over several nodes made as ONE batch job of N nodes (meta
+    "layout": "job"): its nodes work in <run>/n<K>, each with its own out.log,
+    events.jsonl, kept copies and exit_code (runscripts.make_node_sh). The
+    other layout, N jobs of one node, has no "layout" (the runs before it
+    neither): sibling runs <pool>-n<K>, each with "node"."""
+    return meta.get("layout") == "job"
+
 def pool_members(d, meta):
     """[(dir, meta)] of the runs whose outputs make this one's results: the
     jobs <pool>-n1..nN of a submission over several nodes (meta "pool"; for
-    thread_speedup.py each measured the executables it claimed first), else
-    the run alone. Those not created yet are left out."""
+    thread_speedup.py each measured the executables it claimed first) or,
+    one job of N nodes (is_job_layout), its node directories <run>/n1..nN,
+    each with the run's meta plus its "node"; else the run alone. Those not
+    created yet are left out (a job of N nodes still queued: none)."""
     pool, n = meta.get("pool"), meta.get("nodes")
     if not pool or not isinstance(n, int) or n < 2:
         return [(d, meta)]
+    if is_job_layout(meta):
+        return [(os.path.join(d, "n%d" % k), dict(meta, node=k)) for k in range(1, n + 1)
+                if os.path.isdir(os.path.join(d, "n%d" % k))]
     out = []
     for k in range(1, n + 1):
         dk = os.path.join(os.path.dirname(d), "%s-n%d" % (pool, k))
@@ -894,6 +952,31 @@ def pool_members(d, meta):
             out.append((dk, mk))
     return out
 
+def member_files(d, meta, name):
+    """File @p name of each job of the run's pool (pool_members) that has it,
+    first node first: the copy the job kept in its run directory, else the
+    one in the output directory its log announces. The run alone outside a pool."""
+    paths = []
+    if not name:
+        return paths
+    for dk, mk in pool_members(d, meta):
+        od = out_dir(dk, mk)
+        pk = own_copy(dk, name) or (os.path.join(os.path.expanduser(od), name) if od else None)
+        if pk and os.path.isfile(pk):
+            paths.append(pk)
+    return paths
+
+def run_index_key(col):
+    """Sort key of multi_launch_stress.py's CSV rows: their run_index (global
+    over the jobs of a pool), the unreadable ones last."""
+    i = col.get("run_index")
+    def key(r):
+        try:
+            return (0, int(r[i]))
+        except (TypeError, ValueError, IndexError):
+            return (1, 0)
+    return key
+
 def act_summary(a):
     """The Résumé tab: multi_launch_stress's timings_summary.csv aggregated per
     build, or the last rows of another program's summary CSV as they are."""
@@ -901,20 +984,18 @@ def act_summary(a):
     d = rdir(a[0], a[1])
     meta = json.loads(read(os.path.join(d, "meta.json"), "{}"))
     kind, name = meta.get("summary"), meta.get("summary_file")
-    phases = phases_section(read_events(d))
+    phases = (pooled_phases_section(d, meta) if is_bench_chart(meta) and len(pool_members(d, meta)) > 1
+              else phases_section(read_events(d)))
     if not kind or not name:
         if phases:
             print(json.dumps({"sections": [phases]}))
         else:
             print(json.dumps({"note": "pas de résumé pour ce programme"}))
         return
-    members = pool_members(d, meta) if kind != "multi_launch" else [(d, meta)]
-    paths = []
-    for dk, mk in members:
-        od = out_dir(dk, mk)
-        pk = own_copy(dk, name) or (os.path.join(os.path.expanduser(od), name) if od else None)
-        if pk and os.path.isfile(pk):
-            paths.append(pk)
+    # A submission over several nodes: its jobs' CSVs together (thread_speedup.py:
+    # the executables each claimed; multi_launch_stress.py: the run indices).
+    members = pool_members(d, meta)
+    paths = member_files(d, meta, name)
     path = paths[0] if paths else None
     if not path or not os.path.isfile(path):
         if phases:
@@ -934,14 +1015,17 @@ def act_summary(a):
             more = list(csv.reader(f))
         if more and more[0] == head:
             body += more[1:]
+    if len(paths) > 1 and is_bench_chart(meta):
+        body.sort(key=bench_row_key({h: i for i, h in enumerate(head)}))
     if kind != "multi_launch":
-        pooled = " — %d nœuds sur %d" % (len(paths), meta.get("nodes") or len(members)) if len(members) > 1 else ""
         table = {"title": name, "columns": head, "rows": body[-1000:],
                  "note": "%s — %d ligne(s)%s%s" % (name, len(body),
-                         ", les 1000 dernières" if len(body) > 1000 else "", pooled)}
+                         ", les 1000 dernières" if len(body) > 1000 else "",
+                         pooled_note(paths, members, meta))}
         print(json.dumps({"sections": [phases, table]} if phases else table))
         return
     col = {h: i for i, h in enumerate(head)}
+    body.sort(key=run_index_key(col))
     per = {}
     for r in body:
         try:
@@ -964,10 +1048,56 @@ def act_summary(a):
         out.append(["TOTAL"] + summary_row(tot, statistics))
     print(json.dumps({"columns": ["build", "runs", "échecs", "moyenne s", "médiane s", "max s", "threads"],
                       "rows": out, "fail_rows": [i for i, r in enumerate(out) if r[2] != "0"],
-                      "note": "%s — %d run(s)" % (name, len(body))}))
+                      "note": "%s — %d run(s)%s" % (name, len(body), pooled_note(paths, members, meta))}))
 
-def phases_section(ev):
-    """The phases of a bench_and_test.py run, from its events, as a table."""
+def pooled_note(paths, members, meta):
+    """" — 2 nœuds sur 3": the jobs of a pool whose CSV was read, "" outside one."""
+    if len(members) < 2:
+        return ""
+    return " — %d nœuds sur %d" % (len(paths), meta.get("nodes") or len(members))
+
+def bench_row_key(col):
+    """Sort key of bench_summary.csv rows gathered from the jobs of a pool
+    (each wrote the configurations it claimed): config, variant, threads, as
+    one job's file is sorted."""
+    def key(r):
+        def at(k):
+            i = col.get(k)
+            return r[i] if i is not None and i < len(r) else ""
+        try:
+            th = int(at("Threads"))
+        except ValueError:
+            th = 0
+        return (at("Config"), at("Variant"), th)
+    return key
+
+def pooled_phases_section(d, meta):
+    """phases_section over the jobs of a bench_and_test.py submission over
+    several nodes: one row per job and phase, a "nœud" column first (n<K>),
+    the errors and the end of each job in the note."""
+    rows, fails, ended, errs, found = [], [], 0, 0, 0
+    members = pool_members(d, meta)
+    for dk, mk in members:
+        s = phases_section(read_events(dk), label="n%s" % mk.get("node", "?"))
+        if not s:
+            continue
+        found += 1
+        fails += [len(rows) + i for i in s["fail_rows"]]
+        rows += s["rows"]
+        if s.get("end"):
+            ended += 1
+            errs += s["end"].get("errors", 0) or 0
+    if not found:
+        return None
+    note = "%d phase(s) sur %d nœud(s) sur %d" % (len(rows), found, meta.get("nodes") or len(members))
+    if ended:
+        note += " — %d fini(s), %d erreur(s)" % (ended, errs)
+    return {"title": "Phases", "columns": ["nœud", "phase", "statut", "durée s", "erreurs", "début"],
+            "rows": rows, "fail_rows": fails, "note": note}
+
+def phases_section(ev, label=None):
+    """The phases of a bench_and_test.py run, from its events, as a table.
+    @p label: a first column (the job of a pool, pooled_phases_section)."""
     if not ev:
         return None
     import time as _time
@@ -993,6 +1123,8 @@ def phases_section(ev):
         note += " — fin : %d erreur(s)%s, %.1f min" % (end.get("errors", 0),
                                                      ", interrompu" if end.get("interrupted") else "",
                                                      end.get("minutes", 0))
+    if label is not None:
+        return {"rows": [[label] + r for r in rows], "fail_rows": fails, "end": end}
     return {"title": "Phases", "columns": ["phase", "statut", "durée s", "erreurs", "début"],
             "rows": rows, "fail_rows": fails, "note": note}
 
@@ -1074,42 +1206,58 @@ def bench_points(d, meta):
     """The Graphique tab of bench_and_test.py: bench_summary.csv, the run's
     own copy (kept when it ended) or, before that, the shared one -- "own"
     says which. {"configs", "variants", "rows": [config, variant, threads,
-    avg s, peak Mo or None, speedup or None]}."""
+    avg s, peak Mo or None, speedup or None]}. A submission over several
+    nodes: the files of all its jobs (member_files; each holds the
+    configurations it claimed), "own" when each is a job's own copy or in
+    the job's own output directory (--pool: never shared with another run)."""
     import csv
     name = meta.get("summary_file") or "bench_summary.csv"
-    path = own_copy(d, name)
-    own = path is not None
-    if not own:
-        od = out_dir(d, meta)
-        path = os.path.join(os.path.expanduser(od), name) if od else None
-    if not path or not os.path.isfile(path):
-        return {"note": "pas encore de %s (écrit à la fin du run)" % name}
+    members = pool_members(d, meta)
+    if len(members) > 1:
+        paths = member_files(d, meta, name)
+        if not paths:
+            return {"note": "pas encore de %s dans les %d jobs (écrit à la fin de chacun)"
+                            % (name, len(members))}
+        own = True
+    else:
+        path = own_copy(d, name)
+        own = path is not None
+        if not own:
+            od = out_dir(d, meta)
+            path = os.path.join(os.path.expanduser(od), name) if od else None
+        if not path or not os.path.isfile(path):
+            return {"note": "pas encore de %s (écrit à la fin du run)" % name}
+        paths = [path]
     def num(v):
         try:
             return float(v)
         except (TypeError, ValueError):
             return None
     configs, variants, rows = [], [], []
-    with text_open(path) as f:
-        rd = csv.reader(f)
-        head = next(rd, [])
-        col = {h: i for i, h in enumerate(head)}
-        for r in rd:
-            try:
-                c, v, th, avg = r[col["Config"]], r[col["Variant"]], int(r[col["Threads"]]), float(r[col["AvgTime_s"]])
-                v = normalize_variant(v)        # a summary written before the rename
-            except (KeyError, ValueError, IndexError):
-                continue
-            mem = num(r[col["PeakMem_Mo"]]) if "PeakMem_Mo" in col and len(r) > col["PeakMem_Mo"] else None
-            sp = (num(r[col["Speedup_vs_baseline"]])
-                  if "Speedup_vs_baseline" in col and len(r) > col["Speedup_vs_baseline"] else None)
-            if c not in configs:
-                configs.append(c)
-            if v not in variants:
-                variants.append(v)
-            rows.append([c, v, th, avg, mem, sp])
-    return {"kind": "bench", "configs": configs, "variants": variants, "rows": rows, "own": own,
-            "mtime": os.path.getmtime(path)}
+    for path in paths:
+        with text_open(path) as f:
+            rd = csv.reader(f)
+            head = next(rd, [])
+            col = {h: i for i, h in enumerate(head)}
+            for r in rd:
+                try:
+                    c, v, th, avg = r[col["Config"]], r[col["Variant"]], int(r[col["Threads"]]), float(r[col["AvgTime_s"]])
+                    v = normalize_variant(v)        # a summary written before the rename
+                except (KeyError, ValueError, IndexError):
+                    continue
+                mem = num(r[col["PeakMem_Mo"]]) if "PeakMem_Mo" in col and len(r) > col["PeakMem_Mo"] else None
+                sp = (num(r[col["Speedup_vs_baseline"]])
+                      if "Speedup_vs_baseline" in col and len(r) > col["Speedup_vs_baseline"] else None)
+                if c not in configs:
+                    configs.append(c)
+                if v not in variants:
+                    variants.append(v)
+                rows.append([c, v, th, avg, mem, sp])
+    out = {"kind": "bench", "configs": configs, "variants": variants, "rows": rows, "own": own,
+           "mtime": max(os.path.getmtime(p) for p in paths)}
+    if len(members) > 1:
+        out.update(nodes=meta.get("nodes") or len(members), nodes_found=len(paths))
+    return out
 
 def act_points(a):
     """The Graphique tab: one point per run of timings_summary.csv (the last
@@ -1127,24 +1275,28 @@ def act_points(a):
     if meta.get("summary") != "multi_launch":
         print(json.dumps({"note": "graphique disponible pour multi_launch_stress.py, bench_and_test.py et thread_speedup.py seulement"}))
         return
-    od = out_dir(d, meta)
-    path = os.path.join(od, meta["summary_file"]) if od else None
-    if not path or not os.path.isfile(path):
+    # A submission over several nodes: the rows of all its jobs, which share
+    # the --runs (the run indices are global, unique over the jobs), in order.
+    paths = member_files(d, meta, meta["summary_file"])
+    if not paths:
         print(json.dumps({"note": "pas encore de %s" % meta["summary_file"]}))
         return
     builds, exes, rows = {}, {}, []
-    with text_open(path) as f:
-        rd = csv.reader(f)
-        head = next(rd, [])
-        col = {h: i for i, h in enumerate(head)}
-        for r in rd:
-            try:
-                b, e = r[col["build"]], r[col["executable"]]
-                rows.append([int(r[col["run_index"]]), builds.setdefault(b, len(builds)),
-                             exes.setdefault(e, len(exes)), int(r[col["num_threads"]]),
-                             float(r[col["wall_seconds"]]), int(r[col["returncode"]])])
-            except (KeyError, ValueError, IndexError):
-                continue
+    for path in paths:
+        with text_open(path) as f:
+            rd = csv.reader(f)
+            head = next(rd, [])
+            col = {h: i for i, h in enumerate(head)}
+            for r in rd:
+                try:
+                    b, e = r[col["build"]], r[col["executable"]]
+                    rows.append([int(r[col["run_index"]]), builds.setdefault(b, len(builds)),
+                                 exes.setdefault(e, len(exes)), int(r[col["num_threads"]]),
+                                 float(r[col["wall_seconds"]]), int(r[col["returncode"]])])
+                except (KeyError, ValueError, IndexError):
+                    continue
+    if len(paths) > 1:
+        rows.sort(key=lambda row: row[0])
     n = len(rows)
     print(json.dumps({"builds": sorted(builds, key=builds.get), "exes": sorted(exes, key=exes.get),
                       "rows": rows[-30000:], "total": n}))
@@ -1209,9 +1361,8 @@ def outputs_to_delete(base, rid, d, meta, own):
         return [od], None
     # A shared directory: what this run wrote, i.e. after it was submitted
     # (meta.json) -- run_logs/ also holds the older runs' logs, kept.
-    try:
-        t0 = os.path.getmtime(os.path.join(d, "meta.json"))
-    except OSError:
+    t0 = submitted_at(d)
+    if t0 is None:
         return None, "date de soumission de %s illisible : rien supprimé" % rid
     out = []
     for name in own:
@@ -1281,9 +1432,18 @@ def delete_run(base, rid, opts, keep_others=False):
     paths = []
     meta = {}
     kept = None
+    members = [(d, meta)]
     if opts.get("own"):
         meta = json.loads(read(os.path.join(d, "meta.json"), "{}") or "{}")
-        paths, err = outputs_to_delete(base, rid, d, meta, opts["own"])
+        # A job of N nodes: each node's output directory (bench_and_test.py
+        # and thread_speedup.py write one per node), checked one by one.
+        members = pool_members(d, meta) if is_job_layout(meta) else [(d, meta)]
+        paths, err = [], None
+        for dk, mk in members:
+            pk, err = outputs_to_delete(base, rid, dk, mk, opts["own"])
+            if err:
+                break
+            paths += [p for p in pk if p not in paths]
         if err and not keep_others:
             return {"error": err}
         if err:
@@ -1299,11 +1459,12 @@ def delete_run(base, rid, opts, keep_others=False):
                 continue
         removed.append(p)
     if isinstance(opts.get("own"), list):
-        od = out_dir(d, meta)
-        for name in opts["own"]:
-            sub = os.path.join(os.path.expanduser(od), name) if od and os.sep not in name else None
-            if sub and os.path.isdir(sub) and not os.path.islink(sub):
-                prune_empty(sub)      # emptied by this run's files only
+        for dk, mk in members:
+            od = out_dir(dk, mk)
+            for name in opts["own"]:
+                sub = os.path.join(os.path.expanduser(od), name) if od and os.sep not in name else None
+                if sub and os.path.isdir(sub) and not os.path.islink(sub):
+                    prune_empty(sub)      # emptied by this run's files only
     shutil.rmtree(d)
     return dict({"ok": True, "removed": removed}, **({"kept": kept} if kept else {}))
 
@@ -1330,7 +1491,10 @@ def act_errors(a):
         # No error file: the log of each failure, named by the run's own
         # output (compile_all.sh: "[FAIL] <build> ... → <its log>").
         logs = []
-        for m in re.finditer(opts["fail_re"], read(os.path.join(d, "out.log"), ""), re.M):
+        text = read(os.path.join(d, "out.log"), "")
+        if is_job_layout(meta):      # node n1's output is in the run's log too, the others' not
+            text = "\n".join(read(os.path.join(dk, "out.log"), "") for dk, _mk in pool_members(d, meta))
+        for m in re.finditer(opts["fail_re"], text, re.M):
             p = os.path.expanduser(m.group(1))
             if os.path.isfile(p) and p not in logs:
                 logs.append(p)
@@ -1341,21 +1505,30 @@ def act_errors(a):
     elif not pats:
         print(json.dumps({"note": "pas de log d'erreurs pour ce programme", "files": []}))
         return
+    elif pooled_bench(d, meta):
+        act_errors_pooled(base, d, meta, opts, pats)
+        return
     else:
-        od = out_dir(d, meta)
-        if not od:
+        # multi_launch_stress.py over several nodes: each job writes the
+        # error_<run>_*.txt of the runs it claimed in its own output directory
+        # (the run indices global: no two files share a name) -- all of them.
+        ods = [o for o in [out_dir(d, meta)] + [out_dir(dk, mk) for dk, mk in pool_members(d, meta) if dk != d]
+               if o] if meta.get("summary") == "multi_launch" else [out_dir(d, meta)]
+        if not ods or not ods[0]:
             print(json.dumps({"note": "pas encore de dossier de sortie annoncé dans le log", "files": []}))
             return
-        od = os.path.expanduser(od)
+        ods = [os.path.expanduser(o) for o in ods]
+        od = ods[0]
         found = {}
     for pat in pats:
         mine = own_copy(d, pat)
         if mine:                 # the copy the run kept when it ended
             found[mine] = False
             continue
-        for p in glob.glob(os.path.join(od, pat)):
-            if os.path.isfile(p):
-                found[p] = bool(re.search(r"[*?[]", pat))
+        for o in ods:
+            for p in glob.glob(os.path.join(o, pat)):
+                if os.path.isfile(p):
+                    found[p] = bool(re.search(r"[*?[]", pat))
     def mtime(p):
         try:
             return os.path.getmtime(p)
@@ -1396,6 +1569,92 @@ def act_errors(a):
         out["logs"] = failure_logs(base, rid, d, meta, od, opts["full_logs"])
     print(json.dumps(out))
 
+def pooled_bench(d, meta):
+    """(root, [(dir, meta, output dir, "n<K>")]) of a bench_and_test.py
+    submission over several nodes, else None. Each job writes in its own
+    output directory, <arch>/pool_<id>/n<K> (bench_runner/cli.py): root is
+    their common parent when they have one -- the paths act_errors sends and
+    act_errfile reads are relative to it, "n2/run_logs/..." --, else this
+    job's directory (the other jobs' complete outputs then not reachable)."""
+    if not is_bench_chart(meta):
+        return None
+    members = pool_members(d, meta)
+    if len(members) < 2:
+        return None
+    out, parents = [], set()
+    for dk, mk in members:
+        od = out_dir(dk, mk)
+        od = os.path.expanduser(od) if od else None
+        if od:
+            parents.add(os.path.dirname(os.path.normpath(od)))
+        out.append((dk, mk, od, "n%s" % mk.get("node", "?")))
+    mine = out_dir(d, meta)
+    root = parents.pop() if len(parents) == 1 else (os.path.expanduser(mine) if mine else None)
+    return root, out
+
+def act_errors_pooled(base, d, meta, opts, pats):
+    """act_errors for bench_and_test.py over several nodes: every job's
+    errors log, failures and failed executions' logs, each named after its
+    job (n<K>/bench_errors.log, "n2: CHECK_FAIL ..."), newest first."""
+    root, members = pooled_bench(d, meta)
+    found, label_of = {}, {}
+    for dk, _mk, od, label in members:
+        for pat in pats:
+            mine = own_copy(dk, pat)
+            hits = [mine] if mine else [p for p in glob.glob(os.path.join(od, pat)) if os.path.isfile(p)] if od else []
+            for p in hits:
+                found[p] = bool(not mine and re.search(r"[*?[]", pat))
+                label_of[p] = "%s/%s" % (label, os.path.basename(p))
+    def mtime(p):
+        try:
+            return os.path.getmtime(p)
+        except OSError:
+            return 0
+    paths = sorted(found, key=lambda p: (-mtime(p), p))
+    files, budget, count = [], ERR_TOTAL_MAX, 0
+    for p in paths[:ERR_FILES_MAX]:
+        try:
+            size = os.path.getsize(p)
+        except OSError:
+            continue
+        n = min(ERR_FILE_MAX, budget)
+        if n <= 0:
+            break
+        data = tail_text(p, n)
+        skipped = max(0, size - n)
+        if skipped:
+            nl = data.find("\n")
+            data = data[nl + 1:] if nl >= 0 else data
+        budget -= len(data.encode("utf-8", "replace"))
+        if data.strip():
+            count += 1 if found[p] else max(1, len(ERR_ENTRY_RE.findall(data)))
+        files.append({"name": label_of[p], "size": size, "mtime": mtime(p), "data": data, "skipped": skipped})
+    # Each job's own directory: no other run writes there, no "newer".
+    out = {"dir": root, "files": files, "count": count, "total_files": len(paths), "newer": None}
+    if not paths:
+        out["note"] = "aucun fichier %s dans les %d jobs" % (", ".join(pats), len(members))
+
+    def rel(od, names):
+        """@p names, relative to job directory @p od, made relative to root
+        (dropped when od is not under it)."""
+        if not root or not od:
+            return []
+        pre = os.path.relpath(os.path.realpath(od), os.path.realpath(root))
+        return [os.path.join(pre, n) for n in names] if not pre.startswith("..") else []
+    if opts.get("cases"):
+        out["cases"] = []
+        for dk, _mk, od, label in members:
+            for c in failed_cases(od, opts["cases"], dk) if od else []:
+                c["summary"] = "%s: %s" % (label, c["summary"])
+                c["logs"] = rel(od, c["logs"])
+                out["cases"].append(c)
+    if opts.get("full_logs"):
+        out["logs"] = []
+        for dk, mk, od, _label in members:
+            if od:
+                out["logs"] += rel(od, failure_logs(base, os.path.basename(dk), dk, mk, od, opts["full_logs"]))
+    print(json.dumps(out))
+
 def inside(od, rel):
     """os.path.join(od, rel) when it stays inside the output directory @p od
     (a name read in a file, or sent by the window), else None."""
@@ -1429,6 +1688,16 @@ def failed_cases(od, name, d=None):
                         "replayable": bool(runs), "logs": logs})
     return out
 
+def submitted_at(d):
+    """When run dir @p d was submitted (its meta.json's time) -- a node
+    directory of a job of N nodes: its run's --, or None."""
+    for p in (os.path.join(d, "meta.json"), os.path.join(os.path.dirname(d), "meta.json")):
+        try:
+            return os.path.getmtime(p)
+        except OSError:
+            continue
+    return None
+
 def run_started(d):
     """When run dir @p d started, by the cluster's clock: its "start" event,
     else None."""
@@ -1446,9 +1715,8 @@ def failure_logs(base, rid, d, meta, od, sub):
     ld = inside(od, sub)
     if not ld or not os.path.isdir(ld):
         return []
-    try:
-        t0 = os.path.getmtime(os.path.join(d, "meta.json"))
-    except OSError:
+    t0 = submitted_at(d)
+    if t0 is None:
         return []
     t1 = None
     for _other, od2, _m2 in runs_sharing(base, rid, od):
@@ -1475,7 +1743,8 @@ def act_errfile(a):
     d = os.path.join(base, rid)
     meta = json.loads(read(os.path.join(d, "meta.json"), "{}") or "{}")
     opts = json.loads(base64.b64decode(a[2]).decode()) if len(a) > 2 and a[2] else {}
-    od = out_dir(d, meta)
+    pb = pooled_bench(d, meta)
+    od = pb[0] if pb else out_dir(d, meta)       # a pool: the paths are relative to the jobs' parent
     if not od:
         print(json.dumps({"error": "pas de dossier de sortie annoncé dans le log de %s" % rid}))
         return

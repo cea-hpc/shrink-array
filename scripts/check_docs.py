@@ -73,6 +73,7 @@ ALLOWED = {
     "FAST_ALLOC_MAX_CONST_BLOCK_SIZE", "internal/static_const_array_define.h",
     "chunk/internal/diag_mutex.h", "diag_mutex.h", "internal::diag_print_mutex", "chunk/internal/nano_sleeper.h",
     "chunk_config::have_aggressive_compression",  # now chunk_config::aggressive_compression()
+    "is_cst_val_new_value_is_other_cst_val",  # now passes_mark_pre_check()
     # the developer settings fixed after the Milan measurements, and CHUNK_THP's functions
     "CHUNK_RECHUNK_KEEP_RECYCLED_MB", "alloc_config::thp_advise", "thp_never", "advise_thp_region",
     # the rechunk decider's former environment variables (now RechunkPolicy fields and
@@ -98,7 +99,7 @@ ALLOWED = {
     "Chunk2Base", "Proxy2Base", "ArrayChunk2Base", "Chunk2AOmpPolicy", "RechunkHooks2", "Chunk2Def",
     "ChunkOmpPolicy", "CompressionManagerOmpPolicy",
     # files a shrink_gui run writes in its directory on the cluster (docs/shrink_gui.md)
-    "run.sh", "job.sh", "launch.sh",
+    "run.sh", "job.sh", "launch.sh", "node.sh",
     # C++ standard library, compiler, language
     "std", "size_t", "int64_t", "uint32_t", "operator", "noexcept", "constexpr", "seq_cst",
     "memory_order_seq_cst", "memory_order_relaxed", "memory_order_acquire", "memory_order_release",

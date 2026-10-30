@@ -257,7 +257,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     void
     mark_for_compression_if_needed(this const Derived& self, InT<T> second_val, InT<T> new_value, InT<T> first_value)
     {
-        const bool isv = self.is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val);
+        const bool isv = self.passes_mark_pre_check(new_value, first_value, second_val);
         self.mark_for_compression_impl(self.Base::read_values(), new_value, isv, second_val, first_value);
     }
 
@@ -293,7 +293,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      */
     void mark_for_compression_if_needed(this const Derived& self, bool old_value, bool new_value)
     {
-        const bool isv = self.is_cst_val_new_value_is_other_cst_val(new_value, false, true);
+        const bool isv = self.passes_mark_pre_check(new_value, false, true);
         self.mark_for_compression_impl(old_value, new_value, isv, true, false);
     }
 
@@ -310,7 +310,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
                                         InT<T>              new_value,
                                         InT<T>              first_value)
     {
-        const bool isv = self.is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val);
+        const bool isv = self.passes_mark_pre_check(new_value, first_value, second_val);
         self.mark_for_compression_impl(old_value, new_value, isv, second_val, first_value);
     }
 
@@ -346,25 +346,28 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     static constexpr bool is_not_bool = !is_bool;
 
     /**
-     * @brief Whether the chunk is currently at ONE of the two constants and
-     *        new_value is precisely the OTHER one -- i.e. a direct
-     *        constant-to-constant transition (cst1 -> second_val, or
-     *        cst2 -> first_value).
-     * @note Keep the terms conjunctive. `(A && is_cst_val2()) || is_not_cst_val2()`
-     *       reduces to `A || !is_cst_val2()`, and since a chunk is at most one
-     *       of cst_val1 / cst_val2, one of the two `!B` terms is always true:
-     *       the pre-check (`isv` of mark_for_compression_core) would then
-     *       filter nothing.
+     * @brief Does this write pass the variant's marking pre-check?
+     * @details The `isv` filter of every marking entry point: the CRTP call of
+     *          Derived::pre_check_mark_for_compression(), which this class
+     *          defaults to pre_check_mark_for_compression_strict() -- a constant
+     *          is written, WHATEVER the chunk's state (zero_one_value adds that
+     *          the rank has a candidate list for the value; zero_any and
+     *          pattern widen it). It does not look at the chunk's state: a
+     *          chunk materialised by a plain value and written back to a
+     *          constant element by element must be queued too.
+     * @note Invariant: it never rejects a write that
+     *       should_mark_for_compression() would accept. It only spares the
+     *       other writes the old-value read; a qualifying write it rejected
+     *       would leave its chunk materialised for the run.
      * @param new_value The new value to check.
      * @param first_value The first constant value to compare against.
      * @param second_val The second constant value to compare against.
-     * @return true if the chunk is at cst_val1 and new_value == second_val,
-     *         or at cst_val2 and new_value == first_value.
+     * @return true if the write is worth the marking path.
      */
-    [[nodiscard]] bool is_cst_val_new_value_is_other_cst_val(this const Derived& self,
-                                                             InT<T>              new_value,
-                                                             InT<T>              first_value,
-                                                             InT<T>              second_val) noexcept;
+    [[nodiscard]] bool passes_mark_pre_check(this const Derived& self,
+                                             InT<T>              new_value,
+                                             InT<T>              first_value,
+                                             InT<T>              second_val) noexcept;
 
     /**
      * @brief Default pre-check hook (zero_one_value behaviour).
@@ -391,7 +394,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      *          way, adds this element to the compression candidate list.
      *          `isv` itself is a fast pre-check meant to let obviously
      *          irrelevant writes skip that work entirely (see
-     *          is_cst_val_new_value_is_other_cst_val()).
+     *          passes_mark_pre_check()).
      * @tparam Args Extra args forwarded to should_mark_for_compression()
      *              (the second/first constant values).
      * @param old_value Value before the write.

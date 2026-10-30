@@ -164,12 +164,15 @@ class MachinePanel:
         """The duration is remembered per program (compile_all.sh is short,
         multi_launch_stress.py long)."""
         self.settings.setValue(f"time_s/{self.program.currentText()}", v)
+        if not getattr(self, "rescaling", False):
+            self.rescale_armed = False   # a duration of one's own: "Nœuds" leaves it (nodes_changed)
         self.update_qos()
 
     def qos_choice(self):
         """(qos to add with -Q or None, its row, error or None). A -Q already in
-        the directives wins over the list: it is only checked."""
-        directives = self.directives.toPlainText()
+        the directives wins over the list: it is only checked. The cores are
+        the job's: one job of N nodes, N × the node's (job_directives)."""
+        directives = self.job_directives() if hasattr(self, "nodes_layout") else self.directives.toPlainText()
         if not BATCH["qos"] or not self.qos_rows:    # no QoS known: the scheduler's default
             return None, None, None
         fixed = qos.explicit_qos(directives)
@@ -192,10 +195,27 @@ class MachinePanel:
             bits.append(T("prioritaire"))
         if row["max_sub"] and row["max_sub"] <= 10:     # test: 2; normal/long: 100, not worth a word
             bits.append(T(f"{row['max_sub']} job(s) soumis au plus"))
+        serial = self.serial_note(name, row)
+        if serial:
+            bits.append(f"<span style='color:#c0392b'>{html.escape(T(serial), quote=False)}</span>")
         fixed = T(" (fixée dans les directives)") if qos.explicit_qos(self.directives.toPlainText()) else ""
         self.qos_note.setText(f"→ <b>{html.escape(name)}</b>{fixed} : " + ", ".join(bits)
                               if i18n.LANG == "fr" else
                               f"→ <b>{html.escape(name)}</b>{fixed}: " + ", ".join(bits))
+
+    def serial_note(self, name, row=None):
+        """N jobs of one node whose QoS @p name caps a user's cores below N ×
+        theirs (qos.serializes): they will run one after another -- the
+        sentence, else None."""
+        if not hasattr(self, "nodes_layout") or self.nodes_wanted() < 2 or self.one_job():
+            return None
+        if row is None:
+            name, row, _err = self.qos_choice()
+        n, cpus = self.nodes_wanted(), qos.job_cpus(self.directives.toPlainText())
+        if not qos.serializes(row, cpus, n):
+            return None
+        return (f"QoS {name or qos.explicit_qos(self.directives.toPlainText()) or '?'} : {row['sum_cpus']} cœurs au plus pour tous vos jobs, "
+                f"les {n} jobs passeront l'un après l'autre")
 
     # ----------------------------------------------------------- connection
     def check(self):

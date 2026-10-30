@@ -23,7 +23,10 @@ _COLS = {"name": "name", "qos": "name", "partition": "partition", "priority": "p
          "maxsub": "max_sub", "maxsubmit": "max_sub", "maxsubmitjobs": "max_sub",
          "maxsubmitpu": "max_sub", "maxsubmitjobsperuser": "max_sub", "maxcpuspu": "max_cpus",
          "maxrun": "max_run", "maxjobs": "max_run", "maxjobspu": "max_run", "maxtime": "max_time", "maxwall": "max_time",
-         "maxwalldurationperjob": "max_time"}
+         "maxwalldurationperjob": "max_time",
+         # The cores of all of a user's jobs together (ccc_mqinfo's SumCPUs,
+         # sacctmgr's MaxTRESPerUser "cpu=N"): beyond, the jobs wait their turn.
+         "sumcpus": "sum_cpus", "maxtrespu": "sum_cpus", "maxtresperuser": "sum_cpus"}
 
 _TIME_RE = re.compile(r"^(?:(\d+)-)?(\d+)(?::(\d+))?(?::(\d+))?$")
 
@@ -75,12 +78,16 @@ def _spans(line):
 
 def _int(text):
     text = text.strip()
+    m = re.search(r"(?:^|,)cpu=(\d+)", text)      # a TRES list: its cpu count
+    if m:
+        return int(m.group(1))
     return int(text) if text.isdigit() else None
 
 
 def parse_mqinfo(text):
     """ccc_mqinfo's output -> rows {name, partition ("*" = all), priority,
-    max_cpus, max_sub, max_run (None = no limit), max_time (seconds)}.
+    max_cpus, sum_cpus (all the user's jobs), max_sub, max_run (None = no
+    limit), max_time (seconds)}.
     [] when nothing usable is found (empty, unknown format): the caller keeps
     what it had."""
     lines = [ln.rstrip() for ln in (text or "").splitlines()]
@@ -119,6 +126,7 @@ def parse_mqinfo(text):
         rows.append({"name": cells["name"], "partition": part,
                      "priority": _int(cells.get("priority", "")) or 0,
                      "max_cpus": _int(cells.get("max_cpus", "")),
+                     "sum_cpus": _int(cells.get("sum_cpus", "")),
                      "max_sub": _int(cells.get("max_sub", "")),
                      "max_run": _int(cells.get("max_run", "")),
                      "max_time": t})
@@ -177,6 +185,13 @@ def job_cpus(directives):
     return (_opt(directives, "n") or 1) * (_opt(directives, "c") or 1)
 
 
+def serializes(row, cpus, jobs):
+    """True when @p jobs jobs of @p cpus cores each, under QoS @p row, cannot
+    all run at once: together beyond its per-user total (sum_cpus) -- they
+    then run one after another (inti's xlong on milan-bxi: 128 cores, one node)."""
+    return bool(row and row.get("sum_cpus") and cpus and jobs > 1 and cpus * jobs > row["sum_cpus"])
+
+
 def choose(rows, partition, cpus, seconds, wanted="auto"):
     """(name, row, error). @p wanted names a QoS (checked: open on the
     partition, duration and cores within its limits) or is "auto": among the
@@ -192,6 +207,8 @@ def choose(rows, partition, cpus, seconds, wanted="auto"):
                     f"({fmt(row['max_time'], lang)})")
         if row["max_cpus"] and cpus and cpus > row["max_cpus"]:
             return f"{cpus} cœurs dépassent le maximum de la QoS {name} sur {partition} ({row['max_cpus']})"
+        if row.get("sum_cpus") and cpus and cpus > row["sum_cpus"]:      # a job that never starts
+            return f"{cpus} cœurs dépassent le maximum de la QoS {name} sur {partition} ({row['sum_cpus']})"
         return None
 
     if wanted and wanted != "auto":
@@ -203,8 +220,13 @@ def choose(rows, partition, cpus, seconds, wanted="auto"):
     open_rows = [r for r in (limits(rows, n, partition) for n in names(rows)) if r is not None]
     fits = [r for r in open_rows if check(r, r["name"]) is None]
     if not fits:
-        most = max((r["max_time"] for r in open_rows), default=None)
-        return None, None, (f"aucune QoS n'accepte {fmt(seconds, lang)} sur {partition}"
+        # The longest duration a QoS gives these cores (a job of several
+        # nodes: 48 h on milan-bxi fits xlong's time, not its 128 cores).
+        sized = [r for r in open_rows if not ((r["max_cpus"] and cpus and cpus > r["max_cpus"])
+                                              or (r.get("sum_cpus") and cpus and cpus > r["sum_cpus"]))]
+        most = max((r["max_time"] for r in sized), default=None)
+        for_cpus = f" pour {cpus} cœurs" if len(sized) < len(open_rows) else ""
+        return None, None, (f"aucune QoS n'accepte {fmt(seconds, lang)} sur {partition}{for_cpus}"
                             + (f" (au plus {fmt(most, lang)})" if most else ""))
     best = sorted(fits, key=lambda r: (-r["priority"], r["max_time"]))[0]
     return best["name"], best, None

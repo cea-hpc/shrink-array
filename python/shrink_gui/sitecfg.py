@@ -235,6 +235,9 @@ class Site:
             "cancel": chk.commands(b, "batch", "cancel", ["scancel"]),
             "qos_info": chk.text(b, "batch", "qos_info", ""),
             "directive": chk.text(b, "batch", "directive"),
+            # Inside a batch job of several nodes: what starts one task per
+            # node (runscripts.node_launch), when the partition has no launcher.
+            "step": chk.command(b, "batch", "step") if "step" in b else "srun",
         }
         for k, default, fields in (("name", "", ("name",)), ("time", None, ("seconds", "minutes", "hms")),
                                    ("output", None, ("log",)), ("error", "", ("log",)),

@@ -7,7 +7,7 @@ import time
 import re as _re
 
 from ..builds import resolve_build_dir, short_config_label, validation_built
-from .. import events
+from .. import events, share
 from ..progress import CONFIG_W
 from ..runs import _append_error_now, effective_timeout, run_capture_stdout_streaming
 from ..settings import is_sanitizer_config, sanitizer_env_for
@@ -160,6 +160,9 @@ def run_ctest_phase(args, extra_ldpath, errors):
         if not validation_built(bdir):
             print(lead + dim("validation not built here (Debug, CHECK_OPTIM and sanitizer builds only) — skipped"))
             n_not_built += 1
+            continue
+        # --pool: the unit is ctest/<config>, its build directory's harnesses.
+        if not share.take("ctest", cfg, short_config_label(cfg)):
             continue
 
         cmd = ["ctest", "-L", args.ctest_label, "--output-on-failure",

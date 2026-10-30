@@ -4,9 +4,9 @@
 
 > Status: end of October 2026. `pattern::Array` is a member of the `zero_any` family: this
 > document describes what it does **differently** from `zero_any`, whose machinery it reuses
-> whole (second-value registry, write engine, compression pass, read sections), described in
+> in full (second-value registry, write engine, compression pass, read sections), described in
 > [algo_zero_any.md](algo_zero_any.md) and [algo_zero_one_value.md](algo_zero_one_value.md). Its
-> lock-free handshake of its own is model-checked: [formal_models.md](formal_models.md),
+> own lock-free handshake is model-checked: [formal_models.md](formal_models.md),
 > section 7. When in doubt, the code is the reference.
 
 ***
@@ -43,14 +43,14 @@ libraries, benchmark and validation programs).
 
 ## 2. Per-chunk metadata: the offset in the second-value slot
 
-`pattern` adds no byte per chunk. A motif chunk has no second value, so its slot in
+`pattern` adds no bytes per chunk. A motif chunk has no second value, so its slot in
 `zero_any`'s second-value row (`sizeof(T)`, already there for every chunk) holds its offset. The
 alternative, the offset in the chunk object, would cost 8 bytes per chunk and save a cache line
-per motif read (the row is another array); it is an open point (§10). Consequences:
+per motif read (the row is another array); it is an open question (§10). Consequences:
 
 - a read of a motif chunk needs the chunk's **index** to find its slot: the reads that know it
   pass the slot (`ArrayChunkBase::operator[]`, the iterator, `read_range`, `for_each_value`,
-  the proxy's reads); a motif chunk read without its slot is an invariant failure, but in the
+  the proxy's reads); a motif chunk read without its slot is an invariant failure, except in the
   relaxed scans (the marking filter);
 - `CHUNK_SECOND_VALUE_INDEXED` is refused for element types wider than 4 bytes (their slot holds
   a registry identifier, not a `T`);
@@ -81,12 +81,12 @@ path of every element.
   registered the **second** time it is seen, **by another chunk**: the first sighting only
   records, in a probation table of 64 Ki entries of 16 bits, 8 more bits of its hash and an
   8-bit tag of the chunk. The same chunk seen again with the same contents (random data
-  rewritten unchanged) stays on probation: a motif one chunk uses saves nothing. A collision
+  rewritten unchanged) stays on probation: a motif used by only one chunk saves nothing. A collision
   costs a missed or a useless entry, never a wrong value. With 8 bits instead of 16, the
   dynamic validation found random chunks registering their own motif by collision, one first
   sighting in a few hundred.
 - **Reclaim.** `pattern::Array<T>::reclaim_second_values()`, at a sequential point: the
-  constants as `zero_any`, then the motifs no chunk points at; their identifiers are reused, the
+  constants as `zero_any` does, then the motifs no chunk points at; their identifiers are reused, the
   index is rebuilt and the probation table cleared.
 
 ## 4. When a chunk becomes a compression candidate
@@ -110,7 +110,7 @@ two constants is read in one block, normalised, hashed and submitted to the admi
 1. the offset stored in the chunk's slot (release);
 2. the type slot set to `CstSlot::motif`;
 3. the values pointer switched by CAS from the buffer to the motif (acq_rel);
-4. the buffer released to the pool after the grace period, as a compression to a constant.
+4. the buffer released to the pool after the grace period, as for a compression to a constant.
 
 ## 6. The read, and the rewrites of the slot
 
@@ -123,8 +123,8 @@ in two executions (F5, [formal_models.md](formal_models.md) section 8.6); the ru
 implemented:
 
 - the reader loads the slot with **acquire**, then the pointer **again**
-  (`Chunk::motif_offset()`): unchanged, the offset belongs to the state the two loads bracket;
-  moved, it starts over;
+  (`Chunk::motif_offset()`): if unchanged, the offset belongs to the state the two loads bracket;
+  if it moved, it starts over;
 - every rewrite of the slot of a chunk of a member with the motif state is a **release** atomic
   store (`SecondValueRef::reset_release()`, `set_from_array_release()`), made after the pass saw
   the materialised buffer: a reader that sees the new slot cannot see the old pointer again;
@@ -148,7 +148,7 @@ pass compresses each candidate at its own size.
 
 - **Rechunk.** `rechunk_to()` rebuilds the array from the old chunks' values: a motif chunk is
   read as its motif plus its offset, never as `zero_any`'s "same second constant" shortcut
-  (`is_cst_val2()` holds for a motif chunk, as for the write engine it is compressed). The
+  (`is_cst_val2()` holds for a motif chunk since, for the write engine, it is compressed). The
   rebuilt chunks, written through the proxies, are queued by the completion rule and compressed
   to motifs of the new size by the next pass.
 - **Advisor.** `ChunkSizeAdvisor` reads a motif chunk as data (motif plus offset), never as a
@@ -172,7 +172,7 @@ builds (1,536 of 1,537 at the dynamic size 64); the `zero` build compresses one.
 `std::vector<long>`, a `zero_any::Array<long>` and a `pattern::Array<long>` in the same binary,
 and prints the memory of the connectivity of a structured hexahedral mesh (256 cells wide, 8
 nodes per cell) in each. Indicative, on a shared 8-core container, 2^24 elements, chunk 256
-(the reference runs are to be made on the target machine):
+(the reference runs remain to be made on the target machine):
 
 | | vector | `zero_any` | `pattern` |
 |---|---|---|---|
@@ -189,7 +189,7 @@ staying in cache; the write pays the classification of the chunks.
 ## 10. Limits and open points
 
 - **Where the offset lives** (§2): the slot, against the chunk object (+8 bytes per chunk, a
-  cache line fewer per motif read); to measure with `access_cost_pattern` on motif-heavy reads.
+  cache line fewer per motif read); to be measured with `access_cost_pattern` on motif-heavy reads.
 - **The advisor's motif forecast** (§8): at a candidate size, a window would be compressed to a
   motif if its normalised content is shared with another window. An estimate from the sampled
   chunks is cheap, but changes `ChunkSizeEstimate` (a public struct) and the decider.

@@ -221,17 +221,23 @@ void check_environment()
     check(std::ranges::find(switches, std::string_view{"CHUNK_RECHUNK_CHURN"}, &logging::detail::LegacySwitch::name) ==
               switches.end(),
           "env: CHUNK_RECHUNK_CHURN is no longer a switch (CHUNK_LOG=rechunk=debug)");
+    check(logging::enabled(Channel::ledger, Level::info), "env: CHUNK_LEDGER_REPORT=1 raises ledger to info");
+    check(!logging::enabled(Channel::arena, Level::info), "env: arena stays at warn (CHUNK_ARENA_REPORT unset)");
 
     CHUNK_LOG(warn, general, "first line through the default sink");
     const auto lines             = read_lines(g_log_path);
     bool       bad_item_reported = false;
     bool       first_line        = false;
     bool       deprecated        = false;
+    bool       report_deprecated = false;
     for (const auto& line : lines)
     {
         deprecated |=
             line.starts_with("[shrink_array][env][W][") &&
             line.ends_with("] FAST_ALLOC_TRACE is deprecated: it means CHUNK_LOG=alloc=trace, which it now sets");
+        report_deprecated |=
+            line.starts_with("[shrink_array][env][W][") &&
+            line.ends_with("] CHUNK_LEDGER_REPORT is deprecated: it means CHUNK_LOG=ledger=info, which it now sets");
         bad_item_reported |=
             line.starts_with("[shrink_array][env][W][") && line.find("\"verbose\"") != std::string::npos;
         first_line |=
@@ -240,6 +246,7 @@ void check_environment()
     check(bad_item_reported, "env: CHUNK_LOG item \"verbose\" reported in CHUNK_LOG_FILE");
     check(first_line, "env: a message reaches CHUNK_LOG_FILE with its prefix");
     check(deprecated, "env: a deprecated switch is warned about");
+    check(report_deprecated, "env: a former report switch is warned about");
 }
 
 // --- 2 ----------------------------------------------------------------------
@@ -639,6 +646,8 @@ int main(int argc, char** argv)
     std::remove(g_log_path.c_str());
     setenv("CHUNK_LOG", "warn, rechunk=debug, verbose", 1);
     setenv("FAST_ALLOC_TRACE", "1", 1);    // a deprecated legacy switch: raises alloc to trace
+    setenv("CHUNK_LEDGER_REPORT", "1", 1); // a former report switch: raises ledger to info
+    unsetenv("CHUNK_ARENA_REPORT");
     setenv("CHUNK_RECHUNK_CHURN", "1", 1); // no longer read: CHUNK_LOG=rechunk=debug
     setenv("CHUNK_LOG_FILE", (dir + "/shrink_log_validation.%p.log").c_str(), 1);
 

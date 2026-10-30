@@ -18,10 +18,10 @@
 
 | variable | default | effect |
 |---|---|---|
-| `CHUNK_LOG` | `warn,rechunk=info` | which messages of the library are written: comma-separated items, left to right; a bare level (`off`, `error`, `warn`, `info`, `debug`, `trace`) sets every channel (`rechunk` included: `CHUNK_LOG=warn` hides the re-chunks), `channel=level` one (`general`, `env`, `alloc`, `arena`, `pool`, `rechunk`, `drain`, `compress`, `recycle`, `ledger`, `ompt`, `affinity`, `advisor`, `memory`). Example: `CHUNK_LOG=warn,rechunk=debug`. An invariant failure is written whatever the setting. A program can also call `shrink_array::logging::configure()` and hand the messages to its own logger with `shrink_array::logging::set_sink()` (`chunk/log.h`) |
+| `CHUNK_LOG` | `warn,rechunk=info` | which messages of the library are written: comma-separated items, left to right; a bare level (`off`, `error`, `warn`, `info`, `debug`, `trace`) sets every channel (`rechunk` included: `CHUNK_LOG=warn` hides the re-chunks), `channel=level` one (`general`, `env`, `alloc`, `arena`, `pool`, `rechunk`, `drain`, `compress`, `recycle`, `ledger`, `ompt`, `affinity`, `advisor`, `memory`). Example: `CHUNK_LOG=warn,rechunk=debug`. The library's reports are levels of their channel: `arena=info` (the buffer arena), `ledger=info` (the block registry, at exit), `ompt=info` (the synchronisation regions, at exit); a bare `info` or higher switches them all on, with the counters of the arena and of OMPT, which cost a little time. An invariant failure is written regardless of the setting. A program can also call `shrink_array::logging::configure()` and hand the messages to its own logger with `shrink_array::logging::set_sink()` (`chunk/log.h`) |
 | `CHUNK_LOG_FILE` | stderr | file the messages are appended to; `%p` is replaced by the process id |
 | `CHUNK_THREAD_CAPACITY` | max(`omp_get_max_threads()`, cores, 256) | number of ranks the per-thread structures are sized for; can only raise the default (oversubscription). A rank at or past it stops the program with a message naming this variable |
-| `CHUNK_REQUIRE_OMPT` | — | OMPT builds: `1` aborts the program if the OMPT tool was not loaded by the runtime (otherwise, a warning of the log), since the end-of-phase events would then never happen |
+| `CHUNK_REQUIRE_OMPT` | — | OMPT builds: `1` aborts the program if the OMPT tool was not loaded by the runtime (otherwise, a warning in the log), since the end-of-phase events would then never happen |
 
 ## 2. CMake options
 
@@ -47,7 +47,7 @@ benchmark's own macro, not the library's). See [getting_started.md](getting_star
 
 The options shared by every library of a build (§2) are recorded by CMake in the generated
 `chunk/build_options.h` and `fast_allocators/build_options.h`, installed with the libraries; the
-headers read them there, whatever a program defines itself. A file compiled with OpenMP against a
+headers read them there, regardless of what a program defines itself. A file compiled with OpenMP against a
 library built without it, or the reverse, does not compile. A program spelling the variant or the
 geometry differently from the library it links does not link: the undefined symbol
 (`shrink_array::link_check::variant_...`) names the settings it was compiled with.

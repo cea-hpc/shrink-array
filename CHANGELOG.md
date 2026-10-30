@@ -215,6 +215,11 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `formal/queue_handback.c`: the end of a compression pass against the candidate marking of a
+  writer. It finds F6 (`docs/formal_models.md`, section 8.8), open: a chunk made constant
+  between `steal_unmark()` and the reset of its "queued" flag is dropped from every list and
+  stays materialised until written again -- memory, no wrong value. The model accepts a fix,
+  the flag handed back (1 -> 2, a writer's 3, re-queued by the pass), not applied yet.
 - `thread_speedup.py --pool=<id>` and shrink_gui's "Nodes" field for it: N one-node batch jobs
   share the executable list, as `compile_all.sh --pool` shares its configurations; each job
   measures the executables it claims first (an atomic `mkdir` in
@@ -293,6 +298,12 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- `SecondValueProxyBase::is_cst_val_new_value_is_other_cst_val()` is now
+  `passes_mark_pre_check()` (internal): it has dispatched to the variant's
+  `pre_check_mark_for_compression()` since September, and its name and comment still said the
+  narrow test it replaced ("the chunk at one constant, the other one written"), which invited a
+  fix back to the bug. `docs/algo_zero_one_value.md`: an array without a second value is queued
+  under `T{}`, not never (`has_candidate_list` is a guard before the flag's CAS).
 - The `shrink_bench` executables carry the threading backend of their build in their name:
   `shrink_bench_<backend>_<variant>_<size>` with `<backend>` `omp`, `std` or `serial`
   (`CHUNK_THREADS_BACKEND`), e.g. `shrink_bench_omp_zero_any_256`, `shrink_bench_std_zero_dyn`,
@@ -335,6 +346,15 @@ the tag's checksum to the recipe.
   `--force_rechunk`, `--force_rechunk_at`, `--force_rechunk_toggle`, `--force_rechunk_alt`, plus
   `--advisor_period` and `--advise_five` for its own schedule. `bench_and_test.py`'s re-chunk
   phase and `diag_zero_rechunk_slowdown.py` pass them.
+- The library's reports are log levels, no longer environment variables: the buffer arena's
+  summary (with its `partial` and `freepath` lines and the free-path counters) is
+  `CHUNK_LOG=arena=info`, the block registry's report at exit `ledger=info`, the OMPT
+  statistics at exit `ompt=info`, and `shrink_bench`'s report of zero_any's second-value
+  registry at each advisor pass `compress=info` (its heading, `cst2-gc @ iter <k>`, is a log line
+  now). A report is switched on by its channel's level and then written in full; a bare
+  `CHUNK_LOG=info` switches them all on. `diag_zero_rechunk_slowdown.py` asks for `arena=info`,
+  and reads the `freepath` lines as the log writes them: its `[FREEPATH]` pattern matched
+  nothing since the log.
 - The decider's two per-array traces are log levels, no longer environment variables: the churn
   line (materialisations per pass, the transient they imply) is `CHUNK_LOG=rechunk=debug`
   (it was `rechunk=info`, switched on by `CHUNK_RECHUNK_CHURN`), and the advisor's full table at
@@ -428,6 +448,10 @@ the tag's checksum to the recipe.
 
 ### Deprecated
 
+- `CHUNK_ARENA_REPORT`, `CHUNK_LEDGER_REPORT`, `CHUNK_OMPT_STATS` and `CHUNK_CST2_PROBE`: they set
+  `CHUNK_LOG=arena=info`, `ledger=info`, `ompt=info` and `compress=info`, with a warning (see
+  Changed); set means non-empty and not starting with `0`, for the two that any value used to
+  switch on. Removal planned for 2026-12-31.
 - `FAST_ALLOC_TRACE` (it sets `CHUNK_LOG=alloc=trace`, with a warning): removal planned for
   2026-12-31.
 - `python/omp_speedup.py`: runs `thread_speedup.py` with the same arguments (one line on stderr
