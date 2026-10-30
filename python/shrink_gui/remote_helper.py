@@ -282,6 +282,8 @@ def act_check(a):
          "msub": bool(submit) and cmd_out(["which", submit[0]]) is not None,
          # the QoS limits (parsed by the GUI)
          "mqinfo": cmd_out(shlex.split(batch["qos_info"])) if batch.get("qos_info") else None,
+         # the machine's partitions (parsed by the GUI, partitions.py)
+         "mpinfo": cmd_out(shlex.split(batch["partition_info"])) if batch.get("partition_info") else None,
          # what this machine is, for the local mode's "partition"
          "machine": os.uname()[4], "cpus": os.cpu_count(), "mem_gb": mem_gb()}
     if a and a[0]:

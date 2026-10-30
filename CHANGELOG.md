@@ -52,6 +52,13 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- shrink_gui 0.15: the partition list also offers the partitions the machine lists at the
+  connection check (`[batch] partition_info`: `ccc_mpinfo` on inti, `sinfo -o '%P %c %D %a'` in
+  `slurm_example.toml`), beside the site file's `[partitions]`, which win for a name in both. Their
+  directives, launcher and detached options come from the site's new `[discovered]` templates
+  (`{name}`, `{cores}` per node), their architecture from a pattern on the name (`arm`); `skip`
+  leaves some out. The table read is remembered for the next start.
+  `python3 -m shrink_gui.partitions` shows, on the cluster, what the window reads from it.
 - `formal/queue_handback.c`: the end of a compression pass against the candidate marking of a
   writer. It finds F6 (`docs/formal_models.md`, section 8.7), open: a chunk made constant
   between `steal_unmark()` and the reset of its "queued" flag is dropped from every list and

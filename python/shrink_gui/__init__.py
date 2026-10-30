@@ -81,6 +81,7 @@ Tests (offscreen, fake ssh/ccc_msub): python3 -m pytest shrink_gui/tests -q
 Modules:
   sitecfg.py        the site file: reading, checks (sites/: the examples)
   config.py         programs, and the site's partitions and defaults as the window uses them
+  partitions.py     the partitions the machine lists (ccc_mpinfo), as entries of the partition list
   remote_helper.py  what runs on inti (sent on ssh's stdin; Python 3.6)
   runscripts.py     run.sh / launch.sh of a run
   remote.py         the ssh calls (QProcess)
@@ -100,4 +101,4 @@ Modules:
     tooltips.py         the tooltip texts
 """
 
-__version__ = "0.14"
+__version__ = "0.15"

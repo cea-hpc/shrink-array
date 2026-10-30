@@ -11,7 +11,7 @@ import json
 
 from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 
-from shrink_gui import i18n, qos
+from shrink_gui import config, i18n, qos
 from shrink_gui.config import BATCH, DETACHED, LOCAL, LOCAL_DEFAULTS, PRESETS, SITE
 from shrink_gui.i18n import T
 
@@ -23,6 +23,11 @@ class MachinePanel:
         """The settings key of the QoS table last read: the CEA site keeps the
         historical key, another site its own."""
         return "mqinfo" if SITE.name == "inti" else f"mqinfo/{SITE.name}"
+
+    @staticmethod
+    def mpinfo_key():
+        """The settings key of the partition table last read, per site."""
+        return f"mpinfo/{SITE.name}"
 
     @staticmethod
     def batch_arg():
@@ -73,6 +78,27 @@ class MachinePanel:
             self.mode.setCurrentIndex(max(0, self.mode.findData(self._get("mode"))))
         for c in (self.preset, self.mode):
             c.blockSignals(False)
+
+    def refresh_partitions(self, text):
+        """The partition table @p text the connection check read
+        (config.set_discovered): the list is filled again, the partition
+        selected stays (the first one if it is gone), and it is remembered
+        for the next start."""
+        if not config.set_discovered(text) or self.is_local():
+            return
+        self.settings.setValue(self.mpinfo_key(), text)
+        keep = self.preset.currentData()
+        self.preset.blockSignals(True)
+        self.preset.clear()
+        for key, p in PRESETS.items():
+            if not p.get("local"):
+                self.preset.addItem(T(p["label"]), key)
+        i = self.preset.findData(keep)
+        self.preset.setCurrentIndex(max(0, i))
+        self.preset.blockSignals(False)
+        self.set_tooltips()
+        if i < 0:
+            self.preset_changed()
 
     def local_label(self):
         """This machine's "partition": what the check found there."""
@@ -256,6 +282,7 @@ class MachinePanel:
                 self.qos_rows = rows
                 self.fill_qos(self.qos.currentData())
                 self.update_qos()
+            self.refresh_partitions(r.get("mpinfo") or "")
             self.inti_git = r.get("git")
             self.show_git_state()
             if self.inti_git:

@@ -2,7 +2,7 @@
 
 > French version: [shrink_gui_fr.md](shrink_gui_fr.md).
 
-> October 2026, `shrink_gui` 0.14 (prototype). A window on the laptop to submit
+> October 2026, `shrink_gui` 0.15 (prototype). A window on the laptop to submit
 > `compile_all.sh`, `bench_and_test.py`, `multi_launch_stress.py` and `thread_speedup.py` on the cluster, or to
 > run them on the laptop itself (§3, "This machine"), follow
 > their log, read their summary and fetch their results. The code is described in the
@@ -65,7 +65,7 @@ runs again by itself.
 
 | field | role |
 |---|---|
-| Partition | `gh200-bxi` (ARM, 288 cores) or `milan-bxi` (x86, 64 cores); also sets the architecture of the defaults |
+| Partition | `gh200-bxi` (ARM, 288 cores) or `milan-bxi` (x86, 64 cores), then the other partitions `ccc_mpinfo` lists at the connection check (below); also sets the architecture of the defaults |
 | Submission | `ccc_msub` (batch, the default) or `ccc_mprun` detached from the login node |
 | Max time (-T) | accepts `2 d`, `1 h 30`, `90 min`, `1-00:00:00` |
 | QoS (-Q) | "auto" picks the QoS from the duration, according to the limits `ccc_mqinfo` reports |
@@ -262,7 +262,13 @@ To create one, copy an example to `~/.config/shrink_gui/site.toml` and edit it:
 | `[detached]` | the detached mode's command and its time and QoS options; left out when the site has none |
 | `[qos]` | the QoS limits used until the connection check reads them |
 | `[partitions.<name>]` | label, architecture, directives, launcher, detached options |
+| `[discovered]` | the templates of the partitions `[batch] partition_info` lists (`ccc_mpinfo`, `sinfo -o '%P %c %D %a'`) that `[partitions]` does not describe: directives, launcher and detached options with `{name}` and `{cores}` (the cores of one node), a pattern on the name for the ARM ones (`arm`, the others are x86) and one for those not to offer (`skip`) |
 | `[defaults."<program>".<arch>]` | the option defaults per program and architecture (`{build_root}` is the site's) |
+
+The partitions the machine lists are read at each connection check and remembered for the next
+start; a partition both in the table and in `[partitions]` keeps the site file's entry. What the
+window will read can be checked on the cluster, from the repository's `python/` directory:
+`ccc_mpinfo | python3 -m shrink_gui.partitions`.
 
 A file that cannot be used (syntax, unknown or missing key, unknown template field) stops the
 window with a message naming the file and the key. The file is read with `tomllib`
@@ -290,7 +296,7 @@ cd python && python3 -m pytest shrink_gui/tests -q
 ```
 
 The tests run without a display (`QT_QPA_PLATFORM=offscreen`) against a fake local cluster:
-fake `ssh`, `ccc_msub`, `squeue`, `ccc_mdel`, `ccc_mprun` and `ccc_mqinfo` (`tests/fakes`), with
+fake `ssh`, `ccc_msub`, `squeue`, `ccc_mdel`, `ccc_mprun`, `ccc_mqinfo` and `ccc_mpinfo` (`tests/fakes`), with
 the inti site file regardless of what `~/.config` holds; `test_site.py` also runs a plain Slurm site
 (fake `sbatch` and `scancel`).
 They are skipped when PySide6 is not installed.
