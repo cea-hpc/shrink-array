@@ -362,8 +362,11 @@ placés avant :
   lecture de l'ancienne valeur, une comparaison et, à la première de chaque passe, la CAS
   du drapeau ;
 - l'existence d'une **liste pour cette seconde valeur sur ce rang**
-  (`has_candidate_list`) : un tableau qui n'a jamais appelé `set_second_value()` n'a pas de
-  liste, et n'est jamais mis en file.
+  (`has_candidate_list`). Tout tableau en a une : un tableau qui n'a jamais appelé
+  `set_second_value()` est mis en file sous la clé `T{}`, dont son constructeur crée les
+  listes (`register_no_second_value_key()`). Le test est une garde : il refuse une écriture
+  avant la CAS du drapeau du chunk, car un refus après elle laisserait le drapeau levé et le
+  chunk ne serait plus jamais mis en file.
 
 Un drapeau atomique par chunk (« déjà candidat », `tab_is_inside_chunk_list_to_compress`,
 indexé par `num_tab`) garantit qu'un chunk n'est mis en file **qu'une fois** jusqu'à la
@@ -574,7 +577,7 @@ La liste complète, avec les macros et les options CMake, est dans
 | variable | effet |
 |---|---|
 | `CHUNK_LOG=rechunk=debug` | temps des phases du rechunk (`memory=debug` : repliements) |
-| `CHUNK_OMPT_STATS=1` | statistiques des régions de synchronisation (build OMPT) |
+| `CHUNK_LOG=ompt=info` | statistiques des régions de synchronisation (build OMPT) |
 | `shrink_bench --rechunk_dry_run` | le décideur analyse et journalise, mais n'applique aucun rechunk (mesurer le coût des analyses ; `RechunkPolicy::dry_run`) |
 | `shrink_bench --rechunk_max_coarsen <n>` | facteur maximal d'un grossissement (4 par défaut ; `RechunkPolicy::max_coarsen_factor`) |
 

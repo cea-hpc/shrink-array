@@ -3,6 +3,8 @@
 """Phase 1 (2c): the STL interface self-check, once per compiler front-end."""
 import sys
 
+from .. import share
+from ..builds import short_config_label
 from ..progress import _prog, get_progress_bar
 from ..runs import _append_error_now, effective_timeout, run_cmd
 from ..term import cyan, green, red
@@ -65,6 +67,11 @@ def run_stl_phase(args, plan, counter, errors):
     #     from the run's exit code (the section prints ALL PASSED / N
     #     FAILURE(S) and exits non-zero on failure).
     for cfg, exe in stl_representative_exes(args, plan.check_exes):
+        # --pool: the unit is stl/<config>, the front-end's representative
+        # configuration (one run each).
+        if not share.take("stl", cfg, short_config_label(cfg)):
+            counter.skip(1)
+            continue
         counter.idx += 1
         sys.stdout.write(
             f"\r{get_progress_bar(counter.idx, counter.total)} "

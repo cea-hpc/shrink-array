@@ -27,6 +27,7 @@ output = "--output={log}"
 error = ""                       # stderr goes to the output file
 qos = "--qos={qos}"
 slurm = "{option}"               # --dependency=..., --begin=..., one line each
+step = "srun"                    # one task per node in a job of several nodes
 
 # No [detached] table: no detached mode, the runs are batch jobs.
 

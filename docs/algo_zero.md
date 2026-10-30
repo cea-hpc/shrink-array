@@ -13,7 +13,7 @@
 ## 1. What `zero` compresses
 
 `zero` is the simplest of the three variants: a chunk is either **compressed to zero** (`T{}`) or
-**materialised**. There is no second value, neither per array (`zero_one_value`) nor per chunk
+**materialised**. There is no second value, either per array (`zero_one_value`) or per chunk
 (`zero_any`).
 
 | state | `values` points to | test |
@@ -35,7 +35,7 @@ The chunk object is 16 bytes (in OpenMP builds, where the zero counter of the se
 mode is an empty type, see §4), plus one "already in compression list" byte and two
 bytes of the *dirty bitset* (one bit, in a 64-bit word padded to 128 bytes). With no second value, `zero` has **no type or value
 metadata** per chunk: it is the variant with the least metadata, and the one whose
-memory is made up the most of **materialised data**. On `shrink_bench` at 64 threads,
+memory is most made up of **materialised data**. On `shrink_bench` at 64 threads,
 about 38 GB of its 40 GB is data.
 
 ## 3. Read and write
@@ -103,7 +103,7 @@ frequency of the passes.
 ## 7. What `zero` does differently during a rechunk
 
 The general sequence is the one in [adaptive_rechunk.md](adaptive_rechunk.md) §4. Two
-specifics come from the volume of data in `zero`:
+differences stem from the volume of data in `zero`:
 
 - **the rebuild in slices** (16): each slice
   frees the old chunks it has copied, and between two slices, the reserves of the
@@ -120,9 +120,9 @@ On `shrink_bench` (64 threads), dynamic `zero` ends at **40.3 GB**, like static 
 (40.2 GB), and 0.6 GB above static 1,024 (39.7 GB), the size it reaches. Two
 reasons for this small gain:
 
-- its metadata is already small, and growing the chunks mostly gains
-  on the metadata;
-- after its rechunk, dynamic `zero` **slows down** (1.5 to 2 times per iteration compared with
+- its metadata is already small, and growing the chunks mostly saves
+  metadata;
+- after its rechunk, dynamic `zero` **slows down** (1.5 to 2 times slower per iteration than
   static 1,024), for a reason still unknown: a dynamic build started directly at
   1,024 runs as fast as the static one, and `zero_one_value` does not slow down after its rechunks.
 

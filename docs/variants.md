@@ -19,7 +19,7 @@ An array is split into **chunks** of `S` consecutive elements. A chunk is either
 **materialised** (it owns a buffer of `S` elements) or **compressed**: it stores only
 a constant, and then costs only its metadata. A read from a compressed chunk
 returns the constant; a write of a different value first **materialises** it. Compression
-passes then give the buffer back from chunks that have become uniform again.
+passes then take the buffer back from chunks that have become uniform again.
 
 The three variants share this machinery: the proxies that intercept reads and
 writes, the deferred writes while a compression is in progress, the block compression
@@ -28,7 +28,7 @@ geometry. They differ in **what they can compress**.
 
 ## 2. What each one can compress
 
-| variant | library (macro it defines) | a chunk is compressed if it is uniform at… | cost of a constant |
+| variant | library (macro it defines) | a chunk is compressed if all its elements equal… | cost of a constant |
 |---|---|---|---|
 | **`zero`** | `chunk::chunk_zero` (`CHUNK_VARIANT_ZERO`) | **zero** (`T{}`) | nothing: one shared constant buffer |
 | **`zero_one_value`** | `chunk::chunk_zero_one_value` (`CHUNK_VARIANT_ZERO_ONE_VALUE`) | zero, **or** a **second value** specific to the array (`set_second_value`) | nothing beyond the array |
@@ -66,7 +66,7 @@ compress finely, then grow them when the metadata dominates.
 |---|---|
 | mostly zero, with areas of arbitrary data | **`zero`**: the simplest, and no second-value metadata |
 | zero or equal to **one** other dominant value, known to the array | **`zero_one_value`** |
-| made of many **areas uniform at different values** | **`zero_any`** |
+| made of many **uniform areas, each with its own value** | **`zero_any`** |
 
 Order of magnitude on `shrink_bench` (arrays of 10⁹ elements, 64 threads), memory at the end
 of the run:

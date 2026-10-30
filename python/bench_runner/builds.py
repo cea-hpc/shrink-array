@@ -88,6 +88,20 @@ def oracle_complete(output_dir, config):
     return os.path.exists(os.path.join(oracle_dir(output_dir, config), ORACLE_MARKER))
 
 
+def purge_oracle(d):
+    """Remove the reference files of oracle directory @p d (data_tab*, its
+    completeness marker included); returns how many went."""
+    import glob
+    n = 0
+    for f in glob.glob(os.path.join(d, "data_tab*")):
+        try:
+            os.remove(f)
+            n += 1
+        except OSError:
+            pass
+    return n
+
+
 def physical_config(build_root, config):
     """The build directory a configuration's binaries come from: its own, or,
     for a run-time mode (settings.VIRTUAL_CONFIG_ENV) with no directory of its

@@ -91,10 +91,21 @@ class BenchChart:
         self.bc_cmp.blockSignals(True)
         self.bc_cmp.clear()
         self.bc_cmp.addItem(T("(aucun)"), None)
+        # A submission over several nodes is one entry (any of its jobs gives
+        # the summary of all, remote_helper.bench_points), and never compared
+        # with itself -- as the speedup chart's list.
+        own_pool = cur["meta"].get("pool") if cur else None
+        pools = set()
         for r in self.runs:
             if r["id"] != self.current and is_bench_chart(r["meta"]) and r["meta"].get("arch") == arch \
                     and not r["meta"].get("rerun_of"):
-                self.bc_cmp.addItem(f"{r['id']}  [{T(r['status'])}]", r["id"])
+                pool = r["meta"].get("pool")
+                if not pool:
+                    self.bc_cmp.addItem(f"{r['id']}  [{T(r['status'])}]", r["id"])
+                elif pool != own_pool and pool not in pools:
+                    pools.add(pool)
+                    n = r["meta"].get("nodes", "?")
+                    self.bc_cmp.addItem(f"{T(f'{pool} ({n} nœuds)')}  [{T(r['status'])}]", r["id"])
         i = self.bc_cmp.findData(keep) if keep else 0
         self.bc_cmp.setCurrentIndex(max(0, i))
         self.bc_cmp.blockSignals(False)

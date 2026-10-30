@@ -1070,7 +1070,7 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_thr(int bu
     }
 
     // Tell the ledger before each svfree, or every block released here stays parked in the
-    // ledger and floods CHUNK_LEDGER_REPORT with false positives.
+    // ledger and floods the ledger report (ledger=info) with false positives.
     if (skip.empty())
     {
         for (const auto* elm : blocks)

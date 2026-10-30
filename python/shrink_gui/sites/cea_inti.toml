@@ -38,6 +38,10 @@ output = "-o {log}"
 error = "-e {log}"
 qos = "-Q {qos}"
 slurm = '-E "{options}"'
+# A job of several nodes ("Nœuds", "un job de N nœuds"): the command that
+# starts one task per node inside the job when the partition has no launcher
+# (its node, task and core options are added). Default: srun.
+step = "ccc_mprun"
 
 # The detached mode: the command started from the login node, in the
 # background: `<command> <partition's detached options> <time> <qos> bash run.sh`

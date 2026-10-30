@@ -47,7 +47,7 @@ Dans la bibliothèque : `shrink_array::exact_rss_kib()` (`internal/exact_rss.h`)
 | question | outil |
 |---|---|
 | combien dans les tampons de chunks, combien ailleurs ? | `CHUNK_LOG=memory=info` : à chaque passage de l'advisor, la mémoire exacte, dont la part résidente de l'arène des tampons (`mincore`) |
-| que font les slabs ? | `CHUNK_ARENA_REPORT=1` (slabs distribués, rendus au système) |
+| que font les slabs ? | `CHUNK_LOG=warn,rechunk=info,arena=info` (slabs distribués, rendus au système) |
 | quelle zone de l'espace d'adressage grossit ? | deux `pmap -x <pid>` à deux instants, comparés par zone |
 | que rend chaque rechunk ? | `CHUNK_LOG=memory=debug` : ligne `rss` (mémoire à chaque étape, `end-entry`) |
 

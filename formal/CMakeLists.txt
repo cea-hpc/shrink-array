@@ -19,6 +19,8 @@ include(CheckLanguage)
 check_language(C)
 if(CMAKE_C_COMPILER)
     enable_language(C)
+    # queue_handback is not run natively: its source configuration fails by design while F6
+    # is open (docs/formal_models.md, section 8.8); run_genmc.sh checks it.
     set(_formal_models writer_compressor compressor_flush reader_reclaim switch_mt motif_offset)
     foreach(_m IN LISTS _formal_models)
         add_executable(formal_native_${_m} ${_m}.c)

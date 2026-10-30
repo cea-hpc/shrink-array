@@ -3,6 +3,7 @@
 """Phase 3: adaptive re-chunk feature test (dyn)."""
 import sys
 
+from .. import share
 from ..builds import (
     _run_dir, _variant_base, oracle_complete, oracle_dir, resolve_exe, short_config_label,
     skip_variant_on_config,
@@ -78,16 +79,38 @@ def run_rechunk_phase(args, extra_ldpath, errors):
         "CHUNK_LOG":            "warn,rechunk=info",
     }
 
+    oracle_seen = {}
+
     def _oracle_ok(cfg):
-        return oracle_complete(args.output_dir, cfg)
+        # --pool: another job may be generating it (share.wait_oracle), once
+        # per configuration; a wait that gives up is an error, the check
+        # stage then skipped as when the oracle is absent.
+        if cfg not in oracle_seen:
+            ready = share.wait_oracle(cfg, short_config_label(cfg))
+            if not ready:
+                _entry = share.oracle_timeout_entry(cfg, short_config_label(cfg))
+                errors.append(_entry)
+                _append_error_now(args.errors_log, _entry)
+            oracle_seen[cfg] = ready and oracle_complete(share.oracle_root(args), cfg)
+        return oracle_seen[cfg]
 
     n_pass = n_total = 0
     for cfg in args.configs:
+        # --pool: the unit is rechunk/<config>, its _dyn binaries (both
+        # stages). Claimed only where there is one, else every job would
+        # report someone else doing nothing (without --pool, such a config
+        # goes through the loop below as it always did).
+        if share.active() and not any(
+                resolve_exe(args.build_root, cfg, f"{b}@dyn", st)
+                for b in bases if not skip_variant_on_config(f"{b}@dyn", cfg) for st in ("check", "perf")):
+            continue
+        if not share.take("rechunk", cfg, short_config_label(cfg)):
+            continue
         san = {**sanitizer_env_for(cfg), **config_env(cfg)}
         to  = effective_timeout(args.timeout, args.timeout_per_thread, args.check_threads)
         if not _oracle_ok(cfg):
             print(yellow(f"   {short_config_label(cfg)}: no complete oracle in "
-                         f"{oracle_dir(args.output_dir, cfg)}: check stage skipped, perf only"))
+                         f"{oracle_dir(share.oracle_root(args), cfg)}: check stage skipped, perf only"))
         for base in bases:
             var = f"{base}@dyn"
             if skip_variant_on_config(var, cfg):
@@ -107,7 +130,7 @@ def run_rechunk_phase(args, extra_ldpath, errors):
                 # wrote it (a shrink binary never writes reference files:
                 # io_res is 2, read-only, in every chunk build); perf touches
                 # no file and gets a directory of its own.
-                rdir = (oracle_dir(args.output_dir, cfg) if stage == "check"
+                rdir = (oracle_dir(share.oracle_root(args), cfg) if stage == "check"
                         else _run_dir(args.output_dir, "rechunk", short_config_label(cfg), var, stage))
                 run_env = {**env_common, **san}
                 ok, dur, code, err_tail, _ = run_cmd(

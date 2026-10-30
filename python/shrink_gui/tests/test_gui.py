@@ -271,9 +271,11 @@ def test_compile_all_over_several_nodes(gui, site, monkeypatch):
     w.program.setCurrentText("compile_all.sh")
     assert pump(lambda: w.form.schema is not None and "pool" in w.form.widgets)   # read from its usage()
     w.mode.setCurrentIndex(w.mode.findData("mprun"))
-    assert not w.where.isRowVisible(w.nodes)                    # batch only
+    assert not w.where.isRowVisible(w.nodes_row)                    # batch only
     w.mode.setCurrentIndex(w.mode.findData("msub"))
-    assert w.where.isRowVisible(w.nodes)
+    assert w.where.isRowVisible(w.nodes_row)
+    assert w.nodes_layout.currentData() == "job"                 # the default: one job of N nodes
+    w.nodes_layout.setCurrentIndex(w.nodes_layout.findData("jobs"))
     w.nodes.setValue(3)
     assert "--pool=<la soumission>" in w.preview.toPlainText() and "3 jobs" in w.preview.toPlainText()
     # The real compile_all.sh read the options; a stand-in runs in the jobs.
@@ -304,7 +306,7 @@ def test_compile_all_over_several_nodes(gui, site, monkeypatch):
     w.after.setCurrentIndex(w.after.findData(pool))
     jobids = [(site.runs / r["id"] / "jobid").read_text().strip() for r in jobs]
     _choose_fake(w, pump)
-    assert not w.where.isRowVisible(w.nodes)                    # a program that cannot share its work
+    assert not w.where.isRowVisible(w.nodes_row)                    # a program that cannot share its work
     rid = _submit(w, pump, {"runs": "1"}, len(w.runs))
     assert f'--dependency=afterok:{":".join(jobids)}' in (site.runs / rid / "job.sh").read_text()
     assert _wait_status(w, pump, rid, "fini", 60)
@@ -314,6 +316,77 @@ def test_compile_all_over_several_nodes(gui, site, monkeypatch):
     w.reuse_run(jobs[2])                                         # back to compile_all.sh over 3 nodes
     assert w.program.currentText() == "compile_all.sh" and w.nodes.value() == 3
     assert "--pool=<la soumission>" in w.preview.toPlainText()
+
+
+def test_one_job_of_several_nodes(gui, site, monkeypatch):
+    """"Nœuds" 2, "un job de N nœuds" (the default): one run, its job asks 2
+    nodes, node.sh runs on each (the fake ccc_mprun starts -n 2 tasks). The
+    duration follows "Nœuds" until typed; the QoS is checked on the job's
+    cores; N jobs of one node under a per-user core cap are said to serialize."""
+    from shrink_gui import config
+    w, pump = gui
+    assert pump(lambda: qos_max(w, "test", "gh200-bxi") == 3 * 3600, 10)
+    from test_nodes_job import MQINFO
+    from shrink_gui import qos
+    w.qos_rows = qos.parse_mqinfo(MQINFO)            # inti's real limits (xlong: 128 cores per user)
+    w.fill_qos("auto")
+    w.program.setCurrentText("compile_all.sh")
+    assert pump(lambda: w.form.schema is not None and "pool" in w.form.widgets)
+    w.mode.setCurrentIndex(w.mode.findData("msub"))
+    w.preset.setCurrentIndex(w.preset.findData("milan-bxi"))
+    w.directives.setPlainText("#MSUB -q milan-bxi\n#MSUB -N 1\n#MSUB -n 1\n#MSUB -c 128\n")
+    w.nodes.setValue(1)
+    w.time_s.setValue(48 * 3600)
+    w.program.setCurrentText("fake_stress.py")
+    w.program.setCurrentText("compile_all.sh")            # its remembered duration: "Nœuds" may rescale it
+    assert w.time_s.value() == 48 * 3600 and w.nodes_layout.currentData() == "job"
+    w.nodes.setValue(4)
+    assert w.time_s.value() == 12 * 3600 and w.nodes_hint.text() == "durée max par nœud ≈ total / 4"
+    assert "<b>normal</b>" in w.qos_note.text()                # 4 × 128 cores, 12 h
+    w.nodes.setValue(3)
+    assert w.time_s.value() == 16 * 3600
+    w.nodes.setValue(7)
+    assert w.time_s.value() == 7 * 3600                        # 6 h 51 rounded up to the quarter hour
+    w.nodes.setValue(3)
+    w.time_s.setValue(48 * 3600)                               # typed: kept from now on
+    assert "aucune QoS n'accepte 2 j 00 h sur milan-bxi pour 384 cœurs (au plus 1 j 00 h)" in w.qos_note.text()
+    w.nodes.setValue(2)
+    assert w.time_s.value() == 48 * 3600
+    w.nodes_layout.setCurrentIndex(w.nodes_layout.findData("jobs"))
+    assert "<b>xlong</b>" in w.qos_note.text() and "les 2 jobs passeront l'un après l'autre" in w.qos_note.text()
+    w.nodes_layout.setCurrentIndex(w.nodes_layout.findData("job"))
+    assert "un job de 2 nœuds" in w.preview.toPlainText()
+    w.time_s.setValue(12 * 3600)
+    stub = site.root / "stub"
+    stub.mkdir()
+    (stub / "compile_all.sh").write_text('echo "args: $*"; sleep 3; exit 0\n')
+    monkeypatch.setitem(config.PROGRAMS["compile_all.sh"], "cwd", str(stub))
+    n = len(w.runs)
+    time.sleep(1.05)
+    w.launch()
+    assert pump(lambda: len(w.runs) == n + 1, 30)
+    run = w.runs[0]
+    rid, d = run["id"], site.runs / run["id"]
+    assert run["meta"]["layout"] == "job" and run["meta"]["nodes"] == 2 and run["meta"]["pool"] == rid
+    assert run["meta"]["command"].endswith(f" --pool={rid}") and "node" not in run["meta"]
+    assert run["meta"]["launcher"] == "ccc_mprun -N 2 -n 2 -c 128"
+    job = (d / "job.sh").read_text()
+    assert "#MSUB -N 2\n#MSUB -n 2\n#MSUB -c 128\n" in job and "#MSUB -Q normal" in job
+    assert w.table.item(0, 1).text() == "compile_all.sh [×2]"
+    assert pump(lambda: w.after.findData(rid) >= 0, 10)           # one run to wait for
+    assert w.after.itemText(w.after.findData(rid)) == f"après {rid} (2 nœuds)"
+    w.after.setCurrentIndex(w.after.findData(rid))
+    assert w.after_spec()["runs"] == [rid]
+    w.after.setCurrentIndex(0)
+    assert _wait_status(w, pump, rid, "fini", 60)
+    for k in (1, 2):
+        assert f"args: --pool={rid}" in (d / f"n{k}" / "out.log").read_text()
+    log = (d / "out.log").read_text()
+    assert "[gui] node n2: exit code 0" in log and log.count("[gui] build check") <= 1
+    w.nodes_layout.setCurrentIndex(w.nodes_layout.findData("jobs"))
+    w.nodes.setValue(1)
+    w.reuse_run(next(r for r in w.runs if r["id"] == rid))
+    assert w.nodes.value() == 2 and w.nodes_layout.currentData() == "job" and w.time_s.value() == 12 * 3600
 
 
 def test_build_check_follows_the_options(gui):
@@ -679,7 +752,8 @@ def test_thread_speedup_over_several_nodes(gui, site):
     w.program.setCurrentText("thread_speedup.py")
     assert pump(lambda: w.form.schema is not None and "pool" in w.form.widgets)
     w.mode.setCurrentIndex(w.mode.findData("msub"))
-    assert w.where.isRowVisible(w.nodes)
+    assert w.where.isRowVisible(w.nodes_row)
+    w.nodes_layout.setCurrentIndex(w.nodes_layout.findData("jobs"))
     w.nodes.setValue(2)
     assert "--pool=<la soumission>" in w.preview.toPlainText() and "2 jobs" in w.preview.toPlainText()
     n = len(w.runs)

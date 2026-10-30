@@ -3,7 +3,8 @@
 """Phase 1 (2d): the sanitizer checks (ASan with std-alloc, TSan)."""
 import sys
 
-from ..builds import _variant_base, config_dir_present, resolve_exe, skip_variant_on_config
+from .. import share
+from ..builds import _variant_base, config_dir_present, resolve_exe, short_config_label, skip_variant_on_config
 from ..progress import _prog, get_progress_bar
 from ..runs import _append_error_now, effective_timeout, run_cmd
 from ..settings import SANITIZER_CONFIGS, SANITIZER_REPS, sanitizer_env_for, sanitizer_skip_reason
@@ -23,6 +24,15 @@ def run_sanitizer_phase(args, plan, counter, errors):
         why = sanitizer_skip_reason(cfg)
         if why:
             print(yellow(f"⚠️  {cfg} skipped: {why}."))
+            continue
+        # --pool: the unit is sanitizer/<config>, each of SANITIZER_CONFIGS
+        # present: their binaries are independent, and the slowest phase per
+        # run (5-20x) is the one that gains most from being spread.
+        if not share.take("sanitizer", cfg, short_config_label(cfg)):
+            # What Plan.count_runs counted for it (the baseline included).
+            counter.skip(SANITIZER_REPS * sum(
+                1 for var in args.variants
+                if not skip_variant_on_config(var, cfg) and resolve_exe(args.build_root, cfg, var, "check")))
             continue
         san_env = sanitizer_env_for(cfg)
         for var in args.variants:

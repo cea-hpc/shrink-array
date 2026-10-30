@@ -3,6 +3,7 @@
 """Phase 1b: seed-pinned sequential-vs-OpenMP compression-classification compare."""
 import sys
 
+from .. import share
 from ..builds import (
     find_llvm_seq_omp_pairs, resolve_exe, short_config_label, skip_variant_on_config,
 )
@@ -75,6 +76,12 @@ def run_seq_omp_compare_phase(args, extra_ldpath, errors):
     n_pairs_skipped = 0
     n_diverged = 0  # dyn runs whose re-chunk decisions differed: not comparable
     for omp_cfg, seq_cfg in pairs:
+        # --pool: the unit is a seq/omp pair, claimed as
+        # seq_omp_compare/<omp config>: both its binaries are compared on one
+        # node, every variant, size and thread count of it.
+        if not share.take("seq_omp_compare", omp_cfg,
+                          f"{short_config_label(omp_cfg)} / {short_config_label(seq_cfg)}"):
+            continue
         # The compare reads CHUNK_STATS. A pair whose binaries are not stats
         # builds has nothing to compare: found out on its FIRST sequential run
         # and skipped as a whole, rather than running every variant, size and

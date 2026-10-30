@@ -69,3 +69,11 @@ class RunCounter:
     def idx(self, value):
         self._idx = value
         events.progress(value, self.total)
+
+    def skip(self, n):
+        """--pool: @p n runs of the total left to another job (a unit it
+        claimed). Taken off the total rather than counted as done: the bar
+        and the ETA are this job's own, and it ends at 100%."""
+        if n > 0:
+            self.total = max(self._idx, self.total - n)
+            events.progress(self._idx, self.total)

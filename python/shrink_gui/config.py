@@ -66,6 +66,11 @@ PROGRAMS = {
         # naming the build root, the one naming the builds (a list, or a file
         # of names one per line, relative to cwd).
         "builds_opt": {"root": "build_root", "builds": "builds"},
+        # "Nœuds" N > 1: N batch jobs of one node, the same command plus
+        # --pool=<the submission>; the jobs share the --runs, each claiming the
+        # next free run index, the first failure stops them all; the Résumé,
+        # Graphique and Erreurs tabs of any of them gather the jobs.
+        "pool_opt": "--pool",
         # What "Supprimer" may also remove ("ses sorties"): "dir" = the output
         # directory the log announces, the run's own; a list = those entries
         # of a SHARED output directory (never the rest of it).
@@ -98,6 +103,15 @@ PROGRAMS = {
         "rerun": {"opt": "--rerun-failed", "repeat": "--rerun-repeat", "log_dir": "--full-log-dir",
                   "drop": ["--no-full-log"]},
         "builds_opt": {"root": "build_root", "builds": "configs"},
+        # "Nœuds" N > 1: N batch jobs of one node, the same command plus
+        # --pool=<the submission>; within each phase, each (phase,
+        # configuration) unit is done by the first job that claims it, each
+        # oracle generated once (the others wait for it), a failed case
+        # recorded and the job going on. Each job writes to its own
+        # bench_results/<arch>/pool_<id>/n<K> (the "Run outputs" line), oracle/
+        # staying shared; the Résumé, Graphique and Erreurs tabs of any of
+        # them gather the jobs.
+        "pool_opt": "--pool",
         # bench_results/<arch> is shared by every run of the architecture and
         # holds the oracles (oracle/): only what each run rewrites goes.
         "own_outputs": ["bench_output.log", "bench_errors.log", "failed_cases.jsonl", "bench_summary.csv",

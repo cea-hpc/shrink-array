@@ -47,7 +47,7 @@ In the library: `shrink_array::exact_rss_kib()` (`internal/exact_rss.h`). In the
 | question | tool |
 |---|---|
 | how much in chunk buffers, how much elsewhere? | `CHUNK_LOG=memory=info`: at each advisor tick, the exact memory, including the resident part of the buffer arena (`mincore`) |
-| what are the slabs doing? | `CHUNK_ARENA_REPORT=1` (slabs handed out, returned to the system) |
+| what are the slabs doing? | `CHUNK_LOG=warn,rechunk=info,arena=info` (slabs handed out, returned to the system) |
 | which area of the address space is growing? | two `pmap -x <pid>` at two points in time, compared area by area |
 | what does each rechunk return? | `CHUNK_LOG=memory=debug`: `rss` line (memory at each step, `end-entry`) |
 
@@ -97,9 +97,9 @@ in fresh directories with the same configuration, alternate, and be wary.
 | maximum size of a coarsening step | `--rechunk_max_coarsen <n>` |
 
 The full list is in [developer_settings.md](developer_settings.md).
-The decider's settings are `shrink_bench` options (the library reads them from no variable).
+The decider's settings are `shrink_bench` options (the library does not read them from any variable).
 Beware: `--rechunk_min_gain_mb 1000000` no longer blocks coarsenings since the
-"gain per cost" criterion; use `--rechunk_dry_run`.
+"gain per cost" criterion was introduced; use `--rechunk_dry_run`.
 
 ## 3. Recipes
 

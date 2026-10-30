@@ -56,6 +56,10 @@ Notable features:
     cmake-build-omp-gnu-stats / cmake-build-gnu-stats, checked and never
     timed; a run without any prints a warning up front.
   * Clean Ctrl+C: the CSV and the error log are written even on interruption.
+  * --pool ID (shrink_gui's "Nœuds"): several batch jobs share the campaign,
+    each (phase, configuration) unit done by the first job that claims it,
+    each oracle generated once (bench_runner/share.py); each job writes to
+    its own <output-dir>/<arch>/pool_ID/<job>, oracle/ staying shared.
 
 The code lives in the bench_runner package next to this script (one module
 per concern, one per phase under bench_runner/phases/): copy the package
