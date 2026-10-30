@@ -9,8 +9,8 @@
 [![Checked with GenMC](https://img.shields.io/badge/checked%20with-GenMC-8a2be2.svg)](docs/formal_models_fr.md)
 
 **shrink-array** donne aux codes de calcul C++ des tableaux qui se lisent et s'écrivent comme un
-`std::vector` -- mêmes `[]`, mêmes boucles, mêmes threads OpenMP (ou `std::thread`, TBB) -- mais cessent de payer pour
-les parties qui contiennent la même valeur. Sur le banc de référence, une charge d'un milliard
+`std::vector` -- mêmes `[]`, mêmes boucles, mêmes threads OpenMP (ou `std::thread`, TBB) -- mais ne paient plus la mémoire
+des parties qui contiennent une même valeur. Sur le banc de référence, un cas test d'un milliard
 d'éléments qui demande **125,9 Go** en `std::vector` tient dans **6 à 7,3 Go** : jusqu'à 20 fois
 moins de mémoire, sans toucher aux boucles.
 
@@ -19,16 +19,16 @@ moins de mémoire, sans toucher aux boucles.
 - **Compresse pendant que le programme tourne** : un chunk qui devient uniforme rend son
   tampon ; un chunk réécrit en reprend un.
 - **N'importe quelle valeur répétée**, pas seulement zéro (`zero_any`), pour tout type trivialement
-  copiable : `double`, `std::complex`, vos propres structures.
+  copiable : `double`, `std::complex`, vos structures.
 - **Fait pour beaucoup de threads** : aucun verrou à l'écriture, des tableaux de 10⁹ éléments,
-  quelques centaines de threads -- ceux d'OpenMP, ou les propres `std::thread` et tâches TBB du
-  programme avec le backend std (`CHUNK_THREADS=std`, sans OpenMP). C++23, Linux, CMake, Spack.
+  quelques centaines de threads -- ceux d'OpenMP, ou, avec le backend std, les `std::thread` et
+  les tâches TBB du programme lui-même (`CHUNK_THREADS=std`, sans OpenMP). C++23, Linux, CMake, Spack.
 
 *Le projet s'appelle `shrink-array` (dépôt, paquet Spack) ; le namespace C++ est
 `shrink_array` ; le paquet CMake installé est `chunk` (`find_package(chunk)`, cibles
 `chunk::…`).*
 
-## En un coup d'œil
+## Aperçu
 
 Les boucles d'un code écrit pour `std::vector` restent telles quelles ; seul le type du tableau
 change :
@@ -45,7 +45,7 @@ change :
      a[i] = field(i);
 ```
 
-(La forme nue `#pragma omp parallel for` demande un build OMPT ; avec le `libgomp` de GCC,
+(Le `#pragma omp parallel for` seul demande un build OMPT ; avec le `libgomp` de GCC,
 ouvrez la région avec `parallel_phase()`, voir [Un premier programme, parallèle et multi-thread](#un-premier-programme-parallèle-et-multi-thread).)
 
 ![Mémoire du process au banc de référence : std::vector 125,9 Go, zero 40,2 Go, zero_one_value 17,3 Go, zero_any 7,26 Go](docs/images/memory_bench_fr.png)
@@ -110,7 +110,7 @@ sa::finalize_parallel_phase();       // hors de la région : vider les écriture
 
 Sans OpenMP, la lambda est simplement exécutée une fois, en série.
 
-**Boucles parallèles multi-thread avec OMPT : rien de la bibliothèque autour.** Dans un build OMPT (Clang, oneAPI : la
+**Boucles parallèles multi-thread avec OMPT : aucun appel de la bibliothèque autour.** Dans un build OMPT (Clang, oneAPI : la
 bibliothèque embarque un outil OMPT, `CHUNK_OPT_OMPT`), le runtime OpenMP indique à la
 bibliothèque où chaque région commence et finit ; la boucle s'écrit donc comme pour un
 `std::vector` -- la même fonction remplit les deux :
@@ -137,8 +137,8 @@ ne seraient jamais marquées.
 
 **Avec TBB : `shrink_array::tbb::parallel_for`.** Construite avec le backend std
 (`-DCHUNK_THREADS=std`, Spack `threads=std`), la bibliothèque accepte les écritures des threads
-de TBB. `chunk/tbb_adaptor.h` est `oneapi::tbb::parallel_for` avec les mêmes arguments et la
-phase marquée pour vous : `begin_parallel_phase()` avant chaque morceau qu'un thread exécute,
+de TBB. `chunk/tbb_adaptor.h` fournit un `oneapi::tbb::parallel_for` aux mêmes arguments, qui marque
+la phase à votre place : `begin_parallel_phase()` avant chaque morceau qu'un thread exécute,
 `finalize_parallel_phase()` une fois toutes les tâches terminées (aussi quand le corps lève une
 exception) :
 
@@ -162,7 +162,7 @@ a.shrink_to_fit();                   // la phase est close : un point séquentie
 Les partitionneurs et les `task_arena` s'utilisent comme avec TBB lui-même ; une arène plus
 large que la machine demande `CHUNK_THREAD_CAPACITY`. Un `oneapi::tbb::parallel_for` imbriqué
 dans le corps prend `sa::tbb::phase_body(inner)`. L'en-tête est fourni avec la bibliothèque, qui
-ne dépend pas de TBB : c'est le programme qui le lie.
+ne dépend pas de TBB : c'est au programme de se lier à TBB.
 
 ```cmake
 find_package(chunk 0.1 REQUIRED)
@@ -176,8 +176,8 @@ threads. Les `std::thread` et vos propres pools de threads :
 
 Le lier à `chunk::chunk_zero_any` (voir [Installer](#installer)). La version complète, qui vérifie
 ce qu'elle relit, est [examples/getting_started](examples/getting_started/getting_started.cpp) ;
-[docs/getting_started_fr.md](docs/getting_started_fr.md) la commente pas à pas, puis les règles
-ci-dessous.
+[docs/getting_started_fr.md](docs/getting_started_fr.md) la commente pas à pas, puis détaille les
+règles ci-dessous.
 
 ## Comment ça marche
 
@@ -200,7 +200,7 @@ flowchart LR
 Un tableau est découpé en **chunks** de `S` éléments consécutifs (`S` une puissance de deux ou
 un multiple de 64). Un chunk dont tous les éléments valent la même constante ne garde aucun
 tampon : il pointe sur un tampon partagé de cette constante et coûte quelques octets de
-métadonnées. Trois variantes décident quelles constantes comptent :
+métadonnées. Les trois variantes diffèrent par les constantes retenues :
 
 | variante | classe | un chunk est compressé quand il est uniforme à… |
 |---|---|---|
@@ -212,7 +212,7 @@ La variante et la taille de chunk (256, 1024, ou dynamique et adaptative : `_dyn
 par la bibliothèque liée : `chunk::chunk_zero_any_256`, `chunk::chunk_zero_any_dyn`, ...
 [docs/variantes_fr.md](docs/variantes_fr.md) dit ce que coûte chacune ;
 [docs/algo_zero_one_value_fr.md](docs/algo_zero_one_value_fr.md) comment lectures, écritures et compression
-tournent ensemble.
+cohabitent.
 
 **Des entiers qui se répètent avec un décalage : `pattern::Array`.** Une connectivité de
 maillage n'est jamais uniforme, et pourtant la maille `c + 1` porte les numéros de nœuds de la
@@ -255,13 +255,13 @@ et les lectures.
 **Sans verrou, et vérifié plutôt que seulement testé.** Aucun thread ne prend de verrou pour
 lire ou écrire un élément. Les écrivains, la passe de compression qui reprend le tampon d'un
 chunk, le flush des écritures différées et les lecteurs se coordonnent uniquement par des
-atomiques et des barrières : des poignées de main à la Dekker
+atomiques et des barrières : des protocoles d'échange à la Dekker
 ([docs/synchronisation_dekker_fr.md](docs/synchronisation_dekker_fr.md)). C'est de là que
 vient la montée en threads, et c'est aussi là qu'est l'essentiel de la complexité de la
 bibliothèque. Chaque protocole n'est correct qu'avec l'ordre mémoire exact d'une poignée de
 lectures et d'écritures. Sur un processeur à ordre faible comme Grace, une erreur se manifeste
 par une écriture perdue ou un accès à un tampon rendu une fois sur des milliers d'exécutions,
-et l'histoire de la bibliothèque en compte plusieurs. Les tests seuls ne peuvent pas trancher.
+et l'historique de la bibliothèque en compte plusieurs. Les tests seuls ne peuvent pas trancher.
 
 Les trois protocoles -- écrivains d'éléments
 contre passe de compression, passe contre flush des écritures différées, lecteurs purs contre
@@ -270,12 +270,12 @@ en sont explorés exhaustivement par [GenMC](https://github.com/MPI-SWS/genmc) s
 mémoire C11 (RC11 et IMM), sans écriture perdue, sans accès à un tampon rendu, sans course de
 données et sans attente non bornée, et les modèles refusent douze mutations, dont six états
 passés de la bibliothèque. La forme à `membarrier()` repose sur l'argument de la section 4.2 de
-[docs/synchronisation_dekker_fr.md](docs/synchronisation_dekker_fr.md) ; tout le reste est au
+[docs/synchronisation_dekker_fr.md](docs/synchronisation_dekker_fr.md) ; tout le reste relève du
 vérificateur ([docs/formal_models_fr.md](docs/formal_models_fr.md)). Ce que cela couvre,
 précisément : toutes les exécutions que le modèle mémoire autorise, pour de petites
 configurations (jusqu'à 5 écrivains ou 3 lecteurs, un chunk, une passe). Ce n'est pas une
 preuve pour un nombre quelconque de threads, et un modèle est une réduction du source écrite à
-la main, que les mutations qu'il doit refuser gardent honnête.
+la main, dont les mutations qu'il doit refuser garantissent la fidélité.
 
 ## En chiffres
 
@@ -312,12 +312,21 @@ threads et retombe vers 17 à 128.
 
 ![Speedup du backend std::thread sur AMD EPYC 7763 (Milan, 2 × 64 cœurs), std-oneapi, --multiply 1](docs/images/speedup_milan_std-oneapi_x1.png)
 
+Le même build, avec les boucles du bench exécutées en tâches TBB (`shrink_bench_tbb_*`, échelle
+linéaire) : les tableaux sont écrits par les threads de TBB, comme le ferait un programme TBB
+avec `shrink_array::tbb::parallel_for`. Les variantes suivent la droite idéale
+jusqu'à 16 threads, atteignent 19 à 26 à 32 et 28 à 52 à 128 (les tailles statiques 256 et
+1024 entre 40 et 52, les `_dyn` entre 28 et 37), là où `std::vector` plafonne vers 22 à 64
+threads et retombe vers 12 à 128.
+
+![Speedup du bench TBB sur AMD EPYC 7763 (Milan, 2 × 64 cœurs), std-oneapi](docs/images/speedup_milan_std-oneapi_tbb.png)
+
 **Une référence équitable.** Le `std::vector` de ces mesures (`shrink_bench_<backend>_vector_*`) est un
 vrai `std::vector`, dont la mise à zéro est parallèle
 ([examples/shrink_bench/baseline_vector.h](examples/shrink_bench/baseline_vector.h)). Un
 `std::vector<T> v(n)` ordinaire initialise ses `n` éléments sur le seul thread qui le
 construit : la création est séquentielle, et sur un nœud à plusieurs sockets toutes les pages
-atterrissent sur le nœud NUMA de ce thread (premier contact), si bien que chaque boucle
+sont placées sur le nœud NUMA de ce thread (*first touch*), si bien que chaque boucle
 parallèle qui suit lit de la mémoire distante. Les tableaux par chunks n'allouent rien à la
 création et ne paient aucun de ces deux coûts. Face à un `std::vector` non modifié, les runs
 OpenMP de `shrink_bench` seraient plus rapides que le vector sur quelques milliers
@@ -387,21 +396,21 @@ Les options CMake (`OMP`, `CHUNK_THREADS`, `CHUNK_STATIC_SIZES`, `CHUNK_VARIANTS
   de 256 threads et de plus que les cœurs demande `CHUNK_THREAD_CAPACITY` fixé avant le premier
   tableau ; sans OMPT (le `libgomp` de GCC), ouvrir les
   régions par `parallel_phase()`.
-- **Un par processus** : l'état de la bibliothèque -- registres de types, allocateurs,
+- **Un seul état par processus** : l'état de la bibliothèque -- registres de types, allocateurs,
   structures par thread, la phase -- est celui du processus, partagé par toutes les parties du
   programme qui l'utilisent : une seule équipe de premier niveau qui écrit des tableaux à la fois
   (les régions imbriquées ne posent pas de problème), les appels d'arrêt une fois à la fin
   ([docs/getting_started_fr.md](docs/getting_started_fr.md), section 5).
-- **Absents, par construction** : `data()` (un chunk compressé n'a pas de tampon), `T&` et les
+- **Volontairement absents** : `data()` (un chunk compressé n'a pas de tampon), `T&` et les
   itérateurs mutables, `insert` / `erase` au milieu.
 - **Écritures en masse plus rapides** : `fill_range`, `copy_range` et leurs versions `_mt`
   décident une fois par chunk au lieu d'une fois par élément.
 - **Messages** : seulement les avertissements et les erreurs, sur stderr, une ligne chacun ;
   `CHUNK_LOG=warn,rechunk=info` en montre plus, `CHUNK_LOG_FILE` les écrit dans un fichier,
-  `shrink_array::logging::set_sink()` les confie à votre propre logger
+  `shrink_array::logging::set_sink()` les confie à votre logger
   ([docs/api_fr.md](docs/api_fr.md), section 9).
 
-Chaque appel, par tâche : [docs/api_fr.md](docs/api_fr.md).
+Tous les appels, classés par tâche : [docs/api_fr.md](docs/api_fr.md).
 
 ## En cours
 
@@ -444,7 +453,7 @@ aussi une version Spack (`spack install shrink-array@cpp23`).
 
 Exemples : [simple_array](examples/simple_array) (le même calcul sur un `std::vector` et sur un
 tableau), [multi-mat](examples/multi-mat) (champs multi-matériaux, boucles écrites une fois pour
-les deux ; `multi-mat-md`, la même chose en 2D par `mdspan`), [validation](examples/validation) (un harnais par propriété, lancé par `ctest`).
+les deux ; `multi-mat-md`, la même chose en 2D par `mdspan`), [validation](examples/validation) (un test par propriété, lancé par `ctest`).
 Chaque document existe en anglais et en français ([docs/README.md](docs/README.md)) ; ce qui a
 changé d'une version à l'autre : [CHANGELOG.md](CHANGELOG.md) (en anglais).
 
@@ -452,13 +461,13 @@ changé d'une version à l'autre : [CHANGELOG.md](CHANGELOG.md) (en anglais).
 
 shrink-array en est à la version 0.1 : avant la 1.0, une version mineure peut changer
 l'interface ([politique de versions](CHANGELOG.md)). Chaque push lance les vérifications des
-sources, les builds GCC 14 (OpenMP, série et threads std avec oneTBB), les harnais de validation, le backend std
+sources, les builds GCC 14 (OpenMP, série et threads std avec oneTBB), les tests de validation, le backend std
 sous ThreadSanitizer et les modèles GenMC, le build OpenMP sur x86-64 et sur AArch64
 ([CI](.github/workflows/ci.yml)) ; chaque nuit, les builds AArch64 trop longs pour un push -- le
 backend std sous ThreadSanitizer, le build `_dyn`
 ([nightly](.github/workflows/nightly.yml)).
 
-L'essai sur vos propres données est le retour le plus utile : si la bibliothèque économise de
+Le retour le plus utile est un essai sur vos données : si la bibliothèque économise de
 la mémoire dans votre code -- ou n'en économise pas --
 [ouvrez une issue](https://github.com/cea-hpc/shrink-array/issues) en indiquant le type, la
 taille et ce que contient le tableau. Les rapports de bugs et les pull requests suivent

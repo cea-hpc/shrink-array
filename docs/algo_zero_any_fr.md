@@ -44,7 +44,7 @@ Avec l'option CMake **`CHUNK_SECOND_VALUE_INDEXED`** (désactivée par défaut),
 seconde valeur des types de plus de 4 octets contient l'**identifiant** du tableau du registre
 (4 octets) au lieu de la valeur (8 pour un `double`, 16 pour un complexe) : −3,8 % de mémoire
 sur le run de référence de 50 millions de chunks, mais +3 % de temps d'écriture (une lecture
-dépendante de plus à chaque écriture d'un chunk matérialisé). À réserver aux charges limitées
+dépendante de plus à chaque écriture d'un chunk matérialisé). À réserver aux calculs limités
 par la mémoire plutôt que par le débit d'écriture.
 
 Ces lignes font de `zero_any` la variante la plus chère en métadonnées par chunk (16 octets
@@ -75,7 +75,7 @@ l'ancien stockage derrière lui : 3,5 Go sur le banc, avec 15 tableaux rechunké
   jusqu'à un appel à `reclaim_second_values()` en point séquentiel : il marque les valeurs
   encore référencées (chunks compressés à elles, emplacements de seconde valeur par chunk)
   sur tous les tableaux du type et libère les autres, dont les identifiants sont ensuite
-  réutilisés. Sans lui, une charge qui produit un très grand nombre de valeurs distinctes
+  réutilisés. Sans lui, un calcul qui produit un très grand nombre de valeurs distinctes
   fait grossir le registre jusqu'à épuiser ses identifiants, ce qui arrête le run. Dans le
   banc, `CHUNK_BENCH_ULONG_BANDS` limite le nombre de valeurs distinctes du tableau
   `unsigned long`, `CHUNK_CST2_PROBE=1` affiche l'état du registre et

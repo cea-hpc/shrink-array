@@ -79,7 +79,7 @@ de lecture de chaque élément.
   utiliser, les tailles d'un build dynamique se les partagent. La taille d'une entrée est celle de
   son segment. Plus de segment pour une taille : le motif n'est pas enregistré
   (`MotifStats::full`) et le chunk reste matérialisé.
-- **Recherche.** Un hash de 64 bits du motif normalisé (la taille mélangée dedans), **confirmé**
+- **Recherche.** Un hash de 64 bits du motif normalisé (la taille incluse dans le calcul), **confirmé**
   en comparant les tableaux, dans un index à adressage ouvert lu sans verrou ; un enregistrement
   prend le mutex. Un index agrandi garde ses anciennes tables jusqu'au prochain reclaim : un
   lecteur ne tient jamais une table libérée (la technique du registre de `zero_any`).
@@ -141,7 +141,7 @@ le tampon que la passe libère, pas la case. Le modèle GenMC réduit l'a trouv�
   danger.
 
 Vérifié pour toutes les cibles, jusqu'à 3 lecteurs ou 3 lectures, sous RC11 et IMM ; chaque partie
-de la règle est porteuse (les mutations du modèle). Coût : une lecture acquire et une seconde
+de la règle est indispensable (les mutations du modèle). Coût : une lecture acquire et une seconde
 lecture du pointeur, dans la même ligne de cache, sur la lecture d'un chunk motif seulement.
 
 ## 7. L'écriture

@@ -91,7 +91,7 @@ peuvent avoir des tailles différentes après un rechunk : chaque chunk est comp
 Il vaut `somme_chunk_create / (100 × nombre de threads)`, avec un plancher de 100 candidats
 (`ChunkDef` : `factor_div_nb_chunk_for_compress`, `size_min_list_chunk_to_check_compress`).
 `somme_chunk_create` est le nombre de chunks existants de ce type. Deux corrections de
-septembre 2026 le tiennent juste :
+septembre 2026 le maintiennent exact :
 
 - il est **décrémenté** à la destruction d'un tableau (sans quoi il ne faisait que croître :
   seuil de 390 au début d'un run, ~42 000 à la fin, et presque plus aucune compression) ;
@@ -126,5 +126,5 @@ raisons à ce gain faible :
   statique 1 024), pour une raison encore inconnue : un build dynamique démarré directement à
   1 024 va aussi vite que le statique, et `zero_one_value` ne ralentit pas après ses rechunks.
 
-Pour une charge comme celle du banc, un `zero` **statique** à la bonne taille reste aujourd'hui le
+Pour un cas comme celui du banc, un `zero` **statique** à la bonne taille reste aujourd'hui le
 meilleur choix.

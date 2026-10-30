@@ -55,7 +55,7 @@ L'interface est proche d'un `std::vector` : `size()`, `resize()`, `at()`, itéra
 
 - **`operator[]` non constant renvoie un proxy** (`zero_one_value::Proxy<T>`), pas une référence. C'est par
   lui que passent toutes les écritures. Les opérateurs composés (`+=`, `*=`, …) sont
-  reprogrammés sur le proxy.
+  redéfinis sur le proxy.
 - **`set_second_value()` doit être appelé hors région parallèle**, avant les écritures : il
   enregistre la seconde valeur dans le registre et crée les listes de candidats à la
   compression pour cette valeur. Un tableau qui ne déclare jamais de seconde valeur se
@@ -155,7 +155,7 @@ Lire un chunk compressé ne coûte rien de plus : on lit dans le tampon constant
 lecture voit les écritures **différées** (section 7.3) déjà émises sur ce chunk :
 
 1. un **filtre grossier** par chunk (le « dirty bitset ») : un bit à zéro signifie qu'aucune
-   écriture différée n'a jamais visé ce chunk, et la lecture repart immédiatement. C'est le
+   écriture différée n'a jamais visé ce chunk, et la lecture se fait aussitôt. C'est le
    cas de loin le plus fréquent ;
 2. sinon, le **compteur précis** d'opérations en attente du chunk décide s'il faut appliquer
    ces opérations (`reader_sync`) avant de lire.
@@ -530,7 +530,7 @@ le laisser sur le chemin élément par élément :
   est réservé à `bool` et renvoie `false` pour les autres types ;
 - la mise en file (`internal::queue_for_compression`) doit **charger la seconde valeur** avant
   d'ajouter le chunk (`set_info_on_chunk()`), puisque les listes de `zero_one_value` sont indexées par
-  elle. Sans ça, les chunks atterrissaient dans la liste de `T{}`, qu'aucune passe ne vide ;
+  elle. Sans cela, les chunks aboutissaient dans la liste de `T{}`, qu'aucune passe ne vide ;
 - en mode compteur (les builds serial), une écriture directe doit **recompter** les deux
   compteurs du chunk, `nb_val_eq_first_value_` et `nb_val_eq_second_value_`, que zero_one_value::Proxy tient
   sinon à jour écriture par écriture (`internal::resync_counters`, comme le compte des zéros de
@@ -579,8 +579,8 @@ La liste complète, avec les macros et les options CMake, est dans
 | `shrink_bench --rechunk_max_coarsen <n>` | facteur maximal d'un grossissement (4 par défaut ; `RechunkPolicy::max_coarsen_factor`) |
 
 Pour la validation, le crochet de test « écritures différées forcées »
-(`chunk/internal/test_hooks.h`, compilé avec les harnesses) envoie une écriture sur N
-par le chemin différé ; `deferred_path_validation` l'allume (N = 7). L'option de
+(`chunk/internal/test_hooks.h`, compilé avec les tests de validation) envoie une écriture sur N
+par le chemin différé ; `deferred_path_validation` l'active (N = 7). L'option de
 compilation `CHUNK_FORCE_DEFER_EVERY=N` le force dans tout l'arbre (à utiliser à 32
 threads au plus).
 
@@ -608,4 +608,4 @@ Options CMake liées aux performances des bancs :
 | géométrie | `internal/chunk_size_policy.h` |
 | rechunk, décideur | `internal/array_chunk_rechunk_inline.h`, `chunk_size_advisor.h` |
 | opérations sur plages | `array_chunk_range_ops.h` |
-| harnais de validation | `examples/validation/` (`rechunk_validation`, `compress_roundtrip`, `deferred_path_validation`, `pool_accounting`, `fill_range_mt_validation`, …) |
+| tests de validation | `examples/validation/` (`rechunk_validation`, `compress_roundtrip`, `deferred_path_validation`, `pool_accounting`, `fill_range_mt_validation`, …) |
