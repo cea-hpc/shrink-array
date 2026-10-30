@@ -357,21 +357,25 @@ EN = {
     "Nœuds": "Nodes", "la soumission": "the submission",
     "Nombre de jobs batch d'un nœud chacun entre lesquels le travail est partagé "
     "(--pool, ccc_msub seulement) : les configurations de compile_all.sh, les exécutables "
-    "de thread_speedup.py.\n\n"
+    "de thread_speedup.py, les --runs de multi_launch_stress.py.\n\n"
     "Chaque job reçoit la même commande et les mêmes directives ; il traite ce qu'il "
     "réclame le premier, dans l'ordre habituel, et laisse le reste aux autres jobs : la "
     "charge s'équilibre seule. Un job qui démarre quand tout est déjà pris finit aussitôt "
     "(code 0).\n\n"
     "thread_speedup.py : les onglets Graphique et Résumé d'un de ces jobs réunissent ceux "
-    "de tous.\n\n"
+    "de tous. multi_launch_stress.py : chaque job prend le prochain run libre, le total "
+    "reste --runs ; le premier échec arrête tous les jobs ; Résumé, Graphique et Erreurs "
+    "réunissent les jobs.\n\n"
     "« Démarrage : après » propose ensuite une compilation entière : on attend tous ses jobs.":
         "Number of batch jobs of one node each that share the work "
         "(--pool, ccc_msub only): compile_all.sh's configurations, thread_speedup.py's "
-        "executables.\n\n"
+        "executables, multi_launch_stress.py's --runs.\n\n"
         "Each job gets the same command and directives; it handles what it claims first, in the usual "
         "order, and leaves the rest to the other jobs: the load balances itself. A job that starts when "
         "everything is already taken ends at once (code 0).\n\n"
-        "thread_speedup.py: the Chart and Summary tabs of any of these jobs gather them all.\n\n"
+        "thread_speedup.py: the Chart and Summary tabs of any of these jobs gather them all. "
+        "multi_launch_stress.py: each job takes the next free run, the total stays --runs; the "
+        "first failure stops every job; Summary, Chart and Errors gather the jobs.\n\n"
         "\"Start: after\" then offers a whole compilation: all its jobs are waited for.",
     "dès la soumission": "on submission", "si elle réussit": "if it succeeds",
     "quelle que soit son issue": "whatever its result",

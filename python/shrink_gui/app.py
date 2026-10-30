@@ -101,7 +101,7 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
         qrow.addWidget(self.qos)
         qrow.addWidget(self.qos_note, 1)
         # Nodes: a program that can share its work (PROGRAMS[...]["pool_opt"]:
-        # compile_all.sh / thread_speedup.py --pool) submitted as that many
+        # compile_all.sh / thread_speedup.py / multi_launch_stress.py --pool) submitted as that many
         # batch jobs of one node.
         self.nodes = QSpinBox()
         self.nodes.setRange(1, 32)

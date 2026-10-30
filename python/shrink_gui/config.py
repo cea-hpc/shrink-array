@@ -66,6 +66,11 @@ PROGRAMS = {
         # naming the build root, the one naming the builds (a list, or a file
         # of names one per line, relative to cwd).
         "builds_opt": {"root": "build_root", "builds": "builds"},
+        # "Nœuds" N > 1: N batch jobs of one node, the same command plus
+        # --pool=<the submission>; the jobs share the --runs, each claiming the
+        # next free run index, the first failure stops them all; the Résumé,
+        # Graphique and Erreurs tabs of any of them gather the jobs.
+        "pool_opt": "--pool",
         # What "Supprimer" may also remove ("ses sorties"): "dir" = the output
         # directory the log announces, the run's own; a list = those entries
         # of a SHARED output directory (never the rest of it).
