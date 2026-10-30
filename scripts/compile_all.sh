@@ -24,6 +24,7 @@ module unload ninja 2>/dev/null || true
 # for IntelLLVM 2026 (the CMakeLists then passes -std itself).
 chunk_module_load_first cmake/4.0.3 cmake/3.31.4 cmake
 module load ninja
+chunk_ensure_ninja || exit 1   # an x86 ~/.local/bin/ninja on an ARM node: site_env.sh
 
 # Default value for dry-run mode
 DRYRUN=false
@@ -372,6 +373,7 @@ load_gcc_module() {
 
 
 run_cmd "module load ninja"
+[ "$DRYRUN" = true ] || chunk_ensure_ninja || exit 1
 run_cmd "chunk_module_load_first cmake/4.0.3 cmake/3.31.4 cmake"
 
 source "$CHUNK_SCRIPT_DIR/functions_for_compile.sh"
@@ -509,6 +511,7 @@ reset_compiler_modules
 load_gcc_module
 run_cmd "module load inteloneapi/26.0.0"
 run_cmd "module load ninja"
+[ "$DRYRUN" = true ] || chunk_ensure_ninja || exit 1
 
 # Without modules, oneAPI's own setvars.sh puts icpx on PATH.
 if [ "$CHUNK_HAVE_MODULES" = false ] && ! command -v icpx >/dev/null 2>&1 && [ -f "$CHUNK_ONEAPI_SETVARS" ]; then
@@ -665,6 +668,7 @@ if [ "$CHUNK_HAVE_MODULES" = true ]; then
     fi
     # Reload ninja in case loading LLVM unloaded it
     run_cmd "module load ninja"
+    [ "$DRYRUN" = true ] || chunk_ensure_ninja || exit 1
     # aarch64 off the CEA site: binutils/2.43 where it exists, else the newest
     # binutils module, as compile_all_gnu.sh does (the system one, RHEL 9's
     # 2.35, is too old). Not at CEA: the llvm modules there carry their own
@@ -978,6 +982,7 @@ else
     echo "Using $latest_aocc (latest available)"
     run_cmd "module load $latest_aocc"
     run_cmd "module load ninja"
+    [ "$DRYRUN" = true ] || chunk_ensure_ninja || exit 1
 
     # After loading the aocc module, clang++ in PATH is AOCC's clang++.
     aoccxx="$(command -v clang++ 2>/dev/null)"
