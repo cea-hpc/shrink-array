@@ -659,9 +659,12 @@ if [ "$CHUNK_HAVE_MODULES" = true ]; then
     fi
     # Reload ninja in case loading LLVM unloaded it
     run_cmd "module load ninja"
-    # aarch64: binutils/2.43 where it exists, else the newest binutils module,
-    # as compile_all_gnu.sh does (the system one, RHEL 9's 2.35, is too old).
-    if [ "$(uname -m)" = aarch64 ]; then
+    # aarch64 off the CEA site: binutils/2.43 where it exists, else the newest
+    # binutils module, as compile_all_gnu.sh does (the system one, RHEL 9's
+    # 2.35, is too old). Not at CEA: the llvm modules there carry their own
+    # requirements (see the binutils/2.42 conflict of nvhpc above), and the
+    # Inti builds stay as they were.
+    if [ "$(uname -m)" = aarch64 ] && [ "$CHUNK_SITE" != cea ]; then
         newest_binutils=$(chunk_newest_module binutils)
         [ -n "$newest_binutils" ] && run_cmd "chunk_module_load_first binutils/2.43 $newest_binutils"
     fi
