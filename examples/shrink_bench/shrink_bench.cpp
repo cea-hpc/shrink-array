@@ -56,6 +56,7 @@
 #include "chunk/ring_log_debug.h"     // ring_init/analyze_ring_sweep decls
 #include "chunk/rechunk_decider.h"    // re-chunk decisions (acts in dyn builds only)
 #include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
+#include "chunk/log.h"                 // CHUNK_LOG, logging::enabled (the cst2 report at compress=info)
 
 using namespace shrink_array;
 
@@ -866,14 +867,14 @@ int main(int argc, char* argv[])
             }
             if constexpr (chunk_config::use_zero_any)
             {
-                if (std::getenv("CHUNK_CST2_PROBE")) // only prints when requested
+                // CHUNK_LOG=compress=info: the registry's report at each pass.
+                if (shrink_array::logging::enabled(shrink_array::logging::Channel::compress,
+                                                   shrink_array::logging::Level::info))
                 {
                     // STEP B — cst2 GC mark report (read-only) : zero_any::Array-only API
                     // (per-chunk cst_val2 pointer registry has no equivalent on zero /
                     // zero_one_value, which have no per-chunk GC-able registry to report on).
-                    // %ld + a cast: k_iter is Int, which is `long` in the int64
-                    // build and `int` otherwise.
-                    std::fprintf(stderr, "[cst2-gc @ iter %ld]\n", static_cast<long>(k_iter));
+                    CHUNK_LOG(info, compress, "cst2-gc @ iter {}", k_iter);
                     // Spelled out rather than Array<T>: the enclosing
                     // `if constexpr` is in a plain lambda, so its discarded
                     // branch is still checked, and Array<T> is zero::Array<T> --

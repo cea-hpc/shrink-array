@@ -39,7 +39,7 @@
 #include "chunk/type_name.h"                  // type_name<T> (pool breakdown)
 #include "fast_allocators/internal/svalloc.h" // svfree (drain_reuse_list_for_size)
 
-#include "chunk/internal/freepath_counters.h" // CHUNK_FREEPATH_INC (CHUNK_ARENA_REPORT)
+#include "chunk/internal/freepath_counters.h" // CHUNK_FREEPATH_INC (arena=info)
 #include "chunk/internal/immortal.h"          // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/second_value_info.h" // SecondValueInfo (InfArrayT)
 

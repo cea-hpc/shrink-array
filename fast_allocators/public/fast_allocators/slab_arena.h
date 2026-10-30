@@ -65,10 +65,9 @@
 #include <system_error>  // std::errc (std::from_chars)
 
 #include "fast_allocators/internal/raw_memory.h"   // address_bits
-#include "fast_allocators/internal/alloc_config.h" // reclaim_min_empty_slabs
 #include "fast_allocators/internal/pmp_alloc.h"    // pmp::parallel_for, pmp::in_parallel, pmp::max_threads (the sweeps)
 #include "fast_allocators/internal/fatal.h"        // FAST_ALLOC_FATAL
-#include "fast_allocators/internal/log_core.h"     // CHUNK_LOG, CHUNK_LOG_ALWAYS (CHUNK_ARENA_REPORT)
+#include "fast_allocators/internal/log_core.h"     // CHUNK_LOG, CHUNK_LOG_ALWAYS, logging::enabled (arena=info)
 
 namespace fast_alloc
 {
@@ -711,16 +710,13 @@ inline SlabArena& arena_for(ArenaKind kind)
     }
 }
 
-/// @brief Is arena reporting switched on?
-/// @details Reads CHUNK_ARENA_REPORT from the environment, ONCE. Setting it
-///          after the first call has no effect.
+/// @brief Is arena reporting switched on (CHUNK_LOG=arena=info)?
+/// @details Read ONCE, at the first call: the free-path counters it gates are
+///          either counted from the start or not at all. A logging::configure()
+///          after the first call has no effect on it.
 inline bool arena_report_enabled() noexcept
 {
-    static const bool on = []
-    {
-        const char* env = std::getenv("CHUNK_ARENA_REPORT");
-        return env && env[0] && env[0] != '0';
-    }();
+    static const bool on = logging::enabled(logging::Channel::arena, logging::Level::info);
     return on;
 }
 

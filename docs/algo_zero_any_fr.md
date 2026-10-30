@@ -78,7 +78,7 @@ l'ancien stockage derrière lui : 3,5 Go sur le banc, avec 15 tableaux rechunké
   réutilisés. Sans lui, un calcul qui produit un très grand nombre de valeurs distinctes
   fait grossir le registre jusqu'à épuiser ses identifiants, ce qui arrête le run. Dans le
   banc, `CHUNK_BENCH_ULONG_BANDS` limite le nombre de valeurs distinctes du tableau
-  `unsigned long`, `CHUNK_CST2_PROBE=1` affiche l'état du registre et
+  `unsigned long`, `CHUNK_LOG=compress=info` affiche l'état du registre et
   `CHUNK_CST2_RECLAIM=N` libère toutes les N itérations.
 
 `find_or_set_ind_cst_val2(valeur, emplacement)` enregistre la valeur si besoin, l'écrit dans

@@ -193,8 +193,9 @@ noms `shrink_array::logging`) : un niveau (`error`, `warn`, `info`, `debug`, `tr
 | `logging::set_sink(fn, user)` | confie chaque enregistrement (niveau, canal, message, emplacement dans le source) à `fn` -- le logger du programme -- au lieu de stderr ; `nullptr` revient au défaut. Un enregistrement peut arriver pendant la sortie du programme : le sink doit lui survivre, ou être retiré avant |
 
 Ce qu'un programme demande explicitement -- `print_all_reuse_pool_breakdown()`,
-`CHUNK_ARENA_REPORT`, `CHUNK_LEDGER_REPORT`, `CHUNK_OMPT_STATS` -- est écrit quel que soit
-`CHUNK_LOG`, par le même sink. Une violation d'invariant ou un échec fatal de l'allocateur arrête
+`gc_mark_report()` -- est écrit quel que soit `CHUNK_LOG`, par le même sink. Les rapports de la
+bibliothèque sont des niveaux de leur canal : `arena=info` (l'arène des tampons), `ledger=info` (le
+registre des blocs, à la sortie), `ompt=info` (les régions de synchronisation, à la sortie). Une violation d'invariant ou un échec fatal de l'allocateur arrête
 toujours le programme : un bloc sur stderr commençant par `[CRITICAL_FAILURE]`
 (`[DEBUG_INVARIANT_FAILURE]` dans un build debug), la backtrace, puis l'enregistrement (niveau
 fatal) vers le sink ou `CHUNK_LOG_FILE`. Le contenu des canaux :

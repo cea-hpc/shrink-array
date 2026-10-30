@@ -1348,7 +1348,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             //    materialised. That cost is real and belongs in the decider's
             //    data term.
             //  - many folded, few materialised -> the residue is not in the
-            //    chunks; look at the pools (CHUNK_ARENA_REPORT=1).
+            //    chunks; look at the pools (CHUNK_LOG=arena=info).
             long n_mat = 0;
             for (int c = 0; c < n_new; ++c)
             {

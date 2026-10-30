@@ -172,6 +172,15 @@ the tag's checksum to the recipe.
   `--force_rechunk`, `--force_rechunk_at`, `--force_rechunk_toggle`, `--force_rechunk_alt`, plus
   `--advisor_period` and `--advise_five` for its own schedule. `bench_and_test.py`'s re-chunk
   phase and `diag_zero_rechunk_slowdown.py` pass them.
+- The library's reports are log levels, no longer environment variables: the buffer arena's
+  summary (with its `partial` and `freepath` lines and the free-path counters) is
+  `CHUNK_LOG=arena=info`, the block registry's report at exit `ledger=info`, the OMPT
+  statistics at exit `ompt=info`, and `shrink_bench`'s report of zero_any's second-value
+  registry at each advisor pass `compress=info` (its heading, `cst2-gc @ iter <k>`, is a log line
+  now). A report is switched on by its channel's level and then written in full; a bare
+  `CHUNK_LOG=info` switches them all on. `diag_zero_rechunk_slowdown.py` asks for `arena=info`,
+  and reads the `freepath` lines as the log writes them: its `[FREEPATH]` pattern matched
+  nothing since the log.
 - The decider's two per-array traces are log levels, no longer environment variables: the churn
   line (materialisations per pass, the transient they imply) is `CHUNK_LOG=rechunk=debug`
   (it was `rechunk=info`, switched on by `CHUNK_RECHUNK_CHURN`), and the advisor's full table at
@@ -265,6 +274,10 @@ the tag's checksum to the recipe.
 
 ### Deprecated
 
+- `CHUNK_ARENA_REPORT`, `CHUNK_LEDGER_REPORT`, `CHUNK_OMPT_STATS` and `CHUNK_CST2_PROBE`: they set
+  `CHUNK_LOG=arena=info`, `ledger=info`, `ompt=info` and `compress=info`, with a warning (see
+  Changed); set means non-empty and not starting with `0`, for the two that any value used to
+  switch on. Removal planned for 2026-12-31.
 - `FAST_ALLOC_TRACE` (it sets `CHUNK_LOG=alloc=trace`, with a warning): removal planned for
   2026-12-31.
 - `python/omp_speedup.py`: runs `thread_speedup.py` with the same arguments (one line on stderr

@@ -45,9 +45,12 @@ passes (CHANGELOG.md, Removed).
 The traces are messages of the library's log, chosen by `CHUNK_LOG` (see
 [environment_variables.md](environment_variables.md)). The variables of the former traces
 (`CHUNK_RECHUNK_TRACE`, `CHUNK_RECHUNK_TRACE_SLICES`, `CHUNK_RECHUNK_MEMTRACE`,
-`CHUNK_RECHUNK_TRACE_MEM`, `CHUNK_AFFINITY_TRACE`, `CHUNK_RECYCLE_TRACE`) are no longer read; only
-`FAST_ALLOC_TRACE` still sets the level it stands for, with a deprecation warning. *Removal
-planned: 2026-12-31.*
+`CHUNK_RECHUNK_TRACE_MEM`, `CHUNK_AFFINITY_TRACE`, `CHUNK_RECYCLE_TRACE`) are no longer read;
+`FAST_ALLOC_TRACE` and the variables of the former reports (`CHUNK_ARENA_REPORT`,
+`CHUNK_LEDGER_REPORT`, `CHUNK_OMPT_STATS`, `CHUNK_CST2_PROBE`) still set the level they stand for,
+with a deprecation warning. *Removal planned: 2026-12-31.* A report is switched on by the level of
+its channel, then written in full; a bare level (`CHUNK_LOG=info`) switches them all on, and the
+arena's and OMPT's counters with them, which cost a little time.
 
 | setting | what it prints |
 |---|---|
@@ -60,11 +63,11 @@ planned: 2026-12-31.*
 | `CHUNK_LOG=advisor=debug` (formerly `CHUNK_ADVISOR_TABLE`) | in addition, the full advisor table of each array analysed, at each pass |
 | `CHUNK_LOG=affinity=debug` (formerly `CHUNK_AFFINITY_TRACE`) | each per-array set of allocators created (key, size, budget) |
 | `CHUNK_LOG=compress=info` | check builds: the blocks left to compress after the final flush, and `zero_any`'s constant blocks never queued; the compression residual of an audit (`compress()` on zero_one_value::Array / zero_any::Array); `compress=debug` adds zero_one_value::Array's per-chunk detail |
-| `CHUNK_ARENA_REPORT` | the summary of the buffer arena (slabs handed out, given back to the system; its `partial` line, the free pages given back from the slabs still in use); a report: written whatever `CHUNK_LOG` says (channel `arena`) |
+| `CHUNK_LOG=arena=info` (formerly `CHUNK_ARENA_REPORT`) | the summary of the buffer arena at each drain point (slabs handed out, given back to the system; its `partial` line, the free pages given back from the slabs still in use; its `freepath` lines, counted only at this level) |
 | `CHUNK_LOG=recycle=debug` / `recycle=trace` (formerly `CHUNK_RECYCLE_TRACE`) | check builds: the foreign blocks the deferred-write pool drops, on a doubling schedule / one line per block |
-| `CHUNK_LEDGER_REPORT` (*set*) | the report of the block registry (builds with the registry), at exit; a report: written whatever `CHUNK_LOG` says (channel `ledger`) |
-| `CHUNK_OMPT_STATS` | statistics of the synchronisation regions (OMPT builds), at exit; a report: written whatever `CHUNK_LOG` says (channel `ompt`) |
-| `CHUNK_CST2_PROBE` (*set*) | `zero_any`: report of the second-value registry at each pass (benchmark) |
+| `CHUNK_LOG=ledger=info` (formerly `CHUNK_LEDGER_REPORT`) | the report of the block registry (builds with the registry), at exit |
+| `CHUNK_LOG=ompt=info` (formerly `CHUNK_OMPT_STATS`) | statistics of the synchronisation regions (OMPT builds), at exit |
+| `CHUNK_LOG=compress=info` in `shrink_bench` (formerly `CHUNK_CST2_PROBE`) | `zero_any`: in addition, the report of the second-value registry at each advisor pass (`gc_mark_report()`) |
 | `CHUNK_CST2_RECLAIM` | `zero_any`, `N`: every N iterations, frees the second values no chunk uses any more (`reclaim_second_values()`) and prints how many, then each type's identifiers in use against the capacity, free, reclaims and refusals (`second_value_stats()`) (benchmark, any build) |
 | `ALLOC_TOKEN_REPORT` | `SANITIZER=token` builds always print, on exit, the allocations per token (the 40 largest); this sets how many: `0` none, `N` the N largest, `all` every token |
 | `CHUNK_LOG=alloc=trace` (formerly `FAST_ALLOC_TRACE`) | one `munmap` line per emptied slab that a pool's reserve does not keep and that is freed |

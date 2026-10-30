@@ -48,8 +48,11 @@ Les traces sont des messages du journal de la bibliothèque, choisis par `CHUNK_
 [variables_environnement_fr.md](variables_environnement_fr.md)). Les variables des anciennes
 traces (`CHUNK_RECHUNK_TRACE`, `CHUNK_RECHUNK_TRACE_SLICES`, `CHUNK_RECHUNK_MEMTRACE`,
 `CHUNK_RECHUNK_TRACE_MEM`, `CHUNK_AFFINITY_TRACE`, `CHUNK_RECYCLE_TRACE`) ne sont plus lues ;
-seule `FAST_ALLOC_TRACE` règle encore le niveau qui lui correspond, avec un avertissement de
-dépréciation. *Retrait prévu : 31/12/2026.*
+`FAST_ALLOC_TRACE` et les variables des anciens rapports (`CHUNK_ARENA_REPORT`,
+`CHUNK_LEDGER_REPORT`, `CHUNK_OMPT_STATS`, `CHUNK_CST2_PROBE`) règlent encore le niveau qui leur
+correspond, avec un avertissement de dépréciation. *Retrait prévu : 31/12/2026.* Un rapport est
+activé par le niveau de son canal, puis écrit en entier ; un niveau seul (`CHUNK_LOG=info`) les
+active tous, et avec eux les compteurs de l'arène et d'OMPT, qui coûtent un peu de temps.
 
 | réglage | ce qu'il affiche |
 |---|---|
@@ -62,11 +65,11 @@ dépréciation. *Retrait prévu : 31/12/2026.*
 | `CHUNK_LOG=advisor=debug` (autrefois `CHUNK_ADVISOR_TABLE`) | en plus, la table complète de l'advisor de chaque tableau analysé, à chaque passage |
 | `CHUNK_LOG=affinity=debug` (autrefois `CHUNK_AFFINITY_TRACE`) | chaque jeu d'allocateurs par tableau créé (clé, taille, budget) |
 | `CHUNK_LOG=compress=info` | builds de vérification : les blocs restant à compresser après le dernier vidage, et les blocs constants de `zero_any` jamais mis en file ; le résidu de compression d'un audit (`compress()` sur zero_one_value::Array / zero_any::Array) ; `compress=debug` ajoute le détail par chunk de zero_one_value::Array |
-| `CHUNK_ARENA_REPORT` | le bilan de l'arène des tampons (slabs distribués, rendus au système ; sa ligne `partial`, les pages libres rendues des slabs encore utilisés) ; un rapport : écrit quel que soit `CHUNK_LOG` (canal `arena`) |
+| `CHUNK_LOG=arena=info` (autrefois `CHUNK_ARENA_REPORT`) | le bilan de l'arène des tampons à chaque point de vidage (slabs distribués, rendus au système ; sa ligne `partial`, les pages libres rendues des slabs encore utilisés ; ses lignes `freepath`, comptées seulement à ce niveau) |
 | `CHUNK_LOG=recycle=debug` / `recycle=trace` (autrefois `CHUNK_RECYCLE_TRACE`) | builds de vérification : les blocs étrangers que le pool des écritures différées abandonne, à intervalles doublants / une ligne par bloc |
-| `CHUNK_LEDGER_REPORT` (*définie*) | le rapport du registre des blocs (builds avec registre), à la sortie ; un rapport : écrit quel que soit `CHUNK_LOG` (canal `ledger`) |
-| `CHUNK_OMPT_STATS` | statistiques des régions de synchronisation (builds OMPT), à la sortie ; un rapport : écrit quel que soit `CHUNK_LOG` (canal `ompt`) |
-| `CHUNK_CST2_PROBE` (*définie*) | `zero_any` : rapport du registre des secondes valeurs à chaque passage (banc) |
+| `CHUNK_LOG=ledger=info` (autrefois `CHUNK_LEDGER_REPORT`) | le rapport du registre des blocs (builds avec registre), à la sortie |
+| `CHUNK_LOG=ompt=info` (autrefois `CHUNK_OMPT_STATS`) | statistiques des régions de synchronisation (builds OMPT), à la sortie |
+| `CHUNK_LOG=compress=info` dans `shrink_bench` (autrefois `CHUNK_CST2_PROBE`) | `zero_any` : en plus, le rapport du registre des secondes valeurs à chaque passage de l'advisor (`gc_mark_report()`) |
 | `CHUNK_CST2_RECLAIM` | `zero_any`, `N` : toutes les N itérations, libère les secondes valeurs qu'aucun chunk n'utilise plus (`reclaim_second_values()`) et affiche leur nombre, puis pour chaque type les identifiants en usage face à la capacité, libres, les libérations et les refus (`second_value_stats()`) (banc, tout build) |
 | `ALLOC_TOKEN_REPORT` | les builds `SANITIZER=token` impriment toujours, à la sortie, les allocations par jeton (les 40 plus grosses) ; elle en fixe le nombre : `0` aucune, `N` les N plus grosses, `all` toutes |
 | `CHUNK_LOG=alloc=trace` (autrefois `FAST_ALLOC_TRACE`) | une ligne `munmap` par slab vidé que la réserve d'un pool ne garde pas et qui est libéré |

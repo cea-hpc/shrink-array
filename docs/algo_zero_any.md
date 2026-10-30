@@ -77,7 +77,7 @@ the old storage behind: 3.5 GB on the benchmark, with 15 rechunked arrays.
   the type and frees the others, whose identifiers are then reused. Without it, a workload
   that produces a very large number of distinct values makes the registry grow until its
   identifiers run out, which stops the run. In the benchmark, `CHUNK_BENCH_ULONG_BANDS`
-  limits the number of distinct values of the `unsigned long` array, `CHUNK_CST2_PROBE=1`
+  limits the number of distinct values of the `unsigned long` array, `CHUNK_LOG=compress=info`
   prints the state of the registry and `CHUNK_CST2_RECLAIM=N` reclaims every N iterations.
 
 `find_or_set_ind_cst_val2(value, slot)` registers the value if needed, writes it into the

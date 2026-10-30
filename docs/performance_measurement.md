@@ -47,7 +47,7 @@ In the library: `shrink_array::exact_rss_kib()` (`internal/exact_rss.h`). In the
 | question | tool |
 |---|---|
 | how much in chunk buffers, how much elsewhere? | `CHUNK_LOG=memory=info`: at each advisor tick, the exact memory, including the resident part of the buffer arena (`mincore`) |
-| what are the slabs doing? | `CHUNK_ARENA_REPORT=1` (slabs handed out, returned to the system) |
+| what are the slabs doing? | `CHUNK_LOG=warn,rechunk=info,arena=info` (slabs handed out, returned to the system) |
 | which area of the address space is growing? | two `pmap -x <pid>` at two points in time, compared area by area |
 | what does each rechunk return? | `CHUNK_LOG=memory=debug`: `rss` line (memory at each step, `end-entry`) |
 

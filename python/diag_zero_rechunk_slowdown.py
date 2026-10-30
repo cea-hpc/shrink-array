@@ -47,7 +47,7 @@ first dyn run, else 3/4 of the run):
     perf c2c           false sharing (HITM lines), same window
     perf record -g     where the idle cores are: libgomp barrier / lock
                        symbols versus library code
-  plus one run of each with CHUNK_ARENA_REPORT=1: [FREEPATH] parked_foreign,
+  plus one run of each with CHUNK_LOG=...,arena=info: freepath parked_foreign,
   the blocks freed by a rank that does not own their slab -- the allocator's
   view of the ownership mismatch the rebuild schedule would leave behind.
   (Separate runs: those counters are shared atomics and perturb the timing.)
@@ -76,7 +76,10 @@ from bench_runner.settings import find_bench_exe  # noqa: E402
 ITER_RE = re.compile(r"^iter (\d+) : time : ")
 # The re-chunk's phase line, as the log writes it (rechunk=debug) and as it was printed before.
 RECHUNK_RE = re.compile(r"^(?:\[RECHUNK\]|\[shrink_array\]\[rechunk\]\[D\]\[\d+\]) (\d+) -> (\d+) phases")
-FREEPATH_RE = re.compile(r"\[FREEPATH\] (\S+)\s+freed=(\d+)\s+parked_own=(\d+)\s+parked_foreign=(\d+)")
+# The arena report's free-path line, as the log writes it ("[shrink_array][arena][I][<tid>] freepath
+# <when> freed=..."), and as it was printed before the log ("[FREEPATH] <when> freed=...").
+FREEPATH_RE = re.compile(r"(?:\[FREEPATH\]|\[arena\]\[I\]\[\d+\] freepath) (\S+)\s+freed=(\d+)\s+parked_own=(\d+)"
+                         r"\s+parked_foreign=(\d+)")
 
 # (name, executable after its shrink_bench_<backend>_, environment, extra
 # shrink_bench arguments)
@@ -313,9 +316,9 @@ def main():
                     ["numastat", "stat", "c2c", "record"], a.window).run()
             perf_reports(r)
             summary.append(f"{name:8s} {stat_summary(r) or '(no perf stat)'}   -> {r.dir}")
-            print(f"[part 2] {name}: allocator counters (CHUNK_ARENA_REPORT=1)", flush=True)
+            print(f"[part 2] {name}: allocator counters (CHUNK_LOG=...,arena=info)", flush=True)
             env2 = dict(env)
-            env2["CHUNK_ARENA_REPORT"] = "1"
+            env2["CHUNK_LOG"] = "warn,rechunk=debug,arena=info"
             r2 = Run(f"{name}_freepath", path_of[exe], env2, args + extra, out, a.threads).run()
             if r2.freepath:
                 # cumulative counters: take the per-iteration increase of parked_foreign

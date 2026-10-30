@@ -285,8 +285,8 @@ inline ankerl::unordered_dense::map<const void*, BRec>& block_live()
 
 /// @brief End-of-run report: every block still in the ledger, by (state, last site).
 // Lists every block still recorded in block_live(), grouped by (state, last
-// site). Enabled only when the ledger is on AND CHUNK_LEDGER_REPORT is set in
-// the environment, so it costs nothing otherwise. It separates the causes a
+// site). Enabled only when the ledger is on AND CHUNK_LOG sets ledger to info,
+// so it costs nothing otherwise. It separates the causes a
 // LeakSanitizer report cannot: a block left LIVE was allocated and never parked
 // nor released (its reference was dropped); a block left parked was parked but
 // not freed by the exit drain; a leaked block absent from the table was never
@@ -355,7 +355,7 @@ inline void report_live_blocks() noexcept
     }
 }
 
-/// @brief Register report_live_blocks() at exit (CHUNK_LEDGER_REPORT), once,
+/// @brief Register report_live_blocks() at exit (CHUNK_LOG=ledger=info), once,
 ///        on the first block the ledger sees.
 //
 // ORDER MATTERS: function-local statics and std::atexit handlers run in the
@@ -368,7 +368,7 @@ inline void maybe_register_live_report() noexcept
     {
         static const bool registered = []
         {
-            if (std::getenv("CHUNK_LEDGER_REPORT") != nullptr)
+            if (logging::enabled(logging::Channel::ledger, logging::Level::info))
             {
                 (void)block_live();                        // construct the map FIRST
                 std::atexit([] { report_live_blocks(); }); // ...then register

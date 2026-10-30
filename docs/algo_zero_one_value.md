@@ -555,7 +555,7 @@ The full list, with the macros and the CMake options, is in
 | variable | effect |
 |---|---|
 | `CHUNK_LOG=rechunk=debug` | rechunk phase times (`memory=debug`: foldings) |
-| `CHUNK_OMPT_STATS=1` | statistics of synchronisation regions (OMPT build) |
+| `CHUNK_LOG=ompt=info` | statistics of synchronisation regions (OMPT build) |
 | `shrink_bench --rechunk_dry_run` | the decider analyses and logs, but applies no rechunk (to measure the cost of the analyses; `RechunkPolicy::dry_run`) |
 | `shrink_bench --rechunk_max_coarsen <n>` | maximum coarsening factor (4 by default; `RechunkPolicy::max_coarsen_factor`) |
 

@@ -188,9 +188,10 @@ each, on stderr:
 | `logging::configure("warn,rechunk=debug")` | the same specification from the code, on top of `CHUNK_LOG`; returns the number of items not understood |
 | `logging::set_sink(fn, user)` | hands every record (level, channel, message, source location) to `fn` -- the program's own logger -- instead of stderr; `nullptr` goes back. A record can arrive at exit: the sink must outlive it, or be removed first |
 
-What a program asks for explicitly -- `print_all_reuse_pool_breakdown()`, `CHUNK_ARENA_REPORT`,
-`CHUNK_LEDGER_REPORT`, `CHUNK_OMPT_STATS` -- is written whatever `CHUNK_LOG` says, through the
-same sink. A broken invariant or a fatal allocator failure always stops the program: a block on
+What a program asks for explicitly -- `print_all_reuse_pool_breakdown()`, `gc_mark_report()` -- is
+written whatever `CHUNK_LOG` says, through the same sink. The reports of the library are levels of
+their channel: `arena=info` (the buffer arena), `ledger=info` (the block registry, at exit),
+`ompt=info` (the synchronisation regions, at exit). A broken invariant or a fatal allocator failure always stops the program: a block on
 stderr headed `[CRITICAL_FAILURE]` (`[DEBUG_INVARIANT_FAILURE]` in a debug build), the
 backtrace, then the record (level fatal) to the sink or `CHUNK_LOG_FILE`. The channels'
 contents: [developer_settings.md](developer_settings.md), section 2.

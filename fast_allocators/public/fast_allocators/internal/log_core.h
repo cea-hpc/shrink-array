@@ -54,10 +54,12 @@
  *   the call), and any other type as its bytes in hex (fmt_arg): a message
  *   can print an element value of any type. A char pointer stays a string.
  * - Traces and reports: a trace is a flow CHUNK_LOG switches on (CHUNK_LOG);
- *   a report is a summary the program asked for explicitly -- a print_*
- *   function it called, a report switch it set (CHUNK_LEDGER_REPORT,
- *   CHUNK_OMPT_STATS), a trace build option -- and is written whatever
- *   CHUNK_LOG says (CHUNK_LOG_ALWAYS, level info), through the same sink.
+ *   a report is a summary -- the arena's (arena=info), the block ledger's
+ *   (ledger=info), the OMPT statistics (ompt=info), a print_* function the
+ *   program called, a trace build option. The level of its channel switches
+ *   a report on (a print_* call, or a build option, is the request itself);
+ *   once on, it is written in full (CHUNK_LOG_ALWAYS, level info), through
+ *   the same sink.
  *   A report can run at exit: a sink installed with set_sink() must outlive
  *   it, or be removed (set_sink(nullptr)) before its state goes.
  * - Not here: the fatal level. An invariant failure is CHUNK_INVARIANT_FAILED
@@ -559,8 +561,9 @@ inline void report_bad_items(const Spec& spec, std::string_view who) noexcept
 }
 
 /// @brief An environment switch that raises a channel to a level: a trace
-///        of before the log (deprecated: its use is warned about), or a
-///        setting whose point is what it logs (none left: the decider's
+///        or a report of before the log (deprecated: its use is warned about;
+///        docs/developer_settings.md section 2 dates its removal), or a setting
+///        whose point is what it logs (none left: the decider's
 ///        CHUNK_RECHUNK_CHURN is now CHUNK_LOG=rechunk=debug).
 struct LegacySwitch
 {
@@ -573,8 +576,12 @@ struct LegacySwitch
 /// @brief The switches, applied after CHUNK_LOG and raising only: setting
 ///        one shows what it showed before, whatever CHUNK_LOG says.
 ///        Set = non-empty and not starting with '0'.
-inline constexpr std::array<LegacySwitch, 1> legacy_switches{{
+inline constexpr std::array<LegacySwitch, 5> legacy_switches{{
     {"FAST_ALLOC_TRACE", Channel::alloc, Level::trace, true},
+    {"CHUNK_ARENA_REPORT", Channel::arena, Level::info, true},
+    {"CHUNK_LEDGER_REPORT", Channel::ledger, Level::info, true},
+    {"CHUNK_OMPT_STATS", Channel::ompt, Level::info, true},
+    {"CHUNK_CST2_PROBE", Channel::compress, Level::info, true},
 }};
 
 /// @brief True when switch @p sw is set.

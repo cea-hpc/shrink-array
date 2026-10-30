@@ -446,7 +446,7 @@ inline void SlabArena::report(const char* when) const noexcept
     {
         recycled += block_size * lists.count;
     }
-    // CHUNK_ARENA_REPORT asked for it: a report, written whatever CHUNK_LOG says.
+    // arena=info asked for it (report_all_arenas): a report, written in full.
     CHUNK_LOG_ALWAYS(arena,
                      "{:<6} {:<16} mapped={:8} KiB  live={:8} KiB  high={:8} KiB  freelist={:8} KiB  regions={}  "
                      "allocs={}  deallocs={}  deallocMiB={}  recycled={} KiB (in={} out={} foreign={} advised={})",
