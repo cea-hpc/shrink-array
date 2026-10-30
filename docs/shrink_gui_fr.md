@@ -2,7 +2,7 @@
 
 > English version: [shrink_gui.md](shrink_gui.md).
 
-> Octobre 2026, `shrink_gui` 0.14 (prototype). Une fenêtre sur le portable pour soumettre
+> Octobre 2026, `shrink_gui` 0.15 (prototype). Une fenêtre sur le portable pour soumettre
 > `compile_all.sh`, `bench_and_test.py`, `multi_launch_stress.py` et `thread_speedup.py` sur le calculateur, ou
 > pour les lancer sur le portable lui-même (§3, « Cette machine »), suivre
 > leur log, lire leur résumé et rapatrier leurs résultats. Le détail du code est dans la
@@ -65,7 +65,7 @@ connexion, la vérification complète est refaite d'elle-même.
 
 | champ | rôle |
 |---|---|
-| Partition | `gh200-bxi` (ARM, 288 cœurs) ou `milan-bxi` (x86, 64 cœurs) ; fixe aussi l'architecture des valeurs par défaut |
+| Partition | `gh200-bxi` (ARM, 288 cœurs) ou `milan-bxi` (x86, 64 cœurs), puis les autres partitions que `ccc_mpinfo` liste à la vérification de la connexion (ci-dessous) ; fixe aussi l'architecture des valeurs par défaut |
 | Soumission | `ccc_msub` (batch, le défaut) ou `ccc_mprun` détaché depuis le nœud de login |
 | Durée max (-T) | accepte `2 j`, `1 h 30`, `90 min`, `1-00:00:00` |
 | QoS (-Q) | « auto » choisit la QoS d'après la durée, selon les limites lues par `ccc_mqinfo` |
@@ -275,7 +275,13 @@ Pour en écrire un, copier un exemple dans `~/.config/shrink_gui/site.toml` et l
 | `[detached]` | la commande du mode détaché et ses options de durée et de QoS ; absente si le site n'en a pas |
 | `[qos]` | les limites des QoS en attendant que la vérification de la connexion les lise |
 | `[partitions.<nom>]` | libellé, architecture, directives, lanceur, options du mode détaché |
+| `[discovered]` | les gabarits des partitions que liste `[batch] partition_info` (`ccc_mpinfo`, `sinfo -o '%P %c %D %a'`) et que `[partitions]` ne décrit pas : directives, lanceur et options du mode détaché avec `{name}` et `{cores}` (les cœurs d'un nœud), un motif sur le nom pour les partitions ARM (`arm`, les autres sont x86) et un pour celles à ne pas proposer (`skip`) |
 | `[defaults."<programme>".<arch>]` | les valeurs par défaut des options par programme et architecture (`{build_root}` est celle du site) |
+
+Les partitions que liste la machine sont lues à chaque vérification de la connexion et mémorisées
+pour le démarrage suivant ; une partition à la fois dans la table et dans `[partitions]` garde
+l'entrée du fichier de site. Ce que la fenêtre lira se vérifie sur le calculateur, depuis le
+répertoire `python/` du dépôt : `ccc_mpinfo | python3 -m shrink_gui.partitions`.
 
 Un fichier inutilisable (syntaxe, clé inconnue ou manquante, champ de gabarit inconnu) arrête
 la fenêtre avec un message qui nomme le fichier et la clé. Le fichier est lu par `tomllib`
@@ -304,7 +310,7 @@ cd python && python3 -m pytest shrink_gui/tests -q
 ```
 
 Les tests tournent sans écran (`QT_QPA_PLATFORM=offscreen`) contre un faux calculateur local :
-de faux `ssh`, `ccc_msub`, `squeue`, `ccc_mdel`, `ccc_mprun` et `ccc_mqinfo` (`tests/fakes`), avec
+de faux `ssh`, `ccc_msub`, `squeue`, `ccc_mdel`, `ccc_mprun`, `ccc_mqinfo` et `ccc_mpinfo` (`tests/fakes`), avec
 le fichier de site d'inti quel que soit le contenu de `~/.config` ; `test_site.py` fait aussi
 tourner un site Slurm standard (faux `sbatch` et `scancel`).
 Ils sont sautés si PySide6 n'est pas installé.

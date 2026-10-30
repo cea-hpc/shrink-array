@@ -6,7 +6,7 @@ TOML file (sitecfg.py, sites/); what depends on the repository is here."""
 import os
 import re
 
-from shrink_gui import i18n, sitecfg
+from shrink_gui import i18n, partitions, sitecfg
 from shrink_gui.remote_helper import normalize_variant
 
 APP = "shrink_gui"
@@ -42,6 +42,32 @@ PRESETS.update({
         "mprun": "",
     },
 })
+
+# The partitions the machine lists (the site's [batch] partition_info, read
+# by the connection check, kept per site): entries of PRESETS too, built from
+# the site's [discovered] templates, for the partitions the site file does not
+# describe. set_discovered() replaces the ones a previous reading added.
+SITE_PARTITIONS = frozenset(SITE.partitions)
+
+
+def set_discovered(text):
+    """Read the partition table @p text (partitions.parse) into PRESETS:
+    the entries of an earlier reading go, those of this one come, after the
+    site file's. Returns the keys added; nothing changes when @p text has no
+    table (the caller keeps what it had)."""
+    if not SITE.discovered:
+        return []
+    rows = partitions.parse(text)
+    if not rows:
+        return []
+    for key in [k for k, p in PRESETS.items() if p.get("discovered")]:
+        del PRESETS[key]
+    found = partitions.presets(rows, SITE.discovered, SITE_PARTITIONS)
+    local = PRESETS.pop(LOCAL)
+    PRESETS.update(found)
+    PRESETS[LOCAL] = local      # this machine stays last
+    return list(found)
+
 
 # Programs: script and working directory relative to the repository, how the
 # options are read, "builds_opt" (the options naming the builds the run uses,

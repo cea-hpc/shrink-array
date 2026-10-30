@@ -215,6 +215,13 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- shrink_gui 0.15: the partition list also offers the partitions the machine lists at the
+  connection check (`[batch] partition_info`: `ccc_mpinfo` on inti, `sinfo -o '%P %c %D %a'` in
+  `slurm_example.toml`), beside the site file's `[partitions]`, which win for a name in both. Their
+  directives, launcher and detached options come from the site's new `[discovered]` templates
+  (`{name}`, `{cores}` per node), their architecture from a pattern on the name (`arm`); `skip`
+  leaves some out. The table read is remembered for the next start.
+  `python3 -m shrink_gui.partitions` shows, on the cluster, what the window reads from it.
 - `formal/queue_handback.c`: the end of a compression pass against the candidate marking of a
   writer. It finds F6 (`docs/formal_models.md`, section 8.8), open: a chunk made constant
   between `steal_unmark()` and the reset of its "queued" flag is dropped from every list and
@@ -540,6 +547,14 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `fill_range_mt()`, `copy_range_mt()`, `transform_range_mt()` on a `zero_any` array of an element
+  type without relaxed element access (`std::complex<double>`, the aggregates): a span that did not
+  cover its whole chunk -- the ends of a range off a chunk boundary -- never queued the chunk, even
+  when it completed it uniform, and the chunk stayed materialised for the run. Any uniform span
+  queues it now; the pass drops it if the rest of the chunk differs. The check builds' audit
+  ("never queued for compression") counted 34 to 140 such chunks of `tab_complex` per run of
+  `shrink_bench` at `--divisor 10 --iter_max 1000` on Milan, at every thread count, 1 included;
+  none now. `fill_range_mt_validation` checks the case.
 - `compile_all.sh` no longer loads a hard-coded `gcc/15.2.0`: it loads `gcc/15.2.0` where it exists,
   else the newest `gcc/<ver>` module, for llvm, oneapi, nvhpc and aocc. On a machine without
   15.2.0 the gcc load failed, then the llvm module, which needs a gcc, failed too, and the llvm

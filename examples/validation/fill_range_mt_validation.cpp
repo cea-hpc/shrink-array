@@ -42,6 +42,7 @@
  */
 
 #include <chrono>      // std::chrono::steady_clock, std::chrono::duration
+#include <complex>     // std::complex: an element type without relaxed access
 #include <cstring>     // std::strcmp
 #include <type_traits> // std::conditional_t
 #include <vector>      // std::vector
@@ -277,6 +278,66 @@ static int run_validation(long count, int rounds)
     return bad ? 1 : 0;
 }
 
+// zero_any, an element type without relaxed element access (std::complex<double>):
+// store_range_mt stores it plain and queues a chunk on the span's own values. A
+// span that does not cover its chunk -- the end of a range off a chunk boundary --
+// may still complete it: the chunk below is all 0 but its last element, and a fill
+// of 0 starting at that element (a one-element span in it, the rest in the next
+// chunk) leaves it uniform. It must be queued, so the end of the phase compresses
+// it. Before, only a whole-chunk span was, and the chunk stayed materialised.
+static int run_partial_span_queueing()
+{
+    if constexpr (!chunk_config::use_zero_any)
+    {
+        return 0;
+    }
+    else
+    {
+        using C = std::complex<double>;
+        Array<C>   arr(1);
+        const long cs = static_cast<long>(arr.chunk_size());
+        arr.resize(4 * cs);
+        const long last_of_1 = (2 * cs) - 1; // the last element of chunk 1
+
+#pragma omp parallel
+        {
+            begin_phase();
+#pragma omp single
+            arr[last_of_1] = C(1., 0.); // chunk 1 materialised, not uniform
+        }
+        end_phase();
+        const bool materialised_before = arr.written(last_of_1);
+
+#pragma omp parallel
+        {
+            begin_phase();
+#pragma omp single
+            fill_range_mt(arr, static_cast<std::size_t>(last_of_1), static_cast<std::size_t>((2 * cs) + (cs / 2)),
+                          C(0., 0.));
+        }
+        end_phase();
+
+        long bad = 0;
+        for (long i = 0; i < 4 * cs; ++i)
+        {
+            if (static_cast<C>(arr[i]) != C(0., 0.))
+            {
+                ++bad;
+            }
+        }
+        const bool compressed_after = !arr.written(last_of_1);
+        if (!materialised_before || !compressed_after || bad != 0)
+        {
+            println("[{}] FAIL partial span: chunk 1 materialised before the fill {}, compressed after {}, {} wrong "
+                    "value(s)",
+                    variant_name(), materialised_before, compressed_after, bad);
+            return 1;
+        }
+        println("[{}] OK: a partial fill span completing a chunk of std::complex<double> queues it", variant_name());
+        return 0;
+    }
+}
+
 // Perf blocks: half the smallest chunk this bench builds (64), with values
 // alternating between neighbours, so no chunk is ever uniform -- a uniform
 // zero_any chunk compresses to its second value, and the timings would then
@@ -392,7 +453,7 @@ static int run_body(int argc, char** argv)
     const int rounds = argc > 2 ? shrink_array::arg_number<int>(argv[2], 30, "rounds") : 30;
     println("=== fill_range_mt_validation [variant = {}]  N={}  threads={} ===", variant_name(), count,
             CHUNK_PMP_MAX_THREADS);
-    const int fails = run_validation(count, rounds);
+    const int fails = run_validation(count, rounds) + run_partial_span_queueing();
     println("[{}] === {} ===", variant_name(), fails ? "FILL_RANGE_MT FAILED" : "FILL_RANGE_MT OK");
     return fails;
 }

@@ -20,6 +20,8 @@ cancel = "scancel"
 # The QoS limits: sacctmgr prints a header and a line of dashes, as the
 # window expects; a QoS with no Partition column applies to every partition.
 qos_info = "sacctmgr show qos format=Name,Priority,MaxWall,MaxSubmitPU"
+# The partitions: one row each, a header (PARTITION CPUS NODES AVAIL) over them.
+partition_info = "sinfo -o '%P %c %D %a'"
 directive = "#SBATCH"
 name = "--job-name={name}"
 time = "--time={minutes}"
@@ -44,6 +46,17 @@ directives = """
 #SBATCH --cpus-per-task=64
 """
 launcher = ""
+
+# The partitions sinfo lists beside [partitions.cpu] (cea_inti.toml documents
+# the keys).
+[discovered]
+directives = """
+#SBATCH --partition={name}
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task={cores}
+"""
+arm = "grace|gh200|a64fx|arm"
 
 [defaults."multi_launch_stress.py".x86]
 min_threads = "8"
