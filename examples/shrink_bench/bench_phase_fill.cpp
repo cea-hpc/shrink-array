@@ -29,9 +29,7 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
                       std::chrono::steady_clock::time_point& end,
                       std::chrono::duration<double>&         elapsed_seconds)
 {
-    // Local aliases so the body below is VERBATIM -- same names, same lines,
-    // same comments as when it sat in main(). A behaviour difference is
-    // therefore an extraction bug, never a rewrite.
+    // Short local names for the arrays, shared by every phase file.
     auto& tab1 = bench_arr.tab1;
     auto& tab2 = bench_arr.tab2;
     auto& tab3 = bench_arr.tab3;

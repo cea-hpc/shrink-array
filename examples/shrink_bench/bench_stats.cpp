@@ -36,7 +36,7 @@
 
 void bench_stats(BenchArrays& bench_arr, bool stats)
 {
-    // Aliases so the body below is VERBATIM (see bench_phase_fill.cpp).
+    // Short local names for the arrays (see bench_phase_fill.cpp).
     auto& tab1 = bench_arr.tab1;
     auto& tab2 = bench_arr.tab2;
     auto& tab3 = bench_arr.tab3;

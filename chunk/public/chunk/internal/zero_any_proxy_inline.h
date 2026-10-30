@@ -716,6 +716,10 @@ T zero_any::ProxyImpl<T, Derived, ChunkT>::assign_impl(this Derived& self, InT<U
                         continue;
                     }
 
+                    // The element's value before this write -- the chunk's constant
+                    // if it was just materialised -- for the marking below.
+                    const InT<T> v_old = Base::read_values_async(ctx);
+
                     if constexpr (build_config::any_check)
                     {
                         // Catch an out-of-range index BEFORE it writes. Compare against
@@ -800,6 +804,11 @@ T zero_any::ProxyImpl<T, Derived, ChunkT>::assign_impl(this Derived& self, InT<U
                         }
                     }
 
+                    // As the compound ops' replay (execute_simple_operation_async): a
+                    // replayed write that makes the chunk uniform queues it, or it
+                    // waits for the next direct write. After the store, unlike
+                    // the direct path: a flush excludes the passes.
+                    Base2::mark_for_compression_if_needed_with_value_async(proxy, v_old, static_cast<T>(ctx->operand));
                     break;
                 }
             };

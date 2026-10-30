@@ -133,12 +133,11 @@ struct is_atomic_pointer<std::atomic<U*>> : public std::true_type
 
 // -----------------------------------------------------------------------------
 // The checksum of an array: the sum, over its elements different from T{}, of
-// a hash of the element's VALUE MIXED WITH ITS INDEX. It used to sum the bytes
-// of the elements, which no index entered: two chunks swapped, a chunk's
-// content copied to the wrong index while another took its place, compensating
-// byte errors -- the very class of geometry / re-chunk bugs the check runs hunt
-// -- all summed to the same value. The sum stays order-free (a parallel
-// reduction, modulo 2^64) and costs about what the byte loop did.
+// a hash of the element's VALUE MIXED WITH ITS INDEX. A sum of the bytes alone,
+// which no index enters, would miss two chunks swapped, a chunk's content
+// copied to the wrong index while another took its place, compensating byte
+// errors -- the very class of geometry / re-chunk bugs the check runs hunt.
+// The sum stays order-free (a parallel reduction, modulo 2^64).
 //   - integral elements hash their VALUE, not their bytes: tab_bool is a
 //     std::vector<short> in the baseline and an Array<bool> in a shrink build
 //     (bench_array.h), and their checksums must agree; so does a packed Bit
