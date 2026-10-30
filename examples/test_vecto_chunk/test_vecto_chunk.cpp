@@ -310,10 +310,7 @@ int main()
 
         int end0 = start0 + size;
 
-        if (end0 > sz)
-        {
-            end0 = sz;
-        }
+        end0 = std::min(end0, sz);
 
         const int nsz = end0 - start0;
 

@@ -231,11 +231,11 @@ def test_target_and_exec_pickers(gui, site, monkeypatch):
     assert sorted(got) == (["omp-gnu-debug", "omp-llvm"] if multi else ["omp-gnu-debug"])   # one glob: the last ticked
     w.form.widgets["target"][1].setText("omp-llvm")
     monkeypatch.setattr(widgets_mod.PickerDialog, "exec",
-                        lambda dlg: fake_exec(dlg, ["shrink_bench_zero_64", "shrink_bench_zero_dyn"]))
+                        lambda dlg: fake_exec(dlg, ["shrink_bench_omp_zero_64", "shrink_bench_omp_zero_dyn"]))
     w.pick("exec")
     exes = seen["--exec : exécutables"]
-    assert set(exes) >= {"shrink_bench_zero_64", "shrink_bench_zero_dyn"}
-    assert "shrink_bench_zero_256" not in exes                     # x86_64 build: not on gh200
+    assert set(exes) >= {"shrink_bench_omp_zero_64", "shrink_bench_omp_zero_dyn"}
+    assert "shrink_bench_omp_zero_256" not in exes                     # x86_64 build: not on gh200
     assert ("--exec=" + w.form.widgets["exec"][1].text()) in w.preview.toPlainText().replace("'", "")
 
 
@@ -609,18 +609,24 @@ def test_bench_chart_and_comparison(gui, site):
 
 def _fake_speedup_build(site):
     """A build root with fake shrink_bench binaries: vector and zero_any@dyn
-    scale, zero@dyn always fails (an error line, rc 1)."""
+    scale, zero@dyn always fails (an error line, rc 1). Next to them, stale
+    binaries under the names without a backend (a build made before the
+    executables carried it, rebuilt since), which fail: thread_speedup.py must
+    never pick them."""
     import platform
     d = site.home / "br" / "cmake-build-omp-llvm" / f"Linux__{platform.machine()}" / "examples" / "shrink_bench"
     d.mkdir(parents=True)
     body = ('#!/bin/bash\nm=1; while [ $# -gt 0 ]; do [ "$1" = --multiply ] && m=$2; shift; done\n'
             'python3 -c "print(\'Memory consumption (peak): 10.0 Mo\'); '
             'print(\'Elapsed time computation : %%.4fs\' %% (%s * $m / $OMP_NUM_THREADS))"\n')
-    for name, base in (("shrink_bench_vector_perf", 2.0), ("shrink_bench_zero_any_dyn", 1.5)):
+    for name, base in (("shrink_bench_omp_vector_perf", 2.0), ("shrink_bench_omp_zero_any_dyn", 1.5)):
         (d / name).write_text(body % base)
         (d / name).chmod(0o755)
-    (d / "shrink_bench_zero_dyn").write_text("#!/bin/bash\necho 'error: no chunk today' >&2\nexit 1\n")
-    (d / "shrink_bench_zero_dyn").chmod(0o755)
+    (d / "shrink_bench_omp_zero_dyn").write_text("#!/bin/bash\necho 'error: no chunk today' >&2\nexit 1\n")
+    (d / "shrink_bench_omp_zero_dyn").chmod(0o755)
+    for stale in ("shrink_bench_vector_perf", "shrink_bench_zero_any_dyn"):
+        (d / stale).write_text("#!/bin/bash\necho 'error: stale binary run' >&2\nexit 3\n")
+        (d / stale).chmod(0o755)
     return site.home / "br"
 
 
@@ -651,7 +657,7 @@ def test_thread_speedup_submitted_from_the_window(gui, site):
     b = _submit(w, pump, dict(vals, execs="vector,zero_any@dyn,zero@dyn", multiply="2"), len(w.runs))
     assert _wait_status(w, pump, b, "fini")
     run = next(r for r in w.runs if r["id"] == b)
-    assert run["code"] == 1 and run["errors"][0] == 4 and run["errors"][1].startswith("RUN_FAIL: shrink_bench_zero_dyn")
+    assert run["code"] == 1 and run["errors"][0] == 4 and run["errors"][1].startswith("RUN_FAIL: shrink_bench_omp_zero_dyn")
     w.table.selectRow(next(i for i, r in enumerate(w.runs) if r["id"] == a))
     w.sc_cmp.setCurrentIndex(w.sc_cmp.findData(b))
     assert pump(lambda: "B / A : ×1.000" in w.sc_note.text(), 10)  # the speedups match
@@ -689,7 +695,7 @@ def test_thread_speedup_over_several_nodes(gui, site):
         assert _wait_status(w, pump, r["id"], "fini", 60)
     logs = [(site.runs / r["id"] / "out.log").read_text() for r in jobs]
     claimed = [re.findall(r"\[pool\] (\S+): claimed by this run", t) for t in logs]
-    assert sorted(sum(claimed, [])) == ["shrink_bench_vector_perf", "shrink_bench_zero_any_dyn"]
+    assert sorted(sum(claimed, [])) == ["shrink_bench_omp_vector_perf", "shrink_bench_omp_zero_any_dyn"]
     outs = [re.search(r"Outputs in (\S+)", t).group(1) for t in logs]
     assert outs[0] != outs[1]                                    # the same host, the same second
     row = next(i for i, r in enumerate(w.runs) if r["id"] == jobs[1]["id"])
@@ -873,3 +879,25 @@ def test_connection_watch_times_out(gui, site, monkeypatch):
     got = []
     w.remote.ping(got.append, timeout_ms=500)
     assert pump(lambda: got, 10) and got == [False]
+
+
+def test_options_in_alphabetical_order(gui):
+    """The options form lists the options by their shown name, dashes and case
+    aside; the positional arguments come first, in the script's order (the
+    command line keeps them in it)."""
+    from PySide6.QtWidgets import QFormLayout
+
+    from shrink_gui.widgets import OptionsForm
+
+    w, pump = gui
+    w.program.setCurrentText("multi_launch_stress.py")
+    assert pump(lambda: w.form.schema is not None and "regen_ref" in w.form.widgets)
+    lay = w.form.lay
+    shown = [lay.itemAt(r, QFormLayout.LabelRole).widget().text() for r in range(lay.rowCount())]
+    opts = [s for s in shown if s.startswith("-")]
+    assert len(opts) > 3
+    assert opts == sorted(opts, key=lambda s: (s.lstrip("-").lower(), s))
+
+    acts = [{"flags": [], "dest": "b"}, {"flags": ["--Zed"], "dest": "z"}, {"flags": ["-a", "--alpha"], "dest": "a"},
+            {"flags": [], "dest": "a_pos"}, {"flags": ["--no_io"], "dest": "n"}, {"flags": ["--mode"], "dest": "m"}]
+    assert [ac["dest"] for ac in OptionsForm.display_order(acts)] == ["b", "a_pos", "a", "m", "n", "z"]

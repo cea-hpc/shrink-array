@@ -24,17 +24,17 @@ os.makedirs(logs, exist_ok=True)
 cases = os.path.join(od, "failed_cases.jsonl")
 if a.rerun_failed is not None:
     print("rerun %d" % a.rerun_repeat)
-    log = os.path.join(logs, "shrink_bench_zero_any__omp4__00001__rc-11.log")
+    log = os.path.join(logs, "shrink_bench_omp_zero_any_dyn__omp4__00001__rc-11.log")
     with open(log, "w") as f:
-        f.write("# cmd: shrink_bench_zero_any\n# ===== STDERR =====\nstill crashing\n")
+        f.write("# cmd: shrink_bench_omp_zero_any_dyn\n# ===== STDERR =====\nstill crashing\n")
     with open(cases, "w") as f:
         f.write(json.dumps({"kind": "CHECK_FAIL", "summary": "CHECK_FAIL: zero_any t=4 code=-11",
                             "runs": [{"cmd": ["x"], "log": log}]}) + "\n")
     raise SystemExit(1)
-log = os.path.join(logs, "shrink_bench_zero_any__omp4__00003__rc-11.log")
+log = os.path.join(logs, "shrink_bench_omp_zero_any_dyn__omp4__00003__rc-11.log")
 with open(log, "w") as f:
-    f.write("# cmd: shrink_bench_zero_any\n# ===== STDERR =====\nSegmentation fault at chunk 17\n")
-with open(os.path.join(logs, "shrink_bench_zero__omp4__00001__ok.log"), "w") as f:
+    f.write("# cmd: shrink_bench_omp_zero_any_dyn\n# ===== STDERR =====\nSegmentation fault at chunk 17\n")
+with open(os.path.join(logs, "shrink_bench_omp_zero_dyn__omp4__00001__ok.log"), "w") as f:
     f.write("fine\n")
 with open(os.path.join(od, "bench_summary.csv"), "w") as f:
     f.write("Config,Variant,Threads,AvgTime_s,PeakMem_Mo,Speedup_vs_baseline,MemRatio_vs_baseline,"

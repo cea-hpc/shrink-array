@@ -82,6 +82,8 @@ connexion, la vérification complète est refaite d'elle-même.
 Le programme à lancer, et ses options **lues dans le script lui-même** sur le calculateur
 (« Lire les options ») : l'`argparse` des scripts Python, l'`usage()` de `compile_all.sh`. Une
 option ajoutée au script apparaît donc dans le formulaire sans toucher à l'interface. Les options
+y sont classées par ordre alphabétique (tirets et casse ignorés), après les arguments positionnels,
+laissés dans l'ordre du script. Les options
 modifiées sont en gras ; une option laissée à sa valeur par défaut n'est pas mise sur la ligne de
 commande. « Enregistrer comme défauts » remplace les valeurs par défaut de ce programme sur
 cette architecture. « Commande » montre exactement ce qui sera exécuté.

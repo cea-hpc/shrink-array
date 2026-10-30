@@ -230,13 +230,19 @@ COLOR_BY = {
     "Aucune": (lambda exe: "runs", ["runs"]),
 }
 
-# The old names too (shrink_bench_chunk2a_dyn: a build made before the rename),
-# read as the new ones. Longest first: zero would also match zero_any.
-EXE_RE = re.compile(r"shrink_bench_(zero_any|zero_one_value|zero|chunk2a|chunk2|chunk)(?:_(\w+))?$")
+# shrink_bench_<backend>_<variant>[_<size>], <backend> omp / std / serial (the
+# threading backend of the build), and the TBB bench's shrink_bench_tbb_<variant>_<size>:
+# the variant and the size, whatever the backend. The old names too, read as
+# the new ones: without a backend (shrink_bench_zero_any_dyn, before the
+# executables carried it) and the old labels (shrink_bench_chunk2a_dyn, before
+# the variant rename) -- the results of past runs. Longest first: zero would
+# also match zero_any.
+EXE_RE = re.compile(r"shrink_bench_(?:(?:omp|std|serial|tbb)_)?"
+                    r"(zero_any|zero_one_value|zero|chunk2a|chunk2|chunk)(?:_(\w+))?$")
 
 def exe_parts(exe):
-    """shrink_bench_zero_any_dyn -> ("zero_any", "dyn"), shrink_bench_chunk2a_dyn
-    too; no size -> "default"."""
+    """shrink_bench_omp_zero_any_dyn -> ("zero_any", "dyn"), shrink_bench_tbb_zero_any_dyn,
+    shrink_bench_zero_any_dyn and shrink_bench_chunk2a_dyn too; no size -> "default"."""
     m = EXE_RE.search(exe)
     return (normalize_variant(m.group(1)), m.group(2) or "default") if m else (exe, "?")
 

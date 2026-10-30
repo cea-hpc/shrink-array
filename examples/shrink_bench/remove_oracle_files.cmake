@@ -1,7 +1,7 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 # ctest cleanup of fixture shrink_bench_oracle (see CMakeLists.txt): delete
-# the reference files shrink_bench_vector_check wrote in the build directory
+# the reference files shrink_bench_<backend>_vector_check wrote in the build directory
 # -- data_tab*.bin and their checksums, about 22 GB at the default sizes.
 # Left behind, they stayed on disk after every ctest run.
 #   cmake -DORACLE_DIR=<dir> -P remove_oracle_files.cmake

@@ -116,7 +116,10 @@ class FastBlockSupport<Derived, false>
 {
   public:
     /** @brief No-op: this mode has no deferred candidate list. */
-    static void make_block_compression() noexcept {}
+    static void make_block_compression() noexcept
+    {
+        // Nothing to fold: the counter compresses a chunk on the write.
+    }
 };
 
 } // namespace shrink_array::zero

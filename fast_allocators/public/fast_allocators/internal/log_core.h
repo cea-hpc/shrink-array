@@ -769,6 +769,8 @@ inline void set_sink(Sink sink, void* user = nullptr) noexcept
     }
     catch (...) // std::mutex::lock: std::system_error
     {
+        // The lock could not be taken: the sink in place stays, and a logger
+        // has nowhere better to say so than through that sink.
     }
 }
 } // namespace fast_alloc::logging

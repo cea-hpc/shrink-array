@@ -98,6 +98,43 @@ def is_tbb_variant(var):
     return var.split("@", 1)[0] in TBB_VARIANTS
 
 
+# Every shrink_bench executable carries the threading backend of its build in
+# its name (examples/shrink_bench/CMakeLists.txt): shrink_bench_<backend>_<rest>,
+# <backend> one of these, <rest> zero_any_256, zero_int64_dyn, vector_check,
+# std_alloc_1024, ... The build directory's name does not tell the backend
+# (cmake-build-gnu-stats is serial, cmake-build-omp-gnu-stats OpenMP, and a
+# hand-made one says nothing), but a build directory holds ONE backend: so an
+# executable is found by trying the three names, the one built there being the
+# only one present. The TBB bench is the exception, its "tbb" naming what runs
+# its regions: shrink_bench_tbb_<variant>_<size>, one name.
+#
+# No fallback to the unprefixed names the executables had before: a build
+# directory rebuilt since still holds those binaries, stale, and they must not
+# be run in place of the new ones.
+BENCH_BACKENDS = ("omp", "std", "serial")
+
+
+def bench_exe_names(rest):
+    """The names the executable `rest` (its name after "shrink_bench_", without
+    the backend: "zero_any_256", "vector_check", "tbb_zero_any_dyn") may have
+    in a build directory, in the order they are tried. Python 3.6: the
+    standalone scripts that copy it (thread_speedup.py, multi_launch_stress.py)
+    run there."""
+    if rest.startswith("tbb_"):
+        return ["shrink_bench_" + rest]
+    return ["shrink_bench_%s_%s" % (b, rest) for b in BENCH_BACKENDS]
+
+
+def find_bench_exe(directory, rest):
+    """The path of the executable `rest` (bench_exe_names) in `directory`, the
+    first of its names present there as an executable file, or None."""
+    for name in bench_exe_names(rest):
+        path = os.path.join(directory, name)
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return None
+
+
 # The variants were named chunk / chunk2 / chunk2a until they took the name of
 # their namespace. Command lines, perf databases, bench_summary.csv files, JSON
 # logs and CHUNK_STATS tags of older builds still carry the old labels: they
@@ -269,7 +306,7 @@ SCALING_CONFIGS  = ["cmake-build-omp-llvm", "cmake-build-omp-gnu"]
 # bend it shares is the machine's, and one only the chunk variants show is ours.
 SCALING_REFERENCE_VARIANT = "vector"
 SCALING_THREADS  = [4, 8, 16, 32, 64, 128]
-# The guard runs the int64 binaries (shrink_bench_<variant>_int64_<size>, see
+# The guard runs the int64 binaries (shrink_bench_<backend>_<variant>_int64_<size>, see
 # int64_variant) at --multiply 2: arrays past INT_MAX elements, so the curves
 # also cover the 64-bit index path at the scale it exists for. --iter_max 500
 # holds each point down; the sizes with no int64 declination (256) are left out.

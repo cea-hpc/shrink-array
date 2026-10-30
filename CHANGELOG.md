@@ -435,6 +435,25 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- The `shrink_bench` executables carry the threading backend of their build in their name:
+  `shrink_bench_<backend>_<variant>_<size>` with `<backend>` `omp`, `std` or `serial`
+  (`CHUNK_THREADS_BACKEND`), e.g. `shrink_bench_omp_zero_any_256`, `shrink_bench_std_zero_dyn`,
+  `shrink_bench_serial_zero_one_value_1024`; likewise `shrink_bench_<backend>_<variant>_int64_<size>`,
+  `shrink_bench_<backend>_vector_check` / `_vector_perf` / `_vector_int64_perf` and
+  `shrink_bench_<backend>_std_alloc_<size>`. A binary of a `cmake-build-std-*` build now says
+  that it runs without OpenMP. The ctest names follow
+  (`shrink_bench_<backend>_<variant>_check_<size>`, `shrink_bench_<backend>_vector_check`); the
+  TBB bench keeps `shrink_bench_tbb_<variant>_<size>`, and the validation harnesses and the
+  fixture names do not change. The old names are gone: `bench_and_test.py`,
+  `thread_speedup.py`, `multi_launch_stress.py` and the other scripts look for the new ones
+  only (each of the three backend names, a build directory holding one;
+  `bench_runner/settings.py`'s `bench_exe_names`), never for the old ones, which a build
+  directory rebuilt since still holds, stale. Rebuild to get the new names. shrink_gui still
+  reads the old names in the results of past runs. `compile_all.sh --exec=` matches the real
+  target names: `--exec='shrink_bench_*_zero_256'` for every backend.
+- shrink_gui: the options form lists the options in alphabetical order (dashes and case aside)
+  rather than in the script's declaration order; the positional arguments stay first, in the
+  script's order, since the command line keeps them in it.
 - `thread_speedup.py --all-exec` takes the TBB bench too (`shrink_bench_tbb_<variant>_<size>`,
   after the other executables, in the std builds made with oneTBB; none with `--int64`, it has
   no 64-bit declination). shrink_gui's speedup chart reads its names: the colour of its variant,

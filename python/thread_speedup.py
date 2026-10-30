@@ -4,7 +4,8 @@
 """thread_speedup.py -- thread speedup curves of shrink_bench executables on one
 build target (Grace, Milan, or this machine), whatever runs the threads: OpenMP
 (omp-* targets), the std::thread backend (std-*), or TBB (shrink_bench_tbb_*,
-by full name). The thread count is OMP_NUM_THREADS, which the std backend and
+by full name). The executables carry their backend in their name:
+shrink_bench_omp_*, shrink_bench_std_*, shrink_bench_serial_*. The thread count is OMP_NUM_THREADS, which the std backend and
 the TBB bench read too (CHUNK_NUM_THREADS, which they would read first, is taken
 out of the runs' environment). Formerly omp_speedup.py, which still runs this one.
 
@@ -39,17 +40,20 @@ speedup_<target>_<host>_<date>/ when that work area exists, else
 
 Examples (from python/, on a compute node):
   python3 thread_speedup.py --target omp-llvm --min-threads 1 --max-threads 72 \\
-      --exec shrink_bench_vector_perf shrink_bench_zero_any_dyn --multiply 2
+      --exec shrink_bench_omp_vector_perf shrink_bench_omp_zero_any_dyn --multiply 2
   python3 thread_speedup.py --target omp-gnu --min-threads 4 --max-threads 128 \\
       --exec zero@dyn zero_any@1024 --threads 4 8 16 32 64 96 128 --reps 5
 
---exec takes a full name (shrink_bench_zero_any_dyn), or base@size
-(zero_any@dyn -> shrink_bench_zero_any_dyn), or "vector" (shrink_bench_vector_perf),
-as bench_and_test.py names them. --all-exec takes every one the target has
+--exec takes a full name (shrink_bench_omp_zero_any_dyn, taken as it is), or
+base@size (zero_any@dyn -> shrink_bench_<backend>_zero_any_dyn), or "vector"
+(shrink_bench_<backend>_vector_perf), as bench_and_test.py names them: the
+backend is the target's, whichever of shrink_bench_omp_ / _std_ / _serial_ its
+build directory holds (bench_runner/settings.py, bench_exe_names; never the
+names without a backend, which a rebuilt directory still holds, stale). --all-exec takes every one the target has
 for this machine: vector, then zero / zero_one_value / zero_any in each size
 (--size narrows it), then the TBB bench of each (shrink_bench_tbb_<variant>_<size>,
 in std builds made with oneTBB); with --int64 their 64-bit declinations
-(shrink_bench_*_int64_*, the only ones past INT_MAX elements: --multiply 2
+(shrink_bench_<backend>_*_int64_*, the only ones past INT_MAX elements: --multiply 2
 and up; the TBB bench has none).
 
 --mode perf (the default) is the measurement: 1e9 elements x --multiply,
@@ -99,6 +103,14 @@ try:
 except ImportError:
     def normalize_variant(label, warn=None):   # copied alone: the new labels only
         return label
+try:
+    # The names of an executable, one per backend (shrink_bench_<backend>_<rest>).
+    from bench_runner.settings import bench_exe_names
+except ImportError:
+    def bench_exe_names(rest):                  # copied alone: bench_runner's, as it is
+        if rest.startswith("tbb_"):
+            return ["shrink_bench_" + rest]
+        return ["shrink_bench_%s_%s" % (b, rest) for b in ("omp", "std", "serial")]
 SIZES = ["dyn", "1024", "256", "64"]
 ORACLE_MARKER = "data_tab_ORACLE_COMPLETE.marker"  # bench_runner/builds.py
 REPO = os.path.dirname(HERE)
@@ -110,17 +122,30 @@ ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 # ------------------------------------------------------------------ helpers
 def exe_name(spec, mode="perf"):
-    """zero_any@dyn -> shrink_bench_zero_any_dyn, vector -> shrink_bench_vector_perf
-    (vector_check in check mode: the one binary built twice), a full name or a
+    """zero_any@dyn -> zero_any_dyn, vector -> vector_perf (vector_check in
+    check mode: the one binary built twice), zero_any_int64_dyn as it is: the
+    name without its "shrink_bench_<backend>_", which find_exe completes with
+    the backend the target was built with. A full name (shrink_bench_...) or a
     path as it is."""
     if os.sep in spec or spec.startswith("shrink_bench_"):
         return spec
     if spec == "vector":
-        return "shrink_bench_vector_" + mode
+        return "vector_" + mode
     if "@" in spec:
         base, size = spec.split("@", 1)
-        return "shrink_bench_%s_%s" % (base, size)
-    return "shrink_bench_" + spec
+        return "%s_%s" % (base, size)
+    return spec
+
+
+def shown_name(name):
+    """What a missing executable is reported as: a full name or a path as it
+    is, an exe_name() one with its backends (shrink_bench_{omp,std,serial}_zero_dyn)."""
+    if os.sep in name or name.startswith("shrink_bench_"):
+        return name
+    names = bench_exe_names(name)
+    if len(names) == 1:
+        return names[0]
+    return "shrink_bench_{%s}_%s" % (",".join(n.split("_")[2] for n in names), name)
 
 
 def glob_execs(root, target, pattern):
@@ -154,10 +179,9 @@ def all_execs(root, target, a):
         specs += ["tbb_%s@%s" % (v, sz) for v in VARIANTS for sz in a.size or SIZES]
     out = []
     for spec in specs:
-        name = exe_name(spec if not spec.startswith("vector_int64") else "shrink_bench_" + spec, a.mode)
-        exe = find_exe(root, target, name)
+        exe = find_exe(root, target, exe_name(spec, a.mode))
         if exe:
-            out.append((name, exe))
+            out.append((os.path.basename(exe), exe))
     return out
 
 
@@ -186,19 +210,23 @@ def build_root(arg):
 
 def find_exe(root, target, spec):
     """The executable @p spec (a name exe_name gave, or a path) of build
-    target @p target, for this machine's architecture, or None."""
+    target @p target, for this machine's architecture, or None. A full name
+    is looked for as it is; an exe_name() one under each of its backend
+    names (bench_exe_names), the build directory holding one backend."""
     name = spec
     if os.sep in name:
         return os.path.abspath(name) if os.access(name, os.X_OK) else None
+    names = [name] if name.startswith("shrink_bench_") else bench_exe_names(name)
     cfg = target if target.startswith("cmake-build-") else "cmake-build-" + target
     arch = platform.machine()
-    cands = sorted(glob.glob(os.path.join(root, cfg, "*", EXE_SUBPATH, name)))
-    cands = [c for c in cands
-             if os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(c)))).endswith(arch)]
-    cands += [os.path.join(root, cfg, EXE_SUBPATH, name), os.path.join(root, cfg, name)]
-    for c in cands:
-        if os.path.isfile(c) and os.access(c, os.X_OK):
-            return c
+    dirs = sorted(glob.glob(os.path.join(root, cfg, "*", EXE_SUBPATH)))
+    dirs = [d for d in dirs if os.path.basename(os.path.dirname(os.path.dirname(d))).endswith(arch)]
+    dirs += [os.path.join(root, cfg, EXE_SUBPATH), os.path.join(root, cfg)]
+    for d in dirs:
+        for n in names:
+            c = os.path.join(d, n)
+            if os.path.isfile(c) and os.access(c, os.X_OK):
+                return c
     return None
 
 
@@ -533,9 +561,9 @@ def parse_args(argv=None):
                    help="build target (compile_all.sh config): omp-llvm, omp-gnu, omp-oneapi... "
                         "or cmake-build-omp-llvm")
     p.add_argument("--exec", dest="execs", nargs="+", metavar="EXE",
-                   help="executables, space- or comma-separated: full name (shrink_bench_zero_any_dyn), "
-                        "base@size (zero_any@dyn), vector (shrink_bench_vector_perf), a glob pattern "
-                        "(shrink_bench_zero_any_*), or a path")
+                   help="executables, space- or comma-separated: full name (shrink_bench_omp_zero_any_dyn), "
+                        "base@size (zero_any@dyn), vector (shrink_bench_<backend>_vector_perf), a glob "
+                        "pattern (shrink_bench_*_zero_any_*), or a path")
     p.add_argument("--all-exec", action="store_true",
                    help="every executable the target has here: vector, then zero / zero_one_value / "
                         "zero_any in each size, then their TBB bench (shrink_bench_tbb_*, when the build has "
@@ -543,7 +571,7 @@ def parse_args(argv=None):
     p.add_argument("--size", type=lambda v: [x for x in v.split(",") if x], default=None,
                    metavar="dyn,1024,...", help="--all-exec: these sizes only (default: %s)" % ",".join(SIZES))
     p.add_argument("--int64", action="store_true",
-                   help="--all-exec: the 64-bit declinations (shrink_bench_*_int64_*), needed past INT_MAX "
+                   help="--all-exec: the 64-bit declinations (shrink_bench_<backend>_*_int64_*), needed past INT_MAX "
                         "elements (--multiply 2 and up); perf mode only")
     p.add_argument("--mode", choices=["perf", "check"], default="perf",
                    help="perf (default): the measurement. check: the correctness mode, run in the target's "
@@ -623,8 +651,7 @@ def main(argv=None):
             spec = normalize_variant(spec, "--exec")      # chunk2a@dyn -> zero_any@dyn
         name = exe_name(spec, a.mode)
         exe = find_exe(root, target, name)
-        (execs.append((name if os.sep not in name else os.path.basename(name), exe)) if exe
-         else missing.append(name))
+        (execs.append((os.path.basename(exe), exe)) if exe else missing.append(shown_name(name)))
     if a.all_exec:
         found = all_execs(root, target, a)
         if not found:

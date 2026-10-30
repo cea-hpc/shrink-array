@@ -151,7 +151,7 @@ def _build(site, name, stale):
     d = site.home / "br" / f"cmake-build-{name}" / f"RHEL_9.4__{platform.machine()}"
     (d / "examples" / "shrink_bench").mkdir(parents=True)
     (d / "build.ninja").write_text("")
-    exe = d / "examples" / "shrink_bench" / "shrink_bench_zero_dyn"
+    exe = d / "examples" / "shrink_bench" / "shrink_bench_omp_zero_dyn"
     exe.write_text("")
     exe.chmod(0o755)
     if stale:

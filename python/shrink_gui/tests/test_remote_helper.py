@@ -189,9 +189,9 @@ def test_msub_qos_directive(site):
 
 def _fake_build_rep(site):
     br = site.home / "br"
-    for name, arch, exes in (("omp-llvm", "RHEL_9.4__aarch64", ["shrink_bench_zero_64", "shrink_bench_zero_dyn"]),
-                             ("omp-gnu-debug", "RHEL_9.4__aarch64", ["shrink_bench_zero_64"]),
-                             ("omp-llvm", "RHEL_8.10__x86_64", ["shrink_bench_zero_256"])):
+    for name, arch, exes in (("omp-llvm", "RHEL_9.4__aarch64", ["shrink_bench_omp_zero_64", "shrink_bench_omp_zero_dyn"]),
+                             ("omp-gnu-debug", "RHEL_9.4__aarch64", ["shrink_bench_omp_zero_64"]),
+                             ("omp-llvm", "RHEL_8.10__x86_64", ["shrink_bench_omp_zero_256"])):
         d = br / f"cmake-build-{name}" / arch
         d.mkdir(parents=True)
         rules = "".join(f"build bin/{e}: CXX_EXECUTABLE_LINKER__{e}_Release obj.o\n" for e in exes)
@@ -207,7 +207,7 @@ def test_build_targets(site):
         assert "omp-llvm" in r["configs"] and not any("$" in c for c in r["configs"])
     dirs = {d["name"]: d for d in r["dirs"]}
     assert set(dirs) == {"omp-llvm", "omp-gnu-debug", "omp-aocc"}            # x86_64 left out
-    assert dirs["omp-llvm"]["execs"] == ["shrink_bench_zero_64", "shrink_bench_zero_dyn"]
+    assert dirs["omp-llvm"]["execs"] == ["shrink_bench_omp_zero_64", "shrink_bench_omp_zero_dyn"]
     assert dirs["omp-aocc"]["configured"] is False
 
 
@@ -421,9 +421,9 @@ def test_errors_failures_and_their_logs(site):
     logs = od / "run_logs"
     logs.mkdir(parents=True)
     _bench_run(site, "f1", "2026-10-13 10:00:00", od)
-    crash = logs / "shrink_bench_zero_any__omp4__00003__ok.log"     # a sanitizer hit exits 0
+    crash = logs / "shrink_bench_omp_zero_any__omp4__00003__ok.log"     # a sanitizer hit exits 0
     crash.write_text("ERROR: AddressSanitizer\n")
-    (logs / "shrink_bench_zero__omp4__00001__ok.log").write_text("fine\n")
+    (logs / "shrink_bench_omp_zero__omp4__00001__ok.log").write_text("fine\n")
     (od / "failed_cases.jsonl").write_text(
         json.dumps({"kind": "CHECK_FAIL", "summary": "CHECK_FAIL: zero_any", "runs": [{"log": str(crash)}]}) + "\n"
         + json.dumps({"kind": "MEM_GUARD", "summary": "MEM_GUARD: x", "runs": []}) + "\n"
@@ -432,12 +432,12 @@ def test_errors_failures_and_their_logs(site):
                                         "full_logs": "run_logs"}).encode()).decode()
     r = site.helper("errors", "~/shrink_runs", "f1", opts)
     assert [(c["kind"], c["replayable"], c["logs"]) for c in r["cases"]] == [
-        ("CHECK_FAIL", True, ["run_logs/shrink_bench_zero_any__omp4__00003__ok.log"]),
+        ("CHECK_FAIL", True, ["run_logs/shrink_bench_omp_zero_any__omp4__00003__ok.log"]),
         ("MEM_GUARD", False, []), ("X", True, [])]
     # the failed executions of the run, for an older bench_runner: never __ok
-    (logs / "shrink_bench_zero_one_value__omp8__00002__timeout.log").write_text("hung\n")
+    (logs / "shrink_bench_omp_zero_one_value__omp8__00002__timeout.log").write_text("hung\n")
     assert site.helper("errors", "~/shrink_runs", "f1", opts)["logs"] == [
-        "run_logs/shrink_bench_zero_one_value__omp8__00002__timeout.log"]
+        "run_logs/shrink_bench_omp_zero_one_value__omp8__00002__timeout.log"]
     f = site.helper("errfile", "~/shrink_runs", "f1", base64.b64encode(json.dumps(
         {"paths": r["cases"][0]["logs"] + ["../../../../etc/passwd"]}).encode()).decode())["files"]
     assert "AddressSanitizer" in f[0]["data"] and f[1].get("missing") and f[1]["data"] == ""
@@ -490,6 +490,23 @@ def test_old_variant_labels_read_as_the_new_ones():
     assert exe_parts("shrink_bench_chunk2a_dyn") == exe_parts("shrink_bench_zero_any_dyn") == ("zero_any", "dyn")
     assert exe_parts("./shrink_bench_zero_1024") == ("zero", "1024")
     assert exe_parts("shrink_bench_zero_one_value") == ("zero_one_value", "default")
+
+
+def test_exe_names_carry_the_backend():
+    # shrink_bench_<backend>_<variant>_<size> (and the TBB bench's tbb_) parse as
+    # the old names did; bench_runner looks an executable up under the three
+    # backend names, never under the old one.
+    from shrink_gui.config import exe_parts
+    assert exe_parts("shrink_bench_omp_zero_any_dyn") == ("zero_any", "dyn")
+    assert exe_parts("./shrink_bench_std_zero_1024") == ("zero", "1024")
+    assert exe_parts("shrink_bench_serial_zero_one_value_256") == ("zero_one_value", "256")
+    assert exe_parts("shrink_bench_tbb_zero_any_256") == ("zero_any", "256")
+    import sys
+    sys.path.insert(0, str(REPO / "python"))
+    from bench_runner.settings import bench_exe_names
+    assert bench_exe_names("zero_any_256") == ["shrink_bench_omp_zero_any_256", "shrink_bench_std_zero_any_256",
+                                               "shrink_bench_serial_zero_any_256"]
+    assert bench_exe_names("tbb_zero_any_dyn") == ["shrink_bench_tbb_zero_any_dyn"]
 
 
 def test_own_copies_win_over_the_shared_directory(site):

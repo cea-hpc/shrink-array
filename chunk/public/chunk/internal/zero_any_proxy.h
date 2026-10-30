@@ -606,7 +606,7 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
     static inline constinit internal::LazyImmortal<PointerMap<ChunkT>> share_info_array; ///< pointer->tab mapping
 
   private:
-    using ManagerChunk2A = typename ChunkTraits<ChunkT>::ManagerType;
+    using ManagerChunk2A = ChunkTraits<ChunkT>::ManagerType;
 
     using Base::read_values;
     using Base::values_;

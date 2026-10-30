@@ -81,7 +81,9 @@ runs again by itself.
 
 The program to run, and its options **read from the script itself** on the cluster ("Read
 options"): the Python scripts' `argparse`, `compile_all.sh`'s `usage()`. An option added to a
-script therefore appears in the form without touching the interface. Changed options are in
+script therefore appears in the form without touching the interface. The options are in
+alphabetical order (dashes and case aside), after the positional arguments, kept in the
+script's order. Changed options are in
 bold; an option left at its default is not put on the command line. "Save as defaults"
 replaces this program's defaults on this architecture. "Command" shows exactly what will run.
 

@@ -74,7 +74,7 @@ def build_parser():
                              "variants: any of 64/256/1024 (static compile-time "
                              "sizes) and 'dyn' (runtime size). 'vector' is "
                              "size-agnostic and always tested once. Executables "
-                             "are named shrink_bench_<variant>_<stage>_<size>.")
+                             "are named shrink_bench_<backend>_<variant>_<size>.")
     parser.add_argument("--baseline-variant", default=DEFAULT_BASELINE,
                         help="Variant used as the baseline for the speedup computation.")
     # --- Regression guards (compression health + memory) ---

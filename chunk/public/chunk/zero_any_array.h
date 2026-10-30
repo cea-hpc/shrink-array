@@ -213,19 +213,18 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
 
     using Base::assign; // the (first, last) overload, hidden by the one above otherwise
 
-  protected:
-    // ── What the final class's constructors and destructor are built on ──────
-    //
     // Never copied or moved as such: the final class's copy and move operations
     // build an empty array and then copy the elements or exchange the storage.
-
-    ArrayImpl()  = default;
-    ~ArrayImpl() = default;
-
     ArrayImpl(const ArrayImpl&)            = delete;
     ArrayImpl(ArrayImpl&&)                 = delete;
     ArrayImpl& operator=(const ArrayImpl&) = delete;
     ArrayImpl& operator=(ArrayImpl&&)      = delete;
+
+  protected:
+    // ── What the final class's constructors and destructor are built on ──────
+
+    ArrayImpl()  = default;
+    ~ArrayImpl() = default;
 
     /**
      * @brief The constructors' body: build the storage for @p sz elements at

@@ -270,21 +270,17 @@ void read_check_binary_file(Int                ind,
         bench_par::critical([&] { std::println("{} Checksum OK !", tab_name); });
         return;
     }
-    else
+    if (!read_trace)
     {
-        if (!read_trace)
-        {
-            std::print(stderr, "{}\nError checksum ! checksum read : {} checksum calculate : {}", tab_name, lchs_read,
-                       lchs);
-        }
-
-        if (!no_compress)
-        {
-            std::print(stderr, " --> we decompress and read the file : {}", tab_name);
-        }
-        std::println(stderr, "");
+        std::print(stderr, "{}\nError checksum ! checksum read : {} checksum calculate : {}", tab_name, lchs_read,
+                   lchs);
     }
 
+    if (!no_compress)
+    {
+        std::print(stderr, " --> we decompress and read the file : {}", tab_name);
+    }
+    std::println(stderr, "");
     // A reference written with --checksum_only has no data to compare against:
     // the miss cannot be located, so stop here with a clear message rather than
     // through a missing-file error further down.

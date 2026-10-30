@@ -68,9 +68,19 @@ set(SHRINK_BENCH_HEADERS
 #   _64, _256, _1024  -> static libs chunk_<variant>_<size> (compile-time geometry)
 #   _dyn              -> dynamic lib chunk_<variant>_dyn (runtime geometry), with the
 #                        runtime size baked via -DDYN_CHUNK_SIZE=<SHRINK_BENCH_DYN_SIZE>.
-# Naming: shrink_bench_<variant>_<mode>_<declination>, e.g.
-#   shrink_bench_zero_one_value_256, shrink_bench_zero_any_dyn. The check / perf mode is
-#   chosen at run time with --mode.
+# Naming: shrink_bench_<backend>_<variant>_<declination>, e.g.
+#   shrink_bench_omp_zero_one_value_256, shrink_bench_std_zero_any_dyn. The check / perf
+#   mode is chosen at run time with --mode.
+#
+# <backend> is the threading backend of the build (CHUNK_THREADS_BACKEND, top
+# CMakeLists.txt): omp, std or serial -- _SA2_BACKEND below. Every executable
+# of this directory carries it, so a binary says what runs its threads without
+# a look at the build directory it came from: a cmake-build-std-* build has no
+# OpenMP in it, and its shrink_bench_std_* names say so. A build directory
+# holds one backend only, so the scripts find an executable by trying the
+# three names (python/bench_runner/settings.py, bench_exe_names). The one
+# exception is the TBB bench, shrink_bench_tbb_<variant>_<declination>: its
+# "tbb" already names what runs its regions (and it exists in std builds only).
 #
 # vector has no chunk geometry: it keeps its two plain targets (no declination).
 # The size list mirrors chunk/CMakeLists.txt's CHUNK_STATIC_SIZES; keep them in
@@ -104,7 +114,7 @@ endif()
 #
 # Unity build (SHRINK_BENCH_UNITY, ON): the 16 sources of a bench executable
 # compiled as one translation unit. Compiled apart, each re-instantiated the
-# whole header-only library for itself: shrink_bench_zero_any_256 took 198 s
+# whole header-only library for itself: shrink_bench_omp_zero_any_256 took 198 s
 # of compilation in Debug and 312 s at -O2 -g, against 49 s and 90 s as one
 # unit, for a peak of 2.9 / 3.4 GB instead of 2.3 / 2.8 (the checksums are the
 # same). The sources needed no change. Two costs: the compiler may now inline
@@ -142,9 +152,9 @@ endfunction()
 # perf` already starts at 1e9, and `--multiply 2` is refused at 32 bits by
 # check_size_limits().
 #
-# Naming: shrink_bench_<variant>_int64_<declination>, e.g.
-# shrink_bench_zero_int64_1024, shrink_bench_zero_any_int64_dyn, and the
-# baseline shrink_bench_vector_int64_perf.
+# Naming: shrink_bench_<backend>_<variant>_int64_<declination>, e.g.
+# shrink_bench_omp_zero_int64_1024, shrink_bench_omp_zero_any_int64_dyn, and the
+# baseline shrink_bench_omp_vector_int64_perf.
 #
 # OFF by default: this directory is already the bulk of the build. Turn it on
 # with -DSHRINK_BENCH_INT64=ON -- the compile scripts do so on the release
@@ -174,6 +184,17 @@ function(sa2_add_int64_target name lib)
     sa2_setup_target(${name})
 endfunction()
 
+# The backend marker of every name below (but the TBB bench's): openmp is
+# spelled omp, as the cmake-build-omp-* directories and OMP=ON spell it.
+if (CHUNK_THREADS_BACKEND STREQUAL "openmp")
+  set(_SA2_BACKEND omp)
+elseif (CHUNK_THREADS_BACKEND STREQUAL "std" OR CHUNK_THREADS_BACKEND STREQUAL "serial")
+  set(_SA2_BACKEND ${CHUNK_THREADS_BACKEND})
+else ()
+  message(FATAL_ERROR "shrink_bench: unknown CHUNK_THREADS_BACKEND '${CHUNK_THREADS_BACKEND}'")
+endif ()
+set(_sa2_prefix shrink_bench_${_SA2_BACKEND})
+
 set(_sa2_variant_names   zero       zero_one_value      zero_any)
 set(_sa2_variant_libbase chunk_zero    chunk_zero_one_value    chunk_zero_any)
 
@@ -181,8 +202,9 @@ list(LENGTH _sa2_variant_names _sa2_nvar)
 math(EXPR _sa2_nvar_last "${_sa2_nvar} - 1")
 
 # One target per (variant, declination) -- no longer one per mode as well.
-# Naming: shrink_bench_<variant>_<declination>, e.g. shrink_bench_zero_one_value_256,
-# shrink_bench_zero_any_dyn. Pick check or perf at run time with --mode.
+# Naming: shrink_bench_<backend>_<variant>_<declination>, e.g.
+# shrink_bench_omp_zero_one_value_256, shrink_bench_serial_zero_any_dyn. Pick check or
+# perf at run time with --mode.
 foreach(_vi RANGE ${_sa2_nvar_last})
   list(GET _sa2_variant_names   ${_vi} _vname)
   list(GET _sa2_variant_libbase ${_vi} _libbase)
@@ -192,23 +214,23 @@ foreach(_vi RANGE ${_sa2_nvar_last})
 
   # Static-size declinations.
   foreach(_sz IN LISTS CHUNK_STATIC_SIZES)
-    set(_tgt shrink_bench_${_vname}_${_sz})
+    set(_tgt ${_sa2_prefix}_${_vname}_${_sz})
     add_executable(${_tgt} ${SHRINK_BENCH_SOURCES} ${SHRINK_BENCH_HEADERS})
     target_link_libraries(${_tgt} PRIVATE ${_libbase}_${_sz})
     sa2_setup_target(${_tgt})
     if (_sz IN_LIST SHRINK_BENCH_INT64_SIZES)
-      sa2_add_int64_target(shrink_bench_${_vname}_int64_${_sz} ${_libbase}_${_sz})
+      sa2_add_int64_target(${_sa2_prefix}_${_vname}_int64_${_sz} ${_libbase}_${_sz})
     endif()
   endforeach()
 
   # Dynamic declination.
   if (CHUNK_BUILD_DYN)
-    set(_tgt shrink_bench_${_vname}_dyn)
+    set(_tgt ${_sa2_prefix}_${_vname}_dyn)
     add_executable(${_tgt} ${SHRINK_BENCH_SOURCES} ${SHRINK_BENCH_HEADERS})
     target_link_libraries(${_tgt} PRIVATE ${_libbase}_dyn)
     target_compile_definitions(${_tgt} PRIVATE DYN_CHUNK_SIZE=${SHRINK_BENCH_DYN_SIZE})
     sa2_setup_target(${_tgt})
-    sa2_add_int64_target(shrink_bench_${_vname}_int64_dyn ${_libbase}_dyn DYN_CHUNK_SIZE=${SHRINK_BENCH_DYN_SIZE})
+    sa2_add_int64_target(${_sa2_prefix}_${_vname}_int64_dyn ${_libbase}_dyn DYN_CHUNK_SIZE=${SHRINK_BENCH_DYN_SIZE})
   endif()
 endforeach()
 
@@ -217,7 +239,9 @@ endforeach()
 # would, the library's own passes on the std backend's std::jthreads at the serial
 # points. Std builds with CHUNK_WITH_TBB (the TBB threads take ranks of the
 # registry): shrink_bench_tbb_<variant>_<declination>, same --mode, same
-# OMP_NUM_THREADS (CHUNK_NUM_THREADS) for the thread count.
+# OMP_NUM_THREADS (CHUNK_NUM_THREADS) for the thread count. No backend marker
+# in that name: "tbb" is what runs its regions, and std the only backend it
+# is built on.
 if (CHUNK_WITH_TBB AND CHUNK_THREADS_BACKEND STREQUAL "std")
   foreach(_vi RANGE ${_sa2_nvar_last})
     list(GET _sa2_variant_names   ${_vi} _vname)
@@ -242,7 +266,7 @@ if (CHUNK_WITH_TBB AND CHUNK_THREADS_BACKEND STREQUAL "std")
   endforeach()
 endif()
 
-# No chunk2bits targets: every shrink_bench_zero_one_value_* run carries tab_bool
+# No chunk2bits targets: every shrink_bench_<backend>_zero_one_value_* run carries tab_bool
 # (zero_one_value::Array<bool>, one byte per bool) AND its twin tab_bool_bits
 # (ArrayChunkBits, 8 per byte) on the same workload -- see BenchBoolBitsArray
 # (bench_array.h). The zero / zero_any builds give the twin their own
@@ -259,20 +283,23 @@ endif()
 # mode and inflate every speedup this bench has ever reported. Two targets is the
 # cheap, honest answer -- it is 2 of 26, and it is what keeps the measurement
 # comparable to past campaigns.
-add_executable(shrink_bench_vector_check ${SHRINK_BENCH_SOURCES} ${SHRINK_BENCH_HEADERS})
-add_executable(shrink_bench_vector_perf  ${SHRINK_BENCH_SOURCES} ${SHRINK_BENCH_HEADERS})
-target_link_libraries(shrink_bench_vector_check PRIVATE chunk_vector)
-target_link_libraries(shrink_bench_vector_perf  PRIVATE chunk_vector)
-sa2_setup_target(shrink_bench_vector_check)
-sa2_setup_target(shrink_bench_vector_perf)
-chunk_enable_fast_math(shrink_bench_vector_perf)
+# shrink_bench_<backend>_vector_check / _perf (and _vector_int64_perf below).
+set(_sa2_vector_check ${_sa2_prefix}_vector_check)
+set(_sa2_vector_perf  ${_sa2_prefix}_vector_perf)
+add_executable(${_sa2_vector_check} ${SHRINK_BENCH_SOURCES} ${SHRINK_BENCH_HEADERS})
+add_executable(${_sa2_vector_perf}  ${SHRINK_BENCH_SOURCES} ${SHRINK_BENCH_HEADERS})
+target_link_libraries(${_sa2_vector_check} PRIVATE chunk_vector)
+target_link_libraries(${_sa2_vector_perf}  PRIVATE chunk_vector)
+sa2_setup_target(${_sa2_vector_check})
+sa2_setup_target(${_sa2_vector_perf})
+chunk_enable_fast_math(${_sa2_vector_perf})
 
 # The std::vector baseline gets an int64 target too: a 64-bit shrink run is
 # only worth a number next to the baseline built the same way. Only the perf
 # one -- the check target has no 64-bit meaning (no reference files).
-sa2_add_int64_target(shrink_bench_vector_int64_perf chunk_vector)
+sa2_add_int64_target(${_sa2_prefix}_vector_int64_perf chunk_vector)
 if (SHRINK_BENCH_INT64)
-  chunk_enable_fast_math(shrink_bench_vector_int64_perf)
+  chunk_enable_fast_math(${_sa2_prefix}_vector_int64_perf)
 endif()
 # The compute kernel is `omp for simd` over cos/sin/atan/tan: without the
 # vector libm the perf target gets from chunk_enable_fast_math it stays scalar
@@ -281,19 +308,20 @@ endif()
 # Expected, not actionable: silenced here. The perf target keeps the warning,
 # where it does mean a loop that should vectorise no longer does.
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  target_compile_options(shrink_bench_vector_check PRIVATE -Wno-pass-failed)
+  target_compile_options(${_sa2_vector_check} PRIVATE -Wno-pass-failed)
 endif()
 
 # --- std_alloc (optional): mirror the declination scheme on the zero_any path ---
+# shrink_bench_<backend>_std_alloc_<declination>.
 if (CHUNK_STD_ALLOC AND "zero_any" IN_LIST CHUNK_VARIANTS)
   foreach(_sz IN LISTS CHUNK_STATIC_SIZES)
-    set(_tgt shrink_bench_std_alloc_${_sz})
+    set(_tgt ${_sa2_prefix}_std_alloc_${_sz})
     add_executable(${_tgt} ${SHRINK_BENCH_SOURCES} ${SHRINK_BENCH_HEADERS})
     target_link_libraries(${_tgt} PRIVATE chunk_zero_any_${_sz})
     sa2_setup_target(${_tgt})
   endforeach()
   if (CHUNK_BUILD_DYN)
-    set(_tgt shrink_bench_std_alloc_dyn)
+    set(_tgt ${_sa2_prefix}_std_alloc_dyn)
     add_executable(${_tgt} ${SHRINK_BENCH_SOURCES} ${SHRINK_BENCH_HEADERS})
     target_link_libraries(${_tgt} PRIVATE chunk_zero_any_dyn)
     target_compile_definitions(${_tgt} PRIVATE DYN_CHUNK_SIZE=${SHRINK_BENCH_DYN_SIZE})
@@ -308,7 +336,7 @@ if (CHUNK_BUILD_DYN)
   # --- Tests: register the check declinations of each variant ---
   #
   # The check runs compare against the reference files (data_tab*) that
-  # shrink_bench_vector_check writes -- relative paths, in the working directory
+  # shrink_bench_<backend>_vector_check writes -- relative paths, in the working directory
   # every test here shares (this build dir). So:
   #  - vector_check is the SETUP of fixture shrink_bench_oracle and every check
   #    REQUIRES it: ctest runs it first, also under -R / -j, and marks the
@@ -323,8 +351,12 @@ if (CHUNK_BUILD_DYN)
   #    manual `--mode check` run afterwards needs vector_check run again.
   # bench_and_test.py does not run these (no `validation` label): it keeps its
   # own oracles per configuration.
-  add_test(NAME shrink_bench_vector_check COMMAND shrink_bench_vector_check)
-  set_tests_properties(shrink_bench_vector_check PROPERTIES
+  # The test names carry the backend as the executables do
+  # (shrink_bench_<backend>_vector_check, shrink_bench_<backend>_<variant>_check_<size>;
+  # the TBB ones keep their tbb): `ctest -R shrink_bench_std_` picks a backend.
+  # The fixture and lock names have none, one build holding one backend.
+  add_test(NAME ${_sa2_vector_check} COMMAND ${_sa2_vector_check})
+  set_tests_properties(${_sa2_vector_check} PROPERTIES
                        ENVIRONMENT OMP_NUM_THREADS=8
                        FIXTURES_SETUP shrink_bench_oracle
                        RESOURCE_LOCK shrink_bench_oracle_files)
@@ -339,9 +371,9 @@ if (CHUNK_BUILD_DYN)
     foreach(_sz IN LISTS CHUNK_STATIC_SIZES)
       # One binary per variant and size since the check/perf merge; the mode
       # is a run-time flag (the _check_ binaries these named no longer exist).
-      add_test(NAME shrink_bench_${_vname}_check_${_sz}
-               COMMAND shrink_bench_${_vname}_${_sz} --mode check)
-      set_tests_properties(shrink_bench_${_vname}_check_${_sz} PROPERTIES
+      add_test(NAME ${_sa2_prefix}_${_vname}_check_${_sz}
+               COMMAND ${_sa2_prefix}_${_vname}_${_sz} --mode check)
+      set_tests_properties(${_sa2_prefix}_${_vname}_check_${_sz} PROPERTIES
                            ENVIRONMENT OMP_NUM_THREADS=8
                            FIXTURES_REQUIRED shrink_bench_oracle
                            RESOURCE_LOCK shrink_bench_oracle_files)

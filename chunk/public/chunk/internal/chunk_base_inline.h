@@ -709,7 +709,7 @@ ChunkBase<T, Derived>::is_constant_to(this const Derived& self, InT<T> value, un
 }
 
 template <typename T, typename Derived>
-[[nodiscard]] typename ChunkBase<T, Derived>::ConstantWalk
+[[nodiscard]] ChunkBase<T, Derived>::ConstantWalk
 ChunkBase<T, Derived>::walk_constant(const T* vals, InT<T> value, unsigned int from, unsigned int count) noexcept
 {
     // Same shape as scan_constants(): branch-free blocks, exit between them.

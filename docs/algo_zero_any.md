@@ -102,7 +102,7 @@ Both cases are filtered by a **necessary condition** (`may_become_uniform`): two
 other elements of the chunk (the first and the last, or their neighbours if one of them is
 the written element) already hold the written value. Without this filter, a chunk of varied data
 was put in the list, re-read, found non-uniform, removed, then put back in the list by the next
-write: ~3 µs per write on `shrink_bench_zero_any_256` at 64 threads.
+write: ~3 µs per write on `shrink_bench_omp_zero_any_256` at 64 threads.
 
 ## 5. The compression pass
 
@@ -128,7 +128,7 @@ from its constant materialises it, pre-filled with **this constant**.
 
 The proxy finds the chunk's metadata rows through the array number. An
 "armed" variant, where the write `operator[]` gave the proxy the row addresses directly,
-was removed: its gain (~0.4% on `shrink_bench_zero_any_256` at 64 threads) did not justify
+was removed: its gain (~0.4% on `shrink_bench_omp_zero_any_256` at 64 threads) did not justify
 the resynchronisation invariant it imposed on each reallocation of the rows.
 
 ## 7. What `zero_any` does differently during a rechunk
