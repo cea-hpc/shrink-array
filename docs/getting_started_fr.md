@@ -398,7 +398,9 @@ les threads d'OpenMP : pour les autres, utilisez le backend std.
   constructible par défaut (types arithmétiques, `bool`, `std::complex`, énumérations,
   `std::array` et agrégats de ceux-ci). Un type qui possède une ressource (`std::string`) est
   refusé à la compilation. `zero_one_value` demande en plus un ordre sur la seconde valeur : une
-  structure de doubles déclare `auto operator<=>(const T&) const = default;`.
+  structure de doubles déclare `auto operator<=>(const T&) const = default;`. Sur un élément
+  `bool`, `a[i] += 1` et les autres affectations arithmétiques (`-= *= /= %= <<= >>=`) ne
+  compilent pas : écrire `=`, `&=`, `|=` ou `^=`.
 - **`zero_one_value` ne compresse qu'à sa seconde valeur déclarée.** Sans `set_second_value()`, un
   tableau `zero_one_value` ne compresse qu'à zéro.
 - **Mesurer la mémoire avec le bon outil.** `VmRSS` est en retard à plusieurs threads : voir

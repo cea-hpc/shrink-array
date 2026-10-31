@@ -77,7 +77,12 @@ DOWNCAST_FILES = {
 C_PRINTF = re.compile(r"(?<![\w:])(std::)?v?printf\s*\(")
 C_SPRINTF = re.compile(r"(?<![\w:])(std::)?v?s(n)?printf\s*\(")
 SSTREAM = re.compile(r"\bstd::(ostringstream|stringstream)\b")
-SSTREAM_FILES = IOSTREAM_FILES | {"examples/validation/element_ref_validation.cpp"}
+# The two validation files test the element's operator<< (and print a
+# std::complex, which std::format does not take before C++26).
+SSTREAM_FILES = IOSTREAM_FILES | {
+    "examples/validation/element_ref_validation.cpp",
+    "examples/validation/operators_validation.cpp",
+}
 # find(...) compared with an end(): a membership test (rule 8).
 FIND_NE_END = re.compile(r"\b(?:std::ranges::find|std::find)\s*\(.*\)\s*[!=]=\s*[\w.>-]*\bend\(\)")
 C_PRINTF_FILES = {"examples/validation/element_ref_validation.cpp"}

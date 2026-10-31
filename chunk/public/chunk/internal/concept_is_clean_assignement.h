@@ -100,31 +100,39 @@ concept IsCleanShiftOp = std::is_integral_v<std::remove_cvref_t<T>> && std::is_i
 // The proxies' compound operators exist only for element types that have the
 // operation, so e.g. `tab[i] += p` on an aggregate is refused at the call
 // rather than deep inside std::plus or the atomic apply.
+/// @brief Not bool nor Bit: arithmetic on a truth value is refused at compile
+///        time (`b += 1`, `b *= 2`, `b <<= 1` only mean "set" or "keep"); a bool
+///        array has =, &=, |=, ^= and reads.
+template <typename T>
+concept ElementArithmetic = !shrink_array::is_bool_like_v<std::remove_cvref_t<T>>;
 /// @brief T + T converts back to T.
 template <typename T>
-concept ElementAddable = requires(T lhs, T rhs) {
+concept ElementAddable = ElementArithmetic<T> && requires(T lhs, T rhs) {
     { lhs + rhs } -> std::convertible_to<T>;
 };
 /// @brief T - T converts back to T.
 template <typename T>
-concept ElementSubtractable = requires(T lhs, T rhs) {
+concept ElementSubtractable = ElementArithmetic<T> && requires(T lhs, T rhs) {
     { lhs - rhs } -> std::convertible_to<T>;
 };
 /// @brief T * T converts back to T.
 template <typename T>
-concept ElementMultipliable = requires(T lhs, T rhs) {
+concept ElementMultipliable = ElementArithmetic<T> && requires(T lhs, T rhs) {
     { lhs * rhs } -> std::convertible_to<T>;
 };
 /// @brief T / T converts back to T.
 template <typename T>
-concept ElementDivisible = requires(T lhs, T rhs) {
+concept ElementDivisible = ElementArithmetic<T> && requires(T lhs, T rhs) {
     { lhs / rhs } -> std::convertible_to<T>;
 };
 /// @brief T % T converts back to T.
 template <typename T>
-concept ElementModulable = requires(T lhs, T rhs) {
+concept ElementModulable = ElementArithmetic<T> && requires(T lhs, T rhs) {
     { lhs % rhs } -> std::convertible_to<T>;
 };
+/// @brief T is an integer other than bool: <<= and >>= exist.
+template <typename T>
+concept ElementShiftable = std::is_integral_v<std::remove_cvref_t<T>> && ElementArithmetic<T>;
 /// @brief T has ++ and --.
 template <typename T>
 concept ElementIncrementable = requires(T elem) {

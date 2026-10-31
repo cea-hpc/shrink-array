@@ -158,7 +158,8 @@ struct ArithmeticAffectationProxyContext : public BaseArithmeticContext<T, zero:
 
 /// @brief Context of a deferred Proxy<T> compound operation (+=, -=, *= ...):
 ///        the operand and the operation.
-template <typename T, typename Op>
+/// @tparam OperandT the operand as stored (ProxyBase::enqueue_async_arithmetic).
+template <typename T, typename Op, typename OperandT>
 struct ArithmeticOperationProxyContext : public BaseArithmeticContext<T, zero::Proxy<T>>
 {
     using Base = BaseArithmeticContext<T, zero::Proxy<T>>;
@@ -169,15 +170,15 @@ struct ArithmeticOperationProxyContext : public BaseArithmeticContext<T, zero::P
     /// @param op Functor implementing the operation.
     /// @param array_ptr Owning array.
     ArithmeticOperationProxyContext(const zero::Proxy<T>&    proxy,
-                                    InT<T>                   op_value,
+                                    InT<OperandT>            op_value,
                                     Op                       op,
                                     ArrayKey<zero::Chunk<T>> array_ptr)
         : Base(proxy, array_ptr), operand(op_value), operation(op)
     {
     }
 
-    T  operand;   ///< right-hand operand
-    Op operation; ///< functor implementing the operation
+    OperandT operand;   ///< right-hand operand
+    Op       operation; ///< functor implementing the operation
 };
 
 /// @brief Context of a deferred zero_one_value::Proxy / zero_any::Proxy write without operation.
@@ -194,7 +195,8 @@ struct ArithmeticContext : public BaseArithmeticContext<T, ProxyT, ChunkT>
 
 /// @brief Context of a deferred zero_one_value::Proxy / zero_any::Proxy compound operation: the
 ///        operand and the operation.
-template <typename T, typename Op, typename ChunkT, typename ProxyT>
+/// @tparam OperandT the operand as stored (ProxyBase::enqueue_async_arithmetic).
+template <typename T, typename Op, typename ChunkT, typename ProxyT, typename OperandT = T>
 struct ArithmeticOperationContext : public BaseArithmeticContext<T, ProxyT, ChunkT>
 {
     using Base = BaseArithmeticContext<T, ProxyT, ChunkT>;
@@ -204,13 +206,13 @@ struct ArithmeticOperationContext : public BaseArithmeticContext<T, ProxyT, Chun
     /// @param op_value Right-hand operand.
     /// @param op Functor implementing the operation.
     /// @param array_ptr Owning array.
-    ArithmeticOperationContext(const ProxyT& proxy, InT<T> op_value, Op op, ArrayKey<ChunkT> array_ptr)
+    ArithmeticOperationContext(const ProxyT& proxy, InT<OperandT> op_value, Op op, ArrayKey<ChunkT> array_ptr)
         : Base(proxy, array_ptr), operand(op_value), operation(op)
     {
     }
 
-    T  operand;   ///< right-hand operand
-    Op operation; ///< functor implementing the operation
+    OperandT operand;   ///< right-hand operand
+    Op       operation; ///< functor implementing the operation
 };
 
 /// @brief Context of a deferred zero_one_value::Proxy / zero_any::Proxy assignment: the assigned value.
