@@ -453,7 +453,7 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> value) noexcept
     {
         if constexpr (is_not_bool)
         {
-            if (value == second_value_)
+            if (static_cast<T>(value) == second_value_) // as stored: an int for a std::complex T
             {
                 if (values_loc == chunk_.get_cst_val2(BaseSpec::ind_))
                 {
@@ -903,21 +903,28 @@ void zero_one_value::Proxy<T>::execute_inplace_operation(Lambda operation)
         v_old = read_values();
     }
 
-    if constexpr (is_not_bool)
+    // A compressed chunk is materialised before the in-place update: its
+    // `values` is the shared cst_val1/cst_val2 block, which an update through it
+    // would rewrite for every chunk of every array at that constant.
+    if (is_val2 || is_val1)
     {
-        if (is_val2 || is_val1)
+        if constexpr (is_not_bool)
         {
             Base::chunk_.create_value(is_val2, inf_array_);
-            if constexpr (chunk_config::use_compression_with_counter)
+        }
+        else
+        {
+            Base::chunk_.create_value_bool(is_val2);
+        }
+        if constexpr (chunk_config::use_compression_with_counter)
+        {
+            if (is_val2)
             {
-                if (is_val2)
-                {
-                    chunk_.set_nb_val_eq_second_value(this->chunk_size());
-                }
-                else if (is_val1)
-                {
-                    chunk_.set_nb_val_eq_first_value(this->chunk_size());
-                }
+                chunk_.set_nb_val_eq_second_value(this->chunk_size());
+            }
+            else if (is_val1)
+            {
+                chunk_.set_nb_val_eq_first_value(this->chunk_size());
             }
         }
     }
@@ -1103,7 +1110,16 @@ void zero_one_value::Proxy<T>::apply_compound_operation([[maybe_unused]] Op op, 
         const InT<T> v_old = Base::read_values_outside_session();
         if (v_old != zero_one_value::Chunk<T>::first_value)
         {
-            Base::apply_atomic_op(op, operand, v_old);
+            // An operand the operation cannot take as it is -- an integer for a
+            // std::complex, whose operators are templates -- goes in as a T.
+            if constexpr (std::is_invocable_r_v<T, Op, T, BaseT<U>>)
+            {
+                Base::apply_atomic_op(op, operand, v_old);
+            }
+            else
+            {
+                Base::apply_atomic_op(op, static_cast<T>(operand), v_old);
+            }
         }
     }
 }

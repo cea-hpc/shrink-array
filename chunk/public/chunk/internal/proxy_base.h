@@ -62,7 +62,7 @@ struct CompressionManager;
 template <typename T>
 struct ArithmeticProxyContext;
 
-template <typename T, typename Op>
+template <typename T, typename Op, typename OperandT = T>
 struct ArithmeticOperationProxyContext;
 
 namespace zero
@@ -944,7 +944,8 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     Derived operator&=(this auto&& self, const U& operand) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<BaseT<U>>
     {
-        self.template bitwise_assign<U>(operand, [](auto lhs, auto rhs) { return lhs & rhs; });
+        self.template bitwise_assign<BaseT<U>>(static_cast<BaseT<U>>(operand),
+                                               [](auto lhs, auto rhs) { return lhs & rhs; });
         return self;
     }
 
@@ -962,7 +963,8 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     Derived operator|=(this auto&& self, const U& operand) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<BaseT<U>>
     {
-        self.template bitwise_assign<U>(operand, [](auto lhs, auto rhs) { return lhs | rhs; });
+        self.template bitwise_assign<BaseT<U>>(static_cast<BaseT<U>>(operand),
+                                               [](auto lhs, auto rhs) { return lhs | rhs; });
         return self;
     }
 
@@ -980,7 +982,8 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     Derived operator^=(this auto&& self, const U& operand) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<BaseT<U>>
     {
-        self.template bitwise_assign<U>(operand, [](auto lhs, auto rhs) { return lhs ^ rhs; });
+        self.template bitwise_assign<BaseT<U>>(static_cast<BaseT<U>>(operand),
+                                               [](auto lhs, auto rhs) { return lhs ^ rhs; });
         return self;
     }
 
@@ -1038,16 +1041,19 @@ class ProxyBase : public ProxyOperators<Derived, T>,
 
     /** @brief Bitwise shift left — clean types (Integral <<= Integral). */
     template <typename U>
-        requires IsCleanShiftOp<T, U>
+        requires IsCleanShiftOp<T, U> && ElementShiftable<T>
     Derived operator<<=(this auto&& self, const U& operand) noexcept
     {
-        self.template bitwise_assign<U>(operand, [](auto lhs, auto rhs) { return lhs << rhs; });
+        // The shift's type is the promoted LEFT operand, not the common type: the
+        // amount as an int, common_type_t<T, int> is that promoted type.
+        self.template bitwise_assign<int>(static_cast<int>(static_cast<BaseT<U>>(operand)),
+                                          [](auto lhs, auto rhs) { return lhs << rhs; });
         return self;
     }
 
     /** @brief Bitwise shift left — trap for non-integral shift amount. */
     template <typename U>
-        requires(!IsCleanShiftOp<T, U>) && std::is_integral_v<T>
+        requires(!IsCleanShiftOp<T, U>) && ElementShiftable<T>
     [[deprecated("HPC WARNING: Shift amount must be an integer to avoid precision issues.")]]
     Derived operator<<=(this auto&& self, const U& operand) noexcept
     {
@@ -1066,16 +1072,19 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @note Divides by 2^v for unsigned types, implementation-defined for signed
      */
     template <typename U>
-        requires IsCleanShiftOp<T, U>
+        requires IsCleanShiftOp<T, U> && ElementShiftable<T>
     Derived operator>>=(this auto&& self, const U& operand) noexcept
     {
-        self.template bitwise_assign<U>(operand, [](auto lhs, auto rhs) { return lhs >> rhs; });
+        // The shift's type is the promoted LEFT operand, not the common type: the
+        // amount as an int, common_type_t<T, int> is that promoted type.
+        self.template bitwise_assign<int>(static_cast<int>(static_cast<BaseT<U>>(operand)),
+                                          [](auto lhs, auto rhs) { return lhs >> rhs; });
         return self;
     }
 
     /** @brief Bitwise shift right — trap. */
     template <typename U>
-        requires(!IsCleanShiftOp<T, U>) && std::is_integral_v<T>
+        requires(!IsCleanShiftOp<T, U>) && ElementShiftable<T>
     [[deprecated("HPC WARNING: Shift amount must be an integer.")]]
     Derived operator>>=(this auto&& self, const U& operand) noexcept
     {

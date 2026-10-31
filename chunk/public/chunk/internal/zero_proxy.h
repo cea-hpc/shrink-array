@@ -531,7 +531,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *        constant? If so, the write is a genuine no-op.
      * @tparam U Type of the value being assigned.
      * @param value Value being assigned.
-     * @return true if @p value == zero and the chunk is already compressed.
+     * @return true if @p value, as stored (converted to T), is zero and the
+     *         chunk is already compressed.
      * @note Never while the chunk has a deferred op pending (pending_any()):
      *       that op, older than this write in program order, would replay
      *       AFTER it -- the engine's WAW guard retires it first, and this
@@ -540,7 +541,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     template <typename U>
     [[nodiscard]] bool is_cst_val_and_v_equal_zero(const U& value) const noexcept
     {
-        return value == zero && is_cst_val() && !chunk_.pending_any();
+        return static_cast<T>(value) == zero && is_cst_val() && !chunk_.pending_any();
     }
 
     /**
@@ -738,7 +739,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
-        requires ElementModulable<T> || std::is_same_v<T, bool>
+        requires ElementModulable<T>
     Proxy operator%=(const U& operand) noexcept
     {
         if constexpr (std::is_integral_v<T>)

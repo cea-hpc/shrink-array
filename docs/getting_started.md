@@ -389,7 +389,8 @@ threads: for the others, use the std backend.
   (arithmetic types, `bool`, `std::complex`, enums, `std::array` and aggregates of those). A
   type that owns a resource (`std::string`) is refused at compile time. `zero_one_value` also needs an
   order on the second value: a struct of doubles declares `auto operator<=>(const T&) const =
-  default;`.
+  default;`. On a `bool` element, `a[i] += 1` and the other arithmetic assignments (`-= *= /=
+  %= <<= >>=`) do not compile: write `=`, `&=`, `|=` or `^=`.
 - **`zero_one_value` compresses only to its declared second value.** Without `set_second_value()`, a
   `zero_one_value` array compresses to zero only.
 - **Measure memory with the right tool.** `VmRSS` lags behind on many threads; see
