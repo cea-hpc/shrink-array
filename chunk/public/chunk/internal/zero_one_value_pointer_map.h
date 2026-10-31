@@ -143,7 +143,7 @@ class PointerMapChunk2InfArrayPolicy<T, false>
     using InfArrayT = SecondValueInfo<T>;
 
     /// @brief No registry: always empty.
-    [[nodiscard]] static std::vector<InfArrayT*> get_all_inf_array() 
+    [[nodiscard]] static std::vector<InfArrayT*> get_all_inf_array()
     {
         return {};
     }
