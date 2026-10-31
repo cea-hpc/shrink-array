@@ -445,7 +445,7 @@ class Team
     void for_runtime(Index first, Index last, Body&& body, [[maybe_unused]] WaitMode wait_mode = WaitMode::wait);
 
     /// @brief Wait until every thread of the team gets here (`omp barrier`).
-    void barrier() noexcept
+    static void barrier() noexcept
     {
     #ifdef _OPENMP
         #pragma omp barrier
