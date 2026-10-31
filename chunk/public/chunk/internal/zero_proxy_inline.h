@@ -324,7 +324,8 @@ T zero::Proxy<T>::assign_impl(InT<U> value) noexcept
     // every write for a test only the `value == zero` branch makes.
     if constexpr (chunk_config::use_compression_with_counter)
     {
-        if (value == zero)
+        // The stored value, not the operand: char = 256 stores a zero.
+        if (static_cast<T>(value) == zero)
         {
             if (is_cst_val())
             {
