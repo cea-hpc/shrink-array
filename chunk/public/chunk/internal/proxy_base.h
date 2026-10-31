@@ -1038,7 +1038,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
 
     /** @brief Bitwise shift left — clean types (Integral <<= Integral). */
     template <typename U>
-        requires IsCleanShiftOp<T, U>
+        requires IsCleanShiftOp<T, U> && ElementShiftable<T>
     Derived operator<<=(const U& operand) noexcept
     {
         // The shift's type is the promoted LEFT operand, not the common type: the
@@ -1050,7 +1050,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
 
     /** @brief Bitwise shift left — trap for non-integral shift amount. */
     template <typename U>
-        requires(!IsCleanShiftOp<T, U>) && std::is_integral_v<T>
+        requires(!IsCleanShiftOp<T, U>) && ElementShiftable<T>
     [[deprecated("HPC WARNING: Shift amount must be an integer to avoid precision issues.")]]
     Derived operator<<=(const U& operand) noexcept
     {
@@ -1069,7 +1069,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @note Divides by 2^v for unsigned types, implementation-defined for signed
      */
     template <typename U>
-        requires IsCleanShiftOp<T, U>
+        requires IsCleanShiftOp<T, U> && ElementShiftable<T>
     Derived operator>>=(const U& operand) noexcept
     {
         // The shift's type is the promoted LEFT operand, not the common type: the
@@ -1081,7 +1081,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
 
     /** @brief Bitwise shift right — trap. */
     template <typename U>
-        requires(!IsCleanShiftOp<T, U>) && std::is_integral_v<T>
+        requires(!IsCleanShiftOp<T, U>) && ElementShiftable<T>
     [[deprecated("HPC WARNING: Shift amount must be an integer.")]]
     Derived operator>>=(const U& operand) noexcept
     {

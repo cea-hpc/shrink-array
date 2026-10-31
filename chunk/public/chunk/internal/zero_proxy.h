@@ -732,7 +732,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
-        requires ElementModulable<T> || std::is_same_v<T, bool>
+        requires ElementModulable<T>
     Proxy operator%=(const U& operand) noexcept
     {
         if constexpr (std::is_integral_v<T>)

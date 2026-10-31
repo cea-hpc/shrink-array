@@ -459,16 +459,42 @@ struct Run
     }
 };
 
-/// @brief Left out on a bool: `*`, `*=`, `<<=` and `~`, valid and warned about
-///        as on a plain bool (-Wint-in-bool-context, -Wbool-operation); the
-///        arithmetic compound assignments `+= -= /= %=`, which the arrays of
-///        bool do not implement (the logical `&= |= ^=` and `=` they do).
+/// @brief The compound assignments an array of bool refuses at compile time
+///        (ElementArithmetic, concept_is_clean_assignement.h), where a plain
+///        bool takes them: arithmetic on a truth value. Not run; the
+///        static_asserts of refuses_bool_arithmetic() check the refusal.
+template <typename Op>
+constexpr bool refused_on_bool =
+    std::is_same_v<Op, AddAssign> || std::is_same_v<Op, SubAssign> || std::is_same_v<Op, MulAssign> ||
+    std::is_same_v<Op, DivAssign> || std::is_same_v<Op, ModAssign> || std::is_same_v<Op, ShlAssign> ||
+    std::is_same_v<Op, ShrAssign>;
+
+/// @brief Left out on a bool: `*` and `~`, valid and warned about as on a
+///        plain bool (-Wint-in-bool-context, -Wbool-operation), and the
+///        refused_on_bool assignments.
 template <typename Op, typename T>
 constexpr bool bool_warning =
-    std::is_same_v<T, bool> &&
-    (std::is_same_v<Op, MulAssign> || std::is_same_v<Op, ShlAssign> || std::is_same_v<Op, Complement> ||
-     std::is_same_v<Op, Mul> || std::is_same_v<Op, AddAssign> || std::is_same_v<Op, SubAssign> ||
-     std::is_same_v<Op, DivAssign> || std::is_same_v<Op, ModAssign>);
+    std::is_same_v<T, bool> && (std::is_same_v<Op, Mul> || std::is_same_v<Op, Complement> || refused_on_bool<Op>);
+
+/// @brief `a[i] OP= 1` does not compile on an array of B (bool), for every
+///        refused_on_bool operator; `=`, `&=`, `|=` and `^=` do.
+template <typename B>
+void refuses_bool_arithmetic()
+{
+    static_assert(!requires(Arr<B>& arr) { arr[0] += 1; });
+    static_assert(!requires(Arr<B>& arr) { arr[0] -= 1; });
+    static_assert(!requires(Arr<B>& arr) { arr[0] *= 1; });
+    static_assert(!requires(Arr<B>& arr) { arr[0] /= 1; });
+    static_assert(!requires(Arr<B>& arr) { arr[0] %= 1; });
+    static_assert(!requires(Arr<B>& arr) { arr[0] <<= 1; });
+    static_assert(!requires(Arr<B>& arr) { arr[0] >>= 1; });
+    static_assert(requires(Arr<B>& arr) {
+        arr[0] = true;
+        arr[0] &= true;
+        arr[0] |= true;
+        arr[0] ^= true;
+    });
+}
 
 /// @brief Does the library take a C operand of `T OP=` as a plain T does?
 /// @details The clean operands (concept_is_clean_assignement.h): the same
@@ -854,6 +880,7 @@ long run_types(long count, long chunk_sz, const char* mode, long& cases)
     {
         fails += run_type<float>(count, chunk_sz, mode, cases);
         fails += run_type<double>(count, chunk_sz, mode, cases);
+        refuses_bool_arithmetic<bool>();
         fails += run_type<bool>(count, chunk_sz, mode, cases);
         fails += run_type<std::complex<double>>(count, chunk_sz, mode, cases);
     }
