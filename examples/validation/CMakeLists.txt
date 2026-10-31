@@ -92,6 +92,11 @@
 #   shrink_to_fit_validation a few uniform chunks, then shrink_to_fit(): none
 #                           keeps a buffer, in every build (a serial zero_any
 #                           left its last partial batch of candidates).
+#   operators_validation    every operator of a[i] (compound, ++/--, =, unary,
+#                           binary, ==, conversions, os <<) on char to
+#                           complex<double>, against plain T, direct and
+#                           with the deferred path forced (one executable
+#                           per variant, and pattern's)
 #   compound_ops_validation `*=`, `/=`, `%=` read back what std::vector would
 #                           (results landing on zero included), `double /= 0.0`
 #                           gives inf, set_second_value(0) declares nothing;
@@ -504,6 +509,30 @@ foreach(_geom ${CHUNK_DEFAULT_SIZE} dyn)
     set(_tgt pattern_validation_zero_any_${_geom})
     validation_harness_executable(${_tgt} chunk_zero_any CHUNK_VARIANT_ZERO_ANY ${_geom} pattern_validation)
     validation_add_test(${_tgt} ${_tgt} pattern_validation "1;8")
+  endif()
+endforeach()
+
+# --- operators_validation: every operator of a[i] on every element type
+# (char to complex<double>; pattern: the integers but bool), against plain T,
+# directly and with the deferred path forced. Its own executables, as
+# pattern_validation: nine element types instantiated per variant would weigh
+# on the group's unity TU. Default static size, at 1 and 8 threads; pattern on
+# the zero_any library (OPERATORS_VALIDATION_PATTERN).
+foreach(_vi RANGE ${_rt_nvar_last})
+  list(GET _rt_variant_names   ${_vi} _vname)
+  list(GET _rt_variant_libbase ${_vi} _libbase)
+  list(GET _rt_variant_macro   ${_vi} _vmacro)
+  if (NOT TARGET ${_libbase}_${CHUNK_DEFAULT_SIZE})
+    continue()
+  endif()
+  set(_tgt operators_validation_${_vname}_${CHUNK_DEFAULT_SIZE})
+  validation_harness_executable(${_tgt} ${_libbase} ${_vmacro} ${CHUNK_DEFAULT_SIZE} operators_validation)
+  validation_add_test(${_tgt} ${_tgt} operators_validation "1;8")
+  if (_vname STREQUAL "zero_any")
+    set(_tgt operators_validation_pattern_${CHUNK_DEFAULT_SIZE})
+    validation_harness_executable(${_tgt} ${_libbase} ${_vmacro} ${CHUNK_DEFAULT_SIZE} operators_validation)
+    target_compile_definitions(${_tgt} PRIVATE OPERATORS_VALIDATION_PATTERN)
+    validation_add_test(${_tgt} ${_tgt} operators_validation "1;8")
   endif()
 endforeach()
 
