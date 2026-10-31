@@ -858,7 +858,10 @@ void ProxyBase<Derived, T, ChunkT>::enqueue_deferred_write(CtxType* ctx, LambdaB
  * @tparam U         Operand type.
  * @tparam Op        Binary operation type.
  * @tparam AsyncBody Callable `(ctx, proxy)` applying the operation on replay.
- * @param operand          Operand, stored converted to T.
+ * @param operand          Operand, stored converted to T -- or, an integer
+ *                         operand of an integer T, to their common type: the
+ *                         direct path computes in it, and `b &= 6` on a bool
+ *                         needs the 6, not bool(6).
  * @param operation  Operation to replay.
  * @param async_body Replay body.
  */
@@ -868,10 +871,13 @@ void ProxyBase<Derived, T, ChunkT>::enqueue_async_arithmetic(const U& operand, O
 {
     using ProxyType = std::remove_reference_t<decltype(derived())>;
 
-    using CtxType = std::conditional_t<is_simple_proxy<ProxyType>::value, ArithmeticOperationProxyContext<T, Op>,
-                                       ArithmeticOperationContext<T, Op, ChunkT, ProxyType>>;
+    using OperandT =
+        std::conditional_t<std::is_integral_v<T> && std::is_integral_v<BaseT<U>>, std::common_type_t<T, BaseT<U>>, T>;
+    using CtxType =
+        std::conditional_t<is_simple_proxy<ProxyType>::value, ArithmeticOperationProxyContext<T, Op, OperandT>,
+                           ArithmeticOperationContext<T, Op, ChunkT, ProxyType, OperandT>>;
 
-    auto* ctx = pool_new_ctx<CtxType>(derived(), static_cast<T>(operand), operation, ptr_on_array_);
+    auto* ctx = pool_new_ctx<CtxType>(derived(), static_cast<OperandT>(operand), operation, ptr_on_array_);
 
     auto op_async = [ctx, body = std::forward<AsyncBody>(async_body)]() mutable
     {

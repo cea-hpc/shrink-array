@@ -1012,6 +1012,19 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
             shrink_array::set_thread_alloc_key(proxy.alloc_key());
         }
 
+        // A motif chunk (pattern): its elements are motif + offset, the slot
+        // holds the offset, not a second value -- the read and the branches below
+        // would take it for a constant. Materialised first, as the write path does
+        // (perform_core_assignment).
+        if constexpr (has_motif_state_v<ChunkT>)
+        {
+            if (ChunkT::is_motif_ptr(ctx->chunk.values_load())) [[unlikely]]
+            {
+                ctx->chunk.create_value(true, proxy.ptr_second_value_);
+                continue; // the proxy and its state, rebuilt
+            }
+        }
+
         const InT<T>   v_old           = Base::read_values_async(ctx);
         const CalcType v_new_precise   = op(static_cast<CalcType>(v_old), static_cast<CalcType>(operand));
         const auto     v_new_truncated = static_cast<T>(v_new_precise);
@@ -1184,12 +1197,14 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_inplace
 
     while (true)
     {
-        // Best-effort; re-checked by the post-store test.
-        const InT<T> v_old = Base::read_values_async(ctx);
-
         const Derived proxy = Base::template make_proxy_with_info<Derived>(ctx);
 
         derived().ensure_writable_storage_async(proxy);
+
+        // After the materialisation, as execute_simple_operation_async: a motif
+        // chunk (pattern) read raw would miss its offset. Best-effort; re-checked
+        // by the post-store test.
+        const InT<T> v_old = Base::read_values_async(ctx);
 
         T* values_before = ctx->chunk.values_load();
 
@@ -1273,7 +1288,16 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::apply_compound_operation(Op op, In
         {
             set_info_on_chunk();
         }
-        Base::apply_atomic_op(op, operand, v_old);
+        // An operand the operation cannot take as it is -- an integer for a
+        // std::complex, whose operators are templates -- goes in as a T.
+        if constexpr (std::is_invocable_r_v<T, Op, T, BaseT<U>>)
+        {
+            Base::apply_atomic_op(op, operand, v_old);
+        }
+        else
+        {
+            Base::apply_atomic_op(op, static_cast<T>(operand), v_old);
+        }
     }
 }
 

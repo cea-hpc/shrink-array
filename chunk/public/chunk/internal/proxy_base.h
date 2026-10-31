@@ -63,7 +63,7 @@ struct CompressionManager;
 template <typename T>
 struct ArithmeticProxyContext;
 
-template <typename T, typename Op>
+template <typename T, typename Op, typename OperandT = T>
 struct ArithmeticOperationProxyContext;
 
 namespace zero
@@ -944,7 +944,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     Derived operator&=(const U& operand) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<BaseT<U>>
     {
-        bitwise_assign<U>(operand, [](auto lhs, auto rhs) { return lhs & rhs; });
+        bitwise_assign<BaseT<U>>(static_cast<BaseT<U>>(operand), [](auto lhs, auto rhs) { return lhs & rhs; });
         return derived();
     }
 
@@ -962,7 +962,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     Derived operator|=(const U& operand) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<BaseT<U>>
     {
-        bitwise_assign<U>(operand, [](auto lhs, auto rhs) { return lhs | rhs; });
+        bitwise_assign<BaseT<U>>(static_cast<BaseT<U>>(operand), [](auto lhs, auto rhs) { return lhs | rhs; });
         return derived();
     }
 
@@ -980,7 +980,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     Derived operator^=(const U& operand) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<BaseT<U>>
     {
-        bitwise_assign<U>(operand, [](auto lhs, auto rhs) { return lhs ^ rhs; });
+        bitwise_assign<BaseT<U>>(static_cast<BaseT<U>>(operand), [](auto lhs, auto rhs) { return lhs ^ rhs; });
         return derived();
     }
 
@@ -1041,7 +1041,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         requires IsCleanShiftOp<T, U>
     Derived operator<<=(const U& operand) noexcept
     {
-        bitwise_assign<U>(operand, [](auto lhs, auto rhs) { return lhs << rhs; });
+        // The shift's type is the promoted LEFT operand, not the common type: the
+        // amount as an int, common_type_t<T, int> is that promoted type.
+        bitwise_assign<int>(static_cast<int>(static_cast<BaseT<U>>(operand)),
+                            [](auto lhs, auto rhs) { return lhs << rhs; });
         return derived();
     }
 
@@ -1069,7 +1072,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         requires IsCleanShiftOp<T, U>
     Derived operator>>=(const U& operand) noexcept
     {
-        bitwise_assign<U>(operand, [](auto lhs, auto rhs) { return lhs >> rhs; });
+        // The shift's type is the promoted LEFT operand, not the common type: the
+        // amount as an int, common_type_t<T, int> is that promoted type.
+        bitwise_assign<int>(static_cast<int>(static_cast<BaseT<U>>(operand)),
+                            [](auto lhs, auto rhs) { return lhs >> rhs; });
         return derived();
     }
 
