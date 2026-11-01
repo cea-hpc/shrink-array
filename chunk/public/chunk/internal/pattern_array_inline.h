@@ -19,7 +19,7 @@
 #include <vector> // std::vector (reclaim_motifs' marks)
 
 #include "chunk/pattern_array.h"         // the class these bodies belong to
-#include "chunk/internal/motif_region.h" // pattern::MotifRegion (install_motif_for_test)
+#include "chunk/internal/motif_region.h" // pattern::MotifRegion (install_motif)
 
 namespace shrink_array
 {
@@ -40,7 +40,7 @@ pattern::Array<T, IntType>& pattern::Array<T, IntType>::operator=(Array&& other)
 }
 
 template <ArrayChunkElement T, typename IntType>
-bool pattern::Array<T, IntType>::install_motif_for_test(int num_chunk, const T* elems)
+bool pattern::Array<T, IntType>::install_motif(int num_chunk, const T* elems)
 {
     using ChunkT = typename Array::ChunkType;
     auto& chunk  = this->chunk_list_[static_cast<std::size_t>(num_chunk)];

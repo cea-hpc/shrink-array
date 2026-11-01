@@ -92,11 +92,12 @@
 #   shrink_to_fit_validation a few uniform chunks, then shrink_to_fit(): none
 #                           keeps a buffer, in every build (a serial zero_any
 #                           left its last partial batch of candidates).
-#   chunk_exchange_validation  export_chunk() / import_chunk()
-#                           (chunk/chunk_exchange.h): an array rebuilt from its
-#                           exported chunk states reads, exports and behaves as
-#                           the source, every state of the variant (pattern's
-#                           motifs: chunk_exchange_validation_pattern_<size>).
+#   chunk_exchange_validation  export_chunk() / import_chunk() and
+#                           export_array() / import_array() (chunk/chunk_exchange.h):
+#                           an array rebuilt from its exported states reads,
+#                           exports and behaves as the source, every state of the
+#                           variant, double and bool (pattern's motifs, on int:
+#                           chunk_exchange_validation_pattern_<size>).
 #   operators_validation    every operator of a[i] (compound, ++/--, =, unary,
 #                           binary, ==, conversions, os <<) on char to
 #                           complex<double>, against plain T, direct and
