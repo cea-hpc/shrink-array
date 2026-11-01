@@ -93,10 +93,10 @@
 #                           keeps a buffer, in every build (a serial zero_any
 #                           left its last partial batch of candidates).
 #   chunk_exchange_validation  export_chunk() / import_chunk()
-#                           (chunk/chunk_exchange.h): a zero_any array rebuilt
-#                           from its exported chunk states reads, exports and
-#                           behaves as the source (the other variants: not
-#                           wired yet).
+#                           (chunk/chunk_exchange.h): an array rebuilt from its
+#                           exported chunk states reads, exports and behaves as
+#                           the source, every state of the variant (pattern's
+#                           motifs: chunk_exchange_validation_pattern_<size>).
 #   operators_validation    every operator of a[i] (compound, ++/--, =, unary,
 #                           binary, ==, conversions, os <<) on char to
 #                           complex<double>, against plain T, direct and
@@ -549,6 +549,16 @@ foreach(_vi RANGE ${_rt_nvar_last})
     validation_add_test(${_tgt} ${_tgt} operators_validation "1;8")
   endif()
 endforeach()
+
+# --- chunk_exchange_validation on pattern::Array<int> (its motif state), on the
+# zero_any library, as operators_validation_pattern.
+if (TARGET chunk_zero_any_${CHUNK_DEFAULT_SIZE})
+  set(_tgt chunk_exchange_validation_pattern_${CHUNK_DEFAULT_SIZE})
+  validation_harness_executable(${_tgt} chunk_zero_any CHUNK_VARIANT_ZERO_ANY ${CHUNK_DEFAULT_SIZE}
+                                chunk_exchange_validation)
+  target_compile_definitions(${_tgt} PRIVATE CHUNK_EXCHANGE_PATTERN)
+  validation_add_test(${_tgt} ${_tgt} chunk_exchange_validation "1;8")
+endif()
 
 # --- element_ref_validation: what operator[] accepts and refuses
 # (chunk/internal/element_ref.h), in every build that has the harnesses.
