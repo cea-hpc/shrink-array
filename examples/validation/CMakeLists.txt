@@ -518,6 +518,11 @@ endforeach()
 # pattern_validation: nine element types instantiated per variant would weigh
 # on the group's unity TU. Default static size, at 1 and 8 threads; pattern on
 # the zero_any library (OPERATORS_VALIDATION_PATTERN).
+# One translation unit per group of element types, not a unity one: all of
+# them in one unit took 7.8 GB to compile (GCC 14, -O3), and the AArch64 CI
+# runner (16 GB, two compiles at once) was stopped for want of memory.
+set(_ov_parts operators_validation_small_integers.cpp operators_validation_wide_integers.cpp
+              operators_validation_floating.cpp operators_validation_bool_complex.cpp)
 foreach(_vi RANGE ${_rt_nvar_last})
   list(GET _rt_variant_names   ${_vi} _vname)
   list(GET _rt_variant_libbase ${_vi} _libbase)
@@ -527,10 +532,14 @@ foreach(_vi RANGE ${_rt_nvar_last})
   endif()
   set(_tgt operators_validation_${_vname}_${CHUNK_DEFAULT_SIZE})
   validation_harness_executable(${_tgt} ${_libbase} ${_vmacro} ${CHUNK_DEFAULT_SIZE} operators_validation)
+  target_sources(${_tgt} PRIVATE ${_ov_parts})
+  set_target_properties(${_tgt} PROPERTIES UNITY_BUILD OFF)
   validation_add_test(${_tgt} ${_tgt} operators_validation "1;8")
   if (_vname STREQUAL "zero_any")
     set(_tgt operators_validation_pattern_${CHUNK_DEFAULT_SIZE})
     validation_harness_executable(${_tgt} ${_libbase} ${_vmacro} ${CHUNK_DEFAULT_SIZE} operators_validation)
+    target_sources(${_tgt} PRIVATE ${_ov_parts})
+    set_target_properties(${_tgt} PROPERTIES UNITY_BUILD OFF)
     target_compile_definitions(${_tgt} PRIVATE OPERATORS_VALIDATION_PATTERN)
     validation_add_test(${_tgt} ${_tgt} operators_validation "1;8")
   endif()
