@@ -85,11 +85,11 @@
 #include <complex>         // std::complex (spelled by fmt_arg)
 #include <cstddef>         // std::size_t
 #include <cstdint>         // std::uint8_t, std::uint64_t
-#include <cstdio>          // std::FILE, std::fopen, std::fwrite, std::fflush, stderr
+#include <cstdio>          // std::FILE, std::fopen, std::fwrite, std::fflush, std::fputs, stderr
 #include <cstdlib>         // std::getenv
 #include <cstring>         // std::memcpy
 #include <format>          // std::format_to_n, std::format_string
-#include <mutex>           // std::mutex, std::once_flag, std::call_once, std::scoped_lock
+#include <mutex>           // std::mutex, std::once_flag, std::call_once, std::scoped_lock, std::unique_lock
 #include <ranges>          // std::ranges::input_range (MembersArg)
 #include <span>            // std::span, std::as_bytes (BytesArg)
 #include <source_location> // std::source_location
@@ -612,7 +612,8 @@ inline void emit_fatal(const Record& record) noexcept
     {
         for (int attempt = 0; attempt < 1000; ++attempt)
         {
-            if (sink_mutex.try_lock())
+            const std::unique_lock lk(sink_mutex, std::try_to_lock);
+            if (lk.owns_lock())
             {
                 if (sink != nullptr)
                 {
@@ -624,7 +625,6 @@ inline void emit_fatal(const Record& record) noexcept
                 {
                     default_sink(record);
                 }
-                sink_mutex.unlock();
                 return;
             }
             ::sched_yield();
@@ -870,8 +870,9 @@ inline void set_sink(Sink sink, void* user = nullptr) noexcept
     }
     catch (...) // std::mutex::lock: std::system_error
     {
-        // The lock could not be taken: the sink in place stays, and a logger
-        // has nowhere better to say so than through that sink.
+        // The lock could not be taken: the sink in place stays. Not through
+        // that sink (it is the one being replaced): straight to stderr.
+        std::fputs("fast_alloc logging: set_sink() could not take the sink lock; the sink in place stays\n", stderr);
     }
 }
 } // namespace fast_alloc::logging

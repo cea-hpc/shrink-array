@@ -44,7 +44,8 @@ namespace fast_alloc
 {
 
 /// @brief The address of @p ptr as an integer (see the file comment).
-[[nodiscard]] inline std::uintptr_t address_bits(const void* ptr) noexcept
+template <typename T>
+[[nodiscard]] std::uintptr_t address_bits(const T* ptr) noexcept
 {
     return std::bit_cast<std::uintptr_t>(ptr);
 }

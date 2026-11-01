@@ -81,7 +81,7 @@ SSTREAM = re.compile(r"\bstd::(ostringstream|stringstream)\b")
 # std::complex, which std::format does not take before C++26).
 SSTREAM_FILES = IOSTREAM_FILES | {
     "examples/validation/element_ref_validation.cpp",
-    "examples/validation/operators_validation.cpp",
+    "examples/validation/operators_validation_cases.h",
 }
 # find(...) compared with an end(): a membership test (rule 8).
 FIND_NE_END = re.compile(r"\b(?:std::ranges::find|std::find)\s*\(.*\)\s*[!=]=\s*[\w.>-]*\bend\(\)")
