@@ -128,6 +128,25 @@ l'exécution (inlinée de force). `-DCHUNK_LOOSE_ELEMENT_REF` désactive la vér
 | `for_each_span(a, first, last, f)` | lecture : `f(std::span<const T>)` par bloc (une boucle vectorisable) ; un chunk compressé en `f(v, count)` quand `f` l'accepte. Un `std::vector` est un seul span |
 | `read_range(a, first, last, out)` | lecture : `[first, last)` copié vers `out` |
 
+### 5.1 États des chunks : export et import
+
+`chunk/chunk_exchange.h`. Un tableau lu et reconstruit chunk par chunk sans le décompresser --
+la base d'un transfert (hôte vers GPU) ou d'un checkpoint compressé. Un `ChunkState<T>` dit ce
+que contient un chunk : `first_value` ou `second_value` (`value`, sans tampon), `motif`
+(pattern : l'élément `k` vaut `data[k] + value`), ou `materialised` (`data`, ses
+`chunk_size()` éléments). Il ne dépend pas de la façon dont la bibliothèque code le chunk en
+interne.
+
+| appel | contexte |
+|---|---|
+| `export_chunk(a, c)` | séquentiel : l'état du chunk `c` ; `data` pointe dans `a`, valable jusqu'à la prochaine écriture de `a` |
+| `import_chunk(a, c, state)` | séquentiel : le chunk `c` prend `state`, une constante sans tampon ; `false` si le chunk a été écrit |
+| `export_array(a)` | séquentiel : la taille, `chunk_size()`, la seconde valeur de zero_one_value, l'état de chaque chunk |
+| `import_array(a, state)` | séquentiel : `a` devient le tableau que décrit `state`, quoi qu'il contînt ; `false` (et `a` inchangé) à une autre taille de chunk |
+
+Toutes les variantes et tous les types d'élément sauf `Bit` (ArrayChunkBits). À appeler après la
+phase, comme `fill_range`.
+
 ## 6. Phases OpenMP
 
 `chunk/manage_ompt.h`. Nécessaires seulement quand `build_config::has_not_ompt` (libgomp de GCC) ; sans
