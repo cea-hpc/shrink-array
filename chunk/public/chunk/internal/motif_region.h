@@ -136,7 +136,8 @@ class MotifRegion
     /// @brief Is @p ptr inside the region (a motif)? False before the first registration.
     /// @details One acquire load and a subtract-compare: on the read path of
     ///          every pattern::Array element, materialised chunks included.
-    [[nodiscard]] static bool contains(const void* ptr) noexcept
+    template <typename P>
+    [[nodiscard]] static bool contains(const P* ptr) noexcept
     {
         const std::byte* const base = begin_.load(std::memory_order_acquire);
         return base != nullptr && ::fast_alloc::address_bits(ptr) - ::fast_alloc::address_bits(base) < region_bytes;
@@ -167,9 +168,10 @@ class MotifRegion
 
     /// @brief The probation tag of the chunk at @p who: 8 bits of its address,
     ///        never 0 (the empty probation byte).
-    [[nodiscard]] static std::uint8_t sighting_tag(const void* who) noexcept
+    template <typename P>
+    [[nodiscard]] static std::uint8_t sighting_tag(const P* who) noexcept
     {
-        const auto mixed = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(who)) * 0x9E3779B97F4A7C15ULL;
+        const auto mixed = static_cast<std::uint64_t>(::fast_alloc::address_bits(who)) * 0x9E3779B97F4A7C15ULL;
         const auto tag   = static_cast<std::uint8_t>(mixed >> 56U);
         return tag == 0 ? std::uint8_t{1} : tag;
     }

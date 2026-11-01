@@ -670,12 +670,12 @@ class ChunkBase : public CRTPSupport<Derived>,
 
     using CstVal1Type = std::conditional_t<build_config::use_mm_protect, T*, std::array<T, cst_buffer_size>>;
 
-    ChunkBase()                            = default;
-    ~ChunkBase()                           = default;
-    ChunkBase(const ChunkBase&)            = default;
-    ChunkBase& operator=(const ChunkBase&) = default;
-    ChunkBase(ChunkBase&&)                 = default;
-    ChunkBase& operator=(ChunkBase&&)      = default;
+    ChunkBase()                                = default;
+    ~ChunkBase()                               = default;
+    ChunkBase(const ChunkBase&)                = default;
+    ChunkBase& operator=(const ChunkBase&)     = default;
+    ChunkBase(ChunkBase&&) noexcept            = default;
+    ChunkBase& operator=(ChunkBase&&) noexcept = default;
 
     // ========================================================================
     // Atomic / Non-atomic pointer management
