@@ -125,6 +125,24 @@ does not compile, with a message. A proxy kept on purpose: `std::move(x) = v;`, 
 | `for_each_span(a, first, last, f)` | read: `f(std::span<const T>)` per block (a vectorisable loop); a compressed chunk as `f(v, count)` when `f` accepts it. A `std::vector` is one span |
 | `read_range(a, first, last, out)` | read: `[first, last)` copied to `out` |
 
+### 5.1 Chunk states: export and import
+
+`chunk/chunk_exchange.h`. An array read and rebuilt chunk by chunk without decompressing it --
+the base of a transfer (host to device) or a compressed checkpoint. A `ChunkState<T>` says what a
+chunk holds: `first_value` or `second_value` (`value`, no buffer), `motif` (pattern: element `k`
+is `data[k] + value`), or `materialised` (`data`, its `chunk_size()` elements). It does not
+depend on how the library encodes the chunk inside.
+
+| call | context |
+|---|---|
+| `export_chunk(a, c)` | sequential: chunk `c`'s state; `data` points into `a`, valid until `a` is written |
+| `import_chunk(a, c, state)` | sequential: chunk `c` takes `state`, a constant without a buffer; `false` if the chunk was written |
+| `export_array(a)` | sequential: size, `chunk_size()`, zero_one_value's second value, every chunk's state |
+| `import_array(a, state)` | sequential: `a` becomes the array `state` describes, whatever it held; `false` (and `a` unchanged) at another chunk size |
+
+Every variant and element type but `Bit` (ArrayChunkBits). Call them after the phase, as
+`fill_range`.
+
 ## 6. OpenMP phases
 
 `chunk/manage_ompt.h`. Needed only when `build_config::has_not_ompt` (GCC's libgomp); no-ops
