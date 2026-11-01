@@ -92,6 +92,11 @@
 #   shrink_to_fit_validation a few uniform chunks, then shrink_to_fit(): none
 #                           keeps a buffer, in every build (a serial zero_any
 #                           left its last partial batch of candidates).
+#   chunk_exchange_validation  export_chunk() / import_chunk()
+#                           (chunk/chunk_exchange.h): a zero_any array rebuilt
+#                           from its exported chunk states reads, exports and
+#                           behaves as the source (the other variants: not
+#                           wired yet).
 #   operators_validation    every operator of a[i] (compound, ++/--, =, unary,
 #                           binary, ==, conversions, os <<) on char to
 #                           complex<double>, against plain T, direct and
@@ -249,7 +254,7 @@ set(_rt_harnesses       compress_roundtrip pool_accounting open_types_validation
                         nested_region_validation concurrent_teams_validation iterator_validation
                         stale_proxy_validation
                         region_storage_validation compound_ops_validation bulk_write_team_validation
-                        shrink_to_fit_validation)
+                        shrink_to_fit_validation chunk_exchange_validation)
 set(_rt_dyn_harnesses   pool_accounting open_types_validation index64_validation stale_proxy_validation)
 
 # Compile definitions of a variant at a geometry.
