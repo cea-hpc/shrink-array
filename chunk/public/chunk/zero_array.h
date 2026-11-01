@@ -200,7 +200,7 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
 
     /// @brief Build an array holding the elements of @p il.
     /// @param il Source values.
-    Array(std::initializer_list<T> il) : Array(il.begin(), il.end()) {}
+    explicit Array(std::initializer_list<T> il) : Array(il.begin(), il.end()) {}
 
     /// @brief clear() the array, then erase its entry from Proxy<T>::share_info_array.
     ~Array();

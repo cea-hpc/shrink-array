@@ -59,9 +59,9 @@ class GlobalStatsChunkList
 
         // The type column fits the longest name (zero_one_value::Chunk<std::complex<double> > is 57).
         std::size_t longest_name = 0;
-        for (const auto& entry : all_stats_)
+        for (const auto& [name, stats] : all_stats_)
         {
-            longest_name = std::max(longest_name, entry.first.size());
+            longest_name = std::max(longest_name, name.size());
         }
         const int     col_type    = std::max(50, static_cast<int>(longest_name) + 2);
         constexpr int col_data    = 18;

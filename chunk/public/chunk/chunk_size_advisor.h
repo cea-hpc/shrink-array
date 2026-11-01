@@ -271,7 +271,7 @@ struct ChunkSizeAdvisor
 
         // classify: kind 0 = cst1, 1 = cst2, 2 = mat; two cst2 chunks merge iff
         // same `key` (zero_any: buffer ptr; zero_one_value: one shared sentinel).
-        const auto classify = [&](const auto& chunk, const void*& key) -> int
+        const auto classify = [&](const auto& chunk, const void*& key)
         {
             key = nullptr;
             if (chunk.is_cst_val1())
@@ -379,7 +379,7 @@ struct ChunkSizeAdvisor
         const auto    nwin = [&](uint32_t cand_sz) { return (len + cand_sz - 1) / cand_sz; };
 
         // Windows of size C inside the constant run of chunks [r0, r1).
-        const auto windows_inside = [&](int64_t r0, int64_t r1, uint32_t cand_sz) -> int64_t
+        const auto windows_inside = [&](int64_t r0, int64_t r1, uint32_t cand_sz)
         {
             const int64_t begin = r0 * chunk_sz;
             const int64_t wmin  = (begin + cand_sz - 1) / cand_sz;
