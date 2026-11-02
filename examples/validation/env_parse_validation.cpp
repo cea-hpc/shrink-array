@@ -19,13 +19,14 @@
 // line (env_parse.h), alone: no chunk, no array, no variant.
 // ============================================================================
 //
-//   1. parse_number on integers: the whole text or nothing -- empty, null,
-//      trailing characters, a leading space or '+', out of range, '-' for an
-//      unsigned type are refused, and the output is left untouched;
+//   1. parse_number on integers: the whole text or a std::expected error
+//      saying why -- empty (null or ""), not a number (a leading space, '+',
+//      '-' for an unsigned type), trailing characters, out of range;
 //   2. parse_number on floating point: the same, ERANGE included;
-//   3. env_number: unset or empty gives the fallback silently; a valid value
-//      is taken; an invalid one gives the fallback AND one warning on the
-//      env channel (a typo such as 6o must not pass unnoticed);
+//   3. env_number / env_optional: unset or empty gives the fallback (nothing)
+//      silently; a valid value is taken; an invalid one gives the fallback
+//      (nothing) AND one warning on the env channel (a typo such as 6o must
+//      not pass unnoticed);
 //   4. arg_number: the same rule for a command-line argument, its warning on
 //      the general channel;
 //   5. env_flag: unset, empty and a leading '0' are false, anything else true.
@@ -33,10 +34,11 @@
 // The nightly's coverage report had every refusal of this header at 0 %: the
 // programs only ever met valid values. Exit status 0 when every check passes.
 
-#include <cstdlib> // setenv, unsetenv
-#include <string>  // std::string
+#include <cstdlib>     // setenv, unsetenv
+#include <string>      // std::string
+#include <string_view> // std::string_view
 
-#include "chunk/internal/env_parse.h" // parse_number, env_number, arg_number, env_flag
+#include "chunk/internal/env_parse.h" // parse_number, ParseError, env_number, env_optional, arg_number, env_flag
 #include "chunk/internal/print.h"     // shrink_array::println
 #include "chunk/log.h"                // logging::set_sink, Record, Level, Channel
 
@@ -78,40 +80,45 @@ void count_warnings(const logging::Record& record, void* /*user*/) noexcept
 }
 
 // --- 1 ----------------------------------------------------------------------
+// The refusal and its reason (cpp23: parse_number returns std::expected).
+template <typename T>
+bool refused(const char* text, shrink_array::ParseError why)
+{
+    const auto v = shrink_array::parse_number<T>(text);
+    return !v && v.error() == why;
+}
+
 void check_integers()
 {
-    int value = 7;
-    check(shrink_array::parse_number("42", value) && value == 42, "int: 42");
-    check(shrink_array::parse_number("-5", value) && value == -5, "int: -5");
+    using shrink_array::ParseError;
+    check(shrink_array::parse_number<int>("42") == 42, "int: 42");
+    check(shrink_array::parse_number<int>("-5") == -5, "int: -5");
 
-    value = 7;
-    check(!shrink_array::parse_number("", value) && value == 7, "int: empty refused, untouched");
-    check(!shrink_array::parse_number(static_cast<const char*>(nullptr), value) && value == 7,
-          "int: null refused, untouched");
-    check(!shrink_array::parse_number("12x", value) && value == 7, "int: trailing characters refused");
-    check(!shrink_array::parse_number(" 1", value) && value == 7, "int: a leading space refused");
-    check(!shrink_array::parse_number("+1", value) && value == 7, "int: a leading '+' refused");
-    check(!shrink_array::parse_number("99999999999", value) && value == 7, "int: out of range refused");
-    check(!shrink_array::parse_number("abc", value) && value == 7, "int: not a number refused");
+    check(refused<int>("", ParseError::empty), "int: empty refused (empty)");
+    check(refused<int>(nullptr, ParseError::empty), "int: null refused (empty)");
+    check(refused<int>("12x", ParseError::trailing_chars), "int: 12x refused (trailing characters)");
+    check(refused<int>(" 1", ParseError::not_a_number), "int: a leading space refused (not a number)");
+    check(refused<int>("+1", ParseError::not_a_number), "int: a leading '+' refused (not a number)");
+    check(refused<int>("99999999999", ParseError::out_of_range), "int: out of range refused (out of range)");
+    check(refused<int>("abc", ParseError::not_a_number), "int: abc refused (not a number)");
+    check(refused<unsigned>("-1", ParseError::not_a_number), "unsigned: '-' refused (not a number)");
+    check(shrink_array::parse_number<long long>("99999999999") == 99999999999LL, "long long: 99999999999");
 
-    unsigned u = 3;
-    check(!shrink_array::parse_number("-1", u) && u == 3, "unsigned: '-' refused");
-    long long big = 0;
-    check(shrink_array::parse_number("99999999999", big) && big == 99999999999LL, "long long: 99999999999");
+    check(std::string_view(shrink_array::to_string(ParseError::trailing_chars)) == "trailing characters",
+          "to_string names the reason");
 }
 
 // --- 2 ----------------------------------------------------------------------
 void check_floating()
 {
-    double value = 2.0;
-    check(shrink_array::parse_number("1.5", value) && value == 1.5, "double: 1.5");
-    check(shrink_array::parse_number("-2e3", value) && value == -2000.0, "double: -2e3");
+    using shrink_array::ParseError;
+    check(shrink_array::parse_number<double>("1.5") == 1.5, "double: 1.5");
+    check(shrink_array::parse_number<double>("-2e3") == -2000.0, "double: -2e3");
 
-    value = 2.0;
-    check(!shrink_array::parse_number("", value) && value == 2.0, "double: empty refused");
-    check(!shrink_array::parse_number("abc", value) && value == 2.0, "double: not a number refused");
-    check(!shrink_array::parse_number("1.0x", value) && value == 2.0, "double: trailing characters refused");
-    check(!shrink_array::parse_number("1e400", value) && value == 2.0, "double: out of range (ERANGE) refused");
+    check(refused<double>("", ParseError::empty), "double: empty refused (empty)");
+    check(refused<double>("abc", ParseError::not_a_number), "double: abc refused (not a number)");
+    check(refused<double>("1.0x", ParseError::trailing_chars), "double: 1.0x refused (trailing characters)");
+    check(refused<double>("1e400", ParseError::out_of_range), "double: 1e400 refused (out of range)");
 }
 
 // --- 3 ----------------------------------------------------------------------
@@ -135,6 +142,16 @@ void check_env_number()
 
     ::setenv(name, "0.25", 1);
     check(shrink_array::env_number(name, 1.0) == 0.25, "env: 0.25 as a double");
+
+    // env_optional: the value, or nothing (unset, empty, invalid with its warning).
+    ::setenv(name, "7", 1);
+    check(shrink_array::env_optional<int>(name) == 7, "env_optional: 7");
+    g_env_warnings = 0;
+    ::setenv(name, "7x", 1);
+    check(!shrink_array::env_optional<int>(name).has_value() && g_env_warnings == 1,
+          "env_optional: 7x, nothing and one warning");
+    ::unsetenv(name);
+    check(!shrink_array::env_optional<int>(name).has_value(), "env_optional: unset, nothing");
     ::unsetenv(name);
 }
 

@@ -32,7 +32,9 @@
 //   5. CHUNK_LOG_FIRST_N and CHUNK_LOG_POW2 count right;
 //   6. a message longer than line_max is cut, with "...";
 //   7. no allocation on the path of a message (operator new is counted;
-//      under TSan, through the sanitizer's malloc hook);
+//      under TSan, through the sanitizer's malloc hook); a std::complex and a
+//      type with no formatter spelled there too, "(re+imi)" and its bytes in
+//      hex -- outside the fatal children, where the coverage counts them;
 //   8. 8 threads writing to the default sink at once: every line in the file
 //      whole, none lost;
 //   9. the fatal level, each case in a child (this executable re-run with
@@ -66,8 +68,8 @@
 #include <algorithm>   // std::ranges::find
 #include <array>       // std::array
 #include <atomic>      // std::atomic
-#include <complex>     // std::complex (check 9)
-#include <cstdint>     // std::uint32_t, std::int32_t (checks 9, 10)
+#include <complex>     // std::complex (checks 7 and 9)
+#include <cstdint>     // std::uint32_t, std::int32_t (checks 7, 9, 10)
 #include <cstdio>      // std::remove, std::sscanf, std::fflush
 #include <csignal>     // SIGTRAP, SIGABRT (check 9, --debugger)
 #include <print>       // std::println (the children's stdout)
@@ -442,6 +444,24 @@ void check_no_allocation()
     const std::size_t                   len    = logging::detail::format_message(buf.data(), "{} {}", &number, str);
     check(std::string_view(buf.data(), len) == std::format("{} text", static_cast<const void*>(&number)),
           "a pointer is spelled as its address, a char pointer as a string");
+
+    // std::complex as "(re+imi)", a type with no formatter as its bytes in
+    // memory order (a union: its bytes on every branch), on this path too and
+    // still without allocation.
+    union Word
+    {
+        std::uint32_t u;
+        float         f;
+    };
+    const Word word{0x01020304U};
+    g_news.store(0);
+    g_counting           = true;
+    const std::size_t n2 = logging::detail::format_message(
+        buf.data(), "complex {} {} bytes {}", std::complex<double>(1.0, -2.0), std::complex<float>(0.5F, 3.0F), word);
+    g_counting = false;
+    check(std::string_view(buf.data(), n2) == "complex (1-2i) (0.5+3i) bytes 0x04030201",
+          "std::complex and a type with no formatter spelled on the message path");
+    check(g_news.load() == 0, "no allocation for a std::complex or a type with no formatter");
 }
 
 // --- 8 ----------------------------------------------------------------------
