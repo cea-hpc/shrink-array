@@ -685,6 +685,11 @@ class ChunkBase : public DeferredReadGate<Derived>,
     /// @return Pointer to the chunk data
     [[nodiscard]] T* values_load() const noexcept;
 
+    /// @brief values_load() for a pure read (element_at): the same acquire, or, under
+    ///        chunk_config::read_dep_order (experimental, AArch64), a relaxed load whose
+    ///        users must reach memory only THROUGH the returned pointer.
+    [[nodiscard]] const T* values_load_for_read() const noexcept;
+
     /// @brief Store a pointer to the values with appropriate memory ordering
     /// @param new_values Pointer to store
     void values_store(T* new_values) noexcept;

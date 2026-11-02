@@ -293,6 +293,13 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `CHUNK_READ_DEP_ORDER=1` (experimental, AArch64, a macro in `CMAKE_CXX_FLAGS`): a pure read
+  (`ChunkBase::element_at`) loads the chunk's `values` relaxed, ordered with the loads through it
+  -- the element, the second value -- by their address dependency instead of an acquire. On
+  Grace every read costs 2.4 ns whatever the chunk's state (x86: 1.1 to 1.8): the hypothesis is
+  that each acquire load (LDAPR) holds the next element's loads, and the loop runs at the
+  latency of its two acquires (the read gate's and this one). Off by default, under evaluation
+  with `access_cost`.
 - `examples/bool_arrays`: the two boolean containers of a `zero_one_value` build side by side --
   `zero_one_value::Array<bool>` (a byte per element) and `ArrayChunkBits` (a bit per element, the
   layout of `std::vector<bool>`, neighbouring elements writable from different threads) -- the

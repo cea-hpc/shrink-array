@@ -1,7 +1,8 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 #
-# The per-push CI: the source checks (clang-format 23 included), then gcc 14 in
+# The per-push CI: the source checks (clang-format 23 included), the Python
+# tools' tests (pytest), then gcc 14 in
 # an OpenMP, a serial and a std-threads (+ oneTBB) build with the check-mode
 # switches (CHECK_OPTIM), the validation harnesses at chunk size 256 (`check`
 # target: ctest -L validation), the examples (ctest -L examples), the library
@@ -49,12 +50,39 @@ jobs:
       - name: check_* scripts
         run: |
           status=0
-          for s in check_docs check_tracked check_raw_reads check_includes check_naming check_headers check_format; do
+          # check_cpp23_idioms exists on cpp23 and cpp26 only (develop stays C++20).
+          for s in check_docs check_tracked check_raw_reads check_includes check_naming check_headers check_format \
+                   check_cpp23_idioms; do
+            [ -f scripts/$s.py ] || continue
             echo "::group::$s"
             python3 scripts/$s.py . || status=1
             echo "::endgroup::"
           done
           exit $status
+
+  # The Python tools' tests: shrink_gui (the GUI offscreen, against a fake inti:
+  # fake ssh, ccc_msub, squeue... from tests/fakes), bench_runner,
+  # thread_speedup.py --merge. No build: two minutes. PySide6 is installed so
+  # the GUI tests run instead of skipping; the apt libraries are what Qt's
+  # offscreen platform loads.
+  python-tests:
+    name: Python tests (pytest)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+          python -m pip install -q pytest==9.1.1 PySide6==6.9.3
+      - name: pytest
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q python/shrink_gui/tests
 
   # A fixup!/squash!/amend! commit is squashed into its target before the
   # push (git rebase -i --autosquash), not published: once pushed it can only

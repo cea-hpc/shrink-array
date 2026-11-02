@@ -129,6 +129,7 @@ and how the shared options reach the headers, are in
 | `CHUNK_WRITE_WAIT_MAX_YIELDS=<n>` | how long a writer facing a compressor waits before deferring its write (64 *yields*) |
 | `CHUNK_READ_RECLAIM_SLOTS=<n>` | number of reader threads tracked individually by the buffer reclamation (1,024) |
 | `CHUNK_STATS_MAX_THR=<n>` | number of ranks of the `CHUNK_STATS` counters (1,024) |
+| `CHUNK_READ_DEP_ORDER=1` | **experimental**, AArch64 only, off under TSan: a pure read loads the chunk's `values` pointer relaxed, ordered with the element load by their address dependency instead of an acquire (`chunk_config::read_dep_order`, config.h). Under evaluation on Grace (`access_cost`): pass it in `CMAKE_CXX_FLAGS` of a build of its own |
 | `CHUNK_TEST_READ_DELAY_EVERY=<n>`, `CHUNK_TEST_READ_DELAY_US=<µs>` | test hook: one read in N by a thread that requested it waits (50 µs), to widen the reader / reclamation window (`read_reclaim_validation`) |
 | `CHUNK_TEST_PASS_DELAY_EVERY=<n>`, `CHUNK_TEST_PASS_DELAY_US=<µs>` | test hook: a delay (200 µs) in one compression pass in N |
 | `CHUNK_GCOV_DUMP` | coverage builds (`--coverage`): the fatal report writes the gcov counters before `abort()`, so the paths the death tests take are counted; set by the nightly coverage job |
