@@ -85,12 +85,20 @@ void zero_one_value::PointerMap<T>::report_key_not_found(Key key, const char* si
         std::array<char, logging::line_max> keys{};
         std::size_t                         n   = 0;
         const size_t                        lim = (count > 64u) ? 64u : count;
-        for (size_t i = 0; i < lim && n < keys.size(); ++i)
+        try
         {
-            n += static_cast<std::size_t>(std::format_to_n(keys.data() + n, keys.size() - n, " [{} num_tab={}]",
-                                                           static_cast<const void*>(vec_[i].first),
-                                                           vec_[i].second.num_tab)
-                                              .size);
+            for (size_t i = 0; i < lim && n < keys.size(); ++i)
+            {
+                n += static_cast<std::size_t>(std::format_to_n(keys.data() + n, keys.size() - n, " [{} num_tab={}]",
+                                                               static_cast<const void*>(vec_[i].first),
+                                                               vec_[i].second.num_tab)
+                                                  .size);
+            }
+        }
+        catch (...)
+        {
+            // Unreachable (a format string checked at compile time, a pointer
+            // and an int): the keys listed so far are kept.
         }
         CHUNK_LOG(error, general,
                   "share_info {}: KEY NOT FOUND: this={} rank={} searched_key={} vec.size={}; valid keys:{}{}", site,
