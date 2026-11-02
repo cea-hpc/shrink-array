@@ -1,0 +1,97 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
+#
+# Coverity Scan (scan.coverity.com, project cea-hpc-shrink-array): once a week
+# on develop, and on demand. scripts/coverity_submit.sh does the work -- the
+# cov-build capture of a clean gcc 14 OpenMP build, then builds/init, the
+# upload and the enqueue. The defects come back by mail and on the project's
+# page (View Defects); the job only says whether the build was queued.
+#
+# Needs two repository secrets: COVERITY_SCAN_TOKEN (the token of the
+# project's Project Settings page) and COVERITY_SCAN_EMAIL (where Scan mails
+# the result). Without the token the job says so and stops, green. Weekly
+# because Scan limits the submissions (a few a day, about 20 a week for a
+# project this size) and an analysis takes hours in its queue.
+
+name: Coverity
+
+on:
+  schedule:
+    # Sunday 04:41 UTC: after the nightly, off the hour.
+    - cron: '41 4 * * 0'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  coverity:
+    name: Coverity Scan
+    # The scan belongs to cea-hpc's repository, not to the forks.
+    if: github.repository == 'cea-hpc/shrink-array'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      CC: gcc-14
+      CXX: g++-14
+      COVERITY_TOKEN: ${{ secrets.COVERITY_SCAN_TOKEN }}
+      COV_BUILD_DIR: ${{ github.workspace }}/build-cov
+      JOBS: 2
+    steps:
+      - name: Token present
+        id: token
+        run: |
+          if [ -z "$COVERITY_TOKEN" ]; then
+            echo "::notice::no COVERITY_SCAN_TOKEN secret: Coverity Scan skipped"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v5
+        if: steps.token.outputs.ok == 'true'
+        with:
+          # A schedule runs on the default branch (main); the development is on develop.
+          ref: ${{ github.event_name == 'schedule' && 'develop' || github.ref }}
+      - name: Toolchain
+        if: steps.token.outputs.ok == 'true'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev jq
+      # The analysis tool (about 1 GB), cached under the checksum Scan gives
+      # for its current version: downloaded again only when Scan moves on.
+      - name: Coverity tool version
+        if: steps.token.outputs.ok == 'true'
+        id: tool
+        run: |
+          md5=$(curl -sSf --data-urlencode "token=$COVERITY_TOKEN" -d project=cea-hpc/shrink-array -d md5=1 \
+                https://scan.coverity.com/download/linux64)
+          echo "md5=$md5" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        if: steps.token.outputs.ok == 'true'
+        id: cache
+        with:
+          path: ${{ runner.temp }}/cov-analysis
+          key: cov-analysis-linux64-${{ steps.tool.outputs.md5 }}
+      - name: Download the Coverity tool
+        if: steps.token.outputs.ok == 'true' && steps.cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sSf -o "$RUNNER_TEMP/cov.tgz" --data-urlencode "token=$COVERITY_TOKEN" \
+               -d project=cea-hpc/shrink-array https://scan.coverity.com/download/linux64
+          mkdir -p "$RUNNER_TEMP/cov-analysis"
+          tar xzf "$RUNNER_TEMP/cov.tgz" -C "$RUNNER_TEMP/cov-analysis" --strip-components=1
+          rm "$RUNNER_TEMP/cov.tgz"
+      - name: Capture and submit
+        if: steps.token.outputs.ok == 'true'
+        env:
+          COVERITY_EMAIL: ${{ secrets.COVERITY_SCAN_EMAIL }}
+        run: COV_BIN="$RUNNER_TEMP/cov-analysis/bin" scripts/coverity_submit.sh
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.token.outputs.ok == 'true'
+        with:
+          name: cov-build-log
+          path: build-cov/cov-int/build-log.txt
+          retention-days: 14
