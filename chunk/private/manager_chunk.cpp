@@ -16,7 +16,7 @@
 
 #include <atomic> // std::atomic (g_need_flush_deferred)
 
-#include "chunk/internal/manager_chunk.h" // extern g_need_flush_deferred (manager_chunk_inline.h)
+#include "chunk/internal/manager_chunk.h" // extern g_need_flush_deferred (manager_chunk_policies_inline.h)
 
 namespace shrink_array
 {
@@ -24,7 +24,9 @@ namespace shrink_array
 std::atomic<bool> g_need_flush_deferred{true};
 
 // This TU holds only the non-template global state. Method bodies are in
-// chunk/internal/manager_chunk_inline.h; there is no explicit instantiation: each
+// chunk/internal/manager_chunk_inline.h and the inline files of its bases
+// (reuse_pools_inline.h, compress_candidates_inline.h,
+// manager_chunk_policies_inline.h); there is no explicit instantiation: each
 // ManagerChunk<ChunkT, T> is instantiated in the consumer TU (initialize<Types>()).
 
 
