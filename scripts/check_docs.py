@@ -106,6 +106,11 @@ ALLOWED = {
     "CHUNK_REFLECTION", "CHUNK_OPT_REFLECTION", "build_config::has_reflection", "SHRINK_ARRAY_HAS_ENUM_NAME",
     "SHRINK_ARRAY_HAS_REFLECT_FIELDS", "SHRINK_ARRAY_HAS_SOA_ARRAY", "SHRINK_ARRAY_HAS_VALUE_HASH_MEMBERWISE",
     "event_name_table", "table_matches", "field_count", "sched_names", "names_match",
+    # internal names with an old variant label, renamed 2026-11 (CHANGELOG.md, Unreleased)
+    "TChunkComp", "TChunk2Comp", "MapTypeChunk2P", "TChunk2AComp", "IsChunk2", "IsChunk2OrZeroAnyFamily",
+    "Base2",
+    # called by the CHUNK_DO_CHECK write paths but defined nowhere, removed by 47d082fe
+    "global_check_write_nan",
     # files a shrink_gui run writes in its directory on the cluster (docs/shrink_gui.md)
     "run.sh", "job.sh", "launch.sh", "node.sh",
     # C++ standard library, compiler, language

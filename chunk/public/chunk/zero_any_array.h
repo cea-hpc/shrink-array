@@ -187,7 +187,8 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
     using ProxyType  = SecondValueBase::ProxyType; ///< The write proxy of the non-const accessors (zero_any::Proxy<T>).
     using value_type = T;                          ///< Stored element type.
 
-    using Manager = ManagerType; ///< Same type as ManagerType.
+    using Manager                                      = ManagerType; ///< Same type as ManagerType.
+    using ManagerChunk2A [[deprecated("use Manager")]] = Manager;     ///< Former name, until 1.0.
 
     // The former snake_case spellings, kept until 1.0 (types are PascalCase).
     using chunk_type [[deprecated("types are PascalCase: use ChunkType")]]          = ChunkType;

@@ -417,6 +417,32 @@ the tag's checksum to the recipe.
   reported failed: `expect_stop.cmake` reports it skipped
   (`mdspan_submdspan_misaligned` without `submdspan`).
 
+### Changed
+
+- The internal names that kept an old variant label (`chunk2`, `chunk2a`,
+  `V1`/`V2`/`V2A`) say the variant: the candidate lists are
+  `zero_candidates(_thr)`, `zero_one_value_candidates_thr`,
+  `zero_one_value_candidates_map_thr`, `zero_any_candidates(_thr)` (were
+  `chunk_to_compress_potentially(_thr)`, `chunk2_...`, `map_chunk2_...`,
+  `chunk2a_...`), with their accessors and `remove_from_<variant>_candidates_*`;
+  their types `ZeroComp`, `ZeroCompThr`, `ZeroOneValueComp`,
+  `ZeroOneValueCompThr`, `ZeroOneValueCompMap`, `ZeroOneValueCompByValue`,
+  `ZeroAnyComp`, `ZeroAnyCompThr`, `ZeroAnyCompOf` (were `TChunkComp`,
+  `TChunk2Comp`, `MapTypeChunk2P`, `TChunk2AComp`...); the concepts
+  `IsZeroOneValue`, `IsSecondValueFamily` (were `IsChunk2`,
+  `IsChunk2OrZeroAnyFamily`); the class aliases `SecondValueBase`, `Manager`
+  (were `Base2`, `ManagerChunk2`, `ManagerChunk2A`), `CandidateTuples`,
+  `CandidateValueTuples` (were `VecTupleChunk*pInt2`);
+  `ZeroOneValueInfArrayPolicy`, `CHUNK_LINK_CHECK_ZERO/_ZERO_ONE_VALUE/_ZERO_ANY`
+  and the multi-mat example's `VectZeroOneValue`. Generic `chunk` names (the
+  block of CHUNK_SIZE values, common to the variants: `ChunkBase`,
+  `ManagerChunk`, `ParamChunk`...) stay.
+
+### Deprecated
+
+- `zero_one_value::Array::ManagerChunk2` and `zero_any::Array::ManagerChunk2A`:
+  use `Manager`. Kept until 1.0.
+
 ## 0.2.0 -- 2026-10-30
 
 ### Added
