@@ -134,6 +134,7 @@ dans [variables_environnement_fr.md](variables_environnement_fr.md) §3.
 | `CHUNK_STATS_MAX_THR=<n>` | nombre de rangs des compteurs `CHUNK_STATS` (1 024) |
 | `CHUNK_TEST_READ_DELAY_EVERY=<n>`, `CHUNK_TEST_READ_DELAY_US=<µs>` | crochet de test : une lecture sur N d'un thread qui l'a demandé attend (50 µs), pour élargir la fenêtre lecteur / récupération (`read_reclaim_validation`) |
 | `CHUNK_TEST_PASS_DELAY_EVERY=<n>`, `CHUNK_TEST_PASS_DELAY_US=<µs>` | crochet de test : délai (200 µs) dans une passe de compression sur N |
+| `CHUNK_GCOV_DUMP` | builds de couverture (`--coverage`) : le rapport fatal écrit les compteurs gcov avant `abort()`, pour que les chemins des tests de mort soient comptés ; posée par le job de couverture du nightly |
 
 Les seuils des passes de compression de `zero_any` sont des constantes de `zero_any_chunk_def.h`
 (les niveaux 1 à 3 de l'ancienne `CHUNK2A_COMPRESS_LEVEL` n'ont jamais été construits ni testés).
