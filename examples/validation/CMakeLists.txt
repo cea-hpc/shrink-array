@@ -662,6 +662,37 @@ chunk_require_cxx20(bit_words_validation PRIVATE)
 add_test(NAME bit_words_validation COMMAND bit_words_validation)
 set_property(TEST bit_words_validation PROPERTY LABELS validation)
 
+# --- chunk_index_sample_validation: the chunk sample of the compression-residual
+# messages (chunk_index_sample.h) alone, header only: the text, the "(+N more)",
+# the cut at the stack buffer's size, a 64-bit element index.
+add_executable(chunk_index_sample_validation chunk_index_sample_validation.cpp)
+chunk_add_alloc_token_rt(chunk_index_sample_validation)
+target_include_directories(chunk_index_sample_validation PRIVATE ${PROJECT_SOURCE_DIR}/chunk/public)
+chunk_require_cxx20(chunk_index_sample_validation PRIVATE)
+add_test(NAME chunk_index_sample_validation COMMAND chunk_index_sample_validation)
+set_property(TEST chunk_index_sample_validation PROPERTY LABELS validation)
+
+# --- env_parse_validation: the checked number parsing of the environment and
+# the command line (env_parse.h) alone, header only: every refusal (empty,
+# trailing characters, out of range, '-' for unsigned), the fallback with its
+# warning (counted through logging::set_sink), env_flag. The log's headers as
+# log_validation takes them.
+add_executable(env_parse_validation env_parse_validation.cpp)
+chunk_add_alloc_token_rt(env_parse_validation)
+target_include_directories(env_parse_validation PRIVATE ${PROJECT_SOURCE_DIR}/chunk/public
+                                                        ${PROJECT_BINARY_DIR}/chunk/generated # chunk/build_options.h
+                                                        ${PROJECT_SOURCE_DIR}/fast_allocators/public)
+target_link_libraries(env_parse_validation PRIVATE Threads::Threads)
+if (OMP)
+  target_link_libraries(env_parse_validation PRIVATE OpenMP::OpenMP_CXX) # build_options.h asks for the library's OpenMP
+endif()
+if (CHUNK_THREADS_BACKEND STREQUAL "std")
+  target_compile_definitions(env_parse_validation PRIVATE FAST_ALLOC_PMP_STD=1)
+endif()
+chunk_require_cxx20(env_parse_validation PRIVATE)
+add_test(NAME env_parse_validation COMMAND env_parse_validation)
+set_property(TEST env_parse_validation PROPERTY LABELS validation)
+
 # --- rank_registry_validation: the rank registry of the threading backend
 # (fast_allocators/internal/pmp_runtime.h) alone, header only, driven from
 # std::threads: dense, unique, bounded ranks, given back at thread exit and
