@@ -20,12 +20,14 @@
 #                   ~/Downloads/cov-analysis-linux64-2024.12.1.tar.gz if absent).
 #                   Coverity Scan only accepts cov-build 2024.12.1 or 2024.6.1.
 #   COV_BUILD_DIR   the build tree (default: /tmp/$USER/build-cov; emptied)
-#   GCC_MODULE      compiler module (default: gcc/gcc-14.2.0-x86_64)
+#   GCC_MODULE      compiler module, where modules exist (default: gcc/gcc-14.2.0-x86_64)
+#   CXX             the C++ compiler (default: the g++ on PATH after the module)
 #   CMAKE_ARGS      extra CMake arguments (default: -DOMP=ON, size 256)
 #   JOBS            build parallelism (default: 2)
 #
 # The proxy is the shell's (https_proxy): scan.coverity.com and
-# storage.googleapis.com go through it.
+# storage.googleapis.com go through it. .github/workflows/coverity.yml runs
+# this script weekly (COV_BIN from the download, CXX=g++-14).
 set -euo pipefail
 
 PROJECT=cea-hpc-shrink-array
@@ -35,7 +37,7 @@ case "${1:-}" in
     --capture-only) MODE=capture ;;
     --submit-only) MODE=submit ;;
     "") ;;
-    *) sed -n '4,27p' "$0"; exit 2 ;;
+    *) sed -n '4,30p' "$0"; exit 2 ;;
 esac
 
 COV_BUILD_DIR=${COV_BUILD_DIR:-/tmp/$USER/build-cov}
@@ -70,7 +72,7 @@ capture() {
     fi
     # shellcheck disable=SC2086
     cmake -S "$REPO" -B "$COV_BUILD_DIR" -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_CXX_COMPILER="$(command -v g++)" $CMAKE_ARGS
+        -DCMAKE_CXX_COMPILER="${CXX:-$(command -v g++)}" $CMAKE_ARGS
     cd "$COV_BUILD_DIR"
     nice -n 19 cov-build --dir cov-int cmake --build . -j"$JOBS"
     tail -3 cov-int/build-log.txt
