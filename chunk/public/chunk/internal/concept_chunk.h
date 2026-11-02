@@ -58,11 +58,11 @@ concept IsZeroAnyFamily = is_zero_any_family_v<ChunkT<T>>;
 
 /// @brief ChunkT<T> is zero_one_value::Chunk<T>.
 template <template <typename> typename ChunkT, typename T>
-concept IsChunk2 = std::is_same_v<ChunkT<T>, zero_one_value::Chunk<T>>;
+concept IsZeroOneValue = std::is_same_v<ChunkT<T>, zero_one_value::Chunk<T>>;
 
 /// @brief ChunkT<T> is zero_one_value::Chunk<T> or of the zero_any family.
 template <template <typename> typename ChunkT, typename T>
-concept IsChunk2OrZeroAnyFamily = IsChunk2<ChunkT, T> || IsZeroAnyFamily<ChunkT, T>;
+concept IsSecondValueFamily = IsZeroOneValue<ChunkT, T> || IsZeroAnyFamily<ChunkT, T>;
 
 /// @brief The chunk template of a chunk type (specialised below).
 template <typename>

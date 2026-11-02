@@ -243,11 +243,11 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::perform_c
     // Runs inside a region, next to pure readers: the buffers this pass
     // releases wait for one grace period (read_reclaim.h).
     const read_reclaim::PassScope pass_scope;
-    const int                     szm          = ManagerChunk2::get_size_max_number_of_chunk_to_check_compress();
+    const int                     szm          = Manager::get_size_max_number_of_chunk_to_check_compress();
     const int                     thr_rank     = get_thr_rank_fast();
     const int                     sz_threshold = szm / 2;
 
-    const auto& ml = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr_rank];
+    const auto& ml = Manager::zero_one_value_candidates_map_thr[thr_rank];
 
     if constexpr (is_not_bool)
     {
@@ -275,7 +275,7 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::perform_c
     }
     else
     {
-        const auto* vec_tuple_p = ManagerChunk2::compress_candidates(thr_rank, true);
+        const auto* vec_tuple_p = Manager::compress_candidates(thr_rank, true);
         if (vec_tuple_p)
         {
             const int sz_before = static_cast<int>(vec_tuple_p->size());
@@ -302,7 +302,7 @@ void zero_one_value::Proxy<T>::perform_core_assignment(InT<T> value) const noexc
     {
         if (value == static_cast<T>(zero_one_value::Chunk<T>::first_value))
         {
-            if (Base::is_not_cst_val1() && Base2::is_not_cst_val2())
+            if (Base::is_not_cst_val1() && SecondValueBase::is_not_cst_val2())
             {
                 if (this->raw_elem() != zero_one_value::Chunk<T>::first_value)
                 {
@@ -360,7 +360,7 @@ void zero_one_value::Proxy<T>::perform_core_assignment(InT<T> value) const noexc
     }
     else if constexpr (chunk_config::use_compression_with_counter)
     {
-        if (Base2::is_not_cst_val2())
+        if (SecondValueBase::is_not_cst_val2())
         {
             // Read once, before the store below: InT, no copy of a struct.
             const InT<T> vv = this->raw_elem();
@@ -512,7 +512,7 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> value) noexcept
         perform_core_assignment(value);
     };
 
-    [[maybe_unused]] const bool need_async = Base2::write_with_optional_lock_with_set_ptr(lbd_equal_core);
+    [[maybe_unused]] const bool need_async = SecondValueBase::write_with_optional_lock_with_set_ptr(lbd_equal_core);
 
     if constexpr (chunk_config::use_compression_without_counter)
     {
@@ -586,7 +586,8 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> value) noexcept
                 // As the compound ops' replay: a replayed write that makes the chunk
                 // uniform queues it, or it waits for the next direct write. After the
                 // store, unlike the direct path: a flush excludes the passes.
-                Base2::mark_for_compression_if_needed_with_value_async(proxy, v_old, static_cast<T>(ctx->operand));
+                SecondValueBase::mark_for_compression_if_needed_with_value_async(proxy, v_old,
+                                                                                 static_cast<T>(ctx->operand));
             };
 
             Base::enqueue_deferred_write(ctx, std::move(lbd_equal_asynch));
@@ -791,7 +792,7 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_a
         chunk_.create_value(true, inf_array_);
         operation(op);
     }
-    else if (Base2::is_not_cst_val2())
+    else if (SecondValueBase::is_not_cst_val2())
     {
         this->raw_elem_set(static_cast<T>(v_new_precise));
         this->mark_for_compression_if_needed_with_value(v_old, static_cast<T>(v_new_precise));
@@ -902,7 +903,7 @@ void zero_one_value::Proxy<T>::execute_inplace_operation(Lambda operation)
         this->set_info_second_value_ind();
     }
 
-    const bool is_val2 = Base2::is_cst_val2();
+    const bool is_val2 = SecondValueBase::is_cst_val2();
     const bool is_val1 = Base::is_cst_val1();
 
     [[maybe_unused]] T v_old{};
@@ -1031,7 +1032,7 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_i
     // afterwards, so InT (a reference for a struct) rather than a copy.
     // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
     const InT<T> v_new = elem_get(values, static_cast<std::size_t>(num));
-    Base2::mark_for_compression_if_needed_with_value_async(proxy, v_old, v_new);
+    SecondValueBase::mark_for_compression_if_needed_with_value_async(proxy, v_old, v_new);
 }
 
 template <typename T>
@@ -1060,7 +1061,7 @@ void zero_one_value::Proxy<T>::apply_compound_operation([[maybe_unused]] Op op, 
             }
 
             const bool was_second_value  = (v_old_snapshot == second_value_);
-            const bool was_second_value0 = was_second_value && Base2::is_not_cst_val2();
+            const bool was_second_value0 = was_second_value && SecondValueBase::is_not_cst_val2();
 
             execute_arithmetic_compound_operation(
                 op, operand,
@@ -1157,11 +1158,11 @@ zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::get_vec_tuple_
     const auto second_value = get_second_value();
     // find(), not operator[]: operator[] INSERTS a null entry for a missing
     // key, which have_chunk_to_compress() would dereference later.
-    auto&      candidates = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr];
+    auto&      candidates = Manager::zero_one_value_candidates_map_thr[thr];
     const auto it         = candidates.find(second_value);
     if (it == candidates.end() || it->second == nullptr) [[unlikely]]
     {
-        chunk2_missing_candidate_list(thr);
+        zero_one_value_missing_candidate_list(thr);
     }
     return *it->second;
 }
@@ -1175,11 +1176,11 @@ zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::get_vec_tuple_
     const auto second_value = get_second_value(ctx);
     // find(), not operator[]: operator[] INSERTS a null entry for a missing
     // key, which have_chunk_to_compress() would dereference later.
-    auto&      candidates = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr];
+    auto&      candidates = Manager::zero_one_value_candidates_map_thr[thr];
     const auto it         = candidates.find(second_value);
     if (it == candidates.end() || it->second == nullptr) [[unlikely]]
     {
-        chunk2_missing_candidate_list(thr);
+        zero_one_value_missing_candidate_list(thr);
     }
     return *it->second;
 }
@@ -1322,7 +1323,7 @@ template <typename T>
 {
     if constexpr (build_config::threaded && chunk_config::use_fast_block_compression)
     {
-        const auto& per_thr = ManagerChunk2::map_chunk2_to_compress_potentially_thr;
+        const auto& per_thr = Manager::zero_one_value_candidates_map_thr;
         const int   thr     = get_thr_rank_fast();
         if (thr < 0 || static_cast<std::size_t>(thr) >= per_thr.size()) [[unlikely]]
         {

@@ -98,6 +98,11 @@ ALLOWED = {
     # former class names the CHANGELOG cites (now SecondValue*Base, zero_any::ChunkThreadPolicy, ...)
     "Chunk2Base", "Proxy2Base", "ArrayChunk2Base", "Chunk2AOmpPolicy", "RechunkHooks2", "Chunk2Def",
     "ChunkOmpPolicy", "CompressionManagerOmpPolicy",
+    # internal names with an old variant label, renamed 2026-11 (CHANGELOG.md, Unreleased)
+    "TChunkComp", "TChunk2Comp", "MapTypeChunk2P", "TChunk2AComp", "IsChunk2", "IsChunk2OrZeroAnyFamily",
+    "Base2",
+    # called by the CHUNK_DO_CHECK write paths but defined nowhere, removed by 47d082fe
+    "global_check_write_nan",
     # files a shrink_gui run writes in its directory on the cluster (docs/shrink_gui.md)
     "run.sh", "job.sh", "launch.sh", "node.sh",
     # C++ standard library, compiler, language

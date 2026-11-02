@@ -42,7 +42,7 @@
 #include "chunk/zero_chunk_def.h"           // zero::ChunkDef
 #include "chunk/zero_one_value_chunk_def.h" // zero_one_value::ChunkDef
 #include "chunk/zero_any_chunk_def.h"       // zero_any::ChunkDef
-#include "chunk/internal/concept_chunk.h"   // IsChunk, IsChunk2, IsZeroAnyFamily
+#include "chunk/internal/concept_chunk.h"   // IsChunk, IsZeroOneValue, IsZeroAnyFamily
 #include "chunk/global_stats_chunk_list.h"  // GlobalStatsChunkList
 #include "chunk/type_name.h"                // type_name<T>
 #include "chunk/singleton.h"                // SingletonChk
@@ -53,7 +53,7 @@ namespace shrink_array
 template <template <typename> typename ChunkT, typename T>
 void ManagerChunk<ChunkT, T>::sweep_prepare()
 {
-    if constexpr (chunk_config::use_fast_block_compression && IsChunk2<ChunkT, T>)
+    if constexpr (chunk_config::use_fast_block_compression && IsZeroOneValue<ChunkT, T>)
     {
         if constexpr (is_not_bool)
         {
@@ -69,7 +69,7 @@ void ManagerChunk<ChunkT, T>::sweep_rank([[maybe_unused]] int thr, [[maybe_unuse
 {
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        if constexpr (IsChunk2<ChunkT, T>)
+        if constexpr (IsZeroOneValue<ChunkT, T>)
         {
             if constexpr (is_not_bool)
             {
@@ -101,7 +101,7 @@ bool ManagerChunk<ChunkT, T>::sweep_mops_up([[maybe_unused]] bool apply) const
 {
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        if constexpr (IsChunk2<ChunkT, T>)
+        if constexpr (IsZeroOneValue<ChunkT, T>)
         {
             return true;
         }
@@ -192,7 +192,7 @@ void ManagerChunk<ChunkT, T>::compute_size_max_number_of_chunk_to_check_compress
     // every materialisation allocates afresh.
     using VariantDef =
         std::conditional_t<IsZeroAnyFamily<ChunkT, T>, zero_any::ChunkDef,
-                           std::conditional_t<IsChunk2<ChunkT, T>, zero_one_value::ChunkDef, zero::ChunkDef>>;
+                           std::conditional_t<IsZeroOneValue<ChunkT, T>, zero_one_value::ChunkDef, zero::ChunkDef>>;
 
     int threshold = somme_chunk_create / (VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS);
     threshold     = std::max(threshold, VariantDef::size_min_list_chunk_to_check_compress);

@@ -214,7 +214,8 @@ try
         arr.clear();
     }
 
-    println("=== {} ===", fails ? "FILL_RANGE_MT_V1V2 FAILED" : "FILL_RANGE_MT_V1V2 OK");
+    println("=== {} ===",
+            fails ? "FILL_RANGE_MT_ZERO_AND_ZERO_ONE_VALUE FAILED" : "FILL_RANGE_MT_ZERO_AND_ZERO_ONE_VALUE OK");
     return fails ? 1 : 0;
 }
 catch (const std::exception& e)

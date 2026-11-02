@@ -138,7 +138,7 @@ flowchart TD
 ```
 
 Ce qui diffère de `zero_one_value` : une liste de candidats par rang
-(`chunk_to_compress_potentially_thr`), et non une par seconde valeur, et une seule constante
+(`zero_candidates_thr`), et non une par seconde valeur, et une seule constante
 cible, donc une seule liste de sortie. Les builds séquentiels n'ont pas de passe
 (`make_block_compression` y est vide) : c'est le compteur de zéros qui compresse (§4).
 

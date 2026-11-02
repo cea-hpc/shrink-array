@@ -31,7 +31,7 @@
 #include "chunk/internal/cpu_pause.h"         // CHUNK_CPU_PAUSE (spin in create_value*)
 #include "chunk/zero_any_chunk.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
 #include "chunk/internal/zero_any_proxy.h"      // zero_any::Proxy<T>
-#include "chunk/internal/manager_chunk.h"       // ManagerChunk2A:: (dependent calls the include tools cannot attribute)
+#include "chunk/internal/manager_chunk.h"       // Manager:: (dependent calls the include tools cannot attribute)
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
 #include "chunk/internal/write_compress_sync_policy.h" // WriteCompressSyncPolicy::is_thread_writing_on (wait_before_materialise)
 #include "chunk/chunk_traits.h"                        // ChunkTraits<ChunkT>::ProxyType (wait_before_materialise)
@@ -120,12 +120,12 @@ template <typename T, typename Derived, bool Enabled>
  *       because `first_value` is 0 (an all-zero chunk is classified compact1).
  */
 template <typename T, typename Derived>
-void zero_any::ChunkImpl<T, Derived>::fill_list_to_compress(VecTupleChunkA2pInt2&  ll_compt1,
-                                                            VecTupleChunkA2pTint2& ll_compt2,
-                                                            int                    num_chunk,
-                                                            int                    num_tab,
-                                                            ChunkElems             size,
-                                                            [[maybe_unused]] bool  claimed)
+void zero_any::ChunkImpl<T, Derived>::fill_list_to_compress(CandidateTuples&      ll_compt1,
+                                                            CandidateValueTuples& ll_compt2,
+                                                            int                   num_chunk,
+                                                            int                   num_tab,
+                                                            ChunkElems            size,
+                                                            [[maybe_unused]] bool claimed)
 {
     if (Base::is_not_cst_val1())
     {
@@ -202,7 +202,7 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
     // carries its array's ChunkElems (from push_to_compress_list()), pinned right before
     // clear_int_st() reaches ChunkBase::free_values(), which routes by the ambient
     // thread_chunk_size() (see zero_one_value::Proxy::manage_full_first_value() in zero_one_value_proxy.h).
-    auto& vec_tuple_to_compress = ManagerChunk2A::get_chunk2a_to_compress_potentially(thr);
+    auto& vec_tuple_to_compress = Manager::get_zero_any_candidates(thr);
 
     const auto sz = static_cast<int>(vec_tuple_to_compress.size());
 
@@ -260,8 +260,8 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
         }
     }
 
-    VecTupleChunkA2pInt2  ll_compt1;
-    VecTupleChunkA2pTint2 ll_compt2;
+    CandidateTuples      ll_compt1;
+    CandidateValueTuples ll_compt2;
 
     ll_compt1.reserve((sz / 50) + 1);
     ll_compt2.reserve((sz / 50) + 1);
@@ -634,7 +634,7 @@ bool zero_any::ChunkImpl<T, Derived>::have_chunk_to_compress([[maybe_unused]] in
 template <typename T, typename Derived>
 void zero_any::ChunkImpl<T, Derived>::compress_chunk_to_compress_in_par([[maybe_unused]] int thr, bool apply)
 {
-    auto& vec_tup = ManagerChunk2A::get_chunk2a_to_compress_potentially(thr);
+    auto& vec_tup = Manager::get_zero_any_candidates(thr);
 
     if constexpr (build_config::threaded)
     {
@@ -704,12 +704,12 @@ void zero_any::ChunkImpl<T, Derived>::compress_chunk_to_compress_in_par([[maybe_
  *                  first; forwarded to fill_list_to_compress().
  */
 template <typename T, typename Derived>
-void zero_any::ChunkImpl<T, Derived>::fill_list_chunk_to_compress_in_par([[maybe_unused]] int   thr,
-                                                                         VecTupleChunkA2pInt2&  ll_compt1,
-                                                                         VecTupleChunkA2pTint2& ll_compt2,
-                                                                         [[maybe_unused]] bool  claimed)
+void zero_any::ChunkImpl<T, Derived>::fill_list_chunk_to_compress_in_par([[maybe_unused]] int  thr,
+                                                                         CandidateTuples&      ll_compt1,
+                                                                         CandidateValueTuples& ll_compt2,
+                                                                         [[maybe_unused]] bool claimed)
 {
-    auto& vec_tup = ManagerChunk2A::get_chunk2a_to_compress_potentially(thr);
+    auto& vec_tup = Manager::get_zero_any_candidates(thr);
 
     const int sz = vec_tup.size();
 
@@ -1409,11 +1409,11 @@ template <typename T, typename Derived>
 {
     if constexpr (build_config::threaded)
     {
-        return ManagerChunk2A::is_chunk2a_to_compress_potentially_empty();
+        return Manager::is_zero_any_candidates_empty();
     }
     else
     {
-        return ManagerChunk2A::get_chunk2a_to_compress_potentially().empty();
+        return Manager::get_zero_any_candidates().empty();
     }
 }
 

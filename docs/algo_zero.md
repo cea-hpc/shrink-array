@@ -136,7 +136,7 @@ flowchart TD
 ```
 
 What differs from `zero_one_value`: one candidate list per rank
-(`chunk_to_compress_potentially_thr`), not one per second value, and a single target constant,
+(`zero_candidates_thr`), not one per second value, and a single target constant,
 hence a single output list. Sequential builds have no pass (`make_block_compression` is empty
 there): the zero counter compresses (§4).
 

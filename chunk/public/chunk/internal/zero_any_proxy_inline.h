@@ -175,12 +175,12 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::mark_for_compression_if_needed(InT
     {
         // Called BEFORE the store (handle_no_bool_assignment): the memory check
         // must expect the old value -- see mark_for_compression_before_store.
-        Base2::mark_for_compression_before_store(BaseSpec::ptr_second_value_.get(), new_value, ChunkT::first_value,
-                                                 vals);
+        SecondValueBase::mark_for_compression_before_store(BaseSpec::ptr_second_value_.get(), new_value,
+                                                           ChunkT::first_value, vals);
     }
     else
     {
-        Base2::mark_for_compression_if_needed(new_value);
+        SecondValueBase::mark_for_compression_if_needed(new_value);
     }
 }
 
@@ -193,12 +193,12 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::mark_for_compression_if_needed_wit
 {
     if constexpr (is_not_bool)
     {
-        Base2::mark_for_compression_if_needed(BaseSpec::ptr_second_value_.get(), old_value, new_value,
-                                              ChunkT::first_value);
+        SecondValueBase::mark_for_compression_if_needed(BaseSpec::ptr_second_value_.get(), old_value, new_value,
+                                                        ChunkT::first_value);
     }
     else
     {
-        Base2::mark_for_compression_if_needed(old_value, new_value);
+        SecondValueBase::mark_for_compression_if_needed(old_value, new_value);
     }
 }
 
@@ -257,11 +257,11 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::resize_tab_is_int(int num_tab, int
 template <typename T, typename Derived, typename ChunkT>
 void zero_any::ProxyImpl<T, Derived, ChunkT>::trigger_compression_if_needed(int thr_rank)
 {
-    const auto& vec_to_compress_potantially = ManagerChunk2A::get_chunk2a_to_compress_potentially(thr_rank);
+    const auto& vec_to_compress_potantially = Manager::get_zero_any_candidates(thr_rank);
 
     if constexpr (build_config::threaded)
     {
-        const int szm = ManagerChunk2A::get_size_max_number_of_chunk_to_check_compress();
+        const int szm = Manager::get_size_max_number_of_chunk_to_check_compress();
 
         const int sz = static_cast<int>(vec_to_compress_potantially.size());
 
@@ -291,11 +291,11 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::perform_compression() noexcept
     // Runs inside a region, next to pure readers: the buffers this pass
     // releases wait for one grace period (read_reclaim.h).
     const read_reclaim::PassScope pass_scope;
-    const int                     szm = ManagerChunk2A::get_size_max_number_of_chunk_to_check_compress();
+    const int                     szm = Manager::get_size_max_number_of_chunk_to_check_compress();
 
     const int thr_rank = get_thr_rank_fast();
 
-    const auto& vec_to_compress_potantially = ManagerChunk2A::get_chunk2a_to_compress_potentially(thr_rank);
+    const auto& vec_to_compress_potantially = Manager::get_zero_any_candidates(thr_rank);
 
     const int sz_before = static_cast<int>(vec_to_compress_potantially.size());
 
@@ -655,13 +655,13 @@ T zero_any::ProxyImpl<T, Derived, ChunkT>::assign_impl(InT<U> value) noexcept
         // By reference: value outlives the synchronous call; the deferred path copies it.
         const auto assignment_body = [this, &value] { handle_no_bool_assignment(value); };
 
-        need_async = Base2::write_with_optional_lock_with_set_ptr(assignment_body);
+        need_async = SecondValueBase::write_with_optional_lock_with_set_ptr(assignment_body);
     }
     else
     {
         const auto assignment_body_bool = [this, &value] { handle_bool_assignment(value); };
 
-        need_async = Base2::write_with_optional_lock_with_set_ptr(assignment_body_bool);
+        need_async = SecondValueBase::write_with_optional_lock_with_set_ptr(assignment_body_bool);
     }
 
     if constexpr (build_config::threaded)
@@ -806,7 +806,8 @@ T zero_any::ProxyImpl<T, Derived, ChunkT>::assign_impl(InT<U> value) noexcept
                     // replayed write that makes the chunk uniform queues it, or it
                     // waits for the next direct write. After the store, unlike
                     // the direct path: a flush excludes the passes.
-                    Base2::mark_for_compression_if_needed_with_value_async(proxy, v_old, static_cast<T>(ctx->operand));
+                    SecondValueBase::mark_for_compression_if_needed_with_value_async(proxy, v_old,
+                                                                                     static_cast<T>(ctx->operand));
                     break;
                 }
             };
@@ -893,7 +894,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_simple_
             continue;
         }
 
-        Base2::mark_for_compression_if_needed_with_value_async(proxy, v_old, derived().read_values());
+        SecondValueBase::mark_for_compression_if_needed_with_value_async(proxy, v_old, derived().read_values());
         break;
     }
 }
@@ -945,7 +946,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::execute_arithmetic_compound_operat
 
             modify_fn(op);
         }
-        else if (Base2::is_not_cst_val2())
+        else if (SecondValueBase::is_not_cst_val2())
         {
             Base::store_value(v_new_truncated);
 
@@ -1241,7 +1242,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_inplace
             }
         }
 
-        Base2::mark_for_compression_if_needed_with_value_async(proxy, v_old, derived().read_values());
+        SecondValueBase::mark_for_compression_if_needed_with_value_async(proxy, v_old, derived().read_values());
         break;
     }
 }

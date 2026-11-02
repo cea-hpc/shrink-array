@@ -152,7 +152,7 @@ flowchart TD
 ```
 
 Ce qui diffère de `zero_one_value` : une liste de candidats par rang
-(`get_chunk2a_to_compress_potentially`), et non une par seconde valeur ; la seconde constante est
+(`get_zero_any_candidates`), et non une par seconde valeur ; la seconde constante est
 l'élément 0 du chunk, enregistré seulement à ce moment ; les métadonnées du chunk (case, type)
 sont écrites **avant** le CAS (`block_clear_common`). Les builds séquentiels exécutent la même
 passe, sans les marques et sans `start` / `finish`.
