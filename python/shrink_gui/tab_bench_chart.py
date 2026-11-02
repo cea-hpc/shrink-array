@@ -69,9 +69,10 @@ class BenchChart:
         row.addWidget(QLabel("Comparer avec"))
         row.addWidget(self.bc_cmp, 1)
         row.addWidget(bref)
+        self.bc_view = ScatterView()
+        row.addWidget(self.chart_save_button(self.bc_view, self.bench_image_name))
         self.bc_note = TLabel("")
         self.bc_note.setWordWrap(True)
-        self.bc_view = ScatterView()
         w = QWidget()
         lay = QVBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -79,6 +80,14 @@ class BenchChart:
         lay.addWidget(self.bc_note)
         lay.addWidget(self.bc_view, 1)
         return w
+
+    def bench_image_name(self):
+        """The name proposed for the image: the run, the config, the measure,
+        and B when compared."""
+        rid_b = self.bc_cmp.currentData()
+        metric = {"temps": "temps", "mémoire": "memoire", "speedup": "speedup"}[self.bc_metric.currentData()]
+        return "_".join(x for x in (self._image_run_name(self.current), self.bc_config.currentText(), metric)
+                        if x) + (f"_vs_{self._image_run_name(rid_b)}" if rid_b else "")
 
     def fill_bench_compare(self):
         """The runs the current one can be compared with: the other
