@@ -558,9 +558,11 @@ the tag's checksum to the recipe.
   against `RLIMIT_AS` and, under strict overcommit, the commit charge. bss of
   `shrink_bench_omp_zero_any_256`: 348 MB -> 0.27 MB. The price: reading a second value back
   loads the table's pointer first (one L1 hit, independent of the identifier's computation).
-  Not measurable on a 2-core VM: `access_cost`'s new `read-second` case +1.8% at the minimum,
-  within the drift of the cases that do not touch the table (+2 to +11%); the benchmark at 2
-  threads -6% (sd 8-10%), HWM unchanged. `region_init()` is now serialised by a mutex and
+  Below measurement on Grace (aarch64, 1 thread, spread 0-1%): `access_cost`'s new
+  `read-second` case 2.413 ns per element against 2.409 for `read-constant`, which does not
+  touch the table, and 2.415 for `read-varied`. On a 2-core x86 VM, within the noise as well
+  (`read-second` +1.8% at the minimum; the benchmark at 2 threads -6%, sd 8-10%, HWM
+  unchanged). `region_init()` is now serialised by a mutex and
   publishes `region_begin` last: a thread that lost the race could find it set before
   `region_end` and `id_limit`.
 - `access_cost`: a `read-second` case, an array all at 1.5 (zero_any: every chunk compressed to a

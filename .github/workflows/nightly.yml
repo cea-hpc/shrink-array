@@ -103,11 +103,8 @@ jobs:
           -DCHUNK_BUILD_DYN=ON
       - name: Build and run the validation harnesses (check target)
         run: cmake --build build --target check
-      - name: GenMC models, native runs
-        run: |
-          targets=$(ninja -C build -t targets all | sed -n 's/^\(formal_native_[a-z_]*\):.*/\1/p' | sort -u)
-          cmake --build build --target $targets
-          ctest --test-dir build -L formal --output-on-failure
+      # No GenMC native runs here: they are C programs, the same in a _dyn build,
+      # and ci.yml's AArch64 OpenMP job runs them on every push.
 
   # Line coverage of chunk/ and fast_allocators/ by the validation harnesses:
   # Debug (-O0, the lines map to the source), OpenMP, 256 + _dyn, gcc 14
