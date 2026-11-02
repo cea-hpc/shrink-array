@@ -139,7 +139,7 @@ T* zero::Proxy<T>::perform_core_assignment(T* vals, InT<T> value) const noexcept
 
     if constexpr (build_config::do_check)
     {
-        global_check_write_nan(value, num_);
+        chunk_config::CheckNaN<chunk_config::do_check>::maybe(value, static_cast<long>(num_));
     }
     return vals;
 }
@@ -685,7 +685,7 @@ void zero::Proxy<T>::apply_compound_operation(InT<U> operand, BinaryOp op)
         {
             if constexpr (build_config::do_check)
             {
-                global_check_write_nan(operand, num_);
+                chunk_config::CheckNaN<chunk_config::do_check>::maybe(operand, static_cast<long>(num_));
             }
 
             execute_arithmetic_compound_operation(

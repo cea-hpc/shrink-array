@@ -123,7 +123,8 @@ class TabCstVal2Holder;
  *          IDENTIFIER registered for the value (its index in the type's
  *          region, 1-based; 0 = no second value) rather than the value: 4
  *          bytes per chunk instead of 8 (double, long) or 16 (complex<double>).
- *          Reading it back is one load of GlobalVecHolder::value_by_id[id].
+ *          Reading it back is GlobalVecHolder::value_by_id[id]: the table
+ *          pointer, then the value (an mmap'd table, see value_by_id).
  *          Narrower types keep the value itself: an identifier would not be
  *          smaller, and bool has no registry.
  */
@@ -316,10 +317,11 @@ class GlobalVecHolder
     /// @brief Largest identifier the region can hand out.
     ///
     /// @details One cache line per identifier (region_init()'s stride), so the region
-    ///          alone would allow 33 M. Capped by CHUNK_CST_VAL2_MAX_IDS because
-    ///          value_by_id[max_ids + 1] is then the binding cost (256 MiB of address
-    ///          space per type for a double at 33 M). The default leaves ample headroom
-    ///          over real workloads.
+    ///          alone would allow 33 M. Capped by CHUNK_CST_VAL2_MAX_IDS, which
+    ///          also sizes the reservations: max_ids x 64 bytes of region and
+    ///          (max_ids + 1) x sizeof(T) of value table per type, address space
+    ///          only (MAP_NORESERVE, backed as identifiers are handed out). The
+    ///          default leaves ample headroom over real workloads.
 #ifndef CHUNK_CST_VAL2_MAX_IDS
     #define CHUNK_CST_VAL2_MAX_IDS (4uz << 20U)
 #endif
@@ -560,7 +562,7 @@ class GlobalVecHolder
     {
         const std::byte* base = region_begin.load(std::memory_order_relaxed);
         const auto id = ((::fast_alloc::address_bits(ptr) - ::fast_alloc::address_bits(base)) / region_stride) + 1u;
-        return value_by_id[id];
+        return values()[id];
     }
 
     /**
@@ -690,13 +692,42 @@ class GlobalVecHolder
     ///       is then a shift by 6, not a 64-bit `div` by a global.
     static constexpr std::size_t region_stride = id_stride;
 
+    /// @brief Index 0 alone, until region_init() maps the table: a read of
+    ///        "no second value" needs no mapping.
+    static inline T value_by_id_none[1]{};
+
     /// @brief The value registered under each identifier, contiguous: what
     ///        a chunk's second value is read through on every write of a
-    ///        wide type (SecondValueRef::get). 8 bytes per value, L1-resident
-    ///        for the values a run actually uses. Zero-initialised static
-    ///        storage: the pages of identifiers never handed out are never
-    ///        touched. Index 0 is "no second value" and stays T{}.
-    static inline std::array<T, max_ids + 1> value_by_id{};
+    ///        wide type (SecondValueRef::get), sizeof(T) per value,
+    ///        L1-resident for the values a run actually uses. Index 0 is "no
+    ///        second value" and holds T{}.
+    ///
+    /// @details A pointer, to an mmap(MAP_NORESERVE) reservation of
+    ///          (id_limit + 1) values made by region_init(), next to the
+    ///          region and the same way: only the pages of identifiers handed
+    ///          out are ever backed, region_reset() gives them back, and the
+    ///          size follows CHUNK_CST_VAL2_ID_LIMIT. A static array of
+    ///          max_ids + 1 values (32 MiB of bss for a double, 96 for a 24-byte
+    ///          type, per element type) cost the same RSS for a trivial T, but
+    ///          not for a T whose default constructor is not constexpr: its
+    ///          dynamic initialisation touched every page at startup. It also
+    ///          counted against RLIMIT_AS and, under strict overcommit, against
+    ///          the commit charge, for every element type linked in. The price
+    ///          is one more dependent load per read, an L1 hit
+    ///          (CHANGELOG, access_cost).
+    ///
+    /// @note A plain pointer, written once by region_init() before its
+    ///       release store of region_begin: every reader holds an Array<T>,
+    ///       whose init() ran region_init(), so the write happens before the
+    ///       read and there is no race. Plain also lets the compiler keep it
+    ///       in a register across a loop.
+    static inline T* value_by_id = value_by_id_none;
+
+    /// @brief The table value_by_id points to. @see value_by_id
+    [[nodiscard]] static T* values() noexcept
+    {
+        return value_by_id;
+    }
 
   private:
     /// @brief What is reserved and carved: exactly the identifiers
@@ -714,7 +745,15 @@ class GlobalVecHolder
     static constexpr size_t index_cap       = 1uz << chunk_cst_val2_index_loc; ///< Initial capacity.
     static constexpr int    index_max_probe = 64;                              ///< Bounded; giving up means fallback.
 
-    /// @brief Reserve the region. Idempotent; called by init().
+    /// @brief Bytes of the value table: identifiers 0 to id_limit.
+    /// @pre region_init() has read id_limit.
+    [[nodiscard]] static std::size_t value_table_bytes() noexcept
+    {
+        return (id_limit + 1u) * sizeof(T);
+    }
+
+    /// @brief Reserve the region and map the value table. Idempotent; called
+    ///        by init().
     static void region_init();
 
     /// @brief Give the carved pages back and start over. Last clear only.
@@ -880,7 +919,7 @@ class TabCstVal2Holder
      *
      * @details Same conversion, but returns T{} rather than indexing out of
      *          bounds if @p ptr is not where the caller thought. A pointer that
-     *          passes is_cst_val2_ptr() can only yield an id in [1, max_ids],
+     *          passes is_cst_val2_ptr() can only yield an id in [1, id_capacity()],
      *          so this never fires in a correct call -- it guards a pointer
      *          that was not range-tested, where a compare is cheaper than a
      *          crash.
@@ -890,7 +929,7 @@ class TabCstVal2Holder
     /// @brief The value registered under @p id; T{} for 0.
     [[nodiscard]] static T value_of_id(std::uint32_t id) noexcept
     {
-        return VecHolder::value_by_id[id]; // [0] is T{}
+        return VecHolder::values()[id]; // [0] is T{}
     }
 
     /**

@@ -40,6 +40,12 @@
  *                            (buffer taken from the allocator); the vector:
  *                            a zeroed vector written over
  *            rmw             a[i] += 0.5 on the varied array
+ *            read-second     sum of every element of an array all at 1.5,
+ *                            written outside the timing: every chunk
+ *                            compressed to a constant other than zero where
+ *                            the variant can (zero_any: a second value, read
+ *                            back through the registry's value table; zero:
+ *                            materialised); the vector: all 1.5
  *
  *          A write case's time includes the end of its phase (the deferred
  *          writes flushed, the between-region compression pass): what a
@@ -56,8 +62,9 @@
  *          writes when --verify is given.
  *
  *          Memory: the vector (8 n_elems bytes), the array (about the same at its
- *          largest), the random indices (4 n_elems bytes). The default n_elems = 2^27
- *          takes about 3 GB.
+ *          largest), the random indices (4 n_elems bytes), and the constant vectors
+ *          of read-constant and read-second (8 n_elems bytes each). The default
+ *          n_elems = 2^27 takes about 4 GB.
  *
  *          Usage: access_cost [--n n_elems] [--reps R] [--csv] [--verify]
  */
@@ -365,7 +372,8 @@ double minimum(const std::vector<double>& samples)
 }
 
 constexpr const char* case_names[] = {"read-varied",  "read-constant", "read-random",
-                                      "write-varied", "write-fresh",   "rmw"};
+                                      "write-varied", "write-fresh",   "rmw",
+                                      "read-second"};
 constexpr int         n_cases      = static_cast<int>(sizeof(case_names) / sizeof(case_names[0]));
 } // namespace
 
@@ -424,6 +432,7 @@ int main(int argc, char** argv)
     const std::vector<int> idx = random_indices(n_elems);
     std::vector<double>    vec(static_cast<std::size_t>(n_elems));
     std::vector<double>    zeros(static_cast<std::size_t>(n_elems), 0.);
+    std::vector<double>    seconds(static_cast<std::size_t>(n_elems), 1.5);
 
     // [case][container 0 = vector, 1 = array] -> seconds per repetition
     std::vector<double> times[n_cases][2];
@@ -525,6 +534,15 @@ int main(int argc, char** argv)
             {
                 bad_elements += verify_elements("rmw", arr, vec);
             }
+        }
+        // read-second: an array all at 1.5 (its end of phase compresses it),
+        // a vector of 1.5. The sum is exact: n x 1.5 < 2^53.
+        {
+            Array<double> second_arr(count);
+            arr_write(second_arr, count, [](long) { return 1.5; });
+            const auto [sv, sa] =
+                pair(6, [&] { return vec_read(seconds); }, [&] { return arr_read(second_arr, count); });
+            check_sum(6, sv.sum, sa.sum);
         }
     }
 
