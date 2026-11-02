@@ -241,7 +241,9 @@ endforeach()
 # registry): shrink_bench_tbb_<variant>_<declination>, same --mode, same
 # OMP_NUM_THREADS (CHUNK_NUM_THREADS) for the thread count. No backend marker
 # in that name: "tbb" is what runs its regions, and std the only backend it
-# is built on.
+# is built on. With SHRINK_BENCH_INT64, its 64-bit twins as the other benches
+# have: shrink_bench_tbb_<variant>_int64_<declination>, for the sizes of
+# SHRINK_BENCH_INT64_SIZES and dyn.
 if (CHUNK_WITH_TBB AND CHUNK_THREADS_BACKEND STREQUAL "std")
   foreach(_vi RANGE ${_sa2_nvar_last})
     list(GET _sa2_variant_names   ${_vi} _vname)
@@ -262,6 +264,15 @@ if (CHUNK_WITH_TBB AND CHUNK_THREADS_BACKEND STREQUAL "std")
         target_compile_definitions(${_tgt} PRIVATE DYN_CHUNK_SIZE=${SHRINK_BENCH_DYN_SIZE})
       endif()
       sa2_setup_target(${_tgt})
+      if (SHRINK_BENCH_INT64 AND (_sz STREQUAL "dyn" OR _sz IN_LIST SHRINK_BENCH_INT64_SIZES))
+        set(_t64 shrink_bench_tbb_${_vname}_int64_${_sz})
+        if (_sz STREQUAL "dyn")
+          sa2_add_int64_target(${_t64} ${_libbase}_${_sz} BENCH_PAR_TBB=1 DYN_CHUNK_SIZE=${SHRINK_BENCH_DYN_SIZE})
+        else()
+          sa2_add_int64_target(${_t64} ${_libbase}_${_sz} BENCH_PAR_TBB=1)
+        endif()
+        target_link_libraries(${_t64} PRIVATE TBB::tbb)
+      endif()
     endforeach()
   endforeach()
 endif()

@@ -53,8 +53,8 @@ names without a backend, which a rebuilt directory still holds, stale). --all-ex
 for this machine: vector, then zero / zero_one_value / zero_any in each size
 (--size narrows it), then the TBB bench of each (shrink_bench_tbb_<variant>_<size>,
 in std builds made with oneTBB); with --int64 their 64-bit declinations
-(shrink_bench_<backend>_*_int64_*, the only ones past INT_MAX elements: --multiply 2
-and up; the TBB bench has none).
+(shrink_bench_<backend>_*_int64_* and shrink_bench_tbb_*_int64_*, the only ones past
+INT_MAX elements: --multiply 2 and up).
 
 --mode perf (the default) is the measurement: 1e9 elements x --multiply,
 --no_io. --mode check runs the correctness mode (5e6 elements, read back
@@ -168,15 +168,14 @@ def glob_execs(root, target, pattern):
 def all_execs(root, target, a):
     """--all-exec: the executables the target has for this machine, vector
     first, then each variant in each size (--size), 32-bit or --int64, then
-    the TBB bench of each (32-bit only: it has no int64 declination). Those
-    the target has not built are left out, the TBB bench of a build without
-    oneTBB among them."""
+    the TBB bench of each, the same way. Those the target has not built are
+    left out: the TBB bench of a build without oneTBB, and the int64 sizes
+    that are not built (SHRINK_BENCH_INT64_SIZES and dyn only)."""
     specs = ["vector_int64_perf" if a.int64 else "vector"]
     for v in VARIANTS:
         for sz in a.size or SIZES:
             specs.append("%s%s@%s" % (v, "_int64" if a.int64 else "", sz))
-    if not a.int64:
-        specs += ["tbb_%s@%s" % (v, sz) for v in VARIANTS for sz in a.size or SIZES]
+    specs += ["tbb_%s%s@%s" % (v, "_int64" if a.int64 else "", sz) for v in VARIANTS for sz in a.size or SIZES]
     out = []
     for spec in specs:
         exe = find_exe(root, target, exe_name(spec, a.mode))
@@ -567,7 +566,7 @@ def parse_args(argv=None):
     p.add_argument("--all-exec", action="store_true",
                    help="every executable the target has here: vector, then zero / zero_one_value / "
                         "zero_any in each size, then their TBB bench (shrink_bench_tbb_*, when the build has "
-                        "it; not with --int64) (with --exec: added to them)")
+                        "it; with --int64, its int64 twins too) (with --exec: added to them)")
     p.add_argument("--size", type=lambda v: [x for x in v.split(",") if x], default=None,
                    metavar="dyn,1024,...", help="--all-exec: these sizes only (default: %s)" % ",".join(SIZES))
     p.add_argument("--int64", action="store_true",
