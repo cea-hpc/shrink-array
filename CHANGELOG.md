@@ -470,6 +470,13 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `CHUNK_DO_CHECK=ON` builds compile again. The proxies' write paths called
+  `global_check_write_nan()`, defined nowhere; they now go through
+  `chunk_config::CheckNaN<do_check>::maybe()`, as the reads do, so `CheckNaN::update(false)`
+  turns the write check off too. And `CheckNaN<true>::maybe()` (config.h) called
+  `global_check_nan()` before any declaration of it: for a `double` argument-dependent lookup
+  finds nothing, so every TU that saw config.h before global_check.h failed (GCC 13). The
+  overloads are now declared in config.h, under `CHUNK_OPT_DO_CHECK`.
 - The compression passes of `zero`, `zero_one_value` and `zero_any` (threaded builds): a write that
   made a chunk constant while its pass handed it back -- between the pass's `steal_unmark()` and
   the reset of its "queued" flag -- met the flag still up and did not queue it, and the reset

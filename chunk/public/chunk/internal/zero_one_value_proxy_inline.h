@@ -425,7 +425,7 @@ void zero_one_value::Proxy<T>::perform_core_assignment(InT<T> value) const noexc
 
     if constexpr (build_config::do_check)
     {
-        global_check_write_nan(value, num_);
+        chunk_config::CheckNaN<chunk_config::do_check>::maybe(value, static_cast<long>(num_));
     }
 }
 
@@ -1056,7 +1056,7 @@ void zero_one_value::Proxy<T>::apply_compound_operation([[maybe_unused]] Op op, 
         {
             if constexpr (build_config::do_check)
             {
-                global_check_write_nan(operand, num_);
+                chunk_config::CheckNaN<chunk_config::do_check>::maybe(operand, static_cast<long>(num_));
             }
 
             const bool was_second_value  = (v_old_snapshot == second_value_);

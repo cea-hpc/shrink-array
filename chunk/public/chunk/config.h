@@ -24,6 +24,10 @@
 
 #include "chunk/build_options.h" // CHUNK_OPT_*: the options the library was built with (generated)
 
+#if CHUNK_OPT_DO_CHECK
+    #include <complex> // std::complex (the global_check_nan declarations)
+#endif
+
 namespace shrink_array::build_config
 {
 
@@ -462,7 +466,32 @@ struct CheckNaN
     static void maybe([[maybe_unused]] auto val, [[maybe_unused]] long index) noexcept {}
 };
 
+} // namespace shrink_array::chunk_config
+
+#if CHUNK_OPT_DO_CHECK
+namespace shrink_array
+{
+// Declared here, defined in chunk/internal/global_check.h: CheckNaN<true>::maybe()
+// calls them with a double, a float or a std::complex, for which argument-dependent
+// lookup finds nothing at the point of instantiation -- ordinary lookup at the
+// definition below must already see them, whichever header a TU includes first.
+// (global_check.h cannot simply be included here: it includes invariant_check.h,
+// which includes this file.)
+inline void global_check_nan(long i) noexcept;
+inline void global_check_nan(const double& val, long i) noexcept;
+inline void global_check_nan(const float& val, long i) noexcept;
+inline void global_check_nan(const std::complex<double>& val, long i) noexcept;
+template <typename T>
+void global_check_nan(const T& val, long i) noexcept;
+} // namespace shrink_array
+#endif
+
+namespace shrink_array::chunk_config
+{
+
 /// @brief The real switch: maybe() checks while it is on.
+/// @note Every TU that instantiates maybe() must also see global_check.h (chunk_base.h
+///       includes it), where the overloads above are defined.
 template <>
 class CheckNaN<true>
 {
