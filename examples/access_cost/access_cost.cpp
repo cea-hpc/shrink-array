@@ -81,16 +81,16 @@
 #include <utility>     // std::as_const
 #include <vector>      // std::vector
 
-#include "chunk/chunk_traits.h"         // the IntType = int default of the arrays
-#include "chunk/zero_array.h"           // zero::Array
-#include "chunk/zero_one_value_array.h" // zero_one_value::Array
-#include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
-#include "chunk/config.h"               // chunk_config::use_zero*, build_config::use_openmp / has_not_ompt
-#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"          // begin_parallel_phase, finalize_parallel_phase
-#include "chunk/internal/env_parse.h"   // arg_number (checked, not atoi)
-#include "chunk/internal/print.h"       // shrink_array::println
+#include "chunk/chunk_traits.h"                   // the IntType = int default of the arrays
+#include "chunk/zero_array.h"                     // zero::Array
+#include "chunk/zero_one_value_array.h"           // zero_one_value::Array
+#include "chunk/zero_any_array.h"                 // zero_any::Array
+#include "chunk/param_chunk.h"                    // ParamChunk::init_indexes
+#include "chunk/config.h"                         // chunk_config::use_zero*, build_config::use_openmp / has_not_ompt
+#include "chunk/PMP_CHUNK.h"                      // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"                    // begin_parallel_phase, finalize_parallel_phase
+#include "chunk/internal/env_parse.h"             // arg_number (checked, not atoi)
+#include "chunk/internal/print.h"                 // shrink_array::println
 #include "fast_allocators/internal/pmp_runtime.h" // team_size / team_rank (read-bulk)
 
 using namespace shrink_array;
