@@ -119,7 +119,9 @@ jobs:
       CC: gcc-14
       CXX: g++-14
       CMAKE_BUILD_PARALLEL_LEVEL: 2
-      ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:detect_stack_use_after_return=1
+      # print_module_map=1: the modules' load addresses in the report, so a faulting pc
+      # of an inlined frame can be disassembled in the binary the failure step uploads.
+      ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:detect_stack_use_after_return=1:print_module_map=1
     steps:
       - uses: actions/checkout@v5
         with:
@@ -146,6 +148,14 @@ jobs:
       # zero_one_value's 8-thread case, not reproduced since). Stops at the first failure.
       - name: read_reclaim harnesses, repeated
         run: ctest --test-dir build -R '^read_reclaim_validation_' --repeat until-fail:20 --timeout 600 --output-on-failure
+      # On a failure, the validation executables (the faulting pc is an offset in one of
+      # them: print_module_map above), for objdump -d around it.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: asan-validation-binaries
+          path: build/examples/validation/validation_*_256
+          retention-days: 14
 
   # clang 23 (apt.llvm.org) with libstdc++ and libomp, OpenMP: the
   # diagnostics gcc does not give, and the OMPT tool (CHUNK_HAVE_OMPT), which
