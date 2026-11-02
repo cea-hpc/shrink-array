@@ -153,6 +153,19 @@ jobs:
       - name: Validation harnesses
         continue-on-error: true
         run: ctest --test-dir build -j4 -LE examples --timeout 1800 --output-on-failure
+      # The traces' own paths: the size predictor (chunk_size_predictor.h, at
+      # every zero_any clear() with advisor=info in a check build) and the
+      # compression residual's chunk sample (compress=info) run only when
+      # their channel is at info, which no harness asks for: 0 % in the report.
+      # A second pass of two quick harness families with those channels on adds
+      # their counters to the first pass's: compress_roundtrip reaches the
+      # predictor, bulk_write_team_validation a residual. Not the whole suite,
+      # whose log-reading tests (log_validation) set CHUNK_LOG themselves.
+      - name: Harnesses with the advisor and compress traces on
+        continue-on-error: true
+        env:
+          CHUNK_LOG: warn,advisor=info,compress=info
+        run: ctest --test-dir build -j4 -R '^(compress_roundtrip|bulk_write_team_validation)_' --timeout 1800 --output-on-failure
       - name: Coverage report
         if: always()
         run: |

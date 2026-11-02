@@ -55,6 +55,18 @@ namespace zero_one_value
  *          num_tab: hence the destructor's two erases and rechunk_to()'s six
  *          hooks (zero_any has three).
  *
+ *          Booleans, two containers, chosen by type (docs/variants.md, section 2):
+ *            - Array<bool>: one byte per element in a materialised chunk, a plain
+ *              byte store per write;
+ *            - Array<Bit>, spelled ArrayChunkBits<> (chunk/array_chunk_bits.h):
+ *              one bit per element, 8 per byte -- the layout of std::vector<bool>
+ *              -- for an atomic read-modify-write of a 64-bit word per write, so
+ *              that two threads may write neighbouring elements, which
+ *              std::vector<bool> does not allow.
+ *          Both compress all-false chunks to first_value and all-true chunks to
+ *          the second value, `true` by construction (no set_second_value()).
+ *          examples/bool_arrays uses both.
+ *
  * @tparam T        stored element type
  * @tparam IntType index type used for sizes and element positions
  */

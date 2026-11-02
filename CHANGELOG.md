@@ -408,6 +408,13 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `examples/bool_arrays`: the two boolean containers of a `zero_one_value` build side by side --
+  `zero_one_value::Array<bool>` (a byte per element) and `ArrayChunkBits` (a bit per element, the
+  layout of `std::vector<bool>`, neighbouring elements writable from different threads) -- the
+  same mask written from every thread, read back, and the data each keeps (`ctest -L examples`).
+  `docs/variants.md` gets the section they lacked ("Booleans: two containers": what a
+  materialised chunk holds, the write, the threads, when to choose which), and
+  `zero_one_value::Array`'s comment names both.
 - `CHUNK_BREAK_ON_FAILURE`: under a debugger (gdb, cuda-gdb, gdbserver, lldb, lldb-server, read
   from `TracerPid` and the tracer's name, without allocating), an invariant failure or a
   `FAST_ALLOC_FATAL`, its report written, raises `SIGTRAP`: the debugger stops on the failing
