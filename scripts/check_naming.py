@@ -23,7 +23,7 @@ Over chunk/, fast_allocators/ and examples/:
   iterator, ...), the traits and tags (is_..., has_...,
   ..._t, ..._tag, rebind).
 - No identifier of the implementation's reserved `__` form, but the
-  compiler's and the runtime's (__builtin_..., __cxa_..., __kmp_...).
+  compiler's and the runtime's (__builtin_..., __cxa_..., __kmp_..., __gcov_...).
 
 What a line cannot show -- the `_` that ends a private or protected data
 member, a parameter's case -- clang-tidy's readability-identifier-naming
@@ -61,7 +61,7 @@ TYPE_DEF = re.compile(r"\b(?:class|struct|union)\s+([A-Za-z_]\w*)\s*(?:final\b\s
 TEMPLATE_PARAM = re.compile(r"\b(?:typename|class)\s+([A-Z][A-Z_]*[A-Z_][A-Z0-9_]*)\b")  # T, T2, A0 pass
 RESERVED = re.compile(r"(?<![\w])(__[a-z]\w*)")
 RESERVED_OK = re.compile(r"__(cpp_|has_|attribute__|builtin_|int128|asm__|volatile__|cxa_|sanitizer_|alloc_token_|"
-                         r"kmp_|lsan_|asan_|tsan_|msan_|ubsan_|forceinline|declspec|restrict|typeof|extension__)")
+                         r"kmp_|lsan_|asan_|tsan_|msan_|ubsan_|gcov_|forceinline|declspec|restrict|typeof|extension__)")
 ENUM_HEAD = re.compile(r"\benum\b(?:\s+(?:class|struct))?(?:\s+\w+)?\s*(?::\s*[\w:]+\s*)?(\{|$)")
 ENUMERATOR = re.compile(r"(?:^|[{,])\s*([A-Za-z_]\w*)\s*(?==|,|\}|$)")
 
