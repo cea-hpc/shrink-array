@@ -122,6 +122,17 @@ the tag's checksum to the recipe.
 - `zero_one_value::Array::ManagerChunk2` and `zero_any::Array::ManagerChunk2A`:
   use `Manager`. Kept until 1.0.
 
+### Fixed
+
+- `pattern::Array` compresses to motifs in an OMPT build (clang, Intel: `CHUNK_HAVE_OMPT`).
+  There the pass at each region's end is `compress_chunk_to_compress_in_par()`, chunk by chunk
+  through `compress()`, which only knew the two constants: no chunk ever became a motif
+  (`pattern_validation` failed under clang, the nightly's new clang job). A chunk `compress()`
+  leaves materialised now goes through `pattern::Chunk::compress_to_motif()`: the admission rule
+  and the `block_clear_motif()` order of the claimed pass (docs/algo_pattern.md, section 5).
+  `chunk_exchange_validation` accepts, for pattern, an imported materialised chunk found
+  compressed to a motif since (its copy is the motif's second sighting).
+
 ## 0.2.0 -- 2026-10-30
 
 ### Added
