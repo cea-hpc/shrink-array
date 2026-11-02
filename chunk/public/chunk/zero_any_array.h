@@ -169,24 +169,25 @@ template <typename Derived>
 class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<Derived>, public RechunkHooks<Derived>
 {
   public:
-    using Base2   = SecondValueArrayBase<Derived>; ///< Second-value common base (dirty bitset, second-value plumbing).
-    using Base    = ArrayChunkBase<Derived>;       ///< Base shared by every variant.
-    using Hooks2A = RechunkHooks<Derived>;         ///< Re-chunk hooks (dynamic geometry).
+    using SecondValueBase =
+        SecondValueArrayBase<Derived>;       ///< Second-value common base (dirty bitset, second-value plumbing).
+    using Base    = ArrayChunkBase<Derived>; ///< Base shared by every variant.
+    using Hooks2A = RechunkHooks<Derived>;   ///< Re-chunk hooks (dynamic geometry).
 
-    friend Base2; ///< The CRTP base reaches this class's private members.
-    friend Base;  ///< For swap_identity().
+    friend SecondValueBase; ///< The CRTP base reaches this class's private members.
+    friend Base;            ///< For swap_identity().
 
     // Re-declared (not only inherited): the mixins declare them too, so an outside
     // `Arr::ChunkType` would be ambiguous between base subobjects (lookup precedes access).
-    using Traits      = Base2::Traits;      ///< ArrayChunkTraits<Derived>.
-    using T           = Base2::T;           ///< Stored element type.
-    using IntType     = Base2::IndType;     ///< Index type used for sizes and element positions.
-    using ChunkType   = Base2::ChunkType;   ///< The chunk type held in chunk_list_ (zero_any::Chunk<T>).
-    using ManagerType = Base2::ManagerType; ///< The per-type manager (ManagerChunk<zero_any::Chunk, T>).
-    using ProxyType   = Base2::ProxyType;   ///< The write proxy of the non-const accessors (zero_any::Proxy<T>).
-    using value_type  = T;                  ///< Stored element type.
+    using Traits      = SecondValueBase::Traits;      ///< ArrayChunkTraits<Derived>.
+    using T           = SecondValueBase::T;           ///< Stored element type.
+    using IntType     = SecondValueBase::IndType;     ///< Index type used for sizes and element positions.
+    using ChunkType   = SecondValueBase::ChunkType;   ///< The chunk type held in chunk_list_ (zero_any::Chunk<T>).
+    using ManagerType = SecondValueBase::ManagerType; ///< The per-type manager (ManagerChunk<zero_any::Chunk, T>).
+    using ProxyType  = SecondValueBase::ProxyType; ///< The write proxy of the non-const accessors (zero_any::Proxy<T>).
+    using value_type = T;                          ///< Stored element type.
 
-    using ManagerChunk2A = ManagerType; ///< Same type as ManagerType.
+    using Manager = ManagerType; ///< Same type as ManagerType.
 
     // The former snake_case spellings, kept until 1.0 (types are PascalCase).
     using chunk_type [[deprecated("types are PascalCase: use ChunkType")]]          = ChunkType;
@@ -195,11 +196,11 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
     using ind_type [[deprecated("types are PascalCase: use IndType")]]              = IntType;
     using chunk_list_type [[deprecated("types are PascalCase: use ChunkListType")]] = Base::ChunkListType;
 
-    using Base2::chunk_list_;
-    using Base2::m_size_;
-    using Base2::motif_offset_slot; // has_motif_state_v members: the advisor reads a motif chunk's offset
-    using Base2::nb_chunk_;
-    using Base2::resize;
+    using SecondValueBase::chunk_list_;
+    using SecondValueBase::m_size_;
+    using SecondValueBase::motif_offset_slot; // has_motif_state_v members: the advisor reads a motif chunk's offset
+    using SecondValueBase::nb_chunk_;
+    using SecondValueBase::resize;
 
     using Base::nb_tab;
     using Base::num_tab_;
@@ -281,7 +282,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
      * @param count new element count
      * @param val   value every element takes
      *
-     * @note Fills [0, count), not only the new elements: Base2::resize(count, val) has
+     * @note Fills [0, count), not only the new elements: SecondValueBase::resize(count, val) has
      *       std::vector::resize semantics, so this goes through ArrayChunkBase::assign.
      */
     void assign(IntType count, T val) // T, not InT<T>: see ArrayChunkBase::assign

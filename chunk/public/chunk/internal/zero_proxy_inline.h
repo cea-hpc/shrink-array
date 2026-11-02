@@ -734,7 +734,7 @@ void zero::Proxy<T>::apply_compound_operation(InT<U> operand, BinaryOp op)
 template <typename Derived, typename T, bool Enabled>
 void zero::ProxyFastCompPolicy<Derived, T, Enabled>::trigger_compression_if_needed(int thr_rank) noexcept
 {
-    const auto& vec_tuple = Manager::chunk_to_compress_potentially_thr[thr_rank];
+    const auto& vec_tuple = Manager::zero_candidates_thr[thr_rank];
 
     const int sz = static_cast<int>(vec_tuple.size());
 
@@ -760,7 +760,7 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::perform_compression(this co
 
     const int szm = Manager::get_size_max_number_of_chunk_to_check_compress();
 
-    const auto& vec_tuple = Manager::chunk_to_compress_potentially_thr[thr_rank];
+    const auto& vec_tuple = Manager::zero_candidates_thr[thr_rank];
 
     const int sz_before = static_cast<int>(vec_tuple.size());
 

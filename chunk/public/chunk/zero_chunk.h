@@ -368,7 +368,7 @@ class ChunkFastCompPolicy : public ChunkThreadPolicy<T, Derived>
     // 4th element: the chunk's OWN geometry, captured at enqueue by
     // push_to_compress_list. compress() must scan exactly that many elements,
     // NOT alloc_chunk_count() (the CONSUMING thread's ambient size, may differ).
-    using VecTupleChunkpInt2 = std::vector<std::tuple<Chunk<T>*, int, int, ChunkElems>>;
+    using CandidateTuples = std::vector<std::tuple<Chunk<T>*, int, int, ChunkElems>>;
 
     using Manager = ManagerChunk<Chunk, T>;
     using Base    = ChunkBase<T, Derived>;
@@ -398,18 +398,18 @@ class ChunkFastCompPolicy : public ChunkThreadPolicy<T, Derived>
      * @param n_elems   THIS chunk's element count -- never the ambient size, see
      *                  TChunk.h's note on the field it is carried in
      */
-    void fill_list_to_compress(this Derived&       self,
-                               VecTupleChunkpInt2& ll_compt,
-                               int                 num_chunk,
-                               int                 num_tab,
-                               unsigned int        n_elems);
+    void fill_list_to_compress(this Derived&    self,
+                               CandidateTuples& ll_compt,
+                               int              num_chunk,
+                               int              num_tab,
+                               unsigned int     n_elems);
 
     /**
      * @brief Scan @p thr's queued candidates and collect those now compressible.
      * @param thr      rank whose candidate list is scanned
      * @param ll_compt out: the chunks found compressible, with their geometry
      */
-    static void fill_list_chunk_to_compress_in_par(int thr, VecTupleChunkpInt2& ll_compt);
+    static void fill_list_chunk_to_compress_in_par(int thr, CandidateTuples& ll_compt);
 };
 
 /**
@@ -424,7 +424,7 @@ class ChunkFastCompPolicy<T, Derived, false> : public ChunkThreadPolicy<T, Deriv
 {
   public:
     // 4th element: the chunk's own geometry (see the enabled policy).
-    using VecTupleChunkpInt2 = std::vector<std::tuple<Chunk<T>*, int, int, ChunkElems>>;
+    using CandidateTuples = std::vector<std::tuple<Chunk<T>*, int, int, ChunkElems>>;
 
     /// @brief No block compression in this mode.
     static void make_block_compression(int /*thr*/, const Proxy<T>* /*proxy*/) {}
@@ -437,12 +437,10 @@ class ChunkFastCompPolicy<T, Derived, false> : public ChunkThreadPolicy<T, Deriv
 
   private:
     /// @brief No candidate list to fill in this mode.
-    static void fill_list_chunk_to_compress_in_par(int /*thr*/, VecTupleChunkpInt2& /*ll_compt*/) {}
+    static void fill_list_chunk_to_compress_in_par(int /*thr*/, CandidateTuples& /*ll_compt*/) {}
     /// @copydoc fill_list_chunk_to_compress_in_par
-    static void fill_list_to_compress(VecTupleChunkpInt2& /*ll_compt*/,
-                                      int /*num_chunk*/,
-                                      int /*num_tab*/,
-                                      unsigned int /*n_elems*/)
+    static void
+    fill_list_to_compress(CandidateTuples& /*ll_compt*/, int /*num_chunk*/, int /*num_tab*/, unsigned int /*n_elems*/)
     {
     }
 };

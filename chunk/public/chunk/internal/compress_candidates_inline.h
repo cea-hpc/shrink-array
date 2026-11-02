@@ -47,7 +47,7 @@
 #include "chunk/zero_chunk.h"                   // Chunk<T>: the ChunkT<T>:: calls
 #include "chunk/zero_one_value_chunk.h"         // zero_one_value::Chunk<T>: the ChunkT<T>:: calls
 #include "chunk/zero_any_chunk.h"               // zero_any::Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/internal/concept_chunk.h"       // IsChunk, IsChunk2, IsZeroAnyFamily
+#include "chunk/internal/concept_chunk.h"       // IsChunk, IsZeroOneValue, IsZeroAnyFamily
 
 namespace shrink_array
 {
@@ -76,7 +76,7 @@ void CompressCandidates<ChunkT, T>::force_compress()
     {
         ChunkT<T>::make_block_compression(thr, nullptr);
     }
-    else if constexpr (chunk_config::use_fast_block_compression && IsChunk2<ChunkT, T>)
+    else if constexpr (chunk_config::use_fast_block_compression && IsZeroOneValue<ChunkT, T>)
     {
         ChunkT<T>::make_block_compression(thr);
     }
@@ -99,23 +99,23 @@ void CompressCandidates<ChunkT, T>::resize_lists()
     if constexpr (chunk_config::use_fast_block_compression && IsChunk<ChunkT, T>)
     {
         // Resize the list of chunks potentially needing compression
-        chunk_to_compress_potentially_thr.resize(nthr);
+        zero_candidates_thr.resize(nthr);
     }
 
     // --- Complex types (zero_one_value/zero_any) multi-threading logic ---
     if constexpr (build_config::threaded)
     {
         // Specific to zero_one_value: Dual-value compression with static maps
-        if constexpr (IsChunk2<ChunkT, T>)
+        if constexpr (IsZeroOneValue<ChunkT, T>)
         {
-            map_chunk2_to_compress_potentially_thr.resize(nthr);
-            chunk2_to_compress_potentially_thr.resize(nthr);
+            zero_one_value_candidates_map_thr.resize(nthr);
+            zero_one_value_candidates_thr.resize(nthr);
         }
 
         // Specific to zero_any: Per-chunk secondary value compression
         if constexpr (IsZeroAnyFamily<ChunkT, T>)
         {
-            chunk2a_to_compress_potentially_thr.resize(nthr);
+            zero_any_candidates_thr.resize(nthr);
         }
     }
 }
@@ -141,7 +141,7 @@ bool CompressCandidates<ChunkT, T>::have_candidates(int n_thr)
     // file header's @warning.
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        if constexpr (IsChunk2<ChunkT, T>)
+        if constexpr (IsZeroOneValue<ChunkT, T>)
         {
             if constexpr (is_not_bool)
             {
@@ -179,7 +179,7 @@ void CompressCandidates<ChunkT, T>::compress_pass([[maybe_unused]] bool apply)
 {
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        if constexpr (IsChunk2<ChunkT, T>)
+        if constexpr (IsZeroOneValue<ChunkT, T>)
         {
             if constexpr (is_not_bool)
             {
@@ -203,34 +203,34 @@ void CompressCandidates<ChunkT, T>::compress_pass([[maybe_unused]] bool apply)
 }
 
 template <template <typename> class ChunkT, typename T>
-auto& CompressCandidates<ChunkT, T>::get_chunk2a_to_compress_potentially([[maybe_unused]] int thr) noexcept
+auto& CompressCandidates<ChunkT, T>::get_zero_any_candidates([[maybe_unused]] int thr) noexcept
 {
     if constexpr (build_config::threaded)
     {
-        return chunk2a_to_compress_potentially_thr[thr];
+        return zero_any_candidates_thr[thr];
     }
     else
     {
-        return chunk2a_to_compress_potentially;
+        return zero_any_candidates;
     }
 }
 
 template <template <typename> class ChunkT, typename T>
-[[nodiscard]] bool CompressCandidates<ChunkT, T>::is_chunk2a_to_compress_potentially_empty() noexcept
+[[nodiscard]] bool CompressCandidates<ChunkT, T>::is_zero_any_candidates_empty() noexcept
 {
     if constexpr (build_config::threaded)
     {
-        return chunk2a_to_compress_potentially_thr.empty();
+        return zero_any_candidates_thr.empty();
     }
     else
     {
-        return chunk2a_to_compress_potentially.empty();
+        return zero_any_candidates.empty();
     }
 }
 
 template <template <typename> class ChunkT, typename T>
-void CompressCandidates<ChunkT, T>::remove_from_compress_list_chunk2a_by_ptr_range(const void* lo,
-                                                                                   const void* hi) noexcept
+void CompressCandidates<ChunkT, T>::remove_from_zero_any_candidates_by_ptr_range(const void* lo,
+                                                                                 const void* hi) noexcept
 {
     const auto in_range = [lo, hi](const auto& tup)
     {
@@ -239,44 +239,45 @@ void CompressCandidates<ChunkT, T>::remove_from_compress_list_chunk2a_by_ptr_ran
     };
     if constexpr (build_config::threaded)
     {
-        const auto nthr = static_cast<int>(chunk2a_to_compress_potentially_thr.size());
+        const auto nthr = static_cast<int>(zero_any_candidates_thr.size());
         for (int thr = 0; thr < nthr; ++thr)
         {
-            std::erase_if(chunk2a_to_compress_potentially_thr[thr], in_range);
+            std::erase_if(zero_any_candidates_thr[thr], in_range);
         }
     }
     else
     {
-        std::erase_if(chunk2a_to_compress_potentially, in_range);
+        std::erase_if(zero_any_candidates, in_range);
     }
 }
 
 template <template <typename> class ChunkT, typename T>
-void CompressCandidates<ChunkT, T>::remove_from_compress_list_chunk2a_by_num_tab(int num_tab) noexcept
+void CompressCandidates<ChunkT, T>::remove_from_zero_any_candidates_by_num_tab(int num_tab) noexcept
 {
     if constexpr (build_config::threaded)
     {
-        const auto nthr = static_cast<int>(chunk2a_to_compress_potentially_thr.size());
+        const auto nthr = static_cast<int>(zero_any_candidates_thr.size());
         for (int thr = 0; thr < nthr; ++thr)
         {
-            erase_candidates_of_tab(chunk2a_to_compress_potentially_thr[thr], num_tab);
+            erase_candidates_of_tab(zero_any_candidates_thr[thr], num_tab);
         }
     }
     else
     {
-        erase_candidates_of_tab(chunk2a_to_compress_potentially, num_tab);
+        erase_candidates_of_tab(zero_any_candidates, num_tab);
     }
 }
 
 template <template <typename> class ChunkT, typename T>
-void CompressCandidates<ChunkT, T>::remove_from_compress_list_chunk2_by_num_tab([[maybe_unused]] int num_tab) noexcept
+void CompressCandidates<ChunkT, T>::remove_from_zero_one_value_candidates_by_num_tab(
+    [[maybe_unused]] int num_tab) noexcept
 {
     if constexpr (build_config::threaded)
     {
-        const auto nthr = static_cast<int>(map_chunk2_to_compress_potentially_thr.size());
+        const auto nthr = static_cast<int>(zero_one_value_candidates_map_thr.size());
         for (int thr = 0; thr < nthr; ++thr)
         {
-            for (const auto& kv : map_chunk2_to_compress_potentially_thr[thr])
+            for (const auto& kv : zero_one_value_candidates_map_thr[thr])
             {
                 const auto& sp = kv.second;
                 if (!sp)
@@ -290,19 +291,19 @@ void CompressCandidates<ChunkT, T>::remove_from_compress_list_chunk2_by_num_tab(
 }
 
 template <template <typename> class ChunkT, typename T>
-void CompressCandidates<ChunkT, T>::remove_from_compress_list_chunk_by_num_tab(int num_tab) noexcept
+void CompressCandidates<ChunkT, T>::remove_from_zero_candidates_by_num_tab(int num_tab) noexcept
 {
     if constexpr (build_config::threaded)
     {
-        const auto nthr = static_cast<int>(chunk_to_compress_potentially_thr.size());
+        const auto nthr = static_cast<int>(zero_candidates_thr.size());
         for (int thr = 0; thr < nthr; ++thr)
         {
-            erase_candidates_of_tab(chunk_to_compress_potentially_thr[thr], num_tab);
+            erase_candidates_of_tab(zero_candidates_thr[thr], num_tab);
         }
     }
     else
     {
-        erase_candidates_of_tab(chunk_to_compress_potentially, num_tab);
+        erase_candidates_of_tab(zero_candidates, num_tab);
     }
 }
 

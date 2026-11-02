@@ -152,7 +152,7 @@ flowchart TD
 ```
 
 What differs from `zero_one_value`: one candidate list per rank
-(`get_chunk2a_to_compress_potentially`), not one per second value; the second constant is the
+(`get_zero_any_candidates`), not one per second value; the second constant is the
 chunk's element 0, registered only now; the chunk's metadata (slot, type) is written **before**
 the CAS (`block_clear_common`). Sequential builds run the same pass, without the marks and
 without `start` / `finish`.

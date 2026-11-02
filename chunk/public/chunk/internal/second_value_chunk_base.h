@@ -161,7 +161,7 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
 
   private:
     static constexpr bool is_zero_any_family_derived = is_zero_any_family_v<Derived>;
-    static constexpr bool is_chunk2_derived          = std::is_same_v<Derived, zero_one_value::Chunk<T>>;
+    static constexpr bool is_zero_one_value_derived  = std::is_same_v<Derived, zero_one_value::Chunk<T>>;
 
     /// @brief Clear chunk and reset to constant value
     /// @tparam IndexT Type of index parameter

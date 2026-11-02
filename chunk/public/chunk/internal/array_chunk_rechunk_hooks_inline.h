@@ -110,11 +110,11 @@ template <typename Derived>
 {
     if constexpr (is_zero_any_family)
     {
-        return ManagerType::chunk2a_to_compress_potentially_thr;
+        return ManagerType::zero_any_candidates_thr;
     }
     else
     {
-        return ManagerType::chunk_to_compress_potentially_thr;
+        return ManagerType::zero_candidates_thr;
     }
 }
 
@@ -123,11 +123,11 @@ template <typename Derived>
 {
     if constexpr (is_zero_any_family)
     {
-        return ManagerType::chunk2a_to_compress_potentially;
+        return ManagerType::zero_any_candidates;
     }
     else
     {
-        return ManagerType::chunk_to_compress_potentially;
+        return ManagerType::zero_candidates;
     }
 }
 
@@ -136,11 +136,11 @@ void RechunkHooks<Derived, true>::remove_candidates_of_tab(int num_tab) noexcept
 {
     if constexpr (is_zero_any_family)
     {
-        ManagerType::remove_from_compress_list_chunk2a_by_num_tab(num_tab);
+        ManagerType::remove_from_zero_any_candidates_by_num_tab(num_tab);
     }
     else
     {
-        ManagerType::remove_from_compress_list_chunk_by_num_tab(num_tab);
+        ManagerType::remove_from_zero_candidates_by_num_tab(num_tab);
     }
 }
 

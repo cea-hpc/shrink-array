@@ -66,7 +66,7 @@
     #include "chunk/mdspan_tile_ops.h"            // md::update_tiles, md::for_each_tile, md::fill_box
 
     #include "config.h"     // PRAGMA_FORCEINLINE
-    #include "Containers.h" // Vect, VectChunk, VectChunk2
+    #include "Containers.h" // Vect, VectChunk, VectZeroOneValue
 
 namespace multi_mat::md
 {
@@ -172,13 +172,13 @@ const shrink_array::zero::Array<T>& array_of(const VectChunk<T>& v) noexcept
 }
 /// @brief The zero_one_value::Chunk array of a presence fraction.
 template <typename T>
-shrink_array::zero_one_value::Array<T>& array_of(VectChunk2<T>& v) noexcept
+shrink_array::zero_one_value::Array<T>& array_of(VectZeroOneValue<T>& v) noexcept
 {
     return v;
 }
 /// @brief The zero_one_value::Chunk array of a presence fraction, read-only.
 template <typename T>
-const shrink_array::zero_one_value::Array<T>& array_of(const VectChunk2<T>& v) noexcept
+const shrink_array::zero_one_value::Array<T>& array_of(const VectZeroOneValue<T>& v) noexcept
 {
     return v;
 }

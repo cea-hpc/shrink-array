@@ -66,9 +66,9 @@ void zero_any::ArrayImpl<Derived>::rebuild_storage(IntType sz)
 
         if (nb_chunk_)
         {
-            ManagerChunk2A::increm_somme_chunk_create(nb_chunk_);
-            ManagerChunk2A::compute_size_buffer_reuse();
-            ManagerChunk2A::compute_size_max_number_of_chunk_to_check_compress();
+            Manager::increm_somme_chunk_create(nb_chunk_);
+            Manager::compute_size_buffer_reuse();
+            Manager::compute_size_max_number_of_chunk_to_check_compress();
 
             acquire_cst2_registry();
             this->acquire_chunk_list(static_cast<std::size_t>(nb_chunk_));
@@ -268,7 +268,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
     // before they are freed: in non-OMPT builds nothing else clears it, and a
     // later compression pass would walk the dangling Chunk* (use-after-free).
     // By num_tab, so other live arrays' candidates are untouched.
-    ManagerChunk2A::remove_from_compress_list_chunk2a_by_num_tab(num_tab_);
+    Manager::remove_from_zero_any_candidates_by_num_tab(num_tab_);
 
     // Also drop any candidate whose chunk pointer lies in THIS array's
     // chunk_list_ span: the by-num_tab removal misses a tuple whose num_tab was
@@ -276,7 +276,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
     // buffer. Must run before the terminal sweep and before chunk_list_.clear().
     if (!chunk_list_.empty())
     {
-        ManagerChunk2A::remove_from_compress_list_chunk2a_by_ptr_range(
+        Manager::remove_from_zero_any_candidates_by_ptr_range(
             static_cast<const void*>(chunk_list_.data()),
             static_cast<const void*>(chunk_list_.data() + chunk_list_.size()));
     }
@@ -292,11 +292,11 @@ void zero_any::ArrayImpl<Derived>::clear_core()
         return;
     }
 
-    ManagerChunk2A::decrem_somme_chunk_create(nb_chunk_);
+    Manager::decrem_somme_chunk_create(nb_chunk_);
     // Recompute what derives from the total -- see zero::Array::clear_core():
     // otherwise a re-chunk leaves the threshold sized for the geometry it just left.
-    ManagerChunk2A::compute_size_buffer_reuse();
-    ManagerChunk2A::compute_size_max_number_of_chunk_to_check_compress();
+    Manager::compute_size_buffer_reuse();
+    Manager::compute_size_max_number_of_chunk_to_check_compress();
 
     if constexpr (chunk_config::not_use_compression_with_ompt)
     {
@@ -468,7 +468,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
                     // t_active (may be another size mid-rechunk): a size-A buffer filed
                     // under list[B] would be memset at B by a later pop and overflow.
                     const unsigned int my_sz = this->size_policy_.size();
-                    auto&              lbf   = ManagerChunk2A::get_list_block_free_thr_for_size(thr_rank, my_sz);
+                    auto&              lbf   = Manager::get_list_block_free_thr_for_size(thr_rank, my_sz);
 
                     for (int k = 0; k < nb; ++k)
                     {
@@ -539,7 +539,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
     // region. Key 0 (shared pool): nothing to give back per array.
     if (this->alloc_key_ != 0 && !CHUNK_PMP_IN_PARALLEL_REGION)
     {
-        ManagerChunk2A::drain_reuse_list_for_size(this->size_policy_.size());
+        Manager::drain_reuse_list_for_size(this->size_policy_.size());
     }
     probe.mark(internal::TeardownStep::key_drain);
 }
@@ -673,8 +673,8 @@ void zero_any::ArrayImpl<Derived>::release_chunk_range(int first, int last)
         // geometry. Inside a region, or for a few chunks, the calling thread.
         const unsigned int my_sz = this->size_policy_.size();
         parallel_storage_init::for_each_chunk_in(
-            first, last, [my_sz]() -> auto&
-            { return ManagerChunk2A::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz); },
+            first, last,
+            [my_sz]() -> auto& { return Manager::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz); },
             [this](int j, auto& lbf)
             {
                 if (chunk_list_[j].written_test())
@@ -707,7 +707,7 @@ void zero_any::ArrayImpl<Derived>::resize(this Derived& self, IntType newsz)
     const int     old_nb_chunk = self.nb_chunk_;
     const IntType old_size     = self.m_size_; // the stale-tail reset at the end
 
-    self.Base2::resize_common(newsz);
+    self.SecondValueBase::resize_common(newsz);
     if (self.nb_chunk_ > 0)
     {
         self.acquire_cst2_registry(); // an array built empty gets its chunks here

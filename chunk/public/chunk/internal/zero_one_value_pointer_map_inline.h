@@ -21,12 +21,12 @@ namespace shrink_array
 {
 
 // ---------------------------------------------------------------------------
-// shrink_array::PointerMapChunk2InfArrayPolicy<T, Enabled>
+// shrink_array::ZeroOneValueInfArrayPolicy<T, Enabled>
 // ---------------------------------------------------------------------------
 
 template <typename T, bool Enabled>
-[[nodiscard]] PointerMapChunk2InfArrayPolicy<T, Enabled>::InfArrayT*
-PointerMapChunk2InfArrayPolicy<T, Enabled>::find_inf_array(InT<T> key) const
+[[nodiscard]] ZeroOneValueInfArrayPolicy<T, Enabled>::InfArrayT*
+ZeroOneValueInfArrayPolicy<T, Enabled>::find_inf_array(InT<T> key) const
 {
     const auto it = map_inf_array_.find(key);
     if (it != map_inf_array_.end())
@@ -37,7 +37,7 @@ PointerMapChunk2InfArrayPolicy<T, Enabled>::find_inf_array(InT<T> key) const
 }
 
 template <typename T, bool Enabled>
-void PointerMapChunk2InfArrayPolicy<T, Enabled>::erase_inf_array_by_ptr(const InfArrayT* self_ptr)
+void ZeroOneValueInfArrayPolicy<T, Enabled>::erase_inf_array_by_ptr(const InfArrayT* self_ptr)
 {
     for (auto it = map_inf_array_.begin(); it != map_inf_array_.end();)
     {

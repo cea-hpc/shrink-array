@@ -48,7 +48,7 @@
 #include "chunk/zero_any_chunk.h"                // zero_any::Chunk<T>: the ChunkT<T>:: calls
 #include "chunk/zero_array.h"                    // ArrayChunkCore complete: ArrayType::clear_all_dirty_bitsets
 #include "chunk/internal/array_chunk_for.h"      // ArrayChunkForT
-#include "chunk/internal/concept_chunk.h"        // IsChunk, IsChunk2, IsZeroAnyFamily
+#include "chunk/internal/concept_chunk.h"        // IsChunk, IsZeroOneValue, IsZeroAnyFamily
 #include "chunk/internal/chunk_func.h"           // load_balance_list_block_free_thr (the policies' header declares it)
 
 namespace shrink_array
@@ -837,7 +837,7 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::delete_list_block_chunk_free_its
 {
     using Mgr = ManagerChunk<ChunkT, T>;
 
-    if constexpr (IsChunk2OrZeroAnyFamily<ChunkT, T>)
+    if constexpr (IsSecondValueFamily<ChunkT, T>)
     {
         Mgr::list_block_free_thr.clear();
     }
