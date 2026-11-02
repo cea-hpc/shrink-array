@@ -141,6 +141,11 @@ jobs:
           -DCHUNK_BUILD_DYN=OFF
       - name: Build and run the validation harnesses (check target)
         run: cmake --build build --target check
+      # The reader-vs-compression stress (read_reclaim_validation_*), many times over: a
+      # race there shows once in tens of runs (one SEGV under ASan on 2026-11-02, in
+      # zero_one_value's 8-thread case, not reproduced since). Stops at the first failure.
+      - name: read_reclaim harnesses, repeated
+        run: ctest --test-dir build -R '^read_reclaim_validation_' --repeat until-fail:20 --timeout 600 --output-on-failure
 
   # clang 23 (apt.llvm.org) with libstdc++ and libomp, OpenMP: the
   # diagnostics gcc does not give, and the OMPT tool (CHUNK_HAVE_OMPT), which
