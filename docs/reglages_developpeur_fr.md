@@ -132,6 +132,7 @@ dans [variables_environnement_fr.md](variables_environnement_fr.md) §3.
 | `CHUNK_WRITE_WAIT_MAX_YIELDS=<n>` | attente d'un écrivain devant un compresseur avant de différer son écriture (64 *yields*) |
 | `CHUNK_READ_RECLAIM_SLOTS=<n>` | nombre de threads lecteurs suivis individuellement par la récupération des tampons (1 024) |
 | `CHUNK_STATS_MAX_THR=<n>` | nombre de rangs des compteurs `CHUNK_STATS` (1 024) |
+| `CHUNK_READ_DEP_ORDER=1` | **expérimental**, AArch64 seulement, inactif sous TSan : une lecture pure charge le pointeur `values` du chunk en relaxed, ordonné avec la lecture de l'élément par leur dépendance d'adresse au lieu d'un acquire (`chunk_config::read_dep_order`, config.h). En évaluation sur Grace (`access_cost`) : à passer dans `CMAKE_CXX_FLAGS` d'un build à part |
 | `CHUNK_TEST_READ_DELAY_EVERY=<n>`, `CHUNK_TEST_READ_DELAY_US=<µs>` | crochet de test : une lecture sur N d'un thread qui l'a demandé attend (50 µs), pour élargir la fenêtre lecteur / récupération (`read_reclaim_validation`) |
 | `CHUNK_TEST_PASS_DELAY_EVERY=<n>`, `CHUNK_TEST_PASS_DELAY_US=<µs>` | crochet de test : délai (200 µs) dans une passe de compression sur N |
 | `CHUNK_GCOV_DUMP` | builds de couverture (`--coverage`) : le rapport fatal écrit les compteurs gcov avant `abort()`, pour que les chemins des tests de mort soient comptés ; posée par le job de couverture du nightly |

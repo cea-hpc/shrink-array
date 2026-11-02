@@ -367,6 +367,32 @@ inline constexpr bool tsan_build = false;
 #endif
 
 /**
+ * @brief EXPERIMENTAL (-DCHUNK_READ_DEP_ORDER=1 in CMAKE_CXX_FLAGS, AArch64 only): the pure
+ *        read's load of a chunk's `values` (ChunkBase::element_at) is RELAXED, ordered with
+ *        the loads through it by their address dependency instead of an acquire.
+ *
+ * @details An acquire load (LDAPR) keeps every later load of the thread after it: on a read
+ *          loop, the next element's loads wait for this one's `values`, which serialises the
+ *          loop on load latency (Grace: 2.4 ns per read whatever the chunk's state, against
+ *          1.1 to 1.8 on x86, where an acquire load costs nothing). What the acquire orders
+ *          after the `values` load on that path is reached THROUGH the pointer -- the
+ *          element (vals[offset]), the second value (value_by_id[id], id computed from it)
+ *          -- and the Arm memory model orders a load after the load its address depends on.
+ *          The read gate (pending_any(), an acquire) still precedes it.
+ *          Not C++: the standard's dependency ordering is memory_order_consume, which
+ *          compilers implement as acquire. The dependency is kept by hiding the loaded value
+ *          from the compiler (internal::hide_value) so that it cannot be replaced by a value
+ *          it compared equal to. Off under TSan (which does not model it) and on other
+ *          architectures (x86: the acquire is a plain load already).
+ *          Measurement first: access_cost with and without it, on Grace.
+ */
+#if defined(CHUNK_READ_DEP_ORDER) && CHUNK_READ_DEP_ORDER && defined(__aarch64__) && !defined(CHUNK_TSAN_BUILD)
+inline constexpr bool read_dep_order = true;
+#else
+inline constexpr bool read_dep_order = false;
+#endif
+
+/**
  * @brief The write/compress handshake's shape (WriteCompressSyncPolicy).
  *
  * @details Two sides must never run together: an element WRITE inside its critical section,
