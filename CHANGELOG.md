@@ -126,6 +126,10 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `access_cost`: a `read-bulk` case, the varied array read through `for_each_value()` (each
+  thread its slice): one read gate per chunk and one read section per block instead of both per
+  element. On a 2-core x86 VM, 1.10 times the vector against 3.2 for the element read
+  (`read-varied`); `python/access_cost.py` lists it.
 - `CHUNK_READ_DEP_ORDER=1` (experimental, AArch64, a macro in `CMAKE_CXX_FLAGS`): a pure read
   (`ChunkBase::element_at`) loads the chunk's `values` relaxed, ordered with the loads through it
   -- the element, the second value -- by their address dependency instead of an acquire. On
