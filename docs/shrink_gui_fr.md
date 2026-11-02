@@ -161,6 +161,24 @@ plusieurs nœuds en une seule entrée, et jamais la soumission elle-même. Le sp
 exécutable est mesuré sur un seul nœud : les N nœuds doivent être de même type (une
 partition). `--pool` peut aussi se donner à la main (`--help`).
 
+**Une image des N nœuds.** Le `speedup.png` de chaque job ne montre que les exécutables qu'il a
+mesurés. Le bouton « Enregistrer l'image… » du Graphique (sur chacune de ses pages, actif dès
+qu'un graphique est tracé) écrit le graphique tel qu'il est affiché -- les courbes des N jobs
+réunies, les filtres et le run comparé compris -- en PNG, ou en SVG (vectoriel) quand le nom
+finit par `.svg` et que PySide6 a QtSvg ; le nom proposé est celui de la soumission
+(`<pool>_<cible>_speedup.png`), la boîte de dialogue rouvre le dossier de la dernière image
+enregistrée, et la barre d'état donne le chemin écrit. Sur le calculateur,
+`thread_speedup.py --merge DIR [DIR ...] --out OUTDIR` ne mesure rien et réunit les dossiers de
+sortie des jobs (chacun affiche `<outdir>/summary.csv ...` à la fin) en un seul, tel qu'un run
+sur tous les exécutables l'aurait écrit : `summary.csv`, `results.csv`, `meta.json` (les
+dossiers réunis, avec leur hôte, leur CPU et leur commande), et `plot.gp` et `speedup.png`
+tracés par les fonctions d'un run, le titre nommant les hôtes (`inti5012+inti5013+inti5014`,
+« `<n>` nodes » au-delà de quatre). Les speedups sont recopiés, pas recalculés (chacun est
+relatif au premier nombre de threads de son run) ; un exécutable présent dans plusieurs
+dossiers est pris dans le premier donné, comme le fait le Graphique, avec un avertissement, de
+même que toute différence de modèle de CPU, de cible, de `--mode`, `--multiply`, `--metric`,
+`--numa`, d'arguments des exécutables ou de liste de threads.
+
 ### Les runs
 
 Le tableau liste les runs du dossier des runs, rafraîchi toutes les 15 s : programme,

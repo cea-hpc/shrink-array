@@ -77,6 +77,26 @@ its executables one after the other, each with its repetitions interleaved over
 the thread counts. Each run writes its own output directory (the curves of its
 executables); shrink_gui draws and sums up the pool's runs together.
 
+--merge DIR [DIR ...] [--out OUTDIR] measures nothing: it merges the output
+directories of several runs (the jobs of a pool, each printing
+"<outdir>/summary.csv ..." at its end) into OUTDIR, created and refused when
+it exists and is not empty (default: speedup_<target>_merged_<date> next to the
+first DIR). Each DIR must hold a summary.csv. OUTDIR gets the rows of every
+summary.csv (sorted as a run sorts them: executable, then threads), the runs of
+every results.csv, and plot.gp and speedup.png written by the functions a run
+uses, the title naming the hosts merged (inti5012+inti5013+inti5014; "<n>
+nodes" past four) instead of this machine; its meta.json lists the directories
+merged with their host, CPU and command. The speedups are copied, not
+recomputed: each is against its executable at its own run's first thread
+count, valid as it is. An executable found in several directories is taken
+from the FIRST one given (as shrink_gui's Graphique tab does for a pool), the
+others left out with a warning on stderr. Differences between the runs' meta.json
+are warnings too, not errors: CPU model or architecture (the hostnames are
+expected to differ, the CPU is not), build target, --mode, --multiply,
+--metric, --numa, the executables' arguments (the speedups would not be
+comparable), and the thread lists (fine for the plot, the curves just do not
+share every point).
+
 Python 3.6 or later, standard library only (matplotlib optional).
 """
 import argparse
@@ -458,18 +478,22 @@ def summarize(rows, metric, tmin):
     return out
 
 
+RESULTS_HEADER = ["target", "exe", "threads", "rep", "wall_s", "compute_s", "mem_mo", "rc"]
+SUMMARY_HEADER = ["target", "exe", "threads", "ok_runs", "best_s", "median_s", "best_wall_s",
+                  "best_compute_s", "peak_mem_mo", "speedup", "efficiency"]
+
+
 def write_csvs(outdir, a, rows, summary):
     with open(os.path.join(outdir, "results.csv"), "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["target", "exe", "threads", "rep", "wall_s", "compute_s", "mem_mo", "rc"])
+        w.writerow(RESULTS_HEADER)
         for r in rows:
             w.writerow([a.target, r["exe"], r["threads"], r["rep"], "%.4f" % r["wall_s"],
                         "" if r["compute_s"] is None else "%.4f" % r["compute_s"],
                         "" if r["mem_mo"] is None else "%.1f" % r["mem_mo"], r["rc"]])
     with open(os.path.join(outdir, "summary.csv"), "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["target", "exe", "threads", "ok_runs", "best_s", "median_s", "best_wall_s",
-                    "best_compute_s", "peak_mem_mo", "speedup", "efficiency"])
+        w.writerow(SUMMARY_HEADER)
         for row in summary:
             w.writerow([a.target] + [row[0], row[1], row[2]] +
                        ["" if v is None else ("%.4f" % v) for v in row[3:7]] +
@@ -477,12 +501,14 @@ def write_csvs(outdir, a, rows, summary):
                        ["" if v is None else ("%.3f" % v) for v in row[8:]])
 
 
-def write_gnuplot(outdir, a, execs, tmin, tmax):
-    """plot.gp: speedup and efficiency against threads, one line per exe."""
+def write_gnuplot(outdir, a, execs, tmin, tmax, host=None):
+    """plot.gp: speedup and efficiency against threads, one line per exe. The
+    title names @p host, this machine by default (--merge: the hosts of the
+    runs merged)."""
     lines = ['# gnuplot plot.gp  ->  speedup.png (from summary.csv)',
              'set datafile separator ","', 'set terminal pngcairo size 1400,560 font ",11" noenhanced',
              'set output "speedup.png"', 'set multiplot layout 1,2 title "%s -- %s (%s, --multiply %g, %s time)"'
-             % (a.target, socket.gethostname(), a.mode, a.multiply, a.metric.split("_")[0]),
+             % (a.target, host or socket.gethostname(), a.mode, a.multiply, a.metric.split("_")[0]),
              'set key top left', 'set grid', 'set logscale x 2', 'set xlabel "threads"',
              'set xrange [%g:%g]' % (tmin / 1.2, tmax * 1.2),
              'set ylabel "speedup vs %d thread(s)"' % tmin, 'set logscale y 2']
@@ -502,8 +528,9 @@ def write_gnuplot(outdir, a, execs, tmin, tmax):
         f.write("\n".join(lines) + "\n")
 
 
-def draw_png(outdir, a, summary, tmin):
-    """speedup.png with matplotlib, when it is there (False otherwise)."""
+def draw_png(outdir, a, summary, tmin, host=None):
+    """speedup.png with matplotlib, when it is there (False otherwise); its
+    title names @p host as write_gnuplot's does."""
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -542,12 +569,220 @@ def draw_png(outdir, a, summary, tmin):
     ax1.set_ylabel("speedup vs %d thread(s)" % tmin)
     ax2.set_ylabel("efficiency")
     ax2.set_ylim(0, 1.1)
-    fig.suptitle("%s -- %s (%s, --multiply %g, %s time)" % (a.target, socket.gethostname(), a.mode, a.multiply,
-                                                         a.metric.split("_")[0]))
+    fig.suptitle("%s -- %s (%s, --multiply %g, %s time)" % (a.target, host or socket.gethostname(), a.mode,
+                                                         a.multiply, a.metric.split("_")[0]))
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "speedup.png"), dpi=110)
     plt.close(fig)
     return True
+
+
+def print_summary(summary):
+    """The curve as a table on stdout, at the end of a run (and of --merge)."""
+    print("\n%-28s %7s %10s %10s %8s %6s" % ("exe", "threads", "best s", "median s", "speedup", "eff."))
+    for row in summary:
+        print("%-28s %7d %10s %10s %8s %6s" % (
+            row[0].replace("shrink_bench_", ""), row[1],
+            "%.3f" % row[3] if row[3] else "-", "%.3f" % row[4] if row[4] else "-",
+            "%.2f" % row[8] if row[8] else "-", "%.2f" % row[9] if row[9] else "-"))
+
+
+# ------------------------------------------------------------------- --merge
+# The meta.json keys two runs must share for their speedups to be drawn on one
+# chart, with what a difference means. The CPU model stands for the machine:
+# the hostnames of the nodes of one partition differ, their CPU does not.
+MERGE_CHECKS = [
+    ("cpu", "CPU models", "speedups measured on different processors are not comparable"),
+    ("arch", "architectures", "speedups measured on different machines are not comparable"),
+    ("target", "build targets", "another compiler or backend: the curves do not measure the same code"),
+    ("mode", "modes (--mode)", "perf and check do not run the same work"),
+    ("multiply", "workloads (--multiply)", "the speedup depends on the size of the problem"),
+    ("metric", "metrics (--metric)", "compute and wall time do not time the same thing"),
+    ("numa", "NUMA placements (--numa)", "the memory placement changes the scaling"),
+    ("bench_args", "executable arguments", "the executables did not run the same work"),
+    ("threads", "thread lists", "the plot is fine, but the curves do not share every point"),
+]
+
+
+def merge_parse_args(argv):
+    """The arguments of --merge, a mode of its own: none of a measurement's."""
+    p = argparse.ArgumentParser(
+        prog="thread_speedup.py",
+        description="Merge the output directories of several thread_speedup.py runs (the jobs of a "
+                    "--pool over several nodes, typically) into one: summary.csv, results.csv, plot.gp, "
+                    "speedup.png and meta.json, as one run over all their executables would have "
+                    "written them. Nothing is measured.",
+        epilog="An executable found in several directories is taken from the first one given (the "
+               "order of the command line, as shrink_gui's Graphique tab does for the jobs of a pool), "
+               "with a warning on stderr; so is every difference of CPU model, build target, --mode, "
+               "--multiply, --metric, --numa, executable arguments or thread list between the runs.")
+    p.add_argument("--merge", nargs="+", required=True, metavar="DIR",
+                   help="output directories of thread_speedup.py, each holding its summary.csv (and its "
+                        "meta.json, results.csv when there)")
+    p.add_argument("--out", default=None, metavar="OUTDIR",
+                   help="the merged directory, created; refused when it exists and is not empty (default: "
+                        "speedup_<target>_merged_<date> next to the first DIR)")
+    return p.parse_args(argv)
+
+
+def read_run_dir(d):
+    """{"dir", "summary": [rows as strings], "results": [rows] or None,
+    "meta": {}} of the output directory @p d; an error message (str) when its
+    summary.csv is missing or not thread_speedup.py's."""
+    path = os.path.join(d, "summary.csv")
+    if not os.path.isfile(path):
+        return "%s: no summary.csv" % d
+    with open(path, newline="") as f:
+        rows = list(csv.reader(f))
+    if not rows or rows[0] != SUMMARY_HEADER:
+        return "%s: not the summary.csv of thread_speedup.py (header %s)" % (path, ",".join(rows[0] if rows else []))
+    out = {"dir": d, "summary": [r for r in rows[1:] if len(r) == len(SUMMARY_HEADER)], "results": None, "meta": {}}
+    rpath = os.path.join(d, "results.csv")
+    if os.path.isfile(rpath):
+        with open(rpath, newline="") as f:
+            res = list(csv.reader(f))
+        if res and res[0] == RESULTS_HEADER:
+            out["results"] = [r for r in res[1:] if len(r) == len(RESULTS_HEADER)]
+    try:
+        with open(os.path.join(d, "meta.json")) as f:
+            meta = json.load(f)
+        out["meta"] = meta if isinstance(meta, dict) else {}
+    except (OSError, ValueError):
+        pass
+    return out
+
+
+def summary_rows(rows):
+    """summary.csv's rows (strings) as summarize() gives them, for draw_png:
+    [exe, threads, n_ok, best, median, best_wall, best_compute, mem, speedup,
+    efficiency], the empty cells None."""
+    def num(v):
+        try:
+            return float(v)
+        except ValueError:
+            return None
+    return [[r[1], int(r[2]), int(r[3] or 0)] + [num(v) for v in r[4:]] for r in rows]
+
+
+def host_label(hosts):
+    """The hosts of a merge as the plot title names them: inti5012+inti5013
+    up to four, else "<n> nodes"."""
+    short = list(dict.fromkeys(h.split(".")[0] for h in hosts if h))
+    if not short:
+        return "merged runs"
+    return "+".join(short) if len(short) <= 4 else "%d nodes" % len(short)
+
+
+def merge_main(argv):
+    """--merge: one output directory out of several runs', with no measurement.
+    The speedup of a row is against the same executable at its run's first
+    thread count, so it stays valid as it is: the rows are copied, never
+    recomputed. An executable is taken from the first directory holding it;
+    plot.gp and speedup.png are written by the functions a run uses, so the
+    merged image looks like a run's, its title naming the hosts merged."""
+    m = merge_parse_args(argv)
+    dirs = [os.path.abspath(os.path.expanduser(d)) for d in m.merge]
+    runs, bad = [], []
+    for d in dirs:
+        r = read_run_dir(d)
+        (bad if isinstance(r, str) else runs).append(r)
+    if bad:
+        sys.exit("--merge: each DIR must be an output directory of thread_speedup.py, holding its "
+                 "summary.csv:\n  %s\n(given: %s)" % ("\n  ".join(bad), " ".join(m.merge)))
+    if len(set(dirs)) != len(dirs):
+        sys.exit("--merge: a directory is given twice")
+
+    def warn(msg):
+        print("warning: " + msg, file=sys.stderr, flush=True)
+
+    # The consistency of the runs: warnings, the user knows why they merge.
+    for r in runs:
+        if not r["meta"]:
+            warn("%s: no meta.json, its consistency with the other runs is not checked" % r["dir"])
+    for key, what, why_ in MERGE_CHECKS:
+        vals = [(r["dir"], r["meta"][key]) for r in runs if key in r["meta"]]
+        if len({json.dumps(v, sort_keys=True) for _, v in vals}) > 1:
+            warn("different %s -- %s:\n  %s" % (what, why_, "\n  ".join(
+                "%s: %s" % (d, " ".join(map(str, v)) if isinstance(v, list) else v) for d, v in vals)))
+    targets = list(dict.fromkeys(row[0] for r in runs for row in r["summary"]))
+    if len(targets) > 1 and not all("target" in r["meta"] for r in runs):
+        warn("different build targets in the summary.csv files: %s" % ", ".join(targets))
+
+    # Each executable from the first directory holding it.
+    owner, dup = {}, {}
+    for i, r in enumerate(runs):
+        for e in dict.fromkeys(row[1] for row in r["summary"]):
+            if e in owner:
+                dup.setdefault(e, [runs[owner[e]]["dir"]]).append(r["dir"])
+            else:
+                owner[e] = i
+    for e, ds in dup.items():
+        warn("%s is in %d directories, kept from the first: %s (left out: %s)"
+             % (e, len(ds), ds[0], ", ".join(ds[1:])))
+    rows = [row for i, r in enumerate(runs) for row in r["summary"] if owner[row[1]] == i]
+    rows.sort(key=lambda row: (row[1], int(row[2])))          # summarize()'s order
+    if not rows:
+        sys.exit("--merge: the summary.csv files hold no row")
+    results = None
+    with_res = [r for r in runs if r["results"] is not None]
+    if with_res:
+        results = [row for i, r in enumerate(runs) if r["results"] is not None
+                   for row in r["results"] if owner.get(row[1]) == i]
+        for r in runs:
+            if r["results"] is None:
+                warn("%s: no results.csv, the merged one lacks its runs" % r["dir"])
+
+    # The plot's settings: the first run's (a difference was warned of above).
+    first = next((r["meta"] for r in runs if r["meta"]), {})
+    a = argparse.Namespace(target=first.get("target") or targets[0], mode=first.get("mode") or "perf",
+                           multiply=float(first.get("multiply") or 1.0), metric=first.get("metric") or "compute_s")
+    hosts = [r["meta"].get("host", "") for r in runs]
+    label = host_label(hosts)
+    ts = sorted({int(row[2]) for row in rows})
+    # The executables in the order of the runs' plans (vector first, then the
+    # variants, sizes...: meta.json's "execs"), then any other.
+    order = list(dict.fromkeys(e for r in runs for e in (r["meta"].get("execs") or {}) if e in owner))
+    order += sorted(set(owner) - set(order))
+
+    outdir = os.path.abspath(os.path.expanduser(m.out or os.path.join(
+        os.path.dirname(dirs[0]), "speedup_%s_merged_%s" % (a.target, datetime.datetime.now().strftime("%Y%m%d_%H%M%S")))))
+    if os.path.isdir(outdir) and os.listdir(outdir):
+        sys.exit("--merge: %s exists and is not empty (give another --out)" % outdir)
+    os.makedirs(outdir, exist_ok=True)
+    with open(os.path.join(outdir, "summary.csv"), "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(SUMMARY_HEADER)
+        w.writerows(rows)
+    if results is not None:
+        with open(os.path.join(outdir, "results.csv"), "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(RESULTS_HEADER)
+            w.writerows(results)
+    execs = {}
+    for r in runs:
+        for e, path in (r["meta"].get("execs") or {}).items():
+            if owner.get(e) is not None and runs[owner[e]] is r:
+                execs[e] = path
+    with open(os.path.join(outdir, "meta.json"), "w") as f:
+        json.dump({"command": " ".join(shlex.quote(x) for x in [sys.executable] + sys.argv),
+                   "host": label, "hosts": hosts, "cpu": first.get("cpu"), "arch": first.get("arch"),
+                   "target": a.target, "mode": a.mode, "multiply": a.multiply, "metric": a.metric,
+                   "numa": first.get("numa"), "bench_args": first.get("bench_args"), "reps": first.get("reps"),
+                   "threads": ts, "execs": execs,
+                   "merge": [{"dir": r["dir"], "host": r["meta"].get("host"), "cpu": r["meta"].get("cpu"),
+                              "command": r["meta"].get("command"), "slurm_job": r["meta"].get("slurm_job"),
+                              "pool": r["meta"].get("pool"), "date": r["meta"].get("date"),
+                              "execs": [e for e in order if runs[owner[e]] is r]} for r in runs],
+                   "date": datetime.datetime.now().isoformat(timespec="seconds")}, f, indent=1)
+    summary = summary_rows(rows)
+    write_gnuplot(outdir, a, order, ts[0], ts[-1], host=label)
+    png = draw_png(outdir, a, summary, ts[0], host=label)
+    print("merged %d run(s) (%s): %d executable(s), threads %s" % (len(runs), label, len(owner), ts))
+    print_summary(summary)
+    print("\n%s/summary.csv (the merged curve), %splot.gp%s, meta.json"
+          % (outdir, "results.csv, " if results is not None else "",
+             ", speedup.png" if png else " (gnuplot plot.gp -> speedup.png)"))
+    return 0
 
 
 # --------------------------------------------------------------------- main
@@ -555,7 +790,10 @@ def parse_args(argv=None):
     p = argparse.ArgumentParser(
         description="OpenMP speedup curves of shrink_bench executables on one build target "
                     "(CSV + gnuplot script + PNG when matplotlib is there).",
-        epilog="Everything after -- goes to the executables (e.g. -- --iter_max 500).")
+        epilog="Everything after -- goes to the executables (e.g. -- --iter_max 500). "
+               "thread_speedup.py --merge DIR [DIR ...] [--out OUTDIR] measures nothing: it merges the "
+               "output directories of several runs (the jobs of a --pool) into one, plot and image "
+               "included (thread_speedup.py --merge DIR --help).")
     p.add_argument("--target", required=True,
                    help="build target (compile_all.sh config): omp-llvm, omp-gnu, omp-oneapi... "
                         "or cmake-build-omp-llvm")
@@ -634,6 +872,9 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if any(x == "--merge" or x.startswith("--merge=") for x in argv):
+        return merge_main(argv)
     a = parse_args(argv)
     root = build_root(a.build_root)
     target = a.target[len("cmake-build-"):] if a.target.startswith("cmake-build-") else a.target
@@ -783,12 +1024,7 @@ def main(argv=None):
               % (len(pool.mine), len(pool.others), pool.id))
     write_gnuplot(outdir, a, [n for n, _ in execs], ts[0], ts[-1])
     png = draw_png(outdir, a, summary, ts[0])
-    print("\n%-28s %7s %10s %10s %8s %6s" % ("exe", "threads", "best s", "median s", "speedup", "eff."))
-    for row in summary:
-        print("%-28s %7d %10s %10s %8s %6s" % (
-            row[0].replace("shrink_bench_", ""), row[1],
-            "%.3f" % row[3] if row[3] else "-", "%.3f" % row[4] if row[4] else "-",
-            "%.2f" % row[8] if row[8] else "-", "%.2f" % row[9] if row[9] else "-"))
+    print_summary(summary)
     print("\n%s/summary.csv (the curve), results.csv (every run), plot.gp%s, logs/"
           % (outdir, ", speedup.png" if png else " (gnuplot plot.gp -> speedup.png)"))
     if n_fail:

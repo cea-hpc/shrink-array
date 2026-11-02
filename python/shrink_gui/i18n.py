@@ -119,6 +119,11 @@ EN = {
         "when there are errors.",
     "rechercher dans le log (Entrée : suivant)": "search the log (Enter: next)",
     "Suivre la fin": "Follow the end", "Rafraîchir le résumé": "Refresh the summary",
+    # the Graphique tab's image export (tab_chart, save_chart_image)
+    "Enregistrer l'image…": "Save image…", "Enregistrer l'image du graphique": "Save the chart image",
+    "Image PNG (*.png)": "PNG image (*.png)", "Image SVG (*.svg)": "SVG image (*.svg)",
+    "SVG indisponible (module PySide6.QtSvg absent) : enregistrez en PNG":
+        "SVG unavailable (no PySide6.QtSvg module): save as PNG",
     # chart controls
     "Build": "Build", "Variante": "Variant", "Taille": "Size", "Aucune": "None", "Couleur": "Colour",
     "Comparer avec": "Compare with", "(aucun)": "(none)", "tous": "all", "toutes": "all",
@@ -304,6 +309,10 @@ EN = {
         "the selected runs are still active: stop them first",
     "pas de sorties propres à ces programmes": "no outputs of their own for these programs",
     "Relit le fichier résumé du run sélectionné.": "Reads the selected run's summary file again.",
+    "Enregistre le graphique tel qu'il est affiché -- filtres, run comparé et courbes réunies des "
+    "nœuds d'une soumission compris -- en PNG, ou en SVG (vectoriel) si l'extension est .svg.":
+        "Saves the chart as it is shown -- filters, compared run and the gathered curves of the nodes "
+        "of a submission included -- as PNG, or SVG (vector) when the extension is .svg.",
     "ccc_msub : ce qui lance run.sh sur le nœud réservé (le lanceur de la "
     "partition dans le fichier de site ; vide : directement dans le job).\n"
     "Mémorisé par partition.":
@@ -441,6 +450,7 @@ EN = {
 # Messages built on the fly (and those inti sends back): regex on the French,
 # English replacement. Applied in order, on the whole text.
 EN_RE = [(re.compile(a), b) for a, b in (
+    (r"^Image enregistrée : (.+)$", r"Image saved: \1"), (r"^image non enregistrée : (.+)$", r"image not saved: \1"),
     (r"cette machine", "this machine"), (r"(\d+) cœurs\b", r"\1 cores"), (r"(\d) Gio\b", r"\1 GiB"),
     (r"^shrink-array — runs sur (.+) \(prototype\)$", r"shrink-array — runs on \1 (prototype)"),
     (r"^Dépôt \((.+)\)$", r"Repository (\1)"),
