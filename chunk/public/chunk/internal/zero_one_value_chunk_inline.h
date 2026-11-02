@@ -39,7 +39,7 @@
  * zero_one_value is the two-constant chunk whose second value is shared by the WHOLE
  * array — that is what separates it from zero_any, where each chunk carries its
  * own. The consequence runs through this entire file: the candidate lists are
- * keyed BY second value (`map_chunk2_to_compress_potentially_thr[thr][value]`),
+ * keyed BY second value (`zero_one_value_candidates_map_thr[thr][value]`),
  * so a compression pass is always "drain the list of one (rank, second value)
  * pair", never "drain everything this rank queued".
  *
@@ -117,13 +117,13 @@ template <typename T, typename Derived, bool Enabled>
  * @param n_elems    This chunk's own element count, captured when it was queued.
  */
 template <typename T, typename Derived, bool Enabled>
-void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(this Derived&        self,
-                                                                                     VecTupleChunk2pInt2& ll_compt1,
-                                                                                     VecTupleChunk2pInt2& ll_compt2,
-                                                                                     const InfArrayT&     inf_array,
-                                                                                     int                  num_chunk,
-                                                                                     int                  num_tab,
-                                                                                     unsigned int         n_elems)
+void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(this Derived&    self,
+                                                                                     CandidateTuples& ll_compt1,
+                                                                                     CandidateTuples& ll_compt2,
+                                                                                     const InfArrayT& inf_array,
+                                                                                     int              num_chunk,
+                                                                                     int              num_tab,
+                                                                                     unsigned int     n_elems)
 {
     // InT: a reference into the (const, caller-owned) tuple when T is large.
     const InT<T> second_v = inf_array.second_value;
@@ -158,14 +158,14 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_comp
 template <typename T, typename Derived, bool Enabled>
 template <typename SecondValueFunc>
 void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_compress_impl(
-    this Derived&        self,
-    VecTupleChunk2pInt2& ll_compt1,
-    VecTupleChunk2pInt2& ll_compt2,
-    int                  num_chunk,
-    int                  num_tab,
-    SecondValueFunc&&    get_second_value,
-    bool                 check_cst_val2,
-    unsigned int         n_elems)
+    this Derived&     self,
+    CandidateTuples&  ll_compt1,
+    CandidateTuples&  ll_compt2,
+    int               num_chunk,
+    int               num_tab,
+    SecondValueFunc&& get_second_value,
+    bool              check_cst_val2,
+    unsigned int      n_elems)
 {
     // Skip a chunk already compressed to either constant.
     if (self.Base::is_not_cst_val1() && check_cst_val2)
@@ -313,7 +313,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_chunk_to
                                                                                           bool             apply)
 {
     // Everything the per-rank body touches is rank-local --
-    // map_chunk2_to_compress_potentially_thr[thr_rank], the freed buffer goes to
+    // zero_one_value_candidates_map_thr[thr_rank], the freed buffer goes to
     // thr_rank's pool (clear_int_st), and the candidate flag reset is an atomic
     // store -- so the ranks are independent (a serial loop leaves the team idle
     // during a re-chunk).
@@ -381,7 +381,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_chunk_to
         return;
     }
 
-    auto* const vec_tuple_p = ManagerChunk2::compress_candidates(thr_rank, key);
+    auto* const vec_tuple_p = Manager::compress_candidates(thr_rank, key);
     assert(vec_tuple_p != nullptr && "key registered for every rank by set_second_value()");
     if (vec_tuple_p == nullptr) [[unlikely]]
     {
@@ -481,7 +481,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_t
     InT<T>   key,
     ScanFn&& scan_one)
 {
-    const auto* const vec_tuple_p = ManagerChunk2::compress_candidates(thr_rank, key);
+    const auto* const vec_tuple_p = Manager::compress_candidates(thr_rank, key);
     assert(vec_tuple_p != nullptr && "key registered for every rank by set_second_value()");
     if (vec_tuple_p == nullptr) [[unlikely]]
     {
@@ -515,10 +515,10 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_t
  */
 template <typename T, typename Derived, bool Enabled>
 void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_par(
-    int                  thr_rank,
-    VecTupleChunk2pInt2& ll_compt1,
-    VecTupleChunk2pInt2& ll_compt2,
-    const InfArrayT&     inf_array)
+    int              thr_rank,
+    CandidateTuples& ll_compt1,
+    CandidateTuples& ll_compt2,
+    const InfArrayT& inf_array)
 {
     fill_list_chunk_to_compress_in_par_impl(
         thr_rank, inf_array.second_value,
@@ -546,9 +546,9 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_t
  */
 template <typename T, typename Derived, bool Enabled>
 void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_bool_in_par(
-    int                  thr_rank,
-    VecTupleChunk2pInt2& ll_compt1,
-    VecTupleChunk2pInt2& ll_compt2)
+    int              thr_rank,
+    CandidateTuples& ll_compt1,
+    CandidateTuples& ll_compt2)
 {
     fill_list_chunk_to_compress_in_par_impl(
         thr_rank, static_cast<T>(true),
@@ -595,7 +595,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
     // without set_second_value reaches it via resize_common ->
     // make_block_compression. is_vec_tuple_to_compress_potentially_empty_thr()
     // is not enough: it only tests "no key anywhere".
-    auto&      map_thr = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr_rank];
+    auto&      map_thr = Manager::zero_one_value_candidates_map_thr[thr_rank];
     const auto it      = map_thr.find(second_value);
 
     if (it == map_thr.end() || !it->second)
@@ -676,8 +676,8 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
         }
     }
 
-    VecTupleChunk2pInt2 ll_compt1;
-    VecTupleChunk2pInt2 ll_compt2;
+    CandidateTuples ll_compt1;
+    CandidateTuples ll_compt2;
 
     ll_compt1.reserve((sz / 50) + 1);
     ll_compt2.reserve((sz / 50) + 1);
@@ -842,13 +842,13 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
 {
     if constexpr (is_not_bool)
     {
-        const auto& ml = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr_rank];
+        const auto& ml = Manager::zero_one_value_candidates_map_thr[thr_rank];
 
         for (auto& elm : ml)
         {
             const InT<T> second_val = elm.first; // the map key, by reference when T is large
-            const auto   it         = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr_rank].find(second_val);
-            if (it == ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr_rank].end())
+            const auto   it         = Manager::zero_one_value_candidates_map_thr[thr_rank].find(second_val);
+            if (it == Manager::zero_one_value_candidates_map_thr[thr_rank].end())
             {
                 continue;
             }
@@ -876,8 +876,8 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
             return;
         }
 
-        const auto it = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr_rank].find(true);
-        if (it == ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr_rank].end())
+        const auto it = Manager::zero_one_value_candidates_map_thr[thr_rank].find(true);
+        if (it == Manager::zero_one_value_candidates_map_thr[thr_rank].end())
         {
             return;
         }
@@ -1333,7 +1333,7 @@ bool zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::have_chunk_to_com
 
     for (int thr_rank = 0; thr_rank < max_thr; ++thr_rank)
     {
-        auto&      map_thr = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr_rank];
+        auto&      map_thr = Manager::zero_one_value_candidates_map_thr[thr_rank];
         const auto it      = map_thr.find(second_value);
         if (it != map_thr.end() && !it->second->empty())
         {
@@ -1390,11 +1390,11 @@ zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::get_vec_tuple_to_compr
     InT<T> second_value) noexcept
 {
     // find(), not operator[]: see zero_one_value::Proxy::get_vec_tuple_to_compress_potentially_thr.
-    auto&      lists_by_value = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr];
+    auto&      lists_by_value = Manager::zero_one_value_candidates_map_thr[thr];
     const auto it             = lists_by_value.find(second_value);
     if (it == lists_by_value.end() || it->second == nullptr) [[unlikely]]
     {
-        chunk2_missing_candidate_list(thr);
+        zero_one_value_missing_candidate_list(thr);
     }
     return *it->second;
 }

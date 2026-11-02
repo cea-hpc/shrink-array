@@ -32,7 +32,7 @@
 #include "chunk/internal/chunk_size_policy.h"            // set_thread_chunk_size
 #include "chunk/internal/TChunk.h"                       // VectorTuple4ChunkInt2
 
-#include "chunk/internal/zero_one_value_candidate_list_check.h" // chunk2_missing_candidate_list
+#include "chunk/internal/zero_one_value_candidate_list_check.h" // zero_one_value_missing_candidate_list
 #include "chunk/internal/proxy_base.h"                          // ProxyBase
 #include "chunk/internal/second_value_proxy_base.h"             // SecondValueProxyBase
 #include "chunk/internal/chunk_stats.h" // increm_chunk_write<> in the bodies (a dependent call the include tools cannot attribute)
@@ -324,8 +324,8 @@ template <typename Derived, typename T, typename ChunkT, bool Enabled>
 class ProxyFastCompPolicy : public ProxySpec<T, Derived>
 {
   public:
-    using Base2 = SecondValueProxyBase<Derived, T, Chunk<T>>;
-    using Base  = ProxyBase<Derived, T, Chunk<T>>;
+    using SecondValueBase = SecondValueProxyBase<Derived, T, Chunk<T>>;
+    using Base            = ProxyBase<Derived, T, Chunk<T>>;
 
     using Base::chunk_;
     using Base::num_;
@@ -338,7 +338,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
     // second_value is in a dependent base: import it for unqualified use (two-phase lookup).
     using ProxySpec<T, Derived>::second_value_;
 
-    using ManagerChunk2 = ManagerChunk<Chunk, T>;
+    using Manager = ManagerChunk<Chunk, T>;
 
     using CompressionManagerType = CompressionManager<T, ChunkT>;
 
@@ -365,7 +365,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
      */
     static void note_candidate_pushed(const auto& vec) noexcept
     {
-        if (static_cast<int>(vec.size()) > ManagerChunk2::get_size_max_number_of_chunk_to_check_compress())
+        if (static_cast<int>(vec.size()) > Manager::get_size_max_number_of_chunk_to_check_compress())
         {
             list_over_threshold_ = true;
         }
@@ -461,7 +461,8 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
 
     void mark_for_compression_if_needed_with_value(this const Derived& self, InT<T> old_value, InT<T> new_value)
     {
-        self.Base2::mark_for_compression_if_needed(self.second_value_, old_value, new_value, Chunk<T>::first_value);
+        self.SecondValueBase::mark_for_compression_if_needed(self.second_value_, old_value, new_value,
+                                                             Chunk<T>::first_value);
     }
 
     /**
@@ -562,7 +563,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
      */
     void mark_for_compression_if_needed(this const Derived& self, InT<T> new_value)
     {
-        self.Base2::mark_for_compression_if_needed(self.second_value_, new_value, Chunk<T>::first_value);
+        self.SecondValueBase::mark_for_compression_if_needed(self.second_value_, new_value, Chunk<T>::first_value);
     }
 
   private:
@@ -655,15 +656,15 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
         return os;
     }
 
-    using Base2          = SecondValueProxyBase<Proxy, T, Chunk<T>>;
-    using Base           = ProxyBase<Proxy, T, Chunk<T>>;
-    using ChunkType      = Chunk<T>;
-    using FastCompPolicy = ProxyFastCompPolicy<Proxy, T, Chunk<T>, chunk_config::use_fast_block_compression>;
+    using SecondValueBase = SecondValueProxyBase<Proxy, T, Chunk<T>>;
+    using Base            = ProxyBase<Proxy, T, Chunk<T>>;
+    using ChunkType       = Chunk<T>;
+    using FastCompPolicy  = ProxyFastCompPolicy<Proxy, T, Chunk<T>, chunk_config::use_fast_block_compression>;
 
     using CompressionManagerType = CompressionManager<T, ChunkType>;
 
     friend Base;
-    friend Base2;
+    friend SecondValueBase;
 
     using Base::set_num_tab;
 
@@ -672,7 +673,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
 
   private:
     /// Alias for the chunk manager associated with type T.
-    using ManagerChunk2 = ManagerChunk<Chunk, T>;
+    using Manager = ManagerChunk<Chunk, T>;
 
     using Base::chunk_;        ///< Reference to the associated chunk.
     using Base::num_;          ///< Index of the current element within the chunk.

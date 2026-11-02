@@ -341,7 +341,7 @@ In-flight compression returns these chunks to `cst_val2` as the loop proceeds.
 Each thread keeps **one list of candidate chunks per second value**:
 
 ```
-ManagerChunk2::map_chunk2_to_compress_potentially_thr[rang][second_value]
+Manager::zero_one_value_candidates_map_thr[rang][second_value]
 ```
 
 Each entry holds `(chunk, num_chunk, num_tab, number of elements)`. The number of elements

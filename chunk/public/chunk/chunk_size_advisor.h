@@ -212,7 +212,7 @@ struct ChunkSizeAdvisor
 
         // zero_one_value keys cst2 by the array-level second-value index; fetch it once.
         // zero has no cst2; zero_any keys cst2 per chunk by the values_load() pointer.
-        [[maybe_unused]] const int chunk2_ind = [&]
+        [[maybe_unused]] const int second_value_ind = [&]
         {
             // bool / Bit: one second value, `true`, no index --
             // get_ind_second_value() aborts for them; classify() below asks
@@ -306,7 +306,7 @@ struct ChunkSizeAdvisor
                 }
                 else
                 {
-                    is_cst2 = chunk2_ind >= 0 && chunk.is_cst_val2(chunk2_ind);
+                    is_cst2 = second_value_ind >= 0 && chunk.is_cst_val2(second_value_ind);
                 }
                 if (is_cst2)
                 {

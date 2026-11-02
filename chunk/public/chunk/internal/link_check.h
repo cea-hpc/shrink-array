@@ -33,19 +33,19 @@
 // The 0/1 flags are pasted (##) into the symbol name below, so they must stay macros.
 // NOLINTBEGIN(modernize-macro-to-enum)
 #ifdef CHUNK_VARIANT_ZERO
-    #define CHUNK_LINK_CHECK_V1 1
+    #define CHUNK_LINK_CHECK_ZERO 1
 #else
-    #define CHUNK_LINK_CHECK_V1 0
+    #define CHUNK_LINK_CHECK_ZERO 0
 #endif
 #ifdef CHUNK_VARIANT_ZERO_ONE_VALUE
-    #define CHUNK_LINK_CHECK_V2 1
+    #define CHUNK_LINK_CHECK_ZERO_ONE_VALUE 1
 #else
-    #define CHUNK_LINK_CHECK_V2 0
+    #define CHUNK_LINK_CHECK_ZERO_ONE_VALUE 0
 #endif
 #ifdef CHUNK_VARIANT_ZERO_ANY
-    #define CHUNK_LINK_CHECK_V2A 1
+    #define CHUNK_LINK_CHECK_ZERO_ANY 1
 #else
-    #define CHUNK_LINK_CHECK_V2A 0
+    #define CHUNK_LINK_CHECK_ZERO_ANY 0
 #endif
 #ifdef CHUNK_DYNAMIC
     #define CHUNK_LINK_CHECK_DYN 1
@@ -58,9 +58,9 @@
 #define CHUNK_LINK_CHECK_NAME(v1, v2, v2a, size, dyn) CHUNK_LINK_CHECK_NAME_(v1, v2, v2a, size, dyn)
 
 /// The function of this TU's settings (see above).
-#define CHUNK_LINK_CHECK                                                                              \
-    CHUNK_LINK_CHECK_NAME(CHUNK_LINK_CHECK_V1, CHUNK_LINK_CHECK_V2, CHUNK_LINK_CHECK_V2A, CHUNK_SIZE, \
-                          CHUNK_LINK_CHECK_DYN)
+#define CHUNK_LINK_CHECK                                                                                     \
+    CHUNK_LINK_CHECK_NAME(CHUNK_LINK_CHECK_ZERO, CHUNK_LINK_CHECK_ZERO_ONE_VALUE, CHUNK_LINK_CHECK_ZERO_ANY, \
+                          CHUNK_SIZE, CHUNK_LINK_CHECK_DYN)
 
 namespace shrink_array::link_check
 {

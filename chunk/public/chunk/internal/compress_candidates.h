@@ -30,7 +30,7 @@
 
 #include "chunk/bit.h"               // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/config.h"            // build_config::threaded
-#include "chunk/internal/TChunk.h"   // TChunkComp, TChunk2CompMap, TChunk2AComp
+#include "chunk/internal/TChunk.h"   // ZeroComp, ZeroOneValueCompMap, ZeroAnyComp
 #include "chunk/internal/immortal.h" // Immortal: statics safe for global arrays
 
 namespace shrink_array
@@ -99,11 +99,11 @@ class CompressCandidates
         std::erase_if(candidates, [num_tab](const auto& tup) { return std::get<2>(tup) == num_tab; });
     }
 
-    // Serial counterpart of chunk_to_compress_potentially_thr (likewise
-    // chunk2a_to_compress_potentially). Declared in EVERY build, empty under
+    // Serial counterpart of zero_candidates_thr (likewise
+    // zero_any_candidates). Declared in EVERY build, empty under
     // OpenMP, for the reason given at list_block_free_thr_by_size_.
-    static inline constinit internal::Immortal<TChunkComp<ChunkT, T>> chunk_to_compress_potentially_storage_{};
-    static inline TChunkComp<ChunkT, T>& chunk_to_compress_potentially = chunk_to_compress_potentially_storage_.value;
+    static inline constinit internal::Immortal<ZeroComp<ChunkT, T>> zero_candidates_storage_{};
+    static inline ZeroComp<ChunkT, T>&                              zero_candidates = zero_candidates_storage_.value;
 
     static inline int size_max_number_of_chunk_to_check_compress;
 
@@ -117,17 +117,17 @@ class CompressCandidates
     // serial store while the candidates sit per thread, so the constraint makes
     // a call fail to compile there.
     /// @brief The zero_any candidate list (serial builds: a single one).
-    static auto& get_chunk2a_to_compress_potentially() noexcept
+    static auto& get_zero_any_candidates() noexcept
         requires(!build_config::threaded)
     {
-        return chunk2a_to_compress_potentially;
+        return zero_any_candidates;
     }
     /// @brief Rank @p thr's zero_any candidate list (the single one in a
     ///        serial build).
-    static auto& get_chunk2a_to_compress_potentially([[maybe_unused]] int thr) noexcept;
+    static auto& get_zero_any_candidates([[maybe_unused]] int thr) noexcept;
 
     /// @brief Is no zero_any chunk queued for compression, on any thread?
-    [[nodiscard]] static bool is_chunk2a_to_compress_potentially_empty() noexcept;
+    [[nodiscard]] static bool is_zero_any_candidates_empty() noexcept;
 
     /**
      * @brief Drop every queued zero_any candidate pointing into [@p lo, @p hi).
@@ -144,16 +144,16 @@ class CompressCandidates
      * @note In plain fast-block-compression builds (GNU, no OMPT) this cleanup is
      *       the ONLY one: the built-in vec_tup.clear() runs only under OMPT.
      */
-    static void remove_from_compress_list_chunk2a_by_ptr_range(const void* lo, const void* hi) noexcept;
+    static void remove_from_zero_any_candidates_by_ptr_range(const void* lo, const void* hi) noexcept;
 
     /**
      * @brief Drop every queued zero_any candidate of array @p num_tab, in every
      *        rank's list (zero_any::Array::clear_core and rechunk_to).
      * @param num_tab tab index whose candidates are removed
      * @note Keeps other arrays' candidates. At teardown prefer
-     *       remove_from_compress_list_chunk2a_by_ptr_range() (see why there).
+     *       remove_from_zero_any_candidates_by_ptr_range() (see why there).
      */
-    static void remove_from_compress_list_chunk2a_by_num_tab(int num_tab) noexcept;
+    static void remove_from_zero_any_candidates_by_num_tab(int num_tab) noexcept;
 
     /**
      * @brief zero_one_value analogue: drop every queued zero_one_value candidate for @p num_tab.
@@ -166,19 +166,19 @@ class CompressCandidates
      * @note OpenMP builds only: a serial build queues no zero_one_value candidate (fast
      *       block compression is OpenMP-only), so there is nothing to drop.
      */
-    static void remove_from_compress_list_chunk2_by_num_tab([[maybe_unused]] int num_tab) noexcept;
+    static void remove_from_zero_one_value_candidates_by_num_tab([[maybe_unused]] int num_tab) noexcept;
 
     /// @brief Drop every queued zero candidate of array @p num_tab
     ///        (zero::Array::clear_core and rechunk_to).
     /// @details Removes this array's candidates without compressing, and keeps
     ///          other arrays' intact.
-    static void remove_from_compress_list_chunk_by_num_tab(int num_tab) noexcept;
+    static void remove_from_zero_candidates_by_num_tab(int num_tab) noexcept;
 
     /// @brief zero_one_value's candidate lists: per rank, one list per second value.
-    static inline constinit internal::Immortal<TChunk2CompMap<ChunkT, T>>
-                                             map_chunk2_to_compress_potentially_thr_storage_{};
-    static inline TChunk2CompMap<ChunkT, T>& map_chunk2_to_compress_potentially_thr =
-        map_chunk2_to_compress_potentially_thr_storage_.value;
+    static inline constinit internal::Immortal<ZeroOneValueCompMap<ChunkT, T>>
+                                                  zero_one_value_candidates_map_thr_storage_{};
+    static inline ZeroOneValueCompMap<ChunkT, T>& zero_one_value_candidates_map_thr =
+        zero_one_value_candidates_map_thr_storage_.value;
 
     /**
      * @brief Rank @p thr's candidate list for second value @p key, or null
@@ -190,29 +190,25 @@ class CompressCandidates
     template <typename Key>
     [[nodiscard]] static auto* compress_candidates(int thr, const Key& key) noexcept
     {
-        auto&      by_value = map_chunk2_to_compress_potentially_thr[thr];
+        auto&      by_value = zero_one_value_candidates_map_thr[thr];
         const auto it       = by_value.find(key);
         return it != by_value.end() ? it->second.get() : nullptr;
     }
     /// @brief zero_one_value: per rank, one list per second-value index, copied by
-    ///        zero_one_value::Array into map_chunk2_to_compress_potentially_thr when it
+    ///        zero_one_value::Array into zero_one_value_candidates_map_thr when it
     ///        registers a second value.
-    static inline constinit internal::Immortal<TChunk2CompThr<ChunkT, T>> chunk2_to_compress_potentially_thr_storage_{};
-    static inline TChunk2CompThr<ChunkT, T>&                              chunk2_to_compress_potentially_thr =
-        chunk2_to_compress_potentially_thr_storage_.value;
+    static inline constinit internal::Immortal<ZeroOneValueCompThr<ChunkT, T>> zero_one_value_candidates_thr_storage_{};
+    static inline ZeroOneValueCompThr<ChunkT, T>&                              zero_one_value_candidates_thr =
+        zero_one_value_candidates_thr_storage_.value;
     /// @brief zero_any's per-rank candidate lists.
-    static inline constinit internal::Immortal<TChunk2ACompThr<ChunkT, T>>
-                                              chunk2a_to_compress_potentially_thr_storage_{};
-    static inline TChunk2ACompThr<ChunkT, T>& chunk2a_to_compress_potentially_thr =
-        chunk2a_to_compress_potentially_thr_storage_.value;
+    static inline constinit internal::Immortal<ZeroAnyCompThr<ChunkT, T>> zero_any_candidates_thr_storage_{};
+    static inline ZeroAnyCompThr<ChunkT, T>& zero_any_candidates_thr = zero_any_candidates_thr_storage_.value;
     /// @brief zero's per-rank candidate lists.
-    static inline constinit internal::Immortal<TChunkCompThr<ChunkT, T>> chunk_to_compress_potentially_thr_storage_{};
-    static inline TChunkCompThr<ChunkT, T>&                              chunk_to_compress_potentially_thr =
-        chunk_to_compress_potentially_thr_storage_.value;
+    static inline constinit internal::Immortal<ZeroCompThr<ChunkT, T>> zero_candidates_thr_storage_{};
+    static inline ZeroCompThr<ChunkT, T>& zero_candidates_thr = zero_candidates_thr_storage_.value;
     /// @brief zero_any's single candidate list of a serial build.
-    static inline constinit internal::Immortal<TChunk2AComp<ChunkT, T>> chunk2a_to_compress_potentially_storage_{};
-    static inline TChunk2AComp<ChunkT, T>&                              chunk2a_to_compress_potentially =
-        chunk2a_to_compress_potentially_storage_.value;
+    static inline constinit internal::Immortal<ZeroAnyComp<ChunkT, T>> zero_any_candidates_storage_{};
+    static inline ZeroAnyComp<ChunkT, T>& zero_any_candidates = zero_any_candidates_storage_.value;
 };
 
 } // namespace shrink_array

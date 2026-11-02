@@ -83,7 +83,7 @@ void SecondValueChunkBase<T, Derived>::block_clear_common(this Derived&        s
         }
     }
 
-    if constexpr (is_chunk2_derived && chunk_config::use_compression_with_counter)
+    if constexpr (is_zero_one_value_derived && chunk_config::use_compression_with_counter)
     {
         self.reset_nb_val_eq_second_value();
         self.reset_nb_val_eq_first_value();
@@ -147,7 +147,7 @@ void SecondValueChunkBase<T, Derived>::clear_impl(this Derived&     self,
         self.set_cst_val_to_cst_val1();
         self.init_values_cst_val();
 
-        if constexpr (is_chunk2_derived && chunk_config::use_compression_with_counter)
+        if constexpr (is_zero_one_value_derived && chunk_config::use_compression_with_counter)
         {
             self.reset_nb_val_eq_second_value();
         }
@@ -206,7 +206,7 @@ void SecondValueChunkBase<T, Derived>::check_not_constant_before_clear(this cons
         if (ind_opt.has_value())
         {
             // Path for zero_one_value (Table indexed)
-            if constexpr (is_chunk2_derived)
+            if constexpr (is_zero_one_value_derived)
             {
                 const int ind = *ind_opt;
                 if constexpr (is_bool)

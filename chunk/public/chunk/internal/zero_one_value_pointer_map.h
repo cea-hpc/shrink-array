@@ -26,7 +26,7 @@
 // (a void* handle) and by the value:
 //
 //   zero_one_value::PointerMap<T>                  the map itself (key -> SecondValueInfo).
-//   PointerMapChunk2InfArrayPolicy<T,B>  the value -> inf_array side, as a policy:
+//   ZeroOneValueInfArrayPolicy<T,B>  the value -> inf_array side, as a policy:
 //                                        the <T,false> specialisation is all no-ops.
 //   ValueToInfTupleMapHelper<T>          its std::map type, ordered by ValueLess
 //                                        (value_less.h: complex has no operator<).
@@ -82,7 +82,7 @@ struct ValueToInfTupleMapHelper
  *                 chunk_config::use_fast_block_compression.
  */
 template <typename T, bool Enabled>
-class PointerMapChunk2InfArrayPolicy
+class ZeroOneValueInfArrayPolicy
 {
   public:
     using InfArrayT = SecondValueInfo<T>;
@@ -141,7 +141,7 @@ class PointerMapChunk2InfArrayPolicy
  *          of their own; they simply do nothing and report an empty registry.
  */
 template <typename T>
-class PointerMapChunk2InfArrayPolicy<T, false>
+class ZeroOneValueInfArrayPolicy<T, false>
 {
   public:
     using InfArrayT = SecondValueInfo<T>;
@@ -176,7 +176,7 @@ namespace zero_one_value
 template <typename T>
 class PointerMap
     : public PointerMapLinear<SecondValueInfo<T>, std::deque<std::pair<ArrayKey<Chunk<T>>, SecondValueInfo<T>>>>,
-      public PointerMapChunk2InfArrayPolicy<T, chunk_config::use_fast_block_compression>
+      public ZeroOneValueInfArrayPolicy<T, chunk_config::use_fast_block_compression>
 {
   private:
     /// Internal alias for tuple representing a value with index and table number.
@@ -193,7 +193,7 @@ class PointerMap
 
   private:
     /// @brief Policy carrying the fast-block-compression-only inf_array map.
-    using InfArrayPolicy = PointerMapChunk2InfArrayPolicy<T, chunk_config::use_fast_block_compression>;
+    using InfArrayPolicy = ZeroOneValueInfArrayPolicy<T, chunk_config::use_fast_block_compression>;
 
     // The storage must be a std::deque, NOT a std::vector: a vector's emplace_back
     // reallocates and frees the old buffer under a reader walking it in parallel

@@ -36,7 +36,7 @@
 #include "chunk/internal/second_value_chunk_base.h" // SecondValueChunkBase
 #include "chunk/internal/chunk_stats.h"             // increm_chunk_write
 
-#include "chunk/internal/TChunk.h"          // TChunk2ACompOf, VectorTuple4ChunkInt2
+#include "chunk/internal/TChunk.h"          // ZeroAnyCompOf, VectorTuple4ChunkInt2
 #include "chunk/internal/immortal.h"        // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/chunk_array_new.h" // chunk_array_new::init_chunks (init_chunks_cst_val)
 
@@ -191,7 +191,7 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>, public ChunkC
 {
   public:
     using Base                   = SecondValueChunkBase<T, Derived>;
-    using ManagerChunk2A         = ChunkTraits<Derived>::ManagerType;
+    using Manager                = ChunkTraits<Derived>::ManagerType;
     using CompressionManagerType = CompressionManager<T, Derived>;
 
     using Base::is_bool;
@@ -312,17 +312,17 @@ template <typename T, typename Derived>
 class ChunkThreadPolicy<T, Derived, false> : public SecondValueChunkBase<T, Derived>
 {
   public:
-    using Base           = SecondValueChunkBase<T, Derived>;
-    using ManagerChunk2A = ChunkTraits<Derived>::ManagerType;
+    using Base    = SecondValueChunkBase<T, Derived>;
+    using Manager = ChunkTraits<Derived>::ManagerType;
 
     using Base::is_bool;
     using Base::is_not_bool;
     using Base::values_;
 
     /// @brief The single candidate list of a serial build.
-    static TChunk2ACompOf<Derived>& get_vec_tuple_to_compress_potentially() noexcept
+    static ZeroAnyCompOf<Derived>& get_vec_tuple_to_compress_potentially() noexcept
     {
-        return ManagerChunk2A::chunk2a_to_compress_potentially;
+        return Manager::zero_any_candidates;
     }
 
     /*!
@@ -390,10 +390,10 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>, public TabCstVal2Holder<
     friend class SecondValueChunkBase<T, Derived>;
     friend ProxyType;
 
-    using ManagerChunk2A = ChunkTraits<Derived>::ManagerType;
+    using Manager = ChunkTraits<Derived>::ManagerType;
     // Same tuple as TChunk.h's VectorTuple4ChunkInt2 (the manager storage).
-    using VecTupleChunkA2pInt2  = std::vector<std::tuple<Derived*, int, int, ChunkElems>>;
-    using VecTupleChunkA2pTint2 = std::vector<std::tuple<Derived*, T, int, int, ChunkElems>>;
+    using CandidateTuples      = std::vector<std::tuple<Derived*, int, int, ChunkElems>>;
+    using CandidateValueTuples = std::vector<std::tuple<Derived*, T, int, int, ChunkElems>>;
 
     using Base::allocator_data;
     using Base::first_value;
@@ -479,7 +479,7 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>, public TabCstVal2Holder<
     void init_values_cst_val(const CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value) noexcept;
 
     /// @brief Get reference to the chunk manager (static access)
-    /// @return Reference to the ManagerChunk2A static instance
+    /// @return Reference to the Manager static instance
     ///
     static auto& get_manager() noexcept
     {
@@ -490,9 +490,9 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>, public TabCstVal2Holder<
     }
 
     /// @brief Rank @p thr's candidate list.
-    static TChunk2ACompOf<Derived>& get_vec_tuple_to_compress_potentially_thr(int thr) noexcept
+    static ZeroAnyCompOf<Derived>& get_vec_tuple_to_compress_potentially_thr(int thr) noexcept
     {
-        return ManagerChunk2A::get_chunk2a_to_compress_potentially(thr);
+        return Manager::get_zero_any_candidates(thr);
     }
 
     /// @brief Materialise this chunk if it is currently compressed to either
@@ -551,20 +551,20 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>, public TabCstVal2Holder<
     // array's chunk size (field <3>, from push_to_compress_list). The scan bounds come from
     // that field. Do not add a `= static_chunk_size` default: it would scan only the first
     // static_chunk_size values of a wider chunk, declare it constant and destroy the rest.
-    static void fill_list_chunk_to_compress_in_par(int                    thr,
-                                                   VecTupleChunkA2pInt2&  ll_compt1,
-                                                   VecTupleChunkA2pTint2& ll_compt2,
-                                                   bool                   claimed = false);
+    static void fill_list_chunk_to_compress_in_par(int                   thr,
+                                                   CandidateTuples&      ll_compt1,
+                                                   CandidateValueTuples& ll_compt2,
+                                                   bool                  claimed = false);
 
-    void fill_list_to_compress(this Derived&          self,
-                               VecTupleChunkA2pInt2&  ll_compt1,
-                               VecTupleChunkA2pTint2& ll_compt2,
-                               int                    num_chunk,
-                               int                    num_tab,
-                               ChunkElems             size,
-                               bool                   claimed = false);
+    void fill_list_to_compress(this Derived&         self,
+                               CandidateTuples&      ll_compt1,
+                               CandidateValueTuples& ll_compt2,
+                               int                   num_chunk,
+                               int                   num_tab,
+                               ChunkElems            size,
+                               bool                  claimed = false);
 
-    static inline constinit internal::LazyImmortal<ManagerChunk2A> s_manager_;
+    static inline constinit internal::LazyImmortal<Manager> s_manager_;
 };
 
 /// @brief Chunk of values compressible to the first constant or to a second constant shared through the

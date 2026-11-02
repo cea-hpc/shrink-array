@@ -34,7 +34,7 @@
 #include "chunk/internal/invariant_check.h"                     // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/bad_ptr_check.h"                       // CHUNK_CHECK_VALUES_PTR (check builds)
 #include "chunk/PMP_CHUNK.h"                                    // get_thr_rank_fast, CHUNK_PMP_THREAD_RANK
-#include "chunk/internal/zero_one_value_candidate_list_check.h" // chunk2_missing_candidate_list
+#include "chunk/internal/zero_one_value_candidate_list_check.h" // zero_one_value_missing_candidate_list
 #include "chunk/internal/zero_one_value_proxy.h"                // zero_one_value::Proxy
 #include "chunk/internal/second_value_chunk_base.h"             // SecondValueChunkBase
 #include "chunk/internal/conditional_counter.h"                 // ConditionalCounter, CounterValueT
@@ -332,10 +332,10 @@ template <typename T, typename Derived, bool Enabled = build_config::threaded>
 class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>
 {
   public:
-    using Base          = SecondValueChunkBase<T, Derived>;
-    using BaseSpec      = ChunkSpec<T>;
-    using ManagerChunk2 = ManagerChunk<Chunk, T>;
-    using InfArrayT     = SecondValueInfo<T>;
+    using Base      = SecondValueChunkBase<T, Derived>;
+    using BaseSpec  = ChunkSpec<T>;
+    using Manager   = ManagerChunk<Chunk, T>;
+    using InfArrayT = SecondValueInfo<T>;
 
     using Base::first_value;
     using Base::is_bool;
@@ -548,9 +548,9 @@ template <typename T, typename Derived, bool Enabled>
 class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Derived>
 {
   public:
-    using ManagerChunk2 = ManagerChunk<Chunk, T>;
-    using Base          = SecondValueChunkBase<T, Derived>;
-    using BaseSpec      = ChunkSpec<T>;
+    using Manager  = ManagerChunk<Chunk, T>;
+    using Base     = SecondValueChunkBase<T, Derived>;
+    using BaseSpec = ChunkSpec<T>;
 
     using Base::first_value;
     using Base::values_;
@@ -558,8 +558,8 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
     // Local aliases, as ChunkFastCompPolicy carries its own rather than reaching into Derived.
     // (chunk, num_chunk, num_tab, n_elems) -- n_elems is the chunk's OWN geometry, carried
     // from the candidate queue so the clear loop can pin the thread to it before freeing.
-    using VecTupleChunk2pInt2 = std::vector<std::tuple<Chunk<T>*, int, int, unsigned int>>;
-    using InfArrayT           = SecondValueInfo<T>;
+    using CandidateTuples = std::vector<std::tuple<Chunk<T>*, int, int, unsigned int>>;
+    using InfArrayT       = SecondValueInfo<T>;
 
     /**
      * @brief Scans all threads to see if any chunk is marked for compression with a specific value.
@@ -666,8 +666,8 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      */
     [[nodiscard]] static bool is_vec_tuple_to_compress_potentially_empty_thr() noexcept
     {
-        return ManagerChunk2::map_chunk2_to_compress_potentially_thr.empty() ||
-               ManagerChunk2::map_chunk2_to_compress_potentially_thr[0].empty();
+        return Manager::zero_one_value_candidates_map_thr.empty() ||
+               Manager::zero_one_value_candidates_map_thr[0].empty();
     }
 
     /**
@@ -767,10 +767,10 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      * \param ll_compt2 Output: candidates confirmed uniform on the second constant.
      * \param inf_array (second_value, ...) identifying the candidate list.
      */
-    static void fill_list_chunk_to_compress_in_par(int                  thr_rank,
-                                                   VecTupleChunk2pInt2& ll_compt1,
-                                                   VecTupleChunk2pInt2& ll_compt2,
-                                                   const InfArrayT&     inf_array);
+    static void fill_list_chunk_to_compress_in_par(int              thr_rank,
+                                                   CandidateTuples& ll_compt1,
+                                                   CandidateTuples& ll_compt2,
+                                                   const InfArrayT& inf_array);
 
     /*!
      * \brief Bool specialization of fill_list_chunk_to_compress_in_par().
@@ -778,9 +778,8 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      * \param ll_compt1 Output: candidates confirmed uniform on the first constant.
      * \param ll_compt2 Output: candidates confirmed uniform on the second constant.
      */
-    static void fill_list_chunk_to_compress_bool_in_par(int                  thr_rank,
-                                                        VecTupleChunk2pInt2& ll_compt1,
-                                                        VecTupleChunk2pInt2& ll_compt2);
+    static void
+    fill_list_chunk_to_compress_bool_in_par(int thr_rank, CandidateTuples& ll_compt1, CandidateTuples& ll_compt2);
 
     /*!
      * \brief Re-scan THIS chunk's live content and, if now uniform on the first and/or
@@ -797,14 +796,14 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      * \param n_elems Element count of this chunk (the owning array's geometry).
      */
     template <typename SecondValueFunc>
-    void fill_list_to_compress_impl(this Derived&        self,
-                                    VecTupleChunk2pInt2& ll_compt1,
-                                    VecTupleChunk2pInt2& ll_compt2,
-                                    int                  num_chunk,
-                                    int                  num_tab,
-                                    SecondValueFunc&&    get_second_value,
-                                    bool                 check_cst_val2,
-                                    unsigned int         n_elems);
+    void fill_list_to_compress_impl(this Derived&     self,
+                                    CandidateTuples&  ll_compt1,
+                                    CandidateTuples&  ll_compt2,
+                                    int               num_chunk,
+                                    int               num_tab,
+                                    SecondValueFunc&& get_second_value,
+                                    bool              check_cst_val2,
+                                    unsigned int      n_elems);
 
     /*!
      * \brief Non-bool wrapper around fill_list_to_compress_impl() that
@@ -816,13 +815,13 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      * \param num_tab Which array this chunk belongs to.
      * \param n_elems Element count of this chunk (the owning array's geometry).
      */
-    void fill_list_to_compress(this Derived&        self,
-                               VecTupleChunk2pInt2& ll_compt1,
-                               VecTupleChunk2pInt2& ll_compt2,
-                               const InfArrayT&     inf_array,
-                               int                  num_chunk,
-                               int                  num_tab,
-                               unsigned int         n_elems);
+    void fill_list_to_compress(this Derived&    self,
+                               CandidateTuples& ll_compt1,
+                               CandidateTuples& ll_compt2,
+                               const InfArrayT& inf_array,
+                               int              num_chunk,
+                               int              num_tab,
+                               unsigned int     n_elems);
 
     /*!
      * \brief Bool wrapper around fill_list_to_compress_impl() (the second
@@ -833,12 +832,12 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      * \param num_tab Which array this chunk belongs to.
      * \param n_elems Element count of this chunk (the owning array's geometry).
      */
-    void fill_list_to_compress_bool(this Derived&        self,
-                                    VecTupleChunk2pInt2& ll_compt1,
-                                    VecTupleChunk2pInt2& ll_compt2,
-                                    int                  num_chunk,
-                                    int                  num_tab,
-                                    unsigned int         n_elems)
+    void fill_list_to_compress_bool(this Derived&    self,
+                                    CandidateTuples& ll_compt1,
+                                    CandidateTuples& ll_compt2,
+                                    int              num_chunk,
+                                    int              num_tab,
+                                    unsigned int     n_elems)
     {
         self.fill_list_to_compress_impl(
             ll_compt1, ll_compt2, num_chunk, num_tab, [] { return true; }, self.is_not_cst_val2(), n_elems);
@@ -853,7 +852,7 @@ class ChunkFastCompPolicy<T, Derived, false> : public ChunkThreadPolicy<T, Deriv
 {
   public:
     /// (chunk, num_chunk, num_tab, n_elems); see the true specialisation.
-    using VecTupleChunk2pInt2 = std::vector<std::tuple<Chunk<T>*, int, int, unsigned int>>;
+    using CandidateTuples = std::vector<std::tuple<Chunk<T>*, int, int, unsigned int>>;
     /// (second value, its index in the shared value table, num_tab).
     using InfArrayT = SecondValueInfo<T>;
 
@@ -937,9 +936,9 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
     using ThreadPolicy::create_value;
     using ThreadPolicy::create_value_bool;
 
-    using VecTupleChunk2pInt2 = std::vector<std::tuple<Chunk*, int, int>>;
+    using CandidateTuples = std::vector<std::tuple<Chunk*, int, int>>;
 
-    using ManagerChunk2 = ManagerChunk<Chunk, T>;
+    using Manager = ManagerChunk<Chunk, T>;
     // (second value, index, num_tab). Redeclared here on purpose: the policy
     // bases declare the same name, and this one hides theirs so zero_one_value's own
     // members see one type. It must stay THEIR type -- checked below.
@@ -958,7 +957,7 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
     ~Chunk() = default;
 
     /// @brief Get reference to the chunk manager (static access)
-    /// @return Reference to the ManagerChunk2 static instance
+    /// @return Reference to the Manager static instance
     /// @details On the class, not on the threaded policy: ChunkBase::release_to_owner()
     ///          names self.get_manager() in every build (unreachable serially but
     ///          must compile).
@@ -1136,7 +1135,7 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
      */
     [[nodiscard]] bool is_cst_val(int ind) const noexcept;
 
-    static inline constinit internal::LazyImmortal<ManagerChunk2> s_manager_;
+    static inline constinit internal::LazyImmortal<Manager> s_manager_;
 };
 
 } // namespace zero_one_value

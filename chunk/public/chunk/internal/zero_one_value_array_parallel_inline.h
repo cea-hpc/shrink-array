@@ -79,7 +79,7 @@ void zero_one_value::FastBlockSupport<Derived, true>::make_block_compression(thi
             const auto inf      = self.get_info_second_value();
             const int  thr_self = get_thr_rank_fast();
             bool       found    = false;
-            for (const auto& per_rank : ManagerT::map_chunk2_to_compress_potentially_thr)
+            for (const auto& per_rank : ManagerT::zero_one_value_candidates_map_thr)
             {
                 for (const auto& kv : per_rank)
                 {
@@ -100,7 +100,7 @@ void zero_one_value::FastBlockSupport<Derived, true>::make_block_compression(thi
             }
             if (found)
             {
-                ManagerT::remove_from_compress_list_chunk2_by_num_tab(num_tab);
+                ManagerT::remove_from_zero_one_value_candidates_by_num_tab(num_tab);
             }
         }
     }

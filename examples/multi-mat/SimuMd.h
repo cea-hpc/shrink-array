@@ -33,7 +33,7 @@
 #include <optional>  // std::optional
 #include <vector>    // std::vector
 
-#include "Containers.h"   // MultiArray, VectChunk2
+#include "Containers.h"   // MultiArray, VectZeroOneValue
 #include "MultiMatAlgo.h" // MultiMatAlgo
 
 namespace multi_mat::md
@@ -87,8 +87,8 @@ struct SimuMd
 
     std::vector<bool> dis; ///< Storage of every material: true = chunk
 
-    std::array<MultiArray<double>, 3>      tabs; ///< The three fields of every material
-    MultiArray<double, VectChunk2<double>> frac; ///< The presence fraction of every material
+    std::array<MultiArray<double>, 3>            tabs; ///< The three fields of every material
+    MultiArray<double, VectZeroOneValue<double>> frac; ///< The presence fraction of every material
 
     double time_init     = 0; ///< Seconds in the initialisation (every array zeroed), barrier included (thread 0)
     double time_write    = 0; ///< Seconds in the writes, barrier included (thread 0)
