@@ -56,6 +56,13 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `dyn_geometry_validation` checks the refused chunk sizes: wider than
+  `cst_buffer_size` or neither a power of two nor a multiple of 64,
+  `chunk_size_error` says why, and `set_active_chunk_size` and `rechunk_to`
+  keep the geometry with one warning on the rechunk channel; `pool_accounting`
+  checks that `need_load_balance_list_block_free()` is false once the pools
+  are released. Both were at 0 % in the coverage report.
+
 - `bit_words_validation` checks an empty bitmap (`nbits = 0`: `fill_bits`
   writes nothing, `scan_words` says all_false, `count_ones` 0), and
   `log_validation` a `std::complex` and a type with no formatter on the
