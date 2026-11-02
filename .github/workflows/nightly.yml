@@ -143,7 +143,7 @@ jobs:
         run: >
           cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=Debug
-          "-DCMAKE_CXX_FLAGS=--coverage -fprofile-update=atomic"
+          "-DCMAKE_CXX_FLAGS=--coverage -fprofile-update=atomic -DCHUNK_GCOV_DUMP"
           -DCMAKE_EXE_LINKER_FLAGS=--coverage
           -DOMP=ON
           -DCHUNK_STATIC_SIZES=256

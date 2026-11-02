@@ -213,6 +213,23 @@ inline void break_on_failure() noexcept
     }
     std::raise(SIGTRAP);
 }
+
+#ifdef CHUNK_GCOV_DUMP
+extern "C" void __gcov_dump(void); // NOLINT(bugprone-reserved-identifier): libgcov's entry point
+#endif
+
+/// @brief Coverage builds (CHUNK_GCOV_DUMP, defined by the nightly's gcov
+///        job): write the coverage counters before abort(), which skips the
+///        exit handler that writes them. Without it, every path a death test
+///        takes -- this report, the invariant checks, the bad-pointer checks --
+///        read as never run, the child that took it having died. Nothing
+///        elsewhere.
+inline void gcov_dump_before_abort() noexcept
+{
+#ifdef CHUNK_GCOV_DUMP
+    __gcov_dump();
+#endif
+}
 } // namespace detail
 
 // The functions below print the backtrace one way or the other depending on
@@ -322,6 +339,7 @@ fatal_report(std::string_view prefix, const std::source_location& loc, std::stri
         std::fwrite(msg.data(), 1, msg.size(), stderr);
         std::fputs("\n", stderr);
         std::fflush(stderr);
+        detail::gcov_dump_before_abort();
         std::abort();
     }
     reporting = true;
@@ -370,6 +388,7 @@ fatal_report(std::string_view prefix, const std::source_location& loc, std::stri
     // 4. Under a debugger, the report complete: stop here, the failing frames live.
     detail::break_on_failure();
 
+    detail::gcov_dump_before_abort();
     std::abort();
 }
 

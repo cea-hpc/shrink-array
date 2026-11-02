@@ -56,6 +56,19 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- Two header-only harnesses for helpers the coverage report had at 0 % or
+  close (`ctest -L validation`): `env_parse_validation` (every refusal of
+  `parse_number`, `env_number`'s fallback with its warning on the env
+  channel, `arg_number`, `env_flag`) and `chunk_index_sample_validation` (the
+  chunk sample of the compression-residual messages: the text, "(+N more)",
+  the cut at the stack buffer's size, a 64-bit element index).
+
+- Coverage builds: with `-DCHUNK_GCOV_DUMP` (the nightly's gcov job sets it)
+  the fatal report writes the gcov counters before `abort()`, which skips the
+  exit handler that writes them: the paths the death tests take (the fatal
+  report, the invariant and bad-pointer checks) are counted, where they read
+  as never run.
+
 - The TBB bench's 64-bit twins, `shrink_bench_tbb_<variant>_int64_<1024|dyn>`
   (std builds with oneTBB and `SHRINK_BENCH_INT64`, as the std benches have
   theirs): the TBB regions past INT_MAX elements. `thread_speedup.py
