@@ -29,7 +29,7 @@ fields, and `shrink_bench` exposes them as options (§4). See
 | variable | default | effect |
 |---|---|---|
 | `CHUNK_RECLAIM_THREADS` | 1 | threads issuing a sweep's `madvise` calls; `0`: `omp_get_max_threads()`. On Milan (64 threads), `0` is 3.5% faster for `zero_one_value` and the same for the other variants; it stays at 1 until it is measured on Grace, where 288 threads would issue them |
-| `CHUNK_CST_VAL2_ID_LIMIT` | unset | test hook: lowers the number of identifiers of `zero_any`'s second-value registry (the region's capacity otherwise), so that a harness reaches the registry's limit with a few values (`cst2_registry_validation`, `cst2_reclaim_validation`); can only lower it |
+| `CHUNK_CST_VAL2_ID_LIMIT` | unset | test hook: lowers the number of identifiers of `zero_any`'s second-value registry (the region's capacity otherwise), and sizes the value table to match, so that a harness reaches the registry's limit with a few values (`cst2_registry_validation`, `cst2_reclaim_validation`); can only lower it |
 | `CHUNK_DEFERRED_POOL_KB` | 64 | slab size of the deferred-write pools, in KiB (the operation slabs are never given back: larger means fewer allocator calls but more resident memory) |
 
 `python/ab_settings_campaign.py` measures such a setting against the defaults (computation

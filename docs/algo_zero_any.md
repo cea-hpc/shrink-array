@@ -71,6 +71,16 @@ the old storage behind: 3.5 GB on the benchmark, with 15 rechunked arrays.
   chunk adopts it only by installing it as its `values` pointer.
 - To know whether a chunk is compressed to a second value, it is enough to test whether its
   pointer falls within the registry **region** (`region_contains`).
+- Nothing is stored in the region: a slot is an **identifier**, and the value is read from
+  the **value table** (`value_by_id`, one `T` per identifier). The region and the table are
+  two `mmap(MAP_NORESERVE)` reservations made at the type's first array: address space only,
+  the pages backed as identifiers are handed out, given back at the last clear, and the table
+  sized by `CHUNK_CST_VAL2_ID_LIMIT` when it is set. Until November 2026 the table was a static
+  array of 4 Mi values per element type (32 MiB of bss for a `double`, 332 MiB in all in the
+  benchmark): free while untouched for a trivial type, but a type whose default constructor is
+  not `constexpr` touched all of it at startup, and every type counted against `RLIMIT_AS` and,
+  under strict overcommit, the commit charge. The price is one more load (the table's
+  pointer) on reading a second value back.
 - A value, once registered, stays until the last array of the type is destroyed, **or**
   until `reclaim_second_values()` runs at a sequential point: it marks the values still
   referenced (chunks compressed to them, per-chunk second-value slots) over every array of

@@ -200,6 +200,24 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- `zero_any`'s second-value table (`GlobalVecHolder<T>::value_by_id`, the value behind each
+  identifier) is no longer a static array of 4 Mi values per element type but a pointer to an
+  `mmap(MAP_NORESERVE)` reservation made at the type's first array, next to the identifier
+  region, sized by `CHUNK_CST_VAL2_ID_LIMIT` when set, its pages given back at the last clear.
+  The static array was 332 MiB of bss in the benchmark (32 MiB for a `double`, 96 for a 24-byte
+  type): free while untouched for a trivial type, but an element type whose default constructor
+  is not `constexpr` (which `ArrayChunkElement` allows) had it dynamically initialised at
+  startup -- 101 MB of RSS before `main` for one 24-byte type, 3 MB now -- and every type counted
+  against `RLIMIT_AS` and, under strict overcommit, the commit charge. bss of
+  `shrink_bench_omp_zero_any_256`: 348 MB -> 0.27 MB. The price: reading a second value back
+  loads the table's pointer first (one L1 hit, independent of the identifier's computation).
+  Not measurable on a 2-core VM: `access_cost`'s new `read-second` case +1.8% at the minimum,
+  within the drift of the cases that do not touch the table (+2 to +11%); the benchmark at 2
+  threads -6% (sd 8-10%), HWM unchanged. `region_init()` is now serialised by a mutex and
+  publishes `region_begin` last: a thread that lost the race could find it set before
+  `region_end` and `id_limit`.
+- `access_cost`: a `read-second` case, an array all at 1.5 (zero_any: every chunk compressed to a
+  second value, read back through the value table); `python/access_cost.py` lists it.
 - The version is 0.2.0. Before 1.0 the installed package declares `SameMinorVersion`:
   `find_package(chunk 0.1)` does not find it, ask for `find_package(chunk 0.2)` (the README,
   getting_started and examples/getting_started do).

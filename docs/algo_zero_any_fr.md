@@ -71,6 +71,17 @@ l'ancien stockage derrière lui : 3,5 Go sur le banc, avec 15 tableaux rechunké
   chunk ne l'adopte qu'en l'installant comme son pointeur `values`.
 - Pour savoir si un chunk est compressé à une seconde valeur, il suffit de tester si son
   pointeur tombe dans la **région** du registre (`region_contains`).
+- Rien n'est stocké dans la région : un emplacement est un **identifiant**, et la valeur se
+  lit dans la **table des valeurs** (`value_by_id`, un `T` par identifiant). La région et la
+  table sont deux réservations `mmap(MAP_NORESERVE)` faites au premier tableau du type : de
+  l'espace d'adressage seulement, les pages adossées au fil des identifiants attribués, rendues
+  au dernier `clear`, et la table dimensionnée par `CHUNK_CST_VAL2_ID_LIMIT` quand il est
+  positionné. Jusqu'en novembre 2026 la table était un tableau statique de 4 Mi valeurs par
+  type d'élément (32 Mio de bss pour un `double`, 332 Mio en tout dans le benchmark) : gratuit
+  tant qu'on n'y touche pas pour un type trivial, mais un type dont le constructeur par défaut
+  n'est pas `constexpr` le touchait en entier au démarrage, et chaque type comptait dans
+  `RLIMIT_AS` et, en overcommit strict, dans la mémoire engagée. Le prix : une lecture de plus
+  (le pointeur de la table) pour relire une seconde valeur.
 - Une valeur enregistrée reste jusqu'à la destruction du dernier tableau du type, **ou**
   jusqu'à un appel à `reclaim_second_values()` en point séquentiel : il marque les valeurs
   encore référencées (chunks compressés à elles, emplacements de seconde valeur par chunk)
