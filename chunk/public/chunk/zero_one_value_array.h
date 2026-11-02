@@ -116,7 +116,8 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     /// Registry entry of an array: (second value, its index in the shared value table, num_tab).
     using InfArrayT = SecondValueInfo<T>;
 
-    using Manager = ManagerChunk<Chunk, T>; ///< Same type as ManagerType.
+    using Manager                                     = ManagerChunk<Chunk, T>; ///< Same type as ManagerType.
+    using ManagerChunk2 [[deprecated("use Manager")]] = Manager;                ///< Former name, until 1.0.
 
     // Required, not decoration: ArrayChunkBase re-exports RechunkSupport's hook
     // DEFAULTS under these names, so a hook call through self() would be
