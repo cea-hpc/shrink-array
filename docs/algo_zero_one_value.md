@@ -616,6 +616,6 @@ CMake options related to benchmark performance:
 | readers and buffer reclamation | `internal/read_reclaim.h` |
 | compressor, deferred writes | `internal/compression_manager.h` |
 | geometry | `internal/chunk_size_policy.h` |
-| rechunk, decider | `internal/array_chunk_rechunk_inline.h`, `chunk_size_advisor.h` |
+| rechunk, decider | `internal/array_chunk_rechunk_inline.h`, `internal/array_chunk_rechunk_refill.h`, `chunk_size_advisor.h` |
 | range operations | `array_chunk_range_ops.h` |
 | validation harnesses | `examples/validation/` (`rechunk_validation`, `compress_roundtrip`, `deferred_path_validation`, `pool_accounting`, `fill_range_mt_validation`, …) |

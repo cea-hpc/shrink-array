@@ -595,6 +595,25 @@ template <typename T, typename Derived>
 }
 
 template <typename T, typename Derived>
+[[nodiscard]] CHUNK_FORCE_INLINE const T* ChunkBase<T, Derived>::values_load_for_read() const noexcept
+{
+    if constexpr (build_config::threaded && chunk_config::read_dep_order)
+    {
+        // Relaxed: the loads that need to follow it go through the pointer (address
+        // dependency, chunk_config::read_dep_order). The empty asm makes the value
+        // opaque, so the compiler cannot substitute a value it compared equal to
+        // (region bounds, the constant marker) and lose the dependency.
+        const T* vals = values_.load(std::memory_order_relaxed);
+        __asm__ volatile("" : "+r"(vals));
+        return vals;
+    }
+    else
+    {
+        return values_load();
+    }
+}
+
+template <typename T, typename Derived>
 void ChunkBase<T, Derived>::values_store(T* new_values) noexcept
 {
     CHUNK_CHECK_VALUES_PTR_C(new_values, "values_store", this);
@@ -1266,7 +1285,7 @@ template <bool Relaxed>
             }, "a chunk of the zero_any family must provide is_cst_val2_ptr_of() and second_value_from_ptr(), "
                "or its own branch of the reads: its compressed chunks point at registry entries, not at "
                "their values");
-        const T* const vals = self.values_load();
+        const T* const vals = Relaxed ? self.values_load() : self.values_load_for_read();
         if constexpr (!Relaxed)
         {
             test_hooks::maybe_read_delay(); // TEST KNOB, compiled out by default
@@ -1295,7 +1314,7 @@ template <bool Relaxed>
         // raw-read: element_at_unguarded -- under element_at's ReadSection, or a scan of a claimed chunk
         return load_at<Relaxed>(vals, offset);
     }
-    const T* const vals = self.values_load();
+    const T* const vals = Relaxed ? self.values_load() : self.values_load_for_read();
     // TEST KNOB (test_hooks.h): widens the load -> dereference window
     // a concurrent compressor's CAS + free can fall into. Compiled out
     // unless CHUNK_TEST_READ_DELAY_EVERY > 0, and then only on threads

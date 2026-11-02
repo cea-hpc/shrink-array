@@ -382,6 +382,10 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/array_chunk_rechunk_hooks.h
         public/chunk/internal/array_chunk_rechunk_hooks_inline.h
         public/chunk/internal/array_chunk_rechunk_inline.h
+        public/chunk/internal/array_chunk_rechunk_refill.h
+        public/chunk/internal/array_chunk_rechunk_refill_inline.h
+        public/chunk/internal/array_chunk_rechunk_trace.h
+        public/chunk/internal/array_chunk_rechunk_trace_inline.h
         public/chunk/internal/bad_ptr_check.h
         public/chunk/internal/zero_any_chunk_inline.h
         public/chunk/internal/second_value_chunk_base.h

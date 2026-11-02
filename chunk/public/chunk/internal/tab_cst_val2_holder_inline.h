@@ -478,7 +478,7 @@ void GlobalVecHolder<T>::region_init()
     // Cold: once per element type and process (region_reset() keeps both
     // reservations). Function-local, so constructed on first use, and
     // trivially destructible: safe from a global array's teardown.
-    static std::mutex init_mutex;
+    static std::mutex      init_mutex;
     const std::scoped_lock lk(init_mutex);
     if (region_begin.load(std::memory_order_relaxed) != nullptr)
     {
@@ -506,8 +506,8 @@ void GlobalVecHolder<T>::region_init()
     // The value table: one T per identifier this run can hand out, plus [0].
     // Reserved the same way, so only the pages of identifiers actually handed
     // out are backed; alloc_chunk() constructs each value.
-    void* vals = mmap(nullptr, value_table_bytes(), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE,
-                      -1, 0);
+    void* vals =
+        mmap(nullptr, value_table_bytes(), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
     if (vals == MAP_FAILED) [[unlikely]]
     {
         CHUNK_INVARIANT_FAILED("[cst_val2] cannot reserve the second-value table ({} MiB): {}",
@@ -546,7 +546,7 @@ void GlobalVecHolder<T>::region_reset() noexcept
     // The values of the identifiers carved so far (free ones included: they
     // were carved too). The table is page-aligned and [0] shares the first
     // page, so it is constructed again: T{} need not be all-zero bytes.
-    T* const          table = values();
+    T* const          table  = values();
     const std::size_t carved = ((used / region_stride) + 1u) * sizeof(T);
     madvise(table, carved < value_table_bytes() ? carved : value_table_bytes(), MADV_DONTNEED);
     std::construct_at(table, T{});

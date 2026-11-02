@@ -264,7 +264,7 @@ template <ExchangeableArray Arr>
     {
         // What a type-2 compression commits (find_or_set on the chunk's
         // second-value slot, type table, values pointer), minus the buffer:
-        // array_chunk_rechunk_inline.h, rechunk_refill(). bool registers
+        // array_chunk_rechunk_refill_inline.h, Refill::install_cst2(). bool registers
         // nothing: its one second value is a shared block of true.
         const int  num_tab = arr.num_tab_;
         const auto psv     = ProxyType::BaseSpec::get_tab_second_value(num_tab, static_cast<int>(index));

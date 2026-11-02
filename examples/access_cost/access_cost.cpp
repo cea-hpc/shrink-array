@@ -371,9 +371,8 @@ double minimum(const std::vector<double>& samples)
     return *std::min_element(samples.begin(), samples.end());
 }
 
-constexpr const char* case_names[] = {"read-varied",  "read-constant", "read-random",
-                                      "write-varied", "write-fresh",   "rmw",
-                                      "read-second"};
+constexpr const char* case_names[] = {"read-varied", "read-constant", "read-random", "write-varied",
+                                      "write-fresh", "rmw",           "read-second"};
 constexpr int         n_cases      = static_cast<int>(sizeof(case_names) / sizeof(case_names[0]));
 } // namespace
 

@@ -70,6 +70,26 @@ inline thread_local unsigned int t_active_chunk_size = 0; // 0 = "unset, use glo
 // (packed_bit_birth_factor, zero_one_value::Array::create).
 inline thread_local bool t_birth_at_active_size = false;
 
+/// @brief RAII: set t_birth_at_active_size for the scope (rechunk_to()'s
+///        temporary), reset it on exit -- an exception included.
+struct BirthAtActiveSize
+{
+    /// @brief Set t_birth_at_active_size.
+    BirthAtActiveSize() noexcept
+    {
+        t_birth_at_active_size = true;
+    }
+    /// @brief Reset t_birth_at_active_size to false.
+    ~BirthAtActiveSize() noexcept
+    {
+        t_birth_at_active_size = false;
+    }
+    BirthAtActiveSize(const BirthAtActiveSize&)            = delete;
+    BirthAtActiveSize& operator=(const BirthAtActiveSize&) = delete;
+    BirthAtActiveSize(BirthAtActiveSize&&)                 = delete;
+    BirthAtActiveSize& operator=(BirthAtActiveSize&&)      = delete;
+};
+
 /**
  * @brief Seed the process-wide runtime geometry.
  *
