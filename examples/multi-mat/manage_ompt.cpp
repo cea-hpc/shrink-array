@@ -50,6 +50,7 @@
 #include <cstdio> // std::puts, std::fputs
 
 #include <omp-tools.h> // ompt_* (the OMPT tool interface)
+#include <omp.h>       // omp_in_parallel, omp_get_level (on_sync_region)
 
 #include "chunk/config.h"      // OmptSuspendCounter
 #include "chunk/manage_ompt.h" // shrink_array::begin_parallel_phase, finalize_parallel_phase
@@ -69,8 +70,17 @@ namespace
 ///        asserts on a stale one).
 std::atomic<bool> in_phase_end{false};
 
-void on_implicit_task(ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*, unsigned int, unsigned int, int)
+void on_implicit_task(ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*, unsigned int, unsigned int, int flags)
 {
+    // The INITIAL task is the program's own thread, reported from inside its first
+    // OpenMP call (main's omp_get_max_threads()), under libomp's initialisation lock:
+    // begin_parallel_phase() -> CHUNK_PMP_THREAD_RANK -> chunk_thread_capacity() ->
+    // omp_get_max_threads() would wait on that lock forever. No phase to begin there
+    // (the library's tool skips it the same way, chunk/private/manage_ompt.cpp).
+    if ((flags & ompt_task_initial) != 0)
+    {
+        return;
+    }
     if (shrink_array::g_ompt_suspended.load(std::memory_order_relaxed) != 0)
     {
         return;
@@ -81,10 +91,30 @@ void on_implicit_task(ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*
     }
 }
 
-void on_sync_region(ompt_sync_region_t, ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*, const void*)
+void on_sync_region(ompt_sync_region_t    kind,
+                    ompt_scope_endpoint_t endpoint,
+                    ompt_data_t*          parallel_data,
+                    ompt_data_t*,
+                    const void*)
 {
     if (shrink_array::g_ompt_suspended.load(std::memory_order_relaxed) != 0 ||
         in_phase_end.load(std::memory_order_relaxed))
+    {
+        return;
+    }
+    // The end of the implicit barrier that closes a parallel region: the worker has
+    // LEFT the team (libomp passes parallel_data null), and the rank lookup of the
+    // flush (omp_get_level()) would read a team that is gone -- a SIGSEGV in
+    // omp_get_level. The master's on_parallel_end() flushes every rank right after.
+    // The library's tool skips it the same way (chunk/private/manage_ompt.cpp,
+    // on_barrier_end).
+    if (endpoint == ompt_scope_end && (kind == ompt_sync_region_barrier_implicit_parallel || parallel_data == nullptr))
+    {
+        return;
+    }
+    // A barrier of a NESTED region: its team is not the phase's, whose other threads
+    // are still writing (same rule as the library's tool).
+    if (omp_in_parallel() && omp_get_level() > 1)
     {
         return;
     }

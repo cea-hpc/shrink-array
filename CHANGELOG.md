@@ -289,10 +289,25 @@ the tag's checksum to the recipe.
 - `zero_one_value::Array::ManagerChunk2` and `zero_any::Array::ManagerChunk2A`:
   use `Manager`. Kept until 1.0.
 
+### Fixed
+
+- `pattern::Array` compresses to motifs in an OMPT build (clang, Intel: `CHUNK_HAVE_OMPT`).
+  There the pass at each region's end is `compress_chunk_to_compress_in_par()`, chunk by chunk
+  through `compress()`, which only knew the two constants: no chunk ever became a motif
+  (`pattern_validation` failed under clang, the nightly's new clang job). A chunk `compress()`
+  leaves materialised now goes through `pattern::Chunk::compress_to_motif()`: the admission rule
+  and the `block_clear_motif()` order of the claimed pass (docs/algo_pattern.md, section 5).
+  `chunk_exchange_validation` accepts, for pattern, an imported materialised chunk found
+  compressed to a motif since (its copy is the motif's second sighting).
+
 ## 0.2.0 -- 2026-10-30
 
 ### Added
 
+- `access_cost`: a `read-bulk` case, the varied array read through `for_each_value()` (each
+  thread its slice): one read gate per chunk and one read section per block instead of both per
+  element. On a 2-core x86 VM, 1.10 times the vector against 3.2 for the element read
+  (`read-varied`); `python/access_cost.py` lists it.
 - `CHUNK_READ_DEP_ORDER=1` (experimental, AArch64, a macro in `CMAKE_CXX_FLAGS`): a pure read
   (`ChunkBase::element_at`) loads the chunk's `values` relaxed, ordered with the loads through it
   -- the element, the second value -- by their address dependency instead of an acquire. On

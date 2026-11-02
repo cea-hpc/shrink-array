@@ -68,7 +68,8 @@
     #include <execinfo.h> // backtrace, backtrace_symbols
 #endif
 
-#include "fast_allocators/internal/log_core.h" // format_message, emit_fatal, FmtArgT
+#include "fast_allocators/internal/append_text.h" // append_text, append_int (debugger_attached)
+#include "fast_allocators/internal/log_core.h"    // format_message, emit_fatal, FmtArgT
 
 namespace fast_alloc::logging
 {
@@ -173,9 +174,13 @@ inline std::size_t read_small_file(const char* path, char* buf, std::size_t cap)
     {
         return false;
     }
-    char       path[48];
-    const auto res = std::format_to_n(path, sizeof(path) - 1, "/proc/{}/comm", tracer);
-    *res.out       = '\0';
+    // "/proc/<pid>/comm" without std::format: append_text.h says why.
+    char        path[48]; // "/proc/" + 20 digits + "/comm" + NUL fits
+    char* const end = path + sizeof(path) - 1;
+    char*       out = append_text(path, end, "/proc/");
+    out             = append_int(out, end, tracer);
+    out             = append_text(out, end, "/comm");
+    *out            = '\0';
     char comm[64];
     return is_debugger_name(std::string_view{comm, read_small_file(path, comm, sizeof(comm))});
 #else

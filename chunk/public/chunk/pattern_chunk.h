@@ -35,6 +35,7 @@
 #include <cstddef>     // std::size_t
 #include <tuple>       // std::tuple (the motif candidates)
 #include <type_traits> // std::is_integral_v, std::is_same_v, std::make_unsigned_t
+#include <utility>     // std::pair (find_motif)
 #include <vector>      // std::vector (the motif candidates, the scan buffer)
 
 #include "chunk/chunk_traits.h"                 // ChunkTraits<pattern::Chunk<T>>, HasMotifState
@@ -146,6 +147,23 @@ class Chunk : public zero_any::ChunkImpl<T, Chunk<T>>
      */
     void classify_motif(int num_chunk, int num_tab, ChunkElems size);
 
+    /**
+     * @brief The OMPT pass's motif step (zero_any::ChunkImpl::compress_chunk_to_compress_in_par()):
+     *        this materialised chunk, which compress() left as it is (neither constant),
+     *        compressed to its registered motif plus an offset, at once, under the same
+     *        admission rule as classify_motif().
+     * @details That pass compresses chunk by chunk (compress()), with no claim and no
+     *          make_block_compression(), so classify_motif()'s queue is never drained there.
+     *          It runs where compress()'s clear_int_st() does: the chunk is in this rank's
+     *          list alone (its queue flag), with no writer (parallel_end, the team joined),
+     *          so block_clear_motif()'s CAS cannot fail there either.
+     * @param thr       The pass's rank: whose pool receives the buffer.
+     * @param num_chunk The chunk's index in its array.
+     * @param num_tab   Its array's table.
+     * @param size      Its array's geometry (pinned by the caller).
+     */
+    void compress_to_motif(int thr, int num_chunk, int num_tab, ChunkElems size);
+
     /// @brief How many motif candidates this thread's pass holds (fill_list_chunk_to_compress_in_par()).
     [[nodiscard]] static std::size_t motif_candidate_count() noexcept
     {
@@ -166,8 +184,9 @@ class Chunk : public zero_any::ChunkImpl<T, Chunk<T>>
      *          from the buffer to the motif (the CAS, acq_rel: a reader that sees the
      *          motif sees the offset), then the buffer released after the grace period
      *          (free_block_to_pool(), as zero_any's clear). The chunk is claimed by the
-     *          pass: no other pass compresses it and no writer swaps its buffer, so the
-     *          CAS cannot fail.
+     *          pass (make_block_compression()), or, on the OMPT pass (compress_to_motif()),
+     *          in that rank's list alone with no writer: no other pass compresses it and
+     *          no writer swaps its buffer, so the CAS cannot fail.
      * @param ptr_type_cst The chunk's type slot: set to CstSlot::motif.
      * @param slot         The chunk's second-value slot: receives the offset.
      * @param motif        The registered motif.
@@ -177,6 +196,11 @@ class Chunk : public zero_any::ChunkImpl<T, Chunk<T>>
     void block_clear_motif(CstSlot* ptr_type_cst, SecondValueRef<T> slot, const T* motif, T offset, int thr_rank);
 
   private:
+    /// @brief This materialised chunk's registered motif (null: none, or a first
+    ///        sighting) and its offset (element 0): the read, the normalisation, the hash
+    ///        and MotifRegion::find_or_admit() of classify_motif() and compress_to_motif().
+    [[nodiscard]] std::pair<const T*, T> find_motif(ChunkElems size);
+
     static inline thread_local std::vector<MotifCandidate> motif_candidates_; ///< This thread's pass's motif hits.
     static inline thread_local std::vector<T>              motif_scratch_;    ///< The scan's normalised motif.
 };
