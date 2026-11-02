@@ -48,6 +48,8 @@
  */
 
 #include <cstddef>     // std::size_t
+#include <format>      // std::format (check_copy's promoted count)
+#include <string>      // std::string (same)
 #include <type_traits> // std::conditional_t, std::is_same_v
 #include <utility>     // std::as_const
 #include <vector>      // std::vector (the exported states)
@@ -230,17 +232,28 @@ void prepare(A& arr)
 }
 
 /// @brief The differences between two exports (kinds, values, elements).
+/// @param promoted If not null: pattern only, a chunk @p lhs has materialised and @p rhs
+///        as a motif is counted there, not as a difference. A copy holds the same chunk as
+///        its source: a second sighting by another chunk, so a pass may register its motif
+///        and compress it (an OMPT build's pass at every region's end does); the elements
+///        are checked one by one apart.
 template <typename T>
 long compare_states(const std::vector<ChunkState<T>>& lhs,
                     const std::vector<ChunkState<T>>& rhs,
                     long                              chunk_size,
-                    long                              size)
+                    long                              size,
+                    int*                              promoted = nullptr)
 {
     long bad = lhs.size() != rhs.size() ? 1 : 0;
     for (std::size_t c = 0; c < lhs.size() && c < rhs.size(); ++c)
     {
         const auto& a = lhs[c];
         const auto& b = rhs[c];
+        if (promoted != nullptr && a.kind == ChunkKind::materialised && b.kind == ChunkKind::motif)
+        {
+            ++*promoted;
+            continue;
+        }
         if (a.kind != b.kind || (a.kind != ChunkKind::materialised && a.value != b.value))
         {
             println("  FAIL chunk {}: {} {} vs {} {}", c, kind_name(a.kind), a.value, kind_name(b.kind), b.value);
@@ -292,14 +305,19 @@ long check_copy(const A&                                               arr,
                 long                                                   chunk_size,
                 const char*                                            what)
 {
-    const long size   = static_cast<long>(arr.size());
-    const long wrong  = wrong_elements(arr, chunk_size);
-    const long differ = compare_states(expected, export_array(arr).chunks, chunk_size, size);
-    const int  got    = arr.get_nb_chunk_written();
-    const bool ok     = wrong == 0 && differ == 0 && got == written;
-    println("[{}/{}] {}: {} wrong element(s), {} state difference(s), {} vs {} chunks with a buffer  {}",
-            variant_name(), type_name<typename A::value_type>(), what, wrong, differ, got, written, ok ? "ok" : "FAIL");
-    return wrong + differ + (got != written ? 1 : 0);
+    const long size     = static_cast<long>(arr.size());
+    const long wrong    = wrong_elements(arr, chunk_size);
+    int        promoted = 0; // pattern: materialised chunks found compressed to a motif since
+    const long differ =
+        compare_states(expected, export_array(arr).chunks, chunk_size, size, pattern_build ? &promoted : nullptr);
+    const int  got  = arr.get_nb_chunk_written();
+    const int  want = written - promoted;
+    const bool ok   = wrong == 0 && differ == 0 && got == want;
+    println("[{}/{}] {}: {} wrong element(s), {} state difference(s), {} vs {} chunks with a buffer{}  {}",
+            variant_name(), type_name<typename A::value_type>(), what, wrong, differ, got, want,
+            promoted != 0 ? std::format(" ({} compressed to a motif since)", promoted) : std::string{},
+            ok ? "ok" : "FAIL");
+    return wrong + differ + (got != want ? 1 : 0);
 }
 
 template <typename A>

@@ -100,6 +100,8 @@
 #include <sys/syscall.h> // SYS_gettid
 #include <unistd.h>      // getpid, syscall
 
+#include "fast_allocators/internal/append_text.h" // append_int (CHUNK_LOG_FILE's %p), append_text
+
 #ifndef CHUNK_LOG_MAX_LEVEL
     #define CHUNK_LOG_MAX_LEVEL 5 // trace: every message compiled in, CHUNK_LOG filters at run time
 #endif
@@ -547,10 +549,20 @@ inline void default_sink(const Record& record) noexcept
 {
     static constexpr std::array<char, n_levels> letter{'F', 'E', 'W', 'I', 'D', 'T'};
     char                                        line[line_max + 64];
-    const auto  res = std::format_to_n(line, sizeof(line) - 1, "[shrink_array][{}][{}][{}] {}", name(record.channel),
-                                       letter[static_cast<std::size_t>(record.level)], thread_id(), record.message);
-    std::size_t len =
-        static_cast<std::size_t>(res.size) < sizeof(line) - 1 ? static_cast<std::size_t>(res.size) : sizeof(line) - 1;
+    std::size_t                                 len = 0;
+    try
+    {
+        const auto res = std::format_to_n(line, sizeof(line) - 1, "[shrink_array][{}][{}][{}] {}", name(record.channel),
+                                          letter[static_cast<std::size_t>(record.level)], thread_id(), record.message);
+        len            = static_cast<std::size_t>(res.size) < sizeof(line) - 1 ? static_cast<std::size_t>(res.size)
+                                                                               : sizeof(line) - 1;
+    }
+    catch (...)
+    {
+        // Unreachable: a format string checked at compile time and built-in
+        // arguments (append_text.h). The bare message, so nothing is lost.
+        len = static_cast<std::size_t>(append_text(line, line + sizeof(line) - 1, record.message) - line);
+    }
     line[len++]           = '\n';
     std::FILE* const file = out != nullptr ? out : stderr;
     std::fwrite(line, 1, len, file);
@@ -773,9 +785,10 @@ inline void read_environment() noexcept
         {
             if (p[0] == '%' && p[1] == 'p')
             {
-                used += static_cast<std::size_t>(
-                    std::format_to_n(expanded + used, sizeof(expanded) - 1 - used, "{}", static_cast<long>(::getpid()))
-                        .size);
+                // The pid, without std::format (append_text.h).
+                used = static_cast<std::size_t>(
+                    append_int(expanded + used, expanded + sizeof(expanded) - 1, static_cast<long>(::getpid())) -
+                    expanded);
                 ++p;
             }
             else

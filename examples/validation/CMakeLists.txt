@@ -705,7 +705,9 @@ set_property(TEST bit_words_validation PROPERTY LABELS validation)
 # the cut at the stack buffer's size, a 64-bit element index.
 add_executable(chunk_index_sample_validation chunk_index_sample_validation.cpp)
 chunk_add_alloc_token_rt(chunk_index_sample_validation)
-target_include_directories(chunk_index_sample_validation PRIVATE ${PROJECT_SOURCE_DIR}/chunk/public)
+# fast_allocators/public: append_text.h, the noexcept integer writer it uses.
+target_include_directories(chunk_index_sample_validation PRIVATE ${PROJECT_SOURCE_DIR}/chunk/public
+                                                                 ${PROJECT_SOURCE_DIR}/fast_allocators/public)
 chunk_require_cxx_std(chunk_index_sample_validation PRIVATE)
 add_test(NAME chunk_index_sample_validation COMMAND chunk_index_sample_validation)
 set_property(TEST chunk_index_sample_validation PROPERTY LABELS validation)

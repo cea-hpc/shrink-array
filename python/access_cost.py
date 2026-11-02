@@ -36,7 +36,7 @@ except ImportError:
     def normalize_variant(label, warn=None):   # copied alone: the new labels only
         return label
 
-CASES = ["read-varied", "read-constant", "read-random", "write-varied", "write-fresh", "rmw", "read-second"]
+CASES = ["read-varied", "read-constant", "read-random", "write-varied", "write-fresh", "rmw", "read-second", "read-bulk"]
 
 
 def find_binary(build, variant):
