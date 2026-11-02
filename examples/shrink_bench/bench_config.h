@@ -110,7 +110,7 @@ inline constexpr bool have_bzip2 = false;
 //     exists everywhere, in chunk/config.h (build_config::use_fast_alloc itself).
 //   - `&&` short-circuits EVALUATION, never NAME LOOKUP. `if constexpr (A &&
 //     Derived::m)` is ill-formed for a Derived without `m` even when A is false
-//     -- NEST the two tests instead (array_chunk_rechunk_inline.h).
+//     -- NEST the two tests instead (rechunk_second_index_v, array_chunk_rechunk_refill.h).
 //
 // Five shapes that stay #ifdef whatever you do, because no `if constexpr` can
 // select them:

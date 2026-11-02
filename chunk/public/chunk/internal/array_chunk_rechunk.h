@@ -33,7 +33,8 @@
  *          base defaults (RechunkHookDefaults), because the derived arrays
  *          override them unconditionally.
  *
- * @see array_chunk_rechunk_inline.h for the two large bodies
+ * @see array_chunk_rechunk_inline.h for rechunk_to() and rechunk_all_to()
+ * @see array_chunk_rechunk_refill.h for the refill (rechunk_refill())
  * @see array_chunk_rechunk_trace.h for their traces
  * @see chunk_size_policy.h for the geometry policies this switches between
  */
@@ -167,6 +168,8 @@ class RechunkSupport<Derived, true> : public RechunkHookDefaults<Derived>
      * @param tmp the fresh array at the NEW geometry, to be filled
      * @param old_size chunk size of *this (the read side)
      * @param new_size chunk size of @p tmp (the write side)
+     * @param old_key the allocator key of *this's storage: the set whose slabs
+     *        the slice boundaries recycle (rechunk_to() knows it already)
      *
      * @note A new chunk that gets a buffer must be ARMED by a real proxy write
      *       (the lazy per-chunk pointers: ptr_second_value, compression
@@ -175,7 +178,7 @@ class RechunkSupport<Derived, true> : public RechunkHookDefaults<Derived>
      *       too small to show it). The skipped cst1 spans need no arming, and the
      *       zero_any install commits what a type-2 compression does, with no buffer.
      */
-    void rechunk_refill(Derived& tmp, int old_size, int new_size);
+    void rechunk_refill(Derived& tmp, int old_size, int new_size, unsigned int old_key);
 
     /** @brief CRTP down-cast: the concrete array this mixin is a base of. */
     [[nodiscard]] Derived& self() noexcept
@@ -206,6 +209,10 @@ class RechunkSupport<Derived, true> : public RechunkHookDefaults<Derived>
     static void rechunk_all_to(unsigned int new_size);
 
   private:
+    /// The refill of one re-chunk (array_chunk_rechunk_refill.h): nested, so it
+    /// has the access the arrays' friendship gives this mixin.
+    class Refill;
+
     /**
      * @brief Give back the slabs of the geometry this array has just left:
      *        every rank's (@p old_key, @p old_size) set, and the shared key-0
@@ -245,7 +252,9 @@ class RechunkSupport<Derived, false> : public RechunkHookDefaults<Derived>
     /** @brief No-op: the geometry is fixed at compile time. */
     static void rechunk_to(unsigned int /*new_size*/) noexcept {}
     /** @brief No-op: never reached, since rechunk_to() does nothing. */
-    static void rechunk_refill(Derived& /*tmp*/, int /*old_size*/, int /*new_size*/) noexcept {}
+    static void rechunk_refill(Derived& /*tmp*/, int /*old_size*/, int /*new_size*/, unsigned int /*old_key*/) noexcept
+    {
+    }
 
     /** @brief CRTP down-cast: the concrete array this mixin is a base of. */
     [[nodiscard]] Derived& self() noexcept

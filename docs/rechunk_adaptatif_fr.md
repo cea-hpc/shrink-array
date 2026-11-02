@@ -120,7 +120,7 @@ mesure à données constantes et la possibilité de revenir en arrière.
 
 ## 4. La reconstruction : `rechunk_to()`
 
-`internal/array_chunk_rechunk_inline.h`. Les étapes, avec leur nom dans la trace
+`internal/array_chunk_rechunk_inline.h` (le remplissage : `internal/array_chunk_rechunk_refill.h`). Les étapes, avec leur nom dans la trace
 `CHUNK_LOG=rechunk=debug` :
 
 1. **prologue** : à l'ancienne géométrie, vider les écritures différées du tableau, puis

@@ -230,7 +230,7 @@ void zero::Proxy<T>::execute_arithmetic_compound_operation(Op op, [[maybe_unused
 //     they run where no drain can. check_no_flush_outside_start()
 //     (block_pass_precheck.h) trips in check builds otherwise.
 //
-// (The re-chunk's fold has no zero branch: array_chunk_rechunk_inline.h.)
+// (The re-chunk's fold has no zero branch: array_chunk_rechunk_refill_inline.h, fold_back.)
 //
 // zero_any::Proxy's twins (zero_any_proxy_inline.h) carry a retry loop instead. Do not add a
 // compressor bypassing start() where a drain can run, nor call an `_async`
