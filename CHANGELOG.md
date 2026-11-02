@@ -54,6 +54,13 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
+### Added
+
+- The TBB bench's 64-bit twins, `shrink_bench_tbb_<variant>_int64_<1024|dyn>`
+  (std builds with oneTBB and `SHRINK_BENCH_INT64`, as the std benches have
+  theirs): the TBB regions past INT_MAX elements. `thread_speedup.py
+  --all-exec --int64` takes them too.
+
 ### Added (cpp23)
 
 - `std::expected` forms that say why they refuse, beside the existing calls
