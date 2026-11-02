@@ -661,6 +661,15 @@ void zero_any::ChunkImpl<T, Derived>::compress_chunk_to_compress_in_par([[maybe_
                 // Same condition as the list clear below: see the @warning above.
                 if constexpr (chunk_config::use_compression_with_ompt)
                 {
+                    if constexpr (has_motif_state_v<Derived>)
+                    {
+                        // Neither constant: a registered motif plus an offset? This pass
+                        // has no make_block_compression() to do it (pattern::Chunk).
+                        if (apply && chunk_t->written())
+                        {
+                            chunk_t->compress_to_motif(thr, num_chunk, num_tab, csize);
+                        }
+                    }
                     ProxyType::set_tab_is_inside_chunk_list_to_compress(num_tab, num_chunk, 0);
                 }
             }

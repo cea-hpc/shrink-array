@@ -137,6 +137,15 @@ CAS is made on a claimed chunk, and its failure is an invariant failure. The two
 the release forms of the slot writes (`reset_release`, `find_or_set_ind_cst_val2_release`), for
 the readers of §6.
 
+**With OMPT** (clang, Intel: `CHUNK_HAVE_OMPT`) the pass between regions is not
+`make_block_compression()`: `ompt_callback_parallel_end` runs
+`compress_chunk_to_compress_in_par()`, which compresses chunk by chunk (`compress()`), with no
+claim and no `fill_list_to_compress()`. There, a chunk `compress()` leaves materialised goes
+through `Chunk::compress_to_motif()`: the same read, admission rule and `block_clear_motif()`
+order as above, at once rather than queued. It runs where `compress()`'s own clear does -- the
+chunk in that rank's list alone (its queue flag), no writer (the team has joined) -- so the CAS
+cannot fail there either. Without it, an OMPT build never compressed a chunk to a motif.
+
 ## 6. The read, and the rewrites of the slot
 
 A reader loads the pointer, then the offset: two words. The slot is rewritten by a compression

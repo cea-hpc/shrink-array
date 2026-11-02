@@ -25,7 +25,7 @@ namespace shrink_array
 // ---------------------------------------------------------------------------
 
 template <typename T>
-void pattern::Chunk<T>::classify_motif(int num_chunk, int num_tab, ChunkElems size)
+[[nodiscard]] std::pair<const T*, T> pattern::Chunk<T>::find_motif(ChunkElems size)
 {
     const auto count = static_cast<std::size_t>(size.count());
     motif_scratch_.resize(count);
@@ -36,10 +36,27 @@ void pattern::Chunk<T>::classify_motif(int num_chunk, int num_tab, ChunkElems si
         elem = wrapping_sub(elem, offset);
     }
     const std::uint64_t h = MotifRegion<T>::hash(motif_scratch_.data(), count);
-    if (const T* const motif =
-            MotifRegion<T>::find_or_admit(motif_scratch_.data(), count, h, MotifRegion<T>::sighting_tag(this)))
+    return {MotifRegion<T>::find_or_admit(motif_scratch_.data(), count, h, MotifRegion<T>::sighting_tag(this)), offset};
+}
+
+template <typename T>
+void pattern::Chunk<T>::classify_motif(int num_chunk, int num_tab, ChunkElems size)
+{
+    if (const auto [motif, offset] = find_motif(size); motif != nullptr)
     {
         motif_candidates_.emplace_back(this, motif, offset, num_chunk, num_tab, size);
+    }
+}
+
+template <typename T>
+void pattern::Chunk<T>::compress_to_motif(int thr, int num_chunk, int num_tab, ChunkElems size)
+{
+    using ProxyT = ChunkTraits<Chunk>::ProxyType;
+    if (const auto [motif, offset] = find_motif(size); motif != nullptr)
+    {
+        // The geometry pin is the caller's (compress_chunk_to_compress_in_par()).
+        const SecondValueRef<T> slot = ProxyT::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+        block_clear_motif(&ProxyT::tab_type_cst_val[num_tab][num_chunk], slot, motif, offset, thr);
     }
 }
 
