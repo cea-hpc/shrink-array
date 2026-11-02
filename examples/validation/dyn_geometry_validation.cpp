@@ -50,18 +50,20 @@
 //
 // Compile OMP or non-OMP, dyn, check. Exit 0 = every size round-trips.
 
+#include <string_view> // std::string_view (to_string)
 #include <type_traits> // std::conditional_t
 #include <vector>      // std::vector
 
-#include "chunk/chunk_traits.h"               // forward decls + default IntType = int
-#include "chunk/zero_array.h"                 // zero::Array
-#include "chunk/zero_one_value_array.h"       // zero_one_value::Array
-#include "chunk/zero_any_array.h"             // zero_any::Array
-#include "chunk/param_chunk.h"                // ParamChunk::register_chunk_size, init_indexes
-#include "chunk/internal/chunk_size_policy.h" // cst_buffer_size, set_active_chunk_size, set_thread_chunk_size
+#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
+#include "chunk/zero_array.h"           // zero::Array
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#include "chunk/zero_any_array.h"       // zero_any::Array
+#include "chunk/param_chunk.h"          // ParamChunk::register_chunk_size, init_indexes
+#include "chunk/internal/chunk_size_policy.h" // cst_buffer_size, set_active_chunk_size, set_thread_chunk_size, chunk_size_error
 #include "chunk/config.h"                     // chunk_config::use_zero*
 #include "chunk/internal/env_parse.h"         // env_number / arg_number (checked, not atoi)
 #include "chunk/internal/print.h"             // shrink_array::println
+#include "chunk/log.h"                        // logging::set_sink (the refusals' warnings)
 
 using namespace shrink_array;
 
@@ -180,6 +182,84 @@ static int round_trip_at(unsigned int csz, long count)
     return 0;
 }
 
+// The refusals the round-trips stop short of: a size wider than
+// cst_buffer_size, or not a power of two nor a multiple of 64. Each setter
+// refuses it with one warning on the rechunk channel and keeps the geometry
+// (set_active_chunk_size, an array's rechunk_to); chunk_size_error says why,
+// to_string in words. The coverage report had these refusals at 0 %.
+static int g_rechunk_warnings = 0;
+
+static void count_rechunk_warnings(const logging::Record& record, void* /*user*/) noexcept
+{
+    if (record.level == logging::Level::warn && record.channel == logging::Channel::rechunk)
+    {
+        ++g_rechunk_warnings;
+    }
+}
+
+static int refused_sizes()
+{
+    int        fails = 0;
+    const auto fail  = [&fails](const char* what)
+    {
+        ++fails;
+        println("  FAIL refused sizes: {}", what);
+    };
+    const unsigned int too_wide = 2 * cst_buffer_size;
+
+    if (chunk_size_error(too_wide) != ChunkSizeError::exceeds_buffer)
+    {
+        fail("chunk_size_error(2 x cst_buffer_size) is not exceeds_buffer");
+    }
+    if (chunk_size_error(100) != ChunkSizeError::not_pow2_or_x64 ||
+        chunk_size_error(0) != ChunkSizeError::not_pow2_or_x64)
+    {
+        fail("chunk_size_error(100) / (0) is not not_pow2_or_x64");
+    }
+    if (chunk_size_error(cst_buffer_size).has_value())
+    {
+        fail("chunk_size_error(cst_buffer_size) refuses the widest size allowed");
+    }
+    if (std::string_view(to_string(ChunkSizeError::exceeds_buffer)).find("CHUNK_DYN_MAX_SIZE") ==
+        std::string_view::npos)
+    {
+        fail("to_string(exceeds_buffer) does not name CHUNK_DYN_MAX_SIZE");
+    }
+
+    logging::set_sink(count_rechunk_warnings);
+    const unsigned int before = active_chunk_size();
+    g_rechunk_warnings        = 0;
+    set_active_chunk_size(too_wide);
+    if (active_chunk_size() != before || g_rechunk_warnings != 1)
+    {
+        fail("set_active_chunk_size(2 x cst_buffer_size): the geometry moved, or not one warning");
+    }
+
+    set_active_chunk_size(64);
+    set_thread_chunk_size(64);
+    ParamChunk::register_chunk_size(64);
+    {
+        Array<double> arr(10000);
+        arr[17]            = 1.5;
+        g_rechunk_warnings = 0;
+        arr.rechunk_to(too_wide);
+        if (arr.chunk_size() != 64 || g_rechunk_warnings != 1 || arr[17] != 1.5)
+        {
+            fail("rechunk_to(2 x cst_buffer_size): the array changed, or not one warning");
+        }
+        g_rechunk_warnings = 0;
+        arr.rechunk_to(100);
+        if (arr.chunk_size() != 64 || g_rechunk_warnings != 1)
+        {
+            fail("rechunk_to(100): the array changed, or not one warning");
+        }
+    }
+    logging::set_sink(nullptr);
+
+    println("[{}] refused sizes: {}", variant_name(), fails == 0 ? "OK" : "FAILED");
+    return fails;
+}
+
 static int run_body(int argc, char** argv)
 {
     const long count = argc > 1 ? shrink_array::arg_number<long>(argv[1], 200000L, "N") : 200000L;
@@ -191,12 +271,13 @@ static int run_body(int argc, char** argv)
     int fails = 0;
 
     // Up to cst_buffer_size: past that ceiling the shared constant buffers are
-    // too narrow and the library refuses the geometry by design, so a larger
-    // size here would test the refusal, not the round-trip.
+    // too narrow and the library refuses the geometry by design: refused_sizes()
+    // tests that refusal, apart.
     for (unsigned int csz = 64; csz <= shrink_array::cst_buffer_size; csz <<= 1)
     {
         fails += round_trip_at(csz, count);
     }
+    fails += refused_sizes();
 
     println("\n[{}] {}", variant_name(),
             fails == 0 ? "=== ALL GEOMETRIES ROUND-TRIP ===" : "=== GEOMETRY FAILURES ===");
