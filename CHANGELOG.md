@@ -52,6 +52,19 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `thread_speedup.py --merge DIR [DIR ...] --out OUTDIR` merges the output
+  directories of several runs -- the jobs of a `--pool` over several nodes,
+  each of which only draws the executables it claimed -- into one, with no
+  measurement: the rows of every `summary.csv` and `results.csv`, a
+  `meta.json` naming the directories merged, and `plot.gp` and `speedup.png`
+  drawn by the functions a run uses, titled with the hosts merged. An
+  executable found in several directories is taken from the first one given;
+  that and any difference of CPU model, target, `--mode`, `--multiply`,
+  `--metric`, `--numa`, executable arguments or thread list are warnings on
+  stderr. shrink_gui's Graphique tab has an « Enregistrer l'image… » ("Save
+  image…") button on each of its pages: the chart as shown (a pool's gathered
+  curves included), as PNG or SVG.
+
 - `dyn_geometry_validation` checks the refused chunk sizes: wider than
   `cst_buffer_size` or neither a power of two nor a multiple of 64,
   `chunk_size_error` says why, and `set_active_chunk_size` and `rechunk_to`

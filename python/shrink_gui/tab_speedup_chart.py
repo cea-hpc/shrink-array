@@ -8,6 +8,9 @@ colour alone cannot tell them apart. "Comparer avec" overlays another run of the
 architecture, dashed (another compiler, another commit), and gives the ratio
 B / A over the common points.
 
+« Enregistrer l'image… » writes the chart as shown (tab_chart's
+save_chart_image), the merged curves of a pool included.
+
 A mixin of the main window (app.Main): its methods use the window's
 attributes. The data come from remote_helper speedup_points."""
 import html
@@ -107,9 +110,10 @@ class SpeedupChart:
         row.addWidget(QLabel("Comparer avec"))
         row.addWidget(self.sc_cmp, 1)
         row.addWidget(bref)
+        self.sc_view = ScatterView()
+        row.addWidget(self.chart_save_button(self.sc_view, self.speedup_image_name))
         self.sc_note = TLabel("")
         self.sc_note.setWordWrap(True)
-        self.sc_view = ScatterView()
         w = QWidget()
         lay = QVBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -117,6 +121,15 @@ class SpeedupChart:
         lay.addWidget(self.sc_note)
         lay.addWidget(self.sc_view, 1)
         return w
+
+    def speedup_image_name(self):
+        """The name proposed for the image: the submission (a pool: its merged
+        curves) or the run, the target, the measure, and B when compared."""
+        info = (self.sc_data or {}).get("info") or {}
+        rid_b = self.sc_cmp.currentData()
+        metric = {"speedup": "speedup", "efficacité": "efficacite", "temps": "temps"}[self.sc_metric.currentData()]
+        return "_".join(x for x in (self._image_run_name(self.current), info.get("target"), metric) if x) + (
+            f"_vs_{self._image_run_name(rid_b)}" if rid_b else "")
 
     def fill_speedup_compare(self):
         """The other thread_speedup.py runs of the current one's architecture."""
