@@ -551,7 +551,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::perform_core_assignment(T* vals, I
 
     if constexpr (build_config::do_check)
     {
-        global_check_write_nan(value, num_);
+        chunk_config::CheckNaN<chunk_config::do_check>::maybe(value, static_cast<long>(num_));
     }
 }
 // ========================================================================
