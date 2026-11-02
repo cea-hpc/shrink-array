@@ -52,6 +52,12 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `bit_words_validation` checks an empty bitmap (`nbits = 0`: `fill_bits`
+  writes nothing, `scan_words` says all_false, `count_ones` 0), and
+  `log_validation` a `std::complex` and a type with no formatter on the
+  message path (not only in the fatal children), still with no allocation:
+  branches the coverage report had at 0 %.
+
 - Two header-only harnesses for helpers the coverage report had at 0 % or
   close (`ctest -L validation`): `env_parse_validation` (every refusal of
   `parse_number`, `env_number`'s fallback with its warning on the env
