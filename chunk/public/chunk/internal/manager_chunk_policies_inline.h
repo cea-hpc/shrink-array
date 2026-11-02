@@ -713,8 +713,11 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_dedup([[ma
         std::size_t pos;
         std::size_t end;
     };
-    const auto greater = [&](const Head& lhs, const Head& rhs)
-    { return less(rhs.p, lhs.p) || (lhs.p == rhs.p && lhs.bucket > rhs.bucket); };
+    // after(a, b): a comes out of the min-heap after b -- pointer order, then bucket. The
+    // heap algorithms build a max-heap on their comparator: this one, "greater", makes it
+    // a min-heap.
+    const auto after = [&](const Head& a, const Head& b)
+    { return less(b.p, a.p) || (a.p == b.p && a.bucket > b.bucket); };
 
     std::vector<Head> heap;
     heap.reserve(nfree);
@@ -729,7 +732,7 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_dedup([[ma
                                 static_cast<std::size_t>(last - blocks.begin())});
         }
     }
-    std::ranges::make_heap(heap, greater);
+    std::ranges::make_heap(heap, after);
 
     auto&       repeats     = Mgr::teardown_repeats_[static_cast<std::size_t>(slice)];
     const T*    prev        = nullptr;
@@ -737,7 +740,7 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_dedup([[ma
     bool        have        = false;
     while (!heap.empty())
     {
-        std::ranges::pop_heap(heap, greater);
+        std::ranges::pop_heap(heap, after);
         Head head = heap.back();
         heap.pop_back();
 
@@ -757,7 +760,7 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_dedup([[ma
         {
             head.p = to_free[head.bucket][head.pos];
             heap.push_back(head);
-            std::ranges::push_heap(heap, greater);
+            std::ranges::push_heap(heap, after);
         }
     }
 }
