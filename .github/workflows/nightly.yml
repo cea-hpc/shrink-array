@@ -10,10 +10,11 @@
 #     TSan on the weak memory model (ci.yml runs the same on x86);
 #   - the OpenMP _dyn build (run-time chunk sizes, 256 static next to it): the
 #     re-chunk paths, which the per-push builds leave out (CHUNK_BUILD_DYN=OFF).
-# A third job, on x86 (ubuntu-24.04), measures the line coverage of the
-# library (gcov + gcovr): a report, not a gate.
-# The other long builds -- the remaining sanitizers, clang, GenMC itself -- can
-# join here when they are needed.
+# On x86 (ubuntu-24.04): OpenMP under AddressSanitizer, clang 23 with OpenMP
+# and the OMPT tool, the serial _dyn build, and the line coverage of the
+# library (gcov + gcovr: a report, not a gate).
+# The other long builds -- UBSan, GenMC itself -- can join here when they are
+# needed.
 
 name: Nightly
 
@@ -105,6 +106,113 @@ jobs:
         run: cmake --build build --target check
       # No GenMC native runs here: they are C programs, the same in a _dyn build,
       # and ci.yml's AArch64 OpenMP job runs them on every push.
+
+  # AddressSanitizer on x86, OpenMP: the second-value table's mmap
+  # reservation, the reuse pools, the slab give-back, the re-chunk buffers --
+  # out-of-bounds, use-after-free, double free and leaks at exit. The heavy
+  # unity harnesses two at a time, as std-tsan (ci.yml).
+  x86-openmp-asan:
+    name: x86-64, OpenMP, AddressSanitizer
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      CC: gcc-14
+      CXX: g++-14
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+      ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:detect_stack_use_after_return=1
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+      - name: Toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev
+          g++-14 --version
+          cmake --version
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DOMP=ON
+          -DSANITIZER=address
+          -DCHECK_OPTIM=ON
+          -DCHUNK_STATIC_SIZES=256
+          -DCHUNK_BUILD_DYN=OFF
+      - name: Build and run the validation harnesses (check target)
+        run: cmake --build build --target check
+
+  # clang 23 (apt.llvm.org) with libstdc++ and libomp, OpenMP: the
+  # diagnostics gcc does not give, and the OMPT tool (CHUNK_HAVE_OMPT), which
+  # only a clang build has -- multi-mat's embedded-compression executable.
+  x86-clang-openmp:
+    name: x86-64, clang 23, OpenMP + OMPT
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      CC: clang-23
+      CXX: clang++-23
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+      - name: Toolchain
+        run: |
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null
+          echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-23 main" | sudo tee /etc/apt/sources.list.d/llvm-23.list
+          sudo apt-get update -q
+          # libstdc++-14-dev: clang takes the newest libstdc++ installed.
+          sudo apt-get install -y -q clang-23 libomp-23-dev libstdc++-14-dev ninja-build libbz2-dev
+          clang++-23 --version
+          cmake --version
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DOMP=ON
+          -DUSE_LIBCXX=OFF
+          -DCHECK_OPTIM=ON
+          -DCHUNK_STATIC_SIZES=256
+          -DCHUNK_BUILD_DYN=OFF
+      - name: Build and run the validation harnesses (check target)
+        run: cmake --build build --target check
+      - name: Examples (ctest -L examples)
+        run: |
+          cmake --build build --target getting_started simple_array_chunk multi-mat test_vecto_chunk
+          ctest --test-dir build -L examples --output-on-failure
+
+  # The _dyn build on x86, serial, Release-like (RelWithDebInfo): the re-chunk
+  # paths gated somewhere other than AArch64 OpenMP (arm-openmp-dyn) and the
+  # coverage job (Debug, not a gate).
+  x86-serial-dyn:
+    name: x86-64, serial, _dyn
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      CC: gcc-14
+      CXX: g++-14
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+      - name: Toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev
+          g++-14 --version
+          cmake --version
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DOMP=OFF
+          -DCHECK_OPTIM=ON
+          -DCHUNK_STATIC_SIZES=256
+          -DCHUNK_BUILD_DYN=ON
+      - name: Build and run the validation harnesses (check target)
+        run: cmake --build build --target check
 
   # Line coverage of chunk/ and fast_allocators/ by the validation harnesses:
   # Debug (-O0, the lines map to the source), OpenMP, 256 + _dyn, gcc 14
