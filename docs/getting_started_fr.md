@@ -298,7 +298,9 @@ compiler contre une bibliothèque sans OMPT ; son test tourne avec `CHUNK_REQUIR
 **Les points séquentiels.** Tout ce qui reconstruit le stockage d'un tableau s'appelle hors de
 toute région parallèle : `resize()`, `reserve()`, `push_back()` au-delà de la capacité,
 `clear()`, `assign()`, `swap()`, l'affectation, `shrink_to_fit()`, `compress()`,
-`rechunk_to()`, et, pour `zero_one_value`, `set_second_value()`.
+`rechunk_to()`, et, pour `zero_one_value`, `set_second_value()`. De même pour un appel explicite
+à `make_block_compression()` : dans une région, il est refusé (arrêt dans un build de contrôle,
+erreur dans le journal et pas de passe ailleurs) -- les passes des écrivains y compressent.
 
 **Les threads.** Les structures par thread sont dimensionnées une fois pour
 `max(omp_get_max_threads(), nombre de cœurs, 256)` threads (dans un build std, la taille

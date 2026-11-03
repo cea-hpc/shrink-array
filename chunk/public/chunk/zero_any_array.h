@@ -386,10 +386,17 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
      */
     [[nodiscard]] static SecondValueStats second_value_stats() noexcept;
 
-    /// @brief Compress every chunk currently queued as a candidate.
+    /// @brief Compress every chunk currently queued as a candidate, on every thread's list.
+    /// @note A sequential point: refused inside a parallel region (see
+    ///       zero::FastBlockSupport::make_block_compression()).
     static void make_block_compression();
 
   private:
+    /// @brief The pass behind make_block_compression(), and resize_common()'s drain:
+    ///        every thread's list outside a region, the calling thread's inside one
+    ///        (an array resized by its owning thread), under a read_reclaim::PassScope.
+    static void drain_candidates();
+
     /**
      * @brief Claim this array's identity before its storage is built.
      * @details Called by create() through ArrayChunkBase: registers the address and takes
