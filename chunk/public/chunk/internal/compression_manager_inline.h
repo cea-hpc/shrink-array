@@ -376,20 +376,32 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_chunk_all_ranks(C
             const FlushReplayGuard replay_guard;
             for (auto& [num, op_ptr] : batch)
             {
-                // Check-build guard: a null, misaligned or low op pointer, or one
-                // whose vptr is null or garbage, is a block recycled while still
-                // in the map; say so here rather than crash in write_body().
+                // Check-build guard: a null, misaligned, low or non-canonical op
+                // pointer, or one whose vptr is any of these, is a block recycled
+                // while still in the map; say so here rather than crash in
+                // write_body(). Non-canonical: a recycled block rewritten with
+                // doubles holds a vptr like 0x4008000000000000 (3.0), past the
+                // low bound alone. Same range rule as pool_ledger.h's LEDGER_BADPTR:
+                // x86-64 user pointers are < 2^47, aarch64 ones < 2^52.
                 if constexpr (build_config::any_check)
                 {
+#ifdef __aarch64__
+                    constexpr unsigned addr_bits = 52U;
+#else
+                    constexpr unsigned addr_bits = 47U;
+#endif
+                    const auto bad_ptr = [](std::uintptr_t ptr)
+                    { return ptr < 0x1000 || (ptr >> addr_bits) != 0 || (ptr & 0x7U) != 0; };
+
                     DeferredOperationBase* raw  = op_ptr.get();
                     const auto             addr = ::fast_alloc::address_bits(raw);
-                    if (raw == nullptr || addr < 0x1000 || (addr & 0x7U) != 0)
+                    if (raw == nullptr || bad_ptr(addr))
                     {
                         CHUNK_INVARIANT_FAILED("[FLUSH_PROBE xrank] bad op_ptr in op_map: num={} op={} rank={}", num,
                                                raw, r);
                     }
                     const auto vptr = ::fast_alloc::load_from_bytes<std::uintptr_t>(raw); // its first word
-                    if (vptr < 0x1000)
+                    if (bad_ptr(vptr))
                     {
                         CHUNK_INVARIANT_FAILED("[FLUSH_PROBE xrank] op has null/garbage vptr (recycled under map?): "
                                                "num={} op={} vptr={:#x} rank={}",
