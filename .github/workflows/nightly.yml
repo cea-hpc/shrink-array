@@ -121,7 +121,9 @@ jobs:
       CMAKE_BUILD_PARALLEL_LEVEL: 2
       # print_module_map=1: the modules' load addresses in the report, so a faulting pc
       # of an inlined frame can be disassembled in the binary the failure step uploads.
-      ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:detect_stack_use_after_return=1:print_module_map=1
+      # dump_registers=1: the registers in a SEGV report (gcc 14's ASan prints none
+      # by default), so a high-address fault shows which pointer was garbage.
+      ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:detect_stack_use_after_return=1:print_module_map=1:dump_registers=1
     steps:
       - uses: actions/checkout@v5
         with:

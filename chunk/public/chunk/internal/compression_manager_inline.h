@@ -35,6 +35,55 @@
 namespace shrink_array
 {
 
+namespace detail
+{
+/**
+ * @brief Check builds: stop on a queued op that cannot be a live one, before
+ *        the replay's virtual write_body() call crashes on it.
+ * @details A null, misaligned, low or non-canonical op pointer, or one whose
+ *          vptr is any of these, is a block recycled while still in the map.
+ *          Non-canonical: a recycled block rewritten with doubles holds a vptr
+ *          like 0x4008000000000000 (3.0), past a low bound alone. Same range
+ *          rule as pool_ledger.h's LEDGER_BADPTR: x86-64 user pointers are
+ *          < 2^47, aarch64 ones < 2^52. The op's own checks (write_body's
+ *          DEFERRED_LIFECYCLE magic) run after the virtual call: too late here.
+ * @param raw  the queued op
+ * @param num  its offset in the chunk (the op_map key)
+ * @param rank the rank whose map holds it
+ * @param path which drain: "own" (flush_deferred) or "xrank" (flush_chunk_all_ranks)
+ */
+inline void flush_probe_op([[maybe_unused]] const DeferredOperationBase* raw,
+                           [[maybe_unused]] int                          num,
+                           [[maybe_unused]] int                          rank,
+                           [[maybe_unused]] const char*                  path) noexcept
+{
+    if constexpr (build_config::any_check)
+    {
+#ifdef __aarch64__
+        constexpr unsigned addr_bits = 52U;
+#else
+        constexpr unsigned addr_bits = 47U;
+#endif
+        const auto bad_ptr = [](std::uintptr_t ptr)
+        { return ptr < 0x1000 || (ptr >> addr_bits) != 0 || (ptr & 0x7U) != 0; };
+
+        const auto addr = ::fast_alloc::address_bits(raw);
+        if (raw == nullptr || bad_ptr(addr))
+        {
+            CHUNK_INVARIANT_FAILED("[FLUSH_PROBE {}] bad op_ptr in op_map: num={} op={} rank={}", path, num,
+                                   static_cast<const void*>(raw), rank);
+        }
+        const auto vptr = ::fast_alloc::load_from_bytes<std::uintptr_t>(raw); // its first word
+        if (bad_ptr(vptr))
+        {
+            CHUNK_INVARIANT_FAILED("[FLUSH_PROBE {}] op has null/garbage vptr (recycled under map?): "
+                                   "num={} op={} vptr={:#x} rank={}",
+                                   path, num, static_cast<const void*>(raw), vptr, rank);
+        }
+    }
+}
+} // namespace detail
+
 // No build guard: everything below belongs to the PRIMARY CompressionManagerThreadPolicy
 // template, instantiated only with Enabled=true (threaded builds).
 
@@ -204,6 +253,8 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_deferred(int thr)
             const FlushReplayGuard replay_guard;
             for (auto& [num, op_ptr] : batch)
             {
+                detail::flush_probe_op(op_ptr.get(), num, thr, "own"); // check builds: see its comment
+
                 if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
                 {
                     ring_log_op(get_tid(), EventCode::op_flush_one, static_cast<uint32_t>(num),
@@ -376,38 +427,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_chunk_all_ranks(C
             const FlushReplayGuard replay_guard;
             for (auto& [num, op_ptr] : batch)
             {
-                // Check-build guard: a null, misaligned, low or non-canonical op
-                // pointer, or one whose vptr is any of these, is a block recycled
-                // while still in the map; say so here rather than crash in
-                // write_body(). Non-canonical: a recycled block rewritten with
-                // doubles holds a vptr like 0x4008000000000000 (3.0), past the
-                // low bound alone. Same range rule as pool_ledger.h's LEDGER_BADPTR:
-                // x86-64 user pointers are < 2^47, aarch64 ones < 2^52.
-                if constexpr (build_config::any_check)
-                {
-#ifdef __aarch64__
-                    constexpr unsigned addr_bits = 52U;
-#else
-                    constexpr unsigned addr_bits = 47U;
-#endif
-                    const auto bad_ptr = [](std::uintptr_t ptr)
-                    { return ptr < 0x1000 || (ptr >> addr_bits) != 0 || (ptr & 0x7U) != 0; };
-
-                    DeferredOperationBase* raw  = op_ptr.get();
-                    const auto             addr = ::fast_alloc::address_bits(raw);
-                    if (raw == nullptr || bad_ptr(addr))
-                    {
-                        CHUNK_INVARIANT_FAILED("[FLUSH_PROBE xrank] bad op_ptr in op_map: num={} op={} rank={}", num,
-                                               raw, r);
-                    }
-                    const auto vptr = ::fast_alloc::load_from_bytes<std::uintptr_t>(raw); // its first word
-                    if (bad_ptr(vptr))
-                    {
-                        CHUNK_INVARIANT_FAILED("[FLUSH_PROBE xrank] op has null/garbage vptr (recycled under map?): "
-                                               "num={} op={} vptr={:#x} rank={}",
-                                               num, raw, vptr, r);
-                    }
-                }
+                detail::flush_probe_op(op_ptr.get(), num, r, "xrank"); // check builds: see its comment
 
                 if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
                 {
