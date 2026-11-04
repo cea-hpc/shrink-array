@@ -40,6 +40,7 @@
 #include "chunk/singleton.h"                            // SingletonChk<AllTypeChunk>::get_ref
 #include "chunk/type_name.h"                            // type_name<T>
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
+#include "chunk/internal/read_reclaim.h"                // read_reclaim::PassScope (drain_candidates in a region)
 #include "chunk/config.h"                               // build_config::chunk_dynamic, chunk_config::stats
 #include "chunk/internal/chunk_size_policy.h"           // set_thread_chunk_size
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
@@ -636,8 +637,32 @@ void zero_any::ArrayImpl<Derived>::compress_int(pmp::Team& team)
 template <typename Derived>
 void zero_any::ArrayImpl<Derived>::make_block_compression()
 {
-    // Every rank's list, drained serially by the caller (no region opened
-    // here, no writer handshake: nullptr proxy).
+    // Refused inside a region: it would drain the other threads' lists while
+    // they write and read (see zero::FastBlockSupport::make_block_compression()).
+    if (CHUNK_PMP_IN_PARALLEL_REGION)
+    {
+        CHUNK_CHECK_FAILED(compress,
+                           "make_block_compression() called inside a parallel region: a sequential point, call it "
+                           "after the region");
+        return;
+    }
+    drain_candidates();
+}
+
+template <typename Derived>
+void zero_any::ArrayImpl<Derived>::drain_candidates()
+{
+    // No region opened here, no writer handshake (nullptr proxy). Outside a
+    // region every rank's list, drained serially by the caller. Inside one (an
+    // array resized by its owning thread) this thread's list only, as zero's
+    // and zero_one_value's drains, its released buffers held for one reader
+    // grace period (read_reclaim.h).
+    if (CHUNK_PMP_IN_PARALLEL_REGION)
+    {
+        const read_reclaim::PassScope pass_scope;
+        ChunkType::make_block_compression(CHUNK_PMP_THREAD_RANK, nullptr);
+        return;
+    }
     for (int thr = 0; thr < CHUNK_PMP_RANK_BOUND; ++thr)
     {
         ChunkType::make_block_compression(thr, nullptr);

@@ -26,13 +26,30 @@
 #include "chunk/internal/array_chunk_parallel_common_inline.h" // flush_pending_deferred_ops
 #include "chunk/PMP_CHUNK.h"                                   // CHUNK_PMP_* (make_block_compression)
 #include "chunk/internal/chunk_size_policy.h"                  // set_thread_chunk_size in make_block_compression
-#include "chunk/config.h"                                      // build_config::chunk_dynamic
+#include "chunk/internal/invariant_check.h" // CHUNK_CHECK_FAILED (make_block_compression in a region)
+#include "chunk/internal/read_reclaim.h"    // read_reclaim::PassScope (drain_candidates in a region)
+#include "chunk/config.h"                   // build_config::chunk_dynamic
 
 namespace shrink_array
 {
 
 template <typename Derived>
 void zero_one_value::FastBlockSupport<Derived, true>::make_block_compression()
+{
+    if (CHUNK_PMP_IN_PARALLEL_REGION)
+    {
+        // Refused inside a region: see zero::FastBlockSupport::make_block_compression()
+        // (no proxy: no writer handshake, no reader grace period).
+        CHUNK_CHECK_FAILED(compress,
+                           "make_block_compression() called inside a parallel region: a sequential point, call it "
+                           "after the region");
+        return;
+    }
+    drain_candidates();
+}
+
+template <typename Derived>
+void zero_one_value::FastBlockSupport<Derived, true>::drain_candidates()
 {
     if constexpr (build_config::chunk_dynamic)
     {
@@ -105,6 +122,10 @@ void zero_one_value::FastBlockSupport<Derived, true>::make_block_compression()
     }
     else
     {
+        // An array resized inside a region by its owning thread (resize()):
+        // this thread's list only, and other threads may be reading, so the
+        // buffers released wait for a grace period (read_reclaim.h).
+        const read_reclaim::PassScope pass_scope;
         pass_on_rank(CHUNK_PMP_THREAD_RANK);
     }
 }
