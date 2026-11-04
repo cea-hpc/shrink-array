@@ -173,7 +173,7 @@ jobs:
           name: asan-validation-binaries
           path: build/examples/validation/validation_*_256
           retention-days: 14
-      # gdb <the binary above> <the core>, then `thread apply all bt`.
+      # The cores, for a closer look with the binary above.
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -181,6 +181,18 @@ jobs:
           path: ${{ runner.temp }}/cores
           if-no-files-found: ignore
           retention-days: 14
+      # On the runner: elsewhere gdb lacks Ubuntu's libasan and libc, and stops at their frames.
+      # The core's own name is cut at 15 characters; its execfn note has the full path.
+      - name: Stacks of every thread, from the cores
+        if: failure()
+        run: |
+          sudo apt-get install -y -q gdb
+          for core in "$RUNNER_TEMP"/cores/core.*; do
+            [ -e "$core" ] || continue
+            exe=$(file "$core" | sed -n "s/.*execfn: '\\([^']*\\)'.*/\\1/p")
+            echo "=== $core: $exe"
+            gdb -nx -batch -iex 'set debuginfod enabled off' -ex 'thread apply all bt 30' "$exe" "$core" 2>&1 || true
+          done
 
   # clang 23 (apt.llvm.org) with libstdc++ and libomp, OpenMP: the
   # diagnostics gcc does not give, and the OMPT tool (CHUNK_HAVE_OMPT), which
