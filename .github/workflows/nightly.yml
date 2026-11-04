@@ -137,7 +137,7 @@ jobs:
           sudo apt-get install -y -q g++-14 ninja-build libbz2-dev
           g++-14 --version
           cmake --version
-      # -march=native: the instructions depend on the runner's CPU, and runners differ.
+      # In the log: the runners differ, and a failure may be tied to one of their CPUs.
       - name: Runner CPU
         run: lscpu
       # The cores go to a directory of ours, not to apport (Ubuntu's core_pattern).
@@ -154,6 +154,7 @@ jobs:
           -DCHECK_OPTIM=ON
           -DCHUNK_STATIC_SIZES=256
           -DCHUNK_BUILD_DYN=OFF
+          -DCHUNK_X86_MARCH=x86-64-v3
       - name: Build and run the validation harnesses (check target)
         run: |
           ulimit -c unlimited
