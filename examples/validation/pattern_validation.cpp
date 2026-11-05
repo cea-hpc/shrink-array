@@ -845,6 +845,13 @@ int run(int argc, char** argv)
     const long nch = argc > 1 ? shrink_array::arg_number<long>(argv[1], 64, "chunks") : 64;
     println("=== pattern_validation  chunks={}  threads={} ===", nch, CHUNK_PMP_MAX_THREADS);
 
+    {
+        // Copy-list-initialisation, as for a std::vector: the constructor is not explicit.
+        pattern::Array<int> listed = {1, 2, 3};
+        expect_eq("a = {1, 2, 3}: size", listed.size(), 3);
+        expect_eq("a = {1, 2, 3}: a[1]", static_cast<int>(listed[1]), 2);
+    }
+
     against_zero_any<int>("int", nch);
     against_zero_any<long>("long", nch);
     against_zero_any<unsigned>("unsigned", nch);
