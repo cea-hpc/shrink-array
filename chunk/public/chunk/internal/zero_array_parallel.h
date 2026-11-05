@@ -101,10 +101,24 @@ class FastBlockSupport<Derived, true>
 
     /**
      * @brief Compress every chunk of this array currently queued as a candidate.
-     * @details Drains the calling thread's candidate list, or every thread's
-     *          when called from outside a parallel region.
+     * @details Drains every thread's candidate list. A sequential point: outside
+     *          any parallel region only. Inside one it is refused (an invariant
+     *          failure in check builds, an error in the log otherwise, and no
+     *          pass): without a proxy it takes no writer handshake and no reader
+     *          grace period. In a region the writers' own passes compress.
      */
     void make_block_compression(this Derived& self);
+
+  protected:
+    /**
+     * @brief The pass behind make_block_compression(), and resize()'s drain.
+     * @details Outside a region, every thread's candidate list; inside one (an
+     *          array resized by the thread that owns it), the calling thread's
+     *          list only, its released buffers held for one reader grace period
+     *          (read_reclaim::PassScope). resize() needs it there: the lists hold
+     *          &chunk_list_[j] pointers its reallocation would leave dangling.
+     */
+    void drain_candidates(this Derived& self);
 };
 
 // ── Any other mode: no candidate queue to drain ──────────────────────────────

@@ -534,11 +534,12 @@ class GlobalVecHolder
     /// @note THE constant-2 test of zero_any: `is_cst_val2()` is
     ///       `region_contains(values)`. Relaxed load of a pointer that is
     ///       written once, before any chunk exists.
-    [[nodiscard]] static bool region_contains(const void* ptr) noexcept
+    [[nodiscard]] static bool region_contains(const T* ptr) noexcept
     {
         const std::byte* base = region_begin.load(std::memory_order_relaxed);
-        return base != nullptr && static_cast<const std::byte*>(ptr) >= base &&
-               static_cast<const std::byte*>(ptr) < region_end;
+        const auto       bits = ::fast_alloc::address_bits(ptr);
+        return base != nullptr && bits >= ::fast_alloc::address_bits(base) &&
+               bits < ::fast_alloc::address_bits(region_end);
     }
 
     /// @brief Carve @p bytes from the region.

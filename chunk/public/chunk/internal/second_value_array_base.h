@@ -122,7 +122,7 @@ class SecondValueArrayBase : public ArrayChunkBase<Derived>
         if constexpr (chunk_config::use_fast_block_compression ||
                       (build_config::not_threaded && is_zero_any_family_v<ChunkType>))
         {
-            self.make_block_compression();
+            self.drain_candidates(); // not make_block_compression(): resize() may run in a region
         }
 
         const int old_nb_chunk = self.nb_chunk_;

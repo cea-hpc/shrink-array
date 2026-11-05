@@ -437,7 +437,7 @@ void zero::Array<T, IntType>::resize(const IntType newsz)
 
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        make_block_compression();
+        this->drain_candidates(); // not make_block_compression(): resize() may run in a region
     }
 
     const auto& sh_inf = *zero::Proxy<T>::share_info_array;

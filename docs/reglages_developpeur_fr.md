@@ -174,6 +174,7 @@ Les options de [variables_environnement_fr.md](variables_environnement_fr.md) §
 | `CHUNK_NO_IPA_ICF` | `OFF` | désactive `-fipa-icf` (GCC fusionne sinon des fonctions identiques, ce qui brouille les piles d'appels) |
 | `CHUNK_WARNINGS`, `CHUNK_WERROR` | `ON`, `OFF` | `-Wall -Wextra` sur tous les builds ; avertissements en erreurs en Debug |
 | `CHUNK_HEAVY_JOB_POOL` | vide | pool de jobs Ninja pour les exécutables compilés en une unité (limite la mémoire de compilation) |
+| `CHUNK_X86_MARCH` | `native` | GCC, Clang sur x86-64 : `-march=` des builds optimisés ; un niveau fixe donne un binaire indépendant de la machine (`x86-64-v3` dans le job ASan du nightly, `native` y plante sur Zen 5) |
 | `USE_LIBCXX` | `ON` | builds Clang : libc++ au lieu de la libstdc++ |
 | `USE_GPERF`, `ENABLE_IWYU` | `OFF` | profilage gperftools ; include-what-you-use pendant la compilation |
 | `ONEAPI_XHOST`, `ONEAPI_NO_INTEL_LIBS`, `ONEAPI_FAST_FP` | `OFF` | icpx : binaire réservé à Intel (`-xHost`) ; aucune bibliothèque d'exécution Intel ; garder `-fp-model=fast` |
