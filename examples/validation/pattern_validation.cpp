@@ -659,9 +659,11 @@ static void motif_compression(const char* tname, long nch)
         }
         return ref;
     };
-    // A first sighting leaves its chunk materialised: one per motif, one per thread at most
-    // when the threads' passes see it at once.
-    const long first_sightings = CHUNK_PMP_MAX_THREADS;
+    // A first sighting leaves its chunk materialised: one per motif, one per thread when the
+    // threads' passes see it at once, and a few more: the probation tag has 8 bits, so two
+    // chunks can count as one sighter (find_or_admit()). A bound, not a count: 55 of 64 came
+    // up at 8 threads on a loaded machine, every element right.
+    const long first_sightings = 2L * CHUNK_PMP_MAX_THREADS;
 
     // M: the connectivity written in order.
     const pattern::MotifStats before = Region::stats();
@@ -844,6 +846,13 @@ int run(int argc, char** argv)
 
     const long nch = argc > 1 ? shrink_array::arg_number<long>(argv[1], 64, "chunks") : 64;
     println("=== pattern_validation  chunks={}  threads={} ===", nch, CHUNK_PMP_MAX_THREADS);
+
+    {
+        // Copy-list-initialisation, as for a std::vector: the constructor is not explicit.
+        pattern::Array<int> listed = {1, 2, 3};
+        expect_eq("a = {1, 2, 3}: size", listed.size(), 3);
+        expect_eq("a = {1, 2, 3}: a[1]", static_cast<int>(listed[1]), 2);
+    }
 
     against_zero_any<int>("int", nch);
     against_zero_any<long>("long", nch);

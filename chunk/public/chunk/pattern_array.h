@@ -101,8 +101,10 @@ class Array : public zero_any::ArrayImpl<Array<T, IntType>>
     }
 
     /// @brief Build an array holding the elements of @p il.
+    /// @details Not explicit, as std::vector's: `Array<T> a = {1, 2, 3};`, and a
+    ///          braced list as an argument or a return value.
     /// @param il Source values.
-    explicit Array(std::initializer_list<T> il) : Array(il.begin(), il.end()) {}
+    Array(std::initializer_list<T> il) : Array(il.begin(), il.end()) {}
 
     /// @brief Release the storage, then the registry entry (ArrayImpl::destroy_storage()).
     ~Array()
