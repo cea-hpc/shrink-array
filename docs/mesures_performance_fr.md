@@ -101,6 +101,46 @@ Les réglages du décideur sont des options de `shrink_bench` (la bibliothèque 
 aucune variable). Attention : `--rechunk_min_gain_mb 1000000` ne bloque plus les grossissements
 depuis le critère « gain par coût » ; utiliser `--rechunk_dry_run`.
 
+### 2.4 Ce que coûte une lecture threadée
+
+Mesuré sur Grace (GCC 16, `-mcpu=native`, `access_cost_zero_any_256`, 2²⁷ éléments, trois
+tours alternés), en reconstruisant le même arbre quatre fois : sans la section de lecture
+(`ReadSection`, read_reclaim_inline.h : deux stores release de la séquence du thread et une
+barrière compilateur), sans la porte de lecture (`sync_chunk` : un load acquire du mot du
+bitset dirty du chunk), sans les deux, ou avec les deux. Les retirer n'est sûr que dans une
+telle mesure : ces cas de lecture ne font tourner ni écriture ni passe de compression en même
+temps que les lectures. Médiane du tableau, ns par élément :
+
+| threads | cas | tout | sans section | sans porte | aucune des deux |
+|---|---|---|---|---|---|
+| 1 | read-varied | 2,172 | 0,934 | 2,169 | 0,639 |
+| 1 | read-constant | 2,166 | 0,914 | 2,165 | 0,627 |
+| 1 | read-second | 2,192 | 1,244 | 2,185 | 0,931 |
+| 1 | read-random | 27,161 | 20,743 | 20,568 | 14,368 |
+| 1 | read-bulk | 0,663 | 0,653 | 0,655 | 0,664 |
+| 64 | read-varied | 0,035 | 0,020 | 0,035 | 0,019 |
+| 64 | read-constant | 0,036 | 0,015 | 0,035 | 0,010 |
+| 64 | read-second | 0,036 | 0,021 | 0,036 | 0,014 |
+| 64 | read-random | 0,481 | 0,391 | 0,382 | 0,297 |
+| 64 | read-bulk | 0,019 | 0,020 | 0,019 | 0,020 |
+
+- **Lectures séquentielles, un élément à la fois** (`operator[]`) : la section prend environ
+  la moitié du temps (57 % à 1 thread). La porte ne coûte rien tant que la section est là, et
+  0,3 ns une fois qu'elle est partie : les deux coûts ne s'additionnent pas. Sans doute le
+  compilateur : une barrière et deux stores atomiques par élément l'empêchent de vectoriser ou
+  de dérouler la boucle. À 64 threads, read-varied sans la section est déjà limité par la bande
+  passante mémoire.
+- **read-bulk** (`for_each_value`) est au coût de « aucune des deux » : il amortit déjà les
+  deux. **Boucles chaudes : `for_each_value` ou les itérateurs, pas `operator[]` élément par
+  élément.**
+- **Lectures aléatoires** : les deux coûts s'additionnent, environ un quart du temps chacun.
+  C'est sur eux que repose la correction (l'acquire du bit dirty, l'ordre release de la sortie
+  de section) : rien de bon marché à retirer, et toute modification passe d'abord par
+  formal/reader_reclaim.c.
+- **Les ordres mémoire sont déjà les moins chers** : GCC 16 émet ldapr (RCpc) pour les loads
+  acquire du chemin de lecture ; ses ldar (loads seq_cst) sont tous dans les chemins de
+  compression, de purge et de fin de phase.
+
 ## 3. Recettes
 
 **Le coût de l'advisor sur un même binaire** (trois tours, moyennes) :
