@@ -659,9 +659,11 @@ static void motif_compression(const char* tname, long nch)
         }
         return ref;
     };
-    // A first sighting leaves its chunk materialised: one per motif, one per thread at most
-    // when the threads' passes see it at once.
-    const long first_sightings = CHUNK_PMP_MAX_THREADS;
+    // A first sighting leaves its chunk materialised: one per motif, one per thread when the
+    // threads' passes see it at once, and a few more: the probation tag has 8 bits, so two
+    // chunks can count as one sighter (find_or_admit()). A bound, not a count: 55 of 64 came
+    // up at 8 threads on a loaded machine, every element right.
+    const long first_sightings = 2L * CHUNK_PMP_MAX_THREADS;
 
     // M: the connectivity written in order.
     const pattern::MotifStats before = Region::stats();
