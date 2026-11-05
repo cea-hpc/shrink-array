@@ -54,7 +54,21 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
+## 0.2.1 -- 2026-11-05
+
 ### Added
+
+- `CHUNK_X86_MARCH` (GCC and Clang on x86-64, default `native`): the `-march=` of the optimised
+  builds, for a binary that must not depend on the machine (`docs/developer_settings.md`). The
+  nightly's ASan job sets `x86-64-v3`: with `-march=native` on Zen 5, GCC 14 aligns slots of the
+  frame on 64 bytes, ASan's fake stack can leave them 32 bytes off, and an aligned `vmovdqa64`
+  faults (#GP). The two SEGV of 2026-11-02 in `read_reclaim_validation` of `zero_one_value`
+  were this, not the library: on EPYC 9V45 the same commit fails 3 times of 3 at `native` and
+  passes 2 times of 2 at `x86-64-v3`.
+
+- The check builds' `FLUSH_PROBE` also rejects non-canonical op pointers and vptrs, and looks at
+  `flush_deferred` too. On a failure the nightly's ASan job prints the CPU, the stacks of every
+  thread, and keeps the core dumps and the binaries as artifacts.
 
 - `thread_speedup.py --merge DIR [DIR ...] --out OUTDIR` merges the output
   directories of several runs -- the jobs of a `--pool` over several nodes,
@@ -438,12 +452,33 @@ the tag's checksum to the recipe.
   block of CHUNK_SIZE values, common to the variants: `ChunkBase`,
   `ManagerChunk`, `ParamChunk`...) stay.
 
+- The `std::initializer_list` constructor of every array is implicit, as `std::vector`'s:
+  `Array<T> a = {1, 2, 3};`, and a braced list as an argument or a return value. It was explicit
+  in `zero_one_value` and `pattern` only.
+
 ### Deprecated
 
 - `zero_one_value::Array::ManagerChunk2` and `zero_any::Array::ManagerChunk2A`:
   use `Manager`. Kept until 1.0.
 
 ### Fixed
+
+- `make_block_compression()` inside a parallel region is refused: check builds stop, the others
+  log an error and skip the pass. Run with no proxy, it took no writer handshake and, in `zero`
+  and `zero_one_value`, no reader grace period: it compressed chunks other threads were writing
+  or reading (stale reads, seen with a `read_reclaim` harness). It is a sequential point; in a
+  region the writers' own passes compress. `resize()`, which an owning thread may call in a
+  region, drains through `drain_candidates()`, its released buffers held for a grace period.
+
+- `multi-mat-embedded`: its OMPT tool skips the initial task and the barrier that closes a region,
+  as the library's does. It hung at start-up under libomp.
+
+- The copy of a `zero_one_value` proxy no longer reads indeterminate values: `second_value_` and
+  `ind_` have default initialisers (`ProxyBase`'s `ptr_on_array_` and `num_chunk_` too, Coverity
+  CID 661511). No measurable cost in `access_cost` or `shrink_bench`.
+
+- `scripts/coverity_submit.sh` goes on when the compiler module is missing, with `CXX` or the
+  `g++` on `PATH`; it stopped before the capture.
 
 - `pattern::Array` compresses to motifs in an OMPT build (clang, Intel: `CHUNK_HAVE_OMPT`).
   There the pass at each region's end is `compress_chunk_to_compress_in_par()`, chunk by chunk

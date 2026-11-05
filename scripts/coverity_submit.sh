@@ -68,7 +68,8 @@ capture() {
     # shellcheck disable=SC1091
     if command -v module > /dev/null 2>&1 || [ -f /etc/profile.d/modules.sh ]; then
         source /etc/profile.d/modules.sh 2> /dev/null || true
-        module load "$GCC_MODULE"
+        # Not fatal: a machine with modules need not have this one (set -e would stop here).
+        module load "$GCC_MODULE" || echo "coverity_submit: no module $GCC_MODULE, using ${CXX:-the g++ on PATH}" >&2
     fi
     # shellcheck disable=SC2086
     cmake -S "$REPO" -B "$COV_BUILD_DIR" -DCMAKE_BUILD_TYPE=Release \
