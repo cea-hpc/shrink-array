@@ -429,12 +429,13 @@ inline void warn_chunk_size_refused(const char* who, unsigned int size, ChunkSiz
 /// @return Nothing, or why @p size was refused. Writes no message: the caller decides.
 inline std::expected<void, ChunkSizeError> try_set_active_chunk_size(unsigned int size) noexcept
 {
-    return check_chunk_size(size).transform(
-        [size]
-        {
-            g_active_chunk_size = size;
-            register_runtime_chunk_size(size);
-        });
+    if (const auto err = chunk_size_error(size)) [[unlikely]]
+    {
+        return std::unexpected(*err);
+    }
+    g_active_chunk_size = size;
+    register_runtime_chunk_size(size);
+    return {};
 }
 
 /// @brief try_set_active_chunk_size(), a refusal written on the log (channel
