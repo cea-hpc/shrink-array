@@ -279,7 +279,7 @@ template <typename T>
 static int run_returns(const char* label, long count)
 {
     Array<T>       arr(count);
-    std::vector<T> ref(count);
+    std::vector<T> ref(count, T{});
     long           bad = 0;
 #pragma omp parallel reduction(+ : bad)
     {
