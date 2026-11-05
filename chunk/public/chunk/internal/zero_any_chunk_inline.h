@@ -866,7 +866,7 @@ void wait_before_materialise(const ChunkT& chunk, [[maybe_unused]] int thr_rank)
     if constexpr (chunk_config::use_chunk_steal_mark)
     {
         using Policy = WriteCompressSyncPolicy<typename ChunkTraits<ChunkT>::ProxyType>;
-        if (Policy::is_thread_writing_on(thr_rank, static_cast<const void*>(&chunk)))
+        if (Policy::is_thread_writing_on(thr_rank, &chunk))
         {
             return; // our own write session: the pass holding the mark is parked on our flag
         }

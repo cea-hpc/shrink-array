@@ -335,6 +335,7 @@ class WriteCompressSyncPolicy
     /**
      * @brief Does rank @p thr hold its writer flag on @p chunk -- is it inside
      *        a write critical section on THAT chunk?
+     * @tparam ChunkT the chunk type
      * @param thr   rank to test -- the caller's own
      * @param chunk the chunk
      * @return true while that rank's flag is @p chunk's address
@@ -342,7 +343,8 @@ class WriteCompressSyncPolicy
      *       relaxed load returns what this thread stored, in program order;
      *       no other thread writes a rank's flag.
      */
-    static bool is_thread_writing_on(int thr, const void* chunk) noexcept
+    template <typename ChunkT>
+    static bool is_thread_writing_on(int thr, const ChunkT* chunk) noexcept
     {
         return per_thread_writing[thr].v.load(std::memory_order_relaxed) == chunk;
     }

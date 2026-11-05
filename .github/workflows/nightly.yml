@@ -119,7 +119,14 @@ jobs:
       CC: gcc-14
       CXX: g++-14
       CMAKE_BUILD_PARALLEL_LEVEL: 2
-      ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:detect_stack_use_after_return=1
+      # print_module_map=1: the modules' load addresses in the report, so a faulting pc
+      # of an inlined frame can be disassembled in the binary the failure step uploads.
+      # dump_registers=1: the registers in a SEGV report (gcc 14's ASan prints none
+      # by default), so a high-address fault shows which pointer was garbage.
+      # disable_coredump=0: ASan turns core dumps off by default on 64 bits. Its shadow
+      # stays out of the core (use_madv_dontdump, on by default). The report prints the
+      # first faulting thread alone; the core has the stacks of all of them.
+      ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:detect_stack_use_after_return=1:print_module_map=1:dump_registers=1:disable_coredump=0
     steps:
       - uses: actions/checkout@v5
         with:
@@ -130,6 +137,14 @@ jobs:
           sudo apt-get install -y -q g++-14 ninja-build libbz2-dev
           g++-14 --version
           cmake --version
+      # In the log: the runners differ, and a failure may be tied to one of their CPUs.
+      - name: Runner CPU
+        run: lscpu
+      # The cores go to a directory of ours, not to apport (Ubuntu's core_pattern).
+      - name: Core dumps
+        run: |
+          mkdir -p "$RUNNER_TEMP/cores"
+          sudo sysctl -w kernel.core_pattern="$RUNNER_TEMP/cores/core.%e.%p"
       - name: Configure
         run: >
           cmake -S . -B build -G Ninja
@@ -139,13 +154,46 @@ jobs:
           -DCHECK_OPTIM=ON
           -DCHUNK_STATIC_SIZES=256
           -DCHUNK_BUILD_DYN=OFF
+          -DCHUNK_X86_MARCH=x86-64-v3
       - name: Build and run the validation harnesses (check target)
-        run: cmake --build build --target check
+        run: |
+          ulimit -c unlimited
+          cmake --build build --target check
       # The reader-vs-compression stress (read_reclaim_validation_*), many times over: a
       # race there shows once in tens of runs (one SEGV under ASan on 2026-11-02, in
       # zero_one_value's 8-thread case, not reproduced since). Stops at the first failure.
       - name: read_reclaim harnesses, repeated
-        run: ctest --test-dir build -R '^read_reclaim_validation_' --repeat until-fail:20 --timeout 600 --output-on-failure
+        run: |
+          ulimit -c unlimited
+          ctest --test-dir build -R '^read_reclaim_validation_' --repeat until-fail:20 --timeout 600 --output-on-failure
+      # On a failure, the validation executables (the faulting pc is an offset in one of
+      # them: print_module_map above), for objdump -d around it.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: asan-validation-binaries
+          path: build/examples/validation/validation_*_256
+          retention-days: 14
+      # The cores, for a closer look with the binary above.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: asan-core-dumps
+          path: ${{ runner.temp }}/cores
+          if-no-files-found: ignore
+          retention-days: 14
+      # On the runner: elsewhere gdb lacks Ubuntu's libasan and libc, and stops at their frames.
+      # The core's own name is cut at 15 characters; its execfn note has the full path.
+      - name: Stacks of every thread, from the cores
+        if: failure()
+        run: |
+          sudo apt-get install -y -q gdb
+          for core in "$RUNNER_TEMP"/cores/core.*; do
+            [ -e "$core" ] || continue
+            exe=$(file "$core" | sed -n "s/.*execfn: '\\([^']*\\)'.*/\\1/p")
+            echo "=== $core: $exe"
+            gdb -nx -batch -iex 'set debuginfod enabled off' -ex 'thread apply all bt 30' "$exe" "$core" 2>&1 || true
+          done
 
   # clang 23 (apt.llvm.org) with libstdc++ and libomp, OpenMP: the
   # diagnostics gcc does not give, and the OMPT tool (CHUNK_HAVE_OMPT), which

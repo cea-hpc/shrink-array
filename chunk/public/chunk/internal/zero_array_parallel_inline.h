@@ -24,13 +24,32 @@
 #include "chunk/internal/array_chunk_parallel_common_inline.h" // flush_pending_deferred_ops
 #include "chunk/PMP_CHUNK.h"                                   // CHUNK_PMP_* (make_block_compression)
 #include "chunk/internal/chunk_size_policy.h"                  // set_thread_chunk_size (make_block_compression)
-#include "chunk/config.h"                                      // build_config::chunk_dynamic
+#include "chunk/internal/invariant_check.h" // CHUNK_CHECK_FAILED (make_block_compression in a region)
+#include "chunk/internal/read_reclaim.h"    // read_reclaim::PassScope (drain_candidates in a region)
+#include "chunk/config.h"                   // build_config::chunk_dynamic
 
 namespace shrink_array
 {
 
 template <typename Derived>
 void zero::FastBlockSupport<Derived, true>::make_block_compression(this Derived& self)
+{
+    if (CHUNK_PMP_IN_PARALLEL_REGION)
+    {
+        // Refused inside a region: without a proxy the pass takes no writer
+        // handshake (steal_mark / start) and no reader grace period, so it
+        // would compress chunks other threads are writing or reading. The
+        // writers' own passes (perform_compression) compress in the region.
+        CHUNK_CHECK_FAILED(compress,
+                           "make_block_compression() called inside a parallel region: a sequential point, call it "
+                           "after the region");
+        return;
+    }
+    self.drain_candidates();
+}
+
+template <typename Derived>
+void zero::FastBlockSupport<Derived, true>::drain_candidates(this Derived& self)
 {
     if constexpr (build_config::chunk_dynamic)
     {
@@ -51,6 +70,10 @@ void zero::FastBlockSupport<Derived, true>::make_block_compression(this Derived&
     }
     else
     {
+        // An array resized inside a region by its owning thread (resize()):
+        // this thread's list only, and other threads may be reading, so the
+        // buffers released wait for a grace period (read_reclaim.h).
+        const read_reclaim::PassScope pass_scope;
         ChunkType::make_block_compression(CHUNK_PMP_THREAD_RANK, nullptr);
     }
 }
