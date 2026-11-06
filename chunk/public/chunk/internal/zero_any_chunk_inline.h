@@ -974,6 +974,23 @@ void zero_any::ChunkThreadPolicy<T, Derived, false>::clear_st(CstSlot* ptr_type_
     derived().init_values_cst_val(ptr_type_cst, ptr_second_value);
 }
 
+template <typename T, typename Derived, bool Enabled>
+void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::release_st(CstSlot*          ptr_type_cst,
+                                                                  SecondValueRef<T> ptr_second_value,
+                                                                  int               thr_rank)
+{
+    // CHUNK_STATS: a release, not a compression (block_clear counts those). The
+    // compression's own steps otherwise: type slot to cst1 and second-value slot
+    // reset BEFORE the CAS, then the buffer to free_block_to_pool() (ambient
+    // geometry: the caller's old one; the slab's owner key).
+    if constexpr (chunk_config::stats)
+    {
+        add_chunk_released<Derived>(1, static_cast<long>(sizeof(T)) *
+                                           static_cast<long>(shrink_array::alloc_chunk_count()));
+    }
+    Base::block_clear_common(0, 0, thr_rank, ptr_type_cst, ptr_second_value, nullptr);
+}
+
 /**
  * @brief Releases this chunk's buffer and points it back at a constant.
  *

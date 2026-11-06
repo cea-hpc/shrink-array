@@ -424,6 +424,18 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>
         clear_int_st(num_compress_value, ind, CHUNK_PMP_THREAD_RANK);
     }
 
+    /*!
+     * \brief Release this chunk's buffer to @p thr_rank's pool and point it at the
+     *        first constant, WITHOUT counting a compression: the re-chunk rebuild
+     *        releasing an old chunk it has transcribed (as zero::Chunk::release_st).
+     * \param ind      the array's second-value index (the chunk is not compressed
+     *                 to it: the caller checked owns_live_buffer())
+     * \param thr_rank rank whose pool receives the buffer
+     * \pre The chunk owns a live buffer, and the array is quiescent (no writer, no
+     *      pass): the refill's source.
+     */
+    void release_st(int ind, int thr_rank);
+
   private:
     /// @brief Point @p count freshly allocated chunks at the first constant.
     /// @details Parallel past 500 chunks, and only from OUTSIDE a parallel region. Inside

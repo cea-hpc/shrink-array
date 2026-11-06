@@ -59,6 +59,18 @@ the tag's checksum to the recipe.
 - `diag_zero_rechunk_slowdown.py`: the resident memory against the static run, the churn per array
   after the last re-chunk and, with `--perf`, the samples' share in the compression passes.
 
+### Changed
+
+- Re-chunk: `zero_one_value` and `zero_any` (and `pattern`) free each old chunk as soon as the
+  rebuild has copied it, as `zero` did, and rebuild in 16 slices with the fast allocator under
+  threads: each slice boundary recycles the slabs the slice emptied into the next slice's
+  allocations (`array_chunk_rechunk_refill.h`; the chunks' new `release_st()`). `bool` arrays
+  keep one pass. `zero_one_value_dyn`, x86-64, 2 threads, 10^8 elements: run peak 1,772 ->
+  1,724 MB, end +0.9% (the recycled slabs stay resident, as for `zero`); `zero_any`'s peak
+  on this benchmark is the initialisation's, unchanged. `rechunk_validation` gains
+  `sliced-val2-grow` and `sliced-val2-uneven`: sliced rebuilds mixing zero, second-value and
+  live sources.
+
 ### Fixed
 
 - `README.md` and `README_fr.md` gave the version as 0.1.

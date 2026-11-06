@@ -137,13 +137,22 @@ mesure à données constantes et la possibilité de revenir en arrière.
 6. **old-pool drain** : vider les réserves de l'ancienne taille et rendre au système les
    slabs devenus vides.
 
-**`zero`** reconstruit **par tranches** (16) et libère
-chaque ancien chunk dès qu'il est recopié. Entre deux tranches, les réserves de l'ancienne
+Chaque variante libère chaque ancien chunk dès qu'il est recopié (`release_st()` : le
+tampon retourne à la réserve, le chunk à la première constante ; un chunk à une seconde
+constante pointe sur un tableau partagé et n'est pas touché) et, avec l'allocateur rapide
+sous threads, reconstruit **par tranches** (16 ; les tableaux de `bool` de `zero_one_value`
+et `zero_any` gardent une seule passe). Entre deux tranches, les réserves de l'ancienne
 taille sont vidées et les slabs vidés rendus au système, y compris dans la **réserve
 partagée** quand l'ancien stockage s'y trouve : sans cela, la mémoire de l'ancien stockage
 restait acquise jusqu'à la fin de la reconstruction (sur `rechunk_validation`, pic de la
 reconstruction 78 → 22 Mo). Mesuré sur `zero` à 64 threads : pic de +6,9 Go en une passe,
-+1,7 Go avec 16 tranches.
++1,7 Go avec 16 tranches. Sur `zero_one_value` (x86-64, 2 threads, 10^8 éléments, 1 000
+itérations, trois runs chacun, novembre 2026), le pic du run passe de 1 772 à 1 724 Mo : un
+rechunk d'un stockage qui a ses propres slabs ajoute 0 à 60 Mo au lieu de 65 à 196 Mo. Le
+premier rechunk d'un tableau part encore de la réserve partagée (affinité paresseuse,
+section 5), dont les slabs ne se vident pas ; le mode immédiat n'y a pas fait mieux (pic
+1 732 Mo). Le pic de `zero_any`, sur ce banc, est celui de l'initialisation : ses rechunks
+matérialisent peu.
 
 ## 5. Les allocateurs par tableau (affinité)
 

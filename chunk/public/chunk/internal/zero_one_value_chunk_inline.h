@@ -1068,6 +1068,21 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, false>::clear_st(int ind)
     }
 }
 
+template <typename T, typename Derived, bool Enabled>
+void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::release_st(int ind, int thr_rank)
+{
+    // CHUNK_STATS: a release, not a compression (block_clear counts those): the
+    // bytes still leave the live figure. block_clear_common's CAS cannot lose --
+    // the source of a refill is quiescent -- and the buffer goes through
+    // free_block_to_pool(), routed by the ambient geometry (the caller's: the
+    // old one) and by the slab's owner key, as a compression's would.
+    if constexpr (chunk_config::stats)
+    {
+        add_chunk_released<Derived>(1, static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
+    }
+    Base::block_clear_common(0, ind, thr_rank);
+}
+
 /**
  * @brief Releases this chunk's buffer and points it back at a constant.
  *

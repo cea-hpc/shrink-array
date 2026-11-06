@@ -321,6 +321,18 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>, public ChunkC
         clear_int_st(num_compress_value, ptr_type_cst, ptr_second_value, CHUNK_PMP_THREAD_RANK);
     }
 
+    /*!
+     * \brief Release this chunk's buffer to @p thr_rank's pool and point it at the
+     *        first constant, WITHOUT counting a compression: the re-chunk rebuild
+     *        releasing an old chunk it has transcribed (as zero::Chunk::release_st).
+     * \param ptr_type_cst     Slot of the per-chunk type table (set to cst1).
+     * \param ptr_second_value The chunk's second-value slot (reset).
+     * \param thr_rank         Rank whose pool receives the buffer.
+     * \pre The chunk is materialised (written()), and the array is quiescent (no
+     *      writer, no pass, no reader): the refill's source.
+     */
+    void release_st(CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value, int thr_rank);
+
   private:
     /// @brief Point @p count freshly allocated chunks at the first constant.
     /// @details Parallel past 500 chunks, and only when called from OUTSIDE a
