@@ -140,8 +140,8 @@ measurement on unchanged data and the ability to go back.
 Every variant frees each old chunk as soon as it has been copied (`release_st()`: the
 buffer back to the pool, the chunk to the first constant; a chunk at a second constant
 points at a shared array and is left alone) and, with the fast allocator under threads,
-rebuilds **in slices** (16; the `bool` arrays of `zero_one_value` and `zero_any` keep one
-pass). Between slices, the pools of the old
+rebuilds **in slices** (16; `ArrayChunkBits`, bit-packed, keeps one pass). Between
+slices, the pools of the old
 size are drained and the emptied slabs returned to the system, including in the **shared
 pool** when the old storage lives there: without this, the old storage's memory
 stayed allocated until the end of the rebuild (on `rechunk_validation`, rebuild peak
@@ -240,8 +240,10 @@ is limited to the rebuilds.
   (the `churn` line of `CHUNK_LOG=rechunk=debug`), but a workload that writes heavily into constant regions
   could make a coarsening regrettable: this is the role of learning
   (`coarsen_trust_ratio`) and of the anti-reversal rule.
-- **Rechunking boolean arrays** is validated for `ArrayChunkBits` only
-  (`bits_container_validation`, `zero_one_value` at dyn); `zero_one_value::Array<bool>` and `zero_any::Array<bool>`
-  have no harness, and the benchmark does not hand `tab_bool` to the decider.
+- **Boolean arrays in the benchmark**: `tab_bool` and `tab_bool_bits` stay at their birth
+  geometry unless `--advise_bool` hands them to the decider, so that the two bool containers
+  are compared as they are. The rechunk of `Array<bool>` is checked by `rechunk_validation`
+  (`bool-grow`, `bool-shrink`, `bool-uneven`, `bool-sliced`, every variant), that of
+  `ArrayChunkBits` by `bits_container_validation` (`zero_one_value` at dyn).
 - **The peak remains the initial one**: a dynamic run that starts from 64 first reaches the
   memory of static 64, then goes down.

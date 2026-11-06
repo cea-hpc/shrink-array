@@ -140,8 +140,8 @@ mesure à données constantes et la possibilité de revenir en arrière.
 Chaque variante libère chaque ancien chunk dès qu'il est recopié (`release_st()` : le
 tampon retourne à la réserve, le chunk à la première constante ; un chunk à une seconde
 constante pointe sur un tableau partagé et n'est pas touché) et, avec l'allocateur rapide
-sous threads, reconstruit **par tranches** (16 ; les tableaux de `bool` de `zero_one_value`
-et `zero_any` gardent une seule passe). Entre deux tranches, les réserves de l'ancienne
+sous threads, reconstruit **par tranches** (16 ; `ArrayChunkBits`, compacté bit à bit,
+garde une seule passe). Entre deux tranches, les réserves de l'ancienne
 taille sont vidées et les slabs vidés rendus au système, y compris dans la **réserve
 partagée** quand l'ancien stockage s'y trouve : sans cela, la mémoire de l'ancien stockage
 restait acquise jusqu'à la fin de la reconstruction (sur `rechunk_validation`, pic de la
@@ -242,8 +242,10 @@ se limite aux reconstructions.
   (la ligne `churn` de `CHUNK_LOG=rechunk=debug`), mais un calcul qui écrit beaucoup dans des zones constantes
   pourrait faire regretter un grossissement : c'est le rôle de l'apprentissage
   (`coarsen_trust_ratio`) et de l'anti-retour.
-- **Le rechunk des tableaux de booléens** n'est validé que pour `ArrayChunkBits`
-  (`bits_container_validation`, `zero_one_value` en dyn) ; `zero_one_value::Array<bool>` et `zero_any::Array<bool>`
-  n'ont pas de test de validation, et le banc ne confie pas `tab_bool` au décideur.
+- **Les tableaux de booléens du banc** : `tab_bool` et `tab_bool_bits` restent à leur
+  géométrie de naissance, sauf si `--advise_bool` les confie au décideur, pour que les deux
+  conteneurs de booléens soient comparés tels quels. Le rechunk de `Array<bool>` est vérifié
+  par `rechunk_validation` (`bool-grow`, `bool-shrink`, `bool-uneven`, `bool-sliced`, toutes
+  variantes), celui d'`ArrayChunkBits` par `bits_container_validation` (`zero_one_value` en dyn).
 - **Le pic reste celui du départ** : un run dynamique qui part de 64 atteint d'abord la
   mémoire du statique 64, puis descend.

@@ -108,6 +108,10 @@ struct BenchArgs
     /// tab2, tab_short, tab_complex, tab_point), for runs that must compare with
     /// the campaigns made before the others were advised.
     bool advise_five     = false;
+    /// --advise_bool: hand tab_bool and tab_bool_bits to the decider too. Off by
+    /// default: both stay at their birth geometry, so that the two bool
+    /// containers are compared as they are, not after a re-chunk.
+    bool advise_bool = false;
     bool rechunk_dry_run = false; ///< --rechunk_dry_run: analyse and log, never move
     /// --rechunk_min_gain_mb: absolute deadband of the data-side gain, MB (0
     /// removes it); < 0 (not given): the policy's.

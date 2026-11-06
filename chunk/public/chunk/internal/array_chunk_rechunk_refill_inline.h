@@ -92,10 +92,10 @@ int RechunkSupport<Derived, true>::Refill::slice_count() const noexcept
     // empties the old slabs of the range just consumed and gives their pages
     // back BEFORE the next slice materialises: peak ~ old + new/slices.
     //
-    // 16 slices with the fast allocator and threads, for every variant that
-    // releases its sources (releases_sources: not zero_one_value / zero_any of
-    // bool, which have nothing to give back between slices -- the extra
-    // regions would be pure cost). The std allocator needs no slice: each
+    // 16 slices with the fast allocator and threads, for every array that
+    // releases its sources (releases_sources: not ArrayChunkBits, which has
+    // nothing to give back between slices -- the extra regions would be pure
+    // cost). The std allocator needs no slice: each
     // release is a free() the next allocation reuses.
     if constexpr (releases_sources && build_config::use_fast_alloc)
     {

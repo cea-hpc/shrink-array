@@ -30,12 +30,12 @@
  *            scan_sources     what the old chunks under the new one hold
  *            install_cst2     zero_any: one shared constant, installed, no buffer
  *            read_span        bulk read of the old chunks into the buffer
- *            release_sources  free the old chunks once fully transcribed (not bool)
+ *            release_sources  free the old chunks once fully transcribed
  *            copy_range       fill the new chunk (the public bulk API)
  *            fold_back        zero_any / zero_one_value: compress it at once
  *
  *          run() drives the slices (16 with the fast allocator and threads, 1
- *          otherwise or for bool), each a pmp::team region whose closing slice_boundary()
+ *          otherwise or for ArrayChunkBits), each a pmp::team region whose closing slice_boundary()
  *          sends the slice's released blocks home and recycles the slabs they
  *          emptied.
  *
@@ -54,7 +54,7 @@
 #include <vector>  // the release counters, the recycling scratch
 
 #include "chunk/PMP_CHUNK.h"                          // pmp::Team, ChunkPmpSchedule
-#include "chunk/bit.h"                                // is_bool_like_v (releases_sources)
+#include "chunk/bit.h"                                // is_packed_bit_v (releases_sources)
 #include "chunk/chunk_traits.h"                       // is_zero_any_family_v
 #include "chunk/config.h"                             // chunk_config::use_zero_one_value
 #include "chunk/internal/array_chunk_rechunk.h"       // RechunkSupport, the class Refill is nested in
@@ -187,9 +187,12 @@ class RechunkSupport<Derived, true>::Refill
     /// family carries its constants implicitly.
     static constexpr bool second_index = internal::rechunk_second_index_v<Derived, ChunkType>;
     /// The refill frees each old chunk once transcribed (release_sources()):
-    /// threaded builds, every variant; bool / Bit only for zero (their
-    /// zero_one_value / zero_any chunks have bit-packed constants of their own).
-    static constexpr bool releases_sources = build_config::threaded && (chunk_config::use_zero || !is_bool_like_v<T>);
+    /// threaded builds, every variant and element type but Bit. An
+    /// ArrayChunkBits (zero_one_value::Array<Bit>) packs 8 elements per byte
+    /// and has a geometry of its own (packed_bit_birth_factor): its rebuild
+    /// stays one pass that frees nothing early. Array<bool> is one byte per
+    /// bool, released like any other type.
+    static constexpr bool releases_sources = build_config::threaded && !is_packed_bit_v<T>;
     /// The fresh array's second-value record (zero_one_value), int otherwise.
     using SecondInfo = decltype(internal::rechunk_second_info<Derived, ChunkType>(std::declval<const Derived&>()));
 
