@@ -306,7 +306,11 @@ SCALING_CONFIGS  = ["cmake-build-omp-llvm", "cmake-build-omp-gnu"]
 # The curve every container is read against: no chunk, no compression, so a
 # bend it shares is the machine's, and one only the chunk variants show is ours.
 SCALING_REFERENCE_VARIANT = "vector"
-SCALING_THREADS  = [4, 8, 16, 32, 64, 128]
+# Past 128, for the 2 x 160-core AMD Turin: 160 fills one socket, 256 and 320 cross
+# to the second one, where a bend can be the machine's: read them against vector.
+# A machine with fewer CPUs drops these points (see run_scaling_phase), its curve
+# is unchanged; 160 and 256 run on the 288-core node.
+SCALING_THREADS  = [4, 8, 16, 32, 64, 128, 160, 256, 320]
 # The guard runs the int64 binaries (shrink_bench_<backend>_<variant>_int64_<size>, see
 # int64_variant) at --multiply 2: arrays past INT_MAX elements, so the curves
 # also cover the 64-bit index path at the scale it exists for. --iter_max 500
@@ -407,7 +411,7 @@ MODE_PRESETS = {
         "perf_drop":         [],
         # From 16 threads: the low points of int64 --multiply 2 are the
         # longest runs of the guard (minutes each); full keeps them.
-        "scaling": {"configs": SCALING_CONFIGS, "threads": [16, 32, 64, 128], "sizes": None},
+        "scaling": {"configs": SCALING_CONFIGS, "threads": [16, 32, 64, 128, 160, 256, 320], "sizes": None},
         "seq_omp": {"threads": DEFAULT_SEQ_OMP_THREADS, "sizes": DEFAULT_SEQ_OMP_SIZES},
     },
     "full": {
