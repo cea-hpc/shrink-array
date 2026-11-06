@@ -36,7 +36,6 @@
 #include "chunk/internal/write_compress_sync_policy.h" // WriteCompressSyncPolicy::is_thread_writing_on (wait_before_materialise)
 #include "chunk/chunk_traits.h"                        // ChunkTraits<ChunkT>::ProxyType (wait_before_materialise)
 #include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef
-#include "chunk/internal/test_hooks.h"          // TEST KNOB: test_hooks::maybe_pass_delay
 #include "chunk/internal/queue_flag.h"          // queue_flag::hand_back / release: the pass's hand-back
 
 /**
@@ -361,68 +360,10 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
         Derived::compress_motif_candidates(thr);
     }
 
-    // The candidates a writer queued while this pass handed them back: queued again
-    // into this rank's list once it is emptied (queue_flag::release()).
-    std::remove_cvref_t<decltype(vec_tuple_to_compress)> requeued;
-
-    for (int k = 0; k < sz; ++k)
-    {
-        const auto& tup       = vec_tuple_to_compress[k];
-        const int   num_chunk = std::get<1>(tup);
-        // A negative num_chunk is a corrupt entry (purged entries are erased): reported in
-        // check builds, skipped otherwise.
-        if constexpr (build_config::any_check)
-        {
-            if (num_chunk < 0) [[unlikely]]
-            {
-                CHUNK_INVARIANT_FAILED("zero_any block pass: candidate {} of {} has num_chunk={}", k, sz, num_chunk);
-            }
-        }
-        // Hand the candidate back: its mark FIRST, then the dedup flag. While the flag is up
-        // the chunk is in no other thread's list, so this unmark only drops our own claim.
-        // The other order lets another thread queue the chunk, start its pass and mark it,
-        // and this unmark would erase that claim: writers would then write into a chunk
-        // that pass is scanning and stealing.
-        if (auto* const chunk_t = std::get<0>(tup))
-        {
-            chunk_t->steal_unmark();
-        }
-        test_hooks::maybe_pass_delay(); // TEST KNOB (test_hooks.h)
-        if constexpr (build_config::any_check)
-        {
-            if (auto* const marked = std::get<0>(tup); marked != nullptr && marked->steal_marked()) [[unlikely]]
-            {
-                CHUNK_INVARIANT_FAILED("compression pass: candidate {} was marked while this pass still held its "
-                                       "dedup flag -- two passes on one chunk",
-                                       marked);
-            }
-        }
-        if (num_chunk >= 0)
-        {
-            const int num_tab = std::get<2>(tup);
-
-            if (build_config::threaded && std::get<0>(tup) != nullptr)
-            {
-                // The end of the hand-back started above: free, or queued again if a
-                // writer noted itself meanwhile.
-                if (queue_flag::release(ProxyType::Base::get_tab_is_inside_list_to_compress(num_tab)[num_chunk]))
-                {
-                    requeued.push_back(tup);
-                }
-            }
-            else
-            {
-                ProxyType::Base::reset_tab_inside_list_to_compress(num_tab, num_chunk);
-            }
-        }
-    }
-
-    vec_tuple_to_compress.clear();
-    vec_tuple_to_compress.reserve((sz / 10) + 1);
-    for (const auto& tup : requeued)
-    {
-        vec_tuple_to_compress.push_back(tup);
-    }
+    queue_flag::release_candidates(
+        vec_tuple_to_compress, sz, [](int num_tab, int num_chunk) -> auto&
+        { return ProxyType::Base::get_tab_is_inside_list_to_compress(num_tab)[num_chunk]; },
+        [](int num_tab, int num_chunk) { ProxyType::Base::reset_tab_inside_list_to_compress(num_tab, num_chunk); });
 
     if (proxy2a)
     {
