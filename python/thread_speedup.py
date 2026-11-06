@@ -65,7 +65,7 @@ bench_and_test.py generated for the target (--oracle-dir, default
 was made: --multiply 1, no --no_io. The build root is --build-root, else
 $CHUNK_BUILD_ROOT, else $CHUNK_BUILD_REP (scripts/site_env.sh), else the
 repository; the executable is looked up under
-<root>/cmake-build-<target>/<dir ending with this machine's arch>/examples/shrink_bench/.
+<root>/cmake-build-<target>/<dir ending with this machine's arch, this system's first>/examples/shrink_bench/.
 
 --pool ID (shrink_gui's "Nœuds" field: one batch job per node, the same
 command plus --pool=<the submission>): the runs given the same ID share the
@@ -131,6 +131,15 @@ except ImportError:
         if rest.startswith("tbb_"):
             return ["shrink_bench_" + rest]
         return ["shrink_bench_%s_%s" % (b, rest) for b in ("omp", "std", "serial")]
+try:
+    # This system's build first: Milan on RHEL 8 and Turin on RHEL 9 are both x86_64.
+    from bench_runner.settings import results_dir_name, this_os_first
+except ImportError:
+    def results_dir_name():                     # copied alone: the machine
+        return platform.machine()
+
+    def this_os_first(dirs, name=None):         # copied alone: the sorted order
+        return dirs
 SIZES = ["dyn", "1024", "256", "64"]
 ORACLE_MARKER = "data_tab_ORACLE_COMPLETE.marker"  # bench_runner/builds.py
 REPO = os.path.dirname(HERE)
@@ -168,6 +177,11 @@ def shown_name(name):
     return "shrink_bench_{%s}_%s" % (",".join(n.split("_")[2] for n in names), name)
 
 
+def arch_of(exe_dir):
+    """The $arch of <cfg>/<arch>/examples/shrink_bench."""
+    return os.path.basename(os.path.dirname(os.path.dirname(exe_dir)))
+
+
 def glob_execs(root, target, pattern):
     """[(name, path)] of the executables of the target matching glob @p pattern
     (shrink_gui's "Choisir..." gives some), for this machine."""
@@ -175,8 +189,8 @@ def glob_execs(root, target, pattern):
     cfg = target if target.startswith("cmake-build-") else "cmake-build-" + target
     arch = platform.machine()
     out = {}
-    for d in sorted(glob.glob(os.path.join(root, cfg, "*", EXE_SUBPATH))):
-        if not os.path.basename(os.path.dirname(os.path.dirname(d))).endswith(arch):
+    for d in this_os_first(sorted(glob.glob(os.path.join(root, cfg, "*", EXE_SUBPATH))), name=arch_of):
+        if not arch_of(d).endswith(arch):
             continue
         for f in sorted(os.listdir(d)):
             p = os.path.join(d, f)
@@ -217,7 +231,7 @@ def default_oracle_dir(target):
     its default output dir being $CCCWORKDIR/bench_results (else the cwd)."""
     work = os.environ.get("CCCWORKDIR", "")
     base = os.path.join(work, "bench_results") if work and os.path.isdir(work) else os.getcwd()
-    return os.path.join(base, platform.machine(), "oracle", "cmake-build-" + target)
+    return os.path.join(base, results_dir_name(), "oracle", "cmake-build-" + target)
 
 
 def build_root(arg):
@@ -238,8 +252,8 @@ def find_exe(root, target, spec):
     names = [name] if name.startswith("shrink_bench_") else bench_exe_names(name)
     cfg = target if target.startswith("cmake-build-") else "cmake-build-" + target
     arch = platform.machine()
-    dirs = sorted(glob.glob(os.path.join(root, cfg, "*", EXE_SUBPATH)))
-    dirs = [d for d in dirs if os.path.basename(os.path.dirname(os.path.dirname(d))).endswith(arch)]
+    dirs = this_os_first(sorted(glob.glob(os.path.join(root, cfg, "*", EXE_SUBPATH))), name=arch_of)
+    dirs = [d for d in dirs if arch_of(d).endswith(arch)]
     dirs += [os.path.join(root, cfg, EXE_SUBPATH), os.path.join(root, cfg)]
     for d in dirs:
         for n in names:

@@ -638,7 +638,7 @@ ArrayChunkBase<Derived>::operator[](this Derived& self, IndType index) noexcept
 {
     if constexpr (build_config::strict_element_ref)
     {
-        return reference(self.element_proxy(index));
+        return reference(element_ref_detail::from_array, self, index);
     }
     else
     {
@@ -656,8 +656,11 @@ ArrayChunkBase<Derived>::element_proxy(this Derived& self, IndType index) noexce
     [[maybe_unused]] const int chunk_mod = static_cast<int>(self.size_policy_.modulo());
     CHUNK_ASSUME(num_chunk >= 0);
     CHUNK_ASSUME(num >= 0 && num <= chunk_mod);
-    auto&            chunk_t = self.chunk_list_[num_chunk];
-    const ProxyType& val     = chunk_t[num];
+    auto& chunk_t = self.chunk_list_[num_chunk];
+    // Built here, returned by NRVO, so that a read through a[i] copies no proxy:
+    // not every compiler folds the copies away, and on the stack they cost
+    // (an unaligned store across a page, on the threads whose stack puts it there).
+    ProxyType val = chunk_t[num];
 
     // Arm ptr_on_array / num_chunk in ALL modes, not only under fast block
     // compression: in non-OpenMP builds too, set_num_tab() and

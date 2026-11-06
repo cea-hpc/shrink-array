@@ -95,6 +95,7 @@ et `CHUNK_ADVISOR_TABLE`.
 |---|---|
 | `--advisor_period <n>` | période des passages de l'advisor, en itérations (défaut `max(10, iter_max / 20)` ; 0 le désactive) |
 | `--advise_five` | seuls les cinq tableaux historiques sont confiés au décideur (défaut : tous les tableaux sauf `tab_bool` et `tab_bool_bits`) |
+| `--advise_bool` | `tab_bool` et `tab_bool_bits` sont aussi confiés au décideur (défaut : ils restent à leur géométrie de naissance, pour que les deux conteneurs de booléens soient comparés tels quels) |
 | `--rechunk_dry_run` | le décideur analyse et journalise, mais n'applique aucun rechunk (`RechunkPolicy::dry_run`) |
 | `--rechunk_max_coarsen <n>` | facteur maximal d'un grossissement (`max_coarsen_factor`, 4 ; 1 = sans limite) |
 | `--rechunk_min_gain_mb <x>` | seuil absolu de gain côté données, en Mo (`min_gain_bytes`, 8 ; 0 le supprime) |

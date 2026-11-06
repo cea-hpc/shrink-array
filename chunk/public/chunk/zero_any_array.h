@@ -30,7 +30,7 @@
 #include <type_traits>      // std::is_same_v (reclaim_second_values: bool has no registry)
 
 #include "chunk/internal/second_value_array_base.h"     // for SecondValueArrayBase
-#include "chunk/internal/zero_any_array_parallel.h"     // zero_any::ParallelSupport — OpenMP-only mixin
+#include "chunk/internal/array_chunk_parallel_common.h" // ParallelSupport -- OpenMP-only mixin
 #include "chunk/internal/array_chunk_rechunk_hooks.h"   // RechunkHooks — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
 #include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
@@ -425,7 +425,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
 
     /// @brief Compress every chunk currently queued as a candidate, on every thread's list.
     /// @note A sequential point: refused inside a parallel region (see
-    ///       zero::FastBlockSupport::make_block_compression()).
+    ///       block_pass_refused_in_region()).
     static void make_block_compression();
 
   private:
@@ -640,5 +640,5 @@ class Array : public ArrayImpl<Array<T, IntType>>
 
 // Bodies of the two mode-specific mixins. After zero_any_array_inline.h, so their
 // CRTP self() sees a complete zero_any::Array.
-#include "chunk/internal/zero_any_array_parallel_inline.h"   // zero_any::ParallelSupport's bodies
-#include "chunk/internal/array_chunk_rechunk_hooks_inline.h" // RechunkHooks' bodies
+#include "chunk/internal/array_chunk_parallel_common_inline.h" // flush_pending_deferred_ops
+#include "chunk/internal/array_chunk_rechunk_hooks_inline.h"   // RechunkHooks' bodies

@@ -152,3 +152,34 @@ def test_a_failure_stops_both_jobs(tmp_path):
     assert [r["returncode"] for r in rows].count("3") >= 1
     assert "🛑 [pool] P2: stopped by " in outs[codes.index(1)]
     assert "stopped for every job" in outs[codes.index(3)]
+
+
+def _draws(tmp_path, *extra):
+    """The thread counts of 300 runs of a binary that exits at once."""
+    d = tmp_path / "cmake-build-omp-a"
+    d.mkdir()
+    exe = d / "shrink_bench_omp_zero_one_value_dyn"
+    exe.write_text("#!/bin/bash\n")
+    exe.chmod(0o755)
+    env = dict(os.environ)
+    env.pop("CHUNK_BUILD_ROOT", None)
+    subprocess.run([sys.executable, str(PYDIR / "multi_launch_stress.py"), "--builds", "omp-a",
+                    "--build-root", str(tmp_path), "--run-dir", str(tmp_path / "out"), "--runs", "300",
+                    "--min_threads", "10", "--max_threads", "320", "--numa-interleave", "off", *extra],
+                   check=True, stdout=subprocess.DEVNULL, env=env, cwd=str(tmp_path), timeout=120)
+    with open(tmp_path / "out" / "timings_summary.csv", newline="") as f:
+        return [int(r["num_threads"]) for r in csv.DictReader(f)]
+
+
+def test_peak_threads_weights_the_draw(tmp_path):
+    draws = _draws(tmp_path, "--peak_threads", "96", "--peak_share", "0.7")
+    near = sum(72 <= t <= 120 for t in draws)
+    assert len(draws) == 300 and all(10 <= t <= 320 for t in draws)
+    assert near > 150                         # 75 % expected, uniform would give 15 %
+    assert any(t > 120 for t in draws) and any(t < 72 for t in draws)   # the range is still run
+
+
+def test_peak_threads_outside_the_range_is_refused():
+    r = subprocess.run([sys.executable, str(PYDIR / "multi_launch_stress.py"), "--min_threads", "10",
+                        "--max_threads", "20", "--peak_threads", "96"], capture_output=True, text=True)
+    assert r.returncode != 0 and "outside 10..20" in r.stderr

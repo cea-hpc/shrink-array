@@ -92,6 +92,7 @@ to one, as the former `=name` values of `CHUNK_RECHUNK_CHURN` and `CHUNK_ADVISOR
 |---|---|
 | `--advisor_period <n>` | period of the advisor passes, in iterations (default `max(10, iter_max / 20)`; 0 disables it) |
 | `--advise_five` | only the five historical arrays are handed to the decider (default: all arrays except `tab_bool` and `tab_bool_bits`) |
+| `--advise_bool` | `tab_bool` and `tab_bool_bits` are handed to the decider too (default: they stay at their birth geometry, so that the two bool containers are compared as they are) |
 | `--rechunk_dry_run` | the decider analyses and logs, but applies no rechunk (`RechunkPolicy::dry_run`) |
 | `--rechunk_max_coarsen <n>` | maximum factor of a coarsening (`max_coarsen_factor`, 4; 1 = no limit) |
 | `--rechunk_min_gain_mb <x>` | absolute threshold for the data-side gain, in MB (`min_gain_bytes`, 8; 0 removes it) |

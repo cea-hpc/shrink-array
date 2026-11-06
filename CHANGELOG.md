@@ -54,6 +54,37 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
+### Added
+
+- `shrink_bench --advise_bool`: hands `tab_bool` and `tab_bool_bits` to the re-chunk decider
+  (off by default: the two bool containers stay at their birth geometry, to be compared as
+  they are). `rechunk_validation` gains `bool-sliced`: `Array<bool>` through the sliced
+  rebuild, for the three variants.
+- `docs/gpu_design.md`, the English version of the GPU design document
+  (`docs/conception_gpu_fr.md`); `check_docs.py` checks the pair like the others.
+- `multi_launch_stress.py --peak_threads N [--peak_share F]`: most thread counts drawn near N,
+  the top of the speedup curve, the others still uniform over the range. In `shrink_gui` too.
+- `diag_zero_rechunk_slowdown.py`: the resident memory against the static run, the churn per array
+  after the last re-chunk and, with `--perf`, the samples' share in the compression passes.
+
+### Changed
+
+- Re-chunk: `zero_one_value` and `zero_any` (and `pattern`) free each old chunk as soon as the
+  rebuild has copied it, as `zero` did, and rebuild in 16 slices with the fast allocator under
+  threads: each slice boundary recycles the slabs the slice emptied into the next slice's
+  allocations (`array_chunk_rechunk_refill.h`; the chunks' new `release_st()`), `bool`
+  arrays included; `ArrayChunkBits` (bit-packed) keeps one pass. `zero_one_value_dyn`, x86-64, 2 threads, 10^8 elements: run peak 1,772 ->
+  1,724 MB, end +0.9% (the recycled slabs stay resident, as for `zero`); `zero_any`'s peak
+  on this benchmark is the initialisation's, unchanged. `rechunk_validation` gains
+  `sliced-val2-grow` and `sliced-val2-uneven`: sliced rebuilds mixing zero, second-value and
+  live sources.
+
+### Fixed
+
+- `README.md` and `README_fr.md` gave the version as 0.1.
+- `check_doxygen.py` run by hand with no Doxygen installed ended on a
+  `FileNotFoundError` traceback: it says Doxygen is not found and exits 77 (skipped).
+
 ## 0.2.1 -- 2026-11-05
 
 ### Added

@@ -417,7 +417,7 @@ Two development branches, not in a release yet, and what comes next:
 
 - **GPU -- coming soon.** A backend for NVIDIA and AMD GPUs is being designed: phases rather
   than handshakes, a device-side chunk format, a staged plan
-  ([docs/conception_gpu_fr.md](docs/conception_gpu_fr.md), in French for now).
+  ([docs/gpu_design.md](docs/gpu_design.md)).
 
 `develop` is merged into `cpp23` as it moves, and `cpp23` into `cpp26`; `cpp23` is also a
 Spack version (`spack install shrink-array@cpp23`).
@@ -449,7 +449,7 @@ exists in French ([docs/README.md](docs/README.md)); the changes from one versio
 
 ## Status and contributing
 
-shrink-array is at version 0.1: before 1.0, a minor release may change the interface
+shrink-array is at version 0.2: before 1.0, a minor release may change the interface
 ([versioning policy](CHANGELOG.md)). Every push runs the source checks, the GCC 14 builds
 (OpenMP, serial and std threads with oneTBB), the validation harnesses, the std backend under
 ThreadSanitizer and the GenMC models, the OpenMP build on x86-64 and on AArch64

@@ -231,6 +231,10 @@ BenchArgs parse_bench_args(int argc, char* argv[])
             {
                 args.advise_five = true;
             }
+            else if (arg == "--advise_bool")
+            {
+                args.advise_bool = true;
+            }
             else if (arg == "--rechunk_dry_run")
             {
                 args.rechunk_dry_run = true;

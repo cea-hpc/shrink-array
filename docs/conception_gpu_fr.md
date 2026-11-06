@@ -1,6 +1,6 @@
 # Portage GPU : premier document de conception
 
-> English version: à écrire quand la conception sera stabilisée (`gpu_design.md`).
+> English version: [gpu_design.md](gpu_design.md).
 
 > État : octobre 2026, **avant tout prototype**. Ce document fixe ce qu'un backend GPU de
 > shrink-array devrait être, ce qu'il reprend de la version CPU et ce qu'il abandonne, et le
@@ -481,7 +481,7 @@ l'est côté CPU (`docs/getting_started_fr.md` §5).
 |---|---|---|
 | **0. Prototype** (1 à 2 semaines) | hors arbre, HIP ou CUDA, `zero_any` seul, S = 256 et 1024 fixes, trois kernels (lecture ; écriture avec bump + agrégation par warp + CAS ; `compress()` par vote + compaction CUB/hipCUB) ; banc : lecture streaming, réécriture par plages aléatoires comme `shrink_bench`, contre un tableau plat | lecture ≤ 1,5× le tableau plat ; écriture dans un chunk matérialisé ≤ 2× ; `compress()` de 10 Go matérialisés ≤ 10 ms. **Si la lecture dépasse 2×, la conception est à revoir avant d'aller plus loin** |
 | 1. Cœur dans l'arbre | `chunk/public/chunk/device/` : descripteur, view, proxy, arène, append-buffer, `compress()`, `intrinsics.h` CUDA + HIP ; `zero_any` et `zero` ; convertisseur hôte ↔ device ; tests de validation contre la version CPU sur les mêmes séquences d'écritures ; CI sur un runner GPU si disponible, sinon compilation seule | les validations passent à l'identique CPU/GPU ; même mémoire finale que la variante CPU à géométrie égale |
-| 2. Phases et banc | `parallel_for` aligné et vote avant matérialisation ; `shrink_bench` device (phases du banc contre `DeviceArray`) ; mesures H100 / MI250X ou MI300A ; documentation (ce document mis à jour avec les chiffres, version anglaise) | chiffres publiés dans `variantes_fr.md` |
+| 2. Phases et banc | `parallel_for` aligné et vote avant matérialisation ; `shrink_bench` device (phases du banc contre `DeviceArray`) ; mesures H100 / MI250X ou MI300A ; documentation (ce document et sa version anglaise mis à jour avec les chiffres) | chiffres publiés dans `variantes_fr.md` |
 | 3. Façade Kokkos | `kokkos_adaptor.h`, `parallel_for` Kokkos marquant les phases, `memory_fence` à la place de release/acquire | un exemple Kokkos ; mêmes validations |
 | 4. `zero_one_value`, `pattern` | 8.2, 8.4 | validations ; gain mesuré de `pattern` sur une connectivité |
 | 5. Géométrie dynamique | 9.3 | `rechunk_validation` device |

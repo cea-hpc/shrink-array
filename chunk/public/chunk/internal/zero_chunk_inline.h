@@ -35,7 +35,6 @@
 #include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_*, pmp::team, pmp::in_application_phase
 #include "chunk/internal/pool_ledger.h"         // CHUNK_LEDGER_*
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
-#include "chunk/internal/test_hooks.h"          // TEST KNOB: test_hooks::maybe_pass_delay
 #include "chunk/internal/queue_flag.h"          // queue_flag::hand_back / release: the pass's hand-back
 
 namespace shrink_array
@@ -355,51 +354,10 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int 
         set_thread_chunk_size(saved_sz);
     }
 
-    // The candidates a writer queued while this pass handed them back (queue_flag::release()).
-    std::remove_cvref_t<decltype(vec_tuple_to_compress)> requeued;
-
-    for (int k = 0; k < sz; ++k)
-    {
-        const auto& tup = vec_tuple_to_compress[k];
-
-        const int num_chunk = std::get<1>(tup);
-
-        const int num_tab = std::get<2>(tup);
-        // Hand the candidate back: its mark FIRST, then the dedup flag (the reverse order can
-        // erase another pass's claim: see zero_any::Chunk<T>::make_block_compression).
-        if (auto* const chunk_t = std::get<0>(tup))
-        {
-            chunk_t->steal_unmark();
-        }
-        test_hooks::maybe_pass_delay(); // TEST KNOB (test_hooks.h)
-        if constexpr (build_config::any_check)
-        {
-            if (auto* const marked = std::get<0>(tup); marked != nullptr && marked->steal_marked()) [[unlikely]]
-            {
-                CHUNK_INVARIANT_FAILED("compression pass: candidate {} was marked while this pass still held its "
-                                       "dedup flag -- two passes on one chunk",
-                                       marked);
-            }
-        }
-        if (build_config::threaded && std::get<0>(tup) != nullptr)
-        {
-            if (queue_flag::release(zero::Proxy<T>::get_tab_is_inside_list_to_compress(num_tab)[num_chunk]))
-            {
-                requeued.push_back(tup);
-            }
-        }
-        else
-        {
-            zero::Proxy<T>::reset_tab_inside_list_to_compress(num_tab, num_chunk);
-        }
-    }
-
-    vec_tuple_to_compress.clear();
-    vec_tuple_to_compress.reserve((sz / 10) + 1);
-    for (const auto& tup : requeued)
-    {
-        vec_tuple_to_compress.push_back(tup);
-    }
+    queue_flag::release_candidates(
+        vec_tuple_to_compress, sz, [](int num_tab, int num_chunk) -> auto&
+        { return zero::Proxy<T>::get_tab_is_inside_list_to_compress(num_tab)[num_chunk]; },
+        [](int num_tab, int num_chunk) { zero::Proxy<T>::reset_tab_inside_list_to_compress(num_tab, num_chunk); });
 
     if (guarded)
     {

@@ -49,9 +49,10 @@ const std::vector<std::string> valid_args = {
     "--test_stl", "--test_prealloc", "--no_struct", "--no_mask", "--mask_scale", "--no_conn", "--conn_scale",
     "--checksum_only", "--help",
     // The adaptive re-chunk (dyn builds), bench_args.h.
-    "--advisor_period", "--advise_five", "--rechunk_dry_run", "--rechunk_min_gain_mb", "--rechunk_coarsen_min_meta_mb",
-    "--rechunk_coarsen_min_meta_rate", "--rechunk_max_coarsen", "--rechunk_grid_bits", "--rechunk_backoff_max",
-    "--rechunk_trace_array", "--force_rechunk", "--force_rechunk_at", "--force_rechunk_alt", "--force_rechunk_toggle"};
+    "--advisor_period", "--advise_five", "--advise_bool", "--rechunk_dry_run", "--rechunk_min_gain_mb",
+    "--rechunk_coarsen_min_meta_mb", "--rechunk_coarsen_min_meta_rate", "--rechunk_max_coarsen", "--rechunk_grid_bits",
+    "--rechunk_backoff_max", "--rechunk_trace_array", "--force_rechunk", "--force_rechunk_at", "--force_rechunk_alt",
+    "--force_rechunk_toggle"};
 
 // -----------------------------------------------------------------------------
 // Seed persistence.

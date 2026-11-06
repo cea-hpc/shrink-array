@@ -19,9 +19,20 @@ def shq(v):
 
 # Are the executables of the builds a run uses up to date? On the node, before
 # the command: `ninja -n` on the executables already built under examples/ of
-# each build directory of this architecture -- the targets compile_all.sh made,
-# not those it was never asked to build. "[n/m] ..." lines = work to do =
+# each build directory of this architecture, this system's first ($arch as
+# compile_all.sh writes it) -- the targets compile_all.sh made, not those it was
+# never asked to build. "[n/m] ..." lines = work to do =
 # stale. Exit 96 ("refuse") or a warning ("warn"). Without ninja, skipped.
+# build.ninja read under another name: the glob of cmake/shrink_build_stamp.cmake
+# (CONFIGURE_DEPENDS) makes CMake's check always due, and `ninja -n` stops after
+# that manifest step, on "[1/2] Re-running CMake...", never looking at the
+# executables: every build would be stale, its real state unknown. Only the
+# name build.ninja gets that step.
+# The build stamp's steps alone are not stale: the stamp depends on .git/HEAD
+# (cmake/shrink_build_stamp.cmake), so that any commit, a documentation one
+# too, gives its generation, its compilation and the link of the executables
+# that carry it, with no source changed. A changed source always adds a
+# compilation of its own. Not seen: a relink for a changed external library.
 CHECK_BUILDS_SH = r"""
 gui_check_builds() {
     local mode="$1" root="$2"; shift 2
@@ -29,18 +40,26 @@ gui_check_builds() {
     if ! command -v ninja >/dev/null 2>&1; then
         echo "[gui] build check: no ninja on this node, skipped"; return 0
     fi
-    local arch b name d n=0 stale=() unknown=() exes out
+    local arch mine b name d n=0 stale=() unknown=() exes out manifest rc
     arch=$(uname -m)
+    mine=$(source /etc/os-release 2>/dev/null && echo "${ID^^}_${VERSION_ID}__$arch")
     for b in "$@"; do
         name="$b"; [[ "$name" == cmake-build-* ]] || name="cmake-build-$name"
-        for d in "$root/$name"/*__"$arch" "$root/$name"; do
+        for d in "$root/$name/$mine" "$root/$name"/*__"$arch" "$root/$name"; do
             [ -f "$d/build.ninja" ] || continue
+            [ -z "$mine" ] || [[ "$d" == "$root/$name" || "$d" == */"$mine" ]] ||
+                echo "[gui] build check: no $mine build of $name, checking $d"
             mapfile -t exes < <(cd "$d" && find examples -type f -perm -u+x -not -path '*/CMakeFiles/*' 2>/dev/null | sort)
             [ ${#exes[@]} -gt 0 ] || break
             n=$((n + 1))
-            if ! out=$(ninja -C "$d" -n "${exes[@]}" 2>&1); then
+            manifest=$(mktemp -d)
+            ln -s "$(cd "$d" && pwd)/build.ninja" "$manifest/m.ninja"
+            out=$(ninja -C "$d" -f "$manifest/m.ninja" -n "${exes[@]}" 2>&1)
+            rc=$?
+            rm -rf "$manifest"
+            if [ $rc -ne 0 ]; then
                 unknown+=("$d")
-            elif grep -q '^\[' <<< "$out"; then
+            elif grep '^\[' <<< "$out" | grep -qvE 'Build stamp|build_stamp\.cpp|Linking CXX executable'; then
                 stale+=("$d ($(grep -c '^\[' <<< "$out") step(s))")
             fi
             break

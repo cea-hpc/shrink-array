@@ -359,8 +359,6 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/all_type_chunk_inline.h
         public/chunk/internal/arithmetic_context.h
         public/chunk/internal/zero_any_array_inline.h
-        public/chunk/internal/zero_any_array_parallel.h
-        public/chunk/internal/zero_any_array_parallel_inline.h
         public/chunk/internal/pattern_proxy.h
         public/chunk/internal/motif_region.h
         public/chunk/internal/second_value_array_base.h

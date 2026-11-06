@@ -127,93 +127,83 @@ class ManagerChunk;
 // What is common to all of them is ArrayChunkCore<ChunkType>
 // (array_chunk_core.h), which is what ArrayChunkFor names.
 
+/**
+ * @brief What a chunk type maps to, for one variant.
+ * @tparam ChunkT the variant's chunk template
+ * @tparam ProxyT the variant's proxy template
+ * @tparam T stored element type
+ */
+template <template <typename> class ChunkT, template <typename> class ProxyT, typename T>
+struct VariantChunkTraits
+{
+    using ProxyType   = ProxyT<T>;               ///< Write proxy returned by the non-const accessors.
+    using ManagerType = ManagerChunk<ChunkT, T>; ///< Per-type manager owning the compression machinery.
+};
+
 template <typename C>
 struct ChunkTraits;
 
-/// @brief Chunk<T> maps to Proxy<T> and ManagerChunk<Chunk, T>.
 template <typename T>
-struct ChunkTraits<zero::Chunk<T>>
+struct ChunkTraits<zero::Chunk<T>> : VariantChunkTraits<zero::Chunk, zero::Proxy, T>
 {
-    using ProxyType   = zero::Proxy<T>;               ///< Write proxy returned by the chunk's non-const operator[].
-    using ManagerType = ManagerChunk<zero::Chunk, T>; ///< Per-type manager owning the compression machinery.
 };
 
-/// @brief zero_one_value::Chunk<T> maps to zero_one_value::Proxy<T> and ManagerChunk<zero_one_value::Chunk, T>.
 template <typename T>
-struct ChunkTraits<zero_one_value::Chunk<T>>
+struct ChunkTraits<zero_one_value::Chunk<T>> : VariantChunkTraits<zero_one_value::Chunk, zero_one_value::Proxy, T>
 {
-    using ProxyType   = zero_one_value::Proxy<T>; ///< Write proxy returned by the chunk's non-const operator[].
-    using ManagerType = ManagerChunk<zero_one_value::Chunk, T>; ///< Per-type manager owning the compression machinery.
 };
 
-/// @brief zero_any::Chunk<T> maps to zero_any::Proxy<T> and ManagerChunk<zero_any::Chunk, T>.
 template <typename T>
-struct ChunkTraits<zero_any::Chunk<T>>
+struct ChunkTraits<zero_any::Chunk<T>> : VariantChunkTraits<zero_any::Chunk, zero_any::Proxy, T>
 {
-    using ProxyType   = zero_any::Proxy<T>;               ///< Write proxy returned by the chunk's non-const operator[].
-    using ManagerType = ManagerChunk<zero_any::Chunk, T>; ///< Per-type manager owning the compression machinery.
 };
 
-/// @brief pattern::Chunk<T> maps to pattern::Proxy<T> and ManagerChunk<pattern::Chunk, T>.
 template <typename T>
-struct ChunkTraits<pattern::Chunk<T>>
+struct ChunkTraits<pattern::Chunk<T>> : VariantChunkTraits<pattern::Chunk, pattern::Proxy, T>
 {
-    using ProxyType   = pattern::Proxy<T>;               ///< Write proxy returned by the chunk's non-const operator[].
-    using ManagerType = ManagerChunk<pattern::Chunk, T>; ///< Per-type manager owning the compression machinery.
 };
 
 // ============================================================================
 // 3. ARRAY TO CHUNK MAPPING (ArrayChunkTraits)
 // ============================================================================
 
+/**
+ * @brief What an array type maps to, for one variant.
+ * @tparam ChunkT the variant's chunk template
+ * @tparam ProxyT the variant's proxy template
+ * @tparam T stored element type
+ * @tparam IntType signed global index type
+ */
+template <template <typename> class ChunkT, template <typename> class ProxyT, typename T, typename IntType>
+struct VariantArrayTraits : VariantChunkTraits<ChunkT, ProxyT, T>
+{
+    using ChunkType  = ChunkT<T>; ///< Chunk type the array holds.
+    using value_type = T;         ///< Stored element type.
+    using IndexType  = IntType;   ///< Signed global index type.
+};
+
 template <typename Derived>
 struct ArrayChunkTraits;
 
-/// @brief zero::Array<T, IntType> maps to Chunk<T>, Proxy<T>, ManagerChunk<Chunk, T>, value T and index IntType.
 template <ArrayChunkElement T, typename IntType>
-struct ArrayChunkTraits<zero::Array<T, IntType>>
+struct ArrayChunkTraits<zero::Array<T, IntType>> : VariantArrayTraits<zero::Chunk, zero::Proxy, T, IntType>
 {
-    using ChunkType   = zero::Chunk<T>;               ///< Chunk type the array holds.
-    using ProxyType   = zero::Proxy<T>;               ///< Write proxy returned by the non-const accessors.
-    using ManagerType = ManagerChunk<zero::Chunk, T>; ///< Per-type manager owning the compression machinery.
-    using value_type  = T;                            ///< Stored element type.
-    using IndexType   = IntType;                      ///< Signed global index type.
 };
 
-/// @brief zero_any::Array<T, IntType> maps to zero_any::Chunk<T>, zero_any::Proxy<T>, ManagerChunk<zero_any::Chunk, T>,
-///        value T and index IntType.
 template <ArrayChunkElement T, typename IntType>
-struct ArrayChunkTraits<zero_any::Array<T, IntType>>
+struct ArrayChunkTraits<zero_any::Array<T, IntType>> : VariantArrayTraits<zero_any::Chunk, zero_any::Proxy, T, IntType>
 {
-    using ChunkType   = zero_any::Chunk<T>;               ///< Chunk type the array holds.
-    using ProxyType   = zero_any::Proxy<T>;               ///< Write proxy returned by the non-const accessors.
-    using ManagerType = ManagerChunk<zero_any::Chunk, T>; ///< Per-type manager owning the compression machinery.
-    using value_type  = T;                                ///< Stored element type.
-    using IndexType   = IntType;                          ///< Signed global index type.
 };
 
-/// @brief zero_one_value::Array<T, IntType> maps to zero_one_value::Chunk<T>, zero_one_value::Proxy<T>,
-///        ManagerChunk<zero_one_value::Chunk, T>, value T and index IntType.
 template <ArrayChunkElement T, typename IntType>
 struct ArrayChunkTraits<zero_one_value::Array<T, IntType>>
+    : VariantArrayTraits<zero_one_value::Chunk, zero_one_value::Proxy, T, IntType>
 {
-    using ChunkType   = zero_one_value::Chunk<T>;               ///< Chunk type the array holds.
-    using ProxyType   = zero_one_value::Proxy<T>;               ///< Write proxy returned by the non-const accessors.
-    using ManagerType = ManagerChunk<zero_one_value::Chunk, T>; ///< Per-type manager owning the compression machinery.
-    using value_type  = T;                                      ///< Stored element type.
-    using IndexType   = IntType;                                ///< Signed global index type.
 };
 
-/// @brief pattern::Array<T, IntType> maps to pattern::Chunk<T>, pattern::Proxy<T>,
-///        ManagerChunk<pattern::Chunk, T>, value T and index IntType.
 template <ArrayChunkElement T, typename IntType>
-struct ArrayChunkTraits<pattern::Array<T, IntType>>
+struct ArrayChunkTraits<pattern::Array<T, IntType>> : VariantArrayTraits<pattern::Chunk, pattern::Proxy, T, IntType>
 {
-    using ChunkType   = pattern::Chunk<T>;               ///< Chunk type the array holds.
-    using ProxyType   = pattern::Proxy<T>;               ///< Write proxy returned by the non-const accessors.
-    using ManagerType = ManagerChunk<pattern::Chunk, T>; ///< Per-type manager owning the compression machinery.
-    using value_type  = T;                               ///< Stored element type.
-    using IndexType   = IntType;                         ///< Signed global index type.
 };
 
 // ============================================================================
