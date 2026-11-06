@@ -637,16 +637,10 @@ void zero_any::ArrayImpl<Derived>::compress_int(pmp::Team& team)
 template <typename Derived>
 void zero_any::ArrayImpl<Derived>::make_block_compression()
 {
-    // Refused inside a region: it would drain the other threads' lists while
-    // they write and read (see zero::FastBlockSupport::make_block_compression()).
-    if (CHUNK_PMP_IN_PARALLEL_REGION)
+    if (!block_pass_refused_in_region())
     {
-        CHUNK_CHECK_FAILED(compress,
-                           "make_block_compression() called inside a parallel region: a sequential point, call it "
-                           "after the region");
-        return;
+        drain_candidates();
     }
-    drain_candidates();
 }
 
 template <typename Derived>

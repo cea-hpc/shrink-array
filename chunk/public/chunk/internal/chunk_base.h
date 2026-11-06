@@ -31,7 +31,7 @@
 #include <sys/mman.h>  // mmap, mprotect, PROT_READ
 
 #include "chunk/internal/def_force_inline.h"            // CHUNK_FORCE_INLINE (element_at)
-#include "chunk/chunk_traits.h"                         // is_zero_any_family_v (element_at variant gate)
+#include "chunk/chunk_traits.h"                         // ChunkTraits, is_zero_any_family_v (element_at variant gate)
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement, asserted on ChunkBase
 #include "chunk/internal/churn_counters.h"              // churn::note_materialisation
 #include "chunk/internal/chunk_size_policy.h"           // cst_buffer_size, thread_chunk_size, alloc_chunk_count
@@ -91,26 +91,6 @@ namespace shrink_array
 // definition (chunk/internal/compression_manager.h) comes with the _inline tails.
 template <typename T, typename ChunkT>
 struct CompressionManager;
-
-template <typename Derived>
-struct ProxyTypeTrait;
-
-namespace zero
-{
-
-template <typename T>
-class Chunk;
-template <typename T>
-class Proxy;
-
-} // namespace zero
-
-// Specialisation for Chunk
-template <typename T>
-struct ProxyTypeTrait<zero::Chunk<T>>
-{
-    using Type = zero::Proxy<T>;
-};
 
 // STAYS a directive. Not a twin of the declaration at the top of this file:
 // that one is in fast_alloc, this one is inside `namespace shrink_array`.
@@ -628,7 +608,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     // Atomic pointer type conditional on OpenMP availability
     using AtomicPtrT = std::conditional_t<build_config::threaded, std::atomic<T*>, T*>;
 
-    using ProxyType = ProxyTypeTrait<Derived>::Type;
+    using ProxyType = ChunkTraits<Derived>::ProxyType;
 
     using CRTPSupport<Derived>::derived;
     using CRTPSupport<Derived>::self;

@@ -16,9 +16,8 @@
 
 #pragma once
 
-// Out-of-line bodies of zero_one_value::Array's mode-gated surfaces (zero_one_value::ParallelSupport,
-// zero_one_value::FastBlockSupport). Included at the end of zero_one_value_array.h, so self() sees a complete
-// Derived.
+// Out-of-line bodies of zero_one_value::FastBlockSupport. Included at the end of zero_one_value_array.h, so self() sees
+// a complete Derived.
 
 #include <tuple> // std::get on the candidate tuples (sweep of the other second-value keys)
 
@@ -26,9 +25,8 @@
 #include "chunk/internal/array_chunk_parallel_common_inline.h" // flush_pending_deferred_ops
 #include "chunk/PMP_CHUNK.h"                                   // CHUNK_PMP_* (make_block_compression)
 #include "chunk/internal/chunk_size_policy.h"                  // set_thread_chunk_size in make_block_compression
-#include "chunk/internal/invariant_check.h" // CHUNK_CHECK_FAILED (make_block_compression in a region)
-#include "chunk/internal/read_reclaim.h"    // read_reclaim::PassScope (drain_candidates in a region)
-#include "chunk/config.h"                   // build_config::chunk_dynamic
+#include "chunk/internal/read_reclaim.h"                       // read_reclaim::PassScope (drain_candidates in a region)
+#include "chunk/config.h"                                      // build_config::chunk_dynamic
 
 namespace shrink_array
 {
@@ -36,16 +34,10 @@ namespace shrink_array
 template <typename Derived>
 void zero_one_value::FastBlockSupport<Derived, true>::make_block_compression()
 {
-    if (CHUNK_PMP_IN_PARALLEL_REGION)
+    if (!block_pass_refused_in_region())
     {
-        // Refused inside a region: see zero::FastBlockSupport::make_block_compression()
-        // (no proxy: no writer handshake, no reader grace period).
-        CHUNK_CHECK_FAILED(compress,
-                           "make_block_compression() called inside a parallel region: a sequential point, call it "
-                           "after the region");
-        return;
+        drain_candidates();
     }
-    drain_candidates();
 }
 
 template <typename Derived>

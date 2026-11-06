@@ -26,7 +26,7 @@
 #include "chunk/zero_chunk.h"                   // Chunk<T>
 #include "chunk/internal/read_reclaim.h"        // read_reclaim::PassScope (perform_compression / compress in a region)
 #include "chunk/internal/array_chunk_base.h"    // ArrayChunkBase
-#include "chunk/internal/zero_array_parallel.h" // ParallelSupport — OpenMP-only mixin
+#include "chunk/internal/zero_array_parallel.h" // FastBlockSupport -- fast-block-only mixin; ParallelSupport through it
 #include "chunk/internal/array_chunk_rechunk_hooks.h"   // RechunkHooks — CHUNK_DYNAMIC-only mixin
 #include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_IN_PARALLEL_REGION, pmp::team / Team
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
@@ -60,7 +60,7 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     friend ArrayChunkBase<Array>; // swap_identity()
 
     using Base     = ArrayChunkBase<Array>;
-    using Parallel = zero::ParallelSupport<Array>;
+    using Parallel = ParallelSupport<Array>;
     using Hooks    = RechunkHooks<Array>;
 
     /// @brief Claim this array's identity before its storage is built:
@@ -311,5 +311,5 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
 
 // Bodies of the two mode-specific mixins. After zero_array_inline.h, so their
 // CRTP self() sees a complete zero::Array.
-#include "chunk/internal/zero_array_parallel_inline.h"       // ParallelSupport's bodies
+#include "chunk/internal/zero_array_parallel_inline.h"       // FastBlockSupport's bodies
 #include "chunk/internal/array_chunk_rechunk_hooks_inline.h" // RechunkHooks' bodies
