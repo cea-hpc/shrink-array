@@ -63,7 +63,7 @@ struct CompressionManager;
 template <typename T>
 struct ArithmeticProxyContext;
 
-template <typename T, typename Op>
+template <typename T, typename Op, typename OperandT = T>
 struct ArithmeticOperationProxyContext;
 
 namespace zero
@@ -643,9 +643,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     const int num_;   ///< Offset of this element WITHIN its chunk.
     ChunkT&   chunk_; ///< The chunk that owns the element.
 
-    mutable ArrayKey<ChunkT> ptr_on_array_; ///< The array the chunk belongs to.
-    mutable int              num_chunk_;    ///< Index of the chunk within that array.
-    mutable int              num_tab_ = -1; ///< Index of the array in the registry; -1 until armed.
+    mutable ArrayKey<ChunkT> ptr_on_array_ = nullptr; ///< The array the chunk belongs to; null until set.
+    mutable int              num_chunk_    = -1;      ///< Index of the chunk within that array; -1 until set.
+    mutable int              num_tab_      = -1;      ///< Index of the array in the registry; -1 until armed.
 
     // Frozen chunk geometry for the deferred-replay path.
     // 0 means "not armed" -> chunk_size() falls back to the live ptr_on_array
@@ -693,17 +693,16 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     static constexpr bool bit_operand_v = std::is_same_v<BaseT<U>, bool> || is_packed_bit_v<BaseT<U>>;
 
     /// @brief Bind a proxy to one element.
-    /// @note Leaves #ptr_on_array_, #num_chunk_ and #num_tab_ unset --
-    ///       set_this_and_num_chunk() and set_num_tab() finish the job, and the
-    ///       compression paths need them. A proxy rebuilt from a deferred-write
+    /// @note #ptr_on_array_, #num_chunk_ and #num_tab_ stay at their "not set"
+    ///       defaults (null, -1, -1) -- set_this_and_num_chunk() and set_num_tab()
+    ///       finish the job, and the compression paths need them. The defaults cost
+    ///       nothing on the access path: the proxy is a local the accessors inline,
+    ///       and a store a setter overwrites, or nothing reads, is dropped. A proxy rebuilt from a deferred-write
     ///       context (make_proxy_with_info()) gets set_num_chunk() alone, never
     ///       #ptr_on_array_: its array may be gone since the enqueue. There,
     ///       #chunk_size_frozen_ -- frozen non-zero at enqueue, while the array
     ///       was alive -- keeps every read of the pointer away: chunk_size(),
     ///       alloc_key() and their callers test it first.
-    // Left unset here on purpose (see the @note): this constructor runs on
-    // every element access.
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
     explicit ProxyBase(AtomicPtrRefT values, int num, ChunkT& chunk) noexcept
         : values_(values), num_(num), chunk_(chunk)
     {
@@ -944,7 +943,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     Derived operator&=(const U& operand) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<BaseT<U>>
     {
-        bitwise_assign<U>(operand, [](auto lhs, auto rhs) { return lhs & rhs; });
+        bitwise_assign<BaseT<U>>(static_cast<BaseT<U>>(operand), [](auto lhs, auto rhs) { return lhs & rhs; });
         return derived();
     }
 
@@ -962,7 +961,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     Derived operator|=(const U& operand) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<BaseT<U>>
     {
-        bitwise_assign<U>(operand, [](auto lhs, auto rhs) { return lhs | rhs; });
+        bitwise_assign<BaseT<U>>(static_cast<BaseT<U>>(operand), [](auto lhs, auto rhs) { return lhs | rhs; });
         return derived();
     }
 
@@ -980,7 +979,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     Derived operator^=(const U& operand) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<BaseT<U>>
     {
-        bitwise_assign<U>(operand, [](auto lhs, auto rhs) { return lhs ^ rhs; });
+        bitwise_assign<BaseT<U>>(static_cast<BaseT<U>>(operand), [](auto lhs, auto rhs) { return lhs ^ rhs; });
         return derived();
     }
 
@@ -1038,16 +1037,19 @@ class ProxyBase : public ProxyOperators<Derived, T>,
 
     /** @brief Bitwise shift left — clean types (Integral <<= Integral). */
     template <typename U>
-        requires IsCleanShiftOp<T, U>
+        requires IsCleanShiftOp<T, U> && ElementShiftable<T>
     Derived operator<<=(const U& operand) noexcept
     {
-        bitwise_assign<U>(operand, [](auto lhs, auto rhs) { return lhs << rhs; });
+        // The shift's type is the promoted LEFT operand, not the common type: the
+        // amount as an int, common_type_t<T, int> is that promoted type.
+        bitwise_assign<int>(static_cast<int>(static_cast<BaseT<U>>(operand)),
+                            [](auto lhs, auto rhs) { return lhs << rhs; });
         return derived();
     }
 
     /** @brief Bitwise shift left — trap for non-integral shift amount. */
     template <typename U>
-        requires(!IsCleanShiftOp<T, U>) && std::is_integral_v<T>
+        requires(!IsCleanShiftOp<T, U>) && ElementShiftable<T>
     [[deprecated("HPC WARNING: Shift amount must be an integer to avoid precision issues.")]]
     Derived operator<<=(const U& operand) noexcept
     {
@@ -1066,16 +1068,19 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @note Divides by 2^v for unsigned types, implementation-defined for signed
      */
     template <typename U>
-        requires IsCleanShiftOp<T, U>
+        requires IsCleanShiftOp<T, U> && ElementShiftable<T>
     Derived operator>>=(const U& operand) noexcept
     {
-        bitwise_assign<U>(operand, [](auto lhs, auto rhs) { return lhs >> rhs; });
+        // The shift's type is the promoted LEFT operand, not the common type: the
+        // amount as an int, common_type_t<T, int> is that promoted type.
+        bitwise_assign<int>(static_cast<int>(static_cast<BaseT<U>>(operand)),
+                            [](auto lhs, auto rhs) { return lhs >> rhs; });
         return derived();
     }
 
     /** @brief Bitwise shift right — trap. */
     template <typename U>
-        requires(!IsCleanShiftOp<T, U>) && std::is_integral_v<T>
+        requires(!IsCleanShiftOp<T, U>) && ElementShiftable<T>
     [[deprecated("HPC WARNING: Shift amount must be an integer.")]]
     Derived operator>>=(const U& operand) noexcept
     {

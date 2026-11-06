@@ -60,21 +60,12 @@ inline constexpr bool input_data = true;
 inline constexpr bool input_data = false;
 #endif
 
-// CHECK_COMPRESSION / NEED_COMPRESSION, both computed in bench_prelude.h:
-// CHECK_COMPRESSION == SHRINK_ARRAY && CHUNK_OPT_DEBUG, and NEED_COMPRESSION is currently
-// its exact synonym. They are mirrored separately anyway -- bench_prelude.h is
-// free to make them diverge again, and the call sites say which one they mean.
-#ifdef CHECK_COMPRESSION
-inline constexpr bool check_compression = true;
-#else
-inline constexpr bool check_compression = false;
-#endif
-
-#ifdef NEED_COMPRESSION
-inline constexpr bool need_compression = true;
-#else
-inline constexpr bool need_compression = false;
-#endif
+// The compression audit: a debug build of a shrink array always carries it
+// (the mode is a runtime flag, --mode: a perf run simply does not execute it).
+// need_compression is currently its exact synonym, kept apart: the call sites
+// say which one they mean, and the two may diverge again.
+inline constexpr bool check_compression = chunk_config::is_shrink_enabled && build_config::is_debug;
+inline constexpr bool need_compression  = check_compression;
 
 // BZIP2 (bench_prelude.h: on unless -DNO_BZIP2): the bench's own switch, the
 // library has no part in it.
@@ -119,7 +110,7 @@ inline constexpr bool have_bzip2 = false;
 //     exists everywhere, in chunk/config.h (build_config::use_fast_alloc itself).
 //   - `&&` short-circuits EVALUATION, never NAME LOOKUP. `if constexpr (A &&
 //     Derived::m)` is ill-formed for a Derived without `m` even when A is false
-//     -- NEST the two tests instead (array_chunk_rechunk_inline.h).
+//     -- NEST the two tests instead (rechunk_second_index_v, array_chunk_rechunk_refill.h).
 //
 // Five shapes that stay #ifdef whatever you do, because no `if constexpr` can
 // select them:

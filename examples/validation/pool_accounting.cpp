@@ -43,6 +43,8 @@
 //   3. Dynamic geometry only: a rechunk_to() leaves nothing parked at the OLD
 //      geometry once its drain has run, and the count of chunks alive follows
 //      the new geometry.
+//   4. need_load_balance_list_block_free() is false once the pools are
+//      released (its value with blocks parked depends on the team: shown).
 //
 // Then the library's own teardown, as compress_roundtrip does.
 //
@@ -50,12 +52,12 @@
 
 #include <type_traits> // std::conditional_t
 
-#include "chunk/chunk_traits.h"               // forward decls + default IntType = int
-#include "chunk/zero_array.h"                 // zero::Array
-#include "chunk/zero_one_value_array.h"       // zero_one_value::Array
-#include "chunk/zero_any_array.h"             // zero_any::Array
-#include "chunk/param_chunk.h"                // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"                 // release_chunk_pools, destroy_block_chunk
+#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
+#include "chunk/zero_array.h"           // zero::Array
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#include "chunk/zero_any_array.h"       // zero_any::Array
+#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
+#include "chunk/zero_chunk.h"           // release_chunk_pools, destroy_block_chunk, need_load_balance_list_block_free
 #include "chunk/internal/chunk_size_policy.h" // cst_buffer_size
 #include "chunk/config.h"                     // chunk_config::use_zero*
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS, pmp::current_team
@@ -240,7 +242,16 @@ int run(int argc, char** argv)
     // No #ifdef: release_chunk_pools() does whichever half this build needs --
     // the per-rank lists under OpenMP, the single allocator otherwise. See
     // ChunkPoolParallelInterface in zero_chunk.h.
+    // need_load_balance_list_block_free(): whether the per-rank free-block
+    // lists are uneven enough for load_balance_list_block_free(). With blocks
+    // parked the answer depends on how the team spread them, so it is only
+    // shown; once the pools are released the lists are empty, and empty lists
+    // are never uneven. The coverage report had this public call at 0 %.
+    println("[{}]      need_load_balance_list_block_free() with the pools held: {}", variant_name(),
+            need_load_balance_list_block_free());
     release_chunk_pools();
+    expect(!need_load_balance_list_block_free(), "need_load_balance_list_block_free() false, pools released",
+           need_load_balance_list_block_free() ? 1 : 0, 0);
     destroy_block_chunk();
 
     println("\n[{}] {}", variant_name(),

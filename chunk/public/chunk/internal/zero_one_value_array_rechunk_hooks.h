@@ -69,12 +69,12 @@ class RechunkHooks<Derived, true>
 
     /**
      * @brief Drain the reuse free-list of the target geometry.
-     * @param new_size the chunk size the array is moving to
+     * @param target_size the chunk size the array is moving to
      * @details The buffers parked there were sized for an older geometry.
      */
-    void rechunk_drain_reuse_list(unsigned int new_size) const
+    void rechunk_drain_reuse_list(unsigned int target_size) const
     {
-        ManagerType::drain_reuse_list_for_size(new_size);
+        ManagerType::drain_reuse_list_for_size(target_size);
     }
 
     /// @brief Capture the array-level state that must survive the rechunk.

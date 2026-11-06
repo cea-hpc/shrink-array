@@ -1,16 +1,20 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
-"""The Graphique tab: multi_launch_stress.py's seconds per run against threads.
+"""The Graphique tab: multi_launch_stress.py's seconds per run against threads,
+the pages of the other programs (tab_bench_chart, tab_speedup_chart), and
+the « Enregistrer l'image… » button each page has (save_chart_image).
 
 A mixin of the main window (app.Main): its methods use the window's
 attributes."""
 import html
+import os
+import re
 
 from PySide6.QtCharts import QChart, QLegend, QLineSeries, QLogValueAxis, QScatterSeries, QValueAxis
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QBrush, QColor, QPen
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QHBoxLayout, QLabel, QPushButton, QStackedWidget,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel, QPushButton,
+                               QStackedWidget, QVBoxLayout, QWidget)
 
 from shrink_gui.config import COLOR_BY, VIZ, exe_parts
 from shrink_gui.i18n import T
@@ -64,8 +68,9 @@ class ChartTab:
         prow3.addWidget(self.pt_median)
         prow3.addWidget(self.pt_ok_only)
         prow3.addStretch(1)
-        self.pt_note = TLabel("")
         self.pt_view = ScatterView()
+        prow3.addWidget(self.chart_save_button(self.pt_view, self.points_image_name))
+        self.pt_note = TLabel("")
         ptw = QWidget()
         ptl = QVBoxLayout(ptw)
         ptl.setContentsMargins(0, 0, 0, 0)
@@ -80,6 +85,53 @@ class ChartTab:
         self.pt_stack.addWidget(self.build_bench_page())
         self.pt_stack.addWidget(self.build_speedup_page())      # page 2: thread_speedup.py
         return self.pt_stack
+
+    # ------------------------------------------------------- image export
+    def chart_save_button(self, view, name):
+        """« Enregistrer l'image… » for @p view (a ScatterView), one per page of
+        the tab: enabled while the view has a chart with series; @p name gives
+        the file name proposed, without its extension."""
+        b = QPushButton("Enregistrer l'image…")
+        b.setEnabled(False)
+        view.chart_set.connect(b.setEnabled)
+        b.clicked.connect(lambda: self.save_chart_image(view, name()))
+        return b
+
+    def save_chart_image(self, view, name):
+        """Ask where, then write what @p view shows: PNG, or SVG when QtSvg is
+        there (the extension decides; none typed: the filter chosen). The
+        dialog opens in the directory of the last image saved, else the local
+        results directory, and the status bar gives the path written."""
+        filters = ["Image PNG (*.png)"] + (["Image SVG (*.svg)"] if view.svg_supported() else [])
+        start = (self.settings.value("chart_image_dir", "") or self.local_dir.text().strip()
+                 or os.path.expanduser("~"))
+        name = re.sub(r"[^\w.+-]+", "_", name).strip("_") or "graphique"
+        path, chosen = QFileDialog.getSaveFileName(self, T("Enregistrer l'image du graphique"),
+                                                   os.path.join(os.path.expanduser(start), name + ".png"),
+                                                   ";;".join(T(f) for f in filters))
+        if not path:
+            return
+        if not os.path.splitext(path)[1]:
+            path += ".svg" if "svg" in chosen.lower() else ".png"
+        if path.lower().endswith(".svg") and not view.svg_supported():
+            self.error(T("SVG indisponible (module PySide6.QtSvg absent) : enregistrez en PNG"))
+            return
+        if not view.save_image(path):
+            self.error(T(f"image non enregistrée : {path}"))
+            return
+        self.settings.setValue("chart_image_dir", os.path.dirname(path))
+        self.info(f"Image enregistrée : {path}")
+
+    def _image_run_name(self, rid):
+        """A run's part of an image name: the submission for a job of a pool
+        over several nodes (its chart gathers them all), else the run."""
+        run = next((x for x in self.runs if x["id"] == rid), None)
+        return (run["meta"].get("pool") if run and run["meta"].get("pool") else rid) or "graphique"
+
+    def points_image_name(self):
+        rid_b = self.pt_cmp.currentData()
+        return (self._image_run_name(self.current) + "_temps"
+                + (f"_vs_{self._image_run_name(rid_b)}" if rid_b else ""))
 
     def fill_compare(self):
         """The runs the current one can be compared with: the other

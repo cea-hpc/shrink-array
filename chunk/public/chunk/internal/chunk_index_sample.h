@@ -18,9 +18,10 @@
 
 #include <array>       // std::array
 #include <cstddef>     // std::size_t
-#include <format>      // std::format_to_n
 #include <string_view> // std::string_view
 #include <vector>      // std::vector
+
+#include "fast_allocators/internal/append_text.h" // append_text, append_int
 
 namespace shrink_array::internal
 {
@@ -35,20 +36,27 @@ template <std::size_t N, typename I>
 [[nodiscard]] std::string_view
 chunk_index_sample(std::array<char, N>& buf, const std::vector<int>& idx, I chunk_size, std::size_t max = 10) noexcept
 {
-    std::size_t       count = 0;
+    // Without std::format: this runs in noexcept code (append_text.h).
+    using fast_alloc::append_int;
+    using fast_alloc::append_text;
+    char* const       first = buf.data();
+    char* const       end   = first + N;
+    char*             out   = first;
     const std::size_t shown = idx.size() < max ? idx.size() : max;
-    for (std::size_t k = 0; k < shown && count < N; ++k)
+    for (std::size_t k = 0; k < shown && out < end; ++k)
     {
         const auto num_chunk = idx[k];
-        count += static_cast<std::size_t>(std::format_to_n(buf.data() + count, N - count, "{}{}@{}", k == 0 ? "" : " ",
-                                                           num_chunk, static_cast<I>(num_chunk) * chunk_size)
-                                              .size);
+        out                  = append_text(out, end, k == 0 ? "" : " ");
+        out                  = append_int(out, end, num_chunk);
+        out                  = append_text(out, end, "@");
+        out                  = append_int(out, end, static_cast<I>(num_chunk) * chunk_size);
     }
-    if (idx.size() > shown && count < N)
+    if (idx.size() > shown)
     {
-        count += static_cast<std::size_t>(
-            std::format_to_n(buf.data() + count, N - count, " (+{} more)", idx.size() - shown).size);
+        out = append_text(out, end, " (+");
+        out = append_int(out, end, idx.size() - shown);
+        out = append_text(out, end, " more)");
     }
-    return {buf.data(), count < N ? count : N};
+    return {first, static_cast<std::size_t>(out - first)};
 }
 } // namespace shrink_array::internal

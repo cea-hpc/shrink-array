@@ -179,7 +179,7 @@ void zero::Array<T, IntType>::clear_core()
     {
         const auto& sh_inf   = *zero::Proxy<T>::share_info_array;
         const int   num_tab_ = sh_inf.get_num_tab(this->registry_key());
-        Manager::remove_from_compress_list_chunk_by_num_tab(num_tab_);
+        Manager::remove_from_zero_candidates_by_num_tab(num_tab_);
     }
 
     if (!nb_chunk_)
@@ -436,7 +436,7 @@ void zero::Array<T, IntType>::resize(IntType newsz)
 
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        make_block_compression();
+        this->drain_candidates(); // not make_block_compression(): resize() may run in a region
     }
 
     const auto& sh_inf = *zero::Proxy<T>::share_info_array;

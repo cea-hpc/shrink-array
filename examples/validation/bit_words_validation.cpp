@@ -24,7 +24,8 @@
 //   2. get/set against std::vector<bool>, over a random write sequence;
 //   3. scan_words: all-false / all-true / mixed, including a tail full of
 //      garbage (it must be masked) and a single differing bit at each end;
-//   4. count_ones against the reference;
+//   4. count_ones against the reference; an empty bitmap (nbits = 0) is no
+//      word: fill_bits writes nothing, the scans say all_false and 0;
 //   5. concurrency: 8 threads write interleaved bits of the SAME words (bit i
 //      belongs to thread i % 8) through set_bit_atomic. A plain `|=` loses
 //      bits here; the atomic RMW must lose none.
@@ -32,6 +33,7 @@
 // Exit status 0 when every check passes.
 
 #include <algorithm> // std::min
+#include <array>     // std::array (the empty bitmap's canary)
 #include <cstddef>   // std::size_t
 #include <random>    // std::mt19937_64, std::uniform_int_distribution
 #include <thread>    // std::thread
@@ -57,6 +59,19 @@ void check(bool ok, const char* what, std::size_t nbits)
         ++g_fails;
         println("FAIL {} (n={})", what, nbits);
     }
+}
+
+// An empty bitmap (nbits = 0): no word, so fill_bits must write nothing --
+// the word after it is a canary -- and the scans answer all_false and 0, as an
+// empty chunk. The coverage report had these three early returns at 0 %.
+void empty_bitmap()
+{
+    std::array<bits::WordT, 1> canary{0x5A5A5A5A5A5A5A5AULL};
+    bits::fill_bits(canary.data(), 0, true);
+    bits::fill_bits(canary.data(), 0, false);
+    check(canary[0] == 0x5A5A5A5A5A5A5A5AULL, "fill_bits writes nothing", 0);
+    check(bits::scan_words(canary.data(), 0) == bits::Uniform::all_false, "scan_words: all_false", 0);
+    check(bits::count_ones(canary.data(), 0) == 0, "count_ones: 0", 0);
 }
 
 void geometry()
@@ -299,6 +314,7 @@ int main()
 {
     std::mt19937_64 rng(12345);
     geometry();
+    empty_bitmap();
     for (const std::size_t nbits : {1, 32, 63, 64, 65, 256, 512, 1000, 4096})
     {
         against_vector(nbits, rng);

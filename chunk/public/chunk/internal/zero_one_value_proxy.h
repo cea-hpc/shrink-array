@@ -33,7 +33,7 @@
 #include "chunk/internal/chunk_size_policy.h"            // set_thread_chunk_size
 #include "chunk/internal/TChunk.h"                       // VectorTuple4ChunkInt2
 
-#include "chunk/internal/zero_one_value_candidate_list_check.h" // chunk2_missing_candidate_list
+#include "chunk/internal/zero_one_value_candidate_list_check.h" // zero_one_value_missing_candidate_list
 #include "chunk/internal/proxy_base.h"                          // ProxyBase
 #include "chunk/internal/second_value_proxy_base.h"             // SecondValueProxyBase
 #include "chunk/internal/chunk_stats.h" // increm_chunk_write<> in the bodies (a dependent call the include tools cannot attribute)
@@ -60,13 +60,11 @@ namespace zero_one_value
 {
 
 template <typename T, typename Derived>
-// second_value_ and ind_ are left unset on purpose: the proxy is built on every element
-// access, and each is written before its first read -- both by set_info_on_chunk() and
-// set_info_second_value_ind(...), second_value_ alone by set_second_value() -- from the
-// array's record (the armed mirror, else load_inf_array()). No default initialiser either:
-// T is any element type, and `T second_value_{}` would require it default-constructible and
-// build one per access.
-// NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
+// second_value_ and ind_ have default initialisers although each is written before its first
+// read -- both by set_info_on_chunk() and set_info_second_value_ind(...), second_value_ alone
+// by set_second_value() -- from the array's record (the armed mirror, else load_inf_array()):
+// the proxy is copied out of ArrayChunkBase::element_proxy() before that, and copying an
+// indeterminate value is undefined (GCC 16: -Wmaybe-uninitialized at ElementRef's constructor).
 class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
 {
   public:
@@ -196,7 +194,7 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
      * @details Used for second-level compression. When a chunk contains mostly
      *          this value (and first_value), it can be compressed to save memory.
      */
-    T second_value_;
+    T second_value_{};
 
     /**
      * @brief Index into the chunk's second-value table
@@ -204,7 +202,7 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
      *          identifies which slot this chunk uses.
      */
 
-    int ind_;
+    int ind_ = 0;
 
     /**
      * @brief Cached compression metadata tuple
@@ -373,8 +371,8 @@ template <typename Derived, typename T, typename ChunkT, bool Enabled>
 class ProxyFastCompPolicy : public ProxySpec<T, Derived>
 {
   public:
-    using Base2 = SecondValueProxyBase<Derived, T, Chunk<T>>;
-    using Base  = ProxyBase<Derived, T, Chunk<T>>;
+    using SecondValueBase = SecondValueProxyBase<Derived, T, Chunk<T>>;
+    using Base            = ProxyBase<Derived, T, Chunk<T>>;
 
     using Base::chunk_;
     using Base::num_;
@@ -387,7 +385,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
     // second_value is in a dependent base: import it for unqualified use (two-phase lookup).
     using ProxySpec<T, Derived>::second_value_;
 
-    using ManagerChunk2 = ManagerChunk<Chunk, T>;
+    using Manager = ManagerChunk<Chunk, T>;
 
     using CRTPSupport<Derived>::derived;
     using CRTPSupport<Derived>::self;
@@ -417,7 +415,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
      */
     static void note_candidate_pushed(const auto& vec) noexcept
     {
-        if (static_cast<int>(vec.size()) > ManagerChunk2::get_size_max_number_of_chunk_to_check_compress())
+        if (static_cast<int>(vec.size()) > Manager::get_size_max_number_of_chunk_to_check_compress())
         {
             list_over_threshold_ = true;
         }
@@ -513,7 +511,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
 
     void mark_for_compression_if_needed_with_value(InT<T> old_value, InT<T> new_value) const
     {
-        Base2::mark_for_compression_if_needed(second_value_, old_value, new_value, Chunk<T>::first_value);
+        SecondValueBase::mark_for_compression_if_needed(second_value_, old_value, new_value, Chunk<T>::first_value);
     }
 
     /**
@@ -540,7 +538,6 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
     {
         // Intentionally empty, but must exist: zero_one_value::Array::clear_core() calls it in its
         // `if constexpr (use_fast_block_compression)` branch.
-        //  tab_is_inside_chunk_list_to_compress[num_tab].clear();
     }
 
     /**
@@ -615,7 +612,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
      */
     void mark_for_compression_if_needed(InT<T> new_value) const
     {
-        Base2::mark_for_compression_if_needed(second_value_, new_value, Chunk<T>::first_value);
+        SecondValueBase::mark_for_compression_if_needed(second_value_, new_value, Chunk<T>::first_value);
     }
 
   private:
@@ -699,19 +696,25 @@ template <typename T>
 class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::use_fast_block_compression>
 {
   public:
-    /// @brief Stream output of the element's value (defined below).
-    template <typename U>
-    friend std::ostream& operator<<(std::ostream& os, const Proxy<U>& proxy);
+    /// @brief Write the element's value, read through proxy.read_pure(), to @p os.
+    /// @return @p os.
+    friend std::ostream& operator<<(std::ostream& os, const Proxy& proxy)
+    {
+        // Through the proxy's read entry, like operator T(): the raw values[num] snapshot is stale
+        // while a deferred op pends on this offset.
+        os << proxy.read_pure();
+        return os;
+    }
 
-    using Base2          = SecondValueProxyBase<Proxy, T, Chunk<T>>;
-    using Base           = ProxyBase<Proxy, T, Chunk<T>>;
-    using ChunkType      = Chunk<T>;
-    using FastCompPolicy = ProxyFastCompPolicy<Proxy, T, Chunk<T>, chunk_config::use_fast_block_compression>;
+    using SecondValueBase = SecondValueProxyBase<Proxy, T, Chunk<T>>;
+    using Base            = ProxyBase<Proxy, T, Chunk<T>>;
+    using ChunkType       = Chunk<T>;
+    using FastCompPolicy  = ProxyFastCompPolicy<Proxy, T, Chunk<T>, chunk_config::use_fast_block_compression>;
 
     using CompressionManagerType = CompressionManager<T, ChunkType>;
 
     friend Base;
-    friend Base2;
+    friend SecondValueBase;
 
     using Base::set_num_tab;
 
@@ -720,7 +723,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
 
   private:
     /// Alias for the chunk manager associated with type T.
-    using ManagerChunk2 = ManagerChunk<Chunk, T>;
+    using Manager = ManagerChunk<Chunk, T>;
 
     using Base::chunk_;        ///< Reference to the associated chunk.
     using Base::num_;          ///< Index of the current element within the chunk.
@@ -1046,17 +1049,6 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
 };
 
 } // namespace zero_one_value
-
-/// @brief Write the element's value, read through proxy.read_pure(), to @p os.
-/// @return @p os.
-template <typename T>
-std::ostream& operator<<(std::ostream& os, const zero_one_value::Proxy<T>& proxy)
-{
-    // Through the proxy's read entry, like operator T(): the raw values[num] snapshot is stale
-    // while a deferred op pends on this offset.
-    os << proxy.read_pure();
-    return os;
-}
 
 } // namespace shrink_array
 

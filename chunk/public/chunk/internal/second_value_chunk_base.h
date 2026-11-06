@@ -110,12 +110,12 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
     using Base::values_load;
     using Base::values_store;
 
-    SecondValueChunkBase()                                       = default;
-    ~SecondValueChunkBase()                                      = default;
-    SecondValueChunkBase(const SecondValueChunkBase&)            = default;
-    SecondValueChunkBase& operator=(const SecondValueChunkBase&) = default;
-    SecondValueChunkBase(SecondValueChunkBase&&)                 = default;
-    SecondValueChunkBase& operator=(SecondValueChunkBase&&)      = default;
+    SecondValueChunkBase()                                           = default;
+    ~SecondValueChunkBase()                                          = default;
+    SecondValueChunkBase(const SecondValueChunkBase&)                = default;
+    SecondValueChunkBase& operator=(const SecondValueChunkBase&)     = default;
+    SecondValueChunkBase(SecondValueChunkBase&&) noexcept            = default;
+    SecondValueChunkBase& operator=(SecondValueChunkBase&&) noexcept = default;
 
   protected:
     // ========================================================================
@@ -159,7 +159,7 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
 
   private:
     static constexpr bool is_zero_any_family_derived = is_zero_any_family_v<Derived>;
-    static constexpr bool is_chunk2_derived          = std::is_same_v<Derived, zero_one_value::Chunk<T>>;
+    static constexpr bool is_zero_one_value_derived  = std::is_same_v<Derived, zero_one_value::Chunk<T>>;
 
     /// @brief Clear chunk and reset to constant value
     /// @tparam IndexT Type of index parameter

@@ -6,7 +6,7 @@ import re
 import shlex
 
 from PySide6.QtCharts import QChartView
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont, QPainter, QTextCursor, QValidator
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout,
                                QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
@@ -480,9 +480,12 @@ class PickerDialog(QDialog):
 
 class ScatterView(QChartView):
     """Seconds per run against threads. The nearest point within 24 px gets
-    the tooltip -- a 7 px dot is too small to aim at."""
+    the tooltip -- a 7 px dot is too small to aim at. save_image writes what
+    the view shows; chart_set says, at each setChart, whether there is
+    anything to save (a chart with series), for the button that saves it."""
 
     HIT_PX = 24
+    chart_set = Signal(bool)
 
     def __init__(self):
         super().__init__()
@@ -492,6 +495,38 @@ class ScatterView(QChartView):
         self.log_y = False
         self.log_x = False
         self._last = None
+
+    def setChart(self, chart):
+        super().setChart(chart)
+        self.chart_set.emit(bool(chart.series()))
+
+    @staticmethod
+    def svg_supported():
+        """QtSvg is there (a separate module some PySide6 packagings leave out)."""
+        try:
+            from PySide6.QtSvg import QSvgGenerator  # noqa: F401
+            return True
+        except ImportError:
+            return False
+
+    def save_image(self, path):
+        """The view as it is drawn -- the legend, the theme, the comparison run --
+        into @p path: SVG (vectors, QSvgGenerator) for a .svg, else a raster
+        image in the format of the extension (PNG...), at the screen's pixel
+        density. True when the file is written."""
+        if path.lower().endswith(".svg"):
+            from PySide6.QtSvg import QSvgGenerator
+            gen = QSvgGenerator()
+            gen.setFileName(path)
+            gen.setSize(self.size())
+            gen.setViewBox(self.rect())
+            gen.setTitle(self.chart().title())
+            painter = QPainter(gen)
+            self.render(painter)
+            ok = painter.end()
+            import os
+            return ok and os.path.isfile(path) and os.path.getsize(path) > 0
+        return self.grab().save(path)
 
     def mouseMoveEvent(self, ev):
         super().mouseMoveEvent(ev)

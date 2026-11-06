@@ -45,7 +45,7 @@ void zero_one_value::RechunkHooks<Derived, true>::rechunk_drop_candidates()
             const auto inf = self().get_info_second_value();
             const int  thr = get_thr_rank_fast();
             shrink_array::set_thread_chunk_size(self().size_policy_.size());
-            for (const auto& per_rank : ManagerType::map_chunk2_to_compress_potentially_thr)
+            for (const auto& per_rank : ManagerType::zero_one_value_candidates_map_thr)
             {
                 for (const auto& kv : per_rank)
                 {
@@ -63,7 +63,7 @@ void zero_one_value::RechunkHooks<Derived, true>::rechunk_drop_candidates()
                 }
             }
         }
-        ManagerType::remove_from_compress_list_chunk2_by_num_tab(num_tab);
+        ManagerType::remove_from_zero_one_value_candidates_by_num_tab(num_tab);
     }
 }
 

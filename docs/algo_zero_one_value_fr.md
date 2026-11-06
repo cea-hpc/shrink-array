@@ -341,7 +341,7 @@ La compression en vol rend ces chunks à `cst_val2` au fil de l'eau.
 Chaque thread tient une **liste de chunks candidats par seconde valeur** :
 
 ```
-ManagerChunk2::map_chunk2_to_compress_potentially_thr[rang][second_value]
+Manager::zero_one_value_candidates_map_thr[rang][second_value]
 ```
 
 Chaque entrée porte `(chunk, num_chunk, num_tab, nombre d'éléments)`. Le nombre d'éléments
@@ -604,6 +604,6 @@ Options CMake liées aux performances des bancs :
 | lecteurs et récupération des tampons | `internal/read_reclaim.h` |
 | compresseur, écritures différées | `internal/compression_manager.h` |
 | géométrie | `internal/chunk_size_policy.h` |
-| rechunk, décideur | `internal/array_chunk_rechunk_inline.h`, `chunk_size_advisor.h` |
+| rechunk, décideur | `internal/array_chunk_rechunk_inline.h`, `internal/array_chunk_rechunk_refill.h`, `chunk_size_advisor.h` |
 | opérations sur plages | `array_chunk_range_ops.h` |
 | tests de validation | `examples/validation/` (`rechunk_validation`, `compress_roundtrip`, `deferred_path_validation`, `pool_accounting`, `fill_range_mt_validation`, …) |

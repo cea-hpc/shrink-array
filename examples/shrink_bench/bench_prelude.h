@@ -22,9 +22,8 @@
 // pulls chunk/* transitively). It:
 //   1. defines BZIP2 by default (unless already defined by the build system),
 //   2. pulls the base chunk headers in the correct order,
-//   3. derives SHRINK_ARRAY / CHECK_COMPRESSION / NEED_COMPRESSION from the
-//      variant macros (CHUNK_VARIANT_ZERO*) and the mode macros
-//      (CHUNK_OPT_DEBUG / CHECK),
+//   3. derives SHRINK_ARRAY (the loop pragmas) from the variant macros
+//      (CHUNK_VARIANT_ZERO*),
 //   4. pulls the variant-specific array_chunk* headers,
 //   5. defines the ComplexDouble alias used across TUs.
 //
@@ -239,17 +238,6 @@ inline BenchSched bench_sched_for(Int start, Int end) noexcept
     const Int nthreads = CHUNK_PMP_MAX_THREADS;
     return {std::max<Int>(1, (end - start + nthreads - 1) / nthreads), start}; // contiguous slices
 }
-
-// Not gated on any mode macro: the mode is a runtime flag (--mode, see
-// bench_config.h). A debug build always carries the compression verification
-// code; a --mode perf run simply does not execute it.
-#if defined SHRINK_ARRAY && CHUNK_OPT_DEBUG
-    #define CHECK_COMPRESSION
-#endif
-
-#if (defined SHRINK_ARRAY) && (defined CHECK_COMPRESSION)
-    #define NEED_COMPRESSION
-#endif
 
 #include "chunk/param_chunk.h" // ParamChunk (the bench TUs)
 #include "chunk/config.h"      // chunk_config::, build_config:: (the bench TUs)

@@ -130,6 +130,9 @@ class Tooltips:
                      "Plusieurs runs sélectionnés : une seule confirmation pour tous (les actifs "
                      "sont laissés).",
         "Rafraîchir le résumé": "Relit le fichier résumé du run sélectionné.",
+        "Enregistrer l'image…": "Enregistre le graphique tel qu'il est affiché -- filtres, run comparé et "
+                                "courbes réunies des nœuds d'une soumission compris -- en PNG, ou en SVG "
+                                "(vectoriel) si l'extension est .svg.",
         "git pull": "git pull dans le dépôt d'inti (fusion si les branches ont divergé). "
                     "Un conflit annule le pull : le dépôt reste tel qu'il était.",
         "git pull --rebase": "git pull --rebase dans le dépôt d'inti : vos commits locaux "

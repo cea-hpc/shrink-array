@@ -87,8 +87,7 @@ using Array = shrink_array::ActiveArray<T>;
 // ---------------------------------------------------------------------------
 
 /// @name The second values the workload writes
-/// Moved verbatim out of main(); `inline constexpr` so every phase sees the same
-/// ones. Names unchanged so the moved code reads exactly as it did.
+/// `inline constexpr` so every phase sees the same ones.
 /// @{
 inline constexpr double second_value_d  = 1.;
 inline constexpr double second_value_d0 = 3.5;
@@ -227,23 +226,6 @@ inline constexpr Int bench_conn_bands = 16;
     const Int band = row % bench_conn_bands;
     return iter < band ? 0 : ((iter - band) / bench_conn_bands + 1) % 2;
 }
-
-/// @brief tab_mask's default size, as a fraction of sz (--mask_scale sets it).
-/// @details 1/32. Its per-iteration update writes ~1/16 of the random and
-///          scattered blocks and 1/32 of the constant segments, element by
-///          element through the proxies in a zero / zero_any build: at the
-///          8 x sz it was created with (capped at 2^31 in the 32-bit builds) it
-///          took ~75% of a 43 s zero_any run (64 threads) that is ~7 s without it.
-///          1/32 keeps thousands of 4096-element segments of each kind.
-inline constexpr double bench_mask_default_scale = 1.0 / 32.0;
-
-/// @brief tab_conn's default size, as a fraction of sz (--conn_scale sets it).
-/// @details 1/32. Each iteration gathers and renumbers one band of rows in 16,
-///          dense, through the proxies: at sz (its size when it came in) it
-///          took ~87% of a run -- zero_any, 8 threads, --divisor 2: 64.8 s
-///          with it, 8.4 s without (GCC 16; 140 s against 19 s with icpx) --
-///          and hid every other phase. 1/32 still keeps thousands of rows.
-inline constexpr double bench_conn_default_scale = 1.0 / 32.0;
 
 /// @brief Segment of tab_mask with one kind of content: whole chunks at every
 ///        geometry up to 4096, so a constant segment is constant chunks.

@@ -120,7 +120,7 @@ measurement on unchanged data and the ability to go back.
 
 ## 4. The rebuild: `rechunk_to()`
 
-`internal/array_chunk_rechunk_inline.h`. The steps, with their names in the
+`internal/array_chunk_rechunk_inline.h` (the refill: `internal/array_chunk_rechunk_refill.h`). The steps, with their names in the
 `CHUNK_LOG=rechunk=debug` trace:
 
 1. **prologue**: at the old geometry, flush the array's deferred writes, then

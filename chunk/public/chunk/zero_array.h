@@ -199,6 +199,8 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     }
 
     /// @brief Build an array holding the elements of @p il.
+    /// @details Not explicit, as std::vector's: `Array<T> a = {1, 2, 3};`, and a
+    ///          braced list as an argument or a return value.
     /// @param il Source values.
     Array(std::initializer_list<T> il) : Array(il.begin(), il.end()) {}
 

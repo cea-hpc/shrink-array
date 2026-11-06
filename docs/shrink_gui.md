@@ -152,6 +152,22 @@ note); "Compare with" offers another submission over several nodes as one entry 
 submission itself. The speedup of an executable is measured on one node only, so the N nodes
 must be of the same kind (one partition). `--pool` can be given by hand too (`--help`).
 
+**One image of the N nodes.** Each job's `speedup.png` shows only the executables it measured.
+The Chart's "Save image…" button (on each of its pages, enabled when a chart is drawn) writes
+the chart exactly as shown -- the N jobs' curves gathered, the filters and the compared run
+included -- as PNG, or as SVG (vector) when the name ends in `.svg` and PySide6 has QtSvg; the
+name proposed is the submission's (`<pool>_<target>_speedup.png`), the dialog reopens in the
+directory of the last image saved, and the status bar gives the path written. On the cluster,
+`thread_speedup.py --merge DIR [DIR ...] --out OUTDIR` measures nothing and merges the jobs'
+output directories (each prints `<outdir>/summary.csv ...` at its end) into one, as one run
+over all the executables would have written it: `summary.csv`, `results.csv`, `meta.json`
+(the directories merged, with their host, CPU and command), and `plot.gp` and `speedup.png`
+drawn by the functions a run uses, the title naming the hosts (`inti5012+inti5013+inti5014`,
+"`<n>` nodes" past four). The speedups are copied, not recomputed (each is against its own
+run's first thread count); an executable found in several directories is taken from the first
+one given, as the Chart does, with a warning, and so is any difference of CPU model, target,
+`--mode`, `--multiply`, `--metric`, `--numa`, executable arguments or thread list.
+
 ### The runs
 
 The table lists the runs in the runs directory, refreshed every 15 s: program, partition,

@@ -40,6 +40,15 @@
  *                            (buffer taken from the allocator); the vector:
  *                            a zeroed vector written over
  *            rmw             a[i] += 0.5 on the varied array
+ *            read-bulk       read-varied through for_each_value() (each thread
+ *                            its slice): one gate per chunk and one read
+ *                            section per block, instead of both per element
+ *            read-second     sum of every element of an array all at 1.5,
+ *                            written outside the timing: every chunk
+ *                            compressed to a constant other than zero where
+ *                            the variant can (zero_any: a second value, read
+ *                            back through the registry's value table; zero:
+ *                            materialised); the vector: all 1.5
  *
  *          A write case's time includes the end of its phase (the deferred
  *          writes flushed, the between-region compression pass): what a
@@ -56,8 +65,9 @@
  *          writes when --verify is given.
  *
  *          Memory: the vector (8 n_elems bytes), the array (about the same at its
- *          largest), the random indices (4 n_elems bytes). The default n_elems = 2^27
- *          takes about 3 GB.
+ *          largest), the random indices (4 n_elems bytes), and the constant vectors
+ *          of read-constant and read-second (8 n_elems bytes each). The default
+ *          n_elems = 2^27 takes about 4 GB.
  *
  *          Usage: access_cost [--n n_elems] [--reps R] [--csv] [--verify]
  */
@@ -71,16 +81,17 @@
 #include <utility>     // std::as_const
 #include <vector>      // std::vector
 
-#include "chunk/chunk_traits.h"         // the IntType = int default of the arrays
-#include "chunk/zero_array.h"           // zero::Array
-#include "chunk/zero_one_value_array.h" // zero_one_value::Array
-#include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
-#include "chunk/config.h"               // chunk_config::use_zero*, build_config::use_openmp / has_not_ompt
-#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"          // begin_parallel_phase, finalize_parallel_phase
-#include "chunk/internal/env_parse.h"   // arg_number (checked, not atoi)
-#include "chunk/internal/print.h"       // shrink_array::println
+#include "chunk/chunk_traits.h"                   // the IntType = int default of the arrays
+#include "chunk/zero_array.h"                     // zero::Array
+#include "chunk/zero_one_value_array.h"           // zero_one_value::Array
+#include "chunk/zero_any_array.h"                 // zero_any::Array
+#include "chunk/param_chunk.h"                    // ParamChunk::init_indexes
+#include "chunk/config.h"                         // chunk_config::use_zero*, build_config::use_openmp / has_not_ompt
+#include "chunk/PMP_CHUNK.h"                      // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"                    // begin_parallel_phase, finalize_parallel_phase
+#include "chunk/internal/env_parse.h"             // arg_number (checked, not atoi)
+#include "chunk/internal/print.h"                 // shrink_array::println
+#include "fast_allocators/internal/pmp_runtime.h" // team_size / team_rank (read-bulk)
 
 using namespace shrink_array;
 
@@ -261,6 +272,28 @@ Sample arr_read(Array<double>& arr, int count)
     return {secs_since(t0), sum};
 }
 
+// The bulk read (ArrayChunkBase::for_each_value): each thread its contiguous
+// slice, as schedule(static) would give it.
+Sample arr_read_bulk(Array<double>& arr, int count)
+{
+    const auto  t0  = Clk::now();
+    double      sum = 0.;
+    const auto& ca  = std::as_const(arr);
+#pragma omp parallel reduction(+ : sum)
+    {
+        begin_phase();
+        const long nt   = fast_alloc::pmp::team_size();
+        const long rank = fast_alloc::pmp::team_rank();
+        const auto lo   = static_cast<int>(count * rank / nt);
+        const auto hi   = static_cast<int>(count * (rank + 1) / nt);
+        double     part = 0.;
+        ca.for_each_value(lo, hi, [&part](double v) { part += v; });
+        sum += part;
+    }
+    end_phase(arr);
+    return {secs_since(t0), sum};
+}
+
 Sample arr_read_random(Array<double>& arr, const std::vector<int>& idx)
 {
     const auto  t0    = Clk::now();
@@ -364,8 +397,8 @@ double minimum(const std::vector<double>& samples)
     return *std::min_element(samples.begin(), samples.end());
 }
 
-constexpr const char* case_names[] = {"read-varied",  "read-constant", "read-random",
-                                      "write-varied", "write-fresh",   "rmw"};
+constexpr const char* case_names[] = {"read-varied", "read-constant", "read-random", "write-varied",
+                                      "write-fresh", "rmw",           "read-second", "read-bulk"};
 constexpr int         n_cases      = static_cast<int>(sizeof(case_names) / sizeof(case_names[0]));
 } // namespace
 
@@ -424,6 +457,7 @@ int main(int argc, char** argv)
     const std::vector<int> idx = random_indices(n_elems);
     std::vector<double>    vec(static_cast<std::size_t>(n_elems));
     std::vector<double>    zeros(static_cast<std::size_t>(n_elems), 0.);
+    std::vector<double>    seconds(static_cast<std::size_t>(n_elems), 1.5);
 
     // [case][container 0 = vector, 1 = array] -> seconds per repetition
     std::vector<double> times[n_cases][2];
@@ -525,6 +559,20 @@ int main(int argc, char** argv)
             {
                 bad_elements += verify_elements("rmw", arr, vec);
             }
+        }
+        // read-bulk: the varied array again, through for_each_value().
+        {
+            const auto [sv, sa] = pair(7, [&] { return vec_read(vec); }, [&] { return arr_read_bulk(arr, count); });
+            check_sum(7, sv.sum, sa.sum);
+        }
+        // read-second: an array all at 1.5 (its end of phase compresses it),
+        // a vector of 1.5. The sum is exact: n x 1.5 < 2^53.
+        {
+            Array<double> second_arr(count);
+            arr_write(second_arr, count, [](long) { return 1.5; });
+            const auto [sv, sa] =
+                pair(6, [&] { return vec_read(seconds); }, [&] { return arr_read(second_arr, count); });
+            check_sum(6, sv.sum, sa.sum);
         }
     }
 

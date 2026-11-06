@@ -171,9 +171,9 @@ void zero_one_value::Array<T, IntType>::rebuild_storage(IntType sz)
 
         if (nb_chunk_)
         {
-            ManagerChunk2::increm_somme_chunk_create(nb_chunk_);
-            ManagerChunk2::compute_size_buffer_reuse();
-            ManagerChunk2::compute_size_max_number_of_chunk_to_check_compress();
+            Manager::increm_somme_chunk_create(nb_chunk_);
+            Manager::compute_size_buffer_reuse();
+            Manager::compute_size_max_number_of_chunk_to_check_compress();
 
             // Chunks start at cst_val1 (the first value).
             this->acquire_chunk_list(static_cast<std::size_t>(nb_chunk_));
@@ -291,21 +291,21 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
 
             if constexpr (build_config::threaded)
             {
-                const int sz = ManagerChunk2::chunk2_to_compress_potentially_thr[0].size();
+                const int sz = Manager::zero_one_value_candidates_thr[0].size();
 
                 if (sz <= ind)
                 {
                     for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
                     {
-                        ManagerChunk2::chunk2_to_compress_potentially_thr[thr].resize(ind + 1);
+                        Manager::zero_one_value_candidates_thr[thr].resize(ind + 1);
                     }
                 }
 
                 for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
                 {
-                    const auto& vec_ref    = ManagerChunk2::chunk2_to_compress_potentially_thr[thr][ind];
+                    const auto& vec_ref    = Manager::zero_one_value_candidates_thr[thr][ind];
                     const auto  shared_vec = std::make_shared<VectorTuple4ChunkInt2<zero_one_value::Chunk, T>>(vec_ref);
-                    ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr][sec_value] = shared_vec;
+                    Manager::zero_one_value_candidates_map_thr[thr][sec_value] = shared_vec;
                 }
             }
         }
@@ -394,10 +394,10 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
         {
             for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
             {
-                ManagerChunk2::chunk2_to_compress_potentially_thr[thr].resize(1);
-                const auto& vec_ref    = ManagerChunk2::chunk2_to_compress_potentially_thr[thr][0];
+                Manager::zero_one_value_candidates_thr[thr].resize(1);
+                const auto& vec_ref    = Manager::zero_one_value_candidates_thr[thr][0];
                 const auto  shared_vec = std::make_shared<VectorTuple4ChunkInt2<zero_one_value::Chunk, T>>(vec_ref);
-                ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr][sec_value] = shared_vec;
+                Manager::zero_one_value_candidates_map_thr[thr][sec_value] = shared_vec;
             }
         }
 
@@ -598,12 +598,12 @@ void zero_one_value::Array<T, IntType>::clear_core()
 
         // Remove THIS array's queued compression candidates by num_tab, before
         // its chunks are freed below. zero_one_value's candidate store is
-        // map_chunk2_to_compress_potentially_thr[thr][second_value] (keyed by
+        // zero_one_value_candidates_map_thr[thr][second_value] (keyed by
         // value, shared across arrays); in GNU / non-OMPT fast-block builds
         // nothing else clears it, so a destroyed array's zero_one_value::Chunk* would dangle
         // there for a later pass to walk. Targeted (no compression, other arrays
         // untouched); it also makes rechunk_to's tmp teardown safe.
-        ManagerChunk2::remove_from_compress_list_chunk2_by_num_tab(num_tab);
+        Manager::remove_from_zero_one_value_candidates_by_num_tab(num_tab);
     }
 
     if (!nb_chunk_)
@@ -722,7 +722,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
                           // a size-A buffer filed under list[B] is later popped and
                           // memset at B, and overflows. Single-size builds have one list.
                           const unsigned int my_sz = this->size_policy_.size();
-                          auto&              lbf   = ManagerChunk2::get_list_block_free_thr_for_size(thr_rank, my_sz);
+                          auto&              lbf   = Manager::get_list_block_free_thr_for_size(thr_rank, my_sz);
 
                           for (int k = 0; k < nb; ++k)
                           {
@@ -1150,8 +1150,8 @@ void zero_one_value::Array<T, IntType>::release_chunk_range(int first, int last)
         // geometry. Inside a region, or for a few chunks, the calling thread.
         const unsigned int my_sz = this->size_policy_.size();
         parallel_storage_init::for_each_chunk_in(
-            first, last, [my_sz]() -> auto&
-            { return ManagerChunk2::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz); },
+            first, last,
+            [my_sz]() -> auto& { return Manager::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz); },
             [this](int j, auto& lbf)
             {
                 if (chunk_list_[j].owns_live_buffer())
@@ -1192,7 +1192,7 @@ void zero_one_value::Array<T, IntType>::resize(IntType newsz)
     const int     old_nb_chunk = nb_chunk_;
     const IntType old_size     = this->m_size_; // the stale-tail reset at the end
 
-    Base2::resize_common(newsz);
+    SecondValueBase::resize_common(newsz);
 
     if constexpr (chunk_config::use_fast_block_compression)
     {
@@ -1339,7 +1339,7 @@ void zero_one_value::Array<T, IntType>::register_no_second_value_key()
         {
             for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
             {
-                auto& slot = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr][T{}];
+                auto& slot = Manager::zero_one_value_candidates_map_thr[thr][T{}];
                 if (!slot)
                 {
                     slot = std::make_shared<typename std::remove_reference_t<decltype(slot)>::element_type>();

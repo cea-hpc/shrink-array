@@ -60,7 +60,8 @@
 #include <fcntl.h>         // open, O_RDONLY, O_CLOEXEC (read_small_file)
 #include <unistd.h>        // pause, read, write, close
 
-#include "fast_allocators/internal/log_core.h" // format_message, emit_fatal, FmtArgT
+#include "fast_allocators/internal/append_text.h" // append_text, append_int (debugger_attached)
+#include "fast_allocators/internal/log_core.h"    // format_message, emit_fatal, FmtArgT
 
 namespace fast_alloc::logging
 {
@@ -228,9 +229,13 @@ inline std::size_t read_small_file(const char* path, char* buf, std::size_t cap)
     {
         return false;
     }
-    char       path[48];
-    const auto res = std::format_to_n(path, sizeof(path) - 1, "/proc/{}/comm", tracer);
-    *res.out       = '\0';
+    // "/proc/<pid>/comm" without std::format: append_text.h says why.
+    char        path[48]; // "/proc/" + 20 digits + "/comm" + NUL fits
+    char* const end = path + sizeof(path) - 1;
+    char*       out = append_text(path, end, "/proc/");
+    out             = append_int(out, end, tracer);
+    out             = append_text(out, end, "/comm");
+    *out            = '\0';
     char comm[64];
     return is_debugger_name(std::string_view{comm, read_small_file(path, comm, sizeof(comm))});
 #else
@@ -268,6 +273,23 @@ inline void break_on_failure() noexcept
     }
     std::raise(SIGTRAP);
 }
+
+#ifdef CHUNK_GCOV_DUMP
+extern "C" void __gcov_dump(void); // NOLINT(bugprone-reserved-identifier): libgcov's entry point
+#endif
+
+/// @brief Coverage builds (CHUNK_GCOV_DUMP, defined by the nightly's gcov
+///        job): write the coverage counters before abort(), which skips the
+///        exit handler that writes them. Without it, every path a death test
+///        takes -- this report, the invariant checks, the bad-pointer checks --
+///        read as never run, the child that took it having died. Nothing
+///        elsewhere.
+inline void gcov_dump_before_abort() noexcept
+{
+#ifdef CHUNK_GCOV_DUMP
+    __gcov_dump();
+#endif
+}
 } // namespace detail
 
 /**
@@ -286,6 +308,7 @@ fatal_report(std::string_view prefix, const std::source_location& loc, std::stri
         std::fwrite(msg.data(), 1, msg.size(), stderr);
         std::fputs("\n", stderr);
         std::fflush(stderr);
+        detail::gcov_dump_before_abort();
         std::abort();
     }
     reporting = true;
@@ -334,6 +357,7 @@ fatal_report(std::string_view prefix, const std::source_location& loc, std::stri
     // 4. Under a debugger, the report complete: stop here, the failing frames live.
     detail::break_on_failure();
 
+    detail::gcov_dump_before_abort();
     std::abort();
 }
 

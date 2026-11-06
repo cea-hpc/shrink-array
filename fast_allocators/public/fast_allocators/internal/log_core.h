@@ -72,11 +72,11 @@
 #include <complex>         // std::complex (spelled by fmt_arg)
 #include <cstddef>         // std::size_t
 #include <cstdint>         // std::uint8_t, std::uint64_t
-#include <cstdio>          // std::FILE, std::fopen, std::fwrite, std::fflush, stderr
+#include <cstdio>          // std::FILE, std::fopen, std::fwrite, std::fflush, std::fputs, stderr
 #include <cstdlib>         // std::getenv
 #include <cstring>         // std::memcpy
 #include <format>          // std::format_to_n, std::format_string
-#include <mutex>           // std::mutex, std::once_flag, std::call_once, std::scoped_lock
+#include <mutex>           // std::mutex, std::once_flag, std::call_once, std::scoped_lock, std::unique_lock
 #include <span>            // std::span, std::as_bytes (BytesArg)
 #include <source_location> // std::source_location
 #include <string_view>     // std::string_view
@@ -85,6 +85,8 @@
 #include <sched.h>       // sched_yield (emit_fatal)
 #include <sys/syscall.h> // SYS_gettid
 #include <unistd.h>      // getpid, syscall
+
+#include "fast_allocators/internal/append_text.h" // append_int (CHUNK_LOG_FILE's %p), append_text
 
 #ifndef CHUNK_LOG_MAX_LEVEL
     #define CHUNK_LOG_MAX_LEVEL 5 // trace: every message compiled in, CHUNK_LOG filters at run time
@@ -415,10 +417,20 @@ inline void default_sink(const Record& record) noexcept
 {
     static constexpr std::array<char, n_levels> letter{'F', 'E', 'W', 'I', 'D', 'T'};
     char                                        line[line_max + 64];
-    const auto  res = std::format_to_n(line, sizeof(line) - 1, "[shrink_array][{}][{}][{}] {}", name(record.channel),
-                                       letter[static_cast<std::size_t>(record.level)], thread_id(), record.message);
-    std::size_t len =
-        static_cast<std::size_t>(res.size) < sizeof(line) - 1 ? static_cast<std::size_t>(res.size) : sizeof(line) - 1;
+    std::size_t                                 len = 0;
+    try
+    {
+        const auto res = std::format_to_n(line, sizeof(line) - 1, "[shrink_array][{}][{}][{}] {}", name(record.channel),
+                                          letter[static_cast<std::size_t>(record.level)], thread_id(), record.message);
+        len            = static_cast<std::size_t>(res.size) < sizeof(line) - 1 ? static_cast<std::size_t>(res.size)
+                                                                               : sizeof(line) - 1;
+    }
+    catch (...)
+    {
+        // Unreachable: a format string checked at compile time and built-in
+        // arguments (append_text.h). The bare message, so nothing is lost.
+        len = static_cast<std::size_t>(append_text(line, line + sizeof(line) - 1, record.message) - line);
+    }
     line[len++]           = '\n';
     std::FILE* const file = out != nullptr ? out : stderr;
     std::fwrite(line, 1, len, file);
@@ -480,7 +492,8 @@ inline void emit_fatal(const Record& record) noexcept
     {
         for (int attempt = 0; attempt < 1000; ++attempt)
         {
-            if (sink_mutex.try_lock())
+            const std::unique_lock lk(sink_mutex, std::try_to_lock);
+            if (lk.owns_lock())
             {
                 if (sink != nullptr)
                 {
@@ -492,7 +505,6 @@ inline void emit_fatal(const Record& record) noexcept
                 {
                     default_sink(record);
                 }
-                sink_mutex.unlock();
                 return;
             }
             ::sched_yield();
@@ -641,9 +653,10 @@ inline void read_environment() noexcept
         {
             if (p[0] == '%' && p[1] == 'p')
             {
-                used += static_cast<std::size_t>(
-                    std::format_to_n(expanded + used, sizeof(expanded) - 1 - used, "{}", static_cast<long>(::getpid()))
-                        .size);
+                // The pid, without std::format (append_text.h).
+                used = static_cast<std::size_t>(
+                    append_int(expanded + used, expanded + sizeof(expanded) - 1, static_cast<long>(::getpid())) -
+                    expanded);
                 ++p;
             }
             else
@@ -738,8 +751,9 @@ inline void set_sink(Sink sink, void* user = nullptr) noexcept
     }
     catch (...) // std::mutex::lock: std::system_error
     {
-        // The lock could not be taken: the sink in place stays, and a logger
-        // has nowhere better to say so than through that sink.
+        // The lock could not be taken: the sink in place stays. Not through
+        // that sink (it is the one being replaced): straight to stderr.
+        std::fputs("fast_alloc logging: set_sink() could not take the sink lock; the sink in place stays\n", stderr);
     }
 }
 } // namespace fast_alloc::logging

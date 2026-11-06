@@ -144,7 +144,8 @@ inline void check_begin() noexcept
 /// @brief A write about to be deferred: fail if it runs in a parallel region
 ///        on a thread that did not call begin_parallel_phase() in this phase.
 /// @param chunk the chunk written, @param num the element (for the message).
-inline void check_write(const void* chunk, long num) noexcept
+template <typename ChunkT>
+void check_write(const ChunkT* chunk, long num) noexcept
 {
     if constexpr (active)
     {

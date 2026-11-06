@@ -1,0 +1,16 @@
+#!/bin/bash
+# Fake ccc_mpinfo: the partitions of the fake inti, in the real command's
+# layout (two header lines, the CPUS / NODES groups, MpC, CpN, GpN...): the
+# table of tests/data/ccc_mpinfo_inti.txt, which test_partitions.py also reads
+# directly -- one file, so the two never disagree. The fakes are copied into
+# the test's bin/ (conftest.py): the table is reached through the fake home's
+# shrink-array link to the repository, else next to this script.
+for f in "${FAKE_HOME:-}/shrink-array/python/shrink_gui/tests/data/ccc_mpinfo_inti.txt" \
+         "$(dirname "$0")/../data/ccc_mpinfo_inti.txt"; do
+    if [ -f "$f" ]; then
+        cat "$f"
+        exit 0
+    fi
+done
+echo "fake ccc_mpinfo: tests/data/ccc_mpinfo_inti.txt not found" >&2
+exit 1

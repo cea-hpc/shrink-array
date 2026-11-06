@@ -82,7 +82,7 @@ ALLOWED = {
     "CHUNK_ADVISOR_BACKOFF_MAX", "CHUNK_COARSEN_MIN_META_MB", "CHUNK_COARSEN_MIN_META_RATE", "CHUNK_FORCE_RECHUNK",
     "CHUNK_FORCE_RECHUNK_AT", "CHUNK_FORCE_RECHUNK_TOGGLE", "CHUNK_FORCE_RECHUNK_ALT", "CHUNK_ADVISOR_PERIOD",
     "SHRINK_BENCH_ADVISE_ALL", "CHUNK_RECHUNK_TRACE", "CHUNK_RECHUNK_TRACE_SLICES", "CHUNK_RECHUNK_MEMTRACE",
-    "CHUNK_RECHUNK_TRACE_MEM", "CHUNK_AFFINITY_TRACE", "ArrayChunkCore::spare_chunk_list_",
+    "CHUNK_RECHUNK_TRACE_MEM", "CHUNK_AFFINITY_TRACE", "CHUNK_RECYCLE_TRACE", "ArrayChunkCore::spare_chunk_list_",
     "CHUNK_RECHUNK_CHURN", "CHUNK_ADVISOR_TABLE",
     # the allocator settings fixed by the first ab_settings_campaign.py campaign, and their code
     "CHUNK_ALLOC_AFFINITY_EAGER", "CHUNK_RECLAIM_PARTIAL", "CHUNK_SLAB_FULLEST_FIRST", "CHUNK_RECLAIM_PHASE_KEEP",
@@ -98,6 +98,11 @@ ALLOWED = {
     # former class names the CHANGELOG cites (now SecondValue*Base, zero_any::ChunkThreadPolicy, ...)
     "Chunk2Base", "Proxy2Base", "ArrayChunk2Base", "Chunk2AOmpPolicy", "RechunkHooks2", "Chunk2Def",
     "ChunkOmpPolicy", "CompressionManagerOmpPolicy",
+    # internal names with an old variant label, renamed 2026-11 (CHANGELOG.md, Unreleased)
+    "TChunkComp", "TChunk2Comp", "MapTypeChunk2P", "TChunk2AComp", "IsChunk2", "IsChunk2OrZeroAnyFamily",
+    "Base2",
+    # called by the CHUNK_DO_CHECK write paths but defined nowhere, removed by 47d082fe
+    "global_check_write_nan",
     # files a shrink_gui run writes in its directory on the cluster (docs/shrink_gui.md)
     "run.sh", "job.sh", "launch.sh", "node.sh",
     # C++ standard library, compiler, language

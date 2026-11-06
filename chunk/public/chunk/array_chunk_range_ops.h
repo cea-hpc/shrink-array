@@ -136,7 +136,7 @@ inline constexpr bool track_zeros_v = is_v1_v<Arr> && chunk_config::use_compress
 
 /** @brief zero_one_value in counter mode carries two: first-value and second-value counts. */
 template <typename Arr>
-inline constexpr bool track_chunk2_counts_v = is_v2_v<Arr> && chunk_config::use_compression_with_counter;
+inline constexpr bool track_zero_one_value_counts_v = is_v2_v<Arr> && chunk_config::use_compression_with_counter;
 
 /**
  * @brief Recount the per-chunk element counters after a raw store into
@@ -168,7 +168,7 @@ void resync_counters(Arr& arr, ChunkClass& ch, std::size_t c_begin, const T* dst
         }
         arr.element_proxy(static_cast<Arr::IndType>(c_begin)).resync_nb_val_eq_zero(nz);
     }
-    else if constexpr (track_chunk2_counts_v<Arr> && requires { arr.get_second_value(); })
+    else if constexpr (track_zero_one_value_counts_v<Arr> && requires { arr.get_second_value(); })
     {
         const T       sv = static_cast<T>(arr.get_second_value());
         CounterValueT n1 = 0;
@@ -208,7 +208,7 @@ void resync_counters(Arr& arr, ChunkClass& ch, std::size_t c_begin, const T* dst
 template <typename Arr, typename ChunkClass>
 [[nodiscard]] bool fold_if_full(Arr& arr, ChunkClass& ch, std::size_t c_begin, unsigned int chunk_sz)
 {
-    if constexpr (track_chunk2_counts_v<Arr> && has_second_value_v<Arr> && requires { arr.get_second_value(); })
+    if constexpr (track_zero_one_value_counts_v<Arr> && has_second_value_v<Arr> && requires { arr.get_second_value(); })
     {
         using IndType     = decltype(arr.size());
         using T           = Arr::value_type;
@@ -496,7 +496,7 @@ void packed_chunk_store(Arr&         arr,
     bits::WordT* words = shrink_array::internal::as_words(ch.values_load());
     store_bits(words, i - c_begin, hi - c_begin);
 
-    if constexpr (track_chunk2_counts_v<Arr>)
+    if constexpr (track_zero_one_value_counts_v<Arr>)
     {
         // Counter mode (serial builds): the element write that brings a count
         // to S compresses the chunk on the spot (manage_full_*), and there is

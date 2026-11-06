@@ -292,7 +292,9 @@ compile against a library without OMPT; its test runs with `CHUNK_REQUIRE_OMPT=1
 **Sequential points.** Everything that rebuilds an array's storage must be called outside any
 parallel region: `resize()`, `reserve()`, `push_back()` beyond the capacity, `clear()`,
 `assign()`, `swap()`, assignment, `shrink_to_fit()`, `compress()`, `rechunk_to()`, and, for
-`zero_one_value`, `set_second_value()`.
+`zero_one_value`, `set_second_value()`. So is an explicit `make_block_compression()`: inside a
+region it is refused (check builds stop, others log an error and skip the pass) -- there the
+writers' own passes compress.
 
 **Threads.** The per-thread structures are sized once for `max(omp_get_max_threads(), number
 of cores, 256)` threads (in a std build, the team size -- `CHUNK_NUM_THREADS`, else
@@ -389,7 +391,8 @@ threads: for the others, use the std backend.
   (arithmetic types, `bool`, `std::complex`, enums, `std::array` and aggregates of those). A
   type that owns a resource (`std::string`) is refused at compile time. `zero_one_value` also needs an
   order on the second value: a struct of doubles declares `auto operator<=>(const T&) const =
-  default;`.
+  default;`. On a `bool` element, `a[i] += 1` and the other arithmetic assignments (`-= *= /=
+  %= <<= >>=`) do not compile: write `=`, `&=`, `|=` or `^=`.
 - **`zero_one_value` compresses only to its declared second value.** Without `set_second_value()`, a
   `zero_one_value` array compresses to zero only.
 - **Measure memory with the right tool.** `VmRSS` lags behind on many threads; see

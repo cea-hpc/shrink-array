@@ -50,10 +50,146 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
+## 0.2.1 -- 2026-11-05
+
+### Added
+
+- `CHUNK_X86_MARCH` (GCC and Clang on x86-64, default `native`): the `-march=` of the optimised
+  builds, for a binary that must not depend on the machine (`docs/developer_settings.md`). The
+  nightly's ASan job sets `x86-64-v3`: with `-march=native` on Zen 5, GCC 14 aligns slots of the
+  frame on 64 bytes, ASan's fake stack can leave them 32 bytes off, and an aligned `vmovdqa64`
+  faults (#GP). The two SEGV of 2026-11-02 in `read_reclaim_validation` of `zero_one_value`
+  were this, not the library: on EPYC 9V45 the same commit fails 3 times of 3 at `native` and
+  passes 2 times of 2 at `x86-64-v3`.
+
+- The check builds' `FLUSH_PROBE` also rejects non-canonical op pointers and vptrs, and looks at
+  `flush_deferred` too. On a failure the nightly's ASan job prints the CPU, the stacks of every
+  thread, and keeps the core dumps and the binaries as artifacts.
+
+- `thread_speedup.py --merge DIR [DIR ...] --out OUTDIR` merges the output
+  directories of several runs -- the jobs of a `--pool` over several nodes,
+  each of which only draws the executables it claimed -- into one, with no
+  measurement: the rows of every `summary.csv` and `results.csv`, a
+  `meta.json` naming the directories merged, and `plot.gp` and `speedup.png`
+  drawn by the functions a run uses, titled with the hosts merged. An
+  executable found in several directories is taken from the first one given;
+  that and any difference of CPU model, target, `--mode`, `--multiply`,
+  `--metric`, `--numa`, executable arguments or thread list are warnings on
+  stderr. shrink_gui's Graphique tab has an « Enregistrer l'image… » ("Save
+  image…") button on each of its pages: the chart as shown (a pool's gathered
+  curves included), as PNG or SVG.
+
+- `dyn_geometry_validation` checks the refused chunk sizes: wider than
+  `cst_buffer_size` or neither a power of two nor a multiple of 64,
+  `chunk_size_error` says why, and `set_active_chunk_size` and `rechunk_to`
+  keep the geometry with one warning on the rechunk channel; `pool_accounting`
+  checks that `need_load_balance_list_block_free()` is false once the pools
+  are released. Both were at 0 % in the coverage report.
+
+- `bit_words_validation` checks an empty bitmap (`nbits = 0`: `fill_bits`
+  writes nothing, `scan_words` says all_false, `count_ones` 0), and
+  `log_validation` a `std::complex` and a type with no formatter on the
+  message path (not only in the fatal children), still with no allocation:
+  branches the coverage report had at 0 %.
+
+- Two header-only harnesses for helpers the coverage report had at 0 % or
+  close (`ctest -L validation`): `env_parse_validation` (every refusal of
+  `parse_number`, `env_number`'s fallback with its warning on the env
+  channel, `arg_number`, `env_flag`) and `chunk_index_sample_validation` (the
+  chunk sample of the compression-residual messages: the text, "(+N more)",
+  the cut at the stack buffer's size, a 64-bit element index).
+
+- Coverage builds: with `-DCHUNK_GCOV_DUMP` (the nightly's gcov job sets it)
+  the fatal report writes the gcov counters before `abort()`, which skips the
+  exit handler that writes them: the paths the death tests take (the fatal
+  report, the invariant and bad-pointer checks) are counted, where they read
+  as never run.
+
+- The TBB bench's 64-bit twins, `shrink_bench_tbb_<variant>_int64_<1024|dyn>`
+  (std builds with oneTBB and `SHRINK_BENCH_INT64`, as the std benches have
+  theirs): the TBB regions past INT_MAX elements. `thread_speedup.py
+  --all-exec --int64` takes them too.
+
+### Changed
+
+- The internal names that kept an old variant label (`chunk2`, `chunk2a`,
+  `V1`/`V2`/`V2A`) say the variant: the candidate lists are
+  `zero_candidates(_thr)`, `zero_one_value_candidates_thr`,
+  `zero_one_value_candidates_map_thr`, `zero_any_candidates(_thr)` (were
+  `chunk_to_compress_potentially(_thr)`, `chunk2_...`, `map_chunk2_...`,
+  `chunk2a_...`), with their accessors and `remove_from_<variant>_candidates_*`;
+  their types `ZeroComp`, `ZeroCompThr`, `ZeroOneValueComp`,
+  `ZeroOneValueCompThr`, `ZeroOneValueCompMap`, `ZeroOneValueCompByValue`,
+  `ZeroAnyComp`, `ZeroAnyCompThr`, `ZeroAnyCompOf` (were `TChunkComp`,
+  `TChunk2Comp`, `MapTypeChunk2P`, `TChunk2AComp`...); the concepts
+  `IsZeroOneValue`, `IsSecondValueFamily` (were `IsChunk2`,
+  `IsChunk2OrZeroAnyFamily`); the class aliases `SecondValueBase`, `Manager`
+  (were `Base2`, `ManagerChunk2`, `ManagerChunk2A`), `CandidateTuples`,
+  `CandidateValueTuples` (were `VecTupleChunk*pInt2`);
+  `ZeroOneValueInfArrayPolicy`, `CHUNK_LINK_CHECK_ZERO/_ZERO_ONE_VALUE/_ZERO_ANY`
+  and the multi-mat example's `VectZeroOneValue`. Generic `chunk` names (the
+  block of CHUNK_SIZE values, common to the variants: `ChunkBase`,
+  `ManagerChunk`, `ParamChunk`...) stay.
+
+- The `std::initializer_list` constructor of every array is implicit, as `std::vector`'s:
+  `Array<T> a = {1, 2, 3};`, and a braced list as an argument or a return value. It was explicit
+  in `zero_one_value` and `pattern` only.
+
+### Deprecated
+
+- `zero_one_value::Array::ManagerChunk2` and `zero_any::Array::ManagerChunk2A`:
+  use `Manager`. Kept until 1.0.
+
+### Fixed
+
+- `make_block_compression()` inside a parallel region is refused: check builds stop, the others
+  log an error and skip the pass. Run with no proxy, it took no writer handshake and, in `zero`
+  and `zero_one_value`, no reader grace period: it compressed chunks other threads were writing
+  or reading (stale reads, seen with a `read_reclaim` harness). It is a sequential point; in a
+  region the writers' own passes compress. `resize()`, which an owning thread may call in a
+  region, drains through `drain_candidates()`, its released buffers held for a grace period.
+
+- `multi-mat-embedded`: its OMPT tool skips the initial task and the barrier that closes a region,
+  as the library's does. It hung at start-up under libomp.
+
+- The copy of a `zero_one_value` proxy no longer reads indeterminate values: `second_value_` and
+  `ind_` have default initialisers (`ProxyBase`'s `ptr_on_array_` and `num_chunk_` too, Coverity
+  CID 661511). No measurable cost in `access_cost` or `shrink_bench`.
+
+- `scripts/coverity_submit.sh` goes on when the compiler module is missing, with `CXX` or the
+  `g++` on `PATH`; it stopped before the capture.
+
+- `pattern::Array` compresses to motifs in an OMPT build (clang, Intel: `CHUNK_HAVE_OMPT`).
+  There the pass at each region's end is `compress_chunk_to_compress_in_par()`, chunk by chunk
+  through `compress()`, which only knew the two constants: no chunk ever became a motif
+  (`pattern_validation` failed under clang, the nightly's new clang job). A chunk `compress()`
+  leaves materialised now goes through `pattern::Chunk::compress_to_motif()`: the admission rule
+  and the `block_clear_motif()` order of the claimed pass (docs/algo_pattern.md, section 5).
+  `chunk_exchange_validation` accepts, for pattern, an imported materialised chunk found
+  compressed to a motif since (its copy is the motif's second sighting).
+
 ## 0.2.0 -- 2026-10-30
 
 ### Added
 
+- `access_cost`: a `read-bulk` case, the varied array read through `for_each_value()` (each
+  thread its slice): one read gate per chunk and one read section per block instead of both per
+  element. On a 2-core x86 VM, 1.10 times the vector against 3.2 for the element read
+  (`read-varied`); `python/access_cost.py` lists it.
+- `CHUNK_READ_DEP_ORDER=1` (experimental, AArch64, a macro in `CMAKE_CXX_FLAGS`): a pure read
+  (`ChunkBase::element_at`) loads the chunk's `values` relaxed, ordered with the loads through it
+  -- the element, the second value -- by their address dependency instead of an acquire. On
+  Grace every read costs 2.4 ns whatever the chunk's state (x86: 1.1 to 1.8): the hypothesis is
+  that each acquire load (LDAPR) holds the next element's loads, and the loop runs at the
+  latency of its two acquires (the read gate's and this one). Off by default, under evaluation
+  with `access_cost`.
+- `examples/bool_arrays`: the two boolean containers of a `zero_one_value` build side by side --
+  `zero_one_value::Array<bool>` (a byte per element) and `ArrayChunkBits` (a bit per element, the
+  layout of `std::vector<bool>`, neighbouring elements writable from different threads) -- the
+  same mask written from every thread, read back, and the data each keeps (`ctest -L examples`).
+  `docs/variants.md` gets the section they lacked ("Booleans: two containers": what a
+  materialised chunk holds, the write, the threads, when to choose which), and
+  `zero_one_value::Array`'s comment names both.
 - `CHUNK_BREAK_ON_FAILURE`: under a debugger (gdb, cuda-gdb, gdbserver, lldb, lldb-server, read
   from `TracerPid` and the tracer's name, without allocating), an invariant failure or a
   `FAST_ALLOC_FATAL`, its report written, raises `SIGTRAP`: the debugger stops on the failing
@@ -147,6 +283,26 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- `zero_any`'s second-value table (`GlobalVecHolder<T>::value_by_id`, the value behind each
+  identifier) is no longer a static array of 4 Mi values per element type but a pointer to an
+  `mmap(MAP_NORESERVE)` reservation made at the type's first array, next to the identifier
+  region, sized by `CHUNK_CST_VAL2_ID_LIMIT` when set, its pages given back at the last clear.
+  The static array was 332 MiB of bss in the benchmark (32 MiB for a `double`, 96 for a 24-byte
+  type): free while untouched for a trivial type, but an element type whose default constructor
+  is not `constexpr` (which `ArrayChunkElement` allows) had it dynamically initialised at
+  startup -- 101 MB of RSS before `main` for one 24-byte type, 3 MB now -- and every type counted
+  against `RLIMIT_AS` and, under strict overcommit, the commit charge. bss of
+  `shrink_bench_omp_zero_any_256`: 348 MB -> 0.27 MB. The price: reading a second value back
+  loads the table's pointer first (one L1 hit, independent of the identifier's computation).
+  Below measurement on Grace (aarch64, 1 thread, spread 0-1%): `access_cost`'s new
+  `read-second` case 2.413 ns per element against 2.409 for `read-constant`, which does not
+  touch the table, and 2.415 for `read-varied`. On a 2-core x86 VM, within the noise as well
+  (`read-second` +1.8% at the minimum; the benchmark at 2 threads -6%, sd 8-10%, HWM
+  unchanged). `region_init()` is now serialised by a mutex and
+  publishes `region_begin` last: a thread that lost the race could find it set before
+  `region_end` and `id_limit`.
+- `access_cost`: a `read-second` case, an array all at 1.5 (zero_any: every chunk compressed to a
+  second value, read back through the value table); `python/access_cost.py` lists it.
 - The version is 0.2.0. Before 1.0 the installed package declares `SameMinorVersion`:
   `find_package(chunk 0.1)` does not find it, ask for `find_package(chunk 0.2)` (the README,
   getting_started and examples/getting_started do).
@@ -399,6 +555,13 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `CHUNK_DO_CHECK=ON` builds compile again. The proxies' write paths called
+  `global_check_write_nan()`, defined nowhere; they now go through
+  `chunk_config::CheckNaN<do_check>::maybe()`, as the reads do, so `CheckNaN::update(false)`
+  turns the write check off too. And `CheckNaN<true>::maybe()` (config.h) called
+  `global_check_nan()` before any declaration of it: for a `double` argument-dependent lookup
+  finds nothing, so every TU that saw config.h before global_check.h failed (GCC 13). The
+  overloads are now declared in config.h, under `CHUNK_OPT_DO_CHECK`.
 - The compression passes of `zero`, `zero_one_value` and `zero_any` (threaded builds): a write that
   made a chunk constant while its pass handed it back -- between the pass's `steal_unmark()` and
   the reset of its "queued" flag -- met the flag still up and did not queue it, and the reset

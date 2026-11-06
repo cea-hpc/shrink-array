@@ -28,7 +28,7 @@
 
 void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
 {
-    // Aliases so the body below is VERBATIM (see bench_phase_fill.cpp).
+    // Short local names for the arrays (see bench_phase_fill.cpp).
     auto& tab1 = bench_arr.tab1;
     auto& tab2 = bench_arr.tab2;
     auto& tab3 = bench_arr.tab3;
@@ -50,8 +50,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
     auto& tab_mask      = bench_arr.tab_mask;
     auto& tab_conn      = bench_arr.tab_conn;
 
-    // The flags the two lambdas captured from main(), under their original
-    // names so the bodies below are VERBATIM.
+    // The I/O flags, as locals the two lambdas capture.
     const char*                 no_io         = io.no_io;
     const char*                 no_compress   = io.no_compress;
     const Int                   io_res        = io.io_res;

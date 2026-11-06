@@ -31,7 +31,7 @@ namespace shrink_array
 
 /// @brief A zero_one_value write reached a candidate list that does not exist (see
 ///        zero_one_value::Proxy::pre_check_mark_for_compression).
-[[noreturn]] inline void chunk2_missing_candidate_list(int thr) noexcept
+[[noreturn]] inline void zero_one_value_missing_candidate_list(int thr) noexcept
 {
     CHUNK_INVARIANT_FAILED("[zero_one_value] rank {}: no compression candidate list for this array's second value -- "
                            "a write was queued for an array that never called set_second_value(); "

@@ -55,6 +55,18 @@ namespace zero_one_value
  *          num_tab: hence the destructor's two erases and rechunk_to()'s six
  *          hooks (zero_any has three).
  *
+ *          Booleans, two containers, chosen by type (docs/variants.md, section 2):
+ *            - Array<bool>: one byte per element in a materialised chunk, a plain
+ *              byte store per write;
+ *            - Array<Bit>, spelled ArrayChunkBits<> (chunk/array_chunk_bits.h):
+ *              one bit per element, 8 per byte -- the layout of std::vector<bool>
+ *              -- for an atomic read-modify-write of a 64-bit word per write, so
+ *              that two threads may write neighbouring elements, which
+ *              std::vector<bool> does not allow.
+ *          Both compress all-false chunks to first_value and all-true chunks to
+ *          the second value, `true` by construction (no set_second_value()).
+ *          examples/bool_arrays uses both.
+ *
  * @tparam T        stored element type
  * @tparam IntType index type used for sizes and element positions
  */
@@ -65,12 +77,13 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
               public RechunkHooks<Array<T, IntType>>
 {
   public:
-    using Base2      = SecondValueArrayBase<Array>; ///< Second-value common base (dirty bitset, second-value plumbing).
-    using Base       = ArrayChunkBase<Array>;       ///< Base shared by every variant.
-    using FastBlock2 = FastBlockSupport<Array>;     ///< Fast-block compression pass.
-    using Hooks2     = RechunkHooks<Array>;         ///< Re-chunk hooks (dynamic geometry).
+    using SecondValueBase =
+        SecondValueArrayBase<Array>;            ///< Second-value common base (dirty bitset, second-value plumbing).
+    using Base       = ArrayChunkBase<Array>;   ///< Base shared by every variant.
+    using FastBlock2 = FastBlockSupport<Array>; ///< Fast-block compression pass.
+    using Hooks2     = RechunkHooks<Array>;     ///< Re-chunk hooks (dynamic geometry).
 
-    friend Base2;                 ///< The CRTP base reaches this class's private members.
+    friend SecondValueBase;       ///< The CRTP base reaches this class's private members.
     friend ArrayChunkBase<Array>; ///< For swap_identity().
 
     // RechunkHooks::rechunk_reown_after_swap copies the private ind_cst_val2_.
@@ -79,11 +92,11 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
 
     // Re-declared, not only inherited: the mixins declare them too, and an
     // outside `Arr::ChunkType` would be ambiguous between base subobjects.
-    using Traits      = Base2::Traits;      ///< ArrayChunkTraits<Array>.
-    using ChunkType   = Base2::ChunkType;   ///< Chunk<T>, the chunk type held in chunk_list_.
-    using ManagerType = Base2::ManagerType; ///< ManagerChunk<Chunk, T>, the per-type manager.
-    using ProxyType   = Base2::ProxyType;   ///< Proxy<T>, the write proxy of the non-const accessors.
-    using value_type  = T;                  ///< Stored element type.
+    using Traits      = SecondValueBase::Traits;      ///< ArrayChunkTraits<Array>.
+    using ChunkType   = SecondValueBase::ChunkType;   ///< Chunk<T>, the chunk type held in chunk_list_.
+    using ManagerType = SecondValueBase::ManagerType; ///< ManagerChunk<Chunk, T>, the per-type manager.
+    using ProxyType   = SecondValueBase::ProxyType;   ///< Proxy<T>, the write proxy of the non-const accessors.
+    using value_type  = T;                            ///< Stored element type.
 
     // The former snake_case spellings, kept until 1.0 (types are PascalCase).
     using chunk_type [[deprecated("types are PascalCase: use ChunkType")]]          = ChunkType;
@@ -92,18 +105,19 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     using ind_type [[deprecated("types are PascalCase: use IndType")]]              = IntType;
     using chunk_list_type [[deprecated("types are PascalCase: use ChunkListType")]] = Base::ChunkListType;
 
-    using Base2::chunk_list_;
+    using SecondValueBase::chunk_list_;
 
     using Base::nb_tab;
     using Base::size_policy_;
-    using Base2::m_size_;
-    using Base2::nb_chunk_;
-    using Base2::resize; // resize(sz, val), ArrayChunkBase's
+    using SecondValueBase::m_size_;
+    using SecondValueBase::nb_chunk_;
+    using SecondValueBase::resize; // resize(sz, val), ArrayChunkBase's
 
     /// Registry entry of an array: (second value, its index in the shared value table, num_tab).
     using InfArrayT = SecondValueInfo<T>;
 
-    using ManagerChunk2 = ManagerChunk<Chunk, T>; ///< Same type as ManagerType.
+    using Manager                                     = ManagerChunk<Chunk, T>; ///< Same type as ManagerType.
+    using ManagerChunk2 [[deprecated("use Manager")]] = Manager;                ///< Former name, until 1.0.
 
     // Required, not decoration: ArrayChunkBase re-exports RechunkSupport's hook
     // DEFAULTS under these names, so a hook call through self() would be
@@ -172,8 +186,10 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     }
 
     /// @brief Build an array holding the elements of @p il.
+    /// @details Not explicit, as std::vector's: `Array<T> a = {1, 2, 3};`, and a
+    ///          braced list as an argument or a return value.
     /// @param il Source values.
-    explicit Array(std::initializer_list<T> il) : Array(il.begin(), il.end()) {}
+    Array(std::initializer_list<T> il) : Array(il.begin(), il.end()) {}
 
     /**
      * @brief Release the array's storage, then drop both registry entries.

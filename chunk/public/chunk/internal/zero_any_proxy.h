@@ -40,7 +40,7 @@
 #include "chunk/internal/in_t.h"                         // InT<T>
 #include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/tab_cst_val2_holder.h"          // SecondValueRef
-#include "chunk/internal/TChunk.h"                       // TChunk2ACompOf
+#include "chunk/internal/TChunk.h"                       // ZeroAnyCompOf
 #include "chunk/internal/proxy_base.h"                   // ProxyBase
 #include "chunk/internal/second_value_proxy_base.h"      // SecondValueProxyBase
 #include "chunk/internal/dependent_false.h"              // dependent_false_v (wrong-type branches)
@@ -185,7 +185,7 @@ template <typename T, typename Derived, typename ChunkT>
 class ProxySpec : public SecondValueProxyBase<Derived, T, ChunkT>
 {
   public:
-    using Base2 = SecondValueProxyBase<Derived, T, ChunkT>;
+    using SecondValueBase = SecondValueProxyBase<Derived, T, ChunkT>;
 
     /// @brief What a slot holds: the value, or for a wide T the identifier
     ///        of its shared array (SecondValueTraits) -- 4 bytes per chunk
@@ -196,7 +196,7 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, ChunkT>
     ///        a team for a large array (resize_filled).
     using SecondValueRowT = parallel_storage_init::NoInitVector<SecondValueSlotT>;
 
-    using Base2::Base2;
+    using SecondValueBase::SecondValueBase;
 
     /*!
      * \brief Retrieves a pointer to a specific second value in the chunk.
@@ -288,7 +288,7 @@ class ProxySpec<bool, Derived, ChunkT> : public SecondValueProxyBase<Derived, bo
   public:
     using ChunkType = ChunkT;
 
-    using Base2 = SecondValueProxyBase<Derived, bool, ChunkType>;
+    using SecondValueBase = SecondValueProxyBase<Derived, bool, ChunkType>;
 
     using ValuesTypeRef = SecondValueProxyBase<Derived, bool, ChunkType>::ValuesTypeRef;
 
@@ -296,7 +296,9 @@ class ProxySpec<bool, Derived, ChunkT> : public SecondValueProxyBase<Derived, bo
     /// @param values Reference to the chunk's values.
     /// @param num Index of the element in the chunk.
     /// @param chunk Owning chunk.
-    explicit ProxySpec(ValuesTypeRef values, int num, ChunkType& chunk) noexcept : Base2(values, num, chunk) {}
+    explicit ProxySpec(ValuesTypeRef values, int num, ChunkType& chunk) noexcept : SecondValueBase(values, num, chunk)
+    {
+    }
 
     /*!
      * \brief Retrieves a pointer to a specific second value in the chunk.
@@ -390,8 +392,8 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived, ChunkT>
 
     using ValuesTypeRef = BaseSpec::ValuesTypeRef;
 
-    using Base  = ProxyBase<Derived, T, ChunkT>;
-    using Base2 = SecondValueProxyBase<Derived, T, ChunkT>;
+    using Base            = ProxyBase<Derived, T, ChunkT>;
+    using SecondValueBase = SecondValueProxyBase<Derived, T, ChunkT>;
     using Base::chunk_;
 
     using BaseSpec::BaseSpec;
@@ -410,7 +412,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived, ChunkT>
     void execute_arithmetic_compound_operation_async(auto* ctx, Op op, const U& operand, Body lbd) const;
 
     /// @brief Rank @p thr's zero_any candidate list.
-    TChunk2ACompOf<ChunkT>& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept
+    ZeroAnyCompOf<ChunkT>& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept
     {
         return chunk_.get_vec_tuple_to_compress_potentially_thr(thr);
     }
@@ -446,7 +448,7 @@ class ProxyFastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec<T, Deriv
     using BaseSpec::BaseSpec;
 
     /// @brief The single candidate list of a serial build (zero_any::ChunkThreadPolicy<false>).
-    TChunk2ACompOf<ChunkT>& get_vec_tuple_to_compress_potentially() const noexcept
+    ZeroAnyCompOf<ChunkT>& get_vec_tuple_to_compress_potentially() const noexcept
     {
         return chunk_.get_vec_tuple_to_compress_potentially();
     }
@@ -477,18 +479,14 @@ template <typename T, typename Derived, typename ChunkT>
 class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::use_fast_block_compression>
 {
   public:
-    /// @brief Stream output of the element's value (defined below).
-    template <typename U>
-    friend std::ostream& operator<<(std::ostream& os, const Proxy<U>& proxy);
-
     using ChunkType          = ChunkT;
-    using Base2              = SecondValueProxyBase<Derived, T, ChunkType>;
+    using SecondValueBase    = SecondValueProxyBase<Derived, T, ChunkType>;
     using Base               = ProxyBase<Derived, T, ChunkType>;
     using BaseFastCompPolicy = ProxyFastCompPolicy<Derived, T, ChunkType, chunk_config::use_fast_block_compression>;
     using BaseSpec           = ProxySpec<T, Derived, ChunkType>;
 
     friend Base;
-    friend Base2;
+    friend SecondValueBase;
     friend BaseFastCompPolicy;
     friend Derived; // pattern::Proxy widens pre_check_mark_for_compression() (its completion rule)
 
@@ -610,7 +608,7 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
     static inline constinit internal::LazyImmortal<PointerMap<ChunkT>> share_info_array; ///< pointer->tab mapping
 
   private:
-    using ManagerChunk2A = ChunkTraits<ChunkT>::ManagerType;
+    using Manager = ChunkTraits<ChunkT>::ManagerType;
 
     using Base::read_values;
     using Base::values_;
@@ -804,6 +802,16 @@ class Proxy : public ProxyImpl<T, Proxy<T>, Chunk<T>>
     using Impl::Impl;
     using Impl::operator=; // the value assignments (clean and trap paths)
 
+    /// @brief Write the element's value, read through proxy.read_values(), to @p os.
+    /// @return @p os.
+    friend std::ostream& operator<<(std::ostream& os, const Proxy& proxy)
+    {
+        // Through the proxy's read entry: values[] directly is wrong for a chunk
+        // compressed to a second constant (an unbacked slot).
+        os << proxy.read_values();
+        return os;
+    }
+
     /// @brief Proxy-to-proxy assignment, `a[i] = b[j]`: a WRITE of @p from's
     ///        value (ProxyImpl::operator=), not a rebinding.
     /// @return *this.
@@ -816,17 +824,6 @@ class Proxy : public ProxyImpl<T, Proxy<T>, Chunk<T>>
 };
 
 } // namespace zero_any
-
-/// @brief Write the element's value, read through proxy.read_values(), to @p os.
-/// @return @p os.
-template <typename T>
-std::ostream& operator<<(std::ostream& os, const zero_any::Proxy<T>& proxy)
-{
-    // Through the proxy's read entry: values[] directly is wrong for a chunk
-    // compressed to a second constant (an unbacked slot).
-    os << proxy.read_values();
-    return os;
-}
 
 } // namespace shrink_array
 

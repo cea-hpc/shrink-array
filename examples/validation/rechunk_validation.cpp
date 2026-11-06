@@ -31,7 +31,7 @@
 // variants, hence the static_assert.
 //
 // zero_one_value CONTRACT: the compression-candidate list is indexed by
-// second_value (map_chunk2_to_compress_potentially_thr[thr][second_value]),
+// second_value (zero_one_value_candidates_map_thr[thr][second_value]),
 // populated ONLY by set_second_value. A second_value must therefore be
 // declared BEFORE writing, otherwise get_vec_tuple_to_compress_potentially_thr
 // asserts (vec == nullptr). This is what the bench does via

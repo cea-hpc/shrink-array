@@ -61,7 +61,7 @@
  *          still read back after the freed identifiers are handed out again.
  *
  *          Then the motif state, chunks put in it directly by
- *          install_motif_for_test() (the compression to motifs is M to Q), every third chunk
+ *          install_motif() (the compression to motifs is M to Q), every third chunk
  *          the same motif with an offset of its own (negative ones, and for
  *          short past the type's range: the arithmetic wraps), for int, long,
  *          unsigned and short:
@@ -443,9 +443,9 @@ static void motif_state(const char* tname, long nch)
         for (long c = first; c < nch; c += 3)
         {
             const std::vector<T> vals = motif_chunk(c, shift);
-            if (!arr.install_motif_for_test(static_cast<int>(c), vals.data()))
+            if (!arr.install_motif(static_cast<int>(c), vals.data()))
             {
-                println("  install_motif_for_test refused chunk {}  <-- WRONG", c);
+                println("  install_motif refused chunk {}  <-- WRONG", c);
                 ++fails;
             }
             std::copy(vals.begin(), vals.end(), ref.begin() + c * csz);
@@ -592,9 +592,9 @@ static void fill_over_motifs(const char* tname, long nch)
             vals[static_cast<std::size_t>(j)] =
                 Ch::wrapping_add(static_cast<T>((j * j) % 13 + j / 3), static_cast<T>(c));
         }
-        if (!arr.install_motif_for_test(static_cast<int>(c), vals.data()))
+        if (!arr.install_motif(static_cast<int>(c), vals.data()))
         {
-            println("  install_motif_for_test refused chunk {}  <-- WRONG", c);
+            println("  install_motif refused chunk {}  <-- WRONG", c);
             ++fails;
         }
         std::copy(vals.begin(), vals.end(), ref.begin() + c * csz);
@@ -659,9 +659,11 @@ static void motif_compression(const char* tname, long nch)
         }
         return ref;
     };
-    // A first sighting leaves its chunk materialised: one per motif, one per thread at most
-    // when the threads' passes see it at once.
-    const long first_sightings = CHUNK_PMP_MAX_THREADS;
+    // A first sighting leaves its chunk materialised: one per motif, one per thread when the
+    // threads' passes see it at once, and a few more: the probation tag has 8 bits, so two
+    // chunks can count as one sighter (find_or_admit()). A bound, not a count: 55 of 64 came
+    // up at 8 threads on a loaded machine, every element right.
+    const long first_sightings = 2L * CHUNK_PMP_MAX_THREADS;
 
     // M: the connectivity written in order.
     const pattern::MotifStats before = Region::stats();
@@ -844,6 +846,13 @@ int run(int argc, char** argv)
 
     const long nch = argc > 1 ? shrink_array::arg_number<long>(argv[1], 64, "chunks") : 64;
     println("=== pattern_validation  chunks={}  threads={} ===", nch, CHUNK_PMP_MAX_THREADS);
+
+    {
+        // Copy-list-initialisation, as for a std::vector: the constructor is not explicit.
+        pattern::Array<int> listed = {1, 2, 3};
+        expect_eq("a = {1, 2, 3}: size", listed.size(), 3);
+        expect_eq("a = {1, 2, 3}: a[1]", static_cast<int>(listed[1]), 2);
+    }
 
     against_zero_any<int>("int", nch);
     against_zero_any<long>("long", nch);

@@ -121,6 +121,31 @@ propre taille de chunk, dans cet ordre :
 4. le tampon rendu au pool après la période de grâce, comme pour une compression vers une
    constante.
 
+Le déroulé de la passe ; les étapes jusqu'au parcours sont celles de `zero_any`
+([algo_zero_any_fr.md](algo_zero_any_fr.md) §5), résumées ici :
+
+```mermaid
+flowchart TD
+    A["passe de zero_any jusqu'au parcours :<br/>test du vidage, steal_mark, start"] --> E["fill_list_to_compress à la taille de l'entrée :<br/>scan_constants contre 0 et l'élément 0"]
+    E -->|"tout = 0"| F["type 0 : reset_release de la case,<br/>CAS values -> cst_val1"]
+    E -->|"tout = élément 0"| G["type 1 : find_or_set_ind_cst_val2_release,<br/>CAS values -> le tableau du registre"]
+    E -->|"ni l'un ni l'autre"| M["classify_motif : read_block,<br/>soustraire l'élément 0, hacher, find_or_admit"]
+    M -->|"motif enregistré"| MC["motif_candidates_, réservation gardée"]
+    M -->|"non admis"| N["steal_unmark : reste matérialisé"]
+    MC --> O["compress_motif_candidates, après les constantes :<br/>block_clear_motif"]
+    O --> O1["1 offset -> case, écriture release<br/>2 case de type = CstSlot::motif<br/>3 CAS tampon -> motif"]
+    F --> R["free_block_to_pool après une période de grâce,<br/>steal_unmark"]
+    G --> R
+    O1 --> R
+    R --> K["drapeaux de file rendus comme dans zero_any,<br/>finish()"]
+    N --> K
+```
+
+`find_or_admit` ne rend un motif qu'à partir de sa seconde observation, par un autre chunk (§3) ;
+le CAS du motif se fait sur un chunk réservé, et son échec est une violation d'invariant. Les deux
+constantes utilisent les formes release des écritures de la case (`reset_release`,
+`find_or_set_ind_cst_val2_release`), pour les lecteurs du §6.
+
 ## 6. La lecture, et les réécritures de la case
 
 Un lecteur lit le pointeur, puis l'offset : deux mots. La case est réécrite par une passe de
@@ -148,8 +173,41 @@ lecture du pointeur, dans la même ligne de cache, sur la lecture d'un chunk mot
 
 Le chemin d'écriture de `zero_any`. Une écriture dans un chunk motif le **matérialise** : un
 tampon rempli de `motif[j] + offset`, publié par CAS contre le pointeur du motif (un CAS perdu
-recycle le tampon). `wait_before_materialise()` tient la passe à l'écart du chunk (protocole 1) :
-la case y est stable, lue une fois. L'offset reste dans la case (§2).
+recycle le tampon). La case y est stable, et le remplissage la lit une fois : la passe qui a
+marqué le chunk reste garée sur le drapeau de l'écrivain (protocole 1) jusqu'à `end_write`.
+`wait_before_materialise()` rend la main tout de suite sur ce chemin ; sa boucle d'attente sert
+les appelants sans drapeau (`alloc_chunk`, l'application d'un vidage). L'offset reste dans la
+case (§2).
+
+Le déroulé d'une écriture dans un build OpenMP : les étapes du moteur sont celles du §7.2 de
+[algo_zero_one_value_fr.md](algo_zero_one_value_fr.md), le corps celui de `zero_any` (§6 de
+[algo_zero_any_fr.md](algo_zero_any_fr.md)), résumés ici ; le diagramme montre où `pattern`
+diffère.
+
+```mermaid
+flowchart TD
+    A["pattern::Proxy : zero_any::ProxyImpl::assign_impl"] --> B{"0 sur un chunk à cst_val1,<br/>aucune opération différée en attente ?"}
+    B -->|oui| B1["rien à faire"]
+    B -->|non| C["moteur du 7.2<br/>(write_with_optional_lock_with_set_ptr)"]
+    C --> D{"revérification :<br/>compresseur ?"}
+    D -->|oui| D1["end_write + écriture DIFFÉRÉE"]
+    D -->|non| E["corps handle_no_bool_assignment :<br/>charger values, armer la case"]
+    E --> F{"constante du registre = valeur ?<br/>(is_cst_val2_ptr_of : jamais un motif)"}
+    F -->|oui| F1["rien à faire"]
+    F -->|non| G{"premier ou dernier élément<br/>(is_completion_write),<br/>ou un critère de zero_any ?"}
+    G -->|oui| G1["add_to_compression_list"]
+    G -->|non| H
+    G1 --> H{"values dans la région des motifs ?<br/>(is_motif_ptr)"}
+    H -->|oui| I["create_value : tampon rempli de<br/>motif[j] + offset de la case,<br/>CAS contre le pointeur du motif"]
+    H -->|non| J["perform_core_assignment de zero_any"]
+    I --> K["store_value_at,<br/>l'offset reste dans la case"]
+    J --> L["end_write + entretien du 7.2"]
+    K --> L
+```
+
+La règle de complétion élargit à la fois le pré-test (`pattern::Proxy::pre_check_mark_for_compression`)
+et le prédicat (`should_mark_for_compression`). Sur un chunk motif, l'ancienne valeur que lit le
+marquage est `motif[num] + offset`, via `Chunk::motif_offset()`.
 
 ## 8. Géométrie dynamique : le rechunk et le conseiller
 

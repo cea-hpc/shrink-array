@@ -26,7 +26,8 @@
 // dependent name, so no preprocessor guard is needed.
 //
 // Callers instantiate from these definitions. If one sees only the forward
-// declaration in manager_chunk_inline.h, include this header there -- do not
+// declaration in manager_chunk_policies.h, include this header in
+// manager_chunk_policies_inline.h -- do not
 // add a hand-maintained explicit instantiation list.
 
 namespace shrink_array

@@ -328,6 +328,10 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/array_chunk_rechunk_hooks.h
         public/chunk/internal/array_chunk_rechunk_hooks_inline.h
         public/chunk/internal/array_chunk_rechunk_inline.h
+        public/chunk/internal/array_chunk_rechunk_refill.h
+        public/chunk/internal/array_chunk_rechunk_refill_inline.h
+        public/chunk/internal/array_chunk_rechunk_trace.h
+        public/chunk/internal/array_chunk_rechunk_trace_inline.h
         public/chunk/internal/bad_ptr_check.h
         public/chunk/internal/zero_any_chunk_inline.h
         public/chunk/internal/second_value_chunk_base.h
@@ -368,6 +372,13 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/live_arrays.h
         public/chunk/internal/manager_chunk.h
         public/chunk/internal/manager_chunk_inline.h
+        public/chunk/internal/manager_chunk_interface.h
+        public/chunk/internal/manager_chunk_policies.h
+        public/chunk/internal/manager_chunk_policies_inline.h
+        public/chunk/internal/compress_candidates.h
+        public/chunk/internal/compress_candidates_inline.h
+        public/chunk/internal/reuse_pools.h
+        public/chunk/internal/reuse_pools_inline.h
         public/chunk/internal/map_helper.h
         public/chunk/internal/phase_guard.h
         public/chunk/internal/zero_one_value_pointer_map.h

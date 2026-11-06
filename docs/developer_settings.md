@@ -29,7 +29,7 @@ fields, and `shrink_bench` exposes them as options (§4). See
 | variable | default | effect |
 |---|---|---|
 | `CHUNK_RECLAIM_THREADS` | 1 | threads issuing a sweep's `madvise` calls; `0`: `omp_get_max_threads()`. On Milan (64 threads), `0` is 3.5% faster for `zero_one_value` and the same for the other variants; it stays at 1 until it is measured on Grace, where 288 threads would issue them |
-| `CHUNK_CST_VAL2_ID_LIMIT` | unset | test hook: lowers the number of identifiers of `zero_any`'s second-value registry (the region's capacity otherwise), so that a harness reaches the registry's limit with a few values (`cst2_registry_validation`, `cst2_reclaim_validation`); can only lower it |
+| `CHUNK_CST_VAL2_ID_LIMIT` | unset | test hook: lowers the number of identifiers of `zero_any`'s second-value registry (the region's capacity otherwise), and sizes the value table to match, so that a harness reaches the registry's limit with a few values (`cst2_registry_validation`, `cst2_reclaim_validation`); can only lower it |
 | `CHUNK_DEFERRED_POOL_KB` | 64 | slab size of the deferred-write pools, in KiB (the operation slabs are never given back: larger means fewer allocator calls but more resident memory) |
 
 `python/ab_settings_campaign.py` measures such a setting against the defaults (computation
@@ -129,8 +129,10 @@ and how the shared options reach the headers, are in
 | `CHUNK_WRITE_WAIT_MAX_YIELDS=<n>` | how long a writer facing a compressor waits before deferring its write (64 *yields*) |
 | `CHUNK_READ_RECLAIM_SLOTS=<n>` | number of reader threads tracked individually by the buffer reclamation (1,024) |
 | `CHUNK_STATS_MAX_THR=<n>` | number of ranks of the `CHUNK_STATS` counters (1,024) |
+| `CHUNK_READ_DEP_ORDER=1` | **experimental**, AArch64 only, off under TSan: a pure read loads the chunk's `values` pointer relaxed, ordered with the element load by their address dependency instead of an acquire (`chunk_config::read_dep_order`, config.h). Under evaluation on Grace (`access_cost`): pass it in `CMAKE_CXX_FLAGS` of a build of its own |
 | `CHUNK_TEST_READ_DELAY_EVERY=<n>`, `CHUNK_TEST_READ_DELAY_US=<µs>` | test hook: one read in N by a thread that requested it waits (50 µs), to widen the reader / reclamation window (`read_reclaim_validation`) |
 | `CHUNK_TEST_PASS_DELAY_EVERY=<n>`, `CHUNK_TEST_PASS_DELAY_US=<µs>` | test hook: a delay (200 µs) in one compression pass in N |
+| `CHUNK_GCOV_DUMP` | coverage builds (`--coverage`): the fatal report writes the gcov counters before `abort()`, so the paths the death tests take are counted; set by the nightly coverage job |
 
 The thresholds of `zero_any`'s compression passes are constants of `zero_any_chunk_def.h` (the levels
 1 to 3 of the former `CHUNK2A_COMPRESS_LEVEL` were never built or tested).
@@ -169,6 +171,7 @@ The options of [environment_variables.md](environment_variables.md) §2 are not 
 | `CHUNK_NO_IPA_ICF` | `OFF` | disables `-fipa-icf` (otherwise GCC merges identical functions, which scrambles call stacks) |
 | `CHUNK_WARNINGS`, `CHUNK_WERROR` | `ON`, `OFF` | `-Wall -Wextra` on all builds; warnings as errors in Debug |
 | `CHUNK_HEAVY_JOB_POOL` | empty | Ninja job pool for the executables compiled as a single unit (limits compilation memory) |
+| `CHUNK_X86_MARCH` | `native` | GCC, Clang on x86-64: `-march=` of the optimised builds; a fixed level gives a binary independent of the machine (`x86-64-v3` in the nightly's ASan job, `native` faults there on Zen 5) |
 | `USE_LIBCXX` | `ON` | Clang builds: libc++ instead of libstdc++ |
 | `USE_GPERF`, `ENABLE_IWYU` | `OFF` | gperftools profiling; include-what-you-use during compilation |
 | `ONEAPI_XHOST`, `ONEAPI_NO_INTEL_LIBS`, `ONEAPI_FAST_FP` | `OFF` | icpx: Intel-only binary (`-xHost`); no Intel runtime library; keep `-fp-model=fast` |

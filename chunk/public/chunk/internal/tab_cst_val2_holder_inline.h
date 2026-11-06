@@ -261,7 +261,7 @@ template <typename T>
 std::byte* GlobalVecHolder<T>::region_alloc(std::size_t bytes)
 {
     const std::size_t off = region_used.fetch_add(bytes, std::memory_order_relaxed);
-    // ONE capacity: what value_by_id can hold (region_usable, lowered by
+    // ONE capacity: what the value table holds (region_usable, lowered by
     // CHUNK_CST_VAL2_ID_LIMIT); alloc_chunk() writes value_by_id[id] for every slot
     // carved here, so a slot past it would be a write past the table. Warn once at half.
     const std::size_t cap_bytes = (bytes != 0 && id_limit * bytes < region_usable) ? id_limit * bytes : region_usable;
@@ -466,6 +466,17 @@ void GlobalVecHolder<T>::region_init()
     {
         return;
     }
+    // Serialised, and region_begin published LAST: a thread that finds it set
+    // (the acquire above) also finds region_end, id_limit and the value table.
+    // Cold: once per element type and process (region_reset() keeps both
+    // reservations). Function-local, so constructed on first use, and
+    // trivially destructible: safe from a global array's teardown.
+    static std::mutex      init_mutex;
+    const std::scoped_lock lk(init_mutex);
+    if (region_begin.load(std::memory_order_relaxed) != nullptr)
+    {
+        return;
+    }
     // MM_PROTECT: PROT_NONE for good -- nothing is ever stored in the
     // region, so any dereference of a second-value pointer faults instead
     // of reading a plausible zero. Otherwise RW (never touched either).
@@ -481,17 +492,24 @@ void GlobalVecHolder<T>::region_init()
     // (TabCstVal2Holder::id_of_ptr / value_of_id). Nothing is ever stored
     // in the region, so a slot only has to give each identifier a distinct
     // address: one cache line does, and no page is ever backed.
-    if (std::byte* expected = nullptr;
-        region_begin.compare_exchange_strong(expected, static_cast<std::byte*>(raw), std::memory_order_acq_rel))
+    region_end     = static_cast<std::byte*>(raw) + region_usable;
+    const auto lim = env_number<std::size_t>("CHUNK_CST_VAL2_ID_LIMIT", max_ids);
+    id_limit       = (lim >= 1 && lim < max_ids) ? lim : max_ids; // lowers only
+
+    // The value table: one T per identifier this run can hand out, plus [0].
+    // Reserved the same way, so only the pages of identifiers actually handed
+    // out are backed; alloc_chunk() constructs each value.
+    void* vals =
+        mmap(nullptr, value_table_bytes(), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+    if (vals == MAP_FAILED) [[unlikely]]
     {
-        region_end     = static_cast<std::byte*>(raw) + region_usable;
-        const auto lim = env_number<std::size_t>("CHUNK_CST_VAL2_ID_LIMIT", max_ids);
-        id_limit       = (lim >= 1 && lim < max_ids) ? lim : max_ids; // lowers only
+        CHUNK_INVARIANT_FAILED("[cst_val2] cannot reserve the second-value table ({} MiB): {}",
+                               value_table_bytes() >> 20U, std::strerror(errno));
     }
-    else
-    {
-        munmap(raw, region_usable); // lost the race: the winner's region stands
-    }
+    T* const table = static_cast<T*>(vals);
+    std::construct_at(table, T{}); // [0]: "no second value"
+    value_by_id = table;
+    region_begin.store(static_cast<std::byte*>(raw), std::memory_order_release);
 }
 
 template <typename T>
@@ -518,6 +536,13 @@ void GlobalVecHolder<T>::region_reset() noexcept
     {
         mprotect(base, used, PROT_NONE);
     }
+    // The values of the identifiers carved so far (free ones included: they
+    // were carved too). The table is page-aligned and [0] shares the first
+    // page, so it is constructed again: T{} need not be all-zero bytes.
+    T* const          table  = values();
+    const std::size_t carved = ((used / region_stride) + 1u) * sizeof(T);
+    madvise(table, carved < value_table_bytes() ? carved : value_table_bytes(), MADV_DONTNEED);
+    std::construct_at(table, T{});
 }
 
 template <typename T>
@@ -635,11 +660,11 @@ template <typename T>
         return T{};
     }
     const std::uint32_t id = id_of_ptr(ptr);
-    if (id == 0u || id > VecHolder::max_ids)
+    if (id == 0u || id > VecHolder::id_capacity())
     {
         return T{};
     }
-    return VecHolder::value_by_id[id];
+    return VecHolder::values()[id];
 }
 
 template <typename T>
@@ -652,8 +677,10 @@ T* TabCstVal2Holder<T>::alloc_chunk(T val)
         buf = reinterpret_cast<T*>(VecHolder::region_alloc(VecHolder::region_stride));
     }
     // Before the slot can be published: a reader gets the identifier only from a
-    // slot written after this returns.
-    VecHolder::value_by_id[id_of_ptr(buf)] = val;
+    // slot written after this returns. Constructed, not assigned: the table is
+    // raw mapped memory (a reused identifier's old value is trivially
+    // destructible, T being trivially copyable).
+    std::construct_at(VecHolder::values() + id_of_ptr(buf), val);
     return buf;
 }
 

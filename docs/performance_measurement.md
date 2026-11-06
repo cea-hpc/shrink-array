@@ -101,6 +101,43 @@ The decider's settings are `shrink_bench` options (the library does not read the
 Beware: `--rechunk_min_gain_mb 1000000` no longer blocks coarsenings since the
 "gain per cost" criterion was introduced; use `--rechunk_dry_run`.
 
+### 2.4 What a threaded read costs
+
+Measured on Grace (GCC 16, `-mcpu=native`, `access_cost_zero_any_256`, 2²⁷ elements, three
+alternated rounds), by rebuilding the same tree four times with, in turn, the read section
+removed (`ReadSection`, read_reclaim_inline.h: two release stores of the thread's sequence
+and a compiler fence), the read gate removed (`sync_chunk`: an acquire load of the chunk's
+dirty-bitset word), both, or neither. Removing them is only safe in such a measurement: these
+read cases run no write and no compression pass alongside the reads. Array median, ns per
+element:
+
+| threads | case | all | no section | no gate | neither |
+|---|---|---|---|---|---|
+| 1 | read-varied | 2.172 | 0.934 | 2.169 | 0.639 |
+| 1 | read-constant | 2.166 | 0.914 | 2.165 | 0.627 |
+| 1 | read-second | 2.192 | 1.244 | 2.185 | 0.931 |
+| 1 | read-random | 27.161 | 20.743 | 20.568 | 14.368 |
+| 1 | read-bulk | 0.663 | 0.653 | 0.655 | 0.664 |
+| 64 | read-varied | 0.035 | 0.020 | 0.035 | 0.019 |
+| 64 | read-constant | 0.036 | 0.015 | 0.035 | 0.010 |
+| 64 | read-second | 0.036 | 0.021 | 0.036 | 0.014 |
+| 64 | read-random | 0.481 | 0.391 | 0.382 | 0.297 |
+| 64 | read-bulk | 0.019 | 0.020 | 0.019 | 0.020 |
+
+- **Sequential reads, one element at a time** (`operator[]`): the section is about half of
+  the time (57% at 1 thread). The gate costs nothing while the section is there, and 0.3 ns
+  once it is gone: the two costs do not add up. Most likely the compiler: a fence and two
+  atomic stores per element keep it from vectorising or unrolling the loop. At 64 threads,
+  read-varied without the section is already bound by memory bandwidth.
+- **read-bulk** (`for_each_value`) is at the cost of "neither": it already amortises both.
+  **Hot loops: `for_each_value` or the iterators, not `operator[]` element by element.**
+- **Random reads**: the two costs add up, about a quarter of the time each. They are what
+  the correctness rests on (the acquire of the dirty bit, the release order of the section's
+  exit): nothing cheap to remove, and any change goes through formal/reader_reclaim.c first.
+- **The memory orders are already the cheapest ones**: GCC 16 emits ldapr (RCpc) for the
+  acquire loads of the read path; its ldar (seq_cst loads) are all in the compression, flush
+  and end-of-phase paths.
+
 ## 3. Recipes
 
 **The cost of the advisor on the same binary** (three rounds, averages):

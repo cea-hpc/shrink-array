@@ -7,7 +7,7 @@ cmake_minimum_required(VERSION 3.20)
 if(POLICY CMP0126)
     cmake_policy(SET CMP0126 NEW)
 endif()
-project(shrink_array VERSION 0.2.0 LANGUAGES CXX)
+project(shrink_array VERSION 0.2.1 LANGUAGES CXX)
 
 # Built on its own, or consumed by another project (add_subdirectory,
 # FetchContent)? PROJECT_IS_TOP_LEVEL says it from CMake 3.21; this is the same
@@ -453,6 +453,18 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM" AND NOT ONEAPI_FAST_FP)
     endif()
 endif()
 
+# GCC and Clang on x86-64: the -march= of the optimised builds. A flag in
+# CMAKE_CXX_FLAGS cannot replace it, add_compile_options() comes after and wins.
+# Fixed for a build whose binary must not depend on the machine: the nightly's
+# ASan job: with -march=native on Zen 5, GCC 14 gives a frame 64-byte aligned
+# slots, and depending on the frame's layout ASan's fake stack can leave them
+# 32 bytes off (vmovdqa64: #GP).
+if(SHRINK_ARRAY_IS_TOP_LEVEL)
+    set(CHUNK_X86_MARCH "native" CACHE STRING "GCC, Clang on x86-64: -march= of the optimised builds")
+elseif(NOT DEFINED CHUNK_X86_MARCH)
+    set(CHUNK_X86_MARCH "native")
+endif()
+
 if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
     if(CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
         add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-tp=host>)
@@ -471,7 +483,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebI
         if(CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64|arm)")
             add_compile_options(-mcpu=native)
         else()
-            add_compile_options(-march=native)
+            add_compile_options(-march=${CHUNK_X86_MARCH})
         endif()
     endif()
 endif()

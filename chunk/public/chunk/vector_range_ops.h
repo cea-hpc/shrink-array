@@ -39,7 +39,7 @@
 #include <algorithm>   // std::fill, std::copy
 #include <concepts>    // std::convertible_to
 #include <cstddef>     // std::size_t, std::ptrdiff_t
-#include <iterator>    // std::next
+#include <iterator>    // std::next, std::size, std::begin, std::end
 #include <ranges>      // std::ranges::contiguous_range, range_value_t (for_each_span)
 #include <span>        // std::span (for_each_span)
 #include <type_traits> // std::is_same_v (fill_range_mt's vector<bool> guard)
@@ -115,14 +115,15 @@ template <typename C, typename U>
     requires(!internal::ChunkedArray<C>)
 void fill_range(C& container, std::size_t first, std::size_t last, const U& fill_value)
 {
-    const auto size = static_cast<std::size_t>(container.size());
+    const auto size = static_cast<std::size_t>(std::size(container));
     last            = std::min(last, size);
     if (first >= last)
     {
         return;
     }
-    std::fill(std::next(container.begin(), static_cast<std::ptrdiff_t>(first)),
-              std::next(container.begin(), static_cast<std::ptrdiff_t>(last)), static_cast<C::value_type>(fill_value));
+    std::fill(std::next(std::begin(container), static_cast<std::ptrdiff_t>(first)),
+              std::next(std::begin(container), static_cast<std::ptrdiff_t>(last)),
+              static_cast<C::value_type>(fill_value));
 }
 
 /**
@@ -136,14 +137,14 @@ template <typename C, typename It>
     requires(!internal::ChunkedArray<C>)
 void copy_range(C& container, std::size_t first, std::size_t last, It src_first)
 {
-    const auto size = static_cast<std::size_t>(container.size());
+    const auto size = static_cast<std::size_t>(std::size(container));
     last            = std::min(last, size);
     if (first >= last)
     {
         return;
     }
     std::copy(src_first, std::next(src_first, static_cast<std::ptrdiff_t>(last - first)),
-              std::next(container.begin(), static_cast<std::ptrdiff_t>(first)));
+              std::next(std::begin(container), static_cast<std::ptrdiff_t>(first)));
 }
 
 /// @brief fill_range() on a plain container, tag form: nothing to drain there;
@@ -205,7 +206,7 @@ void transform_range_mt(C& container, std::size_t first, std::size_t last, It sr
 {
     static_assert(!std::is_same_v<C, std::vector<bool>>,
                   "transform_range_mt: std::vector<bool> packs neighbouring indices into one word");
-    const auto size = static_cast<std::size_t>(container.size());
+    const auto size = static_cast<std::size_t>(std::size(container));
     last            = std::min(last, size);
     for (std::size_t i = first; i < last; ++i)
     {
@@ -230,14 +231,14 @@ template <typename C, typename F>
     requires(!internal::ChunkedArray<C>)
 void for_each_value(const C& container, std::size_t first, std::size_t last, F&& func)
 {
-    const auto size = static_cast<std::size_t>(container.size());
+    const auto size = static_cast<std::size_t>(std::size(container));
     last            = std::min(last, size);
     if (first >= last)
     {
         return;
     }
-    const auto end_it = std::next(container.begin(), static_cast<std::ptrdiff_t>(last));
-    for (auto it = std::next(container.begin(), static_cast<std::ptrdiff_t>(first)); it != end_it; ++it)
+    const auto end_it = std::next(std::begin(container), static_cast<std::ptrdiff_t>(last));
+    for (auto it = std::next(std::begin(container), static_cast<std::ptrdiff_t>(first)); it != end_it; ++it)
     {
         func(*it);
     }
@@ -248,7 +249,7 @@ template <typename C, typename F>
     requires(!internal::ChunkedArray<C>)
 void for_each_value(const C& container, F&& func)
 {
-    for (auto it = container.begin(); it != container.end(); ++it)
+    for (auto it = std::begin(container); it != std::end(container); ++it)
     {
         func(*it);
     }
@@ -295,14 +296,14 @@ template <typename C, typename OutIt>
     requires(!internal::ChunkedArray<C>)
 OutIt read_range(const C& container, std::size_t first, std::size_t last, OutIt out)
 {
-    const auto size = static_cast<std::size_t>(container.size());
+    const auto size = static_cast<std::size_t>(std::size(container));
     last            = std::min(last, size);
     if (first >= last)
     {
         return out;
     }
-    return std::copy(std::next(container.begin(), static_cast<std::ptrdiff_t>(first)),
-                     std::next(container.begin(), static_cast<std::ptrdiff_t>(last)), out);
+    return std::copy(std::next(std::begin(container), static_cast<std::ptrdiff_t>(first)),
+                     std::next(std::begin(container), static_cast<std::ptrdiff_t>(last)), out);
 }
 
 } // namespace shrink_array

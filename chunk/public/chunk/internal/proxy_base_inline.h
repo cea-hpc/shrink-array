@@ -59,7 +59,7 @@
 #include "chunk/ring_log_debug.h"              // ScopedRingLog, ring_log, get_tid
 #include "chunk/internal/arithmetic_context.h" // ArithmeticProxyContext, ArithmeticContext
 #include "chunk/internal/array_chunk_for.h"    // ArrayChunkForT
-#include "chunk/internal/concept_chunk.h"      // IsChunk2, ChunkTemplateOf
+#include "chunk/internal/concept_chunk.h"      // IsZeroOneValue, ChunkTemplateOf
 #include "chunk/internal/concept_is_clean_assignement.h" // BaseT
 #include "chunk/internal/crp_helper.h"                   // CHUNK_CRTP_USE_DEDUCING_THIS
 #include "chunk/internal/def_force_inline.h"             // CHUNK_FORCE_INLINE
@@ -284,7 +284,7 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list() const
                 }
 
                 push_to_compress_list(vec, &chunk_, num_chunk_, num_tab_, ChunkElems{this->chunk_size()});
-                if constexpr (IsChunk2<ChunkTemplateOf<ChunkT>::template type, T>)
+                if constexpr (IsZeroOneValue<ChunkTemplateOf<ChunkT>::template type, T>)
                 {
                     Derived::note_candidate_pushed(vec); // the threshold test (zero_one_value::Proxy trigger)
                 }
@@ -374,7 +374,7 @@ ProxyT ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::make_proxy_with_inf
  * was issued. Same once-only CAS discipline, same relaxed-load fast path.
  *
  * zero_one_value keeps its candidates in a context-dependent list, hence the
- * `IsChunk2` branch on which per-thread list to push onto.
+ * `IsZeroOneValue` branch on which per-thread list to push onto.
  *
  * @param ctx  Deferred-operation context being replayed.
  * @note In the C++23 deducing-this variant the proxy is also passed
@@ -406,7 +406,7 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::add_to_compression_li
 
         auto& vec = [&]() -> auto&
         {
-            if constexpr (IsChunk2<ChunkTemplateOf<ChunkT>::template type, T>)
+            if constexpr (IsZeroOneValue<ChunkTemplateOf<ChunkT>::template type, T>)
             {
                 return self.get_vec_tuple_to_compress_potentially_async_thr(ctx, thr);
             }
@@ -417,7 +417,7 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::add_to_compression_li
         }();
 
         push_to_compress_list(vec, &ctx->chunk, ctx->num_chunk, num_tab, self.chunk_size());
-        if constexpr (IsChunk2<ChunkTemplateOf<ChunkT>::template type, T>)
+        if constexpr (IsZeroOneValue<ChunkTemplateOf<ChunkT>::template type, T>)
         {
             Derived::note_candidate_pushed(vec); // the threshold test (zero_one_value::Proxy trigger)
         }
@@ -447,7 +447,7 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::add_to_compression_li
 
         auto& vec = [&]() -> auto&
         {
-            if constexpr (IsChunk2<ChunkTemplateOf<ChunkT>::template type, T>)
+            if constexpr (IsZeroOneValue<ChunkTemplateOf<ChunkT>::template type, T>)
             {
                 return derived().get_vec_tuple_to_compress_potentially_async_thr(ctx, thr);
             }
@@ -458,7 +458,7 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::add_to_compression_li
         }();
 
         push_to_compress_list(vec, &ctx->chunk, ctx->num_chunk, num_tab, derived().chunk_size());
-        if constexpr (IsChunk2<ChunkTemplateOf<ChunkT>::template type, T>)
+        if constexpr (IsZeroOneValue<ChunkTemplateOf<ChunkT>::template type, T>)
         {
             Derived::note_candidate_pushed(vec); // the threshold test (zero_one_value::Proxy trigger)
         }
@@ -858,7 +858,10 @@ void ProxyBase<Derived, T, ChunkT>::enqueue_deferred_write(CtxType* ctx, LambdaB
  * @tparam U         Operand type.
  * @tparam Op        Binary operation type.
  * @tparam AsyncBody Callable `(ctx, proxy)` applying the operation on replay.
- * @param operand          Operand, stored converted to T.
+ * @param operand          Operand, stored converted to T -- or, an integer
+ *                         operand of an integer T, to their common type: the
+ *                         direct path computes in it, and `b &= 6` on a bool
+ *                         needs the 6, not bool(6).
  * @param operation  Operation to replay.
  * @param async_body Replay body.
  */
@@ -868,10 +871,13 @@ void ProxyBase<Derived, T, ChunkT>::enqueue_async_arithmetic(const U& operand, O
 {
     using ProxyType = std::remove_reference_t<decltype(derived())>;
 
-    using CtxType = std::conditional_t<is_simple_proxy<ProxyType>::value, ArithmeticOperationProxyContext<T, Op>,
-                                       ArithmeticOperationContext<T, Op, ChunkT, ProxyType>>;
+    using OperandT =
+        std::conditional_t<std::is_integral_v<T> && std::is_integral_v<BaseT<U>>, std::common_type_t<T, BaseT<U>>, T>;
+    using CtxType =
+        std::conditional_t<is_simple_proxy<ProxyType>::value, ArithmeticOperationProxyContext<T, Op, OperandT>,
+                           ArithmeticOperationContext<T, Op, ChunkT, ProxyType, OperandT>>;
 
-    auto* ctx = pool_new_ctx<CtxType>(derived(), static_cast<T>(operand), operation, ptr_on_array_);
+    auto* ctx = pool_new_ctx<CtxType>(derived(), static_cast<OperandT>(operand), operation, ptr_on_array_);
 
     auto op_async = [ctx, body = std::forward<AsyncBody>(async_body)]() mutable
     {

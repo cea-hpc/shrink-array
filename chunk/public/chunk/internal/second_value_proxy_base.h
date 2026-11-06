@@ -99,32 +99,22 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      * @param operand Multiplier.
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,
-     *         as `a[i] += x;` does, keeps the operation fully deferrable.
-     *         Bool: not implemented -- prints an error and leaves the
-     *         element unchanged.*/
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
         requires ElementMultipliable<T>
     Derived operator*=(const U& operand) noexcept
     {
-        if constexpr (is_bool)
+        // Early-out: multiplying by 1 writes nothing. Nothing to read either:
+        // reading the returned proxy goes through operator T() -> read_pure()
+        // and its read-side gate. BaseT<U> is the arithmetic type even if U
+        // is a Proxy.
+        if (operand == static_cast<BaseT<U>>(1))
         {
-            CHUNK_LOG(error, general, "operator not implemented for bool: the element is left unchanged");
             return derived();
         }
-        else
-        {
-            // Early-out: multiplying by 1 writes nothing. Nothing to read either:
-            // reading the returned proxy goes through operator T() -> read_pure()
-            // and its read-side gate. BaseT<U> is the arithmetic type even if U
-            // is a Proxy.
-            if (operand == static_cast<BaseT<U>>(1))
-            {
-                return derived();
-            }
 
-            derived().template apply_compound_operation<U>(std::multiplies<>{}, operand);
-            return derived();
-        }
+        derived().template apply_compound_operation<U>(std::multiplies<>{}, operand);
+        return derived();
     }
 
     /**
@@ -134,32 +124,22 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      *        (internal::check_integer_divisor); a floating one gives inf/NaN.
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,
-     *         as `a[i] += x;` does, keeps the operation fully deferrable.
-     *         Bool: not implemented -- prints an error and leaves the
-     *         element unchanged.*/
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
         requires ElementDivisible<T>
     Derived operator/=(const U& operand) noexcept
     {
-        if constexpr (is_bool)
-        {
-            CHUNK_LOG(error, general, "operator not implemented for bool: the element is left unchanged");
-            return derived();
-        }
-        else
-        {
-            internal::check_integer_divisor<T>(operand, "/=");
+        internal::check_integer_divisor<T>(operand, "/=");
 
-            // Early-out: dividing by 1 changes nothing -- nothing to write, and
-            // nothing to read: reading the returned proxy goes through
-            // operator T() -> read_pure() (see operator*=).
-            if (operand == static_cast<BaseT<U>>(1))
-            {
-                return derived();
-            }
-            derived().template apply_compound_operation<U>(std::divides<>{}, operand);
+        // Early-out: dividing by 1 changes nothing -- nothing to write, and
+        // nothing to read: reading the returned proxy goes through
+        // operator T() -> read_pure() (see operator*=).
+        if (operand == static_cast<BaseT<U>>(1))
+        {
             return derived();
         }
+        derived().template apply_compound_operation<U>(std::divides<>{}, operand);
+        return derived();
     }
 
     /**
@@ -169,14 +149,12 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      *        (internal::check_integer_divisor).
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,
-     *         as `a[i] += x;` does, keeps the operation fully deferrable.
-     *         Bool: not implemented -- prints an error and leaves the
-     *         element unchanged.*/
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
-        requires ElementModulable<T> || is_bool_like_v<T>
+        requires ElementModulable<T>
     Derived operator%=(const U& operand) noexcept
     {
-        if constexpr (std::is_integral_v<T> && is_not_bool)
+        if constexpr (std::is_integral_v<T>)
         {
             internal::check_integer_divisor<T>(operand, "%=");
             // A non-zero slot can land on zero (4 % 2): apply_compound_operation
@@ -188,7 +166,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
         else
         {
             CHUNK_LOG(error, general,
-                      "operator not implemented (requires an integral non-bool type): the element is "
+                      "operator not implemented (requires an integral type): the element is "
                       "left unchanged");
             return derived();
         }

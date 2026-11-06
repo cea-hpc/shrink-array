@@ -101,8 +101,10 @@ class Array : public zero_any::ArrayImpl<Array<T, IntType>>
     }
 
     /// @brief Build an array holding the elements of @p il.
+    /// @details Not explicit, as std::vector's: `Array<T> a = {1, 2, 3};`, and a
+    ///          braced list as an argument or a return value.
     /// @param il Source values.
-    explicit Array(std::initializer_list<T> il) : Array(il.begin(), il.end()) {}
+    Array(std::initializer_list<T> il) : Array(il.begin(), il.end()) {}
 
     /// @brief Release the storage, then the registry entry (ArrayImpl::destroy_storage()).
     ~Array()
@@ -126,9 +128,10 @@ class Array : public zero_any::ArrayImpl<Array<T, IntType>>
     }
 
     /**
-     * @brief TEST ENTRY: put chunk @p num_chunk directly in the motif state for
-     *        the elements @p elems, chunk_size() of them, without the write path
-     *        and the pass that compress to motifs (pattern_validation, I to L).
+     * @brief Put chunk @p num_chunk directly in the motif state for the
+     *        elements @p elems, chunk_size() of them, without the write path and
+     *        the pass that compress to motifs: import_chunk() (chunk_exchange.h)
+     *        and pattern_validation (I to L).
      * @details The normalised motif (elems[j] - elems[0], wrapping) is
      *          registered in MotifRegion<T> (or found there), the offset
      *          elems[0] goes to the chunk's second-value slot, then the values
@@ -139,7 +142,13 @@ class Array : public zero_any::ArrayImpl<Array<T, IntType>>
      * @param elems     The chunk's elements, chunk_size() of them.
      * @return false, and nothing done, when the chunk is not at the first constant.
      */
-    bool install_motif_for_test(int num_chunk, const T* elems);
+    bool install_motif(int num_chunk, const T* elems);
+
+    /// @brief The former name of install_motif(), kept until 1.0.
+    [[deprecated("install_motif_for_test is install_motif")]] bool install_motif_for_test(int num_chunk, const T* elems)
+    {
+        return install_motif(num_chunk, elems);
+    }
 
     /**
      * @brief zero_any's reclaim_second_values() -- the constants no array of the

@@ -3,10 +3,15 @@
 """The window, end to end, offscreen, against the fake inti."""
 import base64
 import json
+import pathlib
 import re
+import subprocess
+import sys
 import time
 
 import pytest
+
+from conftest import PYDIR
 
 pytest.importorskip("PySide6")
 
@@ -743,10 +748,12 @@ def test_thread_speedup_submitted_from_the_window(gui, site):
     assert w.err_note.text().startswith("4 erreur(s)")
 
 
-def test_thread_speedup_over_several_nodes(gui, site):
+def test_thread_speedup_over_several_nodes(gui, site, monkeypatch, tmp_path):
     """"Nœuds" 2 on thread_speedup.py: two jobs share the executables
     (--pool=<the submission>), each measures those it claims first, in its own
-    output directory; the Graphique and Résumé tabs of either show them all."""
+    output directory; the Graphique and Résumé tabs of either show them all,
+    « Enregistrer l'image… » saves the chart of them all, and
+    thread_speedup.py --merge makes one output directory of the two."""
     w, pump = gui
     br = _fake_speedup_build(site)
     w.program.setCurrentText("thread_speedup.py")
@@ -769,7 +776,8 @@ def test_thread_speedup_over_several_nodes(gui, site):
         assert _wait_status(w, pump, r["id"], "fini", 60)
     logs = [(site.runs / r["id"] / "out.log").read_text() for r in jobs]
     claimed = [re.findall(r"\[pool\] (\S+): claimed by this run", t) for t in logs]
-    assert sorted(sum(claimed, [])) == ["shrink_bench_omp_vector_perf", "shrink_bench_omp_zero_any_dyn"]
+    claimed_all = ["shrink_bench_omp_vector_perf", "shrink_bench_omp_zero_any_dyn"]
+    assert sorted(sum(claimed, [])) == claimed_all
     outs = [re.search(r"Outputs in (\S+)", t).group(1) for t in logs]
     assert outs[0] != outs[1]                                    # the same host, the same second
     row = next(i for i, r in enumerate(w.runs) if r["id"] == jobs[1]["id"])
@@ -778,6 +786,38 @@ def test_thread_speedup_over_several_nodes(gui, site):
     w.tabs.setCurrentIndex(w.TAB_CHART)
     assert pump(lambda: w.pt_stack.currentIndex() == 2 and len(w.sc_view.points) == 4, 10)
     assert w.sc_cmp.findData(jobs[1]["id"]) < 0                  # never compared with itself
+    # « Enregistrer l'image… »: the chart as shown, the two jobs' curves, under
+    # the submission's name
+    from PySide6.QtWidgets import QFileDialog, QPushButton
+    save = next(b for b in w.findChildren(QPushButton) if b.text() == "Enregistrer l'image…"
+                and w.pt_stack.widget(2).isAncestorOf(b))
+    assert save.isEnabled() and "SVG" in save.toolTip()
+    asked = {}
+
+    def dialog(parent, title, start, filters):
+        asked.update(start=start, filters=filters)
+        return str(tmp_path / "pool_chart"), filters.split(";;")[0]
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", staticmethod(dialog))
+    save.click()
+    png = tmp_path / "pool_chart.png"                             # no extension typed: the filter's
+    assert png.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n" and png.stat().st_size > 1000
+    assert pathlib.Path(asked["start"]).name == f"{pool}_omp-llvm_speedup.png"
+    assert w.statusBar().currentMessage() == f"Image enregistrée : {png}"
+    if w.sc_view.svg_supported():
+        assert "Image SVG (*.svg)" in asked["filters"]
+        monkeypatch.setattr(QFileDialog, "getSaveFileName",
+                            staticmethod(lambda *a: (str(tmp_path / "pool_chart.svg"), "")))
+        save.click()
+        assert "<svg" in (tmp_path / "pool_chart.svg").read_text()
+        assert pathlib.Path(w.settings.value("chart_image_dir")) == tmp_path   # the next dialog starts there
+    # the two output directories merged into one, as one run would have written it
+    merged = tmp_path / "merged"
+    p = subprocess.run([sys.executable, str(PYDIR / "thread_speedup.py"), "--merge", *outs, "--out", str(merged)],
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+    assert p.returncode == 0, p.stderr
+    rows = (merged / "summary.csv").read_text().splitlines()[1:]
+    assert sorted({r.split(",")[1] for r in rows}) == claimed_all and len(rows) == 4
+    assert (merged / "plot.gp").is_file() and "warning" not in p.stderr
     w.tabs.setCurrentIndex(w.TAB_SUMMARY)
     assert pump(lambda: w.sum_view.count() == 2, 10)
     w.sum_view.setCurrentIndex(1)

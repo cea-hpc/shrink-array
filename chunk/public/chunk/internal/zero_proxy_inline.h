@@ -139,7 +139,7 @@ T* zero::Proxy<T>::perform_core_assignment(T* vals, InT<T> value) const noexcept
 
     if constexpr (build_config::do_check)
     {
-        global_check_write_nan(value, num_);
+        chunk_config::CheckNaN<chunk_config::do_check>::maybe(value, static_cast<long>(num_));
     }
     return vals;
 }
@@ -230,7 +230,7 @@ void zero::Proxy<T>::execute_arithmetic_compound_operation(Op op, [[maybe_unused
 //     they run where no drain can. check_no_flush_outside_start()
 //     (block_pass_precheck.h) trips in check builds otherwise.
 //
-// (The re-chunk's fold has no zero branch: array_chunk_rechunk_inline.h.)
+// (The re-chunk's fold has no zero branch: array_chunk_rechunk_refill_inline.h, fold_back.)
 //
 // zero_any::Proxy's twins (zero_any_proxy_inline.h) carry a retry loop instead. Do not add a
 // compressor bypassing start() where a drain can run, nor call an `_async`
@@ -324,7 +324,8 @@ T zero::Proxy<T>::assign_impl(InT<U> value) noexcept
     // every write for a test only the `value == zero` branch makes.
     if constexpr (chunk_config::use_compression_with_counter)
     {
-        if (value == zero)
+        // The stored value, not the operand: char = 256 stores a zero.
+        if (static_cast<T>(value) == zero)
         {
             if (is_cst_val())
             {
@@ -674,70 +675,63 @@ void zero::Proxy<T>::apply_compound_operation(InT<U> operand, BinaryOp op)
     // Cross-rank RMW materialisation: pull any foreign deferred write first.
     chunk_.reader_sync(num_);
 
-    if constexpr (is_not_bool)
+    if constexpr (chunk_config::use_compression_with_counter)
     {
-        if constexpr (chunk_config::use_compression_with_counter)
+        // raw-read: serial counter mode (no fast block compression, no concurrent pass)
+        if (values_[num_] != zero)
         {
-            // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-            if (values_[num_] != zero)
+            if constexpr (build_config::do_check)
             {
-                if constexpr (build_config::do_check)
-                {
-                    global_check_write_nan(operand, num_);
-                }
-
-                execute_arithmetic_compound_operation(
-                    op, static_cast<T>(operand),
-                    [this, &operand](auto op_func) // operand: this call's parameter, alive for the call
-                    {
-                        using LocalCalcType = std::common_type_t<T, BaseT<U>>;
-
-                        const InT<T> result = static_cast<T>(op_func(static_cast<LocalCalcType>(Base::load_value()),
-                                                                     static_cast<LocalCalcType>(operand)));
-
-                        Base::store_value(result);
-                    });
-
-                // Test the result, not the operand: `x /= 0.0` is +-inf, and
-                // counting it as a zero would recompress a chunk holding infinities.
-                // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-                if (values_[num_] == zero && !is_cst_val())
-                {
-                    chunk_.inc_nb_val_eq_zero();
-                    if (chunk_.is_full_zero(this->chunk_size()))
-                    {
-                        this->manage_full_zero();
-                    }
-                }
+                chunk_config::CheckNaN<chunk_config::do_check>::maybe(operand, static_cast<long>(num_));
             }
-        }
-        else
-        {
-            // const T, not InT<T>: apply_atomic_op() stores to values[num]
-            // and still reads v_old (in_t.h). Read under a ReadSection (see
-            // ProxyBase::read_values_outside_session).
-            const T v_old = Base::read_values_outside_session();
-            // A zero v_old is not enough to skip: a queued deferred op may change it.
-            if (v_old != zero || CompressionManagerType::have_deferred_queue())
-            {
-                Base::apply_atomic_op(op, static_cast<T>(operand), v_old);
 
-                // Do NOT read values[num] back here: apply_atomic_op may have
-                // DEFERRED the op, and a foreign thread draining this chunk
-                // (reader_sync -> flush_chunk_all_ranks) can be replaying it now.
+            execute_arithmetic_compound_operation(
+                op, static_cast<T>(operand),
+                [this, &operand](auto op_func) // operand: this call's parameter, alive for the call
+                {
+                    using LocalCalcType = std::common_type_t<T, BaseT<U>>;
+
+                    const InT<T> result = static_cast<T>(
+                        op_func(static_cast<LocalCalcType>(Base::load_value()), static_cast<LocalCalcType>(operand)));
+
+                    Base::store_value(result);
+                });
+
+            // Test the result, not the operand: `x /= 0.0` is +-inf, and
+            // counting it as a zero would recompress a chunk holding infinities.
+            // raw-read: serial counter mode (no fast block compression, no concurrent pass)
+            if (values_[num_] == zero && !is_cst_val())
+            {
+                chunk_.inc_nb_val_eq_zero();
+                if (chunk_.is_full_zero(this->chunk_size()))
+                {
+                    this->manage_full_zero();
+                }
             }
         }
     }
     else
     {
-        CHUNK_LOG(error, general, "operator not implemented for bool: the element is left unchanged");
+        // const T, not InT<T>: apply_atomic_op() stores to values[num]
+        // and still reads v_old (in_t.h). Read under a ReadSection (see
+        // ProxyBase::read_values_outside_session).
+        const T v_old = Base::read_values_outside_session();
+        // A zero v_old is not enough to skip: a queued deferred op may change it.
+        if (v_old != zero || CompressionManagerType::have_deferred_queue())
+        {
+            Base::apply_atomic_op(op, static_cast<T>(operand), v_old);
+
+            // Do NOT read values[num] back here: apply_atomic_op may have
+            // DEFERRED the op, and a foreign thread draining this chunk
+            // (reader_sync -> flush_chunk_all_ranks) can be replaying it now.
+        }
     }
 }
 
 template <typename Derived, typename T, bool Enabled>
 void zero::ProxyFastCompPolicy<Derived, T, Enabled>::trigger_compression_if_needed(int thr_rank) noexcept
 {
-    const auto& vec_tuple = Manager::chunk_to_compress_potentially_thr[thr_rank];
+    const auto& vec_tuple = Manager::zero_candidates_thr[thr_rank];
 
     const int sz = static_cast<int>(vec_tuple.size());
 
@@ -763,7 +757,7 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::perform_compression() const
 
     const int szm = Manager::get_size_max_number_of_chunk_to_check_compress();
 
-    const auto& vec_tuple = Manager::chunk_to_compress_potentially_thr[thr_rank];
+    const auto& vec_tuple = Manager::zero_candidates_thr[thr_rank];
 
     const int sz_before = static_cast<int>(vec_tuple.size());
 

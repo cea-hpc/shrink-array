@@ -146,8 +146,8 @@ void FastAllocatorConcrete<T, Arena>::recycle(void* block)
             {
                 // Expected, not an anomaly: recycle=debug reports the
                 // first, then on a doubling schedule with the running total
-                // (~log2(N) lines per thread); recycle=trace (formerly
-                // CHUNK_RECYCLE_TRACE) one line per block.
+                // (~log2(N) lines per thread); recycle=trace one line per
+                // block.
                 thread_local std::size_t n_foreign = 0;
                 ++n_foreign;
                 if (std::has_single_bit(n_foreign))

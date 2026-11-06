@@ -341,7 +341,7 @@ In-flight compression returns these chunks to `cst_val2` as the loop proceeds.
 Each thread keeps **one list of candidate chunks per second value**:
 
 ```
-ManagerChunk2::map_chunk2_to_compress_potentially_thr[rang][second_value]
+Manager::zero_one_value_candidates_map_thr[rang][second_value]
 ```
 
 Each entry holds `(chunk, num_chunk, num_tab, number of elements)`. The number of elements
@@ -601,6 +601,6 @@ CMake options related to benchmark performance:
 | readers and buffer reclamation | `internal/read_reclaim.h` |
 | compressor, deferred writes | `internal/compression_manager.h` |
 | geometry | `internal/chunk_size_policy.h` |
-| rechunk, decider | `internal/array_chunk_rechunk_inline.h`, `chunk_size_advisor.h` |
+| rechunk, decider | `internal/array_chunk_rechunk_inline.h`, `internal/array_chunk_rechunk_refill.h`, `chunk_size_advisor.h` |
 | range operations | `array_chunk_range_ops.h` |
 | validation harnesses | `examples/validation/` (`rechunk_validation`, `compress_roundtrip`, `deferred_path_validation`, `pool_accounting`, `fill_range_mt_validation`, …) |

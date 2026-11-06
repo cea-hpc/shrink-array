@@ -21,12 +21,12 @@ namespace shrink_array
 {
 
 // ---------------------------------------------------------------------------
-// shrink_array::PointerMapChunk2InfArrayPolicy<T, Enabled>
+// shrink_array::ZeroOneValueInfArrayPolicy<T, Enabled>
 // ---------------------------------------------------------------------------
 
 template <typename T, bool Enabled>
-[[nodiscard]] std::vector<typename PointerMapChunk2InfArrayPolicy<T, Enabled>::InfArrayT*>
-PointerMapChunk2InfArrayPolicy<T, Enabled>::get_all_inf_array() const
+[[nodiscard]] std::vector<typename ZeroOneValueInfArrayPolicy<T, Enabled>::InfArrayT*>
+ZeroOneValueInfArrayPolicy<T, Enabled>::get_all_inf_array() const
 {
     std::vector<InfArrayT*> values;
 
@@ -39,8 +39,8 @@ PointerMapChunk2InfArrayPolicy<T, Enabled>::get_all_inf_array() const
 }
 
 template <typename T, bool Enabled>
-[[nodiscard]] PointerMapChunk2InfArrayPolicy<T, Enabled>::InfArrayT*
-PointerMapChunk2InfArrayPolicy<T, Enabled>::find_inf_array(InT<T> key) const
+[[nodiscard]] ZeroOneValueInfArrayPolicy<T, Enabled>::InfArrayT*
+ZeroOneValueInfArrayPolicy<T, Enabled>::find_inf_array(InT<T> key) const
 {
     const auto it = map_inf_array_.find(key);
     if (it != map_inf_array_.end())
@@ -51,7 +51,7 @@ PointerMapChunk2InfArrayPolicy<T, Enabled>::find_inf_array(InT<T> key) const
 }
 
 template <typename T, bool Enabled>
-void PointerMapChunk2InfArrayPolicy<T, Enabled>::erase_inf_array_by_ptr(const InfArrayT* self_ptr)
+void ZeroOneValueInfArrayPolicy<T, Enabled>::erase_inf_array_by_ptr(const InfArrayT* self_ptr)
 {
     for (auto it = map_inf_array_.begin(); it != map_inf_array_.end();)
     {
@@ -85,12 +85,20 @@ void zero_one_value::PointerMap<T>::report_key_not_found(Key key, const char* si
         std::array<char, logging::line_max> keys{};
         std::size_t                         n   = 0;
         const size_t                        lim = (count > 64u) ? 64u : count;
-        for (size_t i = 0; i < lim && n < keys.size(); ++i)
+        try
         {
-            n += static_cast<std::size_t>(std::format_to_n(keys.data() + n, keys.size() - n, " [{} num_tab={}]",
-                                                           static_cast<const void*>(vec_[i].first),
-                                                           vec_[i].second.num_tab)
-                                              .size);
+            for (size_t i = 0; i < lim && n < keys.size(); ++i)
+            {
+                n += static_cast<std::size_t>(std::format_to_n(keys.data() + n, keys.size() - n, " [{} num_tab={}]",
+                                                               static_cast<const void*>(vec_[i].first),
+                                                               vec_[i].second.num_tab)
+                                                  .size);
+            }
+        }
+        catch (...)
+        {
+            // Unreachable (a format string checked at compile time, a pointer
+            // and an int): the keys listed so far are kept.
         }
         CHUNK_LOG(error, general,
                   "share_info {}: KEY NOT FOUND: this={} rank={} searched_key={} vec.size={}; valid keys:{}{}", site,

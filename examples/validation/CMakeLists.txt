@@ -92,6 +92,17 @@
 #   shrink_to_fit_validation a few uniform chunks, then shrink_to_fit(): none
 #                           keeps a buffer, in every build (a serial zero_any
 #                           left its last partial batch of candidates).
+#   chunk_exchange_validation  export_chunk() / import_chunk() and
+#                           export_array() / import_array() (chunk/chunk_exchange.h):
+#                           an array rebuilt from its exported states reads,
+#                           exports and behaves as the source, every state of the
+#                           variant, double and bool (pattern's motifs, on int:
+#                           chunk_exchange_validation_pattern_<size>).
+#   operators_validation    every operator of a[i] (compound, ++/--, =, unary,
+#                           binary, ==, conversions, os <<) on char to
+#                           complex<double>, against plain T, direct and
+#                           with the deferred path forced (one executable
+#                           per variant, and pattern's)
 #   compound_ops_validation `*=`, `/=`, `%=` read back what std::vector would
 #                           (results landing on zero included), `double /= 0.0`
 #                           gives inf, set_second_value(0) declares nothing;
@@ -244,7 +255,7 @@ set(_rt_harnesses       compress_roundtrip pool_accounting open_types_validation
                         nested_region_validation concurrent_teams_validation iterator_validation
                         stale_proxy_validation
                         region_storage_validation compound_ops_validation bulk_write_team_validation
-                        shrink_to_fit_validation)
+                        shrink_to_fit_validation chunk_exchange_validation)
 set(_rt_dyn_harnesses   pool_accounting open_types_validation index64_validation stale_proxy_validation)
 
 # Compile definitions of a variant at a geometry.
@@ -507,6 +518,49 @@ foreach(_geom ${CHUNK_DEFAULT_SIZE} dyn)
   endif()
 endforeach()
 
+# --- operators_validation: every operator of a[i] on every element type
+# (char to complex<double>; pattern: the integers but bool), against plain T,
+# directly and with the deferred path forced. Its own executables, as
+# pattern_validation: nine element types instantiated per variant would weigh
+# on the group's unity TU. Default static size, at 1 and 8 threads; pattern on
+# the zero_any library (OPERATORS_VALIDATION_PATTERN).
+# One translation unit per group of element types, not a unity one: all of
+# them in one unit took 7.8 GB to compile (GCC 14, -O3), and the AArch64 CI
+# runner (16 GB, two compiles at once) was stopped for want of memory.
+set(_ov_parts operators_validation_small_integers.cpp operators_validation_wide_integers.cpp
+              operators_validation_floating.cpp operators_validation_bool_complex.cpp)
+foreach(_vi RANGE ${_rt_nvar_last})
+  list(GET _rt_variant_names   ${_vi} _vname)
+  list(GET _rt_variant_libbase ${_vi} _libbase)
+  list(GET _rt_variant_macro   ${_vi} _vmacro)
+  if (NOT TARGET ${_libbase}_${CHUNK_DEFAULT_SIZE})
+    continue()
+  endif()
+  set(_tgt operators_validation_${_vname}_${CHUNK_DEFAULT_SIZE})
+  validation_harness_executable(${_tgt} ${_libbase} ${_vmacro} ${CHUNK_DEFAULT_SIZE} operators_validation)
+  target_sources(${_tgt} PRIVATE ${_ov_parts})
+  set_target_properties(${_tgt} PROPERTIES UNITY_BUILD OFF)
+  validation_add_test(${_tgt} ${_tgt} operators_validation "1;8")
+  if (_vname STREQUAL "zero_any")
+    set(_tgt operators_validation_pattern_${CHUNK_DEFAULT_SIZE})
+    validation_harness_executable(${_tgt} ${_libbase} ${_vmacro} ${CHUNK_DEFAULT_SIZE} operators_validation)
+    target_sources(${_tgt} PRIVATE ${_ov_parts})
+    set_target_properties(${_tgt} PROPERTIES UNITY_BUILD OFF)
+    target_compile_definitions(${_tgt} PRIVATE OPERATORS_VALIDATION_PATTERN)
+    validation_add_test(${_tgt} ${_tgt} operators_validation "1;8")
+  endif()
+endforeach()
+
+# --- chunk_exchange_validation on pattern::Array<int> (its motif state), on the
+# zero_any library, as operators_validation_pattern.
+if (TARGET chunk_zero_any_${CHUNK_DEFAULT_SIZE})
+  set(_tgt chunk_exchange_validation_pattern_${CHUNK_DEFAULT_SIZE})
+  validation_harness_executable(${_tgt} chunk_zero_any CHUNK_VARIANT_ZERO_ANY ${CHUNK_DEFAULT_SIZE}
+                                chunk_exchange_validation)
+  target_compile_definitions(${_tgt} PRIVATE CHUNK_EXCHANGE_PATTERN)
+  validation_add_test(${_tgt} ${_tgt} chunk_exchange_validation "1;8")
+endif()
+
 # --- element_ref_validation: what operator[] accepts and refuses
 # (chunk/internal/element_ref.h), in every build that has the harnesses.
 #   element_ref_validation_<variant>: every std::vector-style use of a[i]
@@ -607,6 +661,39 @@ target_link_libraries(bit_words_validation PRIVATE Threads::Threads)
 chunk_require_cxx20(bit_words_validation PRIVATE)
 add_test(NAME bit_words_validation COMMAND bit_words_validation)
 set_property(TEST bit_words_validation PROPERTY LABELS validation)
+
+# --- chunk_index_sample_validation: the chunk sample of the compression-residual
+# messages (chunk_index_sample.h) alone, header only: the text, the "(+N more)",
+# the cut at the stack buffer's size, a 64-bit element index.
+add_executable(chunk_index_sample_validation chunk_index_sample_validation.cpp)
+chunk_add_alloc_token_rt(chunk_index_sample_validation)
+# fast_allocators/public: append_text.h, the noexcept integer writer it uses.
+target_include_directories(chunk_index_sample_validation PRIVATE ${PROJECT_SOURCE_DIR}/chunk/public
+                                                                 ${PROJECT_SOURCE_DIR}/fast_allocators/public)
+chunk_require_cxx20(chunk_index_sample_validation PRIVATE)
+add_test(NAME chunk_index_sample_validation COMMAND chunk_index_sample_validation)
+set_property(TEST chunk_index_sample_validation PROPERTY LABELS validation)
+
+# --- env_parse_validation: the checked number parsing of the environment and
+# the command line (env_parse.h) alone, header only: every refusal (empty,
+# trailing characters, out of range, '-' for unsigned), the fallback with its
+# warning (counted through logging::set_sink), env_flag. The log's headers as
+# log_validation takes them.
+add_executable(env_parse_validation env_parse_validation.cpp)
+chunk_add_alloc_token_rt(env_parse_validation)
+target_include_directories(env_parse_validation PRIVATE ${PROJECT_SOURCE_DIR}/chunk/public
+                                                        ${PROJECT_BINARY_DIR}/chunk/generated # chunk/build_options.h
+                                                        ${PROJECT_SOURCE_DIR}/fast_allocators/public)
+target_link_libraries(env_parse_validation PRIVATE Threads::Threads)
+if (OMP)
+  target_link_libraries(env_parse_validation PRIVATE OpenMP::OpenMP_CXX) # build_options.h asks for the library's OpenMP
+endif()
+if (CHUNK_THREADS_BACKEND STREQUAL "std")
+  target_compile_definitions(env_parse_validation PRIVATE FAST_ALLOC_PMP_STD=1)
+endif()
+chunk_require_cxx20(env_parse_validation PRIVATE)
+add_test(NAME env_parse_validation COMMAND env_parse_validation)
+set_property(TEST env_parse_validation PROPERTY LABELS validation)
 
 # --- rank_registry_validation: the rank registry of the threading backend
 # (fast_allocators/internal/pmp_runtime.h) alone, header only, driven from
