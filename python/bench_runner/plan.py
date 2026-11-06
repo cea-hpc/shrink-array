@@ -17,7 +17,7 @@ from .phases.stl import stl_representative_exes
 from .settings import (
     DEFAULT_CONFIGS, DEFAULT_SEQ_OMP_THREADS, DEFAULT_VARIANTS, DEFAULT_THREADS_CHECK, MODE_PRESETS,
     PERF_EXCLUDED_CONFIGS, REFERENCE_THREADS, SANITIZER_CONFIGS, SANITIZER_REPS, sanitizer_skip_reason,
-    SANITIZER_THREADS, fit_threads, is_stats_config, is_tbb_variant, machine_cpus,
+    SANITIZER_THREADS, arch_dir_name, fit_threads, is_stats_config, is_tbb_variant, machine_cpus,
 )
 from .term import bold, cyan, dim, red, yellow
 
@@ -217,7 +217,7 @@ def discover_binaries(args, perf_excluded):
     # --- Phase 0: binary discovery ---------------------------------------
     print(f"🔎 Resolving executables under build_root={args.build_root!r}")
     print(f"   Current machine: {CURRENT_MACHINE} → only *__{CURRENT_MACHINE} "
-          f"builds will be run")
+          f"builds will be run, {arch_dir_name() or 'this system'} first")
     perf_exes  = {}   # (config, var) -> path
     check_exes = {}   # (config, var) -> path   (non-baseline variants)
     # config -> path of ITS vector check binary: every config generates its

@@ -19,8 +19,9 @@ def shq(v):
 
 # Are the executables of the builds a run uses up to date? On the node, before
 # the command: `ninja -n` on the executables already built under examples/ of
-# each build directory of this architecture -- the targets compile_all.sh made,
-# not those it was never asked to build. "[n/m] ..." lines = work to do =
+# each build directory of this architecture, this system's first ($arch as
+# compile_all.sh writes it) -- the targets compile_all.sh made, not those it was
+# never asked to build. "[n/m] ..." lines = work to do =
 # stale. Exit 96 ("refuse") or a warning ("warn"). Without ninja, skipped.
 CHECK_BUILDS_SH = r"""
 gui_check_builds() {
@@ -29,12 +30,15 @@ gui_check_builds() {
     if ! command -v ninja >/dev/null 2>&1; then
         echo "[gui] build check: no ninja on this node, skipped"; return 0
     fi
-    local arch b name d n=0 stale=() unknown=() exes out
+    local arch mine b name d n=0 stale=() unknown=() exes out
     arch=$(uname -m)
+    mine=$(source /etc/os-release 2>/dev/null && echo "${ID^^}_${VERSION_ID}__$arch")
     for b in "$@"; do
         name="$b"; [[ "$name" == cmake-build-* ]] || name="cmake-build-$name"
-        for d in "$root/$name"/*__"$arch" "$root/$name"; do
+        for d in "$root/$name/$mine" "$root/$name"/*__"$arch" "$root/$name"; do
             [ -f "$d/build.ninja" ] || continue
+            [ -z "$mine" ] || [[ "$d" == "$root/$name" || "$d" == */"$mine" ]] ||
+                echo "[gui] build check: no $mine build of $name, checking $d"
             mapfile -t exes < <(cd "$d" && find examples -type f -perm -u+x -not -path '*/CMakeFiles/*' 2>/dev/null | sort)
             [ ${#exes[@]} -gt 0 ] || break
             n=$((n + 1))

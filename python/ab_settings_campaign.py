@@ -65,7 +65,7 @@ from pathlib import Path
 # The executables carry the backend of their build (shrink_bench_<backend>_...):
 # bench_runner's lookup tries the three, a build directory holding one.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from bench_runner.settings import find_bench_exe  # noqa: E402
+from bench_runner.settings import find_bench_exe, this_os_first  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # The plan
@@ -131,7 +131,8 @@ def find_exe(args, variant: str) -> Path | None:
     else:
         cfg = Path(args.build_root) / ("cmake-build-" + args.config.removeprefix("cmake-build-"))
         arch = platform.machine()
-        dirs = sorted(d for d in cfg.glob("*/examples/shrink_bench") if arch in str(d))
+        dirs = this_os_first(sorted(d for d in cfg.glob("*/examples/shrink_bench") if arch in str(d)),
+                             name=lambda d: d.parents[1].name)
         dirs += [cfg / "examples" / "shrink_bench"]
     for d in dirs:
         exe = find_bench_exe(str(d), name)

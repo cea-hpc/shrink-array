@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Defaults, presets and the machine fitting of the thread counts."""
 import os
+import platform
 
 
 # --- Default configuration -----------------------------------------------
@@ -113,6 +114,32 @@ def is_tbb_variant(var):
 # directory rebuilt since still holds those binaries, stale, and they must not
 # be run in place of the new ones.
 BENCH_BACKENDS = ("omp", "std", "serial")
+
+
+def arch_dir_name(os_release="/etc/os-release"):
+    """compile_all.sh's $arch for this machine (ID_VERSION__machine from
+    os-release, e.g. RHEL_9.6__x86_64), or None without an os-release."""
+    fields = {}
+    try:
+        with open(os_release) as f:
+            for line in f:
+                key, _, value = line.strip().partition("=")
+                fields[key] = value.strip("\"'")
+    except OSError:
+        return None
+    if "ID" not in fields:
+        return None
+    return f"{fields['ID'].upper()}_{fields.get('VERSION_ID', '')}__{platform.machine()}"
+
+
+def this_os_first(dirs, name=os.path.basename):
+    """@p dirs with this machine's $arch directory first. A site can have one
+    architecture on several systems (the Milan nodes on RHEL 8, the Turin ones
+    on RHEL 9): the machine suffix alone would take the first in sorted order,
+    the RHEL 8 build. The others stay after it, as a fallback (a system
+    upgraded since the build). @p name: the $arch of an element of @p dirs."""
+    mine = arch_dir_name()
+    return sorted(dirs, key=lambda d: name(d) != mine)
 
 
 def bench_exe_names(rest):
