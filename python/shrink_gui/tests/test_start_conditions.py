@@ -199,3 +199,12 @@ def test_build_check_takes_this_systems_build(site):
     _build(site, "other-os", stale=False, arch=other)
     code, log = _checked(site, "k10", {"mode": "refuse", "root": root, "builds": ["other-os"]})
     assert code == 0 and f"no {mine} build of cmake-build-other-os" in log and other in log
+
+
+def test_build_check_leaves_the_build_stamp_out(site):
+    """HEAD moved, no source changed: the stamp's steps do not stop a run."""
+    d = _build(site, "stamped", stale=False)
+    (d / "STAMP").write_text("")
+    root = str(site.home / "br")
+    code, log = _checked(site, "k11", {"mode": "refuse", "root": root, "builds": ["stamped"]})
+    assert code == 0 and "1 build(s) up to date" in log and "STARTED" in log

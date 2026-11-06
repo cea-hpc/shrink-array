@@ -28,6 +28,11 @@ def shq(v):
 # that manifest step, on "[1/2] Re-running CMake...", never looking at the
 # executables: every build would be stale, its real state unknown. Only the
 # name build.ninja gets that step.
+# The build stamp's steps alone are not stale: the stamp depends on .git/HEAD
+# (cmake/shrink_build_stamp.cmake), so that any commit, a documentation one
+# too, gives its generation, its compilation and the link of the executables
+# that carry it, with no source changed. A changed source always adds a
+# compilation of its own. Not seen: a relink for a changed external library.
 CHECK_BUILDS_SH = r"""
 gui_check_builds() {
     local mode="$1" root="$2"; shift 2
@@ -54,7 +59,7 @@ gui_check_builds() {
             rm -rf "$manifest"
             if [ $rc -ne 0 ]; then
                 unknown+=("$d")
-            elif grep -q '^\[' <<< "$out"; then
+            elif grep '^\[' <<< "$out" | grep -qvE 'Build stamp|build_stamp\.cpp|Linking CXX executable'; then
                 stale+=("$d ($(grep -c '^\[' <<< "$out") step(s))")
             fi
             break
