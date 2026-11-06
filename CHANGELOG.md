@@ -56,6 +56,8 @@ the tag's checksum to the recipe.
   (`docs/conception_gpu_fr.md`); `check_docs.py` checks the pair like the others.
 - `multi_launch_stress.py --peak_threads N [--peak_share F]`: most thread counts drawn near N,
   the top of the speedup curve, the others still uniform over the range. In `shrink_gui` too.
+- `diag_zero_rechunk_slowdown.py`: the resident memory against the static run, the churn per array
+  after the last re-chunk and, with `--perf`, the samples' share in the compression passes.
 
 ### Fixed
 
