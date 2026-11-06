@@ -461,7 +461,7 @@ changé d'une version à l'autre : [CHANGELOG.md](CHANGELOG.md) (en anglais).
 
 ## État du projet et contributions
 
-shrink-array en est à la version 0.1 : avant la 1.0, une version mineure peut changer
+shrink-array en est à la version 0.2 : avant la 1.0, une version mineure peut changer
 l'interface ([politique de versions](CHANGELOG.md)). Chaque push lance les vérifications des
 sources, les builds GCC 14 (OpenMP, série et threads std avec oneTBB), les tests de validation, le backend std
 sous ThreadSanitizer et les modèles GenMC, le build OpenMP sur x86-64 et sur AArch64

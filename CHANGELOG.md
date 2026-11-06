@@ -50,6 +50,17 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
+### Added
+
+- `docs/gpu_design.md`, the English version of the GPU design document
+  (`docs/conception_gpu_fr.md`); `check_docs.py` checks the pair like the others.
+
+### Fixed
+
+- `README.md` and `README_fr.md` gave the version as 0.1.
+- `check_doxygen.py` run by hand with no Doxygen installed ended on a
+  `FileNotFoundError` traceback: it says Doxygen is not found and exits 77 (skipped).
+
 ## 0.2.1 -- 2026-11-05
 
 ### Added

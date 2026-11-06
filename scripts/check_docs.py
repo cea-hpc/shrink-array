@@ -48,6 +48,7 @@ PAIRS = {
     "environment_variables.md": "variables_environnement_fr.md",
     "developer_settings.md": "reglages_developpeur_fr.md",
     "performance_measurement.md": "mesures_performance_fr.md",
+    "gpu_design.md": "conception_gpu_fr.md",
 }
 
 # Documents with no French version, and why.
@@ -59,11 +60,10 @@ ENGLISH_ONLY = {
 
 # Design documents: they describe code that does not exist yet -- planned
 # files, the APIs of the platforms it will target -- so their names are not
-# looked up in the tree (their links are), and they may stay in one language
-# until the design settles.
+# looked up in the tree (their links are).
 DESIGN = {
-    # the GPU backend, before any prototype; its English version (gpu_design.md)
-    # is written once the design is stable
+    # the GPU backend, before any prototype
+    "gpu_design.md",
     "conception_gpu_fr.md",
 }
 
