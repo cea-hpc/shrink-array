@@ -54,6 +54,8 @@ the tag's checksum to the recipe.
 
 - `docs/gpu_design.md`, the English version of the GPU design document
   (`docs/conception_gpu_fr.md`); `check_docs.py` checks the pair like the others.
+- `multi_launch_stress.py --peak_threads N [--peak_share F]`: most thread counts drawn near N,
+  the top of the speedup curve, the others still uniform over the range. In `shrink_gui` too.
 
 ### Fixed
 
