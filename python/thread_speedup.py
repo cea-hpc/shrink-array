@@ -133,8 +133,11 @@ except ImportError:
         return ["shrink_bench_%s_%s" % (b, rest) for b in ("omp", "std", "serial")]
 try:
     # This system's build first: Milan on RHEL 8 and Turin on RHEL 9 are both x86_64.
-    from bench_runner.settings import this_os_first
+    from bench_runner.settings import results_dir_name, this_os_first
 except ImportError:
+    def results_dir_name():                     # copied alone: the machine
+        return platform.machine()
+
     def this_os_first(dirs, name=None):         # copied alone: the sorted order
         return dirs
 SIZES = ["dyn", "1024", "256", "64"]
@@ -228,7 +231,7 @@ def default_oracle_dir(target):
     its default output dir being $CCCWORKDIR/bench_results (else the cwd)."""
     work = os.environ.get("CCCWORKDIR", "")
     base = os.path.join(work, "bench_results") if work and os.path.isdir(work) else os.getcwd()
-    return os.path.join(base, platform.machine(), "oracle", "cmake-build-" + target)
+    return os.path.join(base, results_dir_name(), "oracle", "cmake-build-" + target)
 
 
 def build_root(arg):

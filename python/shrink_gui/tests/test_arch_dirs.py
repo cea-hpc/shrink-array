@@ -36,6 +36,17 @@ def test_arch_dir_name_is_compile_all_arch(tmp_path):
     assert settings.arch_dir_name(str(tmp_path / "none")) is None
 
 
+def test_results_dir_is_the_systems(tmp_path, monkeypatch):
+    _on(monkeypatch, RHEL9)
+    assert settings.results_dir_name() == RHEL9
+    monkeypatch.setenv("CCCWORKDIR", str(tmp_path))
+    monkeypatch.setattr(thread_speedup, "results_dir_name", settings.results_dir_name)
+    assert thread_speedup.default_oracle_dir("omp-gnu") == str(
+        tmp_path / "bench_results" / RHEL9 / "oracle" / "cmake-build-omp-gnu")
+    _on(monkeypatch, None)
+    assert settings.results_dir_name() == MACHINE
+
+
 def test_this_system_first(tmp_path, monkeypatch):
     rhel8, rhel9 = _exe(tmp_path, RHEL8), _exe(tmp_path, RHEL9)
     _on(monkeypatch, RHEL9)

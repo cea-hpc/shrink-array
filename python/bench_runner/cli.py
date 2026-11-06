@@ -29,7 +29,7 @@ from .settings import (
     DEFAULT_SEQ_OMP_VARIANTS, DEFAULT_STATS_MARK_RATIO_MIN, DEFAULT_THREADS_CHECK,
     DEFAULT_TIMEOUT, DEFAULT_TIMEOUT_PER_THREAD, DEFAULT_VARIANTS, INT64_CHECK_VARIANTS,
     MODE_PRESETS, REFERENCE_THREADS, SANITIZER_REPS, SANITIZER_THREADS, SCALING_CONFIGS,
-    SCALING_MAX_SLOWDOWN, SCALING_THREADS, normalize_variant,
+    SCALING_MAX_SLOWDOWN, SCALING_THREADS, normalize_variant, results_dir_name,
 )
 from .state import _numa, _set_full_log_dir
 from .term import _Tee
@@ -377,13 +377,14 @@ def setup_outputs(args):
         _ccc_work = os.environ.get("CCCWORKDIR", "")
         out_dir = (os.path.join(_ccc_work, "bench_results")
                    if _ccc_work and os.path.isdir(_ccc_work) else os.getcwd())
-    # Separate run outputs by architecture. aarch64 and x86_64 runs commonly
-    # share a build_root and are launched with the SAME --output-dir; without an
-    # arch level they write the same bench_summary.csv / bench_errors.log and,
-    # worse, the same data_tab_* oracle in cwd=output_dir. Concurrent runs then
-    # corrupt each other's files, causing spurious mid-run crashes. Appending the
-    # current machine keeps each architecture's results (and oracle) isolated.
-    out_dir = os.path.join(out_dir, CURRENT_MACHINE)
+    # Separate run outputs by system. aarch64 and x86_64 runs commonly share a
+    # build_root and are launched with the SAME --output-dir; without an arch
+    # level they write the same bench_summary.csv / bench_errors.log and, worse,
+    # the same data_tab_* oracle in cwd=output_dir. Concurrent runs then corrupt
+    # each other's files, causing spurious mid-run crashes. Appending the
+    # build's $arch keeps each system's results (and oracle) isolated, down to
+    # the two x86_64 ones (Milan on RHEL 8, Turin on RHEL 9).
+    out_dir = os.path.join(out_dir, results_dir_name())
     os.makedirs(out_dir, exist_ok=True)
     # The architecture's directory: oracle/ and, under --pool, .pools/. The
     # same as args.output_dir without --pool.

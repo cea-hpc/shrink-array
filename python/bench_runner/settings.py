@@ -132,6 +132,13 @@ def arch_dir_name(os_release="/etc/os-release"):
     return f"{fields['ID'].upper()}_{fields.get('VERSION_ID', '')}__{platform.machine()}"
 
 
+def results_dir_name():
+    """The directory of this system under bench_results: its $arch (a system's
+    runs, oracles and timings are not those of another: Milan on RHEL 8 and
+    Turin on RHEL 9 are both x86_64), the machine without an os-release."""
+    return arch_dir_name() or platform.machine()
+
+
 def this_os_first(dirs, name=os.path.basename):
     """@p dirs with this machine's $arch directory first. A site can have one
     architecture on several systems (the Milan nodes on RHEL 8, the Turin ones
