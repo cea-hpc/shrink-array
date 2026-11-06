@@ -25,6 +25,7 @@ class ShrinkArray(CMakePackage):
     # The releases (tags, from git: the repository is not public yet), then the
     # branches: main (the last release and what follows), cpp23 (C++23),
     # develop (merged into main at each release).
+    version("0.2.1", tag="v0.2.1", commit="0a524305e7f4e94713c993f14bb83040dc3fc09b")
     version("0.2.0", tag="v0.2.0", commit="061d2fd77e2c78f7417bf9e5ca1755a2f929d317")
     version("0.1.3", tag="v0.1.3", commit="c6ea28ded4ee48e1c9d7807071b5cdeeaa022d53")
     version("0.1.2", tag="v0.1.2", commit="94b6445820db7459a848a921a86d86574115828d")
