@@ -599,7 +599,7 @@ ArrayChunkBase<Derived>::operator[](IndType index) noexcept
 {
     if constexpr (build_config::strict_element_ref)
     {
-        return reference(element_proxy(index));
+        return reference(element_ref_detail::from_array, *this, index);
     }
     else
     {
@@ -611,10 +611,13 @@ template <typename Derived>
 CHUNK_FLATTEN CHUNK_FORCE_INLINE ArrayChunkBase<Derived>::ProxyType
 ArrayChunkBase<Derived>::element_proxy(IndType index) noexcept
 {
-    const int        num_chunk = chunk_index_of(index);
-    auto&            chunk_t   = chunk_list_[num_chunk];
-    const int        num       = offset_in_chunk(index);
-    const ProxyType& val       = chunk_t[num];
+    const int num_chunk = chunk_index_of(index);
+    auto&     chunk_t   = chunk_list_[num_chunk];
+    const int num       = offset_in_chunk(index);
+    // Built here, returned by NRVO, so that a read through a[i] copies no proxy:
+    // not every compiler folds the copies away, and on the stack they cost
+    // (an unaligned store across a page, on the threads whose stack puts it there).
+    ProxyType val = chunk_t[num];
 
     // Arm ptr_on_array / num_chunk in ALL modes, not only under fast block
     // compression: in non-OpenMP builds too, set_num_tab() and
