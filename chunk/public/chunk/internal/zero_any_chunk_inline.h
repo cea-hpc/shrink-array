@@ -1057,7 +1057,8 @@ void zero_any::ChunkThreadPolicy<T, Derived, false>::clear_st(this Derived&     
 }
 
 template <typename T, typename Derived, bool Enabled>
-void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::release_st(CstSlot*          ptr_type_cst,
+void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::release_st(this Derived&     self,
+                                                                  CstSlot*          ptr_type_cst,
                                                                   SecondValueRef<T> ptr_second_value,
                                                                   int               thr_rank)
 {
@@ -1070,7 +1071,7 @@ void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::release_st(CstSlot*      
         add_chunk_released<Derived>(1, static_cast<long>(sizeof(T)) *
                                            static_cast<long>(shrink_array::alloc_chunk_count()));
     }
-    Base::block_clear_common(0, 0, thr_rank, ptr_type_cst, ptr_second_value, nullptr);
+    self.SecondValueChunkBase<T, Derived>::block_clear_common(0, 0, thr_rank, ptr_type_cst, ptr_second_value, nullptr);
 }
 
 /**
