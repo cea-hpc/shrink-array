@@ -34,8 +34,48 @@ dynamique. Elles diffèrent par **ce qu'elles savent compresser**.
 | **`zero_one_value`** | `chunk::chunk_zero_one_value` (`CHUNK_VARIANT_ZERO_ONE_VALUE`) | zéro, **ou** une **seconde valeur** propre au tableau (`set_second_value`) | rien au-delà du tableau |
 | **`zero_any`** | `chunk::chunk_zero_any` (`CHUNK_VARIANT_ZERO_ANY`) | zéro, **ou n'importe quelle autre valeur**, choisie chunk par chunk | un tableau du registre des secondes valeurs (`tab_cst_val2_holder.h`) par valeur distincte, partagé par tout le processus |
 
-Les tableaux de booléens des builds `zero_one_value` peuvent en plus utiliser `ArrayChunkBits`, qui
-range 8 booléens par octet dans un chunk matérialisé.
+### Booléens : deux conteneurs
+
+Un build `zero_one_value` a deux conteneurs de booléens, choisis par type, tableau par tableau.
+Les deux sont la machinerie de `zero_one_value` : un chunk tout à `false` est comprimé vers la
+première valeur, un chunk tout à `true` vers la seconde, qui vaut `true` par construction (pas de
+`set_second_value()`), et un chunk comprimé ne coûte aucune donnée dans l'un comme dans l'autre.
+Ils diffèrent par ce que contient un chunk **matérialisé** :
+
+| conteneur | en-tête | un chunk matérialisé de S éléments | une écriture | écritures voisines par deux threads |
+|---|---|---|---|---|
+| `zero_one_value::Array<bool>` | `chunk/zero_one_value_array.h` | S octets, un par `bool` | un simple stockage d'octet | sûres, comme pour tout élément |
+| `ArrayChunkBits<>` (`zero_one_value::Array<Bit>`) | `chunk/array_chunk_bits.h` | S/8 octets, 8 `bool` par octet -- le rangement de `std::vector<bool>` | une lecture-modification-écriture atomique du mot de 64 bits qui contient le bit (builds OpenMP) | sûres : le mot est mis à jour atomiquement, aucune écriture n'est perdue |
+| `std::vector<bool>`, pour comparaison | `<vector>` | tout le tableau, en bits, sans compression | une lecture-modification-écriture d'un mot, non atomique | **une course** : deux écritures dans un même mot peuvent en perdre une |
+
+`ArrayChunkBits` prend 8 fois moins de mémoire par élément d'un chunk matérialisé, pour une
+écriture plus chère : c'est le conteneur des grands tableaux de booléens à nombreuses zones mélangées
+(masques, indicateurs sur un maillage), écrits moins souvent que lus.
+`zero_one_value::Array<bool>` est celui des booléens écrits dans des boucles chaudes, ou presque
+uniformes : ses chunks constants ne coûtent rien non plus. Contrairement à `std::vector<bool>`,
+`ArrayChunkBits` n'est pas une spécialisation qui change le comportement d'`Array<bool>` à son
+insu : c'est un type à part, et `zero_one_value::Array<bool>` reste un stockage d'octets.
+L'élément se lit comme un `Bit`, qui se convertit vers et depuis `bool` ; comme pour tout
+conteneur à proxy ici, un élément n'a pas d'adresse. Dans un build à géométrie dynamique, un
+`ArrayChunkBits` naît avec des chunks 8 fois plus grands que la taille du processus
+(`packed_bit_birth_factor`), pour qu'un chunk contienne autant d'octets qu'un chunk de `bool`.
+
+```cpp
+shrink_array::zero_one_value::Array<bool> flags(n); // un octet par élément dans un chunk matérialisé
+shrink_array::ArrayChunkBits<>            mask(n);  // un bit par élément, 8 par octet
+flags[i] = true;
+mask[i]  = true;              // deux threads peuvent écrire des bits voisins en même temps
+const bool b = std::as_const(mask)[i];
+```
+
+Le programme [examples/bool_arrays](../examples/bool_arrays/bool_arrays.cpp) écrit les deux depuis
+tous les threads, éléments voisins compris, vérifie chaque valeur et affiche les données que garde
+chacun.
+
+Les builds `zero_any` fournissent aussi **`pattern::Array`**, pour les entiers : un membre de la
+famille `zero_any` qui compresse, en plus de ses constantes, un chunk égal à un **motif partagé
+plus un offset** -- la forme d'une connectivité de maillage, compressée à environ 1 % d'un vecteur
+sur un maillage structuré. Voir [algo_pattern_fr.md](algo_pattern_fr.md).
 
 ## 3. Ce que coûte un chunk
 
@@ -71,7 +111,7 @@ de run :
 | `zero_any` | 7,26 Go | **6,0 Go** |
 | `zero_one_value` | 17,3 Go | **16,3 Go** |
 | `zero` | 40,2 Go | 40,3 Go (et 39,7 Go en statique 1 024, la taille qu'il atteint) |
-| `std::vector` (`shrink_bench_vector_perf`) | 125,9 Go | — |
+| `std::vector` (`shrink_bench_omp_vector_perf`) | 125,9 Go | — |
 
 La géométrie dynamique fait gagner nettement `zero_one_value` et `zero_any`. Pour `zero`, dont la mémoire est
 surtout faite de données, elle fait jeu égal avec le statique 256 : voir les limites connues

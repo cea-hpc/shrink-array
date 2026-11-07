@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // shrink-array vendored copy -- not the pristine upstream file.
 //   upstream: https://github.com/martinus/unordered_dense
-//   version : v5.3.1 (commit c164976d1426d623d87b98833ff60c7263fde4e1)
+//   version : v5.3.3 (commit 7c58a8b7a48e790fe72f6508eb3b46317cbba9d5)
 //   changes : 2 local patches, each marked "Local patch (shrink-array)"
 //   license : MIT (below; third_party/licenses/unordered_dense-MIT.txt)
 // The mentions further down of CLAUDE.md, notes/ and issue numbers are
@@ -11,7 +11,7 @@
 ///////////////////////// ankerl::unordered_dense::{map, set} /////////////////////////
 
 // A fast & densely stored hashmap and hashset.
-// Version 5.3.1
+// Version 5.3.3
 // https://github.com/martinus/unordered_dense
 //
 // Licensed under the MIT License <http://opensource.org/licenses/MIT>.
@@ -42,7 +42,7 @@
 // see https://semver.org/spec/v2.0.0.html
 #define ANKERL_UNORDERED_DENSE_VERSION_MAJOR 5 // NOLINT(cppcoreguidelines-macro-usage) incompatible API changes
 #define ANKERL_UNORDERED_DENSE_VERSION_MINOR 3 // NOLINT(cppcoreguidelines-macro-usage) backwards compatible functionality
-#define ANKERL_UNORDERED_DENSE_VERSION_PATCH 1 // NOLINT(cppcoreguidelines-macro-usage) backwards compatible bug fixes
+#define ANKERL_UNORDERED_DENSE_VERSION_PATCH 3 // NOLINT(cppcoreguidelines-macro-usage) backwards compatible bug fixes
 
 // API versioning with inline namespace, see https://www.foonathan.net/2018/11/inline-namespaces/
 
@@ -173,7 +173,15 @@
 #        include <intrin.h> // for _BitScanForward
 #    endif
 
-#    if __has_cpp_attribute(likely) && __has_cpp_attribute(unlikely) && ANKERL_UNORDERED_DENSE_CPP_VERSION >= 202002L
+// __has_cpp_attribute is not provided by every C++17 compiler (e.g. MSVC 19.16); probe it with
+// defined() first so the nested use is not evaluated where the builtin is missing (MSVC C4067).
+#    if defined(__has_cpp_attribute) && ANKERL_UNORDERED_DENSE_CPP_VERSION >= 202002L
+#        if __has_cpp_attribute(likely) && __has_cpp_attribute(unlikely)
+#            define ANKERL_UNORDERED_DENSE_HAS_LIKELY_ATTR 1 // NOLINT(cppcoreguidelines-macro-usage)
+#        endif
+#    endif
+
+#    if defined(ANKERL_UNORDERED_DENSE_HAS_LIKELY_ATTR)
 #        define ANKERL_UNORDERED_DENSE_LIKELY_ATTR [[likely]]     // NOLINT(cppcoreguidelines-macro-usage)
 #        define ANKERL_UNORDERED_DENSE_UNLIKELY_ATTR [[unlikely]] // NOLINT(cppcoreguidelines-macro-usage)
 #        define ANKERL_UNORDERED_DENSE_LIKELY(x) (x)              // NOLINT(cppcoreguidelines-macro-usage)

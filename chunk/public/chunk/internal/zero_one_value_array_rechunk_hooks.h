@@ -23,7 +23,7 @@
  *
  * @details Like RechunkHooks for zero, but zero_one_value overrides all SIX hooks: it
  *          resolves num_tab from the registry, carries the array-level second
- *          value across the swap, and re-owns its map_inf_array entry. They run
+ *          value across the swap, and re-owns its map_inf_array_ entry. They run
  *          only under RechunkSupport<Derived, true>::rechunk_to(); the static
  *          specialisation keeps the signatures as no-ops so zero_one_value::Array's
  *          using-declarations stay valid in both modes.
@@ -37,10 +37,7 @@
 #include "chunk/chunk_traits.h"  // ArrayChunkTraits
 #include "chunk/internal/in_t.h" // InT<T>: the captured state
 
-namespace shrink_array
-{
-
-namespace zero_one_value
+namespace shrink_array::zero_one_value
 {
 
 /**
@@ -72,10 +69,13 @@ class RechunkHooks<Derived, true>
 
     /**
      * @brief Drain the reuse free-list of the target geometry.
-     * @param new_size the chunk size the array is moving to
+     * @param target_size the chunk size the array is moving to
      * @details The buffers parked there were sized for an older geometry.
      */
-    void rechunk_drain_reuse_list(this const Derived& self, unsigned int new_size);
+    void rechunk_drain_reuse_list(this const Derived& /*self*/, unsigned int target_size)
+    {
+        ManagerType::drain_reuse_list_for_size(target_size);
+    }
 
     /// @brief Capture the array-level state that must survive the rechunk.
     /// @return this array's second value
@@ -95,7 +95,7 @@ class RechunkHooks<Derived, true>
     bool rechunk_swap_identity(this Derived& self, Derived& tmp);
 
     /**
-     * @brief Re-own the map_inf_array entry after the identity swap.
+     * @brief Re-own the map_inf_array_ entry after the identity swap.
      * @param tmp   scratch array the storage came from
      * @param state value returned by rechunk_capture_state()
      * @details Re-points the shared entry at the SURVIVOR's inf_array member, so
@@ -138,6 +138,4 @@ class RechunkHooks<Derived, false>
     void rechunk_reown_after_swap(Derived& /*tmp*/, InT<value_type> /*state*/) const noexcept {}
 };
 
-} // namespace zero_one_value
-
-} // namespace shrink_array
+} // namespace shrink_array::zero_one_value

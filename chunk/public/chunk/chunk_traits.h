@@ -27,10 +27,12 @@ namespace shrink_array
 // 1. PRIMARY FORWARD DECLARATIONS (With default arguments)
 // ============================================================================
 
-// The three array classes, one namespace each: what the variant compresses.
+// The array classes, one namespace each: what the variant compresses.
 //   zero             zeros only
 //   zero_one_value   zero and one value declared for the whole array
 //   zero_any         zero and, chunk by chunk, any value
+//   pattern          integers: zero, any value, and (being written) a shared motif
+//                    plus an offset per chunk (docs/algo_pattern.md)
 namespace zero
 {
 template <ArrayChunkElement T, typename IntType = int>
@@ -46,6 +48,11 @@ namespace zero_any
 template <ArrayChunkElement T, typename IntType = int>
 class Array;
 } // namespace zero_any
+namespace pattern
+{
+template <ArrayChunkElement T, typename IntType = int>
+class Array;
+} // namespace pattern
 
 // The former names, kept until 1.0.
 template <ArrayChunkElement T, typename IntType = int>
@@ -85,6 +92,16 @@ class Proxy;
 
 } // namespace zero_any
 
+namespace pattern
+{
+
+template <typename T>
+class Chunk;
+template <typename T>
+class Proxy;
+
+} // namespace pattern
+
 // Former names of the chunk and proxy classes, until 1.0.
 template <typename T>
 using Chunk [[deprecated("use zero::Chunk")]] = zero::Chunk<T>;
@@ -110,73 +127,83 @@ class ManagerChunk;
 // What is common to all of them is ArrayChunkCore<ChunkType>
 // (array_chunk_core.h), which is what ArrayChunkFor names.
 
+/**
+ * @brief What a chunk type maps to, for one variant.
+ * @tparam ChunkT the variant's chunk template
+ * @tparam ProxyT the variant's proxy template
+ * @tparam T stored element type
+ */
+template <template <typename> class ChunkT, template <typename> class ProxyT, typename T>
+struct VariantChunkTraits
+{
+    using ProxyType   = ProxyT<T>;               ///< Write proxy returned by the non-const accessors.
+    using ManagerType = ManagerChunk<ChunkT, T>; ///< Per-type manager owning the compression machinery.
+};
+
 template <typename C>
 struct ChunkTraits;
 
-/// @brief Chunk<T> maps to Proxy<T> and ManagerChunk<Chunk, T>.
 template <typename T>
-struct ChunkTraits<zero::Chunk<T>>
+struct ChunkTraits<zero::Chunk<T>> : VariantChunkTraits<zero::Chunk, zero::Proxy, T>
 {
-    using ProxyType   = zero::Proxy<T>;               ///< Write proxy returned by the chunk's non-const operator[].
-    using ManagerType = ManagerChunk<zero::Chunk, T>; ///< Per-type manager owning the compression machinery.
 };
 
-/// @brief zero_one_value::Chunk<T> maps to zero_one_value::Proxy<T> and ManagerChunk<zero_one_value::Chunk, T>.
 template <typename T>
-struct ChunkTraits<zero_one_value::Chunk<T>>
+struct ChunkTraits<zero_one_value::Chunk<T>> : VariantChunkTraits<zero_one_value::Chunk, zero_one_value::Proxy, T>
 {
-    using ProxyType   = zero_one_value::Proxy<T>; ///< Write proxy returned by the chunk's non-const operator[].
-    using ManagerType = ManagerChunk<zero_one_value::Chunk, T>; ///< Per-type manager owning the compression machinery.
 };
 
-/// @brief zero_any::Chunk<T> maps to zero_any::Proxy<T> and ManagerChunk<zero_any::Chunk, T>.
 template <typename T>
-struct ChunkTraits<zero_any::Chunk<T>>
+struct ChunkTraits<zero_any::Chunk<T>> : VariantChunkTraits<zero_any::Chunk, zero_any::Proxy, T>
 {
-    using ProxyType   = zero_any::Proxy<T>;               ///< Write proxy returned by the chunk's non-const operator[].
-    using ManagerType = ManagerChunk<zero_any::Chunk, T>; ///< Per-type manager owning the compression machinery.
+};
+
+template <typename T>
+struct ChunkTraits<pattern::Chunk<T>> : VariantChunkTraits<pattern::Chunk, pattern::Proxy, T>
+{
 };
 
 // ============================================================================
 // 3. ARRAY TO CHUNK MAPPING (ArrayChunkTraits)
 // ============================================================================
 
+/**
+ * @brief What an array type maps to, for one variant.
+ * @tparam ChunkT the variant's chunk template
+ * @tparam ProxyT the variant's proxy template
+ * @tparam T stored element type
+ * @tparam IntType signed global index type
+ */
+template <template <typename> class ChunkT, template <typename> class ProxyT, typename T, typename IntType>
+struct VariantArrayTraits : VariantChunkTraits<ChunkT, ProxyT, T>
+{
+    using ChunkType  = ChunkT<T>; ///< Chunk type the array holds.
+    using value_type = T;         ///< Stored element type.
+    using IndexType  = IntType;   ///< Signed global index type.
+};
+
 template <typename Derived>
 struct ArrayChunkTraits;
 
-/// @brief zero::Array<T, IntType> maps to Chunk<T>, Proxy<T>, ManagerChunk<Chunk, T>, value T and index IntType.
 template <ArrayChunkElement T, typename IntType>
-struct ArrayChunkTraits<zero::Array<T, IntType>>
+struct ArrayChunkTraits<zero::Array<T, IntType>> : VariantArrayTraits<zero::Chunk, zero::Proxy, T, IntType>
 {
-    using ChunkType   = zero::Chunk<T>;               ///< Chunk type the array holds.
-    using ProxyType   = zero::Proxy<T>;               ///< Write proxy returned by the non-const accessors.
-    using ManagerType = ManagerChunk<zero::Chunk, T>; ///< Per-type manager owning the compression machinery.
-    using value_type  = T;                            ///< Stored element type.
-    using IndexType   = IntType;                      ///< Signed global index type.
 };
 
-/// @brief zero_any::Array<T, IntType> maps to zero_any::Chunk<T>, zero_any::Proxy<T>, ManagerChunk<zero_any::Chunk, T>,
-///        value T and index IntType.
 template <ArrayChunkElement T, typename IntType>
-struct ArrayChunkTraits<zero_any::Array<T, IntType>>
+struct ArrayChunkTraits<zero_any::Array<T, IntType>> : VariantArrayTraits<zero_any::Chunk, zero_any::Proxy, T, IntType>
 {
-    using ChunkType   = zero_any::Chunk<T>;               ///< Chunk type the array holds.
-    using ProxyType   = zero_any::Proxy<T>;               ///< Write proxy returned by the non-const accessors.
-    using ManagerType = ManagerChunk<zero_any::Chunk, T>; ///< Per-type manager owning the compression machinery.
-    using value_type  = T;                                ///< Stored element type.
-    using IndexType   = IntType;                          ///< Signed global index type.
 };
 
-/// @brief zero_one_value::Array<T, IntType> maps to zero_one_value::Chunk<T>, zero_one_value::Proxy<T>,
-///        ManagerChunk<zero_one_value::Chunk, T>, value T and index IntType.
 template <ArrayChunkElement T, typename IntType>
 struct ArrayChunkTraits<zero_one_value::Array<T, IntType>>
+    : VariantArrayTraits<zero_one_value::Chunk, zero_one_value::Proxy, T, IntType>
 {
-    using ChunkType   = zero_one_value::Chunk<T>;               ///< Chunk type the array holds.
-    using ProxyType   = zero_one_value::Proxy<T>;               ///< Write proxy returned by the non-const accessors.
-    using ManagerType = ManagerChunk<zero_one_value::Chunk, T>; ///< Per-type manager owning the compression machinery.
-    using value_type  = T;                                      ///< Stored element type.
-    using IndexType   = IntType;                                ///< Signed global index type.
+};
+
+template <ArrayChunkElement T, typename IntType>
+struct ArrayChunkTraits<pattern::Array<T, IntType>> : VariantArrayTraits<pattern::Chunk, pattern::Proxy, T, IntType>
+{
 };
 
 // ============================================================================
@@ -184,7 +211,7 @@ struct ArrayChunkTraits<zero_one_value::Array<T, IntType>>
 // ============================================================================
 //
 // zero_any compresses a chunk to zero or to a value of its own. The variants
-// built on its code (pattern::Array, docs/pattern_design.md) share its
+// built on its code (pattern::Array, docs/algo_pattern.md) share its
 // compression lists, its write engine, its relaxed element stores and its
 // serial compression path, and differ in what a compressed chunk's values
 // pointer names: zero_any's, a second value; pattern's, a motif to which the
@@ -205,8 +232,40 @@ struct ZeroAnyFamily<zero_any::Chunk<T>> : std::true_type
 {
 };
 
+/// @brief pattern::Chunk, zero_any's chunk with shared motifs (docs/algo_pattern.md).
+template <typename T>
+struct ZeroAnyFamily<pattern::Chunk<T>> : std::true_type
+{
+};
+
 /// @brief ZeroAnyFamily<ChunkT>::value.
 template <typename ChunkT>
 inline constexpr bool is_zero_any_family_v = ZeroAnyFamily<ChunkT>::value;
+
+// ============================================================================
+// 5. THE MOTIF STATE
+// ============================================================================
+//
+// A member of the family whose chunk can also equal a shared motif plus an
+// offset of its own (pattern::Chunk, docs/algo_pattern.md): its values
+// pointer then names the motif, and the offset sits in the chunk's
+// second-value slot. The shared code reads and materialises such a chunk in
+// branches compiled for these members only: zero_any's code is unchanged.
+
+/// @brief Has @p ChunkT the motif state? Specialised for each such member.
+template <typename ChunkT>
+struct HasMotifState : std::false_type
+{
+};
+
+/// @brief pattern::Chunk: the motif state's first member.
+template <typename T>
+struct HasMotifState<pattern::Chunk<T>> : std::true_type
+{
+};
+
+/// @brief HasMotifState<ChunkT>::value.
+template <typename ChunkT>
+inline constexpr bool has_motif_state_v = HasMotifState<ChunkT>::value;
 
 } // namespace shrink_array

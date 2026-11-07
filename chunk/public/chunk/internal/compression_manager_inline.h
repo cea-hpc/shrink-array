@@ -36,6 +36,55 @@
 namespace shrink_array
 {
 
+namespace detail
+{
+/**
+ * @brief Check builds: stop on a queued op that cannot be a live one, before
+ *        the replay's virtual write_body() call crashes on it.
+ * @details A null, misaligned, low or non-canonical op pointer, or one whose
+ *          vptr is any of these, is a block recycled while still in the map.
+ *          Non-canonical: a recycled block rewritten with doubles holds a vptr
+ *          like 0x4008000000000000 (3.0), past a low bound alone. Same range
+ *          rule as pool_ledger.h's LEDGER_BADPTR: x86-64 user pointers are
+ *          < 2^47, aarch64 ones < 2^52. The op's own checks (write_body's
+ *          DEFERRED_LIFECYCLE magic) run after the virtual call: too late here.
+ * @param raw  the queued op
+ * @param num  its offset in the chunk (the op_map key)
+ * @param rank the rank whose map holds it
+ * @param path which drain: "own" (flush_deferred) or "xrank" (flush_chunk_all_ranks)
+ */
+inline void flush_probe_op([[maybe_unused]] const DeferredOperationBase* raw,
+                           [[maybe_unused]] int                          num,
+                           [[maybe_unused]] int                          rank,
+                           [[maybe_unused]] const char*                  path) noexcept
+{
+    if constexpr (build_config::any_check)
+    {
+#ifdef __aarch64__
+        constexpr unsigned addr_bits = 52U;
+#else
+        constexpr unsigned addr_bits = 47U;
+#endif
+        const auto bad_ptr = [](std::uintptr_t ptr)
+        { return ptr < 0x1000 || (ptr >> addr_bits) != 0 || (ptr & 0x7U) != 0; };
+
+        const auto addr = ::fast_alloc::address_bits(raw);
+        if (raw == nullptr || bad_ptr(addr))
+        {
+            CHUNK_INVARIANT_FAILED("[FLUSH_PROBE {}] bad op_ptr in op_map: num={} op={} rank={}", path, num,
+                                   static_cast<const void*>(raw), rank);
+        }
+        const auto vptr = ::fast_alloc::load_from_bytes<std::uintptr_t>(raw); // its first word
+        if (bad_ptr(vptr))
+        {
+            CHUNK_INVARIANT_FAILED("[FLUSH_PROBE {}] op has null/garbage vptr (recycled under map?): "
+                                   "num={} op={} vptr={:#x} rank={}",
+                                   path, num, static_cast<const void*>(raw), vptr, rank);
+        }
+    }
+}
+} // namespace detail
+
 // No build guard: everything below belongs to the PRIMARY CompressionManagerThreadPolicy
 // template, instantiated only with Enabled=true (threaded builds).
 
@@ -205,6 +254,8 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_deferred(int thr)
             const FlushReplayGuard replay_guard;
             for (auto& [num, op_ptr] : batch)
             {
+                detail::flush_probe_op(op_ptr.get(), num, thr, "own"); // check builds: see its comment
+
                 if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
                 {
                     ring_log_op(get_tid(), EventCode::op_flush_one, static_cast<uint32_t>(num),
@@ -377,26 +428,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_chunk_all_ranks(C
             const FlushReplayGuard replay_guard;
             for (auto& [num, op_ptr] : batch)
             {
-                // Check-build guard: a null, misaligned or low op pointer, or one
-                // whose vptr is null or garbage, is a block recycled while still
-                // in the map; say so here rather than crash in write_body().
-                if constexpr (build_config::any_check)
-                {
-                    DeferredOperationBase* raw  = op_ptr.get();
-                    const auto             addr = ::fast_alloc::address_bits(raw);
-                    if (raw == nullptr || addr < 0x1000 || (addr & 0x7U) != 0)
-                    {
-                        CHUNK_INVARIANT_FAILED("[FLUSH_PROBE xrank] bad op_ptr in op_map: num={} op={} rank={}", num,
-                                               raw, r);
-                    }
-                    const auto vptr = ::fast_alloc::load_from_bytes<std::uintptr_t>(raw); // its first word
-                    if (vptr < 0x1000)
-                    {
-                        CHUNK_INVARIANT_FAILED("[FLUSH_PROBE xrank] op has null/garbage vptr (recycled under map?): "
-                                               "num={} op={} vptr={:#x} rank={}",
-                                               num, raw, vptr, r);
-                    }
-                }
+                detail::flush_probe_op(op_ptr.get(), num, r, "xrank"); // check builds: see its comment
 
                 if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
                 {
@@ -420,7 +452,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_chunk_all_ranks(C
         // ── Preserve concurrent re-enqueues ──────────────────────────────────
         // An op enqueued into *op_map AFTER the swap (a writer still active on rank r) is a
         // pending write NOT yet replayed. Never clear() the live map: that would drop it
-        // unapplied and leave pending_ops wrong (dec counts only the batch). Erase the
+        // unapplied and leave pending_ops_ wrong (dec counts only the batch). Erase the
         // chunk entry ONLY when nothing was re-enqueued; otherwise leave it (and the
         // dangerous-list membership) for the next flush.
         if (op_map->empty())
@@ -737,5 +769,242 @@ void CompressionManagerThreadPolicy<T, ChunkT, Enabled>::finish()
     }
 }
 
+// ---------------------------------------------------------------------------
+// shrink_array::CompressionManagerThreadPolicy<T, ChunkT, Enabled>::DeferredOperation<Ctx, WriteFn>
+// ---------------------------------------------------------------------------
+
+template <typename T, typename ChunkT, bool Enabled>
+template <typename Ctx, typename WriteFn>
+CompressionManagerThreadPolicy<T, ChunkT, Enabled>::DeferredOperation<Ctx, WriteFn>::~DeferredOperation()
+{
+    // Destroy context object (but do NOT free memory)
+    if (ctx_)
+    {
+        std::destroy_at(ctx_);
+        ctx_ = nullptr;
+    }
+}
+
+template <typename T, typename ChunkT, bool Enabled>
+template <typename Ctx, typename WriteFn>
+void CompressionManagerThreadPolicy<T, ChunkT, Enabled>::DeferredOperation<Ctx, WriteFn>::write_body()
+{
+    if constexpr (build_config::any_check)
+    {
+        const int flusher_rank = get_thr_rank_fast();
+
+        // (1) This op must still be alive. A poisoned magic means the op
+        //     was already destroy()'d — i.e. we are flushing it twice.
+        if (magic_ != deferred_lifecycle::op_alive_magic)
+        {
+            CHUNK_INVARIANT_FAILED("[DEFERRED_LIFECYCLE] op magic corrupt/poisoned "
+                                   "(op={}, magic={:#x}, executed={}, enqueue_rank={}, flusher_rank={})",
+                                   this, magic_, executed_, this->thread_rank_, flusher_rank);
+        }
+
+        // (2) This op must not have run before (double-flush guard).
+        if (executed_)
+        {
+            CHUNK_INVARIANT_FAILED("[DEFERRED_LIFECYCLE] op executed twice "
+                                   "(op={}, enqueue_rank={}, flusher_rank={})",
+                                   this, this->thread_rank_, flusher_rank);
+        }
+
+        // (3) The captured ctx must still be alive. A poisoned or absent
+        //     ctx_alive_magic means the ctx was destroyed/recycled while
+        //     this op still referenced it (the root use-after-recycle).
+        if (ctx_ == nullptr)
+        {
+            CHUNK_INVARIANT_FAILED("[DEFERRED_LIFECYCLE] op has null ctx at write_body "
+                                   "(op={}, enqueue_rank={}, flusher_rank={})",
+                                   this, this->thread_rank_, flusher_rank);
+        }
+
+        if (ctx_->magic != deferred_lifecycle::ctx_alive_magic)
+        {
+            CHUNK_INVARIANT_FAILED("[DEFERRED_LIFECYCLE] ctx not alive at write_body "
+                                   "(op={}, ctx={}, ctx_magic={:#x}, enqueue_rank={}, flusher_rank={})",
+                                   this, ctx_, ctx_->magic, this->thread_rank_, flusher_rank);
+        }
+
+        executed_ = true;
+    }
+
+    // ── Per-op geometry pin ───────────────────────────────────────
+    // The replay may run on a thread whose ambient geometry
+    // (t_active_chunk_size) now belongs to another array, and
+    // create_value() sizes the buffer from it: `values[num]` would run
+    // off a buffer of the wrong width. Pin the enqueue-time geometry
+    // (ctx->chunk_size_frozen, as the proxy's chunk_size_frozen_) and
+    // alloc key, and restore both exactly, including the "unset" 0.
+    if constexpr (build_config::chunk_dynamic)
+    {
+        const unsigned int saved     = t_active_chunk_size;
+        const unsigned int saved_key = t_alloc_key;
+        if (ctx_->chunk_size_frozen != 0U)
+        {
+            set_thread_chunk_size(ctx_->chunk_size_frozen);
+        }
+        set_thread_alloc_key(ctx_->alloc_key_frozen); // the array's slabs, not the caller's
+
+        fn_();
+
+        t_active_chunk_size = saved;
+        t_alloc_key         = saved_key;
+    }
+    else
+    {
+        fn_();
+    }
+}
+
+template <typename T, typename ChunkT, bool Enabled>
+template <typename Ctx, typename WriteFn>
+void CompressionManagerThreadPolicy<T, ChunkT, Enabled>::DeferredOperation<Ctx, WriteFn>::destroy() noexcept
+{
+    // Teardown exactly once, even if two flush paths call destroy() on
+    // the same op concurrently: the first caller wins.
+    if (destroyed_.exchange(true, std::memory_order_acq_rel))
+    {
+        return;
+    }
+
+    if (ctx_)
+    {
+        std::destroy_at(ctx_); // poisons ctx->magic via ~BaseArithmeticContext
+        free_ctx(ctx_);
+        ctx_ = nullptr;
+    }
+
+    // DEFERRED_LIFECYCLE: poison before recycling so a later
+    // double-flush observes op_dead_magic instead of op_alive_magic.
+    if constexpr (build_config::any_check)
+    {
+        magic_ = deferred_lifecycle::op_dead_magic;
+    }
+
+    std::destroy_at(this);
+    free_op(this); // recycle the raw memory
+}
+
+// ---------------------------------------------------------------------------
+// shrink_array::CompressionManagerThreadPolicy<T, ChunkT, Enabled>
+// ---------------------------------------------------------------------------
+
+template <typename T, typename ChunkT, bool Enabled>
+void CompressionManagerThreadPolicy<T, ChunkT, Enabled>::ensure_initialised()
+{
+    std::call_once(init_once_,
+                   []
+                   {
+                       init_dangerous_lists_tracking();
+                       init_deferred_queues();
+                   });
+}
+
+template <typename T, typename ChunkT, bool Enabled>
+[[nodiscard]] bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::any_pending_ops() noexcept
+{
+    if (pending_ops_shard.empty())
+    {
+        return false;
+    }
+    const int max_thr = CHUNK_PMP_RANK_BOUND;
+    int64_t   total   = 0;
+    for (int i = 0; i < max_thr; ++i)
+    {
+        total += pending_ops_shard[i].v.load(std::memory_order_acquire);
+    }
+    return total > 0;
+}
+
+template <typename T, typename ChunkT, bool Enabled>
+void CompressionManagerThreadPolicy<T, ChunkT, Enabled>::record_enqueue_deferred(int thr_rank, ChunkT& chunk) noexcept
+{
+    // Insert UNDER rank thr_rank's shard lock (the one to_be_queued_for_deferred_processing()
+    // already holds): flush_chunk_all_ranks() erases from this set under
+    // it, and an unlocked insert races that erase on the table's storage.
+    //
+    // A flush replay applies its writes directly (FlushReplayGuard): an
+    // enqueue from inside one is a write path ignoring in_flush_replay.
+    if constexpr (build_config::any_check)
+    {
+        if (FlushReplayState<T, ChunkT>::in_flush_replay) [[unlikely]]
+        {
+            CHUNK_INVARIANT_FAILED("record_enqueue_deferred: op enqueued during a flush replay (rank {}, chunk {})",
+                                   thr_rank, &chunk);
+        }
+    }
+    enqueue_lock(thr_rank);
+    // The insert allocates, and ankerl throws on a bucket overflow; the
+    // writers calling this are noexcept: fail with the context instead of
+    // a silent std::terminate.
+    try
+    {
+        deferred_chunk_per_thread[thr_rank].insert(&chunk);
+    }
+    catch (const std::exception& e)
+    {
+        CHUNK_INVARIANT_FAILED("record_enqueue_deferred: insert failed: {} (rank {}, chunk {})", e.what(), thr_rank,
+                               &chunk);
+    }
+    enqueue_unlock(thr_rank);
+
+    mark_thread_has_ops(thr_rank);
+}
+
+template <typename T, typename ChunkT, bool Enabled>
+[[nodiscard]] inline bool
+CompressionManagerThreadPolicy<T, ChunkT, Enabled>::must_defer_write(const ChunkT& chunk) noexcept
+{
+    if constexpr (chunk_config::use_chunk_steal_mark)
+    {
+        // Acquire, paired with steal_mark()'s release: a writer that sees
+        // the mark clear here is ordered before the claim, and one that
+        // sees it set takes the slow path. A relaxed pair would let a
+        // writer miss a mark already set.
+        return chunk.steal_marked();
+    }
+    else
+    {
+        // Serial build only (every threaded build has marks): no concurrent
+        // compressor. Acquire, paired with finish()'s seq_cst decrement,
+        // as when the SHRINK_SMALL_CHUNK build ran this gate under threads
+        // (docs/formal_models.md, F1): a writer that sees a pass OVER also
+        // sees the `values` that pass installed.
+        return hard_inflight_.load(std::memory_order_acquire) > 0;
+    }
+}
+
+template <typename T, typename ChunkT, bool Enabled>
+void CompressionManagerThreadPolicy<T, ChunkT, Enabled>::init_deferred_queues()
+{
+    // Built whole, never resized: the atomics are not movable. The member
+    // initialisers give the zero counts and the free (-1) locks.
+    const auto max_thr        = static_cast<std::size_t>(CHUNK_PMP_THREAD_CAPACITY);
+    deferred_chunk_per_thread = std::vector<UnorderedSetDeferredChunks>(max_thr);
+    pending_ops_shard         = std::vector<PaddedPendingCounter>(max_thr);
+    // Per-rank flush lock shards (see xflush_lock_rank declaration).
+    xflush_lock_rank = std::vector<PaddedFlushLock>(max_thr);
+}
+
+template <typename T, typename ChunkT, bool Enabled>
+void CompressionManagerThreadPolicy<T, ChunkT, Enabled>::dec_pending_ops(int thr_rank, int64_t count) noexcept
+{
+    const int64_t before = pending_ops_shard[thr_rank].v.fetch_sub(count, std::memory_order_release);
+    // Never below zero: any_pending_ops() SUMS the ranks, so a rank at -2
+    // hides two real ops on another one and the array-level flush is
+    // skipped. inc_pending_ops() runs under the same shard lock as the
+    // op insert, so a negative count is a double count, not a race.
+    if constexpr (build_config::any_check)
+    {
+        if (before - count < 0) [[unlikely]]
+        {
+            CHUNK_INVARIANT_FAILED("dec_pending_ops: rank {} count {} -> {} (retired {}): more ops retired than "
+                                   "published -- a double count",
+                                   thr_rank, before, before - count, count);
+        }
+    }
+}
 
 } // namespace shrink_array

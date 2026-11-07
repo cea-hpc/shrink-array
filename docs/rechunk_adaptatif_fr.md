@@ -36,7 +36,7 @@ estimée (métadonnées + données matérialisées).
 
 Les candidates : les rapports en puissances de deux (S×2 à S×16, S÷2 et S÷4), et entre ces
 bornes tout multiple de 64 dont C / 64 a au plus `Options::grid_bits` bits significatifs
-(`CHUNK_ADVISOR_GRID_BITS` ; 2 par défaut : 192, 384, 768, 1536... : des pas de 50 % au plus ;
+(`RechunkPolicy::advisor_grid_bits`, `--rechunk_grid_bits` dans le banc ; 2 par défaut : 192, 384, 768, 1536... : des pas de 50 % au plus ;
 3 ajoute 320, 448, 640, 896... : des pas de 25 %). Chaque ligne découpe le tableau en fenêtres de C éléments, lues sur les chunks actuels :
 
 - une fenêtre **dans une suite de chunks compressés à la même constante** est compressée :
@@ -64,35 +64,41 @@ septembre 2026, chaque analyse allouait un octet et un pointeur par chunk (140 M
 tableau de 15,6 millions de chunks), et les analyses coûtaient 1 à 2 s sur un run de 6,5 s.
 Elles coûtent maintenant ~0,7 s sur un run de `zero_one_value` de 8,4 s.
 
-`CHUNK_ADVISOR_TABLE=1` (ou `=nom_du_tableau`) affiche la table complète à chaque passage.
+`CHUNK_LOG=advisor=debug` écrit la table complète de chaque tableau analysé à chaque passage
+(celle d'un seul tableau avec `RechunkPolicy::trace_array`, `--rechunk_trace_array <nom>` dans le banc).
 
 ## 3. Le décideur : quand et vers où
 
 `RechunkDecider::consider()` (`rechunk_decider.h`, `internal/rechunk_decider_inline.h`) est
-appelé à chaque **passage** : toutes les `CHUNK_ADVISOR_PERIOD` itérations dans le banc
+appelé à chaque **passage** : toutes les `--advisor_period` itérations dans le banc
 (par défaut `max(10, iter_max / 20)`, soit 100 pour 2 000 itérations ; 0 désactive). Il
-prend la meilleure taille de la table, puis applique la politique (`RechunkPolicy`) :
+prend la meilleure taille de la table, puis applique la politique (`RechunkPolicy`). La
+bibliothèque ne lit aucun de ces réglages dans l'environnement : un programme renseigne les
+champs ; le banc les expose en options (entre parenthèses) :
 
 | réglage | défaut | rôle |
 |---|---|---|
 | `stability_ticks` | 3 | la meilleure taille doit rester la même pendant 3 passages |
 | `cooldown_ticks` | 5 | au moins 5 passages entre deux rechunks d'un même tableau |
 | `anti_reversal_ticks` | 30 | pas de retour vers une taille quittée depuis moins de 30 passages |
-| `max_coarsen_factor` | **4** | un grossissement multiplie la taille par 4 au plus (`CHUNK_RECHUNK_MAX_COARSEN`) |
-| `min_gain_bytes`, `min_gain_frac` | 8 Mo, 15 % | seuils de gain côté données (`CHUNK_ADVISOR_MIN_GAIN_MB`) |
+| `max_coarsen_factor` | **4** | un grossissement multiplie la taille par 4 au plus (`--rechunk_max_coarsen`) |
+| `min_gain_bytes`, `min_gain_frac` | 8 Mo, 15 % | seuils de gain côté données (`--rechunk_min_gain_mb`) |
 | `coarsen_gain_multiple` | 3 | un grossissement jugé sur les données doit gagner 3 fois le seuil |
-| `coarsen_min_meta_gain_bytes` | 1 Mo | gain minimal côté métadonnées (`CHUNK_COARSEN_MIN_META_MB`) |
-| `coarsen_min_meta_rate` | 250 Mo/s | gain de métadonnées par seconde de reconstruction estimée (`CHUNK_COARSEN_MIN_META_RATE`) |
+| `coarsen_min_meta_gain_bytes` | 1 Mo | gain minimal côté métadonnées (`--rechunk_coarsen_min_meta_mb`) |
+| `coarsen_min_meta_rate` | 250 Mo/s | gain de métadonnées par seconde de reconstruction estimée (`--rechunk_coarsen_min_meta_rate`) |
 | `coarsen_trust_ratio` | 0,5 | apprentissage : un grossissement qui a rendu moins de la moitié de sa prévision interdit les suivants |
-| `dry_run` | `true` | ne rien appliquer (le banc le met à `false` ; `CHUNK_RECHUNK_DRY_RUN=1` le force) |
-| `max_backoff_ticks` | 8 | un tableau dont le verdict est un « pas de mouvement » établi (déjà optimal, gain sous le seuil) n'est réanalysé qu'après 2, 4, puis jusqu'à 8 passages ; tout autre verdict le ramène à chaque passage (`CHUNK_ADVISOR_BACKOFF_MAX`, 0 ou 1 désactive) |
+| `dry_run` | `true` | ne rien appliquer (le banc le met à `false` ; `--rechunk_dry_run` le garde) |
+| `max_backoff_ticks` | 8 | un tableau dont le verdict est un « pas de mouvement » établi (déjà optimal, gain sous le seuil) n'est réanalysé qu'après 2, 4, puis jusqu'à 8 passages ; tout autre verdict le ramène à chaque passage (`--rechunk_backoff_max`, 0 ou 1 désactive) |
+| `advisor_grid_bits` | 2 | les tailles candidates de l'advisor entre les puissances de deux, voir §2 (`--rechunk_grid_bits`) |
+| `trace_array` | vide | les traces par tableau (ligne `churn` de `CHUNK_LOG=rechunk=debug`, table de l'advisor de `CHUNK_LOG=advisor=debug`) pour ce tableau seulement ; vide : tous les tableaux (`--rechunk_trace_array`) |
+| `force_size`, `force_at`, `force_toggle`, `force_alt` | 0, 0, non, 64 | tests : rechunk de chaque tableau vers `force_size` à partir de l'itération `force_at`, quoi que dise l'advisor ; `force_toggle` alterne avec `force_alt` à chaque passage (`--force_rechunk`, `--force_rechunk_at`, `--force_rechunk_toggle`, `--force_rechunk_alt`) |
 
 Un grossissement est accepté si **l'une** des deux branches passe : la branche
 **métadonnées** (gain de métadonnées au-dessus de son plancher, et débit suffisant au regard
 du coût estimé par `rechunk_cost_ms()`), ou la branche **données** (gain total au-dessus du
-seuil multiplié). Depuis ce critère « gain par coût », `CHUNK_ADVISOR_MIN_GAIN_MB` ne suffit
+seuil multiplié). Depuis ce critère « gain par coût », `min_gain_bytes` ne suffit
 plus à bloquer les grossissements : pour mesurer le coût des seules analyses, utiliser
-`CHUNK_RECHUNK_DRY_RUN=1`.
+`dry_run` (`--rechunk_dry_run`).
 
 L'apprentissage mesure le gain d'un grossissement **à données constantes** : au passage
 suivant, la ligne de l'ancienne taille dans la table (lignes plus fines) donne la mémoire
@@ -114,13 +120,13 @@ mesure à données constantes et la possibilité de revenir en arrière.
 
 ## 4. La reconstruction : `rechunk_to()`
 
-`internal/array_chunk_rechunk_inline.h`. Les étapes, avec leur nom dans la trace
+`internal/array_chunk_rechunk_inline.h` (le remplissage : `internal/array_chunk_rechunk_refill.h`). Les étapes, avec leur nom dans la trace
 `CHUNK_LOG=rechunk=debug` :
 
 1. **prologue** : à l'ancienne géométrie, vider les écritures différées du tableau, puis
    compresser ses candidats en attente avant de les retirer des listes ;
 2. **tmp create** : construire le nouveau stockage, à la nouvelle taille ;
-3. **refill** : le remplir en parallèle (`CHUNK_RECHUNK_SCHEDULE`, `guided,16` par défaut).
+3. **refill** : le remplir en parallèle (ordonnancement `guided,16`).
    Un nouveau chunk dont toutes les sources sont à la première valeur est sauté. Un nouveau
    chunk dont toutes les sources étaient compressées est **replié** tout de suite. Pour
    **`zero_any`**, si toutes ses sources sont à la **même** seconde constante, elle est
@@ -131,13 +137,22 @@ mesure à données constantes et la possibilité de revenir en arrière.
 6. **old-pool drain** : vider les réserves de l'ancienne taille et rendre au système les
    slabs devenus vides.
 
-**`zero`** reconstruit **par tranches** (16 par défaut, `CHUNK_RECHUNK_SLICES`) et libère
-chaque ancien chunk dès qu'il est recopié. Entre deux tranches, les réserves de l'ancienne
+Chaque variante libère chaque ancien chunk dès qu'il est recopié (`release_st()` : le
+tampon retourne à la réserve, le chunk à la première constante ; un chunk à une seconde
+constante pointe sur un tableau partagé et n'est pas touché) et, avec l'allocateur rapide
+sous threads, reconstruit **par tranches** (16 ; `ArrayChunkBits`, compacté bit à bit,
+garde une seule passe). Entre deux tranches, les réserves de l'ancienne
 taille sont vidées et les slabs vidés rendus au système, y compris dans la **réserve
-partagée** quand l'ancien stockage s'y trouve : sans ça, la mémoire de l'ancien stockage
+partagée** quand l'ancien stockage s'y trouve : sans cela, la mémoire de l'ancien stockage
 restait acquise jusqu'à la fin de la reconstruction (sur `rechunk_validation`, pic de la
 reconstruction 78 → 22 Mo). Mesuré sur `zero` à 64 threads : pic de +6,9 Go en une passe,
-+1,7 Go avec 16 tranches.
++1,7 Go avec 16 tranches. Sur `zero_one_value` (x86-64, 2 threads, 10^8 éléments, 1 000
+itérations, trois runs chacun, novembre 2026), le pic du run passe de 1 772 à 1 724 Mo : un
+rechunk d'un stockage qui a ses propres slabs ajoute 0 à 60 Mo au lieu de 65 à 196 Mo. Le
+premier rechunk d'un tableau part encore de la réserve partagée (affinité paresseuse,
+section 5), dont les slabs ne se vident pas ; le mode immédiat n'y a pas fait mieux (pic
+1 732 Mo). Le pic de `zero_any`, sur ce banc, est celui de l'initialisation : ses rechunks
+matérialisent peu.
 
 ## 5. Les allocateurs par tableau (affinité)
 
@@ -146,18 +161,21 @@ avoir son **propre jeu d'allocateurs** (une clé d'affinité), par rang et par t
 tampons ne partagent alors aucun slab avec un autre tableau : quand il est reconstruit ou
 détruit, ses slabs se vident entièrement et sont rendus au système.
 
-Le prix : un slab entamé par couple (rang, tableau, taille). Avec des slabs de 1 Mio (16 pages
-de 64 Kio, pour ne retenir qu'une page par slab rendu), c'est ~780 Mio sur les 16 tableaux du
-banc à 64 threads.
+Le prix : un slab entamé par couple (rang, tableau, taille). Avec les slabs de 1 Mio de l'ancien
+plancher de seize pages (pages de 64 Kio), c'était ~780 Mio sur les 16 tableaux du banc à 64 threads ;
+les slabs y font maintenant 256 Kio, le quart.
 
-D'où deux modes, dont le choix par défaut dépend de la variante :
+D'où deux modes, fixés par variante :
 
 | mode | quand un tableau reçoit sa clé | défaut pour | pourquoi |
 |---|---|---|---|
 | **paresseux** | à son premier rechunk | `zero_one_value`, `zero_any` | ils sont surtout faits de métadonnées : un départ sans jeux par tableau consomme exactement comme le statique (`zero_any` : 11 590 Mo après l'initialisation, contre 12 435 Mo en mode immédiat) |
 | **immédiat** | à sa création | `zero` | `zero` est surtout fait de données, et sa reconstruction par tranches ne rend la mémoire au fil de l'eau que si l'ancien stockage a ses propres slabs. En mode paresseux, le premier rechunk part de slabs partagés, qui mêlent les blocs de plusieurs tableaux et ne se vident pas : +6,0 Go sur 39,3 Go. Pic de `zero` : 41,2 Go en immédiat, 45,6 Go en paresseux, pour la même mémoire de fin |
 
-`CHUNK_ALLOC_AFFINITY_EAGER=0` ou `=1` impose l'un des modes.
+Ce choix a été mesuré contre l'autre mode (Milan, `shrink_bench` int64 dyn, 64 threads, trois
+runs chacun, octobre 2026) : `zero` en mode paresseux prend +9,8 % de temps, +14,6 % au pic et
++11,8 % en fin ; `zero_any` en mode immédiat +7,4 % au pic ; `zero_one_value` est identique dans
+les deux. Le mode n'est plus une variable d'environnement (`CHUNK_ALLOC_AFFINITY_EAGER` a disparu).
 
 ## 6. Ce qui doit disparaître avec l'ancien stockage
 
@@ -179,7 +197,7 @@ correspondent de nouveau à la géométrie réelle.
 ## 7. Résultats
 
 Mémoire (Go) sur `shrink_bench`, 64 threads, tous les tableaux confiés au décideur (le
-défaut du banc ; `SHRINK_BENCH_ADVISE_ALL=0` revient aux cinq tableaux historiques) :
+défaut du banc ; `--advise_five` revient aux cinq tableaux historiques) :
 
 | variante | statique 64 (fin) | dynamique sans advisor (fin) | **dynamique avec advisor (fin)** | statique 256 (fin) |
 |---|---|---|---|---|
@@ -191,8 +209,8 @@ Coût en temps de l'advisor, mesuré sur **un même binaire** (moyennes sur 3 to
 
 | `zero_one_value` dynamique | temps | coût |
 |---|---|---|
-| sans advisor (`CHUNK_ADVISOR_PERIOD=0`) | 8,38 s | — |
-| analyses seules (`CHUNK_RECHUNK_DRY_RUN=1`) | 9,07 s | +0,69 s |
+| sans advisor (`--advisor_period 0`) | 8,38 s | — |
+| analyses seules (`--rechunk_dry_run`) | 9,07 s | +0,69 s |
 | analyses et rechunks (30) | 11,43 s | +2,36 s |
 
 Pour `zero_any`, le coût des rechunks (33) va de 1 à 3,5 s selon les séries de mesures. Pour
@@ -211,21 +229,23 @@ se limite aux reconstructions.
   2 000 itérations, `diag_zero_rechunk_slowdown.py`) : +17 % par itération après le
   passage à 1 024. Inchangé avec une seule tranche, une reconstruction en
   ordonnancement statique, sans recyclage des slabs, sans réutilisation de
-  `chunk_list`, en affinité lazy ; le placement NUMA est équilibré comme celui du
+  `chunk_list_`, en affinité paresseuse ; le placement NUMA est équilibré comme celui du
   statique. L'essentiel venait de l'advisor : ses analyses continuaient à chaque
   passage une fois la géométrie stabilisée, et leurs parties séquentielles
   faisaient attendre les autres threads (__kmp_fork_barrier). Avec
   `max_backoff_ticks` (même nœud, `OMP_PROC_BIND=close`, 4 000 itérations, dernier
   rechunk à l'itération 1 700) : +22 % -> **+7 %**. Le reste est un va-et-vient de
-  compression que le statique n'a pas (~15 000 buffers libérés par itération contre
+  compression que le statique n'a pas (~15 000 tampons libérés par itération contre
   aucun), encore inexpliqué.
 - **Le modèle est statique.** L'advisor juge sur l'état présent des chunks, pas sur les
   écritures à venir. Sur ce banc, les matérialisations passagères mesurées ne pèsent pas
-  (`CHUNK_RECHUNK_CHURN=1`), mais une charge qui écrit beaucoup dans des zones constantes
+  (la ligne `churn` de `CHUNK_LOG=rechunk=debug`), mais un calcul qui écrit beaucoup dans des zones constantes
   pourrait faire regretter un grossissement : c'est le rôle de l'apprentissage
   (`coarsen_trust_ratio`) et de l'anti-retour.
-- **Le rechunk des tableaux de booléens** n'est validé que pour `ArrayChunkBits`
-  (`bits_container_validation`, `zero_one_value` en dyn) ; `zero_one_value::Array<bool>` et `zero_any::Array<bool>`
-  n'ont pas de harnais, et le banc ne confie pas `tab_bool` au décideur.
+- **Les tableaux de booléens du banc** : `tab_bool` et `tab_bool_bits` restent à leur
+  géométrie de naissance, sauf si `--advise_bool` les confie au décideur, pour que les deux
+  conteneurs de booléens soient comparés tels quels. Le rechunk de `Array<bool>` est vérifié
+  par `rechunk_validation` (`bool-grow`, `bool-shrink`, `bool-uneven`, `bool-sliced`, toutes
+  variantes), celui d'`ArrayChunkBits` par `bits_container_validation` (`zero_one_value` en dyn).
 - **Le pic reste celui du départ** : un run dynamique qui part de 64 atteint d'abord la
   mémoire du statique 64, puis descend.

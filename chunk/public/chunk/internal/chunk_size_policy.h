@@ -70,6 +70,26 @@ inline thread_local unsigned int t_active_chunk_size = 0; // 0 = "unset, use glo
 // (packed_bit_birth_factor, zero_one_value::Array::create).
 inline thread_local bool t_birth_at_active_size = false;
 
+/// @brief RAII: set t_birth_at_active_size for the scope (rechunk_to()'s
+///        temporary), reset it on exit -- an exception included.
+struct BirthAtActiveSize
+{
+    /// @brief Set t_birth_at_active_size.
+    BirthAtActiveSize() noexcept
+    {
+        t_birth_at_active_size = true;
+    }
+    /// @brief Reset t_birth_at_active_size to false.
+    ~BirthAtActiveSize() noexcept
+    {
+        t_birth_at_active_size = false;
+    }
+    BirthAtActiveSize(const BirthAtActiveSize&)            = delete;
+    BirthAtActiveSize& operator=(const BirthAtActiveSize&) = delete;
+    BirthAtActiveSize(BirthAtActiveSize&&)                 = delete;
+    BirthAtActiveSize& operator=(BirthAtActiveSize&&)      = delete;
+};
+
 /**
  * @brief Seed the process-wide runtime geometry.
  *
@@ -250,14 +270,14 @@ struct StaticChunkSize
         return static_chunk_mask;
     }
 
-    /// @brief The chunk of element @p index (>= 0): i / size(). Unsigned: a signed
+    /// @brief The chunk of element @p index (>= 0): index / size(). Unsigned: a signed
     ///        division would add a fix-up for negative values.
     template <typename I>
     [[nodiscard]] static constexpr I chunk_of(I index) noexcept
     {
         return static_cast<I>(static_cast<std::make_unsigned_t<I>>(index) / size());
     }
-    /// @brief Element @p index's (>= 0) offset in its chunk: i % size() (a mask
+    /// @brief Element @p index's (>= 0) offset in its chunk: index % size() (a mask
     ///        for a power of two).
     template <typename I>
     [[nodiscard]] static constexpr I offset_of(I index) noexcept
@@ -299,73 +319,19 @@ class DynamicChunkSize
         return modulo_;
     }
 
-    /// @brief The chunk of element @p index (>= 0): i / size(), without a division.
+    /// @brief The chunk of element @p index (>= 0): index / size(), without a division.
     ///        32-bit index: one 64x64->128 multiplication (Lemire, Kaser & Kurz
     ///        2019, exact for every 32-bit dividend). 64-bit: Granlund &
     ///        Montgomery's round-down method (libdivide's branch-free path).
     template <typename I>
-    [[nodiscard]] I chunk_of(I index) const noexcept
-    {
-        // A power of two keeps the shift: the size of an array changes
-        // rarely, so this branch is always predicted.
-        if (pow2_) [[likely]]
-        {
-            return static_cast<I>(static_cast<std::make_unsigned_t<I>>(index) >> decalage_);
-        }
-        if constexpr (sizeof(I) <= 4)
-        {
-            const auto idx64 = static_cast<std::uint64_t>(static_cast<std::make_unsigned_t<I>>(index));
-            return static_cast<I>((static_cast<unsigned __int128>(m32_) * idx64) >> 64);
-        }
-        else
-        {
-            const auto idx64    = static_cast<std::uint64_t>(static_cast<std::make_unsigned_t<I>>(index));
-            const auto quotient = static_cast<std::uint64_t>((static_cast<unsigned __int128>(magic_) * idx64) >> 64);
-            return static_cast<I>((quotient + ((idx64 - quotient) >> 1)) >> magic_shift_);
-        }
-    }
-    /// @brief Element @p index's (>= 0) offset in its chunk: i % size().
+    [[nodiscard]] I chunk_of(I index) const noexcept;
+    /// @brief Element @p index's (>= 0) offset in its chunk: index % size().
     template <typename I>
-    [[nodiscard]] I offset_of(I index) const noexcept
-    {
-        if (pow2_) [[likely]]
-        {
-            return static_cast<I>(static_cast<std::make_unsigned_t<I>>(index) & modulo_);
-        }
-        if constexpr (sizeof(I) <= 4)
-        {
-            // Lemire's direct remainder: the fraction left by the quotient's
-            // multiplication, scaled by the divisor.
-            const std::uint64_t frac = m32_ * static_cast<std::uint64_t>(static_cast<std::make_unsigned_t<I>>(index));
-            return static_cast<I>((static_cast<unsigned __int128>(frac) * size_) >> 64);
-        }
-        else
-        {
-            return static_cast<I>(index - (chunk_of(index) * static_cast<I>(size_)));
-        }
-    }
+    [[nodiscard]] I offset_of(I index) const noexcept;
 
     /// @brief Set a new geometry at run time, and make it the process-wide
     ///        active size. @p size: a power of two or a multiple of 64.
-    void set_size(unsigned int size) noexcept
-    {
-        // Last net: rechunk_to() and set_chunk_size() refuse such a size
-        // before reaching here (is_valid_chunk_size).
-        if constexpr (build_config::any_check)
-        {
-            if (!is_valid_chunk_size(size)) [[unlikely]]
-            {
-                CHUNK_INVARIANT_FAILED("ChunkSizePolicy::set_size({}): a chunk size must be a power of two or a "
-                                       "multiple of 64",
-                                       size);
-            }
-        }
-        size_     = size;
-        decalage_ = static_cast<unsigned int>(log2int(static_cast<std::size_t>(size)));
-        modulo_   = size - 1u;
-        set_divider(size);
-        g_active_chunk_size = size; // keep the allocator-facing runtime size in sync
-    }
+    void set_size(unsigned int size) noexcept;
 
   private:
     // A new array adopts the process-wide active size (default static_chunk_size).
@@ -381,18 +347,7 @@ class DynamicChunkSize
     ///        m32 = floor((2^64 - 1) / size) + 1. 64-bit index: with
     ///        l = ceil(log2(size)), magic = floor(2^64 * (2^l - size) / size) + 1
     ///        and a final shift of l - 1.
-    void set_divider(unsigned int size) noexcept
-    {
-        pow2_             = std::has_single_bit(size); // NOT is_valid_chunk_size: a multiple of 64 is valid too
-        m32_              = UINT64_MAX / size + 1u;
-        unsigned int log2 = 0;
-        while ((1ull << log2) < size)
-        {
-            ++log2;
-        }
-        magic_ = static_cast<std::uint64_t>((static_cast<unsigned __int128>((1ull << log2) - size) << 64) / size) + 1u;
-        magic_shift_ = log2 - 1u;
-    }
+    void set_divider(unsigned int size) noexcept;
 };
 
 
@@ -474,12 +429,13 @@ inline void warn_chunk_size_refused(const char* who, unsigned int size, ChunkSiz
 /// @return Nothing, or why @p size was refused. Writes no message: the caller decides.
 inline std::expected<void, ChunkSizeError> try_set_active_chunk_size(unsigned int size) noexcept
 {
-    return check_chunk_size(size).transform(
-        [size]
-        {
-            g_active_chunk_size = size;
-            register_runtime_chunk_size(size);
-        });
+    if (const auto err = chunk_size_error(size)) [[unlikely]]
+    {
+        return std::unexpected(*err);
+    }
+    g_active_chunk_size = size;
+    register_runtime_chunk_size(size);
+    return {};
 }
 
 /// @brief try_set_active_chunk_size(), a refusal written on the log (channel
@@ -493,3 +449,5 @@ inline void set_active_chunk_size(unsigned int size) noexcept
 }
 
 } // namespace shrink_array
+
+#include "chunk/internal/chunk_size_policy_inline.h" // the template bodies

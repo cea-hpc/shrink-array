@@ -77,9 +77,18 @@ enum class BackendKind : int
 };
 
 /// @brief The backend of this build (fixed at compile time).
-inline constexpr BackendKind backend = FAST_ALLOC_PMP_BACKEND_STD ? BackendKind::std_threads
-                                       : FAST_ALLOC_PMP_THREADED  ? BackendKind::openmp
-                                                                  : BackendKind::serial;
+inline constexpr BackendKind backend = []
+{
+    if (FAST_ALLOC_PMP_BACKEND_STD != 0)
+    {
+        return BackendKind::std_threads;
+    }
+    if (FAST_ALLOC_PMP_THREADED != 0)
+    {
+        return BackendKind::openmp;
+    }
+    return BackendKind::serial;
+}();
 
 /// @brief Whether the backend runs threads: false only for the serial backend.
 inline constexpr bool threaded = backend != BackendKind::serial;

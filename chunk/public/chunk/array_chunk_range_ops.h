@@ -51,6 +51,7 @@
  */
 
 #include <array>       // std::array (the shared edge offsets)
+#include <atomic>      // std::atomic_thread_fence (the filter's second look)
 #include <algorithm>   // std::min (the range clamps)
 #include <cstddef>     // std::size_t, std::ptrdiff_t
 #include <type_traits> // std::is_same_v, std::conditional_t
@@ -65,8 +66,8 @@
 #include "chunk/internal/conditional_counter.h" // CounterValueT
 #include "chunk/config.h"                       // build_config::threaded, chunk_config
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_* (used directly, not via compression_manager.h)
-#include "chunk/chunk_traits.h"                 // zero / zero_one_value / is_zero_any_family_v: the type traits below
-#include "chunk/vector_range_ops.h"             // internal::ChunkedArray + the std::vector fallback
+#include "chunk/chunk_traits.h" // zero / zero_one_value / is_zero_any_family_v, has_motif_state_v: the type traits below
+#include "chunk/vector_range_ops.h"                    // internal::ChunkedArray + the std::vector fallback
 #include "chunk/internal/write_compress_sync_policy.h" // fill_range_mt: the writer side of the Dekker handshake
 #include "chunk/internal/relaxed_element.h"            // fill_range_mt: zero_any's shared elements
 
@@ -124,6 +125,14 @@ inline constexpr bool is_v2_v =
 template <typename Arr>
 inline constexpr bool is_v2a_family_v = is_zero_any_family_v<typename Arr::ChunkType>;
 
+/// @brief zero_any::Array itself, not another member of its family: the arrays
+///        zero_any::Chunk::fill_constant_st can serve. It reads zero_any::Proxy's
+///        second-value and type tables at (num_tab, num_chunk); pattern::Array
+///        keeps tables of its own, where num_tab means another array -- and a
+///        motif chunk is no constant to switch.
+template <typename Arr>
+inline constexpr bool fills_constant_by_state_v = is_v2a_family_v<Arr> && !has_motif_state_v<typename Arr::ChunkType>;
+
 /** @brief zero_one_value on a non-bool T: the variant with a second value (and written(ind)). */
 template <typename Arr>
 inline constexpr bool has_second_value_v =
@@ -135,7 +144,7 @@ inline constexpr bool track_zeros_v = is_v1_v<Arr> && chunk_config::use_compress
 
 /** @brief zero_one_value in counter mode carries two: first-value and second-value counts. */
 template <typename Arr>
-inline constexpr bool track_chunk2_counts_v = is_v2_v<Arr> && chunk_config::use_compression_with_counter;
+inline constexpr bool track_zero_one_value_counts_v = is_v2_v<Arr> && chunk_config::use_compression_with_counter;
 
 /**
  * @brief Recount the per-chunk element counters after a raw store into
@@ -144,8 +153,8 @@ inline constexpr bool track_chunk2_counts_v = is_v2_v<Arr> && chunk_config::use_
  * @details In counter mode (use_compression_with_counter, i.e. without fast
  *          block compression -- the serial builds) the compression of a chunk
  *          is decided by counters the proxy maintains INCREMENTALLY: zero's
- *          nb_val_eq_zero, zero_one_value's nb_val_eq_first_value and
- *          nb_val_eq_second_value. A raw store moves none of them, and nothing
+ *          nb_val_eq_zero_, zero_one_value's nb_val_eq_first_value_ and
+ *          nb_val_eq_second_value_. A raw store moves none of them, and nothing
  *          detects the drift: the full tests compare to chunk_size() exactly,
  *          so a chunk that is NOT all constant compresses when a count lands
  *          there, and every read then returns the constant. Recount, don't
@@ -167,7 +176,7 @@ void resync_counters(Arr& arr, ChunkClass& ch, std::size_t c_begin, const T* dst
         }
         arr.element_proxy(static_cast<Arr::IndType>(c_begin)).resync_nb_val_eq_zero(nz);
     }
-    else if constexpr (track_chunk2_counts_v<Arr> && requires { arr.get_second_value(); })
+    else if constexpr (track_zero_one_value_counts_v<Arr> && requires { arr.get_second_value(); })
     {
         const T       sv = static_cast<T>(arr.get_second_value());
         CounterValueT n1 = 0;
@@ -207,10 +216,10 @@ void resync_counters(Arr& arr, ChunkClass& ch, std::size_t c_begin, const T* dst
 template <typename Arr, typename ChunkClass>
 [[nodiscard]] bool fold_if_full(Arr& arr, ChunkClass& ch, std::size_t c_begin, unsigned int chunk_sz)
 {
-    if constexpr (track_chunk2_counts_v<Arr> && has_second_value_v<Arr> && requires { arr.get_second_value(); })
+    if constexpr (track_zero_one_value_counts_v<Arr> && has_second_value_v<Arr> && requires { arr.get_second_value(); })
     {
         using IndType     = decltype(arr.size());
-        using T           = typename Arr::value_type;
+        using T           = Arr::value_type;
         const bool first  = ch.is_full_first_value(chunk_sz);
         const bool second = !first && ch.is_full_second_value(chunk_sz) &&
                             !(static_cast<T>(arr.get_second_value()) == static_cast<T>(ChunkClass::first_value));
@@ -373,8 +382,8 @@ template <typename Arr, typename ChunkClass>
  *          second value (index @p ind2). Other variants: false (their
  *          whole-chunk paths are their own: fill_constant_st on zero_any::Chunk; bool
  *          and Bit element by element or word by word).
- *          A state read, as materialised(): in fill_range_mt the caller also
- *          checks that no deferred write is pending on the chunk.
+ *          A state read, as materialised(): the callers also check that no
+ *          deferred write is pending on the chunk.
  * @return true and @p c set when the chunk is compressed; false otherwise.
  */
 template <typename Arr, typename ChunkClass>
@@ -424,6 +433,35 @@ holds_constant(const Arr& arr, const ChunkClass& ch, int ind2, const typename Ar
 {
     typename Arr::value_type c{};
     return held_constant(arr, ch, ind2, c) && v == c;
+}
+
+/**
+ * @brief zero_any family: is this chunk at its own second constant, and is it
+ *        @p value? Its values pointer is a second-value slot whose value is
+ *        @p value -- each chunk has its own. A motif chunk (pattern::Array) is
+ *        no constant, whatever its pointer: false. Other variants: false (see
+ *        holds_constant()).
+ */
+template <typename Arr, typename ChunkClass>
+[[nodiscard]] bool at_second_constant(const ChunkClass& ch, InT<typename Arr::value_type> value) noexcept
+{
+    using T = typename Arr::value_type;
+    if constexpr (is_v2a_family_v<Arr> && !is_bool_like_v<T>)
+    {
+        const T* const vals = ch.values_load();
+        if constexpr (has_motif_state_v<ChunkClass>)
+        {
+            if (ChunkClass::is_motif_ptr(vals))
+            {
+                return false;
+            }
+        }
+        return ch.is_cst_val2_ptr_of(vals) && ch.second_value_from_ptr(vals) == value;
+    }
+    else
+    {
+        return false;
+    }
 }
 
 /**
@@ -518,7 +556,7 @@ void packed_chunk_store(Arr&         arr,
     bits::WordT* words = shrink_array::internal::as_words(ch.values_load());
     store_bits(words, i - c_begin, hi - c_begin);
 
-    if constexpr (track_chunk2_counts_v<Arr>)
+    if constexpr (track_zero_one_value_counts_v<Arr>)
     {
         // Counter mode (serial builds): the element write that brings a count
         // to S compresses the chunk on the spot (manage_full_*), and there is
@@ -555,8 +593,9 @@ void packed_chunk_store(Arr&         arr,
  *            chunk constant outright. A materialised chunk releases its buffer;
  *            an already-constant one costs nothing. No allocation either way
  *            (zero; zero_any::Chunk below).
- *          - zero at first_value, zero_one_value at either of its constants, and @p v
- *            that constant (whole chunk or part of it): nothing to do, O(1).
+ *          - zero at first_value, zero_one_value at either of its constants, zero_any
+ *            at its own second constant, and @p v that constant (whole chunk or
+ *            part of it), no deferred write pending on it: nothing to do, O(1).
  *          - zero_one_value::Chunk, fully covered, @p v one of its constants: a materialised
  *            chunk releases its buffer at once (clear_st, the pass's clear);
  *            one compressed at the other constant is armed, then compressed
@@ -707,7 +746,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
             {
                 continue;
             }
-            const bool bit = static_cast<bool>(value);
+            const auto bit = static_cast<bool>(value);
             internal::packed_chunk_store(
                 arr, ch, c_begin, lo, hi, chunk_sz, ind2, [&](std::size_t) { return static_cast<T>(value); },
                 [bit](bits::WordT* words, std::size_t from, std::size_t to)
@@ -727,8 +766,9 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
             // Whatever the value and the chunk's state: a materialised chunk
             // releases its buffer, a compressed one switches its constant in
             // place (zero_any::Chunk::fill_constant_st). Nothing allocated, stored or
-            // scanned; nothing queued for a pass.
-            if constexpr (internal::is_v2a_family_v<Arr>)
+            // scanned; nothing queued for a pass. zero_any::Array only
+            // (internal::fills_constant_by_state_v): pattern::Array takes the paths below.
+            if constexpr (internal::fills_constant_by_state_v<Arr>)
             {
                 if (whole)
                 {
@@ -741,7 +781,9 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
             // zero at first_value, zero_one_value at either constant (whole or part of
             // the chunk). The arming loop below would walk every element of the
             // range through the proxy to find that no write materialises it.
-            if (internal::holds_constant(arr, ch, ind2, static_cast<T>(value)))
+            // Not while an op is pending on the chunk: an older op would replay
+            // over the fill (the proxy's own early-out has the same condition).
+            if (internal::holds_constant(arr, ch, ind2, static_cast<T>(value)) && !ch.pending_any())
             {
                 continue;
             }
@@ -771,6 +813,16 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
             // walks the whole range without materialising, the chunk is
             // constant and nothing is left to do. "Materialises" is written(),
             // not !is_cst_val1(): see internal::materialised.
+            //
+            // zero_any family, part of a chunk at its own second constant and
+            // filled with it: every one of those writes would take the proxy's
+            // early-out (handle_no_bool_assignment), so none is made. A whole
+            // chunk took fill_constant_st above. Not while an op is pending, as
+            // above.
+            if (internal::at_second_constant<Arr>(ch, value) && !ch.pending_any())
+            {
+                continue;
+            }
             std::size_t i = lo;
             while (i < hi && !internal::materialised(arr, ch, ind2))
             {
@@ -915,7 +967,7 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
             // and freed); mixed, it is copied below and stays materialised --
             // the copy is exactly the span, so the copied chunk is mixed too.
             bool span_mixed = false;
-            if constexpr (internal::is_v2a_family_v<Arr>)
+            if constexpr (internal::fills_constant_by_state_v<Arr>)
             {
                 if (whole)
                 {
@@ -1099,9 +1151,11 @@ void store_span_relaxed_edges(T* dst, std::size_t o_lo, std::size_t o_hi, std::s
  *          The queueing rule only looks at the span's own values (reading the
  *          elements other threads write is a race, except zero_any's relaxed
  *          ones): zero compresses only to first_value, zero_one_value to first_value or
- *          the array's second value, zero_any aggregates only a span covering
- *          the whole chunk, uniform. A fill is a uniform span of v, so the
- *          rule reduces to fill_range_mt's.
+ *          the array's second value, zero_any (an element type without relaxed
+ *          access: the aggregates) any uniform span, whole chunk or not -- it
+ *          may complete a chunk whose other elements already hold its value,
+ *          and the pass drops the chunk if they do not. A fill is a uniform
+ *          span of v, so the rule reduces to fill_range_mt's.
  *
  * @tparam Constant value_at returns one value for every index (fill_range_mt):
  *                  no buffer
@@ -1239,7 +1293,7 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
             // chunk in the phase; the session keeps a compressor off it, as
             // for a store. A materialised chunk takes the store below (its
             // buffer is freed by a pass, which waits out the readers).
-            if constexpr (is_v2a_family_v<Arr> && raw_fillable_v<T>)
+            if constexpr (fills_constant_by_state_v<Arr> && raw_fillable_v<T>)
             {
                 if (same && lo == c_begin && hi == c_end && !materialised(arr, ch, ind2) && !ch.pending_any())
                 {
@@ -1315,7 +1369,20 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
                         {
                             store_span_relaxed_edges(dst, i - c_begin, hi - c_begin, chunk_sz, at);
                         }
-                        uniform = may_be_uniform_relaxed(dst, chunk_sz); // buffer pinned by the session
+                        // Buffer pinned by the session. Two threads filling the two
+                        // ends of one chunk each store, then load the other's edge:
+                        // store buffering (x86-TSO and AArch64 allow it) lets BOTH
+                        // read the old edge, and neither queue the chunk they left
+                        // uniform. So on a "no", a seq_cst fence and a second look:
+                        // with the fence on both sides, one of them sees the other's
+                        // stores (formal/range_edges.c). Paid only when the first
+                        // look says "no".
+                        uniform = may_be_uniform_relaxed(dst, chunk_sz);
+                        if (!uniform)
+                        {
+                            std::atomic_thread_fence(std::memory_order_seq_cst);
+                            uniform = may_be_uniform_relaxed(dst, chunk_sz);
+                        }
                     }
                     else
                     {
@@ -1334,7 +1401,13 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
                         // the span's values, as the element paths mark: zero
                         // compresses only to first_value, zero_one_value to first_value
                         // or the second value; zero_any aggregates (no lock-free
-                        // atomic_ref): only a whole-chunk uniform span.
+                        // atomic_ref) any uniform span. Not only a whole chunk:
+                        // a partial span -- the ends of a range that does not
+                        // fall on chunk boundaries -- may complete a chunk the
+                        // rest of which already holds its value, and that chunk
+                        // would stay materialised for the run (the check builds'
+                        // audit counted it: "never queued for compression"). The
+                        // pass scans the chunk and drops it if it is not uniform.
                         if constexpr (is_v1_v<Arr>)
                         {
                             uniform = same && static_cast<T>(v0) == static_cast<T>(ChunkType::first_value);
@@ -1346,7 +1419,7 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
                         }
                         else
                         {
-                            uniform = same && lo == c_begin && hi == c_end;
+                            uniform = same;
                         }
                     }
                     done = true;
@@ -1493,8 +1566,8 @@ void for_each_value(const Arr& arr, F&& func)
 }
 
 /**
- * @brief for_each_span() on a chunked array: f(std::span<const T>) block by
- *        block, and f(v, count) on a compressed chunk when f accepts it
+ * @brief for_each_span() on a chunked array: @p func(std::span<const T>) block by
+ *        block, and func(value, count) on a compressed chunk when func accepts it
  *        (ArrayChunkBase::for_each_span).
  * @warning No other thread may write @p arr during the call (the iterator's
  *          contract). Callable from a parallel region on disjoint slices.

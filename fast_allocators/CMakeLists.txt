@@ -18,7 +18,7 @@ add_library(fast_allocators)
 add_library(fast_allocators::fast_allocators ALIAS fast_allocators)
 
 set(ALLOCATORS_MAJOR_VERSION 2)  # inc. when incompatible change (reset to 0 others)
-set(ALLOCATORS_MINOR_VERSION 2)  # inc. when compatible change (also reset patch vers.)
+set(ALLOCATORS_MINOR_VERSION 3)  # inc. when compatible change (also reset patch vers.)
 set(ALLOCATORS_PATCH_VERSION 0)  # inc. when just fixing bug
 
 set(ALLOCATORS_VERSION
@@ -32,6 +32,7 @@ set(ALLOCATORS_PUBLIC_HEADERS
 # The implementation the two facades pull in: installed with them, not API.
 set(ALLOCATORS_INTERNAL_HEADERS
   public/fast_allocators/internal/alloc_config.h
+  public/fast_allocators/internal/append_text.h
   public/fast_allocators/internal/fatal.h
   public/fast_allocators/internal/int_alloc.h
   public/fast_allocators/internal/lifetime.h
@@ -85,9 +86,6 @@ if (NOT DEFINED CHUNK_DEBUG)
     set(CHUNK_DEBUG OFF)
   endif()
 endif()
-if (NOT DEFINED CHUNK_RECLAIM_EMPTY_SLABS)
-  set(CHUNK_RECLAIM_EMPTY_SLABS ON)
-endif()
 # The library runs threads: every backend but serial (top level: CHUNK_THREADS).
 if (NOT DEFINED ALLOCATORS_THREADED)
   set(ALLOCATORS_THREADED ${ALLOCATORS_OMP})
@@ -97,8 +95,7 @@ if ("${ALLOCATORS_THREADS_BACKEND}" STREQUAL "std")
 else()
   set(ALLOCATORS_STD_THREADS OFF)
 endif()
-foreach(_fa_opt OPENMP:ALLOCATORS_OMP THREADED:ALLOCATORS_THREADED STD_THREADS:ALLOCATORS_STD_THREADS DEBUG:CHUNK_DEBUG CHECK_LISTS:FAST_ALLOC_CHECK_LISTS
-                RECLAIM_EMPTY_SLABS:CHUNK_RECLAIM_EMPTY_SLABS)
+foreach(_fa_opt OPENMP:ALLOCATORS_OMP THREADED:ALLOCATORS_THREADED STD_THREADS:ALLOCATORS_STD_THREADS DEBUG:CHUNK_DEBUG CHECK_LISTS:FAST_ALLOC_CHECK_LISTS)
   string(REPLACE ":" ";" _fa_pair ${_fa_opt})
   list(GET _fa_pair 0 _fa_name)
   list(GET _fa_pair 1 _fa_var)

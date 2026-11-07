@@ -85,89 +85,67 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     }
 
     /**
-     * @brief Multiply this element by `v` in place.
+     * @brief Multiply this element by @p operand in place.
      * @tparam U Type of the operand.
      * @param operand Multiplier.
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,
-     *         as `a[i] += x;` does, keeps the operation fully deferrable.
-     *         Bool: not implemented -- prints an error and leaves the
-     *         element unchanged.*/
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
         requires ElementMultipliable<T>
     Derived operator*=(this auto&& self, const U& operand) noexcept
     {
-        if constexpr (is_bool)
+        // Early-out: multiplying by 1 writes nothing. Nothing to read either:
+        // reading the returned proxy goes through operator T() -> read_pure()
+        // and its read-side gate. BaseT<U> is the arithmetic type even if U
+        // is a Proxy.
+        if (operand == static_cast<BaseT<U>>(1))
         {
-            CHUNK_LOG(error, general, "operator not implemented for bool: the element is left unchanged");
             return self;
         }
-        else
-        {
-            // Early-out: multiplying by 1 writes nothing. Nothing to read either:
-            // reading the returned proxy goes through operator T() -> read_pure()
-            // and its read-side gate. BaseT<U> is the arithmetic type even if U
-            // is a Proxy.
-            if (operand == static_cast<BaseT<U>>(1))
-            {
-                return self;
-            }
 
-            self.template apply_compound_operation<U>(std::multiplies<>{}, operand);
-            return self;
-        }
+        self.template apply_compound_operation<U>(std::multiplies<>{}, operand);
+        return self;
     }
 
     /**
-     * @brief Divide this element by `v` in place.
+     * @brief Divide this element by @p operand in place.
      * @tparam U Type of the operand.
-     * @param operand Divisor. Integer element: check builds stop on v == 0
+     * @param operand Divisor. Integer element: check builds stop on operand == 0
      *        (internal::check_integer_divisor); a floating one gives inf/NaN.
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,
-     *         as `a[i] += x;` does, keeps the operation fully deferrable.
-     *         Bool: not implemented -- prints an error and leaves the
-     *         element unchanged.*/
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
         requires ElementDivisible<T>
     Derived operator/=(this auto&& self, const U& operand) noexcept
     {
-        if constexpr (is_bool)
-        {
-            CHUNK_LOG(error, general, "operator not implemented for bool: the element is left unchanged");
-            return self;
-        }
-        else
-        {
-            internal::check_integer_divisor<T>(operand, "/=");
+        internal::check_integer_divisor<T>(operand, "/=");
 
-            // Early-out: dividing by 1 changes nothing -- nothing to write, and
-            // nothing to read: reading the returned proxy goes through
-            // operator T() -> read_pure() (see operator*=).
-            if (operand == static_cast<BaseT<U>>(1))
-            {
-                return self;
-            }
-            self.template apply_compound_operation<U>(std::divides<>{}, operand);
+        // Early-out: dividing by 1 changes nothing -- nothing to write, and
+        // nothing to read: reading the returned proxy goes through
+        // operator T() -> read_pure() (see operator*=).
+        if (operand == static_cast<BaseT<U>>(1))
+        {
             return self;
         }
+        self.template apply_compound_operation<U>(std::divides<>{}, operand);
+        return self;
     }
 
     /**
-     * @brief Compute this element modulo `v` in place.
+     * @brief Compute this element modulo @p operand in place.
      * @tparam U Type of the operand.
-     * @param operand Modulus. Check builds stop on v == 0
+     * @param operand Modulus. Check builds stop on operand == 0
      *        (internal::check_integer_divisor).
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,
-     *         as `a[i] += x;` does, keeps the operation fully deferrable.
-     *         Bool: not implemented -- prints an error and leaves the
-     *         element unchanged.*/
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
-        requires ElementModulable<T> || is_bool_like_v<T>
+        requires ElementModulable<T>
     Derived operator%=(this auto&& self, const U& operand) noexcept
     {
-        if constexpr (std::is_integral_v<T> && is_not_bool)
+        if constexpr (std::is_integral_v<T>)
         {
             internal::check_integer_divisor<T>(operand, "%=");
             // A non-zero slot can land on zero (4 % 2): apply_compound_operation
@@ -179,7 +157,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
         else
         {
             CHUNK_LOG(error, general,
-                      "operator not implemented (requires an integral non-bool type): the element is "
+                      "operator not implemented (requires an integral type): the element is "
                       "left unchanged");
             return self;
         }
@@ -246,15 +224,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      * @param new_value The new boolean value
      * @note Uses false and true as constant values for comparison
      */
-    void mark_for_compression_if_needed(this const Derived& self, bool new_value)
-    {
-        const bool isv = self.is_cst_val_new_value_is_other_cst_val(new_value, false, true);
-        // Base::read_values() (qualified: dependent base), never values[num]:
-        // it is the write path's read entry and the only one that resolves a
-        // compressed chunk's constant (an unbacked identifier slot); indexing
-        // reads a zero page and the decision below is taken against 0.
-        self.mark_for_compression_impl(self.Base::read_values(), new_value, isv, false, true);
-    }
+    void mark_for_compression_if_needed(this const Derived& self, bool new_value);
 
     /**
      * @brief Marks block for compression with custom constant values
@@ -265,7 +235,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     void
     mark_for_compression_if_needed(this const Derived& self, InT<T> second_val, InT<T> new_value, InT<T> first_value)
     {
-        const bool isv = self.is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val);
+        const bool isv = self.passes_mark_pre_check(new_value, first_value, second_val);
         self.mark_for_compression_impl(self.Base::read_values(), new_value, isv, second_val, first_value);
     }
 
@@ -290,21 +260,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
                                            InT<T>              second_val,
                                            InT<T>              new_value,
                                            InT<T>              first_value,
-                                           const T*            vals)
-    {
-        // isv false makes the whole test a no-op: skip the read of the old
-        // value too, which mark_for_compression_core() would not look at.
-        if (!self.is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val))
-        {
-            return;
-        }
-        const T old = self.Base::read_values_at(vals);
-        if (self.should_mark_for_compression(old, new_value, second_val, first_value) ||
-            (self.Base::read_values_at(vals) != old)) [[unlikely]]
-        {
-            self.add_to_compression_list();
-        }
-    }
+                                           const T*            vals);
 
     /**
      * @brief Marks block for compression with an explicit old boolean value
@@ -315,7 +271,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      */
     void mark_for_compression_if_needed(this const Derived& self, bool old_value, bool new_value)
     {
-        const bool isv = self.is_cst_val_new_value_is_other_cst_val(new_value, false, true);
+        const bool isv = self.passes_mark_pre_check(new_value, false, true);
         self.mark_for_compression_impl(old_value, new_value, isv, true, false);
     }
 
@@ -332,7 +288,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
                                         InT<T>              new_value,
                                         InT<T>              first_value)
     {
-        const bool isv = self.is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val);
+        const bool isv = self.passes_mark_pre_check(new_value, first_value, second_val);
         self.mark_for_compression_impl(old_value, new_value, isv, second_val, first_value);
     }
 
@@ -347,26 +303,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      */
     template <typename WriteFn>
     [[nodiscard]] CHUNK_FORCE_INLINE bool write_with_optional_lock_with_set_ptr(this Derived& self,
-                                                                                WriteFn       write_fn) noexcept
-    {
-        const auto lbd_info = [&self]
-        {
-            if constexpr (chunk_config::use_fast_block_compression)
-            {
-                self.set_num_tab_ptr_is_inside_chunk(); // common initialization required for the fast-path
-            }
-            else
-            {
-                // The capture exists for the branch above only. A SERIAL build
-                // never instantiates it and clang reports the capture as unused
-                // (-Wunused-lambda-capture). Discarding `self` here keeps the
-                // capture explicit; do not switch to [&], which hides the intent.
-                static_cast<void>(self);
-            }
-        };
-
-        return self.write_with_optional_lock_impl([&]() noexcept { write_fn(); }, lbd_info);
-    }
+                                                                                WriteFn       write_fn) noexcept;
 
     /**
      * @brief Static entry point for async callers that only have a proxy
@@ -387,38 +324,26 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     static constexpr bool is_not_bool = !is_bool;
 
     /**
-     * @brief Whether the chunk is currently at ONE of the two constants and
-     *        new_value is precisely the OTHER one -- i.e. a direct
-     *        constant-to-constant transition (cst1 -> second_val, or
-     *        cst2 -> first_value).
-     * @note Keep the terms conjunctive. `(A && is_cst_val2()) || is_not_cst_val2()`
-     *       reduces to `A || !is_cst_val2()`, and since a chunk is at most one
-     *       of cst_val1 / cst_val2, one of the two `!B` terms is always true:
-     *       the pre-check (`isv` of mark_for_compression_core) would then
-     *       filter nothing.
+     * @brief Does this write pass the variant's marking pre-check?
+     * @details The `isv` filter of every marking entry point: the CRTP call of
+     *          Derived::pre_check_mark_for_compression(), which this class
+     *          defaults to pre_check_mark_for_compression_strict() -- a constant
+     *          is written, WHATEVER the chunk's state (zero_one_value adds that
+     *          the rank has a candidate list for the value; zero_any and
+     *          pattern widen it). It does not look at the chunk's state: a
+     *          chunk materialised by a plain value and written back to a
+     *          constant element by element must be queued too.
+     * @note Invariant: it never rejects a write that
+     *       should_mark_for_compression() would accept. It only spares the
+     *       other writes the old-value read; a qualifying write it rejected
+     *       would leave its chunk materialised for the run.
      * @param new_value The new value to check.
      * @param first_value The first constant value to compare against.
      * @param second_val The second constant value to compare against.
-     * @return true if the chunk is at cst_val1 and new_value == second_val,
-     *         or at cst_val2 and new_value == first_value.
+     * @return true if the write is worth the marking path.
      */
-    [[nodiscard]] bool is_cst_val_new_value_is_other_cst_val(this const Derived& self,
-                                                             InT<T>              new_value,
-                                                             InT<T>              first_value,
-                                                             InT<T>              second_val) noexcept
-    {
-        // CRTP dispatch: each variant owns its fast pre-check. zero_one_value keeps the
-        // "a constant is written" test below; zero_any widens it (see
-        // zero_any::Proxy::pre_check_mark_for_compression) because its
-        // should_mark_for_compression() accepts a case this test would reject.
-        //
-        // INVARIANT: pre_check_mark_for_compression() must never return false
-        // for a write that should_mark_for_compression() would accept. `isv` is
-        // only a performance filter; if it rejects a qualifying write the chunk
-        // is silently never queued for compression and its buffer is never
-        // returned to the reuse list.
-        return self.pre_check_mark_for_compression(new_value, first_value, second_val);
-    }
+    [[nodiscard]] bool
+    passes_mark_pre_check(this const Derived& self, InT<T> new_value, InT<T> first_value, InT<T> second_val) noexcept;
 
     /**
      * @brief Default pre-check hook (zero_one_value behaviour).
@@ -445,7 +370,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      *          way, adds this element to the compression candidate list.
      *          `isv` itself is a fast pre-check meant to let obviously
      *          irrelevant writes skip that work entirely (see
-     *          is_cst_val_new_value_is_other_cst_val()).
+     *          passes_mark_pre_check()).
      * @tparam Args Extra args forwarded to should_mark_for_compression()
      *              (the second/first constant values).
      * @param old_value Value before the write.

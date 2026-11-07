@@ -31,6 +31,7 @@
 #include <vector> // std::vector
 
 #include "bench_array.h" // BenchArrays
+#include "bench_par.h"   // bench_par::region_ends_phase
 
 // Guarded inline wrappers around the OMPT phase transitions. Semantics are
 // strictly identical to the manual `if constexpr (build_config::has_not_ompt)
@@ -38,9 +39,12 @@
 // time, so under `has_ompt` the body is elided and the call becomes a no-op
 // that the optimizer folds away. Kept in an anonymous namespace so linkage
 // is local and no library header change is required.
+//
+// The TBB bench (bench_par::region_ends_phase): bench_par::region() begins and
+// ends the phase itself, as OMPT does; the wrappers are no-ops there too.
 inline void begin_parallel_phase_g()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::has_not_ompt && !bench_par::region_ends_phase)
     {
         shrink_array::begin_parallel_phase();
     }
@@ -53,7 +57,7 @@ inline void begin_parallel_phase_g()
 ///          (finalize_parallel_phase_after_flush_g()).
 inline void finalize_parallel_phase_only_flush_g()
 {
-    if constexpr (build_config::has_not_ompt && build_config::use_openmp)
+    if constexpr (build_config::has_not_ompt && build_config::use_openmp && !bench_par::region_ends_phase)
     {
         shrink_array::finalize_parallel_phase_only_flush();
     }
@@ -65,7 +69,11 @@ inline void finalize_parallel_phase_only_flush_g()
 ///          queue itself, after the region's team has joined.
 inline void finalize_parallel_phase_after_flush_g()
 {
-    if constexpr (build_config::has_not_ompt && build_config::use_openmp)
+    if constexpr (bench_par::region_ends_phase)
+    {
+        // bench_par::region() has ended the phase.
+    }
+    else if constexpr (build_config::has_not_ompt && build_config::use_openmp)
     {
         shrink_array::finalize_parallel_phase_after_flush();
     }
@@ -81,22 +89,22 @@ inline void finalize_parallel_phase_after_flush_g()
  * @param bench_arr the arrays, by reference.
  * @param start the timing cursors main() carries across phases; this phase
  *        stamps them (start, end, elapsed_seconds) from inside an `omp
- *        single`, exactly as it did when it was inline in main().
+ *        single`.
  * @param end see start.
  * @param elapsed_seconds see start.
  *
- * @details Moved VERBATIM out of main(): one `omp parallel` region holding a
- *          dozen `omp for nowait` loops, 200 lines, the largest block of the
- *          workload after the compute loop. An ORDINARY function compiled once
- *          -- not a template the caller would re-instantiate, which is what
- *          makes the split worth anything for build time.
+ * @details One `omp parallel` region holding a dozen `omp for nowait` loops,
+ *          the largest block of the workload after the compute loop. An
+ *          ORDINARY function compiled once -- not a template the caller would
+ *          re-instantiate -- for the build time.
  */
 void bench_phase_fill(BenchArrays&                           bench_arr,
                       std::chrono::steady_clock::time_point& start,
                       std::chrono::steady_clock::time_point& end,
                       std::chrono::duration<double>&         elapsed_seconds);
 
-/// @brief Store sqrt(@p value) at index @p index of @p tab. For a zero::Array, the raw reference tab(i) is used only
+/// @brief Store sqrt(@p value) at index @p index of @p tab. For a zero::Array, the raw reference tab(index) is used
+/// only
 ///        when the chunk is written, operator[] otherwise.
 /// @param tab Destination array.
 /// @param index Element index.
@@ -131,12 +139,12 @@ void neutral_sqrt_assign(Arr& tab, Int index, T value)
 /**
  * @brief One iteration of the main compute loop, over [start0, end0).
  *
- * @param bench_arr      the arrays.
- * @param iter      the iteration index; the workload varies its pattern with k % 16.
+ * @param bench_arr the arrays.
+ * @param iter the iteration index; the workload varies its pattern with iter % 16.
  * @param start0 start of the window this iteration writes.
  * @param end0 end of that window.
  * @param tab_nba1 the per-iteration thresholds main() precomputed; read at
- *        [k], never written here.
+ *        [iter], never written here.
  * @param tab_nba2 see tab_nba1.
  * @param val_sum the running accumulators (val_sum, long_val_sum, v_real,
  *        v_im), ADDED TO.
@@ -144,13 +152,11 @@ void neutral_sqrt_assign(Arr& tab, Int index, T value)
  * @param v_real see val_sum.
  * @param v_im see val_sum.
  *
- * @details Moved VERBATIM out of main(): 392 lines, six `omp for` loops inside a
- *          single `omp parallel reduction` region -- the largest block of the
- *          bench.
+ * @details Six `omp for` loops inside a single `omp parallel reduction`
+ *          region -- the largest block of the bench.
  * @note The reduction is done on zero-initialised LOCALS and added to the
- *       caller's accumulators on return. Strictly the same arithmetic as
- *       reducing straight into them (which is what the inline version did), and
- *       it keeps references out of the reduction clause.
+ *       caller's accumulators on return: the same arithmetic as reducing
+ *       straight into them, with no reference in the reduction clause.
  */
 void bench_phase_compute(BenchArrays&            bench_arr,
                          Int                     iter,
@@ -201,15 +207,28 @@ void bench_phase_mask_fill(BenchArrays& bench_arr);
 void bench_phase_mask_compute(BenchArrays& bench_arr, Int iter, long& mask_count);
 
 /**
+ * @brief tab_conn's starting mesh (bench_phase_conn.cpp): every row in its first
+ *        numbering. Its own region, after bench_phase_fill.
+ */
+void bench_phase_conn_fill(BenchArrays& bench_arr);
+
+/**
+ * @brief tab_conn's iteration @p iter: band iter % bench_conn_bands read into
+ *        @p conn_sum (the gather), then renumbered (its node order rotated, or
+ *        put back).
+ */
+void bench_phase_conn_compute(BenchArrays& bench_arr, Int iter, long& conn_sum);
+
+/**
  * @brief Stress (a): a team one thread SHORT of the default, over [beg_s, end_s).
- * @details Moved verbatim. Runs on ~1/5 of iterations (disjoint k-modulo gate in
+ * @details Runs on ~1/5 of iterations (disjoint k-modulo gate in
  *          main()), enough to surface rare bugs without dominating the baseline.
  */
 void bench_phase_stress_teams(BenchArrays& bench_arr, Int team, Int beg_s, Int end_s);
 
 /**
  * @brief Stress (b): `schedule(dynamic, grain)` over [beg_s, end_s).
- * @details Moved verbatim. Scatters iterations so several threads land on the
+ * @details Scatters iterations so several threads land on the
  *          SAME chunk at once -- it is what exercises the CAS / Dekker paths that
  *          stay idle under the default static schedule.
  */
@@ -254,17 +273,16 @@ void bench_phase_compress_all(BenchArrays& bench_arr);
  *        verification pass reads.
  *
  * @note no_io and no_compress are the raw `const char*` main() computes from the
- *       flag or the environment; non-null means "on". Kept as-is rather than
- *       normalised to bool, so the moved code stays verbatim.
+ *       flag or the environment; non-null means "on".
  */
 struct BenchIoFlags
 {
-    const char* no_io;       ///< non-null: skip file I/O entirely
-    const char* no_compress; ///< non-null: write/read uncompressed
-    Int         io_res;      ///< get_io_mode(): 0 none, 1 write, 2 read-and-check
-    bool        read_trace;
-    bool        write_trace;
-    bool        checksum_only = false; ///< --checksum_only: write the checksum files alone
+    const char* no_io         = nullptr; ///< non-null: skip file I/O entirely
+    const char* no_compress   = nullptr; ///< non-null: write/read uncompressed
+    Int         io_res        = 0;       ///< get_io_mode(): 0 none, 1 write, 2 read-and-check
+    bool        read_trace    = false;   ///< read the trace file of a previous run back and compare
+    bool        write_trace   = false;   ///< write the trace file a later run compares against
+    bool        checksum_only = false;   ///< --checksum_only: write the checksum files alone
 };
 
 /**
@@ -272,12 +290,9 @@ struct BenchIoFlags
  *
  * @param ind the iteration index, or -1 for the pass that runs before the loop.
  *
- * @details Moved VERBATIM out of main(), and the two lambdas had to travel
- *          together: lbd_check is GENERIC (`const auto& tab`) because it is
- *          called with all thirteen array types, so it cannot cross a
- *          translation-unit boundary on its own. Inside this file it stays a
- *          generic lambda, instantiated once here instead of in main() -- and
- *          the entry point below is an ordinary function.
+ * @details lbd_check is GENERIC (`const auto& tab`): it is called with all
+ *          thirteen array types, so it lives in the same file as its caller,
+ *          instantiated once there, behind this ordinary function.
  */
 void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io);
 
@@ -288,11 +303,9 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io);
  *        check mode, false in perf. Passed rather than read here, so this file
  *        stays clear of the mode machinery.
  *
- * @details Moved VERBATIM, and again as a GROUP: lbd_stats calls
- *          lbd_fill_values and lbd_fill_chunk, both generic over the array type
- *          since they are applied to all eleven arrays. None of the three could
- *          cross a translation-unit boundary alone. They stay generic lambdas
- *          inside this file; the entry point is an ordinary function.
+ * @details lbd_stats calls lbd_fill_values and lbd_fill_chunk, both generic
+ *          over the array type since they are applied to all eleven arrays:
+ *          the three live together in one file, behind this ordinary function.
  */
 void bench_stats(BenchArrays& bench_arr, bool stats);
 
@@ -308,11 +321,9 @@ void bench_stats(BenchArrays& bench_arr, bool stats);
  *        not to end0.
  * @param end0 see size.
  *
- * @details Moved VERBATIM out of main(), where it was a seventy-line nest of
- *          modulo tests around four near-identical scans. It is the DISPATCHER
- *          of the four sibling range fills, which is why it lives in their
- *          file: side by side, it becomes visible that the four differ only by
- *          the value written and by the sentinel the scan stops on.
+ * @details The DISPATCHER of the four sibling range fills, which is why it
+ *          lives in their file: side by side, the four differ only by the value
+ *          written and by the sentinel the scan stops on.
  */
 void bench_phase_raz_sweep(BenchArrays& bench_arr, Int iter, Int size, Int start0, Int end0);
 
@@ -320,22 +331,19 @@ void bench_phase_raz_sweep(BenchArrays& bench_arr, Int iter, Int size, Int start
  * @brief Print the thirteen checksums.
  * @param check_sum have_check_sum(): false in perf mode, where nothing is read
  *        back and the census would only cost time.
- * @details Moved verbatim, with the variadic print_checksums helper it needs --
- *          which main() had no other use for.
+ * @details With the variadic print_checksums helper it alone needs.
  */
 void bench_print_checksums(BenchArrays& bench_arr, bool check_sum);
 
 /**
  * @brief Validate the compiled chunk geometry, then start the library.
  *
- * @details Moved VERBATIM out of main(). Aborts -- deliberately, and loudly --
- *          on a geometry the build cannot honour: a null chunk size, one that
- *          is neither a power of two nor a multiple of 64, or one outside
- *          [size_min, size_max]. Then
- *          ParamChunk::init_indexes(), which must run BEFORE any array exists,
- *          hence the call staying exactly where it was in main().
- * @note Empty in a std::vector build: the whole body sat under #ifdef
- *       SHRINK_ARRAY, and the guard moved with it.
+ * @details Aborts -- deliberately, and loudly -- on a geometry the build
+ *          cannot honour: a null chunk size, one that is neither a power of two
+ *          nor a multiple of 64, or one outside [size_min, size_max]. Then
+ *          ParamChunk::init_indexes(), which must run BEFORE any array exists:
+ *          main() calls this first.
+ * @note Empty in a std::vector build.
  */
 void bench_init_library();
 
@@ -345,9 +353,8 @@ void bench_init_library();
  * @param test_stl passed straight through to the --test_stl self-checks, which
  *        run just before the teardown proper.
  *
- * @details Moved VERBATIM out of the tail of main(), and the ORDER inside is
- *          load-bearing, which is the reason it travels as one block rather
- *          than as a handful of calls main() could reorder by accident:
+ * @details The ORDER inside is load-bearing, which is why it is one function
+ *          rather than a handful of calls main() could reorder by accident:
  *            1. tab_*.clear() -- clear() runs clear_core(), which is what feeds
  *               the teardown_clear counter;
  *            2. only THEN chunk_stats(), or the counter always reads 0;

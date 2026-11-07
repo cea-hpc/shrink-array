@@ -93,7 +93,7 @@ void StaticConstArray::clear_info_free_elt()
     // Over the ranks the batches were SIZED for, not FAST_ALLOC_PMP_MAX_THREADS: that may
     // have grown since (omp_set_num_threads) and would index past the arrays;
     // nb_thr is 0 serially, where nothing was allocated. reset(), not compt = 0:
-    // somme_sz must come down too, or the emptied batch still counts as full.
+    // somme_sz_ must come down too, or the emptied batch still counts as full.
     for (int thr_rank = 0; thr_rank < tab_info_free_elt().nb_thr; ++thr_rank)
     {
         clear_info_free_elt(thr_rank);

@@ -30,7 +30,7 @@ using namespace shrink_array;
 
 void bench_teardown(BenchArrays& bench_arr, bool test_stl)
 {
-    // Aliases so the body below is VERBATIM (see bench_phase_fill.cpp).
+    // Short local names for the arrays (see bench_phase_fill.cpp).
     auto& tab1 = bench_arr.tab1;
     auto& tab2 = bench_arr.tab2;
     auto& tab3 = bench_arr.tab3;
@@ -50,6 +50,7 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
     auto& tab_point     = bench_arr.tab_point;
     auto& tab_cell      = bench_arr.tab_cell;
     auto& tab_mask      = bench_arr.tab_mask;
+    auto& tab_conn      = bench_arr.tab_conn;
 
     [[maybe_unused]] auto& bench_arrays = bench_arr;
 
@@ -78,6 +79,7 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
     tab_point.clear();
     tab_cell.clear();
     tab_mask.clear();
+    tab_conn.clear();
 
     // Chunk instrumentation counters (CHUNK_STATS). Printed HERE, after the
     // tab_*.clear() above: clear() runs clear_core(), which is what feeds
@@ -100,7 +102,7 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
     // per live array, so a count taken mid-run cannot tell five live arrays
     // from five leaked entries. Here every array is gone, and anything left is
     // an entry that outlived the array that put it there -- erase_inf_array_by_ptr()
-    // acts on map_inf_array, and nothing erases from `vec`.
+    // acts on map_inf_array_, and nothing erases from `vec`.
     //
     // A handful: the scan is short and the cost is the CALL RATE, which caching
     // the per-array-invariant result would fix. Hundreds: the list grew.

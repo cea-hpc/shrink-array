@@ -108,7 +108,7 @@ sa::finalize_parallel_phase();       // outside the region: flush the queued wri
 
 Without OpenMP the lambda simply runs once, serially.
 
-**Parallel multi-threaded loops with OMPT: nothing of the library around them.** In an OMPT build (Clang, oneAPI: the
+**Parallel multi-threaded loops with OMPT: no library calls around them.** In an OMPT build (Clang, oneAPI: the
 library carries an OMPT tool, `CHUNK_OPT_OMPT`), the OpenMP runtime tells the library where
 each region begins and ends, so the loop is written as for a `std::vector` -- the same
 function fills both:
@@ -132,6 +132,44 @@ fill(a, n);                          // the same loop: no parallel_phase(), no p
 is that program, which then compares the two arrays element by element. It needs an OMPT
 build: it does not compile against a library built with GCC's libgomp, where the phases would
 never be marked.
+
+**With TBB: `shrink_array::tbb::parallel_for`.** Built with the std backend
+(`-DCHUNK_THREADS=std`, Spack `threads=std`), the library takes writes from TBB's threads.
+`chunk/tbb_adaptor.h` is `oneapi::tbb::parallel_for` with the same arguments and the phase
+marked for you: `begin_parallel_phase()` before every piece a thread runs,
+`finalize_parallel_phase()` once every task is done (also when the body throws):
+
+```cpp
+#include <oneapi/tbb/blocked_range.h>
+#include "chunk/tbb_adaptor.h"       // shrink_array::tbb::parallel_for
+
+const long                  n = 1L << 24;
+sa::zero_any::Array<double> a(n);
+
+sa::tbb::parallel_for(oneapi::tbb::blocked_range<long>(0, n / 2),
+                      [&](const oneapi::tbb::blocked_range<long>& r) {
+                          for (long i = r.begin(); i != r.end(); ++i)
+                              a[i] = (i < n / 8) ? 1.0 + i % 7 : 3.5;
+                      });
+sa::tbb::parallel_for(n / 2, n, [&](long i) { a[i] = 2.0; });   // the index form
+
+a.shrink_to_fit();                   // the phase is closed: a serial point
+```
+
+Partitioners and `task_arena`s work as with TBB itself; an arena wider than the machine needs
+`CHUNK_THREAD_CAPACITY`. A `oneapi::tbb::parallel_for` nested in the body takes
+`sa::tbb::phase_body(inner)`. The header comes with the library, which does not depend on TBB:
+the program links it.
+
+```cmake
+find_package(chunk 0.2 REQUIRED)
+find_package(TBB REQUIRED)
+target_link_libraries(my_app PRIVATE chunk::chunk_zero_any TBB::tbb)
+```
+
+An OpenMP build refuses the adaptor at compile time: OpenMP numbers only its own threads.
+`std::thread`s and thread pools of your own:
+[docs/getting_started.md](docs/getting_started.md#5-threads-the-rules).
 
 Link it with `chunk::chunk_zero_any` (see [Install](#install)). The complete version, which checks
 what it reads back, is [examples/getting_started](examples/getting_started/getting_started.cpp);
@@ -161,7 +199,7 @@ of 64). A chunk whose elements all hold one constant keeps no buffer: it points 
 buffer of that constant and costs a few bytes of metadata. Three variants decide which
 constants count:
 
-| variant | class | a chunk is compressed when it is uniform at… |
+| variant | class | a chunk is compressed when all its elements equal… |
 |---|---|---|
 | `zero` | `zero::Array<T>` | `T{}` (zero) only |
 | `zero_one_value` | `zero_one_value::Array<T>` | `T{}`, or **one** second value per array, declared with `set_second_value()` |
@@ -171,6 +209,41 @@ The variant and the chunk size (256, 1024, or dynamic and adaptive: `_dyn`) are 
 library you link: `chunk::chunk_zero_any_256`, `chunk::chunk_zero_any_dyn`, ...
 [docs/variants.md](docs/variants.md) says what each one costs;
 [docs/algo_zero_one_value.md](docs/algo_zero_one_value.md) how reads, writes and compression run side by side.
+
+**Integers that repeat with a shift: `pattern::Array`.** A mesh connectivity is never uniform,
+yet cell `c + 1` holds the node numbers of cell `c` plus one. `pattern::Array<T>`, for integer
+types, comes with the `zero_any` libraries: it does everything `zero_any::Array` does, and also
+compresses such a chunk to a **motif plus an offset**. Element `j` reads `motif[j] + offset`;
+the motif is shared by every chunk of that shape, and the offset sits in the chunk's metadata:
+
+```cpp
+#include "chunk/pattern_array.h"   // shrink_array::pattern::Array
+
+const int nx = 4096, ny = 1024;           // nx x ny quad cells, (nx + 1) x (ny + 1) nodes
+sa::pattern::Array<int> conn(4 * nx * ny);   // the 4 nodes of each cell, cell after cell
+
+for (int j = 0; j < ny; ++j)
+    for (int i = 0; i < nx; ++i)
+    {
+        const int c = j * nx + i;             // the cell
+        const int n = j * (nx + 1) + i;       // its first node
+        conn[4 * c + 0] = n;
+        conn[4 * c + 1] = n + 1;
+        conn[4 * c + 2] = n + nx + 2;
+        conn[4 * c + 3] = n + nx + 1;
+    }
+conn.shrink_to_fit();
+
+std::printf("chunks holding a buffer: %.1f %%\n", conn.stats());   // 0.0 %: one motif for 16.8 M ints
+```
+
+With chunks of 256 elements (64 cells, `nx` a multiple of 64), every chunk is the same motif
+with an offset of its own: one motif is registered for the whole array, and every chunk but one
+keeps no buffer (a motif is admitted the second time it is seen, by another chunk). A chunk is
+examined when its first or last element is written, so a connectivity filled in order
+compresses as it is written; a write into a motif chunk gives it a buffer again.
+[docs/algo_pattern.md](docs/algo_pattern.md) explains the motif registry, the compression and
+the reads.
 
 **Lock-free, and checked rather than only tested.** No thread ever takes a lock to read or
 write an element. Writers, the compression pass that takes a chunk's buffer back, the flush of
@@ -192,8 +265,8 @@ rests on the argument of [docs/synchronisation_dekker.md](docs/synchronisation_d
 section 4.2; everything else is the checker's ([docs/formal_models.md](docs/formal_models.md)).
 What that covers, precisely: every execution the memory model allows, for small configurations
 (up to 5 writers or 3 readers, one chunk, one pass). It is not a proof for any number of
-threads, and a model is a reduction of the source written by hand, which the mutations it must
-refuse keep honest.
+threads, and a model is a hand-written reduction of the source, kept honest by the mutations it
+must refuse.
 
 ## In numbers
 
@@ -215,21 +288,30 @@ rewrite 7 to 16 times depending on the variant; in a real code the computation a
 accesses absorbs part of it.
 
 Thread scaling, at three times the size (`--multiply 3`, 3·10⁹ elements: the 64-bit index
-builds `shrink_bench_*_int64_*`), clang/libomp, Grace (288 cores), compute time against 1
-thread ([python/omp_speedup.py](python/omp_speedup.py)): every variant follows the ideal line
+builds `shrink_bench_*_int64_*`), clang/libomp, Grace (288 cores), compute time relative to 1
+thread ([python/thread_speedup.py](python/thread_speedup.py)): every variant follows the ideal line
 up to 16 threads (a speedup of 14 there, 26 to 28 at 32), reaches 48 to 70 at 128 threads and
-stays between 43 and 66 up to 288, where `std::vector` falls back to about 26.
+stays between 43 and 66 up to 288, where `std::vector` drops to about 26.
 
 ![OpenMP speedup of the int64 builds on Grace, omp-llvm, --multiply 3](docs/images/speedup_grace_omp-llvm_int64_x3.png)
 
-On x86, AMD EPYC 7763 (Milan, 2 sockets × 64 cores), Intel oneAPI, at the reference size
-(`--multiply 1`): the same picture. Every variant stays on the ideal line up to 16 threads
-and reaches 43 to 80 at 128, while `std::vector` peaks near 28 at 64 threads and falls back
-to about 18 at 128.
+On x86, AMD EPYC 7763 (Milan, 2 sockets × 64 cores), Intel oneAPI with the std::thread backend
+(`CHUNK_THREADS=std`), at the reference size (`--multiply 1`): every variant stays close to
+the ideal line up to 16 threads (12 to 15 there) and reaches 29 to 46 at 128, while
+`std::vector`, below them from 4 threads on, peaks near 23 at 64 threads and drops to
+about 17 at 128.
 
-![OpenMP speedup on AMD EPYC 7763 (Milan, 2 × 64 cores), omp-oneapi, --multiply 1](docs/images/speedup_milan_omp-oneapi_x1.png)
+![Speedup of the std::thread backend on AMD EPYC 7763 (Milan, 2 × 64 cores), std-oneapi, --multiply 1](docs/images/speedup_milan_std-oneapi_x1.png)
 
-**A fair baseline.** The `std::vector` of these runs (`shrink_bench_vector_*`) is a real
+The same build with the bench's loops as TBB tasks (`shrink_bench_tbb_*`, linear scale): the
+arrays are written from TBB's threads, as a TBB program would write them through
+`shrink_array::tbb::parallel_for`. The variants follow the ideal line up to 16 threads, reach
+19 to 26 at 32 and 28 to 52 at 128 (the static sizes 256 and 1024 at 40 to 52, `_dyn` at 28
+to 37), while `std::vector` peaks near 22 at 64 threads and drops to about 12 at 128.
+
+![Speedup of the TBB bench on AMD EPYC 7763 (Milan, 2 × 64 cores), std-oneapi](docs/images/speedup_milan_std-oneapi_tbb.png)
+
+**A fair baseline.** The `std::vector` of these runs (`shrink_bench_<backend>_vector_*`) is a real
 `std::vector` whose zeroing is parallel
 ([examples/shrink_bench/baseline_vector.h](examples/shrink_bench/baseline_vector.h)). A plain
 `std::vector<T> v(n)` value-initialises its `n` elements on the one thread that constructs it:
@@ -243,7 +325,7 @@ schedule, each page first touched by the thread that works on it; its elements r
 exactly as a `std::vector`'s do. Only who writes the zeros changes.
 
 **Use it** on data that is mostly zero or made of runs of a few values: sparse fields, material
-masks, multi-material quantities, flags. **Don't** on data where every chunk holds varied
+masks, multi-material quantities, flags. **Don't** use it on data where every chunk holds varied
 values: there it costs a little more memory than a `std::vector`, and is slower. Sparse
 formats, hash tables, zfp / Blosc2 or OpenVDB may fit better:
 [docs/alternatives.md](docs/alternatives.md) compares them.
@@ -264,7 +346,7 @@ cmake --install build
 Then, in your project:
 
 ```cmake
-find_package(chunk 0.1 REQUIRED)            # -DCMAKE_PREFIX_PATH=<install prefix>
+find_package(chunk 0.2 REQUIRED)            # -DCMAKE_PREFIX_PATH=<install prefix>
 target_link_libraries(my_app PRIVATE chunk::chunk_zero_any)
 ```
 
@@ -299,12 +381,12 @@ The CMake options (`OMP`, `CHUNK_THREADS`, `CHUNK_STATIC_SIZES`, `CHUNK_VARIANTS
   `double(a[i])` to `printf`, `std::format` or `std::max`.
 - **Threads**: different elements need no synchronisation, even in the same chunk; anything that
   rebuilds the storage (`resize`, `shrink_to_fit`, `assign`, a re-chunk) is a sequential point.
-  Use the arrays from OpenMP threads; a team larger than 256 threads and than the cores needs
+  Use the arrays from OpenMP threads; a team larger than both 256 threads and the core count needs
   `CHUNK_THREAD_CAPACITY` set before the first array;
   without OMPT (GCC's `libgomp`), open the regions with `parallel_phase()`.
 - **One per process**: the library's state -- type registries, allocators, per-thread
   structures, the phase -- is the process's, shared by every part of the program that uses it:
-  one top-level team writing arrays at a time (nested regions are fine), the shutdown calls once
+  one top-level team writing arrays at a time (nested regions are fine), the shutdown calls made once
   at the end ([docs/getting_started.md](docs/getting_started.md), section 5).
 - **Not there, by construction**: `data()` (a compressed chunk has no buffer), `T&` and mutable
   iterators, `insert` / `erase` in the middle.
@@ -318,11 +400,11 @@ Every call, by task: [docs/api.md](docs/api.md).
 
 ## In progress
 
-Two development branches, not in a release yet:
+Two development branches, not in a release yet, and what comes next:
 
 - **`cpp23` -- C++23 and `mdspan`.** A multidimensional view on any array: `f[i, j]` goes
   through the same write proxy, and a tiled layout (16 x 16 tiles for 256-element chunks) makes
-  a uniform 2D or 3D region compress whatever its width. Needs GCC 14 or Clang 18.
+  a uniform 2D or 3D region compress regardless of its width. Needs GCC 14 or Clang 18.
   [docs/mdspan.md](https://github.com/cea-hpc/shrink-array/blob/cpp23/docs/mdspan.md).
 
 - **`cpp26` -- trying out C++26.** Started from `cpp23`, to measure what the new standard
@@ -332,6 +414,10 @@ Two development branches, not in a release yet:
   does not implement. `compile_all.sh` builds the gnu configurations only there
   (`CHUNK_CXX_STANDARD=26`, or `--std=26`). An experiment: the codes the library is meant for
   stay in C++20.
+
+- **GPU -- coming soon.** A backend for NVIDIA and AMD GPUs is being designed: phases rather
+  than handshakes, a device-side chunk format, a staged plan
+  ([docs/gpu_design.md](docs/gpu_design.md)).
 
 `develop` is merged into `cpp23` as it moves, and `cpp23` into `cpp26`; `cpp23` is also a
 Spack version (`spack install shrink-array@cpp23`).
@@ -349,6 +435,7 @@ Spack version (`spack install shrink-array@cpp23`).
 | check a handshake with a model checker | [docs/formal_models.md](docs/formal_models.md) |
 | use dynamic chunk sizes | [docs/adaptive_rechunk.md](docs/adaptive_rechunk.md) |
 | index an array in 2D or 3D (`mdspan`), in tiles that compress | [docs/mdspan.md](docs/mdspan.md) |
+| compress a mesh connectivity (`pattern::Array`) | [docs/algo_pattern.md](docs/algo_pattern.md) |
 | measure memory and time reliably | [docs/performance_measurement.md](docs/performance_measurement.md) |
 | submit and follow runs on the cluster from a window | [docs/shrink_gui.md](docs/shrink_gui.md) |
 | contribute | [CONTRIBUTING.md](CONTRIBUTING.md) |
@@ -362,11 +449,13 @@ exists in French ([docs/README.md](docs/README.md)); the changes from one versio
 
 ## Status and contributing
 
-shrink-array is at version 0.1: before 1.0, a minor release may change the interface
+shrink-array is at version 0.2: before 1.0, a minor release may change the interface
 ([versioning policy](CHANGELOG.md)). Every push runs the source checks, the GCC 14 builds
 (OpenMP, serial and std threads with oneTBB), the validation harnesses, the std backend under
-ThreadSanitizer and the GenMC models
-([CI](.github/workflows/ci.yml)).
+ThreadSanitizer and the GenMC models, the OpenMP build on x86-64 and on AArch64
+([CI](.github/workflows/ci.yml)); every night, the AArch64 builds too slow for a push -- the std
+backend under ThreadSanitizer, the `_dyn` build
+([nightly](.github/workflows/nightly.yml)).
 
 Trying it on your own data is the most useful feedback: if it saves memory in your code -- or
 does not -- [open an issue](https://github.com/cea-hpc/shrink-array/issues) with the type, the

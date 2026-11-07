@@ -5,12 +5,14 @@
 bench_and_test.py — Benchmark + correctness stress runner for shrink-array.
 
 Supported layout (the CEA cluster one):
-    $build_root/{config}/$arch/examples/shrink_bench/shrink_bench_{var}_{stage}
+    $build_root/{config}/$arch/examples/shrink_bench/shrink_bench_<backend>_{var}_{stage}
+(<backend> omp, std or serial, the one {config} was built with: each is tried,
+see bench_runner/settings.py's bench_exe_names.)
 
 Example:
     $CCCWORKDIR/shrink-array/
-      ├── cmake-build-omp-gnu/RHEL_9__aarch64/examples/shrink_bench/shrink_bench_zero_one_value_dyn
-      ├── cmake-build-omp-gnu-have-aggressive-compression/.../shrink_bench_zero_one_value_dyn
+      ├── cmake-build-omp-gnu/RHEL_9__aarch64/examples/shrink_bench/shrink_bench_omp_zero_one_value_dyn
+      ├── cmake-build-omp-gnu-have-aggressive-compression/.../shrink_bench_omp_zero_one_value_dyn
       ├── cmake-build-omp-gnu-std-alloc/...
       ├── cmake-build-omp-llvm/...
       └── ...
@@ -37,7 +39,8 @@ Notable features:
   * Per-run timeout + capture of stderr from crashing runs.
   * Validation harnesses first (ctest -L validation in each build dir):
     rechunk_validation, dyn_geometry_validation, compress_roundtrip,
-    pool_accounting, deferred_path_validation, open_types_validation -- and,
+    pool_accounting, deferred_path_validation, open_types_validation,
+    operators_validation -- and,
     in the std-backend CHECK_OPTIM builds (cmake-build-std-*-check),
     std_thread_validation and tbb_validation.
     --skip-ctest to bypass.
@@ -54,6 +57,10 @@ Notable features:
     cmake-build-omp-gnu-stats / cmake-build-gnu-stats, checked and never
     timed; a run without any prints a warning up front.
   * Clean Ctrl+C: the CSV and the error log are written even on interruption.
+  * --pool ID (shrink_gui's "Nœuds"): several batch jobs share the campaign,
+    each (phase, configuration) unit done by the first job that claims it,
+    each oracle generated once (bench_runner/share.py); each job writes to
+    its own <output-dir>/<arch>/pool_ID/<job>, oracle/ staying shared.
 
 The code lives in the bench_runner package next to this script (one module
 per concern, one per phase under bench_runner/phases/): copy the package

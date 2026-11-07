@@ -84,18 +84,18 @@
 #include <type_traits> // std::conditional_t, std::is_same_v
 #include <vector>      // std::vector (the reference)
 
-#include "chunk/chunk_traits.h"        // forward decls + default IntType = int
-#include "chunk/zero_array.h"          // zero::Array
+#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
+#include "chunk/zero_array.h"           // zero::Array
 #include "chunk/zero_one_value_array.h" // zero_one_value::Array
 #include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/param_chunk.h"         // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"          // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"              // chunk_config::use_zero*
-#include "chunk/PMP_CHUNK.h"           // pmp::*, CHUNK_PMP_*, get_thr_rank_fast, chunk_thread_capacity, the registry
-#include "chunk/manage_ompt.h"         // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/internal/env_parse.h"  // arg_number
-#include "chunk/internal/print.h"      // shrink_array::println
-#include "chunk/internal/test_hooks.h" // force_defer_every (the in-phase case)
+#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
+#include "chunk/zero_chunk.h"           // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"               // chunk_config::use_zero*
+#include "chunk/PMP_CHUNK.h"            // pmp::*, CHUNK_PMP_*, get_thr_rank_fast, chunk_thread_capacity, the registry
+#include "chunk/manage_ompt.h"          // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/env_parse.h"   // arg_number
+#include "chunk/internal/print.h"       // shrink_array::println
+#include "chunk/internal/test_hooks.h"  // force_defer_every (the in-phase case)
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
 

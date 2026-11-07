@@ -7,6 +7,7 @@ import base64
 import json
 import os
 import platform
+import subprocess
 
 from conftest import BATCH, BATCH_ARG, FAKE_PROGRAM
 from shrink_gui.runscripts import make_launch_sh, make_run_sh
@@ -74,6 +75,36 @@ def test_after_already_finished(site):
     assert "n'existe pas" in r["error"]
 
 
+def test_after_the_jobs_of_a_submission_over_several_nodes(site):
+    j1 = _compile(site, "c7-n1", 1, 0)
+    j2 = _compile(site, "c7-n2", 3, 0)
+    after = {"run": "c7-n1", "runs": ["c7-n1", "c7-n2"], "cond": "ok"}
+    r = _launch(site, "b7", _spec("true", after=after))
+    assert r.get("jobid"), r
+    assert f'#MSUB -E "--dependency=afterok:{j1}:{j2}"' in (site.runs / "b7" / "job.sh").read_text()
+    assert site.wait(lambda: _run(site, "c7-n1")["status"] == "fini", 20)
+    assert _run(site, "b7")["status"] == "en attente"            # c7-n2 still runs
+    assert site.wait(lambda: _run(site, "b7")["status"] == "fini", 30)
+    # One job failed: nothing submitted once it is over, pending for ever before.
+    _compile(site, "c8-n1", 0, 0)
+    _compile(site, "c8-n2", 0, 5)
+    assert site.wait(lambda: _run(site, "c8-n2")["status"] == "fini", 20)
+    r = _launch(site, "b8", _spec("true", after={"run": "c8-n1", "runs": ["c8-n1", "c8-n2"], "cond": "ok"}))
+    assert "c8-n2 a échoué (code 5)" in r["error"]
+
+
+def test_mprun_waits_for_all_the_jobs(site):
+    site.env["SHRINK_GUI_POLL"] = "0.2"
+    _compile(site, "c9-n1", 1, 0)
+    _compile(site, "c9-n2", 2, 6)
+    _launch(site, "m9", _spec("echo STARTED", mode="mprun",
+                              after={"run": "c9-n1", "runs": ["c9-n1", "c9-n2"], "cond": "ok"}))
+    assert site.wait(lambda: _run(site, "m9")["status"] == "fini", 30)
+    log = _log(site, "m9")
+    assert _run(site, "m9")["code"] == 95
+    assert "run c9-n1 ended (exit code 0)" in log and "c9-n2 failed: not started" in log and "STARTED" not in log
+
+
 def test_delay(site):
     _launch(site, "d1", _spec("true", delay_s=2))
     assert '#MSUB -E "--begin=now+2"' in (site.runs / "d1" / "job.sh").read_text()
@@ -117,11 +148,11 @@ def test_mprun_stopped_while_waiting(site):
 
 
 # ------------------------------------------------------------ build check
-def _build(site, name, stale):
-    d = site.home / "br" / f"cmake-build-{name}" / f"RHEL_9.4__{platform.machine()}"
+def _build(site, name, stale, arch=f"RHEL_9.4__{platform.machine()}"):
+    d = site.home / "br" / f"cmake-build-{name}" / arch
     (d / "examples" / "shrink_bench").mkdir(parents=True)
     (d / "build.ninja").write_text("")
-    exe = d / "examples" / "shrink_bench" / "shrink_bench_zero_dyn"
+    exe = d / "examples" / "shrink_bench" / "shrink_bench_omp_zero_dyn"
     exe.write_text("")
     exe.chmod(0o755)
     if stale:
@@ -151,3 +182,29 @@ def test_build_check(site):
     assert code == 96 and "1 of 2" in log
     code, log = _checked(site, "k5", {"mode": "refuse", "root": root, "builds_file": "omp-gnu"})
     assert code == 0 and "1 build(s) up to date" in log
+
+
+def test_build_check_takes_this_systems_build(site):
+    """One machine name, two systems (Milan on RHEL 8, Turin on RHEL 9): the
+    build of the node's system is checked, not the first in sorted order."""
+    mine = subprocess.check_output(["bash", "-c", 'source /etc/os-release; echo "${ID^^}_${VERSION_ID}__$(uname -m)"'],
+                                   text=True).strip()
+    other = f"AAA_1__{platform.machine()}"
+    _build(site, "two-os", stale=True, arch=other)
+    _build(site, "two-os", stale=False, arch=mine)
+    root = str(site.home / "br")
+    code, log = _checked(site, "k9", {"mode": "refuse", "root": root, "builds": ["two-os"]})
+    assert code == 0 and "1 build(s) up to date" in log and "STARTED" in log and other not in log
+    # Only the other system's: still checked, and said.
+    _build(site, "other-os", stale=False, arch=other)
+    code, log = _checked(site, "k10", {"mode": "refuse", "root": root, "builds": ["other-os"]})
+    assert code == 0 and f"no {mine} build of cmake-build-other-os" in log and other in log
+
+
+def test_build_check_leaves_the_build_stamp_out(site):
+    """HEAD moved, no source changed: the stamp's steps do not stop a run."""
+    d = _build(site, "stamped", stale=False)
+    (d / "STAMP").write_text("")
+    root = str(site.home / "br")
+    code, log = _checked(site, "k11", {"mode": "refuse", "root": root, "builds": ["stamped"]})
+    assert code == 0 and "1 build(s) up to date" in log and "STARTED" in log

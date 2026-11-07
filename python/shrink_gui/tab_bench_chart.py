@@ -69,9 +69,10 @@ class BenchChart:
         row.addWidget(QLabel("Comparer avec"))
         row.addWidget(self.bc_cmp, 1)
         row.addWidget(bref)
+        self.bc_view = ScatterView()
+        row.addWidget(self.chart_save_button(self.bc_view, self.bench_image_name))
         self.bc_note = TLabel("")
         self.bc_note.setWordWrap(True)
-        self.bc_view = ScatterView()
         w = QWidget()
         lay = QVBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -79,6 +80,14 @@ class BenchChart:
         lay.addWidget(self.bc_note)
         lay.addWidget(self.bc_view, 1)
         return w
+
+    def bench_image_name(self):
+        """The name proposed for the image: the run, the config, the measure,
+        and B when compared."""
+        rid_b = self.bc_cmp.currentData()
+        metric = {"temps": "temps", "mémoire": "memoire", "speedup": "speedup"}[self.bc_metric.currentData()]
+        return "_".join(x for x in (self._image_run_name(self.current), self.bc_config.currentText(), metric)
+                        if x) + (f"_vs_{self._image_run_name(rid_b)}" if rid_b else "")
 
     def fill_bench_compare(self):
         """The runs the current one can be compared with: the other
@@ -91,10 +100,21 @@ class BenchChart:
         self.bc_cmp.blockSignals(True)
         self.bc_cmp.clear()
         self.bc_cmp.addItem(T("(aucun)"), None)
+        # A submission over several nodes is one entry (any of its jobs gives
+        # the summary of all, remote_helper.bench_points), and never compared
+        # with itself -- as the speedup chart's list.
+        own_pool = cur["meta"].get("pool") if cur else None
+        pools = set()
         for r in self.runs:
             if r["id"] != self.current and is_bench_chart(r["meta"]) and r["meta"].get("arch") == arch \
                     and not r["meta"].get("rerun_of"):
-                self.bc_cmp.addItem(f"{r['id']}  [{T(r['status'])}]", r["id"])
+                pool = r["meta"].get("pool")
+                if not pool:
+                    self.bc_cmp.addItem(f"{r['id']}  [{T(r['status'])}]", r["id"])
+                elif pool != own_pool and pool not in pools:
+                    pools.add(pool)
+                    n = r["meta"].get("nodes", "?")
+                    self.bc_cmp.addItem(f"{T(f'{pool} ({n} nœuds)')}  [{T(r['status'])}]", r["id"])
         i = self.bc_cmp.findData(keep) if keep else 0
         self.bc_cmp.setCurrentIndex(max(0, i))
         self.bc_cmp.blockSignals(False)
@@ -205,7 +225,10 @@ class BenchChart:
         chart.setTitle(("Comparaison — " if rb else "") + title + " selon le nombre de threads — " + (config or ""))
         chart.setTitleBrush(QBrush(QColor(V["ink"])))
         chart.legend().setLabelColor(QColor(V["ink2"]))
-        chart.legend().setAlignment(Qt.AlignTop)
+        # On the right, one entry a line (as the speedup chart): in one row at
+        # the top the labels are cut short. Hover gives a label cut all the same.
+        chart.legend().setAlignment(Qt.AlignRight)
+        chart.legend().setShowToolTips(True)
         chart.legend().setMarkerShape(QLegend.MarkerShapeFromSeries)
 
         drawn = []

@@ -39,18 +39,18 @@ The whole matrix (GNU, LLVM, oneAPI, AOCC, NVHPC, sanitizers, statistics, std-al
 only those. `python/bench_and_test.py` runs them over a set of builds, with the benchmark in
 check mode and the performance sweep (see `docs/example_bench_test.txt`).
 
-The defects of this library are mostly **rare races**. A change to a concurrent path is not
+This library's defects are mostly **rare races**. A change to a concurrent path is not
 tested until it has run under ThreadSanitizer, at several thread counts, and many times: use
 `python/multi_launch_stress.py` (see `docs/example_multi_launch_stress.txt`).
 
-What to run, by what the change touches:
+What to run, depending on what the change touches:
 
 | change | run at least |
 |---|---|
 | write engine, Dekker handshake, compression manager, deferred writes | `deferred_path_validation`, `read_reclaim_validation` (also with `CHUNK_TEST_READ_DELAY_EVERY`, and under ASan in a std-alloc build), the TSan builds, `multi_launch_stress.py` |
 | compression marking, the passes | `mark_path_validation`, `compress_roundtrip`, the benchmark in check mode |
 | allocators, reuse lists, slabs | `pool_accounting`, `slab_geometry_validation`, `blk_allocator_validation`, the ledger build (`--with-ledger`), ASan in a std-alloc build |
-| re-chunk, dynamic geometry | `rechunk_validation`, `dyn_geometry_validation`, the benchmark with `CHUNK_FORCE_RECHUNK_TOGGLE=1` |
+| re-chunk, dynamic geometry | `rechunk_validation`, `dyn_geometry_validation`, the benchmark with `--force_rechunk <size> --force_rechunk_toggle` |
 | range operations | `fill_range_mt_validation`, `fill_range_mt_zero_and_zero_one_value_validation`, `range_counters_validation` |
 | thread ranks, regions | `thread_growth_validation`, `nested_region_validation` |
 | container interface | `iterator_validation`, `swap_move_validation`, `stale_proxy_validation`, `open_types_validation`, `index64_validation` |
@@ -62,9 +62,10 @@ The source checks run with the others (`ctest -R check_`):
 |---|---|
 | `check_includes` | every `#include` says why it is there; system and project headers are not mixed in one block |
 | `check_naming` | the naming convention of section 3, as far as a line shows it: snake_case constants, enumerators, functions and variables, PascalCase types, aliases and template parameters, no reserved `__` name |
+| `check_inline_bodies` | no member function body longer than 5 lines inside a class of `chunk/` or `fast_allocators/`: the body is in the header's `<header>_inline.h` companion |
 | `check_headers` | every C++ file opens with the Apache license header (years up to date) and carries no IDE `Created by` stamp; scripts and build files (`.py`, `.sh`, `.cmake`, `CMakeLists.txt`) carry `# Copyright ... CEA` and `# SPDX-License-Identifier: Apache-2.0`; the vendored headers, their upstream SPDX line; `scripts/check_headers.py --fix` repairs |
 | `check_raw_reads` | every raw read of a chunk buffer in the library says why it is safe |
-| `check_tracked` | every file the sources name (a quoted `#include`, a relative Python import, a CMake source or harness, a Markdown link) is tracked by git, not only present on the disk |
+| `check_tracked` | every file the sources name (a quoted `#include`, a relative Python import, a CMake source or harness, a Markdown link) is tracked by git, not only present on disk |
 | `check_docs` | links, code names cited in the documents, English/French pairs, no history markers in comments, the files cited in comments exist |
 
 ## 3. Code rules
@@ -87,7 +88,7 @@ The source checks run with the others (`ctest -R check_`):
   | macros | UPPER_CASE | `CHUNK_SIZE` |
 
   UPPER_CASE is for macros only: a constant or an enumerator spelled like one reads as one, and
-  may meet one. The standard library's shapes keep their spelling: the member types of its
+  may collide with one. The standard library's shapes keep their spelling: the member types of its
   protocols (`value_type`, `size_type`, ...; our own member types are PascalCase, `ChunkType`),
   the traits and tags (`is_cplx`, `rebind`). So do the public `md::` types of `chunk/mdspan.h`
   and `chunk/mdspan_tile_ops.h`, spelt as `std::mdspan` spells its own (`layout_tiled`,
@@ -97,6 +98,11 @@ The source checks run with the others (`ctest -R check_`):
   that changes keeps its former spelling as a `[[deprecated]]` alias until 1.0.
   `check_naming` enforces what a line shows; clang-tidy's `readability-identifier-naming`
   checks the rest (the member suffix, the parameters) with `scripts/clang_tidy_naming.yaml`.
+- **Long bodies go to the `<header>_inline.h` companion.** A member function whose body exceeds 5
+  lines is declared in the class and defined in `internal/<header>_inline.h`, included at the
+  end of the header; the Doxygen comment stays on the declaration. Accessors of a few lines
+  stay in the class. `check_inline_bodies` enforces it;
+  `scripts/check_inline_bodies.py --apply` moves what it lists (then clang-format the files).
 - **No preprocessor where `if constexpr` works.** The rules that decide which `#ifdef` can go,
   and the ones that must stay, are written at the top of `examples/shrink_bench/bench_config.h`.
 - **Comments state the rule, not the story.** Write why the code is the way it is, and what
@@ -130,4 +136,4 @@ well above the noise (10% on the 64-thread dynamic benchmarks) is a result.
 - A new environment variable, macro or CMake option goes into
   [environment_variables.md](environment_variables.md) if a user of the library has to set it,
   into [developer_settings.md](developer_settings.md) otherwise. A switch that keeps an old
-  behaviour for an A/B gets its removal date there when it is added.
+  behaviour for an A/B comparison gets its removal date there when it is added.

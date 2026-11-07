@@ -25,7 +25,26 @@
 
 #pragma once
 
+#include <string> // std::string (--rechunk_trace_array)
+
 #include "bench_int.h" // Int: the sizes this struct carries
+
+/// @brief tab_mask's default size, as a fraction of sz (--mask_scale sets it).
+/// @details 1/32. Its per-iteration update writes ~1/16 of the random and
+///          scattered blocks and 1/32 of the constant segments, element by
+///          element through the proxies in a zero / zero_any build: at the
+///          8 x sz it was created with (capped at 2^31 in the 32-bit builds) it
+///          took ~75% of a 43 s zero_any run (64 threads) that is ~7 s without it.
+///          1/32 keeps thousands of 4096-element segments of each kind.
+inline constexpr double bench_mask_default_scale = 1.0 / 32.0;
+
+/// @brief tab_conn's default size, as a fraction of sz (--conn_scale sets it).
+/// @details 1/32. Each iteration gathers and renumbers one band of rows in 16,
+///          dense, through the proxies: at sz (its size when it came in) it
+///          took ~87% of a run -- zero_any, 8 threads, --divisor 2: 64.8 s
+///          with it, 8.4 s without (GCC 16; 140 s against 19 s with icpx) --
+///          and hid every other phase. 1/32 still keeps thousands of rows.
+inline constexpr double bench_conn_default_scale = 1.0 / 32.0;
 
 /// @brief Everything the command line can set.
 struct BenchArgs
@@ -58,23 +77,75 @@ struct BenchArgs
     /// and its phases, check and compression are skipped.
     bool no_mask = false;
     /// --mask_scale: tab_mask holds mask_scale * sz bools (a real factor, like
-    /// --multiply). Default 1/32 (bench_mask_default_scale, bench_array.h);
-    /// 8 is the size tab_mask was created with.
-    double mask_scale = 1.0 / 32.0;
+    /// --multiply). Default bench_mask_default_scale; 8 is the size tab_mask
+    /// was created with.
+    double mask_scale = bench_mask_default_scale;
+    /// --conn_scale: tab_conn holds about conn_scale * sz ints, whole rows (a
+    /// real factor). Default bench_conn_default_scale; 1 is the size tab_conn
+    /// came in with.
+    double conn_scale = bench_conn_default_scale;
+    /// --no_conn: leave out tab_conn, the mesh connectivity (bench_phase_conn.cpp)
+    /// -- for a run that must compare with the campaigns made before it existed.
+    /// Its array is then of size 1 and its phases, check and compression are
+    /// skipped.
+    bool no_conn = false;
 
     double multiply_factor = 1.0; ///< --multiply (a real factor)
     double divisor_factor  = 1.0; ///< --divisor (a real factor, like --multiply)
 
     /// --iter_max. 2000 by default.
     Int iter_max_arg = 2000;
+
+    /// @name Adaptive re-chunk (dyn builds; the others ignore them)
+    /// The advisor's schedule and the RechunkPolicy fields the bench exposes.
+    /// The library reads none of them from the environment: a program sets the
+    /// policy, and these options are how this one does.
+    /// @{
+    /// --advisor_period: iterations between two advisor passes; 0: no advisor;
+    /// -1 (not given): max(10, iter_max / 20).
+    Int advisor_period = -1;
+    /// --advise_five: hand the decider only the five historical arrays (tab1,
+    /// tab2, tab_short, tab_complex, tab_point), for runs that must compare with
+    /// the campaigns made before the others were advised.
+    bool advise_five = false;
+    /// --advise_bool: hand tab_bool and tab_bool_bits to the decider too. Off by
+    /// default: both stay at their birth geometry, so that the two bool
+    /// containers are compared as they are, not after a re-chunk.
+    bool advise_bool     = false;
+    bool rechunk_dry_run = false; ///< --rechunk_dry_run: analyse and log, never move
+    /// --rechunk_min_gain_mb: absolute deadband of the data-side gain, MB (0
+    /// removes it); < 0 (not given): the policy's.
+    double rechunk_min_gain_mb = -1.0;
+    /// --rechunk_coarsen_min_meta_mb: floor of a coarsening's metadata gain, MB
+    /// (0 removes it); < 0: the policy's.
+    double rechunk_coarsen_min_meta_mb = -1.0;
+    /// --rechunk_coarsen_min_meta_rate: metadata MB per second of estimated
+    /// rebuild a coarsening must reach (0 removes it); < 0: the policy's.
+    double rechunk_coarsen_min_meta_rate = -1.0;
+    /// --rechunk_max_coarsen: largest coarsening factor (1: no cap); 0: the policy's.
+    Int rechunk_max_coarsen = 0;
+    /// --rechunk_grid_bits: the advisor's grid between powers of two; < 0: the policy's.
+    Int rechunk_grid_bits = -1;
+    /// --rechunk_backoff_max: longest back-off, in ticks (0 or 1: none); < 0: the policy's.
+    Int rechunk_backoff_max = -1;
+    /// --rechunk_trace_array <name>: the decider's per-array traces (churn,
+    /// CHUNK_LOG=rechunk=debug; advisor table, CHUNK_LOG=advisor=debug) for
+    /// this array only; empty: every array.
+    std::string rechunk_trace_array;
+    /// --force_rechunk <size>: every advised array re-chunked to this size,
+    /// whatever the advisor says (tests); 0: never.
+    Int  force_rechunk        = 0;
+    Int  force_rechunk_at     = 0;     ///< --force_rechunk_at: first iteration that forces
+    Int  force_rechunk_alt    = 64;    ///< --force_rechunk_alt: --force_rechunk_toggle's other size
+    bool force_rechunk_toggle = false; ///< --force_rechunk_toggle: force at every pass, alternating
+    /// @}
 };
 
 /**
  * @brief Parse argv into a BenchArgs, and select the bench mode.
  *
- * @details Moved VERBATIM out of main(), exit() calls included: --help and an
- *          unknown argument both end the process here, as they always did.
- *          set_bench_mode() is called from inside for --mode, before any
- *          get_ or have_ accessor is read.
+ * @details --help and an unknown argument both end the process here
+ *          (exit()). set_bench_mode() is called from inside for --mode, before
+ *          any get_ or have_ accessor is read.
  */
 BenchArgs parse_bench_args(int argc, char* argv[]);

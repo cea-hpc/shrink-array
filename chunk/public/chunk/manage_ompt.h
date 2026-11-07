@@ -182,9 +182,11 @@ __attribute__((weak)) extern void check_ompt_tool_loaded();
  *          finalize_parallel_phase();
  *          @endcode
  *          with both calls left out under OMPT, where the runtime makes them.
- *          The worksharing goes inside @p body, orphaned: `#pragma omp for`
- *          with its schedule, `nowait`, a reduction on a variable declared
- *          outside... Compiled without OpenMP, @p body runs once.
+ *          The worksharing goes inside @p body: pmp::current_team().for_static()
+ *          and its kin, which every backend splits. An orphaned `#pragma omp for`
+ *          splits only under OpenMP: the std backend runs @p body on each rank
+ *          of its team with the pragma gone, so every rank runs the whole loop.
+ *          A serial build runs @p body once.
  * @param num_threads team size (the num_threads clause); 0: the runtime's.
  * @param body        what every thread of the team runs.
  */

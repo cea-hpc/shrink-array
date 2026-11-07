@@ -16,9 +16,8 @@
 
 #pragma once
 
-// Out-of-line bodies of zero_one_value::Array's mode-gated surfaces (zero_one_value::ParallelSupport,
-// zero_one_value::FastBlockSupport). Included at the end of zero_one_value_array.h, so self() sees a complete
-// Derived.
+// Out-of-line bodies of zero_one_value::FastBlockSupport. Included at the end of zero_one_value_array.h, so self() sees
+// a complete Derived.
 
 #include <tuple> // std::get on the candidate tuples (sweep of the other second-value keys)
 
@@ -26,6 +25,7 @@
 #include "chunk/internal/array_chunk_parallel_common_inline.h" // flush_pending_deferred_ops
 #include "chunk/PMP_CHUNK.h"                                   // CHUNK_PMP_* (make_block_compression)
 #include "chunk/internal/chunk_size_policy.h"                  // set_thread_chunk_size in make_block_compression
+#include "chunk/internal/read_reclaim.h"                       // read_reclaim::PassScope (drain_candidates in a region)
 #include "chunk/config.h"                                      // build_config::chunk_dynamic
 
 namespace shrink_array
@@ -33,6 +33,15 @@ namespace shrink_array
 
 template <typename Derived>
 void zero_one_value::FastBlockSupport<Derived, true>::make_block_compression(this Derived& self)
+{
+    if (!block_pass_refused_in_region())
+    {
+        self.drain_candidates();
+    }
+}
+
+template <typename Derived>
+void zero_one_value::FastBlockSupport<Derived, true>::drain_candidates(this Derived& self)
 {
     if constexpr (build_config::chunk_dynamic)
     {
@@ -66,20 +75,20 @@ void zero_one_value::FastBlockSupport<Derived, true>::make_block_compression(thi
 
         // The passes above drain this array's CURRENT second-value key only. Writes queued
         // before a set_second_value() (or a copy-assignment) sit under an EARLIER key; left
-        // there, resize() reallocates chunk_list under them (dangling &chunk_list[j]). Sweep
+        // there, resize() reallocates chunk_list_ under them (dangling &chunk_list_[j]). Sweep
         // every rank and key: compress this array's leftovers against the current value,
         // clear their flags, drop them by num_tab (as rechunk_drop_candidates()).
         // Sequential point: outside a region only.
         if constexpr (Derived::is_not_bool)
         {
-            using ProxyT   = typename Traits::ProxyType;
-            using ManagerT = typename Traits::ManagerType;
+            using ProxyT   = Traits::ProxyType;
+            using ManagerT = Traits::ManagerType;
 
             const int  num_tab  = ProxyT::share_info_array->get_num_tab(self.registry_key());
             const auto inf      = self.get_info_second_value();
             const int  thr_self = get_thr_rank_fast();
             bool       found    = false;
-            for (const auto& per_rank : ManagerT::map_chunk2_to_compress_potentially_thr)
+            for (const auto& per_rank : ManagerT::zero_one_value_candidates_map_thr)
             {
                 for (const auto& kv : per_rank)
                 {
@@ -100,12 +109,16 @@ void zero_one_value::FastBlockSupport<Derived, true>::make_block_compression(thi
             }
             if (found)
             {
-                ManagerT::remove_from_compress_list_chunk2_by_num_tab(num_tab);
+                ManagerT::remove_from_zero_one_value_candidates_by_num_tab(num_tab);
             }
         }
     }
     else
     {
+        // An array resized inside a region by its owning thread (resize()):
+        // this thread's list only, and other threads may be reading, so the
+        // buffers released wait for a grace period (read_reclaim.h).
+        const read_reclaim::PassScope pass_scope;
         pass_on_rank(CHUNK_PMP_THREAD_RANK);
     }
 }

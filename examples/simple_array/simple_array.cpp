@@ -14,16 +14,16 @@
  * limitations under the License.
  */
 
-#include <bit>     // std::bit_cast (calculate_checksum)
-#include <cassert> // assert
-#include <chrono>  // std::chrono::steady_clock
-#include <cmath>   // std::cos, std::sin, std::sqrt
-#include <cstdint> // std::int64_t, uint64_t
-#include <cstdlib> // std::abort
-#include <random>  // std::mt19937, std::uniform_int_distribution
-#include <array>   // std::array
-#include <fstream> // std::ifstream, std::ofstream
-#include <string>  // std::string, std::to_string
+#include <algorithm> // std::min
+#include <bit>       // std::bit_cast (calculate_checksum)
+#include <chrono>    // std::chrono::steady_clock
+#include <cmath>     // std::cos, std::sin, std::sqrt
+#include <cstdint>   // std::int64_t, uint64_t
+#include <cstdlib>   // std::abort
+#include <random>    // std::mt19937, std::uniform_int_distribution
+#include <array>     // std::array
+#include <fstream>   // std::ifstream, std::ofstream
+#include <string>    // std::string, std::to_string
 
 #include <type_traits>    // std::conditional_t (Array)
 #include <vector>         // std::vector
@@ -187,7 +187,7 @@ int main()
     {
         constexpr int chunk_size = static_cast<int>(shrink_array::static_chunk_size);
 
-        assert(chunk_size <= zero::ChunkDef::size_max);
+        static_assert(chunk_size <= zero::ChunkDef::size_max);
 
 
         if constexpr (chunk_size == 0)
@@ -210,7 +210,9 @@ int main()
         ParamChunk::init_indexes(true);
     }
 
-    constexpr int sz = 1000000000;
+    // 3 arrays of sz doubles: 2.4 GB for std::vector. 1e9 (24 GB at once) made
+    // the ctest fail with bad_alloc on a 30 GB workstation with anything else running.
+    constexpr int sz = 100000000;
     //  constexpr int sz = 100000;
     constexpr int iter_max = 10000;
 
@@ -300,10 +302,7 @@ int main()
 
         int end0 = start0 + size;
 
-        if (end0 > sz)
-        {
-            end0 = sz;
-        }
+        end0 = std::min(end0, sz);
 
         if (k != 0 && k % freq_raz == 0)
         {

@@ -55,7 +55,7 @@ L'interface est proche d'un `std::vector` : `size()`, `resize()`, `at()`, itéra
 
 - **`operator[]` non constant renvoie un proxy** (`zero_one_value::Proxy<T>`), pas une référence. C'est par
   lui que passent toutes les écritures. Les opérateurs composés (`+=`, `*=`, …) sont
-  reprogrammés sur le proxy.
+  redéfinis sur le proxy.
 - **`set_second_value()` doit être appelé hors région parallèle**, avant les écritures : il
   enregistre la seconde valeur dans le registre et crée les listes de candidats à la
   compression pour cette valeur. Un tableau qui ne déclare jamais de seconde valeur se
@@ -155,7 +155,7 @@ Lire un chunk compressé ne coûte rien de plus : on lit dans le tampon constant
 lecture voit les écritures **différées** (section 7.3) déjà émises sur ce chunk :
 
 1. un **filtre grossier** par chunk (le « dirty bitset ») : un bit à zéro signifie qu'aucune
-   écriture différée n'a jamais visé ce chunk, et la lecture repart immédiatement. C'est le
+   écriture différée n'a jamais visé ce chunk, et la lecture se fait aussitôt. C'est le
    cas de loin le plus fréquent ;
 2. sinon, le **compteur précis** d'opérations en attente du chunk décide s'il faut appliquer
    ces opérations (`reader_sync`) avant de lire.
@@ -341,7 +341,7 @@ La compression en vol rend ces chunks à `cst_val2` au fil de l'eau.
 Chaque thread tient une **liste de chunks candidats par seconde valeur** :
 
 ```
-ManagerChunk2::map_chunk2_to_compress_potentially_thr[rang][second_value]
+Manager::zero_one_value_candidates_map_thr[rang][second_value]
 ```
 
 Chaque entrée porte `(chunk, num_chunk, num_tab, nombre d'éléments)`. Le nombre d'éléments
@@ -358,16 +358,26 @@ placés avant :
   septembre 2026, elle n'admettait que l'écriture d'une constante sur un chunk déjà à
   l'autre constante ; un chunk matérialisé par une valeur quelconque puis réécrit élément
   par élément à une constante n'était alors jamais mis en file, et restait matérialisé.
-  Le coût de l'élargissement n'est payé que par les écritures d'une constante : une
-  lecture de l'ancienne valeur, une comparaison et, à la première de chaque passe, la CAS
-  du drapeau ;
+  Le coût de l'élargissement n'est payé que par les écritures d'une constante : la
+  recherche de la liste du rang (le filtre ci-dessous), une lecture de l'ancienne valeur,
+  une comparaison et, à la première de chaque passe, la CAS du drapeau ;
 - l'existence d'une **liste pour cette seconde valeur sur ce rang**
-  (`has_candidate_list`) : un tableau qui n'a jamais appelé `set_second_value()` n'a pas de
-  liste, et n'est jamais mis en file.
+  (`has_candidate_list`). Tout tableau en a une : un tableau qui n'a jamais appelé
+  `set_second_value()` est mis en file sous la clé `T{}`, dont son constructeur crée les
+  listes (`register_no_second_value_key()`). Le test est une garde : il refuse une écriture
+  avant la CAS du drapeau du chunk, car un refus après elle laisserait le drapeau levé et le
+  chunk ne serait plus jamais mis en file.
 
 Un drapeau atomique par chunk (« déjà candidat », `tab_is_inside_chunk_list_to_compress`,
 indexé par `num_tab`) garantit qu'un chunk n'est mis en file **qu'une fois** jusqu'à la
 passe suivante.
+
+Le drapeau a deux valeurs de plus à l'intérieur d'une passe : dès qu'elle a parcouru un
+candidat, la passe met son drapeau à « restitué », avant que sa marque puisse être levée, et une
+écriture qui rend un chunk constant entre-temps trouve cette valeur et se note sur le drapeau
+(« écrit entre-temps ») au lieu de renoncer ; la passe remet ensuite le chunk en file
+(`chunk/internal/queue_flag.h`). Sans cela, un tel chunk était retiré de toutes les listes et
+restait matérialisé (F6, [formal_models_fr.md](formal_models_fr.md) section 8.8).
 
 ### 8.3 Le déclenchement
 
@@ -420,15 +430,13 @@ compressions. Un tampon libéré par un autre rang que son propriétaire est mis
 (« parked ») puis rendu à sa réserve d'origine. Les tableaux assez gros (au-delà de
 `alloc_affinity_min_bytes`, 16 Mio par défaut) peuvent avoir leur propre jeu d'allocateurs
 (clé d'affinité), ce qui permet de restituer leur mémoire d'un bloc quand ils sont
-reconstruits ou détruits ; les slabs vides sont alors rendus au système (sauf build
-`CHUNK_RECLAIM_EMPTY_SLABS=OFF`).
+reconstruits ou détruits ; les slabs vides sont alors rendus au système.
 
 Pour `zero_one_value`, ce jeu n'est créé qu'au **premier rechunk** du tableau (affinité paresseuse) :
 chaque jeu coûte un slab entamé par rang et par taille, soit ~780 Mio sur les 16 tableaux de
 `shrink_bench` à 64 threads, et un tableau jamais reconstruit n'en tire aucun bénéfice. Un
 run dynamique consomme ainsi, au départ, exactement comme le statique à la même taille
-(`zero_one_value` : 19 999 contre 20 009 Mo après l'initialisation). `CHUNK_ALLOC_AFFINITY_EAGER=1`
-crée le jeu dès la création. Détails et mesures : [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) §5.
+(`zero_one_value` : 19 999 contre 20 009 Mo après l'initialisation). Détails et mesures : [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) §5.
 
 ### 9.2 Le rechunk (géométrie dynamique)
 
@@ -447,8 +455,8 @@ décision du **décideur** (`ChunkSizeAdvisor::analyze`, qui estime la mémoire 
 2. vider les listes de réutilisation et préparer les réserves à la nouvelle taille ;
 3. construire un **tableau temporaire** à la nouvelle taille (initialisation des chunks en
    parallèle) ;
-4. le **remplir en parallèle** par tranches (`rechunk_refill`, ordonnancement réglable par
-   `CHUNK_RECHUNK_SCHEDULE`, `guided,16` par défaut) : une tranche dont toutes les sources
+4. le **remplir en parallèle** par tranches (`rechunk_refill`, ordonnancement
+   `guided,16`) : une tranche dont toutes les sources
    sont à la première valeur est sautée ; sinon les valeurs sont relues puis réécrites par
    `copy_range`, et un nouveau chunk dont toutes les sources étaient compressées est
    **replié** tout de suite (`compress()` de la variante sur ce chunk, qui refuse si les
@@ -532,9 +540,9 @@ le laisser sur le chemin élément par élément :
   est réservé à `bool` et renvoie `false` pour les autres types ;
 - la mise en file (`internal::queue_for_compression`) doit **charger la seconde valeur** avant
   d'ajouter le chunk (`set_info_on_chunk()`), puisque les listes de `zero_one_value` sont indexées par
-  elle. Sans ça, les chunks atterrissaient dans la liste de `T{}`, qu'aucune passe ne vide ;
+  elle. Sans cela, les chunks aboutissaient dans la liste de `T{}`, qu'aucune passe ne vide ;
 - en mode compteur (les builds serial), une écriture directe doit **recompter** les deux
-  compteurs du chunk, `nb_val_eq_first_value` et `nb_val_eq_second_value`, que zero_one_value::Proxy tient
+  compteurs du chunk, `nb_val_eq_first_value_` et `nb_val_eq_second_value_`, que zero_one_value::Proxy tient
   sinon à jour écriture par écriture (`internal::resync_counters`, comme le compte des zéros de
   `zero`).
 
@@ -565,6 +573,10 @@ les formes `_mt` écrivent dans une session annoncée au compresseur (étapes 3 
 sur `zero_one_value` comme sur les autres variantes. Exclure `zero_one_value` de `internal::raw_fillable_v`, le
 repli envisagé à l'époque, n'est pas nécessaire.
 
+**Octobre 2026 : normalement corrigé.** Les stores directs recomptent les compteurs, les formes
+`_mt` écrivent dans une session annoncée, et `rechunk_validation` comme le mode check du banc
+passent sur les variantes qui échouaient.
+
 ---
 
 ## 11. Variables d'environnement utiles
@@ -575,16 +587,14 @@ La liste complète, avec les macros et les options CMake, est dans
 
 | variable | effet |
 |---|---|
-| `CHUNK_RECHUNK_SCHEDULE=kind[,chunk]` | ordonnancement de la reconstruction du rechunk (`guided,16` par défaut) |
 | `CHUNK_LOG=rechunk=debug` | temps des phases du rechunk (`memory=debug` : repliements) |
-| `CHUNK_OMPT_STATS=1` | statistiques des régions de synchronisation (build OMPT) |
-| `CHUNK_RECHUNK_DRY_RUN=1` | le décideur analyse et journalise, mais n'applique aucun rechunk (mesurer le coût des analyses) |
-| `CHUNK_RECHUNK_MAX_COARSEN=<n>` | facteur maximal d'un grossissement (4 par défaut) |
-| `CHUNK_ALLOC_AFFINITY_EAGER=1` | jeu d'allocateurs par tableau dès sa création (paresseux par défaut pour `zero_one_value`) |
+| `CHUNK_LOG=ompt=info` | statistiques des régions de synchronisation (build OMPT) |
+| `shrink_bench --rechunk_dry_run` | le décideur analyse et journalise, mais n'applique aucun rechunk (mesurer le coût des analyses ; `RechunkPolicy::dry_run`) |
+| `shrink_bench --rechunk_max_coarsen <n>` | facteur maximal d'un grossissement (4 par défaut ; `RechunkPolicy::max_coarsen_factor`) |
 
 Pour la validation, le crochet de test « écritures différées forcées »
-(`chunk/internal/test_hooks.h`, compilé avec les harnesses) envoie une écriture sur N
-par le chemin différé ; `deferred_path_validation` l'allume (N = 7). L'option de
+(`chunk/internal/test_hooks.h`, compilé avec les tests de validation) envoie une écriture sur N
+par le chemin différé ; `deferred_path_validation` l'active (N = 7). L'option de
 compilation `CHUNK_FORCE_DEFER_EVERY=N` le force dans tout l'arbre (à utiliser à 32
 threads au plus).
 
@@ -592,7 +602,7 @@ Options CMake liées aux performances des bancs :
 
 | option | effet |
 |---|---|
-| `SHRINK_INTEL_LIBM` (ON) | x86-64, hors icpx : lie les exécutables à la libm d'Intel (`libimf`) si elle est trouvée (`INTEL_LIBM_DIR`, `$CMPLR_ROOT/lib`, ou à côté d'`icpx`). AMD Milan, GNU : 15,7 s → 12,4 s sur `shrink_bench_zero_any_256` |
+| `SHRINK_INTEL_LIBM` (ON) | x86-64, hors icpx : lie les exécutables à la libm d'Intel (`libimf`) si elle est trouvée (`INTEL_LIBM_DIR`, `$CMPLR_ROOT/lib`, ou à côté d'`icpx`). AMD Milan, GNU : 15,7 s → 12,4 s sur `shrink_bench_omp_zero_any_256` |
 | `SHRINK_ARM_LIBM` (OFF) | aarch64, GNU/Clang : lie `libamath` d'ArmPL (`ARMPL_LIBM_DIR`). Aucun gain mesuré sur Grace (RHEL 9.6) ; conservée pour refaire la mesure (`-DSHRINK_ARM_LIBM=ON -DARMPL_LIBM_DIR=<dir>`) |
 
 ---
@@ -610,6 +620,6 @@ Options CMake liées aux performances des bancs :
 | lecteurs et récupération des tampons | `internal/read_reclaim.h` |
 | compresseur, écritures différées | `internal/compression_manager.h` |
 | géométrie | `internal/chunk_size_policy.h` |
-| rechunk, décideur | `internal/array_chunk_rechunk_inline.h`, `chunk_size_advisor.h` |
+| rechunk, décideur | `internal/array_chunk_rechunk_inline.h`, `internal/array_chunk_rechunk_refill.h`, `chunk_size_advisor.h` |
 | opérations sur plages | `array_chunk_range_ops.h` |
-| harnais de validation | `examples/validation/` (`rechunk_validation`, `compress_roundtrip`, `deferred_path_validation`, `pool_accounting`, `fill_range_mt_validation`, …) |
+| tests de validation | `examples/validation/` (`rechunk_validation`, `compress_roundtrip`, `deferred_path_validation`, `pool_accounting`, `fill_range_mt_validation`, …) |

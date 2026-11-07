@@ -67,7 +67,7 @@ se voient, chaque côté a une **issue de repli** qui ne bloque pas : l'écrivai
 écriture (§5.2), le compresseur **renonce** à sa passe (§5.3). Il n'y a donc ni tour ni
 attente non bornée.
 
-### 2.2 Pourquoi il casse sur un processeur moderne
+### 2.2 Pourquoi il échoue sur un processeur moderne
 
 La preuve ci-dessus suppose que l'écriture (1) est visible des autres cœurs **avant** que la
 lecture (2) ne s'exécute. Ce n'est pas le cas sur un processeur réel : une écriture part
@@ -91,7 +91,7 @@ ne suffit pas : elle ordonne écriture→écriture et lecture→lecture, pas éc
 
 ## 3. La version symétrique
 
-C'est la forme « manuel » : **les deux côtés** paient une barrière complète.
+C'est la forme « de manuel » : **les deux côtés** paient une barrière complète.
 
 ```cpp
 // écrivain (WriteCompressSyncPolicy::begin_write + announce_write, forme symétrique)
@@ -421,7 +421,7 @@ tient pas de drapeau d'écrivain (`alloc_chunk`, l'application d'un flush) : att
 compresseur ne puisse voler **ce** chunk (sa marque, ou `stealing_inflight_` sans marques),
 sans quoi l'allocation pourrait reprendre le bloc qu'une passe est en train de rendre. Un
 écrivain du chemin rapide n'attend pas : une marque qu'il voit après son regard n° 2 appartient
-à une passe **parquée** sur son propre drapeau, qui ne vole rien avant `end_write` ; attendre
+à une passe **garée** sur son propre drapeau, qui ne vole rien avant `end_write` ; attendre
 ferait s'attendre les deux jusqu'à épuisement du budget de yields du compresseur
 ([formal_models_fr.md](formal_models_fr.md), F2).
 
@@ -435,14 +435,14 @@ ferait s'attendre les deux jusqu'à épuisement du budget de yields du compresse
 - **Garder la barrière de compilateur** de la forme asymétrique, et l'ordre du programme
   annonce → regard.
 - **Toutes les attentes sont bornées, et chaque côté a une issue de repli** (différer,
-  renoncer). Le progrès est garanti par la passe entre deux régions et par le vidage de fin de
+  renoncer). La progression est garantie par la passe entre deux régions et par le vidage de fin de
   phase, qui tournent sans concurrence.
 - **Ne jamais attendre `hard_inflight_` (ni un compte des pilotes de passe) depuis un chemin qui peut tenir
   un drapeau d'écrivain ou un verrou de rang** : seulement `stealing_inflight_` ou la marque du
   chunk.
 - **Le côté rare doit rester rare.** Toute modification qui multiplie les annonces de
   compresseur ou de vidage multiplie les `membarrier`.
-- **Après toute modification**, relancer en build de vérification et sous TSan les harnais
+- **Après toute modification**, relancer en build de vérification et sous TSan les tests de validation
   `deferred_path_validation` (écritures différées forcées) et `read_reclaim_validation` (avec
   et sans `CHUNK_TEST_READ_DELAY_EVERY`, et sous ASan en std-alloc), puis une série
   `multi_launch_stress.py` : les défauts de ce code se manifestent une fois sur des milliers de

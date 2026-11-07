@@ -26,7 +26,6 @@
 #include "chunk/internal/all_type_chunk_decl.h" // the declarations these bodies belong to
 #include "chunk/config.h"                       // build_config::chunk_dynamic, chunk_config::use_zero*
 #include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/for_each_type.h"       // for_each_type
 #include "chunk/internal/manager_chunk.h"       // ManagerChunk<ChunkT, T>
 #include "chunk/singleton.h"                    // SingletonChk<AllTypeChunk>, for ensure_manager
 #include "chunk/chunk_traits.h"                 // the variants' declarations initialize<Types> names
@@ -85,13 +84,6 @@ void AllTypeChunk::ensure_manager()
         SingletonChk<AllTypeChunk>::get_ref().register_manager<ManagerT>();
         return true;
     }();
-}
-
-template <template <typename> class ChunkT, typename Types>
-void AllTypeChunk::fill_manager_chunk()
-{
-    // One ManagerChunk per T of Types (a std::tuple).
-    for_each_type<Types>([this]<typename T> { this->template register_manager<ManagerChunk<ChunkT, T>>(); });
 }
 
 template <typename Types>

@@ -4,8 +4,8 @@
 """Sum the re-chunk phase times (CHUNK_LOG=rechunk=debug) of shrink_bench logs, one line per log.
 
 For each log: the number of re-chunks, the bench's "Elapsed time" lines, then
-each phase of the `a -> b phases (ms)` and `slices` lines summed over
-every re-chunk of the run, in seconds. Comparing two thread counts shows which
+each phase of the `a -> b phases (ms)`, `slices` and `teardown split` lines
+(the latter prefixed `td:`) summed over every re-chunk of the run, in seconds. Comparing two thread counts shows which
 phase grows.
 
 Usage: scripts/rechunk_trace_summary.py <log>...
@@ -18,7 +18,7 @@ import re
 import sys
 
 # As the log writes them (rechunk=debug) and as they were printed before.
-LINE = re.compile(r"(?:\[RECHUNK\]|\[shrink_array\]\[rechunk\]\[D\]\[\d+\]) \d+ -> \d+ (phases|slices \d+) \(ms\): (.*)")
+LINE = re.compile(r"(?:\[RECHUNK\]|\[shrink_array\]\[rechunk\]\[D\]\[\d+\]) \d+ -> \d+ (phases|slices \d+|teardown split) \(ms\): (.*)")
 
 
 def summary(path):
@@ -36,6 +36,8 @@ def summary(path):
             for part in m.group(2).split("|"):
                 key, value = part.strip().rsplit(" ", 1)
                 key = key.replace("of which ", "  ")
+                if m.group(1) == "teardown split":
+                    key = "td:" + key
                 totals[key] = totals.get(key, 0.0) + float(value)
     return n, elapsed, totals
 

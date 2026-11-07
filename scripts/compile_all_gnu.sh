@@ -21,6 +21,7 @@ module unload fortran/gcc 2>/dev/null || true
 # The newest CMake the modules offer (4.0.3), else 3.31.4, else the default.
 chunk_module_load_first cmake/4.0.3 cmake/3.31.4 cmake
 module load ninja
+chunk_ensure_ninja || exit 1   # an x86 ~/.local/bin/ninja on an ARM node: site_env.sh
 
 # Parse command-line arguments
 DRYRUN=false
@@ -79,9 +80,18 @@ while [[ $# -gt 0 ]]; do
             export CHUNK_BUILD_TARGET="${1#*=}"
             shift
             ;;
+        --pool=*)
+            # Shared with other runs (see --pool in compile_all.sh, pool_init).
+            # Under compile_all.sh it comes through CHUNK_POOL instead.
+            export CHUNK_POOL="${1#*=}"
+            [ -n "$CHUNK_POOL" ] || { echo "ERROR: --pool= (expected a name or a directory)" >&2; exit 2; }
+            shift
+            ;;
         --exec=*)
             # Build only the Ninja target(s) matching it inside each selected
-            # build dir, e.g. --exec=shrink_bench_zero_64, --exec='*_dyn', or a
+            # build dir, e.g. --exec='shrink_bench_*_zero_256' (the bench
+            # executables carry their backend: shrink_bench_omp_zero_256 in
+            # an OpenMP build, shrink_bench_std_ / _serial_ elsewhere), --exec='*_dyn', or a
             # comma-separated list of both. Combine with
             # --target=<glob> to also restrict WHICH build dirs are configured.
             export CHUNK_BUILD_EXEC="${1#*=}"
@@ -90,7 +100,7 @@ while [[ $# -gt 0 ]]; do
         *)
             # Previously swallowed silently — a --debug_only (underscore) went
             # unnoticed and the intended flag was never applied.
-            echo "ERROR: unknown argument '$1' (expected --dryrun|--build|--debug-only|--fresh-cache|--no-ipa-icf|--no-hardening|--with-ledger|--jobs=<N>|--target=<glob>|--exec=<ninja-target>)" >&2
+            echo "ERROR: unknown argument '$1' (expected --dryrun|--build|--debug-only|--fresh-cache|--no-ipa-icf|--no-hardening|--with-ledger|--jobs=<N>|--target=<glob>|--exec=<ninja-target>|--pool=<id>)" >&2
             exit 2
             ;;
     esac
@@ -129,12 +139,21 @@ check_target_arg $(known_build_names "$0")
 build_rep="$CHUNK_BUILD_REP"
 
 create_build_rep
+pool_init
+
+# The g++ PATH resolves to before the loads below: they decide the compiler
+# only if they change it (see after the block).
+gxx_before_loads="$(command -v g++ 2>/dev/null)"
 
 # --- Architecture detection & compiler/flags selection ---
 if [ "$(uname -m)" = "aarch64" ]; then
     echo "[ARM/aarch64 detected] Loading gcc/16.1.0 with -mcpu=native"
-    module load binutils/2.43
+    # binutils/2.43 where it exists, else the newest binutils module; the
+    # check stops here if the system one (RHEL 9: 2.35) is still the one used.
+    newest_binutils=$(chunk_newest_module binutils)
+    [ -n "$newest_binutils" ] && chunk_module_load_first binutils/2.43 "$newest_binutils"
     module load gcc/16.1.0
+    chunk_check_binutils gnu || exit 1
     ARCH_FLAGS="-DCMAKE_CXX_FLAGS=-mcpu=native" # C++23: required by the CMakeLists itself
 else
     # Same compiler as aarch64. The g++-16 x86_64 -O3 ICEs have their
@@ -152,13 +171,21 @@ if [ -n "$CHUNK_CXX_STANDARD" ]; then
     echo "[std] C++$CHUNK_CXX_STANDARD for every gnu configuration (CHUNK_CXX_STANDARD)"
 fi
 
-# Fetch the g++ path from the loaded module (without modules: CHUNK_GXX,
-# the newest g++-N on PATH, see site_env.sh)
-if [ "$CHUNK_HAVE_MODULES" = true ]; then
-    gxx="$(command -v g++ 2>/dev/null)"
-else
+# The g++ of the loads when they changed what g++ resolves to (a module tree
+# whose gcc/16 now heads PATH), whether or not CHUNK_HAVE_MODULES says modules
+# are there: testing that alone took CHUNK_GXX -- the broken gcc-toolset-14 --
+# over the gcc 16 the loads had just put first. Loads that changed nothing:
+# CHUNK_GXX (the source-built GCC, a gcc-toolset, the newest g++-N, see
+# site_env.sh), else the g++ on PATH.
+gxx_after_loads="$(command -v g++ 2>/dev/null)"
+if [ -n "$gxx_after_loads" ] && [ "$gxx_after_loads" != "$gxx_before_loads" ]; then
+    gxx="$gxx_after_loads"
+    echo "[site] g++ from the loaded modules: $gxx"
+elif [ -n "${CHUNK_GXX:-}" ]; then
     gxx="$(command -v "$CHUNK_GXX" 2>/dev/null)"
-    echo "[site] no modules: gcc is $CHUNK_GXX"
+    echo "[site] the loads left g++ unchanged: gcc is $CHUNK_GXX"
+else
+    gxx="$gxx_after_loads"
 fi
 [ -z "$gxx" ] && gxx="g++"  # dry-run fallback: bare name, resolved at configure time
 export CXX="$gxx"
@@ -393,6 +420,7 @@ else
     wait_all
 fi
 rc=$?
+pool_summary
 # Standalone run: a --target / --exec that let nothing through is an error
 # (under compile_all.sh the parent gives that verdict for both scripts).
 if ! check_arg_epilogue; then

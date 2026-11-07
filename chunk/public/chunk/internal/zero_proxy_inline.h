@@ -139,7 +139,7 @@ T* zero::Proxy<T>::perform_core_assignment(T* vals, InT<T> value) const noexcept
 
     if constexpr (build_config::do_check)
     {
-        global_check_write_nan(value, num_);
+        chunk_config::CheckNaN<chunk_config::do_check>::maybe(value, static_cast<long>(num_));
     }
     return vals;
 }
@@ -233,7 +233,7 @@ void zero::Proxy<T>::execute_arithmetic_compound_operation(Op op, [[maybe_unused
 //     they run where no drain can. check_no_flush_outside_start()
 //     (block_pass_precheck.h) trips in check builds otherwise.
 //
-// (The re-chunk's fold has no zero branch: array_chunk_rechunk_inline.h.)
+// (The re-chunk's fold has no zero branch: array_chunk_rechunk_refill_inline.h, fold_back.)
 //
 // zero_any::Proxy's twins (zero_any_proxy_inline.h) carry a retry loop instead. Do not add a
 // compressor bypassing start() where a drain can run, nor call an `_async`
@@ -327,7 +327,8 @@ T zero::Proxy<T>::assign_impl(InT<U> value) noexcept
     // every write for a test only the `value == zero` branch makes.
     if constexpr (chunk_config::use_compression_with_counter)
     {
-        if (value == zero)
+        // The stored value, not the operand: char = 256 stores a zero.
+        if (static_cast<T>(value) == zero)
         {
             if (is_cst_val())
             {
@@ -452,7 +453,7 @@ T zero::Proxy<T>::assign_impl(InT<U> value) noexcept
     else
     {
         // Serial path. assign_impl's counter block above ALREADY maintained
-        // nb_val_eq_zero. Do NOT go through lbd_equal_core ->
+        // nb_val_eq_zero_. Do NOT go through lbd_equal_core ->
         // perform_core_assignment: its counter block would count a SECOND time,
         // and manage_full_zero would fire on a chunk that is not all-zero.
         // Apply the write directly (arm + store), with only the arm-time
@@ -481,7 +482,7 @@ template <typename T>
 template <typename Lambda>
 void zero::Proxy<T>::execute_simple_operation(Lambda operation)
 {
-    // Snapshot BEFORE any arming, to maintain nb_val_eq_zero across the write
+    // Snapshot BEFORE any arming, to maintain nb_val_eq_zero_ across the write
     // for an ALREADY-ARMED chunk (0 -> non-zero must decrement it, else the
     // counter drifts up and manage_full_zero() compresses a non-zero chunk).
     // Mirrors execute_inplace_operation.
@@ -677,70 +678,63 @@ void zero::Proxy<T>::apply_compound_operation(InT<U> operand, BinaryOp op)
     // Cross-rank RMW materialisation: pull any foreign deferred write first.
     chunk_.reader_sync(num_);
 
-    if constexpr (is_not_bool)
+    if constexpr (chunk_config::use_compression_with_counter)
     {
-        if constexpr (chunk_config::use_compression_with_counter)
+        // raw-read: serial counter mode (no fast block compression, no concurrent pass)
+        if (values_[num_] != zero)
         {
-            // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-            if (values_[num_] != zero)
+            if constexpr (build_config::do_check)
             {
-                if constexpr (build_config::do_check)
-                {
-                    global_check_write_nan(operand, num_);
-                }
-
-                execute_arithmetic_compound_operation(
-                    op, static_cast<T>(operand),
-                    [this, &operand](auto op_func) // operand: this call's parameter, alive for the call
-                    {
-                        using LocalCalcType = std::common_type_t<T, BaseT<U>>;
-
-                        const InT<T> result = static_cast<T>(op_func(static_cast<LocalCalcType>(Base::load_value()),
-                                                                     static_cast<LocalCalcType>(operand)));
-
-                        Base::store_value(result);
-                    });
-
-                // Test the result, not the operand: `x /= 0.0` is +-inf, and
-                // counting it as a zero would recompress a chunk holding infinities.
-                // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-                if (values_[num_] == zero && !is_cst_val())
-                {
-                    chunk_.inc_nb_val_eq_zero();
-                    if (chunk_.is_full_zero(this->chunk_size()))
-                    {
-                        this->manage_full_zero();
-                    }
-                }
+                chunk_config::CheckNaN<chunk_config::do_check>::maybe(operand, static_cast<long>(num_));
             }
-        }
-        else
-        {
-            // const T, not InT<T>: apply_atomic_op() stores to values[num]
-            // and still reads v_old (in_t.h). Read under a ReadSection (see
-            // ProxyBase::read_values_outside_session).
-            const T v_old = Base::read_values_outside_session();
-            // A zero v_old is not enough to skip: a queued deferred op may change it.
-            if (v_old != zero || CompressionManagerType::have_deferred_queue())
-            {
-                Base::apply_atomic_op(op, static_cast<T>(operand), v_old);
 
-                // Do NOT read values[num] back here: apply_atomic_op may have
-                // DEFERRED the op, and a foreign thread draining this chunk
-                // (reader_sync -> flush_chunk_all_ranks) can be replaying it now.
+            execute_arithmetic_compound_operation(
+                op, static_cast<T>(operand),
+                [this, &operand](auto op_func) // operand: this call's parameter, alive for the call
+                {
+                    using LocalCalcType = std::common_type_t<T, BaseT<U>>;
+
+                    const InT<T> result = static_cast<T>(
+                        op_func(static_cast<LocalCalcType>(Base::load_value()), static_cast<LocalCalcType>(operand)));
+
+                    Base::store_value(result);
+                });
+
+            // Test the result, not the operand: `x /= 0.0` is +-inf, and
+            // counting it as a zero would recompress a chunk holding infinities.
+            // raw-read: serial counter mode (no fast block compression, no concurrent pass)
+            if (values_[num_] == zero && !is_cst_val())
+            {
+                chunk_.inc_nb_val_eq_zero();
+                if (chunk_.is_full_zero(this->chunk_size()))
+                {
+                    this->manage_full_zero();
+                }
             }
         }
     }
     else
     {
-        CHUNK_LOG(error, general, "operator not implemented for bool: the element is left unchanged");
+        // const T, not InT<T>: apply_atomic_op() stores to values[num]
+        // and still reads v_old (in_t.h). Read under a ReadSection (see
+        // ProxyBase::read_values_outside_session).
+        const T v_old = Base::read_values_outside_session();
+        // A zero v_old is not enough to skip: a queued deferred op may change it.
+        if (v_old != zero || CompressionManagerType::have_deferred_queue())
+        {
+            Base::apply_atomic_op(op, static_cast<T>(operand), v_old);
+
+            // Do NOT read values[num] back here: apply_atomic_op may have
+            // DEFERRED the op, and a foreign thread draining this chunk
+            // (reader_sync -> flush_chunk_all_ranks) can be replaying it now.
+        }
     }
 }
 
 template <typename Derived, typename T, bool Enabled>
 void zero::ProxyFastCompPolicy<Derived, T, Enabled>::trigger_compression_if_needed(int thr_rank) noexcept
 {
-    const auto& vec_tuple = Manager::chunk_to_compress_potentially_thr[thr_rank];
+    const auto& vec_tuple = Manager::zero_candidates_thr[thr_rank];
 
     const int sz = static_cast<int>(vec_tuple.size());
 
@@ -766,7 +760,7 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::perform_compression(this co
 
     const int szm = Manager::get_size_max_number_of_chunk_to_check_compress();
 
-    const auto& vec_tuple = Manager::chunk_to_compress_potentially_thr[thr_rank];
+    const auto& vec_tuple = Manager::zero_candidates_thr[thr_rank];
 
     const int sz_before = static_cast<int>(vec_tuple.size());
 
@@ -786,6 +780,145 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::perform_compression(this co
     // Looked at, whether or not there was work: clear the flag. See
     // mark_list_dangerous_for_thread.
     CompressionManagerType::mark_list_safe_for_thread(thr_rank);
+}
+
+// ---------------------------------------------------------------------------
+// shrink_array::PointerMap<T>
+// ---------------------------------------------------------------------------
+
+template <typename T>
+[[nodiscard]] int zero::PointerMap<T>::get_num_tab(Key key) const noexcept
+{
+    for (const auto& [entry_key, tab] : vec_)
+    {
+        if (entry_key == key)
+        {
+            return tab;
+        }
+    }
+
+    CHUNK_INVARIANT_FAILED("[PointerMapChunk get_num_tab] key NOT FOUND: this={} size={} key={}", this, vec_.size(),
+                           key);
+}
+
+// ---------------------------------------------------------------------------
+// shrink_array::ProxyFastCompPolicy<Derived, T, Enabled>
+// ---------------------------------------------------------------------------
+
+template <typename Derived, typename T, bool Enabled>
+void zero::ProxyFastCompPolicy<Derived, T, Enabled>::set_num_tab() noexcept
+{
+    // Armed by the array's operator[] (see zero_any::Proxy::set_num_tab): the
+    // registry lookup only for a proxy armed otherwise.
+    if (num_tab_ >= 0) [[likely]]
+    {
+        return;
+    }
+    num_tab_ = Derived::get_num_tab(ptr_on_array_);
+}
+
+template <typename Derived, typename T, bool Enabled>
+[[nodiscard]] int
+zero::ProxyFastCompPolicy<Derived, T, Enabled>::get_num_tab_async(auto*                               ctx,
+                                                                  [[maybe_unused]] ArrayKey<Chunk<T>> ptr) noexcept
+{
+    // The context's num_tab, captured at enqueue: the one the replay proxy
+    // is armed with (make_proxy_with_info), without a registry scan per
+    // replayed op. Check builds compare it with the registry while the
+    // array is still registered.
+    if constexpr (build_config::any_check)
+    {
+        if (Derived::share_info_array->exists(ptr) && Derived::share_info_array->get_num_tab(ptr) != ctx->num_tab)
+        {
+            CHUNK_INVARIANT_FAILED("[Proxy get_num_tab_async] ctx num_tab={} but the registry says {} for {}",
+                                   ctx->num_tab, Derived::share_info_array->get_num_tab(ptr), ptr);
+        }
+    }
+    return ctx->num_tab;
+}
+
+// ---------------------------------------------------------------------------
+// shrink_array::Proxy<T>
+// ---------------------------------------------------------------------------
+
+template <typename T>
+void zero::Proxy<T>::create_value() const noexcept
+{
+    if constexpr (build_config::chunk_dynamic)
+    {
+        // Route this (possibly worker-thread) allocation to the allocator
+        // for THIS array's chunk size before materializing.
+        shrink_array::set_thread_chunk_size(this->chunk_size());
+        shrink_array::set_thread_alloc_key(this->alloc_key());
+    }
+    chunk_.create_value();
+}
+
+template <typename T>
+template <typename WriteFn>
+CHUNK_FORCE_INLINE bool zero::Proxy<T>::write_with_optional_lock(WriteFn write_fn) noexcept
+{
+    const auto lbd_info = [this]
+    {
+        if constexpr (chunk_config::use_fast_block_compression)
+        {
+            set_info_on_chunk();
+        }
+    };
+
+    return Base::write_with_optional_lock_impl([&]() noexcept { write_fn(); }, lbd_info);
+}
+
+template <typename T>
+[[nodiscard]] bool zero::Proxy<T>::fold_if_full_zero() const
+{
+    if constexpr (chunk_config::use_compression_with_counter)
+    {
+        if (chunk_.is_not_cst_val1() && chunk_.is_full_zero(this->chunk_size()))
+        {
+            if constexpr (build_config::chunk_dynamic)
+            {
+                shrink_array::set_thread_chunk_size(this->chunk_size());
+                shrink_array::set_thread_alloc_key(this->alloc_key());
+            }
+            this->manage_full_zero();
+            return true;
+        }
+    }
+    return false;
+}
+
+template <typename T>
+zero::Proxy<T>::operator T() const noexcept
+{
+    this->check_not_stale();
+    if constexpr (chunk_config::stats)
+    {
+        increm_chunk_read<ChunkType>();
+    }
+
+    if constexpr (build_config::threaded)
+    {
+        // chunk_size_frozen_ != 0: a replay proxy whose ptr_on_array may
+        // dangle (see ProxyBase::chunk_size_frozen_) -- never dereference it;
+        // it runs inside a flush, so go straight to the gated read.
+        if (chunk_size_frozen_ == 0U && ptr_on_array_ != nullptr) [[likely]]
+        {
+            if (!ptr_on_array_->is_chunk_dirty(num_chunk_)) [[likely]]
+            {
+                // A pure read, like element_at: inside a ReadSection, or a
+                // pass in the region may release the buffer between the
+                // pointer load and the element load (read_reclaim.h).
+                const read_reclaim::ReadSection section;
+                // raw-read: inside a read_reclaim::ReadSection
+                return values_[num_];
+            }
+        }
+        return Base::read_pure();
+    }
+
+    // raw-read: serial build (no OpenMP, no concurrent pass)
+    return values_[num_];
 }
 
 } // namespace shrink_array

@@ -45,16 +45,45 @@ lue dans le tampon du chunk ou dans `cst_val1`, après la barrière de lecture.
 
 L'écriture passe par le proxy `Proxy<T>` :
 
-- écrire **zéro** dans un chunk compressé : rien à faire ;
+- écrire **zéro** dans un chunk compressé : rien à faire, sauf si une écriture différée est en
+  attente sur le chunk (`pending_any()`) : l'écriture passe alors par le moteur ;
 - écrire une **autre valeur** dans un chunk compressé : le chunk est **matérialisé** (un
-  tampon pris dans la liste de réutilisation du thread ou alloué, pré-rempli de zéros, publié
-  par CAS), puis la valeur est écrite ;
+  tampon pris dans la liste de réutilisation du thread, déjà à zéro puisqu'un chunk n'est
+  compressé qu'entièrement nul, ou alloué et mis à zéro ; publié par CAS), puis la valeur est
+  écrite ;
 - écrire dans un chunk matérialisé : simple écriture.
+
+Le déroulé d'une écriture dans un build OpenMP : les étapes du moteur sont celles du §7.2 de
+[algo_zero_one_value_fr.md](algo_zero_one_value_fr.md), résumées ici ; le reste est ce que `zero`
+fait à sa façon.
+
+```mermaid
+flowchart TD
+    A["zero::Proxy::assign_impl"] --> B{"0 sur un chunk compressé,<br/>aucune opération différée en attente ?<br/>(is_cst_val_and_v_equal_zero)"}
+    B -->|oui| B1["rien à faire"]
+    B -->|non| C["moteur du 7.2 (write_with_optional_lock) :<br/>set_info_on_chunk, opérations différées,<br/>wait_out_compressor, announce_write"]
+    C --> D{"revérification :<br/>compresseur ?"}
+    D -->|oui| D1["end_write + écriture DIFFÉRÉE<br/>(lbd_equal_asynch)"]
+    D -->|non| E["corps lbd_equal_core : lire old_value<br/>AVANT toute matérialisation"]
+    E --> F{"chunk à cst_val1 ?<br/>(perform_core_assignment)"}
+    F -->|oui| G["create_value : tampon de la liste de réutilisation,<br/>déjà à zéro, ou neuf et mis à zéro,<br/>CAS cst_val1 -> tampon, un CAS perdu le recycle"]
+    F -->|non| H
+    G --> H["store_value_at"]
+    H --> I{"ancienne != 0 et nouvelle == 0, ou élément<br/>changé par un autre écrivain ?<br/>(mark_for_compression_core)"}
+    I -->|oui| J["add_to_compression_list :<br/>queue_flag::try_queue, puis ajout"]
+    I -->|non| K
+    J --> K["end_write + entretien du 7.2<br/>(trigger_compression_if_needed)"]
+```
+
+En build séquentiel, ni moteur ni liste de candidats : `assign_impl` tient lui-même le compteur
+de zéros (`inc_nb_val_eq_zero`, `dec_nb_val_eq_zero`), compresse le chunk tout de suite quand il
+devient entièrement nul (`manage_full_zero`), et sinon le matérialise (`create_value`) et écrit
+directement.
 
 ## 4. Quand un chunk devient candidat à la compression
 
 **Builds séquentiels** : chaque chunk tient un **compteur de zéros**
-(`ChunkCounterPolicy`, `nb_val_eq_zero`). Quand il atteint le nombre d'éléments du chunk, le
+(`ChunkCounterPolicy`, `nb_val_eq_zero_`). Quand il atteint le nombre d'éléments du chunk, le
 chunk est compressé tout de suite (`manage_full_zero`). Ce compteur doit être exactement
 synchronisé avec le contenu : un compteur désynchronisé compresserait un chunk qui ne l'est
 pas, d'où le soin mis à le propager dans les copies.
@@ -77,21 +106,48 @@ Quand la liste d'un thread dépasse le seuil de déclenchement (§6), une passe
 2. chaque candidat est **réservé** (`steal_mark`), avant l'ouverture de la fenêtre de
    compression (`CompressionManager::start()`), dont la barrière publie les réservations ;
 3. `fill_list_to_compress` relit chaque candidat et ne garde que ceux qui sont **entièrement
-   à zéro** ;
+   à zéro** ; les autres sont démarqués tout de suite, et le drapeau de file de chaque candidat
+   parcouru est rendu (`queue_flag::hand_back`) ;
 4. chacun de ceux-là est compressé (`clear_int_st` : `values` repasse à `cst_val1` par CAS, et
-   le tampon rejoint la liste de réutilisation) ;
-5. les réservations sont levées et les octets « déjà en liste » remis à zéro.
+   le tampon rejoint la liste de réutilisation après la période de grâce des sections de
+   lecture) ;
+5. les réservations restantes sont levées, puis les drapeaux de file (`queue_flag::release`) :
+   un candidat écrit entre-temps est remis en liste, de même que le chunk de l'écriture qui a
+   déclenché la passe s'il est matérialisé.
 
 Une liste de candidats mélange les chunks de **tous les tableaux** d'un même type, qui
 peuvent avoir des tailles différentes après un rechunk : chaque chunk est compressé avec
 **son** nombre d'éléments, porté par l'entrée de la liste.
+
+Le déroulé de la passe, dans le style du §8.4 de [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md) :
+
+```mermaid
+flowchart TD
+    A["perform_compression : flush_deferred,<br/>puis make_block_compression"] --> B{"vidage en cours ?<br/>(block_pass_yields_to_flush)"}
+    B -->|oui| B1["renoncer, rien n'est marqué"]
+    B -->|non| C["steal_mark de chaque candidat"]
+    C --> D{"CompressionManager::start"}
+    D -->|refusé| D1["steal_unmark de tous, renoncer"]
+    D -->|accepté| E["fill_list_to_compress à la taille n_elems de l'entrée :<br/>written et is_constant_to 0 ?<br/>puis queue_flag::hand_back"]
+    E -->|oui| F["liste ll_compt"]
+    E -->|non| G["steal_unmark tout de suite"]
+    F --> H["clear_int_st : CAS values -> cst_val1,<br/>free_block_to_pool après une période de grâce,<br/>steal_unmark"]
+    H --> I["chaque candidat : steal_unmark, puis queue_flag::release :<br/>écrit entre-temps -> remis en liste"]
+    G --> I
+    I --> J["chunk déclencheur remis en liste s'il est matérialisé,<br/>finish()"]
+```
+
+Ce qui diffère de `zero_one_value` : une liste de candidats par rang
+(`zero_candidates_thr`), et non une par seconde valeur, et une seule constante
+cible, donc une seule liste de sortie. Les builds séquentiels n'ont pas de passe
+(`make_block_compression` y est vide) : c'est le compteur de zéros qui compresse (§4).
 
 ## 6. Le seuil de déclenchement
 
 Il vaut `somme_chunk_create / (100 × nombre de threads)`, avec un plancher de 100 candidats
 (`ChunkDef` : `factor_div_nb_chunk_for_compress`, `size_min_list_chunk_to_check_compress`).
 `somme_chunk_create` est le nombre de chunks existants de ce type. Deux corrections de
-septembre 2026 le tiennent juste :
+septembre 2026 le maintiennent exact :
 
 - il est **décrémenté** à la destruction d'un tableau (sans quoi il ne faisait que croître :
   seuil de 390 au début d'un run, ~42 000 à la fin, et presque plus aucune compression) ;
@@ -105,7 +161,7 @@ fréquence des passes.
 Le déroulé général est celui de [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) §4. Deux
 particularités viennent du volume de données de `zero` :
 
-- **la reconstruction par tranches** (16 par défaut, `CHUNK_RECHUNK_SLICES`) : chaque tranche
+- **la reconstruction par tranches** (16) : chaque tranche
   libère les anciens chunks qu'elle a recopiés, et entre deux tranches, les réserves de
   l'ancienne taille sont vidées et les slabs vidés rendus au système. Pic de la
   reconstruction à 64 threads : +6,9 Go en une passe, +1,7 Go en 16 tranches ;
@@ -126,5 +182,5 @@ raisons à ce gain faible :
   statique 1 024), pour une raison encore inconnue : un build dynamique démarré directement à
   1 024 va aussi vite que le statique, et `zero_one_value` ne ralentit pas après ses rechunks.
 
-Pour une charge comme celle du banc, un `zero` **statique** à la bonne taille reste aujourd'hui le
+Pour un cas comme celui du banc, un `zero` **statique** à la bonne taille reste aujourd'hui le
 meilleur choix.

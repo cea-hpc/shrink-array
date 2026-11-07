@@ -162,42 +162,11 @@ class ScopedRingLog
 {
   public:
     /// @param payload_value Optional payload. 0 means no payload.
-    explicit ScopedRingLog(uint32_t payload_value = 0) noexcept
-    {
-        if constexpr (chunk_config::ring_log_debug)
-        {
-            tid_     = get_tid();
-            payload_ = payload_value;
-            ended_   = false;
-            ring_log_start(tid_, BeginEvent, payload_);
-        }
-    }
+    explicit ScopedRingLog(uint32_t payload_value = 0) noexcept;
 
     /// @brief Emit EndEvent unless in Manual mode; in Manual mode, check builds print a message on stderr when
     ///        end() was not called.
-    ~ScopedRingLog() noexcept
-    {
-        if constexpr (chunk_config::ring_log_debug)
-        {
-            if constexpr (!Manual)
-            {
-                ring_log_end(tid_, EndEvent, payload_); // end, not start
-            }
-            else
-            {
-                // Manual mode: stop (in check builds only) if the user forgot to call .end()
-                if constexpr (build_config::any_check)
-                {
-                    if (!ended_)
-                    {
-                        CHUNK_INVARIANT_FAILED("ScopedRingLog<Manual>: end() not called before destruction "
-                                               "(BEGIN_EVENT={})",
-                                               static_cast<int>(BeginEvent));
-                    }
-                }
-            }
-        }
-    }
+    ~ScopedRingLog() noexcept;
 
     // Non-copyable, non-movable: a scoped logger should not migrate scopes
     ScopedRingLog(const ScopedRingLog&)            = delete;
@@ -206,17 +175,7 @@ class ScopedRingLog
     ScopedRingLog& operator=(ScopedRingLog&&)      = delete;
 
     /// Explicit end. For Manual mode. Idempotent: calling twice is OK.
-    void end() noexcept
-    {
-        if constexpr (chunk_config::ring_log_debug && Manual)
-        {
-            if (!ended_)
-            {
-                ring_log_end(tid_, EndEvent, payload_);
-                ended_ = true;
-            }
-        }
-    }
+    void end() noexcept;
 
   private:
     [[maybe_unused]] uint32_t tid_;
@@ -230,3 +189,5 @@ using ScopedRingLogManualEnd = ScopedRingLog<BeginEvent, EndEvent, /*Manual=*/tr
 
 
 } // namespace shrink_array
+
+#include "chunk/internal/ring_log_debug_inline.h" // the template bodies

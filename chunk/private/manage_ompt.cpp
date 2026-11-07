@@ -32,9 +32,9 @@
  */
 
 #include <array>       // std::array
-#include <algorithm>   // std::min (CHUNK_OMPT_STATS report)
+#include <algorithm>   // std::min (the ompt=info report)
 #include <atomic>      // std::atomic, std::memory_order
-#include <chrono>      // CHUNK_OMPT_STATS: time spent flushing
+#include <chrono>      // the ompt=info report: time spent flushing
 #include <cstdint>     // std::uint64_t
 #include <cstdlib>     // std::getenv (CHUNK_REQUIRE_OMPT)
 #include <cstring>     // std::strlen (the refused callbacks' list)
@@ -92,9 +92,9 @@ std::atomic<int> g_ompt_tool_state{0};
 char g_ompt_refused[128] = "";
 } // namespace
 
-// ── CHUNK_OMPT_STATS: what the sync-region callback does, counted ───────────
+// ── ompt=info: what the sync-region callback does, counted ───────────────────
 //
-// Measurement only. Off unless CHUNK_OMPT_STATS is set (read once, in
+// Measurement only. Off unless CHUNK_LOG sets ompt to info (read once, in
 // ompt_initialize, before any team exists): one load of a plain bool per
 // callback. On: each thread owns one 128-byte-aligned slot, claimed once, and
 // is its only writer -- no shared cache line, no read-modify-write, and no
@@ -178,7 +178,7 @@ void ompt_finalize(ompt_data_t*)
     {
         return;
     }
-    // CHUNK_OMPT_STATS asked for it: a report, written whatever CHUNK_LOG says.
+    // ompt=info asked for it: a report, written in full.
     const int nslots = std::min(g_ompt_next_slot.load(std::memory_order_acquire), ompt_max_slots);
     CHUNK_LOG_ALWAYS(ompt, "sync: {} threads seen. Per sync-region kind and endpoint, summed over threads:", nslots);
     CHUNK_LOG_ALWAYS(ompt, "sync: {:<27} {:<5} {:>12} {:>12} {:>12} {:>12} {:>10} {:>10}", "kind", "end", "calls",
@@ -394,7 +394,7 @@ void on_parallel_end(ompt_data_t* parallel_data, ompt_data_t*, int, const void*)
 //
 // The signature is the runtime's ompt_callback_sync_region_t. The runtime
 // calls this at BOTH the begin and the end of EVERY sync region, whatever its
-// kind (barriers, taskwait, taskgroup, reductions). CHUNK_OMPT_STATS counts them.
+// kind (barriers, taskwait, taskgroup, reductions). CHUNK_LOG=ompt=info counts them.
 void on_barrier_end(ompt_sync_region_t    kind,
                     ompt_scope_endpoint_t endpoint,
                     ompt_data_t*          parallel_data,
@@ -484,10 +484,9 @@ void on_barrier_end(ompt_sync_region_t    kind,
  */
 int ompt_initialize(ompt_function_lookup_t lookup, int, ompt_data_t*)
 {
-    {
-        const char* env = std::getenv("CHUNK_OMPT_STATS");
-        g_ompt_stats    = env != nullptr && env[0] != '\0' && env[0] != '0'; // before any team: no race
-    }
+    // CHUNK_LOG=ompt=info: read before any team exists, so no race.
+    namespace logging = ::fast_alloc::logging;
+    g_ompt_stats      = logging::enabled(logging::Channel::ompt, logging::Level::info);
 
     auto ompt_set_callback = (ompt_set_callback_t)lookup("ompt_set_callback");
     if (ompt_set_callback)
@@ -526,7 +525,7 @@ int ompt_initialize(ompt_function_lookup_t lookup, int, ompt_data_t*)
  * @brief OMPT entry point looked up by the OpenMP runtime at program start.
  *
  * Advertises ompt_initialize() as the tool initialiser and ompt_finalize() as
- * its finaliser (the CHUNK_OMPT_STATS report; the tool allocates nothing).
+ * its finaliser (the ompt=info report; the tool allocates nothing).
  *
  * @return Pointer to a function-local static result, valid for the whole run.
  */

@@ -1,25 +1,26 @@
 #!/bin/bash
 # Fake ccc_msub: runs the batch script in the background, in its own session
 # (the job id is that session's leader pid), output to its "#MSUB -o" file.
-# '#MSUB -E "..."' is honoured as Slurm would: --dependency=afterok|afterany:J
-# waits for job J to end (afterok: J's run must have written exit_code 0, or
-# the job stays pending for ever, as DependencyNeverSatisfied), --begin=now+N
+# '#MSUB -E "..."' is honoured as Slurm would: --dependency=afterok|afterany:J[:J2...]
+# waits for the jobs J to end (afterok: each J's run must have written exit_code 0,
+# or the job stays pending for ever, as DependencyNeverSatisfied), --begin=now+N
 # waits N seconds. A waiting job is listed PENDING by the fake squeue.
 job="$1"; out=$(grep '^#MSUB -o' "$job" | awk '{print $3}')
 E=$(grep '^#MSUB -E' "$job" | sed -e 's/^#MSUB -E //' -e 's/"//g')
-dep=$(grep -o 'after\(ok\|any\):[0-9]*' <<< "$E")
+dep=$(grep -o 'after\(ok\|any\)\(:[0-9]*\)*' <<< "$E")
 begin=$(grep -o 'begin=now+[0-9]*' <<< "$E" | cut -d+ -f2)
 setsid bash -c '
     job=$1 dep=$2 begin=$3
     if [ -n "$dep$begin" ]; then
         touch "$FAKE_Q/pending_$$"
         if [ -n "$dep" ]; then
-            j=${dep#*:}
-            while kill -0 "$j" 2>/dev/null; do sleep 0.2; done
-            if [ "${dep%%:*}" = afterok ]; then
-                d=$(cat "$FAKE_Q/dir_$j" 2>/dev/null)
-                [ "$(cat "$d/exit_code" 2>/dev/null)" = 0 ] || while :; do sleep 1; done
-            fi
+            for j in $(tr : " " <<< "${dep#*:}"); do
+                while kill -0 "$j" 2>/dev/null; do sleep 0.2; done
+                if [ "${dep%%:*}" = afterok ]; then
+                    d=$(cat "$FAKE_Q/dir_$j" 2>/dev/null)
+                    [ "$(cat "$d/exit_code" 2>/dev/null)" = 0 ] || while :; do sleep 1; done
+                fi
+            done
         fi
         [ -n "$begin" ] && sleep "$begin"
         rm -f "$FAKE_Q/pending_$$"

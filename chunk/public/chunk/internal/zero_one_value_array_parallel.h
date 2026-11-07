@@ -18,64 +18,30 @@
 
 /**
  * @file zero_one_value_array_parallel.h
- * @brief zero_one_value::Array's two mode-gated surfaces -- the OpenMP-only one (the
- *        deferred-op flush) and the fast-block-only one
- *        (make_block_compression) -- isolated in their own mixins so they
- *        disappear entirely from a build that has neither.
+ * @brief zero_one_value::Array's fast-block-only surface (make_block_compression),
+ *        isolated in its own mixin so that it disappears from a build without it.
  *
- * @details Same split as ParallelSupport does for zero::Array:
- *          zero_one_value::ParallelSupport<Derived, threaded> carries
- *          flush_pending_deferred_ops() (ParallelSupportCommon, shared by the
- *          three variants), a no-op in the serial specialisation.
- *
- *          make_block_compression() gets its own mixin rather than joining
- *          the first one: its gate is chunk_config::use_fast_block_compression,
- *          which is STRICTER than threaded (it also needs embedded -- i.e. not
- *          manual -- compression).
+ * @details make_block_compression() does not join ParallelSupport
+ *          (array_chunk_parallel_common.h): its gate is
+ *          chunk_config::use_fast_block_compression, which is STRICTER than
+ *          threaded (it also needs embedded -- i.e. not manual -- compression).
  *
  * @see zero_one_value_array_parallel_inline.h for the body
  * @see zero_array_parallel.h for zero's version of the same split
  */
 
-#include "chunk/config.h"       // build_config::threaded, chunk_config::use_fast_block_compression
-#include "chunk/chunk_traits.h" // ArrayChunkTraits
-#include "chunk/internal/array_chunk_parallel_common.h" // ParallelSupportCommon, ParallelSupportCommonSerial
+#include "chunk/config.h"                               // chunk_config::use_fast_block_compression
+#include "chunk/chunk_traits.h"                         // ArrayChunkTraits
+#include "chunk/internal/array_chunk_parallel_common.h" // ParallelSupport (zero_array.h uses it through this header)
 
 namespace shrink_array
 {
-
-namespace zero_one_value
-{
-
-/**
- * @brief The OpenMP-only members of zero_one_value::Array, present only when the build has OpenMP.
- *
- * @tparam Derived the concrete array type (only zero_one_value::Array today).
- * @tparam Enabled defaulted to build_config::threaded; never pass it
- *         explicitly outside of tests.
- */
-template <typename Derived, bool Enabled = build_config::threaded>
-struct ParallelSupport;
-
-// ── OpenMP build: the real parallel surface ──────────────────────────────────
-/**
- * @brief OpenMP specialisation: the deferred-op flush.
- * @copydetails zero_one_value::ParallelSupport
- */
 template <typename Derived>
-struct ParallelSupport<Derived, true> : public ParallelSupportCommon<Derived>
-{
-    // flush_pending_deferred_ops() and self() come from ParallelSupportCommon.
-};
+class SecondValueArrayBase; // second_value_array_base.h: the friend below
+} // namespace shrink_array
 
-// ── Serial build: nothing to parallelise ─────────────────────────────────────
-/**
- * @brief Serial specialisation: the same verb, inert.
- */
-template <typename Derived>
-struct ParallelSupport<Derived, false> : public ParallelSupportCommonSerial<Derived>
+namespace shrink_array::zero_one_value
 {
-};
 
 /**
  * @brief zero_one_value::Array's fast-block compression pass, present only in that mode.
@@ -100,14 +66,30 @@ class FastBlockSupport<Derived, true>
 {
   public:
     using Traits    = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
-    using ChunkType = Traits::ChunkType;         ///< Chunk type held in the array's chunk_list.
+    using ChunkType = Traits::ChunkType;         ///< Chunk type held in the array's chunk_list_.
 
     /**
      * @brief Compress every chunk of this array currently queued as a candidate.
-     * @details Drains the calling thread's candidate list, or every thread's
-     *          when called from outside a parallel region.
+     * @details Drains every thread's candidate list. A sequential point: outside
+     *          any parallel region only. Inside one it is refused (an invariant
+     *          failure in check builds, an error in the log otherwise, and no
+     *          pass): without a proxy it takes no writer handshake and no reader
+     *          grace period. In a region the writers' own passes compress.
      */
     void make_block_compression(this Derived& self);
+
+  protected:
+    friend SecondValueArrayBase<Derived>; ///< resize_common() drains through drain_candidates().
+
+    /**
+     * @brief The pass behind make_block_compression(), and resize()'s drain.
+     * @details Outside a region, every thread's candidate list; inside one (an
+     *          array resized by the thread that owns it), the calling thread's
+     *          list only, its released buffers held for one reader grace period
+     *          (read_reclaim::PassScope). resize() needs it there: the lists hold
+     *          &chunk_list_[j] pointers its reallocation would leave dangling.
+     */
+    void drain_candidates(this Derived& self);
 };
 
 // ── Any other mode: no candidate queue to drain ──────────────────────────────
@@ -129,6 +111,4 @@ class FastBlockSupport<Derived, false>
     }
 };
 
-} // namespace zero_one_value
-
-} // namespace shrink_array
+} // namespace shrink_array::zero_one_value

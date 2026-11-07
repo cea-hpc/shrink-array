@@ -39,6 +39,7 @@
 // zero::Array* definitions the alias below selects between.
 #include "chunk/array_chunk_range_ops.h" // the bulk range API and the zero::Array* definitions (see above)
 #include "chunk/array_chunk_bits.h"      // tab_bool_bits, tab_mask: bools packed 8 per byte
+#include "chunk/pattern_array.h"         // pattern::Array: tab_conn in the zero_one_value and zero_any builds
 
 namespace shrink_array
 {
@@ -86,8 +87,7 @@ using Array = shrink_array::ActiveArray<T>;
 // ---------------------------------------------------------------------------
 
 /// @name The second values the workload writes
-/// Moved verbatim out of main(); `inline constexpr` so every phase sees the same
-/// ones. Names unchanged so the moved code reads exactly as it did.
+/// `inline constexpr` so every phase sees the same ones.
 /// @{
 inline constexpr double second_value_d  = 1.;
 inline constexpr double second_value_d0 = 3.5;
@@ -177,14 +177,55 @@ using BenchMaskArray =
                        shrink_array::ArrayChunkBits<Int>,
                        std::conditional_t<chunk_config::is_shrink_enabled, Array<bool>, std::vector<bool>>>;
 
-/// @brief tab_mask's default size, as a fraction of sz (--mask_scale sets it).
-/// @details 1/32. Its per-iteration update writes ~1/16 of the random and
-///          scattered blocks and 1/32 of the constant segments, element by
-///          element through the proxies in a zero / zero_any build: at the
-///          8 x sz it was created with (capped at 2^31 in the 32-bit builds) it
-///          took ~75% of a 43 s zero_any run (64 threads) that is ~7 s without it.
-///          1/32 keeps thousands of 4096-element segments of each kind.
-inline constexpr double bench_mask_default_scale = 1.0 / 32.0;
+/**
+ * @brief What tab_conn is: the connectivity of a hexahedral mesh, the 8 node
+ *        numbers of each cell, cell after cell (bench_phase_conn.cpp) -- never
+ *        uniform, yet a chunk of whole cells is the chunk before it plus a constant.
+ *
+ * @details The array pattern::Array is for (docs/algo_pattern.md):
+ *            - zero_one_value and zero_any builds: pattern::Array<int>, a member of the
+ *              zero_any family that compresses a chunk to a shared motif plus an offset
+ *              (it lives in either library: its machinery is zero_any's, header-only);
+ *            - zero builds: zero::Array<int>, which compresses nothing of it;
+ *            - the std::vector baseline: a vector of int.
+ */
+using BenchConnArray = std::conditional_t<
+    chunk_config::use_zero_any || chunk_config::use_zero_one_value,
+    shrink_array::pattern::Array<int, Int>,
+    std::conditional_t<chunk_config::use_zero, shrink_array::zero::Array<int, Int>, shrink_array::BaselineVector<int>>>;
+
+/// @brief Cells per row of tab_conn's mesh: a multiple of 32, so a chunk of up to
+///        2048 elements that divides a row never spans two of them.
+inline constexpr Int bench_conn_nx = 256;
+
+/// @brief Elements per row of tab_conn: 8 nodes per cell.
+inline constexpr Int bench_conn_row = 8 * bench_conn_nx;
+
+/// @brief tab_conn's rows are in bench_conn_bands interleaved bands (row % bands):
+///        iteration k renumbers band k % bands.
+inline constexpr Int bench_conn_bands = 16;
+
+/// @brief Element @p index of tab_conn: node (corner + @p rotation) % 8 of cell
+///        index / 8, on a mesh of rows of bench_conn_nx cells and one layer;
+///        @p layer = (nx + 1) * (rows + 1) is the node offset of the top face.
+[[nodiscard]] constexpr int bench_conn_value(Int index, Int layer, Int rotation) noexcept
+{
+    const Int cell   = index / 8;
+    const Int corner = (index % 8 + rotation) % 8;
+    const Int i      = cell % bench_conn_nx;
+    const Int j      = cell / bench_conn_nx;
+    return static_cast<int>((i + (corner & 1)) + ((bench_conn_nx + 1) * (j + ((corner >> 1) & 1))) +
+                            (layer * (corner >> 2)));
+}
+
+/// @brief The node rotation of row @p row of tab_conn after iteration @p iter
+///        (-1: the initial fill): 1 when its band has been renumbered an odd
+///        number of times.
+[[nodiscard]] constexpr Int bench_conn_rotation(Int row, Int iter) noexcept
+{
+    const Int band = row % bench_conn_bands;
+    return iter < band ? 0 : ((iter - band) / bench_conn_bands + 1) % 2;
+}
 
 /// @brief Segment of tab_mask with one kind of content: whole chunks at every
 ///        geometry up to 4096, so a constant segment is constant chunks.
@@ -240,7 +281,7 @@ enum class BenchMaskKind
     return BenchMaskKind::scattered;
 }
 
-/// @brief The starting value of tab_mask[i].
+/// @brief The starting value of tab_mask[@p index].
 [[nodiscard]] constexpr bool bench_mask_initial(Int index) noexcept
 {
     const auto hash = bench_mask_hash(static_cast<std::uint64_t>(index));
@@ -259,7 +300,7 @@ enum class BenchMaskKind
 }
 
 /**
- * @brief The eighteen arrays the workload drives, by reference, plus their
+ * @brief The nineteen arrays the workload drives, by reference, plus their
  *        geometry.
  *
  * @note References, not values: the arrays stay owned by main(), which builds
@@ -290,6 +331,7 @@ struct BenchArrays
     Array<Cell>&          tab_cell;  ///< an aggregate element: an Int and a float
     BenchMaskArray&
         tab_mask; ///< mask_scale * sz bools (--mask_scale, default 1/32): masks and flags (bench_phase_mask.cpp)
+    BenchConnArray& tab_conn; ///< a mesh connectivity, about sz ints, whole rows (bench_phase_conn.cpp)
 
     Int sz       = 0; ///< element count of the double arrays (others are sz, 2*sz or sz/2)
     Int interval = 0; ///< the workload's stride, get_size_interval()
@@ -299,4 +341,7 @@ struct BenchArrays
     /// false under --no_mask: tab_mask is of size 1 and its phases, check and
     /// compression are skipped.
     bool with_mask = true;
+    /// false under --no_conn: tab_conn is of size 1 and its phases, check and
+    /// compression are skipped.
+    bool with_conn = true;
 };

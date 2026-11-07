@@ -121,7 +121,7 @@ run error "MUT_NO_RECHECK, isolation"                        -- -DSTRICT_SCAN -D
 run error "MUT_CHECK_FIRST, isolation"                       -- -DSTRICT_SCAN -DTO_FIRST -DMUT_CHECK_FIRST $M4
 run error "MUT_NO_WINDOW, isolation"                         -- -DSTRICT_SCAN -DTO_FIRST -DMUT_NO_WINDOW $M4
 run error "MUT_NO_FENCE, isolation"                          -- -DSTRICT_SCAN -DTO_FIRST -DMUT_NO_FENCE $M4
-echo "-- the same mutations under P1-P3 alone, and the orders readers would need: must still pass (7.6) --"
+echo "-- the same mutations under P1-P3 alone, and the orders readers would need: must still pass (8.7) --"
 run ok    "MUT_NO_RECHECK, P1-P3"                            -- -DTO_FIRST -DMUT_NO_RECHECK $M4
 run ok    "MUT_CHECK_FIRST, P1-P3"                           -- -DTO_FIRST -DMUT_CHECK_FIRST $M4
 run ok    "MUT_NO_WINDOW, P1-P3"                             -- -DTO_FIRST -DMUT_NO_WINDOW $M4
@@ -133,5 +133,45 @@ run error "MUT_NO_BUF_CHECK on a materialised chunk (buffer lost)" -- -DINIT_BUF
 run error "SECOND_MATERIALISER: the span's precondition broken"    -- -DSECOND_MATERIALISER $M4
 run ok    "SECOND_MATERIALISER, switch by CAS (not taken)"   -- -DSECOND_MATERIALISER -DSWITCH_CAS $M4
 run ok    "switch by CAS, first value, materialised"         -- -DSWITCH_CAS -DTO_FIRST -DINIT_BUF $M4
+M5=motif_offset.c
+echo "== handshake 4: motif readers <-> rewrites of the offset slot ($M5) =="
+run ok    "source, another motif"                            --check-liveness -- $M5
+run ok    "source, the same motif (ABA)"                     --check-liveness -- -DTARGET_SAME_MOTIF $M5
+run ok    "source, first constant"                           --check-liveness -- -DTARGET_CST1 $M5
+run ok    "source, second constant"                          --check-liveness -- -DTARGET_CST2 $M5
+run ok    "source, 3 reads"                                  --check-liveness -- -DNREADS=3 $M5
+run ok    "source, 2 readers x 2 reads"                      --check-liveness -- -DNREADERS=2 -DNREADS=2 $M5
+run ok    "source, 3 readers"                                --check-liveness -- -DNREADERS=3 $M5
+echo "-- mutations: each must be refused --"
+run error "MUT_SLOT_LOAD_RELAXED (the re-check needs acquire)" -- -DMUT_SLOT_LOAD_RELAXED $M5
+run error "MUT_SLOT_STORE_RELAXED (the pass's store must be release)" -- -DMUT_SLOT_STORE_RELAXED $M5
+run error "MUT_CAS_BEFORE_SLOT (algo_pattern.md section 6: the slot first)" -- -DMUT_CAS_BEFORE_SLOT $M5
+run error "MUT_NO_GRACE (calibration)"                       -- -DMUT_NO_GRACE $M5
+echo "-- the behaviours the model changed in the source (F5) --"
+run error "MUT_NO_RECHECK, another motif (F5, before)"       -- -DMUT_NO_RECHECK $M5
+run error "MUT_NO_RECHECK, first constant (F5, before)"      -- -DMUT_NO_RECHECK -DTARGET_CST1 $M5
+run error "MUT_NO_RECHECK, second constant (F5, before)"     -- -DMUT_NO_RECHECK -DTARGET_CST2 $M5
+run ok    "MUT_NO_RECHECK, the same motif: harmless"         -- -DMUT_NO_RECHECK -DTARGET_SAME_MOTIF $M5
+run error "MUT_SLOT_STORE_PLAIN, first constant (F5, before: reset())" -- -DMUT_SLOT_STORE_PLAIN -DTARGET_CST1 $M5
+run error "MUT_SLOT_STORE_PLAIN, second constant (F5, before: set_from_array())" -- -DMUT_SLOT_STORE_PLAIN -DTARGET_CST2 $M5
+
+M5=queue_handback.c
+
+echo "== the pass's hand-back <-> candidate marking ($M5) =="
+run ok    "source: the flag handed back (1 -> 2 -> 0/3)"        --check-liveness -- $M5
+run ok    "source, W2 too (exclusion)"                          --check-liveness -- -DWITH_W2 $M5
+echo "-- mutations: each must be refused --"
+run error "MUT_OLD_HANDBACK (F6, before: unmark, then reset)"   -- -DMUT_OLD_HANDBACK $M5
+run error "MUT_HANDBACK_AFTER_UNMARK (the window is back)"      -- -DMUT_HANDBACK_AFTER_UNMARK $M5
+run error "MUT_WRITER_IGNORES_2 (nobody notes the write)"       -- -DMUT_WRITER_IGNORES_2 $M5
+
+M6=range_edges.c
+
+echo "== fill_range_mt's queueing filter: two ends of one chunk ($M6) =="
+run ok    "source: a look, then fence and second look on a no"  -- $M6
+echo "-- mutations: each must be refused --"
+run error "MUT_ONE_LOOK (F7, before: store buffering)"          -- -DMUT_ONE_LOOK $M6
+run error "MUT_FENCE_ONE_SIDE (both sides need the fence)"      -- -DMUT_FENCE_ONE_SIDE $M6
+run error "MUT_RECHECK_NO_FENCE (the second look alone)"        -- -DMUT_RECHECK_NO_FENCE $M6
 
 exit $fail

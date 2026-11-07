@@ -55,13 +55,13 @@
  *                         pass compresses it (the CAS path)
  *   -DSTRICT_SCAN         the stronger property of isolation: the pass never scans a chunk that is
  *                         not a buffer. The library does not need it for safety (the clear is
- *                         idempotent, see section 7 of docs/formal_models.md); it is what the
+ *                         idempotent, see section 8 of docs/formal_models.md); it is what the
  *                         mark and the window buy by design, and what the mutations below break
  *   -DSWITCH_CAS          the switch is a CAS from the constant observed, not a store (an
  *                         alternative the source does not take)
  *
  * Mutations. With -DSTRICT_SCAN -DTO_FIRST the first four make GenMC report a violation;
- * under the properties P1-P3 alone they do NOT (that is the finding, docs/formal_models.md 7.6):
+ * under the properties P1-P3 alone they do NOT (that is the finding, docs/formal_models.md 8.7):
  *   -DMUT_NO_RECHECK      the writer switches without looking at the mark
  *   -DMUT_CHECK_FIRST     the writer looks at the mark BEFORE announcing
  *   -DMUT_NO_WINDOW       the pass does not wait for the writers
@@ -69,7 +69,7 @@
  *   -DMUT_NO_BUF_CHECK    the writer switches without looking at `values` (materialised?): with
  *                         -DINIT_BUF it overwrites a buffer, which is refused under P1-P3
  *   -DMUT_RELAXED_VALUES  the switch is a relaxed store of `values` (readers are not modelled:
- *                         passes here, see docs/formal_models.md section 8)
+ *                         passes here, see docs/formal_models.md section 9)
  *   -DMUT_META_AFTER      the writer stores `values` BEFORE `meta` (passes here, same remark)
  *   -DSECOND_MATERIALISER a second thread materialises the chunk (CAS constant -> buffer) while
  *                         the writer switches: the span's precondition, broken. Must be refused

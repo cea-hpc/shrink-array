@@ -30,7 +30,7 @@
 
 extern Dispatch dispatch;
 
-/// @brief What every per-material array has: its material index.
+/// @brief The common base of the per-material arrays.
 template <typename T>
 class VectCom
 {
@@ -41,15 +41,6 @@ class VectCom
     ///        and the derived classes hold a chunk array or a vector whose
     ///        destructor must run.
     virtual ~VectCom() = default;
-
-    /// @brief The material this array belongs to.
-    void set_ind(int index)
-    {
-        ind_ = index;
-    }
-
-  private:
-    int ind_;
 };
 
 /// @brief A field of a "chunk" material: compressed where it is zero.
@@ -72,7 +63,7 @@ struct VectChunk : public VectCom<T>, public shrink_array::zero::Array<T>
  *          the interface chunks are ever materialised.
  */
 template <typename T>
-struct VectChunk2 : public VectCom<T>, public shrink_array::zero_one_value::Array<T>
+struct VectZeroOneValue : public VectCom<T>, public shrink_array::zero_one_value::Array<T>
 {
     /// @brief The fraction of a pure cell, the second constant of the array.
     static constexpr T full = 1;
@@ -102,7 +93,7 @@ struct Vect : public VectCom<T>, public std::vector<T>
  *        dispatch says.
  * @tparam T        Element type.
  * @tparam VecChunkT The chunk array of the chunk materials: VectChunk<T> for a
- *                  field, VectChunk2<T> for the presence fraction.
+ *                  field, VectZeroOneValue<T> for the presence fraction.
  */
 template <typename T, typename VecChunkT = VectChunk<T>>
 class MultiArray : public std::vector<VectCom<T>*>
@@ -160,14 +151,12 @@ void MultiArray<T, VecChunk>::create(int nbmat, int mesh_size)
         if (dispatch.is_chunk(k))
         {
             auto* vec = new VecChunk;
-            vec->set_ind(k);
             vec->create(mesh_size);
             (*this)[k] = vec;
         }
         else
         {
             auto* vec = new VecDir;
-            vec->set_ind(k);
             vec->create(mesh_size);
             (*this)[k] = vec;
         }

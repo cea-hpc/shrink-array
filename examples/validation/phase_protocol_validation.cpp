@@ -34,7 +34,9 @@
 //   - a forgotten finalize stops at the next begin, in every build (release
 //     included: the check is per region, not per write);
 //   - check builds: a forgotten begin stops at the first deferred write, and
-//     release_chunk_pools() inside a region stops.
+//     release_chunk_pools() inside a region stops, as does an explicit
+//     make_block_compression() (a sequential point: without a proxy it takes
+//     no writer handshake and no reader grace period).
 //
 // OpenMP without OMPT only (the protocol is manual there); 77 = skipped.
 // ============================================================================
@@ -221,29 +223,39 @@ long regions(Bracket how)
     return bad;
 }
 
+/// A sequential point a case calls inside a region, instead of the regions.
+enum class InRegion
+{
+    nothing,       ///< the regions of Case::how
+    release_pools, ///< release_chunk_pools()
+    block_pass,    ///< an explicit make_block_compression() on an array
+};
+
 /// One case: how its child brackets the regions, and what must happen.
 struct Case
 {
     const char* name;
     Bracket     how;
-    bool        teardown_in_region; ///< instead of the regions: release_chunk_pools() in one
-    bool        check_build_only;   ///< the check exists in check builds only
-    const char* must_print;         ///< nullptr: must run to the end, values right
+    InRegion    in_region;        ///< a sequential point called in a region instead
+    bool        check_build_only; ///< the check exists in check builds only
+    const char* must_print;       ///< nullptr: must run to the end, values right
 };
 
 constexpr const char* msg_twice     = "begin_parallel_phase() twice in the same phase";
 constexpr const char* msg_deferred  = "deferred write in a parallel region by thread";
 constexpr const char* msg_in_region = "release_chunk_pools() called inside a parallel region";
+constexpr const char* msg_block     = "make_block_compression() called inside a parallel region";
 
 const Case case_table[] = {
-    {"brackets by hand", Bracket::by_hand, false, false, nullptr},
-    {"parallel_phase()", Bracket::helper, false, false, nullptr},
-    {"only_flush / after_flush pair", Bracket::split, false, false, nullptr},
-    {"begin in a nested region", Bracket::nested_begin, false, false, nullptr},
-    {"begin outside any region", Bracket::begin_serial, false, false, nullptr},
-    {"finalize forgotten", Bracket::no_finalize, false, false, msg_twice},
-    {"begin forgotten (deferred write)", Bracket::no_begin, false, true, msg_deferred},
-    {"release_chunk_pools() in a region", Bracket::by_hand, true, true, msg_in_region},
+    {"brackets by hand", Bracket::by_hand, InRegion::nothing, false, nullptr},
+    {"parallel_phase()", Bracket::helper, InRegion::nothing, false, nullptr},
+    {"only_flush / after_flush pair", Bracket::split, InRegion::nothing, false, nullptr},
+    {"begin in a nested region", Bracket::nested_begin, InRegion::nothing, false, nullptr},
+    {"begin outside any region", Bracket::begin_serial, InRegion::nothing, false, nullptr},
+    {"finalize forgotten", Bracket::no_finalize, InRegion::nothing, false, msg_twice},
+    {"begin forgotten (deferred write)", Bracket::no_begin, InRegion::nothing, true, msg_deferred},
+    {"release_chunk_pools() in a region", Bracket::by_hand, InRegion::release_pools, true, msg_in_region},
+    {"make_block_compression() in a region", Bracket::by_hand, InRegion::block_pass, true, msg_block},
 };
 constexpr int nb_cases = static_cast<int>(sizeof case_table / sizeof case_table[0]);
 
@@ -251,10 +263,17 @@ constexpr int nb_cases = static_cast<int>(sizeof case_table / sizeof case_table[
 int child(int case_idx)
 {
     const Case& test_case = case_table[case_idx];
-    if (test_case.teardown_in_region)
+    if (test_case.in_region == InRegion::release_pools)
     {
 #pragma omp parallel
         release_chunk_pools();
+        return 0;
+    }
+    if (test_case.in_region == InRegion::block_pass)
+    {
+        Array<int> arr(1024);
+#pragma omp parallel
+        arr.make_block_compression();
         return 0;
     }
     const long bad = regions(test_case.how);

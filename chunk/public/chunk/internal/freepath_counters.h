@@ -36,7 +36,7 @@
     #include <atomic> // std::memory_order_relaxed
 
     #include "fast_allocators/slab_arena.h" // fast_alloc::arena_report_enabled, fast_alloc::freepath_*
-    // Counted only while the report is on (CHUNK_ARENA_REPORT, read once): on every
+    // Counted only while the report is on (CHUNK_LOG=arena=info, read once): on every
     // thread's materialisation/release path a shared counter is a shared-line store per
     // chunk -- see fast_alloc::IsolatedCounter.
     #define CHUNK_FREEPATH_INC(which)                                                                    \

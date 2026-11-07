@@ -31,7 +31,7 @@
 // variants, hence the static_assert.
 //
 // zero_one_value CONTRACT: the compression-candidate list is indexed by
-// second_value (map_chunk2_to_compress_potentially_thr[thr][second_value]),
+// second_value (zero_one_value_candidates_map_thr[thr][second_value]),
 // populated ONLY by set_second_value. A second_value must therefore be
 // declared BEFORE writing, otherwise get_vec_tuple_to_compress_potentially_thr
 // asserts (vec == nullptr). This is what the bench does via
@@ -112,7 +112,7 @@ void drain_compression_backlog()
 // ── Serial or parallel passes ────────────────────────────────────────────────
 bool g_parallel = false; ///< --mode: the pass being run
 
-/// @brief f(i) for i in [0, N): a plain loop, or a work-shared parallel
+/// @brief @p func(i) for i in [0, @p count): a plain loop, or a work-shared parallel
 ///        region (static schedule) followed by the phase-end drain.
 template <typename F>
 void for_each_index(long count, F&& func)
@@ -140,7 +140,7 @@ void for_each_index(long count, F&& func)
     drain_compression_backlog();
 }
 
-/// @brief How many i in [0, N) satisfy bad(i) -- the checks, in the same
+/// @brief How many i in [0, @p nindex) satisfy @p bad(i) -- the checks, in the same
 ///        serial or parallel pass. Details are then printed by a serial scan.
 template <typename F>
 long count_if_index(long nindex, F&& bad)
@@ -212,7 +212,8 @@ constexpr const char* variant_name()
 template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& arr, const Val& value)
 {
-    if constexpr (requires(Arr probe) { probe.set_second_value(value); })
+    // bool's second value is true, always: zero_one_value warns on the call.
+    if constexpr (!std::is_same_v<Val, bool> && requires(Arr probe) { probe.set_second_value(value); })
     {
         arr.set_second_value(value);
     }
@@ -812,6 +813,38 @@ int check_multiple_of_64_chain(const char* label)
 namespace
 {
 /// @brief One case: its name (--case), the geometry it starts from, its body.
+/// bool content for the bool cases: runs of false, runs of true, and varied
+/// spans, 3000 elements each.
+bool bool_runs(long i)
+{
+    switch ((i / 3000) % 3)
+    {
+        case 0:
+            return false;
+        case 1:
+            return true;
+        default:
+            return i % 3 == 0;
+    }
+}
+
+/// double content for the sliced-val2 cases: runs of 0, runs of the second
+/// value 0.5 and varied data, 2600 elements each (several chunks at every
+/// geometry the cases use).
+double sliced_val2_mix(long i)
+{
+    switch ((i / 2600) % 5)
+    {
+        case 0:
+            return 0.0;
+        case 1:
+        case 3:
+            return 0.5;
+        default:
+            return double(i % 977) + 0.75;
+    }
+}
+
 struct Case
 {
     const char*          name;
@@ -954,10 +987,34 @@ static int run_body(int argc, char** argv)
         // only from 8192 new chunks on (n_new / 4096 slices, up to 16), which
         // no case above reaches. Every slice boundary drains the old geometry's
         // parked blocks and recycles the slabs they empty into the next slice's
-        // allocations (CHUNK_RECHUNK_RECYCLE): stale buffers that must come
+        // allocations (always, since CHUNK_RECHUNK_RECYCLE is gone): stale buffers that must come
         // back zero-filled where the data is zero, and exact elsewhere. Mostly
         // distinct values (no constant chunk to fold) with zero spans; grown
         // (4 slices) and shrunk (8 slices), then rewritten and recompressed.
+        // bool, one byte per element: the refill's bulk read (memcpy per source
+        // chunk, zero_any's shared array of true filled as a constant). Runs of
+        // false, runs of true and varied spans; grown, shrunk, and to a size the
+        // old one does not divide (768), whose new chunks straddle old ones.
+        {"bool-grow", 512,
+         []
+         {
+             return check_invariance<bool>("bool-grow-512-to-2048", 1000000L, 2048, bool_runs, /*sv_value=*/true,
+                                           /*post_rounds=*/1);
+         }},
+        {"bool-shrink", 512,
+         [] { return check_invariance<bool>("bool-shrink-512-to-64", 1000000L, 64, bool_runs, /*sv_value=*/true); }},
+        {"bool-uneven", 512,
+         [] { return check_invariance<bool>("bool-uneven-512-to-768", 1000000L, 768, bool_runs, /*sv_value=*/true); }},
+        // Array<bool> through the SLICED path (fast-alloc threaded builds): 4M
+        // bools 64 -> 256, 16384 new chunks, 4 slices. Sources at false (cst1),
+        // at true (the second constant: a shared array, never released) and
+        // live ones, released during the copy; then rewritten and recompressed.
+        {"bool-sliced", 64,
+         []
+         {
+             return check_invariance<bool>("bool-sliced-64-to-256", 4L << 20, 256, bool_runs, /*sv_value=*/true,
+                                           /*post_rounds=*/2);
+         }},
         {"sliced-grow", 64,
          []
          {
@@ -973,6 +1030,26 @@ static int run_body(int argc, char** argv)
                  "sliced-shrink-512-to-64", 2L << 20, 64,
                  [](long i) -> double { return (i / 5000) % 3 == 0 ? 0.0 : double(i % 613) + 0.25; },
                  /*sv_value=*/0.25, /*post_rounds=*/2);
+         }},
+        // The same sliced path with sources of all three kinds side by side:
+        // runs of zero, runs of the second value (compressed to it by the
+        // rechunk's prologue) and varied data. zero_one_value and zero_any
+        // release their materialised sources during the copy like zero, and
+        // must leave the second-constant ones alone (a shared array, never
+        // freed). Grown 64 -> 256 (aligned, 4 slices), and shrunk 512 -> 192,
+        // a size the old one does not divide: new chunks straddle old ones,
+        // released by the last of their readers.
+        {"sliced-val2-grow", 64,
+         []
+         {
+             return check_invariance<double>("sliced-val2-grow-64-to-256", 4L << 20, 256, sliced_val2_mix,
+                                             /*sv_value=*/0.5, /*post_rounds=*/2);
+         }},
+        {"sliced-val2-uneven", 512,
+         []
+         {
+             return check_invariance<double>("sliced-val2-uneven-512-to-192", 2L << 20, 192, sliced_val2_mix,
+                                             /*sv_value=*/0.5, /*post_rounds=*/2);
          }},
     };
 

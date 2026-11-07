@@ -24,6 +24,10 @@
 
 #include "chunk/build_options.h" // CHUNK_OPT_*: the options the library was built with (generated)
 
+#if CHUNK_OPT_DO_CHECK
+    #include <complex> // std::complex (the global_check_nan declarations)
+#endif
+
 namespace shrink_array::build_config
 {
 
@@ -51,15 +55,6 @@ inline constexpr bool chunk_dynamic = false;
 #endif
 inline constexpr std::size_t alloc_affinity_min_bytes =
     CHUNK_ALLOC_AFFINITY_MIN_BYTES; // -D to override (0 = off; tiny = every array, for tests)
-
-/// @brief Mirror of alloc_config::reclaim_empty_slabs, from the same CMake option
-///        (CHUNK_RECLAIM_EMPTY_SLABS, recorded in both generated build_options.h).
-///
-/// Duplicated deliberately: alloc_config.h is not included by a std-alloc build, and
-/// `if constexpr (build_config::use_fast_alloc)` does NOT hide alloc_config:: (a
-/// non-dependent name is looked up at template definition). This mirror lets such a site
-/// be a plain `if constexpr` with no \#ifdef.
-inline constexpr bool reclaim_empty_slabs = CHUNK_OPT_RECLAIM_EMPTY_SLABS != 0;
 
 // build_options.h refuses a file whose OpenMP setting is not the library's.
 inline constexpr bool use_openmp = CHUNK_OPT_OPENMP != 0;
@@ -372,6 +367,32 @@ inline constexpr bool tsan_build = false;
 #endif
 
 /**
+ * @brief EXPERIMENTAL (-DCHUNK_READ_DEP_ORDER=1 in CMAKE_CXX_FLAGS, AArch64 only): the pure
+ *        read's load of a chunk's `values` (ChunkBase::element_at) is RELAXED, ordered with
+ *        the loads through it by their address dependency instead of an acquire.
+ *
+ * @details An acquire load (LDAPR) keeps every later load of the thread after it: on a read
+ *          loop, the next element's loads wait for this one's `values`, which serialises the
+ *          loop on load latency (Grace: 2.4 ns per read whatever the chunk's state, against
+ *          1.1 to 1.8 on x86, where an acquire load costs nothing). What the acquire orders
+ *          after the `values` load on that path is reached THROUGH the pointer -- the
+ *          element (vals[offset]), the second value (value_by_id[id], id computed from it)
+ *          -- and the Arm memory model orders a load after the load its address depends on.
+ *          The read gate (pending_any(), an acquire) still precedes it.
+ *          Not C++: the standard's dependency ordering is memory_order_consume, which
+ *          compilers implement as acquire. The dependency is kept by hiding the loaded value
+ *          from the compiler (internal::hide_value) so that it cannot be replaced by a value
+ *          it compared equal to. Off under TSan (which does not model it) and on other
+ *          architectures (x86: the acquire is a plain load already).
+ *          Measurement first: access_cost with and without it, on Grace.
+ */
+#if defined(CHUNK_READ_DEP_ORDER) && CHUNK_READ_DEP_ORDER && defined(__aarch64__) && !defined(CHUNK_TSAN_BUILD)
+inline constexpr bool read_dep_order = true;
+#else
+inline constexpr bool read_dep_order = false;
+#endif
+
+/**
  * @brief The write/compress handshake's shape (WriteCompressSyncPolicy).
  *
  * @details Two sides must never run together: an element WRITE inside its critical section,
@@ -471,7 +492,32 @@ struct CheckNaN
     static void maybe([[maybe_unused]] auto val, [[maybe_unused]] long index) noexcept {}
 };
 
+} // namespace shrink_array::chunk_config
+
+#if CHUNK_OPT_DO_CHECK
+namespace shrink_array
+{
+// Declared here, defined in chunk/internal/global_check.h: CheckNaN<true>::maybe()
+// calls them with a double, a float or a std::complex, for which argument-dependent
+// lookup finds nothing at the point of instantiation -- ordinary lookup at the
+// definition below must already see them, whichever header a TU includes first.
+// (global_check.h cannot simply be included here: it includes invariant_check.h,
+// which includes this file.)
+inline void global_check_nan(long i) noexcept;
+inline void global_check_nan(const double& val, long i) noexcept;
+inline void global_check_nan(const float& val, long i) noexcept;
+inline void global_check_nan(const std::complex<double>& val, long i) noexcept;
+template <typename T>
+void global_check_nan(const T& val, long i) noexcept;
+} // namespace shrink_array
+#endif
+
+namespace shrink_array::chunk_config
+{
+
 /// @brief The real switch: maybe() checks while it is on.
+/// @note Every TU that instantiates maybe() must also see global_check.h (chunk_base.h
+///       includes it), where the overloads above are defined.
 template <>
 class CheckNaN<true>
 {

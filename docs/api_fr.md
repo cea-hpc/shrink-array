@@ -1,9 +1,9 @@
-# L'API en un coup d'œil
+# Aperçu de l'API
 
 > English version: [api.md](api.md).
 
-> Octobre 2026. Une page pour ce qu'un programme appelle, regroupé par tâche. Les détails (paramètres, préconditions, complexité) sont dans la référence Doxygen
-> (`cmake --build build --target doc`), où l'on peut chercher ces noms. L'usage en contexte :
+> Octobre 2026. Ce qu'un programme appelle, sur une seule page, regroupé par tâche. Les détails (paramètres, préconditions, complexité) sont dans la référence Doxygen
+> (`cmake --build build --target doc`), où l'on peut chercher ces noms. L'utilisation en situation :
 > [getting_started_fr.md](getting_started_fr.md).
 
 ***
@@ -40,8 +40,8 @@ voir [mdspan_fr.md](mdspan_fr.md).
 
 ## 3. Opérations du conteneur
 
-Ce qu'a un `std::vector`, avec les différences qui comptent. **(S)** marque un point séquentiel :
-hors de toute région parallèle, et il invalide les proxys du tableau.
+Les opérations d'un `std::vector`, avec les différences importantes. **(S)** marque un point
+séquentiel : à appeler hors de toute région parallèle ; il invalide les proxys du tableau.
 
 | opération | membres | remarques |
 |---|---|---|
@@ -86,8 +86,8 @@ les tableaux de l'appelant : dans un code où plusieurs modules ont leurs propre
   arrête le run --, les libres, les libérations faites et ce qu'elles ont libéré, les libérations
   refusées par cause (un appel refusé renvoie 0 comme un appel qui n'a rien à libérer) et si
   l'index est dégradé (toute libération est alors refusée et les identifiants ne font que
-  croître). Échantillonné aux points de contrôle de l'application, `in_use()` / `capacity` est
-  l'alerte précoce.
+  croître). Relevé aux points de contrôle de l'application, le rapport `in_use()` / `capacity` sert
+  d'alerte précoce.
 
 Absents : `data()`, les itérateurs mutables, `insert` / `erase` au milieu, un tri en place.
 
@@ -128,6 +128,25 @@ l'exécution (inlinée de force). `-DCHUNK_LOOSE_ELEMENT_REF` désactive la vér
 | `for_each_span(a, first, last, f)` | lecture : `f(std::span<const T>)` par bloc (une boucle vectorisable) ; un chunk compressé en `f(v, count)` quand `f` l'accepte. Un `std::vector` est un seul span |
 | `read_range(a, first, last, out)` | lecture : `[first, last)` copié vers `out` |
 
+### 5.1 États des chunks : export et import
+
+`chunk/chunk_exchange.h`. Un tableau lu et reconstruit chunk par chunk sans le décompresser --
+la base d'un transfert (hôte vers GPU) ou d'un checkpoint compressé. Un `ChunkState<T>` dit ce
+que contient un chunk : `first_value` ou `second_value` (`value`, sans tampon), `motif`
+(pattern : l'élément `k` vaut `data[k] + value`), ou `materialised` (`data`, ses
+`chunk_size()` éléments). Il ne dépend pas de la façon dont la bibliothèque code le chunk en
+interne.
+
+| appel | contexte |
+|---|---|
+| `export_chunk(a, c)` | séquentiel : l'état du chunk `c` ; `data` pointe dans `a`, valable jusqu'à la prochaine écriture de `a` |
+| `import_chunk(a, c, state)` | séquentiel : le chunk `c` prend `state`, une constante sans tampon ; `false` si le chunk a été écrit |
+| `export_array(a)` | séquentiel : la taille, `chunk_size()`, la seconde valeur de zero_one_value, l'état de chaque chunk |
+| `import_array(a, state)` | séquentiel : `a` devient le tableau que décrit `state`, quoi qu'il contînt ; `false` (et `a` inchangé) à une autre taille de chunk |
+
+Toutes les variantes et tous les types d'élément sauf `Bit` (ArrayChunkBits). À appeler après la
+phase, comme `fill_range`.
+
 ## 6. Phases OpenMP
 
 `chunk/manage_ompt.h`. Nécessaires seulement quand `build_config::has_not_ompt` (libgomp de GCC) ; sans
@@ -147,7 +166,7 @@ le programme, dans tous les builds. Les builds de contrôle (Debug, `CHECK_OPTIM
 aussi sur une écriture différée dans une région par un thread qui n'a pas appelé
 `begin_parallel_phase()`.
 
-Les threads propres de l'application (`std::thread`, TBB) demandent le backend std
+Les threads créés par l'application (`std::thread`, TBB) demandent le backend std
 (`CHUNK_THREADS=std`) : chaque thread qui écrit appelle `begin_parallel_phase()` avant sa
 première écriture, et un seul thread appelle `finalize_parallel_phase()` une fois qu'ils se sont
 arrêtés. `shrink_array::tbb::parallel_for` fait les deux appels pour une boucle TBB ; l'en-tête
@@ -194,12 +213,13 @@ noms `shrink_array::logging`) : un niveau (`error`, `warn`, `info`, `debug`, `tr
 |---|---|
 | `CHUNK_LOG=warn,rechunk=info` | les niveaux : un niveau seul pour tous les canaux, `canal=niveau` pour un seul, de gauche à droite ; `off` n'écrit que les échecs fatals |
 | `CHUNK_LOG_FILE=chemin` | le fichier où les lignes sont ajoutées au lieu de stderr (`%p` : le numéro du processus) |
-| `logging::configure("warn,rechunk=debug")` | la même spécification depuis le code, par-dessus `CHUNK_LOG` ; renvoie le nombre d'éléments non compris |
-| `logging::set_sink(fn, user)` | confie chaque enregistrement (niveau, canal, message, emplacement dans le source) à `fn` -- le logger du programme -- au lieu de stderr ; `nullptr` revient au défaut. Un enregistrement peut arriver à la sortie : le sink doit lui survivre, ou être retiré avant |
+| `logging::configure("warn,rechunk=debug")` | la même spécification depuis le code, par-dessus `CHUNK_LOG` ; renvoie le nombre d'éléments non reconnus |
+| `logging::set_sink(fn, user)` | confie chaque enregistrement (niveau, canal, message, emplacement dans le source) à `fn` -- le logger du programme -- au lieu de stderr ; `nullptr` revient au défaut. Un enregistrement peut arriver pendant la sortie du programme : le sink doit lui survivre, ou être retiré avant |
 
 Ce qu'un programme demande explicitement -- `print_all_reuse_pool_breakdown()`,
-`CHUNK_ARENA_REPORT`, `CHUNK_LEDGER_REPORT`, `CHUNK_OMPT_STATS` -- est écrit quel que soit
-`CHUNK_LOG`, par le même sink. Une violation d'invariant ou un échec fatal de l'allocateur arrête
+`gc_mark_report()` -- est écrit quel que soit `CHUNK_LOG`, par le même sink. Les rapports de la
+bibliothèque sont des niveaux de leur canal : `arena=info` (l'arène des tampons), `ledger=info` (le
+registre des blocs, à la sortie), `ompt=info` (les régions de synchronisation, à la sortie). Une violation d'invariant ou un échec fatal de l'allocateur arrête
 toujours le programme : un bloc sur stderr commençant par `[CRITICAL_FAILURE]`
 (`[DEBUG_INVARIANT_FAILURE]` dans un build debug), la backtrace, puis l'enregistrement (niveau
 fatal) vers le sink ou `CHUNK_LOG_FILE`. Le contenu des canaux :

@@ -190,7 +190,7 @@ double sorted_at(long index, long chunk_sz)
     return (2.0 * second_value) + static_cast<double>(index - (c2 * chunk_sz));
 }
 
-/// @brief Write @p value(i) at every i in [0, N) from a parallel region, then
+/// @brief Write @p value(i) at every i in [0, @p count) from a parallel region, then
 ///        the between-region pass.
 /// @details A serial zero_any has no between-region pass (there is no region):
 ///          its candidates wait for make_block_compression(), which a writer
@@ -242,8 +242,8 @@ struct Report
         return bad ? 1 : 0;
     }
 
-    const char* step;
-    long        bad = 0;
+    const char* step = "";
+    long        bad  = 0;
 };
 
 /// @brief Chunks folded to a constant: expected at least the first-constant

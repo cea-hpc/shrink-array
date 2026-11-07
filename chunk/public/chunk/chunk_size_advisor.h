@@ -56,13 +56,16 @@
 // ops drained). The walk reads chunk states and, for finer sizes, chunk data.
 // ============================================================================
 
-#include <algorithm> // std::sort, std::unique, std::upper_bound, std::ranges::min_element (best)
-#include <atomic>    // std::atomic_ref (the per-thread counts merged)
-#include <bit>       // std::bit_width, std::countr_zero
-#include <cmath>     // std::lround (the extrapolated materialised count)
-#include <cstddef>   // std::size_t
-#include <cstdint>   // int64_t, uint32_t
-#include <vector>    // std::vector
+#include <algorithm>   // std::sort, std::unique, std::upper_bound, std::ranges::min_element (best)
+#include <array>       // std::array (motif_chunk_data's buffers)
+#include <atomic>      // std::atomic_ref (the per-thread counts merged)
+#include <bit>         // std::bit_width, std::countr_zero
+#include <cmath>       // std::lround (the extrapolated materialised count)
+#include <cstddef>     // std::size_t
+#include <cstdint>     // int64_t, uint32_t
+#include <format>      // std::format (write_table's lines)
+#include <string_view> // std::string_view (write_table's sink)
+#include <vector>      // std::vector
 
 #include "chunk/internal/in_t.h"               // InT<T>: the element snapshots
 #include "chunk/bit.h"                         // is_bool_like_v, is_packed_bit_v
@@ -72,8 +75,10 @@
 #include "chunk/PMP_CHUNK.h"                   // CHUNK_PMP_NUM_THREADS (the parts per thread), pmp::team
 #include "chunk/internal/rechunk_cost_model.h" // rechunk_cost_ms, rechunk_is_worth_it
 #include "chunk/internal/chunk_size_policy.h"  // shrink_array::cst_buffer_size
-#include "chunk/internal/env_parse.h"          // env_number (CHUNK_ADVISOR_GRID_BITS)
 #include "chunk/internal/print.h"              // shrink_array::println
+#include "chunk/log.h"                         // CHUNK_LOG (log(): channel advisor)
+#include "chunk/chunk_traits.h"                // is_zero_any_family_v, has_motif_state_v (pattern::Array)
+#include "chunk/internal/relaxed_element.h"    // load_element_relaxed (a motif chunk's offset)
 
 namespace shrink_array
 {
@@ -111,32 +116,65 @@ struct ChunkSizeReport
     int                            cur  = -1;         ///< index of current size (-1: none)
 };
 
+namespace internal
+{
+/**
+ * @brief The data of chunk @p idx of @p tab, a member with the motif state
+ *        (pattern::Array): its buffer; for a motif chunk, its motif plus its
+ *        offset, written into this thread's scratch buffer @p which (0 or 1:
+ *        the analysis holds two chunks' data at once).
+ * @details For ChunkSizeAdvisor::analyze(), at a quiescent point: the slot is
+ *          stable. A function template of its own, with its own buffers, called
+ *          from discarded branches for the other variants: their code -- the
+ *          analysis lambdas and what they capture -- is unchanged. GCC orders a
+ *          lambda's captures by first appearance, discarded branches included:
+ *          the callers name nothing the lambdas did not already name first.
+ */
+template <typename Arr>
+[[nodiscard]] const Arr::value_type* motif_chunk_data(const Arr& tab, int64_t idx, int which)
+{
+    using ChunkT = Arr::ChunkType;
+    using T      = Arr::value_type;
+    static thread_local std::array<std::vector<T>, 2> buffers;
+    std::vector<T>&                                   scratch = buffers[static_cast<std::size_t>(which)];
+    const T* const                                    vals    = tab.chunk_list_[idx].values_load();
+    if (!ChunkT::is_motif_ptr(vals))
+    {
+        return vals;
+    }
+    const T        off      = load_element_relaxed(tab.motif_offset_slot(static_cast<int>(idx)));
+    const uint32_t chunk_sz = tab.chunk_size();
+    scratch.resize(chunk_sz);
+    for (uint32_t i = 0; i < chunk_sz; ++i)
+    {
+        scratch[i] = ChunkT::motif_value(vals, static_cast<int>(i), off);
+    }
+    return scratch.data();
+}
+} // namespace internal
+
 /// @brief Estimates an array's model memory at other chunk sizes without re-chunking (see the header comment).
 /// @tparam T Element type.
 template <typename T>
 struct ChunkSizeAdvisor
 {
-    /// @brief Options::grid_bits' default: CHUNK_ADVISOR_GRID_BITS, read once, else 2.
-    /// @details 1 and 2 give about the same footprint, 3 a few % more: at 3 the
-    ///          cheapest size is often a small step (256 -> 384) that the
-    ///          decider's rate gate refuses, with no fallback to the next best.
-    [[nodiscard]] static int default_grid_bits() noexcept
-    {
-        static const int bits = env_number<int>("CHUNK_ADVISOR_GRID_BITS", 2);
-        return bits;
-    }
-
     /// @brief Which sizes analyze() evaluates, its scan cap and the per-chunk metadata cost it adds.
     struct Options
     {
-        int coarser_levels = 4;                   ///< evaluate S*2 .. S*2^levels
-        int finer_levels   = 2;                   ///< evaluate S/2 .. S/2^levels (data sampled)
-        int grid_bits      = default_grid_bits(); ///< also every multiple of 64 between
-                                                  ///< S/2^finer_levels and S*2^coarser_levels whose
-                                                  ///< C/64 has at most this many significant bits
-                                                  ///< (2: 192, 384, 768...: steps of at most 50%;
-                                                  ///< 3: 320, 448, 640...: 25%); 0: none
-        int64_t max_mat_scans = 65536;            ///< cap on materialized chunks whose DATA is read
+        int coarser_levels = 4;        ///< evaluate S*2 .. S*2^levels
+        int finer_levels   = 2;        ///< evaluate S/2 .. S/2^levels (data sampled)
+        int grid_bits      = 2;        ///< also every multiple of 64 between
+                                       ///< S/2^finer_levels and S*2^coarser_levels whose
+                                       ///< C/64 has at most this many significant bits
+                                       ///< (2: 192, 384, 768...: steps of at most 50%;
+                                       ///< 3: 320, 448, 640...: 25%); 0: none. 1 and 2
+                                       ///< give about the same footprint, 3 a few % more:
+                                       ///< at 3 the cheapest size is often a small step
+                                       ///< (256 -> 384) that the decider's rate gate
+                                       ///< refuses, with no fallback to the next best.
+                                       ///< RechunkPolicy::advisor_grid_bits sets it for
+                                       ///< RechunkDecider::consider().
+        int64_t max_mat_scans = 65536; ///< cap on materialized chunks whose DATA is read
         /// Per-chunk metadata beyond sizeof(chunk): tracking-list entry (~0.8 B,
         /// see the GLOBAL COMPRESSION LISTS monitoring table: List Memory /
         /// Allocated Chunks) + dirty bitset (128 B / 64 chunks = 2 B) + slack.
@@ -164,23 +202,29 @@ struct ChunkSizeAdvisor
         rep.elem_bytes =
             chunk_sz != 0 ? static_cast<double>(Arr::ChunkType::storage_units(chunk_sz)) * sizeof(T) / chunk_sz : 0.;
 
-        if (nc <= 0)
+        // No chunk, or no geometry (never on a live array: every setter refuses
+        // a zero size): nothing to analyse. Every division below is by
+        // chunk_sz or by a candidate derived from it, hence this test first.
+        if (nc <= 0 || chunk_sz == 0)
         {
             return rep;
         }
 
         // zero_one_value keys cst2 by the array-level second-value index; fetch it once.
         // zero has no cst2; zero_any keys cst2 per chunk by the values_load() pointer.
-        [[maybe_unused]] const int chunk2_ind = [&]
+        [[maybe_unused]] const int second_value_ind = [&]
         {
             // bool / Bit: one second value, `true`, no index --
             // get_ind_second_value() aborts for them; classify() below asks
             // the unindexed is_cst_val2().
-            if constexpr (chunk_config::use_zero_one_value && !is_bool_like_v<T>)
+            // A zero_any-family array in a zero_one_value build (pattern::Array):
+            // no index, the zero_any branches below.
+            if constexpr (chunk_config::use_zero_one_value && !is_zero_any_family_v<typename Arr::ChunkType> &&
+                          !is_bool_like_v<T>)
             {
                 return tab.get_ind_second_value();
             }
-            else if constexpr (chunk_config::use_zero_one_value)
+            else if constexpr (chunk_config::use_zero_one_value && !is_zero_any_family_v<typename Arr::ChunkType>)
             {
                 return 0;
             }
@@ -197,7 +241,7 @@ struct ChunkSizeAdvisor
         const InT<T> cst1_value = Arr::ChunkType::first_value;
         bool         has_cst2   = false;
         T            cst2_value = cst1_value;
-        if constexpr ((chunk_config::use_zero_one_value || chunk_config::use_zero_any) &&
+        if constexpr ((chunk_config::use_zero_one_value || is_zero_any_family_v<typename Arr::ChunkType>) &&
                       requires { tab.get_second_value(); })
         {
             cst2_value = tab.get_second_value();
@@ -210,7 +254,8 @@ struct ChunkSizeAdvisor
             // below to it: the finer rows would miss every other uniform
             // sub-block, and a costly coarsening could never look worse than
             // refining back.
-            if constexpr (chunk_config::use_zero_any)
+            // The family, not the build: pattern::Array in a zero_one_value build too.
+            if constexpr (is_zero_any_family_v<typename Arr::ChunkType>)
             {
                 return true;
             }
@@ -226,14 +271,25 @@ struct ChunkSizeAdvisor
 
         // classify: kind 0 = cst1, 1 = cst2, 2 = mat; two cst2 chunks merge iff
         // same `key` (zero_any: buffer ptr; zero_one_value: one shared sentinel).
-        const auto classify = [&](const auto& chunk, const void*& key) -> int
+        const auto classify = [&](const auto& chunk, const void*& key)
         {
             key = nullptr;
             if (chunk.is_cst_val1())
             {
                 return 0;
             }
-            if constexpr (chunk_config::use_zero_any)
+            if constexpr (has_motif_state_v<typename Arr::ChunkType>)
+            {
+                // A motif chunk (pattern::Array): is_cst_val2() for the write engine,
+                // but no constant. Its data -- motif + offset, internal::motif_chunk_data() -- is
+                // read as a materialised chunk's (no motif forecast: never optimistic).
+                if (Arr::ChunkType::is_motif_ptr(chunk.values_load()))
+                {
+                    return 2;
+                }
+            }
+            // The family, not the build (as compressible_value).
+            if constexpr (is_zero_any_family_v<typename Arr::ChunkType>)
             {
                 if (chunk.is_cst_val2())
                 {
@@ -250,7 +306,7 @@ struct ChunkSizeAdvisor
                 }
                 else
                 {
-                    is_cst2 = chunk2_ind >= 0 && chunk.is_cst_val2(chunk2_ind);
+                    is_cst2 = second_value_ind >= 0 && chunk.is_cst_val2(second_value_ind);
                 }
                 if (is_cst2)
                 {
@@ -323,7 +379,7 @@ struct ChunkSizeAdvisor
         const auto    nwin = [&](uint32_t cand_sz) { return (len + cand_sz - 1) / cand_sz; };
 
         // Windows of size C inside the constant run of chunks [r0, r1).
-        const auto windows_inside = [&](int64_t r0, int64_t r1, uint32_t cand_sz) -> int64_t
+        const auto windows_inside = [&](int64_t r0, int64_t r1, uint32_t cand_sz)
         {
             const int64_t begin = r0 * chunk_sz;
             const int64_t wmin  = (begin + cand_sz - 1) / cand_sz;
@@ -401,11 +457,7 @@ struct ChunkSizeAdvisor
                 team.single(
                     [&]
                     {
-                        n_parts = static_cast<int64_t>(CHUNK_PMP_NUM_THREADS) * 4;
-                        if (n_parts > nc)
-                        {
-                            n_parts = nc;
-                        }
+                        n_parts = std::min<int64_t>(static_cast<int64_t>(CHUNK_PMP_NUM_THREADS) * 4, nc);
                         part_mat.assign(static_cast<std::size_t>(n_parts), 0);
                         part_first.assign(static_cast<std::size_t>(n_parts), Seg{0, 0, -1, nullptr});
                         part_last.assign(static_cast<std::size_t>(n_parts), Seg{0, 0, -1, nullptr});
@@ -569,6 +621,7 @@ struct ChunkSizeAdvisor
                     std::vector<uint32_t> seg_start; // the picked chunk's runs of equal values ...
                     std::vector<T>        seg_val;   // ... and their values
 
+
                     // Element index of a materialised buffer, and whether [first, last)
                     // of it is uniform (its value in `val`).
                     const auto value_of = [](const T* vals, std::size_t index) -> T
@@ -614,6 +667,10 @@ struct ChunkSizeAdvisor
                         {
                             const int64_t chunk_idx = picks[static_cast<std::size_t>(pick)];
                             const T*      vj        = tab.chunk_list_[chunk_idx].values_load();
+                            if constexpr (has_motif_state_v<typename Arr::ChunkType>)
+                            {
+                                vj = internal::motif_chunk_data(tab, chunk_idx, 0); // pattern::Array
+                            }
 
                             // Chunk chunk_idx's runs of equal values: [b, e) of it is uniform iff
                             // b and e - 1 fall in the same run.
@@ -720,9 +777,19 @@ struct ChunkSizeAdvisor
                                         }
                                         else
                                         {
-                                            ok = uniform_range(ch.values_load(),
-                                                               static_cast<std::size_t>(p0 - (cc * chunk_sz)),
-                                                               static_cast<std::size_t>(p1 - (cc * chunk_sz)), part);
+                                            if constexpr (has_motif_state_v<typename Arr::ChunkType>)
+                                            {
+                                                ok =
+                                                    uniform_range(internal::motif_chunk_data(tab, cc, 1),
+                                                                  static_cast<std::size_t>(p0 - (cc * chunk_sz)),
+                                                                  static_cast<std::size_t>(p1 - (cc * chunk_sz)), part);
+                                            }
+                                            else
+                                            {
+                                                ok = uniform_range(
+                                                    ch.values_load(), static_cast<std::size_t>(p0 - (cc * chunk_sz)),
+                                                    static_cast<std::size_t>(p1 - (cc * chunk_sz)), part);
+                                            }
                                         }
                                         if (ok && has_v)
                                         {
@@ -792,20 +859,36 @@ struct ChunkSizeAdvisor
     /// @brief Print @p rep as a table on stdout, headed by @p name.
     static void print(const ChunkSizeReport& rep, const char* name)
     {
-        println("── ChunkSizeAdvisor [{}] current S={}, meta={:.1f} B/chunk ──", name, rep.current_size,
-                rep.meta_bytes);
+        write_table(rep, name, [](std::string_view line) { println("{}", line); });
+    }
+
+    /// @brief Write @p rep as a table to the log, channel advisor at debug
+    ///        (CHUNK_LOG=advisor=debug), headed by @p name.
+    static void log(const ChunkSizeReport& rep, const char* name)
+    {
+        write_table(rep, name, [](std::string_view line) { CHUNK_LOG(debug, advisor, "{}", line); });
+    }
+
+  private:
+    /// @brief Hand the lines of @p rep's table, headed by @p name, to @p out
+    ///        (a callable taking a std::string_view): print() and log().
+    template <typename Out>
+    static void write_table(const ChunkSizeReport& rep, const char* name, Out&& out)
+    {
+        out(std::format("── ChunkSizeAdvisor [{}] current S={}, meta={:.1f} B/chunk ──", name, rep.current_size,
+                        rep.meta_bytes));
         // An index loop, not std::views::enumerate: libc++ has it from 20 only.
         for (std::size_t i = 0; i < rep.table.size(); ++i)
         {
             const auto& row = rep.table[i];
-            println("   S={:5} : chunks={:9}  mat={:9} ({:5.1f}%)  mem={:9.2f} Mo {}{}{}", row.size, row.n_chunks,
-                    row.mat,
-                    row.n_chunks != 0 ? 100. * static_cast<double>(row.mat) / static_cast<double>(row.n_chunks) : 0.,
-                    row.mem_bytes / (1024. * 1024.), row.exact ? "" : "~",
-                    static_cast<int>(i) == rep.cur ? " <- current" : "",
-                    static_cast<int>(i) == rep.best ? "  ** BEST **" : "");
+            out(std::format(
+                "   S={:5} : chunks={:9}  mat={:9} ({:5.1f}%)  mem={:9.2f} Mo {}{}{}", row.size, row.n_chunks, row.mat,
+                row.n_chunks != 0 ? 100. * static_cast<double>(row.mat) / static_cast<double>(row.n_chunks) : 0.,
+                row.mem_bytes / (1024. * 1024.), row.exact ? "" : "~",
+                static_cast<int>(i) == rep.cur ? " <- current" : "",
+                static_cast<int>(i) == rep.best ? "  ** BEST **" : ""));
         }
-        println("   estimated gain best vs current : {:.2f} Mo", rep.best_gain_bytes() / (1024. * 1024.));
+        out(std::format("   estimated gain best vs current : {:.2f} Mo", rep.best_gain_bytes() / (1024. * 1024.)));
 
         // Re-chunk cost, when best != current: gain (bytes) and cost (ms) are
         // shown side by side. The constants are hardware specific
@@ -819,7 +902,8 @@ struct ChunkSizeAdvisor
             // Observation-phase thresholds (not a decision, just a hint label):
             // >= 1 Mo gained and <= 50 ms spent reads as clearly worth it.
             const bool worth = rechunk_is_worth_it(gain_bytes, cost_ms, 1uz << 20U, 50.0);
-            println("   estimated re-chunk cost       : {:.3f} ms  ({})", cost_ms, worth ? "worth it" : "marginal");
+            out(std::format("   estimated re-chunk cost       : {:.3f} ms  ({})", cost_ms,
+                            worth ? "worth it" : "marginal"));
         }
     }
 };

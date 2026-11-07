@@ -7,7 +7,7 @@ cmake_minimum_required(VERSION 3.20)
 if(POLICY CMP0126)
     cmake_policy(SET CMP0126 NEW)
 endif()
-project(shrink_array VERSION 0.1.3 LANGUAGES CXX)
+project(shrink_array VERSION 0.2.1 LANGUAGES CXX)
 
 # Built on its own, or consumed by another project (add_subdirectory,
 # FetchContent)? PROJECT_IS_TOP_LEVEL says it from CMake 3.21; this is the same
@@ -29,34 +29,30 @@ option(CHUNK_FORCE_LEDGER "Keep the pool ledger active under OpenMP (off by defa
 # An emptied slab would otherwise keep its resident pages: the allocator never
 # unmaps a value slab (see the op/value aliasing note in tc_allocator.h), so the
 # peak of a re-chunk -- where the old and the new geometry are both materialised
-# -- would stay in RSS afterwards. This madvise()s those pages away while
-# keeping the slab mapped and reusable.
-#
-# ON by default since it was measured to be free. rechunk_validation_zero_dyn
+# -- would stay in RSS afterwards. The sweeps (a re-chunk, a teardown,
+# trim_reuse_pools) madvise() those pages away while keeping the slab mapped and
+# reusable, always: it was measured to be free. rechunk_validation_zero_dyn
 # 200000 128 3, peak RSS, best of 3: 129.9 -> 88.3 MB at one thread and
 # 104.8 -> 87.9 MB at four, with the wall time unchanged (16.79 -> 16.60 s and
 # 16.22 -> 16.06 s). The syscall cost does not register: 99 madvise calls over
 # the whole run, 29 microseconds in total, because a slab only empties at a
 # geometry change or at teardown -- never in steady state.
 #
-# It is safe by construction rather than by care: the only call site is
-# TCTypeCAllocator::reclaim_empty_slabs_now(), the VALUE family, on a set the
-# caller knows abandoned (a re-chunk's old geometry, a teardown). Its free list
-# lives in the heap-allocated tab_firstFree and its metadata in the slab header
-# object -- both outside the pages being dropped -- and it makes no promise
-# about element contents (callers initialise what they get), so the zero pages
-# MADV_DONTNEED brings back are as good as any. The op/ctx family
-# threads its free list THROUGH the freed elements and would be corrupted by
-# this; its on_kept is an empty lambda and it is never madvised.
+# It is safe by construction rather than by care: only a sweep advises, on the
+# VALUE family, on a set the caller knows abandoned (a re-chunk's old geometry,
+# a teardown). Its free list lives in the heap-allocated tab_firstFree and its
+# metadata in the slab header object -- both outside the pages being dropped --
+# and it makes no promise about element contents (callers initialise what they
+# get), so the zero pages MADV_DONTNEED brings back are as good as any. The
+# op/ctx family threads its free list THROUGH the freed elements and would be
+# corrupted by this; its on_kept is an empty lambda and it is never madvised.
 #
-# Turn it OFF if a profile ever shows page faults from slabs that empty and
-# refill in a loop; "strace -c -e trace=madvise" gives the call count directly.
-#
-# Recorded, like every option the headers read, in the generated
-# chunk/build_options.h and fast_allocators/build_options.h, installed with the
-# libraries: a project using the installed package compiles the inline
-# allocator code with the library's value, whatever it defines itself.
-option(CHUNK_RECLAIM_EMPTY_SLABS "Release an emptied slab's pages with madvise instead of keeping them resident" ON)
+# CHUNK_RECLAIM_EMPTY_SLABS=OFF, which kept them resident, is no longer an
+# option: a cache that still has it is warned about.
+if (DEFINED CHUNK_RECLAIM_EMPTY_SLABS AND NOT CHUNK_RECLAIM_EMPTY_SLABS)
+  message(WARNING "CHUNK_RECLAIM_EMPTY_SLABS=OFF is ignored: the option is gone, emptied slabs are always "
+                  "given back. A CMakeCache.txt from an older configure? (compile_all.sh --fresh-cache)")
+endif()
 
 # Reinforced debug level for fast_allocators' slab lists: on a Debug build,
 # every insert / remove also walks the whole list (sl_check, sl_contains) --
@@ -457,6 +453,18 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM" AND NOT ONEAPI_FAST_FP)
     endif()
 endif()
 
+# GCC and Clang on x86-64: the -march= of the optimised builds. A flag in
+# CMAKE_CXX_FLAGS cannot replace it, add_compile_options() comes after and wins.
+# Fixed for a build whose binary must not depend on the machine: the nightly's
+# ASan job: with -march=native on Zen 5, GCC 14 gives a frame 64-byte aligned
+# slots, and depending on the frame's layout ASan's fake stack can leave them
+# 32 bytes off (vmovdqa64: #GP).
+if(SHRINK_ARRAY_IS_TOP_LEVEL)
+    set(CHUNK_X86_MARCH "native" CACHE STRING "GCC, Clang on x86-64: -march= of the optimised builds")
+elseif(NOT DEFINED CHUNK_X86_MARCH)
+    set(CHUNK_X86_MARCH "native")
+endif()
+
 if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
     if(CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
         add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-tp=host>)
@@ -475,7 +483,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebI
         if(CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64|arm)")
             add_compile_options(-mcpu=native)
         else()
-            add_compile_options(-march=native)
+            add_compile_options(-march=${CHUNK_X86_MARCH})
         endif()
     endif()
 endif()
@@ -731,7 +739,7 @@ endif()
 
 # ── Intel libm for GNU / Clang builds on x86-64 ─────────────────────────────
 # RHEL 8's glibc libm is old and slow on cos/sin/atan/tan, which the benches'
-# compute phases live in: AMD Milan, GNU, shrink_bench_zero_any_256, 64 threads,
+# compute phases live in: AMD Milan, GNU, shrink_bench_omp_zero_any_256, 64 threads,
 # 15.70 s -> 12.41 s with libimf (same seed, same long_val_sum). icpx links
 # libimf itself; other compilers get it here when it is found. Every
 # executable of the build uses the same libm, so check-mode comparisons within
@@ -815,7 +823,7 @@ endif()
 # ── ArmPL's libamath for GNU / Clang builds on aarch64 ──────────────────────
 # Arm's optimised libm (armpl module, free), linked ahead of glibc's: the
 # benches' compute phases live in cos/sin/atan/tan (the x86-64 counterpart,
-# libimf, took shrink_bench_zero_any_256 from 15.70 s to 12.41 s on AMD Milan,
+# libimf, took shrink_bench_omp_zero_any_256 from 15.70 s to 12.41 s on AMD Milan,
 # GNU). NVHPC is left alone: it links its own optimised math library.
 # SHRINK_ARM_LIBM is OFF by default: measured on Grace (clang 22, 64 threads,
 # same seed, RHEL 9.6 glibc vs armpl 25.07), zero_any_dyn 8.30 -> 8.12 s,
@@ -934,6 +942,11 @@ if(SHRINK_ARRAY_BUILD_TESTS AND BUILD_TESTING AND Python3_Interpreter_FOUND)
     add_test(NAME check_naming
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_naming.py ${PROJECT_SOURCE_DIR})
     set_property(TEST check_naming PROPERTY LABELS validation)
+    # A member function body longer than 5 lines is defined out of class, in the
+    # header's _inline.h companion (scripts/check_inline_bodies.py; apply moves them).
+    add_test(NAME check_inline_bodies
+             COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_inline_bodies.py --check ${PROJECT_SOURCE_DIR})
+    set_property(TEST check_inline_bodies PROPERTY LABELS validation)
     # Every source file carries its license: the Apache block for C++, SPDX
     # lines for scripts and build files, the upstream SPDX line for the vendored
     # headers (scripts/check_headers.py; --fix repairs).
@@ -957,6 +970,15 @@ if(SHRINK_ARRAY_BUILD_TESTS AND BUILD_TESTING AND Python3_Interpreter_FOUND)
     add_test(NAME check_cpp23_idioms
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_cpp23_idioms.py ${PROJECT_SOURCE_DIR})
     set_property(TEST check_cpp23_idioms PROPERTY LABELS validation)
+    # Every C++ source as clang-format 23 leaves it (scripts/check_format.py),
+    # where that version is installed: another one formats differently.
+    find_program(CHUNK_CLANG_FORMAT_23 clang-format-23)
+    if (CHUNK_CLANG_FORMAT_23)
+      add_test(NAME check_format
+               COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_format.py ${PROJECT_SOURCE_DIR})
+      set_property(TEST check_format PROPERTY LABELS validation)
+      set_property(TEST check_format PROPERTY ENVIRONMENT CLANG_FORMAT=${CHUNK_CLANG_FORMAT_23})
+    endif()
     # The Doxygen documentation builds without a warning (scripts/check_doxygen.py),
     # when Doxygen is installed: find_package(Doxygen) above, for the doc target.
     if (DOXYGEN_FOUND)

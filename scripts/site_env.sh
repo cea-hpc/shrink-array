@@ -14,7 +14,9 @@
 #   CHUNK_SRC_DIR           the repository (from this script's location)
 #   CHUNK_BUILD_REP         where the cmake-build-<name>/<arch> trees go:
 #                             cea   $CCCWORKDIR/shrink-array (the TGCC work area)
-#                             local the repository itself (as CLion does)
+#                             local $CCCWORKDIR/shrink-array when CCCWORKDIR
+#                                   is set, else the repository itself (as
+#                                   CLion does)
 #   CHUNK_GCC_TOOLCHAIN_DIR the libstdc++ that clang / icpx / nvc++ use:
 #                             cea   /ccc/products/gcc-15.2.0/system/default
 #                             local the newest ~/opt/gcc-X.Y.Z or /opt/gcc-X.Y.Z
@@ -30,6 +32,9 @@
 #                           and only a libtbb built for this architecture
 #                           exported with its CMAKE_PREFIX_PATH and
 #                           LD_LIBRARY_PATH entries; CHUNK_WITH_TBB=0: no search
+#   CHUNK_WITH_TBB=1        none of those but the system's (libtbb-dev,
+#                           tbb-devel: <libdir>/cmake/TBB/TBBConfig.cmake),
+#                           which CMake finds alone; CHUNK_SYSTEM_TBB names it
 #
 # Each can be set in the environment first to override. The build names
 # (cmake-build-<name>/<arch>, arch = ID_VERSION__machine from os-release) are
@@ -61,7 +66,14 @@ if [ "$CHUNK_SITE" = cea ]; then
     : "${CHUNK_BUILD_REP:=${CCCWORKDIR:?site_env.sh: CCCWORKDIR unset, set CHUNK_BUILD_REP}/shrink-array}"
     : "${CHUNK_GCC_TOOLCHAIN_DIR:=/ccc/products/gcc-15.2.0/system/default}"
 else
-    : "${CHUNK_BUILD_REP:=$CHUNK_SRC_DIR}"
+    # A machine of the TGCC environment off the CEA network (CCCWORKDIR set,
+    # no /ccc/products/gcc-15.2.0) keeps its trees in the work area, as cea
+    # does: the sources in ~ have the quota.
+    if [ -n "${CCCWORKDIR:-}" ]; then
+        : "${CHUNK_BUILD_REP:=$CCCWORKDIR/shrink-array}"
+    else
+        : "${CHUNK_BUILD_REP:=$CHUNK_SRC_DIR}"
+    fi
     # A GCC built from source is both the gnu compiler (CHUNK_GXX below) and
     # the libstdc++ of clang / icpx, as gcc-15.2.0 is at CEA. None: the
     # drivers' own default.
@@ -72,9 +84,12 @@ fi
 # Environment Modules: absent on a workstation. A stand-in that fails quietly
 # keeps every `module load x || ...` and `if run_cmd "module load x"` of the
 # scripts on their "not available" path; the tools are then taken from PATH.
-# A local site never takes its compilers from modules, even where the command
-# exists (AlmaLinux ships Environment Modules with no compiler module).
-if [ "$CHUNK_SITE" = cea ] && type module >/dev/null 2>&1; then
+# A local site takes its compilers from modules only where a gcc module exists:
+# AlmaLinux ships Environment Modules with no compiler module (the stand-in),
+# a machine with a module tree of its own (gcc/16) loads it as CEA does --
+# stubbed, its loads changed nothing and the broken gcc-toolset-14 was taken.
+if type module >/dev/null 2>&1 &&
+    { [ "$CHUNK_SITE" = cea ] || module -t av gcc 2>&1 | grep -qE '^gcc/[0-9]'; }; then
     CHUNK_HAVE_MODULES=true
 else
     CHUNK_HAVE_MODULES=false
@@ -140,6 +155,78 @@ if [ "$CHUNK_HAVE_MODULES" = false ]; then
     fi
     export CHUNK_GXX CHUNK_CLANGXX CHUNK_ONEAPI_SETVARS CHUNK_NVCXX
 fi
+
+# chunk_newest_module <name>: the highest <name>/<ver> module available, or
+# nothing (no such module, no modules).
+chunk_newest_module() {
+    module -t av "$1" 2>&1 | tr -s '[:space:]' '\n' | grep -oE "^$1/[0-9]+(\.[0-9]+)*" | sort -V -u | tail -1
+}
+
+# chunk_check_binutils <label> [warn]: print the as / ld the compiler will use
+# and fail when, on aarch64 with modules, they are the system ones (warn: say
+# so and go on -- clang assembles itself, only gcc needs the new as). RHEL 9's
+# binutils is 2.35, too old for gcc 16 -mcpu=native on Grace: a binutils module
+# that did not load left /usr/bin/as in PATH, and the build only died later on
+# instructions the assembler does not know. Nothing checked off aarch64 (the
+# x86 builds never loaded a binutils) or without modules (the system one is
+# the only one).
+chunk_check_binutils() {
+    local as_path ld_path
+    as_path=$(command -v as 2>/dev/null)
+    ld_path=$(command -v ld 2>/dev/null)
+    echo "[INFO] $1 binutils: as ${as_path:-none} ($(as --version 2>/dev/null | head -1)), ld ${ld_path:-none} ($(ld --version 2>/dev/null | head -1))"
+    [ "$(uname -m)" = aarch64 ] && [ "$CHUNK_HAVE_MODULES" = true ] || return 0
+    case "$as_path" in
+        ''|/usr/bin/*|/bin/*)
+            if [ "${2:-}" = warn ]; then
+                echo "[WARN] $1: the system binutils (${as_path:-none}), no binutils module loaded"
+                return 0
+            fi
+            echo "ERROR: $1: no binutils module loaded, the system assembler (${as_path:-none}) is too old for gcc 16 on aarch64" >&2
+            echo "       binutils modules here: $(module -t av binutils 2>&1 | grep -oE '^binutils/[0-9.]+' | tr '\n' ' ')" >&2
+            return 1 ;;
+    esac
+}
+
+# chunk_ensure_ninja: make the ninja on PATH one that runs here, after a
+# `module load ninja`. A home shared by the x86 and the ARM nodes (/ccc/home)
+# can hold an x86-64 ~/.local/bin/ninja ahead of the module's: on grace /
+# gh200 every configure then failed with "cannot execute binary file". The
+# first ninja of PATH that answers --version wins (its directory goes first);
+# none: the error, return 1. Nothing changes when the first one already runs,
+# nor when there is no ninja at all (a --dryrun on a workstation; CMake says
+# so at configure time, as before).
+chunk_ensure_ninja() {
+    local n bad="" first
+    first=$(command -v ninja 2>/dev/null)
+    if [ -z "$first" ] || "$first" --version >/dev/null 2>&1; then
+        return 0
+    fi
+    for n in $(type -a -P ninja ninja-build 2>/dev/null | awk '!seen[$0]++'); do
+        if "$n" --version >/dev/null 2>&1; then
+            [ -n "$first" ] && echo "[ninja] $first does not run on $(uname -m) (another architecture's binary?): using $n"
+            PATH="$(dirname "$n"):$PATH"
+            export PATH
+            return 0
+        fi
+        bad="$bad $n"
+    done
+    echo "ERROR: no ninja that runs on $(uname -m) on PATH${bad:+ (not runnable:$bad)}; load a ninja module or install one for this architecture" >&2
+    return 1
+}
+
+# chunk_drop_dead_make_program <build-dir>: a cache that names a ninja which
+# does not run here (configured by the x86 one above, or from another node)
+# loses that entry, and CMake looks ninja up again on PATH.
+chunk_drop_dead_make_program() {
+    local cache="$1/CMakeCache.txt" prog
+    [ -f "$cache" ] || return 0
+    prog=$(sed -n 's/^CMAKE_MAKE_PROGRAM:[A-Z]*=//p' "$cache")
+    [ -n "$prog" ] || return 0
+    "$prog" --version >/dev/null 2>&1 && return 0
+    echo "[ninja] $1: the cached CMAKE_MAKE_PROGRAM ($prog) does not run here: dropped"
+    sed -i '/^CMAKE_MAKE_PROGRAM:/d' "$cache"
+}
 
 # chunk_gcc_toolchain_opt <form>: the libstdc++ option for clang-like drivers,
 # or nothing when no toolchain dir is set (local: the driver's default).
@@ -216,7 +303,19 @@ if [ "${CHUNK_WITH_TBB:-}" != 0 ]; then
         unset _chunk_tbb_lib
     else
         unset TBBROOT
+        # Else the system's oneTBB (libtbb-dev, tbb-devel): CMake finds it in
+        # its default prefixes and ld.so loads it, nothing to export but the
+        # switch itself (set_tbb_options reads CHUNK_WITH_TBB).
+        if [ -z "${CHUNK_WITH_TBB:-}" ]; then
+            for _chunk_tbb_cfg in "/usr/lib/$(uname -m)-linux-gnu" /usr/lib64 /usr/lib; do
+                if [ -f "$_chunk_tbb_cfg/cmake/TBB/TBBConfig.cmake" ] && chunk_tbb_arch_ok "$_chunk_tbb_cfg"; then
+                    export CHUNK_WITH_TBB=1 CHUNK_SYSTEM_TBB="$_chunk_tbb_cfg"
+                    break
+                fi
+            done
+            unset _chunk_tbb_cfg
+        fi
     fi
 fi
 
-echo "[site] $CHUNK_SITE: sources $CHUNK_SRC_DIR, builds under $CHUNK_BUILD_REP, modules $CHUNK_HAVE_MODULES${CHUNK_GCC_TOOLCHAIN_DIR:+, libstdc++ from $CHUNK_GCC_TOOLCHAIN_DIR}${TBBROOT:+, oneTBB $TBBROOT}"
+echo "[site] $CHUNK_SITE: sources $CHUNK_SRC_DIR, builds under $CHUNK_BUILD_REP, modules $CHUNK_HAVE_MODULES${CHUNK_GCC_TOOLCHAIN_DIR:+, libstdc++ from $CHUNK_GCC_TOOLCHAIN_DIR}${TBBROOT:+, oneTBB $TBBROOT}${CHUNK_SYSTEM_TBB:+, oneTBB of the system ($CHUNK_SYSTEM_TBB)}"

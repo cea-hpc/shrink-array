@@ -54,6 +54,9 @@
  */
 
 
+#include <cstdio>    // std::fprintf (main)
+#include <exception> // std::exception (main)
+
 #include "chunk/zero_array.h"            // zero::Array
 #include "chunk/zero_one_value_array.h"  // zero_one_value::Array
 #include "chunk/array_chunk_range_ops.h" // fill_range_mt
@@ -92,12 +95,12 @@ static long materialised(const Arr& arr, long nchunks)
     long       count    = 0;
     for (long j = 0; j < nchunks; ++j)
     {
-        count += arr.written(static_cast<typename Arr::IndType>(j * chunk_sz)) ? 1 : 0;
+        count += arr.written(static_cast<Arr::IndType>(j * chunk_sz)) ? 1 : 0;
     }
     return count;
 }
 
-/// @brief One parallel phase running @p body over [0, n), then the flush and
+/// @brief One parallel phase running @p body over [0, @p count), then the flush and
 ///        the compression pass -- the manual phase calls of manage_ompt.h.
 template <typename Fn>
 static void phase(long count, Fn&& body)
@@ -125,7 +128,7 @@ static int run_case(const char* name, Arr& arr, long nchunks, double value, long
     const long count    = nchunks * chunk_sz;
     const long half     = chunk_sz / 2;
 
-    phase(count, [&](long i) { arr[static_cast<typename Arr::IndType>(i)] = plain(i); });
+    phase(count, [&](long i) { arr[static_cast<Arr::IndType>(i)] = plain(i); });
     const long before = materialised(arr, nchunks);
 
     // Two spans per chunk, adjacent iterations: with schedule(static, 1) they
@@ -142,7 +145,7 @@ static int run_case(const char* name, Arr& arr, long nchunks, double value, long
     long bad = 0;
     for (long i = 0; i < count; ++i)
     {
-        const double got = arr[static_cast<typename Arr::IndType>(i)];
+        const double got = arr[static_cast<Arr::IndType>(i)];
         if (got != value)
         {
             if (bad < 3)
@@ -165,6 +168,7 @@ static int run_case(const char* name, Arr& arr, long nchunks, double value, long
 }
 
 int main(int argc, char** argv)
+try
 {
     const long nchunks = argc > 1 ? shrink_array::arg_number<long>(argv[1], 64, "chunks") : 64;
     ParamChunk::init_indexes(true);
@@ -210,6 +214,13 @@ int main(int argc, char** argv)
         arr.clear();
     }
 
-    println("=== {} ===", fails ? "FILL_RANGE_MT_V1V2 FAILED" : "FILL_RANGE_MT_V1V2 OK");
+    println("=== {} ===",
+            fails ? "FILL_RANGE_MT_ZERO_AND_ZERO_ONE_VALUE FAILED" : "FILL_RANGE_MT_ZERO_AND_ZERO_ONE_VALUE OK");
     return fails ? 1 : 0;
+}
+catch (const std::exception& e)
+{
+    // A failed std::format or a bad argument: said, not std::terminate().
+    std::fprintf(stderr, "fill_range_mt_zero_and_zero_one_value_validation: %s\n", e.what());
+    return 1;
 }

@@ -32,7 +32,8 @@
  *     CHUNK_LOG_POW2(warn, recycle, "dropped FOREIGN block {}", ptr);
  *     CHUNK_LOG_ALWAYS(pool, "{} size {}: {} block(s)", label, size, n); // a report asked for
  *
- * - Filtering: CHUNK_LOG=warn (the default), CHUNK_LOG=warn,rechunk=debug,
+ * - Filtering: CHUNK_LOG=warn,rechunk=info (the default: a re-chunk the
+ *   decider applies says so), CHUNK_LOG=warn,rechunk=debug,
  *   CHUNK_LOG=off. Items apply left to right: a bare level sets every
  *   channel, `channel=level` one. Read once, at the first message;
  *   configure() applies a specification on top of it. The switches of the
@@ -53,10 +54,12 @@
  *   the call), and any other type as its bytes in hex (fmt_arg): a message
  *   can print an element value of any type. A char pointer stays a string.
  * - Traces and reports: a trace is a flow CHUNK_LOG switches on (CHUNK_LOG);
- *   a report is a summary the program asked for explicitly -- a print_*
- *   function it called, a report switch it set (CHUNK_LEDGER_REPORT,
- *   CHUNK_OMPT_STATS), a trace build option -- and is written whatever
- *   CHUNK_LOG says (CHUNK_LOG_ALWAYS, level info), through the same sink.
+ *   a report is a summary -- the arena's (arena=info), the block ledger's
+ *   (ledger=info), the OMPT statistics (ompt=info), a print_* function the
+ *   program called, a trace build option. The level of its channel switches
+ *   a report on (a print_* call, or a build option, is the request itself);
+ *   once on, it is written in full (CHUNK_LOG_ALWAYS, level info), through
+ *   the same sink.
  *   A report can run at exit: a sink installed with set_sink() must outlive
  *   it, or be removed (set_sink(nullptr)) before its state goes.
  * - Not here: the fatal level. An invariant failure is CHUNK_INVARIANT_FAILED
@@ -69,11 +72,11 @@
 #include <complex>         // std::complex (spelled by fmt_arg)
 #include <cstddef>         // std::size_t
 #include <cstdint>         // std::uint8_t, std::uint64_t
-#include <cstdio>          // std::FILE, std::fopen, std::fwrite, std::fflush, stderr
+#include <cstdio>          // std::FILE, std::fopen, std::fwrite, std::fflush, std::fputs, stderr
 #include <cstdlib>         // std::getenv
 #include <cstring>         // std::memcpy
 #include <format>          // std::format_to_n, std::format_string
-#include <mutex>           // std::mutex, std::once_flag, std::call_once, std::scoped_lock
+#include <mutex>           // std::mutex, std::once_flag, std::call_once, std::scoped_lock, std::unique_lock
 #include <span>            // std::span, std::as_bytes (BytesArg)
 #include <source_location> // std::source_location
 #include <string_view>     // std::string_view
@@ -82,6 +85,8 @@
 #include <sched.h>       // sched_yield (emit_fatal)
 #include <sys/syscall.h> // SYS_gettid
 #include <unistd.h>      // getpid, syscall
+
+#include "fast_allocators/internal/append_text.h" // append_int (CHUNK_LOG_FILE's %p), append_text
 
 #ifndef CHUNK_LOG_MAX_LEVEL
     #define CHUNK_LOG_MAX_LEVEL 5 // trace: every message compiled in, CHUNK_LOG filters at run time
@@ -352,11 +357,16 @@ struct Spec
     return out;
 }
 
-/// @brief Every channel at warn: what a program logs with CHUNK_LOG unset.
+/// @brief What a program logs with CHUNK_LOG unset: every channel at warn,
+///        rechunk at info -- the line of each re-chunk the decider applies
+///        (one per move, a sequential point), as before the log existed. The
+///        channel's other info lines need their policy field
+///        (RechunkPolicy::force_size). A bare level in CHUNK_LOG sets rechunk too.
 inline constexpr std::array<Level, n_channels> default_max = []
 {
     std::array<Level, n_channels> levels{};
     levels.fill(Level::warn);
+    levels[static_cast<std::size_t>(Channel::rechunk)] = Level::info;
     return levels;
 }();
 
@@ -407,10 +417,20 @@ inline void default_sink(const Record& record) noexcept
 {
     static constexpr std::array<char, n_levels> letter{'F', 'E', 'W', 'I', 'D', 'T'};
     char                                        line[line_max + 64];
-    const auto  res = std::format_to_n(line, sizeof(line) - 1, "[shrink_array][{}][{}][{}] {}", name(record.channel),
-                                       letter[static_cast<std::size_t>(record.level)], thread_id(), record.message);
-    std::size_t len =
-        static_cast<std::size_t>(res.size) < sizeof(line) - 1 ? static_cast<std::size_t>(res.size) : sizeof(line) - 1;
+    std::size_t                                 len = 0;
+    try
+    {
+        const auto res = std::format_to_n(line, sizeof(line) - 1, "[shrink_array][{}][{}][{}] {}", name(record.channel),
+                                          letter[static_cast<std::size_t>(record.level)], thread_id(), record.message);
+        len            = static_cast<std::size_t>(res.size) < sizeof(line) - 1 ? static_cast<std::size_t>(res.size)
+                                                                               : sizeof(line) - 1;
+    }
+    catch (...)
+    {
+        // Unreachable: a format string checked at compile time and built-in
+        // arguments (append_text.h). The bare message, so nothing is lost.
+        len = static_cast<std::size_t>(append_text(line, line + sizeof(line) - 1, record.message) - line);
+    }
     line[len++]           = '\n';
     std::FILE* const file = out != nullptr ? out : stderr;
     std::fwrite(line, 1, len, file);
@@ -472,7 +492,8 @@ inline void emit_fatal(const Record& record) noexcept
     {
         for (int attempt = 0; attempt < 1000; ++attempt)
         {
-            if (sink_mutex.try_lock())
+            const std::unique_lock lk(sink_mutex, std::try_to_lock);
+            if (lk.owns_lock())
             {
                 if (sink != nullptr)
                 {
@@ -484,7 +505,6 @@ inline void emit_fatal(const Record& record) noexcept
                 {
                     default_sink(record);
                 }
-                sink_mutex.unlock();
                 return;
             }
             ::sched_yield();
@@ -553,8 +573,10 @@ inline void report_bad_items(const Spec& spec, std::string_view who) noexcept
 }
 
 /// @brief An environment switch that raises a channel to a level: a trace
-///        of before the log (deprecated: its use is warned about), or a
-///        setting whose point is what it logs (CHUNK_RECHUNK_DRY_RUN).
+///        or a report of before the log (deprecated: its use is warned about;
+///        docs/developer_settings.md section 2 dates its removal), or a setting
+///        whose point is what it logs (none left: the decider's
+///        CHUNK_RECHUNK_CHURN is now CHUNK_LOG=rechunk=debug).
 struct LegacySwitch
 {
     std::string_view name;
@@ -566,17 +588,12 @@ struct LegacySwitch
 /// @brief The switches, applied after CHUNK_LOG and raising only: setting
 ///        one shows what it showed before, whatever CHUNK_LOG says.
 ///        Set = non-empty and not starting with '0'.
-inline constexpr std::array<LegacySwitch, 10> legacy_switches{{
-    {"CHUNK_RECHUNK_TRACE", Channel::rechunk, Level::debug, true},
-    {"CHUNK_RECHUNK_TRACE_SLICES", Channel::rechunk, Level::trace, true},
-    {"CHUNK_RECHUNK_TRACE_MEM", Channel::memory, Level::debug, true},
-    {"CHUNK_RECHUNK_MEMTRACE", Channel::memory, Level::info, true},
-    {"CHUNK_RECHUNK_DRY_RUN", Channel::rechunk, Level::info, false},
-    {"CHUNK_RECHUNK_CHURN", Channel::rechunk, Level::info, false},
-    {"CHUNK_FORCE_RECHUNK", Channel::rechunk, Level::info, false},
-    {"CHUNK_AFFINITY_TRACE", Channel::affinity, Level::debug, true},
-    {"CHUNK_RECYCLE_TRACE", Channel::recycle, Level::trace, true},
+inline constexpr std::array<LegacySwitch, 5> legacy_switches{{
     {"FAST_ALLOC_TRACE", Channel::alloc, Level::trace, true},
+    {"CHUNK_ARENA_REPORT", Channel::arena, Level::info, true},
+    {"CHUNK_LEDGER_REPORT", Channel::ledger, Level::info, true},
+    {"CHUNK_OMPT_STATS", Channel::ompt, Level::info, true},
+    {"CHUNK_CST2_PROBE", Channel::compress, Level::info, true},
 }};
 
 /// @brief True when switch @p sw is set.
@@ -636,9 +653,10 @@ inline void read_environment() noexcept
         {
             if (p[0] == '%' && p[1] == 'p')
             {
-                used += static_cast<std::size_t>(
-                    std::format_to_n(expanded + used, sizeof(expanded) - 1 - used, "{}", static_cast<long>(::getpid()))
-                        .size);
+                // The pid, without std::format (append_text.h).
+                used = static_cast<std::size_t>(
+                    append_int(expanded + used, expanded + sizeof(expanded) - 1, static_cast<long>(::getpid())) -
+                    expanded);
                 ++p;
             }
             else
@@ -733,6 +751,9 @@ inline void set_sink(Sink sink, void* user = nullptr) noexcept
     }
     catch (...) // std::mutex::lock: std::system_error
     {
+        // The lock could not be taken: the sink in place stays. Not through
+        // that sink (it is the one being replaced): straight to stderr.
+        std::fputs("fast_alloc logging: set_sink() could not take the sink lock; the sink in place stays\n", stderr);
     }
 }
 } // namespace fast_alloc::logging

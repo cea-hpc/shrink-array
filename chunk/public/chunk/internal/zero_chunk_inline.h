@@ -23,11 +23,11 @@
 #include <print>           // std::println
 #include <source_location> // std::source_location
 #include <tuple>           // the candidate-list entries
+#include <type_traits>     // std::remove_cvref_t (the re-queued candidates)
 
 #include "chunk/zero_chunk.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
 #include "chunk/config.h"     // build_config::chunk_dynamic, chunk_config::stats
 #include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (operator new[])
 #include "chunk/internal/chunk_size_policy.h"   // alloc_chunk_count
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_* / add_chunk_* (CHUNK_STATS)
 #include "chunk/internal/manager_chunk.h"       // manager_chunk:: candidate lists (dependent calls)
@@ -35,7 +35,7 @@
 #include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_*, pmp::team, pmp::in_application_phase
 #include "chunk/internal/pool_ledger.h"         // CHUNK_LEDGER_*
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
-#include "chunk/internal/test_hooks.h"          // TEST KNOB: test_hooks::maybe_pass_delay
+#include "chunk/internal/queue_flag.h"          // queue_flag::hand_back / release: the pass's hand-back
 
 namespace shrink_array
 {
@@ -52,13 +52,6 @@ template <typename T, typename Derived, bool Enabled>
     return static_cast<void*>(chunks);
 }
 
-template <typename T, typename Derived, bool Enabled>
-void zero::ChunkThreadPolicy<T, Derived, Enabled>::init_chunks_cst_val(zero::Chunk<T>* chunks,
-                                                                       std::size_t     count) noexcept
-{
-    chunk_array_new::init_chunks(chunks, count, [](zero::Chunk<T>& chunk) { chunk.init_values_cst_val(); });
-}
-
 // Out of line on purpose, as operator new[] above: avoids a false -Wmismatched-new-delete
 // (see zero_any::ChunkThreadPolicy::operator delete[] in zero_any_chunk_inline.h).
 template <typename T, typename Derived, bool Enabled>
@@ -68,10 +61,10 @@ template <typename T, typename Derived, bool Enabled>
 }
 
 template <typename T, typename Derived, bool Enabled>
-void zero::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_par(int                 thr,
-                                                                                        VecTupleChunkpInt2& ll_compt)
+void zero::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_par(int              thr,
+                                                                                        CandidateTuples& ll_compt)
 {
-    const auto& vec_tup = Derived::Manager::chunk_to_compress_potentially_thr[thr];
+    const auto& vec_tup = Derived::Manager::zero_candidates_thr[thr];
 
     const int sz = vec_tup.size();
 
@@ -86,6 +79,9 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress
         // The chunk's OWN geometry, captured at enqueue -- not the ambient size.
         const auto count = ll_compt.size();
         chunk_t->fill_list_to_compress(ll_compt, num_chunk, num_tab, std::get<3>(tup).count());
+        // Scanned, still marked: hand its queue flag back before the mark can go down,
+        // here for the chunks the scan drops (queue_flag.h, F6).
+        queue_flag::hand_back(zero::Proxy<T>::get_tab_is_inside_list_to_compress(num_tab)[num_chunk]);
         // Not selected by the scan: the writers may have it back now.
         if (ll_compt.size() == count)
         {
@@ -95,11 +91,11 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress
 }
 
 template <typename T, typename Derived, bool Enabled>
-void zero::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(this Derived&       self,
-                                                                           VecTupleChunkpInt2& ll_compt,
-                                                                           int                 num_chunk,
-                                                                           int                 num_tab,
-                                                                           unsigned int        n_elems)
+void zero::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(this Derived&    self,
+                                                                           CandidateTuples& ll_compt,
+                                                                           int              num_chunk,
+                                                                           int              num_tab,
+                                                                           unsigned int     n_elems)
 {
     if (self.written())
     {
@@ -143,7 +139,7 @@ void zero::Chunk<T>::compress_sweep_rank(int thr)
 {
     // Bypasses CompressionManager::start(): see check_no_flush_outside_start.
     check_no_flush_outside_start<zero::Proxy<T>>("Chunk::compress_sweep_rank");
-    auto& chunk_t = Manager::chunk_to_compress_potentially_thr[thr];
+    auto& chunk_t = Manager::zero_candidates_thr[thr];
     // Dynamic geometry: pin the ambient chunk size to EACH candidate's own (its ChunkElems),
     // restored after the loop. free_block_to_pool() parks in the list of the AMBIENT size,
     // which after a re-chunk may be another array's: a 64-buffer parked in the 128 list
@@ -187,14 +183,14 @@ void zero::Chunk<T>::compress_chunk_to_compress(bool /*apply*/)
 template <typename T, typename Derived, bool Enabled>
 bool zero::ChunkFastCompPolicy<T, Derived, Enabled>::have_chunk_to_compress(int max_thr)
 {
-    if (Manager::chunk_to_compress_potentially_thr.empty())
+    if (Manager::zero_candidates_thr.empty())
     {
         return false;
     }
 
     for (int thr = 0; thr < max_thr; ++thr)
     {
-        const auto& chunk_t = Manager::chunk_to_compress_potentially_thr[thr];
+        const auto& chunk_t = Manager::zero_candidates_thr[thr];
 
         const bool is_empty = chunk_t.empty();
         if (!is_empty)
@@ -242,14 +238,6 @@ void zero::ChunkThreadPolicy<T, Derived, Enabled>::create_value(this Derived& se
     std::atomic_thread_fence(std::memory_order_release);
 }
 
-// OpenMP: delegates to the rank-aware overload. The serial specialisation below allocates
-// directly (no per-thread free list).
-template <typename T, typename Derived, bool Enabled>
-void zero::ChunkThreadPolicy<T, Derived, Enabled>::create_value(this Derived& self) noexcept
-{
-    self.create_value(get_thr_rank_fast());
-}
-
 template <typename T, typename Derived>
 void zero::ChunkThreadPolicy<T, Derived, false>::create_value(this Derived& self) noexcept
 {
@@ -272,12 +260,12 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int 
 {
     // Before the first parallel region the per-rank lists do not exist (sized at region
     // begin), yet zero::Array::resize() calls this from create(): do not index them.
-    if (thr < 0 || static_cast<size_t>(thr) >= Manager::chunk_to_compress_potentially_thr.size())
+    if (thr < 0 || static_cast<size_t>(thr) >= Manager::zero_candidates_thr.size())
     {
         return;
     }
 
-    auto& vec_tuple_to_compress = Manager::chunk_to_compress_potentially_thr[thr];
+    auto& vec_tuple_to_compress = Manager::zero_candidates_thr[thr];
 
     const int sz = vec_tuple_to_compress.size();
 
@@ -337,10 +325,13 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int 
         }
     }
 
-    VecTupleChunkpInt2 ll_compt;
+    CandidateTuples ll_compt;
 
     ll_compt.reserve((sz / 10) + 1);
 
+    // The scan hands every candidate's queue flag back as it goes, before any mark goes
+    // down (fill_list_chunk_to_compress_in_par: queue_flag.h, F6); the loop at the end
+    // releases them.
     fill_list_chunk_to_compress_in_par(thr, ll_compt);
 
     // Geometry: a rank's list mixes chunks of EVERY array, at their own sizes. clear_int_st()
@@ -363,34 +354,10 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int 
         set_thread_chunk_size(saved_sz);
     }
 
-    for (int k = 0; k < sz; ++k)
-    {
-        const auto& tup = vec_tuple_to_compress[k];
-
-        const int num_chunk = std::get<1>(tup);
-
-        const int num_tab = std::get<2>(tup);
-        // Hand the candidate back: its mark FIRST, then the dedup flag (the reverse order can
-        // erase another pass's claim: see zero_any::Chunk<T>::make_block_compression).
-        if (auto* const chunk_t = std::get<0>(tup))
-        {
-            chunk_t->steal_unmark();
-        }
-        test_hooks::maybe_pass_delay(); // TEST KNOB (test_hooks.h)
-        if constexpr (build_config::any_check)
-        {
-            if (auto* const marked = std::get<0>(tup); marked != nullptr && marked->steal_marked()) [[unlikely]]
-            {
-                CHUNK_INVARIANT_FAILED("compression pass: candidate {} was marked while this pass still held its "
-                                       "dedup flag -- two passes on one chunk",
-                                       marked);
-            }
-        }
-        zero::Proxy<T>::reset_tab_inside_list_to_compress(num_tab, num_chunk);
-    }
-
-    vec_tuple_to_compress.clear();
-    vec_tuple_to_compress.reserve((sz / 10) + 1);
+    queue_flag::release_candidates(
+        vec_tuple_to_compress, sz, [](int num_tab, int num_chunk) -> auto&
+        { return zero::Proxy<T>::get_tab_is_inside_list_to_compress(num_tab)[num_chunk]; },
+        [](int num_tab, int num_chunk) { zero::Proxy<T>::reset_tab_inside_list_to_compress(num_tab, num_chunk); });
 
     if (guarded)
     {
@@ -545,6 +512,104 @@ void zero::ChunkThreadPolicy<T, Derived, false>::release_st(this Derived& self, 
     self.Base::free_values();
 
     self.init_values_cst_val();
+}
+
+// ---------------------------------------------------------------------------
+// shrink_array::ChunkThreadPolicy<T, Derived, Enabled>
+// ---------------------------------------------------------------------------
+
+template <typename T, typename Derived, bool Enabled>
+T* zero::ChunkThreadPolicy<T, Derived, Enabled>::try_mark_cst_and_get_old(this Derived& self)
+{
+    T* old = self.Base::values_load();
+    if (old == Base::get_cst_val1()) [[unlikely]]
+    {
+        return nullptr;
+    }
+
+    T* expected = old;
+    T* new_ptr  = Base::get_cst_val1();
+
+    if (!self.values_.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel, std::memory_order_acquire))
+        [[unlikely]]
+    {
+        return nullptr;
+    }
+    return old;
+}
+
+// ---------------------------------------------------------------------------
+// shrink_array::Chunk<T>
+// ---------------------------------------------------------------------------
+
+template <typename T>
+zero::Chunk<T>::Chunk(const Chunk& other) : ChunkCounterPolicy<chunk_config::use_compression_with_counter>(other)
+{
+    if constexpr (build_config::threaded)
+    {
+        values_.store(other.values_.load());
+    }
+    else
+    {
+        values_ = other.values_;
+    }
+}
+
+template <typename T>
+zero::Chunk<T>& zero::Chunk<T>::operator=(const Chunk<T>& other)
+{
+    if (this == &other)
+    {
+        return *this;
+    }
+
+    // Same reason as the copy ctor: propagate the zero-counter state.
+    ChunkCounterPolicy<chunk_config::use_compression_with_counter>::operator=(other);
+
+    if constexpr (build_config::threaded)
+    {
+        T* loaded_value = other.values.load();
+        values_.store(loaded_value);
+    }
+    else
+    {
+        values_ = other.values;
+    }
+
+    return *this;
+}
+
+template <typename T>
+void zero::Chunk<T>::alloc_chunk(this auto& self, [[maybe_unused]] int thr_rank)
+{
+    if (self.is_cst_val1())
+    {
+        if constexpr (chunk_config::stats)
+        {
+            increm_chunk_write<ChunkType>();
+        }
+
+        if constexpr (build_config::threaded)
+        {
+            self.create_value(thr_rank);
+        }
+        else
+        {
+            self.create_value();
+        }
+    }
+}
+
+template <typename T>
+auto& zero::Chunk<T>::get_manager() noexcept
+{
+    // Do not make this a function-local static: its lazy guard's first init
+    // can run from compress() inside an OpenMP region and deadlock threads on
+    // __cxa_guard_acquire. A LazyImmortal (chunk/internal/immortal.h) is built
+    // by the manager's registration (ManagerChunk::init_static_state), before
+    // any array or thread reaches it, and never destroyed (a global array
+    // still uses it after main).
+    return *s_manager_;
 }
 
 } // namespace shrink_array

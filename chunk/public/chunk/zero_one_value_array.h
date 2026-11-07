@@ -16,18 +16,15 @@
 
 #pragma once
 
-#include <iostream>    // for cout, ostream
-#include <type_traits> // for is_same_v
-#include <vector>      // for vector
-
+#include <iostream>         // for cout, ostream
 #include <initializer_list> // the {a, b, c} constructor
 #include <iterator>         // std::forward_iterator, std::distance -- the (first, last) constructor
 
-#include "chunk/bit.h"                                         // is_bool_like_v: bool and Bit share the bool path
-#include "chunk/internal/in_t.h"                               // InT<T>: the element snapshots
-#include "chunk/internal/second_value_info.h"                  // SecondValueInfo (InfArrayT)
-#include "chunk/internal/second_value_array_base.h"            // for SecondValueArrayBase
-#include "chunk/internal/zero_one_value_array_parallel.h"      // zero_one_value::ParallelSupport — OpenMP-only mixin
+#include "chunk/bit.h"                                    // is_bool_like_v: bool and Bit share the bool path
+#include "chunk/internal/in_t.h"                          // InT<T>: the element snapshots
+#include "chunk/internal/second_value_info.h"             // SecondValueInfo (InfArrayT)
+#include "chunk/internal/second_value_array_base.h"       // for SecondValueArrayBase
+#include "chunk/internal/zero_one_value_array_parallel.h" // zero_one_value::FastBlockSupport; ParallelSupport through it
 #include "chunk/internal/zero_one_value_array_rechunk_hooks.h" // zero_one_value::RechunkHooks — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/array_chunk_base.h"                   // for ArrayChunkBase
 #include "chunk/internal/concept_array_chunk_element.h"        // for ArrayChunkElement
@@ -58,6 +55,18 @@ namespace zero_one_value
  *          num_tab: hence the destructor's two erases and rechunk_to()'s six
  *          hooks (zero_any has three).
  *
+ *          Booleans, two containers, chosen by type (docs/variants.md, section 2):
+ *            - Array<bool>: one byte per element in a materialised chunk, a plain
+ *              byte store per write;
+ *            - Array<Bit>, spelled ArrayChunkBits<> (chunk/array_chunk_bits.h):
+ *              one bit per element, 8 per byte -- the layout of std::vector<bool>
+ *              -- for an atomic read-modify-write of a 64-bit word per write, so
+ *              that two threads may write neighbouring elements, which
+ *              std::vector<bool> does not allow.
+ *          Both compress all-false chunks to first_value and all-true chunks to
+ *          the second value, `true` by construction (no set_second_value()).
+ *          examples/bool_arrays uses both.
+ *
  * @tparam T        stored element type
  * @tparam IntType index type used for sizes and element positions
  */
@@ -68,25 +77,26 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
               public RechunkHooks<Array<T, IntType>>
 {
   public:
-    using Base2      = SecondValueArrayBase<Array>; ///< Second-value common base (dirty bitset, second-value plumbing).
-    using Base       = ArrayChunkBase<Array>;       ///< Base shared by every variant.
-    using FastBlock2 = FastBlockSupport<Array>;     ///< Fast-block compression pass.
-    using Hooks2     = RechunkHooks<Array>;         ///< Re-chunk hooks (dynamic geometry).
+    using SecondValueBase =
+        SecondValueArrayBase<Array>;            ///< Second-value common base (dirty bitset, second-value plumbing).
+    using Base       = ArrayChunkBase<Array>;   ///< Base shared by every variant.
+    using FastBlock2 = FastBlockSupport<Array>; ///< Fast-block compression pass.
+    using Hooks2     = RechunkHooks<Array>;     ///< Re-chunk hooks (dynamic geometry).
 
-    friend Base2;                 ///< The CRTP base reaches this class's private members.
+    friend SecondValueBase;       ///< The CRTP base reaches this class's private members.
     friend ArrayChunkBase<Array>; ///< For swap_identity().
 
-    // RechunkHooks::rechunk_reown_after_swap copies the private ind_cst_val2.
+    // RechunkHooks::rechunk_reown_after_swap copies the private ind_cst_val2_.
     template <typename, bool>
     friend class shrink_array::zero_one_value::RechunkHooks;
 
     // Re-declared, not only inherited: the mixins declare them too, and an
     // outside `Arr::ChunkType` would be ambiguous between base subobjects.
-    using Traits      = Base2::Traits;      ///< ArrayChunkTraits<Array>.
-    using ChunkType   = Base2::ChunkType;   ///< Chunk<T>, the chunk type held in chunk_list.
-    using ManagerType = Base2::ManagerType; ///< ManagerChunk<Chunk, T>, the per-type manager.
-    using ProxyType   = Base2::ProxyType;   ///< Proxy<T>, the write proxy of the non-const accessors.
-    using value_type  = T;                  ///< Stored element type.
+    using Traits      = SecondValueBase::Traits;      ///< ArrayChunkTraits<Array>.
+    using ChunkType   = SecondValueBase::ChunkType;   ///< Chunk<T>, the chunk type held in chunk_list_.
+    using ManagerType = SecondValueBase::ManagerType; ///< ManagerChunk<Chunk, T>, the per-type manager.
+    using ProxyType   = SecondValueBase::ProxyType;   ///< Proxy<T>, the write proxy of the non-const accessors.
+    using value_type  = T;                            ///< Stored element type.
 
     // The former snake_case spellings, kept until 1.0 (types are PascalCase).
     using chunk_type [[deprecated("types are PascalCase: use ChunkType")]]          = ChunkType;
@@ -95,18 +105,19 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     using ind_type [[deprecated("types are PascalCase: use IndType")]]              = IntType;
     using chunk_list_type [[deprecated("types are PascalCase: use ChunkListType")]] = Base::ChunkListType;
 
-    using Base2::chunk_list_;
+    using SecondValueBase::chunk_list_;
 
     using Base::nb_tab;
     using Base::size_policy_;
-    using Base2::m_size_;
-    using Base2::nb_chunk_;
-    using Base2::resize; // resize(sz, val), ArrayChunkBase's
+    using SecondValueBase::m_size_;
+    using SecondValueBase::nb_chunk_;
+    using SecondValueBase::resize; // resize(sz, val), ArrayChunkBase's
 
     /// Registry entry of an array: (second value, its index in the shared value table, num_tab).
     using InfArrayT = SecondValueInfo<T>;
 
-    using ManagerChunk2 = ManagerChunk<Chunk, T>; ///< Same type as ManagerType.
+    using Manager                                     = ManagerChunk<Chunk, T>; ///< Same type as ManagerType.
+    using ManagerChunk2 [[deprecated("use Manager")]] = Manager;                ///< Former name, until 1.0.
 
     // Required, not decoration: ArrayChunkBase re-exports RechunkSupport's hook
     // DEFAULTS under these names, so a hook call through self() would be
@@ -175,6 +186,8 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     }
 
     /// @brief Build an array holding the elements of @p il.
+    /// @details Not explicit, as std::vector's: `Array<T> a = {1, 2, 3};`, and a
+    ///          braced list as an argument or a return value.
     /// @param il Source values.
     Array(std::initializer_list<T> il) : Array(il.begin(), il.end()) {}
 
@@ -189,22 +202,13 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      *            at this address inherits our num_tab and second value
      *            (PointerMap's first-match lookup); rechunk_to()'s @c tmp
      *            makes address reuse routine.
-     *          - erase_inf_array_by_ptr(&inf_array): map_inf_array entries
+     *          - erase_inf_array_by_ptr(&inf_array): map_inf_array_ entries
      *            pointing at our inf_array MEMBER would be dereferenced by the
      *            next array's terminal sweep (use after free). Fast-block,
      *            non-bool only; rechunk_to() re-points its value onto the
      *            survivor first, so only entries we still own go.
      */
-    ~Array()
-    {
-        clear();
-        Proxy<T>::share_info_array->erase(this->registry_key());
-
-        if constexpr (chunk_config::use_fast_block_compression && is_not_bool)
-        {
-            Proxy<T>::share_info_array->erase_inf_array_by_ptr(&inf_array_);
-        }
-    }
+    ~Array();
 
     /**
      * @brief Move-assign: this array's own contents are released (clear()),
@@ -214,27 +218,11 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      *          chunks keep their metadata rows (num_tab). Sequential context.
      * @note noexcept, as the move constructor: a failure here terminates.
      */
-    Array& operator=(Array&& other) noexcept
-    {
-        if (this != &other)
-        {
-            clear();
-            this->swap_storage_and_identity(other);
-        }
-        return *this;
-    }
+    Array& operator=(Array&& other) noexcept;
 
     /// @brief Deep copy-assignment (see the copy constructor). Self-assignment
     ///        is a no-op.
-    Array& operator=(const Array& from)
-    {
-        if (this != &from)
-        {
-            copy_second_value_from(from);
-            this->copy_from(from);
-        }
-        return *this;
-    }
+    Array& operator=(const Array& from);
 
     /**
      * @brief Set the array-wide second constant.
@@ -253,17 +241,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      * @brief The array-wide second constant, read from the shared registry.
      * @return the registered second value; always true for bool
      */
-    [[nodiscard]] T get_second_value() const noexcept
-    {
-        if constexpr (!is_bool_like_v<T>)
-        {
-            return Proxy<T>::share_info_array->get_second_value(this->registry_key());
-        }
-        else
-        {
-            return true;
-        }
-    }
+    [[nodiscard]] T get_second_value() const noexcept;
 
     /// @brief Full registry tuple for this array: second value, its index, num_tab.
     [[nodiscard]] InfArrayT get_info_second_value() const noexcept
@@ -273,18 +251,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
 
     /// @brief Index of this array's second value in the shared value table.
     /// @warning Aborts for bool, which registers no second value.
-    [[nodiscard]] int get_ind_second_value() const noexcept
-    {
-        if constexpr (is_not_bool)
-        {
-            return get_info_second_value().ind;
-        }
-        else
-        {
-            CHUNK_INVARIANT_FAILED(
-                "zero_one_value::Array<bool>::get_ind_second_value(): bool registers no second value");
-        }
-    }
+    [[nodiscard]] int get_ind_second_value() const noexcept;
 
     /**
      * @brief Has the chunk holding element @p index been materialised?
@@ -303,26 +270,16 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      * @note zero_one_value::Chunk::written() needs the array's second-value index: see
      *       has_chunk_written_v (array_chunk_base.h).
      */
-    [[nodiscard]] bool chunk_written(int num_chunk) const
-    {
-        if constexpr (is_not_bool)
-        {
-            return chunk_list_[num_chunk].written(get_ind_second_value());
-        }
-        else
-        {
-            return chunk_list_[num_chunk].written();
-        }
-    }
+    [[nodiscard]] bool chunk_written(int num_chunk) const;
 
     /**
      * @brief Resize the array, preserving the elements that still fit.
      * @details Drains the compression candidates and deferred ops first: both
-     *          hold `&chunk_list[j]` pointers a reallocation would dangle.
+     *          hold `&chunk_list_[j]` pointers a reallocation would dangle.
      * @param newsz new element count
      * @note Shrinking releases the dropped chunks' buffers (release_chunk_range():
      *       freed serially, parked in the geometry's reuse list under OpenMP);
-     *       chunk_list keeps its capacity.
+     *       chunk_list_ keeps its capacity.
      */
     void resize(IntType newsz);
 
@@ -340,7 +297,14 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      * @details clear_core() plus the pre-drain compression stats.
      * @see clear_core
      */
-    void clear();
+    void clear()
+    {
+        // clear() and clear_core() are currently the same teardown; the split exists so
+        // rechunk_to() can release its temporary array through clear_core() without
+        // going through the public entry point.
+        this->invalidate_proxies();
+        clear_core();
+    }
 
     /**
      * @brief Audit pass: report the constant chunks the incremental compression missed.
@@ -366,7 +330,12 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      * @brief Public entry point for the audit pass.
      * @see compress_int, which this forwards to.
      */
-    void compress();
+    void compress()
+    {
+        // Plain forwarder. Do not add an in-parallel-region test here: it hit an LLVM
+        // OpenMP runtime bug.
+        compress_int();
+    }
 
     /// @brief Read-only access to the underlying chunk list.
     [[nodiscard]] const Base::ChunkListType& get_chunk_list() const noexcept
@@ -429,17 +398,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     /// @brief Declare @p from's second value on this array, when it has one
     ///        (T{} means none: rechunk_seed_fresh's rule) and this array has
     ///        not declared it yet.
-    void copy_second_value_from(const Array& from)
-    {
-        if constexpr (!is_bool_like_v<T>)
-        {
-            const InT<T> sv = from.get_second_value();
-            if (sv != T{} && get_second_value() != sv)
-            {
-                set_second_value(sv, false);
-            }
-        }
-    }
+    void copy_second_value_from(const Array& from);
 
     /// @brief Address of the registry mirror, for ArrayChunkBase to arm write
     ///        proxies with (zero_one_value::ProxySpec::arm_inf_array).
@@ -456,63 +415,20 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
         inf_array_ = this->get_info_second_value();
     }
 
-    /// @brief Make the T{} key drainable: its tuple in map_inf_array and a
+    /// @brief Make the T{} key drainable: its tuple in map_inf_array_ and a
     ///        candidate list per rank, if this type has none yet. Idempotent;
     ///        fast-block builds only (the serial path has no lists).
-    void register_no_second_value_key()
-    {
-        if constexpr (is_not_bool && chunk_config::use_fast_block_compression)
-        {
-            auto& sh_inf = *Proxy<T>::share_info_array;
-            if (sh_inf.find_inf_array(T{}) == nullptr)
-            {
-                sh_inf.insert(T{}, &inf_array_none);
-                // The between-phase pass drains only the values of THIS map: T{}
-                // must be in it, at the sentinel index (so set_second_value(T{})
-                // still sees it unregistered and builds a real block).
-                sh_inf.insert_map_ind_cst_val2(T{}, chunk_config::no_second_value_index);
-            }
-            if constexpr (build_config::threaded)
-            {
-                for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
-                {
-                    auto& slot = ManagerChunk2::map_chunk2_to_compress_potentially_thr[thr][T{}];
-                    if (!slot)
-                    {
-                        slot = std::make_shared<typename std::remove_reference_t<decltype(slot)>::element_type>();
-                    }
-                }
-            }
-        }
-    }
+    void register_no_second_value_key();
 
     /**
      * @brief The identity step of swap(): the registry tuple (second value,
      *        its index, num_tab), which is what zero_one_value reads its identity
      *        from, then the members that mirror it.
-     * @details num_tab is not swapped (zero_one_value never reads it). map_inf_array
+     * @details num_tab is not swapped (zero_one_value never reads it). map_inf_array_
      *          points each second value at an array's inf_array MEMBER, which
      *          now holds the other tuple: both values are re-pointed.
      */
-    void swap_identity(Array& other)
-    {
-        auto& sh_inf = *Proxy<T>::share_info_array;
-        sh_inf.swap_entries(this->registry_key(), other.registry_key());
-        std::swap(ind_cst_val2_, other.ind_cst_val2_);
-        sync_registry_mirror();
-        other.sync_registry_mirror();
-        if constexpr (chunk_config::use_fast_block_compression && is_not_bool)
-        {
-            for (Array* arr : {this, &other})
-            {
-                const T value = arr->inf_array_.second_value;
-                if (value != T{})
-                {
-                    sh_inf.insert(value, &arr->inf_array_);
-                }
-            }
-        }
-    }
+    void swap_identity(Array& other);
 
     /// This array's (second value, index, num_tab) tuple: a MIRROR of its entry
     /// in zero_one_value::Proxy<T>::share_info_array, complete in every build mode.
@@ -521,14 +437,14 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     ///          create(), set_second_value(), the identity swaps. Write proxies
     ///          are armed with its address, keeping the registry scan off the
     ///          write path.
-    /// @warning map_inf_array holds a POINTER to this member, so the destructor
+    /// @warning map_inf_array_ holds a POINTER to this member, so the destructor
     ///          must erase that entry -- see its documentation.
     InfArrayT inf_array_;
 
     /**
      * @brief The (T{}, no_second_value_index) tuple every array without a
      *        second value is drained under.
-     * @details The compression pass walks map_inf_array; an array with no
+     * @details The compression pass walks map_inf_array_; an array with no
      *          second value queues under T{}, which needs this tuple and a list
      *          per rank (register_no_second_value_key()). Never erased.
      */
@@ -547,5 +463,5 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
 #include "chunk/internal/zero_one_value_array_inline.h" // the template bodies
 
 // The mixins' bodies, after zero_one_value_array_inline.h: self() needs a complete zero_one_value::Array.
-#include "chunk/internal/zero_one_value_array_parallel_inline.h"      // zero_one_value::ParallelSupport's bodies
+#include "chunk/internal/zero_one_value_array_parallel_inline.h"      // zero_one_value::FastBlockSupport's bodies
 #include "chunk/internal/zero_one_value_array_rechunk_hooks_inline.h" // zero_one_value::RechunkHooks's bodies

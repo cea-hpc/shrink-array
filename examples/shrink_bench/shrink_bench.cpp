@@ -15,8 +15,7 @@
  */
 
 // Central prelude first: fixes the chunk/ include order and derives the
-// SHRINK_ARRAY / CHECK_COMPRESSION / NEED_COMPRESSION macros from the
-// build-time variant selector.
+// SHRINK_ARRAY macro from the build-time variant selector.
 #include "bench_prelude.h" // Int, tc, ComplexDouble, SHRINK_ARRAY
 
 #include <algorithm> // std::min, std::max
@@ -56,27 +55,15 @@
 #include "chunk/ring_log_debug.h"     // ring_init/analyze_ring_sweep decls
 #include "chunk/rechunk_decider.h"    // re-chunk decisions (acts in dyn builds only)
 #include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
+#include "chunk/log.h"                // CHUNK_LOG, logging::enabled (the cst2 report at compress=info)
 
 using namespace shrink_array;
-
-namespace shrink_array
-{
-
-// ActiveArray now lives in bench_array.h, with the `Int` index type it hands
-// to the library: this file carried a second, identical copy of the alias --
-// harmless while both spelled the same thing, a redefinition as soon as one of
-// them gained a template argument.
-
-// chunk_dyn_size now lives in bench_array.h: bench_init.cpp needs it as much
-// as main() does.
-
-} // namespace shrink_array
 
 /// @brief The chunk-size advisor and the re-chunk decider act in a dynamic
 ///        chunked build only. The objects exist in every build so the loop
 ///        reads the same; RechunkDecider::consider() is itself a no-op when
 ///        !chunk_dynamic, and this flag gates the rest with `if constexpr`.
-inline constexpr bool has_advisor = chunk_config::is_shrink_enabled && build_config::chunk_dynamic;
+constexpr bool has_advisor = chunk_config::is_shrink_enabled && build_config::chunk_dynamic;
 
 template <typename T>
 using Array = ActiveArray<T>;
@@ -246,7 +233,9 @@ int main(int argc, char* argv[])
     const bool      test_stl        = bench_args.test_stl;
     const bool      no_struct       = bench_args.no_struct;
     const bool      no_mask         = bench_args.no_mask;
+    const bool      no_conn         = bench_args.no_conn;
     const double    mask_scale      = bench_args.mask_scale; // tab_mask's size / sz
+    const double    conn_scale      = bench_args.conn_scale; // tab_conn's size / sz
     const double    multiply_factor = bench_args.multiply_factor;
     const double    divisor_factor  = bench_args.divisor_factor;
     const Int       iter_max_arg    = bench_args.iter_max_arg;
@@ -526,8 +515,7 @@ int main(int argc, char* argv[])
     }
 
     // Array<bool> in a shrink build, std::vector<short> in the baseline
-    // (bench_array.h says why): one alias, where four declarations under
-    // #if defined CHUNK_VARIANT_ZERO* stood.
+    // (bench_array.h says why).
     BenchBoolArray tab_bool(sz);
     // tab_bool's twin, written with the same values at the same places:
     // ArrayChunkBits (8 bools per byte) in a zero_one_value build, tab_bool's own type
@@ -544,14 +532,10 @@ int main(int argc, char* argv[])
     // holds -- at --mask_scale 8, the size tab_mask was created with, 8 x 10^9
     // wrapped a 32-bit Int to -589934592 and zero_any::Array<bool, int> threw
     // std::length_error. The int64 builds take the full size.
-    long long mask_want = std::llround(mask_scale * static_cast<double>(sz));
-    if (mask_want < 1)
-    {
-        mask_want = 1;
-    }
-    const Int mask_sz = mask_want > static_cast<long long>(std::numeric_limits<Int>::max())
-                            ? static_cast<Int>(static_cast<long long>(std::numeric_limits<Int>::max()) & ~0x3FFLL)
-                            : static_cast<Int>(mask_want);
+    const long long mask_want = std::max(std::llround(mask_scale * static_cast<double>(sz)), 1LL);
+    const Int       mask_sz = mask_want > static_cast<long long>(std::numeric_limits<Int>::max())
+                                  ? static_cast<Int>(static_cast<long long>(std::numeric_limits<Int>::max()) & ~0x3FFLL)
+                                  : static_cast<Int>(mask_want);
     if (!no_mask && static_cast<long long>(mask_sz) != mask_want)
     {
         std::println("Note: tab_mask capped at {} elements ({} requested; Int is 32-bit here, the int64 build "
@@ -564,12 +548,31 @@ int main(int argc, char* argv[])
         std::println("tab_mask: {} elements (--mask_scale {})", mask_sz, mask_scale);
     }
 
-    // Handle on the eighteen arrays, passed to the extracted phases. References,
+    // A mesh connectivity (bench_phase_conn.cpp): pattern::Array<int> in the
+    // zero_one_value and zero_any builds, zero::Array<int> in a zero build, a vector
+    // in the baseline (BenchConnArray). About conn_scale * sz ints (--conn_scale,
+    // default 1/32), whole rows of bench_conn_row, computed in 64 bits and capped
+    // at the build's Int as tab_mask; size 1 under --no_conn
+    // (BenchArrays::with_conn) or when that is less than one row.
+    const long long conn_rows_want =
+        std::llround(conn_scale * static_cast<double>(sz)) / static_cast<long long>(bench_conn_row);
+    const long long conn_rows_max = static_cast<long long>(std::numeric_limits<Int>::max()) / bench_conn_row;
+    const Int       conn_sz       = static_cast<Int>((conn_rows_want < conn_rows_max ? conn_rows_want : conn_rows_max) *
+                                                     static_cast<long long>(bench_conn_row));
+    const bool      no_tab_conn   = no_conn || conn_sz == 0;
+    BenchConnArray  tab_conn(no_tab_conn ? 1 : conn_sz);
+    if (!no_tab_conn)
+    {
+        std::println("tab_conn: {} elements ({} rows of {} cells, --conn_scale {})", conn_sz, conn_sz / bench_conn_row,
+                     bench_conn_nx, conn_scale);
+    }
+
+    // Handle on the nineteen arrays, passed to the extracted phases. References,
     // so main() stays the owner -- it builds them and destroys them.
-    BenchArrays bench_arrays{tab1,     tab2,          tab3,        tab4,      tab5,      tab_int,
-                             tab_bool, tab_bool_bits, tab_complex, tab_float, tab_short, tab_char,
-                             tab_long, tab_ulong,     tab_quant,   tab_point, tab_cell,  tab_mask,
-                             sz,       interval,      !no_struct,  !no_mask};
+    BenchArrays bench_arrays{tab1,          tab2,        tab3,        tab4,      tab5,     tab_int,  tab_bool,
+                             tab_bool_bits, tab_complex, tab_float,   tab_short, tab_char, tab_long, tab_ulong,
+                             tab_quant,     tab_point,   tab_cell,    tab_mask,  tab_conn, sz,       interval,
+                             !no_struct,    !no_mask,    !no_tab_conn};
 
     // The end-of-life stats print these next to the table number.
     maybe_set_debug_name(tab1, "tab1");
@@ -590,6 +593,7 @@ int main(int argc, char* argv[])
     maybe_set_debug_name(tab_point, "tab_point");
     maybe_set_debug_name(tab_cell, "tab_cell");
     maybe_set_debug_name(tab_mask, "tab_mask");
+    maybe_set_debug_name(tab_conn, "tab_conn");
 
     SingletonChk<GlobalStatsChunkList>::get_ref().print();
 
@@ -609,6 +613,7 @@ int main(int argc, char* argv[])
     bench_phase_fill(bench_arrays, start, end, elapsed_seconds);
     bench_phase_struct_fill(bench_arrays);
     bench_phase_mask_fill(bench_arrays);
+    bench_phase_conn_fill(bench_arrays);
 
     // Verification pass (writing or reading back the reference files):
     // lbd_check and lbd_check_all, in bench_checks.cpp.
@@ -682,6 +687,7 @@ int main(int argc, char* argv[])
     long          long_val_sum = 0;
     double        point_sum    = 0; // the struct arrays' read sweep (bench_phase_struct.cpp)
     long          mask_count   = 0; // tab_mask's read sweep (bench_phase_mask.cpp)
+    long          conn_sum     = 0; // tab_conn's gather (bench_phase_conn.cpp)
     double        v_real       = 0;
     double        v_im         = 0;
 
@@ -689,9 +695,6 @@ int main(int argc, char* argv[])
 
     // Value census and filling rates: lbd_fill_values, lbd_fill_chunk and
     // lbd_stats, in bench_stats.cpp.
-
-    // Start iteration loop
-    // #define TEST_CAPTUR_BUG
 
     // Random abort injection (TEST_CAPTUR_BUG). The draws sit inside the
     // `if constexpr`, so a normal build never touches std::random_device -- the
@@ -710,7 +713,7 @@ int main(int argc, char* argv[])
     }
 
     // ── Chunk-size advisor (STEP 0: observation only, dyn+zero_any builds) ──
-    // Every CHUNK_ADVISOR_PERIOD iterations (env, default 500, 0 = disabled),
+    // Every --advisor_period iterations (0 = disabled),
     // estimate each representative array's memory across candidate chunk
     // sizes and print the table + the analysis cost. Runs at this SERIAL
     // point of the loop (quiescent enough for observation; states may still
@@ -727,8 +730,9 @@ int main(int argc, char* argv[])
     // first move lands around a tenth of the way in, where the geometric gains
     // are largest, and the tick count stays bounded. The floor of 10 stops a
     // very short run from examining every other iteration.
-    // CHUNK_ADVISOR_PERIOD overrides; 0 still disables.
-    const Int advisor_period = shrink_array::env_number<Int>("CHUNK_ADVISOR_PERIOD", std::max<Int>(10, iter_max / 20));
+    // --advisor_period overrides; 0 disables.
+    const Int advisor_period =
+        bench_args.advisor_period >= 0 ? bench_args.advisor_period : std::max<Int>(10, iter_max / 20);
     // Phase-3A decider (dry-run): persists across ticks, keyed by array address.
     // `advisor_call` increments once per advisor_tick so cooldown/stability count
     // in ticks, not iterations. Policy defaults: 3 stable ticks, 8 MB deadband,
@@ -737,7 +741,45 @@ int main(int argc, char* argv[])
     // advisor on the array, applies the memory + hysteresis policy, and re-chunks
     // it when worthwhile. dry_run=false makes it act (rechunk is now parallel and
     // cheap, so we gate purely on memory gain + hysteresis, not CPU cost).
-    RechunkDecider rechunk_decider{RechunkPolicy{.dry_run = false}};
+    // The --rechunk_* / --force_rechunk* options set the policy's fields: the
+    // library reads none of them from the environment.
+    const RechunkPolicy rechunk_policy = [&bench_args]
+    {
+        constexpr double mib = 1024.0 * 1024.0;
+        RechunkPolicy    pol;
+        pol.dry_run = bench_args.rechunk_dry_run;
+        if (bench_args.rechunk_min_gain_mb >= 0.0)
+        {
+            pol.min_gain_bytes = static_cast<std::size_t>(bench_args.rechunk_min_gain_mb * mib);
+        }
+        if (bench_args.rechunk_coarsen_min_meta_mb >= 0.0)
+        {
+            pol.coarsen_min_meta_gain_bytes = static_cast<std::size_t>(bench_args.rechunk_coarsen_min_meta_mb * mib);
+        }
+        if (bench_args.rechunk_coarsen_min_meta_rate >= 0.0)
+        {
+            pol.coarsen_min_meta_rate = bench_args.rechunk_coarsen_min_meta_rate;
+        }
+        if (bench_args.rechunk_max_coarsen > 0)
+        {
+            pol.max_coarsen_factor = static_cast<unsigned>(bench_args.rechunk_max_coarsen);
+        }
+        if (bench_args.rechunk_grid_bits >= 0)
+        {
+            pol.advisor_grid_bits = static_cast<int>(bench_args.rechunk_grid_bits);
+        }
+        if (bench_args.rechunk_backoff_max >= 0)
+        {
+            pol.max_backoff_ticks = static_cast<int>(bench_args.rechunk_backoff_max);
+        }
+        pol.trace_array  = bench_args.rechunk_trace_array;
+        pol.force_size   = static_cast<unsigned>(bench_args.force_rechunk);
+        pol.force_at     = static_cast<int>(bench_args.force_rechunk_at);
+        pol.force_alt    = static_cast<unsigned>(bench_args.force_rechunk_alt);
+        pol.force_toggle = bench_args.force_rechunk_toggle;
+        return pol;
+    }();
+    RechunkDecider rechunk_decider{rechunk_policy};
     Int            advisor_call = 0;
     const auto     advisor_tick = [&](Int k_iter)
     {
@@ -763,16 +805,12 @@ int main(int argc, char* argv[])
             // starts like the static S=64 build and ends below the static S=256
             // one (zero_any, 64 threads: 6.57 GB against 7.26 GB; with only the
             // five arrays above advised, the other ten stay at S=64, ~12.5 GB).
-            // SHRINK_BENCH_ADVISE_ALL=0 advises only the five, for runs that
-            // must compare with earlier campaigns. tab_bool and tab_bool_bits
-            // excepted: both stay at their birth geometry, so the two bool
-            // containers are compared as they are, not after a re-chunk.
-            static const bool advise_all = []
-            {
-                const char* env = std::getenv("SHRINK_BENCH_ADVISE_ALL");
-                return env == nullptr || env[0] == '\0' || env[0] != '0';
-            }();
-            if (advise_all)
+            // --advise_five advises only the five, for runs that must compare
+            // with earlier campaigns. tab_bool and tab_bool_bits excepted: both
+            // stay at their birth geometry, so the two bool containers are
+            // compared as they are, not after a re-chunk -- unless
+            // --advise_bool hands them over too (below).
+            if (!bench_args.advise_five)
             {
                 rechunk_decider.consider<double>(tab3, tick, iter, "tab3");
                 rechunk_decider.consider<double>(tab4, tick, iter, "tab4");
@@ -787,6 +825,18 @@ int main(int argc, char* argv[])
                 {
                     rechunk_decider.consider<Cell>(tab_cell, tick, iter, "tab_cell");
                 }
+                if (!no_tab_conn)
+                {
+                    rechunk_decider.consider<int>(tab_conn, tick, iter, "tab_conn");
+                }
+            }
+            // --advise_bool: the two bool containers, re-chunked like the rest.
+            // tab_bool_bits is an ArrayChunkBits in a zero_one_value build
+            // (value_type Bit, as tab_mask), tab_bool's own type elsewhere.
+            if (bench_args.advise_bool)
+            {
+                rechunk_decider.consider<bool>(tab_bool, tick, iter, "tab_bool");
+                rechunk_decider.consider<BenchBoolBitsArray::value_type>(tab_bool_bits, tick, iter, "tab_bool_bits");
             }
             // tab_mask: an ArrayChunkBits in a zero_one_value build, whose advisor
             // knows the packed layout (the other variants' Array<bool> is not
@@ -795,19 +845,19 @@ int main(int argc, char* argv[])
             {
                 if (!no_mask)
                 {
-                    rechunk_decider.consider<typename BenchMaskArray::value_type>(tab_mask, tick, iter, "tab_mask");
+                    rechunk_decider.consider<BenchMaskArray::value_type>(tab_mask, tick, iter, "tab_mask");
                 }
             }
             if constexpr (chunk_config::use_zero_any)
             {
-                if (std::getenv("CHUNK_CST2_PROBE")) // only prints when requested
+                // CHUNK_LOG=compress=info: the registry's report at each pass.
+                if (shrink_array::logging::enabled(shrink_array::logging::Channel::compress,
+                                                   shrink_array::logging::Level::info))
                 {
                     // STEP B — cst2 GC mark report (read-only) : zero_any::Array-only API
                     // (per-chunk cst_val2 pointer registry has no equivalent on zero /
                     // zero_one_value, which have no per-chunk GC-able registry to report on).
-                    // %ld + a cast: k_iter is Int, which is `long` in the int64
-                    // build and `int` otherwise.
-                    std::fprintf(stderr, "[cst2-gc @ iter %ld]\n", static_cast<long>(k_iter));
+                    CHUNK_LOG(info, compress, "cst2-gc @ iter {}", k_iter);
                     // Spelled out rather than Array<T>: the enclosing
                     // `if constexpr` is in a plain lambda, so its discarded
                     // branch is still checked, and Array<T> is zero::Array<T> --
@@ -919,10 +969,7 @@ int main(int argc, char* argv[])
 
         Int end0 = start0 + size;
 
-        if (end0 > sz)
-        {
-            end0 = sz;
-        }
+        end0 = std::min(end0, sz);
 
         if constexpr (test_captur_bug)
         {
@@ -946,6 +993,8 @@ int main(int argc, char* argv[])
             bench_phase_struct_compute(bench_arrays, k, start0, end0, tab_nba1, tab_nba2, point_sum);
             // tab_mask's update, its own region (bench_phase_mask.cpp).
             bench_phase_mask_compute(bench_arrays, k, mask_count);
+            // tab_conn's renumbering, its own region (bench_phase_conn.cpp).
+            bench_phase_conn_compute(bench_arrays, k, conn_sum);
         }
 
         // ─── STRESS TESTS ──────────────────────────────────────────────────
@@ -1090,9 +1139,10 @@ int main(int argc, char* argv[])
                 !std::isfinite(val_sum) || !std::isfinite(cv_val_sum.real()) || !std::isfinite(cv_val_sum.imag());
             if (k % ksum_period == 0 || k == 0 || k == iter_max - 1 || ksum_bad)
             {
-                std::println(
-                    "k : {} val_sum = {} long_val_sum = {} cv_val_sum = ({},{}) point_sum = {} mask_count = {}", k,
-                    val_sum, long_val_sum, cv_val_sum.real(), cv_val_sum.imag(), point_sum, mask_count);
+                std::println("k : {} val_sum = {} long_val_sum = {} cv_val_sum = ({},{}) point_sum = {} mask_count = "
+                             "{} conn_sum = {}",
+                             k, val_sum, long_val_sum, cv_val_sum.real(), cv_val_sum.imag(), point_sum, mask_count,
+                             conn_sum);
                 std::fflush(stdout);
             }
         }
@@ -1198,6 +1248,7 @@ int main(int argc, char* argv[])
     std::fflush(stdout);
     std::println("\npoint_sum  = {}", point_sum);
     std::println("mask_count = {}", mask_count);
+    std::println("conn_sum   = {}", conn_sum);
 
     bench_print_checksums(bench_arrays, check_sum);
 

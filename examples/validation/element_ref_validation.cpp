@@ -33,7 +33,8 @@
 // Run by ctest; the variant comes from the CHUNK_VARIANT_* macro of the target.
 
 #include <complex>     // std::complex<double>
-#include <cstdio>      // std::printf
+#include <cstdio>      // std::printf, std::fprintf
+#include <exception>   // std::exception (main)
 #include <sstream>     // std::ostringstream (os << a[i])
 #include <type_traits> // std::conditional_t, std::is_same_v
 #include <utility>     // std::move
@@ -143,6 +144,11 @@ int usage()
     ints[4] <<= 3;
     expect("int %, ~, <<=", ints[2] + ints[3] + ints[4], 1 - 8 + 8);
 
+    // Copy-list-initialisation, as for a std::vector: the constructor is not explicit.
+    Array<double> listed = {1.0, 2.5, 4.0};
+    expect("a = {1, 2.5, 4}: size", listed.size(), 3);
+    expect("a = {1, 2.5, 4}: a[1]", static_cast<double>(listed[1]), 2.5);
+
     Array<bool> bools(100);
     bools[1]      = true;
     bools[2]      = bools[1];
@@ -201,11 +207,18 @@ void misuse()
 
 #ifndef ELEMENT_REF_CASE
 int main()
+try
 {
     ParamChunk::init_indexes(true);
     const int rc = usage();
     release_chunk_pools();
     destroy_block_chunk();
     return rc;
+}
+catch (const std::exception& e)
+{
+    // A failed std::format or a bad argument: said, not std::terminate().
+    std::fprintf(stderr, "element_ref_validation: %s\n", e.what());
+    return 1;
 }
 #endif

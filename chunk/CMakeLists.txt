@@ -152,7 +152,6 @@ _chunk_opt(CHUNK_OPT_CHECK_OPTIM CHECK_OPTIM)
 _chunk_opt(CHUNK_OPT_STATS CHUNK_STATS)
 _chunk_opt(CHUNK_OPT_MM_PROTECT CHUNK_MM_PROTECT)
 _chunk_opt(CHUNK_OPT_SECOND_VALUE_INDEXED CHUNK_SECOND_VALUE_INDEXED)
-_chunk_opt(CHUNK_OPT_RECLAIM_EMPTY_SLABS CHUNK_RECLAIM_EMPTY_SLABS)
 _chunk_opt(CHUNK_OPT_AGGRESSIVE_COMPRESSION HAVE_AGGRESSIVE_COMPRESSION)
 _chunk_opt(CHUNK_OPT_POOL_NO_REUSE CHUNK_POOL_NO_REUSE)
 _chunk_opt(CHUNK_OPT_ALIGN_CHECK CHUNK_ALIGN_CHECK)
@@ -360,8 +359,8 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/all_type_chunk_inline.h
         public/chunk/internal/arithmetic_context.h
         public/chunk/internal/zero_any_array_inline.h
-        public/chunk/internal/zero_any_array_parallel.h
-        public/chunk/internal/zero_any_array_parallel_inline.h
+        public/chunk/internal/pattern_proxy.h
+        public/chunk/internal/motif_region.h
         public/chunk/internal/second_value_array_base.h
         public/chunk/internal/zero_one_value_array_inline.h
         public/chunk/internal/zero_one_value_array_parallel.h
@@ -381,6 +380,10 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/array_chunk_rechunk_hooks.h
         public/chunk/internal/array_chunk_rechunk_hooks_inline.h
         public/chunk/internal/array_chunk_rechunk_inline.h
+        public/chunk/internal/array_chunk_rechunk_refill.h
+        public/chunk/internal/array_chunk_rechunk_refill_inline.h
+        public/chunk/internal/array_chunk_rechunk_trace.h
+        public/chunk/internal/array_chunk_rechunk_trace_inline.h
         public/chunk/internal/bad_ptr_check.h
         public/chunk/internal/zero_any_chunk_inline.h
         public/chunk/internal/second_value_chunk_base.h
@@ -420,6 +423,13 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/live_arrays.h
         public/chunk/internal/manager_chunk.h
         public/chunk/internal/manager_chunk_inline.h
+        public/chunk/internal/manager_chunk_interface.h
+        public/chunk/internal/manager_chunk_policies.h
+        public/chunk/internal/manager_chunk_policies_inline.h
+        public/chunk/internal/compress_candidates.h
+        public/chunk/internal/compress_candidates_inline.h
+        public/chunk/internal/reuse_pools.h
+        public/chunk/internal/reuse_pools_inline.h
         public/chunk/internal/map_helper.h
         public/chunk/internal/phase_guard.h
         public/chunk/internal/zero_one_value_pointer_map.h
@@ -448,6 +458,8 @@ set(CHUNK_PUBLIC_HEADERS
         public/chunk/zero_array.h
         public/chunk/zero_one_value_array.h
         public/chunk/zero_any_array.h
+        public/chunk/pattern_array.h
+        public/chunk/pattern_chunk.h
         public/chunk/array_chunk.h   # deprecated: zero_array.h
         public/chunk/array_chunk2.h  # deprecated: zero_one_value_array.h
         public/chunk/array_chunk2A.h # deprecated: zero_any_array.h
@@ -775,7 +787,7 @@ endforeach()
 # The fast_allocators version chunk-config.cmake asks for (find_dependency).
 # fast_allocators/CMakeLists.txt, configured after this file, checks it against
 # its own ALLOCATORS_VERSION through this global property.
-set(CHUNK_FAST_ALLOCATORS_VERSION 2.2.0)
+set(CHUNK_FAST_ALLOCATORS_VERSION 2.3.0)
 set_property(GLOBAL PROPERTY CHUNK_FAST_ALLOCATORS_VERSION ${CHUNK_FAST_ALLOCATORS_VERSION})
 
 install(TARGETS ${_chunk_install_targets}

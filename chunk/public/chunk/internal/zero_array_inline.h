@@ -168,7 +168,7 @@ void zero::Array<T, IntType>::clear_core()
         set_thread_chunk_size(static_cast<unsigned int>(this->size_policy_.size()));
     }
 
-    // Drain deferred writes before chunk_list is freed. force: the pending-op
+    // Drain deferred writes before chunk_list_ is freed. force: the pending-op
     // counter can read 0 while ops are queued (array_chunk_parallel_common_inline.h),
     // so a point that frees chunks must not trust it.
     this->flush_pending_deferred_ops(/*force=*/true);
@@ -180,7 +180,7 @@ void zero::Array<T, IntType>::clear_core()
     {
         const auto& sh_inf   = *zero::Proxy<T>::share_info_array;
         const int   num_tab_ = sh_inf.get_num_tab(this->registry_key());
-        Manager::remove_from_compress_list_chunk_by_num_tab(num_tab_);
+        Manager::remove_from_zero_candidates_by_num_tab(num_tab_);
     }
 
     if (!nb_chunk_)
@@ -283,13 +283,13 @@ void zero::Array<T, IntType>::clear_core()
     }
     m_size_ = 0;
 
-    this->release_chunk_list(); // Mandatory with the new allocator (a re-chunk keeps the buffer)
+    this->release_chunk_list(); // Mandatory with the new allocator
 
     nb_chunk_ = 0;
 
     // An array with its own slab affinity gives its memory back NOW: its parked
     // buffers go home to its allocator set, whose slabs then empty (and
-    // reclaim_empty_slabs madvises them). Sequential point; the drain opens its
+    // the sweep madvises them). Sequential point; the drain opens its
     // own region. Key 0: nothing to give back per array.
     if (this->alloc_key_ != 0 && !CHUNK_PMP_IN_PARALLEL_REGION)
     {
@@ -427,7 +427,7 @@ void zero::Array<T, IntType>::resize(IntType newsz)
 {
     this->invalidate_proxies();
 
-    // Drain the deferred ops on the CURRENT chunks before chunk_list and the
+    // Drain the deferred ops on the CURRENT chunks before chunk_list_ and the
     // dirty bitset are reallocated: a queued op holds a reference to its chunk.
     // And BEFORE the compression pass (as SecondValueArrayBase::resize_common()): a
     // replayed write can queue its chunk again, and the realloc and
@@ -437,7 +437,7 @@ void zero::Array<T, IntType>::resize(IntType newsz)
 
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        make_block_compression();
+        this->drain_candidates(); // not make_block_compression(): resize() may run in a region
     }
 
     const auto& sh_inf = *zero::Proxy<T>::share_info_array;
@@ -496,6 +496,50 @@ void zero::Array<T, IntType>::resize(IntType newsz)
         {
             (*this)[i] = T{};
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// shrink_array::Array<T, IntType>
+// ---------------------------------------------------------------------------
+
+template <ArrayChunkElement T, typename IntType>
+zero::Array<T, IntType>::~Array()
+{
+    clear();
+    // Drop our (this -> num_tab) registry entry so a later array at this
+    // address does not inherit our stale num_tab via zero::PointerMap's
+    // first-match lookup (required for rechunk_to's tmp). Must run AFTER
+    // clear(), which still needs get_num_tab(registry_key()).
+    Proxy<T>::share_info_array->erase(this->registry_key());
+}
+
+template <ArrayChunkElement T, typename IntType>
+zero::Array<T, IntType>& zero::Array<T, IntType>::operator=(Array&& other) noexcept
+{
+    if (this != &other)
+    {
+        clear();
+        this->swap_storage_and_identity(other);
+    }
+    return *this;
+}
+
+template <ArrayChunkElement T, typename IntType>
+void zero::Array<T, IntType>::compress(bool verbose)
+{
+    const bool in_parr = CHUNK_PMP_IN_PARALLEL_REGION;
+
+    if (in_parr)
+    {
+        // Inside the caller's region: other threads may be reading, so
+        // the buffers released wait for a grace period (read_reclaim.h).
+        const read_reclaim::PassScope pass_scope;
+        compress_int(verbose);
+    }
+    else
+    {
+        pmp::team(pmp::Options{}, [&](pmp::Team& team) { compress_int(team, verbose); });
     }
 }
 

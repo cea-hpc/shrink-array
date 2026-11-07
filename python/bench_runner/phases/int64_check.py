@@ -3,6 +3,7 @@
 """Phase 3b: 64-bit index checks against the 32-bit oracles."""
 import sys
 
+from .. import share
 from ..builds import int64_variant, oracle_complete, oracle_dir, resolve_exe, short_config_label
 from ..progress import CONFIG_W, VARIANT_W
 from ..runs import _append_error_now, effective_timeout, repro_line, run_cmd
@@ -34,8 +35,18 @@ def run_int64_check_phase(args, extra_ldpath, errors):
         exes  = [(var, exe) for var, exe in exes if exe]
         if not exes:
             continue  # not an int64 config: nothing to say
-        if not oracle_complete(args.output_dir, cfg):
-            print(yellow(f"   {label}: no complete oracle in {oracle_dir(args.output_dir, cfg)} -- skipped"))
+        # --pool: the unit is int64_check/<config>; its oracle may still be
+        # in the making in another job (share.wait_oracle).
+        if not share.take("int64_check", cfg, label):
+            continue
+        if not share.wait_oracle(cfg, label):
+            _entry = share.oracle_timeout_entry(cfg, label)
+            print(yellow(f"   {label}: " + _entry.splitlines()[0]))
+            errors.append(_entry)
+            _append_error_now(args.errors_log, _entry)
+            continue
+        if not oracle_complete(share.oracle_root(args), cfg):
+            print(yellow(f"   {label}: no complete oracle in {oracle_dir(share.oracle_root(args), cfg)} -- skipped"))
             continue
         for var, exe in exes:
             n_total += 1
@@ -45,7 +56,7 @@ def run_int64_check_phase(args, extra_ldpath, errors):
             sys.stdout.write("\r" + lead + "running…       ")
             sys.stdout.flush()
             run_env = {**env, **sanitizer_env_for(cfg), **config_env(cfg)}
-            run_cwd = oracle_dir(args.output_dir, cfg)
+            run_cwd = oracle_dir(share.oracle_root(args), cfg)
             ok, dur, code, err_tail, _ = run_cmd(
                 [exe, "--mode", "check"], run_env, to,
                 extra_ld_library_path=extra_ldpath, cwd=run_cwd)

@@ -77,19 +77,7 @@ class PointerMap : public PointerMapLinear<int, std::vector<std::pair<ArrayKey<C
      * @return The registered table number.
      * @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
      */
-    [[nodiscard]] int get_num_tab(Key key) const noexcept
-    {
-        for (const auto& [entry_key, tab] : vec_)
-        {
-            if (entry_key == key)
-            {
-                return tab;
-            }
-        }
-
-        CHUNK_INVARIANT_FAILED("[PointerMapChunk get_num_tab] key NOT FOUND: this={} size={} key={}", this, vec_.size(),
-                               key);
-    }
+    [[nodiscard]] int get_num_tab(Key key) const noexcept;
 
     /**
      * @brief Swap the table numbers registered for two existing keys.
@@ -150,7 +138,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      */
     auto& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept
     {
-        return Manager::chunk_to_compress_potentially_thr[thr];
+        return Manager::zero_candidates_thr[thr];
     }
 
     /**
@@ -190,16 +178,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
     /**
      * @brief Resolve and cache this proxy's table number from ptr_on_array.
      */
-    void set_num_tab() noexcept
-    {
-        // Armed by the array's operator[] (see zero_any::Proxy::set_num_tab): the
-        // registry lookup only for a proxy armed otherwise.
-        if (num_tab_ >= 0) [[likely]]
-        {
-            return;
-        }
-        num_tab_ = Derived::get_num_tab(ptr_on_array_);
-    }
+    void set_num_tab() noexcept;
 
     /**
      * @brief Post-write entry point for callers that already have both the
@@ -240,22 +219,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      * @param ptr The array the context was enqueued from.
      * @return The table number @p ptr belongs to.
      */
-    [[nodiscard]] static int get_num_tab_async(auto* ctx, [[maybe_unused]] ArrayKey<Chunk<T>> ptr) noexcept
-    {
-        // The context's num_tab, captured at enqueue: the one the replay proxy
-        // is armed with (make_proxy_with_info), without a registry scan per
-        // replayed op. Check builds compare it with the registry while the
-        // array is still registered.
-        if constexpr (build_config::any_check)
-        {
-            if (Derived::share_info_array->exists(ptr) && Derived::share_info_array->get_num_tab(ptr) != ctx->num_tab)
-            {
-                CHUNK_INVARIANT_FAILED("[Proxy get_num_tab_async] ctx num_tab={} but the registry says {} for {}",
-                                       ctx->num_tab, Derived::share_info_array->get_num_tab(ptr), ptr);
-            }
-        }
-        return ctx->num_tab;
-    }
+    [[nodiscard]] static int get_num_tab_async(auto* ctx, [[maybe_unused]] ArrayKey<Chunk<T>> ptr) noexcept;
 
     /**
      * @brief Async-context counterpart of execute_inplace_operation().
@@ -417,9 +381,15 @@ template <typename T>
 class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_block_compression>
 {
   public:
-    /// @brief Stream output of the element's value (defined below).
-    template <typename U>
-    friend std::ostream& operator<<(std::ostream& os, const Proxy<U>& proxy);
+    /// @brief Write the element's value, read through proxy.read_pure(), to @p os.
+    /// @return @p os.
+    friend std::ostream& operator<<(std::ostream& os, const Proxy& proxy)
+    {
+        // Through the read entry, like operator T(): values[num] is stale while a
+        // deferred op pends on this offset.
+        os << proxy.read_pure();
+        return os;
+    }
 
     using ChunkType = Chunk<T>;
     using Base      = ProxyBase<Proxy, T, Chunk<T>>;
@@ -493,17 +463,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @brief Materialise the owning chunk (allocate + init), pinning the
      *        active chunk size for this array first in dynamic builds.
      */
-    void create_value() const noexcept
-    {
-        if constexpr (build_config::chunk_dynamic)
-        {
-            // Route this (possibly worker-thread) allocation to the allocator
-            // for THIS array's chunk size before materializing.
-            shrink_array::set_thread_chunk_size(this->chunk_size());
-            shrink_array::set_thread_alloc_key(this->alloc_key());
-        }
-        chunk_.create_value();
-    }
+    void create_value() const noexcept;
 
     /**
      * @brief Materialise the owning chunk only if `need_alloc` is true (the
@@ -527,20 +487,9 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @return Whatever Base::write_with_optional_lock_impl() returns.
      */
     template <typename WriteFn>
-    CHUNK_FORCE_INLINE bool write_with_optional_lock(WriteFn write_fn) noexcept
-    {
-        const auto lbd_info = [this]
-        {
-            if constexpr (chunk_config::use_fast_block_compression)
-            {
-                set_info_on_chunk();
-            }
-        };
-
-        return Base::write_with_optional_lock_impl([&]() noexcept { write_fn(); }, lbd_info);
-    }
+    CHUNK_FORCE_INLINE bool write_with_optional_lock(WriteFn write_fn) noexcept;
     /**
-     * @brief Perform the actual write: install `v` at this proxy's index,
+     * @brief Perform the actual write: install @p value at this proxy's index,
      *        materialising the chunk first if it is currently compressed.
      * @param vals The chunk's values pointer, loaded by the caller inside the
      *        write session; it decides whether to materialise.
@@ -582,7 +531,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *        constant? If so, the write is a genuine no-op.
      * @tparam U Type of the value being assigned.
      * @param value Value being assigned.
-     * @return true if v == zero and the chunk is already compressed.
+     * @return true if @p value, as stored (converted to T), is zero and the
+     *         chunk is already compressed.
      * @note Never while the chunk has a deferred op pending (pending_any()):
      *       that op, older than this write in program order, would replay
      *       AFTER it -- the engine's WAW guard retires it first, and this
@@ -591,11 +541,11 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     template <typename U>
     [[nodiscard]] bool is_cst_val_and_v_equal_zero(const U& value) const noexcept
     {
-        return value == zero && is_cst_val() && !chunk_.pending_any();
+        return static_cast<T>(value) == zero && is_cst_val() && !chunk_.pending_any();
     }
 
     /**
-     * @brief Core of operator=(): writes `v`, with an early-out when the chunk
+     * @brief Core of operator=(): writes @p value, with an early-out when the chunk
      *        is already compressed to it; maintains the zero counter in
      *        counter-mode builds.
      * @tparam U Type of the value being assigned.
@@ -687,8 +637,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @brief Re-state the owning chunk's zero count after a BULK fill that did
      *        not go through this write path.
      *
-     * @details nb_val_eq_zero is maintained per write, and manage_full_zero()
-     *          fires on `nb_val_eq_zero == chunk_size` exactly. A direct store
+     * @details nb_val_eq_zero_ is maintained per write, and manage_full_zero()
+     *          fires on `nb_val_eq_zero_ == chunk_size` exactly. A direct store
      *          into the buffer leaves the counter wrong, and a later write can
      *          then compress a chunk that is not all zero. The counter is in a
      *          private base of Chunk<T> befriending only this proxy, hence the
@@ -715,26 +665,10 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *          compression: the pass folds the chunk).
      * @return true when the chunk was folded: its buffer is gone.
      */
-    [[nodiscard]] bool fold_if_full_zero() const
-    {
-        if constexpr (chunk_config::use_compression_with_counter)
-        {
-            if (chunk_.is_not_cst_val1() && chunk_.is_full_zero(this->chunk_size()))
-            {
-                if constexpr (build_config::chunk_dynamic)
-                {
-                    shrink_array::set_thread_chunk_size(this->chunk_size());
-                    shrink_array::set_thread_alloc_key(this->alloc_key());
-                }
-                this->manage_full_zero();
-                return true;
-            }
-        }
-        return false;
-    }
+    [[nodiscard]] bool fold_if_full_zero() const;
 
     /**
-     * @brief Add `v` to this element in place.
+     * @brief Add @p operand to this element in place.
      * @tparam U Type of the operand.
      * @param operand Operand to add.
      * @return This proxy. Converting it to T reads the resulting value,
@@ -749,7 +683,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     }
 
     /**
-     * @brief Subtract `v` from this element in place.
+     * @brief Subtract @p operand from this element in place.
      * @tparam U Type of the operand.
      * @param operand Operand to subtract.
      * @return This proxy. Converting it to T reads the resulting value,
@@ -764,9 +698,9 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     }
 
     /**
-     * @brief Divide this element by `v` in place.
+     * @brief Divide this element by @p operand in place.
      * @tparam U Type of the operand.
-     * @param operand Divisor. Integer element: check builds stop on v == 0
+     * @param operand Divisor. Integer element: check builds stop on operand == 0
      *        (internal::check_integer_divisor); a floating one gives inf/NaN.
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,
@@ -781,7 +715,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     }
 
     /**
-     * @brief Multiply this element by `v` in place.
+     * @brief Multiply this element by @p operand in place.
      * @tparam U Type of the operand.
      * @param operand Multiplier.
      * @return This proxy. Converting it to T reads the resulting value,
@@ -796,16 +730,16 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     }
 
     /**
-     * @brief Compute this element modulo `v` in place. Integral T only; a
-     *        no-op passthrough (returns v unchanged) for non-integral T.
+     * @brief Compute this element modulo @p operand in place. Integral T only; a
+     *        no-op passthrough (the element unchanged) for non-integral T.
      * @tparam U Type of the operand.
-     * @param operand Modulus. Check builds stop on v == 0
+     * @param operand Modulus. Check builds stop on operand == 0
      *        (internal::check_integer_divisor).
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
-        requires ElementModulable<T> || std::is_same_v<T, bool>
+        requires ElementModulable<T>
     Proxy operator%=(const U& operand) noexcept
     {
         if constexpr (std::is_integral_v<T>)
@@ -832,37 +766,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *          set by the deferred-enqueue path, so a clear bit means the fast
      *          read stands. Folds to constant false in serial builds.
      */
-    operator T() const noexcept
-    {
-        this->check_not_stale();
-        if constexpr (chunk_config::stats)
-        {
-            increm_chunk_read<ChunkType>();
-        }
-
-        if constexpr (build_config::threaded)
-        {
-            // chunk_size_frozen_ != 0: a replay proxy whose ptr_on_array may
-            // dangle (see ProxyBase::chunk_size_frozen_) -- never dereference it;
-            // it runs inside a flush, so go straight to the gated read.
-            if (chunk_size_frozen_ == 0U && ptr_on_array_ != nullptr) [[likely]]
-            {
-                if (!ptr_on_array_->is_chunk_dirty(num_chunk_)) [[likely]]
-                {
-                    // A pure read, like element_at: inside a ReadSection, or a
-                    // pass in the region may release the buffer between the
-                    // pointer load and the element load (read_reclaim.h).
-                    const read_reclaim::ReadSection section;
-                    // raw-read: inside a read_reclaim::ReadSection
-                    return values_[num_];
-                }
-            }
-            return Base::read_pure();
-        }
-
-        // raw-read: serial build (no OpenMP, no concurrent pass)
-        return values_[num_];
-    }
+    operator T() const noexcept;
 
     // No address, and do not add operator T&(): `tab[nc] = val` would route
     // through it and materialise blocks for nothing. Hence foo(T&) rejects a[i].
@@ -895,17 +799,6 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
 };
 
 } // namespace zero
-
-/// @brief Write the element's value, read through proxy.read_pure(), to @p os.
-/// @return @p os.
-template <typename T>
-std::ostream& operator<<(std::ostream& os, const zero::Proxy<T>& proxy)
-{
-    // Through the read entry, like operator T(): values[num] is stale while a
-    // deferred op pends on this offset.
-    os << proxy.read_pure();
-    return os;
-}
 
 } // namespace shrink_array
 

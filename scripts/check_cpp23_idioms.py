@@ -18,12 +18,16 @@ Rules, on chunk/, fast_allocators/ and examples/ (.h, .hpp, .cpp), comment and
    std::println / std::print instead (fprintf stays where nothing may
    allocate). Exceptions, as decided when the library moved to println
    (def53af7): ring_log_debug (a SEGV-hunt tool), the std::cout reports of
-   param_chunk.h and tab_cst_val2_holder.h, and print_compression_stats'
+   param_chunk.h and tab_cst_val2_holder.h (and its _inline.h, where the
+   bodies moved), and print_compression_stats'
    `std::ostream& os = std::cout` default argument.
 2. No derived(): the CRTP helper is gone, members take `this Derived& self`.
 3. static_cast<Derived&>(*this) only where a comment says why (the policies
    called as Base:: from sibling policies, whose *this is not a Derived):
-   chunk_base.h and array_chunk_base.h.
+   chunk_base.h and array_chunk_base.h, and their _inline.h where the bodies
+   moved; proxy_base_inline.h, whose read_pure() / read_values_at() reach the
+   pattern proxy's motif_offset_slot() but are called from ProxyBase's own
+   implicit-object members.
 4. No editor or merge leftovers tracked anywhere: *.sa, *.orig, *.rej, *.bak,
    *~.
 5. No C stdout printing: printf / std::printf / vprintf. std::println instead;
@@ -35,6 +39,9 @@ Rules, on chunk/, fast_allocators/ and examples/ (.h, .hpp, .cpp), comment and
 7. No std::ostringstream / std::stringstream to build text: std::format.
    Exceptions: the rule-1 files, and element_ref_validation.cpp, which checks
    that `os << a[i]` compiles.
+8. No find-then-compare to test membership, `std::ranges::find(r, x) != r.end()`
+   (or std::find): std::ranges::contains(r, x). A find whose iterator is used
+   stays.
 
 Usage: scripts/check_cpp23_idioms.py [repo root]   (exit 1 on a violation)
 """
@@ -53,6 +60,7 @@ IOSTREAM_FILES = {
     "chunk/public/chunk/ring_log_debug.h",
     "chunk/public/chunk/param_chunk.h",
     "chunk/public/chunk/internal/tab_cst_val2_holder.h",
+    "chunk/public/chunk/internal/tab_cst_val2_holder_inline.h",
 }
 IOSTREAM_LINE_OK = re.compile(r"std::ostream&\s*\w+\s*=\s*std::cout\b")
 
@@ -61,12 +69,22 @@ DOWNCAST = re.compile(r"static_cast<\s*(const\s+)?Derived\s*&>\(\s*\*this\s*\)")
 DOWNCAST_FILES = {
     "chunk/public/chunk/internal/chunk_base.h",
     "chunk/public/chunk/internal/array_chunk_base.h",
+    "chunk/public/chunk/internal/chunk_base_inline.h",
+    "chunk/public/chunk/internal/array_chunk_base_inline.h",
+    "chunk/public/chunk/internal/proxy_base_inline.h",
 }
 
 C_PRINTF = re.compile(r"(?<![\w:])(std::)?v?printf\s*\(")
 C_SPRINTF = re.compile(r"(?<![\w:])(std::)?v?s(n)?printf\s*\(")
 SSTREAM = re.compile(r"\bstd::(ostringstream|stringstream)\b")
-SSTREAM_FILES = IOSTREAM_FILES | {"examples/validation/element_ref_validation.cpp"}
+# The two validation files test the element's operator<< (and print a
+# std::complex, which std::format does not take before C++26).
+SSTREAM_FILES = IOSTREAM_FILES | {
+    "examples/validation/element_ref_validation.cpp",
+    "examples/validation/operators_validation_cases.h",
+}
+# find(...) compared with an end(): a membership test (rule 8).
+FIND_NE_END = re.compile(r"\b(?:std::ranges::find|std::find)\s*\(.*\)\s*[!=]=\s*[\w.>-]*\bend\(\)")
 C_PRINTF_FILES = {"examples/validation/element_ref_validation.cpp"}
 
 LEFTOVER = re.compile(r"(\.sa|\.orig|\.rej|\.bak|~)$")
@@ -110,6 +128,8 @@ def check(root: pathlib.Path):
                 bad.append(f"{f}:{n}: snprintf / sprintf: use std::format (std::format_to_n for a fixed buffer)")
             if SSTREAM.search(code) and f not in SSTREAM_FILES:
                 bad.append(f"{f}:{n}: {SSTREAM.search(code).group(0)}: use std::format")
+            if FIND_NE_END.search(code):
+                bad.append(f"{f}:{n}: find(...) compared with end(): use std::ranges::contains")
             if DERIVED_CALL.search(code):
                 bad.append(f"{f}:{n}: derived(): take `this Derived& self` instead")
             if DOWNCAST.search(code) and f not in DOWNCAST_FILES:

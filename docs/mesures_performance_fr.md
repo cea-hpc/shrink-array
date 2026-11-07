@@ -13,9 +13,9 @@
 ### 1.1 `VmRSS` est faux à plusieurs threads
 
 `VmRSS` (`/proc/self/status`), `/proc/self/statm` et `ru_maxrss` (`getrusage`) lisent les
-compteurs de mémoire résidente du noyau. Ces compteurs sont tenus **par thread**, et reportés
+compteurs de mémoire résidente du noyau. Ces compteurs sont tenus **par thread**, et répercutés
 dans le total du processus seulement de temps en temps. Avec 64 threads qui font des défauts
-de page, le total prend du retard. Mesuré sur `shrink_bench_zero_any_dyn` :
+de page, le total prend du retard. Mesuré sur `shrink_bench_omp_zero_any_dyn` :
 
 | moment | `VmRSS` | exact (`smaps_rollup`) | retard |
 |---|---|---|---|
@@ -47,7 +47,7 @@ Dans la bibliothèque : `shrink_array::exact_rss_kib()` (`internal/exact_rss.h`)
 | question | outil |
 |---|---|
 | combien dans les tampons de chunks, combien ailleurs ? | `CHUNK_LOG=memory=info` : à chaque passage de l'advisor, la mémoire exacte, dont la part résidente de l'arène des tampons (`mincore`) |
-| que font les slabs ? | `CHUNK_ARENA_REPORT=1` (slabs distribués, rendus au système) |
+| que font les slabs ? | `CHUNK_LOG=warn,rechunk=info,arena=info` (slabs distribués, rendus au système) |
 | quelle zone de l'espace d'adressage grossit ? | deux `pmap -x <pid>` à deux instants, comparés par zone |
 | que rend chaque rechunk ? | `CHUNK_LOG=memory=debug` : ligne `rss` (mémoire à chaque étape, `end-entry`) |
 
@@ -93,14 +93,53 @@ dans des répertoires neufs avec la même configuration, alterner, et se méfier
 
 | comparer… | interrupteur |
 |---|---|
-| sans advisor / analyses seules / avec rechunks | `CHUNK_ADVISOR_PERIOD=0` / `CHUNK_RECHUNK_DRY_RUN=1` / rien |
-| affinité paresseuse / immédiate | `CHUNK_ALLOC_AFFINITY_EAGER=0` / `=1` |
-| taille maximale d'un pas de grossissement | `CHUNK_RECHUNK_MAX_COARSEN=<n>` |
-| ordonnancement de la reconstruction | `CHUNK_RECHUNK_SCHEDULE=…` |
+| sans advisor / analyses seules / avec rechunks | `--advisor_period 0` / `--rechunk_dry_run` / rien |
+| taille maximale d'un pas de grossissement | `--rechunk_max_coarsen <n>` |
 
 La liste complète est dans [reglages_developpeur_fr.md](reglages_developpeur_fr.md).
-Attention : `CHUNK_ADVISOR_MIN_GAIN_MB=1000000` ne bloque plus les grossissements depuis le
-critère « gain par coût » ; utiliser `CHUNK_RECHUNK_DRY_RUN=1`.
+Les réglages du décideur sont des options de `shrink_bench` (la bibliothèque ne les lit dans
+aucune variable). Attention : `--rechunk_min_gain_mb 1000000` ne bloque plus les grossissements
+depuis le critère « gain par coût » ; utiliser `--rechunk_dry_run`.
+
+### 2.4 Ce que coûte une lecture threadée
+
+Mesuré sur Grace (GCC 16, `-mcpu=native`, `access_cost_zero_any_256`, 2²⁷ éléments, trois
+tours alternés), en reconstruisant le même arbre quatre fois : sans la section de lecture
+(`ReadSection`, read_reclaim_inline.h : deux stores release de la séquence du thread et une
+barrière compilateur), sans la porte de lecture (`sync_chunk` : un load acquire du mot du
+bitset dirty du chunk), sans les deux, ou avec les deux. Les retirer n'est sûr que dans une
+telle mesure : ces cas de lecture ne font tourner ni écriture ni passe de compression en même
+temps que les lectures. Médiane du tableau, ns par élément :
+
+| threads | cas | tout | sans section | sans porte | aucune des deux |
+|---|---|---|---|---|---|
+| 1 | read-varied | 2,172 | 0,934 | 2,169 | 0,639 |
+| 1 | read-constant | 2,166 | 0,914 | 2,165 | 0,627 |
+| 1 | read-second | 2,192 | 1,244 | 2,185 | 0,931 |
+| 1 | read-random | 27,161 | 20,743 | 20,568 | 14,368 |
+| 1 | read-bulk | 0,663 | 0,653 | 0,655 | 0,664 |
+| 64 | read-varied | 0,035 | 0,020 | 0,035 | 0,019 |
+| 64 | read-constant | 0,036 | 0,015 | 0,035 | 0,010 |
+| 64 | read-second | 0,036 | 0,021 | 0,036 | 0,014 |
+| 64 | read-random | 0,481 | 0,391 | 0,382 | 0,297 |
+| 64 | read-bulk | 0,019 | 0,020 | 0,019 | 0,020 |
+
+- **Lectures séquentielles, un élément à la fois** (`operator[]`) : la section prend environ
+  la moitié du temps (57 % à 1 thread). La porte ne coûte rien tant que la section est là, et
+  0,3 ns une fois qu'elle est partie : les deux coûts ne s'additionnent pas. Sans doute le
+  compilateur : une barrière et deux stores atomiques par élément l'empêchent de vectoriser ou
+  de dérouler la boucle. À 64 threads, read-varied sans la section est déjà limité par la bande
+  passante mémoire.
+- **read-bulk** (`for_each_value`) est au coût de « aucune des deux » : il amortit déjà les
+  deux. **Boucles chaudes : `for_each_value` ou les itérateurs, pas `operator[]` élément par
+  élément.**
+- **Lectures aléatoires** : les deux coûts s'additionnent, environ un quart du temps chacun.
+  C'est sur eux que repose la correction (l'acquire du bit dirty, l'ordre release de la sortie
+  de section) : rien de bon marché à retirer, et toute modification passe d'abord par
+  formal/reader_reclaim.c.
+- **Les ordres mémoire sont déjà les moins chers** : GCC 16 émet ldapr (RCpc) pour les loads
+  acquire du chemin de lecture ; ses ldar (loads seq_cst) sont tous dans les chemins de
+  compression, de purge et de fin de phase.
 
 ## 3. Recettes
 
@@ -109,8 +148,13 @@ critère « gain par coût » ; utiliser `CHUNK_RECHUNK_DRY_RUN=1`.
 ```
 rm -f /tmp/modes.txt
 for r in 1 2 3; do
-  for mode in "CHUNK_ADVISOR_PERIOD=0" "CHUNK_RECHUNK_DRY_RUN=1" "X_NORMAL=1"; do
-    t=$(env $mode OMP_NUM_THREADS=64 OMP_PROC_BIND=close OMP_PLACES=cores $BIN --mode perf --no_io 2>/dev/null \
+  for mode in no_advisor dry_run normal; do
+    case $mode in
+      no_advisor) opt="--advisor_period 0" ;;
+      dry_run)    opt="--rechunk_dry_run" ;;
+      normal)     opt="" ;;
+    esac
+    t=$(OMP_NUM_THREADS=64 OMP_PROC_BIND=close OMP_PLACES=cores $BIN --mode perf --no_io $opt 2>/dev/null \
         | grep -oE "Elapsed time computation : [0-9.]+" | awk '{print $NF}')
     echo "$mode $t" >> /tmp/modes.txt
   done
@@ -155,8 +199,8 @@ que `zero`, après son rechunk, n'occupait plus que ~40 cœurs au lieu de ~52.
 `python/bimodal_probe.py` lance N fois le même binaire et relève, pour chaque run, les pages par
 nœud NUMA, AnonHugePages, la mémoire libre et les blocs libres d'ordre maximal de chaque nœud
 avant le run, et les compteurs perf pour mille instructions (parcours de TLB, recharges L1D / L2,
-accès distants). Il coupe les runs au plus grand écart de temps et dit quelles grandeurs séparent
-les deux groupes. `--mode` alterne des environnements (`--mode "" --mode "CHUNK_THP=never"`,
+accès distants). Il sépare les runs en deux groupes au plus grand écart de temps et indique quelles
+grandeurs les distinguent. `--mode` alterne des environnements (`--mode "" --mode "CHUNK_RECLAIM_THREADS=0"`,
 `--mode "numactl --membind=0"`).
 
 ```

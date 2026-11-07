@@ -44,14 +44,14 @@ With the CMake option **`CHUNK_SECOND_VALUE_INDEXED`** (disabled by default), th
 slot of types larger than 4 bytes holds the **identifier** of the registry array
 (4 bytes) instead of the value (8 for a `double`, 16 for a complex): −3.8% memory
 on the reference run of 50 million chunks, but +3% write time (one more dependent
-read on each write to a materialised chunk). Keep it for workloads limited
+read on each write to a materialised chunk). Reserve it for workloads limited
 by memory rather than by write throughput.
 
 These rows make `zero_any` the variant with the most expensive metadata per chunk (16 bytes
 of object, plus 2 bytes and `sizeof(T)`), and therefore the one that gains the most from growing its chunks:
 see [adaptive_rechunk.md](adaptive_rechunk.md).
 
-When a storage is destroyed (end of life of the array, or old storage of a rechunk), its
+When a storage is destroyed (the array's end of life, or the old storage of a rechunk), its
 three rows are **freed** (`zero_any::Proxy::clear_tab_is_int`), not just emptied. Until
 September 2026, `clear()` kept their capacity, and each rechunk left the rows of
 the old storage behind: 3.5 GB on the benchmark, with 15 rechunked arrays.
@@ -71,13 +71,23 @@ the old storage behind: 3.5 GB on the benchmark, with 15 rechunked arrays.
   chunk adopts it only by installing it as its `values` pointer.
 - To know whether a chunk is compressed to a second value, it is enough to test whether its
   pointer falls within the registry **region** (`region_contains`).
+- Nothing is stored in the region: a slot is an **identifier**, and the value is read from
+  the **value table** (`value_by_id`, one `T` per identifier). The region and the table are
+  two `mmap(MAP_NORESERVE)` reservations made at the type's first array: address space only,
+  the pages backed as identifiers are handed out, given back at the last clear, and the table
+  sized by `CHUNK_CST_VAL2_ID_LIMIT` when it is set. Until November 2026 the table was a static
+  array of 4 Mi values per element type (32 MiB of bss for a `double`, 332 MiB in all in the
+  benchmark): free while untouched for a trivial type, but a type whose default constructor is
+  not `constexpr` touched all of it at startup, and every type counted against `RLIMIT_AS` and,
+  under strict overcommit, the commit charge. The price is one more load (the table's
+  pointer) on reading a second value back.
 - A value, once registered, stays until the last array of the type is destroyed, **or**
   until `reclaim_second_values()` runs at a sequential point: it marks the values still
   referenced (chunks compressed to them, per-chunk second-value slots) over every array of
   the type and frees the others, whose identifiers are then reused. Without it, a workload
   that produces a very large number of distinct values makes the registry grow until its
   identifiers run out, which stops the run. In the benchmark, `CHUNK_BENCH_ULONG_BANDS`
-  limits the number of distinct values of the `unsigned long` array, `CHUNK_CST2_PROBE=1`
+  limits the number of distinct values of the `unsigned long` array, `CHUNK_LOG=compress=info`
   prints the state of the registry and `CHUNK_CST2_RECLAIM=N` reclaims every N iterations.
 
 `find_or_set_ind_cst_val2(value, slot)` registers the value if needed, writes it into the
@@ -93,7 +103,7 @@ its own:
   second value; this is how it discovers one;
 - **change**: in a chunk that has a second value, a write of a value other than this
   second value, different from the value it replaces. The chunk may be becoming uniform at
-  a third value, whatever the last write replaced: a region painted over another one ends
+  a third value, regardless of what the last write replaced: a region painted over another one ends
   with writes over values that are neither constant. Do not narrow it to writes that leave
   the second value: a chunk compressed once at V, then made uniform at W over other values,
   would never be put back in the list (`mark_path_validation`, scenario D).
@@ -102,7 +112,7 @@ Both cases are filtered by a **necessary condition** (`may_become_uniform`): two
 other elements of the chunk (the first and the last, or their neighbours if one of them is
 the written element) already hold the written value. Without this filter, a chunk of varied data
 was put in the list, re-read, found non-uniform, removed, then put back in the list by the next
-write: ~3 µs per write on `shrink_bench_zero_any_256` at 64 threads.
+write: ~3 µs per write on `shrink_bench_omp_zero_any_256` at 64 threads.
 
 ## 5. The compression pass
 
@@ -115,26 +125,95 @@ each element with the first element of the chunk):
   `find_or_set_ind_cst_val2` registers the value and returns the shared array, which
   `clear_int_st` installs by CAS as the chunk's `values` pointer.
 
-The freed buffer joins the thread's reuse list. The trigger threshold is
-`somme_chunk_create / (50 × number of threads)`, with a floor of 500 candidates (default
-compression level, `CHUNK2A_COMPRESS_LEVEL=0`, in `zero_any_chunk_def.h`).
+The freed buffer joins the thread's reuse list after the read sections' grace period. The
+trigger threshold is
+`somme_chunk_create / (50 × number of threads)`, with a floor of 500 candidates (constants of
+`zero_any_chunk_def.h`).
+
+The course of the pass, in the style of §8.4 of [algo_zero_one_value.md](algo_zero_one_value.md):
+
+```mermaid
+flowchart TD
+    A["perform_compression: flush_deferred,<br/>then make_block_compression"] --> B{"flush in progress?<br/>(block_pass_yields_to_flush)"}
+    B -->|yes| B1["give up, nothing marked"]
+    B -->|no| C["steal_mark every candidate"]
+    C --> D{"CompressionManager::start"}
+    D -->|declined| D1["steal_unmark all, give up"]
+    D -->|accepted| E["fill_list_to_compress at the entry's size:<br/>scan_constants against 0 and element 0"]
+    E -->|"all = 0"| F["list ll_compt1"]
+    E -->|"all = element 0"| G["list ll_compt2"]
+    E -->|"otherwise"| N["steal_unmark at once"]
+    F --> F1["clear_int_st, type 0: slot reset,<br/>type cst_val1, CAS values -> cst_val1"]
+    G --> G1["find_or_set_ind_cst_val2: value registered,<br/>written in the slot, then clear_int_st, type 1:<br/>CAS values -> the registry array"]
+    F1 --> R["free_block_to_pool after a grace period,<br/>steal_unmark"]
+    G1 --> R
+    R --> K["queue flags: hand_back after the scan, release at the end,<br/>written meanwhile -> queued again,<br/>trigger's chunk queued again, finish()"]
+    N --> K
+```
+
+What differs from `zero_one_value`: one candidate list per rank
+(`get_zero_any_candidates`), not one per second value; the second constant is the
+chunk's element 0, registered only now; the chunk's metadata (slot, type) is written **before**
+the CAS (`block_clear_common`). Sequential builds run the same pass, without the marks and
+without `start` / `finish`.
 
 ## 6. The write
 
-The write path is the one of `zero_one_value` (§6 of [algo_zero_one_value.md](algo_zero_one_value.md)), with
-one difference: the second value to compare against is **the chunk's**, read from its metadata
-row, and not the array's. Writing into a compressed chunk a value different
-from its constant materialises it, pre-filled with **this constant**.
+The write path is that of `zero_one_value` (§6 of [algo_zero_one_value.md](algo_zero_one_value.md)), with
+these differences:
+
+- the second value to compare against is **the chunk's**, read from its metadata row, and not
+  the array's;
+- no second-value shortcut before the engine: writing the chunk's second value is a no-op inside
+  the write body, when the chunk is compressed to it (`handle_no_bool_assignment`) or the element
+  already holds it (`perform_core_assignment`);
+- the chunk is marked **before** the store (`mark_for_compression_before_store`), with the
+  criteria of §4;
+- writing a value different from its constant into a compressed chunk materialises it,
+  pre-filled with **this constant**, behind `wait_before_materialise`;
+- in sequential builds, the engine calls `perform_compression` after every write; it does
+  nothing below half the trigger threshold.
 
 The proxy finds the chunk's metadata rows through the array number. An
 "armed" variant, where the write `operator[]` gave the proxy the row addresses directly,
-was removed: its gain (~0.4% on `shrink_bench_zero_any_256` at 64 threads) did not justify
+was removed: its gain (~0.4% on `shrink_bench_omp_zero_any_256` at 64 threads) did not justify
 the resynchronisation invariant it imposed on each reallocation of the rows.
+
+The course of a write in an OpenMP build: the engine steps are those of §7.2 of
+[algo_zero_one_value.md](algo_zero_one_value.md), compressed here; the rest is where `zero_any`
+differs (for `bool`, `handle_bool_assignment` plays the same part, with `true` as the second
+value).
+
+```mermaid
+flowchart TD
+    A["zero_any::ProxyImpl::assign_impl"] --> B{"0 on a cst_val1 chunk,<br/>no deferred operation pending?<br/>(is_cst_val1_and_v_equal_first_value)"}
+    B -->|yes| B1["nothing to do"]
+    B -->|no| C["engine of 7.2 (write_with_optional_lock_with_set_ptr):<br/>deferred operations, wait_out_compressor,<br/>announce_write"]
+    C --> D{"re-check:<br/>compressor?"}
+    D -->|yes| D1["end_write + DEFERRED write<br/>(lbd_equal_asynch)"]
+    D -->|no| E["body handle_no_bool_assignment:<br/>load values, arm the chunk's second-value slot"]
+    E --> F{"chunk at its second value<br/>and value = that value?"}
+    F -->|yes| F1["nothing to do"]
+    F -->|no| G{"BEFORE the store: a constant written<br/>over something else, or discover / leave<br/>passing may_become_uniform?"}
+    G -->|yes| G1["add_to_compression_list"]
+    G -->|no| H
+    G1 --> H{"perform_core_assignment:<br/>state of the chunk?"}
+    H -->|"element already = value = second value"| K
+    H -->|"cst_val1"| H1["create_value: pre-filled with 0,<br/>CAS against cst_val1"]
+    H -->|"second value"| H2["create_value: pre-filled with the<br/>chunk's second value, CAS against it"]
+    H -->|"materialised"| I
+    H1 --> I["store_value_at"]
+    H2 --> I
+    I --> K["end_write + housekeeping of 7.2<br/>(trigger_compression_if_needed)"]
+```
+
+`wait_before_materialise` returns at once on this path (the writer's own flag is on the chunk),
+and a lost CAS in `create_value` recycles the buffer.
 
 ## 7. What `zero_any` does differently during a rechunk
 
 The general sequence is the one in [adaptive_rechunk.md](adaptive_rechunk.md) §4, with
-three specifics:
+three differences:
 
 - **the advisor counts as compressible** any uniform sub-block, at any value,
   since each chunk can register its own. With the rule of the other variants
@@ -150,7 +229,7 @@ three specifics:
 ## 8. Results
 
 On `shrink_bench` (64 threads), dynamic `zero_any`, with all arrays handed to the
-decider, ends at **6.0 GB**, against 7.3 GB for static 256 and 12.7 GB for static
+decider, ends at **6.0 GB**, compared with 7.3 GB for static 256 and 12.7 GB for static
 64, whose memory it has at the start. It is the variant that benefits the most from the dynamic
 geometry: its per-chunk metadata is the heaviest, and its chunks compressed to
 varied values make the fine sizes useful at the start.

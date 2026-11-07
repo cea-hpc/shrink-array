@@ -28,6 +28,7 @@
 #include <cstdio>  // std::fprintf, stderr
 #include <cstdlib> // std::getenv
 #include <cstring> // std::strcmp
+#include <string>  // std::string (self_command)
 
 #ifdef __linux__
     #include <sys/prctl.h> // prctl(PR_SET_DUMPABLE)

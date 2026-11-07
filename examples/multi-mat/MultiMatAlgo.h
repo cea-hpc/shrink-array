@@ -96,7 +96,7 @@ class MultiMatAlgo
 
     // The concrete array behind material `mat` of a MultiArray: the one the
     // container names (vec_dir / vec_chunk), so a MultiArray of presence
-    // fractions hands out its VectChunk2 the same way a field hands out its
+    // fractions hands out its VectZeroOneValue the same way a field hands out its
     // VectChunk.
 
     /// @brief The std::vector of material @p mat in @p gdr.

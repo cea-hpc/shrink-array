@@ -436,7 +436,7 @@ int advisor_and_rechunk(long count)
     // The advisor does not evaluate below Options::min_size (64): at S=64 the
     // S/2 row exists only if asked for, so ask -- the finer path is what this
     // check is about. No change for S >= 128.
-    typename ChunkSizeAdvisor<Bit>::Options opt;
+    ChunkSizeAdvisor<Bit>::Options opt;
     if (static_cast<long>(opt.min_size) > chunk_sz / 2)
     {
         opt.min_size = static_cast<std::uint32_t>(chunk_sz / 2);

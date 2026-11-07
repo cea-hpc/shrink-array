@@ -32,8 +32,8 @@
 #include "chunk/all_type_chunk.h"          // the declarations defined here
 #include "chunk/internal/churn_counters.h" // churn::note_phase_end
 #include "chunk/PMP_CHUNK.h" // CHUNK_PMP_THREAD_RANK / _RANK_BOUND / _NUM_THREADS, chunk_rank_cache, pmp::team, current_team
+
 #include "chunk/internal/deferred_op_pool.h" // for reset_all
-#include "chunk/internal/env_parse.h"        // env_number (CHUNK_RECLAIM_PHASE_KEEP)
 #include "chunk/internal/phase_guard.h"      // check-build guard of the phase protocol
 #include "chunk/manage_ompt.h"               // the declarations of the five phase functions below
 #include "chunk/param_chunk.h"               // ParamChunk::init_indexes (ensure_ready)
@@ -60,6 +60,7 @@ AllTypeChunk::AllTypeChunk()
 void AllTypeChunk::ensure_ready()
 {
     static std::once_flag once;
+
     std::call_once(once,
                    []
                    {
@@ -199,12 +200,10 @@ void finalize_parallel_phase_after_flush()
         ens_type_chunk.destroy_after_flush(false);
 
         reset_all();
-        if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
+        if (!chunk_config::aggressive_compression() && ens_type_chunk.have_chunk_to_compress_potentially())
+        // run-time switch: chunk/config.h
         {
-            if (ens_type_chunk.have_chunk_to_compress_potentially())
-            {
-                ens_type_chunk.compress_chunk_to_compress_potentially(true);
-            }
+            ens_type_chunk.compress_chunk_to_compress_potentially(true);
         }
         // Empirically load-bearing (see the note in
         // finalize_parallel_phase_only_flush). Do NOT remove.
@@ -233,6 +232,7 @@ void finalize_parallel_phase()
     // phase first, so the flush and the compression below run on teams of
     // the std backend (nothing otherwise).
     pmp::leave_application_phase();
+
     if constexpr (phase_guard::tracked)
     {
         phase_guard::next_phase();
@@ -247,14 +247,13 @@ void finalize_parallel_phase()
         // in this phase; their ops were just replayed (deferred_op_pool.h).
         retire_exited_thread_pools();
 
-        if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
+        if (!chunk_config::aggressive_compression() && ens_type_chunk.have_chunk_to_compress_potentially())
+        // run-time switch: chunk/config.h
         {
             // Drain the deferred-compression backlog here, between parallel
             // phases: parallel, with no concurrent writers (no start() barrier).
-            if (ens_type_chunk.have_chunk_to_compress_potentially())
-            {
-                ens_type_chunk.compress_chunk_to_compress_potentially(true);
-            }
+
+            ens_type_chunk.compress_chunk_to_compress_potentially(true);
         }
         // Empirically load-bearing (see the note in
         // finalize_parallel_phase_only_flush). Do NOT remove.
@@ -262,6 +261,25 @@ void finalize_parallel_phase()
 #if !CHUNK_OPT_STD_ALLOC
         fast_alloc::report_all_arenas("finalize_phase");
 #endif
+    }
+    else if constexpr (chunk_config::is_shrink_enabled)
+    {
+        // Serial build: nothing is deferred, but the zero_any family queues its
+        // candidates as a threaded build does, and the in-loop trigger
+        // (perform_compression()) only runs a pass past half the list maximum.
+        // A backlog below that waits for ever: chunks written for the last
+        // time stay materialised to the end of the run -- the constants as
+        // well as pattern's motifs. Drain it here, as the threaded branch does,
+        // with the pass that trigger runs (make_block_compression(), through
+        // force_chunk_to_compress(); a no-op on an empty list).
+        // Neither have_chunk_to_compress_potentially() as the gate nor
+        // compress_chunk_to_compress_potentially() as the drain: both are
+        // use_fast_block_compression code, which a serial build compiles out
+        // (the gate always says "nothing").
+        if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
+        {
+            SingletonChk<AllTypeChunk>::get_ref().force_chunk_to_compress();
+        }
     }
 }
 
@@ -344,6 +362,7 @@ void AllTypeChunk::compress_chunk_to_compress_potentially(bool apply) const
 
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
     int team = 0;
+
     pmp::team(pmp::Options{},
               [&](pmp::Team& /*team*/)
               {
@@ -357,6 +376,7 @@ void AllTypeChunk::compress_chunk_to_compress_potentially(bool apply) const
                       elm->sweep_rank(thr, apply);
                   }
               });
+
     for (auto* elm : work)
     {
         if (elm->sweep_mops_up(apply))
@@ -368,20 +388,6 @@ void AllTypeChunk::compress_chunk_to_compress_potentially(bool apply) const
         }
     }
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);
-
-    // CHUNK_RECLAIM_PHASE_KEEP=K (unset: off): the pass's freed buffers
-    // went back to their slabs, which stay resident until a sweep. Give
-    // the empty ones back now, keeping K per allocator instance for the
-    // next phase's materialisations (fewer madvise / fault-in round
-    // trips). Serial and quiescent here: the pass's region has joined.
-    static const long phase_keep = env_number<long>("CHUNK_RECLAIM_PHASE_KEEP", -1L);
-    if (phase_keep >= 0)
-    {
-        for (auto* elm : work)
-        {
-            (void)elm->sweep_empty_slabs_int(static_cast<std::size_t>(phase_keep));
-        }
-    }
 }
 
 bool AllTypeChunk::have_chunk_to_compress_potentially() const
@@ -391,7 +397,6 @@ bool AllTypeChunk::have_chunk_to_compress_potentially() const
     return std::ranges::any_of(get_list_type_chunk(),
                                [max_thr](const auto* elm) { return elm->have_chunk_to_compress_potentially(max_thr); });
 }
-
 
 template <typename Derived>
 void AllTypeChunkParallelInterface<Derived, true>::destroy_after_flush(this const Derived& self, bool in_parallel)

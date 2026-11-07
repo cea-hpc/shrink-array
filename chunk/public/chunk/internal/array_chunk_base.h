@@ -57,6 +57,7 @@
 #include "chunk/internal/def_force_inline.h"    // CHUNK_FORCE_INLINE
 #include "chunk/internal/element_ref.h"         // ElementRef: what operator[] returns
 #include "chunk/internal/live_arrays.h"         // LiveArrayToken — the teardown verbs' live-array count
+#include "chunk/internal/process_verbs.h"       // compress_now_and_trim_pools -- shrink_to_fit()
 
 namespace shrink_array
 {
@@ -119,7 +120,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
                        public RechunkSupport<Derived>
 {
   public:
-    // RechunkSupport swaps chunk_list / m_size / nb_chunk / size_policy_ with the
+    // RechunkSupport swaps chunk_list_ / m_size / nb_chunk / size_policy_ with the
     // fresh array; as a base it cannot reach these protected members through a
     // Derived object without friendship (both specialisations: <typename, bool>).
     template <typename, bool>
@@ -132,7 +133,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     using Traits      = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
     using T           = Traits::value_type;        ///< Stored element type.
     using IndType     = Traits::IndexType;         ///< Signed global index type.
-    using ChunkType   = Traits::ChunkType;         ///< Chunk type held in @ref chunk_list.
+    using ChunkType   = Traits::ChunkType;         ///< Chunk type held in @ref chunk_list_.
     using ProxyType   = Traits::ProxyType;         ///< Write proxy returned by the non-const accessors.
     using ManagerType = Traits::ManagerType;       ///< Per-type manager owning the compression machinery.
     using Core        = ArrayChunkCore<ChunkType>; ///< The index-independent part (array_chunk_core.h).
@@ -311,28 +312,10 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
          * @brief Read the element under the cursor.
          * @return the element VALUE (no reference exists in a compressed store)
          */
-        [[nodiscard]] reference operator*() const noexcept
-        {
-            // chunk_ already sync'd by enter_chunk(): raw read, as chunk_t[num].
-            check_no_write_since_entry();
-            return (*chunk_)[num_];
-        }
+        [[nodiscard]] reference operator*() const noexcept;
 
         /** @brief Advance one element, entering (and syncing) the next chunk on overflow. */
-        const_iterator& operator++() noexcept
-        {
-            // lin_ is the ONLY thing operator==/!= compare: it must track the
-            // cursor, or range-for runs past the logical end.
-            ++lin_;
-            ++num_;
-            if (num_ > modulo_) [[unlikely]] // crossed a chunk boundary
-            {
-                num_ = 0;
-                ++num_chunk_;
-                enter_chunk(); // sync + repoint (skipped past the end)
-            }
-            return *this;
-        }
+        const_iterator& operator++() noexcept;
 
         /** @brief Post-increment; prefer the prefix form on the hot path. */
         const_iterator operator++(int) noexcept
@@ -343,21 +326,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
         }
 
         /** @brief Step back one element, entering (and syncing) the previous chunk on underflow. */
-        const_iterator& operator--() noexcept
-        {
-            --lin_;                     // see operator++: lin_ is what == and != read
-            if (num_ == 0) [[unlikely]] // crossed a chunk boundary backwards
-            {
-                --num_chunk_;
-                num_ = modulo_;
-                enter_chunk();
-            }
-            else
-            {
-                --num_;
-            }
-            return *this;
-        }
+        const_iterator& operator--() noexcept;
 
         /** @brief Post-decrement; prefer the prefix form on the hot path. */
         const_iterator operator--(int) noexcept
@@ -386,39 +355,15 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
         /// @brief Check builds, precise read gate: nothing was deferred onto the
         ///        current chunk since enter_chunk() drained it -- i.e. no other
         ///        thread writes the array during the iteration (class contract).
-        void check_no_write_since_entry() const noexcept
-        {
-            if constexpr (build_config::any_check && ChunkType::precise)
-            {
-                if (chunk_->read_gate_should_wait(num_)) [[unlikely]]
-                {
-                    CHUNK_INVARIANT_FAILED(
-                        "ArrayChunkBase::const_iterator: a write was deferred onto chunk {} of array {} "
-                        "during the iteration (offset {}); the iterator would not see it -- no other "
-                        "thread may write an array that is being iterated",
-                        num_chunk_, owner_, num_);
-                }
-            }
-        }
+        void check_no_write_since_entry() const noexcept;
 
         /**
-         * @brief Point chunk_ at chunk_list[num_chunk_] and sync it once.
+         * @brief Point chunk_ at chunk_list_[num_chunk_] and sync it once.
          * @details Guarded so the end() position (one past the last element) never
          *          dereferences an out-of-range chunk: at end, num_chunk_ may index
-         *          chunk_list.size().
+         *          chunk_list_.size().
          */
-        void enter_chunk() noexcept
-        {
-            if (num_chunk_ >= 0 && static_cast<std::size_t>(num_chunk_) < owner_->chunk_list_.size()) [[likely]]
-            {
-                chunk_ = &owner_->chunk_list_[num_chunk_];
-                owner_->sync_chunk(*chunk_, num_chunk_, num_); // once per chunk
-            }
-            else
-            {
-                chunk_ = nullptr; // end / rend sentinel: never dereferenced
-            }
-        }
+        void enter_chunk() noexcept;
 
         /**
          * @brief Move the cursor to absolute index @p lin: every jump comes here.
@@ -441,18 +386,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
         /// @brief Check builds: @p lhs and @p rhs walk the same array (or are
         ///        both singular, which C++14 allows to compare).
         static void check_same_owner([[maybe_unused]] const const_iterator& lhs,
-                                     [[maybe_unused]] const const_iterator& rhs) noexcept
-        {
-            if constexpr (build_config::any_check)
-            {
-                if (lhs.owner_ != rhs.owner_) [[unlikely]]
-                {
-                    CHUNK_INVARIANT_FAILED("ArrayChunkBase::const_iterator: iterators of two different arrays compared "
-                                           "or subtracted ({} vs {})",
-                                           lhs.owner_, rhs.owner_);
-                }
-            }
-        }
+                                     [[maybe_unused]] const const_iterator& rhs) noexcept;
 
         const Derived*   owner_     = nullptr; ///< Array being traversed.
         const ChunkType* chunk_     = nullptr; ///< Current chunk, already sync'd; null at end/rend.
@@ -588,18 +522,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      *       resize(), a sequential point (see capacity()). Invalidates all
      *       iterators.
      */
-    void push_back(this Derived& self, InT<T> val)
-    {
-        if (static_cast<size_type>(self.m_size_) < self.capacity()) [[likely]]
-        {
-            ++self.m_size_;
-        }
-        else
-        {
-            self.resize(self.m_size_ + 1);
-        }
-        self[self.m_size_ - 1] = val;
-    }
+    void push_back(this Derived& self, InT<T> val);
 
     /**
      * @brief Append one element built from @p args.
@@ -683,56 +606,14 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      *          iterator, so every element still goes through the const operator[].
      * @param first first index, inclusive (clamped to [0, size()])
      * @param last  last index, exclusive (clamped to size())
-     * @param func     called as f(value); its return value is ignored
+     * @param func  called as func(value); its return value is ignored
      * @warning Same contract as the iterator: no other thread may write the
      *          array during the call. Check builds stop on a write deferred
      *          onto the chunk being read. Callable from a parallel region,
      *          every thread on its own slice.
      */
     template <typename F>
-    void for_each_value(IndType first, IndType last, F&& func) const
-    {
-        if constexpr (bulk_fast)
-        {
-            std::array<T, bulk_block> buf;
-            for_each_chunk_span(first, last,
-                                [&](const ChunkType& ch, int num_chunk, int lo, int hi)
-                                {
-                                    for (int j = lo; j < hi; j += bulk_block)
-                                    {
-                                        const int len = (hi - j) < bulk_block ? (hi - j) : bulk_block;
-                                        ch.read_block(j, len, buf.data());
-                                        check_no_write_during_bulk_read(ch, num_chunk, j);
-                                        for (int k = 0; k < len; ++k)
-                                        {
-                                            func(buf[k]);
-                                        }
-                                    }
-                                });
-        }
-        else
-        {
-            if (first < 0)
-            {
-                first = 0;
-            }
-            if (last > m_size_)
-            {
-                last = m_size_;
-            }
-            if (first >= last)
-            {
-                return;
-            }
-            // begin() takes `this const Derived&` (deducing this): not callable on the base.
-            const Derived&       d      = static_cast<const Derived&>(*this);
-            const const_iterator end_it = d.begin() + last;
-            for (const_iterator it = d.begin() + first; it != end_it; ++it)
-            {
-                func(*it);
-            }
-        }
-    }
+    void for_each_value(IndType first, IndType last, F&& func) const;
 
     /// @brief for_each_value() over every element.
     template <typename F>
@@ -746,13 +627,13 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      *        block, in order: the loop over the span can be vectorised.
      *
      * @details for_each_value() by blocks of up to bulk_block elements. When @p func
-     *          is also callable as f(const T& v, std::size_t count), a compressed
+     *          is also callable as func(const T& value, std::size_t count), a compressed
      *          chunk is passed that way in O(1); other callables get it as spans.
      *          Stats and NaN-check builds fill blocks through the iterator and
-     *          never call f(v, count).
+     *          never call func(value, count).
      * @param first first index, inclusive (clamped to [0, size()])
      * @param last  last index, exclusive (clamped to size())
-     * @param func     called as f(std::span<const T>), and f(v, count) when it
+     * @param func  called as func(std::span<const T>), and func(value, count) when it
      *              accepts it; its return value is ignored. A span is only
      *              valid during its call.
      * @warning for_each_value()'s contract: no other thread may write the
@@ -760,57 +641,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      *          thread on its own slice.
      */
     template <typename F>
-    void for_each_span(IndType first, IndType last, F&& func) const
-    {
-        std::array<T, bulk_block> buf;
-        if constexpr (bulk_fast)
-        {
-            for_each_chunk_span(first, last,
-                                [&](const ChunkType& ch, int num_chunk, int lo, int hi)
-                                {
-                                    for (int j = lo; j < hi; j += bulk_block)
-                                    {
-                                        const int len = (hi - j) < bulk_block ? (hi - j) : bulk_block;
-                                        if constexpr (std::invocable<F&, const T&, std::size_t>)
-                                        {
-                                            // A compressed chunk stays so for the rest of the
-                                            // call (no writer): the constant covers [j, hi).
-                                            T cst{};
-                                            if (ch.read_block_or_constant(j, len, buf.data(), cst))
-                                            {
-                                                check_no_write_during_bulk_read(ch, num_chunk, j);
-                                                func(std::as_const(cst), static_cast<std::size_t>(hi - j));
-                                                return;
-                                            }
-                                        }
-                                        else
-                                        {
-                                            ch.read_block(j, len, buf.data());
-                                        }
-                                        check_no_write_during_bulk_read(ch, num_chunk, j);
-                                        func(std::span<const T>(buf.data(), static_cast<std::size_t>(len)));
-                                    }
-                                });
-        }
-        else
-        {
-            int filled = 0;
-            for_each_value(first, last,
-                           [&](const T& value)
-                           {
-                               buf[filled++] = value;
-                               if (filled == bulk_block)
-                               {
-                                   func(std::span<const T>(buf.data(), static_cast<std::size_t>(filled)));
-                                   filled = 0;
-                               }
-                           });
-            if (filled > 0)
-            {
-                func(std::span<const T>(buf.data(), static_cast<std::size_t>(filled)));
-            }
-        }
-    }
+    void for_each_span(IndType first, IndType last, F&& func) const;
 
     /// @brief for_each_span() over every element.
     template <typename F>
@@ -826,34 +657,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @return @p out advanced past the last element written.
      */
     template <typename OutIt>
-    OutIt read_range(IndType first, IndType last, OutIt out) const
-    {
-        if constexpr (bulk_fast && std::is_same_v<OutIt, T*>)
-        {
-            for_each_chunk_span(first, last,
-                                [&](const ChunkType& ch, int num_chunk, int lo, int hi)
-                                {
-                                    for (int j = lo; j < hi; j += bulk_block)
-                                    {
-                                        const int len = (hi - j) < bulk_block ? (hi - j) : bulk_block;
-                                        ch.read_block(j, len, out);
-                                        check_no_write_during_bulk_read(ch, num_chunk, j);
-                                        out += len;
-                                    }
-                                });
-            return out;
-        }
-        else
-        {
-            for_each_value(first, last,
-                           [&out](const T& value)
-                           {
-                               *out = value;
-                               ++out;
-                           });
-            return out;
-        }
-    }
+    OutIt read_range(IndType first, IndType last, OutIt out) const;
     /** @} */
 
     /**
@@ -879,7 +683,11 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      *          and rank, not per array), so this serves every array. Size and
      *          capacity do not change. Sequential context.
      */
-    void shrink_to_fit();
+    void shrink_to_fit()
+    {
+        invalidate_proxies();
+        compress_now_and_trim_pools();
+    }
 
     /**
      * @brief Checked read access.
@@ -923,7 +731,11 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @param count new element count
      * @param val value written to every position
      */
-    void assign(this Derived& self, IndType count, T val); // T, not InT<T>: val may be a(i) -- resize() can free it
+    void assign(this Derived& self, IndType count, T val) // T, not InT<T>: val may be a(i) -- resize() can free it
+    {
+        self.resize(count);
+        self.write_range_by_chunks(0, count, [&val](IndType) { return val; });
+    }
 
     /**
      * @brief assign(): the elements of [first, last), in order.
@@ -952,34 +764,14 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @pre Both operands must share chunk geometry (enforced under check; with
      *      StaticChunkSize this is always true).
      */
-    void swap(this Derived& self, Derived& other) noexcept
-    {
-        if constexpr (build_config::any_check)
-        {
-            if (self.size_policy_.size() != other.size_policy_.size())
-            {
-                CHUNK_INVARIANT_FAILED("zero::Array::swap: mismatched chunk geometry ({} vs {})",
-                                       self.size_policy_.size(), other.size_policy_.size());
-            }
-        }
-        self.swap_storage_and_identity(other);
-    }
+    void swap(this Derived& self, Derived& other) noexcept;
 
     /**
      * @brief Const read access (used by read_value()).
      * @param index global element index (unchecked)
      * @return the element value, after the read gate has been honoured
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator()(this const Derived& self, IndType index) noexcept
-    {
-        const int   num_chunk = self.chunk_index_of(index);
-        const int   num       = self.offset_in_chunk(index);
-        const auto& chunk_t   = self.chunk_list_[num_chunk];
-
-        self.sync_chunk(chunk_t, num_chunk, num);
-
-        return chunk_t.read_value(num);
-    }
+    CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator()(this const Derived& self, IndType index) noexcept;
 
     /**
      * @brief Raw reference access: arr(i) = value.
@@ -988,16 +780,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @warning Bypasses the write proxy: valid only where the chunk is known to
      *          be materialised. Prefer operator[] otherwise.
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE T& operator()(this Derived& self, IndType index) noexcept
-    {
-        const int num_chunk = self.chunk_index_of(index);
-        const int num       = self.offset_in_chunk(index);
-        auto&     chunk_t   = self.chunk_list_[num_chunk];
-
-        self.sync_chunk(chunk_t, num_chunk, num);
-
-        return chunk_t(num);
-    }
+    CHUNK_FLATTEN CHUNK_FORCE_INLINE T& operator()(this Derived& self, IndType index) noexcept;
 
     /**
      * @brief Unchecked read access (hot path).
@@ -1007,30 +790,15 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      *          `inline` in debug and for nvc++; CHUNK_FLATTEN (opt-in,
      *          -DSHRINK_AGGRESSIVE_INLINE, never nvc++) pulls the whole read path in.
      *
-     * @param index global element index; the caller guarantees 0 <= i < size()
+     * @param index global element index; the caller guarantees 0 <= index < size()
      * @return the element VALUE (see the member-typedef note on const_reference)
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](this const Derived& self, IndType index) noexcept
-    {
-        const int num_chunk = self.chunk_index_of(index);
-        const int num       = self.offset_in_chunk(index);
-        // Lets the compiler drop bounds/sign checks (0 <= num <= modulo by construction).
-        // modulo() is read into a local first: clang ignores an assumption that
-        // calls a function it cannot prove side-effect free (-Wassume).
-        [[maybe_unused]] const int chunk_mod = static_cast<int>(self.size_policy_.modulo());
-        CHUNK_ASSUME(num_chunk >= 0);
-        CHUNK_ASSUME(num >= 0 && num <= chunk_mod);
-        const auto& chunk_t = self.chunk_list_[num_chunk];
-
-        self.sync_chunk(chunk_t, num_chunk, num);
-
-        return chunk_t[num];
-    }
+    CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](this const Derived& self, IndType index) noexcept;
 
     /**
      * @brief Unchecked write access: THE write entry of the container.
      *
-     * @param index global element index; the caller guarantees 0 <= i < size()
+     * @param index global element index; the caller guarantees 0 <= index < size()
      * @return the write proxy for that element, armed with the owning array and
      *         chunk number
      * @warning The proxy is a HANDLE into this array's chunk storage, not a
@@ -1044,55 +812,16 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      *          the same kind of proxy. The ElementRef wrapper makes a use of
      *          `auto v = a[i];` fail to compile (internal/element_ref.h).
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE reference operator[](this Derived& self, IndType index) noexcept
-    {
-        if constexpr (build_config::strict_element_ref)
-        {
-            return reference(self.element_proxy(index));
-        }
-        else
-        {
-            return self.element_proxy(index);
-        }
-    }
+    CHUNK_FLATTEN CHUNK_FORCE_INLINE reference operator[](this Derived& self, IndType index) noexcept;
 
     /**
      * @brief The write proxy of element @p index, in every build: operator[]'s
      *        work, for the library code that names the proxy (operator[]
      *        wraps it in an ElementRef).
-     * @param index global element index; the caller guarantees 0 <= i < size()
+     * @param index global element index; the caller guarantees 0 <= index < size()
      * @return the write proxy for that element, armed as operator[]'s
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE ProxyType element_proxy(this Derived& self, IndType index) noexcept
-    {
-        const int        num_chunk = self.chunk_index_of(index);
-        auto&            chunk_t   = self.chunk_list_[num_chunk];
-        const int        num       = self.offset_in_chunk(index);
-        const ProxyType& val       = chunk_t[num];
-
-        // Arm ptr_on_array / num_chunk in ALL modes, not only under fast block
-        // compression: in non-OpenMP builds too, set_num_tab() and
-        // get_info_second_value() look ptr_on_array up in share_info_array.
-        val.set_this_and_num_chunk(self.registry_key(), num_chunk, self.num_tab_);
-        val.arm_storage_generation(&self.storage_generation_); // check builds only
-
-        // zero_one_value only: arm the proxy with this array's registry mirror, so the
-        // write path copies (second_value, ind, num_tab) instead of scanning
-        // share_info_array. Tested on the DECLARED proxy type, not a `requires`:
-        // a renamed member must fail to compile, not fall back silently.
-        if constexpr (std::is_same_v<ProxyType, zero_one_value::Proxy<T>>)
-        {
-            val.arm_inf_array(self.registry_mirror());
-        }
-
-        // No sync on the write entry: the read entries pull visibility
-        // (ChunkBase::reader_sync), and a same-offset WAW is handled on the
-        // direct write path. The const accessors and T& operator() keep sync_chunk.
-
-        chunk_config::CheckNaN<chunk_config::do_check>::maybe(val, static_cast<long>(index));
-
-        return val;
-    }
+    CHUNK_FLATTEN CHUNK_FORCE_INLINE ProxyType element_proxy(this Derived& self, IndType index) noexcept;
 
   protected:
     // The core's members, named here so this class and the derived arrays use
@@ -1121,19 +850,19 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * the narrowing, valid while size() < INT_MAX * chunk_size().
      * @{
      */
-    /// @brief The chunk holding element @p index (>= 0): i / chunk_size() (SizePolicy::chunk_of).
+    /// @brief The chunk holding element @p index (>= 0): index / chunk_size() (ActiveSizePolicy::chunk_of).
     [[nodiscard]] int chunk_index_of(IndType index) const noexcept
     {
         return static_cast<int>(size_policy_.chunk_of(index));
     }
 
-    /// @brief Element @p index's (>= 0) offset inside its chunk: i % chunk_size() (SizePolicy::offset_of).
+    /// @brief Element @p index's (>= 0) offset inside its chunk: index % chunk_size() (ActiveSizePolicy::offset_of).
     [[nodiscard]] int offset_in_chunk(IndType index) const noexcept
     {
         return static_cast<int>(size_policy_.offset_of(index));
     }
 
-    /// @brief Chunks allocated for @p count elements: n / chunk_size() + 1 (the last
+    /// @brief Chunks allocated for @p count elements: count / chunk_size() + 1 (the last
     ///        chunk is never full -- see capacity()).
     [[nodiscard]] int chunks_for(IndType count) const noexcept
     {
@@ -1204,26 +933,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      *        (Derived::swap_identity()). No geometry precondition -- the
      *        geometry is exchanged with the chunks, as rechunk_to() does.
      */
-    void swap_storage_and_identity(this Derived& self, Derived& other)
-    {
-        if (&self == &other)
-        {
-            return;
-        }
-        self.flush_pending_deferred_ops(/*force=*/true);
-        other.flush_pending_deferred_ops(/*force=*/true);
-        self.invalidate_proxies();
-        other.invalidate_proxies();
-
-        using std::swap;
-        swap(self.chunk_list_, other.chunk_list_);
-        swap(self.alloc_key_, other.alloc_key_);
-        self.swap_dirty_bitset(other);
-        swap(self.m_size_, other.m_size_);
-        swap(self.nb_chunk_, other.nb_chunk_);
-        swap(self.size_policy_, other.size_policy_);
-        self.swap_identity(other);
-    }
+    void swap_storage_and_identity(this Derived& self, Derived& other);
 
     IndType m_size_; ///< Number of elements exposed by size().
 
@@ -1260,6 +970,15 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
         return self(index);
     }
 
+    /// @brief The second-value slot of chunk @p num_chunk, where a motif chunk
+    ///        keeps its offset (has_motif_state_v members only). Protected, not
+    ///        private: the family's array re-exports it for the chunk-size advisor.
+    [[nodiscard]] const T* motif_offset_slot(int num_chunk) const noexcept
+        requires has_motif_state_v<ChunkType>
+    {
+        return ProxyType::BaseSpec::get_tab_second_value(this->num_tab_, num_chunk).slot;
+    }
+
   private:
     /// @brief Elements per read section in the bulk reads (8 to 64 measure
     ///        alike; the larger, the fewer sections on long ranges).
@@ -1272,57 +991,29 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     ///        [first, last) touches -- offsets [lo, hi) in it -- after one
     ///        sync_chunk, as the iterator does on chunk entry.
     template <typename Fn>
-    void for_each_chunk_span(IndType first, IndType last, Fn&& fn) const
-    {
-        if (first < 0)
-        {
-            first = 0;
-        }
-        if (last > m_size_)
-        {
-            last = m_size_;
-        }
-        if (first >= last)
-        {
-            return;
-        }
-        const int  c_first = chunk_index_of(first);
-        const int  c_last  = chunk_index_of(last - 1);
-        const auto full    = static_cast<int>(size_policy_.size());
-        for (int c = c_first; c <= c_last; ++c)
-        {
-            const int        lo = c == c_first ? offset_in_chunk(first) : 0;
-            const int        hi = c == c_last ? offset_in_chunk(last - 1) + 1 : full;
-            const ChunkType& ch = chunk_list_[static_cast<std::size_t>(c)];
-            // sync_chunk takes the derived array (deducing this).
-            static_cast<const Derived&>(*this).sync_chunk(ch, c, lo);
-            fn(ch, c, lo, hi);
-        }
-    }
+    void for_each_chunk_span(IndType first, IndType last, Fn&& fn) const;
+
+
+    /// @brief ch.read_block(), with chunk @p num_chunk's offset slot for a
+    ///        member with the motif state.
+    void read_chunk_block(const ChunkType& ch, int num_chunk, int first, int count, T* out) const noexcept;
+
+    /// @brief ch.read_block_or_constant(), with chunk @p num_chunk's offset
+    ///        slot for a member with the motif state.
+    bool read_chunk_block_or_constant(const ChunkType& ch, int num_chunk, int first, int count, T* out, T& cst)
+        const noexcept;
 
     /// @brief Check builds, precise read gate: nothing was deferred onto
     ///        the chunk since its sync -- the iterator's check, per block.
     void check_no_write_during_bulk_read([[maybe_unused]] const ChunkType& ch,
                                          [[maybe_unused]] int              num_chunk,
-                                         [[maybe_unused]] int              offset) const noexcept
-    {
-        if constexpr (build_config::any_check && ChunkType::precise)
-        {
-            if (ch.read_gate_should_wait(offset)) [[unlikely]]
-            {
-                CHUNK_INVARIANT_FAILED("ArrayChunkBase bulk read: a write was deferred onto chunk {} of array {} "
-                                       "during the read (offset {}); it would not be seen -- no other thread may "
-                                       "write an array that is being read in bulk",
-                                       num_chunk, this, offset);
-            }
-        }
-    }
+                                         [[maybe_unused]] int              offset) const noexcept;
 
     /**
      * @brief Is chunk @p num_chunk materialised?
-     * @details Routes to Derived::chunk_written(j) when it exists (zero_one_value::Array,
+     * @details Routes to Derived::chunk_written(num_chunk) when it exists (zero_one_value::Array,
      *          whose chunks need the second-value index), else asks
-     *          chunk_list[j].written() directly.
+     *          chunk_list_[num_chunk].written() directly.
      * @param num_chunk CHUNK index
      * @return true if chunk @p num_chunk has been written (i.e. is not constant)
      * @see has_chunk_written_v
@@ -1343,26 +1034,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @note Compiles to nothing in a serial build (`if constexpr (threaded)`).
      */
     CHUNK_FORCE_INLINE void
-    sync_chunk(this const Derived& self, const ChunkType& chunk_t, int num_chunk, int offset) noexcept
-    {
-        if constexpr (build_config::threaded)
-        {
-            // Coarse pre-filter: the deferred-enqueue path marks this bit with
-            // the CHUNK index (proxy_base_inline.h), so a clear bit means no
-            // deferred op was ever queued for this chunk: skip the gate. This
-            // keeps the hot read path cheap. The bit is sticky until
-            // clear_dirty_bitset(); the authoritative gate is the chunk's own
-            // pending counter, below.
-            if (self.is_chunk_dirty(num_chunk)) [[unlikely]]
-            {
-                // precise per-chunk gate (DeferredReadGate, chunk_base.h).
-                if (chunk_t.read_gate_should_wait(offset)) [[unlikely]]
-                {
-                    chunk_t.wait_for_availability(offset);
-                }
-            }
-        }
-    }
+    sync_chunk(this const Derived& self, const ChunkType& chunk_t, int num_chunk, int offset) noexcept;
 
     /// @brief The core's rechunk_fn_: casts @p core back to Derived and calls rechunk_to(@p new_size).
     static void rechunk_thunk(Core& core, unsigned int new_size)

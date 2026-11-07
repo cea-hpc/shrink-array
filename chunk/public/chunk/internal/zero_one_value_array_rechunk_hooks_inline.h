@@ -45,7 +45,7 @@ void zero_one_value::RechunkHooks<Derived, true>::rechunk_drop_candidates(this D
             const auto inf = self.get_info_second_value();
             const int  thr = get_thr_rank_fast();
             shrink_array::set_thread_chunk_size(self.size_policy_.size());
-            for (const auto& per_rank : ManagerType::map_chunk2_to_compress_potentially_thr)
+            for (const auto& per_rank : ManagerType::zero_one_value_candidates_map_thr)
             {
                 for (const auto& kv : per_rank)
                 {
@@ -63,15 +63,8 @@ void zero_one_value::RechunkHooks<Derived, true>::rechunk_drop_candidates(this D
                 }
             }
         }
-        ManagerType::remove_from_compress_list_chunk2_by_num_tab(num_tab);
+        ManagerType::remove_from_zero_one_value_candidates_by_num_tab(num_tab);
     }
-}
-
-template <typename Derived>
-void zero_one_value::RechunkHooks<Derived, true>::rechunk_drain_reuse_list(this const Derived& /*self*/,
-                                                                           unsigned int new_size)
-{
-    ManagerType::drain_reuse_list_for_size(new_size);
 }
 
 template <typename Derived>
@@ -110,7 +103,7 @@ void zero_one_value::RechunkHooks<Derived, true>::rechunk_seed_fresh(this Derive
 template <typename Derived>
 bool zero_one_value::RechunkHooks<Derived, true>::rechunk_swap_identity(this Derived& self, Derived& tmp)
 {
-    // The num_tab, ind_cst_val2 and inf_array MEMBERS are NOT swapped: the
+    // The num_tab, ind_cst_val2_ and inf_array MEMBERS are NOT swapped: the
     // identity comes from share_info_array, and the members may be
     // uninitialized (swapping would read indeterminate values). The mirrors are
     // re-read in rechunk_reown_after_swap().
@@ -122,7 +115,7 @@ void zero_one_value::RechunkHooks<Derived, true>::rechunk_reown_after_swap(this 
                                                                            Derived&        tmp,
                                                                            InT<value_type> state)
 {
-    // Re-own the registration of `state`: map_inf_array[state] points at
+    // Re-own the registration of `state`: map_inf_array_[state] points at
     // &tmp.inf_array, which dangles once the stack tmp dies, and the next
     // compression of `state` would dereference it. Copy tmp's (value, ind) and
     // re-point the map at this array's member. Only when the fresh array

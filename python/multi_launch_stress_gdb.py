@@ -83,16 +83,25 @@ exec_timeout = args.exec_timeout
 # have always carried a size, there never was a bare shrink_bench_zero_check.
 # Fixed here on the dyn size, multi_launch_stress.py's default -- and without
 # the _check, now a run-time flag (MODE_ARGS below).
-base_exec_list = [
-    "./shrink_bench_zero_dyn",
-    "./shrink_bench_zero_one_value_dyn",
-    "./shrink_bench_zero_any_dyn",
-]
+#
+# The executables carry the backend of their build: shrink_bench_<backend>_<rest>,
+# <backend> omp, std or serial. This directory holds one of the three: the first
+# present is taken (bench_runner/settings.py's bench_exe_names, copied here: this
+# script runs copied into a build directory). Never the names without a backend,
+# which a rebuilt directory still holds, stale.
+def bench_exe(rest):
+    """./shrink_bench_<backend>_<rest> for the backend present here (the omp
+    name when none is: the launch then reports it missing)."""
+    names = ["./shrink_bench_%s_%s" % (b, rest) for b in ("omp", "std", "serial")]
+    return next((n for n in names if os.path.isfile(n)), names[0])
+
+
+base_exec_list = [bench_exe("zero_dyn"), bench_exe("zero_one_value_dyn"), bench_exe("zero_any_dyn")]
 
 # check and perf are one binary since they were merged; the mode is chosen here.
 MODE_ARGS = ["--mode", "check"]
 
-executables = base_exec_list[:] if args.all_exec else ["./shrink_bench_zero_one_value_dyn"]
+executables = base_exec_list[:] if args.all_exec else [bench_exe("zero_one_value_dyn")]
 
 # ============================================================
 #  Ensure .gdbinit contains the GroupBT command

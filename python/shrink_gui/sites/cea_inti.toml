@@ -27,6 +27,7 @@ submit = "ccc_msub"              # run as `<submit> job.sh` in the run directory
 jobid_re = '\b(\d{2,})\b'        # the job id in what submit prints (last match, group 1)
 cancel = ["ccc_mdel", "scancel"] # `<cancel> <jobid>`, tried in order
 qos_info = "ccc_mqinfo"          # prints the QoS limits table; "" when there is none
+partition_info = "ccc_mpinfo"    # prints the partitions (see [discovered]); "" when there is none
 # The job script header: one "<directive> <option>" line each. Fields:
 # {name}; {seconds}, {minutes} (rounded up) or {hms} ([D-]HH:MM:SS); {log}
 # (out.log, output and error both); {qos}; Slurm start conditions as
@@ -38,6 +39,10 @@ output = "-o {log}"
 error = "-e {log}"
 qos = "-Q {qos}"
 slurm = '-E "{options}"'
+# A job of several nodes ("Nœuds", "un job de N nœuds"): the command that
+# starts one task per node inside the job when the partition has no launcher
+# (its node, task and core options are added). Default: srun.
+step = "ccc_mprun"
 
 # The detached mode: the command started from the login node, in the
 # background: `<command> <partition's detached options> <time> <qos> bash run.sh`
@@ -96,6 +101,24 @@ directives = """
 """
 launcher = ""
 detached = "-N1 -c 64 -p milan-bxi -Xfirst"
+
+# The partitions the connection check reads from partition_info, beside the
+# ones above (which win for a name in both): each gets an entry built from
+# these templates -- {name}: the partition, {cores}: the cores of one node --
+# which, as above, are editable in the window and remembered per partition.
+# arm: a pattern on the name for the ARM partitions (the others are x86);
+# skip: a pattern on the name for the partitions not to offer ("" = none).
+[discovered]
+directives = """
+#MSUB -q {name}
+#MSUB -N 1
+#MSUB -n 1
+#MSUB -c {cores}
+"""
+launcher = ""
+detached = "-N1 -c {cores} -p {name} -Xfirst"
+arm = "gh200|grace|a64fx|arm"
+skip = ""
 
 # The options' defaults per program and architecture, by argparse dest: a
 # string is the option's value (shell variables expand there; {build_root}

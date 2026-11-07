@@ -32,6 +32,7 @@
 #include "chunk/internal/conditional_counter.h" // ConditionalCounter
 #include "chunk/internal/zero_proxy.h"          // Proxy<T>
 #include "chunk/internal/immortal.h"            // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (init_chunks_cst_val)
 
 namespace shrink_array
 {
@@ -116,6 +117,9 @@ extern void destroy_block_chunk();
 
 // Build-agnostic free functions over the policy above, declared and defined
 // (chunk_std.cpp) in EVERY build, so calling any of them links in both models.
+// The teardown ones (delete_chunk_allocator, clear_all_list_block_free_thr,
+// delete_list_block_chunk_free_itself) are sequential points, as
+// release_chunk_pools() says.
 /// @brief ChunkPoolParallelInterface<>::delete_chunk_allocator() of this build.
 extern void delete_chunk_allocator();
 /// @brief ChunkPoolParallelInterface<>::clear_all_list_block_free_thr() of this build.
@@ -140,6 +144,13 @@ extern bool need_load_balance_list_block_free();
  *       this only empties the free lists, and destroy_block_chunk(),
  *       delete_list_block_chunk_free_itself() and delete_chunk_allocator() do
  *       nothing: the array parks its buffers there when it dies.
+ * @warning Sequential point: call it once, after the last parallel region. From
+ *          inside a region (OpenMP's, the std backend's team or application
+ *          phase) a check build aborts; any other build says so on stderr and
+ *          does nothing. Every thread of the team would otherwise empty the
+ *          same pools at once. The same holds for destroy_block_chunk(),
+ *          delete_chunk_allocator(), clear_all_list_block_free_thr(),
+ *          delete_list_block_chunk_free_itself() and an array's shrink_to_fit().
  */
 extern void release_chunk_pools();
 
@@ -189,7 +200,7 @@ class ChunkCounterPolicy
     /// @return true when the count has reached @p size -- the compression trigger
     [[nodiscard]] bool is_full_zero(unsigned int size = static_chunk_size) const noexcept
     {
-        return nb_val_eq_zero_ == size;
+        return static_cast<CounterValueT>(nb_val_eq_zero_) == size;
     }
 
   private:
@@ -244,7 +255,10 @@ class ChunkThreadPolicy : public ChunkBase<T, Derived>
 
     /// @brief Materialise storage for the calling thread.
     /// @details Delegates to the rank-aware overload using this thread's rank.
-    void create_value(this Derived& self) noexcept;
+    void create_value(this Derived& self) noexcept
+    {
+        self.create_value(get_thr_rank_fast());
+    }
 
     /// @brief Compress: release this chunk's buffer to @p thr_rank's reuse
     ///        list and count it as a compression (CHUNK_STATS).
@@ -286,31 +300,17 @@ class ChunkThreadPolicy : public ChunkBase<T, Derived>
      * @note This is the CAS-steal that makes a compressor's window dangerous to
      *       concurrent writers -- see CompressionManager's hard_inflight_.
      */
-    T* try_mark_cst_and_get_old(this Derived& self)
-    {
-        T* old = self.Base::values_load();
-        if (old == Base::get_cst_val1()) [[unlikely]]
-        {
-            return nullptr;
-        }
-
-        T* expected = old;
-        T* new_ptr  = Base::get_cst_val1();
-
-        if (!self.values_.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel,
-                                                  std::memory_order_acquire)) [[unlikely]]
-        {
-            return nullptr;
-        }
-        return old;
-    }
+    T* try_mark_cst_and_get_old(this Derived& self);
 
     /// @brief Point @p count freshly allocated chunks at the first constant.
     /// @details Parallel past 500 chunks, and only from OUTSIDE a parallel
     ///          region (inside one, an orphaned `omp for` would hang waiting for
     ///          the other threads). An application that placement-news an array
     ///          of chunks initialises it here.
-    static void init_chunks_cst_val(Chunk<T>* chunks, std::size_t count) noexcept;
+    static void init_chunks_cst_val(Chunk<T>* chunks, std::size_t count) noexcept
+    {
+        chunk_array_new::init_chunks(chunks, count, [](Chunk<T>& chunk) { chunk.init_values_cst_val(); });
+    }
 
     /**
      * @brief Zero-fill a buffer that allocate_chunk_internal has just created.
@@ -368,7 +368,7 @@ class ChunkFastCompPolicy : public ChunkThreadPolicy<T, Derived>
     // 4th element: the chunk's OWN geometry, captured at enqueue by
     // push_to_compress_list. compress() must scan exactly that many elements,
     // NOT alloc_chunk_count() (the CONSUMING thread's ambient size, may differ).
-    using VecTupleChunkpInt2 = std::vector<std::tuple<Chunk<T>*, int, int, ChunkElems>>;
+    using CandidateTuples = std::vector<std::tuple<Chunk<T>*, int, int, ChunkElems>>;
 
     using Manager = ManagerChunk<Chunk, T>;
     using Base    = ChunkBase<T, Derived>;
@@ -398,18 +398,18 @@ class ChunkFastCompPolicy : public ChunkThreadPolicy<T, Derived>
      * @param n_elems   THIS chunk's element count -- never the ambient size, see
      *                  TChunk.h's note on the field it is carried in
      */
-    void fill_list_to_compress(this Derived&       self,
-                               VecTupleChunkpInt2& ll_compt,
-                               int                 num_chunk,
-                               int                 num_tab,
-                               unsigned int        n_elems);
+    void fill_list_to_compress(this Derived&    self,
+                               CandidateTuples& ll_compt,
+                               int              num_chunk,
+                               int              num_tab,
+                               unsigned int     n_elems);
 
     /**
      * @brief Scan @p thr's queued candidates and collect those now compressible.
      * @param thr      rank whose candidate list is scanned
      * @param ll_compt out: the chunks found compressible, with their geometry
      */
-    static void fill_list_chunk_to_compress_in_par(int thr, VecTupleChunkpInt2& ll_compt);
+    static void fill_list_chunk_to_compress_in_par(int thr, CandidateTuples& ll_compt);
 };
 
 /**
@@ -424,7 +424,7 @@ class ChunkFastCompPolicy<T, Derived, false> : public ChunkThreadPolicy<T, Deriv
 {
   public:
     // 4th element: the chunk's own geometry (see the enabled policy).
-    using VecTupleChunkpInt2 = std::vector<std::tuple<Chunk<T>*, int, int, ChunkElems>>;
+    using CandidateTuples = std::vector<std::tuple<Chunk<T>*, int, int, ChunkElems>>;
 
     /// @brief No block compression in this mode.
     static void make_block_compression(int /*thr*/, const Proxy<T>* /*proxy*/) {}
@@ -437,12 +437,10 @@ class ChunkFastCompPolicy<T, Derived, false> : public ChunkThreadPolicy<T, Deriv
 
   private:
     /// @brief No candidate list to fill in this mode.
-    static void fill_list_chunk_to_compress_in_par(int /*thr*/, VecTupleChunkpInt2& /*ll_compt*/) {}
+    static void fill_list_chunk_to_compress_in_par(int /*thr*/, CandidateTuples& /*ll_compt*/) {}
     /// @copydoc fill_list_chunk_to_compress_in_par
-    static void fill_list_to_compress(VecTupleChunkpInt2& /*ll_compt*/,
-                                      int /*num_chunk*/,
-                                      int /*num_tab*/,
-                                      unsigned int /*n_elems*/)
+    static void
+    fill_list_to_compress(CandidateTuples& /*ll_compt*/, int /*num_chunk*/, int /*num_tab*/, unsigned int /*n_elems*/)
     {
     }
 };
@@ -507,48 +505,15 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     /// @brief Copy the zero-counter base and the `values` pointer of @p other.
     ///
     /// The ChunkCounterPolicy base must be copied explicitly: a user-defined
-    /// copy ctor otherwise DEFAULT-constructs it, resetting nb_val_eq_zero, and
+    /// copy ctor otherwise DEFAULT-constructs it, resetting nb_val_eq_zero_, and
     /// manage_full_zero() later re-compresses a chunk that is not all-zero.
     /// ChunkFastCompPolicy holds the atomic `values` (non-copyable), copied by
     /// hand below.
-    Chunk(const Chunk& other)
-
-        : ChunkCounterPolicy<chunk_config::use_compression_with_counter>(other)
-    {
-        if constexpr (build_config::threaded)
-        {
-            values_.store(other.values_.load());
-        }
-        else
-        {
-            values_ = other.values_;
-        }
-    }
+    Chunk(const Chunk& other);
 
     /// @brief Copy the zero-counter base and the `values` pointer of @p other unless it is this chunk.
     /// @return *this.
-    Chunk& operator=(const Chunk<T>& other)
-    {
-        if (this == &other)
-        {
-            return *this;
-        }
-
-        // Same reason as the copy ctor: propagate the zero-counter state.
-        ChunkCounterPolicy<chunk_config::use_compression_with_counter>::operator=(other);
-
-        if constexpr (build_config::threaded)
-        {
-            T* loaded_value = other.values.load();
-            values_.store(loaded_value);
-        }
-        else
-        {
-            values_ = other.values;
-        }
-
-        return *this;
-    }
+    Chunk& operator=(const Chunk<T>& other);
 
     /// @brief Point this chunk at the shared zero constant (compressed state).
     void init_values_cst_val(this auto& self)
@@ -574,37 +539,10 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
 
     /// @brief Materialise storage if still compressed, from @p thr_rank's pool.
     /// @param thr_rank calling thread's rank; ignored in serial builds
-    void alloc_chunk(this auto& self, [[maybe_unused]] int thr_rank)
-    {
-        if (self.is_cst_val1())
-        {
-            if constexpr (chunk_config::stats)
-            {
-                increm_chunk_write<ChunkType>();
-            }
-
-            if constexpr (build_config::threaded)
-            {
-                self.create_value(thr_rank);
-            }
-            else
-            {
-                self.create_value();
-            }
-        }
-    }
+    void alloc_chunk(this auto& self, [[maybe_unused]] int thr_rank);
 
     /// @brief Get reference to the chunk manager (static access)
-    static auto& get_manager() noexcept
-    {
-        // Do not make this a function-local static: its lazy guard's first init
-        // can run from compress() inside an OpenMP region and deadlock threads on
-        // __cxa_guard_acquire. A LazyImmortal (chunk/internal/immortal.h) is built
-        // by the manager's registration (ManagerChunk::init_static_state), before
-        // any array or thread reaches it, and never destroyed (a global array
-        // still uses it after main).
-        return *s_manager_;
-    }
+    static auto& get_manager() noexcept;
 
     /**
      * @brief Drain and compress every thread's candidate list.

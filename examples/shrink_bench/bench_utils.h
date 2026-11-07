@@ -133,12 +133,11 @@ struct is_atomic_pointer<std::atomic<U*>> : public std::true_type
 
 // -----------------------------------------------------------------------------
 // The checksum of an array: the sum, over its elements different from T{}, of
-// a hash of the element's VALUE MIXED WITH ITS INDEX. It used to sum the bytes
-// of the elements, which no index entered: two chunks swapped, a chunk's
-// content copied to the wrong index while another took its place, compensating
-// byte errors -- the very class of geometry / re-chunk bugs the check runs hunt
-// -- all summed to the same value. The sum stays order-free (a parallel
-// reduction, modulo 2^64) and costs about what the byte loop did.
+// a hash of the element's VALUE MIXED WITH ITS INDEX. A sum of the bytes alone,
+// which no index enters, would miss two chunks swapped, a chunk's content
+// copied to the wrong index while another took its place, compensating byte
+// errors -- the very class of geometry / re-chunk bugs the check runs hunt.
+// The sum stays order-free (a parallel reduction, modulo 2^64).
 //   - integral elements hash their VALUE, not their bytes: tab_bool is a
 //     std::vector<short> in the baseline and an Array<bool> in a shrink build
 //     (bench_array.h), and their checksums must agree; so does a packed Bit
@@ -355,13 +354,13 @@ double convert_memory(double memory_value);
 void memory_consumption(const std::string& msg);
 
 /// @brief Linear map of @p index from [0, sz] to [0, sz1].
-/// @return (sz1 / sz) * i, truncated to Int.
+/// @return (sz1 / sz) * index, truncated to Int.
 Int linear_correlation(Int index, Int sz, Int sz1);
 /// @brief Power-law map of @p index from [0, sz] to [0, sz1].
-/// @return sz1 * (i / sz)^p, truncated to Int.
+/// @return sz1 * (index / sz)^rate, truncated to Int.
 Int exponential_correlation(Int index, Int sz, Int sz1, double rate);
 /// @brief Square-root map of @p index from [0, sz] to [0, sz1].
-/// @return sz1 * sqrt(i / sz), truncated to Int.
+/// @return sz1 * sqrt(index / sz), truncated to Int.
 Int interpolation(Int index, Int sz, Int sz1);
 
 /// @brief Edit distance between @p lhs and @p rhs (insertions, deletions, substitutions).

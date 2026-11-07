@@ -40,6 +40,7 @@
 //
 // Exit 0 = every check holds.
 
+#include <cstddef> // std::size_t
 #include <cstdint> // std::uintptr_t
 #include <format>  // std::format
 #include <string>  // std::string

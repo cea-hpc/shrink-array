@@ -4,7 +4,8 @@
 import sys
 import time
 
-from ..builds import is_compression_only_config, skip_variant_on_config
+from .. import share
+from ..builds import is_compression_only_config, short_config_label, skip_variant_on_config
 from ..progress import _prog, get_progress_bar
 from ..runs import _append_error_now, effective_timeout, run_with_rebuild_retry
 from ..settings import config_env
@@ -17,6 +18,7 @@ def run_perf_phase(args, plan, counter, errors, results):
     print(cyan(bold(f"\n🚀 Performance — threads {args.threads}")))
     baseline_times = {}
     baseline_mems  = {}
+    unit = None
     for cfg in args.configs:
         # Baseline per (variant, tc): time of the baseline_variant for
         # this tc, on this config. A compression-only config (e.g.
@@ -27,6 +29,17 @@ def run_perf_phase(args, plan, counter, errors, results):
         if not is_compression_only_config(cfg):
             baseline_times = {}
             baseline_mems  = {}
+        # --pool: the unit is perf/<base config>, the compression-only
+        # configs that follow it (the ones inheriting its baseline above)
+        # included -- done by the job that claimed the base, which has the
+        # baseline. One before any base config has none to inherit: a unit
+        # of its own.
+        if unit is None or not is_compression_only_config(cfg):
+            unit = cfg
+        if not share.take("perf", unit, short_config_label(cfg) if cfg == unit
+                          else f"{short_config_label(cfg)} (with {short_config_label(unit)})"):
+            counter.skip(_perf_runs(plan, cfg))
+            continue
         for var in args.variants:
             if skip_variant_on_config(var, cfg):
                 continue
@@ -131,3 +144,10 @@ def run_perf_phase(args, plan, counter, errors, results):
                 else:
                     sys.stdout.write(f" -> {red(f'⚠️  no valid run out of {_reps}')}\n")
                     sys.stdout.flush()
+
+
+def _perf_runs(plan, cfg):
+    """The perf runs of @p cfg the run counter counts (Plan.count_runs)."""
+    return sum(plan.reps_perf_for(var, tc, cfg)
+               for (c, var) in plan.perf_exes if c == cfg and not skip_variant_on_config(var, cfg)
+               for tc in plan.threads_for(var, cfg))

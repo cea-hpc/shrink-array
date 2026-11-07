@@ -47,7 +47,7 @@
  *          (operator()(i) returning a reference does not compile).
  */
 
-#include "chunk/bit.h"          // Bit
+#include "chunk/bit.h"                  // Bit
 #include "chunk/zero_one_value_array.h" // zero_one_value::Array
 
 namespace shrink_array

@@ -81,29 +81,9 @@
 #include "chunk/internal/invariant_check.h"      // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/immortal.h"             // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/log.h"                           // CHUNK_LOG (the identifier and index warnings)
-#if CHUNK_OPT_FAST_ALLOC
-    #include "fast_allocators/internal/alloc_config.h" // alloc_config::thp_advise (CHUNK_THP)
-#endif
 
 namespace shrink_array
 {
-
-/// @brief CHUNK_THP for the cst2 region: alloc_config::thp_advise() in a
-///        fast-alloc build, always false in a std-alloc build.
-///
-/// alloc_config.h belongs to fast_allocators, which a std-alloc build neither
-/// builds nor puts on the include path. The name cannot be written unguarded
-/// in region_init() either: it is not dependent, so it is looked up when the
-/// template is defined, `if constexpr` or not (see build_config's
-/// reclaim_empty_slabs mirror in config.h).
-inline bool cst2_thp_advise() noexcept
-{
-#if CHUNK_OPT_FAST_ALLOC
-    return fast_alloc::alloc_config::thp_advise();
-#else
-    return false;
-#endif
-}
 
 /**
  * @brief One block of the registry chain: 64 slots and a link to the next.
@@ -142,7 +122,8 @@ class TabCstVal2Holder;
  *          IDENTIFIER registered for the value (its index in the type's
  *          region, 1-based; 0 = no second value) rather than the value: 4
  *          bytes per chunk instead of 8 (double, long) or 16 (complex<double>).
- *          Reading it back is one load of GlobalVecHolder::value_by_id[id].
+ *          Reading it back is GlobalVecHolder::value_by_id[id]: the table
+ *          pointer, then the value (an mmap'd table, see value_by_id).
  *          Narrower types keep the value itself: an identifier would not be
  *          smaller, and bool has no registry.
  */
@@ -170,54 +151,25 @@ struct SecondValueRef
     using SlotT = SecondValueTraits<T>::SlotT;
 
     /// @brief The chunk's second value; T{} (== first_value, 0) when none.
-    [[nodiscard]] T get() const noexcept
-    {
-        if constexpr (SecondValueTraits<T>::indexed)
-        {
-            return TabCstVal2Holder<T>::value_of_id(*slot);
-        }
-        else
-        {
-            return *slot;
-        }
-    }
+    [[nodiscard]] T get() const noexcept;
     /// @brief Record @p value as the chunk's second value. For an indexed type this
     ///        registers the value's slot if it is new (find_or_set).
-    void set(T value) const
-    {
-        if constexpr (SecondValueTraits<T>::indexed)
-        {
-            // Up to the record: a reclaim must not run in between (LookupGuard).
-            const typename GlobalVecHolder<T>::LookupGuard in_flight;
-            *slot = TabCstVal2Holder<T>::id_for_value(value);
-        }
-        else
-        {
-            *slot = value;
-        }
-    }
+    void set(T value) const;
     /// @brief Record the value of a slot the caller already has.
-    void set_from_array(const T* src) const noexcept
-    {
-        // bool has no registry (TabCstVal2Holder<bool>): value_of_ptr would index
-        // value_by_id with an address-sized id. Never called for bool today.
-        static_assert(!std::is_same_v<T, bool>, "SecondValueRef<bool>::set_from_array: bool has no registry");
-        if constexpr (SecondValueTraits<T>::indexed)
-        {
-            *slot = TabCstVal2Holder<T>::id_of_ptr(src);
-        }
-        else
-        {
-            // NOT *src: nothing is stored at a slot, so that would record 0 and mark the
-            // chunk constant at the wrong value, silently.
-            *slot = GlobalVecHolder<T>::value_of_ptr(src);
-        }
-    }
+    void set_from_array(const T* src) const noexcept;
     /// @brief No second value (the `= 0` of the value table).
     void reset() const noexcept
     {
         *slot = SlotT{};
     }
+    /// @brief reset() as an atomic release store: the slot of a member with the motif
+    ///        state, which a reader of the chunk's motif may load meanwhile (F5).
+    void reset_release() const noexcept
+    {
+        std::atomic_ref<SlotT>(*slot).store(SlotT{}, std::memory_order_release);
+    }
+    /// @brief set_from_array() as an atomic release store (see reset_release()).
+    void                   set_from_array_release(const T* src) const noexcept;
     [[nodiscard]] explicit operator bool() const noexcept
     {
         return slot != nullptr;
@@ -364,10 +316,11 @@ class GlobalVecHolder
     /// @brief Largest identifier the region can hand out.
     ///
     /// @details One cache line per identifier (region_init()'s stride), so the region
-    ///          alone would allow 33 M. Capped by CHUNK_CST_VAL2_MAX_IDS because
-    ///          value_by_id[max_ids + 1] is then the binding cost (256 MiB of address
-    ///          space per type for a double at 33 M). The default leaves ample headroom
-    ///          over real workloads.
+    ///          alone would allow 33 M. Capped by CHUNK_CST_VAL2_MAX_IDS, which
+    ///          also sizes the reservations: max_ids x 64 bytes of region and
+    ///          (max_ids + 1) x sizeof(T) of value table per type, address space
+    ///          only (MAP_NORESERVE, backed as identifiers are handed out). The
+    ///          default leaves ample headroom over real workloads.
 #ifndef CHUNK_CST_VAL2_MAX_IDS
     #define CHUNK_CST_VAL2_MAX_IDS (4uz << 20U)
 #endif
@@ -388,15 +341,7 @@ class GlobalVecHolder
      * @warning Walks the chain without the lock: call it at a quiescent point,
      *          not while a compression pass may be appending.
      */
-    [[nodiscard]] static std::size_t count_entries() noexcept
-    {
-        std::size_t count = 0;
-        for (Segment<T>* s = head.load(std::memory_order_acquire); s != nullptr; s = s->next)
-        {
-            count += static_cast<std::size_t>(s->used);
-        }
-        return count;
-    }
+    [[nodiscard]] static std::size_t count_entries() noexcept;
 
     /// @brief Identifiers handed out so far: the region's high-water mark,
     ///        freed identifiers included (they are reused before it moves).
@@ -428,22 +373,7 @@ class GlobalVecHolder
     static inline std::atomic<std::size_t> refused_degraded{0}; ///< Refused: index degraded.
 
     /// @brief Where this type's identifiers stand. Relaxed reads, any time.
-    [[nodiscard]] static SecondValueStats stats() noexcept
-    {
-        constexpr auto   rx = std::memory_order_relaxed;
-        SecondValueStats stats;
-        stats.handed_out       = ids_handed_out();
-        stats.free             = free_id_count();
-        stats.free             = stats.free < stats.handed_out ? stats.free : stats.handed_out; // two relaxed reads
-        stats.capacity         = id_capacity();
-        stats.degraded         = index_degraded.load(rx);
-        stats.reclaims         = reclaim_runs.load(rx);
-        stats.freed            = reclaim_freed.load(rx);
-        stats.refused_parallel = refused_parallel.load(rx);
-        stats.refused_rechunk  = refused_rechunk.load(rx);
-        stats.refused_degraded = refused_degraded.load(rx);
-        return stats;
-    }
+    [[nodiscard]] static SecondValueStats stats() noexcept;
 
     /// @brief Identifier (1-based) of the slot @p ptr.
     /// @pre region_contains(ptr).
@@ -482,21 +412,7 @@ class GlobalVecHolder
     ///        result in the chunk's second-value table. No-op in release.
     struct LookupGuard
     {
-        LookupGuard() noexcept
-        {
-            if constexpr (build_config::any_check)
-            {
-                // seq_cst on both sides (ReclaimScope): each increments its own
-                // counter then reads the other's, so one of the two always sees
-                // the other.
-                lookups_in_flight.fetch_add(1, std::memory_order_seq_cst);
-                if (reclaims_running.load(std::memory_order_seq_cst) != 0) [[unlikely]]
-                {
-                    CHUNK_INVARIANT_FAILED("cst_val2: second-value lookup or registration during a reclaim "
-                                           "(reclaim_second_values() needs a sequential point)");
-                }
-            }
-        }
+        LookupGuard() noexcept;
         ~LookupGuard()
         {
             if constexpr (build_config::any_check)
@@ -535,15 +451,7 @@ class GlobalVecHolder
         ReclaimScope& operator=(ReclaimScope&&)      = delete;
 
         /// @brief Fail if a lookup or registration is in flight.
-        static void check_no_lookup(const char* when) noexcept
-        {
-            if (const int in_flight = lookups_in_flight.load(std::memory_order_seq_cst); in_flight != 0) [[unlikely]]
-            {
-                CHUNK_INVARIANT_FAILED("cst_val2: reclaim {} with {} second-value lookup(s) or registration(s) "
-                                       "in flight (reclaim_second_values() needs a sequential point)",
-                                       when, in_flight);
-            }
-        }
+        static void check_no_lookup(const char* when) noexcept;
     };
 
     /**
@@ -577,141 +485,65 @@ class GlobalVecHolder
      *          flight may hold. No epoch guards either case; check builds
      *          detect them (LookupGuard / ReclaimScope).
      */
-    static std::size_t reclaim_unmarked(const std::vector<std::uint8_t>& referenced)
-    {
-        const ReclaimScope     scope;            // check builds: no lookup in flight (nests in the caller's)
-        const std::scoped_lock lk(insert_mutex); // the contract excludes appenders: uncontended
+    static std::size_t reclaim_unmarked(const std::vector<std::uint8_t>& referenced);
 
-        std::vector<T*> kept;
-        std::size_t     freed = 0;
-        for (const Segment<T>* s = head.load(std::memory_order_acquire); s != nullptr; s = s->next)
-        {
-            for (int i = 0; i < s->used; ++i)
-            {
-                T* const            slot = s->slots[i];
-                const std::uint32_t id   = slot_id(slot);
-                if (id < referenced.size() && referenced[id] == 0)
-                {
-                    free_ids.push_back(id);
-                    free_ids_count.fetch_add(1, std::memory_order_relaxed);
-                    ++freed;
-                }
-                else
-                {
-                    kept.push_back(slot);
-                }
-            }
-        }
-        if (freed == 0)
-        {
-            return 0;
-        }
+    // ── The members of the zero_any family that share this registry ──────────
+    //
+    // Every array of the family with element type T draws its second values from this one
+    // registry: zero_any::Array<T> and pattern::Array<T> alike. A reclaim must mark what ALL
+    // of them still name: each member registers its mark here on its first use of the
+    // registry (zero_any::ArrayImpl::acquire_cst2_registry()), and
+    // zero_any::ArrayImpl::reclaim_second_values(), on any member, runs them all.
 
-        // The chain again, packed: occupancy stays contiguous (Segment's note).
-        auto*       first = new Segment<T>();
-        Segment<T>* last  = first;
-        for (T* slot : kept)
-        {
-            if (last->used == Segment<T>::slots_per_segment)
-            {
-                last->next = new Segment<T>();
-                last       = last->next;
-            }
-            last->slots[last->used] = slot;
-            ++last->used;
-        }
-        const Segment<T>* old = head.exchange(first, std::memory_order_acq_rel);
-        while (old != nullptr)
-        {
-            const Segment<T>* next = old->next;
-            delete old;
-            old = next;
-        }
+    /// @brief A member's mark: sets referenced[id] for each identifier its live arrays name.
+    using MarkFn = void (*)(std::vector<std::uint8_t>& referenced);
 
-        // The index again, from the survivors only: an entry left for a freed
-        // slot would answer a lookup of the old value with an identifier that
-        // has gone to another one.
-        index_clear(); // also drops index_degraded and the cached tail
-        for (T* slot : kept)
-        {
-            index_publish(value_of_ptr(slot), slot);
-        }
-        tail = last;
-        return freed;
-    }
+    /// @brief How many members can register a mark (zero_any, pattern, and room to spare).
+    static constexpr std::size_t max_markers = 4;
+
+    /**
+     * @brief Register @p mark, once: a mark already there is not added again.
+     * @details Lock-free (a CAS per slot), callable from any thread. More members than
+     *          max_markers is an invariant failure: a member left out would have its
+     *          values freed under it.
+     * @param mark The member's mark function.
+     */
+    static void register_marker(MarkFn mark) noexcept;
+
+    /// @brief Run every registered mark over @p referenced (reclaim_second_values()).
+    /// @param referenced One flag per identifier, set for those still named.
+    static void mark_all(std::vector<std::uint8_t>& referenced);
+
+    /// @brief The registered marks (register_marker()); null = free slot. Never
+    ///        unregistered: a mark only reads its member's registry of arrays.
+    static inline std::array<std::atomic<MarkFn>, max_markers> markers{};
 
     /// @brief A freed identifier's slot, or null when none is free.
     /// @pre Under #insert_mutex (alloc_chunk(), from find_or_register()).
-    [[nodiscard]] static T* take_free_slot() noexcept
-    {
-        if (free_ids.empty())
-        {
-            return nullptr;
-        }
-        const std::uint32_t id = free_ids.back();
-        free_ids.pop_back();
-        free_ids_count.fetch_sub(1, std::memory_order_relaxed);
-        return reinterpret_cast<T*>(region_begin.load(std::memory_order_relaxed) +
-                                    ((static_cast<std::size_t>(id) - 1u) * region_stride));
-    }
+    [[nodiscard]] static T* take_free_slot() noexcept;
 
     /// @brief Is @p ptr a second-value slot of this type?
     /// @note THE constant-2 test of zero_any: `is_cst_val2()` is
     ///       `region_contains(values)`. Relaxed load of a pointer that is
     ///       written once, before any chunk exists.
-    [[nodiscard]] static bool region_contains(const void* ptr) noexcept
+    [[nodiscard]] static bool region_contains(const T* ptr) noexcept
     {
         const std::byte* base = region_begin.load(std::memory_order_relaxed);
-        return base != nullptr && static_cast<const std::byte*>(ptr) >= base &&
-               static_cast<const std::byte*>(ptr) < region_end;
+        const auto       bits = ::fast_alloc::address_bits(ptr);
+        return base != nullptr && bits >= ::fast_alloc::address_bits(base) &&
+               bits < ::fast_alloc::address_bits(region_end);
     }
 
     /// @brief Carve @p bytes from the region.
     /// @pre init() ran. Called under #insert_mutex (single appender); the
     ///      fetch_add is belt and braces.
-    static std::byte* region_alloc(std::size_t bytes)
-    {
-        const std::size_t off = region_used.fetch_add(bytes, std::memory_order_relaxed);
-        // ONE capacity: what value_by_id can hold (region_usable, lowered by
-        // CHUNK_CST_VAL2_ID_LIMIT); alloc_chunk() writes value_by_id[id] for every slot
-        // carved here, so a slot past it would be a write past the table. Warn once at half.
-        const std::size_t cap_bytes =
-            (bytes != 0 && id_limit * bytes < region_usable) ? id_limit * bytes : region_usable;
-        const char* limiting =
-            (max_ids * id_stride) < region_bytes ? "CHUNK_CST_VAL2_MAX_IDS" : "CHUNK_CST_VAL2_REGION_BYTES";
-        if (id_limit < max_ids)
-        {
-            limiting = "CHUNK_CST_VAL2_ID_LIMIT";
-        }
-        if (bytes != 0 && off + bytes > cap_bytes / 2) [[unlikely]]
-        {
-            static std::atomic warned{false};
-            bool               expected = false;
-            if (warned.compare_exchange_strong(expected, true, std::memory_order_relaxed))
-            {
-                CHUNK_LOG(
-                    warn, compress,
-                    "second-value identifiers past half used: {} of {} (bound by {}). Raise it if the count keeps "
-                    "growing; running out aborts.",
-                    off / bytes, cap_bytes / bytes, limiting);
-            }
-        }
-        if (off + bytes > cap_bytes) [[unlikely]]
-        {
-            CHUNK_INVARIANT_FAILED("[cst_val2] second-value identifiers exhausted: {} of {}, bound by {} "
-                                   "(CHUNK_CST_VAL2_MAX_IDS={}, CHUNK_CST_VAL2_REGION_BYTES={} MiB). Raise it, or "
-                                   "reduce the number of DISTINCT second values the workload registers.",
-                                   off / bytes, cap_bytes / (bytes != 0 ? bytes : 1), limiting, max_ids,
-                                   region_bytes >> 20U);
-        }
-        return region_begin.load(std::memory_order_relaxed) + off;
-    }
+    static std::byte* region_alloc(std::size_t bytes);
 
     /**
      * @brief The value the slot @p ptr stands for.
      *
      * @details The one way to recover a value from a slot (probe revalidations,
-     *          rehash, degraded scans). Never `p[0]`: nothing is stored at a slot, so
+     *          rehash, degraded scans). Never `ptr[0]`: nothing is stored at a slot, so
      *          that reads a zero page (without MM_PROTECT), no value is ever found
      *          again and every registration takes the lock.
      *
@@ -723,43 +555,18 @@ class GlobalVecHolder
     {
         const std::byte* base = region_begin.load(std::memory_order_relaxed);
         const auto id = ((::fast_alloc::address_bits(ptr) - ::fast_alloc::address_bits(base)) / region_stride) + 1u;
-        return value_by_id[id];
+        return values()[id];
     }
 
     /**
      * @brief Look @p value up in the index, lock-free. This is the hot path.
      * @return Its slot, or null -- meaning "not found HERE", never
      *         "not registered". The caller must fall back.
-     * @details A hit is revalidated (value_of_ptr(p) == v) whatever the
+     * @details A hit is revalidated (value_of_ptr(slot) == @p value) whatever the
      *          concurrency: open addressing probes across collisions, so the
      *          slot reached may belong to another value.
      */
-    static T* index_lookup(InT<T> value) noexcept
-    {
-        // The table named here is never freed while a reader can hold it (see
-        // index_generations). A superseded generation misses newer values: a miss
-        // only means "not found here".
-        const IndexTable* table = index_tab.load(std::memory_order_acquire);
-        if (table == nullptr)
-        {
-            return nullptr;
-        }
-        const size_t mask = table->cap - 1;
-        const size_t slot = index_hash(value) & mask;
-        for (int probe = 0; probe < index_max_probe; ++probe)
-        {
-            T* entry = table->slots[(slot + probe) & mask].load(std::memory_order_acquire);
-            if (entry == nullptr)
-            {
-                return nullptr; // empty slot => value is not indexed here
-            }
-            if (value_of_ptr(entry) == value)
-            {
-                return entry; // validated hit
-            }
-        }
-        return nullptr; // probe budget exhausted => treat as miss
-    }
+    static T* index_lookup(InT<T> value) noexcept;
 
     /**
      * @brief Record that @p value is served by @p ptr. No-op if already present.
@@ -770,56 +577,7 @@ class GlobalVecHolder
      * @note Giving up after #index_max_probe sets #index_degraded rather than
      *       failing: the value IS registered in the chain, just not indexed.
      */
-    static void index_publish(InT<T> value, T* ptr) noexcept
-    {
-        IndexTable* table = index_tab.load(std::memory_order_relaxed);
-        // Grow before the table passes half full: linear probing degrades
-        // sharply beyond that.
-        if (table == nullptr || (table->used + 1) * 2 > table->cap)
-        {
-            table = index_grow();
-        }
-        for (int attempt = 0; attempt < 2; ++attempt)
-        {
-            const size_t mask = table->cap - 1;
-            const size_t slot = index_hash(value) & mask;
-            for (int probe = 0; probe < index_max_probe; ++probe)
-            {
-                const size_t idx = (slot + probe) & mask;
-                const T*     cur = table->slots[idx].load(std::memory_order_acquire);
-                if (cur != nullptr)
-                {
-                    if (value_of_ptr(cur) == value)
-                    {
-                        return; // already indexed (equivalent pointer)
-                    }
-                    continue; // occupied by another value -> probe on
-                }
-                // Empty slot: publish (single writer under insert_mutex).
-                table->slots[idx].store(ptr, std::memory_order_release);
-                ++table->used;
-                return;
-            }
-            // Budget exhausted at <= 50% load: pathological clustering. One
-            // more doubling before giving up.
-            if (attempt == 0)
-            {
-                table = index_grow();
-            }
-        }
-        // Still exhausted: a registered value may now be unfindable by
-        // index_lookup, so the cold path must re-enable its authoritative O(N)
-        // segment scan. Sticky flag (never reset until index_clear). Said once:
-        // from here on reclaim_second_values() is refused, so the identifiers
-        // only grow, and the exhaustion abort alone would not name the cause.
-        if (!index_degraded.exchange(true, std::memory_order_relaxed))
-        {
-            CHUNK_LOG(warn, compress,
-                      "second-value index degraded (probe budget exhausted after a regrowth): lookups fall back to the "
-                      "O(N) chain scan, and reclaim_second_values() is refused until the last array of this type is "
-                      "destroyed -- the identifiers can only grow.");
-        }
-    }
+    static void index_publish(InT<T> value, T* ptr) noexcept;
 
     /**
      * @brief Register one more user of this type's registry, creating it if new.
@@ -843,24 +601,7 @@ class GlobalVecHolder
      *          a user: a reference taken with no array alive would keep
      *          #ref_count above 0, and the registry would never be freed again.
      */
-    static void install_head()
-    {
-        static const Sentinel<T> sentinel;
-
-        region_init();
-
-        // Install the initial segment, once.
-        if (head.load(std::memory_order_relaxed) == nullptr)
-        {
-            auto        seg      = std::make_unique<Segment<T>>();
-            Segment<T>* null_ptr = nullptr;
-            if (head.compare_exchange_strong(null_ptr, seg.get(), std::memory_order_release, std::memory_order_relaxed))
-            {
-                seg.release(); // CAS won: seg is now owned by head
-            }
-            // If CAS lost: another thread installed a segment first — seg destroyed
-        }
-    }
+    static void install_head();
 
     /**
      * @brief Chain a fresh segment after @p last and return it.
@@ -898,50 +639,7 @@ class GlobalVecHolder
      *       "I am the lone thread of a single". omp_in_parallel() is the wrong
      *       test, since the single legitimately runs inside a parallel region.
      */
-    static void clear_if_last(int& nb_val2)
-    {
-        const int remaining = ref_count.fetch_sub(1, std::memory_order_acq_rel) - 1;
-        if (remaining > 0)
-        {
-            return; // Other zero_any::Array<T> instances still alive — do not free
-        }
-
-        // Last instance: free the segments and count what they held, for ONE
-        // summary line. The slots themselves are region memory:
-        // region_reset() below gives them back all at once.
-        int         nb_segs = 0;
-        Segment<T>* seg     = head.exchange(nullptr, std::memory_order_acq_rel);
-        while (seg != nullptr)
-        {
-            ++nb_segs;
-            const int used = seg->used;
-            for (int i = 0; i < used; ++i)
-            {
-                if (seg->slots[i] != nullptr)
-                {
-                    ++nb_val2;
-                }
-            }
-            auto owned = std::unique_ptr<Segment<T>>(seg);
-            seg        = owned->next;
-        }
-
-        if (nb_segs > 1)
-        {
-            std::cout << "[cst_val2] " << nb_val2 << " distinct second values across " << nb_segs
-                      << " segments (capacity " << nb_segs * Segment<T>::slots_per_segment
-                      << "), index_degraded=" << index_degraded.load(std::memory_order_relaxed) << "\n";
-        }
-
-        // Registry gone: drop the index so no stale pointer survives.
-        index_clear();
-        region_reset(); // the slots' pages, all at once
-
-        // Reinstall an empty segment for any later pass. NOT init(): that
-        // takes a reference, and one taken here, with no array alive, would
-        // keep #ref_count above 0 for good.
-        install_head();
-    }
+    static void clear_if_last(int& nb_val2);
 
     /**
      * @brief Free everything unconditionally, ignoring #ref_count.
@@ -949,19 +647,7 @@ class GlobalVecHolder
      *          does not reinstall an empty segment, so #head is left null and
      *          the registry is unusable afterwards.
      */
-    static void cleanup_all()
-    {
-        const Segment<T>* seg = head.exchange(nullptr, std::memory_order_relaxed);
-        while (seg != nullptr)
-        {
-            // The slots are region memory, freed by region_reset() below.
-            const Segment<T>* next = seg->next;
-            delete seg;
-            seg = next;
-        }
-        index_clear(); // registry gone: drop stale advisory index entries
-        region_reset();
-    }
+    static void cleanup_all();
 
     /// @brief First segment. NEVER null after init() -- clear_if_last()
     ///        reinstalls an empty one (install_head(), which registers no
@@ -999,13 +685,42 @@ class GlobalVecHolder
     ///       is then a shift by 6, not a 64-bit `div` by a global.
     static constexpr std::size_t region_stride = id_stride;
 
+    /// @brief Index 0 alone, until region_init() maps the table: a read of
+    ///        "no second value" needs no mapping.
+    static inline T value_by_id_none[1]{};
+
     /// @brief The value registered under each identifier, contiguous: what
     ///        a chunk's second value is read through on every write of a
-    ///        wide type (SecondValueRef::get). 8 bytes per value, L1-resident
-    ///        for the values a run actually uses. Zero-initialised static
-    ///        storage: the pages of identifiers never handed out are never
-    ///        touched. Index 0 is "no second value" and stays T{}.
-    static inline std::array<T, max_ids + 1> value_by_id{};
+    ///        wide type (SecondValueRef::get), sizeof(T) per value,
+    ///        L1-resident for the values a run actually uses. Index 0 is "no
+    ///        second value" and holds T{}.
+    ///
+    /// @details A pointer, to an mmap(MAP_NORESERVE) reservation of
+    ///          (id_limit + 1) values made by region_init(), next to the
+    ///          region and the same way: only the pages of identifiers handed
+    ///          out are ever backed, region_reset() gives them back, and the
+    ///          size follows CHUNK_CST_VAL2_ID_LIMIT. A static array of
+    ///          max_ids + 1 values (32 MiB of bss for a double, 96 for a 24-byte
+    ///          type, per element type) cost the same RSS for a trivial T, but
+    ///          not for a T whose default constructor is not constexpr: its
+    ///          dynamic initialisation touched every page at startup. It also
+    ///          counted against RLIMIT_AS and, under strict overcommit, against
+    ///          the commit charge, for every element type linked in. The price
+    ///          is one more dependent load per read, an L1 hit
+    ///          (CHANGELOG, access_cost).
+    ///
+    /// @note A plain pointer, written once by region_init() before its
+    ///       release store of region_begin: every reader holds an Array<T>,
+    ///       whose init() ran region_init(), so the write happens before the
+    ///       read and there is no race. Plain also lets the compiler keep it
+    ///       in a register across a loop.
+    static inline T* value_by_id = value_by_id_none;
+
+    /// @brief The table value_by_id points to. @see value_by_id
+    [[nodiscard]] static T* values() noexcept
+    {
+        return value_by_id;
+    }
 
   private:
     /// @brief What is reserved and carved: exactly the identifiers
@@ -1023,90 +738,24 @@ class GlobalVecHolder
     static constexpr size_t index_cap       = 1uz << chunk_cst_val2_index_loc; ///< Initial capacity.
     static constexpr int    index_max_probe = 64;                              ///< Bounded; giving up means fallback.
 
-    /// @brief Reserve the region. Idempotent; called by init().
-    static void region_init()
+    /// @brief Bytes of the value table: identifiers 0 to id_limit.
+    /// @pre region_init() has read id_limit.
+    [[nodiscard]] static std::size_t value_table_bytes() noexcept
     {
-        if (region_begin.load(std::memory_order_acquire) != nullptr)
-        {
-            return;
-        }
-        // MM_PROTECT: PROT_NONE for good -- nothing is ever stored in the
-        // region, so any dereference of a second-value pointer faults instead
-        // of reading a plausible zero. Otherwise RW (never touched either).
-        const int prot = build_config::use_mm_protect ? PROT_NONE : (PROT_READ | PROT_WRITE);
-        void*     raw  = mmap(nullptr, region_usable, prot, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
-        if (raw == MAP_FAILED) [[unlikely]]
-        {
-            CHUNK_INVARIANT_FAILED("[cst_val2] cannot reserve the second-value region ({} MiB): {}",
-                                   region_usable >> 20U, std::strerror(errno));
-        }
-        // CHUNK_THP (experimental, off by default): advice only. Not under
-        // MM_PROTECT, where the region stays PROT_NONE.
-        if constexpr (!build_config::use_mm_protect)
-        {
-            if (cst2_thp_advise())
-            {
-                (void)madvise(raw, region_usable, MADV_HUGEPAGE);
-            }
-        }
-        // Every slot is carved at a multiple of region_stride (id_stride),
-        // which is what turns a slot pointer into a small identifier and back
-        // (TabCstVal2Holder::id_of_ptr / value_of_id). Nothing is ever stored
-        // in the region, so a slot only has to give each identifier a distinct
-        // address: one cache line does, and no page is ever backed.
-        if (std::byte* expected = nullptr;
-            region_begin.compare_exchange_strong(expected, static_cast<std::byte*>(raw), std::memory_order_acq_rel))
-        {
-            region_end     = static_cast<std::byte*>(raw) + region_usable;
-            const auto lim = env_number<std::size_t>("CHUNK_CST_VAL2_ID_LIMIT", max_ids);
-            id_limit       = (lim >= 1 && lim < max_ids) ? lim : max_ids; // lowers only
-        }
-        else
-        {
-            munmap(raw, region_usable); // lost the race: the winner's region stands
-        }
+        return (id_limit + 1u) * sizeof(T);
     }
 
+    /// @brief Reserve the region and map the value table. Idempotent; called
+    ///        by init().
+    static void region_init();
+
     /// @brief Give the carved pages back and start over. Last clear only.
-    static void region_reset() noexcept
-    {
-        free_ids.clear(); // the identifiers it lists go with the pages
-        free_ids_count.store(0, std::memory_order_relaxed);
-        std::byte* base = region_begin.load(std::memory_order_relaxed);
-        if (base == nullptr)
-        {
-            return;
-        }
-        const std::size_t used = region_used.exchange(0, std::memory_order_relaxed);
-        if (used == 0)
-        {
-            return;
-        }
-        if constexpr (build_config::use_mm_protect)
-        {
-            mprotect(base, used, PROT_READ | PROT_WRITE); // madvise needs a writable mapping to drop
-        }
-        madvise(base, used, MADV_DONTNEED);
-        if constexpr (build_config::use_mm_protect)
-        {
-            mprotect(base, used, PROT_NONE);
-        }
-    }
+    static void region_reset() noexcept;
 
     /// @brief Value hash (a 64-bit finaliser over the object's bytes).
     /// @note Hashes the REPRESENTATION, so two values that compare equal but
     ///       differ bitwise would land in different slots.
-    static size_t index_hash(InT<T> value) noexcept
-    {
-        uint64_t bits = 0;
-        std::memcpy(&bits, &value, sizeof(T) < sizeof(uint64_t) ? sizeof(T) : sizeof(uint64_t));
-        bits ^= bits >> 33U;
-        bits *= 0xff51afd7ed558ccdULL;
-        bits ^= bits >> 33U;
-        bits *= 0xc4ceb9fe1a85ec53ULL;
-        bits ^= bits >> 33U;
-        return static_cast<size_t>(bits);
-    }
+    static size_t index_hash(InT<T> value) noexcept;
 
     /**
      * @brief Publish a table twice the size of the live one (or the initial
@@ -1119,35 +768,7 @@ class GlobalVecHolder
      *          slot's value through value_of_ptr().
      * @return The new live table.
      */
-    static IndexTable* index_grow() noexcept
-    {
-        const IndexTable* old = index_tab.load(std::memory_order_relaxed);
-        const std::size_t cap = old == nullptr ? index_cap : old->cap * 2;
-        auto              nt  = std::make_unique<IndexTable>(cap);
-        if (old != nullptr)
-        {
-            const std::size_t mask = cap - 1;
-            for (std::size_t i = 0; i < old->cap; ++i)
-            {
-                T* entry = old->slots[i].load(std::memory_order_relaxed);
-                if (entry == nullptr)
-                {
-                    continue;
-                }
-                std::size_t idx = index_hash(value_of_ptr(entry)) & mask;
-                while (nt->slots[idx].load(std::memory_order_relaxed) != nullptr)
-                {
-                    idx = (idx + 1) & mask;
-                }
-                nt->slots[idx].store(entry, std::memory_order_relaxed);
-            }
-            nt->used = old->used;
-        }
-        IndexTable* raw = nt.get();
-        index_generations.push_back(std::move(nt));
-        index_tab.store(raw, std::memory_order_release);
-        return raw;
-    }
+    static IndexTable* index_grow() noexcept;
 
     /**
      * @brief Empty the index and drop the cached tail.
@@ -1155,16 +776,7 @@ class GlobalVecHolder
      *          slots are given back -- an entry outliving its slot is a
      *          dangling pointer a lock-free reader will follow.
      */
-    static void index_clear() noexcept
-    {
-        index_degraded.store(false, std::memory_order_relaxed);
-        tail = nullptr; // drop cached tail; next cold-path append re-seeds from head
-        // Single-threaded by contract, so this is the one point where the
-        // superseded generations can go: no reader holds any of them. The
-        // live table goes too; the next publish starts again at index_cap.
-        index_tab.store(nullptr, std::memory_order_release);
-        index_generations.clear();
-    }
+    static void index_clear() noexcept;
 
     /// @brief Live zero_any::Array<T> instances. The registry is freed when it
     ///        reaches zero, not before. @see clear_if_last
@@ -1243,15 +855,11 @@ class TabCstVal2Holder
      *
      * @note The O(N) chain scan runs only behind GlobalVecHolder::index_degraded.
      */
-    [[nodiscard]] T* find_or_set_ind_cst_val2(T second_v, SecondValueRef<T> ptr_second_value)
-    {
-        // Up to the record in the second-value table, which the reclaim's mark
-        // scans: a reclaim must not run in between (LookupGuard).
-        const typename VecHolder::LookupGuard in_flight;
-        T*                                    buf = find_or_register(second_v);
-        ptr_second_value.set_from_array(buf);
-        return buf;
-    }
+    [[nodiscard]] T* find_or_set_ind_cst_val2(T second_v, SecondValueRef<T> ptr_second_value);
+
+    /// @brief find_or_set_ind_cst_val2() recording the slot by a release store
+    ///        (SecondValueRef::set_from_array_release()): a member with the motif state.
+    [[nodiscard]] T* find_or_set_ind_cst_val2_release(T second_v, SecondValueRef<T> ptr_second_value);
 
     /// @brief Is @p ptr one of this type's second-value slots?
     /// @note `is_cst_val2()` of zero_any: one relaxed load of the region base
@@ -1269,31 +877,7 @@ class TabCstVal2Holder
     ///          constant from the per-chunk tables alone
     ///          (init_values_cst_val): re-sync after a lost CAS, re-chunk,
     ///          teardown -- never on the element write path.
-    [[nodiscard]] static T* find_cst_val2_ptr(InT<T> second_v)
-    {
-        using Gvh = GlobalVecHolder<T>;
-        const typename Gvh::LookupGuard in_flight; // holds an index generation / the chain
-        if (T* hit = Gvh::index_lookup(second_v)) [[likely]]
-        {
-            return hit;
-        }
-        if (!Gvh::index_degraded.load(std::memory_order_relaxed))
-        {
-            return nullptr;
-        }
-        const std::scoped_lock lk(Gvh::insert_mutex);
-        for (const Segment<T>* seg = Gvh::head.load(std::memory_order_acquire); seg != nullptr; seg = seg->next)
-        {
-            for (int i = 0; i < seg->used; ++i)
-            {
-                if (Gvh::value_of_ptr(seg->slots[i]) == second_v)
-                {
-                    return seg->slots[i];
-                }
-            }
-        }
-        return nullptr;
-    }
+    [[nodiscard]] static T* find_cst_val2_ptr(InT<T> second_v);
 
     // ── Lifecycle ─────────────────────────────────────────────────────────
 
@@ -1323,29 +907,17 @@ class TabCstVal2Holder
      *
      * @details Same conversion, but returns T{} rather than indexing out of
      *          bounds if @p ptr is not where the caller thought. A pointer that
-     *          passes is_cst_val2_ptr() can only yield an id in [1, max_ids],
+     *          passes is_cst_val2_ptr() can only yield an id in [1, id_capacity()],
      *          so this never fires in a correct call -- it guards a pointer
      *          that was not range-tested, where a compare is cheaper than a
      *          crash.
      */
-    [[nodiscard]] static T value_of_ptr_checked(const T* ptr) noexcept
-    {
-        if (!is_cst_val2_ptr(ptr))
-        {
-            return T{};
-        }
-        const std::uint32_t id = id_of_ptr(ptr);
-        if (id == 0u || id > VecHolder::max_ids)
-        {
-            return T{};
-        }
-        return VecHolder::value_by_id[id];
-    }
+    [[nodiscard]] static T value_of_ptr_checked(const T* ptr) noexcept;
 
     /// @brief The value registered under @p id; T{} for 0.
     [[nodiscard]] static T value_of_id(std::uint32_t id) noexcept
     {
-        return VecHolder::value_by_id[id]; // [0] is T{}
+        return VecHolder::values()[id]; // [0] is T{}
     }
 
     /**
@@ -1381,89 +953,13 @@ class TabCstVal2Holder
      *          pointer. That ordering is what index_publish()'s release store
      *          makes visible.
      */
-    static T* alloc_chunk(T val)
-    {
-        // A reclaimed identifier first; the region only when none is free.
-        T* buf = VecHolder::take_free_slot();
-        if (buf == nullptr)
-        {
-            buf = reinterpret_cast<T*>(VecHolder::region_alloc(VecHolder::region_stride));
-        }
-        // Before the slot can be published: a reader gets the identifier only from a
-        // slot written after this returns.
-        VecHolder::value_by_id[id_of_ptr(buf)] = val;
-        return buf;
-    }
+    static T* alloc_chunk(T val);
 
     /**
      * @brief The slot for @p second_v, registering it if new.
      * @return The value's slot (an identifier, never dereferenced). Never null.
      */
-    [[nodiscard]] static T* find_or_register(InT<T> second_v)
-    {
-        const typename VecHolder::LookupGuard in_flight; // check builds; nests in the callers'
-        // ── Hot path, lock-free ───────────────────────────────────────────
-        if (T* hit = VecHolder::index_lookup(second_v)) [[likely]]
-        {
-            return hit;
-        }
-
-        // ── Cold path, under the insert lock ──────────────────────────────
-        const std::scoped_lock lk(VecHolder::insert_mutex);
-
-        // Double-check: another thread may have inserted second_v since our miss. The
-        // index is single-writer under this lock, so it is authoritative here.
-        if (T* hit = VecHolder::index_lookup(second_v)) [[likely]]
-        {
-            return hit;
-        }
-
-        // Only if the index ever overflowed its probe budget (index_degraded) can a
-        // registered value be unindexed: then, and only then, scan the chain to avoid a duplicate.
-        const bool degraded = VecHolder::index_degraded.load(std::memory_order_relaxed);
-
-        SegmentT* last_seg = VecHolder::tail;
-        if (last_seg == nullptr) [[unlikely]]
-        {
-            // First append after a clear: re-seed the cached tail from head.
-            last_seg = VecHolder::head.load(std::memory_order_acquire);
-            while (last_seg->next != nullptr)
-            {
-                last_seg = last_seg->next;
-            }
-            VecHolder::tail = last_seg;
-        }
-
-        if (degraded) [[unlikely]]
-        {
-            for (const SegmentT* seg = VecHolder::head.load(std::memory_order_acquire); seg != nullptr; seg = seg->next)
-            {
-                for (int i = 0; i < seg->used; ++i)
-                {
-                    if (VecHolder::value_of_ptr(seg->slots[i]) == second_v)
-                    {
-                        VecHolder::index_publish(second_v, seg->slots[i]);
-                        return seg->slots[i];
-                    }
-                }
-            }
-        }
-
-        // Not present: append. The list is append-only between clears, so the
-        // first free slot is last_seg->used (or slot 0 of a fresh segment).
-        // create() guarantees head is never nullptr here.
-        SegmentT* seg = last_seg;
-        if (seg->used == SegmentT::slots_per_segment)
-        {
-            seg = VecHolder::append_segment(last_seg);
-        }
-
-        T* buf                = alloc_chunk(second_v); // value_by_id[] BEFORE publication
-        seg->slots[seg->used] = buf;
-        ++seg->used;
-        VecHolder::index_publish(second_v, buf); // release: readers see the value
-        return buf;
-    }
+    [[nodiscard]] static T* find_or_register(InT<T> second_v);
 };
 
 /**
@@ -1516,3 +1012,5 @@ class TabCstVal2Holder<bool>
 };
 
 } // namespace shrink_array
+
+#include "chunk/internal/tab_cst_val2_holder_inline.h" // the template bodies

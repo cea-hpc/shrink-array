@@ -29,11 +29,13 @@
  *
  *          RechunkSupport<Derived, chunk_dynamic> splits it in two: the dynamic
  *          specialisation carries the real algorithm, the static one keeps the
- *          same signatures as no-ops. Both keep the @c rechunk_* hooks
- *          with their base defaults, because the derived arrays override them
- *          unconditionally.
+ *          same signatures as no-ops. Both inherit the @c rechunk_* hooks'
+ *          base defaults (RechunkHookDefaults), because the derived arrays
+ *          override them unconditionally.
  *
- * @see array_chunk_rechunk_inline.h for the two large bodies
+ * @see array_chunk_rechunk_inline.h for rechunk_to() and rechunk_all_to()
+ * @see array_chunk_rechunk_refill.h for the refill (rechunk_refill())
+ * @see array_chunk_rechunk_trace.h for their traces
  * @see chunk_size_policy.h for the geometry policies this switches between
  */
 
@@ -58,18 +60,56 @@ namespace shrink_array
 template <typename Derived, bool Dynamic = build_config::chunk_dynamic>
 class RechunkSupport;
 
+/**
+ * @brief Base defaults for the rechunk_* hooks, shared by both specialisations.
+ *
+ * @details No-ops that suit a variant with no deferred candidates / no
+ *          second_value / no registry. Each zero::Array* overrides the ones it
+ *          needs (they are hidden, not virtual — resolved on the concrete array through self).
+ *          Kept here so a variant only defines what differs; present in a
+ *          static build too, so the derived overrides stay valid declarations.
+ *
+ * @tparam Derived the concrete array type.
+ */
+template <typename Derived>
+class RechunkHookDefaults
+{
+  public:
+    using T = ArrayChunkTraits<Derived>::value_type; ///< Stored element type.
+
+  protected:
+    /** @brief Forget this array's compression candidates before the swap (default: none to drop). */
+    static void rechunk_drop_candidates() {}
+    /** @brief Drain the reuse free-list of the target geometry (default: nothing to drain). */
+    static void rechunk_drain_reuse_list(unsigned int /*new_size*/) {}
+    /** @brief Capture the variant state to carry across a re-chunk (default: none). */
+    [[nodiscard]] static T rechunk_capture_state() noexcept
+    {
+        return T{};
+    }
+    /** @brief Apply the captured state to the fresh array (default: no-op). */
+    static void rechunk_seed_fresh(InT<T> /*state*/) {}
+    /** @brief Post-swap fixup so the dying temporary does not take state with it (default: no-op). */
+    static void rechunk_reown_after_swap(Derived& /*tmp*/, InT<T> /*state*/) {}
+    /** @brief Swap registry identity with the temporary (default: nothing to swap, succeeds). */
+    static bool rechunk_swap_identity(Derived& /*tmp*/)
+    {
+        return true;
+    }
+};
+
 // ── CHUNK_DYNAMIC build: the real algorithm ──────────────────────────────────
 /**
  * @brief Dynamic specialisation: the shared re-chunk algorithm and its hooks.
  */
 template <typename Derived>
-class RechunkSupport<Derived, true>
+class RechunkSupport<Derived, true> : public RechunkHookDefaults<Derived>
 {
   public:
     using Traits    = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
     using T         = Traits::value_type;        ///< Stored element type.
     using IndType   = Traits::IndexType;         ///< Signed global index type.
-    using ChunkType = Traits::ChunkType;         ///< Chunk type held in the array's chunk_list.
+    using ChunkType = Traits::ChunkType;         ///< Chunk type held in the array's chunk_list_.
     using ProxyType = Traits::ProxyType;         ///< Proxy type owning the per-type array registry.
 
   protected:
@@ -99,7 +139,7 @@ class RechunkSupport<Derived, true>
      *          - rechunk_swap_identity(tmp) -> bool — swap num_tab member (if any)
      *            + registry entry (swap_keys/entries)
      *          - rechunk_reown_after_swap(tmp,state) — post-swap fixup (zero_one_value
-     *            re-owns its map_inf_array entry so it doesn't dangle when tmp dies)
+     *            re-owns its map_inf_array_ entry so it doesn't dangle when tmp dies)
      *
      * @param new_size the new chunk size (a power of two or a multiple of 64)
      * @warning Restores the previously active geometry on exit; see
@@ -130,22 +170,22 @@ class RechunkSupport<Derived, true>
      *
      * @details Chunk-level rebuild: each new chunk is rebuilt from the old
      *          chunks its span covers, in parallel over the new chunks (schedule
-     *          from CHUNK_RECHUNK_SCHEDULE) and, for zero with the fast allocator
+     *          guided,16) and, for zero with the fast allocator
      *          under OpenMP, in slices with a drain between them
-     *          (CHUNK_RECHUNK_SLICES). A span whose sources are all cst1 stays
+     *          (16). A span whose sources are all cst1 stays
      *          compressed; a zero_any span whose sources are all the same second
      *          constant gets that constant installed without a buffer; the others
      *          are read from *this at OLD and filled through copy_range() at NEW,
      *          then folded back at once when every source was a constant (zero_one_value,
      *          zero_any). zero releases each source chunk as soon as it has been
-     *          transcribed. A build that selects no chunk variant falls back to a
-     *          tiled element transcription (~1M-element tiles through the proxy).
-     *          Runs at a quiescent serial point: rechunk_to() has flushed the
+     *          transcribed. Runs at a quiescent serial point: rechunk_to() has flushed the
      *          deferred ops.
      *
      * @param tmp the fresh array at the NEW geometry, to be filled
      * @param old_size chunk size of *this (the read side)
      * @param new_size chunk size of @p tmp (the write side)
+     * @param old_key the allocator key of *this's storage: the set whose slabs
+     *        the slice boundaries recycle (rechunk_to() knows it already)
      *
      * @note A new chunk that gets a buffer must be ARMED by a real proxy write
      *       (the lazy per-chunk pointers: ptr_second_value, compression
@@ -154,37 +194,7 @@ class RechunkSupport<Derived, true>
      *       too small to show it). The skipped cst1 spans need no arming, and the
      *       zero_any install commits what a type-2 compression does, with no buffer.
      */
-    void rechunk_refill(this Derived& self, Derived& tmp, int old_size, int new_size);
-
-    /**
-     * @name Re-chunk hooks (base defaults)
-     *
-     * Base defaults for the rechunk_* hooks: no-ops that suit a variant with no
-     * deferred candidates / no second_value / no registry. Each array class
-     * overrides the ones it needs (they are hidden, not virtual — resolved on
-     * the concrete array through self). Kept here so a variant only defines what differs.
-     * @{
-     */
-    /** @brief Forget this array's compression candidates before the swap (default: none to drop). */
-    static void rechunk_drop_candidates() {}
-    /** @brief Drain the reuse free-list of the target geometry (default: nothing to drain). */
-    static void rechunk_drain_reuse_list(unsigned int /*new_size*/) {}
-    /** @brief Capture the variant state to carry across a re-chunk (default: none). */
-    [[nodiscard]] static T rechunk_capture_state() noexcept
-    {
-        return T{};
-    }
-    /** @brief Apply the captured state to the fresh array (default: no-op). */
-    static void rechunk_seed_fresh(InT<T> /*state*/) {}
-    /** @brief Post-swap fixup so the dying temporary does not take state with it (default: no-op). */
-    static void rechunk_reown_after_swap(Derived& /*tmp*/, InT<T> /*state*/) {}
-    /** @brief Swap registry identity with the temporary (default: nothing to swap, succeeds). */
-    static bool rechunk_swap_identity(Derived& /*tmp*/)
-    {
-        return true;
-    }
-
-    /** @} */
+    void rechunk_refill(this Derived& self, Derived& tmp, int old_size, int new_size, unsigned int old_key);
 
     /**
      * @brief Re-chunk EVERY live array of this variant to @p new_size (quiescent point only).
@@ -201,21 +211,29 @@ class RechunkSupport<Derived, true>
      *          returns (once, for all types) before the next write phase.
      * @see rechunk_to
      */
-    static void rechunk_all_to(unsigned int new_size)
-    {
-        ProxyType::share_info_array->for_each_key(
-            [new_size](ArrayKey<ChunkType> key)
-            {
-                if (key != nullptr)
-                {
-                    // The key is an array's core, and the arrays of this
-                    // element type may differ in index type: reach each one's
-                    // own rechunk_to() through the core (the registry hands out
-                    // const keys; a re-chunk rebuilds the array).
-                    const_cast<ArrayChunkCore<ChunkType>*>(key)->rechunk_erased(new_size);
-                }
-            });
-    }
+    static void rechunk_all_to(unsigned int new_size);
+
+  private:
+    /// The refill of one re-chunk (array_chunk_rechunk_refill.h): nested, so it
+    /// has the access the arrays' friendship gives this mixin.
+    class Refill;
+
+    /**
+     * @brief Give back the slabs of the geometry this array has just left:
+     *        every rank's (@p old_key, @p old_size) set, and the shared key-0
+     *        pool, in one sweep (fast allocator under threads only).
+     * @param old_key the allocator key the old storage was built under
+     * @param old_size the old chunk size
+     */
+    static void sweep_old_geometry(unsigned int old_key, unsigned int old_size);
+
+    /**
+     * @brief CHUNK_LOG=memory=debug: the occupancy of that set and of the key-0
+     *        pool after the drain and the sweep.
+     * @param old_key the allocator key the old storage was built under
+     * @param old_size the old chunk size
+     */
+    static void log_old_pool_census(unsigned int old_key, unsigned int old_size);
 };
 
 // ── Static-geometry build: nothing to re-chunk ───────────────────────────────
@@ -225,17 +243,15 @@ class RechunkSupport<Derived, true>
  * @details With a compile-time chunk size there is no geometry to move to, so
  *          rechunk_to()/rechunk_all_to()/rechunk_refill() do nothing. They are
  *          kept (rather than removed) because call sites — the re-chunk decider,
- *          the manager, the benches — are written once for both modes. The hooks
- *          keep their defaults so the derived overrides stay valid declarations
- *          in a static build too.
+ *          the manager, the benches — are written once for both modes.
  */
 template <typename Derived>
-class RechunkSupport<Derived, false>
+class RechunkSupport<Derived, false> : public RechunkHookDefaults<Derived>
 {
   public:
     using Traits    = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
     using T         = Traits::value_type;        ///< Stored element type.
-    using ChunkType = Traits::ChunkType;         ///< Chunk type held in the array's chunk_list.
+    using ChunkType = Traits::ChunkType;         ///< Chunk type held in the array's chunk_list_.
 
   protected:
     /** @brief No-op: the geometry is fixed at compile time. */
@@ -250,32 +266,9 @@ class RechunkSupport<Derived, false>
         return {};
     }
     /** @brief No-op: never reached, since rechunk_to() does nothing. */
-    static void rechunk_refill(Derived& /*tmp*/, unsigned int /*old_size*/, unsigned int /*new_size*/) noexcept {}
-
-    /**
-     * @name Re-chunk hooks (base defaults) — same no-ops as the dynamic specialisation's.
-     * @{
-     */
-    /** @brief Nothing to drop. */
-    static void rechunk_drop_candidates() {}
-    /** @brief Nothing to drain. */
-    static void rechunk_drain_reuse_list(unsigned int /*new_size*/) {}
-    /** @brief No state to carry. */
-    [[nodiscard]] static T rechunk_capture_state() noexcept
+    static void rechunk_refill(Derived& /*tmp*/, int /*old_size*/, int /*new_size*/, unsigned int /*old_key*/) noexcept
     {
-        return T{};
     }
-    /** @brief No state to apply. */
-    static void rechunk_seed_fresh(InT<T> /*state*/) {}
-    /** @brief Nothing to re-own. */
-    static void rechunk_reown_after_swap(Derived& /*tmp*/, InT<T> /*state*/) {}
-    /** @brief Nothing to swap; succeeds. */
-    static bool rechunk_swap_identity(Derived& /*tmp*/)
-    {
-        return true;
-    }
-
-    /** @} */
 
     /** @brief No-op: the geometry is fixed at compile time. */
     static void rechunk_all_to(unsigned int /*new_size*/) noexcept {}

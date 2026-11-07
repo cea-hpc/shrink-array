@@ -48,6 +48,7 @@ PAIRS = {
     "environment_variables.md": "variables_environnement_fr.md",
     "developer_settings.md": "reglages_developpeur_fr.md",
     "performance_measurement.md": "mesures_performance_fr.md",
+    "gpu_design.md": "conception_gpu_fr.md",
 }
 
 # Documents with no French version, and why.
@@ -55,8 +56,15 @@ ENGLISH_ONLY = {
     # the threads branch's working plan, status and decisions: it goes with the
     # branch, not into a release
     "threading_backends.md",
-    # the plan of the pattern::Array variant: replaced by algo_ documents when it exists
-    "pattern_design.md",
+}
+
+# Design documents: they describe code that does not exist yet -- planned
+# files, the APIs of the platforms it will target -- so their names are not
+# looked up in the tree (their links are).
+DESIGN = {
+    # the GPU backend, before any prototype
+    "gpu_design.md",
+    "conception_gpu_fr.md",
 }
 
 # Real names that are not defined in this tree.
@@ -65,13 +73,38 @@ ALLOWED = {
     "FAST_ALLOC_MAX_CONST_BLOCK_SIZE", "internal/static_const_array_define.h",
     "chunk/internal/diag_mutex.h", "diag_mutex.h", "internal::diag_print_mutex", "chunk/internal/nano_sleeper.h",
     "chunk_config::have_aggressive_compression",  # now chunk_config::aggressive_compression()
+    "is_cst_val_new_value_is_other_cst_val",  # now passes_mark_pre_check()
+    # the developer settings fixed after the Milan measurements, and CHUNK_THP's functions
+    "CHUNK_RECHUNK_KEEP_RECYCLED_MB", "alloc_config::thp_advise", "thp_never", "advise_thp_region",
+    # the rechunk decider's former environment variables (now RechunkPolicy fields and
+    # shrink_bench options) and the trace variables CHUNK_LOG replaced
+    "CHUNK_RECHUNK_DRY_RUN", "CHUNK_RECHUNK_MAX_COARSEN", "CHUNK_ADVISOR_MIN_GAIN_MB", "CHUNK_ADVISOR_GRID_BITS",
+    "CHUNK_ADVISOR_BACKOFF_MAX", "CHUNK_COARSEN_MIN_META_MB", "CHUNK_COARSEN_MIN_META_RATE", "CHUNK_FORCE_RECHUNK",
+    "CHUNK_FORCE_RECHUNK_AT", "CHUNK_FORCE_RECHUNK_TOGGLE", "CHUNK_FORCE_RECHUNK_ALT", "CHUNK_ADVISOR_PERIOD",
+    "SHRINK_BENCH_ADVISE_ALL", "CHUNK_RECHUNK_TRACE", "CHUNK_RECHUNK_TRACE_SLICES", "CHUNK_RECHUNK_MEMTRACE",
+    "CHUNK_RECHUNK_TRACE_MEM", "CHUNK_AFFINITY_TRACE", "CHUNK_RECYCLE_TRACE", "ArrayChunkCore::spare_chunk_list_",
+    "CHUNK_RECHUNK_CHURN", "CHUNK_ADVISOR_TABLE",
+    # the allocator settings fixed by the first ab_settings_campaign.py campaign, and their code
+    "CHUNK_ALLOC_AFFINITY_EAGER", "CHUNK_RECLAIM_PARTIAL", "CHUNK_SLAB_FULLEST_FIRST", "CHUNK_RECLAIM_PHASE_KEEP",
+    "CHUNK_REUSE_SHARE_DIV", "CHUNK_REUSE_FLOOR_KB", "CHUNK_RECLAIM_MIN_SLABS",
+    "TCTypeCAllocator::order_fullest_first", "ManagerChunk::sweep_empty_slabs_int",
+    "ManagerChunk::reuse_floor_buffers",
+    # removed at (or before) their planned date: zero_any's compression levels, the reclaim option
+    "CHUNK2A_COMPRESS_LEVEL", "CHUNK_RECLAIM_EMPTY_SLABS", "FAST_ALLOC_OPT_RECLAIM_EMPTY_SLABS",
+    "CHUNK_OPT_RECLAIM_EMPTY_SLABS", "alloc_config::reclaim_empty_slabs", "build_config::reclaim_empty_slabs",
+    "scripts/diag_zero_rechunk_slowdown.py",
     # renamed to PascalCase (ChunkTemplateOf, ForEachTypeImpl, ...), which CHANGELOG.md records
     "index_type", "cst_val1_type", "chunk_template_of", "for_each_type_impl",
     # former class names the CHANGELOG cites (now SecondValue*Base, zero_any::ChunkThreadPolicy, ...)
     "Chunk2Base", "Proxy2Base", "ArrayChunk2Base", "Chunk2AOmpPolicy", "RechunkHooks2", "Chunk2Def",
     "ChunkOmpPolicy", "CompressionManagerOmpPolicy",
+    # internal names with an old variant label, renamed 2026-11 (CHANGELOG.md, Unreleased)
+    "TChunkComp", "TChunk2Comp", "MapTypeChunk2P", "TChunk2AComp", "IsChunk2", "IsChunk2OrZeroAnyFamily",
+    "Base2",
+    # called by the CHUNK_DO_CHECK write paths but defined nowhere, removed by 47d082fe
+    "global_check_write_nan",
     # files a shrink_gui run writes in its directory on the cluster (docs/shrink_gui.md)
-    "run.sh", "job.sh", "launch.sh",
+    "run.sh", "job.sh", "launch.sh", "node.sh",
     # C++ standard library, compiler, language
     "std", "size_t", "int64_t", "uint32_t", "operator", "noexcept", "constexpr", "seq_cst",
     "memory_order_seq_cst", "memory_order_relaxed", "memory_order_acquire", "memory_order_release",
@@ -81,7 +114,7 @@ ALLOWED = {
     "sort", "data", "capacity", "reserve", "resize", "clear", "assign", "swap", "front", "back", "at",
     "size", "empty", "complex", "array", "vector", "deque", "string", "operator==", "operator<",
     "operator<=>", "_GLIBCXX_ASSERTIONS", "__FAST_MATH__", "_OPENMP", "__GLIBC__", "__GNUC__",
-    "__NVCOMPILER", "auto", "const", "static_assert",
+    "__NVCOMPILER", "__has_cpp_attribute", "auto", "const", "static_assert",
     # OpenMP, OMPT
     "omp_get_max_threads", "omp_get_num_procs", "omp_get_thread_num", "omp_get_thread_limit",
     "omp_get_ancestor_thread_num", "omp_set_num_threads", "omp_in_parallel", "ompt_start_tool",
@@ -105,10 +138,14 @@ ALLOWED = {
 
 # Names the build GENERATES, so that they appear nowhere whole in the sources:
 # the variant libraries (chunk_zero_any_256, chunk::chunk_zero_any_dyn, ...) and the
-# per-variant executables (shrink_bench_zero_any_256, validation_zero_dyn, ...).
+# per-variant executables (shrink_bench_omp_zero_any_256, validation_zero_dyn, ...). The
+# shrink_bench ones carry the threading backend of their build (omp, std, serial) or the
+# TBB bench's tbb; the unprefixed form stays accepted, a measured run citing an old name.
 GENERATED = re.compile(r"^(chunk::)?chunk_(zero|zero_one_value|zero_any|v1|v2|v2a)(_(\d+|dyn))?$"
                        r"|^(shrink_bench|validation|variant_compare|rechunk_validation|dyn_geometry_validation)"
-                       r"_(zero|zero_one_value|zero_any|chunk|chunk2|chunk2a|vector)(_\w+)?$")
+                       r"_(zero|zero_one_value|zero_any|chunk|chunk2|chunk2a|vector)(_\w+)?$"
+                       r"|^shrink_bench_(omp|std|serial|tbb)_(zero|zero_one_value|zero_any|vector|std_alloc)"
+                       r"(_\w+)?$")
 
 CODE_SPAN = re.compile(r"`([^`\n]+)`")
 LINK = re.compile(r"\]\(([^)\s]+)\)")
@@ -249,7 +286,7 @@ def check_pairs(root):
     for fr in sorted(d.glob("*_fr.md")):
         stem = fr.name[:-6] + ".md"
         en = next((e for e, f in PAIRS.items() if f == fr.name), stem)
-        if not (d / en).exists():
+        if not (d / en).exists() and fr.name not in DESIGN:
             bad.append("docs/%s: no English version (%s)" % (fr.name, en))
     # The top-level README and its French version.
     en, fr = root / "README.md", root / "README_fr.md"
@@ -316,7 +353,7 @@ def main() -> int:
     comments = list(comment_lines(root, files))
     sections = [
         ("links", check_links(root, md_files)),
-        ("names", check_names(root, md_files, words, names, verbose)),
+        ("names", check_names(root, [f for f in md_files if f.name not in DESIGN], words, names, verbose)),
         ("French / English pairs", check_pairs(root)),
         ("history markers", check_history(root, comments)),
         ("paths in comments", check_cited_paths(root, comments)),

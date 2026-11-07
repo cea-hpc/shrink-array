@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Defaults, presets and the machine fitting of the thread counts."""
 import os
+import platform
 
 
 # --- Default configuration -----------------------------------------------
@@ -96,6 +97,76 @@ DEFAULT_VARIANTS       = ["vector"] + SHRINK_VARIANTS + ["std_alloc"] + TBB_VARI
 def is_tbb_variant(var):
     """True for a TBB bench variant ("tbb_zero_any", "tbb_zero_any@256")."""
     return var.split("@", 1)[0] in TBB_VARIANTS
+
+
+# Every shrink_bench executable carries the threading backend of its build in
+# its name (examples/shrink_bench/CMakeLists.txt): shrink_bench_<backend>_<rest>,
+# <backend> one of these, <rest> zero_any_256, zero_int64_dyn, vector_check,
+# std_alloc_1024, ... The build directory's name does not tell the backend
+# (cmake-build-gnu-stats is serial, cmake-build-omp-gnu-stats OpenMP, and a
+# hand-made one says nothing), but a build directory holds ONE backend: so an
+# executable is found by trying the three names, the one built there being the
+# only one present. The TBB bench is the exception, its "tbb" naming what runs
+# its regions: shrink_bench_tbb_<variant>_<size>, one name.
+#
+# No fallback to the unprefixed names the executables had before: a build
+# directory rebuilt since still holds those binaries, stale, and they must not
+# be run in place of the new ones.
+BENCH_BACKENDS = ("omp", "std", "serial")
+
+
+def arch_dir_name(os_release="/etc/os-release"):
+    """compile_all.sh's $arch for this machine (ID_VERSION__machine from
+    os-release, e.g. RHEL_9.6__x86_64), or None without an os-release."""
+    fields = {}
+    try:
+        with open(os_release) as f:
+            for line in f:
+                key, _, value = line.strip().partition("=")
+                fields[key] = value.strip("\"'")
+    except OSError:
+        return None
+    if "ID" not in fields:
+        return None
+    return f"{fields['ID'].upper()}_{fields.get('VERSION_ID', '')}__{platform.machine()}"
+
+
+def results_dir_name():
+    """The directory of this system under bench_results: its $arch (a system's
+    runs, oracles and timings are not those of another: Milan on RHEL 8 and
+    Turin on RHEL 9 are both x86_64), the machine without an os-release."""
+    return arch_dir_name() or platform.machine()
+
+
+def this_os_first(dirs, name=os.path.basename):
+    """@p dirs with this machine's $arch directory first. A site can have one
+    architecture on several systems (the Milan nodes on RHEL 8, the Turin ones
+    on RHEL 9): the machine suffix alone would take the first in sorted order,
+    the RHEL 8 build. The others stay after it, as a fallback (a system
+    upgraded since the build). @p name: the $arch of an element of @p dirs."""
+    mine = arch_dir_name()
+    return sorted(dirs, key=lambda d: name(d) != mine)
+
+
+def bench_exe_names(rest):
+    """The names the executable `rest` (its name after "shrink_bench_", without
+    the backend: "zero_any_256", "vector_check", "tbb_zero_any_dyn") may have
+    in a build directory, in the order they are tried. Python 3.6: the
+    standalone scripts that copy it (thread_speedup.py, multi_launch_stress.py)
+    run there."""
+    if rest.startswith("tbb_"):
+        return ["shrink_bench_" + rest]
+    return ["shrink_bench_%s_%s" % (b, rest) for b in BENCH_BACKENDS]
+
+
+def find_bench_exe(directory, rest):
+    """The path of the executable `rest` (bench_exe_names) in `directory`, the
+    first of its names present there as an executable file, or None."""
+    for name in bench_exe_names(rest):
+        path = os.path.join(directory, name)
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return None
 
 
 # The variants were named chunk / chunk2 / chunk2a until they took the name of
@@ -268,8 +339,12 @@ SCALING_CONFIGS  = ["cmake-build-omp-llvm", "cmake-build-omp-gnu"]
 # The curve every container is read against: no chunk, no compression, so a
 # bend it shares is the machine's, and one only the chunk variants show is ours.
 SCALING_REFERENCE_VARIANT = "vector"
-SCALING_THREADS  = [4, 8, 16, 32, 64, 128]
-# The guard runs the int64 binaries (shrink_bench_<variant>_int64_<size>, see
+# Past 128, for the 2 x 160-core AMD Turin: 160 fills one socket, 256 and 320 cross
+# to the second one, where a bend can be the machine's: read them against vector.
+# A machine with fewer CPUs drops these points (see run_scaling_phase), its curve
+# is unchanged; 160 and 256 run on the 288-core node.
+SCALING_THREADS  = [4, 8, 16, 32, 64, 128, 160, 256, 320]
+# The guard runs the int64 binaries (shrink_bench_<backend>_<variant>_int64_<size>, see
 # int64_variant) at --multiply 2: arrays past INT_MAX elements, so the curves
 # also cover the 64-bit index path at the scale it exists for. --iter_max 500
 # holds each point down; the sizes with no int64 declination (256) are left out.
@@ -369,7 +444,7 @@ MODE_PRESETS = {
         "perf_drop":         [],
         # From 16 threads: the low points of int64 --multiply 2 are the
         # longest runs of the guard (minutes each); full keeps them.
-        "scaling": {"configs": SCALING_CONFIGS, "threads": [16, 32, 64, 128], "sizes": None},
+        "scaling": {"configs": SCALING_CONFIGS, "threads": [16, 32, 64, 128, 160, 256, 320], "sizes": None},
         "seq_omp": {"threads": DEFAULT_SEQ_OMP_THREADS, "sizes": DEFAULT_SEQ_OMP_SIZES},
     },
     "full": {

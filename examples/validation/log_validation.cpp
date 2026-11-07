@@ -32,7 +32,9 @@
 //   5. CHUNK_LOG_FIRST_N and CHUNK_LOG_POW2 count right;
 //   6. a message longer than line_max is cut, with "...";
 //   7. no allocation on the path of a message (operator new is counted;
-//      under TSan, through the sanitizer's malloc hook);
+//      under TSan, through the sanitizer's malloc hook); a std::complex and a
+//      type with no formatter spelled there too, "(re+imi)" and its bytes in
+//      hex -- outside the fatal children, where the coverage counts them;
 //   8. 8 threads writing to the default sink at once: every line in the file
 //      whole, none lost;
 //   9. the fatal level, each case in a child (this executable re-run with
@@ -41,15 +43,27 @@
 //      element values of any type are spelled; 8 threads failing at once
 //      give one report; a failure inside the sink still stops;
 //      CHUNK_CHECK_FAILED stops a check build and logs an error elsewhere;
-//      and fast_allocators' FAST_ALLOC_FATAL gives the same report.
+//      and fast_allocators' FAST_ALLOC_FATAL gives the same report;
+//      CHUNK_BREAK_ON_FAILURE=1 stops the child on SIGTRAP, after the report;
+//  10. the debugger detection of the fatal level (fatal.h's tracer_pid,
+//      is_debugger_name) on fixed texts of /proc/<pid>/status and comm.
+//
+// With --debugger <gdb> [<strace>] (the test log_break_on_failure), instead:
+// the fatal child of check 9 run under gdb stops on SIGTRAP in the fatal
+// path, the report written, and continued, aborts; with
+// CHUNK_BREAK_ON_FAILURE=0 it only aborts; under strace (which traces the
+// process too, but is no debugger) it aborts, with no SIGTRAP. Exit status 77
+// (skipped) when gdb cannot be run.
 //
 // Exit status 0 when every check passes.
 
+#include <algorithm>   // std::ranges::find
 #include <array>       // std::array
 #include <atomic>      // std::atomic
-#include <complex>     // std::complex (check 9)
-#include <cstdint>     // std::uint32_t (check 9)
+#include <complex>     // std::complex (checks 7 and 9)
+#include <cstdint>     // std::uint32_t (checks 7 and 9)
 #include <cstdio>      // std::remove, std::sscanf, std::fflush
+#include <csignal>     // SIGTRAP, SIGABRT (check 9, --debugger)
 #include <print>       // std::println (the children's stdout)
 #include <cstdlib>     // std::malloc, std::free, setenv
 #include <cstring>     // std::memcpy
@@ -212,20 +226,31 @@ void check_environment()
     check(!logging::enabled(Channel::rechunk, Level::trace), "env: rechunk stops at debug");
     check(logging::enabled(Channel::pool, Level::warn), "env: the bare level warn applies to pool");
     check(!logging::enabled(Channel::pool, Level::info), "env: pool stops at warn");
-    check(logging::enabled(Channel::memory, Level::debug), "env: CHUNK_RECHUNK_TRACE_MEM=1 raises memory to debug");
-    check(!logging::enabled(Channel::rechunk, Level::trace), "env: CHUNK_RECHUNK_TRACE_SLICES=0 is not set");
+    check(logging::enabled(Channel::alloc, Level::trace), "env: FAST_ALLOC_TRACE=1 raises alloc to trace");
+    const auto& switches = logging::detail::legacy_switches;
+    const auto  trace =
+        std::ranges::find(switches, std::string_view{"FAST_ALLOC_TRACE"}, &logging::detail::LegacySwitch::name);
+    check(trace != switches.end() && logging::detail::is_set(*trace), "env: FAST_ALLOC_TRACE=1 is set");
+    check(std::ranges::find(switches, std::string_view{"CHUNK_RECHUNK_CHURN"}, &logging::detail::LegacySwitch::name) ==
+              switches.end(),
+          "env: CHUNK_RECHUNK_CHURN is no longer a switch (CHUNK_LOG=rechunk=debug)");
+    check(logging::enabled(Channel::ledger, Level::info), "env: CHUNK_LEDGER_REPORT=1 raises ledger to info");
+    check(!logging::enabled(Channel::arena, Level::info), "env: arena stays at warn (CHUNK_ARENA_REPORT unset)");
 
     CHUNK_LOG(warn, general, "first line through the default sink");
     const auto lines             = read_lines(g_log_path);
     bool       bad_item_reported = false;
     bool       first_line        = false;
     bool       deprecated        = false;
+    bool       report_deprecated = false;
     for (const auto& line : lines)
     {
         deprecated |=
             line.starts_with("[shrink_array][env][W][") &&
-            line.ends_with("] CHUNK_RECHUNK_TRACE_MEM is deprecated: it means CHUNK_LOG=memory=debug, which it now "
-                           "sets");
+            line.ends_with("] FAST_ALLOC_TRACE is deprecated: it means CHUNK_LOG=alloc=trace, which it now sets");
+        report_deprecated |=
+            line.starts_with("[shrink_array][env][W][") &&
+            line.ends_with("] CHUNK_LEDGER_REPORT is deprecated: it means CHUNK_LOG=ledger=info, which it now sets");
         bad_item_reported |=
             line.starts_with("[shrink_array][env][W][") && line.find("\"verbose\"") != std::string::npos;
         first_line |=
@@ -234,6 +259,7 @@ void check_environment()
     check(bad_item_reported, "env: CHUNK_LOG item \"verbose\" reported in CHUNK_LOG_FILE");
     check(first_line, "env: a message reaches CHUNK_LOG_FILE with its prefix");
     check(deprecated, "env: a deprecated switch is warned about");
+    check(report_deprecated, "env: a former report switch is warned about");
 }
 
 // --- 2 ----------------------------------------------------------------------
@@ -245,6 +271,9 @@ void check_parse()
 
     auto spec = parse_spec("", default_max);
     check(spec.n_bad == 0 && spec.max == default_max, "parse: empty spec keeps the base");
+    check(default_max[ix(Channel::rechunk)] == Level::info && default_max[ix(Channel::memory)] == Level::warn &&
+              default_max[ix(Channel::general)] == Level::warn,
+          "default: rechunk at info (the applied re-chunks), every other channel at warn");
 
     spec = parse_spec("debug", default_max);
     check(spec.max[ix(Channel::env)] == Level::debug && spec.max[ix(Channel::advisor)] == Level::debug,
@@ -395,6 +424,24 @@ void check_no_allocation()
     const std::size_t                   len    = logging::detail::format_message(buf.data(), "{} {}", &number, str);
     check(std::string_view(buf.data(), len) == std::format("{} text", static_cast<const void*>(&number)),
           "a pointer is spelled as its address, a char pointer as a string");
+
+    // std::complex as "(re+imi)", a type with no formatter as its bytes in
+    // memory order (a union: its bytes on every branch), on this path too and
+    // still without allocation.
+    union Word
+    {
+        std::uint32_t u;
+        float         f;
+    };
+    const Word word{0x01020304U};
+    g_news.store(0);
+    g_counting           = true;
+    const std::size_t n2 = logging::detail::format_message(
+        buf.data(), "complex {} {} bytes {}", std::complex<double>(1.0, -2.0), std::complex<float>(0.5F, 3.0F), word);
+    g_counting = false;
+    check(std::string_view(buf.data(), n2) == "complex (1-2i) (0.5+3i) bytes 0x04030201",
+          "std::complex and a type with no formatter spelled on the message path");
+    check(g_news.load() == 0, "no allocation for a std::complex or a type with no formatter");
 }
 
 // --- 8 ----------------------------------------------------------------------
@@ -525,11 +572,16 @@ struct FatalRun
     std::string log;         ///< CHUNK_LOG_FILE
 };
 
-FatalRun run_child(const char* self, int which)
+/// @brief Run the child of case @p which, under @p wrapper (a debugger's
+///        command line, or nothing) and with the variables @p env in addition.
+///        CHUNK_BREAK_ON_FAILURE is auto unless @p env sets it: one the user
+///        exported does not change the outcome.
+FatalRun run_child(const char* self, int which, std::string_view env = "", std::string_view wrapper = "")
 {
     const std::string dir  = std::filesystem::temp_directory_path().string();
     const std::string base = dir + "/shrink_log_fatal." + std::to_string(::getpid()) + "." + std::to_string(which);
-    const std::string cmd  = "ulimit -c 0; CHUNK_LOG=warn CHUNK_LOG_FILE=\"" + base + ".log\" timeout 60 \"" +
+    const std::string cmd  = "ulimit -c 0; CHUNK_LOG=warn CHUNK_BREAK_ON_FAILURE=auto CHUNK_LOG_FILE=\"" + base +
+                             ".log\" " + std::string(env) + " timeout 120 " + std::string(wrapper) + " \"" +
                              std::string(self) + "\" --fatal " + std::to_string(which) + " > \"" + base + ".out\" 2>&1";
     FatalRun          run;
     const int         status = std::system(cmd.c_str());
@@ -588,7 +640,7 @@ void check_fatal(const char* self)
 
     run = run_child(self, 3);
     // The first record the sink sees is the deprecation warning of
-    // CHUNK_RECHUNK_TRACE_MEM (inherited from main), written while the
+    // FAST_ALLOC_TRACE (inherited from main), written while the
     // configuration is read: the failure must not wait on that read.
     check(run.status == abort_status && run.out.find("failure inside the sink, on \"") != std::string::npos,
           "fatal: a failure inside the sink stops, even during the configuration (no deadlock: timeout 60 s)");
@@ -598,6 +650,16 @@ void check_fatal(const char* self)
               run.out.find("--- Execution Backtrace ---") != std::string::npos &&
               run.log.find("[shrink_array][general][F][") != std::string::npos,
           "FAST_ALLOC_FATAL: the same fatal report (block, backtrace, CHUNK_LOG_FILE)");
+
+    // Forced on, without a debugger: the report, the line that says why, then
+    // SIGTRAP, which nothing handles, kills the child (128 + SIGTRAP).
+    run = run_child(self, 0, "CHUNK_BREAK_ON_FAILURE=1");
+    check(run.status == 128 + SIGTRAP && run.out.find("--- Execution Backtrace ---") != std::string::npos &&
+              run.out.find("CHUNK_BREAK_ON_FAILURE=1: stopping on SIGTRAP") != std::string::npos &&
+              run.out.find("--- Execution Backtrace ---") < run.out.find("stopping on SIGTRAP"),
+          "fatal: CHUNK_BREAK_ON_FAILURE=1 stops on SIGTRAP, after the report");
+    check(run_child(self, 5).out.find("stopping on SIGTRAP") == std::string::npos,
+          "fatal: no stop without a debugger (auto)");
 
     run = run_child(self, 4);
     if constexpr (shrink_array::build_config::any_check)
@@ -615,6 +677,106 @@ void check_fatal(const char* self)
     }
 }
 
+// --- 10. The debugger detection ---------------------------------------------
+
+void check_debugger_detection()
+{
+    namespace fd = fast_alloc::logging::detail;
+    static_assert(fd::tracer_pid("Name:\tgdb\nState:\tS (sleeping)\nTracerPid:\t4242\nUid:\t1\n") == 4242);
+    constexpr std::string_view untraced = "Name:\tlog_validation\nUmask:\t0022\nPPid:\t12\nTracerPid:\t0\nUid:\t1\n";
+    check(fd::tracer_pid(untraced) == 0, "detection: TracerPid 0, no tracer");
+    check(fd::tracer_pid("Name:\tx\nPPid:\t1\nTracerPid:  77") == 77, "detection: spaces, last line with no newline");
+    check(fd::tracer_pid("Name:\tx\nPPid:\t1\n") == 0, "detection: no TracerPid line (other kernel, cut buffer)");
+    check(fd::tracer_pid("TracerPid:\t9\nTracerPid:\t0\n") == 0,
+          "detection: a process named \"TracerPid:\" is not its own tracer");
+    check(fd::tracer_pid("") == 0, "detection: an empty read");
+    check(fd::is_debugger_name("gdb\n") && fd::is_debugger_name("cuda-gdb\n") && fd::is_debugger_name("gdbserver\n") &&
+              fd::is_debugger_name("lldb\n") && fd::is_debugger_name("lldb-server\n") && fd::is_debugger_name("gdb"),
+          "detection: gdb, cuda-gdb, gdbserver, lldb, lldb-server are debuggers");
+    check(
+        !fd::is_debugger_name("strace\n") && !fd::is_debugger_name("ltrace\n") && !fd::is_debugger_name("perf\n") &&
+            !fd::is_debugger_name("rr\n") && !fd::is_debugger_name("tvdsvr\n") &&
+            !fd::is_debugger_name("tvdsvrmain\n") && !fd::is_debugger_name("totalview\n") &&
+            !fd::is_debugger_name("forge-backend\n") && !fd::is_debugger_name("gdb-wrapper\n") &&
+            !fd::is_debugger_name(""),
+        "detection: strace, ltrace, perf, rr, TotalView, DDT, a name merely starting with gdb, an empty read are not");
+#if defined(__linux__)
+    // This process's own file, read as the fatal path reads it: TracerPid is
+    // in it, and with no tracer (ctest's case), no debugger is seen.
+    char              status[4096];
+    const std::size_t len = fd::read_small_file("/proc/self/status", status, sizeof(status));
+    check(len > 0 && std::string_view(status, len).find("\nTracerPid:") != std::string_view::npos,
+          "detection: /proc/self/status read, with its TracerPid line");
+    check(fd::tracer_pid(std::string_view(status, len)) != 0 || !fd::debugger_attached(),
+          "detection: untraced, no debugger");
+#endif
+}
+
+// --- With --debugger: the fatal child under gdb and strace --------------------
+
+/// @brief True when @p a is found in @p text before @p b (both found).
+bool before(const std::string& text, std::string_view a, std::string_view b)
+{
+    const auto pa = text.find(a);
+    const auto pb = text.find(b);
+    return pa != std::string::npos && pb != std::string::npos && pa < pb;
+}
+
+int check_debuggers(const char* self, std::string_view gdb, std::string_view strace)
+{
+    const std::string gdb_q = "\"" + std::string(gdb) + "\"";
+    // The detection is Linux's (TracerPid): elsewhere, no stop to look for.
+    constexpr bool linux_proc =
+#if defined(__linux__)
+        true;
+#else
+        false;
+#endif
+    if (!linux_proc || gdb.empty() || std::system((gdb_q + " -nx -batch -ex quit > /dev/null 2>&1").c_str()) != 0)
+    {
+        println("SKIP: not Linux, or no gdb to run");
+        return 77;
+    }
+    // run, then the frames at the stop, then continue: the abort.
+    const std::string wrapper = gdb_q + " -nx -batch -ex run -ex bt -ex continue -ex kill --args";
+
+    auto run = run_child(self, 0, "", wrapper);
+    check(before(run.out, "--- Execution Backtrace ---", "debugger attached: stopping on SIGTRAP") &&
+              before(run.out, "debugger attached: stopping on SIGTRAP", "received signal SIGTRAP"),
+          "gdb: the report written, the line, then the stop on SIGTRAP");
+    const auto trap  = run.out.find("received signal SIGTRAP");
+    const auto abort = run.out.find("received signal SIGABRT");
+    const auto frame = std::min({run.out.find("break_on_failure", trap), run.out.find("fatal_report", trap),
+                                 run.out.find("invariant_failed", trap)});
+    check(trap != std::string::npos && frame < abort, "gdb: a frame of the fatal path in the backtrace at the stop");
+    check(trap != std::string::npos && abort != std::string::npos && trap < abort, "gdb: continued, it aborts");
+    if (g_fails != 0)
+    {
+        println("---- gdb output ----\n{}--------------------", run.out);
+    }
+
+    run = run_child(self, 0, "CHUNK_BREAK_ON_FAILURE=0", wrapper);
+    check(run.out.find("SIGTRAP") == std::string::npos &&
+              run.out.find("received signal SIGABRT") != std::string::npos &&
+              run.out.find("--- Execution Backtrace ---") != std::string::npos,
+          "gdb, CHUNK_BREAK_ON_FAILURE=0: no stop, the abort");
+
+    if (!strace.empty())
+    {
+        // strace -f exits as its tracee did: 134 for the abort, 133 had it
+        // been a SIGTRAP.
+        run = run_child(self, 0, "", "\"" + std::string(strace) + "\" -f -o /dev/null");
+        check(run.status == 128 + SIGABRT && run.out.find("stopping on SIGTRAP") == std::string::npos,
+              "strace: traced but no debugger, the abort and no SIGTRAP");
+    }
+    else
+    {
+        println("no strace: its check is skipped");
+    }
+    println("{}", g_fails == 0 ? "PASS" : "FAILED");
+    return g_fails == 0 ? 0 : 1;
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -623,14 +785,20 @@ int main(int argc, char** argv)
     {
         return run_fatal(std::atoi(argv[2]));
     }
+    if (argc > 1 && std::string_view(argv[1]) == "--debugger")
+    {
+        return check_debuggers(argv[0], argc > 2 ? argv[2] : "", argc > 3 ? argv[3] : "");
+    }
 
     // Before the first message: the configuration is read at it.
     const std::string dir = std::filesystem::temp_directory_path().string();
     g_log_path            = dir + "/shrink_log_validation." + std::to_string(::getpid()) + ".log";
     std::remove(g_log_path.c_str());
     setenv("CHUNK_LOG", "warn, rechunk=debug, verbose", 1);
-    setenv("CHUNK_RECHUNK_TRACE_MEM", "1", 1);    // a legacy switch: raises memory to debug
-    setenv("CHUNK_RECHUNK_TRACE_SLICES", "0", 1); // "0": not set
+    setenv("FAST_ALLOC_TRACE", "1", 1);    // a deprecated legacy switch: raises alloc to trace
+    setenv("CHUNK_LEDGER_REPORT", "1", 1); // a former report switch: raises ledger to info
+    unsetenv("CHUNK_ARENA_REPORT");
+    setenv("CHUNK_RECHUNK_CHURN", "1", 1); // no longer read: CHUNK_LOG=rechunk=debug
     setenv("CHUNK_LOG_FILE", (dir + "/shrink_log_validation.%p.log").c_str(), 1);
 
     check_environment();
@@ -642,6 +810,7 @@ int main(int argc, char** argv)
     check_no_allocation();
     check_threads();
     check_fatal(argv[0]);
+    check_debugger_detection();
 
     std::remove(g_log_path.c_str());
     println("{}", g_fails == 0 ? "PASS" : "FAILED");

@@ -1,0 +1,342 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
+#
+# The nightly CI: the AArch64 builds too long for a push (ci.yml runs the
+# AArch64 OpenMP check build there). Every night on develop, and on demand on
+# any branch (workflow_dispatch). Two jobs on ubuntu-24.04-arm (4 Neoverse
+# cores, 16 GB), gcc 14, with the check-mode switches:
+#   - the std backend + oneTBB under ThreadSanitizer: the library's own
+#     std::jthread team, the thread-rank registry and the TBB adaptor, seen by
+#     TSan on the weak memory model (ci.yml runs the same on x86);
+#   - the OpenMP _dyn build (run-time chunk sizes, 256 static next to it): the
+#     re-chunk paths, which the per-push builds leave out (CHUNK_BUILD_DYN=OFF).
+# On x86 (ubuntu-24.04): OpenMP under AddressSanitizer, clang 23 with OpenMP
+# and the OMPT tool, the serial _dyn build, and the line coverage of the
+# library (gcov + gcovr: a report, not a gate).
+# The other long builds -- UBSan, GenMC itself -- can join here when they are
+# needed.
+
+name: Nightly
+
+on:
+  schedule:
+    # 03:17 UTC, every day: the runs are off the hour (GitHub's queue is
+    # longest on the hour).
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # A schedule runs on the default branch; the development is on develop.
+  # A manual run takes the branch it was started from.
+  NIGHTLY_REF: ${{ github.event_name == 'schedule' && 'develop' || github.ref }}
+
+jobs:
+  # ThreadSanitizer on AArch64. No vm.mmap_rnd_bits sysctl here: the
+  # address-space randomisation TSan refuses is the x86-64 runners' (ci.yml);
+  # the AArch64 kernel's default fits TSan's 48-bit VA layout.
+  arm-std-tsan:
+    name: AArch64, std backend + TBB, ThreadSanitizer
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    env:
+      CC: gcc-14
+      CXX: g++-14
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+      TSAN_OPTIONS: halt_on_error=1 second_deadlock_stack=1
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+      - name: Toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev libtbb-dev
+          g++-14 --version
+          cmake --version
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCHUNK_THREADS=std
+          -DCHUNK_WITH_TBB=ON
+          -DSANITIZER=thread
+          -DCHECK_OPTIM=ON
+          -DCHUNK_STATIC_SIZES=256
+          -DCHUNK_BUILD_DYN=OFF
+      - name: Build and run the validation harnesses (check target)
+        run: cmake --build build --target check
+
+  # The _dyn build under OpenMP on AArch64: the re-chunk paths
+  # (rechunk_validation_*_dyn and the other _dyn harnesses), which the per-push
+  # builds leave out.
+  arm-openmp-dyn:
+    name: AArch64, OpenMP, _dyn
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    env:
+      CC: gcc-14
+      CXX: g++-14
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+      - name: Toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev
+          g++-14 --version
+          cmake --version
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DOMP=ON
+          -DCHECK_OPTIM=ON
+          -DCHUNK_STATIC_SIZES=256
+          -DCHUNK_BUILD_DYN=ON
+      - name: Build and run the validation harnesses (check target)
+        run: cmake --build build --target check
+      # No GenMC native runs here: they are C programs, the same in a _dyn build,
+      # and ci.yml's AArch64 OpenMP job runs them on every push.
+
+  # AddressSanitizer on x86, OpenMP: the second-value table's mmap
+  # reservation, the reuse pools, the slab give-back, the re-chunk buffers --
+  # out-of-bounds, use-after-free, double free and leaks at exit. The heavy
+  # unity harnesses two at a time, as std-tsan (ci.yml).
+  x86-openmp-asan:
+    name: x86-64, OpenMP, AddressSanitizer
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      CC: gcc-14
+      CXX: g++-14
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+      # print_module_map=1: the modules' load addresses in the report, so a faulting pc
+      # of an inlined frame can be disassembled in the binary the failure step uploads.
+      # dump_registers=1: the registers in a SEGV report (gcc 14's ASan prints none
+      # by default), so a high-address fault shows which pointer was garbage.
+      # disable_coredump=0: ASan turns core dumps off by default on 64 bits. Its shadow
+      # stays out of the core (use_madv_dontdump, on by default). The report prints the
+      # first faulting thread alone; the core has the stacks of all of them.
+      ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:detect_stack_use_after_return=1:print_module_map=1:dump_registers=1:disable_coredump=0
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+      - name: Toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev
+          g++-14 --version
+          cmake --version
+      # In the log: the runners differ, and a failure may be tied to one of their CPUs.
+      - name: Runner CPU
+        run: lscpu
+      # The cores go to a directory of ours, not to apport (Ubuntu's core_pattern).
+      - name: Core dumps
+        run: |
+          mkdir -p "$RUNNER_TEMP/cores"
+          sudo sysctl -w kernel.core_pattern="$RUNNER_TEMP/cores/core.%e.%p"
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DOMP=ON
+          -DSANITIZER=address
+          -DCHECK_OPTIM=ON
+          -DCHUNK_STATIC_SIZES=256
+          -DCHUNK_BUILD_DYN=OFF
+          -DCHUNK_X86_MARCH=x86-64-v3
+      - name: Build and run the validation harnesses (check target)
+        run: |
+          ulimit -c unlimited
+          cmake --build build --target check
+      # The reader-vs-compression stress (read_reclaim_validation_*), many times over: a
+      # race there shows once in tens of runs (one SEGV under ASan on 2026-11-02, in
+      # zero_one_value's 8-thread case, not reproduced since). Stops at the first failure.
+      - name: read_reclaim harnesses, repeated
+        run: |
+          ulimit -c unlimited
+          ctest --test-dir build -R '^read_reclaim_validation_' --repeat until-fail:20 --timeout 600 --output-on-failure
+      # On a failure, the validation executables (the faulting pc is an offset in one of
+      # them: print_module_map above), for objdump -d around it.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: asan-validation-binaries
+          path: build/examples/validation/validation_*_256
+          retention-days: 14
+      # The cores, for a closer look with the binary above.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: asan-core-dumps
+          path: ${{ runner.temp }}/cores
+          if-no-files-found: ignore
+          retention-days: 14
+      # On the runner: elsewhere gdb lacks Ubuntu's libasan and libc, and stops at their frames.
+      # The core's own name is cut at 15 characters; its execfn note has the full path.
+      - name: Stacks of every thread, from the cores
+        if: failure()
+        run: |
+          sudo apt-get install -y -q gdb
+          for core in "$RUNNER_TEMP"/cores/core.*; do
+            [ -e "$core" ] || continue
+            exe=$(file "$core" | sed -n "s/.*execfn: '\\([^']*\\)'.*/\\1/p")
+            echo "=== $core: $exe"
+            gdb -nx -batch -iex 'set debuginfod enabled off' -ex 'thread apply all bt 30' "$exe" "$core" 2>&1 || true
+          done
+
+  # clang 23 (apt.llvm.org) with libstdc++ and libomp, OpenMP: the
+  # diagnostics gcc does not give, and the OMPT tool (CHUNK_HAVE_OMPT), which
+  # only a clang build has -- multi-mat's embedded-compression executable.
+  x86-clang-openmp:
+    name: x86-64, clang 23, OpenMP + OMPT
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      CC: clang-23
+      CXX: clang++-23
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+      - name: Toolchain
+        run: |
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null
+          echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-23 main" | sudo tee /etc/apt/sources.list.d/llvm-23.list
+          sudo apt-get update -q
+          # libstdc++-14-dev: clang takes the newest libstdc++ installed.
+          sudo apt-get install -y -q clang-23 libomp-23-dev libstdc++-14-dev ninja-build libbz2-dev
+          clang++-23 --version
+          cmake --version
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DOMP=ON
+          -DUSE_LIBCXX=OFF
+          -DCHECK_OPTIM=ON
+          -DCHUNK_STATIC_SIZES=256
+          -DCHUNK_BUILD_DYN=OFF
+      - name: Build and run the validation harnesses (check target)
+        run: cmake --build build --target check
+      - name: Examples (ctest -L examples)
+        run: |
+          cmake --build build --target getting_started simple_array_chunk multi-mat test_vecto_chunk
+          ctest --test-dir build -L examples --output-on-failure
+
+  # The _dyn build on x86, serial, Release-like (RelWithDebInfo): the re-chunk
+  # paths gated somewhere other than AArch64 OpenMP (arm-openmp-dyn) and the
+  # coverage job (Debug, not a gate).
+  x86-serial-dyn:
+    name: x86-64, serial, _dyn
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      CC: gcc-14
+      CXX: g++-14
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+      - name: Toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev
+          g++-14 --version
+          cmake --version
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DOMP=OFF
+          -DCHECK_OPTIM=ON
+          -DCHUNK_STATIC_SIZES=256
+          -DCHUNK_BUILD_DYN=ON
+      - name: Build and run the validation harnesses (check target)
+        run: cmake --build build --target check
+
+  # Line coverage of chunk/ and fast_allocators/ by the validation harnesses:
+  # Debug (-O0, the lines map to the source), OpenMP, 256 + _dyn, gcc 14
+  # --coverage. A report, not a gate: the tests step may fail (under -O0 +
+  # gcov the longest checks -- shrink_bench_*_check, the scale-64-to-tgt
+  # re-chunks -- pass 10 minutes; a test killed on its timeout writes no
+  # .gcda, its lines read uncovered), the report is made all the same.
+  # --merge-lines folds the template instances of a line into one (else a line
+  # counts once per instance); the function count stays per instance.
+  # The summary goes to the run page, the HTML (per file, nested) to an
+  # artifact.
+  coverage:
+    name: x86-64, OpenMP, coverage (gcov)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    env:
+      CC: gcc-14
+      CXX: g++-14
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+      - name: Toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev
+          python3 -m venv "$RUNNER_TEMP/gcovr"
+          "$RUNNER_TEMP/gcovr/bin/pip" install -q gcovr==8.8
+          g++-14 --version
+          cmake --version
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          "-DCMAKE_CXX_FLAGS=--coverage -fprofile-update=atomic -DCHUNK_GCOV_DUMP"
+          -DCMAKE_EXE_LINKER_FLAGS=--coverage
+          -DOMP=ON
+          -DCHUNK_STATIC_SIZES=256
+          -DCHUNK_BUILD_DYN=ON
+      - name: Build
+        run: cmake --build build
+      - name: Validation harnesses
+        continue-on-error: true
+        run: ctest --test-dir build -j4 -LE examples --timeout 1800 --output-on-failure
+      # The traces' own paths: the size predictor (chunk_size_predictor.h, at
+      # every zero_any clear() with advisor=info in a check build) and the
+      # compression residual's chunk sample (compress=info) run only when
+      # their channel is at info, which no harness asks for: 0 % in the report.
+      # A second pass of two quick harness families with those channels on adds
+      # their counters to the first pass's: compress_roundtrip reaches the
+      # predictor, bulk_write_team_validation a residual. Not the whole suite,
+      # whose log-reading tests (log_validation) set CHUNK_LOG themselves.
+      - name: Harnesses with the advisor and compress traces on
+        continue-on-error: true
+        env:
+          CHUNK_LOG: warn,advisor=info,compress=info
+        run: ctest --test-dir build -j4 -R '^(compress_roundtrip|bulk_write_team_validation)_' --timeout 1800 --output-on-failure
+      - name: Coverage report
+        if: always()
+        run: |
+          mkdir -p coverage
+          "$RUNNER_TEMP/gcovr/bin/gcovr" -r . build --gcov-executable gcov-14 -j4 \
+            --merge-lines --merge-mode-functions=separate \
+            --filter 'chunk/' --filter 'fast_allocators/' \
+            --gcov-ignore-errors=no_working_dir_found --gcov-ignore-parse-errors=all \
+            --markdown coverage/coverage.md --html-nested coverage/index.html --txt-summary
+          cat coverage/coverage.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-html
+          path: coverage/
+          retention-days: 14

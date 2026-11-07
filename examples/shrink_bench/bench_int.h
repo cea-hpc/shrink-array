@@ -41,7 +41,7 @@
  *       (python/bench_and_test.py runs a few, INT64_CHECK_VARIANTS).
  *
  * Enable with `cmake -DSHRINK_BENCH_INT64=ON`, which adds the int64 targets
- * (shrink_bench_<variant>_int64_<size>, for the sizes of
+ * (shrink_bench_<backend>_<variant>_int64_<size>, for the sizes of
  * SHRINK_BENCH_INT64_SIZES and dyn) next to the ordinary ones (both are kept,
  * neither replaces the other).
  */

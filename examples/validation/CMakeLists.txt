@@ -89,6 +89,20 @@
 #                           resize's release) and zero_any's operator== equal a
 #                           std::vector's, with the phase bracketed; inside a
 #                           region they stay on the calling thread.
+#   shrink_to_fit_validation a few uniform chunks, then shrink_to_fit(): none
+#                           keeps a buffer, in every build (a serial zero_any
+#                           left its last partial batch of candidates).
+#   chunk_exchange_validation  export_chunk() / import_chunk() and
+#                           export_array() / import_array() (chunk/chunk_exchange.h):
+#                           an array rebuilt from its exported states reads,
+#                           exports and behaves as the source, every state of the
+#                           variant, double and bool (pattern's motifs, on int:
+#                           chunk_exchange_validation_pattern_<size>).
+#   operators_validation    every operator of a[i] (compound, ++/--, =, unary,
+#                           binary, ==, conversions, os <<) on char to
+#                           complex<double>, against plain T, direct and
+#                           with the deferred path forced (one executable
+#                           per variant, and pattern's)
 #   compound_ops_validation `*=`, `/=`, `%=` read back what std::vector would
 #                           (results landing on zero included), `double /= 0.0`
 #                           gives inf, set_second_value(0) declares nothing;
@@ -139,6 +153,13 @@
 #                           identifier limit reaches its end), and across a
 #                           re-chunk (dyn). zero_any only, default static
 #                           size and dyn.
+#   pattern_validation      pattern::Array against std::vector (zero, uniform,
+#                           shifted-motif and random chunks; copy, move,
+#                           resize, assign), and the second-value registry it
+#                           shares with zero_any::Array (a reclaim on either
+#                           keeps what both name). Its own executable
+#                           (pattern_validation_zero_any_<size>), default static
+#                           size (pattern::Array is static only).
 #   std_thread_validation   std builds: arrays written from the application's
 #                           own std::threads -- new ones every phase, then
 #                           long-lived ones on a barrier -- each with a rank
@@ -256,7 +277,7 @@ set(_rt_harnesses       compress_roundtrip pool_accounting open_types_validation
                         stale_proxy_validation
                         region_storage_validation compound_ops_validation bulk_write_team_validation
                         fill_range_constant_validation copy_range_constant_validation
-                        constant_switch_validation)
+                        constant_switch_validation shrink_to_fit_validation chunk_exchange_validation)
 set(_rt_dyn_harnesses   pool_accounting open_types_validation index64_validation stale_proxy_validation)
 
 # Compile definitions of a variant at a geometry.
@@ -444,7 +465,8 @@ foreach(_geom IN LISTS _rt_geometries)
         foreach(_case coexistence range-ops scale-64-to-tgt mostly-constant sin-quantized
                       shrink-to-smaller all-same all-different val2-grow val2-shrink
                       invalid-size-refused active-size-refused multiple-of-64-chain index-split
-                      sliced-grow sliced-shrink)
+                      bool-grow bool-shrink bool-uneven bool-sliced sliced-grow sliced-shrink
+                      sliced-val2-grow sliced-val2-uneven)
           validation_add_test(${_base}_${_case} ${_exe} ${_h} "" --case ${_case})
         endforeach()
       elseif (_h STREQUAL "dyn_geometry_validation")
@@ -478,6 +500,12 @@ foreach(_geom IN LISTS _rt_geometries)
         else()
           validation_add_test(${_base} ${_exe} ${_h} "1;8")
         endif()
+      elseif (_h STREQUAL "shrink_to_fit_validation")
+        validation_add_test(${_base} ${_exe} ${_h} "1;8")
+        # With the end-of-phase pass off, shrink_to_fit() alone must fold every
+        # rank's candidates (it folded the calling rank's only).
+        validation_add_test(${_base}_aggressive ${_exe} ${_h} "8")
+        set_property(TEST ${_base}_aggressive_8thr APPEND PROPERTY ENVIRONMENT CHUNK_AGGRESSIVE_COMPRESSION=1)
       elseif (_h STREQUAL "deferred_path_validation")
         validation_add_test(${_base} ${_exe} ${_h} "1;8")
       elseif (_h STREQUAL "phase_protocol_validation")
@@ -497,6 +525,64 @@ foreach(_geom IN LISTS _rt_geometries)
     endforeach()
   endforeach()
 endforeach()
+
+# --- pattern_validation: pattern::Array, a member of the zero_any family,
+# against std::vector, and the second-value registry it shares with
+# zero_any::Array. Its own executable, outside the zero_any group: it
+# instantiates pattern::Array and zero_any::Array for four element types (about
+# 2 GB of compiler memory alone, at -O3 -g), which took the group's unity TU
+# past 7 GB. At the default static size, and in the dynamic geometry (the
+# chunk size per array, and its rechunk: docs/algo_pattern.md, section 8).
+foreach(_geom ${CHUNK_DEFAULT_SIZE} dyn)
+  if (TARGET chunk_zero_any_${_geom})
+    set(_tgt pattern_validation_zero_any_${_geom})
+    validation_harness_executable(${_tgt} chunk_zero_any CHUNK_VARIANT_ZERO_ANY ${_geom} pattern_validation)
+    validation_add_test(${_tgt} ${_tgt} pattern_validation "1;8")
+  endif()
+endforeach()
+
+# --- operators_validation: every operator of a[i] on every element type
+# (char to complex<double>; pattern: the integers but bool), against plain T,
+# directly and with the deferred path forced. Its own executables, as
+# pattern_validation: nine element types instantiated per variant would weigh
+# on the group's unity TU. Default static size, at 1 and 8 threads; pattern on
+# the zero_any library (OPERATORS_VALIDATION_PATTERN).
+# One translation unit per group of element types, not a unity one: all of
+# them in one unit took 7.8 GB to compile (GCC 14, -O3), and the AArch64 CI
+# runner (16 GB, two compiles at once) was stopped for want of memory.
+set(_ov_parts operators_validation_small_integers.cpp operators_validation_wide_integers.cpp
+              operators_validation_floating.cpp operators_validation_bool_complex.cpp)
+foreach(_vi RANGE ${_rt_nvar_last})
+  list(GET _rt_variant_names   ${_vi} _vname)
+  list(GET _rt_variant_libbase ${_vi} _libbase)
+  list(GET _rt_variant_macro   ${_vi} _vmacro)
+  if (NOT TARGET ${_libbase}_${CHUNK_DEFAULT_SIZE})
+    continue()
+  endif()
+  set(_tgt operators_validation_${_vname}_${CHUNK_DEFAULT_SIZE})
+  validation_harness_executable(${_tgt} ${_libbase} ${_vmacro} ${CHUNK_DEFAULT_SIZE} operators_validation)
+  target_sources(${_tgt} PRIVATE ${_ov_parts})
+  set_target_properties(${_tgt} PROPERTIES UNITY_BUILD OFF)
+  validation_add_test(${_tgt} ${_tgt} operators_validation "1;8")
+  if (_vname STREQUAL "zero_any")
+    set(_tgt operators_validation_pattern_${CHUNK_DEFAULT_SIZE})
+    validation_harness_executable(${_tgt} ${_libbase} ${_vmacro} ${CHUNK_DEFAULT_SIZE} operators_validation)
+    target_sources(${_tgt} PRIVATE ${_ov_parts})
+    set_target_properties(${_tgt} PROPERTIES UNITY_BUILD OFF)
+    target_compile_definitions(${_tgt} PRIVATE OPERATORS_VALIDATION_PATTERN)
+    validation_add_test(${_tgt} ${_tgt} operators_validation "1;8")
+  endif()
+endforeach()
+
+# --- chunk_exchange_validation on pattern::Array<int> (its motif state), on the
+# zero_any library, as operators_validation_pattern.
+if (TARGET chunk_zero_any_${CHUNK_DEFAULT_SIZE})
+  set(_tgt chunk_exchange_validation_pattern_${CHUNK_DEFAULT_SIZE})
+  validation_harness_executable(${_tgt} chunk_zero_any CHUNK_VARIANT_ZERO_ANY ${CHUNK_DEFAULT_SIZE}
+                                chunk_exchange_validation)
+  target_compile_definitions(${_tgt} PRIVATE CHUNK_EXCHANGE_PATTERN)
+  validation_add_test(${_tgt} ${_tgt} chunk_exchange_validation "1;8")
+endif()
 
 # --- element_ref_validation: what operator[] accepts and refuses
 # (chunk/internal/element_ref.h), in every build that has the harnesses.
@@ -599,6 +685,39 @@ chunk_require_cxx_std(bit_words_validation PRIVATE)
 add_test(NAME bit_words_validation COMMAND bit_words_validation)
 set_property(TEST bit_words_validation PROPERTY LABELS validation)
 
+# --- chunk_index_sample_validation: the chunk sample of the compression-residual
+# messages (chunk_index_sample.h) alone, header only: the text, the "(+N more)",
+# the cut at the stack buffer's size, a 64-bit element index.
+add_executable(chunk_index_sample_validation chunk_index_sample_validation.cpp)
+chunk_add_alloc_token_rt(chunk_index_sample_validation)
+# fast_allocators/public: append_text.h, the noexcept integer writer it uses.
+target_include_directories(chunk_index_sample_validation PRIVATE ${PROJECT_SOURCE_DIR}/chunk/public
+                                                                 ${PROJECT_SOURCE_DIR}/fast_allocators/public)
+chunk_require_cxx_std(chunk_index_sample_validation PRIVATE)
+add_test(NAME chunk_index_sample_validation COMMAND chunk_index_sample_validation)
+set_property(TEST chunk_index_sample_validation PROPERTY LABELS validation)
+
+# --- env_parse_validation: the checked number parsing of the environment and
+# the command line (env_parse.h) alone, header only: every refusal (empty,
+# trailing characters, out of range, '-' for unsigned), the fallback with its
+# warning (counted through logging::set_sink), env_flag. The log's headers as
+# log_validation takes them.
+add_executable(env_parse_validation env_parse_validation.cpp)
+chunk_add_alloc_token_rt(env_parse_validation)
+target_include_directories(env_parse_validation PRIVATE ${PROJECT_SOURCE_DIR}/chunk/public
+                                                        ${PROJECT_BINARY_DIR}/chunk/generated # chunk/build_options.h
+                                                        ${PROJECT_SOURCE_DIR}/fast_allocators/public)
+target_link_libraries(env_parse_validation PRIVATE Threads::Threads)
+if (OMP)
+  target_link_libraries(env_parse_validation PRIVATE OpenMP::OpenMP_CXX) # build_options.h asks for the library's OpenMP
+endif()
+if (CHUNK_THREADS_BACKEND STREQUAL "std")
+  target_compile_definitions(env_parse_validation PRIVATE FAST_ALLOC_PMP_STD=1)
+endif()
+chunk_require_cxx_std(env_parse_validation PRIVATE)
+add_test(NAME env_parse_validation COMMAND env_parse_validation)
+set_property(TEST env_parse_validation PROPERTY LABELS validation)
+
 # --- rank_registry_validation: the rank registry of the threading backend
 # (fast_allocators/internal/pmp_runtime.h) alone, header only, driven from
 # std::threads: dense, unique, bounded ranks, given back at thread exit and
@@ -637,6 +756,24 @@ endif()
 chunk_require_cxx_std(log_validation PRIVATE)
 add_test(NAME log_validation COMMAND log_validation)
 set_property(TEST log_validation PROPERTY LABELS validation)
+# ... and log_break_on_failure: its fatal child under gdb stops on SIGTRAP in
+# the fatal path, after the report, and aborts when continued; with
+# CHUNK_BREAK_ON_FAILURE=0, or under strace (a tracer, not a debugger), it
+# only aborts (fast_allocators/internal/fatal.h, break_on_failure). Skipped
+# (77) without gdb; the strace run, without strace.
+find_program(CHUNK_GDB_PROGRAM gdb)
+find_program(CHUNK_STRACE_PROGRAM strace)
+set(_gdb "")
+set(_strace "")
+if (CHUNK_GDB_PROGRAM)
+  set(_gdb "${CHUNK_GDB_PROGRAM}")
+endif()
+if (CHUNK_STRACE_PROGRAM)
+  set(_strace "${CHUNK_STRACE_PROGRAM}")
+endif()
+add_test(NAME log_break_on_failure COMMAND log_validation --debugger "${_gdb}" "${_strace}")
+set_property(TEST log_break_on_failure PROPERTY LABELS validation)
+set_property(TEST log_break_on_failure PROPERTY SKIP_RETURN_CODE 77)
 
 # --- team_loops_validation: pmp::Team's static loops (for_static,
 # for_static_chunks and their _simd forms, fast_allocators/internal/

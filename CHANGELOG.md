@@ -54,6 +54,97 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
+### Added
+
+- `shrink_bench --advise_bool`: hands `tab_bool` and `tab_bool_bits` to the re-chunk decider
+  (off by default: the two bool containers stay at their birth geometry, to be compared as
+  they are). `rechunk_validation` gains `bool-sliced`: `Array<bool>` through the sliced
+  rebuild, for the three variants.
+- `docs/gpu_design.md`, the English version of the GPU design document
+  (`docs/conception_gpu_fr.md`); `check_docs.py` checks the pair like the others.
+- `multi_launch_stress.py --peak_threads N [--peak_share F]`: most thread counts drawn near N,
+  the top of the speedup curve, the others still uniform over the range. In `shrink_gui` too.
+- `diag_zero_rechunk_slowdown.py`: the resident memory against the static run, the churn per array
+  after the last re-chunk and, with `--perf`, the samples' share in the compression passes.
+
+### Changed
+
+- Re-chunk: `zero_one_value` and `zero_any` (and `pattern`) free each old chunk as soon as the
+  rebuild has copied it, as `zero` did, and rebuild in 16 slices with the fast allocator under
+  threads: each slice boundary recycles the slabs the slice emptied into the next slice's
+  allocations (`array_chunk_rechunk_refill.h`; the chunks' new `release_st()`), `bool`
+  arrays included; `ArrayChunkBits` (bit-packed) keeps one pass. `zero_one_value_dyn`, x86-64, 2 threads, 10^8 elements: run peak 1,772 ->
+  1,724 MB, end +0.9% (the recycled slabs stay resident, as for `zero`); `zero_any`'s peak
+  on this benchmark is the initialisation's, unchanged. `rechunk_validation` gains
+  `sliced-val2-grow` and `sliced-val2-uneven`: sliced rebuilds mixing zero, second-value and
+  live sources.
+
+### Fixed
+
+- `README.md` and `README_fr.md` gave the version as 0.1.
+- `check_doxygen.py` run by hand with no Doxygen installed ended on a
+  `FileNotFoundError` traceback: it says Doxygen is not found and exits 77 (skipped).
+
+## 0.2.1 -- 2026-11-05
+
+### Added
+
+- `CHUNK_X86_MARCH` (GCC and Clang on x86-64, default `native`): the `-march=` of the optimised
+  builds, for a binary that must not depend on the machine (`docs/developer_settings.md`). The
+  nightly's ASan job sets `x86-64-v3`: with `-march=native` on Zen 5, GCC 14 aligns slots of the
+  frame on 64 bytes, ASan's fake stack can leave them 32 bytes off, and an aligned `vmovdqa64`
+  faults (#GP). The two SEGV of 2026-11-02 in `read_reclaim_validation` of `zero_one_value`
+  were this, not the library: on EPYC 9V45 the same commit fails 3 times of 3 at `native` and
+  passes 2 times of 2 at `x86-64-v3`.
+
+- The check builds' `FLUSH_PROBE` also rejects non-canonical op pointers and vptrs, and looks at
+  `flush_deferred` too. On a failure the nightly's ASan job prints the CPU, the stacks of every
+  thread, and keeps the core dumps and the binaries as artifacts.
+
+- `thread_speedup.py --merge DIR [DIR ...] --out OUTDIR` merges the output
+  directories of several runs -- the jobs of a `--pool` over several nodes,
+  each of which only draws the executables it claimed -- into one, with no
+  measurement: the rows of every `summary.csv` and `results.csv`, a
+  `meta.json` naming the directories merged, and `plot.gp` and `speedup.png`
+  drawn by the functions a run uses, titled with the hosts merged. An
+  executable found in several directories is taken from the first one given;
+  that and any difference of CPU model, target, `--mode`, `--multiply`,
+  `--metric`, `--numa`, executable arguments or thread list are warnings on
+  stderr. shrink_gui's Graphique tab has an « Enregistrer l'image… » ("Save
+  image…") button on each of its pages: the chart as shown (a pool's gathered
+  curves included), as PNG or SVG.
+
+- `dyn_geometry_validation` checks the refused chunk sizes: wider than
+  `cst_buffer_size` or neither a power of two nor a multiple of 64,
+  `chunk_size_error` says why, and `set_active_chunk_size` and `rechunk_to`
+  keep the geometry with one warning on the rechunk channel; `pool_accounting`
+  checks that `need_load_balance_list_block_free()` is false once the pools
+  are released. Both were at 0 % in the coverage report.
+
+- `bit_words_validation` checks an empty bitmap (`nbits = 0`: `fill_bits`
+  writes nothing, `scan_words` says all_false, `count_ones` 0), and
+  `log_validation` a `std::complex` and a type with no formatter on the
+  message path (not only in the fatal children), still with no allocation:
+  branches the coverage report had at 0 %.
+
+- Two header-only harnesses for helpers the coverage report had at 0 % or
+  close (`ctest -L validation`): `env_parse_validation` (every refusal of
+  `parse_number`, `env_number`'s fallback with its warning on the env
+  channel, `arg_number`, `env_flag`) and `chunk_index_sample_validation` (the
+  chunk sample of the compression-residual messages: the text, "(+N more)",
+  the cut at the stack buffer's size, a 64-bit element index).
+
+- Coverage builds: with `-DCHUNK_GCOV_DUMP` (the nightly's gcov job sets it)
+  the fatal report writes the gcov counters before `abort()`, which skips the
+  exit handler that writes them: the paths the death tests take (the fatal
+  report, the invariant and bad-pointer checks) are counted, where they read
+  as never run.
+
+- The TBB bench's 64-bit twins, `shrink_bench_tbb_<variant>_int64_<1024|dyn>`
+  (std builds with oneTBB and `SHRINK_BENCH_INT64`, as the std benches have
+  theirs): the TBB regions past INT_MAX elements. `thread_speedup.py
+  --all-exec --int64` takes them too.
+
 ### Added (cpp23)
 
 - `std::expected` forms that say why they refuse, beside the existing calls
@@ -138,6 +229,10 @@ the tag's checksum to the recipe.
 
 ### Changed (cpp23)
 
+- `RechunkDecider::print_rechunk_log(FILE*)` writes its table with
+  `std::println(out, ...)` instead of `std::fprintf`: same columns, same
+  output.
+
 - `copy_range_mt` and `transform_range_mt` (and the tile writes of
   `md::update_tiles` inside a region) store a chunk span in one block copy and
   compare its values in a loop the compiler vectorises: the copy into the
@@ -213,9 +308,139 @@ the tag's checksum to the recipe.
   reported failed: `expect_stop.cmake` reports it skipped
   (`mdspan_submdspan_misaligned` without `submdspan`).
 
+### Changed
+
+- The internal names that kept an old variant label (`chunk2`, `chunk2a`,
+  `V1`/`V2`/`V2A`) say the variant: the candidate lists are
+  `zero_candidates(_thr)`, `zero_one_value_candidates_thr`,
+  `zero_one_value_candidates_map_thr`, `zero_any_candidates(_thr)` (were
+  `chunk_to_compress_potentially(_thr)`, `chunk2_...`, `map_chunk2_...`,
+  `chunk2a_...`), with their accessors and `remove_from_<variant>_candidates_*`;
+  their types `ZeroComp`, `ZeroCompThr`, `ZeroOneValueComp`,
+  `ZeroOneValueCompThr`, `ZeroOneValueCompMap`, `ZeroOneValueCompByValue`,
+  `ZeroAnyComp`, `ZeroAnyCompThr`, `ZeroAnyCompOf` (were `TChunkComp`,
+  `TChunk2Comp`, `MapTypeChunk2P`, `TChunk2AComp`...); the concepts
+  `IsZeroOneValue`, `IsSecondValueFamily` (were `IsChunk2`,
+  `IsChunk2OrZeroAnyFamily`); the class aliases `SecondValueBase`, `Manager`
+  (were `Base2`, `ManagerChunk2`, `ManagerChunk2A`), `CandidateTuples`,
+  `CandidateValueTuples` (were `VecTupleChunk*pInt2`);
+  `ZeroOneValueInfArrayPolicy`, `CHUNK_LINK_CHECK_ZERO/_ZERO_ONE_VALUE/_ZERO_ANY`
+  and the multi-mat example's `VectZeroOneValue`. Generic `chunk` names (the
+  block of CHUNK_SIZE values, common to the variants: `ChunkBase`,
+  `ManagerChunk`, `ParamChunk`...) stay.
+
+- The `std::initializer_list` constructor of every array is implicit, as `std::vector`'s:
+  `Array<T> a = {1, 2, 3};`, and a braced list as an argument or a return value. It was explicit
+  in `zero_one_value` and `pattern` only.
+
+### Deprecated
+
+- `zero_one_value::Array::ManagerChunk2` and `zero_any::Array::ManagerChunk2A`:
+  use `Manager`. Kept until 1.0.
+
+### Fixed
+
+- `make_block_compression()` inside a parallel region is refused: check builds stop, the others
+  log an error and skip the pass. Run with no proxy, it took no writer handshake and, in `zero`
+  and `zero_one_value`, no reader grace period: it compressed chunks other threads were writing
+  or reading (stale reads, seen with a `read_reclaim` harness). It is a sequential point; in a
+  region the writers' own passes compress. `resize()`, which an owning thread may call in a
+  region, drains through `drain_candidates()`, its released buffers held for a grace period.
+
+- `multi-mat-embedded`: its OMPT tool skips the initial task and the barrier that closes a region,
+  as the library's does. It hung at start-up under libomp.
+
+- The copy of a `zero_one_value` proxy no longer reads indeterminate values: `second_value_` and
+  `ind_` have default initialisers (`ProxyBase`'s `ptr_on_array_` and `num_chunk_` too, Coverity
+  CID 661511). No measurable cost in `access_cost` or `shrink_bench`.
+
+- `scripts/coverity_submit.sh` goes on when the compiler module is missing, with `CXX` or the
+  `g++` on `PATH`; it stopped before the capture.
+
+- `pattern::Array` compresses to motifs in an OMPT build (clang, Intel: `CHUNK_HAVE_OMPT`).
+  There the pass at each region's end is `compress_chunk_to_compress_in_par()`, chunk by chunk
+  through `compress()`, which only knew the two constants: no chunk ever became a motif
+  (`pattern_validation` failed under clang, the nightly's new clang job). A chunk `compress()`
+  leaves materialised now goes through `pattern::Chunk::compress_to_motif()`: the admission rule
+  and the `block_clear_motif()` order of the claimed pass (docs/algo_pattern.md, section 5).
+  `chunk_exchange_validation` accepts, for pattern, an imported materialised chunk found
+  compressed to a motif since (its copy is the motif's second sighting).
+
+## 0.2.0 -- 2026-10-30
+
 ### Added
 
+- `access_cost`: a `read-bulk` case, the varied array read through `for_each_value()` (each
+  thread its slice): one read gate per chunk and one read section per block instead of both per
+  element. On a 2-core x86 VM, 1.10 times the vector against 3.2 for the element read
+  (`read-varied`); `python/access_cost.py` lists it.
+- `CHUNK_READ_DEP_ORDER=1` (experimental, AArch64, a macro in `CMAKE_CXX_FLAGS`): a pure read
+  (`ChunkBase::element_at`) loads the chunk's `values` relaxed, ordered with the loads through it
+  -- the element, the second value -- by their address dependency instead of an acquire. On
+  Grace every read costs 2.4 ns whatever the chunk's state (x86: 1.1 to 1.8): the hypothesis is
+  that each acquire load (LDAPR) holds the next element's loads, and the loop runs at the
+  latency of its two acquires (the read gate's and this one). Off by default, under evaluation
+  with `access_cost`.
+- `examples/bool_arrays`: the two boolean containers of a `zero_one_value` build side by side --
+  `zero_one_value::Array<bool>` (a byte per element) and `ArrayChunkBits` (a bit per element, the
+  layout of `std::vector<bool>`, neighbouring elements writable from different threads) -- the
+  same mask written from every thread, read back, and the data each keeps (`ctest -L examples`).
+  `docs/variants.md` gets the section they lacked ("Booleans: two containers": what a
+  materialised chunk holds, the write, the threads, when to choose which), and
+  `zero_one_value::Array`'s comment names both.
+- `CHUNK_BREAK_ON_FAILURE`: under a debugger (gdb, cuda-gdb, gdbserver, lldb, lldb-server, read
+  from `TracerPid` and the tracer's name, without allocating), an invariant failure or a
+  `FAST_ALLOC_FATAL`, its report written, raises `SIGTRAP`: the debugger stops on the failing
+  thread with its frames live, and continuing aborts as before. strace and the other tracers,
+  TotalView and DDT do not stop; without a debugger nothing changes. `0` never stops, `1` always
+  (`docs/environment_variables.md`). `log_break_on_failure` checks it under gdb and strace.
+- shrink_gui 0.15: the partition list also offers the partitions the machine lists at the
+  connection check (`[batch] partition_info`: `ccc_mpinfo` on inti, `sinfo -o '%P %c %D %a'` in
+  `slurm_example.toml`), beside the site file's `[partitions]`, which win for a name in both. Their
+  directives, launcher and detached options come from the site's new `[discovered]` templates
+  (`{name}`, `{cores}` per node), their architecture from a pattern on the name (`arm`); `skip`
+  leaves some out. The table read is remembered for the next start.
+  `python3 -m shrink_gui.partitions` shows, on the cluster, what the window reads from it.
+- `formal/queue_handback.c`: the end of a compression pass against the candidate marking of a
+  writer -- F6 (`docs/formal_models.md`, section 8.8, fixed: see Fixed).
+- `thread_speedup.py --pool=<id>` and shrink_gui's "Nodes" field for it: N one-node batch jobs
+  share the executable list, as `compile_all.sh --pool` shares its configurations; each job
+  measures the executables it claims first (an atomic `mkdir` in
+  `<out base>/.pools/<id>/`), in its own output directory. The Chart and Summary tabs of any
+  of the jobs gather the whole submission; "Compare with" lists such a submission once.
+- `python/ab_settings_campaign.py`: the A/B campaign of the developer settings still read from the
+  environment: each value against the defaults, computation time and peak / end memory of
+  `shrink_bench` on the three variants at dyn, resumable, with a report of the deviations and
+  of the noise (`docs/developer_settings.md` §1). Its first campaign fixed seven settings (see
+  Removed); its points left, for Grace, are `CHUNK_RECLAIM_THREADS` and
+  `CHUNK_DEFERRED_POOL_KB`.
+- `CHUNK_LOG=rechunk=debug`: a `teardown split` line after each re-chunk's phases divides the
+  `tmp teardown` phase (the old storage's destruction) into its steps, for zero_any and pattern;
+  `scripts/rechunk_trace_summary.py` sums it. Measured on Milan, this phase was 56 % of the
+  re-chunk time of `shrink_bench_zero_any_dyn`.
+- Fast allocator: a sweep (`trim_reuse_pools()`, a re-chunk, a destruction) also gives back the
+  free pages of the value slabs still in use (`TCSlab::advise_free_pages`), as `malloc_trim`
+  does inside glibc's heaps: a slab no longer stays resident whole for its last few live buffers.
+  The value slabs keep their free-list links aside, so a free element is never written to; the
+  last page, the back-pointer's, is kept. The `CHUNK_ARENA_REPORT` `partial` line counts it.
+  Measured on Milan (64 threads, three runs each): without it, the end memory is 7.5% higher for
+  `zero_any` and 1% for `zero_one_value`, at the same time.
+- fast_allocators 2.3.0 (the one above); `CHUNK_FAST_ALLOCATORS_VERSION` follows.
+- shrink_gui runs on PySide6 6.2 and 6.3: QFormLayout's setRowVisible() / isRowVisible() came
+  with Qt 6.4, and the window stopped at start-up without them (AttributeError in
+  machine_panel). `widgets.RowVisibleFormLayout` provides them on every 6.x -- Qt's own from
+  6.4, the row's widgets hidden one by one before (a hidden row then keeps its vertical spacing).
+- shrink_gui: the Log pane shows, as soon as a job is submitted, the run directory, the
+  program's command line and the submission command (`cd <run> && ccc_msub job.sh`, with the
+  batch system's answer); until now it stayed empty while the job waited in the queue, since
+  run.sh prints its `[gui] command:` line on the node. `submit.log` starts with the command too.
 - CI: the per-push workflow builds and validates the std backend with oneTBB, and runs it under ThreadSanitizer.
+- CI on AArch64: the per-push workflow runs the OpenMP check build, the examples, the install
+  test and the native GenMC runs on GitHub's `ubuntu-24.04-arm` runner too -- the weak memory
+  model the handshakes were modelled for, which x86-64 cannot exercise. A nightly workflow
+  (`.github/workflows/nightly.yml`, develop every night, any branch on demand) runs on AArch64
+  what is too long for a push: the std backend with oneTBB under ThreadSanitizer, and the
+  OpenMP `_dyn` build with its re-chunk harnesses.
 - OpenMP is no longer required: the library runs its own parallel work on a
   backend chosen at build time, CMake `CHUNK_THREADS=openmp|std|serial`
   (empty, the default: from `OMP`, as before). `std` runs the teams on
@@ -249,9 +474,123 @@ the tag's checksum to the recipe.
   build lists include the std builds.
 - Spack: variant `threads=openmp|std|serial` (default `openmp`), and `+tbb`
   for the TBB examples (with `+examples threads=std`).
+- `compile_all.sh --pool=<id>` (and `compile_all_gnu.sh`): runs given the same id share the
+  configurations, each built by the first run that claims it. `shrink_gui` 0.14 uses it for
+  its "Nodes" field: `compile_all.sh` over N one-node batch jobs, and "Start: after" waits for
+  all of them (`docs/shrink_gui.md`, section 3).
 
 ### Changed
 
+- `zero_any`'s second-value table (`GlobalVecHolder<T>::value_by_id`, the value behind each
+  identifier) is no longer a static array of 4 Mi values per element type but a pointer to an
+  `mmap(MAP_NORESERVE)` reservation made at the type's first array, next to the identifier
+  region, sized by `CHUNK_CST_VAL2_ID_LIMIT` when set, its pages given back at the last clear.
+  The static array was 332 MiB of bss in the benchmark (32 MiB for a `double`, 96 for a 24-byte
+  type): free while untouched for a trivial type, but an element type whose default constructor
+  is not `constexpr` (which `ArrayChunkElement` allows) had it dynamically initialised at
+  startup -- 101 MB of RSS before `main` for one 24-byte type, 3 MB now -- and every type counted
+  against `RLIMIT_AS` and, under strict overcommit, the commit charge. bss of
+  `shrink_bench_omp_zero_any_256`: 348 MB -> 0.27 MB. The price: reading a second value back
+  loads the table's pointer first (one L1 hit, independent of the identifier's computation).
+  Below measurement on Grace (aarch64, 1 thread, spread 0-1%): `access_cost`'s new
+  `read-second` case 2.413 ns per element against 2.409 for `read-constant`, which does not
+  touch the table, and 2.415 for `read-varied`. On a 2-core x86 VM, within the noise as well
+  (`read-second` +1.8% at the minimum; the benchmark at 2 threads -6%, sd 8-10%, HWM
+  unchanged). `region_init()` is now serialised by a mutex and
+  publishes `region_begin` last: a thread that lost the race could find it set before
+  `region_end` and `id_limit`.
+- `access_cost`: a `read-second` case, an array all at 1.5 (zero_any: every chunk compressed to a
+  second value, read back through the value table); `python/access_cost.py` lists it.
+- The version is 0.2.0. Before 1.0 the installed package declares `SameMinorVersion`:
+  `find_package(chunk 0.1)` does not find it, ask for `find_package(chunk 0.2)` (the README,
+  getting_started and examples/getting_started do).
+
+- The decider's "[RECHUNK-LEARN]" line, written to stdout when a coarsening
+  freed less than the model predicted and is disabled for that array, is a
+  log message like its neighbours: `CHUNK_LOG(info, rechunk, "learn ...")`,
+  shown by default (rechunk=info), on the log's stream (stderr, the sink or
+  CHUNK_LOG_FILE) rather than stdout.
+
+- `SecondValueProxyBase::is_cst_val_new_value_is_other_cst_val()` is now
+  `passes_mark_pre_check()` (internal): it has dispatched to the variant's
+  `pre_check_mark_for_compression()` since September, and its name and comment still said the
+  narrow test it replaced ("the chunk at one constant, the other one written"), which invited a
+  fix back to the bug. `docs/algo_zero_one_value.md`: an array without a second value is queued
+  under `T{}`, not never (`has_candidate_list` is a guard before the flag's CAS).
+- The `shrink_bench` executables carry the threading backend of their build in their name:
+  `shrink_bench_<backend>_<variant>_<size>` with `<backend>` `omp`, `std` or `serial`
+  (`CHUNK_THREADS_BACKEND`), e.g. `shrink_bench_omp_zero_any_256`, `shrink_bench_std_zero_dyn`,
+  `shrink_bench_serial_zero_one_value_1024`; likewise `shrink_bench_<backend>_<variant>_int64_<size>`,
+  `shrink_bench_<backend>_vector_check` / `_vector_perf` / `_vector_int64_perf` and
+  `shrink_bench_<backend>_std_alloc_<size>`. A binary of a `cmake-build-std-*` build now says
+  that it runs without OpenMP. The ctest names follow
+  (`shrink_bench_<backend>_<variant>_check_<size>`, `shrink_bench_<backend>_vector_check`); the
+  TBB bench keeps `shrink_bench_tbb_<variant>_<size>`, and the validation harnesses and the
+  fixture names do not change. The old names are gone: `bench_and_test.py`,
+  `thread_speedup.py`, `multi_launch_stress.py` and the other scripts look for the new ones
+  only (each of the three backend names, a build directory holding one;
+  `bench_runner/settings.py`'s `bench_exe_names`), never for the old ones, which a build
+  directory rebuilt since still holds, stale. Rebuild to get the new names. shrink_gui still
+  reads the old names in the results of past runs. `compile_all.sh --exec=` matches the real
+  target names: `--exec='shrink_bench_*_zero_256'` for every backend.
+- shrink_gui: the options form lists the options in alphabetical order (dashes and case aside)
+  rather than in the script's declaration order; the positional arguments stay first, in the
+  script's order, since the command line keeps them in it.
+- `thread_speedup.py --all-exec` takes the TBB bench too (`shrink_bench_tbb_<variant>_<size>`,
+  after the other executables, in the std builds made with oneTBB; none with `--int64`, it has
+  no 64-bit declination). shrink_gui's speedup chart reads its names: the colour of its variant,
+  the shape of its size, a dash-dot line (dash-dot-dot for B) -- they were grey stars.
+- `python/omp_speedup.py` is `python/thread_speedup.py`: its curves are not OpenMP's only, the
+  std::thread backend's (`std-*` targets) and the TBB bench's (`shrink_bench_tbb_*`) too. Its
+  default output directory is `$CCCWORKDIR/thread_speedup/` (else `~/thread_speedup/`).
+  shrink_gui offers it under the new name and reads the runs recorded under the old one as its
+  own (reuse, outputs, Chart).
+- `zero` re-chunk: the recycled slabs the last slice of the rebuild did not take stay resident
+  for the next allocations, instead of being given back to the system (the former
+  `CHUNK_RECHUNK_KEEP_RECYCLED=1`, now the only behaviour). Milan, `zero_dyn`, 64 threads, three
+  runs each: 11.7 s against 13.2 s of computation, for +0.1% of memory at the end of the run and
+  +0.3% at the peak.
+- The re-chunk decider reads no environment variable: its thresholds and its test hooks are
+  `RechunkPolicy` fields only, which a program sets. New fields: `advisor_grid_bits` (the
+  advisor's grid between the powers of two, 2), and the forced re-chunk of the tests,
+  `force_size`, `force_at`, `force_toggle`, `force_alt`. `shrink_bench` exposes them as options:
+  `--rechunk_dry_run`, `--rechunk_max_coarsen`, `--rechunk_min_gain_mb`, `--rechunk_grid_bits`,
+  `--rechunk_coarsen_min_meta_mb`, `--rechunk_coarsen_min_meta_rate`, `--rechunk_backoff_max`,
+  `--force_rechunk`, `--force_rechunk_at`, `--force_rechunk_toggle`, `--force_rechunk_alt`, plus
+  `--advisor_period` and `--advise_five` for its own schedule. `bench_and_test.py`'s re-chunk
+  phase and `diag_zero_rechunk_slowdown.py` pass them.
+- The library's reports are log levels, no longer environment variables: the buffer arena's
+  summary (with its `partial` and `freepath` lines and the free-path counters) is
+  `CHUNK_LOG=arena=info`, the block registry's report at exit `ledger=info`, the OMPT
+  statistics at exit `ompt=info`, and `shrink_bench`'s report of zero_any's second-value
+  registry at each advisor pass `compress=info` (its heading, `cst2-gc @ iter <k>`, is a log line
+  now). A report is switched on by its channel's level and then written in full; a bare
+  `CHUNK_LOG=info` switches them all on. `diag_zero_rechunk_slowdown.py` asks for `arena=info`,
+  and reads the `freepath` lines as the log writes them: its `[FREEPATH]` pattern matched
+  nothing since the log.
+- The decider's two per-array traces are log levels, no longer environment variables: the churn
+  line (materialisations per pass, the transient they imply) is `CHUNK_LOG=rechunk=debug`
+  (it was `rechunk=info`, switched on by `CHUNK_RECHUNK_CHURN`), and the advisor's full table at
+  each pass is `CHUNK_LOG=advisor=debug`, written to the log (`CHUNK_LOG_FILE`) instead of
+  stdout. The former `=<name>` form is the new `RechunkPolicy::trace_array` (empty: every array;
+  `shrink_bench --rechunk_trace_array <name>`). `ChunkSizeAdvisor<T>::log()` writes a report to
+  the log as `print()` does to stdout. The decider reads no environment variable any more.
+- `shrink_bench`: `tab_conn` holds about `sz / 32` ints by default, `--conn_scale <x>` sets it
+  (`x × sz`, whole rows). At `sz` its dense gather and renumbering took ~87% of a run (zero_any,
+  8 threads, `--divisor 2`: 64.8 s with it, 8.4 s without with GCC 16, 140 s against 19 s with
+  icpx) and hid every other phase -- what looked like a regression of the bench.
+- The re-chunks are on screen again by default: the `rechunk` log channel
+  starts at `info` (`CHUNK_LOG` unset means `warn,rechunk=info`), so each
+  re-chunk the decider applies writes its `decide <array>: re-chunk S=..
+  -> S'=.. [APPLIED]` line, as `[RECHUNK-DECIDE]` did before the log. Since
+  the log, the channel started at `warn` with the others and nothing was
+  shown. `CHUNK_LOG=warn` (a bare level sets every channel) hides it.
+- Fast allocator: the value slabs are no longer floored at sixteen pages. The floor capped the
+  last page an emptied slab used to keep; a sweep now gives the slab back whole, and the floor
+  only made the slabs larger on 64 KiB-page nodes -- 1 MiB at 64 threads instead of 256 KiB --
+  hence a larger partly-used slab per (rank, element type, array, size), and more memory kept
+  resident by a slab's last few live buffers. Each element type's slab is floored at one page
+  and at its largest buffer instead (`value_slab.h`). Unchanged on 4 KiB pages.
 - The three array classes live in a namespace each, named after what they compress:
   `zero::Array` (was `ArrayChunk`), `zero_one_value::Array` (was `ArrayChunk2`),
   `zero_any::Array` (was `ArrayChunk2A`). The chunk and proxy classes, the CMake targets and
@@ -316,9 +655,20 @@ the tag's checksum to the recipe.
   build runs the same regions, with the same clauses.
 - Spack: the variant `openmp` is replaced by `threads` (`+openmp` is now
   `threads=openmp`, `~openmp` `threads=serial`).
+- Vendored ankerl::unordered_dense updated from 5.3.1 to 5.3.3, its two local patches (nvc++)
+  carried over: `__has_cpp_attribute` is probed with `defined()` first (MSVC 19.16); no other
+  change.
 
 ### Deprecated
 
+- `CHUNK_ARENA_REPORT`, `CHUNK_LEDGER_REPORT`, `CHUNK_OMPT_STATS` and `CHUNK_CST2_PROBE`: they set
+  `CHUNK_LOG=arena=info`, `ledger=info`, `ompt=info` and `compress=info`, with a warning (see
+  Changed); set means non-empty and not starting with `0`, for the two that any value used to
+  switch on. Removal planned for 2026-12-31.
+- `FAST_ALLOC_TRACE` (it sets `CHUNK_LOG=alloc=trace`, with a warning): removal planned for
+  2026-12-31.
+- `python/omp_speedup.py`: runs `thread_speedup.py` with the same arguments (one line on stderr
+  says so), for the commands and job scripts that call it; to be removed in a later release.
 - `ArrayChunk`, `ArrayChunk2` and `ArrayChunk2A`: alias templates of the classes above, with a
   `[[deprecated]]` attribute, until 1.0.
 - `chunk/array_chunk.h`, `chunk/array_chunk2.h` and `chunk/array_chunk2A.h`: they include the
@@ -330,14 +680,175 @@ the tag's checksum to the recipe.
 - The former `CHUNK_VARIANTS` values (a CMake deprecation message), library names (INTERFACE
   targets with a `DEPRECATION` property, installed), `CHUNK_VARIANT_V*` macros (defined from the new
   ones, and the other way round) and `chunk_config::use_chunk*` constants (`[[deprecated]]`), until 1.0.
+- `zero_any::ChunkDef::factor_div_somme_chunk_buffer_resuse`, a misspelling: now
+  `factor_div_somme_chunk_buffer_reuse`, the old name a `[[deprecated]]` constant until 1.0.
 
 ### Removed
 
+- The levels 1 to 3 of `CHUNK2A_COMPRESS_LEVEL` (zero_any's compression thresholds), never built
+  or tested, and the macro with them: the thresholds are constants of `zero_any_chunk_def.h`
+  (500 and 50, the former level 0). Their removal was planned for 2026-12-31.
+- The CMake option `CHUNK_RECLAIM_EMPTY_SLABS` (and `FAST_ALLOC_OPT_RECLAIM_EMPTY_SLABS`,
+  `CHUNK_OPT_RECLAIM_EMPTY_SLABS`, `alloc_config::reclaim_empty_slabs`,
+  `build_config::reclaim_empty_slabs`): the sweeps always give emptied slabs back, as the default
+  did; `OFF` was measured costlier in memory for no time saved, and its removal was planned for
+  2026-12-31. A cache that still sets it `OFF` gets a configure warning. The fast allocator's
+  start-up line no longer prints it.
+- `scripts/diag_zero_rechunk_slowdown.py`, a copy of `python/diag_zero_rechunk_slowdown.py`
+  that had drifted from it; the one kept gains the copy's check of the missing executables.
+- The developer settings fixed by the first `ab_settings_campaign.py` campaign (Milan,
+  `shrink_bench` int64 dyn, `zero`, `zero_any` and `zero_one_value`, 64 threads, three
+  interleaved runs per point; noise 0.3%, 1.1% and 2.5% of the time):
+  - `CHUNK_ALLOC_AFFINITY_EAGER`: the mode is fixed per variant, as its default was -- eager for
+    `zero` (lazy: +9.8% of time, +14.6% at the peak, +11.8% at the end), lazy for `zero_any`
+    (eager: +7.4% at the peak) and `zero_one_value` (the same either way).
+  - `CHUNK_RECLAIM_PARTIAL`: the free pages of the slabs in use are always given back (without
+    it, +7.5% of end memory for `zero_any`, +1% for `zero_one_value`, no time saved).
+  - `CHUNK_SLAB_FULLEST_FIRST`, with the re-chaining of the slabs by occupancy
+    (`TCTypeCAllocator::order_fullest_first`): no effect on time or memory, on any variant.
+  - `CHUNK_RECLAIM_PHASE_KEEP`, with the sweep after every compression pass it switched on
+    (`ManagerChunk::sweep_empty_slabs_int`): +74% to +251% of time for no memory saved, whatever
+    the number of slabs kept.
+  - `CHUNK_REUSE_SHARE_DIV` (50), `CHUNK_REUSE_FLOOR_KB` (500 buffers, 100 for an array with
+    its own allocators) and `CHUNK_RECLAIM_MIN_SLABS` (0): within the noise at 25 and 100, at no
+    floor and 4 MiB per rank, at 16 slabs.
+
+  `ManagerChunk::reuse_floor_buffers()` goes with `CHUNK_REUSE_FLOOR_KB`, and the `keep_empty`
+  argument of `ManagerChunk::sweep_empty_slabs()` with the per-pass sweep.
+  `diag_zero_rechunk_slowdown.py` loses its `dyn_lazy` run. `CHUNK_RECLAIM_THREADS` stays
+  (1) until it is measured on Grace: `0` was 3.5% faster for `zero_one_value` on Milan.
+- Developer settings measured on Milan (64 threads, `zero`, `zero_any` and `zero_one_value`
+  dyn, three runs each) and fixed at the value that won or that changed nothing:
+  `CHUNK_RECHUNK_RECYCLE` (recycling is always on: 29% slower without),
+  `CHUNK_RECHUNK_KEEP_RECYCLED` and `CHUNK_RECHUNK_KEEP_RECYCLED_MB` (see Changed),
+  `CHUNK_RECHUNK_SCHEDULE` (`guided,16`: `static` and `dynamic,64` within 1% except
+  `zero_one_value`, where `static` is 7.6% slower), `CHUNK_THP` (the kernel's THP mode decides:
+  `never` and `1` changed neither time nor memory), `CHUNK_SLAB_MIN_PAGES` (no measurable
+  effect; its removal was planned) and `CHUNK_RECHUNK_SLICES` (16: with the recycled slabs kept,
+  32, 64 and 128 slices are 1.3%, 5.2% and 6.5% slower at 64 threads, five runs each; 8 is 1.8%
+  faster for +0.5% of memory). `alloc_config::thp_advise()`, `thp_never()` and
+  `advise_thp_region()` go with `CHUNK_THP`. `scripts/bench_recycle.sh` loses its recycling
+  dimension, and `diag_zero_rechunk_slowdown.py` its `dyn_static1` and `dyn_norecycle` runs.
+- `CHUNK_RECHUNK_DRY_RUN` (a user setting of `docs/environment_variables.md`): set
+  `RechunkPolicy::dry_run` (`shrink_bench --rechunk_dry_run`).
+- The decider's developer variables `CHUNK_RECHUNK_MAX_COARSEN`, `CHUNK_ADVISOR_MIN_GAIN_MB`,
+  `CHUNK_ADVISOR_GRID_BITS`, `CHUNK_ADVISOR_BACKOFF_MAX`, `CHUNK_COARSEN_MIN_META_MB`,
+  `CHUNK_COARSEN_MIN_META_RATE`, `CHUNK_FORCE_RECHUNK`, `CHUNK_FORCE_RECHUNK_AT`,
+  `CHUNK_FORCE_RECHUNK_TOGGLE` and `CHUNK_FORCE_RECHUNK_ALT`, and the benchmark's
+  `CHUNK_ADVISOR_PERIOD` and `SHRINK_BENCH_ADVISE_ALL`: the `RechunkPolicy` fields and
+  `shrink_bench` options of Changed. Set, they are ignored without a message.
+- `ChunkSizeAdvisor<T>::default_grid_bits()` (it read `CHUNK_ADVISOR_GRID_BITS`):
+  `Options::grid_bits` defaults to 2.
+- The deprecated trace switches `CHUNK_RECHUNK_TRACE`, `CHUNK_RECHUNK_TRACE_SLICES`,
+  `CHUNK_RECHUNK_MEMTRACE`, `CHUNK_RECHUNK_TRACE_MEM`, `CHUNK_AFFINITY_TRACE` and
+  `CHUNK_RECYCLE_TRACE`: `CHUNK_LOG` (`rechunk=debug`, `rechunk=trace`, `memory=info`,
+  `memory=debug`, `affinity=debug`, `recycle=trace`). `FAST_ALLOC_TRACE` stays, deprecated.
+- `CHUNK_RECHUNK_CHURN` and `CHUNK_ADVISOR_TABLE`: `CHUNK_LOG=rechunk=debug` and
+  `CHUNK_LOG=advisor=debug`, with `RechunkPolicy::trace_array` for a single array (see Changed).
+  Set, they are ignored without a message.
+- `CHUNK_RECHUNK_REUSE_LIST` and the chunk list buffer a re-chunk kept for the next one
+  (`ArrayChunkCore::spare_chunk_list_`): see Fixed.
 - Two internal headers nothing included: `chunk/internal/diag_mutex.h` (the lock of the
   diagnostic reports, which are `CHUNK_LOG` lines now) and `chunk/internal/nano_sleeper.h`.
 
 ### Fixed
 
+- `CHUNK_DO_CHECK=ON` builds compile again. The proxies' write paths called
+  `global_check_write_nan()`, defined nowhere; they now go through
+  `chunk_config::CheckNaN<do_check>::maybe()`, as the reads do, so `CheckNaN::update(false)`
+  turns the write check off too. And `CheckNaN<true>::maybe()` (config.h) called
+  `global_check_nan()` before any declaration of it: for a `double` argument-dependent lookup
+  finds nothing, so every TU that saw config.h before global_check.h failed (GCC 13). The
+  overloads are now declared in config.h, under `CHUNK_OPT_DO_CHECK`.
+- The compression passes of `zero`, `zero_one_value` and `zero_any` (threaded builds): a write that
+  made a chunk constant while its pass handed it back -- between the pass's `steal_unmark()` and
+  the reset of its "queued" flag -- met the flag still up and did not queue it, and the reset
+  then dropped the chunk from every list: it stayed materialised until written again (memory,
+  no wrong value). The flag now has a "handed back" state the pass sets before it lifts its
+  marks; a writer that finds it notes itself ("written meanwhile") and the pass queues the
+  chunk again (`chunk/internal/queue_flag.h`; F6, `docs/formal_models.md` section 8.8, model
+  `formal/queue_handback.c`). Cost: one compare more on a refused marking, an exchange and a
+  CAS per candidate in a pass.
+- `fill_range_mt()`, `copy_range_mt()`, `transform_range_mt()` on `zero_any` elements with relaxed
+  access (`double`, `int`, ...): two threads filling the two ends of one chunk could both read the
+  other's edge before its store (store buffering, allowed on x86 and AArch64) and neither queue
+  the chunk they left uniform. The filter now looks again after a seq_cst fence when its first
+  look says "not uniform". The check builds' audit counted 6 to 52 such chunks per
+  `shrink_bench` run at 16 to 128 threads on Milan. Model: `formal/range_edges.c`
+  (`docs/formal_models.md`, section 8.9, F7).
+- `fill_range_mt()`, `copy_range_mt()`, `transform_range_mt()` on a `zero_any` array of an element
+  type without relaxed element access (`std::complex<double>`, the aggregates): a span that did not
+  cover its whole chunk -- the ends of a range off a chunk boundary -- never queued the chunk, even
+  when it completed it uniform, and the chunk stayed materialised for the run. Any uniform span
+  queues it now; the pass drops it if the rest of the chunk differs. The check builds' audit
+  ("never queued for compression") counted 34 to 140 such chunks of `tab_complex` per run of
+  `shrink_bench` at `--divisor 10 --iter_max 1000` on Milan, at every thread count, 1 included;
+  none now. `fill_range_mt_validation` checks the case.
+- `compile_all.sh` no longer loads a hard-coded `gcc/15.2.0`: it loads `gcc/15.2.0` where it exists,
+  else the newest `gcc/<ver>` module, for llvm, oneapi, nvhpc and aocc. On a machine without
+  15.2.0 the gcc load failed, then the llvm module, which needs a gcc, failed too, and the llvm
+  builds silently used the system `clang++`. The gcc is now loaded before llvm, and a failed
+  `module load llvm/<ver>` stops the script with what the module requires (`module show`).
+- `compile_all_gnu.sh` on aarch64 loads `binutils/2.43` where it exists, else the newest binutils
+  module, and stops if the assembler is still the system one (RHEL 9: 2.35, too old for gcc 16
+  `-mcpu=native`): a missing or conflicting binutils module used to go unnoticed until the build
+  died on unknown instructions. The llvm and nvhpc sections of `compile_all.sh` print the `as` /
+  `ld` they use and warn on aarch64 when it is the system one.
+- Serial builds (no OpenMP, no std backend): `finalize_parallel_phase()` did not drain the
+  `zero_any` family's compression candidates. The in-loop pass only runs past half the list
+  maximum, so a backlog below it waited to the end of the run, and chunks written for the last
+  time stayed materialised. The end-of-run census hid it for the constants, which it classifies
+  on content, but not for `pattern`'s motifs: `shrink_bench_zero_any_256` (`--divisor 100
+  --iter_max 2000`, seed 42) left 206 of `tab_conn`'s 1217 chunks materialised in serial, and
+  0 under OpenMP, and the seq/omp compare of bench_and_test.py reported it as
+  `SEQ_OMP_COMPARE_MISMATCH` (539706 against 539912). The phase end now runs the same pass as
+  the in-loop trigger.
+- bench_and_test.py's scalability guard: an OOM kill ends its curve, since the next thread
+  counts have arrays of the same size and would be killed the same way. For the `vector`
+  reference it is a note rather than an error: it holds the uncompressed arrays, so it is the
+  first not to fit a job sized for the compressed ones. Before, `vector` at `--multiply 2`
+  logged four `SCALING_RUN_FAIL` per config on a node without the memory for it.
+- `thread_speedup.py` (formerly `omp_speedup.py`) takes `CHUNK_NUM_THREADS` out of the runs'
+  environment: the std backend and the TBB bench read it before `OMP_NUM_THREADS`, so a value
+  left in the shell pinned every point of a `std-*` run to one thread count.
+- shrink_gui: the legends of the Graphique tab are readable again. Set in one row at the top,
+  they cut every label short -- with `thread_speedup.py --all-exec` (a dozen executables, twice
+  over in a comparison) no label was left. They sit on the right now, one entry a line, with the
+  full label on hover; the speedup chart has one entry per executable, its marker (colour: the
+  variant, shape: the size), B's dashed twin of an A curve adding none.
+- The teardown verbs (`release_chunk_pools()`, `destroy_block_chunk()`, `delete_chunk_allocator()`,
+  `clear_all_list_block_free_thr()`, `delete_list_block_chunk_free_itself()`) and
+  `shrink_to_fit()`'s pool trim refused a call from inside a parallel region in check builds
+  only, and four of them not even there. In a release build every thread of the team emptied the
+  same pools at once (double frees, broken lists). All six refuse it in every build now: a check
+  build aborts, the others print one line on stderr and skip the call.
+- The per-chunk vectors (the chunk list, `zero_any`'s second-value and constant-type rows, the
+  candidate flags, the dirty bitset) are mapped by their allocator (`NoInitAllocator`) from
+  1 MiB on, and unmapped when freed. They came from glibc's heap below its mmap threshold, which
+  grows up to 32 MiB each time a mapped block is freed: after a re-chunk freed one list, the
+  next ones went to the heap, which kept them resident once freed. `zero_any_dyn`
+  (`--divisor 10`, default glibc settings): 1387 MB at iteration 1990, 815 MB now; peak 1389 MB,
+  1076 MB now. At 10^9 elements the lists exceed 32 MiB and were already mapped.
+- Re-chunk: the old geometry's chunk list came back to the system. `CHUNK_RECHUNK_REUSE_LIST`
+  (on by default) kept a dying storage's chunk list buffer for the next re-chunk of the same
+  chunk type, and took it whenever it was at most 4x too large: a coarsening 64 -> 256 kept the
+  64 list resident whole for a list a quarter of it, and the last spare of each type was never
+  freed (16 bytes per chunk: 250 MB per 10^9-element array at S=64). `zero_any_dyn`
+  (`--mode perf --divisor 10`) ended at 1165 MB against 761 MB for static 256; 807 MB now
+  (64 threads, full size: 7895 MB -> 5138 MB, static 256: 5088 MB). The reuse is gone, setting
+  and code (see Removed).
+- `shrink_to_fit()` and `ParamChunk::force_compression()` left uniform `zero_any` chunks
+  materialised in a serial build (OpenMP off): a serial `zero_any` queues its compression
+  candidates and folds them in batches of half the list from the write path, and both swept the
+  last, partial batch only in the OpenMP builds. Up to that many chunks kept a buffer -- right
+  values, memory not given back (the cpp26 branch's second-value registry test saw 1750 second
+  values for 2000). They sweep in every build now; `shrink_to_fit_validation` checks it In the threaded builds,
+  `shrink_to_fit()` also folds every rank's candidates now, not the calling thread's alone: with the
+  end-of-phase pass off (`CHUNK_AGGRESSIVE_COMPRESSION=1`), 44 of 100 uniform chunks kept their
+  buffer at 8 threads (`shrink_to_fit_validation_*_aggressive_8thr`).
+- `compile_all.sh`: the slot pool (`.build-slots.<host>.<pid>`) and the log directory
+  (`logs/<date>-<host>-<pid>`) of a run carry the host name. In a `$CHUNK_BUILD_REP` shared by
+  several nodes, two runs with the same pid used the same slot pool.
 - Chunk2A: the deferred replay of `=` stored the element with a plain store
   while another writer's uniform-chunk scan read it as a relaxed atomic -- a
   data race (found by TSan on the std backend, present under OpenMP too).
@@ -860,7 +1371,7 @@ were internal.
   replay: the proxy's armed `num_tab` is captured in the context, and the replay reads it
   back (`Proxy::get_num_tab_cached`, `get_num_tab_async`); check builds compare it with the
   registry.
-- `chunk_list` (the chunks of an array) no longer has its new chunks value-initialised by
+- `chunk_list_` (the chunks of an array) no longer has its new chunks value-initialised by
   `std::vector::resize` on the calling thread: its allocator (`NoInitAllocator`,
   `internal/array_chunk_core.h`) leaves them unconstructed, and the init loops of `create`
   and `resize` construct each chunk (`construct_chunk`) on the thread that initialises it.

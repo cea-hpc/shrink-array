@@ -292,7 +292,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     static void init_indexes(bool big_chunk_block)
     {
         init_indexes(big_chunk_block); // the process-wide setup first: the managers need its block size
-        SingletonChk<AllTypeChunk>::get_ref().template initialize<Types>();
+        SingletonChk<AllTypeChunk>::get_ref().initialize<Types>();
     }
 
     /**
@@ -304,9 +304,9 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      *          known point (a measurement, a checkpoint) rather than at whatever
      *          moment the next sweep happens.
      *
-     * @note An empty no-op unless the build has fast block compression
-     *       (chunk_config::use_fast_block_compression, OpenMP builds), so call
-     *       sites need no guard.
+     * @note Every build, so call sites need no guard: the OpenMP builds'
+     *       candidates, and a serial zero_any's (it queues them too); a serial
+     *       zero or zero_one_value compresses on the write and has none.
      */
     static void force_compression();
 
@@ -353,7 +353,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      *          the binary was not built with, rather than ignoring it silently.
      *
      * @param value the chunk size the caller wanted; only compared, never applied
-     * @warning To actually change the geometry, rebuild with `-DCHUNK_SIZE=v`
+     * @warning To actually change the geometry, rebuild with `-DCHUNK_SIZE=<value>`
      *          (a power of two or a multiple of 64).
      */
     static void set_chunk_size(int value)

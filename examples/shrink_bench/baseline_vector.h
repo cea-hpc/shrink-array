@@ -68,14 +68,14 @@ class DefaultInitAllocator : public A
 
     using A::A;
 
-    /// @brief Default-initialise *p: no write for a trivial U.
+    /// @brief Default-initialise *ptr: no write for a trivial U.
     template <class U>
     void construct(U* ptr) noexcept(std::is_nothrow_default_constructible_v<U>)
     {
         ::new (static_cast<void*>(ptr)) U;
     }
 
-    /// @brief Construct *p from @p args, as the underlying allocator does.
+    /// @brief Construct *ptr from @p args, as the underlying allocator does.
     template <class U, class... Args>
     void construct(U* ptr, Args&&... args)
     {

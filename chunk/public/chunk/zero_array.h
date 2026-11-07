@@ -26,13 +26,12 @@
 #include "chunk/zero_chunk.h"                   // Chunk<T>
 #include "chunk/internal/read_reclaim.h"        // read_reclaim::PassScope (perform_compression / compress in a region)
 #include "chunk/internal/array_chunk_base.h"    // ArrayChunkBase
-#include "chunk/internal/zero_array_parallel.h" // ParallelSupport — OpenMP-only mixin
+#include "chunk/internal/zero_array_parallel.h" // FastBlockSupport -- fast-block-only mixin; ParallelSupport through it
 #include "chunk/internal/array_chunk_rechunk_hooks.h"   // RechunkHooks — CHUNK_DYNAMIC-only mixin
 #include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_IN_PARALLEL_REGION, pmp::team / Team
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 #include "chunk/config.h"                               // build_config::threaded
 #include "chunk/internal/write_compress_sync_policy.h"  // WriteCompressSyncPolicy
-#include "chunk/internal/in_t.h"                        // InT<T>: resize's fill value
 #include "chunk/internal/zero_proxy.h"                  // Proxy<T>: the element proxy and its registry
 
 namespace shrink_array
@@ -53,15 +52,15 @@ namespace zero
  */
 template <ArrayChunkElement T, typename IntType>
 class Array : public ArrayChunkBase<Array<T, IntType>>,
-              public zero::ParallelSupport<Array<T, IntType>>,
-              public zero::FastBlockSupport<Array<T, IntType>>,
+              public ParallelSupport<Array<T, IntType>>,
+              public FastBlockSupport<Array<T, IntType>>,
               public RechunkHooks<Array<T, IntType>>
 {
   private:
     friend ArrayChunkBase<Array>; // swap_identity()
 
     using Base     = ArrayChunkBase<Array>;
-    using Parallel = zero::ParallelSupport<Array>;
+    using Parallel = ParallelSupport<Array>;
     using Hooks    = RechunkHooks<Array>;
 
     /// @brief Claim this array's identity before its storage is built:
@@ -110,7 +109,7 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
 
   public:
     using Traits      = Base::Traits;      ///< ArrayChunkTraits<zero::Array>.
-    using ChunkType   = Base::ChunkType;   ///< Chunk<T>, the chunk type held in chunk_list.
+    using ChunkType   = Base::ChunkType;   ///< Chunk<T>, the chunk type held in chunk_list_.
     using ManagerType = Base::ManagerType; ///< ManagerChunk<Chunk, T>, the per-type manager.
     using ProxyType   = Base::ProxyType;   ///< Proxy<T>, the write proxy of the non-const accessors.
     using value_type  = T;                 ///< Stored element type.
@@ -200,19 +199,13 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     }
 
     /// @brief Build an array holding the elements of @p il.
+    /// @details Not explicit, as std::vector's: `Array<T> a = {1, 2, 3};`, and a
+    ///          braced list as an argument or a return value.
     /// @param il Source values.
     Array(std::initializer_list<T> il) : Array(il.begin(), il.end()) {}
 
     /// @brief clear() the array, then erase its entry from Proxy<T>::share_info_array.
-    ~Array()
-    {
-        clear();
-        // Drop our (this -> num_tab) registry entry so a later array at this
-        // address does not inherit our stale num_tab via zero::PointerMap's
-        // first-match lookup (required for rechunk_to's tmp). Must run AFTER
-        // clear(), which still needs get_num_tab(registry_key()).
-        Proxy<T>::share_info_array->erase(this->registry_key());
-    }
+    ~Array();
 
     /**
      * @brief Move-assign: this array's own contents are released (clear()),
@@ -224,15 +217,7 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
      *          @p other is left with nb_chunk 0. Sequential context, as clear().
      * @note noexcept, as the move constructor: a failure here terminates.
      */
-    Array& operator=(Array&& other) noexcept
-    {
-        if (this != &other)
-        {
-            clear();
-            this->swap_storage_and_identity(other);
-        }
-        return *this;
-    }
+    Array& operator=(Array&& other) noexcept;
 
     /// @brief Deep copy-assignment (see the copy constructor). Self-assignment
     ///        is a no-op.
@@ -269,7 +254,7 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     ///        compressed and the deferred ops drained first.
     /// @note Shrinking releases the dropped chunks' buffers (release_chunk_range():
     ///       freed serially, parked in the geometry's reuse list under OpenMP);
-    ///       chunk_list keeps its capacity.
+    ///       chunk_list_ keeps its capacity.
     void resize(IntType newsz);
 
   private:
@@ -299,22 +284,7 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     }
 
     /// @brief Compress every chunk that is constant at the first value now.
-    void compress(bool verbose = false)
-    {
-        const bool in_parr = CHUNK_PMP_IN_PARALLEL_REGION;
-
-        if (in_parr)
-        {
-            // Inside the caller's region: other threads may be reading, so
-            // the buffers released wait for a grace period (read_reclaim.h).
-            const read_reclaim::PassScope pass_scope;
-            compress_int(verbose);
-        }
-        else
-        {
-            pmp::team(pmp::Options{}, [&](pmp::Team& team) { compress_int(team, verbose); });
-        }
-    }
+    void compress(bool verbose = false);
 
     /// @brief Read-only access to the underlying chunk list.
     [[nodiscard]] const Base::ChunkListType& get_chunk_list() const noexcept
@@ -341,5 +311,5 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
 
 // Bodies of the two mode-specific mixins. After zero_array_inline.h, so their
 // CRTP self() sees a complete zero::Array.
-#include "chunk/internal/zero_array_parallel_inline.h"       // ParallelSupport's bodies
+#include "chunk/internal/zero_array_parallel_inline.h"       // FastBlockSupport's bodies
 #include "chunk/internal/array_chunk_rechunk_hooks_inline.h" // RechunkHooks' bodies
