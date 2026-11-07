@@ -299,7 +299,7 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>, public ChunkC
      * \pre The chunk is materialised (written()), and the array is quiescent (no
      *      writer, no pass, no reader): the refill's source.
      */
-    void release_st(CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value, int thr_rank);
+    void release_st(this Derived& self, CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value, int thr_rank);
 
   private:
     /// @brief Point @p count freshly allocated chunks at the first constant.

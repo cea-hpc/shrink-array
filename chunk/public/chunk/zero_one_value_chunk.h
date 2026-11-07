@@ -434,7 +434,7 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>
      * \pre The chunk owns a live buffer, and the array is quiescent (no writer, no
      *      pass): the refill's source.
      */
-    void release_st(int ind, int thr_rank);
+    void release_st(this Derived& self, int ind, int thr_rank);
 
   private:
     /// @brief Point @p count freshly allocated chunks at the first constant.

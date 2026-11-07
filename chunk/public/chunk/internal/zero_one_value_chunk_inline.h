@@ -1076,7 +1076,7 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, false>::clear_st(this Derived
 }
 
 template <typename T, typename Derived, bool Enabled>
-void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::release_st(int ind, int thr_rank)
+void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::release_st(this Derived& self, int ind, int thr_rank)
 {
     // CHUNK_STATS: a release, not a compression (block_clear counts those): the
     // bytes still leave the live figure. block_clear_common's CAS cannot lose --
@@ -1087,7 +1087,7 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::release_st(int ind,
     {
         add_chunk_released<Derived>(1, static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
     }
-    Base::block_clear_common(0, ind, thr_rank);
+    self.Base::block_clear_common(0, ind, thr_rank);
 }
 
 /**
