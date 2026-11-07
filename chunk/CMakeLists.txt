@@ -753,6 +753,9 @@ if (SHRINK_ARRAY_MODULES AND "zero_any" IN_LIST CHUNK_VARIANTS)
   add_library(chunk_zero_any_module)
   target_sources(chunk_zero_any_module PUBLIC FILE_SET CXX_MODULES BASE_DIRS modules FILES modules/shrink_array.cppm)
   target_link_libraries(chunk_zero_any_module PUBLIC chunk_zero_any)
+  # The module unit imports std (modules/shrink_array.cppm).
+  set_target_properties(chunk_zero_any_module PROPERTIES CXX_MODULE_STD ON)
+  target_compile_features(chunk_zero_any_module PUBLIC cxx_std_23)
   message(STATUS "SHRINK_ARRAY_MODULES: chunk_zero_any_module (import shrink_array;)")
 endif()
 

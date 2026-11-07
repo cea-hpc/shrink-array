@@ -32,24 +32,15 @@ module;
 #include "chunk/param_chunk.h"    // ParamChunk
 #include "chunk/internal/print.h" // print, println
 
-#include <cstddef>  // std::size_t
-#include <new>      // the placement operator new
-#include <typeinfo> // std::type_info
-
 export module shrink_array;
 
-// For GCC 16: the templates the importer instantiates -- std::vector's
-// relocation check (placement new), type_name.h's typeid -- find these two
-// only where the importer can see them, not in the global module fragment
-// (clang 23 looks there too, as [module.context] has it). Without the exports
-// GCC stops in the importer ("must #include <typeinfo>", "no matching function
-// for call to operator new(sizetype, void*)"); an importer that includes <new>
-// and <typeinfo> itself does not need them.
-export using ::operator new;
-export namespace std
-{
-using std::type_info;
-} // namespace std
+// The standard library, as a module. The importer's instantiations look up
+// some std names from here ([module.context]): std::vector's relocation check
+// (the placement operator new), type_name.h's typeid (std::type_info). So GCC
+// 16 needs no `export using ::operator new;` and std::type_info exports, and
+// an importer need not import std itself. The headers above still include
+// their standard headers: both compilers merge them with the module.
+import std;
 
 export namespace shrink_array
 {
