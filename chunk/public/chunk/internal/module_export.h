@@ -18,29 +18,21 @@
 
 /**
  * @file module_export.h
- * @brief SHRINK_ARRAY_EXPORT: `export` where modules/shrink_array.cppm reads a
- *        header in the module's purview, nothing for an ordinary #include.
+ * @brief SHRINK_ARRAY_EXPORT: `export` where modules/shrink_array.cppm reads the
+ *        library, nothing for an ordinary #include.
  *
- * A header whose declarations the module exports themselves (rather than
- * through a using-declaration in the .cppm) is read twice by the module unit:
- * - in the global module fragment, with SHRINK_ARRAY_MODULE_DEPS defined: its
- *   #includes only, so that they are global-module text there;
- * - in the purview, inside `extern "C++"`: its declarations, the exported ones
- *   marked SHRINK_ARRAY_EXPORT. extern "C++" keeps them attached to the global
- *   module, the same entities as in the compiled library and in any program
- *   that #includes the header: one ParamChunk::block_size, one set of pools.
+ * The module unit includes the library's external headers (standard, system,
+ * OpenMP, third party) in its global module fragment, then the library's own
+ * headers in its purview, inside `extern "C++"`: every declaration is the
+ * module's, still attached to the global module -- the same entities as in the
+ * compiled library and in any program that #includes the headers: one
+ * ParamChunk::block_size, one set of pools. What a header marks
+ * SHRINK_ARRAY_EXPORT is exported; the rest stays reachable (an importer's
+ * instantiations use it) but cannot be named by the importer.
  *
- * So such a header has, instead of #pragma once, a double guard: G for an
- * ordinary read (set on entry, as #pragma once would be), G_DEPS for the
- * #includes-only read -- an _inline.h tail includes its header back, and that
- * pass must not loop -- and its declarations sit under
- * #ifndef SHRINK_ARRAY_MODULE_DEPS. Its _inline.h tail, included after that
- * #endif, is read the same way.
- * Only a header that no other header of the module includes can be read so:
- * otherwise its declarations are already in the global module fragment. A
- * header that includes one for its users' convenience skips it when
- * SHRINK_ARRAY_MODULE_UNIT is defined (by the module unit, before any
- * #include): chunk/zero_chunk.h and chunk/shutdown.h.
+ * A name first declared elsewhere unmarked (a forward declaration) cannot be
+ * exported by a later marked declaration: the module exports it by a
+ * using-declaration instead (the variants' Array).
  */
 
 #ifndef SHRINK_ARRAY_EXPORT

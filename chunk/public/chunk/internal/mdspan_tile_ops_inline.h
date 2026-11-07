@@ -14,17 +14,8 @@
  * limitations under the License.
  */
 
-// The double guard of a header the module reads (chunk/internal/module_export.h).
-#if defined(SHRINK_ARRAY_MODULE_DEPS) ? !defined(SHRINK_ARRAY_INTERNAL_MDSPAN_TILE_OPS_INLINE_H_DEPS) \
-                                      : !defined(SHRINK_ARRAY_INTERNAL_MDSPAN_TILE_OPS_INLINE_H)
-    #if defined(SHRINK_ARRAY_MODULE_DEPS)
-        #define SHRINK_ARRAY_INTERNAL_MDSPAN_TILE_OPS_INLINE_H_DEPS
-    #else
-        #define SHRINK_ARRAY_INTERNAL_MDSPAN_TILE_OPS_INLINE_H
-    #endif
-    #include "chunk/mdspan_tile_ops.h" // the class these bodies belong to
-
-    #ifndef SHRINK_ARRAY_MODULE_DEPS // the module's global fragment reads the #includes only
+#pragma once
+#include "chunk/mdspan_tile_ops.h" // the class these bodies belong to
 
 namespace shrink_array
 {
@@ -167,7 +158,3 @@ md::detail::TileCache<View, T>::Entry& md::detail::TileCache<View, T>::fetch(con
 }
 
 } // namespace shrink_array
-
-    #endif // SHRINK_ARRAY_MODULE_DEPS
-
-#endif // SHRINK_ARRAY_INTERNAL_MDSPAN_TILE_OPS_INLINE_H

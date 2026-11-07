@@ -288,9 +288,11 @@ template <typename T, std::size_t N, typename Index, typename Body>
     static_assert(std::is_arithmetic_v<T> && N > 0, "N arithmetic counters");
     T acc[N] = {}; // NOLINT(cppcoreguidelines-avoid-c-arrays): an OpenMP array-section reduction
     #ifdef _OPENMP
-    const bool on    = opt.use_team;
-    const int  nt    = detail::team_size(opt);
-    const int  chunk = detail::chunk_of(opt.sched);
+    // [[maybe_unused]]: only the if() clause reads it, and GCC 16 compiling this
+    // body from a module (chunk/modules/shrink_array.cppm) loses that use.
+    [[maybe_unused]] const bool on    = opt.use_team;
+    const int                   nt    = detail::team_size(opt);
+    const int                   chunk = detail::chunk_of(opt.sched);
     switch (opt.sched.kind)
     {
         case SchedKind::dynamic:
@@ -483,8 +485,8 @@ template <typename Body>
 void team(const Options& opt, Body&& body)
 {
     #ifdef _OPENMP
-    const bool on = opt.use_team;
-    const int  nt = detail::team_size(opt);
+    [[maybe_unused]] const bool on = opt.use_team;
+    const int                   nt = detail::team_size(opt);
         #pragma omp parallel if (on) num_threads(nt)
     {
         Team team;
@@ -510,8 +512,8 @@ template <typename T, std::size_t N, typename Body>
     static_assert(std::is_arithmetic_v<T> && N > 0, "N arithmetic counters");
     T acc[N] = {}; // NOLINT(cppcoreguidelines-avoid-c-arrays): an OpenMP array-section reduction
     #ifdef _OPENMP
-    const bool on = opt.use_team;
-    const int  nt = detail::team_size(opt);
+    [[maybe_unused]] const bool on = opt.use_team;
+    const int                   nt = detail::team_size(opt);
         #pragma omp parallel if (on) num_threads(nt) reduction(+ : acc[ : N])
     {
         Team team;
@@ -542,8 +544,8 @@ template <typename Body>
 {
     bool flag = false;
     #ifdef _OPENMP
-    const bool on = opt.use_team;
-    const int  nt = detail::team_size(opt);
+    [[maybe_unused]] const bool on = opt.use_team;
+    const int                   nt = detail::team_size(opt);
         #pragma omp parallel if (on) num_threads(nt) reduction(|| : flag)
     {
         Team team;

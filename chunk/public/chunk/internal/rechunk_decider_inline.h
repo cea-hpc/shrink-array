@@ -14,36 +14,27 @@
  * limitations under the License.
  */
 
-// The double guard of a header the module reads (chunk/internal/module_export.h).
-#if defined(SHRINK_ARRAY_MODULE_DEPS) ? !defined(SHRINK_ARRAY_INTERNAL_RECHUNK_DECIDER_INLINE_H_DEPS) \
-                                      : !defined(SHRINK_ARRAY_INTERNAL_RECHUNK_DECIDER_INLINE_H)
-    #if defined(SHRINK_ARRAY_MODULE_DEPS)
-        #define SHRINK_ARRAY_INTERNAL_RECHUNK_DECIDER_INLINE_H_DEPS
-    #else
-        #define SHRINK_ARRAY_INTERNAL_RECHUNK_DECIDER_INLINE_H
-    #endif
+#pragma once
 
 // Out-of-line bodies of RechunkDecider (declared in rechunk_decider.h, which
 // includes this file after the class). Only the one-liners stay in the class.
 
-    #include <algorithm> // std::max
-    #include <cstddef>   // std::size_t
-    #include <cstdio>    // std::FILE (print_rechunk_log)
-    #include <cstring>   // std::strcmp (the settled verdicts)
-    #include <format>    // std::format (the advisor table's title)
-    #include <print>     // std::println (print_rechunk_log)
-    #include <string>    // std::string
+#include <algorithm> // std::max
+#include <cstddef>   // std::size_t
+#include <cstdio>    // std::FILE (print_rechunk_log)
+#include <cstring>   // std::strcmp (the settled verdicts)
+#include <format>    // std::format (the advisor table's title)
+#include <print>     // std::println (print_rechunk_log)
+#include <string>    // std::string
 
-    #include "chunk/rechunk_decider.h"             // the declarations these bodies belong to
-    #include "chunk/chunk_size_advisor.h"          // ChunkSizeAdvisor, ChunkSizeReport
-    #include "chunk/config.h"                      // build_config::chunk_dynamic
-    #include "chunk/log.h"                         // CHUNK_LOG, logging::enabled
-    #include "chunk/PMP_CHUNK.h"                   // CHUNK_PMP_MAX_THREADS (the rebuild's team, for its cost)
-    #include "chunk/internal/churn_counters.h"     // the churn trace (rechunk=debug)
-    #include "chunk/internal/exact_rss.h"          // exact_rss_kib (memory=info, per tick)
-    #include "chunk/internal/values_arena_bytes.h" // the values arena, if the build has one (memory=info)
-
-    #ifndef SHRINK_ARRAY_MODULE_DEPS // the module's global fragment reads the #includes only
+#include "chunk/rechunk_decider.h"             // the declarations these bodies belong to
+#include "chunk/chunk_size_advisor.h"          // ChunkSizeAdvisor, ChunkSizeReport
+#include "chunk/config.h"                      // build_config::chunk_dynamic
+#include "chunk/log.h"                         // CHUNK_LOG, logging::enabled
+#include "chunk/PMP_CHUNK.h"                   // CHUNK_PMP_MAX_THREADS (the rebuild's team, for its cost)
+#include "chunk/internal/churn_counters.h"     // the churn trace (rechunk=debug)
+#include "chunk/internal/exact_rss.h"          // exact_rss_kib (memory=info, per tick)
+#include "chunk/internal/values_arena_bytes.h" // the values arena, if the build has one (memory=info)
 
 namespace shrink_array
 {
@@ -538,7 +529,3 @@ inline void RechunkDecider::print_rechunk_log(std::FILE* out) const
 }
 
 } // namespace shrink_array
-
-    #endif // SHRINK_ARRAY_MODULE_DEPS
-
-#endif // SHRINK_ARRAY_INTERNAL_RECHUNK_DECIDER_INLINE_H

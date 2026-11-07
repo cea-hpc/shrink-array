@@ -14,14 +14,7 @@
  * limitations under the License.
  */
 
-// The double guard of a header the module reads (chunk/internal/module_export.h).
-#if defined(SHRINK_ARRAY_MODULE_DEPS) ? !defined(SHRINK_ARRAY_RECHUNK_DECIDER_H_DEPS) \
-                                      : !defined(SHRINK_ARRAY_RECHUNK_DECIDER_H)
-    #if defined(SHRINK_ARRAY_MODULE_DEPS)
-        #define SHRINK_ARRAY_RECHUNK_DECIDER_H_DEPS
-    #else
-        #define SHRINK_ARRAY_RECHUNK_DECIDER_H
-    #endif
+#pragma once
 
 // ============================================================================
 // Re-chunk decider (phase 3 of adaptive chunk sizing)
@@ -46,18 +39,16 @@
 // in the gain gates (rechunk_cost_model.h); hysteresis here is about avoiding
 // OSCILLATION.
 
-    #include <array>         // std::array (Hist's visited ring)
-    #include <cstddef>       // std::size_t
-    #include <cstdio>        // std::FILE, stdout
-    #include <string>        // std::string
-    #include <unordered_map> // std::unordered_map
-    #include <vector>        // std::vector
+#include <array>         // std::array (Hist's visited ring)
+#include <cstddef>       // std::size_t
+#include <cstdio>        // std::FILE, stdout
+#include <string>        // std::string
+#include <unordered_map> // std::unordered_map
+#include <vector>        // std::vector
 
-    #include "chunk/chunk_size_advisor.h" // ChunkSizeReport
+#include "chunk/chunk_size_advisor.h" // ChunkSizeReport
 
-    #include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT
-
-    #ifndef SHRINK_ARRAY_MODULE_DEPS // the module's global fragment reads the #includes only
+#include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT
 
 namespace shrink_array
 {
@@ -233,8 +224,5 @@ SHRINK_ARRAY_EXPORT class RechunkDecider
 
 } // namespace shrink_array
 
-    #endif // SHRINK_ARRAY_MODULE_DEPS
 
-    #include "chunk/internal/rechunk_decider_inline.h" // the method bodies
-
-#endif // SHRINK_ARRAY_RECHUNK_DECIDER_H
+#include "chunk/internal/rechunk_decider_inline.h" // the method bodies

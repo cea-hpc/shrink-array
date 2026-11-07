@@ -14,13 +14,7 @@
  * limitations under the License.
  */
 
-// The double guard of a header the module reads (chunk/internal/module_export.h).
-#if defined(SHRINK_ARRAY_MODULE_DEPS) ? !defined(SHRINK_ARRAY_SHUTDOWN_H_DEPS) : !defined(SHRINK_ARRAY_SHUTDOWN_H)
-    #if defined(SHRINK_ARRAY_MODULE_DEPS)
-        #define SHRINK_ARRAY_SHUTDOWN_H_DEPS
-    #else
-        #define SHRINK_ARRAY_SHUTDOWN_H
-    #endif
+#pragma once
 
 /**
  * @file shutdown.h
@@ -32,9 +26,7 @@
  * and exports both functions by their own declarations.
  */
 
-    #include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT
-
-    #ifndef SHRINK_ARRAY_MODULE_DEPS // the module's global fragment reads the #includes only
+#include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT
 
 namespace shrink_array
 {
@@ -64,6 +56,3 @@ SHRINK_ARRAY_EXPORT extern void destroy_block_chunk();
  */
 SHRINK_ARRAY_EXPORT extern void release_chunk_pools();
 } // namespace shrink_array
-
-    #endif // SHRINK_ARRAY_MODULE_DEPS
-#endif     // SHRINK_ARRAY_SHUTDOWN_H

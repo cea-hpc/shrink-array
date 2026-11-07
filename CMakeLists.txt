@@ -945,6 +945,11 @@ if(SHRINK_ARRAY_BUILD_TESTS AND BUILD_TESTING AND Python3_Interpreter_FOUND)
     add_test(NAME check_includes
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_includes.py ${PROJECT_SOURCE_DIR})
     set_property(TEST check_includes PROPERTY LABELS validation)
+    # The module unit's global module fragment includes every external header
+    # of the library's headers (scripts/check_module_deps.py).
+    add_test(NAME check_module_deps
+             COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_module_deps.py ${PROJECT_SOURCE_DIR})
+    set_property(TEST check_module_deps PROPERTY LABELS validation)
     # Constants are snake_case; UPPER_CASE is for macros, and no k-prefix
     # (scripts/check_naming.py).
     add_test(NAME check_naming

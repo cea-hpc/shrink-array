@@ -14,28 +14,20 @@
  * limitations under the License.
  */
 
-// The double guard of a header the module reads (chunk/internal/module_export.h).
-#if defined(SHRINK_ARRAY_MODULE_DEPS) ? !defined(SHRINK_ARRAY_PARAM_CHUNK_H_DEPS) : !defined(SHRINK_ARRAY_PARAM_CHUNK_H)
-    #if defined(SHRINK_ARRAY_MODULE_DEPS)
-        #define SHRINK_ARRAY_PARAM_CHUNK_H_DEPS
-    #else
-        #define SHRINK_ARRAY_PARAM_CHUNK_H
-    #endif
+#pragma once
 
-    #include <cstddef>  // std::size_t
-    #include <iostream> // std::cout
-    #include <utility>  // std::cmp_not_equal
+#include <cstddef>  // std::size_t
+#include <iostream> // std::cout
+#include <utility>  // std::cmp_not_equal
 
-    #include "chunk/config.h"                     // build_config::threaded, chunk_dynamic
-    #include "chunk/internal/chunk_size_config.h" // static_chunk_size, static_chunk_shift, static_chunk_mask
-    #include "chunk/internal/chunk_size_policy.h" // active_chunk_size, chunk_size_error
-    #include "chunk/internal/func_p2.h"           // is_power_of_two, log2int
-    #include "chunk/singleton.h"                  // SingletonChk
-    #include "chunk/all_type_chunk.h"             // AllTypeChunk
-    #include "chunk/log.h"                        // CHUNK_LOG (the static build's ignored setters)
-    #include "chunk/internal/module_export.h"     // SHRINK_ARRAY_EXPORT (ParamChunk)
-
-    #ifndef SHRINK_ARRAY_MODULE_DEPS // the module's global fragment reads the #includes only
+#include "chunk/config.h"                     // build_config::threaded, chunk_dynamic
+#include "chunk/internal/chunk_size_config.h" // static_chunk_size, static_chunk_shift, static_chunk_mask
+#include "chunk/internal/chunk_size_policy.h" // active_chunk_size, chunk_size_error
+#include "chunk/internal/func_p2.h"           // is_power_of_two, log2int
+#include "chunk/singleton.h"                  // SingletonChk
+#include "chunk/all_type_chunk.h"             // AllTypeChunk
+#include "chunk/log.h"                        // CHUNK_LOG (the static build's ignored setters)
+#include "chunk/internal/module_export.h"     // SHRINK_ARRAY_EXPORT (ParamChunk)
 
 namespace shrink_array
 {
@@ -459,6 +451,3 @@ SHRINK_ARRAY_EXPORT class ParamChunk : public ParamChunkParallelInterface<>, pub
     static int block_size;
 };
 } // namespace shrink_array
-
-    #endif // SHRINK_ARRAY_MODULE_DEPS
-#endif     // SHRINK_ARRAY_PARAM_CHUNK_H

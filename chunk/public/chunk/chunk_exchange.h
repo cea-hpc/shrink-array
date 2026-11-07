@@ -14,14 +14,7 @@
  * limitations under the License.
  */
 
-// The double guard of a header the module reads (chunk/internal/module_export.h).
-#if defined(SHRINK_ARRAY_MODULE_DEPS) ? !defined(SHRINK_ARRAY_CHUNK_EXCHANGE_H_DEPS) \
-                                      : !defined(SHRINK_ARRAY_CHUNK_EXCHANGE_H)
-    #if defined(SHRINK_ARRAY_MODULE_DEPS)
-        #define SHRINK_ARRAY_CHUNK_EXCHANGE_H_DEPS
-    #else
-        #define SHRINK_ARRAY_CHUNK_EXCHANGE_H
-    #endif
+#pragma once
 
 /**
  * @file chunk_exchange.h
@@ -57,24 +50,22 @@
  *          refill does).
  */
 
-    #include <cstddef>     // std::size_t
-    #include <cstdint>     // std::uint8_t
-    #include <memory>      // std::make_unique_for_overwrite (a motif chunk's elements)
-    #include <type_traits> // std::is_same_v, std::is_integral_v, std::make_unsigned_t
-    #include <utility>     // std::move (import_array)
-    #include <vector>      // std::vector (ArrayState's chunks)
+#include <cstddef>     // std::size_t
+#include <cstdint>     // std::uint8_t
+#include <memory>      // std::make_unique_for_overwrite (a motif chunk's elements)
+#include <type_traits> // std::is_same_v, std::is_integral_v, std::make_unsigned_t
+#include <utility>     // std::move (import_array)
+#include <vector>      // std::vector (ArrayState's chunks)
 
-    #include "chunk/array_chunk_range_ops.h"      // copy_range, fill_range, assume_drained, internal::is_v*_v
-    #include "chunk/bit.h"                        // is_packed_bit_v
-    #include "chunk/chunk_traits.h"               // is_zero_any_family_v, has_motif_state_v
-    #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size
-    #include "chunk/internal/cst_slot.h"          // CstSlot
-    #include "chunk/internal/relaxed_element.h"   // load_element_relaxed (a motif chunk's offset)
-    #include "chunk/config.h"                     // build_config::chunk_dynamic
+#include "chunk/array_chunk_range_ops.h"      // copy_range, fill_range, assume_drained, internal::is_v*_v
+#include "chunk/bit.h"                        // is_packed_bit_v
+#include "chunk/chunk_traits.h"               // is_zero_any_family_v, has_motif_state_v
+#include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size
+#include "chunk/internal/cst_slot.h"          // CstSlot
+#include "chunk/internal/relaxed_element.h"   // load_element_relaxed (a motif chunk's offset)
+#include "chunk/config.h"                     // build_config::chunk_dynamic
 
-    #include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT
-
-    #ifndef SHRINK_ARRAY_MODULE_DEPS // the module's global fragment reads the #includes only
+#include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT
 
 namespace shrink_array
 {
@@ -375,7 +366,3 @@ SHRINK_ARRAY_EXPORT template <ExchangeableArray Arr>
 }
 
 } // namespace shrink_array
-
-    #endif // SHRINK_ARRAY_MODULE_DEPS
-
-#endif // SHRINK_ARRAY_CHUNK_EXCHANGE_H

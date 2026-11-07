@@ -15,14 +15,7 @@
  */
 
 // SPDX-License-Identifier: Apache-2.0
-// The double guard of a header the module reads (chunk/internal/module_export.h).
-#if defined(SHRINK_ARRAY_MODULE_DEPS) ? !defined(SHRINK_ARRAY_CHUNK_SIZE_ADVISOR_H_DEPS) \
-                                      : !defined(SHRINK_ARRAY_CHUNK_SIZE_ADVISOR_H)
-    #if defined(SHRINK_ARRAY_MODULE_DEPS)
-        #define SHRINK_ARRAY_CHUNK_SIZE_ADVISOR_H_DEPS
-    #else
-        #define SHRINK_ARRAY_CHUNK_SIZE_ADVISOR_H
-    #endif
+#pragma once
 
 // ============================================================================
 // ChunkSizeAdvisor — STEP 0: pure observation, zero mutation, zero hot-path.
@@ -63,33 +56,31 @@
 // ops drained). The walk reads chunk states and, for finer sizes, chunk data.
 // ============================================================================
 
-    #include <algorithm>   // std::sort, std::unique, std::upper_bound, std::ranges::min_element (best)
-    #include <array>       // std::array (motif_chunk_data's buffers)
-    #include <atomic>      // std::atomic_ref (the per-thread counts merged)
-    #include <bit>         // std::bit_width, std::countr_zero
-    #include <cmath>       // std::lround (the extrapolated materialised count)
-    #include <cstddef>     // std::size_t
-    #include <cstdint>     // int64_t, uint32_t
-    #include <format>      // std::format (write_table's lines)
-    #include <string_view> // std::string_view (write_table's sink)
-    #include <vector>      // std::vector
+#include <algorithm>   // std::sort, std::unique, std::upper_bound, std::ranges::min_element (best)
+#include <array>       // std::array (motif_chunk_data's buffers)
+#include <atomic>      // std::atomic_ref (the per-thread counts merged)
+#include <bit>         // std::bit_width, std::countr_zero
+#include <cmath>       // std::lround (the extrapolated materialised count)
+#include <cstddef>     // std::size_t
+#include <cstdint>     // int64_t, uint32_t
+#include <format>      // std::format (write_table's lines)
+#include <string_view> // std::string_view (write_table's sink)
+#include <vector>      // std::vector
 
-    #include "chunk/internal/in_t.h"               // InT<T>: the element snapshots
-    #include "chunk/bit.h"                         // is_bool_like_v, is_packed_bit_v
-    #include "chunk/internal/element_access.h"     // internal::as_words: Bit sub-blocks scanned by word
-    #include "chunk/internal/bit_words.h"          // bits::scan_range, bits::Uniform, bits::WordT
-    #include "chunk/config.h"                      // chunk_config::use_zero_one_value / use_zero_any
-    #include "chunk/PMP_CHUNK.h"                   // CHUNK_PMP_NUM_THREADS (the parts per thread), pmp::team
-    #include "chunk/internal/rechunk_cost_model.h" // rechunk_cost_ms, rechunk_is_worth_it
-    #include "chunk/internal/chunk_size_policy.h"  // shrink_array::cst_buffer_size
-    #include "chunk/internal/print.h"              // shrink_array::println
-    #include "chunk/log.h"                         // CHUNK_LOG (log(): channel advisor)
-    #include "chunk/chunk_traits.h"                // is_zero_any_family_v, has_motif_state_v (pattern::Array)
-    #include "chunk/internal/relaxed_element.h"    // load_element_relaxed (a motif chunk's offset)
+#include "chunk/internal/in_t.h"               // InT<T>: the element snapshots
+#include "chunk/bit.h"                         // is_bool_like_v, is_packed_bit_v
+#include "chunk/internal/element_access.h"     // internal::as_words: Bit sub-blocks scanned by word
+#include "chunk/internal/bit_words.h"          // bits::scan_range, bits::Uniform, bits::WordT
+#include "chunk/config.h"                      // chunk_config::use_zero_one_value / use_zero_any
+#include "chunk/PMP_CHUNK.h"                   // CHUNK_PMP_NUM_THREADS (the parts per thread), pmp::team
+#include "chunk/internal/rechunk_cost_model.h" // rechunk_cost_ms, rechunk_is_worth_it
+#include "chunk/internal/chunk_size_policy.h"  // shrink_array::cst_buffer_size
+#include "chunk/internal/print.h"              // shrink_array::println
+#include "chunk/log.h"                         // CHUNK_LOG (log(): channel advisor)
+#include "chunk/chunk_traits.h"                // is_zero_any_family_v, has_motif_state_v (pattern::Array)
+#include "chunk/internal/relaxed_element.h"    // load_element_relaxed (a motif chunk's offset)
 
-    #include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT
-
-    #ifndef SHRINK_ARRAY_MODULE_DEPS // the module's global fragment reads the #includes only
+#include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT
 
 namespace shrink_array
 {
@@ -920,7 +911,3 @@ struct ChunkSizeAdvisor
 };
 
 } // namespace shrink_array
-
-    #endif // SHRINK_ARRAY_MODULE_DEPS
-
-#endif // SHRINK_ARRAY_CHUNK_SIZE_ADVISOR_H

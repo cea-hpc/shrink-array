@@ -14,14 +14,7 @@
  * limitations under the License.
  */
 
-// The double guard of a header the module reads (chunk/internal/module_export.h).
-#if defined(SHRINK_ARRAY_MODULE_DEPS) ? !defined(SHRINK_ARRAY_MDSPAN_TILE_OPS_H_DEPS) \
-                                      : !defined(SHRINK_ARRAY_MDSPAN_TILE_OPS_H)
-    #if defined(SHRINK_ARRAY_MODULE_DEPS)
-        #define SHRINK_ARRAY_MDSPAN_TILE_OPS_H_DEPS
-    #else
-        #define SHRINK_ARRAY_MDSPAN_TILE_OPS_H
-    #endif
+#pragma once
 /**
  * @file mdspan_tile_ops.h
  * @brief Tile by tile over a tiled mdspan view (chunk/mdspan.h): for_each_tile()
@@ -73,28 +66,26 @@
  *          size works -- a tile may then straddle chunks.
  */
 
-    #include "chunk/mdspan.h" // shrink_array::md, SHRINK_ARRAY_HAS_MDSPAN
+#include "chunk/mdspan.h" // shrink_array::md, SHRINK_ARRAY_HAS_MDSPAN
 
-    #if SHRINK_ARRAY_HAS_MDSPAN
+#if SHRINK_ARRAY_HAS_MDSPAN
 
-        #include <algorithm> // std::copy, std::copy_n, std::fill, std::fill_n, std::equal, std::all_of, std::min, std::max, std::clamp
-        #include <array>       // std::array (the tile buffer, the tile coordinates)
-        #include <concepts>    // std::invocable, std::same_as, std::integral
-        #include <cstddef>     // std::size_t, std::ptrdiff_t
-        #include <limits>      // std::numeric_limits (the box corners)
-        #include <span>        // std::span (the blocks of for_each_span)
-        #include <tuple>       // std::apply (a multi-index into a mapping)
-        #include <type_traits> // std::remove_cvref_t, std::is_const_v
-        #include <utility>     // std::as_const, std::forward, std::pair
-        #include <vector> // std::vector (a run-time tile larger than the inline buffer, a stencil's halo and tile cache)
+    #include <algorithm> // std::copy, std::copy_n, std::fill, std::fill_n, std::equal, std::all_of, std::min, std::max, std::clamp
+    #include <array>       // std::array (the tile buffer, the tile coordinates)
+    #include <concepts>    // std::invocable, std::same_as, std::integral
+    #include <cstddef>     // std::size_t, std::ptrdiff_t
+    #include <limits>      // std::numeric_limits (the box corners)
+    #include <span>        // std::span (the blocks of for_each_span)
+    #include <tuple>       // std::apply (a multi-index into a mapping)
+    #include <type_traits> // std::remove_cvref_t, std::is_const_v
+    #include <utility>     // std::as_const, std::forward, std::pair
+    #include <vector> // std::vector (a run-time tile larger than the inline buffer, a stencil's halo and tile cache)
 
-        #include "chunk/PMP_CHUNK.h"                // CHUNK_PMP_IN_PARALLEL_REGION
-        #include "chunk/array_chunk_range_ops.h"    // for_each_span, fill_range(_mt), copy_range(_mt)
-        #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
+    #include "chunk/PMP_CHUNK.h"                // CHUNK_PMP_IN_PARALLEL_REGION
+    #include "chunk/array_chunk_range_ops.h"    // for_each_span, fill_range(_mt), copy_range(_mt)
+    #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 
-        #include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT
-
-        #ifndef SHRINK_ARRAY_MODULE_DEPS // the module's global fragment reads the #includes only
+    #include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT
 
 namespace shrink_array::md
 {
@@ -2251,10 +2242,7 @@ void copy_box_in_mt(const View&                        f,
 
 } // namespace shrink_array::md
 
-        #endif // SHRINK_ARRAY_MODULE_DEPS
 
-        #include "chunk/internal/mdspan_tile_ops_inline.h" // the template bodies
+    #include "chunk/internal/mdspan_tile_ops_inline.h" // the template bodies
 
-    #endif // SHRINK_ARRAY_HAS_MDSPAN
-
-#endif // SHRINK_ARRAY_MDSPAN_TILE_OPS_H
+#endif // SHRINK_ARRAY_HAS_MDSPAN

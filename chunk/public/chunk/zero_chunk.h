@@ -33,13 +33,7 @@
 #include "chunk/internal/zero_proxy.h"          // Proxy<T>
 #include "chunk/internal/immortal.h"            // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (init_chunks_cst_val)
-
-// release_chunk_pools() and destroy_block_chunk(), still found through this
-// header -- but not in the module unit, which reads chunk/shutdown.h in its
-// purview (chunk/internal/module_export.h).
-#ifndef SHRINK_ARRAY_MODULE_UNIT
-    #include "chunk/shutdown.h" // release_chunk_pools, destroy_block_chunk
-#endif
+#include "chunk/shutdown.h"                     // release_chunk_pools, destroy_block_chunk
 
 namespace shrink_array
 {

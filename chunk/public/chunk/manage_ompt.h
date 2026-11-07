@@ -14,13 +14,7 @@
  * limitations under the License.
  */
 
-// The double guard of a header the module reads (chunk/internal/module_export.h).
-#if defined(SHRINK_ARRAY_MODULE_DEPS) ? !defined(SHRINK_ARRAY_MANAGE_OMPT_H_DEPS) : !defined(SHRINK_ARRAY_MANAGE_OMPT_H)
-    #if defined(SHRINK_ARRAY_MODULE_DEPS)
-        #define SHRINK_ARRAY_MANAGE_OMPT_H_DEPS
-    #else
-        #define SHRINK_ARRAY_MANAGE_OMPT_H
-    #endif
+#pragma once
 
 /**
  * @file manage_ompt.h
@@ -34,12 +28,10 @@
  * declarations (chunk/internal/module_export.h).
  */
 
-    #include <utility> // std::forward
+#include <utility> // std::forward
 
-    #include "chunk/internal/phase_hooks.h"   // phase_detail::parallel_phase_impl, the phase hooks
-    #include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT (parallel_phase)
-
-    #ifndef SHRINK_ARRAY_MODULE_DEPS // the module's global fragment reads the #includes only
+#include "chunk/internal/phase_hooks.h"   // phase_detail::parallel_phase_impl, the phase hooks
+#include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT (parallel_phase)
 
 namespace shrink_array
 {
@@ -80,6 +72,3 @@ void parallel_phase(Body&& body)
 }
 
 } // namespace shrink_array
-
-    #endif // SHRINK_ARRAY_MODULE_DEPS
-#endif     // SHRINK_ARRAY_MANAGE_OMPT_H

@@ -14,13 +14,7 @@
  * limitations under the License.
  */
 
-// The double guard of a header the module reads (chunk/internal/module_export.h).
-#if defined(SHRINK_ARRAY_MODULE_DEPS) ? !defined(SHRINK_ARRAY_MDSPAN_H_DEPS) : !defined(SHRINK_ARRAY_MDSPAN_H)
-    #if defined(SHRINK_ARRAY_MODULE_DEPS)
-        #define SHRINK_ARRAY_MDSPAN_H_DEPS
-    #else
-        #define SHRINK_ARRAY_MDSPAN_H
-    #endif
+#pragma once
 /**
  * @file mdspan.h
  * @brief A multidimensional view (mdspan) over a compressed array.
@@ -81,46 +75,44 @@
  *          compile (take a value: `double x = f[i, j];`).
  */
 
-    #if __has_include(<mdspan>)
-        #include <mdspan> // std::mdspan, std::extents, std::layout_right (C++23)
-    #endif
+#if __has_include(<mdspan>)
+    #include <mdspan> // std::mdspan, std::extents, std::layout_right (C++23)
+#endif
 
-    #if defined(__cpp_lib_mdspan) && __cpp_lib_mdspan >= 202207L
-        #define SHRINK_ARRAY_HAS_MDSPAN 1
-        #define SHRINK_ARRAY_MDSPAN_NS std
-    #elif __has_include(<mdspan/mdspan.hpp>)
-        #include <mdspan/mdspan.hpp> // Kokkos::mdspan, the reference implementation
-        #define SHRINK_ARRAY_HAS_MDSPAN 1
-        #define SHRINK_ARRAY_MDSPAN_NS MDSPAN_IMPL_STANDARD_NAMESPACE
-        #define SHRINK_ARRAY_HAS_SUBMDSPAN 1 // Kokkos::submdspan, in every version that has <mdspan/mdspan.hpp>
+#if defined(__cpp_lib_mdspan) && __cpp_lib_mdspan >= 202207L
+    #define SHRINK_ARRAY_HAS_MDSPAN 1
+    #define SHRINK_ARRAY_MDSPAN_NS std
+#elif __has_include(<mdspan/mdspan.hpp>)
+    #include <mdspan/mdspan.hpp> // Kokkos::mdspan, the reference implementation
+    #define SHRINK_ARRAY_HAS_MDSPAN 1
+    #define SHRINK_ARRAY_MDSPAN_NS MDSPAN_IMPL_STANDARD_NAMESPACE
+    #define SHRINK_ARRAY_HAS_SUBMDSPAN 1 // Kokkos::submdspan, in every version that has <mdspan/mdspan.hpp>
+#else
+    #define SHRINK_ARRAY_HAS_MDSPAN 0
+#endif
+
+// std::submdspan is C++26 (__cpp_lib_submdspan); the reference
+// implementation has it (above).
+#if !defined(SHRINK_ARRAY_HAS_SUBMDSPAN)
+    #if SHRINK_ARRAY_HAS_MDSPAN && defined(__cpp_lib_submdspan)
+        #define SHRINK_ARRAY_HAS_SUBMDSPAN 1
     #else
-        #define SHRINK_ARRAY_HAS_MDSPAN 0
+        #define SHRINK_ARRAY_HAS_SUBMDSPAN 0
     #endif
+#endif
 
-    // std::submdspan is C++26 (__cpp_lib_submdspan); the reference
-    // implementation has it (above).
-    #if !defined(SHRINK_ARRAY_HAS_SUBMDSPAN)
-        #if SHRINK_ARRAY_HAS_MDSPAN && defined(__cpp_lib_submdspan)
-            #define SHRINK_ARRAY_HAS_SUBMDSPAN 1
-        #else
-            #define SHRINK_ARRAY_HAS_SUBMDSPAN 0
-        #endif
-    #endif
+#if SHRINK_ARRAY_HAS_MDSPAN
 
-    #if SHRINK_ARRAY_HAS_MDSPAN
+    #include <array>    // std::array (the tile extents, the tile strides)
+    #include <concepts> // std::same_as (as_const)
+    #include <cstddef>  // std::size_t
+    #include <type_traits> // std::remove_const_t, std::is_const_v, std::conditional_t, std::make_unsigned_t, std::is_convertible_v
+    #include <string_view> // std::string_view (mdspan_source)
+    #include <utility>     // std::declval, std::index_sequence, std::pair
 
-        #include <array>    // std::array (the tile extents, the tile strides)
-        #include <concepts> // std::same_as (as_const)
-        #include <cstddef>  // std::size_t
-        #include <type_traits> // std::remove_const_t, std::is_const_v, std::conditional_t, std::make_unsigned_t, std::is_convertible_v
-        #include <string_view> // std::string_view (mdspan_source)
-        #include <utility>     // std::declval, std::index_sequence, std::pair
+    #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (a tiled submdspan off the tiles)
 
-        #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (a tiled submdspan off the tiles)
-
-        #include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT
-
-        #ifndef SHRINK_ARRAY_MODULE_DEPS // the module's global fragment reads the #includes only
+    #include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT
 
 namespace shrink_array::md
 {
@@ -131,19 +123,19 @@ namespace mdns = SHRINK_ARRAY_MDSPAN_NS;
 ///        "std::mdspan" or "kokkos/mdspan", then ", submdspan" or ", no
 ///        submdspan". For a program or a harness to say which one it ran on.
 SHRINK_ARRAY_EXPORT inline constexpr std::string_view mdspan_source =
-            #if defined(__cpp_lib_mdspan) && __cpp_lib_mdspan >= 202207L
-                #if SHRINK_ARRAY_HAS_SUBMDSPAN
+    #if defined(__cpp_lib_mdspan) && __cpp_lib_mdspan >= 202207L
+        #if SHRINK_ARRAY_HAS_SUBMDSPAN
     "std::mdspan, submdspan";
-                #else
+        #else
     "std::mdspan, no submdspan";
-                #endif
-            #else
-                #if SHRINK_ARRAY_HAS_SUBMDSPAN
+        #endif
+    #else
+        #if SHRINK_ARRAY_HAS_SUBMDSPAN
     "kokkos/mdspan, submdspan";
-                #else
+        #else
     "kokkos/mdspan, no submdspan";
-                #endif
-            #endif
+        #endif
+    #endif
 
 /// @brief The index type of @p Array: the type of a.size() (as array_chunk_range_ops.h).
 SHRINK_ARRAY_EXPORT template <typename Array>
@@ -225,7 +217,7 @@ struct accessor
     }
 };
 
-            #if SHRINK_ARRAY_HAS_SUBMDSPAN
+    #if SHRINK_ARRAY_HAS_SUBMDSPAN
 namespace detail
 {
 /**
@@ -279,7 +271,7 @@ constexpr void tiled_slice(const Slice& s, Index extent, Index& first, Index& si
     }
 }
 } // namespace detail
-            #endif
+    #endif
 
 namespace detail
 {
@@ -353,14 +345,14 @@ class TiledMappingBase
         tstride_ = g;
     }
 
-            #if SHRINK_ARRAY_HAS_SUBMDSPAN
+    #if SHRINK_ARRAY_HAS_SUBMDSPAN
     /// @brief A submdspan's sub-view: its extents and its offset. Every slice
     ///        keeps its dimension, with stride 1, and is aligned on the tiles
     ///        (it starts on a tile and ends on one or at the extent); a slice
     ///        off the tiles stops the program. @p who names the layout.
     template <typename... Slices>
     constexpr std::pair<grid_type, std::size_t> sub_view(this const Derived& self, const char* who, Slices... slices);
-            #endif
+    #endif
 
   private:
     extents_type ext_{};
@@ -435,7 +427,7 @@ struct layout_tiled
             return a.extents() == b.extents() && a.tile_strides() == b.tile_strides();
         }
 
-            #if SHRINK_ARRAY_HAS_SUBMDSPAN
+    #if SHRINK_ARRAY_HAS_SUBMDSPAN
         /**
          * @brief submdspan of a tiled view: a tiled view again, over the same
          *        tiles (each still one chunk), in its parent's tile grid.
@@ -456,7 +448,7 @@ struct layout_tiled
             return mdns::submdspan_mapping_result<mapping<sub_extents>>{
                 mapping<sub_extents>(sub_extents(size), m.tile_strides()), offset};
         }
-            #endif
+    #endif
     };
 };
 
@@ -523,7 +515,7 @@ struct layout_tiled_dyn
             return a.extents() == b.extents() && a.tile() == b.tile() && a.tile_strides() == b.tile_strides();
         }
 
-            #if SHRINK_ARRAY_HAS_SUBMDSPAN
+    #if SHRINK_ARRAY_HAS_SUBMDSPAN
         /// @brief submdspan of a tiled view: see layout_tiled's.
         template <typename... Slices>
         friend constexpr auto submdspan_mapping(const mapping& m, Slices... slices)
@@ -533,7 +525,7 @@ struct layout_tiled_dyn
             return mdns::submdspan_mapping_result<mapping<sub_extents>>{
                 mapping<sub_extents>(sub_extents(size), m.tile(), m.tile_strides()), offset};
         }
-            #endif
+    #endif
 
       private:
         grid_type  tile_{};
@@ -733,20 +725,17 @@ auto as_const(const View& f)
     }
 }
 
-            #if SHRINK_ARRAY_HAS_SUBMDSPAN
+    #if SHRINK_ARRAY_HAS_SUBMDSPAN
 /// @brief submdspan and full_extent of the mdspan in use (std or Kokkos), so
 ///        that md::submdspan(f, std::pair{0, 64}, md::full_extent) reads the
 ///        same whichever it is.
 SHRINK_ARRAY_EXPORT using mdns::full_extent;
 SHRINK_ARRAY_EXPORT using mdns::submdspan;
-            #endif
+    #endif
 
 } // namespace shrink_array::md
 
-        #endif // SHRINK_ARRAY_MODULE_DEPS
 
-        #include "chunk/internal/mdspan_inline.h" // the template bodies
+    #include "chunk/internal/mdspan_inline.h" // the template bodies
 
-    #endif // SHRINK_ARRAY_HAS_MDSPAN
-
-#endif // SHRINK_ARRAY_MDSPAN_H
+#endif // SHRINK_ARRAY_HAS_MDSPAN

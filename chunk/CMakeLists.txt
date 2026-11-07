@@ -720,9 +720,10 @@ if ("zero" IN_LIST CHUNK_VARIANTS AND "zero_one_value" IN_LIST CHUNK_VARIANTS)
 endif()
 
 # --- The shrink_array module (prototype) ---------------------------------
-# modules/shrink_array.cppm: the headers in the global module fragment, the
-# getting_started names exported. One BMI per variant library (it carries the
-# variant's defines): chunk_<variant>_module, over chunk_<variant>. Needs the
+# modules/shrink_array.cppm: the external headers in the global module
+# fragment, the library in the purview (chunk/internal/module_export.h). One
+# BMI per variant library (it carries the variant's defines):
+# chunk_<variant>_module, over chunk_<variant>. Needs the
 # Ninja generator (module dependency scanning) and `import std` (the option,
 # in the top CMakeLists.txt); not installed yet.
 if (SHRINK_ARRAY_MODULES)
@@ -759,6 +760,13 @@ if (SHRINK_ARRAY_MODULES)
     # The module unit imports std (modules/shrink_array.cppm).
     set_target_properties(chunk_${_mv}_module PROPERTIES CXX_MODULE_STD ON)
     target_compile_features(chunk_${_mv}_module PUBLIC cxx_std_23)
+    # The library's headers, read in the purview, include their external headers
+    # again: <cassert> has no guard, libc++'s <stdio.h> and <stdlib.h> re-enter;
+    # each was read first in the global module fragment, so nothing attaches to
+    # the module (scripts/check_module_deps.py checks the fragment's list).
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+      target_compile_options(chunk_${_mv}_module PRIVATE -Wno-include-angled-in-module-purview)
+    endif()
   endforeach()
   list(TRANSFORM CHUNK_VARIANTS APPEND "_module" OUTPUT_VARIABLE _module_targets)
   list(TRANSFORM _module_targets PREPEND "chunk_")

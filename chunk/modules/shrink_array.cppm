@@ -14,49 +14,112 @@
  * limitations under the License.
  */
 
-// The shrink_array module (prototype): the names a program of
-// docs/getting_started.md uses. Most headers are included in the global module
-// fragment and their names exported by using-declarations; a few top headers
-// are read in the purview and export their own declarations
-// (chunk/internal/module_export.h). The headers stay the source of truth and
-// `#include` keeps working.
+// The shrink_array module (prototype): the whole library, read in the purview,
+// exports what its headers mark SHRINK_ARRAY_EXPORT -- the arrays, ParamChunk,
+// parallel_phase, the teardown, print / println, the chunk exchange, the
+// chunk-size advisor and decider, the mdspan views and tile operations -- and
+// hides the rest (chunk/internal/module_export.h). The headers stay the source
+// of truth and `#include` keeps working.
 //
-// Built per variant library (chunk_zero_any_module links chunk_zero_any): the
-// BMI carries that library's defines (CHUNK_VARIANT_ZERO_ANY, CHUNK_SIZE), so
-// an importer must link the same variant. Macros (CHUNK_LOG, CHUNK_PMP_*) do not
+// Built per variant library (chunk_<variant>_module links chunk_<variant>): the
+// BMI carries that library's defines (CHUNK_VARIANT_*, CHUNK_SIZE), so an
+// importer must link the same variant. Macros (CHUNK_LOG, CHUNK_PMP_*) do not
 // cross an import: a program that needs them still includes chunk/log.h.
 
 module;
 
-// A header that includes one of the purview's for convenience skips it here
-// (chunk/internal/module_export.h).
-#define SHRINK_ARRAY_MODULE_UNIT
+// The library's external headers -- standard, system, OpenMP, third party --
+// and only those, under the conditions of their #includes in the library's
+// headers (scripts/check_module_deps.py compares the two). The library itself
+// is read below, in the purview: its #includes of these then read nothing.
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <barrier>
+#include <bit>
+#include <cassert>
+#include <cerrno>
+#include <charconv>
+#include <chrono>
+#include <climits>
+#include <cmath>
+#include <compare>
+#include <complex>
+#include <concepts>
+#include <csignal>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <deque>
+#include <exception>
+#include <expected>
+#include <format>
+#include <functional>
+#include <initializer_list>
+#include <iostream>
+#include <iterator>
+#include <limits>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <new>
+#include <optional>
+#include <ostream>
+#include <print>
+#include <ranges>
+#include <ratio>
+#include <source_location>
+#include <span>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <system_error>
+#include <thread>
+#include <tuple>
+#include <type_traits>
+#include <typeinfo>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+#include <variant>
+#include <vector>
+#include <version>
 
-// The array of this variant library: the module is built once per variant
-// (chunk_<variant>_module), with the library's CHUNK_VARIANT_* define.
-#if defined(CHUNK_VARIANT_ZERO_ANY)
-    #include "chunk/zero_any_array.h" // zero_any::Array
-    #include "chunk/pattern_array.h"  // pattern::Array, over zero_any's library
-#elif defined(CHUNK_VARIANT_ZERO_ONE_VALUE)
-    #include "chunk/zero_one_value_array.h" // zero_one_value::Array
-#elif defined(CHUNK_VARIANT_ZERO)
-    #include "chunk/zero_array.h" // zero::Array
+#include <fcntl.h>
+#include <sched.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/mman.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+
+#ifdef CHUNK_HAVE_STACKTRACE
+    #include <stacktrace>
 #else
-    #error "shrink_array.cppm: built with a variant library's CHUNK_VARIANT_* define"
+    #include <cxxabi.h>
+    #include <execinfo.h>
+#endif
+#ifdef _OPENMP
+    #include <omp.h>
+#endif
+#if __has_include(<mdspan>)
+    #include <mdspan>
+#endif
+#if !(defined(__cpp_lib_mdspan) && __cpp_lib_mdspan >= 202207L) && __has_include(<mdspan/mdspan.hpp>)
+    #include <mdspan/mdspan.hpp>
+#endif
+#ifdef __has_feature
+    #if __has_feature(address_sanitizer) || __has_feature(leak_sanitizer)
+        #include <sanitizer/lsan_interface.h>
+    #endif
+#elifdef __SANITIZE_ADDRESS__
+    #include <sanitizer/lsan_interface.h>
 #endif
 
-// The #includes of the headers read in the purview below, and only those.
-#define SHRINK_ARRAY_MODULE_DEPS
-#include "chunk/param_chunk.h"
-#include "chunk/internal/print.h"
-#include "chunk/manage_ompt.h"
-#include "chunk/shutdown.h"
-#include "chunk/chunk_exchange.h"
-#include "chunk/chunk_size_advisor.h"
-#include "chunk/rechunk_decider.h"
-#include "chunk/mdspan.h"
-#include "chunk/mdspan_tile_ops.h"
-#undef SHRINK_ARRAY_MODULE_DEPS
+#include "chunk/vendor/flat_hash_map.hpp"
+#include "chunk/vendor/ankerl/unordered_dense.h"
 
 export module shrink_array;
 
@@ -68,13 +131,25 @@ export module shrink_array;
 // their standard headers: both compilers merge them with the module.
 import std;
 
-// Headers whose declarations are the module's: those marked SHRINK_ARRAY_EXPORT
-// are exported, the rest stays reachable but cannot be named by an importer.
-// extern "C++" attaches them to the global module, as everywhere else.
-#undef SHRINK_ARRAY_EXPORT
+// The whole library, in the purview: what is marked SHRINK_ARRAY_EXPORT is
+// exported, the rest stays reachable but cannot be named by an importer.
+// extern "C++" attaches it to the global module, as in the compiled library and
+// in any program that #includes the headers: the same entities, one set of
+// pools. The array of this variant library: the module is built once per
+// variant (chunk_<variant>_module), with the library's CHUNK_VARIANT_* define.
 #define SHRINK_ARRAY_EXPORT export
 extern "C++"
 {
+#if defined(CHUNK_VARIANT_ZERO_ANY)
+    #include "chunk/zero_any_array.h" // zero_any::Array
+    #include "chunk/pattern_array.h"  // pattern::Array, over zero_any's library
+#elif defined(CHUNK_VARIANT_ZERO_ONE_VALUE)
+    #include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#elif defined(CHUNK_VARIANT_ZERO)
+    #include "chunk/zero_array.h" // zero::Array
+#else
+    #error "shrink_array.cppm: built with a variant library's CHUNK_VARIANT_* define"
+#endif
 #include "chunk/param_chunk.h"        // ParamChunk
 #include "chunk/internal/print.h"     // print, println
 #include "chunk/manage_ompt.h"        // parallel_phase
@@ -87,7 +162,7 @@ extern "C++"
 }
 #undef SHRINK_ARRAY_EXPORT
 
-// The other headers' names, exported by using-declarations.
+// Names exported by using-declarations: their headers do not mark them.
 export namespace shrink_array
 {
 // The phase hooks parallel_phase() calls, for a program that opens its regions
@@ -98,8 +173,8 @@ using shrink_array::finalize_parallel_phase;
 using shrink_array::finalize_parallel_phase_after_flush;
 using shrink_array::finalize_parallel_phase_only_flush;
 
-// The variant's array: a using-declaration, since chunk_traits.h (in the global
-// module fragment) declares it first, unexported.
+// The variant's array: a using-declaration, since chunk_traits.h declares it
+// first, unexported.
 #if defined(CHUNK_VARIANT_ZERO_ANY)
 namespace zero_any
 {
