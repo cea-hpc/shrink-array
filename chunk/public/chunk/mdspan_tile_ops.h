@@ -14,7 +14,14 @@
  * limitations under the License.
  */
 
-#pragma once
+// The double guard of a header the module reads (chunk/internal/module_export.h).
+#if defined(SHRINK_ARRAY_MODULE_DEPS) ? !defined(SHRINK_ARRAY_MDSPAN_TILE_OPS_H_DEPS) \
+                                      : !defined(SHRINK_ARRAY_MDSPAN_TILE_OPS_H)
+    #if defined(SHRINK_ARRAY_MODULE_DEPS)
+        #define SHRINK_ARRAY_MDSPAN_TILE_OPS_H_DEPS
+    #else
+        #define SHRINK_ARRAY_MDSPAN_TILE_OPS_H
+    #endif
 /**
  * @file mdspan_tile_ops.h
  * @brief Tile by tile over a tiled mdspan view (chunk/mdspan.h): for_each_tile()
@@ -66,24 +73,28 @@
  *          size works -- a tile may then straddle chunks.
  */
 
-#include "chunk/mdspan.h" // shrink_array::md, SHRINK_ARRAY_HAS_MDSPAN
+    #include "chunk/mdspan.h" // shrink_array::md, SHRINK_ARRAY_HAS_MDSPAN
 
-#if SHRINK_ARRAY_HAS_MDSPAN
+    #if SHRINK_ARRAY_HAS_MDSPAN
 
-    #include <algorithm> // std::copy, std::copy_n, std::fill, std::fill_n, std::equal, std::all_of, std::min, std::max, std::clamp
-    #include <array>       // std::array (the tile buffer, the tile coordinates)
-    #include <concepts>    // std::invocable, std::same_as, std::integral
-    #include <cstddef>     // std::size_t, std::ptrdiff_t
-    #include <limits>      // std::numeric_limits (the box corners)
-    #include <span>        // std::span (the blocks of for_each_span)
-    #include <tuple>       // std::apply (a multi-index into a mapping)
-    #include <type_traits> // std::remove_cvref_t, std::is_const_v
-    #include <utility>     // std::as_const, std::forward, std::pair
-    #include <vector> // std::vector (a run-time tile larger than the inline buffer, a stencil's halo and tile cache)
+        #include <algorithm> // std::copy, std::copy_n, std::fill, std::fill_n, std::equal, std::all_of, std::min, std::max, std::clamp
+        #include <array>       // std::array (the tile buffer, the tile coordinates)
+        #include <concepts>    // std::invocable, std::same_as, std::integral
+        #include <cstddef>     // std::size_t, std::ptrdiff_t
+        #include <limits>      // std::numeric_limits (the box corners)
+        #include <span>        // std::span (the blocks of for_each_span)
+        #include <tuple>       // std::apply (a multi-index into a mapping)
+        #include <type_traits> // std::remove_cvref_t, std::is_const_v
+        #include <utility>     // std::as_const, std::forward, std::pair
+        #include <vector> // std::vector (a run-time tile larger than the inline buffer, a stencil's halo and tile cache)
 
-    #include "chunk/PMP_CHUNK.h"                // CHUNK_PMP_IN_PARALLEL_REGION
-    #include "chunk/array_chunk_range_ops.h"    // for_each_span, fill_range(_mt), copy_range(_mt)
-    #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
+        #include "chunk/PMP_CHUNK.h"                // CHUNK_PMP_IN_PARALLEL_REGION
+        #include "chunk/array_chunk_range_ops.h"    // for_each_span, fill_range(_mt), copy_range(_mt)
+        #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
+
+        #include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT
+
+        #ifndef SHRINK_ARRAY_MODULE_DEPS // the module's global fragment reads the #includes only
 
 namespace shrink_array::md
 {
@@ -93,7 +104,7 @@ namespace shrink_array::md
  * @tparam Index the view's index type
  * @tparam Rank  the view's rank
  */
-template <typename Index, std::size_t Rank>
+SHRINK_ARRAY_EXPORT template <typename Index, std::size_t Rank>
 struct tile
 {
     Index                   number; ///< In [0, tile_count()): the tile's rank in storage order.
@@ -102,7 +113,7 @@ struct tile
 };
 
 /// @brief A tiled view of this library: layout_tiled or layout_tiled_dyn, and md::accessor.
-template <typename View>
+SHRINK_ARRAY_EXPORT template <typename View>
 concept tiled_view_of_array = requires(const typename View::mapping_type& m) {
     m.tile_elements(); // layout_tiled, layout_tiled_dyn
     m.tile_extent(0);
@@ -776,7 +787,7 @@ auto team_share(const View& f)
 } // namespace detail
 
 /// @brief Number of tiles of tiled view @p f (padding tiles included): the range of the range overloads.
-template <tiled_view_of_array View>
+SHRINK_ARRAY_EXPORT template <tiled_view_of_array View>
 typename View::index_type tile_count(const View& f)
 {
     typename View::index_type n = 1;
@@ -932,7 +943,7 @@ void write_tiles(const View& f, const char* who, Walk&& walk, OnBlock& on_block,
  * @warning See the file: no other thread writes these tiles meanwhile; in a
  *          parallel region a tile must be whole chunks.
  */
-template <tiled_view_of_array View, typename OnBlock, typename OnUniform = detail::NoUniform>
+SHRINK_ARRAY_EXPORT template <tiled_view_of_array View, typename OnBlock, typename OnUniform = detail::NoUniform>
 void for_each_tile(const View&               f,
                    typename View::index_type first,
                    typename View::index_type last,
@@ -943,7 +954,7 @@ void for_each_tile(const View&               f,
 }
 
 /// @brief for_each_tile() over every tile of @p f.
-template <tiled_view_of_array View, typename OnBlock, typename OnUniform = detail::NoUniform>
+SHRINK_ARRAY_EXPORT template <tiled_view_of_array View, typename OnBlock, typename OnUniform = detail::NoUniform>
 void for_each_tile(const View& f, OnBlock&& on_block, OnUniform&& on_uniform = {})
 {
     for_each_tile(f, typename View::index_type{0}, tile_count(f), std::forward<OnBlock>(on_block),
@@ -977,7 +988,7 @@ void for_each_tile(const View& f, OnBlock&& on_block, OnUniform&& on_uniform = {
  * @warning for_each_tile()'s. Writes are writes: inside a parallel region,
  *          within a phase (parallel_phase()).
  */
-template <tiled_view_of_array View, typename OnBlock, typename OnUniform = detail::NoUniform>
+SHRINK_ARRAY_EXPORT template <tiled_view_of_array View, typename OnBlock, typename OnUniform = detail::NoUniform>
     requires(!std::is_const_v<typename View::element_type>)
 void update_tiles(const View&               f,
                   typename View::index_type first,
@@ -989,7 +1000,7 @@ void update_tiles(const View&               f,
 }
 
 /// @brief update_tiles() over every tile of @p f.
-template <tiled_view_of_array View, typename OnBlock, typename OnUniform = detail::NoUniform>
+SHRINK_ARRAY_EXPORT template <tiled_view_of_array View, typename OnBlock, typename OnUniform = detail::NoUniform>
     requires(!std::is_const_v<typename View::element_type>)
 void update_tiles(const View& f, OnBlock&& on_block, OnUniform&& on_uniform = {})
 {
@@ -1007,7 +1018,7 @@ void update_tiles(const View& f, OnBlock&& on_block, OnUniform&& on_uniform = {}
  *          callbacks gather is complete once every thread has returned.
  * @warning for_each_tile()'s; every thread of the team calls it.
  */
-template <tiled_view_of_array View, typename OnBlock, typename OnUniform = detail::NoUniform>
+SHRINK_ARRAY_EXPORT template <tiled_view_of_array View, typename OnBlock, typename OnUniform = detail::NoUniform>
 void for_each_tile_mt(const View& f, OnBlock&& on_block, OnUniform&& on_uniform = {})
 {
     detail::read_tiles(f, "md::for_each_tile_mt", detail::dealt_tiles(f), on_block, on_uniform);
@@ -1018,7 +1029,10 @@ void for_each_tile_mt(const View& f, OnBlock&& on_block, OnUniform&& on_uniform 
  *        to the view): those tiles dealt to the team, one unit each, in
  *        storage order. The callbacks get whole tiles, as for_each_tile()'s.
  */
-template <tiled_view_of_array View, std::integral I, typename OnBlock, typename OnUniform = detail::NoUniform>
+SHRINK_ARRAY_EXPORT template <tiled_view_of_array View,
+                              std::integral       I,
+                              typename OnBlock,
+                              typename OnUniform = detail::NoUniform>
 void for_each_tile_mt(const View&                        f,
                       const std::array<I, View::rank()>& box_lo,
                       const std::array<I, View::rank()>& box_hi,
@@ -1045,7 +1059,7 @@ void for_each_tile_mt(const View&                        f,
  *        needed -- the deals differ.
  * @warning update_tiles()'s; every thread of the team calls it.
  */
-template <tiled_view_of_array View, typename OnBlock, typename OnUniform = detail::NoUniform>
+SHRINK_ARRAY_EXPORT template <tiled_view_of_array View, typename OnBlock, typename OnUniform = detail::NoUniform>
     requires(!std::is_const_v<typename View::element_type>)
 void update_tiles_mt(const View& f, OnBlock&& on_block, OnUniform&& on_uniform = {})
 {
@@ -1057,7 +1071,10 @@ void update_tiles_mt(const View& f, OnBlock&& on_block, OnUniform&& on_uniform =
  *        to the view), dealt to the team one unit each. The callbacks get
  *        whole tiles: cells outside the box are theirs to leave alone.
  */
-template <tiled_view_of_array View, std::integral I, typename OnBlock, typename OnUniform = detail::NoUniform>
+SHRINK_ARRAY_EXPORT template <tiled_view_of_array View,
+                              std::integral       I,
+                              typename OnBlock,
+                              typename OnUniform = detail::NoUniform>
     requires(!std::is_const_v<typename View::element_type>)
 void update_tiles_mt(const View&                        f,
                      const std::array<I, View::rank()>& box_lo,
@@ -1080,7 +1097,7 @@ void update_tiles_mt(const View&                        f,
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// @brief Halo cells outside the view take @p value (a Dirichlet border).
-template <typename T>
+SHRINK_ARRAY_EXPORT template <typename T>
 struct constant_boundary
 {
     T value{};
@@ -1088,7 +1105,7 @@ struct constant_boundary
 
 /// @brief Halo cells outside the view take the value of the nearest cell of
 ///        the view (a zero-gradient, Neumann border).
-struct clamp_boundary
+SHRINK_ARRAY_EXPORT struct clamp_boundary
 {
 };
 
@@ -1098,7 +1115,7 @@ struct clamp_boundary
  *        the tile's first cell, te the tile's extents (padding included);
  *        cells outside the view hold the boundary's value.
  */
-template <typename T, std::size_t Rank, typename Index>
+SHRINK_ARRAY_EXPORT template <typename T, std::size_t Rank, typename Index>
 class halo_block
 {
   public:
@@ -1473,11 +1490,11 @@ void stencil_on(const Src&                       src,
  *        phase, a tile whole chunks, and no thread writes @p src meanwhile.
  * @warning Experimental until 1.0 (see the file).
  */
-template <tiled_view_of_array Src,
-          tiled_view_of_array Dst,
-          typename Boundary,
-          typename OnBlock,
-          typename OnUniform = detail::NoUniform>
+SHRINK_ARRAY_EXPORT template <tiled_view_of_array Src,
+                              tiled_view_of_array Dst,
+                              typename Boundary,
+                              typename OnBlock,
+                              typename OnUniform = detail::NoUniform>
     requires(!std::is_const_v<typename Dst::element_type>)
 void stencil_tiles(const Src&               src,
                    const Dst&               dst,
@@ -1493,11 +1510,11 @@ void stencil_tiles(const Src&               src,
 }
 
 /// @brief stencil_tiles() over every tile.
-template <tiled_view_of_array Src,
-          tiled_view_of_array Dst,
-          typename Boundary,
-          typename OnBlock,
-          typename OnUniform = detail::NoUniform>
+SHRINK_ARRAY_EXPORT template <tiled_view_of_array Src,
+                              tiled_view_of_array Dst,
+                              typename Boundary,
+                              typename OnBlock,
+                              typename OnUniform = detail::NoUniform>
     requires(!std::is_const_v<typename Dst::element_type>)
 void stencil_tiles(const Src&               src,
                    const Dst&               dst,
@@ -1520,11 +1537,11 @@ void stencil_tiles(const Src&               src,
  *        it needs.
  * @warning stencil_tiles()'s; every thread of the team calls it.
  */
-template <tiled_view_of_array Src,
-          tiled_view_of_array Dst,
-          typename Boundary,
-          typename OnBlock,
-          typename OnUniform = detail::NoUniform>
+SHRINK_ARRAY_EXPORT template <tiled_view_of_array Src,
+                              tiled_view_of_array Dst,
+                              typename Boundary,
+                              typename OnBlock,
+                              typename OnUniform = detail::NoUniform>
     requires(!std::is_const_v<typename Dst::element_type>)
 void stencil_tiles_mt(const Src&               src,
                       const Dst&               dst,
@@ -1628,7 +1645,7 @@ void fill_tiles(const View&                        f,
  *          the write and compressed again by the end of the phase or the next
  *          pass (see update_tiles()).
  */
-template <tiled_view_of_array View, std::integral I>
+SHRINK_ARRAY_EXPORT template <tiled_view_of_array View, std::integral I>
     requires(!std::is_const_v<typename View::element_type>)
 void fill_box(const View&                        f,
               const std::array<I, View::rank()>& box_lo,
@@ -1642,7 +1659,7 @@ void fill_box(const View&                        f,
 }
 
 /// @brief fill_box() over every tile of @p f.
-template <tiled_view_of_array View, std::integral I>
+SHRINK_ARRAY_EXPORT template <tiled_view_of_array View, std::integral I>
     requires(!std::is_const_v<typename View::element_type>)
 void fill_box(const View&                        f,
               const std::array<I, View::rank()>& lo,
@@ -1662,7 +1679,7 @@ void fill_box(const View&                        f,
  * @warning fill_box()'s; every thread of the team calls it with the same box
  *          and value.
  */
-template <tiled_view_of_array View, std::integral I>
+SHRINK_ARRAY_EXPORT template <tiled_view_of_array View, std::integral I>
     requires(!std::is_const_v<typename View::element_type>)
 void fill_box_mt(const View&                        f,
                  const std::array<I, View::rank()>& lo,
@@ -1729,7 +1746,7 @@ void fill_strided(const View&                        f,
  *          each thread on its own box (its own rows): the runs of two threads
  *          may share a chunk, which fill_range_mt() allows.
  */
-template <detail::writable_strided_view_of_array View, std::integral I>
+SHRINK_ARRAY_EXPORT template <detail::writable_strided_view_of_array View, std::integral I>
 void fill_box(const View&                        f,
               const std::array<I, View::rank()>& lo,
               const std::array<I, View::rank()>& hi,
@@ -1749,7 +1766,7 @@ void fill_box(const View&                        f,
  * @warning fill_box()'s; every thread of the team calls it with the same box
  *          and value.
  */
-template <detail::writable_strided_view_of_array View, std::integral I>
+SHRINK_ARRAY_EXPORT template <detail::writable_strided_view_of_array View, std::integral I>
 void fill_box_mt(const View&                        f,
                  const std::array<I, View::rank()>& lo,
                  const std::array<I, View::rank()>& hi,
@@ -1916,7 +1933,7 @@ void copy_tiles_in(const View&                        f,
  *        chunks, and no thread writes these tiles meanwhile.
  * @warning Experimental until 1.0 (see the file).
  */
-template <tiled_view_of_array View, std::integral I>
+SHRINK_ARRAY_EXPORT template <tiled_view_of_array View, std::integral I>
 void copy_box_out(const View&                        f,
                   const std::array<I, View::rank()>& box_lo,
                   const std::array<I, View::rank()>& box_hi,
@@ -1929,7 +1946,7 @@ void copy_box_out(const View&                        f,
 }
 
 /// @brief copy_box_out() over every tile of @p f.
-template <tiled_view_of_array View, std::integral I>
+SHRINK_ARRAY_EXPORT template <tiled_view_of_array View, std::integral I>
 void copy_box_out(const View&                        f,
                   const std::array<I, View::rank()>& lo,
                   const std::array<I, View::rank()>& hi,
@@ -1952,7 +1969,7 @@ void copy_box_out(const View&                        f,
  *        box and buffer.
  * @warning Experimental until 1.0 (see the file).
  */
-template <tiled_view_of_array View, std::integral I>
+SHRINK_ARRAY_EXPORT template <tiled_view_of_array View, std::integral I>
 void copy_box_out_mt(const View&                        f,
                      const std::array<I, View::rank()>& box_lo,
                      const std::array<I, View::rank()>& box_hi,
@@ -1984,7 +2001,7 @@ void copy_box_out_mt(const View&                        f,
  *        chunks.
  * @warning Experimental until 1.0 (see the file).
  */
-template <tiled_view_of_array View, std::integral I>
+SHRINK_ARRAY_EXPORT template <tiled_view_of_array View, std::integral I>
     requires(!std::is_const_v<typename View::element_type>)
 void copy_box_in(const View&                        f,
                  const std::array<I, View::rank()>& box_lo,
@@ -1998,7 +2015,7 @@ void copy_box_in(const View&                        f,
 }
 
 /// @brief copy_box_in() over every tile of @p f.
-template <tiled_view_of_array View, std::integral I>
+SHRINK_ARRAY_EXPORT template <tiled_view_of_array View, std::integral I>
     requires(!std::is_const_v<typename View::element_type>)
 void copy_box_in(const View&                        f,
                  const std::array<I, View::rank()>& lo,
@@ -2020,7 +2037,7 @@ void copy_box_in(const View&                        f,
  *        box and buffer.
  * @warning Experimental until 1.0 (see the file).
  */
-template <tiled_view_of_array View, std::integral I>
+SHRINK_ARRAY_EXPORT template <tiled_view_of_array View, std::integral I>
     requires(!std::is_const_v<typename View::element_type>)
 void copy_box_in_mt(const View&                        f,
                     const std::array<I, View::rank()>& box_lo,
@@ -2157,7 +2174,7 @@ void copy_strided_in(const View&                        f,
  * @pre   The box lies inside the view's extents (checked).
  * @warning Experimental until 1.0 (see the file).
  */
-template <detail::strided_view_of_array View, std::integral I>
+SHRINK_ARRAY_EXPORT template <detail::strided_view_of_array View, std::integral I>
 void copy_box_out(const View&                        f,
                   const std::array<I, View::rank()>& lo,
                   const std::array<I, View::rank()>& hi,
@@ -2179,7 +2196,7 @@ void copy_box_out(const View&                        f,
  *        alias the array.
  * @warning Experimental until 1.0 (see the file).
  */
-template <detail::writable_strided_view_of_array View, std::integral I>
+SHRINK_ARRAY_EXPORT template <detail::writable_strided_view_of_array View, std::integral I>
 void copy_box_in(const View&                        f,
                  const std::array<I, View::rank()>& lo,
                  const std::array<I, View::rank()>& hi,
@@ -2203,7 +2220,7 @@ void copy_box_in(const View&                        f,
  *        box and buffer.
  * @warning Experimental until 1.0 (see the file).
  */
-template <detail::strided_view_of_array View, std::integral I>
+SHRINK_ARRAY_EXPORT template <detail::strided_view_of_array View, std::integral I>
 void copy_box_out_mt(const View&                        f,
                      const std::array<I, View::rank()>& lo,
                      const std::array<I, View::rank()>& hi,
@@ -2223,7 +2240,7 @@ void copy_box_out_mt(const View&                        f,
  *        box and buffer.
  * @warning Experimental until 1.0 (see the file).
  */
-template <detail::writable_strided_view_of_array View, std::integral I>
+SHRINK_ARRAY_EXPORT template <detail::writable_strided_view_of_array View, std::integral I>
 void copy_box_in_mt(const View&                        f,
                     const std::array<I, View::rank()>& lo,
                     const std::array<I, View::rank()>& hi,
@@ -2234,6 +2251,10 @@ void copy_box_in_mt(const View&                        f,
 
 } // namespace shrink_array::md
 
-    #include "chunk/internal/mdspan_tile_ops_inline.h" // the template bodies
+        #endif // SHRINK_ARRAY_MODULE_DEPS
 
-#endif // SHRINK_ARRAY_HAS_MDSPAN
+        #include "chunk/internal/mdspan_tile_ops_inline.h" // the template bodies
+
+    #endif // SHRINK_ARRAY_HAS_MDSPAN
+
+#endif // SHRINK_ARRAY_MDSPAN_TILE_OPS_H

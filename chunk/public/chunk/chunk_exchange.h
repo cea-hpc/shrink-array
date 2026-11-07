@@ -14,7 +14,14 @@
  * limitations under the License.
  */
 
-#pragma once
+// The double guard of a header the module reads (chunk/internal/module_export.h).
+#if defined(SHRINK_ARRAY_MODULE_DEPS) ? !defined(SHRINK_ARRAY_CHUNK_EXCHANGE_H_DEPS) \
+                                      : !defined(SHRINK_ARRAY_CHUNK_EXCHANGE_H)
+    #if defined(SHRINK_ARRAY_MODULE_DEPS)
+        #define SHRINK_ARRAY_CHUNK_EXCHANGE_H_DEPS
+    #else
+        #define SHRINK_ARRAY_CHUNK_EXCHANGE_H
+    #endif
 
 /**
  * @file chunk_exchange.h
@@ -50,26 +57,30 @@
  *          refill does).
  */
 
-#include <cstddef>     // std::size_t
-#include <cstdint>     // std::uint8_t
-#include <memory>      // std::make_unique_for_overwrite (a motif chunk's elements)
-#include <type_traits> // std::is_same_v, std::is_integral_v, std::make_unsigned_t
-#include <utility>     // std::move (import_array)
-#include <vector>      // std::vector (ArrayState's chunks)
+    #include <cstddef>     // std::size_t
+    #include <cstdint>     // std::uint8_t
+    #include <memory>      // std::make_unique_for_overwrite (a motif chunk's elements)
+    #include <type_traits> // std::is_same_v, std::is_integral_v, std::make_unsigned_t
+    #include <utility>     // std::move (import_array)
+    #include <vector>      // std::vector (ArrayState's chunks)
 
-#include "chunk/array_chunk_range_ops.h"      // copy_range, fill_range, assume_drained, internal::is_v*_v
-#include "chunk/bit.h"                        // is_packed_bit_v
-#include "chunk/chunk_traits.h"               // is_zero_any_family_v, has_motif_state_v
-#include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size
-#include "chunk/internal/cst_slot.h"          // CstSlot
-#include "chunk/internal/relaxed_element.h"   // load_element_relaxed (a motif chunk's offset)
-#include "chunk/config.h"                     // build_config::chunk_dynamic
+    #include "chunk/array_chunk_range_ops.h"      // copy_range, fill_range, assume_drained, internal::is_v*_v
+    #include "chunk/bit.h"                        // is_packed_bit_v
+    #include "chunk/chunk_traits.h"               // is_zero_any_family_v, has_motif_state_v
+    #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size
+    #include "chunk/internal/cst_slot.h"          // CstSlot
+    #include "chunk/internal/relaxed_element.h"   // load_element_relaxed (a motif chunk's offset)
+    #include "chunk/config.h"                     // build_config::chunk_dynamic
+
+    #include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT
+
+    #ifndef SHRINK_ARRAY_MODULE_DEPS // the module's global fragment reads the #includes only
 
 namespace shrink_array
 {
 
 /// @brief What a chunk holds.
-enum class ChunkKind : std::uint8_t
+SHRINK_ARRAY_EXPORT enum class ChunkKind : std::uint8_t
 {
     first_value,  ///< Compressed to the first value (ChunkState::value): no buffer.
     second_value, ///< Compressed to ChunkState::value: no buffer.
@@ -78,7 +89,7 @@ enum class ChunkKind : std::uint8_t
 };
 
 /// @brief One chunk, as export_chunk() reads it and import_chunk() writes it.
-template <typename T>
+SHRINK_ARRAY_EXPORT template <typename T>
 struct ChunkState
 {
     ChunkKind kind  = ChunkKind::first_value; ///< What the chunk holds.
@@ -89,7 +100,7 @@ struct ChunkState
 };
 
 /// @brief A whole array, as export_array() reads it and import_array() writes it.
-template <typename T>
+SHRINK_ARRAY_EXPORT template <typename T>
 struct ArrayState
 {
     std::size_t                size             = 0;     ///< Element count.
@@ -121,7 +132,7 @@ template <typename T>
 } // namespace detail
 
 /// @brief The arrays these functions take: every variant, every element type but Bit.
-template <typename Arr>
+SHRINK_ARRAY_EXPORT template <typename Arr>
 concept ExchangeableArray = internal::ChunkedArray<Arr> && !is_packed_bit_v<typename Arr::value_type>;
 
 /**
@@ -129,7 +140,7 @@ concept ExchangeableArray = internal::ChunkedArray<Arr> && !is_packed_bit_v<type
  * @param arr   the array, at a quiescent point (see the file comment)
  * @param index the chunk, below arr.chunk_count()
  */
-template <ExchangeableArray Arr>
+SHRINK_ARRAY_EXPORT template <ExchangeableArray Arr>
 [[nodiscard]] ChunkState<typename Arr::value_type> export_chunk(const Arr& arr, std::size_t index)
 {
     using T         = Arr::value_type;
@@ -207,7 +218,7 @@ template <ExchangeableArray Arr>
  * @return false, and nothing done, when the chunk is not at the first value
  *         (written and not compressed back since).
  */
-template <ExchangeableArray Arr>
+SHRINK_ARRAY_EXPORT template <ExchangeableArray Arr>
 [[nodiscard]] bool import_chunk(Arr& arr, std::size_t index, const ChunkState<typename Arr::value_type>& state)
 {
     using T         = Arr::value_type;
@@ -308,7 +319,7 @@ template <ExchangeableArray Arr>
  * @param arr the array, at a quiescent point (see the file comment)
  * @return The state; its chunks' data point into @p arr (see ChunkState).
  */
-template <ExchangeableArray Arr>
+SHRINK_ARRAY_EXPORT template <ExchangeableArray Arr>
 [[nodiscard]] ArrayState<typename Arr::value_type> export_array(const Arr& arr)
 {
     using T = Arr::value_type;
@@ -339,7 +350,7 @@ template <ExchangeableArray Arr>
  * @return false, and @p arr unchanged, when a fresh array has another chunk
  *         size than state.chunk_size (a dynamic build at another geometry).
  */
-template <ExchangeableArray Arr>
+SHRINK_ARRAY_EXPORT template <ExchangeableArray Arr>
 [[nodiscard]] bool import_array(Arr& arr, const ArrayState<typename Arr::value_type>& state)
 {
     using T = Arr::value_type;
@@ -364,3 +375,7 @@ template <ExchangeableArray Arr>
 }
 
 } // namespace shrink_array
+
+    #endif // SHRINK_ARRAY_MODULE_DEPS
+
+#endif // SHRINK_ARRAY_CHUNK_EXCHANGE_H

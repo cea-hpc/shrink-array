@@ -14,7 +14,14 @@
  * limitations under the License.
  */
 
-#ifndef SHRINK_ARRAY_PRINT_H // a guard, not #pragma once: see module_export.h
+// The double guard of a header the module reads (chunk/internal/module_export.h).
+#if defined(SHRINK_ARRAY_MODULE_DEPS) ? !defined(SHRINK_ARRAY_INTERNAL_PRINT_H_DEPS) \
+                                      : !defined(SHRINK_ARRAY_INTERNAL_PRINT_H)
+    #if defined(SHRINK_ARRAY_MODULE_DEPS)
+        #define SHRINK_ARRAY_INTERNAL_PRINT_H_DEPS
+    #else
+        #define SHRINK_ARRAY_INTERNAL_PRINT_H
+    #endif
 
 /**
  * @file print.h
@@ -36,28 +43,27 @@
  * unqualified call could find next to the standard one by ADL.
  */
 
-#include <version> // __cpp_lib_print
+    #include <version> // __cpp_lib_print
 
-#if defined(__cpp_lib_print)
-    #include <print> // std::print, std::println
-#else
-    #include <cstdio>  // std::FILE, std::fwrite, stdout
-    #include <format>  // std::format, std::format_string
-    #include <string>  // std::string
-    #include <utility> // std::forward
-#endif
+    #if defined(__cpp_lib_print)
+        #include <print> // std::print, std::println
+    #else
+        #include <cstdio>  // std::FILE, std::fwrite, stdout
+        #include <format>  // std::format, std::format_string
+        #include <string>  // std::string
+        #include <utility> // std::forward
+    #endif
 
-#include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT (print, println)
+    #include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT (print, println)
 
-#ifndef SHRINK_ARRAY_MODULE_DEPS // the module's global fragment reads the #includes only
-    #define SHRINK_ARRAY_PRINT_H
+    #ifndef SHRINK_ARRAY_MODULE_DEPS // the module's global fragment reads the #includes only
 
 namespace shrink_array
 {
-    #if defined(__cpp_lib_print)
+        #if defined(__cpp_lib_print)
 SHRINK_ARRAY_EXPORT using std::print;
 SHRINK_ARRAY_EXPORT using std::println;
-    #else
+        #else
 /// @brief std::print(stream, fmt, args...): format, then one fwrite.
 SHRINK_ARRAY_EXPORT template <typename... Args>
 void print(std::FILE* stream, std::format_string<Args...> fmt, Args&&... args)
@@ -94,8 +100,8 @@ SHRINK_ARRAY_EXPORT inline void println()
 {
     std::fputc('\n', stdout);
 }
-    #endif
+        #endif
 } // namespace shrink_array
 
-#endif // SHRINK_ARRAY_MODULE_DEPS
-#endif // SHRINK_ARRAY_PRINT_H
+    #endif // SHRINK_ARRAY_MODULE_DEPS
+#endif     // SHRINK_ARRAY_INTERNAL_PRINT_H

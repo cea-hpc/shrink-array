@@ -68,4 +68,11 @@ if (TARGET chunk_zero_any_module)
   target_compile_features(getting_started_module PRIVATE cxx_std_23)
   target_link_libraries(getting_started_module PRIVATE chunk_zero_any_module)
   add_test(NAME getting_started_module COMMAND getting_started_module)
+  # module_api.cpp: the names the module exports from its purview headers
+  # (chunk exchange, advisor, decider, mdspan), each used through the import.
+  add_executable(module_api module_api.cpp)
+  set_target_properties(module_api PROPERTIES CXX_SCAN_FOR_MODULES ON CXX_MODULE_STD ON)
+  target_compile_features(module_api PRIVATE cxx_std_23)
+  target_link_libraries(module_api PRIVATE chunk_zero_any_module)
+  add_test(NAME module_api COMMAND module_api)
 endif()

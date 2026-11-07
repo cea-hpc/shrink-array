@@ -14,8 +14,17 @@
  * limitations under the License.
  */
 
-#pragma once
-#include "chunk/mdspan.h" // the class these bodies belong to
+// The double guard of a header the module reads (chunk/internal/module_export.h).
+#if defined(SHRINK_ARRAY_MODULE_DEPS) ? !defined(SHRINK_ARRAY_INTERNAL_MDSPAN_INLINE_H_DEPS) \
+                                      : !defined(SHRINK_ARRAY_INTERNAL_MDSPAN_INLINE_H)
+    #if defined(SHRINK_ARRAY_MODULE_DEPS)
+        #define SHRINK_ARRAY_INTERNAL_MDSPAN_INLINE_H_DEPS
+    #else
+        #define SHRINK_ARRAY_INTERNAL_MDSPAN_INLINE_H
+    #endif
+    #include "chunk/mdspan.h" // the class these bodies belong to
+
+    #ifndef SHRINK_ARRAY_MODULE_DEPS // the module's global fragment reads the #includes only
 
 namespace shrink_array
 {
@@ -99,7 +108,7 @@ constexpr void md::detail::TiledMappingBase<Derived, Extents>::init(this Derived
     }
 }
 
-#if SHRINK_ARRAY_HAS_SUBMDSPAN
+        #if SHRINK_ARRAY_HAS_SUBMDSPAN
 template <typename Derived, typename Extents>
 template <typename... Slices>
 constexpr std::pair<typename md::detail::TiledMappingBase<Derived, Extents>::grid_type, std::size_t>
@@ -136,7 +145,7 @@ md::detail::TiledMappingBase<Derived, Extents>::sub_view(this const Derived& sel
     }
     return {size, static_cast<std::size_t>(which) * static_cast<std::size_t>(self.tile_elements())};
 }
-#endif
+        #endif
 
 // ---------------------------------------------------------------------------
 // shrink_array::layout_tiled_dyn<Rank>::mapping<Extents>
@@ -161,3 +170,7 @@ constexpr md::layout_tiled_dyn<Rank>::mapping<Extents>::mapping(const extents_ty
 }
 
 } // namespace shrink_array
+
+    #endif // SHRINK_ARRAY_MODULE_DEPS
+
+#endif // SHRINK_ARRAY_INTERNAL_MDSPAN_INLINE_H

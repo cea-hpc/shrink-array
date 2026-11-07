@@ -30,8 +30,12 @@
  *   module, the same entities as in the compiled library and in any program
  *   that #includes the header: one ParamChunk::block_size, one set of pools.
  *
- * So such a header has an include guard, not #pragma once, defined only when
- * its declarations are read, and they sit under #ifndef SHRINK_ARRAY_MODULE_DEPS.
+ * So such a header has, instead of #pragma once, a double guard: G for an
+ * ordinary read (set on entry, as #pragma once would be), G_DEPS for the
+ * #includes-only read -- an _inline.h tail includes its header back, and that
+ * pass must not loop -- and its declarations sit under
+ * #ifndef SHRINK_ARRAY_MODULE_DEPS. Its _inline.h tail, included after that
+ * #endif, is read the same way.
  * Only a header that no other header of the module includes can be read so:
  * otherwise its declarations are already in the global module fragment. A
  * header that includes one for its users' convenience skips it when

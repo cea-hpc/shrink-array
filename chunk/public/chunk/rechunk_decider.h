@@ -14,7 +14,14 @@
  * limitations under the License.
  */
 
-#pragma once
+// The double guard of a header the module reads (chunk/internal/module_export.h).
+#if defined(SHRINK_ARRAY_MODULE_DEPS) ? !defined(SHRINK_ARRAY_RECHUNK_DECIDER_H_DEPS) \
+                                      : !defined(SHRINK_ARRAY_RECHUNK_DECIDER_H)
+    #if defined(SHRINK_ARRAY_MODULE_DEPS)
+        #define SHRINK_ARRAY_RECHUNK_DECIDER_H_DEPS
+    #else
+        #define SHRINK_ARRAY_RECHUNK_DECIDER_H
+    #endif
 
 // ============================================================================
 // Re-chunk decider (phase 3 of adaptive chunk sizing)
@@ -39,20 +46,24 @@
 // in the gain gates (rechunk_cost_model.h); hysteresis here is about avoiding
 // OSCILLATION.
 
-#include <array>         // std::array (Hist's visited ring)
-#include <cstddef>       // std::size_t
-#include <cstdio>        // std::FILE, stdout
-#include <string>        // std::string
-#include <unordered_map> // std::unordered_map
-#include <vector>        // std::vector
+    #include <array>         // std::array (Hist's visited ring)
+    #include <cstddef>       // std::size_t
+    #include <cstdio>        // std::FILE, stdout
+    #include <string>        // std::string
+    #include <unordered_map> // std::unordered_map
+    #include <vector>        // std::vector
 
-#include "chunk/chunk_size_advisor.h" // ChunkSizeReport
+    #include "chunk/chunk_size_advisor.h" // ChunkSizeReport
+
+    #include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT
+
+    #ifndef SHRINK_ARRAY_MODULE_DEPS // the module's global fragment reads the #includes only
 
 namespace shrink_array
 {
 
 /// @brief Thresholds of RechunkDecider: stability ticks, gain deadbands, cooldown, caps and dry-run switch.
-struct RechunkPolicy
+SHRINK_ARRAY_EXPORT struct RechunkPolicy
 {
     int         stability_ticks             = 3;        ///< best must hold this many ticks
     std::size_t min_gain_bytes              = 8u << 20; ///< deadband: ignore gains below 8 MB
@@ -133,7 +144,7 @@ struct RechunkPolicy
 };
 
 /// @brief Decides, per array, whether a re-chunk is worthwhile from ChunkSizeReport ticks and a RechunkPolicy.
-class RechunkDecider
+SHRINK_ARRAY_EXPORT class RechunkDecider
 {
   public:
     /// One committed re-chunk, for the end-of-run report.
@@ -222,4 +233,8 @@ class RechunkDecider
 
 } // namespace shrink_array
 
-#include "chunk/internal/rechunk_decider_inline.h" // the method bodies
+    #endif // SHRINK_ARRAY_MODULE_DEPS
+
+    #include "chunk/internal/rechunk_decider_inline.h" // the method bodies
+
+#endif // SHRINK_ARRAY_RECHUNK_DECIDER_H

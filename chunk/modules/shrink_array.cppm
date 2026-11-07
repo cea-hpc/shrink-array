@@ -40,6 +40,11 @@ module;
 #include "chunk/internal/print.h"
 #include "chunk/manage_ompt.h"
 #include "chunk/shutdown.h"
+#include "chunk/chunk_exchange.h"
+#include "chunk/chunk_size_advisor.h"
+#include "chunk/rechunk_decider.h"
+#include "chunk/mdspan.h"
+#include "chunk/mdspan_tile_ops.h"
 #undef SHRINK_ARRAY_MODULE_DEPS
 
 export module shrink_array;
@@ -59,10 +64,15 @@ import std;
 #define SHRINK_ARRAY_EXPORT export
 extern "C++"
 {
-#include "chunk/param_chunk.h"    // ParamChunk
-#include "chunk/internal/print.h" // print, println
-#include "chunk/manage_ompt.h"    // parallel_phase
-#include "chunk/shutdown.h"       // release_chunk_pools, destroy_block_chunk
+#include "chunk/param_chunk.h"        // ParamChunk
+#include "chunk/internal/print.h"     // print, println
+#include "chunk/manage_ompt.h"        // parallel_phase
+#include "chunk/shutdown.h"           // release_chunk_pools, destroy_block_chunk
+#include "chunk/chunk_exchange.h"     // export_chunk, import_chunk, export_array, import_array, ChunkState, ...
+#include "chunk/chunk_size_advisor.h" // ChunkSizeAdvisor, ChunkSizeReport, ChunkSizeEstimate
+#include "chunk/rechunk_decider.h"    // RechunkDecider, RechunkPolicy
+#include "chunk/mdspan.h"             // md::view, md::tiled_view, md::layout_tiled, ...
+#include "chunk/mdspan_tile_ops.h"    // md::for_each_tile, md::fill_box, md::copy_box_in, ...
 }
 #undef SHRINK_ARRAY_EXPORT
 
