@@ -58,12 +58,14 @@ if (NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   set_property(GLOBAL APPEND PROPERTY SHRINK_CHECK_TARGETS getting_started) # check builds it
 endif()
 
-# getting_started_module.cpp: the same program through `import shrink_array;`
+# getting_started_module.cpp: the same program through `import std;` and `import shrink_array;`
 # (SHRINK_ARRAY_MODULES=ON, inside the tree only: the module is not installed).
 if (TARGET chunk_zero_any_module)
   add_executable(getting_started_module getting_started_module.cpp)
-  # The tree keeps CMP0155 OLD (cmake_minimum_required 3.20): scan this source for its import.
-  set_target_properties(getting_started_module PROPERTIES CXX_SCAN_FOR_MODULES ON)
+  # The tree keeps CMP0155 OLD (cmake_minimum_required 3.20): scan this source
+  # for its imports; import std needs C++23 asked as a feature.
+  set_target_properties(getting_started_module PROPERTIES CXX_SCAN_FOR_MODULES ON CXX_MODULE_STD ON)
+  target_compile_features(getting_started_module PRIVATE cxx_std_23)
   target_link_libraries(getting_started_module PRIVATE chunk_zero_any_module)
   add_test(NAME getting_started_module COMMAND getting_started_module)
 endif()

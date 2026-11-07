@@ -7,6 +7,14 @@ cmake_minimum_required(VERSION 3.20)
 if(POLICY CMP0126)
     cmake_policy(SET CMP0126 NEW)
 endif()
+# The shrink_array module (prototype, chunk/CMakeLists.txt): its programs
+# `import std;`, which CMake supports behind an experimental gate set before
+# project() (project() looks for the standard library's modules). The value is
+# CMake 4.2's: it changes with CMake's version.
+option(SHRINK_ARRAY_MODULES "Build the shrink_array C++ module and its programs, through import std (prototype: Ninja, CMake 4.2)" OFF)
+if(SHRINK_ARRAY_MODULES)
+    set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "d0edc3af-4c50-42ea-a356-e2862fe7a444")
+endif()
 project(shrink_array VERSION 0.2.1 LANGUAGES CXX)
 
 # Built on its own, or consumed by another project (add_subdirectory,
