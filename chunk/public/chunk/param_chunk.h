@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#pragma once
+#ifndef SHRINK_ARRAY_PARAM_CHUNK_H // a guard, not #pragma once: see internal/module_export.h
 
 #include <cstddef>  // std::size_t
 #include <iostream> // std::cout
@@ -27,6 +27,10 @@
 #include "chunk/singleton.h"                  // SingletonChk
 #include "chunk/all_type_chunk.h"             // AllTypeChunk
 #include "chunk/log.h"                        // CHUNK_LOG (the static build's ignored setters)
+#include "chunk/internal/module_export.h"     // SHRINK_ARRAY_EXPORT (ParamChunk)
+
+#ifndef SHRINK_ARRAY_MODULE_DEPS // the module's global fragment reads the #includes only
+    #define SHRINK_ARRAY_PARAM_CHUNK_H
 
 namespace shrink_array
 {
@@ -165,7 +169,7 @@ struct ParamChunkDynInterface<false, AllT>
 
 /// @brief Library-wide setup and configuration entry point (all-static), inheriting the build-dependent verbs
 ///        of ParamChunkParallelInterface and ParamChunkDynInterface.
-class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInterface<>
+SHRINK_ARRAY_EXPORT class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInterface<>
 {
   public:
     // The policies read the private #block_size. They are befriended as TEMPLATES: their
@@ -450,3 +454,6 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     static int block_size;
 };
 } // namespace shrink_array
+
+#endif // SHRINK_ARRAY_MODULE_DEPS
+#endif // SHRINK_ARRAY_PARAM_CHUNK_H

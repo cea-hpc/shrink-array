@@ -24,7 +24,7 @@
 // importer sees memcpy only through shrink_array. <cstring>, included before the
 // imports, avoids it; import std or std.compat does not, nor exporting ::memcpy
 // from the module. clang 23 does not need it.
-#include <cstring>
+#include <cstring> // memcpy, for GCC 16 (above)
 
 import std;          // std::as_const
 import shrink_array; // zero_any::Array, parallel_phase, ParamChunk, println, release_chunk_pools, ...

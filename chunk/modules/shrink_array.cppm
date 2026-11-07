@@ -14,10 +14,12 @@
  * limitations under the License.
  */
 
-// The shrink_array module (prototype): the existing headers, included in the
-// global module fragment, and the names a program of docs/getting_started.md
-// uses, exported by using-declarations. Nothing is moved into the module
-// purview: the headers stay the source of truth and `#include` keeps working.
+// The shrink_array module (prototype): the names a program of
+// docs/getting_started.md uses. Most headers are included in the global module
+// fragment and their names exported by using-declarations; a few top headers
+// are read in the purview and export their own declarations
+// (chunk/internal/module_export.h). The headers stay the source of truth and
+// `#include` keeps working.
 //
 // Built per variant library (chunk_zero_any_module links chunk_zero_any): the
 // BMI carries that library's defines (CHUNK_VARIANT_ZERO_ANY, CHUNK_SIZE), so
@@ -29,8 +31,13 @@ module;
 #include "chunk/zero_any_array.h" // zero_any::Array
 #include "chunk/zero_chunk.h"     // release_chunk_pools, destroy_block_chunk
 #include "chunk/manage_ompt.h"    // parallel_phase
-#include "chunk/param_chunk.h"    // ParamChunk
-#include "chunk/internal/print.h" // print, println
+
+// The #includes of the headers read in the purview below, and only those
+// (chunk/internal/module_export.h).
+#define SHRINK_ARRAY_MODULE_DEPS
+#include "chunk/param_chunk.h"
+#include "chunk/internal/print.h"
+#undef SHRINK_ARRAY_MODULE_DEPS
 
 export module shrink_array;
 
@@ -42,13 +49,23 @@ export module shrink_array;
 // their standard headers: both compilers merge them with the module.
 import std;
 
+// Headers whose declarations are the module's: those marked SHRINK_ARRAY_EXPORT
+// are exported, the rest stays reachable but cannot be named by an importer.
+// extern "C++" attaches them to the global module, as everywhere else.
+#undef SHRINK_ARRAY_EXPORT
+#define SHRINK_ARRAY_EXPORT export
+extern "C++"
+{
+#include "chunk/param_chunk.h"    // ParamChunk
+#include "chunk/internal/print.h" // print, println
+}
+#undef SHRINK_ARRAY_EXPORT
+
+// The other headers' names, exported by using-declarations.
 export namespace shrink_array
 {
 using shrink_array::destroy_block_chunk;
 using shrink_array::parallel_phase;
-using shrink_array::ParamChunk;
-using shrink_array::print;
-using shrink_array::println;
 using shrink_array::release_chunk_pools;
 
 namespace zero_any
