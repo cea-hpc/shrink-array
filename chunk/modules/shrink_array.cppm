@@ -28,15 +28,18 @@
 
 module;
 
-#include "chunk/zero_any_array.h" // zero_any::Array
-#include "chunk/zero_chunk.h"     // release_chunk_pools, destroy_block_chunk
-#include "chunk/manage_ompt.h"    // parallel_phase
-
-// The #includes of the headers read in the purview below, and only those
+// A header that includes one of the purview's for convenience skips it here
 // (chunk/internal/module_export.h).
+#define SHRINK_ARRAY_MODULE_UNIT
+
+#include "chunk/zero_any_array.h" // zero_any::Array
+
+// The #includes of the headers read in the purview below, and only those.
 #define SHRINK_ARRAY_MODULE_DEPS
 #include "chunk/param_chunk.h"
 #include "chunk/internal/print.h"
+#include "chunk/manage_ompt.h"
+#include "chunk/shutdown.h"
 #undef SHRINK_ARRAY_MODULE_DEPS
 
 export module shrink_array;
@@ -58,15 +61,21 @@ extern "C++"
 {
 #include "chunk/param_chunk.h"    // ParamChunk
 #include "chunk/internal/print.h" // print, println
+#include "chunk/manage_ompt.h"    // parallel_phase
+#include "chunk/shutdown.h"       // release_chunk_pools, destroy_block_chunk
 }
 #undef SHRINK_ARRAY_EXPORT
 
 // The other headers' names, exported by using-declarations.
 export namespace shrink_array
 {
-using shrink_array::destroy_block_chunk;
-using shrink_array::parallel_phase;
-using shrink_array::release_chunk_pools;
+// The phase hooks parallel_phase() calls, for a program that opens its regions
+// itself (chunk/internal/phase_hooks.h).
+using shrink_array::begin_parallel_phase;
+using shrink_array::finalize_barrier_phase;
+using shrink_array::finalize_parallel_phase;
+using shrink_array::finalize_parallel_phase_after_flush;
+using shrink_array::finalize_parallel_phase_only_flush;
 
 namespace zero_any
 {

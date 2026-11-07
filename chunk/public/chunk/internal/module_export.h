@@ -33,7 +33,10 @@
  * So such a header has an include guard, not #pragma once, defined only when
  * its declarations are read, and they sit under #ifndef SHRINK_ARRAY_MODULE_DEPS.
  * Only a header that no other header of the module includes can be read so:
- * otherwise its declarations are already in the global module fragment.
+ * otherwise its declarations are already in the global module fragment. A
+ * header that includes one for its users' convenience skips it when
+ * SHRINK_ARRAY_MODULE_UNIT is defined (by the module unit, before any
+ * #include): chunk/zero_chunk.h and chunk/shutdown.h.
  */
 
 #ifndef SHRINK_ARRAY_EXPORT

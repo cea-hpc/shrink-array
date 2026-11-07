@@ -34,6 +34,13 @@
 #include "chunk/internal/immortal.h"            // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (init_chunks_cst_val)
 
+// release_chunk_pools() and destroy_block_chunk(), still found through this
+// header -- but not in the module unit, which reads chunk/shutdown.h in its
+// purview (chunk/internal/module_export.h).
+#ifndef SHRINK_ARRAY_MODULE_UNIT
+    #include "chunk/shutdown.h" // release_chunk_pools, destroy_block_chunk
+#endif
+
 namespace shrink_array
 {
 // Forward declaration: only named here, in contexts that depend on T. The
@@ -111,10 +118,6 @@ struct ChunkPoolParallelInterface<false, AllT>
     static void release_chunk_pools();
 };
 
-/// @brief When fast allocation is enabled, call destroy_block_chunk() on the AllTypeChunk singleton; otherwise
-///        do nothing. Nothing either while an array is alive (see release_chunk_pools()).
-extern void destroy_block_chunk();
-
 // Build-agnostic free functions over the policy above, declared and defined
 // (chunk_std.cpp) in EVERY build, so calling any of them links in both models.
 // The teardown ones (delete_chunk_allocator, clear_all_list_block_free_thr,
@@ -131,28 +134,6 @@ extern void delete_list_block_chunk_free_itself();
 /// @brief ChunkPoolParallelInterface<>::need_load_balance_list_block_free() of this build.
 /// @return Its result.
 extern bool need_load_balance_list_block_free();
-
-/**
- * @brief Let go of the chunk reuse pools, whichever thread model this build is.
- *
- * @details OpenMP releases the per-rank lists (clear_all_list_block_free_thr()
- *          then delete_list_block_chunk_free_itself()); a serial build deletes
- *          its single allocator (delete_chunk_allocator()).
- * @note Pair it with destroy_block_chunk(). Both are optional: the process can
- *       simply exit.
- * @note While an array is alive (typically a global one, destroyed after main)
- *       this only empties the free lists, and destroy_block_chunk(),
- *       delete_list_block_chunk_free_itself() and delete_chunk_allocator() do
- *       nothing: the array parks its buffers there when it dies.
- * @warning Sequential point: call it once, after the last parallel region. From
- *          inside a region (OpenMP's, the std backend's team or application
- *          phase) a check build aborts; any other build says so on stderr and
- *          does nothing. Every thread of the team would otherwise empty the
- *          same pools at once. The same holds for destroy_block_chunk(),
- *          delete_chunk_allocator(), clear_all_list_block_free_thr(),
- *          delete_list_block_chunk_free_itself() and an array's shrink_to_fit().
- */
-extern void release_chunk_pools();
 
 namespace zero
 {
