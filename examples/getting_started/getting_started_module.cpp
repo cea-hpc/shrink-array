@@ -19,7 +19,14 @@
 // one compressed array, written in parallel, read back, folded, and the
 // library shut down. Exit status 0 when every value reads back as written.
 
+#include <cstring> // GCC 16: see below
 #include <utility> // std::as_const
+
+// GCC 16 (16.0.1 20260322) stops with an internal compiler error (nonnull_arg_p,
+// in the ealias pass, on glibc's _FORTIFY_SOURCE wrapper of memcpy) when the
+// importer sees memcpy only through the module; including <cstring> here, before
+// the import, avoids it. Exporting ::memcpy from the module does not. clang 23
+// does not need it.
 
 import shrink_array; // zero_any::Array, parallel_phase, ParamChunk, println, release_chunk_pools, ...
 
