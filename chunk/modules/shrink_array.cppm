@@ -32,7 +32,18 @@ module;
 // (chunk/internal/module_export.h).
 #define SHRINK_ARRAY_MODULE_UNIT
 
-#include "chunk/zero_any_array.h" // zero_any::Array
+// The array of this variant library: the module is built once per variant
+// (chunk_<variant>_module), with the library's CHUNK_VARIANT_* define.
+#if defined(CHUNK_VARIANT_ZERO_ANY)
+    #include "chunk/zero_any_array.h" // zero_any::Array
+    #include "chunk/pattern_array.h"  // pattern::Array, over zero_any's library
+#elif defined(CHUNK_VARIANT_ZERO_ONE_VALUE)
+    #include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#elif defined(CHUNK_VARIANT_ZERO)
+    #include "chunk/zero_array.h" // zero::Array
+#else
+    #error "shrink_array.cppm: built with a variant library's CHUNK_VARIANT_* define"
+#endif
 
 // The #includes of the headers read in the purview below, and only those.
 #define SHRINK_ARRAY_MODULE_DEPS
@@ -87,8 +98,26 @@ using shrink_array::finalize_parallel_phase;
 using shrink_array::finalize_parallel_phase_after_flush;
 using shrink_array::finalize_parallel_phase_only_flush;
 
+// The variant's array: a using-declaration, since chunk_traits.h (in the global
+// module fragment) declares it first, unexported.
+#if defined(CHUNK_VARIANT_ZERO_ANY)
 namespace zero_any
 {
 using shrink_array::zero_any::Array;
 } // namespace zero_any
+namespace pattern
+{
+using shrink_array::pattern::Array;
+} // namespace pattern
+#elif defined(CHUNK_VARIANT_ZERO_ONE_VALUE)
+namespace zero_one_value
+{
+using shrink_array::zero_one_value::Array;
+} // namespace zero_one_value
+#elif defined(CHUNK_VARIANT_ZERO)
+namespace zero
+{
+using shrink_array::zero::Array;
+} // namespace zero
+#endif
 } // namespace shrink_array

@@ -722,10 +722,10 @@ endif()
 # --- The shrink_array module (prototype) ---------------------------------
 # modules/shrink_array.cppm: the headers in the global module fragment, the
 # getting_started names exported. One BMI per variant library (it carries the
-# variant's defines): chunk_zero_any_module, over chunk_zero_any. Needs the
+# variant's defines): chunk_<variant>_module, over chunk_<variant>. Needs the
 # Ninja generator (module dependency scanning) and `import std` (the option,
 # in the top CMakeLists.txt); not installed yet.
-if (SHRINK_ARRAY_MODULES AND "zero_any" IN_LIST CHUNK_VARIANTS)
+if (SHRINK_ARRAY_MODULES)
   if (CMAKE_VERSION VERSION_LESS 3.30 OR NOT CMAKE_GENERATOR MATCHES "Ninja")
     message(FATAL_ERROR "SHRINK_ARRAY_MODULES: needs CMake >= 3.30 and a Ninja generator")
   endif()
@@ -750,13 +750,19 @@ if (SHRINK_ARRAY_MODULES AND "zero_any" IN_LIST CHUNK_VARIANTS)
   if (OMP AND TARGET OpenMP::OpenMP_CXX AND TARGET __cmake_cxx23)
     target_link_libraries(__cmake_cxx23 PRIVATE OpenMP::OpenMP_CXX)
   endif()
-  add_library(chunk_zero_any_module)
-  target_sources(chunk_zero_any_module PUBLIC FILE_SET CXX_MODULES BASE_DIRS modules FILES modules/shrink_array.cppm)
-  target_link_libraries(chunk_zero_any_module PUBLIC chunk_zero_any)
-  # The module unit imports std (modules/shrink_array.cppm).
-  set_target_properties(chunk_zero_any_module PROPERTIES CXX_MODULE_STD ON)
-  target_compile_features(chunk_zero_any_module PUBLIC cxx_std_23)
-  message(STATUS "SHRINK_ARRAY_MODULES: chunk_zero_any_module (import shrink_array;)")
+  # One module per variant library of CHUNK_VARIANTS, all named shrink_array:
+  # a program links one of them.
+  foreach(_mv IN LISTS CHUNK_VARIANTS)
+    add_library(chunk_${_mv}_module)
+    target_sources(chunk_${_mv}_module PUBLIC FILE_SET CXX_MODULES BASE_DIRS modules FILES modules/shrink_array.cppm)
+    target_link_libraries(chunk_${_mv}_module PUBLIC chunk_${_mv})
+    # The module unit imports std (modules/shrink_array.cppm).
+    set_target_properties(chunk_${_mv}_module PROPERTIES CXX_MODULE_STD ON)
+    target_compile_features(chunk_${_mv}_module PUBLIC cxx_std_23)
+  endforeach()
+  list(TRANSFORM CHUNK_VARIANTS APPEND "_module" OUTPUT_VARIABLE _module_targets)
+  list(TRANSFORM _module_targets PREPEND "chunk_")
+  message(STATUS "SHRINK_ARRAY_MODULES: ${_module_targets} (import shrink_array;)")
 endif()
 
 # A REAL default library (not just an ALIAS), so the include directories reach the executables.

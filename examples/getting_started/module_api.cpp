@@ -18,7 +18,10 @@
 // headers it reads in its purview -- chunk exchange, chunk-size advisor,
 // re-chunk decider, mdspan views and tile operations -- each used through
 // `import shrink_array;`: they are exported, not only reachable, and their
-// templates instantiate in an importer. Exit status 0 when every check holds.
+// templates instantiate in an importer. Built once per variant module
+// (module_api_<variant>): the library's CHUNK_VARIANT_* define, which reaches
+// this program as the macros of an #include would not, picks the array.
+// Exit status 0 when every check holds.
 
 #include <cstring> // memcpy, for GCC 16 (see getting_started_module.cpp)
 
@@ -28,6 +31,17 @@ import shrink_array;
 namespace sa = shrink_array;
 namespace md = shrink_array::md;
 using shrink_array::println;
+
+#if defined(CHUNK_VARIANT_ZERO_ANY)
+template <typename T>
+using VariantArray = sa::zero_any::Array<T>;
+#elif defined(CHUNK_VARIANT_ZERO_ONE_VALUE)
+template <typename T>
+using VariantArray = sa::zero_one_value::Array<T>;
+#else
+template <typename T>
+using VariantArray = sa::zero::Array<T>;
+#endif
 
 namespace
 {
@@ -45,7 +59,7 @@ void check(bool ok, std::string_view what)
 // Chunk exchange: the whole array, then one chunk, into fresh arrays.
 void exchange(int count)
 {
-    sa::zero_any::Array<double> src(count);
+    VariantArray<double> src(count);
     for (int i = 0; i < count / 4; ++i)
     {
         src[i] = 1.0 + static_cast<double>(i % 5); // varied: materialised chunks
@@ -57,7 +71,7 @@ void exchange(int count)
     src.shrink_to_fit();
 
     const sa::ArrayState<double> state = sa::export_array(src);
-    sa::zero_any::Array<double>  dst(count);
+    VariantArray<double>         dst(count);
     check(sa::import_array(dst, state), "import_array accepts a fresh array");
     const auto& cs   = std::as_const(src);
     const auto& cd   = std::as_const(dst);
@@ -70,7 +84,7 @@ void exchange(int count)
 
     const sa::ChunkState<double> first = sa::export_chunk(src, 0);
     check(first.kind == sa::ChunkKind::materialised, "chunk 0 is materialised");
-    sa::zero_any::Array<double> one(count);
+    VariantArray<double> one(count);
     check(sa::import_chunk(one, 0, first), "import_chunk accepts a fresh chunk");
     check(std::as_const(one)[3] == cs[3], "import_chunk gives the chunk's values");
 }
@@ -78,7 +92,7 @@ void exchange(int count)
 // Advisor and decider: a report on the array, observed once.
 void advisor(int count)
 {
-    sa::zero_any::Array<double> arr(count);
+    VariantArray<double> arr(count);
     for (int i = 0; i < count / 2; ++i)
     {
         arr[i] = static_cast<double>(i % 3);
@@ -93,10 +107,10 @@ void advisor(int count)
 // mdspan: a tiled view, a box filled, read back by tile and by box.
 void views()
 {
-    constexpr int               n    = 64;
-    const auto                  size = static_cast<int>(md::tiled_size<16, 16>(n, n));
-    sa::zero_any::Array<double> arr(size);
-    auto                        f = md::tiled_view<16, 16>(arr, n, n);
+    constexpr int        n    = 64;
+    const auto           size = static_cast<int>(md::tiled_size<16, 16>(n, n));
+    VariantArray<double> arr(size);
+    auto                 f = md::tiled_view<16, 16>(arr, n, n);
     md::fill_box(f, std::array<long, 2>{8, 8}, std::array<long, 2>{40, 24}, 4.0);
 
     const auto cf  = md::as_const(f);
@@ -122,6 +136,21 @@ void views()
     check(cf[0, 0] == 0.0 && cf[8, 8] == 4.0, "the view reads the array");
     println("mdspan: {}", md::mdspan_source);
 }
+
+#if defined(CHUNK_VARIANT_ZERO_ANY)
+// pattern::Array, over zero_any's library: a motif written, read back.
+void pattern()
+{
+    sa::pattern::Array<int> arr(1 << 12);
+    for (int i = 0; i < 1 << 12; ++i)
+    {
+        arr[i] = i % 4;
+    }
+    arr.shrink_to_fit();
+    const auto& ca = std::as_const(arr);
+    check(ca[4093] == 1 && ca[2] == 2, "pattern::Array reads its motif back");
+}
+#endif
 } // namespace
 
 int main()
@@ -131,6 +160,9 @@ int main()
         exchange(1 << 16);
         advisor(1 << 16);
         views();
+#if defined(CHUNK_VARIANT_ZERO_ANY)
+        pattern();
+#endif
     }
     sa::release_chunk_pools();
     sa::destroy_block_chunk();
