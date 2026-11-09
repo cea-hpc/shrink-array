@@ -27,7 +27,7 @@
 #include <type_traits> // std::true_type, std::false_type
 #include <vector>      // std::vector
 
-#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_THREAD_RANK
+#include "chunk/internal/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_THREAD_RANK
 #include "chunk/bit.h"       // is_packed_bit_v (checksum_word)
 
 // -----------------------------------------------------------------------------

@@ -34,7 +34,7 @@
  */
 
 #include "chunk/config.h"        // build_config::chunk_dynamic
-#include "chunk/chunk_traits.h"  // ArrayChunkTraits
+#include "chunk/internal/chunk_traits.h"  // ArrayChunkTraits
 #include "chunk/internal/in_t.h" // InT<T>: the captured state
 
 namespace shrink_array::zero_one_value

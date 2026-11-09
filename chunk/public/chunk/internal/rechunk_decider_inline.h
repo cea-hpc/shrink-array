@@ -31,7 +31,7 @@
 #include "chunk/chunk_size_advisor.h"          // ChunkSizeAdvisor, ChunkSizeReport
 #include "chunk/config.h"                      // build_config::chunk_dynamic
 #include "chunk/log.h"                         // CHUNK_LOG, logging::enabled
-#include "chunk/PMP_CHUNK.h"                   // CHUNK_PMP_MAX_THREADS (the rebuild's team, for its cost)
+#include "chunk/internal/PMP_CHUNK.h"                   // CHUNK_PMP_MAX_THREADS (the rebuild's team, for its cost)
 #include "chunk/internal/churn_counters.h"     // the churn trace (rechunk=debug)
 #include "chunk/internal/exact_rss.h"          // exact_rss_kib (memory=info, per tick)
 #include "chunk/internal/values_arena_bytes.h" // the values arena, if the build has one (memory=info)

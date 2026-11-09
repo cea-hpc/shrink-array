@@ -26,11 +26,11 @@
 
 #include "fast_allocators/internal/raw_memory.h"    // address_bits
 #include "chunk/config.h"                           // build_config::threaded, chunk_config
-#include "chunk/chunk_traits.h"                     // ChunkTraits<Derived>::ManagerType (ChunkImpl, ChunkThreadPolicy)
+#include "chunk/internal/chunk_traits.h"                     // ChunkTraits<Derived>::ManagerType (ChunkImpl, ChunkThreadPolicy)
 #include "chunk/internal/invariant_check.h"         // invariant_failed
 #include "chunk/internal/tab_cst_val2_holder.h"     // TabCstVal2Holder, SecondValueRef
-#include "chunk/PMP_CHUNK.h"                        // CHUNK_PMP_THREAD_RANK
-#include "chunk/ring_log_debug.h"                   // ScopedRingLog, ring_log_* (RING_LOG builds)
+#include "chunk/internal/PMP_CHUNK.h"                        // CHUNK_PMP_THREAD_RANK
+#include "chunk/internal/ring_log_debug.h"                   // ScopedRingLog, ring_log_* (RING_LOG builds)
 #include "chunk/internal/chunk_size_policy.h"       // ChunkElems
 #include "chunk/internal/cst_slot.h"                // CstSlot, cst_slot_of
 #include "chunk/internal/second_value_chunk_base.h" // SecondValueChunkBase
@@ -57,7 +57,7 @@ class Proxy;
 } // namespace zero_any
 
 template <template <typename> typename ChunkT, typename T>
-class ManagerChunk;
+class TypeState;
 
 
 namespace zero_any
@@ -555,7 +555,7 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>, public TabCstVal2Holder<
 
     /// @brief One rank's share of compress_chunk_to_compress() outside a
     ///        region: the body its region runs on each thread. Public for
-    ///        AllTypeChunk's single sweep region (ManagerChunk::sweep_rank).
+    ///        AllTypeChunk's single sweep region (TypeState::sweep_rank).
     static void compress_sweep_rank(int thr, bool apply);
 
     /// @brief Does that pass also sweep, serially, the ranks past the team?

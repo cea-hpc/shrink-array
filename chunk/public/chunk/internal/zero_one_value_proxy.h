@@ -27,7 +27,7 @@
 #include "chunk/config.h"                   // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/crp_helper.h"      // CRTPSupport
-#include "chunk/PMP_CHUNK.h"                // get_thr_rank_fast
+#include "chunk/internal/PMP_CHUNK.h"                // get_thr_rank_fast
 #include "chunk/internal/zero_one_value_pointer_map.h"   // zero_one_value::PointerMap
 #include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment
 #include "chunk/internal/chunk_size_policy.h"            // set_thread_chunk_size
@@ -46,7 +46,7 @@ namespace shrink_array
 {
 
 template <template <typename> class ChunkT, typename T>
-class ManagerChunk;
+class TypeState;
 
 namespace zero_one_value
 {
@@ -385,7 +385,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
     // second_value is in a dependent base: import it for unqualified use (two-phase lookup).
     using ProxySpec<T, Derived>::second_value_;
 
-    using Manager = ManagerChunk<Chunk, T>;
+    using Manager = TypeState<Chunk, T>;
 
     using CRTPSupport<Derived>::derived;
     using CRTPSupport<Derived>::self;
@@ -723,7 +723,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
 
   private:
     /// Alias for the chunk manager associated with type T.
-    using Manager = ManagerChunk<Chunk, T>;
+    using Manager = TypeState<Chunk, T>;
 
     using Base::chunk_;        ///< Reference to the associated chunk.
     using Base::num_;          ///< Index of the current element within the chunk.

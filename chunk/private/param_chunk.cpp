@@ -36,14 +36,14 @@
 #include <utility>   // std::cmp_greater
 
 #include "chunk/config.h"                              // build_config::chunk_dynamic, threaded
-#include "chunk/singleton.h"                           // SingletonChk
+#include "chunk/internal/singleton.h"                           // SingletonChk
 #include "chunk/internal/chunk_size_config.h"          // static_chunk_size
 #include "chunk/internal/chunk_size_policy.h"          // active_chunk_size
 #include "chunk/internal/chunk_stats.h"                // per-variant stats reduce/print
 #include "chunk/param_chunk.h"                         // the declarations defined here
-#include "chunk/PMP_CHUNK.h"                           // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/PMP_CHUNK.h"                           // CHUNK_PMP_MAX_THREADS
 #include "chunk/internal/write_compress_sync_policy.h" // dekker::protocol_name (CHUNK_STATS report only)
-#include "chunk/all_type_chunk.h"                      // AllTypeChunk
+#include "chunk/internal/all_type_chunk.h"                      // AllTypeChunk
 #include "chunk/log.h"                                 // CHUNK_LOG
 
 namespace shrink_array

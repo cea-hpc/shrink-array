@@ -17,14 +17,14 @@
 #pragma once
 
 /**
- * @file manager_chunk_inline.h
- * @brief Out-of-line bodies of ManagerChunk, the per-(variant, element type)
+e  * @file type_state_inline.h
+ * @brief Out-of-line bodies of TypeState, the per-(variant, element type)
  *        state behind every array: what crosses its bases -- the single
  *        compression sweep, the budgets computed from the chunk counters, the
  *        keyed allocator sets.
  *
  * @see reuse_pools_inline.h, compress_candidates_inline.h and
- *      manager_chunk_policies_inline.h for the bodies of its bases.
+ *      type_state_policies_inline.h for the bodies of its bases.
  * @see all_type_chunk.h for the registry that drives every manager at once.
  */
 
@@ -32,26 +32,26 @@
 #include <tuple>       // std::tuple
 #include <type_traits> // std::conditional_t
 
-#include "chunk/internal/manager_chunk.h"   // the declarations these bodies belong to
+#include "chunk/internal/type_state.h"   // the declarations these bodies belong to
 #include "chunk/config.h"                   // build_config, chunk_config
 #include "chunk/log.h"                      // CHUNK_LOG
-#include "chunk/PMP_CHUNK.h"                // CHUNK_PMP_*
-#include "chunk/zero_chunk.h"               // Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/zero_one_value_chunk.h"     // zero_one_value::Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/zero_any_chunk.h"           // zero_any::Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/zero_chunk_def.h"           // zero::ChunkDef
-#include "chunk/zero_one_value_chunk_def.h" // zero_one_value::ChunkDef
-#include "chunk/zero_any_chunk_def.h"       // zero_any::ChunkDef
+#include "chunk/internal/PMP_CHUNK.h"                // CHUNK_PMP_*
+#include "chunk/internal/zero_chunk.h"               // Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/internal/zero_one_value_chunk.h"     // zero_one_value::Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/internal/zero_any_chunk.h"           // zero_any::Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/internal/zero_chunk_def.h"           // zero::ChunkDef
+#include "chunk/internal/zero_one_value_chunk_def.h" // zero_one_value::ChunkDef
+#include "chunk/internal/zero_any_chunk_def.h"       // zero_any::ChunkDef
 #include "chunk/internal/concept_chunk.h"   // IsChunk, IsZeroOneValue, IsZeroAnyFamily
-#include "chunk/global_stats_chunk_list.h"  // GlobalStatsChunkList
-#include "chunk/type_name.h"                // type_name<T>
-#include "chunk/singleton.h"                // SingletonChk
+#include "chunk/internal/global_stats_chunk_list.h"  // GlobalStatsChunkList
+#include "chunk/internal/type_name.h"                // type_name<T>
+#include "chunk/internal/singleton.h"                // SingletonChk
 
 namespace shrink_array
 {
 /// @brief zero_one_value: snapshot the second-value lists the sweep drains.
 template <template <typename> typename ChunkT, typename T>
-void ManagerChunk<ChunkT, T>::sweep_prepare()
+void TypeState<ChunkT, T>::sweep_prepare()
 {
     if constexpr (chunk_config::use_fast_block_compression && IsZeroOneValue<ChunkT, T>)
     {
@@ -65,7 +65,7 @@ void ManagerChunk<ChunkT, T>::sweep_prepare()
 
 /// @brief Rank @p thr's share of compress_chunk_to_compress_potentially().
 template <template <typename> typename ChunkT, typename T>
-void ManagerChunk<ChunkT, T>::sweep_rank([[maybe_unused]] int thr, [[maybe_unused]] bool apply)
+void TypeState<ChunkT, T>::sweep_rank([[maybe_unused]] int thr, [[maybe_unused]] bool apply)
 {
     if constexpr (chunk_config::use_fast_block_compression)
     {
@@ -97,7 +97,7 @@ void ManagerChunk<ChunkT, T>::sweep_rank([[maybe_unused]] int thr, [[maybe_unuse
 /// @brief zero_one_value always swept the ranks past the team; zero_any in one pass;
 ///        Chunk never.
 template <template <typename> typename ChunkT, typename T>
-bool ManagerChunk<ChunkT, T>::sweep_mops_up([[maybe_unused]] bool apply) const
+bool TypeState<ChunkT, T>::sweep_mops_up([[maybe_unused]] bool apply) const
 {
     if constexpr (chunk_config::use_fast_block_compression)
     {
@@ -120,7 +120,7 @@ bool ManagerChunk<ChunkT, T>::sweep_mops_up([[maybe_unused]] bool apply) const
  *       there.
  */
 template <template <typename> typename ChunkT, typename T>
-void ManagerChunk<ChunkT, T>::destroy_block_chunk()
+void TypeState<ChunkT, T>::destroy_block_chunk()
 {
     // allocator_data is declared in every build (chunk_base.h) and is a dependent name, so the
     // discarded branch is never instantiated. std-alloc: destroy() is a no-op.
@@ -131,7 +131,7 @@ void ManagerChunk<ChunkT, T>::destroy_block_chunk()
 }
 
 template <template <typename> typename ChunkT, typename T>
-bool ManagerChunk<ChunkT, T>::register_alloc_key([[maybe_unused]] unsigned int key,
+bool TypeState<ChunkT, T>::register_alloc_key([[maybe_unused]] unsigned int key,
                                                  [[maybe_unused]] unsigned int size,
                                                  [[maybe_unused]] int          nb_chunk)
 {
@@ -164,11 +164,11 @@ bool ManagerChunk<ChunkT, T>::register_alloc_key([[maybe_unused]] unsigned int k
     }
 }
 
-// compute_size_buffer_reuse (documented in manager_chunk.h): derives ReusePools' reuse
+// compute_size_buffer_reuse (documented in type_state.h): derives ReusePools' reuse
 // budget from the number of chunks created so far, so a program that allocates
 // more keeps proportionally more buffers parked for reuse.
 template <template <typename> typename ChunkT, typename T>
-void ManagerChunk<ChunkT, T>::compute_size_buffer_reuse()
+void TypeState<ChunkT, T>::compute_size_buffer_reuse()
 {
     // zero_any::ChunkDef's reuse constants serve every variant (zero_any_chunk_def.h).
     Pools::size_buffer_reuse =
@@ -177,11 +177,11 @@ void ManagerChunk<ChunkT, T>::compute_size_buffer_reuse()
 }
 
 // compute_size_max_number_of_chunk_to_check_compress (documented in
-// manager_chunk.h): sets the threshold past which a rank's candidate list is
+// type_state.h): sets the threshold past which a rank's candidate list is
 // flagged dangerous -- the szm that ProxyBase::should_trigger_compression
 // compares against.
 template <template <typename> typename ChunkT, typename T>
-void ManagerChunk<ChunkT, T>::compute_size_max_number_of_chunk_to_check_compress()
+void TypeState<ChunkT, T>::compute_size_max_number_of_chunk_to_check_compress()
 {
     auto& global_stats = SingletonChk<GlobalStatsChunkList>::get_ref();
 

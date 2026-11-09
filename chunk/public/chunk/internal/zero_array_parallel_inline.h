@@ -21,7 +21,7 @@
 // so the compression manager stays out of the container declaration itself.
 #include "chunk/internal/zero_array_parallel.h"                // FastBlockSupport, the class these bodies belong to
 #include "chunk/internal/array_chunk_parallel_common_inline.h" // flush_pending_deferred_ops
-#include "chunk/PMP_CHUNK.h"                                   // CHUNK_PMP_* (make_block_compression)
+#include "chunk/internal/PMP_CHUNK.h"                                   // CHUNK_PMP_* (make_block_compression)
 #include "chunk/internal/chunk_size_policy.h"                  // set_thread_chunk_size (make_block_compression)
 #include "chunk/internal/read_reclaim.h"                       // read_reclaim::PassScope (drain_candidates in a region)
 #include "chunk/config.h"                                      // build_config::chunk_dynamic

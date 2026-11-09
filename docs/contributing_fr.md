@@ -94,9 +94,15 @@ Les vérifications des sources tournent avec les autres (`ctest -R check_`) :
   `rebind`). Dans un nom en snake_case, la
   variante s'écrit `zero_any`, comme dans les noms de fichiers (`zero_any_array.h`). Les
   globales prennent le préfixe `g_` ; aucun nom ne commence par `__` (réservé). Un nom public qui
-  change garde son ancienne graphie en alias `[[deprecated]]` jusqu'à la 1.0. `check_naming`
+  change garde son ancienne graphie en alias `[[deprecated]]` aussi longtemps que le dit la
+  politique de versions de [CHANGELOG.md](../CHANGELOG.md). `check_naming`
   vérifie ce qu'une ligne montre ; le `readability-identifier-naming` de clang-tidy vérifie le
   reste (le suffixe des membres, les paramètres) avec `scripts/clang_tidy_naming.yaml`.
+- **L'interface publique est figée.** `scripts/public_api.txt` liste les en-têtes et les noms
+  publics ; `check_public_api` échoue quand l'un d'eux est ajouté, déplacé, retiré ou renommé.
+  Un tel changement change l'interface : mettre la liste à jour et le consigner dans
+  CHANGELOG.md (politique de versions). Un nouvel en-tête qu'un programme n'inclut pas va sous
+  `internal/`.
 - **Les corps longs vont dans le compagnon `<en-tête>_inline.h`.** Une méthode dont le corps dépasse
   5 lignes est déclarée dans la classe et définie dans `internal/<en-tête>_inline.h`, inclus en
   fin d'en-tête ; le commentaire Doxygen reste sur la déclaration. Les accesseurs de quelques

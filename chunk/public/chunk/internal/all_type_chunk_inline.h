@@ -26,9 +26,9 @@
 #include "chunk/internal/all_type_chunk_decl.h" // the declarations these bodies belong to
 #include "chunk/config.h"                       // build_config::chunk_dynamic, chunk_config::use_zero*
 #include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/manager_chunk.h"       // ManagerChunk<ChunkT, T>
-#include "chunk/singleton.h"                    // SingletonChk<AllTypeChunk>, for ensure_manager
-#include "chunk/chunk_traits.h"                 // the variants' declarations initialize<Types> names
+#include "chunk/internal/type_state.h"       // TypeState<ChunkT, T>
+#include "chunk/internal/singleton.h"                    // SingletonChk<AllTypeChunk>, for ensure_manager
+#include "chunk/internal/chunk_traits.h"                 // the variants' declarations initialize<Types> names
 #include "chunk/internal/link_check.h"          // CHUNK_LINK_CHECK: the program's settings, the library's
 // Not the chunk definitions: register_manager<> is instantiated in the TU that
 // builds the array (which has them), and including them here would be a cycle.
@@ -96,15 +96,15 @@ void AllTypeChunk::initialize()
     // a build may select more than one (chunk_config::use_zero*).
     if constexpr (chunk_config::use_zero)
     {
-        fill_manager_chunk<zero::Chunk, Types>();
+        fill_type_state<zero::Chunk, Types>();
     }
     if constexpr (chunk_config::use_zero_one_value)
     {
-        fill_manager_chunk<zero_one_value::Chunk, Types>();
+        fill_type_state<zero_one_value::Chunk, Types>();
     }
     if constexpr (chunk_config::use_zero_any)
     {
-        fill_manager_chunk<zero_any::Chunk, Types>();
+        fill_type_state<zero_any::Chunk, Types>();
     }
 }
 

@@ -702,14 +702,6 @@ struct VTCTypeAllocator
      * @param alloc_sz Bytes held, summed over slabs.
      */
     virtual void add_allocated_size(size_t& sum_used_size, size_t& sum_nn_ref, size_t& alloc_sz) const = 0;
-
-    /// @brief Former name of add_allocated_size(), kept for the programs that call it (an
-    ///        override must use the new name).
-    [[deprecated("methods are snake_case: use add_allocated_size")]] void
-    addAllocatedSize(size_t& sum_used_size, size_t& sum_nn_ref, size_t& alloc_sz) const
-    {
-        add_allocated_size(sum_used_size, sum_nn_ref, alloc_sz);
-    }
 };
 
 /// @brief Enrol an allocator in the registry the memory report walks.
@@ -717,20 +709,6 @@ void add_tc_type_allocator_inst(VTCTypeAllocator* /*inst*/);
 
 /// @brief Withdraw it. Called from the destructor.
 void remove_tc_type_allocator_inst(VTCTypeAllocator* /*inst*/);
-
-/// @brief Former name of add_tc_type_allocator_inst(), kept for the programs that call it.
-[[deprecated("functions are snake_case: use add_tc_type_allocator_inst")]] inline void
-add_TCTypeAllocator_inst(VTCTypeAllocator* inst)
-{
-    add_tc_type_allocator_inst(inst);
-}
-
-/// @brief Former name of remove_tc_type_allocator_inst(), kept for the programs that call it.
-[[deprecated("functions are snake_case: use remove_tc_type_allocator_inst")]] inline void
-remove_TCTypeAllocator_inst(VTCTypeAllocator* inst)
-{
-    remove_tc_type_allocator_inst(inst);
-}
 
 /**
  * @brief Owns every slab serving one element size: the machinery common to
@@ -1144,7 +1122,7 @@ class alignas(64) TCTypeCAllocator : public TCSlabPool<TCTypeCAllocator<ElemT>, 
      * @brief The slabs of this instance that are still in use, at a sweep:
      *        give back their free pages (TCSlab::advise_free_pages()).
      * @details The empty slabs are collect_empty_slabs()'s; call this first, at
-     *          the same serial, quiescent point (ManagerChunk::sweep_empty_slabs).
+     *          the same serial, quiescent point (TypeState::sweep_empty_slabs).
      * @return The bytes given back.
      */
     std::size_t tidy_slabs_in_use() noexcept;
@@ -1399,13 +1377,6 @@ class TCTypeAllocatorEBC
      */
     void add_allocated_size(size_t& sum_used_size, size_t& sum_nn_ref, size_t& alloc_sz) const noexcept;
 
-    /// @brief Former name of add_allocated_size(), kept for the programs that call it.
-    [[deprecated("methods are snake_case: use add_allocated_size")]] void
-    addAllocatedSize(size_t& sum_used_size, size_t& sum_nn_ref, size_t& alloc_sz) const noexcept
-    {
-        add_allocated_size(sum_used_size, sum_nn_ref, alloc_sz);
-    }
-
   private:
     /// @brief Reserve capacity. Fixed, unlike the other families' runtime value.
     static constexpr int nb_max_block_empty = 5;
@@ -1447,10 +1418,6 @@ class TCTypeAllocatorEBC
 ///          as a non-type template argument below and in StaticConstArray,
 ///          where an unsigned int constant expression is required.
 inline constexpr unsigned int size_block = 1u << 20u; // 1048576
-
-/// @brief The former name of size_block, kept for programs that use it.
-[[deprecated("constants are snake_case: use fast_alloc::size_block")]] inline constexpr unsigned int SIZE_BLOCK =
-    size_block;
 
 } // namespace fast_alloc
 

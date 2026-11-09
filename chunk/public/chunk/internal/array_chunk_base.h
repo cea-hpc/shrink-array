@@ -47,7 +47,7 @@
 
 #include "chunk/config.h"                       // build_config::any_check, chunk_config::do_check
 #include "chunk/internal/in_t.h"                // InT<T>
-#include "chunk/chunk_traits.h"                 // ArrayChunkTraits, zero_one_value::Proxy
+#include "chunk/internal/chunk_traits.h"                 // ArrayChunkTraits, zero_one_value::Proxy
 #include "chunk/internal/crp_helper.h"          // CRTPSupport
 #include "chunk/internal/array_chunk_core.h"    // ArrayChunkCore — geometry, chunks, bitset, identity
 #include "chunk/internal/array_chunk_rechunk.h" // RechunkSupport — CHUNK_DYNAMIC-only mixin
@@ -82,8 +82,8 @@ inline constexpr bool has_chunk_written_v = requires(const D& obj, int num_chunk
  * @brief Common implementation of the chunked arrays, injected by CRTP.
  *
  * @details Storage is a vector of chunks of `chunk_size()` elements each; a
- *          global index @c i splits into `i >> chunk_decalage()` (chunk number)
- *          and `i & chunk_modulo()` (offset inside the chunk). A chunk may be
+ *          global index @c i splits into `i / chunk_size()` (chunk number)
+ *          and `i % chunk_size()` (offset inside the chunk). A chunk may be
  *          constant-folded or compressed, so elements have no stable address —
  *          which is why the positional accessors below return a value on the
  *          const side and a write proxy on the non-const side rather than
@@ -400,13 +400,6 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          resize/allocation, since it changes how indices map to chunks.
      */
     void set_chunk_size([[maybe_unused]] unsigned int new_chunk_size) noexcept;
-
-    /** @brief log2(chunk_size()): the index shift of a power-of-two size, meaningless otherwise. */
-    [[deprecated("chunk sizes may be multiples of 64: use i / chunk_size()")]] [[nodiscard]] unsigned int
-    chunk_decalage() const noexcept
-    {
-        return size_policy_.decalage();
-    }
 
     /** @brief chunk_size() - 1, the last offset in a chunk (a mask only for a power of two: use i % chunk_size()). */
     [[nodiscard]] unsigned int chunk_modulo() const noexcept

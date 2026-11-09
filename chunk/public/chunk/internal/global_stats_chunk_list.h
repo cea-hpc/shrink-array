@@ -24,8 +24,8 @@
 #include <sstream>   // std::ostringstream
 #include <string>    // std::string
 
-#include "chunk/term_color.h" // tc (TermColor)
-#include "chunk/PMP_CHUNK.h"  // CHUNK_PMP_* macros — used HERE, not via includers
+#include "chunk/internal/term_color.h" // tc (TermColor)
+#include "chunk/internal/PMP_CHUNK.h"  // CHUNK_PMP_* macros — used HERE, not via includers
 
 namespace shrink_array
 {

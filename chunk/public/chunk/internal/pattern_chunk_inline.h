@@ -15,7 +15,7 @@
  */
 
 #pragma once
-#include "chunk/pattern_chunk.h" // the class these bodies belong to
+#include "chunk/internal/pattern_chunk.h" // the class these bodies belong to
 
 namespace shrink_array
 {

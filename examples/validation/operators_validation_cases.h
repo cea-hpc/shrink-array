@@ -75,7 +75,7 @@
 #include <type_traits> // std::conditional_t, std::is_same_v, std::is_integral_v
 #include <utility>     // std::forward, std::as_const
 
-#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
+#include "chunk/internal/chunk_traits.h"         // forward decls + default IntType = int
 #include "chunk/zero_array.h"           // zero::Array
 #include "chunk/zero_one_value_array.h" // zero_one_value::Array
 #include "chunk/zero_any_array.h"       // zero_any::Array
@@ -85,7 +85,7 @@
 #include "chunk/config.h"      // chunk_config::use_zero*, build_config::use_openmp, has_not_ompt
 #include "chunk/manage_ompt.h" // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/param_chunk.h" // ParamChunk::init_indexes
-#include "chunk/type_name.h"   // type_name<T>()
+#include "chunk/internal/type_name.h"   // type_name<T>()
 #include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment, IsCleanShiftOp
 #include "chunk/internal/print.h"                        // shrink_array::println
 #include "chunk/internal/test_hooks.h"                   // force_defer_every, force_defer_compiled

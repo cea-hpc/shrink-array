@@ -41,7 +41,7 @@
 #include <vector>  // std::vector
 
 #include "chunk/config.h"    // build_config::chunk_dynamic
-#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS
 
 namespace shrink_array::churn
 {

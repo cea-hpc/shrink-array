@@ -42,13 +42,13 @@
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::as_const
 
-#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
+#include "chunk/internal/chunk_traits.h"         // forward decls + default IntType = int
 #include "chunk/zero_array.h"           // zero::Array
 #include "chunk/zero_one_value_array.h" // zero_one_value::Array
 #include "chunk/zero_any_array.h"       // zero_any::Array
 #include "chunk/param_chunk.h"          // ParamChunk::init_indexes
 #include "chunk/config.h"               // chunk_config::use_zero*
-#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/PMP_CHUNK.h"            // CHUNK_PMP_MAX_THREADS
 #include "chunk/internal/print.h"       // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp

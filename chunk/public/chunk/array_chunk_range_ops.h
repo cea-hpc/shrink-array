@@ -61,12 +61,12 @@
 #include "chunk/internal/element_access.h" // internal::as_words: Bit chunks are words of bits
 #include "chunk/internal/bit_words.h" // bits::count_ones, bits::scan_words, bits::fill_bit_range(_atomic), bits::store_bit_range_atomic
 #include "chunk/internal/in_t.h"                // InT<T>: the element snapshots
-#include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast
+#include "chunk/internal/PMP_CHUNK.h"                    // get_thr_rank_fast
 #include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size
 #include "chunk/internal/conditional_counter.h" // CounterValueT
 #include "chunk/config.h"                       // build_config::threaded, chunk_config
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_* (used directly, not via compression_manager.h)
-#include "chunk/chunk_traits.h" // zero / zero_one_value / is_zero_any_family_v, has_motif_state_v: the type traits below
+#include "chunk/internal/chunk_traits.h" // zero / zero_one_value / is_zero_any_family_v, has_motif_state_v: the type traits below
 #include "chunk/vector_range_ops.h"                    // internal::ChunkedArray + the std::vector fallback
 #include "chunk/internal/write_compress_sync_policy.h" // fill_range_mt: the writer side of the Dekker handshake
 #include "chunk/internal/relaxed_element.h"            // fill_range_mt: zero_any's shared elements

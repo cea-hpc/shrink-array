@@ -21,9 +21,9 @@
 #include <tuple> // std::get on candidate tuples
 
 #include "chunk/internal/zero_one_value_array_rechunk_hooks.h" // zero_one_value::RechunkHooks, the class these bodies belong to
-#include "chunk/internal/manager_chunk.h"                      // ManagerType — candidate store + reuse free-lists
+#include "chunk/internal/type_state.h"                      // ManagerType — candidate store + reuse free-lists
 #include "chunk/config.h"                     // build_config::threaded, chunk_config::use_fast_block_compression
-#include "chunk/PMP_CHUNK.h"                  // get_thr_rank_fast
+#include "chunk/internal/PMP_CHUNK.h"                  // get_thr_rank_fast
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size
 #include "chunk/internal/in_t.h"              // InT<value_type>: the captured state
 

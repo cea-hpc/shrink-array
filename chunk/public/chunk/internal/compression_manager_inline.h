@@ -25,8 +25,8 @@
 #include "fast_allocators/internal/raw_memory.h"       // address_bits, load_from_bytes
 #include "chunk/internal/compression_manager.h"        // the declarations these bodies belong to
 #include "chunk/config.h"                              // build_config::any_check, chunk_config::ring_log_debug
-#include "chunk/PMP_CHUNK.h"                           // get_thr_rank_fast, CHUNK_PMP_RANK_BOUND
-#include "chunk/ring_log_debug.h"                      // ScopedRingLogManualEnd, ring_log_op
+#include "chunk/internal/PMP_CHUNK.h"                           // get_thr_rank_fast, CHUNK_PMP_RANK_BOUND
+#include "chunk/internal/ring_log_debug.h"                      // ScopedRingLogManualEnd, ring_log_op
 #include "chunk/internal/cpu_pause.h"                  // CHUNK_CPU_PAUSE
 #include "chunk/internal/deferred_op_pool.h"           // DeferredOperationBase
 #include "chunk/internal/invariant_check.h"            // CHUNK_INVARIANT_FAILED

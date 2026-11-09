@@ -23,7 +23,7 @@
 #include "chunk/internal/array_chunk_parallel_common.h" // ParallelSupportCommon, the class these bodies belong to
 #include "chunk/internal/compression_manager.h"         // CompressionManager<> in flush_pending_deferred_ops
 #include "chunk/config.h"                   // build_config::any_check, chunk_config::use_fast_block_compression
-#include "chunk/PMP_CHUNK.h"                // CHUNK_PMP_RANK_BOUND, CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/internal/PMP_CHUNK.h"                // CHUNK_PMP_RANK_BOUND, CHUNK_PMP_IN_PARALLEL_REGION
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED, CHUNK_CHECK_FAILED
 
 namespace shrink_array

@@ -1,0 +1,83 @@
+# The public interface of the chunk library, frozen for 1.0 (CHANGELOG.md,
+# versioning policy; docs/api.md says how to use each name).
+#
+# scripts/check_public_api.py checks it against the tree (ctest check_public_api):
+#   - the [header] sections are exactly the headers of chunk/public/chunk/
+#     outside internal/: a header added, moved or removed fails until this
+#     file says so;
+#   - every name of a section must still be reachable from its header -- a
+#     word of the header or of a chunk/ or fast_allocators/ header it
+#     includes, directly or not: a public name removed or renamed fails.
+# A change to this file is an interface change: record it in CHANGELOG.md
+# (before 1.0 a MINOR release, after it a MAJOR one, or a deprecated alias).
+#
+# Members of the public classes that name the library's machinery are NOT part
+# of the interface, though a program can spell them: they can change in any
+# release. They are listed in [not public] so that nobody adds them above.
+
+[chunk/zero_array.h]
+zero::Array
+size empty capacity at front back resize reserve clear shrink_to_fit
+push_back emplace_back pop_back assign swap begin end cbegin rbegin rend
+compress stats get_nb_chunk_written chunk_size rechunk_to element_proxy
+
+[chunk/zero_one_value_array.h]
+zero_one_value::Array
+set_second_value get_second_value
+
+[chunk/zero_any_array.h]
+zero_any::Array
+reclaim_second_values second_value_stats SecondValueStats
+
+[chunk/pattern_array.h]
+pattern::Array
+reclaim_second_values
+
+[chunk/array_chunk_bits.h]
+ArrayChunkBits
+
+[chunk/bit.h]
+Bit
+
+[chunk/array_chunk_range_ops.h]
+fill_range copy_range fill_range_mt copy_range_mt transform_range_mt
+for_each_value for_each_span read_range
+
+[chunk/vector_range_ops.h]
+fill_range copy_range assume_drained
+
+[chunk/chunk_exchange.h]
+ChunkState ArrayState export_chunk import_chunk export_array import_array
+
+[chunk/param_chunk.h]
+ParamChunk ParamChunk::init_indexes ParamChunk::force_compression ParamChunk::chunk_stats
+release_chunk_pools destroy_block_chunk
+
+[chunk/manage_ompt.h]
+begin_parallel_phase finalize_parallel_phase finalize_parallel_phase_only_flush
+finalize_parallel_phase_after_flush finalize_barrier_phase parallel_phase
+
+[chunk/tbb_adaptor.h]
+tbb::parallel_for tbb::phase_body
+
+[chunk/chunk_size_advisor.h]
+ChunkSizeAdvisor ChunkSizeAdvisor::analyze ChunkSizeEstimate ChunkSizeReport
+
+[chunk/rechunk_decider.h]
+RechunkDecider RechunkDecider::consider RechunkDecider::print_rechunk_log RechunkPolicy
+stability_ticks cooldown_ticks anti_reversal_ticks max_coarsen_factor min_gain_bytes
+min_gain_frac coarsen_gain_multiple coarsen_min_meta_gain_bytes coarsen_min_meta_rate
+coarsen_trust_ratio dry_run max_backoff_ticks advisor_grid_bits trace_array force_size
+force_at force_toggle force_alt
+
+[chunk/config.h]
+build_config::use_openmp build_config::threaded build_config::has_ompt
+build_config::has_not_ompt build_config::chunk_dynamic chunk_config::use_zero
+chunk_config::use_zero_one_value chunk_config::use_zero_any chunk_config::use_second_value
+chunk_config::stats
+
+[chunk/log.h]
+logging::configure logging::set_sink
+
+[not public]
+ManagerType Manager ChunkType ChunkListType ProxyType get_chunk_list

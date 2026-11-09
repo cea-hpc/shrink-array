@@ -35,9 +35,9 @@
 // chunk_vector, simple_array_chunk chunk_zero.
 #include "chunk/param_chunk.h"                // ParamChunk
 #include "chunk/zero_array.h"                 // zero::Array
-#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS
-#include "chunk/zero_chunk_def.h"             // ChunkDef
-#include "chunk/zero_chunk.h"                 // destroy_block_chunk
+#include "chunk/internal/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/zero_chunk_def.h"             // ChunkDef
+#include "chunk/internal/zero_chunk.h"                 // destroy_block_chunk
 #include "chunk/config.h"                     // chunk_config::use_zero*, stats
 #include "chunk/internal/chunk_size_config.h" // static_chunk_size
 

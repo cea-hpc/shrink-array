@@ -62,7 +62,7 @@
 #include "chunk/array_chunk_range_ops.h" // fill_range_mt
 #include "chunk/param_chunk.h"           // ParamChunk::init_indexes
 #include "chunk/config.h"                // OmptSuspendCounter, chunk_config::use_zero / use_zero_one_value
-#include "chunk/PMP_CHUNK.h"             // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/PMP_CHUNK.h"             // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"           // begin_parallel_phase, finalize_parallel_phase_only_flush / _after_flush
 #include "chunk/internal/env_parse.h"    // arg_number (checked, not atoi)
 #include "chunk/internal/print.h"        // shrink_array::println

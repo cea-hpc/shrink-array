@@ -32,6 +32,7 @@
 #include "chunk/internal/conditional_counter.h" // ConditionalCounter
 #include "chunk/internal/zero_proxy.h"          // Proxy<T>
 #include "chunk/internal/immortal.h"            // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/pool_release.h"        // release_chunk_pools, destroy_block_chunk
 #include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (init_chunks_cst_val)
 
 namespace shrink_array
@@ -42,11 +43,11 @@ template <typename T, typename ChunkT>
 struct CompressionManager;
 
 template <template <typename> class ChunkT, typename T>
-class ManagerChunk;
+class TypeState;
 
 /// @brief The per-type facade these verbs drive. Forward-declared, not included:
 ///        zero_chunk.h sits inside an include cycle (chunk_func.h -> zero_chunk.h ->
-///        zero_proxy.h -> manager_chunk.h). Only chunk_std.cpp needs the full type.
+///        zero_proxy.h -> type_state.h). Only chunk_std.cpp needs the full type.
 class AllTypeChunk;
 
 /**
@@ -111,10 +112,6 @@ struct ChunkPoolParallelInterface<false, AllT>
     static void release_chunk_pools();
 };
 
-/// @brief When fast allocation is enabled, call destroy_block_chunk() on the AllTypeChunk singleton; otherwise
-///        do nothing. Nothing either while an array is alive (see release_chunk_pools()).
-extern void destroy_block_chunk();
-
 // Build-agnostic free functions over the policy above, declared and defined
 // (chunk_std.cpp) in EVERY build, so calling any of them links in both models.
 // The teardown ones (delete_chunk_allocator, clear_all_list_block_free_thr,
@@ -131,28 +128,6 @@ extern void delete_list_block_chunk_free_itself();
 /// @brief ChunkPoolParallelInterface<>::need_load_balance_list_block_free() of this build.
 /// @return Its result.
 extern bool need_load_balance_list_block_free();
-
-/**
- * @brief Let go of the chunk reuse pools, whichever thread model this build is.
- *
- * @details OpenMP releases the per-rank lists (clear_all_list_block_free_thr()
- *          then delete_list_block_chunk_free_itself()); a serial build deletes
- *          its single allocator (delete_chunk_allocator()).
- * @note Pair it with destroy_block_chunk(). Both are optional: the process can
- *       simply exit.
- * @note While an array is alive (typically a global one, destroyed after main)
- *       this only empties the free lists, and destroy_block_chunk(),
- *       delete_list_block_chunk_free_itself() and delete_chunk_allocator() do
- *       nothing: the array parks its buffers there when it dies.
- * @warning Sequential point: call it once, after the last parallel region. From
- *          inside a region (OpenMP's, the std backend's team or application
- *          phase) a check build aborts; any other build says so on stderr and
- *          does nothing. Every thread of the team would otherwise empty the
- *          same pools at once. The same holds for destroy_block_chunk(),
- *          delete_chunk_allocator(), clear_all_list_block_free_thr(),
- *          delete_list_block_chunk_free_itself() and an array's shrink_to_fit().
- */
-extern void release_chunk_pools();
 
 namespace zero
 {
@@ -232,7 +207,7 @@ class ChunkThreadPolicy : public ChunkBase<T, Derived>
   public:
     using Base      = ChunkBase<T, Derived>;
     using ChunkType = Derived;
-    using Manager   = ManagerChunk<Chunk, T>;
+    using Manager   = TypeState<Chunk, T>;
 
     using Base::derived;
     using Base::init_block;
@@ -373,7 +348,7 @@ class ChunkFastCompPolicy : public ChunkThreadPolicy<T, Derived>
     // NOT alloc_chunk_count() (the CONSUMING thread's ambient size, may differ).
     using CandidateTuples = std::vector<std::tuple<Chunk<T>*, int, int, ChunkElems>>;
 
-    using Manager = ManagerChunk<Chunk, T>;
+    using Manager = TypeState<Chunk, T>;
     using Base    = ChunkBase<T, Derived>;
 
     using Base::derived;
@@ -482,7 +457,7 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
 
     using CompressionManagerType = CompressionManager<T, ChunkType>;
 
-    using Manager = ManagerChunk<Chunk, T>;
+    using Manager = TypeState<Chunk, T>;
 
     using FastCompPolicy = ChunkFastCompPolicy<T, Chunk<T>, chunk_config::use_fast_block_compression>;
 
@@ -558,7 +533,7 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
 
     /// @brief One rank's share of compress_chunk_to_compress(): the body its
     ///        region runs on each thread. Public for AllTypeChunk's single
-    ///        sweep region (ManagerChunk::sweep_rank).
+    ///        sweep region (TypeState::sweep_rank).
     /// @param thr rank whose candidate list to drain
     static void compress_sweep_rank(int thr);
 

@@ -24,9 +24,10 @@
 #include "chunk/internal/chunk_size_config.h" // static_chunk_size, static_chunk_shift, static_chunk_mask
 #include "chunk/internal/chunk_size_policy.h" // active_chunk_size, chunk_size_error
 #include "chunk/internal/func_p2.h"           // is_power_of_two, log2int
-#include "chunk/singleton.h"                  // SingletonChk
-#include "chunk/all_type_chunk.h"             // AllTypeChunk
+#include "chunk/internal/singleton.h"                  // SingletonChk
+#include "chunk/internal/all_type_chunk.h"             // AllTypeChunk
 #include "chunk/log.h"                        // CHUNK_LOG (the static build's ignored setters)
+#include "chunk/internal/pool_release.h"      // release_chunk_pools, destroy_block_chunk: the shutdown
 
 namespace shrink_array
 {
@@ -61,7 +62,7 @@ namespace shrink_array
 // Build-dependent halves of the façade.
 //
 // Two of ParamChunk's verbs differ by build in their very NAME, which no `if constexpr` can
-// express, so they live in policies selected by a constexpr (as in ManagerChunkInt and
+// express, so they live in policies selected by a constexpr (as in TypeStateInterface and
 // AllTypeChunk). All static: no CRTP down-cast. The bodies are in param_chunk.cpp, with one
 // explicit instantiation of the specialisation this build selects.
 // ===========================================================================
@@ -206,13 +207,6 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
         return chunk_size > 0 && !chunk_size_error(static_cast<unsigned int>(chunk_size));
     }
 
-    /// @brief The former power-of-two-only check: chunk sizes may now also be multiples of 64.
-    [[deprecated("chunk sizes may be multiples of 64: use check_chunk_size")]] static bool
-    check_pow2(int chunk_size) noexcept
-    {
-        return is_power_of_two(chunk_size);
-    }
-
     /**
      * @brief Print the chunk geometry (size, shift, mask) on stdout.
      *
@@ -339,12 +333,6 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      */
     static void chunk_stats();
 
-    /// @brief Former name of chunk_stats(), kept for the programs that still spell it.
-    [[deprecated("functions are snake_case: use ParamChunk::chunk_stats")]] static void ChunkStats()
-    {
-        chunk_stats();
-    }
-
   private:
     /**
      * @brief No-op compatibility shim for the former runtime chunk-size setter.
@@ -395,16 +383,6 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
             CHUNK_LOG(warn, general, "set_decalage_chunk({}) ignored; built with CHUNK_SIZE={} (shift {})", value,
                       static_chunk_size, static_chunk_shift);
         }
-    }
-
-    /**
-     * @brief log2(static_chunk_size): the index shift of a power-of-two size,
-     *        meaningless otherwise (chunk = i / static_chunk_size).
-     */
-    [[deprecated("chunk sizes may be multiples of 64: use i / static_chunk_size")]] static constexpr unsigned int
-    get_decalage_chunk() noexcept
-    {
-        return static_chunk_shift;
     }
 
     /**

@@ -52,13 +52,13 @@
 
 #include <type_traits> // std::conditional_t
 
-#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
+#include "chunk/internal/chunk_traits.h"         // forward decls + default IntType = int
 #include "chunk/zero_array.h"           // zero::Chunk<T> complete (zero_chunk.h): its operator new[]
 #include "chunk/zero_one_value_array.h" // zero_one_value::Chunk<T> complete: its operator new[]
 #include "chunk/zero_any_array.h"       // zero_any::Chunk<T> complete (zero_any_chunk.h): its operator new[]
 #include "chunk/param_chunk.h"          // ParamChunk::init_indexes
 #include "chunk/config.h"               // chunk_config::use_zero*
-#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/PMP_CHUNK.h"            // CHUNK_PMP_MAX_THREADS
 #include "chunk/internal/print.h"       // shrink_array::println
 
 // The array-new is the threaded *ThreadPolicy's (the serial specialisations declare

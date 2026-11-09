@@ -23,14 +23,14 @@
 #include <tuple>           // the candidate-list entries
 #include <type_traits>     // std::remove_cvref_t (the re-queued candidates)
 
-#include "chunk/zero_chunk.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
+#include "chunk/internal/zero_chunk.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
 #include "chunk/config.h"     // build_config::chunk_dynamic, chunk_config::stats
 #include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/chunk_size_policy.h"   // alloc_chunk_count
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_* / add_chunk_* (CHUNK_STATS)
-#include "chunk/internal/manager_chunk.h"       // manager_chunk:: candidate lists (dependent calls)
+#include "chunk/internal/type_state.h"       // TypeState:: candidate lists (dependent calls)
 #include "chunk/internal/zero_proxy.h"          // Proxy<T>: the compression pass's proxy
-#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_*, pmp::team, pmp::in_application_phase
+#include "chunk/internal/PMP_CHUNK.h"                    // CHUNK_PMP_*, pmp::team, pmp::in_application_phase
 #include "chunk/internal/pool_ledger.h"         // CHUNK_LEDGER_*
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
 #include "chunk/internal/queue_flag.h"          // queue_flag::hand_back / release: the pass's hand-back
@@ -600,7 +600,7 @@ auto& zero::Chunk<T>::get_manager() noexcept
     // Do not make this a function-local static: its lazy guard's first init
     // can run from compress() inside an OpenMP region and deadlock threads on
     // __cxa_guard_acquire. A LazyImmortal (chunk/internal/immortal.h) is built
-    // by the manager's registration (ManagerChunk::init_static_state), before
+    // by the manager's registration (TypeState::init_static_state), before
     // any array or thread reaches it, and never destroyed (a global array
     // still uses it after main).
     return *s_manager_;

@@ -80,7 +80,7 @@ flowchart TB
         chk["chunks + proxies<br/>state, read, write engine"]
     end
     subgraph per_type["per (variant, element type)"]
-        mgr["ManagerChunk<br/>reuse pools, compression candidates,<br/>per-rank allocators, deferred flush"]
+        mgr["TypeState<br/>reuse pools, compression candidates,<br/>per-rank allocators, deferred flush"]
         cmp["CompressionManager<br/>passes, deferred writes"]
         reg["shared constants<br/>cst_val1, second-value registry, motif region"]
     end
@@ -107,13 +107,13 @@ flowchart TB
 |---|---|---|---|
 | the variant arrays | `zero::Array`, `zero_one_value::Array`, `zero_any::Array`, `pattern::Array`, `ArrayChunkBits` | `chunk/zero_array.h`, `chunk/zero_one_value_array.h`, `chunk/zero_any_array.h`, `chunk/pattern_array.h`, `chunk/array_chunk_bits.h` | one object per array |
 | the common array | `ArrayChunkBase`, `ArrayChunkCore`, `SecondValueArrayBase`, `RechunkSupport` | `internal/array_chunk_base.h`, `internal/array_chunk_core.h`, `internal/second_value_array_base.h`, `internal/array_chunk_rechunk.h` | bases of every array |
-| chunks | `zero::Chunk`, `zero_one_value::Chunk`, `zero_any::Chunk`, `pattern::Chunk`, `ChunkBase` | `chunk/zero_chunk.h`, `chunk/zero_one_value_chunk.h`, `chunk/zero_any_chunk.h`, `chunk/pattern_chunk.h`, `internal/chunk_base.h` | an element of the array's chunk list |
+| chunks | `zero::Chunk`, `zero_one_value::Chunk`, `zero_any::Chunk`, `pattern::Chunk`, `ChunkBase` | `chunk/internal/zero_chunk.h`, `chunk/internal/zero_one_value_chunk.h`, `chunk/internal/zero_any_chunk.h`, `chunk/internal/pattern_chunk.h`, `internal/chunk_base.h` | an element of the array's chunk list |
 | proxies, write engine | `ProxyBase`, `WriteCompressSyncPolicy`, the variants' `Proxy` | `internal/proxy_base.h`, `internal/write_compress_sync_policy.h` | a temporary per write |
-| per-type state | `ManagerChunk` (facade), `ReusePools`, `CompressCandidates`, `CompressionManager` | `internal/manager_chunk.h`, `internal/reuse_pools.h`, `internal/compress_candidates.h`, `internal/compression_manager.h` | one per (variant, element type), static |
+| per-type state | `TypeState` (facade), `ReusePools`, `CompressCandidates`, `CompressionManager` | `internal/type_state.h`, `internal/reuse_pools.h`, `internal/compress_candidates.h`, `internal/compression_manager.h` | one per (variant, element type), static |
 | shared constants | `TabCstVal2Holder`, `GlobalVecHolder`, `MotifRegion` | `internal/tab_cst_val2_holder.h`, `internal/motif_region.h` | one per element type |
 | process registry, startup | `AllTypeChunk`, `ParamChunk` | `internal/all_type_chunk_decl.h`, `chunk/param_chunk.h` | one per process |
 | phases | `begin_parallel_phase`, `finalize_parallel_phase`, `parallel_phase` | `chunk/manage_ompt.h`, `chunk/private/manage_ompt.cpp` | one phase at a time |
-| backend, ranks | `pmp::Team`, `pmp::parallel_for` | `chunk/PMP_CHUNK.h`, `fast_allocators/internal/pmp_loops.h`, `fast_allocators/internal/pmp_std.h` | process-wide |
+| backend, ranks | `pmp::Team`, `pmp::parallel_for` | `chunk/internal/PMP_CHUNK.h`, `fast_allocators/internal/pmp_loops.h`, `fast_allocators/internal/pmp_std.h` | process-wide |
 | allocation | slab arenas, per-rank allocators | `fast_allocators/slab_arena.h`, `fast_allocators/tc_allocator.h` | process-wide |
 | dynamic geometry | `ChunkSizeAdvisor`, `RechunkDecider`, `RechunkPolicy` | `chunk/chunk_size_advisor.h`, `chunk/rechunk_decider.h`, `internal/chunk_size_policy.h` | per array, driven by the program |
 
@@ -121,6 +121,13 @@ The split per (variant, element type) is the backbone: everything that must be s
 the arrays of one type -- the pools a compressed buffer goes back to, the candidate lists a
 pass drains, the registry of second values -- lives in that type's manager, and nothing is
 shared across types.
+
+What a program sees is much narrower: the 16 headers of `chunk/public/chunk/` outside `internal/`
+(the arrays, the range operations, the export and import of chunk states, the start and stop of
+the library, the phases, the dynamic geometry, the configuration and the log). They and the names
+of [api.md](api.md) are the interface, frozen in `scripts/public_api.txt` and checked by
+`check_public_api`; everything else, including the members of the public classes that name the
+machinery (`ManagerType`, `ChunkListType`...), can change in any release.
 
 ## 4. Static polymorphism
 
@@ -134,16 +141,16 @@ assembled at compile time:
 - **Policies instead of preprocessor branches.** The parts that differ between a threaded and a
   serial build, or a static and a dynamic geometry, are policy classes selected by a `bool`
   template parameter (`ChunkCounterPolicy` against the threaded policies, `DeferredReadGate`,
-  `ManagerChunkParallelImpl`, `ManagerChunkDynImpl`). The selectors are `constexpr` values of
+  `TypeStateParallelImpl`, `TypeStateDynImpl`). The selectors are `constexpr` values of
   `build_config` and `chunk_config` (`chunk/config.h`), tested with `if constexpr`; the
   remaining `#ifdef`s are the ones `if constexpr` cannot replace (an include, a declaration
   that does not compile in the other build), and the rules that decide which are written at
   the top of `examples/shrink_bench/bench_config.h`.
 - **Virtual dispatch only where it is cold.** `AllTypeChunk` must act on every manager of the
   process -- start the passes, flush the deferred writes, tear down -- without knowing their
-  types: it holds `ManagerChunkInt` pointers and calls virtuals, at phase boundaries only.
+  types: it holds `TypeStateInterface` pointers and calls virtuals, at phase boundaries only.
 - **Traits for the families, never the exact type.** `ChunkTraits` and `ArrayChunkTraits`
-  (`chunk/chunk_traits.h`) map a chunk to its proxy and manager, an array to its chunk. Code
+  (`chunk/internal/chunk_traits.h`) map a chunk to its proxy and manager, an array to its chunk. Code
   shared by `zero_any` and `pattern` tests the family (`is_zero_any_family_v`) and the motif
   state (`has_motif_state_v`): a new member then lands in the right branch or fails to compile.
   A member that exists on one variant only is reached through a `std::is_same_v` test against
@@ -397,7 +404,7 @@ backend rather than add a TBB backend: a TBB program links TBB, the library does
 | warnings and errors | one line each on stderr; `CHUNK_LOG` raises a channel (`rechunk`, `memory`, `advisor`, `compress`, `ompt`), `CHUNK_LOG_FILE` redirects, `shrink_array::logging::set_sink()` hands them to the program |
 | counters | the `CHUNK_STATS` build and `ParamChunk::chunk_stats()`: passes, aborts, deferred writes, reuse, parked bytes |
 | memory | measured exactly, not through `VmRSS` alone ([performance_measurement.md](performance_measurement.md)) |
-| post-mortem of a race | the ring log of the debug builds (`chunk/ring_log_debug.h`) |
+| post-mortem of a race | the ring log of the debug builds (`chunk/internal/ring_log_debug.h`) |
 | invariants | the check builds, which stop with a message naming the broken rule |
 
 ## 13. Decisions and the alternatives rejected

@@ -18,7 +18,7 @@
 
 #include <type_traits> // std::is_same_v
 
-#include "chunk/chunk_traits.h" // is_zero_any_family_v
+#include "chunk/internal/chunk_traits.h" // is_zero_any_family_v
 
 namespace shrink_array
 {

@@ -19,10 +19,10 @@
 /**
  * @file reuse_pools.h
  * @brief ReusePools: the buffer reuse pools of one (variant, element type),
- *        a base of ManagerChunk.
+ *        a base of TypeState.
  *
- * Its bodies are in reuse_pools_inline.h, which manager_chunk.h includes once
- * ManagerChunk is complete.
+ * Its bodies are in reuse_pools_inline.h, which type_state.h includes once
+ * TypeState is complete.
  */
 
 #include <algorithm>     // std::max
@@ -34,9 +34,9 @@
 #include <unordered_map> // std::unordered_map
 #include <vector>        // std::vector
 
-#include "chunk/zero_chunk_def.h"     // ChunkDef::size_min_buffer_reuse
-#include "chunk/zero_any_chunk_def.h" // zero_any::ChunkDef: the reuse budget constants
-#include "chunk/PMP_CHUNK.h"          // pmp::Team (drain_reuse_list_for_size_team)
+#include "chunk/internal/zero_chunk_def.h"     // ChunkDef::size_min_buffer_reuse
+#include "chunk/internal/zero_any_chunk_def.h" // zero_any::ChunkDef: the reuse budget constants
+#include "chunk/internal/PMP_CHUNK.h"          // pmp::Team (drain_reuse_list_for_size_team)
 #include "chunk/internal/immortal.h"  // Immortal / LazyImmortal: statics safe for global arrays
 
 namespace shrink_array
@@ -44,7 +44,7 @@ namespace shrink_array
 namespace internal
 {
 /// @brief One repeat seen by the teardown dedup phase: skip @p ptr when freeing bucket @p bucket.
-/// @see ManagerChunkParallelImpl::clear_list_block_free_dedup
+/// @see TypeStateParallelImpl::clear_list_block_free_dedup
 template <typename T>
 struct TeardownRepeat
 {
@@ -55,7 +55,7 @@ struct TeardownRepeat
 
 /**
  * @brief The buffer reuse pools of one (variant, element type), shared by
- *        all its arrays: a base of ManagerChunk, static state only.
+ *        all its arrays: a base of TypeState, static state only.
  *
  * @details Chunk buffers released by a compression or a teardown are parked
  *          here for the next materialisation instead of going back to the
@@ -66,9 +66,9 @@ struct TeardownRepeat
  *          affinity have their own lists (list_block_free_thr_keyed_). The
  *          pools also hold the reuse budgets, the drains of a re-chunk, the
  *          trims, and the hand-off buffers of the teardown
- *          (ManagerChunkParallelImpl::clear_list_block_free_*).
+ *          (TypeStateParallelImpl::clear_list_block_free_*).
  *
- *          The members reached through ManagerChunk only -- by its bodies
+ *          The members reached through TypeState only -- by its bodies
  *          and its policies, which it befriends -- are protected.
  *
  * @tparam ChunkT chunk variant template (zero, zero_one_value or zero_any)

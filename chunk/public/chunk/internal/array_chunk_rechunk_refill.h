@@ -53,9 +53,9 @@
 #include <utility> // std::declval (SecondInfo)
 #include <vector>  // the release counters, the recycling scratch
 
-#include "chunk/PMP_CHUNK.h"                          // pmp::Team, ChunkPmpSchedule
+#include "chunk/internal/PMP_CHUNK.h"                          // pmp::Team, ChunkPmpSchedule
 #include "chunk/bit.h"                                // is_packed_bit_v (releases_sources)
-#include "chunk/chunk_traits.h"                       // is_zero_any_family_v
+#include "chunk/internal/chunk_traits.h"                       // is_zero_any_family_v
 #include "chunk/config.h"                             // chunk_config::use_zero_one_value
 #include "chunk/internal/array_chunk_rechunk.h"       // RechunkSupport, the class Refill is nested in
 #include "chunk/internal/array_chunk_rechunk_trace.h" // SliceProbe

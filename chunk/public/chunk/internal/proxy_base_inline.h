@@ -54,9 +54,9 @@
 #include "chunk/internal/chunk_size_policy.h"  // ChunkElems — used HERE, not via includers
 #include "chunk/internal/phase_guard.h"        // check-build guard of the phase protocol
 #include "chunk/config.h"                      // build_config::any_check, chunk_config::use_fast_block_compression
-#include "chunk/chunk_traits.h"                // is_zero_any_family_v
-#include "chunk/PMP_CHUNK.h"                   // get_thr_rank_fast, CHUNK_PMP_IN_PARALLEL_REGION
-#include "chunk/ring_log_debug.h"              // ScopedRingLog, ring_log, get_tid
+#include "chunk/internal/chunk_traits.h"                // is_zero_any_family_v
+#include "chunk/internal/PMP_CHUNK.h"                   // get_thr_rank_fast, CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/internal/ring_log_debug.h"              // ScopedRingLog, ring_log, get_tid
 #include "chunk/internal/arithmetic_context.h" // ArithmeticProxyContext, ArithmeticContext
 #include "chunk/internal/array_chunk_for.h"    // ArrayChunkForT
 #include "chunk/internal/concept_chunk.h"      // IsZeroOneValue, ChunkTemplateOf

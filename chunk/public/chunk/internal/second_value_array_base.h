@@ -18,9 +18,9 @@
 
 #include "chunk/internal/array_chunk_base.h" // ArrayChunkBase
 #include "chunk/config.h"                    // build_config::not_threaded, chunk_config::use_fast_block_compression
-#include "chunk/chunk_traits.h"              // is_zero_any_family_v
+#include "chunk/internal/chunk_traits.h"              // is_zero_any_family_v
 #include "chunk/internal/in_t.h"             // InT<T>
-#include "chunk/PMP_CHUNK.h"                 // CHUNK_PMP_IN_PARALLEL_REGION, pmp::team
+#include "chunk/internal/PMP_CHUNK.h"                 // CHUNK_PMP_IN_PARALLEL_REGION, pmp::team
 #include "chunk/internal/read_reclaim.h"     // read_reclaim::PassScope (perform_compression / compress in a region)
 
 namespace shrink_array

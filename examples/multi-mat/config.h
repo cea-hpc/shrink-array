@@ -56,7 +56,7 @@
  * both modes: its compress() is an audit pass, not the compressor.
  */
 
-#include "chunk/PMP_CHUNK.h"   // the OpenMP shims of the library (serial build: 1 thread, rank 0)
+#include "chunk/internal/PMP_CHUNK.h"   // the OpenMP shims of the library (serial build: 1 thread, rank 0)
 #include "chunk/config.h"      // shrink_array::build_config::use_openmp, chunk_config::stats
 #include "chunk/manage_ompt.h" // shrink_array::begin_parallel_phase, finalize_barrier_phase
 

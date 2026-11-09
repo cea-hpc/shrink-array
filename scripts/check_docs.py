@@ -71,6 +71,25 @@ DESIGN = {
 # Real names that are not defined in this tree.
 ALLOWED = {
     # removed names that CHANGELOG.md records as removed
+    # the former C++ names, removed before 1.0 (CHANGELOG.md, Unreleased, Removed)
+    "ArrayChunk", "ArrayChunk2", "ArrayChunk2A", "Chunk2", "Chunk2A", "Proxy2", "Proxy2A",
+    "ManagerChunk2", "ManagerChunk2A", "use_chunk", "use_chunk2", "use_chunk2a", "use_chunk2or2a",
+    "chunk_list_type", "manager_type", "proxy_type", "ind_type", "getChunkList", "ChunkStats",
+    "check_pow2", "get_decalage_chunk", "chunk_decalage", "install_motif_for_test",
+    "factor_div_somme_chunk_buffer_resuse", "addAllocatedSize", "add_TCTypeAllocator_inst",
+    "remove_TCTypeAllocator_inst", "SIZE_BLOCK", "chunk/array_chunk.h", "chunk/array_chunk2.h",
+    "chunk/array_chunk2A.h", "array_chunk.h", "array_chunk2.h", "array_chunk2A.h", "chunk_def.h",
+    "chunk2_def.h", "chunk2A_def.h", "chunk_std.h", "chunk2_std.h", "chunk2A_std.h",
+    "chunk/chunk_def.h", "chunk/chunk2_def.h", "chunk/chunk2A_def.h", "chunk/chunk_std.h",
+    "chunk/chunk2_std.h", "chunk/chunk2A_std.h",
+    "CHUNK_VARIANT_V1", "CHUNK_VARIANT_V2", "CHUNK_VARIANT_V2A", "_V2A", "DEPRECATION",
+    # renamed TypeState (CHANGELOG.md, Unreleased, Changed)
+    "ManagerChunk", "ManagerChunkInt", "ManagerChunkDynInterface", "ManagerChunkParallelInterface",
+    "ManagerChunkDynImpl", "ManagerChunkParallelImpl", "fill_manager_chunk", "manager_chunk.h",
+    "manager_chunk_inline.h", "manager_chunk_interface.h", "manager_chunk_policies.h",
+    "manager_chunk_policies_inline.h", "manager_chunk.cpp", "chunk/internal/manager_chunk.h",
+    "chunk/private/manager_chunk.cpp",
+    "chunk/debug.h", "debug.h",  # removed, nothing included it (CHANGELOG.md, Unreleased)
     "FAST_ALLOC_MAX_CONST_BLOCK_SIZE", "internal/static_const_array_define.h",
     "chunk/internal/diag_mutex.h", "diag_mutex.h", "internal::diag_print_mutex", "chunk/internal/nano_sleeper.h",
     "chunk_config::have_aggressive_compression",  # now chunk_config::aggressive_compression()

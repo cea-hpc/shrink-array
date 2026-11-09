@@ -54,14 +54,6 @@ template <ArrayChunkElement T, typename IntType = int>
 class Array;
 } // namespace pattern
 
-// The former names, kept until 1.0.
-template <ArrayChunkElement T, typename IntType = int>
-using ArrayChunk [[deprecated("use zero::Array")]] = zero::Array<T, IntType>;
-template <ArrayChunkElement T, typename IntType = int>
-using ArrayChunk2 [[deprecated("use zero_one_value::Array")]] = zero_one_value::Array<T, IntType>;
-template <ArrayChunkElement T, typename IntType = int>
-using ArrayChunk2A [[deprecated("use zero_any::Array")]] = zero_any::Array<T, IntType>;
-
 namespace zero
 {
 
@@ -102,22 +94,8 @@ class Proxy;
 
 } // namespace pattern
 
-// Former names of the chunk and proxy classes, until 1.0.
-template <typename T>
-using Chunk [[deprecated("use zero::Chunk")]] = zero::Chunk<T>;
-template <typename T>
-using Chunk2 [[deprecated("use zero_one_value::Chunk")]] = zero_one_value::Chunk<T>;
-template <typename T>
-using Chunk2A [[deprecated("use zero_any::Chunk")]] = zero_any::Chunk<T>;
-template <typename T>
-using Proxy [[deprecated("use zero::Proxy")]] = zero::Proxy<T>;
-template <typename T>
-using Proxy2 [[deprecated("use zero_one_value::Proxy")]] = zero_one_value::Proxy<T>;
-template <typename T>
-using Proxy2A [[deprecated("use zero_any::Proxy")]] = zero_any::Proxy<T>;
-
 template <template <typename> class ChunkT, typename T>
-class ManagerChunk;
+class TypeState;
 
 // ============================================================================
 // 2. CHUNK TO PROXY / MANAGER MAPPING (ChunkTraits)
@@ -137,7 +115,7 @@ template <template <typename> class ChunkT, template <typename> class ProxyT, ty
 struct VariantChunkTraits
 {
     using ProxyType   = ProxyT<T>;               ///< Write proxy returned by the non-const accessors.
-    using ManagerType = ManagerChunk<ChunkT, T>; ///< Per-type manager owning the compression machinery.
+    using ManagerType = TypeState<ChunkT, T>; ///< Per-type manager owning the compression machinery.
 };
 
 template <typename C>

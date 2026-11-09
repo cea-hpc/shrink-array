@@ -27,7 +27,7 @@
 #include "chunk/internal/in_t.h"               // InT<T>
 #include "chunk/zero_any_array.h"              // zero_any::Array (dependent calls the include tools cannot attribute)
 #include "chunk/config.h"                      // build_config::any_check, build_config::chunk_dynamic
-#include "chunk/PMP_CHUNK.h"                   // get_thr_rank_fast
+#include "chunk/internal/PMP_CHUNK.h"                   // get_thr_rank_fast
 #include "chunk/internal/arithmetic_context.h" // ArithmeticAffectationContext
 #include "chunk/internal/array_chunk_for.h"    // ArrayKey (ptr_on_array_ reads the array)
 #include "chunk/internal/concept_is_clean_assignement.h" // BaseT

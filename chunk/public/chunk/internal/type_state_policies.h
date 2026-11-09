@@ -17,20 +17,20 @@
 #pragma once
 
 /**
- * @file manager_chunk_policies.h
- * @brief The build-dependent implementation policies of ManagerChunk:
- *        ManagerChunkDynImpl (dynamic geometry) and ManagerChunkParallelImpl
+ * @file type_state_policies.h
+ * @brief The build-dependent implementation policies of TypeState:
+ *        TypeStateDynImpl (dynamic geometry) and TypeStateParallelImpl
  *        (the per-rank allocators, the deferred flush, the teardown of the
  *        reuse lists).
  *
- * They are bases of ManagerChunk and reach its state through
- * ManagerChunk<ChunkT, T>:: (it befriends them). Their bodies are in
- * manager_chunk_policies_inline.h, which manager_chunk.h includes once
- * ManagerChunk is complete.
+ * They are bases of TypeState and reach its state through
+ * TypeState<ChunkT, T>:: (it befriends them). Their bodies are in
+ * type_state_policies_inline.h, which type_state.h includes once
+ * TypeState is complete.
  */
 
 #include "chunk/config.h"                           // build_config::chunk_dynamic, build_config::threaded
-#include "chunk/internal/manager_chunk_interface.h" // ManagerChunkDynInterface, ManagerChunkParallelInterface
+#include "chunk/internal/type_state_interface.h" // TypeStateDynInterface, TypeStateParallelInterface
 
 namespace shrink_array
 {
@@ -47,40 +47,40 @@ void load_balance_list_block_free_thr();
  * @brief The CHUNK_DYNAMIC-only half of the manager IMPLEMENTATION.
  *
  * @details Carries the override, because an `override` of a virtual that exists
- *          in one build only cannot be written conditionally in ManagerChunk.
- *          Inherits the interface VIRTUALLY, to share the one ManagerChunkInt
- *          brings in. The body reaches ManagerChunk's members (max_thr is
+ *          in one build only cannot be written conditionally in TypeState.
+ *          Inherits the interface VIRTUALLY, to share the one TypeStateInterface
+ *          brings in. The body reaches TypeState's members (max_thr is
  *          per-instance) through a CRTP down-cast.
  */
 template <template <typename> typename ChunkT, typename T, bool IsDynamic = build_config::chunk_dynamic>
-struct ManagerChunkDynImpl; // primary left undefined: only the 2 specializations exist
+struct TypeStateDynImpl; // primary left undefined: only the 2 specializations exist
 
 /// @brief Dynamic-geometry builds: implements register_chunk_size().
 template <template <typename> typename ChunkT, typename T>
-struct ManagerChunkDynImpl<ChunkT, T, true> : public virtual ManagerChunkDynInterface<true>
+struct TypeStateDynImpl<ChunkT, T, true> : public virtual TypeStateDynInterface<true>
 {
     void register_chunk_size(unsigned int size, int block_size) override;
 };
 
 /// @brief Static-geometry builds: nothing to implement.
 template <template <typename> typename ChunkT, typename T>
-struct ManagerChunkDynImpl<ChunkT, T, false> : public virtual ManagerChunkDynInterface<false>
+struct TypeStateDynImpl<ChunkT, T, false> : public virtual TypeStateDynInterface<false>
 {
 };
 
 /**
  * @brief The allocator / free-list half of the manager IMPLEMENTATION.
  *
- * @details Carries the mode-specific overrides; @see ManagerChunkDynImpl. The
- *          bodies reach ManagerChunk's state through `mgr` (statics) and a CRTP
- *          down-cast (max_thr); ManagerChunk befriends the policies for that.
+ * @details Carries the mode-specific overrides; @see TypeStateDynImpl. The
+ *          bodies reach TypeState's state through `mgr` (statics) and a CRTP
+ *          down-cast (max_thr); TypeState befriends the policies for that.
  */
 template <template <typename> class ChunkT, typename T, bool Threaded = build_config::threaded>
-class ManagerChunkParallelImpl; // primary left undefined: only the 2 specializations exist
+class TypeStateParallelImpl; // primary left undefined: only the 2 specializations exist
 
 /// @brief OpenMP builds: the per-rank allocator and free-list overrides.
 template <template <typename> class ChunkT, typename T>
-class ManagerChunkParallelImpl<ChunkT, T, true> : public virtual ManagerChunkParallelInterface<true>
+class TypeStateParallelImpl<ChunkT, T, true> : public virtual TypeStateParallelInterface<true>
 {
   private:
     void init_allocators(int block_size) const override;
@@ -114,7 +114,7 @@ class ManagerChunkParallelImpl<ChunkT, T, true> : public virtual ManagerChunkPar
 
 /// @brief Serial builds: a single allocator, and nothing per-thread to manage.
 template <template <typename> class ChunkT, typename T>
-class ManagerChunkParallelImpl<ChunkT, T, false> : public virtual ManagerChunkParallelInterface<false>
+class TypeStateParallelImpl<ChunkT, T, false> : public virtual TypeStateParallelInterface<false>
 {
   private:
     void init_allocator(int block_size) const override;

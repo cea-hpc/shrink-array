@@ -24,7 +24,7 @@
 
 #include <ostream> // std::ostream (operator<<)
 
-#include "chunk/chunk_traits.h"            // pattern::Chunk, pattern::Proxy (forward declarations)
+#include "chunk/internal/chunk_traits.h"            // pattern::Chunk, pattern::Proxy (forward declarations)
 #include "chunk/internal/zero_any_proxy.h" // zero_any::ProxyImpl
 
 namespace shrink_array

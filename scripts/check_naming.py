@@ -29,8 +29,9 @@ What a line cannot show -- the `_` that ends a private or protected data
 member, a parameter's case -- clang-tidy's readability-identifier-naming
 checks (docs/contributing.md section 3).
 
-A line with `[[deprecated` is left alone: the former name, kept as an alias
-for the programs that still spell it (fast_alloc::SIZE_BLOCK, getChunkList).
+A line with `[[deprecated` is left alone: a former name, kept as an alias
+for the programs that still spell it, as the versioning policy of CHANGELOG.md
+says (there is none at present: the last ones went before 1.0).
 
 Usage: scripts/check_naming.py [repo root] [--list]   (exit 1 on a violation)
 """

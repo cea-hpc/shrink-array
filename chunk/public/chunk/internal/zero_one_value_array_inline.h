@@ -30,21 +30,21 @@
 
 #include "chunk/internal/in_t.h"                        // InT<T>: the element snapshots
 #include "chunk/zero_one_value_array.h"                 // zero_one_value::Array, the class these bodies belong to
-#include "chunk/type_name.h"                            // type_name<T>
-#include "chunk/singleton.h"                            // SingletonChk<AllTypeChunk>::get_ref
+#include "chunk/internal/type_name.h"                            // type_name<T>
+#include "chunk/internal/singleton.h"                            // SingletonChk<AllTypeChunk>::get_ref
 #include "chunk/internal/zero_one_value_proxy.h"        // zero_one_value::Proxy<T>
 #include "chunk/internal/chunk_stats.h"                 // increm_chunk_teardown_clear, add_chunk_released
-#include "chunk/all_type_chunk.h"                       // AllTypeChunk::ensure_manager
+#include "chunk/internal/all_type_chunk.h"                       // AllTypeChunk::ensure_manager
 #include "chunk/config.h"                               // chunk_config::use_fast_block_compression, chunk_config::stats
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED, value_repr
 #include "chunk/internal/chunk_index_sample.h"          // chunk_index_sample (the residual's sample)
 #include "chunk/log.h"                                  // CHUNK_LOG, logging::enabled
-#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_*, pmp::parallel_sum
+#include "chunk/internal/PMP_CHUNK.h"                            // CHUNK_PMP_*, pmp::parallel_sum
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 #include "chunk/internal/parallel_storage_init.h"       // for_each_chunk
 // Explicit includes for symbols used by clear_core() below, so this TU does not
 // depend on the transitive include chain.
-#include "chunk/internal/manager_chunk.h"     // ManagerChunk: per-size free lists, candidate filter
+#include "chunk/internal/type_state.h"     // TypeState: per-size free lists, candidate filter
 #include "chunk/internal/pool_ledger.h"       // CHUNK_LEDGER_PARK
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size, cst_buffer_size
 
@@ -95,7 +95,7 @@ void zero_one_value::Array<T, IntType>::create(IntType sz)
 {
     // The first array of this element type registers its manager; every
     // later one pays a guard load. See AllTypeChunk.
-    AllTypeChunk::ensure_manager<ManagerChunk<zero_one_value::Chunk, T>>();
+    AllTypeChunk::ensure_manager<TypeState<zero_one_value::Chunk, T>>();
 
     chunk_config::CheckNaN<chunk_config::do_check>::update(true);
 
@@ -631,11 +631,11 @@ void zero_one_value::Array<T, IntType>::clear_core()
         }
     }
 
-    ManagerChunk<zero_one_value::Chunk, T>::decrem_somme_chunk_create(nb_chunk_);
+    TypeState<zero_one_value::Chunk, T>::decrem_somme_chunk_create(nb_chunk_);
     // Recompute what derives from the total -- see zero::Array::clear_core():
     // otherwise a re-chunk leaves the threshold sized for the geometry it just left.
-    ManagerChunk<zero_one_value::Chunk, T>::compute_size_buffer_reuse();
-    ManagerChunk<zero_one_value::Chunk, T>::compute_size_max_number_of_chunk_to_check_compress();
+    TypeState<zero_one_value::Chunk, T>::compute_size_buffer_reuse();
+    TypeState<zero_one_value::Chunk, T>::compute_size_max_number_of_chunk_to_check_compress();
 
     if constexpr (build_config::not_threaded)
     {
@@ -765,7 +765,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
     // region. Key 0 (shared pool): nothing to give back per array.
     if (this->alloc_key_ != 0 && !CHUNK_PMP_IN_PARALLEL_REGION)
     {
-        ManagerChunk<zero_one_value::Chunk, T>::drain_reuse_list_for_size(this->size_policy_.size());
+        TypeState<zero_one_value::Chunk, T>::drain_reuse_list_for_size(this->size_policy_.size());
     }
 
     // The candidate flags (one byte per chunk): released HERE, after the

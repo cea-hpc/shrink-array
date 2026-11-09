@@ -69,7 +69,7 @@
 #include <atomic>  // std::atomic, std::memory_order_relaxed
 #include <cstddef> // std::size_t (teams::rank_holders)
 
-#include "chunk/PMP_CHUNK.h"                // CHUNK_PMP_*, chunk_pmp_team_rank
+#include "chunk/internal/PMP_CHUNK.h"                // CHUNK_PMP_*, chunk_pmp_team_rank
 #include "chunk/config.h"                   // build_config::any_check, build_config::has_not_ompt
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 

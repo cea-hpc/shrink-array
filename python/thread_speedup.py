@@ -118,10 +118,10 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 VARIANTS = ["zero", "zero_one_value", "zero_any"]          # as multi_launch_stress.py --all_exec
 try:
-    # --exec chunk2a@dyn & co.: the old variant labels, read as their new names until 1.0.
-    from bench_runner.settings import normalize_variant
+    # --exec chunk2a@dyn & co.: an old variant label is refused, with its new name.
+    from bench_runner.settings import check_variant_label
 except ImportError:
-    def normalize_variant(label, warn=None):   # copied alone: the new labels only
+    def check_variant_label(label, option):   # copied alone: the new labels only
         return label
 try:
     # The names of an executable, one per backend (shrink_bench_<backend>_<rest>).
@@ -902,7 +902,7 @@ def main(argv=None):
                 missing.append(spec)
             continue
         if os.sep not in spec and not spec.startswith("shrink_bench_"):
-            spec = normalize_variant(spec, "--exec")      # chunk2a@dyn -> zero_any@dyn
+            spec = check_variant_label(spec, "--exec")    # chunk2a@dyn: refused
         name = exe_name(spec, a.mode)
         exe = find_exe(root, target, name)
         (execs.append((os.path.basename(exe), exe)) if exe else missing.append(shown_name(name)))

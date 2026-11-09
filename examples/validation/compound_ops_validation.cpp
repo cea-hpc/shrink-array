@@ -41,7 +41,7 @@
 #include <utility>     // std::as_const
 #include <vector>      // the reference
 
-#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
+#include "chunk/internal/chunk_traits.h"         // forward decls + default IntType = int
 #include "chunk/zero_array.h"           // zero::Array
 #include "chunk/zero_one_value_array.h" // zero_one_value::Array
 #include "chunk/zero_any_array.h"       // zero_any::Array

@@ -31,7 +31,7 @@
  */
 
 #include "chunk/config.h"                               // chunk_config::use_fast_block_compression
-#include "chunk/chunk_traits.h"                         // ArrayChunkTraits
+#include "chunk/internal/chunk_traits.h"                         // ArrayChunkTraits
 #include "chunk/internal/array_chunk_parallel_common.h" // ParallelSupport (zero_array.h uses it through this header)
 
 namespace shrink_array
