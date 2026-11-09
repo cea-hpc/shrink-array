@@ -72,7 +72,7 @@ using ZeroComp = VectorTuple4ChunkInt2<ChunkTemplate, T>;
  *          the line the others read on every write
  *          (trigger_compression_if_needed()'s size()), a measurable share of
  *          the write path. 128, not 64, so adjacent-line prefetchers do not
- *          pair two slots (as ManagerChunk::PerThreadFreeList). It inherits the
+ *          pair two slots (as TypeState::PerThreadFreeList). It inherits the
  *          container, so `store[thr]` is used unchanged.
  */
 template <typename Container>

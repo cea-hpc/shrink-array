@@ -52,10 +52,10 @@
 #include "bench_args.h" // parse_bench_args, BenchArgs
 
 
-#include "chunk/ring_log_debug.h"     // ring_init/analyze_ring_sweep decls
-#include "chunk/rechunk_decider.h"    // re-chunk decisions (acts in dyn builds only)
-#include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
-#include "chunk/log.h"                // CHUNK_LOG, logging::enabled (the cst2 report at compress=info)
+#include "chunk/internal/ring_log_debug.h" // ring_init/analyze_ring_sweep decls
+#include "chunk/rechunk_decider.h"         // re-chunk decisions (acts in dyn builds only)
+#include "chunk/internal/env_parse.h"      // env_number / arg_number (checked, not atoi)
+#include "chunk/log.h"                     // CHUNK_LOG, logging::enabled (the cst2 report at compress=info)
 
 using namespace shrink_array;
 

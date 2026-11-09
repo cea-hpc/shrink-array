@@ -31,7 +31,7 @@
 #include "chunk/internal/env_parse.h"       // env_number (CHUNK_DEFERRED_POOL_KB)
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (the block probe)
 #include "chunk/internal/pool_ledger.h"     // pool_ledger::on_op_alloc / on_ctx_alloc and the frees
-#include "chunk/ring_log_debug.h"           // ring_log_op, dump_ring_for_addr, EventCode::op_alloc / EventCode::op_free
+#include "chunk/internal/ring_log_debug.h"  // ring_log_op, dump_ring_for_addr, EventCode::op_alloc / EventCode::op_free
 #include "fast_allocators/internal/pmp_runtime.h" // fast_alloc::pmp::backend (the pools of exited threads)
 #include "chunk/log.h"                            // CHUNK_LOG (recycle)
 
@@ -322,7 +322,7 @@ class FastAllocatorConcrete : public FastAllocatorBase
      *
      * CROSS-THREAD SAFETY: a block may reach recycle() on a thread other than
      * the one that allocated it (destroy_after_flush()'s defensive drain runs
-     * another thread's ops here; see ManagerChunk::destroy_after_flush and
+     * another thread's ops here; see TypeState::destroy_after_flush and
      * reset_all). A foreign block pushed on THIS thread's free_list would outlive
      * its owner's thread_local TCTypeAllocator, which munmap()s its slabs: a later
      * allocate_raw() would hand out an unmapped pointer.

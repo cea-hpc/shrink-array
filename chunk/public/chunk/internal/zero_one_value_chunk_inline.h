@@ -22,10 +22,10 @@
 #include <type_traits> // std::remove_cvref_t (the re-queued candidates)
 
 #include "chunk/config.h"                        // build_config::chunk_dynamic, chunk_config::OMPTcc
-#include "chunk/PMP_CHUNK.h"                     // CHUNK_PMP_*, pmp::team
+#include "chunk/internal/PMP_CHUNK.h"            // CHUNK_PMP_*, pmp::team
 #include "chunk/internal/chunk_size_policy.h"    // ChunkElems, set_thread_chunk_size
 #include "chunk/internal/in_t.h"                 // InT<T>
-#include "chunk/zero_one_value_chunk.h"          // zero_one_value::Chunk, the class these bodies belong to
+#include "chunk/internal/zero_one_value_chunk.h" // zero_one_value::Chunk, the class these bodies belong to
 #include "chunk/internal/zero_one_value_proxy.h" // zero_one_value::Proxy<T>
 #include "chunk/internal/block_pass_precheck.h"  // block_pass_yields_to_flush
 #include "chunk/internal/invariant_check.h"      // CHUNK_INVARIANT_FAILED

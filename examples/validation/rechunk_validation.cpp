@@ -64,7 +64,7 @@
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::pair (try_set_active_chunk_size's cases)
 
-#include "chunk/chunk_traits.h"               // forward decls + default IntType = int
+#include "chunk/internal/chunk_traits.h"      // forward decls + default IntType = int
 #include "chunk/zero_array.h"                 // zero::Array
 #include "chunk/zero_one_value_array.h"       // zero_one_value::Array
 #include "chunk/zero_any_array.h"             // zero_any::Array
@@ -78,8 +78,8 @@
 
 using namespace shrink_array;
 
-#include "chunk/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
-#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
+#include "chunk/internal/zero_chunk.h" // release_chunk_pools, destroy_block_chunk
+#include "validation_harness.h"        // self_command; run() is called by validation_driver.cpp
 
 namespace validation::rechunk_validation
 {

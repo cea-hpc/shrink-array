@@ -72,12 +72,12 @@
 #include "chunk/internal/element_access.h"     // internal::as_words: Bit sub-blocks scanned by word
 #include "chunk/internal/bit_words.h"          // bits::scan_range, bits::Uniform, bits::WordT
 #include "chunk/config.h"                      // chunk_config::use_zero_one_value / use_zero_any
-#include "chunk/PMP_CHUNK.h"                   // CHUNK_PMP_NUM_THREADS (the parts per thread), pmp::team
+#include "chunk/internal/PMP_CHUNK.h"          // CHUNK_PMP_NUM_THREADS (the parts per thread), pmp::team
 #include "chunk/internal/rechunk_cost_model.h" // rechunk_cost_ms, rechunk_is_worth_it
 #include "chunk/internal/chunk_size_policy.h"  // shrink_array::cst_buffer_size
 #include "chunk/internal/print.h"              // shrink_array::println
 #include "chunk/log.h"                         // CHUNK_LOG (log(): channel advisor)
-#include "chunk/chunk_traits.h"                // is_zero_any_family_v, has_motif_state_v (pattern::Array)
+#include "chunk/internal/chunk_traits.h"       // is_zero_any_family_v, has_motif_state_v (pattern::Array)
 #include "chunk/internal/relaxed_element.h"    // load_element_relaxed (a motif chunk's offset)
 
 #include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT

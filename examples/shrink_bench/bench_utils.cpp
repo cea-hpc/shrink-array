@@ -31,8 +31,8 @@
 #include "chunk/internal/env_parse.h" // env_flag
 #include "chunk/internal/exact_rss.h" // exact current and peak memory
 
-#include "chunk/all_type_chunk.h" // reuse_pool_bytes, the retention split of memory_consumption
-#include "chunk/build_options.h"  // CHUNK_OPT_FAST_ALLOC
+#include "chunk/internal/all_type_chunk.h" // reuse_pool_bytes, the retention split of memory_consumption
+#include "chunk/build_options.h"           // CHUNK_OPT_FAST_ALLOC
 #if CHUNK_OPT_FAST_ALLOC
     #include "fast_allocators/slab_arena.h" // report_all_arenas, its slab-side counterpart
 #endif

@@ -21,7 +21,7 @@
 // NOTE (dynamic builds): every chunk-geometry computation in the diagnostic
 // paths below MUST come from the array under inspection (data_check.chunk_size():
 // k / chunk_size(), k % chunk_size()), never from the compile-time globals
-// (static_chunk_size, ParamChunk::get_decalage_chunk()...). In CHUNK_DYNAMIC runs the
+// (static_chunk_size, static_chunk_shift...). In CHUNK_DYNAMIC runs the
 // effective size (chunk_dyn_size, e.g. 512) differs from the compile-time
 // default (64): the static shift over-indexes get_chunk_list() (libstdc++ assert
 // in the mismatch report) and the static loop bounds only scan the first 64
@@ -42,9 +42,9 @@
 #include <cstdio>    // stdout, stderr, std::fflush
 #include <print>     // std::println, std::print
 
-#include "bench_config.h"         // have_bzip2
-#include "bench_utils.h"          // is_vector
-#include "chunk/ring_log_debug.h" // analyze_ring_sweep / dump_ring decls
+#include "bench_config.h"                  // have_bzip2
+#include "bench_utils.h"                   // is_vector
+#include "chunk/internal/ring_log_debug.h" // analyze_ring_sweep / dump_ring decls
 
 // -----------------------------------------------------------------------------
 // BZip2 compress/decompress helpers, defined in bench_io.cpp when BZIP2 is on.

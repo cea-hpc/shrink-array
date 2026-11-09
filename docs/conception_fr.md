@@ -80,7 +80,7 @@ flowchart TB
         chk["chunks + proxies<br/>état, lecture, moteur d'écriture"]
     end
     subgraph per_type["par (variante, type d'élément)"]
-        mgr["ManagerChunk<br/>pools de réemploi, candidats à la compression,<br/>allocateurs par rang, vidage différé"]
+        mgr["TypeState<br/>pools de réemploi, candidats à la compression,<br/>allocateurs par rang, vidage différé"]
         cmp["CompressionManager<br/>passes, écritures différées"]
         reg["constantes partagées<br/>cst_val1, registre des secondes valeurs, région des motifs"]
     end
@@ -107,13 +107,13 @@ flowchart TB
 |---|---|---|---|
 | les tableaux des variantes | `zero::Array`, `zero_one_value::Array`, `zero_any::Array`, `pattern::Array`, `ArrayChunkBits` | `chunk/zero_array.h`, `chunk/zero_one_value_array.h`, `chunk/zero_any_array.h`, `chunk/pattern_array.h`, `chunk/array_chunk_bits.h` | un objet par tableau |
 | le tableau commun | `ArrayChunkBase`, `ArrayChunkCore`, `SecondValueArrayBase`, `RechunkSupport` | `internal/array_chunk_base.h`, `internal/array_chunk_core.h`, `internal/second_value_array_base.h`, `internal/array_chunk_rechunk.h` | bases de chaque tableau |
-| chunks | `zero::Chunk`, `zero_one_value::Chunk`, `zero_any::Chunk`, `pattern::Chunk`, `ChunkBase` | `chunk/zero_chunk.h`, `chunk/zero_one_value_chunk.h`, `chunk/zero_any_chunk.h`, `chunk/pattern_chunk.h`, `internal/chunk_base.h` | un élément de la liste de chunks du tableau |
+| chunks | `zero::Chunk`, `zero_one_value::Chunk`, `zero_any::Chunk`, `pattern::Chunk`, `ChunkBase` | `chunk/internal/zero_chunk.h`, `chunk/internal/zero_one_value_chunk.h`, `chunk/internal/zero_any_chunk.h`, `chunk/internal/pattern_chunk.h`, `internal/chunk_base.h` | un élément de la liste de chunks du tableau |
 | proxies, moteur d'écriture | `ProxyBase`, `WriteCompressSyncPolicy`, les `Proxy` des variantes | `internal/proxy_base.h`, `internal/write_compress_sync_policy.h` | un temporaire par écriture |
-| état par type | `ManagerChunk` (façade), `ReusePools`, `CompressCandidates`, `CompressionManager` | `internal/manager_chunk.h`, `internal/reuse_pools.h`, `internal/compress_candidates.h`, `internal/compression_manager.h` | un par (variante, type d'élément), statique |
+| état par type | `TypeState` (façade), `ReusePools`, `CompressCandidates`, `CompressionManager` | `internal/type_state.h`, `internal/reuse_pools.h`, `internal/compress_candidates.h`, `internal/compression_manager.h` | un par (variante, type d'élément), statique |
 | constantes partagées | `TabCstVal2Holder`, `GlobalVecHolder`, `MotifRegion` | `internal/tab_cst_val2_holder.h`, `internal/motif_region.h` | une par type d'élément |
 | registre du processus, démarrage | `AllTypeChunk`, `ParamChunk` | `internal/all_type_chunk_decl.h`, `chunk/param_chunk.h` | un par processus |
 | phases | `begin_parallel_phase`, `finalize_parallel_phase`, `parallel_phase` | `chunk/manage_ompt.h`, `chunk/private/manage_ompt.cpp` | une phase à la fois |
-| backend, rangs | `pmp::Team`, `pmp::parallel_for` | `chunk/PMP_CHUNK.h`, `fast_allocators/internal/pmp_loops.h`, `fast_allocators/internal/pmp_std.h` | tout le processus |
+| backend, rangs | `pmp::Team`, `pmp::parallel_for` | `chunk/internal/PMP_CHUNK.h`, `fast_allocators/internal/pmp_loops.h`, `fast_allocators/internal/pmp_std.h` | tout le processus |
 | allocation | arènes de dalles, allocateurs par rang | `fast_allocators/slab_arena.h`, `fast_allocators/tc_allocator.h` | tout le processus |
 | géométrie dynamique | `ChunkSizeAdvisor`, `RechunkDecider`, `RechunkPolicy` | `chunk/chunk_size_advisor.h`, `chunk/rechunk_decider.h`, `internal/chunk_size_policy.h` | par tableau, piloté par le programme |
 
@@ -121,6 +121,14 @@ Le découpage par (variante, type d'élément) est la colonne vertébrale : tout
 d'un même type doivent partager -- les pools où retourne un buffer comprimé, les listes de
 candidats qu'une passe vide, le registre des secondes valeurs -- vit dans le manager de ce type,
 et rien n'est partagé entre types.
+
+Ce que voit un programme est bien plus étroit : les 16 en-têtes de `chunk/public/chunk/` hors
+`internal/` (les tableaux, les opérations par plage, l'export et l'import d'états de chunks, le
+démarrage et l'arrêt de la bibliothèque, les phases, la géométrie dynamique, la configuration et le
+journal). Eux et les noms d'[api_fr.md](api_fr.md) forment l'interface, figée dans
+`scripts/public_api.txt` et vérifiée par `check_public_api` ; tout le reste, y compris les membres
+des classes publiques qui nomment la machinerie (`ManagerType`, `ChunkListType`…), peut changer
+d'une version à l'autre.
 
 ## 4. Polymorphisme statique
 
@@ -134,17 +142,17 @@ d'instructions ; les variantes sont donc assemblées à la compilation :
 - **Des politiques plutôt que des branches du préprocesseur.** Ce qui diffère entre un build
   threadé et un build série, ou entre géométrie statique et dynamique, est une classe de politique
   choisie par un paramètre template `bool` (`ChunkCounterPolicy` contre les politiques threadées,
-  `DeferredReadGate`, `ManagerChunkParallelImpl`, `ManagerChunkDynImpl`). Les sélecteurs sont des
+  `DeferredReadGate`, `TypeStateParallelImpl`, `TypeStateDynImpl`). Les sélecteurs sont des
   valeurs `constexpr` de `build_config` et `chunk_config` (`chunk/config.h`), testées par
   `if constexpr` ; les `#ifdef` restants sont ceux que `if constexpr` ne peut pas remplacer (un
   include, une déclaration qui ne compile pas dans l'autre build), et les règles qui en décident
   sont écrites en tête de `examples/shrink_bench/bench_config.h`.
 - **Du virtuel seulement là où c'est froid.** `AllTypeChunk` doit agir sur tous les managers du
   processus -- lancer les passes, vider les écritures différées, démonter -- sans connaître leurs
-  types : il tient des pointeurs `ManagerChunkInt` et appelle des virtuelles, aux bornes de phase
+  types : il tient des pointeurs `TypeStateInterface` et appelle des virtuelles, aux bornes de phase
   seulement.
 - **Des traits pour les familles, jamais le type exact.** `ChunkTraits` et `ArrayChunkTraits`
-  (`chunk/chunk_traits.h`) associent un chunk à son proxy et à son manager, un tableau à son
+  (`chunk/internal/chunk_traits.h`) associent un chunk à son proxy et à son manager, un tableau à son
   chunk. Le code partagé par `zero_any` et `pattern` teste la famille (`is_zero_any_family_v`) et
   l'état motif (`has_motif_state_v`) : un nouveau membre tombe alors dans la bonne branche ou ne
   compile pas. Un membre qui n'existe que sur une variante s'atteint par un test `std::is_same_v`
@@ -414,7 +422,7 @@ les étapes et le contrat de phase.
 | avertissements et erreurs | une ligne chacun sur stderr ; `CHUNK_LOG` monte un canal (`rechunk`, `memory`, `advisor`, `compress`, `ompt`), `CHUNK_LOG_FILE` redirige, `shrink_array::logging::set_sink()` les confie au programme |
 | compteurs | le build `CHUNK_STATS` et `ParamChunk::chunk_stats()` : passes, abandons, écritures différées, réemploi, octets mis de côté |
 | mémoire | mesurée exactement, pas par `VmRSS` seul ([mesures_performance_fr.md](mesures_performance_fr.md)) |
-| autopsie d'une course | le journal circulaire des builds de débogage (`chunk/ring_log_debug.h`) |
+| autopsie d'une course | le journal circulaire des builds de débogage (`chunk/internal/ring_log_debug.h`) |
 | invariants | les builds de vérification, qui s'arrêtent avec un message nommant la règle violée |
 
 ## 13. Décisions et alternatives écartées

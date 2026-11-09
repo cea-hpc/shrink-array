@@ -32,8 +32,8 @@
 #include "chunk/internal/conditional_counter.h" // ConditionalCounter
 #include "chunk/internal/zero_proxy.h"          // Proxy<T>
 #include "chunk/internal/immortal.h"            // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/pool_release.h"        // release_chunk_pools, destroy_block_chunk
 #include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (init_chunks_cst_val)
-#include "chunk/shutdown.h"                     // release_chunk_pools, destroy_block_chunk
 
 namespace shrink_array
 {
@@ -43,11 +43,11 @@ template <typename T, typename ChunkT>
 struct CompressionManager;
 
 template <template <typename> class ChunkT, typename T>
-class ManagerChunk;
+class TypeState;
 
 /// @brief The per-type facade these verbs drive. Forward-declared, not included:
 ///        zero_chunk.h sits inside an include cycle (chunk_func.h -> zero_chunk.h ->
-///        zero_proxy.h -> manager_chunk.h). Only chunk_std.cpp needs the full type.
+///        zero_proxy.h -> type_state.h). Only chunk_std.cpp needs the full type.
 class AllTypeChunk;
 
 /**
@@ -207,7 +207,7 @@ class ChunkThreadPolicy : public ChunkBase<T, Derived>
   public:
     using Base      = ChunkBase<T, Derived>;
     using ChunkType = Derived;
-    using Manager   = ManagerChunk<Chunk, T>;
+    using Manager   = TypeState<Chunk, T>;
 
     using Base::init_block;
     using Base::is_cst_val1;
@@ -345,7 +345,7 @@ class ChunkFastCompPolicy : public ChunkThreadPolicy<T, Derived>
     // NOT alloc_chunk_count() (the CONSUMING thread's ambient size, may differ).
     using CandidateTuples = std::vector<std::tuple<Chunk<T>*, int, int, ChunkElems>>;
 
-    using Manager = ManagerChunk<Chunk, T>;
+    using Manager = TypeState<Chunk, T>;
     using Base    = ChunkBase<T, Derived>;
 
     /**
@@ -455,7 +455,7 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
 
     using CompressionManagerType = CompressionManager<T, ChunkType>;
 
-    using Manager = ManagerChunk<Chunk, T>;
+    using Manager = TypeState<Chunk, T>;
 
     using FastCompPolicy = ChunkFastCompPolicy<T, Chunk<T>, chunk_config::use_fast_block_compression>;
 
@@ -528,7 +528,7 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
 
     /// @brief One rank's share of compress_chunk_to_compress(): the body its
     ///        region runs on each thread. Public for AllTypeChunk's single
-    ///        sweep region (ManagerChunk::sweep_rank).
+    ///        sweep region (TypeState::sweep_rank).
     /// @param thr rank whose candidate list to drain
     static void compress_sweep_rank(int thr);
 

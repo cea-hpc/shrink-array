@@ -17,19 +17,22 @@
 #pragma once
 
 /**
- * @file shutdown.h
- * @brief The library's teardown: release_chunk_pools() and destroy_block_chunk()
- *        (chunk_std.cpp defines them).
+ * @file pool_release.h
+ * @brief The two shutdown calls of a program: release_chunk_pools() and
+ *        destroy_block_chunk(), defined in chunk/private/chunk_std.cpp.
  *
- * chunk/zero_chunk.h includes this header, except in the module unit: no
- * other header of the module includes it, so the module reads it in its purview
- * and exports both functions by their own declarations.
+ * @details Declarations only, with no include but SHRINK_ARRAY_EXPORT's: the
+ *          shrink_array module exports them (chunk/modules/shrink_array.cppm),
+ *          chunk/param_chunk.h (the public header a program includes for its
+ *          start and its end) and chunk/internal/zero_chunk.h (the library's
+ *          own callers) take them from here.
  */
 
 #include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT
 
 namespace shrink_array
 {
+
 /// @brief When fast allocation is enabled, call destroy_block_chunk() on the AllTypeChunk singleton; otherwise
 ///        do nothing. Nothing either while an array is alive (see release_chunk_pools()).
 SHRINK_ARRAY_EXPORT extern void destroy_block_chunk();
@@ -55,4 +58,5 @@ SHRINK_ARRAY_EXPORT extern void destroy_block_chunk();
  *          delete_list_block_chunk_free_itself() and an array's shrink_to_fit().
  */
 SHRINK_ARRAY_EXPORT extern void release_chunk_pools();
+
 } // namespace shrink_array

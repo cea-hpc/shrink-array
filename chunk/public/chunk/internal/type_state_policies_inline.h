@@ -17,11 +17,11 @@
 #pragma once
 
 /**
- * @file manager_chunk_policies_inline.h
- * @brief Out-of-line bodies of ManagerChunkDynImpl and ManagerChunkParallelImpl:
+ * @file type_state_policies_inline.h
+ * @brief Out-of-line bodies of TypeStateDynImpl and TypeStateParallelImpl:
  *        the per-rank allocators, the deferred flush, and the teardown of the
- *        reuse lists in four phases. Included by manager_chunk.h once
- *        ManagerChunk is complete.
+ *        reuse lists in four phases. Included by type_state.h once
+ *        TypeState is complete.
  */
 
 #include <algorithm>     // std::max, std::ranges, std::ranges::push_heap, std::ranges::sort
@@ -31,21 +31,21 @@
 #include <unordered_set> // std::unordered_set
 #include <vector>        // std::vector
 
-#include "chunk/internal/manager_chunk.h"        // ManagerChunk complete: the policies reach its state
+#include "chunk/internal/type_state.h"           // TypeState complete: the policies reach its state
 #include "chunk/config.h"                        // build_config, chunk_config
 #include "chunk/internal/invariant_check.h"      // CHUNK_CHECK_FAILED
 #include "chunk/log.h"                           // CHUNK_LOG_FIRST_N, CHUNK_LOG
 #include "fast_allocators/internal/svalloc.h"    // svfree
-#include "chunk/PMP_CHUNK.h"                     // CHUNK_PMP_*, pmp::
+#include "chunk/internal/PMP_CHUNK.h"            // CHUNK_PMP_*, pmp::
 #include "chunk/internal/chunk_size_policy.h"    // alloc_chunk_count, cst_buffer_size
 #include "chunk/internal/value_slab.h"           // value_slab_request
 #include "chunk/internal/compression_manager.h"  // CompressionManager
 #include "chunk/internal/deferred_op_pool.h"     // fast_alloc::ArenaKind
 #include "chunk/internal/deferred_ops_storage.h" // DeferredOpsStorage
 #include "chunk/internal/pool_ledger.h"          // CHUNK_LEDGER_*
-#include "chunk/zero_chunk.h"                    // Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/zero_one_value_chunk.h"          // zero_one_value::Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/zero_any_chunk.h"                // zero_any::Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/internal/zero_chunk.h"           // Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/internal/zero_one_value_chunk.h" // zero_one_value::Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/internal/zero_any_chunk.h"       // zero_any::Chunk<T>: the ChunkT<T>:: calls
 #include "chunk/zero_array.h"                    // ArrayChunkCore complete: ArrayType::clear_all_dirty_bitsets
 #include "chunk/internal/array_chunk_for.h"      // ArrayChunkForT
 #include "chunk/internal/concept_chunk.h"        // IsChunk, IsZeroOneValue, IsZeroAnyFamily
@@ -54,7 +54,7 @@
 namespace shrink_array
 {
 /// @brief Re-entrancy guard of the deferred flush (see flush_all_deferred).
-// Defined (once) in manager_chunk.cpp; flush_all_deferred's body lives in this
+// Defined (once) in type_state.cpp; flush_all_deferred's body lives in this
 // header, so every TU that instantiates it needs the declaration.
 extern std::atomic<bool> g_need_flush_deferred;
 
@@ -66,9 +66,9 @@ extern std::atomic<bool> g_need_flush_deferred;
  * @brief Sizes the per-rank free-lists of released buffers to the current team.
  */
 template <template <typename> typename ChunkT, typename T>
-void ManagerChunkParallelImpl<ChunkT, T, true>::resize_all_list_block_free_thr()
+void TypeStateParallelImpl<ChunkT, T, true>::resize_all_list_block_free_thr()
 {
-    using Mgr        = ManagerChunk<ChunkT, T>;
+    using Mgr        = TypeState<ChunkT, T>;
     const auto& self = static_cast<const Mgr&>(*this);
 
     Mgr::resize_list_block_free_thr(self.max_thr_);
@@ -91,7 +91,7 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::resize_all_list_block_free_thr()
  *       The walk is one empty() test per rank when nothing is left.
  */
 template <template <typename> typename ChunkT, typename T>
-void ManagerChunkParallelImpl<ChunkT, T, true>::destroy_after_flush(bool in_parallel)
+void TypeStateParallelImpl<ChunkT, T, true>::destroy_after_flush(bool in_parallel)
 {
     using Storage = DeferredOpsStorage<typename ChunkT<T>::PerThreadMap>;
     auto& storage = Storage::instance();
@@ -197,9 +197,9 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::destroy_after_flush(bool in_para
  *       recurring residual is not.
  */
 template <template <typename> typename ChunkT, typename T>
-void ManagerChunkParallelImpl<ChunkT, T, true>::flush_all_deferred(bool in_parallel, bool& have_flushed)
+void TypeStateParallelImpl<ChunkT, T, true>::flush_all_deferred(bool in_parallel, bool& have_flushed)
 {
-    using Mgr        = ManagerChunk<ChunkT, T>;
+    using Mgr        = TypeState<ChunkT, T>;
     const auto& self = static_cast<const Mgr&>(*this);
 
     using Storage = DeferredOpsStorage<typename ChunkT<T>::PerThreadMap>;
@@ -324,9 +324,9 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::flush_all_deferred(bool in_paral
  *       modes have no per-thread allocator to build.
  */
 template <template <typename> typename ChunkT, typename T>
-void ManagerChunkParallelImpl<ChunkT, T, true>::alloc_chunk_allocator_thr()
+void TypeStateParallelImpl<ChunkT, T, true>::alloc_chunk_allocator_thr()
 {
-    using Mgr        = ManagerChunk<ChunkT, T>;
+    using Mgr        = TypeState<ChunkT, T>;
     const auto& self = static_cast<const Mgr&>(*this);
 
     // std-alloc: allocator_data is NullValueAllocator (no per-thread array to build).
@@ -350,14 +350,14 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::alloc_chunk_allocator_thr()
  *       array, from any context.
  */
 template <template <typename> typename ChunkT, typename T>
-void ManagerChunkParallelImpl<ChunkT, T, true>::init_allocators([[maybe_unused]] int block_size) const
+void TypeStateParallelImpl<ChunkT, T, true>::init_allocators([[maybe_unused]] int block_size) const
 {
     // std-alloc: no per-thread slab allocator to init. Guard the whole body:
     // get_chunk_allocator() has no return on its std branch (it std::abort()s),
     // so instantiating this call in a std build would fail return-type deduction.
     if constexpr (build_config::use_fast_alloc)
     {
-        using Mgr         = ManagerChunk<ChunkT, T>;
+        using Mgr         = TypeState<ChunkT, T>;
         const int max_thr = static_cast<const Mgr&>(*this).max_thr_;
 
         // Also recorded here: an array may be created before any runtime size is registered,
@@ -386,7 +386,7 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::init_allocators([[maybe_unused]]
  * @note The OpenMP counterpart is init_allocators(), one allocator per rank.
  */
 template <template <typename> typename ChunkT, typename T>
-void ManagerChunkParallelImpl<ChunkT, T, false>::init_allocator(int block_size) const
+void TypeStateParallelImpl<ChunkT, T, false>::init_allocator(int block_size) const
 {
     // std-alloc: allocator_data is NullValueAllocator, init()/set_arena() are no-ops.
     // -1 = never munmap a value slab, and the Value arena rather than the Op
@@ -414,9 +414,9 @@ void ManagerChunkParallelImpl<ChunkT, T, false>::init_allocator(int block_size) 
  *          -- silently. See dyn_geometry_validation, which guards exactly this.
  */
 template <template <typename> typename ChunkT, typename T>
-void ManagerChunkDynImpl<ChunkT, T, true>::register_chunk_size(unsigned int size, [[maybe_unused]] int block_size)
+void TypeStateDynImpl<ChunkT, T, true>::register_chunk_size(unsigned int size, [[maybe_unused]] int block_size)
 {
-    using Mgr                   = ManagerChunk<ChunkT, T>;
+    using Mgr                   = TypeState<ChunkT, T>;
     const int this_thr          = static_cast<const Mgr&>(*this).max_thr_;
     Mgr::registered_block_size_ = block_size; // for register_alloc_key()
 
@@ -478,13 +478,13 @@ struct PtrLess
  * @details One bucket per rank, and a bucket for every slot either collection
  *          holds beyond max_thr, so that nothing is left unscreened by a rank
  *          that has no owner.
- * @post ManagerChunk::teardown_to_free_ has that many empty buckets and
+ * @post TypeState::teardown_to_free_ has that many empty buckets and
  *       teardown_repeats_ is empty.
  */
 template <template <typename> typename ChunkT, typename T>
-std::size_t ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_prepare()
+std::size_t TypeStateParallelImpl<ChunkT, T, true>::clear_list_block_free_prepare()
 {
-    using Mgr        = ManagerChunk<ChunkT, T>;
+    using Mgr        = TypeState<ChunkT, T>;
     const auto& self = static_cast<const Mgr&>(*this);
 
     auto nb = static_cast<std::size_t>(std::max(1, self.max_thr_));
@@ -529,9 +529,9 @@ std::size_t ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_pre
  * @pre clear_list_block_free_prepare() has run.
  */
 template <template <typename> typename ChunkT, typename T>
-void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_screen(int bucket)
+void TypeStateParallelImpl<ChunkT, T, true>::clear_list_block_free_screen(int bucket)
 {
-    using Mgr     = ManagerChunk<ChunkT, T>;
+    using Mgr     = TypeState<ChunkT, T>;
     auto& to_free = Mgr::teardown_to_free_;
 
     if (bucket < 0 || static_cast<std::size_t>(bucket) >= to_free.size())
@@ -601,14 +601,14 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_screen(int
  * @pre clear_list_block_free_screen() has run for EVERY bucket (barrier).
  */
 template <template <typename> typename ChunkT, typename T>
-void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_sort([[maybe_unused]] int bucket)
+void TypeStateParallelImpl<ChunkT, T, true>::clear_list_block_free_sort([[maybe_unused]] int bucket)
 {
     if constexpr (!build_config::free_guard)
     {
         return;
     }
 
-    using Mgr     = ManagerChunk<ChunkT, T>;
+    using Mgr     = TypeState<ChunkT, T>;
     auto& to_free = Mgr::teardown_to_free_;
 
     if (bucket < 0 || static_cast<std::size_t>(bucket) >= to_free.size())
@@ -646,15 +646,15 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_sort([[may
  * @pre clear_list_block_free_sort() has run for EVERY bucket (barrier).
  */
 template <template <typename> typename ChunkT, typename T>
-void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_dedup([[maybe_unused]] int slice,
-                                                                            [[maybe_unused]] int nslices)
+void TypeStateParallelImpl<ChunkT, T, true>::clear_list_block_free_dedup([[maybe_unused]] int slice,
+                                                                         [[maybe_unused]] int nslices)
 {
     if constexpr (!build_config::free_guard)
     {
         return;
     }
 
-    using Mgr           = ManagerChunk<ChunkT, T>;
+    using Mgr           = TypeState<ChunkT, T>;
     const auto& to_free = Mgr::teardown_to_free_;
     const auto  less    = internal::PtrLess<T>{};
 
@@ -782,9 +782,9 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_dedup([[ma
  * @pre clear_list_block_free_dedup() has run for EVERY slice (barrier).
  */
 template <template <typename> typename ChunkT, typename T>
-void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_thr(int bucket)
+void TypeStateParallelImpl<ChunkT, T, true>::clear_list_block_free_thr(int bucket)
 {
-    using Mgr     = ManagerChunk<ChunkT, T>;
+    using Mgr     = TypeState<ChunkT, T>;
     auto& to_free = Mgr::teardown_to_free_;
 
     if (bucket < 0 || static_cast<std::size_t>(bucket) >= to_free.size())
@@ -836,9 +836,9 @@ void ManagerChunkParallelImpl<ChunkT, T, true>::clear_list_block_free_thr(int bu
  *       containers, not their contents.
  */
 template <template <typename> typename ChunkT, typename T>
-void ManagerChunkParallelImpl<ChunkT, T, true>::delete_list_block_chunk_free_itself()
+void TypeStateParallelImpl<ChunkT, T, true>::delete_list_block_chunk_free_itself()
 {
-    using Mgr = ManagerChunk<ChunkT, T>;
+    using Mgr = TypeState<ChunkT, T>;
 
     if constexpr (IsSecondValueFamily<ChunkT, T>)
     {

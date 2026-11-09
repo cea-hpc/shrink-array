@@ -155,11 +155,11 @@ extern "C++"
 #endif
 #include "chunk/param_chunk.h"                // ParamChunk
 #include "chunk/config.h"                     // build_config, chunk_config: the options the library was built with
-#include "chunk/PMP_CHUNK.h"                  // pmp: the loops, the teams, max_threads, team_size, thread_rank
+#include "chunk/internal/PMP_CHUNK.h"         // pmp: the loops, the teams, max_threads, team_size, thread_rank
 #include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
 #include "chunk/internal/print.h"             // print, println
 #include "chunk/manage_ompt.h"                // parallel_phase
-#include "chunk/shutdown.h"                   // release_chunk_pools, destroy_block_chunk
+#include "chunk/internal/pool_release.h"      // release_chunk_pools, destroy_block_chunk
 #include "chunk/chunk_exchange.h"             // export_chunk, import_chunk, export_array, import_array, ChunkState, ...
 #include "chunk/chunk_size_advisor.h"         // ChunkSizeAdvisor, ChunkSizeReport, ChunkSizeEstimate
 #include "chunk/rechunk_decider.h"            // RechunkDecider, RechunkPolicy

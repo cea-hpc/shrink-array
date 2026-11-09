@@ -23,12 +23,12 @@
 #include <initializer_list> // the {a, b, c} constructor
 #include <iterator>         // std::forward_iterator, std::distance -- the (first, last) constructor
 
-#include "chunk/zero_chunk.h"                   // Chunk<T>
+#include "chunk/internal/zero_chunk.h"          // Chunk<T>
 #include "chunk/internal/read_reclaim.h"        // read_reclaim::PassScope (perform_compression / compress in a region)
 #include "chunk/internal/array_chunk_base.h"    // ArrayChunkBase
 #include "chunk/internal/zero_array_parallel.h" // FastBlockSupport -- fast-block-only mixin; ParallelSupport through it
 #include "chunk/internal/array_chunk_rechunk_hooks.h"   // RechunkHooks — CHUNK_DYNAMIC-only mixin
-#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_IN_PARALLEL_REGION, pmp::team / Team
+#include "chunk/internal/PMP_CHUNK.h"                   // CHUNK_PMP_IN_PARALLEL_REGION, pmp::team / Team
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 #include "chunk/config.h"                               // build_config::threaded
 #include "chunk/internal/write_compress_sync_policy.h"  // WriteCompressSyncPolicy
@@ -38,7 +38,7 @@ namespace shrink_array
 {
 
 template <template <typename> typename ChunkT, typename T>
-class ManagerChunk;
+class TypeState;
 
 namespace zero
 {
@@ -110,23 +110,16 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
   public:
     using Traits      = Base::Traits;      ///< ArrayChunkTraits<zero::Array>.
     using ChunkType   = Base::ChunkType;   ///< Chunk<T>, the chunk type held in chunk_list_.
-    using ManagerType = Base::ManagerType; ///< ManagerChunk<Chunk, T>, the per-type manager.
+    using ManagerType = Base::ManagerType; ///< TypeState<Chunk, T>, the per-type manager.
     using ProxyType   = Base::ProxyType;   ///< Proxy<T>, the write proxy of the non-const accessors.
     using value_type  = T;                 ///< Stored element type.
-
-    // The former snake_case spellings, kept until 1.0 (types are PascalCase).
-    using chunk_type [[deprecated("types are PascalCase: use ChunkType")]]          = ChunkType;
-    using manager_type [[deprecated("types are PascalCase: use ManagerType")]]      = ManagerType;
-    using proxy_type [[deprecated("types are PascalCase: use ProxyType")]]          = ProxyType;
-    using ind_type [[deprecated("types are PascalCase: use IndType")]]              = IntType;
-    using chunk_list_type [[deprecated("types are PascalCase: use ChunkListType")]] = Base::ChunkListType;
 
     using Base::chunk_list_;
     using Base::m_size_;
     using Base::nb_chunk_;
     using Base::nb_tab;
     using Base::size_policy_;
-    using Manager = ManagerChunk<Chunk, T>; ///< Same type as ManagerType.
+    using Manager = TypeState<Chunk, T>; ///< Same type as ManagerType.
 
     // Mode-specific members live in the two mixins above. Do not drop these
     // using-declarations: ArrayChunkBase re-exports RechunkSupport's hook
@@ -288,13 +281,6 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
 
     /// @brief Read-only access to the underlying chunk list.
     [[nodiscard]] const Base::ChunkListType& get_chunk_list() const noexcept
-    {
-        return chunk_list_;
-    }
-
-    /// @brief Former name of get_chunk_list(), kept for the programs that still spell it.
-    [[deprecated("methods are snake_case: use get_chunk_list")]] [[nodiscard]] const Base::ChunkListType&
-    getChunkList() const noexcept
     {
         return chunk_list_;
     }

@@ -46,7 +46,7 @@
 #include "chunk/bit.h"                         // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/array_chunk_for.h"    // ArrayKey, zero_one_value::Chunk (the keys)
 #include "chunk/internal/pointer_map_linear.h" // linear scan shared with PointerMapChunk
-#include "chunk/PMP_CHUNK.h"                   // CHUNK_PMP_* — thread rank without an #ifdef _OPENMP
+#include "chunk/internal/PMP_CHUNK.h"          // CHUNK_PMP_* — thread rank without an #ifdef _OPENMP
 #include "chunk/internal/value_less.h"         // ValueLess
 #include "chunk/internal/map_helper.h"         // ValueToIntMapHelper
 #include "chunk/internal/in_t.h"               // InT<T>

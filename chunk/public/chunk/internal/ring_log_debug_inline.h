@@ -15,7 +15,7 @@
  */
 
 #pragma once
-#include "chunk/ring_log_debug.h" // the class these bodies belong to
+#include "chunk/internal/ring_log_debug.h" // the class these bodies belong to
 
 namespace shrink_array
 {

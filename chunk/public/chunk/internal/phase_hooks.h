@@ -75,8 +75,8 @@
  * @see all_type_chunk.cpp for the definitions.
  */
 
-#include "chunk/config.h"    // build_config::has_not_ompt
-#include "chunk/PMP_CHUNK.h" // pmp::team (parallel_phase_impl's region)
+#include "chunk/config.h"             // build_config::has_not_ompt
+#include "chunk/internal/PMP_CHUNK.h" // pmp::team (parallel_phase_impl's region)
 
 namespace shrink_array
 {

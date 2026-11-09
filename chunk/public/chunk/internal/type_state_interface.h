@@ -17,12 +17,12 @@
 #pragma once
 
 /**
- * @file manager_chunk_interface.h
+ * @file type_state_interface.h
  * @brief The type-erased interface of the per-(variant, element type) chunk
- *        managers: ManagerChunkInt and its two build-dependent halves.
+ *        managers: TypeStateInterface and its two build-dependent halves.
  *
- * AllTypeChunk drives every manager through it; ManagerChunk
- * (chunk/internal/manager_chunk.h) implements it.
+ * AllTypeChunk drives every manager through it; TypeState
+ * (chunk/internal/type_state.h) implements it.
  */
 
 #include <cstddef> // std::size_t
@@ -42,19 +42,19 @@ namespace shrink_array
  * @tparam IsDynamic Whether runtime geometry is compiled in.
  */
 template <bool IsDynamic = build_config::chunk_dynamic>
-struct ManagerChunkDynInterface; // primary left undefined: only the 2 specializations exist
+struct TypeStateDynInterface; // primary left undefined: only the 2 specializations exist
 
 /// @brief Dynamic-geometry builds: register_chunk_size().
 template <>
-struct ManagerChunkDynInterface<true>
+struct TypeStateDynInterface<true>
 {
-    ManagerChunkDynInterface()          = default;
-    virtual ~ManagerChunkDynInterface() = default;
+    TypeStateDynInterface()          = default;
+    virtual ~TypeStateDynInterface() = default;
     // An interface: never copied or moved (no slicing).
-    ManagerChunkDynInterface(const ManagerChunkDynInterface&)            = delete;
-    ManagerChunkDynInterface& operator=(const ManagerChunkDynInterface&) = delete;
-    ManagerChunkDynInterface(ManagerChunkDynInterface&&)                 = delete;
-    ManagerChunkDynInterface& operator=(ManagerChunkDynInterface&&)      = delete;
+    TypeStateDynInterface(const TypeStateDynInterface&)            = delete;
+    TypeStateDynInterface& operator=(const TypeStateDynInterface&) = delete;
+    TypeStateDynInterface(TypeStateDynInterface&&)                 = delete;
+    TypeStateDynInterface& operator=(TypeStateDynInterface&&)      = delete;
 
     /// @brief Declare a runtime chunk geometry to this type's allocators.
     virtual void register_chunk_size(unsigned int size, int block_size) = 0;
@@ -62,15 +62,15 @@ struct ManagerChunkDynInterface<true>
 
 /// @brief Static-geometry builds: nothing to declare.
 template <>
-struct ManagerChunkDynInterface<false>
+struct TypeStateDynInterface<false>
 {
-    ManagerChunkDynInterface()          = default;
-    virtual ~ManagerChunkDynInterface() = default;
+    TypeStateDynInterface()          = default;
+    virtual ~TypeStateDynInterface() = default;
     // An interface: never copied or moved (no slicing).
-    ManagerChunkDynInterface(const ManagerChunkDynInterface&)            = delete;
-    ManagerChunkDynInterface& operator=(const ManagerChunkDynInterface&) = delete;
-    ManagerChunkDynInterface(ManagerChunkDynInterface&&)                 = delete;
-    ManagerChunkDynInterface& operator=(ManagerChunkDynInterface&&)      = delete;
+    TypeStateDynInterface(const TypeStateDynInterface&)            = delete;
+    TypeStateDynInterface& operator=(const TypeStateDynInterface&) = delete;
+    TypeStateDynInterface(TypeStateDynInterface&&)                 = delete;
+    TypeStateDynInterface& operator=(TypeStateDynInterface&&)      = delete;
 };
 
 /**
@@ -83,19 +83,19 @@ struct ManagerChunkDynInterface<false>
  * @tparam Threaded Whether the parallel surface is the one compiled in.
  */
 template <bool Threaded = build_config::threaded>
-struct ManagerChunkParallelInterface; // primary left undefined: only the 2 specializations exist
+struct TypeStateParallelInterface; // primary left undefined: only the 2 specializations exist
 
 /// @brief OpenMP builds: per-thread allocators, reuse lists and deferred ops.
 template <>
-struct ManagerChunkParallelInterface<true>
+struct TypeStateParallelInterface<true>
 {
-    ManagerChunkParallelInterface()          = default;
-    virtual ~ManagerChunkParallelInterface() = default;
+    TypeStateParallelInterface()          = default;
+    virtual ~TypeStateParallelInterface() = default;
     // An interface: never copied or moved (no slicing).
-    ManagerChunkParallelInterface(const ManagerChunkParallelInterface&)            = delete;
-    ManagerChunkParallelInterface& operator=(const ManagerChunkParallelInterface&) = delete;
-    ManagerChunkParallelInterface(ManagerChunkParallelInterface&&)                 = delete;
-    ManagerChunkParallelInterface& operator=(ManagerChunkParallelInterface&&)      = delete;
+    TypeStateParallelInterface(const TypeStateParallelInterface&)            = delete;
+    TypeStateParallelInterface& operator=(const TypeStateParallelInterface&) = delete;
+    TypeStateParallelInterface(TypeStateParallelInterface&&)                 = delete;
+    TypeStateParallelInterface& operator=(TypeStateParallelInterface&&)      = delete;
 
     // --- per-thread allocator and free-list surface ---
     /// @brief Set every rank's allocator geometry, from the calling thread:
@@ -126,7 +126,7 @@ struct ManagerChunkParallelInterface<true>
     ///        (a thread freeing far more than it allocates would hoard them).
     virtual void load_balance_list_block_free() = 0;
 
-    // --- teardown of the reuse lists, in phases (see manager_chunk_policies_inline.h) ---
+    // --- teardown of the reuse lists, in phases (see type_state_policies_inline.h) ---
     // AllTypeChunk::clear_list_block_free_thr() drives them: prepare() outside
     // the region, then inside ONE region and separated by barriers: screen()
     // per bucket, sort() per bucket, dedup() per address slice, thr() per
@@ -154,15 +154,15 @@ struct ManagerChunkParallelInterface<true>
 
 /// @brief Serial builds: one allocator, no per-thread free lists, nothing to flush.
 template <>
-struct ManagerChunkParallelInterface<false>
+struct TypeStateParallelInterface<false>
 {
-    ManagerChunkParallelInterface()          = default;
-    virtual ~ManagerChunkParallelInterface() = default;
+    TypeStateParallelInterface()          = default;
+    virtual ~TypeStateParallelInterface() = default;
     // An interface: never copied or moved (no slicing).
-    ManagerChunkParallelInterface(const ManagerChunkParallelInterface&)            = delete;
-    ManagerChunkParallelInterface& operator=(const ManagerChunkParallelInterface&) = delete;
-    ManagerChunkParallelInterface(ManagerChunkParallelInterface&&)                 = delete;
-    ManagerChunkParallelInterface& operator=(ManagerChunkParallelInterface&&)      = delete;
+    TypeStateParallelInterface(const TypeStateParallelInterface&)            = delete;
+    TypeStateParallelInterface& operator=(const TypeStateParallelInterface&) = delete;
+    TypeStateParallelInterface(TypeStateParallelInterface&&)                 = delete;
+    TypeStateParallelInterface& operator=(TypeStateParallelInterface&&)      = delete;
 
     /// @brief Set the single allocator's geometry.
     virtual void init_allocator(int block_size) const = 0;
@@ -173,20 +173,20 @@ struct ManagerChunkParallelInterface<false>
 /**
  * @brief Type-erased interface to a per-(variant, element-type) chunk manager.
  *
- * @details One ManagerChunk class exists per (variant, type); AllTypeChunk, which
+ * @details One TypeState class exists per (variant, type); AllTypeChunk, which
  *          acts on all of them (allocator init, compression passes, teardown),
- *          holds ManagerChunkInt pointers and dispatches through these virtuals.
+ *          holds TypeStateInterface pointers and dispatches through these virtuals.
  *          The build-dependent methods come from the two interface policies above.
  */
-struct ManagerChunkInt : public virtual ManagerChunkDynInterface<>, public virtual ManagerChunkParallelInterface<>
+struct TypeStateInterface : public virtual TypeStateDynInterface<>, public virtual TypeStateParallelInterface<>
 {
-    ManagerChunkInt()           = default;
-    ~ManagerChunkInt() override = default;
+    TypeStateInterface()           = default;
+    ~TypeStateInterface() override = default;
     // An interface: never copied or moved (no slicing).
-    ManagerChunkInt(const ManagerChunkInt&)            = delete;
-    ManagerChunkInt& operator=(const ManagerChunkInt&) = delete;
-    ManagerChunkInt(ManagerChunkInt&&)                 = delete;
-    ManagerChunkInt& operator=(ManagerChunkInt&&)      = delete;
+    TypeStateInterface(const TypeStateInterface&)            = delete;
+    TypeStateInterface& operator=(const TypeStateInterface&) = delete;
+    TypeStateInterface(TypeStateInterface&&)                 = delete;
+    TypeStateInterface& operator=(TypeStateInterface&&)      = delete;
 
     // --- present in every build ---
     /// @brief Release this type's allocation blocks.
@@ -221,10 +221,10 @@ struct ManagerChunkInt : public virtual ManagerChunkDynInterface<>, public virtu
     /// @brief Bytes parked in this manager's reuse pools (printed with CHUNK_STATS).
     /// @details Every build: the reuse pools are not OpenMP-only.
     [[nodiscard]] virtual std::size_t reuse_pool_bytes_int() const = 0;
-    /// @brief Return the pools' excess; see ManagerChunk::trim_reuse_pools.
+    /// @brief Return the pools' excess; see TypeState::trim_reuse_pools.
     virtual std::size_t trim_reuse_pools_int(std::size_t keep_per_thread) = 0;
     /// @brief Print the pools' breakdown by geometry; see
-    ///        ManagerChunk::print_reuse_pool_breakdown.
+    ///        TypeState::print_reuse_pool_breakdown.
     virtual void print_reuse_pool_breakdown_int(const char* label) const = 0;
 
     // The build-dependent halves live in the three interface policies above.
