@@ -17,7 +17,7 @@
 #include <cassert>   // assert
 #include <chrono>    // std::chrono::steady_clock
 #include <cmath>     // std::cos, std::sin, std::sqrt
-#include <cstdlib>   // std::abort, std::srand
+#include <cstdlib>   // std::abort
 #include <ctime>     // std::time
 #include <random>    // std::mt19937, std::uniform_int_distribution, std::default_random_engine
 #include <array>     // std::array
@@ -314,8 +314,9 @@ int main()
 
         const int nsz = end0 - start0;
 
-        // Initialize the random number generator with the current time
-        std::srand(static_cast<unsigned int>(std::time(nullptr)));
+        // The random generator, seeded with the current time (std::mt19937, not
+        // std::rand: a generator of its own, not the C library's shared state).
+        std::mt19937 gen(static_cast<std::mt19937::result_type>(std::time(nullptr)));
 
         // The indirection: the cells of the interval in order, then shuffled
         // by windows below.
@@ -328,7 +329,7 @@ int main()
 
         for (int p = 0; p < 10; ++p)
         {
-            const int win_sz = (std::rand() % (1 + (nsz / 100))) + 1;
+            const int win_sz = std::uniform_int_distribution<int>(1, 1 + (nsz / 100))(gen);
             // A window [win_start, win_start + win_sz) strictly inside [1, nsz). Drawn
             // directly: the former rejection loop (draw win_start in [1, nsz],
             // retry while win_start + win_sz >= nsz) never terminates once nsz is
@@ -338,7 +339,7 @@ int main()
             {
                 break;
             }
-            const int win_start = 1 + (std::rand() % (nsz - win_sz - 1));
+            const int win_start = std::uniform_int_distribution<int>(1, nsz - win_sz - 1)(gen);
 
             // Shuffle the vector to ensure the array is not ordered
             std::shuffle(index.begin() + win_start, index.begin() + win_start + win_sz,

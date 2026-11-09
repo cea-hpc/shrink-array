@@ -928,7 +928,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      */
     void swap_storage_and_identity(this Derived& self, Derived& other);
 
-    IndType m_size_; ///< Number of elements exposed by size().
+    IndType m_size_ = 0; ///< Number of elements exposed by size().
 
     /// @brief Bumped by every operation that invalidates a proxy (see operator[]).
     ///        Check builds' proxies abort on use when it changed

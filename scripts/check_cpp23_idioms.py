@@ -62,7 +62,9 @@ IOSTREAM_FILES = {
     "chunk/public/chunk/internal/tab_cst_val2_holder.h",
     "chunk/public/chunk/internal/tab_cst_val2_holder_inline.h",
 }
-IOSTREAM_LINE_OK = re.compile(r"std::ostream&\s*\w+\s*=\s*std::cout\b")
+# std::println(std::cerr, ...): std::println itself, to stderr, in a program
+# that imports std -- the stderr macro does not cross `import std`.
+IOSTREAM_LINE_OK = re.compile(r"std::ostream&\s*\w+\s*=\s*std::cout\b|\bstd::println\(\s*std::cerr\b")
 
 DERIVED_CALL = re.compile(r"\bderived\(\)")
 DOWNCAST = re.compile(r"static_cast<\s*(const\s+)?Derived\s*&>\(\s*\*this\s*\)")

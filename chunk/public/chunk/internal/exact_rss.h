@@ -34,6 +34,7 @@
 #include <charconv>     // std::from_chars (the "Rss:" value)
 #include <chrono>       // std::chrono::milliseconds
 #include <cstdio>       // std::FILE, std::fopen, std::fclose
+#include <limits>       // std::numeric_limits (the statm bound)
 #include <string_view>  // std::string_view (the "Rss:" line)
 #include <system_error> // std::errc
 #include <thread>       // std::thread, std::this_thread::sleep_for
@@ -81,10 +82,13 @@ inline long exact_rss_kib() noexcept
         long      res    = 0;
         const int fields = std::fscanf(file, "%ld %ld", &size, &res);
         (void)std::fclose(file);
-        const long ps = ::sysconf(_SC_PAGESIZE);
-        if (fields == 2 && ps > 0)
+        const long ps        = ::sysconf(_SC_PAGESIZE);
+        const long kib_by_pg = ps / 1024;
+        // A count read from the file: bounded before the product, so that a
+        // nonsensical one gives -1, not an overflow.
+        if (fields == 2 && kib_by_pg > 0 && res >= 0 && res <= std::numeric_limits<long>::max() / kib_by_pg)
         {
-            return res * (ps / 1024);
+            return res * kib_by_pg;
         }
     }
     return -1;

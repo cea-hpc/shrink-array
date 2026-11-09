@@ -73,6 +73,7 @@
 #include <chrono>      // std::chrono::steady_clock
 #include <cstdint>     // std::uint64_t
 #include <cstdio>      // std::fprintf, stderr
+#include <exception>   // std::exception (main's catch)
 #include <string>      // std::string
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::as_const
@@ -180,6 +181,7 @@ static double plain(long index, int iter)
 }
 
 int main(int argc, char** argv)
+try
 {
     ParamChunk::init_indexes(true);
 
@@ -377,4 +379,10 @@ int main(int argc, char** argv)
     }
     arr.clear();
     return bad;
+}
+catch (const std::exception& e)
+{
+    // A failed allocation, std::format or a bad argument: said, not std::terminate().
+    std::fprintf(stderr, "variant_compare: %s\n", e.what());
+    return 2;
 }
