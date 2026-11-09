@@ -18,7 +18,9 @@
 // parallel, read back, folded, and the library shut down. Exit status 0 when
 // every value reads back as written.
 
-#include <utility> // std::as_const
+#include <cstdio>    // std::fprintf (the catch)
+#include <exception> // std::exception
+#include <utility>   // std::as_const
 
 #include "chunk/zero_any_array.h" // shrink_array::zero_any::Array
 #include "chunk/manage_ompt.h"    // parallel_phase
@@ -43,6 +45,7 @@ static double expected(int index, int count)
 }
 
 int main()
+try
 {
     sa::ParamChunk::init_indexes(true); // once, before the first array
 
@@ -86,4 +89,10 @@ int main()
     sa::release_chunk_pools(); // give the reuse pools back
     sa::destroy_block_chunk();
     return bad == 0 ? 0 : 1;
+}
+catch (const std::exception& e)
+{
+    // A failed allocation or std::format: said, not std::terminate().
+    std::fprintf(stderr, "getting_started: %s\n", e.what());
+    return 2;
 }
