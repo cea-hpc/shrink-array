@@ -37,7 +37,7 @@
 #include <string>  // std::string
 
 #include "chunk/internal/env_parse.h" // parse_number, env_number, arg_number, env_flag
-#include "chunk/internal/print.h"     // shrink_array::println
+#include "chunk/print.h"              // shrink_array::println
 #include "chunk/log.h"                // logging::set_sink, Record, Level, Channel
 
 using shrink_array::println;

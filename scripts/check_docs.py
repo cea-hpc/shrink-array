@@ -90,6 +90,8 @@ ALLOWED = {
     "manager_chunk_policies_inline.h", "manager_chunk.cpp", "chunk/internal/manager_chunk.h",
     "chunk/private/manager_chunk.cpp",
     "chunk/debug.h", "debug.h",  # removed, nothing included it (CHANGELOG.md, Unreleased)
+    "python/run_test.py", "run_test.py",  # removed, it ran a test that no longer exists (CHANGELOG.md, Unreleased)
+    "chunk/internal/print.h",  # now chunk/print.h, public (CHANGELOG.md, Unreleased)
     "FAST_ALLOC_MAX_CONST_BLOCK_SIZE", "internal/static_const_array_define.h",
     "chunk/internal/diag_mutex.h", "diag_mutex.h", "internal::diag_print_mutex", "chunk/internal/nano_sleeper.h",
     "chunk_config::have_aggressive_compression",  # now chunk_config::aggressive_compression()

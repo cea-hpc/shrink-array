@@ -20,6 +20,12 @@ Two checks, against the tree:
 The [not public] section lists the members of the public classes that name the
 library's machinery; they must not appear in a header's section.
 
+3. Examples: the programs under examples/ are what a user copies, so they
+   include public headers only -- none under chunk/internal/ or
+   fast_allocators/internal/. A program that needs one shows a name missing
+   from the interface. INTERNAL_CLIENTS are the exceptions: the harnesses and
+   the benchmarks, which look at the machinery on purpose.
+
 Usage: scripts/check_public_api.py [repo root]   (exit 1 on a failure)
 """
 
@@ -28,6 +34,14 @@ import re
 import sys
 
 INCLUDE = re.compile(r'^\s*#\s*include\s*"((?:chunk|fast_allocators)/[^"]+)"', re.M)
+
+# The programs of examples/ allowed to include internal headers (check 3).
+INTERNAL_CLIENTS = (
+    "examples/validation/",                       # the harnesses: white-box tests
+    "examples/shrink_bench/",                     # the benchmark: counters, pools, ring log
+    "examples/access_cost/access_cost_pattern.cpp",  # the motif census walks the chunk list
+    "examples/multi-mat/",                        # in_parallel_region, print_info_chunk: not public yet
+)
 WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 INCLUDE_DIRS = ("chunk/public", "fast_allocators/public")
 
@@ -105,6 +119,17 @@ def main() -> int:
                 bad.append("%s: %s is in [not public]" % (header, name))
             elif last not in words:
                 bad.append("%s: %s is not declared there any more" % (header, name))
+
+    examples = root / "examples"
+    for path in sorted(examples.rglob("*")):
+        if path.suffix not in (".cpp", ".h", ".hpp") or not path.is_file():
+            continue
+        rel = path.relative_to(root).as_posix()
+        if rel.startswith(INTERNAL_CLIENTS):
+            continue
+        for inc in INCLUDE.findall(path.read_text(encoding="utf-8", errors="replace")):
+            if "/internal/" in inc:
+                bad.append("%s: includes %s, an internal header (examples use the public ones)" % (rel, inc))
 
     total = sum(len(v) for v in sections.values())
     if bad:

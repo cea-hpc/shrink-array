@@ -162,6 +162,15 @@ calls `finalize_parallel_phase()` once they have stopped. `shrink_array::tbb::pa
 makes both calls for a TBB loop; the header is installed with the others, and the program links
 TBB itself (the library does not).
 
+The threads, whatever the backend (`chunk/threads.h`): size per-thread data and number the
+threads with these rather than with `omp_get_*`, so that the program builds with every backend.
+
+| call | OpenMP | std backend | serial |
+|---|---|---|---|
+| `pmp::max_threads()` | `omp_get_max_threads()` | the team size of the next region | 1 |
+| `pmp::team_size()` | `omp_get_num_threads()` | the size of the innermost team | 1 |
+| `pmp::thread_rank()` | `omp_get_thread_num()` | the rank in the innermost team (the registered rank outside one) | 0 |
+
 ## 7. Adaptive chunk size (`_dyn` libraries)
 
 | call | header | what it does |
@@ -171,6 +180,10 @@ TBB itself (the library does not).
 | `decider.consider<T>(a, tick, iter, "name")` | | analyses the array and applies the re-chunk if the policy agrees **(S)** |
 | `decider.print_rechunk_log()` | | the table of the re-chunks performed |
 | `a.rechunk_to(n)` **(S)** | | re-chunk one array to `n` elements per chunk |
+| `a.set_chunk_size(n)` | | the geometry of an EMPTY array, before its first `resize()`; a no-op in a static build |
+| `set_active_chunk_size(n)` | `chunk/chunk_size_advisor.h` | the process-wide chunk size, before `ParamChunk::init_indexes()`: the first geometry |
+| `set_thread_chunk_size(n)` | `chunk/chunk_size_advisor.h` | the chunk size of the arrays the calling thread builds next |
+| `sizeof(zero_any::Chunk<T>)` | `chunk/zero_any_array.h` | the metadata of one chunk, for the advisor's options |
 
 The policy, its defaults and the measured results: [adaptive_rechunk.md](adaptive_rechunk.md).
 
@@ -213,3 +226,10 @@ their channels: `arena=info` (the buffer arena), `ledger=info` (the block regist
 stderr headed `[CRITICAL_FAILURE]` (`[DEBUG_INVARIANT_FAILURE]` in a debug build), the
 backtrace, then the record (level fatal) to the sink or `CHUNK_LOG_FILE`. The channels'
 contents: [developer_settings.md](developer_settings.md), section 2.
+
+## 10. Printing
+
+`chunk/print.h`: `shrink_array::print` and `println`, the C++23 `std::print` / `std::println` in
+every build -- the standard ones where the library has them, the same signatures over
+`std::format` otherwise. `println("{} chunks", n)` to stdout, `println(stderr, ...)` to a stream.
+The examples print through them.

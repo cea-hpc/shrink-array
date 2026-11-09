@@ -22,12 +22,10 @@
 #include <iterator> // std::size
 #include <vector>   // std::vector
 
-#include "chunk/zero_any_array.h"             // zero_any::Array
-#include "chunk/internal/zero_any_chunk.h"    // zero_any
-#include "chunk/chunk_size_advisor.h"         // ChunkSizeAdvisor
-#include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
-#include "chunk/param_chunk.h"                // ParamChunk::init_indexes
-#include "chunk/internal/print.h"             // shrink_array::println
+#include "chunk/zero_any_array.h"     // zero_any::Array, zero_any::Chunk
+#include "chunk/chunk_size_advisor.h" // ChunkSizeAdvisor, set_active_chunk_size, set_thread_chunk_size
+#include "chunk/param_chunk.h"        // ParamChunk::init_indexes
+#include "chunk/print.h"              // shrink_array::println
 
 using namespace shrink_array;
 

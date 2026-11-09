@@ -41,7 +41,7 @@
 #include <vector>    // std::vector
 
 #include "chunk/internal/bit_words.h" // bits::WordT, bits::fill_bits, bits::get_bit, bits::scan_words
-#include "chunk/internal/print.h"     // shrink_array::println
+#include "chunk/print.h"              // shrink_array::println
 
 using shrink_array::println;
 

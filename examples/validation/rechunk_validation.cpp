@@ -72,7 +72,7 @@
 #include "chunk/array_chunk_range_ops.h"      // fill_range / copy_range
 #include "chunk/manage_ompt.h"                // finalize_parallel_phase (compression backlog drain)
 #include "chunk/internal/env_parse.h"         // env_number / arg_number (checked, not atoi)
-#include "chunk/internal/print.h"             // shrink_array::println
+#include "chunk/print.h"                      // shrink_array::println
 
 using namespace shrink_array;
 

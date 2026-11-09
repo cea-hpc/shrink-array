@@ -77,7 +77,7 @@
 #include "chunk/config.h"                // chunk_config::use_zero_one_value*, build_config::use_openmp / has_not_ompt
 #include "chunk/internal/PMP_CHUNK.h"    // chunk_pmp_set_max_active_levels
 #include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/internal/print.h"        // shrink_array::println
+#include "chunk/print.h"                 // shrink_array::println
 #include "chunk/internal/test_hooks.h"   // force_defer_every, forced_deferrals (C, D)
 
 #include "chunk/internal/zero_chunk.h" // release_chunk_pools, destroy_block_chunk

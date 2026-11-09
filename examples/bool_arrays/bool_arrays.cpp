@@ -36,7 +36,7 @@
 #include "chunk/array_chunk_bits.h"     // shrink_array::ArrayChunkBits
 #include "chunk/manage_ompt.h"          // parallel_phase
 #include "chunk/param_chunk.h"          // ParamChunk::init_indexes, release_chunk_pools, destroy_block_chunk
-#include "chunk/internal/print.h"       // shrink_array::println
+#include "chunk/print.h"                // shrink_array::println
 
 namespace sa = shrink_array;
 using shrink_array::println;

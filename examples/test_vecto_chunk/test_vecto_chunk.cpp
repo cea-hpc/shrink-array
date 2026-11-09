@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-#include <cassert>   // assert
 #include <chrono>    // std::chrono::steady_clock
 #include <cmath>     // std::cos, std::sin, std::sqrt
 #include <cstdlib>   // std::abort
@@ -34,13 +33,10 @@
 #include <format> // std::format (the filling rates)
 
 
-#include "chunk/param_chunk.h"                // ParamChunk
-#include "chunk/zero_array.h"                 // zero::Array
-#include "chunk/internal/PMP_CHUNK.h"         // CHUNK_PMP_MAX_THREADS
-#include "chunk/internal/zero_chunk_def.h"    // ChunkDef
-#include "chunk/internal/zero_chunk.h"        // destroy_block_chunk
-#include "chunk/config.h"                     // chunk_config::stats
-#include "chunk/internal/chunk_size_config.h" // static_chunk_size
+#include "chunk/param_chunk.h" // ParamChunk, destroy_block_chunk
+#include "chunk/zero_array.h"  // zero::Array
+#include "chunk/threads.h"     // pmp::max_threads
+#include "chunk/config.h"      // chunk_config::stats
 
 
 using namespace shrink_array;
@@ -193,28 +189,8 @@ void calculate1(double                     val,
 
 int main()
 {
-    const int chunk_size = static_cast<int>(shrink_array::static_chunk_size);
-
-    assert(chunk_size <= zero::ChunkDef::size_max);
-
-
-    if constexpr (chunk_size == 0)
-    {
-        std::cerr << "The chunk size can't be null\n";
-    }
-
-    if (!ParamChunk::check_chunk_size(chunk_size))
-    {
-        std::cerr << "The chunk size must be a power of two or a multiple of 64";
-    }
-
-    if (chunk_size < ParamChunk::size_min || chunk_size > ParamChunk::size_max)
-    {
-        std::cerr << "The chunk size must must be superior or equal to " << ParamChunk::size_min
-                  << " and inferior or equal to " << ParamChunk::size_max << "\n";
-        std::abort();
-    }
-
+    // Once, before the first array. The library checks its compiled chunk size
+    // itself.
     ParamChunk::init_indexes(true);
 
     constexpr int sz = 100000000;
@@ -224,7 +200,7 @@ int main()
     constexpr int freq_raz = iter_max / 50;
     constexpr int interval = 20000;
 
-    const int max_thr = CHUNK_PMP_MAX_THREADS;
+    const int max_thr = shrink_array::pmp::max_threads();
 
     std::cout << "Number of threads : " << max_thr << '\n';
 
