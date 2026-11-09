@@ -19,19 +19,19 @@
 #include <cstddef> // std::size_t
 #include <vector>  // std::vector
 
-#include "chunk/bit.h"                              // is_bool_like_v: bool and Bit share the bool path
-#include "chunk/config.h"                           // build_config::threaded, chunk_config::chunk_dynamic
-#include "chunk/PMP_CHUNK.h"                        // CHUNK_PMP_THREAD_CAPACITY (max_thr)
-#include "chunk/internal/second_value_info.h"       // SecondValueInfo (InfArrayT)
-#include "chunk/internal/manager_chunk_interface.h" // ManagerChunkInt
-#include "chunk/internal/manager_chunk_policies.h"  // ManagerChunkDynImpl, ManagerChunkParallelImpl
-#include "chunk/internal/reuse_pools.h"             // ReusePools
-#include "chunk/internal/compress_candidates.h"     // CompressCandidates
+#include "chunk/bit.h"                           // is_bool_like_v: bool and Bit share the bool path
+#include "chunk/config.h"                        // build_config::threaded, chunk_config::chunk_dynamic
+#include "chunk/internal/PMP_CHUNK.h"            // CHUNK_PMP_THREAD_CAPACITY (max_thr)
+#include "chunk/internal/second_value_info.h"    // SecondValueInfo (InfArrayT)
+#include "chunk/internal/type_state_interface.h" // TypeStateInterface
+#include "chunk/internal/type_state_policies.h"  // TypeStateDynImpl, TypeStateParallelImpl
+#include "chunk/internal/reuse_pools.h"          // ReusePools
+#include "chunk/internal/compress_candidates.h"  // CompressCandidates
 
 namespace shrink_array
 {
 // Forward declaration: only named in contexts that depend on T. The definition
-// (chunk/internal/compression_manager.h) comes with manager_chunk_policies_inline.h.
+// (chunk/internal/compression_manager.h) comes with type_state_policies_inline.h.
 template <typename T, typename ChunkT>
 struct CompressionManager;
 
@@ -40,40 +40,40 @@ struct CompressionManager;
  *
  * @details One instance exists per @c ChunkT / @c T combination, reachable
  *          statically, and AllTypeChunk drives every one of them through
- *          ManagerChunkInt. It is made of:
+ *          TypeStateInterface. It is made of:
  *
  *          - **ReusePools** (reuse_pools.h): the buffer reuse free-lists, their
  *            budgets, drains and trims;
  *          - **CompressCandidates** (compress_candidates.h): the
  *            compression-candidate lists;
- *          - **ManagerChunkDynImpl / ManagerChunkParallelImpl**
- *            (manager_chunk_policies.h): the build-dependent overrides -- the
+ *          - **TypeStateDynImpl / TypeStateParallelImpl**
+ *            (type_state_policies.h): the build-dependent overrides -- the
  *            per-rank allocators, the deferred flush, the teardown of the
  *            reuse lists;
  *          - and, here, what crosses them: the chunk counters both budgets are
  *            computed from, the keyed allocator sets of the arrays with their
  *            own affinity, the single compression sweep, and the overrides of
- *            ManagerChunkInt.
+ *            TypeStateInterface.
  *
  *          The static members of the bases are named through this class as
- *          before (ManagerChunk<ChunkT, T>::get_list_block_free_thr(...)).
+ *          before (TypeState<ChunkT, T>::get_list_block_free_thr(...)).
  *
  * @tparam ChunkT chunk variant template (zero, zero_one_value or zero_any)
  * @tparam T       stored element type
  */
 template <template <typename> class ChunkT, typename T>
-class ManagerChunk final : public virtual ManagerChunkInt,
-                           public ManagerChunkDynImpl<ChunkT, T>,
-                           public ManagerChunkParallelImpl<ChunkT, T>,
-                           public ReusePools<ChunkT, T>,
-                           public CompressCandidates<ChunkT, T>
+class TypeState final : public virtual TypeStateInterface,
+                        public TypeStateDynImpl<ChunkT, T>,
+                        public TypeStateParallelImpl<ChunkT, T>,
+                        public ReusePools<ChunkT, T>,
+                        public CompressCandidates<ChunkT, T>
 {
     // The implementation policies are BASES and need this class's state, which
     // protected access does not reach: friendship, not a public accessor.
     template <template <typename> class, typename, bool>
-    friend struct ManagerChunkDynImpl;
+    friend struct TypeStateDynImpl;
     template <template <typename> class, typename, bool>
-    friend class ManagerChunkParallelImpl;
+    friend class TypeStateParallelImpl;
 
   private:
     using Pools      = ReusePools<ChunkT, T>;         ///< the reuse pools, a base
@@ -134,8 +134,8 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      * @note max_thr is the process-wide thread capacity: every per-thread
      *       container has a slot for any rank, even of a team raised later.
      */
-    ManagerChunk()           = default;
-    ~ManagerChunk() override = default;
+    TypeState()           = default;
+    ~TypeState() override = default;
 
     /**
      * @brief Size the static per-rank structures of (ChunkT, T)
@@ -149,14 +149,13 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         (void)ChunkT<T>::get_manager(); // built now, outside any parallel region of the type
     }
 
-    ManagerChunk(const ManagerChunk&) =
+    TypeState(const TypeState&) =
         delete ("one manager per (variant, type), owned by the registry: never copied or moved");
-    ManagerChunk& operator=(const ManagerChunk&) =
+    TypeState& operator=(const TypeState&) =
         delete ("one manager per (variant, type), owned by the registry: never copied or moved");
-    ManagerChunk(ManagerChunk&&) =
-        delete ("one manager per (variant, type), owned by the registry: never copied or moved");
-    ManagerChunk& operator=(ManagerChunk&&) =
-        delete ("one manager per (variant, type), owned by the registry: never copied or moved");
+    TypeState(TypeState&&) = delete ("one manager per (variant, type), owned by the registry: never copied or moved");
+    TypeState&
+    operator=(TypeState&&) = delete ("one manager per (variant, type), owned by the registry: never copied or moved");
 
     /// @brief CompressCandidates::resize_lists().
     void resize_chunk_to_compress_potentially() const override
@@ -165,8 +164,8 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     }
 
     // Build-dependent overrides live in the policies:
-    //   register_chunk_size()                 -> ManagerChunkDynImpl
-    //   the allocator / free-list surface     -> ManagerChunkParallelImpl
+    //   register_chunk_size()                 -> TypeStateDynImpl
+    //   the allocator / free-list surface     -> TypeStateParallelImpl
 
     /// @brief Recompute how many buffers each thread may keep parked for reuse.
     static void compute_size_buffer_reuse();
@@ -204,10 +203,10 @@ class ManagerChunk final : public virtual ManagerChunkInt,
 
 } // namespace shrink_array
 
-// The bodies, once ManagerChunk is complete: they name ManagerChunk<ChunkT, T>::
+// The bodies, once TypeState is complete: they name TypeState<ChunkT, T>::
 // and need the chunk classes, whose headers include this one (a cycle the
 // order breaks).
-#include "chunk/internal/reuse_pools_inline.h"            // ReusePools' bodies
-#include "chunk/internal/compress_candidates_inline.h"    // CompressCandidates' bodies
-#include "chunk/internal/manager_chunk_policies_inline.h" // the policies' bodies
-#include "chunk/internal/manager_chunk_inline.h"          // ManagerChunk's bodies
+#include "chunk/internal/reuse_pools_inline.h"         // ReusePools' bodies
+#include "chunk/internal/compress_candidates_inline.h" // CompressCandidates' bodies
+#include "chunk/internal/type_state_policies_inline.h" // the policies' bodies
+#include "chunk/internal/type_state_inline.h"          // TypeState's bodies

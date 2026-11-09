@@ -465,7 +465,8 @@ foreach(_geom IN LISTS _rt_geometries)
         foreach(_case coexistence range-ops scale-64-to-tgt mostly-constant sin-quantized
                       shrink-to-smaller all-same all-different val2-grow val2-shrink
                       invalid-size-refused active-size-refused multiple-of-64-chain index-split
-                      bool-grow bool-shrink bool-uneven sliced-grow sliced-shrink)
+                      bool-grow bool-shrink bool-uneven bool-sliced sliced-grow sliced-shrink
+                      sliced-val2-grow sliced-val2-uneven)
           validation_add_test(${_base}_${_case} ${_exe} ${_h} "" --case ${_case})
         endforeach()
       elseif (_h STREQUAL "dyn_geometry_validation")
@@ -756,6 +757,7 @@ set_property(TEST rank_registry_validation PROPERTY LABELS validation)
 # and CHUNK_CHECK_FAILED, each case in a child (the executable re-runs
 # itself with --fatal K). Header-only: no library, no variant.
 add_executable(log_validation log_validation.cpp)
+chunk_add_alloc_token_rt(log_validation)
 target_include_directories(log_validation PRIVATE ${PROJECT_SOURCE_DIR}/chunk/public
                                                   ${PROJECT_BINARY_DIR}/chunk/generated # chunk/build_options.h
                                                   ${PROJECT_SOURCE_DIR}/fast_allocators/public)
@@ -796,6 +798,7 @@ set_property(TEST log_break_on_failure PROPERTY SKIP_RETURN_CODE 77)
 # rank OpenMP gives it, the same share in two nowait loops in a row -- what
 # the bench's barrier-free regions rely on. Header-only: no library, no variant.
 add_executable(team_loops_validation team_loops_validation.cpp)
+chunk_add_alloc_token_rt(team_loops_validation)
 target_include_directories(team_loops_validation PRIVATE ${PROJECT_SOURCE_DIR}/fast_allocators/public)
 target_link_libraries(team_loops_validation PRIVATE Threads::Threads)
 if (OMP)

@@ -23,68 +23,14 @@
 #include <utility>         // std::forward
 
 #include "chunk/config.h"                       // build_config::any_check, chunk_config::use_fast_block_compression
-#include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast (the constant-buffer write check)
+#include "chunk/internal/PMP_CHUNK.h"           // get_thr_rank_fast (the constant-buffer write check)
 #include "chunk/internal/chunk_base.h"          // ChunkBase
 #include "chunk/internal/cst_slot.h"            // CstSlot (clear_impl's type-of-constant slot)
 #include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef, the zero_any second-value slot handle
-#include "chunk/type_name.h"                    // type_name<T>
+#include "chunk/internal/type_name.h"           // type_name<T>
 
 namespace shrink_array
 {
-
-template <typename Derived>
-struct ProxyTypeTrait;
-
-namespace zero_one_value
-{
-
-template <typename T>
-class Chunk;
-template <typename T>
-class Proxy;
-
-} // namespace zero_one_value
-
-namespace zero_any
-{
-
-template <typename T>
-class Chunk;
-template <typename T>
-class Proxy;
-
-} // namespace zero_any
-
-namespace pattern
-{
-
-template <typename T>
-class Chunk;
-template <typename T>
-class Proxy;
-
-} // namespace pattern
-
-// Specialisation for zero_one_value
-template <typename T>
-struct ProxyTypeTrait<zero_one_value::Chunk<T>>
-{
-    using Type = zero_one_value::Proxy<T>;
-};
-
-// Specialisation for zero_any
-template <typename T>
-struct ProxyTypeTrait<zero_any::Chunk<T>>
-{
-    using Type = zero_any::Proxy<T>;
-};
-
-// Specialisation for pattern
-template <typename T>
-struct ProxyTypeTrait<pattern::Chunk<T>>
-{
-    using Type = pattern::Proxy<T>;
-};
 
 // ============================================================================
 // SecondValueChunkBase

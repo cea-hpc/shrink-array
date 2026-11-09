@@ -50,12 +50,12 @@
 #include "chunk/zero_array.h"           // zero::Array
 #include "chunk/zero_one_value_array.h" // zero_one_value::Array
 #include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/zero_chunk.h"           // release_chunk_pools, destroy_block_chunk
+#include "chunk/internal/zero_chunk.h"  // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"               // chunk_config::use_zero_one_value*
 #include "chunk/internal/print.h"       // shrink_array::println
 #include "chunk/manage_ompt.h"          // parallel_phase
 #include "chunk/mdspan_tile_ops.h"      // md::copy_box_out(_mt), md::copy_box_in(_mt)
-#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
+#include "chunk/internal/PMP_CHUNK.h"   // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
 #include "chunk/param_chunk.h"          // ParamChunk::init_indexes
 
 using namespace shrink_array;

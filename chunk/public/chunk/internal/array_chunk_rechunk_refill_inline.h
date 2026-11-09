@@ -30,10 +30,10 @@
 #include <utility>     // std::as_const
 #include <vector>      // the refill buffers
 
-#include "chunk/PMP_CHUNK.h"                           // get_thr_rank_fast, pmp::team, chunk_pmp_*_schedule
+#include "chunk/internal/PMP_CHUNK.h"                  // get_thr_rank_fast, pmp::team, chunk_pmp_*_schedule
 #include "chunk/array_chunk_range_ops.h"               // copy_range -- the public bulk fill
 #include "chunk/bit.h"                                 // is_bool_like_v (the bulk read gate)
-#include "chunk/chunk_traits.h"                        // is_zero_any_family_v, has_motif_state_v
+#include "chunk/internal/chunk_traits.h"               // is_zero_any_family_v, has_motif_state_v
 #include "chunk/config.h"                              // build_config::threaded, chunk_config::use_zero*
 #include "chunk/internal/array_chunk_rechunk_refill.h" // Refill, the class these bodies belong to
 #include "chunk/internal/array_chunk_rechunk_trace.h"  // rechunk_trace_on, rss_mib_now, g_slice_times
@@ -69,7 +69,7 @@ RechunkSupport<Derived, true>::Refill::Refill(Derived&     src,
     , aligned_coarsening_(new_size % old_size == 0)
     , n_slices_(slice_count())
 {
-    if constexpr (chunk_config::use_zero && build_config::threaded)
+    if constexpr (releases_sources)
     {
         if (!aligned_coarsening_)
         {
@@ -81,7 +81,7 @@ RechunkSupport<Derived, true>::Refill::Refill(Derived&     src,
 template <typename Derived>
 int RechunkSupport<Derived, true>::Refill::slice_count() const noexcept
 {
-    // SLICED rebuild. Inside one region zero releases each source chunk as
+    // SLICED rebuild. Inside one region the refill releases each source chunk as
     // soon as it is transcribed (release_sources), but a block freed by a rank
     // that does not own its slab is only parked in that rank's reuse list
     // (walking the owner's slab chains from inside a region is what the
@@ -92,12 +92,12 @@ int RechunkSupport<Derived, true>::Refill::slice_count() const noexcept
     // empties the old slabs of the range just consumed and gives their pages
     // back BEFORE the next slice materialises: peak ~ old + new/slices.
     //
-    // 16 slices, zero + fast alloc + OpenMP only: zero_one_value/zero_any do
-    // not release their source chunks during the copy (their clear_st carries
-    // compression state this loop has no business synthesising), so they have
-    // nothing to give back between slices and the extra regions would be pure
-    // cost.
-    if constexpr (chunk_config::use_zero && build_config::use_fast_alloc && build_config::threaded)
+    // 16 slices with the fast allocator and threads, for every array that
+    // releases its sources (releases_sources: not ArrayChunkBits, which has
+    // nothing to give back between slices -- the extra regions would be pure
+    // cost). The std allocator needs no slice: each
+    // release is a free() the next allocation reuses.
+    if constexpr (releases_sources && build_config::use_fast_alloc)
     {
         // 16: cuts the peak above the pre-re-chunk level about fourfold;
         // more slices gain little. The remainder is the two geometries
@@ -517,7 +517,7 @@ void RechunkSupport<Derived, true>::Refill::read_span([[maybe_unused]] int new_c
     // its compression candidates (rechunk_drop_candidates), and nobody writes
     // src_ meanwhile, so no pass can claim, compress or release one of its
     // chunks -- what the ReadSection guards against. The only release is
-    // zero's release_st (release_sources), coordinated by old_done_: a source
+    // release_st (release_sources), coordinated by old_done_: a source
     // chunk is freed once every span reading it is done.
     //
     // Per source chunk, the same decision element_at_unguarded() makes per
@@ -641,13 +641,16 @@ void RechunkSupport<Derived, true>::Refill::release_sources([[maybe_unused]] con
     // Released while the TLS is still old_size, deliberately:
     // free_block_to_pool() routes by the AMBIENT geometry, so freeing a
     // S-sized buffer under S' would park it in the wrong pool.
-    // zero only: zero_one_value/zero_any's clear_st() take the variant's
-    // compression state (num_compress_value, ptr_type_cst, ptr_second_value),
-    // which this loop has no business synthesising -- releasing their buffers
-    // early would need the matching teardown of that state. Chunk<T>'s
-    // clear_st(thr, n_elems) frees the buffer and marks the chunk cst1, which
-    // is exactly what "already transcribed" means here.
-    if constexpr (chunk_config::use_zero && build_config::threaded)
+    //
+    // Each variant's release_st() frees the buffer and points the chunk at the
+    // first constant without counting a compression -- exactly what "already
+    // transcribed" means here. zero_one_value / zero_any's go through their
+    // compression's own block_clear_common(0, ...) (type slot to cst1, second-
+    // value slot reset, CAS, free_block_to_pool), which is sound on the source:
+    // quiescent, so the CAS cannot lose, and torn down right after the swap,
+    // where a cst1 chunk owns nothing. Only materialised chunks are released:
+    // a chunk at a second constant points at a shared array, never freed.
+    if constexpr (releases_sources)
     {
         const int thr = get_thr_rank_fast();
         for (int oc = span.old_first; oc <= span.old_last; ++oc)
@@ -674,9 +677,29 @@ void RechunkSupport<Derived, true>::Refill::release_sources([[maybe_unused]] con
             auto& och = src_.chunk_list_[static_cast<std::size_t>(oc)];
             // release_st, not clear_st: a release once copied, not a
             // compression (CHUNK_STATS counted every rebuilt chunk as one).
-            if (!och.is_cst_val1())
+            if constexpr (chunk_config::use_zero)
             {
-                och.release_st(thr, old_size_);
+                if (!och.is_cst_val1())
+                {
+                    och.release_st(thr, old_size_);
+                }
+            }
+            else if constexpr (is_zero_any_family_v<ChunkType>)
+            {
+                // written(): neither cst1 nor a cst2 (a pattern motif included).
+                if (och.written())
+                {
+                    och.release_st(&ProxyType::tab_type_cst_val[src_.num_tab_][oc],
+                                   ProxyType::BaseSpec::get_tab_second_value(src_.num_tab_, oc), thr);
+                }
+            }
+            else
+            {
+                // owns_live_buffer(): neither cst1 nor the second constant.
+                if (och.owns_live_buffer())
+                {
+                    och.release_st(ind_old2_, thr);
+                }
             }
         }
     }

@@ -34,7 +34,7 @@
 #include "chunk/internal/array_chunk_rechunk_refill.h" // RechunkSupport::Refill (rechunk_refill)
 #include "chunk/internal/array_chunk_rechunk_trace.h"  // RechunkPhaseTrace
 #include "chunk/internal/chunk_stats.h"                // increm_chunk_rechunk (CHUNK_STATS)
-#include "chunk/PMP_CHUNK.h"                           // CHUNK_PMP_RANK_BOUND
+#include "chunk/internal/PMP_CHUNK.h"                  // CHUNK_PMP_RANK_BOUND
 #include "chunk/log.h"                                 // CHUNK_LOG (the pool census)
 #include "chunk/config.h"                              // build_config::threaded, use_fast_alloc, any_check
 #include "chunk/internal/chunk_size_policy.h"          // set_*_chunk_size, DynChunkSizeGuard, BirthAtActiveSize
@@ -315,7 +315,10 @@ void RechunkSupport<Derived, true>::log_old_pool_census(unsigned int old_key, un
         std::size_t live  = 0;
         std::size_t empty = 0;
     };
-    const auto scan = [old_size]([[maybe_unused]] unsigned int key)
+    // [&], not [old_size]: old_size is unused where the branch below is
+    // discarded (serial or std-alloc builds), and clang warns of an explicit
+    // capture then (-Wunused-lambda-capture).
+    const auto scan = [&]([[maybe_unused]] unsigned int key)
     {
         Occupancy occ;
         if constexpr (build_config::use_fast_alloc && build_config::threaded)

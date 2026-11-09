@@ -27,11 +27,11 @@
 #include <malloc.h>  // malloc_trim, mallopt
 
 #include "chunk/config.h"                  // build_config::threaded / use_openmp, chunk_config
-#include "chunk/singleton.h"               // SingletonChk
-#include "chunk/internal/manager_chunk.h"  // ManagerChunkInt, ManagerChunkParallelImpl
-#include "chunk/all_type_chunk.h"          // the declarations defined here
+#include "chunk/internal/singleton.h"      // SingletonChk
+#include "chunk/internal/type_state.h"     // TypeStateInterface, TypeStateParallelImpl
+#include "chunk/internal/all_type_chunk.h" // the declarations defined here
 #include "chunk/internal/churn_counters.h" // churn::note_phase_end
-#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_THREAD_RANK / _RANK_BOUND / _NUM_THREADS, chunk_rank_cache, pmp::team, current_team
+#include "chunk/internal/PMP_CHUNK.h" // CHUNK_PMP_THREAD_RANK / _RANK_BOUND / _NUM_THREADS, chunk_rank_cache, pmp::team, current_team
 
 #include "chunk/internal/deferred_op_pool.h" // for reset_all
 #include "chunk/internal/phase_guard.h"      // check-build guard of the phase protocol
@@ -77,7 +77,7 @@ void AllTypeChunk::ensure_ready()
                    });
 }
 
-void AllTypeChunk::publish_manager(std::unique_ptr<ManagerChunkInt> manager)
+void AllTypeChunk::publish_manager(std::unique_ptr<TypeStateInterface> manager)
 {
     const auto count = static_cast<std::size_t>(nb_managers_.load(std::memory_order_relaxed));
     if (count == table_capacity_)
@@ -85,7 +85,7 @@ void AllTypeChunk::publish_manager(std::unique_ptr<ManagerChunkInt> manager)
         // Full (or none yet): a table twice as large, the published slots
         // copied, published before the count that will cover the new slot.
         const std::size_t capacity = table_capacity_ == 0 ? first_table_size : 2 * table_capacity_;
-        auto              table    = std::make_unique<ManagerChunkInt*[]>(capacity);
+        auto              table    = std::make_unique<TypeStateInterface*[]>(capacity);
         if (table_capacity_ != 0)
         {
             std::copy_n(tables_.back().get(), count, table.get());
@@ -304,7 +304,7 @@ bool finalize_barrier_phase()
     return false;
 }
 
-// pushManagerChunk<ChunkT, T> and fill_manager_chunk<ChunkT, Types>() are
+// register_manager<ManagerT>() and fill_type_state<ChunkT, Types>() are
 // defined in chunk/internal/all_type_chunk_inline.h (template definitions belong in a
 // header); registration is driven by the consumer's type tuple.
 
@@ -329,8 +329,8 @@ void AllTypeChunk::compress_chunk_to_compress_potentially(bool apply) const
     // Only the types with a candidate. The callers' gate,
     // have_chunk_to_compress_potentially(), is true as soon as ONE type has
     // one, and each type's pass costs a fork/join even on empty lists.
-    const int                     max_thr = CHUNK_PMP_RANK_BOUND;
-    std::vector<ManagerChunkInt*> work;
+    const int                        max_thr = CHUNK_PMP_RANK_BOUND;
+    std::vector<TypeStateInterface*> work;
     for (const auto& elm : get_list_type_chunk())
     {
         if (elm->have_chunk_to_compress_potentially(max_thr))
@@ -417,7 +417,7 @@ bool AllTypeChunkParallelInterface<Derived, true>::flush_all_deferred(this Deriv
     bool have_flushed = false;
 
     // Only the serial flush owns the global flag (see
-    // ManagerChunkParallelImpl::flush_all_deferred).
+    // TypeStateParallelImpl::flush_all_deferred).
     const bool toggle_flag = !in_parallel;
 
     // Two threads must not run the SERIAL flush at once: each drains every
@@ -481,7 +481,7 @@ void AllTypeChunkParallelInterface<Derived, true>::resize_all_list_block_free_th
 }
 
 template <typename Derived>
-void AllTypeChunkParallelInterface<Derived, true>::init_manager(ManagerChunkInt& manager, int block_size) const
+void AllTypeChunkParallelInterface<Derived, true>::init_manager(TypeStateInterface& manager, int block_size) const
 {
     // Per-manager setup, at its registration. Everything here is a
     // slot indexed by rank; nothing needs the rank's own thread. Reached
@@ -551,7 +551,7 @@ template <typename Derived>
 void AllTypeChunkParallelInterface<Derived, true>::clear_list_block_free_thr(this Derived& self)
 {
     // ONE region for all nine element types, four phases separated by
-    // barriers -- see ManagerChunkParallelImpl::clear_list_block_free_* for
+    // barriers -- see TypeStateParallelImpl::clear_list_block_free_* for
     // what each does and why it is independent per bucket / per slice.
     //
     //   screen  rank r's reuse lists -> bucket r          (per bucket)
@@ -626,7 +626,8 @@ bool AllTypeChunkParallelInterface<Derived, true>::need_load_balance_list_block_
 }
 
 template <typename Derived>
-void AllTypeChunkParallelInterface<Derived, false>::init_manager(const ManagerChunkInt& manager, int block_size) const
+void AllTypeChunkParallelInterface<Derived, false>::init_manager(const TypeStateInterface& manager,
+                                                                 int                       block_size) const
 {
     // std-alloc: the manager's init_allocator() is a no-op. Through Derived's
     // alias so that the call stays dependent (see the OpenMP body).

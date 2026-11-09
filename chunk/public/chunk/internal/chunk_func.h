@@ -18,16 +18,16 @@
 
 #include <vector> // std::vector (the per-rank reuse lists)
 
-#include "chunk/PMP_CHUNK.h"  // CHUNK_PMP_RANK_BOUND
-#include "chunk/zero_chunk.h" // self-contained: needs Chunk<T>::manager_chunk
+#include "chunk/internal/PMP_CHUNK.h"  // CHUNK_PMP_RANK_BOUND
+#include "chunk/internal/zero_chunk.h" // self-contained: needs zero::Chunk<T>::Manager
 
 // Function templates over the per-thread reuse lists, instantiated only by the
-// OpenMP manager (ManagerChunkParallelImpl<..., true>); every list access is a
+// OpenMP manager (TypeStateParallelImpl<..., true>); every list access is a
 // dependent name, so no preprocessor guard is needed.
 //
 // Callers instantiate from these definitions. If one sees only the forward
-// declaration in manager_chunk_policies.h, include this header in
-// manager_chunk_policies_inline.h -- do not
+// declaration in type_state_policies.h, include this header in
+// type_state_policies_inline.h -- do not
 // add a hand-maintained explicit instantiation list.
 
 namespace shrink_array

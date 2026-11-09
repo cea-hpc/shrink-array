@@ -26,7 +26,7 @@
 #include "chunk/internal/all_type_chunk_decl.h" // AllTypeChunk::ensure_manager, from create (bodies: all_type_chunk.h)
 #include "chunk/config.h"                       // build_config::chunk_dynamic, chunk_config::CheckNaN
 #include "chunk/internal/chunk_size_policy.h"   // chunk_size_error, register_runtime_chunk_size / set_thread_chunk_size
-#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_IN_PARALLEL_REGION, pmp::parallel_sum, pmp::current_team
+#include "chunk/internal/PMP_CHUNK.h"           // CHUNK_PMP_IN_PARALLEL_REGION, pmp::parallel_sum, pmp::current_team
 #include "chunk/manage_ompt.h"                  // parallel_phase -- write_range_by_chunks
 #include "chunk/internal/parallel_storage_init.h" // use_own_team -- write_range_by_chunks
 #include "chunk/log.h"                            // CHUNK_LOG (set_chunk_size refusal)
@@ -615,7 +615,7 @@ ArrayChunkBase<Derived>::operator[](this Derived& self, IndType index) noexcept
 {
     if constexpr (build_config::strict_element_ref)
     {
-        return reference(self.element_proxy(index));
+        return reference(element_ref_detail::from_array, self, index);
     }
     else
     {
@@ -633,8 +633,11 @@ ArrayChunkBase<Derived>::element_proxy(this Derived& self, IndType index) noexce
     [[maybe_unused]] const int chunk_mod = static_cast<int>(self.size_policy_.modulo());
     CHUNK_ASSUME(num_chunk >= 0);
     CHUNK_ASSUME(num >= 0 && num <= chunk_mod);
-    auto&            chunk_t = self.chunk_list_[num_chunk];
-    const ProxyType& val     = chunk_t[num];
+    auto& chunk_t = self.chunk_list_[num_chunk];
+    // Built here, returned by NRVO, so that a read through a[i] copies no proxy:
+    // not every compiler folds the copies away, and on the stack they cost
+    // (an unaligned store across a page, on the threads whose stack puts it there).
+    ProxyType val = chunk_t[num];
 
     // Arm ptr_on_array / num_chunk in ALL modes, not only under fast block
     // compression: in non-OpenMP builds too, set_num_tab() and

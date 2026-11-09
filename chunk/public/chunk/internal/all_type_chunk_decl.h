@@ -24,7 +24,7 @@
 #include <vector>  // std::vector
 
 #include "chunk/config.h"                 // build_config:: mirrors that select the policies below
-#include "chunk/internal/for_each_type.h" // for_each_type, for fill_manager_chunk
+#include "chunk/internal/for_each_type.h" // for_each_type, for fill_type_state
 
 /**
  * @file all_type_chunk_decl.h
@@ -40,7 +40,7 @@
  *          come with all_type_chunk.h, which each variant's _inline.h
  *          includes after its class.
  *
- * @see manager_chunk.h for the ManagerChunkInt interface this class dispatches
+ * @see type_state.h for the TypeStateInterface interface this class dispatches
  *      through, and manage_ompt.h for the phase transitions that drive it.
  */
 
@@ -53,18 +53,18 @@ class Singleton; // fast_allocators/internal/singleton.h; chunk names it Singlet
 namespace shrink_array
 {
 
-struct ManagerChunkInt;
+struct TypeStateInterface;
 
 template <template <typename> class ChunkT, typename T>
-class ManagerChunk; // manager_chunk.h; named by fill_manager_chunk, complete where it is instantiated
+class TypeState; // type_state.h; named by fill_type_state, complete where it is instantiated
 
 // ===========================================================================
 // Build-dependent halves of the registry's surface.
 //
 // A method cannot be declared conditionally, so the build-dependent halves of
 // AllTypeChunk live in policies selected by a constexpr; AllTypeChunk inherits
-// both. They mirror (and forward to) ManagerChunkInt's
-// ManagerChunkParallelInterface / DynInterface.
+// both. They mirror (and forward to) TypeStateInterface's
+// TypeStateParallelInterface / DynInterface.
 //
 // The bodies stay in all_type_chunk.cpp, whose explicit instantiation names
 // exactly one specialisation of each policy: the other is never type-checked,
@@ -136,7 +136,7 @@ class AllTypeChunkParallelInterface<Derived, true>
      * @param manager    The manager being registered.
      * @param block_size Allocation block (slab) size, in bytes.
      */
-    void init_manager(ManagerChunkInt& manager, int block_size) const;
+    void init_manager(TypeStateInterface& manager, int block_size) const;
 
   private:
     /// Resizes every manager's per-thread free-block lists to the current thread count.
@@ -169,7 +169,7 @@ class AllTypeChunkParallelInterface<Derived, false>
      * @param block_size Allocation block (slab) size, in bytes.
      * @note No-op in std-alloc builds.
      */
-    void init_manager(const ManagerChunkInt& manager, int block_size) const;
+    void init_manager(const TypeStateInterface& manager, int block_size) const;
 };
 
 /**
@@ -209,15 +209,15 @@ struct AllTypeChunkDynInterface<Derived, false>
 /**
  * @brief Process-wide registry of the per-type chunk managers, reached as a singleton.
  *
- * A ManagerChunk is parameterised by both a chunk template (zero / zero_one_value /
+ * A TypeState is parameterised by both a chunk template (zero / zero_one_value /
  * zero_any) and an element type, so there is one manager per combination and no
  * single type can name them all. AllTypeChunk owns them behind
- * ManagerChunkInt pointers and offers the "do it for every type" operations the
+ * TypeStateInterface pointers and offers the "do it for every type" operations the
  * rest of the library needs: allocator setup, deferred-write flush,
  * compression passes, free-list load balancing and teardown.
  *
  * Every public method below is a fan-out: it walks get_list_type_chunk() and
- * forwards to the matching ManagerChunkInt virtual, so the semantics of each
+ * forwards to the matching TypeStateInterface virtual, so the semantics of each
  * one are those of the manager method it calls, applied to all types at once.
  *
  * Access is through <tt>SingletonChk\<AllTypeChunk\>\::get_ref()</tt>. The registry starts
@@ -244,7 +244,7 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
 
     /// The managers' interface, reached through Derived by the policies so
     /// that their bodies stay dependent (each build declares a different half).
-    using ManagerIntT = ManagerChunkInt;
+    using ManagerIntT = TypeStateInterface;
 
     /**
      * @brief Builds an EMPTY registry; managers arrive with the first array of
@@ -280,7 +280,7 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
 
     /// @return The registered managers, in registration order: the prefix
     ///         published so far, read without a lock (see the members below).
-    [[nodiscard]] std::span<ManagerChunkInt* const> get_list_type_chunk() const noexcept
+    [[nodiscard]] std::span<TypeStateInterface* const> get_list_type_chunk() const noexcept
     {
         // The count first: every table published after the slot count-1 was
         // written holds that slot, so the table read next has all of them.
@@ -339,7 +339,7 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
      *
      * @details Keeps @p keep_per_thread buffers per (geometry, rank) and frees
      *          the rest, then hands the pages back to the kernel. See
-     *          ManagerChunk::trim_reuse_pools for why this is needed and when to
+     *          TypeState::trim_reuse_pools for why this is needed and when to
      *          call it. No-op under the fast allocator.
      *
      * @param keep_per_thread working margin kept in each list
@@ -415,11 +415,11 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
 
     /// @brief Store @p manager in the next slot, growing the table if it is
     ///        full, and publish it. Called with registry_mutex_ held.
-    void publish_manager(std::unique_ptr<ManagerChunkInt> manager);
+    void publish_manager(std::unique_ptr<TypeStateInterface> manager);
 
     /**
      * @brief Build, initialise and publish the manager @p ManagerT
-     *        (ManagerChunk<ChunkT, T>). Takes the registry mutex; a no-op
+     *        (TypeState<ChunkT, T>). Takes the registry mutex; a no-op
      *        when that manager is already registered.
      */
     template <typename ManagerT>
@@ -432,24 +432,24 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
      * @tparam Types   Type tuple owned by the consumer (e.g. MyChunkTypes).
      */
     template <template <typename> class ChunkT, typename Types>
-    void fill_manager_chunk()
+    void fill_type_state()
     {
-        // One ManagerChunk per T of Types (a std::tuple).
-        for_each_type<Types>([this]<typename T> { this->register_manager<ManagerChunk<ChunkT, T>>(); });
+        // One TypeState per T of Types (a std::tuple).
+        for_each_type<Types>([this]<typename T> { this->register_manager<TypeState<ChunkT, T>>(); });
     }
 
     /// Resizes every manager's compression-candidate list to the current thread count.
     void resize_chunk_to_compress_potentially() const;
 
     /// The managers, owned; touched only under registry_mutex_.
-    std::vector<std::unique_ptr<ManagerChunkInt>> owned_;
+    std::vector<std::unique_ptr<TypeStateInterface>> owned_;
     /// Every slot table published so far, the current one last (see above).
-    std::vector<std::unique_ptr<ManagerChunkInt*[]>> tables_;
+    std::vector<std::unique_ptr<TypeStateInterface*[]>> tables_;
     /// The current slot table, for the lock-free readers.
-    std::atomic<ManagerChunkInt**> table_{nullptr};
-    std::size_t                    table_capacity_ = 0;
-    std::atomic<int>               nb_managers_{0};
-    std::mutex                     registry_mutex_;
+    std::atomic<TypeStateInterface**> table_{nullptr};
+    std::size_t                       table_capacity_ = 0;
+    std::atomic<int>                  nb_managers_{0};
+    std::mutex                        registry_mutex_;
 
     /// Set under registry_mutex_ when the manager type @p ManagerT is
     /// registered: the duplicate check of register_manager(), with no RTTI.
@@ -468,7 +468,7 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
 
     // The block-free-list verbs (load_balance_list_block_free() & co.) live in
     // AllTypeChunkParallelInterface: they forward to manager virtuals that only
-    // ManagerChunkParallelInterface<true> declares.
+    // TypeStateParallelInterface<true> declares.
 };
 
 /**

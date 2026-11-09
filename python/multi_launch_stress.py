@@ -79,14 +79,14 @@ except ImportError:
     import types as _types  # noqa: E402
 
     _numa = _types.SimpleNamespace(MODES=("auto", "off"), interleave_prefix=lambda env, mode="auto": [])
-# --exec chunk2a & co.: the old variant labels, read as their new names until 1.0.
+# --exec chunk2a & co.: an old variant label is refused, with its new name.
 # find_bench_exe: an executable under its name for each backend
 # (shrink_bench_<backend>_<rest>), the one the build holds.
 try:
-    from bench_runner.settings import bench_exe_names, find_bench_exe, normalize_variant  # noqa: E402
+    from bench_runner.settings import bench_exe_names, check_variant_label, find_bench_exe  # noqa: E402
 except ImportError:
     # Copied alone: the new labels only, and bench_runner's two helpers as they are.
-    def normalize_variant(label, warn=None):
+    def check_variant_label(label, option):
         return label
 
     def bench_exe_names(rest):
@@ -169,6 +169,13 @@ parser = SuggestingArgumentParser(description="Run executable(s) with random thr
 parser.add_argument("--runs", type=int, default=10000, help="Total number of runs (default: 10000)")
 parser.add_argument("--min_threads", type=int, default=2, help="Minimum number of threads (default: 2)")
 parser.add_argument("--max_threads", type=int, default=512, help="Maximum number of threads (default: 512)")
+parser.add_argument("--peak_threads", type=int, default=None, metavar="N",
+                    help="Draw most thread counts near N, typically the top of the speedup curve; "
+                         "the others stay uniform over --min_threads..--max_threads, so that "
+                         "the small and very large counts are still run, less often. "
+                         "Default: uniform over the whole range.")
+parser.add_argument("--peak_share", type=float, default=0.7, metavar="F",
+                    help="With --peak_threads: the share of the draws near it, 0 to 1 (default: 0.7)")
 parser.add_argument("--no_io", action="store_true", help="Disable stdout/stderr file output and set NO_IO=1")
 parser.add_argument("--all_exec", action="store_true",
                     help="Shortcut for --exec all --size all: run every variant in every "
@@ -240,7 +247,7 @@ def _csv_choices(name, valid):
             return out
         items = [v.strip() for v in value.split(",") if v.strip()]
         if name == "--exec":
-            items = [normalize_variant(v, name) for v in items]
+            items = [check_variant_label(v, name) for v in items]
         bad = [v for v in items if v not in valid]
         if bad:
             raise argparse.ArgumentTypeError(
@@ -288,6 +295,10 @@ parser.add_argument("--pool", default=None, metavar="ID",
                          "(suffixed with the job).")
 
 args = parser.parse_args()
+if args.peak_threads is not None and not args.min_threads <= args.peak_threads <= args.max_threads:
+    parser.error(f"peak_threads {args.peak_threads} is outside {args.min_threads}..{args.max_threads}")
+if not 0 <= args.peak_share <= 1:
+    parser.error(f"peak_share {args.peak_share} is not between 0 and 1")
 
 if args.pool:
     if Pool is None:
@@ -370,6 +381,26 @@ n = args.runs
 min_threads = args.min_threads
 max_threads = args.max_threads
 no_io = args.no_io
+
+# --peak_threads: the draws near the peak, in peak +/- this share of it.
+PEAK_WIDTH = 0.25
+
+
+def draw_threads():
+    """A run's thread count: uniform over the range, or, under --peak_threads
+    and for --peak_share of the draws, near the peak (triangular, clipped to
+    the range)."""
+    peak = args.peak_threads
+    if peak is not None and random.random() < args.peak_share:
+        low = max(min_threads, round(peak * (1 - PEAK_WIDTH)))
+        high = min(max_threads, round(peak * (1 + PEAK_WIDTH)))
+        return round(random.triangular(low, high, peak))
+    return random.randint(min_threads, max_threads)
+
+
+if args.peak_threads is not None:
+    print(f"🎯 Thread counts: {args.peak_share:.0%} near {args.peak_threads}, "
+          f"the others uniform over {min_threads}..{max_threads}")
 
 # 🧹 Clean up previous output and error files (only if IO is enabled)
 if not no_io:
@@ -729,14 +760,14 @@ for i in _run_indices():
         random.shuffle(executables)
 
     # Draw a thread count for this run
-    run_threads = random.randint(min_threads, max_threads)
+    run_threads = draw_threads()
 
     # Run each executable in sequence
     for exe in executables:
 
         # In shuffle mode → new draw per executable
         if args.shuffle_exec:
-            exe_threads = random.randint(min_threads, max_threads)
+            exe_threads = draw_threads()
         else:
             exe_threads = run_threads
 

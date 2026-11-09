@@ -34,8 +34,8 @@
 #include "fast_allocators/internal/raw_memory.h" // address_bits
 #include "chunk/config.h"                        // build_config::threaded (get_tid)
 #include "chunk/internal/enum_name.h"            // upper_name_of (event_name)
-#include "chunk/PMP_CHUNK.h"                     // chunk_pmp_team_rank (get_tid)
-#include "chunk/ring_log_debug.h"                // the declarations defined here
+#include "chunk/internal/PMP_CHUNK.h"            // chunk_pmp_team_rank (get_tid)
+#include "chunk/internal/ring_log_debug.h"       // the declarations defined here
 #include "chunk/log.h"                           // CHUNK_LOG
 
 #ifdef CHUNK_RING_LOG_ANY

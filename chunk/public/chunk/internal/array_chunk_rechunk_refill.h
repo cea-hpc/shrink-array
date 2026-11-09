@@ -30,12 +30,12 @@
  *            scan_sources     what the old chunks under the new one hold
  *            install_cst2     zero_any: one shared constant, installed, no buffer
  *            read_span        bulk read of the old chunks into the buffer
- *            release_sources  zero: free the old chunks once fully transcribed
+ *            release_sources  free the old chunks once fully transcribed
  *            copy_range       fill the new chunk (the public bulk API)
  *            fold_back        zero_any / zero_one_value: compress it at once
  *
- *          run() drives the slices (16 for zero + fast allocator + threads, 1
- *          otherwise), each a pmp::team region whose closing slice_boundary()
+ *          run() drives the slices (16 with the fast allocator and threads, 1
+ *          otherwise or for ArrayChunkBits), each a pmp::team region whose closing slice_boundary()
  *          sends the slice's released blocks home and recycles the slabs they
  *          emptied.
  *
@@ -53,8 +53,9 @@
 #include <utility> // std::declval (SecondInfo)
 #include <vector>  // the release counters, the recycling scratch
 
-#include "chunk/PMP_CHUNK.h"                          // pmp::Team, ChunkPmpSchedule
-#include "chunk/chunk_traits.h"                       // is_zero_any_family_v
+#include "chunk/internal/PMP_CHUNK.h"                 // pmp::Team, ChunkPmpSchedule
+#include "chunk/bit.h"                                // is_packed_bit_v (releases_sources)
+#include "chunk/internal/chunk_traits.h"              // is_zero_any_family_v
 #include "chunk/config.h"                             // chunk_config::use_zero_one_value
 #include "chunk/internal/array_chunk_rechunk.h"       // RechunkSupport, the class Refill is nested in
 #include "chunk/internal/array_chunk_rechunk_trace.h" // SliceProbe
@@ -185,6 +186,13 @@ class RechunkSupport<Derived, true>::Refill
     /// zero_one_value folds through its second-value index; the zero_any
     /// family carries its constants implicitly.
     static constexpr bool second_index = internal::rechunk_second_index_v<Derived, ChunkType>;
+    /// The refill frees each old chunk once transcribed (release_sources()):
+    /// threaded builds, every variant and element type but Bit. An
+    /// ArrayChunkBits (zero_one_value::Array<Bit>) packs 8 elements per byte
+    /// and has a geometry of its own (packed_bit_birth_factor): its rebuild
+    /// stays one pass that frees nothing early. Array<bool> is one byte per
+    /// bool, released like any other type.
+    static constexpr bool releases_sources = build_config::threaded && !is_packed_bit_v<T>;
     /// The fresh array's second-value record (zero_one_value), int otherwise.
     using SecondInfo = decltype(internal::rechunk_second_info<Derived, ChunkType>(std::declval<const Derived&>()));
 
@@ -225,7 +233,7 @@ class RechunkSupport<Derived, true>::Refill
         const T* cst2 = nullptr;
     };
 
-    /// @brief Slices of the refill: 16 for zero + fast allocator + threads (fewer
+    /// @brief Slices of the refill: 16 with releases_sources + fast allocator (fewer
     ///        on a small array), 1 otherwise.
     [[nodiscard]] int slice_count() const noexcept;
 
@@ -253,7 +261,7 @@ class RechunkSupport<Derived, true>::Refill
     ///        per-element path (@p copied: elements the bulk read wrote).
     void check_read(int new_chunk, const Span& span, std::size_t copied, const std::vector<T>& buf) const;
 
-    /// @brief zero: release the old chunks @p span has just finished reading.
+    /// @brief Release the old chunks @p span has just finished reading (releases_sources).
     void release_sources(const Span& span);
 
     /// @brief Fold new chunk @p new_chunk back at once when its sources were
@@ -287,10 +295,10 @@ class RechunkSupport<Derived, true>::Refill
     [[maybe_unused]] const int        ind_old2_; ///< src_'s second-value index (the scan)
     [[maybe_unused]] const SecondInfo inf_new2_; ///< tmp_'s second-value record (the fold)
 
-    /// zero, threads: every old chunk lies inside one new chunk (the new size
+    /// releases_sources: every old chunk lies inside one new chunk (the new size
     /// is a multiple of the old one), so old_done_ is not needed.
     [[maybe_unused]] const bool aligned_coarsening_;
-    /// zero, threads, not aligned: how many new chunks have finished with each
+    /// releases_sources, not aligned: how many new chunks have finished with each
     /// old chunk (release_sources()).
     std::vector<std::atomic<int>> old_done_;
 

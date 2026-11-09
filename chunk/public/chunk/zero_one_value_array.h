@@ -20,26 +20,26 @@
 #include <initializer_list> // the {a, b, c} constructor
 #include <iterator>         // std::forward_iterator, std::distance -- the (first, last) constructor
 
-#include "chunk/bit.h"                                         // is_bool_like_v: bool and Bit share the bool path
-#include "chunk/internal/in_t.h"                               // InT<T>: the element snapshots
-#include "chunk/internal/second_value_info.h"                  // SecondValueInfo (InfArrayT)
-#include "chunk/internal/second_value_array_base.h"            // for SecondValueArrayBase
-#include "chunk/internal/zero_one_value_array_parallel.h"      // zero_one_value::ParallelSupport — OpenMP-only mixin
+#include "chunk/bit.h"                                    // is_bool_like_v: bool and Bit share the bool path
+#include "chunk/internal/in_t.h"                          // InT<T>: the element snapshots
+#include "chunk/internal/second_value_info.h"             // SecondValueInfo (InfArrayT)
+#include "chunk/internal/second_value_array_base.h"       // for SecondValueArrayBase
+#include "chunk/internal/zero_one_value_array_parallel.h" // zero_one_value::FastBlockSupport; ParallelSupport through it
 #include "chunk/internal/zero_one_value_array_rechunk_hooks.h" // zero_one_value::RechunkHooks — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/array_chunk_base.h"                   // for ArrayChunkBase
 #include "chunk/internal/concept_array_chunk_element.h"        // for ArrayChunkElement
 #include "chunk/config.h"                                      // for use_fast_block_compression, threaded
 #include "chunk/internal/invariant_check.h"                    // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/write_compress_sync_policy.h"         // for WriteCompressSyncPolicy
-#include "chunk/PMP_CHUNK.h"                                   // CHUNK_PMP_THREAD_CAPACITY, pmp::Team
-#include "chunk/zero_one_value_chunk.h"                        // zero_one_value::Chunk<T>
+#include "chunk/internal/PMP_CHUNK.h"                          // CHUNK_PMP_THREAD_CAPACITY, pmp::Team
+#include "chunk/internal/zero_one_value_chunk.h"               // zero_one_value::Chunk<T>
 #include "chunk/internal/zero_one_value_proxy.h"               // zero_one_value::Proxy<T> and its registry
 
 namespace shrink_array
 {
 
 template <template <typename> typename ChunkT, typename T>
-class ManagerChunk;
+class TypeState;
 
 namespace zero_one_value
 {
@@ -94,16 +94,9 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     // outside `Arr::ChunkType` would be ambiguous between base subobjects.
     using Traits      = SecondValueBase::Traits;      ///< ArrayChunkTraits<Array>.
     using ChunkType   = SecondValueBase::ChunkType;   ///< Chunk<T>, the chunk type held in chunk_list_.
-    using ManagerType = SecondValueBase::ManagerType; ///< ManagerChunk<Chunk, T>, the per-type manager.
+    using ManagerType = SecondValueBase::ManagerType; ///< TypeState<Chunk, T>, the per-type manager.
     using ProxyType   = SecondValueBase::ProxyType;   ///< Proxy<T>, the write proxy of the non-const accessors.
     using value_type  = T;                            ///< Stored element type.
-
-    // The former snake_case spellings, kept until 1.0 (types are PascalCase).
-    using chunk_type [[deprecated("types are PascalCase: use ChunkType")]]          = ChunkType;
-    using manager_type [[deprecated("types are PascalCase: use ManagerType")]]      = ManagerType;
-    using proxy_type [[deprecated("types are PascalCase: use ProxyType")]]          = ProxyType;
-    using ind_type [[deprecated("types are PascalCase: use IndType")]]              = IntType;
-    using chunk_list_type [[deprecated("types are PascalCase: use ChunkListType")]] = Base::ChunkListType;
 
     using SecondValueBase::chunk_list_;
 
@@ -116,8 +109,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     /// Registry entry of an array: (second value, its index in the shared value table, num_tab).
     using InfArrayT = SecondValueInfo<T>;
 
-    using Manager                                     = ManagerChunk<Chunk, T>; ///< Same type as ManagerType.
-    using ManagerChunk2 [[deprecated("use Manager")]] = Manager;                ///< Former name, until 1.0.
+    using Manager = TypeState<Chunk, T>; ///< Same type as ManagerType.
 
     // Required, not decoration: ArrayChunkBase re-exports RechunkSupport's hook
     // DEFAULTS under these names, so a hook call through self() would be
@@ -343,13 +335,6 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
         return chunk_list_;
     }
 
-    /// @brief Former name of get_chunk_list(), kept for the programs that still spell it.
-    [[deprecated("methods are snake_case: use get_chunk_list")]] [[nodiscard]] const Base::ChunkListType&
-    getChunkList() const noexcept
-    {
-        return chunk_list_;
-    }
-
   private:
     static constexpr bool is_bool = is_bool_like_v<T>; // bool and Bit (bit.h)
 
@@ -463,5 +448,5 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
 #include "chunk/internal/zero_one_value_array_inline.h" // the template bodies
 
 // The mixins' bodies, after zero_one_value_array_inline.h: self() needs a complete zero_one_value::Array.
-#include "chunk/internal/zero_one_value_array_parallel_inline.h"      // zero_one_value::ParallelSupport's bodies
+#include "chunk/internal/zero_one_value_array_parallel_inline.h"      // zero_one_value::FastBlockSupport's bodies
 #include "chunk/internal/zero_one_value_array_rechunk_hooks_inline.h" // zero_one_value::RechunkHooks's bodies

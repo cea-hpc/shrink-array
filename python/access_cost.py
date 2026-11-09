@@ -29,11 +29,15 @@ import subprocess
 import sys
 
 try:
-    # --variants chunk2a & co.: the old variant labels, read as their new names until 1.0.
+    # The old variant labels: refused on the command line, read as the new names
+    # in the CSV rows of earlier runs.
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from bench_runner.settings import normalize_variant
+    from bench_runner.settings import check_variant_label, normalize_variant
 except ImportError:
-    def normalize_variant(label, warn=None):   # copied alone: the new labels only
+    def check_variant_label(label, option):   # copied alone: the new labels only
+        return label
+
+    def normalize_variant(label):
         return label
 
 CASES = ["read-varied", "read-constant", "read-random", "write-varied", "write-fresh", "rmw", "read-second", "read-bulk"]
@@ -75,7 +79,7 @@ def main():
     a = ap.parse_args()
 
     threads = [int(t) for t in a.threads.split(",") if t.strip()]
-    variants = [normalize_variant(v.strip(), "--variants") for v in a.variants.split(",") if v.strip()]
+    variants = [check_variant_label(v.strip(), "--variants") for v in a.variants.split(",") if v.strip()]
     binaries = {}
     for v in variants:
         b = find_binary(a.build, v)

@@ -43,7 +43,7 @@
 #include <cstddef>     // std::size_t
 #include <string_view> // chunk_variant_name
 
-#include "chunk/PMP_CHUNK.h"               // get_thr_rank_fast / CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/PMP_CHUNK.h"      // get_thr_rank_fast / CHUNK_PMP_MAX_THREADS
 #include "chunk/config.h"                  // build_config::chunk_dynamic
 #include "chunk/internal/reflect_fields.h" // add_fields (the counters, by reflection)
 

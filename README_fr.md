@@ -59,9 +59,8 @@ temps d'accès, voir [En chiffres](#en-chiffres).*
 ```cpp
 #include <cstdio>
 #include "chunk/zero_any_array.h"   // shrink_array::zero_any::Array
-#include "chunk/zero_chunk.h"       // release_chunk_pools, destroy_block_chunk
 #include "chunk/manage_ompt.h"     // parallel_phase
-#include "chunk/param_chunk.h"     // ParamChunk::init_indexes
+#include "chunk/param_chunk.h"     // ParamChunk::init_indexes, release_chunk_pools, destroy_block_chunk
 
 namespace sa = shrink_array;
 
@@ -445,6 +444,7 @@ aussi une version Spack (`spack install shrink-array@cpp23`).
 |---|---|
 | installer, lier, écrire un premier programme, suivre les règles OpenMP | [docs/getting_started_fr.md](docs/getting_started_fr.md) |
 | trouver un appel | [docs/api_fr.md](docs/api_fr.md) |
+| comprendre comment elle est construite : parties, décisions, modèle de concurrence | [docs/conception_fr.md](docs/conception_fr.md) |
 | choisir une variante | [docs/variantes_fr.md](docs/variantes_fr.md) |
 | comparer aux formats creux, aux compresseurs, aux grilles creuses | [docs/alternatives_fr.md](docs/alternatives_fr.md) |
 | comprendre lecture, écriture, compression en vol, écritures différées | [docs/algo_zero_one_value_fr.md](docs/algo_zero_one_value_fr.md) |
@@ -465,7 +465,7 @@ changé d'une version à l'autre : [CHANGELOG.md](CHANGELOG.md) (en anglais).
 
 ## État du projet et contributions
 
-shrink-array en est à la version 0.1 : avant la 1.0, une version mineure peut changer
+shrink-array en est à la version 0.2 : avant la 1.0, une version mineure peut changer
 l'interface ([politique de versions](CHANGELOG.md)). Chaque push lance les vérifications des
 sources, les builds GCC 14 (OpenMP, série et threads std avec oneTBB), les tests de validation, le backend std
 sous ThreadSanitizer et les modèles GenMC, le build OpenMP sur x86-64 et sur AArch64

@@ -67,14 +67,14 @@
 #include <format>           // std::format
 #include <utility>          // std::forward
 
-#include "chunk/chunk_traits.h"          // forward decls + default IntType = int
+#include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
 #include "chunk/zero_array.h"            // zero::Array
 #include "chunk/zero_one_value_array.h"  // zero_one_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"            // release_chunk_pools, destroy_block_chunk
+#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"                // chunk_config::use_zero*, build_config::has_not_ompt
-#include "chunk/PMP_CHUNK.h"             // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/array_chunk_range_ops.h" // for_each_value / for_each_span / read_range (bulk-reads step)
 #include "chunk/internal/print.h"        // shrink_array::println

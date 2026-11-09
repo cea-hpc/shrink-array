@@ -29,16 +29,16 @@
 #include <vector>      // std::vector
 
 #include "chunk/zero_any_array.h"                       // zero_any::ArrayImpl, the class these bodies belong to
-#include "chunk/all_type_chunk.h"                       // AllTypeChunk::ensure_manager
+#include "chunk/internal/all_type_chunk.h"              // AllTypeChunk::ensure_manager
 #include "chunk/internal/chunk_size_predictor.h"        // report_size_prediction
 #include "chunk/log.h"                                  // CHUNK_LOG, logging::enabled (the size prediction's gate)
 #include "chunk/internal/chunk_index_sample.h"          // chunk_index_sample (the residual's sample)
 #include "chunk/internal/chunk_stats.h"                 // increm_chunk_* (CHUNK_STATS)
 #include "chunk/internal/chunk_stats_printer.h"         // print_formatted_chunk_stats
-#include "chunk/internal/manager_chunk.h"               // ManagerChunk: per-size free lists, candidate filter
-#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_*, get_size_max_tab_omp, pmp loops
-#include "chunk/singleton.h"                            // SingletonChk<AllTypeChunk>::get_ref
-#include "chunk/type_name.h"                            // type_name<T>
+#include "chunk/internal/type_state.h"                  // TypeState: per-size free lists, candidate filter
+#include "chunk/internal/PMP_CHUNK.h"                   // CHUNK_PMP_*, get_size_max_tab_omp, pmp loops
+#include "chunk/internal/singleton.h"                   // SingletonChk<AllTypeChunk>::get_ref
+#include "chunk/internal/type_name.h"                   // type_name<T>
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/read_reclaim.h"                // read_reclaim::PassScope (drain_candidates in a region)
 #include "chunk/config.h"                               // build_config::chunk_dynamic, chunk_config::stats
@@ -628,16 +628,10 @@ void zero_any::ArrayImpl<Derived>::compress_int(pmp::Team& team)
 template <typename Derived>
 void zero_any::ArrayImpl<Derived>::make_block_compression()
 {
-    // Refused inside a region: it would drain the other threads' lists while
-    // they write and read (see zero::FastBlockSupport::make_block_compression()).
-    if (CHUNK_PMP_IN_PARALLEL_REGION)
+    if (!block_pass_refused_in_region())
     {
-        CHUNK_CHECK_FAILED(compress,
-                           "make_block_compression() called inside a parallel region: a sequential point, call it "
-                           "after the region");
-        return;
+        drain_candidates();
     }
-    drain_candidates();
 }
 
 template <typename Derived>

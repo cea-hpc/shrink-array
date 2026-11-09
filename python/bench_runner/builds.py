@@ -7,7 +7,8 @@ import platform as _platform
 from pathlib import Path
 
 from .settings import (COMPRESSION_INSENSITIVE_VARIANTS, COMPRESSION_ONLY_CONFIG_MARKERS, SHRINK_VARIANTS,
-                       bench_exe_names, find_bench_exe, is_tbb_variant, virtual_base)
+                       arch_dir_name, bench_exe_names, find_bench_exe, is_tbb_variant, this_os_first,
+                       virtual_base)
 from .term import dim
 
 
@@ -16,7 +17,8 @@ EXE_SUBPATH = "examples/shrink_bench"
 # $arch sub-directory of the CURRENT machine. build_rep may hold builds for
 # several architectures (RHEL_9.6__aarch64 AND RHEL_8.10__x86_64); we must only
 # run the ones matching the machine the bench runs on, otherwise we get an
-# "Exec format error" (x86 binary launched on ARM or vice-versa).
+# "Exec format error" (x86 binary launched on ARM or vice-versa). Among those,
+# the build of this system comes first (settings.this_os_first).
 CURRENT_MACHINE = _platform.machine()  # 'aarch64' or 'x86_64'
 
 
@@ -26,6 +28,17 @@ def _arch_matches_current(arch_dirname):
     # 'RHEL_9.6__aarch64' -> 'aarch64' ; robust if there is no '__'.
     tail = arch_dirname.rsplit("__", 1)[-1]
     return tail == CURRENT_MACHINE
+
+
+_other_os_noted = set()
+
+
+def _note_other_os(config, arch_dirname):
+    """Say once per build that a run takes a directory of another system."""
+    mine = arch_dir_name()
+    if mine and arch_dirname != mine and (config, arch_dirname) not in _other_os_noted:
+        _other_os_noted.add((config, arch_dirname))
+        print(f"⚠️ {config}: nothing in {mine}, taking {arch_dirname} (built on another system)")
 
 
 def _variant_base(var):
@@ -147,13 +160,15 @@ def resolve_exe(build_root, config, var, stage):
     root = Path(build_root)
 
     # Layout 1: glob over the $arch level, but ONLY the current arch.
-    for arch_dir in sorted((root / config).glob(f"*/{EXE_SUBPATH}")):
+    for arch_dir in this_os_first(sorted((root / config).glob(f"*/{EXE_SUBPATH}")),
+                                  name=lambda d: d.parents[1].name):
         # arch_dir = .../{config}/{arch_dir}/examples/shrink_bench: go up 2
         # levels to get the arch directory name.
         if not _arch_matches_current(arch_dir.parents[1].name):
             continue
         exe = find_bench_exe(str(arch_dir), rest)
         if exe:
+            _note_other_os(config, arch_dir.parents[1].name)
             return str(Path(exe).resolve())
 
     # Layout 2: no $arch level; layout 3: flat executable inside config.
@@ -178,7 +193,7 @@ def built_static_sizes(build_root, config):
     the caller then looks for every size, as before. A Debug or sanitizer
     build builds 256 alone by default (CHUNK_STATIC_SIZES=auto)."""
     root = Path(build_root) / config
-    caches = [c for c in sorted(root.glob("*/CMakeCache.txt"))
+    caches = [c for c in this_os_first(sorted(root.glob("*/CMakeCache.txt")), name=lambda c: c.parent.name)
               if _arch_matches_current(c.parent.name)]
     caches.append(root / "CMakeCache.txt")
     for cache in caches:
@@ -368,8 +383,9 @@ def resolve_build_dir(build_root, config):
     A build directory is one holding a CTestTestfile.cmake. Returns the
     absolute path, or None."""
     root = Path(build_root)
-    for d in sorted((root / config).glob("*/")):
+    for d in this_os_first(sorted((root / config).glob("*/")), name=lambda d: d.name):
         if d.is_dir() and _arch_matches_current(d.name) and (d / "CTestTestfile.cmake").is_file():
+            _note_other_os(config, d.name)
             return str(d.resolve())
     d = root / config
     if (d / "CTestTestfile.cmake").is_file():

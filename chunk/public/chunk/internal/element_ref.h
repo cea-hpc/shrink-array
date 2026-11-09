@@ -63,6 +63,13 @@ class ElementRef;
 
 namespace element_ref_detail
 {
+/// @brief Tag of ElementRef's constructor from an array and an index.
+struct FromArray
+{
+};
+/// @brief The tag's value.
+inline constexpr FromArray from_array{};
+
 /// @brief Always false, but only once instantiated: the static_assert of the
 ///        &-qualified operators fires when one of them is selected, not before.
 template <typename...>
@@ -116,8 +123,16 @@ class ElementRef
     using ProxyType  = P; ///< The wrapped proxy.
     using value_type = T; ///< The element type.
 
-    /// @brief Wrap @p proxy (operator[] and the operators below).
+    /// @brief Wrap @p proxy (the operators below).
     CHUNK_FORCE_INLINE explicit ElementRef(P&& proxy) noexcept : p_(std::move(proxy)) {}
+
+    /// @brief operator[]: the proxy built in place from the prvalue of
+    ///        element_proxy(), so no copy of it exists, in any compiler.
+    template <typename Array, typename Index>
+    CHUNK_FORCE_INLINE ElementRef(element_ref_detail::FromArray /*tag*/, Array& array, Index index) noexcept
+        : p_(array.element_proxy(index))
+    {
+    }
 
     /// @brief Moved (std::move(v), an operator's result).
     ElementRef(ElementRef&&) noexcept = default;

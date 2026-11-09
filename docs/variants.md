@@ -9,7 +9,7 @@
 
 > Names in the code: each variant is named after its namespace, `zero::Array`, `zero_one_value::Array`,
 > `zero_any::Array`. Older material calls them Chunk (or v1), Chunk2 and Chunk2A (the former class
-> names `ArrayChunk`, `ArrayChunk2`, `ArrayChunk2A` are deprecated aliases until 1.0).
+> names `ArrayChunk`, `ArrayChunk2`, `ArrayChunk2A` were removed before 1.0, see CHANGELOG.md).
 
 ***
 

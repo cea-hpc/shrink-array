@@ -7,6 +7,7 @@ import base64
 import json
 import os
 import platform
+import subprocess
 
 from conftest import BATCH, BATCH_ARG, FAKE_PROGRAM
 from shrink_gui.runscripts import make_launch_sh, make_run_sh
@@ -147,8 +148,8 @@ def test_mprun_stopped_while_waiting(site):
 
 
 # ------------------------------------------------------------ build check
-def _build(site, name, stale):
-    d = site.home / "br" / f"cmake-build-{name}" / f"RHEL_9.4__{platform.machine()}"
+def _build(site, name, stale, arch=f"RHEL_9.4__{platform.machine()}"):
+    d = site.home / "br" / f"cmake-build-{name}" / arch
     (d / "examples" / "shrink_bench").mkdir(parents=True)
     (d / "build.ninja").write_text("")
     exe = d / "examples" / "shrink_bench" / "shrink_bench_omp_zero_dyn"
@@ -181,3 +182,29 @@ def test_build_check(site):
     assert code == 96 and "1 of 2" in log
     code, log = _checked(site, "k5", {"mode": "refuse", "root": root, "builds_file": "omp-gnu"})
     assert code == 0 and "1 build(s) up to date" in log
+
+
+def test_build_check_takes_this_systems_build(site):
+    """One machine name, two systems (Milan on RHEL 8, Turin on RHEL 9): the
+    build of the node's system is checked, not the first in sorted order."""
+    mine = subprocess.check_output(["bash", "-c", 'source /etc/os-release; echo "${ID^^}_${VERSION_ID}__$(uname -m)"'],
+                                   text=True).strip()
+    other = f"AAA_1__{platform.machine()}"
+    _build(site, "two-os", stale=True, arch=other)
+    _build(site, "two-os", stale=False, arch=mine)
+    root = str(site.home / "br")
+    code, log = _checked(site, "k9", {"mode": "refuse", "root": root, "builds": ["two-os"]})
+    assert code == 0 and "1 build(s) up to date" in log and "STARTED" in log and other not in log
+    # Only the other system's: still checked, and said.
+    _build(site, "other-os", stale=False, arch=other)
+    code, log = _checked(site, "k10", {"mode": "refuse", "root": root, "builds": ["other-os"]})
+    assert code == 0 and f"no {mine} build of cmake-build-other-os" in log and other in log
+
+
+def test_build_check_leaves_the_build_stamp_out(site):
+    """HEAD moved, no source changed: the stamp's steps do not stop a run."""
+    d = _build(site, "stamped", stale=False)
+    (d / "STAMP").write_text("")
+    root = str(site.home / "br")
+    code, log = _checked(site, "k11", {"mode": "refuse", "root": root, "builds": ["stamped"]})
+    assert code == 0 and "1 build(s) up to date" in log and "STARTED" in log

@@ -26,8 +26,10 @@
 #   JOBS            build parallelism (default: 2)
 #
 # The proxy is the shell's (https_proxy): scan.coverity.com and
-# storage.googleapis.com go through it. .github/workflows/coverity.yml runs
-# this script weekly (COV_BIN from the download, CXX=g++-14).
+# storage.googleapis.com go through it, with Kerberos (--proxy-negotiate: the
+# CEA proxy accepts nothing else and answers 407; without a proxy, or with one
+# that asks for nothing, the option does nothing). .github/workflows/coverity.yml
+# runs this script weekly (COV_BIN from the download, CXX=g++-14).
 set -euo pipefail
 
 PROJECT=cea-hpc-shrink-array
@@ -96,7 +98,7 @@ submit() {
     desc="shrink-array $(git -C "$REPO" rev-parse --short HEAD) ($(git -C "$REPO" rev-parse --abbrev-ref HEAD))"
 
     # 1. A new build. Refused while an earlier one is still queued.
-    resp=$(curl -sS -X POST --data-urlencode "token=$token" --data-urlencode "email=$email" \
+    resp=$(curl -sS --proxy-negotiate -U : -X POST --data-urlencode "token=$token" --data-urlencode "email=$email" \
         -d file_name=cov-int.tgz --data-urlencode "version=$version" --data-urlencode "description=$desc" \
         "https://scan.coverity.com/projects/$PROJECT/builds/init")
     echo "$resp" | jq -e .build_id > /dev/null 2>&1 || die "builds/init refused: $resp"
@@ -105,13 +107,13 @@ submit() {
 
     # 2. The archive to the signed URL (jq turns the & back into &).
     # curl alone exits 0 on an HTTP error: the code is checked.
-    code=$(curl -sS -X PUT --header 'Content-Type: application/json' --upload-file cov-int.tgz \
+    code=$(curl -sS --proxy-negotiate -U : -X PUT --header 'Content-Type: application/json' --upload-file cov-int.tgz \
         -o /dev/null -w '%{http_code}' "$(jq -r .url resp.json)")
     [ "$code" = 200 ] || die "upload: HTTP $code"
     echo "upload: HTTP 200"
 
     # 3. Into the analysis queue.
-    resp=$(curl -sS -X PUT --data-urlencode "token=$token" \
+    resp=$(curl -sS --proxy-negotiate -U : -X PUT --data-urlencode "token=$token" \
         "https://scan.coverity.com/projects/$PROJECT/builds/$(jq -r .build_id resp.json)/enqueue")
     echo "$resp" | jq -e .id > /dev/null 2>&1 || die "enqueue refused: $resp"
     echo "enqueued: $resp -- the result mail goes to $email"

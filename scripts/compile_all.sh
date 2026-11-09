@@ -103,7 +103,7 @@ load_mold
 
 # oneAPI (icpx) builds, x86-only. The icpx 2026.0 ICE in clang CodeGen
 # (EmitCtorList -> getPointerBitCastOrAddrSpaceCast on a null Constant, emitting
-# global_ctors for the explicit ManagerChunk instantiations; Intel
+# global_ctors for the explicit TypeState instantiations; Intel
 # priority-support ticket) has its fallback in chunk/CMakeLists.txt:
 # -DCHUNK_ICPX_O0_WORKAROUND=ON compiles the three TUs it hit at -O0 under icpx.
 # Set to false to skip oneAPI.
@@ -217,6 +217,10 @@ Their TBB bench (shrink_bench_tbb_*) and tbb_validation need oneTBB: made when
 one is found (site_env.sh: TBBROOT, CHUNK_TBB_DIR, \$CCCWORKDIR/tbb-<arch>) or
 CHUNK_WITH_TBB=1, left out with CHUNK_WITH_TBB=0 (the script says which at the start). The std
 TSan build gets TBB from CHUNK_TBB_TSAN_DIR only (a oneTBB built with TSan).
+
+CHUNK_LLVM_ROOT=<dir>: the llvm builds take <dir>/bin/clang++ (LLVM's release
+tarball, extracted) instead of the newest llvm module, e.g. where that module
+has no OpenMP runtime. A <dir> without bin/clang++ is warned, the module used.
 EOF
 }
 
@@ -638,6 +642,22 @@ reset_compiler_modules
 latest_llvm=$(module av llvm 2>&1 | tr -s '[:space:]' '\n' | grep -oE 'llvm/[0-9]+(\.[0-9]+)*' | sort -V -u | tail -1)
 # Without modules: CHUNK_CLANGXX from PATH (site_env.sh).
 [ "$CHUNK_HAVE_MODULES" = false ] && latest_llvm="$CHUNK_CLANGXX (PATH)"
+# CHUNK_LLVM_ROOT: an LLVM tree of one's own (LLVM's release tarball, extracted)
+# in place of the llvm module, e.g. where the module has no OpenMP runtime
+# (llvm/22.1.6 on the Turin nodes: no omp.h, no libomp.so). The release carries
+# clang, libomp, Archer and the sanitizer runtimes; the gcc module is still
+# loaded below for libstdc++ (USE_LIBCXX=OFF), and the RUNPATH to libomp comes
+# from the top CMakeLists.txt (-print-file-name). A root without bin/clang++ is
+# said so, and the module is used.
+chunk_llvm_root=""
+if [ -n "${CHUNK_LLVM_ROOT:-}" ]; then
+    if [ -x "$CHUNK_LLVM_ROOT/bin/clang++" ]; then
+        chunk_llvm_root="$CHUNK_LLVM_ROOT"
+        latest_llvm="$chunk_llvm_root (CHUNK_LLVM_ROOT)"
+    else
+        echo "[WARN] CHUNK_LLVM_ROOT=$CHUNK_LLVM_ROOT: no executable bin/clang++ there, using ${latest_llvm:-no llvm}" >&2
+    fi
+fi
 if [ -z "$latest_llvm" ]; then
     echo "ERROR: no llvm module available on this system" >&2
     exit 1
@@ -661,7 +681,9 @@ if [ "$CHUNK_HAVE_MODULES" = true ]; then
         CHUNK_GCC_TOOLCHAIN_DIR=$(dirname "$(dirname "$(readlink -f "$_chunk_gxx_after")")")
         export CHUNK_GCC_TOOLCHAIN_DIR
     fi
-    if ! run_cmd "module load $latest_llvm"; then
+    if [ -n "$chunk_llvm_root" ]; then
+        echo "[INFO] llvm from CHUNK_LLVM_ROOT, no llvm module: $("$chunk_llvm_root/bin/clang++" --version 2>&1 | head -1)"
+    elif ! run_cmd "module load $latest_llvm"; then
         echo "ERROR: module load $latest_llvm failed (gcc: ${gcc_module:-none}); not building with the system clang++" >&2
         echo "       what $latest_llvm requires:" >&2
         module show "$latest_llvm" 2>&1 | grep -E 'prereq|depends-on|module load|conflict' | sed 's/^/         /' >&2
@@ -682,7 +704,9 @@ if [ "$CHUNK_HAVE_MODULES" = true ]; then
     [ "$DRYRUN" = true ] || chunk_check_binutils llvm warn
 fi
 
-if [ "$CHUNK_HAVE_MODULES" = true ]; then
+if [ -n "$chunk_llvm_root" ]; then
+    clangxx="$chunk_llvm_root/bin/clang++"
+elif [ "$CHUNK_HAVE_MODULES" = true ]; then
     clangxx="$(command -v clang++ 2>/dev/null)"
 else
     clangxx="$(command -v "$CHUNK_CLANGXX" 2>/dev/null)"
@@ -696,6 +720,10 @@ if [ -z "$clangxx" ]; then
     clangxx="clang++"
 fi
 LLVM_CXX_OPT="-DCMAKE_CXX_COMPILER=$clangxx"
+# The C compiler (formal/ enables C) of the same tree: the llvm module put its
+# clang first in PATH, CHUNK_LLVM_ROOT does not, and the cc found then is the
+# gcc module's, which refuses the sanitizer link flags (-fsanitize=alloc-token).
+[ -n "$chunk_llvm_root" ] && LLVM_CXX_OPT="$LLVM_CXX_OPT -DCMAKE_C_COMPILER=$chunk_llvm_root/bin/clang"
 
 LLVM_STDLIB_OPT="-DUSE_LIBCXX=OFF $(chunk_gcc_toolchain_opt cmake)"
 echo "llvm → libstdc++ from ${CHUNK_GCC_TOOLCHAIN_DIR:-the default gcc} (USE_LIBCXX=OFF)"

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Defaults, presets and the machine fitting of the thread counts."""
 import os
+import platform
 
 
 # --- Default configuration -----------------------------------------------
@@ -114,6 +115,39 @@ def is_tbb_variant(var):
 BENCH_BACKENDS = ("omp", "std", "serial")
 
 
+def arch_dir_name(os_release="/etc/os-release"):
+    """compile_all.sh's $arch for this machine (ID_VERSION__machine from
+    os-release, e.g. RHEL_9.6__x86_64), or None without an os-release."""
+    fields = {}
+    try:
+        with open(os_release) as f:
+            for line in f:
+                key, _, value = line.strip().partition("=")
+                fields[key] = value.strip("\"'")
+    except OSError:
+        return None
+    if "ID" not in fields:
+        return None
+    return f"{fields['ID'].upper()}_{fields.get('VERSION_ID', '')}__{platform.machine()}"
+
+
+def results_dir_name():
+    """The directory of this system under bench_results: its $arch (a system's
+    runs, oracles and timings are not those of another: Milan on RHEL 8 and
+    Turin on RHEL 9 are both x86_64), the machine without an os-release."""
+    return arch_dir_name() or platform.machine()
+
+
+def this_os_first(dirs, name=os.path.basename):
+    """@p dirs with this machine's $arch directory first. A site can have one
+    architecture on several systems (the Milan nodes on RHEL 8, the Turin ones
+    on RHEL 9): the machine suffix alone would take the first in sorted order,
+    the RHEL 8 build. The others stay after it, as a fallback (a system
+    upgraded since the build). @p name: the $arch of an element of @p dirs."""
+    mine = arch_dir_name()
+    return sorted(dirs, key=lambda d: name(d) != mine)
+
+
 def bench_exe_names(rest):
     """The names the executable `rest` (its name after "shrink_bench_", without
     the backend: "zero_any_256", "vector_check", "tbb_zero_any_dyn") may have
@@ -136,9 +170,10 @@ def find_bench_exe(directory, rest):
 
 
 # The variants were named chunk / chunk2 / chunk2a until they took the name of
-# their namespace. Command lines, perf databases, bench_summary.csv files, JSON
-# logs and CHUNK_STATS tags of older builds still carry the old labels: they
-# are read as their new names until 1.0.
+# their namespace. Perf databases, bench_summary.csv files, JSON logs and
+# CHUNK_STATS tags recorded before the rename still carry the old labels:
+# normalize_variant() reads them as the new names, so that old and new runs
+# compare. On a command line an old label is refused (check_variant_label).
 LEGACY_VARIANTS = {
     "chunk": "zero", "chunk2": "zero_one_value", "chunk2a": "zero_any",
     "tbb_chunk": "tbb_zero", "tbb_chunk2": "tbb_zero_one_value",
@@ -146,12 +181,12 @@ LEGACY_VARIANTS = {
 }
 
 
-def normalize_variant(label, warn=None):
-    """The current name of a variant label: an old one (chunk2a, chunk2a@256,
-    chunk2a_int64@dyn, tbb_chunk2) becomes its new name (zero_any, zero_any@256,
-    zero_any_int64@dyn, tbb_zero_one_value); anything else comes back unchanged.
-    `warn`: a context string -- when given and the label is an old one, a
-    one-line deprecation note goes to stderr."""
+def normalize_variant(label):
+    """The current name of a variant label READ FROM DATA (a perf database, a
+    summary, a log): an old one (chunk2a, chunk2a@256, chunk2a_int64@dyn,
+    tbb_chunk2) becomes its new name (zero_any, zero_any@256, zero_any_int64@dyn,
+    tbb_zero_one_value); anything else comes back unchanged. For a label given on
+    a command line, see check_variant_label()."""
     if not isinstance(label, str):
         return label
     base, at, size = label.partition("@")
@@ -161,12 +196,16 @@ def normalize_variant(label, warn=None):
     new = LEGACY_VARIANTS.get(base)
     if new is None:
         return label
-    out = new + suffix + at + size
-    if warn:
-        import sys
-        print(f"note: {warn}: variant '{label}' is the old name of '{out}' "
-              "(accepted until 1.0)", file=sys.stderr)
-    return out
+    return new + suffix + at + size
+
+
+def check_variant_label(label, option):
+    """A variant label given on a command line, returned as it is; an old one
+    (chunk2a, tbb_chunk2...) stops the program with its new name."""
+    new = normalize_variant(label)
+    if new != label:
+        raise SystemExit(f"{option}: '{label}' is the former name of '{new}': write '{new}'")
+    return label
 
 # ── Sanitizer CHECK configs ──────────────────────────────────────────────────
 # Two llvm sanitizer build dirs (created by compile_all.sh) run in the CHECK
@@ -305,7 +344,11 @@ SCALING_CONFIGS  = ["cmake-build-omp-llvm", "cmake-build-omp-gnu"]
 # The curve every container is read against: no chunk, no compression, so a
 # bend it shares is the machine's, and one only the chunk variants show is ours.
 SCALING_REFERENCE_VARIANT = "vector"
-SCALING_THREADS  = [4, 8, 16, 32, 64, 128]
+# Past 128, for the 2 x 160-core AMD Turin: 160 fills one socket, 256 and 320 cross
+# to the second one, where a bend can be the machine's: read them against vector.
+# A machine with fewer CPUs drops these points (see run_scaling_phase), its curve
+# is unchanged; 160 and 256 run on the 288-core node.
+SCALING_THREADS  = [4, 8, 16, 32, 64, 128, 160, 256, 320]
 # The guard runs the int64 binaries (shrink_bench_<backend>_<variant>_int64_<size>, see
 # int64_variant) at --multiply 2: arrays past INT_MAX elements, so the curves
 # also cover the 64-bit index path at the scale it exists for. --iter_max 500
@@ -406,7 +449,7 @@ MODE_PRESETS = {
         "perf_drop":         [],
         # From 16 threads: the low points of int64 --multiply 2 are the
         # longest runs of the guard (minutes each); full keeps them.
-        "scaling": {"configs": SCALING_CONFIGS, "threads": [16, 32, 64, 128], "sizes": None},
+        "scaling": {"configs": SCALING_CONFIGS, "threads": [16, 32, 64, 128, 160, 256, 320], "sizes": None},
         "seq_omp": {"threads": DEFAULT_SEQ_OMP_THREADS, "sizes": DEFAULT_SEQ_OMP_SIZES},
     },
     "full": {

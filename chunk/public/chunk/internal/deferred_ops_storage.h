@@ -21,8 +21,8 @@
 #include <cstddef> // std::size_t
 #include <mutex>   // std::mutex, std::scoped_lock
 
-#include "chunk/PMP_CHUNK.h"         // CHUNK_PMP_* macros — used HERE, not via includers
-#include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/PMP_CHUNK.h" // CHUNK_PMP_* macros — used HERE, not via includers
+#include "chunk/internal/immortal.h"  // Immortal / LazyImmortal: statics safe for global arrays
 
 namespace shrink_array
 {

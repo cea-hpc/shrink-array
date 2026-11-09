@@ -52,13 +52,13 @@
 #include <utility>     // std::as_const
 #include <vector>      // std::vector (the copy sources)
 
-#include "chunk/chunk_traits.h"          // forward decls + default ind_type = int
+#include "chunk/internal/chunk_traits.h" // forward decls + default ind_type = int
 #include "chunk/zero_array.h"            // zero::Array
 #include "chunk/zero_one_value_array.h"  // zero_one_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/array_chunk_range_ops.h" // fill_range, copy_range, fill_range_mt, copy_range_mt
 #include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"            // release_chunk_pools, destroy_block_chunk
+#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"                // chunk_config::use_zero*
 #include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/print.h"        // shrink_array::println

@@ -23,11 +23,32 @@
 #include "chunk/internal/array_chunk_parallel_common.h" // ParallelSupportCommon, the class these bodies belong to
 #include "chunk/internal/compression_manager.h"         // CompressionManager<> in flush_pending_deferred_ops
 #include "chunk/config.h"                   // build_config::any_check, chunk_config::use_fast_block_compression
-#include "chunk/PMP_CHUNK.h"                // CHUNK_PMP_RANK_BOUND, CHUNK_PMP_IN_PARALLEL_REGION
-#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (check builds)
+#include "chunk/internal/PMP_CHUNK.h"       // CHUNK_PMP_RANK_BOUND, CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED, CHUNK_CHECK_FAILED
 
 namespace shrink_array
 {
+
+/**
+ * @brief Refuse a public make_block_compression() inside a region.
+ * @details Without a proxy the pass takes no writer handshake (steal_mark /
+ *          start) and no reader grace period, so it would compress chunks other
+ *          threads are writing or reading. The writers' own passes
+ *          (perform_compression) compress in the region.
+ * @return true if the caller is in a region: an invariant failure in check
+ *         builds, an error in the log otherwise, and the caller runs no pass.
+ */
+[[nodiscard]] inline bool block_pass_refused_in_region()
+{
+    if (CHUNK_PMP_IN_PARALLEL_REGION)
+    {
+        CHUNK_CHECK_FAILED(compress,
+                           "make_block_compression() called inside a parallel region: a sequential point, call it "
+                           "after the region");
+        return true;
+    }
+    return false;
+}
 
 template <typename Derived>
 void ParallelSupportCommon<Derived>::flush_pending_deferred_ops(bool force)

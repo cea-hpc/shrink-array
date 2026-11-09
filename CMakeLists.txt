@@ -1045,6 +1045,11 @@ if(SHRINK_ARRAY_BUILD_TESTS AND BUILD_TESTING AND Python3_Interpreter_FOUND)
     add_test(NAME check_naming
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_naming.py ${PROJECT_SOURCE_DIR})
     set_property(TEST check_naming PROPERTY LABELS validation)
+    # The public headers and names are the ones scripts/public_api.txt freezes
+    # (scripts/check_public_api.py).
+    add_test(NAME check_public_api
+             COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_public_api.py ${PROJECT_SOURCE_DIR})
+    set_property(TEST check_public_api PROPERTY LABELS validation)
     # A member function body longer than 5 lines is defined out of class, in the
     # header's _inline.h companion (scripts/check_inline_bodies.py; apply moves them).
     add_test(NAME check_inline_bodies

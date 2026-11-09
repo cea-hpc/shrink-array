@@ -20,10 +20,10 @@
 #include <atomic>  // std::atomic, std::atomic_thread_fence, std::memory_order
 #include <cstdint> // uint32_t (the ring_log payloads)
 
-#include "chunk/config.h"            // chunk_config::asymmetric_dekker, chunk_config::ring_log_debug
-#include "chunk/PMP_CHUNK.h"         // CHUNK_PMP_THREAD_CAPACITY
-#include "chunk/ring_log_debug.h"    // ring_log, get_tid
-#include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/config.h"                  // chunk_config::asymmetric_dekker, chunk_config::ring_log_debug
+#include "chunk/internal/PMP_CHUNK.h"      // CHUNK_PMP_THREAD_CAPACITY
+#include "chunk/internal/ring_log_debug.h" // ring_log, get_tid
+#include "chunk/internal/immortal.h"       // Immortal / LazyImmortal: statics safe for global arrays
 
 #ifdef __linux__
     #include <sys/syscall.h> // SYS_membarrier

@@ -95,8 +95,8 @@
 #include <oneapi/tbb/blocked_range.h> // oneapi::tbb::blocked_range (the index forms)
 #include <oneapi/tbb/parallel_for.h>  // oneapi::tbb::parallel_for
 
-#include "chunk/PMP_CHUNK.h"   // pmp::backend, pmp::BackendKind
-#include "chunk/manage_ompt.h" // begin_parallel_phase, finalize_parallel_phase
+#include "chunk/internal/PMP_CHUNK.h" // pmp::backend, pmp::BackendKind
+#include "chunk/manage_ompt.h"        // begin_parallel_phase, finalize_parallel_phase
 
 namespace shrink_array::tbb
 {

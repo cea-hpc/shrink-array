@@ -64,7 +64,7 @@
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::pair (try_set_active_chunk_size's cases)
 
-#include "chunk/chunk_traits.h"               // forward decls + default IntType = int
+#include "chunk/internal/chunk_traits.h"      // forward decls + default IntType = int
 #include "chunk/zero_array.h"                 // zero::Array
 #include "chunk/zero_one_value_array.h"       // zero_one_value::Array
 #include "chunk/zero_any_array.h"             // zero_any::Array
@@ -78,8 +78,8 @@
 
 using namespace shrink_array;
 
-#include "chunk/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
-#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
+#include "chunk/internal/zero_chunk.h" // release_chunk_pools, destroy_block_chunk
+#include "validation_harness.h"        // self_command; run() is called by validation_driver.cpp
 
 namespace validation::rechunk_validation
 {
@@ -828,6 +828,23 @@ bool bool_runs(long i)
     }
 }
 
+/// double content for the sliced-val2 cases: runs of 0, runs of the second
+/// value 0.5 and varied data, 2600 elements each (several chunks at every
+/// geometry the cases use).
+double sliced_val2_mix(long i)
+{
+    switch ((i / 2600) % 5)
+    {
+        case 0:
+            return 0.0;
+        case 1:
+        case 3:
+            return 0.5;
+        default:
+            return double(i % 977) + 0.75;
+    }
+}
+
 struct Case
 {
     const char*          name;
@@ -988,6 +1005,16 @@ static int run_body(int argc, char** argv)
          [] { return check_invariance<bool>("bool-shrink-512-to-64", 1000000L, 64, bool_runs, /*sv_value=*/true); }},
         {"bool-uneven", 512,
          [] { return check_invariance<bool>("bool-uneven-512-to-768", 1000000L, 768, bool_runs, /*sv_value=*/true); }},
+        // Array<bool> through the SLICED path (fast-alloc threaded builds): 4M
+        // bools 64 -> 256, 16384 new chunks, 4 slices. Sources at false (cst1),
+        // at true (the second constant: a shared array, never released) and
+        // live ones, released during the copy; then rewritten and recompressed.
+        {"bool-sliced", 64,
+         []
+         {
+             return check_invariance<bool>("bool-sliced-64-to-256", 4L << 20, 256, bool_runs, /*sv_value=*/true,
+                                           /*post_rounds=*/2);
+         }},
         {"sliced-grow", 64,
          []
          {
@@ -1003,6 +1030,26 @@ static int run_body(int argc, char** argv)
                  "sliced-shrink-512-to-64", 2L << 20, 64,
                  [](long i) -> double { return (i / 5000) % 3 == 0 ? 0.0 : double(i % 613) + 0.25; },
                  /*sv_value=*/0.25, /*post_rounds=*/2);
+         }},
+        // The same sliced path with sources of all three kinds side by side:
+        // runs of zero, runs of the second value (compressed to it by the
+        // rechunk's prologue) and varied data. zero_one_value and zero_any
+        // release their materialised sources during the copy like zero, and
+        // must leave the second-constant ones alone (a shared array, never
+        // freed). Grown 64 -> 256 (aligned, 4 slices), and shrunk 512 -> 192,
+        // a size the old one does not divide: new chunks straddle old ones,
+        // released by the last of their readers.
+        {"sliced-val2-grow", 64,
+         []
+         {
+             return check_invariance<double>("sliced-val2-grow-64-to-256", 4L << 20, 256, sliced_val2_mix,
+                                             /*sv_value=*/0.5, /*post_rounds=*/2);
+         }},
+        {"sliced-val2-uneven", 512,
+         []
+         {
+             return check_invariance<double>("sliced-val2-uneven-512-to-192", 2L << 20, 192, sliced_val2_mix,
+                                             /*sv_value=*/0.5, /*post_rounds=*/2);
          }},
     };
 

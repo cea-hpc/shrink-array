@@ -56,11 +56,11 @@
 #include <utility>     // std::as_const
 #include <vector>      // std::vector, the reference
 
-#include "chunk/zero_chunk.h"     // release_chunk_pools, destroy_block_chunk
-#include "chunk/manage_ompt.h"    // parallel_phase
-#include "chunk/zero_array.h"     // zero::Array (an annotated column)
-#include "chunk/soa_array.h"      // shrink_array::SoaArray, shrink_array::soa::plain, soa::column
-#include "chunk/internal/print.h" // shrink_array::println
+#include "chunk/internal/zero_chunk.h" // release_chunk_pools, destroy_block_chunk
+#include "chunk/manage_ompt.h"         // parallel_phase
+#include "chunk/zero_array.h"          // zero::Array (an annotated column)
+#include "chunk/soa_array.h"           // shrink_array::SoaArray, shrink_array::soa::plain, soa::column
+#include "chunk/internal/print.h"      // shrink_array::println
 
 
 namespace sa = shrink_array;

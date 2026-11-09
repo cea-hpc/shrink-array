@@ -18,60 +18,24 @@
 
 /**
  * @file zero_array_parallel.h
- * @brief zero::Array's two mode-gated surfaces -- the OpenMP-only one (the
- *        deferred-op flush) and the fast-block-only one
- *        (make_block_compression) -- isolated in their own mixins so they
- *        disappear entirely from a build that has neither.
+ * @brief zero::Array's fast-block-only surface (make_block_compression),
+ *        isolated in its own mixin so that it disappears from a build without it.
  *
- * @details ParallelSupport<Derived, threaded> carries
- *          flush_pending_deferred_ops(), which drains the deferred writes
- *          queued on this array's chunks (ParallelSupportCommon, shared with the
- *          two other variants); the serial specialisation is an empty class
- *          whose flush is a no-op. FastBlockSupport<Derived,
- *          use_fast_block_compression> carries the fast-block compression pass,
- *          whose gate is stricter than threaded.
+ * @details FastBlockSupport<Derived, use_fast_block_compression> carries the
+ *          fast-block compression pass, whose gate is stricter than threaded.
+ *          ParallelSupport (array_chunk_parallel_common.h) carries what all the
+ *          variants share under threads.
  *
  * @see zero_array_parallel_inline.h for the body
  * @see array_chunk_parallel_common.h for the shared part
  */
 
-#include "chunk/config.h"       // build_config::threaded, chunk_config::use_fast_block_compression
-#include "chunk/chunk_traits.h" // ArrayChunkTraits
-#include "chunk/internal/array_chunk_parallel_common.h" // ParallelSupportCommon, ParallelSupportCommonSerial
+#include "chunk/config.h"                               // chunk_config::use_fast_block_compression
+#include "chunk/internal/chunk_traits.h"                // ArrayChunkTraits
+#include "chunk/internal/array_chunk_parallel_common.h" // ParallelSupport (zero_array.h uses it through this header)
 
 namespace shrink_array::zero
 {
-
-/**
- * @brief The OpenMP-only members of an array, present only when the build has OpenMP.
- *
- * @tparam Derived the concrete array type (only zero::Array today).
- * @tparam Enabled defaulted to build_config::threaded; never pass it
- *         explicitly outside of tests — the point of the parameter is that the
- *         two specialisations below are selected by the build mode.
- */
-template <typename Derived, bool Enabled = build_config::threaded>
-struct ParallelSupport;
-
-// ── OpenMP build: the real parallel surface ──────────────────────────────────
-/**
- * @brief OpenMP specialisation: the deferred-op flush.
- * @copydetails ParallelSupport
- */
-template <typename Derived>
-struct ParallelSupport<Derived, true> : public ParallelSupportCommon<Derived>
-{
-    // flush_pending_deferred_ops() and self() come from ParallelSupportCommon.
-};
-
-// ── Serial build: nothing to parallelise ─────────────────────────────────────
-/**
- * @brief Serial specialisation: the same verb, inert.
- */
-template <typename Derived>
-struct ParallelSupport<Derived, false> : public ParallelSupportCommonSerial<Derived>
-{
-};
 
 /**
  * @brief zero::Array's fast-block compression pass, present only in that mode.

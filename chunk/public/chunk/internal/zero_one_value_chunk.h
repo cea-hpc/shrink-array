@@ -33,7 +33,7 @@
 #include "chunk/config.h"                                       // build_config::threaded, chunk_config
 #include "chunk/internal/invariant_check.h"                     // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/bad_ptr_check.h"                       // CHUNK_CHECK_VALUES_PTR (check builds)
-#include "chunk/PMP_CHUNK.h"                                    // get_thr_rank_fast, CHUNK_PMP_THREAD_RANK
+#include "chunk/internal/PMP_CHUNK.h"                           // get_thr_rank_fast, CHUNK_PMP_THREAD_RANK
 #include "chunk/internal/zero_one_value_candidate_list_check.h" // zero_one_value_missing_candidate_list
 #include "chunk/internal/zero_one_value_proxy.h"                // zero_one_value::Proxy
 #include "chunk/internal/second_value_chunk_base.h"             // SecondValueChunkBase
@@ -51,7 +51,7 @@ template <typename T, typename ChunkT>
 struct CompressionManager;
 
 template <template <typename> class ChunkT, typename T>
-class ManagerChunk;
+class TypeState;
 
 namespace zero_one_value
 {
@@ -334,7 +334,7 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>
   public:
     using Base      = SecondValueChunkBase<T, Derived>;
     using BaseSpec  = ChunkSpec<T>;
-    using Manager   = ManagerChunk<Chunk, T>;
+    using Manager   = TypeState<Chunk, T>;
     using InfArrayT = SecondValueInfo<T>;
 
     using Base::first_value;
@@ -423,6 +423,18 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>
     {
         self.clear_int_st(num_compress_value, ind, CHUNK_PMP_THREAD_RANK);
     }
+
+    /*!
+     * \brief Release this chunk's buffer to @p thr_rank's pool and point it at the
+     *        first constant, WITHOUT counting a compression: the re-chunk rebuild
+     *        releasing an old chunk it has transcribed (as zero::Chunk::release_st).
+     * \param ind      the array's second-value index (the chunk is not compressed
+     *                 to it: the caller checked owns_live_buffer())
+     * \param thr_rank rank whose pool receives the buffer
+     * \pre The chunk owns a live buffer, and the array is quiescent (no writer, no
+     *      pass): the refill's source.
+     */
+    void release_st(this Derived& self, int ind, int thr_rank);
 
   private:
     /// @brief Point @p count freshly allocated chunks at the first constant.
@@ -548,7 +560,7 @@ template <typename T, typename Derived, bool Enabled>
 class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Derived>
 {
   public:
-    using Manager  = ManagerChunk<Chunk, T>;
+    using Manager  = TypeState<Chunk, T>;
     using Base     = SecondValueChunkBase<T, Derived>;
     using BaseSpec = ChunkSpec<T>;
 
@@ -635,7 +647,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
 
     /// @brief One rank's share of compress_chunk_to_compress() for one second
     ///        value: the body its region runs on each thread. Public for
-    ///        AllTypeChunk's single sweep region (ManagerChunk::sweep_rank).
+    ///        AllTypeChunk's single sweep region (TypeState::sweep_rank).
     static void compress_sweep_rank(int thr_rank, const InfArrayT& inf_array, bool apply)
     {
         compress_chunk_to_compress_in_par(thr_rank, inf_array, apply);
@@ -938,7 +950,7 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
 
     using CandidateTuples = std::vector<std::tuple<Chunk*, int, int>>;
 
-    using Manager = ManagerChunk<Chunk, T>;
+    using Manager = TypeState<Chunk, T>;
     // (second value, index, num_tab). Redeclared here on purpose: the policy
     // bases declare the same name, and this one hides theirs so zero_one_value's own
     // members see one type. It must stay THEIR type -- checked below.

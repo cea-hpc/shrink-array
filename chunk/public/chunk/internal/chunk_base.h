@@ -34,7 +34,7 @@
 #include <sys/mman.h>  // mmap, mprotect, PROT_READ
 
 #include "chunk/internal/def_force_inline.h"            // CHUNK_FORCE_INLINE (element_at)
-#include "chunk/chunk_traits.h"                         // is_zero_any_family_v (element_at variant gate)
+#include "chunk/internal/chunk_traits.h"                // ChunkTraits, is_zero_any_family_v (element_at variant gate)
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement, asserted on ChunkBase
 #include "chunk/internal/churn_counters.h"              // churn::note_materialisation
 #include "chunk/internal/chunk_size_policy.h"           // cst_buffer_size, thread_chunk_size, alloc_chunk_count
@@ -44,8 +44,8 @@
 #include "chunk/internal/relaxed_element.h"             // element_at<true>: the marking filter's reads
 #include "fast_allocators/internal/svalloc.h"           // svcalloc_align, svfree
 #include "chunk/config.h"                               // build_config::threaded, chunk_config::stats
-#include "chunk/PMP_CHUNK.h"                 // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_IN_PARALLEL_REGION, pmp::team
-#include "chunk/ring_log_debug.h"            // EventCode::value_alloc/FREE (debug ring log)
+#include "chunk/internal/PMP_CHUNK.h"        // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_IN_PARALLEL_REGION, pmp::team
+#include "chunk/internal/ring_log_debug.h"   // EventCode::value_alloc/FREE (debug ring log)
 #include "chunk/internal/global_check.h"     // global_check_nan (DO_CHECK: config.h's CheckNaN<true>)
 #include "chunk/internal/invariant_check.h"  // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/deferred_op_pool.h" // DeferredOpPtr
@@ -93,26 +93,6 @@ namespace shrink_array
 // definition (chunk/internal/compression_manager.h) comes with the _inline tails.
 template <typename T, typename ChunkT>
 struct CompressionManager;
-
-template <typename Derived>
-struct ProxyTypeTrait;
-
-namespace zero
-{
-
-template <typename T>
-class Chunk;
-template <typename T>
-class Proxy;
-
-} // namespace zero
-
-// Specialisation for Chunk
-template <typename T>
-struct ProxyTypeTrait<zero::Chunk<T>>
-{
-    using Type = zero::Proxy<T>;
-};
 
 // STAYS a directive. Not a twin of the declaration at the top of this file:
 // that one is in fast_alloc, this one is inside `namespace shrink_array`.
@@ -631,7 +611,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
     // Atomic pointer type conditional on OpenMP availability
     using AtomicPtrT = std::conditional_t<build_config::threaded, std::atomic<T*>, T*>;
 
-    using ProxyType = ProxyTypeTrait<Derived>::Type;
+    using ProxyType = ChunkTraits<Derived>::ProxyType;
 
     // std-alloc placeholder for `allocator_data`: no-op stubs of the fast
     // allocator's interface, so manager code shared by both modes compiles in

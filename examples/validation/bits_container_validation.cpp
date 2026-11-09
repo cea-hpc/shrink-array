@@ -59,14 +59,14 @@
 #include <utility>   // std::pair
 #include <vector>    // std::vector
 
-#include "chunk/chunk_traits.h"          // forward decls + default IntType = int (zero_one_value::Array<bool>)
+#include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int (zero_one_value::Array<bool>)
 #include "chunk/array_chunk_bits.h"      // ArrayChunkBits, Bit (and zero_one_value::Array with them)
 #include "chunk/chunk_size_advisor.h"    // ChunkSizeAdvisor
 #include "chunk/array_chunk_range_ops.h" // fill_range, copy_range, and their _mt forms
 #include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"            // release_chunk_pools, destroy_block_chunk
+#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"                // build_config::chunk_dynamic, build_config::has_not_ompt
-#include "chunk/PMP_CHUNK.h"             // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h"    // arg_number (checked, not atoi)
 #include "chunk/internal/print.h"        // shrink_array::println

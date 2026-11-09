@@ -30,24 +30,24 @@
 #include <type_traits>      // std::is_same_v (reclaim_second_values: bool has no registry)
 
 #include "chunk/internal/second_value_array_base.h"     // for SecondValueArrayBase
-#include "chunk/internal/zero_any_array_parallel.h"     // zero_any::ParallelSupport — OpenMP-only mixin
+#include "chunk/internal/array_chunk_parallel_common.h" // ParallelSupport -- OpenMP-only mixin
 #include "chunk/internal/array_chunk_rechunk_hooks.h"   // RechunkHooks — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
 #include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
 #include "chunk/config.h"                               // for threaded, g_in_rechunk_rebuild
-#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_IN_PARALLEL_REGION (reclaim_second_values), pmp::Team
+#include "chunk/internal/PMP_CHUNK.h"           // CHUNK_PMP_IN_PARALLEL_REGION (reclaim_second_values), pmp::Team
 #include "chunk/internal/tab_cst_val2_holder.h" // for GlobalVecHolder (cst2 GC)
 #include "chunk/internal/write_compress_sync_policy.h" // for WriteCompressSyncPolicy
 #include "chunk/internal/array_chunk_core.h"           // the core the bases share
 #include "chunk/internal/zero_any_proxy.h"             // zero_any::Proxy<T> and its tables
-#include "chunk/zero_any_chunk.h"                      // zero_any::Chunk<T>
+#include "chunk/internal/zero_any_chunk.h"             // zero_any::Chunk<T>
 #include "chunk/log.h"                                 // CHUNK_LOG, CHUNK_LOG_ALWAYS (the second values)
 
 namespace shrink_array
 {
 
 template <template <typename> class ChunkT, typename T>
-class ManagerChunk;
+class TypeState;
 
 /// @brief Why zero_any::Array<T>::try_reclaim_second_values() refuses to run.
 enum class ReclaimRefusal : std::uint8_t
@@ -183,19 +183,11 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
     using T           = SecondValueBase::T;           ///< Stored element type.
     using IntType     = SecondValueBase::IndType;     ///< Index type used for sizes and element positions.
     using ChunkType   = SecondValueBase::ChunkType;   ///< The chunk type held in chunk_list_ (zero_any::Chunk<T>).
-    using ManagerType = SecondValueBase::ManagerType; ///< The per-type manager (ManagerChunk<zero_any::Chunk, T>).
+    using ManagerType = SecondValueBase::ManagerType; ///< The per-type manager (TypeState<zero_any::Chunk, T>).
     using ProxyType  = SecondValueBase::ProxyType; ///< The write proxy of the non-const accessors (zero_any::Proxy<T>).
     using value_type = T;                          ///< Stored element type.
 
-    using Manager                                      = ManagerType; ///< Same type as ManagerType.
-    using ManagerChunk2A [[deprecated("use Manager")]] = Manager;     ///< Former name, until 1.0.
-
-    // The former snake_case spellings, kept until 1.0 (types are PascalCase).
-    using chunk_type [[deprecated("types are PascalCase: use ChunkType")]]          = ChunkType;
-    using manager_type [[deprecated("types are PascalCase: use ManagerType")]]      = ManagerType;
-    using proxy_type [[deprecated("types are PascalCase: use ProxyType")]]          = ProxyType;
-    using ind_type [[deprecated("types are PascalCase: use IndType")]]              = IntType;
-    using chunk_list_type [[deprecated("types are PascalCase: use ChunkListType")]] = Base::ChunkListType;
+    using Manager = ManagerType; ///< Same type as ManagerType.
 
     using SecondValueBase::chunk_list_;
     using SecondValueBase::m_size_;
@@ -334,13 +326,6 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
         return chunk_list_;
     }
 
-    /// @brief Former name of get_chunk_list(), kept for the programs that still spell it.
-    [[deprecated("methods are snake_case: use get_chunk_list")]] [[nodiscard]] const Base::ChunkListType&
-    getChunkList() const noexcept
-    {
-        return chunk_list_;
-    }
-
     /**
      * @brief Report how many cst2 buffers a sweep could reclaim.
      * @details Runs gc_collect_live() and compares the live count with
@@ -426,7 +411,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
 
     /// @brief Compress every chunk currently queued as a candidate, on every thread's list.
     /// @note A sequential point: refused inside a parallel region (see
-    ///       zero::FastBlockSupport::make_block_compression()).
+    ///       block_pass_refused_in_region()).
     static void make_block_compression();
 
   private:
@@ -641,5 +626,5 @@ class Array : public ArrayImpl<Array<T, IntType>>
 
 // Bodies of the two mode-specific mixins. After zero_any_array_inline.h, so their
 // CRTP self() sees a complete zero_any::Array.
-#include "chunk/internal/zero_any_array_parallel_inline.h"   // zero_any::ParallelSupport's bodies
-#include "chunk/internal/array_chunk_rechunk_hooks_inline.h" // RechunkHooks' bodies
+#include "chunk/internal/array_chunk_parallel_common_inline.h" // flush_pending_deferred_ops
+#include "chunk/internal/array_chunk_rechunk_hooks_inline.h"   // RechunkHooks' bodies

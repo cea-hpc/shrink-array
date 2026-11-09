@@ -52,10 +52,10 @@
 #include "bench_args.h" // parse_bench_args, BenchArgs
 
 
-#include "chunk/ring_log_debug.h"     // ring_init/analyze_ring_sweep decls
-#include "chunk/rechunk_decider.h"    // re-chunk decisions (acts in dyn builds only)
-#include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
-#include "chunk/log.h"                // CHUNK_LOG, logging::enabled (the cst2 report at compress=info)
+#include "chunk/internal/ring_log_debug.h" // ring_init/analyze_ring_sweep decls
+#include "chunk/rechunk_decider.h"         // re-chunk decisions (acts in dyn builds only)
+#include "chunk/internal/env_parse.h"      // env_number / arg_number (checked, not atoi)
+#include "chunk/log.h"                     // CHUNK_LOG, logging::enabled (the cst2 report at compress=info)
 
 using namespace shrink_array;
 
@@ -808,7 +808,8 @@ int main(int argc, char* argv[])
             // --advise_five advises only the five, for runs that must compare
             // with earlier campaigns. tab_bool and tab_bool_bits excepted: both
             // stay at their birth geometry, so the two bool containers are
-            // compared as they are, not after a re-chunk.
+            // compared as they are, not after a re-chunk -- unless
+            // --advise_bool hands them over too (below).
             if (!bench_args.advise_five)
             {
                 rechunk_decider.consider<double>(tab3, tick, iter, "tab3");
@@ -828,6 +829,14 @@ int main(int argc, char* argv[])
                 {
                     rechunk_decider.consider<int>(tab_conn, tick, iter, "tab_conn");
                 }
+            }
+            // --advise_bool: the two bool containers, re-chunked like the rest.
+            // tab_bool_bits is an ArrayChunkBits in a zero_one_value build
+            // (value_type Bit, as tab_mask), tab_bool's own type elsewhere.
+            if (bench_args.advise_bool)
+            {
+                rechunk_decider.consider<bool>(tab_bool, tick, iter, "tab_bool");
+                rechunk_decider.consider<BenchBoolBitsArray::value_type>(tab_bool_bits, tick, iter, "tab_bool_bits");
             }
             // tab_mask: an ArrayChunkBits in a zero_one_value build, whose advisor
             // knows the packed layout (the other variants' Array<bool> is not

@@ -25,7 +25,7 @@
  *          AllTypeChunk without pulling in the full zero/zero_one_value/zero_any
  *          definitions.
  *
- * @see manager_chunk.h for the ManagerChunkInt interface this class dispatches
+ * @see type_state.h for the TypeStateInterface interface this class dispatches
  *      through, and manage_ompt.h for the phase transitions that drive it.
  */
 

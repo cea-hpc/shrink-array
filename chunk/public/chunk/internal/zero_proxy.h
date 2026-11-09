@@ -43,7 +43,7 @@ namespace shrink_array
 {
 
 template <template <typename> class ChunkT, typename T>
-class ManagerChunk;
+class TypeState;
 
 namespace zero
 {
@@ -113,7 +113,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
 {
   public:
     using ChunkType = Chunk<T>;
-    using Manager   = ManagerChunk<Chunk, T>;
+    using Manager   = TypeState<Chunk, T>;
     using Base      = ProxyBase<Derived, T, ChunkType>;
 
     using CompressionManagerType = CompressionManager<T, ChunkType>;
@@ -420,7 +420,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     };
 
   private:
-    using Manager = ManagerChunk<Chunk, T>;
+    using Manager = TypeState<Chunk, T>;
 
     using Base::read_values;
     using Base::values_;

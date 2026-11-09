@@ -51,7 +51,7 @@
 #include <vector>      // std::vector (chunk_list_)
 
 #include "chunk/config.h"                            // build_config::alloc_affinity_min_bytes, build_config::any_check
-#include "chunk/chunk_traits.h"                      // ChunkTraits (ProxyType, ManagerType)
+#include "chunk/internal/chunk_traits.h"             // ChunkTraits (ProxyType, ManagerType)
 #include "chunk/internal/chunk_size_policy.h"        // ActiveSizePolicy
 #include "chunk/internal/array_chunk_dirty_bitset.h" // DirtyBitsetSupport
 #include "chunk/internal/array_chunk_for.h"          // ArrayKey (registry_key)
@@ -67,8 +67,10 @@ namespace alloc_affinity_detail
 /// default for zero, lazy for zero_one_value / zero_any, fixed at build time.
 /// zero's memory is mostly data and its rebuild is sliced: from the shared pool,
 /// whose slabs mix several arrays' blocks, no slab empties during the first
-/// re-chunk, so eager lowers its peak. zero_one_value / zero_any are not sliced and
-/// are metadata-heavy: lazy saves them the per-array slabs. Measured on Milan
+/// re-chunk, so eager lowers its peak. zero_one_value / zero_any are metadata-heavy:
+/// lazy saves them the per-array slabs. Their rebuilds are sliced too, but eager
+/// zero_one_value did no better on x86-64 (2 threads, 10^8 elements, November 2026:
+/// peak 1,732 MB against 1,724 lazy, end 1,495 against 1,511). Measured on Milan
 /// (shrink_bench int64 dyn, 64 threads, three runs each, October 2026): zero lazy
 /// costs +9.8% of time, +14.6% at the peak and +11.8% at the end; zero_any eager
 /// +7.4% at the peak; zero_one_value is the same either way.

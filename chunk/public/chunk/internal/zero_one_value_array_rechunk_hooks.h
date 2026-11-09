@@ -33,9 +33,9 @@
  * @see zero_one_value_array_rechunk_hooks_inline.h for the bodies
  */
 
-#include "chunk/config.h"        // build_config::chunk_dynamic
-#include "chunk/chunk_traits.h"  // ArrayChunkTraits
-#include "chunk/internal/in_t.h" // InT<T>: the captured state
+#include "chunk/config.h"                // build_config::chunk_dynamic
+#include "chunk/internal/chunk_traits.h" // ArrayChunkTraits
+#include "chunk/internal/in_t.h"         // InT<T>: the captured state
 
 namespace shrink_array::zero_one_value
 {

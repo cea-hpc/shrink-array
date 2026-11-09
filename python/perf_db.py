@@ -58,11 +58,11 @@ from datetime import datetime, timezone
 
 try:
     # Rows recorded before the rename carry chunk / chunk2 / chunk2a: read as
-    # zero / zero_one_value / zero_any until 1.0.
+    # zero / zero_one_value / zero_any, so that old and new runs compare.
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from bench_runner.settings import normalize_variant
 except ImportError:
-    def normalize_variant(label, warn=None):   # copied alone: labels as stored
+    def normalize_variant(label):   # copied alone: labels as stored
         return label
 
 SCHEMA_VERSION = 1
