@@ -76,6 +76,7 @@
 #include <chrono>      // std::chrono::steady_clock
 #include <cstdint>     // std::uint64_t
 #include <cstdio>      // std::fprintf, stderr
+#include <exception>   // std::exception (main's catch)
 #include <string>      // std::string
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::as_const
@@ -403,6 +404,7 @@ constexpr int         n_cases      = static_cast<int>(sizeof(case_names) / sizeo
 } // namespace
 
 int main(int argc, char** argv)
+try
 {
     ParamChunk::init_indexes(true);
 
@@ -598,4 +600,10 @@ int main(int argc, char** argv)
         return 1;
     }
     return 0;
+}
+catch (const std::exception& e)
+{
+    // A failed allocation, std::format or a bad argument: said, not std::terminate().
+    std::fprintf(stderr, "access_cost: %s\n", e.what());
+    return 2;
 }
