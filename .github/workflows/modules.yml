@@ -68,3 +68,20 @@ jobs:
       # check_module_deps. advisor_demo needs the _dyn library (CHUNK_BUILD_DYN=ON).
       - name: Build and run the validation harnesses and the module programs (check target)
         run: cmake --build build --target check
+      # What a user project does: the library alone, installed with its
+      # modules (chunk::chunk_<variant>_module), then examples/getting_started
+      # and examples/bool_arrays configured on their own with find_package(chunk):
+      # each builds the BMI from the installed shrink_array.cppm and imports it.
+      - name: Install, then getting_started and bool_arrays against the install
+        run: |
+          cmake -S . -B build-lib -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo ${{ matrix.cmake_args }} \
+            -DCHUNK_STATIC_SIZES=256 -DCHUNK_BUILD_DYN=OFF \
+            -DSHRINK_ARRAY_BUILD_EXAMPLES=OFF -DSHRINK_ARRAY_BUILD_TESTS=OFF
+          cmake --build build-lib
+          cmake --install build-lib --prefix "$RUNNER_TEMP/prefix"
+          for ex in getting_started bool_arrays; do
+            cmake -S examples/$ex -B build-$ex -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+              -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/prefix"
+            cmake --build build-$ex
+            OMP_NUM_THREADS=4 ./build-$ex/$ex
+          done
