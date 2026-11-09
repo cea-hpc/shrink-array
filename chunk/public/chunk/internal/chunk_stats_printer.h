@@ -87,14 +87,25 @@ inline void print_formatted_chunk_stats(std::ostream&      os,
     // A std::vector stores every element; the chunk store only pays off when a
     // material fraction of chunks collapse to a constant. Same threshold logic
     // for all three variants.
-    std::string verdict;
+    // zero says what it compresses: an array with almost no all-zero chunk is
+    // one the variant cannot help (a connectivity, a mesh coordinate), not a
+    // compression that failed.
+    const bool        zero_variant = chunk_name == "zero";
+    const std::string zero_only    = "zero compresses only all-zero chunks";
+    std::string       verdict;
     if (n_compressed == 0)
     {
-        verdict = red + "no compression — plain std::vector would be lighter" + reset;
+        verdict = red +
+                  (zero_variant ? "no all-zero chunk — " + zero_only + ": plain std::vector would be lighter"
+                                : std::string("no compression — plain std::vector would be lighter")) +
+                  reset;
     }
     else if (pct_total < 25.0)
     {
-        verdict = yellow + "compression marginal vs std::vector — plain storage may be lighter" + reset;
+        verdict = yellow +
+                  (zero_variant ? "few all-zero chunks — " + zero_only + ": plain storage may be lighter"
+                                : std::string("compression marginal vs std::vector — plain storage may be lighter")) +
+                  reset;
     }
     else if (chunk_name != "zero" && (n_t1 == 0 || pct_t1 < 10.0))
     {

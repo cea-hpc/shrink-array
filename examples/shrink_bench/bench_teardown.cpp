@@ -24,6 +24,7 @@
 #include "bench_stl_checks.h"          // run_stl_self_checks
 #include "chunk/internal/zero_chunk.h" // clear_all_list_block_free_thr, delete_chunk_allocator
 #include "chunk/param_chunk.h"         // ParamChunk::chunk_stats
+#include "chunk/print.h"               // shrink_array::println (the tab_conn note)
 
 // As in shrink_bench.cpp, where this body comes from.
 using namespace shrink_array;
@@ -79,6 +80,18 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
     tab_point.clear();
     tab_cell.clear();
     tab_mask.clear();
+    // Zero builds: tab_conn is a zero::Array (bench_array.h), and a connectivity
+    // has no all-zero chunk -- its census line, printed by clear(), finds
+    // nothing compressed. Said before it, so the line is not read as a failure.
+    if constexpr (chunk_config::use_zero)
+    {
+        if (bench_arr.with_conn)
+        {
+            shrink_array::println(
+                "[tab_conn] zero build: a connectivity has no all-zero chunk, nothing to compress here; "
+                "pattern::Array compresses its motifs in the zero_one_value / zero_any builds");
+        }
+    }
     tab_conn.clear();
 
     // Chunk instrumentation counters (CHUNK_STATS). Printed HERE, after the
