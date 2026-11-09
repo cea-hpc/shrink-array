@@ -25,6 +25,7 @@
 #include <cmath>     // std::sin (the range-API checks)
 #include <cstdio>    // std::fprintf
 #include <cstdlib>   // std::getenv, std::exit, std::abort
+#include <exception> // std::exception (main's catch)
 #include <iostream>  // std::cout, std::cerr, std::cin
 #include <random>    // std::mt19937, std::uniform_int_distribution
 #include <print>     // std::println, std::print
@@ -183,6 +184,7 @@ static void run_prealloc_checks(Int count)
 }
 
 int main(int argc, char* argv[])
+try
 {
     // Optionally cap the glibc arenas, BEFORE any parallel region creates them.
     //
@@ -1287,4 +1289,10 @@ int main(int argc, char* argv[])
     bench_teardown(bench_arrays, test_stl);
 
     return 0;
+}
+catch (const std::exception& e)
+{
+    // A failed allocation, std::format or a bad argument: said, not std::terminate().
+    std::fprintf(stderr, "shrink_bench: %s\n", e.what());
+    return 2;
 }

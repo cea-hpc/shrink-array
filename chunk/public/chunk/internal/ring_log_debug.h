@@ -181,9 +181,9 @@ class ScopedRingLog
     void end() noexcept;
 
   private:
-    [[maybe_unused]] uint32_t tid_;
-    [[maybe_unused]] uint32_t payload_;
-    [[maybe_unused]] bool     ended_;
+    [[maybe_unused]] uint32_t tid_     = 0;
+    [[maybe_unused]] uint32_t payload_ = 0;
+    [[maybe_unused]] bool     ended_   = false;
 };
 
 // Convenience aliases
