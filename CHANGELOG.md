@@ -71,6 +71,16 @@ the tag's checksum to the recipe.
   the top of the speedup curve, the others still uniform over the range. In `shrink_gui` too.
 - `diag_zero_rechunk_slowdown.py`: the resident memory against the static run, the churn per array
   after the last re-chunk and, with `--perf`, the samples' share in the compression passes.
+- **Three additions to the public interface**, what the examples needed from `internal/`:
+  `chunk/threads.h` (new): `pmp::max_threads()`, `pmp::team_size()`, `pmp::thread_rank()`, the
+  threads of whatever backend the build has (OpenMP, std, serial), instead of
+  `CHUNK_PMP_MAX_THREADS`; `chunk/print.h` (was `chunk/internal/print.h`): `print` / `println`;
+  `set_active_chunk_size()`, `set_thread_chunk_size()` (through `chunk/chunk_size_advisor.h`)
+  and `zero_any::Chunk` (through `chunk/zero_any_array.h`, for `sizeof` in the advisor's
+  options). 18 public headers. `simple_array`, `test_vecto_chunk`, `variant_compare`,
+  `access_cost`, `advisor_demo`, `getting_started` and `bool_arrays` include public headers
+  only, and `check_public_api` fails when an example outside the harnesses and the benchmarks
+  includes an internal one.
 
 ### Changed
 
@@ -136,6 +146,8 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- CI: the `check_*` step ran 8 of the 10 `scripts/check_*.py`; `check_public_api` (the frozen
+  interface) and `check_inline_bodies` ran under ctest only. Both are in the loop.
 - `README.md` and `README_fr.md` gave the version as 0.1.
 - `check_doxygen.py` run by hand with no Doxygen installed ended on a
   `FileNotFoundError` traceback: it says Doxygen is not found and exits 77 (skipped).
