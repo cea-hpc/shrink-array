@@ -719,59 +719,60 @@ if ("zero" IN_LIST CHUNK_VARIANTS AND "zero_one_value" IN_LIST CHUNK_VARIANTS)
                     NO_OMPT_TOOL)
 endif()
 
-# --- The shrink_array module (prototype) ---------------------------------
+# --- The shrink_array module ------------------------------------------
 # modules/shrink_array.cppm: the external headers in the global module
 # fragment, the library in the purview (chunk/internal/module_export.h). One
 # BMI per variant library (it carries the variant's defines):
-# chunk_<variant>_module, over chunk_<variant>. Needs the
-# Ninja generator (module dependency scanning) and `import std` (the option,
-# in the top CMakeLists.txt); not installed yet.
-if (SHRINK_ARRAY_MODULES)
-  if (CMAKE_VERSION VERSION_LESS 3.30 OR NOT CMAKE_GENERATOR MATCHES "Ninja")
-    message(FATAL_ERROR "SHRINK_ARRAY_MODULES: needs CMake >= 3.30 and a Ninja generator")
-  endif()
-  if (NOT "23" IN_LIST CMAKE_CXX_COMPILER_IMPORT_STD)
-    message(FATAL_ERROR "SHRINK_ARRAY_MODULES: no `import std` for C++23 "
-                        "(${CMAKE_CXX23_COMPILER_IMPORT_STD_NOT_FOUND_MESSAGE}); another CMake than 4.2 "
-                        "needs its own CMAKE_EXPERIMENTAL_CXX_IMPORT_STD value")
-  endif()
-  # project() picked the std module of the standard library it found then:
-  # -stdlib=libc++ (USE_LIBCXX) comes after it, so it must be given at configure.
-  # apt.llvm.org's clang 23 finds a copy of libc++.modules.json whose relative
-  # paths lead nowhere (/lib/share/...): also give
-  # -DCMAKE_CXX_STDLIB_MODULES_JSON=/usr/lib/llvm-23/lib/libc++.modules.json.
-  # (CMAKE_CXX_STANDARD_LIBRARY is set at the first configure only: test the cache.)
-  if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND USE_LIBCXX AND NOT "$CACHE{CMAKE_CXX_FLAGS}" MATCHES "-stdlib=libc\\+\\+")
-    message(FATAL_ERROR "SHRINK_ARRAY_MODULES with USE_LIBCXX: configure with -DCMAKE_CXX_FLAGS=-stdlib=libc++, "
-                        "so that import std is libc++'s")
-  endif()
-  # import std's module (CMake's __cmake_cxx23) gets the top directory's flags
-  # only: clang then refuses its std.pcm in an OpenMP program ("OpenMP support
-  # and version of OpenMP ... differs in precompiled file").
-  if (OMP AND TARGET OpenMP::OpenMP_CXX AND TARGET __cmake_cxx23)
-    target_link_libraries(__cmake_cxx23 PRIVATE OpenMP::OpenMP_CXX)
-  endif()
-  # One module per variant library of CHUNK_VARIANTS, all named shrink_array:
-  # a program links one of them.
-  foreach(_mv IN LISTS CHUNK_VARIANTS)
-    add_library(chunk_${_mv}_module)
-    target_sources(chunk_${_mv}_module PUBLIC FILE_SET CXX_MODULES BASE_DIRS modules FILES modules/shrink_array.cppm)
-    target_link_libraries(chunk_${_mv}_module PUBLIC chunk_${_mv})
-    # The module unit imports std (modules/shrink_array.cppm).
-    set_target_properties(chunk_${_mv}_module PROPERTIES CXX_MODULE_STD ON)
-    target_compile_features(chunk_${_mv}_module PUBLIC cxx_std_23)
-    # The library's headers, read in the purview, include their external headers
-    # again: <cassert> has no guard, libc++'s <stdio.h> and <stdlib.h> re-enter;
-    # each was read first in the global module fragment, so nothing attaches to
-    # the module (scripts/check_module_deps.py checks the fragment's list).
-    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-      target_compile_options(chunk_${_mv}_module PRIVATE -Wno-include-angled-in-module-purview)
-    endif()
-  endforeach()
-  list(TRANSFORM CHUNK_VARIANTS APPEND "_module" OUTPUT_VARIABLE _module_targets)
-  list(TRANSFORM _module_targets PREPEND "chunk_")
-  message(STATUS "SHRINK_ARRAY_MODULES: ${_module_targets} (import shrink_array;)")
+# chunk_<variant>_module, over chunk_<variant>. This branch is built for
+# modules: always on, with the Ninja generator (module dependency scanning)
+# and `import std` (its experimental gate, CMake 4.2's, is set before
+# project() in the top CMakeLists.txt); not installed yet.
+if (CMAKE_VERSION VERSION_LESS 4.2 OR NOT CMAKE_GENERATOR MATCHES "Ninja")
+  message(FATAL_ERROR "shrink_array module: needs CMake >= 4.2 and a Ninja generator "
+                      "(CMake ${CMAKE_VERSION}, ${CMAKE_GENERATOR})")
 endif()
+if (NOT "23" IN_LIST CMAKE_CXX_COMPILER_IMPORT_STD)
+  message(FATAL_ERROR "shrink_array module: no `import std` for C++23 "
+                      "(${CMAKE_CXX23_COMPILER_IMPORT_STD_NOT_FOUND_MESSAGE}); another CMake than 4.2 "
+                      "needs its own CMAKE_EXPERIMENTAL_CXX_IMPORT_STD value (top CMakeLists.txt; "
+                      "a project that adds this one as a subdirectory sets it before its own project())")
+endif()
+# project() picked the std module of the standard library it found then:
+# -stdlib=libc++ (USE_LIBCXX) comes after it, so it must be given at configure.
+# apt.llvm.org's clang 23 finds a copy of libc++.modules.json whose relative
+# paths lead nowhere (/lib/share/...): also give
+# -DCMAKE_CXX_STDLIB_MODULES_JSON=/usr/lib/llvm-23/lib/libc++.modules.json.
+# (CMAKE_CXX_STANDARD_LIBRARY is set at the first configure only: test the cache.)
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND USE_LIBCXX AND NOT "$CACHE{CMAKE_CXX_FLAGS}" MATCHES "-stdlib=libc\\+\\+")
+  message(FATAL_ERROR "USE_LIBCXX: configure with -DCMAKE_CXX_FLAGS=-stdlib=libc++, "
+                      "so that import std is libc++'s")
+endif()
+# import std's module (CMake's __cmake_cxx23) gets the top directory's flags
+# only: clang then refuses its std.pcm in an OpenMP program ("OpenMP support
+# and version of OpenMP ... differs in precompiled file").
+if (OMP AND TARGET OpenMP::OpenMP_CXX AND TARGET __cmake_cxx23)
+  target_link_libraries(__cmake_cxx23 PRIVATE OpenMP::OpenMP_CXX)
+endif()
+# One module per variant library of CHUNK_VARIANTS, all named shrink_array:
+# a program links one of them.
+foreach(_mv IN LISTS CHUNK_VARIANTS)
+  add_library(chunk_${_mv}_module)
+  target_sources(chunk_${_mv}_module PUBLIC FILE_SET CXX_MODULES BASE_DIRS modules FILES modules/shrink_array.cppm)
+  target_link_libraries(chunk_${_mv}_module PUBLIC chunk_${_mv})
+  # The module unit imports std (modules/shrink_array.cppm).
+  set_target_properties(chunk_${_mv}_module PROPERTIES CXX_MODULE_STD ON)
+  target_compile_features(chunk_${_mv}_module PUBLIC cxx_std_23)
+  # The library's headers, read in the purview, include their external headers
+  # again: <cassert> has no guard, libc++'s <stdio.h> and <stdlib.h> re-enter;
+  # each was read first in the global module fragment, so nothing attaches to
+  # the module (scripts/check_module_deps.py checks the fragment's list).
+  if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(chunk_${_mv}_module PRIVATE -Wno-include-angled-in-module-purview)
+  endif()
+endforeach()
+list(TRANSFORM CHUNK_VARIANTS APPEND "_module" OUTPUT_VARIABLE _module_targets)
+list(TRANSFORM _module_targets PREPEND "chunk_")
+message(STATUS "shrink_array module: ${_module_targets} (import shrink_array;)")
 
 # A REAL default library (not just an ALIAS), so the include directories reach the executables.
 # Default library: no variant define, default compile-time size (static_chunk_size=64), static.

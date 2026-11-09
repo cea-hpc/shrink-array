@@ -162,6 +162,15 @@ extern "C++"
 }
 #undef SHRINK_ARRAY_EXPORT
 
+// GCC 16.2 emits an inline variable of the purview neither in the module's
+// object nor in an importer whose instantiations read it into a local
+// (`unsigned every = force_defer_every;` in test_hooks::forced_deferral()): the
+// importer's link then fails on an undefined reference. A non-inline
+// odr-use here emits it in the module's object. clang 23 does not need it.
+[[gnu::used]] static const void* const gcc16_emit_inline_variables[] = {
+    &shrink_array::test_hooks::force_defer_every,
+};
+
 // Names exported by using-declarations: their headers do not mark them.
 export namespace shrink_array
 {

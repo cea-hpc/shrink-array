@@ -1,0 +1,69 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
+#
+# The cpp23-modules branch: the shrink_array module is always built
+# (chunk/modules/shrink_array.cppm), through `import std`. That needs GCC 16
+# (the official gcc image) and CMake 4.2, whose experimental gate value the
+# top CMakeLists.txt sets: Debian's CMake (3.31) has no import std for GCC, so
+# the job takes Kitware's release. A workflow of its own, not a job of ci.yml:
+# ci.yml comes from develop at every merge, this file stays on this branch.
+name: Modules
+
+on:
+  push:
+    branches: [cpp23-modules]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gcc16-modules:
+    name: gcc 16, modules, ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    container: gcc:16.2.0-trixie
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: OpenMP
+            cmake_args: -DOMP=ON
+          - name: serial
+            cmake_args: -DOMP=OFF
+    env:
+      # The unity harnesses, as ci.yml: two at a time fit the runner's 16 GB.
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+      DEBIAN_FRONTEND: noninteractive
+      CMAKE_VERSION: 4.2.8
+    steps:
+      - uses: actions/checkout@v5
+      - name: Toolchain
+        run: |
+          apt-get update -q
+          apt-get install -y -q ninja-build libbz2-dev python3
+          curl -fsSL "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz" \
+            | tar xz -C /opt
+          echo "/opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin" >> "$GITHUB_PATH"
+          g++ --version
+          "/opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/cmake" --version
+          # The container runs as root, the checkout belongs to the runner's
+          # user: without this, git refuses the tree and the build stamp
+          # (git describe) has no revision.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          ${{ matrix.cmake_args }}
+          -DCHECK_OPTIM=ON
+          -DCHUNK_STATIC_SIZES=256
+          -DCHUNK_BUILD_DYN=OFF
+      # check: the validation label, with the module programs (getting_started_module,
+      # module_api_<variant>) and check_module_deps.
+      - name: Build and run the validation harnesses and the module programs (check target)
+        run: cmake --build build --target check

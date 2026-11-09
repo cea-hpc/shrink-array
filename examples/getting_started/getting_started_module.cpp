@@ -15,7 +15,7 @@
  */
 
 // getting_started.cpp with `import std;` and `import shrink_array;` in place of the #includes
-// (chunk/modules/shrink_array.cppm, SHRINK_ARRAY_MODULES=ON). The same program:
+// (chunk/modules/shrink_array.cppm). The same program:
 // one compressed array, written in parallel, read back, folded, and the
 // library shut down. Exit status 0 when every value reads back as written.
 

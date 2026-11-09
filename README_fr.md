@@ -347,6 +347,10 @@ Prérequis : **Linux** (x86-64 ou aarch64), un compilateur **C++23** (GCC 14 ou 
 ou plus, oneAPI ; NVHPC et AOCC 5 n'ont pas de C++23 utilisable), **CMake 3.20**, et en option
 **OpenMP**.
 
+Sur la branche `cpp23-modules`, le module `shrink_array` (`import shrink_array;`) est toujours
+construit, via `import std` : **GCC 16** ou **Clang avec libc++** (clang 23 testé),
+**CMake 4.2** et le générateur **Ninja** (`-G Ninja`).
+
 ```shell
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DOMP=ON -DCMAKE_INSTALL_PREFIX=$HOME/opt/shrink-array
 cmake --build build

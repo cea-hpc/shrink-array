@@ -58,27 +58,32 @@ if (NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   set_property(GLOBAL APPEND PROPERTY SHRINK_CHECK_TARGETS getting_started) # check builds it
 endif()
 
-# getting_started_module.cpp: the same program through `import std;` and `import shrink_array;`
-# (SHRINK_ARRAY_MODULES=ON, inside the tree only: the module is not installed).
-if (TARGET chunk_zero_any_module)
-  add_executable(getting_started_module getting_started_module.cpp)
-  # The tree keeps CMP0155 OLD (cmake_minimum_required 3.20): scan this source
-  # for its imports; import std needs C++23 asked as a feature.
-  set_target_properties(getting_started_module PROPERTIES CXX_SCAN_FOR_MODULES ON CXX_MODULE_STD ON)
-  target_compile_features(getting_started_module PRIVATE cxx_std_23)
-  target_link_libraries(getting_started_module PRIVATE chunk_zero_any_module)
-  add_test(NAME getting_started_module COMMAND getting_started_module)
-endif()
+# getting_started_module.cpp: the same program through `import std;` and `import shrink_array;`.
+# Inside the tree only: the module is not installed yet, so the build against
+# an installed library (find_package above) keeps getting_started.cpp.
+if (NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  if ("zero_any" IN_LIST CHUNK_VARIANTS)
+    add_executable(getting_started_module getting_started_module.cpp)
+    # The tree keeps CMP0155 OLD (cmake_minimum_required 3.20): scan this source
+    # for its imports; import std needs C++23 asked as a feature.
+    set_target_properties(getting_started_module PROPERTIES CXX_SCAN_FOR_MODULES ON CXX_MODULE_STD ON)
+    target_compile_features(getting_started_module PRIVATE cxx_std_23)
+    target_link_libraries(getting_started_module PRIVATE chunk_zero_any_module)
+    add_test(NAME getting_started_module COMMAND getting_started_module)
+    set_property(TEST getting_started_module PROPERTY LABELS validation examples)
+    set_property(GLOBAL APPEND PROPERTY SHRINK_CHECK_TARGETS getting_started_module) # check builds it
+  endif()
 
-# module_api.cpp: the names the module exports from its purview headers
-# (chunk exchange, advisor, decider, mdspan), each used through the import,
-# once per variant module (module_api_<variant>).
-foreach(_mv zero zero_one_value zero_any)
-  if (TARGET chunk_${_mv}_module)
+  # module_api.cpp: the names the module exports from its purview headers
+  # (chunk exchange, advisor, decider, mdspan), each used through the import,
+  # once per variant module (module_api_<variant>).
+  foreach(_mv IN LISTS CHUNK_VARIANTS)
     add_executable(module_api_${_mv} module_api.cpp)
     set_target_properties(module_api_${_mv} PROPERTIES CXX_SCAN_FOR_MODULES ON CXX_MODULE_STD ON)
     target_compile_features(module_api_${_mv} PRIVATE cxx_std_23)
     target_link_libraries(module_api_${_mv} PRIVATE chunk_${_mv}_module)
     add_test(NAME module_api_${_mv} COMMAND module_api_${_mv})
-  endif()
-endforeach()
+    set_property(TEST module_api_${_mv} PROPERTY LABELS validation)
+    set_property(GLOBAL APPEND PROPERTY SHRINK_CHECK_TARGETS module_api_${_mv})
+  endforeach()
+endif()
