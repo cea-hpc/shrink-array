@@ -26,7 +26,7 @@
 #include "chunk/internal/all_type_chunk_decl.h" // AllTypeChunk::ensure_manager, from create (bodies: all_type_chunk.h)
 #include "chunk/config.h"                       // build_config::chunk_dynamic, chunk_config::CheckNaN
 #include "chunk/internal/chunk_size_policy.h"   // chunk_size_error, register_runtime_chunk_size / set_thread_chunk_size
-#include "chunk/internal/PMP_CHUNK.h"                    // CHUNK_PMP_IN_PARALLEL_REGION, pmp::parallel_sum, pmp::current_team
+#include "chunk/internal/PMP_CHUNK.h"           // CHUNK_PMP_IN_PARALLEL_REGION, pmp::parallel_sum, pmp::current_team
 #include "chunk/manage_ompt.h"                  // parallel_phase -- write_range_by_chunks
 #include "chunk/internal/parallel_storage_init.h" // use_own_team -- write_range_by_chunks
 #include "chunk/log.h"                            // CHUNK_LOG (set_chunk_size refusal)

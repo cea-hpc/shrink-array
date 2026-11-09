@@ -59,7 +59,7 @@
 
 #include "chunk/array_chunk_range_ops.h"      // copy_range, fill_range, assume_drained, internal::is_v*_v
 #include "chunk/bit.h"                        // is_packed_bit_v
-#include "chunk/internal/chunk_traits.h"               // is_zero_any_family_v, has_motif_state_v
+#include "chunk/internal/chunk_traits.h"      // is_zero_any_family_v, has_motif_state_v
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size
 #include "chunk/internal/cst_slot.h"          // CstSlot
 #include "chunk/internal/relaxed_element.h"   // load_element_relaxed (a motif chunk's offset)

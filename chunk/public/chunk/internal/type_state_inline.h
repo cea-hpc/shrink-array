@@ -32,9 +32,9 @@ e  * @file type_state_inline.h
 #include <tuple>       // std::tuple
 #include <type_traits> // std::conditional_t
 
-#include "chunk/internal/type_state.h"   // the declarations these bodies belong to
-#include "chunk/config.h"                   // build_config, chunk_config
-#include "chunk/log.h"                      // CHUNK_LOG
+#include "chunk/internal/type_state.h"               // the declarations these bodies belong to
+#include "chunk/config.h"                            // build_config, chunk_config
+#include "chunk/log.h"                               // CHUNK_LOG
 #include "chunk/internal/PMP_CHUNK.h"                // CHUNK_PMP_*
 #include "chunk/internal/zero_chunk.h"               // Chunk<T>: the ChunkT<T>:: calls
 #include "chunk/internal/zero_one_value_chunk.h"     // zero_one_value::Chunk<T>: the ChunkT<T>:: calls
@@ -42,7 +42,7 @@ e  * @file type_state_inline.h
 #include "chunk/internal/zero_chunk_def.h"           // zero::ChunkDef
 #include "chunk/internal/zero_one_value_chunk_def.h" // zero_one_value::ChunkDef
 #include "chunk/internal/zero_any_chunk_def.h"       // zero_any::ChunkDef
-#include "chunk/internal/concept_chunk.h"   // IsChunk, IsZeroOneValue, IsZeroAnyFamily
+#include "chunk/internal/concept_chunk.h"            // IsChunk, IsZeroOneValue, IsZeroAnyFamily
 #include "chunk/internal/global_stats_chunk_list.h"  // GlobalStatsChunkList
 #include "chunk/internal/type_name.h"                // type_name<T>
 #include "chunk/internal/singleton.h"                // SingletonChk
@@ -132,8 +132,8 @@ void TypeState<ChunkT, T>::destroy_block_chunk()
 
 template <template <typename> typename ChunkT, typename T>
 bool TypeState<ChunkT, T>::register_alloc_key([[maybe_unused]] unsigned int key,
-                                                 [[maybe_unused]] unsigned int size,
-                                                 [[maybe_unused]] int          nb_chunk)
+                                              [[maybe_unused]] unsigned int size,
+                                              [[maybe_unused]] int          nb_chunk)
 {
     if constexpr (build_config::chunk_dynamic && build_config::use_fast_alloc && build_config::threaded)
     {

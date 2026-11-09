@@ -26,11 +26,11 @@
 
 #include "fast_allocators/internal/raw_memory.h"    // address_bits
 #include "chunk/config.h"                           // build_config::threaded, chunk_config
-#include "chunk/internal/chunk_traits.h"                     // ChunkTraits<Derived>::ManagerType (ChunkImpl, ChunkThreadPolicy)
+#include "chunk/internal/chunk_traits.h"            // ChunkTraits<Derived>::ManagerType (ChunkImpl, ChunkThreadPolicy)
 #include "chunk/internal/invariant_check.h"         // invariant_failed
 #include "chunk/internal/tab_cst_val2_holder.h"     // TabCstVal2Holder, SecondValueRef
-#include "chunk/internal/PMP_CHUNK.h"                        // CHUNK_PMP_THREAD_RANK
-#include "chunk/internal/ring_log_debug.h"                   // ScopedRingLog, ring_log_* (RING_LOG builds)
+#include "chunk/internal/PMP_CHUNK.h"               // CHUNK_PMP_THREAD_RANK
+#include "chunk/internal/ring_log_debug.h"          // ScopedRingLog, ring_log_* (RING_LOG builds)
 #include "chunk/internal/chunk_size_policy.h"       // ChunkElems
 #include "chunk/internal/cst_slot.h"                // CstSlot, cst_slot_of
 #include "chunk/internal/second_value_chunk_base.h" // SecondValueChunkBase

@@ -43,7 +43,7 @@
 #include "fast_allocators/internal/raw_memory.h" // address_bits
 #include "chunk/config.h"                        // build_config::any_check
 #include "chunk/internal/invariant_check.h"      // invariant_failed
-#include "chunk/internal/PMP_CHUNK.h"                     // get_thr_rank_fast, CHUNK_PMP_*
+#include "chunk/internal/PMP_CHUNK.h"            // get_thr_rank_fast, CHUNK_PMP_*
 
 namespace shrink_array::bad_ptr
 {

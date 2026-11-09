@@ -31,21 +31,21 @@
 #include <unordered_set> // std::unordered_set
 #include <vector>        // std::vector
 
-#include "chunk/internal/type_state.h"        // TypeState complete: the policies reach its state
+#include "chunk/internal/type_state.h"           // TypeState complete: the policies reach its state
 #include "chunk/config.h"                        // build_config, chunk_config
 #include "chunk/internal/invariant_check.h"      // CHUNK_CHECK_FAILED
 #include "chunk/log.h"                           // CHUNK_LOG_FIRST_N, CHUNK_LOG
 #include "fast_allocators/internal/svalloc.h"    // svfree
-#include "chunk/internal/PMP_CHUNK.h"                     // CHUNK_PMP_*, pmp::
+#include "chunk/internal/PMP_CHUNK.h"            // CHUNK_PMP_*, pmp::
 #include "chunk/internal/chunk_size_policy.h"    // alloc_chunk_count, cst_buffer_size
 #include "chunk/internal/value_slab.h"           // value_slab_request
 #include "chunk/internal/compression_manager.h"  // CompressionManager
 #include "chunk/internal/deferred_op_pool.h"     // fast_alloc::ArenaKind
 #include "chunk/internal/deferred_ops_storage.h" // DeferredOpsStorage
 #include "chunk/internal/pool_ledger.h"          // CHUNK_LEDGER_*
-#include "chunk/internal/zero_chunk.h"                    // Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/internal/zero_one_value_chunk.h"          // zero_one_value::Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/internal/zero_any_chunk.h"                // zero_any::Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/internal/zero_chunk.h"           // Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/internal/zero_one_value_chunk.h" // zero_one_value::Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/internal/zero_any_chunk.h"       // zero_any::Chunk<T>: the ChunkT<T>:: calls
 #include "chunk/zero_array.h"                    // ArrayChunkCore complete: ArrayType::clear_all_dirty_bitsets
 #include "chunk/internal/array_chunk_for.h"      // ArrayChunkForT
 #include "chunk/internal/concept_chunk.h"        // IsChunk, IsZeroOneValue, IsZeroAnyFamily
@@ -647,7 +647,7 @@ void TypeStateParallelImpl<ChunkT, T, true>::clear_list_block_free_sort([[maybe_
  */
 template <template <typename> typename ChunkT, typename T>
 void TypeStateParallelImpl<ChunkT, T, true>::clear_list_block_free_dedup([[maybe_unused]] int slice,
-                                                                            [[maybe_unused]] int nslices)
+                                                                         [[maybe_unused]] int nslices)
 {
     if constexpr (!build_config::free_guard)
     {

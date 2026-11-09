@@ -18,15 +18,15 @@
 #include <cstddef> // std::size_t
 #include <cstdio>  // std::fprintf (teardown_outside_region)
 
-#include "chunk/internal/all_type_chunk.h"           // AllTypeChunk
-#include "chunk/internal/zero_chunk.h"               // the declarations defined here (ChunkPoolParallelInterface)
+#include "chunk/internal/all_type_chunk.h"  // AllTypeChunk
+#include "chunk/internal/zero_chunk.h"      // the declarations defined here (ChunkPoolParallelInterface)
 #include "chunk/config.h"                   // build_config::threaded, use_fast_alloc
 #include "chunk/internal/chunk_stats.h"     // ChunkStatsThr (CHUNK_STATS only)
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (teardown_outside_region)
 #include "chunk/internal/live_arrays.h"     // live_array_count: the teardown waits for the last array
 #include "chunk/internal/process_verbs.h"   // compress_now_and_trim_pools, defined here
-#include "chunk/internal/singleton.h"                // SingletonChk
-#include "chunk/internal/PMP_CHUNK.h"                // CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/internal/singleton.h"       // SingletonChk
+#include "chunk/internal/PMP_CHUNK.h"       // CHUNK_PMP_IN_PARALLEL_REGION
 
 namespace shrink_array
 {

@@ -27,7 +27,7 @@
 #include "chunk/config.h"                   // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/crp_helper.h"      // CRTPSupport
-#include "chunk/internal/PMP_CHUNK.h"                // get_thr_rank_fast
+#include "chunk/internal/PMP_CHUNK.h"       // get_thr_rank_fast
 #include "chunk/internal/zero_one_value_pointer_map.h"   // zero_one_value::PointerMap
 #include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment
 #include "chunk/internal/chunk_size_policy.h"            // set_thread_chunk_size

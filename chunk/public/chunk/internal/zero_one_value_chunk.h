@@ -34,7 +34,7 @@
 #include "chunk/config.h"                                       // build_config::threaded, chunk_config
 #include "chunk/internal/invariant_check.h"                     // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/bad_ptr_check.h"                       // CHUNK_CHECK_VALUES_PTR (check builds)
-#include "chunk/internal/PMP_CHUNK.h"                                    // get_thr_rank_fast, CHUNK_PMP_THREAD_RANK
+#include "chunk/internal/PMP_CHUNK.h"                           // get_thr_rank_fast, CHUNK_PMP_THREAD_RANK
 #include "chunk/internal/zero_one_value_candidate_list_check.h" // zero_one_value_missing_candidate_list
 #include "chunk/internal/zero_one_value_proxy.h"                // zero_one_value::Proxy
 #include "chunk/internal/second_value_chunk_base.h"             // SecondValueChunkBase

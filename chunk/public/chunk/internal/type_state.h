@@ -19,14 +19,14 @@
 #include <cstddef> // std::size_t
 #include <vector>  // std::vector
 
-#include "chunk/bit.h"                              // is_bool_like_v: bool and Bit share the bool path
-#include "chunk/config.h"                           // build_config::threaded, chunk_config::chunk_dynamic
-#include "chunk/internal/PMP_CHUNK.h"                        // CHUNK_PMP_THREAD_CAPACITY (max_thr)
-#include "chunk/internal/second_value_info.h"       // SecondValueInfo (InfArrayT)
+#include "chunk/bit.h"                           // is_bool_like_v: bool and Bit share the bool path
+#include "chunk/config.h"                        // build_config::threaded, chunk_config::chunk_dynamic
+#include "chunk/internal/PMP_CHUNK.h"            // CHUNK_PMP_THREAD_CAPACITY (max_thr)
+#include "chunk/internal/second_value_info.h"    // SecondValueInfo (InfArrayT)
 #include "chunk/internal/type_state_interface.h" // TypeStateInterface
 #include "chunk/internal/type_state_policies.h"  // TypeStateDynImpl, TypeStateParallelImpl
-#include "chunk/internal/reuse_pools.h"             // ReusePools
-#include "chunk/internal/compress_candidates.h"     // CompressCandidates
+#include "chunk/internal/reuse_pools.h"          // ReusePools
+#include "chunk/internal/compress_candidates.h"  // CompressCandidates
 
 namespace shrink_array
 {
@@ -63,10 +63,10 @@ struct CompressionManager;
  */
 template <template <typename> class ChunkT, typename T>
 class TypeState final : public virtual TypeStateInterface,
-                           public TypeStateDynImpl<ChunkT, T>,
-                           public TypeStateParallelImpl<ChunkT, T>,
-                           public ReusePools<ChunkT, T>,
-                           public CompressCandidates<ChunkT, T>
+                        public TypeStateDynImpl<ChunkT, T>,
+                        public TypeStateParallelImpl<ChunkT, T>,
+                        public ReusePools<ChunkT, T>,
+                        public CompressCandidates<ChunkT, T>
 {
     // The implementation policies are BASES and need this class's state, which
     // protected access does not reach: friendship, not a public accessor.
@@ -203,7 +203,7 @@ class TypeState final : public virtual TypeStateInterface,
 // The bodies, once TypeState is complete: they name TypeState<ChunkT, T>::
 // and need the chunk classes, whose headers include this one (a cycle the
 // order breaks).
-#include "chunk/internal/reuse_pools_inline.h"            // ReusePools' bodies
-#include "chunk/internal/compress_candidates_inline.h"    // CompressCandidates' bodies
+#include "chunk/internal/reuse_pools_inline.h"         // ReusePools' bodies
+#include "chunk/internal/compress_candidates_inline.h" // CompressCandidates' bodies
 #include "chunk/internal/type_state_policies_inline.h" // the policies' bodies
 #include "chunk/internal/type_state_inline.h"          // TypeState's bodies

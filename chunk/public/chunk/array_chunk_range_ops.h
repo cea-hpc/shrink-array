@@ -61,7 +61,7 @@
 #include "chunk/internal/element_access.h" // internal::as_words: Bit chunks are words of bits
 #include "chunk/internal/bit_words.h" // bits::count_ones, bits::scan_words, bits::fill_bit_range(_atomic), bits::store_bit_range_atomic
 #include "chunk/internal/in_t.h"                // InT<T>: the element snapshots
-#include "chunk/internal/PMP_CHUNK.h"                    // get_thr_rank_fast
+#include "chunk/internal/PMP_CHUNK.h"           // get_thr_rank_fast
 #include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size
 #include "chunk/internal/conditional_counter.h" // CounterValueT
 #include "chunk/config.h"                       // build_config::threaded, chunk_config

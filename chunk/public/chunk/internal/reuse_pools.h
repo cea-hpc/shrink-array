@@ -37,7 +37,7 @@
 #include "chunk/internal/zero_chunk_def.h"     // ChunkDef::size_min_buffer_reuse
 #include "chunk/internal/zero_any_chunk_def.h" // zero_any::ChunkDef: the reuse budget constants
 #include "chunk/internal/PMP_CHUNK.h"          // pmp::Team (drain_reuse_list_for_size_team)
-#include "chunk/internal/immortal.h"  // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/immortal.h"           // Immortal / LazyImmortal: statics safe for global arrays
 
 namespace shrink_array
 {

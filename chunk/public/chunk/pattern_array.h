@@ -41,8 +41,8 @@
 
 #include <cstddef> // std::size_t
 
-#include "chunk/internal/chunk_traits.h"           // ArrayChunkTraits<pattern::Array>, ArrayChunkElement
-#include "chunk/internal/pattern_chunk.h"          // pattern::Chunk
+#include "chunk/internal/chunk_traits.h"  // ArrayChunkTraits<pattern::Array>, ArrayChunkElement
+#include "chunk/internal/pattern_chunk.h" // pattern::Chunk
 #include "chunk/internal/pattern_proxy.h" // pattern::Proxy (the only include of it: Array's ProxyType must be complete)
 #include "chunk/zero_any_array.h"         // zero_any::ArrayImpl
 

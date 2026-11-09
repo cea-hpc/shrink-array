@@ -23,7 +23,7 @@
 
 #include "chunk/internal/zero_one_value_array_parallel.h" // zero_one_value::FastBlockSupport, the class these bodies belong to
 #include "chunk/internal/array_chunk_parallel_common_inline.h" // flush_pending_deferred_ops
-#include "chunk/internal/PMP_CHUNK.h"                                   // CHUNK_PMP_* (make_block_compression)
+#include "chunk/internal/PMP_CHUNK.h"                          // CHUNK_PMP_* (make_block_compression)
 #include "chunk/internal/chunk_size_policy.h"                  // set_thread_chunk_size in make_block_compression
 #include "chunk/internal/read_reclaim.h"                       // read_reclaim::PassScope (drain_candidates in a region)
 #include "chunk/config.h"                                      // build_config::chunk_dynamic

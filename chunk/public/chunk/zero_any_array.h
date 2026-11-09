@@ -34,12 +34,12 @@
 #include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
 #include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
 #include "chunk/config.h"                               // for threaded, g_in_rechunk_rebuild
-#include "chunk/internal/PMP_CHUNK.h"                    // CHUNK_PMP_IN_PARALLEL_REGION (reclaim_second_values), pmp::Team
+#include "chunk/internal/PMP_CHUNK.h"           // CHUNK_PMP_IN_PARALLEL_REGION (reclaim_second_values), pmp::Team
 #include "chunk/internal/tab_cst_val2_holder.h" // for GlobalVecHolder (cst2 GC)
 #include "chunk/internal/write_compress_sync_policy.h" // for WriteCompressSyncPolicy
 #include "chunk/internal/array_chunk_core.h"           // the core the bases share
 #include "chunk/internal/zero_any_proxy.h"             // zero_any::Proxy<T> and its tables
-#include "chunk/internal/zero_any_chunk.h"                      // zero_any::Chunk<T>
+#include "chunk/internal/zero_any_chunk.h"             // zero_any::Chunk<T>
 #include "chunk/log.h"                                 // CHUNK_LOG, CHUNK_LOG_ALWAYS (the second values)
 
 namespace shrink_array

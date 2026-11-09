@@ -24,13 +24,13 @@
 #include <type_traits>     // std::remove_cvref_t (the re-queued candidates)
 
 #include "chunk/internal/zero_chunk.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
-#include "chunk/config.h"     // build_config::chunk_dynamic, chunk_config::stats
+#include "chunk/config.h"              // build_config::chunk_dynamic, chunk_config::stats
 #include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/chunk_size_policy.h"   // alloc_chunk_count
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_* / add_chunk_* (CHUNK_STATS)
-#include "chunk/internal/type_state.h"       // TypeState:: candidate lists (dependent calls)
+#include "chunk/internal/type_state.h"          // TypeState:: candidate lists (dependent calls)
 #include "chunk/internal/zero_proxy.h"          // Proxy<T>: the compression pass's proxy
-#include "chunk/internal/PMP_CHUNK.h"                    // CHUNK_PMP_*, pmp::team, pmp::in_application_phase
+#include "chunk/internal/PMP_CHUNK.h"           // CHUNK_PMP_*, pmp::team, pmp::in_application_phase
 #include "chunk/internal/pool_ledger.h"         // CHUNK_LEDGER_*
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
 #include "chunk/internal/queue_flag.h"          // queue_flag::hand_back / release: the pass's hand-back

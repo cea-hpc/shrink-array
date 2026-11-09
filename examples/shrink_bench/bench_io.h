@@ -42,8 +42,8 @@
 #include <format>    // std::format
 #include <vector>    // std::vector
 
-#include "bench_config.h"         // have_bzip2
-#include "bench_utils.h"          // is_vector
+#include "bench_config.h"                  // have_bzip2
+#include "bench_utils.h"                   // is_vector
 #include "chunk/internal/ring_log_debug.h" // analyze_ring_sweep / dump_ring decls
 
 // -----------------------------------------------------------------------------

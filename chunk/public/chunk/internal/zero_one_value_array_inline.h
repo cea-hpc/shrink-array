@@ -30,21 +30,21 @@
 
 #include "chunk/internal/in_t.h"                        // InT<T>: the element snapshots
 #include "chunk/zero_one_value_array.h"                 // zero_one_value::Array, the class these bodies belong to
-#include "chunk/internal/type_name.h"                            // type_name<T>
-#include "chunk/internal/singleton.h"                            // SingletonChk<AllTypeChunk>::get_ref
+#include "chunk/internal/type_name.h"                   // type_name<T>
+#include "chunk/internal/singleton.h"                   // SingletonChk<AllTypeChunk>::get_ref
 #include "chunk/internal/zero_one_value_proxy.h"        // zero_one_value::Proxy<T>
 #include "chunk/internal/chunk_stats.h"                 // increm_chunk_teardown_clear, add_chunk_released
-#include "chunk/internal/all_type_chunk.h"                       // AllTypeChunk::ensure_manager
+#include "chunk/internal/all_type_chunk.h"              // AllTypeChunk::ensure_manager
 #include "chunk/config.h"                               // chunk_config::use_fast_block_compression, chunk_config::stats
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED, value_repr
 #include "chunk/internal/chunk_index_sample.h"          // chunk_index_sample (the residual's sample)
 #include "chunk/log.h"                                  // CHUNK_LOG, logging::enabled
-#include "chunk/internal/PMP_CHUNK.h"                            // CHUNK_PMP_*, pmp::parallel_sum
+#include "chunk/internal/PMP_CHUNK.h"                   // CHUNK_PMP_*, pmp::parallel_sum
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 #include "chunk/internal/parallel_storage_init.h"       // for_each_chunk
 // Explicit includes for symbols used by clear_core() below, so this TU does not
 // depend on the transitive include chain.
-#include "chunk/internal/type_state.h"     // TypeState: per-size free lists, candidate filter
+#include "chunk/internal/type_state.h"        // TypeState: per-size free lists, candidate filter
 #include "chunk/internal/pool_ledger.h"       // CHUNK_LEDGER_PARK
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size, cst_buffer_size
 

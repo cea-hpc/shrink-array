@@ -75,7 +75,7 @@
 #include <unordered_map> // std::unordered_map (the TBB regions' construct slots)
 #include <utility>       // std::forward
 
-#include "bench_int.h"       // Int
+#include "bench_int.h"                // Int
 #include "chunk/internal/PMP_CHUNK.h" // shrink_array::pmp::team, pmp::Team, pmp::Options, pmp::backend
 
 #if defined(BENCH_PAR_TBB) && BENCH_PAR_TBB

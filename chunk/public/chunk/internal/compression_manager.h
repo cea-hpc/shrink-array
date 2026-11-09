@@ -28,9 +28,9 @@
 #include "chunk/vendor/ankerl/unordered_dense.h" // ankerl::unordered_dense::set
 
 #include "chunk/config.h"                            // build_config::any_check, chunk_config::ring_log_debug
-#include "chunk/internal/PMP_CHUNK.h"                         // get_thr_rank_fast
+#include "chunk/internal/PMP_CHUNK.h"                // get_thr_rank_fast
 #include "chunk/internal/in_t.h"                     // InT<T>
-#include "chunk/internal/ring_log_debug.h"                    // ring_log, get_tid, EV_*_THREAD_HAS_OPS
+#include "chunk/internal/ring_log_debug.h"           // ring_log, get_tid, EV_*_THREAD_HAS_OPS
 #include "chunk/internal/invariant_check.h"          // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/chunk_size_policy.h"        // t_active_chunk_size — per-op geometry pin in write_body
 #include "chunk/internal/deferred_op_pool.h"         // DeferredOperationBase

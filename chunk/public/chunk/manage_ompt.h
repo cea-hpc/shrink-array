@@ -74,7 +74,7 @@
 
 #include <utility> // std::forward
 
-#include "chunk/config.h"    // build_config::has_not_ompt
+#include "chunk/config.h"             // build_config::has_not_ompt
 #include "chunk/internal/PMP_CHUNK.h" // pmp::team (parallel_phase's region)
 
 namespace shrink_array

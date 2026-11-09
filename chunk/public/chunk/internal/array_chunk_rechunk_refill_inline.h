@@ -30,10 +30,10 @@
 #include <utility>     // std::as_const
 #include <vector>      // the refill buffers
 
-#include "chunk/internal/PMP_CHUNK.h"                           // get_thr_rank_fast, pmp::team, chunk_pmp_*_schedule
+#include "chunk/internal/PMP_CHUNK.h"                  // get_thr_rank_fast, pmp::team, chunk_pmp_*_schedule
 #include "chunk/array_chunk_range_ops.h"               // copy_range -- the public bulk fill
 #include "chunk/bit.h"                                 // is_bool_like_v (the bulk read gate)
-#include "chunk/internal/chunk_traits.h"                        // is_zero_any_family_v, has_motif_state_v
+#include "chunk/internal/chunk_traits.h"               // is_zero_any_family_v, has_motif_state_v
 #include "chunk/config.h"                              // build_config::threaded, chunk_config::use_zero*
 #include "chunk/internal/array_chunk_rechunk_refill.h" // Refill, the class these bodies belong to
 #include "chunk/internal/array_chunk_rechunk_trace.h"  // rechunk_trace_on, rss_mib_now, g_slice_times

@@ -21,9 +21,9 @@
 #include <type_traits> // std::has_unique_object_representations_v
 #include <utility>     // std::unreachable, __cpp_lib_unreachable
 
-#include "chunk/internal/zero_chunk_def.h"        // ComplexType
-#include "chunk/internal/complex_less.h" // ComplexLess
-#include "chunk/internal/in_t.h"         // InT<T>: the compared values
+#include "chunk/internal/zero_chunk_def.h" // ComplexType
+#include "chunk/internal/complex_less.h"   // ComplexLess
+#include "chunk/internal/in_t.h"           // InT<T>: the compared values
 
 namespace shrink_array
 {

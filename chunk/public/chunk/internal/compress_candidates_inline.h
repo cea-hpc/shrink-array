@@ -41,13 +41,13 @@
 #include <algorithm> // std::ranges
 #include <tuple>     // std::get
 
-#include "chunk/internal/compress_candidates.h" // the declarations these bodies belong to
-#include "chunk/config.h"                       // build_config, chunk_config
-#include "chunk/internal/PMP_CHUNK.h"                    // CHUNK_PMP_*
-#include "chunk/internal/zero_chunk.h"                   // Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/internal/zero_one_value_chunk.h"         // zero_one_value::Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/internal/zero_any_chunk.h"               // zero_any::Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/internal/concept_chunk.h"       // IsChunk, IsZeroOneValue, IsZeroAnyFamily
+#include "chunk/internal/compress_candidates.h"  // the declarations these bodies belong to
+#include "chunk/config.h"                        // build_config, chunk_config
+#include "chunk/internal/PMP_CHUNK.h"            // CHUNK_PMP_*
+#include "chunk/internal/zero_chunk.h"           // Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/internal/zero_one_value_chunk.h" // zero_one_value::Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/internal/zero_any_chunk.h"       // zero_any::Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/internal/concept_chunk.h"        // IsChunk, IsZeroOneValue, IsZeroAnyFamily
 
 namespace shrink_array
 {

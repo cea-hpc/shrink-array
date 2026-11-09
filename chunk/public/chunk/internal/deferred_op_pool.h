@@ -31,7 +31,7 @@
 #include "chunk/internal/env_parse.h"       // env_number (CHUNK_DEFERRED_POOL_KB)
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (the block probe)
 #include "chunk/internal/pool_ledger.h"     // pool_ledger::on_op_alloc / on_ctx_alloc and the frees
-#include "chunk/internal/ring_log_debug.h"           // ring_log_op, dump_ring_for_addr, EventCode::op_alloc / EventCode::op_free
+#include "chunk/internal/ring_log_debug.h"  // ring_log_op, dump_ring_for_addr, EventCode::op_alloc / EventCode::op_free
 #include "fast_allocators/internal/pmp_runtime.h" // fast_alloc::pmp::backend (the pools of exited threads)
 #include "chunk/log.h"                            // CHUNK_LOG (recycle)
 

@@ -19,14 +19,14 @@
 #include <array>  // std::array (the residual's sample)
 #include <vector> // std::vector
 
-#include "chunk/internal/all_type_chunk.h"                       // ensure_manager, from create
+#include "chunk/internal/all_type_chunk.h"              // ensure_manager, from create
 #include "chunk/zero_array.h"                           // zero::Array, the class these bodies belong to
 #include "chunk/internal/chunk_stats.h"                 // increm_chunk_* (CHUNK_STATS)
 #include "chunk/internal/chunk_stats_printer.h"         // print_formatted_chunk_stats
-#include "chunk/internal/type_state.h"               // per-size free lists, candidate filter
-#include "chunk/internal/PMP_CHUNK.h"                            // CHUNK_PMP_*, pmp::parallel_sum
+#include "chunk/internal/type_state.h"                  // per-size free lists, candidate filter
+#include "chunk/internal/PMP_CHUNK.h"                   // CHUNK_PMP_*, pmp::parallel_sum
 #include "chunk/internal/pool_ledger.h"                 // CHUNK_LEDGER_PARK / DISCARD
-#include "chunk/internal/type_name.h"                            // type_name<T>
+#include "chunk/internal/type_name.h"                   // type_name<T>
 #include "chunk/config.h"                               // build_config::chunk_dynamic, chunk_config::stats
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/chunk_index_sample.h"          // chunk_index_sample (the residual's sample)

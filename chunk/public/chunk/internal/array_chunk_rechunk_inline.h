@@ -34,7 +34,7 @@
 #include "chunk/internal/array_chunk_rechunk_refill.h" // RechunkSupport::Refill (rechunk_refill)
 #include "chunk/internal/array_chunk_rechunk_trace.h"  // RechunkPhaseTrace
 #include "chunk/internal/chunk_stats.h"                // increm_chunk_rechunk (CHUNK_STATS)
-#include "chunk/internal/PMP_CHUNK.h"                           // CHUNK_PMP_RANK_BOUND
+#include "chunk/internal/PMP_CHUNK.h"                  // CHUNK_PMP_RANK_BOUND
 #include "chunk/log.h"                                 // CHUNK_LOG (the pool census)
 #include "chunk/config.h"                              // build_config::threaded, use_fast_alloc, any_check
 #include "chunk/internal/chunk_size_policy.h"          // set_*_chunk_size, DynChunkSizeGuard, BirthAtActiveSize

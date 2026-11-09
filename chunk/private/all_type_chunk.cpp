@@ -26,9 +26,9 @@
 #include <malloc.h> // malloc_trim, mallopt
 
 #include "chunk/config.h"                  // build_config::threaded / use_openmp, chunk_config
-#include "chunk/internal/singleton.h"               // SingletonChk
-#include "chunk/internal/type_state.h"  // TypeStateInterface, TypeStateParallelImpl
-#include "chunk/internal/all_type_chunk.h"          // the declarations defined here
+#include "chunk/internal/singleton.h"      // SingletonChk
+#include "chunk/internal/type_state.h"     // TypeStateInterface, TypeStateParallelImpl
+#include "chunk/internal/all_type_chunk.h" // the declarations defined here
 #include "chunk/internal/churn_counters.h" // churn::note_phase_end
 #include "chunk/internal/PMP_CHUNK.h" // CHUNK_PMP_THREAD_RANK / _RANK_BOUND / _NUM_THREADS, chunk_rank_cache, pmp::team, current_team
 
@@ -324,7 +324,7 @@ void AllTypeChunk::compress_chunk_to_compress_potentially(bool apply) const
     // Only the types with a candidate. The callers' gate,
     // have_chunk_to_compress_potentially(), is true as soon as ONE type has
     // one, and each type's pass costs a fork/join even on empty lists.
-    const int                     max_thr = CHUNK_PMP_RANK_BOUND;
+    const int                        max_thr = CHUNK_PMP_RANK_BOUND;
     std::vector<TypeStateInterface*> work;
     for (const auto& elm : get_list_type_chunk())
     {
@@ -622,7 +622,8 @@ bool AllTypeChunkParallelInterface<Derived, true>::need_load_balance_list_block_
 }
 
 template <typename Derived>
-void AllTypeChunkParallelInterface<Derived, false>::init_manager(const TypeStateInterface& manager, int block_size) const
+void AllTypeChunkParallelInterface<Derived, false>::init_manager(const TypeStateInterface& manager,
+                                                                 int                       block_size) const
 {
     // std-alloc: the manager's init_allocator() is a no-op. Through Derived's
     // alias so that the call stays dependent (see the OpenMP body).

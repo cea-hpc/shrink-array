@@ -40,7 +40,7 @@
 #include <mutex>   // std::once_flag, std::call_once
 #include <vector>  // std::vector
 
-#include "chunk/config.h"    // build_config::chunk_dynamic
+#include "chunk/config.h"             // build_config::chunk_dynamic
 #include "chunk/internal/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS
 
 namespace shrink_array::churn

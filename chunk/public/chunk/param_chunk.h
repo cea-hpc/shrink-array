@@ -24,8 +24,8 @@
 #include "chunk/internal/chunk_size_config.h" // static_chunk_size, static_chunk_shift, static_chunk_mask
 #include "chunk/internal/chunk_size_policy.h" // active_chunk_size, chunk_size_error
 #include "chunk/internal/func_p2.h"           // is_power_of_two, log2int
-#include "chunk/internal/singleton.h"                  // SingletonChk
-#include "chunk/internal/all_type_chunk.h"             // AllTypeChunk
+#include "chunk/internal/singleton.h"         // SingletonChk
+#include "chunk/internal/all_type_chunk.h"    // AllTypeChunk
 #include "chunk/log.h"                        // CHUNK_LOG (the static build's ignored setters)
 #include "chunk/internal/pool_release.h"      // release_chunk_pools, destroy_block_chunk: the shutdown
 

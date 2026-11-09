@@ -23,12 +23,12 @@
 #include <initializer_list> // the {a, b, c} constructor
 #include <iterator>         // std::forward_iterator, std::distance -- the (first, last) constructor
 
-#include "chunk/internal/zero_chunk.h"                   // Chunk<T>
+#include "chunk/internal/zero_chunk.h"          // Chunk<T>
 #include "chunk/internal/read_reclaim.h"        // read_reclaim::PassScope (perform_compression / compress in a region)
 #include "chunk/internal/array_chunk_base.h"    // ArrayChunkBase
 #include "chunk/internal/zero_array_parallel.h" // FastBlockSupport -- fast-block-only mixin; ParallelSupport through it
 #include "chunk/internal/array_chunk_rechunk_hooks.h"   // RechunkHooks — CHUNK_DYNAMIC-only mixin
-#include "chunk/internal/PMP_CHUNK.h"                            // CHUNK_PMP_IN_PARALLEL_REGION, pmp::team / Team
+#include "chunk/internal/PMP_CHUNK.h"                   // CHUNK_PMP_IN_PARALLEL_REGION, pmp::team / Team
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 #include "chunk/config.h"                               // build_config::threaded
 #include "chunk/internal/write_compress_sync_policy.h"  // WriteCompressSyncPolicy

@@ -445,9 +445,9 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
     std::vector<std::unique_ptr<TypeStateInterface*[]>> tables_;
     /// The current slot table, for the lock-free readers.
     std::atomic<TypeStateInterface**> table_{nullptr};
-    std::size_t                    table_capacity_ = 0;
-    std::atomic<int>               nb_managers_{0};
-    std::mutex                     registry_mutex_;
+    std::size_t                       table_capacity_ = 0;
+    std::atomic<int>                  nb_managers_{0};
+    std::mutex                        registry_mutex_;
 
     /// Set under registry_mutex_ when the manager type @p ManagerT is
     /// registered: the duplicate check of register_manager(), with no RTTI.

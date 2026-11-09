@@ -26,15 +26,15 @@
 #include "chunk/internal/dependent_false.h" // dependent_false_v (wrong-type branches)
 
 #include "chunk/internal/chunk_size_policy.h" // ChunkElems, set_thread_chunk_size
-#include "chunk/internal/PMP_CHUNK.h"                  // CHUNK_PMP_*, get_thr_rank_fast, pmp::team
+#include "chunk/internal/PMP_CHUNK.h"         // CHUNK_PMP_*, get_thr_rank_fast, pmp::team
 #include "chunk/config.h"                     // build_config::threaded, chunk_config::use_chunk_steal_mark
 #include "chunk/internal/cpu_pause.h"         // CHUNK_CPU_PAUSE (spin in create_value*)
 #include "chunk/internal/zero_any_chunk.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
 #include "chunk/internal/zero_any_proxy.h"      // zero_any::Proxy<T>
-#include "chunk/internal/type_state.h"       // Manager:: (dependent calls the include tools cannot attribute)
+#include "chunk/internal/type_state.h"          // Manager:: (dependent calls the include tools cannot attribute)
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
 #include "chunk/internal/write_compress_sync_policy.h" // WriteCompressSyncPolicy::is_thread_writing_on (wait_before_materialise)
-#include "chunk/internal/chunk_traits.h"                        // ChunkTraits<ChunkT>::ProxyType (wait_before_materialise)
+#include "chunk/internal/chunk_traits.h"               // ChunkTraits<ChunkT>::ProxyType (wait_before_materialise)
 #include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef
 #include "chunk/internal/queue_flag.h"          // queue_flag::hand_back / release: the pass's hand-back
 

@@ -51,7 +51,7 @@
 #include <vector>      // std::vector (chunk_list_)
 
 #include "chunk/config.h"                            // build_config::alloc_affinity_min_bytes, build_config::any_check
-#include "chunk/internal/chunk_traits.h"                      // ChunkTraits (ProxyType, ManagerType)
+#include "chunk/internal/chunk_traits.h"             // ChunkTraits (ProxyType, ManagerType)
 #include "chunk/internal/chunk_size_policy.h"        // ActiveSizePolicy
 #include "chunk/internal/array_chunk_dirty_bitset.h" // DirtyBitsetSupport
 #include "chunk/internal/array_chunk_for.h"          // ArrayKey (registry_key)

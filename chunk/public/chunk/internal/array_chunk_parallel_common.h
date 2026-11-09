@@ -32,7 +32,7 @@
  */
 
 #include "chunk/internal/chunk_traits.h" // ArrayChunkTraits
-#include "chunk/config.h"       // build_config::threaded
+#include "chunk/config.h"                // build_config::threaded
 
 namespace shrink_array
 {

@@ -31,8 +31,8 @@
 #include "chunk/config.h"                                      // for use_fast_block_compression, threaded
 #include "chunk/internal/invariant_check.h"                    // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/write_compress_sync_policy.h"         // for WriteCompressSyncPolicy
-#include "chunk/internal/PMP_CHUNK.h"                                   // CHUNK_PMP_THREAD_CAPACITY, pmp::Team
-#include "chunk/internal/zero_one_value_chunk.h"                        // zero_one_value::Chunk<T>
+#include "chunk/internal/PMP_CHUNK.h"                          // CHUNK_PMP_THREAD_CAPACITY, pmp::Team
+#include "chunk/internal/zero_one_value_chunk.h"               // zero_one_value::Chunk<T>
 #include "chunk/internal/zero_one_value_proxy.h"               // zero_one_value::Proxy<T> and its registry
 
 namespace shrink_array

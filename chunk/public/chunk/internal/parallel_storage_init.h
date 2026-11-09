@@ -55,7 +55,7 @@
 #include <unistd.h>    // sysconf(_SC_PAGESIZE)
 
 #include "chunk/internal/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS / CHUNK_PMP_IN_PARALLEL_REGION, pmp loops
-#include "chunk/config.h"    // build_config::threaded
+#include "chunk/config.h"             // build_config::threaded
 
 namespace shrink_array
 {

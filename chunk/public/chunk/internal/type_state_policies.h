@@ -29,7 +29,7 @@
  * TypeState is complete.
  */
 
-#include "chunk/config.h"                           // build_config::chunk_dynamic, build_config::threaded
+#include "chunk/config.h"                        // build_config::chunk_dynamic, build_config::threaded
 #include "chunk/internal/type_state_interface.h" // TypeStateDynInterface, TypeStateParallelInterface
 
 namespace shrink_array

@@ -28,7 +28,7 @@
 #include <vector>      // std::vector
 
 #include "chunk/internal/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_THREAD_RANK
-#include "chunk/bit.h"       // is_packed_bit_v (checksum_word)
+#include "chunk/bit.h"                // is_packed_bit_v (checksum_word)
 
 // -----------------------------------------------------------------------------
 // Cache-line-padded uint64 used as a per-thread accumulator to avoid false

@@ -32,7 +32,7 @@
 #include "chunk/vendor/ankerl/unordered_dense.h" // zero_any::PointerMap::big
 
 #include "chunk/config.h"                     // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
-#include "chunk/internal/chunk_traits.h"               // ChunkTraits<ChunkT>::ManagerType (ProxyImpl)
+#include "chunk/internal/chunk_traits.h"      // ChunkTraits<ChunkT>::ManagerType (ProxyImpl)
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size, set_thread_alloc_key
 #include "chunk/internal/cst_slot.h"          // CstSlot (tab_type_cst_val)
 #include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment

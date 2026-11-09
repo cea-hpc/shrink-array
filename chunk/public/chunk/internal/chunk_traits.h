@@ -114,7 +114,7 @@ class TypeState;
 template <template <typename> class ChunkT, template <typename> class ProxyT, typename T>
 struct VariantChunkTraits
 {
-    using ProxyType   = ProxyT<T>;               ///< Write proxy returned by the non-const accessors.
+    using ProxyType   = ProxyT<T>;            ///< Write proxy returned by the non-const accessors.
     using ManagerType = TypeState<ChunkT, T>; ///< Per-type manager owning the compression machinery.
 };
 
