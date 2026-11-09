@@ -28,7 +28,9 @@
 // chunks are folded, and the program prints what each array keeps.
 // Exit status 0 when every value reads back as written.
 
-#include <utility> // std::as_const
+#include <cstdio>    // std::fprintf (the catch)
+#include <exception> // std::exception
+#include <utility>   // std::as_const
 
 #include "chunk/zero_one_value_array.h" // shrink_array::zero_one_value::Array (Array<bool>)
 #include "chunk/array_chunk_bits.h"     // shrink_array::ArrayChunkBits
@@ -79,6 +81,7 @@ static void report(const char* name, const Arr& arr, double bytes_per_element)
 }
 
 int main()
+try
 {
     sa::ParamChunk::init_indexes(true); // once, before the first array
 
@@ -119,4 +122,10 @@ int main()
     sa::release_chunk_pools(); // give the reuse pools back
     sa::destroy_block_chunk();
     return bad == 0 ? 0 : 1;
+}
+catch (const std::exception& e)
+{
+    // A failed allocation or std::format: said, not std::terminate().
+    std::fprintf(stderr, "bool_arrays: %s\n", e.what());
+    return 2;
 }
