@@ -442,6 +442,7 @@ aussi une version Spack (`spack install shrink-array@cpp23`).
 |---|---|
 | installer, lier, écrire un premier programme, suivre les règles OpenMP | [docs/getting_started_fr.md](docs/getting_started_fr.md) |
 | trouver un appel | [docs/api_fr.md](docs/api_fr.md) |
+| comprendre comment elle est construite : parties, décisions, modèle de concurrence | [docs/conception_fr.md](docs/conception_fr.md) |
 | choisir une variante | [docs/variantes_fr.md](docs/variantes_fr.md) |
 | comparer aux formats creux, aux compresseurs, aux grilles creuses | [docs/alternatives_fr.md](docs/alternatives_fr.md) |
 | comprendre lecture, écriture, compression en vol, écritures différées | [docs/algo_zero_one_value_fr.md](docs/algo_zero_one_value_fr.md) |
