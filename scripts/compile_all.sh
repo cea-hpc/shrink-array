@@ -713,6 +713,10 @@ if [ -z "$clangxx" ]; then
     clangxx="clang++"
 fi
 LLVM_CXX_OPT="-DCMAKE_CXX_COMPILER=$clangxx"
+# The C compiler (formal/ enables C) of the same tree: the llvm module put its
+# clang first in PATH, CHUNK_LLVM_ROOT does not, and the cc found then is the
+# gcc module's, which refuses the sanitizer link flags (-fsanitize=alloc-token).
+[ -n "$chunk_llvm_root" ] && LLVM_CXX_OPT="$LLVM_CXX_OPT -DCMAKE_C_COMPILER=$chunk_llvm_root/bin/clang"
 
 LLVM_STDLIB_OPT="-DUSE_LIBCXX=OFF $(chunk_gcc_toolchain_opt cmake)"
 echo "llvm → libstdc++ from ${CHUNK_GCC_TOOLCHAIN_DIR:-the default gcc} (USE_LIBCXX=OFF)"
