@@ -49,6 +49,7 @@
 #include "chunk/internal/chunk_size_config.h" // static_chunk_size / static_chunk_shift / static_chunk_mask
 #include "chunk/internal/invariant_check.h"   // CHUNK_INVARIANT_FAILED (an invalid geometry)
 #include "chunk/log.h"                        // CHUNK_LOG (the refusals)
+#include "chunk/internal/module_export.h"     // SHRINK_ARRAY_EXPORT (set_thread_chunk_size, set_active_chunk_size)
 
 namespace shrink_array
 {
@@ -151,7 +152,7 @@ enum class ChunkSizeError : std::uint8_t
 
 // Per-thread active size: set by array ops before allocating; read by the
 // allocator routing. Falls back to the process-wide seed when unset.
-inline void set_thread_chunk_size(unsigned int size) noexcept
+SHRINK_ARRAY_EXPORT inline void set_thread_chunk_size(unsigned int size) noexcept
 {
     t_active_chunk_size = size;
 }
@@ -440,7 +441,7 @@ inline std::expected<void, ChunkSizeError> try_set_active_chunk_size(unsigned in
 
 /// @brief try_set_active_chunk_size(), a refusal written on the log (channel
 ///        rechunk, warning) in every build.
-inline void set_active_chunk_size(unsigned int size) noexcept
+SHRINK_ARRAY_EXPORT inline void set_active_chunk_size(unsigned int size) noexcept
 {
     if (const auto set = try_set_active_chunk_size(size); !set) [[unlikely]]
     {

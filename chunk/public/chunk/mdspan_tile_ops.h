@@ -1020,10 +1020,7 @@ void for_each_tile_mt(const View& f, OnBlock&& on_block, OnUniform&& on_uniform 
  *        to the view): those tiles dealt to the team, one unit each, in
  *        storage order. The callbacks get whole tiles, as for_each_tile()'s.
  */
-SHRINK_ARRAY_EXPORT template <tiled_view_of_array View,
-                              std::integral       I,
-                              typename OnBlock,
-                              typename OnUniform = detail::NoUniform>
+SHRINK_ARRAY_EXPORT template <tiled_view_of_array View, std::integral I, typename OnBlock, typename OnUniform = detail::NoUniform>
 void for_each_tile_mt(const View&                        f,
                       const std::array<I, View::rank()>& box_lo,
                       const std::array<I, View::rank()>& box_hi,
@@ -1062,10 +1059,7 @@ void update_tiles_mt(const View& f, OnBlock&& on_block, OnUniform&& on_uniform =
  *        to the view), dealt to the team one unit each. The callbacks get
  *        whole tiles: cells outside the box are theirs to leave alone.
  */
-SHRINK_ARRAY_EXPORT template <tiled_view_of_array View,
-                              std::integral       I,
-                              typename OnBlock,
-                              typename OnUniform = detail::NoUniform>
+SHRINK_ARRAY_EXPORT template <tiled_view_of_array View, std::integral I, typename OnBlock, typename OnUniform = detail::NoUniform>
     requires(!std::is_const_v<typename View::element_type>)
 void update_tiles_mt(const View&                        f,
                      const std::array<I, View::rank()>& box_lo,
@@ -1482,10 +1476,10 @@ void stencil_on(const Src&                       src,
  * @warning Experimental until 1.0 (see the file).
  */
 SHRINK_ARRAY_EXPORT template <tiled_view_of_array Src,
-                              tiled_view_of_array Dst,
-                              typename Boundary,
-                              typename OnBlock,
-                              typename OnUniform = detail::NoUniform>
+                 tiled_view_of_array Dst,
+                 typename Boundary,
+                 typename OnBlock,
+                 typename OnUniform = detail::NoUniform>
     requires(!std::is_const_v<typename Dst::element_type>)
 void stencil_tiles(const Src&               src,
                    const Dst&               dst,
@@ -1502,10 +1496,10 @@ void stencil_tiles(const Src&               src,
 
 /// @brief stencil_tiles() over every tile.
 SHRINK_ARRAY_EXPORT template <tiled_view_of_array Src,
-                              tiled_view_of_array Dst,
-                              typename Boundary,
-                              typename OnBlock,
-                              typename OnUniform = detail::NoUniform>
+                 tiled_view_of_array Dst,
+                 typename Boundary,
+                 typename OnBlock,
+                 typename OnUniform = detail::NoUniform>
     requires(!std::is_const_v<typename Dst::element_type>)
 void stencil_tiles(const Src&               src,
                    const Dst&               dst,
@@ -1529,10 +1523,10 @@ void stencil_tiles(const Src&               src,
  * @warning stencil_tiles()'s; every thread of the team calls it.
  */
 SHRINK_ARRAY_EXPORT template <tiled_view_of_array Src,
-                              tiled_view_of_array Dst,
-                              typename Boundary,
-                              typename OnBlock,
-                              typename OnUniform = detail::NoUniform>
+                 tiled_view_of_array Dst,
+                 typename Boundary,
+                 typename OnBlock,
+                 typename OnUniform = detail::NoUniform>
     requires(!std::is_const_v<typename Dst::element_type>)
 void stencil_tiles_mt(const Src&               src,
                       const Dst&               dst,

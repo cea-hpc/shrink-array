@@ -23,8 +23,6 @@
 // this program as the macros of an #include would not, picks the array.
 // Exit status 0 when every check holds.
 
-#include <cstring> // memcpy, for GCC 16 (see getting_started_module.cpp)
-
 import std;
 import shrink_array;
 

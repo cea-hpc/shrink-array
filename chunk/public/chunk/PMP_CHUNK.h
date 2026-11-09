@@ -21,13 +21,16 @@
 #include "chunk/config.h"                         // build_config::any_check, build_config::threaded
 #include "fast_allocators/internal/pmp_loops.h"   // fast_alloc::pmp: the loops and teams re-exported below
 #include "fast_allocators/internal/pmp_runtime.h" // fast_alloc::pmp: the runtime queries, FAST_ALLOC_PMP_THREADED
+#include "chunk/internal/module_export.h"         // SHRINK_ARRAY_EXPORT (pmp)
 
 /// @brief The library's threading backend (docs/threading_backends.md): the
 ///        data-parallel loops (use B), the teams (use C) and the runtime
 ///        queries (use A). One implementation, in fast_allocators/internal/
 ///        pmp_loops.h and pmp_runtime.h, shared with the allocator. The
-///        CHUNK_PMP_* macros below are the library's names for the queries.
-namespace shrink_array::pmp
+///        CHUNK_PMP_* macros below are the library's names for the queries;
+///        pmp::max_threads(), team_size() and thread_rank() are theirs for
+///        a program that imports the module (macros do not cross an import).
+SHRINK_ARRAY_EXPORT namespace shrink_array::pmp
 {
 using ::fast_alloc::pmp::active_level;
 using ::fast_alloc::pmp::backend;
@@ -36,6 +39,7 @@ using ::fast_alloc::pmp::current_team;
 using ::fast_alloc::pmp::enter_application_phase;
 using ::fast_alloc::pmp::in_application_phase;
 using ::fast_alloc::pmp::leave_application_phase;
+using ::fast_alloc::pmp::max_threads;
 using ::fast_alloc::pmp::nowait;
 using ::fast_alloc::pmp::Options;
 using ::fast_alloc::pmp::parallel_for;
@@ -46,6 +50,7 @@ using ::fast_alloc::pmp::Schedule;
 using ::fast_alloc::pmp::team;
 using ::fast_alloc::pmp::Team;
 using ::fast_alloc::pmp::team_any;
+using ::fast_alloc::pmp::team_size;
 using ::fast_alloc::pmp::team_sum;
 using ::fast_alloc::pmp::thread_rank;
 using ::fast_alloc::pmp::threaded;

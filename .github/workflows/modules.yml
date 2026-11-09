@@ -63,7 +63,8 @@ jobs:
           -DCHECK_OPTIM=ON
           -DCHUNK_STATIC_SIZES=256
           -DCHUNK_BUILD_DYN=OFF
-      # check: the validation label, with the module programs (getting_started_module,
-      # module_api_<variant>) and check_module_deps.
+      # check: the validation label, with the programs that import the module
+      # (getting_started, bool_arrays, mdspan_tiles, module_api_<variant>) and
+      # check_module_deps. advisor_demo needs the _dyn library (CHUNK_BUILD_DYN=ON).
       - name: Build and run the validation harnesses and the module programs (check target)
         run: cmake --build build --target check

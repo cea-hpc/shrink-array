@@ -47,14 +47,15 @@
  *          (operator()(i) returning a reference does not compile).
  */
 
-#include "chunk/bit.h"                  // Bit
-#include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#include "chunk/bit.h"                    // Bit
+#include "chunk/zero_one_value_array.h"   // zero_one_value::Array
+#include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT (ArrayChunkBits)
 
 namespace shrink_array
 {
 
 /// @brief The bit-packed bool container (see the file comment).
-template <typename IntType = int>
+SHRINK_ARRAY_EXPORT template <typename IntType = int>
 using ArrayChunkBits = zero_one_value::Array<Bit, IntType>;
 
 } // namespace shrink_array

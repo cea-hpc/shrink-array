@@ -83,6 +83,28 @@ add_executable(mon_appli main.cpp)
 target_link_libraries(mon_appli PRIVATE chunk::chunk_zero_any)
 ```
 
+Sur la branche `cpp23-modules`, un programme peut aussi faire `import shrink_array;` au lieu
+d'inclure les en-têtes : il lie le module de la variante, `chunk::chunk_zero_any_module` (un par
+bibliothèque de variante à la taille par défaut, installé avec elle), avec CMake 4.2 et le
+générateur Ninja (`-G Ninja`) :
+
+```cmake
+cmake_minimum_required(VERSION 3.20)
+# import std : la porte expérimentale de CMake 4.2, avant project() (la valeur change avec la version de CMake).
+set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "d0edc3af-4c50-42ea-a356-e2862fe7a444")
+project(mon_appli LANGUAGES CXX)
+
+find_package(chunk 0.2 REQUIRED)
+
+add_executable(mon_appli main.cpp)
+set_target_properties(mon_appli PROPERTIES CXX_SCAN_FOR_MODULES ON CXX_MODULE_STD ON)
+target_compile_features(mon_appli PRIVATE cxx_std_23)
+target_link_libraries(mon_appli PRIVATE chunk::chunk_zero_any_module)
+```
+
+Les macros ne traversent pas un import : un programme qui a besoin de `CHUNK_LOG` inclut toujours
+`chunk/log.h`.
+
 La bibliothèque liée **choisit la variante et la taille de chunk**. Les en-têtes sont les mêmes
 pour toutes, et la bibliothèque apporte les définitions de compilation qui sélectionnent la
 sienne (`CHUNK_VARIANT_ZERO_ANY=1`, `CHUNK_SIZE=256` ou `CHUNK_DYNAMIC`), ainsi que le C++20,
@@ -130,17 +152,12 @@ vérifier ce que contient l'installation.
 ## 4. Un premier programme, parallèle et multi-thread
 
 C'est [`examples/getting_started/getting_started.cpp`](../examples/getting_started/getting_started.cpp),
-raccourci. Le répertoire contient aussi le `CMakeLists.txt` du §3 : il se construit aussi bien avec une
-installation que dans l'arbre des sources.
+raccourci. Il importe le module ; le répertoire contient aussi le `CMakeLists.txt` du §3 : il se
+construit aussi bien avec une installation que dans l'arbre des sources.
 
 ```cpp
-#include <cstdio>
-#include <utility>                 // std::as_const
-
-#include "chunk/zero_any_array.h"   // shrink_array::zero_any::Array
-#include "chunk/zero_chunk.h"       // release_chunk_pools, destroy_block_chunk
-#include "chunk/manage_ompt.h"     // parallel_phase
-#include "chunk/param_chunk.h"     // ParamChunk::init_indexes
+import std;          // std::printf, std::as_const
+import shrink_array; // zero_any::Array, parallel_phase, ParamChunk, release_chunk_pools, ...
 
 namespace sa = shrink_array;
 

@@ -14,12 +14,14 @@
  * limitations under the License.
  */
 
-// The shrink_array module (prototype): the whole library, read in the purview,
-// exports what its headers mark SHRINK_ARRAY_EXPORT -- the arrays, ParamChunk,
+// The shrink_array module: the whole library, read in the purview, exports
+// what its headers mark SHRINK_ARRAY_EXPORT -- the arrays, ParamChunk,
 // parallel_phase, the teardown, print / println, the chunk exchange, the
-// chunk-size advisor and decider, the mdspan views and tile operations -- and
-// hides the rest (chunk/internal/module_export.h). The headers stay the source
-// of truth and `#include` keeps working.
+// chunk-size advisor and decider, the mdspan views and tile operations, the
+// build options (build_config, chunk_config), the pmp loops and queries, the
+// chunk-size settings -- and hides the rest (chunk/internal/module_export.h).
+// The headers stay the source of truth: the library's own sources and the
+// white-box validation harnesses still #include them.
 //
 // Built per variant library (chunk_<variant>_module links chunk_<variant>): the
 // BMI carries that library's defines (CHUNK_VARIANT_*, CHUNK_SIZE), so an
@@ -145,20 +147,24 @@ extern "C++"
     #include "chunk/pattern_array.h"  // pattern::Array, over zero_any's library
 #elif defined(CHUNK_VARIANT_ZERO_ONE_VALUE)
     #include "chunk/zero_one_value_array.h" // zero_one_value::Array
+    #include "chunk/array_chunk_bits.h"     // ArrayChunkBits: zero_one_value::Array<Bit>
 #elif defined(CHUNK_VARIANT_ZERO)
     #include "chunk/zero_array.h" // zero::Array
 #else
     #error "shrink_array.cppm: built with a variant library's CHUNK_VARIANT_* define"
 #endif
-#include "chunk/param_chunk.h"        // ParamChunk
-#include "chunk/internal/print.h"     // print, println
-#include "chunk/manage_ompt.h"        // parallel_phase
-#include "chunk/shutdown.h"           // release_chunk_pools, destroy_block_chunk
-#include "chunk/chunk_exchange.h"     // export_chunk, import_chunk, export_array, import_array, ChunkState, ...
-#include "chunk/chunk_size_advisor.h" // ChunkSizeAdvisor, ChunkSizeReport, ChunkSizeEstimate
-#include "chunk/rechunk_decider.h"    // RechunkDecider, RechunkPolicy
-#include "chunk/mdspan.h"             // md::view, md::tiled_view, md::layout_tiled, ...
-#include "chunk/mdspan_tile_ops.h"    // md::for_each_tile, md::fill_box, md::copy_box_in, ...
+#include "chunk/param_chunk.h"                // ParamChunk
+#include "chunk/config.h"                     // build_config, chunk_config: the options the library was built with
+#include "chunk/PMP_CHUNK.h"                  // pmp: the loops, the teams, max_threads, team_size, thread_rank
+#include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
+#include "chunk/internal/print.h"             // print, println
+#include "chunk/manage_ompt.h"                // parallel_phase
+#include "chunk/shutdown.h"                   // release_chunk_pools, destroy_block_chunk
+#include "chunk/chunk_exchange.h"             // export_chunk, import_chunk, export_array, import_array, ChunkState, ...
+#include "chunk/chunk_size_advisor.h"         // ChunkSizeAdvisor, ChunkSizeReport, ChunkSizeEstimate
+#include "chunk/rechunk_decider.h"            // RechunkDecider, RechunkPolicy
+#include "chunk/mdspan.h"                     // md::view, md::tiled_view, md::layout_tiled, ...
+#include "chunk/mdspan_tile_ops.h"            // md::for_each_tile, md::fill_box, md::copy_box_in, ...
 }
 #undef SHRINK_ARRAY_EXPORT
 
@@ -188,6 +194,7 @@ using shrink_array::finalize_parallel_phase_only_flush;
 namespace zero_any
 {
 using shrink_array::zero_any::Array;
+using shrink_array::zero_any::Chunk; // sizeof(Chunk<T>): the chunk metadata, for the advisor's options
 } // namespace zero_any
 namespace pattern
 {

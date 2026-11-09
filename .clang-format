@@ -89,5 +89,9 @@ SpacesInSquareBrackets: false
 #Standard:        LS_Cpp20
 TabWidth:        8
 UseTab:          Never
+# The module's export marker (chunk/internal/module_export.h): formatted as
+# `export`, so that `SHRINK_ARRAY_EXPORT namespace N {` stays a namespace.
+Macros:
+  - SHRINK_ARRAY_EXPORT=export
 ...
 

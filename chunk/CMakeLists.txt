@@ -726,7 +726,7 @@ endif()
 # chunk_<variant>_module, over chunk_<variant>. This branch is built for
 # modules: always on, with the Ninja generator (module dependency scanning)
 # and `import std` (its experimental gate, CMake 4.2's, is set before
-# project() in the top CMakeLists.txt); not installed yet.
+# project() in the top CMakeLists.txt); the chunk_<variant> ones are installed (below).
 if (CMAKE_VERSION VERSION_LESS 4.2 OR NOT CMAKE_GENERATOR MATCHES "Ninja")
   message(FATAL_ERROR "shrink_array module: needs CMake >= 4.2 and a Ninja generator "
                       "(CMake ${CMAKE_VERSION}, ${CMAKE_GENERATOR})")
@@ -753,22 +753,44 @@ endif()
 if (OMP AND TARGET OpenMP::OpenMP_CXX AND TARGET __cmake_cxx23)
   target_link_libraries(__cmake_cxx23 PRIVATE OpenMP::OpenMP_CXX)
 endif()
-# One module per variant library of CHUNK_VARIANTS, all named shrink_array:
-# a program links one of them.
-foreach(_mv IN LISTS CHUNK_VARIANTS)
-  add_library(chunk_${_mv}_module)
-  target_sources(chunk_${_mv}_module PUBLIC FILE_SET CXX_MODULES BASE_DIRS modules FILES modules/shrink_array.cppm)
-  target_link_libraries(chunk_${_mv}_module PUBLIC chunk_${_mv})
+# chunk_add_module(<lib>): <lib>_module, the module over the variant library
+# <lib> (chunk_zero_any, chunk_zero_any_256, chunk_zero_any_dyn, ...): its BMI
+# carries <lib>'s defines (variant, CHUNK_SIZE / CHUNK_DYNAMIC). Every one is
+# named shrink_array: a program links one of them. Once per library: a second
+# call does nothing (several examples share chunk_zero_any_256_module).
+function(chunk_add_module lib)
+  if (TARGET ${lib}_module)
+    return()
+  endif()
+  add_library(${lib}_module)
+  target_sources(${lib}_module PUBLIC FILE_SET CXX_MODULES BASE_DIRS ${CHUNK_MODULE_DIR} FILES ${CHUNK_MODULE_DIR}/shrink_array.cppm)
+  target_link_libraries(${lib}_module PUBLIC ${lib})
   # The module unit imports std (modules/shrink_array.cppm).
-  set_target_properties(chunk_${_mv}_module PROPERTIES CXX_MODULE_STD ON)
-  target_compile_features(chunk_${_mv}_module PUBLIC cxx_std_23)
+  set_target_properties(${lib}_module PROPERTIES CXX_MODULE_STD ON)
+  target_compile_features(${lib}_module PUBLIC cxx_std_23)
   # The library's headers, read in the purview, include their external headers
   # again: <cassert> has no guard, libc++'s <stdio.h> and <stdlib.h> re-enter;
   # each was read first in the global module fragment, so nothing attaches to
   # the module (scripts/check_module_deps.py checks the fragment's list).
   if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    target_compile_options(chunk_${_mv}_module PRIVATE -Wno-include-angled-in-module-purview)
+    target_compile_options(${lib}_module PRIVATE -Wno-include-angled-in-module-purview)
   endif()
+endfunction()
+
+# chunk_link_module(<target> <lib>): <target> imports the module over <lib>.
+# The tree keeps CMP0155 OLD (cmake_minimum_required 3.20): the target's
+# sources are scanned for their imports; import std needs C++23 asked as a
+# feature.
+function(chunk_link_module target lib)
+  chunk_add_module(${lib})
+  set_target_properties(${target} PROPERTIES CXX_SCAN_FOR_MODULES ON CXX_MODULE_STD ON)
+  target_compile_features(${target} PRIVATE cxx_std_23)
+  target_link_libraries(${target} PRIVATE ${lib}_module)
+endfunction()
+
+set(CHUNK_MODULE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/modules" CACHE INTERNAL "chunk/modules: shrink_array.cppm")
+foreach(_mv IN LISTS CHUNK_VARIANTS)
+  chunk_add_module(chunk_${_mv})
 endforeach()
 list(TRANSFORM CHUNK_VARIANTS APPEND "_module" OUTPUT_VARIABLE _module_targets)
 list(TRANSFORM _module_targets PREPEND "chunk_")
@@ -837,6 +859,25 @@ install(TARGETS ${_chunk_install_targets}
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
         COMPONENT chunk-devel)
 
+# The modules over the default variant libraries (chunk::chunk_<variant>_module):
+# shrink_array.cppm and the module initializer's archive. A consumer's build
+# makes the BMI again from the installed unit, with the library's definitions
+# (variant, CHUNK_SIZE), and needs import std as this build does (its CMake
+# sets CMAKE_EXPERIMENTAL_CXX_IMPORT_STD before project(): docs/getting_started.md).
+list(TRANSFORM CHUNK_VARIANTS APPEND "_module" OUTPUT_VARIABLE _chunk_module_install_targets)
+list(TRANSFORM _chunk_module_install_targets PREPEND "chunk_")
+install(TARGETS ${_chunk_module_install_targets}
+        EXPORT chunk-targets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        COMPONENT chunk-devel
+        FILE_SET CXX_MODULES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/chunk/modules
+        COMPONENT chunk-devel)
+foreach(_t IN LISTS _chunk_module_install_targets)
+  if (NOT TARGET chunk::${_t})
+    add_library(chunk::${_t} ALIAS ${_t})
+  endif()
+endforeach()
+
 # The whole public/ tree, not CHUNK_PUBLIC_HEADERS alone: the facades in that
 # list include the CHUNK_INTERNAL_HEADERS (a template library ships its
 # implementation headers), so an install of the 40 facades could not compile a
@@ -903,7 +944,8 @@ write_basic_package_version_file(
         VERSION ${CHUNK_VERSION}
         COMPATIBILITY ${_chunk_compatibility})
 
-install(EXPORT chunk-targets NAMESPACE chunk:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/chunk/cmake)
+install(EXPORT chunk-targets NAMESPACE chunk:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/chunk/cmake
+        CXX_MODULES_DIRECTORY modules)
 
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/chunk-config.cmake
         ${CMAKE_CURRENT_BINARY_DIR}/chunk-config-version.cmake
