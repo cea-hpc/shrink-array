@@ -452,6 +452,19 @@ les étapes et le contrat de phase.
   de taille.
 - **Le registre des secondes valeurs** croît avec le nombre de valeurs distinctes jusqu'à ce que
   `reclaim_second_values()` passe.
+- **`pattern::Array`, trois points ouverts** ([algo_pattern_fr.md](algo_pattern_fr.md) §10) :
+  - *où placer l'offset* : aujourd'hui dans la case de seconde valeur du chunk, qui ne coûte aucun
+    octet par chunk mais une ligne de cache de plus par lecture de motif ; dans l'objet chunk, il
+    coûterait 8 octets par chunk et économiserait cette ligne. À trancher par une mesure avec
+    `access_cost_pattern` sur des lectures dominées par les motifs ;
+  - *la prévision des motifs par le conseiller* : le conseiller lit un chunk motif comme des
+    données et ne prévoit aucune compression en motif aux autres tailles ; il n'est donc jamais
+    optimiste, mais sous-estime l'intérêt d'un rechunk d'un tableau `pattern`. Une prévision sur
+    les chunks échantillonnés coûte peu, mais elle change `ChunkSizeEstimate` -- une struct
+    publique, donc l'API -- et le décideur ;
+  - *les motifs plus courts qu'un chunk* (un pas qui ne divise pas la taille du chunk, un offset
+    qui croît dans le chunk) ne sont pas couverts : `chunk[j] = P[j mod s] + (j div s) * pas`
+    serait une seconde sorte de motif, à mesurer d'abord sur de vraies connectivités.
 - **Les modèles** couvrent de petites configurations (quelques écrivains ou lecteurs, un chunk,
   une passe) : ils ne sont pas une preuve pour un nombre quelconque de threads.
 

@@ -432,6 +432,18 @@ backend rather than add a TBB backend: a TBB program links TBB, the library does
   that go back to their arena rather than to the new size class.
 - **The second-value registry** grows with the number of distinct values until
   `reclaim_second_values()` runs.
+- **`pattern::Array`, three open points** ([algo_pattern.md](algo_pattern.md) §10):
+  - *where the offset lives*: in the chunk's second-value slot today, which costs no byte per
+    chunk but one more cache line per motif read; in the chunk object it would cost 8 bytes per
+    chunk and save that line. To be settled by a measurement with `access_cost_pattern` on
+    motif-heavy reads;
+  - *the advisor's motif forecast*: the advisor reads a motif chunk as data and forecasts no
+    motif compression at the other sizes, so it is never optimistic but undervalues a rechunk of
+    a `pattern` array. A forecast from the sampled chunks is cheap, but it changes
+    `ChunkSizeEstimate` -- a public struct, hence the API -- and the decider;
+  - *motifs shorter than a chunk* (a stride that does not divide the chunk size, an offset that
+    grows inside the chunk) are not covered: `chunk[j] = P[j mod s] + (j div s) * step` would be
+    a second kind of motif, to be measured on real connectivities first.
 - **The models** cover small configurations (a few writers or readers, one chunk, one pass): they
   are not a proof for any number of threads.
 
