@@ -20,7 +20,7 @@
 #include <chrono>      // std::chrono::steady_clock (rechunk=debug: the registry release time)
 #include <cstddef>     // std::size_t
 #include <array>       // std::array (the residual's sample)
-#include <iomanip>     // std::setw (print_type_name)
+#include <format>      // std::format (print_type_name)
 #include <iostream>    // std::cout (print_type_name)
 #include <string_view> // std::string_view (the residual's kind)
 #include <string>      // the type name in print_type_name
@@ -107,8 +107,8 @@ void zero_any::ArrayImpl<Derived>::rebuild_storage(IntType sz)
 template <ArrayChunkElement T>
 void print_type_name(int nb_val2)
 {
-    std::cout << std::left << std::setw(30) << ("Type: " + type_name<T>())
-              << " → Number of compression values : " << nb_val2 << "\n";
+    // std::format, not std::left/std::setw: std::cout's flags stay as they were.
+    std::cout << std::format("{:<30} → Number of compression values : {}\n", "Type: " + type_name<T>(), nb_val2);
 }
 
 template <typename Derived>

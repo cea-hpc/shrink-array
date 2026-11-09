@@ -265,6 +265,10 @@ std::byte* GlobalVecHolder<T>::region_alloc(std::size_t bytes)
     // CHUNK_CST_VAL2_ID_LIMIT); alloc_chunk() writes value_by_id[id] for every slot
     // carved here, so a slot past it would be a write past the table. Warn once at half.
     const std::size_t cap_bytes = (bytes != 0 && id_limit * bytes < region_usable) ? id_limit * bytes : region_usable;
+    // The counts of the two messages, in identifiers: a bytes of 0 (no caller
+    // passes one, region_stride is not) must not divide by zero on the way to
+    // the abort.
+    const std::size_t per_id = bytes != 0 ? bytes : 1;
     const char*       limiting =
         (max_ids * id_stride) < region_bytes ? "CHUNK_CST_VAL2_MAX_IDS" : "CHUNK_CST_VAL2_REGION_BYTES";
     if (id_limit < max_ids)
@@ -280,7 +284,7 @@ std::byte* GlobalVecHolder<T>::region_alloc(std::size_t bytes)
             CHUNK_LOG(warn, compress,
                       "second-value identifiers past half used: {} of {} (bound by {}). Raise it if the count keeps "
                       "growing; running out aborts.",
-                      off / bytes, cap_bytes / bytes, limiting);
+                      off / per_id, cap_bytes / per_id, limiting);
         }
     }
     if (off + bytes > cap_bytes) [[unlikely]]
@@ -288,8 +292,7 @@ std::byte* GlobalVecHolder<T>::region_alloc(std::size_t bytes)
         CHUNK_INVARIANT_FAILED("[cst_val2] second-value identifiers exhausted: {} of {}, bound by {} "
                                "(CHUNK_CST_VAL2_MAX_IDS={}, CHUNK_CST_VAL2_REGION_BYTES={} MiB). Raise it, or "
                                "reduce the number of DISTINCT second values the workload registers.",
-                               off / bytes, cap_bytes / (bytes != 0 ? bytes : 1), limiting, max_ids,
-                               region_bytes >> 20U);
+                               off / per_id, cap_bytes / per_id, limiting, max_ids, region_bytes >> 20U);
     }
     return region_begin.load(std::memory_order_relaxed) + off;
 }
