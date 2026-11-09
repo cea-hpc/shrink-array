@@ -95,9 +95,14 @@ The source checks run with the others (`ctest -R check_`):
   `accessor`, `constant_boundary`): a view written against `std::mdspan` reads the same with them
   (`STD_STYLE_API` in `scripts/check_naming.py`); their `detail::` helpers are PascalCase. Inside a snake_case name the variant is `zero_any`, as in the file names (`zero_any_array.h`).
   Globals take a `g_` prefix; no name starts with `__` (reserved). A public name
-  that changes keeps its former spelling as a `[[deprecated]]` alias until 1.0.
+  that changes keeps its former spelling as a `[[deprecated]]` alias for as long as the
+  versioning policy of [CHANGELOG.md](../CHANGELOG.md) says.
   `check_naming` enforces what a line shows; clang-tidy's `readability-identifier-naming`
   checks the rest (the member suffix, the parameters) with `scripts/clang_tidy_naming.yaml`.
+- **The public interface is frozen.** `scripts/public_api.txt` lists the public headers and
+  names; `check_public_api` fails when one is added, moved, removed or renamed. A change there
+  is an interface change: update the list and record it in CHANGELOG.md (versioning policy).
+  A new header that a program does not include goes under `internal/`.
 - **Long bodies go to the `<header>_inline.h` companion.** A member function whose body exceeds 5
   lines is declared in the class and defined in `internal/<header>_inline.h`, included at the
   end of the header; the Doxygen comment stays on the declaration. Accessors of a few lines

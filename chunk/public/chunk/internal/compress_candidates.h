@@ -19,10 +19,10 @@
 /**
  * @file compress_candidates.h
  * @brief CompressCandidates: the compression-candidate lists of one
- *        (variant, element type), a base of ManagerChunk.
+ *        (variant, element type), a base of TypeState.
  *
- * Its bodies are in compress_candidates_inline.h, which manager_chunk.h
- * includes once ManagerChunk is complete.
+ * Its bodies are in compress_candidates_inline.h, which type_state.h
+ * includes once TypeState is complete.
  */
 
 #include <tuple>  // std::get (erase_candidates_of_tab)
@@ -38,7 +38,7 @@ namespace shrink_array
 
 /**
  * @brief The compression-candidate lists of one (variant, element type),
- *        shared by all its arrays: a base of ManagerChunk, static state only.
+ *        shared by all its arrays: a base of TypeState, static state only.
  *
  * @details Chunks a write left eligible for compression, queued per rank and
  *          processed in batches by the compression passes. Since the store is
@@ -47,8 +47,8 @@ namespace shrink_array
  *          three variants keep them in different containers (see
  *          compress_candidates_inline.h).
  *
- *          The members reached through ManagerChunk only are protected:
- *          ManagerChunk's overrides of ManagerChunkInt forward to the passes
+ *          The members reached through TypeState only are protected:
+ *          TypeState's overrides of TypeStateInterface forward to the passes
  *          below.
  *
  * @tparam ChunkT chunk variant template (zero, zero_one_value or zero_any)
@@ -62,16 +62,16 @@ class CompressCandidates
     static constexpr bool is_not_bool = !is_bool;
 
     /// @brief Compress every compressible chunk of this type now, ignoring the
-    ///        candidate lists (ManagerChunk::force_chunk_to_compress).
+    ///        candidate lists (TypeState::force_chunk_to_compress).
     static void force_compress();
     /// @brief Size the per-rank candidate lists to the team
-    ///        (ManagerChunk::resize_chunk_to_compress_potentially).
+    ///        (TypeState::resize_chunk_to_compress_potentially).
     static void resize_lists();
     /// @brief Does any of the @p n_thr per-rank candidate lists hold a chunk?
-    ///        (ManagerChunk::have_chunk_to_compress_potentially)
+    ///        (TypeState::have_chunk_to_compress_potentially)
     [[nodiscard]] static bool have_candidates(int n_thr);
     /// @brief Drain this type's candidate backlog
-    ///        (ManagerChunk::compress_chunk_to_compress_potentially).
+    ///        (TypeState::compress_chunk_to_compress_potentially).
     static void compress_pass(bool apply);
 
     /// @brief Set the candidate-list length that triggers a compression pass.

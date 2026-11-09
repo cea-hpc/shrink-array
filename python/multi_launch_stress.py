@@ -79,14 +79,14 @@ except ImportError:
     import types as _types  # noqa: E402
 
     _numa = _types.SimpleNamespace(MODES=("auto", "off"), interleave_prefix=lambda env, mode="auto": [])
-# --exec chunk2a & co.: the old variant labels, read as their new names until 1.0.
+# --exec chunk2a & co.: an old variant label is refused, with its new name.
 # find_bench_exe: an executable under its name for each backend
 # (shrink_bench_<backend>_<rest>), the one the build holds.
 try:
-    from bench_runner.settings import bench_exe_names, find_bench_exe, normalize_variant  # noqa: E402
+    from bench_runner.settings import bench_exe_names, check_variant_label, find_bench_exe  # noqa: E402
 except ImportError:
     # Copied alone: the new labels only, and bench_runner's two helpers as they are.
-    def normalize_variant(label, warn=None):
+    def check_variant_label(label, option):
         return label
 
     def bench_exe_names(rest):
@@ -247,7 +247,7 @@ def _csv_choices(name, valid):
             return out
         items = [v.strip() for v in value.split(",") if v.strip()]
         if name == "--exec":
-            items = [normalize_variant(v, name) for v in items]
+            items = [check_variant_label(v, name) for v in items]
         bad = [v for v in items if v not in valid]
         if bad:
             raise argparse.ArgumentTypeError(

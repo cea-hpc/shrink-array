@@ -29,23 +29,10 @@ from .settings import (
     DEFAULT_SEQ_OMP_VARIANTS, DEFAULT_STATS_MARK_RATIO_MIN, DEFAULT_THREADS_CHECK,
     DEFAULT_TIMEOUT, DEFAULT_TIMEOUT_PER_THREAD, DEFAULT_VARIANTS, INT64_CHECK_VARIANTS,
     MODE_PRESETS, REFERENCE_THREADS, SANITIZER_REPS, SANITIZER_THREADS, SCALING_CONFIGS,
-    SCALING_MAX_SLOWDOWN, SCALING_THREADS, normalize_variant, results_dir_name,
+    SCALING_MAX_SLOWDOWN, SCALING_THREADS, check_variant_label, results_dir_name,
 )
 from .state import _numa, _set_full_log_dir
 from .term import _Tee
-
-
-class _OldOptionName(argparse.Action):
-    """An option's old spelling, hidden from --help: stores into the new
-    option's dest and says so on stderr (accepted until 1.0)."""
-    def __init__(self, option_strings, dest, new_name=None, **kw):
-        self.new_name = new_name
-        super().__init__(option_strings, dest, **kw)
-
-    def __call__(self, parser, namespace, values, option_string=None):
-        print(f"note: {option_string} is the old name of {self.new_name} (accepted until 1.0)",
-              file=sys.stderr)
-        setattr(namespace, self.dest, values)
 
 
 def build_parser():
@@ -94,9 +81,6 @@ def build_parser():
                         help="FAIL if zero_any peak memory exceeds zero_one_value's by more than "
                              "this ratio on the same (config, threads, size) "
                              "(default 1.10). Set <= 0 to disable.")
-    parser.add_argument("--mem-chunk2a-vs-chunk2-max", type=float, action=_OldOptionName,
-                        dest="mem_zero_any_vs_zero_one_value_max", default=argparse.SUPPRESS,
-                        new_name="--mem-zero-any-vs-zero-one-value-max", help=argparse.SUPPRESS)
     parser.add_argument("--mem-vs-baseline-max", type=float, default=None,
                         help="FAIL if a chunk variant's peak memory exceeds the baseline "
                              "variant's by more than this ratio (default: off).")
@@ -314,13 +298,13 @@ def build_parser():
 def apply_regression_guards(args, parser):
     """Hand --numa-interleave and the stats-guard floors to the run helpers
     (state), and return the zero_any-vs-zero_one_value memory ceiling (None: off).
-    The variant options given with an old label (chunk2a, tbb_chunk2...) are
-    read as their new names here, with a note on stderr."""
-    args.variants = [normalize_variant(v, "--variants") for v in args.variants]
+    A variant option given with an old label (chunk2a, tbb_chunk2...) stops the
+    run, with the new name."""
+    args.variants = [check_variant_label(v, "--variants") for v in args.variants]
     if args.light_variants is not None:
-        args.light_variants = [normalize_variant(v, "--light-variants") for v in args.light_variants]
-    args.seq_omp_variants = [normalize_variant(v, "--seq-omp-variants") for v in args.seq_omp_variants]
-    args.baseline_variant = normalize_variant(args.baseline_variant, "--baseline-variant")
+        args.light_variants = [check_variant_label(v, "--light-variants") for v in args.light_variants]
+    args.seq_omp_variants = [check_variant_label(v, "--seq-omp-variants") for v in args.seq_omp_variants]
+    args.baseline_variant = check_variant_label(args.baseline_variant, "--baseline-variant")
     # Regression guards: apply CLI overrides to the module-level floor map used
     # inside run_cmd (which has no access to args).
     state._NUMA_MODE = args.numa_interleave
@@ -333,7 +317,7 @@ def apply_regression_guards(args, parser):
                 parser.error(f"--stats-mark-ratio-min expects TAG=RATIO, got {item!r}")
             tag, val = item.split("=", 1)
             try:
-                floors[normalize_variant(tag.strip(), "--stats-mark-ratio-min")] = float(val)
+                floors[check_variant_label(tag.strip(), "--stats-mark-ratio-min")] = float(val)
             except ValueError:
                 parser.error(f"--stats-mark-ratio-min: bad ratio in {item!r}")
         state._STATS_MARK_RATIO_MIN = floors

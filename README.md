@@ -57,9 +57,8 @@ types, static chunks of 256, whole-process memory at the end. The price is acces
 ```cpp
 #include <cstdio>
 #include "chunk/zero_any_array.h"   // shrink_array::zero_any::Array
-#include "chunk/zero_chunk.h"       // release_chunk_pools, destroy_block_chunk
 #include "chunk/manage_ompt.h"     // parallel_phase
-#include "chunk/param_chunk.h"     // ParamChunk::init_indexes
+#include "chunk/param_chunk.h"     // ParamChunk::init_indexes, release_chunk_pools, destroy_block_chunk
 
 namespace sa = shrink_array;
 
@@ -428,6 +427,7 @@ Spack version (`spack install shrink-array@cpp23`).
 |---|---|
 | install, link, write a first program, follow the OpenMP rules | [docs/getting_started.md](docs/getting_started.md) |
 | find a call | [docs/api.md](docs/api.md) |
+| understand how it is built: parts, decisions, concurrency model | [docs/design.md](docs/design.md) |
 | choose a variant | [docs/variants.md](docs/variants.md) |
 | compare with sparse formats, compressors, sparse grids | [docs/alternatives.md](docs/alternatives.md) |
 | understand reads, writes, in-flight compression, deferred writes | [docs/algo_zero_one_value.md](docs/algo_zero_one_value.md) |

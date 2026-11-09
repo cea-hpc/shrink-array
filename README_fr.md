@@ -59,9 +59,8 @@ temps d'accès, voir [En chiffres](#en-chiffres).*
 ```cpp
 #include <cstdio>
 #include "chunk/zero_any_array.h"   // shrink_array::zero_any::Array
-#include "chunk/zero_chunk.h"       // release_chunk_pools, destroy_block_chunk
 #include "chunk/manage_ompt.h"     // parallel_phase
-#include "chunk/param_chunk.h"     // ParamChunk::init_indexes
+#include "chunk/param_chunk.h"     // ParamChunk::init_indexes, release_chunk_pools, destroy_block_chunk
 
 namespace sa = shrink_array;
 
@@ -443,6 +442,7 @@ aussi une version Spack (`spack install shrink-array@cpp23`).
 |---|---|
 | installer, lier, écrire un premier programme, suivre les règles OpenMP | [docs/getting_started_fr.md](docs/getting_started_fr.md) |
 | trouver un appel | [docs/api_fr.md](docs/api_fr.md) |
+| comprendre comment elle est construite : parties, décisions, modèle de concurrence | [docs/conception_fr.md](docs/conception_fr.md) |
 | choisir une variante | [docs/variantes_fr.md](docs/variantes_fr.md) |
 | comparer aux formats creux, aux compresseurs, aux grilles creuses | [docs/alternatives_fr.md](docs/alternatives_fr.md) |
 | comprendre lecture, écriture, compression en vol, écritures différées | [docs/algo_zero_one_value_fr.md](docs/algo_zero_one_value_fr.md) |

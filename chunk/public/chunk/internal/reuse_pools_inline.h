@@ -19,8 +19,8 @@
 /**
  * @file reuse_pools_inline.h
  * @brief Out-of-line bodies of ReusePools, the buffer reuse pools of one
- *        (variant, element type). Included by manager_chunk.h once
- *        ManagerChunk is complete.
+ *        (variant, element type). Included by type_state.h once
+ *        TypeState is complete.
  */
 
 #include <algorithm>   // std::max, std::sort, std::unique, std::ranges::contains, std::ranges::count_if
@@ -30,18 +30,18 @@
 #include <utility>     // std::pair
 #include <vector>      // std::vector
 
-#include "chunk/internal/reuse_pools.h"       // the declarations these bodies belong to
-#include "chunk/config.h"                     // build_config, chunk_config
-#include "chunk/log.h"                        // CHUNK_LOG_ALWAYS
-#include "fast_allocators/internal/svalloc.h" // svfree
-#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_*, pmp::
-#include "chunk/internal/chunk_size_policy.h" // alloc_chunk_count, thread_chunk_size
-#include "chunk/internal/pool_ledger.h"       // CHUNK_LEDGER_*
-#include "chunk/internal/freepath_counters.h" // CHUNK_FREEPATH_*
-#include "chunk/zero_chunk.h"                 // Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/zero_one_value_chunk.h"       // zero_one_value::Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/zero_any_chunk.h"             // zero_any::Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/type_name.h"                  // type_name<T>
+#include "chunk/internal/reuse_pools.h"          // the declarations these bodies belong to
+#include "chunk/config.h"                        // build_config, chunk_config
+#include "chunk/log.h"                           // CHUNK_LOG_ALWAYS
+#include "fast_allocators/internal/svalloc.h"    // svfree
+#include "chunk/internal/PMP_CHUNK.h"            // CHUNK_PMP_*, pmp::
+#include "chunk/internal/chunk_size_policy.h"    // alloc_chunk_count, thread_chunk_size
+#include "chunk/internal/pool_ledger.h"          // CHUNK_LEDGER_*
+#include "chunk/internal/freepath_counters.h"    // CHUNK_FREEPATH_*
+#include "chunk/internal/zero_chunk.h"           // Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/internal/zero_one_value_chunk.h" // zero_one_value::Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/internal/zero_any_chunk.h"       // zero_any::Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/internal/type_name.h"            // type_name<T>
 
 namespace shrink_array
 {

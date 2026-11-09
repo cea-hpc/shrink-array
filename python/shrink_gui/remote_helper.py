@@ -15,8 +15,8 @@ import base64, glob, io, json, os, re, shlex, signal, socket, subprocess, sys, t
 
 # The variants were named chunk / chunk2 / chunk2a (tbb_chunk...) until they took
 # the name of their namespace: the summaries, logs and executables of before read
-# as the new names until 1.0. The table of bench_runner/settings.py, copied: this
-# file imports nothing of the repository.
+# as the new names, so that old and new runs compare. The table of
+# bench_runner/settings.py, copied: this file imports nothing of the repository.
 LEGACY_VARIANTS = {
     "chunk": "zero", "chunk2": "zero_one_value", "chunk2a": "zero_any",
     "tbb_chunk": "tbb_zero", "tbb_chunk2": "tbb_zero_one_value", "tbb_chunk2a": "tbb_zero_any",

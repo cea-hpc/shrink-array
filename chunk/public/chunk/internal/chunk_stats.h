@@ -42,8 +42,8 @@
 #include <concepts>    // ChunkStatsZeroComparable
 #include <string_view> // chunk_variant_name
 
-#include "chunk/PMP_CHUNK.h" // get_thr_rank_fast / CHUNK_PMP_MAX_THREADS
-#include "chunk/config.h"    // build_config::chunk_dynamic
+#include "chunk/internal/PMP_CHUNK.h" // get_thr_rank_fast / CHUNK_PMP_MAX_THREADS
+#include "chunk/config.h"             // build_config::chunk_dynamic
 
 namespace shrink_array
 {

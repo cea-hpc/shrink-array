@@ -44,11 +44,6 @@ class ChunkDef
 
     /// Reuse budget per thread = chunks / (this * max threads); used for every variant, global and per size.
     constexpr static int factor_div_somme_chunk_buffer_reuse = 50;
-
-    /// Former, misspelt name of factor_div_somme_chunk_buffer_reuse, until 1.0.
-    [[deprecated(
-        "use factor_div_somme_chunk_buffer_reuse")]] constexpr static int factor_div_somme_chunk_buffer_resuse =
-        factor_div_somme_chunk_buffer_reuse;
 };
 
 } // namespace shrink_array::zero_any

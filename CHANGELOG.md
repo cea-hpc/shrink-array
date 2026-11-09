@@ -14,8 +14,12 @@ Two version numbers, both `MAJOR.MINOR.PATCH`:
 
 The **public interface** that the version describes is:
 
-- the headers of `chunk/public/chunk/` that are not in `internal/`, and what they declare;
-- the installed CMake targets (`chunk::chunk_v2a_256`, `chunk::chunk_v2a`, ...) and the
+- the headers of `chunk/public/chunk/` that are not in `internal/`, and the names of
+  `docs/api.md` they declare: `scripts/public_api.txt` lists them, and `check_public_api` fails
+  when one is added, moved, removed or renamed without the list. The members of the public
+  classes that name the library's machinery (`ManagerType`, `Manager`, `ChunkType`,
+  `ChunkListType`, `ProxyType`, `get_chunk_list()`) are not part of it;
+- the installed CMake targets (`chunk::chunk_zero_any_256`, `chunk::chunk_zero_any`, ...) and the
   variables `find_package(chunk)` sets;
 - the CMake options and the environment variables of `docs/environment_variables.md` (the user
   settings); those of `docs/developer_settings.md` are development tools, which can change in any
@@ -31,7 +35,7 @@ under Changed; the behaviour of the arrays behind a view keeps the policy above.
 
 | bump | when | examples |
 |---|---|---|
-| **MAJOR** | a change that can break a correct consumer: a public name, target, option or variable removed or renamed with no compatibility path, a changed contract | removing `ArrayChunk2::set_second_value`; dropping `chunk::chunk_v1` |
+| **MAJOR** | a change that can break a correct consumer: a public name, target, option or variable removed or renamed with no compatibility path, a changed contract | removing `zero_one_value::Array::set_second_value`; dropping `chunk::chunk_zero` |
 | **MINOR** | an addition, or a change with a compatibility path (the old name kept, deprecated) | new targets installed; a user option renamed with the old spelling still accepted |
 | **PATCH** | a fix that changes no interface | a race fixed; a wrong value in a trace |
 
@@ -56,6 +60,11 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `docs/design.md` (`docs/conception_fr.md` in French), the design document: requirements and
+  non-goals, the parts and their scope, static polymorphism, build-time configuration, the
+  access paths, the concurrency model, memory, dynamic geometry, backends, the decisions with
+  the alternatives rejected, known limits. Linked from `docs/README.md` and both READMEs;
+  `check_docs.py` checks the pair.
 - `shrink_bench --advise_bool`: hands `tab_bool` and `tab_bool_bits` to the re-chunk decider
   (off by default: the two bool containers stay at their birth geometry, to be compared as
   they are). `rechunk_validation` gains `bool-sliced`: `Array<bool>` through the sliced
@@ -69,6 +78,24 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- **The public interface, narrowed and frozen** (breaking). The public headers are what
+  `docs/api.md` documents; `PMP_CHUNK.h`, `all_type_chunk.h`, `chunk_traits.h`,
+  `global_stats_chunk_list.h`, `ring_log_debug.h`, `singleton.h`, `term_color.h`,
+  `type_name.h`, `zero_chunk.h`, `zero_one_value_chunk.h`, `zero_any_chunk.h`, `pattern_chunk.h`,
+  `zero_chunk_def.h`, `zero_one_value_chunk_def.h` and `zero_any_chunk_def.h` are under
+  `chunk/internal/` (a program that included one includes the array's header instead).
+  `release_chunk_pools()` and `destroy_block_chunk()` come with `chunk/param_chunk.h` (they
+  were in `chunk/zero_chunk.h`). `ManagerType`, `Manager`, `ChunkType`, `ChunkListType`,
+  `ProxyType` and `get_chunk_list()` are not part of the interface any more. The interface is
+  `scripts/public_api.txt`, checked by `check_public_api` (ctest). On cpp23 it also lists
+  `chunk/mdspan.h` and `chunk/mdspan_tile_ops.h`, experimental until 1.0.
+- **`ManagerChunk` is `TypeState`**: the shared state of one (variant, element type) -- reuse
+  pools, compression candidates, per-rank allocators, deferred flush -- named after what it is.
+  `ManagerChunkInt` is `TypeStateInterface`, `ManagerChunkDynInterface` /
+  `ManagerChunkParallelInterface` / `ManagerChunkDynImpl` / `ManagerChunkParallelImpl` are
+  `TypeStateDynInterface` / `TypeStateParallelInterface` / `TypeStateDynImpl` /
+  `TypeStateParallelImpl`, and `internal/manager_chunk*.h` are `internal/type_state*.h`
+  (`chunk/private/manager_chunk.cpp`: `type_state.cpp`). All internal: no interface change.
 - Re-chunk: `zero_one_value` and `zero_any` (and `pattern`) free each old chunk as soon as the
   rebuild has copied it, as `zero` did, and rebuild in 16 slices with the fast allocator under
   threads: each slice boundary recycles the slabs the slice emptied into the next slice's
@@ -78,6 +105,39 @@ the tag's checksum to the recipe.
   on this benchmark is the initialisation's, unchanged. `rechunk_validation` gains
   `sliced-val2-grow` and `sliced-val2-uneven`: sliced rebuilds mixing zero, second-value and
   live sources.
+
+### Removed
+
+- `chunk/debug.h`, which nothing included (`print_backtrace` is
+  `fast_alloc::logging::print_backtrace`).
+- **The other compatibility paths kept until 1.0** (breaking). The variant macros
+  `CHUNK_VARIANT_V1`, `CHUNK_VARIANT_V2`, `CHUNK_VARIANT_V2A` (use `CHUNK_VARIANT_ZERO`,
+  `CHUNK_VARIANT_ZERO_ONE_VALUE`, `CHUNK_VARIANT_ZERO_ANY`); the `CHUNK_VARIANTS` spellings
+  `chunk`, `chunk2`, `chunk2a`, now refused with the new name; the targets `chunk::chunk_v1*`,
+  `chunk::chunk_v2*`, `chunk::chunk_v2a*` (link `chunk::chunk_zero*`, `chunk::chunk_zero_one_value*`,
+  `chunk::chunk_zero_any*`). In the scripts, an old variant label on a command line (`chunk2a`,
+  `chunk2a@dyn`, `tbb_chunk2`...) is refused with its new name, and `bench_and_test.py`'s
+  hidden `--mem-chunk2a-vs-chunk2-max` is gone; the data recorded before the rename (perf
+  databases, summaries, logs) are still read, their old labels as the new names.
+- **The former C++ names kept until 1.0** (breaking: the next release is 0.3.0). The 45
+  `[[deprecated]]` aliases: `ArrayChunk`, `ArrayChunk2`, `ArrayChunk2A` (use `zero::Array`,
+  `zero_one_value::Array`, `zero_any::Array`), `Chunk2`, `Chunk2A`, `Proxy2`, `Proxy2A` and the
+  former `Chunk` / `Proxy` (use the variant's namespace), `use_chunk`, `use_chunk2`,
+  `use_chunk2a`, `use_chunk2or2a` (use `use_zero`, `use_zero_one_value`, `use_zero_any`,
+  `use_second_value`), the arrays' `chunk_type`, `manager_type`, `proxy_type`, `ind_type`,
+  `chunk_list_type` (use `ChunkType`, `ManagerType`, `ProxyType`, `IndType`, `ChunkListType`),
+  `getChunkList()` (use `get_chunk_list()`), `ManagerChunk2`, `ManagerChunk2A` (use `Manager`),
+  `pattern::Array::install_motif_for_test()` (use `install_motif()`),
+  `ParamChunk::ChunkStats()` (use `chunk_stats()`), `ParamChunk::check_pow2()` (use
+  `check_chunk_size()`), `ParamChunk::get_decalage_chunk()` and `chunk_decalage()` (use
+  `i / chunk_size()`), `factor_div_somme_chunk_buffer_resuse`; in fast_allocators,
+  `addAllocatedSize()`, `add_TCTypeAllocator_inst()`, `remove_TCTypeAllocator_inst()`,
+  `SIZE_BLOCK` (use `add_allocated_size()`, `add_tc_type_allocator_inst()`,
+  `remove_tc_type_allocator_inst()`, `size_block`). And the headers of the former names:
+  `chunk/array_chunk.h`, `chunk/array_chunk2.h`, `chunk/array_chunk2A.h`, `chunk/chunk_def.h`,
+  `chunk/chunk2_def.h`, `chunk/chunk2A_def.h`, `chunk/chunk_std.h`, `chunk/chunk2_std.h`,
+  `chunk/chunk2A_std.h` (include `chunk/zero_array.h`, `chunk/zero_chunk.h`, ... instead). The
+  proxies' `HPC WARNING` diagnostics on mixed-type operators stay.
 
 ### Fixed
 

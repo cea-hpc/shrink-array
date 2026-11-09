@@ -78,16 +78,16 @@
 #include <utility>     // std::as_const
 #include <vector>      // std::vector
 
-#include "chunk/chunk_traits.h"         // the IntType = int default of zero_one_value::Array<T> / zero_any::Array<T>
-#include "chunk/zero_one_value_array.h" // zero_one_value::Array
-#include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
-#include "chunk/config.h"               // chunk_config::use_zero_any, build_config::use_openmp
-#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"          // shrink_array::begin_parallel_phase, finalize_parallel_phase
-#include "chunk/internal/env_parse.h"   // arg_number (checked, not atoi)
-#include "chunk/internal/exact_rss.h"   // exact_rss_kib (smaps_rollup)
-#include "chunk/internal/print.h"       // shrink_array::println
+#include "chunk/internal/chunk_traits.h" // the IntType = int default of zero_one_value::Array<T> / zero_any::Array<T>
+#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_any_array.h"        // zero_any::Array
+#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
+#include "chunk/config.h"                // chunk_config::use_zero_any, build_config::use_openmp
+#include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"           // shrink_array::begin_parallel_phase, finalize_parallel_phase
+#include "chunk/internal/env_parse.h"    // arg_number (checked, not atoi)
+#include "chunk/internal/exact_rss.h"    // exact_rss_kib (smaps_rollup)
+#include "chunk/internal/print.h"        // shrink_array::println
 
 
 using namespace shrink_array;

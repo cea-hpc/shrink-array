@@ -822,6 +822,21 @@ launch_build() {  # <build-dir> [cmake --build extra args…]
         echo "cmake --build $dir ${_dry_exec}$*  # → log $name.log"
         return
     fi
+    # No build.ninja: the configure did not produce one -- it failed (run_cmd
+    # goes on to launch_build whatever its cmake returned; its error is on the
+    # screen, above), or never ran (--build on a dir never configured). Said
+    # here, as a failure, instead of a ninja whose log only reads "loading
+    # 'build.ninja': No such file or directory" -- which hid that llvm 22 on the
+    # Turin nodes has no OpenMP runtime behind ten omp-llvm "build" failures.
+    if [ ! -f "$dir/build.ninja" ]; then
+        __clear_status
+        N_FAILED=$(( N_FAILED + 1 ))
+        printf '[FAIL] %-50s not configured: %s\n' "$name" \
+               "$([ "${BUILD_ONLY:-false}" = true ] && echo "--build on a dir never configured" \
+                  || echo "its cmake configure failed, the error is on the screen above")"
+        __PENDING_HEADER=""
+        return 0
+    fi
     # --exec=<glob>: build only the Ninja target(s) matching <glob> (e.g. one
     # executable, or a family like '*_dyn' / '*_256') instead of the whole build
     # dir. CHUNK_BUILD_EXEC holds the pattern. A literal name (no glob chars) is

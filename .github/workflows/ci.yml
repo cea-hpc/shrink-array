@@ -18,7 +18,7 @@ name: CI
 
 on:
   push:
-    branches: [main, develop, threads, cpp23, cpp26]
+    branches: [main, develop, cpp23, cpp26]
   pull_request:
     branches: [main, develop]
   workflow_dispatch:
@@ -87,7 +87,7 @@ jobs:
   # A fixup!/squash!/amend! commit is squashed into its target before the
   # push (git rebase -i --autosquash), not published: once pushed it can only
   # stay. Only the commits this push or pull request brings are looked at, not
-  # the ones already on another branch (a merge of develop into threads brings
+  # the ones already on another branch (a merge of develop into cpp23 brings
   # commits develop has already passed).
   commit-hygiene:
     name: No fixup commit
