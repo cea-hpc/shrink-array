@@ -657,6 +657,17 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
         // ── Variants whose second-value state lives in the proxy ─────────────
         else if constexpr (!internal::raw_fillable_v<T>)
         {
+            // Already at the fill value: every write below would take the
+            // proxy's early-out, so none is made (the raw path's test below).
+            bool at_value = value_is_cst1 ? ch.is_cst_val1() : internal::at_second_constant(arr, ch, ind2, value);
+            if constexpr (requires { ch.pending_any(); })
+            {
+                at_value = at_value && !ch.pending_any();
+            }
+            if (at_value)
+            {
+                continue;
+            }
             for (std::size_t i = lo; i < hi; ++i)
             {
                 arr[static_cast<IndType>(i)] = value;
@@ -1006,6 +1017,37 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
 
             auto& ch = arr.chunk_ref(ci);
 
+            // A constant fill of a chunk already at that value -- its first
+            // constant or its second one, over all of it or part -- writes
+            // nothing: each element write below would take the proxy's
+            // early-out, chunk_size times for one answer (fill_range's test).
+            // Racing writers of the chunk's other indices change nothing: a
+            // materialisation copies the constant into the buffer, so these
+            // indices hold the value either way. Not while an op is pending on
+            // the chunk: an older op would replay over the fill.
+            if constexpr (Constant)
+            {
+                const InT<T> fill     = static_cast<T>(value_at(lo));
+                const bool   is_cst1  = fill == static_cast<T>(ChunkType::first_value);
+                bool         at_value = false;
+                if constexpr (is_packed_bit_v<T>)
+                {
+                    at_value = is_cst1 ? ch.is_cst_val1() : ch.is_cst_val2();
+                }
+                else
+                {
+                    at_value = is_cst1 ? ch.is_cst_val1() : at_second_constant(arr, ch, ind2, fill);
+                }
+                if constexpr (requires { ch.pending_any(); })
+                {
+                    at_value = at_value && !ch.pending_any();
+                }
+                if (at_value)
+                {
+                    continue;
+                }
+            }
+
             // Materialise through the element path, outside any session.
             std::size_t i = lo;
             while (i < hi && !materialised(arr, ch, ind2))
@@ -1172,7 +1214,9 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
  *          keeps the per-element write path's guarantees by taking its steps
  *          once per chunk span: see internal::store_range_mt. Unlike
  *          fill_range, a chunk is never RELEASED here (a whole-chunk fill of
- *          the constant leaves it materialised and queued).
+ *          the constant leaves it materialised and queued). As in fill_range, a
+ *          chunk already at the fill value (first or second constant) is
+ *          skipped with one test, not armed element by element.
  *
  *          zero_any, zero_one_value and zero under OpenMP with fast block compression
  *          (ArrayChunkBits too: one atomic update per word); elsewhere (bool,
