@@ -34,7 +34,7 @@
  */
 
 #include <cstdlib>     // std::abort
-#include <iomanip>     // std::setprecision, std::fixed
+#include <format>      // std::format (the filling rates)
 #include <iostream>    // std::cout, std::cerr
 #include <vector>      // std::vector
 #include <functional>  // std::function
@@ -217,8 +217,8 @@ int main()
                              {
                                  const double sz0 = only_first_chunk ? tab0_ind.stats_seq() : tab0_ind.stats();
 
-                                 std::cout << "  Chunk filling rate : " << std::fixed << std::setprecision(2) << sz0
-                                           << "%" << '\n';
+                                 // std::format, not std::fixed: std::cout's flags stay as they were.
+                                 std::cout << "  Chunk filling rate : " << std::format("{:.2f}", sz0) << "%" << '\n';
 
                                  // The presence fraction, a zero_one_value array: only its
                                  // interface chunks should be materialised, the
@@ -227,8 +227,8 @@ int main()
                                  const auto&  frac_ind = get_mat_vec(simu.get_frac());
                                  const double szf      = only_first_chunk ? frac_ind.stats_seq() : frac_ind.stats();
 
-                                 std::cout << "  Fraction chunk filling rate (zero_one_value) : " << std::fixed
-                                           << std::setprecision(2) << szf << "%" << '\n';
+                                 std::cout << "  Fraction chunk filling rate (zero_one_value) : "
+                                           << std::format("{:.2f}", szf) << "%" << '\n';
                              }
 
                              if (only_first_chunk)
@@ -248,8 +248,7 @@ int main()
                              }
                              const double sz = static_cast<double>(sum) / static_cast<double>(mesh_size) * 100.;
 
-                             std::cout << "  Real filling rate : " << std::fixed << std::setprecision(2) << sz << "%"
-                                       << '\n';
+                             std::cout << "  Real filling rate : " << std::format("{:.2f}", sz) << "%" << '\n';
                          }
                      });
     };

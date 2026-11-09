@@ -21,7 +21,7 @@
 #include <array>       // std::array (the checksums' names)
 #include <complex>     // operator== on ComplexDouble
 #include <cstddef>     // std::size_t
-#include <iomanip>     // std::setw, std::setprecision
+#include <format>      // std::format (the census lines, the filling rates)
 #include <iostream>    // std::cout
 #include <sstream>     // std::ostringstream
 #include <string>      // std::string
@@ -127,32 +127,23 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         const double pcz = double(nbz) / double(ssz);
         const double pcv = double(nbv) / double(ssz);
 
-        std::cout << std::fixed << std::setprecision(2);
-
-        // int, not Int: a display width handed to std::setw(int), never an
-        // array index -- Int widens to 64 bits under BENCH_INT64 and would
-        // narrow back at setw().
+        // std::format, not std::fixed / std::setw: std::cout's flags stay as
+        // they were for what the bench prints next.
         constexpr int name_width = 20;
         // Signed: a name longer than the width pads by 0, not by (size_t)-1 / 2.
         const int name_padding = std::max<int>(0, (name_width - static_cast<int>(name.length())) / 2);
-        std::cout << std::setw(name_padding) << "" << "\nstatistics " << name << "\n";
+        std::cout << std::string(static_cast<std::size_t>(name_padding), ' ') << "\nstatistics " << name << "\n";
 
-        constexpr Int label_width = 22;
-        constexpr Int value_width = 10;
+        // One census line: the label padded to 22, the colon, the count and the
+        // percentage right-aligned on 10.
+        const auto line = [](const std::string& label, Int count, double percent)
+        { std::cout << std::format("{:<22}:{:>10}{:>10.2f} %\n", label, count, percent); };
 
-        // The colon is now output as a separate token to ensure alignment.
         if constexpr (is_not_bool)
         {
-            std::cout << std::setw(label_width) << std::left << "Numbers of values" << ":" << std::setw(value_width)
-                      << std::right << nb << std::setw(value_width) << std::right << (pc * 100) << " %" << "\n";
+            line("Numbers of values", nb, pc * 100);
         }
-
-        // First output line: label "Numbers of 0"
-        const std::string label0 = "Numbers of 0";
-        std::cout << std::setw(label_width) << std::left << label0
-                  << ":" // Ensures the colon is always in the same position
-                  << std::setw(value_width) << std::right << nbz << std::setw(value_width) << std::right << (pcz * 100)
-                  << " %" << "\n";
+        line("Numbers of 0", nbz, pcz * 100);
 
         // Second output line: build the label dynamically with a suffix.
         std::ostringstream oss;
@@ -167,10 +158,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
             oss << sec_val;
         }
 
-        const std::string label = oss.str();
-        std::cout << std::setw(label_width) << std::left << label << ":" // Ensures consistent colon alignment
-                  << std::setw(value_width) << std::right << nbv << std::setw(value_width) << std::right << (pcv * 100)
-                  << " %" << "\n";
+        line(oss.str(), nbv, pcv * 100);
     };
 
     if constexpr (chunk_config::is_shrink_enabled)
@@ -197,17 +185,10 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
 
         constexpr int name_width   = 20;
         const int     name_padding = std::max<int>(0, (name_width - static_cast<int>(name.length())) / 2);
-        std::cout << std::fixed << std::setprecision(2);
-        std::cout << std::setw(name_padding) << "" << "\nstatistics " << name << "\n";
-
-        constexpr int label_width = 22;
-        constexpr int value_width = 10;
-        std::cout << std::setw(label_width) << std::left << "Numbers of 0" << ":" << std::setw(value_width)
-                  << std::right << nbz << std::setw(value_width) << std::right << (100.0 * double(nbz) / double(ssz))
-                  << " %" << "\n";
-        std::cout << std::setw(label_width) << std::left << "Numbers of levels != 0" << ":" << std::setw(value_width)
-                  << std::right << nb << std::setw(value_width) << std::right << (100.0 * double(nb) / double(ssz))
-                  << " %" << "\n";
+        std::cout << std::string(static_cast<std::size_t>(name_padding), ' ') << "\nstatistics " << name << "\n";
+        std::cout << std::format("{:<22}:{:>10}{:>10.2f} %\n", "Numbers of 0", nbz, 100.0 * double(nbz) / double(ssz));
+        std::cout << std::format("{:<22}:{:>10}{:>10.2f} %\n", "Numbers of levels != 0", nb,
+                                 100.0 * double(nb) / double(ssz));
     };
 
     // One lambda instead of two. The body of a generic lambda is a TEMPLATE, so
@@ -221,8 +202,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         if constexpr (chunk_config::is_shrink_enabled)
         {
             const double sz0 = tab.stats();
-            std::cout << name << " chunk filling rate : " << std::fixed << std::setprecision(3) << sz0 << "%"
-                      << std::endl;
+            std::cout << name << " chunk filling rate : " << std::format("{:.3f}", sz0) << "%" << std::endl;
         }
     };
 

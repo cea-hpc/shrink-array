@@ -25,7 +25,8 @@
 #include <cmath>     // std::sin (the range-API checks)
 #include <cstdio>    // std::fprintf
 #include <cstdlib>   // std::getenv, std::exit, std::abort
-#include <iomanip>   // std::setw, std::left
+#include <exception> // std::exception (main's catch)
+#include <format>    // std::format (the sizeof lines)
 #include <iostream>  // std::cout, std::cerr, std::cin
 #include <random>    // std::mt19937, std::uniform_int_distribution
 #include <stdexcept> // std::invalid_argument (the INPUT_DATA prompt)
@@ -184,6 +185,7 @@ static void run_prealloc_checks(Int count)
 }
 
 int main(int argc, char* argv[])
+try
 {
     // Optionally cap the glibc arenas, BEFORE any parallel region creates them.
     //
@@ -458,10 +460,11 @@ int main(int argc, char* argv[])
 
                         // Print the line with a dedicated color scheme:
                         // [Label in White] [= in Cyan] [Value in Bold Yellow] [Unit in Green]
-                        std::cout << tc.white << std::left << std::setw(static_cast<int>(max_width + 10)) << label
-                                  << tc.reset << tc.cyan << " = " << tc.reset << tc.bold << tc.yellow << std::setw(5)
-                                  << sizeof(ChunkType<decltype(team)>) << tc.reset << tc.green << " bytes" << tc.reset
-                                  << "\n";
+                        // std::format, not std::left / std::setw: std::cout's flags stay as they were.
+                        std::cout << tc.white << std::format("{:<{}}", label, max_width + 10) << tc.reset << tc.cyan
+                                  << " = " << tc.reset << tc.bold << tc.yellow
+                                  << std::format("{:>5}", sizeof(ChunkType<decltype(team)>)) << tc.reset << tc.green
+                                  << " bytes" << tc.reset << "\n";
                     }(data_types),
                     ...); // C++17 Fold expression
             },
@@ -1301,4 +1304,10 @@ int main(int argc, char* argv[])
     bench_teardown(bench_arrays, test_stl);
 
     return 0;
+}
+catch (const std::exception& e)
+{
+    // A failed allocation, std::format or a bad argument: said, not std::terminate().
+    std::fprintf(stderr, "shrink_bench: %s\n", e.what());
+    return 2;
 }
