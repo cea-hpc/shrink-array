@@ -315,7 +315,10 @@ void RechunkSupport<Derived, true>::log_old_pool_census(unsigned int old_key, un
         std::size_t live  = 0;
         std::size_t empty = 0;
     };
-    const auto scan = [old_size]([[maybe_unused]] unsigned int key)
+    // [&], not [old_size]: old_size is unused where the branch below is
+    // discarded (serial or std-alloc builds), and clang warns of an explicit
+    // capture then (-Wunused-lambda-capture).
+    const auto scan = [&]([[maybe_unused]] unsigned int key)
     {
         Occupancy occ;
         if constexpr (build_config::use_fast_alloc && build_config::threaded)

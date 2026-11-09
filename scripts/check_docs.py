@@ -49,6 +49,7 @@ PAIRS = {
     "developer_settings.md": "reglages_developpeur_fr.md",
     "performance_measurement.md": "mesures_performance_fr.md",
     "gpu_design.md": "conception_gpu_fr.md",
+    "design.md": "conception_fr.md",
 }
 
 # Documents with no French version, and why.

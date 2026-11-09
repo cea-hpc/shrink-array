@@ -56,6 +56,11 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `docs/design.md` (`docs/conception_fr.md` in French), the design document: requirements and
+  non-goals, the parts and their scope, static polymorphism, build-time configuration, the
+  access paths, the concurrency model, memory, dynamic geometry, backends, the decisions with
+  the alternatives rejected, known limits. Linked from `docs/README.md` and both READMEs;
+  `check_docs.py` checks the pair.
 - `shrink_bench --advise_bool`: hands `tab_bool` and `tab_bool_bits` to the re-chunk decider
   (off by default: the two bool containers stay at their birth geometry, to be compared as
   they are). `rechunk_validation` gains `bool-sliced`: `Array<bool>` through the sliced
