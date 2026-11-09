@@ -28,7 +28,7 @@
 // chunks are folded, and the program prints what each array keeps.
 // Exit status 0 when every value reads back as written.
 
-import std;          // std::as_const
+import std;          // std::as_const, std::println and std::cerr (the catch), std::exception
 import shrink_array; // zero_one_value::Array, ArrayChunkBits, parallel_phase, ParamChunk, println, release_chunk_pools, ...
 
 namespace sa = shrink_array;
@@ -74,6 +74,7 @@ static void report(const char* name, const Arr& arr, double bytes_per_element)
 }
 
 int main()
+try
 {
     sa::ParamChunk::init_indexes(true); // once, before the first array
 
@@ -114,4 +115,10 @@ int main()
     sa::release_chunk_pools(); // give the reuse pools back
     sa::destroy_block_chunk();
     return bad == 0 ? 0 : 1;
+}
+catch (const std::exception& e)
+{
+    // A failed allocation or std::format: said, not std::terminate().
+    std::println(std::cerr, "bool_arrays: {}", e.what()); // stderr is a macro: import std has no such name
+    return 2;
 }
