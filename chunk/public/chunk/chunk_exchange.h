@@ -334,18 +334,30 @@ template <ExchangeableArray Arr>
  * @details A fresh array of state.size elements (zero_one_value: with the
  *          second value declared) imports every chunk, then is moved into
  *          @p arr, which releases what it held. @p state may come from @p arr
- *          itself: its buffers are copied before the move.
+ *          itself: its buffers are copied before the move. Only the chunks
+ *          that hold elements, the first ceil(size / chunk_size), are
+ *          imported: an exported array may carry more (reserve(), or the
+ *          spare last chunk of a fresh array, which one grown by push_back
+ *          does not have), and theirs lie past its size.
  * @param arr   the array to replace, at a quiescent point (see the file comment)
  * @param state an export_array() result (its data still valid)
  * @return false, and @p arr unchanged, when a fresh array has another chunk
- *         size than state.chunk_size (a dynamic build at another geometry).
+ *         size than state.chunk_size (a dynamic build at another geometry), or
+ *         when @p state has fewer chunks than its size needs (not an export).
  */
 template <ExchangeableArray Arr>
 [[nodiscard]] bool import_array(Arr& arr, const ArrayState<typename Arr::value_type>& state)
 {
     using T = Arr::value_type;
     Arr fresh(static_cast<decltype(arr.size())>(state.size));
-    if (fresh.chunk_size() != state.chunk_size || static_cast<std::size_t>(fresh.chunk_count()) != state.chunks.size())
+    if (fresh.chunk_size() != state.chunk_size || state.chunk_size == 0)
+    {
+        return false;
+    }
+    // Not the chunk counts: they differ between two arrays of one size (a
+    // reserve(), a fresh array's spare last chunk). The elements decide.
+    const std::size_t used = (state.size + state.chunk_size - 1) / state.chunk_size;
+    if (state.chunks.size() < used || static_cast<std::size_t>(fresh.chunk_count()) < used)
     {
         return false;
     }
@@ -356,7 +368,7 @@ template <ExchangeableArray Arr>
             fresh.set_second_value(state.second_value);
         }
     }
-    for (std::size_t c = 0; c < state.chunks.size(); ++c)
+    for (std::size_t c = 0; c < used; ++c)
     {
         (void)import_chunk(fresh, c, state.chunks[c]); // a fresh array: every chunk at the first value
     }

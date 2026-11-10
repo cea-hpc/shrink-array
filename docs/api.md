@@ -133,7 +133,7 @@ depend on how the library encodes the chunk inside.
 | `export_chunk(a, c)` | sequential: chunk `c`'s state; `data` points into `a`, valid until `a` is written |
 | `import_chunk(a, c, state)` | sequential: chunk `c` takes `state`, a constant without a buffer; `false` if the chunk was written |
 | `export_array(a)` | sequential: size, `chunk_size()`, zero_one_value's second value, every chunk's state |
-| `import_array(a, state)` | sequential: `a` becomes the array `state` describes, whatever it held; `false` (and `a` unchanged) at another chunk size |
+| `import_array(a, state)` | sequential: `a` becomes the array `state` describes, whatever it held; `false` (and `a` unchanged) at another chunk size; the chunks past `state`'s size (a `reserve()`) are not imported |
 
 Every variant and element type but `Bit` (ArrayChunkBits). Call them after the phase, as
 `fill_range`.

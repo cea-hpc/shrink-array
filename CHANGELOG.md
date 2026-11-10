@@ -171,6 +171,12 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `import_array(b, export_array(a))` returned `false` whenever `a` had another chunk count than a
+  fresh array of its size: after `a.reserve(10000)` (40 chunks for 10 elements), or for an array
+  grown by 256 `push_back` (1 chunk, against 2 for a fresh array of 256). A checkpoint could
+  refuse to load. `import_array()` imports the chunks that hold elements, the first
+  `ceil(size / chunk_size)`, and refuses only another chunk size or a state with fewer chunks
+  than its size needs. `chunk_exchange_validation` imports both kinds of array.
 - A negative size was accepted: `a.resize(-1)` threw nothing and left `size() == -1`,
   `a.reserve(-1)` raised the capacity to 4,294,967,296, `Array(-1)` built an array. They throw
   `std::length_error` now, as `std::vector`, and leave the array as it was. `shrink_bench
