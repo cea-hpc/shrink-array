@@ -97,6 +97,22 @@ void ParamChunk::init_indexes(bool big_chunk_block)
     sz /= CHUNK_PMP_MAX_THREADS; // taking into account the number of threads
 
     sz = std::max(sz_min, sz);
+
+    // A later call (the first array runs init_indexes(true) when the program
+    // did not) may not change the block size: the allocators registered after
+    // it would cut their slabs to another size than those registered before,
+    // and a buffer is freed through slab_of() of whichever allocator of its
+    // type the thread's ambient size selects -- one slab size per element type
+    // (TCSlab::slab_bytes_for). Refused, the first one kept; the same size is
+    // a harmless repeat (each validation harness calls init_indexes(true)).
+    if (const int published = ens_type_chunk.ready_block_size(); published != 0 && published != sz) [[unlikely]]
+    {
+        CHUNK_LOG(warn, general,
+                  "ParamChunk::init_indexes({}) ignored: the allocation blocks are already {} bytes (one block size "
+                  "per process -- call init_indexes() once, before the first array)",
+                  big_chunk_block, published);
+        return;
+    }
     // No floor in pages by default. There was one, at sixteen pages, while an
     // emptied slab kept its last page (the trailing back-pointer): it capped
     // that retained share at ~6%. A sweep now gives the slab back whole

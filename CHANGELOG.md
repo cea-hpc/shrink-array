@@ -171,6 +171,13 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- A second `ParamChunk::init_indexes()` with the other argument (or `init_indexes(false)` after
+  the first array had run `init_indexes(true)`) changed the allocation block size: the
+  allocators registered afterwards cut their slabs to another size than the earlier ones of the
+  same element type, against the one-slab-size-per-type invariant `slab_of()` relies on
+  (`tc_allocator.h`). Out of contract (`docs/api.md`: once), now enforced: a call that would
+  change the block size is ignored with a warning; the same size again is a harmless repeat.
+  `pool_accounting` checks both.
 - `a.push_back(a(i))` and `a.resize(n, a(i))` past the capacity, with an element of more than 16
   bytes (passed by reference): `resize()` ran first, and its compression pass could release the
   buffer `a(i)` points into, which the write of the new element could then reuse, filled with the
