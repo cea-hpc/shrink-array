@@ -56,6 +56,12 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `CHUNK_PHASE_FENCES=0` runs without the four `seq_cst` fences that close the phase functions
+  (`chunk/private/all_type_chunk.cpp`), with a warning. They were kept as "empirically
+  load-bearing" since one unexplained checksum in August 2026; no handshake needs them as far
+  as the code reads, and several defects that lost deferred writes at phase boundaries have been
+  fixed since. The switch is there to settle it by measure before they are removed; the default
+  keeps them (`docs/developer_settings.md` §1).
 - `shrink_gui` 0.16: an environment field under the extra arguments (`NAME=value` words),
   exported in `run.sh` and `node.sh` before the command -- `CHUNK_LLVM_ROOT=~/llvm-22` for
   `compile_all.sh`, a run-time switch of the library for a bench. Exported before
