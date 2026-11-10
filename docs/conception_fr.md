@@ -465,11 +465,10 @@ les étapes et le contrat de phase.
     octet par chunk mais une ligne de cache de plus par lecture de motif ; dans l'objet chunk, il
     coûterait 8 octets par chunk et économiserait cette ligne. À trancher par une mesure avec
     `access_cost_pattern` sur des lectures dominées par les motifs ;
-  - *la prévision des motifs par le conseiller* : le conseiller lit un chunk motif comme des
-    données et ne prévoit aucune compression en motif aux autres tailles ; il n'est donc jamais
-    optimiste, mais sous-estime l'intérêt d'un rechunk d'un tableau `pattern`. Une prévision sur
-    les chunks échantillonnés coûte peu, mais elle change `ChunkSizeEstimate` -- une struct
-    publique, donc l'API -- et le décideur ;
+  - *la prévision des motifs par le conseiller* ne voit que les fenêtres faites de chunks motifs
+    et constants (`ChunkSizeEstimate::motif`) ; jusqu'en novembre 2026 il lisait un chunk motif
+    comme des données, et pouvait alors grossir un tableau dont les motifs ne survivent pas aux
+    fenêtres plus grandes (×51 mesuré) ;
   - *les motifs plus courts qu'un chunk* (un pas qui ne divise pas la taille du chunk, un offset
     qui croît dans le chunk) ne sont pas couverts : `chunk[j] = P[j mod s] + (j div s) * pas`
     serait une seconde sorte de motif, à mesurer d'abord sur de vraies connectivités.

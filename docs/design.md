@@ -444,10 +444,9 @@ backend rather than add a TBB backend: a TBB program links TBB, the library does
     chunk but one more cache line per motif read; in the chunk object it would cost 8 bytes per
     chunk and save that line. To be settled by a measurement with `access_cost_pattern` on
     motif-heavy reads;
-  - *the advisor's motif forecast*: the advisor reads a motif chunk as data and forecasts no
-    motif compression at the other sizes, so it is never optimistic but undervalues a rechunk of
-    a `pattern` array. A forecast from the sampled chunks is cheap, but it changes
-    `ChunkSizeEstimate` -- a public struct, hence the API -- and the decider;
+  - *the advisor's motif forecast* sees only the windows made of motif and constant chunks
+    (`ChunkSizeEstimate::motif`); it read a motif chunk as data until November 2026, and could
+    then coarsen an array whose motifs do not survive the larger windows (x51 measured);
   - *motifs shorter than a chunk* (a stride that does not divide the chunk size, an offset that
     grows inside the chunk) are not covered: `chunk[j] = P[j mod s] + (j div s) * step` would be
     a second kind of motif, to be measured on real connectivities first.

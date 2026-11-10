@@ -56,6 +56,14 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- SonarQube Cloud (project `cea-hpc_shrink-array`): `.github/workflows/sonar.yml` analyses
+  the tree on every push to develop and main, and on demand, with the rules of SonarQube for IDE
+  (SonarLint) -- the C++ from CMake's compilation database, one entry per source file, nothing
+  compiled; `sonar-project.properties` says what is analysed. Needs the `SONAR_TOKEN` secret
+  (without it the job stops, green). `scripts/sonar_export.py` writes every issue of a branch
+  to one JSON or CSV file (`--hotspots` adds the security hotspots), through the Web API and
+  the shell's Kerberos proxy, as `coverity_submit.sh` does; past the API's 10,000 issues per
+  query it splits the query by language, type, severity, rule or directory.
 - `docs/design.md` (`docs/conception_fr.md` in French), the design document: requirements and
   non-goals, the parts and their scope, static polymorphism, build-time configuration, the
   access paths, the concurrency model, memory, dynamic geometry, backends, the decisions with
@@ -154,6 +162,13 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `ChunkSizeAdvisor` counted a `pattern::Array`'s motif chunks as materialised, at every size:
+  its model of an array of motifs was off by two orders of magnitude, and blind to what a
+  coarsening loses. With the decider applying, a `pattern::Array<int>` of 2^26 elements (8
+  local motifs, irregular offsets) was re-chunked 256 -> 1024, from 5.25 MB to 270 MB, and
+  kept there. The advisor now counts them (`ChunkSizeEstimate::motif`, new, appended; `mat`
+  no longer includes them; `mem_bytes` adds one entry per distinct motif) and forecasts them
+  at the other sizes from the motif pointers and offsets. `pattern_validation` gains S.
 - CI: the `check_*` step ran 8 of the 10 `scripts/check_*.py`; `check_public_api` (the frozen
   interface) and `check_inline_bodies` ran under ctest only. Both are in the loop.
 - `README.md` and `README_fr.md` gave the version as 0.1.

@@ -65,6 +65,7 @@
 #include <cstdint>     // int64_t, uint32_t
 #include <format>      // std::format (write_table's lines)
 #include <string_view> // std::string_view (write_table's sink)
+#include <type_traits> // std::conditional_t (the motif forecast's rows, pattern::Array only)
 #include <vector>      // std::vector
 
 #include "chunk/internal/in_t.h"               // InT<T>: the element snapshots
@@ -86,12 +87,15 @@ namespace shrink_array
 /// @brief Model figures for one candidate chunk size: chunk counts and estimated memory.
 struct ChunkSizeEstimate
 {
-    uint32_t size      = 0;     ///< candidate chunk size (elements)
-    int64_t  n_chunks  = 0;     ///< total chunks at that size
-    int64_t  mat       = 0;     ///< materialized chunks (estimated or exact)
-    int64_t  cst       = 0;     ///< compressed chunks (cst_val1 + cst_val2)
-    double   mem_bytes = 0.;    ///< model memory (bytes)
-    bool     exact     = false; ///< true: exact fold; false: sampled estimate
+    uint32_t size      = 0;  ///< candidate chunk size (elements)
+    int64_t  n_chunks  = 0;  ///< total chunks at that size
+    int64_t  mat       = 0;  ///< materialized chunks (estimated or exact)
+    int64_t  cst       = 0;  ///< compressed chunks (cst_val1 + cst_val2)
+    double   mem_bytes = 0.; ///< model memory (bytes): metadata, materialised data and,
+                             ///< for pattern::Array, one entry per distinct motif
+    bool    exact = false;   ///< true: exact fold; false: sampled estimate
+    int64_t motif = 0;       ///< chunks compressed to a motif (pattern::Array; 0 otherwise):
+                             ///< exact at the current size, forecast at the others
 };
 
 /// @brief ChunkSizeAdvisor's result: one ChunkSizeEstimate per candidate size, with the best and current indices.
@@ -269,9 +273,12 @@ struct ChunkSizeAdvisor
             }
         };
 
-        // classify: kind 0 = cst1, 1 = cst2, 2 = mat; two cst2 chunks merge iff
-        // same `key` (zero_any: buffer ptr; zero_one_value: one shared sentinel).
-        const auto classify = [&](const auto& chunk, const void*& key)
+        // classify: kind 0 = cst1, 1 = cst2, 2 = mat, motif_kind = a motif chunk
+        // (pattern::Array; 2 for the other variants, which have none); two cst2
+        // chunks merge iff same `key` (zero_any: buffer ptr; zero_one_value: one
+        // shared sentinel).
+        constexpr int motif_kind = has_motif_state_v<typename Arr::ChunkType> ? 3 : 2;
+        const auto    classify   = [&](const auto& chunk, const void*& key)
         {
             key = nullptr;
             if (chunk.is_cst_val1())
@@ -281,11 +288,12 @@ struct ChunkSizeAdvisor
             if constexpr (has_motif_state_v<typename Arr::ChunkType>)
             {
                 // A motif chunk (pattern::Array): is_cst_val2() for the write engine,
-                // but no constant. Its data -- motif + offset, internal::motif_chunk_data() -- is
-                // read as a materialised chunk's (no motif forecast: never optimistic).
+                // but no constant, and no buffer of its own: a kind of its own,
+                // counted and forecast apart (the motif forecast below), never
+                // sampled as data.
                 if (Arr::ChunkType::is_motif_ptr(chunk.values_load()))
                 {
-                    return 2;
+                    return motif_kind;
                 }
             }
             // The family, not the build (as compressible_value).
@@ -391,12 +399,12 @@ struct ChunkSizeAdvisor
         {
             int64_t     start;
             int64_t     end;
-            int         kind; // -1: none, 0 cst1, 1 cst2, 2 mat
+            int         kind; // -1: none, 0 cst1, 1 cst2, 2 mat, motif_kind
             const void* key;
         };
         const auto count_run = [&](const Seg& seg, std::vector<int64_t>& inside)
         {
-            if (seg.kind < 0 || seg.kind == 2)
+            if (seg.kind < 0 || seg.kind == 2 || seg.kind == motif_kind)
             {
                 return;
             }
@@ -761,7 +769,8 @@ struct ChunkSizeAdvisor
                                         const auto&   ch  = tab.chunk_list_[cc];
                                         const void*   key = nullptr;
                                         T             part{};
-                                        if (classify(ch, key) != 2)
+                                        const int     kc = classify(ch, key);
+                                        if (kc != 2 && kc != motif_kind)
                                         {
                                             part = ch.read_value_scan(0); // the constant (a scan read: no app stats)
                                         }
@@ -818,6 +827,151 @@ struct ChunkSizeAdvisor
                 }
             });
 
+        // ── pattern::Array: the motif forecast ────────────────────────────────
+        // At the current size, the motif chunks and the distinct motifs, counted.
+        // At another size C, a window [a0, a1) that holds no materialised chunk
+        // and at least one motif chunk holds the same normalised data as another
+        // window iff their parts match: for each chunk it overlaps, in order, a
+        // motif chunk's (motif pointer, first element in the motif, length) or a
+        // constant chunk's length, each with its first value minus the window's
+        // first value. Equal keys, equal data (the converse can fail: two motifs
+        // with an equal sub-range; the forecast then misses a share, never invents
+        // one). A key seen c >= 2 times: c - 1 motif windows, one materialised
+        // (the first sighting the pass leaves on probation, docs/algo_pattern.md
+        // section 3), one motif entry. Uniform windows among them are rare (a motif
+        // chunk is never uniform) and counted as motifs. Read from the pointers
+        // and offset slots alone, one candidate size per task; nothing to do on
+        // an array without a motif chunk.
+        struct MotifRows
+        {
+            std::vector<int64_t> win;     // motif windows per candidate
+            std::vector<int64_t> entries; // distinct motifs per candidate
+        };
+        struct NoMotifRows
+        {
+        };
+        [[maybe_unused]] std::conditional_t<has_motif_state_v<typename Arr::ChunkType>, MotifRows, NoMotifRows>
+            motif_rows{};
+        if constexpr (has_motif_state_v<typename Arr::ChunkType>)
+        {
+            using ChunkT = typename Arr::ChunkType;
+            motif_rows.win.assign(static_cast<std::size_t>(n_cand), 0);
+            motif_rows.entries.assign(static_cast<std::size_t>(n_cand), 0);
+            std::vector<const T*> motifs_now;
+            for (int64_t j = 0; j < nc; ++j)
+            {
+                const void* key = nullptr;
+                if (classify(tab.chunk_list_[j], key) == motif_kind)
+                {
+                    motifs_now.push_back(tab.chunk_list_[j].values_load());
+                }
+            }
+            const auto motif0 = static_cast<int64_t>(motifs_now.size());
+            std::sort(motifs_now.begin(), motifs_now.end());
+            const auto distinct0 =
+                static_cast<int64_t>(std::unique(motifs_now.begin(), motifs_now.end()) - motifs_now.begin());
+            const auto mix = [](std::uint64_t h, std::uint64_t v)
+            {
+                h ^= v + 0x9E3779B97F4A7C15ULL + (h << 6U) + (h >> 2U);
+                h *= 0xBF58476D1CE4E5B9ULL;
+                return h ^ (h >> 31U);
+            };
+            if (motif0 > 0)
+            {
+                pmp::team(
+                    pmp::Options{.use_team = nc > 16384},
+                    [&](pmp::Team& team)
+                    {
+                        team.for_dynamic<int>(
+                            0, n_cand, 1,
+                            [&](int ci)
+                            {
+                                const uint32_t cand_sz = cand[static_cast<std::size_t>(ci)];
+                                if (cand_sz == chunk_sz)
+                                {
+                                    motif_rows.win[static_cast<std::size_t>(ci)]     = motif0;
+                                    motif_rows.entries[static_cast<std::size_t>(ci)] = distinct0;
+                                    return;
+                                }
+                                std::vector<std::uint64_t> keys;
+                                const int64_t              n_w = nwin(cand_sz);
+                                for (int64_t w = 0; w < n_w; ++w)
+                                {
+                                    const int64_t a0        = w * cand_sz;
+                                    const int64_t a1        = a0 + cand_sz < len ? a0 + cand_sz : len;
+                                    const int64_t ca        = a0 / chunk_sz;
+                                    const int64_t cb        = (a1 - 1) / chunk_sz;
+                                    bool          has_motif = false;
+                                    bool          ok        = true;
+                                    T             first{};
+                                    std::uint64_t h = mix(0x51ED27C3A9F1B6D5ULL, static_cast<std::uint64_t>(a1 - a0));
+                                    for (int64_t cc = ca; cc <= cb && ok; ++cc)
+                                    {
+                                        const auto&   ch   = tab.chunk_list_[cc];
+                                        const void*   key  = nullptr;
+                                        const int     kc   = classify(ch, key);
+                                        const int64_t p0   = a0 > cc * chunk_sz ? a0 : cc * chunk_sz;
+                                        const int64_t p1   = a1 < (cc + 1) * chunk_sz ? a1 : (cc + 1) * chunk_sz;
+                                        const auto    from = static_cast<std::uint64_t>(p0 - (cc * chunk_sz));
+                                        const auto    cnt  = static_cast<std::uint64_t>(p1 - p0);
+                                        T             v0{};
+                                        if (kc == 2)
+                                        {
+                                            ok = false; // a materialised chunk: the sampled windows' business
+                                            break;
+                                        }
+                                        if (kc == motif_kind)
+                                        {
+                                            const T* motif = ch.values_load();
+                                            const T  off   = internal::load_element_relaxed(
+                                                tab.motif_offset_slot(static_cast<int>(cc)));
+                                            v0        = ChunkT::motif_value(motif, static_cast<int>(from), off);
+                                            h         = mix(h, reinterpret_cast<std::uintptr_t>(motif));
+                                            h         = mix(h, from);
+                                            has_motif = true;
+                                        }
+                                        else
+                                        {
+                                            v0 = ch.read_value_scan(0); // the constant (a scan read: no app stats)
+                                            h  = mix(h, 0x0C0175A27ULL);
+                                        }
+                                        if (cc == ca)
+                                        {
+                                            first = v0;
+                                        }
+                                        h = mix(h, cnt);
+                                        h = mix(h, static_cast<std::uint64_t>(static_cast<typename ChunkT::UnsignedT>(
+                                                       ChunkT::wrapping_sub(v0, first))));
+                                    }
+                                    if (ok && has_motif)
+                                    {
+                                        keys.push_back(h);
+                                    }
+                                }
+                                std::sort(keys.begin(), keys.end());
+                                int64_t n_motif = 0;
+                                int64_t n_entry = 0;
+                                for (std::size_t i = 0; i < keys.size();)
+                                {
+                                    std::size_t k = i + 1;
+                                    while (k < keys.size() && keys[k] == keys[i])
+                                    {
+                                        ++k;
+                                    }
+                                    if (k - i >= 2)
+                                    {
+                                        n_motif += static_cast<int64_t>(k - i) - 1;
+                                        ++n_entry;
+                                    }
+                                    i = k;
+                                }
+                                motif_rows.win[static_cast<std::size_t>(ci)]     = n_motif;
+                                motif_rows.entries[static_cast<std::size_t>(ci)] = n_entry;
+                            });
+                    });
+            }
+        }
+
         // ── Assemble the table (ascending sizes) ──────────────────────────────
         for (int ci = 0; ci < n_cand; ++ci)
         {
@@ -847,6 +1001,24 @@ struct ChunkSizeAdvisor
             est.mem_bytes = (static_cast<double>(nch) * rep.meta_bytes) +
                             (static_cast<double>(mat) * static_cast<double>(Arr::ChunkType::storage_units(cand_sz)) *
                              sizeof(T)); // Bit: size / 8 bytes, not size
+            if constexpr (has_motif_state_v<typename Arr::ChunkType>)
+            {
+                // The motif windows were counted materialised above (no constant
+                // run, no sampled uniform window holds a motif chunk): moved to
+                // `motif`, plus one entry per distinct motif. At the current size
+                // mat0 never counted the motif chunks: the constants are what is left.
+                const int64_t motif =
+                    std::min(motif_rows.win[static_cast<std::size_t>(ci)], cand_sz == chunk_sz ? nch - mat : mat);
+                if (cand_sz != chunk_sz)
+                {
+                    est.mat = mat - motif;
+                }
+                est.motif     = motif;
+                est.cst       = nch - est.mat - motif;
+                est.mem_bytes = (static_cast<double>(nch) * rep.meta_bytes) +
+                                (static_cast<double>(est.mat + motif_rows.entries[static_cast<std::size_t>(ci)]) *
+                                 static_cast<double>(Arr::ChunkType::storage_units(cand_sz)) * sizeof(T));
+            }
             rep.table.push_back(est);
         }
 
@@ -886,11 +1058,12 @@ struct ChunkSizeAdvisor
         for (std::size_t i = 0; i < rep.table.size(); ++i)
         {
             const auto& row = rep.table[i];
-            out(std::format("   S={:5} : chunks={:9}  mat={:9} ({:5.1f}%)  mem={:9.2f} Mo {}{}{}", row.size,
+            out(std::format("   S={:5} : chunks={:9}  mat={:9} ({:5.1f}%)  mem={:9.2f} Mo {}{}{}{}", row.size,
                             static_cast<long long>(row.n_chunks), static_cast<long long>(row.mat),
                             row.n_chunks != 0 ? 100. * static_cast<double>(row.mat) / static_cast<double>(row.n_chunks)
                                               : 0.,
                             row.mem_bytes / (1024. * 1024.), row.exact ? "" : "~",
+                            row.motif != 0 ? std::format("  motif={}", static_cast<long long>(row.motif)) : "",
                             static_cast<int>(i) == rep.cur ? " <- current" : "",
                             static_cast<int>(i) == rep.best ? "  ** BEST **" : ""));
         }
