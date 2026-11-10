@@ -114,6 +114,7 @@ et `CHUNK_ADVISOR_TABLE`.
 | `SHRINK_BENCH_MALLOC_TRIM` | `1` : `malloc_trim` à chaque ligne de mémoire, et pas seulement aux points de contrôle (« after init », « end ») ; déforme la courbe et coûte dans la boucle chronométrée |
 | `SHRINK_BENCH_KEEP_POOLS` | `1` : pas de `trim_reuse_pools` aux points de contrôle (les tampons mis de côté et, avec l'allocateur rapide, les slabs vidés restent résidents) |
 | `BENCH_SCHED_BLOCK` | taille des blocs d'ordonnancement des phases du banc (64 ; 0 = tranches contiguës) |
+| `BENCH_RANK_TIMING` | `1` : banc TBB seulement, chronomètre chaque région par rang virtuel et affiche en fin de run, par site d'appel, la répartition du temps des threads en travail / déséquilibre / démarrage / fin, et le temps en série entre les régions (stderr, lignes `[rank-timing]`) |
 | `NO_IO`, `COMPRESS` | équivalents de `--no_io` et `--compress` |
 | `--no_mask`, `--mask_scale <x>` | sans `tab_mask` ; ou sa taille, `x × sz` (défaut 1/32) |
 | `--no_conn`, `--conn_scale <x>` | sans `tab_conn`, la connectivité de maillage (`pattern::Array` dans les builds `zero_one_value` et `zero_any`) ; ou sa taille, environ `x × sz` en rangées entières (défaut 1/32) |

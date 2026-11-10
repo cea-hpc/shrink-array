@@ -111,6 +111,7 @@ to one, as the former `=name` values of `CHUNK_RECHUNK_CHURN` and `CHUNK_ADVISOR
 | `SHRINK_BENCH_MALLOC_TRIM` | `1`: `malloc_trim` at each memory line, and not only at the checkpoints ("after init", "end"); distorts the curve and costs time in the timed loop |
 | `SHRINK_BENCH_KEEP_POOLS` | `1`: no `trim_reuse_pools` at the checkpoints (the parked buffers, and with the fast allocator the emptied slabs, stay resident) |
 | `BENCH_SCHED_BLOCK` | size of the scheduling blocks of the benchmark phases (64; 0 = contiguous slices) |
+| `BENCH_RANK_TIMING` | `1`: TBB bench only, times every region per virtual rank and prints at exit, per call site, the split of the threads' time into busy / imbalance / launch / tail, and the serial time between regions (stderr, `[rank-timing]` lines) |
 | `NO_IO`, `COMPRESS` | equivalents of `--no_io` and `--compress` |
 | `--no_mask`, `--mask_scale <x>` | without `tab_mask`; or its size, `x × sz` (default 1/32) |
 | `--no_conn`, `--conn_scale <x>` | without `tab_conn`, the mesh connectivity (`pattern::Array` in the `zero_one_value` and `zero_any` builds); or its size, about `x × sz` in whole rows (default 1/32) |
