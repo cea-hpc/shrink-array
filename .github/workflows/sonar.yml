@@ -32,8 +32,9 @@ permissions:
 jobs:
   sonar:
     name: SonarQube Cloud
-    # The analysis belongs to cea-hpc's repository, not to the forks.
-    if: github.repository == 'cea-hpc/shrink-array'
+    # Any repository with the SONAR_TOKEN secret (cea-hpc's or a fork): the
+    # SonarQube Cloud organisation and project key come from the repository
+    # variables SONAR_ORGANIZATION and SONAR_PROJECT_KEY, by default cea-hpc's.
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
@@ -106,5 +107,7 @@ jobs:
         uses: SonarSource/sonarqube-scan-action@v5
         with:
           args: >
+            -Dsonar.organization=${{ vars.SONAR_ORGANIZATION || 'cea-hpc' }}
+            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY || 'cea-hpc_shrink-array' }}
             -Dsonar.cfamily.compile-commands=build/compile_commands_sonar.json
             -Dsonar.cfamily.threads=4

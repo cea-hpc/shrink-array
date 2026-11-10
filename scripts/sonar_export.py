@@ -16,7 +16,8 @@ Usage: scripts/sonar_export.py [--branch develop] [--format json|csv]
   --hotspots  the security hotspots too (api/hotspots/search), in the JSON
               under "hotspots" (CSV: as rows of type SECURITY_HOTSPOT)
   -o FILE     where to write (default: stdout)
-  --project   the project key (default: cea-hpc_shrink-array)
+  --project   the project key (default: $SONAR_PROJECT_KEY, else
+              cea-hpc_shrink-array)
 
 Environment:
   SONAR_TOKEN  a user token (sonarcloud.io, My Account, Security). The project
@@ -40,7 +41,7 @@ import subprocess
 import sys
 import urllib.parse
 
-DEFAULT_PROJECT = "cea-hpc_shrink-array"
+DEFAULT_PROJECT = os.environ.get("SONAR_PROJECT_KEY") or "cea-hpc_shrink-array"
 PAGE_SIZE = 500
 API_LIMIT = 10000
 
