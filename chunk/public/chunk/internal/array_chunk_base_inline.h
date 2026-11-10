@@ -91,6 +91,19 @@ void ArrayChunkBase<Derived>::set_chunk_size([[maybe_unused]] unsigned int new_c
             warn_chunk_size_refused("set_chunk_size", new_chunk_size, *err);
             return;
         }
+        // An array that has chunks keeps its geometry: the new size would only
+        // change how indices map onto chunks laid out at the old one (a[i]
+        // reads another element), and become every later array's birth size.
+        // rechunk_to() moves the elements. The same size stays accepted: it
+        // changes no mapping.
+        if (nb_chunk_ != 0 && new_chunk_size != size_policy_.size()) [[unlikely]]
+        {
+            CHUNK_LOG(warn, rechunk,
+                      "set_chunk_size({}) refused: the array has {} chunk(s) at size {} (rechunk_to() "
+                      "moves the elements)",
+                      new_chunk_size, nb_chunk_, size_policy_.size());
+            return;
+        }
     }
     size_policy_.set_size(new_chunk_size); // no-op under StaticChunkSize
     if constexpr (build_config::chunk_dynamic)

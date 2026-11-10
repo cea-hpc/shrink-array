@@ -186,7 +186,7 @@ tous les backends.
 | `decider.consider<T>(a, tick, iter, "name")` | | analyse le tableau et applique le rechunk si la politique est d'accord **(S)** |
 | `decider.print_rechunk_log()` | | la table des rechunks effectués |
 | `a.rechunk_to(n)` **(S)** | | rechunke un tableau à `n` éléments par chunk |
-| `a.set_chunk_size(n)` | | la géométrie d'un tableau VIDE, avant son premier `resize()` ; sans effet dans un build statique |
+| `a.set_chunk_size(n)` | | la géométrie d'un tableau VIDE, avant son premier `resize()` ; refusé (avertissement) sur un tableau qui a des chunks -- `rechunk_to()` déplace les éléments ; sans effet dans un build statique |
 | `set_active_chunk_size(n)` | `chunk/chunk_size_advisor.h` | la taille de chunk du processus, avant `ParamChunk::init_indexes()` : la première géométrie |
 | `set_thread_chunk_size(n)` | `chunk/chunk_size_advisor.h` | la taille de chunk des prochains tableaux construits par le thread appelant |
 | `sizeof(zero_any::Chunk<T>)` | `chunk/zero_any_array.h` | les métadonnées d'un chunk, pour les options du conseiller |

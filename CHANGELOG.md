@@ -171,6 +171,13 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `a.set_chunk_size(n)` on an array that had chunks changed its geometry without moving them:
+  on 100,000 written elements, 64 -> 1024 left the 1563 chunks where they were, and `a[99000]`
+  read another element; the size also became the birth size of every array built afterwards.
+  The documentation said "the geometry of an EMPTY array", nothing enforced it. Another size on
+  an array that has chunks is now refused with a warning, geometry kept (`rechunk_to()` moves
+  the elements); the same size stays accepted. `advisor_demo`, which built an `Array(1)` then
+  set another size, builds an `Array(0)`. `rechunk_validation`'s refusal case checks it.
 - `rechunk_to()` corrupted the heap on an array ending less than a chunk below `INT_MAX` (an `int`
   index, `_dyn` build): a `zero_any::Array<int8_t>` of `INT_MAX` elements, its last ten written,
   re-chunked 4096 -> 2048, stopped on a glibc `malloc.c` assertion. The end of the last chunk,

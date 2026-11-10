@@ -396,8 +396,10 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @param new_chunk_size the new chunk size: a power of two or a multiple of
      *        64, at most cst_buffer_size (chunk_size_error); refused otherwise,
      *        with a warning, geometry kept
-     * @warning Must be called on an empty container, before any
-     *          resize/allocation, since it changes how indices map to chunks.
+     * @warning For an empty container, before any resize/allocation, since it
+     *          changes how indices map to chunks: on an array that has chunks,
+     *          another size is refused with a warning, geometry kept (rechunk_to()
+     *          moves the elements).
      */
     void set_chunk_size([[maybe_unused]] unsigned int new_chunk_size) noexcept;
 
