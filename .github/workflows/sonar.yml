@@ -1,0 +1,110 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
+#
+# SonarQube Cloud (sonarcloud.io, project cea-hpc_shrink-array): the rules of
+# SonarQube for IDE (SonarLint) over the whole tree, on every push to develop
+# and main, and on demand for any branch. The C++ is analysed from CMake's
+# compilation database -- nothing is compiled: the job configures, generates
+# the build stamp, and hands the database to the scanner. The issues are on
+# the project's page; scripts/sonar_export.py fetches them as JSON or CSV.
+#
+# Needs the repository secret SONAR_TOKEN (sonarcloud.io, My Account,
+# Security). Without it the job says so and stops, green. On the SonarQube
+# Cloud side: the project imported from cea-hpc's GitHub organisation, its
+# Automatic Analysis off (C++ is analysed from CI only), and develop declared
+# a long-lived branch (Administration, Branches and Pull Requests) so that its
+# issues are kept.
+
+name: Sonar
+
+on:
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  sonar:
+    name: SonarQube Cloud
+    # The analysis belongs to cea-hpc's repository, not to the forks.
+    if: github.repository == 'cea-hpc/shrink-array'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      CC: gcc-14
+      CXX: g++-14
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    steps:
+      - name: Token present
+        id: token
+        run: |
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "::notice::no SONAR_TOKEN secret: SonarQube Cloud analysis skipped"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v5
+        if: steps.token.outputs.ok == 'true'
+        with:
+          # The whole history: the scanner blames each issue's line (new code,
+          # assignee).
+          fetch-depth: 0
+      - name: Toolchain
+        if: steps.token.outputs.ok == 'true'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev libtbb-dev
+      # The configuration of the CI's gcc 14 OpenMP job, with the harnesses
+      # (CHECK_OPTIM) and without the unity builds: a unity translation unit is
+      # a generated file outside the sources, and the files it includes would
+      # not be analysed as themselves.
+      - name: Configure
+        if: steps.token.outputs.ok == 'true'
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          -DOMP=ON
+          -DCHECK_OPTIM=ON
+          -DCHUNK_STATIC_SIZES=256
+          -DCHUNK_BUILD_DYN=OFF
+          -DCHUNK_LIB_UNITY=OFF
+          -DCHUNK_VALIDATION_UNITY=OFF
+      # The only source generated at build time: the build stamp (git
+      # describe). chunk/build_options.h is written at configure.
+      - name: Generated sources
+        if: steps.token.outputs.ok == 'true'
+        run: cmake --build build --target shrink_build_stamp_gen
+      # A source compiled for several variant libraries appears once per
+      # library: the first entry is kept, so that each file is analysed once
+      # (the variant code paths of the others are left out).
+      - name: One entry per source file
+        if: steps.token.outputs.ok == 'true'
+        run: |
+          python3 - <<'EOF'
+          import json
+          with open("build/compile_commands.json") as f:
+              entries = json.load(f)
+          seen, kept = set(), []
+          for e in entries:
+              if e["file"] not in seen:
+                  seen.add(e["file"])
+                  kept.append(e)
+          with open("build/compile_commands_sonar.json", "w") as f:
+              json.dump(kept, f, indent=1)
+          print(f"compile_commands: {len(entries)} entries, {len(kept)} files")
+          EOF
+      - name: Analyse
+        if: steps.token.outputs.ok == 'true'
+        uses: SonarSource/sonarqube-scan-action@v5
+        with:
+          args: >
+            -Dsonar.cfamily.compile-commands=build/compile_commands_sonar.json
+            -Dsonar.cfamily.threads=4
