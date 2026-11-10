@@ -24,10 +24,8 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   # default-size ones (chunk::chunk_zero_any_module, ...) and their dependencies
   # (fast_allocators, OpenMP and Threads when the library was built with them).
   find_package(chunk 0.2 REQUIRED)
-  set(GETTING_STARTED_LIB chunk::chunk_zero_any CACHE STRING "The shrink-array library to link (getting_started_ompt)")
   set(GETTING_STARTED_MODULE chunk::chunk_zero_any_module CACHE STRING "The shrink-array module to import")
 else()
-  set(GETTING_STARTED_LIB chunk_zero_any)
   set(GETTING_STARTED_MODULE chunk_zero_any_module)
 endif()
 
@@ -54,7 +52,10 @@ else()
 endif()
 if (_gs_ompt)
   add_executable(getting_started_ompt getting_started_ompt.cpp)
-  target_link_libraries(getting_started_ompt PRIVATE ${GETTING_STARTED_LIB})
+  # It imports the module too, as getting_started.cpp.
+  set_target_properties(getting_started_ompt PROPERTIES CXX_SCAN_FOR_MODULES ON CXX_MODULE_STD ON)
+  target_compile_features(getting_started_ompt PRIVATE cxx_std_23)
+  target_link_libraries(getting_started_ompt PRIVATE ${GETTING_STARTED_MODULE})
   if (NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     add_test(NAME getting_started_ompt COMMAND getting_started_ompt)
     set_property(TEST getting_started_ompt PROPERTY ENVIRONMENT "CHUNK_REQUIRE_OMPT=1;OMP_NUM_THREADS=8")

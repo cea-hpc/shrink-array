@@ -15,7 +15,10 @@ chunk_require_cxx_std(simple_array_chunk PRIVATE)
 # Link the matching chunk variant so is_shrink_enabled sees the same value
 # on both sides of the library boundary (see chunk/CMakeLists.txt header).
 target_link_libraries(simple_array_vector PRIVATE chunk_vector)
-target_link_libraries(simple_array_chunk  PRIVATE chunk_zero)
+# simple_array_chunk imports the module over chunk_zero (import shrink_array;);
+# simple_array_vector, over chunk_vector (no variant, no module), reads the
+# headers: simple_array.cpp picks one or the other on CHUNK_VARIANT_ZERO.
+chunk_link_module(simple_array_chunk chunk_zero)
 
 # CHUNK_VARIANT_ZERO=1 now comes from chunk_zero (PUBLIC); the line below is kept
 # as a harmless redefinition to keep this executable self-explanatory in

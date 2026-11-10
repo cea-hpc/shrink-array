@@ -20,7 +20,8 @@ chunk_require_cxx_std(test_vecto_chunk PRIVATE)
 # shape of the library) while this example instantiates zero::Array<double>
 # itself -- the same mismatch multi-mat had (its allocators and lists never
 # set up: SIGSEGV in create_value from the first parallel write).
-target_link_libraries(test_vecto_chunk PRIVATE chunk_zero_${CHUNK_DEFAULT_SIZE})
+# It imports the module over its variant library (import shrink_array;).
+chunk_link_module(test_vecto_chunk chunk_zero_${CHUNK_DEFAULT_SIZE})
 
 add_test(NAME test_vecto_chunk COMMAND test_vecto_chunk)
 set_property(TEST test_vecto_chunk PROPERTY LABELS examples)

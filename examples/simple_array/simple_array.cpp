@@ -14,29 +14,38 @@
  * limitations under the License.
  */
 
-#include <algorithm> // std::min
-#include <bit>       // std::bit_cast (calculate_checksum)
-#include <chrono>    // std::chrono::steady_clock
-#include <cmath>     // std::cos, std::sin, std::sqrt
-#include <cstdint>   // std::int64_t, uint64_t
-#include <cstdlib>   // std::abort
-#include <random>    // std::mt19937, std::uniform_int_distribution
-#include <array>     // std::array
-#include <fstream>   // std::ifstream, std::ofstream
-#include <string>    // std::string, std::to_string
-
-#include <type_traits>    // std::conditional_t (Array)
-#include <vector>         // std::vector
-#include <sys/resource.h> // getrusage
+// The C headers first, for their macros and global names: an import brings
+// neither.
+#include <cstdint>        // uint64_t (unqualified)
 #include <cstdio>         // stderr
-#include <print>          // std::println, std::print
+#include <sys/resource.h> // getrusage, RUSAGE_SELF
 
-// Both executables have the chunk headers: simple_array_vector links
-// chunk_vector, simple_array_chunk chunk_zero.
-#include "chunk/param_chunk.h" // ParamChunk, destroy_block_chunk
-#include "chunk/zero_array.h"  // zero::Array
-#include "chunk/threads.h"     // pmp::max_threads
-#include "chunk/config.h"      // chunk_config::use_zero*, stats
+// simple_array_chunk imports the module over its variant library (chunk_zero,
+// whose CHUNK_VARIANT_ZERO reaches this file). simple_array_vector links
+// chunk_vector: no variant, so no module -- it reads the headers.
+#ifdef CHUNK_VARIANT_ZERO
+import std;          // std::bit_cast, std::chrono, std::mt19937, std::ofstream, std::conditional_t, std::println, ...
+import shrink_array; // zero::Array, ParamChunk, destroy_block_chunk, pmp::max_threads, chunk_config
+#else
+    #include <algorithm> // std::min
+    #include <bit>       // std::bit_cast (calculate_checksum)
+    #include <chrono>    // std::chrono::steady_clock
+    #include <cmath>     // std::cos, std::sin, std::sqrt
+    #include <cstdlib>   // std::abort
+    #include <random>    // std::mt19937, std::uniform_int_distribution
+    #include <array>     // std::array
+    #include <fstream>   // std::ifstream, std::ofstream
+    #include <string>    // std::string, std::to_string
+
+    #include <type_traits> // std::conditional_t (Array)
+    #include <vector>      // std::vector
+    #include <print>       // std::println, std::print
+
+    #include "chunk/param_chunk.h" // ParamChunk, destroy_block_chunk
+    #include "chunk/zero_array.h"  // zero::Array
+    #include "chunk/threads.h"     // pmp::max_threads
+    #include "chunk/config.h"      // chunk_config::use_zero*, stats
+#endif
 
 
 /// @brief splitmix64's finaliser: a bijection on 64 bits that spreads every

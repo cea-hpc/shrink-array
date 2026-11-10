@@ -26,12 +26,8 @@
 // around them. With GCC's libgomp (no OMPT) the phases would never be marked:
 // write the regions with parallel_phase(), as getting_started.cpp does.
 
-#include <utility> // std::as_const
-#include <vector>  // std::vector, the reference
-
-#include "chunk/zero_any_array.h" // shrink_array::zero_any::Array
-#include "chunk/config.h"         // build_config::has_ompt
-#include "chunk/print.h"          // shrink_array::println
+import std;          // std::as_const, std::vector (the reference)
+import shrink_array; // zero_any::Array, build_config::has_ompt, println
 
 namespace sa = shrink_array;
 using shrink_array::println;
