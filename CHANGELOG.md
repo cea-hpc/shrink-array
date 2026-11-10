@@ -179,6 +179,12 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- std backend: a thread building, re-chunking or destroying a large array outside a region could
+  deadlock with another thread's team. It held the cold-path lock and waited for the pool (one
+  team at a time) while a member of the team holding the pool waited for that lock to build its
+  own array (ThreadSanitizer's lock-order inversion in `bulk_write_team_validation`). The pool
+  no longer makes a team wait: when another thread's team holds it, the new team runs as a team
+  of one on its caller, as a nested or application-phase team already does.
 - Building or destroying arrays from several threads of a region at once corrupted the heap
   (a crash in most runs: 15 of 16 with a work array per thread and per iteration). The
   constructor grew the per-array tables that every write of every other thread indexes, and

@@ -76,9 +76,13 @@ inline void pmp::std_backend::TeamCtx::leave(std::uint64_t seq)
 // ---------------------------------------------------------------------------
 
 template <typename Job>
-void pmp::std_backend::Pool::run(int n, Job& job)
+bool pmp::std_backend::Pool::try_run(int n, Job& job)
 {
-    const std::scoped_lock lock(team_mutex_);
+    const std::unique_lock lock(team_mutex_, std::try_to_lock);
+    if (!lock.owns_lock())
+    {
+        return false;
+    }
     while (static_cast<int>(workers_.size()) < n - 1)
     {
         const int           r     = static_cast<int>(workers_.size()) + 1;
@@ -96,12 +100,13 @@ void pmp::std_backend::Pool::run(int n, Job& job)
     // within microseconds of rank 0, and a futex wake-up costs more.
     if (spin_until(n, [this]() noexcept { return pending_.load(std::memory_order_acquire) == 0; }))
     {
-        return;
+        return true;
     }
     for (int p = pending_.load(std::memory_order_acquire); p != 0; p = pending_.load(std::memory_order_acquire))
     {
         pending_.wait(p, std::memory_order_acquire);
     }
+    return true;
 }
 
 inline void pmp::std_backend::Pool::call(int rank) noexcept

@@ -46,7 +46,7 @@
 #include <cstdint>       // std::uint64_t (the pool's job word)
 #include <exception>     // std::terminate (a body that throws)
 #include <memory>        // std::unique_ptr (the construct slots)
-#include <mutex>         // std::mutex, std::scoped_lock (the slots; one team at a time)
+#include <mutex>         // std::mutex, std::scoped_lock, std::unique_lock (the slots; one team at a time)
 #include <thread>        // std::jthread (the workers)
 #include <unordered_map> // std::unordered_map (the construct slots)
 #include <vector>        // std::vector (the workers, the per-rank counts and results)
@@ -141,8 +141,10 @@ class Pool
 
     /// @brief Run @p job(rank) for every rank of [0, @p n): rank 0 on the
     ///        calling thread, the others on the workers; return when all are done.
+    /// @return false, without running @p job, when another thread's team holds
+    ///         the pool (the caller runs a team of one instead of waiting).
     template <typename Job>
-    void run(int n, Job& job);
+    [[nodiscard]] bool try_run(int n, Job& job);
 
   private:
     Pool() = default;
@@ -183,19 +185,27 @@ inline void static_block(long long n, int nt, int rank, long long& b, long long&
  * @details A team of one when @p on is false, @p nt is 1, the calling
  *          thread is already in max_active_levels active teams, or an
  *          application phase is open (application threads hold the ranks the
- *          workers would take); it still counts as a level, as OpenMP's
- *          serialised regions do.
+ *          workers would take), or the pool runs another thread's team; it
+ *          still counts as a level, as OpenMP's serialised regions do.
+ *          Never waiting for the pool keeps it out of every lock order: a
+ *          thread holding the library's cold-path lock (an array built or
+ *          re-chunked outside a region) used to wait for the pool while a
+ *          member of the team holding it waited for that lock.
  */
 template <typename TeamT, typename Body>
 void open_team(bool on, int nt, Body& body)
 {
-    const auto& s = tls();
-    if (!on || nt <= 1 || s.active_level >= settings().max_active_levels.load(std::memory_order_relaxed) ||
-        settings().application_phase.load(std::memory_order_acquire))
+    const auto& s      = tls();
+    const auto  serial = [&body]
     {
         const FrameGuard frame(nullptr, 0, 1);
         TeamT            t(nullptr, 0);
         body(t);
+    };
+    if (!on || nt <= 1 || s.active_level >= settings().max_active_levels.load(std::memory_order_relaxed) ||
+        settings().application_phase.load(std::memory_order_acquire))
+    {
+        serial();
         return;
     }
     TeamCtx ctx(nt);
@@ -205,7 +215,10 @@ void open_team(bool on, int nt, Body& body)
         TeamT            t(&ctx, rank);
         body(t);
     };
-    Pool::get().run(nt, job);
+    if (!Pool::get().try_run(nt, job))
+    {
+        serial();
+    }
 }
 } // namespace std_backend
 
