@@ -98,6 +98,9 @@ variables before the command, and the run's log has them (`[gui] env: ...`). A w
 `NAME=value`, or a name the run's script uses for itself (`RUN_DIR`, `PY`...), blocks the
 submission.
 
+When the window is not tall enough for the two groups (a laptop screen), they scroll together;
+"Submit" stays below them, always in view.
+
 Before submitting an argparse script, the window has the script itself check the command on
 the cluster: its module-level `parse_args(argv)` function when it has one (`thread_speedup.py`:
 its own checks included, without running `main`), otherwise its `parse_args()` call. An unknown

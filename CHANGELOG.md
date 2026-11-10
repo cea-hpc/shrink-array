@@ -62,6 +62,9 @@ the tag's checksum to the recipe.
   `scripts/site_env.sh` and again after it (the run's value wins); a leading `~/` is the home
   directory of the machine the run is on. Kept per program, written to `meta.json` (`env`),
   taken back by "Reprendre ses options", shown before the command and in the run's log.
+- `shrink_gui`: the left panel ("Où et comment", "Quoi") scrolls when the window is shorter
+  than it, and "Soumettre" stays below it, always in view: with one more field the button was
+  pushed out of a laptop screen.
 - SonarQube Cloud (project `cea-hpc_shrink-array`): `.github/workflows/sonar.yml` analyses
   the tree on every push to develop and main, and on demand, with the rules of SonarQube for IDE
   (SonarLint) -- the C++ from CMake's compilation database, one entry per source file, nothing

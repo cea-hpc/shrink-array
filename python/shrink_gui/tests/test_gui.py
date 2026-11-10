@@ -109,6 +109,28 @@ def test_environment_field(gui, site):
     w.env.setText("")
 
 
+def test_submit_stays_in_view(gui):
+    """A window shorter than the left panel (a laptop screen): the two groups
+    scroll, "Soumettre" stays below them, inside the window."""
+    w, pump = gui
+    _choose_fake(w, pump)
+    size = w.size()
+    try:
+        for height in (860, 600, 480):
+            w.resize(1400, height)
+            pump(lambda: False, 0.3)
+            bottom = w.blaunch.mapTo(w, w.blaunch.rect().bottomLeft()).y()
+            assert w.blaunch.isVisibleTo(w) and 0 < bottom <= w.height(), (height, bottom)
+            assert w.env.isVisibleTo(w) and w.preview.isVisibleTo(w)
+            # ... and nothing of the panel is cut on the right
+            assert w.left_scroll.viewport().width() >= w.left_scroll.widget().minimumSizeHint().width()
+        assert w.left_scroll.verticalScrollBar().maximum() > 0          # at 480 the panel scrolls
+        w.left_scroll.ensureWidgetVisible(w.env)
+        assert not w.env.visibleRegion().isEmpty()
+    finally:
+        w.resize(size)
+
+
 def test_compare_two_runs(gui):
     w, pump = gui
     _choose_fake(w, pump)

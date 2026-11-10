@@ -99,6 +99,9 @@ repris par « Reprendre ses options » ; « Commande » montre les variables dev
 le log du run les donne (`[gui] env: ...`). Un mot qui n'est pas `NOM=valeur`, ou un nom que le
 script du run utilise pour lui-même (`RUN_DIR`, `PY`...), bloque la soumission.
 
+Quand la fenêtre n'est pas assez haute pour les deux groupes (un écran de portable), ils défilent
+ensemble ; « Soumettre » reste en dessous, toujours visible.
+
 Avant de soumettre un script argparse, la fenêtre fait vérifier la commande par le script
 lui-même sur le calculateur : sa fonction `parse_args(argv)` quand il en a une au niveau du
 module (`thread_speedup.py` : ses propres contrôles compris, sans lancer `main`), sinon son appel
