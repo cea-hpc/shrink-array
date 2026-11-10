@@ -49,7 +49,7 @@
 #include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"           // parallel_phase
 #include "chunk/internal/env_parse.h"    // shrink_array::arg_number
-#include "chunk/internal/print.h"        // shrink_array::println
+#include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
 

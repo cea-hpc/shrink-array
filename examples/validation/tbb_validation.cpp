@@ -81,7 +81,7 @@
 #include "chunk/internal/PMP_CHUNK.h"    // pmp::*, CHUNK_PMP_* (THREAD_CAPACITY: the registry), get_thr_rank_fast
 #include "chunk/tbb_adaptor.h"           // shrink_array::tbb::parallel_for, phase_body
 #include "chunk/internal/env_parse.h"    // arg_number
-#include "chunk/internal/print.h"        // shrink_array::println
+#include "chunk/print.h"                 // shrink_array::println
 #include "chunk/internal/test_hooks.h"   // force_defer_every (the in-phase case)
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp

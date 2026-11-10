@@ -75,9 +75,25 @@ the tag's checksum to the recipe.
   the top of the speedup curve, the others still uniform over the range. In `shrink_gui` too.
 - `diag_zero_rechunk_slowdown.py`: the resident memory against the static run, the churn per array
   after the last re-chunk and, with `--perf`, the samples' share in the compression passes.
+- **Three additions to the public interface**, what the examples needed from `internal/`:
+  `chunk/threads.h` (new): `pmp::max_threads()`, `pmp::team_size()`, `pmp::thread_rank()`, the
+  threads of whatever backend the build has (OpenMP, std, serial), instead of
+  `CHUNK_PMP_MAX_THREADS`; `chunk/print.h` (was `chunk/internal/print.h`): `print` / `println`;
+  `set_active_chunk_size()`, `set_thread_chunk_size()` (through `chunk/chunk_size_advisor.h`)
+  and `zero_any::Chunk` (through `chunk/zero_any_array.h`, for `sizeof` in the advisor's
+  options), and the arrays' `set_chunk_size()` (an empty array's geometry). 18 public headers. `simple_array`, `test_vecto_chunk`, `variant_compare`,
+  `access_cost`, `advisor_demo`, `getting_started` and `bool_arrays` include public headers
+  only, and `check_public_api` fails when an example outside the harnesses and the benchmarks
+  includes an internal one.
 
 ### Changed
 
+- The end-of-life census line of a zero array says what the variant compresses: "few all-zero
+  chunks — zero compresses only all-zero chunks" instead of "compression marginal vs
+  std::vector", which read as a failure on an array zero cannot help. `shrink_bench` says
+  before `tab_conn`'s line, in zero builds, that a connectivity is pattern::Array's case.
+- `fill_range_mt` skips a chunk already at the fill value with one test, as `fill_range` does,
+  instead of arming it element by element; `fill_range` does the same on its `bool` path.
 - **The public interface, narrowed and frozen** (breaking). The public headers are what
   `docs/api.md` documents; `PMP_CHUNK.h`, `all_type_chunk.h`, `chunk_traits.h`,
   `global_stats_chunk_list.h`, `ring_log_debug.h`, `singleton.h`, `term_color.h`,
@@ -108,6 +124,8 @@ the tag's checksum to the recipe.
 
 ### Removed
 
+- `python/run_test.py`: it ran a `test/test1` that no longer exists, under a path left as
+  `????` when the tree went public; `bench_runner` averages the memory over runs.
 - `chunk/debug.h`, which nothing included (`print_backtrace` is
   `fast_alloc::logging::print_backtrace`).
 - **The other compatibility paths kept until 1.0** (breaking). The variant macros
@@ -141,6 +159,8 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- CI: the `check_*` step ran 8 of the 10 `scripts/check_*.py`; `check_public_api` (the frozen
+  interface) and `check_inline_bodies` ran under ctest only. Both are in the loop.
 - `README.md` and `README_fr.md` gave the version as 0.1.
 - `check_doxygen.py` run by hand with no Doxygen installed ended on a
   `FileNotFoundError` traceback: it says Doxygen is not found and exits 77 (skipped).

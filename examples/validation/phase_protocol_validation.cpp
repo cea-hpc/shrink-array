@@ -60,7 +60,7 @@
 #include "chunk/internal/test_hooks.h"  // test_hooks::force_defer_every
 #include "chunk/manage_ompt.h"          // begin_parallel_phase, finalize_parallel_phase, parallel_phase
 #include "chunk/param_chunk.h"          // ParamChunk::init_indexes
-#include "chunk/internal/print.h"       // shrink_array::println
+#include "chunk/print.h"                // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 

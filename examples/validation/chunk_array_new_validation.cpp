@@ -59,7 +59,7 @@
 #include "chunk/param_chunk.h"           // ParamChunk::init_indexes
 #include "chunk/config.h"                // chunk_config::use_zero*
 #include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
-#include "chunk/internal/print.h"        // shrink_array::println
+#include "chunk/print.h"                 // shrink_array::println
 
 // The array-new is the threaded *ThreadPolicy's (the serial specialisations declare
 // none), and the "region" cases call it from an `omp single`: CMake builds this

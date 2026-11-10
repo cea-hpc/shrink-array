@@ -87,7 +87,7 @@
 #include "chunk/param_chunk.h"        // ParamChunk::init_indexes
 #include "chunk/internal/type_name.h" // type_name<T>()
 #include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment, IsCleanShiftOp
-#include "chunk/internal/print.h"                        // shrink_array::println
+#include "chunk/print.h"                                 // shrink_array::println
 #include "chunk/internal/test_hooks.h"                   // force_defer_every, force_defer_compiled
 
 namespace validation::operators_validation

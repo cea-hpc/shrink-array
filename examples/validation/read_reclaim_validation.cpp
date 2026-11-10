@@ -130,7 +130,7 @@
 #include "chunk/config.h"                // chunk_config::use_zero_one_value*, build_config::use_openmp / has_not_ompt
 #include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/test_hooks.h"   // test_hooks::read_delay_* / pass_delay_*
-#include "chunk/internal/print.h"        // shrink_array::println
+#include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
 

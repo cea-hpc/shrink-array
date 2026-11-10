@@ -55,7 +55,7 @@
 #include "chunk/config.h"                // chunk_config::use_zero*, build_config::has_not_ompt
 #include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/internal/print.h"        // shrink_array::println
+#include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 

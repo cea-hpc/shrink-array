@@ -46,7 +46,7 @@
 #include <string>  // std::string
 
 #include "fast_allocators/tc_allocator.h" // TCTypeCAllocator, TCCAllocator
-#include "chunk/internal/print.h"         // shrink_array::println
+#include "chunk/print.h"                  // shrink_array::println
 
 using shrink_array::println;
 

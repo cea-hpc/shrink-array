@@ -31,7 +31,7 @@
 
 #include "chunk/zero_any_array.h" // shrink_array::zero_any::Array
 #include "chunk/config.h"         // build_config::has_ompt
-#include "chunk/internal/print.h" // shrink_array::println
+#include "chunk/print.h"          // shrink_array::println
 
 namespace sa = shrink_array;
 using shrink_array::println;

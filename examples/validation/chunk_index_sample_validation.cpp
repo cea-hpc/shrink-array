@@ -37,7 +37,7 @@
 #include <vector>      // std::vector
 
 #include "chunk/internal/chunk_index_sample.h" // internal::chunk_index_sample
-#include "chunk/internal/print.h"              // shrink_array::println
+#include "chunk/print.h"                       // shrink_array::println
 
 using shrink_array::println;
 using shrink_array::internal::chunk_index_sample;

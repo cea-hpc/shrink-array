@@ -25,7 +25,7 @@
 
 #include "chunk/config.h"              // build_config::use_openmp
 #include "chunk/param_chunk.h"         // ParamChunk::init_indexes
-#include "chunk/internal/print.h"      // shrink_array::println
+#include "chunk/print.h"               // shrink_array::println
 #include "chunk/internal/test_hooks.h" // force_defer_every, force_defer_compiled
 
 #include "operators_validation_cases.h" // Arr, n_chunks, only_type, run_small_integers, ...

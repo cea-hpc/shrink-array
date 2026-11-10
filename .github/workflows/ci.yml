@@ -52,7 +52,7 @@ jobs:
           status=0
           # check_cpp23_idioms exists on cpp23 and cpp26 only (develop stays C++20).
           for s in check_docs check_tracked check_raw_reads check_includes check_naming check_headers check_format \
-                   check_cpp23_idioms; do
+                   check_inline_bodies check_public_api check_cpp23_idioms; do
             [ -f scripts/$s.py ] || continue
             echo "::group::$s"
             python3 scripts/$s.py . || status=1
