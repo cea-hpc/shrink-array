@@ -162,6 +162,20 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- The sign of a zero was lost: a `-0.0` written to an array read back `+0.0` (`1.0 / x` went
+  from `-inf` to `+inf`, `std::signbit`, `std::copysign`, `std::atan2` changed), for `float`,
+  `double` and `std::complex`, in the three variants -- a write onto a chunk compressed to zero,
+  a whole chunk written in parallel, a materialised chunk rewritten then compressed, a single
+  element onto a `+0.0`, `fill_range`/`fill_range_mt`. Every "already there" / "the run is the
+  constant" decision compared with `==`, and `-0.0 == +0.0`. They now go through
+  `same_value()` (`internal/same_value.h`): the bits for `float` and `double` (a run of `-0.0`
+  is no longer compressed to the zero constant -- in `zero_any` it compresses to its own
+  constant; a run of one NaN payload now compresses and reads back bit for bit), `==` and the
+  sign bit for `long double`, part by part for `std::complex` and `std::array`, `==` for the
+  other types. An aggregate of floating-point members keeps comparing them with its `==`
+  unless it specialises `shrink_array::ValueIdentity<T>`. `zero_one_value` orders its second
+  values to match (`ValueLess`): `-0.0` can be a second value. `signed_zero_validation` checks
+  every case, bit for bit, in each variant.
 - `ChunkSizeAdvisor` counted a `pattern::Array`'s motif chunks as materialised, at every size:
   its model of an array of motifs was off by two orders of magnitude, and blind to what a
   coarsening loses. With the decider applying, a `pattern::Array<int>` of 2^26 elements (8

@@ -35,6 +35,7 @@
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 #include "chunk/internal/parallel_storage_init.h"       // for_each_chunk
 #include "chunk/internal/in_t.h"                        // InT<T>
+#include "chunk/internal/same_value.h"                  // same_value
 
 namespace shrink_array
 {
@@ -118,7 +119,7 @@ void zero::Array<T, IntType>::print_compression_stats(std::ostream& os) const
             {
                 return;
             }
-            if (*v0 == zero::Chunk<T>::first_value)
+            if (same_value(*v0, zero::Chunk<T>::first_value))
             {
                 ++acc[0]; // compressible now; the drain just had not caught it yet
             }

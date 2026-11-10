@@ -48,7 +48,8 @@
 #include <utility>  // std::pair
 #include <vector>   // std::vector
 
-#include "chunk/log.h" // CHUNK_LOG
+#include "chunk/log.h"                 // CHUNK_LOG
+#include "chunk/internal/same_value.h" // same_value
 
 namespace shrink_array
 {
@@ -95,7 +96,7 @@ template <typename T>
             {
                 ref = summary[idx].second;
             }
-            else if (*ref != summary[idx].second)
+            else if (!same_value(*ref, summary[idx].second))
             {
                 all_const = false;
                 break;

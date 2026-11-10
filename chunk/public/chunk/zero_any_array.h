@@ -41,6 +41,7 @@
 #include "chunk/internal/zero_any_proxy.h"             // zero_any::Proxy<T> and its tables
 #include "chunk/internal/zero_any_chunk.h"             // zero_any::Chunk<T>
 #include "chunk/log.h"                                 // CHUNK_LOG, CHUNK_LOG_ALWAYS (the second values)
+#include "chunk/internal/same_value.h"                 // same_value
 
 namespace shrink_array
 {
@@ -116,7 +117,7 @@ void mark_second_values(std::vector<std::uint8_t>& referenced)
             {
                 mark_cst2_id(referenced, slot); // the identifier itself; 0 = none
             }
-            else if (!(slot == T{}))
+            else if (!same_value(static_cast<T>(slot), T{}))
             {
                 if (const T* hit = Gvh::index_lookup(slot))
                 {

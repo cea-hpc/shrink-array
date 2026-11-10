@@ -37,6 +37,7 @@
 #include "chunk/internal/chunk_traits.h"               // ChunkTraits<ChunkT>::ProxyType (wait_before_materialise)
 #include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef
 #include "chunk/internal/queue_flag.h"          // queue_flag::hand_back / release: the pass's hand-back
+#include "chunk/internal/same_value.h"          // same_value
 
 /**
  * @file zero_any_chunk_inline.h
@@ -317,7 +318,7 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
 
         if constexpr (Base::is_not_bool)
         {
-            if (second_v != T{})
+            if (!same_value(second_v, T{}))
             {
                 CstSlot* ptr_type_cst = &ProxyType::tab_type_cst_val[num_tab][num_chunk];
 

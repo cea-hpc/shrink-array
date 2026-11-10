@@ -34,6 +34,11 @@
 #                           through writes, a compression pass and a partial
 #                           rewrite like an array of double -- the element
 #                           type contract: trivially copyable, ==, T{}.
+#   signed_zero_validation  -0.0 (double, float, std::complex, an aggregate
+#                           with a ValueIdentity) and a NaN payload read back
+#                           bit for bit through element writes, fill_range(_mt),
+#                           a -0.0 second value and compression passes: the
+#                           library decides with same_value(), not ==.
 #   deferred_path_validation a write parked in a rank queue (the deferred
 #                           path: enqueue, replay, backlog drain, read gate, WAW
 #                           guard) lands in program order with every other
@@ -255,7 +260,7 @@ set(_rt_harnesses       compress_roundtrip pool_accounting open_types_validation
                         nested_region_validation concurrent_teams_validation iterator_validation
                         stale_proxy_validation
                         region_storage_validation compound_ops_validation bulk_write_team_validation
-                        shrink_to_fit_validation chunk_exchange_validation)
+                        shrink_to_fit_validation chunk_exchange_validation signed_zero_validation)
 set(_rt_dyn_harnesses   pool_accounting open_types_validation index64_validation stale_proxy_validation)
 
 # Compile definitions of a variant at a geometry.

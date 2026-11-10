@@ -46,6 +46,7 @@
 #include "chunk/internal/dependent_false.h"              // dependent_false_v (wrong-type branches)
 #include "chunk/internal/immortal.h"                     // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/parallel_storage_init.h"        // NoInitVector, resize_filled, for_each_chunk
+#include "chunk/internal/same_value.h"                   // same_value
 
 namespace shrink_array
 {
@@ -738,8 +739,8 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
         // The "leave" clause depends on the old value, which this filter does not see: let
         // any write of a non-second value through; the predicate decides on the old value.
         return this->pre_check_mark_for_compression_strict(new_value, first_value, second_val) ||
-               (second_val == first_value && new_value != first_value) ||
-               (second_val != first_value && new_value != second_val);
+               (same_value(second_val, first_value) && !same_value(new_value, first_value)) ||
+               (!same_value(second_val, first_value) && !same_value(new_value, second_val));
     }
 
     /**

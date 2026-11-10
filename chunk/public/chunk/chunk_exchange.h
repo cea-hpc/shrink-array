@@ -64,6 +64,7 @@
 #include "chunk/internal/cst_slot.h"          // CstSlot
 #include "chunk/internal/relaxed_element.h"   // load_element_relaxed (a motif chunk's offset)
 #include "chunk/config.h"                     // build_config::chunk_dynamic
+#include "chunk/internal/same_value.h"        // same_value
 
 namespace shrink_array
 {
@@ -231,7 +232,7 @@ template <ExchangeableArray Arr>
     }
 
     if (state.kind == ChunkKind::first_value ||
-        (state.kind == ChunkKind::second_value && state.value == static_cast<T>(ChunkType::first_value)))
+        (state.kind == ChunkKind::second_value && same_value(state.value, static_cast<T>(ChunkType::first_value))))
     {
         return true; // the chunk's state already
     }
@@ -290,7 +291,7 @@ template <ExchangeableArray Arr>
         else
         {
             const int ind = arr.get_ind_second_value();
-            if (ind >= 0 && state.value == static_cast<T>(arr.get_second_value()))
+            if (ind >= 0 && same_value(state.value, static_cast<T>(arr.get_second_value())))
             {
                 chunk.init_values_cst_val(1, ind);
                 chunk.reset_nb_val_eq_second_value();

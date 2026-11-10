@@ -67,6 +67,7 @@
 #include "chunk/internal/write_compress_sync_policy.h"   // WriteCompressSyncPolicy
 #include "chunk/internal/test_hooks.h"                   // TEST KNOB: test_hooks::forced_deferral
 #include "chunk/internal/queue_flag.h"                   // queue_flag::try_queue: the writers' side
+#include "chunk/internal/same_value.h"                   // same_value
 
 namespace shrink_array
 {
@@ -1052,7 +1053,7 @@ void ProxyBase<Derived, T, ChunkT>::apply_atomic_op(Op operation, const U& opera
                                 // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
                                 const InT<T> readback = elem_get(values_after, static_cast<std::size_t>(ctx->num));
                                 const auto   expected = static_cast<T>(res);
-                                if (readback != expected)
+                                if (!same_value(static_cast<T>(readback), expected))
                                 {
                                     CHUNK_INVARIANT_FAILED(
                                         "apply_atomic_op ASYNC lambda: chunk={} num={} readback mismatch: "

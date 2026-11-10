@@ -390,7 +390,11 @@ threads: for the others, use the std backend.
   (arithmetic types, `bool`, `std::complex`, enums, `std::array` and aggregates of those). A
   type that owns a resource (`std::string`) is refused at compile time. `zero_one_value` also needs an
   order on the second value: a struct of doubles declares `auto operator<=>(const T&) const =
-  default;`. On a `bool` element, `a[i] += 1` and the other arithmetic assignments (`-= *= /=
+  default;`. An element reads back the bits written: the library tells `-0.0` from `+0.0`
+  (bit comparison for `float`, `double`, `std::complex`, `std::array`), but compares the
+  members of an aggregate with its `==`, which merges the two zeros -- specialise
+  `shrink_array::ValueIdentity<T>` (`chunk/internal/same_value.h`) to keep the sign of a zero
+  member. On a `bool` element, `a[i] += 1` and the other arithmetic assignments (`-= *= /=
   %= <<= >>=`) do not compile: write `=`, `&=`, `|=` or `^=`.
 - **`zero_one_value` compresses only to its declared second value.** Without `set_second_value()`, a
   `zero_one_value` array compresses to zero only.

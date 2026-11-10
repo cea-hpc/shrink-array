@@ -26,6 +26,7 @@
 #include "chunk/internal/PMP_CHUNK.h"         // get_thr_rank_fast
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size
 #include "chunk/internal/in_t.h"              // InT<value_type>: the captured state
+#include "chunk/internal/same_value.h"        // same_value
 
 namespace shrink_array
 {
@@ -89,7 +90,7 @@ void zero_one_value::RechunkHooks<Derived, true>::rechunk_seed_fresh(InT<value_t
     // state, and re-declaring it would make a degenerate cst_val2 == cst_val1 buffer.
     if constexpr (Derived::is_not_bool)
     {
-        if (state != value_type{})
+        if (!same_value(state, value_type{}))
         {
             self().set_second_value(state, false);
         }
@@ -122,7 +123,7 @@ void zero_one_value::RechunkHooks<Derived, true>::rechunk_reown_after_swap(Deriv
     {
         if constexpr (Derived::is_not_bool)
         {
-            if (state != value_type{})
+            if (!same_value(state, value_type{}))
             {
                 Derived& arr = self();
 

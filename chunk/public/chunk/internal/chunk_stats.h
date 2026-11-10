@@ -42,8 +42,9 @@
 #include <concepts>    // ChunkStatsZeroComparable
 #include <string_view> // chunk_variant_name
 
-#include "chunk/internal/PMP_CHUNK.h" // get_thr_rank_fast / CHUNK_PMP_MAX_THREADS
-#include "chunk/config.h"             // build_config::chunk_dynamic
+#include "chunk/internal/PMP_CHUNK.h"  // get_thr_rank_fast / CHUNK_PMP_MAX_THREADS
+#include "chunk/config.h"              // build_config::chunk_dynamic
+#include "chunk/internal/same_value.h" // same_value
 
 namespace shrink_array
 {
@@ -393,7 +394,7 @@ void increm_chunk_write() noexcept
  */
 template <typename V>
 concept ChunkStatsZeroComparable = requires(const V& value) {
-    { value != V{} } -> std::convertible_to<bool>;
+    { value == V{} } -> std::convertible_to<bool>;
 };
 
 /**
@@ -410,7 +411,7 @@ void increm_chunk_write(V v) noexcept
 {
     if constexpr (ChunkStatsZeroComparable<V>)
     {
-        if (v != V{})
+        if (!same_value(v, V{})) // -0.0 is not the zero a compressed chunk holds
         {
             chunk_stats_slot(C::stat_variant).write++;
         }

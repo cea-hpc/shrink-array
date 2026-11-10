@@ -47,6 +47,7 @@
 #include "chunk/internal/parallel_storage_init.h"       // for_each_chunk
 #include "chunk/internal/pool_ledger.h"                 // CHUNK_LEDGER_* (check builds)
 #include "chunk/internal/teardown_probe.h"              // teardown_probe (rechunk=debug: the tmp teardown split)
+#include "chunk/internal/same_value.h"                  // same_value
 
 namespace shrink_array
 {
@@ -149,7 +150,7 @@ void zero_any::ArrayImpl<Derived>::print_compression_stats(std::ostream& os) con
                 {
                     return;
                 }
-                ++acc[*v0 == ChunkType::first_value ? 0 : 1];
+                ++acc[same_value(*v0, static_cast<T>(ChunkType::first_value)) ? 0 : 1];
                 return;
             }
             const CstSlot ct = ProxyType::tab_type_cst_val[num_tab_][j];
@@ -369,11 +370,12 @@ void zero_any::ArrayImpl<Derived>::clear_core()
                     {
                         continue;
                     }
-                    if (*cst == static_cast<T>(ChunkType::first_value))
+                    if (same_value(*cst, static_cast<T>(ChunkType::first_value)))
                     {
                         ++missed_first;
                     }
-                    else if (*cst == ProxyType::BaseSpec::get_tab_second_value(num_tab_, j).get())
+                    else if (same_value(*cst,
+                                        static_cast<T>(ProxyType::BaseSpec::get_tab_second_value(num_tab_, j).get())))
                     {
                         ++missed_second;
                     }

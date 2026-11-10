@@ -80,6 +80,7 @@
 #include "chunk/log.h"                         // CHUNK_LOG (log(): channel advisor)
 #include "chunk/internal/chunk_traits.h"       // is_zero_any_family_v, has_motif_state_v (pattern::Array)
 #include "chunk/internal/relaxed_element.h"    // load_element_relaxed (a motif chunk's offset)
+#include "chunk/internal/same_value.h"         // same_value
 
 namespace shrink_array
 {
@@ -249,7 +250,7 @@ struct ChunkSizeAdvisor
                       requires { tab.get_second_value(); })
         {
             cst2_value = tab.get_second_value();
-            has_cst2   = !(cst2_value == cst1_value);
+            has_cst2   = !same_value(cst2_value, cst1_value);
         }
         const auto compressible_value = [&]([[maybe_unused]] const T& elem) -> bool
         {
@@ -265,11 +266,11 @@ struct ChunkSizeAdvisor
             }
             else
             {
-                if (elem == cst1_value)
+                if (same_value(elem, cst1_value))
                 {
                     return true;
                 }
-                return has_cst2 && (elem == cst2_value);
+                return has_cst2 && same_value(elem, cst2_value);
             }
         };
 
@@ -658,7 +659,7 @@ struct ChunkSizeAdvisor
                             for (std::size_t i = first + 1; i < last; ++i)
                             {
                                 // raw-read: as above
-                                if (!(vals[i] == vals[first]))
+                                if (!same_value(vals[i], vals[first]))
                                 {
                                     return false;
                                 }
@@ -716,7 +717,7 @@ struct ChunkSizeAdvisor
                             {
                                 for (uint32_t i = 1; i < chunk_sz; ++i)
                                 {
-                                    if (!(vj[i] == vj[i - 1]))
+                                    if (!same_value(vj[i], vj[i - 1]))
                                     {
                                         seg_start.push_back(i);
                                         seg_val.push_back(vj[i]);

@@ -398,7 +398,12 @@ les threads d'OpenMP : pour les autres, utilisez le backend std.
   constructible par défaut (types arithmétiques, `bool`, `std::complex`, énumérations,
   `std::array` et agrégats de ceux-ci). Un type qui possède une ressource (`std::string`) est
   refusé à la compilation. `zero_one_value` demande en plus un ordre sur la seconde valeur : une
-  structure de doubles déclare `auto operator<=>(const T&) const = default;`. Sur un élément
+  structure de doubles déclare `auto operator<=>(const T&) const = default;`. Un élément se
+  relit avec les bits écrits : la bibliothèque distingue `-0.0` de `+0.0` (comparaison des
+  bits pour `float`, `double`, `std::complex`, `std::array`), mais compare les membres d'un
+  agrégat avec son `==`, qui confond les deux zéros -- spécialiser
+  `shrink_array::ValueIdentity<T>` (`chunk/internal/same_value.h`) garde le signe d'un membre
+  nul. Sur un élément
   `bool`, `a[i] += 1` et les autres affectations arithmétiques (`-= *= /= %= <<= >>=`) ne
   compilent pas : écrire `=`, `&=`, `|=` ou `^=`.
 - **`zero_one_value` ne compresse qu'à sa seconde valeur déclarée.** Sans `set_second_value()`, un

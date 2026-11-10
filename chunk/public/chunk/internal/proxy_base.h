@@ -46,6 +46,7 @@
 #include "chunk/internal/read_reclaim.h"                 // ReadSection: read_values_outside_session
 #include "chunk/internal/immortal.h"                     // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/parallel_storage_init.h"        // NoInitVector, make_filled: the candidate-flag rows
+#include "chunk/internal/same_value.h"                   // same_value
 
 namespace shrink_array
 {
@@ -463,13 +464,14 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///          acquire load of the chunk header, constant-false in a serial build.
     [[nodiscard]] bool is_cst_val1_and_v_equal_first_value(InT<T> value) const noexcept
     {
-        return value == static_cast<T>(ChunkT::first_value) && is_cst_val1() && !chunk_.pending_any();
+        return same_value(value, static_cast<T>(ChunkT::first_value)) && is_cst_val1() && !chunk_.pending_any();
     }
 
     /// @brief is_cst_val1_and_v_equal_first_value() from a loaded value pointer.
     [[nodiscard]] bool is_cst_val1_and_v_equal_first_value(const T* values_loc, InT<T> value) const noexcept
     {
-        return value == static_cast<T>(ChunkT::first_value) && is_cst_val1(values_loc) && !chunk_.pending_any();
+        return same_value(value, static_cast<T>(ChunkT::first_value)) && is_cst_val1(values_loc) &&
+               !chunk_.pending_any();
     }
 
     /// @brief Point this proxy at an already-known candidate flag.

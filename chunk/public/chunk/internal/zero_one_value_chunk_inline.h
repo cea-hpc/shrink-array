@@ -31,6 +31,7 @@
 #include "chunk/internal/dependent_false.h"      // dependent_false_v (wrong-type branches)
 #include "chunk/internal/invariant_check.h"      // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/queue_flag.h"           // queue_flag::hand_back / release: the pass's hand-back
+#include "chunk/internal/same_value.h"           // same_value
 
 /**
  * @file zero_one_value_chunk_inline.h
@@ -717,7 +718,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
         // chunk could be compressed to the OTHER array's constant, and its own
         // array, which only recognises its own constant, would then write into
         // that shared block, changing every chunk compressed to it.
-        if (proxy2->is_not_cst_val() && proxy2->second_value_ == second_value)
+        if (proxy2->is_not_cst_val() && same_value(proxy2->second_value_, second_value))
         {
             proxy2->add_to_compression_list(vec_tuple_to_compress);
         }
