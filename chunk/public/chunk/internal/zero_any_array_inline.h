@@ -730,6 +730,7 @@ void zero_any::ArrayImpl<Derived>::release_chunk_range(int first, int last)
 template <typename Derived>
 void zero_any::ArrayImpl<Derived>::resize(IntType newsz)
 {
+    this->check_length(newsz, "resize");
     this->invalidate_proxies();
     const auto& sh_inf = *ProxyType::share_info_array;
 

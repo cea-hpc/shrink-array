@@ -94,6 +94,7 @@ namespace shrink_array
 template <ArrayChunkElement T, typename IntType>
 void zero_one_value::Array<T, IntType>::create(IntType sz)
 {
+    this->check_length(sz, "constructor");
     // The first array of this element type registers its manager; every
     // later one pays a guard load. See AllTypeChunk.
     AllTypeChunk::ensure_manager<TypeState<zero_one_value::Chunk, T>>();
@@ -1189,6 +1190,7 @@ void zero_one_value::Array<T, IntType>::release_chunk_range(int first, int last)
 template <ArrayChunkElement T, typename IntType>
 void zero_one_value::Array<T, IntType>::resize(IntType newsz)
 {
+    this->check_length(newsz, "resize");
     this->invalidate_proxies();
     const int     old_nb_chunk = nb_chunk_;
     const IntType old_size     = this->m_size_; // the stale-tail reset at the end

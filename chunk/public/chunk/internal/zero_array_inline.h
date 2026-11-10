@@ -425,6 +425,7 @@ void zero::Array<T, IntType>::release_chunk_range(int first, int last)
 template <ArrayChunkElement T, typename IntType>
 void zero::Array<T, IntType>::resize(IntType newsz)
 {
+    this->check_length(newsz, "resize");
     this->invalidate_proxies();
 
     // Drain the deferred ops on the CURRENT chunks before chunk_list_ and the

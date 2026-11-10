@@ -811,6 +811,15 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     using Core::num_tab_;
     using Core::size_policy_;
 
+    /**
+     * @brief Throw std::length_error, as std::vector does, for a negative
+     *        element count: the constructors, resize() and reserve() call it
+     *        first, before touching the storage.
+     * @param count the requested element count or capacity
+     * @param who the call, for the message ("resize", "reserve", ...)
+     */
+    static void check_length(IndType count, const char* who);
+
     /// @brief Installs the core's way back to rechunk_to() (rechunk_erased).
     /// @note Protected, not private with `friend Derived`: zero_one_value and zero_any
     ///       reach this base through SecondValueArrayBase<Derived>, which has to

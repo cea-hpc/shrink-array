@@ -19,8 +19,10 @@
 // Out-of-line template method bodies for ArrayChunkBase<Derived>. Included at the
 // end of array_chunk_base.h (after the class), so every TU that uses the class
 // sees the definitions. Kept separate to keep array_chunk_base.h to declarations.
-#include <iterator>  // std::forward_iterator, std::distance (assign)
-#include <stdexcept> // std::out_of_range (at())
+#include <iterator>    // std::forward_iterator, std::distance (assign)
+#include <stdexcept>   // std::out_of_range (at()), std::length_error (check_length)
+#include <string>      // std::string (check_length's message)
+#include <type_traits> // std::is_signed_v (check_length)
 
 #include "chunk/internal/array_chunk_base.h"    // ArrayChunkBase, the class these bodies belong to
 #include "chunk/internal/all_type_chunk_decl.h" // AllTypeChunk::ensure_manager, from create (bodies: all_type_chunk.h)
@@ -36,8 +38,23 @@ namespace shrink_array
 {
 
 template <typename Derived>
+void ArrayChunkBase<Derived>::check_length(IndType count, const char* who)
+{
+    // A negative count used to go through: resize(-1) left size() == -1,
+    // reserve(-1) a capacity of 2^32 (the count cast to size_type).
+    if constexpr (std::is_signed_v<IndType>)
+    {
+        if (count < 0) [[unlikely]]
+        {
+            throw std::length_error(std::string("shrink_array: ") + who + ": negative element count");
+        }
+    }
+}
+
+template <typename Derived>
 void ArrayChunkBase<Derived>::create(IndType sz)
 {
+    check_length(sz, "constructor");
     // The first array of this element type registers its manager; every
     // later one pays a guard load. See AllTypeChunk.
     AllTypeChunk::ensure_manager<ManagerType>();
@@ -222,6 +239,7 @@ void ArrayChunkBase<Derived>::assign(It first, It last)
 template <typename Derived>
 void ArrayChunkBase<Derived>::reserve(IndType new_capacity)
 {
+    check_length(new_capacity, "reserve");
     if (static_cast<size_type>(new_capacity) <= capacity())
     {
         return;

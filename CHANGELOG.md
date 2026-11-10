@@ -171,6 +171,10 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- A negative size was accepted: `a.resize(-1)` threw nothing and left `size() == -1`,
+  `a.reserve(-1)` raised the capacity to 4,294,967,296, `Array(-1)` built an array. They throw
+  `std::length_error` now, as `std::vector`, and leave the array as it was. `shrink_bench
+  --test_stl` checks the three, against `std::vector` too.
 - `a.set_chunk_size(n)` on an array that had chunks changed its geometry without moving them:
   on 100,000 written elements, 64 -> 1024 left the 1563 chunks where they were, and `a[99000]`
   read another element; the size also became the birth size of every array built afterwards.

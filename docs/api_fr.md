@@ -45,7 +45,7 @@ séquentiel : à appeler hors de toute région parallèle ; il invalide les prox
 | lecture | `operator[](i) const`, `at(i) const`, `front()`, `back()`, `operator()(i) const` | renvoient un `T` |
 | écriture | `operator[](i)`, `at(i)` | renvoient un proxy d'écriture (§4) |
 | référence brute | `operator()(i)` (non const) | un `T&` dans le tampon : **seulement sur un chunk matérialisé**, contourne la bibliothèque |
-| agrandir, réduire **(S)** | `resize(n)`, `reserve(n)`, `clear()`, `shrink_to_fit()` | `shrink_to_fit()` replie aussi chaque chunk devenu constant |
+| agrandir, réduire **(S)** | `resize(n)`, `reserve(n)`, `clear()`, `shrink_to_fit()` | `shrink_to_fit()` replie aussi chaque chunk devenu constant ; un `n` négatif (ici et au constructeur) lève `std::length_error`, comme `std::vector` |
 | ajout | `push_back(v)`, `emplace_back(...)`, `pop_back()` | **(S)** seulement quand il faut un nouveau chunk |
 | remplacement **(S)** | `assign(n, v)`, `assign(first, last)`, `swap(other)`, `operator=` | |
 | itération | `begin()`, `end()`, `cbegin()`, `rbegin()`, `rend()` | itérateurs const à accès aléatoire, par valeur |

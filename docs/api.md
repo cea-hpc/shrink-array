@@ -45,7 +45,7 @@ outside any parallel region, and it invalidates the array's proxies.
 | read | `operator[](i) const`, `at(i) const`, `front()`, `back()`, `operator()(i) const` | return a `T` |
 | write | `operator[](i)`, `at(i)` | return a write proxy (§4) |
 | raw reference | `operator()(i)` (non-const) | a `T&` into the buffer: **only on a materialised chunk**, bypasses the library |
-| grow, shrink **(S)** | `resize(n)`, `reserve(n)`, `clear()`, `shrink_to_fit()` | `shrink_to_fit()` also folds every chunk that became constant |
+| grow, shrink **(S)** | `resize(n)`, `reserve(n)`, `clear()`, `shrink_to_fit()` | `shrink_to_fit()` also folds every chunk that became constant; a negative `n` (here and in the constructor) throws `std::length_error`, as `std::vector` |
 | append | `push_back(v)`, `emplace_back(...)`, `pop_back()` | **(S)** only when it needs a new chunk |
 | replace **(S)** | `assign(n, v)`, `assign(first, last)`, `swap(other)`, `operator=` | |
 | iterate | `begin()`, `end()`, `cbegin()`, `rbegin()`, `rend()` | const random-access iterators, by value |
