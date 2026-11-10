@@ -30,7 +30,8 @@
 //     every thread of the team in the same order; each thread counts the
 //     constructs it met, and a construct that needs shared state (a dynamic
 //     loop's next block, a single's claim) finds it by that count;
-//   - barrier(): a std::barrier of the team; the end of a team is a join;
+//   - barrier(): the team's SpinBarrier (spins for CHUNK_PMP_SPIN_US, then
+//     sleeps); single(): one CAS on a team-wide mark; the end of a team is a join;
 //   - a team opened inside a team (nested) runs as a team of one, as OpenMP's
 //     default (max_active_levels 1); one team of the pool at a time: a second
 //     thread opening one meanwhile waits for it.
@@ -41,7 +42,7 @@
     #error "pmp_std.h is included by pmp_loops.h, after the types it shares with the other backends"
 #endif
 
-#include <barrier>       // std::barrier (Team::barrier)
+#include <atomic>        // std::atomic (SpinBarrier, the single mark)
 #include <cstdint>       // std::uint64_t (the pool's job word)
 #include <exception>     // std::terminate (a body that throws)
 #include <memory>        // std::unique_ptr (the construct slots)
@@ -65,13 +66,43 @@ struct Slot
     int                    left = 0;       ///< Threads that have not left it yet (under TeamCtx::mutex).
 };
 
+/**
+ * @brief The barrier of a team: a counter and a generation; the waiters spin
+ *        on the generation for spin_budget_ns(), then sleep on it.
+ * @details The last thread in resets the counter, then publishes the next
+ *          generation (release): a thread that sees it (acquire) sees the
+ *          counter reset, so it may enter the next barrier at once. A thread
+ *          reads the generation BEFORE it counts itself in: the generation
+ *          cannot move before every thread, this one included, has counted.
+ *          The notify costs nothing when nobody sleeps (libstdc++ counts the
+ *          waiters). Replaces std::barrier<>, whose libstdc++ implementation
+ *          sleeps almost at once: a futex wake-up cascade per barrier, ~0.4 ms
+ *          at 160 threads.
+ */
+class SpinBarrier
+{
+  public:
+    explicit SpinBarrier(int n) noexcept : n_(n), count_(n) {}
+
+    /// @brief Wait until all n threads have arrived (pmp_std_inline.h).
+    void arrive_and_wait() noexcept;
+
+  private:
+    const int n_;
+    alignas(64) std::atomic<int> count_;            ///< Threads still to arrive.
+    alignas(64) std::atomic<std::uint32_t> gen_{0}; ///< Bumped by the last thread in.
+};
+
 /// @brief What the threads of one team share.
 struct TeamCtx
 {
     explicit TeamCtx(int n) : size(n), bar(n), met(static_cast<std::size_t>(n), 0) {}
 
-    const int                                                size;  ///< Threads in the team.
-    std::barrier<>                                           bar;   ///< Team::barrier().
+    const int   size; ///< Threads in the team.
+    SpinBarrier bar;  ///< Team::barrier().
+    /// Team::single(): every single numbered below this has been claimed; the
+    /// thread that moves it past construct s runs single s (pmp_std_inline.h).
+    alignas(64) std::atomic<std::uint64_t> single_mark{0};
     std::mutex                                               mutex; ///< Guards slots.
     std::unordered_map<std::uint64_t, std::unique_ptr<Slot>> slots; ///< The constructs some thread is in.
     std::vector<std::uint64_t>                               met;   ///< met[rank]: constructs rank has entered.

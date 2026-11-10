@@ -101,6 +101,14 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- std backend: `Team::barrier()` spins for `CHUNK_PMP_SPIN_US` (default 1000 us) before sleeping,
+  as OpenMP's blocktime does, instead of a `std::barrier` that slept on a futex almost at once;
+  `single()` is lock-free (one CAS on a team-wide mark, no mutex, no map slot per construct); the
+  pool's hand-offs spin for the same budget. At 160 threads the re-chunk's slice-boundary drain
+  took 2.45 s in the TBB bench against 0.24 s with OpenMP, the time in the team's
+  synchronisation. `CHUNK_PMP_SPIN_US=0` sleeps at once (the former behaviour, for A/B).
+  `team_sync_validation` (and `_nospin`) checks barriers, singles and many teams in a row;
+  `--bench` prints their cost.
 - The end-of-life census line of a zero array says what the variant compresses: "few all-zero
   chunks — zero compresses only all-zero chunks" instead of "compression marginal vs
   std::vector", which read as a failure on an array zero cannot help. `shrink_bench` says

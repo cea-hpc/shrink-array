@@ -21,6 +21,30 @@ namespace fast_alloc
 {
 
 // ---------------------------------------------------------------------------
+// fast_alloc::SpinBarrier
+// ---------------------------------------------------------------------------
+
+inline void pmp::std_backend::SpinBarrier::arrive_and_wait() noexcept
+{
+    const std::uint32_t gen = gen_.load(std::memory_order_acquire);
+    if (count_.fetch_sub(1, std::memory_order_acq_rel) == 1)
+    {
+        count_.store(n_, std::memory_order_relaxed);
+        gen_.store(gen + 1U, std::memory_order_release);
+        gen_.notify_all();
+        return;
+    }
+    if (spin_until(n_, [&]() noexcept { return gen_.load(std::memory_order_acquire) != gen; }))
+    {
+        return;
+    }
+    while (gen_.load(std::memory_order_acquire) == gen)
+    {
+        gen_.wait(gen, std::memory_order_acquire);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // fast_alloc::TeamCtx
 // ---------------------------------------------------------------------------
 
@@ -68,6 +92,12 @@ void pmp::std_backend::Pool::run(int n, Job& job)
     word_.store((gen << 16) | static_cast<std::uint64_t>(n), std::memory_order_release);
     word_.notify_all();
     call(0);
+    // Spin first (spin_budget_ns): the team's last worker is usually done
+    // within microseconds of rank 0, and a futex wake-up costs more.
+    if (spin_until(n, [this]() noexcept { return pending_.load(std::memory_order_acquire) == 0; }))
+    {
+        return;
+    }
     for (int p = pending_.load(std::memory_order_acquire); p != 0; p = pending_.load(std::memory_order_acquire))
     {
         pending_.wait(p, std::memory_order_acquire);
@@ -90,7 +120,14 @@ inline void pmp::std_backend::Pool::worker_loop(int rank, std::uint64_t seen) no
 {
     for (;;)
     {
-        word_.wait(seen, std::memory_order_acquire);
+        // Spin first (spin_budget_ns): teams opened back to back (a re-chunk's
+        // slices) find their workers awake; past the budget, sleep on the word.
+        // The last team's size stands for the next one's (oversubscription).
+        const auto last_team = static_cast<int>(seen & 0xFFFFU);
+        if (!spin_until(last_team, [this, seen]() noexcept { return word_.load(std::memory_order_acquire) != seen; }))
+        {
+            word_.wait(seen, std::memory_order_acquire);
+        }
         seen = word_.load(std::memory_order_acquire);
         if (rank < static_cast<int>(seen & 0xFFFFU))
         {
@@ -199,13 +236,28 @@ void pmp::Team::single(F&& f, WaitMode w)
         f();
         return;
     }
-    std::uint64_t      seq  = 0;
-    std_backend::Slot& slot = ctx_->enter(rank_, seq);
-    if (!slot.claimed.exchange(true, std::memory_order_acq_rel))
+    // Lock-free: every thread meets the constructs in the same order, so this
+    // one's number seq is the same for all (the count enter() keeps too). The
+    // mark is "every single numbered below it has been claimed"; the thread
+    // that moves it past seq claims this one. A thread that finds it already
+    // past seq loses: whoever moved it there went through this single first
+    // (same order), and claimed it or found it claimed.
+    const std::uint64_t seq  = ctx_->met[static_cast<std::size_t>(rank_)]++;
+    std::uint64_t       mark = ctx_->single_mark.load(std::memory_order_acquire);
+    bool                mine = false;
+    while (mark <= seq)
+    {
+        if (ctx_->single_mark.compare_exchange_weak(mark, seq + 1, std::memory_order_acq_rel,
+                                                    std::memory_order_acquire))
+        {
+            mine = true;
+            break;
+        }
+    }
+    if (mine)
     {
         f();
     }
-    ctx_->leave(seq);
     end_construct(w);
 }
 

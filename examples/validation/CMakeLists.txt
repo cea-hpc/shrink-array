@@ -778,6 +778,29 @@ chunk_require_cxx20(team_loops_validation PRIVATE)
 add_test(NAME team_loops_validation COMMAND team_loops_validation)
 set_property(TEST team_loops_validation PROPERTY LABELS validation)
 
+# --- team_sync_validation: pmp::Team's synchronisation (barrier, single in
+# its wait and nowait forms, singles mixed with dynamic loops, teams in a row)
+# on the build's backend; under the std backend, with its spinning waits and
+# again with CHUNK_PMP_SPIN_US=0 (sleep at once). `--bench [threads]` prints
+# the cost of a barrier, a single and a team. Header-only, as team_loops.
+add_executable(team_sync_validation team_sync_validation.cpp)
+chunk_add_alloc_token_rt(team_sync_validation)
+target_include_directories(team_sync_validation PRIVATE ${PROJECT_SOURCE_DIR}/fast_allocators/public)
+target_link_libraries(team_sync_validation PRIVATE Threads::Threads)
+if (OMP)
+  target_link_libraries(team_sync_validation PRIVATE OpenMP::OpenMP_CXX)
+endif()
+if (CHUNK_THREADS_BACKEND STREQUAL "std")
+  target_compile_definitions(team_sync_validation PRIVATE FAST_ALLOC_PMP_STD=1)
+endif()
+chunk_require_cxx20(team_sync_validation PRIVATE)
+add_test(NAME team_sync_validation COMMAND team_sync_validation)
+set_property(TEST team_sync_validation PROPERTY LABELS validation)
+if (CHUNK_THREADS_BACKEND STREQUAL "std")
+  add_test(NAME team_sync_validation_nospin COMMAND team_sync_validation)
+  set_tests_properties(team_sync_validation_nospin PROPERTIES LABELS validation ENVIRONMENT "CHUNK_PMP_SPIN_US=0")
+endif()
+
 # --- blk_allocator_validation: fast_allocators' public size-dispatching front
 # end (BlkAllocator) alone. Nothing in the library calls it, so this is what
 # runs it: sizes on, between and past the buckets, many live blocks at once,
