@@ -180,15 +180,15 @@ class DeferredReadGate<Derived, DeferReadGate::none>
 
     /// @brief No-op: nothing to synchronise against in a serial build.
     /// @param offset Element offset being read; unused.
-    void reader_sync([[maybe_unused]] int offset) const noexcept {}
+    static void reader_sync([[maybe_unused]] int offset) noexcept {}
 
     /// @brief No-op: no per-chunk pending counter exists in a serial build.
     /// @param thr Calling thread's rank; unused.
-    void pending_publish([[maybe_unused]] int thr) noexcept {}
+    static void pending_publish([[maybe_unused]] int thr) noexcept {}
 
     /// @brief No-op: no per-chunk pending counter exists in a serial build.
     /// @param count Number of operations retired; unused.
-    void pending_retire([[maybe_unused]] int32_t count) noexcept {}
+    static void pending_retire([[maybe_unused]] int32_t count) noexcept {}
 
     /// @brief Always false: nothing can ever be pending in a serial build.
     /// @return Always false.
