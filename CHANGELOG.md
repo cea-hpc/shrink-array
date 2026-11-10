@@ -171,6 +171,14 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `zero_any` (and `pattern`): a pass handed its candidates' queue flags back after all its
+  scans, while the scan had already lowered the mark of a candidate it dropped. A writer that
+  found that mark down and made the chunk constant met the flag still "queued" and gave up; the
+  pass then released the flag, and the chunk stayed constant and materialised in no list until
+  its next write: memory not reclaimed, no wrong value -- F6's window, open again for those
+  chunks (`formal/queue_handback.c`'s `MUT_HANDBACK_AFTER_UNMARK`). Each candidate's flag is
+  handed back in the scan, before its mark can go down, as `zero` and `zero_one_value` do.
+  `docs/formal_models.md` section 8.7.
 - A second `ParamChunk::init_indexes()` with the other argument (or `init_indexes(false)` after
   the first array had run `init_indexes(true)`) changed the allocation block size: the
   allocators registered afterwards cut their slabs to another size than the earlier ones of the

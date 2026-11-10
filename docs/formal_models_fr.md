@@ -388,9 +388,8 @@ que la passe comprime est démarqué juste après son effacement.
 
 Le correctif (`chunk/internal/queue_flag.h`) : dès que la passe a parcouru un candidat, et tant
 que sa marque tient encore les écrivains à l'écart, le drapeau du candidat passe de 1 à 2,
-« restitué » (`queue_flag::hand_back` ; dans le parcours même pour `zero` et `zero_one_value`,
-dont les parcours lèvent la marque d'un chunk qu'ils écartent, après tous les parcours pour
-`zero_any`) ; un écrivain dont le marquage trouve 2 le change
+« restitué » (`queue_flag::hand_back`, dans le parcours même, avant que le parcours lève la marque d'un
+chunk qu'il écarte, dans les trois variantes) ; un écrivain dont le marquage trouve 2 le change
 en 3, « écrit entre-temps », au lieu de renoncer (`queue_flag::try_queue`, à chaque site
 d'écrivain : `add_to_compression_list()`, sa forme asynchrone, les écritures par plage qui y
 passent) ; la passe remet ensuite 2 -> 0 par CAS et, sur un 3, remet elle-même le chunk dans la
@@ -417,7 +416,10 @@ liste, une fois.
 | `MUT_HANDBACK_AFTER_UNMARK` : le drapeau mis à 2 après la baisse de la marque | échec | violation de sûreté | -- |
 | `MUT_WRITER_IGNORES_2` : l'écrivain renonce sur un 2 comme sur un 1 | échec | violation de sûreté | -- |
 
-Les mêmes verdicts sous IMM. Dans la bibliothèque, le mode `remark` de `read_reclaim_validation`
+Les mêmes verdicts sous IMM. `zero_any` (et `pattern`) restituait d'abord les drapeaux après tous
+les parcours, alors que son parcours levait déjà la marque d'un candidat écarté : pour ceux-là,
+l'ordre de `MUT_HANDBACK_AFTER_UNMARK`, et la fenêtre de F6 rouverte. Il restitue désormais chacun
+dans le parcours, comme `zero`. Dans la bibliothèque, le mode `remark` de `read_reclaim_validation`
 (des passes avec un délai dans la fenêtre de restitution, des écrivains sur les mêmes chunks) est
 passé par la nouvelle branche -- une écriture notée sur un drapeau restitué, le chunk remis en
 file par sa passe -- 267 536 fois pour `zero_any` et 1 849 pour `zero_one_value` en 8 s à 4

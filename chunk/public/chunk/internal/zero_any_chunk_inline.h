@@ -267,23 +267,9 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
     ll_compt2.reserve((sz / 50) + 1);
 
     // `claimed`: the claim loop runs only with a proxy (without: the resize path).
+    // The scan hands each candidate's queue flag back as soon as it is scanned,
+    // before its mark can go down (queue_flag.h, F6).
     fill_list_chunk_to_compress_in_par(thr, ll_compt1, ll_compt2, proxy2a != nullptr);
-
-    // Every candidate scanned, every mark still up: hand the queue flags back before
-    // the first steal_unmark() below (queue_flag.h: a writer of a chunk whose mark is
-    // down notes itself on the flag instead of losing its queueing -- F6).
-    if constexpr (build_config::threaded)
-    {
-        for (int k = 0; k < sz; ++k)
-        {
-            const auto& tup = vec_tuple_to_compress[k];
-            if (std::get<0>(tup) != nullptr && std::get<1>(tup) >= 0)
-            {
-                queue_flag::hand_back(
-                    ProxyType::Base::get_tab_is_inside_list_to_compress(std::get<2>(tup))[std::get<1>(tup)]);
-            }
-        }
-    }
 
     for (auto& tup : ll_compt1)
     {
@@ -664,6 +650,19 @@ void zero_any::ChunkImpl<T, Derived>::fill_list_chunk_to_compress_in_par([[maybe
 
     const int sz = vec_tup.size();
 
+    // pattern: the motif candidates the scan set aside; 0 for plain zero_any.
+    const auto motif_count = []
+    {
+        if constexpr (has_motif_state_v<Derived>)
+        {
+            return Derived::motif_candidate_count();
+        }
+        else
+        {
+            return std::size_t{0};
+        }
+    };
+
     for (int k = 0; k < sz; ++k)
     {
         const auto& tup = vec_tup[k];
@@ -678,24 +677,27 @@ void zero_any::ChunkImpl<T, Derived>::fill_list_chunk_to_compress_in_par([[maybe
 
             const auto n1 = ll_compt1.size();
             const auto n2 = ll_compt2.size();
-            if constexpr (has_motif_state_v<Derived>)
+            // A motif candidate is stolen too (compress_motif_candidates()): it keeps its claim.
+            [[maybe_unused]] const auto n3 = motif_count();
+            chunk_t->fill_list_to_compress(ll_compt1, ll_compt2, num_chunk, num_tab, csize, claimed);
+            // Scanned, still marked: hand its queue flag back BEFORE the mark can go
+            // down, as zero does (queue_flag.h, F6). After it, a writer that finds the
+            // mark down and makes the chunk constant notes itself on the flag, and the
+            // pass queues the chunk again (release_candidates). Handed back after all
+            // the scans, as it was, the flag of a dropped candidate was still "queued"
+            // when that writer tried: it gave up, and the chunk stayed constant and
+            // materialised in no list (formal/queue_handback.c, MUT_HANDBACK_AFTER_UNMARK).
+            if constexpr (build_config::threaded)
             {
-                // A motif candidate is stolen too (compress_motif_candidates()): it keeps its claim.
-                const auto n3 = Derived::motif_candidate_count();
-                chunk_t->fill_list_to_compress(ll_compt1, ll_compt2, num_chunk, num_tab, csize, claimed);
-                if (ll_compt1.size() == n1 && ll_compt2.size() == n2 && Derived::motif_candidate_count() == n3)
+                if (num_chunk >= 0)
                 {
-                    chunk_t->steal_unmark();
+                    queue_flag::hand_back(ProxyType::Base::get_tab_is_inside_list_to_compress(num_tab)[num_chunk]);
                 }
             }
-            else
+            // Not selected: nothing will be stolen, release it to the writers now.
+            if (ll_compt1.size() == n1 && ll_compt2.size() == n2 && motif_count() == n3)
             {
-                chunk_t->fill_list_to_compress(ll_compt1, ll_compt2, num_chunk, num_tab, csize, claimed);
-                // Not selected: nothing will be stolen, release it to the writers now.
-                if (ll_compt1.size() == n1 && ll_compt2.size() == n2)
-                {
-                    chunk_t->steal_unmark();
-                }
+                chunk_t->steal_unmark();
             }
         }
     }

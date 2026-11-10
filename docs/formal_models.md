@@ -367,8 +367,8 @@ compresses is unmarked right after its clear.
 
 The fix (`chunk/internal/queue_flag.h`): as soon as the pass has scanned a candidate, and while
 its mark still keeps the writers out, the candidate's flag goes from 1 to 2, "handed back"
-(`queue_flag::hand_back`; in the scan itself for `zero` and `zero_one_value`, whose scans
-release the mark of a chunk they drop, after all the scans for `zero_any`); a writer whose marking finds 2 turns it into 3, "written meanwhile",
+(`queue_flag::hand_back`, in the scan itself, before the scan releases the mark of a chunk it
+drops, in the three variants); a writer whose marking finds 2 turns it into 3, "written meanwhile",
 rather than giving up (`queue_flag::try_queue`, every writer's site: `add_to_compression_list()`,
 its async form, the range writes through it); the pass then resets 2 -> 0 by CAS and, on a 3,
 queues the chunk again in its own rank's list (`queue_flag::release`). In the passes of `zero`,
@@ -392,7 +392,10 @@ the flag is up exactly when the chunk is listed, once.
 | `MUT_HANDBACK_AFTER_UNMARK`: the flag set to 2 after the mark is down | fail | safety violation | -- |
 | `MUT_WRITER_IGNORES_2`: the writer gives up on a 2 as on a 1 | fail | safety violation | -- |
 
-The same verdicts under IMM. In the library, `read_reclaim_validation`'s `remark` mode (passes
+The same verdicts under IMM. `zero_any` (and `pattern`) first handed the flags back after all
+the scans, while its scan already released the mark of a candidate it dropped: for those, the
+order of `MUT_HANDBACK_AFTER_UNMARK`, and the F6 window open again. It hands each one back in
+the scan now, as `zero` does. In the library, `read_reclaim_validation`'s `remark` mode (passes
 with a delay in the hand-back window, writers on the same chunks) went through the new branch --
 a write noted on a handed-back flag, the chunk queued again by its pass -- 267,536 times for
 `zero_any` and 1,849 for `zero_one_value` in 8 s at 4 threads, each a queueing the old code lost.

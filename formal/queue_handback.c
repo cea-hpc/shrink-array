@@ -31,9 +31,10 @@
  *   mark_candidate()            proxy_base_inline.h  add_to_compression_list(): probe, CAS 0->1
  *   listed                      the entries of the chunk in every rank's candidate list
  *   pass()                      zero_any_chunk_inline.h  make_block_compression(): claim
- *                               (steal_mark), start(), scan (fill_list_to_compress), clear +
- *                               steal_unmark of the constant ones, then the hand-back loop:
- *                               steal_unmark, reset_tab_inside_list_to_compress (release)
+ *                               (steal_mark), start(), scan (fill_list_chunk_to_compress_in_par:
+ *                               fill_list_to_compress, hand_back, steal_unmark of a dropped one),
+ *                               clear + steal_unmark of the constant ones, then the hand-back
+ *                               loop: reset_tab_inside_list_to_compress (release)
  *   writer()                    proxy_base_inline.h  write_with_optional_lock_impl(): announce,
  *                               check 2 (must_defer_write = steal_marked), body (materialise,
  *                               store, mark for compression), end_write
@@ -49,8 +50,8 @@
  *   P1  no store into a buffer the pass has returned (GenMC reports the access to freed memory);
  *   P2  (-DWITH_W2) W2's value is in the chunk.
  *
- * THE SOURCE (default): the flag is HANDED BACK (chunk/internal/queue_flag.h): once the scans
- * are done, every candidate's flag goes 1 -> 2 while its mark still keeps the writers out
+ * THE SOURCE (default): the flag is HANDED BACK (chunk/internal/queue_flag.h): as soon as a
+ * candidate is scanned, its flag goes 1 -> 2 while its mark still keeps the writers out
  * (queue_flag::hand_back); a writer that finds 2 turns it into 3 ("written meanwhile") instead
  * of giving up (queue_flag::try_queue); the pass then resets 2 -> 0 by CAS, and on a 3 queues
  * the chunk again itself (queue_flag::release). Must PASS.
@@ -243,7 +244,7 @@ static void* pass(void* arg)
                 constant = false;
 
 #if defined(HANDBACK) && !defined(MUT_HANDBACK_AFTER_UNMARK)
-    /* every scan done, the marks still up: hand the flags back (1 -> 2), queue_flag::hand_back */
+    /* scanned, the mark still up: hand the flag back (1 -> 2), queue_flag::hand_back */
     atomic_exchange_explicit(&queued, 2, memory_order_acq_rel);
 #endif
 
