@@ -21,6 +21,7 @@
 
 #include <algorithm> // std::max
 #include <array>     // std::array (the advisor table's title)
+#include <chrono>    // std::chrono::steady_clock (each re-chunk's wall time)
 #include <cstddef>   // std::size_t
 #include <cstdio>    // std::fprintf (print_rechunk_log)
 #include <cstring>   // std::strcmp (the settled verdicts)
@@ -315,9 +316,12 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
             if (cur_sz != tgt)
             {
                 CHUNK_LOG(info, rechunk, "force {}: {} -> {}", name, cur_sz, tgt);
+                const auto t0 = std::chrono::steady_clock::now();
                 arr.rechunk_to(tgt);
+                const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
                 // Logged for print_rechunk_log(); mem figures 0 (not measured).
                 log_.emplace_back(RechunkEvent{iter, std::string(name), cur_sz, tgt, 0.0, 0.0, 0.0});
+                log_.back().seconds = secs;
                 return true;
             }
             return false;
@@ -480,11 +484,14 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
             const unsigned old_sz   = cur_e.size;
             const unsigned new_sz   = best_e.size;
 
+            const auto t0 = std::chrono::steady_clock::now();
             arr.rechunk_to(new_sz);
+            const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
 
             // "after" is measured at the NEXT tick; seed it with the prediction
             // for a run that ends before then.
             log_.emplace_back(RechunkEvent{iter, std::string(name), old_sz, new_sz, mem_bef, mem_prd, mem_prd});
+            log_.back().seconds = secs;
             pending_after_[&arr] = log_.size() - 1;
         }
         return act;
@@ -495,26 +502,32 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
 // before -> after (measured), with the advisor's prediction for comparison.
 inline void RechunkDecider::print_rechunk_log(std::FILE* out) const
 {
-    std::fprintf(out, "Re-chunks performed: %zu\n", log_.size());
+    double total_s = 0.;
+    for (const RechunkEvent& event : log_)
+    {
+        total_s += event.seconds > 0. ? event.seconds : 0.;
+    }
+    std::fprintf(out, "Re-chunks performed: %zu (%.2f s)\n", log_.size(), total_s);
     for (const RechunkEvent& event : log_)
     {
         const double d_meas = event.mem_before - event.mem_after;
+        const double ms     = event.seconds >= 0. ? event.seconds * 1e3 : -1.;
         if (event.mem_after_old >= 0.)
         {
             std::fprintf(out,
                          "  iter %-6d %-12s S %5u -> %-5u   mem %7.1f -> %7.1f MB "
-                         "(freed %6.1f MB, %6.1f at unchanged data; advisor predicted %6.1f)\n",
+                         "(freed %6.1f MB, %6.1f at unchanged data; advisor predicted %6.1f) in %5.0f ms\n",
                          event.iter, event.name.c_str(), event.old_size, event.new_size, event.mem_before / 1e6,
                          event.mem_after / 1e6, d_meas / 1e6, (event.mem_after_old - event.mem_after) / 1e6,
-                         (event.mem_before - event.mem_pred) / 1e6);
+                         (event.mem_before - event.mem_pred) / 1e6, ms);
         }
         else
         {
             std::fprintf(out,
                          "  iter %-6d %-12s S %5u -> %-5u   mem %7.1f -> %7.1f MB "
-                         "(freed %6.1f MB; advisor predicted %6.1f)\n",
+                         "(freed %6.1f MB; advisor predicted %6.1f) in %5.0f ms\n",
                          event.iter, event.name.c_str(), event.old_size, event.new_size, event.mem_before / 1e6,
-                         event.mem_after / 1e6, d_meas / 1e6, (event.mem_before - event.mem_pred) / 1e6);
+                         event.mem_after / 1e6, d_meas / 1e6, (event.mem_before - event.mem_pred) / 1e6, ms);
         }
     }
 }
