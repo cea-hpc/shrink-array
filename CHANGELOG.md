@@ -171,6 +171,11 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `dekker::heavy_barrier()` ignored the return of `membarrier(MEMBARRIER_CMD_PRIVATE_EXPEDITED)`.
+  Under the asymmetric handshake the writers announce with a compiler barrier only, so a failed
+  call -- after a successful registration it cannot fail but under a seccomp filter installed
+  later -- would let a pass free a buffer a writer is in, silently. It stops now, in every
+  build, with the errno.
 - `zero_any` (and `pattern`): a pass handed its candidates' queue flags back after all its
   scans, while the scan had already lowered the mark of a candidate it dropped. A writer that
   found that mark down and made the chunk constant met the flag still "queued" and gave up; the
