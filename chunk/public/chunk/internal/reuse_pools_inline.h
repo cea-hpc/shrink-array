@@ -25,6 +25,7 @@
 
 #include <algorithm>   // std::find, std::max, std::sort, std::unique
 #include <atomic>      // std::atomic, std::memory_order
+#include <chrono>      // std::chrono::steady_clock (the team drain's probe)
 #include <cstddef>     // std::size_t
 #include <type_traits> // std::remove_reference_t
 #include <utility>     // std::pair
@@ -37,6 +38,7 @@
 #include "chunk/internal/PMP_CHUNK.h"            // CHUNK_PMP_*, pmp::
 #include "chunk/internal/chunk_size_policy.h"    // alloc_chunk_count, thread_chunk_size
 #include "chunk/internal/pool_ledger.h"          // CHUNK_LEDGER_*
+#include "chunk/internal/drain_probe.h"          // g_drain_probe (rechunk=debug, the team drain's split)
 #include "chunk/internal/freepath_counters.h"    // CHUNK_FREEPATH_*
 #include "chunk/internal/zero_chunk.h"           // Chunk<T>: the ChunkT<T>:: calls
 #include "chunk/internal/zero_one_value_chunk.h" // zero_one_value::Chunk<T>: the ChunkT<T>:: calls
@@ -716,8 +718,15 @@ void ReusePools<ChunkT, T>::drain_reuse_list_for_size_team([[maybe_unused]] pmp:
             }); // implicit barrier: scratch is complete for every thread
         auto* const geometry = static_cast<AllocT*>(scratch.geometry);
         const int   me       = CHUNK_PMP_THREAD_RANK;
-        auto* const held     = scratch.held.get();
-        auto* const dirty    = scratch.dirty.get();
+        // rechunk=debug: this thread's own-rank passes, barriers excluded
+        // (drain_probe.h). Read after the barrier above: the master arms it
+        // before entering the drain.
+        using ProbeClock = std::chrono::steady_clock;
+        const bool probe = internal::g_drain_probe.armed.load(std::memory_order_relaxed);
+        const auto ns    = [](ProbeClock::time_point from) noexcept
+        { return std::chrono::duration_cast<std::chrono::nanoseconds>(ProbeClock::now() - from).count(); };
+        auto* const held  = scratch.held.get();
+        auto* const dirty = scratch.dirty.get();
         if (me >= 0 && static_cast<std::size_t>(me) < scratch.n_flags)
         {
             held[me].store(1, std::memory_order_relaxed); // read after the first set's barrier
@@ -728,7 +737,9 @@ void ReusePools<ChunkT, T>::drain_reuse_list_for_size_team([[maybe_unused]] pmp:
             const int  n_thr   = static_cast<int>(per_thr.size());
             const auto is_set  = [](const std::atomic<unsigned char>* flags, int rank) noexcept
             { return flags[rank].load(std::memory_order_relaxed) != 0; };
+            const auto t_sort = probe ? ProbeClock::now() : ProbeClock::time_point{};
             drain_sort_rank(per_thr, n_thr, me, geometry, scratch.bucket, dirty);
+            const long long sort_ns = probe ? ns(t_sort) : 0;
             team.barrier();
             team.single(
                 [&]
@@ -743,9 +754,25 @@ void ReusePools<ChunkT, T>::drain_reuse_list_for_size_team([[maybe_unused]] pmp:
                         }
                     }
                 }); // implicit barrier: every row is sorted, every dirty flag raised
+            long long free_ns = 0;
+            long long blocks  = 0;
             if (me >= 0 && me < n_thr && is_set(dirty, me))
             {
+                if (probe)
+                {
+                    for (int q = 0; q < n_thr; ++q)
+                    {
+                        blocks += static_cast<long long>(
+                            scratch.bucket[static_cast<std::size_t>(q)][static_cast<std::size_t>(me)].size());
+                    }
+                }
+                const auto t_free = probe ? ProbeClock::now() : ProbeClock::time_point{};
                 drain_free_rank(n_thr, me, geometry, scratch.bucket, /*release_cells=*/false);
+                free_ns = probe ? ns(t_free) : 0;
+            }
+            if (probe && me >= 0 && me < n_thr)
+            {
+                internal::g_drain_probe.report(sort_ns, free_ns, blocks); // before the barrier: read after it
             }
             team.barrier();
             team.single(

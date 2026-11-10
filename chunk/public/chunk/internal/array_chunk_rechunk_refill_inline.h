@@ -37,6 +37,7 @@
 #include "chunk/config.h"                              // build_config::threaded, chunk_config::use_zero*
 #include "chunk/internal/array_chunk_rechunk_refill.h" // Refill, the class these bodies belong to
 #include "chunk/internal/array_chunk_rechunk_trace.h"  // rechunk_trace_on, rss_mib_now, g_slice_times
+#include "chunk/internal/drain_probe.h"                // g_drain_probe (the boundary drain's split)
 #include "chunk/internal/chunk_size_policy.h"          // set_thread_chunk_size, DynChunkSizeGuard
 #include "chunk/internal/chunk_stats.h"                // increm_chunk_rechunk_* (CHUNK_STATS)
 #include "chunk/internal/compression_manager.h"        // CompressionManager<>::FlushReplayGuard
@@ -282,6 +283,9 @@ void RechunkSupport<Derived, true>::Refill::slice_boundary(pmp::Team& team)
             if (trace_on_)
             {
                 slice_t0_ = SliceClock::now();
+                internal::g_drain_probe.reset();
+                // Read past the drain's first barrier.
+                internal::g_drain_probe.armed.store(true, std::memory_order_relaxed);
             }
         });
     ManagerT::drain_reuse_list_for_size_team(team, static_cast<unsigned int>(old_size_), team_drain_);
@@ -302,6 +306,20 @@ void RechunkSupport<Derived, true>::Refill::slice_boundary(pmp::Team& team)
             {
                 slice_t1_ = SliceClock::now();
                 internal::g_slice_times.drain_ms += internal::elapsed_ms(slice_t0_, slice_t1_);
+                // Every thread reported before the drain's last barrier.
+                auto&        dp  = internal::g_drain_probe;
+                auto&        st  = internal::g_slice_times;
+                const int    nr  = dp.n.load(std::memory_order_relaxed);
+                const double inv = nr > 0 ? 1.0 / nr : 0.0;
+                const auto   ld  = [](const std::atomic<long long>& slot)
+                { return static_cast<double>(slot.load(std::memory_order_relaxed)); };
+                st.drain_sort_max_ms += ld(dp.sort_max) * 1e-6;
+                st.drain_sort_avg_ms += ld(dp.sort_sum) * 1e-6 * inv;
+                st.drain_free_max_ms += ld(dp.free_max) * 1e-6;
+                st.drain_free_avg_ms += ld(dp.free_sum) * 1e-6 * inv;
+                st.drain_blocks_max += ld(dp.blocks_max);
+                st.drain_blocks_avg += ld(dp.blocks_sum) * inv;
+                dp.armed.store(false, std::memory_order_relaxed);
             }
             const auto n_ranks = static_cast<std::size_t>(CHUNK_PMP_RANK_BOUND);
             if (recycle_held_.size() != n_ranks)

@@ -376,6 +376,7 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/compress_candidates_inline.h
         public/chunk/internal/reuse_pools.h
         public/chunk/internal/reuse_pools_inline.h
+        public/chunk/internal/drain_probe.h
         public/chunk/internal/map_helper.h
         public/chunk/internal/phase_guard.h
         public/chunk/internal/zero_one_value_pointer_map.h
