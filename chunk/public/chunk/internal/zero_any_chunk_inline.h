@@ -19,6 +19,7 @@
 #include <algorithm>   // std::fill_n (the create_value fills)
 #include <cstdlib>     // std::abort
 #include <optional>    // std::nullopt (the clears)
+#include <thread>      // std::this_thread::yield (wait_before_materialise)
 #include <type_traits> // std::remove_cvref_t (the re-queued candidates)
 
 #include "chunk/internal/in_t.h"            // InT<T>: the element snapshots
@@ -736,6 +737,21 @@ void zero_any::ChunkImpl<T, Derived>::fill_list_chunk_to_compress_in_par([[maybe
 template <typename T, typename ChunkT>
 void wait_before_materialise(const ChunkT& chunk, [[maybe_unused]] int thr_rank) noexcept
 {
+    // The library's wait: 1000 pauses, then a yield (cpu_pause.h). A pause alone
+    // spun out a whole time slice whenever the pass holding the mark waited for a
+    // core (more threads than cores: the std backend, TBB).
+    auto relax = [spins = 0]() mutable
+    {
+        if (++spins > 1000)
+        {
+            std::this_thread::yield();
+            spins = 0;
+        }
+        else
+        {
+            CHUNK_CPU_PAUSE();
+        }
+    };
     if constexpr (chunk_config::use_chunk_steal_mark)
     {
         using Policy = WriteCompressSyncPolicy<typename ChunkTraits<ChunkT>::ProxyType>;
@@ -745,14 +761,14 @@ void wait_before_materialise(const ChunkT& chunk, [[maybe_unused]] int thr_rank)
         }
         while (chunk.steal_marked())
         {
-            CHUNK_CPU_PAUSE();
+            relax();
         }
     }
     else
     {
         while (CompressionManager<T, ChunkT>::is_hard_compression_inflight())
         {
-            CHUNK_CPU_PAUSE();
+            relax();
         }
     }
 }

@@ -171,6 +171,10 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `wait_before_materialise()` (`zero_any`, `pattern`) waited for the compressor's mark with a
+  pause and no yield, against the library's rule (1000 pauses, then a yield): with more threads
+  than cores (the std backend, TBB) a thread could spin a whole time slice while the pass that
+  holds the mark waited for a core. It yields after 1000 pauses now.
 - `dekker::heavy_barrier()` ignored the return of `membarrier(MEMBARRIER_CMD_PRIVATE_EXPEDITED)`.
   Under the asymmetric handshake the writers announce with a compiler barrier only, so a failed
   call -- after a successful registration it cannot fail but under a seccomp filter installed
