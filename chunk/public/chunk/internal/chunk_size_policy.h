@@ -144,8 +144,15 @@ enum class ChunkSizeError : std::uint8_t
     return g_active_chunk_size;
 }
 
-// Per-thread active size: set by array ops before allocating; read by the
-// allocator routing. Falls back to the process-wide seed when unset.
+/// @brief Route the calling thread's next chunk allocations to the allocator of
+///        @p size elements.
+/// @details The library sets it itself, from the array it is about to write,
+///          before every allocation (allocator routing, read by
+///          alloc_chunk_count()); falls back to the process-wide size when unset.
+///          It does NOT give a new array its geometry: an array is born at the
+///          process-wide set_active_chunk_size(), and a.set_chunk_size() sets an
+///          empty one's.
+/// @param size chunk size, in elements
 inline void set_thread_chunk_size(unsigned int size) noexcept
 {
     t_active_chunk_size = size;

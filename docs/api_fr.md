@@ -188,7 +188,7 @@ tous les backends.
 | `a.rechunk_to(n)` **(S)** | | rechunke un tableau à `n` éléments par chunk |
 | `a.set_chunk_size(n)` | | la géométrie d'un tableau VIDE, avant son premier `resize()` ; refusé (avertissement) sur un tableau qui a des chunks -- `rechunk_to()` déplace les éléments ; sans effet dans un build statique |
 | `set_active_chunk_size(n)` | `chunk/chunk_size_advisor.h` | la taille de chunk du processus, avant `ParamChunk::init_indexes()` : la première géométrie |
-| `set_thread_chunk_size(n)` | `chunk/chunk_size_advisor.h` | la taille de chunk des prochains tableaux construits par le thread appelant |
+| `set_thread_chunk_size(n)` | `chunk/chunk_size_advisor.h` | la taille vers laquelle sont aiguillées les prochaines allocations de chunk du thread appelant ; la bibliothèque la fixe avant chaque allocation. Pas la géométrie d'un nouveau tableau : les tableaux naissent à `set_active_chunk_size()`, `a.set_chunk_size(n)` fixe celle d'un tableau vide |
 | `sizeof(zero_any::Chunk<T>)` | `chunk/zero_any_array.h` | les métadonnées d'un chunk, pour les options du conseiller |
 
 La politique, ses valeurs par défaut et les résultats mesurés : [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md).

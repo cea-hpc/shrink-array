@@ -182,7 +182,7 @@ threads with these rather than with `omp_get_*`, so that the program builds with
 | `a.rechunk_to(n)` **(S)** | | re-chunk one array to `n` elements per chunk |
 | `a.set_chunk_size(n)` | | the geometry of an EMPTY array, before its first `resize()`; refused (warning) on an array that has chunks -- `rechunk_to()` moves the elements; a no-op in a static build |
 | `set_active_chunk_size(n)` | `chunk/chunk_size_advisor.h` | the process-wide chunk size, before `ParamChunk::init_indexes()`: the first geometry |
-| `set_thread_chunk_size(n)` | `chunk/chunk_size_advisor.h` | the chunk size of the arrays the calling thread builds next |
+| `set_thread_chunk_size(n)` | `chunk/chunk_size_advisor.h` | the size the calling thread's next chunk allocations are routed to; the library sets it before each allocation. Not a new array's geometry: arrays are born at `set_active_chunk_size()`, `a.set_chunk_size(n)` sets an empty one's |
 | `sizeof(zero_any::Chunk<T>)` | `chunk/zero_any_array.h` | the metadata of one chunk, for the advisor's options |
 
 The policy, its defaults and the measured results: [adaptive_rechunk.md](adaptive_rechunk.md).

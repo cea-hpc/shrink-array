@@ -171,6 +171,11 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `docs/api.md` section 7 said `set_thread_chunk_size(n)` gives "the chunk size of the arrays the
+  calling thread builds next"; a new array still took the process-wide size. It routes the
+  calling thread's chunk allocations, and the library sets it before each of them: the table
+  and the function's comment say so, and point to `set_active_chunk_size()` and
+  `a.set_chunk_size()` for a new array's geometry.
 - `import_array(b, export_array(a))` returned `false` whenever `a` had another chunk count than a
   fresh array of its size: after `a.reserve(10000)` (40 chunks for 10 elements), or for an array
   grown by 256 `push_back` (1 chunk, against 2 for a fresh array of 256). A checkpoint could
