@@ -21,8 +21,8 @@ from PySide6.QtWidgets import QMessageBox
 from shrink_gui import qos
 from shrink_gui.config import ARCH_DEFAULTS, BATCH, BUILD_REP, DEFAULTS, DETACHED, PROGRAMS, SITE
 from shrink_gui.i18n import T
-from shrink_gui.runscripts import (directive_cores, make_launch_sh, make_local_launch_sh, make_node_sh,
-                                   make_run_sh, node_launch, nodes_directives)
+from shrink_gui.runscripts import (directive_cores, env_words, make_launch_sh, make_local_launch_sh,
+                                   make_node_sh, make_run_sh, node_launch, nodes_directives, parse_env)
 from shrink_gui.widgets import PickerDialog, ask, families, split_list, unique_globs
 
 
@@ -32,6 +32,8 @@ class LaunchForm:
         self.time_s.setValue(int(self.settings.value(f"time_s/{prog}",
                                                      PROGRAMS[prog].get("time_s", DEFAULTS["time_s"]))))
         self.rescale_armed = True        # the program's duration: "Nœuds" may rescale it
+        if hasattr(self, "env"):         # the program's environment variables, as left last time
+            self.env.setText(self.settings.value(f"env/{prog}", "") or "")
         cached = self.settings.value(f"schema/{self.program.currentText()}")
         self.form.pickers = {d: self.pick for d in PROGRAMS[prog].get("pickers", {})}
         self.check_builds.setEnabled("builds_opt" in PROGRAMS[prog])
@@ -266,12 +268,28 @@ class LaunchForm:
             parts.append(self.extra.text().strip())
         return " ".join(parts)
 
+    def env_changed(self, *_):
+        """The "Environnement" field was edited: kept per program (a
+        CHUNK_LLVM_ROOT for compile_all.sh is not one for bench_and_test.py)."""
+        self.settings.setValue(f"env/{self.program.currentText()}", self.env.text())
+        self.update_preview()
+
+    def run_env(self):
+        """The variables of the "Environnement" field, [(name, value)];
+        ValueError when a word is not NAME=value (runscripts.parse_env)."""
+        return parse_env(self.env.text()) if hasattr(self, "env") else []
+
     def update_preview(self, *_):
         self.apply_time_by_mode()
         if hasattr(self, "preview"):
             n = self.nodes_wanted()
             how = T(f"un job de {n} nœuds") if self.one_job() else T(f"{n} jobs, un nœud chacun")
-            self.preview.setPlainText(self.command() + (
+            try:
+                env = env_words(self.run_env())
+                env = env + " " if env else ""
+            except ValueError as e:
+                env = f"# {T(str(e))}\n"
+            self.preview.setPlainText(env + self.command() + (
                 f" {self.pool_opt()}=<{T('la soumission')}>\n# {how}" if n > 1 else ""))
 
     def time_by_mode(self):
@@ -391,6 +409,11 @@ class LaunchForm:
         rerun_failed), with the form's partition, mode, directives and -T."""
         self.save()
         prog = self.program.currentText()
+        try:
+            self.run_env()
+        except ValueError as e:
+            self.error(str(e))
+            return
         if command is None and not self.form.schema and ask(
                 self, "Options non lues",
                 "Les options du script n'ont pas été lues : seuls les arguments en plus seront "
@@ -521,6 +544,7 @@ class LaunchForm:
                                                  f"_N{job_meta['nodes']}" if job_meta else "")
         repo, cwd = self.repo.text().strip(), PROGRAMS[prog]["cwd"]
         launcher = self.launcher.text().strip() if mode in ("msub", "local") else ""
+        env = self.run_env()             # checked by launch()
         node_sh, nodes = None, None
         if job_meta.get("layout") == "job":
             # run.sh runs in the job's shell, on its first node (the checks,
@@ -529,11 +553,11 @@ class LaunchForm:
             nodes = {"n": job_meta["nodes"],
                      "launch": node_launch(launcher, BATCH.get("step"), job_meta["nodes"],
                                            directive_cores(self.directives.toPlainText()))}
-            node_sh = make_node_sh(repo, cwd, cmd)
+            node_sh = make_node_sh(repo, cwd, cmd, env)
             launcher = nodes["launch"]
         return {
             "mode": mode,
-            "run.sh": make_run_sh(repo, cwd, cmd, check, nodes),
+            "run.sh": make_run_sh(repo, cwd, cmd, check, nodes, env),
             **({"node.sh": node_sh} if node_sh else {}),
             "msub": self.job_directives() if mode == "msub" else "",
             "launcher": "" if nodes else launcher if mode == "msub" else "",
@@ -552,6 +576,7 @@ class LaunchForm:
                      "launcher": launcher,
                      "command": cmd, "values": self.form.values(),
                      "extra": extra if extra is not None else self.extra.text(),
+                     "env": self.env.text().strip(),
                      "repo": self.repo.text().strip(), "time_s": self.time_s.value(),
                      "qos": "" if mode == "local" else qname or qos.explicit_qos(self.job_directives()) or "",
                      "qos_wanted": self.qos.currentData(),

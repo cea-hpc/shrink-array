@@ -56,6 +56,12 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `shrink_gui` 0.16: an environment field under the extra arguments (`NAME=value` words),
+  exported in `run.sh` and `node.sh` before the command -- `CHUNK_LLVM_ROOT=~/llvm-22` for
+  `compile_all.sh`, a run-time switch of the library for a bench. Exported before
+  `scripts/site_env.sh` and again after it (the run's value wins); a leading `~/` is the home
+  directory of the machine the run is on. Kept per program, written to `meta.json` (`env`),
+  taken back by "Reprendre ses options", shown before the command and in the run's log.
 - SonarQube Cloud (project `cea-hpc_shrink-array`): `.github/workflows/sonar.yml` analyses
   the tree on every push to develop and main, and on demand, with the rules of SonarQube for IDE
   (SonarLint) -- the C++ from CMake's compilation database, one entry per source file, nothing

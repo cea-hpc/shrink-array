@@ -77,6 +77,38 @@ def test_submit_follow_summary_fetch(gui, site):
     assert pump(lambda: (site.local / rid / "outputs" / "timings_summary.csv").exists(), 10)
 
 
+def test_environment_field(gui, site):
+    """NAME=value words: shown before the command, refused when malformed,
+    exported in run.sh, written to meta.json, kept per program, and taken
+    back by "Reprendre ses options"."""
+    w, pump = gui
+    _choose_fake(w, pump)
+    w.env.setText("CHUNK_LLVM_ROOT")
+    assert w.preview.toPlainText().startswith("# environnement : ")
+    n = len(w.runs)
+    w.launch()
+    pump(lambda: False, 1)
+    assert len(w.runs) == n and "NOM=valeur" in w.statusBar().currentMessage()
+    w.env.setText('CHUNK_LLVM_ROOT=~/llvm-22 CHUNK_X="a b"')
+    assert w.preview.toPlainText().startswith("CHUNK_LLVM_ROOT='~/llvm-22' CHUNK_X='a b' python3 fake_stress.py")
+    rid = _submit(w, pump, {"runs": "3", "step": "0.01"}, n)
+    run_sh = (site.runs / rid / "run.sh").read_text()
+    assert run_sh.count('export CHUNK_LLVM_ROOT="$HOME"/llvm-22\n') == 2 and "export CHUNK_X='a b'\n" in run_sh
+    assert w.runs[0]["meta"]["env"] == 'CHUNK_LLVM_ROOT=~/llvm-22 CHUNK_X="a b"'
+    assert _wait_status(w, pump, rid, "fini")
+    assert "[gui] env: CHUNK_LLVM_ROOT='~/llvm-22' CHUNK_X='a b'" in (site.runs / rid / "out.log").read_text()
+    # per program: another program has its own, this one finds its own again
+    w.program.setCurrentText("compile_all.sh")
+    assert w.env.text() == ""
+    w.program.setCurrentText("fake_stress.py")
+    assert w.env.text() == 'CHUNK_LLVM_ROOT=~/llvm-22 CHUNK_X="a b"'
+    w.env.setText("")
+    w.table.selectRow(0)
+    w.reuse()
+    assert w.env.text() == 'CHUNK_LLVM_ROOT=~/llvm-22 CHUNK_X="a b"'
+    w.env.setText("")
+
+
 def test_compare_two_runs(gui):
     w, pump = gui
     _choose_fake(w, pump)

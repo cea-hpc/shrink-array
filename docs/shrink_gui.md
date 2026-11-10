@@ -2,7 +2,7 @@
 
 > French version: [shrink_gui_fr.md](shrink_gui_fr.md).
 
-> October 2026, `shrink_gui` 0.15 (prototype). A window on the laptop to submit
+> October 2026, `shrink_gui` 0.16 (prototype). A window on the laptop to submit
 > `compile_all.sh`, `bench_and_test.py`, `multi_launch_stress.py` and `thread_speedup.py` on the cluster, or to
 > run them on the laptop itself (§3, "This machine"), follow
 > their log, read their summary and fetch their results. The code is described in the
@@ -86,6 +86,17 @@ alphabetical order (dashes and case aside), after the positional arguments, kept
 script's order. Changed options are in
 bold; an option left at its default is not put on the command line. "Save as defaults"
 replaces this program's defaults on this architecture. "Command" shows exactly what will run.
+
+Under the extra arguments, the **environment** field takes variables to export before the
+command, on the node: `NAME=value` words separated by spaces (`NAME="a b"` for a value with
+spaces). For instance `CHUNK_LLVM_ROOT=~/llvm-22` for `compile_all.sh`, or a run-time switch of
+the library for a bench. They are exported before `scripts/site_env.sh`, which may read them,
+and again after it: the run's value wins over the site's. A leading `~/` is the home directory
+of the machine the run is on; nothing else of a value is expanded. The field is kept per
+program, written to `meta.json` and taken back by "Reuse its options"; "Command" shows the
+variables before the command, and the run's log has them (`[gui] env: ...`). A word that is not
+`NAME=value`, or a name the run's script uses for itself (`RUN_DIR`, `PY`...), blocks the
+submission.
 
 Before submitting an argparse script, the window has the script itself check the command on
 the cluster: its module-level `parse_args(argv)` function when it has one (`thread_speedup.py`:

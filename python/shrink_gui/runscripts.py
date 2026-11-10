@@ -98,10 +98,63 @@ def check_builds_call(check):
             + f'gui_check_builds {check["mode"]} {root} "${{GUI_BUILDS[@]}}"\n')
 
 
-def _env_sh(repo, cwd, with_git=True):
+# The "Environnement" field. A name the scripts below use for themselves is
+# refused: exported, it would be overwritten (PY, R) or would break them (RUN_DIR).
+_ENV_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+ENV_RESERVED = ("RUN_DIR", "R", "PY", "K", "ND", "TEE", "GUI_BUILDS", "code",
+                "CHUNK_BENCH_EVENTS", "CHUNK_BENCH_KEEP_DIR")
+
+
+def parse_env(text):
+    """The "Environnement" field as [(name, value)]: NAME=value words, with the
+    shell's quoting for a value with spaces (NAME="a b"). ValueError (a French
+    message, for the status bar) names the word that is not one."""
+    try:
+        words = shlex.split(text or "")
+    except ValueError as e:
+        raise ValueError(f"environnement illisible : {e}") from None
+    env = []
+    for word in words:
+        name, eq, value = word.partition("=")
+        if not eq or not _ENV_NAME_RE.match(name):
+            raise ValueError(f"environnement : « {word} » n'est pas de la forme NOM=valeur")
+        if name in ENV_RESERVED:
+            raise ValueError(f"environnement : {name} est réservé au script du run")
+        env.append((name, value))
+    return env
+
+
+def env_words(env):
+    """@p env as the words of a command line (the preview, the log)."""
+    return " ".join(f"{name}={shlex.quote(value)}" for name, value in env or [])
+
+
+def env_exports(env):
+    """The export lines of @p env ([(name, value)]). A value is taken as it is
+    (no $VAR expansion), but for a leading ~ or ~/: the home directory of the
+    machine the run is on."""
+    lines = []
+    for name, value in env or []:
+        if value == "~" or value.startswith("~/"):
+            rhs = '"$HOME"' + (shlex.quote(value[1:]) if value[1:] else "")
+        else:
+            rhs = shlex.quote(value)
+        lines.append(f"export {name}={rhs}\n")
+    return "".join(lines)
+
+
+def _env_sh(repo, cwd, with_git=True, env=None):
     """The part of run.sh (and node.sh) that sets the scene: the repository
     (its commit recorded in git_start when @p with_git), the modules and
-    site_env.sh, the newest python3, the program's directory @p cwd."""
+    site_env.sh, the newest python3, the program's directory @p cwd.
+    @p env: the variables of the "Environnement" field (parse_env), exported
+    before site_env.sh, which may read them, and again after it: the run's
+    value wins over the site's."""
+    exports = env_exports(env)
+    env_before = ("# The variables of the \"Environnement\" field: before site_env.sh, which may read them...\n"
+                  + exports) if exports else ""
+    env_after = ("# ... and after it: the run's value wins over the site's.\n" + exports
+                 + f"echo \"[gui] env: \"{shlex.quote(env_words(env))}\n") if exports else ""
     git = f"""# The code the run actually starts on (meta.json has the one it was submitted on).
 if git rev-parse HEAD > "$RUN_DIR/git_start" 2>/dev/null; then
     echo "[gui] commit $(git rev-parse --short HEAD) ($(git rev-parse --abbrev-ref HEAD))$(git status --porcelain --untracked-files=no 2>/dev/null | grep -q . && echo ' + local changes')"
@@ -115,8 +168,8 @@ cd "$R" || {{ echo "[gui] repository $R not found"; exit 97; }}
 {git}# A batch job's shell may not have Environment Modules set up (compile_all.sh
 # needs `module`): take the login profile then.
 type module >/dev/null 2>&1 || source /etc/profile >/dev/null 2>&1
-[ -f scripts/site_env.sh ] && source scripts/site_env.sh
-export CHUNK_BUILD_ROOT="${{CHUNK_BUILD_ROOT:-${{CHUNK_BUILD_REP:-.}}}}"
+{env_before}[ -f scripts/site_env.sh ] && source scripts/site_env.sh
+{env_after}export CHUNK_BUILD_ROOT="${{CHUNK_BUILD_ROOT:-${{CHUNK_BUILD_REP:-.}}}}"
 # Python writes to a file here, not a terminal: unbuffered, or the log only
 # shows up by 8 KiB blocks.
 export PYTHONUNBUFFERED=1
@@ -132,8 +185,9 @@ echo "[gui] cwd $PWD"
 """
 
 
-def make_run_sh(repo, cwd, command, check=None, nodes=None):
+def make_run_sh(repo, cwd, command, check=None, nodes=None, env=None):
     """What runs on the compute node. @p check: the build check (check_builds_call).
+    @p env: the variables to export before the command (parse_env).
     @p nodes: a job of several nodes, {"n": N, "launch": the command that starts
     one task per node (node_launch)}: run.sh then makes the checks once, on
     the job's first node, and starts node.sh (make_node_sh) on every node,
@@ -163,10 +217,10 @@ export CHUNK_BENCH_EVENTS="$RUN_DIR/events.jsonl"
 # ... and, once over, a copy of its CSV / errors log / failure list (the output
 # directory is shared by the runs of an architecture, each rewrites them).
 export CHUNK_BENCH_KEEP_DIR="$RUN_DIR"
-{_env_sh(repo, cwd)}{check_builds_call(check)}{tail}"""
+{_env_sh(repo, cwd, env=env)}{check_builds_call(check)}{tail}"""
 
 
-def make_node_sh(repo, cwd, command):
+def make_node_sh(repo, cwd, command, env=None):
     """A job of several nodes: what each of its tasks runs (one per node,
     started by run.sh). Node K = the task's rank + 1 works in $RUN_DIR/n<K>:
     its out.log (node n1's also on the task's output, i.e. the run's out.log),
@@ -191,7 +245,7 @@ fi
 echo "[gui] node $(hostname) n$K  start $(date '+%F %T')  job ${{SLURM_JOB_ID:-}}"
 export CHUNK_BENCH_EVENTS="$ND/events.jsonl"
 export CHUNK_BENCH_KEEP_DIR="$ND"
-{_env_sh(repo, cwd, with_git=False)}echo "[gui] command: "{shlex.quote(command)}
+{_env_sh(repo, cwd, with_git=False, env=env)}echo "[gui] command: "{shlex.quote(command)}
 {command}
 code=$?
 echo "$code" > "$ND/exit_code"

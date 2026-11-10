@@ -4,6 +4,7 @@
 import ast
 import base64
 import json
+import os
 import subprocess
 import tarfile
 import io
@@ -170,6 +171,46 @@ def test_run_sh_is_valid_bash():
     sh = make_run_sh("~/shrink-array", "python", "python3 x.py --a 1")
     assert "CHUNK_BENCH_EVENTS" in sh and "git_start" in sh
     subprocess.run(["bash", "-n"], input=sh.encode(), check=True)
+
+
+def test_env_field_parses_and_refuses():
+    from shrink_gui.runscripts import env_exports, env_words, parse_env
+    env = parse_env('CHUNK_LLVM_ROOT=~/llvm-22  A="b c" EMPTY= N=$HOME/x')
+    assert env == [("CHUNK_LLVM_ROOT", "~/llvm-22"), ("A", "b c"), ("EMPTY", ""), ("N", "$HOME/x")]
+    assert parse_env("") == [] and parse_env(None) == []
+    assert env_words(env) == "CHUNK_LLVM_ROOT='~/llvm-22' A='b c' EMPTY='' N='$HOME/x'"
+    # a leading ~/ is the home of the machine the run is on; nothing else expands
+    assert env_exports(env).splitlines() == ['export CHUNK_LLVM_ROOT="$HOME"/llvm-22', "export A='b c'",
+                                             "export EMPTY=''", "export N='$HOME/x'"]
+    for bad, why in (("FOO", "NOM=valeur"), ("1A=2", "NOM=valeur"), ("=3", "NOM=valeur"), ("A-B=1", "NOM=valeur"),
+                     ('A="b', "illisible"), ("RUN_DIR=/tmp", "réservé"), ("PY=python2", "réservé")):
+        with pytest.raises(ValueError, match=why):
+            parse_env(bad)
+
+
+def test_run_sh_exports_the_env(tmp_path):
+    """The variables reach the command, after site_env.sh (the run's value
+    wins) and before it (site_env.sh may read them); node.sh has them too."""
+    from shrink_gui.runscripts import make_node_sh, parse_env
+    repo = tmp_path / "repo"
+    (repo / "scripts").mkdir(parents=True)
+    (repo / "scripts" / "site_env.sh").write_text('echo "site saw ${SEEN:-nothing}"\nexport WINS=site\n')
+    env = parse_env("SEEN=yes WINS='the run' HOME_DIR=~/x")
+    cmd = 'echo "cmd: $SEEN|$WINS|$HOME_DIR"'
+    for name, sh in (("run.sh", make_run_sh(str(repo), ".", cmd, env=env)),
+                     ("node.sh", make_node_sh(str(repo), ".", cmd, env))):
+        subprocess.run(["bash", "-n"], input=sh.encode(), check=True)
+        run = tmp_path / name.split(".")[0]
+        run.mkdir()
+        (run / name).write_text(sh)
+        out = subprocess.run(["bash", str(run / name)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             universal_newlines=True, env=dict(os.environ, HOME="/home/me")).stdout
+        if name == "node.sh":
+            out = (run / "n1" / "out.log").read_text()
+        assert "site saw yes" in out and "cmd: yes|the run|/home/me/x" in out, out
+        assert "[gui] env: SEEN=yes WINS='the run' HOME_DIR='~/x'" in out
+    plain = make_run_sh(str(repo), ".", cmd)                    # no field, nothing added
+    assert "[gui] env" not in plain and "Environnement" not in plain
 
 
 def test_check_reads_mqinfo(site):
