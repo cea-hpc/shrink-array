@@ -422,17 +422,33 @@ void ArrayChunkBase<Derived>::const_iterator::check_same_owner([[maybe_unused]] 
 // ---------------------------------------------------------------------------
 
 template <typename Derived>
+void ArrayChunkBase<Derived>::resize(IndType newsz, InT<T> val)
+{
+    const IndType old_size = m_size_;
+    const T       value    = val; // before resize(): val may be a(i) (see push_back)
+    derived().resize(newsz);
+
+    // A team of its own outside a region (the library's threshold, the
+    // phase bracketed), the calling thread inside one.
+    write_range_by_chunks(old_size, newsz, [&value](IndType) { return value; });
+}
+
+template <typename Derived>
 void ArrayChunkBase<Derived>::push_back(InT<T> val)
 {
     if (static_cast<size_type>(m_size_) < capacity()) [[likely]]
     {
         ++m_size_;
+        (*this)[m_size_ - 1] = val;
+        return;
     }
-    else
-    {
-        derived().resize(m_size_ + 1);
-    }
-    (*this)[m_size_ - 1] = val;
+    // Copied before resize(), as assign() takes its T by value: past 16 bytes
+    // val is a reference, and push_back(a(i)) points it into a chunk buffer
+    // that resize()'s compression pass can release -- and the write below
+    // re-use, filled with the constant, before val is read.
+    const T value = val;
+    derived().resize(m_size_ + 1);
+    (*this)[m_size_ - 1] = value;
 }
 
 template <typename Derived>

@@ -471,15 +471,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @details The derived arrays' resize(newsz) does the resizing (they name
      *          this overload back with a using-declaration).
      */
-    void resize(IndType newsz, InT<T> val)
-    {
-        const IndType old_size = m_size_;
-        derived().resize(newsz);
-
-        // A team of its own outside a region (the library's threshold, the
-        // phase bracketed), the calling thread inside one.
-        write_range_by_chunks(old_size, newsz, [&val](IndType) { return static_cast<T>(val); });
-    }
+    void resize(IndType newsz, InT<T> val);
 
     /**
      * @brief Append one element, growing the container by one.

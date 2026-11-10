@@ -171,6 +171,12 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `a.push_back(a(i))` and `a.resize(n, a(i))` past the capacity, with an element of more than 16
+  bytes (passed by reference): `resize()` ran first, and its compression pass could release the
+  buffer `a(i)` points into, which the write of the new element could then reuse, filled with the
+  constant, before the value was read. Both copy the value before `resize()`, as `assign()`
+  already did. `open_types_validation` checks both on a 24-byte struct (`zero` and `zero_any`:
+  `zero_one_value` has no `a(i)` on a non-`bool` element).
 - `docs/api.md` section 7 said `set_thread_chunk_size(n)` gives "the chunk size of the arrays the
   calling thread builds next"; a new array still took the process-wide size. It routes the
   calling thread's chunk allocations, and the library sets it before each of them: the table
