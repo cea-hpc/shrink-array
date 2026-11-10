@@ -290,6 +290,23 @@ class WriteCompressSyncPolicy
     [[gnu::always_inline]] static void announce_write(int thr, const void* chunk) noexcept;
 
     /**
+     * @brief What a deferred enqueue publishes in its writer flag: non-null, so
+     *        the flushers see the enqueue (is_thread_writing), but no chunk, so
+     *        the compressor's window (any_thread_writing_on_marked) does not
+     *        wait for it.
+     * @details An enqueue runs because the chunk is marked: with the chunk's
+     *          address in the flag, a pass parked in start() waited for the very
+     *          writers its mark had sent to the slow path, on its yield budget.
+     *          The enqueue touches no buffer of the chunk (only the deferred
+     *          maps and the pending counter, which the passes do not touch):
+     *          formal/writer_compressor.c lowers the flag before the capture.
+     */
+    [[nodiscard]] static const void* enqueue_tag() noexcept
+    {
+        return &enqueue_tag_;
+    }
+
+    /**
      * @brief Lower this thread's writer flag, ending its critical section.
      * @param thr calling thread's rank
      */
@@ -409,6 +426,8 @@ class WriteCompressSyncPolicy
     static bool any_thread_writing(int max_thr) noexcept;
 
   private:
+    static constexpr char enqueue_tag_ = 0; ///< Its address is enqueue_tag().
+
     /**
      * @brief Raise this thread's writer flag.
      * @param thr   calling thread's rank

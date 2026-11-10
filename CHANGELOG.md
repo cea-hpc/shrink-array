@@ -171,6 +171,12 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- A deferred enqueue raised its writer flag on the chunk it was deferred for -- a chunk the
+  compressor had marked -- so a pass parked in `start()` (whose window is "no writer on a chunk
+  I marked") waited for the very writers its mark had sent to the slow path, on its yield
+  budget, and could give up. The enqueue publishes a tag instead of the chunk: the flushers
+  still see a raised flag, the compressor's window skips it. `formal/writer_compressor.c`
+  already lowered the flag before the capture.
 - `wait_before_materialise()` (`zero_any`, `pattern`) waited for the compressor's mark with a
   pause and no yield, against the library's rule (1000 pauses, then a yield): with more threads
   than cores (the std backend, TBB) a thread could spin a whole time slice while the pass that

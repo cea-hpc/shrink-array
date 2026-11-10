@@ -153,7 +153,9 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::to_be_queued_for_deferred_process
     using Policy = WriteCompressSyncPolicy<typename Derived::ProxyType>;
 
     CompressionManager<T, Derived>::enqueue_lock(thr_rank);
-    Policy::announce_write(thr_rank, chunk_ptr); // flag + seq_cst fence, one Dekker verb
+    // The flag holds enqueue_tag(), not chunk_ptr: the flushers need a raised flag,
+    // the compressor's window must not wait for an enqueue on the chunk it marked.
+    Policy::announce_write(thr_rank, Policy::enqueue_tag()); // flag + fence, one Dekker verb
 
     // The container steps below allocate, and ankerl's maps can throw. Callers are noexcept,
     // so an escaping exception would be a silent std::terminate: report where instead.
