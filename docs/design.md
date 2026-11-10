@@ -122,9 +122,9 @@ the arrays of one type -- the pools a compressed buffer goes back to, the candid
 pass drains, the registry of second values -- lives in that type's manager, and nothing is
 shared across types.
 
-What a program sees is much narrower: the 16 headers of `chunk/public/chunk/` outside `internal/`
+What a program sees is much narrower: the 18 headers of `chunk/public/chunk/` outside `internal/`
 (the arrays, the range operations, the export and import of chunk states, the start and stop of
-the library, the phases, the dynamic geometry, the configuration and the log). They and the names
+the library, the phases, the dynamic geometry, the configuration, the log, the threads and the output). They and the names
 of [api.md](api.md) are the interface, frozen in `scripts/public_api.txt` and checked by
 `check_public_api`; everything else, including the members of the public classes that name the
 machinery (`ManagerType`, `ChunkListType`...), can change in any release.

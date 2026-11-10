@@ -18,8 +18,9 @@
 // what its headers mark SHRINK_ARRAY_EXPORT -- the arrays, ParamChunk,
 // parallel_phase, the teardown, print / println, the chunk exchange, the
 // chunk-size advisor and decider, the mdspan views and tile operations, the
-// build options (build_config, chunk_config), the pmp loops and queries, the
-// chunk-size settings -- and hides the rest (chunk/internal/module_export.h).
+// build options (build_config, chunk_config), the pmp loops and queries
+// (chunk/threads.h's among them), the chunk-size settings -- and hides the
+// rest (chunk/internal/module_export.h).
 // The headers stay the source of truth: the library's own sources and the
 // white-box validation harnesses still #include them.
 //
@@ -157,7 +158,8 @@ extern "C++"
 #include "chunk/config.h"                     // build_config, chunk_config: the options the library was built with
 #include "chunk/internal/PMP_CHUNK.h"         // pmp: the loops, the teams, max_threads, team_size, thread_rank
 #include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
-#include "chunk/internal/print.h"             // print, println
+#include "chunk/print.h"                      // print, println
+#include "chunk/threads.h"                    // pmp::max_threads, team_size, thread_rank
 #include "chunk/manage_ompt.h"                // parallel_phase
 #include "chunk/internal/pool_release.h"      // release_chunk_pools, destroy_block_chunk
 #include "chunk/chunk_exchange.h"             // export_chunk, import_chunk, export_array, import_array, ChunkState, ...

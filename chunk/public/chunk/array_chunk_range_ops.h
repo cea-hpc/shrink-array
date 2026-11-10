@@ -755,6 +755,19 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
         // ── Variants whose second-value state lives in the proxy ─────────────
         else if constexpr (!internal::raw_fillable_v<T>)
         {
+            // Already at the fill value: every write below would take the
+            // proxy's early-out, so none is made (the raw path's test below).
+            // The first constant only: bool has no second-value index
+            // (held_constant()).
+            bool at_value = value_is_cst1 && ch.is_cst_val1();
+            if constexpr (requires { ch.pending_any(); })
+            {
+                at_value = at_value && !ch.pending_any();
+            }
+            if (at_value)
+            {
+                continue;
+            }
             for (std::size_t i = lo; i < hi; ++i)
             {
                 arr[static_cast<IndType>(i)] = value;

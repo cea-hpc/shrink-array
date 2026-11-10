@@ -105,7 +105,7 @@
 #include "chunk/internal/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"        // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
-#include "chunk/internal/print.h"     // shrink_array::println
+#include "chunk/print.h"              // shrink_array::println
 #if CHUNK_OPT_STATS
     #include "chunk/internal/chunk_stats.h" // chunk_stats_n_variant, reduce_chunk_stats
 #endif

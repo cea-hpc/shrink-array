@@ -122,10 +122,10 @@ d'un même type doivent partager -- les pools où retourne un buffer comprimé, 
 candidats qu'une passe vide, le registre des secondes valeurs -- vit dans le manager de ce type,
 et rien n'est partagé entre types.
 
-Ce que voit un programme est bien plus étroit : les 16 en-têtes de `chunk/public/chunk/` hors
+Ce que voit un programme est bien plus étroit : les 18 en-têtes de `chunk/public/chunk/` hors
 `internal/` (les tableaux, les opérations par plage, l'export et l'import d'états de chunks, le
-démarrage et l'arrêt de la bibliothèque, les phases, la géométrie dynamique, la configuration et le
-journal). Eux et les noms d'[api_fr.md](api_fr.md) forment l'interface, figée dans
+démarrage et l'arrêt de la bibliothèque, les phases, la géométrie dynamique, la configuration, le
+journal, les threads et la sortie). Eux et les noms d'[api_fr.md](api_fr.md) forment l'interface, figée dans
 `scripts/public_api.txt` et vérifiée par `check_public_api` ; tout le reste, y compris les membres
 des classes publiques qui nomment la machinerie (`ManagerType`, `ChunkListType`…), peut changer
 d'une version à l'autre.

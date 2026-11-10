@@ -94,7 +94,7 @@
 #include "chunk/internal/PMP_CHUNK.h"    // pmp::*, CHUNK_PMP_*, get_thr_rank_fast, chunk_thread_capacity, the registry
 #include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h"    // arg_number
-#include "chunk/internal/print.h"        // shrink_array::println
+#include "chunk/print.h"                 // shrink_array::println
 #include "chunk/internal/test_hooks.h"   // force_defer_every (the in-phase case)
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp

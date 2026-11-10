@@ -39,7 +39,7 @@
 #include <string_view> // std::string_view
 
 #include "chunk/internal/env_parse.h" // parse_number, ParseError, env_number, env_optional, arg_number, env_flag
-#include "chunk/internal/print.h"     // shrink_array::println
+#include "chunk/print.h"              // shrink_array::println
 #include "chunk/log.h"                // logging::set_sink, Record, Level, Channel
 
 using shrink_array::println;

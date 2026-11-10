@@ -486,6 +486,8 @@ set(CHUNK_PUBLIC_HEADERS
         public/chunk/rechunk_decider.h
         public/chunk/config.h
         public/chunk/log.h
+        public/chunk/print.h
+        public/chunk/threads.h
 )
 
 set(CHUNK_SOURCES

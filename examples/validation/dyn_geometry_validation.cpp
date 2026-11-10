@@ -62,7 +62,7 @@
 #include "chunk/internal/chunk_size_policy.h" // cst_buffer_size, set_active_chunk_size, set_thread_chunk_size, chunk_size_error
 #include "chunk/config.h"                     // chunk_config::use_zero*
 #include "chunk/internal/env_parse.h"         // env_number / arg_number (checked, not atoi)
-#include "chunk/internal/print.h"             // shrink_array::println
+#include "chunk/print.h"                      // shrink_array::println
 #include "chunk/log.h"                        // logging::set_sink (the refusals' warnings)
 
 using namespace shrink_array;

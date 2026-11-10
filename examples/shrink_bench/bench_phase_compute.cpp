@@ -417,6 +417,14 @@ void bench_phase_compute(BenchArrays&            bench_arr,
             const auto beg_loc0 =
                 static_cast<Int>(static_cast<double>(start0) + (4.8 * static_cast<double>(interval10)));
 
+            // The per-thread partials of the 20 passes below, merged ONCE after
+            // them: an atomic merge per pass (80 per thread per call, every thread
+            // at the same moment, on the four neighbouring sums of main) was 5.7 %
+            // of a TBB run at 160 threads -- the double ones are CAS loops.
+            double p_val_sum      = 0;
+            long   p_long_val_sum = 0;
+            double p_v_real       = 0;
+            double p_v_im         = 0;
             for (Int p = 0; p < 20; ++p)
             {
                 const auto val = static_cast<double>(p);
@@ -433,16 +441,13 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                 // No reduction clause: GCC merges a multi-variable reduction inside
                 // GOMP_atomic_start(), ONE global libgomp mutex, which 64 threads hit
                 // together at the end of this nowait loop (2.9x slower than libomp).
-                // Per-thread partials, merged by lock-free atomics below. The blocks
-                // are walked explicitly -- block b of sched_blk iterations from
-                // sched_base goes to thread b mod T, the mapping of the region's
-                // schedule(static, sched_blk) loops -- so the inner loop can be an
-                // omp simd reduction on the std::vector baseline.
-                double    p_val_sum      = 0;
-                long      p_long_val_sum = 0;
-                double    p_v_real       = 0;
-                double    p_v_im         = 0;
-                const Int n_blocks       = (end0 - sched_base + sched_blk - 1) / sched_blk;
+                // Per-thread partials (declared before the passes), merged by
+                // lock-free atomics after them. The blocks are walked explicitly --
+                // block b of sched_blk iterations from sched_base goes to thread
+                // b mod T, the mapping of the region's schedule(static, sched_blk)
+                // loops -- so the inner loop can be an omp simd reduction on the
+                // std::vector baseline.
+                const Int n_blocks = (end0 - sched_base + sched_blk - 1) / sched_blk;
                 team.for_static_chunks<Int>(
                     0, n_blocks, 1,
                     [&](const Int blk) __attribute__((always_inline))
@@ -474,11 +479,11 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                         }
                     },
                     bench_par::nowait);
-                bench_par::atomic_add(val_sum, p_val_sum);
-                bench_par::atomic_add(long_val_sum, p_long_val_sum);
-                bench_par::atomic_add(v_real, p_v_real);
-                bench_par::atomic_add(v_im, p_v_im);
             }
+            bench_par::atomic_add(val_sum, p_val_sum);
+            bench_par::atomic_add(long_val_sum, p_long_val_sum);
+            bench_par::atomic_add(v_real, p_v_real);
+            bench_par::atomic_add(v_im, p_v_im);
 
             // No barrier before the last loop, and none between its two passes:
             // same iteration space, same static schedule, so its p = 1 pass reads

@@ -65,7 +65,7 @@
 #include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"           // begin_parallel_phase, finalize_parallel_phase_only_flush / _after_flush
 #include "chunk/internal/env_parse.h"    // arg_number (checked, not atoi)
-#include "chunk/internal/print.h"        // shrink_array::println
+#include "chunk/print.h"                 // shrink_array::println
 
 
 /// The suspension counter read by chunk_config::OMPTcc: non-zero, no OMPT

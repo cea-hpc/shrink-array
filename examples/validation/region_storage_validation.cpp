@@ -49,7 +49,7 @@
 #include "chunk/param_chunk.h"           // ParamChunk::init_indexes
 #include "chunk/config.h"                // chunk_config::use_zero*
 #include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
-#include "chunk/internal/print.h"        // shrink_array::println
+#include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
 

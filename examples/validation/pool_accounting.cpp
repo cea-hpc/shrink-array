@@ -66,7 +66,7 @@
 #include "chunk/internal/zero_one_value_chunk_def.h" // zero_one_value::ChunkDef
 #include "chunk/internal/zero_any_chunk_def.h"       // zero_any::ChunkDef
 #include "chunk/internal/env_parse.h"                // env_number / arg_number (checked, not atoi)
-#include "chunk/internal/print.h"                    // shrink_array::println
+#include "chunk/print.h"                             // shrink_array::println
 
 // Defined by every executable of the library (the fast allocator reads it).
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
