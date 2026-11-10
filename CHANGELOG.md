@@ -171,6 +171,13 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `rechunk_to()` corrupted the heap on an array ending less than a chunk below `INT_MAX` (an `int`
+  index, `_dyn` build): a `zero_any::Array<int8_t>` of `INT_MAX` elements, its last ten written,
+  re-chunked 4096 -> 2048, stopped on a glibc `malloc.c` assertion. The end of the last chunk,
+  `base + chunk_size`, was computed in the index type and wrapped negative, and `hi - lo` became a
+  huge `memcpy` length. Computed in `long long`, as `write_range_by_chunks` already did.
+  `index64_validation`'s `int-top-rechunk` case re-chunks such an array to the other geometry and
+  back.
 - The sign of a zero was lost: a `-0.0` written to an array read back `+0.0` (`1.0 / x` went
   from `-inf` to `+inf`, `std::signbit`, `std::copysign`, `std::atan2` changed), for `float`,
   `double` and `std::complex`, in the three variants -- a write onto a chunk compressed to zero,
