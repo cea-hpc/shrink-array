@@ -475,14 +475,16 @@ class Registry
             tot.tail += s->tail;
         }
         const double serial_idle = (threads - 1) * serial_;
-        const double all = tot.busy + tot.imbalance + tot.launch + tot.tail + serial_idle;
-        const auto   pct = [all](double x) { return all > 0 ? 100.0 * x / all : 0.0; };
+        const double all         = tot.busy + tot.imbalance + tot.launch + tot.tail + serial_idle;
+        const auto   pct         = [all](double x) { return all > 0 ? 100.0 * x / all : 0.0; };
 
-        std::fprintf(stderr, "[rank-timing] %d threads; in regions %.3f s, serial between regions %.3f s "
-                             "(of which finalize_parallel_phase %.3f s)\n",
+        std::fprintf(stderr,
+                     "[rank-timing] %d threads; in regions %.3f s, serial between regions %.3f s "
+                     "(of which finalize_parallel_phase %.3f s)\n",
                      CHUNK_PMP_MAX_THREADS, tot.wall, serial_, finalize_);
-        std::fprintf(stderr, "[rank-timing] thread-time %.1f s: busy %.1f%%, imbalance %.1f%%, launch %.1f%%, "
-                             "tail %.1f%%, serial (threads-1 idle) %.1f%%\n",
+        std::fprintf(stderr,
+                     "[rank-timing] thread-time %.1f s: busy %.1f%%, imbalance %.1f%%, launch %.1f%%, "
+                     "tail %.1f%%, serial (threads-1 idle) %.1f%%\n",
                      all, pct(tot.busy), pct(tot.imbalance), pct(tot.launch), pct(tot.tail), pct(serial_idle));
 
         std::vector<const Site*> order;
@@ -500,9 +502,9 @@ class Registry
         {
             const double site_all = s->busy + s->imbalance + s->launch + s->tail;
             const auto   sp       = [site_all](double x) { return site_all > 0 ? 100.0 * x / site_all : 0.0; };
-            std::fprintf(stderr, "[rank-timing] %-28s %8lld %10.3f %9.2f %8.1f %8.1f %8.1f %8.1f\n",
-                         s->name.c_str(), s->calls, s->wall, s->mean_busy > 0 ? s->max_busy / s->mean_busy : 0.0,
-                         sp(s->busy), sp(s->imbalance), sp(s->launch), sp(s->tail));
+            std::fprintf(stderr, "[rank-timing] %-28s %8lld %10.3f %9.2f %8.1f %8.1f %8.1f %8.1f\n", s->name.c_str(),
+                         s->calls, s->wall, s->mean_busy > 0 ? s->max_busy / s->mean_busy : 0.0, sp(s->busy),
+                         sp(s->imbalance), sp(s->launch), sp(s->tail));
         }
     }
 
@@ -535,9 +537,9 @@ inline thread_local int depth = 0;
 template <typename Body>
 void region(int num_threads, Body&& body, const std::source_location loc = std::source_location::current())
 {
-    namespace rt = detail::rank_timing;
-    const int  n     = num_threads > 0 ? num_threads : CHUNK_PMP_MAX_THREADS;
-    const bool timed = rt::enabled() && rt::depth == 0;
+    namespace rt                    = detail::rank_timing;
+    const int                 n     = num_threads > 0 ? num_threads : CHUNK_PMP_MAX_THREADS;
+    const bool                timed = rt::enabled() && rt::depth == 0;
     std::unique_ptr<rt::Call> call;
     if (timed)
     {
@@ -555,7 +557,7 @@ void region(int num_threads, Body&& body, const std::source_location loc = std::
                 const auto s = rt::Clock::now();
                 Team       t(&ctx, k, n);
                 body(t);
-                const auto e = rt::Clock::now();
+                const auto e                           = rt::Clock::now();
                 cp->start[static_cast<std::size_t>(k)] = rt::seconds(s - cp->t0);
                 cp->end[static_cast<std::size_t>(k)]   = rt::seconds(e - cp->t0);
             }

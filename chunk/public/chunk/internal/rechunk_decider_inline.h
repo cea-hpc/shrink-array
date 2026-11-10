@@ -491,7 +491,7 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
             // "after" is measured at the NEXT tick; seed it with the prediction
             // for a run that ends before then.
             log_.emplace_back(RechunkEvent{iter, std::string(name), old_sz, new_sz, mem_bef, mem_prd, mem_prd});
-            log_.back().seconds = secs;
+            log_.back().seconds  = secs;
             pending_after_[&arr] = log_.size() - 1;
         }
         return act;
