@@ -46,6 +46,7 @@
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 #include "chunk/internal/parallel_storage_init.h"       // for_each_chunk
 #include "chunk/internal/pool_ledger.h"                 // CHUNK_LEDGER_* (check builds)
+#include "chunk/internal/cold_path_lock.h"              // ColdPathLock: construction, teardown, resize
 #include "chunk/internal/teardown_probe.h"              // teardown_probe (rechunk=debug: the tmp teardown split)
 #include "chunk/internal/same_value.h"                  // same_value
 
@@ -222,6 +223,7 @@ void zero_any::ArrayImpl<Derived>::clear()
 template <typename Derived>
 void zero_any::ArrayImpl<Derived>::destroy_storage()
 {
+    const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
     clear();
     ProxyType::share_info_array->erase(this->registry_key());
     // rechunk=debug, tmp teardown only (armed by rechunk_to): free chunk_list_'s
@@ -239,6 +241,7 @@ void zero_any::ArrayImpl<Derived>::destroy_storage()
 template <typename Derived>
 void zero_any::ArrayImpl<Derived>::clear_core()
 {
+    const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
     // Pin the ambient size to THIS array's own geometry before the sweep
     // below. Same rule as zero_one_value::Array::clear_core() -- see that
     // function's comment.
@@ -258,7 +261,9 @@ void zero_any::ArrayImpl<Derived>::clear_core()
     // whose writes are still queued, constant_value() (raw values_load()) sees a
     // non-constant buffer, and the chunk is under-counted as still-compressed.
     // zero_any carries far more deferred traffic than zero/zero_one_value, so it exposes this first.
-    this->flush_pending_deferred_ops(/*force=*/true);
+    // Inside a region, a work array of this thread's: this rank's structures only.
+    const bool own_rank = this->teardown_on_own_rank(num_tab_);
+    this->flush_pending_deferred_ops(/*force=*/true, own_rank);
     probe.mark(internal::TeardownStep::flush);
 
     // Per-array compression stats: read after the flush (before it, in-flight
@@ -273,7 +278,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
     // before they are freed: in non-OMPT builds nothing else clears it, and a
     // later compression pass would walk the dangling Chunk* (use-after-free).
     // By num_tab, so other live arrays' candidates are untouched.
-    Manager::remove_from_zero_any_candidates_by_num_tab(num_tab_);
+    Manager::remove_from_zero_any_candidates_by_num_tab(num_tab_, own_rank);
 
     // Also drop any candidate whose chunk pointer lies in THIS array's
     // chunk_list_ span: the by-num_tab removal misses a tuple whose num_tab was
@@ -283,7 +288,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
     {
         Manager::remove_from_zero_any_candidates_by_ptr_range(
             static_cast<const void*>(chunk_list_.data()),
-            static_cast<const void*>(chunk_list_.data() + chunk_list_.size()));
+            static_cast<const void*>(chunk_list_.data() + chunk_list_.size()), own_rank);
     }
     probe.mark(internal::TeardownStep::candidates);
 
@@ -314,7 +319,9 @@ void zero_any::ArrayImpl<Derived>::clear_core()
         {
             const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
 
-            if (ens_type_chunk.have_chunk_to_compress_potentially())
+            // Not for a work array torn down in a region: that pass walks every
+            // rank's list, of every type.
+            if (!own_rank && ens_type_chunk.have_chunk_to_compress_potentially())
             {
                 ens_type_chunk.compress_chunk_to_compress_potentially(false);
             }
@@ -731,6 +738,7 @@ template <typename Derived>
 void zero_any::ArrayImpl<Derived>::resize(IntType newsz)
 {
     this->check_length(newsz, "resize");
+    const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
     this->invalidate_proxies();
     const auto& sh_inf = *ProxyType::share_info_array;
 

@@ -225,14 +225,7 @@ class PointerMap
      * @param key Pointer used as a key in the vector.
      * @param num_tab Table number associated with the key.
      */
-    void insert_only_num_tab(Key key, int num_tab)
-    {
-        // No second value yet: the sentinel index, not 0 (which is the slot
-        // of whichever second value was registered first, by any array).
-        const T   val{};
-        const int ind = chunk_config::no_second_value_index;
-        vec_.emplace_back(key, InfArrayT{val, ind, num_tab});
-    }
+    void insert_only_num_tab(Key key, int num_tab);
 
     /**
      * @brief Entries get_info_second_value() scans, and the high-water mark.

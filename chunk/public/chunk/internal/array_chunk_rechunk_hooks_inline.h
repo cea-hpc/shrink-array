@@ -28,6 +28,7 @@
 #include "chunk/config.h"                       // build_config::threaded, chunk_config::use_fast_block_compression
 #include "chunk/internal/PMP_CHUNK.h"           // get_thr_rank_fast
 #include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size
+#include "chunk/internal/tab_users.h"           // TabUsers::mark_shared (the identity swap)
 #include "chunk/internal/block_pass_precheck.h" // check_no_flush_outside_start
 
 namespace shrink_array
@@ -96,6 +97,10 @@ bool RechunkHooks<Derived, true>::rechunk_swap_identity(Derived& tmp)
     // num_tab is set in pre_create_hook and indexes the per-array metadata, so
     // swap the member AND make the registry agree (get_num_tab(registry_key())
     // -> the new row).
+    // The candidates queued before the exchange carry the other array's num_tab:
+    // neither is a one-rank array any more, as far as a teardown can tell.
+    internal::TabUsers<typename Derived::ChunkType>::mark_shared(self().num_tab_);
+    internal::TabUsers<typename Derived::ChunkType>::mark_shared(tmp.num_tab_);
     using std::swap;
     swap(self().num_tab_, tmp.num_tab_);
     return ProxyType::share_info_array->swap_keys(self().registry_key(), tmp.registry_key());

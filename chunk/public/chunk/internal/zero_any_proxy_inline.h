@@ -1312,6 +1312,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::apply_compound_operation(Op op, In
 template <typename ChunkT, size_t SmallN>
 [[nodiscard]] int zero_any::PointerMap<ChunkT, SmallN>::get_num_tab(Key key) const noexcept
 {
+    const internal::RegistryReadLock registry_lock(internal::registry_mutex());
     if (!using_big_)
     {
         for (const auto& [entry_key, tab] : small_)
@@ -1336,6 +1337,7 @@ template <typename ChunkT, size_t SmallN>
 template <typename ChunkT, size_t SmallN>
 void zero_any::PointerMap<ChunkT, SmallN>::erase(Key key) noexcept
 {
+    const internal::RegistryWriteLock registry_lock(internal::registry_mutex());
     if (!using_big_)
     {
         for (auto it = small_.begin(); it != small_.end(); ++it)
@@ -1365,6 +1367,7 @@ void zero_any::PointerMap<ChunkT, SmallN>::erase(Key key) noexcept
 template <typename ChunkT, size_t SmallN>
 void zero_any::PointerMap<ChunkT, SmallN>::insert(Key key, int num_tab)
 {
+    const internal::RegistryWriteLock registry_lock(internal::registry_mutex());
     if (!using_big_)
     {
         small_.emplace_back(key, num_tab);
@@ -1389,6 +1392,7 @@ void zero_any::PointerMap<ChunkT, SmallN>::insert(Key key, int num_tab)
 template <typename ChunkT, size_t SmallN>
 bool zero_any::PointerMap<ChunkT, SmallN>::set_num_tab(Key key, int new_num_tab) noexcept
 {
+    const internal::RegistryWriteLock registry_lock(internal::registry_mutex());
     if (!using_big_)
     {
         for (auto& [k, tab] : small_)
@@ -1414,10 +1418,11 @@ bool zero_any::PointerMap<ChunkT, SmallN>::set_num_tab(Key key, int new_num_tab)
 template <typename ChunkT, size_t SmallN>
 bool zero_any::PointerMap<ChunkT, SmallN>::swap_keys(Key key_a, Key key_b) noexcept
 {
-    int  na = 0;
-    int  nb = 0;
-    bool fa = false;
-    bool fb = false;
+    const internal::RegistryWriteLock registry_lock(internal::registry_mutex());
+    int                               na = 0;
+    int                               nb = 0;
+    bool                              fa = false;
+    bool                              fb = false;
     if (!using_big_)
     {
         for (const auto& [key, tab] : small_)

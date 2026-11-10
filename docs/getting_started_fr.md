@@ -301,6 +301,15 @@ toute région parallèle : `resize()`, `reserve()`, `push_back()` au-delà de la
 à `make_block_compression()` : dans une région, il est refusé (arrêt dans un build de contrôle,
 erreur dans le journal et pas de passe ailleurs) -- les passes des écrivains y compressent.
 
+**Les tableaux de travail dans une région.** Un thread d'une région peut construire ses propres
+tableaux (`zero_any::Array<double> work(n);`), les écrire, les lire et les laisser détruire,
+pendant que les autres threads font de même et que l'équipe écrit des tableaux partagés. La
+construction et la destruction prennent un verrou de la bibliothèque, un tableau à la fois pour
+tout le processus ; les accès aux éléments n'en prennent aucun. Un tel tableau appartient à son
+thread : lui seul l'écrit, et les points séquentiels ci-dessus restent des points séquentiels
+pour lui. Sa destruction coûte un `membarrier()`, et ne lance pas la passe de compression
+finale que fait une destruction hors région.
+
 **Les threads.** Les structures par thread sont dimensionnées une fois pour
 `max(omp_get_max_threads(), nombre de cœurs, 256)` threads (dans un build std, la taille
 d'équipe -- `CHUNK_NUM_THREADS`, sinon `OMP_NUM_THREADS` -- tient lieu de

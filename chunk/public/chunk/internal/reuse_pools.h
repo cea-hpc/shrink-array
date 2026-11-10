@@ -218,7 +218,8 @@ class ReusePools
         return (static_cast<std::uint64_t>(key) << 32U) | size;
     }
 
-    static inline int size_buffer_reuse;
+    // Atomic: set on the cold path (under its lock), read when a buffer is parked.
+    static inline constinit std::atomic<int> size_buffer_reuse{0};
     static inline constinit internal::LazyImmortal<std::unordered_map<unsigned int, int>>
         size_buffer_reuse_by_key_; ///< see get_size_buffer_reuse(key)
 
@@ -273,7 +274,7 @@ class ReusePools
     /// @brief Maximum number of buffers a thread keeps parked for reuse.
     [[nodiscard]] static int get_size_buffer_reuse() noexcept
     {
-        return size_buffer_reuse;
+        return size_buffer_reuse.load(std::memory_order_relaxed);
     }
     /// @brief Reuse budget of the list (thr, key): the array's own share per rank,
     ///        set by set_size_buffer_reuse(key, ...); key 0 and unknown keys get

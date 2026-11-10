@@ -35,6 +35,7 @@
 #include "chunk/internal/array_chunk_rechunk_trace.h"  // RechunkPhaseTrace
 #include "chunk/internal/chunk_stats.h"                // increm_chunk_rechunk (CHUNK_STATS)
 #include "chunk/internal/PMP_CHUNK.h"                  // CHUNK_PMP_RANK_BOUND
+#include "chunk/internal/cold_path_lock.h"             // ColdPathLock: construction, teardown, resize
 #include "chunk/log.h"                                 // CHUNK_LOG (the pool census)
 #include "chunk/config.h"                              // build_config::threaded, use_fast_alloc, any_check
 #include "chunk/internal/chunk_size_policy.h"          // set_*_chunk_size, DynChunkSizeGuard, BirthAtActiveSize
@@ -46,7 +47,8 @@ namespace shrink_array
 template <typename Derived>
 void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
 {
-    const unsigned int old_size = self().size_policy_.size();
+    const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
+    const unsigned int           old_size = self().size_policy_.size();
     // Captured before the swap below hands `self` tmp's key: the allocator set
     // holding the OLD geometry's blocks is (old_key, old_size), and it is the
     // one whose slabs must empty for the re-chunk to give memory back.

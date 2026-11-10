@@ -179,6 +179,18 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- Building or destroying arrays from several threads of a region at once corrupted the heap
+  (a crash in most runs: 15 of 16 with a work array per thread and per iteration). The
+  constructor grew the per-array tables that every write of every other thread indexes, and
+  wrote the identity registry and the manager's totals with no lock. Building and destroying an
+  array now take a cold-path lock (`internal/cold_path_lock.h`); the tables indexed by
+  `num_tab` no longer move their rows (`internal/stable_table.h`); the two thresholds the write
+  path reads are atomics; the identity registries have a reader lock. A work array destroyed
+  inside a region is torn down on its thread's rank alone (`internal/tab_users.h`: no walk of
+  the other ranks' lists, no pass over the other arrays, no allocator set of its own) after one
+  `read_reclaim` grace period. Arrays another rank has used keep the sequential-point teardown.
+  `resize()`, copies and `rechunk_to()` stay sequential points. `region_storage_validation`
+  gains the whole-team case; `docs/getting_started.md` states the contract.
 - A deferred enqueue raised its writer flag on the chunk it was deferred for -- a chunk the
   compressor had marked -- so a pass parked in `start()` (whose window is "no writer on a chunk
   I marked") waited for the very writers its mark had sent to the slow path, on its yield

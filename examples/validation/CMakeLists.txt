@@ -88,6 +88,9 @@
 #                           reads back what std::vector would, and counts its
 #                           written chunks right. The storage paths once fell
 #                           back on an orphaned `omp for` there, and hung.
+#                           And the whole team at once: each thread builds,
+#                           fills and destroys work arrays of its own while
+#                           the team writes a shared one (the cold-path lock).
 #   bulk_write_team_validation the whole-array writes that take a team of
 #                           their own outside a region (copy construction and
 #                           assignment, assign, resize(n, val), a shrinking

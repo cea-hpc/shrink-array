@@ -197,6 +197,31 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
         return this;
     }
 
+    /**
+     * @brief Does the teardown of array @p num_tab walk the calling thread's
+     *        per-rank structures only?
+     * @details True inside a parallel region, for an array no other rank has
+     *          queued a chunk of or deferred a write to (internal::TabUsers): a
+     *          work array of the calling thread. Its teardown then drains this
+     *          rank's deferred writes and candidate list, and runs no pass over
+     *          the other arrays. False at a sequential point, and for any array
+     *          another rank has used: the teardown walks every rank, which
+     *          requires that no other thread be writing.
+     * @param num_tab The array's table number.
+     */
+    [[nodiscard]] static bool teardown_on_own_rank(int num_tab) noexcept;
+
+    /**
+     * @brief Inside a region, wait until no other thread can still be reading
+     *        one of this array's chunks through a pointer it loaded earlier.
+     * @details Call before chunk_list_'s buffer is freed or reallocated. The
+     *          owner no longer writes, so no new pointer to a chunk is
+     *          published; a compressor's start() may still hold the one it read
+     *          from this thread's writer flag (its scan is a read section). One
+     *          grace period of read_reclaim. Nothing at a sequential point.
+     */
+    void await_chunk_readers() const noexcept;
+
     /// @brief Give this array its own allocator set if it is worth a slab per
     ///        rank; registers allocators, reuse lists and their budget with the
     ///        manager. Call from rebuild_storage() once nb_chunk is known

@@ -34,6 +34,7 @@
 #include "chunk/internal/chunk_size_policy.h"           // set_thread_chunk_size
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 #include "chunk/internal/parallel_storage_init.h"       // for_each_chunk
+#include "chunk/internal/cold_path_lock.h"              // ColdPathLock: construction, teardown, resize
 #include "chunk/internal/in_t.h"                        // InT<T>
 #include "chunk/internal/same_value.h"                  // same_value
 
@@ -159,6 +160,7 @@ void zero::Array<T, IntType>::clear()
 template <ArrayChunkElement T, typename IntType>
 void zero::Array<T, IntType>::clear_core()
 {
+    const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
     // Pin the ambient size to THIS array's geometry before the sweep:
     // get_chunk_allocator() routes on thread_chunk_size(), not on the buffer, so
     // a size left by another array would send these buffers to the wrong
@@ -171,16 +173,17 @@ void zero::Array<T, IntType>::clear_core()
     // Drain deferred writes before chunk_list_ is freed. force: the pending-op
     // counter can read 0 while ops are queued (array_chunk_parallel_common_inline.h),
     // so a point that frees chunks must not trust it.
-    this->flush_pending_deferred_ops(/*force=*/true);
+    // Inside a region, a work array of this thread's: this rank's structures only.
+    const int  num_tab  = zero::Proxy<T>::share_info_array->get_num_tab(this->registry_key());
+    const bool own_rank = this->teardown_on_own_rank(num_tab);
+    this->flush_pending_deferred_ops(/*force=*/true, own_rank);
 
     // Remove this array's queued candidates before its chunks are freed: they
     // would dangle for the next make_block_compression, and rechunk_to relies on
     // it to keep foreign-geometry chunks out of the shared list.
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        const auto& sh_inf   = *zero::Proxy<T>::share_info_array;
-        const int   num_tab_ = sh_inf.get_num_tab(this->registry_key());
-        Manager::remove_from_zero_candidates_by_num_tab(num_tab_);
+        Manager::remove_from_zero_candidates_by_num_tab(num_tab, own_rank);
     }
 
     if (!nb_chunk_)
@@ -426,6 +429,7 @@ template <ArrayChunkElement T, typename IntType>
 void zero::Array<T, IntType>::resize(IntType newsz)
 {
     this->check_length(newsz, "resize");
+    const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
     this->invalidate_proxies();
 
     // Drain the deferred ops on the CURRENT chunks before chunk_list_ and the
@@ -460,6 +464,7 @@ void zero::Array<T, IntType>::resize(IntType newsz)
         release_chunk_range(nb_chunk_, old_nb_chunk);
     }
 
+    this->await_chunk_readers();
     chunk_list_.resize(nb_chunk_);
     Base::reallocate_dirty_bitset(old_nb_chunk, nb_chunk_);
 
@@ -507,6 +512,7 @@ void zero::Array<T, IntType>::resize(IntType newsz)
 template <ArrayChunkElement T, typename IntType>
 zero::Array<T, IntType>::~Array()
 {
+    const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
     clear();
     // Drop our (this -> num_tab) registry entry so a later array at this
     // address does not inherit our stale num_tab via zero::PointerMap's

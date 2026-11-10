@@ -790,6 +790,7 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::perform_compression() const
 template <typename T>
 [[nodiscard]] int zero::PointerMap<T>::get_num_tab(Key key) const noexcept
 {
+    const internal::RegistryReadLock registry_lock(internal::registry_mutex());
     for (const auto& [entry_key, tab] : vec_)
     {
         if (entry_key == key)

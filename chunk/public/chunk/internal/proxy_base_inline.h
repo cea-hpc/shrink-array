@@ -68,6 +68,7 @@
 #include "chunk/internal/test_hooks.h"                   // TEST KNOB: test_hooks::forced_deferral
 #include "chunk/internal/queue_flag.h"                   // queue_flag::try_queue: the writers' side
 #include "chunk/internal/same_value.h"                   // same_value
+#include "chunk/internal/tab_users.h"                    // TabUsers: the ranks holding something of an array
 
 namespace shrink_array
 {
@@ -208,6 +209,7 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list([[maybe_unused]] aut
             {
                 increm_chunk_mark_ok<ChunkT>();
             }
+            internal::TabUsers<ChunkT>::note(num_tab_, get_thr_rank_fast());
             push_to_compress_list(vec_tuple, &chunk_, num_chunk_, num_tab_, ChunkElems{this->chunk_size()});
         }
         else if constexpr (chunk_config::stats)
@@ -284,6 +286,7 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list() const
                     }
                 }
 
+                internal::TabUsers<ChunkT>::note(num_tab_, thr);
                 push_to_compress_list(vec, &chunk_, num_chunk_, num_tab_, ChunkElems{this->chunk_size()});
                 if constexpr (IsZeroOneValue<ChunkTemplateOf<ChunkT>::template type, T>)
                 {
@@ -417,6 +420,7 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::add_to_compression_li
             }
         }();
 
+        internal::TabUsers<ChunkT>::note(num_tab, thr); // a replay queues on the replaying rank
         push_to_compress_list(vec, &ctx->chunk, ctx->num_chunk, num_tab, self.chunk_size());
         if constexpr (IsZeroOneValue<ChunkTemplateOf<ChunkT>::template type, T>)
         {
@@ -458,6 +462,7 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::add_to_compression_li
             }
         }();
 
+        internal::TabUsers<ChunkT>::note(num_tab, thr); // a replay queues on the replaying rank
         push_to_compress_list(vec, &ctx->chunk, ctx->num_chunk, num_tab, derived().chunk_size());
         if constexpr (IsZeroOneValue<ChunkTemplateOf<ChunkT>::template type, T>)
         {
@@ -840,6 +845,9 @@ void ProxyBase<Derived, T, ChunkT>::enqueue_deferred_write(CtxType* ctx, LambdaB
     phase_guard::check_write(&chunk_, static_cast<long>(ctx->num));
 
     const int thr_rank = get_thr_rank_fast();
+
+    // This rank now holds a write of that array: its teardown must drain it.
+    internal::TabUsers<ChunkT>::note(ctx->num_tab, thr_rank);
 
     using OpType = CompressionManagerType::template DeferredOperation<CtxType, std::decay_t<LambdaBody>>;
     auto* op_ptr = pool_new_op<OpType>(ctx, std::forward<LambdaBody>(body), thr_rank);

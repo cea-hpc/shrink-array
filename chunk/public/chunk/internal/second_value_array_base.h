@@ -136,6 +136,7 @@ class SecondValueArrayBase : public ArrayChunkBase<Derived>
             // Do not return early keeping them: teardown loops stop at nb_chunk, so their
             // buffers would leak. The pass above left none of them referenced.
             derived().release_chunk_range(nb_chunk_, old_nb_chunk);
+            this->await_chunk_readers();
             chunk_list_.resize(static_cast<std::size_t>(nb_chunk_));
             Base::reallocate_dirty_bitset(old_nb_chunk, nb_chunk_);
 
@@ -150,6 +151,7 @@ class SecondValueArrayBase : public ArrayChunkBase<Derived>
             return;
         }
 
+        this->await_chunk_readers();
         chunk_list_.resize(nb_chunk_);
         Base::reallocate_dirty_bitset(old_nb_chunk, nb_chunk_);
 

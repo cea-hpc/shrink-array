@@ -110,6 +110,7 @@ void zero_one_value::PointerMap<T>::report_key_not_found(Key key, const char* si
 template <typename T>
 void zero_one_value::PointerMap<T>::replace_all_other_elm(Key key, InT<T> val, int ind) noexcept
 {
+    const internal::RegistryWriteLock registry_lock(internal::registry_mutex());
     for (auto& item : vec_)
     {
         if (item.first == key)
@@ -159,6 +160,7 @@ template <typename T>
 template <typename T>
 void zero_one_value::PointerMap<T>::replace(Key key, InT<T> val, int ind) noexcept
 {
+    const internal::RegistryWriteLock registry_lock(internal::registry_mutex());
     for (auto& item : vec_)
     {
         if (item.first == key)
@@ -176,6 +178,7 @@ void zero_one_value::PointerMap<T>::replace(Key key, InT<T> val, int ind) noexce
 template <typename T>
 [[nodiscard]] T zero_one_value::PointerMap<T>::get_second_value(Key key) const noexcept
 {
+    const internal::RegistryReadLock registry_lock(internal::registry_mutex());
     if constexpr (is_not_bool)
     {
         for (const auto& item : vec_)
@@ -198,6 +201,7 @@ template <typename T>
 template <typename T>
 [[nodiscard]] int zero_one_value::PointerMap<T>::get_num_tab(Key key) const noexcept
 {
+    const internal::RegistryReadLock registry_lock(internal::registry_mutex());
     for (const auto& item : vec_)
     {
         if (item.first == key)
@@ -213,6 +217,7 @@ template <typename T>
 [[nodiscard]] zero_one_value::PointerMap<T>::InfArrayT
 zero_one_value::PointerMap<T>::get_info_second_value(Key key) const noexcept
 {
+    const internal::RegistryReadLock registry_lock(internal::registry_mutex());
     if constexpr (is_not_bool)
     {
         if constexpr (build_config::any_check)
@@ -271,6 +276,21 @@ zero_one_value::PointerMap<T>::get_info_second_value(Key key) const noexcept
         }
         return vec_[0].second; // fallback: not registered (should not happen)
     }
+}
+
+// ---------------------------------------------------------------------------
+// shrink_array::PointerMap<T>
+// ---------------------------------------------------------------------------
+
+template <typename T>
+void zero_one_value::PointerMap<T>::insert_only_num_tab(Key key, int num_tab)
+{
+    // No second value yet: the sentinel index, not 0 (which is the slot
+    // of whichever second value was registered first, by any array).
+    const T                           val{};
+    const int                         ind = chunk_config::no_second_value_index;
+    const internal::RegistryWriteLock registry_lock(internal::registry_mutex());
+    vec_.emplace_back(key, InfArrayT{val, ind, num_tab});
 }
 
 } // namespace shrink_array

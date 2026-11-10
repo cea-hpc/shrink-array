@@ -51,7 +51,7 @@ namespace shrink_array
 }
 
 template <typename Derived>
-void ParallelSupportCommon<Derived>::flush_pending_deferred_ops(bool force)
+void ParallelSupportCommon<Derived>::flush_pending_deferred_ops(bool force, bool own_rank_only)
 {
     if constexpr (chunk_config::use_fast_block_compression)
     {
@@ -75,7 +75,14 @@ void ParallelSupportCommon<Derived>::flush_pending_deferred_ops(bool force)
         // holds exactly the chunks with ops queued. It also drains the other
         // arrays of this (T, chunk type): their ops are applied earlier, still
         // in order.
-        if (force || CM::any_pending_ops())
+        if (own_rank_only)
+        {
+            // An array of the calling thread's own, torn down in a region: its
+            // deferred writes are all on this rank. The other ranks' queues are
+            // theirs to drain.
+            static_cast<void>(CM::flush_deferred(CHUNK_PMP_THREAD_RANK));
+        }
+        else if (force || CM::any_pending_ops())
         {
             const int max_thr = CHUNK_PMP_RANK_BOUND;
             for (int r = 0; r < max_thr; ++r)

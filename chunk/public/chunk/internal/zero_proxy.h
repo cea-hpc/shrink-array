@@ -69,6 +69,7 @@ class PointerMap : public PointerMapLinear<int, std::vector<std::pair<ArrayKey<C
      */
     void insert(Key key, int num_tab)
     {
+        const internal::RegistryWriteLock registry_lock(internal::registry_mutex());
         vec_.emplace_back(key, num_tab);
     }
 

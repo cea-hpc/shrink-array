@@ -44,6 +44,7 @@
 #include "chunk/internal/crp_helper.h"                   // CRTPSupport, CHUNK_CRTP_USE_DEDUCING_THIS
 #include "chunk/internal/test_hooks.h"                   // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (read_values)
 #include "chunk/internal/read_reclaim.h"                 // ReadSection: read_values_outside_session
+#include "chunk/internal/stable_table.h"                 // StableTable: the outer per-array tables
 #include "chunk/internal/immortal.h"                     // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/parallel_storage_init.h"        // NoInitVector, make_filled: the candidate-flag rows
 #include "chunk/internal/same_value.h"                   // same_value
@@ -256,9 +257,9 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
      * whole by make_filled (atomics are not movable).
      */
 
-    static inline constinit internal::Immortal<std::vector<ChunkFlagRowT>>
-                                              tab_is_inside_chunk_list_to_compress_storage_{};
-    static inline std::vector<ChunkFlagRowT>& tab_is_inside_chunk_list_to_compress =
+    static inline constinit internal::Immortal<internal::StableTable<ChunkFlagRowT>>
+                                                        tab_is_inside_chunk_list_to_compress_storage_{};
+    static inline internal::StableTable<ChunkFlagRowT>& tab_is_inside_chunk_list_to_compress =
         tab_is_inside_chunk_list_to_compress_storage_.value;
 };
 
@@ -309,9 +310,9 @@ class ProxyBaseFastCompPolicy<Derived, T, ChunkT, false> : public CRTPSupport<De
     static inline constinit internal::Immortal<CompressionManager<T, ChunkT>> compression_mgr_storage_{};
     static inline CompressionManager<T, ChunkT>& compression_mgr = compression_mgr_storage_.value;
     std::atomic<char>*                           ptr_is_inside_chunk_list_to_compress_;
-    static inline constinit internal::Immortal<std::vector<ChunkFlagRowT>>
-                                              tab_is_inside_chunk_list_to_compress_storage_{};
-    static inline std::vector<ChunkFlagRowT>& tab_is_inside_chunk_list_to_compress =
+    static inline constinit internal::Immortal<internal::StableTable<ChunkFlagRowT>>
+                                                        tab_is_inside_chunk_list_to_compress_storage_{};
+    static inline internal::StableTable<ChunkFlagRowT>& tab_is_inside_chunk_list_to_compress =
         tab_is_inside_chunk_list_to_compress_storage_.value;
 };
 

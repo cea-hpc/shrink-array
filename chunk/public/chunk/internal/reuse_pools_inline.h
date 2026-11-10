@@ -379,7 +379,7 @@ template <template <typename> class ChunkT, typename T>
             return it->second;
         }
     }
-    return size_buffer_reuse;
+    return size_buffer_reuse.load(std::memory_order_relaxed);
 }
 
 template <template <typename> class ChunkT, typename T>

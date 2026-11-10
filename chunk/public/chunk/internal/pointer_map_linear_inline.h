@@ -27,6 +27,7 @@ namespace shrink_array
 template <typename Payload, typename Storage>
 void PointerMapLinear<Payload, Storage>::erase(Key key)
 {
+    const internal::RegistryWriteLock registry_lock(internal::registry_mutex());
     for (auto it = vec_.begin(); it != vec_.end(); ++it)
     {
         if (it->first == key)
@@ -40,8 +41,9 @@ void PointerMapLinear<Payload, Storage>::erase(Key key)
 template <typename Payload, typename Storage>
 bool PointerMapLinear<Payload, Storage>::swap_entries(Key key_a, Key key_b) noexcept
 {
-    Payload* pa = nullptr;
-    Payload* pb = nullptr;
+    const internal::RegistryWriteLock registry_lock(internal::registry_mutex());
+    Payload*                          pa = nullptr;
+    Payload*                          pb = nullptr;
     for (auto& item : vec_)
     {
         if (item.first == key_a)

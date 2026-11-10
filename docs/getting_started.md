@@ -295,6 +295,14 @@ parallel region: `resize()`, `reserve()`, `push_back()` beyond the capacity, `cl
 region it is refused (check builds stop, others log an error and skip the pass) -- there the
 writers' own passes compress.
 
+**Work arrays inside a region.** A thread of a region may build arrays of its own
+(`zero_any::Array<double> work(n);`), write and read them, and let them be destroyed, while
+the other threads do the same and the team writes shared arrays. Construction and destruction
+take a lock of the library, one array at a time for the whole process; the element accesses
+take none. Such an array is its thread's: only that thread writes it, and the sequential
+points above are still sequential points for it. Its destruction costs one `membarrier()`,
+and skips the final compression pass that a destruction outside a region runs.
+
 **Threads.** The per-thread structures are sized once for `max(omp_get_max_threads(), number
 of cores, 256)` threads (in a std build, the team size -- `CHUNK_NUM_THREADS`, else
 `OMP_NUM_THREADS` -- stands for `omp_get_max_threads()`; about 1 KiB per element type and per

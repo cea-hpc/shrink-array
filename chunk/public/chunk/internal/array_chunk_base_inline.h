@@ -31,6 +31,8 @@
 #include "chunk/internal/PMP_CHUNK.h"           // CHUNK_PMP_IN_PARALLEL_REGION, pmp::parallel_sum, pmp::current_team
 #include "chunk/manage_ompt.h"                  // parallel_phase -- write_range_by_chunks
 #include "chunk/internal/parallel_storage_init.h" // use_own_team -- write_range_by_chunks
+#include "chunk/internal/cold_path_lock.h"        // ColdPathLock: construction, teardown, resize
+#include "chunk/internal/tab_users.h"             // TabUsers: a row per array
 #include "chunk/log.h"                            // CHUNK_LOG (set_chunk_size refusal)
 #include "chunk/internal/chunk_stats.h"           // increm_chunk_dirty_gate (sync_chunk, CHUNK_STATS)
 
@@ -55,6 +57,7 @@ template <typename Derived>
 void ArrayChunkBase<Derived>::create(IndType sz)
 {
     check_length(sz, "constructor");
+    const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
     // The first array of this element type registers its manager; every
     // later one pays a guard load. See AllTypeChunk.
     AllTypeChunk::ensure_manager<ManagerType>();
@@ -72,6 +75,7 @@ void ArrayChunkBase<Derived>::create_common()
     chunk_config::CheckNaN<chunk_config::do_check>::update(true);
 
     derived().pre_create_hook();
+    internal::TabUsers<ChunkType>::resize(nb_tab);
 
     // In ALL modes, do not gate on use_fast_block_compression: zero_any::Proxy needs
     // its tab_* containers (tab_second_value, ...) even without OpenMP; for
@@ -583,6 +587,7 @@ OutIt ArrayChunkBase<Derived>::read_range(IndType first, IndType last, OutIt out
 template <typename Derived>
 void ArrayChunkBase<Derived>::swap(Derived& other) noexcept
 {
+    const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
     if constexpr (build_config::any_check)
     {
         if (size_policy_.size() != other.size_policy_.size())
