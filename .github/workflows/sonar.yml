@@ -60,8 +60,7 @@ jobs:
       - name: Toolchain
         if: steps.token.outputs.ok == 'true'
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev libtbb-dev
+          .github/apt_install.sh g++-14 ninja-build libbz2-dev libtbb-dev
       # The configuration of the CI's gcc 14 OpenMP job, with the harnesses
       # (CHECK_OPTIM) and without the unity builds: a unity translation unit is
       # a generated file outside the sources, and the files it includes would
