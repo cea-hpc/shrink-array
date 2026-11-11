@@ -218,11 +218,6 @@ class RechunkPhaseTrace
         mark(Mark::entry);
     }
 
-    /// @brief The timings are on (rechunk=debug).
-    [[nodiscard]] bool phases_on() const noexcept
-    {
-        return phases_;
-    }
     /// @brief The memory side is on (memory=debug).
     [[nodiscard]] bool memory_on() const noexcept
     {
