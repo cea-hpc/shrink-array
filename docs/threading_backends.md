@@ -187,8 +187,11 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    1..n-1 of one process-wide pool of `std::jthread`s (worker k is always
    rank k, so successive static loops give a rank the same block: first
    touch); for_static splits as libgomp does, for_dynamic / single find
-   their shared state by the count of constructs each thread has encountered, barrier is
-   a `std::barrier`, the end of a team a join; a nested team runs as a team
+   their shared state by the count of constructs each thread has encountered (single
+   by one CAS on a team-wide mark, no lock), barrier is a `SpinBarrier` (spins for
+   `CHUNK_PMP_SPIN_US`, default 1 ms, then sleeps -- OpenMP's blocktime; a
+   `std::barrier` slept at once, ~0.4 ms per barrier at 160 threads), the end of
+   a team a join; a nested team runs as a team
    of one (max_active_levels 1); one std-backend team at a time. `pmp_std_state.h`
    holds what the queries read: each thread's stack of team frames and the
    settings (`set_num_threads`, the run-time schedule); the default team

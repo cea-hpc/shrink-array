@@ -100,10 +100,11 @@ int main()
     double             meta = 0.;
     for (const unsigned cs : sizes)
     {
-        set_thread_chunk_size(cs);
-        zero_any::Array<double> tab(1); // proven pattern (test_multisize):
-        tab.set_chunk_size(cs);         // register per-array size FIRST,
-        tab.resize(n_elems);            // THEN size the geometry
+        // An empty array takes its geometry (set_chunk_size refuses another
+        // size once the array has chunks), THEN its elements.
+        zero_any::Array<double> tab(0);
+        tab.set_chunk_size(cs);
+        tab.resize(n_elems);
         fill_and_compress(tab);
         if (meta == 0.)
         {
@@ -131,9 +132,8 @@ int main()
     int grid_rows = 0; // rows at a size that is not a power of two, checked
     for (const Ref run : {Ref{256u, 65536}, Ref{1024u, 65536}, Ref{256u, 300}})
     {
-        const unsigned ref_size = run.ref_size;
-        set_thread_chunk_size(ref_size);
-        zero_any::Array<double> ref(1);
+        const unsigned          ref_size = run.ref_size;
+        zero_any::Array<double> ref(0);
         ref.set_chunk_size(ref_size);
         ref.resize(n_elems);
         fill_and_compress(ref);

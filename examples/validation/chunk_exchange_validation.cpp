@@ -39,6 +39,9 @@
  *               value, the value written back and shrink_to_fit() put it back).
  *            2. import_array() into an array already written with other values,
  *               and into the source itself: the same again.
+ *            3. import_array() of an array grown by push_back to whole chunks
+ *               (one chunk fewer than a fresh array of its size) and of one
+ *               after a reserve() (chunks past its size): the same elements.
  *
  *          Every array is destroyed at the end (a second value or motif shared
  *          by several counted right, or a later destruction fails).
@@ -431,6 +434,40 @@ long round_trip()
         const bool self = import_array(src, export_array(src));
         fails += self ? 0 : 1;
         fails += check_copy(src, kinds, written, chunk_size, "import_array over itself");
+    }
+
+    // 3. Arrays with another chunk count than a fresh one of their size: grown
+    //    by push_back to whole chunks (no spare last chunk), and after a
+    //    reserve() (chunks past the size). import_array() refused both.
+    {
+        const auto import_back = [&](const A& from, const char* how)
+        {
+            A          into(1);
+            const bool done = import_array(into, export_array(from));
+            const long bad  = (done ? 0 : 1) + (into.size() != from.size() ? 1 : 0) + wrong_elements(into, chunk_size);
+            println("[{}/{}] import_array of an array {} ({} chunks for {} elements): {} problem(s)  {}",
+                    variant_name(), type_name<T>(), how, from.chunk_count(), static_cast<long>(from.size()), bad,
+                    bad == 0 ? "ok" : "FAIL");
+            return bad;
+        };
+
+        A grown(0);
+        prepare(grown);
+        for (long i = 0; i < n_full_chunks * chunk_size; ++i)
+        {
+            grown.push_back(source_value<T>(i, chunk_size));
+        }
+        fails += import_back(grown, "grown by push_back");
+
+        A reserved(0);
+        prepare(reserved);
+        reserved.resize(static_cast<int>(size));
+        for (long i = 0; i < size; ++i)
+        {
+            reserved[static_cast<int>(i)] = source_value<T>(i, chunk_size);
+        }
+        reserved.reserve(static_cast<int>(40 * chunk_size));
+        fails += import_back(reserved, "after reserve()");
     }
     return fails;
 }

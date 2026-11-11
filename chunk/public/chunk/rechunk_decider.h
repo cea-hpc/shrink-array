@@ -152,6 +152,8 @@ SHRINK_ARRAY_EXPORT class RechunkDecider
         /// advisor evaluates the finer sizes too): old_mem_now - mem_after is
         /// what the move freed at UNCHANGED data. -1 when not available.
         double mem_after_old = -1.;
+        /// Wall time of the rechunk_to() call, seconds; -1 when not measured.
+        double seconds = -1.;
     };
 
     /// @brief Store the policy.

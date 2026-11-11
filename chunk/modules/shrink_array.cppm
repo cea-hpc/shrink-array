@@ -38,7 +38,6 @@ module;
 #include <algorithm>
 #include <array>
 #include <atomic>
-#include <barrier>
 #include <bit>
 #include <cassert>
 #include <cerrno>
@@ -73,6 +72,7 @@ module;
 #include <print>
 #include <ranges>
 #include <ratio>
+#include <shared_mutex>
 #include <source_location>
 #include <span>
 #include <stdexcept>

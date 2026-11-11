@@ -22,7 +22,7 @@
 #include <cstddef>     // std::size_t
 #include <print>       // std::println, std::print
 #include <numeric>     // std::accumulate -- STL self-checks
-#include <stdexcept>   // std::out_of_range -- STL self-checks
+#include <stdexcept>   // std::out_of_range, std::length_error -- STL self-checks
 #include <type_traits> // std::is_same_v -- STL self-checks
 #include <utility>     // std::as_const -- STL self-checks
 #include <vector>      // std::vector
@@ -161,6 +161,30 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
                 threw = true;
             }
             expect(threw, "front() on empty throws (chunk mode)");
+        }
+
+        // A negative count: std::length_error from resize(), reserve() and the
+        // constructor, as std::vector (whose size_type turns -1 into a count
+        // past max_size()); the array is left as it was.
+        {
+            Array<double> arr(5);
+            const auto    throws = [](auto&& call)
+            {
+                try
+                {
+                    call();
+                }
+                catch (const std::length_error&)
+                {
+                    return true;
+                }
+                return false;
+            };
+            expect(throws([&] { arr.resize(static_cast<Int>(-1)); }), "resize(-1) throws std::length_error");
+            expect(throws([&] { arr.reserve(static_cast<Int>(-1)); }), "reserve(-1) throws std::length_error");
+            expect(arr.size() == 5 && arr.capacity() < (std::size_t{1} << 32),
+                   "resize(-1) / reserve(-1) leave the array as it was");
+            expect(throws([] { Array<double> neg(static_cast<Int>(-1)); }), "Array(-1) throws std::length_error");
         }
 
         // --- non-const at() returns a write proxy (assignment goes through it) -

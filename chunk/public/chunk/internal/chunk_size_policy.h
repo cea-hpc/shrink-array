@@ -124,6 +124,7 @@ enum class ChunkSizeError : std::uint8_t
     not_pow2_or_x64, ///< neither a power of two nor a multiple of 64 (0 included): is_valid_chunk_size
     exceeds_buffer,  ///< wider than cst_buffer_size, the shared constant buffers: raise CHUNK_DYN_MAX_SIZE
     fixed_geometry,  ///< a static-size build: no geometry but the compiled one (try_rechunk_to, try_set_chunk_size)
+    has_chunks,      ///< another size on an array that has chunks: rechunk_to() moves the elements (try_set_chunk_size)
 };
 
 /// @brief The reason @p err, in words.
@@ -137,6 +138,8 @@ enum class ChunkSizeError : std::uint8_t
             return "exceeds cst_buffer_size (raise CHUNK_DYN_MAX_SIZE)";
         case ChunkSizeError::fixed_geometry:
             return "the chunk size of a static build is fixed (link a _dyn library)";
+        case ChunkSizeError::has_chunks:
+            return "the array has chunks at another size (rechunk_to() moves the elements)";
     }
     return "?";
 }
@@ -150,8 +153,15 @@ enum class ChunkSizeError : std::uint8_t
     return g_active_chunk_size;
 }
 
-// Per-thread active size: set by array ops before allocating; read by the
-// allocator routing. Falls back to the process-wide seed when unset.
+/// @brief Route the calling thread's next chunk allocations to the allocator of
+///        @p size elements.
+/// @details The library sets it itself, from the array it is about to write,
+///          before every allocation (allocator routing, read by
+///          alloc_chunk_count()); falls back to the process-wide size when unset.
+///          It does NOT give a new array its geometry: an array is born at the
+///          process-wide set_active_chunk_size(), and a.set_chunk_size() sets an
+///          empty one's.
+/// @param size chunk size, in elements
 SHRINK_ARRAY_EXPORT inline void set_thread_chunk_size(unsigned int size) noexcept
 {
     t_active_chunk_size = size;

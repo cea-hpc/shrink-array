@@ -43,8 +43,10 @@
 #include "chunk/internal/concept_is_clean_assignement.h" // IsCleanCompoundOp, IsCleanShiftOp, BaseT
 #include "chunk/internal/test_hooks.h"                   // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (read_values)
 #include "chunk/internal/read_reclaim.h"                 // ReadSection: read_values_outside_session
+#include "chunk/internal/stable_table.h"                 // StableTable: the outer per-array tables
 #include "chunk/internal/immortal.h"                     // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/parallel_storage_init.h"        // NoInitVector, make_filled: the candidate-flag rows
+#include "chunk/internal/same_value.h"                   // same_value
 
 namespace shrink_array
 {
@@ -248,9 +250,9 @@ class ProxyBaseFastCompPolicy
      * whole by make_filled (atomics are not movable).
      */
 
-    static inline constinit internal::Immortal<std::vector<ChunkFlagRowT>>
-                                              tab_is_inside_chunk_list_to_compress_storage_{};
-    static inline std::vector<ChunkFlagRowT>& tab_is_inside_chunk_list_to_compress =
+    static inline constinit internal::Immortal<internal::StableTable<ChunkFlagRowT>>
+                                                        tab_is_inside_chunk_list_to_compress_storage_{};
+    static inline internal::StableTable<ChunkFlagRowT>& tab_is_inside_chunk_list_to_compress =
         tab_is_inside_chunk_list_to_compress_storage_.value;
 };
 
@@ -301,9 +303,9 @@ class ProxyBaseFastCompPolicy<Derived, T, ChunkT, false>
     static inline constinit internal::Immortal<CompressionManager<T, ChunkT>> compression_mgr_storage_{};
     static inline CompressionManager<T, ChunkT>& compression_mgr = compression_mgr_storage_.value;
     std::atomic<char>*                           ptr_is_inside_chunk_list_to_compress_;
-    static inline constinit internal::Immortal<std::vector<ChunkFlagRowT>>
-                                              tab_is_inside_chunk_list_to_compress_storage_{};
-    static inline std::vector<ChunkFlagRowT>& tab_is_inside_chunk_list_to_compress =
+    static inline constinit internal::Immortal<internal::StableTable<ChunkFlagRowT>>
+                                                        tab_is_inside_chunk_list_to_compress_storage_{};
+    static inline internal::StableTable<ChunkFlagRowT>& tab_is_inside_chunk_list_to_compress =
         tab_is_inside_chunk_list_to_compress_storage_.value;
 };
 
@@ -440,13 +442,14 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///          acquire load of the chunk header, constant-false in a serial build.
     [[nodiscard]] bool is_cst_val1_and_v_equal_first_value(InT<T> value) const noexcept
     {
-        return value == static_cast<T>(ChunkT::first_value) && is_cst_val1() && !chunk_.pending_any();
+        return same_value(value, static_cast<T>(ChunkT::first_value)) && is_cst_val1() && !chunk_.pending_any();
     }
 
     /// @brief is_cst_val1_and_v_equal_first_value() from a loaded value pointer.
     [[nodiscard]] bool is_cst_val1_and_v_equal_first_value(const T* values_loc, InT<T> value) const noexcept
     {
-        return value == static_cast<T>(ChunkT::first_value) && is_cst_val1(values_loc) && !chunk_.pending_any();
+        return same_value(value, static_cast<T>(ChunkT::first_value)) && is_cst_val1(values_loc) &&
+               !chunk_.pending_any();
     }
 
     /// @brief Point this proxy at an already-known candidate flag.

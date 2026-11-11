@@ -45,6 +45,9 @@
 //      the new geometry.
 //   4. need_load_balance_list_block_free() is false once the pools are
 //      released (its value with blocks parked depends on the team: shown).
+//   0. First of all: a second ParamChunk::init_indexes() with the other
+//      argument leaves the block size alone (every allocator of a type must
+//      cut its slabs to one size); the same argument again is a harmless repeat.
 //
 // Then the library's own teardown, as compress_roundtrip does.
 //
@@ -67,6 +70,8 @@
 #include "chunk/internal/zero_any_chunk_def.h"       // zero_any::ChunkDef
 #include "chunk/internal/env_parse.h"                // env_number / arg_number (checked, not atoi)
 #include "chunk/print.h"                             // shrink_array::println
+#include "chunk/internal/singleton.h"                // SingletonChk
+#include "chunk/internal/all_type_chunk.h"           // AllTypeChunk::ready_block_size
 
 // Defined by every executable of the library (the fast allocator reads it).
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
@@ -151,6 +156,14 @@ int run(int argc, char** argv)
     ParamChunk::init_indexes(true);
 
     println("=== pool_accounting [variant = {}]  N={}  threads={} ===", variant_name(), count, CHUNK_PMP_MAX_THREADS);
+
+    // --- 0. one block size per process ------------------------------------
+    const auto block_size = [] { return static_cast<long>(SingletonChk<AllTypeChunk>::get_ref().ready_block_size()); };
+    const long blocks     = block_size();
+    ParamChunk::init_indexes(false); // refused, with a warning
+    expect(block_size() == blocks, "init_indexes(false) after (true) keeps the block size", block_size(), blocks);
+    ParamChunk::init_indexes(true);
+    expect(block_size() == blocks, "init_indexes(true) again keeps the block size", block_size(), blocks);
 
     const long base = Manager::get_somme_chunk_create();
     expect(Manager::reuse_pool_blocks() == 0, "pools empty at start", (long)Manager::reuse_pool_blocks(), 0);

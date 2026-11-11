@@ -59,3 +59,11 @@ docs/doxygen-warnings.log
 
 # --- Local PySide6 wheels (shrink_gui install, not part of the repo) ---
 python/pyside6_wheels/
+
+# --- Coverity Scan (scripts/coverity_submit.sh): capture dir and upload replies ---
+cov-int/
+cov-response
+cov-response.json
+
+# --- Timestamped benchmark plots written by the python/ scripts ---
+python/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]-*.png

@@ -257,7 +257,10 @@ SHRINK_ARRAY_EXPORT class ParamChunk : public ParamChunkParallelInterface<>, pub
      *       process runs init_indexes(true) itself (AllTypeChunk::ensure_ready),
      *       wherever it is constructed -- a global array included.
      * @warning A chunk must fit in one allocation block; a warning is emitted
-     *          otherwise.
+     *          otherwise. A later call that would change the block size (the
+     *          other @p big_chunk_block, or after the first array ran
+     *          init_indexes(true)) is ignored with a warning: every allocator
+     *          must cut its slabs to one size.
      */
     static void init_indexes(bool big_chunk_block);
 

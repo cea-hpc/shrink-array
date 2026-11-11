@@ -70,6 +70,7 @@
 #include "chunk/vector_range_ops.h"                    // internal::ChunkedArray + the std::vector fallback
 #include "chunk/internal/write_compress_sync_policy.h" // fill_range_mt: the writer side of the Dekker handshake
 #include "chunk/internal/relaxed_element.h"            // fill_range_mt: zero_any's shared elements
+#include "chunk/internal/same_value.h"                 // same_value
 
 namespace shrink_array
 {
@@ -169,7 +170,7 @@ void resync_counters(Arr& arr, ChunkClass& ch, std::size_t c_begin, const T* dst
         CounterValueT nz = 0;
         for (unsigned int k = 0; k < chunk_sz; ++k)
         {
-            if (dst[k] == static_cast<T>(ChunkClass::first_value))
+            if (same_value(dst[k], static_cast<T>(ChunkClass::first_value)))
             {
                 ++nz;
             }
@@ -183,11 +184,11 @@ void resync_counters(Arr& arr, ChunkClass& ch, std::size_t c_begin, const T* dst
         CounterValueT n2 = 0;
         for (unsigned int k = 0; k < chunk_sz; ++k)
         {
-            if (dst[k] == static_cast<T>(ChunkClass::first_value))
+            if (same_value(dst[k], static_cast<T>(ChunkClass::first_value)))
             {
                 ++n1;
             }
-            if (dst[k] == sv)
+            if (same_value(dst[k], sv))
             {
                 ++n2;
             }
@@ -218,11 +219,12 @@ template <typename Arr, typename ChunkClass>
 {
     if constexpr (track_zero_one_value_counts_v<Arr> && has_second_value_v<Arr> && requires { arr.get_second_value(); })
     {
-        using IndType     = decltype(arr.size());
-        using T           = Arr::value_type;
-        const bool first  = ch.is_full_first_value(chunk_sz);
-        const bool second = !first && ch.is_full_second_value(chunk_sz) &&
-                            !(static_cast<T>(arr.get_second_value()) == static_cast<T>(ChunkClass::first_value));
+        using IndType    = decltype(arr.size());
+        using T          = Arr::value_type;
+        const bool first = ch.is_full_first_value(chunk_sz);
+        const bool second =
+            !first && ch.is_full_second_value(chunk_sz) &&
+            !same_value(static_cast<T>(arr.get_second_value()), static_cast<T>(ChunkClass::first_value));
         if (!first && !second)
         {
             return false;
@@ -277,7 +279,7 @@ template <typename Arr, typename ChunkClass>
 template <typename T>
 [[nodiscard]] bool may_be_uniform(const T* dst, unsigned int chunk_sz) noexcept
 {
-    return chunk_sz == 0 || (dst[0] == dst[chunk_sz / 2] && dst[0] == dst[chunk_sz - 1]);
+    return chunk_sz == 0 || (same_value(dst[0], dst[chunk_sz / 2]) && same_value(dst[0], dst[chunk_sz - 1]));
 }
 
 /**
@@ -293,7 +295,8 @@ template <typename T>
         return true;
     }
     const T v0 = load_element_relaxed(dst);
-    return v0 == load_element_relaxed(dst + (chunk_sz / 2)) && v0 == load_element_relaxed(dst + chunk_sz - 1);
+    return same_value(v0, static_cast<T>(load_element_relaxed(dst + (chunk_sz / 2)))) &&
+           same_value(v0, static_cast<T>(load_element_relaxed(dst + chunk_sz - 1)));
 }
 
 /**
@@ -456,7 +459,8 @@ template <typename Arr, typename ChunkClass>
                 return false;
             }
         }
-        return ch.is_cst_val2_ptr_of(vals) && ch.second_value_from_ptr(vals) == value;
+        return ch.is_cst_val2_ptr_of(vals) &&
+               same_value(static_cast<T>(ch.second_value_from_ptr(vals)), static_cast<T>(value));
     }
     else
     {
@@ -658,7 +662,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
         set_thread_chunk_size(chunk_sz);
     }
 
-    const bool value_is_cst1 = (value == static_cast<T>(ChunkType::first_value));
+    const bool value_is_cst1 = same_value(static_cast<T>(value), static_cast<T>(ChunkType::first_value));
 
     // zero_one_value::Chunk: which of the array'chunk_sz constants the value is -- 0 the first, 1
     // the second (index ind2), -1 neither. A whole chunk filled with one of
@@ -670,7 +674,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
         {
             chunk2_cst = 0;
         }
-        else if (ind2 >= 0 && value == static_cast<T>(arr.get_second_value()))
+        else if (ind2 >= 0 && same_value(static_cast<T>(value), static_cast<T>(arr.get_second_value())))
         {
             chunk2_cst = 1;
         }
@@ -881,7 +885,8 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
             bool compressible_value = value_is_cst1 || internal::is_v2a_family_v<Arr>;
             if constexpr (internal::is_v2_v<Arr> && requires { arr.get_second_value(); })
             {
-                compressible_value = compressible_value || value == static_cast<T>(arr.get_second_value());
+                compressible_value =
+                    compressible_value || same_value(static_cast<T>(value), static_cast<T>(arr.get_second_value()));
             }
             if (compressible_value && internal::may_be_uniform(dst, chunk_sz))
             {
@@ -987,7 +992,7 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
                     const auto src_at = [&](std::size_t k)
                     { return static_cast<T>(*(src_first + static_cast<std::ptrdiff_t>(k - first))); };
                     const T v0 = src_at(lo);
-                    span_mixed = !(v0 == src_at(lo + chunk_sz / 2) && v0 == src_at(hi - 1));
+                    span_mixed = !(same_value(v0, src_at(lo + chunk_sz / 2)) && same_value(v0, src_at(hi - 1)));
                     if (!span_mixed)
                     {
                         // No early exit: the guess has passed, the span is
@@ -996,7 +1001,7 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
                         std::size_t differ = 0;
                         for (std::size_t k = lo; k < hi; ++k)
                         {
-                            differ += static_cast<std::size_t>(!(src_at(k) == v0));
+                            differ += static_cast<std::size_t>(!same_value(src_at(k), v0));
                         }
                         span_mixed = (differ != 0);
                     }
@@ -1268,7 +1273,7 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
                 unsigned int differ = 0;
                 for (std::size_t k = lo + 1; k < hi; ++k)
                 {
-                    differ |= static_cast<unsigned int>(!(buf[k - c_begin] == v0));
+                    differ |= static_cast<unsigned int>(!same_value(buf[k - c_begin], v0));
                 }
                 same = differ == 0;
             }
@@ -1423,12 +1428,12 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
                         // pass scans the chunk and drops it if it is not uniform.
                         if constexpr (is_v1_v<Arr>)
                         {
-                            uniform = same && static_cast<T>(v0) == static_cast<T>(ChunkType::first_value);
+                            uniform = same && same_value(static_cast<T>(v0), static_cast<T>(ChunkType::first_value));
                         }
                         else if constexpr (is_v2_v<Arr> && requires { arr.get_second_value(); })
                         {
-                            uniform = same && (static_cast<T>(v0) == static_cast<T>(ChunkType::first_value) ||
-                                               static_cast<T>(v0) == static_cast<T>(arr.get_second_value()));
+                            uniform = same && (same_value(static_cast<T>(v0), static_cast<T>(ChunkType::first_value)) ||
+                                               same_value(static_cast<T>(v0), static_cast<T>(arr.get_second_value())));
                         }
                         else
                         {

@@ -2,7 +2,7 @@
 
 > English version: [shrink_gui.md](shrink_gui.md).
 
-> Octobre 2026, `shrink_gui` 0.15 (prototype). Une fenêtre sur le portable pour soumettre
+> Octobre 2026, `shrink_gui` 0.16 (prototype). Une fenêtre sur le portable pour soumettre
 > `compile_all.sh`, `bench_and_test.py`, `multi_launch_stress.py` et `thread_speedup.py` sur le calculateur, ou
 > pour les lancer sur le portable lui-même (§3, « Cette machine »), suivre
 > leur log, lire leur résumé et rapatrier leurs résultats. Le détail du code est dans la
@@ -87,6 +87,20 @@ laissés dans l'ordre du script. Les options
 modifiées sont en gras ; une option laissée à sa valeur par défaut n'est pas mise sur la ligne de
 commande. « Enregistrer comme défauts » remplace les valeurs par défaut de ce programme sur
 cette architecture. « Commande » montre exactement ce qui sera exécuté.
+
+Sous les arguments en plus, le champ **environnement** reçoit les variables à exporter avant la
+commande, sur le nœud : des mots `NOM=valeur` séparés par des espaces (`NOM="a b"` pour une
+valeur avec des espaces). Par exemple `CHUNK_LLVM_ROOT=~/llvm-22` pour `compile_all.sh`, ou un
+interrupteur d'exécution de la bibliothèque pour un bench. Elles sont exportées avant
+`scripts/site_env.sh`, qui peut les lire, puis de nouveau après : la valeur du run l'emporte sur
+celle du site. Un `~/` en tête est le répertoire personnel de la machine du run ; rien d'autre
+n'est développé dans une valeur. Le champ est mémorisé par programme, écrit dans `meta.json` et
+repris par « Reprendre ses options » ; « Commande » montre les variables devant la commande, et
+le log du run les donne (`[gui] env: ...`). Un mot qui n'est pas `NOM=valeur`, ou un nom que le
+script du run utilise pour lui-même (`RUN_DIR`, `PY`...), bloque la soumission.
+
+Quand la fenêtre n'est pas assez haute pour les deux groupes (un écran de portable), ils défilent
+ensemble ; « Soumettre » reste en dessous, toujours visible.
 
 Avant de soumettre un script argparse, la fenêtre fait vérifier la commande par le script
 lui-même sur le calculateur : sa fonction `parse_args(argv)` quand il en a une au niveau du

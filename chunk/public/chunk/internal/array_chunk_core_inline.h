@@ -16,6 +16,10 @@
 
 #pragma once
 #include "chunk/internal/array_chunk_core.h" // the class these bodies belong to
+#include "chunk/internal/PMP_CHUNK.h"        // CHUNK_PMP_IN_PARALLEL_REGION, CHUNK_PMP_THREAD_RANK
+#include "chunk/internal/tab_users.h"        // TabUsers (teardown_on_own_rank)
+#include "chunk/config.h"                    // build_config::threaded
+#include "chunk/internal/read_reclaim.h"     // wait_for_readers (await_chunk_readers)
 
 namespace shrink_array
 {
@@ -25,6 +29,31 @@ namespace shrink_array
 // ---------------------------------------------------------------------------
 
 template <typename ChunkT>
+[[nodiscard]] bool ArrayChunkCore<ChunkT>::teardown_on_own_rank([[maybe_unused]] int num_tab) noexcept
+{
+    if constexpr (build_config::threaded)
+    {
+        return CHUNK_PMP_IN_PARALLEL_REGION && internal::TabUsers<ChunkT>::only(num_tab, CHUNK_PMP_THREAD_RANK);
+    }
+    else
+    {
+        return false;
+    }
+}
+
+template <typename ChunkT>
+void ArrayChunkCore<ChunkT>::await_chunk_readers() const noexcept
+{
+    if constexpr (read_reclaim::enabled)
+    {
+        if (!chunk_list_.empty() && CHUNK_PMP_IN_PARALLEL_REGION)
+        {
+            read_reclaim::wait_for_readers();
+        }
+    }
+}
+
+template <typename ChunkT>
 void ArrayChunkCore<ChunkT>::assign_alloc_key()
 {
     if constexpr (build_config::alloc_affinity_min_bytes == 0 || !build_config::chunk_dynamic ||
@@ -32,7 +61,9 @@ void ArrayChunkCore<ChunkT>::assign_alloc_key()
     {
         return;
     }
-    if (nb_chunk_ <= 0)
+    // An array built inside a region shares the pool: registering an allocator
+    // set writes tables the other threads' allocations are reading.
+    if (nb_chunk_ <= 0 || CHUNK_PMP_IN_PARALLEL_REGION)
     {
         return;
     }
@@ -67,6 +98,7 @@ void ArrayChunkCore<ChunkT>::acquire_chunk_list(std::size_t count)
 template <typename ChunkT>
 void ArrayChunkCore<ChunkT>::release_chunk_list()
 {
+    await_chunk_readers();
     chunk_list_.clear();
 }
 

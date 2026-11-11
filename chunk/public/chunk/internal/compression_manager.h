@@ -37,6 +37,7 @@
 #include "chunk/internal/deferred_lifecycle_check.h" // DEFERRED_LIFECYCLE sentinels
 #include "chunk/internal/chunk_stats.h"              // increm_chunk_gate_* (the handshake, rare side)
 #include "chunk/internal/immortal.h"                 // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/same_value.h"               // same_value
 
 namespace shrink_array
 {
@@ -828,8 +829,8 @@ struct CompressionManager : public CompressionManagerThreadPolicy<T, ChunkT, bui
     [[nodiscard]] static bool
     should_mark_for_compression(InT<T> old_value, InT<T> new_value, InT<T> second_value, InT<T> first_value) noexcept
     {
-        return (old_value != first_value && new_value == first_value) ||
-               (old_value != second_value && new_value == second_value);
+        return (!same_value(old_value, first_value) && same_value(new_value, first_value)) ||
+               (!same_value(old_value, second_value) && same_value(new_value, second_value));
     }
 };
 

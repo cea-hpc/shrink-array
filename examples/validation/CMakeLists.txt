@@ -34,6 +34,11 @@
 #                           through writes, a compression pass and a partial
 #                           rewrite like an array of double -- the element
 #                           type contract: trivially copyable, ==, T{}.
+#   signed_zero_validation  -0.0 (double, float, std::complex, an aggregate
+#                           with a ValueIdentity) and a NaN payload read back
+#                           bit for bit through element writes, fill_range(_mt),
+#                           a -0.0 second value and compression passes: the
+#                           library decides with same_value(), not ==.
 #   deferred_path_validation a write parked in a rank queue (the deferred
 #                           path: enqueue, replay, backlog drain, read gate, WAW
 #                           guard) lands in program order with every other
@@ -83,6 +88,9 @@
 #                           reads back what std::vector would, and counts its
 #                           written chunks right. The storage paths once fell
 #                           back on an orphaned `omp for` there, and hung.
+#                           And the whole team at once: each thread builds,
+#                           fills and destroys work arrays of its own while
+#                           the team writes a shared one (the cold-path lock).
 #   bulk_write_team_validation the whole-array writes that take a team of
 #                           their own outside a region (copy construction and
 #                           assignment, assign, resize(n, val), a shrinking
@@ -277,7 +285,8 @@ set(_rt_harnesses       compress_roundtrip pool_accounting open_types_validation
                         stale_proxy_validation
                         region_storage_validation compound_ops_validation bulk_write_team_validation
                         fill_range_constant_validation copy_range_constant_validation
-                        constant_switch_validation shrink_to_fit_validation chunk_exchange_validation)
+                        constant_switch_validation shrink_to_fit_validation chunk_exchange_validation
+                        signed_zero_validation)
 set(_rt_dyn_harnesses   pool_accounting open_types_validation index64_validation stale_proxy_validation)
 
 # Compile definitions of a variant at a geometry.
@@ -794,6 +803,29 @@ endif()
 chunk_require_cxx_std(team_loops_validation PRIVATE)
 add_test(NAME team_loops_validation COMMAND team_loops_validation)
 set_property(TEST team_loops_validation PROPERTY LABELS validation)
+
+# --- team_sync_validation: pmp::Team's synchronisation (barrier, single in
+# its wait and nowait forms, singles mixed with dynamic loops, teams in a row)
+# on the build's backend; under the std backend, with its spinning waits and
+# again with CHUNK_PMP_SPIN_US=0 (sleep at once). `--bench [threads]` prints
+# the cost of a barrier, a single and a team. Header-only, as team_loops.
+add_executable(team_sync_validation team_sync_validation.cpp)
+chunk_add_alloc_token_rt(team_sync_validation)
+target_include_directories(team_sync_validation PRIVATE ${PROJECT_SOURCE_DIR}/fast_allocators/public)
+target_link_libraries(team_sync_validation PRIVATE Threads::Threads)
+if (OMP)
+  target_link_libraries(team_sync_validation PRIVATE OpenMP::OpenMP_CXX)
+endif()
+if (CHUNK_THREADS_BACKEND STREQUAL "std")
+  target_compile_definitions(team_sync_validation PRIVATE FAST_ALLOC_PMP_STD=1)
+endif()
+chunk_require_cxx_std(team_sync_validation PRIVATE)
+add_test(NAME team_sync_validation COMMAND team_sync_validation)
+set_property(TEST team_sync_validation PROPERTY LABELS validation)
+if (CHUNK_THREADS_BACKEND STREQUAL "std")
+  add_test(NAME team_sync_validation_nospin COMMAND team_sync_validation)
+  set_tests_properties(team_sync_validation_nospin PROPERTIES LABELS validation ENVIRONMENT "CHUNK_PMP_SPIN_US=0")
+endif()
 
 # --- blk_allocator_validation: fast_allocators' public size-dispatching front
 # end (BlkAllocator) alone. Nothing in the library calls it, so this is what

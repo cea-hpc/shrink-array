@@ -40,6 +40,7 @@
 #include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
 #include "chunk/internal/parallel_storage_init.h" // make_filled, resize_filled, for_each_chunk
 #include "chunk/log.h"                            // CHUNK_LOG, CHUNK_LOG_ALWAYS
+#include "chunk/internal/same_value.h"            // same_value
 
 /**
  * @file zero_any_proxy_inline.h
@@ -505,9 +506,9 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::perform_core_assignment(T* vals, I
 
     if constexpr (is_not_bool)
     {
-        if (value == static_cast<T>(BaseSpec::ptr_second_value_.get()))
+        if (same_value(value, static_cast<T>(BaseSpec::ptr_second_value_.get())))
         {
-            if (is_cst2 || Base::read_values_at(vals) == BaseSpec::ptr_second_value_.get())
+            if (is_cst2 || same_value(Base::read_values_at(vals), static_cast<T>(BaseSpec::ptr_second_value_.get())))
             {
                 return;
             }
@@ -587,7 +588,8 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::handle_no_bool_assignment(this Der
         self.set_ptr_second_value();
 
         // Second value onto a cst_val2 chunk: nothing to do.
-        if (self.chunk_.is_cst_val2_ptr_of(vals) && value == static_cast<T>(self.BaseSpec::ptr_second_value_.get()))
+        if (self.chunk_.is_cst_val2_ptr_of(vals) &&
+            same_value(value, static_cast<T>(self.BaseSpec::ptr_second_value_.get())))
         {
             return;
         }
@@ -796,7 +798,7 @@ T zero_any::ProxyImpl<T, Derived, ChunkT>::assign_impl(this Derived& self, InT<U
                         // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
                         const InT<T> readback = values_after[num];
                         const auto   expected = static_cast<T>(ctx->operand);
-                        if (readback != expected)
+                        if (!same_value(static_cast<T>(readback), expected))
                         {
                             CHUNK_INVARIANT_FAILED("lbd_equal_asynch: readback mismatch after store! "
                                                    "chunk={} num={} expected={} readback={}",
@@ -942,7 +944,8 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::execute_arithmetic_compound_operat
 
     if constexpr (is_not_bool)
     {
-        const bool will_be_not_second_value = (v_new_truncated != self.BaseSpec::ptr_second_value_.get()) && cst_val2;
+        const bool will_be_not_second_value =
+            !same_value(v_new_truncated, static_cast<T>(self.BaseSpec::ptr_second_value_.get())) && cst_val2;
 
         if (will_be_not_second_value)
         {
@@ -1038,7 +1041,8 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
 
         if constexpr (is_not_bool)
         {
-            const bool will_be_not_second_value = (v_new_truncated != proxy.ptr_second_value_.get()) && cst_val2;
+            const bool will_be_not_second_value =
+                !same_value(v_new_truncated, static_cast<T>(proxy.ptr_second_value_.get())) && cst_val2;
 
             if (will_be_not_second_value)
             {
@@ -1093,7 +1097,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
             }
             {
                 // No-op arm (result == second value on cst_val2): re-test before exiting.
-                if (proxy.is_cst_val2() && v_new_truncated == proxy.ptr_second_value_.get())
+                if (proxy.is_cst_val2() && same_value(v_new_truncated, static_cast<T>(proxy.ptr_second_value_.get())))
                 {
                     break;
                 }
@@ -1289,7 +1293,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::apply_compound_operation(this Deri
     // first_value absorbs (0 * operand == 0). Racy but safe: a concurrent writer
     // cannot make the "was first_value" branch wrong, provided v_old is a value
     // the element really held (hence the ReadSection).
-    if (v_old != ChunkT::first_value)
+    if (!same_value(v_old, static_cast<T>(ChunkT::first_value)))
     {
         // Serial build: apply_atomic_op() runs the body without the engine's
         // lbd_info, and the body reads ptr_second_value.
@@ -1317,6 +1321,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::apply_compound_operation(this Deri
 template <typename ChunkT, size_t SmallN>
 [[nodiscard]] int zero_any::PointerMap<ChunkT, SmallN>::get_num_tab(Key key) const noexcept
 {
+    const internal::RegistryReadLock registry_lock(internal::registry_mutex());
     if (!using_big_)
     {
         for (const auto& [entry_key, tab] : small_)
@@ -1341,6 +1346,7 @@ template <typename ChunkT, size_t SmallN>
 template <typename ChunkT, size_t SmallN>
 void zero_any::PointerMap<ChunkT, SmallN>::erase(Key key) noexcept
 {
+    const internal::RegistryWriteLock registry_lock(internal::registry_mutex());
     if (!using_big_)
     {
         for (auto it = small_.begin(); it != small_.end(); ++it)
@@ -1370,6 +1376,7 @@ void zero_any::PointerMap<ChunkT, SmallN>::erase(Key key) noexcept
 template <typename ChunkT, size_t SmallN>
 void zero_any::PointerMap<ChunkT, SmallN>::insert(Key key, int num_tab)
 {
+    const internal::RegistryWriteLock registry_lock(internal::registry_mutex());
     if (!using_big_)
     {
         small_.emplace_back(key, num_tab);
@@ -1394,6 +1401,7 @@ void zero_any::PointerMap<ChunkT, SmallN>::insert(Key key, int num_tab)
 template <typename ChunkT, size_t SmallN>
 bool zero_any::PointerMap<ChunkT, SmallN>::set_num_tab(Key key, int new_num_tab) noexcept
 {
+    const internal::RegistryWriteLock registry_lock(internal::registry_mutex());
     if (!using_big_)
     {
         for (auto& [k, tab] : small_)
@@ -1419,10 +1427,11 @@ bool zero_any::PointerMap<ChunkT, SmallN>::set_num_tab(Key key, int new_num_tab)
 template <typename ChunkT, size_t SmallN>
 bool zero_any::PointerMap<ChunkT, SmallN>::swap_keys(Key key_a, Key key_b) noexcept
 {
-    int  na = 0;
-    int  nb = 0;
-    bool fa = false;
-    bool fb = false;
+    const internal::RegistryWriteLock registry_lock(internal::registry_mutex());
+    int                               na = 0;
+    int                               nb = 0;
+    bool                              fa = false;
+    bool                              fb = false;
     if (!using_big_)
     {
         for (const auto& [key, tab] : small_)
@@ -1640,9 +1649,10 @@ zero_any::ProxyImpl<T, Derived, ChunkT>::should_mark_for_compression(InT<T> old_
             return true;
         }
     }
-    const bool discover = (second_value == first_value && new_value != first_value);
-    const bool change   = (second_value != first_value && new_value != second_value && !(new_value == old_value));
-    if (!discover && !change)
+    const bool discover = (same_value(second_value, first_value) && !same_value(new_value, first_value));
+    const bool leave    = (!same_value(second_value, first_value) && same_value(old_value, second_value) &&
+                           !same_value(new_value, second_value));
+    if (!discover && !leave)
     {
         return false;
     }
@@ -1678,7 +1688,8 @@ template <typename T, typename Derived, typename ChunkT>
         const int offset = this->num_;
         const int r0     = (offset == 0) ? 1 : 0;
         const int r1     = (offset == chunk_sz - 1) ? chunk_sz - 2 : chunk_sz - 1;
-        return this->chunk_.read_value_scan_relaxed(r0) == value && this->chunk_.read_value_scan_relaxed(r1) == value;
+        return same_value(static_cast<T>(this->chunk_.read_value_scan_relaxed(r0)), static_cast<T>(value)) &&
+               same_value(static_cast<T>(this->chunk_.read_value_scan_relaxed(r1)), static_cast<T>(value));
     }
 }
 

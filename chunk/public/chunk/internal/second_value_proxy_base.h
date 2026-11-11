@@ -27,6 +27,7 @@
 #include "chunk/internal/in_t.h"                         // InT<T>
 #include "chunk/internal/proxy_base.h"                   // ProxyBase
 #include "chunk/log.h"                                   // CHUNK_LOG (the operators bool has not)
+#include "chunk/internal/same_value.h"                   // same_value
 
 namespace shrink_array
 {
@@ -215,7 +216,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     [[nodiscard]] static bool
     pre_check_mark_for_compression_strict(InT<T> new_value, InT<T> first_value, InT<T> second_val) noexcept
     {
-        return new_value == first_value || new_value == second_val;
+        return same_value(new_value, first_value) || same_value(new_value, second_val);
     }
 
     // --- Boolean overloads ---

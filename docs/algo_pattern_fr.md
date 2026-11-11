@@ -219,9 +219,17 @@ et la passe compresse chaque candidat à sa propre taille.
   constante » de `zero_any` (`is_cst_val2()` est vrai pour un chunk motif, compressé pour le
   moteur d'écriture). Les chunks reconstruits, écrits par les proxies, sont mis en file par la
   règle de complétion et compressés en motifs de la nouvelle taille par la passe suivante.
-- **Conseiller.** `ChunkSizeAdvisor` lit un chunk motif comme une donnée (motif plus offset),
-  jamais comme une constante : ses prévisions de constantes sont celles que `zero_any` fait sur
-  les mêmes valeurs. Il ne prévoit aucune compression en motif (§10) : jamais optimiste.
+- **Conseiller.** `ChunkSizeAdvisor` compte à part les chunks motifs
+  (`ChunkSizeEstimate::motif`), exactement à la taille courante, avec une entrée de motif par
+  motif distinct dans le modèle de mémoire. À une autre taille, une fenêtre sans chunk
+  matérialisé est découpée en ses parties -- pour un chunk motif (motif, premier élément dans le
+  motif, longueur), pour un chunk constant sa longueur -- chacune avec sa première valeur moins
+  celle de la fenêtre : deux fenêtres aux mêmes parties portent les mêmes données normalisées.
+  Une clé vue c >= 2 fois prévoit c - 1 fenêtres motifs et une matérialisée (la première
+  observation), à partir des pointeurs et des cases d'offset, sans lire les données. Jusqu'en
+  novembre 2026, il lisait un chunk motif comme des données à toutes les tailles : aveugle aux
+  motifs qu'un grossissement perd, il a rechunké un tableau de 8 motifs locaux à offsets
+  irréguliers de 256 à 1024, de 5,25 Mo à 270 Mo (2^26 int, 128 threads).
 
 ## 9. Résultats
 
@@ -262,10 +270,10 @@ classification des chunks.
 - **L'emplacement de l'offset** (§2) : la case, contre l'objet chunk (+8 octets par chunk, une
   ligne de cache de moins par lecture de motif) ; à mesurer avec `access_cost_pattern` sur des
   lectures dominées par les motifs.
-- **La prévision de motifs du conseiller** (§8) : à une taille candidate, une fenêtre serait
-  compressée en motif si son contenu normalisé est partagé avec une autre fenêtre. Une estimation
-  sur les chunks échantillonnés coûte peu, mais change `ChunkSizeEstimate` (une struct publique)
-  et le décideur.
+- **La prévision de motifs du conseiller** (§8) ne voit que les fenêtres faites de chunks
+  motifs et constants : une fenêtre qui contient un chunk matérialisé est prévue comme `zero_any`
+  la prévoit, et deux motifs à sous-plage égale ne sont pas reconnus comme un seul (un partage
+  manqué, jamais inventé).
 - **Les motifs plus courts qu'un chunk** (un pas qui ne divise pas la taille du chunk, un offset
   qui croît dans le chunk) ne sont pas couverts : `chunk[j] = P[j mod s] + (j div s) * pas` serait
   une seconde sorte de motif. Mesurer d'abord sur de vraies connectivités.

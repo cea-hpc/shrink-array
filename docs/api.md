@@ -50,7 +50,7 @@ outside any parallel region, and it invalidates the array's proxies.
 | read | `operator[](i) const`, `at(i) const`, `front()`, `back()`, `operator()(i) const` | return a `T` |
 | write | `operator[](i)`, `at(i)` | return a write proxy (§4) |
 | raw reference | `operator()(i)` (non-const) | a `T&` into the buffer: **only on a materialised chunk**, bypasses the library |
-| grow, shrink **(S)** | `resize(n)`, `reserve(n)`, `clear()`, `shrink_to_fit()` | `shrink_to_fit()` also folds every chunk that became constant |
+| grow, shrink **(S)** | `resize(n)`, `reserve(n)`, `clear()`, `shrink_to_fit()` | `shrink_to_fit()` also folds every chunk that became constant; a negative `n` (here and in the constructor) throws `std::length_error`, as `std::vector` |
 | append | `push_back(v)`, `emplace_back(...)`, `pop_back()` | **(S)** only when it needs a new chunk |
 | replace **(S)** | `assign(n, v)`, `assign(first, last)`, `swap(other)`, `operator=` | |
 | iterate | `begin()`, `end()`, `cbegin()`, `rbegin()`, `rend()` | const random-access iterators, by value |
@@ -138,7 +138,7 @@ depend on how the library encodes the chunk inside.
 | `export_chunk(a, c)` | sequential: chunk `c`'s state; `data` points into `a`, valid until `a` is written |
 | `import_chunk(a, c, state)` | sequential: chunk `c` takes `state`, a constant without a buffer; `false` if the chunk was written |
 | `export_array(a)` | sequential: size, `chunk_size()`, zero_one_value's second value, every chunk's state |
-| `import_array(a, state)` | sequential: `a` becomes the array `state` describes, whatever it held; `false` (and `a` unchanged) at another chunk size |
+| `import_array(a, state)` | sequential: `a` becomes the array `state` describes, whatever it held; `false` (and `a` unchanged) at another chunk size; the chunks past `state`'s size (a `reserve()`) are not imported |
 
 Every variant and element type but `Bit` (ArrayChunkBits). Call them after the phase, as
 `fill_range`.
@@ -185,9 +185,9 @@ threads with these rather than with `omp_get_*`, so that the program builds with
 | `decider.consider<T>(a, tick, iter, "name")` | | analyses the array and applies the re-chunk if the policy agrees **(S)** |
 | `decider.print_rechunk_log()` | | the table of the re-chunks performed |
 | `a.rechunk_to(n)` **(S)** | | re-chunk one array to `n` elements per chunk (`a.try_rechunk_to(n)`: says why a size is refused) |
-| `a.set_chunk_size(n)` | | the geometry of an EMPTY array, before its first `resize()`; a no-op in a static build |
+| `a.set_chunk_size(n)` | | the geometry of an EMPTY array, before its first `resize()`; refused (warning) on an array that has chunks -- `rechunk_to()` moves the elements; a no-op in a static build (`a.try_set_chunk_size(n)`: says why a size is refused) |
 | `set_active_chunk_size(n)` | `chunk/chunk_size_advisor.h` | the process-wide chunk size, before `ParamChunk::init_indexes()`: the first geometry |
-| `set_thread_chunk_size(n)` | `chunk/chunk_size_advisor.h` | the chunk size of the arrays the calling thread builds next |
+| `set_thread_chunk_size(n)` | `chunk/chunk_size_advisor.h` | the size the calling thread's next chunk allocations are routed to; the library sets it before each allocation. Not a new array's geometry: arrays are born at `set_active_chunk_size()`, `a.set_chunk_size(n)` sets an empty one's |
 | `sizeof(zero_any::Chunk<T>)` | `chunk/zero_any_array.h` | the metadata of one chunk, for the advisor's options |
 
 The policy, its defaults and the measured results: [adaptive_rechunk.md](adaptive_rechunk.md).

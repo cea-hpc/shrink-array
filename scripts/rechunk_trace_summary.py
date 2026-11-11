@@ -18,7 +18,7 @@ import re
 import sys
 
 # As the log writes them (rechunk=debug) and as they were printed before.
-LINE = re.compile(r"(?:\[RECHUNK\]|\[shrink_array\]\[rechunk\]\[D\]\[\d+\]) \d+ -> \d+ (phases|slices \d+|teardown split) \(ms\): (.*)")
+LINE = re.compile(r"(?:\[RECHUNK\]|\[shrink_array\]\[rechunk\]\[D\]\[\d+\]) \d+ -> \d+ (phases|slices \d+|teardown split|drain split) \(ms\): (.*)")
 
 
 def summary(path):
@@ -38,6 +38,8 @@ def summary(path):
                 key = key.replace("of which ", "  ")
                 if m.group(1) == "teardown split":
                     key = "td:" + key
+                elif m.group(1) == "drain split":
+                    key = "dr:" + key
                 totals[key] = totals.get(key, 0.0) + float(value)
     return n, elapsed, totals
 
@@ -50,7 +52,9 @@ def main() -> int:
         n, elapsed, totals = summary(path)
         print(f"== {os.path.basename(path)}: {n} rechunk(s)  |  " + "  ;  ".join(elapsed))
         if totals:
-            print("   " + "  ".join(f"{k}={v / 1000:.2f}s" for k, v in totals.items()))
+            # Times in ms -> s; the drain's block counts are counts, not times.
+            print("   " + "  ".join(f"{k}={v:.0f}" if "blocks" in k else f"{k}={v / 1000:.2f}s"
+                                    for k, v in totals.items()))
         elif n == 0:
             print("   (no re-chunk in this run)")
         else:

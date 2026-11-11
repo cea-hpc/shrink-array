@@ -42,8 +42,11 @@
 #include "chunk/internal/TChunk.h"                       // ZeroAnyCompOf
 #include "chunk/internal/proxy_base.h"                   // ProxyBase
 #include "chunk/internal/second_value_proxy_base.h"      // SecondValueProxyBase
+#include "chunk/internal/stable_table.h"                 // StableTable: the outer per-array tables
+#include "chunk/internal/cold_path_lock.h"               // registry_mutex (zero_any::PointerMap)
 #include "chunk/internal/immortal.h"                     // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/parallel_storage_init.h"        // NoInitVector, resize_filled, for_each_chunk
+#include "chunk/internal/same_value.h"                   // same_value
 
 namespace shrink_array
 {
@@ -266,8 +269,8 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, ChunkT>
      * \brief Static container holding second values for each tab and chunk.
      * Indexed as tab_second_value[num_tab][num_chunk].
      */
-    static inline constinit internal::Immortal<std::vector<SecondValueRowT>> tab_second_value_storage_{};
-    static inline std::vector<SecondValueRowT>& tab_second_value = tab_second_value_storage_.value;
+    static inline constinit internal::Immortal<internal::StableTable<SecondValueRowT>> tab_second_value_storage_{};
+    static inline internal::StableTable<SecondValueRowT>& tab_second_value = tab_second_value_storage_.value;
 };
 
 } // namespace zero_any
@@ -366,8 +369,9 @@ class ProxySpec<bool, Derived, ChunkT> : public SecondValueProxyBase<Derived, bo
      * \brief Static container holding second values for each tab and chunk.
      * Indexed as tab_second_value[num_tab][num_chunk].
      */
-    static inline constinit internal::Immortal<std::vector<std::unique_ptr<bool[]>>> tab_second_value_storage_{};
-    static inline std::vector<std::unique_ptr<bool[]>>& tab_second_value = tab_second_value_storage_.value;
+    static inline constinit internal::Immortal<internal::StableTable<std::unique_ptr<bool[]>>>
+                                                                  tab_second_value_storage_{};
+    static inline internal::StableTable<std::unique_ptr<bool[]>>& tab_second_value = tab_second_value_storage_.value;
 };
 
 } // namespace zero_any
@@ -593,9 +597,9 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
     /**
      * @brief Per-tab array of flags indicating the type of constant value used.
      */
-    static inline constinit internal::Immortal<std::vector<parallel_storage_init::NoInitVector<CstSlot>>>
+    static inline constinit internal::Immortal<internal::StableTable<parallel_storage_init::NoInitVector<CstSlot>>>
         tab_type_cst_val_storage_{}; ///< type-of-constant flags
-    static inline std::vector<parallel_storage_init::NoInitVector<CstSlot>>& tab_type_cst_val =
+    static inline internal::StableTable<parallel_storage_init::NoInitVector<CstSlot>>& tab_type_cst_val =
         tab_type_cst_val_storage_.value;
 
     /**
@@ -736,8 +740,8 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
         // The "change" clause depends on the old value, which this filter does not see: let
         // any write of a non-second value through; the predicate decides on the old value.
         return this->pre_check_mark_for_compression_strict(new_value, first_value, second_val) ||
-               (second_val == first_value && new_value != first_value) ||
-               (second_val != first_value && new_value != second_val);
+               (same_value(second_val, first_value) && !same_value(new_value, first_value)) ||
+               (!same_value(second_val, first_value) && !same_value(new_value, second_val));
     }
 
     /**

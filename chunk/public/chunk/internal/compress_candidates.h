@@ -25,8 +25,10 @@
  * includes once TypeState is complete.
  */
 
-#include <tuple>  // std::get (erase_candidates_of_tab)
-#include <vector> // std::erase_if
+#include <atomic>  // std::atomic (the pass threshold)
+#include <tuple>   // std::get (erase_candidates_of_tab)
+#include <utility> // std::pair (removal_ranks)
+#include <vector>  // std::erase_if
 
 #include "chunk/bit.h"               // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/config.h"            // build_config::threaded
@@ -79,7 +81,7 @@ class CompressCandidates
     ///          candidate list, hence how often compression runs at all.
     static void set_size_max_number_of_chunk_to_check_compress(int max_chunks)
     {
-        size_max_number_of_chunk_to_check_compress = max_chunks;
+        size_max_number_of_chunk_to_check_compress.store(max_chunks, std::memory_order_relaxed);
     }
 
     /**
@@ -99,19 +101,31 @@ class CompressCandidates
         std::erase_if(candidates, [num_tab](const auto& tup) { return std::get<2>(tup) == num_tab; });
     }
 
+    /**
+     * @brief The ranks whose lists a teardown removal walks: [first, last).
+     * @details Every rank, unless @p own_rank_only: then the calling thread's
+     *          alone. That is the teardown, inside a region, of an array no
+     *          other rank has queued (internal::TabUsers) -- the other ranks
+     *          are appending to their lists, which hold nothing of it.
+     * @param nthr number of per-rank lists.
+     * @param own_rank_only walk the calling thread's list only.
+     */
+    [[nodiscard]] static std::pair<int, int> removal_ranks(int nthr, bool own_rank_only) noexcept;
+
     // Serial counterpart of zero_candidates_thr (likewise
     // zero_any_candidates). Declared in EVERY build, empty under
     // OpenMP, for the reason given at list_block_free_thr_by_size_.
     static inline constinit internal::Immortal<ZeroComp<ChunkT, T>> zero_candidates_storage_{};
     static inline ZeroComp<ChunkT, T>&                              zero_candidates = zero_candidates_storage_.value;
 
-    static inline int size_max_number_of_chunk_to_check_compress;
+    // Atomic: set on the cold path (under its lock), read by every write.
+    static inline constinit std::atomic<int> size_max_number_of_chunk_to_check_compress{0};
 
   public:
     /// @brief Candidate-list length that triggers a compression pass.
     [[nodiscard]] static int get_size_max_number_of_chunk_to_check_compress() noexcept
     {
-        return size_max_number_of_chunk_to_check_compress;
+        return size_max_number_of_chunk_to_check_compress.load(std::memory_order_relaxed);
     }
     // Serial-only on purpose: under OpenMP it would return the always-empty
     // serial store while the candidates sit per thread, so the constraint makes
@@ -144,7 +158,8 @@ class CompressCandidates
      * @note In plain fast-block-compression builds (GNU, no OMPT) this cleanup is
      *       the ONLY one: the built-in vec_tup.clear() runs only under OMPT.
      */
-    static void remove_from_zero_any_candidates_by_ptr_range(const void* lo, const void* hi) noexcept;
+    static void
+    remove_from_zero_any_candidates_by_ptr_range(const void* lo, const void* hi, bool own_rank_only = false) noexcept;
 
     /**
      * @brief Drop every queued zero_any candidate of array @p num_tab, in every
@@ -153,7 +168,7 @@ class CompressCandidates
      * @note Keeps other arrays' candidates. At teardown prefer
      *       remove_from_zero_any_candidates_by_ptr_range() (see why there).
      */
-    static void remove_from_zero_any_candidates_by_num_tab(int num_tab) noexcept;
+    static void remove_from_zero_any_candidates_by_num_tab(int num_tab, bool own_rank_only = false) noexcept;
 
     /**
      * @brief zero_one_value analogue: drop every queued zero_one_value candidate for @p num_tab.
@@ -166,13 +181,14 @@ class CompressCandidates
      * @note OpenMP builds only: a serial build queues no zero_one_value candidate (fast
      *       block compression is OpenMP-only), so there is nothing to drop.
      */
-    static void remove_from_zero_one_value_candidates_by_num_tab([[maybe_unused]] int num_tab) noexcept;
+    static void remove_from_zero_one_value_candidates_by_num_tab([[maybe_unused]] int num_tab,
+                                                                 bool                 own_rank_only = false) noexcept;
 
     /// @brief Drop every queued zero candidate of array @p num_tab
     ///        (zero::Array::clear_core and rechunk_to).
     /// @details Removes this array's candidates without compressing, and keeps
     ///          other arrays' intact.
-    static void remove_from_zero_candidates_by_num_tab(int num_tab) noexcept;
+    static void remove_from_zero_candidates_by_num_tab(int num_tab, bool own_rank_only = false) noexcept;
 
     /// @brief zero_one_value's candidate lists: per rank, one list per second value.
     static inline constinit internal::Immortal<ZeroOneValueCompMap<ChunkT, T>>

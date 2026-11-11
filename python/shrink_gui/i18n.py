@@ -53,6 +53,7 @@ EN = {
     "Lire les options": "Read options", "filtrer les options (nom ou aide)…": "filter the options (name or help)…",
     "Défauts de l'architecture": "Architecture defaults", "Enregistrer comme défauts": "Save as defaults",
     "arguments en plus, tels quels (facultatif)": "extra arguments, as they are (optional)",
+    "environnement : NOM=valeur … (facultatif)": "environment: NAME=value … (optional)",
     "Commande :": "Command:", "Soumettre": "Submit",
     # runs
     "Run": "Run", "Programme": "Program", "Job": "Job", "Statut": "Status",
@@ -232,6 +233,17 @@ EN = {
     "formulaire ne connaît pas (--no-gnu de compile_all.sh, par exemple).":
         "Arguments appended as they are to the command: for an option the form does not "
         "know (compile_all.sh's --no-gnu, for instance).",
+    "Variables d'environnement exportées avant la commande, sur le nœud : NOM=valeur, "
+    "séparées par des espaces (NOM=\"a b\" pour une valeur avec des espaces ; un ~/ en "
+    "tête devient le répertoire personnel de la machine du run).\n\n"
+    "Par exemple CHUNK_LLVM_ROOT=~/llvm-22 pour compile_all.sh. Elles l'emportent sur "
+    "celles de scripts/site_env.sh. Mémorisées par programme, et reprises avec "
+    "« Reprendre ses options ».":
+        "Environment variables exported before the command, on the node: NAME=value, "
+        "separated by spaces (NAME=\"a b\" for a value with spaces; a leading ~/ becomes the "
+        "home directory of the machine the run is on).\n\n"
+        "For instance CHUNK_LLVM_ROOT=~/llvm-22 for compile_all.sh. They win over those of "
+        "scripts/site_env.sh. Kept per program, and taken back by \"Reuse its options\".",
     "La commande exacte qui sera exécutée sur le nœud. Seules les options modifiées "
     "(en gras) y figurent : les autres gardent le défaut du script.":
         "The exact command run on the node. Only the changed options (in bold) are in it: "
@@ -702,6 +714,9 @@ EN_RE = [(re.compile(a), b) for a, b in (
     (r"^vérification des options de (\S+)…$", r"checking the options of \1…"),
     (r"^options non vérifiées \((.*)\) : soumis quand même$", r"options not checked (\1): submitted anyway"),
     (r"^commande illisible : ", "unreadable command: "),
+    (r"^environnement illisible : ", "unreadable environment: "),
+    (r"^environnement : « (.*) » n'est pas de la forme NOM=valeur$", r"environment: \"\1\" is not NAME=value"),
+    (r"^environnement : (\S+) est réservé au script du run$", r"environment: \1 is reserved for the run's script"),
     (r"^(\S+) : il faut (\S+) ou (\S+) \(sinon le job s'arrête aussitôt sur une erreur d'usage\)",
      r"\1: needs \2 or \3 (else the job stops at once on a usage error)"),
     (r" -- (.+) ne servent qu'avec (\S+) : est-ce lui qu'il fallait cocher \?$",
