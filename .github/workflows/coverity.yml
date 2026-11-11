@@ -59,8 +59,7 @@ jobs:
       - name: Toolchain
         if: steps.token.outputs.ok == 'true'
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev jq
+          .github/apt_install.sh g++-14 ninja-build libbz2-dev jq
       # The analysis tool (about 1 GB), cached under the checksum Scan gives
       # for its current version: downloaded again only when Scan moves on.
       - name: Coverity tool version
