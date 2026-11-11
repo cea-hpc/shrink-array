@@ -248,7 +248,7 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     /// @note Shrinking releases the dropped chunks' buffers (release_chunk_range():
     ///       freed serially, parked in the geometry's reuse list under OpenMP);
     ///       chunk_list_ keeps its capacity.
-    void resize(const IntType newsz) pre(newsz >= 0) post(this->size() == newsz);
+    void resize(const IntType newsz) post(this->size() == newsz);
 
   private:
     /// @brief Release the buffers of chunks [@p first, @p last) -- the chunks

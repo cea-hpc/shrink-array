@@ -95,9 +95,15 @@
  *               compressed again to motifs of the new size.
  *
  *          R  the chunk-size advisor on a pattern::Array and a zero_any::Array
- *             holding the same four kinds of chunks: the same table, row for row
- *             -- pattern's motif chunks are read as data (motif + offset), never
- *             as constants.
+ *             holding the same four kinds of chunks: the same constants, row for
+ *             row; pattern's materialised plus motif chunks are zero_any's
+ *             materialised ones (zero_any reads a motif's data as a buffer), and
+ *             at the current size the motif count is exact.
+ *          S  (dynamic geometry) the advisor's motif forecast: a connectivity --
+ *             one motif, regular offsets -- keeps its motifs at twice the chunk
+ *             size, and the model says the coarsening gains; four local motifs
+ *             with irregular offsets lose them, and the model says it loses (the
+ *             advisor once saw only the metadata gain: a x51 re-chunk).
  *
  *          Usage: pattern_validation [chunks]
  */
@@ -111,14 +117,14 @@
 #include "chunk/zero_any_array.h"        // zero_any::Array (H)
 #include "chunk/pattern_array.h"         // pattern::Array, pattern::MotifRegion
 #include "chunk/array_chunk_range_ops.h" // fill_range (M)
-#include "chunk/chunk_size_advisor.h"    // ChunkSizeAdvisor (R)
+#include "chunk/chunk_size_advisor.h"    // ChunkSizeAdvisor (R, S)
 #include "chunk/param_chunk.h"           // ParamChunk::init_indexes
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"                // chunk_config::use_zero_any, build_config::has_not_ompt
 #include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h"    // arg_number (checked, not atoi)
-#include "chunk/internal/print.h"        // shrink_array::println
+#include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
 
@@ -776,23 +782,114 @@ static void advisor_agrees(const char* tname, long nch)
     ZArr zarr(n);
     write_range(parr, ref, 0, n);
     write_range(zarr, ref, 0, n);
-    expect_true("R  pattern has motif chunks", motif_chunks(parr, nch) > 0);
+    const long nm = motif_chunks(parr, nch);
+    expect_true("R  pattern has motif chunks", nm > 0);
     const ChunkSizeReport pr   = ChunkSizeAdvisor<T>::analyze(parr);
     const ChunkSizeReport zr   = ChunkSizeAdvisor<T>::analyze(zarr);
-    bool                  same = pr.table.size() == zr.table.size() && !pr.table.empty();
+    bool                  same = pr.table.size() == zr.table.size() && !pr.table.empty() && pr.cur == zr.cur;
     for (std::size_t i = 0; same && i < pr.table.size(); ++i)
     {
         const auto& a = pr.table[i];
         const auto& b = zr.table[i];
-        same = a.size == b.size && a.n_chunks == b.n_chunks && a.mat == b.mat && a.cst == b.cst && a.exact == b.exact;
+        same          = a.size == b.size && a.n_chunks == b.n_chunks && a.mat + a.motif == b.mat && a.cst == b.cst &&
+                        a.exact == b.exact && b.motif == 0;
         if (!same)
         {
-            println("  R  row {}: pattern {} chunks {} mat {} cst; zero_any {} chunks {} mat {} cst", a.size,
-                    a.n_chunks, a.mat, a.cst, b.n_chunks, b.mat, b.cst);
+            println("  R  row {}: pattern {} chunks {} mat {} motif {} cst; zero_any {} chunks {} mat {} cst", a.size,
+                    a.n_chunks, a.mat, a.motif, a.cst, b.n_chunks, b.mat, b.cst);
         }
     }
     println("  {:<44} {} rows", "R  advisor table", pr.table.size());
-    expect_true("R  the same table as zero_any", same);
+    expect_true("R  zero_any's constants, its mat split into mat + motif", same);
+    if (pr.cur >= 0)
+    {
+        expect_eq("R  current size: the motif chunks, exact",
+                  static_cast<long>(pr.table[static_cast<std::size_t>(pr.cur)].motif), nm);
+    }
+}
+
+/// @brief S (see the file comment): the advisor's motif forecast, at twice the
+///        chunk size. Dynamic geometry only: a static build has no coarser candidate.
+template <typename T>
+static void advisor_motif_forecast(const char* tname, long nch)
+{
+    using PArr     = pattern::Array<T, long>;
+    const long csz = static_cast<long>(PArr(0).chunk_size());
+    const long n   = nch * csz;
+    println("--- pattern::Array<{}>  the advisor's motif forecast ({} chunks)", tname, nch);
+    std::uint64_t rng  = 7;
+    const auto    next = [&rng]
+    {
+        rng = rng * 6364136223846793005ULL + 1442695040888963407ULL;
+        return rng >> 33U;
+    };
+    // Four local motifs (element 0 at 0), and per chunk an irregular offset.
+    std::vector<std::vector<T>> local(4, std::vector<T>(static_cast<std::size_t>(csz)));
+    for (auto& m : local)
+    {
+        for (long j = 1; j < csz; ++j)
+        {
+            m[static_cast<std::size_t>(j)] = static_cast<T>(next() % 97);
+        }
+    }
+    std::vector<T> conn(static_cast<std::size_t>(n));
+    std::vector<T> irregular(static_cast<std::size_t>(n));
+    T              base = 0;
+    for (long c = 0; c < nch; ++c)
+    {
+        const auto& m = local[static_cast<std::size_t>(next() % 4)];
+        base          = static_cast<T>(base + static_cast<T>(1 + (next() % 900000))); // below 2^31 for int
+        for (long j = 0; j < csz; ++j)
+        {
+            conn[static_cast<std::size_t>((c * csz) + j)] =
+                static_cast<T>(local[0][static_cast<std::size_t>(j)] + c * 3);
+            irregular[static_cast<std::size_t>((c * csz) + j)] = static_cast<T>(m[static_cast<std::size_t>(j)] + base);
+        }
+    }
+    const auto row_at = [](const ChunkSizeReport& rep, long size) -> const ChunkSizeEstimate*
+    {
+        for (const auto& row : rep.table)
+        {
+            if (static_cast<long>(row.size) == size)
+            {
+                return &row;
+            }
+        }
+        return nullptr;
+    };
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        const bool  regular = pass == 0;
+        PArr        arr(n);
+        const auto& ref = regular ? conn : irregular;
+        write_range(arr, ref, 0, n);
+        write_range(arr, ref, 0, n); // the second sightings: every chunk a motif
+        const ChunkSizeReport rep = ChunkSizeAdvisor<T>::analyze(arr);
+        const auto*           cur = rep.cur >= 0 ? &rep.table[static_cast<std::size_t>(rep.cur)] : nullptr;
+        const auto*           two = row_at(rep, 2 * csz);
+        if (cur == nullptr || two == nullptr)
+        {
+            println("  {:<44} no row at {} (static geometry): skipped", "S  forecast", 2 * csz);
+            return;
+        }
+        const char* what = regular ? "S  connectivity" : "S  irregular offsets";
+        println("  {:<44} current {} motif / {:.0f} B, at {}: {} motif / {:.0f} B", what,
+                static_cast<long long>(cur->motif), cur->mem_bytes, 2 * csz, static_cast<long long>(two->motif),
+                two->mem_bytes);
+        expect_true("S  current size: motif chunks counted", cur->motif >= nch / 2 && cur->mat <= nch / 2);
+        if (regular)
+        {
+            expect_true("S  connectivity: motifs kept at twice the size", two->motif >= (nch / 2) - 2);
+            expect_true("S  connectivity: coarsening forecast as a gain", two->mem_bytes < cur->mem_bytes);
+        }
+        else
+        {
+            expect_true("S  irregular: (almost) no motif at twice the size", two->motif <= 2);
+            expect_true("S  irregular: coarsening forecast as a loss", two->mem_bytes > cur->mem_bytes);
+            expect_true("S  irregular: the best size is not coarser",
+                        rep.best >= 0 && rep.table[static_cast<std::size_t>(rep.best)].size <= cur->size);
+        }
+    }
 }
 
 /// @brief H (see the file comment): the registry shared with zero_any.
@@ -871,6 +968,8 @@ int run(int argc, char** argv)
     motif_compression<short>("short", nch);
     advisor_agrees<int>("int", nch);
     advisor_agrees<long>("long", nch);
+    advisor_motif_forecast<int>("int", nch < 2048 ? 2048 : nch);
+    advisor_motif_forecast<long>("long", nch < 2048 ? 2048 : nch);
 
     release_chunk_pools();
     destroy_block_chunk();

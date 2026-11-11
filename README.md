@@ -14,7 +14,8 @@ On the reference benchmark, a billion-element workload that needs **125.9 GB** w
 `std::vector` runs in **6 to 7.3 GB**: up to 20 times less memory, with no change to the loops.
 
 - **Drop-in**: `a[i] = v`, `a[i] += x`, `resize`, `push_back`, range-for. No new indexing, no
-  rebuild step, no loss.
+  rebuild step, no loss: an element reads back the bits written, `-0.0` and NaN payloads
+  included.
 - **Compresses while the program runs**: a chunk that becomes uniform gives its buffer back;
   one that is written again gets a new one.
 - **Any repeated value**, not only zero (`zero_any`), for any trivially copyable type: `double`,

@@ -20,6 +20,7 @@
 
 #include "chunk/internal/second_value_proxy_base.h" // the declarations these bodies belong to
 #include "chunk/internal/in_t.h"                    // InT<T>
+#include "chunk/internal/same_value.h"              // same_value
 
 namespace shrink_array
 {
@@ -41,7 +42,7 @@ void SecondValueProxyBase<Derived, T, ChunkT>::mark_for_compression_core(this co
     // Check if transition is valid for compression OR if memory changed unexpectedly (Race)
     // isv (Is Valid) guards the entire check for performance.
     if (isv && (self.should_mark_for_compression(old_value, new_value, std::forward<Args>(compression_args)...) ||
-                (self.Base::load_value() != expected_in_memory))) [[unlikely]]
+                !same_value(static_cast<T>(self.Base::load_value()), static_cast<T>(expected_in_memory)))) [[unlikely]]
     {
         self.add_to_compression_list();
     }
@@ -77,7 +78,7 @@ void SecondValueProxyBase<Derived, T, ChunkT>::mark_for_compression_before_store
     }
     const T old = self.Base::read_values_at(vals);
     if (self.should_mark_for_compression(old, new_value, second_val, first_value) ||
-        (self.Base::read_values_at(vals) != old)) [[unlikely]]
+        !same_value(static_cast<T>(self.Base::read_values_at(vals)), old)) [[unlikely]]
     {
         self.add_to_compression_list();
     }

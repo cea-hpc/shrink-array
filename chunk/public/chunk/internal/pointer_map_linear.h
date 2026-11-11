@@ -37,6 +37,8 @@
 
 #include <utility> // std::swap
 
+#include "chunk/internal/cold_path_lock.h" // registry_mutex: a lookup against a registration
+
 namespace shrink_array
 {
 
@@ -85,6 +87,7 @@ class PointerMapLinear
      */
     [[nodiscard]] bool exists(Key key) const noexcept
     {
+        const internal::RegistryReadLock registry_lock(internal::registry_mutex());
         return find_payload(key) != nullptr;
     }
 

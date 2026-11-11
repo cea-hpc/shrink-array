@@ -61,14 +61,13 @@
 #include <utility>   // std::as_const
 #include <vector>    // std::vector (the box buffers)
 
-#include "chunk/zero_any_array.h"      // zero_any::Array
-#include "chunk/internal/zero_chunk.h" // release_chunk_pools, destroy_block_chunk
-#include "chunk/internal/print.h"      // shrink_array::println
-#include "chunk/manage_ompt.h"         // parallel_phase
-#include "chunk/mdspan.h"              // shrink_array::md
-#include "chunk/internal/PMP_CHUNK.h"  // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
+#include "chunk/zero_any_array.h" // zero_any::Array
+#include "chunk/print.h"          // shrink_array::println
+#include "chunk/manage_ompt.h"    // parallel_phase
+#include "chunk/mdspan.h"         // shrink_array::md, SHRINK_ARRAY_HAS_MDSPAN
+#include "chunk/threads.h"        // pmp::team_size, pmp::thread_rank
 #include "chunk/mdspan_tile_ops.h" // md::for_each_tile(_mt), md::update_tiles, md::fill_box(_mt), md::copy_box_*(_mt), md::stencil_tiles_mt
-#include "chunk/param_chunk.h" // ParamChunk::init_indexes
+#include "chunk/param_chunk.h" // ParamChunk::init_indexes, release_chunk_pools, destroy_block_chunk
 
 namespace sa = shrink_array;
 
@@ -384,8 +383,8 @@ void paint(long n, int& bad)
         [&]
         {
             // Each thread one contiguous slice of the tiles, every rectangle in order.
-            const long nth   = CHUNK_PMP_NUM_THREADS;
-            const long me    = CHUNK_PMP_THREAD_RANK;
+            const long nth   = shrink_array::pmp::team_size();
+            const long me    = shrink_array::pmp::thread_rank();
             const long first = ntiles * me / nth;
             const long last  = ntiles * (me + 1) / nth;
             for (const Rect& r : rects)
@@ -555,8 +554,8 @@ void box_copy(long n, int& bad)
     t0            = std::chrono::steady_clock::now();
 #pragma omp parallel
     {
-        const long nth = CHUNK_PMP_NUM_THREADS;
-        const long me  = CHUNK_PMP_THREAD_RANK;
+        const long nth = shrink_array::pmp::team_size();
+        const long me  = shrink_array::pmp::thread_rank();
         const long r0  = lo[0] + (hi[0] - lo[0]) * me / nth;
         const long r1  = lo[0] + (hi[0] - lo[0]) * (me + 1) / nth;
         if (r0 < r1)
@@ -575,8 +574,8 @@ void box_copy(long n, int& bad)
     sa::parallel_phase(
         [&]
         {
-            const long nth = CHUNK_PMP_NUM_THREADS;
-            const long me  = CHUNK_PMP_THREAD_RANK;
+            const long nth = shrink_array::pmp::team_size();
+            const long me  = shrink_array::pmp::thread_rank();
             const long r0  = lo[0] + (hi[0] - lo[0]) * me / nth;
             const long r1  = lo[0] + (hi[0] - lo[0]) * (me + 1) / nth;
             if (r0 < r1)

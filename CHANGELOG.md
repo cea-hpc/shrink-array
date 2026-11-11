@@ -60,6 +60,29 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `CHUNK_PHASE_FENCES=0` runs without the four `seq_cst` fences that close the phase functions
+  (`chunk/private/all_type_chunk.cpp`), with a warning. They were kept as "empirically
+  load-bearing" since one unexplained checksum in August 2026; no handshake needs them as far
+  as the code reads, and several defects that lost deferred writes at phase boundaries have been
+  fixed since. The switch is there to settle it by measure before they are removed; the default
+  keeps them (`docs/developer_settings.md` §1).
+- `shrink_gui` 0.16: an environment field under the extra arguments (`NAME=value` words),
+  exported in `run.sh` and `node.sh` before the command -- `CHUNK_LLVM_ROOT=~/llvm-22` for
+  `compile_all.sh`, a run-time switch of the library for a bench. Exported before
+  `scripts/site_env.sh` and again after it (the run's value wins); a leading `~/` is the home
+  directory of the machine the run is on. Kept per program, written to `meta.json` (`env`),
+  taken back by "Reprendre ses options", shown before the command and in the run's log.
+- `shrink_gui`: the left panel ("Où et comment", "Quoi") scrolls when the window is shorter
+  than it, and "Soumettre" stays below it, always in view: with one more field the button was
+  pushed out of a laptop screen.
+- SonarQube Cloud (project `cea-hpc_shrink-array`): `.github/workflows/sonar.yml` analyses
+  the tree on every push to develop and main, and on demand, with the rules of SonarQube for IDE
+  (SonarLint) -- the C++ from CMake's compilation database, one entry per source file, nothing
+  compiled; `sonar-project.properties` says what is analysed. Needs the `SONAR_TOKEN` secret
+  (without it the job stops, green). `scripts/sonar_export.py` writes every issue of a branch
+  to one JSON or CSV file (`--hotspots` adds the security hotspots), through the Web API and
+  the shell's Kerberos proxy, as `coverity_submit.sh` does; past the API's 10,000 issues per
+  query it splits the query by language, type, severity, rule or directory.
 - `docs/design.md` (`docs/conception_fr.md` in French), the design document: requirements and
   non-goals, the parts and their scope, static polymorphism, build-time configuration, the
   access paths, the concurrency model, memory, dynamic geometry, backends, the decisions with
@@ -75,9 +98,33 @@ the tag's checksum to the recipe.
   the top of the speedup curve, the others still uniform over the range. In `shrink_gui` too.
 - `diag_zero_rechunk_slowdown.py`: the resident memory against the static run, the churn per array
   after the last re-chunk and, with `--perf`, the samples' share in the compression passes.
+- **Three additions to the public interface**, what the examples needed from `internal/`:
+  `chunk/threads.h` (new): `pmp::max_threads()`, `pmp::team_size()`, `pmp::thread_rank()`, the
+  threads of whatever backend the build has (OpenMP, std, serial), instead of
+  `CHUNK_PMP_MAX_THREADS`; `chunk/print.h` (was `chunk/internal/print.h`): `print` / `println`;
+  `set_active_chunk_size()`, `set_thread_chunk_size()` (through `chunk/chunk_size_advisor.h`)
+  and `zero_any::Chunk` (through `chunk/zero_any_array.h`, for `sizeof` in the advisor's
+  options), and the arrays' `set_chunk_size()` (an empty array's geometry). 18 public headers. `simple_array`, `test_vecto_chunk`, `variant_compare`,
+  `access_cost`, `advisor_demo`, `getting_started` and `bool_arrays` include public headers
+  only, and `check_public_api` fails when an example outside the harnesses and the benchmarks
+  includes an internal one.
 
 ### Changed
 
+- std backend: `Team::barrier()` spins for `CHUNK_PMP_SPIN_US` (default 1000 us) before sleeping,
+  as OpenMP's blocktime does, instead of a `std::barrier` that slept on a futex almost at once;
+  `single()` is lock-free (one CAS on a team-wide mark, no mutex, no map slot per construct); the
+  pool's hand-offs spin for the same budget. At 160 threads the re-chunk's slice-boundary drain
+  took 2.45 s in the TBB bench against 0.24 s with OpenMP, the time in the team's
+  synchronisation. `CHUNK_PMP_SPIN_US=0` sleeps at once (the former behaviour, for A/B).
+  `team_sync_validation` (and `team_sync_validation_nospin`) checks barriers, singles and many
+  teams in a row; `--bench` prints their cost.
+- The end-of-life census line of a zero array says what the variant compresses: "few all-zero
+  chunks — zero compresses only all-zero chunks" instead of "compression marginal vs
+  std::vector", which read as a failure on an array zero cannot help. `shrink_bench` says
+  before `tab_conn`'s line, in zero builds, that a connectivity is pattern::Array's case.
+- `fill_range_mt` skips a chunk already at the fill value with one test, as `fill_range` does,
+  instead of arming it element by element; `fill_range` does the same on its `bool` path.
 - **The public interface, narrowed and frozen** (breaking). The public headers are what
   `docs/api.md` documents; `PMP_CHUNK.h`, `all_type_chunk.h`, `chunk_traits.h`,
   `global_stats_chunk_list.h`, `ring_log_debug.h`, `singleton.h`, `term_color.h`,
@@ -109,6 +156,8 @@ the tag's checksum to the recipe.
 
 ### Removed
 
+- `python/run_test.py`: it ran a `test/test1` that no longer exists, under a path left as
+  `????` when the tree went public; `bench_runner` averages the memory over runs.
 - `chunk/debug.h`, which nothing included (`print_backtrace` is
   `fast_alloc::logging::print_backtrace`).
 - **The other compatibility paths kept until 1.0** (breaking). The variant macros
@@ -142,6 +191,112 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- std backend: a thread building, re-chunking or destroying a large array outside a region could
+  deadlock with another thread's team. It held the cold-path lock and waited for the pool (one
+  team at a time) while a member of the team holding the pool waited for that lock to build its
+  own array (ThreadSanitizer's lock-order inversion in `bulk_write_team_validation`). The pool
+  no longer makes a team wait: when another thread's team holds it, the new team runs as a team
+  of one on its caller, as a nested or application-phase team already does.
+- Building or destroying arrays from several threads of a region at once corrupted the heap
+  (a crash in most runs: 15 of 16 with a work array per thread and per iteration). The
+  constructor grew the per-array tables that every write of every other thread indexes, and
+  wrote the identity registry and the manager's totals with no lock. Building and destroying an
+  array now take a cold-path lock (`internal/cold_path_lock.h`); the tables indexed by
+  `num_tab` no longer move their rows (`internal/stable_table.h`); the two thresholds the write
+  path reads are atomics; the identity registries have a reader lock. A work array destroyed
+  inside a region is torn down on its thread's rank alone (`internal/tab_users.h`: no walk of
+  the other ranks' lists, no pass over the other arrays, no allocator set of its own) after one
+  `read_reclaim` grace period. Arrays another rank has used keep the sequential-point teardown.
+  `resize()`, copies and `rechunk_to()` stay sequential points. `region_storage_validation`
+  gains the whole-team case; `docs/getting_started.md` states the contract.
+- A deferred enqueue raised its writer flag on the chunk it was deferred for -- a chunk the
+  compressor had marked -- so a pass parked in `start()` (whose window is "no writer on a chunk
+  I marked") waited for the very writers its mark had sent to the slow path, on its yield
+  budget, and could give up. The enqueue publishes a tag instead of the chunk: the flushers
+  still see a raised flag, the compressor's window skips it. `formal/writer_compressor.c`
+  already lowered the flag before the capture.
+- `wait_before_materialise()` (`zero_any`, `pattern`) waited for the compressor's mark with a
+  pause and no yield, against the library's rule (1000 pauses, then a yield): with more threads
+  than cores (the std backend, TBB) a thread could spin a whole time slice while the pass that
+  holds the mark waited for a core. It yields after 1000 pauses now.
+- `dekker::heavy_barrier()` ignored the return of `membarrier(MEMBARRIER_CMD_PRIVATE_EXPEDITED)`.
+  Under the asymmetric handshake the writers announce with a compiler barrier only, so a failed
+  call -- after a successful registration it cannot fail but under a seccomp filter installed
+  later -- would let a pass free a buffer a writer is in, silently. It stops now, in every
+  build, with the errno.
+- `zero_any` (and `pattern`): a pass handed its candidates' queue flags back after all its
+  scans, while the scan had already lowered the mark of a candidate it dropped. A writer that
+  found that mark down and made the chunk constant met the flag still "queued" and gave up; the
+  pass then released the flag, and the chunk stayed constant and materialised in no list until
+  its next write: memory not reclaimed, no wrong value -- F6's window, open again for those
+  chunks (`formal/queue_handback.c`'s `MUT_HANDBACK_AFTER_UNMARK`). Each candidate's flag is
+  handed back in the scan, before its mark can go down, as `zero` and `zero_one_value` do.
+  `docs/formal_models.md` section 8.7.
+- A second `ParamChunk::init_indexes()` with the other argument (or `init_indexes(false)` after
+  the first array had run `init_indexes(true)`) changed the allocation block size: the
+  allocators registered afterwards cut their slabs to another size than the earlier ones of the
+  same element type, against the one-slab-size-per-type invariant `slab_of()` relies on
+  (`tc_allocator.h`). Out of contract (`docs/api.md`: once), now enforced: a call that would
+  change the block size is ignored with a warning; the same size again is a harmless repeat.
+  `pool_accounting` checks both.
+- `a.push_back(a(i))` and `a.resize(n, a(i))` past the capacity, with an element of more than 16
+  bytes (passed by reference): `resize()` ran first, and its compression pass could release the
+  buffer `a(i)` points into, which the write of the new element could then reuse, filled with the
+  constant, before the value was read. Both copy the value before `resize()`, as `assign()`
+  already did. `open_types_validation` checks both on a 24-byte struct (`zero` and `zero_any`:
+  `zero_one_value` has no `a(i)` on a non-`bool` element).
+- `docs/api.md` section 7 said `set_thread_chunk_size(n)` gives "the chunk size of the arrays the
+  calling thread builds next"; a new array still took the process-wide size. It routes the
+  calling thread's chunk allocations, and the library sets it before each of them: the table
+  and the function's comment say so, and point to `set_active_chunk_size()` and
+  `a.set_chunk_size()` for a new array's geometry.
+- `import_array(b, export_array(a))` returned `false` whenever `a` had another chunk count than a
+  fresh array of its size: after `a.reserve(10000)` (40 chunks for 10 elements), or for an array
+  grown by 256 `push_back` (1 chunk, against 2 for a fresh array of 256). A checkpoint could
+  refuse to load. `import_array()` imports the chunks that hold elements, the first
+  `ceil(size / chunk_size)`, and refuses only another chunk size or a state with fewer chunks
+  than its size needs. `chunk_exchange_validation` imports both kinds of array.
+- A negative size was accepted: `a.resize(-1)` threw nothing and left `size() == -1`,
+  `a.reserve(-1)` raised the capacity to 4,294,967,296, `Array(-1)` built an array. They throw
+  `std::length_error` now, as `std::vector`, and leave the array as it was. `shrink_bench
+  --test_stl` checks the three, against `std::vector` too.
+- `a.set_chunk_size(n)` on an array that had chunks changed its geometry without moving them:
+  on 100,000 written elements, 64 -> 1024 left the 1563 chunks where they were, and `a[99000]`
+  read another element; the size also became the birth size of every array built afterwards.
+  The documentation said "the geometry of an EMPTY array", nothing enforced it. Another size on
+  an array that has chunks is now refused with a warning, geometry kept (`rechunk_to()` moves
+  the elements); the same size stays accepted. `advisor_demo`, which built an `Array(1)` then
+  set another size, builds an `Array(0)`. `rechunk_validation`'s refusal case checks it.
+- `rechunk_to()` corrupted the heap on an array ending less than a chunk below `INT_MAX` (an `int`
+  index, `_dyn` build): a `zero_any::Array<int8_t>` of `INT_MAX` elements, its last ten written,
+  re-chunked 4096 -> 2048, stopped on a glibc `malloc.c` assertion. The end of the last chunk,
+  `base + chunk_size`, was computed in the index type and wrapped negative, and `hi - lo` became a
+  huge `memcpy` length. Computed in `long long`, as `write_range_by_chunks` already did.
+  `index64_validation`'s `int-top-rechunk` case re-chunks such an array to the other geometry and
+  back.
+- The sign of a zero was lost: a `-0.0` written to an array read back `+0.0` (`1.0 / x` went
+  from `-inf` to `+inf`, `std::signbit`, `std::copysign`, `std::atan2` changed), for `float`,
+  `double` and `std::complex`, in the three variants -- a write onto a chunk compressed to zero,
+  a whole chunk written in parallel, a materialised chunk rewritten then compressed, a single
+  element onto a `+0.0`, `fill_range`/`fill_range_mt`. Every "already there" / "the run is the
+  constant" decision compared with `==`, and `-0.0 == +0.0`. They now go through
+  `same_value()` (`internal/same_value.h`): the bits for `float` and `double` (a run of `-0.0`
+  is no longer compressed to the zero constant -- in `zero_any` it compresses to its own
+  constant; a run of one NaN payload now compresses and reads back bit for bit), `==` and the
+  sign bit for `long double`, part by part for `std::complex` and `std::array`, `==` for the
+  other types. An aggregate of floating-point members keeps comparing them with its `==`
+  unless it specialises `shrink_array::ValueIdentity<T>`. `zero_one_value` orders its second
+  values to match (`ValueLess`): `-0.0` can be a second value. `signed_zero_validation` checks
+  every case, bit for bit, in each variant.
+- `ChunkSizeAdvisor` counted a `pattern::Array`'s motif chunks as materialised, at every size:
+  its model of an array of motifs was off by two orders of magnitude, and blind to what a
+  coarsening loses. With the decider applying, a `pattern::Array<int>` of 2^26 elements (8
+  local motifs, irregular offsets) was re-chunked 256 -> 1024, from 5.25 MB to 270 MB, and
+  kept there. The advisor now counts them (`ChunkSizeEstimate::motif`, new, appended; `mat`
+  no longer includes them; `mem_bytes` adds one entry per distinct motif) and forecasts them
+  at the other sizes from the motif pointers and offsets. `pattern_validation` gains S.
+- CI: the `check_*` step ran 8 of the 10 `scripts/check_*.py`; `check_public_api` (the frozen
+  interface) and `check_inline_bodies` ran under ctest only. Both are in the loop.
 - `README.md` and `README_fr.md` gave the version as 0.1.
 - `check_doxygen.py` run by hand with no Doxygen installed ended on a
   `FileNotFoundError` traceback: it says Doxygen is not found and exits 77 (skipped).

@@ -39,8 +39,8 @@
 #include "chunk/zero_any_array.h"       // zero_any::Array
 #include "chunk/internal/zero_chunk.h"  // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"               // chunk_config::use_zero_one_value*
-#include "chunk/internal/print.h"       // shrink_array::println
-#include "chunk/mdspan.h"               // shrink_array::md
+#include "chunk/print.h"                // shrink_array::println
+#include "chunk/mdspan.h"               // shrink_array::md, SHRINK_ARRAY_HAS_MDSPAN
 #include "chunk/param_chunk.h"          // ParamChunk::init_indexes
 
 using namespace shrink_array;

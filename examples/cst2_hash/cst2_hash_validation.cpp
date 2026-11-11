@@ -39,10 +39,10 @@
 #include <cstring> // std::memset
 #include <utility> // std::as_const
 
-#include "chunk/zero_any_array.h"      // shrink_array::zero_any::Array, SecondValueStats
-#include "chunk/internal/zero_chunk.h" // release_chunk_pools, destroy_block_chunk
-#include "chunk/manage_ompt.h"         // parallel_phase
-#include "chunk/internal/print.h"      // shrink_array::println
+#include "chunk/zero_any_array.h" // shrink_array::zero_any::Array, SecondValueStats
+#include "chunk/param_chunk.h"    // release_chunk_pools, destroy_block_chunk
+#include "chunk/manage_ompt.h"    // parallel_phase
+#include "chunk/print.h"          // shrink_array::println
 
 namespace sa = shrink_array;
 

@@ -16,6 +16,7 @@
 
 #pragma once
 #include "chunk/internal/tab_cst_val2_holder.h" // the class these bodies belong to
+#include "chunk/internal/same_value.h"          // same_value
 
 namespace shrink_array
 {
@@ -317,7 +318,7 @@ T* GlobalVecHolder<T>::index_lookup(InT<T> value) noexcept
         {
             return nullptr; // empty slot => value is not indexed here
         }
-        if (value_of_ptr(entry) == value)
+        if (same_value(value_of_ptr(entry), value))
         {
             return entry; // validated hit
         }
@@ -345,7 +346,7 @@ void GlobalVecHolder<T>::index_publish(InT<T> value, T* ptr) noexcept
             const T*     cur = table->slots[idx].load(std::memory_order_acquire);
             if (cur != nullptr)
             {
-                if (value_of_ptr(cur) == value)
+                if (same_value(value_of_ptr(cur), value))
                 {
                     return; // already indexed (equivalent pointer)
                 }
@@ -646,7 +647,7 @@ template <typename T>
     {
         for (int i = 0; i < seg->used; ++i)
         {
-            if (Gvh::value_of_ptr(seg->slots[i]) == second_v)
+            if (same_value(Gvh::value_of_ptr(seg->slots[i]), second_v))
             {
                 return seg->slots[i];
             }
@@ -729,7 +730,7 @@ template <typename T>
         {
             for (int i = 0; i < seg->used; ++i)
             {
-                if (VecHolder::value_of_ptr(seg->slots[i]) == second_v)
+                if (same_value(VecHolder::value_of_ptr(seg->slots[i]), second_v))
                 {
                     VecHolder::index_publish(second_v, seg->slots[i]);
                     return seg->slots[i];

@@ -122,9 +122,9 @@ the arrays of one type -- the pools a compressed buffer goes back to, the candid
 pass drains, the registry of second values -- lives in that type's manager, and nothing is
 shared across types.
 
-What a program sees is much narrower: the 16 headers of `chunk/public/chunk/` outside `internal/`
+What a program sees is much narrower: the 18 headers of `chunk/public/chunk/` outside `internal/`
 (the arrays, the range operations, the export and import of chunk states, the start and stop of
-the library, the phases, the dynamic geometry, the configuration and the log). They and the names
+the library, the phases, the dynamic geometry, the configuration, the log, the threads and the output). They and the names
 of [api.md](api.md) are the interface, frozen in `scripts/public_api.txt` and checked by
 `check_public_api`; everything else, including the members of the public classes that name the
 machinery (`ManagerType`, `ChunkListType`...), can change in any release.
@@ -243,6 +243,19 @@ The program alternates **serial points** and **parallel phases**:
 - at a **serial point**, one thread is alone with the arrays: `resize`, `shrink_to_fit`,
   `assign`, a rechunk, the range operations without `_mt`, the export and import of
   chunk states (`chunk/chunk_exchange.h`), `set_second_value`.
+
+Building and destroying an array is neither: a thread may do it inside a phase, for a work
+array of its own. That **cold path** writes state shared by every array of the element type
+(the identity registry, the next `num_tab`, the outer per-array tables, the manager's totals),
+so it takes one lock for the whole library (`internal/cold_path_lock.h`). The hot path takes
+none: the tables it indexes by `num_tab` never move their rows (`internal/stable_table.h`), the
+thresholds it reads are atomics, and the registry has a reader lock for the lookups made
+outside the cold path (replays, check builds). A teardown inside a phase cannot walk the other
+ranks' candidate lists and deferred queues, which their threads are appending to:
+`internal/tab_users.h` records which ranks hold something of each array, and an array that
+only the calling rank has used is torn down on that rank alone, with no pass over the other
+arrays. Before its chunk list is freed, one grace period of `read_reclaim` covers a
+compressor's `start()`, whose scan reads the chunk each writer announced.
 
 The **phase contract** (`chunk/manage_ompt.h`): every thread that writes calls
 `begin_parallel_phase()` before its first write (it caches its rank), and one thread calls
@@ -444,10 +457,9 @@ backend rather than add a TBB backend: a TBB program links TBB, the library does
     chunk but one more cache line per motif read; in the chunk object it would cost 8 bytes per
     chunk and save that line. To be settled by a measurement with `access_cost_pattern` on
     motif-heavy reads;
-  - *the advisor's motif forecast*: the advisor reads a motif chunk as data and forecasts no
-    motif compression at the other sizes, so it is never optimistic but undervalues a rechunk of
-    a `pattern` array. A forecast from the sampled chunks is cheap, but it changes
-    `ChunkSizeEstimate` -- a public struct, hence the API -- and the decider;
+  - *the advisor's motif forecast* sees only the windows made of motif and constant chunks
+    (`ChunkSizeEstimate::motif`); it read a motif chunk as data until November 2026, and could
+    then coarsen an array whose motifs do not survive the larger windows (x51 measured);
   - *motifs shorter than a chunk* (a stride that does not divide the chunk size, an offset that
     grows inside the chunk) are not covered: `chunk[j] = P[j mod s] + (j div s) * step` would be
     a second kind of motif, to be measured on real connectivities first.

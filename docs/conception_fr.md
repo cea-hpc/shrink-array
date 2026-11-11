@@ -122,10 +122,10 @@ d'un même type doivent partager -- les pools où retourne un buffer comprimé, 
 candidats qu'une passe vide, le registre des secondes valeurs -- vit dans le manager de ce type,
 et rien n'est partagé entre types.
 
-Ce que voit un programme est bien plus étroit : les 16 en-têtes de `chunk/public/chunk/` hors
+Ce que voit un programme est bien plus étroit : les 18 en-têtes de `chunk/public/chunk/` hors
 `internal/` (les tableaux, les opérations par plage, l'export et l'import d'états de chunks, le
-démarrage et l'arrêt de la bibliothèque, les phases, la géométrie dynamique, la configuration et le
-journal). Eux et les noms d'[api_fr.md](api_fr.md) forment l'interface, figée dans
+démarrage et l'arrêt de la bibliothèque, les phases, la géométrie dynamique, la configuration, le
+journal, les threads et la sortie). Eux et les noms d'[api_fr.md](api_fr.md) forment l'interface, figée dans
 `scripts/public_api.txt` et vérifiée par `check_public_api` ; tout le reste, y compris les membres
 des classes publiques qui nomment la machinerie (`ManagerType`, `ChunkListType`…), peut changer
 d'une version à l'autre.
@@ -251,6 +251,21 @@ Le programme alterne **points séquentiels** et **phases parallèles** :
 - en un **point séquentiel**, un seul thread est seul avec les tableaux : `resize`,
   `shrink_to_fit`, `assign`, un rechunk, les opérations par plage sans `_mt`, l'export et l'import
   d'états de chunks (`chunk/chunk_exchange.h`), `set_second_value`.
+
+Construire et détruire un tableau n'est ni l'un ni l'autre : un thread peut le faire pendant une
+phase, pour un tableau de travail qui lui est propre. Ce **chemin froid** écrit un état partagé
+par tous les tableaux du type d'élément (le registre d'identité, le prochain `num_tab`, les
+tables externes par tableau, les totaux du gestionnaire) : il prend un verrou unique pour toute
+la bibliothèque (`internal/cold_path_lock.h`). Le chemin chaud n'en prend aucun : les tables
+qu'il indexe par `num_tab` ne déplacent jamais leurs lignes (`internal/stable_table.h`), les
+seuils qu'il lit sont des atomiques, et le registre a un verrou de lecture pour les recherches
+faites hors du chemin froid (rejeux, builds de contrôle). Un démontage pendant une phase ne
+peut pas parcourir les listes de candidats et les files différées des autres rangs, que leurs
+threads sont en train d'allonger : `internal/tab_users.h` note quels rangs détiennent quelque
+chose de chaque tableau, et un tableau que seul le rang appelant a utilisé est démonté sur ce
+rang seul, sans passe sur les autres tableaux. Avant de libérer sa liste de chunks, un délai de
+grâce de `read_reclaim` couvre le `start()` d'un compresseur, dont le balayage lit le chunk
+annoncé par chaque écrivain.
 
 Le **contrat de phase** (`chunk/manage_ompt.h`) : chaque thread qui écrit appelle
 `begin_parallel_phase()` avant sa première écriture (il met son rang en cache), et un thread
@@ -465,11 +480,10 @@ les étapes et le contrat de phase.
     octet par chunk mais une ligne de cache de plus par lecture de motif ; dans l'objet chunk, il
     coûterait 8 octets par chunk et économiserait cette ligne. À trancher par une mesure avec
     `access_cost_pattern` sur des lectures dominées par les motifs ;
-  - *la prévision des motifs par le conseiller* : le conseiller lit un chunk motif comme des
-    données et ne prévoit aucune compression en motif aux autres tailles ; il n'est donc jamais
-    optimiste, mais sous-estime l'intérêt d'un rechunk d'un tableau `pattern`. Une prévision sur
-    les chunks échantillonnés coûte peu, mais elle change `ChunkSizeEstimate` -- une struct
-    publique, donc l'API -- et le décideur ;
+  - *la prévision des motifs par le conseiller* ne voit que les fenêtres faites de chunks motifs
+    et constants (`ChunkSizeEstimate::motif`) ; jusqu'en novembre 2026 il lisait un chunk motif
+    comme des données, et pouvait alors grossir un tableau dont les motifs ne survivent pas aux
+    fenêtres plus grandes (×51 mesuré) ;
   - *les motifs plus courts qu'un chunk* (un pas qui ne divise pas la taille du chunk, un offset
     qui croît dans le chunk) ne sont pas couverts : `chunk[j] = P[j mod s] + (j div s) * pas`
     serait une seconde sorte de motif, à mesurer d'abord sur de vraies connectivités.

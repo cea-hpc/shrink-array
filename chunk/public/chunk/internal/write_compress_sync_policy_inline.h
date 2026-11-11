@@ -67,8 +67,10 @@ bool WriteCompressSyncPolicy<ProxyT, Enabled>::any_thread_writing_on_marked(int 
 {
     for (int i = 0; i < max_thr; ++i)
     {
-        const auto* chunk = static_cast<const ChunkT*>(per_thread_writing[i].v.load(std::memory_order_acquire));
-        if (chunk != nullptr && chunk->steal_marked())
+        const void* flag = per_thread_writing[i].v.load(std::memory_order_acquire);
+        // enqueue_tag(): a deferred enqueue, on no chunk -- not dereferenced.
+        const auto* chunk = static_cast<const ChunkT*>(flag);
+        if (flag != nullptr && flag != enqueue_tag() && chunk->steal_marked())
         {
             return true;
         }

@@ -278,6 +278,15 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
         ready_      = true;
     }
 
+    /// @brief The block size mark_ready() recorded, or 0 before the first
+    ///        ParamChunk::init_indexes(): the allocators of every type are cut
+    ///        to it, so it may not change afterwards.
+    [[nodiscard]] int ready_block_size()
+    {
+        const std::scoped_lock lock(registry_mutex_);
+        return ready_ ? block_size_ : 0;
+    }
+
     /// @return The registered managers, in registration order: the prefix
     ///         published so far, read without a lock (see the members below).
     [[nodiscard]] std::span<TypeStateInterface* const> get_list_type_chunk() const noexcept

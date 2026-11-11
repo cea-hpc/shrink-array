@@ -50,7 +50,7 @@ séquentiel : à appeler hors de toute région parallèle ; il invalide les prox
 | lecture | `operator[](i) const`, `at(i) const`, `front()`, `back()`, `operator()(i) const` | renvoient un `T` |
 | écriture | `operator[](i)`, `at(i)` | renvoient un proxy d'écriture (§4) |
 | référence brute | `operator()(i)` (non const) | un `T&` dans le tampon : **seulement sur un chunk matérialisé**, contourne la bibliothèque |
-| agrandir, réduire **(S)** | `resize(n)`, `reserve(n)`, `clear()`, `shrink_to_fit()` | `shrink_to_fit()` replie aussi chaque chunk devenu constant |
+| agrandir, réduire **(S)** | `resize(n)`, `reserve(n)`, `clear()`, `shrink_to_fit()` | `shrink_to_fit()` replie aussi chaque chunk devenu constant ; un `n` négatif (ici et au constructeur) lève `std::length_error`, comme `std::vector` |
 | ajout | `push_back(v)`, `emplace_back(...)`, `pop_back()` | **(S)** seulement quand il faut un nouveau chunk |
 | remplacement **(S)** | `assign(n, v)`, `assign(first, last)`, `swap(other)`, `operator=` | |
 | itération | `begin()`, `end()`, `cbegin()`, `rbegin()`, `rend()` | itérateurs const à accès aléatoire, par valeur |
@@ -142,7 +142,7 @@ interne.
 | `export_chunk(a, c)` | séquentiel : l'état du chunk `c` ; `data` pointe dans `a`, valable jusqu'à la prochaine écriture de `a` |
 | `import_chunk(a, c, state)` | séquentiel : le chunk `c` prend `state`, une constante sans tampon ; `false` si le chunk a été écrit |
 | `export_array(a)` | séquentiel : la taille, `chunk_size()`, la seconde valeur de zero_one_value, l'état de chaque chunk |
-| `import_array(a, state)` | séquentiel : `a` devient le tableau que décrit `state`, quoi qu'il contînt ; `false` (et `a` inchangé) à une autre taille de chunk |
+| `import_array(a, state)` | séquentiel : `a` devient le tableau que décrit `state`, quoi qu'il contînt ; `false` (et `a` inchangé) à une autre taille de chunk ; les chunks au-delà de la taille de `state` (un `reserve()`) ne sont pas importés |
 
 Toutes les variantes et tous les types d'élément sauf `Bit` (ArrayChunkBits). À appeler après la
 phase, comme `fill_range`.
@@ -172,6 +172,16 @@ première écriture, et un seul thread appelle `finalize_parallel_phase()` une f
 arrêtés. `shrink_array::tbb::parallel_for` fait les deux appels pour une boucle TBB ; l'en-tête
 est installé avec les autres, et le programme lie TBB lui-même (la bibliothèque, non).
 
+Les threads, quel que soit le backend (`chunk/threads.h`) : dimensionner les données par thread et
+numéroter les threads avec eux plutôt qu'avec `omp_get_*`, pour que le programme compile avec
+tous les backends.
+
+| appel | OpenMP | backend std | série |
+|---|---|---|---|
+| `pmp::max_threads()` | `omp_get_max_threads()` | la taille d'équipe de la prochaine région | 1 |
+| `pmp::team_size()` | `omp_get_num_threads()` | la taille de l'équipe la plus interne | 1 |
+| `pmp::thread_rank()` | `omp_get_thread_num()` | le rang dans l'équipe la plus interne (le rang enregistré hors équipe) | 0 |
+
 ## 7. Taille de chunk adaptative (bibliothèques `_dyn`)
 
 | appel | en-tête | ce qu'il fait |
@@ -181,6 +191,10 @@ est installé avec les autres, et le programme lie TBB lui-même (la bibliothèq
 | `decider.consider<T>(a, tick, iter, "name")` | | analyse le tableau et applique le rechunk si la politique est d'accord **(S)** |
 | `decider.print_rechunk_log()` | | la table des rechunks effectués |
 | `a.rechunk_to(n)` **(S)** | | rechunke un tableau à `n` éléments par chunk (`a.try_rechunk_to(n)` : dit pourquoi une taille est refusée) |
+| `a.set_chunk_size(n)` | | la géométrie d'un tableau VIDE, avant son premier `resize()` ; refusé (avertissement) sur un tableau qui a des chunks -- `rechunk_to()` déplace les éléments ; sans effet dans un build statique (`a.try_set_chunk_size(n)` : dit pourquoi une taille est refusée) |
+| `set_active_chunk_size(n)` | `chunk/chunk_size_advisor.h` | la taille de chunk du processus, avant `ParamChunk::init_indexes()` : la première géométrie |
+| `set_thread_chunk_size(n)` | `chunk/chunk_size_advisor.h` | la taille vers laquelle sont aiguillées les prochaines allocations de chunk du thread appelant ; la bibliothèque la fixe avant chaque allocation. Pas la géométrie d'un nouveau tableau : les tableaux naissent à `set_active_chunk_size()`, `a.set_chunk_size(n)` fixe celle d'un tableau vide |
+| `sizeof(zero_any::Chunk<T>)` | `chunk/zero_any_array.h` | les métadonnées d'un chunk, pour les options du conseiller |
 
 La politique, ses valeurs par défaut et les résultats mesurés : [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md).
 
@@ -224,3 +238,10 @@ toujours le programme : un bloc sur stderr commençant par `[CRITICAL_FAILURE]`
 (`[DEBUG_INVARIANT_FAILURE]` dans un build debug), la backtrace, puis l'enregistrement (niveau
 fatal) vers le sink ou `CHUNK_LOG_FILE`. Le contenu des canaux :
 [reglages_developpeur_fr.md](reglages_developpeur_fr.md), section 2.
+
+## 10. Affichage
+
+`chunk/print.h` : `shrink_array::print` et `println`, les `std::print` / `std::println` de C++23
+dans tous les builds -- ceux de la bibliothèque standard quand elle les a, les mêmes signatures
+au-dessus de `std::format` sinon. `println("{} chunks", n)` vers stdout, `println(stderr, ...)`
+vers un flux. Les exemples affichent par eux.

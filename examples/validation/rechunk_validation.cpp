@@ -74,7 +74,7 @@
 #include "chunk/array_chunk_range_ops.h"      // fill_range / copy_range
 #include "chunk/manage_ompt.h"                // finalize_parallel_phase (compression backlog drain)
 #include "chunk/internal/env_parse.h"         // env_number / arg_number (checked, not atoi)
-#include "chunk/internal/print.h"             // shrink_array::println
+#include "chunk/print.h"                      // shrink_array::println
 
 using namespace shrink_array;
 
@@ -531,7 +531,9 @@ int check_range_ops(const char* label, long count)
 
 /// @brief A size that is neither a power of two nor a multiple of 64 (48, 96,
 ///        3, S + 1) is refused -- by rechunk_to() on a filled array and on an
-///        empty one, and by set_chunk_size() -- and so is, on the empty array,
+///        empty one, and by set_chunk_size() -- and so is set_chunk_size() of a
+///        VALID other size on the filled array (it would remap the indices
+///        without moving the elements), and, on the empty array,
 ///        a valid size wider than cst_buffer_size (it would read the shared
 ///        constant buffers out of bounds); geometry, content and the ambient
 ///        size stay as they were. A legal re-chunk must still work afterwards.
@@ -562,6 +564,19 @@ int check_non_pow2_refused(const char* label)
         {
             println("[{}/{}] FAIL: rechunk_to({}) applied: geometry {} -> {}", variant_name(), label, new_size,
                     old_size, arr.chunk_size());
+            ++bad;
+        }
+    }
+    // A valid size, but the array has chunks: refused (rechunk_to() moves the
+    // elements; set_chunk_size() would only remap the indices, and make it the
+    // ambient size).
+    for (const unsigned new_size : {old_size * 2u, old_size / 2u})
+    {
+        arr.set_chunk_size(new_size);
+        if (arr.chunk_size() != old_size)
+        {
+            println("[{}/{}] FAIL: set_chunk_size({}) on a filled array applied: geometry {} -> {}", variant_name(),
+                    label, new_size, old_size, arr.chunk_size());
             ++bad;
         }
     }

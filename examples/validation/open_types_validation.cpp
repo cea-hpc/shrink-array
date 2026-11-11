@@ -51,6 +51,10 @@
 //   one was torn down, and (dyn builds) a type whose first array comes after
 //   a second geometry was declared, so the registration replays it.
 //
+//   Plus: push_back(a(i)) and resize(n, a(i)) past the capacity on Point3,
+//   a type passed by reference -- the value must be read before resize()
+//   (zero and zero_any: zero_one_value has no a(i) on a non-bool element).
+//
 // WHAT IT DOES NOT COVER
 //
 //   Arithmetic on the element (a struct has none), re-chunking of these
@@ -76,7 +80,7 @@
 #include "chunk/config.h"             // chunk_config::use_zero_one_value*, build_config::chunk_dynamic / has_not_ompt
 #include "chunk/internal/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"        // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/internal/print.h"     // shrink_array::println
+#include "chunk/print.h"              // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
@@ -400,6 +404,66 @@ int run(int argc, char** argv)
         cp.clear();
         cells.clear();
         rng.clear();
+    }
+
+    // push_back(a(i)) and resize(n, a(i)) past the capacity. a(i) is a
+    // reference into chunk i's buffer, and a Point3 (24 bytes) is passed by
+    // reference: resize()'s compression pass could release that buffer (its
+    // chunk rewritten to the second value, a candidate), and the write of the
+    // new element re-use it, filled with the first constant, before the value
+    // was read. Under ASan with the standard allocator, a use-after-free.
+    // zero_one_value has no a(i) on a non-bool element (its written() needs the
+    // second-value index): nothing to alias there.
+    if constexpr (!chunk_config::use_zero_one_value)
+    {
+        int           bad = 0;
+        Array<Point3> al;
+        maybe_set_second_value(al, sp.second);
+        const int cs = static_cast<int>(al.chunk_size());
+        al.resize(4 * cs);
+        for (int i = 0; i < 4 * cs; ++i)
+        {
+            al[i] = sp.varied(i); // materialised
+        }
+        while (static_cast<std::size_t>(al.size()) < al.capacity())
+        {
+            al.push_back(Point3{});
+        }
+        // Each chunk made constant right before its a(i): still materialised when
+        // a(i) is taken (a checked build stops on a(i) of a compressed chunk), a
+        // candidate when resize() runs its pass.
+        for (int i = 0; i < cs; ++i)
+        {
+            al[i] = sp.second;
+        }
+        al.push_back(al(3)); // past the capacity: resize() first
+        if (std::as_const(al).back() != sp.second)
+        {
+            ++bad;
+            println("[{}/aliased push_back] FAIL: push_back(a(3)) past the capacity stored another value",
+                    variant_name());
+        }
+        const int old_size = static_cast<int>(al.size());
+        for (int i = cs; i < 2 * cs; ++i)
+        {
+            al[i] = sp.second;
+        }
+        al.resize(old_size + (2 * cs), al(cs + 3));
+        for (int i = old_size; i < old_size + (2 * cs); ++i)
+        {
+            if (std::as_const(al)[i] != sp.second)
+            {
+                ++bad;
+                println("[{}/aliased push_back] FAIL: resize(n, a(cs + 3)): [{}] is another value", variant_name(), i);
+                break;
+            }
+        }
+        if (!bad)
+        {
+            println("[{}/aliased push_back] OK: push_back(a(i)) and resize(n, a(i)) past the capacity", variant_name());
+        }
+        fails += bad ? 1 : 0;
+        al.clear();
     }
 
     if constexpr (build_config::chunk_dynamic)

@@ -25,7 +25,9 @@
 #include "chunk/config.h"                     // build_config::threaded, chunk_config::use_fast_block_compression
 #include "chunk/internal/PMP_CHUNK.h"         // get_thr_rank_fast
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size
+#include "chunk/internal/tab_users.h"         // TabUsers::mark_shared (the identity swap)
 #include "chunk/internal/in_t.h"              // InT<value_type>: the captured state
+#include "chunk/internal/same_value.h"        // same_value
 
 namespace shrink_array
 {
@@ -89,7 +91,7 @@ void zero_one_value::RechunkHooks<Derived, true>::rechunk_seed_fresh(this Derive
     // state, and re-declaring it would make a degenerate cst_val2 == cst_val1 buffer.
     if constexpr (Derived::is_not_bool)
     {
-        if (state != value_type{})
+        if (!same_value(state, value_type{}))
         {
             self.set_second_value(state, false);
         }
@@ -107,6 +109,11 @@ bool zero_one_value::RechunkHooks<Derived, true>::rechunk_swap_identity(this Der
     // identity comes from share_info_array, and the members may be
     // uninitialized (swapping would read indeterminate values). The mirrors are
     // re-read in rechunk_reown_after_swap().
+    // As RechunkHooks::rechunk_swap_identity(): no longer one-rank arrays for a teardown.
+    internal::TabUsers<typename Derived::ChunkType>::mark_shared(
+        ProxyType::share_info_array->get_num_tab(self.registry_key()));
+    internal::TabUsers<typename Derived::ChunkType>::mark_shared(
+        ProxyType::share_info_array->get_num_tab(tmp.registry_key()));
     return ProxyType::share_info_array->swap_entries(self.registry_key(), tmp.registry_key());
 }
 
@@ -124,7 +131,7 @@ void zero_one_value::RechunkHooks<Derived, true>::rechunk_reown_after_swap(this 
     {
         if constexpr (Derived::is_not_bool)
         {
-            if (state != value_type{})
+            if (!same_value(state, value_type{}))
             {
                 self.inf_array_    = tmp.inf_array_; // tmp's is valid (set_second_value ran)
                 self.ind_cst_val2_ = tmp.ind_cst_val2_;

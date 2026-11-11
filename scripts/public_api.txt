@@ -19,7 +19,7 @@
 zero::Array
 size empty capacity at front back resize reserve clear shrink_to_fit
 push_back emplace_back pop_back assign swap begin end cbegin rbegin rend
-compress stats get_nb_chunk_written chunk_size rechunk_to element_proxy
+compress stats get_nb_chunk_written chunk_size rechunk_to element_proxy set_chunk_size
 
 [chunk/zero_one_value_array.h]
 zero_one_value::Array
@@ -28,6 +28,7 @@ set_second_value get_second_value
 [chunk/zero_any_array.h]
 zero_any::Array
 reclaim_second_values second_value_stats SecondValueStats
+zero_any::Chunk
 
 [chunk/pattern_array.h]
 pattern::Array
@@ -62,6 +63,7 @@ tbb::parallel_for tbb::phase_body
 
 [chunk/chunk_size_advisor.h]
 ChunkSizeAdvisor ChunkSizeAdvisor::analyze ChunkSizeEstimate ChunkSizeReport
+set_active_chunk_size set_thread_chunk_size
 
 [chunk/rechunk_decider.h]
 RechunkDecider RechunkDecider::consider RechunkDecider::print_rechunk_log RechunkPolicy
@@ -94,6 +96,12 @@ md::halo_block md::clamp_boundary md::constant_boundary
 
 [chunk/soa_array.h]
 SoaArray soa::column soa::plain soa::split SoaDefaultColumn
+
+[chunk/print.h]
+print println
+
+[chunk/threads.h]
+pmp::max_threads pmp::team_size pmp::thread_rank
 
 [not public]
 ManagerType Manager ChunkType ChunkListType ProxyType get_chunk_list

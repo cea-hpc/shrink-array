@@ -19,8 +19,10 @@
 // Out-of-line template method bodies for ArrayChunkBase<Derived>. Included at the
 // end of array_chunk_base.h (after the class), so every TU that uses the class
 // sees the definitions. Kept separate to keep array_chunk_base.h to declarations.
-#include <iterator>  // std::forward_iterator, std::distance (assign)
-#include <stdexcept> // std::out_of_range (at())
+#include <iterator>    // std::forward_iterator, std::distance (assign)
+#include <stdexcept>   // std::out_of_range (at()), std::length_error (check_length)
+#include <string>      // std::string (check_length's message)
+#include <type_traits> // std::is_signed_v (check_length)
 
 #include "chunk/internal/array_chunk_base.h"    // ArrayChunkBase, the class these bodies belong to
 #include "chunk/internal/all_type_chunk_decl.h" // AllTypeChunk::ensure_manager, from create (bodies: all_type_chunk.h)
@@ -29,6 +31,8 @@
 #include "chunk/internal/PMP_CHUNK.h"           // CHUNK_PMP_IN_PARALLEL_REGION, pmp::parallel_sum, pmp::current_team
 #include "chunk/manage_ompt.h"                  // parallel_phase -- write_range_by_chunks
 #include "chunk/internal/parallel_storage_init.h" // use_own_team -- write_range_by_chunks
+#include "chunk/internal/cold_path_lock.h"        // ColdPathLock: construction, teardown, resize
+#include "chunk/internal/tab_users.h"             // TabUsers: a row per array
 #include "chunk/log.h"                            // CHUNK_LOG (set_chunk_size refusal)
 #include "chunk/internal/chunk_stats.h"           // increm_chunk_dirty_gate (sync_chunk, CHUNK_STATS)
 
@@ -36,8 +40,24 @@ namespace shrink_array
 {
 
 template <typename Derived>
+void ArrayChunkBase<Derived>::check_length(IndType count, const char* who)
+{
+    // A negative count used to go through: resize(-1) left size() == -1,
+    // reserve(-1) a capacity of 2^32 (the count cast to size_type).
+    if constexpr (std::is_signed_v<IndType>)
+    {
+        if (count < 0) [[unlikely]]
+        {
+            throw std::length_error(std::string("shrink_array: ") + who + ": negative element count");
+        }
+    }
+}
+
+template <typename Derived>
 void ArrayChunkBase<Derived>::create(this Derived& self, IndType sz)
 {
+    check_length(sz, "constructor");
+    const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
     // The first array of this element type registers its manager; every
     // later one pays a guard load. See AllTypeChunk.
     AllTypeChunk::ensure_manager<ManagerType>();
@@ -55,6 +75,7 @@ void ArrayChunkBase<Derived>::create_common(this Derived& self)
     chunk_config::CheckNaN<chunk_config::do_check>::update(true);
 
     self.pre_create_hook();
+    internal::TabUsers<ChunkType>::resize(self.nb_tab);
 
     // In ALL modes, do not gate on use_fast_block_compression: zero_any::Proxy needs
     // its tab_* containers (tab_second_value, ...) even without OpenMP; for
@@ -88,16 +109,25 @@ ArrayChunkBase<Derived>::try_set_chunk_size([[maybe_unused]] unsigned int new_ch
     if constexpr (build_config::chunk_dynamic)
     {
         // As try_set_active_chunk_size(): the size set only when accepted.
-        return check_chunk_size(new_chunk_size)
-            .transform(
-                [this, new_chunk_size]
-                {
-                    size_policy_.set_size(new_chunk_size);
-                    // Ensure the allocators for this size exist (sequential, idempotent) and
-                    // make it this thread's active size, so its allocations route there.
-                    register_runtime_chunk_size(new_chunk_size);
-                    set_thread_chunk_size(new_chunk_size);
-                });
+        if (const auto valid = check_chunk_size(new_chunk_size); !valid) [[unlikely]]
+        {
+            return valid;
+        }
+        // An array that has chunks keeps its geometry: the new size would only
+        // change how indices map onto chunks laid out at the old one (a[i]
+        // reads another element), and become every later array's birth size.
+        // rechunk_to() moves the elements. The same size stays accepted: it
+        // changes no mapping.
+        if (nb_chunk_ != 0 && new_chunk_size != size_policy_.size()) [[unlikely]]
+        {
+            return std::unexpected(ChunkSizeError::has_chunks);
+        }
+        size_policy_.set_size(new_chunk_size);
+        // Ensure the allocators for this size exist (sequential, idempotent) and
+        // make it this thread's active size, so its allocations route there.
+        register_runtime_chunk_size(new_chunk_size);
+        set_thread_chunk_size(new_chunk_size);
+        return {};
     }
     else
     {
@@ -229,6 +259,7 @@ void ArrayChunkBase<Derived>::assign(this Derived& self, It first, It last)
 template <typename Derived>
 void ArrayChunkBase<Derived>::reserve(this Derived& self, const IndType new_capacity)
 {
+    self.check_length(new_capacity, "reserve");
     if (static_cast<size_type>(new_capacity) <= self.capacity())
     {
         return;
@@ -396,17 +427,33 @@ void ArrayChunkBase<Derived>::const_iterator::enter_chunk() noexcept
 // ---------------------------------------------------------------------------
 
 template <typename Derived>
+void ArrayChunkBase<Derived>::resize(this Derived& self, const IndType newsz, InT<T> val)
+{
+    const IndType old_size = self.m_size_;
+    const T       value    = val; // before resize(): val may be a(i) (see push_back)
+    self.resize(newsz);
+
+    // A team of its own outside a region (the library's threshold, the
+    // phase bracketed), the calling thread inside one.
+    self.write_range_by_chunks(old_size, newsz, [&value](IndType) { return value; });
+}
+
+template <typename Derived>
 void ArrayChunkBase<Derived>::push_back(this Derived& self, InT<T> val)
 {
     if (static_cast<size_type>(self.m_size_) < self.capacity()) [[likely]]
     {
         ++self.m_size_;
+        self[self.m_size_ - 1] = val;
+        return;
     }
-    else
-    {
-        self.resize(self.m_size_ + 1);
-    }
-    self[self.m_size_ - 1] = val;
+    // Copied before resize(), as assign() takes its T by value: past 16 bytes
+    // val is a reference, and push_back(a(i)) points it into a chunk buffer
+    // that resize()'s compression pass can release -- and the write below
+    // re-use, filled with the constant, before val is read.
+    const T value = val;
+    self.resize(self.m_size_ + 1);
+    self[self.m_size_ - 1] = value;
 }
 
 template <typename Derived>
@@ -543,6 +590,7 @@ OutIt ArrayChunkBase<Derived>::read_range(IndType first, IndType last, OutIt out
 template <typename Derived>
 void ArrayChunkBase<Derived>::swap(this Derived& self, Derived& other) noexcept
 {
+    const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
     self.swap_storage_and_identity(other); // the geometry: the declaration's precondition
 }
 

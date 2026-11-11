@@ -72,29 +72,49 @@
  *          Usage: access_cost [--n n_elems] [--reps R] [--csv] [--verify]
  */
 
-#include <algorithm>   // std::sort, std::min_element
-#include <chrono>      // std::chrono::steady_clock
-#include <cstdint>     // std::uint64_t
-#include <cstdio>      // std::fprintf, stderr
-#include <exception>   // std::exception (main's catch)
-#include <string>      // std::string
-#include <type_traits> // std::conditional_t
-#include <utility>     // std::as_const
-#include <vector>      // std::vector
+#include <algorithm>    // std::sort, std::min_element
+#include <chrono>       // std::chrono::steady_clock
+#include <cstdint>      // std::uint64_t
+#include <charconv>     // std::from_chars (arg_value)
+#include <cstdio>       // std::fprintf, stderr
+#include <cstring>      // std::strlen
+#include <exception>    // std::exception (main's catch)
+#include <string>       // std::string
+#include <system_error> // std::errc (arg_value)
+#include <type_traits>  // std::conditional_t
+#include <utility>      // std::as_const
+#include <vector>       // std::vector
 
-#include "chunk/internal/chunk_traits.h"          // the IntType = int default of the arrays
-#include "chunk/zero_array.h"                     // zero::Array
-#include "chunk/zero_one_value_array.h"           // zero_one_value::Array
-#include "chunk/zero_any_array.h"                 // zero_any::Array
-#include "chunk/param_chunk.h"                    // ParamChunk::init_indexes
-#include "chunk/config.h"                         // chunk_config::use_zero*, build_config::use_openmp / has_not_ompt
-#include "chunk/internal/PMP_CHUNK.h"             // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"                    // begin_parallel_phase, finalize_parallel_phase
-#include "chunk/internal/env_parse.h"             // arg_number (checked, not atoi)
-#include "chunk/internal/print.h"                 // shrink_array::println
-#include "fast_allocators/internal/pmp_runtime.h" // team_size / team_rank (read-bulk)
+#include "chunk/zero_array.h"           // zero::Array
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#include "chunk/zero_any_array.h"       // zero_any::Array
+#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
+#include "chunk/config.h"               // chunk_config::use_zero*, build_config::use_openmp / has_not_ompt
+#include "chunk/threads.h"              // pmp::max_threads, team_size, thread_rank (read-bulk)
+#include "chunk/manage_ompt.h"          // begin_parallel_phase, finalize_parallel_phase
+#include "chunk/print.h"                // shrink_array::println
 
 using namespace shrink_array;
+
+namespace
+{
+
+/// @brief A number of the command line, checked (std::from_chars, not atoi):
+///        @p fallback kept, with a warning, when @p text is not a whole number.
+template <typename T>
+T arg_value(const char* text, T fallback, const char* name)
+{
+    T           value{};
+    const char* end = text + std::strlen(text);
+    if (const auto [ptr, ec] = std::from_chars(text, end, value); ec == std::errc{} && ptr == end)
+    {
+        return value;
+    }
+    println(stderr, "access_cost: {} '{}' is not a number, {} kept", name, text, fallback);
+    return fallback;
+}
+
+} // namespace
 
 static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
               "access_cost: link chunk_zero_*, chunk_zero_one_value_* or chunk_zero_any_*");
@@ -283,8 +303,8 @@ Sample arr_read_bulk(Array<double>& arr, int count)
 #pragma omp parallel reduction(+ : sum)
     {
         begin_phase();
-        const long nt   = fast_alloc::pmp::team_size();
-        const long rank = fast_alloc::pmp::team_rank();
+        const long nt   = pmp::team_size();
+        const long rank = pmp::thread_rank();
         const auto lo   = static_cast<int>(count * rank / nt);
         const auto hi   = static_cast<int>(count * (rank + 1) / nt);
         double     part = 0.;
@@ -417,11 +437,11 @@ try
         const std::string opt = argv[a];
         if (opt == "--n" && a + 1 < argc)
         {
-            n_elems = shrink_array::arg_number<long>(argv[++a], n_elems, "--n");
+            n_elems = arg_value<long>(argv[++a], n_elems, "--n");
         }
         else if (opt == "--reps" && a + 1 < argc)
         {
-            reps = shrink_array::arg_number<int>(argv[++a], reps, "--reps");
+            reps = arg_value<int>(argv[++a], reps, "--reps");
         }
         else if (opt == "--csv")
         {
@@ -453,7 +473,7 @@ try
     else
     {
         println("=== access_cost [{}]  n={}  chunk_size={}  threads={}  reps={} ===", variant_name(), n_elems, chunk_sz,
-                CHUNK_PMP_MAX_THREADS, reps);
+                pmp::max_threads(), reps);
     }
 
     const std::vector<int> idx = random_indices(n_elems);
@@ -480,7 +500,7 @@ try
         times[c][container].push_back(seconds);
         if (csv)
         {
-            println("{},{},{},{},{},{},{},{:.9f},{:.4f}", variant_name(), chunk_sz, CHUNK_PMP_MAX_THREADS, n_elems, rep,
+            println("{},{},{},{},{},{},{},{:.9f},{:.4f}", variant_name(), chunk_sz, pmp::max_threads(), n_elems, rep,
                     case_names[c], container ? "array" : "vector", seconds,
                     seconds * 1e9 / static_cast<double>(n_elems));
         }

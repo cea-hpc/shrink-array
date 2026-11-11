@@ -397,7 +397,6 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/chunk_stats.h
         public/chunk/internal/chunk_stats_printer.h
         public/chunk/internal/zero_chunk_inline.h
-        public/chunk/internal/complex_less.h
         public/chunk/internal/compression_manager.h
         public/chunk/internal/compression_manager_inline.h
         public/chunk/internal/concept_array_chunk_element.h
@@ -429,6 +428,8 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/compress_candidates_inline.h
         public/chunk/internal/reuse_pools.h
         public/chunk/internal/reuse_pools_inline.h
+        public/chunk/internal/drain_probe.h
+        public/chunk/internal/same_value.h
         public/chunk/internal/map_helper.h
         public/chunk/internal/phase_guard.h
         public/chunk/internal/zero_one_value_pointer_map.h
@@ -486,6 +487,8 @@ set(CHUNK_PUBLIC_HEADERS
         public/chunk/rechunk_decider.h
         public/chunk/config.h
         public/chunk/log.h
+        public/chunk/print.h
+        public/chunk/threads.h
 )
 
 set(CHUNK_SOURCES

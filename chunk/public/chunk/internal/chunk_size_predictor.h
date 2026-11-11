@@ -51,7 +51,8 @@
 #include <algorithm> // std::min, std::ranges::all_of
 #include <span>      // std::span
 
-#include "chunk/log.h" // CHUNK_LOG
+#include "chunk/log.h"                 // CHUNK_LOG
+#include "chunk/internal/same_value.h" // same_value
 
 namespace shrink_array
 {
@@ -85,8 +86,9 @@ template <typename T>
         ++n_blocks;
         const auto  block = all.subspan(base, std::min<std::size_t>(multiple, all.size() - base));
         const auto& head  = block.front();
-        // optional == optional: both engaged with equal values (two nullopt never reach it).
-        if (head.has_value() && std::ranges::all_of(block.subspan(1), [&](const auto& c) { return c == head; }))
+        // Every chunk constant, all at the same value (same_value: a -0.0 run is not a +0.0 one).
+        if (head.has_value() && std::ranges::all_of(block.subspan(1), [&](const auto& c)
+                                                    { return c.has_value() && same_value(*c, *head); }))
         {
             ++n_const;
         }

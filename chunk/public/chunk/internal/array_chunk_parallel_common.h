@@ -74,10 +74,14 @@ class ParallelSupportCommon
      *              on whatever chunk is allocated there. The counter can read 0 while such
      *              an op is still queued, so the gate cannot be trusted here.
      *
+     * @param own_rank_only Drain the calling thread's rank alone: the teardown, inside a
+     *              region, of an array no other rank holds a write of (see
+     *              owned_by_calling_rank()).
+     *
      * @note Guarded on chunk_config::use_fast_block_compression inside: only
      *       that mode queues deferred ops at all.
      */
-    void flush_pending_deferred_ops(bool force = false);
+    void flush_pending_deferred_ops(bool force = false, bool own_rank_only = false);
 };
 
 /**
@@ -88,7 +92,7 @@ template <typename Derived>
 struct ParallelSupportCommonSerial
 {
     /** @brief No-op: nothing is deferred without OpenMP. */
-    void flush_pending_deferred_ops(bool /*force*/ = false) noexcept {}
+    static void flush_pending_deferred_ops(bool /*force*/ = false, bool /*own_rank_only*/ = false) noexcept {}
 };
 
 /**

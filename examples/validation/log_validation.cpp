@@ -88,7 +88,7 @@
 
 #include "chunk/log.h"                      // shrink_array::logging, CHUNK_LOG
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED, CHUNK_CHECK_FAILED
-#include "chunk/internal/print.h"           // shrink_array::println
+#include "chunk/print.h"                    // shrink_array::println
 
 using shrink_array::println;
 

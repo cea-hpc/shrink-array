@@ -15,7 +15,8 @@ d'éléments qui demande **125,9 Go** en `std::vector` tient dans **6 à 7,3 Go*
 moins de mémoire, sans toucher aux boucles.
 
 - **Remplacement direct** : `a[i] = v`, `a[i] += x`, `resize`, `push_back`, range-for. Pas de
-  nouvelle indexation, pas d'étape de reconstruction, aucune perte.
+  nouvelle indexation, pas d'étape de reconstruction, aucune perte : un élément se relit avec
+  les bits écrits, `-0.0` et charges utiles des NaN compris.
 - **Compresse pendant que le programme tourne** : un chunk qui devient uniforme rend son
   tampon ; un chunk réécrit en reprend un.
 - **N'importe quelle valeur répétée**, pas seulement zéro (`zero_any`), pour tout type trivialement

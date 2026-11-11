@@ -52,7 +52,7 @@
 #include "chunk/zero_any_array.h"       // zero_any::Array
 #include "chunk/internal/zero_chunk.h"  // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"               // chunk_config::use_zero_one_value*
-#include "chunk/internal/print.h"       // shrink_array::println
+#include "chunk/print.h"                // shrink_array::println
 #include "chunk/manage_ompt.h"          // parallel_phase
 #include "chunk/mdspan_tile_ops.h"      // md::for_each_tile(_mt), md::update_tiles(_mt), md::fill_box(_mt)
 #include "chunk/param_chunk.h"          // ParamChunk::init_indexes

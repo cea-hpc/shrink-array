@@ -41,6 +41,14 @@
 //                 registry: every array, of either index type, must come out
 //                 at the new geometry with its values.
 //
+//   int-top-rechunk (CHUNK_DYNAMIC builds) one Array<char, int> of INT_MAX
+//                 elements, its last ten written, re-chunked to the other
+//                 geometry and back. The last chunk then ends at 2^31, one
+//                 past the int range: the re-chunk computed that end as
+//                 base + chunk_size in int, wrapped negative, and handed a
+//                 huge length to memcpy (heap corruption, a glibc abort).
+//                 Cheap like past-int-max: every other chunk is constant.
+//
 // --size N (CHUNK_DYNAMIC builds): `mixed` starts at geometry N and re-chunks
 // to 2N, where `past-int-max` then runs. With a size that is not a power of
 // two (the ctest _np2 runs 384, so 384 -> 768), chunk_of / offset_of take the
@@ -64,7 +72,7 @@
 #include "chunk/internal/PMP_CHUNK.h"         // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
-#include "chunk/internal/print.h"             // shrink_array::println
+#include "chunk/print.h"                      // shrink_array::println
 #include "chunk/internal/env_parse.h"         // arg_number (checked, not atoi)
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
@@ -270,6 +278,92 @@ int check_past_int_max()
 }
 
 // ---------------------------------------------------------------------------
+// int-top-rechunk
+// ---------------------------------------------------------------------------
+int check_int_top_rechunk()
+{
+    if constexpr (!build_config::chunk_dynamic)
+    {
+        return 0;
+    }
+    else
+    {
+        const char* label = "int-top-rechunk";
+        using Top         = Array<char, int>;
+        // INT_MAX elements: the last chunk, at any power-of-two (or 384, 768)
+        // geometry, ends at or past 2^31.
+        const int count = INT_MAX;
+        Top       top(count);
+        maybe_set_second_value(top, char(9));
+        const auto     start = top.chunk_size();
+        const unsigned other = (start >= 1024) ? start / 2 : start * 2;
+
+        std::vector<int> pos;
+        for (int k = 10; k >= 1; --k)
+        {
+            pos.push_back(count - k);
+        }
+        pos.push_back(count - static_cast<int>(start) - 1); // the chunk before the last
+        pos.push_back(0);
+        const auto value_at = [](std::size_t k) { return static_cast<char>(1 + (k % 7)); };
+        for (std::size_t k = 0; k < pos.size(); ++k)
+        {
+            top[pos[k]] = value_at(k);
+        }
+
+        const auto verify = [&](const char* step, unsigned want_size) -> int
+        {
+            int         nbad = 0;
+            const auto& ctop = std::as_const(top);
+            if (ctop.chunk_size() != want_size || ctop.size() != count)
+            {
+                println("[{}/{}] FAIL {}: chunk_size {} size {}, expected {} and {}", variant_name(), label, step,
+                        ctop.chunk_size(), static_cast<long>(ctop.size()), want_size, count);
+                ++nbad;
+            }
+            for (std::size_t k = 0; k < pos.size(); ++k)
+            {
+                if (ctop[pos[k]] != value_at(k))
+                {
+                    if (nbad < 5)
+                    {
+                        println("[{}/{}] FAIL {}: [{}] = {}, expected {}", variant_name(), label, step, pos[k],
+                                static_cast<int>(ctop[pos[k]]), static_cast<int>(value_at(k)));
+                    }
+                    ++nbad;
+                }
+            }
+            for (const int untouched : {count - 11, count - static_cast<int>(start) - 2, 1})
+            {
+                if (ctop[untouched] != char(0))
+                {
+                    if (nbad < 5)
+                    {
+                        println("[{}/{}] FAIL {}: untouched [{}] = {}", variant_name(), label, step, untouched,
+                                static_cast<int>(ctop[untouched]));
+                    }
+                    ++nbad;
+                }
+            }
+            return nbad;
+        };
+
+        int bad = verify("written", start);
+        top.rechunk_to(other);
+        bad += verify("rechunked", other);
+        top.rechunk_to(start);
+        bad += verify("rechunked back", start);
+
+        if (!bad)
+        {
+            println("[{}/{}] OK: <char,int> N=INT_MAX, last ten written, {} -> {} -> {}", variant_name(), label, start,
+                    other, start);
+        }
+        return bad ? 1 : 0;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // mixed
 // ---------------------------------------------------------------------------
 
@@ -429,6 +523,7 @@ int run(int argc, char** argv)
     int fails = 0;
     fails += check_mixed();
     fails += check_past_int_max();
+    fails += check_int_top_rechunk();
 
     release_chunk_pools();
     destroy_block_chunk();

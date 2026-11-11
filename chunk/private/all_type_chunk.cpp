@@ -17,6 +17,7 @@
 #include <algorithm> // std::ranges::contains (the registered sizes), std::copy_n (the registry table),
                      // std::ranges::any_of (the manager fan-outs)
 #include <cstddef>   // std::size_t (the reuse-pool byte counts)
+#include <cstdlib>   // std::getenv (CHUNK_PHASE_FENCES)
 #include <mutex>     // std::mutex, std::scoped_lock
 #include <atomic>    // for atomic_thread_fence, memory_order_seq_cst, atomic
 #include <memory>    // for unique_ptr
@@ -27,6 +28,7 @@
 #include <malloc.h>  // malloc_trim, mallopt
 
 #include "chunk/config.h"                  // build_config::threaded / use_openmp, chunk_config
+#include "chunk/log.h"                     // CHUNK_LOG (CHUNK_PHASE_FENCES=0 says so once)
 #include "chunk/internal/singleton.h"      // SingletonChk
 #include "chunk/internal/type_state.h"     // TypeStateInterface, TypeStateParallelImpl
 #include "chunk/internal/all_type_chunk.h" // the declarations defined here
@@ -109,6 +111,48 @@ namespace
 // silently dropping deferred writes. Value-initialised to clear (C++20).
 std::atomic_flag g_serial_flush_owner{};
 
+// The four seq_cst fences that close the phase functions below.
+//
+// Their history: removed together on 23 August 2026 as redundant with the
+// OpenMP barriers, restored together the day after, a run of the bench having
+// given a checksum different from std::vector's -- not reproduced, and never
+// explained. A fence only orders this thread's earlier stores before its later
+// loads; every handshake of the library has its own barrier (announce_write(),
+// announce_flush(), start(): docs/synchronisation_dekker.md), and two of the
+// four run on one thread outside any region. Several defects of the phase
+// boundaries that lose deferred writes were found and fixed after that date
+// (the in-region flush toggling g_need_flush_deferred, two serial flushes at
+// once, a team larger than omp_get_max_threads(), a nested region ending the
+// phase): the likelier causes of that checksum.
+//
+// CHUNK_PHASE_FENCES=0 runs without them, to settle it by measure: the bench's
+// checksums in a loop with and without, at the machine's thread count, on x86
+// and on AArch64. Read once. The default keeps them.
+[[nodiscard]] bool phase_fences_on() noexcept
+{
+    static const bool on = []
+    {
+        const char* env = std::getenv("CHUNK_PHASE_FENCES");
+        const bool  off = env != nullptr && env[0] == '0';
+        if (off)
+        {
+            CHUNK_LOG(warn, general,
+                      "CHUNK_PHASE_FENCES=0: the seq_cst fences that close the phase functions are off (a test)");
+        }
+        return !off;
+    }();
+    return on;
+}
+
+/// The fence that closes a phase function (see phase_fences_on()).
+void phase_fence() noexcept
+{
+    if (phase_fences_on()) [[likely]]
+    {
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+    }
+}
+
 /// Releases g_serial_flush_owner on every exit path of the serial flush.
 struct SerialFlushOwnership
 {
@@ -183,10 +227,9 @@ void finalize_parallel_phase_only_flush()
         auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
         ens_type_chunk.flush_all_deferred(true);
 
-        // Empirically load-bearing (a checksum corruption appears without it).
-        // Do NOT remove -- the enclosing OpenMP barrier does not, in practice,
-        // subsume the ordering this fence provides here.
-        std::atomic_thread_fence(std::memory_order_seq_cst);
+        // Kept since a checksum differed once without it, cause unknown:
+        // CHUNK_PHASE_FENCES=0 runs without (phase_fences_on()).
+        phase_fence();
     }
 }
 
@@ -209,9 +252,8 @@ void finalize_parallel_phase_after_flush()
         {
             ens_type_chunk.compress_chunk_to_compress_potentially(true);
         }
-        // Empirically load-bearing (see the note in
-        // finalize_parallel_phase_only_flush). Do NOT remove.
-        std::atomic_thread_fence(std::memory_order_seq_cst);
+        // As in finalize_parallel_phase_only_flush(): CHUNK_PHASE_FENCES=0 runs without.
+        phase_fence();
 #if !CHUNK_OPT_STD_ALLOC
         fast_alloc::report_all_arenas("after_flush");
 #endif
@@ -259,9 +301,8 @@ void finalize_parallel_phase()
 
             ens_type_chunk.compress_chunk_to_compress_potentially(true);
         }
-        // Empirically load-bearing (see the note in
-        // finalize_parallel_phase_only_flush). Do NOT remove.
-        std::atomic_thread_fence(std::memory_order_seq_cst);
+        // As in finalize_parallel_phase_only_flush(): CHUNK_PHASE_FENCES=0 runs without.
+        phase_fence();
 #if !CHUNK_OPT_STD_ALLOC
         fast_alloc::report_all_arenas("finalize_phase");
 #endif
@@ -296,9 +337,8 @@ bool finalize_barrier_phase()
         auto&      ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
         const bool flushed        = ens_type_chunk.flush_all_deferred(true);
 
-        // Empirically load-bearing (see the note in
-        // finalize_parallel_phase_only_flush). Do NOT remove.
-        std::atomic_thread_fence(std::memory_order_seq_cst);
+        // As in finalize_parallel_phase_only_flush(): CHUNK_PHASE_FENCES=0 runs without.
+        phase_fence();
         return flushed;
     }
     return false;

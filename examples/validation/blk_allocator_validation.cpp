@@ -45,7 +45,7 @@
 
 #include "fast_allocators/internal/static_const_array.h" // BlkAllocator, StaticConstArray
 #include "fast_allocators/internal/svalloc.h"            // fast_alloc::alignment
-#include "chunk/internal/print.h"                        // shrink_array::println
+#include "chunk/print.h"                                 // shrink_array::println
 
 using shrink_array::println;
 

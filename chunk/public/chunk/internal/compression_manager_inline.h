@@ -32,6 +32,7 @@
 #include "chunk/internal/deferred_op_pool.h"           // DeferredOperationBase
 #include "chunk/internal/invariant_check.h"            // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/write_compress_sync_policy.h" // WriteCompressSyncPolicy
+#include "chunk/internal/read_reclaim.h"               // ReadSection (start()'s scan of the writers' chunks)
 
 namespace shrink_array
 {
@@ -642,6 +643,11 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::start()
     {
         if constexpr (chunk_config::use_chunk_steal_mark)
         {
+            // The scan reads the chunk each writer announced, through a pointer
+            // loaded from that writer's flag: a read section, so that an array
+            // torn down inside a region waits for it before it frees its chunks
+            // (ArrayChunkCore::await_chunk_readers()).
+            const read_reclaim::ReadSection scan;
             return WriteCompressSyncPolicy<ProxyT>::template any_thread_writing_on_marked<ChunkT>(max_thr);
         }
         else

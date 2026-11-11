@@ -87,6 +87,12 @@ class Tooltips:
         "opt_filter": "Ne montre que les options dont le nom ou l'aide contient ce texte.",
         "extra": "Arguments ajoutés tels quels à la fin de la commande : pour une option que le "
                  "formulaire ne connaît pas (--no-gnu de compile_all.sh, par exemple).",
+        "env": "Variables d'environnement exportées avant la commande, sur le nœud : NOM=valeur, "
+               "séparées par des espaces (NOM=\"a b\" pour une valeur avec des espaces ; un ~/ en "
+               "tête devient le répertoire personnel de la machine du run).\n\n"
+               "Par exemple CHUNK_LLVM_ROOT=~/llvm-22 pour compile_all.sh. Elles l'emportent sur "
+               "celles de scripts/site_env.sh. Mémorisées par programme, et reprises avec "
+               "« Reprendre ses options ».",
         "preview": "La commande exacte qui sera exécutée sur le nœud. Seules les options modifiées "
                    "(en gras) y figurent : les autres gardent le défaut du script.",
         "table": "Les runs du dossier « Runs (inti) », du plus récent au plus ancien. Cliquez sur un "

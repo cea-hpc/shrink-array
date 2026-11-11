@@ -406,8 +406,10 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @param new_chunk_size the new chunk size: a power of two or a multiple of
      *        64, at most cst_buffer_size (chunk_size_error); refused otherwise,
      *        with a warning, geometry kept
-     * @warning Must be called on an empty container, before any
-     *          resize/allocation, since it changes how indices map to chunks.
+     * @warning For an empty container, before any resize/allocation, since it
+     *          changes how indices map to chunks: on an array that has chunks,
+     *          another size is refused with a warning, geometry kept (rechunk_to()
+     *          moves the elements).
      * @note A refused size is written on the log (channel rechunk, warning);
      *       try_set_chunk_size() returns the reason instead.
      */
@@ -484,7 +486,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      *          storage of a resize() to @p new_capacity, with the size left where it is.
      *          The new chunks are at the first constant, like any fresh chunk.
      */
-    void reserve(this Derived& self, const IndType new_capacity) pre(new_capacity >= 0)
+    void reserve(this Derived& self, const IndType new_capacity)
         post(self.capacity() >= static_cast<size_type>(new_capacity));
 
     /**
@@ -493,15 +495,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @details The derived arrays' resize(newsz) does the resizing (they name
      *          this overload back with a using-declaration).
      */
-    void resize(this Derived& self, const IndType newsz, InT<T> val) pre(newsz >= 0) post(self.size() == newsz)
-    {
-        const IndType old_size = self.m_size_;
-        self.resize(newsz);
-
-        // A team of its own outside a region (the library's threshold, the
-        // phase bracketed), the calling thread inside one.
-        self.write_range_by_chunks(old_size, newsz, [&val](IndType) { return static_cast<T>(val); });
-    }
+    void resize(this Derived& self, const IndType newsz, InT<T> val) post(self.size() == newsz);
 
     /**
      * @brief Append one element, growing the container by one.
@@ -827,6 +821,15 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     using Core::next_alloc_key_;
     using Core::num_tab_;
     using Core::size_policy_;
+
+    /**
+     * @brief Throw std::length_error, as std::vector does, for a negative
+     *        element count: the constructors, resize() and reserve() call it
+     *        first, before touching the storage.
+     * @param count the requested element count or capacity
+     * @param who the call, for the message ("resize", "reserve", ...)
+     */
+    static void check_length(IndType count, const char* who);
 
     /// @brief Installs the core's way back to rechunk_to() (rechunk_erased).
     /// @note Protected, not private with `friend Derived`: zero_one_value and zero_any

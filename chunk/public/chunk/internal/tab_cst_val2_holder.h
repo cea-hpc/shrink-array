@@ -82,6 +82,7 @@
 #include "chunk/internal/invariant_check.h"      // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/immortal.h"             // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/log.h"                           // CHUNK_LOG (the identifier and index warnings)
+#include "chunk/internal/same_value.h"           // same_value
 
 namespace shrink_array
 {
@@ -948,7 +949,7 @@ class TabCstVal2Holder
     ///        0 for T{} (the "no second value" the value table wrote as 0).
     [[nodiscard]] static std::uint32_t id_for_value(InT<T> value)
     {
-        if (value == T{})
+        if (same_value(value, T{}))
         {
             return 0;
         }

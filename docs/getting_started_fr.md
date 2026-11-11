@@ -302,6 +302,15 @@ toute région parallèle : `resize()`, `reserve()`, `push_back()` au-delà de la
 à `make_block_compression()` : dans une région, il est refusé (arrêt dans un build de contrôle,
 erreur dans le journal et pas de passe ailleurs) -- les passes des écrivains y compressent.
 
+**Les tableaux de travail dans une région.** Un thread d'une région peut construire ses propres
+tableaux (`zero_any::Array<double> work(n);`), les écrire, les lire et les laisser détruire,
+pendant que les autres threads font de même et que l'équipe écrit des tableaux partagés. La
+construction et la destruction prennent un verrou de la bibliothèque, un tableau à la fois pour
+tout le processus ; les accès aux éléments n'en prennent aucun. Un tel tableau appartient à son
+thread : lui seul l'écrit, et les points séquentiels ci-dessus restent des points séquentiels
+pour lui. Sa destruction coûte un `membarrier()`, et ne lance pas la passe de compression
+finale que fait une destruction hors région.
+
 **Les threads.** Les structures par thread sont dimensionnées une fois pour
 `max(omp_get_max_threads(), nombre de cœurs, 256)` threads (dans un build std, la taille
 d'équipe -- `CHUNK_NUM_THREADS`, sinon `OMP_NUM_THREADS` -- tient lieu de
@@ -399,7 +408,12 @@ les threads d'OpenMP : pour les autres, utilisez le backend std.
   constructible par défaut (types arithmétiques, `bool`, `std::complex`, énumérations,
   `std::array` et agrégats de ceux-ci). Un type qui possède une ressource (`std::string`) est
   refusé à la compilation. `zero_one_value` demande en plus un ordre sur la seconde valeur : une
-  structure de doubles déclare `auto operator<=>(const T&) const = default;`. Sur un élément
+  structure de doubles déclare `auto operator<=>(const T&) const = default;`. Un élément se
+  relit avec les bits écrits : la bibliothèque distingue `-0.0` de `+0.0` (comparaison des
+  bits pour `float`, `double`, `std::complex`, `std::array`), mais compare les membres d'un
+  agrégat avec son `==`, qui confond les deux zéros -- spécialiser
+  `shrink_array::ValueIdentity<T>` (`chunk/internal/same_value.h`) garde le signe d'un membre
+  nul. Sur un élément
   `bool`, `a[i] += 1` et les autres affectations arithmétiques (`-= *= /= %= <<= >>=`) ne
   compilent pas : écrire `=`, `&=`, `|=` ou `^=`.
 - **`zero_one_value` ne compresse qu'à sa seconde valeur déclarée.** Sans `set_second_value()`, un

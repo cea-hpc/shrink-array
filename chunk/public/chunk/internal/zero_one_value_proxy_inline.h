@@ -31,6 +31,7 @@
 #include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
 #include "chunk/internal/test_hooks.h"   // TEST KNOB: test_hooks::maybe_read_delay
 #include "chunk/log.h"                   // CHUNK_LOG_ALWAYS (verbose)
+#include "chunk/internal/same_value.h"   // same_value
 
 namespace shrink_array
 {
@@ -290,11 +291,11 @@ void zero_one_value::Proxy<T>::perform_core_assignment(InT<T> value) const noexc
 {
     if constexpr (chunk_config::use_compression_with_counter)
     {
-        if (value == static_cast<T>(zero_one_value::Chunk<T>::first_value))
+        if (same_value(value, static_cast<T>(zero_one_value::Chunk<T>::first_value)))
         {
             if (Base::is_not_cst_val1() && SecondValueBase::is_not_cst_val2())
             {
-                if (this->raw_elem() != zero_one_value::Chunk<T>::first_value)
+                if (!same_value(this->raw_elem(), zero_one_value::Chunk<T>::first_value))
                 {
                     chunk_.inc_nb_val_eq_first_value();
                 }
@@ -306,7 +307,7 @@ void zero_one_value::Proxy<T>::perform_core_assignment(InT<T> value) const noexc
                 }
             }
         }
-        else if (Base::is_not_cst_val1() && this->raw_elem() == zero_one_value::Chunk<T>::first_value)
+        else if (Base::is_not_cst_val1() && same_value(this->raw_elem(), zero_one_value::Chunk<T>::first_value))
         {
             chunk_.dec_nb_val_eq_first_value();
         }
@@ -321,7 +322,7 @@ void zero_one_value::Proxy<T>::perform_core_assignment(InT<T> value) const noexc
     T*         vals    = chunk_.values_load();
     const bool is_cst1 = Base::is_cst_val1(vals);
 
-    if (value == second_value_)
+    if (same_value(value, second_value_))
     {
         if (is_cst1)
         {
@@ -354,7 +355,7 @@ void zero_one_value::Proxy<T>::perform_core_assignment(InT<T> value) const noexc
         {
             // Read once, before the store below: InT, no copy of a struct.
             const InT<T> vv = this->raw_elem();
-            if (vv == second_value_)
+            if (same_value(vv, second_value_))
             {
                 chunk_.dec_nb_val_eq_second_value();
             }
@@ -387,12 +388,12 @@ void zero_one_value::Proxy<T>::perform_core_assignment(InT<T> value) const noexc
                 // count a first_value written here. Otherwise a chunk that went
                 // all-second then all-first stops at size - 1 and never
                 // compresses back (serial builds: the counters are the only path).
-                if (value == static_cast<T>(zero_one_value::Chunk<T>::first_value))
+                if (same_value(value, static_cast<T>(zero_one_value::Chunk<T>::first_value)))
                 {
                     chunk_.inc_nb_val_eq_first_value();
                 }
             }
-            else if (value == second_value_)
+            else if (same_value(value, second_value_))
             {
                 chunk_.inc_nb_val_eq_second_value();
                 if (was_cst_val1)
@@ -404,7 +405,7 @@ void zero_one_value::Proxy<T>::perform_core_assignment(InT<T> value) const noexc
             {
                 chunk_.set_nb_val_eq_first_value(this->chunk_size() - 1);
             }
-            else if (value == zero_one_value::Chunk<T>::first_value)
+            else if (same_value(value, zero_one_value::Chunk<T>::first_value))
             {
                 chunk_.inc_nb_val_eq_first_value();
             }
@@ -453,7 +454,7 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> value) noexcept
     {
         if constexpr (is_not_bool)
         {
-            if (static_cast<T>(value) == second_value_) // as stored: an int for a std::complex T
+            if (same_value(static_cast<T>(value), second_value_)) // as stored: an int for a std::complex T
             {
                 if (values_loc == chunk_.get_cst_val2(BaseSpec::ind_))
                 {
@@ -463,7 +464,7 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> value) noexcept
                 const T* const                  live = chunk_.values_load();
                 test_hooks::maybe_read_delay(); // TEST KNOB (test_hooks.h)
                 // raw-read: inside a read_reclaim::ReadSection
-                if (live == chunk_.get_cst_val2(BaseSpec::ind_) || live[num_] == second_value_)
+                if (live == chunk_.get_cst_val2(BaseSpec::ind_) || same_value(live[num_], second_value_))
                 {
                     return value;
                 }
@@ -657,8 +658,8 @@ void zero_one_value::Proxy<T>::execute_simple_operation(Lambda operation)
     if constexpr (chunk_config::use_compression_with_counter)
     {
         const InT<T> v_old = read_values();
-        was_second_value   = (v_old == second_value_);
-        was_first_value    = (v_old == static_cast<T>(zero_one_value::Chunk<T>::first_value));
+        was_second_value   = same_value(v_old, second_value_);
+        was_first_value    = same_value(v_old, static_cast<T>(zero_one_value::Chunk<T>::first_value));
     }
 
     // Without counters (fast block compression) the body -- arithmetic_assign's,
@@ -669,18 +670,19 @@ void zero_one_value::Proxy<T>::execute_simple_operation(Lambda operation)
     if constexpr (chunk_config::use_compression_with_counter)
     {
         // Transitions OUT: position no longer holds the constant it held before.
-        if (was_second_value && this->raw_elem() != second_value_)
+        if (was_second_value && !same_value(this->raw_elem(), second_value_))
         {
             chunk_.dec_nb_val_eq_second_value();
         }
-        else if (was_first_value && this->raw_elem() != static_cast<T>(zero_one_value::Chunk<T>::first_value))
+        else if (was_first_value &&
+                 !same_value(this->raw_elem(), static_cast<T>(zero_one_value::Chunk<T>::first_value)))
         {
             chunk_.dec_nb_val_eq_first_value();
         }
 
         // Transitions IN: position now holds a constant it did not hold before.
         // Guarded by !was_* to avoid double counting.
-        if (!was_second_value && this->raw_elem() == second_value_)
+        if (!was_second_value && same_value(this->raw_elem(), second_value_))
         {
             chunk_.inc_nb_val_eq_second_value();
             if (chunk_.is_full_second_value(this->chunk_size()))
@@ -688,7 +690,8 @@ void zero_one_value::Proxy<T>::execute_simple_operation(Lambda operation)
                 this->manage_full_second_value();
             }
         }
-        else if (!was_first_value && this->raw_elem() == static_cast<T>(zero_one_value::Chunk<T>::first_value))
+        else if (!was_first_value &&
+                 same_value(this->raw_elem(), static_cast<T>(zero_one_value::Chunk<T>::first_value)))
         {
             chunk_.inc_nb_val_eq_first_value();
             if (chunk_.is_full_first_value(this->chunk_size()))
@@ -776,7 +779,7 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_a
 
     // Compare the PRECISE result with the second constant value
     const bool will_be_not_second_value =
-        (v_new_precise != static_cast<CalcType>(self.second_value_)) && self.is_cst_val2();
+        !same_value(v_new_precise, static_cast<CalcType>(self.second_value_)) && self.is_cst_val2();
 
     if (will_be_not_second_value)
     {
@@ -805,7 +808,7 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_a
     const CalcType v_new_precise = op(static_cast<CalcType>(v_old), static_cast<CalcType>(operand));
 
     const bool will_be_not_second_value =
-        (v_new_precise != static_cast<CalcType>(proxy.get_second_value())) && proxy.is_cst_val2();
+        !same_value(v_new_precise, static_cast<CalcType>(proxy.get_second_value())) && proxy.is_cst_val2();
 
     if (will_be_not_second_value)
     {
@@ -850,7 +853,7 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, false>::execute_ari
         // Built where it is used: one write of a struct for one value.
         const auto res = static_cast<T>(intermediate);
 
-        const bool will_be_not_second_value = (res != self.second_value_) && self.is_cst_val2();
+        const bool will_be_not_second_value = !same_value(res, self.second_value_) && self.is_cst_val2();
 
         if (will_be_not_second_value)
         {
@@ -939,8 +942,8 @@ void zero_one_value::Proxy<T>::execute_inplace_operation(Lambda operation)
 
     if constexpr (chunk_config::use_compression_with_counter)
     {
-        was_second_value = (this->raw_elem() == second_value_);
-        was_first_value  = (this->raw_elem() == static_cast<T>(zero_one_value::Chunk<T>::first_value));
+        was_second_value = same_value(this->raw_elem(), second_value_);
+        was_first_value  = same_value(this->raw_elem(), static_cast<T>(zero_one_value::Chunk<T>::first_value));
     }
 
     elem_update(static_cast<T*>(Base::values_), static_cast<std::size_t>(num_), operation);
@@ -948,11 +951,12 @@ void zero_one_value::Proxy<T>::execute_inplace_operation(Lambda operation)
     if constexpr (chunk_config::use_compression_with_counter)
     {
         // Transitions OUT: the position no longer holds the constant it held before.
-        if (was_second_value && this->raw_elem() != second_value_)
+        if (was_second_value && !same_value(this->raw_elem(), second_value_))
         {
             chunk_.dec_nb_val_eq_second_value();
         }
-        else if (was_first_value && this->raw_elem() != static_cast<T>(zero_one_value::Chunk<T>::first_value))
+        else if (was_first_value &&
+                 !same_value(this->raw_elem(), static_cast<T>(zero_one_value::Chunk<T>::first_value)))
         {
             chunk_.dec_nb_val_eq_first_value();
         }
@@ -961,7 +965,7 @@ void zero_one_value::Proxy<T>::execute_inplace_operation(Lambda operation)
         // Test the actual stored value, NOT is_cst_val2(ind) (which checks the
         // storage pointer and is false right after create_value decompressed the
         // chunk, so it would miss the increment and desync the counter).
-        if (!was_second_value && this->raw_elem() == second_value_)
+        if (!was_second_value && same_value(this->raw_elem(), second_value_))
         {
             chunk_.inc_nb_val_eq_second_value();
             if (chunk_.is_full_second_value(this->chunk_size()))
@@ -969,7 +973,8 @@ void zero_one_value::Proxy<T>::execute_inplace_operation(Lambda operation)
                 this->manage_full_second_value();
             }
         }
-        else if (!was_first_value && this->raw_elem() == static_cast<T>(zero_one_value::Chunk<T>::first_value))
+        else if (!was_first_value &&
+                 same_value(this->raw_elem(), static_cast<T>(zero_one_value::Chunk<T>::first_value)))
         {
             chunk_.inc_nb_val_eq_first_value();
             if (chunk_.is_full_first_value(this->chunk_size()))
@@ -1043,7 +1048,7 @@ void zero_one_value::Proxy<T>::apply_compound_operation([[maybe_unused]] Op op, 
         BaseSpec::set_info_second_value_ind(); // Initialize second_value / ind — needed by both branches below
 
         const InT<T> v_old_snapshot = this->raw_elem();
-        const bool   is_first_value = (v_old_snapshot == static_cast<T>(zero_one_value::Chunk<T>::first_value));
+        const bool   is_first_value = same_value(v_old_snapshot, static_cast<T>(zero_one_value::Chunk<T>::first_value));
 
         if (!is_first_value) [[likely]]
         {
@@ -1052,7 +1057,7 @@ void zero_one_value::Proxy<T>::apply_compound_operation([[maybe_unused]] Op op, 
                 chunk_config::CheckNaN<chunk_config::do_check>::maybe(operand, static_cast<long>(num_));
             }
 
-            const bool was_second_value  = (v_old_snapshot == second_value_);
+            const bool was_second_value  = same_value(v_old_snapshot, second_value_);
             const bool was_second_value0 = was_second_value && SecondValueBase::is_not_cst_val2();
 
             execute_arithmetic_compound_operation(
@@ -1080,11 +1085,11 @@ void zero_one_value::Proxy<T>::apply_compound_operation([[maybe_unused]] Op op, 
             // `/ inf`) would count the new zero and keep the old second value
             // counted, and a later write would fold the chunk to cst2 with one
             // element still different (lost).
-            if (was_second_value0 && v_new != second_value_)
+            if (was_second_value0 && !same_value(v_new, second_value_))
             {
                 chunk_.dec_nb_val_eq_second_value();
             }
-            if (Base::is_not_cst_val1() && v_new == zero_one_value::Chunk<T>::first_value)
+            if (Base::is_not_cst_val1() && same_value(v_new, zero_one_value::Chunk<T>::first_value))
             {
                 chunk_.inc_nb_val_eq_first_value();
                 if (chunk_.is_full_first_value(this->chunk_size()))
@@ -1092,7 +1097,7 @@ void zero_one_value::Proxy<T>::apply_compound_operation([[maybe_unused]] Op op, 
                     this->manage_full_first_value();
                 }
             }
-            else if (!was_second_value && v_new == second_value_)
+            else if (!was_second_value && same_value(v_new, second_value_))
             {
                 chunk_.inc_nb_val_eq_second_value();
                 if (chunk_.is_full_second_value(this->chunk_size()))
@@ -1109,7 +1114,7 @@ void zero_one_value::Proxy<T>::apply_compound_operation([[maybe_unused]] Op op, 
         // shortcut may act on a released, zero-filled buffer (see
         // ProxyBase::read_values_outside_session).
         const InT<T> v_old = Base::read_values_outside_session();
-        if (v_old != zero_one_value::Chunk<T>::first_value)
+        if (!same_value(v_old, zero_one_value::Chunk<T>::first_value))
         {
             // An operand the operation cannot take as it is -- an integer for a
             // std::complex, whose operators are templates -- goes in as a T.

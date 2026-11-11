@@ -18,12 +18,14 @@
 
 #include <vector>  // std::vector
 #include <atomic>  // std::atomic, std::atomic_thread_fence, std::memory_order
+#include <cerrno>  // errno (heavy_barrier's failed membarrier)
 #include <cstdint> // uint32_t (the ring_log payloads)
 
-#include "chunk/config.h"                  // chunk_config::asymmetric_dekker, chunk_config::ring_log_debug
-#include "chunk/internal/PMP_CHUNK.h"      // CHUNK_PMP_THREAD_CAPACITY
-#include "chunk/internal/ring_log_debug.h" // ring_log, get_tid
-#include "chunk/internal/immortal.h"       // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/config.h"                   // chunk_config::asymmetric_dekker, chunk_config::ring_log_debug
+#include "chunk/internal/PMP_CHUNK.h"       // CHUNK_PMP_THREAD_CAPACITY
+#include "chunk/internal/ring_log_debug.h"  // ring_log, get_tid
+#include "chunk/internal/immortal.h"        // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (heavy_barrier's failed membarrier)
 
 #ifdef __linux__
     #include <sys/syscall.h> // SYS_membarrier
@@ -108,7 +110,17 @@ inline void heavy_barrier() noexcept
 #if defined(__linux__) && defined(SYS_membarrier)
         if (membarrier_ready.load(std::memory_order_relaxed)) [[likely]]
         {
-            ::syscall(SYS_membarrier, membarrier_cmd_private_expedited, 0, 0);
+            // The writers announce with a compiler barrier only: this call is the
+            // whole of their ordering. Registered, it does not fail (membarrier(2):
+            // EPERM only unregistered); if it does anyway -- a seccomp filter
+            // installed after the registration -- the handshake no longer holds, and
+            // a pass could free the buffer a writer is in. Stop, every build.
+            if (::syscall(SYS_membarrier, membarrier_cmd_private_expedited, 0, 0) != 0) [[unlikely]]
+            {
+                CHUNK_INVARIANT_FAILED("membarrier(MEMBARRIER_CMD_PRIVATE_EXPEDITED) failed after its registration "
+                                       "(errno {}): the asymmetric write/compress handshake cannot hold",
+                                       errno);
+            }
         }
 #endif
     }
@@ -281,6 +293,23 @@ class WriteCompressSyncPolicy
     [[gnu::always_inline]] static void announce_write(int thr, const void* chunk) noexcept;
 
     /**
+     * @brief What a deferred enqueue publishes in its writer flag: non-null, so
+     *        the flushers see the enqueue (is_thread_writing), but no chunk, so
+     *        the compressor's window (any_thread_writing_on_marked) does not
+     *        wait for it.
+     * @details An enqueue runs because the chunk is marked: with the chunk's
+     *          address in the flag, a pass parked in start() waited for the very
+     *          writers its mark had sent to the slow path, on its yield budget.
+     *          The enqueue touches no buffer of the chunk (only the deferred
+     *          maps and the pending counter, which the passes do not touch):
+     *          formal/writer_compressor.c lowers the flag before the capture.
+     */
+    [[nodiscard]] static const void* enqueue_tag() noexcept
+    {
+        return &enqueue_tag_;
+    }
+
+    /**
      * @brief Lower this thread's writer flag, ending its critical section.
      * @param thr calling thread's rank
      */
@@ -400,6 +429,8 @@ class WriteCompressSyncPolicy
     static bool any_thread_writing(int max_thr) noexcept;
 
   private:
+    static constexpr char enqueue_tag_ = 0; ///< Its address is enqueue_tag().
+
     /**
      * @brief Raise this thread's writer flag.
      * @param thr   calling thread's rank
