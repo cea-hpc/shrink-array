@@ -26,20 +26,21 @@
 //     write     : a[size] = 1.0                -> operator[]'s pre.
 //     negative  : a[-1] = 1.0                  -> operator[]'s pre.
 //     proxy     : a.element_proxy(size)        -> element_proxy's pre.
-//     resize    : a.resize(-1)                 -> resize's pre.
-//     reserve   : a.reserve(-1)                -> reserve's pre.
+//     resize    : a.resize(-1)                 -> std::length_error, no violation:
+//     reserve   : a.reserve(-1)                   a negative size is defined (exit 0).
 //     iterators : a.begin() == b.begin()       -> the iterator's contract_assert.
 //   The handler checks the kind of the violation and its predicate and exits
 //   0; a misuse that returns exits 1, an unexpected violation 2.
 
 #include <contracts>   // std::contracts::contract_violation, assertion_kind
 #include <cstdlib>     // std::_Exit
+#include <stdexcept>   // std::length_error (resize, reserve)
 #include <string_view> // std::string_view
 #include <utility>     // std::as_const
 
 #include "chunk/zero_any_array.h" // zero_any::Array
 #include "chunk/param_chunk.h"    // ParamChunk::init_indexes
-#include "chunk/internal/print.h" // shrink_array::println
+#include "chunk/print.h"          // shrink_array::println
 
 using namespace shrink_array;
 
@@ -120,17 +121,28 @@ int main(int argc, char** argv)
         (void)proxy;
         println("[contracts] FAIL: element_proxy({}) returned", count);
     }
-    else if (what == "resize")
+    else if (what == "resize" || what == "reserve")
     {
-        g_expect_word = "newsz";
-        arr.resize(-1);
-        println("[contracts] FAIL: resize(-1) returned");
-    }
-    else if (what == "reserve")
-    {
-        g_expect_word = "new_capacity";
-        arr.reserve(-1);
-        println("[contracts] FAIL: reserve(-1) returned");
+        // No precondition: a negative size throws std::length_error, as in
+        // every build. A violation here fails the test.
+        g_expect_violation = false;
+        try
+        {
+            if (what == "resize")
+            {
+                arr.resize(-1);
+            }
+            else
+            {
+                arr.reserve(-1);
+            }
+            println("[contracts] FAIL: {}(-1) returned", what);
+        }
+        catch (const std::length_error&)
+        {
+            println("[contracts] ok: {}(-1) throws std::length_error", what);
+            return 0;
+        }
     }
     else if (what == "iterators")
     {
