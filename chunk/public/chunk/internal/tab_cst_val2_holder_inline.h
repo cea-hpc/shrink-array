@@ -96,7 +96,7 @@ template <typename T>
 [[nodiscard]] std::size_t GlobalVecHolder<T>::count_entries() noexcept
 {
     std::size_t count = 0;
-    for (Segment<T>* s = head.load(std::memory_order_acquire); s != nullptr; s = s->next)
+    for (const Segment<T>* s = head.load(std::memory_order_acquire); s != nullptr; s = s->next)
     {
         count += static_cast<std::size_t>(s->used);
     }
