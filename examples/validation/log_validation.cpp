@@ -407,7 +407,8 @@ void check_no_allocation()
     const double value = 2.5;
     g_news.store(0);
     g_counting = true;
-    CHUNK_LOG(warn, general, "no allocation: {} {:.3f} {} {}", 123456789L, value, std::string_view{"view"}, &value);
+    CHUNK_LOG(warn, general, "no allocation: {} {:.3f} {} {} {}", 123456789L, value, std::string_view{"view"}, &value,
+              value);
     CHUNK_LOG(debug, general, "filtered out {}", 1);
     CHUNK_LOG_POW2(warn, general, "pow2 no allocation {}", 1);
     g_counting = false;
