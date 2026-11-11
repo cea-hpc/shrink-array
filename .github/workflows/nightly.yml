@@ -56,8 +56,7 @@ jobs:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Toolchain
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev libtbb-dev
+          .github/apt_install.sh g++-14 ninja-build libbz2-dev libtbb-dev
           g++-14 --version
           cmake --version
       - name: Configure
@@ -90,8 +89,7 @@ jobs:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Toolchain
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev
+          .github/apt_install.sh g++-14 ninja-build libbz2-dev
           g++-14 --version
           cmake --version
       - name: Configure
@@ -133,8 +131,7 @@ jobs:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Toolchain
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev
+          .github/apt_install.sh g++-14 ninja-build libbz2-dev
           g++-14 --version
           cmake --version
       # In the log: the runners differ, and a failure may be tied to one of their CPUs.
@@ -187,7 +184,7 @@ jobs:
       - name: Stacks of every thread, from the cores
         if: failure()
         run: |
-          sudo apt-get install -y -q gdb
+          .github/apt_install.sh gdb
           for core in "$RUNNER_TEMP"/cores/core.*; do
             [ -e "$core" ] || continue
             exe=$(file "$core" | sed -n "s/.*execfn: '\\([^']*\\)'.*/\\1/p")
@@ -214,9 +211,8 @@ jobs:
         run: |
           wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null
           echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-23 main" | sudo tee /etc/apt/sources.list.d/llvm-23.list
-          sudo apt-get update -q
           # libstdc++-14-dev: clang takes the newest libstdc++ installed.
-          sudo apt-get install -y -q clang-23 libomp-23-dev libstdc++-14-dev ninja-build libbz2-dev
+          .github/apt_install.sh clang-23 libomp-23-dev libstdc++-14-dev ninja-build libbz2-dev
           clang++-23 --version
           cmake --version
       - name: Configure
@@ -252,8 +248,7 @@ jobs:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Toolchain
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev
+          .github/apt_install.sh g++-14 ninja-build libbz2-dev
           g++-14 --version
           cmake --version
       - name: Configure
@@ -291,8 +286,7 @@ jobs:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Toolchain
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev
+          .github/apt_install.sh g++-14 ninja-build libbz2-dev
           python3 -m venv "$RUNNER_TEMP/gcovr"
           "$RUNNER_TEMP/gcovr/bin/pip" install -q gcovr==8.8
           g++-14 --version
