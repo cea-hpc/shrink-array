@@ -64,7 +64,7 @@
 #include <cstdint>     // std::uint32_t (checks 7 and 9)
 #include <cstdio>      // std::remove, std::sscanf
 #include <csignal>     // SIGTRAP, SIGABRT (check 9, --debugger)
-#include <cstdlib>     // std::malloc, std::free, setenv
+#include <cstdlib>     // std::malloc, std::free
 #include <cstring>     // std::memcpy
 #include <filesystem>  // std::filesystem::temp_directory_path
 #include <format>      // std::format (the expected address, check 7)
@@ -74,6 +74,7 @@
 #include <string_view> // std::string_view
 #include <thread>      // std::thread
 #include <vector>      // std::vector
+#include <stdlib.h>    // setenv, unsetenv (POSIX: <cstdlib> need not declare them)
 #include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
 #include <unistd.h>    // getpid
 

@@ -33,8 +33,8 @@
 // The nightly's coverage report had every refusal of this header at 0 %: the
 // programs only ever met valid values. Exit status 0 when every check passes.
 
-#include <cstdlib> // setenv, unsetenv
-#include <string>  // std::string
+#include <stdlib.h> // setenv, unsetenv (POSIX: <cstdlib> need not declare them)
+#include <string>   // std::string
 
 #include "chunk/internal/env_parse.h" // parse_number, env_number, arg_number, env_flag
 #include "chunk/print.h"              // shrink_array::println

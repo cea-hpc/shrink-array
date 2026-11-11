@@ -43,6 +43,7 @@
 
 #include <atomic>  // std::atomic (the counters)
 #include <chrono>  // std::chrono::steady_clock (--bench)
+#include <ratio>   // std::nano (--bench)
 #include <cstdio>  // std::printf
 #include <cstdlib> // std::atoi
 #include <cstring> // std::strcmp
