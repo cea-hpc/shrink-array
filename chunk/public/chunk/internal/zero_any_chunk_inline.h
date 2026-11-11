@@ -507,7 +507,7 @@ void zero_any::ChunkImpl<T, Derived>::fill_constant_st(this Derived& self,
 
     const SecondValueRef<T> ptr_second_value = zero_any::Proxy<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
     CstSlot*                ptr_type_cst     = &zero_any::Proxy<T>::tab_type_cst_val[num_tab][num_chunk];
-    const bool              to_first         = (v == static_cast<T>(first_value));
+    const bool              to_first         = same_value(v, static_cast<T>(first_value));
 
     if (self.written())
     {

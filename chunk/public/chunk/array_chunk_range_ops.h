@@ -435,7 +435,7 @@ template <typename Arr, typename ChunkClass>
 holds_constant(const Arr& arr, const ChunkClass& ch, int ind2, const typename Arr::value_type& v) noexcept
 {
     typename Arr::value_type c{};
-    return held_constant(arr, ch, ind2, c) && v == c;
+    return held_constant(arr, ch, ind2, c) && same_value(v, c);
 }
 
 /**

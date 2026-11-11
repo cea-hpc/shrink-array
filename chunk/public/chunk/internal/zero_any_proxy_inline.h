@@ -1649,10 +1649,12 @@ zero_any::ProxyImpl<T, Derived, ChunkT>::should_mark_for_compression(InT<T> old_
             return true;
         }
     }
+    // discover: a first second value; change: a chunk turning uniform at a third
+    // value -- the pass's scan tells.
     const bool discover = (same_value(second_value, first_value) && !same_value(new_value, first_value));
-    const bool leave    = (!same_value(second_value, first_value) && same_value(old_value, second_value) &&
-                           !same_value(new_value, second_value));
-    if (!discover && !leave)
+    const bool change   = (!same_value(second_value, first_value) && !same_value(new_value, second_value) &&
+                           !same_value(new_value, old_value));
+    if (!discover && !change)
     {
         return false;
     }
