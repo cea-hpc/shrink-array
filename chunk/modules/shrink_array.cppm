@@ -24,9 +24,10 @@
 // The headers stay the source of truth: the library's own sources and the
 // white-box validation harnesses still #include them.
 //
-// Built per variant library (chunk_<variant>_module links chunk_<variant>): the
-// BMI carries that library's defines (CHUNK_VARIANT_*, CHUNK_SIZE), so an
-// importer must link the same variant. Macros (CHUNK_LOG, CHUNK_PMP_*) do not
+// Built per variant library (chunk_<variant>_module links chunk_<variant>; and
+// chunk_vector_module, the std::vector mode, links chunk_vector): the BMI
+// carries that library's defines (CHUNK_VARIANT_*, CHUNK_SIZE), so an importer
+// must link the same library. Macros (CHUNK_LOG, CHUNK_PMP_*) do not
 // cross an import: a program that needs them still includes chunk/log.h.
 
 module;
@@ -149,10 +150,10 @@ extern "C++"
 #elif defined(CHUNK_VARIANT_ZERO_ONE_VALUE)
     #include "chunk/zero_one_value_array.h" // zero_one_value::Array
     #include "chunk/array_chunk_bits.h"     // ArrayChunkBits: zero_one_value::Array<Bit>
-#elif defined(CHUNK_VARIANT_ZERO)
-    #include "chunk/zero_array.h" // zero::Array
 #else
-    #error "shrink_array.cppm: built with a variant library's CHUNK_VARIANT_* define"
+    // CHUNK_VARIANT_ZERO, or no variant: chunk_vector, the std::vector mode
+    // (chunk_config::use_zero false), whose programs still name zero::Array.
+    #include "chunk/zero_array.h" // zero::Array
 #endif
 #include "chunk/param_chunk.h"                // ParamChunk
 #include "chunk/config.h"                     // build_config, chunk_config: the options the library was built with
@@ -207,7 +208,7 @@ namespace zero_one_value
 {
 using shrink_array::zero_one_value::Array;
 } // namespace zero_one_value
-#elif defined(CHUNK_VARIANT_ZERO)
+#else
 namespace zero
 {
 using shrink_array::zero::Array;

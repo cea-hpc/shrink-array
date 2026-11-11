@@ -790,8 +790,11 @@ set(CHUNK_MODULE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/modules" CACHE INTERNAL "chunk
 foreach(_mv IN LISTS CHUNK_VARIANTS)
   chunk_add_module(chunk_${_mv})
 endforeach()
+# chunk_vector (the std::vector mode, no variant) has its module too.
+chunk_add_module(chunk_vector)
 list(TRANSFORM CHUNK_VARIANTS APPEND "_module" OUTPUT_VARIABLE _module_targets)
 list(TRANSFORM _module_targets PREPEND "chunk_")
+list(APPEND _module_targets chunk_vector_module)
 message(STATUS "shrink_array module: ${_module_targets} (import shrink_array;)")
 
 # A REAL default library (not just an ALIAS), so the include directories reach the executables.
@@ -838,13 +841,15 @@ install(TARGETS ${_chunk_install_targets}
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
         COMPONENT chunk-devel)
 
-# The modules over the default variant libraries (chunk::chunk_<variant>_module):
+# The modules over the default variant libraries (chunk::chunk_<variant>_module)
+# and over chunk_vector (chunk::chunk_vector_module):
 # shrink_array.cppm and the module initializer's archive. A consumer's build
 # makes the BMI again from the installed unit, with the library's definitions
 # (variant, CHUNK_SIZE), and needs import std as this build does (its CMake
 # sets CMAKE_EXPERIMENTAL_CXX_IMPORT_STD before project(): docs/getting_started.md).
 list(TRANSFORM CHUNK_VARIANTS APPEND "_module" OUTPUT_VARIABLE _chunk_module_install_targets)
 list(TRANSFORM _chunk_module_install_targets PREPEND "chunk_")
+list(APPEND _chunk_module_install_targets chunk_vector_module)
 install(TARGETS ${_chunk_module_install_targets}
         EXPORT chunk-targets
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
