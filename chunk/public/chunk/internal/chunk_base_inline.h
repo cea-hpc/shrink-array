@@ -33,6 +33,7 @@
 #include "chunk/internal/value_slab.h"                 // value_slab_request (the value slabs' size)
 #include "fast_allocators/internal/svalloc.h"          // svfree
 #include "chunk/internal/write_compress_sync_policy.h" // WriteCompressSyncPolicy
+#include "chunk/internal/same_value.h"                 // same_value
 
 namespace shrink_array
 {
@@ -153,7 +154,9 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::to_be_queued_for_deferred_process
     using Policy = WriteCompressSyncPolicy<typename Derived::ProxyType>;
 
     CompressionManager<T, Derived>::enqueue_lock(thr_rank);
-    Policy::announce_write(thr_rank, chunk_ptr); // flag + seq_cst fence, one Dekker verb
+    // The flag holds enqueue_tag(), not chunk_ptr: the flushers need a raised flag,
+    // the compressor's window must not wait for an enqueue on the chunk it marked.
+    Policy::announce_write(thr_rank, Policy::enqueue_tag()); // flag + fence, one Dekker verb
 
     // The container steps below allocate, and ankerl's maps can throw. Callers are noexcept,
     // so an escaping exception would be a silent std::terminate: report where instead.
@@ -660,7 +663,7 @@ template <typename T, typename Derived>
     // Coinciding constants (frequent in zero_any: second_v is values[0], and a
     // sparse chunk often starts at first_value): one compare per element,
     // not two identical ones. Same verdict -- `first` only -- as below.
-    if (first_v == second_v)
+    if (same_value(first_v, second_v))
     {
         return ConstantScan{self.is_constant_to(first_v, count), false};
     }
@@ -674,8 +677,8 @@ template <typename T, typename Derived>
         for (unsigned int j = i; j < block_end; ++j)
         {
             // raw-read: compressor scan of a chunk this pass claimed (steal mark), or a sequential caller
-            not_first |= static_cast<unsigned int>(vals[j] != first_v);
-            not_second |= static_cast<unsigned int>(vals[j] != second_v);
+            not_first |= static_cast<unsigned int>(!same_value(vals[j], first_v));
+            not_second |= static_cast<unsigned int>(!same_value(vals[j], second_v));
         }
         i           = block_end;
         scan.first  = scan.first && not_first == 0;
@@ -740,7 +743,7 @@ ChunkBase<T, Derived>::walk_constant(const T* vals, InT<T> value, unsigned int f
         for (unsigned int j = i; j < block_end; ++j)
         {
             // raw-read: compressor scan of a chunk this pass claimed (steal mark), or a sequential caller
-            bad |= static_cast<unsigned int>(vals[j] != value);
+            bad |= static_cast<unsigned int>(!same_value(vals[j], value));
         }
         i = block_end;
         if (bad != 0)

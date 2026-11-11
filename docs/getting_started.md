@@ -295,6 +295,14 @@ parallel region: `resize()`, `reserve()`, `push_back()` beyond the capacity, `cl
 region it is refused (check builds stop, others log an error and skip the pass) -- there the
 writers' own passes compress.
 
+**Work arrays inside a region.** A thread of a region may build arrays of its own
+(`zero_any::Array<double> work(n);`), write and read them, and let them be destroyed, while
+the other threads do the same and the team writes shared arrays. Construction and destruction
+take a lock of the library, one array at a time for the whole process; the element accesses
+take none. Such an array is its thread's: only that thread writes it, and the sequential
+points above are still sequential points for it. Its destruction costs one `membarrier()`,
+and skips the final compression pass that a destruction outside a region runs.
+
 **Threads.** The per-thread structures are sized once for `max(omp_get_max_threads(), number
 of cores, 256)` threads (in a std build, the team size -- `CHUNK_NUM_THREADS`, else
 `OMP_NUM_THREADS` -- stands for `omp_get_max_threads()`; about 1 KiB per element type and per
@@ -390,7 +398,11 @@ threads: for the others, use the std backend.
   (arithmetic types, `bool`, `std::complex`, enums, `std::array` and aggregates of those). A
   type that owns a resource (`std::string`) is refused at compile time. `zero_one_value` also needs an
   order on the second value: a struct of doubles declares `auto operator<=>(const T&) const =
-  default;`. On a `bool` element, `a[i] += 1` and the other arithmetic assignments (`-= *= /=
+  default;`. An element reads back the bits written: the library tells `-0.0` from `+0.0`
+  (bit comparison for `float`, `double`, `std::complex`, `std::array`), but compares the
+  members of an aggregate with its `==`, which merges the two zeros -- specialise
+  `shrink_array::ValueIdentity<T>` (`chunk/internal/same_value.h`) to keep the sign of a zero
+  member. On a `bool` element, `a[i] += 1` and the other arithmetic assignments (`-= *= /=
   %= <<= >>=`) do not compile: write `=`, `&=`, `|=` or `^=`.
 - **`zero_one_value` compresses only to its declared second value.** Without `set_second_value()`, a
   `zero_one_value` array compresses to zero only.

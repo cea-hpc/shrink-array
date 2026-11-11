@@ -30,9 +30,11 @@ namespace shrink_array
  *    pooled, replaced by a shared constant buffer and taken back without ever
  *    running a constructor or destructor of T. Resource owners (std::string)
  *    are out.
- *  - **equality comparable**: compression is "every element == the constant",
- *    scanned with the type's own operator== (padding is not part of the value;
- *    never a memcmp).
+ *  - **equality comparable**: compression is "every element is the constant",
+ *    decided by same_value() (same_value.h): the bits for float and double
+ *    (-0.0 is not +0.0), part by part for std::complex and std::array, the
+ *    type's own operator== otherwise (padding is not part of the value; never a
+ *    memcmp of a struct). ValueIdentity<T> specialises it for an aggregate.
  *  - **default constructible**: T{} is the first constant, the value a fresh
  *    array reads everywhere and the one a run compresses to.
  *

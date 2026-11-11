@@ -217,9 +217,16 @@ pass compresses each candidate at its own size.
   (`is_cst_val2()` holds for a motif chunk since, for the write engine, it is compressed). The
   rebuilt chunks, written through the proxies, are queued by the completion rule and compressed
   to motifs of the new size by the next pass.
-- **Advisor.** `ChunkSizeAdvisor` reads a motif chunk as data (motif plus offset), never as a
-  constant: its constant forecasts are those `zero_any` makes on the same values. It forecasts
-  no motif compression (§10): never optimistic.
+- **Advisor.** `ChunkSizeAdvisor` counts the motif chunks apart (`ChunkSizeEstimate::motif`),
+  exactly at the current size, with one motif entry per distinct motif in the memory model. At
+  another size, a window with no materialised chunk is cut into its parts -- a motif chunk's
+  (motif, first element in it, length), a constant chunk's length -- each with its first value
+  minus the window's: two windows with the same parts hold the same normalised data. A key
+  seen c >= 2 times forecasts c - 1 motif windows and one materialised (the first sighting),
+  from the pointers and offset slots, without reading data. Until November 2026 it read a
+  motif chunk as data at every size: blind to the motifs a coarsening loses, it once
+  re-chunked an array of 8 local motifs with irregular offsets 256 -> 1024, from 5.25 MB to
+  270 MB (2^26 ints, 128 threads).
 
 ## 9. Results
 
@@ -256,9 +263,9 @@ staying in cache; the write pays the classification of the chunks.
 
 - **Where the offset lives** (§2): the slot, against the chunk object (+8 bytes per chunk, a
   cache line fewer per motif read); to be measured with `access_cost_pattern` on motif-heavy reads.
-- **The advisor's motif forecast** (§8): at a candidate size, a window would be compressed to a
-  motif if its normalised content is shared with another window. An estimate from the sampled
-  chunks is cheap, but changes `ChunkSizeEstimate` (a public struct) and the decider.
+- **The advisor's motif forecast** (§8) sees only the windows made of motif and constant chunks:
+  one that holds a materialised chunk is forecast as `zero_any` forecasts it, and two motifs
+  with an equal sub-range are not recognised as one (a share missed, never invented).
 - **Motifs shorter than a chunk** (a stride that does not divide the chunk size, an offset growing
   inside the chunk) are not covered: `chunk[j] = P[j mod s] + (j div s) * step` would be a
   second kind of motif. Measure on real connectivities first.

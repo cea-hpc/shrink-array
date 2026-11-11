@@ -21,9 +21,8 @@
 #include <type_traits> // std::has_unique_object_representations_v
 #include <utility>     // std::unreachable
 
-#include "chunk/internal/zero_chunk_def.h" // ComplexType
-#include "chunk/internal/complex_less.h"   // ComplexLess
-#include "chunk/internal/in_t.h"           // InT<T>: the compared values
+#include "chunk/internal/in_t.h"       // InT<T>: the compared values
+#include "chunk/internal/same_value.h" // identity_less, internal::has_identity_order
 
 namespace shrink_array
 {
@@ -31,8 +30,13 @@ namespace shrink_array
  * @brief The strict weak order zero_one_value keys its second-value tables with.
  *
  * zero_one_value keys a std::map of candidate tables by second value, so it needs an
- * ordering the value type may not provide. In order of preference:
- *  - std::complex: ComplexLess, real then imaginary (no operator< in std);
+ * ordering the value type may not provide, and whose equivalence is
+ * same_value() (same_value.h): two second values the library keeps apart must
+ * be two keys. In order of preference:
+ *  - floating point, std::complex, std::array of those: identity_less(), the
+ *    order of the bit patterns -- -0.0 and +0.0 are two keys, and so are two
+ *    NaNs of different payloads (operator< would merge the zeros and is not
+ *    a strict weak order with a NaN);
  *  - a type with operator<: that one (arithmetic, enum, std::array, a struct
  *    with a defaulted operator<=>);
  *  - a type whose every bit is value (has_unique_object_representations: no
@@ -52,9 +56,9 @@ struct ValueLess
     /// @return true when @p lhs orders before @p rhs.
     static bool operator()(InT<T> lhs, InT<T> rhs) noexcept
     {
-        if constexpr (ComplexType<T>)
+        if constexpr (internal::has_identity_order<T>::value)
         {
-            return ComplexLess<typename T::value_type>{}(lhs, rhs);
+            return identity_less(lhs, rhs);
         }
         else if constexpr (std::totally_ordered<T>)
         {

@@ -26,8 +26,12 @@
 
 #include <array>   // std::array (the frame stack)
 #include <atomic>  // std::atomic (the settings)
-#include <cstdlib> // std::getenv, std::strtol (CHUNK_NUM_THREADS, OMP_NUM_THREADS)
-#include <thread>  // std::thread::hardware_concurrency (the default team size)
+#include <chrono>  // std::chrono::steady_clock (the spin budget)
+#include <cstdlib> // std::getenv, std::strtol (CHUNK_NUM_THREADS, OMP_NUM_THREADS, CHUNK_PMP_SPIN_US)
+#include <thread>  // std::thread::hardware_concurrency, std::this_thread::yield
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+    #include <intrin.h> // _mm_pause (cpu_relax)
+#endif
 
 namespace fast_alloc::pmp::std_backend
 {
@@ -179,5 +183,98 @@ struct Settings
 {
     const int nthreads = settings().nthreads.load(std::memory_order_relaxed);
     return nthreads > 0 ? nthreads : default_threads();
+}
+
+/// @brief How long a waiting thread of the backend spins before it sleeps, in
+///        ns: CHUNK_PMP_SPIN_US (microseconds, default 1000; 0: sleep at once).
+/// @details OpenMP's blocktime, for the barriers, singles and team hand-offs
+///          of the std backend. A futex sleep and wake-up costs tens of
+///          microseconds per thread, and a barrier of a large team wakes them
+///          in a cascade (~0.4 ms at 160 threads, against ~20 us spinning):
+///          spinning wins whenever the wait is shorter than the budget, which
+///          is the case of the library's teams (the re-chunk's slice
+///          boundaries: a few barriers every few milliseconds). The budget
+///          bounds the CPU a waiting thread burns, for a long wait or an
+///          oversubscribed machine.
+[[nodiscard]] inline long long spin_budget_ns() noexcept
+{
+    static const long long budget = []
+    {
+        long long   us    = 1000;
+        const char* value = std::getenv("CHUNK_PMP_SPIN_US"); // NOLINT(concurrency-mt-unsafe): read once
+        if (value != nullptr)
+        {
+            char*      end    = nullptr;
+            const long parsed = std::strtol(value, &end, 10);
+            if (end != value && parsed >= 0 && parsed <= 10'000'000)
+            {
+                us = parsed;
+            }
+        }
+        return us * 1000;
+    }();
+    return budget;
+}
+
+/// @brief A hint to the core that the thread spins (x86 pause, AArch64 yield).
+inline void cpu_relax() noexcept
+{
+#if defined(__x86_64__) || defined(__i386__)
+    __builtin_ia32_pause();
+#elif defined(__aarch64__) || defined(__arm__)
+    asm volatile("yield" ::: "memory");
+#elif defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+    _mm_pause();
+#endif
+}
+
+/// @brief The hardware threads (at least 1), read once.
+[[nodiscard]] inline int hardware_threads() noexcept
+{
+    static const int threads = []
+    {
+        const auto n = static_cast<int>(std::thread::hardware_concurrency());
+        return n > 0 ? n : 1;
+    }();
+    return threads;
+}
+
+/**
+ * @brief Spin until @p done() is true or the spin budget is spent.
+ * @param team_threads Threads of the team the caller waits with: more than
+ *        the hardware threads, and the caller sleeps at once (a spinning
+ *        waiter would hold the core of a thread it waits for -- libgomp
+ *        throttles its spin count the same way).
+ * @return @p done()'s last value: false means the caller must sleep.
+ * @details Every 256 rounds the clock is read and the thread yields: when
+ *          other threads want the cores (another runtime's idle workers, a
+ *          busy machine), the one being waited for gets a turn.
+ */
+template <typename Done>
+[[nodiscard]] bool spin_until(int team_threads, Done&& done) noexcept
+{
+    const long long budget = team_threads > hardware_threads() ? 0 : spin_budget_ns();
+    if (budget <= 0)
+    {
+        return done();
+    }
+    const auto start = std::chrono::steady_clock::now();
+    for (unsigned i = 1;; ++i)
+    {
+        if (done())
+        {
+            return true;
+        }
+        cpu_relax();
+        if ((i & 255U) == 0U)
+        {
+            if (std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start)
+                    .count() >= budget)
+            {
+                return done();
+            }
+            std::this_thread::yield();
+        }
+    }
 }
 } // namespace fast_alloc::pmp::std_backend

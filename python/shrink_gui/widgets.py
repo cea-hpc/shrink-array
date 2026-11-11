@@ -6,11 +6,11 @@ import re
 import shlex
 
 from PySide6.QtCharts import QChartView
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QFont, QPainter, QTextCursor, QValidator
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout,
                                QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
-                               QPlainTextEdit, QPushButton, QSpinBox, QTableWidgetItem, QToolTip,
+                               QPlainTextEdit, QPushButton, QScrollArea, QSpinBox, QTableWidgetItem, QToolTip,
                                QVBoxLayout, QWidget)
 
 from shrink_gui import i18n, qos
@@ -179,6 +179,45 @@ class RowVisibleFormLayout(QFormLayout):
         r = self._row_of(row)
         # isHidden(): hidden explicitly, whatever the window's own state.
         return r >= 0 and any(not w.isHidden() for w in self._row_widgets(r))
+
+class VScrollArea(QScrollArea):
+    """A scroll area that only scrolls vertically: as wide as its widget (plus
+    the scroll bar), so that a splitter gives it the room a plain widget would
+    get, and as short as the window makes it."""
+
+    def __init__(self):
+        super().__init__()
+        self.setWidgetResizable(True)
+        self.setFrameShape(QScrollArea.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+    def setWidget(self, widget):
+        super().setWidget(widget)
+        widget.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        # The widget's own size hints changed (a label set at run time, a row
+        # shown): the area's follow, which Qt does not do across a viewport.
+        if obj is self.widget() and event.type() == QEvent.LayoutRequest:
+            self.updateGeometry()
+        return super().eventFilter(obj, event)
+
+    def _width_of(self, hint):
+        return hint.width() + self.verticalScrollBar().sizeHint().width() + 2 * self.frameWidth()
+
+    def minimumSizeHint(self):
+        hint = super().minimumSizeHint()
+        if self.widget():
+            hint.setWidth(self._width_of(self.widget().minimumSizeHint()))
+        return hint
+
+    def sizeHint(self):
+        hint = super().sizeHint()
+        if self.widget():
+            hint.setWidth(self._width_of(self.widget().sizeHint()))
+            hint.setHeight(self.widget().sizeHint().height() + 2 * self.frameWidth())
+        return hint
+
 
 class TLabel(QLabel):
     """A QLabel whose setText() translates (status lines set at run time)."""

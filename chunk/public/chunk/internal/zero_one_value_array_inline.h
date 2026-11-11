@@ -28,6 +28,8 @@
 #include <sys/mman.h> // mprotect (use_mm_protect: the read-only cst_val2 blocks)
 #include <unistd.h>   // sysconf(_SC_PAGESIZE) (same)
 
+#include "chunk/internal/cold_path_lock.h"              // ColdPathLock: construction, teardown, resize
+#include "chunk/internal/tab_users.h"                   // TabUsers: a row per array
 #include "chunk/internal/in_t.h"                        // InT<T>: the element snapshots
 #include "chunk/zero_one_value_array.h"                 // zero_one_value::Array, the class these bodies belong to
 #include "chunk/internal/type_name.h"                   // type_name<T>
@@ -47,6 +49,7 @@
 #include "chunk/internal/type_state.h"        // TypeState: per-size free lists, candidate filter
 #include "chunk/internal/pool_ledger.h"       // CHUNK_LEDGER_PARK
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size, cst_buffer_size
+#include "chunk/internal/same_value.h"        // same_value
 
 /**
  * @file zero_one_value_array_inline.h
@@ -93,6 +96,8 @@ namespace shrink_array
 template <ArrayChunkElement T, typename IntType>
 void zero_one_value::Array<T, IntType>::create(IntType sz)
 {
+    this->check_length(sz, "constructor");
+    const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
     // The first array of this element type registers its manager; every
     // later one pays a guard load. See AllTypeChunk.
     AllTypeChunk::ensure_manager<TypeState<zero_one_value::Chunk, T>>();
@@ -103,6 +108,7 @@ void zero_one_value::Array<T, IntType>::create(IntType sz)
 
     sh_inf.insert_only_num_tab(this->registry_key(), nb_tab);
     ++nb_tab;
+    internal::TabUsers<ChunkType>::resize(nb_tab);
 
     // Registry entry written: refresh the mirror the write proxies are armed
     // with (see zero_one_value::Array::inf_array).
@@ -225,7 +231,7 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
         // T{} is the first value; while the second is T{} too (none
         // declared), declaring T{} would register a block and candidate lists
         // for a value every write already folds as the first one.
-        if (sec_value == T{} && get_second_value() == T{})
+        if (same_value(sec_value, T{}) && same_value(get_second_value(), T{}))
         {
             if (message)
             {
@@ -369,7 +375,7 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
         }
         const bool exi = sh_inf.exists(this->registry_key());
 
-        if (exi && sec_value != get_second_value())
+        if (exi && !same_value(sec_value, get_second_value()))
         {
             sh_inf.replace_all_other_elm(this->registry_key(), sec_value, ind_cst_val2_);
             sh_inf.insert_map_ind_cst_val2(sec_value, ind);
@@ -464,7 +470,7 @@ void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os
                                               {
                                                   return;
                                               }
-                                              ++acc[*v0 == zero_one_value::Chunk<T>::first_value ? 0 : 1];
+                                              ++acc[same_value(*v0, zero_one_value::Chunk<T>::first_value) ? 0 : 1];
                                               return;
                                           }
                                           ++acc[ck.is_cst_val1() ? 0 : 1];
@@ -490,7 +496,7 @@ void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os
                                               {
                                                   return;
                                               }
-                                              ++acc[*v0 == zero_one_value::Chunk<T>::first_value ? 0 : 1];
+                                              ++acc[same_value(*v0, zero_one_value::Chunk<T>::first_value) ? 0 : 1];
                                               return;
                                           }
                                           ++acc[ck.is_cst_val1() ? 0 : 1];
@@ -514,25 +520,25 @@ void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os
         const auto   csz          = static_cast<unsigned int>(this->size_policy_.size());
         const int    ind          = get_ind_second_value();
         const InT<T> second_value = get_second_value();
-        n_would_be_2a =
-            pmp::parallel_sum<int, 1>(0, nb_chunk_, team_opt,
-                                      [&](int j, auto& acc)
-                                      {
-                                          const auto& ck = chunk_list_[j];
-                                          if (!ck.written(ind))
-                                          {
-                                              return; // compressed: holds first_value or second_value by definition
-                                          }
-                                          const InT<T> value = ck.read_value_scan(0);
-                                          if (value == zero_one_value::Chunk<T>::first_value || value == second_value)
-                                          {
-                                              return; // zero_one_value material, caught or not
-                                          }
-                                          if (ck.is_constant_to(value, csz))
-                                          {
-                                              ++acc[0];
-                                          }
-                                      })[0];
+        n_would_be_2a             = pmp::parallel_sum<int, 1>(
+            0, nb_chunk_, team_opt,
+            [&](int j, auto& acc)
+            {
+                const auto& ck = chunk_list_[j];
+                if (!ck.written(ind))
+                {
+                    return; // compressed: holds first_value or second_value by definition
+                }
+                const InT<T> value = ck.read_value_scan(0);
+                if (same_value(value, zero_one_value::Chunk<T>::first_value) || same_value(value, second_value))
+                {
+                    return; // zero_one_value material, caught or not
+                }
+                if (ck.is_constant_to(value, csz))
+                {
+                    ++acc[0];
+                }
+            })[0];
     }
 
     // Centralized rendering: shared layout/colors/verdict with zero_any::Array
@@ -556,6 +562,7 @@ void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os
 template <ArrayChunkElement T, typename IntType>
 void zero_one_value::Array<T, IntType>::clear_core()
 {
+    const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
     // Pin the ambient size to THIS array's geometry before the clear_st() /
     // free_values() sweep below (and before flush_pending_deferred_ops(), which
     // can itself free). get_chunk_allocator() routes on the ambient
@@ -578,7 +585,10 @@ void zero_one_value::Array<T, IntType>::clear_core()
     // (array_chunk_parallel_common_inline.h); a sequential point that
     // reallocates or frees chunks must not trust it (as rechunk, swap and
     // zero_any::Array::clear_core()).
-    this->flush_pending_deferred_ops(/*force=*/true);
+    // Inside a region, a work array of this thread's: this rank's structures only.
+    const bool own_rank =
+        this->teardown_on_own_rank(zero_one_value::Proxy<T>::share_info_array->get_num_tab(this->registry_key()));
+    this->flush_pending_deferred_ops(/*force=*/true, own_rank);
 
     // Per-array compression stats, read here: after the flush (before it, async
     // compression work may be in flight and the snapshot depends on the thread
@@ -603,7 +613,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
         // nothing else clears it, so a destroyed array's zero_one_value::Chunk* would dangle
         // there for a later pass to walk. Targeted (no compression, other arrays
         // untouched); it also makes rechunk_to's tmp teardown safe.
-        Manager::remove_from_zero_one_value_candidates_by_num_tab(num_tab);
+        Manager::remove_from_zero_one_value_candidates_by_num_tab(num_tab, own_rank);
     }
 
     if (!nb_chunk_)
@@ -624,7 +634,9 @@ void zero_one_value::Array<T, IntType>::clear_core()
         {
             const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
 
-            if (ens_type_chunk.have_chunk_to_compress_potentially())
+            // Not for a work array torn down in a region: that pass walks every
+            // rank's list, of every type.
+            if (!own_rank && ens_type_chunk.have_chunk_to_compress_potentially())
             {
                 ens_type_chunk.compress_chunk_to_compress_potentially(false);
             }
@@ -1188,6 +1200,8 @@ void zero_one_value::Array<T, IntType>::release_chunk_range(int first, int last)
 template <ArrayChunkElement T, typename IntType>
 void zero_one_value::Array<T, IntType>::resize(IntType newsz)
 {
+    this->check_length(newsz, "resize");
+    const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
     this->invalidate_proxies();
     const int     old_nb_chunk = nb_chunk_;
     const IntType old_size     = this->m_size_; // the stale-tail reset at the end
@@ -1238,6 +1252,7 @@ void zero_one_value::Array<T, IntType>::resize(IntType newsz)
 template <ArrayChunkElement T, typename IntType>
 zero_one_value::Array<T, IntType>::~Array()
 {
+    const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
     clear();
     Proxy<T>::share_info_array->erase(this->registry_key());
 
@@ -1314,7 +1329,7 @@ void zero_one_value::Array<T, IntType>::copy_second_value_from(const Array& from
     if constexpr (!is_bool_like_v<T>)
     {
         const InT<T> sv = from.get_second_value();
-        if (sv != T{} && get_second_value() != sv)
+        if (!same_value(sv, T{}) && !same_value(get_second_value(), sv))
         {
             set_second_value(sv, false);
         }
@@ -1362,7 +1377,7 @@ void zero_one_value::Array<T, IntType>::swap_identity(Array& other)
         for (Array* arr : {this, &other})
         {
             const T value = arr->inf_array_.second_value;
-            if (value != T{})
+            if (!same_value(value, T{}))
             {
                 sh_inf.insert(value, &arr->inf_array_);
             }

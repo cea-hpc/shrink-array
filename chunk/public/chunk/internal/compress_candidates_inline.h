@@ -229,8 +229,21 @@ template <template <typename> class ChunkT, typename T>
 }
 
 template <template <typename> class ChunkT, typename T>
-void CompressCandidates<ChunkT, T>::remove_from_zero_any_candidates_by_ptr_range(const void* lo,
-                                                                                 const void* hi) noexcept
+[[nodiscard]] std::pair<int, int> CompressCandidates<ChunkT, T>::removal_ranks(int nthr, bool own_rank_only) noexcept
+{
+    if (own_rank_only)
+    {
+        const int rank = CHUNK_PMP_THREAD_RANK;
+        return {rank, rank < nthr ? rank + 1 : rank};
+    }
+    return {0, nthr};
+}
+
+template <template <typename> class ChunkT, typename T>
+void CompressCandidates<ChunkT, T>::remove_from_zero_any_candidates_by_ptr_range(
+    const void*           lo,
+    const void*           hi,
+    [[maybe_unused]] bool own_rank_only) noexcept
 {
     const auto in_range = [lo, hi](const auto& tup)
     {
@@ -239,8 +252,8 @@ void CompressCandidates<ChunkT, T>::remove_from_zero_any_candidates_by_ptr_range
     };
     if constexpr (build_config::threaded)
     {
-        const auto nthr = static_cast<int>(zero_any_candidates_thr.size());
-        for (int thr = 0; thr < nthr; ++thr)
+        const auto [first, last] = removal_ranks(static_cast<int>(zero_any_candidates_thr.size()), own_rank_only);
+        for (int thr = first; thr < last; ++thr)
         {
             std::erase_if(zero_any_candidates_thr[thr], in_range);
         }
@@ -252,12 +265,14 @@ void CompressCandidates<ChunkT, T>::remove_from_zero_any_candidates_by_ptr_range
 }
 
 template <template <typename> class ChunkT, typename T>
-void CompressCandidates<ChunkT, T>::remove_from_zero_any_candidates_by_num_tab(int num_tab) noexcept
+void CompressCandidates<ChunkT, T>::remove_from_zero_any_candidates_by_num_tab(
+    int                   num_tab,
+    [[maybe_unused]] bool own_rank_only) noexcept
 {
     if constexpr (build_config::threaded)
     {
-        const auto nthr = static_cast<int>(zero_any_candidates_thr.size());
-        for (int thr = 0; thr < nthr; ++thr)
+        const auto [first, last] = removal_ranks(static_cast<int>(zero_any_candidates_thr.size()), own_rank_only);
+        for (int thr = first; thr < last; ++thr)
         {
             erase_candidates_of_tab(zero_any_candidates_thr[thr], num_tab);
         }
@@ -270,12 +285,14 @@ void CompressCandidates<ChunkT, T>::remove_from_zero_any_candidates_by_num_tab(i
 
 template <template <typename> class ChunkT, typename T>
 void CompressCandidates<ChunkT, T>::remove_from_zero_one_value_candidates_by_num_tab(
-    [[maybe_unused]] int num_tab) noexcept
+    [[maybe_unused]] int  num_tab,
+    [[maybe_unused]] bool own_rank_only) noexcept
 {
     if constexpr (build_config::threaded)
     {
-        const auto nthr = static_cast<int>(zero_one_value_candidates_map_thr.size());
-        for (int thr = 0; thr < nthr; ++thr)
+        const auto [first, last] =
+            removal_ranks(static_cast<int>(zero_one_value_candidates_map_thr.size()), own_rank_only);
+        for (int thr = first; thr < last; ++thr)
         {
             for (const auto& kv : zero_one_value_candidates_map_thr[thr])
             {
@@ -291,12 +308,13 @@ void CompressCandidates<ChunkT, T>::remove_from_zero_one_value_candidates_by_num
 }
 
 template <template <typename> class ChunkT, typename T>
-void CompressCandidates<ChunkT, T>::remove_from_zero_candidates_by_num_tab(int num_tab) noexcept
+void CompressCandidates<ChunkT, T>::remove_from_zero_candidates_by_num_tab(int                   num_tab,
+                                                                           [[maybe_unused]] bool own_rank_only) noexcept
 {
     if constexpr (build_config::threaded)
     {
-        const auto nthr = static_cast<int>(zero_candidates_thr.size());
-        for (int thr = 0; thr < nthr; ++thr)
+        const auto [first, last] = removal_ranks(static_cast<int>(zero_candidates_thr.size()), own_rank_only);
+        for (int thr = first; thr < last; ++thr)
         {
             erase_candidates_of_tab(zero_candidates_thr[thr], num_tab);
         }

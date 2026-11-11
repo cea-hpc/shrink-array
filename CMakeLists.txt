@@ -162,6 +162,9 @@ endif()
 set(CHUNK_OMP ${OMP})
 
 if(SHRINK_ARRAY_BUILD_TESTS)
+    # No CDash dashboard targets (Nightly*, Continuous*, Experimental*): there
+    # is no CDash server; BUILD_TESTING and ctest are kept.
+    set_property(GLOBAL PROPERTY CTEST_TARGETS_ADDED 1)
     include(CTest)
 else()
     set(BUILD_TESTING OFF) # this subtree only: the parent's own setting is left alone

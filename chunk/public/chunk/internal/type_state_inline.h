@@ -171,9 +171,9 @@ template <template <typename> typename ChunkT, typename T>
 void TypeState<ChunkT, T>::compute_size_buffer_reuse()
 {
     // zero_any::ChunkDef's reuse constants serve every variant (zero_any_chunk_def.h).
-    Pools::size_buffer_reuse =
-        static_cast<int>(somme_chunk_create / (Pools::reuse_share_div() * CHUNK_PMP_MAX_THREADS));
-    Pools::size_buffer_reuse = std::max(Pools::size_buffer_reuse, zero_any::ChunkDef::size_min_buffer_reuse);
+    const int budget = static_cast<int>(somme_chunk_create / (Pools::reuse_share_div() * CHUNK_PMP_MAX_THREADS));
+    Pools::size_buffer_reuse.store(std::max(budget, zero_any::ChunkDef::size_min_buffer_reuse),
+                                   std::memory_order_relaxed);
 }
 
 // compute_size_max_number_of_chunk_to_check_compress (documented in

@@ -35,6 +35,7 @@
 #include "chunk/internal/read_reclaim.h"                 // read_reclaim::ReadSection
 #include "chunk/internal/chunk_stats.h" // increm_chunk_read<> (a dependent call the include tools cannot attribute)
 #include "chunk/internal/immortal.h"    // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/same_value.h"  // same_value
 
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
@@ -68,6 +69,7 @@ class PointerMap : public PointerMapLinear<int, std::vector<std::pair<ArrayKey<C
      */
     void insert(Key key, int num_tab)
     {
+        const internal::RegistryWriteLock registry_lock(internal::registry_mutex());
         vec_.emplace_back(key, num_tab);
     }
 
@@ -329,7 +331,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      */
     [[nodiscard]] static bool should_mark_for_compression(InT<T> old_value, InT<T> new_value) noexcept
     {
-        return old_value != zero && new_value == zero;
+        return !same_value(old_value, zero) && same_value(new_value, zero);
     }
 };
 
@@ -541,7 +543,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     template <typename U>
     [[nodiscard]] bool is_cst_val_and_v_equal_zero(const U& value) const noexcept
     {
-        return static_cast<T>(value) == zero && is_cst_val() && !chunk_.pending_any();
+        return same_value(static_cast<T>(value), zero) && is_cst_val() && !chunk_.pending_any();
     }
 
     /**

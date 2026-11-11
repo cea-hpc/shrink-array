@@ -50,7 +50,7 @@ séquentiel : à appeler hors de toute région parallèle ; il invalide les prox
 | lecture | `operator[](i) const`, `at(i) const`, `front()`, `back()`, `operator()(i) const` | renvoient un `T` |
 | écriture | `operator[](i)`, `at(i)` | renvoient un proxy d'écriture (§4) |
 | référence brute | `operator()(i)` (non const) | un `T&` dans le tampon : **seulement sur un chunk matérialisé**, contourne la bibliothèque |
-| agrandir, réduire **(S)** | `resize(n)`, `reserve(n)`, `clear()`, `shrink_to_fit()` | `shrink_to_fit()` replie aussi chaque chunk devenu constant |
+| agrandir, réduire **(S)** | `resize(n)`, `reserve(n)`, `clear()`, `shrink_to_fit()` | `shrink_to_fit()` replie aussi chaque chunk devenu constant ; un `n` négatif (ici et au constructeur) lève `std::length_error`, comme `std::vector` |
 | ajout | `push_back(v)`, `emplace_back(...)`, `pop_back()` | **(S)** seulement quand il faut un nouveau chunk |
 | remplacement **(S)** | `assign(n, v)`, `assign(first, last)`, `swap(other)`, `operator=` | |
 | itération | `begin()`, `end()`, `cbegin()`, `rbegin()`, `rend()` | itérateurs const à accès aléatoire, par valeur |
@@ -142,7 +142,7 @@ interne.
 | `export_chunk(a, c)` | séquentiel : l'état du chunk `c` ; `data` pointe dans `a`, valable jusqu'à la prochaine écriture de `a` |
 | `import_chunk(a, c, state)` | séquentiel : le chunk `c` prend `state`, une constante sans tampon ; `false` si le chunk a été écrit |
 | `export_array(a)` | séquentiel : la taille, `chunk_size()`, la seconde valeur de zero_one_value, l'état de chaque chunk |
-| `import_array(a, state)` | séquentiel : `a` devient le tableau que décrit `state`, quoi qu'il contînt ; `false` (et `a` inchangé) à une autre taille de chunk |
+| `import_array(a, state)` | séquentiel : `a` devient le tableau que décrit `state`, quoi qu'il contînt ; `false` (et `a` inchangé) à une autre taille de chunk ; les chunks au-delà de la taille de `state` (un `reserve()`) ne sont pas importés |
 
 Toutes les variantes et tous les types d'élément sauf `Bit` (ArrayChunkBits). À appeler après la
 phase, comme `fill_range`.
@@ -191,9 +191,9 @@ tous les backends.
 | `decider.consider<T>(a, tick, iter, "name")` | | analyse le tableau et applique le rechunk si la politique est d'accord **(S)** |
 | `decider.print_rechunk_log()` | | la table des rechunks effectués |
 | `a.rechunk_to(n)` **(S)** | | rechunke un tableau à `n` éléments par chunk (`a.try_rechunk_to(n)` : dit pourquoi une taille est refusée) |
-| `a.set_chunk_size(n)` | | la géométrie d'un tableau VIDE, avant son premier `resize()` ; sans effet dans un build statique |
+| `a.set_chunk_size(n)` | | la géométrie d'un tableau VIDE, avant son premier `resize()` ; refusé (avertissement) sur un tableau qui a des chunks -- `rechunk_to()` déplace les éléments ; sans effet dans un build statique (`a.try_set_chunk_size(n)` : dit pourquoi une taille est refusée) |
 | `set_active_chunk_size(n)` | `chunk/chunk_size_advisor.h` | la taille de chunk du processus, avant `ParamChunk::init_indexes()` : la première géométrie |
-| `set_thread_chunk_size(n)` | `chunk/chunk_size_advisor.h` | la taille de chunk des prochains tableaux construits par le thread appelant |
+| `set_thread_chunk_size(n)` | `chunk/chunk_size_advisor.h` | la taille vers laquelle sont aiguillées les prochaines allocations de chunk du thread appelant ; la bibliothèque la fixe avant chaque allocation. Pas la géométrie d'un nouveau tableau : les tableaux naissent à `set_active_chunk_size()`, `a.set_chunk_size(n)` fixe celle d'un tableau vide |
 | `sizeof(zero_any::Chunk<T>)` | `chunk/zero_any_array.h` | les métadonnées d'un chunk, pour les options du conseiller |
 
 La politique, ses valeurs par défaut et les résultats mesurés : [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md).

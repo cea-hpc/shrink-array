@@ -37,6 +37,7 @@
 #include "chunk/config.h"                              // build_config::threaded, chunk_config::use_zero*
 #include "chunk/internal/array_chunk_rechunk_refill.h" // Refill, the class these bodies belong to
 #include "chunk/internal/array_chunk_rechunk_trace.h"  // rechunk_trace_on, rss_mib_now, g_slice_times
+#include "chunk/internal/drain_probe.h"                // g_drain_probe (the boundary drain's split)
 #include "chunk/internal/chunk_size_policy.h"          // set_thread_chunk_size, DynChunkSizeGuard
 #include "chunk/internal/chunk_stats.h"                // increm_chunk_rechunk_* (CHUNK_STATS)
 #include "chunk/internal/compression_manager.h"        // CompressionManager<>::FlushReplayGuard
@@ -282,6 +283,9 @@ void RechunkSupport<Derived, true>::Refill::slice_boundary(pmp::Team& team)
             if (trace_on_)
             {
                 slice_t0_ = SliceClock::now();
+                internal::g_drain_probe.reset();
+                // Read past the drain's first barrier.
+                internal::g_drain_probe.armed.store(true, std::memory_order_relaxed);
             }
         });
     ManagerT::drain_reuse_list_for_size_team(team, static_cast<unsigned int>(old_size_), team_drain_);
@@ -302,6 +306,20 @@ void RechunkSupport<Derived, true>::Refill::slice_boundary(pmp::Team& team)
             {
                 slice_t1_ = SliceClock::now();
                 internal::g_slice_times.drain_ms += internal::elapsed_ms(slice_t0_, slice_t1_);
+                // Every thread reported before the drain's last barrier.
+                auto&        dp  = internal::g_drain_probe;
+                auto&        st  = internal::g_slice_times;
+                const int    nr  = dp.n.load(std::memory_order_relaxed);
+                const double inv = nr > 0 ? 1.0 / nr : 0.0;
+                const auto   ld  = [](const std::atomic<long long>& slot)
+                { return static_cast<double>(slot.load(std::memory_order_relaxed)); };
+                st.drain_sort_max_ms += ld(dp.sort_max) * 1e-6;
+                st.drain_sort_avg_ms += ld(dp.sort_sum) * 1e-6 * inv;
+                st.drain_free_max_ms += ld(dp.free_max) * 1e-6;
+                st.drain_free_avg_ms += ld(dp.free_sum) * 1e-6 * inv;
+                st.drain_blocks_max += ld(dp.blocks_max);
+                st.drain_blocks_avg += ld(dp.blocks_sum) * inv;
+                dp.armed.store(false, std::memory_order_relaxed);
             }
             const auto n_ranks = static_cast<std::size_t>(CHUNK_PMP_RANK_BOUND);
             if (recycle_held_.size() != n_ranks)
@@ -363,11 +381,15 @@ void RechunkSupport<Derived, true>::Refill::rebuild_one(int new_chunk, std::vect
     {
         return;
     }
-    const IndType end = (base + new_size_) < total_ ? (base + new_size_) : total_;
-    const Span    span{.base      = base,
-                       .end       = end,
-                       .old_first = static_cast<int>(base / old_size_),
-                       .old_last  = static_cast<int>((end - 1) / old_size_)};
+    // In long long: base + new_size_ passes IndType's range when the array
+    // ends less than a chunk below its top (int index, ~2^31 elements), and the
+    // wrapped end then sized the copy below. Same as write_range_by_chunks().
+    const long long end_ll = static_cast<long long>(base) + new_size_;
+    const IndType   end    = end_ll < static_cast<long long>(total_) ? static_cast<IndType>(end_ll) : total_;
+    const Span      span{.base      = base,
+                         .end       = end,
+                         .old_first = static_cast<int>(base / old_size_),
+                         .old_last  = static_cast<int>((end - 1) / old_size_)};
 
     const Sources sources = scan_sources(span);
     if (sources.all_cst1)
@@ -531,14 +553,17 @@ void RechunkSupport<Derived, true>::Refill::read_span([[maybe_unused]] int new_c
         std::size_t pos = 0;
         for (int oc = span.old_first; oc <= span.old_last; ++oc)
         {
-            const auto&    och     = src_.chunk_list_[static_cast<std::size_t>(oc)];
-            const IndType  oc_base = static_cast<IndType>(oc) * static_cast<IndType>(old_size_);
-            const IndType  lo      = span.base > oc_base ? span.base : oc_base;
-            const IndType  oc_end  = oc_base + static_cast<IndType>(old_size_);
-            const IndType  hi      = span.end < oc_end ? span.end : oc_end;
-            const auto     src_len = static_cast<std::size_t>(hi - lo);
-            const auto     off     = static_cast<std::size_t>(lo - oc_base);
-            const T* const vals    = och.values_load();
+            const auto&   och     = src_.chunk_list_[static_cast<std::size_t>(oc)];
+            const IndType oc_base = static_cast<IndType>(oc) * static_cast<IndType>(old_size_);
+            const IndType lo      = span.base > oc_base ? span.base : oc_base;
+            // In long long: oc_base + old_size_ wraps for the last old chunk of
+            // an array within a chunk of IndType's top; hi - lo then went
+            // negative, a huge size_t length for the memcpy below.
+            const long long oc_end = static_cast<long long>(oc_base) + old_size_;
+            const IndType   hi = static_cast<long long>(span.end) < oc_end ? span.end : static_cast<IndType>(oc_end);
+            const auto      src_len = static_cast<std::size_t>(hi - lo);
+            const auto      off     = static_cast<std::size_t>(lo - oc_base);
+            const T* const  vals    = och.values_load();
             if constexpr (is_zero_any_family_v<ChunkType>)
             {
                 if (och.is_cst_val2_ptr_of(vals))
@@ -656,21 +681,24 @@ void RechunkSupport<Derived, true>::Refill::release_sources([[maybe_unused]] con
         for (int oc = span.old_first; oc <= span.old_last; ++oc)
         {
             const IndType oc_base = static_cast<IndType>(oc) * static_cast<IndType>(old_size_);
-            const IndType oc_end  = oc_base + static_cast<IndType>(old_size_);
+            // In long long: oc_base + old_size_ passes IndType's range for the
+            // last old chunk of an array within a chunk of its top (see rebuild_one).
+            const long long oc_end = static_cast<long long>(oc_base) + old_size_;
             if (!aligned_coarsening_)
             {
                 // Old chunk oc's readers: the new chunks overlapping its
                 // elements [oc_base, min(oc_end, total)). Release it with the
                 // last of them to finish, whoever that is.
-                const IndType last_elem = (oc_end < total_ ? oc_end : total_) - 1;
-                const auto    readers   = static_cast<int>((last_elem / static_cast<IndType>(new_size_)) -
-                                                           (oc_base / static_cast<IndType>(new_size_)) + 1);
+                const IndType last_elem =
+                    (oc_end < static_cast<long long>(total_) ? static_cast<IndType>(oc_end) : total_) - 1;
+                const auto readers = static_cast<int>((last_elem / static_cast<IndType>(new_size_)) -
+                                                      (oc_base / static_cast<IndType>(new_size_)) + 1);
                 if (old_done_[static_cast<std::size_t>(oc)].fetch_add(1, std::memory_order_acq_rel) + 1 != readers)
                 {
                     continue;
                 }
             }
-            else if (oc_end > span.end)
+            else if (oc_end > static_cast<long long>(span.end))
             {
                 continue; // still needed by the next new chunk
             }

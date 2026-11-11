@@ -61,11 +61,11 @@ class TCTypeAllocator
 {
   public:
     /// @brief No-op.
-    void init(size_t, size_t, size_t) {}
+    static void init(size_t, size_t, size_t) noexcept {}
     /// @brief No-op.
-    void set_arena(fast_alloc::ArenaKind) {}
+    static void set_arena(fast_alloc::ArenaKind) noexcept {}
     /// @brief Always true.
-    bool is_free_able_elt(std::byte*)
+    static bool is_free_able_elt(std::byte*) noexcept
     {
         return true;
     }
