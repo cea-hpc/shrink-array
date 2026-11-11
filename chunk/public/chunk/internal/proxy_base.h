@@ -28,7 +28,6 @@
 #include <complex>     // std::complex
 #include <cstdlib>     // std::size_t
 #include <functional>  // std::plus, std::minus
-#include <vector>      // std::vector
 
 #include "chunk/internal/element_access.h" // elem_get / elem_set, is_packed_bit_v: Bit buffers are words of bits
 #include "chunk/config.h"                  // chunk_config::use_fast_block_compression, build_config::any_check

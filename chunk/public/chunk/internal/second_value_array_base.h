@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include <cstddef> // std::size_t
+
 #include "chunk/internal/array_chunk_base.h" // ArrayChunkBase
 #include "chunk/config.h"                    // build_config::not_threaded, chunk_config::use_fast_block_compression
 #include "chunk/internal/chunk_traits.h"     // is_zero_any_family_v

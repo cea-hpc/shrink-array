@@ -17,9 +17,7 @@
 #pragma once
 
 #include <algorithm>   // std::min, std::copy_n, std::ranges::fill (the resize copy)
-#include <atomic>      // std::memory_order_relaxed
 #include <cstdlib>     // std::abort (debug stubs)
-#include <exception>   // std::exception (zero_any::PointerMap::erase)
 #include <iostream>    // std::cerr (debug stubs)
 #include <memory>      // std::unique_ptr, std::addressof (operator=: operator& is deleted)
 #include <type_traits> // std::is_same_v

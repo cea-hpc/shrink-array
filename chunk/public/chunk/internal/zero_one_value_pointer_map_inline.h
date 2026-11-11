@@ -15,6 +15,12 @@
  */
 
 #pragma once
+#include <array>       // std::array (report_key_not_found)
+#include <format>      // std::format_to_n (report_key_not_found)
+#include <string_view> // std::string_view (report_key_not_found)
+#include <cstddef>     // std::size_t
+#include <vector>      // std::vector
+
 #include "chunk/internal/zero_one_value_pointer_map.h" // the class these bodies belong to
 
 namespace shrink_array

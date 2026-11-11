@@ -44,12 +44,13 @@
 
 #include <atomic>        // std::atomic (SpinBarrier, the single mark)
 #include <cstdint>       // std::uint64_t (the pool's job word)
-#include <exception>     // std::terminate (a body that throws)
 #include <memory>        // std::unique_ptr (the construct slots)
 #include <mutex>         // std::mutex, std::scoped_lock, std::unique_lock (the slots; one team at a time)
 #include <thread>        // std::jthread (the workers)
 #include <unordered_map> // std::unordered_map (the construct slots)
 #include <vector>        // std::vector (the workers, the per-rank counts and results)
+#include <array>         // std::array
+#include <cstddef>       // std::size_t
 
 #include "fast_allocators/internal/pmp_std_state.h" // std_backend::tls, FrameGuard, settings, nthreads_var
 

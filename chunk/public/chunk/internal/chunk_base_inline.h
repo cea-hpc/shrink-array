@@ -19,6 +19,11 @@
 #include <exception>   // std::exception (deferred enqueue)
 #include <memory>      // std::make_unique
 #include <type_traits> // std::remove_reference_t
+#include <algorithm>   // std::min
+#include <atomic> // std::memory_order_acq_rel, std::memory_order_acquire, std::memory_order_relaxed, std::memory_order_release
+#include <cstddef> // std::size_t
+#include <cstring> // std::memset, std::strerror
+#include <vector>  // std::vector
 
 #include "chunk/internal/chunk_base.h"                 // the declarations these bodies belong to
 #include "chunk/config.h"                              // build_config::use_fast_alloc, chunk_config::

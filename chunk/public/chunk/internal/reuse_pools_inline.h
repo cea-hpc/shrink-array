@@ -30,6 +30,7 @@
 #include <type_traits> // std::remove_reference_t
 #include <utility>     // std::pair
 #include <vector>      // std::vector
+#include <memory>      // std::make_unique
 
 #include "chunk/internal/reuse_pools.h"          // the declarations these bodies belong to
 #include "chunk/config.h"                        // build_config, chunk_config

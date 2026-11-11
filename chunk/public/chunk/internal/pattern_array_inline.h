@@ -16,7 +16,9 @@
 
 #pragma once
 
-#include <vector> // std::vector (reclaim_motifs' marks)
+#include <vector>  // std::vector (reclaim_motifs' marks)
+#include <cstddef> // std::size_t
+#include <cstdint> // std::uint32_t, std::uint8_t
 
 #include "chunk/pattern_array.h"         // the class these bodies belong to
 #include "chunk/internal/motif_region.h" // pattern::MotifRegion (install_motif)

@@ -25,8 +25,9 @@
 #include <string_view> // std::string_view (the residual's kind)
 #include <vector>      // std::vector
 
-#include <sys/mman.h> // mprotect (use_mm_protect: the read-only cst_val2 blocks)
-#include <unistd.h>   // sysconf(_SC_PAGESIZE) (same)
+#include <sys/mman.h>  // mprotect (use_mm_protect: the read-only cst_val2 blocks)
+#include <unistd.h>    // sysconf(_SC_PAGESIZE) (same)
+#include <type_traits> // std::remove_reference_t
 
 #include "chunk/internal/cold_path_lock.h"              // ColdPathLock: construction, teardown, resize
 #include "chunk/internal/tab_users.h"                   // TabUsers: a row per array

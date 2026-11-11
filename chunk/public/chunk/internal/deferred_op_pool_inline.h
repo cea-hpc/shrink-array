@@ -15,6 +15,12 @@
  */
 
 #pragma once
+#include <algorithm> // std::max
+#include <bit>       // std::has_single_bit
+#include <cstddef>   // std::byte, std::max_align_t, std::size_t
+#include <cstdint>   // std::uintptr_t
+#include <mutex>     // std::scoped_lock
+
 #include "chunk/internal/deferred_op_pool.h" // the class these bodies belong to
 
 namespace shrink_array

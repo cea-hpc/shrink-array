@@ -15,6 +15,12 @@
  */
 
 #pragma once
+#include <exception> // std::terminate (a body that throws)
+#include <atomic> // std::memory_order_acq_rel, std::memory_order_acquire, std::memory_order_relaxed, std::memory_order_release
+#include <cstddef> // std::size_t
+#include <cstdint> // std::uint32_t, std::uint64_t
+#include <mutex>   // std::scoped_lock, std::try_to_lock, std::unique_lock
+
 #include "fast_allocators/internal/pmp_std.h" // the class these bodies belong to
 
 namespace fast_alloc

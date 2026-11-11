@@ -17,7 +17,6 @@
 #pragma once
 
 #include <algorithm>        // std::min (operator==)
-#include <atomic>           // std::atomic (operator==: a difference found)
 #include <cstddef>          // std::size_t
 #include <cstdint>          // std::uint8_t, std::uint32_t (reclaim_second_values' mark)
 #include <iostream>         // for cout, ostream

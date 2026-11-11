@@ -15,7 +15,17 @@
  */
 
 #pragma once
-#include <ranges> // std::views::reverse (the recycled list, from the back)
+#include <ranges>     // std::views::reverse (the recycled list, from the back)
+#include <algorithm>  // std::max, std::ranges::sort, std::stable_partition
+#include <atomic>     // std::memory_order_relaxed
+#include <chrono>     // std::chrono::duration_cast, std::chrono::nanoseconds, std::chrono::steady_clock
+#include <cstddef>    // std::byte, std::size_t
+#include <cstdint>    // std::uintptr_t
+#include <cstring>    // std::strerror
+#include <functional> // std::less
+#include <mutex>      // std::scoped_lock
+#include <utility>    // std::cmp_less
+#include <vector>     // std::vector
 
 #include "fast_allocators/slab_arena.h" // the class these bodies belong to
 

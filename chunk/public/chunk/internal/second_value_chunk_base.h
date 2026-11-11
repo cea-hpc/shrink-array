@@ -16,11 +16,9 @@
 
 #pragma once
 
-#include <atomic>          // std::atomic_thread_fence, std::memory_order_release
 #include <optional>        // std::optional
 #include <source_location> // std::source_location
 #include <type_traits>     // std::is_same_v
-#include <utility>         // std::forward
 
 #include "chunk/config.h"                       // build_config::any_check, chunk_config::use_fast_block_compression
 #include "chunk/internal/PMP_CHUNK.h"           // get_thr_rank_fast (the constant-buffer write check)

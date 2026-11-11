@@ -19,7 +19,6 @@
 #include <atomic>   // std::atomic, std::memory_order_release
 #include <concepts> // std::assignable_from
 #include <cstddef>  // std::size_t
-#include <memory>   // std::addressof (operator=: operator& is deleted)
 #include <ostream>  // std::ostream
 
 #include "chunk/bit.h"                      // is_bool_like_v: bool and Bit share the bool path

@@ -16,17 +16,21 @@
 
 #pragma once
 
-#include <atomic>      // std::memory_order (the missed-compression audit)
-#include <chrono>      // std::chrono::steady_clock (rechunk=debug: the registry release time)
-#include <cstddef>     // std::size_t
-#include <array>       // std::array (the residual's sample)
-#include <format>      // std::format (print_type_name)
-#include <iostream>    // std::cout (print_type_name)
-#include <string_view> // std::string_view (the residual's kind)
-#include <string>      // the type name in print_type_name
-#include <type_traits> // std::remove_reference_t
-#include <utility>     // std::pair (the clear() summary)
-#include <vector>      // std::vector
+#include <atomic>        // std::memory_order (the missed-compression audit)
+#include <chrono>        // std::chrono::steady_clock (rechunk=debug: the registry release time)
+#include <cstddef>       // std::size_t
+#include <array>         // std::array (the residual's sample)
+#include <format>        // std::format (print_type_name)
+#include <iostream>      // std::cout (print_type_name)
+#include <string_view>   // std::string_view (the residual's kind)
+#include <string>        // the type name in print_type_name
+#include <type_traits>   // std::remove_reference_t
+#include <utility>       // std::pair (the clear() summary)
+#include <vector>        // std::vector
+#include <algorithm>     // std::min
+#include <cstdint>       // std::uint8_t
+#include <ratio>         // std::milli
+#include <unordered_set> // std::unordered_set
 
 #include "chunk/zero_any_array.h"                       // zero_any::ArrayImpl, the class these bodies belong to
 #include "chunk/internal/all_type_chunk.h"              // AllTypeChunk::ensure_manager

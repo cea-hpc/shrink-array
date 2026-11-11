@@ -15,6 +15,8 @@
  */
 
 #pragma once
+#include <utility> // std::swap
+
 #include "chunk/internal/pointer_map_linear.h" // the class these bodies belong to
 
 namespace shrink_array

@@ -37,13 +37,12 @@
  * @see chunk_size_policy.h for the geometry policy (static vs dynamic)
  */
 
-#include <compare>  // std::strong_ordering (const_iterator's operator<=>)
-#include <array>    // std::array (the bulk-read buffer)
-#include <concepts> // std::invocable (for_each_span's run overload)
-#include <cstddef>  // std::size_t (size_type)
-#include <span>     // std::span (for_each_span)
-#include <utility>  // std::swap, std::as_const
-#include <iterator> // std::reverse_iterator, iterator tags — const_iterator, input_iterator (assign)
+#include <compare>     // std::strong_ordering (const_iterator's operator<=>)
+#include <cstddef>     // std::size_t (size_type)
+#include <span>        // std::span (for_each_span)
+#include <utility>     // std::swap, std::as_const
+#include <iterator>    // std::reverse_iterator, iterator tags — const_iterator, input_iterator (assign)
+#include <type_traits> // std::conditional_t
 
 #include "chunk/config.h"                       // build_config::any_check, chunk_config::do_check
 #include "chunk/internal/in_t.h"                // InT<T>

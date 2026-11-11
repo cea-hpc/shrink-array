@@ -34,13 +34,11 @@
 // The key -> value store is a LINEAR scan over a std::deque (PointerMapLinear; see
 // the storage note in zero_one_value::PointerMap). Only the value -> inf_array side is a std::map.
 
-#include <array>       // std::array (report_key_not_found)
-#include <format>      // std::format_to_n (report_key_not_found)
-#include <string_view> // std::string_view (report_key_not_found)
-#include <deque>       // std::deque: share_info storage, no realloc invalidation
-#include <map>         // std::map
-#include <utility>     // std::pair
-#include <vector>      // std::vector
+#include <deque>   // std::deque: share_info storage, no realloc invalidation
+#include <map>     // std::map
+#include <utility> // std::pair
+#include <vector>  // std::vector
+#include <cstddef> // std::size_t
 
 #include "chunk/bit.h"                         // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/array_chunk_for.h"    // ArrayKey, zero_one_value::Chunk (the keys)

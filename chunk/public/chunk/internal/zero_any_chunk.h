@@ -16,13 +16,12 @@
 
 #pragma once
 
-#include <atomic>          // std::memory_order_* on the values pointer
-#include <cstddef>         // std::size_t
-#include <cstdint>         // uint32_t / uintptr_t (the ring-log chunk id)
-#include <source_location> // std::source_location::current() in the invariants
-#include <tuple>           // the candidate-list entries
-#include <type_traits>     // std::is_same_v (concurrent-ops base)
-#include <vector>          // std::vector
+#include <cstddef>     // std::size_t
+#include <cstdint>     // uint32_t / uintptr_t (the ring-log chunk id)
+#include <tuple>       // the candidate-list entries
+#include <type_traits> // std::is_same_v (concurrent-ops base)
+#include <vector>      // std::vector
+#include <optional>    // std::nullopt
 
 #include "fast_allocators/internal/raw_memory.h"    // address_bits
 #include "chunk/config.h"                           // build_config::threaded, chunk_config

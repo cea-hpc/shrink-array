@@ -51,13 +51,10 @@
 #include <cstddef>       // std::size_t, std::byte (region_base_)
 #include <cstdint>       // std::uintptr_t, std::uint8_t
 #include <cstdlib>       // std::getenv
-#include <functional>    // std::less (the sweep orders slab pointers)
-#include <utility>       // std::cmp_less
 #include <vector>        // std::vector
 #include <mutex>         // std::mutex, std::scoped_lock
 #include <atomic>        // std::atomic, std::memory_order_relaxed
 #include <charconv>      // std::from_chars (CHUNK_RECLAIM_THREADS)
-#include <chrono>        // the sweep timer
 #include <cstring>       // std::strerror
 #include <string_view>   // std::string_view (reclaim_env_number)
 #include <unordered_map> // std::unordered_map

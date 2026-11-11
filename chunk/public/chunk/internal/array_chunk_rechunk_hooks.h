@@ -48,7 +48,6 @@
  * @see array_chunk_rechunk_hooks_inline.h for the bodies
  */
 
-#include <type_traits> // std::is_same_v (zero or zero_any)
 
 #include "chunk/config.h"                // build_config::chunk_dynamic
 #include "chunk/internal/chunk_traits.h" // ArrayChunkTraits, is_zero_any_family_v

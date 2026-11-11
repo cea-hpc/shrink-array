@@ -16,8 +16,10 @@
 
 #pragma once
 
-#include <array>  // std::array (the residual's sample)
-#include <vector> // std::vector
+#include <array>   // std::array (the residual's sample)
+#include <vector>  // std::vector
+#include <cstddef> // std::size_t
+#include <ostream> // std::ostream
 
 #include "chunk/internal/all_type_chunk.h"              // ensure_manager, from create
 #include "chunk/zero_array.h"                           // zero::Array, the class these bodies belong to

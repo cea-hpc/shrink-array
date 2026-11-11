@@ -26,6 +26,9 @@
 #include <cstdint>    // std::uintptr_t
 #include <utility>    // std::cmp_less (the element-size check), std::cmp_greater_equal
 #include <vector>     // std::vector
+#include <atomic>     // std::memory_order_relaxed
+#include <cstring>    // std::memset, std::strerror
+#include <limits>     // std::numeric_limits
 
 #include "fast_allocators/internal/raw_memory.h" // store_to_bytes
 #include "fast_allocators/tc_allocator.h"        // the declarations these bodies belong to

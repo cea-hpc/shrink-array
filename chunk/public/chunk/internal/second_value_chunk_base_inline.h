@@ -16,7 +16,10 @@
 
 #pragma once
 
-#include <optional> // std::nullopt_t (the index-less overloads)
+#include <optional>        // std::nullopt_t (the index-less overloads)
+#include <atomic>          // std::atomic_thread_fence, std::memory_order_release
+#include <utility>         // std::forward
+#include <source_location> // std::source_location
 
 #include "chunk/internal/second_value_chunk_base.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
 #include "chunk/config.h"                       // build_config::any_check, chunk_config::use_compression_with_counter

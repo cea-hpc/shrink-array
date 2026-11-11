@@ -28,6 +28,7 @@
 #include <array>   // std::array (the per-step times)
 #include <chrono>  // std::chrono::steady_clock
 #include <cstddef> // std::size_t
+#include <ratio>   // std::milli
 
 namespace shrink_array::internal
 {

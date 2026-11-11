@@ -29,6 +29,8 @@
  * TypeState is complete.
  */
 
+#include <cstddef> // std::size_t
+
 #include "chunk/config.h"                        // build_config::chunk_dynamic, build_config::threaded
 #include "chunk/internal/type_state_interface.h" // TypeStateDynInterface, TypeStateParallelInterface
 

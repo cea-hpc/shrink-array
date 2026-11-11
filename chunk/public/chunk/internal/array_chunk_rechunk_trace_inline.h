@@ -18,6 +18,10 @@
 
 // Out-of-line bodies of the re-chunk's traces (array_chunk_rechunk_trace.h).
 
+#include <atomic>  // std::memory_order_relaxed
+#include <chrono>  // std::chrono::steady_clock
+#include <cstddef> // std::size_t
+
 #include "chunk/internal/array_chunk_rechunk_trace.h" // the classes these bodies belong to
 
 namespace shrink_array::internal
