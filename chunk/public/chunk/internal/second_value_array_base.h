@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include <cstddef> // std::size_t
+
 #include "chunk/internal/array_chunk_base.h" // ArrayChunkBase
 #include "chunk/config.h"                    // build_config::not_threaded, chunk_config::use_fast_block_compression
 #include "chunk/internal/chunk_traits.h"     // is_zero_any_family_v
@@ -122,7 +124,17 @@ class SecondValueArrayBase : public ArrayChunkBase<Derived>
         if constexpr (chunk_config::use_fast_block_compression ||
                       (build_config::not_threaded && is_zero_any_family_v<ChunkType>))
         {
-            self.drain_candidates(); // not make_block_compression(): resize() may run in a region
+            // Not make_block_compression(): resize() may run in a region, on an
+            // array of the calling thread's own -- then this array's candidates
+            // only, the thread's list holding other arrays' chunks too.
+            if (CHUNK_PMP_IN_PARALLEL_REGION)
+            {
+                self.drain_own_candidates();
+            }
+            else
+            {
+                self.drain_candidates();
+            }
         }
 
         const int old_nb_chunk = self.nb_chunk_;

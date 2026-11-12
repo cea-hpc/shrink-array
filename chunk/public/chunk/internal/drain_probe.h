@@ -30,7 +30,8 @@
  *          so the pools need no logging include.
  */
 
-#include <atomic> // std::atomic
+#include <atomic>           // std::atomic, std::memory_order_relaxed
+#include <initializer_list> // the slot list of reset()
 
 namespace shrink_array::internal
 {

@@ -15,6 +15,12 @@
  */
 
 #pragma once
+#include <algorithm> // std::max
+#include <bit>       // std::has_single_bit
+#include <cstddef>   // std::byte, std::max_align_t, std::size_t
+#include <cstdint>   // std::uintptr_t
+#include <mutex>     // std::scoped_lock
+
 #include "chunk/internal/deferred_op_pool.h" // the class these bodies belong to
 
 namespace shrink_array
@@ -242,7 +248,8 @@ void FastAllocatorConcrete<T, Arena>::probe_returned_block(const void* ptr, cons
         const void* pg0  = base - (addr & mask);
         const void* pg1  = base + (sizeof(T) - 1) - ((addr + sizeof(T) - 1) & mask);
 
-        if (::msync(const_cast<void*>(pg0), 1, MS_ASYNC) != 0 || ::msync(const_cast<void*>(pg1), 1, MS_ASYNC) != 0)
+        if (::msync(const_cast<void*>(pg0), 1, MS_ASYNC) != 0 || // NOSONAR(cpp:S859)
+            ::msync(const_cast<void*>(pg1), 1, MS_ASYNC) != 0)   // NOSONAR(cpp:S859)
         {
             CHUNK_INVARIANT_FAILED("[ALLOC_PROBE {}] block NOT MAPPED (wild ptr): p={} T size={} slab={}", path, ptr,
                                    sizeof(T), build_config::use_fast_alloc ? &allocator() : nullptr);

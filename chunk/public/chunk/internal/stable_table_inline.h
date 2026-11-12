@@ -15,6 +15,9 @@
  */
 
 #pragma once
+#include <atomic>  // std::memory_order_acquire, std::memory_order_relaxed, std::memory_order_release
+#include <cstddef> // std::size_t
+
 #include "chunk/internal/stable_table.h" // the class these bodies belong to
 
 namespace shrink_array

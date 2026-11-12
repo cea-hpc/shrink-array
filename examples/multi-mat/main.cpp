@@ -34,6 +34,7 @@
  */
 
 #include <cstdlib>     // std::abort
+#include <exception>   // std::exception (main's catch)
 #include <vector>      // std::vector
 #include <functional>  // std::function
 #include <fstream>     // std::ofstream
@@ -41,7 +42,7 @@
 #include <chrono>      // std::chrono::steady_clock
 
 #include <sys/resource.h> // getrusage
-#include <cstdio>         // stderr
+#include <cstdio>         // stderr, std::fprintf (main's catch)
 #include <print>          // std::println, std::print
 
 #include "chunk/param_chunk.h"                // ParamChunk
@@ -123,6 +124,7 @@ const vector<bool>& Simu::get_dis() const
 }
 
 int main()
+try
 {
     const int max_thr = multi_mat::max_threads();
 
@@ -291,4 +293,11 @@ int main()
             ParamChunk::chunk_stats();
         }
     }
+    return 0;
+}
+catch (const std::exception& e)
+{
+    // A failed allocation or std::format: said, not std::terminate().
+    std::fprintf(stderr, "multi-mat: %s\n", e.what());
+    return 2;
 }

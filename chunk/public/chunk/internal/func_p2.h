@@ -16,18 +16,10 @@
 
 #pragma once
 
-#include <bit>     // std::has_single_bit
 #include <cstddef> // size_t
 
 namespace shrink_array
 {
-
-/// @brief Whether @p value is a power of two.
-/// @return true when @p value is positive and has a single bit set.
-constexpr bool is_power_of_two(int value) noexcept
-{
-    return value > 0 && std::has_single_bit(static_cast<unsigned int>(value));
-}
 
 /// @brief Integer base-2 logarithm, rounded down.
 /// @return floor(log2(@p value)); 0 for values below 2.

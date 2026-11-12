@@ -312,7 +312,7 @@ long compare(const Pair<T>& pair, const std::string& what)
 template <typename T>
 long check(Pair<T>& pair, const std::string& what)
 {
-    long bad = compare(pair, what);
+    const long bad = compare(pair, what);
 #pragma omp parallel
     {
         begin_phase();

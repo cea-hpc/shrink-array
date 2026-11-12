@@ -1,0 +1,29 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
+# How to cite shrink-array. GitHub reads this file ("Cite this repository").
+# No version here on purpose: cite the release you used (its tag).
+cff-version: 1.2.0
+message: "If you use shrink-array in work you publish, please cite it as below."
+type: software
+title: "shrink-array: compressed chunk arrays for C++ HPC codes"
+abstract: >-
+  Arrays for C++ HPC codes that are used like a std::vector and take less
+  memory when large parts of them hold the same value. An array is cut into
+  chunks; a chunk whose elements are all equal keeps no buffer of its own.
+  Arrays of a billion elements, written concurrently from OpenMP threads,
+  std::threads or TBB tasks, with no lock on the write path.
+authors:
+  - family-names: Ballereau
+    given-names: Philippe
+    affiliation: "CEA"
+repository-code: "https://github.com/cea-hpc/shrink-array"
+url: "https://github.com/cea-hpc/shrink-array"
+license: Apache-2.0
+keywords:
+  - HPC
+  - C++20
+  - compressed arrays
+  - sparse data
+  - memory footprint
+  - OpenMP
+  - lock-free

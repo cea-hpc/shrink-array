@@ -53,9 +53,8 @@
 #include "chunk/internal/chunk_stats.h"      // increm_chunk_* / add_chunk_* (CHUNK_STATS)
 #include "chunk/internal/bad_ptr_check.h"    // CHUNK_CHECK_VALUES_PTR (check builds)
 
-#include "chunk/internal/freepath_counters.h" // [FREEPATH] counters, needed in std-alloc builds too
-#include "chunk/internal/test_hooks.h"        // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (element_at)
-#include "chunk/internal/read_reclaim.h"      // ReadSection (element_at), defer_release (free_block_to_pool)
+#include "chunk/internal/test_hooks.h"   // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (element_at)
+#include "chunk/internal/read_reclaim.h" // ReadSection (element_at), defer_release (free_block_to_pool)
 
 #if CHUNK_OPT_FAST_ALLOC
     #include "fast_allocators/slab_arena.h"   // the slab header slab_of() returns (owner, owner_key)

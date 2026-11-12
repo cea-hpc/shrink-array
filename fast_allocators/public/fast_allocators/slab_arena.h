@@ -51,23 +51,20 @@
 #include <cstddef>       // std::size_t, std::byte (region_base_)
 #include <cstdint>       // std::uintptr_t, std::uint8_t
 #include <cstdlib>       // std::getenv
-#include <functional>    // std::less (the sweep orders slab pointers)
-#include <utility>       // std::cmp_less
 #include <vector>        // std::vector
 #include <mutex>         // std::mutex, std::scoped_lock
 #include <atomic>        // std::atomic, std::memory_order_relaxed
 #include <charconv>      // std::from_chars (CHUNK_RECLAIM_THREADS)
-#include <chrono>        // the sweep timer
 #include <cstring>       // std::strerror
 #include <string_view>   // std::string_view (reclaim_env_number)
 #include <unordered_map> // std::unordered_map
-#include <unordered_set> // std::unordered_set
 #include <system_error>  // std::errc (std::from_chars)
 
-#include "fast_allocators/internal/raw_memory.h" // address_bits
-#include "fast_allocators/internal/pmp_alloc.h"  // pmp::parallel_for, pmp::in_parallel, pmp::max_threads (the sweeps)
-#include "fast_allocators/internal/fatal.h"      // FAST_ALLOC_FATAL
-#include "fast_allocators/internal/log_core.h"   // CHUNK_LOG, CHUNK_LOG_ALWAYS, logging::enabled (arena=info)
+#include "fast_allocators/internal/raw_memory.h"       // address_bits
+#include "fast_allocators/internal/flat_address_set.h" // detail::FlatAddressSet (the live slabs)
+#include "fast_allocators/internal/pmp_alloc.h" // pmp::parallel_for, pmp::in_parallel, pmp::max_threads (the sweeps)
+#include "fast_allocators/internal/fatal.h"     // FAST_ALLOC_FATAL
+#include "fast_allocators/internal/log_core.h"  // CHUNK_LOG, CHUNK_LOG_ALWAYS, logging::enabled (arena=info)
 
 namespace fast_alloc
 {
@@ -615,8 +612,10 @@ class SlabArena
     std::unordered_map<std::size_t, std::vector<void*>> free_lists_;
 
     /// @brief Slabs currently handed out. Exists so allocate() can refuse to
-    ///        recycle one that is still live -- the corruption check.
-    std::unordered_set<std::uintptr_t> live_;
+    ///        recycle one that is still live -- the corruption check. A flat
+    ///        table (flat_address_set.h): a std::unordered_set cost a malloc per
+    ///        slab handed out and a free per slab recycled.
+    detail::FlatAddressSet live_;
 
     /// @brief A slab given back by recycle_batch(); advised = its pages were
     ///        dropped since (advise_recycled()).

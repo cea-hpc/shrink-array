@@ -79,6 +79,7 @@
 #include <cstdio>       // std::fprintf, stderr
 #include <cstring>      // std::strlen
 #include <exception>    // std::exception (main's catch)
+#include <iterator>     // std::size
 #include <string>       // std::string
 #include <system_error> // std::errc (arg_value)
 #include <type_traits>  // std::conditional_t
@@ -420,7 +421,7 @@ double minimum(const std::vector<double>& samples)
 
 constexpr const char* case_names[] = {"read-varied", "read-constant", "read-random", "write-varied",
                                       "write-fresh", "rmw",           "read-second", "read-bulk"};
-constexpr int         n_cases      = static_cast<int>(sizeof(case_names) / sizeof(case_names[0]));
+constexpr int         n_cases      = static_cast<int>(std::size(case_names));
 } // namespace
 
 int main(int argc, char** argv)

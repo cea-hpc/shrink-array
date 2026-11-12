@@ -30,6 +30,7 @@
 #include <type_traits> // std::remove_reference_t
 #include <utility>     // std::pair
 #include <vector>      // std::vector
+#include <memory>      // std::make_unique
 
 #include "chunk/internal/reuse_pools.h"          // the declarations these bodies belong to
 #include "chunk/config.h"                        // build_config, chunk_config
@@ -228,7 +229,7 @@ std::size_t ReusePools<ChunkT, T>::release_parked_buffers([[maybe_unused]] std::
                         {
                             CHUNK_FREEPATH_INC(freed);
                             CHUNK_LEDGER_DISCARD(block, "trim_reuse_pools.owner");
-                            const_cast<AllocT*>(static_cast<const AllocT*>(slab->owner))->free_elt_pow2(block, slab);
+                            static_cast<AllocT*>(slab->owner)->free_elt_pow2(block, slab);
                             bytes_freed += block_bytes;
                         }
                         else
@@ -624,7 +625,7 @@ void ReusePools<ChunkT, T>::drain_free_rank(int           n_thr,
             CHUNK_FREEPATH_INC(freed);
             CHUNK_LEDGER_DISCARD(block, "rechunk_to.drain_reuse.owner");
             auto* slab  = geometry->slab_of(block);
-            auto* owner = const_cast<Alloc*>(static_cast<const Alloc*>(slab->owner));
+            auto* owner = static_cast<Alloc*>(slab->owner);
             owner->free_elt_pow2(block, slab);
         }
         cell.clear();

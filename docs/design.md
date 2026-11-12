@@ -255,7 +255,10 @@ ranks' candidate lists and deferred queues, which their threads are appending to
 `internal/tab_users.h` records which ranks hold something of each array, and an array that
 only the calling rank has used is torn down on that rank alone, with no pass over the other
 arrays. Before its chunk list is freed, one grace period of `read_reclaim` covers a
-compressor's `start()`, whose scan reads the chunk each writer announced.
+compressor's `start()`, whose scan reads the chunk each writer announced. A `resize()` inside a
+phase, by the thread that owns the array, must empty the candidate lists of that array's chunks
+before it reallocates the chunk list; its pass takes no writer handshake, so it runs on that
+array's candidates alone, the others set aside for its duration (`internal/own_candidates.h`).
 
 The **phase contract** (`chunk/manage_ompt.h`): every thread that writes calls
 `begin_parallel_phase()` before its first write (it caches its rank), and one thread calls

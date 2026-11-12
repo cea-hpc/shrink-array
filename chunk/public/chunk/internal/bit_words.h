@@ -91,7 +91,7 @@ inline constexpr std::size_t word_bytes = sizeof(WordT); ///< bytes per word
 [[nodiscard]] inline bool get_bit_relaxed(const WordT* words, std::size_t bit) noexcept
 {
     // atomic_ref needs a non-const object; the load does not write.
-    auto& word = const_cast<WordT&>(words[bit / word_bits]);
+    auto& word = const_cast<WordT&>(words[bit / word_bits]); // NOSONAR(cpp:S859)
     return (std::atomic_ref<WordT>(word).load(std::memory_order_relaxed) & bit_mask(bit)) != 0;
 }
 

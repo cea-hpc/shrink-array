@@ -234,7 +234,14 @@ is limited to the rebuilds.
   `max_backoff_ticks` (same node, `OMP_PROC_BIND=close`, 4,000 iterations, last
   re-chunk at iteration 1,700): +22% -> **+7%**. What remains is compression
   churn the static run does not have (~15,000 buffers freed per iteration
-  against none), not yet explained.
+  against none), not yet explained. Still there in November 2026 after the teardown split
+  of `zero`'s rechunk, as an indication only (x86-64, GCC 16, 8 threads, `--mode perf
+  --divisor 16 --iter_max 2000`, best of 3): +11 to +13% per iteration after the last
+  re-chunk (iteration 600), 4% more resident memory than static 1,024. The churn could not be
+  measured at that size: the `churn` line counts per allocation key, and an array draws from
+  the shared pool (key 0, not counted) until its metadata passes
+  `CHUNK_ALLOC_AFFINITY_MIN_BYTES` (16 MiB) and it has been re-chunked -- the line says so
+  now. Measure it at full size (`diag_zero_rechunk_slowdown.py` as it stands).
 - **The model is static.** The advisor bases its judgement on the current state of the chunks, not on
   future writes. On this benchmark, the transient materialisations measured do not matter
   (the `churn` line of `CHUNK_LOG=rechunk=debug`), but a workload that writes heavily into constant regions
@@ -245,5 +252,12 @@ is limited to the rebuilds.
   are compared as they are. The rechunk of `Array<bool>` is checked by `rechunk_validation`
   (`bool-grow`, `bool-shrink`, `bool-uneven`, `bool-sliced`, every variant), that of
   `ArrayChunkBits` by `bits_container_validation` (`zero_one_value` at dyn).
-- **The peak remains the initial one**: a dynamic run that starts from 64 first reaches the
-  memory of static 64, then goes down.
+- **The peak is not always the starting geometry's**: a dynamic run that starts from 64 has
+  the memory of static 64 after its initialisation; its rechunks then give memory back (the
+  resident memory goes down) or slow its growth. The run's peak is the starting geometry's
+  only when it comes at the initialisation; where the memory grows during the run, the peak
+  stays below. Measured with `top` and `smaps_rollup` (x86-64, 8 threads, `shrink_bench`
+  `--multiply 10 --iter_max 1000 --advisor_period 2`, against the same binary with
+  `--rechunk_dry_run`, November 2026): `zero_any` goes down from 481 to 303 MiB after its
+  rechunks and ends at 238 MiB instead of 545, its peak being the initialisation's (582 MiB);
+  `zero_one_value` peaks at 1,342 MiB instead of 1,523, `zero` at 2,531 MiB instead of 2,736.

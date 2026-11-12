@@ -519,10 +519,15 @@ ProxyBase<Derived, T, ChunkT>::write_with_optional_lock_impl([[maybe_unused]] th
                 }
             }
         }
-        // An aggregate, brace-initialised below: declaring the copy/move
-        // operations would make it a non-aggregate.
-        struct OwnReplayExclGuard // NOLINT(cppcoreguidelines-special-member-functions)
+        // Releases the rank's enqueue lock once: not copyable nor movable (a
+        // copy would release it twice).
+        struct OwnReplayExclGuard
         {
+            explicit OwnReplayExclGuard(int r) noexcept : rank(r) {}
+            OwnReplayExclGuard(const OwnReplayExclGuard&)            = delete;
+            OwnReplayExclGuard& operator=(const OwnReplayExclGuard&) = delete;
+            OwnReplayExclGuard(OwnReplayExclGuard&&)                 = delete;
+            OwnReplayExclGuard& operator=(OwnReplayExclGuard&&)      = delete;
             ~OwnReplayExclGuard()
             {
                 if (rank >= 0)
@@ -792,7 +797,7 @@ void ProxyBase<Derived, T, ChunkT>::enqueue_deferred_write(CtxType* ctx, LambdaB
 {
     // This const guards the proxy, not the array: enqueueing marks the array's
     // dirty bitset now, the write itself replays at the phase end.
-    auto* arr = const_cast<ArrayChunkForT<ChunkT>*>(ptr_on_array_);
+    auto* arr = const_cast<ArrayChunkForT<ChunkT>*>(ptr_on_array_); // NOSONAR(cpp:S859)
     arr->mark_chunk_dirty(ctx->num_chunk);
     increm_chunk_gate_deferred<ChunkT>();
 
@@ -1271,7 +1276,7 @@ void ProxyBase<Derived, T, ChunkT>::apply_inplace_operation(this Derived&       
             auto* ctx     = pool_new_ctx<CtxType>(self, self.ptr_on_array_);
 
             // Rebuild a fresh proxy at replay time.
-            auto write_body = [ctx, op = std::forward<AsyncOp>(async_op)]() mutable
+            auto write_body = [ctx, op = std::move(async_op)]() mutable // async_op: by value
             {
                 const auto proxy = ProxyBase::template make_proxy_with_info<ProxyType>(ctx);
 

@@ -292,31 +292,58 @@ inline void chunk_pmp_set_max_active_levels(int levels) noexcept
     ::fast_alloc::pmp::set_max_active_levels(levels);
 }
 
-/// @brief Rank of the calling thread in the active OpenMP team, read from the thread-local cache.
-/// @return The cached rank; filled from the OpenMP library on first use when the cache holds -1.
+/// @brief Rank of the calling thread in the active OpenMP team.
+/// @details Read from the thread-local cache (chunk_rank_cache()), filled from
+///          the OpenMP library on first use when it holds -1 -- except in an
+///          OpenMP build without OMPT and without checks, where it is re-read
+///          from the library on every call. There nothing clears the cache: no
+///          implicit-task callback, and begin_parallel_phase() refills it only
+///          where the program calls it. A rank left over from another team (a
+///          forgotten begin, then a team that changed) would make the thread
+///          use another thread's per-rank structures -- deferred queue,
+///          candidate list, flush lock -- which that thread uses without a
+///          lock: hangs and crashes, measured. The re-read is one
+///          omp_get_level() and one omp_get_thread_num() at level 1, 2 to 5 %
+///          of shrink_bench's computation time at 8 threads. A check build stops
+///          on a stale cache instead; with OMPT, and on the std backend, the
+///          cache is cleared when the team changes.
+/// @return The rank in the active team.
 inline int get_thr_rank_fast() noexcept
 {
-    // If OMPT is working, this value is already set at the start of the region.
-    // No guards, no OpenMP library calls, just a direct TLS read.
-    int& cache = ::shrink_array::chunk_rank_cache();
-    int  rank  = cache;
-
-    // Fallback if OMPT is disabled or not supported by the runtime
-    if (rank == -1) [[unlikely]]
+    if constexpr (build_config::use_openmp && build_config::has_not_ompt && !build_config::any_check)
     {
-        rank = cache = ::shrink_array::chunk_pmp_checked_rank(::shrink_array::chunk_pmp_library_rank());
-    }
-    if constexpr (build_config::any_check)
-    {
-        // A stale cache (a rank left over from another region) breaks the per-rank
-        // queues: fail in release check builds too.
-        if (rank != ::shrink_array::chunk_pmp_library_rank()) [[unlikely]]
+        int&      cache = ::shrink_array::chunk_rank_cache();
+        const int rank  = ::shrink_array::chunk_pmp_library_rank();
+        if (cache != rank) [[unlikely]]
         {
-            CHUNK_INVARIANT_FAILED("stale thread-rank cache: {} but this thread is rank {} of the active team", rank,
-                                   ::shrink_array::chunk_pmp_library_rank());
+            cache = ::shrink_array::chunk_pmp_checked_rank(rank); // a new rank: checked against the capacity
         }
+        return rank;
     }
-    return rank;
+    else
+    {
+        // With OMPT this value is already set at the start of the region: a
+        // direct TLS read, no OpenMP library call.
+        int& cache = ::shrink_array::chunk_rank_cache();
+        int  rank  = cache;
+
+        // First use on this thread, or a cache cleared by a team change.
+        if (rank == -1) [[unlikely]]
+        {
+            rank = cache = ::shrink_array::chunk_pmp_checked_rank(::shrink_array::chunk_pmp_library_rank());
+        }
+        if constexpr (build_config::any_check)
+        {
+            // A stale cache (a rank left over from another region) breaks the per-rank
+            // queues: fail in release check builds too.
+            if (rank != ::shrink_array::chunk_pmp_library_rank()) [[unlikely]]
+            {
+                CHUNK_INVARIANT_FAILED("stale thread-rank cache: {} but this thread is rank {} of the active team",
+                                       rank, ::shrink_array::chunk_pmp_library_rank());
+            }
+        }
+        return rank;
+    }
 }
 
     #ifndef CHUNK_PMP_THREAD_RANK

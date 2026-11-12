@@ -34,6 +34,10 @@
  *          are built the same way (an atomic is not movable). No extra byte per
  *          chunk nor in the vector.
  *
+ *          Freeing them is shared out the same way: a large mapped buffer
+ *          gives its pages back from a team (release_mapped(), at the end of
+ *          this file) before the munmap, which then drops an empty mapping.
+ *
  *          for_each_chunk() is the init loop of the three variants: a team of
  *          its own outside a region for a large array, the calling thread
  *          otherwise. Never an orphaned `omp for`: an array built by each
@@ -51,7 +55,7 @@
 #include <type_traits> // std::is_trivially_destructible_v
 #include <utility>     // std::forward
 #include <vector>      // std::vector
-#include <sys/mman.h>  // mmap, munmap: the large per-chunk vectors
+#include <sys/mman.h>  // mmap, munmap, madvise: the large per-chunk vectors
 #include <unistd.h>    // sysconf(_SC_PAGESIZE)
 
 #include "chunk/internal/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS / CHUNK_PMP_IN_PARALLEL_REGION, pmp loops
@@ -90,6 +94,11 @@ inline constexpr std::size_t mapped_min_bytes = std::size_t{1} << 20U;
     const std::size_t page = page_bytes();
     return (bytes + page - 1) / page * page;
 }
+
+/// @brief Unmap a NoInitAllocator mapping of @p length bytes (whole pages); a
+///        large one gives its pages back from a team first (defined at the end
+///        of this file, after can_open_team()).
+inline void release_mapped(void* ptr, std::size_t length) noexcept;
 } // namespace no_init_alloc_detail
 
 /**
@@ -156,7 +165,7 @@ struct NoInitAllocator : std::allocator<T>
             std::allocator<T>::deallocate(ptr, n);
             return;
         }
-        (void)::munmap(ptr, no_init_alloc_detail::mapped_length(n * sizeof(T)));
+        no_init_alloc_detail::release_mapped(ptr, no_init_alloc_detail::mapped_length(n * sizeof(T)));
     }
 
     NoInitAllocator() noexcept = default;
@@ -334,3 +343,58 @@ void resize_filled(NoInitVector<T>& vec, std::size_t count, const T& value)
 }
 
 } // namespace shrink_array::parallel_storage_init
+
+namespace shrink_array::no_init_alloc_detail
+{
+/// @brief From this many bytes a mapping gives its pages back from a team: the
+///        list of a large array (a 10^9-element array at chunk size 64: about
+///        15 M chunks, 125-250 MB). Below, one munmap costs less than a team.
+inline constexpr std::size_t parallel_release_min_bytes = std::size_t{32} << 20U;
+
+/// @brief The smallest slice a thread releases: a madvise call per few pages
+///        would cost more than the pages.
+inline constexpr std::size_t release_slice_min_bytes = std::size_t{2} << 20U;
+
+/**
+ * @details The munmap of a large mapping frees every page from the calling
+ *          thread: the re-chunk's "list unmap" (0.87 s of 1.66 s of tmp
+ *          teardown, 32 re-chunks at 160 threads). madvise(MADV_DONTNEED) on
+ *          disjoint slices runs in parallel in the kernel; with the static
+ *          schedule each thread releases the slice its rank touched first
+ *          (construct_range), on its NUMA node. The munmap then drops an empty
+ *          mapping. A team that cannot start (an exception from the backend):
+ *          the munmap alone, which frees everything anyway.
+ */
+inline void release_mapped(void* ptr, std::size_t length) noexcept
+{
+    if constexpr (build_config::threaded)
+    {
+        if (length >= parallel_release_min_bytes && parallel_storage_init::can_open_team())
+        {
+            const auto        threads    = static_cast<std::size_t>(CHUNK_PMP_MAX_THREADS);
+            const std::size_t max_slices = length / release_slice_min_bytes;
+            const std::size_t slices     = threads < max_slices ? threads : max_slices;
+            const std::size_t page       = page_bytes();
+            const std::size_t per        = (length / slices + page - 1) / page * page;
+            auto* const       base       = static_cast<char*>(ptr);
+            try
+            {
+                pmp::parallel_for(0L, static_cast<long>(slices), pmp::Options{},
+                                  [base, per, length](long s)
+                                  {
+                                      const std::size_t off = static_cast<std::size_t>(s) * per;
+                                      if (off < length)
+                                      {
+                                          const std::size_t len = length - off < per ? length - off : per;
+                                          (void)::madvise(base + off, len, MADV_DONTNEED);
+                                      }
+                                  });
+            }
+            catch (...) // NOLINT(bugprone-empty-catch): the munmap below releases it all
+            {
+            }
+        }
+    }
+    (void)::munmap(ptr, length);
+}
+} // namespace shrink_array::no_init_alloc_detail

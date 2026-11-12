@@ -2,7 +2,7 @@
 
 > French version: [algo_pattern_fr.md](algo_pattern_fr.md).
 
-> Status: end of October 2026. `pattern::Array` is a member of the `zero_any` family: this
+> Status: November 2026. `pattern::Array` is a member of the `zero_any` family: this
 > document describes what it does **differently** from `zero_any`, whose machinery it reuses
 > in full (second-value registry, write engine, compression pass, read sections), described in
 > [algo_zero_any.md](algo_zero_any.md) and [algo_zero_one_value.md](algo_zero_one_value.md). Its

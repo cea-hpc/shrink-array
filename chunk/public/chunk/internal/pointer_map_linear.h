@@ -35,7 +35,6 @@
  *       into a hash map past a threshold.
  */
 
-#include <utility> // std::swap
 
 #include "chunk/internal/cold_path_lock.h" // registry_mutex: a lookup against a registration
 

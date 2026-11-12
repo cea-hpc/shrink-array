@@ -442,7 +442,7 @@ static int run_nan()
     arr[(2 * csz) + 7]                           = other;
     ref[static_cast<std::size_t>((2 * csz) + 7)] = other;
     compress_all(arr);
-    int fails = verify("double", "nan-payload", arr, ref);
+    const int fails = verify("double", "nan-payload", arr, ref);
     arr.clear();
     return fails;
 }

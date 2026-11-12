@@ -48,7 +48,7 @@ namespace fast_alloc
 
 /// @brief Copy @p text at @p out, cut at @p end.
 /// @return One past the last character written.
-[[nodiscard]] inline char* append_text(char* out, char* end, std::string_view text) noexcept
+[[nodiscard]] inline char* append_text(char* out, const char* end, std::string_view text) noexcept
 {
     const auto n = std::min(text.size(), static_cast<std::size_t>(end - out));
     std::memcpy(out, text.data(), n);
@@ -58,7 +58,7 @@ namespace fast_alloc
 /// @brief Write @p value in decimal at @p out, cut at @p end.
 /// @return One past the last character written.
 template <std::integral Int>
-[[nodiscard]] char* append_int(char* out, char* end, Int value) noexcept
+[[nodiscard]] char* append_int(char* out, const char* end, Int value) noexcept
 {
     char       digits[std::numeric_limits<Int>::digits10 + 3]; // sign + one digit digits10 does not count
     const auto res = std::to_chars(digits, digits + sizeof(digits), value);

@@ -15,6 +15,13 @@
  */
 
 #pragma once
+#include <exception> // std::terminate (a body that throws)
+#include <atomic> // std::memory_order_acq_rel, std::memory_order_acquire, std::memory_order_relaxed, std::memory_order_release
+#include <cstddef> // std::size_t
+#include <cstdint> // std::uint32_t, std::uint64_t
+#include <mutex>   // std::try_to_lock, std::unique_lock
+#include <thread>  // std::this_thread::yield (a dynamic slot still in use)
+
 #include "fast_allocators/internal/pmp_std.h" // the class these bodies belong to
 
 namespace fast_alloc
@@ -48,26 +55,36 @@ inline void pmp::std_backend::SpinBarrier::arrive_and_wait() noexcept
 // fast_alloc::TeamCtx
 // ---------------------------------------------------------------------------
 
-inline pmp::std_backend::Slot& pmp::std_backend::TeamCtx::enter(int rank, std::uint64_t& seq)
+inline pmp::std_backend::DynSlot& pmp::std_backend::TeamCtx::enter_dynamic(int rank, std::uint64_t& seq) noexcept
 {
-    seq = met[static_cast<std::size_t>(rank)]++;
-    const std::scoped_lock lock(mutex);
-    auto&                  s = slots[seq];
-    if (!s)
+    seq              = met[static_cast<std::size_t>(rank)]++;
+    DynSlot&   slot  = dyn[seq % dyn_ring];
+    const auto ready = 2 * (seq + 1);
+    for (unsigned spins = 1;; ++spins)
     {
-        s       = std::make_unique<Slot>();
-        s->left = size;
-    }
-    return *s;
-}
-
-inline void pmp::std_backend::TeamCtx::leave(std::uint64_t seq)
-{
-    const std::scoped_lock lock(mutex);
-    const auto             it = slots.find(seq);
-    if (--it->second->left == 0)
-    {
-        slots.erase(it);
+        std::uint64_t tag = slot.tag.load(std::memory_order_acquire);
+        if (tag == ready)
+        {
+            return slot; // claimed and reset by the first thread of this loop
+        }
+        // Free: even (not being reset), an older loop's, and nobody left in it.
+        // A tag above `ready` cannot be: a later loop on this slot needs this
+        // thread out of this one first.
+        if ((tag & 1U) == 0U && tag < ready && slot.left.load(std::memory_order_acquire) == 0 &&
+            slot.tag.compare_exchange_strong(tag, ready - 1, std::memory_order_acq_rel, std::memory_order_acquire))
+        {
+            slot.next.store(0, std::memory_order_relaxed);
+            slot.left.store(size, std::memory_order_relaxed);
+            slot.tag.store(ready, std::memory_order_release);
+            return slot;
+        }
+        // Being reset by another thread, or still in use by a thread
+        // dyn_ring constructs behind: it leaves without anyone's help.
+        cpu_relax();
+        if ((spins & 255U) == 0U)
+        {
+            std::this_thread::yield();
+        }
     }
 }
 
@@ -198,8 +215,8 @@ void pmp::Team::for_dynamic(Index first, Index last, int chunk, Body&& body, Wai
         }
         return;
     }
-    std::uint64_t      seq  = 0;
-    std_backend::Slot& slot = ctx_->enter(rank_, seq);
+    std::uint64_t         seq  = 0;
+    std_backend::DynSlot& slot = ctx_->enter_dynamic(rank_, seq);
     for (long long b = slot.next.fetch_add(c, std::memory_order_relaxed); b < n;
          b           = slot.next.fetch_add(c, std::memory_order_relaxed))
     {
@@ -209,7 +226,9 @@ void pmp::Team::for_dynamic(Index first, Index last, int chunk, Body&& body, Wai
             body(static_cast<Index>(first + static_cast<Index>(k)));
         }
     }
-    ctx_->leave(seq);
+    // acq_rel: this thread's uses of the slot happen before its reuse
+    // (the next claimer reads left == 0, acquire).
+    slot.left.fetch_sub(1, std::memory_order_acq_rel);
     end_construct(w);
 }
 
@@ -242,7 +261,7 @@ void pmp::Team::single(F&& f, WaitMode w)
         return;
     }
     // Lock-free: every thread meets the constructs in the same order, so this
-    // one's number seq is the same for all (the count enter() keeps too). The
+    // one's number seq is the same for all (the count enter_dynamic() keeps too). The
     // mark is "every single numbered below it has been claimed"; the thread
     // that moves it past seq claims this one. A thread that finds it already
     // past seq loses: whoever moved it there went through this single first

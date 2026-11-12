@@ -36,7 +36,11 @@
 //   - check builds: a forgotten begin stops at the first deferred write, and
 //     release_chunk_pools() inside a region stops, as does an explicit
 //     make_block_compression() (a sequential point: without a proxy it takes
-//     no writer handshake and no reader grace period).
+//     no writer handshake and no reader grace period);
+//   - a forgotten begin with a stale rank cache (every thread handed another
+//     thread's rank, as a team that changed would leave it): release builds
+//     re-read the rank on every use (get_thr_rank_fast) and read back right;
+//     check builds stop on the stale cache.
 //
 // OpenMP without OMPT only (the protocol is manual there); 77 = skipped.
 // ============================================================================
@@ -44,13 +48,13 @@
 #include <cstdio>      // std::fopen, std::fclose, std::fread, FILE, std::remove
 #include <cstdlib>     // std::system, std::atoi
 #include <cstring>     // std::strcmp
+#include <iterator>    // std::size
 #include <string>      // std::string
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::as_const
 #include <vector>      // std::vector, the reference
 
 #include <sys/wait.h> // WIFEXITED, WEXITSTATUS
-#include <unistd.h>   // getpid
 
 #include "chunk/zero_array.h"           // zero::Array
 #include "chunk/zero_one_value_array.h" // zero_one_value::Array
@@ -58,6 +62,7 @@
 #include "chunk/internal/zero_chunk.h"  // release_chunk_pools
 #include "chunk/config.h"               // chunk_config::use_zero*, build_config::has_not_ompt, any_check
 #include "chunk/internal/test_hooks.h"  // test_hooks::force_defer_every
+#include "chunk/internal/PMP_CHUNK.h"   // chunk_rank_cache, chunk_pmp_team_rank (the stale-rank case)
 #include "chunk/manage_ompt.h"          // begin_parallel_phase, finalize_parallel_phase, parallel_phase
 #include "chunk/param_chunk.h"          // ParamChunk::init_indexes
 #include "chunk/print.h"                // shrink_array::println
@@ -130,6 +135,7 @@ enum class Bracket
     begin_serial, ///< by_hand, plus a begin outside any region first
     no_finalize,  ///< begin, never finalize
     no_begin,     ///< finalize, never begin
+    stale_rank,   ///< no_begin, each thread's rank cache set to another thread's rank
 };
 
 /// The helper's reduction. At namespace scope, not a local of regions():
@@ -172,7 +178,13 @@ long regions(Bracket how)
         }
 #pragma omp parallel num_threads(team(r))
         {
-            if (how != Bracket::no_begin)
+            if (how == Bracket::stale_rank)
+            {
+                // What a team that changed leaves in the cache when nothing
+                // clears it (no OMPT, no begin): another thread's rank.
+                chunk_rank_cache() = (chunk_pmp_team_rank() + 1) % team(r);
+            }
+            else if (how != Bracket::no_begin)
             {
                 begin_parallel_phase();
             }
@@ -231,33 +243,44 @@ enum class InRegion
     block_pass,    ///< an explicit make_block_compression() on an array
 };
 
+/// The builds a case runs in.
+enum class Builds
+{
+    all,          ///< every build
+    check_only,   ///< the check exists in check builds only
+    release_only, ///< what a check build stops on, a release build must survive
+};
+
 /// One case: how its child brackets the regions, and what must happen.
 struct Case
 {
     const char* name;
     Bracket     how;
-    InRegion    in_region;        ///< a sequential point called in a region instead
-    bool        check_build_only; ///< the check exists in check builds only
-    const char* must_print;       ///< nullptr: must run to the end, values right
+    InRegion    in_region;  ///< a sequential point called in a region instead
+    Builds      builds;     ///< the builds it runs in
+    const char* must_print; ///< nullptr: must run to the end, values right
 };
 
 constexpr const char* msg_twice     = "begin_parallel_phase() twice in the same phase";
 constexpr const char* msg_deferred  = "deferred write in a parallel region by thread";
 constexpr const char* msg_in_region = "release_chunk_pools() called inside a parallel region";
 constexpr const char* msg_block     = "make_block_compression() called inside a parallel region";
+constexpr const char* msg_stale     = "stale thread-rank cache";
 
 const Case case_table[] = {
-    {"brackets by hand", Bracket::by_hand, InRegion::nothing, false, nullptr},
-    {"parallel_phase()", Bracket::helper, InRegion::nothing, false, nullptr},
-    {"only_flush / after_flush pair", Bracket::split, InRegion::nothing, false, nullptr},
-    {"begin in a nested region", Bracket::nested_begin, InRegion::nothing, false, nullptr},
-    {"begin outside any region", Bracket::begin_serial, InRegion::nothing, false, nullptr},
-    {"finalize forgotten", Bracket::no_finalize, InRegion::nothing, false, msg_twice},
-    {"begin forgotten (deferred write)", Bracket::no_begin, InRegion::nothing, true, msg_deferred},
-    {"release_chunk_pools() in a region", Bracket::by_hand, InRegion::release_pools, true, msg_in_region},
-    {"make_block_compression() in a region", Bracket::by_hand, InRegion::block_pass, true, msg_block},
+    {"brackets by hand", Bracket::by_hand, InRegion::nothing, Builds::all, nullptr},
+    {"parallel_phase()", Bracket::helper, InRegion::nothing, Builds::all, nullptr},
+    {"only_flush / after_flush pair", Bracket::split, InRegion::nothing, Builds::all, nullptr},
+    {"begin in a nested region", Bracket::nested_begin, InRegion::nothing, Builds::all, nullptr},
+    {"begin outside any region", Bracket::begin_serial, InRegion::nothing, Builds::all, nullptr},
+    {"finalize forgotten", Bracket::no_finalize, InRegion::nothing, Builds::all, msg_twice},
+    {"begin forgotten (deferred write)", Bracket::no_begin, InRegion::nothing, Builds::check_only, msg_deferred},
+    {"release_chunk_pools() in a region", Bracket::by_hand, InRegion::release_pools, Builds::check_only, msg_in_region},
+    {"make_block_compression() in a region", Bracket::by_hand, InRegion::block_pass, Builds::check_only, msg_block},
+    {"stale rank cache, no begin", Bracket::stale_rank, InRegion::nothing, Builds::check_only, msg_stale},
+    {"stale rank cache, no begin", Bracket::stale_rank, InRegion::nothing, Builds::release_only, nullptr},
 };
-constexpr int nb_cases = static_cast<int>(sizeof case_table / sizeof case_table[0]);
+constexpr int nb_cases = static_cast<int>(std::size(case_table));
 
 /// The child: run case @p case_idx; 0 when every element read back right.
 int child(int case_idx)
@@ -288,7 +311,7 @@ int child(int case_idx)
 int check_case(const char* self, int case_idx)
 {
     const Case&       test_case = case_table[case_idx];
-    const std::string log = "/tmp/phase_protocol_" + std::to_string(getpid()) + "_" + std::to_string(case_idx) + ".log";
+    const std::string log       = validation::temp_path("phase_protocol_" + std::to_string(case_idx) + ".log");
     const std::string cmd =
         validation::self_command(self) + " --case " + std::to_string(case_idx) + " > \"" + log + "\" 2>&1";
     const int   status = std::system(cmd.c_str());
@@ -339,9 +362,15 @@ int run(int argc, char** argv)
     int fails = 0;
     for (int k = 0; k < nb_cases; ++k)
     {
-        if (case_table[k].check_build_only && !build_config::any_check)
+        const Builds builds = case_table[k].builds;
+        if (builds == Builds::check_only && !build_config::any_check)
         {
             println("[{}/phase-protocol] {:<36} skipped (check builds only)", variant_name(), case_table[k].name);
+            continue;
+        }
+        if (builds == Builds::release_only && build_config::any_check)
+        {
+            println("[{}/phase-protocol] {:<36} skipped (release builds only)", variant_name(), case_table[k].name);
             continue;
         }
         fails += check_case(argv[0], k);

@@ -2,7 +2,7 @@
 
 > English version: [contributing.md](contributing.md).
 
-> Octobre 2026. Comment construire, tester, mesurer et documenter une modification. Lire d'abord
+> Novembre 2026. Comment construire, tester, mesurer et documenter une modification. Lire d'abord
 > [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md) : l'essentiel de la bibliothèque est la mécanique qu'il décrit.
 
 ***
@@ -66,6 +66,9 @@ Les vérifications des sources tournent avec les autres (`ctest -R check_`) :
 | `check_headers` | chaque fichier C++ commence par l'en-tête de licence Apache (années à jour) et ne porte pas de tampon `Created by` de l'IDE ; les scripts et fichiers de build (`.py`, `.sh`, `.cmake`, `CMakeLists.txt`) portent `# Copyright ... CEA` et `# SPDX-License-Identifier: Apache-2.0` ; les en-têtes vendorés, la ligne SPDX de leur licence d'origine ; `scripts/check_headers.py --fix` corrige |
 | `check_raw_reads` | chaque lecture brute d'un tampon de chunk dans la bibliothèque dit pourquoi elle est sûre |
 | `check_tracked` | chaque fichier cité par les sources (un `#include` entre guillemets, un import Python relatif, une source ou un test CMake, un lien Markdown) est suivi par git, pas seulement présent sur le disque |
+| `check_public_api` | les en-têtes et les noms publics sont ceux que liste `scripts/public_api.txt` : échoue quand l'un d'eux est ajouté, déplacé, retiré ou renommé |
+| `check_format` | chaque fichier C++ de `chunk/`, `fast_allocators/` et `examples/` est tel que clang-format 23 le laisse (`scripts/check_format.py --fix` les réécrit) ; enregistré seulement quand CMake trouve cette version |
+| `check_doxygen` | la documentation Doxygen se construit sans avertissement ; enregistré seulement quand CMake trouve Doxygen, sauté avant la 1.9 |
 | `check_docs` | liens, noms de code cités dans les documents, paires anglais/français, pas de marqueurs d'historique dans les commentaires, les fichiers cités dans les commentaires existent |
 
 ## 3. Règles de code

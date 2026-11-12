@@ -53,7 +53,7 @@ def main() -> int:
         print(f"== {os.path.basename(path)}: {n} rechunk(s)  |  " + "  ;  ".join(elapsed))
         if totals:
             # Times in ms -> s; the drain's block counts are counts, not times.
-            print("   " + "  ".join(f"{k}={v:.0f}" if "blocks" in k else f"{k}={v / 1000:.2f}s"
+            print("   " + "  ".join(f"{k}={v:.0f}" if ("blocks" in k or "slabs" in k) else f"{k}={v / 1000:.2f}s"
                                     for k, v in totals.items()))
         elif n == 0:
             print("   (no re-chunk in this run)")

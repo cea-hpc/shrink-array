@@ -16,7 +16,10 @@
 
 #pragma once
 
-#include <mutex> // std::once_flag, std::call_once (ensure_initialized)
+#include <mutex>  // std::once_flag, std::call_once (ensure_initialized)
+#include <atomic> // std::atomic_signal_fence, std::atomic_thread_fence, std::memory_order_acquire, std::memory_order_relaxed, std::memory_order_seq_cst
+#include <cstddef> // std::size_t
+#include <vector>  // std::vector
 
 #include "chunk/internal/write_compress_sync_policy.h" // the class these bodies belong to
 
