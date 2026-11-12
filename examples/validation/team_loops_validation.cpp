@@ -40,7 +40,7 @@
 
 #include <cstdio>  // std::printf
 #include <vector>  // std::vector
-#include <utility> // std::pair
+#include <utility> // std::pair, std::forward
 
 #include "fast_allocators/internal/pmp_loops.h"   // fast_alloc::pmp::team, Team, options, WaitMode
 #include "fast_allocators/internal/pmp_runtime.h" // fast_alloc::pmp::BackendKind
@@ -118,16 +118,16 @@ void run_loop(pmp::Team& team, LoopKind kind, Index first, Index last, int chunk
     switch (kind)
     {
         case LoopKind::static_blocks:
-            team.for_static(first, last, body, wait_mode);
+            team.for_static(first, last, std::forward<Body>(body), wait_mode);
             return;
         case LoopKind::static_blocks_simd:
-            team.for_static_simd(first, last, body, wait_mode);
+            team.for_static_simd(first, last, std::forward<Body>(body), wait_mode);
             return;
         case LoopKind::static_chunks:
-            team.for_static_chunks(first, last, chunk, body, wait_mode);
+            team.for_static_chunks(first, last, chunk, std::forward<Body>(body), wait_mode);
             return;
         case LoopKind::static_chunks_simd:
-            team.for_static_chunks_simd(first, last, chunk, body, wait_mode);
+            team.for_static_chunks_simd(first, last, chunk, std::forward<Body>(body), wait_mode);
             return;
     }
 }
