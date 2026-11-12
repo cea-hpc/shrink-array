@@ -800,6 +800,17 @@ endif()
 chunk_require_cxx20(team_sync_validation PRIVATE)
 add_test(NAME team_sync_validation COMMAND team_sync_validation)
 set_property(TEST team_sync_validation PROPERTY LABELS validation)
+
+# --- flat_address_set_validation: the flat set of SlabArena's live slabs
+# (fast_allocators/internal/flat_address_set.h) against std::unordered_set:
+# random inserts / erases / lookups, growth, erase-all-then-refill.
+# `--bench [n]` times both. Header-only.
+add_executable(flat_address_set_validation flat_address_set_validation.cpp)
+chunk_add_alloc_token_rt(flat_address_set_validation)
+target_include_directories(flat_address_set_validation PRIVATE ${PROJECT_SOURCE_DIR}/fast_allocators/public)
+chunk_require_cxx20(flat_address_set_validation PRIVATE)
+add_test(NAME flat_address_set_validation COMMAND flat_address_set_validation)
+set_property(TEST flat_address_set_validation PROPERTY LABELS validation)
 if (CHUNK_THREADS_BACKEND STREQUAL "std")
   add_test(NAME team_sync_validation_nospin COMMAND team_sync_validation)
   set_tests_properties(team_sync_validation_nospin PROPERTIES LABELS validation ENVIRONMENT "CHUNK_PMP_SPIN_US=0")
