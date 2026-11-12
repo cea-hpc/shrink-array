@@ -51,6 +51,8 @@ set(ALLOCATORS_INTERNAL_HEADERS
   public/fast_allocators/internal/pmp_loops_inline.h
   public/fast_allocators/internal/pmp_std_inline.h
   public/fast_allocators/internal/slab_arena_inline.h
+  public/fast_allocators/internal/flat_address_set.h
+  public/fast_allocators/internal/flat_address_set_inline.h
 )
 
 target_sources(fast_allocators PRIVATE
