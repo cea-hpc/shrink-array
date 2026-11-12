@@ -234,7 +234,14 @@ is limited to the rebuilds.
   `max_backoff_ticks` (same node, `OMP_PROC_BIND=close`, 4,000 iterations, last
   re-chunk at iteration 1,700): +22% -> **+7%**. What remains is compression
   churn the static run does not have (~15,000 buffers freed per iteration
-  against none), not yet explained.
+  against none), not yet explained. Still there in November 2026 after the teardown split
+  of `zero`'s rechunk, as an indication only (x86-64, GCC 16, 8 threads, `--mode perf
+  --divisor 16 --iter_max 2000`, best of 3): +11 to +13% per iteration after the last
+  re-chunk (iteration 600), 4% more resident memory than static 1,024. The churn could not be
+  measured at that size: the `churn` line counts per allocation key, and an array draws from
+  the shared pool (key 0, not counted) until its metadata passes
+  `CHUNK_ALLOC_AFFINITY_MIN_BYTES` (16 MiB) and it has been re-chunked -- the line says so
+  now. Measure it at full size (`diag_zero_rechunk_slowdown.py` as it stands).
 - **The model is static.** The advisor bases its judgement on the current state of the chunks, not on
   future writes. On this benchmark, the transient materialisations measured do not matter
   (the `churn` line of `CHUNK_LOG=rechunk=debug`), but a workload that writes heavily into constant regions
