@@ -58,10 +58,16 @@ class FlatAddressSet
     std::size_t erase(std::uintptr_t key) noexcept;
 
     /// @brief Number of addresses in the set.
-    [[nodiscard]] std::size_t size() const noexcept { return size_; }
+    [[nodiscard]] std::size_t size() const noexcept
+    {
+        return size_;
+    }
 
     /// @brief Is the set empty?
-    [[nodiscard]] bool empty() const noexcept { return size_ == 0; }
+    [[nodiscard]] bool empty() const noexcept
+    {
+        return size_ == 0;
+    }
 
   private:
     /// @brief The home slot of @p key: the top bits of murmur3's fmix64 of it.
@@ -83,9 +89,9 @@ class FlatAddressSet
     /// @brief Double the table (16 slots when empty) and re-insert every key.
     void grow();
 
-    std::vector<std::uintptr_t> slots_;     ///< 0 = empty; size a power of two, or 0.
-    std::size_t                 size_  = 0; ///< Keys in the table.
-    std::size_t                 mask_  = 0; ///< slots_.size() - 1.
+    std::vector<std::uintptr_t> slots_;      ///< 0 = empty; size a power of two, or 0.
+    std::size_t                 size_  = 0;  ///< Keys in the table.
+    std::size_t                 mask_  = 0;  ///< slots_.size() - 1.
     unsigned                    shift_ = 64; ///< 64 - log2(slots_.size()): the hash's top bits.
 };
 

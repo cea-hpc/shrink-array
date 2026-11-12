@@ -59,8 +59,8 @@ void check(bool ok, const char* what)
 /// @brief Random operations on keys drawn from a pool; every result against the reference.
 void random_ops(std::uintptr_t align, std::size_t pool, std::size_t ops, std::uint64_t seed)
 {
-    std::mt19937_64                    rng(seed);
-    std::vector<std::uintptr_t>        keys(pool);
+    std::mt19937_64             rng(seed);
+    std::vector<std::uintptr_t> keys(pool);
     for (auto& k : keys)
     {
         k = ((rng() | 1U) & ~(align - 1)) | align; // non-zero, aligned
@@ -73,9 +73,15 @@ void random_ops(std::uintptr_t align, std::size_t pool, std::size_t ops, std::ui
         const std::uintptr_t key = keys[rng() % pool];
         switch (rng() % 3)
         {
-        case 0: mismatches += flat.insert(key) != ref.insert(key).second ? 1 : 0; break;
-        case 1: mismatches += flat.erase(key) != ref.erase(key) ? 1 : 0; break;
-        default: mismatches += flat.contains(key) != ref.contains(key) ? 1 : 0; break;
+            case 0:
+                mismatches += flat.insert(key) != ref.insert(key).second ? 1 : 0;
+                break;
+            case 1:
+                mismatches += flat.erase(key) != ref.erase(key) ? 1 : 0;
+                break;
+            default:
+                mismatches += flat.contains(key) != ref.contains(key) ? 1 : 0;
+                break;
         }
         mismatches += flat.size() != ref.size() ? 1 : 0;
     }
@@ -90,10 +96,10 @@ void random_ops(std::uintptr_t align, std::size_t pool, std::size_t ops, std::ui
 
 void grow_erase_refill()
 {
-    constexpr std::size_t       n     = 200000;
-    constexpr std::uintptr_t    align = 1U << 16U;
-    FlatAddressSet              flat;
-    bool                        ok = true;
+    constexpr std::size_t    n     = 200000;
+    constexpr std::uintptr_t align = 1U << 16U;
+    FlatAddressSet           flat;
+    bool                     ok = true;
     for (std::size_t i = 1; i <= n; ++i)
     {
         ok = ok && flat.insert(i * align * 7);
@@ -124,9 +130,9 @@ void grow_erase_refill()
 void dense_runs()
 {
     // One region carved back to back: consecutive multiples of the slab size.
-    constexpr std::uintptr_t base  = std::uintptr_t{1} << 40U;
-    constexpr std::uintptr_t slab  = 1U << 16U;
-    constexpr std::size_t    n     = 100000;
+    constexpr std::uintptr_t base = std::uintptr_t{1} << 40U;
+    constexpr std::uintptr_t slab = 1U << 16U;
+    constexpr std::size_t    n    = 100000;
     FlatAddressSet           flat;
     std::mt19937_64          rng(7);
     std::vector<char>        in(n, 0);

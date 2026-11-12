@@ -60,11 +60,11 @@
 #include <unordered_map> // std::unordered_map
 #include <system_error>  // std::errc (std::from_chars)
 
-#include "fast_allocators/internal/raw_memory.h" // address_bits
+#include "fast_allocators/internal/raw_memory.h"       // address_bits
 #include "fast_allocators/internal/flat_address_set.h" // detail::FlatAddressSet (the live slabs)
-#include "fast_allocators/internal/pmp_alloc.h"  // pmp::parallel_for, pmp::in_parallel, pmp::max_threads (the sweeps)
-#include "fast_allocators/internal/fatal.h"      // FAST_ALLOC_FATAL
-#include "fast_allocators/internal/log_core.h"   // CHUNK_LOG, CHUNK_LOG_ALWAYS, logging::enabled (arena=info)
+#include "fast_allocators/internal/pmp_alloc.h" // pmp::parallel_for, pmp::in_parallel, pmp::max_threads (the sweeps)
+#include "fast_allocators/internal/fatal.h"     // FAST_ALLOC_FATAL
+#include "fast_allocators/internal/log_core.h"  // CHUNK_LOG, CHUNK_LOG_ALWAYS, logging::enabled (arena=info)
 
 namespace fast_alloc
 {
