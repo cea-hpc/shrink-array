@@ -49,7 +49,9 @@
  *       [shrink_array][rechunk][W][12345] message
  *   (channel, level letter, kernel thread id), so lines from many threads
  *   do not interleave.
- * - Arguments: anything std::format spells, plus std::complex, "(re+imi)",
+ * - Arguments: anything std::format spells (a floating-point value with no
+ *   format spec through std::to_chars: libc++ allocates to print the shortest
+ *   form), plus std::complex, "(re+imi)",
  *   a pointer to any object as its address (no static_cast<const void*> at
  *   the call), with C++26 reflection a struct member by member,
  *   "{a: 1, inner: {x: 2.5}}", and any other type -- a union, an enum, a
@@ -81,7 +83,10 @@
 
 #include <array>           // std::array (the thresholds, the names)
 #include <atomic>          // std::atomic
+#include <algorithm>       // std::copy (FloatArg, ComplexArg)
 #include <bit>             // std::has_single_bit (CHUNK_LOG_POW2)
+#include <charconv>        // std::to_chars (FloatArg, ComplexArg: no allocation)
+#include <cmath>           // std::signbit (ComplexArg)
 #include <complex>         // std::complex (spelled by fmt_arg)
 #include <cstddef>         // std::size_t
 #include <cstdint>         // std::uint8_t, std::uint64_t
@@ -94,9 +99,9 @@
 #include <span>            // std::span, std::as_bytes (BytesArg)
 #include <source_location> // std::source_location
 #include <string_view>     // std::string_view
-#include <type_traits> // std::remove_cvref_t, std::conditional_t, std::is_lvalue_reference_v, std::is_pointer_v, std::is_object_v
-#include <utility>       // std::forward, std::declval, std::move
-#include <sched.h>       // sched_yield (emit_fatal)
+#include <type_traits> // std::remove_cvref_t, std::conditional_t, std::is_lvalue_reference_v, std::is_pointer_v, std::is_object_v, std::is_floating_point_v
+#include <utility>     // std::forward, std::declval, std::move
+#include <sched.h>     // sched_yield (emit_fatal)
 #include <sys/syscall.h> // SYS_gettid
 #include <unistd.h>      // getpid, syscall
 
@@ -250,6 +255,15 @@ struct ComplexArg
     std::complex<T> z;
 };
 
+/// @brief A floating-point value: "{}" through std::to_chars, the same text as
+///        std::format's (its shortest form) without the allocation libc++
+///        makes for it; a format spec ("{:.3f}") goes to std::formatter<T>.
+template <typename T>
+struct FloatArg
+{
+    T v;
+};
+
 /// @brief A value of a type with no formatter, formatted as its bytes: "0x" and
 ///        two hex digits per byte, in memory order.
 template <typename V>
@@ -266,10 +280,19 @@ inline constexpr bool is_address =
 
 /// @brief The argument std::format sees for @p arg: itself when its type is Formattable.
 template <typename A>
-    requires(Formattable<std::remove_cvref_t<A>> && !is_complex<std::remove_cvref_t<A>>)
+    requires(Formattable<std::remove_cvref_t<A>> && !is_complex<std::remove_cvref_t<A>> &&
+             !std::is_floating_point_v<std::remove_cvref_t<A>>)
 constexpr A&& fmt_arg(A&& arg) noexcept
 {
     return std::forward<A>(arg);
+}
+
+/// @brief Overload for a floating-point value.
+template <typename A>
+    requires std::is_floating_point_v<std::remove_cvref_t<A>>
+constexpr auto fmt_arg(A&& value) noexcept
+{
+    return FloatArg<std::remove_cvref_t<A>>{value};
 }
 
 /// @brief Overload for std::complex.
@@ -899,10 +922,51 @@ struct std::formatter<fast_alloc::logging::detail::ComplexArg<T>, char>
         return ctx.begin();
     }
 
+    // "({}{:+}i)", through std::to_chars (see FloatArg): "{:+}" adds the sign
+    // of a value without one, a NaN included.
     template <typename Ctx>
     auto format(const fast_alloc::logging::detail::ComplexArg<T>& arg, Ctx& ctx) const
     {
-        return std::format_to(ctx.out(), "({}{:+}i)", arg.z.real(), arg.z.imag());
+        std::array<char, 128> text{};
+        char*                 p   = text.data();
+        char* const           end = text.data() + text.size();
+        *p++                      = '(';
+        p                         = std::to_chars(p, end, arg.z.real()).ptr;
+        if (!std::signbit(arg.z.imag()))
+        {
+            *p++ = '+';
+        }
+        p    = std::to_chars(p, end, arg.z.imag()).ptr;
+        *p++ = 'i';
+        *p++ = ')';
+        return std::copy(text.data(), p, ctx.out());
+    }
+};
+
+/// @brief fmt_arg's floating-point value: "{}" through std::to_chars, a spec
+///        through std::formatter<T>.
+template <typename T>
+struct std::formatter<fast_alloc::logging::detail::FloatArg<T>, char>
+{
+    std::formatter<T, char> inner;
+    bool                    shortest = true; ///< "{}": no spec
+
+    constexpr auto parse(std::format_parse_context& ctx)
+    {
+        shortest = ctx.begin() == ctx.end() || *ctx.begin() == '}';
+        return inner.parse(ctx);
+    }
+
+    template <typename Ctx>
+    auto format(const fast_alloc::logging::detail::FloatArg<T>& arg, Ctx& ctx) const
+    {
+        if (!shortest)
+        {
+            return inner.format(arg.v, ctx);
+        }
+        std::array<char, 128> text{};
+        const auto            res = std::to_chars(text.data(), text.data() + text.size(), arg.v);
+        return std::copy(text.data(), res.ptr, ctx.out());
     }
 };
 

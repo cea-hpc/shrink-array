@@ -2,7 +2,7 @@
 
 > English version: [synchronisation_dekker.md](synchronisation_dekker.md).
 
-> État : début octobre 2026. Ce document explique comment les écrivains, les compresseurs,
+> État : novembre 2026. Ce document explique comment les écrivains, les compresseurs,
 > les vidages d'écritures différées et les lecteurs s'excluent mutuellement **sans verrou sur le
 > chemin d'écriture**. La machinerie d'ensemble (proxys, écritures différées, compression en
 > vol) est décrite dans [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md) §7 et §8. Les noms cités sont
@@ -212,6 +212,11 @@ tableau de chaque variante, avant toute écriture parallèle. Le résultat est r
 Le protocole n'est donc jamais plus faible que la forme symétrique : il est seulement plus
 rapide quand il peut l'être. `ParamChunk::chunk_stats()` indique la forme qui a tourné
 (`dekker::protocol_name()`).
+
+Un cas n'a pas de repli : l'enregistrement a réussi, les écrivains annoncent donc sans barrière,
+et un appel `membarrier` ultérieur échoue (un filtre seccomp installé après l'enregistrement).
+Le protocole ne tient plus, et une passe pourrait libérer le tampon dans lequel un écrivain se
+trouve : `heavy_barrier()` arrête le programme (`CHUNK_INVARIANT_FAILED`), dans tous les builds.
 
 ### 4.4 Le prix, et la condition
 

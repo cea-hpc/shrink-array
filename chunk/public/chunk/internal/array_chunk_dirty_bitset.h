@@ -44,7 +44,6 @@
 #include <cstddef>   // std::size_t
 #include <cstdint>   // uint64_t
 #include <utility>   // std::swap
-#include <vector>    // std::vector
 
 #include "chunk/config.h"                         // build_config::threaded
 #include "chunk/internal/array_chunk_for.h"       // ArrayKey (clear_all_dirty_bitsets)

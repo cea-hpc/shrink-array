@@ -466,6 +466,53 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/zero_one_value_chunk_def.h
         public/chunk/internal/zero_any_chunk_def.h
         public/chunk/internal/pool_release.h
+        public/chunk/internal/array_chunk_core.h
+        public/chunk/internal/array_chunk_core_inline.h
+        public/chunk/internal/array_chunk_dirty_bitset_inline.h
+        public/chunk/internal/bit_words.h
+        public/chunk/internal/block_pass_precheck.h
+        public/chunk/internal/chunk_array_new.h
+        public/chunk/internal/chunk_index_sample.h
+        public/chunk/internal/chunk_size_policy_inline.h
+        public/chunk/internal/churn_counters.h
+        public/chunk/internal/churn_counters_inline.h
+        public/chunk/internal/cold_path_lock.h
+        public/chunk/internal/deferred_op_pool_inline.h
+        public/chunk/internal/element_access.h
+        public/chunk/internal/element_ref.h
+        public/chunk/internal/env_parse.h
+        public/chunk/internal/exact_rss.h
+        public/chunk/internal/motif_region_inline.h
+        public/chunk/internal/own_candidates.h
+        public/chunk/internal/parallel_storage_init.h
+        public/chunk/internal/pattern_array_inline.h
+        public/chunk/internal/pattern_chunk_inline.h
+        public/chunk/internal/pointer_map_linear_inline.h
+        public/chunk/internal/process_verbs.h
+        public/chunk/internal/queue_flag.h
+        public/chunk/internal/read_reclaim.h
+        public/chunk/internal/read_reclaim_inline.h
+        public/chunk/internal/relaxed_element.h
+        public/chunk/internal/ring_log_debug_inline.h
+        public/chunk/internal/second_value_info.h
+        public/chunk/internal/stable_table.h
+        public/chunk/internal/stable_table_inline.h
+        public/chunk/internal/tab_cst_val2_holder_inline.h
+        public/chunk/internal/tab_users.h
+        public/chunk/internal/teardown_probe.h
+        public/chunk/internal/test_hooks.h
+        public/chunk/internal/value_less.h
+        public/chunk/internal/value_slab.h
+        public/chunk/internal/values_arena_bytes.h
+        public/chunk/internal/write_compress_sync_policy_inline.h
+        public/chunk/internal/zero_one_value_candidate_list_check.h
+        public/chunk/internal/zero_one_value_pointer_map_inline.h
+        public/chunk/internal/mdspan_inline.h
+        public/chunk/internal/mdspan_tile_ops_inline.h
+        public/chunk/internal/enum_name.h
+        public/chunk/internal/reflect_fields.h
+        public/chunk/internal/soa_array_inline.h
+        public/chunk/internal/value_hash.h
 )
 
 set(CHUNK_PUBLIC_HEADERS
@@ -489,6 +536,7 @@ set(CHUNK_PUBLIC_HEADERS
         public/chunk/log.h
         public/chunk/print.h
         public/chunk/threads.h
+        public/chunk/soa_array.h
 )
 
 set(CHUNK_SOURCES

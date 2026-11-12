@@ -385,7 +385,12 @@ def parse_method_head(head: str):
         return None
     # the declaration must END with a parameter list + qualifiers (not `= value` nor a brace init)
     tail = norm_ws(rest)
-    if not re.search(r"\)(\s*(const|volatile|noexcept(\([^{}]*\))?|override|final|&&?|->\s*[^{]+|requires\b[^{]*|:\s*[^{]+))*\s*$", tail):
+    # The qualifiers, then at most one tail (trailing return, requires-clause, ctor
+    # initialisers) running to the end: no repeated group of overlapping unbounded
+    # alternatives, which backtracked exponentially on a tail that does not match
+    # (12 "-> a" took 30 s; Sonar python:S5852).
+    if not re.search(r"\)(?:\s*(?:const|volatile|noexcept(?:\([^{}]*\))?|override|final|&&?))*\s*"
+                     r"(?:->\s*[^{]+|requires\b[^{]*|:\s*[^{]+)?$", tail):
         return None
     probe = rest[:30]
     offset = head.find(probe)
@@ -588,7 +593,6 @@ def build_definition(m: Method, raw: str):
     qual = "::".join([*nss[1:], *[c.qualifier() for c in m.cls_chain]])
     # return type: outside the class scope, a class-local name is written Class<T>::Name
     # (C++20: no `typename` needed) and a name of the class's namespace gets that namespace
-    trailing = None
     if ret and ret not in ("auto", "decltype(auto)"):
         ret = qualify_return_type(ret, m, nss)
     has_inline = bool({"constexpr", "consteval", "inline", "CHUNK_FORCE_INLINE"} & set(specs))
@@ -604,13 +608,6 @@ def build_definition(m: Method, raw: str):
     if def_quals:
         # a trailing return already present in the suffix: keep order ... -> R requires
         sig += " " + def_quals
-    if trailing:
-        # insert before a requires-clause if any
-        if " requires " in (" " + def_quals):
-            k = sig.rfind(" requires ")
-            sig = sig[:k] + f" -> {trailing}" + sig[k:]
-        else:
-            sig += f" -> {trailing}"
     sig = wrap_signature(sig)
     if init:
         sig += "\n    " + init

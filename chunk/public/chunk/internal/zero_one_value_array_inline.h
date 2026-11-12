@@ -25,8 +25,9 @@
 #include <string_view> // std::string_view (the residual's kind)
 #include <vector>      // std::vector
 
-#include <sys/mman.h> // mprotect (use_mm_protect: the read-only cst_val2 blocks)
-#include <unistd.h>   // sysconf(_SC_PAGESIZE) (same)
+#include <sys/mman.h>  // mprotect (use_mm_protect: the read-only cst_val2 blocks)
+#include <unistd.h>    // sysconf(_SC_PAGESIZE) (same)
+#include <type_traits> // std::remove_reference_t
 
 #include "chunk/internal/cold_path_lock.h"              // ColdPathLock: construction, teardown, resize
 #include "chunk/internal/tab_users.h"                   // TabUsers: a row per array
@@ -48,6 +49,7 @@
 // depend on the transitive include chain.
 #include "chunk/internal/type_state.h"        // TypeState: per-size free lists, candidate filter
 #include "chunk/internal/pool_ledger.h"       // CHUNK_LEDGER_PARK
+#include "chunk/internal/teardown_probe.h"    // teardown_probe (rechunk=debug: the tmp teardown split)
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size, cst_buffer_size
 #include "chunk/internal/same_value.h"        // same_value
 
@@ -88,7 +90,6 @@
 
 namespace shrink_array
 {
-
 // Identity setup only: claim a num_tab in the shared registry, size the
 // per-tab tables to match, then hand the geometry-dependent work to
 // rebuild_storage(). Everything here happens exactly once per array:
@@ -588,7 +589,12 @@ void zero_one_value::Array<T, IntType>::clear_core()
     // Inside a region, a work array of this thread's: this rank's structures only.
     const bool own_rank =
         this->teardown_on_own_rank(zero_one_value::Proxy<T>::share_info_array->get_num_tab(this->registry_key()));
+    // rechunk=debug, tmp teardown only (armed by rechunk_to): the split's marks
+    // (teardown_probe.h; the same steps as zero_any::ArrayImpl::clear_core()).
+    auto& probe = internal::teardown_probe();
+    probe.mark(internal::TeardownStep::entry);
     this->flush_pending_deferred_ops(/*force=*/true, own_rank);
+    probe.mark(internal::TeardownStep::flush);
 
     // Per-array compression stats, read here: after the flush (before it, async
     // compression work may be in flight and the snapshot depends on the thread
@@ -615,6 +621,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
         // untouched); it also makes rechunk_to's tmp teardown safe.
         Manager::remove_from_zero_one_value_candidates_by_num_tab(num_tab, own_rank);
     }
+    probe.mark(internal::TeardownStep::candidates);
 
     if (!nb_chunk_)
     {
@@ -648,6 +655,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
     // otherwise a re-chunk leaves the threshold sized for the geometry it just left.
     TypeState<zero_one_value::Chunk, T>::compute_size_buffer_reuse();
     TypeState<zero_one_value::Chunk, T>::compute_size_max_number_of_chunk_to_check_compress();
+    probe.mark(internal::TeardownStep::terminal);
 
     if constexpr (build_config::not_threaded)
     {
@@ -764,10 +772,12 @@ void zero_one_value::Array<T, IntType>::clear_core()
     }
 
     m_size_ = 0;
+    probe.mark(internal::TeardownStep::park);
 
     this->release_chunk_list(); // Mandatory with the new allocator
 
     nb_chunk_ = 0;
+    probe.mark(internal::TeardownStep::tables);
 
     // An array with its own slab affinity gives its memory back NOW: every
     // buffer parked above (own rank) or by another rank (foreign, under this
@@ -779,6 +789,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
     {
         TypeState<zero_one_value::Chunk, T>::drain_reuse_list_for_size(this->size_policy_.size());
     }
+    probe.mark(internal::TeardownStep::key_drain);
 
     // The candidate flags (one byte per chunk): released HERE, after the
     // purge (clear_is_int() above runs before it and must stay a no-op) and
@@ -791,6 +802,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
         zero_one_value::Proxy<T>::release_tab_is_int(
             zero_one_value::Proxy<T>::share_info_array->get_num_tab(this->registry_key()));
     }
+    probe.mark(internal::TeardownStep::tables);
 }
 
 template <ArrayChunkElement T, typename IntType>
@@ -819,17 +831,15 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
     bool drained = false;
     if constexpr (chunk_config::not_use_compression_with_ompt)
     {
-        if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
+        if (!chunk_config::aggressive_compression() && !CHUNK_PMP_IN_PARALLEL_REGION)
+        // run-time switch: chunk/config.h
         {
-            if (!CHUNK_PMP_IN_PARALLEL_REGION)
+            const auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::get_ref();
+            if (ens_type_chunk.have_chunk_to_compress_potentially())
             {
-                const auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::get_ref();
-                if (ens_type_chunk.have_chunk_to_compress_potentially())
-                {
-                    ens_type_chunk.compress_chunk_to_compress_potentially(true);
-                }
-                drained = true;
+                ens_type_chunk.compress_chunk_to_compress_potentially(true);
             }
+            drained = true;
         }
     }
 
@@ -1260,6 +1270,16 @@ zero_one_value::Array<T, IntType>::~Array()
     {
         Proxy<T>::share_info_array->erase_inf_array_by_ptr(&inf_array_);
     }
+    // rechunk=debug, tmp teardown only (armed by rechunk_to): free chunk_list_'s
+    // buffer here rather than with the member, so that the split can time it
+    // (as zero_any::ArrayImpl::destroy_storage()).
+    auto& probe = internal::teardown_probe();
+    if (probe.on)
+    {
+        probe.mark(internal::TeardownStep::erase);
+        typename SecondValueBase::ChunkListType().swap(chunk_list_);
+        probe.mark(internal::TeardownStep::list_unmap);
+    }
 }
 
 template <ArrayChunkElement T, typename IntType>
@@ -1384,5 +1404,4 @@ void zero_one_value::Array<T, IntType>::swap_identity(Array& other)
         }
     }
 }
-
 } // namespace shrink_array

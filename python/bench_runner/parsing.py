@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Reading a run's output: memory, checksums, CHUNK_STATS counters, seeds."""
 import json
+import math
 import os
 import re as _re
 
@@ -40,7 +41,7 @@ def _is_nonfinite(tok):
         v = float(t)
     except ValueError:
         return False  # unrecognised token -> do not flag
-    return v != v or v == float("inf") or v == float("-inf")
+    return math.isnan(v) or math.isinf(v)
 
 
 def detect_nonfinite_checksum(stdout_text):

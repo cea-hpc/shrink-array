@@ -351,6 +351,10 @@ void RechunkSupport<Derived, true>::Refill::slice_boundary(pmp::Team& team)
         [&]
         {
             const DynChunkSizeGuard at_old{static_cast<unsigned int>(old_size_)};
+            if (trace_on_)
+            {
+                internal::g_slice_times.collect_detach_ms += internal::elapsed_ms(slice_t1_, SliceClock::now());
+            }
             for (std::size_t r = 0; r < recycle_held_.size(); ++r)
             {
                 auto& allocator = ChunkType::get_chunk_allocator(static_cast<int>(r), old_key_);
@@ -363,6 +367,10 @@ void RechunkSupport<Derived, true>::Refill::slice_boundary(pmp::Team& team)
                 // One uncontended lock per rank, each rank's slabs under its
                 // own rank (NUMA).
                 allocator.recycle_detached(recycle_scratch_[r]);
+                if (trace_on_)
+                {
+                    internal::g_slice_times.collect_slabs += static_cast<double>(recycle_scratch_[r].size());
+                }
             }
             if (trace_on_)
             {

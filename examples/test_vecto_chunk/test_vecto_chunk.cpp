@@ -17,11 +17,12 @@
 #include <chrono>    // std::chrono::steady_clock
 #include <cmath>     // std::cos, std::sin, std::sqrt
 #include <cstdlib>   // std::abort
+#include <exception> // std::exception (main's catch)
 #include <ctime>     // std::time
 #include <random>    // std::mt19937, std::uniform_int_distribution, std::default_random_engine
 #include <array>     // std::array
 #include <fstream>   // std::ifstream, std::ofstream
-#include <cstdio>    // stderr
+#include <cstdio>    // stderr, std::fprintf (main's catch)
 #include <print>     // std::println, std::print
 #include <algorithm> // For std::shuffle
 #include <string>    // std::string, std::to_string
@@ -188,6 +189,7 @@ void calculate1(double                     val,
 }
 
 int main()
+try
 {
     // Once, before the first array. The library checks its compiled chunk size
     // itself.
@@ -427,4 +429,10 @@ int main()
     destroy_block_chunk();
 
     return 0;
+}
+catch (const std::exception& e)
+{
+    // A failed allocation or std::format: said, not std::terminate().
+    std::fprintf(stderr, "test_vecto_chunk: %s\n", e.what());
+    return 2;
 }

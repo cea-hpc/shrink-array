@@ -60,6 +60,14 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- CI (P3 of the audit): four gaps closed. Per push, `fetch-content`: `examples/fetch_content`
+  (new) consumes the checkout with `FetchContent`, and the job checks that the consumer keeps
+  its build type, flags, `doc` target and tests, and installs nothing of the library. Nightly:
+  `oldest-compilers` (GCC 13 and Clang 18, the minimum the README and the recipe state, never
+  built by the CI), `x86-openmp-ubsan` (`SANITIZER=undefined`, new: UBSan, the first report
+  stops the program; 256 and `_dyn`), and `spack` (the recipe installed from the checkout for
+  `target=x86_64_v3`, no target flag from the project, no AVX-512 instruction in the
+  libraries, `getting_started` built against the install).
 - `CHUNK_PHASE_FENCES=0` runs without the four `seq_cst` fences that close the phase functions
   (`chunk/private/all_type_chunk.cpp`), with a warning. They were kept as "empirically
   load-bearing" since one unexplained checksum in August 2026; no handshake needs them as far
@@ -111,6 +119,15 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- `USE_LIBCXX` is `OFF` by default: a Clang build uses the standard library the compiler picks
+  by itself (libstdc++ on Linux), `-DUSE_LIBCXX=ON` asks for libc++. The default was `ON`, and
+  the first configure failed on a Clang installed without libc++; the build scripts, the CI
+  jobs and the Spack recipe all passed `OFF` already.
+- `CITATION.cff` at the root (GitHub's "Cite this repository"), and a "Citing" section in the
+  READMEs.
+- Spack recipe: `maintainers`, and the form the builtin repository's style check accepts (lines
+  of 99 columns at most, the test of the `sizes` values as a function), so that the file can be
+  submitted there unchanged.
 - std backend: `Team::barrier()` spins for `CHUNK_PMP_SPIN_US` (default 1000 us) before sleeping,
   as OpenMP's blocktime does, instead of a `std::barrier` that slept on a futex almost at once;
   `single()` is lock-free (one CAS on a team-wide mark, no mutex, no map slot per construct); the
@@ -191,6 +208,63 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `TCSlab::alloc_block()` tested its capacity after computing it: `block_allocator -
+  sizeof(void*)` is unsigned and wraps for a slab smaller than the back-pointer, and the
+  quotient, cast to `int`, could come out positive (a slab of 1 byte and elements of 3: a
+  capacity of 1,431,655,763) and pass the "does not fit" test. The sizes are now compared before
+  the subtraction, and an element size below 1 is refused with them. No size the library asks
+  for reaches it (Coverity 661091).
+- `test_vecto_chunk` and `multi-mat`: `main()` catches `std::exception` and says it, as the
+  other examples do, instead of ending in `std::terminate()` (Coverity 661907, 661959, 661960).
+- Documentation brought back in line with the sources, in both languages.
+  `docs/algo_pattern_fr.md` §5 lacked the paragraph on the OMPT pass
+  (`Chunk::compress_to_motif()`). `docs/developer_settings.md` lists the CMake options it
+  missed (`SHRINK_BENCH_INT64_SIZES`, `CHUNK_VALIDATION_UNITY_BATCH`, `GCC_TOOLCHAIN_DIR`,
+  `USE_MOLD`, `CHUNK_VEC_REPORT`, `GETTING_STARTED_LIB`, `BOOL_ARRAYS_LIB`) and, in a new §8,
+  the variables the tools and the harnesses read (`CHUNK_BUILD_ROOT`, `CHUNK_BENCH_EVENTS`,
+  `CHUNK_POOL_REF_WAIT`, `CHUNK_POOL_POLL`, `CATCH_CRASH_EXE`, `CLANG_FORMAT`, `FK_SECONDS`,
+  `BLK_HUGE`, `CHUNK_VALIDATION_CHILD`); `docs/environment_variables.md` §2 has
+  `SHRINK_ARRAY_BUILD_EXAMPLES` and `SHRINK_ARRAY_BUILD_TESTS`. `docs/contributing.md` names
+  `check_public_api`, `check_format` and `check_doxygen` in its table of checks;
+  `docs/formal_models.md` says the native models keep their assertions (`-UNDEBUG`);
+  `docs/synchronisation_dekker.md` §4.3 says a `membarrier` that fails once registered stops the
+  program. `docs/README.md` no longer claims every document has a French version
+  (`docs/threading_backends.md` is in English only) and its code table names `pattern_array.h`,
+  `threads.h`, the `fetch_content` example and the other formal models. The Doxygen comments of
+  the constructors and of `resize()` state what a thread may do inside a region.
+- `resize()` inside a parallel region compressed chunks of other arrays under their writers.
+  Its drain ran the compression pass, which takes no writer handshake there, on the calling
+  thread's WHOLE candidate list: right for the array being resized, which only that thread
+  writes, wrong for a shared array the thread had also written -- another thread could be
+  writing that chunk (ThreadSanitizer: 9 races on a probe; a lost or torn value in principle).
+  The copy constructor goes through the same drain. The pass now runs on the resized array's
+  candidates only, the others set aside for its duration (`internal/own_candidates.h`,
+  `drain_own_candidates()` in the three variants). For zero_one_value the same call also
+  sweeps, on the calling rank, that array's candidates queued under an earlier second value,
+  which the in-region drain left pointing into the reallocated chunk list.
+  `region_storage_validation`'s whole-team case now grows each thread's array with chunks of
+  the shared one in its list.
+- OpenMP without OMPT (libgomp): a thread whose rank cache was left over from another team --
+  `begin_parallel_phase()` forgotten, then a team that changed -- used another thread's per-rank
+  structures (deferred queue, candidate list, flush lock), which that thread uses without a
+  lock: hangs, crashes and aborts in about half the runs of `phase_protocol_validation`'s new
+  "stale rank cache, no begin" case. Nothing clears the cache there (no implicit-task callback),
+  so the builds without checks now re-read the rank on every use (`get_thr_rank_fast()`: one
+  `omp_get_level()` and one `omp_get_thread_num()`; 2 to 5 % of `shrink_bench`'s computation
+  time at 8 threads); check builds keep stopping on the stale cache. 45 runs out of 45 pass.
+- Packaging (P1 and P4 of the audit). **Spack**: the package was built for the build host
+  whatever `target=` said -- the project's `-march=native` (`-mcpu=native`, `-tp=host`) came
+  after the wrapper's flag and won; `CHUNK_NATIVE_TUNING=OFF` (new, default ON) adds no target
+  flag and the recipe sets it. The recipe also declares what it used without saying: the C
+  compiler (`formal/`), `bzip2` for `+examples`, Python for the tests. **`-DNDEBUG`**: the
+  project's own Release and RelWithDebInfo flags dropped CMake's `-DNDEBUG`, so a release
+  library carried its `assert()`s; they are compiled out again, except in the builds that are
+  there to check (`CHECK_OPTIM`, sanitizers, Debug). The reverse for `formal/`: its native models
+  state their property with `assert()` and were built with CMake's C Release flags, `-DNDEBUG`
+  included -- the six `formal_native_*` tests passed whatever the model did; they now build
+  with `-UNDEBUG`. **Workflows**: the 21 `uses:` are pinned by commit, the release in a comment,
+  and `.github/dependabot.yml` proposes the updates. The `doc` target is defined at the top
+  level only (a consumer's own `doc` target stopped its configure).
 - std backend: a thread building, re-chunking or destroying a large array outside a region could
   deadlock with another thread's team. It held the cold-path lock and waited for the pool (one
   team at a time) while a member of the team holding the pool waited for that lock to build its

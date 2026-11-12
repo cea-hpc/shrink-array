@@ -383,7 +383,7 @@ def act_options(a):
         runpy.run_path(path, run_name="__main__")
     except Done:
         return
-    except SystemExit:
+    except SystemExit:  # the user's script exited before parsing: nothing to dump
         pass
     except BaseException as e:
         import traceback
@@ -460,7 +460,7 @@ def act_validate(a):
         return answer(skipped="%s n'a pas appelé parse_args" % a[1])
     except Done:
         return answer(ok=True)
-    except SystemExit as e:
+    except SystemExit as e:  # the script's exit is the answer, sent back as JSON
         if e.code in (0, None):
             return answer(ok=True)
         return answer(refused=refusal(e))
@@ -1503,7 +1503,7 @@ def act_errors(a):
         if not logs:
             print(json.dumps({"note": "aucun échec dans le log du run", "files": [], "count": 0}))
             return
-        found, od, pats = {p: True for p in logs}, os.path.dirname(logs[0]), []
+        found, od, pats = dict.fromkeys(logs, True), os.path.dirname(logs[0]), []
     elif not pats:
         print(json.dumps({"note": "pas de log d'erreurs pour ce programme", "files": []}))
         return

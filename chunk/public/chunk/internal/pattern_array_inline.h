@@ -16,7 +16,9 @@
 
 #pragma once
 
-#include <vector> // std::vector (reclaim_motifs' marks)
+#include <vector>  // std::vector (reclaim_motifs' marks)
+#include <cstddef> // std::size_t
+#include <cstdint> // std::uint32_t, std::uint8_t
 
 #include "chunk/pattern_array.h"         // the class these bodies belong to
 #include "chunk/internal/motif_region.h" // pattern::MotifRegion (install_motif)
@@ -57,7 +59,8 @@ bool pattern::Array<T, IntType>::install_motif(int num_chunk, const T* elems)
     const T* const entry = MotifRegion<T>::find_or_register(motif.data(), count);
     // The offset first, then the pointer: the order of the compression to come.
     Array::ProxyType::BaseSpec::set(this->num_tab_, num_chunk, elems[0]);
-    chunk.values_store(const_cast<T*>(entry)); // never written through: a motif chunk materialises first
+    // Never written through: a motif chunk materialises first.
+    chunk.values_store(const_cast<T*>(entry)); // NOSONAR(cpp:S859)
     return true;
 }
 

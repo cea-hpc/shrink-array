@@ -21,6 +21,12 @@ What the tracked sources name:
    `<name>.c` from the names formal/CMakeLists.txt lists;
 4. a relative link of a Markdown file (`[text](other.md)`, `(../examples/x.cpp)`).
 
+5. the reverse, for the libraries' headers: every tracked header under
+   chunk/public/ and fast_allocators/public/ is listed in its library's
+   CMakeLists.txt (CHUNK_*_HEADERS, ALLOCATORS_*_HEADERS: the target_sources
+   that put it in an IDE's project, and the statement of what is API and what
+   is detail). The install copies the whole tree either way, so an unlisted
+   header still ships; it is only outside every target.
 A named file that exists but is untracked is an error (`git add` it); one that
 exists nowhere is an error too, unless a tracked `<name>.in` generates it (a
 CMake *-config-version.cmake is generated; words inside a CMake string are not
@@ -175,6 +181,14 @@ def main():
                 if (root / path).is_dir() or any(t.startswith(path.rstrip("/") + "/") for t in tracked):
                     continue
                 verdict(f"{f}:{n}", f"link {target}", [path])
+
+    # 5. every tracked library header is listed in its library's CMakeLists.txt
+    for lib in ("chunk", "fast_allocators"):
+        listed = set(re.findall(r"public/[A-Za-z0-9_/]+\.h\b", (root / lib / "CMakeLists.txt").read_text(encoding="utf-8")))
+        for f in sorted(t for t in tracked if t.startswith(lib + "/public/") and t.endswith(".h")):
+            if f[len(lib) + 1:] not in listed:
+                problems.append(f"{f}: tracked, but in no header list of {lib}/CMakeLists.txt (add it to "
+                                f"{'CHUNK' if lib == 'chunk' else 'ALLOCATORS'}_INTERNAL_HEADERS or _PUBLIC_HEADERS)")
 
     for p in problems:
         print(p)

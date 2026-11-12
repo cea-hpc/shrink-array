@@ -31,7 +31,7 @@
 
 #include "chunk/rechunk_decider.h"             // the declarations these bodies belong to
 #include "chunk/chunk_size_advisor.h"          // ChunkSizeAdvisor, ChunkSizeReport
-#include "chunk/config.h"                      // build_config::chunk_dynamic
+#include "chunk/config.h"                      // build_config::chunk_dynamic, alloc_affinity_min_bytes
 #include "chunk/log.h"                         // CHUNK_LOG, logging::enabled
 #include "chunk/internal/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS (the rebuild's team, for its cost)
 #include "chunk/internal/churn_counters.h"     // the churn trace (rechunk=debug)
@@ -410,6 +410,17 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
                               "S=64: {:.1f} MB if scattered, {:.1f} MB if grouped",
                               name, cur_size, d_creates, d_phases, static_cast<double>(d_creates) / d_phases,
                               hist.churn_mat, mat_now, transient, mb_s, cur_size, mb_64s, mb_s);
+                }
+                else if (key == 0)
+                {
+                    // churn_counters.h counts per allocation key and leaves the
+                    // shared pool out: there it would print "baseline" at every
+                    // tick and measure nothing.
+                    CHUNK_LOG(debug, rechunk,
+                              "churn {} S={}: not counted -- the array allocates from the shared pool (key 0: its "
+                              "metadata is under CHUNK_ALLOC_AFFINITY_MIN_BYTES = {} MiB, or it has not been "
+                              "re-chunked yet), whose materialisations are not told apart per array",
+                              name, cur_size, build_config::alloc_affinity_min_bytes >> 20U);
                 }
                 else
                 {

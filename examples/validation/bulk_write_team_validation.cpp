@@ -28,7 +28,7 @@
 // the phase fails the phase protocol. Each result is compared element by
 // element with a std::vector, before and after a compression pass. The same
 // operations on a small array inside a region run on the calling thread, one
-// thread at a time (array creation is not thread-safe).
+// thread at a time (the copy and assign() are sequential points).
 //
 // Exit 0 = every check holds. Any thread count (the tests run it at 1 and 8).
 // ============================================================================
@@ -223,10 +223,12 @@ int run_type(const char* type, long count)
     // Inside a region: each thread its own small array, on the calling thread.
     // One thread at a time (a mutex, not `omp critical`: the region is a team
     // of the build's backend, the std backend's too, where an OpenMP pragma is
-    // ignored): creating, resizing or destroying arrays from several threads
-    // at once is outside the library's contract -- create_common() takes no
-    // lock and the zero_any registry (zero_any::PointerMap) is not thread-safe
-    // (see region_storage_validation).
+    // ignored). Building and destroying arrays from several threads at once
+    // would be allowed -- both take the cold-path lock (cold_path_lock.h), and
+    // region_storage_validation covers the whole team doing it -- but the copy
+    // constructor (copy_from() resizes) and assign() are sequential points:
+    // inside a region, one thread at a time while the others wait
+    // (docs/getting_started.md, section 5).
     int        region_fails = 0;
     std::mutex one_at_a_time;
     parallel_phase(

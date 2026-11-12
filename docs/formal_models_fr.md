@@ -52,7 +52,8 @@ genmc --check-liveness -- -DSHAPE_SYMMETRIC -DINIT_CONSTANT formal/writer_compre
 Avec CMake, `ctest -L formal` lance `formal_genmc` (quand `genmc` est sur le PATH ou que
 `-DGENMC_EXECUTABLE=` le nomme) et `formal_native_*` : chaque modèle compilé comme un programme
 ordinaire et lancé 300 fois, ce qui prouve que le modèle est un vrai programme et sert d'oracle
-faible pour le protocole. Rien de `formal/` n'entre dans la bibliothèque ni n'est installé.
+faible pour le protocole. Ils sont compilés avec `-UNDEBUG` quel que soit le type de build :
+leurs `assert()` sont le test. Rien de `formal/` n'entre dans la bibliothèque ni n'est installé.
 
 ## 3. Le modèle du protocole 1 : écrivain contre compresseur
 
@@ -495,6 +496,35 @@ peut pas être : ils venaient d'un autre trou, les tranches partielles de `fill_
 `std::complex<double>` (corrigé, voir CHANGELOG.md). Avec ce correctif et celui de F7 (section
 8.9), l'audit n'en comptait aucun sur Milan jusqu'à 128 threads (`zero_any` en géométrie 256,
 1024 et dynamique, trois graines chacune) : F6 était réel mais rare dans ce bench.
+
+**Deux passes : l'ordre de la restitution.** `queue_flag::release_candidates()` (la restitution
+des trois variantes depuis qu'elles la partagent) rend à chaque candidat sa marque **avant** son
+drapeau. Tant que le drapeau n'est pas libre, le chunk n'est dans aucune autre liste, aucune autre
+passe n'a pu le marquer, et la baisse de la marque ne retire que la réclamation de cette passe. Le
+modèle à une passe ne pouvait pas dire si cet ordre compte : il n'y a pas d'autre réclamation à
+effacer, et l'ordre inverse passe. `-DTWO_PASSES` en donne une : quand l'écriture de W met le chunk
+en file (dans la liste de son propre rang), le thread de W lance la passe B dessus, comme le fait
+le déclenchement en boucle. Le modèle fait aussi ce que fait la source là où la première version
+prenait un raccourci : un candidat que le parcours écarte voit sa marque baissée dans le parcours,
+et la boucle de restitution baisse à nouveau celle de chaque candidat -- la baisse redondante qui,
+faite après le drapeau, tombe sur la réclamation de la passe B.
+
+| cas | attendu | verdict (natif, ordonnancement forcé) |
+|---|---|---|
+| source, deux passes | succès | succès (l'écriture de W est notée sur le drapeau restitué, la passe B ne tourne jamais) |
+| `MUT_RELEASE_BEFORE_UNMARK`, une passe | succès | -- |
+| `MUT_RELEASE_BEFORE_UNMARK`, deux passes : le drapeau rendu, puis la marque | échec | **P2 à chaque run**, et une écriture dans le tampon libéré (AddressSanitizer : heap-use-after-free) |
+
+Le scénario : la passe A écarte le chunk et baisse sa marque dans le parcours ; W, différé
+jusque-là, écrit 0 à la place du dernier 7 juste après la restitution de A, trouve le drapeau libre
+et met le chunk en file ; la passe B le marque et passe start() ; la baisse tardive de A efface la
+marque de B ; W2 s'annonce, ne trouve pas de marque et continue ; B trouve le chunk constant, le
+vide et libère le tampon ; W2 y écrit, et sa valeur est perdue. Dans l'ordre de la source, la baisse
+de A arrive quand le drapeau vaut encore 2 ou 3 : rien ne peut mettre le chunk en file avant elle.
+Les verdicts GenMC (`run_genmc.sh`, trois lignes de plus) restent à prendre : les runs natifs
+ci-dessus forcent cet entrelacement-là avec des pauses (`-DDEMO_SCHEDULE` : le test
+`formal_native_queue_handback_two_passes_schedule`, à côté des runs libres à deux passes) ; ce sont
+un oracle pour lui, pas une vérification exhaustive.
 
 ### 8.9 F7 : deux threads remplissant les deux bouts d'un chunk pouvaient le laisser tous deux hors file (corrigé)
 

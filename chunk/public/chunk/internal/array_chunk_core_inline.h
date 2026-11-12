@@ -15,6 +15,9 @@
  */
 
 #pragma once
+#include <atomic>  // std::memory_order_relaxed
+#include <cstddef> // std::size_t
+
 #include "chunk/internal/array_chunk_core.h" // the class these bodies belong to
 #include "chunk/internal/PMP_CHUNK.h"        // CHUNK_PMP_IN_PARALLEL_REGION, CHUNK_PMP_THREAD_RANK
 #include "chunk/internal/tab_users.h"        // TabUsers (teardown_on_own_rank)

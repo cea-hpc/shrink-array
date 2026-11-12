@@ -15,6 +15,15 @@
  */
 
 #pragma once
+#include <iostream> // std::cout
+#include <atomic> // std::memory_order_acq_rel, std::memory_order_acquire, std::memory_order_relaxed, std::memory_order_release, std::memory_order_seq_cst
+#include <cstddef> // std::byte, std::size_t
+#include <cstdint> // std::uint32_t, std::uint8_t
+#include <cstring> // std::memcpy, std::strerror
+#include <memory>  // std::unique_ptr
+#include <mutex>   // std::mutex, std::scoped_lock
+#include <vector>  // std::vector
+
 #include "chunk/internal/tab_cst_val2_holder.h" // the class these bodies belong to
 #include "chunk/internal/same_value.h"          // same_value
 
@@ -87,7 +96,7 @@ template <typename T>
 [[nodiscard]] std::size_t GlobalVecHolder<T>::count_entries() noexcept
 {
     std::size_t count = 0;
-    for (Segment<T>* s = head.load(std::memory_order_acquire); s != nullptr; s = s->next)
+    for (const Segment<T>* s = head.load(std::memory_order_acquire); s != nullptr; s = s->next)
     {
         count += static_cast<std::size_t>(s->used);
     }

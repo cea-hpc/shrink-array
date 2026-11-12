@@ -96,6 +96,7 @@ ALLOWED = {
     "chunk/internal/diag_mutex.h", "diag_mutex.h", "internal::diag_print_mutex", "chunk/internal/nano_sleeper.h",
     "chunk_config::have_aggressive_compression",  # now chunk_config::aggressive_compression()
     "is_cst_val_new_value_is_other_cst_val",  # now passes_mark_pre_check()
+    "is_power_of_two",  # func_p2.h's, never called: removed (lint lot 4)
     # the developer settings fixed after the Milan measurements, and CHUNK_THP's functions
     "CHUNK_RECHUNK_KEEP_RECYCLED_MB", "alloc_config::thp_advise", "thp_never", "advise_thp_region",
     # the rechunk decider's former environment variables (now RechunkPolicy fields and

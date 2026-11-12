@@ -22,6 +22,9 @@
 #include <type_traits>     // std::remove_cvref_t
 #include <utility>         // std::move, std::cmp_greater_equal
 #include <vector>          // the per-chunk "queued" flags
+#include <exception>       // std::exception (zero_any::PointerMap::erase)
+#include <algorithm>       // std::min, std::ranges::fill
+#include <cstddef>         // std::size_t
 
 #include "chunk/internal/zero_any_proxy.h"     // the declarations these bodies belong to
 #include "chunk/internal/in_t.h"               // InT<T>

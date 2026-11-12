@@ -58,7 +58,7 @@ union Immortal
 {
     constexpr Immortal() : value() {}
     // Never destroys value: the point of the type.
-    constexpr ~Immortal() {} // NOLINT(modernize-use-equals-default): = default would destroy value
+    constexpr ~Immortal() {} // NOLINT(modernize-use-equals-default) NOSONAR(cpp:S3490): = default would destroy value
 
     Immortal(const Immortal&) = delete ("never-destroyed static storage: copy its value member, not the storage");
     Immortal&

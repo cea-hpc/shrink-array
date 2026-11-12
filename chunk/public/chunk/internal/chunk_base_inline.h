@@ -19,6 +19,11 @@
 #include <exception>   // std::exception (deferred enqueue)
 #include <memory>      // std::make_unique
 #include <type_traits> // std::remove_reference_t
+#include <algorithm>   // std::min
+#include <atomic> // std::memory_order_acq_rel, std::memory_order_acquire, std::memory_order_relaxed, std::memory_order_release
+#include <cstddef> // std::size_t
+#include <cstring> // std::memset, std::strerror
+#include <vector>  // std::vector
 
 #include "chunk/internal/chunk_base.h"                 // the declarations these bodies belong to
 #include "chunk/config.h"                              // build_config::use_fast_alloc, chunk_config::
@@ -84,7 +89,7 @@ void ChunkBase<T, Derived>::free_block_to_pool(this Derived& self, [[maybe_unuse
                 CHUNK_FREEPATH_INC(freed);
                 CHUNK_LEDGER_RELEASE(val, "free_block_to_pool.free_to_owner");
                 using AllocT = std::remove_reference_t<decltype(allocator)>;
-                const_cast<AllocT*>(static_cast<const AllocT*>(slab->owner))->free_elt_pow2(val, slab);
+                static_cast<AllocT*>(slab->owner)->free_elt_pow2(val, slab);
             }
             else
             {
@@ -140,7 +145,7 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::to_be_queued_for_deferred_process
 
     auto* arr = storage->get(); // simple acquire load, always fresh
 
-    auto* chunk_ptr = static_cast<Derived*>(const_cast<ChunkDeferredOpsPolicy*>(this));
+    auto* chunk_ptr = static_cast<Derived*>(const_cast<ChunkDeferredOpsPolicy*>(this)); // NOSONAR(cpp:S859)
 
     // ── Enqueue vs cross-thread flush: PER-RANK shard lock ────────────────
     // The requirement is pairwise (flusher of rank r <-> writer of rank r), which is what
@@ -238,7 +243,7 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::wait_for_availability([[maybe_unu
         increm_chunk_read_sync<Derived>();
     }
 
-    auto* chunk_ptr = static_cast<Derived*>(const_cast<ChunkDeferredOpsPolicy*>(this));
+    auto* chunk_ptr = static_cast<Derived*>(const_cast<ChunkDeferredOpsPolicy*>(this)); // NOSONAR(cpp:S859)
 
     // ── Stage 1: drain OUR OWN rank only ───────────────────────────────────
     // sync_chunk runs on the write operators too, so the dominant case is a thread re-touching
@@ -1351,7 +1356,7 @@ void ChunkBase<T, Derived>::release_to_owner(this Derived& self, int thr_rank, T
         return;
     }
     using AllocT = std::remove_reference_t<decltype(mine)>;
-    auto* owner  = const_cast<AllocT*>(static_cast<const AllocT*>(slab->owner));
+    auto* owner  = static_cast<AllocT*>(slab->owner);
     if (slab->owner_rank < 0 || slab->owner_rank == thr_rank || !CHUNK_PMP_IN_PARALLEL_REGION)
     {
         CHUNK_FREEPATH_INC(freed);

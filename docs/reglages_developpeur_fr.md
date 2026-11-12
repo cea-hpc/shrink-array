@@ -2,7 +2,7 @@
 
 > English version: [developer_settings.md](developer_settings.md).
 
-> État : octobre 2026. Les interrupteurs des développeurs de la bibliothèque : réglage du décideur
+> État : novembre 2026. Les interrupteurs des développeurs de la bibliothèque : réglage du décideur
 > et des allocateurs, traces, rechunks forcés, banc, macros de compilation, options de mise au
 > point et de compilation, scripts de compilation. Ce sont des **outils de développement** : hors
 > de la politique de versionnage de [CHANGELOG.md](../CHANGELOG.md), ils peuvent changer ou
@@ -152,6 +152,7 @@ Les options de [variables_environnement_fr.md](variables_environnement_fr.md) §
 |---|---|---|
 | `SHRINK_BENCH_DYN_SIZE` | 64 | taille de départ des cibles `_dyn` |
 | `SHRINK_BENCH_INT64` | `OFF` | cibles à indice 64 bits (`_int64`) |
+| `SHRINK_BENCH_INT64_SIZES` | 1024 | avec `SHRINK_BENCH_INT64` : les tailles de chunk statiques qui reçoivent un jumeau `_int64`, un sous-ensemble de `CHUNK_STATIC_SIZES` (les cibles `_dyn` en ont toujours un) |
 | `SHRINK_INTEL_LIBM` | `ON` | x86-64 : lier la libm d'Intel si elle est trouvée |
 | `SHRINK_ARM_LIBM` | `OFF` | aarch64 : lier `libamath` d'ArmPL (aucun gain mesuré sur Grace) |
 | `CHUNK_ICPX_O0_WORKAROUND` | `OFF` | contournement d'une erreur interne d'icpx sur trois fichiers |
@@ -161,6 +162,7 @@ Les options de [variables_environnement_fr.md](variables_environnement_fr.md) §
 | `SHRINK_BENCH_UNITY` | `ON` | chaque exécutable `shrink_bench` compilé en une seule unité (unity build, 3,5 à 4 fois moins de compilation) ; `OFF` pour comparer des temps avec des campagnes antérieures, l'inlining entre fichiers du banc pouvant les changer ; `SHRINK_BENCH_UNITY_BATCH` fichiers par unité (0 = tous) |
 | `CHUNK_DEBUG_INFO` | `auto` | informations de débogage des builds optimisés : `full` (`-g`), `lines` (`-g1` : noms de fonctions et tables de lignes, assez pour perf et les backtraces gdb, pas pour les variables locales), `none` ; `auto` : `full` avec `CHECK_OPTIM` ou un sanitizer, `lines` sinon. Le code machine est le même ; `lines` compile 20 à 27 % plus vite avec 40 % de mémoire de pointe en moins. Les builds Debug ont toujours `-g` |
 | `CHUNK_VALIDATION_UNITY` | `ON` | les tests de validation regroupés en un exécutable par variante et géométrie (unity build) ; `OFF` : un exécutable par test |
+| `CHUNK_VALIDATION_UNITY_BATCH` | 0 | avec `CHUNK_VALIDATION_UNITY` : nombre de tests par unité de compilation d'un tel exécutable ; 0 : tous ceux d'un groupe dans une seule unité. Une petite valeur (3) baisse le pic mémoire du compilateur sur une machine qui en a peu |
 | `CHUNK_BUILD_VALIDATION` | selon le build | compiler les tests de `examples/validation`, et avec eux les crochets de test (`CHUNK_TEST_HOOKS`) ; par défaut `ON` en Debug, avec `CHECK_OPTIM` ou un sanitizer, `OFF` ailleurs (non mis en cache : suit la configuration courante) |
 | `FAST_ALLOC_CHECK_LISTS` | `OFF` | niveau de debug renforcé des listes de slabs : en Debug, vérification complète de la liste à chaque insertion et retrait (lent) ; un Debug ordinaire garde les vérifications légères |
 | `HAVE_AGGRESSIVE_COMPRESSION` | `OFF` | défaut de la compression « agressive », un réglage d'exécution : `CHUNK_AGGRESSIVE_COMPRESSION=1` (ou `0`) la fixe pour un lancement. La passe entre deux phases est sautée, et toute la compression se fait pendant les régions parallèles, à des instants imprévisibles. Plus lent, mais sollicite les chemins concurrents : un mode de validation, qui n'a plus besoin d'un build à lui |
@@ -179,7 +181,12 @@ Les options de [variables_environnement_fr.md](variables_environnement_fr.md) §
 | `CHUNK_WARNINGS`, `CHUNK_WERROR` | `ON`, `OFF` | `-Wall -Wextra` sur tous les builds ; avertissements en erreurs en Debug |
 | `CHUNK_HEAVY_JOB_POOL` | vide | pool de jobs Ninja pour les exécutables compilés en une unité (limite la mémoire de compilation) |
 | `CHUNK_X86_MARCH` | `native` | GCC, Clang sur x86-64 : `-march=` des builds optimisés ; un niveau fixe donne un binaire indépendant de la machine (`x86-64-v3` dans le job ASan du nightly, `native` y plante sur Zen 5) |
-| `USE_LIBCXX` | `ON` | builds Clang : libc++ au lieu de la libstdc++ |
+| `CHUNK_NATIVE_TUNING` | ON | OFF : aucune option de cible venant du projet (`-march=`/`-mcpu=native`, `-tp=host`, `-xHost`) : la cible est celle de l'appelant. La recette Spack le met à OFF, pour que le `target=` de la spec soit celui compilé ; l'option du projet passait après celle du wrapper et l'emportait |
+| `USE_LIBCXX` | `OFF` | builds Clang : `ON` pour libc++ (`-stdlib=libc++`) au lieu de la bibliothèque standard par défaut du compilateur, libstdc++ sous Linux |
+| `GCC_TOOLCHAIN_DIR` | selon la machine | builds Clang : l'installation de GCC dont clang prend la libstdc++ et le runtime (`--gcc-toolchain=`) ; vide : le choix du driver. Un chemin qui n'existe pas est ignoré, avec un avertissement |
+| `USE_MOLD` | `AUTO` | lier avec mold : `AUTO` (s'il est trouvé et que le build le supporte), `ON` (une erreur sinon), `OFF` |
+| `CHUNK_VEC_REPORT` | `OFF` | cibles fast-math des exemples : le compilateur signale les boucles qu'il n'a pas vectorisées |
+| `GETTING_STARTED_LIB`, `BOOL_ARRAYS_LIB` | `chunk::chunk_zero_any`, `chunk::chunk_zero_one_value` | `examples/getting_started` et `examples/bool_arrays` construits seuls, contre une bibliothèque installée : la cible de bibliothèque qu'ils lient |
 | `USE_GPERF`, `ENABLE_IWYU` | `OFF` | profilage gperftools ; include-what-you-use pendant la compilation |
 | `ONEAPI_XHOST`, `ONEAPI_NO_INTEL_LIBS`, `ONEAPI_FAST_FP` | `OFF` | icpx : binaire réservé à Intel (`-xHost`) ; aucune bibliothèque d'exécution Intel ; garder `-fp-model=fast` |
 
@@ -226,3 +233,19 @@ ajoutent `CHUNK_WITH_TBB=ON` quand `TBBROOT` est défini (par le script d'enviro
 ou `spack load intel-oneapi-tbb`) ou quand `CHUNK_WITH_TBB=1`, et le disent au début ;
 `CHUNK_WITH_TBB=0` écarte TBB. Les builds std sous ThreadSanitizer ne prennent TBB que de
 `CHUNK_TBB_TSAN_DIR`, le répertoire du paquet CMake d'un oneTBB compilé avec TSan.
+
+## 8. Variables des outils et des tests
+
+Lues par les outils Python, les scripts de vérification et quelques tests, pas par la bibliothèque.
+
+| variable | défaut | effet |
+|---|---|---|
+| `CHUNK_BUILD_ROOT` | répertoire courant | où sont les répertoires `cmake-build-<cible>` : défaut de `--build-root` dans `bench_and_test.py`, `multi_launch_stress.py` et `thread_speedup.py` (qui se replie sur `CHUNK_BUILD_REP`). `shrink_gui` l'exporte dans les scripts qu'il soumet |
+| `CHUNK_BENCH_EVENTS` | non défini | fichier où les campagnes ajoutent leurs événements, un enregistrement JSON par ligne (défaut de `--events-file`) ; `shrink_gui` le positionne et suit le fichier |
+| `CHUNK_POOL_REF_WAIT` | 21 600 | campagnes `--pool` : secondes pendant lesquelles un job attend la référence qu'un autre job génère, avant de sauter ce qui en dépend |
+| `CHUNK_POOL_POLL` | 2 | campagnes `--pool` : secondes entre deux regards sur ce que les autres jobs ont fait |
+| `CATCH_CRASH_EXE` | non défini | défaut de `--exe` dans `python/catch_crash.py` |
+| `CLANG_FORMAT` | non défini | le binaire clang-format que lance `scripts/check_format.py`, avant `clang-format-23` et `clang-format` du PATH (la version 23 est exigée). `ctest` le positionne sur celui que CMake a trouvé |
+| `FK_SECONDS` | 2 | durée, en secondes, du stress de `zero_one_value_foreign_key_validation` |
+| `BLK_HUGE` | non défini | défini : `blk_allocator_validation` alloue aussi ses blocs au-delà de 2 Gio et 4 Gio (sautés sinon) |
+| `CHUNK_VALIDATION_CHILD` | non défini | positionné par un test sur les processus fils qu'il lance pour les regarder échouer : le fils désactive son core dump. À ne pas positionner à la main |

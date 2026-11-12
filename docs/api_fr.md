@@ -2,7 +2,7 @@
 
 > English version: [api.md](api.md).
 
-> Octobre 2026. Ce qu'un programme appelle, sur une seule page, regroupé par tâche. Les détails (paramètres, préconditions, complexité) sont dans la référence Doxygen
+> Novembre 2026. Ce qu'un programme appelle, sur une seule page, regroupé par tâche. Les détails (paramètres, préconditions, complexité) sont dans la référence Doxygen
 > (`cmake --build build --target doc`), où l'on peut chercher ces noms. L'utilisation en situation :
 > [getting_started_fr.md](getting_started_fr.md).
 
@@ -41,7 +41,9 @@ voir [mdspan_fr.md](mdspan_fr.md).
 ## 3. Opérations du conteneur
 
 Les opérations d'un `std::vector`, avec les différences importantes. **(S)** marque un point
-séquentiel : à appeler hors de toute région parallèle ; il invalide les proxys du tableau.
+séquentiel : à appeler hors de toute région parallèle, ou dans une région depuis un seul thread
+pendant que les autres laissent les tableaux en paix ([prise en main, §5](getting_started_fr.md)) ;
+il invalide les proxys du tableau.
 
 | opération | membres | remarques |
 |---|---|---|

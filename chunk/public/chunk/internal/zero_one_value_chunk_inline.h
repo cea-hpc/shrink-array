@@ -20,6 +20,7 @@
 #include <cstddef>     // std::size_t
 #include <optional>    // std::nullopt (the clears)
 #include <type_traits> // std::remove_cvref_t (the re-queued candidates)
+#include <atomic>      // std::memory_order_acq_rel, std::memory_order_acquire, std::memory_order_release
 
 #include "chunk/config.h"                        // build_config::chunk_dynamic, chunk_config::OMPTcc
 #include "chunk/internal/PMP_CHUNK.h"            // CHUNK_PMP_*, pmp::team

@@ -77,12 +77,21 @@ class FastBlockSupport<Derived, true>
     /**
      * @brief The pass behind make_block_compression(), and resize()'s drain.
      * @details Outside a region, every thread's candidate list; inside one (an
-     *          array resized by the thread that owns it), the calling thread's
-     *          list only, its released buffers held for one reader grace period
-     *          (read_reclaim::PassScope). resize() needs it there: the lists hold
-     *          &chunk_list_[j] pointers its reallocation would leave dangling.
+     *          array resized by the thread that owns it), drain_own_candidates().
+     *          resize() needs it: the lists hold &chunk_list_[j] pointers its
+     *          reallocation would leave dangling.
      */
     void drain_candidates(this Derived& self);
+
+    /**
+     * @brief The drain inside a region: the pass on this array's candidates
+     *        only, in the calling thread's list.
+     * @details The other arrays' candidates stay queued, untouched
+     *          (internal/own_candidates.h): the pass takes no writer handshake,
+     *          and another thread may be writing them. The buffers released are
+     *          held for one reader grace period (read_reclaim::PassScope).
+     */
+    void drain_own_candidates(this Derived& self);
 };
 
 // ── Any other mode: no candidate queue to drain ──────────────────────────────

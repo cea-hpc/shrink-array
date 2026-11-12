@@ -2,7 +2,7 @@
 
 > French version: [api_fr.md](api_fr.md).
 
-> October 2026. One page for what a program calls, grouped by task. The details (parameters, preconditions, complexity) are in the Doxygen reference
+> November 2026. One page for what a program calls, grouped by task. The details (parameters, preconditions, complexity) are in the Doxygen reference
 > (`cmake --build build --target doc`), searchable by these names. Usage in context:
 > [getting_started.md](getting_started.md).
 
@@ -41,7 +41,8 @@ a view tile by tile, a uniform tile in one call, and fills a box of it by runs: 
 ## 3. Container operations
 
 What a `std::vector` has, with the differences that matter. **(S)** marks a sequential point:
-outside any parallel region, and it invalidates the array's proxies.
+outside any parallel region, or inside one from a single thread while the others leave the arrays
+alone ([getting started, §5](getting_started.md)); it invalidates the array's proxies.
 
 | operation | members | notes |
 |---|---|---|

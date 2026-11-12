@@ -15,6 +15,14 @@
  */
 
 #pragma once
+#include <atomic>      // std::memory_order_acquire, std::memory_order_relaxed, std::memory_order_release
+#include <cstddef>     // std::byte, std::size_t
+#include <cstdint>     // std::uint16_t, std::uint32_t, std::uint64_t, std::uint8_t
+#include <cstring>     // std::memcmp, std::memcpy
+#include <mutex>       // std::scoped_lock
+#include <type_traits> // std::make_unsigned_t
+#include <vector>      // std::vector
+
 #include "chunk/internal/motif_region.h" // the class these bodies belong to
 
 namespace shrink_array
@@ -192,7 +200,7 @@ T* pattern::MotifRegion<T>::take_slot(std::size_t count)
     {
         const std::uint32_t id = cls.free_ids.back();
         cls.free_ids.pop_back();
-        return const_cast<T*>(entry_by_id()[id]);
+        return const_cast<T*>(entry_by_id()[id]); // NOSONAR(cpp:S859)
     }
     const std::size_t bytes = (count * sizeof(T) + entry_align - 1) / entry_align * entry_align;
     if (bytes > segment_bytes)

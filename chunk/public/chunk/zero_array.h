@@ -139,6 +139,9 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
      * @brief Build an array of @p sz elements.
      * @param sz initial element count; 0 by default, as std::vector (a fresh
      *           array is empty, so a push_back on it yields one element)
+     * @note May run inside a parallel region, for a work array of the calling
+     *       thread: construction and destruction take the library's cold-path
+     *       lock (internal/cold_path_lock.h), one array at a time.
      */
     explicit Array(IntType sz = 0)
     {
@@ -243,8 +246,12 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     }
 
     /// @brief Resize to @p newsz elements; new elements read the first
-    ///        constant. A sequential point: the rank's candidates are
-    ///        compressed and the deferred ops drained first.
+    ///        constant. A sequential point: the candidates are compressed
+    ///        and the deferred ops drained first.
+    /// @note Inside a parallel region, only by the thread that owns the array
+    ///       (a work array of its own): the drain then covers this array's
+    ///       candidates alone (drain_own_candidates()), not the shared
+    ///       arrays' the thread has also written.
     /// @note Shrinking releases the dropped chunks' buffers (release_chunk_range():
     ///       freed serially, parked in the geometry's reuse list under OpenMP);
     ///       chunk_list_ keeps its capacity.

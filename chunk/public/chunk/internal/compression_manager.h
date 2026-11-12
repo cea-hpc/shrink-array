@@ -16,14 +16,12 @@
 
 #pragma once
 
-#include <vector>    // std::vector
-#include <cstddef>   // std::size_t
-#include <cstdint>   // std::int32_t, std::uint64_t, int64_t
-#include <exception> // std::exception (record_enqueue_deferred)
-#include <utility>   // std::move, std::forward
-#include <atomic>    // std::atomic, std::memory_order
-#include <memory>    // std::destroy_at
-#include <mutex>     // std::call_once, std::once_flag (ensure_initialised)
+#include <vector>  // std::vector
+#include <cstddef> // std::size_t
+#include <cstdint> // std::int32_t, std::uint64_t, int64_t
+#include <utility> // std::move, std::forward
+#include <atomic>  // std::atomic, std::memory_order
+#include <mutex>   // std::call_once, std::once_flag (ensure_initialised)
 
 #include "chunk/vendor/ankerl/unordered_dense.h" // ankerl::unordered_dense::set
 

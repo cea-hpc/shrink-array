@@ -40,6 +40,7 @@
 
 #include <algorithm> // std::ranges
 #include <tuple>     // std::get
+#include <utility>   // std::pair
 
 #include "chunk/internal/compress_candidates.h"  // the declarations these bodies belong to
 #include "chunk/config.h"                        // build_config, chunk_config

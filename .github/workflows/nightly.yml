@@ -10,11 +10,12 @@
 #     TSan on the weak memory model (ci.yml runs the same on x86);
 #   - the OpenMP _dyn build (run-time chunk sizes, 256 static next to it): the
 #     re-chunk paths, which the per-push builds leave out (CHUNK_BUILD_DYN=OFF).
-# On x86 (ubuntu-24.04): OpenMP under AddressSanitizer, clang 23 with OpenMP
-# and the OMPT tool, the serial _dyn build, and the line coverage of the
+# On x86 (ubuntu-24.04): OpenMP under AddressSanitizer and under
+# UndefinedBehaviorSanitizer, clang 23 with OpenMP and the OMPT tool, the
+# oldest compilers supported (gcc 13, clang 18), the serial _dyn build, the
+# Spack recipe installed from the checkout, and the line coverage of the
 # library (gcov + gcovr: a report, not a gate).
-# The other long builds -- UBSan, GenMC itself -- can join here when they are
-# needed.
+# GenMC itself can join here when it is needed.
 
 name: Nightly
 
@@ -51,7 +52,7 @@ jobs:
       CMAKE_BUILD_PARALLEL_LEVEL: 2
       TSAN_OPTIONS: halt_on_error=1 second_deadlock_stack=1
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Toolchain
@@ -84,7 +85,7 @@ jobs:
       CXX: g++-14
       CMAKE_BUILD_PARALLEL_LEVEL: 2
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Toolchain
@@ -126,7 +127,7 @@ jobs:
       # first faulting thread alone; the core has the stacks of all of them.
       ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:detect_stack_use_after_return=1:print_module_map=1:dump_registers=1:disable_coredump=0
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Toolchain
@@ -165,14 +166,14 @@ jobs:
           ctest --test-dir build -R '^read_reclaim_validation_' --repeat until-fail:20 --timeout 600 --output-on-failure
       # On a failure, the validation executables (the faulting pc is an offset in one of
       # them: print_module_map above), for objdump -d around it.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: failure()
         with:
           name: asan-validation-binaries
           path: build/examples/validation/validation_*_256
           retention-days: 14
       # The cores, for a closer look with the binary above.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: failure()
         with:
           name: asan-core-dumps
@@ -204,7 +205,7 @@ jobs:
       CXX: clang++-23
       CMAKE_BUILD_PARALLEL_LEVEL: 2
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Toolchain
@@ -243,7 +244,7 @@ jobs:
       CXX: g++-14
       CMAKE_BUILD_PARALLEL_LEVEL: 2
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Toolchain
@@ -261,6 +262,155 @@ jobs:
           -DCHUNK_BUILD_DYN=ON
       - name: Build and run the validation harnesses (check target)
         run: cmake --build build --target check
+
+  # The oldest compilers the library says it builds with (README, the Spack
+  # recipe's conflicts): GCC 13 and Clang 18, both in ubuntu-24.04's own
+  # archive. Every other job is gcc 14 or newer and clang 23: a C++20 construct
+  # the old front ends lack would only be seen by a user.
+  oldest-compilers:
+    name: x86-64, ${{ matrix.name }}, OpenMP
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: gcc 13
+            cc: gcc-13
+            cxx: g++-13
+            packages: g++-13
+            cmake_args: ""
+          # libstdc++ (USE_LIBCXX=OFF), as the clang 23 job; libomp 18.
+          - name: clang 18
+            cc: clang-18
+            cxx: clang++-18
+            packages: clang-18 libomp-18-dev
+            cmake_args: -DUSE_LIBCXX=OFF
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+      - name: Toolchain
+        run: |
+          .github/apt_install.sh ${{ matrix.packages }} ninja-build libbz2-dev
+          ${{ matrix.cxx }} --version
+          cmake --version
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DOMP=ON
+          ${{ matrix.cmake_args }}
+          -DCHECK_OPTIM=ON
+          -DCHUNK_STATIC_SIZES=256
+          -DCHUNK_BUILD_DYN=OFF
+      - name: Build and run the validation harnesses (check target)
+        run: cmake --build build --target check
+      - name: Examples (ctest -L examples)
+        run: |
+          cmake --build build --target getting_started simple_array_chunk multi-mat test_vecto_chunk
+          ctest --test-dir build -L examples --output-on-failure
+
+  # UndefinedBehaviorSanitizer (SANITIZER=undefined), OpenMP: signed overflow in
+  # the index arithmetic, shifts, misaligned accesses, out-of-range conversions.
+  # The first report stops the program (-fno-sanitize-recover in the build).
+  # A fixed -march, as the ASan job: the binary does not depend on the runner.
+  # The unity harnesses one at a time (the heavy pool): instrumented, one of
+  # them takes more than 7 GB to compile.
+  x86-openmp-ubsan:
+    name: x86-64, OpenMP, UndefinedBehaviorSanitizer
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      CC: gcc-14
+      CXX: g++-14
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+      UBSAN_OPTIONS: print_stacktrace=1
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+      - name: Toolchain
+        run: |
+          .github/apt_install.sh g++-14 ninja-build libbz2-dev
+          g++-14 --version
+          cmake --version
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DOMP=ON
+          -DSANITIZER=undefined
+          -DCHECK_OPTIM=ON
+          -DCHUNK_STATIC_SIZES=256
+          -DCHUNK_BUILD_DYN=ON
+          -DCHUNK_X86_MARCH=x86-64-v3
+          -DCMAKE_JOB_POOLS=heavy=1
+          -DCHUNK_HEAVY_JOB_POOL=heavy
+      - name: Build and run the validation harnesses (check target)
+        run: cmake --build build --target check
+
+  # The Spack recipe (spack/spack_repo/shrink_array), on the commit under test:
+  # an environment whose shrink-array@develop is this checkout (spack develop),
+  # installed for target=x86_64_v3 with the runner's own gcc, cmake and make.
+  # It checks what the recipe promises: it concretizes and installs, the build
+  # took no target flag from the project (the spec's target is the wrapper's to
+  # pass), and a user project finds the installed package.
+  # Spack is pinned to a release; its package repository is fetched at first use.
+  spack:
+    name: Spack recipe (install, target=x86_64_v3)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      SPACK_REF: v1.0.4
+      SPACK_USER_CONFIG_PATH: ${{ github.workspace }}/.spack-config
+      SPACK_USER_CACHE_PATH: ${{ github.workspace }}/.spack-cache
+      SPACK_DISABLE_LOCAL_CONFIG: 1
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+      - name: Spack
+        run: |
+          git clone --quiet --depth 1 --branch "$SPACK_REF" https://github.com/spack/spack.git "$RUNNER_TEMP/spack"
+          . "$RUNNER_TEMP/spack/share/spack/setup-env.sh"
+          spack --version
+          spack compiler find
+          spack external find --not-buildable cmake gmake
+          spack repo add spack/spack_repo/shrink_array
+          spack info shrink-array
+      - name: Concretize and install this checkout
+        run: |
+          . "$RUNNER_TEMP/spack/share/spack/setup-env.sh"
+          spack env create -d "$RUNNER_TEMP/env"
+          spack -e "$RUNNER_TEMP/env" add "shrink-array@develop sizes=256 ~dyn target=x86_64_v3"
+          spack -e "$RUNNER_TEMP/env" develop --path "$GITHUB_WORKSPACE" shrink-array@develop
+          spack -e "$RUNNER_TEMP/env" concretize
+          spack -e "$RUNNER_TEMP/env" install -j 2
+      # The project added no -march of its own: its configure says so, and the
+      # libraries hold no AVX-512 instruction (zmm), which -march=native puts
+      # there on the runners that have it and x86_64_v3 does not allow.
+      - name: The target is the spec's
+        run: |
+          . "$RUNNER_TEMP/spack/share/spack/setup-env.sh"
+          prefix=$(spack -e "$RUNNER_TEMP/env" location -i shrink-array)
+          zcat -f "$prefix"/.spack/spack-build-out.txt* | grep -F "Target flags: none"
+          for lib in "$prefix"/lib/*.a; do
+            zmm=$(objdump -d "$lib" | grep -c zmm || true)
+            echo "$(basename "$lib"): $zmm zmm"
+            [ "$zmm" -eq 0 ]
+          done
+      - name: getting_started against the Spack install
+        run: |
+          . "$RUNNER_TEMP/spack/share/spack/setup-env.sh"
+          prefix=$(spack -e "$RUNNER_TEMP/env" location -i shrink-array)
+          cmake -S examples/getting_started -B build-gs -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$prefix"
+          cmake --build build-gs
+          OMP_NUM_THREADS=4 ./build-gs/getting_started
 
   # Line coverage of chunk/ and fast_allocators/ by the validation harnesses:
   # Debug (-O0, the lines map to the source), OpenMP, 256 + _dyn, gcc 14
@@ -281,7 +431,7 @@ jobs:
       CXX: g++-14
       CMAKE_BUILD_PARALLEL_LEVEL: 2
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Toolchain
@@ -328,7 +478,7 @@ jobs:
             --gcov-ignore-errors=no_working_dir_found --gcov-ignore-parse-errors=all \
             --markdown coverage/coverage.md --html-nested coverage/index.html --txt-summary
           cat coverage/coverage.md >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: coverage-html

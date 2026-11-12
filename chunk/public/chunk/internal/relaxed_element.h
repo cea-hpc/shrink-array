@@ -78,7 +78,7 @@ template <typename T>
 {
     static_assert(relaxed_element_access_v<T>);
     // atomic_ref<const T> is C++26; a load never writes through the reference.
-    return std::atomic_ref<T>(*const_cast<T*>(ptr)).load(std::memory_order_relaxed);
+    return std::atomic_ref<T>(*const_cast<T*>(ptr)).load(std::memory_order_relaxed); // NOSONAR(cpp:S859)
 }
 
 /// @brief Load @p *ptr through an acquire std::atomic_ref: the offset slot of a
@@ -89,7 +89,7 @@ template <typename T>
 {
     static_assert(relaxed_element_access_v<T>);
     // atomic_ref<const T> is C++26; a load never writes through the reference.
-    return std::atomic_ref<T>(*const_cast<T*>(ptr)).load(std::memory_order_acquire);
+    return std::atomic_ref<T>(*const_cast<T*>(ptr)).load(std::memory_order_acquire); // NOSONAR(cpp:S859)
 }
 
 /// @brief Store @p value to @p *ptr through a relaxed std::atomic_ref.

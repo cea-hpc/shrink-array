@@ -31,6 +31,7 @@ e  * @file type_state_inline.h
 #include <algorithm>   // std::max
 #include <tuple>       // std::tuple
 #include <type_traits> // std::conditional_t
+#include <atomic>      // std::memory_order_relaxed
 
 #include "chunk/internal/type_state.h"               // the declarations these bodies belong to
 #include "chunk/config.h"                            // build_config, chunk_config

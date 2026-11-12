@@ -15,6 +15,11 @@
  */
 
 #pragma once
+#include <bit>         // std::has_single_bit
+#include <cstddef>     // std::size_t
+#include <cstdint>     // std::uint64_t
+#include <type_traits> // std::make_unsigned_t
+
 #include "chunk/internal/chunk_size_policy.h" // the class these bodies belong to
 
 namespace shrink_array

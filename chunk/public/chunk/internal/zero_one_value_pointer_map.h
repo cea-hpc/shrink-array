@@ -35,6 +35,7 @@
 // the storage note in zero_one_value::PointerMap). Only the value -> inf_array side is a std::map.
 
 #include <array>       // std::array (report_key_not_found)
+#include <cstddef>     // std::size_t
 #include <format>      // std::format_to_n (report_key_not_found)
 #include <string_view> // std::string_view (report_key_not_found)
 #include <deque>       // std::deque: share_info storage, no realloc invalidation
