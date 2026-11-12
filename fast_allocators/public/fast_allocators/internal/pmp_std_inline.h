@@ -57,9 +57,9 @@ inline void pmp::std_backend::SpinBarrier::arrive_and_wait() noexcept
 
 inline pmp::std_backend::DynSlot& pmp::std_backend::TeamCtx::enter_dynamic(int rank, std::uint64_t& seq) noexcept
 {
-    seq                 = met[static_cast<std::size_t>(rank)]++;
-    DynSlot&      slot  = dyn[seq % dyn_ring];
-    const auto    ready = 2 * (seq + 1);
+    seq              = met[static_cast<std::size_t>(rank)]++;
+    DynSlot&   slot  = dyn[seq % dyn_ring];
+    const auto ready = 2 * (seq + 1);
     for (unsigned spins = 1;; ++spins)
     {
         std::uint64_t tag = slot.tag.load(std::memory_order_acquire);

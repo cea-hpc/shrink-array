@@ -42,13 +42,13 @@
     #error "pmp_std.h is included by pmp_loops.h, after the types it shares with the other backends"
 #endif
 
-#include <atomic>        // std::atomic (SpinBarrier, the single mark, the dynamic-loop ring)
-#include <cstdint>       // std::uint64_t (the pool's job word, the construct numbers)
-#include <mutex>         // std::mutex, std::unique_lock (one team at a time)
-#include <thread>        // std::jthread (the workers)
-#include <vector>        // std::vector (the workers, the per-rank counts and results)
-#include <array>         // std::array
-#include <cstddef>       // std::size_t
+#include <atomic>  // std::atomic (SpinBarrier, the single mark, the dynamic-loop ring)
+#include <cstdint> // std::uint64_t (the pool's job word, the construct numbers)
+#include <mutex>   // std::mutex, std::unique_lock (one team at a time)
+#include <thread>  // std::jthread (the workers)
+#include <vector>  // std::vector (the workers, the per-rank counts and results)
+#include <array>   // std::array
+#include <cstddef> // std::size_t
 
 #include "fast_allocators/internal/pmp_std_state.h" // std_backend::tls, FrameGuard, settings, nthreads_var
 
@@ -73,9 +73,9 @@ namespace std_backend
  */
 struct alignas(64) DynSlot
 {
-    std::atomic<long long>                 next{0}; ///< Next unclaimed offset of the loop.
-    alignas(64) std::atomic<std::uint64_t> tag{0};  ///< See above.
-    std::atomic<int>                       left{0}; ///< Threads of the loop that have not left it.
+    std::atomic<long long> next{0};                ///< Next unclaimed offset of the loop.
+    alignas(64) std::atomic<std::uint64_t> tag{0}; ///< See above.
+    std::atomic<int> left{0};                      ///< Threads of the loop that have not left it.
 };
 
 /**
@@ -119,7 +119,7 @@ struct TeamCtx
 
     /// @brief Dynamic loops in flight at once: a thread more than this many
     ///        constructs ahead of a slow one waits for it to leave the slot.
-    static constexpr std::size_t dyn_ring = 64;
+    static constexpr std::size_t  dyn_ring = 64;
     std::array<DynSlot, dyn_ring> dyn; ///< The dynamic loops' slots (DynSlot).
 
     /// @brief Enter the next construct of @p rank, a dynamic loop: its slot,
