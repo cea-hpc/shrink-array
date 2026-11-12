@@ -41,6 +41,7 @@
 
 #include <cstdio>      // std::fopen, std::fclose, std::fread, FILE, std::remove
 #include <cstdlib>     // std::system, std::atoi
+#include <iterator>    // std::size
 #include <string>      // std::string, std::to_string
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::move
@@ -113,7 +114,7 @@ const Case case_table[] = {
     {"push_back beyond the capacity", true, false},
     {"rechunk_to", true, true},
 };
-constexpr int nb_cases = static_cast<int>(sizeof case_table / sizeof case_table[0]);
+constexpr int nb_cases = static_cast<int>(std::size(case_table));
 
 /// The child: one case. A template so that rechunk_to, which a static build
 /// does not have, is only named in a discarded branch of a dependent call.

@@ -48,6 +48,7 @@
 #include <cstdio>      // std::fopen, std::fclose, std::fread, FILE, std::remove
 #include <cstdlib>     // std::system, std::atoi
 #include <cstring>     // std::strcmp
+#include <iterator>    // std::size
 #include <string>      // std::string
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::as_const
@@ -280,7 +281,7 @@ const Case case_table[] = {
     {"stale rank cache, no begin", Bracket::stale_rank, InRegion::nothing, Builds::check_only, msg_stale},
     {"stale rank cache, no begin", Bracket::stale_rank, InRegion::nothing, Builds::release_only, nullptr},
 };
-constexpr int nb_cases = static_cast<int>(sizeof case_table / sizeof case_table[0]);
+constexpr int nb_cases = static_cast<int>(std::size(case_table));
 
 /// The child: run case @p case_idx; 0 when every element read back right.
 int child(int case_idx)
