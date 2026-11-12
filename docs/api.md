@@ -36,7 +36,8 @@ that of the linked library (`chunk::chunk_zero_any`, ...); `chunk_config::use_ze
 ## 3. Container operations
 
 What a `std::vector` has, with the differences that matter. **(S)** marks a sequential point:
-outside any parallel region, and it invalidates the array's proxies.
+outside any parallel region, or inside one from a single thread while the others leave the arrays
+alone ([getting started, §5](getting_started.md)); it invalidates the array's proxies.
 
 | operation | members | notes |
 |---|---|---|

@@ -184,7 +184,7 @@ int main()
    dans un build séquentiel, ces deux appels ne génèrent aucun code.
 4. **La lecture** : sur un tableau `const`, `operator[]` rend un `T`. Sur un tableau non
    constant, il rend un *proxy* (§6).
-5. **`shrink_to_fit()`** lance une passe de compression complète, hors région parallèle. Il
+5. **`shrink_to_fit()`** lance une passe de compression complète, en un point séquentiel (§5). Il
    n'est pas nécessaire de l'appeler : les chunks sont compressés pendant l'exécution. Il sert
    à récupérer la mémoire à un moment précis.
 6. **La destruction du tableau** rend ses tampons. La bibliothèque affiche alors une ligne par
@@ -294,12 +294,19 @@ est le programme du §4 écrit ainsi : une même fonction remplit un `std::vecto
 `zero_any::Array<double>`, et le programme vérifie qu'ils se relisent à l'identique. Il refuse de
 compiler contre une bibliothèque sans OMPT ; son test tourne avec `CHUNK_REQUIRE_OMPT=1`.
 
-**Les points séquentiels.** Tout ce qui reconstruit le stockage d'un tableau s'appelle hors de
-toute région parallèle : `resize()`, `reserve()`, `push_back()` au-delà de la capacité,
-`clear()`, `assign()`, `swap()`, l'affectation, `shrink_to_fit()`, `compress()`,
-`rechunk_to()`, et, pour `zero_one_value`, `set_second_value()`. De même pour un appel explicite
-à `make_block_compression()` : dans une région, il est refusé (arrêt dans un build de contrôle,
-erreur dans le journal et pas de passe ailleurs) -- les passes des écrivains y compressent.
+**Les points séquentiels.** Tout ce qui reconstruit le stockage d'un tableau est un point
+séquentiel : `resize()`, `reserve()`, `push_back()` au-delà de la capacité, `clear()`,
+`assign()`, `swap()`, la construction par copie et l'affectation, `shrink_to_fit()`,
+`compress()`, `rechunk_to()`, et, pour `zero_one_value`, `set_second_value()`. Un point
+séquentiel vide les écritures différées et lance une passe de compression sur des listes que
+partagent tous les tableaux du type d'élément. Il s'appelle hors de toute région parallèle, ou
+dans une région depuis un seul thread pendant que le reste de l'équipe laisse les tableaux en
+paix : sous `omp single` ou `omp masked`, ou derrière un verrou du programme que chaque autre
+thread attend. Deux threads d'une région n'exécutent jamais de points séquentiels en même temps,
+et aucun thread n'écrit ni ne lit un tableau pendant ce temps. Un appel explicite à
+`make_block_compression()` fait exception : dans une région, il est refusé (arrêt dans un build
+de contrôle, erreur dans le journal et pas de passe ailleurs) -- les passes des écrivains y
+compressent.
 
 **Les tableaux de travail dans une région.** Un thread d'une région peut construire ses propres
 tableaux (`zero_any::Array<double> work(n);`), les écrire, les lire et les laisser détruire,
@@ -378,7 +385,7 @@ sa::tbb::parallel_for(oneapi::tbb::blocked_range<long>(0, n), [&](const auto& r)
 ```
 
 Entre `begin` et `finalize`, la bibliothèque compte les threads du programme comme une région
-parallèle (les points séquentiels ci-dessus ne doivent pas y être appelés, comme dans une région OpenMP), et
+parallèle (les points séquentiels ci-dessus y suivent la même règle que dans une région OpenMP), et
 chacun d'eux occupe une des places par thread tant qu'il vit. Un build OpenMP ne numérote que
 les threads d'OpenMP : pour les autres, utilisez le backend std.
 

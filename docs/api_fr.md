@@ -36,7 +36,9 @@ celle de la bibliothèque liée (`chunk::chunk_zero_any`, ...) ; `chunk_config::
 ## 3. Opérations du conteneur
 
 Les opérations d'un `std::vector`, avec les différences importantes. **(S)** marque un point
-séquentiel : à appeler hors de toute région parallèle ; il invalide les proxys du tableau.
+séquentiel : à appeler hors de toute région parallèle, ou dans une région depuis un seul thread
+pendant que les autres laissent les tableaux en paix ([prise en main, §5](getting_started_fr.md)) ;
+il invalide les proxys du tableau.
 
 | opération | membres | remarques |
 |---|---|---|
