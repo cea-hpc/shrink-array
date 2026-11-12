@@ -57,26 +57,27 @@
 //
 // Exit status 0 when every check passes.
 
-#include <algorithm>   // std::ranges::find
-#include <array>       // std::array
-#include <atomic>      // std::atomic
-#include <complex>     // std::complex (checks 7 and 9)
-#include <cstdint>     // std::uint32_t (checks 7 and 9)
-#include <cstdio>      // std::remove, std::sscanf
-#include <csignal>     // SIGTRAP, SIGABRT (check 9, --debugger)
-#include <cstdlib>     // std::malloc, std::free
-#include <cstring>     // std::memcpy
-#include <filesystem>  // std::filesystem::temp_directory_path
-#include <format>      // std::format (the expected address, check 7)
-#include <fstream>     // std::ifstream
-#include <new>         // std::bad_alloc
-#include <string>      // std::string, std::getline
-#include <string_view> // std::string_view
-#include <thread>      // std::thread
-#include <vector>      // std::vector
-#include <stdlib.h>    // setenv, unsetenv (POSIX: <cstdlib> need not declare them)
-#include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
-#include <unistd.h>    // getpid
+#include <algorithm>    // std::ranges::find
+#include <array>        // std::array
+#include <atomic>       // std::atomic
+#include <complex>      // std::complex (checks 7 and 9)
+#include <cstdint>      // std::uint32_t (checks 7 and 9)
+#include <cstdio>       // std::remove, std::sscanf, std::perror
+#include <csignal>      // SIGTRAP, SIGABRT (check 9, --debugger)
+#include <cstdlib>      // std::malloc, std::free, std::abort, std::atexit
+#include <cstring>      // std::memcpy
+#include <filesystem>   // std::filesystem::temp_directory_path, remove_all (private_temp_dir)
+#include <format>       // std::format (the expected address, check 7)
+#include <fstream>      // std::ifstream
+#include <new>          // std::bad_alloc
+#include <string>       // std::string, std::getline
+#include <string_view>  // std::string_view
+#include <system_error> // std::error_code (private_temp_dir's cleanup)
+#include <thread>       // std::thread
+#include <vector>       // std::vector
+#include <stdlib.h>     // setenv, unsetenv, mkdtemp (POSIX: <cstdlib> need not declare them)
+#include <sys/wait.h>   // WIFEXITED, WEXITSTATUS
+#include <unistd.h>     // getpid (the expected expansion of CHUNK_LOG_FILE's %p)
 
 #include "chunk/log.h"                      // shrink_array::logging, CHUNK_LOG
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED, CHUNK_CHECK_FAILED
@@ -578,6 +579,38 @@ int run_fatal(int which)
     }
 }
 
+/// @brief This process's own temporary directory, for the log files and the
+///        children's output: made once by mkdtemp() under $TMPDIR (else /tmp),
+///        readable by this user only, removed with its content at exit -- not
+///        a fixed /tmp/<name>.<pid> that another user of the node could take
+///        first. (The grouped harnesses have validation::temp_path(); this
+///        program is built on its own.)
+const std::string& private_temp_dir()
+{
+    static const std::string dir = []
+    {
+        std::string templ = (std::filesystem::temp_directory_path() / "shrink_log_validation.XXXXXX").string();
+        if (::mkdtemp(templ.data()) == nullptr)
+        {
+            std::perror("log_validation: mkdtemp");
+            std::abort();
+        }
+        return templ;
+    }();
+    static const bool cleanup_registered = []
+    {
+        std::atexit(
+            []
+            {
+                std::error_code ec; // best effort: a leftover directory is not a failure
+                std::filesystem::remove_all(private_temp_dir(), ec);
+            });
+        return true;
+    }();
+    (void)cleanup_registered;
+    return dir;
+}
+
 struct FatalRun
 {
     int         status = -1; ///< the shell's: 134 for an abort
@@ -591,8 +624,7 @@ struct FatalRun
 ///        exported does not change the outcome.
 FatalRun run_child(const char* self, int which, std::string_view env = "", std::string_view wrapper = "")
 {
-    const std::string dir  = std::filesystem::temp_directory_path().string();
-    const std::string base = dir + "/shrink_log_fatal." + std::to_string(::getpid()) + "." + std::to_string(which);
+    const std::string base = private_temp_dir() + "/fatal." + std::to_string(which);
     const std::string cmd  = "ulimit -c 0; CHUNK_LOG=warn CHUNK_BREAK_ON_FAILURE=auto CHUNK_LOG_FILE=\"" + base +
                              ".log\" " + std::string(env) + " timeout 120 " + std::string(wrapper) + " \"" +
                              std::string(self) + "\" --fatal " + std::to_string(which) + " > \"" + base + ".out\" 2>&1";
@@ -804,15 +836,14 @@ int main(int argc, char** argv)
     }
 
     // Before the first message: the configuration is read at it.
-    const std::string dir = std::filesystem::temp_directory_path().string();
-    g_log_path            = dir + "/shrink_log_validation." + std::to_string(::getpid()) + ".log";
+    g_log_path = private_temp_dir() + "/shrink_log_validation." + std::to_string(::getpid()) + ".log";
     std::remove(g_log_path.c_str());
     setenv("CHUNK_LOG", "warn, rechunk=debug, verbose", 1);
     setenv("FAST_ALLOC_TRACE", "1", 1);    // a deprecated legacy switch: raises alloc to trace
     setenv("CHUNK_LEDGER_REPORT", "1", 1); // a former report switch: raises ledger to info
     unsetenv("CHUNK_ARENA_REPORT");
     setenv("CHUNK_RECHUNK_CHURN", "1", 1); // no longer read: CHUNK_LOG=rechunk=debug
-    setenv("CHUNK_LOG_FILE", (dir + "/shrink_log_validation.%p.log").c_str(), 1);
+    setenv("CHUNK_LOG_FILE", (private_temp_dir() + "/shrink_log_validation.%p.log").c_str(), 1); // %p: g_log_path
 
     check_environment();
     check_parse();

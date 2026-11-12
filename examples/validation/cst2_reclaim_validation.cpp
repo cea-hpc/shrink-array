@@ -60,7 +60,6 @@
 #include <fstream>    // the --rounds child's log
 #include <string>     // std::string, std::to_string, std::getline
 #include <sys/wait.h> // WIFEXITED, WEXITSTATUS
-#include <unistd.h>   // getpid
 
 #include "chunk/internal/chunk_traits.h"      // forward decls (zero_any::Chunk) + default IntType = int
 #include "chunk/zero_any_array.h"             // zero_any::Array, zero_any::Chunk complete (its registry types)
@@ -217,7 +216,7 @@ static int run_rounds_child(long nch, long rounds)
 static void check_rounds_under_limit(const char* self, long nch)
 {
     const long        limit = 3 * nch;
-    const std::string log   = "/tmp/cst2_reclaim_" + std::to_string(getpid()) + ".log";
+    const std::string log   = validation::temp_path("cst2_reclaim.log");
     const std::string cmd = "CHUNK_CST_VAL2_ID_LIMIT=" + std::to_string(limit) + " " + validation::self_command(self) +
                             " --rounds " + std::to_string(nch) + " 12 > \"" + log + "\" 2>&1";
     const int         status = std::system(cmd.c_str());

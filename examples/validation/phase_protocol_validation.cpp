@@ -55,7 +55,6 @@
 #include <vector>      // std::vector, the reference
 
 #include <sys/wait.h> // WIFEXITED, WEXITSTATUS
-#include <unistd.h>   // getpid
 
 #include "chunk/zero_array.h"           // zero::Array
 #include "chunk/zero_one_value_array.h" // zero_one_value::Array
@@ -312,7 +311,7 @@ int child(int case_idx)
 int check_case(const char* self, int case_idx)
 {
     const Case&       test_case = case_table[case_idx];
-    const std::string log = "/tmp/phase_protocol_" + std::to_string(getpid()) + "_" + std::to_string(case_idx) + ".log";
+    const std::string log       = validation::temp_path("phase_protocol_" + std::to_string(case_idx) + ".log");
     const std::string cmd =
         validation::self_command(self) + " --case " + std::to_string(case_idx) + " > \"" + log + "\" 2>&1";
     const int   status = std::system(cmd.c_str());

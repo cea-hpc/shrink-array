@@ -46,7 +46,6 @@
 #include <thread>      // std::thread (the two host threads)
 #include <type_traits> // std::conditional_t
 #include <vector>      // std::vector
-#include <unistd.h>    // getpid
 #include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
@@ -148,7 +147,7 @@ static long check(const Array<int>& arr, int rounds, int who)
 /// the concurrent-teams invariant.
 [[maybe_unused]] static int check_concurrent(const char* self) // OpenMP builds only
 {
-    const std::string log    = "/tmp/concurrent_teams_" + std::to_string(getpid()) + ".log";
+    const std::string log    = validation::temp_path("concurrent_teams.log");
     const std::string cmd    = validation::self_command(self) + " --concurrent > \"" + log + "\" 2>&1";
     const int         status = std::system(cmd.c_str());
     std::string       out;

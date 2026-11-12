@@ -25,11 +25,13 @@
 // harness) the name may be left out.
 // ============================================================================
 
-#include <cstdio>   // std::fprintf, stderr
-#include <cstdlib>  // std::getenv
-#include <cstring>  // std::strcmp
-#include <iterator> // std::size
-#include <string>   // std::string (self_command)
+#include <cstdio>       // std::fprintf, std::perror, stderr
+#include <cstdlib>      // std::getenv, std::atexit, std::abort, mkdtemp (POSIX)
+#include <cstring>      // std::strcmp
+#include <filesystem>   // std::filesystem::temp_directory_path, remove_all (temp_path)
+#include <iterator>     // std::size
+#include <string>       // std::string (self_command, temp_path)
+#include <system_error> // std::error_code (temp_path's cleanup)
 
 #ifdef __linux__
     #include <sys/prctl.h> // prctl(PR_SET_DUMPABLE)
@@ -77,6 +79,32 @@ std::string validation::self_command(const char* argv0)
         cmd += std::string(" ") + g_running;
     }
     return cmd;
+}
+
+namespace
+{
+std::string g_temp_dir; // temp_path()'s directory, removed at exit
+} // namespace
+
+std::string validation::temp_path(const std::string& name)
+{
+    if (g_temp_dir.empty())
+    {
+        std::string dir = (std::filesystem::temp_directory_path() / "shrink_validation.XXXXXX").string();
+        if (::mkdtemp(dir.data()) == nullptr)
+        {
+            std::perror("validation: mkdtemp");
+            std::abort();
+        }
+        g_temp_dir = dir;
+        std::atexit(
+            []
+            {
+                std::error_code ec; // best effort: a leftover directory is not a failure
+                std::filesystem::remove_all(g_temp_dir, ec);
+            });
+    }
+    return g_temp_dir + "/" + name;
 }
 
 int main(int argc, char** argv)

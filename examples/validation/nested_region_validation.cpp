@@ -66,7 +66,6 @@
 #include <string>      // std::string, std::to_string
 #include <type_traits> // std::conditional_t
 #include <vector>      // std::vector
-#include <unistd.h>    // getpid
 #include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
@@ -235,7 +234,7 @@ static long run_nested(Array<int>& arr, std::vector<int>& ref, int rounds, Inner
 /// the nested-active invariant.
 [[maybe_unused]] static int check_nested_active(const char* self) // OpenMP builds only
 {
-    const std::string log    = "/tmp/nested_region_active_" + std::to_string(getpid()) + ".log";
+    const std::string log    = validation::temp_path("nested_region_active.log");
     const std::string cmd    = validation::self_command(self) + " --nested-active > \"" + log + "\" 2>&1";
     const int         status = std::system(cmd.c_str());
     std::string       out;

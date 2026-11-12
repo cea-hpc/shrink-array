@@ -54,7 +54,6 @@
 #include <fstream>    // the --id-limit child's log
 #include <string>     // std::string, std::to_string, std::getline
 #include <sys/wait.h> // WIFEXITED, WEXITSTATUS
-#include <unistd.h>   // getpid
 
 #include "chunk/internal/chunk_traits.h" // forward decls (zero_any::Chunk) + default IntType = int
 #include "chunk/zero_any_array.h"        // zero_any::Array, zero_any::Chunk complete (its registry types)
@@ -181,7 +180,7 @@ static int run_id_limit_child()
 ///        value_by_id[] out of bounds.
 static void check_id_limit(const char* self)
 {
-    const std::string log     = "/tmp/cst2_id_limit_" + std::to_string(getpid()) + ".log";
+    const std::string log     = validation::temp_path("cst2_id_limit.log");
     const std::string cmd     = std::string("CHUNK_CST_VAL2_ID_LIMIT=16 ") + validation::self_command(self) +
                                 " --id-limit > \"" + log + "\" 2>&1";
     const int         status  = std::system(cmd.c_str());
