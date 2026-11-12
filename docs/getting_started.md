@@ -1,6 +1,6 @@
 # Getting started with shrink-array
 
-> October 2026. This guide is about **using** the library. How it works inside is described
+> November 2026. This guide is about **using** the library. How it works inside is described
 > in the design documents, indexed in [README.md](README.md). A French version of
 > this guide is [getting_started_fr.md](getting_started_fr.md).
 

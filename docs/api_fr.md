@@ -2,7 +2,7 @@
 
 > English version: [api.md](api.md).
 
-> Octobre 2026. Ce qu'un programme appelle, sur une seule page, regroupé par tâche. Les détails (paramètres, préconditions, complexité) sont dans la référence Doxygen
+> Novembre 2026. Ce qu'un programme appelle, sur une seule page, regroupé par tâche. Les détails (paramètres, préconditions, complexité) sont dans la référence Doxygen
 > (`cmake --build build --target doc`), où l'on peut chercher ces noms. L'utilisation en situation :
 > [getting_started_fr.md](getting_started_fr.md).
 

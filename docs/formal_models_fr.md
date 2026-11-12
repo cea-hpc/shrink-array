@@ -52,7 +52,8 @@ genmc --check-liveness -- -DSHAPE_SYMMETRIC -DINIT_CONSTANT formal/writer_compre
 Avec CMake, `ctest -L formal` lance `formal_genmc` (quand `genmc` est sur le PATH ou que
 `-DGENMC_EXECUTABLE=` le nomme) et `formal_native_*` : chaque modèle compilé comme un programme
 ordinaire et lancé 300 fois, ce qui prouve que le modèle est un vrai programme et sert d'oracle
-faible pour le protocole. Rien de `formal/` n'entre dans la bibliothèque ni n'est installé.
+faible pour le protocole. Ils sont compilés avec `-UNDEBUG` quel que soit le type de build :
+leurs `assert()` sont le test. Rien de `formal/` n'entre dans la bibliothèque ni n'est installé.
 
 ## 3. Le modèle du protocole 1 : écrivain contre compresseur
 

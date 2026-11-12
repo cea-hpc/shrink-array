@@ -2,7 +2,7 @@
 
 > French version: [variables_environnement_fr.md](variables_environnement_fr.md).
 
-> Status: October 2026. This page lists what a **user** of the library sets: the settings the
+> Status: November 2026. This page lists what a **user** of the library sets: the settings the
 > versioning policy of [CHANGELOG.md](../CHANGELOG.md) covers. Everything else -- the tuning of
 > the decider and of the allocators, the traces, the benchmark, the test hooks, the debugging
 > options, the build scripts -- is in [developer_settings.md](developer_settings.md): development
@@ -32,6 +32,8 @@
 | `CHUNK_THREADS` | empty | threading backend of the library: `openmp`, `std` (`std::jthread` workers of its own, no OpenMP) or `serial`; empty: `openmp` with `OMP=ON`, `serial` otherwise. Set, it sets `OMP` to match |
 | `CHUNK_STATIC_SIZES` | `auto` | static chunk sizes built (targets `_<size>`); `auto`: `256;1024`, `256` alone in a Debug or sanitizer build |
 | `CHUNK_BUILD_DYN` | `ON` | also build a dynamic-geometry library (`_dyn`) per variant |
+| `SHRINK_ARRAY_BUILD_EXAMPLES` | `ON` at top level | build the examples, the benchmark and the validation harnesses; `OFF` by default when the project is included in another one (`add_subdirectory`, `FetchContent`) |
+| `SHRINK_ARRAY_BUILD_TESTS` | `ON` at top level | register the tests with CTest; `OFF` by default when the project is included in another one, whose `ctest` then does not run them |
 | `CHUNK_STD_ALLOC` | `OFF` | standard allocator for the chunk buffers instead of `fast_allocators` (useful under ASan: each buffer is a real `malloc`) |
 | `CHUNK_SECOND_VALUE_INDEXED` | `OFF` | `zero_any`: the second-value slot holds a 4-byte identifier instead of the value (less memory, +3% write time) |
 | `CHUNK_STATS` | `OFF` | instrumentation counters and the `ParamChunk::chunk_stats()` report |

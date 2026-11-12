@@ -79,7 +79,7 @@ class FastBlockSupport<Derived, true>
     void make_block_compression();
 
   protected:
-    friend SecondValueArrayBase<Derived>; ///< resize_common() drains through drain_candidates().
+    friend SecondValueArrayBase<Derived>; ///< resize_common() drains through the two functions below.
 
     /**
      * @brief The pass behind make_block_compression(), and resize()'s drain.

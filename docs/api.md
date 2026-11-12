@@ -2,7 +2,7 @@
 
 > French version: [api_fr.md](api_fr.md).
 
-> October 2026. One page for what a program calls, grouped by task. The details (parameters, preconditions, complexity) are in the Doxygen reference
+> November 2026. One page for what a program calls, grouped by task. The details (parameters, preconditions, complexity) are in the Doxygen reference
 > (`cmake --build build --target doc`), searchable by these names. Usage in context:
 > [getting_started.md](getting_started.md).
 

@@ -2,7 +2,7 @@
 
 > French version: [contributing_fr.md](contributing_fr.md).
 
-> October 2026. How to build, test, measure and document a change. Read
+> November 2026. How to build, test, measure and document a change. Read
 > [algo_zero_one_value.md](algo_zero_one_value.md) first: most of the library is the machinery it describes.
 
 ***
@@ -66,6 +66,9 @@ The source checks run with the others (`ctest -R check_`):
 | `check_headers` | every C++ file opens with the Apache license header (years up to date) and carries no IDE `Created by` stamp; scripts and build files (`.py`, `.sh`, `.cmake`, `CMakeLists.txt`) carry `# Copyright ... CEA` and `# SPDX-License-Identifier: Apache-2.0`; the vendored headers, their upstream SPDX line; `scripts/check_headers.py --fix` repairs |
 | `check_raw_reads` | every raw read of a chunk buffer in the library says why it is safe |
 | `check_tracked` | every file the sources name (a quoted `#include`, a relative Python import, a CMake source or harness, a Markdown link) is tracked by git, not only present on disk |
+| `check_public_api` | the public headers and names are those `scripts/public_api.txt` lists: fails when one is added, moved, removed or renamed |
+| `check_format` | every C++ file of `chunk/`, `fast_allocators/` and `examples/` is as clang-format 23 leaves it (`scripts/check_format.py --fix` rewrites them); registered only when CMake finds that version |
+| `check_doxygen` | the Doxygen documentation builds without a warning; registered only when CMake finds Doxygen, skipped before 1.9 |
 | `check_docs` | links, code names cited in the documents, English/French pairs, no history markers in comments, the files cited in comments exist |
 
 ## 3. Code rules

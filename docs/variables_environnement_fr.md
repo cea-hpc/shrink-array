@@ -2,7 +2,7 @@
 
 > English version: [environment_variables.md](environment_variables.md).
 
-> État : octobre 2026. Cette page liste ce que règle un **utilisateur** de la bibliothèque : les
+> État : novembre 2026. Cette page liste ce que règle un **utilisateur** de la bibliothèque : les
 > réglages que couvre la politique de versionnage de [CHANGELOG.md](../CHANGELOG.md). Tout le
 > reste -- le réglage du décideur et des allocateurs, les traces, le banc, les crochets de test,
 > les options de mise au point, les scripts de compilation -- est dans
@@ -33,6 +33,8 @@
 | `CHUNK_THREADS` | vide | backend de threads de la bibliothèque : `openmp`, `std` (des workers `std::jthread` à elle, sans OpenMP) ou `serial` ; vide : `openmp` avec `OMP=ON`, `serial` sinon. Renseigné, il fixe `OMP` en conséquence |
 | `CHUNK_STATIC_SIZES` | `auto` | tailles de chunk statiques construites (cibles `_<taille>`) ; `auto` : `256;1024`, `256` seule dans un build Debug ou sanitizer |
 | `CHUNK_BUILD_DYN` | `ON` | construire aussi une bibliothèque à géométrie dynamique (`_dyn`) par variante |
+| `SHRINK_ARRAY_BUILD_EXAMPLES` | `ON` au niveau racine | construire les exemples, le banc et les tests de validation ; `OFF` par défaut quand le projet est inclus dans un autre (`add_subdirectory`, `FetchContent`) |
+| `SHRINK_ARRAY_BUILD_TESTS` | `ON` au niveau racine | enregistrer les tests auprès de CTest ; `OFF` par défaut quand le projet est inclus dans un autre, dont le `ctest` ne les lance alors pas |
 | `CHUNK_STD_ALLOC` | `OFF` | allocateur standard pour les tampons de chunks au lieu de `fast_allocators` (utile sous ASan : chaque tampon est un vrai `malloc`) |
 | `CHUNK_SECOND_VALUE_INDEXED` | `OFF` | `zero_any` : l'emplacement de seconde valeur contient un identifiant de 4 octets au lieu de la valeur (moins de mémoire, +3 % de temps d'écriture) |
 | `CHUNK_STATS` | `OFF` | compteurs d'instrumentation et rapport `ParamChunk::chunk_stats()` |

@@ -48,6 +48,7 @@ genmc --check-liveness -- -DSHAPE_SYMMETRIC -DINIT_CONSTANT formal/writer_compre
 With CMake, `ctest -L formal` runs `formal_genmc` (when `genmc` is on the PATH or
 `-DGENMC_EXECUTABLE=` names it) and `formal_native_*`: each model compiled as an ordinary program
 and run 300 times, which proves the model is a real program and is a weak oracle for the protocol.
+They are compiled with `-UNDEBUG` whatever the build type: their `assert()` are the test.
 Nothing in `formal/` is built into the library or installed.
 
 ## 3. The model of handshake 1: writer against compressor

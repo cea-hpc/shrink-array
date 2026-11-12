@@ -193,6 +193,22 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- Documentation brought back in line with the sources, in both languages.
+  `docs/algo_pattern_fr.md` §5 lacked the paragraph on the OMPT pass
+  (`Chunk::compress_to_motif()`). `docs/developer_settings.md` lists the CMake options it
+  missed (`SHRINK_BENCH_INT64_SIZES`, `CHUNK_VALIDATION_UNITY_BATCH`, `GCC_TOOLCHAIN_DIR`,
+  `USE_MOLD`, `CHUNK_VEC_REPORT`, `GETTING_STARTED_LIB`, `BOOL_ARRAYS_LIB`) and, in a new §8,
+  the variables the tools and the harnesses read (`CHUNK_BUILD_ROOT`, `CHUNK_BENCH_EVENTS`,
+  `CHUNK_POOL_REF_WAIT`, `CHUNK_POOL_POLL`, `CATCH_CRASH_EXE`, `CLANG_FORMAT`, `FK_SECONDS`,
+  `BLK_HUGE`, `CHUNK_VALIDATION_CHILD`); `docs/environment_variables.md` §2 has
+  `SHRINK_ARRAY_BUILD_EXAMPLES` and `SHRINK_ARRAY_BUILD_TESTS`. `docs/contributing.md` names
+  `check_public_api`, `check_format` and `check_doxygen` in its table of checks;
+  `docs/formal_models.md` says the native models keep their assertions (`-UNDEBUG`);
+  `docs/synchronisation_dekker.md` §4.3 says a `membarrier` that fails once registered stops the
+  program. `docs/README.md` no longer claims every document has a French version
+  (`docs/threading_backends.md` is in English only) and its code table names `pattern_array.h`,
+  `threads.h`, the `fetch_content` example and the other formal models. The Doxygen comments of
+  the constructors and of `resize()` state what a thread may do inside a region.
 - `resize()` inside a parallel region compressed chunks of other arrays under their writers.
   Its drain ran the compression pass, which takes no writer handshake there, on the calling
   thread's WHOLE candidate list: right for the array being resized, which only that thread
