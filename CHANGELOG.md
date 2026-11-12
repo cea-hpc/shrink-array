@@ -219,7 +219,7 @@ the tag's checksum to the recipe.
   `docs/algo_pattern_fr.md` §5 lacked the paragraph on the OMPT pass
   (`Chunk::compress_to_motif()`). `docs/developer_settings.md` lists the CMake options it
   missed (`SHRINK_BENCH_INT64_SIZES`, `CHUNK_VALIDATION_UNITY_BATCH`, `GCC_TOOLCHAIN_DIR`,
-  `USE_MOLD`, `CHUNK_VEC_REPORT`, `GETTING_STARTED_LIB`, `BOOL_ARRAYS_LIB`) and, in a new §8,
+  `USE_MOLD`, `CHUNK_VEC_REPORT`, `GETTING_STARTED_MODULE`, `BOOL_ARRAYS_MODULE` on this branch) and, in a new §8,
   the variables the tools and the harnesses read (`CHUNK_BUILD_ROOT`, `CHUNK_BENCH_EVENTS`,
   `CHUNK_POOL_REF_WAIT`, `CHUNK_POOL_POLL`, `CATCH_CRASH_EXE`, `CLANG_FORMAT`, `FK_SECONDS`,
   `BLK_HUGE`, `CHUNK_VALIDATION_CHILD`); `docs/environment_variables.md` §2 has
