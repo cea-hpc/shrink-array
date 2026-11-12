@@ -2,7 +2,7 @@
 
 > English version: [algo_pattern.md](algo_pattern.md).
 
-> État : fin octobre 2026. `pattern::Array` est un membre de la famille `zero_any` : ce document
+> État : novembre 2026. `pattern::Array` est un membre de la famille `zero_any` : ce document
 > décrit ce qu'il fait **autrement** que `zero_any`, dont il reprend toute la mécanique (registre
 > des secondes valeurs, moteur d'écriture, passe de compression, sections de lecture), décrite
 > dans [algo_zero_any_fr.md](algo_zero_any_fr.md) et
@@ -145,6 +145,16 @@ flowchart TD
 le CAS du motif se fait sur un chunk réservé, et son échec est une violation d'invariant. Les deux
 constantes utilisent les formes release des écritures de la case (`reset_release`,
 `find_or_set_ind_cst_val2_release`), pour les lecteurs du §6.
+
+**Avec OMPT** (clang, Intel : `CHUNK_HAVE_OMPT`), la passe entre régions n'est pas
+`make_block_compression()` : `ompt_callback_parallel_end` lance
+`compress_chunk_to_compress_in_par()`, qui compresse chunk par chunk (`compress()`), sans
+réservation ni `fill_list_to_compress()`. Là, un chunk que `compress()` laisse matérialisé passe
+par `Chunk::compress_to_motif()` : la même lecture, la même règle d'admission et le même ordre
+de `block_clear_motif()` que ci-dessus, tout de suite au lieu d'être mis en file. Elle tourne là
+où tourne la remise à zéro de `compress()` elle-même -- le chunk dans la liste de ce seul rang
+(son drapeau de file), aucun écrivain (l'équipe a rejoint) -- donc le CAS ne peut pas échouer là
+non plus. Sans elle, un build OMPT ne compressait jamais un chunk vers un motif.
 
 ## 6. La lecture, et les réécritures de la case
 

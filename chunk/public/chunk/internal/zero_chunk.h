@@ -19,7 +19,6 @@
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
 
-#include <atomic>  // std::memory_order_acquire, std::memory_order_acq_rel
 #include <cstddef> // std::size_t
 #include <tuple>   // the candidate-list entries
 #include <vector>  // std::vector

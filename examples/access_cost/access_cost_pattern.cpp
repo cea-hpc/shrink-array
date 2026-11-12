@@ -58,6 +58,7 @@
 #include <cstdint>   // std::uint64_t
 #include <cstdio>    // std::fprintf, stderr
 #include <exception> // std::exception (main)
+#include <iterator>  // std::size
 #include <string>    // std::string
 #include <utility>   // std::as_const
 #include <vector>    // std::vector
@@ -366,7 +367,7 @@ double minimum(const std::vector<double>& samples)
 }
 
 constexpr const char* case_names[]      = {"read-varied", "read-conn", "read-conn-random", "write-conn"};
-constexpr int         n_cases           = static_cast<int>(sizeof(case_names) / sizeof(case_names[0]));
+constexpr int         n_cases           = static_cast<int>(std::size(case_names));
 constexpr const char* container_names[] = {"vector", "zero_any", "pattern"};
 constexpr int         n_containers      = 3;
 } // namespace

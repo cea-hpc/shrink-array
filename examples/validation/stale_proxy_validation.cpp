@@ -41,10 +41,10 @@
 
 #include <cstdio>      // std::fopen, std::fclose, std::fread, FILE, std::remove
 #include <cstdlib>     // std::system, std::atoi
+#include <iterator>    // std::size
 #include <string>      // std::string, std::to_string
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::move
-#include <unistd.h>    // getpid
 #include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
@@ -113,7 +113,7 @@ const Case case_table[] = {
     {"push_back beyond the capacity", true, false},
     {"rechunk_to", true, true},
 };
-constexpr int nb_cases = static_cast<int>(sizeof case_table / sizeof case_table[0]);
+constexpr int nb_cases = static_cast<int>(std::size(case_table));
 
 /// The child: one case. A template so that rechunk_to, which a static build
 /// does not have, is only named in a discarded branch of a dependent call.
@@ -229,7 +229,7 @@ static int run_child(int case_idx)
 static int check_case(const char* self, int case_idx)
 {
     const Case&       test_case = case_table[case_idx];
-    const std::string log = "/tmp/stale_proxy_" + std::to_string(getpid()) + "_" + std::to_string(case_idx) + ".log";
+    const std::string log       = validation::temp_path("stale_proxy_" + std::to_string(case_idx) + ".log");
     const std::string cmd =
         validation::self_command(self) + " --case " + std::to_string(case_idx) + " > \"" + log + "\" 2>&1";
     const int   status = std::system(cmd.c_str());

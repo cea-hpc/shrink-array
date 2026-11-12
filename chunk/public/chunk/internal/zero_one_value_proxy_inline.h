@@ -18,6 +18,7 @@
 
 #include <cstddef>     // std::size_t
 #include <type_traits> // std::remove_cvref_t
+#include <memory>      // std::addressof (operator=: operator& is deleted)
 
 #include "chunk/internal/in_t.h"                 // InT<T>
 #include "chunk/internal/bad_ptr_check.h"        // CHUNK_CHECK_VALUES_PTR (check builds)

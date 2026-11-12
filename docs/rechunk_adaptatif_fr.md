@@ -236,7 +236,14 @@ se limite aux reconstructions.
   `max_backoff_ticks` (même nœud, `OMP_PROC_BIND=close`, 4 000 itérations, dernier
   rechunk à l'itération 1 700) : +22 % -> **+7 %**. Le reste est un va-et-vient de
   compression que le statique n'a pas (~15 000 tampons libérés par itération contre
-  aucun), encore inexpliqué.
+  aucun), encore inexpliqué. Toujours là en novembre 2026 après le découpage de la fin du
+  rechunk de `zero`, à titre indicatif (x86-64, GCC 16, 8 threads, `--mode perf --divisor 16
+  --iter_max 2000`, meilleur de 3) : +11 à +13 % par itération après le dernier rechunk
+  (itération 600), 4 % de mémoire résidente de plus que le statique 1 024. Le va-et-vient n'a
+  pas pu être mesuré à cette taille : la ligne `churn` compte par clé d'allocation, et un
+  tableau puise dans la réserve partagée (clé 0, non comptée) tant que ses métadonnées ne
+  dépassent pas `CHUNK_ALLOC_AFFINITY_MIN_BYTES` (16 Mio) et qu'il n'a pas été rechunké -- la
+  ligne le dit désormais. À mesurer en taille réelle (`diag_zero_rechunk_slowdown.py` tel quel).
 - **Le modèle est statique.** L'advisor juge sur l'état présent des chunks, pas sur les
   écritures à venir. Sur ce banc, les matérialisations passagères mesurées ne pèsent pas
   (la ligne `churn` de `CHUNK_LOG=rechunk=debug`), mais un calcul qui écrit beaucoup dans des zones constantes
@@ -247,5 +254,13 @@ se limite aux reconstructions.
   conteneurs de booléens soient comparés tels quels. Le rechunk de `Array<bool>` est vérifié
   par `rechunk_validation` (`bool-grow`, `bool-shrink`, `bool-uneven`, `bool-sliced`, toutes
   variantes), celui d'`ArrayChunkBits` par `bits_container_validation` (`zero_one_value` en dyn).
-- **Le pic reste celui du départ** : un run dynamique qui part de 64 atteint d'abord la
-  mémoire du statique 64, puis descend.
+- **Le pic n'est pas toujours celui de la géométrie de départ** : un run dynamique qui part
+  de 64 a la mémoire du statique 64 après son initialisation ; ses rechunks rendent ensuite
+  de la mémoire (la mémoire résidente redescend) ou freinent sa croissance. Le pic du run
+  n'est celui de la géométrie de départ que s'il tombe à l'initialisation ; là où la mémoire
+  croît pendant le run, le pic reste en dessous. Mesuré avec `top` et `smaps_rollup`
+  (x86-64, 8 threads, `shrink_bench` `--multiply 10 --iter_max 1000 --advisor_period 2`,
+  contre le même binaire avec `--rechunk_dry_run`, novembre 2026) : `zero_any` redescend de
+  481 à 303 Mio après ses rechunks et finit à 238 Mio au lieu de 545, son pic étant celui de
+  l'initialisation (582 Mio) ; `zero_one_value` culmine à 1 342 Mio au lieu de 1 523, `zero`
+  à 2 531 Mio au lieu de 2 736.

@@ -1,6 +1,6 @@
 # Getting started with shrink-array
 
-> October 2026. This guide is about **using** the library. How it works inside is described
+> November 2026. This guide is about **using** the library. How it works inside is described
 > in the design documents, indexed in [README.md](README.md). A French version of
 > this guide is [getting_started_fr.md](getting_started_fr.md).
 
@@ -195,7 +195,7 @@ int main()
    build, those two calls compile to nothing.
 4. **Reading**: through a `const` array, `operator[]` returns a `T`. On a non-const array it
    returns a *proxy* (§6).
-5. **`shrink_to_fit()`** runs a full compression pass, outside any parallel region. You do not
+5. **`shrink_to_fit()`** runs a full compression pass, at a sequential point (§5). You do not
    need to call it: chunks are compressed as the program runs. It is there for when you want
    the memory back at a specific point.
 6. **Destroying the array** gives its buffers back. The library prints one line per array at
@@ -304,20 +304,27 @@ is the program of §4 written that way: one function fills a `std::vector<double
 `zero_any::Array<double>`, and the program checks that they read back the same. It refuses to
 compile against a library without OMPT; its test runs with `CHUNK_REQUIRE_OMPT=1`.
 
-**Sequential points.** Everything that rebuilds an array's storage must be called outside any
-parallel region: `resize()`, `reserve()`, `push_back()` beyond the capacity, `clear()`,
-`assign()`, `swap()`, assignment, `shrink_to_fit()`, `compress()`, `rechunk_to()`, and, for
-`zero_one_value`, `set_second_value()`. So is an explicit `make_block_compression()`: inside a
-region it is refused (check builds stop, others log an error and skip the pass) -- there the
-writers' own passes compress.
+**Sequential points.** Everything that rebuilds an array's storage is a sequential point:
+`resize()`, `reserve()`, `push_back()` beyond the capacity, `clear()`, `assign()`, `swap()`,
+copy construction and assignment, `shrink_to_fit()`, `compress()`, `rechunk_to()`, and, for
+`zero_one_value`, `set_second_value()`. One drains the deferred writes and runs a compression
+pass over lists that every array of the element type shares. Call it outside any parallel
+region, or inside one from a single thread while the rest of the team leaves the arrays alone:
+under `omp single` or `omp masked`, or behind a lock of the program's that every other thread
+waits on. Two threads of a region never run sequential points at the same time, and no thread
+writes or reads an array meanwhile. An explicit `make_block_compression()` is the exception:
+inside a region it is refused (check builds stop, others log an error and skip the pass) --
+there the writers' own passes compress.
 
 **Work arrays inside a region.** A thread of a region may build arrays of its own
 (`zero_any::Array<double> work(n);`), write and read them, and let them be destroyed, while
 the other threads do the same and the team writes shared arrays. Construction and destruction
 take a lock of the library, one array at a time for the whole process; the element accesses
 take none. Such an array is its thread's: only that thread writes it, and the sequential
-points above are still sequential points for it. Its destruction costs one `membarrier()`,
-and skips the final compression pass that a destruction outside a region runs.
+points above are still sequential points for it -- but `resize()`, which its thread may call
+there: the pass it runs first covers that array's chunks only, not the shared arrays' the
+thread has also written. Its destruction costs one `membarrier()`, and skips the final
+compression pass that a destruction outside a region runs.
 
 **Threads.** The per-thread structures are sized once for `max(omp_get_max_threads(), number
 of cores, 256)` threads (in a std build, the team size -- `CHUNK_NUM_THREADS`, else
@@ -386,7 +393,7 @@ sa::tbb::parallel_for(oneapi::tbb::blocked_range<long>(0, n), [&](const auto& r)
 ```
 
 Between `begin` and `finalize` the library counts the program's threads as a parallel region
-(the sequential points above must not be called there, as inside an OpenMP region), and each of them
+(the sequential points above follow the same rule there as inside an OpenMP region), and each of them
 holds one of the per-thread slots while it is alive. An OpenMP build numbers only OpenMP's
 threads: for the others, use the std backend.
 

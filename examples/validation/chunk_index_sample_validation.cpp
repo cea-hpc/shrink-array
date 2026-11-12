@@ -101,7 +101,7 @@ void check_buffer()
     const std::string_view got = chunk_index_sample(g.buf, {123, 456, 789}, 1024);
     check(got.size() == g.buf.size() && got == std::string_view("123@1259", 8), "cut at the buffer's 8 bytes", got);
     bool intact = true;
-    for (char c : g.canary)
+    for (const char c : g.canary)
     {
         intact = intact && c == 'C';
     }

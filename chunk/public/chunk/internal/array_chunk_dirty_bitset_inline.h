@@ -15,6 +15,11 @@
  */
 
 #pragma once
+#include <algorithm> // std::min
+#include <atomic>    // std::memory_order_acq_rel, std::memory_order_relaxed, std::memory_order_release
+#include <cstddef>   // std::size_t
+#include <utility>   // std::move
+
 #include "chunk/internal/array_chunk_dirty_bitset.h" // the class these bodies belong to
 
 namespace shrink_array
@@ -54,7 +59,7 @@ void DirtyBitsetSupport<Derived, true>::clear_all_dirty_bitsets()
             {
                 // The registry hands out const keys; clearing the bitset is
                 // the quiescent point's own write.
-                const_cast<Derived*>(key)->clear_dirty_bitset();
+                const_cast<Derived*>(key)->clear_dirty_bitset(); // NOSONAR(cpp:S859)
             }
         });
 }

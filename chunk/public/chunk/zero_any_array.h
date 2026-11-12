@@ -17,7 +17,6 @@
 #pragma once
 
 #include <algorithm>        // std::min (operator==)
-#include <atomic>           // std::atomic (operator==: a difference found)
 #include <cstddef>          // std::size_t
 #include <cstdint>          // std::uint8_t, std::uint32_t (reclaim_second_values' mark)
 #include <iostream>         // for cout, ostream
@@ -258,6 +257,10 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
     /**
      * @brief Resize the array, preserving the elements that still fit.
      * @param newsz new element count
+     * @note A sequential point. Inside a parallel region, only by the thread
+     *       that owns the array (a work array of its own): the drain then
+     *       covers this array's candidates alone (drain_own_candidates()),
+     *       not the shared arrays' the thread has also written.
      * @note Shrinking releases the dropped chunks' buffers (release_chunk_range():
      *       freed serially, parked in the geometry's reuse list under OpenMP);
      *       chunk_list_ keeps its capacity.
@@ -415,10 +418,15 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
     static void make_block_compression();
 
   private:
-    /// @brief The pass behind make_block_compression(), and resize_common()'s drain:
-    ///        every thread's list outside a region, the calling thread's inside one
-    ///        (an array resized by its owning thread), under a read_reclaim::PassScope.
+    /// @brief The pass behind make_block_compression(), and resize_common()'s drain
+    ///        outside a region: every thread's list.
     static void drain_candidates();
+
+    /// @brief resize_common()'s drain inside a region (an array resized by its
+    ///        owning thread): the pass on this array's candidates only, in the
+    ///        calling thread's list, under a read_reclaim::PassScope. The other
+    ///        arrays' candidates stay queued, untouched (internal/own_candidates.h).
+    void drain_own_candidates();
 
     /**
      * @brief Claim this array's identity before its storage is built.
@@ -539,6 +547,9 @@ class Array : public ArrayImpl<Array<T, IntType>>
      * @brief Build an array of @p sz elements at the current active geometry.
      * @param sz initial element count; 0 by default, as std::vector (a fresh
      *           array is empty, so a push_back on it yields one element)
+     * @note May run inside a parallel region, for a work array of the calling
+     *       thread: construction and destruction take the library's cold-path
+     *       lock (internal/cold_path_lock.h), one array at a time.
      */
     explicit Array(IntType sz = 0)
     {

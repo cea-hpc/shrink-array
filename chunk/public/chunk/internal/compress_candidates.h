@@ -28,7 +28,6 @@
 #include <atomic>  // std::atomic (the pass threshold)
 #include <tuple>   // std::get (erase_candidates_of_tab)
 #include <utility> // std::pair (removal_ranks)
-#include <vector>  // std::erase_if
 
 #include "chunk/bit.h"               // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/config.h"            // build_config::threaded

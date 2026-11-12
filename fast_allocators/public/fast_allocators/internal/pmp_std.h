@@ -42,14 +42,13 @@
     #error "pmp_std.h is included by pmp_loops.h, after the types it shares with the other backends"
 #endif
 
-#include <atomic>        // std::atomic (SpinBarrier, the single mark)
-#include <cstdint>       // std::uint64_t (the pool's job word)
-#include <exception>     // std::terminate (a body that throws)
-#include <memory>        // std::unique_ptr (the construct slots)
-#include <mutex>         // std::mutex, std::scoped_lock, std::unique_lock (the slots; one team at a time)
-#include <thread>        // std::jthread (the workers)
-#include <unordered_map> // std::unordered_map (the construct slots)
-#include <vector>        // std::vector (the workers, the per-rank counts and results)
+#include <atomic>  // std::atomic (SpinBarrier, the single mark, the dynamic-loop ring)
+#include <cstdint> // std::uint64_t (the pool's job word, the construct numbers)
+#include <mutex>   // std::mutex, std::unique_lock (one team at a time)
+#include <thread>  // std::jthread (the workers)
+#include <vector>  // std::vector (the workers, the per-rank counts and results)
+#include <array>   // std::array
+#include <cstddef> // std::size_t
 
 #include "fast_allocators/internal/pmp_std_state.h" // std_backend::tls, FrameGuard, settings, nthreads_var
 
@@ -57,13 +56,26 @@ namespace fast_alloc::pmp
 {
 namespace std_backend
 {
-/// @brief The shared state of one worksharing construct of a team: a dynamic
-///        loop's next block, a single's claim.
-struct Slot
+/**
+ * @brief The shared state of one dynamic loop of a team, in a ring of
+ *        TeamCtx::dyn_ring slots: construct seq uses slot seq % dyn_ring.
+ * @details tag: 2 (seq + 1) once construct seq's slot is ready, odd while the
+ *          thread that claimed it resets it, 0 never used. The first thread of
+ *          construct seq claims the slot when its tag is even and below
+ *          2 (seq + 1) and the loop that used it has no thread left in it
+ *          (left == 0, read acquire): one CAS of the tag. It resets next and
+ *          left, then publishes the tag (release); the others join on seeing it
+ *          (acquire). Leaving is a fetch_sub of left (acq_rel). No lock: the
+ *          former slot map took the team mutex twice per thread and per loop,
+ *          218 us an empty loop at 160 threads against 7 us a barrier.
+ *          The counter has a cache line of its own (every chunk hits it); the
+ *          tag and count share the next one (once per thread and loop).
+ */
+struct alignas(64) DynSlot
 {
-    std::atomic<long long> next{0};        ///< Next unclaimed offset of a dynamic loop.
-    std::atomic<bool>      claimed{false}; ///< A single: some thread took it.
-    int                    left = 0;       ///< Threads that have not left it yet (under TeamCtx::mutex).
+    std::atomic<long long> next{0};                ///< Next unclaimed offset of the loop.
+    alignas(64) std::atomic<std::uint64_t> tag{0}; ///< See above.
+    std::atomic<int> left{0};                      ///< Threads of the loop that have not left it.
 };
 
 /**
@@ -103,15 +115,16 @@ struct TeamCtx
     /// Team::single(): every single numbered below this has been claimed; the
     /// thread that moves it past construct s runs single s (pmp_std_inline.h).
     alignas(64) std::atomic<std::uint64_t> single_mark{0};
-    std::mutex                                               mutex; ///< Guards slots.
-    std::unordered_map<std::uint64_t, std::unique_ptr<Slot>> slots; ///< The constructs some thread is in.
-    std::vector<std::uint64_t>                               met;   ///< met[rank]: constructs rank has entered.
+    std::vector<std::uint64_t> met; ///< met[rank]: constructs rank has entered.
 
-    /// @brief Enter the next construct of @p rank; its slot, and its number in @p seq.
-    Slot& enter(int rank, std::uint64_t& seq);
+    /// @brief Dynamic loops in flight at once: a thread more than this many
+    ///        constructs ahead of a slow one waits for it to leave the slot.
+    static constexpr std::size_t  dyn_ring = 64;
+    std::array<DynSlot, dyn_ring> dyn; ///< The dynamic loops' slots (DynSlot).
 
-    /// @brief Leave construct @p seq; the last thread out frees its slot.
-    void leave(std::uint64_t seq);
+    /// @brief Enter the next construct of @p rank, a dynamic loop: its slot,
+    ///        claimed or joined (DynSlot), and its number in @p seq.
+    DynSlot& enter_dynamic(int rank, std::uint64_t& seq) noexcept;
 };
 
 /**

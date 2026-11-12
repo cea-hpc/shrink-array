@@ -86,7 +86,9 @@ namespace shrink_array
  *
  * Caches the OpenMP rank of the calling thread into the thread-local
  * `g_fast_omp_rank`, so the per-thread deferred queues can be indexed without
- * paying an `omp_get_thread_num()` call on each write.
+ * paying an `omp_get_thread_num()` call on each write -- in a check build; an
+ * OpenMP build without OMPT and without checks re-reads the rank on every use
+ * (get_thr_rank_fast(): nothing would clear a stale cache there).
  *
  * @note Must run inside the parallel region, before any chunk write.
  */

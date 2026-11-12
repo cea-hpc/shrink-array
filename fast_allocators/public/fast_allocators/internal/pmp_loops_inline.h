@@ -148,16 +148,20 @@ void pmp::Team::for_dynamic(Index first, Index last, int chunk, Body&& body, [[m
     static_assert(std::is_integral_v<Index>, "the loop index is an integer");
     [[maybe_unused]] const int step = chunk > 0 ? chunk : 1;
     #ifdef _OPENMP
+    // monotonic: a plain schedule(dynamic) is nonmonotonic since OpenMP 5.0,
+    // which LLVM's libomp runs by work stealing (static_steal), and a run of
+    // nowait dynamic loops trips its "vnew.p.ub * (UT)chunk <= trip" assertion
+    // (LLVM 23; team_sync_validation case 4). libgomp is monotonic anyway.
     if (wait_mode == WaitMode::nowait)
     {
-        #pragma omp for schedule(dynamic, step) nowait
+        #pragma omp for schedule(monotonic : dynamic, step) nowait
         for (Index i = first; i < last; ++i)
         {
             body(i);
         }
         return;
     }
-        #pragma omp for schedule(dynamic, step)
+        #pragma omp for schedule(monotonic : dynamic, step)
     for (Index i = first; i < last; ++i)
     {
         body(i);

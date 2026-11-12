@@ -2,7 +2,7 @@
 
 > French version: [shrink_gui_fr.md](shrink_gui_fr.md).
 
-> October 2026, `shrink_gui` 0.16 (prototype). A window on the laptop to submit
+> November 2026, `shrink_gui` 0.16 (prototype). A window on the laptop to submit
 > `compile_all.sh`, `bench_and_test.py`, `multi_launch_stress.py` and `thread_speedup.py` on the cluster, or to
 > run them on the laptop itself (§3, "This machine"), follow
 > their log, read their summary and fetch their results. The code is described in the

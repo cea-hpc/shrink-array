@@ -56,8 +56,10 @@ def die(msg):
     sys.exit(1)
 
 
-def get(host, path, params):
-    """GET host/path?params as JSON, through curl (proxy, Kerberos, token)."""
+def get(host, path, params, none_on_404=False):
+    """GET host/path?params as JSON, through curl (proxy, Kerberos, token).
+
+    none_on_404: None for an HTTP 404 instead of stopping."""
     url = "%s%s?%s" % (host, path, urllib.parse.urlencode(params))
     # The token goes through curl's config on stdin, not argv (ps shows argv).
     config = ""
@@ -72,6 +74,8 @@ def get(host, path, params):
     body, _, status = proc.stdout.decode().rpartition("\n")
     if proc.returncode != 0:
         die("%s: curl exit %d: %s" % (path, proc.returncode, proc.stderr.decode().strip()))
+    if status == "404" and none_on_404:
+        return None
     if status != "200":
         die("%s: HTTP %s: %s" % (path, status, body[:300]))
     try:
@@ -217,6 +221,14 @@ def main():
     if fmt is None:
         fmt = "csv" if args.output and args.output.endswith(".csv") else "json"
     host = os.environ.get("SONAR_HOST", "https://sonarcloud.io").rstrip("/")
+
+    # An unknown key is not an error for api/issues/search: it only fails on
+    # the facets ("Facet(s) 'directories' require to also filter by project or
+    # organization"). Say what is missing instead.
+    if get(host, "/api/components/show", {"component": args.project}, none_on_404=True) is None:
+        die("project %s not found on %s (or not visible with this token): no analysis has created it yet "
+            "-- .github/workflows/sonar.yml skips the analysis without the SONAR_TOKEN secret -- or the key "
+            "is another one: --project KEY, or SONAR_PROJECT_KEY" % (args.project, host))
 
     base = {"componentKeys": args.project, "branch": args.branch}
     if not args.all:

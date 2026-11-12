@@ -22,6 +22,8 @@
 #include <exception>   // std::exception (erase failures)
 #include <thread>      // std::this_thread — used HERE, not by our includers
 #include <type_traits> // std::remove_reference_t (the swap-drain batch type)
+#include <memory>      // std::destroy_at
+#include <cstddef>     // std::size_t
 
 #include "fast_allocators/internal/raw_memory.h"       // address_bits, load_from_bytes
 #include "chunk/internal/compression_manager.h"        // the declarations these bodies belong to

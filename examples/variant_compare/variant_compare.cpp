@@ -77,6 +77,7 @@
 #include <cstdio>       // std::fprintf, std::fopen, std::fgets, std::sscanf, stderr
 #include <cstring>      // std::strlen
 #include <exception>    // std::exception (main's catch)
+#include <iterator>     // std::size
 #include <string>       // std::string
 #include <system_error> // std::errc (arg_value)
 #include <type_traits>  // std::conditional_t
@@ -149,7 +150,7 @@ constexpr const char* variant_name()
 
 /// The first value is 0; the second values, the first of them declared.
 constexpr double second_value[] = {9., 11., 13., 17., 19., 23., 29., 31.};
-constexpr int    max_constants  = static_cast<int>(sizeof(second_value) / sizeof(second_value[0]));
+constexpr int    max_constants  = static_cast<int>(std::size(second_value));
 
 // ── Phase brackets: no-ops under OMPT (the callbacks do it) ─────────────────
 static void begin_phase()

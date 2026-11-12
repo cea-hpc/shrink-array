@@ -145,7 +145,9 @@ std::atomic_flag g_serial_flush_owner{};
 }
 
 /// The fence that closes a phase function (see phase_fences_on()).
-void phase_fence() noexcept
+/// maybe_unused: every caller sits in an `if constexpr (... is_shrink_enabled)`
+/// branch, discarded in the targets without compression (chunk, chunk_vector).
+[[maybe_unused]] void phase_fence() noexcept
 {
     if (phase_fences_on()) [[likely]]
     {

@@ -71,7 +71,6 @@
 #include <type_traits> // std::conditional_t
 #include <vector>      // index_generations
 // <iostream> directly: param_chunk.h would be a circular include (it reaches this header).
-#include <iostream> // std::cout
 
 #include "fast_allocators/internal/raw_memory.h" // address_bits
 #include "chunk/internal/chunk_size_policy.h"    // cst_buffer_size

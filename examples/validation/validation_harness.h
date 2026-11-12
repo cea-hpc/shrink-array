@@ -47,4 +47,14 @@ namespace validation
 /// @return e.g. `"/path/validation_zero_any_256" stale_proxy_validation`
 std::string self_command(const char* argv0);
 
+/// @brief A path in this process's own temporary directory, for the logs of
+///        the children a harness runs: the directory is made once, by
+///        mkdtemp() under $TMPDIR (else /tmp), readable by this user only, and
+///        removed with its content when the process exits. Unpredictable and
+///        private, where a fixed /tmp/<name>_<pid> could be taken first by
+///        another user of a shared node, or collide with another run.
+/// @param name the file name, unique within this process
+/// @return e.g. `/tmp/shrink_validation.Ab3xYz/phase_protocol_2.log`
+std::string temp_path(const std::string& name);
+
 } // namespace validation

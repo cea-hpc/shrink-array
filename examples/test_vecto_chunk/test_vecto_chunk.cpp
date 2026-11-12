@@ -170,6 +170,7 @@ void calculate1(double                     val,
 }
 
 int main()
+try
 {
     // Once, before the first array. The library checks its compiled chunk size
     // itself.
@@ -409,4 +410,10 @@ int main()
     destroy_block_chunk();
 
     return 0;
+}
+catch (const std::exception& e)
+{
+    // A failed allocation or std::format: said, not std::terminate().
+    std::fprintf(stderr, "test_vecto_chunk: %s\n", e.what());
+    return 2;
 }

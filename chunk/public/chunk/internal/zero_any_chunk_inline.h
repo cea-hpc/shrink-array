@@ -16,11 +16,13 @@
 
 #pragma once
 
-#include <algorithm>   // std::fill_n (the create_value fills)
-#include <cstdlib>     // std::abort
-#include <optional>    // std::nullopt (the clears)
-#include <thread>      // std::this_thread::yield (wait_before_materialise)
-#include <type_traits> // std::remove_cvref_t (the re-queued candidates)
+#include <algorithm>       // std::fill_n (the create_value fills)
+#include <cstdlib>         // std::abort
+#include <optional>        // std::nullopt (the clears)
+#include <thread>          // std::this_thread::yield (wait_before_materialise)
+#include <type_traits>     // std::remove_cvref_t (the re-queued candidates)
+#include <atomic>          // std::memory_order_* on the values pointer
+#include <source_location> // std::source_location::current() in the invariants
 
 #include "chunk/internal/in_t.h"            // InT<T>: the element snapshots
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (steal-mark check)

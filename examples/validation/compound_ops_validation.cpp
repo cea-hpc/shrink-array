@@ -37,7 +37,6 @@
 #include <string>      // std::string
 #include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
 #include <type_traits> // std::conditional_t
-#include <unistd.h>    // getpid
 #include <utility>     // std::as_const
 #include <vector>      // the reference
 
@@ -199,7 +198,7 @@ int run_child(int which)
 int check_stops(const char* self, int which)
 {
     const char*       what = which == 0 ? "int /= 0 stops (check build)" : "int %= 0 stops (check build)";
-    const std::string log  = "/tmp/compound_ops_" + std::to_string(getpid()) + "_" + std::to_string(which) + ".log";
+    const std::string log  = validation::temp_path("compound_ops_" + std::to_string(which) + ".log");
     const std::string cmd =
         validation::self_command(self) + " --child " + std::to_string(which) + " > \"" + log + "\" 2>&1";
     const int   status = std::system(cmd.c_str());

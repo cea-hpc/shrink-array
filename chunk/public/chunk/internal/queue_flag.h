@@ -34,7 +34,7 @@
  *          between, a writer finds the mark down and writes; if its write makes
  *          the chunk constant, its CAS 0 -> 1 meets the flag still up and gives
  *          up, and the reset then drops the chunk from every list: a constant
- *          chunk left materialised (F6, docs/formal_models.md section 8.7,
+ *          chunk left materialised (F6, docs/formal_models.md section 8.8,
  *          formal/queue_handback.c). The order itself is load-bearing -- once
  *          the flag is down another pass may queue and mark the chunk, and a
  *          late unmark would erase its claim -- so it is kept, and the window

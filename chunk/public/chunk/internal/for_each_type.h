@@ -38,8 +38,10 @@ template <typename... Ts>
 struct ForEachTypeImpl<std::tuple<Ts...>>
 {
     /// @brief Call `fn.template operator()<T>()` for each T of the tuple, in order.
+    /// @note Not forwarded: @p fn is called once per type, and forwarding it
+    ///       could move it more than once.
     template <typename F>
-    static void apply(F&& fn)
+    static void apply(F&& fn) // NOSONAR(cpp:S5425)
     {
         (fn.template operator()<Ts>(), ...);
     }

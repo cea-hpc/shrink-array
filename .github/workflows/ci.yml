@@ -6,13 +6,14 @@
 # an OpenMP, a serial and a std-threads (+ oneTBB) build with the check-mode
 # switches (CHECK_OPTIM), the validation harnesses at chunk size 256 (`check`
 # target: ctest -L validation), the examples (ctest -L examples), the library
-# installed and getting_started built against it (find_package), the native runs
+# installed and getting_started built against it (find_package), the library
+# consumed by another project's build (FetchContent), the native runs
 # of the GenMC models (ctest -L formal) and the std backend under
 # ThreadSanitizer. The OpenMP build runs on AArch64 as well (ubuntu-24.04-arm,
 # Neoverse): the lock-free handshakes were written for that weak memory model,
 # and x86 cannot see them fail. The long builds -- the other sanitizers, _dyn,
-# clang, GenMC itself, the AArch64 ThreadSanitizer and _dyn builds -- belong to
-# nightly.yml, not here.
+# clang, the oldest compilers, the Spack recipe, GenMC itself, the AArch64
+# ThreadSanitizer and _dyn builds -- belong to nightly.yml, not here.
 
 name: CI
 
@@ -37,15 +38,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       # check_format needs clang-format 23 exactly (another version formats
       # differently): apt.llvm.org's, the runner has an older one.
       - name: clang-format 23
         run: |
           wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null
           echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-23 main" | sudo tee /etc/apt/sources.list.d/llvm-23.list
-          sudo apt-get update -q
-          sudo apt-get install -y -q clang-format-23
+          .github/apt_install.sh clang-format-23
           clang-format-23 --version
       - name: check_* scripts
         run: |
@@ -70,15 +70,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
       - name: Dependencies
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
-          python -m pip install -q pytest==9.1.1 PySide6==6.9.3
+          .github/apt_install.sh libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+          python -m pip install -q --only-binary :all: pytest==9.1.1 PySide6==6.9.3
       - name: pytest
         env:
           QT_QPA_PLATFORM: offscreen
@@ -94,7 +93,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
       - name: New commits carry no fixup!/squash!/amend!
@@ -171,11 +170,10 @@ jobs:
       # the runner's 16 GB, Ninja's default (cores + 2) does not.
       CMAKE_BUILD_PARALLEL_LEVEL: 2
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: Toolchain
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev ${{ matrix.tbb && 'libtbb-dev' || '' }}
+          .github/apt_install.sh g++-14 ninja-build libbz2-dev ${{ matrix.tbb && 'libtbb-dev' || '' }}
           g++-14 --version
           cmake --version
       - name: Configure
@@ -216,6 +214,43 @@ jobs:
           cmake --build build --target $targets
           ctest --test-dir build -L formal --output-on-failure
 
+  # shrink-array consumed by another project's own build, without an install:
+  # examples/fetch_content brings this checkout in with FetchContent and links
+  # chunk::chunk_zero_any. Its CMakeLists stops the configure if the library
+  # changed the consumer's build type or flags; the steps check the rest -- the
+  # consumer keeps its own `doc` target and its own tests, and its install holds
+  # nothing of the library.
+  fetch-content:
+    if: github.ref_name != 'cpp26'
+    name: FetchContent consumer
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CC: gcc-14
+      CXX: g++-14
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: Toolchain
+        run: |
+          .github/apt_install.sh g++-14 ninja-build
+          g++-14 --version
+          cmake --version
+      - name: Configure and build
+        run: |
+          cmake -S examples/fetch_content -B build-fc -G Ninja
+          cmake --build build-fc
+      - name: The consumer's test, and only it
+        run: |
+          ctest --test-dir build-fc --output-on-failure
+          [ "$(ctest --test-dir build-fc -N | sed -n 's/^Total Tests: //p')" = 1 ]
+      - name: The consumer's own doc target and install
+        run: |
+          cmake --build build-fc --target doc
+          cmake --install build-fc --prefix "$RUNNER_TEMP/consumer-prefix"
+          find "$RUNNER_TEMP/consumer-prefix" -type f
+          [ "$(find "$RUNNER_TEMP/consumer-prefix" -type f | wc -l)" = 1 ]
+
   # The std backend runs its own threads (std::jthread team, thread-rank registry,
   # the TBB adaptor on top): ThreadSanitizer sees those as it does not see OpenMP's.
   # The check target builds and runs std_thread_validation and tbb_validation too.
@@ -234,11 +269,10 @@ jobs:
       CMAKE_BUILD_PARALLEL_LEVEL: 4
       TSAN_OPTIONS: halt_on_error=1 second_deadlock_stack=1
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: Toolchain
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev libtbb-dev
+          .github/apt_install.sh g++-14 ninja-build libbz2-dev libtbb-dev
           # ThreadSanitizer aborts on the runners' default address-space randomization.
           sudo sysctl vm.mmap_rnd_bits=28
       - name: Configure
@@ -286,7 +320,7 @@ jobs:
       CMAKE_BUILD_PARALLEL_LEVEL: 2
       DEBIAN_FRONTEND: noninteractive
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: Toolchain
         run: |
           apt-get update -q

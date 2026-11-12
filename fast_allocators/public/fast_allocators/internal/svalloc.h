@@ -136,7 +136,7 @@ template <typename T>
 inline void svfree_align(const void* ptr) noexcept
 {
     assert(ptr != nullptr);
-    std::free(const_cast<void*>(ptr));
+    std::free(const_cast<void*>(ptr)); // NOSONAR(cpp:S859)
 }
 
 /// @brief @p count elements of T, uninitialised (malloc). Release with svfree().
@@ -166,7 +166,7 @@ template <typename T>
 inline void svfree(const void* ptr) noexcept
 {
     assert(ptr != nullptr);
-    std::free(const_cast<void*>(ptr));
+    std::free(const_cast<void*>(ptr)); // NOSONAR(cpp:S859)
 }
 
 } // namespace fast_alloc

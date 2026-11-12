@@ -67,6 +67,9 @@ class Array : public zero_any::ArrayImpl<Array<T, IntType>>
     /**
      * @brief Build an array of @p sz elements.
      * @param sz initial element count; 0 by default, as std::vector
+     * @note May run inside a parallel region, for a work array of the calling
+     *       thread: construction and destruction take the library's cold-path
+     *       lock (internal/cold_path_lock.h), one array at a time.
      */
     explicit Array(IntType sz = 0)
     {

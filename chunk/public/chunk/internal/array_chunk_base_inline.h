@@ -23,6 +23,11 @@
 #include <stdexcept>   // std::out_of_range (at()), std::length_error (check_length)
 #include <string>      // std::string (check_length's message)
 #include <type_traits> // std::is_signed_v (check_length)
+#include <array>       // std::array (the bulk-read buffer)
+#include <concepts>    // std::invocable (for_each_span's run overload)
+#include <cstddef>     // std::size_t
+#include <span>        // std::span
+#include <utility>     // std::swap
 
 #include "chunk/internal/array_chunk_base.h"    // ArrayChunkBase, the class these bodies belong to
 #include "chunk/internal/all_type_chunk_decl.h" // AllTypeChunk::ensure_manager, from create (bodies: all_type_chunk.h)
