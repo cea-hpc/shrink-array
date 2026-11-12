@@ -211,11 +211,15 @@ double ns_per(std::chrono::steady_clock::time_point t0, long long n)
 
 int bench(int nt)
 {
-    constexpr int reps    = 20000;
-    constexpr int n_teams = 2000;
-    double        bar_ns  = 0;
-    double        sgl_ns  = 0;
-    int           size    = 0;
+    constexpr int reps           = 20000;
+    constexpr int n_teams        = 2000;
+    constexpr int dyn_reps       = 5000;
+    double        bar_ns         = 0;
+    double        sgl_ns         = 0;
+    double        dyn_wait_ns    = 0;
+    double        dyn_nowait_ns  = 0;
+    double        dyn_rebuild_ns = 0;
+    int           size           = 0;
     pmp::team(pmp::Options{.num_threads = nt},
               [&](pmp::Team& team)
               {
@@ -238,6 +242,33 @@ int bench(int nt)
                           sgl_ns = ns_per(t0, reps);
                           size   = team.size();
                       });
+                  // A dynamic loop's entry and exit: an empty body, one
+                  // iteration per thread, with its barrier...
+                  const int n = team.size();
+                  team.barrier();
+                  t0 = std::chrono::steady_clock::now();
+                  for (int r = 0; r < dyn_reps; ++r)
+                  {
+                      team.for_dynamic(0, n, 1, [](int) {});
+                  }
+                  team.masked([&] { dyn_wait_ns = ns_per(t0, dyn_reps); });
+                  // ... without it, many in a row (every thread at the mutex at once) ...
+                  team.barrier();
+                  t0 = std::chrono::steady_clock::now();
+                  for (int r = 0; r < dyn_reps; ++r)
+                  {
+                      team.for_dynamic(0, n, 1, [](int) {}, pmp::nowait);
+                  }
+                  team.barrier();
+                  team.masked([&] { dyn_nowait_ns = ns_per(t0, dyn_reps); });
+                  // ... and the rebuild loop's shape: 16 x size iterations, chunk 16.
+                  team.barrier();
+                  t0 = std::chrono::steady_clock::now();
+                  for (int r = 0; r < dyn_reps; ++r)
+                  {
+                      team.for_dynamic(0, 16 * n, 16, [](int) {});
+                  }
+                  team.masked([&] { dyn_rebuild_ns = ns_per(t0, dyn_reps); });
               });
     const auto t0 = std::chrono::steady_clock::now();
     for (int k = 0; k < n_teams; ++k)
@@ -247,6 +278,9 @@ int bench(int nt)
     const double team_ns = ns_per(t0, n_teams);
     std::printf("[team-sync] %d threads: barrier %.2f us | single (wait) %.2f us | team open+close %.2f us\n", size,
                 bar_ns * 1e-3, sgl_ns * 1e-3, team_ns * 1e-3);
+    std::printf("[team-sync] %d threads: dynamic (wait) %.2f us | dynamic (nowait) %.2f us | "
+                "dynamic 16 x size, chunk 16 %.2f us\n",
+                size, dyn_wait_ns * 1e-3, dyn_nowait_ns * 1e-3, dyn_rebuild_ns * 1e-3);
     return 0;
 }
 
