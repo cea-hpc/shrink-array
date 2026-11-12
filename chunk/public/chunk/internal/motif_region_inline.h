@@ -200,7 +200,7 @@ T* pattern::MotifRegion<T>::take_slot(std::size_t count)
     {
         const std::uint32_t id = cls.free_ids.back();
         cls.free_ids.pop_back();
-        return const_cast<T*>(entry_by_id()[id]);
+        return const_cast<T*>(entry_by_id()[id]); // NOSONAR(cpp:S859)
     }
     const std::size_t bytes = (count * sizeof(T) + entry_align - 1) / entry_align * entry_align;
     if (bytes > segment_bytes)

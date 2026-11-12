@@ -59,7 +59,7 @@ void DirtyBitsetSupport<Derived, true>::clear_all_dirty_bitsets()
             {
                 // The registry hands out const keys; clearing the bitset is
                 // the quiescent point's own write.
-                const_cast<Derived*>(key)->clear_dirty_bitset();
+                const_cast<Derived*>(key)->clear_dirty_bitset(); // NOSONAR(cpp:S859)
             }
         });
 }

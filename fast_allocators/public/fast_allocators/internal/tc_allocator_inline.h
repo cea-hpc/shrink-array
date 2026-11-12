@@ -530,7 +530,7 @@ Slab* TCSlabPool<Derived, ElemT, Slab>::new_slab()
 {
     auto* slab       = new Slab;
     slab->arena_kind = arena_kind_; // route slab to its op/ctx/value arena
-    slab->owner      = self();
+    slab->owner      = static_cast<Derived*>(this);
     slab->owner_rank = rank_;
     slab->owner_key  = key_;
     slab->init(static_cast<int>(element_size_), block_allocator_);

@@ -836,7 +836,7 @@ void ProxyBase<Derived, T, ChunkT>::enqueue_deferred_write(CtxType* ctx, LambdaB
 {
     // This const guards the proxy, not the array: enqueueing marks the array's
     // dirty bitset now, the write itself replays at the phase end.
-    auto* arr = const_cast<ArrayChunkForT<ChunkT>*>(ptr_on_array_);
+    auto* arr = const_cast<ArrayChunkForT<ChunkT>*>(ptr_on_array_); // NOSONAR(cpp:S859)
     arr->mark_chunk_dirty(ctx->num_chunk);
     increm_chunk_gate_deferred<ChunkT>();
 

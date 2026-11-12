@@ -389,8 +389,9 @@ class alignas(64) TCSlab
     ///        once at creation by that instance, never changed while the slab
     ///        exists (a slab moving to another instance would rewrite it).
     ///        Answers "does this element belong to me?" in O(1); do not replace
-    ///        it by a list walk (quadratic over the reuse-pool drain).
-    const void* owner = nullptr;
+    ///        it by a list walk (quadratic over the reuse-pool drain). Not
+    ///        const: the freeing paths call that instance (free_elt_pow2()).
+    void* owner = nullptr;
     /// @brief Rank (thread) of #owner, or -1 when the owner has no rank. Lets a
     ///        freeing thread decide "mine, free it" vs "foreign, park it"
     ///        without knowing which allocator set the block came from.

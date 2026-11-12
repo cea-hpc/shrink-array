@@ -97,7 +97,7 @@ void pattern::Chunk<T>::block_clear_motif(CstSlot*          ptr_type_cst,
     add_chunk_bytes_freed<Chunk>(static_cast<long>(sizeof(T)) * static_cast<long>(shrink_array::alloc_chunk_count()));
     if constexpr (build_config::threaded)
     {
-        T* const old = this->try_mark_cst_and_get_old(1, const_cast<T*>(motif));
+        T* const old = this->try_mark_cst_and_get_old(1, const_cast<T*>(motif)); // NOSONAR(cpp:S859)
         if (old == nullptr) [[unlikely]]
         {
             CHUNK_INVARIANT_FAILED("block_clear_motif: the CAS from the buffer to the motif failed on a claimed "
@@ -109,7 +109,7 @@ void pattern::Chunk<T>::block_clear_motif(CstSlot*          ptr_type_cst,
     else
     {
         T* const old  = this->values_;
-        this->values_ = const_cast<T*>(motif);
+        this->values_ = const_cast<T*>(motif); // NOSONAR(cpp:S859)
         this->free_values(old);
     }
 }

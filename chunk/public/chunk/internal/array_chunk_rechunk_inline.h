@@ -365,7 +365,7 @@ void RechunkSupport<Derived, true>::rechunk_all_to(unsigned int new_size)
                 // element type may differ in index type: reach each one's
                 // own rechunk_to() through the core (the registry hands out
                 // const keys; a re-chunk rebuilds the array).
-                const_cast<ArrayChunkCore<ChunkType>*>(key)->rechunk_erased(new_size);
+                const_cast<ArrayChunkCore<ChunkType>*>(key)->rechunk_erased(new_size); // NOSONAR(cpp:S859)
             }
         });
 }
