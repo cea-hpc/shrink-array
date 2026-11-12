@@ -196,32 +196,32 @@ namespace shrink_array::chunk_config
 // (chunk_config::chunk_dynamic, chunk_config::has_ompt, ...), one declaration
 // each rather than a using-directive -- a name added to build_config is not
 // part of chunk_config until it is listed here.
-using build_config::use_mm_protect;
-using build_config::chunk_dynamic;
-using build_config::alloc_affinity_min_bytes;
-using build_config::use_openmp;
-using build_config::not_use_openmp;
-using build_config::threaded;
-using build_config::not_threaded;
-using build_config::deferred_drain_threshold;
-using build_config::force_defer_every;
-using build_config::use_fast_alloc;
-using build_config::use_std_alloc;
-using build_config::is_debug;
-using build_config::check_optim;
-using build_config::any_check;
-using build_config::strict_element_ref;
-using build_config::has_ompt;
-using build_config::has_not_ompt;
-using build_config::do_check;
-using build_config::deferred_pool_granularity;
-using build_config::verbose;
-using build_config::pool_no_reuse;
 using build_config::align_check;
-using build_config::rechunk_ledger_trace;
-using build_config::free_guard;
-using build_config::second_value_indexed;
+using build_config::alloc_affinity_min_bytes;
+using build_config::any_check;
+using build_config::check_optim;
+using build_config::chunk_dynamic;
+using build_config::deferred_drain_threshold;
+using build_config::deferred_pool_granularity;
 using build_config::dirty_word_align;
+using build_config::do_check;
+using build_config::force_defer_every;
+using build_config::free_guard;
+using build_config::has_not_ompt;
+using build_config::has_ompt;
+using build_config::is_debug;
+using build_config::not_threaded;
+using build_config::not_use_openmp;
+using build_config::pool_no_reuse;
+using build_config::rechunk_ledger_trace;
+using build_config::second_value_indexed;
+using build_config::strict_element_ref;
+using build_config::threaded;
+using build_config::use_fast_alloc;
+using build_config::use_mm_protect;
+using build_config::use_openmp;
+using build_config::use_std_alloc;
+using build_config::verbose;
 
 // --- Array Type Selection ---
 // Per library, from its CMake target (PUBLIC definitions): what a program

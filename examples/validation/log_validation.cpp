@@ -190,7 +190,8 @@ void capture(const logging::Record& record, void* /*user*/) noexcept
     // rather than escaping into std::terminate.
     try
     {
-        g_captured.push_back(Captured{record.level, record.channel, std::string{record.message}, record.location.line()});
+        g_captured.push_back(
+            Captured{record.level, record.channel, std::string{record.message}, record.location.line()});
     }
     catch (...)
     {

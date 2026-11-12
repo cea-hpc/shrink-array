@@ -263,7 +263,8 @@ set(_rt_harnesses       compress_roundtrip pool_accounting open_types_validation
                         nested_region_validation concurrent_teams_validation iterator_validation
                         stale_proxy_validation
                         region_storage_validation compound_ops_validation bulk_write_team_validation
-                        shrink_to_fit_validation chunk_exchange_validation signed_zero_validation)
+                        shrink_to_fit_validation chunk_exchange_validation signed_zero_validation
+                        no_init_release_validation)
 set(_rt_dyn_harnesses   pool_accounting open_types_validation index64_validation stale_proxy_validation)
 
 # Compile definitions of a variant at a geometry.
