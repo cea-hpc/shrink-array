@@ -38,6 +38,7 @@
 #include "chunk/internal/parallel_storage_init.h"       // for_each_chunk
 #include "chunk/internal/cold_path_lock.h"              // ColdPathLock: construction, teardown, resize
 #include "chunk/internal/in_t.h"                        // InT<T>
+#include "chunk/internal/teardown_probe.h"              // teardown_probe (rechunk=debug: the tmp teardown split)
 #include "chunk/internal/same_value.h"                  // same_value
 
 namespace shrink_array
@@ -178,7 +179,12 @@ void zero::Array<T, IntType>::clear_core()
     // Inside a region, a work array of this thread's: this rank's structures only.
     const int  num_tab  = zero::Proxy<T>::share_info_array->get_num_tab(this->registry_key());
     const bool own_rank = this->teardown_on_own_rank(num_tab);
+    // rechunk=debug, tmp teardown only (armed by rechunk_to): the split's marks
+    // (teardown_probe.h; the same steps as zero_any::ArrayImpl::clear_core()).
+    auto& probe = internal::teardown_probe();
+    probe.mark(internal::TeardownStep::entry);
     this->flush_pending_deferred_ops(/*force=*/true, own_rank);
+    probe.mark(internal::TeardownStep::flush);
 
     // Remove this array's queued candidates before its chunks are freed: they
     // would dangle for the next make_block_compression, and rechunk_to relies on
@@ -187,6 +193,7 @@ void zero::Array<T, IntType>::clear_core()
     {
         Manager::remove_from_zero_candidates_by_num_tab(num_tab, own_rank);
     }
+    probe.mark(internal::TeardownStep::candidates);
 
     if (!nb_chunk_)
     {
@@ -207,6 +214,7 @@ void zero::Array<T, IntType>::clear_core()
     // (several times too large, a large throughput loss).
     Manager::compute_size_buffer_reuse();
     Manager::compute_size_max_number_of_chunk_to_check_compress();
+    probe.mark(internal::TeardownStep::terminal);
 
     if constexpr (build_config::threaded)
     {
@@ -287,10 +295,12 @@ void zero::Array<T, IntType>::clear_core()
         }
     }
     m_size_ = 0;
+    probe.mark(internal::TeardownStep::park);
 
     this->release_chunk_list(); // Mandatory with the new allocator
 
     nb_chunk_ = 0;
+    probe.mark(internal::TeardownStep::tables);
 
     // An array with its own slab affinity gives its memory back NOW: its parked
     // buffers go home to its allocator set, whose slabs then empty (and
@@ -300,11 +310,13 @@ void zero::Array<T, IntType>::clear_core()
     {
         TypeState<zero::Chunk, T>::drain_reuse_list_for_size(this->size_policy_.size());
     }
+    probe.mark(internal::TeardownStep::key_drain);
 
     // The candidate flags (one byte per chunk): released now that the purge
     // at the top has run and the chunks are gone -- a re-chunk's old storage
     // dies under its own num_tab, which nothing reuses.
     zero::Proxy<T>::release_tab_is_int(this->num_tab_);
+    probe.mark(internal::TeardownStep::tables);
 }
 
 template <ArrayChunkElement T, typename IntType>
@@ -521,6 +533,17 @@ zero::Array<T, IntType>::~Array()
     // first-match lookup (required for rechunk_to's tmp). Must run AFTER
     // clear(), which still needs get_num_tab(registry_key()).
     Proxy<T>::share_info_array->erase(this->registry_key());
+    // rechunk=debug, tmp teardown only (armed by rechunk_to): free chunk_list_'s
+    // buffer here rather than with the member, so that the split can time it
+    // (as zero_any::ArrayImpl::destroy_storage()). The same release, a few
+    // instructions earlier.
+    auto& probe = internal::teardown_probe();
+    if (probe.on)
+    {
+        probe.mark(internal::TeardownStep::erase);
+        typename Base::ChunkListType().swap(chunk_list_);
+        probe.mark(internal::TeardownStep::list_unmap);
+    }
 }
 
 template <ArrayChunkElement T, typename IntType>

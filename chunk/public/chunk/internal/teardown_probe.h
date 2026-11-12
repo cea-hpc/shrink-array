@@ -32,7 +32,8 @@
 
 namespace shrink_array::internal
 {
-/// @brief The steps of a teardown, in the order they run (zero_any::ArrayImpl).
+/// @brief The steps of a teardown, in the order they run (zero_any::ArrayImpl;
+///        zero::Array and zero_one_value::Array mark the steps they have).
 enum class TeardownStep : std::size_t
 {
     entry,      ///< from the swap to clear_core(): invalidate_proxies, the check-build scan
