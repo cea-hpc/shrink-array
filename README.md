@@ -363,6 +363,11 @@ FetchContent_MakeAvailable(shrink_array)
 target_link_libraries(my_app PRIVATE chunk::chunk_zero_any)
 ```
 
+With CMake 3.28 or later, add `EXCLUDE_FROM_ALL` to `FetchContent_Declare`: only the libraries
+you link are built, and your own `cmake --install` installs nothing of shrink-array.
+[`examples/fetch_content`](examples/fetch_content/CMakeLists.txt) is such a project, built by
+the CI.
+
 With Spack, the recipe is in the repository:
 
 ```shell
@@ -450,9 +455,11 @@ exists in French ([docs/README.md](docs/README.md)); the changes from one versio
 shrink-array is at version 0.2: before 1.0, a minor release may change the interface
 ([versioning policy](CHANGELOG.md)). Every push runs the source checks, the GCC 14 builds
 (OpenMP, serial and std threads with oneTBB), the validation harnesses, the std backend under
-ThreadSanitizer and the GenMC models, the OpenMP build on x86-64 and on AArch64
-([CI](.github/workflows/ci.yml)); every night, the AArch64 builds too slow for a push -- the std
-backend under ThreadSanitizer, the `_dyn` build
+ThreadSanitizer and the GenMC models, the OpenMP build on x86-64 and on AArch64, a project that
+consumes the library with `FetchContent` ([CI](.github/workflows/ci.yml)); every night, the
+AArch64 builds too slow for a push -- the std backend under ThreadSanitizer, the `_dyn` build --
+and, on x86-64, AddressSanitizer, UndefinedBehaviorSanitizer, Clang 23, the oldest compilers
+supported (GCC 13, Clang 18) and the Spack recipe installed from the checkout
 ([nightly](.github/workflows/nightly.yml)).
 
 Trying it on your own data is the most useful feedback: if it saves memory in your code -- or

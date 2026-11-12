@@ -90,8 +90,8 @@ option(CHUNK_MM_PROTECT "Read-only (mprotect) constant buffers: a stray write to
 option(CHUNK_STATS "Collect compression statistics (ParamChunk::chunk_stats())" OFF)
 
 # ── Sanitizer option ──────────────────────────────────────────────────────────
-set(SANITIZER "none" CACHE STRING "Sanitizer to enable: none, thread, address, token")
-set_property(CACHE SANITIZER PROPERTY STRINGS none thread address token)
+set(SANITIZER "none" CACHE STRING "Sanitizer to enable: none, thread, address, undefined, token")
+set_property(CACHE SANITIZER PROPERTY STRINGS none thread address undefined token)
 
 message(STATUS "Sanitizer: ${SANITIZER}")
 
@@ -262,6 +262,13 @@ elseif(SANITIZER STREQUAL "address")
     message(STATUS "Address Sanitizer enabled")
     set(SANITIZER_FLAGS "-fsanitize=address")
 
+elseif(SANITIZER STREQUAL "undefined")
+    # UndefinedBehaviorSanitizer: signed overflow, shifts, misaligned and null
+    # accesses, out-of-range conversions... The first report stops the program
+    # (-fno-sanitize-recover): a test that prints one and goes on would pass.
+    message(STATUS "Undefined Behavior Sanitizer enabled")
+    set(SANITIZER_FLAGS "-fsanitize=undefined -fno-sanitize-recover=undefined")
+
 elseif(SANITIZER STREQUAL "token")
     # AllocToken (Clang >= 22): every malloc / calloc / realloc / operator new
     # is rewritten into __alloc_token_<name>(..., token), the token being a
@@ -276,7 +283,7 @@ elseif(SANITIZER STREQUAL "token")
     set(SANITIZER_FLAGS "-fsanitize=alloc-token")
 
 elseif(NOT SANITIZER STREQUAL "none")
-    message(FATAL_ERROR "Unknown sanitizer '${SANITIZER}'. Valid values: none, thread, address, token")
+    message(FATAL_ERROR "Unknown sanitizer '${SANITIZER}'. Valid values: none, thread, address, undefined, token")
 endif()
 
 # Apply the sanitizer flags for EVERY build type.

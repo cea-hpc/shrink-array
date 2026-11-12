@@ -36,7 +36,7 @@
 | `CHUNK_SECOND_VALUE_INDEXED` | `OFF` | `zero_any`: the second-value slot holds a 4-byte identifier instead of the value (less memory, +3% write time) |
 | `CHUNK_STATS` | `OFF` | instrumentation counters and the `ParamChunk::chunk_stats()` report |
 | `CHECK_OPTIM` | `OFF` | invariant checks in an optimised build |
-| `SANITIZER` | `none` | `thread`, `address` or `token` (AllocToken, Clang ≥ 22), for all build types |
+| `SANITIZER` | `none` | `thread`, `address`, `undefined` (UBSan, the first report stops the program) or `token` (AllocToken, Clang ≥ 22), for all build types |
 
 ## 3. Variant and geometry
 

@@ -374,6 +374,11 @@ FetchContent_MakeAvailable(shrink_array)
 target_link_libraries(my_app PRIVATE chunk::chunk_zero_any)
 ```
 
+Avec CMake 3.28 ou plus récent, ajoutez `EXCLUDE_FROM_ALL` à `FetchContent_Declare` : seules les
+bibliothèques que vous liez sont compilées, et votre propre `cmake --install` n'installe rien de
+shrink-array. [`examples/fetch_content`](examples/fetch_content/CMakeLists.txt) est un tel projet,
+compilé par la CI.
+
 Avec Spack, la recette est dans le dépôt :
 
 ```shell
@@ -465,9 +470,11 @@ changé d'une version à l'autre : [CHANGELOG.md](CHANGELOG.md) (en anglais).
 shrink-array en est à la version 0.2 : avant la 1.0, une version mineure peut changer
 l'interface ([politique de versions](CHANGELOG.md)). Chaque push lance les vérifications des
 sources, les builds GCC 14 (OpenMP, série et threads std avec oneTBB), les tests de validation, le backend std
-sous ThreadSanitizer et les modèles GenMC, le build OpenMP sur x86-64 et sur AArch64
-([CI](.github/workflows/ci.yml)) ; chaque nuit, les builds AArch64 trop longs pour un push -- le
-backend std sous ThreadSanitizer, le build `_dyn`
+sous ThreadSanitizer et les modèles GenMC, le build OpenMP sur x86-64 et sur AArch64, un projet qui
+consomme la bibliothèque par `FetchContent` ([CI](.github/workflows/ci.yml)) ; chaque nuit, les
+builds AArch64 trop longs pour un push -- le backend std sous ThreadSanitizer, le build `_dyn` --
+et, sur x86-64, AddressSanitizer, UndefinedBehaviorSanitizer, Clang 23, les plus anciens
+compilateurs pris en charge (GCC 13, Clang 18) et la recette Spack installée depuis le dépôt
 ([nightly](.github/workflows/nightly.yml)).
 
 Le retour le plus utile est un essai sur vos données : si la bibliothèque économise de

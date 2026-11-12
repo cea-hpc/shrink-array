@@ -37,7 +37,7 @@
 | `CHUNK_SECOND_VALUE_INDEXED` | `OFF` | `zero_any` : l'emplacement de seconde valeur contient un identifiant de 4 octets au lieu de la valeur (moins de mémoire, +3 % de temps d'écriture) |
 | `CHUNK_STATS` | `OFF` | compteurs d'instrumentation et rapport `ParamChunk::chunk_stats()` |
 | `CHECK_OPTIM` | `OFF` | vérifications d'invariants en build optimisé |
-| `SANITIZER` | `none` | `thread`, `address` ou `token` (AllocToken, Clang ≥ 22), pour tous les types de build |
+| `SANITIZER` | `none` | `thread`, `address`, `undefined` (UBSan, le premier rapport arrête le programme) ou `token` (AllocToken, Clang ≥ 22), pour tous les types de build |
 
 ## 3. Variante et géométrie
 
