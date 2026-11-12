@@ -56,6 +56,14 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- CI (P3 of the audit): four gaps closed. Per push, `fetch-content`: `examples/fetch_content`
+  (new) consumes the checkout with `FetchContent`, and the job checks that the consumer keeps
+  its build type, flags, `doc` target and tests, and installs nothing of the library. Nightly:
+  `oldest-compilers` (GCC 13 and Clang 18, the minimum the README and the recipe state, never
+  built by the CI), `x86-openmp-ubsan` (`SANITIZER=undefined`, new: UBSan, the first report
+  stops the program; 256 and `_dyn`), and `spack` (the recipe installed from the checkout for
+  `target=x86_64_v3`, no target flag from the project, no AVX-512 instruction in the
+  libraries, `getting_started` built against the install).
 - `CHUNK_PHASE_FENCES=0` runs without the four `seq_cst` fences that close the phase functions
   (`chunk/private/all_type_chunk.cpp`), with a warning. They were kept as "empirically
   load-bearing" since one unexplained checksum in August 2026; no handshake needs them as far
@@ -185,11 +193,19 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- OpenMP without OMPT (libgomp): a thread whose rank cache was left over from another team --
+  `begin_parallel_phase()` forgotten, then a team that changed -- used another thread's per-rank
+  structures (deferred queue, candidate list, flush lock), which that thread uses without a
+  lock: hangs, crashes and aborts in about half the runs of `phase_protocol_validation`'s new
+  "stale rank cache, no begin" case. Nothing clears the cache there (no implicit-task callback),
+  so the builds without checks now re-read the rank on every use (`get_thr_rank_fast()`: one
+  `omp_get_level()` and one `omp_get_thread_num()`; 2 to 5 % of `shrink_bench`'s computation
+  time at 8 threads); check builds keep stopping on the stale cache. 45 runs out of 45 pass.
 - Packaging (P1 and P4 of the audit). **Spack**: the package was built for the build host
   whatever `target=` said -- the project's `-march=native` (`-mcpu=native`, `-tp=host`) came
   after the wrapper's flag and won; `CHUNK_NATIVE_TUNING=OFF` (new, default ON) adds no target
   flag and the recipe sets it. The recipe also declares what it used without saying: the C
-  compiler (`formal/`), `bzip2` for `+examples`, Python for the tests. **`NDEBUG`**: the
+  compiler (`formal/`), `bzip2` for `+examples`, Python for the tests. **`-DNDEBUG`**: the
   project's own Release and RelWithDebInfo flags dropped CMake's `-DNDEBUG`, so a release
   library carried its `assert()`s; they are compiled out again, except in the builds that are
   there to check (`CHECK_OPTIM`, sanitizers, Debug). The reverse for `formal/`: its native models

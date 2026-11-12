@@ -39,8 +39,8 @@
 //     no writer handshake and no reader grace period);
 //   - a forgotten begin with a stale rank cache (every thread handed another
 //     thread's rank, as a team that changed would leave it): release builds
-//     re-read the rank on the slow paths -- the deferred enqueue, the candidate
-//     push -- and read back right; check builds stop on the stale cache.
+//     re-read the rank on every use (get_thr_rank_fast) and read back right;
+//     check builds stop on the stale cache.
 //
 // OpenMP without OMPT only (the protocol is manual there); 77 = skipped.
 // ============================================================================

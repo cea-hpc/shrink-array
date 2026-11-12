@@ -226,7 +226,9 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
      clears on entering a team and restores on leaving it -- what OMPT's
      implicit-task callback does for `g_fast_omp_rank` -- and
      `release_registered_rank()` clears. `get_thr_rank_fast()` and
-     `begin_parallel_phase()` go through it.
+     `begin_parallel_phase()` go through it. OpenMP without OMPT, nothing clears
+     `g_fast_omp_rank`: a check build stops on a stale value, the others re-read
+     the rank on every `get_thr_rank_fast()`.
    - **Application phase** (`std_backend::Settings::application_phase`): opened by
      `begin_parallel_phase()` from a thread in no team of the std backend
      (`pmp::enter_application_phase()`), closed first thing by
