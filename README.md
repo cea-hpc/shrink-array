@@ -468,6 +468,12 @@ size and what the array holds. Bug reports and pull requests follow
 [CONTRIBUTING.md](CONTRIBUTING.md). If the library is useful to you, a star on the repository
 helps others find it.
 
+## Citing
+
+If shrink-array is part of work you publish, cite the repository and the release you used:
+[CITATION.cff](CITATION.cff) has the reference, which GitHub shows under "Cite this
+repository".
+
 ## License
 
 Apache License 2.0, see [LICENSE](LICENSE). Copyright CEA.

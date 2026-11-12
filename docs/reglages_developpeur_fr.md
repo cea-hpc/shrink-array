@@ -182,7 +182,7 @@ Les options de [variables_environnement_fr.md](variables_environnement_fr.md) §
 | `CHUNK_HEAVY_JOB_POOL` | vide | pool de jobs Ninja pour les exécutables compilés en une unité (limite la mémoire de compilation) |
 | `CHUNK_X86_MARCH` | `native` | GCC, Clang sur x86-64 : `-march=` des builds optimisés ; un niveau fixe donne un binaire indépendant de la machine (`x86-64-v3` dans le job ASan du nightly, `native` y plante sur Zen 5) |
 | `CHUNK_NATIVE_TUNING` | ON | OFF : aucune option de cible venant du projet (`-march=`/`-mcpu=native`, `-tp=host`, `-xHost`) : la cible est celle de l'appelant. La recette Spack le met à OFF, pour que le `target=` de la spec soit celui compilé ; l'option du projet passait après celle du wrapper et l'emportait |
-| `USE_LIBCXX` | `ON` | builds Clang : libc++ au lieu de la libstdc++ |
+| `USE_LIBCXX` | `OFF` | builds Clang : `ON` pour libc++ (`-stdlib=libc++`) au lieu de la bibliothèque standard par défaut du compilateur, libstdc++ sous Linux |
 | `GCC_TOOLCHAIN_DIR` | selon la machine | builds Clang : l'installation de GCC dont clang prend la libstdc++ et le runtime (`--gcc-toolchain=`) ; vide : le choix du driver. Un chemin qui n'existe pas est ignoré, avec un avertissement |
 | `USE_MOLD` | `AUTO` | lier avec mold : `AUTO` (s'il est trouvé et que le build le supporte), `ON` (une erreur sinon), `OFF` |
 | `CHUNK_VEC_REPORT` | `OFF` | cibles fast-math des exemples : le compilateur signale les boucles qu'il n'a pas vectorisées |

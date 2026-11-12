@@ -115,6 +115,15 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- `USE_LIBCXX` is `OFF` by default: a Clang build uses the standard library the compiler picks
+  by itself (libstdc++ on Linux), `-DUSE_LIBCXX=ON` asks for libc++. The default was `ON`, and
+  the first configure failed on a Clang installed without libc++; the build scripts, the CI
+  jobs and the Spack recipe all passed `OFF` already.
+- `CITATION.cff` at the root (GitHub's "Cite this repository"), and a "Citing" section in the
+  READMEs.
+- Spack recipe: `maintainers`, and the form the builtin repository's style check accepts (lines
+  of 99 columns at most, the test of the `sizes` values as a function), so that the file can be
+  submitted there unchanged.
 - std backend: `Team::barrier()` spins for `CHUNK_PMP_SPIN_US` (default 1000 us) before sleeping,
   as OpenMP's blocktime does, instead of a `std::barrier` that slept on a futex almost at once;
   `single()` is lock-free (one CAS on a team-wide mark, no mutex, no map slot per construct); the

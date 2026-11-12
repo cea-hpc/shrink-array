@@ -179,7 +179,7 @@ The options of [environment_variables.md](environment_variables.md) §2 are not 
 | `CHUNK_HEAVY_JOB_POOL` | empty | Ninja job pool for the executables compiled as a single unit (limits compilation memory) |
 | `CHUNK_X86_MARCH` | `native` | GCC, Clang on x86-64: `-march=` of the optimised builds; a fixed level gives a binary independent of the machine (`x86-64-v3` in the nightly's ASan job, `native` faults there on Zen 5) |
 | `CHUNK_NATIVE_TUNING` | ON | OFF: no target flag from the project at all (`-march=`/`-mcpu=native`, `-tp=host`, `-xHost`): the target is the caller's. The Spack recipe sets it OFF, so that the spec's `target=` is the one compiled for; the project's flag came after the wrapper's and won |
-| `USE_LIBCXX` | `ON` | Clang builds: libc++ instead of libstdc++ |
+| `USE_LIBCXX` | `OFF` | Clang builds: `ON` for libc++ (`-stdlib=libc++`) instead of the compiler's default standard library, libstdc++ on Linux |
 | `GCC_TOOLCHAIN_DIR` | depends on the machine | Clang builds: the GCC installation whose libstdc++ and runtime clang uses (`--gcc-toolchain=`); empty: the driver's own choice. A path that does not exist is ignored, with a warning |
 | `USE_MOLD` | `AUTO` | link with mold: `AUTO` (when it is found and the build supports it), `ON` (an error otherwise), `OFF` |
 | `CHUNK_VEC_REPORT` | `OFF` | fast-math targets of the examples: the compiler reports the loops it did not vectorise |

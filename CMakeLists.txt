@@ -222,7 +222,10 @@ endif()
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 
-    option(USE_LIBCXX "Use Clang libc++ instead of libstdc++" ON)
+    # OFF: the standard library is the one the compiler picks by itself
+    # (libstdc++ on Linux). ON asked for a libc++ most installations of Clang
+    # do not come with, and the first configure of a newcomer failed on it.
+    option(USE_LIBCXX "Use Clang libc++ instead of libstdc++" OFF)
 
     if(USE_LIBCXX)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")

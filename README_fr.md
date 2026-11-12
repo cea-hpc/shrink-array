@@ -484,6 +484,12 @@ taille et ce que contient le tableau. Les rapports de bugs et les pull requests 
 [docs/contributing_fr.md](docs/contributing_fr.md). Si la bibliothèque vous sert, une étoile sur
 le dépôt aide d'autres personnes à la trouver.
 
+## Citer
+
+Si shrink-array entre dans un travail que vous publiez, citez le dépôt et la version utilisée :
+[CITATION.cff](CITATION.cff) donne la référence, que GitHub affiche sous « Cite this
+repository ».
+
 ## Licence
 
 Apache License 2.0, voir [LICENSE](LICENSE). Copyright CEA.
