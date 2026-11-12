@@ -383,7 +383,7 @@ def act_options(a):
         runpy.run_path(path, run_name="__main__")
     except Done:
         return
-    except SystemExit:  # NOSONAR(python:S5754): the user's script exited before parsing; nothing to dump
+    except SystemExit:  # the user's script exited before parsing: nothing to dump
         pass
     except BaseException as e:
         import traceback
@@ -460,7 +460,7 @@ def act_validate(a):
         return answer(skipped="%s n'a pas appelé parse_args" % a[1])
     except Done:
         return answer(ok=True)
-    except SystemExit as e:  # NOSONAR(python:S5754): the script's exit is the answer, sent back as JSON
+    except SystemExit as e:  # the script's exit is the answer, sent back as JSON
         if e.code in (0, None):
             return answer(ok=True)
         return answer(refused=refusal(e))
