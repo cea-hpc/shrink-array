@@ -48,6 +48,9 @@ set(ALLOCATORS_INTERNAL_HEADERS
   public/fast_allocators/internal/static_const_array_inline.h
   public/fast_allocators/internal/svalloc.h
   public/fast_allocators/internal/tc_allocator_inline.h
+  public/fast_allocators/internal/pmp_loops_inline.h
+  public/fast_allocators/internal/pmp_std_inline.h
+  public/fast_allocators/internal/slab_arena_inline.h
 )
 
 target_sources(fast_allocators PRIVATE
