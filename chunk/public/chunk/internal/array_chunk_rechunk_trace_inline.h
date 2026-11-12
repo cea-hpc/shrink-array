@@ -123,9 +123,11 @@ inline void RechunkPhaseTrace::log(unsigned int old_size, unsigned int new_size)
                       st.setup_max_ms, st.barrier_ms, st.boundary_ms, st.join_ms);
             CHUNK_LOG(debug, rechunk,
                       "{} -> {} drain split (ms): sort max {:.1f} | sort avg {:.1f} | free max {:.1f} | "
-                      "free avg {:.1f} | blocks max {:.0f} | blocks avg {:.0f}",
+                      "free avg {:.1f} | blocks max {:.0f} | blocks avg {:.0f} | collect detach {:.1f} | "
+                      "collect slabs {:.0f}",
                       old_size, new_size, st.drain_sort_max_ms, st.drain_sort_avg_ms, st.drain_free_max_ms,
-                      st.drain_free_avg_ms, st.drain_blocks_max, st.drain_blocks_avg);
+                      st.drain_free_avg_ms, st.drain_blocks_max, st.drain_blocks_avg, st.collect_detach_ms,
+                      st.collect_slabs);
         }
     }
     if (memory_)
