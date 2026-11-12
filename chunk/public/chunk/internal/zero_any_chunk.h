@@ -459,14 +459,16 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>, public TabCstVal2Holder<
     ~ChunkImpl() = default;
 
     /// @brief Copy the per-chunk state of @p other (Base::values_store(other.values_load())).
-    ChunkImpl(const ChunkImpl& other)
+    /// @details noexcept, and so is the assignment: no move is declared, a move
+    ///          copies, and the copy is two noexcept calls.
+    ChunkImpl(const ChunkImpl& other) noexcept
     {
         Base::values_store(other.values_load()); // the whole per-chunk state
     }
 
     /// @brief Copy the per-chunk state of @p other unless it is this chunk.
     /// @return *this.
-    ChunkImpl& operator=(const ChunkImpl& other)
+    ChunkImpl& operator=(const ChunkImpl& other) noexcept
     {
         if (this != &other)
         {

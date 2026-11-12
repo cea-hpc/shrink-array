@@ -1309,7 +1309,7 @@ void ProxyBase<Derived, T, ChunkT>::apply_inplace_operation(SyncOp sync_op, [[ma
             auto* ctx     = pool_new_ctx<CtxType>(derived(), ptr_on_array_);
 
             // Rebuild a fresh proxy at replay time.
-            auto write_body = [ctx, op = std::forward<AsyncOp>(async_op)]() mutable
+            auto write_body = [ctx, op = std::move(async_op)]() mutable // async_op: by value
             {
                 const auto proxy = ProxyBase::template make_proxy_with_info<ProxyType>(ctx);
 
