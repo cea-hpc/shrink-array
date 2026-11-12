@@ -193,6 +193,18 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `resize()` inside a parallel region compressed chunks of other arrays under their writers.
+  Its drain ran the compression pass, which takes no writer handshake there, on the calling
+  thread's WHOLE candidate list: right for the array being resized, which only that thread
+  writes, wrong for a shared array the thread had also written -- another thread could be
+  writing that chunk (ThreadSanitizer: 9 races on a probe; a lost or torn value in principle).
+  The copy constructor goes through the same drain. The pass now runs on the resized array's
+  candidates only, the others set aside for its duration (`internal/own_candidates.h`,
+  `drain_own_candidates()` in the three variants). For zero_one_value the same call also
+  sweeps, on the calling rank, that array's candidates queued under an earlier second value,
+  which the in-region drain left pointing into the reallocated chunk list.
+  `region_storage_validation`'s whole-team case now grows each thread's array with chunks of
+  the shared one in its list.
 - OpenMP without OMPT (libgomp): a thread whose rank cache was left over from another team --
   `begin_parallel_phase()` forgotten, then a team that changed -- used another thread's per-rank
   structures (deferred queue, candidate list, flush lock), which that thread uses without a

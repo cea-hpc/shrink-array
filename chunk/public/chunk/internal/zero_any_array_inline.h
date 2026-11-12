@@ -44,7 +44,8 @@
 #include "chunk/internal/singleton.h"                   // SingletonChk<AllTypeChunk>::get_ref
 #include "chunk/internal/type_name.h"                   // type_name<T>
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/read_reclaim.h"                // read_reclaim::PassScope (drain_candidates in a region)
+#include "chunk/internal/read_reclaim.h"                // read_reclaim::PassScope (drain_own_candidates)
+#include "chunk/internal/own_candidates.h"              // with_own_candidates_only (drain_own_candidates)
 #include "chunk/config.h"                               // build_config::chunk_dynamic, chunk_config::stats
 #include "chunk/internal/chunk_size_policy.h"           // set_thread_chunk_size
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
@@ -659,21 +660,29 @@ void zero_any::ArrayImpl<Derived>::make_block_compression()
 template <typename Derived>
 void zero_any::ArrayImpl<Derived>::drain_candidates()
 {
-    // No region opened here, no writer handshake (nullptr proxy). Outside a
-    // region every rank's list, drained serially by the caller. Inside one (an
-    // array resized by its owning thread) this thread's list only, as zero's
-    // and zero_one_value's drains, its released buffers held for one reader
-    // grace period (read_reclaim.h).
-    if (CHUNK_PMP_IN_PARALLEL_REGION)
-    {
-        const read_reclaim::PassScope pass_scope;
-        ChunkType::make_block_compression(CHUNK_PMP_THREAD_RANK, nullptr);
-        return;
-    }
+    // No region opened here, no writer handshake (nullptr proxy): a sequential
+    // point, every rank's list, drained serially by the caller. Inside a
+    // region, resize_common() calls drain_own_candidates() instead.
     for (int thr = 0; thr < CHUNK_PMP_RANK_BOUND; ++thr)
     {
         ChunkType::make_block_compression(thr, nullptr);
     }
+}
+
+template <typename Derived>
+void zero_any::ArrayImpl<Derived>::drain_own_candidates()
+{
+    // An array resized inside a region by its owning thread. No writer
+    // handshake either: nobody else writes THIS array. The thread's list also
+    // holds chunks of arrays other threads are writing: they sit the pass out.
+    // The buffers released wait for one reader grace period (read_reclaim.h).
+    const int rank = CHUNK_PMP_THREAD_RANK;
+    internal::with_own_candidates_only(Manager::get_zero_any_candidates(rank), num_tab_,
+                                       [rank]
+                                       {
+                                           const read_reclaim::PassScope pass_scope;
+                                           ChunkType::make_block_compression(rank, nullptr);
+                                       });
 }
 
 template <typename Derived>

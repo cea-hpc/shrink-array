@@ -41,7 +41,12 @@
  *          writes a shared array. Construction and destruction take the
  *          cold-path lock (internal/cold_path_lock.h); the element accesses
  *          take none. Before the lock, two constructors grew the per-array
- *          tables at once (heap corruption, a crash in most runs).
+ *          tables at once (heap corruption, a crash in most runs). Each thread
+ *          also grows its array there, with chunks of the shared one in its
+ *          candidate list: resize()'s pass, which takes no writer handshake,
+ *          runs on the resized array's candidates only
+ *          (internal/own_candidates.h) -- it used to run on the whole list,
+ *          under the other threads' writes.
  *
  *          Each case checks every element. A hang shows as the ctest timeout.
  */
@@ -170,9 +175,16 @@ double work_value(int rank, int round, int index)
 
 /// @brief One thread's work arrays, @p rounds times: one built, written twice
 ///        and read back, a second one built from it while the first is alive,
-///        both destroyed.
+///        the first one grown, both destroyed.
+/// @details Between its writes and its resize() the thread also writes its
+///          share of @p shared, as the others do (a static `omp for`, nowait:
+///          the same elements for a thread at every round, and nobody waits):
+///          its candidate list then holds chunks of an array other threads
+///          are writing, which the resize's pass must leave alone.
 /// @param rank a number of this thread's own, to tell its values from the others'
-long work_arrays(int count, int rank, int rounds)
+/// @note Called by every thread of the team, the same number of rounds: the
+///       loop on @p shared is a worksharing construct.
+long work_arrays(Arr& shared, int count, int rank, int rounds)
 {
     long bad = 0;
     for (int round = 0; round < rounds; ++round)
@@ -191,9 +203,20 @@ long work_arrays(int count, int rank, int rounds)
         {
             other[i] = static_cast<double>(std::as_const(mine)[i]);
         }
-        for (int i = 0; i < len; ++i)
+#pragma omp for schedule(static) nowait
+        for (int i = 0; i < count; ++i)
         {
-            bad += static_cast<double>(std::as_const(mine)[i]) != work_value(rank, round + 1, i);
+            shared[i] = work_value(0, round, i);
+        }
+        const int grown = len + 700;
+        mine.resize(grown);
+        for (int i = len; i < grown; ++i)
+        {
+            mine[i] = work_value(rank, round, i);
+        }
+        for (int i = 0; i < grown; ++i)
+        {
+            bad += static_cast<double>(std::as_const(mine)[i]) != work_value(rank, i < len ? round + 1 : round, i);
         }
         for (int i = 0; i < len / 2; ++i)
         {
@@ -270,7 +293,7 @@ int run(int /*argc*/, char** /*argv*/)
                 {
                     shared[i] = work_value(0, 0, i);
                 }
-                bad_each += work_arrays(count, rank, rounds);
+                bad_each += work_arrays(shared, count, rank, rounds);
 #pragma omp for schedule(static)
                 for (int i = 0; i < count; ++i)
                 {

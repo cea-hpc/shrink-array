@@ -305,8 +305,10 @@ there the writers' own passes compress.
 the other threads do the same and the team writes shared arrays. Construction and destruction
 take a lock of the library, one array at a time for the whole process; the element accesses
 take none. Such an array is its thread's: only that thread writes it, and the sequential
-points above are still sequential points for it. Its destruction costs one `membarrier()`,
-and skips the final compression pass that a destruction outside a region runs.
+points above are still sequential points for it -- but `resize()`, which its thread may call
+there: the pass it runs first covers that array's chunks only, not the shared arrays' the
+thread has also written. Its destruction costs one `membarrier()`, and skips the final
+compression pass that a destruction outside a region runs.
 
 **Threads.** The per-thread structures are sized once for `max(omp_get_max_threads(), number
 of cores, 256)` threads (in a std build, the team size -- `CHUNK_NUM_THREADS`, else

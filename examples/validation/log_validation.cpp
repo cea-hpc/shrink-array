@@ -186,7 +186,17 @@ std::vector<Captured> g_captured;
 
 void capture(const logging::Record& record, void* /*user*/) noexcept
 {
-    g_captured.push_back(Captured{record.level, record.channel, std::string{record.message}, record.location.line()});
+    // A Sink is noexcept: an allocation failure stops the test with a message
+    // rather than escaping into std::terminate.
+    try
+    {
+        g_captured.push_back(Captured{record.level, record.channel, std::string{record.message}, record.location.line()});
+    }
+    catch (...)
+    {
+        std::fputs("log_validation: capture: out of memory\n", stderr);
+        std::abort();
+    }
 }
 
 // Preallocated: what check 7's sink writes into, so the sink allocates nothing.

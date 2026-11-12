@@ -19,13 +19,15 @@
 // Out-of-line bodies of zero_one_value::FastBlockSupport. Included at the end of zero_one_value_array.h, so self() sees
 // a complete Derived.
 
-#include <tuple> // std::get on the candidate tuples (sweep of the other second-value keys)
+#include <algorithm> // std::min (sweep_leftover_candidates)
+#include <tuple>     // std::get on the candidate tuples (sweep of the other second-value keys)
 
 #include "chunk/internal/zero_one_value_array_parallel.h" // zero_one_value::FastBlockSupport, the class these bodies belong to
 #include "chunk/internal/array_chunk_parallel_common_inline.h" // flush_pending_deferred_ops
 #include "chunk/internal/PMP_CHUNK.h"                          // CHUNK_PMP_* (make_block_compression)
 #include "chunk/internal/chunk_size_policy.h"                  // set_thread_chunk_size in make_block_compression
-#include "chunk/internal/read_reclaim.h"                       // read_reclaim::PassScope (drain_candidates in a region)
+#include "chunk/internal/read_reclaim.h"                       // read_reclaim::PassScope (drain_own_candidates)
+#include "chunk/internal/own_candidates.h"                     // with_own_candidates_only (drain_own_candidates)
 #include "chunk/config.h"                                      // build_config::chunk_dynamic
 
 namespace shrink_array
@@ -65,60 +67,102 @@ void zero_one_value::FastBlockSupport<Derived, true>::drain_candidates()
 
     // Do not open a region here (an `omp parallel` form hits an LLVM OpenMP runtime bug):
     // outside a region every rank's list is drained serially, inside one each thread its own.
-    if (!CHUNK_PMP_IN_PARALLEL_REGION)
+    if (CHUNK_PMP_IN_PARALLEL_REGION)
     {
-        for (int thr = 0; thr < CHUNK_PMP_RANK_BOUND; ++thr)
-        {
-            pass_on_rank(thr);
-        }
+        drain_own_candidates();
+        return;
+    }
+    for (int thr = 0; thr < CHUNK_PMP_RANK_BOUND; ++thr)
+    {
+        pass_on_rank(thr);
+    }
+    sweep_leftover_candidates(/*own_rank_only=*/false);
+}
 
-        // The passes above drain this array's CURRENT second-value key only. Writes queued
-        // before a set_second_value() (or a copy-assignment) sit under an EARLIER key; left
-        // there, resize() reallocates chunk_list_ under them (dangling &chunk_list_[j]). Sweep
-        // every rank and key: compress this array's leftovers against the current value,
-        // clear their flags, drop them by num_tab (as rechunk_drop_candidates()).
-        // Sequential point: outside a region only.
-        if constexpr (Derived::is_not_bool)
-        {
-            using ProxyT   = Traits::ProxyType;
-            using ManagerT = Traits::ManagerType;
+template <typename Derived>
+void zero_one_value::FastBlockSupport<Derived, true>::drain_own_candidates()
+{
+    using ProxyT   = Traits::ProxyType;
+    using ManagerT = Traits::ManagerType;
 
-            const int  num_tab  = ProxyT::share_info_array->get_num_tab(self().registry_key());
-            const auto inf      = self().get_info_second_value();
-            const int  thr_self = get_thr_rank_fast();
-            bool       found    = false;
-            for (const auto& per_rank : ManagerT::zero_one_value_candidates_map_thr)
+    if constexpr (build_config::chunk_dynamic)
+    {
+        shrink_array::set_thread_chunk_size(self().chunk_size()); // as drain_candidates()
+    }
+
+    // An array resized inside a region by its owning thread (resize()). The pass takes no
+    // writer handshake: this array's candidates only, the thread's list for this second
+    // value holding chunks of arrays other threads are writing. Other threads may be
+    // reading, so the buffers released wait for a grace period (read_reclaim.h).
+    const int  rank     = CHUNK_PMP_THREAD_RANK;
+    const int  num_tab  = ProxyT::share_info_array->get_num_tab(self().registry_key());
+    const auto inf      = self().get_info_second_value();
+    auto&      by_value = ManagerT::zero_one_value_candidates_map_thr[rank];
+    const auto it       = by_value.find(inf.second_value);
+    if (it != by_value.end() && it->second)
+    {
+        internal::with_own_candidates_only(*it->second, num_tab,
+                                           [&]
+                                           {
+                                               const read_reclaim::PassScope pass_scope;
+                                               if constexpr (Derived::is_not_bool)
+                                               {
+                                                   ChunkType::make_block_compression(rank, inf, nullptr);
+                                               }
+                                               else
+                                               {
+                                                   ChunkType::make_block_compression_bool(rank, nullptr);
+                                               }
+                                           });
+    }
+    const read_reclaim::PassScope sweep_scope;
+    sweep_leftover_candidates(/*own_rank_only=*/true);
+}
+
+template <typename Derived>
+void zero_one_value::FastBlockSupport<Derived, true>::sweep_leftover_candidates([[maybe_unused]] bool own_rank_only)
+{
+    // The passes drain this array's CURRENT second-value key only. Writes queued before a
+    // set_second_value() (or a copy-assignment) sit under an EARLIER key; left there,
+    // resize() reallocates chunk_list_ under them (dangling &chunk_list_[j]). Sweep every
+    // key: compress this array's leftovers against the current value, clear their flags,
+    // drop them by num_tab (as rechunk_drop_candidates()). Every rank at a sequential
+    // point; the calling thread's only inside a region, where the array is its own.
+    if constexpr (Derived::is_not_bool)
+    {
+        using ProxyT   = Traits::ProxyType;
+        using ManagerT = Traits::ManagerType;
+
+        const int  num_tab  = ProxyT::share_info_array->get_num_tab(self().registry_key());
+        const auto inf      = self().get_info_second_value();
+        const int  thr_self = get_thr_rank_fast();
+        const int  nb_rank  = static_cast<int>(ManagerT::zero_one_value_candidates_map_thr.size());
+        const int  first    = own_rank_only ? thr_self : 0;
+        const int  last     = own_rank_only ? std::min(thr_self + 1, nb_rank) : nb_rank;
+        bool       found    = false;
+        for (int thr = first; thr < last; ++thr)
+        {
+            for (const auto& kv : ManagerT::zero_one_value_candidates_map_thr[thr])
             {
-                for (const auto& kv : per_rank)
+                if (!kv.second)
                 {
-                    if (!kv.second)
+                    continue;
+                }
+                for (auto& tup : *kv.second)
+                {
+                    if (std::get<2>(tup) == num_tab)
                     {
-                        continue;
-                    }
-                    for (auto& tup : *kv.second)
-                    {
-                        if (std::get<2>(tup) == num_tab)
-                        {
-                            std::get<0>(tup)->compress(thr_self, inf, /*apply=*/true, std::get<3>(tup).count());
-                            ProxyT::reset_tab_inside_list_to_compress(num_tab, std::get<1>(tup));
-                            found = true;
-                        }
+                        std::get<0>(tup)->compress(thr_self, inf, /*apply=*/true, std::get<3>(tup).count());
+                        ProxyT::reset_tab_inside_list_to_compress(num_tab, std::get<1>(tup));
+                        found = true;
                     }
                 }
             }
-            if (found)
-            {
-                ManagerT::remove_from_zero_one_value_candidates_by_num_tab(num_tab);
-            }
         }
-    }
-    else
-    {
-        // An array resized inside a region by its owning thread (resize()):
-        // this thread's list only, and other threads may be reading, so the
-        // buffers released wait for a grace period (read_reclaim.h).
-        const read_reclaim::PassScope pass_scope;
-        pass_on_rank(CHUNK_PMP_THREAD_RANK);
+        if (found)
+        {
+            ManagerT::remove_from_zero_one_value_candidates_by_num_tab(num_tab, own_rank_only);
+        }
     }
 }
 

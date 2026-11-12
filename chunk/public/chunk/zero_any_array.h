@@ -377,10 +377,15 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
     static void make_block_compression();
 
   private:
-    /// @brief The pass behind make_block_compression(), and resize_common()'s drain:
-    ///        every thread's list outside a region, the calling thread's inside one
-    ///        (an array resized by its owning thread), under a read_reclaim::PassScope.
+    /// @brief The pass behind make_block_compression(), and resize_common()'s drain
+    ///        outside a region: every thread's list.
     static void drain_candidates();
+
+    /// @brief resize_common()'s drain inside a region (an array resized by its
+    ///        owning thread): the pass on this array's candidates only, in the
+    ///        calling thread's list, under a read_reclaim::PassScope. The other
+    ///        arrays' candidates stay queued, untouched (internal/own_candidates.h).
+    void drain_own_candidates();
 
     /**
      * @brief Claim this array's identity before its storage is built.

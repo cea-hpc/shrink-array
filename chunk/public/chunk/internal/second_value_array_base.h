@@ -125,7 +125,17 @@ class SecondValueArrayBase : public ArrayChunkBase<Derived>
         if constexpr (chunk_config::use_fast_block_compression ||
                       (build_config::not_threaded && is_zero_any_family_v<ChunkType>))
         {
-            derived().drain_candidates(); // not make_block_compression(): resize() may run in a region
+            // Not make_block_compression(): resize() may run in a region, on an
+            // array of the calling thread's own -- then this array's candidates
+            // only, the thread's list holding other arrays' chunks too.
+            if (CHUNK_PMP_IN_PARALLEL_REGION)
+            {
+                derived().drain_own_candidates();
+            }
+            else
+            {
+                derived().drain_candidates();
+            }
         }
 
         const int old_nb_chunk = nb_chunk_;

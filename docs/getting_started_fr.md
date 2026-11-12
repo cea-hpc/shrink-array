@@ -314,7 +314,9 @@ pendant que les autres threads font de même et que l'équipe écrit des tableau
 construction et la destruction prennent un verrou de la bibliothèque, un tableau à la fois pour
 tout le processus ; les accès aux éléments n'en prennent aucun. Un tel tableau appartient à son
 thread : lui seul l'écrit, et les points séquentiels ci-dessus restent des points séquentiels
-pour lui. Sa destruction coûte un `membarrier()`, et ne lance pas la passe de compression
+pour lui -- sauf `resize()`, que son thread peut y appeler : la passe qu'il lance d'abord ne
+couvre que les chunks de ce tableau, pas ceux des tableaux partagés que le thread a aussi
+écrits. Sa destruction coûte un `membarrier()`, et ne lance pas la passe de compression
 finale que fait une destruction hors région.
 
 **Les threads.** Les structures par thread sont dimensionnées une fois pour

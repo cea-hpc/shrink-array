@@ -265,7 +265,11 @@ threads sont en train d'allonger : `internal/tab_users.h` note quels rangs déti
 chose de chaque tableau, et un tableau que seul le rang appelant a utilisé est démonté sur ce
 rang seul, sans passe sur les autres tableaux. Avant de libérer sa liste de chunks, un délai de
 grâce de `read_reclaim` couvre le `start()` d'un compresseur, dont le balayage lit le chunk
-annoncé par chaque écrivain.
+annoncé par chaque écrivain. Un `resize()` pendant une phase, par le thread propriétaire du
+tableau, doit vider les listes de candidats des chunks de ce tableau avant de réallouer la liste
+de chunks ; sa passe ne prend pas de poignée de main avec les écrivains, elle ne porte donc que
+sur les candidats de ce tableau, les autres étant mis de côté le temps de la passe
+(`internal/own_candidates.h`).
 
 Le **contrat de phase** (`chunk/manage_ompt.h`) : chaque thread qui écrit appelle
 `begin_parallel_phase()` avant sa première écriture (il met son rang en cache), et un thread
