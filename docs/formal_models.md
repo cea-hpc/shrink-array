@@ -407,6 +407,32 @@ CHANGELOG.md). With it and F7's fix (section 8.8), the audit counted none on Mil
 threads (`zero_any` at 256, 1024 and dynamic geometry, three seeds each): F6 was real but rare in
 that benchmark.
 
+**Two passes: the order of the hand-back.** `queue_flag::release_candidates()` (the hand-back of
+the three variants since the passes share it) gives each candidate its mark back **before** its
+flag. While the flag is not free the chunk is in no other list, no other pass can have marked it,
+and the unmark drops this pass's claim only. The one-pass model could not say whether that order
+matters: there is no other claim to erase, and the swapped order passes. `-DTWO_PASSES` gives it
+one: when W's write queues the chunk (into its own rank's list), W's thread runs pass B on it, as
+the in-loop trigger does. The model also does what the source does where the first version took a
+shortcut: a candidate the scan drops is unmarked in the scan, and the hand-back loop unmarks every
+candidate again -- the redundant unmark that, done after the flag, lands on pass B's claim.
+
+| case | expected | verdict (native, forced schedule) |
+|---|---|---|
+| source, two passes | pass | pass (W's write is noted on the handed-back flag, pass B never runs) |
+| `MUT_RELEASE_BEFORE_UNMARK`, one pass | pass | -- |
+| `MUT_RELEASE_BEFORE_UNMARK`, two passes: the flag released, then the mark | fail | **P2 in every run**, and a store into the freed buffer (AddressSanitizer: heap-use-after-free) |
+
+The scenario: pass A drops the chunk and unmarks it in the scan; W, deferred until then, writes the
+last 7 to 0 just after A's release, finds the flag free and queues the chunk; pass B marks it and
+passes start(); A's late unmark erases B's mark; W2 announces, finds no mark and goes on; B finds
+the chunk constant, clears it and frees the buffer; W2 stores into it, and its value is lost. With
+the source's order, A's unmark comes while the flag is still 2 or 3: nothing can queue the chunk
+before it. The GenMC verdicts (`run_genmc.sh`, three lines more) are still to be taken: the native
+runs above force that one interleaving with sleeps (`-DDEMO_SCHEDULE`: the test
+`formal_native_queue_handback_two_passes_schedule`, next to the free two-pass runs); they are an
+oracle for it, not an exhaustive check.
+
 ### 8.8 F7: two threads filling the two ends of one chunk could both leave it unqueued (fixed)
 
 `formal/range_edges.c`. `fill_range_mt()` (and `copy_range_mt()`, `transform_range_mt()`) on

@@ -136,6 +136,10 @@ echo "-- mutations: each must be refused --"
 run error "MUT_OLD_HANDBACK (F6, before: unmark, then reset)"   -- -DMUT_OLD_HANDBACK $M5
 run error "MUT_HANDBACK_AFTER_UNMARK (the window is back)"      -- -DMUT_HANDBACK_AFTER_UNMARK $M5
 run error "MUT_WRITER_IGNORES_2 (nobody notes the write)"       -- -DMUT_WRITER_IGNORES_2 $M5
+echo "-- two passes: the order of the hand-back (mark first, then flag) --"
+run ok    "source, two passes (W's pass B after its push)"      --check-liveness -- -DTWO_PASSES $M5
+run ok    "MUT_RELEASE_BEFORE_UNMARK, one pass: no claim to erase" -- -DMUT_RELEASE_BEFORE_UNMARK $M5
+run error "MUT_RELEASE_BEFORE_UNMARK, two passes (B's claim erased)" -- -DTWO_PASSES -DMUT_RELEASE_BEFORE_UNMARK $M5
 
 M6=range_edges.c
 

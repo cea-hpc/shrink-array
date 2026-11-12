@@ -432,6 +432,35 @@ peut pas être : ils venaient d'un autre trou, les tranches partielles de `fill_
 8.8), l'audit n'en comptait aucun sur Milan jusqu'à 128 threads (`zero_any` en géométrie 256,
 1024 et dynamique, trois graines chacune) : F6 était réel mais rare dans ce bench.
 
+**Deux passes : l'ordre de la restitution.** `queue_flag::release_candidates()` (la restitution
+des trois variantes depuis qu'elles la partagent) rend à chaque candidat sa marque **avant** son
+drapeau. Tant que le drapeau n'est pas libre, le chunk n'est dans aucune autre liste, aucune autre
+passe n'a pu le marquer, et la baisse de la marque ne retire que la réclamation de cette passe. Le
+modèle à une passe ne pouvait pas dire si cet ordre compte : il n'y a pas d'autre réclamation à
+effacer, et l'ordre inverse passe. `-DTWO_PASSES` en donne une : quand l'écriture de W met le chunk
+en file (dans la liste de son propre rang), le thread de W lance la passe B dessus, comme le fait
+le déclenchement en boucle. Le modèle fait aussi ce que fait la source là où la première version
+prenait un raccourci : un candidat que le parcours écarte voit sa marque baissée dans le parcours,
+et la boucle de restitution baisse à nouveau celle de chaque candidat -- la baisse redondante qui,
+faite après le drapeau, tombe sur la réclamation de la passe B.
+
+| cas | attendu | verdict (natif, ordonnancement forcé) |
+|---|---|---|
+| source, deux passes | succès | succès (l'écriture de W est notée sur le drapeau restitué, la passe B ne tourne jamais) |
+| `MUT_RELEASE_BEFORE_UNMARK`, une passe | succès | -- |
+| `MUT_RELEASE_BEFORE_UNMARK`, deux passes : le drapeau rendu, puis la marque | échec | **P2 à chaque run**, et une écriture dans le tampon libéré (AddressSanitizer : heap-use-after-free) |
+
+Le scénario : la passe A écarte le chunk et baisse sa marque dans le parcours ; W, différé
+jusque-là, écrit 0 à la place du dernier 7 juste après la restitution de A, trouve le drapeau libre
+et met le chunk en file ; la passe B le marque et passe start() ; la baisse tardive de A efface la
+marque de B ; W2 s'annonce, ne trouve pas de marque et continue ; B trouve le chunk constant, le
+vide et libère le tampon ; W2 y écrit, et sa valeur est perdue. Dans l'ordre de la source, la baisse
+de A arrive quand le drapeau vaut encore 2 ou 3 : rien ne peut mettre le chunk en file avant elle.
+Les verdicts GenMC (`run_genmc.sh`, trois lignes de plus) restent à prendre : les runs natifs
+ci-dessus forcent cet entrelacement-là avec des pauses (`-DDEMO_SCHEDULE` : le test
+`formal_native_queue_handback_two_passes_schedule`, à côté des runs libres à deux passes) ; ce sont
+un oracle pour lui, pas une vérification exhaustive.
+
 ### 8.8 F7 : deux threads remplissant les deux bouts d'un chunk pouvaient le laisser tous deux hors file (corrigé)
 
 `formal/range_edges.c`. `fill_range_mt()` (et `copy_range_mt()`, `transform_range_mt()`) sur des
