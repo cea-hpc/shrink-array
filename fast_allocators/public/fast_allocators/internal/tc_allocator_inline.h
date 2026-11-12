@@ -46,15 +46,18 @@ inline void TCSlab<Links>::alloc_block()
     // slab to ask (TCSlabPool::slab_bytes_).
     block_allocator = slab_bytes_for(block_allocator);
 
-    block_size = static_cast<int>((block_allocator - sizeof(void*)) / element_size);
-
     // Not even one element fits next to the back-pointer: the first one would
-    // overwrite it. Nothing to round to -- refuse, with the sizes.
-    if (block_size < 1) [[unlikely]]
+    // overwrite it. Nothing to round to -- refuse, with the sizes. Compared
+    // before the subtraction below: unsigned, it wraps for a slab smaller than
+    // the back-pointer, and the quotient, cast to int, could pass a test made
+    // on it.
+    if (element_size < 1 || block_allocator < sizeof(void*) + static_cast<uintptr_t>(element_size)) [[unlikely]]
     {
         FAST_ALLOC_FATAL("TCAllocator: element of {} bytes does not fit in a slab of {} bytes (back-pointer included)",
                          element_size, block_allocator);
     }
+
+    block_size = static_cast<int>((block_allocator - sizeof(void*)) / static_cast<uintptr_t>(element_size));
 
     if constexpr (side_links)
     {

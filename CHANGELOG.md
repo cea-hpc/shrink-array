@@ -202,6 +202,14 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `TCSlab::alloc_block()` tested its capacity after computing it: `block_allocator -
+  sizeof(void*)` is unsigned and wraps for a slab smaller than the back-pointer, and the
+  quotient, cast to `int`, could come out positive (a slab of 1 byte and elements of 3: a
+  capacity of 1,431,655,763) and pass the "does not fit" test. The sizes are now compared before
+  the subtraction, and an element size below 1 is refused with them. No size the library asks
+  for reaches it (Coverity 661091).
+- `test_vecto_chunk` and `multi-mat`: `main()` catches `std::exception` and says it, as the
+  other examples do, instead of ending in `std::terminate()` (Coverity 661907, 661959, 661960).
 - Documentation brought back in line with the sources, in both languages.
   `docs/algo_pattern_fr.md` §5 lacked the paragraph on the OMPT pass
   (`Chunk::compress_to_motif()`). `docs/developer_settings.md` lists the CMake options it

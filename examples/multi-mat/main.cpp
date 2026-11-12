@@ -34,6 +34,7 @@
  */
 
 #include <cstdlib>     // std::abort
+#include <exception>   // std::exception (main's catch)
 #include <format>      // std::format (the filling rates)
 #include <iostream>    // std::cout, std::cerr
 #include <vector>      // std::vector
@@ -123,6 +124,7 @@ const vector<bool>& Simu::get_dis() const
 }
 
 int main()
+try
 {
     const int max_thr = multi_mat::max_threads();
 
@@ -293,4 +295,11 @@ int main()
             ParamChunk::chunk_stats();
         }
     }
+    return 0;
+}
+catch (const std::exception& e)
+{
+    // A failed allocation or std::format: said, not std::terminate().
+    std::cerr << "multi-mat: " << e.what() << '\n';
+    return 2;
 }
