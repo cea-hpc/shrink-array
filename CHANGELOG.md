@@ -185,6 +185,19 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- Packaging (P1 and P4 of the audit). **Spack**: the package was built for the build host
+  whatever `target=` said -- the project's `-march=native` (`-mcpu=native`, `-tp=host`) came
+  after the wrapper's flag and won; `CHUNK_NATIVE_TUNING=OFF` (new, default ON) adds no target
+  flag and the recipe sets it. The recipe also declares what it used without saying: the C
+  compiler (`formal/`), `bzip2` for `+examples`, Python for the tests. **`NDEBUG`**: the
+  project's own Release and RelWithDebInfo flags dropped CMake's `-DNDEBUG`, so a release
+  library carried its `assert()`s; they are compiled out again, except in the builds that are
+  there to check (`CHECK_OPTIM`, sanitizers, Debug). The reverse for `formal/`: its native models
+  state their property with `assert()` and were built with CMake's C Release flags, `-DNDEBUG`
+  included -- the six `formal_native_*` tests passed whatever the model did; they now build
+  with `-UNDEBUG`. **Workflows**: the 21 `uses:` are pinned by commit, the release in a comment,
+  and `.github/dependabot.yml` proposes the updates. The `doc` target is defined at the top
+  level only (a consumer's own `doc` target stopped its configure).
 - std backend: a thread building, re-chunking or destroying a large array outside a region could
   deadlock with another thread's team. It held the cold-path lock and waited for the pool (one
   team at a time) while a member of the team holding the pool waited for that lock to build its

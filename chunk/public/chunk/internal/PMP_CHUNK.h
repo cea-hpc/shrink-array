@@ -319,6 +319,36 @@ inline int get_thr_rank_fast() noexcept
     return rank;
 }
 
+/// @brief get_thr_rank_fast() for the slow paths that file something under the
+///        rank: the deferred enqueue (op pool, queue, flush records) and the
+///        candidate push (per-rank candidate list).
+/// @details OpenMP without OMPT, no check: the cache is cleared by nothing --
+///          no implicit-task callback, and begin_parallel_phase() refills it
+///          only where the program calls it. A rank left over from another
+///          team would file the op or the candidate on another thread's
+///          structures, which that thread writes without a lock. These paths
+///          are rare enough to re-read the library's rank (one
+///          omp_get_thread_num at level 1) and refresh a stale cache. A check
+///          build stops on it instead (get_thr_rank_fast); with OMPT, and on
+///          the std backend, the cache is cleared when the team changes.
+inline int get_thr_rank_slow_path() noexcept
+{
+    if constexpr (build_config::use_openmp && build_config::has_not_ompt && !build_config::any_check)
+    {
+        int&      cache = ::shrink_array::chunk_rank_cache();
+        const int rank  = ::shrink_array::chunk_pmp_library_rank();
+        if (cache != rank) [[unlikely]]
+        {
+            cache = ::shrink_array::chunk_pmp_checked_rank(rank);
+        }
+        return rank;
+    }
+    else
+    {
+        return get_thr_rank_fast();
+    }
+}
+
     #ifndef CHUNK_PMP_THREAD_RANK
 
 /// @brief Rank of the calling thread, queried from the OpenMP library and checked.
@@ -387,6 +417,12 @@ inline void chunk_pmp_set_max_active_levels(int) noexcept {}
 
 /// @brief Serial build: the calling thread's rank, always 0.
 inline int get_thr_rank_fast() noexcept
+{
+    return 0;
+}
+
+/// @brief Serial build: the calling thread's rank, always 0.
+inline int get_thr_rank_slow_path() noexcept
 {
     return 0;
 }

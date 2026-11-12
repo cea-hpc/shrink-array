@@ -366,6 +366,16 @@ else()
 endif()
 message(STATUS "Debug information of the optimised builds: ${_chunk_debug_info} (${_chunk_opt_g})")
 
+# assert(): compiled out (-DNDEBUG) in the optimised builds, as CMake's own
+# Release flags do -- these lines replace them, and used to drop it, so a
+# release library carried its asserts. Kept where a build is there to check:
+# Debug, CHECK_OPTIM and the sanitizer builds.
+if(CHECK_OPTIM OR NOT SANITIZER STREQUAL "none")
+    set(_chunk_ndebug "")
+else()
+    set(_chunk_ndebug " -DNDEBUG")
+endif()
+
 # Top level: in the cache, as before. Consumed by another project: plain
 # variables of this subtree -- the cache is the consumer's.
 if(SHRINK_ARRAY_IS_TOP_LEVEL)
@@ -374,16 +384,16 @@ if(SHRINK_ARRAY_IS_TOP_LEVEL)
         CACHE STRING "Debug flags" FORCE)
 
     set(CMAKE_CXX_FLAGS_RELEASE
-        "-O3 ${_chunk_opt_g}"
+        "-O3 ${_chunk_opt_g}${_chunk_ndebug}"
         CACHE STRING "Release flags" FORCE)
 
     set(CMAKE_CXX_FLAGS_RELWITHDEBINFO
-        "-O3 ${_chunk_opt_g}"
+        "-O3 ${_chunk_opt_g}${_chunk_ndebug}"
         CACHE STRING "RelWithDebInfo flags" FORCE)
 else()
     set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
-    set(CMAKE_CXX_FLAGS_RELEASE "-O3 ${_chunk_opt_g}")
-    set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O3 ${_chunk_opt_g}")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 ${_chunk_opt_g}${_chunk_ndebug}")
+    set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O3 ${_chunk_opt_g}${_chunk_ndebug}")
 endif()
 
 # ── Runtime RPATH: embed the compiler's own runtime libraries ─────────────────
@@ -468,7 +478,24 @@ elseif(NOT DEFINED CHUNK_X86_MARCH)
     set(CHUNK_X86_MARCH "native")
 endif()
 
-if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+# CHUNK_NATIVE_TUNING=OFF: no target flag at all from this file -- no
+# -march= / -mcpu=native, no -tp=host, no -xHost. For a build whose target is
+# chosen by who builds it: Spack's compiler wrapper passes the -march= of the
+# spec's target, and a flag added here comes after it and wins, so the package
+# was tied to the build host whatever target= said. The recipe sets it OFF.
+if(SHRINK_ARRAY_IS_TOP_LEVEL)
+    option(CHUNK_NATIVE_TUNING "Optimised builds: tune for the build host (-march=native, -mcpu=native, -tp=host). OFF: no target flag, the caller's apply" ON)
+elseif(NOT DEFINED CHUNK_NATIVE_TUNING)
+    set(CHUNK_NATIVE_TUNING ON)
+endif()
+
+if(NOT CHUNK_NATIVE_TUNING)
+    message(STATUS "Target flags: none (CHUNK_NATIVE_TUNING=OFF, the caller's apply)")
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM" AND ONEAPI_NO_INTEL_LIBS)
+        add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-no-intel-lib;-fveclib=none>")
+        add_link_options($<$<LINK_LANGUAGE:CXX>:-no-intel-lib>)
+    endif()
+elseif(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
     if(CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
         add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-tp=host>)
     elseif(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
@@ -854,9 +881,13 @@ endif()
 
 # ── Documentation ─────────────────────────────────────────────────────────────
 # `cmake --build <build> --target doc` -> docs/html/index.html. The Doxyfile's
-# paths are relative to docs/, hence the working directory.
-find_package(Doxygen OPTIONAL_COMPONENTS dot)
-if (DOXYGEN_FOUND)
+# paths are relative to docs/, hence the working directory. Top level only: a
+# consumer (add_subdirectory, FetchContent) may have a `doc` target of its own,
+# and two targets of one name stop its configure.
+if(SHRINK_ARRAY_IS_TOP_LEVEL)
+    find_package(Doxygen OPTIONAL_COMPONENTS dot)
+endif()
+if (SHRINK_ARRAY_IS_TOP_LEVEL AND DOXYGEN_FOUND)
     add_custom_target(doc
             COMMAND ${DOXYGEN_EXECUTABLE} Doxyfile
             WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/docs

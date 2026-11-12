@@ -247,5 +247,13 @@ se limite aux reconstructions.
   conteneurs de booléens soient comparés tels quels. Le rechunk de `Array<bool>` est vérifié
   par `rechunk_validation` (`bool-grow`, `bool-shrink`, `bool-uneven`, `bool-sliced`, toutes
   variantes), celui d'`ArrayChunkBits` par `bits_container_validation` (`zero_one_value` en dyn).
-- **Le pic reste celui du départ** : un run dynamique qui part de 64 atteint d'abord la
-  mémoire du statique 64, puis descend.
+- **Le pic n'est pas toujours celui de la géométrie de départ** : un run dynamique qui part
+  de 64 a la mémoire du statique 64 après son initialisation ; ses rechunks rendent ensuite
+  de la mémoire (la mémoire résidente redescend) ou freinent sa croissance. Le pic du run
+  n'est celui de la géométrie de départ que s'il tombe à l'initialisation ; là où la mémoire
+  croît pendant le run, le pic reste en dessous. Mesuré avec `top` et `smaps_rollup`
+  (x86-64, 8 threads, `shrink_bench` `--multiply 10 --iter_max 1000 --advisor_period 2`,
+  contre le même binaire avec `--rechunk_dry_run`, novembre 2026) : `zero_any` redescend de
+  481 à 303 Mio après ses rechunks et finit à 238 Mio au lieu de 545, son pic étant celui de
+  l'initialisation (582 Mio) ; `zero_one_value` culmine à 1 342 Mio au lieu de 1 523, `zero`
+  à 2 531 Mio au lieu de 2 736.

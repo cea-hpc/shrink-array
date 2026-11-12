@@ -245,5 +245,12 @@ is limited to the rebuilds.
   are compared as they are. The rechunk of `Array<bool>` is checked by `rechunk_validation`
   (`bool-grow`, `bool-shrink`, `bool-uneven`, `bool-sliced`, every variant), that of
   `ArrayChunkBits` by `bits_container_validation` (`zero_one_value` at dyn).
-- **The peak remains the initial one**: a dynamic run that starts from 64 first reaches the
-  memory of static 64, then goes down.
+- **The peak is not always the starting geometry's**: a dynamic run that starts from 64 has
+  the memory of static 64 after its initialisation; its rechunks then give memory back (the
+  resident memory goes down) or slow its growth. The run's peak is the starting geometry's
+  only when it comes at the initialisation; where the memory grows during the run, the peak
+  stays below. Measured with `top` and `smaps_rollup` (x86-64, 8 threads, `shrink_bench`
+  `--multiply 10 --iter_max 1000 --advisor_period 2`, against the same binary with
+  `--rechunk_dry_run`, November 2026): `zero_any` goes down from 481 to 303 MiB after its
+  rechunks and ends at 238 MiB instead of 545, its peak being the initialisation's (582 MiB);
+  `zero_one_value` peaks at 1,342 MiB instead of 1,523, `zero` at 2,531 MiB instead of 2,736.

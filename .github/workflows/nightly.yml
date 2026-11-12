@@ -51,7 +51,7 @@ jobs:
       CMAKE_BUILD_PARALLEL_LEVEL: 2
       TSAN_OPTIONS: halt_on_error=1 second_deadlock_stack=1
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Toolchain
@@ -84,7 +84,7 @@ jobs:
       CXX: g++-14
       CMAKE_BUILD_PARALLEL_LEVEL: 2
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Toolchain
@@ -126,7 +126,7 @@ jobs:
       # first faulting thread alone; the core has the stacks of all of them.
       ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:detect_stack_use_after_return=1:print_module_map=1:dump_registers=1:disable_coredump=0
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Toolchain
@@ -165,14 +165,14 @@ jobs:
           ctest --test-dir build -R '^read_reclaim_validation_' --repeat until-fail:20 --timeout 600 --output-on-failure
       # On a failure, the validation executables (the faulting pc is an offset in one of
       # them: print_module_map above), for objdump -d around it.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: failure()
         with:
           name: asan-validation-binaries
           path: build/examples/validation/validation_*_256
           retention-days: 14
       # The cores, for a closer look with the binary above.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: failure()
         with:
           name: asan-core-dumps
@@ -204,7 +204,7 @@ jobs:
       CXX: clang++-23
       CMAKE_BUILD_PARALLEL_LEVEL: 2
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Toolchain
@@ -243,7 +243,7 @@ jobs:
       CXX: g++-14
       CMAKE_BUILD_PARALLEL_LEVEL: 2
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Toolchain
@@ -281,7 +281,7 @@ jobs:
       CXX: g++-14
       CMAKE_BUILD_PARALLEL_LEVEL: 2
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Toolchain
@@ -328,7 +328,7 @@ jobs:
             --gcov-ignore-errors=no_working_dir_found --gcov-ignore-parse-errors=all \
             --markdown coverage/coverage.md --html-nested coverage/index.html --txt-summary
           cat coverage/coverage.md >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: coverage-html

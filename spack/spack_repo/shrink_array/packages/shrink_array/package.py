@@ -88,8 +88,18 @@ class ShrinkArray(CMakePackage):
     )
 
     depends_on("cxx", type="build")
+    # C: the reduced models of formal/, built with the tests only.
+    depends_on("c", type="build")
     depends_on("cmake@3.20:", type="build")
     depends_on("tbb", when="+tbb")
+    # shrink_bench compresses its reference data (find_package(BZip2 REQUIRED)).
+    depends_on("bzip2", when="+examples")
+    # The source checks registered as tests (scripts/check_*.py) and the scripts
+    # the validation runs.
+    depends_on("python@3.8:", type="test")
+    # threads=openmp: the OpenMP runtime is the compiler's own (libgomp, libomp,
+    # libiomp5), found by find_package(OpenMP). No package to depend on: a
+    # Clang without libomp fails at configure, with CMake's message.
 
     # Linux only: membarrier, madvise, mincore, /proc.
     requires("platform=linux", msg="shrink-array relies on Linux system calls and /proc")
@@ -122,6 +132,12 @@ class ShrinkArray(CMakePackage):
             self.define_from_variant("CHECK_OPTIM", "checks"),
             self.define_from_variant("SHRINK_ARRAY_BUILD_EXAMPLES", "examples"),
             self.define("SHRINK_ARRAY_BUILD_TESTS", self.run_tests),
+            # The target is the spec's: Spack's compiler wrapper passes its
+            # -march=. Without this the project adds -march=native (-mcpu=native,
+            # -tp=host) after it, and the package only runs on the build host's
+            # CPU. Read by the versions after 0.2.1; the earlier ones ignore it
+            # and stay tied to the build host.
+            self.define("CHUNK_NATIVE_TUNING", False),
             # The compiler and standard library Spack chose: no libc++ switch
             # (the project's default with Clang), no mold, no Intel libm.
             self.define("USE_LIBCXX", False),

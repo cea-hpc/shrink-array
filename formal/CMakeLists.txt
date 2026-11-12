@@ -23,6 +23,10 @@ if(CMAKE_C_COMPILER)
     foreach(_m IN LISTS _formal_models)
         add_executable(formal_native_${_m} ${_m}.c)
         target_compile_definitions(formal_native_${_m} PRIVATE NATIVE SHAPE_SYMMETRIC)
+        # A model's property is an assert(): CMake's C flags of a Release build
+        # carry -DNDEBUG, which compiled every one of them out -- the test then
+        # passed whatever the model did.
+        target_compile_options(formal_native_${_m} PRIVATE -UNDEBUG)
         set_target_properties(formal_native_${_m} PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
         find_package(Threads REQUIRED)
         target_link_libraries(formal_native_${_m} PRIVATE Threads::Threads)
