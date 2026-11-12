@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 from spack_repo.builtin.build_systems.cmake import CMakePackage
 
-from spack.package import *
+from spack.package import *  # NOSONAR(python:S2208): the convention of every Spack recipe
 
 
 class ShrinkArray(CMakePackage):

@@ -588,7 +588,6 @@ def build_definition(m: Method, raw: str):
     qual = "::".join([*nss[1:], *[c.qualifier() for c in m.cls_chain]])
     # return type: outside the class scope, a class-local name is written Class<T>::Name
     # (C++20: no `typename` needed) and a name of the class's namespace gets that namespace
-    trailing = None
     if ret and ret not in ("auto", "decltype(auto)"):
         ret = qualify_return_type(ret, m, nss)
     has_inline = bool({"constexpr", "consteval", "inline", "CHUNK_FORCE_INLINE"} & set(specs))
@@ -604,13 +603,6 @@ def build_definition(m: Method, raw: str):
     if def_quals:
         # a trailing return already present in the suffix: keep order ... -> R requires
         sig += " " + def_quals
-    if trailing:
-        # insert before a requires-clause if any
-        if " requires " in (" " + def_quals):
-            k = sig.rfind(" requires ")
-            sig = sig[:k] + f" -> {trailing}" + sig[k:]
-        else:
-            sig += f" -> {trailing}"
     sig = wrap_signature(sig)
     if init:
         sig += "\n    " + init
