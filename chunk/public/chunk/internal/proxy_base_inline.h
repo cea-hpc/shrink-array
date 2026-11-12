@@ -563,10 +563,15 @@ ProxyBase<Derived, T, ChunkT>::write_with_optional_lock_impl(WriteCallable&&    
                 }
             }
         }
-        // An aggregate, brace-initialised below: declaring the copy/move
-        // operations would make it a non-aggregate.
-        struct OwnReplayExclGuard // NOLINT(cppcoreguidelines-special-member-functions)
+        // Releases the rank's enqueue lock once: not copyable nor movable (a
+        // copy would release it twice).
+        struct OwnReplayExclGuard
         {
+            explicit OwnReplayExclGuard(int r) noexcept : rank(r) {}
+            OwnReplayExclGuard(const OwnReplayExclGuard&)            = delete;
+            OwnReplayExclGuard& operator=(const OwnReplayExclGuard&) = delete;
+            OwnReplayExclGuard(OwnReplayExclGuard&&)                 = delete;
+            OwnReplayExclGuard& operator=(OwnReplayExclGuard&&)      = delete;
             ~OwnReplayExclGuard()
             {
                 if (rank >= 0)
