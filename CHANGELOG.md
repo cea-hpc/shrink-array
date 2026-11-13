@@ -211,6 +211,11 @@ the tag's checksum to the recipe.
   `RegistryWriteLock` bumps, and a per-thread memo of 16 sets of 4 ways (a direct-mapped one
   let two arrays written in turn evict each other in about one run out of two, depending on
   where ASLR put them). The bench at 14 threads: 7–8 s → 0.6–1.1 s.
+- Check builds: the count of second-value lookups in flight (`GlobalVecHolder::LookupGuard`,
+  which lets a reclaim detect a lookup running alongside it) was one atomic shared by every
+  thread, two locked RMWs per lookup: about 90 % of `find_or_set_ind_cst_val2()`, and 13 % of
+  the bench on a many-core machine. One counter per thread on a cache line of its own, summed
+  by the reclaim; the seq_cst handshake is unchanged.
 - `TCSlab::alloc_block()` tested its capacity after computing it: `block_allocator -
   sizeof(void*)` is unsigned and wraps for a slab smaller than the back-pointer, and the
   quotient, cast to `int`, could come out positive (a slab of 1 byte and elements of 3: a

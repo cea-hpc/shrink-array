@@ -132,8 +132,9 @@ GlobalVecHolder<T>::LookupGuard::LookupGuard() noexcept
     {
         // seq_cst on both sides (ReclaimScope): each increments its own
         // counter then reads the other's, so one of the two always sees
-        // the other.
-        lookups_in_flight.fetch_add(1, std::memory_order_seq_cst);
+        // the other. Still true with one counter per thread: the reclaim
+        // increments, then reads every slot, all in the single seq_cst order.
+        my_in_flight().fetch_add(1, std::memory_order_seq_cst);
         if (reclaims_running.load(std::memory_order_seq_cst) != 0) [[unlikely]]
         {
             CHUNK_INVARIANT_FAILED("cst_val2: second-value lookup or registration during a reclaim "
@@ -149,7 +150,12 @@ GlobalVecHolder<T>::LookupGuard::LookupGuard() noexcept
 template <typename T>
 void GlobalVecHolder<T>::ReclaimScope::check_no_lookup(const char* when) noexcept
 {
-    if (const int in_flight = lookups_in_flight.load(std::memory_order_seq_cst); in_flight != 0) [[unlikely]]
+    int in_flight = 0;
+    for (const InFlightSlot& slot : lookups_in_flight)
+    {
+        in_flight += slot.count.load(std::memory_order_seq_cst);
+    }
+    if (in_flight != 0) [[unlikely]]
     {
         CHUNK_INVARIANT_FAILED("cst_val2: reclaim {} with {} second-value lookup(s) or registration(s) "
                                "in flight (reclaim_second_values() needs a sequential point)",
