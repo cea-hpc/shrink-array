@@ -115,36 +115,80 @@ class RegistryWriteLock
 /// @brief Runs @p verify -- a cross-check that reads a registry under
 ///        RegistryReadLock and reports a mismatch itself -- unless this thread
 ///        already ran it on @p key since the last registry change.
-/// @details A small direct-mapped memo per thread and per call site (a lambda
-///          has a type of its own, so does each template instantiation of the
-///          enclosing function), indexed by @p slot_hint, so that a loop body
-///          writing to a few arrays does not evict itself. The generation is
-///          loaded BEFORE @p verify: a change during it leaves an older
-///          generation in the memo, and the next call checks again.
-/// @param slot_hint the array's address: picks the memo slot.
+/// @details A memo per thread and per call site (a lambda has a type of its
+///          own, so does each template instantiation of the enclosing
+///          function): 16 sets of 4 ways, the set picked by a multiplicative
+///          hash of @p slot_hint. Not direct-mapped: with 16 slots indexed by
+///          a few address bits, two arrays a loop writes in turn could share a
+///          slot, depending on where ASLR put them, and evict each other on
+///          every write -- the lock on every write again, in one run out of
+///          two. The generation is loaded BEFORE @p verify: a change during it
+///          leaves an older generation in the memo, and the next call checks
+///          again.
+/// @param slot_hint the array's address: picks the memo set.
 /// @param key       everything the answer depends on besides the registries
 ///                  (the array, the values the proxy was armed with).
+template <typename Key>
+struct GenerationMemo
+{
+    std::uint64_t generation = 0;
+    Key           key{};
+    bool          valid = false;
+};
+
+inline constexpr std::size_t generation_memo_ways     = 4;
+inline constexpr int         generation_memo_set_bits = 4; // 16 sets
+
+/// @brief One set of the memo (namespace scope: GCC 14 crashes on a local
+///        struct of the function template that uses its local constants).
+template <typename Key>
+struct GenerationMemoSet
+{
+    std::array<GenerationMemo<Key>, generation_memo_ways> ways{};
+    std::size_t                                           next_victim = 0; ///< round robin
+};
+
 template <typename Key, typename Verify>
 void verify_once_per_generation(const void* slot_hint, const Key& key, Verify&& verify)
 {
-    struct Memo
-    {
-        std::uint64_t generation = 0;
-        Key           key{};
-        bool          valid = false;
-    };
-    static constexpr std::size_t              memo_slots = 16;
-    thread_local std::array<Memo, memo_slots> memos{};
+    using Memo                                                             = GenerationMemo<Key>;
+    using MemoSet                                                          = GenerationMemoSet<Key>;
+    constexpr std::size_t                                        memo_ways = generation_memo_ways;
+    constexpr int                                                set_bits  = generation_memo_set_bits;
+    thread_local std::array<MemoSet, std::size_t{1} << set_bits> memos{};
 
-    const auto addr       = std::bit_cast<std::uintptr_t>(slot_hint);
-    Memo&      memo       = memos[((addr >> 4U) ^ (addr >> 10U)) % memo_slots];
+    // Fibonacci hashing: the top bits of the product depend on every bit of
+    // the address.
+    constexpr std::uint64_t golden = 0x9E3779B97F4A7C15ULL;
+    const auto              addr   = static_cast<std::uint64_t>(std::bit_cast<std::uintptr_t>(slot_hint));
+    MemoSet&                set    = memos[static_cast<std::size_t>((addr * golden) >> (64 - set_bits))];
+
     const auto generation = registry_generation().load(std::memory_order_acquire);
-    if (memo.valid && memo.generation == generation && memo.key == key) [[likely]]
+    for (const Memo& memo : set.ways)
     {
-        return;
+        if (memo.valid && memo.generation == generation && memo.key == key) [[likely]]
+        {
+            return;
+        }
     }
     std::forward<Verify>(verify)();
-    memo = Memo{generation, key, true};
+
+    // The way that holds this key under an older generation, or the next
+    // victim of the round robin.
+    std::size_t victim = set.next_victim;
+    for (std::size_t w = 0; w < memo_ways; ++w)
+    {
+        if (set.ways[w].valid && set.ways[w].key == key)
+        {
+            victim = w;
+            break;
+        }
+    }
+    if (victim == set.next_victim)
+    {
+        set.next_victim = (set.next_victim + 1) % memo_ways;
+    }
+    set.ways[victim] = Memo{generation, key, true};
 }
 
 } // namespace shrink_array::internal
