@@ -1562,12 +1562,19 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::set_num_tab() noexcept
     {
         if constexpr (build_config::any_check)
         {
-            if (num_tab_ != share_info_array->get_num_tab(ptr_on_array_))
-            {
-                CHUNK_INVARIANT_FAILED(
-                    "zero_any::ProxyImpl::set_num_tab: armed num_tab {} differs from the registry's for array {}",
-                    num_tab_, ptr_on_array_);
-            }
+            // Once per (array, num_tab) and registry generation, not per write:
+            // see verify_once_per_generation().
+            internal::verify_once_per_generation(ptr_on_array_, std::pair{ptr_on_array_, num_tab_},
+                                                 [this]
+                                                 {
+                                                     if (num_tab_ != share_info_array->get_num_tab(ptr_on_array_))
+                                                     {
+                                                         CHUNK_INVARIANT_FAILED(
+                                                             "zero_any::ProxyImpl::set_num_tab: armed num_tab {} "
+                                                             "differs from the registry's for array {}",
+                                                             num_tab_, ptr_on_array_);
+                                                     }
+                                                 });
         }
         return;
     }

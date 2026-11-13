@@ -31,8 +31,14 @@
 // pass over every type. Recursive: rechunk_to() builds and destroys a temporary
 // inside the array it re-chunks, and a region opened under it may build one too.
 
+#include <array>        // std::array
+#include <atomic>       // std::atomic
+#include <bit>          // std::bit_cast
+#include <cstddef>      // std::size_t
+#include <cstdint>      // std::uint64_t, std::uintptr_t
 #include <mutex>        // std::recursive_mutex, std::scoped_lock, std::unique_lock
 #include <shared_mutex> // std::shared_mutex, std::shared_lock
+#include <utility>      // std::forward
 
 namespace shrink_array::internal
 {
@@ -65,7 +71,80 @@ using ColdPathLock = std::scoped_lock<std::recursive_mutex>;
 
 /// @brief Holds the registries' lock for a lookup.
 using RegistryReadLock = std::shared_lock<std::shared_mutex>;
-/// @brief Holds the registries' lock for a registration, a removal or an exchange.
-using RegistryWriteLock = std::unique_lock<std::shared_mutex>;
+
+/// @brief The registries' generation: bumped by every RegistryWriteLock as it
+///        releases. Two loads that return the same value bracket no change of
+///        any registry. Read by verify_once_per_generation().
+[[nodiscard]] inline std::atomic<std::uint64_t>& registry_generation() noexcept
+{
+    static std::atomic<std::uint64_t> generation{0};
+    return generation;
+}
+
+/// @brief Holds the registries' lock for a registration, a removal or an
+///        exchange, and bumps registry_generation() before releasing it.
+class RegistryWriteLock
+{
+  public:
+    explicit RegistryWriteLock(std::shared_mutex& mutex) : lock_(mutex) {}
+    // The body runs before lock_ is destroyed: the bump is still under the lock.
+    ~RegistryWriteLock()
+    {
+        registry_generation().fetch_add(1, std::memory_order_release);
+    }
+
+    RegistryWriteLock(const RegistryWriteLock&)            = delete;
+    RegistryWriteLock& operator=(const RegistryWriteLock&) = delete;
+    RegistryWriteLock(RegistryWriteLock&&)                 = delete;
+    RegistryWriteLock& operator=(RegistryWriteLock&&)      = delete;
+
+  private:
+    std::unique_lock<std::shared_mutex> lock_;
+};
+
+// The check builds compare, on every write through a proxy, what the proxy was
+// armed with against the registry. Done as is, that is a RegistryReadLock per
+// write: every thread increments and decrements the one reader count of
+// registry_mutex(), and the cache line it sits on bounces between the cores
+// (pthread_rwlock_rdlock + unlock were ~91 % of the omp-gnu-check bench). The
+// answer cannot change while neither the key nor any registry does: a thread
+// remembers the (generation, key) pairs it verified and skips those. The hot
+// path is then one atomic load of a line that is only written by a registry
+// change, plus thread-local memory.
+
+/// @brief Runs @p verify -- a cross-check that reads a registry under
+///        RegistryReadLock and reports a mismatch itself -- unless this thread
+///        already ran it on @p key since the last registry change.
+/// @details A small direct-mapped memo per thread and per call site (a lambda
+///          has a type of its own, so does each template instantiation of the
+///          enclosing function), indexed by @p slot_hint, so that a loop body
+///          writing to a few arrays does not evict itself. The generation is
+///          loaded BEFORE @p verify: a change during it leaves an older
+///          generation in the memo, and the next call checks again.
+/// @param slot_hint the array's address: picks the memo slot.
+/// @param key       everything the answer depends on besides the registries
+///                  (the array, the values the proxy was armed with).
+template <typename Key, typename Verify>
+void verify_once_per_generation(const void* slot_hint, const Key& key, Verify&& verify)
+{
+    struct Memo
+    {
+        std::uint64_t generation = 0;
+        Key           key{};
+        bool          valid = false;
+    };
+    static constexpr std::size_t              memo_slots = 16;
+    thread_local std::array<Memo, memo_slots> memos{};
+
+    const auto addr       = std::bit_cast<std::uintptr_t>(slot_hint);
+    Memo&      memo       = memos[((addr >> 4U) ^ (addr >> 10U)) % memo_slots];
+    const auto generation = registry_generation().load(std::memory_order_acquire);
+    if (memo.valid && memo.generation == generation && memo.key == key) [[likely]]
+    {
+        return;
+    }
+    std::forward<Verify>(verify)();
+    memo = Memo{generation, key, true};
+}
 
 } // namespace shrink_array::internal

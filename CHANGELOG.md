@@ -202,6 +202,13 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- Check builds (`CHECK_OPTIM`, and the sanitizer and Debug builds) were several times slower
+  than the others under OpenMP: the cross-check of a proxy's `num_tab` against the registry,
+  done on every write (`zero_any`) and every replayed op (`zero`), took the registries' shared
+  lock, and every thread bounced its reader count (`pthread_rwlock_rdlock` + `unlock` were 91 %
+  of `shrink_bench_omp_zero_any_dyn`). A thread now skips a check it already made on the same
+  array and `num_tab` while no registry has changed: a generation counter that
+  `RegistryWriteLock` bumps. The bench at 14 threads: 7–8 s → 0.6–1.1 s.
 - `TCSlab::alloc_block()` tested its capacity after computing it: `block_allocator -
   sizeof(void*)` is unsigned and wraps for a slab smaller than the back-pointer, and the
   quotient, cast to `int`, could come out positive (a slab of 1 byte and elements of 3: a
