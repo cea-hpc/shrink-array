@@ -2,7 +2,7 @@
 
 > English version: [shrink_gui.md](shrink_gui.md).
 
-> Novembre 2026, `shrink_gui` 0.16 (prototype). Une fenêtre sur le portable pour soumettre
+> Novembre 2026, `shrink_gui` 0.17 (prototype). Une fenêtre sur le portable pour soumettre
 > `compile_all.sh`, `bench_and_test.py`, `multi_launch_stress.py` et `thread_speedup.py` sur le calculateur, ou
 > pour les lancer sur le portable lui-même (§3, « Cette machine »), suivre
 > leur log, lire leur résumé et rapatrier leurs résultats. Le détail du code est dans la
@@ -71,7 +71,7 @@ connexion, la vérification complète est refaite d'elle-même.
 | QoS (-Q) | « auto » choisit la QoS d'après la durée, selon les limites lues par `ccc_mqinfo` |
 | Nœuds | les programmes qui partagent leur travail, en batch : le nombre de nœuds qui se le partagent, en un job de N nœuds ou N jobs d'un nœud (ci-dessous) |
 | Démarrage | après un run `compile_all.sh` pas encore fini (dépendance Slurm `afterok`/`afterany`), et/ou pas avant une heure donnée |
-| Builds à jour | avant la commande, `ninja -n` sur les builds utilisés : refuser (code 96), avertir, ou ne pas vérifier |
+| Builds à jour | avant la commande, `ninja -n` sur les builds utilisés : refuser (code 96), avertir, ou ne pas vérifier. « Nettoyer les builds… » à côté : §5 |
 | Directives, Lanceur (job) | les lignes `#MSUB` et le lanceur sur le nœud ; propres à la partition et mémorisés |
 | Dépôt (inti), Runs (inti) | le dépôt shrink-array et le dossier des runs, sur le calculateur |
 | Git (inti) | branche, commit, modifications locales, avance ou retard sur la branche suivie ; boutons `git pull` et `git pull --rebase` (§5) |
@@ -287,6 +287,38 @@ retard datent du dernier `fetch` ; un `git pull` les remet à jour.
 - Un conflit **annule** l'opération (`git merge --abort` ou `git rebase --abort`) : le dépôt
   reste tel qu'il était, et une fenêtre montre la sortie de git.
 - Si le commit a changé, la connexion est revérifiée et les options du script sont relues.
+
+### Nettoyer les builds
+
+Une fois `compile_all.sh` terminé, un répertoire de build garde ce dont seule la compilation
+avait besoin : les fichiers objets (environ la moitié de la taille d'un build : 172 Mio de `.o`
+pour 124 Mio d'exécutables dans un build `zero_any` avec ses validations), leurs fichiers de
+dépendances, les en-têtes précompilés, les bibliothèques statiques. « Nettoyer les builds… », à
+côté de « Builds à jour », liste chaque build configuré de la racine des builds
+(`<racine>/cmake-build-<nom>/<arch>`, toutes architectures) avec ce que son nettoyage
+libérerait, sa taille totale et son dernier nettoyage ; les builds qui ont quelque chose à
+libérer sont cochés.
+
+- **Supprimés** : `*.o`, `*.obj`, `*.o.d`, `*.gch`, `*.pch`, `*.a`.
+- **Gardés** : les exécutables, les bibliothèques partagées (un exécutable peut en charger une
+  par son RPATH), `build.ninja`, `CMakeCache.txt`, `.ninja_log`, `.ninja_deps`, les sources
+  générées (`Unity/`, le build stamp). Le build reste un build : le prochain `compile_all.sh`
+  recompile tout et refait les liens, sans reconfigurer.
+- L'interface demande confirmation, et prévient quand un run `compile_all.sh` est encore
+  actif : nettoyer un build qu'il compile le fait échouer.
+- **« Builds à jour » après un nettoyage.** `ninja -n` voudrait refaire chaque objet manquant :
+  tout build nettoyé serait « pas à jour ». Le nettoyage lance donc d'abord ce même `ninja -n`
+  et écrit son verdict dans `.shrink_gui_cleaned`, dans le répertoire du build. Jusqu'à la
+  compilation suivante (un `.ninja_log` plus récent que ce fichier), la vérification de
+  `run.sh` juge un build nettoyé sur ses sources : à jour s'il l'était au nettoyage et
+  qu'aucune source ou en-tête C/C++, aucun `CMakeLists.txt` ni fichier `*.cmake` / `*.in` du
+  dépôt (`CMAKE_HOME_DIRECTORY`) n'est plus récent que ce fichier ; sinon pas à jour, avec la
+  raison (« cleaned, chunk/foo.h changed since »). Un nettoyage sans `ninja` sur le nœud de
+  login, ou d'un build sans exécutable, note « non vérifié » : le build compte comme pas à
+  jour jusqu'à sa prochaine compilation.
+- Après une recompilation partielle (un seul `--target`), les builds des autres cibles n'ont
+  plus d'objets et la marque a disparu : la vérification les voit pas à jour. Recompilez-les,
+  ou réglez la vérification sur « avertir ».
 
 ## 6. Adapter l'interface au site
 

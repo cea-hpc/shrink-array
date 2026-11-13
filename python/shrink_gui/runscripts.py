@@ -34,6 +34,29 @@ def shq(v):
 # that carry it, with no source changed. A changed source always adds a
 # compilation of its own. Not seen: a relink for a changed external library.
 CHECK_BUILDS_SH = r"""
+# A build "Nettoyer les builds…" cleaned (remote_helper.act_clean_builds), no
+# build since: its objects are gone, `ninja -n` would rebuild them all. Up to
+# date if it was when cleaned and no source of the repository (C/C++ sources
+# and headers, CMake files) is newer than the mark; else CLEANED_WHY says why.
+gui_check_cleaned() {
+    local d="$1" mark="$1/.shrink_gui_cleaned" src newer
+    if ! grep -q '"up_to_date": true' "$mark"; then
+        CLEANED_WHY="cleaned while not up to date, or not checked: compile it again"; return 1
+    fi
+    src=$(sed -n 's/^CMAKE_HOME_DIRECTORY:INTERNAL=//p' "$d/CMakeCache.txt" 2>/dev/null)
+    if [ -z "$src" ] || [ ! -d "$src" ]; then
+        CLEANED_WHY="cleaned, source directory unknown"; return 1
+    fi
+    newer=$(find "$src" \( -name .git -o -name 'cmake-build-*' \) -prune -o -type f \
+                \( -name '*.h' -o -name '*.hpp' -o -name '*.hxx' -o -name '*.inc' -o -name '*.c' \
+                   -o -name '*.cc' -o -name '*.cpp' -o -name '*.cxx' -o -name 'CMakeLists.txt' \
+                   -o -name '*.cmake' -o -name '*.in' \) -newer "$mark" -print -quit 2>/dev/null)
+    if [ -n "$newer" ]; then
+        CLEANED_WHY="cleaned, ${newer#"$src"/} changed since"; return 1
+    fi
+    return 0
+}
+
 gui_check_builds() {
     local mode="$1" root="$2"; shift 2
     root="${root/#\~/$HOME}"
@@ -52,6 +75,10 @@ gui_check_builds() {
             mapfile -t exes < <(cd "$d" && find examples -type f -perm -u+x -not -path '*/CMakeFiles/*' 2>/dev/null | sort)
             [ ${#exes[@]} -gt 0 ] || break
             n=$((n + 1))
+            if [ -f "$d/.shrink_gui_cleaned" ] && ! [ "$d/.ninja_log" -nt "$d/.shrink_gui_cleaned" ]; then
+                gui_check_cleaned "$d" || stale+=("$d ($CLEANED_WHY)")
+                break
+            fi
             manifest=$(mktemp -d)
             ln -s "$(cd "$d" && pwd)/build.ninja" "$manifest/m.ninja"
             out=$(ninja -C "$d" -f "$manifest/m.ninja" -n "${exes[@]}" 2>&1)

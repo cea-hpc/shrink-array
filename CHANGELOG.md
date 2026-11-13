@@ -56,6 +56,15 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `shrink_gui` 0.17: "Nettoyer les builds…", beside "Builds up to date". Lists every configured
+  build of the build root (every architecture) with what cleaning it frees, and removes from
+  the checked ones what the next build re-creates: the object files (about half of a build),
+  their dependency files, the precompiled headers, the static libraries. The executables, the
+  shared libraries and the build files stay: the next `compile_all.sh` recompiles everything,
+  with no new configuration. The build check of `run.sh` knows a cleaned build: until its next
+  build it is up to date if `ninja -n` said so just before the clean (`.shrink_gui_cleaned`)
+  and no source, header or CMake file of the repository changed since
+  (`docs/shrink_gui.md` §5).
 - CI (P3 of the audit): four gaps closed. Per push, `fetch-content`: `examples/fetch_content`
   (new) consumes the checkout with `FetchContent`, and the job checks that the consumer keeps
   its build type, flags, `doc` target and tests, and installs nothing of the library. Nightly:
