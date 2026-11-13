@@ -60,6 +60,15 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `shrink_gui` 0.17: "Nettoyer les builds…", beside "Builds up to date". Lists every configured
+  build of the build root (every architecture) with what cleaning it frees, and removes from
+  the checked ones what the next build re-creates: the object files (about half of a build),
+  their dependency files, the precompiled headers, the static libraries. The executables, the
+  shared libraries and the build files stay: the next `compile_all.sh` recompiles everything,
+  with no new configuration. The build check of `run.sh` knows a cleaned build: until its next
+  build it is up to date if `ninja -n` said so just before the clean (`.shrink_gui_cleaned`)
+  and no source, header or CMake file of the repository changed since
+  (`docs/shrink_gui.md` §5).
 - CI (P3 of the audit): four gaps closed. Per push, `fetch-content`: `examples/fetch_content`
   (new) consumes the checkout with `FetchContent`, and the job checks that the consumer keeps
   its build type, flags, `doc` target and tests, and installs nothing of the library. Nightly:
@@ -207,6 +216,20 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- Check builds (`CHECK_OPTIM`, and the sanitizer and Debug builds) were several times slower
+  than the others under OpenMP: the cross-check of a proxy's `num_tab` against the registry,
+  done on every write (`zero_any`) and every replayed op (`zero`), took the registries' shared
+  lock, and every thread bounced its reader count (`pthread_rwlock_rdlock` + `unlock` were 91 %
+  of `shrink_bench_omp_zero_any_dyn`). A thread now skips a check it already made on the same
+  array and `num_tab` while no registry has changed: a generation counter that
+  `RegistryWriteLock` bumps, and a per-thread memo of 16 sets of 4 ways (a direct-mapped one
+  let two arrays written in turn evict each other in about one run out of two, depending on
+  where ASLR put them). The bench at 14 threads: 7–8 s → 0.6–1.1 s.
+- Check builds: the count of second-value lookups in flight (`GlobalVecHolder::LookupGuard`,
+  which lets a reclaim detect a lookup running alongside it) was one atomic shared by every
+  thread, two locked RMWs per lookup: about 90 % of `find_or_set_ind_cst_val2()`, and 13 % of
+  the bench on a many-core machine. One counter per thread on a cache line of its own, summed
+  by the reclaim; the seq_cst handshake is unchanged.
 - `TCSlab::alloc_block()` tested its capacity after computing it: `block_allocator -
   sizeof(void*)` is unsigned and wraps for a slab smaller than the back-pointer, and the
   quotient, cast to `int`, could come out positive (a slab of 1 byte and elements of 3: a

@@ -72,7 +72,14 @@ class Tooltips:
                         "de chaque build que le programme utilisera (--configs de bench_and_test.py, "
                         "--builds de multi_launch_stress.py, sous --build-root). Un build dont une "
                         "source, un en-tête ou la configuration a changé depuis sa compilation n'est "
-                        "pas à jour.\n\n« refuser » : le run s'arrête (code 96) en listant ces builds.",
+                        "pas à jour.\n\n« refuser » : le run s'arrête (code 96) en listant ces builds.\n\n"
+                        "Un build passé par « Nettoyer les builds… » n'a plus ses fichiers objets : "
+                        "jusqu'à sa prochaine compilation, il est à jour s'il l'était au nettoyage et "
+                        "qu'aucune source, aucun en-tête ni fichier CMake du dépôt n'a changé depuis.",
+        "bclean": "Supprime des builds ce que la compilation suivante refait (fichiers objets, "
+                  "en-têtes précompilés, bibliothèques statiques) ; garde les exécutables. Le "
+                  "prochain compile_all.sh recompile tout. « Builds à jour » reconnaît un build "
+                  "nettoyé : il le juge sur ses sources jusqu'à sa prochaine compilation.",
         "directives": "Lignes #MSUB du script batch (ou options ccc_mprun en mode détaché). Propres à "
                       "la partition, mémorisées.\n\n-T, -r, -o et -e sont ajoutés d'après le formulaire.",
         "repo": "Le dépôt shrink-array SUR INTI. Les options sont lues dans ces scripts-là, et c'est "

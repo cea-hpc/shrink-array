@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QGroupBox, QH
 
 from shrink_gui import config, i18n, qos
 from shrink_gui.config import APP, DEFAULTS, LOCAL, PROGRAMS, QOS_FALLBACK
+from shrink_gui.builds_panel import BuildsPanel
 from shrink_gui.git_panel import GitPanel
 from shrink_gui.i18n import T, status_short, status_text, tip
 from shrink_gui.launch_form import LaunchForm
@@ -28,7 +29,7 @@ from shrink_gui.tooltips import Tooltips
 from shrink_gui.widgets import DurationBox, LogView, OptionsForm, RowVisibleFormLayout, TLabel, VScrollArea
 
 
-class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab, BenchChart, ErrorsTab,
+class Main(MachinePanel, LaunchForm, RunActions, GitPanel, BuildsPanel, SummaryTab, ChartTab, BenchChart, ErrorsTab,
            SpeedupChart, Tooltips, QMainWindow):
     COLS = ["Run", "Programme", "Partition", "Commit", "Job", "Statut", "Avancement", "Erreurs",
             "Durée", "Dernière ligne"]
@@ -165,7 +166,13 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
         where.addRow("QoS (-Q)", qrow)
         where.addRow("Nœuds", self.nodes_row)
         where.addRow("Démarrage", arow)
-        where.addRow("Builds à jour", self.check_builds)
+        # "Nettoyer les builds…" (builds_panel.py): what the next build re-creates
+        self.bclean = QPushButton("Nettoyer les builds…")
+        self.bclean.clicked.connect(self.clean_builds)
+        cbrow = QHBoxLayout()
+        cbrow.addWidget(self.check_builds, 1)
+        cbrow.addWidget(self.bclean)
+        where.addRow("Builds à jour", cbrow)
         where.addRow("Directives", self.directives)
         self.launcher = QLineEdit()
         self.launcher.setPlaceholderText("vide : la commande tourne directement dans le job")

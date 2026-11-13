@@ -403,8 +403,29 @@ class GlobalVecHolder
     // in flight when a reclaim starts or ends, or starts while it runs.
     // Release builds pay nothing.
 
-    /// @brief Lookups/registrations in flight (check builds only).
-    static inline std::atomic<int> lookups_in_flight{0};
+    /// @brief Lookups/registrations in flight, one counter per thread on a
+    ///        cache line of its own (check builds only; one slot otherwise).
+    /// @details One counter shared by every thread made each lookup bounce its
+    ///          cache line between the cores: two locked RMWs per second-value
+    ///          lookup, about 90 % of find_or_set_ind_cst_val2() in the check
+    ///          bench. A thread takes a slot once (round robin; past
+    ///          in_flight_slots threads share one, which costs contention, not
+    ///          correctness: the reclaim reads the sum).
+    struct alignas(64) InFlightSlot
+    {
+        std::atomic<int> count{0};
+    };
+    static constexpr std::size_t                            in_flight_slots = build_config::any_check ? 64 : 1;
+    static inline std::array<InFlightSlot, in_flight_slots> lookups_in_flight{};
+    static inline std::atomic<std::size_t>                  next_in_flight_slot{0};
+
+    /// @brief This thread's counter of lookups in flight.
+    [[nodiscard]] static std::atomic<int>& my_in_flight() noexcept
+    {
+        thread_local const std::size_t slot =
+            next_in_flight_slot.fetch_add(1, std::memory_order_relaxed) % in_flight_slots;
+        return lookups_in_flight[slot].count;
+    }
     /// @brief Reclaim scopes open, nested ones included (check builds only).
     static inline std::atomic<int> reclaims_running{0};
 
@@ -417,7 +438,7 @@ class GlobalVecHolder
         {
             if constexpr (build_config::any_check)
             {
-                lookups_in_flight.fetch_sub(1, std::memory_order_acq_rel);
+                my_in_flight().fetch_sub(1, std::memory_order_acq_rel);
             }
         }
         LookupGuard(const LookupGuard&)            = delete;

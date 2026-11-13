@@ -833,11 +833,19 @@ zero::ProxyFastCompPolicy<Derived, T, Enabled>::get_num_tab_async(auto*         
     // array is still registered.
     if constexpr (build_config::any_check)
     {
-        if (Derived::share_info_array->exists(ptr) && Derived::share_info_array->get_num_tab(ptr) != ctx->num_tab)
-        {
-            CHUNK_INVARIANT_FAILED("[Proxy get_num_tab_async] ctx num_tab={} but the registry says {} for {}",
-                                   ctx->num_tab, Derived::share_info_array->get_num_tab(ptr), ptr);
-        }
+        // Once per (array, num_tab) and registry generation, not per replayed
+        // op: see verify_once_per_generation().
+        const int num_tab = ctx->num_tab;
+        internal::verify_once_per_generation(
+            ptr, std::pair{ptr, num_tab},
+            [ptr, num_tab]
+            {
+                if (Derived::share_info_array->exists(ptr) && Derived::share_info_array->get_num_tab(ptr) != num_tab)
+                {
+                    CHUNK_INVARIANT_FAILED("[Proxy get_num_tab_async] ctx num_tab={} but the registry says {} for {}",
+                                           num_tab, Derived::share_info_array->get_num_tab(ptr), ptr);
+                }
+            });
     }
     return ctx->num_tab;
 }

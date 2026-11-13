@@ -63,6 +63,8 @@ afterok:j1:...:jN).
 "Builds à jour": run.sh first runs `ninja -n` on the executables
 already built in each build the program will use (--configs / --builds under
 --build-root) and refuses to start (exit code 96) or warns when one is stale.
+A build "Nettoyer les builds…" cleaned (no objects left, .shrink_gui_cleaned)
+is judged by its sources instead, until its next build.
 
 "Récupérer" fetches the run directory, plus the summary files of the
 program's own output directory, read from the log ("📁 Outputs, CSV and log
@@ -102,6 +104,7 @@ Modules:
     launch_form.py      program, options form, start conditions, pickers, submission
     run_actions.py      stop, reuse the options, delete, fetch the results
     git_panel.py        the Git (inti) rows
+    builds_panel.py     "Nettoyer les builds…": what the next build re-creates, removed
     tab_summary.py      the Résumé tab
     tab_chart.py        the Graphique tab (multi_launch_stress.py)
     tab_bench_chart.py  ... its bench_and_test.py page
@@ -110,4 +113,4 @@ Modules:
     tooltips.py         the tooltip texts
 """
 
-__version__ = "0.16"
+__version__ = "0.17"

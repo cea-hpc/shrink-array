@@ -2,7 +2,7 @@
 
 > French version: [shrink_gui_fr.md](shrink_gui_fr.md).
 
-> November 2026, `shrink_gui` 0.16 (prototype). A window on the laptop to submit
+> November 2026, `shrink_gui` 0.17 (prototype). A window on the laptop to submit
 > `compile_all.sh`, `bench_and_test.py`, `multi_launch_stress.py` and `thread_speedup.py` on the cluster, or to
 > run them on the laptop itself (§3, "This machine"), follow
 > their log, read their summary and fetch their results. The code is described in the
@@ -71,7 +71,7 @@ runs again by itself.
 | QoS (-Q) | "auto" picks the QoS from the duration, according to the limits `ccc_mqinfo` reports |
 | Nodes | the pooled programs in batch mode: the number of nodes that share the work, as one job of N nodes or N one-node jobs (below) |
 | Start | after a `compile_all.sh` run that has not finished yet (Slurm dependency `afterok`/`afterany`), and/or not before a given time |
-| Builds up to date | before the command, `ninja -n` on the builds used: refuse (code 96), warn, or skip |
+| Builds up to date | before the command, `ninja -n` on the builds used: refuse (code 96), warn, or skip. "Nettoyer les builds…" beside it: §5 |
 | Directives, Launcher (job) | the `#MSUB` lines and the launcher on the node; per partition, remembered |
 | Repository (inti), Runs (inti) | the shrink-array repository and the runs directory, on the cluster |
 | Git (inti) | branch, commit, local changes, ahead of or behind the upstream; `git pull` and `git pull --rebase` buttons (§5) |
@@ -272,6 +272,36 @@ the last `fetch`; a `git pull` brings them up to date.
 - A conflict **cancels** the operation (`git merge --abort` or `git rebase --abort`): the
   repository stays as it was, and a window shows git's output.
 - When the commit changed, the connection is checked again and the script options read again.
+
+### Cleaning the builds
+
+Once `compile_all.sh` is done, a build directory still holds what only the build itself needed:
+the object files (about half of a build's size: 172 MiB of `.o` against 124 MiB of executables
+in a `zero_any` build with its validations), their dependency files, the precompiled headers,
+the static libraries. "Nettoyer les builds…", beside "Builds up to date", lists every
+configured build of the build root (`<build root>/cmake-build-<name>/<arch>`, every
+architecture) with what cleaning it would free, its total size and its last clean; the builds
+with something to free are checked.
+
+- **Removed**: `*.o`, `*.obj`, `*.o.d`, `*.gch`, `*.pch`, `*.a`.
+- **Kept**: the executables, the shared libraries (an executable may load one through its
+  RPATH), `build.ninja`, `CMakeCache.txt`, `.ninja_log`, `.ninja_deps`, the generated sources
+  (`Unity/`, the build stamp). The build stays a build: the next `compile_all.sh` recompiles
+  everything and relinks, with no new configuration.
+- The interface asks first, and warns when a `compile_all.sh` run is still active: cleaning a
+  build it compiles makes it fail.
+- **"Builds up to date" after a clean.** `ninja -n` would rebuild every missing object: every
+  cleaned build would be stale. So the clean first runs the same `ninja -n` and writes its
+  verdict to `.shrink_gui_cleaned` in the build directory. Until the next build (a
+  `.ninja_log` newer than that file), the check of `run.sh` judges a cleaned build by its
+  sources: up to date if it was when cleaned and no C/C++ source or header, `CMakeLists.txt`
+  or `*.cmake` / `*.in` file of the repository (`CMAKE_HOME_DIRECTORY`) is newer than the
+  file; otherwise not up to date, with the reason ("cleaned, chunk/foo.h changed since").
+  A clean without `ninja` on the login node, or of a build with no executable, records "not
+  checked": the build counts as stale until its next compilation.
+- After a partial rebuild (one `--target`), the builds of the other targets have no objects
+  any more and the mark is gone: the check sees them stale. Rebuild them, or set the check to
+  "warn".
 
 ## 6. Adapting it to a site
 
