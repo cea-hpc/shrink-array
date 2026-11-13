@@ -333,6 +333,9 @@ ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::back()
 // shrink_array::ArrayChunkBase<Derived>::const_iterator
 // ---------------------------------------------------------------------------
 
+// `inline` is not needed for the ODR (a template), but it is GCC's and Clang's
+// inlining hint: in class, the body had it implicitly, and lost it when it was
+// moved out of class. Kept on purpose for the iterator read (02fffc622).
 template <typename Derived>
 [[nodiscard]] inline ArrayChunkBase<Derived>::const_iterator::reference
 ArrayChunkBase<Derived>::const_iterator::operator*() const noexcept
