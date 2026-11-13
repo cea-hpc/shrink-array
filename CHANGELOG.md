@@ -230,6 +230,11 @@ the tag's checksum to the recipe.
   thread, two locked RMWs per lookup: about 90 % of `find_or_set_ind_cst_val2()`, and 13 % of
   the bench on a many-core machine. One counter per thread on a cache line of its own, summed
   by the reclaim; the seq_cst handshake is unchanged.
+- Check builds, `zero_one_value` (and `ArrayChunkBits`): the comparison of a proxy's armed
+  second-value index and `num_tab` with the registry, on every write
+  (`ProxySpec::armed_inf_array()`), took the registries' shared lock too: 95 % of
+  `shrink_bench_omp_zero_one_value_1024` at 160 threads. It goes through the same per-thread memo.
+  At 14 threads, `--mode perf --divisor 10 --iter_max 100`: 82–89 s → 1.7–1.8 s.
 - `TCSlab::alloc_block()` tested its capacity after computing it: `block_allocator -
   sizeof(void*)` is unsigned and wraps for a slab smaller than the back-pointer, and the
   quotient, cast to `int`, could come out positive (a slab of 1 byte and elements of 3: a

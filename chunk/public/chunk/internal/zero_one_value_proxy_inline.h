@@ -19,9 +19,11 @@
 #include <cstddef>     // std::size_t
 #include <type_traits> // std::remove_cvref_t
 #include <memory>      // std::addressof (operator=: operator& is deleted)
+#include <tuple>       // std::tuple (the key of the check builds' registry memo)
 
 #include "chunk/internal/in_t.h"                 // InT<T>
 #include "chunk/internal/bad_ptr_check.h"        // CHUNK_CHECK_VALUES_PTR (check builds)
+#include "chunk/internal/cold_path_lock.h"       // verify_once_per_generation (check builds)
 #include "chunk/internal/zero_one_value_proxy.h" // the declarations these bodies belong to
 #include "chunk/config.h"             // chunk_config::use_compression_with_counter, build_config::chunk_dynamic
 #include "chunk/internal/PMP_CHUNK.h" // get_thr_rank_fast
@@ -55,15 +57,24 @@ zero_one_value::ProxySpec<T, Derived>::armed_inf_array(this const Derived& self)
         {
             // ind and num_tab only: ind maps one-to-one to the value, and a
             // value compare would raise a false alarm on a NaN second value.
-            const InfArrayT reg = Derived::get_info_second_value(self.get_ptr_on_array());
-            if (reg.ind != self.inf_array_src_->ind || reg.num_tab != self.inf_array_src_->num_tab)
-            {
-                CHUNK_INVARIANT_FAILED(
-                    "zero_one_value::ProxySpec::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
-                    "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
-                    self.inf_array_src_->ind, self.inf_array_src_->num_tab, reg.ind, reg.num_tab,
-                    self.get_ptr_on_array());
-            }
+            // Once per (array, ind, num_tab) and registry generation, not per
+            // write: see verify_once_per_generation().
+            const auto ptr     = self.get_ptr_on_array();
+            const int  ind     = self.inf_array_src_->ind;
+            const int  num_tab = self.inf_array_src_->num_tab;
+            internal::verify_once_per_generation(
+                ptr, std::tuple{ptr, ind, num_tab},
+                [ptr, ind, num_tab]
+                {
+                    const InfArrayT reg = Derived::get_info_second_value(ptr);
+                    if (reg.ind != ind || reg.num_tab != num_tab)
+                    {
+                        CHUNK_INVARIANT_FAILED("zero_one_value::ProxySpec::load_inf_array: armed (ind {}, num_tab {}) "
+                                               "differs from the registry's (ind {}, num_tab {}) for array {} -- a "
+                                               "registry write without sync_registry_mirror()?",
+                                               ind, num_tab, reg.ind, reg.num_tab, ptr);
+                    }
+                });
         }
     }
     return self.inf_array_src_;
@@ -91,15 +102,24 @@ zero_one_value::ProxySpec<T, Derived>::armed_inf_array(this const Derived& self)
         {
             // ind and num_tab only: ind maps one-to-one to the value, and a
             // value compare would raise a false alarm on a NaN second value.
-            const InfArrayT reg = Derived::get_info_second_value(self.get_ptr_on_array());
-            if (reg.ind != self.inf_array_src_->ind || reg.num_tab != self.inf_array_src_->num_tab)
-            {
-                CHUNK_INVARIANT_FAILED(
-                    "zero_one_value::ProxySpec::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
-                    "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
-                    self.inf_array_src_->ind, self.inf_array_src_->num_tab, reg.ind, reg.num_tab,
-                    self.get_ptr_on_array());
-            }
+            // Once per (array, ind, num_tab) and registry generation, not per
+            // write: see verify_once_per_generation().
+            const auto ptr     = self.get_ptr_on_array();
+            const int  ind     = self.inf_array_src_->ind;
+            const int  num_tab = self.inf_array_src_->num_tab;
+            internal::verify_once_per_generation(
+                ptr, std::tuple{ptr, ind, num_tab},
+                [ptr, ind, num_tab]
+                {
+                    const InfArrayT reg = Derived::get_info_second_value(ptr);
+                    if (reg.ind != ind || reg.num_tab != num_tab)
+                    {
+                        CHUNK_INVARIANT_FAILED("zero_one_value::ProxySpec::load_inf_array: armed (ind {}, num_tab {}) "
+                                               "differs from the registry's (ind {}, num_tab {}) for array {} -- a "
+                                               "registry write without sync_registry_mirror()?",
+                                               ind, num_tab, reg.ind, reg.num_tab, ptr);
+                    }
+                });
         }
     }
     return self.inf_array_src_;
