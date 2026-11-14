@@ -732,8 +732,12 @@ int library_teams(int nt, int teams)
 
     // Every TBB thread busy (no phase: a team may open) while a second thread
     // opens teams: their tasks start late or never, the teams still end.
-    std::atomic<bool> stop{false};
-    std::thread       opener(
+    // The busy tasks capture nothing: the index form calls the caller's
+    // lambda itself, which an uninstrumented libtbb hands over unseen by
+    // ThreadSanitizer (tsan_tbb.supp); a static flag needs no hand-over.
+    static std::atomic<bool> stop{false};
+    stop.store(false);
+    std::thread opener(
         [&]
         {
             for (int k = 0; k < teams / 4; ++k)
@@ -743,7 +747,7 @@ int library_teams(int nt, int teams)
             stop.store(true);
         });
     oneapi::tbb::parallel_for(0, nt, 1,
-                              [&](int)
+                              [](int)
                               {
                                   while (!stop.load())
                                   {
