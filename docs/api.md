@@ -161,7 +161,11 @@ The application's own threads (`std::thread`, TBB) need the std backend (`CHUNK_
 every thread that writes calls `begin_parallel_phase()` before its first write, and one thread
 calls `finalize_parallel_phase()` once they have stopped. `shrink_array::tbb::parallel_for`
 makes both calls for a TBB loop; the header is installed with the others, and the program links
-TBB itself (the library does not).
+TBB itself (the library does not). Its first call also gives the library's own teams (the flush
+and compression pass of `finalize_parallel_phase()`, a re-chunk, a parallel initialisation) to
+TBB's threads instead of the std backend's pool, so that the two do not compete for the cores;
+a TBB program that writes the arrays without the adaptor calls
+`shrink_array::tbb::use_tbb_for_library_teams()` itself, once.
 
 The threads, whatever the backend (`chunk/threads.h`): size per-thread data and number the
 threads with these rather than with `omp_get_*`, so that the program builds with every backend.

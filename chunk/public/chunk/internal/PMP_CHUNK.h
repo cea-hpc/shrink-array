@@ -43,6 +43,7 @@ using ::fast_alloc::pmp::parallel_for_local;
 using ::fast_alloc::pmp::parallel_sum;
 using ::fast_alloc::pmp::SchedKind;
 using ::fast_alloc::pmp::Schedule;
+using ::fast_alloc::pmp::set_team_launcher;
 using ::fast_alloc::pmp::team;
 using ::fast_alloc::pmp::Team;
 using ::fast_alloc::pmp::team_any;

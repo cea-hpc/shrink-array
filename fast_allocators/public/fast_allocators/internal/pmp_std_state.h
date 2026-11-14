@@ -27,8 +27,10 @@
 #include <array>   // std::array (the frame stack)
 #include <atomic>  // std::atomic (the settings)
 #include <chrono>  // std::chrono::steady_clock (the spin budget)
-#include <cstdlib> // std::getenv, std::strtol (CHUNK_NUM_THREADS, OMP_NUM_THREADS, CHUNK_PMP_SPIN_US)
+#include <cstdint> // std::uint64_t (TeamLauncher's argument)
+#include <cstdlib> // std::getenv, std::strtol (CHUNK_NUM_THREADS, OMP_NUM_THREADS, CHUNK_PMP_SPIN_US, CHUNK_PMP_JOIN_US)
 #include <thread>  // std::thread::hardware_concurrency, std::this_thread::yield
+#include <utility> // std::forward (spin_until)
 #if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
     #include <intrin.h> // _mm_pause (cpu_relax)
 #endif
@@ -121,6 +123,18 @@ class FrameGuard
     int  prev_cache_ = -1; ///< rank_cache before the team: still right after it.
 };
 
+/**
+ * @brief Starts @p count tasks of another runtime, each calling
+ *        @p task(@p arg) once, and returns without waiting for them
+ *        (set_team_launcher(), pmp_runtime.h).
+ * @details The std backend's teams then take their workers from that runtime
+ *          (the TBB adaptor's arena) instead of the pool's own threads. The
+ *          runtime need not start every task, nor start them at once: a team
+ *          is made of the tasks that started within join_budget_ns(), and
+ *          the late ones return at once (Pool::try_run_launched()).
+ */
+using TeamLauncher = void (*)(int count, void (*task)(std::uint64_t), std::uint64_t arg);
+
 /// @brief The process-wide settings (OpenMP's ICVs): set by the queries'
 ///        setters, read when a team opens.
 struct Settings
@@ -136,6 +150,9 @@ struct Settings
     /// everywhere and no team of more than one thread opens: its workers'
     /// ranks would be those of the application's threads.
     std::atomic<bool> application_phase{false};
+    /// The runtime the teams take their workers from (TeamLauncher); nullptr:
+    /// the pool's own threads.
+    std::atomic<TeamLauncher> team_launcher{nullptr};
 };
 
 /// @brief The settings (one instance per process, never destroyed).
@@ -216,6 +233,30 @@ struct Settings
     return budget;
 }
 
+/// @brief How long a team whose workers are another runtime's tasks
+///        (TeamLauncher) waits for them to start, in ns: CHUNK_PMP_JOIN_US
+///        (microseconds, default 200). The tasks started by then make the
+///        team; the late ones return at once.
+[[nodiscard]] inline long long join_budget_ns() noexcept
+{
+    static const long long budget = []
+    {
+        long long   us    = 200;
+        const char* value = std::getenv("CHUNK_PMP_JOIN_US"); // NOLINT(concurrency-mt-unsafe): read once
+        if (value != nullptr)
+        {
+            char*      end    = nullptr;
+            const long parsed = std::strtol(value, &end, 10);
+            if (end != value && parsed >= 0 && parsed <= 10'000'000)
+            {
+                us = parsed;
+            }
+        }
+        return us * 1000;
+    }();
+    return budget;
+}
+
 /// @brief A hint to the core that the thread spins (x86 pause, AArch64 yield).
 inline void cpu_relax() noexcept
 {
@@ -240,20 +281,15 @@ inline void cpu_relax() noexcept
 }
 
 /**
- * @brief Spin until @p done() is true or the spin budget is spent.
- * @param team_threads Threads of the team the caller waits with: more than
- *        the hardware threads, and the caller sleeps at once (a spinning
- *        waiter would hold the core of a thread it waits for -- libgomp
- *        throttles its spin count the same way).
+ * @brief Spin until @p done() is true or @p budget ns are spent.
  * @return @p done()'s last value: false means the caller must sleep.
  * @details Every 256 rounds the clock is read and the thread yields: when
  *          other threads want the cores (another runtime's idle workers, a
  *          busy machine), the one being waited for gets a turn.
  */
 template <typename Done>
-[[nodiscard]] bool spin_until(int team_threads, Done&& done) noexcept
+[[nodiscard]] bool spin_for(long long budget, Done&& done) noexcept
 {
-    const long long budget = team_threads > hardware_threads() ? 0 : spin_budget_ns();
     if (budget <= 0)
     {
         return done();
@@ -276,5 +312,19 @@ template <typename Done>
             std::this_thread::yield();
         }
     }
+}
+
+/**
+ * @brief Spin until @p done() is true or the spin budget (spin_budget_ns()) is spent.
+ * @param team_threads Threads of the team the caller waits with: more than
+ *        the hardware threads, and the caller sleeps at once (a spinning
+ *        waiter would hold the core of a thread it waits for -- libgomp
+ *        throttles its spin count the same way).
+ * @return @p done()'s last value: false means the caller must sleep.
+ */
+template <typename Done>
+[[nodiscard]] bool spin_until(int team_threads, Done&& done) noexcept
+{
+    return spin_for(team_threads > hardware_threads() ? 0 : spin_budget_ns(), std::forward<Done>(done));
 }
 } // namespace fast_alloc::pmp::std_backend

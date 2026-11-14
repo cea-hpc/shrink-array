@@ -207,6 +207,29 @@ inline void leave_application_phase() noexcept
     }
 }
 
+/**
+ * @brief Std backend: take the workers of the next teams from another runtime
+ *        (std_backend::TeamLauncher; the TBB adaptor's arena), so that the
+ *        library's teams and the application's threads share the cores
+ *        instead of two sets of threads competing for them.
+ * @param launch the launcher; nullptr: back to the backend's own threads
+ * @return true for the std backend; false, nothing done, for the others
+ *         (OpenMP's teams are OpenMP's, the serial backend has none).
+ */
+inline bool set_team_launcher(std_backend::TeamLauncher launch) noexcept
+{
+    if constexpr (backend == BackendKind::std_threads)
+    {
+        std_backend::settings().team_launcher.store(launch, std::memory_order_release);
+        return true;
+    }
+    else
+    {
+        (void)launch;
+        return false;
+    }
+}
+
 /// @brief Nesting level of the calling thread, serialised regions included
 ///        (omp_get_level): 0 outside any region.
 [[nodiscard]] inline int level() noexcept

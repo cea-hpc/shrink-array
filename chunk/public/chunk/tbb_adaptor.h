@@ -92,10 +92,14 @@
 #include <type_traits> // std::is_same_v
 #include <utility>     // std::forward
 
+#include <cstdint> // std::uint64_t (the launcher's argument)
+#include <mutex>   // std::once_flag, std::call_once (installing the launcher)
+
 #include <oneapi/tbb/blocked_range.h> // oneapi::tbb::blocked_range (the index forms)
 #include <oneapi/tbb/parallel_for.h>  // oneapi::tbb::parallel_for
+#include <oneapi/tbb/task_arena.h>    // oneapi::tbb::task_arena (the library's teams)
 
-#include "chunk/internal/PMP_CHUNK.h" // pmp::backend, pmp::BackendKind
+#include "chunk/internal/PMP_CHUNK.h" // pmp::backend, pmp::BackendKind, pmp::set_team_launcher
 #include "chunk/manage_ompt.h"        // begin_parallel_phase, finalize_parallel_phase
 
 namespace shrink_array::tbb
@@ -151,7 +155,40 @@ template <std::integral Index>
 {
     return last > first ? static_cast<Index>(((last - first) + (step - 1)) / step) : Index(0);
 }
+
+/// @brief The library's teams' launcher (pmp::set_team_launcher()): @p count
+///        tasks of an arena of TBB's default size, each calling @p task(@p arg).
+inline void launch_team_tasks(int count, void (*task)(std::uint64_t), std::uint64_t arg)
+{
+    static oneapi::tbb::task_arena* const arena = new oneapi::tbb::task_arena(); // NOLINT: immortal, as the pool
+    for (int k = 0; k < count; ++k)
+    {
+        arena->enqueue([task, arg] { task(arg); });
+    }
+}
 } // namespace detail
+
+/**
+ * @brief Std backend: the library's own teams (the flush and compression
+ *        pass of finalize_parallel_phase(), a re-chunk, a parallel
+ *        initialisation) take their workers from TBB instead of the std
+ *        backend's pool. Called by every adaptor call; once is enough, and
+ *        a TBB program that writes the arrays by hand calls it itself.
+ * @details Without it a TBB program runs two sets of threads, TBB's and the
+ *          pool's: the pool's spin after each team (CHUNK_PMP_SPIN_US) on
+ *          the cores TBB's threads need. TBB does not promise to run the
+ *          tasks at once, so a team is made of those that started within
+ *          CHUNK_PMP_JOIN_US (200 us by default): the team of one, in the
+ *          worst case, is still correct. Nothing for the serial backend.
+ */
+inline void use_tbb_for_library_teams()
+{
+    if constexpr (pmp::backend == pmp::BackendKind::std_threads)
+    {
+        static std::once_flag once;
+        std::call_once(once, [] { (void)pmp::set_team_launcher(&detail::launch_team_tasks); });
+    }
+}
 
 /**
  * @brief A body that calls begin_parallel_phase() before every piece it runs,
@@ -204,6 +241,7 @@ void parallel_for(const Range& range, const Body& body, Extra&&... extra)
     }
     else
     {
+        shrink_array::tbb::use_tbb_for_library_teams();
         const detail::PhaseEnd end;
         oneapi::tbb::parallel_for(range, shrink_array::tbb::phase_body(body), std::forward<Extra>(extra)...);
     }
