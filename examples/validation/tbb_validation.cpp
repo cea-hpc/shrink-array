@@ -49,7 +49,14 @@
 //   - a body that throws: the exception reaches the caller, the phase is
 //     closed, and the next call runs normally; a step of 0 is refused
 //     (std::invalid_argument, as TBB) before any phase opens;
-//   - a narrower task_arena (2 threads) for one call.
+//   - a narrower task_arena (2 threads) for one call;
+//   - 64-bit indices: an Array<char, long> of more than INT_MAX elements,
+//     written through the index form with a step that lands on both sides of
+//     2^31 and through the range form on a blocked_range<long> straddling
+//     2^31, then read back. Almost every chunk stays at the first constant,
+//     so the array costs its chunk metadata (a few hundred MB), not 2 GB, as
+//     in index64_validation. Skipped under ThreadSanitizer (its shadow memory
+//     over that metadata).
 //
 //   After every phase the array is compared, element by element, with a
 //   std::vector that received the same writes.
@@ -59,11 +66,13 @@
 
 #include <algorithm>   // std::max, std::min
 #include <atomic>      // std::atomic
+#include <climits>     // INT_MAX (past_int_max)
 #include <map>         // std::map (thread -> rank)
 #include <mutex>       // std::mutex, std::scoped_lock
 #include <stdexcept>   // std::runtime_error (the throwing body), std::invalid_argument (step 0)
 #include <thread>      // std::this_thread::get_id
 #include <type_traits> // std::conditional_t
+#include <utility>     // std::as_const (past_int_max)
 #include <vector>      // std::vector (the reference)
 
 #include <oneapi/tbb/blocked_range.h>  // oneapi::tbb::blocked_range
@@ -92,11 +101,11 @@ namespace validation::tbb_validation
 using namespace shrink_array;
 using oneapi::tbb::blocked_range;
 
-template <typename T>
-using Array =
-    std::conditional_t<chunk_config::use_zero_any,
-                       zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+template <typename T, typename I = int>
+using Array = std::conditional_t<
+    chunk_config::use_zero_any,
+    zero_any::Array<T, I>,
+    std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T, I>, zero::Array<T, I>>>;
 
 constexpr const char* variant_name()
 {
@@ -609,6 +618,55 @@ int throwing_body(const char* label, long N, const Scenario<T>& sc)
     return fails == 0 ? 0 : 1;
 }
 
+/// @brief 64-bit indices through the adaptor: an Array<char, long> past
+///        INT_MAX, written by the index form (a step landing on both sides of
+///        2^31) and by the range form (a blocked_range<long> straddling 2^31),
+///        read back; an element neither form wrote reads 0.
+int past_int_max()
+{
+    using Big        = Array<char, long>;
+    const long count = static_cast<long>(INT_MAX) + (3L * 4096) + 5; // three chunks past INT_MAX at 4096
+    const long step  = (1L << 20) + 7;                               // ~2048 positions, some past INT_MAX
+    const long lo    = static_cast<long>(INT_MAX) - 2048;            // the range form's first index
+    const auto value = [](long i) { return static_cast<char>(1 + (i % 120)); };
+    Big        big(count);
+
+    shrink_array::tbb::parallel_for(0L, count, step, [&](long i) { big[i] = value(i); });
+    shrink_array::tbb::parallel_for(blocked_range<long>(lo, count),
+                                    [&](const blocked_range<long>& r)
+                                    {
+                                        for (long i = r.begin(); i != r.end(); ++i)
+                                        {
+                                            big[i] = value(i);
+                                        }
+                                    });
+
+    const auto& cb  = std::as_const(big);
+    long        bad = 0;
+    long        n   = 0;
+    for (long i = 0; i < count; i += step, ++n)
+    {
+        bad += cb[i] != value(i) ? 1 : 0;
+    }
+    for (long i = lo; i < count; ++i)
+    {
+        bad += cb[i] != value(i) ? 1 : 0;
+    }
+    for (const long i : {1L, step + 1, lo - 1})
+    {
+        bad += cb[i] != 0 ? 1 : 0;
+    }
+    if (bad != 0)
+    {
+        println("[{}/past-int-max] FAIL: {} element(s) wrong of N={} (INT_MAX + {})", variant_name(), bad, count,
+                count - static_cast<long>(INT_MAX));
+        return 1;
+    }
+    println("[{}/past-int-max] OK: N={} (INT_MAX + {}), {} index-form positions, range [{}, {})", variant_name(), count,
+            count - static_cast<long>(INT_MAX), n, lo, count);
+    return 0;
+}
+
 int run(int argc, char** argv)
 {
     const long N      = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 18, "N") : (1L << 18);
@@ -654,6 +712,14 @@ int run(int argc, char** argv)
             fails += nested<double>("double", N, phases, sd);
             fails += nested<int>("int", N, phases, si);
             fails += throwing_body<double>("double", N, sd);
+            if constexpr (chunk_config::tsan_build)
+            {
+                println("[{}/past-int-max] skipped under ThreadSanitizer", variant_name());
+            }
+            else
+            {
+                fails += past_int_max();
+            }
         });
 
     // A narrower arena for one call: its threads are TBB's same workers.
