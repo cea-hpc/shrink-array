@@ -56,6 +56,13 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `scripts/compile_all.sh` builds with Arm Compiler for Linux on ARM (the `acfl` family:
+  `omp-acfl`, `std-acfl`, `omp-acfl-debug`; `--only=acfl`, `--no-acfl`), the ARM counterpart
+  of the x86-only `oneapi` and `aocc`. `armclang++` comes from `CHUNK_ACFL_ROOT` (an install
+  prefix, as `spack location -i acfl` prints it), from the `PATH` (`spack load acfl`), from
+  the newest `$CCCWORKDIR/opt/*/acfl-*` (a Spack install tree there) or from an `acfl` module;
+  none found, the family is skipped. `bench_runner` and `build_arm.txt` list the two
+  optimised builds.
 - `shrink_array::tbb::use_tbb_for_library_teams()` (`chunk/tbb_adaptor.h`), called by every
   adaptor call: under the std backend, the library's own teams (the flush and compression pass of
   `finalize_parallel_phase()`, a re-chunk, a parallel initialisation) take their workers from TBB

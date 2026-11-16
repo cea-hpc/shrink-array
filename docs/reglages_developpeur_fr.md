@@ -207,7 +207,7 @@ transmettant les options communes. `--help` donne la liste complète.
 | `--build` | sans reconfigurer (reconstruction seule) |
 | `--fresh-cache` | supprimer le `CMakeCache.txt` de chaque build sélectionné avant de configurer |
 | `--debug-only` | seulement les builds Debug |
-| `--only=<c>`, `--no-<c>` | un seul compilateur, ou sans lui (`gnu`, `oneapi`, `nvhpc`, `llvm`, `aocc`) |
+| `--only=<c>`, `--no-<c>` | un seul compilateur, ou sans lui (`gnu`, `oneapi`, `nvhpc`, `llvm`, `aocc`, `acfl` ; `oneapi` et `aocc` sur x86-64 seulement, `acfl` sur ARM seulement) |
 | `--with-nvhpc` | ajouter NVHPC, désactivé par défaut (environ 1 h 30 par build sur x86, sans gain) |
 | `--no-sanitizers` | sans les builds LLVM sous sanitizer |
 | `--with-ledger` | ajouter `cmake-build-omp-gnu-debug-ledger` (Debug OpenMP avec `CHUNK_FORCE_LEDGER=ON`), désactivé par défaut ; un `--target` qui le sélectionne le construit aussi |
