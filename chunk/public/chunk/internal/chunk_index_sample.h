@@ -40,7 +40,7 @@ chunk_index_sample(std::array<char, N>& buf, const std::vector<int>& idx, I chun
     using fast_alloc::append_int;
     using fast_alloc::append_text;
     char* const       first = buf.data();
-    char* const       end   = first + N;
+    const char* const end   = first + N;
     char*             out   = first;
     const std::size_t shown = idx.size() < max ? idx.size() : max;
     for (std::size_t k = 0; k < shown && out < end; ++k)

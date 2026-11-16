@@ -604,7 +604,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
         const std::size_t hi      = last < c_end ? last : c_end;
         const bool        whole   = (lo == c_begin) && (hi == c_end);
 
-        auto& ch = arr.chunk_ref(ci);
+        const auto& ch = arr.chunk_ref(ci);
 
         // ── Whole chunk set to the compressible constant: no storage needed ──
         //
@@ -791,7 +791,7 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
         const std::size_t lo      = first > c_begin ? first : c_begin;
         const std::size_t hi      = last < c_end ? last : c_end;
 
-        auto& ch = arr.chunk_ref(ci);
+        const auto& ch = arr.chunk_ref(ci);
 
         if constexpr (is_packed_bit_v<T>)
         {

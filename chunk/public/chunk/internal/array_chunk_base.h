@@ -740,9 +740,9 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      */
     CHUNK_FLATTEN CHUNK_FORCE_INLINE T& operator()(IndType index) noexcept
     {
-        const int num_chunk = chunk_index_of(index);
-        const int num       = offset_in_chunk(index);
-        auto&     chunk_t   = chunk_list_[num_chunk];
+        const int   num_chunk = chunk_index_of(index);
+        const int   num       = offset_in_chunk(index);
+        const auto& chunk_t   = chunk_list_[num_chunk];
 
         sync_chunk(chunk_t, num_chunk, num);
 

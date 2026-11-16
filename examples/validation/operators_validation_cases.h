@@ -536,9 +536,9 @@ void compound_scalar(Run& run, const char* operand_name, C operand)
                 return;
             }
         }
-        Pair<T>              pair(run.count);
-        std::unique_ptr<T[]> got(new T[static_cast<std::size_t>(run.count)]());
-        std::unique_ptr<T[]> want(new T[static_cast<std::size_t>(run.count)]());
+        Pair<T>                    pair(run.count);
+        const std::unique_ptr<T[]> got(new T[static_cast<std::size_t>(run.count)]());
+        const std::unique_ptr<T[]> want(new T[static_cast<std::size_t>(run.count)]());
         fill(pair, run.chunk_sz, &start_value<T>);
 #pragma omp parallel
         {
@@ -622,9 +622,9 @@ void inc_dec(Run& run)
 {
     if constexpr (Op::template valid<T>)
     {
-        Pair<T>              pair(run.count);
-        std::unique_ptr<T[]> got(new T[static_cast<std::size_t>(run.count)]());
-        std::unique_ptr<T[]> want(new T[static_cast<std::size_t>(run.count)]());
+        Pair<T>                    pair(run.count);
+        const std::unique_ptr<T[]> got(new T[static_cast<std::size_t>(run.count)]());
+        const std::unique_ptr<T[]> want(new T[static_cast<std::size_t>(run.count)]());
         fill(pair, run.chunk_sz, &start_value<T>);
 #pragma omp parallel
         {

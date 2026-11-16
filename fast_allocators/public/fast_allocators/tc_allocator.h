@@ -661,7 +661,7 @@ void sl_manage_full_empty(Node*&  block,
 template <typename Node>
 void sl_delete_all(Node* block, Node* block_full, Node* const* block_empty, int nb_block_empty) noexcept
 {
-    for (Node* list : {block, block_full})
+    for (const Node* list : {block, block_full})
     {
         while (list != nullptr)
         {
