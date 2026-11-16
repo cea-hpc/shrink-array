@@ -232,7 +232,7 @@ the tag's checksum to the recipe.
   Downfall/GDS mitigation), and the emulated gathers gave up on the load of the indirection's
   data pointer, left inside the `omp simd reduction` loop ("no vectype for stmt ...
   _M_start"). The loop now reads the indirection through `ll.data()`, taken once: gcc 14, 15
-  and 16 vectorise it on every tuning (`_ZGVdN4v_cos`, `_sin`, `_tan` with AVX2; gcc 16,
+  and 16 vectorise it on every tuning (libmvec's _ZGVdN4v_cos, _sin and _tan with AVX2; gcc 16,
   i9-12900H, 2 M cells, 8 materials, 100 iterations, 2 threads: the whole run 24.3-27.6 s
   -> 21.0-22.5 s). `shrink_bench` is left as it was. The comment of
   `chunk_enable_fast_math` says it, and that clang knows libmvec's `tan` only since LLVM 19.
