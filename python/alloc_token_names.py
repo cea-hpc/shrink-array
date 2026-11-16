@@ -5,7 +5,7 @@
 
     python3 python/alloc_token_names.py [--dwarf] <binary> [<log>]    (log defaults to stdin)
 
-The census (chunk/alloc_token_rt.cpp, SANITIZER=token builds) prints one line
+The census (chunk/alloc_token_rt.cpp, CHUNK_SANITIZER=token builds) prints one line
 per token, and a token is Clang's hash of the allocated type's name:
 SipHash-2-4 with LLVM's fixed "stable hash" key, reduced to the lower half of
 the 64-bit space, the upper half being for types that contain pointers

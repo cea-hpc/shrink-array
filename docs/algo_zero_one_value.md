@@ -583,8 +583,8 @@ CMake options related to benchmark performance:
 
 | option | effect |
 |---|---|
-| `SHRINK_INTEL_LIBM` (ON) | x86-64, not icpx: links the executables against Intel's libm (`libimf`) if it is found (`INTEL_LIBM_DIR`, `$CMPLR_ROOT/lib`, or next to `icpx`). AMD Milan, GNU: 15.7 s → 12.4 s on `shrink_bench_omp_zero_any_256` |
-| `SHRINK_ARM_LIBM` (OFF) | aarch64, GNU/Clang: links ArmPL's `libamath` (`ARMPL_LIBM_DIR`). No gain measured on Grace (RHEL 9.6); kept so that the measurement can be redone (`-DSHRINK_ARM_LIBM=ON -DARMPL_LIBM_DIR=<dir>`) |
+| `SHRINK_INTEL_LIBM` (ON) | x86-64, not icpx: links the executables against Intel's libm (`libimf`) if it is found (`CHUNK_INTEL_LIBM_DIR`, `$CMPLR_ROOT/lib`, or next to `icpx`). AMD Milan, GNU: 15.7 s → 12.4 s on `shrink_bench_omp_zero_any_256` |
+| `SHRINK_ARM_LIBM` (OFF) | aarch64, GNU/Clang: links ArmPL's `libamath` (`CHUNK_ARMPL_LIBM_DIR`). No gain measured on Grace (RHEL 9.6); kept so that the measurement can be redone (`-DSHRINK_ARM_LIBM=ON -DCHUNK_ARMPL_LIBM_DIR=<dir>`) |
 
 ---
 

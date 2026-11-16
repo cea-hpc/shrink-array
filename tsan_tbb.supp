@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # TSan suppressions for oneTBB's partitioners, used by the tbb_validation tests
-# of a SANITIZER=thread build (examples/validation/CMakeLists.txt).
+# of a CHUNK_SANITIZER=thread build (examples/validation/CMakeLists.txt).
 #
 # A parallel_for task is built by one worker -- the root by the caller, each
 # split-off child by the worker that splits (start_for's constructors: its

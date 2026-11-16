@@ -37,7 +37,7 @@ namespace sa = shrink_array;
 using shrink_array::println;
 
 static_assert(sa::build_config::not_use_openmp || sa::build_config::has_ompt,
-              "getting_started_ompt needs a library built with the OMPT tool (Clang or oneAPI, OMP=ON); "
+              "getting_started_ompt needs a library built with the OMPT tool (Clang or oneAPI, CHUNK_OPENMP=ON); "
               "without OMPT, open the regions with parallel_phase() (getting_started.cpp)");
 
 // Written once for both containers, run by all the threads of the region: the

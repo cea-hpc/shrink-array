@@ -78,8 +78,8 @@ jobs:
           cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-          -DOMP=ON
-          -DCHECK_OPTIM=ON
+          -DCHUNK_OPENMP=ON
+          -DCHUNK_CHECK_OPTIM=ON
           -DCHUNK_STATIC_SIZES=256
           -DCHUNK_BUILD_DYN=OFF
           -DCHUNK_LIB_UNITY=OFF

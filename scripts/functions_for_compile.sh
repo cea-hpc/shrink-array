@@ -101,12 +101,12 @@ set_tbb_options() {
 # chunk/CMakeLists.txt to switch on. One rule, applied identically to every
 # compiler section (gnu via compile_with_cmake, llvm/oneapi/nvhpc via run_cmd):
 #
-#   -DCMAKE_BUILD_TYPE=Debug or -DSANITIZER=<x>  →  -DCHUNK_GLIBCXX_ASSERTIONS=ON
+#   -DCMAKE_BUILD_TYPE=Debug or -DCHUNK_SANITIZER=<x>  →  -DCHUNK_GLIBCXX_ASSERTIONS=ON
 #       libstdc++ precondition checks (vector::operator[] bounds...). This is what
 #       exposed the out-of-bounds operator[] in allocate_chunk_internal. ABI-safe
 #       and cheap, so every Debug / sanitizer flavour gets it -- nvhpc included.
 #
-#   -DSANITIZER=address                          →  -DCHUNK_UBSAN=ON
+#   -DCHUNK_SANITIZER=address                          →  -DCHUNK_UBSAN=ON
 #       UBSan pairs with ASan in the same build; never with TSan (the CMake side
 #       refuses the combination, we simply never ask for it).
 #
@@ -121,8 +121,8 @@ hardening_opts_for() {  # <cmake-args> → echo extra -D flags ("" if none)
     local args=$1 out=""
     local debug=false asan=false san=false
     case "$args" in *-DCMAKE_BUILD_TYPE=Debug*) debug=true ;; esac
-    case "$args" in *-DSANITIZER=address*|*-DSANITIZER=token*)     asan=true; san=true ;;
-                    *-DSANITIZER=*)            san=true ;; esac
+    case "$args" in *-DCHUNK_SANITIZER=address*|*-DCHUNK_SANITIZER=token*)     asan=true; san=true ;;
+                    *-DCHUNK_SANITIZER=*)            san=true ;; esac
     if { $debug || $san; }; then
         case "$args" in *CHUNK_GLIBCXX_ASSERTIONS*) ;;
                         *) out="$out -DCHUNK_GLIBCXX_ASSERTIONS=ON" ;; esac

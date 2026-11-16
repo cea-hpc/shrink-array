@@ -24,7 +24,7 @@ set(_mm_sources main.cpp
         MultiMatAlgo.h Loops.h PMP.h Containers.h Dispatch.h ComputeLoops.h Simu.h
         config.h)
 
-if (OMP)
+if (CHUNK_OPENMP)
     find_package(OpenMP)
 endif ()
 
@@ -88,7 +88,7 @@ if (CHUNK_HAVE_OMPT)
     set_property(TEST multi_mat_embedded PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
 else ()
     add_executable(multi-mat-embedded EXCLUDE_FROM_ALL ${_mm_sources} manage_ompt.cpp)
-    message(STATUS "multi-mat-embedded: not in `all` (no OMPT tool with ${CMAKE_CXX_COMPILER_ID}; Clang or IntelLLVM, OMP=ON)")
+    message(STATUS "multi-mat-embedded: not in `all` (no OMPT tool with ${CMAKE_CXX_COMPILER_ID}; Clang or IntelLLVM, CHUNK_OPENMP=ON)")
 endif ()
 multi_mat_setup_target(multi-mat-embedded)
 target_compile_definitions(multi-mat-embedded PRIVATE MULTIMAT_EMBEDDED_COMPRESSION)

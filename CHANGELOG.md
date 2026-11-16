@@ -140,6 +140,15 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- CMake options without a prefix have one: `OMP` is `CHUNK_OPENMP`, `SANITIZER` is
+  `CHUNK_SANITIZER`, `CHECK_OPTIM` is `CHUNK_CHECK_OPTIM`, and likewise `CHUNK_USE_LIBCXX`,
+  `CHUNK_USE_MOLD`, `CHUNK_USE_GPERF`, `CHUNK_ENABLE_IWYU`, `CHUNK_GCC_TOOLCHAIN_DIR`,
+  `CHUNK_INTEL_ICPX`, `CHUNK_INTEL_ICPX_GLOB`, `CHUNK_INTEL_LIBM_DIR`, `CHUNK_ONEAPI_FAST_FP`,
+  `CHUNK_ONEAPI_NO_INTEL_LIBS`, `CHUNK_ONEAPI_XHOST`, `CHUNK_ARMPL_LIBM_DIR`;
+  `HAVE_AGGRESSIVE_COMPRESSION` is `CHUNK_AGGRESSIVE_COMPRESSION_DEFAULT`. A project that took
+  the library in with `add_subdirectory()` or `FetchContent` shared those names with it in its
+  cache. The former names are still read, with a deprecation message, when the project is
+  built on its own (`-DOMP=ON` sets `CHUNK_OPENMP`); as a subproject it ignores them.
 - Public names, before the interface is published more widely. `ParamChunk` is `Runtime`
   (`chunk/runtime.h`), `ParamChunk::init_indexes()` is `Runtime::init()` and
   `destroy_block_chunk()` is `Runtime::shutdown()`: the façade's name said neither what it is

@@ -75,7 +75,7 @@ DEFAULT_CONFIGS = [
     "cmake-build-omp-acfl",                            # RelWithDebInfo ACfL
     "cmake-build-std-acfl",                            # ACfL, std backend (+ TBB bench)
     # Non-OpenMP builds — cover the `if constexpr(!use_openmp)` code paths so a
-    # serial-path regression is caught. Build them with -DOMP:BOOL=OFF; if the
+    # serial-path regression is caught. Build them with -DCHUNK_OPENMP:BOOL=OFF; if the
     # directory is absent it is skipped with a single note (see
     # drop_absent_configs), not one MISSING warning per variant.
     "cmake-build-gnu",                                 # non-OMP GNU

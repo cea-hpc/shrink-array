@@ -75,9 +75,9 @@ message(STATUS "CHUNK_VARIANTS = ${CHUNK_VARIANTS}")
 # --- Aggressive vs release compression scheduling ------------------------
 # A run-time switch (chunk_config::aggressive_compression(), environment
 # CHUNK_AGGRESSIVE_COMPRESSION=1 / 0); the option only sets its default.
-option(HAVE_AGGRESSIVE_COMPRESSION "Default of the run-time aggressive-compression switch (CHUNK_AGGRESSIVE_COMPRESSION)" OFF)
-if (HAVE_AGGRESSIVE_COMPRESSION)
-  message(STATUS "HAVE_AGGRESSIVE_COMPRESSION=ON → aggressive scheduling by default (CHUNK_AGGRESSIVE_COMPRESSION=0 turns it off)")
+option(CHUNK_AGGRESSIVE_COMPRESSION_DEFAULT "Default of the run-time aggressive-compression switch (CHUNK_AGGRESSIVE_COMPRESSION)" OFF)
+if (CHUNK_AGGRESSIVE_COMPRESSION_DEFAULT)
+  message(STATUS "CHUNK_AGGRESSIVE_COMPRESSION_DEFAULT=ON → aggressive scheduling by default (CHUNK_AGGRESSIVE_COMPRESSION=0 turns it off)")
 endif()
 
 # --- Read-side deferred-op sync -----------------------------------------
@@ -147,11 +147,11 @@ else()
 endif()
 _chunk_opt(CHUNK_OPT_OMPT CHUNK_HAVE_OMPT)
 _chunk_opt(CHUNK_OPT_DEBUG CHUNK_DEBUG)
-_chunk_opt(CHUNK_OPT_CHECK_OPTIM CHECK_OPTIM)
+_chunk_opt(CHUNK_OPT_CHECK_OPTIM CHUNK_CHECK_OPTIM)
 _chunk_opt(CHUNK_OPT_STATS CHUNK_STATS)
 _chunk_opt(CHUNK_OPT_MM_PROTECT CHUNK_MM_PROTECT)
 _chunk_opt(CHUNK_OPT_SECOND_VALUE_INDEXED CHUNK_SECOND_VALUE_INDEXED)
-_chunk_opt(CHUNK_OPT_AGGRESSIVE_COMPRESSION HAVE_AGGRESSIVE_COMPRESSION)
+_chunk_opt(CHUNK_OPT_AGGRESSIVE_COMPRESSION CHUNK_AGGRESSIVE_COMPRESSION_DEFAULT)
 _chunk_opt(CHUNK_OPT_POOL_NO_REUSE CHUNK_POOL_NO_REUSE)
 _chunk_opt(CHUNK_OPT_ALIGN_CHECK CHUNK_ALIGN_CHECK)
 _chunk_opt(CHUNK_OPT_FORCE_LEDGER CHUNK_FORCE_LEDGER)
@@ -209,14 +209,14 @@ endif()
 
 if (CHUNK_UBSAN)
   if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    # TSan is selected either by the project's -DSANITIZER=thread or by a raw
+    # TSan is selected either by the project's -DCHUNK_SANITIZER=thread or by a raw
     # -fsanitize=thread in the flags; refuse both.
-    if ("${SANITIZER}" MATCHES "thread"
+    if ("${CHUNK_SANITIZER}" MATCHES "thread"
         OR "${CMAKE_CXX_FLAGS}" MATCHES "-fsanitize=[^ ]*thread"
         OR "${CMAKE_EXE_LINKER_FLAGS}" MATCHES "-fsanitize=[^ ]*thread")
       message(FATAL_ERROR
         "CHUNK_UBSAN=ON cannot be combined with ThreadSanitizer "
-        "(SANITIZER=thread or -fsanitize=thread requested). "
+        "(CHUNK_SANITIZER=thread or -fsanitize=thread requested). "
         "UBSan pairs with ASan; TSan must stay in its own build.")
     endif()
     target_compile_options(chunk_hardening INTERFACE
@@ -234,7 +234,7 @@ endif()
 # RelWithDebInfo sanitizer flavours are compiled at -O2, which drops them on
 # aarch64 -- and a TSan/ASan report without a usable stack is worthless. Kept
 # separate from CHUNK_UBSAN (which sets it too) so a TSan build gets it as well.
-if (SANITIZER AND NOT SANITIZER STREQUAL "none"
+if (CHUNK_SANITIZER AND NOT CHUNK_SANITIZER STREQUAL "none"
     AND (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
   target_compile_options(chunk_hardening INTERFACE -fno-omit-frame-pointer)
 endif()
@@ -246,7 +246,7 @@ endif()
 # fires on every template instantiation concerned -- dozens of ten-line blocks
 # that drown the real diagnostics, which is exactly what made a build failure
 # unreadable (see __report_job in scripts/functions_for_compile.sh).
-if (SANITIZER MATCHES "thread" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+if (CHUNK_SANITIZER MATCHES "thread" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   target_compile_options(chunk_hardening INTERFACE -Wno-tsan)
 endif()
 
@@ -580,14 +580,14 @@ function(chunk_add_variant target_name variant_define size is_dyn)
     target_link_libraries(${target_name} PUBLIC fast_allocators::fast_allocators)
   endif()
 
-  # SANITIZER=token (umbrella CMakeLists): -fsanitize=alloc-token rewrites every
+  # CHUNK_SANITIZER=token (umbrella CMakeLists): -fsanitize=alloc-token rewrites every
   # allocation into __alloc_token_<symbol>(..., token) and Clang ships no
   # runtime for those, so alloc_token_rt.cpp provides them -- a per-type
   # allocation census printed at exit. It goes INTO each variant archive rather
   # than into a library of its own so the linker meets the definitions in the
   # first archive it scans, whatever the order of the ones that follow.
   # Compiled uninstrumented: instrumented, its own malloc calls would recurse.
-  if (SANITIZER STREQUAL "token")
+  if (CHUNK_SANITIZER STREQUAL "token")
     target_sources(${target_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/private/alloc_token_rt.cpp)
     set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/private/alloc_token_rt.cpp
             PROPERTIES COMPILE_OPTIONS "-fno-sanitize=alloc-token")

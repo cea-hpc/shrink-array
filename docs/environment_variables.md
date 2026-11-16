@@ -28,8 +28,8 @@
 
 | option | default | effect |
 |---|---|---|
-| `OMP` | `OFF` | build with OpenMP |
-| `CHUNK_THREADS` | empty | threading backend of the library: `openmp`, `std` (`std::jthread` workers of its own, no OpenMP) or `serial`; empty: `openmp` with `OMP=ON`, `serial` otherwise. Set, it sets `OMP` to match |
+| `CHUNK_OPENMP` | `OFF` | build with OpenMP |
+| `CHUNK_THREADS` | empty | threading backend of the library: `openmp`, `std` (`std::jthread` workers of its own, no OpenMP) or `serial`; empty: `openmp` with `CHUNK_OPENMP=ON`, `serial` otherwise. Set, it sets `CHUNK_OPENMP` to match |
 | `CHUNK_STATIC_SIZES` | `auto` | static chunk sizes built (targets `_<size>`); `auto`: `256;1024`, `256` alone in a Debug or sanitizer build |
 | `CHUNK_BUILD_DYN` | `ON` | also build a dynamic-geometry library (`_dyn`) per variant |
 | `SHRINK_ARRAY_BUILD_EXAMPLES` | `ON` at top level | build the examples, the benchmark and the validation harnesses; `OFF` by default when the project is included in another one (`add_subdirectory`, `FetchContent`) |
@@ -37,8 +37,8 @@
 | `CHUNK_STD_ALLOC` | `OFF` | standard allocator for the chunk buffers instead of `fast_allocators` (useful under ASan: each buffer is a real `malloc`) |
 | `CHUNK_SECOND_VALUE_INDEXED` | `OFF` | `zero_any`: the second-value slot holds a 4-byte identifier instead of the value (less memory, +3% write time) |
 | `CHUNK_STATS` | `OFF` | instrumentation counters and the `Runtime::chunk_stats()` report |
-| `CHECK_OPTIM` | `OFF` | invariant checks in an optimised build |
-| `SANITIZER` | `none` | `thread`, `address`, `undefined` (UBSan, the first report stops the program) or `token` (AllocToken, Clang ≥ 22), for all build types |
+| `CHUNK_CHECK_OPTIM` | `OFF` | invariant checks in an optimised build |
+| `CHUNK_SANITIZER` | `none` | `thread`, `address`, `undefined` (UBSan, the first report stops the program) or `token` (AllocToken, Clang ≥ 22), for all build types |
 
 ## 3. Variant and geometry
 

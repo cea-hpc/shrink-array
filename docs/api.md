@@ -72,7 +72,7 @@ their own `zero_any::Array<double>`, the sequential point must hold for all of t
   an OpenMP team started by another host thread. Under the std backend the application's
   threads are seen between `begin_parallel_phase()` and `finalize_parallel_phase()`: the call is
   refused there.
-- *What detects it*: check builds (Debug, `CHECK_OPTIM`) stop on any second-value lookup or
+- *What detects it*: check builds (Debug, `CHUNK_CHECK_OPTIM`) stop on any second-value lookup or
   registration that overlaps a reclaim. Run the application once in a check build with its
   reclaim calls in place; release builds pay nothing and check nothing.
 - *Watching the identifiers*: `zero_any::Array<T>::second_value_stats()` (static, any time, any
@@ -154,7 +154,7 @@ otherwise, and in serial builds.
 | `tbb::parallel_for(...)` | a TBB program, std or serial backend (`chunk/tbb_adaptor.h`): the arguments of `oneapi::tbb::parallel_for`, with `begin_parallel_phase()` before every piece and `finalize_parallel_phase()` after the call |
 
 A `begin_parallel_phase()` with no `finalize_parallel_phase()` since the previous region stops
-the program, in every build. Check builds (Debug, `CHECK_OPTIM`) also stop on a deferred write
+the program, in every build. Check builds (Debug, `CHUNK_CHECK_OPTIM`) also stop on a deferred write
 in a region by a thread that did not call `begin_parallel_phase()`.
 
 The application's own threads (`std::thread`, TBB) need the std backend (`CHUNK_THREADS=std`):

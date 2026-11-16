@@ -49,7 +49,7 @@
  *    nothing. That tool is what the mode stands on, so a build without
  *    OMPT is refused here rather than compiled to a version that loses the
  *    deferred writes: CHUNK_OPT_OMPT is set by the top-level CMakeLists for
- *    Clang and IntelLLVM (OMP=ON, not under TSan); gcc's libgomp has no
+ *    Clang and IntelLLVM (CHUNK_OPENMP=ON, not under TSan); gcc's libgomp has no
  *    OMPT.
  *
  * The presence fraction (a zero_one_value array) is compressed by that engine in
@@ -62,7 +62,7 @@
 
 #if defined(MULTIMAT_EMBEDDED_COMPRESSION) && !CHUNK_OPT_OMPT
     #error \
-        "multi-mat-embedded rests on the OMPT tool of the chunk library, which this build has not (CHUNK_OPT_OMPT): build with Clang or IntelLLVM, OMP=ON, no TSan -- gcc's libgomp has no OMPT"
+        "multi-mat-embedded rests on the OMPT tool of the chunk library, which this build has not (CHUNK_OPT_OMPT): build with Clang or IntelLLVM, CHUNK_OPENMP=ON, no TSan -- gcc's libgomp has no OMPT"
 #endif
 
 // `#pragma forceinline` is the classic Intel compiler's; gcc and clang warn

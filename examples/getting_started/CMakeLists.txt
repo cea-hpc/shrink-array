@@ -49,7 +49,7 @@ if (_gs_ompt)
     set_property(TEST getting_started_ompt PROPERTY ENVIRONMENT "CHUNK_REQUIRE_OMPT=1;OMP_NUM_THREADS=8")
   endif()
 else()
-  message(STATUS "getting_started_ompt: not built (no OMPT tool: Clang or oneAPI, OMP=ON)")
+  message(STATUS "getting_started_ompt: not built (no OMPT tool: Clang or oneAPI, CHUNK_OPENMP=ON)")
 endif()
 
 if (NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)

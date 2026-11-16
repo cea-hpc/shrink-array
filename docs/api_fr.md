@@ -74,7 +74,7 @@ les tableaux de l'appelant : dans un code où plusieurs modules ont leurs propre
   hors du contrat de phase, ou une équipe OpenMP lancée par un autre thread hôte. Sous le
   backend std, les threads de l'application sont vus entre `begin_parallel_phase()` et
   `finalize_parallel_phase()` : l'appel y est refusé.
-- *Ce qui le détecte* : les builds de contrôle (Debug, `CHECK_OPTIM`) s'arrêtent sur toute
+- *Ce qui le détecte* : les builds de contrôle (Debug, `CHUNK_CHECK_OPTIM`) s'arrêtent sur toute
   recherche ou tout enregistrement de seconde valeur qui chevauche une libération. Faites
   tourner l'application une fois dans un build de contrôle avec ses appels de libération ; les
   builds release ne paient rien et ne vérifient rien.
@@ -159,7 +159,7 @@ effet sinon, et dans les builds séquentiels.
 | `tbb::parallel_for(...)` | un programme TBB, backend std ou série (`chunk/tbb_adaptor.h`) : les arguments de `oneapi::tbb::parallel_for`, avec `begin_parallel_phase()` avant chaque morceau et `finalize_parallel_phase()` après l'appel |
 
 Un `begin_parallel_phase()` sans `finalize_parallel_phase()` depuis la région précédente arrête
-le programme, dans tous les builds. Les builds de contrôle (Debug, `CHECK_OPTIM`) s'arrêtent
+le programme, dans tous les builds. Les builds de contrôle (Debug, `CHUNK_CHECK_OPTIM`) s'arrêtent
 aussi sur une écriture différée dans une région par un thread qui n'a pas appelé
 `begin_parallel_phase()`.
 

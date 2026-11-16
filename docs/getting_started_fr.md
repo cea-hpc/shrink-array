@@ -46,7 +46,7 @@ la branche `cpp23` demande le C++23, GCC 14 ou plus récent) et CMake ≥ 3.20 :
 ```sh
 cmake -S shrink-array -B build -G Ninja \
       -DCMAKE_BUILD_TYPE=Release \
-      -DOMP=ON \
+      -DCHUNK_OPENMP=ON \
       -DCMAKE_INSTALL_PREFIX=$HOME/opt/shrink-array
 cmake --build build
 cmake --install build
@@ -56,8 +56,8 @@ Les options utiles à l'utilisateur :
 
 | option | défaut | effet |
 |---|---|---|
-| `OMP` | `OFF` | construire avec OpenMP. Un programme qui utilise les tableaux dans des régions OpenMP a besoin d'une bibliothèque construite avec |
-| `CHUNK_THREADS` | vide | backend de threads de la bibliothèque : `openmp`, `std` (des workers `std::jthread` à elle, sans OpenMP) ou `serial` ; vide : `openmp` avec `OMP=ON`, `serial` sinon. Renseigné, il fixe `OMP` en conséquence |
+| `CHUNK_OPENMP` | `OFF` | construire avec OpenMP. Un programme qui utilise les tableaux dans des régions OpenMP a besoin d'une bibliothèque construite avec |
+| `CHUNK_THREADS` | vide | backend de threads de la bibliothèque : `openmp`, `std` (des workers `std::jthread` à elle, sans OpenMP) ou `serial` ; vide : `openmp` avec `CHUNK_OPENMP=ON`, `serial` sinon. Renseigné, il fixe `CHUNK_OPENMP` en conséquence |
 | `CHUNK_STATIC_SIZES` | `auto` | les tailles de chunk fixées à la compilation, une bibliothèque par taille et par variante ; `auto` : `256;1024`, mais `256` seule dans un build Debug ou sanitizer de ce projet (pas d'un projet qui l'inclut) |
 | `CHUNK_BUILD_DYN` | `ON` | construire aussi les bibliothèques dont la taille de chunk est choisie à l'exécution, et peut changer (`_dyn`) |
 | `CHUNK_STD_ALLOC` | `OFF` | allouer les tampons des chunks avec l'allocateur standard plutôt qu'avec `fast_allocators`, fourni avec la bibliothèque (utile sous AddressSanitizer) |
@@ -267,7 +267,7 @@ l'autre, un `finalize_parallel_phase()` oublié applique une écriture différé
 si les deux appels sont oubliés, des valeurs sont fausses, sans message. Le programme
 s'arrête, dans tous les builds, sur un `begin_parallel_phase()` sans
 `finalize_parallel_phase()` depuis la région précédente ; les builds de contrôle (Debug,
-`CHECK_OPTIM`) s'arrêtent aussi sur une écriture différée par un thread qui n'a pas appelé
+`CHUNK_CHECK_OPTIM`) s'arrêtent aussi sur une écriture différée par un thread qui n'a pas appelé
 `begin_parallel_phase()`. Placer ces appels sous
 `if constexpr (sa::build_config::needs_explicit_phases)`, comme ci-dessus, permet de garder un seul source
 pour les deux runtimes.

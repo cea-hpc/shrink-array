@@ -165,7 +165,7 @@ one, on a team of the backend. `phases.h` states the contract.
    In four parts: 7a the CMake option and `threaded` separated from `use_openmp`
    (no new backend), 7b the std backend, 7c the rank registry and
    `in_parallel()` in it, 7d the `std::thread` harness and `compile_all.sh`.
-   *7a done*: `CHUNK_THREADS` (`openmp` or `serial`; empty: from `OMP`, as
+   *7a done*: `CHUNK_THREADS` (`openmp` or `serial`; empty: from `CHUNK_OPENMP`, as
    before; `std` refused until 7b), recorded as `CHUNK_OPT_THREADED` /
    `FAST_ALLOC_OPT_THREADED` in the generated build options
    (`chunk/public/chunk/build_options.h.in`) and as `chunk_THREADS` in

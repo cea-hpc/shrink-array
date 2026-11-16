@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 add_executable(test_vecto_chunk test_vecto_chunk.cpp)
 
-if (OMP)
+if (CHUNK_OPENMP)
     find_package(OpenMP REQUIRED)
     target_link_libraries(test_vecto_chunk PUBLIC OpenMP::OpenMP_CXX)
 endif ()

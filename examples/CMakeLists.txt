@@ -139,7 +139,7 @@ set(CHUNK_VALIDATION_BUILT ${_build_validation} CACHE INTERNAL "examples/validat
 if(_build_validation)
     add_subdirectory(validation)
 else()
-    message(STATUS "Validation harnesses: not built (Debug, CHECK_OPTIM or a sanitizer only; -DCHUNK_BUILD_VALIDATION=ON forces them)")
+    message(STATUS "Validation harnesses: not built (Debug, CHUNK_CHECK_OPTIM or a sanitizer only; -DCHUNK_BUILD_VALIDATION=ON forces them)")
 endif()
 
 # zero_one_value against zero_any on one workload (per-operation cost, compression)

@@ -132,14 +132,14 @@ class ShrinkArray(CMakePackage):
         args = [
             # OMP for every version; CHUNK_THREADS (which sets OMP to match)
             # only where the std backend exists.
-            self.define("OMP", threads == "openmp"),
+            self.define("CHUNK_OPENMP", threads == "openmp"),
             self.define("CHUNK_STATIC_SIZES", ";".join(sizes)),
             self.define("CHUNK_DEFAULT_SIZE", sizes[0]),
             self.define_from_variant("CHUNK_BUILD_DYN", "dyn"),
             self.define("CHUNK_STD_ALLOC", spec.satisfies("~fast_alloc")),
             self.define_from_variant("CHUNK_STATS", "stats"),
             self.define_from_variant("CHUNK_SECOND_VALUE_INDEXED", "second_value_indexed"),
-            self.define_from_variant("CHECK_OPTIM", "checks"),
+            self.define_from_variant("CHUNK_CHECK_OPTIM", "checks"),
             self.define_from_variant("SHRINK_ARRAY_BUILD_EXAMPLES", "examples"),
             self.define("SHRINK_ARRAY_BUILD_TESTS", self.run_tests),
             # The target is the spec's: Spack's compiler wrapper passes its
@@ -151,8 +151,8 @@ class ShrinkArray(CMakePackage):
             # The compiler and standard library Spack chose: no libc++ switch
             # (the project's default with Clang up to 0.2.1), no mold, no Intel
             # libm.
-            self.define("USE_LIBCXX", False),
-            self.define("USE_MOLD", "OFF"),
+            self.define("CHUNK_USE_LIBCXX", False),
+            self.define("CHUNK_USE_MOLD", "OFF"),
             self.define("SHRINK_INTEL_LIBM", False),
         ]
         if threads == "std":

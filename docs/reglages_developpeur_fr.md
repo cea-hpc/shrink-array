@@ -74,7 +74,7 @@ active tous, et avec eux les compteurs de l'arène et d'OMPT, qui coûtent un pe
 | `CHUNK_LOG=ompt=info` (autrefois `CHUNK_OMPT_STATS`) | statistiques des régions de synchronisation (builds OMPT), à la sortie |
 | `CHUNK_LOG=compress=info` dans `shrink_bench` (autrefois `CHUNK_CST2_PROBE`) | `zero_any` : en plus, le rapport du registre des secondes valeurs à chaque passage de l'advisor (`gc_mark_report()`) |
 | `CHUNK_CST2_RECLAIM` | `zero_any`, `N` : toutes les N itérations, libère les secondes valeurs qu'aucun chunk n'utilise plus (`reclaim_second_values()`) et affiche leur nombre, puis pour chaque type les identifiants en usage face à la capacité, libres, les libérations et les refus (`second_value_stats()`) (banc, tout build) |
-| `ALLOC_TOKEN_REPORT` | les builds `SANITIZER=token` impriment toujours, à la sortie, les allocations par jeton (les 40 plus grosses) ; elle en fixe le nombre : `0` aucune, `N` les N plus grosses, `all` toutes |
+| `ALLOC_TOKEN_REPORT` | les builds `CHUNK_SANITIZER=token` impriment toujours, à la sortie, les allocations par jeton (les 40 plus grosses) ; elle en fixe le nombre : `0` aucune, `N` les N plus grosses, `all` toutes |
 | `CHUNK_LOG=alloc=trace` (autrefois `FAST_ALLOC_TRACE`) | une ligne `munmap` par slab vidé que la réserve d'un pool ne garde pas et qui est libéré |
 
 Les traces par tableau (la ligne `churn`, la table de l'advisor) couvrent tous les tableaux que
@@ -161,12 +161,12 @@ Les options de [variables_environnement_fr.md](variables_environnement_fr.md) §
 | `CHUNK_LIB_UNITY` | `ON` | chaque archive de variante (`chunk_zero_any_256`, ...) compilée en une seule unité (unity build, 4 à 6 fois moins de compilation) ; un fichier qui a ses propres options de compilation reste à part |
 | `SHRINK_BENCH_PRINT_MEM` | `ON` | `shrink_bench` affiche ses lignes de mémoire (après l'init, toutes les `freq_conso_mem` itérations, après une compression) ; `OFF` pour chronométrer un run sans les lectures de RSS qui les produisent |
 | `SHRINK_BENCH_UNITY` | `ON` | chaque exécutable `shrink_bench` compilé en une seule unité (unity build, 3,5 à 4 fois moins de compilation) ; `OFF` pour comparer des temps avec des campagnes antérieures, l'inlining entre fichiers du banc pouvant les changer ; `SHRINK_BENCH_UNITY_BATCH` fichiers par unité (0 = tous) |
-| `CHUNK_DEBUG_INFO` | `auto` | informations de débogage des builds optimisés : `full` (`-g`), `lines` (`-g1` : noms de fonctions et tables de lignes, assez pour perf et les backtraces gdb, pas pour les variables locales), `none` ; `auto` : `full` avec `CHECK_OPTIM` ou un sanitizer, `lines` sinon. Le code machine est le même ; `lines` compile 20 à 27 % plus vite avec 40 % de mémoire de pointe en moins. Les builds Debug ont toujours `-g` |
+| `CHUNK_DEBUG_INFO` | `auto` | informations de débogage des builds optimisés : `full` (`-g`), `lines` (`-g1` : noms de fonctions et tables de lignes, assez pour perf et les backtraces gdb, pas pour les variables locales), `none` ; `auto` : `full` avec `CHUNK_CHECK_OPTIM` ou un sanitizer, `lines` sinon. Le code machine est le même ; `lines` compile 20 à 27 % plus vite avec 40 % de mémoire de pointe en moins. Les builds Debug ont toujours `-g` |
 | `CHUNK_VALIDATION_UNITY` | `ON` | les tests de validation regroupés en un exécutable par variante et géométrie (unity build) ; `OFF` : un exécutable par test |
 | `CHUNK_VALIDATION_UNITY_BATCH` | 0 | avec `CHUNK_VALIDATION_UNITY` : nombre de tests par unité de compilation d'un tel exécutable ; 0 : tous ceux d'un groupe dans une seule unité. Une petite valeur (3) baisse le pic mémoire du compilateur sur une machine qui en a peu |
-| `CHUNK_BUILD_VALIDATION` | selon le build | compiler les tests de `examples/validation`, et avec eux les crochets de test (`CHUNK_TEST_HOOKS`) ; par défaut `ON` en Debug, avec `CHECK_OPTIM` ou un sanitizer, `OFF` ailleurs (non mis en cache : suit la configuration courante) |
+| `CHUNK_BUILD_VALIDATION` | selon le build | compiler les tests de `examples/validation`, et avec eux les crochets de test (`CHUNK_TEST_HOOKS`) ; par défaut `ON` en Debug, avec `CHUNK_CHECK_OPTIM` ou un sanitizer, `OFF` ailleurs (non mis en cache : suit la configuration courante) |
 | `FAST_ALLOC_CHECK_LISTS` | `OFF` | niveau de debug renforcé des listes de slabs : en Debug, vérification complète de la liste à chaque insertion et retrait (lent) ; un Debug ordinaire garde les vérifications légères |
-| `HAVE_AGGRESSIVE_COMPRESSION` | `OFF` | défaut de la compression « agressive », un réglage d'exécution : `CHUNK_AGGRESSIVE_COMPRESSION=1` (ou `0`) la fixe pour un lancement. La passe entre deux phases est sautée, et toute la compression se fait pendant les régions parallèles, à des instants imprévisibles. Plus lent, mais sollicite les chemins concurrents : un mode de validation, qui n'a plus besoin d'un build à lui |
+| `CHUNK_AGGRESSIVE_COMPRESSION_DEFAULT` | `OFF` | défaut de la compression « agressive », un réglage d'exécution : `CHUNK_AGGRESSIVE_COMPRESSION=1` (ou `0`) la fixe pour un lancement. La passe entre deux phases est sautée, et toute la compression se fait pendant les régions parallèles, à des instants imprévisibles. Plus lent, mais sollicite les chemins concurrents : un mode de validation, qui n'a plus besoin d'un build à lui |
 | `CHUNK_FORCE_LEDGER` | `OFF` | garde le registre des blocs (`pool_ledger.h`) actif sous OpenMP, où il est éteint par défaut : son mutex global sérialise chaque allocation et libération. Détecte double libération et remise illégale en réserve |
 | `CHUNK_DEFERRED_DRAIN_THRESHOLD` | vide (4 096) | seuil de vidage de sa propre file par un rang |
 | `CHUNK_FORCE_DEFER_EVERY` | 0 | une écriture sur N par le chemin différé, dans tout l'arbre (validation ; 32 threads au plus) |
@@ -183,13 +183,13 @@ Les options de [variables_environnement_fr.md](variables_environnement_fr.md) §
 | `CHUNK_HEAVY_JOB_POOL` | vide | pool de jobs Ninja pour les exécutables compilés en une unité (limite la mémoire de compilation) |
 | `CHUNK_X86_MARCH` | `native` | GCC, Clang sur x86-64 : `-march=` des builds optimisés ; un niveau fixe donne un binaire indépendant de la machine (`x86-64-v3` dans le job ASan du nightly, `native` y plante sur Zen 5) |
 | `CHUNK_NATIVE_TUNING` | ON | OFF : aucune option de cible venant du projet (`-march=`/`-mcpu=native`, `-tp=host`, `-xHost`) : la cible est celle de l'appelant. La recette Spack le met à OFF, pour que le `target=` de la spec soit celui compilé ; l'option du projet passait après celle du wrapper et l'emportait |
-| `USE_LIBCXX` | `OFF` | builds Clang : `ON` pour libc++ (`-stdlib=libc++`) au lieu de la bibliothèque standard par défaut du compilateur, libstdc++ sous Linux |
-| `GCC_TOOLCHAIN_DIR` | selon la machine | builds Clang : l'installation de GCC dont clang prend la libstdc++ et le runtime (`--gcc-toolchain=`) ; vide : le choix du driver. Un chemin qui n'existe pas est ignoré, avec un avertissement |
-| `USE_MOLD` | `AUTO` | lier avec mold : `AUTO` (s'il est trouvé et que le build le supporte), `ON` (une erreur sinon), `OFF` |
+| `CHUNK_USE_LIBCXX` | `OFF` | builds Clang : `ON` pour libc++ (`-stdlib=libc++`) au lieu de la bibliothèque standard par défaut du compilateur, libstdc++ sous Linux |
+| `CHUNK_GCC_TOOLCHAIN_DIR` | selon la machine | builds Clang : l'installation de GCC dont clang prend la libstdc++ et le runtime (`--gcc-toolchain=`) ; vide : le choix du driver. Un chemin qui n'existe pas est ignoré, avec un avertissement |
+| `CHUNK_USE_MOLD` | `AUTO` | lier avec mold : `AUTO` (s'il est trouvé et que le build le supporte), `ON` (une erreur sinon), `OFF` |
 | `CHUNK_VEC_REPORT` | `OFF` | cibles fast-math des exemples : le compilateur signale les boucles qu'il n'a pas vectorisées |
 | `GETTING_STARTED_LIB`, `BOOL_ARRAYS_LIB` | `chunk::chunk_zero_any`, `chunk::chunk_zero_one_value` | `examples/getting_started` et `examples/bool_arrays` construits seuls, contre une bibliothèque installée : la cible de bibliothèque qu'ils lient |
-| `USE_GPERF`, `ENABLE_IWYU` | `OFF` | profilage gperftools ; include-what-you-use pendant la compilation |
-| `ONEAPI_XHOST`, `ONEAPI_NO_INTEL_LIBS`, `ONEAPI_FAST_FP` | `OFF` | icpx : binaire réservé à Intel (`-xHost`) ; aucune bibliothèque d'exécution Intel ; garder `-fp-model=fast` |
+| `CHUNK_USE_GPERF`, `CHUNK_ENABLE_IWYU` | `OFF` | profilage gperftools ; include-what-you-use pendant la compilation |
+| `CHUNK_ONEAPI_XHOST`, `CHUNK_ONEAPI_NO_INTEL_LIBS`, `CHUNK_ONEAPI_FAST_FP` | `OFF` | icpx : binaire réservé à Intel (`-xHost`) ; aucune bibliothèque d'exécution Intel ; garder `-fp-model=fast` |
 
 Pour les builds clang sur x86-64, `CHUNK_LIBMVEC_LINKS` (dans le cache, calculée à la
 configuration) indique si la bibliothèque vectorielle de la glibc fournit les fonctions
@@ -211,7 +211,7 @@ transmettant les options communes. `--help` donne la liste complète.
 | `--with-nvhpc` | ajouter NVHPC, désactivé par défaut (environ 1 h 30 par build sur x86, sans gain) |
 | `--no-sanitizers` | sans les builds LLVM sous sanitizer |
 | `--with-ledger` | ajouter `cmake-build-omp-gnu-debug-ledger` (Debug OpenMP avec `CHUNK_FORCE_LEDGER=ON`), désactivé par défaut ; un `--target` qui le sélectionne le construit aussi |
-| `--with-token-sanitizer` | ajouter `cmake-build-omp-llvm-debug-std-alloc-token-sanitizer` (`SANITIZER=token`), désactivé par défaut ; un `--target` qui le sélectionne le construit aussi ; `--no-sanitizers` l'en retire |
+| `--with-token-sanitizer` | ajouter `cmake-build-omp-llvm-debug-std-alloc-token-sanitizer` (`CHUNK_SANITIZER=token`), désactivé par défaut ; un `--target` qui le sélectionne le construit aussi ; `--no-sanitizers` l'en retire |
 | `--target=<glob>` | seulement les configurations dont le nom correspond (`omp-llvm`, ou un motif du shell entre apostrophes) ; un motif qui ne correspond à rien est une erreur |
 | `--exec=<glob>` | seulement les cibles Ninja correspondantes dans chaque build (`shrink_bench_omp_zero_256`, ou un motif du shell entre apostrophes : `'shrink_bench_*_zero_256'` la prend quel que soit le backend) |
 | `--jobs=<n>` | nombre de configurations compilées en même temps (4 par défaut) ; le budget de cœurs est partagé entre elles |

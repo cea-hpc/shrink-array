@@ -13,7 +13,7 @@ comments of the sources:
    (chunk/, fast_allocators/, examples/, scripts/, python/, cmake/ and the
    CMakeLists.txt). A renamed or removed name leaves its documentation
    behind; this is how it is found. A span made of several words, a command
-   line or a value (`0`, `-DOMP=ON`, `256;1024`) is not a name and is not
+   line or a value (`0`, `-DCHUNK_OPENMP=ON`, `256;1024`) is not a name and is not
    checked; ALLOWED lists the names that are real but live outside the tree
    (standard library, OpenMP, Linux, tools).
 3. Pairs: a document and its French version (x.md / x_fr.md, or the explicit

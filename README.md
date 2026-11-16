@@ -336,7 +336,7 @@ Requirements: **Linux** (x86-64 or aarch64), a **C++20** compiler (GCC 13 or 14 
 tested; oneAPI, AOCC and NVHPC built), **CMake 3.20**, and optionally **OpenMP**.
 
 ```shell
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DOMP=ON -DCMAKE_INSTALL_PREFIX=$HOME/opt/shrink-array
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCHUNK_OPENMP=ON -DCMAKE_INSTALL_PREFIX=$HOME/opt/shrink-array
 cmake --build build
 ctest --test-dir build
 cmake --install build
@@ -357,7 +357,7 @@ include(FetchContent)
 FetchContent_Declare(shrink_array
   GIT_REPOSITORY https://github.com/cea-hpc/shrink-array.git
   GIT_TAG        main)                 # or a commit, to pin the version
-set(OMP ON)                            # build the OpenMP libraries
+set(CHUNK_OPENMP ON)                            # build the OpenMP libraries
 FetchContent_MakeAvailable(shrink_array)
 
 target_link_libraries(my_app PRIVATE chunk::chunk_zero_any)
@@ -375,7 +375,7 @@ spack repo add <clone>/spack/spack_repo/shrink_array
 spack install shrink-array threads=openmp sizes=256,1024 %gcc@15   # threads=std: written from std::threads or TBB
 ```
 
-The CMake options (`OMP`, `CHUNK_THREADS`, `CHUNK_STATIC_SIZES`, `CHUNK_VARIANTS`, `CHUNK_BUILD_DYN`,
+The CMake options (`CHUNK_OPENMP`, `CHUNK_THREADS`, `CHUNK_STATIC_SIZES`, `CHUNK_VARIANTS`, `CHUNK_BUILD_DYN`,
 `CHUNK_STD_ALLOC`...) and the environment variables:
 [docs/environment_variables.md](docs/environment_variables.md).
 

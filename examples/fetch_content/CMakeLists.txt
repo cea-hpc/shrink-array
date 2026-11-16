@@ -35,7 +35,7 @@ set(_consumer_release_flags "${CMAKE_CXX_FLAGS_RELEASE}")
 add_custom_target(doc COMMAND ${CMAKE_COMMAND} -E echo "the doc target of the consumer" VERBATIM)
 
 # The library's options are set like any cache variable, before the fetch.
-set(OMP ON CACHE BOOL "shrink-array: OpenMP")
+set(CHUNK_OPENMP ON CACHE BOOL "shrink-array: OpenMP")
 set(CHUNK_STATIC_SIZES 256 CACHE STRING "shrink-array: one static chunk size")
 set(CHUNK_BUILD_DYN OFF CACHE BOOL "shrink-array: no runtime-size library")
 

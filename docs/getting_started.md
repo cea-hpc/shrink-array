@@ -43,7 +43,7 @@ branch needs C++23, GCC 14 or later) and CMake ≥ 3.20:
 ```sh
 cmake -S shrink-array -B build -G Ninja \
       -DCMAKE_BUILD_TYPE=Release \
-      -DOMP=ON \
+      -DCHUNK_OPENMP=ON \
       -DCMAKE_INSTALL_PREFIX=$HOME/opt/shrink-array
 cmake --build build
 cmake --install build
@@ -53,8 +53,8 @@ The options that matter to a user:
 
 | option | default | effect |
 |---|---|---|
-| `OMP` | `OFF` | build with OpenMP. A program that uses the arrays from OpenMP regions needs a library built with it |
-| `CHUNK_THREADS` | empty | threading backend of the library: `openmp`, `std` (`std::jthread` workers of its own, no OpenMP) or `serial`; empty: `openmp` with `OMP=ON`, `serial` otherwise. Set, it sets `OMP` to match |
+| `CHUNK_OPENMP` | `OFF` | build with OpenMP. A program that uses the arrays from OpenMP regions needs a library built with it |
+| `CHUNK_THREADS` | empty | threading backend of the library: `openmp`, `std` (`std::jthread` workers of its own, no OpenMP) or `serial`; empty: `openmp` with `CHUNK_OPENMP=ON`, `serial` otherwise. Set, it sets `CHUNK_OPENMP` to match |
 | `CHUNK_STATIC_SIZES` | `auto` | the compile-time chunk sizes built, one library per size and variant; `auto`: `256;1024`, but `256` alone in a Debug or sanitizer build of this project (not of a project that includes it) |
 | `CHUNK_BUILD_DYN` | `ON` | also build the libraries whose chunk size is chosen at run time, and can change (`_dyn`) |
 | `CHUNK_STD_ALLOC` | `OFF` | allocate the chunk buffers with the standard allocator instead of the bundled `fast_allocators` (useful under AddressSanitizer) |
@@ -261,7 +261,7 @@ higher than it should. When the team size changes from one region to the next, a
 `finalize_parallel_phase()` replays a deferred write that was already freed, and with both
 calls forgotten, values come out wrong, silently. The program stops, in every build, on a
 `begin_parallel_phase()` with no `finalize_parallel_phase()` since the previous region; check
-builds (Debug, `CHECK_OPTIM`) also stop on a deferred write by a thread that skipped
+builds (Debug, `CHUNK_CHECK_OPTIM`) also stop on a deferred write by a thread that skipped
 `begin_parallel_phase()`.
 Writing them behind `if constexpr (sa::build_config::needs_explicit_phases)`, as above, keeps one
 source for both runtimes.
