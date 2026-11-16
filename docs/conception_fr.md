@@ -176,7 +176,7 @@ tourne :
 
 | choix | comment | pourquoi à la compilation |
 |---|---|---|
-| variante | une bibliothèque par variante (`chunk::chunk_zero`, `chunk::chunk_zero_one_value`, `chunk::chunk_zero_any`), qui définit `CHUNK_VARIANT_ZERO`, `CHUNK_VARIANT_ZERO_ONE_VALUE` ou `CHUNK_VARIANT_ZERO_ANY` ; `CHUNK_VARIANTS` | la variante change la disposition du chunk et le chemin d'écriture |
+| variante | une bibliothèque par variante (`shrink_array::zero`, `shrink_array::zero_one_value`, `shrink_array::zero_any`), qui définit `CHUNK_VARIANT_ZERO`, `CHUNK_VARIANT_ZERO_ONE_VALUE` ou `CHUNK_VARIANT_ZERO_ANY` ; `CHUNK_VARIANTS` | la variante change la disposition du chunk et le chemin d'écriture |
 | géométrie | tailles statiques (`CHUNK_STATIC_SIZES`, bibliothèques `_256`, `_1024`…) ou dynamique (`CHUNK_BUILD_DYN`, bibliothèques `_dyn`, `CHUNK_DYNAMIC`) | une taille statique fait de `i >> shift` et `i & mask` des immédiats ; une dynamique les lit dans le tableau |
 | backend de threads | `CHUNK_THREADS` : `openmp`, `std` ou `serial` | les structures par rang, les protocoles d'échange et les compteurs n'existent que dans les builds threadés |
 | qui marque les phases | `CHUNK_OPT_OMPT` | avec OMPT le runtime marque les phases ; sans, c'est le programme |

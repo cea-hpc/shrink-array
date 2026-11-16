@@ -30,9 +30,9 @@ dynamique. Elles diffèrent par **ce qu'elles savent compresser**.
 
 | variante | bibliothèque (macro qu'elle définit) | un chunk est compressé s'il est uniforme à… | coût d'une constante |
 |---|---|---|---|
-| **`zero`** | `chunk::chunk_zero` (`CHUNK_VARIANT_ZERO`) | **zéro** (`T{}`) | rien : un tampon constant partagé |
-| **`zero_one_value`** | `chunk::chunk_zero_one_value` (`CHUNK_VARIANT_ZERO_ONE_VALUE`) | zéro, **ou** une **seconde valeur** propre au tableau (`set_second_value`) | rien au-delà du tableau |
-| **`zero_any`** | `chunk::chunk_zero_any` (`CHUNK_VARIANT_ZERO_ANY`) | zéro, **ou n'importe quelle autre valeur**, choisie chunk par chunk | un tableau du registre des secondes valeurs (`tab_cst_val2_holder.h`) par valeur distincte, partagé par tout le processus |
+| **`zero`** | `shrink_array::zero` (`CHUNK_VARIANT_ZERO`) | **zéro** (`T{}`) | rien : un tampon constant partagé |
+| **`zero_one_value`** | `shrink_array::zero_one_value` (`CHUNK_VARIANT_ZERO_ONE_VALUE`) | zéro, **ou** une **seconde valeur** propre au tableau (`set_second_value`) | rien au-delà du tableau |
+| **`zero_any`** | `shrink_array::zero_any` (`CHUNK_VARIANT_ZERO_ANY`) | zéro, **ou n'importe quelle autre valeur**, choisie chunk par chunk | un tableau du registre des secondes valeurs (`tab_cst_val2_holder.h`) par valeur distincte, partagé par tout le processus |
 
 ### Booléens : deux conteneurs
 

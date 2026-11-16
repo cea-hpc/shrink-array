@@ -43,7 +43,7 @@
 ## 3. Variant and geometry
 
 They are not set by the program: they come with the library target it links
-(`chunk::chunk_zero_any_256`, `chunk::chunk_zero_dyn`, ...), which carries the macros
+(`shrink_array::zero_any_256`, `shrink_array::zero_dyn`, ...), which carries the macros
 `CHUNK_VARIANT_ZERO` / `CHUNK_VARIANT_ZERO_ONE_VALUE` / `CHUNK_VARIANT_ZERO_ANY`, and `CHUNK_DYNAMIC` for a
 dynamic geometry (the size is chosen at run time, per array; `DYN_CHUNK_SIZE` is the
 benchmark's own macro, not the library's). See [getting_started.md](getting_started.md).

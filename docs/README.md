@@ -37,7 +37,7 @@
 
 | document (EN / FR) | contents |
 |---|---|
-| [getting_started.md](getting_started.md) / [getting_started_fr.md](getting_started_fr.md) | user guide: install, link from CMake (`find_package(chunk)`), first program (`examples/getting_started`), OpenMP rules, pitfalls |
+| [getting_started.md](getting_started.md) / [getting_started_fr.md](getting_started_fr.md) | user guide: install, link from CMake (`find_package(shrink_array)`), first program (`examples/getting_started`), OpenMP rules, pitfalls |
 | [api.md](api.md) / [api_fr.md](api_fr.md) | the API by task: start and stop, containers, operations, write proxy, range operations, OpenMP phases, adaptive chunk size, compile-time configuration |
 | [contributing.md](contributing.md) / [contributing_fr.md](contributing_fr.md) | for contributors: build, which tests for which change, code and comment rules, performance claims, docs and changelog |
 | [design.md](design.md) / [conception_fr.md](conception_fr.md) | the overall design: requirements and non-goals, the parts and their scope (per array, per type, per process), CRTP and policies, build-time configuration, an access from the call to the memory, phases and the three handshakes, memory and allocators, dynamic geometry, backends, the decisions and the alternatives rejected, known limits |

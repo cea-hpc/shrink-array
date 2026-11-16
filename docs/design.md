@@ -172,7 +172,7 @@ What decides the cost of an access is fixed when the library is built, not when 
 
 | choice | how | why at build time |
 |---|---|---|
-| variant | one library per variant (`chunk::chunk_zero`, `chunk::chunk_zero_one_value`, `chunk::chunk_zero_any`), which defines `CHUNK_VARIANT_ZERO`, `CHUNK_VARIANT_ZERO_ONE_VALUE` or `CHUNK_VARIANT_ZERO_ANY`; `CHUNK_VARIANTS` | the variant changes the chunk layout and the write path |
+| variant | one library per variant (`shrink_array::zero`, `shrink_array::zero_one_value`, `shrink_array::zero_any`), which defines `CHUNK_VARIANT_ZERO`, `CHUNK_VARIANT_ZERO_ONE_VALUE` or `CHUNK_VARIANT_ZERO_ANY`; `CHUNK_VARIANTS` | the variant changes the chunk layout and the write path |
 | geometry | static sizes (`CHUNK_STATIC_SIZES`, libraries `_256`, `_1024`...) or dynamic (`CHUNK_BUILD_DYN`, libraries `_dyn`, `CHUNK_DYNAMIC`) | a static size makes `i >> shift` and `i & mask` immediates; a dynamic one reads them from the array |
 | threading backend | `CHUNK_THREADS`: `openmp`, `std` or `serial` | the per-rank structures, the handshakes and the counters exist only in threaded builds |
 | phase driver | `CHUNK_OPT_OMPT` | with OMPT the runtime marks the phases; without it the program does |

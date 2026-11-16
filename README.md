@@ -24,9 +24,8 @@ On the reference benchmark, a billion-element workload that needs **125.9 GB** w
   threads -- OpenMP's, or the program's own `std::thread`s and TBB tasks with the std backend
   (`CHUNK_THREADS=std`, no OpenMP needed). C++20, Linux, CMake, Spack.
 
-*The project is `shrink-array` (repository, Spack package); the C++ namespace is
-`shrink_array`; the installed CMake package is `chunk` (`find_package(chunk)`, targets
-`chunk::…`).*
+*The project is `shrink-array` (repository, Spack package); the C++ namespace and the CMake
+package are `shrink_array` (`find_package(shrink_array)`, targets `shrink_array::…`).*
 
 ## At a glance
 
@@ -162,16 +161,16 @@ Partitioners and `task_arena`s work as with TBB itself; an arena wider than the 
 the program links it.
 
 ```cmake
-find_package(chunk 0.2 REQUIRED)
+find_package(shrink_array 0.2 REQUIRED)
 find_package(TBB REQUIRED)
-target_link_libraries(my_app PRIVATE chunk::chunk_zero_any TBB::tbb)
+target_link_libraries(my_app PRIVATE shrink_array::zero_any TBB::tbb)
 ```
 
 An OpenMP build refuses the adaptor at compile time: OpenMP numbers only its own threads.
 `std::thread`s and thread pools of your own:
 [docs/getting_started.md](docs/getting_started.md#5-threads-the-rules).
 
-Link it with `chunk::chunk_zero_any` (see [Install](#install)). The complete version, which checks
+Link it with `shrink_array::zero_any` (see [Install](#install)). The complete version, which checks
 what it reads back, is [examples/getting_started](examples/getting_started/getting_started.cpp);
 [docs/getting_started.md](docs/getting_started.md) walks through it, then through the rules
 below.
@@ -206,7 +205,7 @@ constants count:
 | `zero_any` | `zero_any::Array<T>` | `T{}`, or **any** value, chunk by chunk, with nothing to declare -- **start here** |
 
 The variant and the chunk size (256, 1024, or dynamic and adaptive: `_dyn`) are chosen by the
-library you link: `chunk::chunk_zero_any_256`, `chunk::chunk_zero_any_dyn`, ...
+library you link: `shrink_array::zero_any_256`, `shrink_array::zero_any_dyn`, ...
 [docs/variants.md](docs/variants.md) says what each one costs;
 [docs/algo_zero_one_value.md](docs/algo_zero_one_value.md) how reads, writes and compression run side by side.
 
@@ -345,8 +344,8 @@ cmake --install build
 Then, in your project:
 
 ```cmake
-find_package(chunk 0.2 REQUIRED)            # -DCMAKE_PREFIX_PATH=<install prefix>
-target_link_libraries(my_app PRIVATE chunk::chunk_zero_any)
+find_package(shrink_array 0.2 REQUIRED)            # -DCMAKE_PREFIX_PATH=<install prefix>
+target_link_libraries(my_app PRIVATE shrink_array::zero_any)
 ```
 
 `add_subdirectory(shrink-array)` works too, and so does `FetchContent`, with nothing to
@@ -360,7 +359,7 @@ FetchContent_Declare(shrink_array
 set(CHUNK_OPENMP ON)                            # build the OpenMP libraries
 FetchContent_MakeAvailable(shrink_array)
 
-target_link_libraries(my_app PRIVATE chunk::chunk_zero_any)
+target_link_libraries(my_app PRIVATE shrink_array::zero_any)
 ```
 
 With CMake 3.28 or later, add `EXCLUDE_FROM_ALL` to `FetchContent_Declare`: only the libraries

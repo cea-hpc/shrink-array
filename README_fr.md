@@ -25,9 +25,8 @@ moins de mémoire, sans toucher aux boucles.
   quelques centaines de threads -- ceux d'OpenMP, ou, avec le backend std, les `std::thread` et
   les tâches TBB du programme lui-même (`CHUNK_THREADS=std`, sans OpenMP). C++20, Linux, CMake, Spack.
 
-*Le projet s'appelle `shrink-array` (dépôt, paquet Spack) ; le namespace C++ est
-`shrink_array` ; le paquet CMake installé est `chunk` (`find_package(chunk)`, cibles
-`chunk::…`).*
+*Le projet s'appelle `shrink-array` (dépôt, paquet Spack) ; le namespace C++ et le paquet
+CMake sont `shrink_array` (`find_package(shrink_array)`, cibles `shrink_array::…`).*
 
 ## Aperçu
 
@@ -165,16 +164,16 @@ dans le corps prend `sa::tbb::phase_body(inner)`. L'en-tête est fourni avec la 
 ne dépend pas de TBB : c'est au programme de se lier à TBB.
 
 ```cmake
-find_package(chunk 0.2 REQUIRED)
+find_package(shrink_array 0.2 REQUIRED)
 find_package(TBB REQUIRED)
-target_link_libraries(my_app PRIVATE chunk::chunk_zero_any TBB::tbb)
+target_link_libraries(my_app PRIVATE shrink_array::zero_any TBB::tbb)
 ```
 
 Un build OpenMP refuse l'adaptateur à la compilation : OpenMP ne numérote que ses propres
 threads. Les `std::thread` et vos propres pools de threads :
 [docs/getting_started_fr.md](docs/getting_started_fr.md#5-threads--les-règles).
 
-Le lier à `chunk::chunk_zero_any` (voir [Installer](#installer)). La version complète, qui vérifie
+Le lier à `shrink_array::zero_any` (voir [Installer](#installer)). La version complète, qui vérifie
 ce qu'elle relit, est [examples/getting_started](examples/getting_started/getting_started.cpp) ;
 [docs/getting_started_fr.md](docs/getting_started_fr.md) la commente pas à pas, puis détaille les
 règles ci-dessous.
@@ -209,7 +208,7 @@ métadonnées. Les trois variantes diffèrent par les constantes retenues :
 | `zero_any` | `zero_any::Array<T>` | `T{}`, ou **n'importe quelle** valeur, chunk par chunk, sans rien déclarer -- **commencer par elle** |
 
 La variante et la taille de chunk (256, 1024, ou dynamique et adaptative : `_dyn`) sont choisies
-par la bibliothèque liée : `chunk::chunk_zero_any_256`, `chunk::chunk_zero_any_dyn`, ...
+par la bibliothèque liée : `shrink_array::zero_any_256`, `shrink_array::zero_any_dyn`, ...
 [docs/variantes_fr.md](docs/variantes_fr.md) dit ce que coûte chacune ;
 [docs/algo_zero_one_value_fr.md](docs/algo_zero_one_value_fr.md) comment lectures, écritures et compression
 cohabitent.
@@ -356,8 +355,8 @@ cmake --install build
 Puis, dans votre projet :
 
 ```cmake
-find_package(chunk 0.2 REQUIRED)            # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
-target_link_libraries(my_app PRIVATE chunk::chunk_zero_any)
+find_package(shrink_array 0.2 REQUIRED)            # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
+target_link_libraries(my_app PRIVATE shrink_array::zero_any)
 ```
 
 `add_subdirectory(shrink-array)` marche aussi, et `FetchContent` aussi, sans rien installer
@@ -371,7 +370,7 @@ FetchContent_Declare(shrink_array
 set(CHUNK_OPENMP ON)                            # compiler les bibliothèques OpenMP
 FetchContent_MakeAvailable(shrink_array)
 
-target_link_libraries(my_app PRIVATE chunk::chunk_zero_any)
+target_link_libraries(my_app PRIVATE shrink_array::zero_any)
 ```
 
 Avec CMake 3.28 ou plus récent, ajoutez `EXCLUDE_FROM_ALL` à `FetchContent_Declare` : seules les

@@ -30,7 +30,7 @@ Tous les noms sont dans l'espace de noms `shrink_array`, `build_config` et `chun
 | `BitArray` | `chunk/bit_array.h` | `bool`, stocké sur un bit par élément (builds `zero_one_value`) |
 
 `IntType` est le type d'indice : `long` pour plus de 2³¹ éléments. La variante compilée est
-celle de la bibliothèque liée (`chunk::chunk_zero_any`, ...) ; `chunk_config::use_zero`,
+celle de la bibliothèque liée (`shrink_array::zero_any`, ...) ; `chunk_config::use_zero`,
 `chunk_config::use_zero_one_value` et `chunk_config::use_zero_any` indiquent laquelle, à la compilation.
 
 ## 3. Opérations du conteneur

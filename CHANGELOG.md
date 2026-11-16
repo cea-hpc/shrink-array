@@ -140,6 +140,17 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- The CMake package is `shrink_array`, the project's name: `find_package(shrink_array)`, and
+  targets without the repeated word -- `shrink_array::zero_any`, `shrink_array::zero_any_256`,
+  `shrink_array::zero_any_dyn` (`zero` and `zero_one_value` alike), `shrink_array::vector`,
+  `shrink_array::chunk` -- installed and in the build tree (`add_subdirectory()`,
+  `FetchContent`). Its variables are `shrink_array_STATIC_SIZES`, `shrink_array_DEFAULT_SIZE`,
+  `shrink_array_HAS_DYN`, `shrink_array_OPENMP`, `shrink_array_THREADS`, `shrink_array_OMPT`,
+  `shrink_array_STD_ALLOC`. The project had three names (`shrink-array`, `shrink_array`,
+  `chunk`), and `chunk` is one another package may take in a shared prefix.
+  `find_package(chunk)` and the `chunk::chunk_…` targets still work, with a deprecation
+  message, until the next minor version. Unchanged: the `#include "chunk/…"` paths, the
+  `CHUNK_` options, the names of the library files.
 - CMake options without a prefix have one: `OMP` is `CHUNK_OPENMP`, `SANITIZER` is
   `CHUNK_SANITIZER`, `CHECK_OPTIM` is `CHUNK_CHECK_OPTIM`, and likewise `CHUNK_USE_LIBCXX`,
   `CHUNK_USE_MOLD`, `CHUNK_USE_GPERF`, `CHUNK_ENABLE_IWYU`, `CHUNK_GCC_TOOLCHAIN_DIR`,

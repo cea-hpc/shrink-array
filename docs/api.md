@@ -30,7 +30,7 @@ All names are in namespace `shrink_array`, `build_config` and `chunk_config` inc
 | `BitArray` | `chunk/bit_array.h` | `bool`, stored one bit per element (`zero_one_value` builds) |
 
 `IntType` is the index type: `long` for more than 2³¹ elements. The variant compiled in is
-that of the linked library (`chunk::chunk_zero_any`, ...); `chunk_config::use_zero`,
+that of the linked library (`shrink_array::zero_any`, ...); `chunk_config::use_zero`,
 `chunk_config::use_zero_one_value` and `chunk_config::use_zero_any` tell which, at compile time.
 
 ## 3. Container operations

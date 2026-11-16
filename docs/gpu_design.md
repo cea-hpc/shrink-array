@@ -436,7 +436,7 @@ It comes **after** fixed geometry in the plan (section 13).
   one. **(To be decided)**: clang as the single CUDA compiler, which avoids nvcc and its
   limits, at the price of CUDA support one version behind.
 - CMake: a `CHUNK_DEVICE=none|cuda|hip` option (and `CHUNK_DEVICE_KOKKOS=ON` for the facade),
-  targets `chunk::chunk_zero_any_device_256`, …; Spack: a `device` variant.
+  targets `shrink_array::zero_any_device_256`, …; Spack: a `device` variant.
 
 ### 12.2 API sketch
 

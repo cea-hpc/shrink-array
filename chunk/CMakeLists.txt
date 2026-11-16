@@ -737,6 +737,12 @@ foreach(_t IN LISTS _chunk_install_targets)
   if (NOT TARGET chunk::${_t})
     add_library(chunk::${_t} ALIAS ${_t})
   endif()
+  # ... and under the project's name, the one of find_package(shrink_array):
+  # shrink_array::zero_any_256 for chunk_zero_any_256.
+  string(REGEX REPLACE "^chunk_" "" _short "${_t}")
+  if (NOT TARGET shrink_array::${_short})
+    add_library(shrink_array::${_short} ALIAS ${_t})
+  endif()
 endforeach()
 
 # The fast_allocators version chunk-config.cmake asks for (find_dependency).
@@ -824,5 +830,23 @@ install(EXPORT chunk-targets NAMESPACE chunk:: DESTINATION ${CMAKE_INSTALL_LIBDI
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/chunk-config.cmake
         ${CMAKE_CURRENT_BINARY_DIR}/chunk-config-version.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/chunk/cmake
+        COMPONENT chunk-devel
+)
+
+# The package under the project's name, find_package(shrink_array): it loads the
+# chunk package above and names its targets shrink_array::<variant>[_<size>|_dyn]
+# (shrink_array-config.cmake.in). Same version, same compatibility rule.
+string(REPLACE ";" " " _chunk_install_targets "${_chunk_install_targets}")
+set(SHRINK_ARRAY_CHUNK_CMAKE_DIR ${CMAKE_INSTALL_LIBDIR}/chunk/cmake)
+configure_package_config_file(shrink_array-config.cmake.in shrink_array-config.cmake
+        INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/shrink_array
+        PATH_VARS SHRINK_ARRAY_CHUNK_CMAKE_DIR)
+write_basic_package_version_file(
+        shrink_array-config-version.cmake
+        VERSION ${CHUNK_VERSION}
+        COMPATIBILITY ${_chunk_compatibility})
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/shrink_array-config.cmake
+        ${CMAKE_CURRENT_BINARY_DIR}/shrink_array-config-version.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/shrink_array
         COMPONENT chunk-devel
 )

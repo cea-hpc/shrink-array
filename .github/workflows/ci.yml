@@ -194,7 +194,7 @@ jobs:
           cmake --build build --target getting_started simple_array_chunk multi-mat test_vecto_chunk
           ctest --test-dir build -L examples --output-on-failure
       # What a user project does: the library alone, installed, and
-      # examples/getting_started configured on its own with find_package(chunk).
+      # examples/getting_started configured on its own with find_package(shrink_array).
       - name: Install, then getting_started against the install
         if: matrix.install
         run: |
@@ -216,7 +216,7 @@ jobs:
 
   # shrink-array consumed by another project's own build, without an install:
   # examples/fetch_content brings this checkout in with FetchContent and links
-  # chunk::chunk_zero_any. Its CMakeLists stops the configure if the library
+  # shrink_array::zero_any. Its CMakeLists stops the configure if the library
   # changed the consumer's build type or flags; the steps check the rest -- the
   # consumer keeps its own `doc` target and its own tests, and its install holds
   # nothing of the library.

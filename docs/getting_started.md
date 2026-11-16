@@ -73,10 +73,10 @@ your program the phase calls of §5.
 cmake_minimum_required(VERSION 3.20)
 project(my_app LANGUAGES CXX)
 
-find_package(chunk 0.2 REQUIRED)        # -DCMAKE_PREFIX_PATH=<install prefix>
+find_package(shrink_array 0.2 REQUIRED)        # -DCMAKE_PREFIX_PATH=<install prefix>
 
 add_executable(my_app main.cpp)
-target_link_libraries(my_app PRIVATE chunk::chunk_zero_any)
+target_link_libraries(my_app PRIVATE shrink_array::zero_any)
 ```
 
 The library you link **chooses the variant and the chunk size**. The headers are the same
@@ -88,13 +88,13 @@ as the library did.
 
 | target | variant | chunk size |
 |---|---|---|
-| `chunk::chunk_zero`, `chunk::chunk_zero_one_value`, `chunk::chunk_zero_any` | `zero`, `zero_one_value`, `zero_any` | the first of `CHUNK_STATIC_SIZES` (256) |
-| `chunk::chunk_zero_any_1024`, … | | that compile-time size |
-| `chunk::chunk_zero_any_dyn`, … | | chosen at run time, per array (can be changed with `rechunk_to()` or by the adaptive decider) |
-| `chunk::chunk_vector` | none: the arrays are `std::vector` | — |
+| `shrink_array::zero`, `shrink_array::zero_one_value`, `shrink_array::zero_any` | `zero`, `zero_one_value`, `zero_any` | the first of `CHUNK_STATIC_SIZES` (256) |
+| `shrink_array::zero_any_1024`, … | | that compile-time size |
+| `shrink_array::zero_any_dyn`, … | | chosen at run time, per array (can be changed with `rechunk_to()` or by the adaptive decider) |
+| `shrink_array::vector` | none: the arrays are `std::vector` | — |
 
 Link **one** variant library per program, and write **that variant's class**:
-`zero_any::Array<T>` with `chunk::chunk_zero_any`. The class you write is what you get -- a program
+`zero_any::Array<T>` with `shrink_array::zero_any`. The class you write is what you get -- a program
 naming `zero_any::Array` keeps it regardless of what it links -- and an array of a variant other than the
 library's is not supported: depending on the calls, it does not compile or it crashes.
 To let the link choose, write the arrays through an alias for the variant the library
@@ -115,11 +115,11 @@ using Array = std::conditional_t<sa::chunk_config::use_zero_any, sa::zero_any::A
               std::conditional_t<sa::chunk_config::use_zero, sa::zero::Array<T>, std::vector<T>>>>;
 ```
 
-With it, `chunk::chunk_vector` builds the same program on plain `std::vector`s, which is the
+With it, `shrink_array::vector` builds the same program on plain `std::vector`s, which is the
 easiest way to compare memory and time.
 
-`find_package(chunk)` also sets `chunk_STATIC_SIZES`, `chunk_DEFAULT_SIZE`, `chunk_HAS_DYN`,
-`chunk_OPENMP`, `chunk_OMPT` and `chunk_STD_ALLOC`, for a project that wants to check what the
+`find_package(shrink_array)` also sets `shrink_array_STATIC_SIZES`, `shrink_array_DEFAULT_SIZE`, `shrink_array_HAS_DYN`,
+`shrink_array_OPENMP`, `shrink_array_OMPT` and `shrink_array_STD_ALLOC`, for a project that wants to check what the
 installation holds.
 
 ## 4. A first program, parallel and multi-threaded

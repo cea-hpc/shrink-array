@@ -18,9 +18,9 @@ class ShrinkArray(CMakePackage):
     threads -- or, with threads=std, from std::threads or TBB.
 
     Installs one library per variant and chunk size, found with
-    find_package(chunk): chunk::chunk_zero_<S>, chunk::chunk_zero_one_value_<S>,
-    chunk::chunk_zero_any_<S> (static S), chunk::chunk_<variant>_dyn (runtime S),
-    chunk::chunk_<variant> (the first static size)."""
+    find_package(shrink_array): shrink_array::zero_<S>, shrink_array::zero_one_value_<S>,
+    shrink_array::zero_any_<S> (static S), shrink_array::<variant>_dyn (runtime S),
+    shrink_array::<variant> (the first static size)."""
 
     homepage = "https://github.com/cea-hpc/shrink-array"
     git = "https://github.com/cea-hpc/shrink-array.git"
@@ -64,13 +64,13 @@ class ShrinkArray(CMakePackage):
         values=_valid_chunk_size,
         multi=True,
         description="Static chunk sizes, each a power of two or a multiple of 64: one library "
-        "per variant and size (chunk::chunk_zero_any_256, ...); "
-        "the smallest is the one of the bare chunk::chunk_<variant> targets",
+        "per variant and size (shrink_array::zero_any_256, ...); "
+        "the smallest is the one of the bare shrink_array::<variant> targets",
     )
     variant(
         "dyn",
         default=True,
-        description="Also a runtime-size library per variant (chunk::chunk_<variant>_dyn): "
+        description="Also a runtime-size library per variant (shrink_array::<variant>_dyn): "
         "adaptive re-chunk",
     )
     variant(

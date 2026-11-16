@@ -184,7 +184,7 @@ The options of [environment_variables.md](environment_variables.md) §2 are not 
 | `CHUNK_GCC_TOOLCHAIN_DIR` | depends on the machine | Clang builds: the GCC installation whose libstdc++ and runtime clang uses (`--gcc-toolchain=`); empty: the driver's own choice. A path that does not exist is ignored, with a warning |
 | `CHUNK_USE_MOLD` | `AUTO` | link with mold: `AUTO` (when it is found and the build supports it), `ON` (an error otherwise), `OFF` |
 | `CHUNK_VEC_REPORT` | `OFF` | fast-math targets of the examples: the compiler reports the loops it did not vectorise |
-| `GETTING_STARTED_LIB`, `BOOL_ARRAYS_LIB` | `chunk::chunk_zero_any`, `chunk::chunk_zero_one_value` | `examples/getting_started` and `examples/bool_arrays` built on their own, against an installed library: the library target they link |
+| `GETTING_STARTED_LIB`, `BOOL_ARRAYS_LIB` | `shrink_array::zero_any`, `shrink_array::zero_one_value` | `examples/getting_started` and `examples/bool_arrays` built on their own, against an installed library: the library target they link |
 | `CHUNK_USE_GPERF`, `CHUNK_ENABLE_IWYU` | `OFF` | gperftools profiling; include-what-you-use during compilation |
 | `CHUNK_ONEAPI_XHOST`, `CHUNK_ONEAPI_NO_INTEL_LIBS`, `CHUNK_ONEAPI_FAST_FP` | `OFF` | icpx: Intel-only binary (`-xHost`); no Intel runtime library; keep `-fp-model=fast` |
 

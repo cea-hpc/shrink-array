@@ -168,7 +168,7 @@ one, on a team of the backend. `phases.h` states the contract.
    *7a done*: `CHUNK_THREADS` (`openmp` or `serial`; empty: from `CHUNK_OPENMP`, as
    before; `std` refused until 7b), recorded as `CHUNK_OPT_THREADED` /
    `FAST_ALLOC_OPT_THREADED` in the generated build options
-   (`chunk/public/chunk/build_options.h.in`) and as `chunk_THREADS` in
+   (`chunk/public/chunk/build_options.h.in`) and as `shrink_array_THREADS` in
    `chunk/chunk-config.cmake.in`; `build_config::threaded` /
    `not_threaded` and `alloc_config::threaded`, each checked against
    `pmp::threaded` by a `static_assert`. Every library test of `use_openmp`

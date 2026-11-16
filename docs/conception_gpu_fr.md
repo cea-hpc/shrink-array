@@ -444,7 +444,7 @@ Elle vient **après** la géométrie fixe dans le plan (section 13).
   applications est la bonne. **(À trancher)** : clang comme compilateur CUDA unique, qui
   évite nvcc et ses limites, au prix d'une prise en charge de CUDA en retard d'une version.
 - CMake : une option `CHUNK_DEVICE=none|cuda|hip` (et `CHUNK_DEVICE_KOKKOS=ON` pour la
-  façade), des cibles `chunk::chunk_zero_any_device_256`, … ; Spack : une variante `device`.
+  façade), des cibles `shrink_array::zero_any_device_256`, … ; Spack : une variante `device`.
 
 ### 12.2 Esquisse d'API
 

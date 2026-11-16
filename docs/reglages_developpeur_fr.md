@@ -187,7 +187,7 @@ Les options de [variables_environnement_fr.md](variables_environnement_fr.md) §
 | `CHUNK_GCC_TOOLCHAIN_DIR` | selon la machine | builds Clang : l'installation de GCC dont clang prend la libstdc++ et le runtime (`--gcc-toolchain=`) ; vide : le choix du driver. Un chemin qui n'existe pas est ignoré, avec un avertissement |
 | `CHUNK_USE_MOLD` | `AUTO` | lier avec mold : `AUTO` (s'il est trouvé et que le build le supporte), `ON` (une erreur sinon), `OFF` |
 | `CHUNK_VEC_REPORT` | `OFF` | cibles fast-math des exemples : le compilateur signale les boucles qu'il n'a pas vectorisées |
-| `GETTING_STARTED_LIB`, `BOOL_ARRAYS_LIB` | `chunk::chunk_zero_any`, `chunk::chunk_zero_one_value` | `examples/getting_started` et `examples/bool_arrays` construits seuls, contre une bibliothèque installée : la cible de bibliothèque qu'ils lient |
+| `GETTING_STARTED_LIB`, `BOOL_ARRAYS_LIB` | `shrink_array::zero_any`, `shrink_array::zero_one_value` | `examples/getting_started` et `examples/bool_arrays` construits seuls, contre une bibliothèque installée : la cible de bibliothèque qu'ils lient |
 | `CHUNK_USE_GPERF`, `CHUNK_ENABLE_IWYU` | `OFF` | profilage gperftools ; include-what-you-use pendant la compilation |
 | `CHUNK_ONEAPI_XHOST`, `CHUNK_ONEAPI_NO_INTEL_LIBS`, `CHUNK_ONEAPI_FAST_FP` | `OFF` | icpx : binaire réservé à Intel (`-xHost`) ; aucune bibliothèque d'exécution Intel ; garder `-fp-model=fast` |
 

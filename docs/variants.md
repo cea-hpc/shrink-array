@@ -30,9 +30,9 @@ geometry. They differ in **what they can compress**.
 
 | variant | library (macro it defines) | a chunk is compressed if all its elements equal… | cost of a constant |
 |---|---|---|---|
-| **`zero`** | `chunk::chunk_zero` (`CHUNK_VARIANT_ZERO`) | **zero** (`T{}`) | nothing: one shared constant buffer |
-| **`zero_one_value`** | `chunk::chunk_zero_one_value` (`CHUNK_VARIANT_ZERO_ONE_VALUE`) | zero, **or** a **second value** specific to the array (`set_second_value`) | nothing beyond the array |
-| **`zero_any`** | `chunk::chunk_zero_any` (`CHUNK_VARIANT_ZERO_ANY`) | zero, **or any other value**, chosen chunk by chunk | one array from the second-value registry (`tab_cst_val2_holder.h`) per distinct value, shared by the whole process |
+| **`zero`** | `shrink_array::zero` (`CHUNK_VARIANT_ZERO`) | **zero** (`T{}`) | nothing: one shared constant buffer |
+| **`zero_one_value`** | `shrink_array::zero_one_value` (`CHUNK_VARIANT_ZERO_ONE_VALUE`) | zero, **or** a **second value** specific to the array (`set_second_value`) | nothing beyond the array |
+| **`zero_any`** | `shrink_array::zero_any` (`CHUNK_VARIANT_ZERO_ANY`) | zero, **or any other value**, chosen chunk by chunk | one array from the second-value registry (`tab_cst_val2_holder.h`) per distinct value, shared by the whole process |
 
 ### Booleans: two containers
 

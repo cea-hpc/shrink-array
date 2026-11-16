@@ -44,7 +44,7 @@
 ## 3. Variante et géométrie
 
 Le programme ne les règle pas : elles viennent avec la cible de bibliothèque qu'il lie
-(`chunk::chunk_zero_any_256`, `chunk::chunk_zero_dyn`, ...), qui porte les macros
+(`shrink_array::zero_any_256`, `shrink_array::zero_dyn`, ...), qui porte les macros
 `CHUNK_VARIANT_ZERO` / `CHUNK_VARIANT_ZERO_ONE_VALUE` / `CHUNK_VARIANT_ZERO_ANY`, et `CHUNK_DYNAMIC` pour une
 géométrie dynamique (taille choisie à l'exécution, tableau par tableau ; `DYN_CHUNK_SIZE`
 est une macro du bench, pas de la bibliothèque). Voir [getting_started_fr.md](getting_started_fr.md).
