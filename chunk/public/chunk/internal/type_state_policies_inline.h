@@ -537,8 +537,8 @@ void TypeStateParallelImpl<ChunkT, T, true>::clear_list_block_free_screen(int bu
     {
         return;
     }
-    const auto  bucket_idx = static_cast<std::size_t>(bucket);
-    const auto& out        = to_free[bucket_idx];
+    const auto bucket_idx = static_cast<std::size_t>(bucket);
+    auto&      out        = to_free[bucket_idx];
 
     // RAW default list container, NOT the size-aware overload. It may be smaller than max_thr
     // (see allocate_chunk_internal): an unsized slot has nothing to drain.
