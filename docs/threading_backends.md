@@ -201,7 +201,7 @@ one, on a team of the backend. `phases.h` states the contract.
    7b the application drives the arrays from ONE thread; the library's own
    teams run on the std backend. Application threads are 7c.
    *7c done*: the application's threads under the std backend.
-   - **Rank**: `shrink_array::thread_rank()` (`pmp_runtime.h`) is the rank in the
+   - **Rank**: `pmp::thread_rank()` (`pmp_runtime.h`) is the rank in the
      innermost active team of the std backend when the thread is in one
      (`std_backend::ThreadState::active_rank`, kept by `FrameGuard`), its
      `registered_rank()` otherwise -- the application's threads, and the
