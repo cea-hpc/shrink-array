@@ -564,7 +564,7 @@ bool zero_any::ChunkImpl<T, Derived>::have_chunk_to_compress([[maybe_unused]] in
 template <typename T, typename Derived>
 void zero_any::ChunkImpl<T, Derived>::compress_chunk_to_compress_in_par([[maybe_unused]] int thr, bool apply)
 {
-    const auto& vec_tup = Manager::get_zero_any_candidates(thr);
+    auto& vec_tup = Manager::get_zero_any_candidates(thr);
 
     if constexpr (build_config::threaded)
     {
