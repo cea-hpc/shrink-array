@@ -22,7 +22,7 @@
 #   COV_BUILD_DIR   the build tree (default: /tmp/$USER/build-cov; emptied)
 #   GCC_MODULE      compiler module, where modules exist (default: gcc/gcc-14.2.0-x86_64)
 #   CXX             the C++ compiler (default: the g++ on PATH after the module)
-#   CMAKE_ARGS      extra CMake arguments (default: -DOMP=ON, size 256)
+#   CMAKE_ARGS      extra CMake arguments (default: -DCHUNK_OPENMP=ON, size 256)
 #   JOBS            build parallelism (default: 2)
 #
 # The proxy is the shell's (https_proxy): scan.coverity.com and
@@ -44,7 +44,7 @@ esac
 
 COV_BUILD_DIR=${COV_BUILD_DIR:-/tmp/$USER/build-cov}
 GCC_MODULE=${GCC_MODULE:-gcc/gcc-14.2.0-x86_64}
-CMAKE_ARGS=${CMAKE_ARGS:--DOMP=ON -DCHUNK_STATIC_SIZES=256 -DCHUNK_BUILD_DYN=OFF}
+CMAKE_ARGS=${CMAKE_ARGS:--DCHUNK_OPENMP=ON -DCHUNK_STATIC_SIZES=256 -DCHUNK_BUILD_DYN=OFF}
 JOBS=${JOBS:-2}
 
 die() { echo "coverity_submit: $*" >&2; exit 1; }

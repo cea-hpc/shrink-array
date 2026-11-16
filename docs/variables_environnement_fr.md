@@ -29,22 +29,22 @@
 
 | option | défaut | effet |
 |---|---|---|
-| `OMP` | `OFF` | construire avec OpenMP |
-| `CHUNK_THREADS` | vide | backend de threads de la bibliothèque : `openmp`, `std` (des workers `std::jthread` à elle, sans OpenMP) ou `serial` ; vide : `openmp` avec `OMP=ON`, `serial` sinon. Renseigné, il fixe `OMP` en conséquence |
+| `CHUNK_OPENMP` | `OFF` | construire avec OpenMP |
+| `CHUNK_THREADS` | vide | backend de threads de la bibliothèque : `openmp`, `std` (des workers `std::jthread` à elle, sans OpenMP) ou `serial` ; vide : `openmp` avec `CHUNK_OPENMP=ON`, `serial` sinon. Renseigné, il fixe `CHUNK_OPENMP` en conséquence |
 | `CHUNK_STATIC_SIZES` | `auto` | tailles de chunk statiques construites (cibles `_<taille>`) ; `auto` : `256;1024`, `256` seule dans un build Debug ou sanitizer |
 | `CHUNK_BUILD_DYN` | `ON` | construire aussi une bibliothèque à géométrie dynamique (`_dyn`) par variante |
 | `SHRINK_ARRAY_BUILD_EXAMPLES` | `ON` au niveau racine | construire les exemples, le banc et les tests de validation ; `OFF` par défaut quand le projet est inclus dans un autre (`add_subdirectory`, `FetchContent`) |
 | `SHRINK_ARRAY_BUILD_TESTS` | `ON` au niveau racine | enregistrer les tests auprès de CTest ; `OFF` par défaut quand le projet est inclus dans un autre, dont le `ctest` ne les lance alors pas |
 | `CHUNK_STD_ALLOC` | `OFF` | allocateur standard pour les tampons de chunks au lieu de `fast_allocators` (utile sous ASan : chaque tampon est un vrai `malloc`) |
 | `CHUNK_SECOND_VALUE_INDEXED` | `OFF` | `zero_any` : l'emplacement de seconde valeur contient un identifiant de 4 octets au lieu de la valeur (moins de mémoire, +3 % de temps d'écriture) |
-| `CHUNK_STATS` | `OFF` | compteurs d'instrumentation et rapport `ParamChunk::chunk_stats()` |
-| `CHECK_OPTIM` | `OFF` | vérifications d'invariants en build optimisé |
-| `SANITIZER` | `none` | `thread`, `address`, `undefined` (UBSan, le premier rapport arrête le programme) ou `token` (AllocToken, Clang ≥ 22), pour tous les types de build |
+| `CHUNK_STATS` | `OFF` | compteurs d'instrumentation et rapport `Runtime::chunk_stats()` |
+| `CHUNK_CHECK_OPTIM` | `OFF` | vérifications d'invariants en build optimisé |
+| `CHUNK_SANITIZER` | `none` | `thread`, `address`, `undefined` (UBSan, le premier rapport arrête le programme) ou `token` (AllocToken, Clang ≥ 22), pour tous les types de build |
 
 ## 3. Variante et géométrie
 
 Le programme ne les règle pas : elles viennent avec la cible de bibliothèque qu'il lie
-(`chunk::chunk_zero_any_256`, `chunk::chunk_zero_dyn`, ...), qui porte les macros
+(`shrink_array::zero_any_256`, `shrink_array::zero_dyn`, ...), qui porte les macros
 `CHUNK_VARIANT_ZERO` / `CHUNK_VARIANT_ZERO_ONE_VALUE` / `CHUNK_VARIANT_ZERO_ANY`, et `CHUNK_DYNAMIC` pour une
 géométrie dynamique (taille choisie à l'exécution, tableau par tableau ; `DYN_CHUNK_SIZE`
 est une macro du bench, pas de la bibliothèque). Voir [getting_started_fr.md](getting_started_fr.md).

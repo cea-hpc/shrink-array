@@ -58,9 +58,9 @@
 #include "chunk/zero_array.h"            // zero::Array
 #include "chunk/zero_one_value_array.h"  // zero_one_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
-#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/config.h"                // chunk_config::use_zero*, build_config::has_not_ompt
-#include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/config.h"                // chunk_config::use_zero*, build_config::needs_explicit_phases
+#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_THREAD_RANK
 #include "chunk/print.h"                 // shrink_array::println
 
@@ -153,7 +153,7 @@ long life_of_one_array(Arrays& arr, int count)
     {
         arr_w[c * csz] = 7.0;
     }
-    if (arr_w.get_nb_chunk_written() != half)
+    if (arr_w.written_chunk_count() != half)
     {
         ++bad;
     }
@@ -240,7 +240,7 @@ int report(const char* what, int count, long bad)
 
 int run(int /*argc*/, char** /*argv*/)
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
     println("=== region_storage_validation [variant = {}]  threads={} ===", variant_name(), CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
@@ -283,7 +283,7 @@ int run(int /*argc*/, char** /*argv*/)
             Arr           shared(count);
 #pragma omp parallel reduction(+ : bad_each)
             {
-                if constexpr (build_config::has_not_ompt)
+                if constexpr (build_config::needs_explicit_phases)
                 {
                     begin_parallel_phase();
                 }
@@ -300,7 +300,7 @@ int run(int /*argc*/, char** /*argv*/)
                     shared[i] = work_value(0, 1, i);
                 }
             }
-            if constexpr (build_config::has_not_ompt)
+            if constexpr (build_config::needs_explicit_phases)
             {
                 finalize_parallel_phase();
             }

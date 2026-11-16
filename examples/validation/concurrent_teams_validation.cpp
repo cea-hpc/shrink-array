@@ -52,13 +52,13 @@
 #include "chunk/zero_array.h"            // zero::Array
 #include "chunk/zero_one_value_array.h"  // zero_one_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
-#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/config.h"                // chunk_config::use_zero_one_value*, build_config::use_openmp / has_not_ompt
-#include "chunk/internal/PMP_CHUNK.h"    // chunk_pmp_team_rank
-#include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/print.h"                 // shrink_array::println
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/config.h" // chunk_config::use_zero_one_value*, build_config::use_openmp / needs_explicit_phases
+#include "chunk/internal/PMP_CHUNK.h" // chunk_pmp_team_rank
+#include "chunk/phases.h"             // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/print.h"              // shrink_array::println
 
-#include "chunk/internal/zero_chunk.h" // release_chunk_pools, destroy_block_chunk
+#include "chunk/internal/zero_chunk.h" // release_chunk_pools, Runtime::shutdown
 #include "validation_harness.h"        // self_command; run() is called by validation_driver.cpp
 
 namespace validation::concurrent_teams_validation
@@ -104,7 +104,7 @@ static void phases(Array<int>& arr, int who, int rounds, std::latch* hold)
     {
 #pragma omp parallel num_threads(2)
         {
-            if constexpr (build_config::has_not_ompt)
+            if constexpr (build_config::needs_explicit_phases)
             {
                 begin_parallel_phase();
             }
@@ -118,7 +118,7 @@ static void phases(Array<int>& arr, int who, int rounds, std::latch* hold)
                 arr[i] = expected(i, round, who);
             }
         }
-        if constexpr (build_config::has_not_ompt)
+        if constexpr (build_config::needs_explicit_phases)
         {
             finalize_parallel_phase();
         }
@@ -181,7 +181,7 @@ static int run_body(int argc, char** argv)
 {
     const bool concurrent = argc > 1 && std::string(argv[1]) == "--concurrent";
 
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     const long count  = 1L << 16;
     const int  rounds = 3;
@@ -233,7 +233,7 @@ int run(int argc, char** argv)
     // or LeakSanitizer reports them in the std-alloc builds.
     const int rc = run_body(argc, argv);
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
     return rc;
 }
 

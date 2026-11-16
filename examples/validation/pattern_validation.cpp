@@ -116,13 +116,13 @@
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
 #include "chunk/zero_any_array.h"        // zero_any::Array (H)
 #include "chunk/pattern_array.h"         // pattern::Array, pattern::MotifRegion
-#include "chunk/array_chunk_range_ops.h" // fill_range (M)
+#include "chunk/range_ops.h"             // fill_range (M)
 #include "chunk/chunk_size_advisor.h"    // ChunkSizeAdvisor (R, S)
-#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"                // chunk_config::use_zero_any, build_config::has_not_ompt
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
+#include "chunk/config.h"                // chunk_config::use_zero_any, build_config::needs_explicit_phases
 #include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h"    // arg_number (checked, not atoi)
 #include "chunk/print.h"                 // shrink_array::println
 
@@ -139,7 +139,7 @@ static int fails = 0;
 
 static void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
@@ -150,7 +150,7 @@ static void begin_phase()
 template <typename Arr>
 static void end_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -940,7 +940,7 @@ static void shared_registry(long nch)
 
 int run(int argc, char** argv)
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     const long nch = argc > 1 ? shrink_array::arg_number<long>(argv[1], 64, "chunks") : 64;
     println("=== pattern_validation  chunks={}  threads={} ===", nch, CHUNK_PMP_MAX_THREADS);
@@ -973,7 +973,7 @@ int run(int argc, char** argv)
     advisor_motif_forecast<long>("long", nch < 2048 ? 2048 : nch);
 
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
 
     println("\n{}", fails == 0 ? "=== PATTERN OK ===" : "=== PATTERN FAILURES ===");
     return fails == 0 ? 0 : 1;

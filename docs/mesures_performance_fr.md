@@ -216,7 +216,7 @@ python3 python/bimodal_probe.py --runs 12 -- $BIN --mode perf --no_io
   `CMakeCache.txt`. En cas de doute, reconfigurer dans un répertoire neuf. Pour comparer deux
   builds, la commande `ninja -C <build> -t commands <cible>` montre les options réellement
   utilisées.
-- **Un build neuf n'a pas les options voulues** : `OMP` vaut `OFF` par défaut, et un banc sans
+- **Un build neuf n'a pas les options voulues** : `CHUNK_OPENMP` vaut `OFF` par défaut, et un banc sans
   OpenMP tourne sur un seul cœur. Vérifier `ldd $BIN | grep gomp`.
 - **L'assembleur trop ancien** pour `-mcpu=native` avec GCC 16 (« unknown architecture ») :
   charger des `binutils` récents.

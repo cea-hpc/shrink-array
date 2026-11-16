@@ -56,7 +56,7 @@ namespace shrink_array
 // -----------------------------------------------------------------------------
 // Runtime "active" chunk size (dynamic builds only). Two layers:
 //
-//   * g_active_chunk_size : PROCESS-WIDE seed, used at init_indexes and as the
+//   * g_active_chunk_size : PROCESS-WIDE seed, used at init and as the
 //     fallback when a thread has declared no size.
 //   * t_active_chunk_size : PER-THREAD size, set by the write/resize paths from
 //     the owning array right before an allocation may happen, so that each
@@ -98,8 +98,8 @@ struct BirthAtActiveSize
  *          drain_reuse_list_for_size() never visits, so after a re-chunk they
  *          stay resident for good (a sizeable share of the array's footprint).
  *          Idempotent and sequential.
- * @note Defined in param_chunk.cpp: the array headers must not include
- *       param_chunk.h (include cycle).
+ * @note Defined in runtime.cpp: the array headers must not include
+ *       runtime.h (include cycle).
  */
 void register_runtime_chunk_size(unsigned int size);
 
@@ -394,7 +394,7 @@ static_assert(!ActiveSizePolicy::is_dynamic || chunk_dyn_max_size >= static_chun
 ///        than that reads the shared constant buffers out of bounds.
 /// @details The one rule of every setter that takes a size (rechunk_to(),
 ///          set_chunk_size(), set_active_chunk_size()) and of
-///          ParamChunk::check_chunk_size().
+///          Runtime::check_chunk_size().
 [[nodiscard]] constexpr std::optional<ChunkSizeError> chunk_size_error(unsigned int size) noexcept
 {
     if (!is_valid_chunk_size(size)) [[unlikely]]

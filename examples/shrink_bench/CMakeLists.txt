@@ -88,7 +88,7 @@ set(SHRINK_BENCH_HEADERS
 # ============================================================================
 
 find_package(BZip2 REQUIRED)
-if (OMP)
+if (CHUNK_OPENMP)
     find_package(OpenMP REQUIRED)
 endif ()
 
@@ -128,7 +128,7 @@ option(SHRINK_BENCH_UNITY "Compile each shrink_bench executable as one unity tra
 option(SHRINK_BENCH_PRINT_MEM "shrink_bench prints its memory lines (after init, every freq_conso_mem iterations, after a compression)" ON)
 set(SHRINK_BENCH_UNITY_BATCH "0" CACHE STRING "Bench sources per unity translation unit (0: all)")
 function(sa2_setup_target tgt)
-    if (OMP)
+    if (CHUNK_OPENMP)
         target_link_libraries(${tgt} PUBLIC OpenMP::OpenMP_CXX)
     endif ()
     chunk_require_cxx_std(${tgt} PRIVATE)
@@ -185,7 +185,7 @@ function(sa2_add_int64_target name lib)
 endfunction()
 
 # The backend marker of every name below (but the TBB bench's): openmp is
-# spelled omp, as the cmake-build-omp-* directories and OMP=ON spell it.
+# spelled omp, as the cmake-build-omp-* directories and CHUNK_OPENMP=ON spell it.
 if (CHUNK_THREADS_BACKEND STREQUAL "openmp")
   set(_SA2_BACKEND omp)
 elseif (CHUNK_THREADS_BACKEND STREQUAL "std" OR CHUNK_THREADS_BACKEND STREQUAL "serial")
@@ -279,7 +279,7 @@ endif()
 
 # No chunk2bits targets: every shrink_bench_<backend>_zero_one_value_* run carries tab_bool
 # (zero_one_value::Array<bool>, one byte per bool) AND its twin tab_bool_bits
-# (ArrayChunkBits, 8 per byte) on the same workload -- see BenchBoolBitsArray
+# (BitArray, 8 per byte) on the same workload -- see BenchBoolBitsArray
 # (bench_array.h). The zero / zero_any builds give the twin their own
 # Array<bool>.
 

@@ -34,7 +34,7 @@ signed types and negative offsets too. Integers only (`static_assert`): a connec
 integer, and the wrapping arithmetic has no floating-point equivalent.
 
 The class is `pattern::Array<T, IntType>`, built in the `zero_any` library
-(`chunk::chunk_zero_any`, `CHUNK_VARIANT_ZERO_ANY`), static or dynamic geometry. Code:
+(`shrink_array::zero_any`, `CHUNK_VARIANT_ZERO_ANY`), static or dynamic geometry. Code:
 `chunk/pattern_array.h`, `chunk/internal/pattern_chunk.h`, `internal/pattern_proxy.h`,
 `internal/motif_region.h` and their _inline.h companions; the family's shared code branches on
 the trait `has_motif_state_v` (`chunk/internal/chunk_traits.h`), always at compile time: `zero_any`'s

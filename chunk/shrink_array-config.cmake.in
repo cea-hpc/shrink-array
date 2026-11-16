@@ -1,0 +1,39 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
+#
+# find_package(shrink_array): the package under the project's name. The
+# libraries are those of the chunk package installed beside it (its former and
+# only name until 0.3); each gets its shrink_array:: name here:
+#   shrink_array::zero_any_256  shrink_array::zero_any_dyn  shrink_array::zero_any
+#   (zero and zero_one_value alike), shrink_array::vector, shrink_array::chunk
+@PACKAGE_INIT@
+
+set(_shrink_array_loads_chunk ON) # chunk-config.cmake: not the deprecated direct use
+include("@PACKAGE_SHRINK_ARRAY_CHUNK_CMAKE_DIR@/chunk-config.cmake")
+unset(_shrink_array_loads_chunk)
+
+foreach(_shrink_array_target IN ITEMS @_chunk_install_targets@)
+  string(REGEX REPLACE "^chunk_" "" _shrink_array_name "${_shrink_array_target}")
+  if(TARGET chunk::${_shrink_array_target} AND NOT TARGET shrink_array::${_shrink_array_name})
+    add_library(shrink_array::${_shrink_array_name} INTERFACE IMPORTED)
+    set_target_properties(shrink_array::${_shrink_array_name} PROPERTIES
+                          INTERFACE_LINK_LIBRARIES chunk::${_shrink_array_target})
+  endif()
+endforeach()
+unset(_shrink_array_target)
+unset(_shrink_array_name)
+
+# What this installation holds, for a consumer that wants to choose:
+#   shrink_array_STATIC_SIZES  the compile-time sizes built (shrink_array::zero_any_<size>)
+#   shrink_array_DEFAULT_SIZE  the size of the bare shrink_array::zero / zero_one_value / zero_any
+#   shrink_array_HAS_DYN       shrink_array::<variant>_dyn exist (runtime chunk size)
+#   shrink_array_OPENMP        built with OpenMP (consumers are compiled with it too)
+#   shrink_array_THREADS       the threading backend: openmp, std or serial
+#   shrink_array_OMPT          built with the OMPT tool (no phase brackets needed)
+#   shrink_array_STD_ALLOC     chunk buffers from the standard allocator
+foreach(_shrink_array_var IN ITEMS STATIC_SIZES DEFAULT_SIZE HAS_DYN OPENMP THREADS OMPT STD_ALLOC)
+  set(shrink_array_${_shrink_array_var} "${chunk_${_shrink_array_var}}")
+endforeach()
+unset(_shrink_array_var)
+
+check_required_components(shrink_array)

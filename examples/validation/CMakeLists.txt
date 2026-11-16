@@ -14,7 +14,7 @@
 #   dyn_geometry_validation an array reads back what was written at EVERY
 #                           registered runtime chunk size -- the pairing between
 #                           set_active_chunk_size (array side) and
-#                           ParamChunk::register_chunk_size (allocator side),
+#                           Runtime::register_chunk_size (allocator side),
 #                           which fails silently when only one of the two is
 #                           done. No rechunk_to on purpose: when this one fails
 #                           the cause is in the geometry/allocation pairing and
@@ -221,7 +221,7 @@ endif()
 
 # Finish wiring a harness target: OpenMP when on, C++20, check build.
 function(validation_setup_target tgt)
-    if (OMP)
+    if (CHUNK_OPENMP)
         target_link_libraries(${tgt} PUBLIC OpenMP::OpenMP_CXX)
     endif ()
     chunk_require_cxx_std(${tgt} PRIVATE)
@@ -382,10 +382,10 @@ foreach(_geom IN LISTS _rt_geometries)
     # array whose every chunk is at the first constant. OpenMP builds only: the
     # operators are the threaded *ThreadPolicy's (the serial specialisations
     # declare none), and the harness calls them from an `omp single`.
-    if (OMP)
+    if (CHUNK_OPENMP)
       list(APPEND _group chunk_array_new_validation)
     endif()
-    # bits_container_validation: ArrayChunkBits (zero_one_value::Array<Bit>) against
+    # bits_container_validation: BitArray (zero_one_value::Array<Bit>) against
     # std::vector<bool>. zero_one_value libraries only, every geometry.
     if (_vname STREQUAL "zero_one_value")
       list(APPEND _group bits_container_validation)
@@ -411,7 +411,7 @@ foreach(_geom IN LISTS _rt_geometries)
     # zero_one_value_foreign_key_validation: a chunk is only ever compressed to its own
     # array's second value (the harness says why). zero_one_value only, default static
     # size, at 8 threads; OpenMP builds only (the passes run in a region).
-    if (OMP AND _vname STREQUAL "zero_one_value" AND NOT _geom STREQUAL "dyn")
+    if (CHUNK_OPENMP AND _vname STREQUAL "zero_one_value" AND NOT _geom STREQUAL "dyn")
       list(APPEND _group zero_one_value_foreign_key_validation)
     endif()
     # deferred_path_validation: every write path through the deferred queue,
@@ -439,14 +439,14 @@ foreach(_geom IN LISTS _rt_geometries)
     # pass that releases the buffer, and a pass that must not erase another
     # pass's claim (the harness says why). OpenMP builds only, default static
     # size, at 8 threads (2 writers, 6 readers); 77 = skipped.
-    if (OMP AND NOT _geom STREQUAL "dyn")
+    if (CHUNK_OPENMP AND NOT _geom STREQUAL "dyn")
       list(APPEND _group read_reclaim_validation)
     endif()
     # phase_protocol_validation: the guard of the phase protocol (phase_guard.h)
     # stops a forgotten finalize / begin and lets the correct uses run, each
     # case in a child. OpenMP builds only, default static size, at 8 threads;
     # 77 = skipped (OMPT: the protocol is not manual there).
-    if (OMP AND NOT _geom STREQUAL "dyn")
+    if (CHUNK_OPENMP AND NOT _geom STREQUAL "dyn")
       list(APPEND _group phase_protocol_validation)
     endif()
     # rechunk_validation (content invariance across rechunk_to(), one test per
@@ -497,7 +497,7 @@ foreach(_geom IN LISTS _rt_geometries)
       elseif (_h STREQUAL "zero_one_value_foreign_key_validation")
         validation_add_test(zero_one_value_foreign_key_validation ${_exe} ${_h} "8")
       elseif (_h STREQUAL "tbb_validation")
-        if (SANITIZER STREQUAL "thread")
+        if (CHUNK_SANITIZER STREQUAL "thread")
           # ThreadSanitizer: N = 2^16 elements instead of 2^18 -- every form,
           # partitioner and phase still runs, on four times fewer elements: at
           # 2^18, zero_one_value at 8 threads went past ctest's 1500 s on a
@@ -686,18 +686,18 @@ if (TARGET chunk_zero_and_zero_one_value_${CHUNK_DEFAULT_SIZE})
   endforeach()
 endif()
 
-# --- bit_words_validation: the bit-packed storage kernel of ArrayChunkBits
+# --- bit_words_validation: the bit-packed storage kernel of BitArray
 # alone (header only, no variant, no library): get/set against
 # std::vector<bool>, the word scans, and concurrent writes to neighbouring
 # bits of one word through the atomic read-modify-write.
 find_package(Threads REQUIRED)
-# SANITIZER=token: -fsanitize=alloc-token rewrites every allocation into
+# CHUNK_SANITIZER=token: -fsanitize=alloc-token rewrites every allocation into
 # __alloc_token_<name>(..., token), whose definitions (alloc_token_rt.cpp) are
 # compiled INTO each chunk variant archive. The executables below link none, so
 # they get their own copy -- uninstrumented, or its own malloc calls would
 # recurse. A no-op for every other sanitizer.
 function(chunk_add_alloc_token_rt target)
-  if (SANITIZER STREQUAL "token")
+  if (CHUNK_SANITIZER STREQUAL "token")
     set(_rt ${PROJECT_SOURCE_DIR}/chunk/private/alloc_token_rt.cpp)
     target_sources(${target} PRIVATE ${_rt})
     set_source_files_properties(${_rt} DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -738,7 +738,7 @@ target_include_directories(env_parse_validation PRIVATE ${PROJECT_SOURCE_DIR}/ch
                                                         ${PROJECT_BINARY_DIR}/chunk/generated # chunk/build_options.h
                                                         ${PROJECT_SOURCE_DIR}/fast_allocators/public)
 target_link_libraries(env_parse_validation PRIVATE Threads::Threads)
-if (OMP)
+if (CHUNK_OPENMP)
   target_link_libraries(env_parse_validation PRIVATE OpenMP::OpenMP_CXX) # build_options.h asks for the library's OpenMP
 endif()
 if (CHUNK_THREADS_BACKEND STREQUAL "std")
@@ -757,7 +757,7 @@ add_executable(rank_registry_validation rank_registry_validation.cpp)
 chunk_add_alloc_token_rt(rank_registry_validation)
 target_include_directories(rank_registry_validation PRIVATE ${PROJECT_SOURCE_DIR}/fast_allocators/public)
 target_link_libraries(rank_registry_validation PRIVATE Threads::Threads)
-if (OMP)
+if (CHUNK_OPENMP)
   target_link_libraries(rank_registry_validation PRIVATE OpenMP::OpenMP_CXX)
 endif ()
 chunk_require_cxx_std(rank_registry_validation PRIVATE)
@@ -776,7 +776,7 @@ target_include_directories(log_validation PRIVATE ${PROJECT_SOURCE_DIR}/chunk/pu
                                                   ${PROJECT_BINARY_DIR}/chunk/generated # chunk/build_options.h
                                                   ${PROJECT_SOURCE_DIR}/fast_allocators/public)
 target_link_libraries(log_validation PRIVATE Threads::Threads)
-if (OMP)
+if (CHUNK_OPENMP)
   target_link_libraries(log_validation PRIVATE OpenMP::OpenMP_CXX) # build_options.h asks for the library's OpenMP
 endif()
 # ... and for the library's backend: the std backend's macro, which the chunk:: targets
@@ -815,7 +815,7 @@ add_executable(team_loops_validation team_loops_validation.cpp)
 chunk_add_alloc_token_rt(team_loops_validation)
 target_include_directories(team_loops_validation PRIVATE ${PROJECT_SOURCE_DIR}/fast_allocators/public)
 target_link_libraries(team_loops_validation PRIVATE Threads::Threads)
-if (OMP)
+if (CHUNK_OPENMP)
   target_link_libraries(team_loops_validation PRIVATE OpenMP::OpenMP_CXX)
 endif()
 if (CHUNK_THREADS_BACKEND STREQUAL "std")
@@ -834,7 +834,7 @@ add_executable(team_sync_validation team_sync_validation.cpp)
 chunk_add_alloc_token_rt(team_sync_validation)
 target_include_directories(team_sync_validation PRIVATE ${PROJECT_SOURCE_DIR}/fast_allocators/public)
 target_link_libraries(team_sync_validation PRIVATE Threads::Threads)
-if (OMP)
+if (CHUNK_OPENMP)
   target_link_libraries(team_sync_validation PRIVATE OpenMP::OpenMP_CXX)
 endif()
 if (CHUNK_THREADS_BACKEND STREQUAL "std")
@@ -866,7 +866,7 @@ endif()
 if (NOT CHUNK_STD_ALLOC)
   add_executable(blk_allocator_validation blk_allocator_validation.cpp)
   target_link_libraries(blk_allocator_validation PRIVATE fast_allocators)
-  if (OMP)
+  if (CHUNK_OPENMP)
     target_link_libraries(blk_allocator_validation PRIVATE OpenMP::OpenMP_CXX)
   endif ()
   chunk_add_alloc_token_rt(blk_allocator_validation)
@@ -885,7 +885,7 @@ endif()
 # the element size, or slab_of() through the ambient-size allocator misses the
 # block's slab after a re-chunk (see the harness). TCTypeCAllocator exists
 # under OpenMP only, and fast_allocators is not built with CHUNK_STD_ALLOC.
-if (OMP AND NOT CHUNK_STD_ALLOC)
+if (CHUNK_OPENMP AND NOT CHUNK_STD_ALLOC)
   add_executable(slab_geometry_validation slab_geometry_validation.cpp)
   target_link_libraries(slab_geometry_validation PRIVATE fast_allocators OpenMP::OpenMP_CXX)
   chunk_add_alloc_token_rt(slab_geometry_validation)

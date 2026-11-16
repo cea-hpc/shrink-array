@@ -100,7 +100,7 @@
 #include <oneapi/tbb/task_arena.h>    // oneapi::tbb::task_arena (the library's teams)
 
 #include "chunk/internal/PMP_CHUNK.h" // pmp::backend, pmp::BackendKind, pmp::set_team_launcher
-#include "chunk/manage_ompt.h"        // begin_parallel_phase, finalize_parallel_phase
+#include "chunk/phases.h"             // begin_parallel_phase, finalize_parallel_phase
 
 namespace shrink_array::tbb
 {

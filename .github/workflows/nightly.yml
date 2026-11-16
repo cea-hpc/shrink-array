@@ -66,8 +66,8 @@ jobs:
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
           -DCHUNK_THREADS=std
           -DCHUNK_WITH_TBB=ON
-          -DSANITIZER=thread
-          -DCHECK_OPTIM=ON
+          -DCHUNK_SANITIZER=thread
+          -DCHUNK_CHECK_OPTIM=ON
           -DCHUNK_STATIC_SIZES=256
           -DCHUNK_BUILD_DYN=OFF
       - name: Build and run the validation harnesses (check target)
@@ -97,8 +97,8 @@ jobs:
         run: >
           cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          -DOMP=ON
-          -DCHECK_OPTIM=ON
+          -DCHUNK_OPENMP=ON
+          -DCHUNK_CHECK_OPTIM=ON
           -DCHUNK_STATIC_SIZES=256
           -DCHUNK_BUILD_DYN=ON
       - name: Build and run the validation harnesses (check target)
@@ -147,9 +147,9 @@ jobs:
         run: >
           cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          -DOMP=ON
-          -DSANITIZER=address
-          -DCHECK_OPTIM=ON
+          -DCHUNK_OPENMP=ON
+          -DCHUNK_SANITIZER=address
+          -DCHUNK_CHECK_OPTIM=ON
           -DCHUNK_STATIC_SIZES=256
           -DCHUNK_BUILD_DYN=OFF
           -DCHUNK_X86_MARCH=x86-64-v3
@@ -220,9 +220,9 @@ jobs:
         run: >
           cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          -DOMP=ON
-          -DUSE_LIBCXX=OFF
-          -DCHECK_OPTIM=ON
+          -DCHUNK_OPENMP=ON
+          -DCHUNK_USE_LIBCXX=OFF
+          -DCHUNK_CHECK_OPTIM=ON
           -DCHUNK_STATIC_SIZES=256
           -DCHUNK_BUILD_DYN=OFF
       - name: Build and run the validation harnesses (check target)
@@ -256,8 +256,8 @@ jobs:
         run: >
           cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          -DOMP=OFF
-          -DCHECK_OPTIM=ON
+          -DCHUNK_OPENMP=OFF
+          -DCHUNK_CHECK_OPTIM=ON
           -DCHUNK_STATIC_SIZES=256
           -DCHUNK_BUILD_DYN=ON
       - name: Build and run the validation harnesses (check target)
@@ -280,12 +280,12 @@ jobs:
             cxx: g++-13
             packages: g++-13
             cmake_args: ""
-          # libstdc++ (USE_LIBCXX=OFF), as the clang 23 job; libomp 18.
+          # libstdc++ (CHUNK_USE_LIBCXX=OFF), as the clang 23 job; libomp 18.
           - name: clang 18
             cc: clang-18
             cxx: clang++-18
             packages: clang-18 libomp-18-dev
-            cmake_args: -DUSE_LIBCXX=OFF
+            cmake_args: -DCHUNK_USE_LIBCXX=OFF
     env:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
@@ -303,9 +303,9 @@ jobs:
         run: >
           cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          -DOMP=ON
+          -DCHUNK_OPENMP=ON
           ${{ matrix.cmake_args }}
-          -DCHECK_OPTIM=ON
+          -DCHUNK_CHECK_OPTIM=ON
           -DCHUNK_STATIC_SIZES=256
           -DCHUNK_BUILD_DYN=OFF
       - name: Build and run the validation harnesses (check target)
@@ -315,7 +315,7 @@ jobs:
           cmake --build build --target getting_started simple_array_chunk multi-mat test_vecto_chunk
           ctest --test-dir build -L examples --output-on-failure
 
-  # UndefinedBehaviorSanitizer (SANITIZER=undefined), OpenMP: signed overflow in
+  # UndefinedBehaviorSanitizer (CHUNK_SANITIZER=undefined), OpenMP: signed overflow in
   # the index arithmetic, shifts, misaligned accesses, out-of-range conversions.
   # The first report stops the program (-fno-sanitize-recover in the build).
   # A fixed -march, as the ASan job: the binary does not depend on the runner.
@@ -343,9 +343,9 @@ jobs:
         run: >
           cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          -DOMP=ON
-          -DSANITIZER=undefined
-          -DCHECK_OPTIM=ON
+          -DCHUNK_OPENMP=ON
+          -DCHUNK_SANITIZER=undefined
+          -DCHUNK_CHECK_OPTIM=ON
           -DCHUNK_STATIC_SIZES=256
           -DCHUNK_BUILD_DYN=ON
           -DCHUNK_X86_MARCH=x86-64-v3
@@ -447,7 +447,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Debug
           "-DCMAKE_CXX_FLAGS=--coverage -fprofile-update=atomic -DCHUNK_GCOV_DUMP"
           -DCMAKE_EXE_LINKER_FLAGS=--coverage
-          -DOMP=ON
+          -DCHUNK_OPENMP=ON
           -DCHUNK_STATIC_SIZES=256
           -DCHUNK_BUILD_DYN=ON
       - name: Build

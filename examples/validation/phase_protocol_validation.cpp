@@ -60,11 +60,11 @@
 #include "chunk/zero_one_value_array.h" // zero_one_value::Array
 #include "chunk/zero_any_array.h"       // zero_any::Array
 #include "chunk/internal/zero_chunk.h"  // release_chunk_pools
-#include "chunk/config.h"               // chunk_config::use_zero*, build_config::has_not_ompt, any_check
+#include "chunk/config.h"               // chunk_config::use_zero*, build_config::needs_explicit_phases, any_check
 #include "chunk/internal/test_hooks.h"  // test_hooks::force_defer_every
 #include "chunk/internal/PMP_CHUNK.h"   // chunk_rank_cache, chunk_pmp_team_rank (the stale-rank case)
-#include "chunk/manage_ompt.h"          // begin_parallel_phase, finalize_parallel_phase, parallel_phase
-#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
+#include "chunk/phases.h"               // begin_parallel_phase, finalize_parallel_phase, parallel_phase
+#include "chunk/runtime.h"              // Runtime::init
 #include "chunk/print.h"                // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
@@ -345,12 +345,13 @@ int check_case(const char* self, int case_idx)
 
 int run(int argc, char** argv)
 {
-    if constexpr (!build_config::use_openmp || !build_config::has_not_ompt || !test_hooks::force_defer_compiled)
+    if constexpr (!build_config::use_openmp || !build_config::needs_explicit_phases ||
+                  !test_hooks::force_defer_compiled)
     {
         println("phase_protocol_validation: skipped (OpenMP without OMPT, with the test hooks, only)");
         return 77;
     }
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
     if (argc > 2 && std::strcmp(argv[1], "--case") == 0)
     {
         test_hooks::force_defer_every = 7; // the deferred path, every 7th write of every thread

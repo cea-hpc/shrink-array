@@ -12,13 +12,13 @@
 A development build of one configuration:
 
 ```sh
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DOMP=ON
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCHUNK_OPENMP=ON
 cmake --build build
 ```
 
 A Debug build builds one static size, 256, instead of two (`CHUNK_STATIC_SIZES=auto`), which
 saves much of the build time; `-DCHUNK_VARIANTS=zero_any` builds one variant instead of three, with its examples and
-harnesses only. A Debug build, `-DCHECK_OPTIM=ON` or a sanitizer also builds the validation harnesses
+harnesses only. A Debug build, `-DCHUNK_CHECK_OPTIM=ON` or a sanitizer also builds the validation harnesses
 (`examples/validation`).
 
 The whole matrix (GNU, LLVM, oneAPI, AOCC, NVHPC, sanitizers, statistics, std-alloc...) is

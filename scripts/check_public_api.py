@@ -10,8 +10,8 @@ Two checks, against the tree:
    internal/ or removed fails until the list says so -- an interface change,
    which CHANGELOG.md must record.
 2. Names: every name of a section is still reachable from its header: its last
-   component (`Array` for zero::Array, `init_indexes` for
-   ParamChunk::init_indexes) is a word of the header or of a header it
+   component (`Array` for zero::Array, `init` for
+   Runtime::init) is a word of the header or of a header it
    includes from chunk/ or fast_allocators/, directly or not. A public name
    removed or renamed fails. The check does not compile anything: a name that
    moved to another header it includes still passes, which is what a program

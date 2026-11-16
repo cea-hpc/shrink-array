@@ -339,7 +339,7 @@ void TypeStateParallelImpl<ChunkT, T, true>::alloc_chunk_allocator_thr()
 /**
  * @brief Set every rank's chunk allocator geometry.
  *
- * @param block_size Slab size in bytes (ParamChunk::block_size), divided by
+ * @param block_size Slab size in bytes (Runtime::block_size), divided by
  *        8 / sizeof(T) for element types narrower than 8 bytes, so that a
  *        slab holds about as many elements whatever the type.
  * @note Fast-alloc builds only. Sequential, from whichever thread registers
@@ -381,7 +381,7 @@ void TypeStateParallelImpl<ChunkT, T, true>::init_allocators([[maybe_unused]] in
 
 /**
  * @brief Initialise this type's single chunk allocator (serial build).
- * @param block_size Slab size in bytes (ParamChunk::block_size).
+ * @param block_size Slab size in bytes (Runtime::block_size).
  * @note The OpenMP counterpart is init_allocators(), one allocator per rank.
  */
 template <template <typename> typename ChunkT, typename T>
@@ -537,8 +537,8 @@ void TypeStateParallelImpl<ChunkT, T, true>::clear_list_block_free_screen(int bu
     {
         return;
     }
-    const auto  bucket_idx = static_cast<std::size_t>(bucket);
-    const auto& out        = to_free[bucket_idx];
+    const auto bucket_idx = static_cast<std::size_t>(bucket);
+    auto&      out        = to_free[bucket_idx];
 
     // RAW default list container, NOT the size-aware overload. It may be smaller than max_thr
     // (see allocate_chunk_internal): an unsized slot has nothing to drain.

@@ -37,11 +37,11 @@
 #include "chunk/zero_array.h"           // zero::Array
 #include "chunk/zero_one_value_array.h" // zero_one_value::Array
 #include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/internal/zero_chunk.h"  // release_chunk_pools, destroy_block_chunk
+#include "chunk/internal/zero_chunk.h"  // release_chunk_pools, Runtime::shutdown
 #include "chunk/config.h"               // chunk_config::use_zero_one_value*
 #include "chunk/print.h"                // shrink_array::println
 #include "chunk/mdspan.h"               // shrink_array::md, SHRINK_ARRAY_HAS_MDSPAN
-#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
+#include "chunk/runtime.h"              // Runtime::init
 
 using namespace shrink_array;
 
@@ -320,7 +320,7 @@ void tiled_block()
 
 int main()
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
     row_major();
     rank3();
     tiled_mapping<16, 16>(64, 64);
@@ -330,7 +330,7 @@ int main()
     tiled_view();
     tiled_block();
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
     if (fails != 0)
     {
         println("mdspan_validation: {} failure(s)", fails);

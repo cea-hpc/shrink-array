@@ -4,7 +4,7 @@
 #
 # What a user project does when it does not install the library: it brings the
 # sources in with FetchContent and links a chunk:: target, as it would after
-# find_package(chunk). Not part of the shrink-array build (examples/ does not
+# find_package(shrink_array). Not part of the shrink-array build (examples/ does not
 # add it): configured on its own, by the CI.
 #
 #     cmake -S examples/fetch_content -B build-fc
@@ -35,7 +35,7 @@ set(_consumer_release_flags "${CMAKE_CXX_FLAGS_RELEASE}")
 add_custom_target(doc COMMAND ${CMAKE_COMMAND} -E echo "the doc target of the consumer" VERBATIM)
 
 # The library's options are set like any cache variable, before the fetch.
-set(OMP ON CACHE BOOL "shrink-array: OpenMP")
+set(CHUNK_OPENMP ON CACHE BOOL "shrink-array: OpenMP")
 set(CHUNK_STATIC_SIZES 256 CACHE STRING "shrink-array: one static chunk size")
 set(CHUNK_BUILD_DYN OFF CACHE BOOL "shrink-array: no runtime-size library")
 
@@ -54,7 +54,7 @@ FetchContent_MakeAvailable(shrink_array)
 
 # The program of docs/getting_started.md, from the fetched sources.
 add_executable(consumer "${shrink_array_SOURCE_DIR}/examples/getting_started/getting_started.cpp")
-target_link_libraries(consumer PRIVATE chunk::chunk_zero_any)
+target_link_libraries(consumer PRIVATE shrink_array::zero_any)
 add_test(NAME consumer COMMAND consumer)
 install(TARGETS consumer RUNTIME DESTINATION bin)
 

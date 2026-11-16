@@ -61,7 +61,7 @@ L'interface est proche d'un `std::vector` : `size()`, `resize()`, `at()`, itéra
   compression pour cette valeur. Un tableau qui ne déclare jamais de seconde valeur se
   comporte comme un `zero::Array` (compression vers 0 seulement).
 - **Les opérations sur plages** (`fill_range`, `copy_range`, `fill_range_mt` dans
-  `array_chunk_range_ops.h`) écrivent une plage en une décision par chunk, et
+  `range_ops.h`) écrivent une plage en une décision par chunk, et
   `fill_range_mt` peut être appelée par plusieurs threads à la fois (section 10).
 
 ---
@@ -602,8 +602,8 @@ Options CMake liées aux performances des bancs :
 
 | option | effet |
 |---|---|
-| `SHRINK_INTEL_LIBM` (ON) | x86-64, hors icpx : lie les exécutables à la libm d'Intel (`libimf`) si elle est trouvée (`INTEL_LIBM_DIR`, `$CMPLR_ROOT/lib`, ou à côté d'`icpx`). AMD Milan, GNU : 15,7 s → 12,4 s sur `shrink_bench_omp_zero_any_256` |
-| `SHRINK_ARM_LIBM` (OFF) | aarch64, GNU/Clang : lie `libamath` d'ArmPL (`ARMPL_LIBM_DIR`). Aucun gain mesuré sur Grace (RHEL 9.6) ; conservée pour refaire la mesure (`-DSHRINK_ARM_LIBM=ON -DARMPL_LIBM_DIR=<dir>`) |
+| `SHRINK_INTEL_LIBM` (ON) | x86-64, hors icpx : lie les exécutables à la libm d'Intel (`libimf`) si elle est trouvée (`CHUNK_INTEL_LIBM_DIR`, `$CMPLR_ROOT/lib`, ou à côté d'`icpx`). AMD Milan, GNU : 15,7 s → 12,4 s sur `shrink_bench_omp_zero_any_256` |
+| `SHRINK_ARM_LIBM` (OFF) | aarch64, GNU/Clang : lie `libamath` d'ArmPL (`CHUNK_ARMPL_LIBM_DIR`). Aucun gain mesuré sur Grace (RHEL 9.6) ; conservée pour refaire la mesure (`-DSHRINK_ARM_LIBM=ON -DCHUNK_ARMPL_LIBM_DIR=<dir>`) |
 
 ---
 
@@ -621,5 +621,5 @@ Options CMake liées aux performances des bancs :
 | compresseur, écritures différées | `internal/compression_manager.h` |
 | géométrie | `internal/chunk_size_policy.h` |
 | rechunk, décideur | `internal/array_chunk_rechunk_inline.h`, `internal/array_chunk_rechunk_refill.h`, `chunk_size_advisor.h` |
-| opérations sur plages | `array_chunk_range_ops.h` |
+| opérations sur plages | `range_ops.h` |
 | tests de validation | `examples/validation/` (`rechunk_validation`, `compress_roundtrip`, `deferred_path_validation`, `pool_accounting`, `fill_range_mt_validation`, …) |

@@ -1,7 +1,7 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 # examples/bool_arrays: the two boolean containers of a zero_one_value build,
-# zero_one_value::Array<bool> (a byte per element) and ArrayChunkBits (a bit per
+# zero_one_value::Array<bool> (a byte per element) and BitArray (a bit per
 # element), side by side (docs/variants.md, section 2).
 #
 # Builds two ways, as examples/getting_started:
@@ -16,8 +16,8 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   project(bool_arrays LANGUAGES CXX)
   set(CMAKE_CXX_STANDARD 20)
   set(CMAKE_CXX_STANDARD_REQUIRED ON)
-  find_package(chunk 0.2 REQUIRED)
-  set(BOOL_ARRAYS_LIB chunk::chunk_zero_one_value CACHE STRING "The shrink-array library to link")
+  find_package(shrink_array 0.2 REQUIRED)
+  set(BOOL_ARRAYS_LIB shrink_array::zero_one_value CACHE STRING "The shrink-array library to link")
 else()
   set(BOOL_ARRAYS_LIB chunk_zero_one_value)
 endif()

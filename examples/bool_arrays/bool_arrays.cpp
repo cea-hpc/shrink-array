@@ -18,7 +18,7 @@
 // (docs/variants.md, section 2, "Booleans: two containers"):
 //
 //   - zero_one_value::Array<bool>: one byte per element in a materialised chunk;
-//   - ArrayChunkBits<>: one bit per element, 8 per byte -- the layout of
+//   - BitArray<>: one bit per element, 8 per byte -- the layout of
 //     std::vector<bool> -- whose write is an atomic update of the 64-bit word.
 //
 // Both get the same mask, written from every thread with schedule(static, 1):
@@ -33,9 +33,9 @@
 #include <utility>   // std::as_const
 
 #include "chunk/zero_one_value_array.h" // shrink_array::zero_one_value::Array (Array<bool>)
-#include "chunk/array_chunk_bits.h"     // shrink_array::ArrayChunkBits
-#include "chunk/manage_ompt.h"          // parallel_phase
-#include "chunk/param_chunk.h"          // ParamChunk::init_indexes, release_chunk_pools, destroy_block_chunk
+#include "chunk/bit_array.h"            // shrink_array::BitArray
+#include "chunk/phases.h"               // parallel_phase
+#include "chunk/runtime.h"              // Runtime::init, release_chunk_pools, Runtime::shutdown
 #include "chunk/print.h"                // shrink_array::println
 
 namespace sa = shrink_array;
@@ -74,7 +74,7 @@ static int count_wrong(const Arr& arr, int count)
 template <typename Arr>
 static void report(const char* name, const Arr& arr, double bytes_per_element)
 {
-    const int    written = arr.get_nb_chunk_written();
+    const int    written = arr.written_chunk_count();
     const double data_kb = written * static_cast<double>(arr.chunk_size()) * bytes_per_element / 1024.0;
     println("  {:<30} chunks of {:>5}: {:>6} of {:>6} hold data ({:5.1f} %), {:9.1f} KiB of data (metadata aside)",
             name, arr.chunk_size(), written, arr.chunk_count(), arr.stats(), data_kb);
@@ -83,14 +83,14 @@ static void report(const char* name, const Arr& arr, double bytes_per_element)
 int main()
 try
 {
-    sa::ParamChunk::init_indexes(true); // once, before the first array
+    sa::Runtime::init(true); // once, before the first array
 
     int bad = 0;
     {
         const int count = 1 << 22; // 4 M booleans: 4 MiB as bytes, 512 KiB as a std::vector<bool>
 
         sa::zero_one_value::Array<bool> flags(count); // a byte per element, all false, nothing allocated
-        sa::ArrayChunkBits<>            mask(count);  // a bit per element, all false, nothing allocated
+        sa::BitArray<>                  mask(count);  // a bit per element, all false, nothing allocated
 
         // Write both, neighbouring elements from different threads. No
         // set_second_value(): for booleans the second value is `true`.
@@ -106,7 +106,7 @@ try
             });
 
         // Read back through const references: Array<bool> gives a bool,
-        // ArrayChunkBits a Bit, which converts to bool.
+        // BitArray a Bit, which converts to bool.
         bad += count_wrong(std::as_const(flags), count);
         bad += count_wrong(std::as_const(mask), count);
 
@@ -115,12 +115,12 @@ try
 
         println("n = {} booleans, {} read back wrong", count, bad);
         report("zero_one_value::Array<bool>", flags, 1.0);
-        report("ArrayChunkBits<>", mask, 1.0 / 8.0);
+        report("BitArray<>", mask, 1.0 / 8.0);
         println("  {:<30} {:9.1f} KiB, and a race on neighbouring writes", "std::vector<bool>", count / 8.0 / 1024.0);
     } // the arrays release their chunks here
 
     sa::release_chunk_pools(); // give the reuse pools back
-    sa::destroy_block_chunk();
+    sa::Runtime::shutdown();
     return bad == 0 ? 0 : 1;
 }
 catch (const std::exception& e)

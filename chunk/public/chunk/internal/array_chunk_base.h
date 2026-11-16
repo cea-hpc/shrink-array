@@ -450,7 +450,13 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * Uses multi-threading if not already in a parallel region.
      * @return Total number of non-constant chunks.
      */
-    [[nodiscard]] int get_nb_chunk_written(this const Derived& self);
+    [[nodiscard]] int written_chunk_count(this const Derived& self);
+
+    /// @brief Former name of written_chunk_count().
+    [[deprecated("renamed written_chunk_count()")]] [[nodiscard]] int get_nb_chunk_written(this const Derived& self)
+    {
+        return self.written_chunk_count();
+    }
 
     /**
      * @brief Calculate the filling rate of written chunks.
@@ -464,7 +470,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      */
     [[nodiscard]] double stats(this const Derived& self)
     {
-        return self.nb_chunk_ ? (100.0 * self.get_nb_chunk_written() / self.nb_chunk_) : 0.0;
+        return self.nb_chunk_ ? (100.0 * self.written_chunk_count() / self.nb_chunk_) : 0.0;
     }
 
     // ── Capacity, and the growth by one ──────────────────────────────────────
@@ -578,7 +584,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @name Bulk reads
      * The read half of fill_range / copy_range. Call them through the free
      * functions shrink_array::for_each_value / for_each_span / read_range
-     * (array_chunk_range_ops.h), which take a std::vector as well.
+     * (range_ops.h), which take a std::vector as well.
      * @{
      */
     /**
@@ -1018,10 +1024,10 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     [[nodiscard]] bool is_written_at(this const Derived& self, int num_chunk) noexcept;
 
     /**
-     * @brief Sequential counterpart of get_nb_chunk_written().
+     * @brief Sequential counterpart of written_chunk_count().
      * @return Total number of non-constant chunks, counted on one thread.
      */
-    [[nodiscard]] int get_nb_chunk_written_seq(this const Derived& self);
+    [[nodiscard]] int written_chunk_count_seq(this const Derived& self);
 
     /**
      * @brief Centralized synchronization logic.

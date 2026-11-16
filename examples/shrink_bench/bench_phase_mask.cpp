@@ -28,7 +28,7 @@
 ///
 /// Every loop runs over whole 64-element blocks, one thread per block: in the
 /// std::vector<bool> baseline two threads writing the same word would race.
-/// The chunked containers do not need it (ArrayChunkBits writes each word
+/// The chunked containers do not need it (BitArray writes each word
 /// atomically), but the workload has to be the same in every build.
 
 #include <cstdint> // std::uint64_t

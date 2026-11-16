@@ -24,7 +24,7 @@
 #include <string> // std::string
 
 #include "chunk/config.h"              // build_config::use_openmp
-#include "chunk/param_chunk.h"         // ParamChunk::init_indexes
+#include "chunk/runtime.h"             // Runtime::init
 #include "chunk/print.h"               // shrink_array::println
 #include "chunk/internal/test_hooks.h" // force_defer_every, force_defer_compiled
 
@@ -56,7 +56,7 @@ int run(int argc, char** argv)
     {
         only_type = argv[2];
     }
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
     const auto chunk_sz = static_cast<long>(Arr<int>(1).chunk_size());
     const long count    = n_chunks * chunk_sz;
     println("=== operators_validation [variant = {}]  N={} ({} chunks of {}) ===", variant_name(), count, n_chunks,

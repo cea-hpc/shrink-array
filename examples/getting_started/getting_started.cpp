@@ -23,8 +23,8 @@
 #include <utility>   // std::as_const
 
 #include "chunk/zero_any_array.h" // shrink_array::zero_any::Array
-#include "chunk/manage_ompt.h"    // parallel_phase
-#include "chunk/param_chunk.h"    // ParamChunk::init_indexes, release_chunk_pools, destroy_block_chunk
+#include "chunk/phases.h"         // parallel_phase
+#include "chunk/runtime.h"        // Runtime::init, release_chunk_pools, Runtime::shutdown
 #include "chunk/print.h"          // shrink_array::println
 
 namespace sa = shrink_array;
@@ -47,7 +47,7 @@ static double expected(int index, int count)
 int main()
 try
 {
-    sa::ParamChunk::init_indexes(true); // once, before the first array
+    sa::Runtime::init(true); // once, before the first array
 
     int bad = 0;
     {
@@ -87,7 +87,7 @@ try
     } // the array releases its chunks here
 
     sa::release_chunk_pools(); // give the reuse pools back
-    sa::destroy_block_chunk();
+    sa::Runtime::shutdown();
     return bad == 0 ? 0 : 1;
 }
 catch (const std::exception& e)

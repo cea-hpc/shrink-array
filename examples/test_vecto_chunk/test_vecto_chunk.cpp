@@ -34,10 +34,10 @@
 #include <vector> // std::vector
 
 
-#include "chunk/param_chunk.h" // ParamChunk, destroy_block_chunk
-#include "chunk/zero_array.h"  // zero::Array
-#include "chunk/threads.h"     // pmp::max_threads
-#include "chunk/config.h"      // chunk_config::stats
+#include "chunk/runtime.h"    // Runtime, Runtime::shutdown
+#include "chunk/zero_array.h" // zero::Array
+#include "chunk/threads.h"    // shrink_array::max_threads
+#include "chunk/config.h"     // chunk_config::stats
 
 
 using namespace shrink_array;
@@ -187,7 +187,7 @@ try
 {
     // Once, before the first array. The library checks its compiled chunk size
     // itself.
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     constexpr int sz = 100000000;
 
@@ -196,7 +196,7 @@ try
     constexpr int freq_raz = iter_max / 50;
     constexpr int interval = 20000;
 
-    const int max_thr = shrink_array::pmp::max_threads();
+    const int max_thr = shrink_array::max_threads();
 
     std::println("Number of threads : {}", max_thr);
 
@@ -402,7 +402,7 @@ try
 
     if constexpr (chunk_config::stats)
     {
-        ParamChunk::chunk_stats();
+        Runtime::chunk_stats();
     }
 
     struct rusage usage{};
@@ -420,7 +420,7 @@ try
     tab2.clear();
     tab3.clear();
 
-    destroy_block_chunk();
+    Runtime::shutdown();
 
     return 0;
 }

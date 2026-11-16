@@ -19,11 +19,11 @@
 zero::Array
 size empty capacity at front back resize reserve clear shrink_to_fit
 push_back emplace_back pop_back assign swap begin end cbegin rbegin rend
-compress stats get_nb_chunk_written chunk_size rechunk_to element_proxy set_chunk_size
+compress stats written_chunk_count get_nb_chunk_written chunk_size rechunk_to element_proxy set_chunk_size
 
 [chunk/zero_one_value_array.h]
 zero_one_value::Array
-set_second_value get_second_value
+set_second_value second_value get_second_value
 
 [chunk/zero_any_array.h]
 zero_any::Array
@@ -34,13 +34,13 @@ zero_any::Chunk
 pattern::Array
 reclaim_second_values
 
-[chunk/array_chunk_bits.h]
-ArrayChunkBits
+[chunk/bit_array.h]
+BitArray
 
 [chunk/bit.h]
 Bit
 
-[chunk/array_chunk_range_ops.h]
+[chunk/range_ops.h]
 fill_range copy_range fill_range_mt copy_range_mt transform_range_mt
 for_each_value for_each_span read_range
 
@@ -50,11 +50,11 @@ fill_range copy_range assume_drained
 [chunk/chunk_exchange.h]
 ChunkState ArrayState export_chunk import_chunk export_array import_array
 
-[chunk/param_chunk.h]
-ParamChunk ParamChunk::init_indexes ParamChunk::force_compression ParamChunk::chunk_stats
-release_chunk_pools destroy_block_chunk
+[chunk/runtime.h]
+Runtime Runtime::init Runtime::force_compression Runtime::chunk_stats
+release_chunk_pools Runtime::shutdown
 
-[chunk/manage_ompt.h]
+[chunk/phases.h]
 begin_parallel_phase finalize_parallel_phase finalize_parallel_phase_only_flush
 finalize_parallel_phase_after_flush finalize_barrier_phase parallel_phase
 
@@ -74,7 +74,7 @@ force_at force_toggle force_alt
 
 [chunk/config.h]
 build_config::use_openmp build_config::threaded build_config::has_ompt
-build_config::has_not_ompt build_config::chunk_dynamic chunk_config::use_zero
+build_config::needs_explicit_phases build_config::has_not_ompt build_config::chunk_dynamic chunk_config::use_zero
 chunk_config::use_zero_one_value chunk_config::use_zero_any chunk_config::use_second_value
 chunk_config::stats
 
@@ -101,7 +101,20 @@ SoaArray soa::column soa::plain soa::split SoaDefaultColumn
 print println
 
 [chunk/threads.h]
-pmp::max_threads pmp::team_size pmp::thread_rank
+max_threads team_size thread_rank pmp::max_threads pmp::team_size pmp::thread_rank
+
+# The former names (0.2), deprecated: each header includes the new one.
+[chunk/manage_ompt.h]
+begin_parallel_phase finalize_parallel_phase parallel_phase
+
+[chunk/param_chunk.h]
+ParamChunk init_indexes destroy_block_chunk
+
+[chunk/array_chunk_bits.h]
+ArrayChunkBits
+
+[chunk/array_chunk_range_ops.h]
+fill_range copy_range
 
 [not public]
 ManagerType Manager ChunkType ChunkListType ProxyType get_chunk_list

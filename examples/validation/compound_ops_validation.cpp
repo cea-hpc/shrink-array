@@ -44,7 +44,7 @@
 #include "chunk/zero_array.h"            // zero::Array
 #include "chunk/zero_one_value_array.h"  // zero_one_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
-#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
+#include "chunk/runtime.h"               // Runtime::init
 #include "chunk/config.h"                // chunk_config::use_zero*, build_config::any_check
 #include "chunk/print.h"                 // shrink_array::println
 
@@ -164,7 +164,7 @@ int second_value_zero()
         A           arr(count);
         std::vector ref(static_cast<std::size_t>(count), 0.0);
         arr.set_second_value(0.0, /*message=*/false);
-        long bad = arr.get_second_value() != 0.0;
+        long bad = arr.second_value() != 0.0;
         for (int i = 0; i < count; i += 3)
         {
             arr[i]                           = 1.5;
@@ -229,10 +229,10 @@ int run(int argc, char** argv)
 {
     if (argc > 2 && std::string(argv[1]) == "--child")
     {
-        ParamChunk::init_indexes(true);
+        Runtime::init(true);
         return run_child(std::atoi(argv[2]));
     }
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
     println("=== compound_ops_validation [variant = {}] ===", variant_name());
 
     int fails = integer_ops() + float_div_by_zero() + second_value_zero();

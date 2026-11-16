@@ -41,7 +41,7 @@
  *          includes after its class.
  *
  * @see type_state.h for the TypeStateInterface interface this class dispatches
- *      through, and manage_ompt.h for the phase transitions that drive it.
+ *      through, and phases.h for the phase transitions that drive it.
  */
 
 namespace fast_alloc
@@ -223,10 +223,10 @@ struct TypeStateRegistryDynInterface<Derived, false>
  * Access is through <tt>SingletonChk\<TypeStateRegistry\>\::get_ref()</tt>. The registry starts
  * empty and fills itself: the first array of each (chunk template, element
  * type) registers its manager from its create() (ensure_manager). The first
- * array of the process also runs ParamChunk::init_indexes(true) if the program
+ * array of the process also runs Runtime::init(true) if the program
  * has not called it (ensure_ready), so an array may be constructed anywhere,
  * a global one included. A program may also register a list of types up front
- * with ParamChunk::init_indexes<Types>().
+ * with Runtime::init<Types>().
  *
  * @note The available surface depends on the build, and the parts that vary
  *       live in the two policies above:
@@ -256,7 +256,7 @@ class TypeStateRegistry : public TypeStateRegistryParallelInterface<TypeStateReg
      *
      * @note Out of line (type_state_registry.cpp): it checks, once per process,
      *       that the OMPT tool of an OMPT build is loaded
-     *       (check_ompt_tool_loaded, manage_ompt.h).
+     *       (check_ompt_tool_loaded, phases.h).
      */
     TypeStateRegistry();
 
@@ -270,7 +270,7 @@ class TypeStateRegistry : public TypeStateRegistryParallelInterface<TypeStateReg
         delete ("the managers' registry is a singleton: use SingletonChk<TypeStateRegistry>::get_ref()");
     virtual ~TypeStateRegistry() = default;
 
-    /// @brief ParamChunk::init_indexes() has set the block size: managers may
+    /// @brief Runtime::init() has set the block size: managers may
     ///        now be registered. Records the block size they are built with.
     void mark_ready(int block_size)
     {
@@ -280,7 +280,7 @@ class TypeStateRegistry : public TypeStateRegistryParallelInterface<TypeStateReg
     }
 
     /// @brief The block size mark_ready() recorded, or 0 before the first
-    ///        ParamChunk::init_indexes(): the allocators of every type are cut
+    ///        Runtime::init(): the allocators of every type are cut
     ///        to it, so it may not change afterwards.
     [[nodiscard]] int ready_block_size()
     {
@@ -299,13 +299,13 @@ class TypeStateRegistry : public TypeStateRegistryParallelInterface<TypeStateReg
     }
 
     /**
-     * @brief ParamChunk::init_indexes(true), once, if the program has not run
-     *        init_indexes() itself before its first array.
+     * @brief Runtime::init(true), once, if the program has not run
+     *        init() itself before its first array.
      * @details Called by ensure_manager(), i.e. by the first array of each
      *          type, outside the registry lock. Any context the first array can
      *          be built in: a global array (static initialisation), a parallel
      *          region (std::call_once serialises the threads). An explicit
-     *          init_indexes() call still works, before or after.
+     *          init() call still works, before or after.
      */
     static void ensure_ready();
 
@@ -333,14 +333,14 @@ class TypeStateRegistry : public TypeStateRegistryParallelInterface<TypeStateReg
      * @brief Bytes parked across every manager's reuse pools, at the moment of
      *        the call.
      *
-     * @details Printed with CHUNK_STATS (see param_chunk.cpp). The stats counters
+     * @details Printed with CHUNK_STATS (see runtime.cpp). The stats counters
      *          measure EVENTS -- allocations, reuses, compressions -- and say
      *          nothing about what is still held when a run ends; this does (the
      *          pools can hold most of the resident memory).
      *
      * @note Declared in every build, not in the OpenMP policy: the reuse pools
      *       exist in every build, and so does the CHUNK_STATS block of
-     *       param_chunk.cpp that prints them.
+     *       runtime.cpp that prints them.
      */
     [[nodiscard]] std::size_t reuse_pool_bytes() const;
 
@@ -382,7 +382,7 @@ class TypeStateRegistry : public TypeStateRegistryParallelInterface<TypeStateReg
      * work touches nothing another thread can be using yet, and the fan-outs
      * read the registry without a lock (see the members below).
      *
-     * Runs ensure_ready() first: init_indexes() is optional.
+     * Runs ensure_ready() first: init() is optional.
      */
     template <typename ManagerT>
     static void ensure_manager();
@@ -391,7 +391,7 @@ class TypeStateRegistry : public TypeStateRegistryParallelInterface<TypeStateReg
      * @brief Registers every element type of a tuple up front, for the chunk
      *        templates the build compiles arrays for.
      *
-     * Called by `ParamChunk::init_indexes<Types>()`, hence public.
+     * Called by `Runtime::init<Types>()`, hence public.
      * Optional since the arrays register their own types: what it buys is
      * having every manager in place before the first parallel region, at the
      * cost of managers for types the program may never use.
@@ -466,7 +466,7 @@ class TypeStateRegistry : public TypeStateRegistryParallelInterface<TypeStateReg
     template <typename ManagerT>
     static inline bool registered_ = false;
 
-    /// Set by ParamChunk::init_indexes(): the registry accepts managers only
+    /// Set by Runtime::init(): the registry accepts managers only
     /// once the block size (and the stats) exist. An array constructed before
     /// that aborts with a message naming the call.
     bool ready_      = false;

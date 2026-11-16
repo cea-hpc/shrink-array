@@ -232,7 +232,7 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
         // T{} is the first value; while the second is T{} too (none
         // declared), declaring T{} would register a block and candidate lists
         // for a value every write already folds as the first one.
-        if (same_value(sec_value, T{}) && same_value(get_second_value(), T{}))
+        if (same_value(sec_value, T{}) && same_value(this->second_value(), T{}))
         {
             if (message)
             {
@@ -374,7 +374,7 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
         }
         const bool exi = sh_inf.exists(this->registry_key());
 
-        if (exi && !same_value(sec_value, get_second_value()))
+        if (exi && !same_value(sec_value, this->second_value()))
         {
             sh_inf.replace_all_other_elm(this->registry_key(), sec_value, ind_cst_val2_);
             sh_inf.insert_map_ind_cst_val2(sec_value, ind);
@@ -479,7 +479,7 @@ void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os
     }
     else
     {
-        // bool (and Bit, ArrayChunkBits): the second constant is `true`, one
+        // bool (and Bit, BitArray): the second constant is `true`, one
         // for the type -- an all-true chunk is type-2. Do not count it as
         // type-1: the verdict would say "plain zero would suffice" for arrays
         // whose true chunks zero cannot compress.
@@ -518,7 +518,7 @@ void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os
     {
         const auto   csz          = static_cast<unsigned int>(this->size_policy_.size());
         const int    ind          = get_ind_second_value();
-        const InT<T> second_value = get_second_value();
+        const InT<T> second_value = this->second_value();
         n_would_be_2a             = pmp::parallel_sum<int, 1>(
             0, nb_chunk_, team_opt,
             [&](int j, auto& acc)
@@ -852,7 +852,7 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
 
     if constexpr (is_not_bool)
     {
-        second_value = get_second_value();
+        second_value = this->second_value();
         ind          = get_ind_second_value();
 
         team.for_static<int>(
@@ -1303,7 +1303,7 @@ zero_one_value::Array<T, IntType>& zero_one_value::Array<T, IntType>::operator=(
 }
 
 template <ArrayChunkElement T, typename IntType>
-[[nodiscard]] T zero_one_value::Array<T, IntType>::get_second_value() const noexcept
+[[nodiscard]] T zero_one_value::Array<T, IntType>::second_value() const noexcept
 {
     if constexpr (!is_bool_like_v<T>)
     {
@@ -1346,8 +1346,8 @@ void zero_one_value::Array<T, IntType>::copy_second_value_from(const Array& from
 {
     if constexpr (!is_bool_like_v<T>)
     {
-        const InT<T> sv = from.get_second_value();
-        if (!same_value(sv, T{}) && !same_value(get_second_value(), sv))
+        const InT<T> sv = from.second_value();
+        if (!same_value(sv, T{}) && !same_value(this->second_value(), sv))
         {
             set_second_value(sv, false);
         }

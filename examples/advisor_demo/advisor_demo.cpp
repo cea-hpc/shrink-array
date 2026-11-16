@@ -24,7 +24,7 @@
 
 #include "chunk/zero_any_array.h"     // zero_any::Array, zero_any::Chunk
 #include "chunk/chunk_size_advisor.h" // ChunkSizeAdvisor, set_active_chunk_size
-#include "chunk/param_chunk.h"        // ParamChunk::init_indexes
+#include "chunk/runtime.h"            // Runtime::init
 #include "chunk/print.h"              // shrink_array::println
 
 using namespace shrink_array;
@@ -95,7 +95,7 @@ int main()
     // Mandatory library init: the block size and the allocator indexes for
     // the first size. Element types register themselves at their first array.
     set_active_chunk_size(64);
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     // Ground truth at every real size
     // The powers of two, and the multiples of 64 the advisor's grid evaluates

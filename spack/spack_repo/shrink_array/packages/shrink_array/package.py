@@ -18,9 +18,9 @@ class ShrinkArray(CMakePackage):
     threads -- or, with threads=std, from std::threads or TBB.
 
     Installs one library per variant and chunk size, found with
-    find_package(chunk): chunk::chunk_zero_<S>, chunk::chunk_zero_one_value_<S>,
-    chunk::chunk_zero_any_<S> (static S), chunk::chunk_<variant>_dyn (runtime S),
-    chunk::chunk_<variant> (the first static size)."""
+    find_package(shrink_array): shrink_array::zero_<S>, shrink_array::zero_one_value_<S>,
+    shrink_array::zero_any_<S> (static S), shrink_array::<variant>_dyn (runtime S),
+    shrink_array::<variant> (the first static size)."""
 
     homepage = "https://github.com/cea-hpc/shrink-array"
     git = "https://github.com/cea-hpc/shrink-array.git"
@@ -64,13 +64,13 @@ class ShrinkArray(CMakePackage):
         values=_valid_chunk_size,
         multi=True,
         description="Static chunk sizes, each a power of two or a multiple of 64: one library "
-        "per variant and size (chunk::chunk_zero_any_256, ...); "
-        "the smallest is the one of the bare chunk::chunk_<variant> targets",
+        "per variant and size (shrink_array::zero_any_256, ...); "
+        "the smallest is the one of the bare shrink_array::<variant> targets",
     )
     variant(
         "dyn",
         default=True,
-        description="Also a runtime-size library per variant (chunk::chunk_<variant>_dyn): "
+        description="Also a runtime-size library per variant (shrink_array::<variant>_dyn): "
         "adaptive re-chunk",
     )
     variant(
@@ -132,14 +132,14 @@ class ShrinkArray(CMakePackage):
         args = [
             # OMP for every version; CHUNK_THREADS (which sets OMP to match)
             # only where the std backend exists.
-            self.define("OMP", threads == "openmp"),
+            self.define("CHUNK_OPENMP", threads == "openmp"),
             self.define("CHUNK_STATIC_SIZES", ";".join(sizes)),
             self.define("CHUNK_DEFAULT_SIZE", sizes[0]),
             self.define_from_variant("CHUNK_BUILD_DYN", "dyn"),
             self.define("CHUNK_STD_ALLOC", spec.satisfies("~fast_alloc")),
             self.define_from_variant("CHUNK_STATS", "stats"),
             self.define_from_variant("CHUNK_SECOND_VALUE_INDEXED", "second_value_indexed"),
-            self.define_from_variant("CHECK_OPTIM", "checks"),
+            self.define_from_variant("CHUNK_CHECK_OPTIM", "checks"),
             self.define_from_variant("SHRINK_ARRAY_BUILD_EXAMPLES", "examples"),
             self.define("SHRINK_ARRAY_BUILD_TESTS", self.run_tests),
             # The target is the spec's: Spack's compiler wrapper passes its
@@ -151,8 +151,8 @@ class ShrinkArray(CMakePackage):
             # The compiler and standard library Spack chose: no libc++ switch
             # (the project's default with Clang up to 0.2.1), no mold, no Intel
             # libm.
-            self.define("USE_LIBCXX", False),
-            self.define("USE_MOLD", "OFF"),
+            self.define("CHUNK_USE_LIBCXX", False),
+            self.define("CHUNK_USE_MOLD", "OFF"),
             self.define("SHRINK_INTEL_LIBM", False),
         ]
         if threads == "std":

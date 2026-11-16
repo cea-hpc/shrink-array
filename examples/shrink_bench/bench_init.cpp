@@ -23,7 +23,7 @@
 
 #include "bench_phases.h" // bench_init_library (defined here)
 
-// As in shrink_bench.cpp, where this body comes from: it names ParamChunk,
+// As in shrink_bench.cpp, where this body comes from: it names Runtime,
 // ChunkDef and static_chunk_size unqualified. In a .cpp the directive stays
 // contained -- it would have no place in a header.
 using namespace shrink_array;
@@ -42,16 +42,16 @@ void bench_init_library()
             std::abort();
         }
 
-        if (!ParamChunk::check_chunk_size(chunk_size))
+        if (!Runtime::check_chunk_size(chunk_size))
         {
             std::print(stderr, "The chunk size must be a power of two or a multiple of 64");
             std::abort();
         }
 
-        if constexpr (chunk_size < ParamChunk::size_min || chunk_size > ParamChunk::size_max)
+        if constexpr (chunk_size < Runtime::size_min || chunk_size > Runtime::size_max)
         {
             std::println(stderr, "The chunk size must must be superior or equal to {} and inferior or equal to {}",
-                         ParamChunk::size_min, ParamChunk::size_max);
+                         Runtime::size_min, Runtime::size_max);
             std::abort();
         }
 
@@ -63,18 +63,18 @@ void bench_init_library()
         // unused — keeping it valid costs nothing).
         static_assert(shrink_array::is_valid_chunk_size(shrink_array::chunk_dyn_size),
                       "chunk_dyn_size (DYN_CHUNK_SIZE) must be a power of two or a multiple of 64");
-        static_assert(shrink_array::chunk_dyn_size >= ParamChunk::size_min &&
-                          shrink_array::chunk_dyn_size <= ParamChunk::size_max,
-                      "chunk_dyn_size (DYN_CHUNK_SIZE) out of [ParamChunk::size_min, size_max]");
+        static_assert(shrink_array::chunk_dyn_size >= Runtime::size_min &&
+                          shrink_array::chunk_dyn_size <= Runtime::size_max,
+                      "chunk_dyn_size (DYN_CHUNK_SIZE) out of [Runtime::size_min, size_max]");
 
         if constexpr (build_config::chunk_dynamic)
         {
             // Seed the process-wide active chunk size before the allocators are
-            // primed by init_indexes. In static builds this branch is discarded.
+            // primed by init. In static builds this branch is discarded.
             shrink_array::set_active_chunk_size(shrink_array::chunk_dyn_size);
         }
 
-        ParamChunk::init_indexes(false);
-        ParamChunk::print_info_chunk();
+        Runtime::init(false);
+        Runtime::print_info_chunk();
     }
 }

@@ -21,7 +21,7 @@
  * @brief The two shutdown calls of a program: release_chunk_pools() and
  *        destroy_block_chunk(), defined in chunk/private/chunk_std.cpp.
  *
- * @details Declarations only, with no include: chunk/param_chunk.h (the public
+ * @details Declarations only, with no include: chunk/runtime.h (the public
  *          header a program includes for its start and its end) and
  *          chunk/internal/zero_chunk.h (the library's own callers) both take
  *          them from here.
@@ -32,7 +32,17 @@ namespace shrink_array
 
 /// @brief When fast allocation is enabled, call destroy_block_chunk() on the TypeStateRegistry singleton; otherwise
 ///        do nothing. Nothing either while an array is alive (see release_chunk_pools()).
-extern void destroy_block_chunk();
+namespace internal
+{
+/// @brief The body of Runtime::shutdown() (chunk/runtime.h), which is what a program calls.
+extern void shutdown_runtime();
+} // namespace internal
+
+/// @brief Former name of Runtime::shutdown().
+[[deprecated("renamed Runtime::shutdown() (chunk/runtime.h)")]] inline void destroy_block_chunk()
+{
+    internal::shutdown_runtime();
+}
 
 /**
  * @brief Let go of the chunk reuse pools, whichever thread model this build is.

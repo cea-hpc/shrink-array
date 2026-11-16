@@ -140,7 +140,7 @@ jobs:
         include:
           - name: OpenMP
             runner: ubuntu-24.04
-            cmake_args: -DOMP=ON
+            cmake_args: -DCHUNK_OPENMP=ON
             formal: true
             install: true
           # The same build on AArch64 (4 Neoverse cores, 16 GB, like the x86
@@ -149,12 +149,12 @@ jobs:
           # arch flag is -mcpu=native there (-march=native on x86).
           - name: AArch64 OpenMP
             runner: ubuntu-24.04-arm
-            cmake_args: -DOMP=ON
+            cmake_args: -DCHUNK_OPENMP=ON
             formal: true
             install: true
           - name: serial
             runner: ubuntu-24.04
-            cmake_args: -DOMP=OFF
+            cmake_args: -DCHUNK_OPENMP=OFF
             formal: true
             install: true
           # The std backend (the library's own std::jthread team, no OpenMP) and
@@ -181,7 +181,7 @@ jobs:
           cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
           ${{ matrix.cmake_args }}
-          -DCHECK_OPTIM=ON
+          -DCHUNK_CHECK_OPTIM=ON
           -DCHUNK_STATIC_SIZES=256
           -DCHUNK_BUILD_DYN=OFF
       - name: Build and run the validation harnesses (check target)
@@ -194,7 +194,7 @@ jobs:
           cmake --build build --target getting_started simple_array_chunk multi-mat test_vecto_chunk
           ctest --test-dir build -L examples --output-on-failure
       # What a user project does: the library alone, installed, and
-      # examples/getting_started configured on its own with find_package(chunk).
+      # examples/getting_started configured on its own with find_package(shrink_array).
       - name: Install, then getting_started against the install
         if: matrix.install
         run: |
@@ -216,7 +216,7 @@ jobs:
 
   # shrink-array consumed by another project's own build, without an install:
   # examples/fetch_content brings this checkout in with FetchContent and links
-  # chunk::chunk_zero_any. Its CMakeLists stops the configure if the library
+  # shrink_array::zero_any. Its CMakeLists stops the configure if the library
   # changed the consumer's build type or flags; the steps check the rest -- the
   # consumer keeps its own `doc` target and its own tests, and its install holds
   # nothing of the library.
@@ -281,8 +281,8 @@ jobs:
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
           -DCHUNK_THREADS=std
           -DCHUNK_WITH_TBB=ON
-          -DSANITIZER=thread
-          -DCHECK_OPTIM=ON
+          -DCHUNK_SANITIZER=thread
+          -DCHUNK_CHECK_OPTIM=ON
           -DCHUNK_STATIC_SIZES=256
           -DCHUNK_BUILD_DYN=OFF
           -DCHUNK_CHECK_EXCLUDE=_1thr$
@@ -312,9 +312,9 @@ jobs:
       matrix:
         include:
           - name: OpenMP
-            cmake_args: -DOMP=ON
+            cmake_args: -DCHUNK_OPENMP=ON
           - name: serial
-            cmake_args: -DOMP=OFF
+            cmake_args: -DCHUNK_OPENMP=OFF
     env:
       # The unity harnesses, as build-test: two at a time fit the runner's 16 GB.
       CMAKE_BUILD_PARALLEL_LEVEL: 2
@@ -336,7 +336,7 @@ jobs:
           cmake -S . -B build -G Ninja
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
           ${{ matrix.cmake_args }}
-          -DCHECK_OPTIM=ON
+          -DCHUNK_CHECK_OPTIM=ON
           -DCHUNK_STATIC_SIZES=256
           -DCHUNK_BUILD_DYN=OFF
       - name: Build and run the validation harnesses (check target)

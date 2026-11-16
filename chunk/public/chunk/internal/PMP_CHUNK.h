@@ -310,7 +310,7 @@ inline void chunk_pmp_set_max_active_levels(int levels) noexcept
 /// @return The rank in the active team.
 inline int get_thr_rank_fast() noexcept
 {
-    if constexpr (build_config::use_openmp && build_config::has_not_ompt && !build_config::any_check)
+    if constexpr (build_config::use_openmp && build_config::needs_explicit_phases && !build_config::any_check)
     {
         int&      cache = ::shrink_array::chunk_rank_cache();
         const int rank  = ::shrink_array::chunk_pmp_library_rank();

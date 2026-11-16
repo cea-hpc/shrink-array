@@ -61,7 +61,7 @@ The interface is close to a `std::vector`: `size()`, `resize()`, `at()`, constan
   lists for this value. An array that never declares a second value
   behaves like a `zero::Array` (compression to 0 only).
 - **Range operations** (`fill_range`, `copy_range`, `fill_range_mt` in
-  `array_chunk_range_ops.h`) write a range with one decision per chunk, and
+  `range_ops.h`) write a range with one decision per chunk, and
   `fill_range_mt` can be called by several threads at once (section 10).
 
 ---
@@ -598,8 +598,8 @@ CMake options related to benchmark performance:
 
 | option | effect |
 |---|---|
-| `SHRINK_INTEL_LIBM` (ON) | x86-64, not icpx: links the executables against Intel's libm (`libimf`) if it is found (`INTEL_LIBM_DIR`, `$CMPLR_ROOT/lib`, or next to `icpx`). AMD Milan, GNU: 15.7 s → 12.4 s on `shrink_bench_omp_zero_any_256` |
-| `SHRINK_ARM_LIBM` (OFF) | aarch64, GNU/Clang: links ArmPL's `libamath` (`ARMPL_LIBM_DIR`). No gain measured on Grace (RHEL 9.6); kept so that the measurement can be redone (`-DSHRINK_ARM_LIBM=ON -DARMPL_LIBM_DIR=<dir>`) |
+| `SHRINK_INTEL_LIBM` (ON) | x86-64, not icpx: links the executables against Intel's libm (`libimf`) if it is found (`CHUNK_INTEL_LIBM_DIR`, `$CMPLR_ROOT/lib`, or next to `icpx`). AMD Milan, GNU: 15.7 s → 12.4 s on `shrink_bench_omp_zero_any_256` |
+| `SHRINK_ARM_LIBM` (OFF) | aarch64, GNU/Clang: links ArmPL's `libamath` (`CHUNK_ARMPL_LIBM_DIR`). No gain measured on Grace (RHEL 9.6); kept so that the measurement can be redone (`-DSHRINK_ARM_LIBM=ON -DCHUNK_ARMPL_LIBM_DIR=<dir>`) |
 
 ---
 
@@ -617,5 +617,5 @@ CMake options related to benchmark performance:
 | compressor, deferred writes | `internal/compression_manager.h` |
 | geometry | `internal/chunk_size_policy.h` |
 | rechunk, decider | `internal/array_chunk_rechunk_inline.h`, `internal/array_chunk_rechunk_refill.h`, `chunk_size_advisor.h` |
-| range operations | `array_chunk_range_ops.h` |
+| range operations | `range_ops.h` |
 | validation harnesses | `examples/validation/` (`rechunk_validation`, `compress_roundtrip`, `deferred_path_validation`, `pool_accounting`, `fill_range_mt_validation`, …) |

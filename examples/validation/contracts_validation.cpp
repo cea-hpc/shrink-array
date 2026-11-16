@@ -39,7 +39,7 @@
 #include <utility>     // std::as_const
 
 #include "chunk/zero_any_array.h" // zero_any::Array
-#include "chunk/param_chunk.h"    // ParamChunk::init_indexes
+#include "chunk/runtime.h"        // Runtime::init
 #include "chunk/print.h"          // shrink_array::println
 
 using namespace shrink_array;
@@ -75,7 +75,7 @@ int main(int argc, char** argv)
         return 3;
     }
     const std::string_view what = argv[1];
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     constexpr int           count = 1000;
     zero_any::Array<double> arr(count);

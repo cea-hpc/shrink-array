@@ -25,7 +25,7 @@
  * The write sessions and the queue flag are left out: the question is only whether the filter
  * can say "not uniform" to both threads of a chunk they leave uniform.
  *
- *   model                      source (chunk/public/chunk/array_chunk_range_ops.h)
+ *   model                      source (chunk/public/chunk/range_ops.h)
  *   ------------------------   -----------------------------------------------------
  *   fill_half()                fill_span_relaxed_edges() (store_element_relaxed)
  *   may_be_uniform()           may_be_uniform_relaxed() (load_element_relaxed)

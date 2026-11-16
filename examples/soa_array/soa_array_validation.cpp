@@ -56,11 +56,11 @@
 #include <utility>     // std::as_const
 #include <vector>      // std::vector, the reference
 
-#include "chunk/param_chunk.h" // release_chunk_pools, destroy_block_chunk
-#include "chunk/manage_ompt.h" // parallel_phase
-#include "chunk/zero_array.h"  // zero::Array (an annotated column)
-#include "chunk/soa_array.h"   // shrink_array::SoaArray, shrink_array::soa::plain, soa::column
-#include "chunk/print.h"       // shrink_array::println
+#include "chunk/runtime.h"    // release_chunk_pools, Runtime::shutdown
+#include "chunk/phases.h"     // parallel_phase
+#include "chunk/zero_array.h" // zero::Array (an annotated column)
+#include "chunk/soa_array.h"  // shrink_array::SoaArray, shrink_array::soa::plain, soa::column
+#include "chunk/print.h"      // shrink_array::println
 
 
 namespace sa = shrink_array;
@@ -563,6 +563,6 @@ int main()
     bad += nested(1 << 18);
 
     sa::release_chunk_pools();
-    sa::destroy_block_chunk();
+    sa::Runtime::shutdown();
     return bad == 0 ? 0 : 1;
 }

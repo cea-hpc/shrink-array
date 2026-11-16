@@ -82,7 +82,7 @@ HUNKS = [
     #include <vector>      // std::vector (a run-time tile larger than the inline buffer)
 
     #include "chunk/internal/PMP_CHUNK.h"                // CHUNK_PMP_IN_PARALLEL_REGION
-    #include "chunk/array_chunk_range_ops.h"    // for_each_span, fill_range(_mt), copy_range(_mt)
+    #include "chunk/range_ops.h"    // for_each_span, fill_range(_mt), copy_range(_mt)
 ''',
      r'''    #include <algorithm> // std::copy, std::copy_n, std::fill, std::fill_n, std::equal, std::all_of, std::min, std::max, std::clamp
     #include <array>       // std::array (the tile buffer, the tile coordinates)
@@ -96,7 +96,7 @@ HUNKS = [
     #include <vector> // std::vector (a run-time tile larger than the inline buffer, a stencil's halo and tile cache)
 
     #include "chunk/internal/PMP_CHUNK.h"                // CHUNK_PMP_IN_PARALLEL_REGION
-    #include "chunk/array_chunk_range_ops.h"    // for_each_span, fill_range(_mt), copy_range(_mt)
+    #include "chunk/range_ops.h"    // for_each_span, fill_range(_mt), copy_range(_mt)
 '''),
     ('chunk/public/chunk/mdspan_tile_ops.h',
      r'''                        on_uniform);
@@ -782,19 +782,19 @@ Les trois laissent le même champ, avec les mêmes 2561 chunks matérialisés.
  *          Exit 0, 1 when a layout does not read back the field, 77 when
 '''),
     ('examples/mdspan_tiles/mdspan_tiles.cpp',
-     r'''#include "chunk/manage_ompt.h"    // parallel_phase
+     r'''#include "chunk/phases.h"    // parallel_phase
 #include "chunk/mdspan.h"         // shrink_array::md, SHRINK_ARRAY_HAS_MDSPAN
 #include "chunk/internal/PMP_CHUNK.h"      // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
 #include "chunk/mdspan_tile_ops.h" // md::for_each_tile(_mt), md::update_tiles, md::fill_box(_mt), md::copy_box_out(_mt), md::copy_box_in(_mt)
-#include "chunk/param_chunk.h" // ParamChunk::init_indexes
+#include "chunk/runtime.h" // Runtime::init
 
 namespace sa = shrink_array;
 ''',
-     r'''#include "chunk/manage_ompt.h"    // parallel_phase
+     r'''#include "chunk/phases.h"    // parallel_phase
 #include "chunk/mdspan.h"         // shrink_array::md, SHRINK_ARRAY_HAS_MDSPAN
 #include "chunk/internal/PMP_CHUNK.h"      // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
 #include "chunk/mdspan_tile_ops.h" // md::for_each_tile(_mt), md::update_tiles, md::fill_box(_mt), md::copy_box_*(_mt), md::stencil_tiles_mt
-#include "chunk/param_chunk.h" // ParamChunk::init_indexes
+#include "chunk/runtime.h" // Runtime::init
 
 namespace sa = shrink_array;
 '''),
@@ -926,7 +926,7 @@ void stencil(long n, int& bad)
     box_copy_team(n, bad);
     index_cost(n, bad);
     sa::release_chunk_pools();
-    sa::destroy_block_chunk();
+    sa::Runtime::shutdown();
 ''',
      r'''    paint(n, bad);
     box_copy(n, bad);
@@ -934,7 +934,7 @@ void stencil(long n, int& bad)
     stencil(n, bad);
     index_cost(n, bad);
     sa::release_chunk_pools();
-    sa::destroy_block_chunk();
+    sa::Runtime::shutdown();
 '''),
     ('examples/validation/CMakeLists.txt',
      r'''  endif()
@@ -1030,12 +1030,12 @@ NEW_FILES = {
 #include "chunk/zero_array.h"     // ArrayChunk
 #include "chunk/zero_one_value_array.h"    // ArrayChunk2
 #include "chunk/zero_any_array.h"   // ArrayChunk2A
-#include "chunk/internal/zero_chunk.h"       // release_chunk_pools, destroy_block_chunk
+#include "chunk/internal/zero_chunk.h"       // release_chunk_pools, Runtime::shutdown
 #include "chunk/config.h"          // chunk_config::use_zero_one_value*
 #include "chunk/print.h"  // shrink_array::println
-#include "chunk/manage_ompt.h"     // parallel_phase
+#include "chunk/phases.h"     // parallel_phase
 #include "chunk/mdspan_tile_ops.h" // md::stencil_tiles(_mt), SHRINK_ARRAY_HAS_MDSPAN
-#include "chunk/param_chunk.h"     // ParamChunk::init_indexes
+#include "chunk/runtime.h"     // Runtime::init
 
 using namespace shrink_array;
 
@@ -1394,7 +1394,7 @@ int alias()
 
 int main(int argc, char** argv)
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
     if (argc > 1 && std::string_view(argv[1]) == "alias")
     {
         return alias();
@@ -1405,7 +1405,7 @@ int main(int argc, char** argv)
     tiled(how::team_outside);
     rank3();
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
     if (fails != 0)
     {
         println("mdspan_stencil_validation: {} failure(s)", fails);

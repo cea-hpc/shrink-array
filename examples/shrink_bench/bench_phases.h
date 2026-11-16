@@ -34,7 +34,7 @@
 #include "bench_par.h"   // bench_par::region_ends_phase
 
 // Guarded inline wrappers around the OMPT phase transitions. Semantics are
-// strictly identical to the manual `if constexpr (build_config::has_not_ompt)
+// strictly identical to the manual `if constexpr (build_config::needs_explicit_phases)
 // { ... }` blocks they replace: the `if constexpr` is evaluated at compile
 // time, so under `has_ompt` the body is elided and the call becomes a no-op
 // that the optimizer folds away. Kept in an anonymous namespace so linkage
@@ -44,7 +44,7 @@
 // ends the phase itself, as OMPT does; the wrappers are no-ops there too.
 inline void begin_parallel_phase_g()
 {
-    if constexpr (build_config::has_not_ompt && !bench_par::region_ends_phase)
+    if constexpr (build_config::needs_explicit_phases && !bench_par::region_ends_phase)
     {
         shrink_array::begin_parallel_phase();
     }
@@ -52,12 +52,12 @@ inline void begin_parallel_phase_g()
 
 /// @brief Without OMPT: shrink_array::finalize_parallel_phase_only_flush(); no-op otherwise.
 /// @details OpenMP only: the split end needs a barrier of the application's
-///          team, which only OpenMP gives the library (manage_ompt.h). The
+///          team, which only OpenMP gives the library (phases.h). The
 ///          other backends end the phase after the region, in one call
 ///          (finalize_parallel_phase_after_flush_g()).
 inline void finalize_parallel_phase_only_flush_g()
 {
-    if constexpr (build_config::has_not_ompt && build_config::use_openmp && !bench_par::region_ends_phase)
+    if constexpr (build_config::needs_explicit_phases && build_config::use_openmp && !bench_par::region_ends_phase)
     {
         shrink_array::finalize_parallel_phase_only_flush();
     }
@@ -73,11 +73,11 @@ inline void finalize_parallel_phase_after_flush_g()
     {
         // bench_par::region() has ended the phase.
     }
-    else if constexpr (build_config::has_not_ompt && build_config::use_openmp)
+    else if constexpr (build_config::needs_explicit_phases && build_config::use_openmp)
     {
         shrink_array::finalize_parallel_phase_after_flush();
     }
-    else if constexpr (build_config::has_not_ompt)
+    else if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -341,7 +341,7 @@ void bench_print_checksums(BenchArrays& bench_arr, bool check_sum);
  * @details Aborts -- deliberately, and loudly -- on a geometry the build
  *          cannot honour: a null chunk size, one that is neither a power of two
  *          nor a multiple of 64, or one outside [size_min, size_max]. Then
- *          ParamChunk::init_indexes(), which must run BEFORE any array exists:
+ *          Runtime::init(), which must run BEFORE any array exists:
  *          main() calls this first.
  * @note Empty in a std::vector build.
  */

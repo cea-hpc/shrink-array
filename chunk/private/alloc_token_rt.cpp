@@ -17,7 +17,7 @@
 /**
  * @file alloc_token_rt.cpp
  * @brief The runtime behind -fsanitize=alloc-token: a per-type allocation
- *        census. Linked into every chunk variant when SANITIZER=token.
+ *        census. Linked into every chunk variant when CHUNK_SANITIZER=token.
  *
  * @details Clang >= 22 with -fsanitize=alloc-token rewrites every heap
  *          allocation into `__alloc_token_<symbol>(<original args>, token)`,

@@ -21,7 +21,7 @@
  * @brief The element type of the bit-packed container: a bool stored as one
  *        bit, 8 per byte.
  *
- * @details ArrayChunkBits is zero_one_value::Array<Bit>: the whole zero_one_value machinery with its own
+ * @details BitArray is zero_one_value::Array<Bit>: the whole zero_one_value machinery with its own
  *          managers, pools and registries. zero_one_value::Array<bool> keeps one byte per bool and a
  *          plain store per write; the packed one holds 8x less per materialised chunk and
  *          pays an atomic read-modify-write of a 64-bit word per write.
@@ -39,7 +39,7 @@
 namespace shrink_array
 {
 
-/// @brief A bool stored as one bit (the element type of ArrayChunkBits).
+/// @brief A bool stored as one bit (the element type of BitArray).
 class Bit
 {
   public:

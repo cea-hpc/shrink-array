@@ -53,7 +53,7 @@
 #include <sys/resource.h> // getrusage
 
 #include "chunk/internal/chunk_size_config.h" // static_chunk_size
-#include "chunk/param_chunk.h"                // ParamChunk
+#include "chunk/runtime.h"                    // Runtime
 
 #include "config.h"         // multi_mat::max_threads, embedded_compression
 #include "ComputeLoopsMd.h" // SimuMd::compute_loops, verify
@@ -377,7 +377,7 @@ int run(SimuMd& s, const MultiMatAlgoT& mm_algo, const char* chunk_policy)
     {
         if (s.option_chunk != 2)
         {
-            ParamChunk::chunk_stats();
+            Runtime::chunk_stats();
         }
     }
     return rc;
@@ -396,9 +396,9 @@ int main(int argc, char** argv)
     }
 
     constexpr int chunk_size = static_cast<int>(shrink_array::static_chunk_size);
-    if constexpr (chunk_size < ParamChunk::size_min || chunk_size > ParamChunk::size_max)
+    if constexpr (chunk_size < Runtime::size_min || chunk_size > Runtime::size_max)
     {
-        std::println(stderr, "The chunk size must be in [{}, {}]", ParamChunk::size_min, ParamChunk::size_max);
+        std::println(stderr, "The chunk size must be in [{}, {}]", Runtime::size_min, Runtime::size_max);
         std::abort();
     }
 
@@ -410,7 +410,7 @@ int main(int argc, char** argv)
                  static_cast<long>(simu.nx) * simu.ny, simu.nbmat, simu.iter_max);
     std::println("Tile              : {} x {} (chunk size {})", tile_shape[0], tile_shape[1], chunk_size);
 
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     simu.draw_storage();
     dispatch.create(simu.nbmat);

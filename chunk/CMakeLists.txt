@@ -75,9 +75,9 @@ message(STATUS "CHUNK_VARIANTS = ${CHUNK_VARIANTS}")
 # --- Aggressive vs release compression scheduling ------------------------
 # A run-time switch (chunk_config::aggressive_compression(), environment
 # CHUNK_AGGRESSIVE_COMPRESSION=1 / 0); the option only sets its default.
-option(HAVE_AGGRESSIVE_COMPRESSION "Default of the run-time aggressive-compression switch (CHUNK_AGGRESSIVE_COMPRESSION)" OFF)
-if (HAVE_AGGRESSIVE_COMPRESSION)
-  message(STATUS "HAVE_AGGRESSIVE_COMPRESSION=ON → aggressive scheduling by default (CHUNK_AGGRESSIVE_COMPRESSION=0 turns it off)")
+option(CHUNK_AGGRESSIVE_COMPRESSION_DEFAULT "Default of the run-time aggressive-compression switch (CHUNK_AGGRESSIVE_COMPRESSION)" OFF)
+if (CHUNK_AGGRESSIVE_COMPRESSION_DEFAULT)
+  message(STATUS "CHUNK_AGGRESSIVE_COMPRESSION_DEFAULT=ON → aggressive scheduling by default (CHUNK_AGGRESSIVE_COMPRESSION=0 turns it off)")
 endif()
 
 # --- Read-side deferred-op sync -----------------------------------------
@@ -147,11 +147,11 @@ else()
 endif()
 _chunk_opt(CHUNK_OPT_OMPT CHUNK_HAVE_OMPT)
 _chunk_opt(CHUNK_OPT_DEBUG CHUNK_DEBUG)
-_chunk_opt(CHUNK_OPT_CHECK_OPTIM CHECK_OPTIM)
+_chunk_opt(CHUNK_OPT_CHECK_OPTIM CHUNK_CHECK_OPTIM)
 _chunk_opt(CHUNK_OPT_STATS CHUNK_STATS)
 _chunk_opt(CHUNK_OPT_MM_PROTECT CHUNK_MM_PROTECT)
 _chunk_opt(CHUNK_OPT_SECOND_VALUE_INDEXED CHUNK_SECOND_VALUE_INDEXED)
-_chunk_opt(CHUNK_OPT_AGGRESSIVE_COMPRESSION HAVE_AGGRESSIVE_COMPRESSION)
+_chunk_opt(CHUNK_OPT_AGGRESSIVE_COMPRESSION CHUNK_AGGRESSIVE_COMPRESSION_DEFAULT)
 _chunk_opt(CHUNK_OPT_POOL_NO_REUSE CHUNK_POOL_NO_REUSE)
 _chunk_opt(CHUNK_OPT_ALIGN_CHECK CHUNK_ALIGN_CHECK)
 _chunk_opt(CHUNK_OPT_FORCE_LEDGER CHUNK_FORCE_LEDGER)
@@ -209,14 +209,14 @@ endif()
 
 if (CHUNK_UBSAN)
   if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    # TSan is selected either by the project's -DSANITIZER=thread or by a raw
+    # TSan is selected either by the project's -DCHUNK_SANITIZER=thread or by a raw
     # -fsanitize=thread in the flags; refuse both.
-    if ("${SANITIZER}" MATCHES "thread"
+    if ("${CHUNK_SANITIZER}" MATCHES "thread"
         OR "${CMAKE_CXX_FLAGS}" MATCHES "-fsanitize=[^ ]*thread"
         OR "${CMAKE_EXE_LINKER_FLAGS}" MATCHES "-fsanitize=[^ ]*thread")
       message(FATAL_ERROR
         "CHUNK_UBSAN=ON cannot be combined with ThreadSanitizer "
-        "(SANITIZER=thread or -fsanitize=thread requested). "
+        "(CHUNK_SANITIZER=thread or -fsanitize=thread requested). "
         "UBSan pairs with ASan; TSan must stay in its own build.")
     endif()
     target_compile_options(chunk_hardening INTERFACE
@@ -234,7 +234,7 @@ endif()
 # RelWithDebInfo sanitizer flavours are compiled at -O2, which drops them on
 # aarch64 -- and a TSan/ASan report without a usable stack is worthless. Kept
 # separate from CHUNK_UBSAN (which sets it too) so a TSan build gets it as well.
-if (SANITIZER AND NOT SANITIZER STREQUAL "none"
+if (CHUNK_SANITIZER AND NOT CHUNK_SANITIZER STREQUAL "none"
     AND (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
   target_compile_options(chunk_hardening INTERFACE -fno-omit-frame-pointer)
 endif()
@@ -246,7 +246,7 @@ endif()
 # fires on every template instantiation concerned -- dozens of ten-line blocks
 # that drown the real diagnostics, which is exactly what made a build failure
 # unreadable (see __report_job in scripts/functions_for_compile.sh).
-if (SANITIZER MATCHES "thread" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+if (CHUNK_SANITIZER MATCHES "thread" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   target_compile_options(chunk_hardening INTERFACE -Wno-tsan)
 endif()
 
@@ -522,14 +522,18 @@ set(CHUNK_PUBLIC_HEADERS
         public/chunk/zero_one_value_array.h
         public/chunk/zero_any_array.h
         public/chunk/pattern_array.h
+        public/chunk/bit_array.h
         public/chunk/array_chunk_bits.h
         public/chunk/bit.h
+        public/chunk/range_ops.h
         public/chunk/array_chunk_range_ops.h
         public/chunk/mdspan.h
         public/chunk/mdspan_tile_ops.h
         public/chunk/vector_range_ops.h
         public/chunk/chunk_exchange.h
+        public/chunk/runtime.h
         public/chunk/param_chunk.h
+        public/chunk/phases.h
         public/chunk/manage_ompt.h
         public/chunk/tbb_adaptor.h
         public/chunk/chunk_size_advisor.h
@@ -547,7 +551,7 @@ set(CHUNK_SOURCES
         private/zero_any_array.cpp
         private/type_state.cpp
         private/type_state_registry.cpp
-        private/param_chunk.cpp
+        private/runtime.cpp
         private/chunk_std.cpp
         private/manage_ompt.cpp
         private/ring_log_debug.cpp
@@ -610,7 +614,7 @@ function(chunk_add_variant target_name variant_define size is_dyn)
     # The OpenMP runtime finds the tool with dlsym("ompt_start_tool") in the
     # EXECUTABLE: its symbols must be in the dynamic symbol table, which an
     # executable does not export by default. Without this the runtime silently
-    # runs without the tool (manage_ompt.h's warning says so at start-up).
+    # runs without the tool (phases.h's warning says so at start-up).
     target_link_options(${target_name} INTERFACE -rdynamic)
   endif()
 
@@ -637,14 +641,14 @@ function(chunk_add_variant target_name variant_define size is_dyn)
     target_link_libraries(${target_name} PUBLIC fast_allocators::fast_allocators)
   endif()
 
-  # SANITIZER=token (umbrella CMakeLists): -fsanitize=alloc-token rewrites every
+  # CHUNK_SANITIZER=token (umbrella CMakeLists): -fsanitize=alloc-token rewrites every
   # allocation into __alloc_token_<symbol>(..., token) and Clang ships no
   # runtime for those, so alloc_token_rt.cpp provides them -- a per-type
   # allocation census printed at exit. It goes INTO each variant archive rather
   # than into a library of its own so the linker meets the definitions in the
   # first archive it scans, whatever the order of the ones that follow.
   # Compiled uninstrumented: instrumented, its own malloc calls would recurse.
-  if (SANITIZER STREQUAL "token")
+  if (CHUNK_SANITIZER STREQUAL "token")
     target_sources(${target_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/private/alloc_token_rt.cpp)
     set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/private/alloc_token_rt.cpp
             PROPERTIES COMPILE_OPTIONS "-fno-sanitize=alloc-token")
@@ -795,6 +799,12 @@ foreach(_t IN LISTS _chunk_install_targets)
   if (NOT TARGET chunk::${_t})
     add_library(chunk::${_t} ALIAS ${_t})
   endif()
+  # ... and under the project's name, the one of find_package(shrink_array):
+  # shrink_array::zero_any_256 for chunk_zero_any_256.
+  string(REGEX REPLACE "^chunk_" "" _short "${_t}")
+  if (NOT TARGET shrink_array::${_short})
+    add_library(shrink_array::${_short} ALIAS ${_t})
+  endif()
 endforeach()
 
 # The fast_allocators version chunk-config.cmake asks for (find_dependency).
@@ -882,5 +892,23 @@ install(EXPORT chunk-targets NAMESPACE chunk:: DESTINATION ${CMAKE_INSTALL_LIBDI
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/chunk-config.cmake
         ${CMAKE_CURRENT_BINARY_DIR}/chunk-config-version.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/chunk/cmake
+        COMPONENT chunk-devel
+)
+
+# The package under the project's name, find_package(shrink_array): it loads the
+# chunk package above and names its targets shrink_array::<variant>[_<size>|_dyn]
+# (shrink_array-config.cmake.in). Same version, same compatibility rule.
+string(REPLACE ";" " " _chunk_install_targets "${_chunk_install_targets}")
+set(SHRINK_ARRAY_CHUNK_CMAKE_DIR ${CMAKE_INSTALL_LIBDIR}/chunk/cmake)
+configure_package_config_file(shrink_array-config.cmake.in shrink_array-config.cmake
+        INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/shrink_array
+        PATH_VARS SHRINK_ARRAY_CHUNK_CMAKE_DIR)
+write_basic_package_version_file(
+        shrink_array-config-version.cmake
+        VERSION ${CHUNK_VERSION}
+        COMPATIBILITY ${_chunk_compatibility})
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/shrink_array-config.cmake
+        ${CMAKE_CURRENT_BINARY_DIR}/shrink_array-config-version.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/shrink_array
         COMPONENT chunk-devel
 )

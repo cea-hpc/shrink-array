@@ -18,7 +18,7 @@
 
 /**
  * @file bit_words.h
- * @brief Bit-packed storage kernel of ArrayChunkBits: n bools in
+ * @brief Bit-packed storage kernel of BitArray: n bools in
  *        ceil(n / 64) 64-bit words, bit k of element i in word i / 64.
  *
  * @details Plain functions over a word pointer, no chunk, no array: the chunk

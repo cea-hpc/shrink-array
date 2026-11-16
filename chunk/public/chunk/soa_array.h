@@ -126,9 +126,9 @@
 #include <utility>     // std::index_sequence, std::declval, std::as_const
 #include <vector>      // std::vector (the member lists, consteval; a soa::plain column)
 
-#include "chunk/zero_any_array.h"        // zero_any::Array, the default column
-#include "chunk/array_chunk_range_ops.h" // fill_range(_mt), copy_range(_mt), for_each_span (chunked columns)
-#include "chunk/vector_range_ops.h"      // the same on a soa::plain column (std::vector)
+#include "chunk/zero_any_array.h"   // zero_any::Array, the default column
+#include "chunk/range_ops.h"        // fill_range(_mt), copy_range(_mt), for_each_span (chunked columns)
+#include "chunk/vector_range_ops.h" // the same on a soa::plain column (std::vector)
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 
 namespace shrink_array

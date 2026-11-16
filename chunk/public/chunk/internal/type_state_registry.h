@@ -26,7 +26,7 @@
  *          definitions.
  *
  * @see type_state.h for the TypeStateInterface interface this class dispatches
- *      through, and manage_ompt.h for the phase transitions that drive it.
+ *      through, and phases.h for the phase transitions that drive it.
  */
 
 #include "chunk/internal/type_state_registry_decl.h"   // TypeStateRegistry, the declarations

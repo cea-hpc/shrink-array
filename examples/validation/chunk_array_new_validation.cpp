@@ -56,7 +56,7 @@
 #include "chunk/zero_array.h"            // zero::Chunk<T> complete (zero_chunk.h): its operator new[]
 #include "chunk/zero_one_value_array.h"  // zero_one_value::Chunk<T> complete: its operator new[]
 #include "chunk/zero_any_array.h"        // zero_any::Chunk<T> complete (zero_any_chunk.h): its operator new[]
-#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
+#include "chunk/runtime.h"               // Runtime::init
 #include "chunk/config.h"                // chunk_config::use_zero*
 #include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
 #include "chunk/print.h"                 // shrink_array::println
@@ -170,7 +170,7 @@ int placement_case(std::size_t count)
 
 int run(int /*argc*/, char** /*argv*/)
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     println("=== chunk_array_new_validation [variant = {}]  threads={} ===", variant_name(), CHUNK_PMP_MAX_THREADS);
 

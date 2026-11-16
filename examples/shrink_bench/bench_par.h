@@ -90,7 +90,7 @@
     #include <string_view>     // std::string_view (its file name)
     #include <vector>          // std::vector (a call's rank times, the sites)
 
-    #include "chunk/manage_ompt.h" // finalize_parallel_phase (the end of a region)
+    #include "chunk/phases.h"      // finalize_parallel_phase (the end of a region)
     #include "chunk/tbb_adaptor.h" // shrink_array::tbb::phase_body (the begin of each task), use_tbb_for_library_teams
 #endif
 
