@@ -234,14 +234,20 @@ struct Settings
 }
 
 /// @brief How long a team whose workers are another runtime's tasks
-///        (TeamLauncher) waits for them to start, in ns: CHUNK_PMP_JOIN_US
-///        (microseconds, default 200). The tasks started by then make the
-///        team; the late ones return at once.
+///        (TeamLauncher: TBB's, tbb_adaptor.h) waits for them to start, in
+///        ns: CHUNK_PMP_JOIN_US (microseconds, default 5000). The tasks
+///        started by then make the team; the late ones return at once.
+/// @details 5 ms, not 200 us: on a 144-thread AArch64 node the TBB bench
+///          (shrink_bench_tbb_zero_any_int64_dyn --multiply 3 --mode perf)
+///          ran 79.5 s with 200 us, 50.9 s with 5 ms -- the finalize 21 s ->
+///          13.9 s, and the program's regions 52.5 s -> 31.1 s: a task that
+///          missed its team was taken and dropped by a TBB worker during the
+///          program's next region (launch 13% -> 2.2% of the thread time).
 [[nodiscard]] inline long long join_budget_ns() noexcept
 {
     static const long long budget = []
     {
-        long long us = 200;
+        long long us = 5000;
         if (const char* value = std::getenv("CHUNK_PMP_JOIN_US");
             value != nullptr) // NOLINT(concurrency-mt-unsafe): read once
         {

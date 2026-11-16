@@ -412,7 +412,7 @@ one, on a team of the backend. `phases.h` states the contract.
      every team on the cores TBB needs. A team now enqueues its n - 1 workers
      as tasks of a TBB arena. TBB does not promise to run them at once, and a
      barrier waiting for a task never started would never end, so the team's
-     size is fixed after the tasks had `CHUNK_PMP_JOIN_US` (200 us) to start:
+     size is fixed after the tasks had `CHUNK_PMP_JOIN_US` (5 ms; 200 us at first) to start:
      those that came take ranks 1, 2, ... and the team runs with them (with
      the caller alone, at worst); a later task finds the join closed, or a
      later generation, and returns, touching nothing but the pool

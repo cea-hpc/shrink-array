@@ -146,6 +146,13 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- Std backend with the library's teams on TBB: `CHUNK_PMP_JOIN_US`, how long such a team waits
+  for its TBB tasks to start, is 5 ms by default instead of 200 us. On a 144-thread AArch64 node
+  the TBB bench (`shrink_bench_tbb_zero_any_int64_dyn --multiply 3 --mode perf`) ran 79.5 s with
+  200 us and 50.9 s with 5 ms: the finalize 21 s -> 13.9 s, and the program's own regions
+  52.5 s -> 31.1 s, since a task that missed its team was taken and dropped by a TBB worker
+  during the next region (`BENCH_RANK_TIMING`'s launch share 13% -> 2.2%). Only TBB's teams
+  wait so: the OpenMP backend and the std backend's own pool are untouched.
 - The CMake package is `shrink_array`, the project's name: `find_package(shrink_array)`, and
   targets without the repeated word -- `shrink_array::zero_any`, `shrink_array::zero_any_256`,
   `shrink_array::zero_any_dyn` (`zero` and `zero_one_value` alike), `shrink_array::vector`,

@@ -212,7 +212,7 @@ inline void launch_team_tasks(int count, void (*task)(std::uint64_t), std::uint6
  *          pool's: the pool's spin after each team (CHUNK_PMP_SPIN_US) on
  *          the cores TBB's threads need. TBB does not promise to run the
  *          tasks at once, so a team is made of those that started within
- *          CHUNK_PMP_JOIN_US (200 us by default): the team of one, in the
+ *          CHUNK_PMP_JOIN_US (5 ms by default): the team of one, in the
  *          worst case, is still correct. Nothing for the serial backend.
  *          The tasks go to the arena of the thread that opens the team: the
  *          one its TBB algorithms run in. A program whose regions run in an
