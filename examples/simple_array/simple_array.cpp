@@ -189,16 +189,14 @@ int main()
 
     // 3 arrays of sz doubles: 2.4 GB for std::vector. 1e9 (24 GB at once) made
     // the ctest fail with bad_alloc on a 30 GB workstation with anything else running.
-    constexpr int sz = 100000000;
-    //  constexpr int sz = 100000;
+    constexpr int sz       = 100000000;
     constexpr int iter_max = 10000;
 
     constexpr int freq_check_sum = iter_max / 5;
 
     constexpr int freq_compress = iter_max / 10; // chunk arrays only
-    // constexpr int freq_raz = iter_max / 500;
-    constexpr int freq_raz = iter_max / 50;
-    constexpr int interval = 20000;
+    constexpr int freq_raz      = iter_max / 50;
+    constexpr int interval      = 20000;
 
     const int max_thr = shrink_array::pmp::max_threads();
 
@@ -209,7 +207,6 @@ int main()
     std::println("Initialisation ...");
     std::println("Creation of arrays ...");
 
-    // constexpr int interval = 2000;
     Array tab1(sz);
     Array tab2(sz);
     Array tab3(sz);

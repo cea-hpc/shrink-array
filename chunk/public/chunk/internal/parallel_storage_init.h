@@ -392,6 +392,7 @@ inline void release_mapped(void* ptr, std::size_t length) noexcept
             }
             catch (...) // NOLINT(bugprone-empty-catch): the munmap below releases it all
             {
+                // nothing to undo here: the munmap below releases it all
             }
         }
     }

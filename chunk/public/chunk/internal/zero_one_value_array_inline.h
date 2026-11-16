@@ -250,7 +250,7 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
 
         if (ind == -1)
         {
-            ind = zero_one_value::Chunk<T>::tab_m_ptr_cst_val2->size();
+            ind = static_cast<int>(zero_one_value::Chunk<T>::tab_m_ptr_cst_val2->size());
 
             if constexpr (build_config::use_mm_protect)
             {
@@ -298,7 +298,7 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
 
             if constexpr (build_config::threaded)
             {
-                const int sz = Manager::zero_one_value_candidates_thr[0].size();
+                const int sz = static_cast<int>(Manager::zero_one_value_candidates_thr[0].size());
 
                 if (sz <= ind)
                 {
@@ -733,7 +733,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
 
                       const int thr_rank = CHUNK_PMP_THREAD_RANK;
 
-                      const int nb = ll_chunk_loc.size();
+                      const int nb = static_cast<int>(ll_chunk_loc.size());
 
                       if (nb > 0)
                       {

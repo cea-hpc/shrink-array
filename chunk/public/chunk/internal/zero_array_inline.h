@@ -245,7 +245,7 @@ void zero::Array<T, IntType>::clear_core()
                           },
                           pmp::nowait);
 
-                      const int nb = ll_chunk_loc.size();
+                      const int nb = static_cast<int>(ll_chunk_loc.size());
 
                       if (nb > 0)
                       {

@@ -49,6 +49,25 @@ function(multi_mat_setup_target tgt)
     # see chunk_enable_fast_math in examples/CMakeLists.txt. multi-mat compares
     # nothing bit for bit (it prints its result), so fast math is fine here.
     chunk_enable_fast_math(${tgt})
+
+    # gcc on x86-64: the four flags chunk_enable_fast_math passes do not define
+    # __FAST_MATH__, and glibc's math-vector.h declares the vector cos, sin and
+    # tan (libmvec) to gcc only under it -- the compute loop
+    # (LoopsSimd::omp_foreach_simd_red_sum) stayed scalar, "function is not
+    # vectorizable" in -fopt-info-vec-all. -ffast-math defines it; glibc then
+    # declares only the variants it ships, so nothing can fail to link. Its
+    # extra -ffinite-math-only is harmless here: multi-mat tests no value for
+    # NaN or inf, and the library compares doubles by their bits
+    # (same_value.h). It would fold away the NaN check of a CHUNK_DO_CHECK
+    # build, hence the condition. Not in chunk_enable_fast_math: shrink_bench's
+    # std::vector baseline would change against past campaigns, and its
+    # std::isfinite guards would fold to true.
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+        AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
+        AND CMAKE_SYSTEM_NAME STREQUAL "Linux"
+        AND NOT CHUNK_DO_CHECK)
+        target_compile_options(${tgt} PRIVATE -ffast-math)
+    endif ()
 endfunction()
 
 add_executable(multi-mat ${_mm_sources} ompt_off.cpp)

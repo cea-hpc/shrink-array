@@ -182,6 +182,7 @@ struct SliceProbe
         long long cur = slot.load(std::memory_order_relaxed);
         while (value > cur && !slot.compare_exchange_weak(cur, value, std::memory_order_relaxed))
         {
+            // a failed compare_exchange_weak reloaded cur: retry
         }
     }
 };
