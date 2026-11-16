@@ -222,8 +222,8 @@ void check_queries()
 {
     if constexpr (!pmp::threaded)
     {
-        expect(shrink_array::max_threads() == 1 && pmp::team_rank() == 0 && shrink_array::team_size() == 1 &&
-                   !pmp::in_parallel() && pmp::level() == 0,
+        expect(pmp::max_threads() == 1 && pmp::team_rank() == 0 && pmp::team_size() == 1 && !pmp::in_parallel() &&
+                   pmp::level() == 0,
                "serial backend: one thread");
     }
     else
