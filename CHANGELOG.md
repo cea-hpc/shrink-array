@@ -93,12 +93,14 @@ the tag's checksum to the recipe.
   stops the program; 256 and `_dyn`), and `spack` (the recipe installed from the checkout for
   `target=x86_64_v3`, no target flag from the project, no AVX-512 instruction in the
   libraries, `getting_started` built against the install).
-- `CHUNK_PHASE_FENCES=0` runs without the four `seq_cst` fences that close the phase functions
-  (`chunk/private/type_state_registry.cpp`), with a warning. They were kept as "empirically
-  load-bearing" since one unexplained checksum in August 2026; no handshake needs them as far
-  as the code reads, and several defects that lost deferred writes at phase boundaries have been
-  fixed since. The switch is there to settle it by measure before they are removed; the default
-  keeps them (`docs/developer_settings.md` §1).
+- The four `seq_cst` fences that closed the phase functions (`finalize_parallel_phase()`, its
+  `only_flush` / `after_flush` halves, `finalize_barrier_phase()`;
+  `chunk/private/type_state_registry.cpp`) are gone, and `CHUNK_PHASE_FENCES` with them. They
+  were kept as "empirically load-bearing" since one unexplained checksum in August 2026; no
+  handshake needs them as far as the code reads (each has its own barrier), and several defects
+  that lost deferred writes at phase boundaries were fixed since. Settled by measure: several tens
+  of thousands of `shrink_bench --mode check` runs on AArch64, the weaker memory model, with the
+  fences off (`CHUNK_PHASE_FENCES=0`), not one checksum different from `std::vector`'s.
 - `shrink_gui` 0.16: an environment field under the extra arguments (`NAME=value` words),
   exported in `run.sh` and `node.sh` before the command -- `CHUNK_LLVM_ROOT=~/llvm-22` for
   `compile_all.sh`, a run-time switch of the library for a bench. Exported before
