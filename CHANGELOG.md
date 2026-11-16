@@ -139,6 +139,15 @@ the tag's checksum to the recipe.
   follow: `type_state_registry.h`, `type_state_registry_decl.h`,
   `type_state_registry_inline.h` (`chunk/internal/`) and `chunk/private/type_state_registry.cpp`.
   Internal: no public header names it.
+- `ChunkSizeAdvisor::analyze()` was one function of 837 lines; it is now 38, and its counting
+  passes are the member functions of `internal::ChunkSizeScan` (`chunk/internal/chunk_size_scan.h`,
+  bodies in `chunk_size_scan_inline.h`): the candidate sizes, the classification, the runs of
+  constant chunks per part and their serial merge, the sampling, the ambiguous windows of a
+  picked chunk, the motif forecast of `pattern::Array` -- one function each, the longest of 57
+  lines. The table's rows come from `internal::advisor_row()`. Same interface, same report:
+  the old and the new `analyze()` were run in one process on the same arrays of the four
+  containers (`double`, `int`, `long`, `bool`, `Bit`; six sets of options; 1, 2 and 4 threads)
+  and compared field by field, 5,040 reports without a difference, in the same time.
 - `USE_LIBCXX` is `OFF` by default: a Clang build uses the standard library the compiler picks
   by itself (libstdc++ on Linux), `-DUSE_LIBCXX=ON` asks for libc++. The default was `ON`, and
   the first configure failed on a Clang installed without libc++; the build scripts, the CI
