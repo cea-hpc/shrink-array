@@ -25,9 +25,8 @@ moins de mémoire, sans toucher aux boucles.
   quelques centaines de threads -- ceux d'OpenMP, ou, avec le backend std, les `std::thread` et
   les tâches TBB du programme lui-même (`CHUNK_THREADS=std`, sans OpenMP). C++23, Linux, CMake, Spack.
 
-*Le projet s'appelle `shrink-array` (dépôt, paquet Spack) ; le namespace C++ est
-`shrink_array` ; le paquet CMake installé est `chunk` (`find_package(chunk)`, cibles
-`chunk::…`).*
+*Le projet s'appelle `shrink-array` (dépôt, paquet Spack) ; le namespace C++ et le paquet
+CMake sont `shrink_array` (`find_package(shrink_array)`, cibles `shrink_array::…`).*
 
 ## Aperçu
 
@@ -60,14 +59,14 @@ temps d'accès, voir [En chiffres](#en-chiffres).*
 ```cpp
 #include <cstdio>
 #include "chunk/zero_any_array.h"   // shrink_array::zero_any::Array
-#include "chunk/manage_ompt.h"     // parallel_phase
-#include "chunk/param_chunk.h"     // ParamChunk::init_indexes, release_chunk_pools, destroy_block_chunk
+#include "chunk/phases.h"     // parallel_phase
+#include "chunk/runtime.h"     // Runtime::init, release_chunk_pools, Runtime::shutdown
 
 namespace sa = shrink_array;
 
 int main()
 {
-    sa::ParamChunk::init_indexes(true);       // facultatif : le premier tableau le fait sinon
+    sa::Runtime::init(true);       // facultatif : le premier tableau le fait sinon
     {
         const int                n = 1 << 24;
         sa::zero_any::Array<double> a(n);        // tous les éléments à 0.0, aucun tampon encore
@@ -84,7 +83,7 @@ int main()
         std::printf("chunks holding a buffer: %.1f %%\n", a.stats());
     }                                         // le tableau rend ses chunks ici
     sa::release_chunk_pools();                // facultatif : rendre les pools avant la fin
-    sa::destroy_block_chunk();
+    sa::Runtime::shutdown();
 }
 ```
 
@@ -165,16 +164,16 @@ dans le corps prend `sa::tbb::phase_body(inner)`. L'en-tête est fourni avec la 
 ne dépend pas de TBB : c'est au programme de se lier à TBB.
 
 ```cmake
-find_package(chunk 0.2 REQUIRED)
+find_package(shrink_array 0.2 REQUIRED)
 find_package(TBB REQUIRED)
-target_link_libraries(my_app PRIVATE chunk::chunk_zero_any TBB::tbb)
+target_link_libraries(my_app PRIVATE shrink_array::zero_any TBB::tbb)
 ```
 
 Un build OpenMP refuse l'adaptateur à la compilation : OpenMP ne numérote que ses propres
 threads. Les `std::thread` et vos propres pools de threads :
 [docs/getting_started_fr.md](docs/getting_started_fr.md#5-threads--les-règles).
 
-Le lier à `chunk::chunk_zero_any` (voir [Installer](#installer)). La version complète, qui vérifie
+Le lier à `shrink_array::zero_any` (voir [Installer](#installer)). La version complète, qui vérifie
 ce qu'elle relit, est [examples/getting_started](examples/getting_started/getting_started.cpp) ;
 [docs/getting_started_fr.md](docs/getting_started_fr.md) la commente pas à pas, puis détaille les
 règles ci-dessous.
@@ -209,7 +208,7 @@ métadonnées. Les trois variantes diffèrent par les constantes retenues :
 | `zero_any` | `zero_any::Array<T>` | `T{}`, ou **n'importe quelle** valeur, chunk par chunk, sans rien déclarer -- **commencer par elle** |
 
 La variante et la taille de chunk (256, 1024, ou dynamique et adaptative : `_dyn`) sont choisies
-par la bibliothèque liée : `chunk::chunk_zero_any_256`, `chunk::chunk_zero_any_dyn`, ...
+par la bibliothèque liée : `shrink_array::zero_any_256`, `shrink_array::zero_any_dyn`, ...
 [docs/variantes_fr.md](docs/variantes_fr.md) dit ce que coûte chacune ;
 [docs/algo_zero_one_value_fr.md](docs/algo_zero_one_value_fr.md) comment lectures, écritures et compression
 cohabitent.
@@ -348,7 +347,7 @@ ou plus, oneAPI ; NVHPC et AOCC 5 n'ont pas de C++23 utilisable), **CMake 3.20**
 **OpenMP**.
 
 ```shell
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DOMP=ON -DCMAKE_INSTALL_PREFIX=$HOME/opt/shrink-array
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCHUNK_OPENMP=ON -DCMAKE_INSTALL_PREFIX=$HOME/opt/shrink-array
 cmake --build build
 ctest --test-dir build
 cmake --install build
@@ -357,8 +356,8 @@ cmake --install build
 Puis, dans votre projet :
 
 ```cmake
-find_package(chunk 0.2 REQUIRED)            # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
-target_link_libraries(my_app PRIVATE chunk::chunk_zero_any)
+find_package(shrink_array 0.2 REQUIRED)            # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
+target_link_libraries(my_app PRIVATE shrink_array::zero_any)
 ```
 
 `add_subdirectory(shrink-array)` marche aussi, et `FetchContent` aussi, sans rien installer
@@ -369,10 +368,10 @@ include(FetchContent)
 FetchContent_Declare(shrink_array
   GIT_REPOSITORY https://github.com/cea-hpc/shrink-array.git
   GIT_TAG        main)                 # ou un commit, pour figer la version
-set(OMP ON)                            # compiler les bibliothèques OpenMP
+set(CHUNK_OPENMP ON)                            # compiler les bibliothèques OpenMP
 FetchContent_MakeAvailable(shrink_array)
 
-target_link_libraries(my_app PRIVATE chunk::chunk_zero_any)
+target_link_libraries(my_app PRIVATE shrink_array::zero_any)
 ```
 
 Avec CMake 3.28 ou plus récent, ajoutez `EXCLUDE_FROM_ALL` à `FetchContent_Declare` : seules les
@@ -387,7 +386,7 @@ spack repo add <clone>/spack/spack_repo/shrink_array
 spack install shrink-array threads=openmp sizes=256,1024 %gcc@15   # threads=std : écrits depuis des std::thread ou TBB
 ```
 
-Les options CMake (`OMP`, `CHUNK_THREADS`, `CHUNK_STATIC_SIZES`, `CHUNK_VARIANTS`, `CHUNK_BUILD_DYN`,
+Les options CMake (`CHUNK_OPENMP`, `CHUNK_THREADS`, `CHUNK_STATIC_SIZES`, `CHUNK_VARIANTS`, `CHUNK_BUILD_DYN`,
 `CHUNK_STD_ALLOC`...) et les variables d'environnement :
 [docs/variables_environnement_fr.md](docs/variables_environnement_fr.md).
 

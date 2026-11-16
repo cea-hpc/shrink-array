@@ -21,7 +21,7 @@
 
 // Compile-time iteration over a std::tuple<Ts...> of types. Used by consumer
 // TUs to drive per-type instantiation from a type list they own (e.g. a
-// std::tuple passed to ParamChunk::init_indexes<Types>()).
+// std::tuple passed to Runtime::init<Types>()).
 //
 // The library owns no "supported types" list; consumer code is
 // responsible for declaring which T it uses.

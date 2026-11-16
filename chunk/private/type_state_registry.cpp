@@ -37,8 +37,8 @@
 
 #include "chunk/internal/deferred_op_pool.h" // for reset_all
 #include "chunk/internal/phase_guard.h"      // check-build guard of the phase protocol
-#include "chunk/manage_ompt.h"               // the declarations of the five phase functions below
-#include "chunk/param_chunk.h"               // ParamChunk::init_indexes (ensure_ready)
+#include "chunk/phases.h"                    // the declarations of the five phase functions below
+#include "chunk/runtime.h"                   // Runtime::init (ensure_ready)
 
 // Must stay a directive: a std-alloc build does not put fast_allocators/public on the
 // include path, so the header is unreachable there. Same for the two report_all_arenas() calls.
@@ -49,10 +49,10 @@
 namespace shrink_array
 {
 /// @brief Empty registry; warns once if the OMPT tool this build relies on is
-///        not loaded (manage_ompt.h, check_ompt_tool_loaded).
+///        not loaded (phases.h, check_ompt_tool_loaded).
 TypeStateRegistry::TypeStateRegistry()
 {
-    // Weak: absent from a NO_OMPT_TOOL library (manage_ompt.h).
+    // Weak: absent from a NO_OMPT_TOOL library (phases.h).
     if (&check_ompt_tool_loaded != nullptr)
     {
         check_ompt_tool_loaded();
@@ -74,7 +74,7 @@ void TypeStateRegistry::ensure_ready()
                        }
                        if (!ready)
                        {
-                           ParamChunk::init_indexes(true);
+                           Runtime::init(true);
                        }
                    });
 }
@@ -191,7 +191,7 @@ void begin_parallel_phase()
     // One top-level team at a time (phase_guard::teams): each thread of a
     // top-level team takes its rank for the phase; a rank already held by
     // another thread is refused.
-    if constexpr (build_config::use_openmp && build_config::has_not_ompt)
+    if constexpr (build_config::use_openmp && build_config::needs_explicit_phases)
     {
         if (CHUNK_PMP_LEVEL == 1)
         {
@@ -210,7 +210,7 @@ void finalize_parallel_phase_only_flush()
         churn::note_phase_end();
     }
     // use_openmp, not threaded: the barrier is the application's team's,
-    // which only OpenMP gives the library (the phase contract, manage_ompt.h).
+    // which only OpenMP gives the library (the phase contract, phases.h).
     if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
     {
         // Barrier + flush must both happen inside the same enclosing
@@ -238,7 +238,7 @@ void finalize_parallel_phase_after_flush()
     {
         phase_guard::next_phase();
     }
-    // use_openmp: a shape of the phase contract only OpenMP has (manage_ompt.h).
+    // use_openmp: a shape of the phase contract only OpenMP has (phases.h).
     if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
     {
         const auto& ens_type_chunk = SingletonChk<TypeStateRegistry>::get_ref();
@@ -264,7 +264,7 @@ void finalize_parallel_phase()
     // a component that knows nothing of it -- the enclosing phase is not over:
     // its other threads may still be writing, and the flush below drains every
     // rank's queue without a lock. The enclosing phase's own end finalizes
-    // (manage_ompt.h; nested_region_validation D). A team, not
+    // (phases.h; nested_region_validation D). A team, not
     // CHUNK_PMP_IN_PARALLEL_REGION: the std backend's application phase is
     // in_parallel() too, and this is where it closes.
     if (pmp::active_level() > 0)
@@ -328,7 +328,7 @@ void finalize_parallel_phase()
 
 bool finalize_barrier_phase()
 {
-    // use_openmp: a shape of the phase contract only OpenMP has (manage_ompt.h).
+    // use_openmp: a shape of the phase contract only OpenMP has (phases.h).
     if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
     {
         // NOT const: flush_all_deferred() mutates the managers it drains.

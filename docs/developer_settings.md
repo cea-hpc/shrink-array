@@ -72,7 +72,7 @@ arena's and OMPT's counters with them, which cost a little time.
 | `CHUNK_LOG=ompt=info` (formerly `CHUNK_OMPT_STATS`) | statistics of the synchronisation regions (OMPT builds), at exit |
 | `CHUNK_LOG=compress=info` in `shrink_bench` (formerly `CHUNK_CST2_PROBE`) | `zero_any`: in addition, the report of the second-value registry at each advisor pass (`gc_mark_report()`) |
 | `CHUNK_CST2_RECLAIM` | `zero_any`, `N`: every N iterations, frees the second values no chunk uses any more (`reclaim_second_values()`) and prints how many, then each type's identifiers in use against the capacity, free, reclaims and refusals (`second_value_stats()`) (benchmark, any build) |
-| `ALLOC_TOKEN_REPORT` | `SANITIZER=token` builds always print, on exit, the allocations per token (the 40 largest); this sets how many: `0` none, `N` the N largest, `all` every token |
+| `ALLOC_TOKEN_REPORT` | `CHUNK_SANITIZER=token` builds always print, on exit, the allocations per token (the 40 largest); this sets how many: `0` none, `N` the N largest, `all` every token |
 | `CHUNK_LOG=alloc=trace` (formerly `FAST_ALLOC_TRACE`) | one `munmap` line per emptied slab that a pool's reserve does not keep and that is freed |
 
 The per-array traces (the `churn` line, the advisor table) cover every array the decider
@@ -158,12 +158,12 @@ The options of [environment_variables.md](environment_variables.md) §2 are not 
 | `CHUNK_LIB_UNITY` | `ON` | each variant archive (`chunk_zero_any_256`, ...) compiled as a single unit (unity build, 4 to 6 times less compilation); a file that has its own compile options stays separate |
 | `SHRINK_BENCH_PRINT_MEM` | `ON` | `shrink_bench` prints its memory lines (after init, every freq_conso_mem iterations, after a compression); `OFF` to time a run without the RSS reads behind them |
 | `SHRINK_BENCH_UNITY` | `ON` | each `shrink_bench` executable compiled as a single unit (unity build, 3.5 to 4 times less compilation); `OFF` to compare timings with earlier campaigns, since inlining across benchmark files can change them; `SHRINK_BENCH_UNITY_BATCH` files per unit (0 = all) |
-| `CHUNK_DEBUG_INFO` | `auto` | debug information of the optimised builds: `full` (`-g`), `lines` (`-g1`: function names and line tables, enough for perf and gdb backtraces, not the locals), `none`; `auto`: `full` with `CHECK_OPTIM` or a sanitizer, `lines` otherwise. The machine code is the same; `lines` compiles 20 to 27 % faster with 40 % less peak memory. Debug builds always get `-g` |
+| `CHUNK_DEBUG_INFO` | `auto` | debug information of the optimised builds: `full` (`-g`), `lines` (`-g1`: function names and line tables, enough for perf and gdb backtraces, not the locals), `none`; `auto`: `full` with `CHUNK_CHECK_OPTIM` or a sanitizer, `lines` otherwise. The machine code is the same; `lines` compiles 20 to 27 % faster with 40 % less peak memory. Debug builds always get `-g` |
 | `CHUNK_VALIDATION_UNITY` | `ON` | the validation harnesses grouped into one executable per variant and geometry (unity build); `OFF`: one executable per harness |
 | `CHUNK_VALIDATION_UNITY_BATCH` | 0 | with `CHUNK_VALIDATION_UNITY`: harnesses per translation unit of such an executable; 0: all those of a group in one unit. A small value (3) lowers the compiler's memory peak on a machine with little memory |
-| `CHUNK_BUILD_VALIDATION` | depends on the build | compile the harnesses of `examples/validation`, and with them the test hooks (`CHUNK_TEST_HOOKS`); by default `ON` in Debug, with `CHECK_OPTIM` or a sanitizer, `OFF` elsewhere (not cached: follows the current configuration) |
+| `CHUNK_BUILD_VALIDATION` | depends on the build | compile the harnesses of `examples/validation`, and with them the test hooks (`CHUNK_TEST_HOOKS`); by default `ON` in Debug, with `CHUNK_CHECK_OPTIM` or a sanitizer, `OFF` elsewhere (not cached: follows the current configuration) |
 | `FAST_ALLOC_CHECK_LISTS` | `OFF` | stronger debug level for the slab lists: in Debug, full check of the list at each insertion and removal (slow); an ordinary Debug build keeps the light checks |
-| `HAVE_AGGRESSIVE_COMPRESSION` | `OFF` | default of the "aggressive" compression, a run-time switch: `CHUNK_AGGRESSIVE_COMPRESSION=1` (or `0`) sets it for a run. The pass between two phases is skipped, and all compression happens during the parallel regions, at unpredictable times. Slower, but it exercises the concurrent paths: a validation mode, which no longer needs a build of its own |
+| `CHUNK_AGGRESSIVE_COMPRESSION_DEFAULT` | `OFF` | default of the "aggressive" compression, a run-time switch: `CHUNK_AGGRESSIVE_COMPRESSION=1` (or `0`) sets it for a run. The pass between two phases is skipped, and all compression happens during the parallel regions, at unpredictable times. Slower, but it exercises the concurrent paths: a validation mode, which no longer needs a build of its own |
 | `CHUNK_FORCE_LEDGER` | `OFF` | keeps the block registry (`pool_ledger.h`) active under OpenMP, where it is off by default: its global mutex serialises every allocation and free. Detects double frees and illegal returns to the reserve |
 | `CHUNK_DEFERRED_DRAIN_THRESHOLD` | empty (4,096) | threshold at which a rank flushes its own queue |
 | `CHUNK_FORCE_DEFER_EVERY` | 0 | one write in N through the deferred path, across the whole tree (validation; 32 threads at most) |
@@ -180,13 +180,13 @@ The options of [environment_variables.md](environment_variables.md) §2 are not 
 | `CHUNK_HEAVY_JOB_POOL` | empty | Ninja job pool for the executables compiled as a single unit (limits compilation memory) |
 | `CHUNK_X86_MARCH` | `native` | GCC, Clang on x86-64: `-march=` of the optimised builds; a fixed level gives a binary independent of the machine (`x86-64-v3` in the nightly's ASan job, `native` faults there on Zen 5) |
 | `CHUNK_NATIVE_TUNING` | ON | OFF: no target flag from the project at all (`-march=`/`-mcpu=native`, `-tp=host`, `-xHost`): the target is the caller's. The Spack recipe sets it OFF, so that the spec's `target=` is the one compiled for; the project's flag came after the wrapper's and won |
-| `USE_LIBCXX` | `OFF` | Clang builds: `ON` for libc++ (`-stdlib=libc++`) instead of the compiler's default standard library, libstdc++ on Linux |
-| `GCC_TOOLCHAIN_DIR` | depends on the machine | Clang builds: the GCC installation whose libstdc++ and runtime clang uses (`--gcc-toolchain=`); empty: the driver's own choice. A path that does not exist is ignored, with a warning |
-| `USE_MOLD` | `AUTO` | link with mold: `AUTO` (when it is found and the build supports it), `ON` (an error otherwise), `OFF` |
+| `CHUNK_USE_LIBCXX` | `OFF` | Clang builds: `ON` for libc++ (`-stdlib=libc++`) instead of the compiler's default standard library, libstdc++ on Linux |
+| `CHUNK_GCC_TOOLCHAIN_DIR` | depends on the machine | Clang builds: the GCC installation whose libstdc++ and runtime clang uses (`--gcc-toolchain=`); empty: the driver's own choice. A path that does not exist is ignored, with a warning |
+| `CHUNK_USE_MOLD` | `AUTO` | link with mold: `AUTO` (when it is found and the build supports it), `ON` (an error otherwise), `OFF` |
 | `CHUNK_VEC_REPORT` | `OFF` | fast-math targets of the examples: the compiler reports the loops it did not vectorise |
-| `GETTING_STARTED_LIB`, `BOOL_ARRAYS_LIB` | `chunk::chunk_zero_any`, `chunk::chunk_zero_one_value` | `examples/getting_started` and `examples/bool_arrays` built on their own, against an installed library: the library target they link |
-| `USE_GPERF`, `ENABLE_IWYU` | `OFF` | gperftools profiling; include-what-you-use during compilation |
-| `ONEAPI_XHOST`, `ONEAPI_NO_INTEL_LIBS`, `ONEAPI_FAST_FP` | `OFF` | icpx: Intel-only binary (`-xHost`); no Intel runtime library; keep `-fp-model=fast` |
+| `GETTING_STARTED_LIB`, `BOOL_ARRAYS_LIB` | `shrink_array::zero_any`, `shrink_array::zero_one_value` | `examples/getting_started` and `examples/bool_arrays` built on their own, against an installed library: the library target they link |
+| `CHUNK_USE_GPERF`, `CHUNK_ENABLE_IWYU` | `OFF` | gperftools profiling; include-what-you-use during compilation |
+| `CHUNK_ONEAPI_XHOST`, `CHUNK_ONEAPI_NO_INTEL_LIBS`, `CHUNK_ONEAPI_FAST_FP` | `OFF` | icpx: Intel-only binary (`-xHost`); no Intel runtime library; keep `-fp-model=fast` |
 
 For clang builds on x86-64, `CHUNK_LIBMVEC_LINKS` (in the cache, computed at
 configure time) tells whether the glibc vector library provides the math
@@ -204,11 +204,12 @@ the common options. `--help` gives the full list.
 | `--build` | without reconfiguring (rebuild only) |
 | `--fresh-cache` | delete the `CMakeCache.txt` of each selected build before configuring |
 | `--debug-only` | only the Debug builds |
-| `--only=<c>`, `--no-<c>` | a single compiler, or without it (`gnu`, `oneapi`, `nvhpc`, `llvm`, `aocc`) |
+| `--only=<c>`, `--no-<c>` | a single compiler, or without it (`gnu`, `oneapi`, `nvhpc`, `llvm`, `aocc`, `acfl`; `oneapi` and `aocc` on x86-64 only, `acfl` on ARM only) |
+| `--list-targets`, `--list-execs`, `--list` | list the configurations `--target` accepts (configured here or not, x86-64 or ARM only), the targets `--exec` accepts in each configured build directory, or both; nothing is built. They honour `--target=<glob>` and `--exec=<glob>` |
 | `--with-nvhpc` | add NVHPC, disabled by default (about 1 h 30 per build on x86, with no gain) |
 | `--no-sanitizers` | without the LLVM sanitizer builds |
 | `--with-ledger` | add `cmake-build-omp-gnu-debug-ledger` (OpenMP Debug with `CHUNK_FORCE_LEDGER=ON`), disabled by default; a `--target` that selects it also builds it |
-| `--with-token-sanitizer` | add `cmake-build-omp-llvm-debug-std-alloc-token-sanitizer` (`SANITIZER=token`), disabled by default; a `--target` that selects it also builds it; `--no-sanitizers` skips it |
+| `--with-token-sanitizer` | add `cmake-build-omp-llvm-debug-std-alloc-token-sanitizer` (`CHUNK_SANITIZER=token`), disabled by default; a `--target` that selects it also builds it; `--no-sanitizers` skips it |
 | `--target=<glob>` | only the configurations whose name matches (`omp-llvm`, or a quoted shell glob); a pattern that matches nothing is an error |
 | `--exec=<glob>` | only the matching Ninja targets in each build (`shrink_bench_omp_zero_256`, or a quoted shell glob: `'shrink_bench_*_zero_256'` matches it regardless of the backend) |
 | `--jobs=<n>` | number of configurations compiled at the same time (4 by default); the core budget is shared between them |

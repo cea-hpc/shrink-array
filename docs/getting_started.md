@@ -43,7 +43,7 @@ branch needs C++23, GCC 14 or later) and CMake ≥ 3.20:
 ```sh
 cmake -S shrink-array -B build -G Ninja \
       -DCMAKE_BUILD_TYPE=Release \
-      -DOMP=ON \
+      -DCHUNK_OPENMP=ON \
       -DCMAKE_INSTALL_PREFIX=$HOME/opt/shrink-array
 cmake --build build
 cmake --install build
@@ -53,8 +53,8 @@ The options that matter to a user:
 
 | option | default | effect |
 |---|---|---|
-| `OMP` | `OFF` | build with OpenMP. A program that uses the arrays from OpenMP regions needs a library built with it |
-| `CHUNK_THREADS` | empty | threading backend of the library: `openmp`, `std` (`std::jthread` workers of its own, no OpenMP) or `serial`; empty: `openmp` with `OMP=ON`, `serial` otherwise. Set, it sets `OMP` to match |
+| `CHUNK_OPENMP` | `OFF` | build with OpenMP. A program that uses the arrays from OpenMP regions needs a library built with it |
+| `CHUNK_THREADS` | empty | threading backend of the library: `openmp`, `std` (`std::jthread` workers of its own, no OpenMP) or `serial`; empty: `openmp` with `CHUNK_OPENMP=ON`, `serial` otherwise. Set, it sets `CHUNK_OPENMP` to match |
 | `CHUNK_STATIC_SIZES` | `auto` | the compile-time chunk sizes built, one library per size and variant; `auto`: `256;1024`, but `256` alone in a Debug or sanitizer build of this project (not of a project that includes it) |
 | `CHUNK_BUILD_DYN` | `ON` | also build the libraries whose chunk size is chosen at run time, and can change (`_dyn`) |
 | `CHUNK_STD_ALLOC` | `OFF` | allocate the chunk buffers with the standard allocator instead of the bundled `fast_allocators` (useful under AddressSanitizer) |
@@ -73,10 +73,10 @@ your program the phase calls of §5.
 cmake_minimum_required(VERSION 3.20)
 project(my_app LANGUAGES CXX)
 
-find_package(chunk 0.2 REQUIRED)        # -DCMAKE_PREFIX_PATH=<install prefix>
+find_package(shrink_array 0.2 REQUIRED)        # -DCMAKE_PREFIX_PATH=<install prefix>
 
 add_executable(my_app main.cpp)
-target_link_libraries(my_app PRIVATE chunk::chunk_zero_any)
+target_link_libraries(my_app PRIVATE shrink_array::zero_any)
 ```
 
 The library you link **chooses the variant and the chunk size**. The headers are the same
@@ -88,13 +88,13 @@ as the library did.
 
 | target | variant | chunk size |
 |---|---|---|
-| `chunk::chunk_zero`, `chunk::chunk_zero_one_value`, `chunk::chunk_zero_any` | `zero`, `zero_one_value`, `zero_any` | the first of `CHUNK_STATIC_SIZES` (256) |
-| `chunk::chunk_zero_any_1024`, … | | that compile-time size |
-| `chunk::chunk_zero_any_dyn`, … | | chosen at run time, per array (can be changed with `rechunk_to()` or by the adaptive decider) |
-| `chunk::chunk_vector` | none: the arrays are `std::vector` | — |
+| `shrink_array::zero`, `shrink_array::zero_one_value`, `shrink_array::zero_any` | `zero`, `zero_one_value`, `zero_any` | the first of `CHUNK_STATIC_SIZES` (256) |
+| `shrink_array::zero_any_1024`, … | | that compile-time size |
+| `shrink_array::zero_any_dyn`, … | | chosen at run time, per array (can be changed with `rechunk_to()` or by the adaptive decider) |
+| `shrink_array::vector` | none: the arrays are `std::vector` | — |
 
 Link **one** variant library per program, and write **that variant's class**:
-`zero_any::Array<T>` with `chunk::chunk_zero_any`. The class you write is what you get -- a program
+`zero_any::Array<T>` with `shrink_array::zero_any`. The class you write is what you get -- a program
 naming `zero_any::Array` keeps it regardless of what it links -- and an array of a variant other than the
 library's is not supported: depending on the calls, it does not compile or it crashes.
 To let the link choose, write the arrays through an alias for the variant the library
@@ -115,11 +115,11 @@ using Array = std::conditional_t<sa::chunk_config::use_zero_any, sa::zero_any::A
               std::conditional_t<sa::chunk_config::use_zero, sa::zero::Array<T>, std::vector<T>>>>;
 ```
 
-With it, `chunk::chunk_vector` builds the same program on plain `std::vector`s, which is the
+With it, `shrink_array::vector` builds the same program on plain `std::vector`s, which is the
 easiest way to compare memory and time.
 
-`find_package(chunk)` also sets `chunk_STATIC_SIZES`, `chunk_DEFAULT_SIZE`, `chunk_HAS_DYN`,
-`chunk_OPENMP`, `chunk_OMPT` and `chunk_STD_ALLOC`, for a project that wants to check what the
+`find_package(shrink_array)` also sets `shrink_array_STATIC_SIZES`, `shrink_array_DEFAULT_SIZE`, `shrink_array_HAS_DYN`,
+`shrink_array_OPENMP`, `shrink_array_OMPT` and `shrink_array_STD_ALLOC`, for a project that wants to check what the
 installation holds.
 
 ## 4. A first program, parallel and multi-threaded
@@ -133,14 +133,14 @@ well as inside the tree.
 #include <utility>                 // std::as_const
 
 #include "chunk/zero_any_array.h"   // shrink_array::zero_any::Array
-#include "chunk/manage_ompt.h"     // parallel_phase
-#include "chunk/param_chunk.h"     // ParamChunk::init_indexes, release_chunk_pools, destroy_block_chunk
+#include "chunk/phases.h"     // parallel_phase
+#include "chunk/runtime.h"     // Runtime::init, release_chunk_pools, Runtime::shutdown
 
 namespace sa = shrink_array;
 
 int main()
 {
-    sa::ParamChunk::init_indexes(true);          // (1) once, before the first array
+    sa::Runtime::init(true);          // (1) once, before the first array
 
     {
         const int n = 1 << 24;                   // 16 M doubles: 128 MiB as a std::vector
@@ -164,13 +164,13 @@ int main()
     }                                            // (6) the array releases its chunks
 
     sa::release_chunk_pools();                   // (7) shut the library down
-    sa::destroy_block_chunk();
+    sa::Runtime::shutdown();
 }
 ```
 
-1. **`init_indexes(true)`**, once, before the first array: it sets up the allocation blocks
+1. **`init(true)`**, once, before the first array: it sets up the allocation blocks
    (`true`: large blocks, the usual choice). Optional: without it, the first array of the
-   program runs `init_indexes(true)` itself. Element types need no declaration: each one is
+   program runs `init(true)` itself. Element types need no declaration: each one is
    registered the first time an array of it is built.
 2. **A new array** reads `T{}` everywhere and allocates no buffer.
 3. **`parallel_phase()`** opens a parallel region and runs the lambda on every thread. Without
@@ -261,9 +261,9 @@ higher than it should. When the team size changes from one region to the next, a
 `finalize_parallel_phase()` replays a deferred write that was already freed, and with both
 calls forgotten, values come out wrong, silently. The program stops, in every build, on a
 `begin_parallel_phase()` with no `finalize_parallel_phase()` since the previous region; check
-builds (Debug, `CHECK_OPTIM`) also stop on a deferred write by a thread that skipped
+builds (Debug, `CHUNK_CHECK_OPTIM`) also stop on a deferred write by a thread that skipped
 `begin_parallel_phase()`.
-Writing them behind `if constexpr (sa::build_config::has_not_ompt)`, as above, keeps one
+Writing them behind `if constexpr (sa::build_config::needs_explicit_phases)`, as above, keeps one
 source for both runtimes.
 
 `shrink_array::parallel_phase()` writes the region and both calls for you, and leaves them out
@@ -338,9 +338,9 @@ all of it. What that asks of them:
 - **The first array fixes the thread capacity** (above): at least 256 threads, or the cores, or
   `OMP_NUM_THREADS`; a component that opens larger teams needs `CHUNK_THREAD_CAPACITY` set
   before the first array.
-- **Process-wide calls.** `ParamChunk::init_indexes()` sets the allocation block size of the
+- **Process-wide calls.** `Runtime::init()` sets the allocation block size of the
   whole process: one call, at the start, by the program (a later one leaves the arrays already
-  built intact). `release_chunk_pools()` and `destroy_block_chunk()` empty everyone's free
+  built intact). `release_chunk_pools()` and `Runtime::shutdown()` empty everyone's free
   lists (an array still alive keeps what it needs): once, at the end of the program, or not at
   all. `reclaim_second_values()` covers every array of a type; `CHUNK_LOG` and
   `logging::set_sink()` are one setting for all.

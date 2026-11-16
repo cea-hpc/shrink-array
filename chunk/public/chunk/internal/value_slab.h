@@ -32,7 +32,7 @@ namespace shrink_array
 /**
  * @brief Slab request, in bytes, of the value allocators of element type @p T
  *        (TCSlab rounds it up to a power of two).
- * @param block_size ParamChunk's block size: the bytes of a slab of 8-byte
+ * @param block_size Runtime's block size: the bytes of a slab of 8-byte
  *        elements.
  * @param max_element_bytes The largest buffer these allocators hand out:
  *        storage_units(cst_buffer_size) * sizeof(T).

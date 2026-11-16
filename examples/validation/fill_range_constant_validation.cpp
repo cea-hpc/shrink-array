@@ -55,11 +55,11 @@
 #include "chunk/zero_array.h"            // zero::Array
 #include "chunk/zero_one_value_array.h"  // zero_one_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
-#include "chunk/array_chunk_range_ops.h" // fill_range, fill_range_mt
-#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
+#include "chunk/range_ops.h"             // fill_range, fill_range_mt
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
 #include "chunk/config.h"                // chunk_config::use_zero_one_value*
-#include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
@@ -101,7 +101,7 @@ void region(long n, Fn&& body)
 {
 #pragma omp parallel
     {
-        if constexpr (build_config::has_not_ompt)
+        if constexpr (build_config::needs_explicit_phases)
         {
             shrink_array::begin_parallel_phase();
         }
@@ -111,7 +111,7 @@ void region(long n, Fn&& body)
             body(i);
         }
     }
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -178,7 +178,7 @@ void expect_compressed(const char* scenario, const Array<double>& a, long c0, lo
 
 int run(int /*argc*/, char** /*argv*/)
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
     const long S = static_cast<long>(Array<double>(1).chunk_size());
     const long N = n_chunks * S;
     println("=== fill_range_constant_validation [variant = {}]  chunk_size={}  chunks={} ===", variant_name(), S,
@@ -272,7 +272,7 @@ int run(int /*argc*/, char** /*argv*/)
         fill_range(a, static_cast<std::size_t>(S / 2), static_cast<std::size_t>(N - S / 2), 0.0);
 #pragma omp parallel
         {
-            if constexpr (build_config::has_not_ompt)
+            if constexpr (build_config::needs_explicit_phases)
             {
                 shrink_array::begin_parallel_phase();
             }
@@ -282,7 +282,7 @@ int run(int /*argc*/, char** /*argv*/)
                 fill_range_mt(a, static_cast<std::size_t>(c * S + S / 4), static_cast<std::size_t>((c + 1) * S), 0.0);
             }
         }
-        if constexpr (build_config::has_not_ompt)
+        if constexpr (build_config::needs_explicit_phases)
         {
             shrink_array::finalize_parallel_phase();
         }
@@ -297,7 +297,7 @@ int run(int /*argc*/, char** /*argv*/)
     }
 
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
     println("\n[{}] {}", variant_name(), fails == 0 ? "=== FILL RANGE OK ===" : "=== FILL RANGE FAILURES ===");
     return fails ? 1 : 0;
 }

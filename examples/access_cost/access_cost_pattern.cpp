@@ -66,10 +66,10 @@
 #include "chunk/internal/chunk_traits.h" // the IntType = int default of the arrays
 #include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/pattern_array.h"         // pattern::Array, pattern::MotifRegion
-#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/config.h"                // chunk_config::use_zero_any, build_config::use_openmp / has_not_ompt
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/config.h"                // chunk_config::use_zero_any, build_config::use_openmp / needs_explicit_phases
 #include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"           // begin_parallel_phase, finalize_parallel_phase
+#include "chunk/phases.h"                // begin_parallel_phase, finalize_parallel_phase
 #include "chunk/internal/env_parse.h"    // arg_number (checked, not atoi)
 #include "chunk/print.h"                 // shrink_array::println
 
@@ -86,7 +86,7 @@ namespace
 // ── Phase brackets: no-ops under OMPT (the callbacks do it) ─────────────────
 void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
@@ -95,7 +95,7 @@ void begin_phase()
 template <typename Arr>
 void end_phase(Arr& arr)
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -375,7 +375,7 @@ constexpr int         n_containers      = 3;
 int main(int argc, char** argv)
 try
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     long n_elems = 1L << 26;
     int  reps    = 5;

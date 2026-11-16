@@ -56,11 +56,11 @@
 #include "chunk/zero_array.h"            // zero::Array
 #include "chunk/zero_one_value_array.h"  // zero_one_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
-#include "chunk/array_chunk_range_ops.h" // fill_range, copy_range, fill_range_mt, copy_range_mt
-#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
+#include "chunk/range_ops.h"             // fill_range, copy_range, fill_range_mt, copy_range_mt
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
 #include "chunk/config.h"                // chunk_config::use_zero*
-#include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
@@ -102,7 +102,7 @@ static void phase(Array<double>& arr, long n, Fn&& body)
 {
 #pragma omp parallel
     {
-        if constexpr (build_config::has_not_ompt)
+        if constexpr (build_config::needs_explicit_phases)
         {
             begin_parallel_phase();
         }
@@ -112,7 +112,7 @@ static void phase(Array<double>& arr, long n, Fn&& body)
             body(i);
         }
     }
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         finalize_parallel_phase();
     }
@@ -134,7 +134,7 @@ static int phase_count(Array<double>& arr, Fn&& body)
     int in_region = 0;
 #pragma omp parallel
     {
-        if constexpr (build_config::has_not_ompt)
+        if constexpr (build_config::needs_explicit_phases)
         {
             begin_parallel_phase();
         }
@@ -146,7 +146,7 @@ static int phase_count(Array<double>& arr, Fn&& body)
 #pragma omp single
         in_region = materialised(arr);
     }
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         finalize_parallel_phase();
     }
@@ -242,7 +242,7 @@ static void check_reclaim(const Arr& a, Expect&& expect)
 
 int run(int /*argc*/, char** /*argv*/)
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     const long S  = static_cast<long>(Array<double>(1).chunk_size());
     const long N  = n_chunks * S;
@@ -379,7 +379,7 @@ int run(int /*argc*/, char** /*argv*/)
     }
 
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
 
     println("\n[{}] {}", variant_name(),
             fails == 0 ? "=== CONSTANT SWITCH OK, TEARDOWN OK ===" : "=== CONSTANT SWITCH FAILURES ===");

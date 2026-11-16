@@ -38,7 +38,7 @@
 
 | document (EN / FR) | contents |
 |---|---|
-| [getting_started.md](getting_started.md) / [getting_started_fr.md](getting_started_fr.md) | user guide: install, link from CMake (`find_package(chunk)`), first program (`examples/getting_started`), OpenMP rules, pitfalls |
+| [getting_started.md](getting_started.md) / [getting_started_fr.md](getting_started_fr.md) | user guide: install, link from CMake (`find_package(shrink_array)`), first program (`examples/getting_started`), OpenMP rules, pitfalls |
 | [api.md](api.md) / [api_fr.md](api_fr.md) | the API by task: start and stop, containers, operations, write proxy, range operations, OpenMP phases, adaptive chunk size, compile-time configuration |
 | [contributing.md](contributing.md) / [contributing_fr.md](contributing_fr.md) | for contributors: build, which tests for which change, code and comment rules, performance claims, docs and changelog |
 | [design.md](design.md) / [conception_fr.md](conception_fr.md) | the overall design: requirements and non-goals, the parts and their scope (per array, per type, per process), CRTP and policies, build-time configuration, an access from the call to the memory, phases and the three handshakes, memory and allocators, dynamic geometry, backends, the decisions and the alternatives rejected, known limits |
@@ -63,7 +63,7 @@
 
 | directory | contents |
 |---|---|
-| `chunk/public/chunk/` | the API: `zero_array.h`, `zero_one_value_array.h`, `zero_any_array.h`, `pattern_array.h`, `param_chunk.h`, `config.h`, `threads.h`, `mdspan.h`, `mdspan_tile_ops.h` |
+| `chunk/public/chunk/` | the API: `zero_array.h`, `zero_one_value_array.h`, `zero_any_array.h`, `pattern_array.h`, `runtime.h`, `config.h`, `threads.h`, `mdspan.h`, `mdspan_tile_ops.h` |
 | `chunk/public/chunk/internal/` | the implementation: chunks, proxies, write engine, compression, re-chunk |
 | `chunk/private/` | the compiled parts of the library (type registry, OMPT tool, statistics, traces) |
 | `fast_allocators/` | the buffer allocators (arenas, slabs, reuse lists) |

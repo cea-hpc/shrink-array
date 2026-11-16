@@ -69,8 +69,13 @@ DEFAULT_CONFIGS = [
     # (AOCC 5 has no working C++23 with libstdc++ 15; compile_all.sh --with-aocc).
     "cmake-build-omp-oneapi",                          # release oneAPI (icpx)
     "cmake-build-std-oneapi",                          # oneAPI, std backend (+ TBB bench)
+    "cmake-build-std-aocc",                            # AOCC, std backend (+ TBB bench)
+    # ARM only, the counterpart: Arm Compiler for Linux (armclang++), when
+    # compile_all.sh found it. On x86-64 absent, dropped with the same note.
+    "cmake-build-omp-acfl",                            # RelWithDebInfo ACfL
+    "cmake-build-std-acfl",                            # ACfL, std backend (+ TBB bench)
     # Non-OpenMP builds — cover the `if constexpr(!use_openmp)` code paths so a
-    # serial-path regression is caught. Build them with -DOMP:BOOL=OFF; if the
+    # serial-path regression is caught. Build them with -DCHUNK_OPENMP:BOOL=OFF; if the
     # directory is absent it is skipped with a single note (see
     # drop_absent_configs), not one MISSING warning per variant.
     "cmake-build-gnu",                                 # non-OMP GNU

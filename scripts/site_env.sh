@@ -231,12 +231,12 @@ chunk_drop_dead_make_program() {
 # chunk_gcc_toolchain_opt <form>: the libstdc++ option for clang-like drivers,
 # or nothing when no toolchain dir is set (local: the driver's default).
 #   flags -> -DCMAKE_CXX_FLAGS=--gcc-toolchain=<dir>   (icpx, nvc++)
-#   cmake -> -DGCC_TOOLCHAIN_DIR=<dir>                  (clang, aocc)
+#   cmake -> -DCHUNK_GCC_TOOLCHAIN_DIR=<dir>                  (clang, aocc)
 chunk_gcc_toolchain_opt() {
     [ -z "$CHUNK_GCC_TOOLCHAIN_DIR" ] && return 0
     case $1 in
         flags) echo "-DCMAKE_CXX_FLAGS=--gcc-toolchain=$CHUNK_GCC_TOOLCHAIN_DIR" ;;
-        cmake) echo "-DGCC_TOOLCHAIN_DIR=$CHUNK_GCC_TOOLCHAIN_DIR" ;;
+        cmake) echo "-DCHUNK_GCC_TOOLCHAIN_DIR=$CHUNK_GCC_TOOLCHAIN_DIR" ;;
     esac
 }
 

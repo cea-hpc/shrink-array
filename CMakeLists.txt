@@ -21,9 +21,48 @@ endif()
 option(SHRINK_ARRAY_BUILD_EXAMPLES "Build the examples, benchmarks and validation harnesses" ${SHRINK_ARRAY_IS_TOP_LEVEL})
 option(SHRINK_ARRAY_BUILD_TESTS "Register the tests (include(CTest))" ${SHRINK_ARRAY_IS_TOP_LEVEL})
 
+# The options had no prefix until 0.3 (OMP, SANITIZER, CHECK_OPTIM, ...): a name
+# a project that takes this one in may use for something else, in the cache they
+# share. They are CHUNK_ ones now. The former names are still read, with a
+# message, when this project is the top-level one -- never as a subproject,
+# where the name may be the consumer's.
+if(SHRINK_ARRAY_IS_TOP_LEVEL)
+    foreach(_chunk_renamed IN ITEMS
+            "INTEL_ICPX_GLOB=CHUNK_INTEL_ICPX_GLOB"
+            "INTEL_ICPX=CHUNK_INTEL_ICPX"
+            "INTEL_LIBM_DIR=CHUNK_INTEL_LIBM_DIR"
+            "ONEAPI_NO_INTEL_LIBS=CHUNK_ONEAPI_NO_INTEL_LIBS"
+            "ONEAPI_FAST_FP=CHUNK_ONEAPI_FAST_FP"
+            "ONEAPI_XHOST=CHUNK_ONEAPI_XHOST"
+            "ARMPL_LIBM_DIR=CHUNK_ARMPL_LIBM_DIR"
+            "HAVE_AGGRESSIVE_COMPRESSION=CHUNK_AGGRESSIVE_COMPRESSION_DEFAULT"
+            "GCC_TOOLCHAIN_DIR=CHUNK_GCC_TOOLCHAIN_DIR"
+            "ENABLE_IWYU=CHUNK_ENABLE_IWYU"
+            "USE_LIBCXX=CHUNK_USE_LIBCXX"
+            "USE_GPERF=CHUNK_USE_GPERF"
+            "USE_MOLD=CHUNK_USE_MOLD"
+            "CHECK_OPTIM=CHUNK_CHECK_OPTIM"
+            "SANITIZER=CHUNK_SANITIZER"
+            "OMP=CHUNK_OPENMP")
+        string(REPLACE "=" ";" _chunk_renamed "${_chunk_renamed}")
+        list(GET _chunk_renamed 0 _chunk_former)
+        list(GET _chunk_renamed 1 _chunk_name)
+        if(DEFINED CACHE{${_chunk_former}})
+            message(DEPRECATION "-D${_chunk_former} is -D${_chunk_name} now (the former name goes at the next minor version)")
+            if(NOT DEFINED CACHE{${_chunk_name}})
+                set(${_chunk_name} "$CACHE{${_chunk_former}}" CACHE STRING "(given as ${_chunk_former})")
+            endif()
+            unset(${_chunk_former} CACHE)
+        endif()
+    endforeach()
+    unset(_chunk_renamed)
+    unset(_chunk_former)
+    unset(_chunk_name)
+endif()
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-option(CHECK_OPTIM "Enable runtime invariant checks in release builds" OFF)
+option(CHUNK_CHECK_OPTIM "Enable runtime invariant checks in release builds" OFF)
 option(CHUNK_FORCE_LEDGER "Keep the pool ledger active under OpenMP (off by default there: its global mutex serialises every alloc/free)" OFF)
 
 # An emptied slab would otherwise keep its resident pages: the allocator never
@@ -86,40 +125,40 @@ option(CHUNK_SECOND_VALUE_INDEXED "zero_any: store second values as 4-byte ident
 # builds it so they keep compiling.
 option(CHUNK_MM_PROTECT "Read-only (mprotect) constant buffers: a stray write to a compressed chunk faults" OFF)
 
-# CHUNK_STATS: compression statistics (chunk_stats.h), printed by ParamChunk::chunk_stats().
-option(CHUNK_STATS "Collect compression statistics (ParamChunk::chunk_stats())" OFF)
+# CHUNK_STATS: compression statistics (chunk_stats.h), printed by Runtime::chunk_stats().
+option(CHUNK_STATS "Collect compression statistics (Runtime::chunk_stats())" OFF)
 
 # ── Sanitizer option ──────────────────────────────────────────────────────────
-set(SANITIZER "none" CACHE STRING "Sanitizer to enable: none, thread, address, undefined, token")
-set_property(CACHE SANITIZER PROPERTY STRINGS none thread address undefined token)
+set(CHUNK_SANITIZER "none" CACHE STRING "Sanitizer to enable: none, thread, address, undefined, token")
+set_property(CACHE CHUNK_SANITIZER PROPERTY STRINGS none thread address undefined token)
 
-message(STATUS "Sanitizer: ${SANITIZER}")
+message(STATUS "Sanitizer: ${CHUNK_SANITIZER}")
 
 # ── Threading backend ─────────────────────────────────────────────────────────
 # CHUNK_THREADS picks the backend the library runs its threads on
 # (docs/threading_backends.md): openmp, std (std::jthread workers of the
 # library's own, no OpenMP: OMP is set OFF) or serial. Empty (the default):
-# from OMP, as before -- the scripts pass -DOMP=ON. Set, it wins and sets OMP
+# from OMP, as before -- the scripts pass -DCHUNK_OPENMP=ON. Set, it wins and sets OMP
 # to match.
-set(CHUNK_THREADS "" CACHE STRING "Threading backend: openmp, std, serial (empty: openmp when OMP=ON, serial otherwise)")
+set(CHUNK_THREADS "" CACHE STRING "Threading backend: openmp, std, serial (empty: openmp when CHUNK_OPENMP=ON, serial otherwise)")
 set_property(CACHE CHUNK_THREADS PROPERTY STRINGS "" openmp std serial)
 if(NOT CHUNK_THREADS STREQUAL "")
     if(CHUNK_THREADS STREQUAL "std")
-        set(OMP OFF CACHE BOOL "Build with OpenMP (the parallel library and examples)" FORCE)
+        set(CHUNK_OPENMP OFF CACHE BOOL "Build with OpenMP (the parallel library and examples)" FORCE)
     elseif(CHUNK_THREADS STREQUAL "openmp")
-        set(OMP ON CACHE BOOL "Build with OpenMP (the parallel library and examples)" FORCE)
+        set(CHUNK_OPENMP ON CACHE BOOL "Build with OpenMP (the parallel library and examples)" FORCE)
     elseif(CHUNK_THREADS STREQUAL "serial")
-        set(OMP OFF CACHE BOOL "Build with OpenMP (the parallel library and examples)" FORCE)
+        set(CHUNK_OPENMP OFF CACHE BOOL "Build with OpenMP (the parallel library and examples)" FORCE)
     else()
         message(FATAL_ERROR "CHUNK_THREADS='${CHUNK_THREADS}': expected openmp, std or serial")
     endif()
 endif()
 
 # ── OpenMP ────────────────────────────────────────────────────────────────────
-# Read by every target of the tree; the scripts pass -DOMP=ON. OFF (as an
+# Read by every target of the tree; the scripts pass -DCHUNK_OPENMP=ON. OFF (as an
 # undeclared variable read) builds the serial library.
-option(OMP "Build with OpenMP (the parallel library and examples)" OFF)
-if(OMP)
+option(CHUNK_OPENMP "Build with OpenMP (the parallel library and examples)" OFF)
+if(CHUNK_OPENMP)
     set(CHUNK_THREADS_BACKEND openmp)
 elseif(CHUNK_THREADS STREQUAL "std")
     set(CHUNK_THREADS_BACKEND std)
@@ -152,14 +191,14 @@ if(CHUNK_WITH_TBB)
         message(STATUS "oneTBB ${TBB_VERSION}: the TBB adaptor's validation is built")
     endif()
 endif()
-if(OMP)
+if(CHUNK_OPENMP)
     find_package(OpenMP 4.5 REQUIRED)
     set(CMAKE_LIBRARY_PATH /usr/local/lib/x86_64-unknown-linux-gnu ${CMAKE_LIBRARY_PATH})
 endif()
 
 # ── Options ───────────────────────────────────────────────────────────────────
 
-set(CHUNK_OMP ${OMP})
+set(CHUNK_OMP ${CHUNK_OPENMP})
 
 if(SHRINK_ARRAY_BUILD_TESTS)
     # No CDash dashboard targets (Nightly*, Continuous*, Experimental*): there
@@ -187,7 +226,7 @@ endif()
 set(CHUNK_STATIC_SIZES "auto" CACHE STRING
     "Compile-time chunk sizes built (semicolon list, powers of two or multiples of 64), or auto: 256;1024, 256 alone in a top-level Debug or sanitizer build")
 if(CHUNK_STATIC_SIZES STREQUAL "auto")
-    if(SHRINK_ARRAY_IS_TOP_LEVEL AND (CMAKE_BUILD_TYPE STREQUAL "Debug" OR NOT SANITIZER STREQUAL "none"))
+    if(SHRINK_ARRAY_IS_TOP_LEVEL AND (CMAKE_BUILD_TYPE STREQUAL "Debug" OR NOT CHUNK_SANITIZER STREQUAL "none"))
         set(CHUNK_STATIC_SIZES "256")
     else()
         set(CHUNK_STATIC_SIZES "256;1024")
@@ -197,10 +236,10 @@ endif()
 set(CHUNK_STATIC_SIZES_BUILT "${CHUNK_STATIC_SIZES}" CACHE INTERNAL "CHUNK_STATIC_SIZES as resolved")
 
 # ── OMPT detection (Clang/IntelLLVM only) ────────────────────────────────────
-if(OMP)
+if(CHUNK_OPENMP)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
         # TSan is incompatible with OMPT instrumentation
-        if(NOT SANITIZER STREQUAL "thread")
+        if(NOT CHUNK_SANITIZER STREQUAL "thread")
             # Recorded in chunk/build_options.h (CHUNK_OPT_OMPT); also read
             # for the targets that exist only with the OMPT tool
             # (examples/multi-mat's embedded-compression executable).
@@ -225,9 +264,9 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     # OFF: the standard library is the one the compiler picks by itself
     # (libstdc++ on Linux). ON asked for a libc++ most installations of Clang
     # do not come with, and the first configure of a newcomer failed on it.
-    option(USE_LIBCXX "Use Clang libc++ instead of libstdc++" OFF)
+    option(CHUNK_USE_LIBCXX "Use Clang libc++ instead of libstdc++" OFF)
 
-    if(USE_LIBCXX)
+    if(CHUNK_USE_LIBCXX)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lc++ -lc++abi")
     else()
@@ -238,14 +277,14 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         else()
             set(_chunk_default_gcc_toolchain "")
         endif()
-        set(GCC_TOOLCHAIN_DIR "${_chunk_default_gcc_toolchain}" CACHE PATH "Path to GCC toolchain (empty: the driver's default)")
+        set(CHUNK_GCC_TOOLCHAIN_DIR "${_chunk_default_gcc_toolchain}" CACHE PATH "Path to GCC toolchain (empty: the driver's default)")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libstdc++")
-        if(GCC_TOOLCHAIN_DIR AND NOT EXISTS "${GCC_TOOLCHAIN_DIR}")
+        if(CHUNK_GCC_TOOLCHAIN_DIR AND NOT EXISTS "${CHUNK_GCC_TOOLCHAIN_DIR}")
             # A cache made before this check (or copied from the CEA) would
             # otherwise hide every standard header.
-            message(WARNING "GCC_TOOLCHAIN_DIR=${GCC_TOOLCHAIN_DIR} does not exist: using the driver's default")
-        elseif(GCC_TOOLCHAIN_DIR)
-            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --gcc-toolchain=${GCC_TOOLCHAIN_DIR}")
+            message(WARNING "CHUNK_GCC_TOOLCHAIN_DIR=${CHUNK_GCC_TOOLCHAIN_DIR} does not exist: using the driver's default")
+        elseif(CHUNK_GCC_TOOLCHAIN_DIR)
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --gcc-toolchain=${CHUNK_GCC_TOOLCHAIN_DIR}")
         endif()
     endif()
 endif()
@@ -255,44 +294,44 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "Int
 endif()
 
 # ── Sanitizer flags ───────────────────────────────────────────────────────────
-if(SANITIZER STREQUAL "thread")
+if(CHUNK_SANITIZER STREQUAL "thread")
     message(STATUS "Thread Sanitizer enabled")
     set(SANITIZER_FLAGS "-fsanitize=thread")
     # TSan requires position-independent code
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIE")
 
-elseif(SANITIZER STREQUAL "address")
+elseif(CHUNK_SANITIZER STREQUAL "address")
     message(STATUS "Address Sanitizer enabled")
     set(SANITIZER_FLAGS "-fsanitize=address")
 
-elseif(SANITIZER STREQUAL "undefined")
+elseif(CHUNK_SANITIZER STREQUAL "undefined")
     # UndefinedBehaviorSanitizer: signed overflow, shifts, misaligned and null
     # accesses, out-of-range conversions... The first report stops the program
     # (-fno-sanitize-recover): a test that prints one and goes on would pass.
     message(STATUS "Undefined Behavior Sanitizer enabled")
     set(SANITIZER_FLAGS "-fsanitize=undefined -fno-sanitize-recover=undefined")
 
-elseif(SANITIZER STREQUAL "token")
+elseif(CHUNK_SANITIZER STREQUAL "token")
     # AllocToken (Clang >= 22): every malloc / calloc / realloc / operator new
     # is rewritten into __alloc_token_<name>(..., token), the token being a
     # hash of the allocated TYPE. It is instrumentation only: neither
     # compiler-rt nor the packaged Scudo ships the __alloc_token_* entry
     # points, so the program has to provide them or the link fails.
     if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_VERSION VERSION_LESS 22)
-        message(FATAL_ERROR "SANITIZER=token needs Clang >= 22 (-fsanitize=alloc-token); "
+        message(FATAL_ERROR "CHUNK_SANITIZER=token needs Clang >= 22 (-fsanitize=alloc-token); "
                             "got ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
     endif()
     message(STATUS "Alloc Token instrumentation enabled")
     set(SANITIZER_FLAGS "-fsanitize=alloc-token")
 
-elseif(NOT SANITIZER STREQUAL "none")
-    message(FATAL_ERROR "Unknown sanitizer '${SANITIZER}'. Valid values: none, thread, address, undefined, token")
+elseif(NOT CHUNK_SANITIZER STREQUAL "none")
+    message(FATAL_ERROR "Unknown sanitizer '${CHUNK_SANITIZER}'. Valid values: none, thread, address, undefined, token")
 endif()
 
 # Apply the sanitizer flags for EVERY build type.
 #
 # Not only into CMAKE_CXX_FLAGS_DEBUG below, which CMake reads only when
-# CMAKE_BUILD_TYPE=Debug: a RelWithDebInfo build with -DSANITIZER=address would
+# CMAKE_BUILD_TYPE=Debug: a RelWithDebInfo build with -DCHUNK_SANITIZER=address would
 # then configure cleanly, print "Address Sanitizer enabled", and produce an
 # UNinstrumented binary (`nm -C <exe> | grep -c __asan` returns 1 instead of
 # thousands).
@@ -309,9 +348,9 @@ if(SANITIZER_FLAGS)
 endif()
 
 # ── GPerftools option ─────────────────────────────────────────────────────────
-option(USE_GPERF "Enable gperftools CPU profiling" OFF)
+option(CHUNK_USE_GPERF "Enable gperftools CPU profiling" OFF)
 
-if(USE_GPERF)
+if(CHUNK_USE_GPERF)
     message(STATUS "GPerftools profiling enabled")
     # The 'profiler' library
     find_library(GPERF_PROFILER profiler)
@@ -355,7 +394,7 @@ set(CHUNK_DEBUG_INFO "auto" CACHE STRING "Debug information of the optimised bui
 set_property(CACHE CHUNK_DEBUG_INFO PROPERTY STRINGS auto full lines none)
 set(_chunk_debug_info "${CHUNK_DEBUG_INFO}")
 if(_chunk_debug_info STREQUAL "auto")
-    if(CHECK_OPTIM OR NOT SANITIZER STREQUAL "none")
+    if(CHUNK_CHECK_OPTIM OR NOT CHUNK_SANITIZER STREQUAL "none")
         set(_chunk_debug_info "full")
     else()
         set(_chunk_debug_info "lines")
@@ -380,7 +419,7 @@ message(STATUS "Debug information of the optimised builds: ${_chunk_debug_info} 
 # Release flags do -- these lines replace them, and used to drop it, so a
 # release library carried its asserts. Kept where a build is there to check:
 # Debug, CHECK_OPTIM and the sanitizer builds.
-if(CHECK_OPTIM OR NOT SANITIZER STREQUAL "none")
+if(CHUNK_CHECK_OPTIM OR NOT CHUNK_SANITIZER STREQUAL "none")
     set(_chunk_ndebug "")
 else()
     set(_chunk_ndebug " -DNDEBUG")
@@ -422,7 +461,7 @@ set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 set(_rt_probe_libs "")
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     # This project links clang with -stdlib=libstdc++ (--gcc-toolchain=...) when
-    # USE_LIBCXX=OFF, so the runtime C++ lib is gcc's libstdc++. libc++ names are
+    # CHUNK_USE_LIBCXX=OFF, so the runtime C++ lib is gcc's libstdc++. libc++ names are
     # probed harmlessly in case a libc++ build is ever re-enabled.
     list(APPEND _rt_probe_libs libstdc++.so.6 libomp.so
                                libc++.so.1 libc++abi.so.1 libunwind.so.1)
@@ -444,18 +483,18 @@ include(CheckCXXCompilerFlag)
 # callbacks have already printed their lines. -x<target> is what asks for that
 # vendor dispatch, so the default here is -march=native: the clang spelling
 # icpx also takes, same instruction set for the machine it is built on, no
-# -x. ONEAPI_XHOST=ON restores -xHost for a binary that will only ever run on
+# -x. CHUNK_ONEAPI_XHOST=ON restores -xHost for a binary that will only ever run on
 # the Intel machine that built it.
 #
 # If the message persists with -march=native (the feature requirement is
 # recorded either way; only the run on the AMD machine can tell), the last
-# resort is ONEAPI_NO_INTEL_LIBS=ON: it links NO Intel runtime library at all.
+# resort is CHUNK_ONEAPI_NO_INTEL_LIBS=ON: it links NO Intel runtime library at all.
 # That is what it takes -- dropping libirc alone does not link, since libsvml
 # itself needs it (undefined __intel_cpu_features_init_x) -- and the price is
 # the vectorised math: -fveclib=none, so sin/cos go through libm one element
 # at a time.
-option(ONEAPI_XHOST "icpx: build an Intel-only binary (-xHost) instead of one that also runs on AMD" OFF)
-option(ONEAPI_NO_INTEL_LIBS "icpx: link no Intel runtime library (no libirc, no libsvml: no vector math) -- the last resort when the vendor check still fires on a non-Intel CPU" OFF)
+option(CHUNK_ONEAPI_XHOST "icpx: build an Intel-only binary (-xHost) instead of one that also runs on AMD" OFF)
+option(CHUNK_ONEAPI_NO_INTEL_LIBS "icpx: link no Intel runtime library (no libirc, no libsvml: no vector math) -- the last resort when the vendor check still fires on a non-Intel CPU" OFF)
 
 # icpx floating-point model. Unlike GCC and Clang, icpx defaults to
 # -fp-model=fast (-ffast-math): reassociation, and SVML for the vectorised
@@ -466,12 +505,12 @@ option(ONEAPI_NO_INTEL_LIBS "icpx: link no Intel runtime library (no libirc, no 
 # Clang do by default; -fimf-use-svml=true sends the scalar calls to SVML too,
 # so scalar and vector paths call the same routines (not under
 # ONEAPI_NO_INTEL_LIBS: no SVML there, everything goes to libm already).
-# ONEAPI_FAST_FP=ON restores icpx's default, for timings comparable with
+# CHUNK_ONEAPI_FAST_FP=ON restores icpx's default, for timings comparable with
 # campaigns measured before -- the check is then expected to fail.
-option(ONEAPI_FAST_FP "icpx: keep the default -fp-model=fast (the vector oracle check then fails)" OFF)
-if(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM" AND NOT ONEAPI_FAST_FP)
+option(CHUNK_ONEAPI_FAST_FP "icpx: keep the default -fp-model=fast (the vector oracle check then fails)" OFF)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM" AND NOT CHUNK_ONEAPI_FAST_FP)
     add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fp-model=precise>)
-    if(NOT ONEAPI_NO_INTEL_LIBS)
+    if(NOT CHUNK_ONEAPI_NO_INTEL_LIBS)
         add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fimf-use-svml=true>)
     endif()
 endif()
@@ -501,7 +540,7 @@ endif()
 
 if(NOT CHUNK_NATIVE_TUNING)
     message(STATUS "Target flags: none (CHUNK_NATIVE_TUNING=OFF, the caller's apply)")
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM" AND ONEAPI_NO_INTEL_LIBS)
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM" AND CHUNK_ONEAPI_NO_INTEL_LIBS)
         add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-no-intel-lib;-fveclib=none>")
         add_link_options($<$<LINK_LANGUAGE:CXX>:-no-intel-lib>)
     endif()
@@ -509,12 +548,12 @@ elseif(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWith
     if(CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
         add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-tp=host>)
     elseif(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
-        if(ONEAPI_XHOST)
+        if(CHUNK_ONEAPI_XHOST)
             add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-xHost>)
         else()
             add_compile_options(-march=native)
         endif()
-        if(ONEAPI_NO_INTEL_LIBS)
+        if(CHUNK_ONEAPI_NO_INTEL_LIBS)
             add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-no-intel-lib;-fveclib=none>")
             add_link_options($<$<LINK_LANGUAGE:CXX>:-no-intel-lib>)
         endif()
@@ -568,11 +607,11 @@ endif ()
 # mold cuts each link from seconds to tenths. AUTO = use it if found and the
 # toolchain supports -fuse-ld=mold: GNU >= 12.1, Clang, IntelLLVM (clang-based).
 # NVHPC/PGI drive their own link step — never forced there. Sanitizer builds
-# are fine with mold. Force with -DUSE_MOLD=ON/OFF.
-set(USE_MOLD "AUTO" CACHE STRING "Link with mold: AUTO, ON, OFF")
-set_property(CACHE USE_MOLD PROPERTY STRINGS AUTO ON OFF)
+# are fine with mold. Force with -DCHUNK_USE_MOLD=ON/OFF.
+set(CHUNK_USE_MOLD "AUTO" CACHE STRING "Link with mold: AUTO, ON, OFF")
+set_property(CACHE CHUNK_USE_MOLD PROPERTY STRINGS AUTO ON OFF)
 
-if(NOT USE_MOLD STREQUAL "OFF")
+if(NOT CHUNK_USE_MOLD STREQUAL "OFF")
     # CHUNK_MOLD_PATH is set by scripts/compile_all.sh, which resolves mold in a
     # subshell: on x86 the mold module conflicts with the gnu version the build
     # uses, so its path is extracted without letting the module state leak here.
@@ -666,8 +705,8 @@ if(NOT USE_MOLD STREQUAL "OFF")
             message(STATUS "Linker: mold found but ${_mold_link_opts} rejected by "
                            "${CMAKE_CXX_COMPILER_ID} — using the default linker")
         endif()
-    elseif(USE_MOLD STREQUAL "ON")
-        message(FATAL_ERROR "USE_MOLD=ON but mold is absent or unsupported by "
+    elseif(CHUNK_USE_MOLD STREQUAL "ON")
+        message(FATAL_ERROR "CHUNK_USE_MOLD=ON but mold is absent or unsupported by "
                             "${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
     else()
         message(STATUS "Linker: default (mold not found or not supported by "
@@ -726,16 +765,16 @@ endif()
 #   -DCMAKE_JOB_POOLS="compile=2;link=1;heavy=1" -DCHUNK_HEAVY_JOB_POOL=heavy
 set(CHUNK_HEAVY_JOB_POOL "" CACHE STRING "Ninja job pool for the unity-built shrink_bench and validation executables (empty: the default compile pool)")
 
-# Opt-in header hygiene. -DENABLE_IWYU=ON runs include-what-you-use alongside
+# Opt-in header hygiene. -DCHUNK_ENABLE_IWYU=ON runs include-what-you-use alongside
 # each C++ compile, using the project mapping file iwyu.imp (routes *_inline.h
 # implementations to their public facade, ankerl internals to
 # unordered_dense.h, plus the STL bits mappings). IWYU must be on PATH; if it is
 # absent we warn and continue (the build is never blocked). IWYU is slow and
 # noisy, so it stays OFF by default — turn it on for a dedicated hygiene pass:
-#   cmake -B build-iwyu -DENABLE_IWYU=ON ...   &&   cmake --build build-iwyu
+#   cmake -B build-iwyu -DCHUNK_ENABLE_IWYU=ON ...   &&   cmake --build build-iwyu
 # Must be set before the first add_subdirectory() so every target inherits it.
-option(ENABLE_IWYU "Run include-what-you-use during the build (needs iwyu on PATH)" OFF)
-if(ENABLE_IWYU)
+option(CHUNK_ENABLE_IWYU "Run include-what-you-use during the build (needs iwyu on PATH)" OFF)
+if(CHUNK_ENABLE_IWYU)
     find_program(IWYU_EXE NAMES include-what-you-use iwyu)
     if(IWYU_EXE)
         # IWYU parses with its OWN embedded clang, not the project compiler. If
@@ -760,7 +799,7 @@ if(ENABLE_IWYU)
         endif()
         set(_iwyu_map "${CMAKE_CURRENT_SOURCE_DIR}/iwyu.imp")
         if(NOT EXISTS "${_iwyu_map}")
-            message(WARNING "ENABLE_IWYU=ON but mapping file not found: ${_iwyu_map} "
+            message(WARNING "CHUNK_ENABLE_IWYU=ON but mapping file not found: ${_iwyu_map} "
                             "— running IWYU without a mapping file")
             set(CMAKE_CXX_INCLUDE_WHAT_YOU_USE
                 "${IWYU_EXE}" "-Xiwyu" "--max_line_length=100")
@@ -772,7 +811,7 @@ if(ENABLE_IWYU)
             message(STATUS "IWYU: enabled (${IWYU_EXE}), mapping ${_iwyu_map}")
         endif()
     else()
-        message(WARNING "ENABLE_IWYU=ON but include-what-you-use was not found on "
+        message(WARNING "CHUNK_ENABLE_IWYU=ON but include-what-you-use was not found on "
                         "PATH — continuing without it")
     endif()
 endif()
@@ -785,12 +824,12 @@ endif()
 # executable of the build uses the same libm, so check-mode comparisons within
 # a build are unaffected.
 option(SHRINK_INTEL_LIBM "x86-64, non-icpx: link the executables with Intel's libm (libimf) when found" ON)
-set(INTEL_LIBM_DIR "" CACHE PATH "Directory holding libimf.so and libintlc.so (default: $CMPLR_ROOT/lib, then next to icpx)")
+set(CHUNK_INTEL_LIBM_DIR "" CACHE PATH "Directory holding libimf.so and libintlc.so (default: $CMPLR_ROOT/lib, then next to icpx)")
 if(SHRINK_INTEL_LIBM AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
    AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
     set(_imf_hints "")
-    if(INTEL_LIBM_DIR)
-        list(APPEND _imf_hints "${INTEL_LIBM_DIR}")
+    if(CHUNK_INTEL_LIBM_DIR)
+        list(APPEND _imf_hints "${CHUNK_INTEL_LIBM_DIR}")
     endif()
     if(DEFINED ENV{CMPLR_ROOT})
         list(APPEND _imf_hints "$ENV{CMPLR_ROOT}/lib")
@@ -801,15 +840,15 @@ if(SHRINK_INTEL_LIBM AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
     # there, and the omp-llvm build on Milan silently linked glibc's libm
     # (34.6% of the zero_any_256 profile). INTEL_ICPX names one; otherwise the
     # newest match of INTEL_ICPX_GLOB is taken.
-    set(INTEL_ICPX "" CACHE FILEPATH "icpx whose libimf to link when icpx is not in PATH (default: newest match of INTEL_ICPX_GLOB)")
-    set(INTEL_ICPX_GLOB "/ccc/products/icx-*/system/default/*/bin/icpx" CACHE STRING
+    set(CHUNK_INTEL_ICPX "" CACHE FILEPATH "icpx whose libimf to link when icpx is not in PATH (default: newest match of CHUNK_INTEL_ICPX_GLOB)")
+    set(CHUNK_INTEL_ICPX_GLOB "/ccc/products/icx-*/system/default/*/bin/icpx" CACHE STRING
         "Where to look for an installed icpx when it is not in PATH (SHRINK_INTEL_LIBM)")
     set(_shrink_icpx_used "${_shrink_icpx}")
     if(NOT _shrink_icpx)
-        if(INTEL_ICPX AND EXISTS "${INTEL_ICPX}")
-            set(_shrink_icpx_used "${INTEL_ICPX}")
-        elseif(INTEL_ICPX_GLOB)
-            file(GLOB _icpx_candidates LIST_DIRECTORIES false ${INTEL_ICPX_GLOB})
+        if(CHUNK_INTEL_ICPX AND EXISTS "${CHUNK_INTEL_ICPX}")
+            set(_shrink_icpx_used "${CHUNK_INTEL_ICPX}")
+        elseif(CHUNK_INTEL_ICPX_GLOB)
+            file(GLOB _icpx_candidates LIST_DIRECTORIES false ${CHUNK_INTEL_ICPX_GLOB})
             if(_icpx_candidates)
                 if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.18)
                     list(SORT _icpx_candidates COMPARE NATURAL ORDER DESCENDING)
@@ -856,7 +895,7 @@ if(SHRINK_INTEL_LIBM AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
         # workstation that merely has oneAPI installed.
         add_link_options("-L${_imf_dir}" "LINKER:-rpath,${_imf_dir}")
     else()
-        message(STATUS "Intel libm: not found -- glibc libm (set INTEL_LIBM_DIR, or load the oneAPI environment)")
+        message(STATUS "Intel libm: not found -- glibc libm (set CHUNK_INTEL_LIBM_DIR, or load the oneAPI environment)")
     endif()
 endif()
 
@@ -869,15 +908,15 @@ endif()
 # same seed, RHEL 9.6 glibc vs armpl 25.07), zero_any_dyn 8.30 -> 8.12 s,
 # zero_any_256 6.20 -> 6.23 s, zero_one_value_256 5.76 -> 5.75 s -- noise; RHEL 9's
 # aarch64 libm is on par with ArmPL's for these calls. Kept for re-measuring:
-# -DSHRINK_ARM_LIBM=ON -DARMPL_LIBM_DIR=<dir of libamath.so>; the executables
+# -DSHRINK_ARM_LIBM=ON -DCHUNK_ARMPL_LIBM_DIR=<dir of libamath.so>; the executables
 # then carry an rpath and run without the module.
 option(SHRINK_ARM_LIBM "aarch64, GNU/Clang: link the executables with ArmPL's libamath when found (default OFF: no measured gain on Grace)" OFF)
-set(ARMPL_LIBM_DIR "" CACHE PATH "Directory holding libamath.so (default: from the armpl module, $ARMPL_DIR/lib)")
+set(CHUNK_ARMPL_LIBM_DIR "" CACHE PATH "Directory holding libamath.so (default: from the armpl module, $ARMPL_DIR/lib)")
 if(SHRINK_ARM_LIBM AND CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64"
    AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
     set(_amath_hints "")
-    if(ARMPL_LIBM_DIR)
-        list(APPEND _amath_hints "${ARMPL_LIBM_DIR}")
+    if(CHUNK_ARMPL_LIBM_DIR)
+        list(APPEND _amath_hints "${CHUNK_ARMPL_LIBM_DIR}")
     endif()
     if(DEFINED ENV{ARMPL_DIR})
         list(APPEND _amath_hints "$ENV{ARMPL_DIR}/lib")
@@ -898,7 +937,7 @@ if(SHRINK_ARM_LIBM AND CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64"
         link_libraries("${SHRINK_LIBAMATH}")
         add_link_options("LINKER:-rpath,${_amath_dir}")
     else()
-        message(STATUS "ArmPL libm: libamath not found -- glibc libm (load the armpl module before cmake, or set ARMPL_LIBM_DIR)")
+        message(STATUS "ArmPL libm: libamath not found -- glibc libm (load the armpl module before cmake, or set CHUNK_ARMPL_LIBM_DIR)")
     endif()
 endif()
 
@@ -930,7 +969,7 @@ endif()
 # change. Decided here, before the library: see CHUNK_TEST_HOOKS below.
 if(DEFINED CHUNK_BUILD_VALIDATION)
     set(_build_validation ${CHUNK_BUILD_VALIDATION})
-elseif(CMAKE_BUILD_TYPE STREQUAL "Debug" OR CHECK_OPTIM OR NOT SANITIZER STREQUAL "none")
+elseif(CMAKE_BUILD_TYPE STREQUAL "Debug" OR CHUNK_CHECK_OPTIM OR NOT CHUNK_SANITIZER STREQUAL "none")
     set(_build_validation ON)
 else()
     set(_build_validation OFF)
@@ -948,7 +987,7 @@ set(CHUNK_TEST_HOOKS ${_build_validation})
 add_subdirectory(chunk)
 
 if(NOT CHUNK_STD_ALLOC)
-    set(ALLOCATORS_OMP ${OMP})
+    set(ALLOCATORS_OMP ${CHUNK_OPENMP})
     set(ALLOCATORS_THREADED ${CHUNK_THREADED})
     set(ALLOCATORS_THREADS_BACKEND ${CHUNK_THREADS_BACKEND})
     add_subdirectory(fast_allocators)

@@ -58,7 +58,7 @@ namespace zero_one_value
  *          Booleans, two containers, chosen by type (docs/variants.md, section 2):
  *            - Array<bool>: one byte per element in a materialised chunk, a plain
  *              byte store per write;
- *            - Array<Bit>, spelled ArrayChunkBits<> (chunk/array_chunk_bits.h):
+ *            - Array<Bit>, spelled BitArray<> (chunk/bit_array.h):
  *              one bit per element, 8 per byte -- the layout of std::vector<bool>
  *              -- for an atomic read-modify-write of a 64-bit word per write, so
  *              that two threads may write neighbouring elements, which
@@ -236,7 +236,13 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      * @brief The array-wide second constant, read from the shared registry.
      * @return the registered second value; always true for bool
      */
-    [[nodiscard]] T get_second_value() const noexcept;
+    [[nodiscard]] T second_value() const noexcept;
+
+    /// @brief Former name of second_value().
+    [[deprecated("renamed second_value()")]] [[nodiscard]] T get_second_value() const noexcept
+    {
+        return second_value();
+    }
 
     /// @brief Full registry tuple for this array: second value, its index, num_tab.
     [[nodiscard]] InfArrayT get_info_second_value() const noexcept
@@ -311,7 +317,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      *          miss), then compresses materialised chunks that are fully one
      *          constant; those that survive are reported on stderr.
      * @note A diagnostic, not the engine (driven by the write path and
-     *       manage_ompt.h's phase transitions).
+     *       phases.h's phase transitions).
      * @param team the team the scan is shared over (the one compress() opens,
      *             or the caller's region)
      */

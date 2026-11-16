@@ -86,10 +86,10 @@
 
 #include "chunk/zero_one_value_array.h" // zero_one_value::Array
 #include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
+#include "chunk/runtime.h"              // Runtime::init
 #include "chunk/config.h"               // chunk_config::use_zero_any, build_config::use_openmp
-#include "chunk/threads.h"              // pmp::max_threads
-#include "chunk/manage_ompt.h"          // shrink_array::begin_parallel_phase, finalize_parallel_phase
+#include "chunk/threads.h"              // shrink_array::max_threads
+#include "chunk/phases.h"               // shrink_array::begin_parallel_phase, finalize_parallel_phase
 #include "chunk/print.h"                // shrink_array::println
 
 
@@ -155,14 +155,14 @@ constexpr int    max_constants  = static_cast<int>(std::size(second_value));
 // ── Phase brackets: no-ops under OMPT (the callbacks do it) ─────────────────
 static void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
 }
 static void end_phase(Array<double>& arr)
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -227,7 +227,7 @@ static double plain(long index, int iter)
 int main(int argc, char** argv)
 try
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     long n_elems = 1L << 28;
     int  iters   = 20;
@@ -271,7 +271,8 @@ try
     const long nchunks  = n_elems / chunk_sz;
 
     println("=== variant_compare [{}]  n={}  chunk_size={}  chunks={}  iters={}  constants={}  threads={}{} ===",
-            variant_name(), n_elems, chunk_sz, nchunks, iters, nconst, pmp::max_threads(), verify ? "  (verify)" : "");
+            variant_name(), n_elems, chunk_sz, nchunks, iters, nconst, shrink_array::max_threads(),
+            verify ? "  (verify)" : "");
 
     Array<double> arr(static_cast<int>(n_elems));
     maybe_declare_second_value(arr, second_value[0]);
@@ -387,7 +388,7 @@ try
 
     // The chunks holding data: the others are compressed (the array's last
     // chunk, past n_elems, holds none).
-    const long compressed = nchunks - arr.get_nb_chunk_written();
+    const long compressed = nchunks - arr.written_chunk_count();
 
     const double total = t_const + t_plain + t_read + t_rmw;
     println("time (s)    const {:8.3f} | plain {:8.3f} | read {:8.3f} | rmw {:8.3f} | total {:8.3f}", t_const, t_plain,

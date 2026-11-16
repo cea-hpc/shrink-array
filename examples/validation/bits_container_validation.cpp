@@ -15,7 +15,7 @@
  */
 
 // ============================================================================
-// ArrayChunkBits (bools packed 8 per byte) against std::vector<bool>.
+// BitArray (bools packed 8 per byte) against std::vector<bool>.
 // ============================================================================
 //
 //   1. round trip: materialise, write runs of all-false / all-true / mixed
@@ -50,7 +50,7 @@
 //      active size (capped at cst_buffer_size), which it leaves unchanged --
 //      an array of another type created next is born at it.
 //
-// zero_one_value builds only (ArrayChunkBits is zero_one_value::Array<Bit>). Exit 0 = pass.
+// zero_one_value builds only (BitArray is zero_one_value::Array<Bit>). Exit 0 = pass.
 
 #include <algorithm> // std::min
 #include <cstdint>   // std::uint64_t, std::uint32_t, std::uint8_t (the copy source)
@@ -60,14 +60,14 @@
 #include <vector>    // std::vector
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int (zero_one_value::Array<bool>)
-#include "chunk/array_chunk_bits.h"      // ArrayChunkBits, Bit (and zero_one_value::Array with them)
+#include "chunk/bit_array.h"             // BitArray, Bit (and zero_one_value::Array with them)
 #include "chunk/chunk_size_advisor.h"    // ChunkSizeAdvisor
-#include "chunk/array_chunk_range_ops.h" // fill_range, copy_range, and their _mt forms
-#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"                // build_config::chunk_dynamic, build_config::has_not_ompt
+#include "chunk/range_ops.h"             // fill_range, copy_range, and their _mt forms
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
+#include "chunk/config.h"                // build_config::chunk_dynamic, build_config::needs_explicit_phases
 #include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h"    // arg_number (checked, not atoi)
 #include "chunk/print.h"                 // shrink_array::println
 
@@ -83,14 +83,14 @@ namespace
 
 void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
 }
 void end_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -105,7 +105,7 @@ bool varied(long index)
     return (index % 3) == 0 || (index % 7) == 2;
 }
 
-long compare(const ArrayChunkBits<>& arr, const std::vector<bool>& ref, std::string_view step)
+long compare(const BitArray<>& arr, const std::vector<bool>& ref, std::string_view step)
 {
     long bad   = 0;
     long first = -1;
@@ -131,7 +131,7 @@ long compare(const ArrayChunkBits<>& arr, const std::vector<bool>& ref, std::str
 
 int round_trip(long count)
 {
-    ArrayChunkBits<>  arr(count);
+    BitArray<>        arr(count);
     std::vector<bool> ref(static_cast<std::size_t>(count), false);
     int               fails = 0;
 
@@ -227,8 +227,8 @@ int round_trip(long count)
 
 int neighbours(long count)
 {
-    ArrayChunkBits<> arr(count);
-    int              fails = 0;
+    BitArray<> arr(count);
+    int        fails = 0;
     // Two passes, set then clear half: each word written by every thread in both.
 #pragma omp parallel
     {
@@ -276,7 +276,7 @@ int birth_size()
     }
     const unsigned int          active = active_chunk_size();
     const unsigned int          expect = std::min(active * packed_bit_birth_factor, cst_buffer_size);
-    ArrayChunkBits<>            arr(1L << 16);
+    BitArray<>                  arr(1L << 16);
     zero_one_value::Array<bool> bools(1L << 16);
     int                         fails = 0;
     if (arr.chunk_size() != expect || active_chunk_size() != active || bools.chunk_size() != active)
@@ -296,12 +296,12 @@ int birth_size()
 
 int surface()
 {
-    ArrayChunkBits<> arr(1000);
-    int              fails = 0;
-    arr[3]                 = true;
-    const bool b3          = arr[3];
-    const bool b4          = arr[4];
-    arr[4]                 = !b4;
+    BitArray<> arr(1000);
+    int        fails = 0;
+    arr[3]           = true;
+    const bool b3    = arr[3];
+    const bool b4    = arr[4];
+    arr[4]           = !b4;
     fails += !(b3 && !b4 && arr[4] == true && arr[3] == b3 && arr[5] == false);
     if (fails)
     {
@@ -313,7 +313,7 @@ int surface()
 
 int logical_ops(long count)
 {
-    ArrayChunkBits<>  arr(count);
+    BitArray<>        arr(count);
     std::vector<bool> ref(static_cast<std::size_t>(count), false);
     const auto        opnd  = [](long i, int k) { return (((i * 7) + (k * 3)) % 5) < 2; };
     int               fails = 0;
@@ -369,7 +369,7 @@ int logical_ops(long count)
     }
 
     // A proxy of the same container as the operand.
-    ArrayChunkBits<> small(8);
+    BitArray<> small(8);
     small[0] = true;
     arr[0]   = false;
     arr[0] |= small[0];
@@ -388,8 +388,8 @@ int logical_ops(long count)
 
 int advisor_and_rechunk(long count)
 {
-    ArrayChunkBits<> arr(count);
-    int              fails = 0;
+    BitArray<> arr(count);
+    int        fails = 0;
     if constexpr (build_config::chunk_dynamic)
     {
         arr.rechunk_to(256); // room for a finer row (the advisor stops at 64)
@@ -515,7 +515,7 @@ int advisor_and_rechunk(long count)
 
 int bulk_ranges(long count)
 {
-    ArrayChunkBits<>  arr(count);
+    BitArray<>        arr(count);
     std::vector<bool> ref(static_cast<std::size_t>(count), false);
     const auto        chunk_sz = static_cast<long>(arr.chunk_size());
     int               fails    = 0;
@@ -608,7 +608,7 @@ int bulk_ranges(long count)
 
 int parallel_fill(long count)
 {
-    ArrayChunkBits<>  arr(count);
+    BitArray<>        arr(count);
     std::vector<bool> ref(static_cast<std::size_t>(count), false);
     int               fails = 0;
 
@@ -653,7 +653,7 @@ int parallel_fill(long count)
 
 int parallel_copy_transform(long count)
 {
-    ArrayChunkBits<>  arr(count);
+    BitArray<>        arr(count);
     std::vector<bool> ref(static_cast<std::size_t>(count), false);
     int               fails = 0;
 
@@ -718,7 +718,7 @@ int run(int argc, char** argv)
     // 85 runs: whole runs and whole chunks at every size the harness is built at.
     constexpr long default_n = 85 * run_len;
     const long     count     = argc > 1 ? shrink_array::arg_number<long>(argv[1], default_n, "N") : default_n;
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     println("=== bits_container_validation  N={}  threads={} ===", count, CHUNK_PMP_MAX_THREADS);
     int fails = 0;
@@ -733,7 +733,7 @@ int run(int argc, char** argv)
     fails += parallel_copy_transform(count);
 
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
 
     println("[bits] {}", fails == 0 ? "=== ALL CHECKS PASSED ===" : "=== FAILURES ===");
     return fails;

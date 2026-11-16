@@ -60,6 +60,17 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `scripts/compile_all.sh --list-targets`, `--list-execs`, `--list`: the configurations
+  `--target` accepts (configured here or not, x86-64 or ARM only), the targets `--exec` accepts
+  in each configured build directory, or both, without building; they honour `--target=<glob>`
+  and `--exec=<glob>`.
+- `scripts/compile_all.sh` builds with Arm Compiler for Linux on ARM (the `acfl` family:
+  `omp-acfl`, `std-acfl`, `omp-acfl-debug`; `--only=acfl`, `--no-acfl`), the ARM counterpart
+  of the x86-only `oneapi` and `aocc`. `armclang++` comes from `CHUNK_ACFL_ROOT` (an install
+  prefix, as `spack location -i acfl` prints it), from the `PATH` (`spack load acfl`), from
+  the newest `$CCCWORKDIR/opt/*/acfl-*` (a Spack install tree there) or from an `acfl` module;
+  none found, the family is skipped. `bench_runner` and `build_arm.txt` list the two
+  optimised builds.
 - `shrink_array::tbb::use_tbb_for_library_teams()` (`chunk/tbb_adaptor.h`), called by every
   adaptor call: under the std backend, the library's own teams (the flush and compression pass of
   `finalize_parallel_phase()`, a re-chunk, a parallel initialisation) take their workers from TBB
@@ -137,6 +148,38 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- The CMake package is `shrink_array`, the project's name: `find_package(shrink_array)`, and
+  targets without the repeated word -- `shrink_array::zero_any`, `shrink_array::zero_any_256`,
+  `shrink_array::zero_any_dyn` (`zero` and `zero_one_value` alike), `shrink_array::vector`,
+  `shrink_array::chunk` -- installed and in the build tree (`add_subdirectory()`,
+  `FetchContent`). Its variables are `shrink_array_STATIC_SIZES`, `shrink_array_DEFAULT_SIZE`,
+  `shrink_array_HAS_DYN`, `shrink_array_OPENMP`, `shrink_array_THREADS`, `shrink_array_OMPT`,
+  `shrink_array_STD_ALLOC`. The project had three names (`shrink-array`, `shrink_array`,
+  `chunk`), and `chunk` is one another package may take in a shared prefix.
+  `find_package(chunk)` and the `chunk::chunk_…` targets still work, with a deprecation
+  message, until the next minor version. Unchanged: the `#include "chunk/…"` paths, the
+  `CHUNK_` options, the names of the library files.
+- CMake options without a prefix have one: `OMP` is `CHUNK_OPENMP`, `SANITIZER` is
+  `CHUNK_SANITIZER`, `CHECK_OPTIM` is `CHUNK_CHECK_OPTIM`, and likewise `CHUNK_USE_LIBCXX`,
+  `CHUNK_USE_MOLD`, `CHUNK_USE_GPERF`, `CHUNK_ENABLE_IWYU`, `CHUNK_GCC_TOOLCHAIN_DIR`,
+  `CHUNK_INTEL_ICPX`, `CHUNK_INTEL_ICPX_GLOB`, `CHUNK_INTEL_LIBM_DIR`, `CHUNK_ONEAPI_FAST_FP`,
+  `CHUNK_ONEAPI_NO_INTEL_LIBS`, `CHUNK_ONEAPI_XHOST`, `CHUNK_ARMPL_LIBM_DIR`;
+  `HAVE_AGGRESSIVE_COMPRESSION` is `CHUNK_AGGRESSIVE_COMPRESSION_DEFAULT`. A project that took
+  the library in with `add_subdirectory()` or `FetchContent` shared those names with it in its
+  cache. The former names are still read, with a deprecation message, when the project is
+  built on its own (`-DOMP=ON` sets `CHUNK_OPENMP`); as a subproject it ignores them.
+- Public names, before the interface is published more widely. `ParamChunk` is `Runtime`
+  (`chunk/runtime.h`), `ParamChunk::init_indexes()` is `Runtime::init()` and
+  `destroy_block_chunk()` is `Runtime::shutdown()`: the façade's name said neither what it is
+  nor what the two calls do. The phase calls are in `chunk/phases.h` (`chunk/manage_ompt.h`
+  named the one build that does not need them) and `build_config::has_not_ompt` is
+  `build_config::needs_explicit_phases`. `ArrayChunkBits` is `BitArray` (`chunk/bit_array.h`);
+  `chunk/array_chunk_range_ops.h` is `chunk/range_ops.h`. `get_second_value()` is
+  `second_value()` and `get_nb_chunk_written()` is `written_chunk_count()`, as `size()` and
+  `chunk_size()` have no `get_`. `max_threads()`, `team_size()` and `thread_rank()` are
+  reachable from `shrink_array::` (they were `shrink_array::pmp::` only). Every former name
+  still compiles: the four headers include the new ones, the others are `[[deprecated]]` and
+  forward. They go at the next minor version; `docs/api.md` has the table.
 - `AllTypeChunk` is now `TypeStateRegistry`, and its two policies
   `TypeStateRegistryParallelInterface` and `TypeStateRegistryDynInterface`: the class is the
   process-wide registry of the per-type managers (`TypeState`), not a chunk. Its files

@@ -11,7 +11,7 @@ if (CHUNK_BUILD_DYN)
     target_link_libraries(advisor_demo PRIVATE chunk_zero_any_dyn)
     target_compile_definitions(advisor_demo PRIVATE
         CHUNK_VARIANT_ZERO_ANY CHUNK_DYNAMIC DYN_CHUNK_SIZE=${SHRINK_BENCH_DYN_SIZE})
-    if (OMP)
+    if (CHUNK_OPENMP)
         find_package(OpenMP REQUIRED)
         target_link_libraries(advisor_demo PUBLIC OpenMP::OpenMP_CXX)
     endif ()

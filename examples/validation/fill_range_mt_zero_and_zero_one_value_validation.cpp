@@ -57,15 +57,15 @@
 #include <cstdio>    // std::fprintf (main)
 #include <exception> // std::exception (main)
 
-#include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
-#include "chunk/array_chunk_range_ops.h" // fill_range_mt
-#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/config.h"                // OmptSuspendCounter, chunk_config::use_zero / use_zero_one_value
-#include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"           // begin_parallel_phase, finalize_parallel_phase_only_flush / _after_flush
-#include "chunk/internal/env_parse.h"    // arg_number (checked, not atoi)
-#include "chunk/print.h"                 // shrink_array::println
+#include "chunk/zero_array.h"           // zero::Array
+#include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#include "chunk/range_ops.h"            // fill_range_mt
+#include "chunk/runtime.h"              // Runtime::init
+#include "chunk/config.h"               // OmptSuspendCounter, chunk_config::use_zero / use_zero_one_value
+#include "chunk/internal/PMP_CHUNK.h"   // CHUNK_PMP_MAX_THREADS
+#include "chunk/phases.h"               // begin_parallel_phase, finalize_parallel_phase_only_flush / _after_flush
+#include "chunk/internal/env_parse.h"   // arg_number (checked, not atoi)
+#include "chunk/print.h"                // shrink_array::println
 
 
 /// The suspension counter read by chunk_config::OMPTcc: non-zero, no OMPT
@@ -101,7 +101,7 @@ static long materialised(const Arr& arr, long nchunks)
 }
 
 /// @brief One parallel phase running @p body over [0, @p count), then the flush and
-///        the compression pass -- the manual phase calls of manage_ompt.h.
+///        the compression pass -- the manual phase calls of phases.h.
 template <typename Fn>
 static void phase(long count, Fn&& body)
 {
@@ -171,7 +171,7 @@ int main(int argc, char** argv)
 try
 {
     const long nchunks = argc > 1 ? shrink_array::arg_number<long>(argv[1], 64, "chunks") : 64;
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     constexpr bool omp = build_config::use_openmp;
     println("=== fill_range_mt_zero_and_zero_one_value_validation  chunks={}  threads={}  ({}) ===", nchunks,

@@ -55,7 +55,7 @@ class TypeStateRegistry;
  *
  * @tparam Enabled build_config::threaded.
  * @tparam AllT    The TypeStateRegistry facade. LOAD-BEARING (as on
- *                 ParamChunkParallelInterface, param_chunk.h): it keeps the
+ *                 RuntimeParallelInterface, runtime.h): it keeps the
  *                 bodies TEMPLATES, so a build instantiates only its own, and
  *                 the calls DEPENDENT, so phase-1 lookup does not resolve them
  *                 against the concrete facade. The two teardown halves are verbs

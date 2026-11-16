@@ -53,13 +53,13 @@
 #include "chunk/zero_array.h"            // zero::Array
 #include "chunk/zero_one_value_array.h"  // zero_one_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
-#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/config.h"                // chunk_config::use_zero_one_value*, build_config::use_openmp / has_not_ompt
-#include "chunk/internal/PMP_CHUNK.h"    // chunk_pmp_set_num_threads, CHUNK_PMP_THREAD_CAPACITY
-#include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/print.h"                 // shrink_array::println
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/config.h" // chunk_config::use_zero_one_value*, build_config::use_openmp / needs_explicit_phases
+#include "chunk/internal/PMP_CHUNK.h" // chunk_pmp_set_num_threads, CHUNK_PMP_THREAD_CAPACITY
+#include "chunk/phases.h"             // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/print.h"              // shrink_array::println
 
-#include "chunk/internal/zero_chunk.h" // release_chunk_pools, destroy_block_chunk
+#include "chunk/internal/zero_chunk.h" // release_chunk_pools, Runtime::shutdown
 #include "validation_harness.h"        // self_command; run() is called by validation_driver.cpp
 
 namespace validation::thread_growth_validation
@@ -69,14 +69,14 @@ using namespace shrink_array;
 
 static void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
 }
 static void end_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -234,7 +234,7 @@ static int run_body(int argc, char** argv)
 
     // 1. The arrays are created under a 2-thread team.
     set_team(2);
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     const long    count = 1L << 16;
     Array<int>    arr(count);
@@ -283,7 +283,7 @@ int run(int argc, char** argv)
     // one in the std-alloc builds (each buffer is a real malloc there).
     const int rc = run_body(argc, argv);
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
     return rc;
 }
 

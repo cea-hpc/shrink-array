@@ -20,7 +20,7 @@
  *        needs from the OpenMP runtime, and nothing more.
  *
  * The chunk library compresses from its write path; what it asks of the
- * application is the PHASES of chunk/manage_ompt.h -- the deferred writes
+ * application is the PHASES of chunk/phases.h -- the deferred writes
  * replayed before they are read, the candidates left over drained when the
  * region ends. This file makes those calls from the runtime's callbacks, so
  * the application source has none:
@@ -52,8 +52,8 @@
 #include <omp-tools.h> // ompt_* (the OMPT tool interface)
 #include <omp.h>       // omp_in_parallel, omp_get_level (on_sync_region)
 
-#include "chunk/config.h"      // OmptSuspendCounter
-#include "chunk/manage_ompt.h" // shrink_array::begin_parallel_phase, finalize_parallel_phase
+#include "chunk/config.h" // OmptSuspendCounter
+#include "chunk/phases.h" // shrink_array::begin_parallel_phase, finalize_parallel_phase
 
 /// @brief The suspension counter the library reads and updates
 ///        (chunk_config::OMPTcc, declared in chunk/config.h): the callbacks

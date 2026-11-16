@@ -37,7 +37,7 @@ exacts, y compris pour les types signés et les offsets négatifs. Entiers seule
 d'équivalent flottant.
 
 La classe est `pattern::Array<T, IntType>`, construite dans la bibliothèque `zero_any`
-(`chunk::chunk_zero_any`, `CHUNK_VARIANT_ZERO_ANY`), en géométrie statique ou dynamique. Code :
+(`shrink_array::zero_any`, `CHUNK_VARIANT_ZERO_ANY`), en géométrie statique ou dynamique. Code :
 `chunk/pattern_array.h`, `chunk/internal/pattern_chunk.h`, `internal/pattern_proxy.h`,
 `internal/motif_region.h` et leurs compagnons _inline.h ; le code partagé de la famille
 bifurque sur le trait `has_motif_state_v` (`chunk/internal/chunk_traits.h`), toujours à la compilation :

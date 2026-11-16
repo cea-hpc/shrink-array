@@ -104,7 +104,7 @@ void ChunkPoolParallelInterface<false, AllT>::release_chunk_pools()
 }
 
 // The one instantiation of the pair: the other thread model's bodies are left
-// uninstantiated rather than #ifdef'd out. Same device as param_chunk.cpp.
+// uninstantiated rather than #ifdef'd out. Same device as runtime.cpp.
 template struct ChunkPoolParallelInterface<build_config::threaded, TypeStateRegistry>;
 
 // --- Build-agnostic free functions over the policy -----------------------
@@ -231,9 +231,9 @@ std::size_t compress_now_and_trim_pools()
     return ens_type_chunk.trim_reuse_pools(0);
 }
 
-void destroy_block_chunk()
+void internal::shutdown_runtime()
 {
-    if (!teardown_outside_region("destroy_block_chunk"))
+    if (!teardown_outside_region("Runtime::shutdown"))
     {
         return;
     }

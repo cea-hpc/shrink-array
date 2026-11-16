@@ -55,3 +55,14 @@ using ::fast_alloc::pmp::team_size;
 using ::fast_alloc::pmp::thread_rank;
 
 } // namespace shrink_array::pmp
+
+namespace shrink_array
+{
+
+// The same three, without the pmp:: of the library's thread backends: what a
+// program writes.
+using ::fast_alloc::pmp::max_threads;
+using ::fast_alloc::pmp::team_size;
+using ::fast_alloc::pmp::thread_rank;
+
+} // namespace shrink_array

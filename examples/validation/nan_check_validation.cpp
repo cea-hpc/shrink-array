@@ -40,7 +40,7 @@
 #include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
 
 #include "chunk/config.h"               // chunk_config::use_zero_any / use_zero_one_value, build_config::do_check
-#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
+#include "chunk/runtime.h"              // Runtime::init
 #include "chunk/print.h"                // shrink_array::println
 #include "chunk/zero_any_array.h"       // zero_any::Array
 #include "chunk/zero_array.h"           // zero::Array
@@ -184,7 +184,7 @@ void write_ordinary(long chunk_sz)
 
 int run(int argc, char** argv)
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
     if (argc > 2 && std::string(argv[1]) == "--case")
     {
         return run_case(argv[2]);

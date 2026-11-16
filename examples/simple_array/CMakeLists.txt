@@ -3,7 +3,7 @@
 add_executable(simple_array_vector simple_array.cpp)
 add_executable(simple_array_chunk  simple_array.cpp)
 
-if (OMP)
+if (CHUNK_OPENMP)
     find_package(OpenMP REQUIRED)
     target_link_libraries(simple_array_vector PUBLIC OpenMP::OpenMP_CXX)
     target_link_libraries(simple_array_chunk  PUBLIC OpenMP::OpenMP_CXX)

@@ -24,7 +24,7 @@
 // chunk sizes, without re-chunking anything:
 //
 //     mem(S) ≈ n_chunks(S) * meta_bytes_per_chunk  +  U_mat(S) * S * sizeof(T)
-//     (S / 8 bytes per materialised chunk for Bit, ArrayChunkBits: storage_units)
+//     (S / 8 bytes per materialised chunk for Bit, BitArray: storage_units)
 //
 //   meta term  : fixed per-chunk cost (sizeof(chunk) + tracking list + dirty
 //                bitset + slack), pushes toward LARGER chunks.

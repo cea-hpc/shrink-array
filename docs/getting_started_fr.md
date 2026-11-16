@@ -46,7 +46,7 @@ la branche `cpp23` demande le C++23, GCC 14 ou plus récent) et CMake ≥ 3.20 :
 ```sh
 cmake -S shrink-array -B build -G Ninja \
       -DCMAKE_BUILD_TYPE=Release \
-      -DOMP=ON \
+      -DCHUNK_OPENMP=ON \
       -DCMAKE_INSTALL_PREFIX=$HOME/opt/shrink-array
 cmake --build build
 cmake --install build
@@ -56,8 +56,8 @@ Les options utiles à l'utilisateur :
 
 | option | défaut | effet |
 |---|---|---|
-| `OMP` | `OFF` | construire avec OpenMP. Un programme qui utilise les tableaux dans des régions OpenMP a besoin d'une bibliothèque construite avec |
-| `CHUNK_THREADS` | vide | backend de threads de la bibliothèque : `openmp`, `std` (des workers `std::jthread` à elle, sans OpenMP) ou `serial` ; vide : `openmp` avec `OMP=ON`, `serial` sinon. Renseigné, il fixe `OMP` en conséquence |
+| `CHUNK_OPENMP` | `OFF` | construire avec OpenMP. Un programme qui utilise les tableaux dans des régions OpenMP a besoin d'une bibliothèque construite avec |
+| `CHUNK_THREADS` | vide | backend de threads de la bibliothèque : `openmp`, `std` (des workers `std::jthread` à elle, sans OpenMP) ou `serial` ; vide : `openmp` avec `CHUNK_OPENMP=ON`, `serial` sinon. Renseigné, il fixe `CHUNK_OPENMP` en conséquence |
 | `CHUNK_STATIC_SIZES` | `auto` | les tailles de chunk fixées à la compilation, une bibliothèque par taille et par variante ; `auto` : `256;1024`, mais `256` seule dans un build Debug ou sanitizer de ce projet (pas d'un projet qui l'inclut) |
 | `CHUNK_BUILD_DYN` | `ON` | construire aussi les bibliothèques dont la taille de chunk est choisie à l'exécution, et peut changer (`_dyn`) |
 | `CHUNK_STD_ALLOC` | `OFF` | allouer les tampons des chunks avec l'allocateur standard plutôt qu'avec `fast_allocators`, fourni avec la bibliothèque (utile sous AddressSanitizer) |
@@ -77,10 +77,10 @@ dispense le programme des appels de phase du §5.
 cmake_minimum_required(VERSION 3.20)
 project(mon_appli LANGUAGES CXX)
 
-find_package(chunk 0.2 REQUIRED)        # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
+find_package(shrink_array 0.2 REQUIRED)        # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
 
 add_executable(mon_appli main.cpp)
-target_link_libraries(mon_appli PRIVATE chunk::chunk_zero_any)
+target_link_libraries(mon_appli PRIVATE shrink_array::zero_any)
 ```
 
 La bibliothèque liée **choisit la variante et la taille de chunk**. Les en-têtes sont les mêmes
@@ -92,13 +92,13 @@ programme les compile comme la bibliothèque.
 
 | cible | variante | taille de chunk |
 |---|---|---|
-| `chunk::chunk_zero`, `chunk::chunk_zero_one_value`, `chunk::chunk_zero_any` | `zero`, `zero_one_value`, `zero_any` | la première de `CHUNK_STATIC_SIZES` (256) |
-| `chunk::chunk_zero_any_1024`, … | | cette taille, fixée à la compilation |
-| `chunk::chunk_zero_any_dyn`, … | | choisie à l'exécution, par tableau (modifiable par `rechunk_to()` ou par le décideur adaptatif) |
-| `chunk::chunk_vector` | aucune : les tableaux sont des `std::vector` | — |
+| `shrink_array::zero`, `shrink_array::zero_one_value`, `shrink_array::zero_any` | `zero`, `zero_one_value`, `zero_any` | la première de `CHUNK_STATIC_SIZES` (256) |
+| `shrink_array::zero_any_1024`, … | | cette taille, fixée à la compilation |
+| `shrink_array::zero_any_dyn`, … | | choisie à l'exécution, par tableau (modifiable par `rechunk_to()` ou par le décideur adaptatif) |
+| `shrink_array::vector` | aucune : les tableaux sont des `std::vector` | — |
 
 Lier **une seule** bibliothèque de variante par programme, et écrire **la classe de cette
-variante** : `zero_any::Array<T>` avec `chunk::chunk_zero_any`. La classe écrite est celle que l'on
+variante** : `zero_any::Array<T>` avec `shrink_array::zero_any`. La classe écrite est celle que l'on
 obtient -- un programme qui nomme `zero_any::Array` la garde quelle que soit la bibliothèque --,
 et un tableau d'une autre variante que celle de la bibliothèque n'est pas pris en charge :
 selon les appels, il ne compile pas ou il plante. Pour laisser l'édition de liens choisir,
@@ -120,11 +120,11 @@ using Array = std::conditional_t<sa::chunk_config::use_zero_any, sa::zero_any::A
               std::conditional_t<sa::chunk_config::use_zero, sa::zero::Array<T>, std::vector<T>>>>;
 ```
 
-Avec lui, `chunk::chunk_vector` construit le même programme sur de simples `std::vector`, ce
+Avec lui, `shrink_array::vector` construit le même programme sur de simples `std::vector`, ce
 qui est la façon la plus simple de comparer mémoire et temps.
 
-`find_package(chunk)` définit aussi `chunk_STATIC_SIZES`, `chunk_DEFAULT_SIZE`,
-`chunk_HAS_DYN`, `chunk_OPENMP`, `chunk_OMPT` et `chunk_STD_ALLOC`, pour un projet qui veut
+`find_package(shrink_array)` définit aussi `shrink_array_STATIC_SIZES`, `shrink_array_DEFAULT_SIZE`,
+`shrink_array_HAS_DYN`, `shrink_array_OPENMP`, `shrink_array_OMPT` et `shrink_array_STD_ALLOC`, pour un projet qui veut
 vérifier ce que contient l'installation.
 
 ## 4. Un premier programme, parallèle et multi-thread
@@ -138,14 +138,14 @@ installation que dans l'arbre des sources.
 #include <utility>                 // std::as_const
 
 #include "chunk/zero_any_array.h"   // shrink_array::zero_any::Array
-#include "chunk/manage_ompt.h"     // parallel_phase
-#include "chunk/param_chunk.h"     // ParamChunk::init_indexes, release_chunk_pools, destroy_block_chunk
+#include "chunk/phases.h"     // parallel_phase
+#include "chunk/runtime.h"     // Runtime::init, release_chunk_pools, Runtime::shutdown
 
 namespace sa = shrink_array;
 
 int main()
 {
-    sa::ParamChunk::init_indexes(true);          // (1) une fois, avant le premier tableau
+    sa::Runtime::init(true);          // (1) une fois, avant le premier tableau
 
     {
         const int n = 1 << 24;                   // 16 M doubles : 128 Mio en std::vector
@@ -169,13 +169,13 @@ int main()
     }                                            // (6) le tableau rend ses chunks
 
     sa::release_chunk_pools();                   // (7) arrêter la bibliothèque
-    sa::destroy_block_chunk();
+    sa::Runtime::shutdown();
 }
 ```
 
-1. **`init_indexes(true)`**, une fois, avant le premier tableau : prépare les blocs
+1. **`init(true)`**, une fois, avant le premier tableau : prépare les blocs
    d'allocation (`true` : gros blocs, le choix habituel). Facultatif : sans lui, le premier
-   tableau du programme lance lui-même `init_indexes(true)`. Les types d'éléments ne se
+   tableau du programme lance lui-même `init(true)`. Les types d'éléments ne se
    déclarent pas : chacun est enregistré à la construction du premier tableau de ce type.
 2. **Un tableau neuf** lit `T{}` partout et n'alloue aucun tampon.
 3. **`parallel_phase()`** ouvre une région parallèle et exécute la lambda sur chaque thread.
@@ -267,9 +267,9 @@ l'autre, un `finalize_parallel_phase()` oublié applique une écriture différé
 si les deux appels sont oubliés, des valeurs sont fausses, sans message. Le programme
 s'arrête, dans tous les builds, sur un `begin_parallel_phase()` sans
 `finalize_parallel_phase()` depuis la région précédente ; les builds de contrôle (Debug,
-`CHECK_OPTIM`) s'arrêtent aussi sur une écriture différée par un thread qui n'a pas appelé
+`CHUNK_CHECK_OPTIM`) s'arrêtent aussi sur une écriture différée par un thread qui n'a pas appelé
 `begin_parallel_phase()`. Placer ces appels sous
-`if constexpr (sa::build_config::has_not_ompt)`, comme ci-dessus, permet de garder un seul source
+`if constexpr (sa::build_config::needs_explicit_phases)`, comme ci-dessus, permet de garder un seul source
 pour les deux runtimes.
 
 `shrink_array::parallel_phase()` écrit la région et les deux appels à votre place, et les omet
@@ -347,9 +347,9 @@ shrink-array, par exemple -- partagent tout cela, ce qui impose quelques règles
 - **Le premier tableau fixe la capacité en threads** (ci-dessus) : au moins 256 threads, ou les
   cœurs, ou `OMP_NUM_THREADS` ; un composant qui ouvre des équipes plus grandes demande
   `CHUNK_THREAD_CAPACITY` fixé avant le premier tableau.
-- **Des appels à l'échelle du processus.** `ParamChunk::init_indexes()` fixe la taille des blocs
+- **Des appels à l'échelle du processus.** `Runtime::init()` fixe la taille des blocs
   d'allocation de tout le processus : un appel, au début, par le programme (un appel ultérieur
-  laisse intacts les tableaux déjà construits). `release_chunk_pools()` et `destroy_block_chunk()`
+  laisse intacts les tableaux déjà construits). `release_chunk_pools()` et `Runtime::shutdown()`
   vident les listes libres de tout le monde (un tableau encore vivant garde ce qu'il lui faut) :
   une fois, à la fin du programme, ou pas du tout. `reclaim_second_values()` couvre tous les
   tableaux d'un type ; `CHUNK_LOG` et `logging::set_sink()` sont des réglages communs à tous.

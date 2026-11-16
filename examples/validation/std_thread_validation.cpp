@@ -88,11 +88,12 @@
 #include "chunk/zero_array.h"            // zero::Array
 #include "chunk/zero_one_value_array.h"  // zero_one_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
-#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
 #include "chunk/config.h"                // chunk_config::use_zero*
 #include "chunk/internal/PMP_CHUNK.h"    // pmp::*, CHUNK_PMP_*, get_thr_rank_fast, chunk_thread_capacity, the registry
-#include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/threads.h"               // shrink_array::thread_rank (the writers' rank, against the registry's)
 #include "chunk/internal/env_parse.h"    // arg_number
 #include "chunk/print.h"                 // shrink_array::println
 #include "chunk/internal/test_hooks.h"   // force_defer_every (the in-phase case)
@@ -228,9 +229,10 @@ void check_writer(Failures& f, std::atomic<int>* rank_seen, int t)
         f.fail();
     }
     const int r = get_thr_rank_fast();
-    if (r < 0 || r >= chunk_thread_capacity() || r != pmp::thread_rank())
+    if (r < 0 || r >= chunk_thread_capacity() || r != shrink_array::thread_rank())
     {
-        println("FAIL: writer rank {} (thread_rank {}, capacity {})", r, pmp::thread_rank(), chunk_thread_capacity());
+        println("FAIL: writer rank {} (thread_rank {}, capacity {})", r, shrink_array::thread_rank(),
+                chunk_thread_capacity());
         f.fail();
     }
     rank_seen[t].store(r, std::memory_order_relaxed);
@@ -695,7 +697,7 @@ int run(int argc, char** argv)
     const long N      = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 18, "N") : (1L << 18);
     const int  phases = argc > 2 ? shrink_array::arg_number<int>(argv[2], 6, "phases") : 6;
 
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     // Writers: the backend's team size (OMP_NUM_THREADS of the test), so the
     // thread ranks reach as far as the std backend's workers do -- and below the
@@ -712,10 +714,10 @@ int run(int argc, char** argv)
     }
 
     // The main thread's rank, before any writer: a registered one, outside any team.
-    if (get_thr_rank_fast() != pmp::thread_rank() || CHUNK_PMP_IN_PARALLEL_REGION)
+    if (get_thr_rank_fast() != shrink_array::thread_rank() || CHUNK_PMP_IN_PARALLEL_REGION)
     {
         println("FAIL: the main thread outside any team: rank {} / thread_rank {}, in_parallel {}", get_thr_rank_fast(),
-                pmp::thread_rank(), CHUNK_PMP_IN_PARALLEL_REGION);
+                shrink_array::thread_rank(), CHUNK_PMP_IN_PARALLEL_REGION);
         return 1;
     }
 
@@ -741,7 +743,7 @@ int run(int argc, char** argv)
     fails += maintenance_refused<int>("int", N, nt, si);
 
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
 
     println("\n[{}] {}", variant_name(), fails == 0 ? "=== STD::THREAD OK ===" : "=== STD::THREAD FAILURES ===");
     return fails == 0 ? 0 : 1;

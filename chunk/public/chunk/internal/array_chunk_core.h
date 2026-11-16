@@ -156,7 +156,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
      * @brief Direct access to one chunk, for bulk range operations.
      *
      * @details NOT part of the container interface: it exposes the chunked
-     *          representation, for the bulk operations of array_chunk_range_ops.h
+     *          representation, for the bulk operations of range_ops.h
      *          (one decision per chunk, not per element). Everything else goes
      *          through operator[].
      *

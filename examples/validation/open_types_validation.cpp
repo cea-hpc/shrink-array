@@ -45,7 +45,7 @@
 //   element against a std::vector reference. Phase brackets as in
 //   compress_roundtrip.
 //
-//   No type is declared up front: ParamChunk::init_indexes(bool) alone, and
+//   No type is declared up front: Runtime::init(bool) alone, and
 //   each array registers its element type at its construction -- the first
 //   Point3 array after a parallel region has run, a Quad array after a Color
 //   one was torn down, and (dyn builds) a type whose first array comes after
@@ -74,12 +74,12 @@
 #include "chunk/zero_array.h"                 // zero::Array
 #include "chunk/zero_one_value_array.h"       // zero_one_value::Array
 #include "chunk/zero_any_array.h"             // zero_any::Array
-#include "chunk/param_chunk.h"                // ParamChunk::init_indexes, register_chunk_size
-#include "chunk/internal/zero_chunk.h"        // release_chunk_pools, destroy_block_chunk
+#include "chunk/runtime.h"                    // Runtime::init, register_chunk_size
+#include "chunk/internal/zero_chunk.h"        // release_chunk_pools, Runtime::shutdown
 #include "chunk/internal/chunk_size_policy.h" // active_chunk_size, set_active_chunk_size, set_thread_chunk_size
-#include "chunk/config.h"             // chunk_config::use_zero_one_value*, build_config::chunk_dynamic / has_not_ompt
+#include "chunk/config.h" // chunk_config::use_zero_one_value*, build_config::chunk_dynamic / needs_explicit_phases
 #include "chunk/internal/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"        // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/phases.h"             // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/print.h"              // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
@@ -140,14 +140,14 @@ struct Pair16
 
 static void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
 }
 static void end_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -313,7 +313,7 @@ int run(int argc, char** argv)
 
     // No type list: each array registers its own element type at its
     // construction (TypeStateRegistry::ensure_manager). The process-wide setup alone.
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     println("=== open_types_validation [variant = {}]  N={}  threads={} ===", variant_name(), count,
             CHUNK_PMP_MAX_THREADS);
@@ -358,7 +358,7 @@ int run(int argc, char** argv)
     const unsigned int base_size = active_chunk_size();
     if constexpr (build_config::chunk_dynamic)
     {
-        ParamChunk::register_chunk_size(2 * base_size);
+        Runtime::register_chunk_size(2 * base_size);
     }
 
     fails += round_trip<Quad>("Quad", count, sq);
@@ -483,7 +483,7 @@ int run(int argc, char** argv)
     }
 
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
 
     println("\n[{}] {}", variant_name(),
             fails == 0 ? "=== OPEN TYPES OK, TEARDOWN OK ===" : "=== OPEN TYPES FAILURES ===");

@@ -54,11 +54,11 @@
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
 #include "chunk/zero_one_value_array.h"  // zero_one_value::Array
-#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"                // build_config::has_not_ompt
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
+#include "chunk/config.h"                // build_config::needs_explicit_phases
 #include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
@@ -79,7 +79,7 @@ constexpr int n_others = 40; ///< arrays declaring a new second value each: seve
 
 void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
@@ -87,7 +87,7 @@ void begin_phase()
 
 void end_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -153,7 +153,7 @@ long check_all(const char* what, const Arr& arr, double value)
 
 int run(int /*argc*/, char** /*argv*/)
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     int fails = 0;
     {
@@ -220,7 +220,7 @@ int run(int /*argc*/, char** /*argv*/)
     }
 
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
 
     println("\n[zero_one_value] {}", fails ? "=== REGISTRY GROWTH FAILED ===" : "=== REGISTRY GROWTH OK ===");
     return fails ? 1 : 0;

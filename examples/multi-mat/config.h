@@ -30,7 +30,7 @@
  * The chunk library compresses from its write path in every OpenMP build: a
  * write that closes a constant run queues its chunk, and a thread whose
  * list fills runs a pass over the candidates. What a pass needs from the
- * application is the PHASES (chunk/manage_ompt.h): a write that lands on a
+ * application is the PHASES (chunk/phases.h): a write that lands on a
  * chunk the pass holds is deferred, and somebody has to replay the deferred
  * writes before they are read -- at the barriers -- and to drain the
  * candidates left when the region ends. Two ways to provide them, two
@@ -49,7 +49,7 @@
  *    nothing. That tool is what the mode stands on, so a build without
  *    OMPT is refused here rather than compiled to a version that loses the
  *    deferred writes: CHUNK_OPT_OMPT is set by the top-level CMakeLists for
- *    Clang and IntelLLVM (OMP=ON, not under TSan); gcc's libgomp has no
+ *    Clang and IntelLLVM (CHUNK_OPENMP=ON, not under TSan); gcc's libgomp has no
  *    OMPT.
  *
  * The presence fraction (a zero_one_value array) is compressed by that engine in
@@ -58,11 +58,11 @@
 
 #include "chunk/internal/PMP_CHUNK.h" // the OpenMP shims of the library (serial build: 1 thread, rank 0)
 #include "chunk/config.h"             // shrink_array::build_config::use_openmp, chunk_config::stats
-#include "chunk/manage_ompt.h"        // shrink_array::begin_parallel_phase, finalize_barrier_phase
+#include "chunk/phases.h"             // shrink_array::begin_parallel_phase, finalize_barrier_phase
 
 #if defined(MULTIMAT_EMBEDDED_COMPRESSION) && !CHUNK_OPT_OMPT
     #error \
-        "multi-mat-embedded rests on the OMPT tool of the chunk library, which this build has not (CHUNK_OPT_OMPT): build with Clang or IntelLLVM, OMP=ON, no TSan -- gcc's libgomp has no OMPT"
+        "multi-mat-embedded rests on the OMPT tool of the chunk library, which this build has not (CHUNK_OPT_OMPT): build with Clang or IntelLLVM, CHUNK_OPENMP=ON, no TSan -- gcc's libgomp has no OMPT"
 #endif
 
 // `#pragma forceinline` is the classic Intel compiler's; gcc and clang warn

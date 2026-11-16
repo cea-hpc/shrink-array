@@ -30,9 +30,9 @@ geometry. They differ in **what they can compress**.
 
 | variant | library (macro it defines) | a chunk is compressed if all its elements equal… | cost of a constant |
 |---|---|---|---|
-| **`zero`** | `chunk::chunk_zero` (`CHUNK_VARIANT_ZERO`) | **zero** (`T{}`) | nothing: one shared constant buffer |
-| **`zero_one_value`** | `chunk::chunk_zero_one_value` (`CHUNK_VARIANT_ZERO_ONE_VALUE`) | zero, **or** a **second value** specific to the array (`set_second_value`) | nothing beyond the array |
-| **`zero_any`** | `chunk::chunk_zero_any` (`CHUNK_VARIANT_ZERO_ANY`) | zero, **or any other value**, chosen chunk by chunk | one array from the second-value registry (`tab_cst_val2_holder.h`) per distinct value, shared by the whole process |
+| **`zero`** | `shrink_array::zero` (`CHUNK_VARIANT_ZERO`) | **zero** (`T{}`) | nothing: one shared constant buffer |
+| **`zero_one_value`** | `shrink_array::zero_one_value` (`CHUNK_VARIANT_ZERO_ONE_VALUE`) | zero, **or** a **second value** specific to the array (`set_second_value`) | nothing beyond the array |
+| **`zero_any`** | `shrink_array::zero_any` (`CHUNK_VARIANT_ZERO_ANY`) | zero, **or any other value**, chosen chunk by chunk | one array from the second-value registry (`tab_cst_val2_holder.h`) per distinct value, shared by the whole process |
 
 ### Booleans: two containers
 
@@ -44,24 +44,24 @@ a compressed chunk costs no data in either. They differ in what a **materialised
 | container | header | a materialised chunk of S elements | a write | neighbouring writes from two threads |
 |---|---|---|---|---|
 | `zero_one_value::Array<bool>` | `chunk/zero_one_value_array.h` | S bytes, one per `bool` | a plain byte store | safe, as for any element |
-| `ArrayChunkBits<>` (`zero_one_value::Array<Bit>`) | `chunk/array_chunk_bits.h` | S/8 bytes, 8 `bool` per byte -- the layout of `std::vector<bool>` | an atomic read-modify-write of the 64-bit word holding the bit (OpenMP builds) | safe: the word is updated atomically, no write is lost |
+| `BitArray<>` (`zero_one_value::Array<Bit>`) | `chunk/bit_array.h` | S/8 bytes, 8 `bool` per byte -- the layout of `std::vector<bool>` | an atomic read-modify-write of the 64-bit word holding the bit (OpenMP builds) | safe: the word is updated atomically, no write is lost |
 | `std::vector<bool>`, for comparison | `<vector>` | the whole array, bit-packed, no compression | a read-modify-write of a word, not atomic | **a data race**: two writes in one word may lose one |
 
-`ArrayChunkBits` takes 8 times less memory per element of a materialised chunk, for a costlier
+`BitArray` takes 8 times less memory per element of a materialised chunk, for a costlier
 write; use it
 for large boolean arrays with many mixed areas (masks, flags over a mesh) that are written less
 often than read. `zero_one_value::Array<bool>` is the one for booleans written in hot loops, or
 mostly uniform: its constant chunks cost nothing either. Unlike `std::vector<bool>`,
-`ArrayChunkBits` is not a specialisation that changes `Array<bool>`'s behaviour behind its back:
+`BitArray` is not a specialisation that changes `Array<bool>`'s behaviour behind its back:
 it is a type of its own, and `zero_one_value::Array<bool>` stays a byte store. The element reads
 as a `Bit`, which converts to and from `bool`; as for every proxy container here, an element has
-no address. In a dynamic-geometry build an `ArrayChunkBits` is born with chunks 8 times the
+no address. In a dynamic-geometry build an `BitArray` is born with chunks 8 times the
 process-wide size (`packed_bit_birth_factor`), so that a chunk holds as many bytes as a `bool`
 one.
 
 ```cpp
 shrink_array::zero_one_value::Array<bool> flags(n); // one byte per element in a materialised chunk
-shrink_array::ArrayChunkBits<>            mask(n);  // one bit per element, 8 per byte
+shrink_array::BitArray<>            mask(n);  // one bit per element, 8 per byte
 flags[i] = true;
 mask[i]  = true;              // two threads may write neighbouring bits at once
 const bool b = std::as_const(mask)[i];

@@ -135,7 +135,7 @@ inline constexpr std::string_view mdspan_source =
         #endif
     #endif
 
-/// @brief The index type of @p Array: the type of a.size() (as array_chunk_range_ops.h).
+/// @brief The index type of @p Array: the type of a.size() (as range_ops.h).
 template <typename Array>
 using index_of = decltype(std::declval<const std::remove_const_t<Array>&>().size());
 

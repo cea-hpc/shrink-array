@@ -32,7 +32,7 @@ foreach(_vi RANGE ${_vc_nvar_last})
   set(_tgt variant_compare_${_vname}_${CHUNK_DEFAULT_SIZE})
   add_executable(${_tgt} variant_compare.cpp)
   target_link_libraries(${_tgt} PRIVATE ${_libbase}_${CHUNK_DEFAULT_SIZE}) # CHUNK_VARIANT_ZERO_ONE_VALUE / _ZERO_ANY, CHUNK_SIZE: PUBLIC
-  if (OMP)
+  if (CHUNK_OPENMP)
     target_link_libraries(${_tgt} PUBLIC OpenMP::OpenMP_CXX)
   endif ()
   chunk_require_cxx_std(${_tgt} PRIVATE)

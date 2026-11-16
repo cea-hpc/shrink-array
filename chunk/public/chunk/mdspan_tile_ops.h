@@ -82,7 +82,7 @@
     #include <vector> // std::vector (a run-time tile larger than the inline buffer, a stencil's halo and tile cache)
 
     #include "chunk/internal/PMP_CHUNK.h"       // CHUNK_PMP_IN_PARALLEL_REGION
-    #include "chunk/array_chunk_range_ops.h"    // for_each_span, fill_range(_mt), copy_range(_mt)
+    #include "chunk/range_ops.h"                // for_each_span, fill_range(_mt), copy_range(_mt)
     #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 
 namespace shrink_array::md

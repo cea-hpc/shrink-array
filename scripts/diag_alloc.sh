@@ -26,7 +26,7 @@ case "$variant" in
   fast)    name=fastpur;  opt="";                         gccmod="$GCC_MODULE";      san="";     label="FAST only (slab, the crashing reference)" ;;
   std)     name=std;      opt="-DCHUNK_STD_ALLOC=ON";     gccmod="$GCC_MODULE";      san="";     label="STD (malloc, the clean reference)"        ;;
   noreuse) name=noreuse;  opt="-DCHUNK_POOL_NO_REUSE=ON"; gccmod="$GCC_MODULE";      san="";     label="NO_REUSE (new/delete)"                    ;;
-  tsan)    name=tsan;     opt="-DCHUNK_STD_ALLOC=ON -DSANITIZER=thread"; gccmod="$GCC_TSAN_MODULE"; san="tsan"; label="TSan (oracle, STD)" ;;
+  tsan)    name=tsan;     opt="-DCHUNK_STD_ALLOC=ON -DCHUNK_SANITIZER=thread"; gccmod="$GCC_TSAN_MODULE"; san="tsan"; label="TSan (oracle, STD)" ;;
   *) echo "usage: $0 {fast|std|noreuse|tsan} [nb_runs]"; exit 2 ;;
 esac
 [ "$variant" = "tsan" ] && runs="${2:-5}"
@@ -60,7 +60,7 @@ fi
 B="$WORK/cmake-build-$name/$arch"
 # The bench executable: its name carries the threading backend of the build
 # (shrink_bench_<backend>_..., examples/shrink_bench/CMakeLists.txt), omp here,
-# every configuration of this script being configured with -DOMP=ON below.
+# every configuration of this script being configured with -DCHUNK_OPENMP=ON below.
 bench=shrink_bench_omp_zero_any_dyn
 
 # ── 2) configure ─────────────────────────────────────────────────────────────
@@ -68,7 +68,7 @@ step "cmake configure  (build dir: $B)"
 rm -rf "$B"
 extra=""
 [ "$san" = "tsan" ] && extra='-DCMAKE_CXX_COMPILER='"$(which g++)"' -DCMAKE_C_COMPILER='"$(which gcc)"' -DCMAKE_EXE_LINKER_FLAGS=-fsanitize=thread'
-if ! cmake -S "$SRC" -B "$B" -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo $opt $extra >/tmp/cfg_$name.log 2>&1; then
+if ! cmake -S "$SRC" -B "$B" -DCHUNK_OPENMP:BOOL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo $opt $extra >/tmp/cfg_$name.log 2>&1; then
   echo "  !! CONFIGURE FAILED:"; tail -20 /tmp/cfg_$name.log; exit 1
 fi
 grep -q "Manually-specified variables were not used" /tmp/cfg_$name.log \

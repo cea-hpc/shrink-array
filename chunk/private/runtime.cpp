@@ -15,11 +15,11 @@
  */
 
 /**
- * @file param_chunk.cpp
- * @brief Bodies of the ParamChunk façade: startup wiring and the exit report.
+ * @file runtime.cpp
+ * @brief Bodies of the Runtime façade: startup wiring and the exit report.
  *
- *  - **Startup**: init_indexes() sizes and publishes the allocation block;
- *    init_thread_structures() lives on ParamChunkParallelInterface, one body
+ *  - **Startup**: init() sizes and publishes the allocation block;
+ *    init_thread_structures() lives on RuntimeParallelInterface, one body
  *    per thread model.
  *  - **The geometry registration hook**, for dynamic builds.
  *  - **chunk_stats()**, the instrumentation report (presentation only).
@@ -39,7 +39,7 @@
 #include "chunk/internal/chunk_size_config.h"          // static_chunk_size
 #include "chunk/internal/chunk_size_policy.h"          // active_chunk_size
 #include "chunk/internal/chunk_stats.h"                // per-variant stats reduce/print
-#include "chunk/param_chunk.h"                         // the declarations defined here
+#include "chunk/runtime.h"                             // the declarations defined here
 #include "chunk/internal/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS
 #include "chunk/internal/write_compress_sync_policy.h" // dekker::protocol_name (CHUNK_STATS report only)
 #include "chunk/internal/type_state_registry.h"        // TypeStateRegistry
@@ -48,16 +48,16 @@
 namespace shrink_array
 {
 
-/// @brief Allocation block (slab) size in bytes, computed once by init_indexes().
-int ParamChunk::block_size;
-// No #ifdef _OPENMP: the bodies are TEMPLATES on AllT (see param_chunk.h), and
+/// @brief Allocation block (slab) size in bytes, computed once by init().
+int Runtime::block_size;
+// No #ifdef _OPENMP: the bodies are TEMPLATES on AllT (see runtime.h), and
 // only the one this build instantiates below is compiled. Use
 // SingletonChk<AllT>, never SingletonChk<TypeStateRegistry>: the calls must stay
 // dependent, or phase-1 lookup rejects the other build's body.
 
-/// @copydoc ParamChunkParallelInterface<true>::init_thread_structures
+/// @copydoc RuntimeParallelInterface<true>::init_thread_structures
 template <typename AllT>
-void ParamChunkParallelInterface<true, AllT>::init_thread_structures()
+void RuntimeParallelInterface<true, AllT>::init_thread_structures()
 {
     if constexpr (build_config::use_fast_alloc)
     {
@@ -68,10 +68,10 @@ void ParamChunkParallelInterface<true, AllT>::init_thread_structures()
 
 // The one instantiation: the other thread model's body stays uninstantiated
 // (as TypeStateRegistryParallelInterface in type_state_registry.cpp).
-template struct ParamChunkParallelInterface<build_config::threaded, TypeStateRegistry>;
+template struct RuntimeParallelInterface<build_config::threaded, TypeStateRegistry>;
 
 /**
- * @copydoc ParamChunk::init_indexes
+ * @copydoc Runtime::init
  *
  * @details Block size = 2 MiB (15 MiB with @p big_chunk_block) divided by the
  *          thread count, floored at 240 KiB. Each element type scales it to its
@@ -80,7 +80,7 @@ template struct ParamChunkParallelInterface<build_config::threaded, TypeStateReg
  * @warning A chunk larger than one block cannot be allocated; only a warning,
  *          as the caller cannot fix the compile-time geometry at run time.
  */
-void ParamChunk::init_indexes(bool big_chunk_block)
+void Runtime::init(bool big_chunk_block)
 {
     auto& ens_type_chunk = SingletonChk<TypeStateRegistry>::get_ref();
 
@@ -96,18 +96,18 @@ void ParamChunk::init_indexes(bool big_chunk_block)
 
     sz = std::max(sz_min, sz);
 
-    // A later call (the first array runs init_indexes(true) when the program
+    // A later call (the first array runs init(true) when the program
     // did not) may not change the block size: the allocators registered after
     // it would cut their slabs to another size than those registered before,
     // and a buffer is freed through slab_of() of whichever allocator of its
     // type the thread's ambient size selects -- one slab size per element type
     // (TCSlab::slab_bytes_for). Refused, the first one kept; the same size is
-    // a harmless repeat (each validation harness calls init_indexes(true)).
+    // a harmless repeat (each validation harness calls init(true)).
     if (const int published = ens_type_chunk.ready_block_size(); published != 0 && published != sz) [[unlikely]]
     {
         CHUNK_LOG(warn, general,
-                  "ParamChunk::init_indexes({}) ignored: the allocation blocks are already {} bytes (one block size "
-                  "per process -- call init_indexes() once, before the first array)",
+                  "Runtime::init({}) ignored: the allocation blocks are already {} bytes (one block size "
+                  "per process -- call init() once, before the first array)",
                   big_chunk_block, published);
         return;
     }
@@ -128,7 +128,7 @@ void ParamChunk::init_indexes(bool big_chunk_block)
     }
 
     // Per-type structures are built when each type registers its manager (first
-    // array, or init_indexes<Types>()), with the block size published here.
+    // array, or init<Types>()), with the block size published here.
     init_thread_structures(); // the allocator banner
 
     if constexpr (chunk_config::stats)
@@ -149,8 +149,8 @@ void ParamChunk::init_indexes(bool big_chunk_block)
     }
 }
 
-/// @copydoc ParamChunk::force_compression
-void ParamChunk::force_compression()
+/// @copydoc Runtime::force_compression
+void Runtime::force_compression()
 {
     // Every build: a serial zero_any queues its candidates too (see
     // compress_now_and_trim_pools()).
@@ -161,14 +161,14 @@ void ParamChunk::force_compression()
 #if CHUNK_OPT_STATS
 
 /**
- * @copydoc ParamChunk::chunk_stats
+ * @copydoc Runtime::chunk_stats
  *
  * @details Two passes: the first reduces the totals so that each legend line
  *          is printed only when some counter will stand behind it.
  *
  * @note Presentation only: the counters are maintained elsewhere.
  */
-void ParamChunk::chunk_stats()
+void Runtime::chunk_stats()
 {
     // Totals first, to filter the legend; then one block per active variant.
     ChunkStatsThr all{};
@@ -492,18 +492,18 @@ void ParamChunk::chunk_stats()
 }
 
 #else
-/// @copydoc ParamChunk::chunk_stats
+/// @copydoc Runtime::chunk_stats
 /// @note No counters without CHUNK_STATS; kept so call sites need no guard.
-void ParamChunk::chunk_stats() {}
+void Runtime::chunk_stats() {}
 #endif
 
 // Defined for every dynamic build; no #ifdef CHUNK_DYNAMIC: a TEMPLATE on AllT,
 // never instantiated by a static build. Same rule as init_thread_structures():
 // SingletonChk<AllT>, never SingletonChk<TypeStateRegistry>, or phase-1 lookup
 // rejects it in a static build.
-/// @copydoc ParamChunkDynInterface<true>::register_chunk_size
+/// @copydoc RuntimeDynInterface<true>::register_chunk_size
 template <typename AllT>
-void ParamChunkDynInterface<true, AllT>::register_chunk_size([[maybe_unused]] unsigned int size)
+void RuntimeDynInterface<true, AllT>::register_chunk_size([[maybe_unused]] unsigned int size)
 {
     // Must run in every dynamic build, OpenMP or not, fast-alloc or std-alloc:
     // besides the per-thread allocators (fast-alloc), it gives the per-size
@@ -512,23 +512,23 @@ void ParamChunkDynInterface<true, AllT>::register_chunk_size([[maybe_unused]] un
     // smaller buffer is popped for a larger chunk (overflow in init_block), or
     // drain_reuse_list_for_size finds no slot at the first re-chunk.
     auto& ens_type_chunk = SingletonChk<AllT>::get_ref();
-    ens_type_chunk.register_chunk_size(size, ParamChunk::block_size);
+    ens_type_chunk.register_chunk_size(size, Runtime::block_size);
 }
 
 // The one instantiation of the pair: in a static build this is the EMPTY
 // <false, TypeStateRegistry>, and the body above is never compiled.
-template struct ParamChunkDynInterface<build_config::chunk_dynamic, TypeStateRegistry>;
+template struct RuntimeDynInterface<build_config::chunk_dynamic, TypeStateRegistry>;
 
 /**
- * @brief Build-agnostic wrapper over ParamChunk::register_chunk_size().
+ * @brief Build-agnostic wrapper over Runtime::register_chunk_size().
  * @param size the runtime chunk size to declare; ignored in a static build.
  * @details Defined in EVERY build so an `if constexpr (chunk_dynamic)` call
  *          site links either way; in a static build the call is the no-op of
- *          ParamChunkDynInterface<false, TypeStateRegistry>.
+ *          RuntimeDynInterface<false, TypeStateRegistry>.
  */
 void register_runtime_chunk_size(unsigned int size)
 {
-    ParamChunk::register_chunk_size(size);
+    Runtime::register_chunk_size(size);
 }
 
 } // namespace shrink_array

@@ -36,7 +36,7 @@
 
 // All of these serve the CHUNK_STATS half of the file only.
 #include <array>       // std::array
-#include <chrono>      // g_chunk_stats_t0, the rates ParamChunk::chunk_stats() prints
+#include <chrono>      // g_chunk_stats_t0, the rates Runtime::chunk_stats() prints
 #include <map>         // std::map
 #include <mutex>       // std::mutex, std::scoped_lock
 #include <concepts>    // ChunkStatsZeroComparable
@@ -121,7 +121,7 @@ struct alignas(64) ChunkStatsThr
     long gate_driver         = 0; ///< run_slow_path() drivers (a writer sent to the slow path)
 };
 
-/// @brief Program start, for the per-second rates ParamChunk::chunk_stats() shows
+/// @brief Program start, for the per-second rates Runtime::chunk_stats() shows
 ///        next to the gate counters. Static init: as early as the counters.
 inline const std::chrono::steady_clock::time_point g_chunk_stats_t0 = std::chrono::steady_clock::now();
 
@@ -521,7 +521,7 @@ inline ChunkStatsThr reduce_chunk_stats(int variant) noexcept
 // purpose: every call to the former is wrapped in `if constexpr
 // (chunk_config::stats)` (array_chunk*_inline.h), and the latter returns
 // ChunkStatsThr, which exists only in this branch, so its caller
-// (param_chunk.cpp) is gated behind `#if CHUNK_OPT_STATS` anyway.
+// (runtime.cpp) is gated behind `#if CHUNK_OPT_STATS` anyway.
 
 #else // !CHUNK_STATS
 

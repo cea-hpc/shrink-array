@@ -30,9 +30,9 @@ dynamique. Elles diffèrent par **ce qu'elles savent compresser**.
 
 | variante | bibliothèque (macro qu'elle définit) | un chunk est compressé s'il est uniforme à… | coût d'une constante |
 |---|---|---|---|
-| **`zero`** | `chunk::chunk_zero` (`CHUNK_VARIANT_ZERO`) | **zéro** (`T{}`) | rien : un tampon constant partagé |
-| **`zero_one_value`** | `chunk::chunk_zero_one_value` (`CHUNK_VARIANT_ZERO_ONE_VALUE`) | zéro, **ou** une **seconde valeur** propre au tableau (`set_second_value`) | rien au-delà du tableau |
-| **`zero_any`** | `chunk::chunk_zero_any` (`CHUNK_VARIANT_ZERO_ANY`) | zéro, **ou n'importe quelle autre valeur**, choisie chunk par chunk | un tableau du registre des secondes valeurs (`tab_cst_val2_holder.h`) par valeur distincte, partagé par tout le processus |
+| **`zero`** | `shrink_array::zero` (`CHUNK_VARIANT_ZERO`) | **zéro** (`T{}`) | rien : un tampon constant partagé |
+| **`zero_one_value`** | `shrink_array::zero_one_value` (`CHUNK_VARIANT_ZERO_ONE_VALUE`) | zéro, **ou** une **seconde valeur** propre au tableau (`set_second_value`) | rien au-delà du tableau |
+| **`zero_any`** | `shrink_array::zero_any` (`CHUNK_VARIANT_ZERO_ANY`) | zéro, **ou n'importe quelle autre valeur**, choisie chunk par chunk | un tableau du registre des secondes valeurs (`tab_cst_val2_holder.h`) par valeur distincte, partagé par tout le processus |
 
 ### Booléens : deux conteneurs
 
@@ -45,24 +45,24 @@ Ils diffèrent par ce que contient un chunk **matérialisé** :
 | conteneur | en-tête | un chunk matérialisé de S éléments | une écriture | écritures voisines par deux threads |
 |---|---|---|---|---|
 | `zero_one_value::Array<bool>` | `chunk/zero_one_value_array.h` | S octets, un par `bool` | un simple stockage d'octet | sûres, comme pour tout élément |
-| `ArrayChunkBits<>` (`zero_one_value::Array<Bit>`) | `chunk/array_chunk_bits.h` | S/8 octets, 8 `bool` par octet -- le rangement de `std::vector<bool>` | une lecture-modification-écriture atomique du mot de 64 bits qui contient le bit (builds OpenMP) | sûres : le mot est mis à jour atomiquement, aucune écriture n'est perdue |
+| `BitArray<>` (`zero_one_value::Array<Bit>`) | `chunk/bit_array.h` | S/8 octets, 8 `bool` par octet -- le rangement de `std::vector<bool>` | une lecture-modification-écriture atomique du mot de 64 bits qui contient le bit (builds OpenMP) | sûres : le mot est mis à jour atomiquement, aucune écriture n'est perdue |
 | `std::vector<bool>`, pour comparaison | `<vector>` | tout le tableau, en bits, sans compression | une lecture-modification-écriture d'un mot, non atomique | **une course** : deux écritures dans un même mot peuvent en perdre une |
 
-`ArrayChunkBits` prend 8 fois moins de mémoire par élément d'un chunk matérialisé, pour une
+`BitArray` prend 8 fois moins de mémoire par élément d'un chunk matérialisé, pour une
 écriture plus chère : c'est le conteneur des grands tableaux de booléens à nombreuses zones mélangées
 (masques, indicateurs sur un maillage), écrits moins souvent que lus.
 `zero_one_value::Array<bool>` est celui des booléens écrits dans des boucles chaudes, ou presque
 uniformes : ses chunks constants ne coûtent rien non plus. Contrairement à `std::vector<bool>`,
-`ArrayChunkBits` n'est pas une spécialisation qui change le comportement d'`Array<bool>` à son
+`BitArray` n'est pas une spécialisation qui change le comportement d'`Array<bool>` à son
 insu : c'est un type à part, et `zero_one_value::Array<bool>` reste un stockage d'octets.
 L'élément se lit comme un `Bit`, qui se convertit vers et depuis `bool` ; comme pour tout
 conteneur à proxy ici, un élément n'a pas d'adresse. Dans un build à géométrie dynamique, un
-`ArrayChunkBits` naît avec des chunks 8 fois plus grands que la taille du processus
+`BitArray` naît avec des chunks 8 fois plus grands que la taille du processus
 (`packed_bit_birth_factor`), pour qu'un chunk contienne autant d'octets qu'un chunk de `bool`.
 
 ```cpp
 shrink_array::zero_one_value::Array<bool> flags(n); // un octet par élément dans un chunk matérialisé
-shrink_array::ArrayChunkBits<>            mask(n);  // un bit par élément, 8 par octet
+shrink_array::BitArray<>            mask(n);  // un bit par élément, 8 par octet
 flags[i] = true;
 mask[i]  = true;              // deux threads peuvent écrire des bits voisins en même temps
 const bool b = std::as_const(mask)[i];

@@ -51,8 +51,8 @@
 #include "chunk/zero_array.h"            // zero::Array
 #include "chunk/zero_one_value_array.h"  // zero_one_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
-#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
 #include "chunk/config.h"                // chunk_config::use_zero_one_value*, build_config::chunk_dynamic / any_check
 #include "chunk/print.h"                 // shrink_array::println
 
@@ -218,10 +218,10 @@ static int run_case(int case_idx)
 
 static int run_child(int case_idx)
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
     const int rc = run_case<Array<int>>(case_idx);
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
     return rc;
 }
 

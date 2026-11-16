@@ -156,7 +156,7 @@ class ElementRef
         return static_cast<T>(p_);
     }
 
-    /// @brief ArrayChunkBits: `bool b = a[i]`, the proxy's operator bool (a
+    /// @brief BitArray: `bool b = a[i]`, the proxy's operator bool (a
     ///        Bit converts to bool, but C++ does not chain the two conversions).
     CHUNK_FORCE_INLINE operator bool() const&&
         requires(!std::is_same_v<T, bool>) && requires(const P& proxy) { proxy.operator bool(); }

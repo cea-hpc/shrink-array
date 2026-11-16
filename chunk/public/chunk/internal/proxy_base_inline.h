@@ -786,7 +786,7 @@ unsigned int ProxyBase<Derived, T, ChunkT>::alloc_key() const noexcept
  * Marks the chunk dirty on its array, allocates the operation from the pool,
  * pushes it onto the rank's queue and records the enqueue with the compression
  * manager (which is what makes `pending_any()` / `foreign_pending()` see it).
- * The queue is drained by the phase transitions of manage_ompt.h.
+ * The queue is drained by the phase transitions of phases.h.
  *
  * @tparam CtxType    Context type holding the write location and operands.
  * @tparam LambdaBody Callable replaying the write from that context.

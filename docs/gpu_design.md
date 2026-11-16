@@ -30,7 +30,7 @@ where "20 times less" changes what a code can handle.
 - running the existing CPU code on GPU: the execution machinery (section 2) is not portable
   and does not need to be;
 - writes concurrent with a compression **inside** a kernel;
-- bit-packed `bool` (`ArrayChunkBits`);
+- bit-packed `bool` (`BitArray`);
 - a SYCL/Intel backend (possible through the portability layer, not targeted).
 
 ## 2. What ports, what does not
@@ -436,7 +436,7 @@ It comes **after** fixed geometry in the plan (section 13).
   one. **(To be decided)**: clang as the single CUDA compiler, which avoids nvcc and its
   limits, at the price of CUDA support one version behind.
 - CMake: a `CHUNK_DEVICE=none|cuda|hip` option (and `CHUNK_DEVICE_KOKKOS=ON` for the facade),
-  targets `chunk::chunk_zero_any_device_256`, …; Spack: a `device` variant.
+  targets `shrink_array::zero_any_device_256`, …; Spack: a `device` variant.
 
 ### 12.2 API sketch
 

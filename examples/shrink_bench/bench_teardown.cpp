@@ -23,7 +23,7 @@
 #include "bench_phases.h"              // bench_teardown (defined here), BenchArrays
 #include "bench_stl_checks.h"          // run_stl_self_checks
 #include "chunk/internal/zero_chunk.h" // clear_all_list_block_free_thr, delete_chunk_allocator
-#include "chunk/param_chunk.h"         // ParamChunk::chunk_stats
+#include "chunk/runtime.h"             // Runtime::chunk_stats
 #include "chunk/print.h"               // shrink_array::println (the tab_conn note)
 
 // As in shrink_bench.cpp, where this body comes from.
@@ -103,7 +103,7 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
     // so a plain if constexpr does the job -- no #ifdef needed.
     if constexpr (chunk_config::stats)
     {
-        shrink_array::ParamChunk::chunk_stats();
+        shrink_array::Runtime::chunk_stats();
     }
 
     // Entries get_info_second_value() scans per call, per element type. It is a

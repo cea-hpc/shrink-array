@@ -76,7 +76,7 @@ zero_one_value::RechunkHooks<Derived, true>::rechunk_capture_state(this const De
     // The array-level second value; bool's is re-established by create().
     if constexpr (Derived::is_not_bool)
     {
-        return self.get_second_value();
+        return self.second_value();
     }
     else
     {

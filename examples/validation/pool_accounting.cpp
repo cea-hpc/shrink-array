@@ -45,7 +45,7 @@
 //      the new geometry.
 //   4. need_load_balance_list_block_free() is false once the pools are
 //      released (its value with blocks parked depends on the team: shown).
-//   0. First of all: a second ParamChunk::init_indexes() with the other
+//   0. First of all: a second Runtime::init() with the other
 //      argument leaves the block size alone (every allocator of a type must
 //      cut its slabs to one size); the same argument again is a harmless repeat.
 //
@@ -59,12 +59,12 @@
 #include "chunk/zero_array.h"            // zero::Array
 #include "chunk/zero_one_value_array.h"  // zero_one_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
-#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk, need_load_balance_list_block_free
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown, need_load_balance_list_block_free
 #include "chunk/internal/chunk_size_policy.h"        // cst_buffer_size
 #include "chunk/config.h"                            // chunk_config::use_zero*
 #include "chunk/internal/PMP_CHUNK.h"                // CHUNK_PMP_MAX_THREADS, pmp::current_team
-#include "chunk/manage_ompt.h"                       // parallel_phase
+#include "chunk/phases.h"                            // parallel_phase
 #include "chunk/internal/zero_chunk_def.h"           // ChunkDef
 #include "chunk/internal/zero_one_value_chunk_def.h" // zero_one_value::ChunkDef
 #include "chunk/internal/zero_any_chunk_def.h"       // zero_any::ChunkDef
@@ -117,7 +117,7 @@ void maybe_set_second_value(Arr& arr, const Val& value)
     }
 }
 
-// The phase brackets: parallel_phase() (manage_ompt.h) places them.
+// The phase brackets: parallel_phase() (phases.h) places them.
 
 // Serial builds free a cleared array's buffers outright; threaded ones
 // (OpenMP, std) park them.
@@ -153,7 +153,7 @@ int run(int argc, char** argv)
 {
     const long count = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 20, "N") : (1L << 20);
 
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     println("=== pool_accounting [variant = {}]  N={}  threads={} ===", variant_name(), count, CHUNK_PMP_MAX_THREADS);
 
@@ -161,10 +161,10 @@ int run(int argc, char** argv)
     const auto block_size = []
     { return static_cast<long>(SingletonChk<TypeStateRegistry>::get_ref().ready_block_size()); };
     const long blocks = block_size();
-    ParamChunk::init_indexes(false); // refused, with a warning
-    expect(block_size() == blocks, "init_indexes(false) after (true) keeps the block size", block_size(), blocks);
-    ParamChunk::init_indexes(true);
-    expect(block_size() == blocks, "init_indexes(true) again keeps the block size", block_size(), blocks);
+    Runtime::init(false); // refused, with a warning
+    expect(block_size() == blocks, "init(false) after (true) keeps the block size", block_size(), blocks);
+    Runtime::init(true);
+    expect(block_size() == blocks, "init(true) again keeps the block size", block_size(), blocks);
 
     const long base = Manager::get_somme_chunk_create();
     expect(Manager::reuse_pool_blocks() == 0, "pools empty at start", (long)Manager::reuse_pool_blocks(), 0);
@@ -189,7 +189,7 @@ int run(int argc, char** argv)
         // N is a multiple of the chunk size that spare chunk is never written.
         const auto csz       = static_cast<long>(arr.chunk_size());
         const long covering  = (count + csz - 1) / csz;
-        const long written_a = arr.get_nb_chunk_written();
+        const long written_a = arr.written_chunk_count();
         expect(written_a == covering, "a fully materialised (written == chunks covering N)", written_a, covering);
 
         // --- 2. parking: a's buffers go to the pools, exactly ----------------
@@ -215,7 +215,7 @@ int run(int argc, char** argv)
         Array<double> third(count);
         maybe_set_second_value(third, 3.5);
         materialise_all(third, count);
-        const long written_c    = third.get_nb_chunk_written();
+        const long written_c    = third.written_chunk_count();
         const auto parked_after = static_cast<long>(Manager::reuse_pool_blocks());
         const long want_after   = parked > written_c ? parked - written_c : 0;
         const auto slack        = static_cast<long>(CHUNK_PMP_MAX_THREADS); // per-rank pools, see the header
@@ -236,7 +236,7 @@ int run(int argc, char** argv)
                 expect(at_old == 0, "nothing parked at the OLD geometry after rechunk_to", at_old, 0);
                 // Chunks alive followed the geometry: fewer chunks at a larger size.
                 const long delta = Manager::get_somme_chunk_create() - before;
-                const long want  = static_cast<long>(half.get_nb_chunk_written()) - chunks_b;
+                const long want  = static_cast<long>(half.written_chunk_count()) - chunks_b;
                 expect(delta <= 0 && delta >= want - 1, "somme_chunk_create follows the new chunk count", delta, want);
             }
         }
@@ -266,7 +266,7 @@ int run(int argc, char** argv)
     release_chunk_pools();
     expect(!need_load_balance_list_block_free(), "need_load_balance_list_block_free() false, pools released",
            need_load_balance_list_block_free() ? 1 : 0, 0);
-    destroy_block_chunk();
+    Runtime::shutdown();
 
     println("\n[{}] {}", variant_name(),
             g_fails == 0 ? "=== POOL ACCOUNTING OK, TEARDOWN OK ===" : "=== POOL ACCOUNTING FAILURES ===");

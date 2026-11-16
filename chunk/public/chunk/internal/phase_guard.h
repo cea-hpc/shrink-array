@@ -18,7 +18,7 @@
 
 /**
  * @file phase_guard.h
- * @brief Guard of the parallel-phase protocol (manage_ompt.h).
+ * @brief Guard of the parallel-phase protocol (phases.h).
  *
  * Without OMPT the library does not see region boundaries. A write can be
  * DEFERRED to the writing thread's queue (once the chunk's candidate list is
@@ -51,26 +51,26 @@
  *    without the brackets is legitimate (region_storage_validation). What
  *    needs the brackets is a write left queued in a rank's queue.
  *
- * Only where the protocol is manual (build_config::has_not_ompt, OpenMP):
+ * Only where the protocol is manual (build_config::needs_explicit_phases, OpenMP):
  * under OMPT the runtime callbacks make the calls themselves (`tracked`).
  * The finalize check runs in EVERY such build, release included: it costs
  * one level query and one comparison per thread and per region, never per
  * write, and what it stops is a freed op replayed or values silently wrong.
  * The begin check is a check-build one (`active`, build_config::any_check):
  * alone, a forgotten begin leaves the values right. shrink_array::
- * parallel_phase() (manage_ompt.h) makes both calls for the program.
+ * parallel_phase() (phases.h) makes both calls for the program.
  *
  * One top-level team at a time: the generation is global, so with two
  * teams started by different host threads one team's phase end makes the
  * other's threads stale (check_write fails) and can hide its forgotten
- * finalize. Such a program is outside the protocol anyway (manage_ompt.h).
+ * finalize. Such a program is outside the protocol anyway (phases.h).
  */
 
 #include <atomic>  // std::atomic, std::memory_order_relaxed
 #include <cstddef> // std::size_t (teams::rank_holders)
 
 #include "chunk/internal/PMP_CHUNK.h"       // CHUNK_PMP_*, chunk_pmp_team_rank
-#include "chunk/config.h"                   // build_config::any_check, build_config::has_not_ompt
+#include "chunk/config.h"                   // build_config::any_check, build_config::needs_explicit_phases
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 
 namespace shrink_array::phase_guard
@@ -101,7 +101,7 @@ inline void next_phase() noexcept
 
 /// @brief The protocol is manual in this build (OpenMP without OMPT): the
 ///        generations are kept and the finalize check runs, in every build type.
-inline constexpr bool tracked = build_config::threaded && build_config::has_not_ompt;
+inline constexpr bool tracked = build_config::threaded && build_config::needs_explicit_phases;
 
 /// @brief ... and it is a check build: the begin check (check_write) runs too.
 inline constexpr bool active = tracked && build_config::any_check;

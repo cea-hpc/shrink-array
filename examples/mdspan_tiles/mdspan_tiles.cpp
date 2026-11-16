@@ -64,11 +64,11 @@
 
 #include "chunk/zero_any_array.h" // zero_any::Array
 #include "chunk/print.h"          // shrink_array::println
-#include "chunk/manage_ompt.h"    // parallel_phase
+#include "chunk/phases.h"         // parallel_phase
 #include "chunk/mdspan.h"         // shrink_array::md, SHRINK_ARRAY_HAS_MDSPAN
-#include "chunk/threads.h"        // pmp::team_size, pmp::thread_rank
+#include "chunk/threads.h"        // shrink_array::team_size, shrink_array::thread_rank
 #include "chunk/mdspan_tile_ops.h" // md::for_each_tile(_mt), md::update_tiles, md::fill_box(_mt), md::copy_box_*(_mt), md::stencil_tiles_mt
-#include "chunk/param_chunk.h" // ParamChunk::init_indexes, release_chunk_pools, destroy_block_chunk
+#include "chunk/runtime.h" // Runtime::init, release_chunk_pools, Runtime::shutdown
 
 namespace sa = shrink_array;
 
@@ -385,8 +385,8 @@ void paint(long n, int& bad)
         [&]
         {
             // Each thread one contiguous slice of the tiles, every rectangle in order.
-            const long nth   = shrink_array::pmp::team_size();
-            const long me    = shrink_array::pmp::thread_rank();
+            const long nth   = shrink_array::team_size();
+            const long me    = shrink_array::thread_rank();
             const long first = ntiles * me / nth;
             const long last  = ntiles * (me + 1) / nth;
             for (const Rect& r : rects)
@@ -556,8 +556,8 @@ void box_copy(long n, int& bad)
     t0            = std::chrono::steady_clock::now();
     #pragma omp parallel
     {
-        const long nth = shrink_array::pmp::team_size();
-        const long me  = shrink_array::pmp::thread_rank();
+        const long nth = shrink_array::team_size();
+        const long me  = shrink_array::thread_rank();
         const long r0  = lo[0] + (hi[0] - lo[0]) * me / nth;
         const long r1  = lo[0] + (hi[0] - lo[0]) * (me + 1) / nth;
         if (r0 < r1)
@@ -576,8 +576,8 @@ void box_copy(long n, int& bad)
     sa::parallel_phase(
         [&]
         {
-            const long nth = shrink_array::pmp::team_size();
-            const long me  = shrink_array::pmp::thread_rank();
+            const long nth = shrink_array::team_size();
+            const long me  = shrink_array::thread_rank();
             const long r0  = lo[0] + (hi[0] - lo[0]) * me / nth;
             const long r1  = lo[0] + (hi[0] - lo[0]) * (me + 1) / nth;
             if (r0 < r1)
@@ -949,7 +949,7 @@ void index_cost(long n, int& bad)
 
 int main(int argc, char** argv)
 {
-    sa::ParamChunk::init_indexes(true);
+    sa::Runtime::init(true);
     const long n   = argc > 1 ? std::atol(argv[1]) : 2048;
     int        bad = 0;
     sa::println("mdspan_tiles: {}", sa::md::mdspan_source);
@@ -970,7 +970,7 @@ int main(int argc, char** argv)
     stencil(n, bad);
     index_cost(n, bad);
     sa::release_chunk_pools();
-    sa::destroy_block_chunk();
+    sa::Runtime::shutdown();
     return bad == 0 ? 0 : 1;
 }
 
