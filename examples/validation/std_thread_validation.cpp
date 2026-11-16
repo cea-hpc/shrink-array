@@ -93,6 +93,7 @@
 #include "chunk/config.h"                // chunk_config::use_zero*
 #include "chunk/internal/PMP_CHUNK.h"    // pmp::*, CHUNK_PMP_*, get_thr_rank_fast, chunk_thread_capacity, the registry
 #include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/threads.h"               // shrink_array::thread_rank (the writers' rank, against the registry's)
 #include "chunk/internal/env_parse.h"    // arg_number
 #include "chunk/print.h"                 // shrink_array::println
 #include "chunk/internal/test_hooks.h"   // force_defer_every (the in-phase case)
