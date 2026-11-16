@@ -408,6 +408,7 @@ class RankRegistry
                 int seen = high_water_.load(std::memory_order_relaxed);
                 while (r >= seen && !high_water_.compare_exchange_weak(seen, r + 1, std::memory_order_relaxed))
                 {
+                    // a failed compare_exchange_weak reloaded seen: retry
                 }
                 return r;
             }

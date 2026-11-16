@@ -551,6 +551,7 @@ int run_fatal(int which)
                         ready.fetch_add(1);
                         while (ready.load() < 8)
                         {
+                            // spin until the 8 threads are in
                         }
                         CHUNK_INVARIANT_FAILED("thread {} failed", t);
                     });

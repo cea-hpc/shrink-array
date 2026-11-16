@@ -135,6 +135,7 @@ class RssPeakSampler
         long cur = peak_.load(std::memory_order_relaxed);
         while (kib > cur && !peak_.compare_exchange_weak(cur, kib, std::memory_order_relaxed))
         {
+            // a failed compare_exchange_weak reloaded cur: retry
         }
     }
     /// @brief Largest sample so far, in KiB (0 before the first one).

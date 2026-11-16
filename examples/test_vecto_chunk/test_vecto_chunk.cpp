@@ -163,8 +163,6 @@ void calculate(double                  val,
     {
         const int pos = index[i - start0];
         tab_vec[pos] += tab1[pos] + (tab2[pos] * tab3[i]) - tab2[i] + val;
-        //  tab_vec[pos] += tab1[pos] + tab2[pos] * std::atan(tab3[pos]) + std::cos(val);
-        //     tab_vec[pos] += std::cos(tab1[pos]) + std::sin(tab2[pos]) + std::atan(tab3[pos]) + std::cos(val);
     }
 }
 

@@ -651,7 +651,7 @@ void zero_any::ChunkImpl<T, Derived>::fill_list_chunk_to_compress_in_par([[maybe
 {
     auto& vec_tup = Manager::get_zero_any_candidates(thr);
 
-    const int sz = vec_tup.size();
+    const int sz = static_cast<int>(vec_tup.size());
 
     // pattern: the motif candidates the scan set aside; 0 for plain zero_any.
     const auto motif_count = []

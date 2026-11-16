@@ -195,8 +195,9 @@ void TypeState<ChunkT, T>::compute_size_max_number_of_chunk_to_check_compress()
         std::conditional_t<IsZeroAnyFamily<ChunkT, T>, zero_any::ChunkDef,
                            std::conditional_t<IsZeroOneValue<ChunkT, T>, zero_one_value::ChunkDef, zero::ChunkDef>>;
 
-    int threshold = somme_chunk_create / (VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS);
-    threshold     = std::max(threshold, VariantDef::size_min_list_chunk_to_check_compress);
+    int threshold =
+        static_cast<int>(somme_chunk_create / (VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS));
+    threshold = std::max(threshold, VariantDef::size_min_list_chunk_to_check_compress);
 
     Candidates::set_size_max_number_of_chunk_to_check_compress(threshold);
     const size_t element_size = sizeof(std::tuple<ChunkT<T>*, int, int>);

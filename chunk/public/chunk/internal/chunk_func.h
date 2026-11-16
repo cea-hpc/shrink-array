@@ -57,7 +57,7 @@ bool need_load_balance_list_block_free_thr()
 
     for (int thr_rank = 0; thr_rank < max_thr; ++thr_rank)
     {
-        const int sz = zero::Chunk<T>::Manager::get_list_block_free_thr_size(thr_rank);
+        const int sz = static_cast<int>(zero::Chunk<T>::Manager::get_list_block_free_thr_size(thr_rank));
         if (sz < 0.9 * lg || sz > 1.1 * lg)
         {
             return true;
@@ -95,11 +95,11 @@ void load_balance_list_block_free_thr()
     {
         auto& lbf = zero::Chunk<T>::Manager::get_list_block_free_thr(thr_rank);
 
-        const int sz = lbf.size();
+        const int sz = static_cast<int>(lbf.size());
 
         if (sz > lg)
         {
-            const int ll_sz = ll.size();
+            const int ll_sz = static_cast<int>(ll.size());
 
             ll.resize(ll_sz + sz - lg);
 
@@ -118,13 +118,13 @@ void load_balance_list_block_free_thr()
     {
         auto& lbf = zero::Chunk<T>::Manager::get_list_block_free_thr(thr_rank);
 
-        const int sz = lbf.size();
+        const int sz = static_cast<int>(lbf.size());
 
         if (sz < lg)
         {
             lbf.resize(lbf.size() + lg - sz);
 
-            const int pp = ll.size() - (lg - sz);
+            const int pp = static_cast<int>(ll.size()) - (lg - sz);
 
             T* const* ll_loc = ll.data() + ll.size() - lg;
 

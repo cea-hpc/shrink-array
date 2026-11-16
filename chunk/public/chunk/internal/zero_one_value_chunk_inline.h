@@ -486,7 +486,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_t
     }
     const auto& vec_tuple = *vec_tuple_p;
 
-    const int nn = vec_tuple.size();
+    const int nn = static_cast<int>(vec_tuple.size());
 
     for (int k = 0; k < nn; ++k)
     {
@@ -602,7 +602,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
 
     auto& vec_tuple_to_compress = *it->second;
 
-    const int sz = vec_tuple_to_compress.size();
+    const int sz = static_cast<int>(vec_tuple_to_compress.size());
 
     if (sz == 0)
     {

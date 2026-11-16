@@ -484,7 +484,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
 
                 const int thr_rank = CHUNK_PMP_THREAD_RANK;
 
-                const int nb = ll_chunk_loc.size();
+                const int nb = static_cast<int>(ll_chunk_loc.size());
 
                 if (nb > 0)
                 {
