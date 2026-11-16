@@ -81,7 +81,11 @@ struct Vec3
 {
     auto operator<=>(const Vec3&) const = default;
 
-    double x, y, z;
+    double x;
+
+    double y;
+
+    double z;
 };
 } // namespace validation::signed_zero_validation
 
@@ -230,7 +234,7 @@ static int verify(const char* type_name, const char* label, const Array<T>& arr,
 {
     long       bad   = 0;
     long       first = -1;
-    const long n     = static_cast<long>(ref.size());
+    const auto n     = static_cast<long>(ref.size());
     for (long i = 0; i < n; ++i)
     {
         const T got = std::as_const(arr)[i];
@@ -245,7 +249,7 @@ static int verify(const char* type_name, const char* label, const Array<T>& arr,
     }
     if (bad != 0)
     {
-        const long csz = static_cast<long>(arr.chunk_size());
+        const auto csz = static_cast<long>(arr.chunk_size());
         println("[{}/{}/{}] FAIL: {}/{} elements lost their bits, first at i={} (chunk #{}, offset {})", variant_name(),
                 type_name, label, bad, n, first, first / csz, first % csz);
         return 1;
@@ -262,7 +266,7 @@ static int run_type(const char* type_name)
 
     // Four chunks: enough for each case to own whole chunks of the geometry.
     Array<T>   probe(1);
-    const long csz = static_cast<long>(probe.chunk_size());
+    const auto csz = static_cast<long>(probe.chunk_size());
     probe.clear();
     const long n = 4 * csz;
 
@@ -426,15 +430,15 @@ static int run_type(const char* type_name)
 static int run_nan()
 {
     Array<double> probe(1);
-    const long    csz = static_cast<long>(probe.chunk_size());
+    const auto    csz = static_cast<long>(probe.chunk_size());
     probe.clear();
     const long n = 3 * csz;
 
     const double qnan  = std::numeric_limits<double>::quiet_NaN();
     const double other = -qnan; // same payload, sign bit set: a different value
 
-    Array<double>       arr(n);
-    std::vector<double> ref(static_cast<std::size_t>(n), 0.0);
+    Array<double> arr(n);
+    std::vector   ref(static_cast<std::size_t>(n), 0.0);
     // NaNs on purpose: off with the CHUNK_DO_CHECK builds' NaN check, which
     // every write and every checked read would trip. After the constructor,
     // which switches it back on.
@@ -460,7 +464,7 @@ static int run_nan()
 static int run_compound_on_zero()
 {
     Array<double> probe(1);
-    const long    csz = static_cast<long>(probe.chunk_size());
+    const auto    csz = static_cast<long>(probe.chunk_size());
     probe.clear();
     const long n = 2 * csz;
 

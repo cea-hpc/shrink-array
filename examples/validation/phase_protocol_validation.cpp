@@ -147,8 +147,8 @@ long helper_sum = 0;
 /// std::vector does.
 long regions(Bracket how)
 {
-    Array<int>       arr(n_items);
-    std::vector<int> ref(n_items, 0);
+    Array<int>  arr(n_items);
+    std::vector ref(n_items, 0);
     helper_sum = 0;
     for (int r = 0; r < n_regions; ++r)
     {

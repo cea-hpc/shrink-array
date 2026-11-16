@@ -104,8 +104,7 @@ void* FastAllocatorConcrete<T, Arena>::allocate_raw()
         // use-after-recycle that the free-list would hide (stale but mapped data).
         return ::operator new(sizeof(T));
     }
-    auto& fl = free_list();
-    if (!fl.empty())
+    if (auto& fl = free_list(); !fl.empty())
     {
         T* block = fl.back();
         fl.pop_back();
@@ -283,7 +282,7 @@ FastAllocatorBase* AllocatorRegistry<Tag>::find_or_create()
     auto&        allocators = allocs();
     const size_t sz         = sizeof(T);
 
-    for (auto& alloc : allocators)
+    for (const auto& alloc : allocators)
     {
         if (alloc->block_size == sz)
         {

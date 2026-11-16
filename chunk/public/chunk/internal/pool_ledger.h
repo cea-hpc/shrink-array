@@ -258,11 +258,12 @@ inline const char* bstate_name(BState state) noexcept
 {
     switch (state)
     {
-        case BState::free:
+        using enum BState;
+        case free:
             return "FREE";
-        case BState::live:
+        case live:
             return "LIVE";
-        case BState::parked:
+        case parked:
             return "PARKED";
     }
     return "??";
@@ -308,9 +309,8 @@ inline void report_live_blocks() noexcept
         };
         std::array<Row, 64> rows{};
         int                 n_rows = 0;
-        for (const auto& kv : block_live())
+        for (const auto& [block, rec] : block_live())
         {
-            const BRec& rec = kv.second;
             if (rec.state == BState::free)
             {
                 continue;

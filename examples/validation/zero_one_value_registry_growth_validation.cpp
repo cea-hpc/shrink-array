@@ -96,7 +96,7 @@ void end_phase()
 /// @brief Write @p value everywhere from a region, then compress from a region.
 void fill_and_compress(Arr& arr, double value)
 {
-    const long count = static_cast<long>(arr.size());
+    const auto count = static_cast<long>(arr.size());
 #pragma omp parallel
     {
         begin_phase();
@@ -119,8 +119,8 @@ void fill_and_compress(Arr& arr, double value)
 /// @brief Chunks of @p arr still materialised.
 int materialised(const Arr& arr)
 {
-    const long chunk_sz = static_cast<long>(arr.chunk_size());
-    const long count    = static_cast<long>(arr.size());
+    const auto chunk_sz = static_cast<long>(arr.chunk_size());
+    const auto count    = static_cast<long>(arr.size());
     int        nmat     = 0;
     for (long j = 0; j * chunk_sz < count; ++j)
     {
@@ -133,7 +133,7 @@ int materialised(const Arr& arr)
 long check_all(const char* what, const Arr& arr, double value)
 {
     long       bad   = 0;
-    const long count = static_cast<long>(arr.size());
+    const auto count = static_cast<long>(arr.size());
     for (long i = 0; i < count; ++i)
     {
         const double got = arr[static_cast<Ind>(i)];
@@ -158,7 +158,7 @@ int run(int /*argc*/, char** /*argv*/)
     int fails = 0;
     {
         Arr        arr;
-        const long chunk_sz = static_cast<long>(arr.chunk_size());
+        const auto chunk_sz = static_cast<long>(arr.chunk_size());
         arr.resize(static_cast<Ind>(n_chunks * chunk_sz));
         arr.set_second_value(1.0);
         println("=== zero_one_value_registry_growth_validation  chunk_size={}  threads={}  others={} ===", chunk_sz,

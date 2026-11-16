@@ -246,14 +246,15 @@ static T value_of(Kind kind, long num_chunk, long j, long round, std::uint64_t& 
 {
     switch (kind)
     {
-        case Kind::zero:
+        using enum Kind;
+        case zero:
             return T{};
-        case Kind::uniform:
+        case uniform:
             return static_cast<T>(num_chunk * 7 + 3 + round * 1000);
-        case Kind::motif:
+        case motif:
             // The same motif in every motif chunk, shifted by an offset of its own.
             return static_cast<T>((j * j) % 13 + j / 3 + num_chunk * 100 + round * 1000);
-        case Kind::random:
+        case random:
         default:
             rng = rng * 6364136223846793005ULL + 1442695040888963407ULL;
             return static_cast<T>(rng >> 33U);
@@ -305,7 +306,7 @@ template <template <typename, typename> class ArrayT, typename T>
 static std::vector<long> round_trip(const char* vname, const char* tname, long nch)
 {
     using Arr      = ArrayT<T, long>;
-    const long csz = static_cast<long>(Arr(0).chunk_size());
+    const auto csz = static_cast<long>(Arr(0).chunk_size());
     const long n   = nch * csz;
     println("--- {}::Array<{}>  {} chunks of {}", vname, tname, nch, csz);
     std::vector<long> census;
@@ -427,7 +428,7 @@ static void motif_state(const char* tname, long nch)
 {
     using Arr      = pattern::Array<T, long>;
     using Ch       = pattern::Chunk<T>;
-    const long csz = static_cast<long>(Arr(0).chunk_size());
+    const auto csz = static_cast<long>(Arr(0).chunk_size());
     const long n   = nch * csz;
     println("--- pattern::Array<{}>  motif chunks", tname);
 
@@ -435,7 +436,7 @@ static void motif_state(const char* tname, long nch)
     // ones for a signed T, and past the range of a short (the arithmetic wraps).
     const auto motif_chunk = [&](long c, long shift)
     {
-        const T        off = static_cast<T>((c - nch / 2) * 1000003L + shift);
+        const auto     off = static_cast<T>((c - nch / 2) * 1000003L + shift);
         std::vector<T> vals(static_cast<std::size_t>(csz));
         for (long j = 0; j < csz; ++j)
         {
@@ -579,13 +580,13 @@ static void fill_over_motifs(const char* tname, long nch)
 {
     using Arr      = pattern::Array<T, long>;
     using Ch       = pattern::Chunk<T>;
-    const long csz = static_cast<long>(Arr(0).chunk_size());
+    const auto csz = static_cast<long>(Arr(0).chunk_size());
     const long n   = nch * csz;
     println("--- pattern::Array<{}>  fill_range over motif chunks", tname);
 
     std::vector<T> ref(static_cast<std::size_t>(n), T{});
     Arr            arr(n);
-    const T        uniform = static_cast<T>(7);
+    const auto     uniform = static_cast<T>(7);
     // Chunk 1 uniform (its second constant once the pass ran), every third
     // chunk from 0 a motif.
     std::fill(ref.begin() + csz, ref.begin() + 2 * csz, uniform);
@@ -637,7 +638,7 @@ static void motif_compression(const char* tname, long nch)
     using Arr      = pattern::Array<T, long>;
     using Ch       = pattern::Chunk<T>;
     using Region   = pattern::MotifRegion<T>;
-    const long csz = static_cast<long>(Arr(0).chunk_size());
+    const auto csz = static_cast<long>(Arr(0).chunk_size());
     const long n   = nch * csz;
     println("--- pattern::Array<{}>  compression to motifs", tname);
 
@@ -769,7 +770,7 @@ static void advisor_agrees(const char* tname, long nch)
 {
     using PArr     = pattern::Array<T, long>;
     using ZArr     = zero_any::Array<T, long>;
-    const long csz = static_cast<long>(PArr(0).chunk_size());
+    const auto csz = static_cast<long>(PArr(0).chunk_size());
     const long n   = nch * csz;
     println("--- pattern::Array<{}>  the advisor", tname);
     std::uint64_t  rng = 99;
@@ -814,7 +815,7 @@ template <typename T>
 static void advisor_motif_forecast(const char* tname, long nch)
 {
     using PArr     = pattern::Array<T, long>;
-    const long csz = static_cast<long>(PArr(0).chunk_size());
+    const auto csz = static_cast<long>(PArr(0).chunk_size());
     const long n   = nch * csz;
     println("--- pattern::Array<{}>  the advisor's motif forecast ({} chunks)", tname, nch);
     std::uint64_t rng  = 7;
@@ -898,7 +899,7 @@ static void shared_registry(long nch)
     using Za       = zero_any::Array<int, long>;
     using Pa       = pattern::Array<int, long>;
     using Registry = zero_any::Chunk<int>::Holder::VecHolder;
-    const long csz = static_cast<long>(Za(0).chunk_size());
+    const auto csz = static_cast<long>(Za(0).chunk_size());
     const long n   = nch * csz;
     println("--- H  zero_any::Array<int> and pattern::Array<int>: one second-value registry");
 
@@ -946,7 +947,7 @@ int run(int argc, char** argv)
 
     {
         // Copy-list-initialisation, as for a std::vector: the constructor is not explicit.
-        pattern::Array<int> listed = {1, 2, 3};
+        pattern::Array listed = {1, 2, 3};
         expect_eq("a = {1, 2, 3}: size", listed.size(), 3);
         expect_eq("a = {1, 2, 3}: a[1]", static_cast<int>(listed[1]), 2);
     }

@@ -177,8 +177,8 @@ void Simu::input_data()
             // chunk_rate %.
             std::random_device rd0;
 
-            std::mt19937                    gen(rd0());
-            std::uniform_int_distribution<> distrib(0, option_chunk == 3 ? 1 : 100);
+            std::mt19937                  gen(rd0());
+            std::uniform_int_distribution distrib(0, option_chunk == 3 ? 1 : 100);
 
             const int threshold = option_chunk == 3 ? 1 : chunk_rate;
 

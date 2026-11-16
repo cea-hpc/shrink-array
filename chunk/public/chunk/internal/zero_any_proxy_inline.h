@@ -269,7 +269,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::trigger_compression_if_needed(int 
     {
         const int szm = Manager::get_size_max_number_of_chunk_to_check_compress();
 
-        const int sz = static_cast<int>(vec_to_compress_potantially.size());
+        const auto sz = static_cast<int>(vec_to_compress_potantially.size());
 
         if (Base::should_trigger_compression(sz, szm))
         {
@@ -303,11 +303,9 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::perform_compression() noexcept
 
     const auto& vec_to_compress_potantially = Manager::get_zero_any_candidates(thr_rank);
 
-    const int sz_before = static_cast<int>(vec_to_compress_potantially.size());
+    const auto sz_before = static_cast<int>(vec_to_compress_potantially.size());
 
-    const int sz_threshold = szm / 2;
-
-    if (sz_before > sz_threshold)
+    if (const int sz_threshold = szm / 2; sz_before > sz_threshold)
     {
         // Serial builds defer nothing, and flush_deferred exists only in the
         // threaded policy specialisation.
@@ -692,9 +690,7 @@ T zero_any::ProxyImpl<T, Derived, ChunkT>::assign_impl(this Derived& self, InT<U
                 while (true)
                 {
                     const bool is_cst1 = proxy.is_cst_val1();
-                    const bool is_cst2 = proxy.is_cst_val2();
-
-                    if (is_cst1 || is_cst2)
+                    if (const bool is_cst2 = proxy.is_cst_val2(); is_cst1 || is_cst2)
                     {
                         if constexpr (is_not_bool)
                         {
@@ -725,8 +721,7 @@ T zero_any::ProxyImpl<T, Derived, ChunkT>::assign_impl(this Derived& self, InT<U
                         // Catch an out-of-range index BEFORE it writes. Compare against
                         // proxy.chunk_size() (frozen at enqueue), NOT the static
                         // static_chunk_size, which is only the default in a dynamic build.
-                        const unsigned int csz_guard = proxy.chunk_size();
-                        if (std::cmp_greater_equal(num, csz_guard))
+                        if (const unsigned int csz_guard = proxy.chunk_size(); std::cmp_greater_equal(num, csz_guard))
                         {
                             CHUNK_INVARIANT_FAILED("[deferred2A write] num OUT OF RANGE "
                                                    "(num={}, chunk_size={}, chunk={})",
@@ -890,8 +885,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_simple_
 
         operation(values_before);
 
-        const T* values_after = ctx->chunk.values_load();
-        if (values_after != values_before) [[unlikely]]
+        if (const T* values_after = ctx->chunk.values_load(); values_after != values_before) [[unlikely]]
         {
             internal::replay_retry(retry_count, "execute_simple_operation_async (post-store)",
                                    static_cast<const void*>(&ctx->chunk), ctx->num);
@@ -1040,10 +1034,9 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
 
         if constexpr (is_not_bool)
         {
-            const bool will_be_not_second_value =
-                !same_value(v_new_truncated, static_cast<T>(proxy.ptr_second_value_.get())) && cst_val2;
-
-            if (will_be_not_second_value)
+            if (const bool will_be_not_second_value =
+                    !same_value(v_new_truncated, static_cast<T>(proxy.ptr_second_value_.get())) && cst_val2;
+                will_be_not_second_value)
             {
                 ctx->chunk.create_value(true, proxy.ptr_second_value_);
 
@@ -1058,8 +1051,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
 
                 lbd(op);
 
-                const T* values_after = ctx->chunk.values_load();
-                if (values_after != values_before) [[unlikely]]
+                if (const T* values_after = ctx->chunk.values_load(); values_after != values_before) [[unlikely]]
                 {
                     internal::replay_retry(retry_count,
                                            "execute_arithmetic_compound_operation_async (decompress path post-store)",
@@ -1082,8 +1074,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
 
                 Base::store_value_async(ctx, v_new_truncated);
 
-                const T* values_after = ctx->chunk.values_load();
-                if (values_after != values_before) [[unlikely]]
+                if (const T* values_after = ctx->chunk.values_load(); values_after != values_before) [[unlikely]]
                 {
                     internal::replay_retry(retry_count,
                                            "execute_arithmetic_compound_operation_async (heap path post-store)",
@@ -1110,9 +1101,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
             // bool: the same protocol, second value = true. Unreachable today (no
             // compound operator on a bool proxy); kept complete so a future one
             // does not skip the protocol.
-            const bool will_be_not_second_value = !v_new_truncated && cst_val2;
-
-            if (will_be_not_second_value)
+            if (const bool will_be_not_second_value = !v_new_truncated && cst_val2; will_be_not_second_value)
             {
                 ctx->chunk.create_value_bool(true);
 
@@ -1227,8 +1216,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_inplace
 
         internal::modify_element<ChunkT, T>(values_before, ctx->num, operation);
 
-        const T* values_after = ctx->chunk.values_load();
-        if (values_after != values_before) [[unlikely]]
+        if (const T* values_after = ctx->chunk.values_load(); values_after != values_before) [[unlikely]]
         {
             internal::replay_retry(retry_count, "execute_inplace_operation_async (post-store)",
                                    static_cast<const void*>(&ctx->chunk), ctx->num);
@@ -1516,8 +1504,8 @@ void zero_any::PointerMap<ChunkT, SmallN>::for_each_key(F&& func) const
 template <typename T, typename Derived, typename ChunkT>
 void zero_any::ProxySpec<T, Derived, ChunkT>::resize(int nb_tab, int nb_chunk_old, int nb_chunk)
 {
-    auto&     row  = tab_second_value[static_cast<std::size_t>(nb_tab)];
-    const int held = static_cast<int>(row.size());
+    auto&      row  = tab_second_value[static_cast<std::size_t>(nb_tab)];
+    const auto held = static_cast<int>(row.size());
     // Keeps [0, min(old, new)); new slots value-initialised (by a team for a large array).
     parallel_storage_init::resize_filled(row, static_cast<std::size_t>(nb_chunk), SecondValueSlotT{});
     // Clear from the OLD count too: the row may hold more than nb_chunk_old entries.
@@ -1703,7 +1691,7 @@ template <typename T, typename Derived, typename ChunkT>
     }
     else
     {
-        const int chunk_sz = static_cast<int>(this->chunk_size());
+        const auto chunk_sz = static_cast<int>(this->chunk_size());
         if (chunk_sz < 3) [[unlikely]]
         {
             return true;

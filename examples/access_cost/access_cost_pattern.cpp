@@ -150,7 +150,7 @@ struct Mesh
 std::vector<int> random_indices(long count)
 {
     std::vector<int> idx(static_cast<std::size_t>(count));
-    const int        ni = static_cast<int>(count);
+    const auto       ni = static_cast<int>(count);
 #pragma omp parallel for schedule(static)
     for (int k = 0; k < ni; ++k)
     {
@@ -180,7 +180,7 @@ struct Sample
 Sample vec_read(const std::vector<T>& vec)
 {
     const auto t0    = Clk::now();
-    const int  count = static_cast<int>(vec.size());
+    const auto count = static_cast<int>(vec.size());
     long long  sum   = 0;
 #pragma omp parallel for schedule(static) reduction(+ : sum)
     for (int i = 0; i < count; ++i)
@@ -193,7 +193,7 @@ Sample vec_read(const std::vector<T>& vec)
 Sample vec_read_random(const std::vector<T>& vec, const std::vector<int>& idx)
 {
     const auto t0    = Clk::now();
-    const int  count = static_cast<int>(idx.size());
+    const auto count = static_cast<int>(idx.size());
     long long  sum   = 0;
 #pragma omp parallel for schedule(static) reduction(+ : sum)
     for (int k = 0; k < count; ++k)
@@ -207,7 +207,7 @@ template <typename F>
 Sample vec_write(std::vector<T>& vec, F value)
 {
     const auto t0    = Clk::now();
-    const int  count = static_cast<int>(vec.size());
+    const auto count = static_cast<int>(vec.size());
 #pragma omp parallel for schedule(static)
     for (int i = 0; i < count; ++i)
     {
@@ -240,7 +240,7 @@ template <typename Arr>
 Sample arr_read_random(Arr& arr, const std::vector<int>& idx)
 {
     const auto  t0    = Clk::now();
-    const int   count = static_cast<int>(idx.size());
+    const auto  count = static_cast<int>(idx.size());
     long long   sum   = 0;
     const auto& ca    = std::as_const(arr);
 #pragma omp parallel
@@ -414,10 +414,10 @@ try
         std::fprintf(stderr, "access_cost_pattern: need reps >= 1, 2048 <= n < 2^31\n");
         return 2;
     }
-    n_elems         = 8 * mesh.cells();
-    const int count = static_cast<int>(n_elems);
+    n_elems          = 8 * mesh.cells();
+    const auto count = static_cast<int>(n_elems);
 
-    const long chunk_sz = static_cast<long>(PArr(0).chunk_size());
+    const auto chunk_sz = static_cast<long>(PArr(0).chunk_size());
     const long n_chunks = (n_elems + chunk_sz - 1) / chunk_sz;
     if (csv)
     {

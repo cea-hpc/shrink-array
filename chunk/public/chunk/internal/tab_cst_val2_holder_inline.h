@@ -358,8 +358,7 @@ void GlobalVecHolder<T>::index_publish(InT<T> value, T* ptr) noexcept
         for (int probe = 0; probe < index_max_probe; ++probe)
         {
             const size_t idx = (slot + probe) & mask;
-            const T*     cur = table->slots[idx].load(std::memory_order_acquire);
-            if (cur != nullptr)
+            if (const T* cur = table->slots[idx].load(std::memory_order_acquire); cur != nullptr)
             {
                 if (same_value(value_of_ptr(cur), value))
                 {
@@ -420,8 +419,7 @@ void GlobalVecHolder<T>::install_head()
 template <typename T>
 void GlobalVecHolder<T>::clear_if_last(int& nb_val2)
 {
-    const int remaining = ref_count.fetch_sub(1, std::memory_order_acq_rel) - 1;
-    if (remaining > 0)
+    if (const int remaining = ref_count.fetch_sub(1, std::memory_order_acq_rel) - 1; remaining > 0)
     {
         return; // Other zero_any::Array<T> instances still alive — do not free
     }
@@ -525,7 +523,7 @@ void GlobalVecHolder<T>::region_init()
         CHUNK_INVARIANT_FAILED("[cst_val2] cannot reserve the second-value table ({} MiB): {}",
                                value_table_bytes() >> 20U, std::strerror(errno));
     }
-    T* const table = static_cast<T*>(vals);
+    auto* const table = static_cast<T*>(vals);
     std::construct_at(table, T{}); // [0]: "no second value"
     value_by_id = table;
     region_begin.store(static_cast<std::byte*>(raw), std::memory_order_release);

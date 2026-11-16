@@ -702,7 +702,7 @@ void ReusePools<ChunkT, T>::drain_reuse_list_for_size_team([[maybe_unused]] pmp:
         for (auto* set : scratch.sets)
         {
             auto&      per_thr = *set;
-            const int  n_thr   = static_cast<int>(per_thr.size());
+            const auto n_thr   = static_cast<int>(per_thr.size());
             const auto is_set  = [](const std::atomic<unsigned char>* flags, int rank) noexcept
             { return flags[rank].load(std::memory_order_relaxed) != 0; };
             const auto t_sort = probe ? ProbeClock::now() : ProbeClock::time_point{};

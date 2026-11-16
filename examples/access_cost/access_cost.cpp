@@ -189,7 +189,7 @@ double varied2(long index)
 std::vector<int> random_indices(long count)
 {
     std::vector<int> idx(static_cast<std::size_t>(count));
-    const int        ni = static_cast<int>(count);
+    const auto       ni = static_cast<int>(count);
 #pragma omp parallel for schedule(static)
     for (int k = 0; k < ni; ++k)
     {
@@ -230,7 +230,7 @@ struct SamplePair
 Sample vec_read(const std::vector<double>& vec)
 {
     const auto t0    = Clk::now();
-    const int  count = static_cast<int>(vec.size());
+    const auto count = static_cast<int>(vec.size());
     double     sum   = 0.;
 #pragma omp parallel for schedule(static) reduction(+ : sum)
     for (int i = 0; i < count; ++i)
@@ -243,7 +243,7 @@ Sample vec_read(const std::vector<double>& vec)
 Sample vec_read_random(const std::vector<double>& vec, const std::vector<int>& idx)
 {
     const auto t0    = Clk::now();
-    const int  count = static_cast<int>(idx.size());
+    const auto count = static_cast<int>(idx.size());
     double     sum   = 0.;
 #pragma omp parallel for schedule(static) reduction(+ : sum)
     for (int k = 0; k < count; ++k)
@@ -257,7 +257,7 @@ template <typename F>
 Sample vec_write(std::vector<double>& vec, F value)
 {
     const auto t0    = Clk::now();
-    const int  count = static_cast<int>(vec.size());
+    const auto count = static_cast<int>(vec.size());
 #pragma omp parallel for schedule(static)
     for (int i = 0; i < count; ++i)
     {
@@ -269,7 +269,7 @@ Sample vec_write(std::vector<double>& vec, F value)
 Sample vec_rmw(std::vector<double>& vec)
 {
     const auto t0    = Clk::now();
-    const int  count = static_cast<int>(vec.size());
+    const auto count = static_cast<int>(vec.size());
 #pragma omp parallel for schedule(static)
     for (int i = 0; i < count; ++i)
     {
@@ -322,7 +322,7 @@ Sample arr_read_bulk(Array<double>& arr, int count)
 Sample arr_read_random(Array<double>& arr, const std::vector<int>& idx)
 {
     const auto  t0    = Clk::now();
-    const int   count = static_cast<int>(idx.size());
+    const auto  count = static_cast<int>(idx.size());
     double      sum   = 0.;
     const auto& ca    = std::as_const(arr);
 #pragma omp parallel
@@ -471,10 +471,10 @@ try
         std::fprintf(stderr, "access_cost: need reps >= 1, 1 <= n < 2^31\n");
         return 2;
     }
-    const int count = static_cast<int>(n_elems);
+    const auto count = static_cast<int>(n_elems);
 
     // Read off an EMPTY array: no chunk, no end-of-run stats line of its own.
-    const long chunk_sz = static_cast<long>(Array<double>(0).chunk_size());
+    const auto chunk_sz = static_cast<long>(Array<double>(0).chunk_size());
     if (csv)
     {
         println("variant,chunk_size,threads,n,rep,case,container,seconds,ns_per_elem");
@@ -487,8 +487,8 @@ try
 
     const std::vector<int> idx = random_indices(n_elems);
     std::vector<double>    vec(static_cast<std::size_t>(n_elems));
-    std::vector<double>    zeros(static_cast<std::size_t>(n_elems), 0.);
-    std::vector<double>    seconds(static_cast<std::size_t>(n_elems), 1.5);
+    std::vector            zeros(static_cast<std::size_t>(n_elems), 0.);
+    std::vector            seconds(static_cast<std::size_t>(n_elems), 1.5);
 
     // [case][container 0 = vector, 1 = array] -> seconds per repetition
     std::vector<double> times[n_cases][2];
@@ -573,8 +573,8 @@ try
         // write-fresh: varied values into an array all at 0 (every chunk
         // materialised by its first write) and into a zeroed vector.
         {
-            Array<double>       filled(count);
-            std::vector<double> fv(static_cast<std::size_t>(n_elems), 0.);
+            Array<double> filled(count);
+            std::vector   fv(static_cast<std::size_t>(n_elems), 0.);
             pair(4, [&] { return vec_write(fv, varied); }, [&] { return arr_write(filled, count, varied); });
             check_sum(4, vec_sum(fv), arr_sum(filled, count));
             if (verify)

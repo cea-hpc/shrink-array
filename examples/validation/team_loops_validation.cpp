@@ -94,13 +94,14 @@ const char* name_of(LoopKind kind)
 {
     switch (kind)
     {
-        case LoopKind::static_blocks:
+        using enum LoopKind;
+        case static_blocks:
             return "for_static";
-        case LoopKind::static_blocks_simd:
+        case static_blocks_simd:
             return "for_static_simd";
-        case LoopKind::static_chunks:
+        case static_chunks:
             return "for_static_chunks";
-        case LoopKind::static_chunks_simd:
+        case static_chunks_simd:
             return "for_static_chunks_simd";
     }
     return "?";
@@ -117,16 +118,17 @@ void run_loop(pmp::Team& team, LoopKind kind, Index first, Index last, int chunk
 {
     switch (kind)
     {
-        case LoopKind::static_blocks:
+        using enum LoopKind;
+        case static_blocks:
             team.for_static(first, last, std::forward<Body>(body), wait_mode);
             return;
-        case LoopKind::static_blocks_simd:
+        case static_blocks_simd:
             team.for_static_simd(first, last, std::forward<Body>(body), wait_mode);
             return;
-        case LoopKind::static_chunks:
+        case static_chunks:
             team.for_static_chunks(first, last, chunk, std::forward<Body>(body), wait_mode);
             return;
-        case LoopKind::static_chunks_simd:
+        case static_chunks_simd:
             team.for_static_chunks_simd(first, last, chunk, std::forward<Body>(body), wait_mode);
             return;
     }
@@ -143,14 +145,14 @@ void run_loop(pmp::Team& team, LoopKind kind, Index first, Index last, int chunk
 template <typename Index>
 void check_one(LoopKind kind, int nt, Index first, Index count, int chunk)
 {
-    const Index      last = static_cast<Index>(first + count);
-    const auto       un   = static_cast<std::size_t>(count);
-    std::vector<int> owner_wait(un, -1);
-    std::vector<int> owner_a(un, -1);
-    std::vector<int> owner_b(un, -1);
-    std::vector<int> hits_wait(un, 0);
-    std::vector<int> hits_a(un, 0);
-    int              size = 0;
+    const auto  last = static_cast<Index>(first + count);
+    const auto  un   = static_cast<std::size_t>(count);
+    std::vector owner_wait(un, -1);
+    std::vector owner_a(un, -1);
+    std::vector owner_b(un, -1);
+    std::vector hits_wait(un, 0);
+    std::vector hits_a(un, 0);
+    int         size = 0;
 
     pmp::team(pmp::Options{.num_threads = nt},
               [&](pmp::Team& team)

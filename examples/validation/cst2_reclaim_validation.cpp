@@ -114,7 +114,7 @@ static double cst(double base, long num_chunk)
 ///        @p only_even is false or j is even -- then the between-region pass.
 static void fill(Arr& arr, long nch, long chunk_sz, double base, bool only_even = false)
 {
-    const int ni = static_cast<int>(nch * chunk_sz);
+    const auto ni = static_cast<int>(nch * chunk_sz);
 #pragma omp parallel
     {
         begin_phase();
@@ -194,7 +194,7 @@ static long in_use()
 ///        Returning means it ran to the end.
 static int run_rounds_child(long nch, long rounds)
 {
-    const long chunk_sz = static_cast<long>(Arr(0).chunk_size());
+    const auto chunk_sz = static_cast<long>(Arr(0).chunk_size());
     Arr        arr(static_cast<int>(nch * chunk_sz));
     for (long r = 0; r < rounds; ++r)
     {
@@ -252,7 +252,7 @@ int run(int argc, char** argv)
     ParamChunk::init_indexes(true);
 
     const long nch      = argc > 1 ? shrink_array::arg_number<long>(argv[1], 16, "chunks") : 16;
-    const long chunk_sz = static_cast<long>(Arr(0).chunk_size()); // empty: no chunk, so no registry reference
+    const auto chunk_sz = static_cast<long>(Arr(0).chunk_size()); // empty: no chunk, so no registry reference
 
     println("=== cst2_reclaim_validation  chunks={}  chunk_size={}  threads={} ===", nch, chunk_sz,
             CHUNK_PMP_MAX_THREADS);

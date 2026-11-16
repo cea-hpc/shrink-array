@@ -288,14 +288,13 @@ void TypeStateParallelImpl<ChunkT, T, true>::flush_all_deferred(bool in_parallel
         // a few stragglers are tolerable, a persistent residual is not.
         if constexpr (build_config::any_check)
         {
-            if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
+            // aggressive_compression(): a run-time switch (chunk/config.h).
+            if (!chunk_config::aggressive_compression() &&
+                self.have_chunk_to_compress_potentially(CHUNK_PMP_RANK_BOUND))
             {
-                if (self.have_chunk_to_compress_potentially(CHUNK_PMP_RANK_BOUND))
-                {
-                    CHUNK_LOG(info, compress,
-                              "audit: blocks left to compress after final flush (non-aggressive) -- compression pass "
-                              "skipped some blocks. A few is benign; a recurring/large residual is not.");
-                }
+                CHUNK_LOG(info, compress,
+                          "audit: blocks left to compress after final flush (non-aggressive) -- compression pass "
+                          "skipped some blocks. A few is benign; a recurring/large residual is not.");
             }
         }
 

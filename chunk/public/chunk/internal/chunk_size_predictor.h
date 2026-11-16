@@ -109,7 +109,7 @@ void report_size_prediction(const std::vector<std::optional<T>>& summary,
                             std::size_t                          meta_per_block,
                             unsigned                             max_multiple = 16)
 {
-    const int nb_chunk = static_cast<int>(summary.size());
+    const auto nb_chunk = static_cast<int>(summary.size());
     if (nb_chunk <= 0)
     {
         return;

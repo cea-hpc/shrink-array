@@ -75,7 +75,6 @@ class TypeState final : public virtual TypeStateInterface,
     template <template <typename> class, typename, bool>
     friend class TypeStateParallelImpl;
 
-  private:
     using Pools      = ReusePools<ChunkT, T>;         ///< the reuse pools, a base
     using Candidates = CompressCandidates<ChunkT, T>; ///< the candidate lists, a base
 

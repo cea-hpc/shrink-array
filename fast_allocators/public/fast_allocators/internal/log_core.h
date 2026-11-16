@@ -332,9 +332,8 @@ struct Spec
     out.max = base;
     while (true)
     {
-        const std::size_t      comma = spec.find(',');
-        const std::string_view item  = trim(spec.substr(0, comma));
-        if (!item.empty())
+        const std::size_t comma = spec.find(',');
+        if (const std::string_view item = trim(spec.substr(0, comma)); !item.empty())
         {
             const std::size_t eq = item.find('=');
             Level             lvl{};
@@ -515,8 +514,7 @@ inline void emit_fatal(const Record& record) noexcept
     {
         for (int attempt = 0; attempt < 1000; ++attempt)
         {
-            const std::unique_lock lk(sink_mutex, std::try_to_lock);
-            if (lk.owns_lock())
+            if (const std::unique_lock lk(sink_mutex, std::try_to_lock); lk.owns_lock())
             {
                 if (sink != nullptr)
                 {
@@ -545,8 +543,8 @@ std::size_t format_message(char* buf, std::format_string<FmtArgT<Args>...> fmt, 
 {
     try
     {
-        const auto res = std::format_to_n(buf, line_max, fmt, fmt_arg(std::forward<Args>(args))...);
-        if (static_cast<std::size_t>(res.size) <= line_max)
+        if (const auto res = std::format_to_n(buf, line_max, fmt, fmt_arg(std::forward<Args>(args))...);
+            static_cast<std::size_t>(res.size) <= line_max)
         {
             return static_cast<std::size_t>(res.size);
         }
@@ -667,8 +665,7 @@ inline void read_environment() noexcept
     raise_by_legacy_switches(spec.max);
     store(spec.max);
 
-    const char* path = std::getenv("CHUNK_LOG_FILE");
-    if (path != nullptr && *path != '\0')
+    if (const char* path = std::getenv("CHUNK_LOG_FILE"); path != nullptr && *path != '\0')
     {
         char        expanded[4096];
         std::size_t used = 0;

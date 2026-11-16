@@ -27,10 +27,7 @@
 #include "chunk/internal/chunk_traits.h"   // pattern::Chunk, pattern::Proxy (forward declarations)
 #include "chunk/internal/zero_any_proxy.h" // zero_any::ProxyImpl
 
-namespace shrink_array
-{
-
-namespace pattern
+namespace shrink_array::pattern
 {
 
 /**
@@ -90,6 +87,4 @@ class Proxy : public zero_any::ProxyImpl<T, Proxy<T>, Chunk<T>>
     }
 };
 
-} // namespace pattern
-
-} // namespace shrink_array
+} // namespace shrink_array::pattern

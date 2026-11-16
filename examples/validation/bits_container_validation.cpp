@@ -172,8 +172,7 @@ int round_trip(long count)
     end_phase();
     for (long i = 0; i < count; ++i)
     {
-        const long run = (i / run_len) % 3;
-        if (run != 2)
+        if (const long run = (i / run_len) % 3; run != 2)
         {
             ref[static_cast<std::size_t>(i)] = (run == 1);
         }
@@ -193,8 +192,8 @@ int round_trip(long count)
     // chunks, so the share of written chunks is that of the mixed runs.
     const double written = arr.stats_seq();
     const long   n_runs  = count / run_len;
-    const double expect  = 100.0 * static_cast<double>(n_runs / 3) / static_cast<double>(n_runs);
-    if (written > expect + 1.0 || written < expect - 1.0)
+    if (const double expect = 100.0 * static_cast<double>(n_runs / 3) / static_cast<double>(n_runs);
+        written > expect + 1.0 || written < expect - 1.0)
     {
         println("[bits] FAIL compression: {:.1f}% of the chunks written, expected ~{:.1f}%", written, expect);
         ++fails;
@@ -395,14 +394,13 @@ int advisor_and_rechunk(long count)
     {
         arr.rechunk_to(256); // room for a finer row (the advisor stops at 64)
     }
-    const long chunk_sz = static_cast<long>(arr.chunk_size());
+    const auto chunk_sz = static_cast<long>(arr.chunk_size());
 
     // Runs of whole chunks: all false, all true, and chunks whose first half
     // is all true and second half mixed.
     const auto pattern = [chunk_sz](long i)
     {
-        const long run = (i / run_len) % 3;
-        if (run != 2)
+        if (const long run = (i / run_len) % 3; run != 2)
         {
             return run == 1;
         }
@@ -447,9 +445,9 @@ int advisor_and_rechunk(long count)
         println("[bits] FAIL advisor: no row for the current size {}", chunk_sz);
         return fails + 1;
     }
-    const auto&  cur        = rep.table[static_cast<std::size_t>(rep.cur)];
-    const double data_bytes = cur.mem_bytes - (static_cast<double>(cur.n_chunks) * rep.meta_bytes);
-    if (cur.mat != mat_expected || data_bytes != static_cast<double>(mat_expected) * static_cast<double>(chunk_sz) / 8.)
+    const auto& cur = rep.table[static_cast<std::size_t>(rep.cur)];
+    if (const double data_bytes = cur.mem_bytes - (static_cast<double>(cur.n_chunks) * rep.meta_bytes);
+        cur.mat != mat_expected || data_bytes != static_cast<double>(mat_expected) * static_cast<double>(chunk_sz) / 8.)
     {
         println("[bits] FAIL advisor exact row: mat {} (expected {}), data {:.0f} B (expected {:.0f})",
                 static_cast<long long>(cur.mat), mat_expected, data_bytes,
@@ -519,7 +517,7 @@ int bulk_ranges(long count)
 {
     ArrayChunkBits<>  arr(count);
     std::vector<bool> ref(static_cast<std::size_t>(count), false);
-    const long        chunk_sz = static_cast<long>(arr.chunk_size());
+    const auto        chunk_sz = static_cast<long>(arr.chunk_size());
     int               fails    = 0;
 
     // A start with constant and mixed chunks.
@@ -539,7 +537,7 @@ int bulk_ranges(long count)
 
     for (int round = 0; round < 400; ++round)
     {
-        long first = static_cast<long>(rng() % static_cast<std::uint64_t>(count));
+        auto first = static_cast<long>(rng() % static_cast<std::uint64_t>(count));
         long len   = static_cast<long>(rng() % static_cast<std::uint64_t>(4 * chunk_sz)) + 1;
         if (round % 5 == 0) // whole chunks
         {

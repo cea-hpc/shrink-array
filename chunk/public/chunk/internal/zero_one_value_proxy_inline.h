@@ -290,7 +290,7 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::perform_c
         const auto* vec_tuple_p = Manager::compress_candidates(thr_rank, true);
         if (vec_tuple_p)
         {
-            const int sz_before = static_cast<int>(vec_tuple_p->size());
+            const auto sz_before = static_cast<int>(vec_tuple_p->size());
 
             if (sz_before > sz_threshold)
             {
@@ -388,9 +388,7 @@ void zero_one_value::Proxy<T>::perform_core_assignment(InT<T> value) const noexc
         increm_chunk_write<ChunkType>(value);
     }
 
-    const bool is_cst2 = !is_cst1 && is_cst_val2_at(vals);
-
-    if (is_cst1 || is_cst2)
+    if (const bool is_cst2 = !is_cst1 && is_cst_val2_at(vals); is_cst1 || is_cst2)
     {
         [[maybe_unused]] const bool was_cst_val2 = is_cst2;
         [[maybe_unused]] const bool was_cst_val1 = is_cst1;
@@ -545,9 +543,7 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> value) noexcept
                 [[maybe_unused]] const DynChunkSizeGuard sz_guard{proxy.chunk_size()};
 
                 const bool is_cst1 = proxy.is_cst_val1();
-                const bool is_cst2 = proxy.is_cst_val2();
-
-                if (is_cst1 || is_cst2)
+                if (const bool is_cst2 = proxy.is_cst_val2(); is_cst1 || is_cst2)
                 {
                     if constexpr (is_not_bool)
                     {
@@ -562,8 +558,7 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> value) noexcept
 
                 if constexpr (build_config::any_check)
                 {
-                    const bool is_cst1_loc = proxy.is_cst_val1();
-                    if (is_cst1_loc)
+                    if (const bool is_cst1_loc = proxy.is_cst_val1(); is_cst1_loc)
                     {
                         CHUNK_INVARIANT_FAILED("[deferred write_body] chunk still cst_val1 after create_value "
                                                "(chunk={}, num={})",
@@ -863,9 +858,7 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, false>::execute_ari
 
     using CalcType = std::common_type_t<T, BaseT<U>>;
 
-    const bool was_not_written = !self.Base::chunk_.written(self.ind_);
-
-    if (was_not_written)
+    if (const bool was_not_written = !self.Base::chunk_.written(self.ind_); was_not_written)
     {
         const CalcType intermediate = op(static_cast<CalcType>(self.raw_elem()), static_cast<CalcType>(operand));
         // Built where it is used: one write of a struct for one value.
@@ -1024,9 +1017,7 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_i
     const zero_one_value::Proxy proxy = Base::template make_proxy_with_info<Derived>(ctx);
 
     const bool is_val1 = chunk.is_cst_val1();
-    const bool is_val2 = proxy.is_cst_val2();
-
-    if (is_val1 || is_val2)
+    if (const bool is_val2 = proxy.is_cst_val2(); is_val1 || is_val2)
     {
         if constexpr (is_not_bool)
         {

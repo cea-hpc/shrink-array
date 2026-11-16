@@ -549,8 +549,8 @@ struct ChunkSizeAdvisor
                         Seg open = {0, 0, -1, nullptr};
                         for (int64_t p = 0; p < n_parts; ++p)
                         {
-                            const Seg& first = part_first[static_cast<std::size_t>(p)];
-                            if (open.kind == first.kind && open.key == first.key && open.end == first.start)
+                            if (const Seg& first = part_first[static_cast<std::size_t>(p)];
+                                open.kind == first.kind && open.key == first.key && open.end == first.start)
                             {
                                 open.end = first.end;
                             }
@@ -599,8 +599,8 @@ struct ChunkSizeAdvisor
                                                   auto&   mine = part_picks[static_cast<std::size_t>(part)];
                                                   for (int64_t j = j0; j < j1; ++j)
                                                   {
-                                                      const void* key = nullptr;
-                                                      if (classify(tab.chunk_list_[j], key) !=
+                                                      if (const void* key = nullptr;
+                                                          classify(tab.chunk_list_[j], key) !=
                                                           2) // skip cst1 / cst2 (only mat has data)
                                                       {
                                                           continue;
@@ -770,8 +770,7 @@ struct ChunkSizeAdvisor
                                         const auto&   ch  = tab.chunk_list_[cc];
                                         const void*   key = nullptr;
                                         T             part{};
-                                        const int     kc = classify(ch, key);
-                                        if (kc != 2 && kc != motif_kind)
+                                        if (const int kc = classify(ch, key); kc != 2 && kc != motif_kind)
                                         {
                                             part = ch.read_value_scan(0); // the constant (a scan read: no app stats)
                                         }

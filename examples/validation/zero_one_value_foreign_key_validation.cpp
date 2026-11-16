@@ -151,7 +151,7 @@ int run(int /*argc*/, char** /*argv*/)
     {
         Arr        arr;
         Arr        other;
-        const long chunk_sz = static_cast<long>(arr.chunk_size());
+        const auto chunk_sz = static_cast<long>(arr.chunk_size());
         arr.resize(static_cast<Ind>(chunks_a * chunk_sz));
         other.resize(static_cast<Ind>(chunks_b * chunk_sz));
         arr.set_second_value(val_a);
@@ -210,11 +210,11 @@ int run(int /*argc*/, char** /*argv*/)
                     // `other`: a chunk of this thread's, materialised then constant again.
                     const long cbk =
                         me + static_cast<long>(rng.next() % static_cast<std::uint64_t>(chunks_b / nthreads)) * nthreads;
-                    const Ind b0 = static_cast<Ind>(cbk * chunk_sz);
-                    other[b0]    = 3.0;
-                    other[b0]    = val_b;
+                    const auto b0 = static_cast<Ind>(cbk * chunk_sz);
+                    other[b0]     = 3.0;
+                    other[b0]     = val_b;
                     // `arr`: an element of this thread's, rewritten to the same 2.0.
-                    const long cak = static_cast<long>(rng.next() % static_cast<std::uint64_t>(chunks_a));
+                    const auto cak = static_cast<long>(rng.next() % static_cast<std::uint64_t>(chunks_a));
                     const long off = me % chunk_sz;
                     arr[static_cast<Ind>(cak * chunk_sz + off)] = val_b;
                     ++local;

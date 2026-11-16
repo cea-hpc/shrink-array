@@ -81,8 +81,7 @@ template <typename T>
         // the cst_val1/cst_val2 sentinels are static std::array<T> whose .data() is only
         // alignof(T)-aligned; the linker usually over-aligns statics, but not always
         // (e.g. under sanitizer redzones).
-        constexpr std::uintptr_t align_mask = alignof(T) - 1;
-        if (addr >= 0x1000 && (addr & align_mask) == 0) [[likely]]
+        if (constexpr std::uintptr_t align_mask = alignof(T) - 1; addr >= 0x1000 && (addr & align_mask) == 0) [[likely]]
         {
             return;
         }

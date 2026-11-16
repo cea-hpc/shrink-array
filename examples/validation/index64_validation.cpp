@@ -162,7 +162,7 @@ int check_past_int_max()
     const long count = static_cast<long>(INT_MAX) + (3L * 4096) + 5;
     Big        big(count);
     maybe_set_second_value(big, char(9));
-    const long chunk_sz = static_cast<long>(big.chunk_size());
+    const auto chunk_sz = static_cast<long>(big.chunk_size());
 
     int bad = 0;
     if (big.size() != count)
@@ -209,8 +209,7 @@ int check_past_int_max()
         {
             const char want = expected(k);
             const char got  = cbig[pos[k]];
-            const char gat  = cbig.at(pos[k]);
-            if (got != want || gat != want)
+            if (const char gat = cbig.at(pos[k]); got != want || gat != want)
             {
                 if (nbad < 5)
                 {
@@ -248,7 +247,7 @@ int check_past_int_max()
 
     // (2) the same positions rewritten from a parallel region, one per
     //     iteration: each thread writes on both sides of 2^31
-    const long npos = static_cast<long>(pos.size());
+    const auto npos = static_cast<long>(pos.size());
 #pragma omp parallel
     {
         begin_phase();
@@ -412,7 +411,7 @@ int check_mixed()
     Array<double, int>  int_arr;
     Array<double, long> long_arr;
     Array<double, int>  int_arr2;
-    const long          chunk_sz = static_cast<long>(int_arr.chunk_size());
+    const auto          chunk_sz = static_cast<long>(int_arr.chunk_size());
     const long          count    = (50 * chunk_sz) + 7;
     int_arr.resize(static_cast<int>(count));
     long_arr.resize(count);

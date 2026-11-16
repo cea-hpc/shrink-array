@@ -98,7 +98,7 @@ struct Loops
     template <typename Body, typename IndexList, typename T>
     static void omp_foreach_simd_red_sum(const IndexList& ll, T& red, const Body& lbd) noexcept
     {
-        const int nn = static_cast<int>(ll.size());
+        const auto nn = static_cast<int>(ll.size());
 
         int kdeb             = 0;
         int kfin             = 0;
@@ -179,7 +179,7 @@ struct LoopsSimd
     template <typename Body, typename IndexList, typename T>
     void omp_foreach_simd_red_sum(const IndexList& ll, T& red, const Body& lbd) const noexcept
     {
-        const int nn = static_cast<int>(ll.size());
+        const auto nn = static_cast<int>(ll.size());
 
         int kdeb             = 0;
         int kfin             = 0;
