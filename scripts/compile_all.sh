@@ -112,9 +112,14 @@ enable_oneapi=true
 # Flip to false to skip. Auto-detects the newest aocc-compiler/<ver> module.
 enable_aocc=true
 
+# ACfL (Arm Compiler for Linux, armclang++, clang-based) -- ARM-only, the
+# counterpart of the two above. Flip to false to skip. Found as the ACfL
+# section says (CHUNK_ACFL_ROOT, armclang++ in PATH, $CCCWORKDIR/opt, module).
+enable_acfl=true
+
 # Per-compiler / sanitizer switches (default on). Toggle here, or via CLI:
-#   --no-gnu --no-oneapi --no-nvhpc --no-llvm --no-aocc --no-sanitizers
-#   --only=<gnu|oneapi|nvhpc|llvm|aocc>   (build just that compiler)
+#   --no-gnu --no-oneapi --no-nvhpc --no-llvm --no-aocc --no-acfl --no-sanitizers
+#   --only=<gnu|oneapi|nvhpc|llvm|aocc|acfl>   (build just that compiler)
 # nvhpc is OFF by default for now: about 1h30 per build on x86 and no
 # performance gain over the others. --with-nvhpc or
 # --only=nvhpc turns it back on.
@@ -142,7 +147,7 @@ Usage: $0 [--dryrun] [--build] [--debug-only]
                 CHUNK_RECLAIM_EMPTY_SLABS=OFF in one cache cost two days.
                 Forwarded to compile_all_gnu.sh.
   --debug-only  Compile only the debug builds (skip release / RelWithDebInfo).
-  --only=<c>       Build only compiler <c> (gnu|oneapi|nvhpc|llvm|aocc).
+  --only=<c>       Build only compiler <c> (gnu|oneapi|nvhpc|llvm|aocc|acfl).
   --std=<N>        Build the tree as C++<N> (20, 23 or 26): every gnu
                    configuration gets -DCMAKE_CXX_STANDARD=<N>. Default:
                    CHUNK_CXX_STANDARD (functions_for_compile.sh; 26 on the cpp26
@@ -174,7 +179,7 @@ Usage: $0 [--dryrun] [--build] [--debug-only]
                    never falls back to a full build; matching nothing anywhere
                    is an error (exit 1) naming the closest targets. Combine with
                    --target=<glob> to also restrict which build dirs are configured.
-  --no-<c>         Skip compiler <c> (gnu|oneapi|nvhpc|llvm|aocc).
+  --no-<c>         Skip compiler <c> (gnu|oneapi|nvhpc|llvm|aocc|acfl).
   --with-nvhpc     Also build nvhpc, off by default (slow: ~1h30 on x86,
                    no performance gain).
   --no-sanitizers  Skip the llvm thread/address-sanitizer builds.
@@ -203,8 +208,8 @@ Usage: $0 [--dryrun] [--build] [--debug-only]
   -h, --help    Show this help.
 
 The std threading backend (CHUNK_THREADS=std) is built next to the OpenMP one,
-with every compiler: std-llvm, std-llvm-check, std-oneapi, std-aocc (std-nvhpc
-with nvhpc) here, std-gnu, std-gnu-check and the TSan build in
+with every compiler: std-llvm, std-llvm-check, std-oneapi, std-aocc, std-acfl
+(std-nvhpc with nvhpc) here, std-gnu, std-gnu-check and the TSan build in
 compile_all_gnu.sh. They lengthen the build; --target='omp-*' leaves them out,
 --target='std-*' makes them alone.
 Their TBB bench (shrink_bench_tbb_*) and tbb_validation need oneTBB: made when
@@ -215,6 +220,13 @@ TSan build gets TBB from CHUNK_TBB_TSAN_DIR only (a oneTBB built with TSan).
 CHUNK_LLVM_ROOT=<dir>: the llvm builds take <dir>/bin/clang++ (LLVM's release
 tarball, extracted) instead of the newest llvm module, e.g. where that module
 has no OpenMP runtime. A <dir> without bin/clang++ is warned, the module used.
+
+ARM only, the acfl family (omp-acfl, std-acfl, omp-acfl-debug): Arm Compiler
+for Linux's armclang++, taken from CHUNK_ACFL_ROOT=<install prefix> (what
+`spack location -i acfl` prints), else armclang++ in PATH (`spack load acfl`),
+else the newest \$CCCWORKDIR/opt/*/acfl-* (a Spack install_tree there), else the
+newest acfl / arm-compiler-for-linux module. None found: the family is skipped.
+oneapi and aocc are x86-only and skipped on ARM.
 EOF
 }
 
@@ -242,6 +254,7 @@ for arg in "$@"; do
         --with-nvhpc)    enable_nvhpc=true;       shift ;;
         --no-llvm)       enable_llvm=false;       shift ;;
         --no-aocc)       enable_aocc=false;       shift ;;
+        --no-acfl)       enable_acfl=false;       shift ;;
         --no-sanitizers) enable_sanitizers=false; shift ;;
         --no-hardening)  NO_HARDENING=true;       shift ;;
         --with-ledger)   WITH_LEDGER=true;        shift ;;
@@ -284,13 +297,15 @@ for arg in "$@"; do
         --only=*)
             only="${arg#*=}"
             enable_gnu=false; enable_oneapi=false; enable_nvhpc=false; enable_llvm=false; enable_aocc=false
+            enable_acfl=false
             case "$only" in
                 gnu)    enable_gnu=true ;;
                 oneapi) enable_oneapi=true ;;
                 nvhpc)  enable_nvhpc=true ;;
                 llvm)   enable_llvm=true ;;
                 aocc)   enable_aocc=true ;;
-                *) echo "ERROR: --only=$only (expected gnu|oneapi|nvhpc|llvm|aocc)" >&2; exit 1 ;;
+                acfl)   enable_acfl=true ;;
+                *) echo "ERROR: --only=$only (expected gnu|oneapi|nvhpc|llvm|aocc|acfl)" >&2; exit 1 ;;
             esac
             shift
             ;;
@@ -345,13 +360,13 @@ skip_release() { [ "$DEBUG_ONLY" = true ]; }
 # a subshell are invisible to the parent's wait_all.
 reset_compiler_modules() {
     local m
-    for m in gcc llvm binutils cuda inteloneapi aocc-compiler nvhpc \
+    for m in gcc llvm binutils cuda inteloneapi aocc-compiler nvhpc acfl arm-compiler-for-linux \
              c/gcc c++/gcc fortran/gcc; do
         run_cmd "module unload $m 2>/dev/null || true"
     done
 }
 
-# The gcc whose libstdc++ clang / icpx / nvc++ / aocc use: gcc/15.2.0 where it
+# The gcc whose libstdc++ clang / icpx / nvc++ / aocc / armclang++ use: gcc/15.2.0 where it
 # exists (inti), else the newest gcc/<ver> module. A hard-coded gcc/15.2.0 on a
 # machine without it failed to load, and the llvm module, which needs a gcc,
 # failed after it: clang++ then came from the system PATH, the wrong llvm.
@@ -388,11 +403,12 @@ if chunk_cxx26; then
         echo "ERROR: --only=$only with C++$CHUNK_CXX_STANDARD: only the gnu builds compile C++26 for now (GCC 16)" >&2
         exit 2
     fi
-    echo "[INFO] C++$CHUNK_CXX_STANDARD: gnu builds only -- oneapi, nvhpc, llvm and aocc skipped (no C++26 reflection there yet)"
+    echo "[INFO] C++$CHUNK_CXX_STANDARD: gnu builds only -- oneapi, nvhpc, llvm, aocc and acfl skipped (no C++26 reflection there yet)"
     enable_oneapi=false
     enable_nvhpc=false
     enable_llvm=false
     enable_aocc=false
+    enable_acfl=false
     enable_sanitizers=false
     llvm_cs_size=""
     WITH_TOKEN=false
@@ -1042,6 +1058,80 @@ else
 fi
 else
     echo "[SKIP] aocc builds disabled (enable_aocc=$enable_aocc, is_arm=$is_arm)"
+fi
+
+# ─── ACfL Section (Arm Compiler for Linux, clang-based — ARM-only) ────────────
+# Arm's HPC compiler: armclang++ with its libomp, the Arm Performance Libraries'
+# vector libm. The ARM counterpart of the oneapi and aocc sections. CMake names
+# it ARMClang: the CMakeLists.txt blocks that MATCH "Clang" apply (libstdc++
+# through the gcc toolchain, as aocc and llvm), those that test "Clang" exactly
+# do not (no OMPT tool: no multi-mat-embedded here).
+# armclang++, in order: $CHUNK_ACFL_ROOT (an install prefix: `spack location -i
+# acfl`), armclang++ in PATH (`spack load acfl`), the newest
+# $CCCWORKDIR/opt/*/acfl-* (a Spack install_tree), the newest acfl /
+# arm-compiler-for-linux module.
+if [ "$enable_acfl" = true ] && [ "$is_arm" = true ]; then
+set_build_header 'Compiling acfl openmp:'
+reset_compiler_modules
+
+acflxx=""
+acfl_module=""
+if [ -n "${CHUNK_ACFL_ROOT:-}" ]; then
+    acflxx=$(find "$CHUNK_ACFL_ROOT" -maxdepth 3 -path '*/bin/armclang++' 2>/dev/null | sort -V | tail -1)
+    [ -z "$acflxx" ] && echo "[WARN] CHUNK_ACFL_ROOT=$CHUNK_ACFL_ROOT has no */bin/armclang++: looking elsewhere"
+fi
+[ -z "$acflxx" ] && acflxx="$(command -v armclang++ 2>/dev/null)"
+if [ -z "$acflxx" ] && [ -n "${CCCWORKDIR:-}" ]; then
+    acflxx=$(find "$CCCWORKDIR"/opt/*/acfl-* -maxdepth 3 -path '*/bin/armclang++' 2>/dev/null | sort -V | tail -1)
+fi
+if [ -z "$acflxx" ] && [ "$CHUNK_HAVE_MODULES" != false ]; then
+    acfl_module=$(module av acfl arm-compiler-for-linux 2>&1 | tr -s '[:space:]' '\n' |
+                  grep -oE '(acfl|arm-compiler-for-linux)/[0-9]+(\.[0-9]+)*' | sort -V -u | tail -1)
+fi
+if [ -z "$acflxx" ] && [ -z "$acfl_module" ]; then
+    echo "[SKIP] no Arm Compiler for Linux: set CHUNK_ACFL_ROOT, or spack load acfl (see --help)"
+else
+    if [ -n "$acfl_module" ]; then
+        run_cmd "module load $acfl_module"
+        acflxx="$(command -v armclang++ 2>/dev/null)"
+        [ -z "$acflxx" ] && acflxx="armclang++"  # dry run: the module is not loaded
+    fi
+    echo "Using $acflxx${acfl_module:+ ($acfl_module)}"
+    run_cmd "module load ninja"
+    [ "$DRYRUN" = true ] || chunk_ensure_ninja || exit 1
+    ACFL_CXX_OPT="-DCMAKE_CXX_COMPILER=$acflxx"
+
+    # As aocc: the clang front-end on the gcc toolchain's libstdc++ (C++23's
+    # headers need a recent one; ACfL's own gcc may be older).
+    load_gcc_module
+    ACFL_STDLIB_OPT="-DUSE_LIBCXX=OFF $(chunk_gcc_toolchain_opt cmake)"
+    echo "acfl → libstdc++ from ${CHUNK_GCC_TOOLCHAIN_DIR:-the default gcc} (USE_LIBCXX=OFF)"
+
+    if skip_release; then
+        echo "[debug-only] skipping acfl release builds"
+    else
+        if [ "$BUILD_ONLY" = false ]; then
+            run_cmd "CXX='$acflxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-acfl/$arch $ACFL_CXX_OPT $ACFL_STDLIB_OPT -DOMP:BOOL=ON $INT64_OPT -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+        fi
+        launch_build "$build_rep/cmake-build-omp-acfl/$arch" $BUILD_FLAGS
+
+        set_build_header 'Compiling acfl std backend (no openmp):'
+        if [ "$BUILD_ONLY" = false ]; then
+            run_cmd "CXX='$acflxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-std-acfl/$arch $ACFL_CXX_OPT $ACFL_STDLIB_OPT -DCHUNK_THREADS=std $INT64_OPT $TBB_CMAKE_OPT -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+        fi
+        launch_build "$build_rep/cmake-build-std-acfl/$arch" $BUILD_FLAGS
+    fi
+
+    set_build_header 'Compiling acfl debug openmp:'
+    if [ "$BUILD_ONLY" = false ]; then
+        run_cmd "CXX='$acflxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-acfl-debug/$arch $ACFL_CXX_OPT $ACFL_STDLIB_OPT -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+    fi
+    launch_build "$build_rep/cmake-build-omp-acfl-debug/$arch" $BUILD_FLAGS
+
+    [ -n "$acfl_module" ] && run_cmd "module unload $acfl_module"
+fi
+else
+    echo "[SKIP] acfl builds disabled (enable_acfl=$enable_acfl, is_arm=$is_arm)"
 fi
 
 
