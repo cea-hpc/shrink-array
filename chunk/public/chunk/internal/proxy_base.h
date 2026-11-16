@@ -219,7 +219,13 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
     {
         T* const values_loc = ctx->chunk.values_load();
         elem_set(values_loc, static_cast<std::size_t>(ctx->num), static_cast<T>(value));
+        check_nan_written_async(ctx, value);
     }
+
+    /// @brief CHUNK_DO_CHECK builds: abort if @p value, written on the replay
+    ///        path at the element @p ctx recorded, is NaN. Reports its index in
+    ///        the array, from the chunk index and the geometry frozen at enqueue.
+    static void check_nan_written_async([[maybe_unused]] const auto* ctx, [[maybe_unused]] InT<T> value) noexcept;
 
     /// @brief Read at the offset @p ctx recorded, on the replay path.
     /// @warning Same reload caveat as store_value_async().
@@ -502,11 +508,21 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     [[nodiscard]] T raw_elem() const noexcept;
 
     /// @brief This element, written raw: `values[num] = value`, or an atomic RMW
-    ///        of its word for Bit. No sync, no check.
+    ///        of its word for Bit. No sync; the NaN check of CHUNK_DO_CHECK builds.
     void raw_elem_set(InT<T> value) const noexcept
     {
         elem_set(static_cast<T*>(values_), static_cast<std::size_t>(num_), static_cast<T>(value));
+        check_nan_written(value);
     }
+
+    /// @brief CHUNK_DO_CHECK builds: abort if @p value, just written at this
+    ///        proxy's element, is NaN. Every write path ends here or in
+    ///        check_nan_written_async(): assignments and compound operations
+    ///        (`a[i] += NAN`) alike, direct or replayed.
+    /// @details Reports the index in the array when the proxy was armed by one
+    ///          (operator[], a replay: num_chunk_ set), the position in the
+    ///          chunk otherwise.
+    void check_nan_written([[maybe_unused]] InT<T> value) const noexcept;
 
     /// @brief Write @p value straight through #values, with no synchronisation.
     /// @pre The chunk is materialised and the caller holds the write path.

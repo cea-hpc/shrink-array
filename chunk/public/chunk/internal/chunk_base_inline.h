@@ -816,7 +816,8 @@ T ChunkBase<T, Derived>::operator[](int offset) const noexcept
     // ordering the compiler must keep. Every read paid two (perf annotate,
     // Grace: the release store of the second section held the read).
     const T value = element_at(offset);
-    chunk_config::CheckNaN<chunk_config::do_check>::maybe(value, static_cast<long>(offset));
+    // A chunk does not know its index in the array: the position in the chunk.
+    chunk_config::CheckNaN<chunk_config::do_check>::maybe(value, static_cast<long>(offset), false);
     return value;
 }
 
