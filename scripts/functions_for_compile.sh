@@ -489,6 +489,61 @@ __ninja_target_names() {  # <build-dir> → one name per line (empty if unknown)
       | sed -E 's/_(Debug|Release|RelWithDebInfo|MinSizeRel)?$//' | sort -u
 }
 
+# --list-targets / --list-execs (compile_all.sh): what --target and --exec
+# accept on this machine, then nothing built. Both honour --target=<glob>, and
+# the executables --exec=<glob>. A configuration is "configured" when its
+# directory has a build.ninja; only those have executables to list (the same
+# `ninja -t targets all` list --exec is resolved against).
+list_build_inventory() {  # <list targets: true|false> <list execs: true|false> <names...>
+    local want_t=$1 want_e=$2; shift 2
+    local root="${build_rep:-$CHUNK_BUILD_REP}" name dir note shown=0 conf=0
+    local is_arm_here=false
+    [ "$(uname -m)" = "aarch64" ] && is_arm_here=true
+    if [ "$want_t" = true ]; then
+        echo "Configurations (--target=<glob>), in $root/cmake-build-<name>/$arch:"
+        for name in "$@"; do
+            [ -n "${CHUNK_BUILD_TARGET:-}" ] && ! __glob_list_match "$name" "$CHUNK_BUILD_TARGET" && continue
+            dir="$root/cmake-build-$name/$arch"
+            if [ -f "$dir/build.ninja" ]; then note="configured"; conf=$((conf + 1)); else note="-"; fi
+            case "$name" in
+                *oneapi*|*aocc*) [ "$is_arm_here" = true ] && note="$note, x86-64 only: not here" || note="$note, x86-64 only" ;;
+                *acfl*)          [ "$is_arm_here" = true ] && note="$note, ARM only" || note="$note, ARM only: not here" ;;
+                *nvhpc*)         note="$note, with --with-nvhpc" ;;
+                *token*)         note="$note, with --with-token-sanitizer" ;;
+                *ledger*)        note="$note, with --with-ledger" ;;
+            esac
+            printf '  %-58s %s\n' "$name" "$note"
+            shown=$((shown + 1))
+        done
+        echo "$shown configuration(s), $conf configured here."
+    fi
+    if [ "$want_e" = true ]; then
+        [ "$want_t" = true ] && echo
+        echo "Targets (--exec=<glob>) of the configured build dirs:"
+        local targets t kept any=false
+        for name in "$@"; do
+            [ -n "${CHUNK_BUILD_TARGET:-}" ] && ! __glob_list_match "$name" "$CHUNK_BUILD_TARGET" && continue
+            dir="$root/cmake-build-$name/$arch"
+            [ -f "$dir/build.ninja" ] || continue
+            mapfile -t targets < <(__ninja_target_names "$dir")
+            kept=()
+            for t in "${targets[@]}"; do
+                [ -n "${CHUNK_BUILD_EXEC:-}" ] && ! __glob_list_match "$t" "$CHUNK_BUILD_EXEC" && continue
+                kept+=("$t")
+            done
+            [ ${#kept[@]} -eq 0 ] && continue
+            any=true
+            echo "  $name (${#kept[@]}):"
+            if command -v column >/dev/null 2>&1; then
+                printf '%s\n' "${kept[@]}" | column -c "${COLUMNS:-120}" | sed 's/^/      /'
+            else
+                printf '      %s\n' "${kept[@]}"
+            fi
+        done
+        [ "$any" = true ] || echo "  none: no selected configuration is configured here${CHUNK_BUILD_EXEC:+ with a target matching --exec=$CHUNK_BUILD_EXEC} (a first run of compile_all.sh configures them)"
+    fi
+}
+
 # End of run: the verdict --target / --exec could not give up front. Returns 1
 # (and prints the error) when a filter let nothing through at all.
 check_arg_epilogue() {

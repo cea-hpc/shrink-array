@@ -205,6 +205,14 @@ Usage: $0 [--dryrun] [--build] [--debug-only]
                    and skips the others' (functions_for_compile.sh, pool_init).
                    <id>: a name (under \$CHUNK_BUILD_REP/.pools) or a directory
                    on a file system all the nodes share. A new id per submission.
+  --list-targets   List the configurations --target accepts (each one's name,
+                   whether it is configured here, x86-64 or ARM only), then
+                   exit without building. Honours --target=<glob>.
+  --list-execs     List the targets --exec accepts in each configured build
+                   dir (the executables and libraries of its Ninja list), then
+                   exit. Honours --target=<glob> and --exec=<glob>, e.g.
+                   --list-execs --target=omp-llvm --exec='*validation*'.
+  --list           Both lists.
   -h, --help    Show this help.
 
 The std threading backend (CHUNK_THREADS=std) is built next to the OpenMP one,
@@ -248,6 +256,9 @@ for arg in "$@"; do
             DEBUG_ONLY=true
             shift
             ;;
+        --list-targets)  LIST_TARGETS=true;                    shift ;;
+        --list-execs)    LIST_EXECS=true;                      shift ;;
+        --list)          LIST_TARGETS=true; LIST_EXECS=true;   shift ;;
         --no-gnu)        enable_gnu=false;        shift ;;
         --no-oneapi)     enable_oneapi=false;     shift ;;
         --no-nvhpc)      enable_nvhpc=false;      shift ;;
@@ -394,6 +405,13 @@ source "$CHUNK_SCRIPT_DIR/functions_for_compile.sh"
 # --target=<glob> that matches none of the configurations either script knows:
 # stop here with the closest names, before a single configure runs.
 check_target_arg $(known_build_names "$0" "$CHUNK_SCRIPT_DIR/compile_all_gnu.sh")
+
+# --list-targets / --list-execs / --list: the inventory, then nothing built.
+if [ "${LIST_TARGETS:-false}" = true ] || [ "${LIST_EXECS:-false}" = true ]; then
+    list_build_inventory "${LIST_TARGETS:-false}" "${LIST_EXECS:-false}" \
+        $(known_build_names "$0" "$CHUNK_SCRIPT_DIR/compile_all_gnu.sh")
+    exit 0
+fi
 
 # C++26: the gnu family only (chunk_cxx26, functions_for_compile.sh). Decided
 # before anything is configured; the llvm sanitizer, token and -cs builds live

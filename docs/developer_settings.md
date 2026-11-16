@@ -205,6 +205,7 @@ the common options. `--help` gives the full list.
 | `--fresh-cache` | delete the `CMakeCache.txt` of each selected build before configuring |
 | `--debug-only` | only the Debug builds |
 | `--only=<c>`, `--no-<c>` | a single compiler, or without it (`gnu`, `oneapi`, `nvhpc`, `llvm`, `aocc`, `acfl`; `oneapi` and `aocc` on x86-64 only, `acfl` on ARM only) |
+| `--list-targets`, `--list-execs`, `--list` | list the configurations `--target` accepts (configured here or not, x86-64 or ARM only), the targets `--exec` accepts in each configured build directory, or both; nothing is built. They honour `--target=<glob>` and `--exec=<glob>` |
 | `--with-nvhpc` | add NVHPC, disabled by default (about 1 h 30 per build on x86, with no gain) |
 | `--no-sanitizers` | without the LLVM sanitizer builds |
 | `--with-ledger` | add `cmake-build-omp-gnu-debug-ledger` (OpenMP Debug with `CHUNK_FORCE_LEDGER=ON`), disabled by default; a `--target` that selects it also builds it |

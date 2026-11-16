@@ -56,6 +56,10 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `scripts/compile_all.sh --list-targets`, `--list-execs`, `--list`: the configurations
+  `--target` accepts (configured here or not, x86-64 or ARM only), the targets `--exec` accepts
+  in each configured build directory, or both, without building; they honour `--target=<glob>`
+  and `--exec=<glob>`.
 - `scripts/compile_all.sh` builds with Arm Compiler for Linux on ARM (the `acfl` family:
   `omp-acfl`, `std-acfl`, `omp-acfl-debug`; `--only=acfl`, `--no-acfl`), the ARM counterpart
   of the x86-only `oneapi` and `aocc`. `armclang++` comes from `CHUNK_ACFL_ROOT` (an install
