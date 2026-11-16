@@ -4,7 +4,7 @@
 # A variant library is compiled with one of CHUNK_VARIANT_ZERO*
 # defined (or none, for the vector-mode build), PUBLIC: the macros drive
 # `chunk_config::is_shrink_enabled` and friends in public/chunk/config.h, and
-# they are read *inside* library-side .cpp files (AllTypeChunk.cpp,
+# they are read *inside* library-side .cpp files (TypeStateRegistry.cpp,
 # manage_ompt.cpp today; potentially others tomorrow). The options that are the
 # same for every library of the build are not definitions: they are recorded
 # in the generated chunk/build_options.h (below).
@@ -354,8 +354,8 @@ install(TARGETS chunk_stacktrace EXPORT chunk-targets)
 # --- Shared file lists ---------------------------------------------------
 set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/TChunk.h
-        public/chunk/internal/all_type_chunk_decl.h
-        public/chunk/internal/all_type_chunk_inline.h
+        public/chunk/internal/type_state_registry_decl.h
+        public/chunk/internal/type_state_registry_inline.h
         public/chunk/internal/arithmetic_context.h
         public/chunk/internal/zero_any_array_inline.h
         public/chunk/internal/pattern_proxy.h
@@ -451,7 +451,7 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/tab_cst_val2_holder.h
         public/chunk/internal/write_compress_sync_policy.h
         public/chunk/internal/PMP_CHUNK.h
-        public/chunk/internal/all_type_chunk.h
+        public/chunk/internal/type_state_registry.h
         public/chunk/internal/chunk_traits.h
         public/chunk/internal/global_stats_chunk_list.h
         public/chunk/internal/ring_log_debug.h
@@ -539,7 +539,7 @@ set(CHUNK_SOURCES
         private/zero_one_value_array.cpp
         private/zero_any_array.cpp
         private/type_state.cpp
-        private/all_type_chunk.cpp
+        private/type_state_registry.cpp
         private/param_chunk.cpp
         private/chunk_std.cpp
         private/manage_ompt.cpp
@@ -751,7 +751,7 @@ endforeach()
 # --- Two families in one program ------------------------------------------
 # examples/multi-mat keeps its field arrays in zero::Array<T> and its
 # presence fraction in zero_one_value::Array<T>: one library with both defines, at the
-# default static size only. The registry allows it (all_type_chunk_inline.h:
+# default static size only. The registry allows it (type_state_registry_inline.h:
 # "nothing forbids a build from selecting more than one"); what the second
 # define costs zero is the raw fill of its range ops (raw_fillable_v). Without
 # the OMPT tool: the example carries its own (examples/multi-mat/manage_ompt.cpp).

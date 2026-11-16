@@ -89,6 +89,9 @@ ALLOWED = {
     "manager_chunk_inline.h", "manager_chunk_interface.h", "manager_chunk_policies.h",
     "manager_chunk_policies_inline.h", "manager_chunk.cpp", "chunk/internal/manager_chunk.h",
     "chunk/private/manager_chunk.cpp",
+    # renamed TypeStateRegistry (CHANGELOG.md, Unreleased, Changed)
+    "AllTypeChunk", "AllTypeChunkParallelInterface", "AllTypeChunkDynInterface", "all_type_chunk.h",
+    "all_type_chunk_decl.h", "all_type_chunk_inline.h", "all_type_chunk.cpp", "chunk/private/all_type_chunk.cpp",
     "chunk/debug.h", "debug.h",  # removed, nothing included it (CHANGELOG.md, Unreleased)
     "python/run_test.py", "run_test.py",  # removed, it ran a test that no longer exists (CHANGELOG.md, Unreleased)
     "chunk/internal/print.h",  # now chunk/print.h, public (CHANGELOG.md, Unreleased)

@@ -252,7 +252,7 @@ inline void retire_exited_thread_pools()
             const std::scoped_lock lock(ex.mutex);
             retired.swap(ex.list);
         }
-        for (auto* alloc : retired)
+        for (const auto* alloc : retired)
         {
             delete alloc; // NOLINT(cppcoreguidelines-owning-memory): owned by the list
         }

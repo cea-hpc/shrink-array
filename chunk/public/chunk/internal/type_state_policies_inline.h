@@ -441,7 +441,7 @@ void TypeStateDynImpl<ChunkT, T, true>::register_chunk_size(unsigned int size, [
 }
 
 // Teardown of the reuse lists, in four phases inside ONE parallel region
-// (AllTypeChunk::clear_list_block_free_thr opens it, once for every type):
+// (TypeStateRegistry::clear_list_block_free_thr opens it, once for every type):
 //
 //   prepare  sequential, before the region: size the buckets.
 //   screen   one bucket per call: move rank r's legacy list and its slot in
@@ -537,8 +537,8 @@ void TypeStateParallelImpl<ChunkT, T, true>::clear_list_block_free_screen(int bu
     {
         return;
     }
-    const auto bucket_idx = static_cast<std::size_t>(bucket);
-    auto&      out        = to_free[bucket_idx];
+    const auto  bucket_idx = static_cast<std::size_t>(bucket);
+    const auto& out        = to_free[bucket_idx];
 
     // RAW default list container, NOT the size-aware overload. It may be smaller than max_thr
     // (see allocate_chunk_internal): an unsized slot has nothing to drain.

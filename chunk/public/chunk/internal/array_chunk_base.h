@@ -880,7 +880,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @brief Claim this array's identity and build its storage for @p sz
      *        elements: the constructors' body of zero::Array and zero_any::Array
      *        (zero_one_value::Array has its own). Registers the element type's manager on
-     *        the way (AllTypeChunk::ensure_manager), runs create_common(), then
+     *        the way (TypeStateRegistry::ensure_manager), runs create_common(), then
      *        the variant's rebuild_storage() -- the geometry-dependent
      *        allocation alone, which rechunk_to also calls on an already
      *        registered, just torn-down array WITHOUT re-running create_common()

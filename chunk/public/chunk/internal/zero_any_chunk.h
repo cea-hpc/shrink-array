@@ -532,7 +532,7 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>, public TabCstVal2Holder<
 
     /// @brief One rank's share of compress_chunk_to_compress() outside a
     ///        region: the body its region runs on each thread. Public for
-    ///        AllTypeChunk's single sweep region (TypeState::sweep_rank).
+    ///        TypeStateRegistry's single sweep region (TypeState::sweep_rank).
     static void compress_sweep_rank(int thr, bool apply);
 
     /// @brief Does that pass also sweep, serially, the ranks past the team?

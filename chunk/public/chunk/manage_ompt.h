@@ -69,7 +69,7 @@
  * phase end would replay the other's writes in the middle of its region.
  * Refused once an array exists, in every build (phase_guard::teams).
  *
- * @see all_type_chunk.cpp for the definitions.
+ * @see type_state_registry.cpp for the definitions.
  */
 
 #include <utility> // std::forward
@@ -163,7 +163,7 @@ extern bool finalize_barrier_phase();
  * silently never happen. This forces the runtime's initialisation, then prints
  * one line to stderr if the tool is not active (aborts with CHUNK_REQUIRE_OMPT=1).
  *
- * Called by the AllTypeChunk constructor. A no-op without the OMPT tool.
+ * Called by the TypeStateRegistry constructor. A no-op without the OMPT tool.
  *
  * Weak: a library built NO_OMPT_TOOL (the program ships its own tool, e.g.
  * examples/multi-mat/manage_ompt.cpp) has no definition, and the call is skipped.

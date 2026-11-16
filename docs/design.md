@@ -85,7 +85,7 @@ flowchart TB
         reg["shared constants<br/>cst_val1, second-value registry, motif region"]
     end
     subgraph per_process["per process"]
-        all["AllTypeChunk<br/>registry of every manager"]
+        all["TypeStateRegistry<br/>registry of every manager"]
         par["ParamChunk<br/>startup, statistics"]
         phase["phase hooks (manage_ompt.h)<br/>OMPT or explicit calls"]
         pmp["pmp layer<br/>openmp, std or serial backend"]
@@ -111,7 +111,7 @@ flowchart TB
 | proxies, write engine | `ProxyBase`, `WriteCompressSyncPolicy`, the variants' `Proxy` | `internal/proxy_base.h`, `internal/write_compress_sync_policy.h` | a temporary per write |
 | per-type state | `TypeState` (facade), `ReusePools`, `CompressCandidates`, `CompressionManager` | `internal/type_state.h`, `internal/reuse_pools.h`, `internal/compress_candidates.h`, `internal/compression_manager.h` | one per (variant, element type), static |
 | shared constants | `TabCstVal2Holder`, `GlobalVecHolder`, `MotifRegion` | `internal/tab_cst_val2_holder.h`, `internal/motif_region.h` | one per element type |
-| process registry, startup | `AllTypeChunk`, `ParamChunk` | `internal/all_type_chunk_decl.h`, `chunk/param_chunk.h` | one per process |
+| process registry, startup | `TypeStateRegistry`, `ParamChunk` | `internal/type_state_registry_decl.h`, `chunk/param_chunk.h` | one per process |
 | phases | `begin_parallel_phase`, `finalize_parallel_phase`, `parallel_phase` | `chunk/manage_ompt.h`, `chunk/private/manage_ompt.cpp` | one phase at a time |
 | backend, ranks | `pmp::Team`, `pmp::parallel_for` | `chunk/internal/PMP_CHUNK.h`, `fast_allocators/internal/pmp_loops.h`, `fast_allocators/internal/pmp_std.h` | process-wide |
 | allocation | slab arenas, per-rank allocators | `fast_allocators/slab_arena.h`, `fast_allocators/tc_allocator.h` | process-wide |
@@ -146,7 +146,7 @@ assembled at compile time:
   remaining `#ifdef`s are the ones `if constexpr` cannot replace (an include, a declaration
   that does not compile in the other build), and the rules that decide which are written at
   the top of `examples/shrink_bench/bench_config.h`.
-- **Virtual dispatch only where it is cold.** `AllTypeChunk` must act on every manager of the
+- **Virtual dispatch only where it is cold.** `TypeStateRegistry` must act on every manager of the
   process -- start the passes, flush the deferred writes, tear down -- without knowing their
   types: it holds `TypeStateInterface` pointers and calls virtuals, at phase boundaries only.
 - **Traits for the families, never the exact type.** `ChunkTraits` and `ArrayChunkTraits`
@@ -402,7 +402,7 @@ backend rather than add a TBB backend: a TBB program links TBB, the library does
 ## 11. Process-wide state and lifetime
 
 - **No list of types.** The first array of an element type registers its manager with
-  `AllTypeChunk` (`ensure_manager`), sequentially; from then on the type takes part in every
+  `TypeStateRegistry` (`ensure_manager`), sequentially; from then on the type takes part in every
   pass, flush and teardown. Any type that satisfies `ArrayChunkElement` (trivially copyable,
   equality comparable, default constructible) works, including the program's own aggregates.
 - **Startup**: `ParamChunk::init_indexes()` is optional; the first array calls it.

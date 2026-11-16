@@ -312,7 +312,7 @@ int run(int argc, char** argv)
     const long count = argc > 1 ? std::strtol(argv[1], nullptr, 10) : (1L << 19);
 
     // No type list: each array registers its own element type at its
-    // construction (AllTypeChunk::ensure_manager). The process-wide setup alone.
+    // construction (TypeStateRegistry::ensure_manager). The process-wide setup alone.
     ParamChunk::init_indexes(true);
 
     println("=== open_types_validation [variant = {}]  N={}  threads={} ===", variant_name(), count,

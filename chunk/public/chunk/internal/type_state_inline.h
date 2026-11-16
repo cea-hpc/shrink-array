@@ -25,7 +25,7 @@ e  * @file type_state_inline.h
  *
  * @see reuse_pools_inline.h, compress_candidates_inline.h and
  *      type_state_policies_inline.h for the bodies of its bases.
- * @see all_type_chunk.h for the registry that drives every manager at once.
+ * @see type_state_registry.h for the registry that drives every manager at once.
  */
 
 #include <algorithm>   // std::max
