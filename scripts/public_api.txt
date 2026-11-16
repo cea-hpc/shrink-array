@@ -59,7 +59,7 @@ begin_parallel_phase finalize_parallel_phase finalize_parallel_phase_only_flush
 finalize_parallel_phase_after_flush finalize_barrier_phase parallel_phase
 
 [chunk/tbb_adaptor.h]
-tbb::parallel_for tbb::phase_body
+tbb::parallel_for tbb::phase_body tbb::use_tbb_for_library_teams
 
 [chunk/chunk_size_advisor.h]
 ChunkSizeAdvisor ChunkSizeAdvisor::analyze ChunkSizeEstimate ChunkSizeReport

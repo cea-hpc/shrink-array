@@ -138,10 +138,6 @@ T* zero::Proxy<T>::perform_core_assignment(T* vals, InT<T> value) const noexcept
 
     Base::store_value_at(vals, value);
 
-    if constexpr (build_config::do_check)
-    {
-        chunk_config::CheckNaN<chunk_config::do_check>::maybe(value, static_cast<long>(num_));
-    }
     return vals;
 }
 
@@ -209,6 +205,7 @@ void zero::Proxy<T>::execute_arithmetic_compound_operation(Op op, [[maybe_unused
 
         // raw-read: write session -- the write/compress handshake keeps compressors off this chunk
         values_[num_] = v_new;
+        Base::check_nan_written(v_new);
 
         if constexpr (chunk_config::use_fast_block_compression)
         {
@@ -310,6 +307,7 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::execute_arithmetic_compound
 
         values_ptr[num] = final_val;
         internal::check_replay_store(chunk_loc, values_ptr, "execute_arithmetic_compound_operation_async", num);
+        Base::check_nan_written_async(ctx, final_val);
 
         mark_for_compression_if_needed_with_value_async(proxy, old_value, final_val);
     }
@@ -444,6 +442,7 @@ T zero::Proxy<T>::assign_impl(InT<U> value) noexcept
                 // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
                 values[num] = static_cast<T>(ctx->operand);
                 internal::check_replay_store(chunk, values, "assign_impl (deferred)", num);
+                Base::check_nan_written_async(ctx, static_cast<T>(ctx->operand));
 
                 // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
                 proxy.mark_for_compression_if_needed_with_value(v_old, values[num], values);
@@ -687,11 +686,6 @@ void zero::Proxy<T>::apply_compound_operation(InT<U> operand, BinaryOp op)
         // raw-read: serial counter mode (no fast block compression, no concurrent pass)
         if (!same_value(values_[num_], zero))
         {
-            if constexpr (build_config::do_check)
-            {
-                chunk_config::CheckNaN<chunk_config::do_check>::maybe(operand, static_cast<long>(num_));
-            }
-
             execute_arithmetic_compound_operation(
                 op, static_cast<T>(operand),
                 [this, &operand](auto op_func) // operand: this call's parameter, alive for the call
@@ -716,6 +710,17 @@ void zero::Proxy<T>::apply_compound_operation(InT<U> operand, BinaryOp op)
                 }
             }
         }
+        else if constexpr (std::is_floating_point_v<T> || internal::is_std_complex<T>::value)
+        {
+            if (!op_keeps_value(op, zero, operand))
+            {
+                // A zero the operation does not keep (0 / 0, 0 * inf: NaN;
+                // 0 * -1: -0.0). Serial: the result is op(zero, operand),
+                // written as an assignment, which keeps the zero count and
+                // materialises the chunk.
+                static_cast<void>(assign_impl<T>(static_cast<T>(op(zero, static_cast<T>(operand)))));
+            }
+        }
     }
     else
     {
@@ -723,8 +728,10 @@ void zero::Proxy<T>::apply_compound_operation(InT<U> operand, BinaryOp op)
         // and still reads v_old (in_t.h). Read under a ReadSection (see
         // ProxyBase::read_values_outside_session).
         const T v_old = Base::read_values_outside_session();
-        // A zero v_old is not enough to skip: a queued deferred op may change it.
-        if (!same_value(v_old, zero) || CompressionManagerType::have_deferred_queue())
+        // A zero v_old is not enough to skip: a queued deferred op may change
+        // it, and the operation may not keep it (0 / 0, 0 * inf, 0 * -1).
+        if (!same_value(v_old, zero) || CompressionManagerType::have_deferred_queue() ||
+            !op_keeps_value(op, zero, operand))
         {
             Base::apply_atomic_op(op, static_cast<T>(operand), v_old);
 

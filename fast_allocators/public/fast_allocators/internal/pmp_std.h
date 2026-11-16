@@ -159,6 +159,23 @@ class Pool
     template <typename Job>
     [[nodiscard]] bool try_run(int n, Job& job);
 
+    /**
+     * @brief try_run() with workers of another runtime: @p launch starts
+     *        n - 1 tasks; those that start within join_budget_ns() take ranks
+     *        1, 2, ... and @p run(ctx, rank) runs on a team of them and the
+     *        calling thread (rank 0) -- ctx a TeamCtx of their number.
+     * @return false, without running @p run, when another thread's team holds
+     *         the pool or no task started in time (the caller runs a team of one).
+     * @details The runtime need not start the tasks at once (TBB does not
+     *          promise it): a team waiting at a barrier for a task never
+     *          started would wait forever. So the team's size is fixed once,
+     *          after the wait, to the tasks that came; a task that starts later
+     *          finds the join closed (or a later generation) and returns
+     *          without touching anything but the pool, which outlives it.
+     */
+    template <typename Run>
+    [[nodiscard]] bool try_run_launched(int n, TeamLauncher launch, Run& run);
+
   private:
     Pool() = default;
 
@@ -166,12 +183,25 @@ class Pool
 
     void worker_loop(int rank, std::uint64_t seen) noexcept;
 
-    std::mutex                 team_mutex_; ///< One team at a time.
-    std::vector<std::jthread>  workers_;    ///< Worker k: rank k + 1.
-    std::atomic<std::uint64_t> word_{0};    ///< (generation << 16) | team size.
-    std::atomic<int>           pending_{0}; ///< Workers of the current team not done yet.
-    void (*fn_)(void*, int) = nullptr;      ///< The current job (read by its workers only).
-    void* arg_              = nullptr;      ///< Its argument.
+    /// @brief The task try_run_launched() has the runtime start: join
+    ///        generation @p gen if still open, then run its rank.
+    static void join_task(std::uint64_t gen) noexcept;
+
+    /// @brief join_: the tasks joined so far (low bits), the join closed
+    ///        (bit 16), the generation (above).
+    static constexpr std::uint64_t join_count_mask = 0xFFFFU;
+    static constexpr std::uint64_t join_closed     = 0x10000U;
+    static constexpr int           join_gen_shift  = 17;
+
+    std::mutex                 team_mutex_;     ///< One team at a time.
+    std::vector<std::jthread>  workers_;        ///< Worker k: rank k + 1.
+    std::atomic<std::uint64_t> word_{0};        ///< (generation << 16) | team size.
+    std::atomic<int>           pending_{0};     ///< Workers of the current team not done yet.
+    void (*fn_)(void*, int)         = nullptr;  ///< The current job (read by its workers only).
+    void*                      arg_ = nullptr;  ///< Its argument.
+    std::atomic<std::uint64_t> join_{0};        ///< Launched teams: see join_count_mask.
+    std::atomic<std::uint64_t> go_{0};          ///< Generation whose job is published (fn_, arg_).
+    std::uint64_t              launch_gen_ = 0; ///< Last generation launched (under team_mutex_).
 };
 
 /// @brief [b, e) of @p rank in a static block split of n iterations over @p nt
@@ -204,6 +234,9 @@ inline void static_block(long long n, int nt, int rank, long long& b, long long&
  *          thread holding the library's cold-path lock (an array built or
  *          re-chunked outside a region) used to wait for the pool while a
  *          member of the team holding it waited for that lock.
+ *          With a TeamLauncher set (set_team_launcher(), the TBB adaptor),
+ *          the workers are that runtime's tasks: the team may be smaller
+ *          than @p nt, down to one (Pool::try_run_launched()).
  */
 template <typename TeamT, typename Body>
 void open_team(bool on, int nt, Body& body)
@@ -219,6 +252,20 @@ void open_team(bool on, int nt, Body& body)
         settings().application_phase.load(std::memory_order_acquire))
     {
         serial();
+        return;
+    }
+    if (const TeamLauncher launch = settings().team_launcher.load(std::memory_order_acquire); launch != nullptr)
+    {
+        auto run = [&body](TeamCtx& ctx, int rank)
+        {
+            const FrameGuard frame(&ctx, rank, ctx.size);
+            TeamT            t(&ctx, rank);
+            body(t);
+        };
+        if (!Pool::get().try_run_launched(nt, launch, run))
+        {
+            serial();
+        }
         return;
     }
     TeamCtx ctx(nt);

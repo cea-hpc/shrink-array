@@ -736,8 +736,9 @@ ArrayChunkBase<Derived>::element_proxy(this Derived& self, IndType index) noexce
     // No sync on the write entry: the read entries pull visibility
     // (ChunkBase::reader_sync), and a same-offset WAW is handled on the
     // direct write path. The const accessors and T& operator() keep sync_chunk.
-
-    chunk_config::CheckNaN<chunk_config::do_check>::maybe(val, static_cast<long>(index));
+    // No NaN check here: the written values are checked where they are stored
+    // (ProxyBase::check_nan_written). A check of `val` -- the proxy -- picked
+    // global_check_nan's do-nothing template and never fired.
 
     return val;
 }

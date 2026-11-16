@@ -434,11 +434,6 @@ void zero_one_value::Proxy<T>::perform_core_assignment(InT<T> value) const noexc
     }
 
     Base::store_value_at(vals, value);
-
-    if constexpr (build_config::do_check)
-    {
-        chunk_config::CheckNaN<chunk_config::do_check>::maybe(value, static_cast<long>(num_));
-    }
 }
 
 template <typename T>
@@ -594,6 +589,7 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> value) noexcept
                 // was just materialised -- for the marking below.
                 const InT<T> v_old = Base::read_values_async(ctx);
                 elem_set(values, static_cast<std::size_t>(num), static_cast<T>(ctx->operand));
+                Base::check_nan_written_async(ctx, static_cast<T>(ctx->operand));
 
                 // As the compound ops' replay: a replayed write that makes the chunk
                 // uniform queues it, or it waits for the next direct write. After the
@@ -840,6 +836,7 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_a
     {
         T* values_ptr = ctx->chunk.values_load();
         elem_set(values_ptr, static_cast<std::size_t>(ctx->num), static_cast<T>(v_new_precise));
+        Base::check_nan_written_async(ctx, static_cast<T>(v_new_precise));
         proxy.mark_for_compression_if_needed_with_value(v_old, static_cast<T>(v_new_precise));
     }
 }
@@ -1073,11 +1070,6 @@ void zero_one_value::Proxy<T>::apply_compound_operation([[maybe_unused]] Op op, 
 
         if (!is_first_value) [[likely]]
         {
-            if constexpr (build_config::do_check)
-            {
-                chunk_config::CheckNaN<chunk_config::do_check>::maybe(operand, static_cast<long>(num_));
-            }
-
             const bool was_second_value  = same_value(v_old_snapshot, second_value_);
             const bool was_second_value0 = was_second_value && SecondValueBase::is_not_cst_val2();
 
@@ -1100,6 +1092,7 @@ void zero_one_value::Proxy<T>::apply_compound_operation([[maybe_unused]] Op op, 
             // (a manage_full_* may fold the chunk, and nothing reads v_new
             // after it): InT, no copy of a struct.
             const InT<T> v_new = this->raw_elem();
+            Base::check_nan_written(v_new); // the result, not the operand: `x += NAN` and `0.0 / 0.0`
             // Transition OUT of the second value first, independently of the
             // transition IN below (as execute_simple_operation does). Do not
             // chain it to the first-value branch: `second_value * 0` (or
@@ -1127,6 +1120,17 @@ void zero_one_value::Proxy<T>::apply_compound_operation([[maybe_unused]] Op op, 
                 }
             }
         }
+        else if constexpr (std::is_floating_point_v<T> || internal::is_std_complex<T>::value)
+        {
+            const auto first = static_cast<T>(zero_one_value::Chunk<T>::first_value);
+            if (!op_keeps_value(op, first, operand))
+            {
+                // A first value the operation does not keep (0 / 0, 0 * inf:
+                // NaN; 0 * -1: -0.0). Serial: the result is op(first_value,
+                // operand), written as an assignment, which keeps the counters.
+                static_cast<void>(assign_impl<T>(static_cast<T>(op(first, static_cast<T>(operand)))));
+            }
+        }
     }
 
     if constexpr (chunk_config::use_compression_without_counter)
@@ -1135,7 +1139,23 @@ void zero_one_value::Proxy<T>::apply_compound_operation([[maybe_unused]] Op op, 
         // shortcut may act on a released, zero-filled buffer (see
         // ProxyBase::read_values_outside_session).
         const InT<T> v_old = Base::read_values_outside_session();
-        if (!same_value(v_old, zero_one_value::Chunk<T>::first_value))
+        // The first value absorbs (0 * x == 0) when the operation keeps it.
+        if (const auto first = static_cast<T>(zero_one_value::Chunk<T>::first_value); same_value(v_old, first))
+        {
+            // Not kept (0 / 0, 0 * inf: NaN; 0 * -1: -0.0, see op_keeps_value):
+            // the result is op(first, operand), written as an assignment, which
+            // materialises a constant chunk. Not apply_atomic_op(): it takes
+            // the chunk for materialised, and would write into the shared
+            // constant.
+            if constexpr (std::is_floating_point_v<T> || internal::is_std_complex<T>::value)
+            {
+                if (!op_keeps_value(op, first, operand))
+                {
+                    static_cast<void>(assign_impl<T>(static_cast<T>(op(first, static_cast<T>(operand)))));
+                }
+            }
+        }
+        else
         {
             // An operand the operation cannot take as it is -- an integer for a
             // std::complex, whose operators are templates -- goes in as a T.

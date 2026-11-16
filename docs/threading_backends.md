@@ -403,12 +403,35 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
      without TBB: the library is not thread-safe there). OpenMP refuses it
      at compile time, when it is called: OpenMP numbers only its own
      threads.
+   - The library's own teams on TBB's threads
+     (`shrink_array::tbb::use_tbb_for_library_teams()`, called by every
+     adaptor call; `pmp::set_team_launcher()` underneath). Without it a TBB
+     program runs two sets of threads: TBB's, and the std backend's pool for
+     the library's teams (the finalize's flush and pass, a re-chunk, a
+     parallel initialisation), whose workers spin `CHUNK_PMP_SPIN_US` after
+     every team on the cores TBB needs. A team now enqueues its n - 1 workers
+     as tasks of a TBB arena. TBB does not promise to run them at once, and a
+     barrier waiting for a task never started would never end, so the team's
+     size is fixed after the tasks had `CHUNK_PMP_JOIN_US` (200 us) to start:
+     those that came take ranks 1, 2, ... and the team runs with them (with
+     the caller alone, at worst); a later task finds the join closed, or a
+     later generation, and returns, touching nothing but the pool
+     (`Pool::try_run_launched()`, `join_task()`). Measured on the TBB bench
+     (`shrink_bench_tbb_zero_any_int64_dyn --mode perf --multiply 3`, 24
+     threads, Ryzen 9 9900X under WSL2, GCC 14, two interleaved runs each):
+     computation 116.1 s -> 105.2 s (-9.4%), wall 2:30 -> 2:18, involuntary
+     context switches 16.3 M -> 0.6 M; a perf profile before it had
+     `Pool::worker_loop` spinning at 11% of the cycles.
    - CMake `CHUNK_WITH_TBB` (OFF): `find_package(TBB)` and the harness,
      `tbb_validation` (std and serial builds, every variant and geometry, 1
      and 8 threads, in a `task_arena` of that many threads): each
      partitioner (auto, simple with a small grain, static), the index form
      with steps 1 and 3, compression and forced deferrals in the phase, a
-     nested `oneapi::tbb::parallel_for`, a throwing body, a narrower arena;
+     nested `oneapi::tbb::parallel_for`, a throwing body, a narrower arena,
+     the library's teams on TBB's threads (2000 teams with a barrier, a
+     single and both loops, every rank above 0 on a TBB thread, then 500
+     from a second thread while every TBB thread is busy: they shrink and
+     still end);
      the arrays against `std::vector`s after every phase, one rank per thread
      for the whole phase and distinct between threads, the application phase
      open in the pieces and closed after the call. Mutations: the adaptor

@@ -552,11 +552,6 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::perform_core_assignment(T* vals, I
     }
 
     Base::store_value_at(vals, value);
-
-    if constexpr (build_config::do_check)
-    {
-        chunk_config::CheckNaN<chunk_config::do_check>::maybe(value, static_cast<long>(num_));
-    }
 }
 // ========================================================================
 // ASSIGNMENT OPERATOR
@@ -771,6 +766,7 @@ T zero_any::ProxyImpl<T, Derived, ChunkT>::assign_impl(this Derived& self, InT<U
                         // raw-read: deferred replay, after materialisation (as above)
                         values_before[num] = static_cast<T>(ctx->operand);
                     }
+                    Base::check_nan_written_async(ctx, static_cast<T>(ctx->operand));
 
                     // Post-store confirmation.
                     const T* values_after = chunk.values_load();
@@ -1293,10 +1289,25 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::apply_compound_operation(this Deri
     // (read_reclaim_validation, mode `compound`).
     const InT<T> v_old = self.Base::read_values_outside_session();
 
-    // first_value absorbs (0 * operand == 0). Racy but safe: a concurrent writer
-    // cannot make the "was first_value" branch wrong, provided v_old is a value
-    // the element really held (hence the ReadSection).
-    if (!same_value(v_old, static_cast<T>(ChunkT::first_value)))
+    // first_value absorbs (0 * operand == 0) when the operation keeps it. Racy
+    // but safe: a concurrent writer cannot make the "was first_value" branch
+    // wrong, provided v_old is a value the element really held (hence the
+    // ReadSection).
+    if (const auto first = static_cast<T>(ChunkT::first_value); same_value(v_old, first))
+    {
+        // Not kept (0 / 0, 0 * inf: NaN; 0 * -1: -0.0, see op_keeps_value): the
+        // result is op(first, operand), written as an assignment, which
+        // materialises a constant chunk. Not apply_atomic_op(): it takes the
+        // chunk for materialised, and would write into the shared constant.
+        if constexpr (std::is_floating_point_v<T> || internal::is_std_complex<T>::value)
+        {
+            if (!op_keeps_value(op, first, operand))
+            {
+                static_cast<void>(self.template assign_impl<T>(static_cast<T>(op(first, static_cast<T>(operand)))));
+            }
+        }
+    }
+    else
     {
         // Serial build: apply_atomic_op() runs the body without the engine's
         // lbd_info, and the body reads ptr_second_value.

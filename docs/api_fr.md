@@ -172,7 +172,12 @@ Les threads créés par l'application (`std::thread`, TBB) demandent le backend 
 (`CHUNK_THREADS=std`) : chaque thread qui écrit appelle `begin_parallel_phase()` avant sa
 première écriture, et un seul thread appelle `finalize_parallel_phase()` une fois qu'ils se sont
 arrêtés. `shrink_array::tbb::parallel_for` fait les deux appels pour une boucle TBB ; l'en-tête
-est installé avec les autres, et le programme lie TBB lui-même (la bibliothèque, non).
+est installé avec les autres, et le programme lie TBB lui-même (la bibliothèque, non). Son premier
+appel confie aussi les équipes de la bibliothèque (le vidage et la passe de compression de
+`finalize_parallel_phase()`, un rechunk, une initialisation parallèle) aux threads de TBB plutôt
+qu'au pool du backend std, pour que les deux ne se disputent pas les cœurs ; un programme TBB qui
+écrit les tableaux sans l'adaptateur appelle lui-même `shrink_array::tbb::use_tbb_for_library_teams()`,
+une fois.
 
 Les threads, quel que soit le backend (`chunk/threads.h`) : dimensionner les données par thread et
 numéroter les threads avec eux plutôt qu'avec `omp_get_*`, pour que le programme compile avec

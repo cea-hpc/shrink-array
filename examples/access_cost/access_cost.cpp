@@ -66,13 +66,16 @@
  *
  *          Memory: the vector (8 n_elems bytes), the array (about the same at its
  *          largest), the random indices (4 n_elems bytes), and the constant vectors
- *          of read-constant and read-second (8 n_elems bytes each). The default
- *          n_elems = 2^27 takes about 4 GB.
+ *          of read-constant and read-second (8 n_elems bytes each): about 36
+ *          bytes per element. The default n_elems is max(2^27, threads x 2^20),
+ *          at least 2^20 elements per thread so that a case lasts long enough
+ *          to time at a high thread count: 2^27 (about 4.5 GB) up to 128
+ *          threads, about 3.0e8 (11 GB) at 288.
  *
  *          Usage: access_cost [--n n_elems] [--reps R] [--csv] [--verify]
  */
 
-#include <algorithm>    // std::sort, std::min_element
+#include <algorithm>    // std::sort, std::min_element, std::max, std::min
 #include <chrono>       // std::chrono::steady_clock
 #include <cstdint>      // std::uint64_t
 #include <charconv>     // std::from_chars (arg_value)
@@ -429,10 +432,15 @@ try
 {
     ParamChunk::init_indexes(true);
 
-    long n_elems = 1L << 27;
-    int  reps    = 5;
-    bool csv     = false;
-    bool verify  = false;
+    // At least 2^20 elements per thread: with a fixed 2^27, 288 threads had
+    // 466k elements each, a case lasted a few milliseconds, and the region
+    // and phase overheads made the medians too noisy to compare.
+    constexpr long min_elems_per_thread = 1L << 20;
+    long           n_elems = std::max(1L << 27, static_cast<long>(pmp::max_threads()) * min_elems_per_thread);
+    n_elems                = std::min(n_elems, 0x7fffffffL);
+    int  reps              = 5;
+    bool csv               = false;
+    bool verify            = false;
     for (int a = 1; a < argc; ++a)
     {
         const std::string opt = argv[a];

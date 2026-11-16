@@ -490,7 +490,10 @@ struct CheckNaN
     /// @brief No switch to move.
     static void update([[maybe_unused]] bool state) noexcept {}
     /// @brief No check.
-    static void maybe([[maybe_unused]] auto val, [[maybe_unused]] long index) noexcept {}
+    static void
+    maybe([[maybe_unused]] auto val, [[maybe_unused]] long index, [[maybe_unused]] bool in_array = true) noexcept
+    {
+    }
 };
 
 } // namespace shrink_array::chunk_config
@@ -504,12 +507,12 @@ namespace shrink_array
 // definition below must already see them, whichever header a TU includes first.
 // (global_check.h cannot simply be included here: it includes invariant_check.h,
 // which includes this file.)
-inline void global_check_nan(long i) noexcept;
-inline void global_check_nan(const double& val, long i) noexcept;
-inline void global_check_nan(const float& val, long i) noexcept;
-inline void global_check_nan(const std::complex<double>& val, long i) noexcept;
+inline void global_check_nan(long i, bool in_array) noexcept;
+inline void global_check_nan(const double& val, long i, bool in_array) noexcept;
+inline void global_check_nan(const float& val, long i, bool in_array) noexcept;
+inline void global_check_nan(const std::complex<double>& val, long i, bool in_array) noexcept;
 template <typename T>
-void global_check_nan(const T& val, long i) noexcept;
+void global_check_nan(const T& val, long i, bool in_array) noexcept;
 } // namespace shrink_array
 #endif
 
@@ -528,12 +531,14 @@ class CheckNaN<true>
     {
         check_nan = state;
     }
-    /// @brief global_check_nan(@p val, @p index) if the switch is on.
-    static void maybe(auto val, long index) noexcept
+    /// @brief global_check_nan(@p val, @p index, @p in_array) if the switch is on.
+    /// @param in_array true: @p index is the index in the array; false: the
+    ///                 position in the chunk (the array index is not known).
+    static void maybe(auto val, long index, bool in_array = true) noexcept
     {
         if (check_nan)
         {
-            global_check_nan(val, index);
+            global_check_nan(val, index, in_array);
         }
     }
 

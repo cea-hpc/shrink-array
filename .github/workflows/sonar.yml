@@ -7,6 +7,8 @@
 # compilation database -- nothing is compiled: the job configures, generates
 # the build stamp, and hands the database to the scanner. The issues are on
 # the project's page; scripts/sonar_export.py fetches them as JSON or CSV.
+# The line coverage of chunk/ and fast_allocators/ comes from the latest
+# nightly coverage job (see the step "Coverage of the latest nightly").
 #
 # Needs the repository secret SONAR_TOKEN (sonarcloud.io, My Account,
 # Security). Without it the job says so and stops, green. On the SonarQube
@@ -32,6 +34,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read # the nightly's coverage artifact
 
 jobs:
   sonar:
@@ -105,6 +108,27 @@ jobs:
               json.dump(kept, f, indent=1)
           print(f"compile_commands: {len(entries)} entries, {len(kept)} files")
           EOF
+      # The line coverage: the latest report of nightly.yml's coverage job
+      # (artifact coverage-sonarqube, gcovr's SonarQube format), not a coverage
+      # run of this commit -- that job takes about 3 hours. It may lag the
+      # analysed commit by up to a day: the lines changed since are matched as
+      # they stand. Without a report (expired, never made) the analysis goes on
+      # without coverage.
+      - name: Coverage of the latest nightly
+        id: coverage
+        if: steps.token.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_id=$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=coverage-sonarqube&per_page=10" \
+                     --jq '[.artifacts[] | select(.expired | not)][0].workflow_run.id // empty')
+          if [ -z "$run_id" ] || ! gh run download "$run_id" -R "$GITHUB_REPOSITORY" -n coverage-sonarqube -D sonar-coverage; then
+            echo "::notice::no nightly coverage report: analysis without coverage"
+            echo "args=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "coverage of nightly run $run_id, commit $(cat sonar-coverage/commit.txt 2>/dev/null || echo '?'); analysed: $GITHUB_SHA"
+          echo "args=-Dsonar.coverageReportPaths=sonar-coverage/coverage.xml" >> "$GITHUB_OUTPUT"
       - name: Analyse
         if: steps.token.outputs.ok == 'true'
         uses: SonarSource/sonarqube-scan-action@2f77a1ec69fb1d595b06f35ab27e97605bdef703 # v5.3.2
@@ -114,3 +138,4 @@ jobs:
             -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY || 'cea-hpc_shrink-array' }}
             -Dsonar.cfamily.compile-commands=build/compile_commands_sonar.json
             -Dsonar.cfamily.threads=4
+            ${{ steps.coverage.outputs.args }}

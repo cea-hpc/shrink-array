@@ -471,16 +471,27 @@ jobs:
       - name: Coverage report
         if: always()
         run: |
-          mkdir -p coverage
+          mkdir -p coverage sonar
           "$RUNNER_TEMP/gcovr/bin/gcovr" -r . build --gcov-executable gcov-14 -j4 \
             --merge-lines --merge-mode-functions=separate \
             --filter 'chunk/' --filter 'fast_allocators/' \
             --gcov-ignore-errors=no_working_dir_found --gcov-ignore-parse-errors=all \
-            --markdown coverage/coverage.md --html-nested coverage/index.html --txt-summary
+            --markdown coverage/coverage.md --html-nested coverage/index.html --txt-summary \
+            --sonarqube sonar/coverage.xml
           cat coverage/coverage.md >> "$GITHUB_STEP_SUMMARY"
+          git rev-parse HEAD > sonar/commit.txt
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: coverage-html
           path: coverage/
+          retention-days: 14
+      # The same counters in SonarQube's generic coverage format, with the
+      # commit they measure: sonar.yml's analyses take the latest one (a
+      # 3-hour coverage run per push would hold every analysis that long).
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: coverage-sonarqube
+          path: sonar/
           retention-days: 14
