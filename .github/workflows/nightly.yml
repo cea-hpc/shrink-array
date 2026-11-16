@@ -210,8 +210,8 @@ jobs:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Toolchain
         run: |
-          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null
-          echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-23 main" | sudo tee /etc/apt/sources.list.d/llvm-23.list
+          wget --max-redirect=0 -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null
+          echo "deb https://apt.llvm.org/noble/ llvm-toolchain-noble-23 main" | sudo tee /etc/apt/sources.list.d/llvm-23.list
           # libstdc++-14-dev: clang takes the newest libstdc++ installed.
           .github/apt_install.sh clang-23 libomp-23-dev libstdc++-14-dev ninja-build libbz2-dev
           clang++-23 --version
