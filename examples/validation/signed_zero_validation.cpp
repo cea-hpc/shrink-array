@@ -47,11 +47,12 @@
 //
 // Compile OMP or non-OMP, static or dyn, check. Exit 0 = every bit round-trips.
 
-#include <cmath>       // std::signbit
+#include <cmath>       // std::signbit, std::isnan
 #include <complex>     // std::complex
 #include <cstdint>     // std::uint64_t
 #include <cstdlib>     // std::strtol
 #include <cstring>     // std::memcmp
+#include <format>      // std::format (run_compound_on_zero)
 #include <limits>      // std::numeric_limits
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::as_const
@@ -434,6 +435,10 @@ static int run_nan()
 
     Array<double>       arr(n);
     std::vector<double> ref(static_cast<std::size_t>(n), 0.0);
+    // NaNs on purpose: off with the CHUNK_DO_CHECK builds' NaN check, which
+    // every write and every checked read would trip. After the constructor,
+    // which switches it back on.
+    chunk_config::CheckNaN<chunk_config::do_check>::update(false);
     for (long i = csz; i < 2 * csz; ++i)
     {
         arr[i]                           = qnan;
@@ -444,6 +449,55 @@ static int run_nan()
     compress_all(arr);
     const int fails = verify("double", "nan-payload", arr, ref);
     arr.clear();
+    chunk_config::CheckNaN<chunk_config::do_check>::update(true);
+    return fails;
+}
+
+/// A compound operation on a zero element gives what it gives on a double:
+/// 0 * -1 is -0.0, 0 / 0 and 0 * inf are NaN. The variants used to skip it
+/// ("0 * x is 0") and leave +0.0. On a zero of a compressed chunk and on a
+/// zero of a materialised one.
+static int run_compound_on_zero()
+{
+    Array<double> probe(1);
+    const long    csz = static_cast<long>(probe.chunk_size());
+    probe.clear();
+    const long n = 2 * csz;
+
+    Array<double> arr(n);
+    chunk_config::CheckNaN<chunk_config::do_check>::update(false); // NaNs on purpose (see run_nan)
+    arr[csz + 1]     = 2.5;                                        // the second chunk materialised
+    const double inf = std::numeric_limits<double>::infinity();
+
+    struct Case
+    {
+        long        index;
+        const char* what;
+    };
+    int fails = 0;
+    for (const Case c : {Case{3, "compressed chunk"}, Case{csz + 3, "materialised chunk"}})
+    {
+        arr[c.index] = 0.0;
+        arr[c.index] *= -1.0;
+        const double neg = arr[c.index];
+        arr[c.index] /= 0.0; // -0.0 / 0.0
+        const double div = arr[c.index];
+        arr[c.index]     = 0.0;
+        arr[c.index] *= inf;
+        const double mul_inf = arr[c.index];
+        arr[c.index]         = 0.0;
+        arr[c.index] *= 3.0;
+        const double kept = arr[c.index];
+
+        const bool ok = neg == 0.0 && std::signbit(neg) && std::isnan(div) && std::isnan(mul_inf) && kept == 0.0 &&
+                        !std::signbit(kept);
+        println("[{}/double/compound-on-zero, {}] {}", variant_name(), c.what,
+                ok ? "OK" : std::format("FAIL: 0*-1={} 0/0={} 0*inf={} 0*3={}", neg, div, mul_inf, kept));
+        fails += ok ? 0 : 1;
+        arr[c.index] = 0.0;
+    }
+    arr.clear();
+    chunk_config::CheckNaN<chunk_config::do_check>::update(true);
     return fails;
 }
 
@@ -471,6 +525,7 @@ int run(int argc, char** argv)
     fails += run_type<std::complex<double>>("complex<double>");
     fails += run_type<Vec3>("Vec3");
     fails += run_nan();
+    fails += run_compound_on_zero();
 
     release_chunk_pools();
     destroy_block_chunk();

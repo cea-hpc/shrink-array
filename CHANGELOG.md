@@ -60,6 +60,15 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `shrink_array::tbb::use_tbb_for_library_teams()` (`chunk/tbb_adaptor.h`), called by every
+  adaptor call: under the std backend, the library's own teams (the flush and compression pass of
+  `finalize_parallel_phase()`, a re-chunk, a parallel initialisation) take their workers from TBB
+  instead of the std backend's pool, so that a TBB program no longer runs two sets of threads
+  competing for the cores. A team is made of the TBB tasks that started within
+  `CHUNK_PMP_JOIN_US` (developer setting, 200 us): TBB does not promise to start them at once,
+  and a later task returns without joining. TBB bench, 24 threads: computation -9.4%,
+  involuntary context switches 16.3 M -> 0.6 M. Underneath, `pmp::set_team_launcher()` (any
+  runtime that can start tasks).
 - `shrink_gui` 0.17: "Nettoyer les builds…", beside "Builds up to date". Lists every configured
   build of the build root (every architecture) with what cleaning it frees, and removes from
   the checked ones what the next build re-creates: the object files (about half of a build),

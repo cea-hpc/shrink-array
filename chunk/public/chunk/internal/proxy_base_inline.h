@@ -1174,6 +1174,7 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(this Derived& self, InT<U>
                             {
                                 elem_set(values, static_cast<std::size_t>(ctx->num), static_cast<T>(final_val));
                             }
+                            ProxyBase::check_nan_written_async(ctx, static_cast<T>(final_val));
                         });
                 });
         }
@@ -1389,6 +1390,7 @@ void ProxyBase<Derived, T, ChunkT>::store_value_at(T* const vals, InT<T> value) 
         // Bit: an atomic RMW of the word (element_access.h); values[num] otherwise.
         elem_set(vals, static_cast<std::size_t>(num_), static_cast<T>(value));
     }
+    check_nan_written(value);
 }
 
 template <typename Derived, typename T, typename ChunkT>
@@ -1556,6 +1558,53 @@ template <typename WriteFn>
     };
 
     return self.write_with_optional_lock_impl([&] { write_fn(); }, lbd_info);
+}
+
+// ---------------------------------------------------------------------------
+// shrink_array::ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>
+// ---------------------------------------------------------------------------
+
+template <typename Derived, typename T, typename ChunkT, bool Enabled>
+void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::check_nan_written_async(
+    [[maybe_unused]] const auto* ctx,
+    [[maybe_unused]] InT<T>      value) noexcept
+{
+    if constexpr (chunk_config::do_check)
+    {
+        if (ctx->num_chunk >= 0)
+        {
+            chunk_config::CheckNaN<chunk_config::do_check>::maybe(
+                static_cast<T>(value),
+                (static_cast<long>(ctx->num_chunk) * static_cast<long>(ctx->chunk_size_frozen)) + ctx->num);
+        }
+        else
+        {
+            chunk_config::CheckNaN<chunk_config::do_check>::maybe(static_cast<T>(value), static_cast<long>(ctx->num),
+                                                                  false);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// shrink_array::ProxyBase<Derived, T, ChunkT>
+// ---------------------------------------------------------------------------
+
+template <typename Derived, typename T, typename ChunkT>
+void ProxyBase<Derived, T, ChunkT>::check_nan_written([[maybe_unused]] InT<T> value) const noexcept
+{
+    if constexpr (chunk_config::do_check)
+    {
+        if (num_chunk_ >= 0)
+        {
+            chunk_config::CheckNaN<chunk_config::do_check>::maybe(
+                static_cast<T>(value), (static_cast<long>(num_chunk_) * static_cast<long>(chunk_size())) + num_);
+        }
+        else
+        {
+            chunk_config::CheckNaN<chunk_config::do_check>::maybe(static_cast<T>(value), static_cast<long>(num_),
+                                                                  false);
+        }
+    }
 }
 
 } // namespace shrink_array

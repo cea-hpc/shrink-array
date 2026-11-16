@@ -91,7 +91,7 @@
     #include <vector>          // std::vector (a call's rank times, the sites)
 
     #include "chunk/manage_ompt.h" // finalize_parallel_phase (the end of a region)
-    #include "chunk/tbb_adaptor.h" // shrink_array::tbb::phase_body (the begin of each task)
+    #include "chunk/tbb_adaptor.h" // shrink_array::tbb::phase_body (the begin of each task), use_tbb_for_library_teams
 #endif
 
 namespace bench_par
@@ -308,6 +308,10 @@ inline oneapi::tbb::task_arena& arena()
     (void)gc;
     return *a;
 }
+
+/// @brief The library's own teams take TBB's threads too, from the start (the
+///        arrays' creation opens some before the first region).
+inline const bool library_teams_on_tbb = (shrink_array::tbb::use_tbb_for_library_teams(), true);
 
 /**
  * @brief Per-rank timing of the TBB regions (BENCH_RANK_TIMING=1), to tell

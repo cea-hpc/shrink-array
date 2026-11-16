@@ -256,4 +256,29 @@ struct has_identity_order<std::array<E, N>> : has_identity_order<E>
 };
 } // namespace internal
 
+/**
+ * @brief Whether `op(v, operand)` is @p v again, bit for bit (same_value()):
+ *        the condition under which a compound operation on an element holding
+ *        a chunk's constant -- zero, the first value -- may be skipped.
+ * @details "0 * x is 0" holds for the integers (0 * x, 0 / x, 0 % x; x == 0 is
+ *          undefined, as on a std::vector) and is assumed for the other
+ *          non-floating types. Not for floating point: 0 / 0, 0 * inf and
+ *          0 * NaN are NaN, 0 * -1 is -0.0 -- computed, then compared.
+ * @param op      the compound operation (std::multiplies, std::divides, ...).
+ * @param v       the element's value (the chunk's constant).
+ * @param operand the right-hand side.
+ */
+template <typename T, typename Op, typename U>
+[[nodiscard]] bool op_keeps_value(Op op, const T& v, const U& operand) noexcept
+{
+    if constexpr (std::is_floating_point_v<T> || internal::is_std_complex<T>::value)
+    {
+        return same_value(static_cast<T>(op(v, static_cast<T>(operand))), v);
+    }
+    else
+    {
+        return true;
+    }
+}
+
 } // namespace shrink_array

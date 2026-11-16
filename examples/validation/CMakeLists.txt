@@ -67,6 +67,11 @@
 #                           assign, swap, assignments, shrink_to_fit, a
 #                           re-chunk) stops on an invariant failure; each case
 #                           in a child, which re-runs this executable.
+#   nan_check_validation    CHUNK_DO_CHECK builds (passes elsewhere): a NaN
+#                           written through any operator (=, +=, *=, /= 0)
+#                           stops with a report naming its index in the
+#                           array; ordinary values and infinities do not. Each
+#                           case in a child, which re-runs this executable.
 #   thread_growth_validation arrays created under a 2-thread team keep
 #                           working when the team grows to the thread
 #                           capacity afterwards (the per-rank structures are
@@ -286,7 +291,7 @@ set(_rt_harnesses       compress_roundtrip pool_accounting open_types_validation
                         region_storage_validation compound_ops_validation bulk_write_team_validation
                         fill_range_constant_validation copy_range_constant_validation
                         constant_switch_validation shrink_to_fit_validation chunk_exchange_validation
-                        signed_zero_validation no_init_release_validation)
+                        signed_zero_validation no_init_release_validation nan_check_validation)
 set(_rt_dyn_harnesses   pool_accounting open_types_validation index64_validation stale_proxy_validation)
 
 # Compile definitions of a variant at a geometry.

@@ -126,6 +126,79 @@ bool pmp::std_backend::Pool::try_run(int n, Job& job)
     return true;
 }
 
+template <typename Run>
+bool pmp::std_backend::Pool::try_run_launched(int n, TeamLauncher launch, Run& run)
+{
+    const std::unique_lock lock(team_mutex_, std::try_to_lock);
+    if (!lock.owns_lock())
+    {
+        return false;
+    }
+    const std::uint64_t gen = ++launch_gen_;
+    join_.store(gen << join_gen_shift, std::memory_order_release);
+    try
+    {
+        launch(n - 1, &Pool::join_task, gen);
+    }
+    catch (...) // NOLINT(bugprone-empty-catch): the tasks already started make the team
+    {
+    }
+    const auto all = static_cast<std::uint64_t>(n - 1);
+    (void)spin_for(join_budget_ns(),
+                   [this, all]() noexcept { return (join_.load(std::memory_order_acquire) & join_count_mask) == all; });
+    const auto joined = static_cast<int>(join_.fetch_or(join_closed, std::memory_order_acq_rel) & join_count_mask);
+    if (joined == 0)
+    {
+        return false;
+    }
+    TeamCtx ctx(joined + 1);
+    auto    job = [&run, &ctx](int rank) { run(ctx, rank); };
+    fn_         = [](void* j, int rank) { (*static_cast<decltype(job)*>(j))(rank); };
+    arg_        = &job;
+    pending_.store(joined, std::memory_order_relaxed);
+    go_.store(gen, std::memory_order_release);
+    go_.notify_all();
+    call(0);
+    if (spin_until(joined + 1, [this]() noexcept { return pending_.load(std::memory_order_acquire) == 0; }))
+    {
+        return true;
+    }
+    for (int p = pending_.load(std::memory_order_acquire); p != 0; p = pending_.load(std::memory_order_acquire))
+    {
+        pending_.wait(p, std::memory_order_acquire);
+    }
+    return true;
+}
+
+inline void pmp::std_backend::Pool::join_task(std::uint64_t gen) noexcept
+{
+    Pool&         p = get();
+    std::uint64_t w = p.join_.load(std::memory_order_acquire);
+    do
+    {
+        if ((w >> join_gen_shift) != gen || (w & join_closed) != 0U)
+        {
+            return; // late: the team started without this task
+        }
+    } while (!p.join_.compare_exchange_weak(w, w + 1, std::memory_order_acq_rel, std::memory_order_acquire));
+    const int rank = static_cast<int>(w & join_count_mask) + 1;
+    // The opener publishes the job once the join is closed; the next
+    // generation cannot start before this task is done (it is pending).
+    if (!spin_until(1, [&p, gen]() noexcept { return p.go_.load(std::memory_order_acquire) == gen; }))
+    {
+        for (std::uint64_t g = p.go_.load(std::memory_order_acquire); g != gen;
+             g               = p.go_.load(std::memory_order_acquire))
+        {
+            p.go_.wait(g, std::memory_order_acquire);
+        }
+    }
+    p.call(rank);
+    if (p.pending_.fetch_sub(1, std::memory_order_acq_rel) == 1)
+    {
+        p.pending_.notify_one();
+    }
+}
+
 inline void pmp::std_backend::Pool::call(int rank) noexcept
 {
     try
