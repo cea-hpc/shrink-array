@@ -73,7 +73,7 @@ def main():
     ap.add_argument("--threads", default="1,%d" % (os.cpu_count() or 1), help="thread counts, comma-separated")
     ap.add_argument("--variants", default="zero,zero_one_value,zero_any")
     ap.add_argument("--rounds", type=int, default=3)
-    ap.add_argument("--n", type=int, default=0, help="elements (default: the binary's, 2^27)")
+    ap.add_argument("--n", type=int, default=0, help="elements (default: the binary's, max(2^27, threads x 2^20))")
     ap.add_argument("--reps", type=int, default=5, help="repetitions per run")
     ap.add_argument("--csv", help="write every repetition here")
     a = ap.parse_args()
