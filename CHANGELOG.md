@@ -278,6 +278,18 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- TBB: the library's own teams run in the program's arena. `use_tbb_for_library_teams()`
+  launched them (the flush and compression pass of `finalize_parallel_phase()`, a re-chunk) in
+  a `task_arena` of its own, so TBB's workers left the program's arena for that one and came
+  back at every phase. On a 144-thread AArch64 node the TBB bench took about three times the
+  OpenMP one: per compute region, 12.7 ms for 3.2 ms of work per rank, a rank waiting 2.5 ms
+  for its task to start, and 23 s in `finalize_parallel_phase()` over the run. The tasks now go
+  to the calling thread's arena (`oneapi::tbb::this_task_arena::enqueue`, oneTBB 2021.6 and
+  later), and `use_tbb_for_library_teams(arena)` names the arena for a program that runs its
+  regions in an explicit `task_arena`; `shrink_bench` does. `BENCH_RANK_TIMING` printed the
+  time of `finalize_parallel_phase()` as a part of the serial time, which it is not, and left
+  it out of the thread-time it splits: its report gives the three wall times apart, and a
+  finalize share.
 - `multi-mat` built with gcc on x86-64: the compute loop (`LoopsSimd::omp_foreach_simd_red_sum`,
   `cos + sin + tan` under `omp simd`) never vectorised. glibc declares its vector `cos`, `sin`
   and `tan` (libmvec) to gcc only under `__FAST_MATH__`, which the flags of

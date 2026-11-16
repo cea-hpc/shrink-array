@@ -172,7 +172,10 @@ appel confie aussi les équipes de la bibliothèque (le vidage et la passe de co
 `finalize_parallel_phase()`, un rechunk, une initialisation parallèle) aux threads de TBB plutôt
 qu'au pool du backend std, pour que les deux ne se disputent pas les cœurs ; un programme TBB qui
 écrit les tableaux sans l'adaptateur appelle lui-même `shrink_array::tbb::use_tbb_for_library_teams()`,
-une fois.
+une fois. Ces équipes tournent dans l'arène du thread qui les ouvre, celle où tournent ses
+algorithmes TBB ; un programme dont les régions tournent dans une `task_arena` à lui alors qu'il
+appelle `finalize_parallel_phase()` en dehors passe cette arène :
+`use_tbb_for_library_teams(arena)`. Sinon les threads de TBB changent d'arène deux fois par région.
 
 Les threads, quel que soit le backend (`chunk/threads.h`) : dimensionner les données par thread et
 numéroter les threads avec eux plutôt qu'avec `omp_get_*`, pour que le programme compile avec

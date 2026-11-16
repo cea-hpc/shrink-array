@@ -310,8 +310,12 @@ inline oneapi::tbb::task_arena& arena()
 }
 
 /// @brief The library's own teams take TBB's threads too, from the start (the
-///        arrays' creation opens some before the first region).
-inline const bool library_teams_on_tbb = (shrink_array::tbb::use_tbb_for_library_teams(), true);
+///        arrays' creation opens some before the first region) -- in the
+///        bench's arena: region() runs its tasks there and calls
+///        finalize_parallel_phase() outside it, so the calling thread's arena
+///        would be another one, and the workers would change arena twice per
+///        region.
+inline const bool library_teams_on_tbb = (shrink_array::tbb::use_tbb_for_library_teams(arena()), true);
 
 /**
  * @brief Per-rank timing of the TBB regions (BENCH_RANK_TIMING=1), to tell
@@ -328,9 +332,12 @@ inline const bool library_teams_on_tbb = (shrink_array::tbb::use_tbb_for_library
  *                         wake-up, begin_parallel_phase(), a rank queued behind
  *                         another on the same thread);
  *            - tail:      n x (W - e_max), the last rank's end to execute()'s return.
- *          Outside the regions, the calling thread alone runs (finalize_parallel_phase(),
- *          the bench's serial code): its time, x (threads - 1), is the serial share
- *          of the idle workers. Totals per call site (file:line of the region()
+ *          After each region, finalize_parallel_phase(): its wall time x threads
+ *          is the finalize share (the library's teams work inside it, on TBB's
+ *          threads; how busy they are is not split). Between a finalize and the
+ *          next region the calling thread alone runs the bench's serial code: its
+ *          time, x (threads - 1), is the serial share of the idle workers. The
+ *          three wall times sum to the run's. Totals per call site (file:line of the region()
  *          call), printed on stderr at exit, the costliest idle first.
  *          Off by default: one test of a static bool per region, no clock read.
  */
@@ -478,18 +485,21 @@ class Registry
             tot.launch += s->launch;
             tot.tail += s->tail;
         }
-        const double serial_idle = (threads - 1) * serial_;
-        const double all         = tot.busy + tot.imbalance + tot.launch + tot.tail + serial_idle;
-        const auto   pct         = [all](double x) { return all > 0 ? 100.0 * x / all : 0.0; };
+        // serial_ runs from a finalize's end to the next region: finalize_ is not in it.
+        const double serial_idle  = (threads - 1) * serial_;
+        const double finalize_all = threads * finalize_;
+        const double all          = tot.busy + tot.imbalance + tot.launch + tot.tail + finalize_all + serial_idle;
+        const auto   pct          = [all](double x) { return all > 0 ? 100.0 * x / all : 0.0; };
 
         std::fprintf(stderr,
-                     "[rank-timing] %d threads; in regions %.3f s, serial between regions %.3f s "
-                     "(of which finalize_parallel_phase %.3f s)\n",
-                     CHUNK_PMP_MAX_THREADS, tot.wall, serial_, finalize_);
+                     "[rank-timing] %d threads; wall %.3f s: in regions %.3f s, finalize_parallel_phase %.3f s, "
+                     "serial between them %.3f s\n",
+                     CHUNK_PMP_MAX_THREADS, tot.wall + finalize_ + serial_, tot.wall, finalize_, serial_);
         std::fprintf(stderr,
                      "[rank-timing] thread-time %.1f s: busy %.1f%%, imbalance %.1f%%, launch %.1f%%, "
-                     "tail %.1f%%, serial (threads-1 idle) %.1f%%\n",
-                     all, pct(tot.busy), pct(tot.imbalance), pct(tot.launch), pct(tot.tail), pct(serial_idle));
+                     "tail %.1f%%, finalize (not split) %.1f%%, serial (threads-1 idle) %.1f%%\n",
+                     all, pct(tot.busy), pct(tot.imbalance), pct(tot.launch), pct(tot.tail), pct(finalize_all),
+                     pct(serial_idle));
 
         std::vector<const Site*> order;
         order.reserve(sites_.size());

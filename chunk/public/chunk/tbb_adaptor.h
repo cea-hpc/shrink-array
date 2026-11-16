@@ -93,11 +93,13 @@
 #include <utility>     // std::forward
 
 #include <cstdint> // std::uint64_t (the launcher's argument)
+#include <atomic>  // std::atomic (the arena named for the library's teams)
 #include <mutex>   // std::once_flag, std::call_once (installing the launcher)
 
 #include <oneapi/tbb/blocked_range.h> // oneapi::tbb::blocked_range (the index forms)
 #include <oneapi/tbb/parallel_for.h>  // oneapi::tbb::parallel_for
-#include <oneapi/tbb/task_arena.h>    // oneapi::tbb::task_arena (the library's teams)
+#include <oneapi/tbb/task_arena.h>    // oneapi::tbb::task_arena, this_task_arena::enqueue (the library's teams)
+#include <oneapi/tbb/version.h>       // TBB_INTERFACE_VERSION (this_task_arena::enqueue: oneTBB 2021.6)
 
 #include "chunk/internal/PMP_CHUNK.h" // pmp::backend, pmp::BackendKind, pmp::set_team_launcher
 #include "chunk/phases.h"             // begin_parallel_phase, finalize_parallel_phase
@@ -156,15 +158,47 @@ template <std::integral Index>
     return last > first ? static_cast<Index>(((last - first) + (step - 1)) / step) : Index(0);
 }
 
+/// @brief The arena use_tbb_for_library_teams(arena) named for the library's
+///        teams; nullptr: the calling thread's own.
+[[nodiscard]] inline std::atomic<oneapi::tbb::task_arena*>& team_arena() noexcept
+{
+    static std::atomic<oneapi::tbb::task_arena*> named{nullptr};
+    return named;
+}
+
 /// @brief The library's teams' launcher (pmp::set_team_launcher()): @p count
-///        tasks of an arena of TBB's default size, each calling @p task(@p arg).
+///        tasks, each calling @p task(@p arg), in the arena the program named
+///        (team_arena()), else in the calling thread's.
+/// @details NOT an arena of the library's own: the program's regions run in
+///          the program's arena, each followed by a finalize_parallel_phase(),
+///          and TBB's workers would leave one arena for the other and come
+///          back at every phase -- a rank of a 144-thread region waited 2.5 ms
+///          for its task to start, for 3 ms of work. The calling thread's
+///          arena is the one its algorithms just ran in; a thread that is in
+///          none gets TBB's default one, as its first algorithm would.
 inline void launch_team_tasks(int count, void (*task)(std::uint64_t), std::uint64_t arg)
 {
+    if (oneapi::tbb::task_arena* const named = team_arena().load(std::memory_order_acquire); named != nullptr)
+    {
+        for (int k = 0; k < count; ++k)
+        {
+            named->enqueue([task, arg] { task(arg); });
+        }
+        return;
+    }
+#if TBB_INTERFACE_VERSION >= 12060
+    for (int k = 0; k < count; ++k)
+    {
+        oneapi::tbb::this_task_arena::enqueue([task, arg] { task(arg); });
+    }
+#else
+    // No this_task_arena::enqueue before oneTBB 2021.6: an arena of TBB's default size.
     static oneapi::tbb::task_arena* const arena = new oneapi::tbb::task_arena(); // NOLINT: immortal, as the pool
     for (int k = 0; k < count; ++k)
     {
         arena->enqueue([task, arg] { task(arg); });
     }
+#endif
 }
 } // namespace detail
 
@@ -180,6 +214,10 @@ inline void launch_team_tasks(int count, void (*task)(std::uint64_t), std::uint6
  *          tasks at once, so a team is made of those that started within
  *          CHUNK_PMP_JOIN_US (200 us by default): the team of one, in the
  *          worst case, is still correct. Nothing for the serial backend.
+ *          The tasks go to the arena of the thread that opens the team: the
+ *          one its TBB algorithms run in. A program whose regions run in an
+ *          explicit task_arena, with finalize_parallel_phase() called outside
+ *          it, names that arena with the overload below.
  */
 inline void use_tbb_for_library_teams()
 {
@@ -188,6 +226,20 @@ inline void use_tbb_for_library_teams()
         static std::once_flag once;
         std::call_once(once, [] { (void)pmp::set_team_launcher(&detail::launch_team_tasks); });
     }
+}
+
+/**
+ * @brief use_tbb_for_library_teams(), the library's teams launched in @p arena
+ *        whatever thread opens them: the task_arena the program runs its
+ *        regions in, so that TBB's workers stay in one arena from a region to
+ *        the pass that follows it.
+ * @param arena must outlive the library's use (the last array, the last
+ *              finalize_parallel_phase()); the last call wins.
+ */
+inline void use_tbb_for_library_teams(oneapi::tbb::task_arena& arena)
+{
+    detail::team_arena().store(&arena, std::memory_order_release);
+    use_tbb_for_library_teams();
 }
 
 /**
