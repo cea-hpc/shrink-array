@@ -104,9 +104,9 @@ int report(const char* what, long bad)
 /// `*=`, `/=`, `%=` against a std::vector, results on zero included.
 int integer_ops()
 {
-    const int        count = 50000;
-    Arr<int>         arr(count);
-    std::vector<int> ref(static_cast<std::size_t>(count), 0);
+    const int   count = 50000;
+    Arr<int>    arr(count);
+    std::vector ref(static_cast<std::size_t>(count), 0);
     for (int i = 0; i < count; ++i)
     {
         const int value                  = (i / 1000) % 3 == 0 ? 0 : 4 + (i % 9);
@@ -160,9 +160,9 @@ int second_value_zero()
 {
     if constexpr (chunk_config::use_zero_one_value && !chunk_config::use_zero_any)
     {
-        const int           count = 20000;
-        A                   arr(count);
-        std::vector<double> ref(static_cast<std::size_t>(count), 0.0);
+        const int   count = 20000;
+        A           arr(count);
+        std::vector ref(static_cast<std::size_t>(count), 0.0);
         arr.set_second_value(0.0, /*message=*/false);
         long bad = arr.get_second_value() != 0.0;
         for (int i = 0; i < count; i += 3)

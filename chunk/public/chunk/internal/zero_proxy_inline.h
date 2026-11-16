@@ -90,9 +90,7 @@ T* zero::Proxy<T>::perform_core_assignment(T* vals, InT<T> value) const noexcept
         increm_chunk_write<ChunkType>(value);
     }
 
-    const bool need_alloc = this->is_cst_val1(vals);
-
-    if (need_alloc)
+    if (const bool need_alloc = this->is_cst_val1(vals); need_alloc)
     {
         // Counter-mode state across the allocation; empty work otherwise.
         class
@@ -457,8 +455,7 @@ T zero::Proxy<T>::assign_impl(InT<U> value) noexcept
         // and manage_full_zero would fire on a chunk that is not all-zero.
         // Apply the write directly (arm + store), with only the arm-time
         // counter init.
-        const bool need_alloc = is_cst_val();
-        if (need_alloc)
+        if (const bool need_alloc = is_cst_val(); need_alloc)
         {
             create_value();
             if constexpr (chunk_config::use_compression_with_counter)
@@ -542,9 +539,7 @@ template <typename Derived, typename T, bool Enabled>
 template <typename Lambda>
 void zero::ProxyFastCompPolicy<Derived, T, Enabled>::execute_simple_operation_async(auto* ctx, Lambda operation)
 {
-    const bool is_val1 = ctx->chunk.is_cst_val1();
-
-    if (is_val1)
+    if (const bool is_val1 = ctx->chunk.is_cst_val1(); is_val1)
     {
         ctx->chunk.create_value();
     }
@@ -649,10 +644,8 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::execute_inplace_operation_a
 
     const InT<T> v_old = Base::read_values_async(ctx);
 
-    const zero::Proxy proxy  = Base::template make_proxy_with_info<Derived>(ctx);
-    const bool        is_val = chunk_loc.is_cst_val1();
-
-    if (is_val)
+    const zero::Proxy proxy = Base::template make_proxy_with_info<Derived>(ctx);
+    if (const bool is_val = chunk_loc.is_cst_val1(); is_val)
     {
         // Through the proxy: pins the ambient geometry (see execute_inplace_operation).
         proxy.create_value();
@@ -745,7 +738,7 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::trigger_compression_if_need
 {
     const auto& vec_tuple = Manager::zero_candidates_thr[thr_rank];
 
-    const int sz = static_cast<int>(vec_tuple.size());
+    const auto sz = static_cast<int>(vec_tuple.size());
 
     const int szm = Manager::get_size_max_number_of_chunk_to_check_compress();
 
@@ -771,9 +764,7 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::perform_compression() const
 
     const auto& vec_tuple = Manager::zero_candidates_thr[thr_rank];
 
-    const int sz_before = static_cast<int>(vec_tuple.size());
-
-    if (Base::should_trigger_compression(sz_before, szm))
+    if (const auto sz_before = static_cast<int>(vec_tuple.size()); Base::should_trigger_compression(sz_before, szm))
     {
         // Drain this rank's deferred ops first: they must be applied before
         // their chunks are compressed. Do not RETURN when the rank has any

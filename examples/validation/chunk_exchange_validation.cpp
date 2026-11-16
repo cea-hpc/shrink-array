@@ -191,19 +191,20 @@ ChunkKind expected_kind(int chunk)
     const bool second_b = chunk_config::use_zero_any || (chunk_config::use_zero_one_value && is_bool<T>);
     switch (chunk)
     {
+        using enum ChunkKind;
         case 0:
         case 4:
-            return ChunkKind::first_value;
+            return first_value;
         case 1:
         case 5:
-            return second_a ? ChunkKind::second_value : ChunkKind::materialised;
+            return second_a ? second_value : materialised;
         case 2:
-            return second_b ? ChunkKind::second_value : ChunkKind::materialised;
+            return second_b ? second_value : materialised;
         case 3:
         case 7:
-            return pattern_build ? ChunkKind::motif : ChunkKind::materialised;
+            return pattern_build ? motif : materialised;
         default:
-            return ChunkKind::materialised;
+            return materialised;
     }
 }
 
@@ -211,13 +212,14 @@ const char* kind_name(ChunkKind kind)
 {
     switch (kind)
     {
-        case ChunkKind::first_value:
+        using enum ChunkKind;
+        case first_value:
             return "first_value";
-        case ChunkKind::second_value:
+        case second_value:
             return "second_value";
-        case ChunkKind::motif:
+        case motif:
             return "motif";
-        case ChunkKind::materialised:
+        case materialised:
             return "materialised";
     }
     return "?";
@@ -250,20 +252,21 @@ long compare_states(const std::vector<ChunkState<T>>& lhs,
     long bad = lhs.size() != rhs.size() ? 1 : 0;
     for (std::size_t c = 0; c < lhs.size() && c < rhs.size(); ++c)
     {
+        using enum ChunkKind;
         const auto& a = lhs[c];
         const auto& b = rhs[c];
-        if (promoted != nullptr && a.kind == ChunkKind::materialised && b.kind == ChunkKind::motif)
+        if (promoted != nullptr && a.kind == materialised && b.kind == motif)
         {
             ++*promoted;
             continue;
         }
-        if (a.kind != b.kind || (a.kind != ChunkKind::materialised && a.value != b.value))
+        if (a.kind != b.kind || (a.kind != materialised && a.value != b.value))
         {
             println("  FAIL chunk {}: {} {} vs {} {}", c, kind_name(a.kind), a.value, kind_name(b.kind), b.value);
             ++bad;
             continue;
         }
-        if ((a.kind == ChunkKind::materialised || a.kind == ChunkKind::motif) && a.data != nullptr)
+        if ((a.kind == materialised || a.kind == motif) && a.data != nullptr)
         {
             const long begin = static_cast<long>(c) * chunk_size;
             const long n     = begin + chunk_size < size ? chunk_size : size - begin;
@@ -308,7 +311,7 @@ long check_copy(const A&                                               arr,
                 long                                                   chunk_size,
                 const char*                                            what)
 {
-    const long size     = static_cast<long>(arr.size());
+    const auto size     = static_cast<long>(arr.size());
     const long wrong    = wrong_elements(arr, chunk_size);
     int        promoted = 0; // pattern: materialised chunks found compressed to a motif since
     const long differ =
@@ -330,7 +333,7 @@ long round_trip()
     long fails = 0;
     A    src(0);
     prepare(src);
-    const long chunk_size = static_cast<long>(src.chunk_size());
+    const auto chunk_size = static_cast<long>(src.chunk_size());
     const long size       = (n_full_chunks * chunk_size) + (chunk_size / 2);
     src.resize(static_cast<int>(size));
     if constexpr (pattern_build)

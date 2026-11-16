@@ -261,7 +261,7 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
 
                 void* ptr = mmap(nullptr, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
-                T* arr = static_cast<T*>(ptr);
+                auto* arr = static_cast<T*>(ptr);
 
                 for (int i = 0; i < static_cast<int>(this->size_policy_.size()); ++i)
                 {
@@ -298,9 +298,7 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
 
             if constexpr (build_config::threaded)
             {
-                const int sz = static_cast<int>(Manager::zero_one_value_candidates_thr[0].size());
-
-                if (sz <= ind)
+                if (const auto sz = static_cast<int>(Manager::zero_one_value_candidates_thr[0].size()); sz <= ind)
                 {
                     for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
                     {
@@ -341,7 +339,7 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
                     const size_t alloc_sz = (bytes + pagesize - 1) / pagesize * pagesize;
 
                     void* ptr = mmap(nullptr, alloc_sz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-                    T*    arr = static_cast<T*>(ptr);
+                    auto* arr = static_cast<T*>(ptr);
                     for (std::size_t i = 0; i < need_elems; ++i)
                     {
                         arr[i] = sec_value;
@@ -733,7 +731,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
 
                       const int thr_rank = CHUNK_PMP_THREAD_RANK;
 
-                      const int nb = static_cast<int>(ll_chunk_loc.size());
+                      const auto nb = static_cast<int>(ll_chunk_loc.size());
 
                       if (nb > 0)
                       {
@@ -834,8 +832,8 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
         if (!chunk_config::aggressive_compression() && !CHUNK_PMP_IN_PARALLEL_REGION)
         // run-time switch: chunk/config.h
         {
-            const auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::get_ref();
-            if (ens_type_chunk.have_chunk_to_compress_potentially())
+            if (const auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::get_ref();
+                ens_type_chunk.have_chunk_to_compress_potentially())
             {
                 ens_type_chunk.compress_chunk_to_compress_potentially(true);
             }
@@ -946,9 +944,9 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
         {
             if constexpr (chunk_config::use_fast_block_compression)
             {
-                auto& flag     = (*flags)[static_cast<std::size_t>(jj)];
-                char  expected = 0;
-                if (!flag.compare_exchange_strong(expected, 1, std::memory_order_acq_rel, std::memory_order_acquire))
+                auto& flag = (*flags)[static_cast<std::size_t>(jj)];
+                if (char expected = 0;
+                    !flag.compare_exchange_strong(expected, 1, std::memory_order_acq_rel, std::memory_order_acquire))
                 {
                     left_to_pass.push_back(jj);
                     return;
@@ -1361,8 +1359,7 @@ void zero_one_value::Array<T, IntType>::register_no_second_value_key()
 {
     if constexpr (is_not_bool && chunk_config::use_fast_block_compression)
     {
-        auto& sh_inf = *Proxy<T>::share_info_array;
-        if (sh_inf.find_inf_array(T{}) == nullptr)
+        if (auto& sh_inf = *Proxy<T>::share_info_array; sh_inf.find_inf_array(T{}) == nullptr)
         {
             sh_inf.insert(T{}, &inf_array_none);
             // The between-phase pass drains only the values of THIS map: T{}

@@ -148,8 +148,7 @@ void zero_any::ArrayImpl<Derived>::print_compression_stats(std::ostream& os) con
         0, nb_chunk_, pmp::Options{.use_team = !CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk_ > 500},
         [&](int j, auto& acc)
         {
-            const auto& ck = chunk_list_[j];
-            if (ck.written())
+            if (const auto& ck = chunk_list_[j]; ck.written())
             {
                 const auto v0 = ck.constant_value(csz_audit);
                 if (!v0)
@@ -484,9 +483,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
 
                 const int thr_rank = CHUNK_PMP_THREAD_RANK;
 
-                const int nb = static_cast<int>(ll_chunk_loc.size());
-
-                if (nb > 0)
+                if (const auto nb = static_cast<int>(ll_chunk_loc.size()); nb > 0)
                 {
                     // Park into the reuse list of THIS array's geometry, not the ambient
                     // t_active (may be another size mid-rechunk): a size-A buffer filed

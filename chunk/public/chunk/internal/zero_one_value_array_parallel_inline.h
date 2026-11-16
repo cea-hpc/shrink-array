@@ -98,8 +98,7 @@ void zero_one_value::FastBlockSupport<Derived, true>::drain_own_candidates()
     const int  num_tab  = ProxyT::share_info_array->get_num_tab(self().registry_key());
     const auto inf      = self().get_info_second_value();
     auto&      by_value = ManagerT::zero_one_value_candidates_map_thr[rank];
-    const auto it       = by_value.find(inf.second_value);
-    if (it != by_value.end() && it->second)
+    if (const auto it = by_value.find(inf.second_value); it != by_value.end() && it->second)
     {
         internal::with_own_candidates_only(*it->second, num_tab,
                                            [&]
@@ -136,7 +135,7 @@ void zero_one_value::FastBlockSupport<Derived, true>::sweep_leftover_candidates(
         const int  num_tab  = ProxyT::share_info_array->get_num_tab(self().registry_key());
         const auto inf      = self().get_info_second_value();
         const int  thr_self = get_thr_rank_fast();
-        const int  nb_rank  = static_cast<int>(ManagerT::zero_one_value_candidates_map_thr.size());
+        const auto nb_rank  = static_cast<int>(ManagerT::zero_one_value_candidates_map_thr.size());
         const int  first    = own_rank_only ? thr_self : 0;
         const int  last     = own_rank_only ? std::min(thr_self + 1, nb_rank) : nb_rank;
         bool       found    = false;

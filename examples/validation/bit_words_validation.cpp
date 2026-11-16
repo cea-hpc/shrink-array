@@ -88,7 +88,7 @@ void geometry()
 
 void against_vector(std::size_t nbits, std::mt19937_64& rng)
 {
-    std::vector<bits::WordT> words(bits::words_for(nbits) + 1, 0xDEADBEEFDEADBEEFull); // +1: a guard word
+    std::vector<bits::WordT> words(bits::words_for(nbits) + 1, 0xDEADBEEFDEADBEEFULL); // +1: a guard word
     const bits::WordT        guard = words.back();
     bits::fill_bits(words.data(), nbits, false);
     std::vector<bool> ref(nbits, false);
@@ -188,6 +188,7 @@ void ranges(std::mt19937_64& rng)
         }
         for (std::size_t first = 0; first < 192; first += 7)
         {
+            using enum bits::Uniform;
             for (std::size_t n = 0; first + n <= 192; n += 5)
             {
                 bool any = false;
@@ -197,9 +198,7 @@ void ranges(std::mt19937_64& rng)
                     any = any || bits::get_bit(words.data(), i);
                     all = all && bits::get_bit(words.data(), i);
                 }
-                const bits::Uniform expect = !any  ? bits::Uniform::all_false
-                                             : all ? bits::Uniform::all_true
-                                                   : bits::Uniform::mixed;
+                const bits::Uniform expect = !any ? all_false : all ? all_true : mixed;
                 if (bits::scan_range(words.data(), first, n) != expect)
                 {
                     check(false, "scan_range", n);
@@ -228,11 +227,11 @@ void concurrent(std::size_t nbits, int rounds)
             {
                 for (int r = 0; r < rounds; ++r)
                 {
-                    for (std::size_t i = static_cast<std::size_t>(t); i < nbits; i += n_thr)
+                    for (auto i = static_cast<std::size_t>(t); i < nbits; i += n_thr)
                     {
                         bits::set_bit_atomic(words.data(), i, true);
                     }
-                    for (std::size_t i = static_cast<std::size_t>(t); i < nbits; i += n_thr)
+                    for (auto i = static_cast<std::size_t>(t); i < nbits; i += n_thr)
                     {
                         if ((i / n_thr) % 2 == 1)
                         {
@@ -278,11 +277,11 @@ void concurrent_ranges(std::size_t nbits, int rounds)
             {
                 for (int r = 0; r < rounds; ++r)
                 {
-                    for (std::size_t s = static_cast<std::size_t>(t); s < spans.size(); s += n_thr)
+                    for (auto s = static_cast<std::size_t>(t); s < spans.size(); s += n_thr)
                     {
                         bits::fill_bit_range_atomic(words.data(), spans[s].first, spans[s].second, true);
                     }
-                    for (std::size_t s = static_cast<std::size_t>(t); s < spans.size(); s += n_thr)
+                    for (auto s = static_cast<std::size_t>(t); s < spans.size(); s += n_thr)
                     {
                         if (s % 2 == 1)
                         {

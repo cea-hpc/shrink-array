@@ -178,9 +178,7 @@ inline bool StaticConstArray::try_free_block(int sz, void* ptr)
 
 inline bool InfoFreeElt::push_back(void* ptr, int sz, int thr_rank)
 {
-    int& ref_compt = compt[thr_rank];
-
-    if ((ref_compt < max_free_elt && somme_sz_[thr_rank] < 4 * 1024 * 1024))
+    if (int& ref_compt = compt[thr_rank]; ref_compt < max_free_elt && somme_sz_[thr_rank] < 4 * 1024 * 1024)
     {
         tab_ptr[thr_rank][ref_compt] = ptr;
         tab_sz[thr_rank][ref_compt]  = sz;

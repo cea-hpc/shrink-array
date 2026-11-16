@@ -70,8 +70,7 @@ inline void flush_probe_op([[maybe_unused]] const DeferredOperationBase* raw,
         const auto bad_ptr = [](std::uintptr_t ptr)
         { return ptr < 0x1000 || (ptr >> addr_bits) != 0 || (ptr & 0x7U) != 0; };
 
-        const auto addr = ::fast_alloc::address_bits(raw);
-        if (raw == nullptr || bad_ptr(addr))
+        if (const auto addr = ::fast_alloc::address_bits(raw); raw == nullptr || bad_ptr(addr))
         {
             CHUNK_INVARIANT_FAILED("[FLUSH_PROBE {}] bad op_ptr in op_map: num={} op={} rank={}", path, num,
                                    static_cast<const void*>(raw), rank);

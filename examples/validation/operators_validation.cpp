@@ -57,7 +57,7 @@ int run(int argc, char** argv)
         only_type = argv[2];
     }
     ParamChunk::init_indexes(true);
-    const long chunk_sz = static_cast<long>(Arr<int>(1).chunk_size());
+    const auto chunk_sz = static_cast<long>(Arr<int>(1).chunk_size());
     const long count    = n_chunks * chunk_sz;
     println("=== operators_validation [variant = {}]  N={} ({} chunks of {}) ===", variant_name(), count, n_chunks,
             chunk_sz);

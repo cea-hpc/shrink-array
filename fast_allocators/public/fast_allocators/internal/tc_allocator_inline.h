@@ -774,7 +774,7 @@ int TCAllocatorEB<ElementBytes, BlockBytes>::alloc_block()
 
         const uintptr_t block_bytes = block_size;
 
-        std::byte* mapping = static_cast<std::byte*>(fast_alloc::map_anonymous(2 * block_size));
+        auto* mapping = static_cast<std::byte*>(fast_alloc::map_anonymous(2 * block_size));
 
         data = mapping + ((0 - fast_alloc::address_bits(mapping)) & (block_bytes - 1)); // align up
 

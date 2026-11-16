@@ -91,7 +91,7 @@ long target_index(long chunk_sz)
 int run_case(const std::string& name)
 {
     const double  nan      = std::numeric_limits<double>::quiet_NaN();
-    const long    chunk_sz = static_cast<long>(Array<double>(1).chunk_size());
+    const auto    chunk_sz = static_cast<long>(Array<double>(1).chunk_size());
     Array<double> arr(n_chunks * chunk_sz);
     const long    k = target_index(chunk_sz);
     arr[k]          = 1.5; // a materialised chunk: the write path, not the constant one
@@ -190,7 +190,7 @@ int run(int argc, char** argv)
         return run_case(argv[2]);
     }
 
-    const long chunk_sz = static_cast<long>(Array<double>(1).chunk_size());
+    const auto chunk_sz = static_cast<long>(Array<double>(1).chunk_size());
     println("=== nan_check_validation [variant = {}]  chunk size {} ===", variant_name(), chunk_sz);
     if constexpr (!build_config::do_check)
     {

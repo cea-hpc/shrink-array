@@ -146,9 +146,9 @@ long life_of_one_array(Arrays& arr, int count)
     bad += mismatches(arr_a, count / 3 + 1, 2 * count, 0.0);
 
     // One element written in each of the first m chunks: m chunks written.
-    Arr&      arr_w = arr.w;
-    const int csz   = static_cast<int>(arr_w.chunk_size());
-    const int half  = (count / csz) / 2;
+    Arr&       arr_w = arr.w;
+    const auto csz   = static_cast<int>(arr_w.chunk_size());
+    const int  half  = (count / csz) / 2;
     for (int c = 0; c < half; ++c)
     {
         arr_w[c * csz] = 7.0;

@@ -251,7 +251,7 @@ static int round_trip(const char* label, long count, const Scenario<T>& sc, bool
         }
     }
 
-    const long csz = static_cast<long>(arr.chunk_size());
+    const auto csz = static_cast<long>(arr.chunk_size());
     if (bad)
     {
         println("[{}/{}] FAIL: {}/{} mismatches, first at i={} (chunk #{}, offset {}, run {}) "

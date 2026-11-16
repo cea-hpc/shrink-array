@@ -97,7 +97,7 @@ void check_single_wait(int nt)
 {
     constexpr int                 rounds = 2000;
     std::vector<std::atomic<int>> ran(rounds);
-    std::vector<int>              value(rounds, 0);
+    std::vector                   value(rounds, 0);
     std::atomic<int>              bad{0};
     pmp::team(pmp::Options{.num_threads = nt},
               [&](pmp::Team& team)

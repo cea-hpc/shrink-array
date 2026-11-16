@@ -1118,7 +1118,7 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(InT<U> operand, Op operati
                 // Compute in CalcType, truncate back to T.
                 const CalcType intermediate = operation(static_cast<CalcType>(current), static_cast<CalcType>(operand));
 
-                const T result = static_cast<T>(intermediate);
+                const auto result = static_cast<T>(intermediate);
                 store_value(result);
 
                 if constexpr (chunk_config::use_fast_block_compression)
@@ -1152,8 +1152,7 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(InT<U> operand, Op operati
 
                             if constexpr (build_config::any_check)
                             {
-                                T* current_chunk_ptr = ctx->chunk.values_load();
-                                if (current_chunk_ptr != values)
+                                if (T* current_chunk_ptr = ctx->chunk.values_load(); current_chunk_ptr != values)
                                 {
                                     invariant_failed(std::source_location::current(),
                                                      "Lambda async ARITH: STALE values pointer! "

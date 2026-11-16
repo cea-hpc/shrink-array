@@ -237,8 +237,7 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
                     chunk_t->steal_mark();
                 }
             }
-            const bool ret = proxy2a->compression_mgr.template start<ProxyType>();
-            if (!ret)
+            if (const bool ret = proxy2a->compression_mgr.template start<ProxyType>(); !ret)
             {
                 for (int k = 0; k < sz; ++k)
                 {
@@ -651,7 +650,7 @@ void zero_any::ChunkImpl<T, Derived>::fill_list_chunk_to_compress_in_par([[maybe
 {
     auto& vec_tup = Manager::get_zero_any_candidates(thr);
 
-    const int sz = static_cast<int>(vec_tup.size());
+    const auto sz = static_cast<int>(vec_tup.size());
 
     // pattern: the motif candidates the scan set aside; 0 for plain zero_any.
     const auto motif_count = []
@@ -948,7 +947,7 @@ void zero_any::ChunkThreadPolicy<T, Derived, false>::create_value_bool(bool need
 {
     // bool's second value is always `true`: this IS create_value() at that value
     // (Base::init_block() is the `false` fill).
-    static T k_second_value = static_cast<T>(true); // a slot the handle can point at; never written
+    static auto k_second_value = static_cast<T>(true); // a slot the handle can point at; never written
     create_value(need_set_second_value, SecondValueRef<T>{&k_second_value});
 }
 

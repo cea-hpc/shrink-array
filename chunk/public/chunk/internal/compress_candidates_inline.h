@@ -248,7 +248,7 @@ void CompressCandidates<ChunkT, T>::remove_from_zero_any_candidates_by_ptr_range
 {
     const auto in_range = [lo, hi](const auto& tup)
     {
-        const void* ptr = static_cast<const void*>(std::get<0>(tup));
+        const auto* ptr = static_cast<const void*>(std::get<0>(tup));
         return ptr >= lo && ptr < hi;
     };
     if constexpr (build_config::threaded)

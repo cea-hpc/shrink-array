@@ -34,8 +34,7 @@ void DirtyBitsetSupport<Derived, true>::mark_chunk_dirty(int chunk_idx) noexcept
 {
     const int      word_idx = chunk_idx >> word_shift;
     const uint64_t bit_mask = 1ULL << (chunk_idx & bit_in_word_mask);
-    auto&          word     = bitset_[word_idx].word;
-    if ((word.load(std::memory_order_relaxed) & bit_mask) == 0)
+    if (auto& word = bitset_[word_idx].word; (word.load(std::memory_order_relaxed) & bit_mask) == 0)
     {
         word.fetch_or(bit_mask, std::memory_order_acq_rel);
     }

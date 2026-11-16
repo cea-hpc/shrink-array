@@ -138,8 +138,9 @@ enum class Mode
 };
 static Mode mode_of(int round)
 {
+    using enum Mode;
     const int mode_idx = (round / 3) % 3;
-    return mode_idx == 0 ? Mode::fill : mode_idx == 1 ? Mode::copy : Mode::transform;
+    return mode_idx == 0 ? fill : mode_idx == 1 ? copy : transform;
 }
 static const char* mode_name(Mode mode)
 {
@@ -148,12 +149,12 @@ static const char* mode_name(Mode mode)
 
 static int run_validation(long count, int rounds)
 {
-    Array<double>       arr(count);
-    std::vector<double> ref(static_cast<std::size_t>(count), 0.0);
-    std::vector<double> src(static_cast<std::size_t>(count), 0.0); // copy rounds
-    Array<double>       src_arr(count);                            // transform rounds: a chunked source
-    const long          nblk = (count + blk - 1) / blk;
-    long                bad  = 0;
+    Array<double> arr(count);
+    std::vector   ref(static_cast<std::size_t>(count), 0.0);
+    std::vector   src(static_cast<std::size_t>(count), 0.0); // copy rounds
+    Array<double> src_arr(count);                            // transform rounds: a chunked source
+    const long    nblk = (count + blk - 1) / blk;
+    long          bad  = 0;
 
     for (int r = 0; r < rounds && bad == 0; ++r)
     {
@@ -295,7 +296,7 @@ static int run_partial_span_queueing()
     {
         using C = std::complex<double>;
         Array<C>   arr(1);
-        const long cs = static_cast<long>(arr.chunk_size());
+        const auto cs = static_cast<long>(arr.chunk_size());
         arr.resize(4 * cs);
         const long last_of_1 = (2 * cs) - 1; // the last element of chunk 1
 

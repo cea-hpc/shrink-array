@@ -98,7 +98,11 @@ struct Point3
 {
     auto operator<=>(const Point3&) const = default;
 
-    double x, y, z;
+    double x;
+
+    double y;
+
+    double z;
 };
 
 /// A tag byte then a double: seven bytes of padding inside the value, which
@@ -129,7 +133,9 @@ struct Pair16
 {
     bool operator==(const Pair16&) const = default;
 
-    std::int16_t a, b;
+    std::int16_t a;
+
+    std::int16_t b;
 };
 
 static void begin_phase()
@@ -285,7 +291,7 @@ static int round_trip(const char* label, long count, const Scenario<T>& sc)
         }
     }
 
-    const long csz = static_cast<long>(arr.chunk_size());
+    const auto csz = static_cast<long>(arr.chunk_size());
     if (bad)
     {
         println("[{}/{}] FAIL: {}/{} mismatches, first at i={} (chunk #{}, offset {}, run {})", variant_name(), label,
@@ -391,8 +397,8 @@ int run(int argc, char** argv)
         Array<Pair16> cells{Pair16{1, 5}, Pair16{2, 6}, Pair16{}};
         check(cells.size() == 3 && std::as_const(cells)[1] == Pair16{2, 6} && std::as_const(cells)[2] == Pair16{},
               "initializer-list constructor");
-        std::vector<Pair16> src(500, Pair16{7, 1});
-        Array<Pair16>       rng(src.begin(), src.end());
+        std::vector   src(500, Pair16{7, 1});
+        Array<Pair16> rng(src.begin(), src.end());
         check(rng.size() == 500 && std::as_const(rng)[499] == Pair16{7, 1}, "(first, last) constructor");
         if (!bad)
         {
@@ -419,7 +425,7 @@ int run(int argc, char** argv)
         int           bad = 0;
         Array<Point3> al;
         maybe_set_second_value(al, sp.second);
-        const int cs = static_cast<int>(al.chunk_size());
+        const auto cs = static_cast<int>(al.chunk_size());
         al.resize(4 * cs);
         for (int i = 0; i < 4 * cs; ++i)
         {
@@ -443,7 +449,7 @@ int run(int argc, char** argv)
             println("[{}/aliased push_back] FAIL: push_back(a(3)) past the capacity stored another value",
                     variant_name());
         }
-        const int old_size = static_cast<int>(al.size());
+        const auto old_size = static_cast<int>(al.size());
         for (int i = cs; i < 2 * cs; ++i)
         {
             al[i] = sp.second;

@@ -191,8 +191,7 @@ void capture(const logging::Record& record, void* /*user*/) noexcept
     // rather than escaping into std::terminate.
     try
     {
-        g_captured.push_back(
-            Captured{record.level, record.channel, std::string{record.message}, record.location.line()});
+        g_captured.emplace_back(record.level, record.channel, std::string{record.message}, record.location.line());
     }
     catch (...)
     {
@@ -234,11 +233,12 @@ std::string g_log_path; // CHUNK_LOG_FILE, expanded
 // --- 1 ----------------------------------------------------------------------
 void check_environment()
 {
-    check(logging::enabled(Channel::rechunk, Level::debug), "env: CHUNK_LOG rechunk=debug applies");
-    check(!logging::enabled(Channel::rechunk, Level::trace), "env: rechunk stops at debug");
-    check(logging::enabled(Channel::pool, Level::warn), "env: the bare level warn applies to pool");
-    check(!logging::enabled(Channel::pool, Level::info), "env: pool stops at warn");
-    check(logging::enabled(Channel::alloc, Level::trace), "env: FAST_ALLOC_TRACE=1 raises alloc to trace");
+    using enum Channel;
+    check(logging::enabled(rechunk, Level::debug), "env: CHUNK_LOG rechunk=debug applies");
+    check(!logging::enabled(rechunk, Level::trace), "env: rechunk stops at debug");
+    check(logging::enabled(pool, Level::warn), "env: the bare level warn applies to pool");
+    check(!logging::enabled(pool, Level::info), "env: pool stops at warn");
+    check(logging::enabled(alloc, Level::trace), "env: FAST_ALLOC_TRACE=1 raises alloc to trace");
     const auto& switches = logging::detail::legacy_switches;
     const auto  trace =
         std::ranges::find(switches, std::string_view{"FAST_ALLOC_TRACE"}, &logging::detail::LegacySwitch::name);
@@ -246,8 +246,8 @@ void check_environment()
     check(std::ranges::find(switches, std::string_view{"CHUNK_RECHUNK_CHURN"}, &logging::detail::LegacySwitch::name) ==
               switches.end(),
           "env: CHUNK_RECHUNK_CHURN is no longer a switch (CHUNK_LOG=rechunk=debug)");
-    check(logging::enabled(Channel::ledger, Level::info), "env: CHUNK_LEDGER_REPORT=1 raises ledger to info");
-    check(!logging::enabled(Channel::arena, Level::info), "env: arena stays at warn (CHUNK_ARENA_REPORT unset)");
+    check(logging::enabled(ledger, Level::info), "env: CHUNK_LEDGER_REPORT=1 raises ledger to info");
+    check(!logging::enabled(arena, Level::info), "env: arena stays at warn (CHUNK_ARENA_REPORT unset)");
 
     CHUNK_LOG(warn, general, "first line through the default sink");
     const auto lines             = read_lines(g_log_path);
@@ -315,11 +315,13 @@ void check_parse()
 // --- 3 ----------------------------------------------------------------------
 void check_filter()
 {
+    using enum Channel;
+    using enum Level;
     logging::configure("warn,drain=info");
-    check(logging::enabled(Channel::drain, Level::info), "filter: drain=info lets info");
-    check(!logging::enabled(Channel::drain, Level::debug), "filter: drain=info stops debug");
-    check(logging::enabled(Channel::general, Level::error), "filter: warn lets error");
-    check(!logging::enabled(Channel::general, Level::info), "filter: warn stops info");
+    check(logging::enabled(drain, info), "filter: drain=info lets info");
+    check(!logging::enabled(drain, debug), "filter: drain=info stops debug");
+    check(logging::enabled(general, error), "filter: warn lets error");
+    check(!logging::enabled(general, info), "filter: warn stops info");
 
     int        evaluated = 0;
     const auto touch     = [&] { return ++evaluated; };
@@ -489,10 +491,10 @@ void check_threads()
         {
             continue;
         }
-        int        thread  = -1;
-        int        line_no = -1;
-        const auto pos     = line.find("] thread ");
-        if (pos == std::string::npos ||
+        int thread  = -1;
+        int line_no = -1;
+        if (const auto pos = line.find("] thread ");
+            pos == std::string::npos ||
             std::sscanf(line.c_str() + pos, "] thread %d line %d", &thread, &line_no) != 2 || thread < 0 ||
             thread >= n_threads || !line.ends_with(" padding-padding"))
         {

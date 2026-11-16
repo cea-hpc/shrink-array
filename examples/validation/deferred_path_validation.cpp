@@ -422,7 +422,7 @@ struct Scenario
 template <typename T>
 static long compare(const char* label, const char* stage, const Array<T>& arr, const std::vector<T>& ref)
 {
-    const long count = static_cast<long>(ref.size());
+    const auto count = static_cast<long>(ref.size());
     long       bad   = 0;
     long       first = -1;
     T          got_first{};
@@ -443,7 +443,7 @@ static long compare(const char* label, const char* stage, const Array<T>& arr, c
     }
     if (bad)
     {
-        const long csz = static_cast<long>(arr.chunk_size());
+        const auto csz = static_cast<long>(arr.chunk_size());
         println("[{}/{}] FAIL after {}: {}/{} mismatches, first at i={} (chunk #{}, offset {}) "
                 "got={:g} expected={:g}",
                 variant_name(), label, stage, bad, count, first, first / csz, first % csz, (double)got_first,
@@ -861,7 +861,7 @@ static int run_replay_marks(const char* label, long count)
     }
     end_phase();
 
-    const long chunk_sz = static_cast<long>(arr.chunk_size());
+    const auto chunk_sz = static_cast<long>(arr.chunk_size());
     const long n_chunks = (count + chunk_sz - 1) / chunk_sz;
     const int  ind2     = internal::second_value_index(arr);
     long       left     = 0;

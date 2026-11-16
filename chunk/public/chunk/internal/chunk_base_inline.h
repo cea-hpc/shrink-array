@@ -1116,7 +1116,7 @@ T* ChunkBase<T, Derived>::map_cst_val1()
                                std::strerror(errno));
     }
 
-    T* arr = static_cast<T*>(ptr);
+    auto* arr = static_cast<T*>(ptr);
     for (size_t i = 0; i < cst_buffer_size; ++i)
     {
         arr[i] = first_value;

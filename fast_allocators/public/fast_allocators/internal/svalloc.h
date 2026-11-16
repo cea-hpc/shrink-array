@@ -93,8 +93,7 @@ namespace detail
 {
     const std::size_t bytes = checked_bytes(what, count, elem);
     void*             ptr   = nullptr; // the only object posix_memalign may legally write
-    const int         rc    = posix_memalign(&ptr, alignment, bytes);
-    if (rc != 0 || (ptr == nullptr && bytes != 0)) [[unlikely]]
+    if (const int rc = posix_memalign(&ptr, alignment, bytes); rc != 0 || (ptr == nullptr && bytes != 0)) [[unlikely]]
     {
         out_of_memory(what, count, elem, rc != 0 ? rc : ENOMEM);
     }

@@ -153,8 +153,8 @@ static double plain(int index)
 ///        written (the array has one more, empty, that no phase touches).
 static int materialised(const Array<double>& arr)
 {
-    const int chunk_sz = static_cast<int>(arr.chunk_size());
-    int       count    = 0;
+    const auto chunk_sz = static_cast<int>(arr.chunk_size());
+    int        count    = 0;
     for (int j = 0; j < n_chunks; ++j)
     {
         count += arr.written(j * chunk_sz);
@@ -209,13 +209,14 @@ static int expect_after(Kind kind)
 {
     switch (kind)
     {
-        case Kind::first:
+        using enum Kind;
+        case first:
             return 0;
-        case Kind::declared:
+        case declared:
             return chunk_config::use_second_value ? 0 : n_chunks;
-        case Kind::other:
+        case other:
             return chunk_config::use_zero_any ? 0 : n_chunks;
-        case Kind::plain:
+        case plain:
             return n_chunks;
     }
     return -1;
@@ -224,8 +225,7 @@ static int expect_after(Kind kind)
 static int check(const char* scenario, const char* step, const Array<double>& arr, Kind kind)
 {
     const int got = materialised(arr);
-    const int exp = expect_after(kind);
-    if (got != exp)
+    if (const int exp = expect_after(kind); got != exp)
     {
         println("[{}/{}] FAIL after '{}': {} chunk(s) materialised, expected {}", variant_name(), scenario, step, got,
                 exp);
@@ -240,8 +240,8 @@ int run(int /*argc*/, char** /*argv*/)
     ParamChunk::init_indexes(true);
 
     // The geometry this build runs at, read off a throwaway array.
-    const int chunk_sz = static_cast<int>(Array<double>(1).chunk_size());
-    const int count    = n_chunks * chunk_sz;
+    const auto chunk_sz = static_cast<int>(Array<double>(1).chunk_size());
+    const int  count    = n_chunks * chunk_sz;
 
     println("=== mark_path_validation [variant = {}]  chunk_size={}  chunks={}  threads={} ===", variant_name(),
             chunk_sz, n_chunks, CHUNK_PMP_MAX_THREADS);

@@ -223,8 +223,7 @@ inline std::size_t reclaim_env_number(const char* name, std::size_t fallback) no
     const std::string_view text{env};
     const char* const      end   = text.data() + text.size();
     std::size_t            value = 0;
-    const auto             res   = std::from_chars(text.data(), end, value);
-    if (res.ec != std::errc{} || res.ptr != end)
+    if (const auto res = std::from_chars(text.data(), end, value); res.ec != std::errc{} || res.ptr != end)
     {
         CHUNK_LOG(warn, env, "{}=\"{}\" is not a valid value: ignored, {} kept", name, env, fallback);
         return fallback;
@@ -697,13 +696,14 @@ enum class ArenaKind : std::uint8_t
 /// @brief The arena for @p kind.
 inline SlabArena& arena_for(ArenaKind kind)
 {
+    using enum ArenaKind;
     switch (kind)
     {
-        case ArenaKind::ctx:
+        case ctx:
             return ctx_arena();
-        case ArenaKind::value:
+        case value:
             return value_arena();
-        case ArenaKind::op:
+        case op:
         default:
             return op_arena();
     }

@@ -202,7 +202,7 @@ static Role role(long chunk, int iter, int nconst)
     hash ^= hash >> 31;
     hash *= 0x94D049BB133111EBULL;
     hash ^= hash >> 29;
-    const int role_id = static_cast<int>(hash % 10);
+    const auto role_id = static_cast<int>(hash % 10);
     if (role_id <= 1)
     {
         return {0, 0.};
@@ -266,7 +266,7 @@ try
     }
 
     // Read off an EMPTY array: no chunk, no end-of-run stats line of its own.
-    const long chunk_sz = static_cast<long>(Array<double>(0).chunk_size());
+    const auto chunk_sz = static_cast<long>(Array<double>(0).chunk_size());
     n_elems             = (n_elems + chunk_sz - 1) / chunk_sz * chunk_sz;
     const long nchunks  = n_elems / chunk_sz;
 
@@ -284,12 +284,12 @@ try
     using Clk       = std::chrono::steady_clock;
     const auto secs = [](Clk::time_point t0) { return std::chrono::duration<double>(Clk::now() - t0).count(); };
 
-    double    t_const  = 0.;
-    double    t_plain  = 0.;
-    double    t_read   = 0.;
-    double    t_rmw    = 0.;
-    double    checksum = 0.;
-    const int count    = static_cast<int>(n_elems);
+    double     t_const  = 0.;
+    double     t_plain  = 0.;
+    double     t_read   = 0.;
+    double     t_rmw    = 0.;
+    double     checksum = 0.;
+    const auto count    = static_cast<int>(n_elems);
 
     // Exact RSS at each iteration end, outside the timed passes (a read
     // walks the page tables). A peak inside a pass is not seen.

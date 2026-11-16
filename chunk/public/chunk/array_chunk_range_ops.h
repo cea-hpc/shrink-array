@@ -171,7 +171,7 @@ void resync_counters(Arr& arr, ChunkClass& ch, std::size_t c_begin, const T* dst
     }
     else if constexpr (track_zero_one_value_counts_v<Arr> && requires { arr.get_second_value(); })
     {
-        const T       sv = static_cast<T>(arr.get_second_value());
+        const auto    sv = static_cast<T>(arr.get_second_value());
         CounterValueT n1 = 0;
         CounterValueT n2 = 0;
         for (unsigned int k = 0; k < chunk_sz; ++k)
@@ -214,10 +214,10 @@ template <typename Arr, typename ChunkClass>
         using IndType    = decltype(arr.size());
         using T          = Arr::value_type;
         const bool first = ch.is_full_first_value(chunk_sz);
-        const bool second =
-            !first && ch.is_full_second_value(chunk_sz) &&
-            !same_value(static_cast<T>(arr.get_second_value()), static_cast<T>(ChunkClass::first_value));
-        if (!first && !second)
+        if (const bool second =
+                !first && ch.is_full_second_value(chunk_sz) &&
+                !same_value(static_cast<T>(arr.get_second_value()), static_cast<T>(ChunkClass::first_value));
+            !first && !second)
         {
             return false;
         }
@@ -447,9 +447,9 @@ void queue_for_compression(Arr& arr, std::size_t index)
         // of zero_one_value's candidate list -- and the chunk would land in the list of
         // T{}, which no pass drains. set_info_on_chunk() loads (second_value,
         // ind, num_tab) and the flag pointer.
-        constexpr bool is_proxy2 =
-            std::is_same_v<typename Arr::ProxyType, zero_one_value::Proxy<typename Arr::value_type>>;
-        if constexpr (!is_proxy2 && requires { proxy.set_num_tab_ptr_is_inside_chunk(); })
+        if constexpr (constexpr bool is_proxy2 =
+                          std::is_same_v<typename Arr::ProxyType, zero_one_value::Proxy<typename Arr::value_type>>;
+                      !is_proxy2 && requires { proxy.set_num_tab_ptr_is_inside_chunk(); })
         {
             proxy.set_num_tab_ptr_is_inside_chunk(); // zero_any::Proxy
         }
@@ -1001,8 +1001,7 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
         if constexpr (!Constant)
         {
             thread_local std::unique_ptr<BufValueT[]> tl_buf;
-            thread_local unsigned int                 tl_cap = 0;
-            if (tl_cap < chunk_sz)
+            if (thread_local unsigned int tl_cap = 0; tl_cap < chunk_sz)
             {
                 tl_buf = std::make_unique_for_overwrite<BufValueT[]>(chunk_sz);
                 tl_cap = chunk_sz;

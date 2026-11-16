@@ -48,8 +48,7 @@ template <typename T, bool Enabled>
 [[nodiscard]] ZeroOneValueInfArrayPolicy<T, Enabled>::InfArrayT*
 ZeroOneValueInfArrayPolicy<T, Enabled>::find_inf_array(InT<T> key) const
 {
-    const auto it = map_inf_array_.find(key);
-    if (it != map_inf_array_.end())
+    if (const auto it = map_inf_array_.find(key); it != map_inf_array_.end())
     {
         return it->second;
     }
@@ -150,8 +149,7 @@ template <typename T>
 {
     if constexpr (is_not_bool)
     {
-        const auto it = map_ind_cst_val2_.find(key);
-        if (it != map_ind_cst_val2_.end())
+        if (const auto it = map_ind_cst_val2_.find(key); it != map_ind_cst_val2_.end())
         {
             return it->second;
         }

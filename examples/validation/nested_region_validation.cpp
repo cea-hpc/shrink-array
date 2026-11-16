@@ -157,7 +157,7 @@ enum class Inner
 /// share, opens a nested region that writes again, then writes after it.
 static long run_nested(Array<int>& arr, std::vector<int>& ref, int rounds, Inner inner)
 {
-    const long count = static_cast<long>(ref.size());
+    const auto count = static_cast<long>(ref.size());
     for (int round = 0; round < rounds; ++round)
     {
 #pragma omp parallel num_threads(4)
@@ -268,9 +268,9 @@ static int run_body(int argc, char** argv)
     chunk_pmp_set_max_active_levels(nested_active ? 2 : 1);
     ParamChunk::init_indexes(true);
 
-    const long       count = 1L << 16;
-    Array<int>       arr(count);
-    std::vector<int> ref(count, 0);
+    const long  count = 1L << 16;
+    Array<int>  arr(count);
+    std::vector ref(count, 0);
 
     println("=== nested_region_validation [variant = {}]  outer team 4, nested regions {} ===", variant_name(),
             nested_active ? "ACTIVE (--nested-active)" : "serialised");
@@ -293,7 +293,7 @@ static int run_body(int argc, char** argv)
         {
             const unsigned long before = test_hooks::forced_deferrals.load();
             Array<int>          arr_c(count);
-            std::vector<int>    ref_c(count, 0);
+            std::vector         ref_c(count, 0);
             const long          nfail  = run_nested(arr_c, ref_c, 3, inner);
             const unsigned long forced = test_hooks::forced_deferrals.load() - before;
             println("[{}] deferred writes queued at the nested ends: {} forced, {} wrong",

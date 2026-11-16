@@ -486,7 +486,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_t
     }
     const auto& vec_tuple = *vec_tuple_p;
 
-    const int nn = static_cast<int>(vec_tuple.size());
+    const auto nn = static_cast<int>(vec_tuple.size());
 
     for (int k = 0; k < nn; ++k)
     {
@@ -602,7 +602,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
 
     auto& vec_tuple_to_compress = *it->second;
 
-    const int sz = static_cast<int>(vec_tuple_to_compress.size());
+    const auto sz = static_cast<int>(vec_tuple_to_compress.size());
 
     if (sz == 0)
     {
@@ -643,8 +643,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
                 chunk_t->steal_mark();
             }
         }
-        const bool ret = proxy2->compression_mgr.template start<zero_one_value::Proxy<T>>();
-        if (!ret)
+        if (const bool ret = proxy2->compression_mgr.template start<zero_one_value::Proxy<T>>(); !ret)
         {
             for (int k = 0; k < sz; ++k)
             {
@@ -1232,7 +1231,7 @@ template <typename T>
 template <typename T>
 [[nodiscard]] bool zero_one_value::ChunkSpec<T>::is_cst_val2_any(const T* vals) noexcept
 {
-    const int nb_cst_val2 = static_cast<int>(tab_m_ptr_cst_val2->size());
+    const auto nb_cst_val2 = static_cast<int>(tab_m_ptr_cst_val2->size());
     for (int i = 0; i < nb_cst_val2; ++i)
     {
         if (vals == get_cst_val2(i))

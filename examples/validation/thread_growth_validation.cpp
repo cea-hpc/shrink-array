@@ -121,7 +121,7 @@ static bool zero_run(long index, int round)
 /// thread under the static schedule), on the array and on the reference.
 static long run_regions(Array<int>& arr, std::vector<int>& ra, Array<double>& darr, std::vector<double>& rd, int rounds)
 {
-    const long count = static_cast<long>(ra.size());
+    const auto count = static_cast<long>(ra.size());
     for (int round = 0; round < rounds; ++round)
     {
 #pragma omp parallel
@@ -236,11 +236,11 @@ static int run_body(int argc, char** argv)
     set_team(2);
     ParamChunk::init_indexes(true);
 
-    const long          count = 1L << 16;
-    Array<int>          arr(count);
-    Array<double>       darr(count);
-    std::vector<int>    ra(count, 0);
-    std::vector<double> rd(count, 0.0);
+    const long    count = 1L << 16;
+    Array<int>    arr(count);
+    Array<double> darr(count);
+    std::vector   ra(count, 0);
+    std::vector   rd(count, 0.0);
 
     long fails = run_regions(arr, ra, darr, rd, 1);
 

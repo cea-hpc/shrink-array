@@ -91,7 +91,7 @@ static double plain(long index)
 template <typename Arr>
 static long materialised(const Arr& arr, long nchunks)
 {
-    const long chunk_sz = static_cast<long>(arr.chunk_size());
+    const auto chunk_sz = static_cast<long>(arr.chunk_size());
     long       count    = 0;
     for (long j = 0; j < nchunks; ++j)
     {
@@ -124,7 +124,7 @@ static void phase(long count, Fn&& body)
 template <typename Arr>
 static int run_case(const char* name, Arr& arr, long nchunks, double value, long expect_materialised)
 {
-    const long chunk_sz = static_cast<long>(arr.chunk_size());
+    const auto chunk_sz = static_cast<long>(arr.chunk_size());
     const long count    = nchunks * chunk_sz;
     const long half     = chunk_sz / 2;
 

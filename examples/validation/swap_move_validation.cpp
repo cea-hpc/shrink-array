@@ -197,7 +197,7 @@ int check_swap()
     const char*   step = "swap";
     Array<double> first_arr;
     Array<double> second_arr;
-    const long    chunk_sz = static_cast<long>(first_arr.chunk_size());
+    const auto    chunk_sz = static_cast<long>(first_arr.chunk_size());
     // Different sizes: the per-array tables (indexed by num_tab) have one row
     // per chunk, so chunks exchanged without their identity would index rows
     // of the wrong length.
@@ -248,7 +248,7 @@ int check_move()
     const char*   step = "move";
     Array<double> src;
     Array<double> dst;
-    const long    chunk_sz    = static_cast<long>(src.chunk_size());
+    const auto    chunk_sz    = static_cast<long>(src.chunk_size());
     const long    count       = (25 * chunk_sz) + 3;
     const long    other_count = (12 * chunk_sz) + 5;
     src.resize(static_cast<int>(count));
@@ -297,7 +297,7 @@ int check_move_construct()
 {
     const char*   step = "move-construct";
     Array<double> src;
-    const long    chunk_sz    = static_cast<long>(src.chunk_size());
+    const auto    chunk_sz    = static_cast<long>(src.chunk_size());
     const long    count       = (20 * chunk_sz) + 9;
     const long    other_count = (7 * chunk_sz) + 1;
     src.resize(static_cast<int>(count));
@@ -344,7 +344,7 @@ int check_vector_realloc()
     std::vector<Array<double>> arrays;
     arrays.reserve(1);
     arrays.emplace_back(0);
-    const long    chunk_sz    = static_cast<long>(arrays[0].chunk_size());
+    const auto    chunk_sz    = static_cast<long>(arrays[0].chunk_size());
     const long    count       = (18 * chunk_sz) + 7;
     const long    other_count = (9 * chunk_sz) + 2;
     const Pattern p0{2.0, 20.0, chunk_sz};
