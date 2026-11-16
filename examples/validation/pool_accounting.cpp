@@ -71,7 +71,7 @@
 #include "chunk/internal/env_parse.h"                // env_number / arg_number (checked, not atoi)
 #include "chunk/print.h"                             // shrink_array::println
 #include "chunk/internal/singleton.h"                // SingletonChk
-#include "chunk/internal/all_type_chunk.h"           // AllTypeChunk::ready_block_size
+#include "chunk/internal/type_state_registry.h"      // TypeStateRegistry::ready_block_size
 
 // Defined by every executable of the library (the fast allocator reads it).
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
@@ -158,8 +158,9 @@ int run(int argc, char** argv)
     println("=== pool_accounting [variant = {}]  N={}  threads={} ===", variant_name(), count, CHUNK_PMP_MAX_THREADS);
 
     // --- 0. one block size per process ------------------------------------
-    const auto block_size = [] { return static_cast<long>(SingletonChk<AllTypeChunk>::get_ref().ready_block_size()); };
-    const long blocks     = block_size();
+    const auto block_size = []
+    { return static_cast<long>(SingletonChk<TypeStateRegistry>::get_ref().ready_block_size()); };
+    const long blocks = block_size();
     ParamChunk::init_indexes(false); // refused, with a warning
     expect(block_size() == blocks, "init_indexes(false) after (true) keeps the block size", block_size(), blocks);
     ParamChunk::init_indexes(true);
@@ -186,7 +187,7 @@ int run(int argc, char** argv)
         materialise_all(half, count / 2);
         // The array keeps one chunk past the last element (N / csz + 1), so when
         // N is a multiple of the chunk size that spare chunk is never written.
-        const long csz       = static_cast<long>(arr.chunk_size());
+        const auto csz       = static_cast<long>(arr.chunk_size());
         const long covering  = (count + csz - 1) / csz;
         const long written_a = arr.get_nb_chunk_written();
         expect(written_a == covering, "a fully materialised (written == chunks covering N)", written_a, covering);
@@ -202,7 +203,7 @@ int run(int argc, char** argv)
         expect(Manager::get_somme_chunk_create() == base + chunks_b,
                "somme_chunk_create back down by a's chunks after a.clear()", Manager::get_somme_chunk_create(),
                base + chunks_b);
-        const long parked      = static_cast<long>(Manager::reuse_pool_blocks());
+        const auto parked      = static_cast<long>(Manager::reuse_pool_blocks());
         const long want_parked = (parks_on_clear && !a_owns_slabs) ? written_a : 0;
         expect(parked == want_parked,
                a_owns_slabs     ? "a owned its slabs: nothing parked after a.clear()"
@@ -215,9 +216,9 @@ int run(int argc, char** argv)
         maybe_set_second_value(third, 3.5);
         materialise_all(third, count);
         const long written_c    = third.get_nb_chunk_written();
-        const long parked_after = static_cast<long>(Manager::reuse_pool_blocks());
+        const auto parked_after = static_cast<long>(Manager::reuse_pool_blocks());
         const long want_after   = parked > written_c ? parked - written_c : 0;
-        const long slack        = static_cast<long>(CHUNK_PMP_MAX_THREADS); // per-rank pools, see the header
+        const auto slack        = static_cast<long>(CHUNK_PMP_MAX_THREADS); // per-rank pools, see the header
         expect(parked_after >= want_after && parked_after <= want_after + slack,
                "pools drained by what c materialised (+/- one per rank)", parked_after, want_after);
 
@@ -231,7 +232,7 @@ int run(int argc, char** argv)
                 const long before = Manager::get_somme_chunk_create();
                 half.rechunk_to(new_size);
                 expect(half.chunk_size() == new_size, "b re-chunked to the new geometry", half.chunk_size(), new_size);
-                const long at_old = static_cast<long>(Manager::reuse_pool_blocks_at(old_size));
+                const auto at_old = static_cast<long>(Manager::reuse_pool_blocks_at(old_size));
                 expect(at_old == 0, "nothing parked at the OLD geometry after rechunk_to", at_old, 0);
                 // Chunks alive followed the geometry: fewer chunks at a larger size.
                 const long delta = Manager::get_somme_chunk_create() - before;

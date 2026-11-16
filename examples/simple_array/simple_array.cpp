@@ -90,9 +90,7 @@ double convert_memory(double memory_value)
     const double kilobytes = memory_value * byte_to_kb;
     const double megabytes = kilobytes * kb_to_mb;
 
-    std::ofstream fichier("memory_mo.txt");
-
-    if (fichier.is_open())
+    if (std::ofstream fichier("memory_mo.txt"); fichier.is_open())
     {
         fichier << megabytes;
         fichier.close();
@@ -110,8 +108,7 @@ void save_seed_to_file(unsigned seed, const std::string& filename)
 {
     std::println("\nSave seed in file");
 
-    std::ofstream file(filename);
-    if (file.is_open())
+    if (std::ofstream file(filename); file.is_open())
     {
         file << seed;
         file.close();
@@ -125,9 +122,8 @@ void save_seed_to_file(unsigned seed, const std::string& filename)
 // Load seed from file
 unsigned load_seed_to_file(const std::string& filename)
 {
-    unsigned      seed = 0;
-    std::ifstream file(filename);
-    if (file.is_open())
+    unsigned seed = 0;
+    if (std::ifstream file(filename); file.is_open())
     {
         file >> seed;
         file.close();
@@ -189,16 +185,14 @@ int main()
 
     // 3 arrays of sz doubles: 2.4 GB for std::vector. 1e9 (24 GB at once) made
     // the ctest fail with bad_alloc on a 30 GB workstation with anything else running.
-    constexpr int sz = 100000000;
-    //  constexpr int sz = 100000;
+    constexpr int sz       = 100000000;
     constexpr int iter_max = 10000;
 
     constexpr int freq_check_sum = iter_max / 5;
 
     constexpr int freq_compress = iter_max / 10; // chunk arrays only
-    // constexpr int freq_raz = iter_max / 500;
-    constexpr int freq_raz = iter_max / 50;
-    constexpr int interval = 20000;
+    constexpr int freq_raz      = iter_max / 50;
+    constexpr int interval      = 20000;
 
     const int max_thr = shrink_array::pmp::max_threads();
 
@@ -209,7 +203,6 @@ int main()
     std::println("Initialisation ...");
     std::println("Creation of arrays ...");
 
-    // constexpr int interval = 2000;
     Array tab1(sz);
     Array tab2(sz);
     Array tab3(sz);
@@ -260,7 +253,7 @@ int main()
         tab_size[k]      = size;
         tab_start[k]     = start0;
 
-        std::uniform_int_distribution<int> uni1(start0, end0);
+        std::uniform_int_distribution uni1(start0, end0);
         tab_nba1[k] = uni1(rng);
         tab_nba2[k] = uni1(rng);
     }
@@ -380,8 +373,7 @@ int main()
         },
         tab1, tab2, tab3);
 
-    struct rusage usage{};
-    if (getrusage(RUSAGE_SELF, &usage) == 0)
+    if (struct rusage usage{}; getrusage(RUSAGE_SELF, &usage) == 0)
     {
         const long rss = usage.ru_maxrss; // Resident Set Size in kilobytes
         // {:.2f}: what the chunk builds printed (the filling-rate lines above

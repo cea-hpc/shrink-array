@@ -249,9 +249,9 @@ template <typename C, typename F>
     requires(!internal::ChunkedArray<C>)
 void for_each_value(const C& container, F&& func)
 {
-    for (auto it = std::begin(container); it != std::end(container); ++it)
+    for (const auto& value : container)
     {
-        func(*it);
+        func(value);
     }
 }
 

@@ -39,7 +39,7 @@ struct CompressionManager;
  * @brief The shared, per-(variant, element-type) state behind every array.
  *
  * @details One instance exists per @c ChunkT / @c T combination, reachable
- *          statically, and AllTypeChunk drives every one of them through
+ *          statically, and TypeStateRegistry drives every one of them through
  *          TypeStateInterface. It is made of:
  *
  *          - **ReusePools** (reuse_pools.h): the buffer reuse free-lists, their
@@ -75,7 +75,6 @@ class TypeState final : public virtual TypeStateInterface,
     template <template <typename> class, typename, bool>
     friend class TypeStateParallelImpl;
 
-  private:
     using Pools      = ReusePools<ChunkT, T>;         ///< the reuse pools, a base
     using Candidates = CompressCandidates<ChunkT, T>; ///< the candidate lists, a base
 
@@ -140,7 +139,7 @@ class TypeState final : public virtual TypeStateInterface,
     /**
      * @brief Size the static per-rank structures of (ChunkT, T)
      *        (see CompressionManager::ensure_initialised).
-     * @details Called by AllTypeChunk::register_manager(), before the manager
+     * @details Called by TypeStateRegistry::register_manager(), before the manager
      *          is published: the fan-outs and the first array come after it.
      */
     static void init_static_state()

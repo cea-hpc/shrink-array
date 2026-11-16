@@ -78,8 +78,8 @@ void ArrayChunkCore<ChunkT>::assign_alloc_key()
     {
         return;
     }
-    const std::size_t meta_bytes = static_cast<std::size_t>(nb_chunk_) * sizeof(ChunkType);
-    if (meta_bytes < build_config::alloc_affinity_min_bytes)
+    if (const std::size_t meta_bytes = static_cast<std::size_t>(nb_chunk_) * sizeof(ChunkType);
+        meta_bytes < build_config::alloc_affinity_min_bytes)
     {
         return;
     }

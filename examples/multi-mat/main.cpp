@@ -67,9 +67,7 @@ double convert_memory(double memory_value)
     const double kilobytes = memory_value * byte_to_kb;
     const double megabytes = kilobytes * kb_to_mb;
 
-    std::ofstream fichier("memory_mo.txt");
-
-    if (fichier.is_open())
+    if (std::ofstream fichier("memory_mo.txt"); fichier.is_open())
     {
         fichier << megabytes;
         fichier.close();
@@ -135,7 +133,7 @@ try
     std::println("Phases            : {}\n",
                  multi_mat::embedded_compression ? "OMPT callbacks (manage_ompt.cpp)" : "phase calls from the program");
 
-    constexpr int chunk_size = static_cast<int>(shrink_array::static_chunk_size);
+    constexpr auto chunk_size = static_cast<int>(shrink_array::static_chunk_size);
 
     if constexpr (chunk_size == 0)
     {

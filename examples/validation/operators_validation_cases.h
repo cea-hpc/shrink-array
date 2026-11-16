@@ -69,7 +69,7 @@
 
 #include <complex>     // std::complex<double>
 #include <cstddef>     // std::size_t
-#include <memory>      // std::unique_ptr (the reference arrays)
+#include <memory>      // std::unique_ptr, std::make_unique (the reference arrays)
 #include <sstream>     // std::ostringstream (os << a[i])
 #include <string>      // std::string
 #include <type_traits> // std::conditional_t, std::is_same_v, std::is_integral_v
@@ -194,7 +194,7 @@ template <typename T>
 T start_value(long i, long chunk_sz)
 {
     const long j    = i % chunk_sz;
-    const auto base = static_cast<long>((j * 7) % 23) - 11;
+    const auto base = ((j * 7) % 23) - 11;
     switch (i / chunk_sz)
     {
         case 0:
@@ -240,7 +240,7 @@ struct Pair
     std::unique_ptr<T[]> ref;
     long                 count;
 
-    explicit Pair(long n) : arr(n), ref(new T[static_cast<std::size_t>(n)]()), count(n) {}
+    explicit Pair(long n) : arr(n), ref(std::make_unique<T[]>(static_cast<std::size_t>(n))), count(n) {}
 };
 
 /// @brief Write @p value_at into both sides of @p pair, then one compression
@@ -292,8 +292,8 @@ long compare(const Pair<T>& pair, const std::string& what)
     long bad = 0;
     for (long i = 0; i < pair.count; ++i)
     {
-        const T got  = static_cast<T>(std::as_const(pair.arr)[i]);
-        const T want = pair.ref[static_cast<std::size_t>(i)];
+        const auto got  = static_cast<T>(std::as_const(pair.arr)[i]);
+        const T    want = pair.ref[static_cast<std::size_t>(i)];
         if (!(got == want))
         {
             if (bad < 4)
@@ -536,9 +536,9 @@ void compound_scalar(Run& run, const char* operand_name, C operand)
                 return;
             }
         }
-        Pair<T>              pair(run.count);
-        std::unique_ptr<T[]> got(new T[static_cast<std::size_t>(run.count)]());
-        std::unique_ptr<T[]> want(new T[static_cast<std::size_t>(run.count)]());
+        Pair<T>                    pair(run.count);
+        const std::unique_ptr<T[]> got(new T[static_cast<std::size_t>(run.count)]());
+        const std::unique_ptr<T[]> want(new T[static_cast<std::size_t>(run.count)]());
         fill(pair, run.chunk_sz, &start_value<T>);
 #pragma omp parallel
         {
@@ -622,9 +622,9 @@ void inc_dec(Run& run)
 {
     if constexpr (Op::template valid<T>)
     {
-        Pair<T>              pair(run.count);
-        std::unique_ptr<T[]> got(new T[static_cast<std::size_t>(run.count)]());
-        std::unique_ptr<T[]> want(new T[static_cast<std::size_t>(run.count)]());
+        Pair<T>                    pair(run.count);
+        const std::unique_ptr<T[]> got(new T[static_cast<std::size_t>(run.count)]());
+        const std::unique_ptr<T[]> want(new T[static_cast<std::size_t>(run.count)]());
         fill(pair, run.chunk_sz, &start_value<T>);
 #pragma omp parallel
         {
@@ -774,7 +774,10 @@ void reads(Run& run)
     long bad = 0;
     for (const T c : {T{}, second_value<T>(), value_of<T>(1)})
     {
-        long got_eq = 0, want_eq = 0, got_ne = 0, want_ne = 0;
+        long got_eq  = 0;
+        long want_eq = 0;
+        long got_ne  = 0;
+        long want_ne = 0;
         for (long i = 0; i < run.count; ++i)
         {
             const T& x = pair.ref[static_cast<std::size_t>(i)];
@@ -785,8 +788,11 @@ void reads(Run& run)
         }
         bad += (got_eq != want_eq) + (got_ne != want_ne);
     }
-    long got_elem = 0, want_elem = 0, got_true = 0, want_true = 0;
-    long got_conv = 0;
+    long got_elem  = 0;
+    long want_elem = 0;
+    long got_true  = 0;
+    long want_true = 0;
+    long got_conv  = 0;
     for (long i = 0; i < run.count; ++i)
     {
         const T& x = pair.ref[static_cast<std::size_t>(i)];

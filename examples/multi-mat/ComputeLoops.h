@@ -244,8 +244,8 @@ void Simu::compute_loops(MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo,
                          {
                              if (dispatch.is_chunk(m))
                              {
-                                 auto& tab0_ind = get_mat_vec(tabs[0]);
-                                 using V        = std::remove_reference_t<decltype(tab0_ind)>;
+                                 const auto& tab0_ind = get_mat_vec(tabs[0]);
+                                 using V              = std::remove_reference_t<decltype(tab0_ind)>;
 
                                  using VecChunkReal = VectChunk<double>;
 

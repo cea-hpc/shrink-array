@@ -25,7 +25,7 @@ e  * @file type_state_inline.h
  *
  * @see reuse_pools_inline.h, compress_candidates_inline.h and
  *      type_state_policies_inline.h for the bodies of its bases.
- * @see all_type_chunk.h for the registry that drives every manager at once.
+ * @see type_state_registry.h for the registry that drives every manager at once.
  */
 
 #include <algorithm>   // std::max
@@ -54,13 +54,10 @@ namespace shrink_array
 template <template <typename> typename ChunkT, typename T>
 void TypeState<ChunkT, T>::sweep_prepare()
 {
-    if constexpr (chunk_config::use_fast_block_compression && IsZeroOneValue<ChunkT, T>)
+    if constexpr (chunk_config::use_fast_block_compression && IsZeroOneValue<ChunkT, T> && is_not_bool)
     {
-        if constexpr (is_not_bool)
-        {
-            const auto inf_arrays = zero_one_value::Proxy<T>::share_info_array->get_all_inf_array();
-            sweep_inf_arrays_.assign(inf_arrays.begin(), inf_arrays.end());
-        }
+        const auto inf_arrays = zero_one_value::Proxy<T>::share_info_array->get_all_inf_array();
+        sweep_inf_arrays_.assign(inf_arrays.begin(), inf_arrays.end());
     }
 }
 
@@ -172,7 +169,7 @@ template <template <typename> typename ChunkT, typename T>
 void TypeState<ChunkT, T>::compute_size_buffer_reuse()
 {
     // zero_any::ChunkDef's reuse constants serve every variant (zero_any_chunk_def.h).
-    const int budget = static_cast<int>(somme_chunk_create / (Pools::reuse_share_div() * CHUNK_PMP_MAX_THREADS));
+    const auto budget = static_cast<int>(somme_chunk_create / (Pools::reuse_share_div() * CHUNK_PMP_MAX_THREADS));
     Pools::size_buffer_reuse.store(std::max(budget, zero_any::ChunkDef::size_min_buffer_reuse),
                                    std::memory_order_relaxed);
 }
@@ -195,8 +192,9 @@ void TypeState<ChunkT, T>::compute_size_max_number_of_chunk_to_check_compress()
         std::conditional_t<IsZeroAnyFamily<ChunkT, T>, zero_any::ChunkDef,
                            std::conditional_t<IsZeroOneValue<ChunkT, T>, zero_one_value::ChunkDef, zero::ChunkDef>>;
 
-    int threshold = somme_chunk_create / (VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS);
-    threshold     = std::max(threshold, VariantDef::size_min_list_chunk_to_check_compress);
+    auto threshold =
+        static_cast<int>(somme_chunk_create / (VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS));
+    threshold = std::max(threshold, VariantDef::size_min_list_chunk_to_check_compress);
 
     Candidates::set_size_max_number_of_chunk_to_check_compress(threshold);
     const size_t element_size = sizeof(std::tuple<ChunkT<T>*, int, int>);

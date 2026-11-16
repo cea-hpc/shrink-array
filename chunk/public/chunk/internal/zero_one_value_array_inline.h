@@ -34,10 +34,10 @@
 #include "chunk/internal/in_t.h"                        // InT<T>: the element snapshots
 #include "chunk/zero_one_value_array.h"                 // zero_one_value::Array, the class these bodies belong to
 #include "chunk/internal/type_name.h"                   // type_name<T>
-#include "chunk/internal/singleton.h"                   // SingletonChk<AllTypeChunk>::get_ref
+#include "chunk/internal/singleton.h"                   // SingletonChk<TypeStateRegistry>::get_ref
 #include "chunk/internal/zero_one_value_proxy.h"        // zero_one_value::Proxy<T>
 #include "chunk/internal/chunk_stats.h"                 // increm_chunk_teardown_clear, add_chunk_released
-#include "chunk/internal/all_type_chunk.h"              // AllTypeChunk::ensure_manager
+#include "chunk/internal/type_state_registry.h"         // TypeStateRegistry::ensure_manager
 #include "chunk/config.h"                               // chunk_config::use_fast_block_compression, chunk_config::stats
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED, value_repr
 #include "chunk/internal/chunk_index_sample.h"          // chunk_index_sample (the residual's sample)
@@ -100,8 +100,8 @@ void zero_one_value::Array<T, IntType>::create(IntType sz)
     this->check_length(sz, "constructor");
     const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
     // The first array of this element type registers its manager; every
-    // later one pays a guard load. See AllTypeChunk.
-    AllTypeChunk::ensure_manager<TypeState<zero_one_value::Chunk, T>>();
+    // later one pays a guard load. See TypeStateRegistry.
+    TypeStateRegistry::ensure_manager<TypeState<zero_one_value::Chunk, T>>();
 
     chunk_config::CheckNaN<chunk_config::do_check>::update(true);
 
@@ -250,7 +250,7 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
 
         if (ind == -1)
         {
-            ind = zero_one_value::Chunk<T>::tab_m_ptr_cst_val2->size();
+            ind = static_cast<int>(zero_one_value::Chunk<T>::tab_m_ptr_cst_val2->size());
 
             if constexpr (build_config::use_mm_protect)
             {
@@ -261,7 +261,7 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
 
                 void* ptr = mmap(nullptr, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
-                T* arr = static_cast<T*>(ptr);
+                auto* arr = static_cast<T*>(ptr);
 
                 for (int i = 0; i < static_cast<int>(this->size_policy_.size()); ++i)
                 {
@@ -298,9 +298,7 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
 
             if constexpr (build_config::threaded)
             {
-                const int sz = Manager::zero_one_value_candidates_thr[0].size();
-
-                if (sz <= ind)
+                if (const auto sz = static_cast<int>(Manager::zero_one_value_candidates_thr[0].size()); sz <= ind)
                 {
                     for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
                     {
@@ -341,7 +339,7 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
                     const size_t alloc_sz = (bytes + pagesize - 1) / pagesize * pagesize;
 
                     void* ptr = mmap(nullptr, alloc_sz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-                    T*    arr = static_cast<T*>(ptr);
+                    auto* arr = static_cast<T*>(ptr);
                     for (std::size_t i = 0; i < need_elems; ++i)
                     {
                         arr[i] = sec_value;
@@ -639,7 +637,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
     {
         if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
         {
-            const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
+            const auto& ens_type_chunk = SingletonChk<TypeStateRegistry>::get_ref();
 
             // Not for a work array torn down in a region: that pass walks every
             // rank's list, of every type.
@@ -733,7 +731,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
 
                       const int thr_rank = CHUNK_PMP_THREAD_RANK;
 
-                      const int nb = ll_chunk_loc.size();
+                      const auto nb = static_cast<int>(ll_chunk_loc.size());
 
                       if (nb > 0)
                       {
@@ -834,8 +832,8 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
         if (!chunk_config::aggressive_compression() && !CHUNK_PMP_IN_PARALLEL_REGION)
         // run-time switch: chunk/config.h
         {
-            const auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::get_ref();
-            if (ens_type_chunk.have_chunk_to_compress_potentially())
+            if (const auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::TypeStateRegistry>::get_ref();
+                ens_type_chunk.have_chunk_to_compress_potentially())
             {
                 ens_type_chunk.compress_chunk_to_compress_potentially(true);
             }
@@ -946,9 +944,9 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
         {
             if constexpr (chunk_config::use_fast_block_compression)
             {
-                auto& flag     = (*flags)[static_cast<std::size_t>(jj)];
-                char  expected = 0;
-                if (!flag.compare_exchange_strong(expected, 1, std::memory_order_acq_rel, std::memory_order_acquire))
+                auto& flag = (*flags)[static_cast<std::size_t>(jj)];
+                if (char expected = 0;
+                    !flag.compare_exchange_strong(expected, 1, std::memory_order_acq_rel, std::memory_order_acquire))
                 {
                     left_to_pass.push_back(jj);
                     return;
@@ -1361,8 +1359,7 @@ void zero_one_value::Array<T, IntType>::register_no_second_value_key()
 {
     if constexpr (is_not_bool && chunk_config::use_fast_block_compression)
     {
-        auto& sh_inf = *Proxy<T>::share_info_array;
-        if (sh_inf.find_inf_array(T{}) == nullptr)
+        if (auto& sh_inf = *Proxy<T>::share_info_array; sh_inf.find_inf_array(T{}) == nullptr)
         {
             sh_inf.insert(T{}, &inf_array_none);
             // The between-phase pass drains only the values of THIS map: T{}

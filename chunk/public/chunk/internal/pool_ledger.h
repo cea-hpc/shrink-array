@@ -300,9 +300,8 @@ inline void report_live_blocks() noexcept
         };
         std::array<Row, 64> rows{};
         int                 n_rows = 0;
-        for (const auto& kv : block_live())
+        for (const auto& [block, rec] : block_live())
         {
-            const BRec& rec = kv.second;
             if (rec.state == BState::free)
             {
                 continue;

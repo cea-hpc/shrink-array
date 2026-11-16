@@ -229,7 +229,7 @@ class CompressionManagerThreadPolicy : public FlushReplayState<T, ChunkT>
     /**
      * @brief Size the per-rank tracking structures this policy owns, once.
      * @details Called when the manager of (T, ChunkT) is registered
-     *          (AllTypeChunk::register_manager): before the first array of the
+     *          (TypeStateRegistry::register_manager): before the first array of the
      *          type, and before any fan-out can reach these structures. Not by
      *          the constructor of a static: that runs at an unspecified point
      *          of the static initialisation, possibly after a global array's

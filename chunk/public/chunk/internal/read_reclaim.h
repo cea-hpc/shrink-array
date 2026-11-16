@@ -106,8 +106,7 @@ inline ReaderSlot* claim_slot() noexcept
     {
         return nullptr;
     }
-    const int slot_idx = g_nslots.fetch_add(1, std::memory_order_acq_rel);
-    if (slot_idx < slot_count) [[likely]]
+    if (const int slot_idx = g_nslots.fetch_add(1, std::memory_order_acq_rel); slot_idx < slot_count) [[likely]]
     {
         t_slot = &g_slots[slot_idx];
         return t_slot;

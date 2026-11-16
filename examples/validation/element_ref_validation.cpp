@@ -167,8 +167,8 @@ void misuse()
 {
     Array<double> arr(10);
     #if ELEMENT_REF_CASE == 1
-    auto   elem = arr[0]; // conversion
-    double read = elem;
+    auto         elem = arr[0]; // conversion
+    const double read = elem;
     (void)read;
     #elif ELEMENT_REF_CASE == 2
     auto elem = arr[0]; // assignment
@@ -177,8 +177,8 @@ void misuse()
     auto elem = arr[0]; // arithmetic
     println("{:g}", elem + 1.0);
     #elif ELEMENT_REF_CASE == 4
-    auto   elem = (arr[0] += 1.0); // a compound result kept
-    double read = elem;
+    auto         elem = (arr[0] += 1.0); // a compound result kept
+    const double read = elem;
     (void)read;
     #elif ELEMENT_REF_CASE == 5
     auto elem = arr[0]; // as the right-hand side of an assignment

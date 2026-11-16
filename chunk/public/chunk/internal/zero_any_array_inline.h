@@ -33,7 +33,7 @@
 #include <unordered_set> // std::unordered_set
 
 #include "chunk/zero_any_array.h"                       // zero_any::ArrayImpl, the class these bodies belong to
-#include "chunk/internal/all_type_chunk.h"              // AllTypeChunk::ensure_manager
+#include "chunk/internal/type_state_registry.h"         // TypeStateRegistry::ensure_manager
 #include "chunk/internal/chunk_size_predictor.h"        // report_size_prediction
 #include "chunk/log.h"                                  // CHUNK_LOG, logging::enabled (the size prediction's gate)
 #include "chunk/internal/chunk_index_sample.h"          // chunk_index_sample (the residual's sample)
@@ -41,7 +41,7 @@
 #include "chunk/internal/chunk_stats_printer.h"         // print_formatted_chunk_stats
 #include "chunk/internal/type_state.h"                  // TypeState: per-size free lists, candidate filter
 #include "chunk/internal/PMP_CHUNK.h"                   // CHUNK_PMP_*, get_size_max_tab_omp, pmp loops
-#include "chunk/internal/singleton.h"                   // SingletonChk<AllTypeChunk>::get_ref
+#include "chunk/internal/singleton.h"                   // SingletonChk<TypeStateRegistry>::get_ref
 #include "chunk/internal/type_name.h"                   // type_name<T>
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/read_reclaim.h"                // read_reclaim::PassScope (drain_own_candidates)
@@ -147,8 +147,7 @@ void zero_any::ArrayImpl<Derived>::print_compression_stats(std::ostream& os) con
         0, nb_chunk_, pmp::Options{.use_team = !CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk_ > 500},
         [&](int j, auto& acc)
         {
-            const auto& ck = chunk_list_[j];
-            if (ck.written())
+            if (const auto& ck = chunk_list_[j]; ck.written())
             {
                 const auto v0 = ck.constant_value(csz_audit);
                 if (!v0)
@@ -319,7 +318,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
         // that dominates the profile.
         if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
         {
-            const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
+            const auto& ens_type_chunk = SingletonChk<TypeStateRegistry>::get_ref();
 
             // Not for a work array torn down in a region: that pass walks every
             // rank's list, of every type.
@@ -475,9 +474,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
 
                 const int thr_rank = CHUNK_PMP_THREAD_RANK;
 
-                const int nb = ll_chunk_loc.size();
-
-                if (nb > 0)
+                if (const auto nb = static_cast<int>(ll_chunk_loc.size()); nb > 0)
                 {
                     // Park into the reuse list of THIS array's geometry, not the ambient
                     // t_active (may be another size mid-rechunk): a size-A buffer filed
@@ -890,8 +887,7 @@ std::size_t zero_any::ArrayImpl<Derived>::reclaim_second_values()
     const auto freed = try_reclaim_second_values();
     if (!freed && freed.error() == ReclaimRefusal::degraded_index)
     {
-        static std::atomic<bool> warned{false};
-        if (!warned.exchange(true, std::memory_order_relaxed))
+        if (static std::atomic<bool> warned{false}; !warned.exchange(true, std::memory_order_relaxed))
         {
             CHUNK_LOG(warn, compress,
                       "reclaim_second_values() refused: the second-value index is degraded, a value unfindable by "

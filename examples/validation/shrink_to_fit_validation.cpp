@@ -91,9 +91,9 @@ double chunk_value(int chunk)
 /// still holding a buffer, plus the elements that read back wrong.
 int one_case(int n_chunks)
 {
-    Arr       arr(0);
-    const int chunk_size = static_cast<int>(arr.chunk_size());
-    const int count      = n_chunks * chunk_size;
+    Arr        arr(0);
+    const auto chunk_size = static_cast<int>(arr.chunk_size());
+    const int  count      = n_chunks * chunk_size;
     arr.resize(count);
     // The team's worksharing, not `omp for`: the std backend has no OpenMP, the
     // pragma would vanish and every rank would write every chunk.

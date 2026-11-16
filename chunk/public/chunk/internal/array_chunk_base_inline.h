@@ -29,12 +29,12 @@
 #include <span>        // std::span
 #include <utility>     // std::swap
 
-#include "chunk/internal/array_chunk_base.h"    // ArrayChunkBase, the class these bodies belong to
-#include "chunk/internal/all_type_chunk_decl.h" // AllTypeChunk::ensure_manager, from create (bodies: all_type_chunk.h)
-#include "chunk/config.h"                       // build_config::chunk_dynamic, chunk_config::CheckNaN
-#include "chunk/internal/chunk_size_policy.h"   // chunk_size_error, register_runtime_chunk_size / set_thread_chunk_size
-#include "chunk/internal/PMP_CHUNK.h"           // CHUNK_PMP_IN_PARALLEL_REGION, pmp::parallel_sum, pmp::current_team
-#include "chunk/manage_ompt.h"                  // parallel_phase -- write_range_by_chunks
+#include "chunk/internal/array_chunk_base.h" // ArrayChunkBase, the class these bodies belong to
+#include "chunk/internal/type_state_registry_decl.h" // TypeStateRegistry::ensure_manager, from create (bodies: type_state_registry.h)
+#include "chunk/config.h"                            // build_config::chunk_dynamic, chunk_config::CheckNaN
+#include "chunk/internal/chunk_size_policy.h" // chunk_size_error, register_runtime_chunk_size / set_thread_chunk_size
+#include "chunk/internal/PMP_CHUNK.h"         // CHUNK_PMP_IN_PARALLEL_REGION, pmp::parallel_sum, pmp::current_team
+#include "chunk/manage_ompt.h"                // parallel_phase -- write_range_by_chunks
 #include "chunk/internal/parallel_storage_init.h" // use_own_team -- write_range_by_chunks
 #include "chunk/internal/cold_path_lock.h"        // ColdPathLock: construction, teardown, resize
 #include "chunk/internal/tab_users.h"             // TabUsers: a row per array
@@ -64,8 +64,8 @@ void ArrayChunkBase<Derived>::create(this Derived& self, IndType sz)
     check_length(sz, "constructor");
     const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
     // The first array of this element type registers its manager; every
-    // later one pays a guard load. See AllTypeChunk.
-    AllTypeChunk::ensure_manager<ManagerType>();
+    // later one pays a guard load. See TypeStateRegistry.
+    TypeStateRegistry::ensure_manager<ManagerType>();
 
     self.create_common();
 
@@ -632,7 +632,7 @@ CHUNK_FLATTEN CHUNK_FORCE_INLINE ArrayChunkBase<Derived>::T& ArrayChunkBase<Deri
     [[maybe_unused]] const int chunk_mod = static_cast<int>(self.size_policy_.modulo());
     CHUNK_ASSUME(num_chunk >= 0);
     CHUNK_ASSUME(num >= 0 && num <= chunk_mod);
-    auto& chunk_t = self.chunk_list_[num_chunk];
+    const auto& chunk_t = self.chunk_list_[num_chunk];
 
     self.sync_chunk(chunk_t, num_chunk, num);
 

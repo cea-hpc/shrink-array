@@ -27,12 +27,12 @@
 #include <vector>    // for vector
 #include <malloc.h>  // malloc_trim, mallopt
 
-#include "chunk/config.h"                  // build_config::threaded / use_openmp, chunk_config
-#include "chunk/log.h"                     // CHUNK_LOG (CHUNK_PHASE_FENCES=0 says so once)
-#include "chunk/internal/singleton.h"      // SingletonChk
-#include "chunk/internal/type_state.h"     // TypeStateInterface, TypeStateParallelImpl
-#include "chunk/internal/all_type_chunk.h" // the declarations defined here
-#include "chunk/internal/churn_counters.h" // churn::note_phase_end
+#include "chunk/config.h"                       // build_config::threaded / use_openmp, chunk_config
+#include "chunk/log.h"                          // CHUNK_LOG (CHUNK_PHASE_FENCES=0 says so once)
+#include "chunk/internal/singleton.h"           // SingletonChk
+#include "chunk/internal/type_state.h"          // TypeStateInterface, TypeStateParallelImpl
+#include "chunk/internal/type_state_registry.h" // the declarations defined here
+#include "chunk/internal/churn_counters.h"      // churn::note_phase_end
 #include "chunk/internal/PMP_CHUNK.h" // CHUNK_PMP_THREAD_RANK / _RANK_BOUND / _NUM_THREADS, chunk_rank_cache, pmp::team, current_team
 
 #include "chunk/internal/deferred_op_pool.h" // for reset_all
@@ -50,7 +50,7 @@ namespace shrink_array
 {
 /// @brief Empty registry; warns once if the OMPT tool this build relies on is
 ///        not loaded (manage_ompt.h, check_ompt_tool_loaded).
-AllTypeChunk::AllTypeChunk()
+TypeStateRegistry::TypeStateRegistry()
 {
     // Weak: absent from a NO_OMPT_TOOL library (manage_ompt.h).
     if (&check_ompt_tool_loaded != nullptr)
@@ -59,14 +59,14 @@ AllTypeChunk::AllTypeChunk()
     }
 }
 
-void AllTypeChunk::ensure_ready()
+void TypeStateRegistry::ensure_ready()
 {
     static std::once_flag once;
 
     std::call_once(once,
                    []
                    {
-                       auto& reg   = SingletonChk<AllTypeChunk>::get_ref();
+                       auto& reg   = SingletonChk<TypeStateRegistry>::get_ref();
                        bool  ready = false;
                        {
                            const std::scoped_lock lock(reg.registry_mutex_);
@@ -79,7 +79,7 @@ void AllTypeChunk::ensure_ready()
                    });
 }
 
-void AllTypeChunk::publish_manager(std::unique_ptr<TypeStateInterface> manager)
+void TypeStateRegistry::publish_manager(std::unique_ptr<TypeStateInterface> manager)
 {
     const auto count = static_cast<std::size_t>(nb_managers_.load(std::memory_order_relaxed));
     if (count == table_capacity_)
@@ -226,7 +226,7 @@ void finalize_parallel_phase_only_flush()
         //    which is stable inside the current parallel region
         pmp::current_team().barrier();
 
-        auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
+        auto& ens_type_chunk = SingletonChk<TypeStateRegistry>::get_ref();
         ens_type_chunk.flush_all_deferred(true);
 
         // Kept since a checksum differed once without it, cause unknown:
@@ -245,7 +245,7 @@ void finalize_parallel_phase_after_flush()
     // use_openmp: a shape of the phase contract only OpenMP has (manage_ompt.h).
     if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
     {
-        const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
+        const auto& ens_type_chunk = SingletonChk<TypeStateRegistry>::get_ref();
         ens_type_chunk.destroy_after_flush(false);
 
         reset_all();
@@ -287,7 +287,7 @@ void finalize_parallel_phase()
     }
     if constexpr (build_config::threaded && chunk_config::is_shrink_enabled)
     {
-        auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
+        auto& ens_type_chunk = SingletonChk<TypeStateRegistry>::get_ref();
         ens_type_chunk.flush_all_deferred(false);
 
         reset_all();
@@ -325,7 +325,7 @@ void finalize_parallel_phase()
         // (the gate always says "nothing").
         if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
         {
-            SingletonChk<AllTypeChunk>::get_ref().force_chunk_to_compress();
+            SingletonChk<TypeStateRegistry>::get_ref().force_chunk_to_compress();
         }
     }
 }
@@ -336,7 +336,7 @@ bool finalize_barrier_phase()
     if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
     {
         // NOT const: flush_all_deferred() mutates the managers it drains.
-        auto&      ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
+        auto&      ens_type_chunk = SingletonChk<TypeStateRegistry>::get_ref();
         const bool flushed        = ens_type_chunk.flush_all_deferred(true);
 
         // As in finalize_parallel_phase_only_flush(): CHUNK_PHASE_FENCES=0 runs without.
@@ -347,10 +347,10 @@ bool finalize_barrier_phase()
 }
 
 // register_manager<ManagerT>() and fill_type_state<ChunkT, Types>() are
-// defined in chunk/internal/all_type_chunk_inline.h (template definitions belong in a
+// defined in chunk/internal/type_state_registry_inline.h (template definitions belong in a
 // header); registration is driven by the consumer's type tuple.
 
-void AllTypeChunk::resize_chunk_to_compress_potentially() const
+void TypeStateRegistry::resize_chunk_to_compress_potentially() const
 {
     for (const auto& elm : get_list_type_chunk())
     {
@@ -358,7 +358,7 @@ void AllTypeChunk::resize_chunk_to_compress_potentially() const
     }
 }
 
-void AllTypeChunk::force_chunk_to_compress() const
+void TypeStateRegistry::force_chunk_to_compress() const
 {
     for (const auto& elm : get_list_type_chunk())
     {
@@ -366,7 +366,7 @@ void AllTypeChunk::force_chunk_to_compress() const
     }
 }
 
-void AllTypeChunk::compress_chunk_to_compress_potentially(bool apply) const
+void TypeStateRegistry::compress_chunk_to_compress_potentially(bool apply) const
 {
     // Only the types with a candidate. The callers' gate,
     // have_chunk_to_compress_potentially(), is true as soon as ONE type has
@@ -436,7 +436,7 @@ void AllTypeChunk::compress_chunk_to_compress_potentially(bool apply) const
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);
 }
 
-bool AllTypeChunk::have_chunk_to_compress_potentially() const
+bool TypeStateRegistry::have_chunk_to_compress_potentially() const
 {
     const int max_thr = CHUNK_PMP_RANK_BOUND;
 
@@ -445,7 +445,7 @@ bool AllTypeChunk::have_chunk_to_compress_potentially() const
 }
 
 template <typename Derived>
-void AllTypeChunkParallelInterface<Derived, true>::destroy_after_flush(this const Derived& self, bool in_parallel)
+void TypeStateRegistryParallelInterface<Derived, true>::destroy_after_flush(this const Derived& self, bool in_parallel)
 {
     for (const auto& elm : self.get_list_type_chunk())
     {
@@ -454,7 +454,7 @@ void AllTypeChunkParallelInterface<Derived, true>::destroy_after_flush(this cons
 }
 
 template <typename Derived>
-bool AllTypeChunkParallelInterface<Derived, true>::flush_all_deferred(this Derived& self, bool in_parallel)
+bool TypeStateRegistryParallelInterface<Derived, true>::flush_all_deferred(this Derived& self, bool in_parallel)
 {
     bool have_flushed = false;
 
@@ -505,7 +505,7 @@ bool AllTypeChunkParallelInterface<Derived, true>::flush_all_deferred(this Deriv
 }
 
 template <typename Derived>
-void AllTypeChunkParallelInterface<Derived, true>::load_balance_list_block_free(this const Derived& self)
+void TypeStateRegistryParallelInterface<Derived, true>::load_balance_list_block_free(this const Derived& self)
 {
     for (const auto& elm : self.get_list_type_chunk())
     {
@@ -514,7 +514,7 @@ void AllTypeChunkParallelInterface<Derived, true>::load_balance_list_block_free(
 }
 
 template <typename Derived>
-void AllTypeChunkParallelInterface<Derived, true>::resize_all_list_block_free_thr(this const Derived& self)
+void TypeStateRegistryParallelInterface<Derived, true>::resize_all_list_block_free_thr(this const Derived& self)
 {
     for (const auto& elm : self.get_list_type_chunk())
     {
@@ -523,7 +523,7 @@ void AllTypeChunkParallelInterface<Derived, true>::resize_all_list_block_free_th
 }
 
 template <typename Derived>
-void AllTypeChunkParallelInterface<Derived, true>::init_manager(TypeStateInterface& manager, int block_size) const
+void TypeStateRegistryParallelInterface<Derived, true>::init_manager(TypeStateInterface& manager, int block_size) const
 {
     // Per-manager setup, at its registration. Everything here is a
     // slot indexed by rank; nothing needs the rank's own thread. Reached
@@ -537,7 +537,7 @@ void AllTypeChunkParallelInterface<Derived, true>::init_manager(TypeStateInterfa
 }
 
 template <typename Derived>
-void AllTypeChunkParallelInterface<Derived, true>::alloc_chunk_allocator_thr(this const Derived& self)
+void TypeStateRegistryParallelInterface<Derived, true>::alloc_chunk_allocator_thr(this const Derived& self)
 {
     // std-alloc: each manager's alloc_chunk_allocator_thr() is a no-op.
     for (const auto& elm : self.get_list_type_chunk())
@@ -546,7 +546,7 @@ void AllTypeChunkParallelInterface<Derived, true>::alloc_chunk_allocator_thr(thi
     }
 }
 
-std::size_t AllTypeChunk::reuse_pool_bytes() const
+std::size_t TypeStateRegistry::reuse_pool_bytes() const
 {
     std::size_t total = 0;
     for (const auto& elm : get_list_type_chunk())
@@ -556,7 +556,7 @@ std::size_t AllTypeChunk::reuse_pool_bytes() const
     return total;
 }
 
-std::size_t AllTypeChunk::trim_reuse_pools(std::size_t keep_per_thread) const
+std::size_t TypeStateRegistry::trim_reuse_pools(std::size_t keep_per_thread) const
 {
     std::size_t freed = 0;
     for (const auto& elm : get_list_type_chunk())
@@ -576,7 +576,7 @@ std::size_t AllTypeChunk::trim_reuse_pools(std::size_t keep_per_thread) const
     return freed;
 }
 
-void AllTypeChunk::print_reuse_pool_breakdown(const char* label) const
+void TypeStateRegistry::print_reuse_pool_breakdown(const char* label) const
 {
     for (const auto& elm : get_list_type_chunk())
     {
@@ -586,11 +586,11 @@ void AllTypeChunk::print_reuse_pool_breakdown(const char* label) const
 
 void print_all_reuse_pool_breakdown(const char* label)
 {
-    SingletonChk<AllTypeChunk>::get_ref().print_reuse_pool_breakdown(label);
+    SingletonChk<TypeStateRegistry>::get_ref().print_reuse_pool_breakdown(label);
 }
 
 template <typename Derived>
-void AllTypeChunkParallelInterface<Derived, true>::clear_list_block_free_thr(this Derived& self)
+void TypeStateRegistryParallelInterface<Derived, true>::clear_list_block_free_thr(this Derived& self)
 {
     // ONE region for all nine element types, four phases separated by
     // barriers -- see TypeStateParallelImpl::clear_list_block_free_* for
@@ -652,7 +652,7 @@ void AllTypeChunkParallelInterface<Derived, true>::clear_list_block_free_thr(thi
 }
 
 template <typename Derived>
-void AllTypeChunkParallelInterface<Derived, true>::delete_list_block_chunk_free_itself(this const Derived& self)
+void TypeStateRegistryParallelInterface<Derived, true>::delete_list_block_chunk_free_itself(this const Derived& self)
 {
     for (const auto& elm : self.get_list_type_chunk())
     {
@@ -661,15 +661,15 @@ void AllTypeChunkParallelInterface<Derived, true>::delete_list_block_chunk_free_
 }
 
 template <typename Derived>
-bool AllTypeChunkParallelInterface<Derived, true>::need_load_balance_list_block_free(this const Derived& self)
+bool TypeStateRegistryParallelInterface<Derived, true>::need_load_balance_list_block_free(this const Derived& self)
 {
     return std::ranges::any_of(self.get_list_type_chunk(),
                                [](const auto* elm) { return elm->need_load_balance_list_block_free(); });
 }
 
 template <typename Derived>
-void AllTypeChunkParallelInterface<Derived, false>::init_manager(const TypeStateInterface& manager,
-                                                                 int                       block_size) const
+void TypeStateRegistryParallelInterface<Derived, false>::init_manager(const TypeStateInterface& manager,
+                                                                      int                       block_size) const
 {
     // std-alloc: the manager's init_allocator() is a no-op. Through Derived's
     // alias so that the call stays dependent (see the OpenMP body).
@@ -678,7 +678,7 @@ void AllTypeChunkParallelInterface<Derived, false>::init_manager(const TypeState
 }
 
 template <typename Derived>
-void AllTypeChunkParallelInterface<Derived, false>::delete_chunk_allocator(this const Derived& self)
+void TypeStateRegistryParallelInterface<Derived, false>::delete_chunk_allocator(this const Derived& self)
 {
     // std-alloc: each manager's delete_chunk_allocator() is a no-op.
     for (const auto& elm : self.get_list_type_chunk())
@@ -690,7 +690,9 @@ void AllTypeChunkParallelInterface<Derived, false>::delete_chunk_allocator(this 
 // One definition for both threading modes: the interface is specialised on a
 // bool.
 template <typename Derived>
-void AllTypeChunkDynInterface<Derived, true>::register_chunk_size(this Derived& self, unsigned int size, int block_size)
+void TypeStateRegistryDynInterface<Derived, true>::register_chunk_size(this Derived& self,
+                                                                       unsigned int  size,
+                                                                       int           block_size)
 {
     // Remembered first, so that a manager registered from now on gets it
     // (register_manager replays the list); then declared to the managers that
@@ -708,7 +710,7 @@ void AllTypeChunkDynInterface<Derived, true>::register_chunk_size(this Derived& 
 }
 
 
-void AllTypeChunk::destroy_block_chunk() const
+void TypeStateRegistry::destroy_block_chunk() const
 {
     // std-alloc: each manager's destroy_block_chunk() is a no-op (NullValueAllocator).
     for (const auto& elm : get_list_type_chunk())
@@ -734,6 +736,6 @@ bool set_max_malloc_arenas(int max_arenas)
 // Instantiate exactly the specialisation this build selected. The other one is
 // never named, so its bodies are never instantiated -- which is what lets the
 // OpenMP versions call manager virtuals that a serial build does not declare.
-template class AllTypeChunkParallelInterface<AllTypeChunk, build_config::threaded>;
-template struct AllTypeChunkDynInterface<AllTypeChunk, build_config::chunk_dynamic>;
+template class TypeStateRegistryParallelInterface<TypeStateRegistry, build_config::threaded>;
+template struct TypeStateRegistryDynInterface<TypeStateRegistry, build_config::chunk_dynamic>;
 } // namespace shrink_array

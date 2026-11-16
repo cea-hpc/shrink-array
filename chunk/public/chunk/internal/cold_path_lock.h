@@ -27,7 +27,7 @@
 // state is either address-stable (StableTable) or atomic.
 //
 // One lock for the whole library, not one per type: a constructor can register
-// a type (AllTypeChunk::ensure_manager) and a destructor can run a terminal
+// a type (TypeStateRegistry::ensure_manager) and a destructor can run a terminal
 // pass over every type. Recursive: rechunk_to() builds and destroys a temporary
 // inside the array it re-chunks, and a region opened under it may build one too.
 
@@ -47,7 +47,7 @@ namespace shrink_array::internal
 ///        after main returns.
 [[nodiscard]] inline std::recursive_mutex& cold_path_mutex() noexcept
 {
-    static std::recursive_mutex* const mutex = new std::recursive_mutex; // NOLINT(cppcoreguidelines-owning-memory)
+    static auto* const mutex = new std::recursive_mutex; // NOLINT(cppcoreguidelines-owning-memory)
     return *mutex;
 }
 
@@ -65,7 +65,7 @@ using ColdPathLock = std::scoped_lock<std::recursive_mutex>;
 /// @brief The identity registries' lock. Never destroyed.
 [[nodiscard]] inline std::shared_mutex& registry_mutex() noexcept
 {
-    static std::shared_mutex* const mutex = new std::shared_mutex; // NOLINT(cppcoreguidelines-owning-memory)
+    static auto* const mutex = new std::shared_mutex; // NOLINT(cppcoreguidelines-owning-memory)
     return *mutex;
 }
 

@@ -288,14 +288,13 @@ void TypeStateParallelImpl<ChunkT, T, true>::flush_all_deferred(bool in_parallel
         // a few stragglers are tolerable, a persistent residual is not.
         if constexpr (build_config::any_check)
         {
-            if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
+            // aggressive_compression(): a run-time switch (chunk/config.h).
+            if (!chunk_config::aggressive_compression() &&
+                self.have_chunk_to_compress_potentially(CHUNK_PMP_RANK_BOUND))
             {
-                if (self.have_chunk_to_compress_potentially(CHUNK_PMP_RANK_BOUND))
-                {
-                    CHUNK_LOG(info, compress,
-                              "audit: blocks left to compress after final flush (non-aggressive) -- compression pass "
-                              "skipped some blocks. A few is benign; a recurring/large residual is not.");
-                }
+                CHUNK_LOG(info, compress,
+                          "audit: blocks left to compress after final flush (non-aggressive) -- compression pass "
+                          "skipped some blocks. A few is benign; a recurring/large residual is not.");
             }
         }
 
@@ -442,7 +441,7 @@ void TypeStateDynImpl<ChunkT, T, true>::register_chunk_size(unsigned int size, [
 }
 
 // Teardown of the reuse lists, in four phases inside ONE parallel region
-// (AllTypeChunk::clear_list_block_free_thr opens it, once for every type):
+// (TypeStateRegistry::clear_list_block_free_thr opens it, once for every type):
 //
 //   prepare  sequential, before the region: size the buckets.
 //   screen   one bucket per call: move rank r's legacy list and its slot in
@@ -538,8 +537,8 @@ void TypeStateParallelImpl<ChunkT, T, true>::clear_list_block_free_screen(int bu
     {
         return;
     }
-    const auto bucket_idx = static_cast<std::size_t>(bucket);
-    auto&      out        = to_free[bucket_idx];
+    const auto  bucket_idx = static_cast<std::size_t>(bucket);
+    const auto& out        = to_free[bucket_idx];
 
     // RAW default list container, NOT the size-aware overload. It may be smaller than max_thr
     // (see allocate_chunk_internal): an unsized slot has nothing to drain.

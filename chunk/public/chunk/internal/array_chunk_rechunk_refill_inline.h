@@ -193,8 +193,8 @@ void RechunkSupport<Derived, true>::Refill::run()
 template <typename Derived>
 void RechunkSupport<Derived, true>::Refill::run_slice(int slice)
 {
-    const int c0 = static_cast<int>((static_cast<long>(n_new_) * slice) / n_slices_);
-    const int c1 = static_cast<int>((static_cast<long>(n_new_) * (slice + 1)) / n_slices_);
+    const auto c0 = static_cast<int>((static_cast<long>(n_new_) * slice) / n_slices_);
+    const auto c1 = static_cast<int>((static_cast<long>(n_new_) * (slice + 1)) / n_slices_);
     if (trace_on_)
     {
         probe_.begin();
@@ -321,8 +321,7 @@ void RechunkSupport<Derived, true>::Refill::slice_boundary(pmp::Team& team)
                 st.drain_blocks_avg += ld(dp.blocks_sum) * inv;
                 dp.armed.store(false, std::memory_order_relaxed);
             }
-            const auto n_ranks = static_cast<std::size_t>(CHUNK_PMP_RANK_BOUND);
-            if (recycle_held_.size() != n_ranks)
+            if (const auto n_ranks = static_cast<std::size_t>(CHUNK_PMP_RANK_BOUND); recycle_held_.size() != n_ranks)
             {
                 recycle_held_.assign(n_ranks, 0);
                 recycle_scratch_.resize(n_ranks);
@@ -516,7 +515,7 @@ bool RechunkSupport<Derived, true>::Refill::install_cst2([[maybe_unused]] int   
             // auto: SecondValueRef is not declared in every TU that
             // instantiates this file (zero_one_value_array.cpp), and the name
             // would be looked up even in a discarded branch.
-            const T    value = static_cast<T>(std::as_const(src_)[span.base]);
+            const auto value = static_cast<T>(std::as_const(src_)[span.base]);
             auto&      nch   = tmp_.chunk_list_[static_cast<std::size_t>(new_chunk)];
             const auto psv   = ProxyType::BaseSpec::get_tab_second_value(tmp_.num_tab_, new_chunk);
             CstSlot*   ptc   = &ProxyType::tab_type_cst_val[tmp_.num_tab_][new_chunk];
@@ -636,7 +635,7 @@ void RechunkSupport<Derived, true>::Refill::check_read([[maybe_unused]] int     
         }
         const auto check_at = [&](IndType index)
         {
-            const T ref = static_cast<T>(std::as_const(src_)[span.base + index]);
+            const auto ref = static_cast<T>(std::as_const(src_)[span.base + index]);
             if (std::memcmp(&ref, &buf[static_cast<std::size_t>(index)], sizeof(T)) != 0) [[unlikely]]
             {
                 CHUNK_INVARIANT_FAILED("rechunk refill bulk read: new chunk {} element {} (global {}) differs "

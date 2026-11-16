@@ -87,7 +87,7 @@ the tag's checksum to the recipe.
   `target=x86_64_v3`, no target flag from the project, no AVX-512 instruction in the
   libraries, `getting_started` built against the install).
 - `CHUNK_PHASE_FENCES=0` runs without the four `seq_cst` fences that close the phase functions
-  (`chunk/private/all_type_chunk.cpp`), with a warning. They were kept as "empirically
+  (`chunk/private/type_state_registry.cpp`), with a warning. They were kept as "empirically
   load-bearing" since one unexplained checksum in August 2026; no handshake needs them as far
   as the code reads, and several defects that lost deferred writes at phase boundaries have been
   fixed since. The switch is there to settle it by measure before they are removed; the default
@@ -137,6 +137,21 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- `AllTypeChunk` is now `TypeStateRegistry`, and its two policies
+  `TypeStateRegistryParallelInterface` and `TypeStateRegistryDynInterface`: the class is the
+  process-wide registry of the per-type managers (`TypeState`), not a chunk. Its files
+  follow: `type_state_registry.h`, `type_state_registry_decl.h`,
+  `type_state_registry_inline.h` (`chunk/internal/`) and `chunk/private/type_state_registry.cpp`.
+  Internal: no public header names it.
+- `ChunkSizeAdvisor::analyze()` was one function of 837 lines; it is now 38, and its counting
+  passes are the member functions of `internal::ChunkSizeScan` (`chunk/internal/chunk_size_scan.h`,
+  bodies in `chunk_size_scan_inline.h`): the candidate sizes, the classification, the runs of
+  constant chunks per part and their serial merge, the sampling, the ambiguous windows of a
+  picked chunk, the motif forecast of `pattern::Array` -- one function each, the longest of 57
+  lines. The table's rows come from `internal::advisor_row()`. Same interface, same report:
+  the old and the new `analyze()` were run in one process on the same arrays of the four
+  containers (`double`, `int`, `long`, `bool`, `Bit`; six sets of options; 1, 2 and 4 threads)
+  and compared field by field, 5,040 reports without a difference, in the same time.
 - `USE_LIBCXX` is `OFF` by default: a Clang build uses the standard library the compiler picks
   by itself (libstdc++ on Linux), `-DUSE_LIBCXX=ON` asks for libc++. The default was `ON`, and
   the first configure failed on a Clang installed without libc++; the build scripts, the CI
@@ -161,7 +176,7 @@ the tag's checksum to the recipe.
 - `fill_range_mt` skips a chunk already at the fill value with one test, as `fill_range` does,
   instead of arming it element by element; `fill_range` does the same on its `bool` path.
 - **The public interface, narrowed and frozen** (breaking). The public headers are what
-  `docs/api.md` documents; `PMP_CHUNK.h`, `all_type_chunk.h`, `chunk_traits.h`,
+  `docs/api.md` documents; `PMP_CHUNK.h`, `type_state_registry.h`, `chunk_traits.h`,
   `global_stats_chunk_list.h`, `ring_log_debug.h`, `singleton.h`, `term_color.h`,
   `type_name.h`, `zero_chunk.h`, `zero_one_value_chunk.h`, `zero_any_chunk.h`, `pattern_chunk.h`,
   `zero_chunk_def.h`, `zero_one_value_chunk_def.h` and `zero_any_chunk_def.h` are under
@@ -226,6 +241,22 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `multi-mat` built with gcc on x86-64: the compute loop (`LoopsSimd::omp_foreach_simd_red_sum`,
+  `cos + sin + tan` under `omp simd`) never vectorised. glibc declares its vector `cos`, `sin`
+  and `tan` (libmvec) to gcc only under `__FAST_MATH__`, which the flags of
+  `chunk_enable_fast_math` do not define; gcc reported "function is not vectorizable" (the
+  "loop vectorized" it printed at the same pragma was the reduction across the lanes). The
+  target now adds `-ffast-math` with gcc on x86-64 Linux, except in a `CHUNK_DO_CHECK` build
+  (its NaN check would fold away). That was enough with gcc 13.3 (8 lanes with AVX-512, the
+  run on the `std::vector` materials about 2.3 times faster), not with gcc 14 to 16 on Intel
+  tunings (alderlake, generic, skylake): they no longer emit hardware gathers (the
+  Downfall/GDS mitigation), and the emulated gathers gave up on the load of the indirection's
+  data pointer, left inside the `omp simd reduction` loop ("no vectype for stmt ...
+  _M_start"). The loop now reads the indirection through `ll.data()`, taken once: gcc 14, 15
+  and 16 vectorise it on every tuning (libmvec's _ZGVdN4v_cos, _sin and _tan with AVX2; gcc 16,
+  i9-12900H, 2 M cells, 8 materials, 100 iterations, 2 threads: the whole run 24.3-27.6 s
+  -> 21.0-22.5 s). `shrink_bench` is left as it was. The comment of
+  `chunk_enable_fast_math` says it, and that clang knows libmvec's `tan` only since LLVM 19.
 - Check builds (`CHECK_OPTIM`, and the sanitizer and Debug builds) were several times slower
   than the others under OpenMP: the cross-check of a proxy's `num_tab` against the registry,
   done on every write (`zero_any`) and every replayed op (`zero`), took the registries' shared

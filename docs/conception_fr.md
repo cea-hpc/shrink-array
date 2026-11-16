@@ -85,7 +85,7 @@ flowchart TB
         reg["constantes partagées<br/>cst_val1, registre des secondes valeurs, région des motifs"]
     end
     subgraph per_process["par processus"]
-        all["AllTypeChunk<br/>registre de tous les managers"]
+        all["TypeStateRegistry<br/>registre de tous les managers"]
         par["ParamChunk<br/>démarrage, statistiques"]
         phase["points de phase (manage_ompt.h)<br/>OMPT ou appels explicites"]
         pmp["couche pmp<br/>backend openmp, std ou serial"]
@@ -111,7 +111,7 @@ flowchart TB
 | proxies, moteur d'écriture | `ProxyBase`, `WriteCompressSyncPolicy`, les `Proxy` des variantes | `internal/proxy_base.h`, `internal/write_compress_sync_policy.h` | un temporaire par écriture |
 | état par type | `TypeState` (façade), `ReusePools`, `CompressCandidates`, `CompressionManager` | `internal/type_state.h`, `internal/reuse_pools.h`, `internal/compress_candidates.h`, `internal/compression_manager.h` | un par (variante, type d'élément), statique |
 | constantes partagées | `TabCstVal2Holder`, `GlobalVecHolder`, `MotifRegion` | `internal/tab_cst_val2_holder.h`, `internal/motif_region.h` | une par type d'élément |
-| registre du processus, démarrage | `AllTypeChunk`, `ParamChunk` | `internal/all_type_chunk_decl.h`, `chunk/param_chunk.h` | un par processus |
+| registre du processus, démarrage | `TypeStateRegistry`, `ParamChunk` | `internal/type_state_registry_decl.h`, `chunk/param_chunk.h` | un par processus |
 | phases | `begin_parallel_phase`, `finalize_parallel_phase`, `parallel_phase` | `chunk/manage_ompt.h`, `chunk/private/manage_ompt.cpp` | une phase à la fois |
 | backend, rangs | `pmp::Team`, `pmp::parallel_for` | `chunk/internal/PMP_CHUNK.h`, `fast_allocators/internal/pmp_loops.h`, `fast_allocators/internal/pmp_std.h` | tout le processus |
 | allocation | arènes de dalles, allocateurs par rang | `fast_allocators/slab_arena.h`, `fast_allocators/tc_allocator.h` | tout le processus |
@@ -147,7 +147,7 @@ d'instructions ; les variantes sont donc assemblées à la compilation :
   `if constexpr` ; les `#ifdef` restants sont ceux que `if constexpr` ne peut pas remplacer (un
   include, une déclaration qui ne compile pas dans l'autre build), et les règles qui en décident
   sont écrites en tête de `examples/shrink_bench/bench_config.h`.
-- **Du virtuel seulement là où c'est froid.** `AllTypeChunk` doit agir sur tous les managers du
+- **Du virtuel seulement là où c'est froid.** `TypeStateRegistry` doit agir sur tous les managers du
   processus -- lancer les passes, vider les écritures différées, démonter -- sans connaître leurs
   types : il tient des pointeurs `TypeStateInterface` et appelle des virtuelles, aux bornes de phase
   seulement.
@@ -421,7 +421,7 @@ les étapes et le contrat de phase.
 ## 11. État du processus et durée de vie
 
 - **Pas de liste de types.** Le premier tableau d'un type d'élément enregistre son manager auprès
-  d'`AllTypeChunk` (`ensure_manager`), séquentiellement ; dès lors le type participe à chaque passe,
+  d'`TypeStateRegistry` (`ensure_manager`), séquentiellement ; dès lors le type participe à chaque passe,
   chaque vidage et au démontage. Tout type qui satisfait `ArrayChunkElement` (trivialement
   copiable, comparable par égalité, constructible par défaut) convient, y compris les agrégats du
   programme.

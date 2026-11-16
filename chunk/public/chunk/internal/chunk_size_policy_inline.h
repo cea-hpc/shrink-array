@@ -96,11 +96,11 @@ inline void DynamicChunkSize::set_divider(unsigned int size) noexcept
     pow2_             = std::has_single_bit(size); // NOT is_valid_chunk_size: a multiple of 64 is valid too
     m32_              = UINT64_MAX / size + 1u;
     unsigned int log2 = 0;
-    while ((1ull << log2) < size)
+    while ((1ULL << log2) < size)
     {
         ++log2;
     }
-    magic_ = static_cast<std::uint64_t>((static_cast<unsigned __int128>((1ull << log2) - size) << 64) / size) + 1u;
+    magic_ = static_cast<std::uint64_t>((static_cast<unsigned __int128>((1ULL << log2) - size) << 64) / size) + 1U;
     magic_shift_ = log2 - 1u;
 }
 

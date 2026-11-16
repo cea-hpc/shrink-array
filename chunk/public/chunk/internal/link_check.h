@@ -19,7 +19,7 @@
 // The settings a program must share with its variant library (CHUNK_VARIANT_ZERO*,
 // CHUNK_SIZE, CHUNK_DYNAMIC), spelled into one function name. The
 // library defines its own (chunk/private/link_check.cpp); the first array of
-// each element type calls the program's (AllTypeChunk::ensure_manager). A
+// each element type calls the program's (TypeStateRegistry::ensure_manager). A
 // mismatch, which would otherwise compile the templates differently in silence,
 // fails to link, and the undefined symbol names the program's settings:
 //

@@ -49,8 +49,8 @@
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (CHUNK_REQUIRE_OMPT)
 #include "chunk/internal/phase_guard.h"     // phase_guard::teams (one top-level team at a time)
 
-#include "chunk/internal/all_type_chunk.h" // AllTypeChunk
-#include "chunk/internal/churn_counters.h" // churn::note_phase_end
+#include "chunk/internal/type_state_registry.h" // TypeStateRegistry
+#include "chunk/internal/churn_counters.h"      // churn::note_phase_end
 
 #if CHUNK_OPT_OMPT
     #include <omp-tools.h> // ompt_set_callback, ompt_start_tool_result_t
@@ -61,7 +61,7 @@
 // sit in. A build without OMPT compiles only the stand-ins of the #else branch.
 #if CHUNK_OPT_OMPT
 
-    // Directive, like all_type_chunk.cpp's: a std-alloc build does not put
+    // Directive, like type_state_registry.cpp's: a std-alloc build does not put
     // fast_allocators/public on the include path at all.
     #if !CHUNK_OPT_STD_ALLOC
         #include "fast_allocators/internal/static_const_array.h" // StaticConstArray::clear_info_free_elt
@@ -310,7 +310,7 @@ void parallel_end_chunk_work()
         return;
     }
 
-    const auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::get_ref();
+    const auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::TypeStateRegistry>::get_ref();
 
     if (!ens_type_chunk.have_chunk_to_compress_potentially())
     {

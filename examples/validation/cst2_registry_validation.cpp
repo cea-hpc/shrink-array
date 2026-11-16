@@ -101,7 +101,7 @@ static void end_phase()
 ///        second value), then the between-region pass.
 static void fill(Arr& arr, long count, double value)
 {
-    const int ni = static_cast<int>(count);
+    const auto ni = static_cast<int>(count);
 #pragma omp parallel
     {
         begin_phase();
@@ -132,7 +132,7 @@ static int fails = 0;
 static void expect(std::string_view where, int users, long min_entries)
 {
     const int  nusers  = Registry::users();
-    const long entries = static_cast<long>(Registry::count_entries());
+    const auto entries = static_cast<long>(Registry::count_entries());
     const bool ok_u    = (nusers == users);
     const bool ok_e    = (min_entries < 0) ? (entries == 0) : (entries >= min_entries);
     println("  {:<44} users {} (expect {})  entries {} (expect {}{}){}", where, nusers, users, entries,
@@ -158,8 +158,8 @@ static void expect_values(std::string_view where, const Arr& arr, long count, do
 ///        at the 17th registration; returning means it ran on.
 static int run_id_limit_child()
 {
-    const long chunk_sz = static_cast<long>(Arr(0).chunk_size());
-    const int  ni       = static_cast<int>(40 * chunk_sz);
+    const auto chunk_sz = static_cast<long>(Arr(0).chunk_size());
+    const auto ni       = static_cast<int>(40 * chunk_sz);
     Arr        arr(ni);
 #pragma omp parallel
     {
@@ -214,7 +214,7 @@ int run(int argc, char** argv)
     ParamChunk::init_indexes(true);
 
     const long nchunks  = argc > 1 ? shrink_array::arg_number<long>(argv[1], 16, "chunks") : 16;
-    const long chunk_sz = static_cast<long>(Arr(0).chunk_size()); // empty: no chunk, so no registry reference
+    const auto chunk_sz = static_cast<long>(Arr(0).chunk_size()); // empty: no chunk, so no registry reference
     const long count    = nchunks * chunk_sz;
 
     println("=== cst2_registry_validation  chunks={}  chunk_size={}  threads={} ===", nchunks, chunk_sz,

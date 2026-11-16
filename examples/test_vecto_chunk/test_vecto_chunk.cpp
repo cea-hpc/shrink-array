@@ -51,9 +51,7 @@ double convert_memory(double memory_value)
     const double kilobytes = memory_value * byte_to_kb;
     const double megabytes = kilobytes * kb_to_mb;
 
-    std::ofstream fichier("memory_mo.txt");
-
-    if (fichier.is_open())
+    if (std::ofstream fichier("memory_mo.txt"); fichier.is_open())
     {
         fichier << megabytes;
         fichier.close();
@@ -71,8 +69,7 @@ void save_seed_to_file(unsigned seed, const std::string& filename)
 {
     std::println("\nSave seed in file");
 
-    std::ofstream file(filename);
-    if (file.is_open())
+    if (std::ofstream file(filename); file.is_open())
     {
         file << seed;
         file.close();
@@ -86,9 +83,8 @@ void save_seed_to_file(unsigned seed, const std::string& filename)
 // Load seed from file
 unsigned load_seed_to_file(const std::string& filename)
 {
-    unsigned      seed = 0;
-    std::ifstream file(filename);
-    if (file.is_open())
+    unsigned seed = 0;
+    if (std::ifstream file(filename); file.is_open())
     {
         file >> seed;
         file.close();
@@ -163,8 +159,6 @@ void calculate(double                  val,
     {
         const int pos = index[i - start0];
         tab_vec[pos] += tab1[pos] + (tab2[pos] * tab3[i]) - tab2[i] + val;
-        //  tab_vec[pos] += tab1[pos] + tab2[pos] * std::atan(tab3[pos]) + std::cos(val);
-        //     tab_vec[pos] += std::cos(tab1[pos]) + std::sin(tab2[pos]) + std::atan(tab3[pos]) + std::cos(val);
     }
 }
 
@@ -269,7 +263,7 @@ try
         tab_size[k]      = size;
         tab_start[k]     = start0;
 
-        std::uniform_int_distribution<int> uni1(start0, end0);
+        std::uniform_int_distribution uni1(start0, end0);
         tab_nba1[k] = uni1(rng);
         tab_nba2[k] = uni1(rng);
     }

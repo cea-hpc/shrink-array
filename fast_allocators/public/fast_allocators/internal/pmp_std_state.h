@@ -158,7 +158,7 @@ struct Settings
 /// @brief The settings (one instance per process, never destroyed).
 [[nodiscard]] inline Settings& settings() noexcept
 {
-    static Settings* const instance = new Settings; // NOLINT(cppcoreguidelines-owning-memory): immortal
+    static auto* const instance = new Settings; // NOLINT(cppcoreguidelines-owning-memory): immortal
     return *instance;
 }
 
@@ -217,9 +217,9 @@ struct Settings
 {
     static const long long budget = []
     {
-        long long   us    = 1000;
-        const char* value = std::getenv("CHUNK_PMP_SPIN_US"); // NOLINT(concurrency-mt-unsafe): read once
-        if (value != nullptr)
+        long long us = 1000;
+        if (const char* value = std::getenv("CHUNK_PMP_SPIN_US");
+            value != nullptr) // NOLINT(concurrency-mt-unsafe): read once
         {
             char*      end    = nullptr;
             const long parsed = std::strtol(value, &end, 10);
@@ -241,9 +241,9 @@ struct Settings
 {
     static const long long budget = []
     {
-        long long   us    = 200;
-        const char* value = std::getenv("CHUNK_PMP_JOIN_US"); // NOLINT(concurrency-mt-unsafe): read once
-        if (value != nullptr)
+        long long us = 200;
+        if (const char* value = std::getenv("CHUNK_PMP_JOIN_US");
+            value != nullptr) // NOLINT(concurrency-mt-unsafe): read once
         {
             char*      end    = nullptr;
             const long parsed = std::strtol(value, &end, 10);

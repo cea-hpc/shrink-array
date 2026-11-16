@@ -171,7 +171,7 @@ int run_case(Case test_case)
     }
 
     Array<double> arr;
-    const long    chunk_sz = static_cast<long>(arr.chunk_size());
+    const auto    chunk_sz = static_cast<long>(arr.chunk_size());
     const long    count    = 3 * chunk_sz;
     arr.resize(static_cast<int>(count));
     maybe_set_second_value(arr, second_value);
@@ -180,7 +180,7 @@ int run_case(Case test_case)
     const auto hi = static_cast<std::size_t>(2 * chunk_sz);
     if (test_case == Case::copy)
     {
-        const std::vector<double> src(static_cast<std::size_t>(chunk_sz), plain_value);
+        const std::vector src(static_cast<std::size_t>(chunk_sz), plain_value);
         shrink_array::copy_range(arr, lo, hi, src.begin());
     }
     else
@@ -227,11 +227,11 @@ int run_fill_constant_case()
     const bool second_applies = chunk_config::use_zero_one_value || chunk_config::use_zero_any;
 
     Array<double> arr;
-    const long    csz   = static_cast<long>(arr.chunk_size());
+    const auto    csz   = static_cast<long>(arr.chunk_size());
     const long    count = 6 * csz;
     arr.resize(static_cast<int>(count));
     maybe_set_second_value(arr, second_value);
-    std::vector<double> ref(static_cast<std::size_t>(count), 0.0);
+    std::vector ref(static_cast<std::size_t>(count), 0.0);
 
     const auto fill = [&](long lo, long hi, double value)
     {
@@ -349,7 +349,7 @@ int run_mul_zero_case()
         return 0;
     }
     Array<double> arr;
-    const long    chunk_sz = static_cast<long>(arr.chunk_size());
+    const auto    chunk_sz = static_cast<long>(arr.chunk_size());
     const long    count    = 3 * chunk_sz;
     arr.resize(static_cast<int>(count));
     maybe_set_second_value(arr, second_value);
@@ -409,17 +409,18 @@ const char* op_name(Op op)
 {
     switch (op)
     {
-        case Op::and_:
+        using enum Op;
+        case and_:
             return "&= 5";
-        case Op::shl:
+        case shl:
             return "<<= 3";
-        case Op::shr:
+        case shr:
             return ">>= 1";
-        case Op::add0:
+        case add0:
             return "+= 0";
-        case Op::sub0:
+        case sub0:
             return "-= 0";
-        case Op::or0:
+        case or0:
             return "|= 0";
         default:
             return "^= 0";
@@ -430,31 +431,32 @@ int run_compound_case(Op op)
 {
     using I = long long;
     Array<I>   arr;
-    const long chunk_sz = static_cast<long>(arr.chunk_size());
+    const auto chunk_sz = static_cast<long>(arr.chunk_size());
     arr.resize(static_cast<int>(3 * chunk_sz));
     maybe_set_second_value(arr, I{7});
     const int span = static_cast<int>(chunk_sz) + 3;
     switch (op)
     {
-        case Op::and_:
+        using enum Op;
+        case and_:
             arr[span] &= I{5};
             break;
-        case Op::shl:
+        case shl:
             arr[span] <<= 3;
             break;
-        case Op::shr:
+        case shr:
             arr[span] >>= 1;
             break;
-        case Op::add0:
+        case add0:
             arr[span] += I{0};
             break;
-        case Op::sub0:
+        case sub0:
             arr[span] -= I{0};
             break;
-        case Op::or0:
+        case or0:
             arr[span] |= I{0};
             break;
-        case Op::xor0:
+        case xor0:
             arr[span] ^= I{0};
             break;
     }
@@ -494,6 +496,7 @@ int run_compound_case(Op op)
 
 int run(int /*argc*/, char** /*argv*/)
 {
+    using enum Op;
     ParamChunk::init_indexes(true);
 
     println("=== range_counters_validation [variant = {}]  counters={} ===", variant_name(),
@@ -505,7 +508,7 @@ int run(int /*argc*/, char** /*argv*/)
     fails += run_case(Case::copy);
     fails += run_fill_constant_case();
     fails += run_mul_zero_case();
-    for (const Op op : {Op::and_, Op::shl, Op::shr, Op::add0, Op::sub0, Op::or0, Op::xor0})
+    for (const Op op : {and_, shl, shr, add0, sub0, or0, xor0})
     {
         fails += run_compound_case(op);
     }

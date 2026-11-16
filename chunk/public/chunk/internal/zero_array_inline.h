@@ -21,7 +21,7 @@
 #include <ostream> // print_compression_stats(std::ostream&)
 #include <vector>  // std::vector
 
-#include "chunk/internal/all_type_chunk.h"              // ensure_manager, from create
+#include "chunk/internal/type_state_registry.h"         // ensure_manager, from create
 #include "chunk/zero_array.h"                           // zero::Array, the class these bodies belong to
 #include "chunk/internal/chunk_stats.h"                 // increm_chunk_* (CHUNK_STATS)
 #include "chunk/internal/chunk_stats_printer.h"         // print_formatted_chunk_stats
@@ -245,7 +245,7 @@ void zero::Array<T, IntType>::clear_core()
                           },
                           pmp::nowait);
 
-                      const int nb = ll_chunk_loc.size();
+                      const auto nb = static_cast<int>(ll_chunk_loc.size());
 
                       if (nb > 0)
                       {

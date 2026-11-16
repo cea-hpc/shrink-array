@@ -28,7 +28,7 @@ namespace shrink_array
 /// @brief Lazily created, never deleted, process-wide instance of T, built with
 ///        `new T()` on first use. fast_alloc::Singleton under the chunk library's name.
 /// @note An alias: a class befriending it, or declaring it in advance, names
-///       fast_alloc::Singleton itself (see AllTypeChunk).
+///       fast_alloc::Singleton itself (see TypeStateRegistry).
 template <typename T>
 using SingletonChk = ::fast_alloc::Singleton<T>;
 

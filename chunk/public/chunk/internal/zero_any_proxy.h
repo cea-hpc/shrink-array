@@ -167,8 +167,7 @@ void realloc_unique(std::unique_ptr<T[]>& ptr, std::size_t old_size, std::size_t
 {
     std::unique_ptr<T[]> new_ptr(new T[new_size]);
 
-    const std::size_t kept = std::min(old_size, new_size);
-    if (kept != 0)
+    if (const std::size_t kept = std::min(old_size, new_size); kept != 0)
     {
         std::copy_n(ptr.get(), kept, new_ptr.get()); // a memmove for a trivial T
     }

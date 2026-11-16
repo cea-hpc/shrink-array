@@ -66,7 +66,7 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress
 {
     const auto& vec_tup = Derived::Manager::zero_candidates_thr[thr];
 
-    const int sz = vec_tup.size();
+    const auto sz = static_cast<int>(vec_tup.size());
 
     for (int k = 0; k < sz; ++k)
     {
@@ -265,7 +265,7 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int 
 
     auto& vec_tuple_to_compress = Manager::zero_candidates_thr[thr];
 
-    const int sz = vec_tuple_to_compress.size();
+    const auto sz = static_cast<int>(vec_tuple_to_compress.size());
 
     if (sz == 0)
     {
@@ -297,9 +297,7 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int 
                 chunk_t->steal_mark();
             }
         }
-        const bool ret = proxy->compression_mgr.template start<zero::Proxy<T>>();
-
-        if (!ret)
+        if (const bool ret = proxy->compression_mgr.template start<zero::Proxy<T>>(); !ret)
         {
             for (int k = 0; k < sz; ++k)
             {
