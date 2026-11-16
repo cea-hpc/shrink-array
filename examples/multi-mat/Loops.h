@@ -186,10 +186,27 @@ struct LoopsSimd
         std::tie(kdeb, kfin) = get_parallel_loop_boundaries(multi_mat::thread_rank(), multi_mat::max_threads(), nn);
 
         T redl = red;
+        // The indirection read through a raw pointer taken once, not ll[k].
+        // A regression of recent gcc (not expected): with ll[k], gcc 14, 15
+        // and 16 leave this loop scalar on Intel tunings (alderlake, generic,
+        // skylake, ...), where gcc 11 vectorised it -- and gcc 13.3 did too on
+        // the AVX-512 machine the libmvec change was measured on. Two causes
+        // meet: (1) these tunings no longer emit hardware gathers (the
+        // Downfall/GDS mitigation; -mgather or -mtune=haswell bring them
+        // back), so the vectoriser emulates the gathers of the body's
+        // tab[nnn] reads; (2) under `omp simd reduction` the load of ll's data
+        // pointer stays inside the loop, and the emulated gather gives up on
+        // it ("not vectorized: no vectype for stmt: ... _M_start", scalar type
+        // int* const). Nothing writes an int* in the body: the load is
+        // invariant, gcc just does not hoist it. Taken once here, it is, and
+        // gcc 14 to 16 vectorise the loop on every tuning (cos/sin/tan through
+        // libmvec, _ZGVdN4v_* with AVX2). Reduced test case and gcc versions:
+        // see the commit that added this comment.
+        const int* const lp = ll.data();
 #pragma omp simd            reduction(+ : redl)
         for (int k = kdeb; k < kfin; ++k)
         {
-            const int nnn = ll[k];
+            const int nnn = lp[k];
             PRAGMA_FORCEINLINE
             lbd(nnn, redl);
         }

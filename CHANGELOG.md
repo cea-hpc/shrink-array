@@ -220,6 +220,22 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- `multi-mat` built with gcc on x86-64: the compute loop (`LoopsSimd::omp_foreach_simd_red_sum`,
+  `cos + sin + tan` under `omp simd`) never vectorised. glibc declares its vector `cos`, `sin`
+  and `tan` (libmvec) to gcc only under `__FAST_MATH__`, which the flags of
+  `chunk_enable_fast_math` do not define; gcc reported "function is not vectorizable" (the
+  "loop vectorized" it printed at the same pragma was the reduction across the lanes). The
+  target now adds `-ffast-math` with gcc on x86-64 Linux, except in a `CHUNK_DO_CHECK` build
+  (its NaN check would fold away). That was enough with gcc 13.3 (8 lanes with AVX-512, the
+  run on the `std::vector` materials about 2.3 times faster), not with gcc 14 to 16 on Intel
+  tunings (alderlake, generic, skylake): they no longer emit hardware gathers (the
+  Downfall/GDS mitigation), and the emulated gathers gave up on the load of the indirection's
+  data pointer, left inside the `omp simd reduction` loop ("no vectype for stmt ...
+  _M_start"). The loop now reads the indirection through `ll.data()`, taken once: gcc 14, 15
+  and 16 vectorise it on every tuning (`_ZGVdN4v_cos`, `_sin`, `_tan` with AVX2; gcc 16,
+  i9-12900H, 2 M cells, 8 materials, 100 iterations, 2 threads: the whole run 24.3-27.6 s
+  -> 21.0-22.5 s). `shrink_bench` is left as it was. The comment of
+  `chunk_enable_fast_math` says it, and that clang knows libmvec's `tan` only since LLVM 19.
 - Check builds (`CHECK_OPTIM`, and the sanitizer and Debug builds) were several times slower
   than the others under OpenMP: the cross-check of a proxy's `num_tab` against the registry,
   done on every write (`zero_any`) and every replayed op (`zero`), took the registries' shared

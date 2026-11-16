@@ -7,9 +7,13 @@
 # -fno-math-errno (the errno store is a side effect) AND a -fveclib -- ArmPL on
 # the AArch64 node, glibc's libmvec (_ZGVdN4v_cos and friends) on x86 with
 # clang; gcc on x86 picks libmvec up by itself from glibc's math-vector.h
-# once __FAST_MATH__ is defined. Checked with -Rpass=loop-vectorize on
-# multi-mat: the compute loop goes from "library call cannot be vectorized"
-# to "vectorized loop (width 4, interleaved 4)".
+# once __FAST_MATH__ is defined -- which only -ffast-math does, not the four
+# flags below (multi-mat adds it, see its CMakeLists.txt). Checked with
+# -Rpass=loop-vectorize on multi-mat: the compute loop goes from "library call
+# cannot be vectorized" to "vectorized loop (width 4, interleaved 4)". Clang
+# knows libmvec's tan since LLVM 19 (atan and the others since 21): with an
+# older clang one std::tan keeps the whole loop scalar. glibc ships them
+# since 2.35, which the check below is about.
 #
 # Not for a check target: the vector cos differs from the scalar one in the
 # last ulp, and check mode compares a std::vector run with a shrink run whose
