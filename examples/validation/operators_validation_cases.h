@@ -82,9 +82,9 @@
 #if defined(OPERATORS_VALIDATION_PATTERN)
     #include "chunk/pattern_array.h" // pattern::Array
 #endif
-#include "chunk/config.h"             // chunk_config::use_zero*, build_config::use_openmp, has_not_ompt
-#include "chunk/manage_ompt.h"        // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/param_chunk.h"        // ParamChunk::init_indexes
+#include "chunk/config.h"             // chunk_config::use_zero*, build_config::use_openmp, needs_explicit_phases
+#include "chunk/phases.h"             // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/runtime.h"            // Runtime::init
 #include "chunk/internal/type_name.h" // type_name<T>()
 #include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment, IsCleanShiftOp
 #include "chunk/print.h"                                 // shrink_array::println
@@ -134,7 +134,7 @@ inline std::string only_type; ///< --type NAME: that element type alone (type_na
 
 inline void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
@@ -142,7 +142,7 @@ inline void begin_phase()
 
 inline void end_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }

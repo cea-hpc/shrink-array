@@ -36,8 +36,8 @@
 #include "chunk/zero_array.h"            // zero::Array
 #include "chunk/zero_one_value_array.h"  // zero_one_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
-#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/manage_ompt.h"           // parallel_phase
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/phases.h"                // parallel_phase
 #include "chunk/config.h"                // chunk_config::use_zero*
 #include "chunk/internal/PMP_CHUNK.h"    // pmp::current_team
 #include "chunk/print.h"                 // shrink_array::println
@@ -112,7 +112,7 @@ int one_case(int n_chunks)
         });
     arr.shrink_to_fit();
 
-    const int   written = arr.get_nb_chunk_written();
+    const int   written = arr.written_chunk_count();
     int         wrong   = 0;
     const auto& carr    = std::as_const(arr);
     for (int index = 0; index < count; ++index)
@@ -131,7 +131,7 @@ int one_case(int n_chunks)
 
 int run(int /*argc*/, char** /*argv*/)
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
     int fails = 0;
     for (const int n_chunks : {1, 10, 100})
     {

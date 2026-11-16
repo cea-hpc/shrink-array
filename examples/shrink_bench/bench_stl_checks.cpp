@@ -324,10 +324,10 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
 
             // zero_one_value: the array-level second value travels with the copy. A
             // generic lambda, so that the `if constexpr` really discards the
-            // body on the arrays that have no get_second_value().
+            // body on the arrays that have no second_value().
             [&]<typename A>(A*)
             {
-                if constexpr (requires(A probe) { probe.get_second_value(); })
+                if constexpr (requires(A probe) { probe.second_value(); })
                 {
                     A s2(n_stl);
                     maybe_set_second_value(s2, second_value_d1);
@@ -336,7 +336,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
                         s2[i] = (i % 3 == 0) ? second_value_d1 : 0.0;
                     }
                     A    t2(s2);
-                    bool ok = t2.get_second_value() == second_value_d1;
+                    bool ok = t2.second_value() == second_value_d1;
                     for (Int i = 0; ok && i < n_stl; ++i)
                     {
                         ok = std::as_const(t2)[i] == std::as_const(s2)[i];

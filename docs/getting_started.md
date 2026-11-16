@@ -133,14 +133,14 @@ well as inside the tree.
 #include <utility>                 // std::as_const
 
 #include "chunk/zero_any_array.h"   // shrink_array::zero_any::Array
-#include "chunk/manage_ompt.h"     // parallel_phase
-#include "chunk/param_chunk.h"     // ParamChunk::init_indexes, release_chunk_pools, destroy_block_chunk
+#include "chunk/phases.h"     // parallel_phase
+#include "chunk/runtime.h"     // Runtime::init, release_chunk_pools, Runtime::shutdown
 
 namespace sa = shrink_array;
 
 int main()
 {
-    sa::ParamChunk::init_indexes(true);          // (1) once, before the first array
+    sa::Runtime::init(true);          // (1) once, before the first array
 
     {
         const int n = 1 << 24;                   // 16 M doubles: 128 MiB as a std::vector
@@ -164,13 +164,13 @@ int main()
     }                                            // (6) the array releases its chunks
 
     sa::release_chunk_pools();                   // (7) shut the library down
-    sa::destroy_block_chunk();
+    sa::Runtime::shutdown();
 }
 ```
 
-1. **`init_indexes(true)`**, once, before the first array: it sets up the allocation blocks
+1. **`init(true)`**, once, before the first array: it sets up the allocation blocks
    (`true`: large blocks, the usual choice). Optional: without it, the first array of the
-   program runs `init_indexes(true)` itself. Element types need no declaration: each one is
+   program runs `init(true)` itself. Element types need no declaration: each one is
    registered the first time an array of it is built.
 2. **A new array** reads `T{}` everywhere and allocates no buffer.
 3. **`parallel_phase()`** opens a parallel region and runs the lambda on every thread. Without
@@ -263,7 +263,7 @@ calls forgotten, values come out wrong, silently. The program stops, in every bu
 `begin_parallel_phase()` with no `finalize_parallel_phase()` since the previous region; check
 builds (Debug, `CHECK_OPTIM`) also stop on a deferred write by a thread that skipped
 `begin_parallel_phase()`.
-Writing them behind `if constexpr (sa::build_config::has_not_ompt)`, as above, keeps one
+Writing them behind `if constexpr (sa::build_config::needs_explicit_phases)`, as above, keeps one
 source for both runtimes.
 
 `shrink_array::parallel_phase()` writes the region and both calls for you, and leaves them out
@@ -338,9 +338,9 @@ all of it. What that asks of them:
 - **The first array fixes the thread capacity** (above): at least 256 threads, or the cores, or
   `OMP_NUM_THREADS`; a component that opens larger teams needs `CHUNK_THREAD_CAPACITY` set
   before the first array.
-- **Process-wide calls.** `ParamChunk::init_indexes()` sets the allocation block size of the
+- **Process-wide calls.** `Runtime::init()` sets the allocation block size of the
   whole process: one call, at the start, by the program (a later one leaves the arrays already
-  built intact). `release_chunk_pools()` and `destroy_block_chunk()` empty everyone's free
+  built intact). `release_chunk_pools()` and `Runtime::shutdown()` empty everyone's free
   lists (an array still alive keeps what it needs): once, at the end of the program, or not at
   all. `reclaim_second_values()` covers every array of a type; `CHUNK_LOG` and
   `logging::set_sink()` are one setting for all.

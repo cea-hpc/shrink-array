@@ -21,14 +21,14 @@
  * Compiled as a real tool only under `CHUNK_OPT_OMPT`.
  * The runtime discovers it through ompt_start_tool(), which registers three
  * callbacks; each of them maps a point of the OpenMP lifecycle onto one of the
- * phase transitions declared in chunk/manage_ompt.h, so an application built
+ * phase transitions declared in chunk/phases.h, so an application built
  * this way needs no explicit call at all.
  *
  * In any other build this file only defines `g_ompt_suspended{1}` (callbacks
  * permanently suspended: none exists); the application drives the phase
- * transitions itself (see manage_ompt.h).
+ * transitions itself (see phases.h).
  *
- * @see chunk/manage_ompt.h for the semantics of the phase transitions.
+ * @see chunk/phases.h for the semantics of the phase transitions.
  */
 
 #include <array>       // std::array
@@ -43,7 +43,7 @@
 
 #include "chunk/config.h"                   // g_ompt_suspended (defined here), chunk_config::is_shrink_enabled
 #include "chunk/internal/singleton.h"       // SingletonChk
-#include "chunk/manage_ompt.h"              // begin_parallel_phase, finalize_parallel_phase, finalize_barrier_phase
+#include "chunk/phases.h"                   // begin_parallel_phase, finalize_parallel_phase, finalize_barrier_phase
 #include "chunk/internal/PMP_CHUNK.h"       // g_fast_omp_rank, CHUNK_PMP_IN_PARALLEL_REGION, CHUNK_PMP_MAX_THREADS
 #include "chunk/log.h"                      // CHUNK_LOG, CHUNK_LOG_ALWAYS
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (CHUNK_REQUIRE_OMPT)
@@ -540,7 +540,7 @@ extern "C" ompt_start_tool_result_t* ompt_start_tool(unsigned int, const char*)
 }
 
 /**
- * @brief See manage_ompt.h. Once per process (a magic static).
+ * @brief See phases.h. Once per process (a magic static).
  */
 void shrink_array::check_ompt_tool_loaded()
 {
@@ -602,7 +602,7 @@ void shrink_array::check_ompt_tool_loaded()
  */
 shrink_array::OmptSuspendCounter shrink_array::g_ompt_suspended{1}; // no callback exists in this build
 
-/// @brief No OMPT tool in this build: nothing to check (see manage_ompt.h).
+/// @brief No OMPT tool in this build: nothing to check (see phases.h).
 void shrink_array::check_ompt_tool_loaded() {}
 
 #endif

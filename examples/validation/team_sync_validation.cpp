@@ -301,6 +301,6 @@ int main(int argc, char** argv)
         check_teams(nt);
     }
     std::printf("team_sync_validation: %d checks, %d failures (default team %d)\n", g_checks, g_fails,
-                pmp::max_threads());
+                shrink_array::max_threads());
     return g_fails == 0 ? 0 : 1;
 }

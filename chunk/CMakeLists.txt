@@ -464,12 +464,16 @@ set(CHUNK_PUBLIC_HEADERS
         public/chunk/zero_one_value_array.h
         public/chunk/zero_any_array.h
         public/chunk/pattern_array.h
+        public/chunk/bit_array.h
         public/chunk/array_chunk_bits.h
         public/chunk/bit.h
+        public/chunk/range_ops.h
         public/chunk/array_chunk_range_ops.h
         public/chunk/vector_range_ops.h
         public/chunk/chunk_exchange.h
+        public/chunk/runtime.h
         public/chunk/param_chunk.h
+        public/chunk/phases.h
         public/chunk/manage_ompt.h
         public/chunk/tbb_adaptor.h
         public/chunk/chunk_size_advisor.h
@@ -486,7 +490,7 @@ set(CHUNK_SOURCES
         private/zero_any_array.cpp
         private/type_state.cpp
         private/type_state_registry.cpp
-        private/param_chunk.cpp
+        private/runtime.cpp
         private/chunk_std.cpp
         private/manage_ompt.cpp
         private/ring_log_debug.cpp
@@ -549,7 +553,7 @@ function(chunk_add_variant target_name variant_define size is_dyn)
     # The OpenMP runtime finds the tool with dlsym("ompt_start_tool") in the
     # EXECUTABLE: its symbols must be in the dynamic symbol table, which an
     # executable does not export by default. Without this the runtime silently
-    # runs without the tool (manage_ompt.h's warning says so at start-up).
+    # runs without the tool (phases.h's warning says so at start-up).
     target_link_options(${target_name} INTERFACE -rdynamic)
   endif()
 

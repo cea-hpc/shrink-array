@@ -61,7 +61,7 @@ The interface is close to a `std::vector`: `size()`, `resize()`, `at()`, constan
   lists for this value. An array that never declares a second value
   behaves like a `zero::Array` (compression to 0 only).
 - **Range operations** (`fill_range`, `copy_range`, `fill_range_mt` in
-  `array_chunk_range_ops.h`) write a range with one decision per chunk, and
+  `range_ops.h`) write a range with one decision per chunk, and
   `fill_range_mt` can be called by several threads at once (section 10).
 
 ---
@@ -602,5 +602,5 @@ CMake options related to benchmark performance:
 | compressor, deferred writes | `internal/compression_manager.h` |
 | geometry | `internal/chunk_size_policy.h` |
 | rechunk, decider | `internal/array_chunk_rechunk_inline.h`, `internal/array_chunk_rechunk_refill.h`, `chunk_size_advisor.h` |
-| range operations | `array_chunk_range_ops.h` |
+| range operations | `range_ops.h` |
 | validation harnesses | `examples/validation/` (`rechunk_validation`, `compress_roundtrip`, `deferred_path_validation`, `pool_accounting`, `fill_range_mt_validation`, …) |

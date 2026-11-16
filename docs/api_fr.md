@@ -14,11 +14,11 @@ Tous les noms sont dans l'espace de noms `shrink_array`, `build_config` et `chun
 
 | appel | en-tête | quand |
 |---|---|---|
-| `ParamChunk::init_indexes(true)` | `chunk/param_chunk.h` | facultatif, une fois, avant le premier tableau, pour choisir les blocs (`true` : gros blocs d'allocation) ; sans lui, le premier tableau lance `init_indexes(true)` |
-| `release_chunk_pools()` | `chunk/param_chunk.h` | facultatif, une fois, à la fin ; tant qu'un tableau vit encore (global ou `static`), il ne fait que vider les listes libres |
-| `destroy_block_chunk()` | `chunk/param_chunk.h` | facultatif, juste après `release_chunk_pools()` ; sans effet tant qu'un tableau vit |
-| `ParamChunk::force_compression()` | `chunk/param_chunk.h` | pour compresser maintenant tous les candidats en attente, pour une mesure ou un point de reprise |
-| `ParamChunk::chunk_stats()` | `chunk/param_chunk.h` | affiche les compteurs `CHUNK_STATS` (sans effet dans les autres builds) |
+| `Runtime::init(true)` | `chunk/runtime.h` | facultatif, une fois, avant le premier tableau, pour choisir les blocs (`true` : gros blocs d'allocation) ; sans lui, le premier tableau lance `init(true)` |
+| `release_chunk_pools()` | `chunk/runtime.h` | facultatif, une fois, à la fin ; tant qu'un tableau vit encore (global ou `static`), il ne fait que vider les listes libres |
+| `Runtime::shutdown()` | `chunk/runtime.h` | facultatif, juste après `release_chunk_pools()` ; sans effet tant qu'un tableau vit |
+| `Runtime::force_compression()` | `chunk/runtime.h` | pour compresser maintenant tous les candidats en attente, pour une mesure ou un point de reprise |
+| `Runtime::chunk_stats()` | `chunk/runtime.h` | affiche les compteurs `CHUNK_STATS` (sans effet dans les autres builds) |
 
 ## 2. Les conteneurs
 
@@ -27,7 +27,7 @@ Tous les noms sont dans l'espace de noms `shrink_array`, `build_config` et `chun
 | `zero::Array<T, IntType = int>` | `chunk/zero_array.h` | `T{}` |
 | `zero_one_value::Array<T, IntType = int>` | `chunk/zero_one_value_array.h` | `T{}` ou la seconde valeur du tableau |
 | `zero_any::Array<T, IntType = int>` | `chunk/zero_any_array.h` | `T{}` ou n'importe quelle valeur, chunk par chunk |
-| `ArrayChunkBits` | `chunk/array_chunk_bits.h` | `bool`, stocké sur un bit par élément (builds `zero_one_value`) |
+| `BitArray` | `chunk/bit_array.h` | `bool`, stocké sur un bit par élément (builds `zero_one_value`) |
 
 `IntType` est le type d'indice : `long` pour plus de 2³¹ éléments. La variante compilée est
 celle de la bibliothèque liée (`chunk::chunk_zero_any`, ...) ; `chunk_config::use_zero`,
@@ -53,10 +53,10 @@ il invalide les proxys du tableau.
 | itération | `begin()`, `end()`, `cbegin()`, `rbegin()`, `rend()` | itérateurs const à accès aléatoire, par valeur |
 | compression **(S)** | `compress()` | une passe de compression complète, immédiate (`zero::Array`, `zero_one_value::Array`, `zero_any::Array`) |
 | libérer les secondes valeurs **(S)** | `reclaim_second_values()` (statique) | libère les secondes valeurs qu'aucun chunk d'aucun `zero_any::Array<T>` n'utilise plus, pour que leurs identifiants soient réutilisés ; renvoie leur nombre (`zero_any::Array`) ; un point séquentiel sur **tous** les tableaux du type, voir plus bas |
-| statistiques | `stats()`, `get_nb_chunk_written()` | pourcentage et nombre de chunks qui détiennent un tampon (chaque tableau imprime aussi une ligne à sa destruction) |
+| statistiques | `stats()`, `written_chunk_count()` | pourcentage et nombre de chunks qui détiennent un tampon (chaque tableau imprime aussi une ligne à sa destruction) |
 | géométrie | `chunk_size()`, `rechunk_to(n)` **(S)** | `rechunk_to()` seulement dans les bibliothèques `_dyn` (sans effet dans les statiques) |
 
-`zero_one_value` seulement : `set_second_value(v)` **(S)**, avant les écritures, et `get_second_value()`.
+`zero_one_value` seulement : `set_second_value(v)` **(S)**, avant les écritures, et `second_value()`.
 
 **`reclaim_second_values()` : une précondition sur tout le type.** Les autres opérations **(S)**
 concernent un tableau ; celle-ci est statique et libère les secondes valeurs de tous les
@@ -112,7 +112,7 @@ l'exécution (inlinée de force). `-DCHUNK_LOOSE_ELEMENT_REF` désactive la vér
 
 ## 5. Opérations sur des plages
 
-`chunk/array_chunk_range_ops.h`. Une décision par chunk au lieu d'une par élément.
+`chunk/range_ops.h`. Une décision par chunk au lieu d'une par élément.
 
 | appel | contexte |
 |---|---|
@@ -141,12 +141,12 @@ interne.
 | `export_array(a)` | séquentiel : la taille, `chunk_size()`, la seconde valeur de zero_one_value, l'état de chaque chunk |
 | `import_array(a, state)` | séquentiel : `a` devient le tableau que décrit `state`, quoi qu'il contînt ; `false` (et `a` inchangé) à une autre taille de chunk ; les chunks au-delà de la taille de `state` (un `reserve()`) ne sont pas importés |
 
-Toutes les variantes et tous les types d'élément sauf `Bit` (ArrayChunkBits). À appeler après la
+Toutes les variantes et tous les types d'élément sauf `Bit` (BitArray). À appeler après la
 phase, comme `fill_range`.
 
 ## 6. Phases OpenMP
 
-`chunk/manage_ompt.h`. Nécessaires seulement quand `build_config::has_not_ompt` (libgomp de GCC) ; sans
+`chunk/phases.h`. Nécessaires seulement quand `build_config::needs_explicit_phases` (libgomp de GCC) ; sans
 effet sinon, et dans les builds séquentiels.
 
 | appel | où |
@@ -180,9 +180,9 @@ tous les backends.
 
 | appel | OpenMP | backend std | série |
 |---|---|---|---|
-| `pmp::max_threads()` | `omp_get_max_threads()` | la taille d'équipe de la prochaine région | 1 |
-| `pmp::team_size()` | `omp_get_num_threads()` | la taille de l'équipe la plus interne | 1 |
-| `pmp::thread_rank()` | `omp_get_thread_num()` | le rang dans l'équipe la plus interne (le rang enregistré hors équipe) | 0 |
+| `shrink_array::max_threads()` | `omp_get_max_threads()` | la taille d'équipe de la prochaine région | 1 |
+| `shrink_array::team_size()` | `omp_get_num_threads()` | la taille de l'équipe la plus interne | 1 |
+| `shrink_array::thread_rank()` | `omp_get_thread_num()` | le rang dans l'équipe la plus interne (le rang enregistré hors équipe) | 0 |
 
 ## 7. Taille de chunk adaptative (bibliothèques `_dyn`)
 
@@ -194,7 +194,7 @@ tous les backends.
 | `decider.print_rechunk_log()` | | la table des rechunks effectués |
 | `a.rechunk_to(n)` **(S)** | | rechunke un tableau à `n` éléments par chunk |
 | `a.set_chunk_size(n)` | | la géométrie d'un tableau VIDE, avant son premier `resize()` ; refusé (avertissement) sur un tableau qui a des chunks -- `rechunk_to()` déplace les éléments ; sans effet dans un build statique |
-| `set_active_chunk_size(n)` | `chunk/chunk_size_advisor.h` | la taille de chunk du processus, avant `ParamChunk::init_indexes()` : la première géométrie |
+| `set_active_chunk_size(n)` | `chunk/chunk_size_advisor.h` | la taille de chunk du processus, avant `Runtime::init()` : la première géométrie |
 | `set_thread_chunk_size(n)` | `chunk/chunk_size_advisor.h` | la taille vers laquelle sont aiguillées les prochaines allocations de chunk du thread appelant ; la bibliothèque la fixe avant chaque allocation. Pas la géométrie d'un nouveau tableau : les tableaux naissent à `set_active_chunk_size()`, `a.set_chunk_size(n)` fixe celle d'un tableau vide |
 | `sizeof(zero_any::Chunk<T>)` | `chunk/zero_any_array.h` | les métadonnées d'un chunk, pour les options du conseiller |
 
@@ -206,7 +206,7 @@ La politique, ses valeurs par défaut et les résultats mesurés : [rechunk_adap
 |---|---|
 | `build_config::use_openmp` | construit avec OpenMP |
 | `build_config::threaded` | la bibliothèque fait tourner des threads (`CHUNK_THREADS` `openmp` ou `std`) |
-| `build_config::has_ompt`, `build_config::has_not_ompt` | construit avec l'outil OMPT, ou non |
+| `build_config::has_ompt`, `build_config::needs_explicit_phases` | construit avec l'outil OMPT, ou non |
 | `build_config::chunk_dynamic` | géométrie dynamique (bibliothèque `_dyn`) |
 | `chunk_config::use_zero`, `chunk_config::use_zero_one_value`, `chunk_config::use_zero_any` | la variante |
 | `chunk_config::stats` | build `CHUNK_STATS` |
@@ -247,3 +247,23 @@ fatal) vers le sink ou `CHUNK_LOG_FILE`. Le contenu des canaux :
 dans tous les builds -- ceux de la bibliothèque standard quand elle les a, les mêmes signatures
 au-dessus de `std::format` sinon. `println("{} chunks", n)` vers stdout, `println(stderr, ...)`
 vers un flux. Les exemples affichent par eux.
+
+## Noms changés en 0.3
+
+Les anciens noms compilent encore, avec un avertissement d'obsolescence (les en-têtes : sans
+rien dire), et disparaissent à la version mineure suivante.
+
+| ancien nom | nom |
+|---|---|
+| `chunk/manage_ompt.h` | `chunk/phases.h` |
+| `chunk/param_chunk.h` | `chunk/runtime.h` |
+| `chunk/array_chunk_bits.h` | `chunk/bit_array.h` |
+| `chunk/array_chunk_range_ops.h` | `chunk/range_ops.h` |
+| `ParamChunk` | `Runtime` |
+| `ParamChunk::init_indexes()` | `Runtime::init()` |
+| `destroy_block_chunk()` | `Runtime::shutdown()` |
+| `build_config::has_not_ompt` | `build_config::needs_explicit_phases` |
+| `ArrayChunkBits<>` | `BitArray<>` |
+| `get_second_value()` | `second_value()` |
+| `get_nb_chunk_written()` | `written_chunk_count()` |
+| `pmp::max_threads()`, `pmp::team_size()`, `pmp::thread_rank()` | `max_threads()`, `team_size()`, `thread_rank()` |

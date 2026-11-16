@@ -86,8 +86,8 @@ flowchart TB
     end
     subgraph per_process["par processus"]
         all["TypeStateRegistry<br/>registre de tous les managers"]
-        par["ParamChunk<br/>démarrage, statistiques"]
-        phase["points de phase (manage_ompt.h)<br/>OMPT ou appels explicites"]
+        par["Runtime<br/>démarrage, statistiques"]
+        phase["points de phase (phases.h)<br/>OMPT ou appels explicites"]
         pmp["couche pmp<br/>backend openmp, std ou serial"]
         fa["fast_allocators<br/>arènes, dalles par rang et par taille"]
     end
@@ -105,14 +105,14 @@ flowchart TB
 
 | partie | classes principales | fichiers | portée |
 |---|---|---|---|
-| les tableaux des variantes | `zero::Array`, `zero_one_value::Array`, `zero_any::Array`, `pattern::Array`, `ArrayChunkBits` | `chunk/zero_array.h`, `chunk/zero_one_value_array.h`, `chunk/zero_any_array.h`, `chunk/pattern_array.h`, `chunk/array_chunk_bits.h` | un objet par tableau |
+| les tableaux des variantes | `zero::Array`, `zero_one_value::Array`, `zero_any::Array`, `pattern::Array`, `BitArray` | `chunk/zero_array.h`, `chunk/zero_one_value_array.h`, `chunk/zero_any_array.h`, `chunk/pattern_array.h`, `chunk/bit_array.h` | un objet par tableau |
 | le tableau commun | `ArrayChunkBase`, `ArrayChunkCore`, `SecondValueArrayBase`, `RechunkSupport` | `internal/array_chunk_base.h`, `internal/array_chunk_core.h`, `internal/second_value_array_base.h`, `internal/array_chunk_rechunk.h` | bases de chaque tableau |
 | chunks | `zero::Chunk`, `zero_one_value::Chunk`, `zero_any::Chunk`, `pattern::Chunk`, `ChunkBase` | `chunk/internal/zero_chunk.h`, `chunk/internal/zero_one_value_chunk.h`, `chunk/internal/zero_any_chunk.h`, `chunk/internal/pattern_chunk.h`, `internal/chunk_base.h` | un élément de la liste de chunks du tableau |
 | proxies, moteur d'écriture | `ProxyBase`, `WriteCompressSyncPolicy`, les `Proxy` des variantes | `internal/proxy_base.h`, `internal/write_compress_sync_policy.h` | un temporaire par écriture |
 | état par type | `TypeState` (façade), `ReusePools`, `CompressCandidates`, `CompressionManager` | `internal/type_state.h`, `internal/reuse_pools.h`, `internal/compress_candidates.h`, `internal/compression_manager.h` | un par (variante, type d'élément), statique |
 | constantes partagées | `TabCstVal2Holder`, `GlobalVecHolder`, `MotifRegion` | `internal/tab_cst_val2_holder.h`, `internal/motif_region.h` | une par type d'élément |
-| registre du processus, démarrage | `TypeStateRegistry`, `ParamChunk` | `internal/type_state_registry_decl.h`, `chunk/param_chunk.h` | un par processus |
-| phases | `begin_parallel_phase`, `finalize_parallel_phase`, `parallel_phase` | `chunk/manage_ompt.h`, `chunk/private/manage_ompt.cpp` | une phase à la fois |
+| registre du processus, démarrage | `TypeStateRegistry`, `Runtime` | `internal/type_state_registry_decl.h`, `chunk/runtime.h` | un par processus |
+| phases | `begin_parallel_phase`, `finalize_parallel_phase`, `parallel_phase` | `chunk/phases.h`, `chunk/private/manage_ompt.cpp` | une phase à la fois |
 | backend, rangs | `pmp::Team`, `pmp::parallel_for` | `chunk/internal/PMP_CHUNK.h`, `fast_allocators/internal/pmp_loops.h`, `fast_allocators/internal/pmp_std.h` | tout le processus |
 | allocation | arènes de dalles, allocateurs par rang | `fast_allocators/slab_arena.h`, `fast_allocators/tc_allocator.h` | tout le processus |
 | géométrie dynamique | `ChunkSizeAdvisor`, `RechunkDecider`, `RechunkPolicy` | `chunk/chunk_size_advisor.h`, `chunk/rechunk_decider.h`, `internal/chunk_size_policy.h` | par tableau, piloté par le programme |
@@ -183,7 +183,7 @@ tourne :
 | allocateur | fast allocators (par défaut) ou `CHUNK_STD_ALLOC` | l'allocateur standard est celui que comprend AddressSanitizer |
 | vérifications | les builds de vérification (`any_check`, `CHUNK_DO_CHECK`) | les contrôles d'invariants et les assertions de protocole coûtent à chaque accès |
 
-`pattern::Array` et `ArrayChunkBits` ne sont pas des bibliothèques à part : ils viennent
+`pattern::Array` et `BitArray` ne sont pas des bibliothèques à part : ils viennent
 respectivement avec les bibliothèques `zero_any` et `zero_one_value`. Les fichiers CMake
 génèrent les déclinaisons par taille et par variante et gardent les noms par défaut en alias ;
 [variables_environnement_fr.md](variables_environnement_fr.md) liste les options.
@@ -271,7 +271,7 @@ de chunks ; sa passe ne prend pas de poignée de main avec les écrivains, elle 
 sur les candidats de ce tableau, les autres étant mis de côté le temps de la passe
 (`internal/own_candidates.h`).
 
-Le **contrat de phase** (`chunk/manage_ompt.h`) : chaque thread qui écrit appelle
+Le **contrat de phase** (`chunk/phases.h`) : chaque thread qui écrit appelle
 `begin_parallel_phase()` avant sa première écriture (il met son rang en cache), et un thread
 appelle `finalize_parallel_phase()` une fois tous les écrivains arrêtés : il vide la file
 d'écritures différées de chaque rang et lance les passes restantes. Dans un build OMPT, c'est le
@@ -425,8 +425,8 @@ les étapes et le contrat de phase.
   chaque vidage et au démontage. Tout type qui satisfait `ArrayChunkElement` (trivialement
   copiable, comparable par égalité, constructible par défaut) convient, y compris les agrégats du
   programme.
-- **Démarrage** : `ParamChunk::init_indexes()` est facultatif ; le premier tableau l'appelle.
-- **Arrêt** : `release_chunk_pools()` et `destroy_block_chunk()` rendent les pools ; les arènes et
+- **Démarrage** : `Runtime::init()` est facultatif ; le premier tableau l'appelle.
+- **Arrêt** : `release_chunk_pools()` et `Runtime::shutdown()` rendent les pools ; les arènes et
   les singletons qui servent au démontage sont immortels (`LazyImmortal`), pour que l'ordre de
   destruction des objets statiques ne puisse pas libérer une mémoire qu'un destructeur ultérieur
   utilise encore.
@@ -439,7 +439,7 @@ les étapes et le contrat de phase.
 | besoin | mécanisme |
 |---|---|
 | avertissements et erreurs | une ligne chacun sur stderr ; `CHUNK_LOG` monte un canal (`rechunk`, `memory`, `advisor`, `compress`, `ompt`), `CHUNK_LOG_FILE` redirige, `shrink_array::logging::set_sink()` les confie au programme |
-| compteurs | le build `CHUNK_STATS` et `ParamChunk::chunk_stats()` : passes, abandons, écritures différées, réemploi, octets mis de côté |
+| compteurs | le build `CHUNK_STATS` et `Runtime::chunk_stats()` : passes, abandons, écritures différées, réemploi, octets mis de côté |
 | mémoire | mesurée exactement, pas par `VmRSS` seul ([mesures_performance_fr.md](mesures_performance_fr.md)) |
 | autopsie d'une course | le journal circulaire des builds de débogage (`chunk/internal/ring_log_debug.h`) |
 | invariants | les builds de vérification, qui s'arrêtent avec un message nommant la règle violée |
@@ -458,7 +458,7 @@ les étapes et le contrat de phase.
 | registre des secondes valeurs en segments | un vecteur redimensionnable | un redimensionnement invalide des pointeurs que d'autres threads tiennent |
 | état par type créé au premier usage | une liste enregistrée des types d'éléments | les types du programme doivent fonctionner sans toucher à la bibliothèque |
 | CRTP et politiques | des classes chunk et proxy virtuelles | un appel virtuel par accès, et pas d'inlining du chemin d'écriture |
-| `ArrayChunkBits` comme type à part | spécialiser `Array<bool>` | l'erreur de `std::vector<bool>` : une spécialisation qui change le comportement derrière le type |
+| `BitArray` comme type à part | spécialiser `Array<bool>` | l'erreur de `std::vector<bool>` : une spécialisation qui change le comportement derrière le type |
 | `pattern` membre de la famille `zero_any`, par les traits | une copie des fichiers de `zero_any` | un seul moteur d'écriture à maintenir, le code de `zero_any` inchangé |
 | backends derrière `pmp`, TBB par un adaptateur | OpenMP obligatoire, ou un backend TBB interne | OpenMP ne doit pas être imposé, et la bibliothèque ne doit pas dépendre de TBB |
 | réglages du décideur dans `RechunkPolicy` | des variables d'environnement | c'est le programme, pas l'environnement, qui possède sa politique |

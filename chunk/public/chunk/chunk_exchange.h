@@ -40,7 +40,7 @@
  *          its trailing elements first.
  *
  *          Every variant -- zero, zero_one_value, zero_any, pattern -- and
- *          every element type but Bit (ArrayChunkBits packs 64 elements per
+ *          every element type but Bit (BitArray packs 64 elements per
  *          word: its buffer is not S elements of T). bool: its one second value
  *          is true.
  *
@@ -57,7 +57,7 @@
 #include <utility>     // std::move (import_array)
 #include <vector>      // std::vector (ArrayState's chunks)
 
-#include "chunk/array_chunk_range_ops.h"      // copy_range, fill_range, assume_drained, internal::is_v*_v
+#include "chunk/range_ops.h"                  // copy_range, fill_range, assume_drained, internal::is_v*_v
 #include "chunk/bit.h"                        // is_packed_bit_v
 #include "chunk/internal/chunk_traits.h"      // is_zero_any_family_v, has_motif_state_v
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size
@@ -178,7 +178,7 @@ template <ExchangeableArray Arr>
             const int ind = arr.get_ind_second_value();
             if (ind >= 0 && chunk.is_cst_val2(ind))
             {
-                return {ChunkKind::second_value, static_cast<T>(arr.get_second_value()), nullptr};
+                return {ChunkKind::second_value, static_cast<T>(arr.second_value()), nullptr};
             }
         }
     }
@@ -291,7 +291,7 @@ template <ExchangeableArray Arr>
         else
         {
             const int ind = arr.get_ind_second_value();
-            if (ind >= 0 && same_value(state.value, static_cast<T>(arr.get_second_value())))
+            if (ind >= 0 && same_value(state.value, static_cast<T>(arr.second_value())))
             {
                 chunk.init_values_cst_val(1, ind);
                 chunk.reset_nb_val_eq_second_value();
@@ -319,7 +319,7 @@ template <ExchangeableArray Arr>
     if constexpr (internal::is_v2_v<Arr> && !std::is_same_v<T, bool>)
     {
         state.has_second_value = arr.get_ind_second_value() >= 0;
-        state.second_value     = state.has_second_value ? static_cast<T>(arr.get_second_value()) : T{};
+        state.second_value     = state.has_second_value ? static_cast<T>(arr.second_value()) : T{};
     }
     state.chunks.reserve(static_cast<std::size_t>(arr.chunk_count()));
     for (int c = 0; c < arr.chunk_count(); ++c)

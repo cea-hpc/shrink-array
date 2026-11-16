@@ -62,15 +62,15 @@
 #include <utility>     // std::as_const
 #include <vector>      // std::vector
 
-#include "chunk/internal/chunk_traits.h"      // forward decls + default IntType = int
-#include "chunk/zero_array.h"                 // zero::Array
-#include "chunk/zero_one_value_array.h"       // zero_one_value::Array
-#include "chunk/zero_any_array.h"             // zero_any::Array
-#include "chunk/param_chunk.h"                // ParamChunk::register_chunk_size, init_indexes
-#include "chunk/internal/zero_chunk.h"        // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"                     // chunk_config::use_zero*, build_config::chunk_dynamic / has_not_ompt
-#include "chunk/internal/PMP_CHUNK.h"         // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"                // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
+#include "chunk/zero_array.h"            // zero::Array
+#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_any_array.h"        // zero_any::Array
+#include "chunk/runtime.h"               // Runtime::register_chunk_size, init
+#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
+#include "chunk/config.h"                // chunk_config::use_zero*, build_config::chunk_dynamic / needs_explicit_phases
+#include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
+#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
 #include "chunk/print.h"                      // shrink_array::println
 #include "chunk/internal/env_parse.h"         // arg_number (checked, not atoi)
@@ -112,7 +112,7 @@ constexpr const char* variant_name()
 
 void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
@@ -120,7 +120,7 @@ void begin_phase()
 
 void end_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -462,7 +462,7 @@ int check_mixed()
         // caller moves it, once, before the next writes.
         set_active_chunk_size(tgt);
         set_thread_chunk_size(tgt);
-        ParamChunk::register_chunk_size(tgt);
+        Runtime::register_chunk_size(tgt);
 
         for (const unsigned int got : {int_arr.chunk_size(), long_arr.chunk_size(), int_arr2.chunk_size()})
         {
@@ -496,7 +496,7 @@ int check_mixed()
 
 int run(int argc, char** argv)
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     // --size N (CHUNK_DYNAMIC): start at geometry N instead of the build's.
     // `mixed` re-chunks to 2N and leaves it active for `past-int-max`: from a
@@ -513,7 +513,7 @@ int run(int argc, char** argv)
         }
         set_active_chunk_size(size);
         set_thread_chunk_size(size);
-        ParamChunk::register_chunk_size(size);
+        Runtime::register_chunk_size(size);
     }
 
     println("=== index64_validation [variant = {}]  threads={}  chunk_size={} ===", variant_name(),
@@ -525,7 +525,7 @@ int run(int argc, char** argv)
     fails += check_int_top_rechunk();
 
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
 
     println("\n[{}] {}", variant_name(), fails ? "=== INDEX64 FAILED ===" : "=== INDEX64 OK ===");
     return fails ? 1 : 0;

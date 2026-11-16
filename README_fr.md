@@ -60,14 +60,14 @@ temps d'accès, voir [En chiffres](#en-chiffres).*
 ```cpp
 #include <cstdio>
 #include "chunk/zero_any_array.h"   // shrink_array::zero_any::Array
-#include "chunk/manage_ompt.h"     // parallel_phase
-#include "chunk/param_chunk.h"     // ParamChunk::init_indexes, release_chunk_pools, destroy_block_chunk
+#include "chunk/phases.h"     // parallel_phase
+#include "chunk/runtime.h"     // Runtime::init, release_chunk_pools, Runtime::shutdown
 
 namespace sa = shrink_array;
 
 int main()
 {
-    sa::ParamChunk::init_indexes(true);       // facultatif : le premier tableau le fait sinon
+    sa::Runtime::init(true);       // facultatif : le premier tableau le fait sinon
     {
         const int                n = 1 << 24;
         sa::zero_any::Array<double> a(n);        // tous les éléments à 0.0, aucun tampon encore
@@ -84,7 +84,7 @@ int main()
         std::printf("chunks holding a buffer: %.1f %%\n", a.stats());
     }                                         // le tableau rend ses chunks ici
     sa::release_chunk_pools();                // facultatif : rendre les pools avant la fin
-    sa::destroy_block_chunk();
+    sa::Runtime::shutdown();
 }
 ```
 

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Two executables from the same sources (config.h):
 #   multi-mat           the manual version, every compiler: the program makes
-#                       the phase calls of chunk/manage_ompt.h itself (four
+#                       the phase calls of chunk/phases.h itself (four
 #                       one-line wrappers) and compresses its field arrays by
 #                       explicit compress() calls every freq_compress
 #                       iterations. No OMPT tool in this binary.

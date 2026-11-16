@@ -43,11 +43,11 @@
 #include "chunk/zero_array.h"            // zero::Array
 #include "chunk/zero_one_value_array.h"  // zero_one_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
-#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
 #include "chunk/config.h"                // chunk_config::use_zero*
 #include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"           // parallel_phase
+#include "chunk/phases.h"                // parallel_phase
 #include "chunk/internal/env_parse.h"    // shrink_array::arg_number
 #include "chunk/print.h"                 // shrink_array::println
 
@@ -266,7 +266,7 @@ int run_type(const char* type, long count)
 
 int run(int argc, char** argv)
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
     const long count = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 20, "N") : (1L << 20);
 
     println("=== bulk_write_team_validation [variant = {}]  threads={} ===", variant_name(), CHUNK_PMP_MAX_THREADS);
@@ -276,7 +276,7 @@ int run(int argc, char** argv)
     fails += run_type<int>("int", count);
 
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
 
     println("\n[{}] {}", variant_name(), fails ? "=== BULK WRITES FAILED ===" : "=== BULK WRITES OK ===");
     return fails ? 1 : 0;

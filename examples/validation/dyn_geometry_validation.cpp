@@ -32,7 +32,7 @@
 //     - set_active_chunk_size(n) moves the array-side geometry, so
 //       arr.chunk_size() reports n and operator[] splits indices at n;
 //     - the buffer comes from the per-size allocator pool, which only knows the
-//       sizes declared to it through ParamChunk::register_chunk_size().
+//       sizes declared to it through Runtime::register_chunk_size().
 //   Declare one without the other and the two disagree silently: chunks claim n
 //   elements while holding a buffer sized for a different geometry, so every
 //   read past that width returns a neighbouring chunk's data. Nothing asserts,
@@ -58,7 +58,7 @@
 #include "chunk/zero_array.h"            // zero::Array
 #include "chunk/zero_one_value_array.h"  // zero_one_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
-#include "chunk/param_chunk.h"           // ParamChunk::register_chunk_size, init_indexes
+#include "chunk/runtime.h"               // Runtime::register_chunk_size, init
 #include "chunk/internal/chunk_size_policy.h" // cst_buffer_size, set_active_chunk_size, set_thread_chunk_size, chunk_size_error
 #include "chunk/config.h"                     // chunk_config::use_zero*
 #include "chunk/internal/env_parse.h"         // env_number / arg_number (checked, not atoi)
@@ -67,7 +67,7 @@
 
 using namespace shrink_array;
 
-#include "chunk/internal/zero_chunk.h" // release_chunk_pools, destroy_block_chunk
+#include "chunk/internal/zero_chunk.h" // release_chunk_pools, Runtime::shutdown
 #include "validation_harness.h"        // self_command; run() is called by validation_driver.cpp
 
 namespace validation::dyn_geometry_validation
@@ -134,7 +134,7 @@ static int round_trip_at(unsigned int csz, long count)
     // side (set_active_chunk_size) and the allocator side (register_chunk_size).
     set_active_chunk_size(csz);
     set_thread_chunk_size(csz);
-    ParamChunk::register_chunk_size(csz);
+    Runtime::register_chunk_size(csz);
 
     Array<double> arr(count);
     maybe_set_second_value(arr, 2.0);
@@ -237,7 +237,7 @@ static int refused_sizes()
 
     set_active_chunk_size(64);
     set_thread_chunk_size(64);
-    ParamChunk::register_chunk_size(64);
+    Runtime::register_chunk_size(64);
     {
         Array<double> arr(10000);
         arr[17]            = 1.5;
@@ -264,7 +264,7 @@ static int run_body(int argc, char** argv)
 {
     const long count = argc > 1 ? shrink_array::arg_number<long>(argv[1], 200000L, "N") : 200000L;
 
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     println("=== dyn_geometry_validation [variant = {}]  N={} ===", variant_name(), count);
 
@@ -292,7 +292,7 @@ int run(int argc, char** argv)
     // one in the std-alloc builds (each buffer is a real malloc there).
     const int rc = run_body(argc, argv);
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
     return rc;
 }
 

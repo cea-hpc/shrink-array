@@ -279,7 +279,7 @@ endif()
 
 # No chunk2bits targets: every shrink_bench_<backend>_zero_one_value_* run carries tab_bool
 # (zero_one_value::Array<bool>, one byte per bool) AND its twin tab_bool_bits
-# (ArrayChunkBits, 8 per byte) on the same workload -- see BenchBoolBitsArray
+# (BitArray, 8 per byte) on the same workload -- see BenchBoolBitsArray
 # (bench_array.h). The zero / zero_any builds give the twin their own
 # Array<bool>.
 

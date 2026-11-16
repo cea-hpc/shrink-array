@@ -138,14 +138,14 @@ installation que dans l'arbre des sources.
 #include <utility>                 // std::as_const
 
 #include "chunk/zero_any_array.h"   // shrink_array::zero_any::Array
-#include "chunk/manage_ompt.h"     // parallel_phase
-#include "chunk/param_chunk.h"     // ParamChunk::init_indexes, release_chunk_pools, destroy_block_chunk
+#include "chunk/phases.h"     // parallel_phase
+#include "chunk/runtime.h"     // Runtime::init, release_chunk_pools, Runtime::shutdown
 
 namespace sa = shrink_array;
 
 int main()
 {
-    sa::ParamChunk::init_indexes(true);          // (1) une fois, avant le premier tableau
+    sa::Runtime::init(true);          // (1) une fois, avant le premier tableau
 
     {
         const int n = 1 << 24;                   // 16 M doubles : 128 Mio en std::vector
@@ -169,13 +169,13 @@ int main()
     }                                            // (6) le tableau rend ses chunks
 
     sa::release_chunk_pools();                   // (7) arrêter la bibliothèque
-    sa::destroy_block_chunk();
+    sa::Runtime::shutdown();
 }
 ```
 
-1. **`init_indexes(true)`**, une fois, avant le premier tableau : prépare les blocs
+1. **`init(true)`**, une fois, avant le premier tableau : prépare les blocs
    d'allocation (`true` : gros blocs, le choix habituel). Facultatif : sans lui, le premier
-   tableau du programme lance lui-même `init_indexes(true)`. Les types d'éléments ne se
+   tableau du programme lance lui-même `init(true)`. Les types d'éléments ne se
    déclarent pas : chacun est enregistré à la construction du premier tableau de ce type.
 2. **Un tableau neuf** lit `T{}` partout et n'alloue aucun tampon.
 3. **`parallel_phase()`** ouvre une région parallèle et exécute la lambda sur chaque thread.
@@ -269,7 +269,7 @@ s'arrête, dans tous les builds, sur un `begin_parallel_phase()` sans
 `finalize_parallel_phase()` depuis la région précédente ; les builds de contrôle (Debug,
 `CHECK_OPTIM`) s'arrêtent aussi sur une écriture différée par un thread qui n'a pas appelé
 `begin_parallel_phase()`. Placer ces appels sous
-`if constexpr (sa::build_config::has_not_ompt)`, comme ci-dessus, permet de garder un seul source
+`if constexpr (sa::build_config::needs_explicit_phases)`, comme ci-dessus, permet de garder un seul source
 pour les deux runtimes.
 
 `shrink_array::parallel_phase()` écrit la région et les deux appels à votre place, et les omet
@@ -347,9 +347,9 @@ shrink-array, par exemple -- partagent tout cela, ce qui impose quelques règles
 - **Le premier tableau fixe la capacité en threads** (ci-dessus) : au moins 256 threads, ou les
   cœurs, ou `OMP_NUM_THREADS` ; un composant qui ouvre des équipes plus grandes demande
   `CHUNK_THREAD_CAPACITY` fixé avant le premier tableau.
-- **Des appels à l'échelle du processus.** `ParamChunk::init_indexes()` fixe la taille des blocs
+- **Des appels à l'échelle du processus.** `Runtime::init()` fixe la taille des blocs
   d'allocation de tout le processus : un appel, au début, par le programme (un appel ultérieur
-  laisse intacts les tableaux déjà construits). `release_chunk_pools()` et `destroy_block_chunk()`
+  laisse intacts les tableaux déjà construits). `release_chunk_pools()` et `Runtime::shutdown()`
   vident les listes libres de tout le monde (un tableau encore vivant garde ce qu'il lui faut) :
   une fois, à la fin du programme, ou pas du tout. `reclaim_second_values()` couvre tous les
   tableaux d'un type ; `CHUNK_LOG` et `logging::set_sink()` sont des réglages communs à tous.

@@ -140,6 +140,18 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- Public names, before the interface is published more widely. `ParamChunk` is `Runtime`
+  (`chunk/runtime.h`), `ParamChunk::init_indexes()` is `Runtime::init()` and
+  `destroy_block_chunk()` is `Runtime::shutdown()`: the façade's name said neither what it is
+  nor what the two calls do. The phase calls are in `chunk/phases.h` (`chunk/manage_ompt.h`
+  named the one build that does not need them) and `build_config::has_not_ompt` is
+  `build_config::needs_explicit_phases`. `ArrayChunkBits` is `BitArray` (`chunk/bit_array.h`);
+  `chunk/array_chunk_range_ops.h` is `chunk/range_ops.h`. `get_second_value()` is
+  `second_value()` and `get_nb_chunk_written()` is `written_chunk_count()`, as `size()` and
+  `chunk_size()` have no `get_`. `max_threads()`, `team_size()` and `thread_rank()` are
+  reachable from `shrink_array::` (they were `shrink_array::pmp::` only). Every former name
+  still compiles: the four headers include the new ones, the others are `[[deprecated]]` and
+  forward. They go at the next minor version; `docs/api.md` has the table.
 - `AllTypeChunk` is now `TypeStateRegistry`, and its two policies
   `TypeStateRegistryParallelInterface` and `TypeStateRegistryDynInterface`: the class is the
   process-wide registry of the per-type managers (`TypeState`), not a chunk. Its files

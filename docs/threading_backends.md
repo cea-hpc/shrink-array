@@ -23,9 +23,9 @@ calls, OMPT named in 23 files. Five different uses:
 |---|---|---|---|
 | **A** | runtime queries: rank, thread count, in-region, level | `PMP_CHUNK.h` (`CHUNK_PMP_THREAD_RANK`, `CHUNK_PMP_MAX_THREADS`, `CHUNK_PMP_IN_PARALLEL_REGION`, ...), `fast_allocators/internal/pmp_alloc.h`, `slab_arena.h` (`omp_get_max_threads`, `omp_in_parallel`), `manage_ompt.cpp` | the same macros, routed to the backend; rank of a non-OpenMP thread: dense, `thread_local`, assigned on first use |
 | **B** | one-shot data-parallel loops at a serial point (`parallel for` [`reduction`] [`if`]) | `array_chunk_base_inline.h:110`, `zero_array_inline.h:117,524`, `zero_one_value_array_inline.h:450,487,535`, `zero_any_array_inline.h:150,209`, `second_value_array_base.h:175`, `parallel_storage_init.h:143,173`, `slab_arena.h:529,822` (dynamic) | `pmp::parallel_for(n, schedule, f)`, `pmp::parallel_reduce(n, init, f, op)` |
-| **C** | team regions with worksharing and synchronisation (`parallel` + `for` / `single` / `masked` / `barrier` / `nowait`) | rechunk slices (`array_chunk_rechunk_refill_inline.h`, `Refill::run_slice` / `slice_boundary`), compression passes (`zero_array_inline.h:216-357`, `zero_one_value_array_inline.h:705-1068`, `zero_any_array_inline.h:428-619`), team drain (`reuse_pools_inline.h`, `drain_reuse_list_for_size_team`; `type_state_policies_inline.h`, the deferred flush), advisor (`chunk_size_advisor.h:392-722`), `type_state_registry.cpp:305,520-545`, `second_value_array_base.h:96`, `chunk*_std_inline.h`, `zero_array.h:301`, `manage_ompt.h:171-176` | `pmp::team(nthreads, [&](pmp::Team& t) { t.for_static(...); t.barrier(); t.single(...); })` |
+| **C** | team regions with worksharing and synchronisation (`parallel` + `for` / `single` / `masked` / `barrier` / `nowait`) | rechunk slices (`array_chunk_rechunk_refill_inline.h`, `Refill::run_slice` / `slice_boundary`), compression passes (`zero_array_inline.h:216-357`, `zero_one_value_array_inline.h:705-1068`, `zero_any_array_inline.h:428-619`), team drain (`reuse_pools_inline.h`, `drain_reuse_list_for_size_team`; `type_state_policies_inline.h`, the deferred flush), advisor (`chunk_size_advisor.h:392-722`), `type_state_registry.cpp:305,520-545`, `second_value_array_base.h:96`, `chunk*_std_inline.h`, `zero_array.h:301`, `phases.h:171-176` | `pmp::team(nthreads, [&](pmp::Team& t) { t.for_static(...); t.barrier(); t.single(...); })` |
 | **D** | mutual exclusion | `#pragma omp critical` (`zero_array_inline.h:357`, `zero_one_value_array_inline.h:1009,1026,1068`, `zero_any_array_inline.h:588,619`, `static_const_array_inline.h:83,145,154` named `fast_alloc_ladder`), `#pragma omp atomic` (`chunk_size_advisor.h:463,722`) | `std::mutex` / `std::atomic` — no backend involved |
-| **E** | phase boundaries of the **application**: OMPT `parallel_begin` / `parallel_end` callbacks drive the deferred-op flush and the compression pass | `manage_ompt.cpp`, `manage_ompt.h`, `type_state_registry.cpp:156` and `manage_ompt.cpp:295` (`#pragma omp barrier` run by **every** thread of the application's team) | the phase contract below; OMPT becomes its automatic implementation |
+| **E** | phase boundaries of the **application**: OMPT `parallel_begin` / `parallel_end` callbacks drive the deferred-op flush and the compression pass | `manage_ompt.cpp`, `phases.h`, `type_state_registry.cpp:156` and `manage_ompt.cpp:295` (`#pragma omp barrier` run by **every** thread of the application's team) | the phase contract below; OMPT becomes its automatic implementation |
 
 E is the only part with no mechanical replacement: no other runtime tells a
 library that the application's parallel section ended (TBB's
@@ -62,7 +62,7 @@ split end (`finalize_parallel_phase_only_flush()` in the region,
 `finalize_parallel_phase_after_flush()` after it) and `finalize_barrier_phase()`
 -- need a barrier of the application's team: OpenMP only. OMPT is the automatic
 caller of the contract for OpenMP applications; `parallel_phase()` the manual
-one, on a team of the backend. `manage_ompt.h` states the contract.
+one, on a team of the backend. `phases.h` states the contract.
 
 ## 3. Steps
 
@@ -88,7 +88,7 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    callbacks fire as before), `num_threads`, `schedule` (`static_blocks`,
    `static_chunks(c)`, `dynamic(c)`). The loops that had no `schedule` clause
    get `schedule(static)`, the libgomp and libomp default. Converted: the
-   exit-census counts of the three variants, `get_nb_chunk_written`, the
+   exit-census counts of the three variants, `written_chunk_count`, the
    `zero_any` size-prediction scan, `for_each_chunk`, `for_each_chunk_in`,
    `construct_range`, the two `madvise` sweeps of `slab_arena.h`.
 4. **C**: `pmp::team` and `pmp::Team` (`for_static`, `for_dynamic`, `barrier`,
@@ -118,7 +118,7 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    the same shares; std and serial: the auto-vectoriser's loop) on all
    three -- what the bench's phases need to be written against `pmp::Team`;
    `team_loops_validation` checks the shares on every backend. Left after step 4, for step 6 (use E): the
-   regions of `parallel_phase` (`manage_ompt.h`) and the `omp barrier` of
+   regions of `parallel_phase` (`phases.h`) and the `omp barrier` of
    `type_state_registry.cpp`'s phase end, run by the application's team.
 5. **A**: the queries through the backend; the `thread_local` rank registry for
    non-OpenMP threads (dense, bounded by the configured maximum, reused when a
@@ -152,7 +152,7 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    serial allocators), which become `FAST_ALLOC_PMP_THREADED`.
 6. **E**: the phase contract (section 2) written down and implemented; OMPT
    becomes one way of calling it. *Done*: the contract in section 2 and in
-   `manage_ompt.h`; `parallel_phase()` opens its region with `pmp::team`
+   `phases.h`; `parallel_phase()` opens its region with `pmp::team`
    (`num_threads` 0: the backend's default, OpenMP `omp_get_max_threads()`,
    where it used a region with no `num_threads` clause), and the barrier of
    `finalize_parallel_phase_only_flush()` is `pmp::current_team().barrier()`.
@@ -201,7 +201,7 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    7b the application drives the arrays from ONE thread; the library's own
    teams run on the std backend. Application threads are 7c.
    *7c done*: the application's threads under the std backend.
-   - **Rank**: `pmp::thread_rank()` (`pmp_runtime.h`) is the rank in the
+   - **Rank**: `shrink_array::thread_rank()` (`pmp_runtime.h`) is the rank in the
      innermost active team of the std backend when the thread is in one
      (`std_backend::ThreadState::active_rank`, kept by `FrameGuard`), its
      `registered_rank()` otherwise -- the application's threads, and the

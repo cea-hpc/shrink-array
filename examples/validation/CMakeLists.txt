@@ -14,7 +14,7 @@
 #   dyn_geometry_validation an array reads back what was written at EVERY
 #                           registered runtime chunk size -- the pairing between
 #                           set_active_chunk_size (array side) and
-#                           ParamChunk::register_chunk_size (allocator side),
+#                           Runtime::register_chunk_size (allocator side),
 #                           which fails silently when only one of the two is
 #                           done. No rechunk_to on purpose: when this one fails
 #                           the cause is in the geometry/allocation pairing and
@@ -363,7 +363,7 @@ foreach(_geom IN LISTS _rt_geometries)
     if (OMP)
       list(APPEND _group chunk_array_new_validation)
     endif()
-    # bits_container_validation: ArrayChunkBits (zero_one_value::Array<Bit>) against
+    # bits_container_validation: BitArray (zero_one_value::Array<Bit>) against
     # std::vector<bool>. zero_one_value libraries only, every geometry.
     if (_vname STREQUAL "zero_one_value")
       list(APPEND _group bits_container_validation)
@@ -648,7 +648,7 @@ if (TARGET chunk_zero_and_zero_one_value_${CHUNK_DEFAULT_SIZE})
   endforeach()
 endif()
 
-# --- bit_words_validation: the bit-packed storage kernel of ArrayChunkBits
+# --- bit_words_validation: the bit-packed storage kernel of BitArray
 # alone (header only, no variant, no library): get/set against
 # std::vector<bool>, the word scans, and concurrent writes to neighbouring
 # bits of one word through the atomic read-modify-write.

@@ -140,7 +140,7 @@ mesure à données constantes et la possibilité de revenir en arrière.
 Chaque variante libère chaque ancien chunk dès qu'il est recopié (`release_st()` : le
 tampon retourne à la réserve, le chunk à la première constante ; un chunk à une seconde
 constante pointe sur un tableau partagé et n'est pas touché) et, avec l'allocateur rapide
-sous threads, reconstruit **par tranches** (16 ; `ArrayChunkBits`, compacté bit à bit,
+sous threads, reconstruit **par tranches** (16 ; `BitArray`, compacté bit à bit,
 garde une seule passe). Entre deux tranches, les réserves de l'ancienne
 taille sont vidées et les slabs vidés rendus au système, y compris dans la **réserve
 partagée** quand l'ancien stockage s'y trouve : sans cela, la mémoire de l'ancien stockage
@@ -253,7 +253,7 @@ se limite aux reconstructions.
   géométrie de naissance, sauf si `--advise_bool` les confie au décideur, pour que les deux
   conteneurs de booléens soient comparés tels quels. Le rechunk de `Array<bool>` est vérifié
   par `rechunk_validation` (`bool-grow`, `bool-shrink`, `bool-uneven`, `bool-sliced`, toutes
-  variantes), celui d'`ArrayChunkBits` par `bits_container_validation` (`zero_one_value` en dyn).
+  variantes), celui d'`BitArray` par `bits_container_validation` (`zero_one_value` en dyn).
 - **Le pic n'est pas toujours celui de la géométrie de départ** : un run dynamique qui part
   de 64 a la mémoire du statique 64 après son initialisation ; ses rechunks rendent ensuite
   de la mémoire (la mémoire résidente redescend) ou freinent sa croissance. Le pic du run

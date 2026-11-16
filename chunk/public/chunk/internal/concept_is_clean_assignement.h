@@ -81,7 +81,7 @@ concept IsCleanAssignment =
       std::is_same_v<std::remove_cvref_t<T>, char>) &&
      std::is_same_v<BaseT<U>, int>) ||
 
-    // Rule 6: the packed bool (ArrayChunkBits) receiving a bool
+    // Rule 6: the packed bool (BitArray) receiving a bool
     (shrink_array::is_packed_bit_v<std::remove_cvref_t<T>> && std::is_same_v<BaseT<U>, bool>);
 
 /// @brief A compound operation T op= U is clean when the assignment is.

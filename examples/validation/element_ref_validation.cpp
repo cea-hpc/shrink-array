@@ -44,8 +44,8 @@
 #include "chunk/zero_one_value_array.h" // zero_one_value::Array
 #include "chunk/zero_any_array.h"       // zero_any::Array
 #include "chunk/config.h"               // chunk_config::use_zero_one_value*, build_config::strict_element_ref
-#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
-#include "chunk/internal/zero_chunk.h"  // release_chunk_pools, destroy_block_chunk
+#include "chunk/runtime.h"              // Runtime::init
+#include "chunk/internal/zero_chunk.h"  // release_chunk_pools, Runtime::shutdown
 #include "chunk/print.h"                // shrink_array::println
 
 using namespace shrink_array;
@@ -209,10 +209,10 @@ void misuse()
 int main()
 try
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
     const int rc = usage();
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
     return rc;
 }
 catch (const std::exception& e)

@@ -30,7 +30,7 @@ répétée compressée par `zero_any`) que la version CPU. Le gain visé est d'a
 - faire tourner le code CPU existant sur GPU : la machinerie d'exécution (section 2) n'est
   pas portable et n'a pas à l'être ;
 - les écritures concurrentes à une compression **à l'intérieur** d'un kernel ;
-- `bool` compacté bit à bit (`ArrayChunkBits`) ;
+- `bool` compacté bit à bit (`BitArray`) ;
 - un backend SYCL/Intel (possible via la couche de portabilité, non visé).
 
 ## 2. Ce qui se porte, ce qui ne se porte pas

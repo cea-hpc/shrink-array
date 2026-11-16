@@ -1,7 +1,7 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 # examples/bool_arrays: the two boolean containers of a zero_one_value build,
-# zero_one_value::Array<bool> (a byte per element) and ArrayChunkBits (a bit per
+# zero_one_value::Array<bool> (a byte per element) and BitArray (a bit per
 # element), side by side (docs/variants.md, section 2).
 #
 # Builds two ways, as examples/getting_started:

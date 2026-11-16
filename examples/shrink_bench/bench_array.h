@@ -37,9 +37,9 @@
 // ChunkedArray concept, so they select nothing in the std::vector build) on
 // top of the std::vector fallback they include. Also what drags in the
 // zero::Array* definitions the alias below selects between.
-#include "chunk/array_chunk_range_ops.h" // the bulk range API and the zero::Array* definitions (see above)
-#include "chunk/array_chunk_bits.h"      // tab_bool_bits, tab_mask: bools packed 8 per byte
-#include "chunk/pattern_array.h"         // pattern::Array: tab_conn in the zero_one_value and zero_any builds
+#include "chunk/range_ops.h"     // the bulk range API and the zero::Array* definitions (see above)
+#include "chunk/bit_array.h"     // tab_bool_bits, tab_mask: bools packed 8 per byte
+#include "chunk/pattern_array.h" // pattern::Array: tab_conn in the zero_one_value and zero_any builds
 
 namespace shrink_array
 {
@@ -58,9 +58,9 @@ using ActiveArray = std::conditional_t<
 
 
 // Runtime chunk size for CHUNK_DYNAMIC builds. Seeded into g_active_chunk_size
-// before init_indexes (below), so every array constructed afterwards adopts this
+// before init (below), so every array constructed afterwards adopts this
 // geometry by default. Ignored in static builds (geometry fixed by static_chunk_size).
-// A power of two or a multiple of 64 in [ParamChunk::size_min, ParamChunk::size_max]; 512
+// A power of two or a multiple of 64 in [Runtime::size_min, Runtime::size_max]; 512
 // differs from the usual compile-time static_chunk_size (64) so a dynamic run visibly
 // exercises a new geometry.
 #ifndef DYN_CHUNK_SIZE
@@ -128,23 +128,23 @@ using BenchBoolArray =
  *
  * @details The two bool containers side by side in ONE run, on the same
  *          workload -- memory (chunk filling rate, pools) and write cost:
- *            - zero_one_value builds: ArrayChunkBits (bit.h), 8 bools per byte in a
+ *            - zero_one_value builds: BitArray (bit.h), 8 bools per byte in a
  *              materialised chunk, one atomic 64-bit read-modify-write per
  *              write; tab_bool stays zero_one_value::Array<bool>, one byte per bool;
  *            - zero / zero_any builds: the variant's Array<bool>, i.e.
- *              tab_bool's own type -- ArrayChunkBits is zero_one_value's machinery;
+ *              tab_bool's own type -- BitArray is zero_one_value's machinery;
  *            - the std::vector baseline: std::vector<short>, as tab_bool
  *              (std::vector<bool> would race: its element writes are not
  *              atomic, and the phases split the loops anywhere).
  *          Holding what tab_bool holds, it is checked against the same
  *          data_tab_bool_*.bin references (bench_checks.cpp) and never writes
  *          one of its own. Reads stay on tab_bool: the twin changes no value
- *          the workload computes. In a dyn build an ArrayChunkBits is born
+ *          the workload computes. In a dyn build an BitArray is born
  *          with chunks packed_bit_birth_factor times tab_bool's (bit.h); a
  *          static build gives both the same chunk size.
  */
 using BenchBoolBitsArray =
-    std::conditional_t<chunk_config::use_zero_one_value, shrink_array::ArrayChunkBits<Int>, BenchBoolArray>;
+    std::conditional_t<chunk_config::use_zero_one_value, shrink_array::BitArray<Int>, BenchBoolArray>;
 
 /// @brief Distinct levels tab_quant may take, hence the distinct second values
 ///        it registers.
@@ -164,17 +164,17 @@ inline constexpr Int bench_double_bands = 200000;
  *
  * @details The array a bit-packed container is for, and the one std::vector's
  *          own bit packing is the reference of:
- *            - zero_one_value builds: ArrayChunkBits (bit.h), 8 bools per byte in a
+ *            - zero_one_value builds: BitArray (bit.h), 8 bools per byte in a
  *              materialised chunk, and constant chunks at no data cost;
  *            - zero / zero_any builds: the variant's Array<bool>, one byte
- *              per bool -- ArrayChunkBits is zero_one_value's machinery;
+ *              per bool -- BitArray is zero_one_value's machinery;
  *            - the std::vector baseline: std::vector<bool>, one bit per bool
  *              and nothing compressed. Its phases write whole 64-element
  *              blocks, one thread per block, so no word of it has two writers.
  */
 using BenchMaskArray =
     std::conditional_t<chunk_config::use_zero_one_value,
-                       shrink_array::ArrayChunkBits<Int>,
+                       shrink_array::BitArray<Int>,
                        std::conditional_t<chunk_config::is_shrink_enabled, Array<bool>, std::vector<bool>>>;
 
 /**
@@ -254,7 +254,7 @@ enum class BenchMaskKind
     scattered  ///< 15 %: scattered flags, ~3 % set
 };
 
-// Why 60 % constant. ArrayChunkBits costs ~16 bytes of header per chunk plus
+// Why 60 % constant. BitArray costs ~16 bytes of header per chunk plus
 // S/8 bytes per chunk that is not constant; std::vector<bool> costs S/8 per
 // chunk's worth of elements. With a fraction c of constant chunks the ratio is
 // 16 / (S/8) + (1 - c): at S = 256, 0.5 + 0.4 = 0.9 of std::vector<bool>

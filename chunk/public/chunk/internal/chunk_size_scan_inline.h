@@ -57,9 +57,9 @@ ChunkSizeScan<Arr>::ChunkSizeScan(const Arr& tab, const Options& opt)
     // zero_one_value and the zero_any family: the array's second value, when
     // designated (otherwise only first_value: the conservative answer).
     if constexpr ((chunk_config::use_zero_one_value || is_zero_any_family_v<ChunkT>) &&
-                  requires { tab.get_second_value(); })
+                  requires { tab.second_value(); })
     {
-        cst2_value_ = tab.get_second_value();
+        cst2_value_ = tab.second_value();
         has_cst2_   = !same_value(cst2_value_, cst1_value_);
     }
     for (const uint32_t cand_sz : cand_)

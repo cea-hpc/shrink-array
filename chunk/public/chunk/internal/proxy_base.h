@@ -882,7 +882,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         return read_pure();
     }
 
-    /// @brief ArrayChunkBits: read the element straight as a bool. Through
+    /// @brief BitArray: read the element straight as a bool. Through
     ///        operator T() it would be two user conversions (proxy -> Bit ->
     ///        bool), which C++ does not chain, so `bool b = a[i]` needs this one.
     [[nodiscard]] operator bool() const noexcept
@@ -1002,7 +1002,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     }
 
     // ------------------------------------------------------------------------
-    // ArrayChunkBits (T = Bit, bit.h): |= &= ^= with a bool operand.
+    // BitArray (T = Bit, bit.h): |= &= ^= with a bool operand.
     //
     // Bit is not integral, so the three above do not apply. A logical
     // operation needs no read-modify-write when the operand decides the result:
@@ -1014,7 +1014,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     // SAME element race; different elements of one word do not.
     // ------------------------------------------------------------------------
 
-    /// @brief `a[i] |= b` for ArrayChunkBits: sets the element when @p operand is true.
+    /// @brief `a[i] |= b` for BitArray: sets the element when @p operand is true.
     template <typename U>
     Derived operator|=(const U& operand) noexcept
         requires is_packed_bit_v<T> && bit_operand_v<U>
@@ -1026,7 +1026,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         return derived();
     }
 
-    /// @brief `a[i] &= b` for ArrayChunkBits: clears the element when @p operand is false.
+    /// @brief `a[i] &= b` for BitArray: clears the element when @p operand is false.
     template <typename U>
     Derived operator&=(const U& operand) noexcept
         requires is_packed_bit_v<T> && bit_operand_v<U>
@@ -1038,7 +1038,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         return derived();
     }
 
-    /// @brief `a[i] ^= b` for ArrayChunkBits: flips the element when @p operand is true.
+    /// @brief `a[i] ^= b` for BitArray: flips the element when @p operand is true.
     template <typename U>
     Derived operator^=(const U& operand) noexcept
         requires is_packed_bit_v<T> && bit_operand_v<U>;

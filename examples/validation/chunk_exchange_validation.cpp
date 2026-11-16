@@ -65,8 +65,8 @@
     #include "chunk/pattern_array.h" // pattern::Array
 #endif
 #include "chunk/chunk_exchange.h"     // export_chunk, import_chunk, export_array, import_array
-#include "chunk/param_chunk.h"        // ParamChunk::init_indexes
-#include "chunk/manage_ompt.h"        // parallel_phase
+#include "chunk/runtime.h"            // Runtime::init
+#include "chunk/phases.h"             // parallel_phase
 #include "chunk/config.h"             // chunk_config::use_zero*
 #include "chunk/internal/PMP_CHUNK.h" // pmp::current_team
 #include "chunk/internal/type_name.h" // type_name<T>()
@@ -316,7 +316,7 @@ long check_copy(const A&                                               arr,
     int        promoted = 0; // pattern: materialised chunks found compressed to a motif since
     const long differ =
         compare_states(expected, export_array(arr).chunks, chunk_size, size, pattern_build ? &promoted : nullptr);
-    const int  got  = arr.get_nb_chunk_written();
+    const int  got  = arr.written_chunk_count();
     const int  want = written - promoted;
     const bool ok   = wrong == 0 && differ == 0 && got == want;
     println("[{}/{}] {}: {} wrong element(s), {} state difference(s), {} vs {} chunks with a buffer{}  {}",
@@ -363,7 +363,7 @@ long round_trip()
     src.shrink_to_fit();
 
     const auto states  = export_array(src).chunks;
-    const int  written = src.get_nb_chunk_written();
+    const int  written = src.written_chunk_count();
     for (int c = 0; c < static_cast<int>(states.size()); ++c)
     {
         if (states[static_cast<std::size_t>(c)].kind != expected_kind<T>(c))
@@ -479,7 +479,7 @@ long round_trip()
 
 int run(int /*argc*/, char** /*argv*/)
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
     long fails = 0;
 #if defined(CHUNK_EXCHANGE_PATTERN)
     fails += round_trip<pattern::Array<int>>();

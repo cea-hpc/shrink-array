@@ -69,12 +69,12 @@
 #include "chunk/zero_array.h"            // zero::Array
 #include "chunk/zero_one_value_array.h"  // zero_one_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
-#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"                // chunk_config::use_zero*, build_config::has_not_ompt
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
+#include "chunk/config.h"                // chunk_config::use_zero*, build_config::needs_explicit_phases
 #include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/array_chunk_range_ops.h" // for_each_value / for_each_span / read_range (bulk-reads step)
+#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/range_ops.h"             // for_each_value / for_each_span / read_range (bulk-reads step)
 #include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
@@ -128,7 +128,7 @@ constexpr const char* variant_name()
 
 void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
@@ -136,7 +136,7 @@ void begin_phase()
 
 void end_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -788,7 +788,7 @@ int check_sort_recipe(const std::vector<double>& ref)
 
 int run(int /*argc*/, char** /*argv*/)
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     println("=== iterator_validation [variant = {}]  threads={} ===", variant_name(), CHUNK_PMP_MAX_THREADS);
 
@@ -823,7 +823,7 @@ int run(int /*argc*/, char** /*argv*/)
     }
 
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
 
     println("\n[{}] {}", variant_name(), fails ? "=== ITERATOR FAILED ===" : "=== ITERATOR OK ===");
     return fails ? 1 : 0;

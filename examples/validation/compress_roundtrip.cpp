@@ -74,11 +74,11 @@
 #include "chunk/zero_array.h"            // zero::Array
 #include "chunk/zero_one_value_array.h"  // zero_one_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
-#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
 #include "chunk/config.h"                // chunk_config::use_zero*
 #include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h"    // env_number / arg_number (checked, not atoi)
 #include "chunk/print.h"                 // shrink_array::println
 
@@ -93,14 +93,14 @@ using namespace shrink_array;
 // The phase brackets, no-ops under OMPT (the callbacks do it) and serially.
 static void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
 }
 static void end_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -273,7 +273,7 @@ int run(int argc, char** argv)
 {
     const long count = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 20, "N") : (1L << 20);
 
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     println("=== compress_roundtrip [variant = {}]  N={}  threads={} ===", variant_name(), count,
             CHUNK_PMP_MAX_THREADS);
@@ -296,7 +296,7 @@ int run(int argc, char** argv)
     // the per-rank lists under OpenMP, the single allocator otherwise. See
     // ChunkPoolParallelInterface in zero_chunk.h.
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
 
     println("\n[{}] {}", variant_name(),
             fails == 0 ? "=== ROUND-TRIP OK, TEARDOWN OK ===" : "=== ROUND-TRIP FAILURES ===");

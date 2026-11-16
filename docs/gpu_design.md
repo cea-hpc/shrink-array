@@ -30,7 +30,7 @@ where "20 times less" changes what a code can handle.
 - running the existing CPU code on GPU: the execution machinery (section 2) is not portable
   and does not need to be;
 - writes concurrent with a compression **inside** a kernel;
-- bit-packed `bool` (`ArrayChunkBits`);
+- bit-packed `bool` (`BitArray`);
 - a SYCL/Intel backend (possible through the portability layer, not targeted).
 
 ## 2. What ports, what does not

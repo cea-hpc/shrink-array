@@ -116,7 +116,10 @@ inline constexpr bool strict_element_ref = true;
 inline constexpr bool has_ompt = CHUNK_OPT_OMPT != 0;
 
 // For call-site readability.
-inline constexpr bool has_not_ompt = !has_ompt;
+inline constexpr bool needs_explicit_phases = !has_ompt;
+
+/// @brief Former name of needs_explicit_phases.
+[[deprecated("renamed build_config::needs_explicit_phases")]] inline constexpr bool has_not_ompt = !has_ompt;
 
 /// Every written value checked for NaN (CMake: CHUNK_DO_CHECK).
 inline constexpr bool do_check = CHUNK_OPT_DO_CHECK != 0;
@@ -207,9 +210,9 @@ using build_config::dirty_word_align;
 using build_config::do_check;
 using build_config::force_defer_every;
 using build_config::free_guard;
-using build_config::has_not_ompt;
 using build_config::has_ompt;
 using build_config::is_debug;
+using build_config::needs_explicit_phases;
 using build_config::not_threaded;
 using build_config::not_use_openmp;
 using build_config::pool_no_reuse;
@@ -418,7 +421,7 @@ inline constexpr bool read_dep_order = false;
  *          feedback loop, an order of magnitude slower. Symmetric only on non-Linux (the
  *          syscall) and under ThreadSanitizer (which does not model membarrier). An
  *          asymmetric build falls back to symmetric AT RUN TIME if membarrier registration
- *          fails (kernel < 4.14, seccomp); ParamChunk::chunk_stats() says which one ran.
+ *          fails (kernel < 4.14, seccomp); Runtime::chunk_stats() says which one ran.
  */
 #if defined(__linux__) && !defined(CHUNK_TSAN_BUILD)
 inline constexpr bool asymmetric_dekker = true;

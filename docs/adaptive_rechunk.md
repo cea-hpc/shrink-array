@@ -140,7 +140,7 @@ measurement on unchanged data and the ability to go back.
 Every variant frees each old chunk as soon as it has been copied (`release_st()`: the
 buffer back to the pool, the chunk to the first constant; a chunk at a second constant
 points at a shared array and is left alone) and, with the fast allocator under threads,
-rebuilds **in slices** (16; `ArrayChunkBits`, bit-packed, keeps one pass). Between
+rebuilds **in slices** (16; `BitArray`, bit-packed, keeps one pass). Between
 slices, the pools of the old
 size are drained and the emptied slabs returned to the system, including in the **shared
 pool** when the old storage lives there: without this, the old storage's memory
@@ -251,7 +251,7 @@ is limited to the rebuilds.
   geometry unless `--advise_bool` hands them to the decider, so that the two bool containers
   are compared as they are. The rechunk of `Array<bool>` is checked by `rechunk_validation`
   (`bool-grow`, `bool-shrink`, `bool-uneven`, `bool-sliced`, every variant), that of
-  `ArrayChunkBits` by `bits_container_validation` (`zero_one_value` at dyn).
+  `BitArray` by `bits_container_validation` (`zero_one_value` at dyn).
 - **The peak is not always the starting geometry's**: a dynamic run that starts from 64 has
   the memory of static 64 after its initialisation; its rechunks then give memory back (the
   resident memory goes down) or slow its growth. The run's peak is the starting geometry's

@@ -62,13 +62,13 @@
 #include "chunk/zero_array.h"            // zero::Array
 #include "chunk/zero_one_value_array.h"  // zero_one_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
-#include "chunk/array_chunk_range_ops.h" // fill_range, fill_range_mt
-#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
+#include "chunk/range_ops.h"             // fill_range, fill_range_mt
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
 #include "chunk/internal/same_value.h"   // ValueIdentity, same_value
-#include "chunk/config.h"                // chunk_config::use_zero_one_value*, build_config::has_not_ompt
+#include "chunk/config.h"                // chunk_config::use_zero_one_value*, build_config::needs_explicit_phases
 #include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
@@ -106,14 +106,14 @@ using namespace shrink_array;
 
 static void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
 }
 static void end_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -509,7 +509,7 @@ int run(int argc, char** argv)
 {
     (void)argc;
     (void)argv;
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     println("=== signed_zero_validation [variant = {}]  threads={} ===", variant_name(), CHUNK_PMP_MAX_THREADS);
 
@@ -532,7 +532,7 @@ int run(int argc, char** argv)
     fails += run_compound_on_zero();
 
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
 
     println("\n[{}] {}", variant_name(), fails == 0 ? "=== SIGNED ZERO OK ===" : "=== SIGNED ZERO FAILURES ===");
     return fails;

@@ -58,14 +58,14 @@ types, static chunks of 256, whole-process memory at the end. The price is acces
 ```cpp
 #include <cstdio>
 #include "chunk/zero_any_array.h"   // shrink_array::zero_any::Array
-#include "chunk/manage_ompt.h"     // parallel_phase
-#include "chunk/param_chunk.h"     // ParamChunk::init_indexes, release_chunk_pools, destroy_block_chunk
+#include "chunk/phases.h"     // parallel_phase
+#include "chunk/runtime.h"     // Runtime::init, release_chunk_pools, Runtime::shutdown
 
 namespace sa = shrink_array;
 
 int main()
 {
-    sa::ParamChunk::init_indexes(true);       // optional: the first array runs it otherwise
+    sa::Runtime::init(true);       // optional: the first array runs it otherwise
     {
         const int                n = 1 << 24;
         sa::zero_any::Array<double> a(n);        // every element 0.0, no buffer yet
@@ -82,7 +82,7 @@ int main()
         std::printf("chunks holding a buffer: %.1f %%\n", a.stats());
     }                                         // the array releases its chunks here
     sa::release_chunk_pools();                // optional: give the pools back before the end
-    sa::destroy_block_chunk();
+    sa::Runtime::shutdown();
 }
 ```
 

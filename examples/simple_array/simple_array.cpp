@@ -33,10 +33,10 @@
 
 // Both executables have the chunk headers: simple_array_vector links
 // chunk_vector, simple_array_chunk chunk_zero.
-#include "chunk/param_chunk.h" // ParamChunk, destroy_block_chunk
-#include "chunk/zero_array.h"  // zero::Array
-#include "chunk/threads.h"     // pmp::max_threads
-#include "chunk/config.h"      // chunk_config::use_zero*, stats
+#include "chunk/runtime.h"    // Runtime, Runtime::shutdown
+#include "chunk/zero_array.h" // zero::Array
+#include "chunk/threads.h"    // shrink_array::max_threads
+#include "chunk/config.h"     // chunk_config::use_zero*, stats
 
 
 /// @brief splitmix64's finaliser: a bijection on 64 bits that spreads every
@@ -180,7 +180,7 @@ int main()
     {
         // Once, before the first array. The library checks its compiled chunk
         // size itself.
-        ParamChunk::init_indexes(true);
+        Runtime::init(true);
     }
 
     // 3 arrays of sz doubles: 2.4 GB for std::vector. 1e9 (24 GB at once) made
@@ -194,7 +194,7 @@ int main()
     constexpr int freq_raz      = iter_max / 50;
     constexpr int interval      = 20000;
 
-    const int max_thr = shrink_array::pmp::max_threads();
+    const int max_thr = shrink_array::max_threads();
 
     std::cout << "Number of threads : " << max_thr << '\n';
 
@@ -370,7 +370,7 @@ int main()
 
             if constexpr (chunk_config::stats)
             {
-                ParamChunk::chunk_stats();
+                Runtime::chunk_stats();
             }
         },
         tab1, tab2, tab3);
@@ -391,7 +391,7 @@ int main()
 
     if constexpr (use_chunk_array)
     {
-        destroy_block_chunk();
+        Runtime::shutdown();
     }
     return 0;
 }

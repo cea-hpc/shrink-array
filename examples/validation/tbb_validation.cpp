@@ -37,7 +37,7 @@
 //   - the index form, step 1 and step 3 (the elements the step skips keep the
 //     previous phase's values);
 //   - in every piece: in_parallel() and the application phase are on, the
-//     rank is the thread's (get_thr_rank_fast() == pmp::thread_rank()), below
+//     rank is the thread's (get_thr_rank_fast() == shrink_array::thread_rank()), below
 //     the capacity, the same for a thread all phase long and distinct between
 //     threads; after the call: no phase, no parallel;
 //   - work in the phase: one index per array (grain 1), each compresses its
@@ -88,8 +88,8 @@
 #include "chunk/zero_array.h"            // zero::Array
 #include "chunk/zero_one_value_array.h"  // zero_one_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
-#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
 #include "chunk/config.h"                // chunk_config::use_zero*
 #include "chunk/internal/PMP_CHUNK.h"    // pmp::*, CHUNK_PMP_* (THREAD_CAPACITY: the registry), get_thr_rank_fast
 #include "chunk/tbb_adaptor.h"           // shrink_array::tbb::parallel_for, phase_body, use_tbb_for_library_teams
@@ -207,9 +207,9 @@ class PhaseRecord
             }
         }
         const int r = get_thr_rank_fast();
-        if (r < 0 || r >= CHUNK_PMP_THREAD_CAPACITY || r != pmp::thread_rank())
+        if (r < 0 || r >= CHUNK_PMP_THREAD_CAPACITY || r != shrink_array::thread_rank())
         {
-            println("FAIL: piece rank {} (thread_rank {}, capacity {})", r, pmp::thread_rank(),
+            println("FAIL: piece rank {} (thread_rank {}, capacity {})", r, shrink_array::thread_rank(),
                     CHUNK_PMP_THREAD_CAPACITY);
             fails_.fetch_add(1, std::memory_order_relaxed);
         }
@@ -769,7 +769,7 @@ int run(int argc, char** argv)
     const long N      = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 18, "N") : (1L << 18);
     const int  phases = argc > 2 ? shrink_array::arg_number<int>(argv[2], 6, "phases") : 6;
 
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     // TBB's threads: the backend's team size (OMP_NUM_THREADS of the test),
     // the calling thread among them -- within the capacity of the registry.
@@ -835,7 +835,7 @@ int run(int argc, char** argv)
     }
 
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
 
     println("\n[{}] {}", variant_name(), fails == 0 ? "=== TBB OK ===" : "=== TBB FAILURES ===");
     return fails == 0 ? 0 : 1;

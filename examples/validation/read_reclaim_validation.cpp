@@ -125,12 +125,12 @@
 #include "chunk/zero_array.h"            // zero::Array
 #include "chunk/zero_one_value_array.h"  // zero_one_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
-#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"                // chunk_config::use_zero_one_value*, build_config::use_openmp / has_not_ompt
-#include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/internal/test_hooks.h"   // test_hooks::read_delay_* / pass_delay_*
-#include "chunk/print.h"                 // shrink_array::println
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
+#include "chunk/config.h" // chunk_config::use_zero_one_value*, build_config::use_openmp / needs_explicit_phases
+#include "chunk/phases.h" // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/test_hooks.h" // test_hooks::read_delay_* / pass_delay_*
+#include "chunk/print.h"               // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
 
@@ -171,7 +171,7 @@ constexpr const char* variant_name()
 
 void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
@@ -179,7 +179,7 @@ void begin_phase()
 
 void end_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -388,7 +388,7 @@ int run_compound(int team, int writers, double seconds, long pollute)
     }
 
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
 
     println("\n[{}] {}", variant_name(),
             rc ? "=== READ RECLAIM COMPOUND FAILED ===" : "=== READ RECLAIM COMPOUND OK ===");
@@ -479,7 +479,7 @@ int run_remark(int team, double seconds)
     }
 
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
 
     println("\n[{}] {}", variant_name(), rc ? "=== READ RECLAIM REMARK FAILED ===" : "=== READ RECLAIM REMARK OK ===");
     return rc;
@@ -489,7 +489,7 @@ int run_remark(int team, double seconds)
 
 int run(int argc, char** argv)
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     // The test hooks this harness widens its windows with (test_hooks.h), on
     // for this process only: one pure read in 16 of a reader thread, one
@@ -660,7 +660,7 @@ int run(int argc, char** argv)
     }
 
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
 
     println("\n[{}] {}", variant_name(), rc ? "=== READ RECLAIM FAILED ===" : "=== READ RECLAIM OK ===");
     return rc;

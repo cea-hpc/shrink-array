@@ -117,7 +117,7 @@ if ("zero_any" IN_LIST CHUNK_VARIANTS)
     add_subdirectory(getting_started)
 endif()
 
-# The two boolean containers of zero_one_value: Array<bool> and ArrayChunkBits
+# The two boolean containers of zero_one_value: Array<bool> and BitArray
 if ("zero_one_value" IN_LIST CHUNK_VARIANTS)
     add_subdirectory(bool_arrays)
 endif()

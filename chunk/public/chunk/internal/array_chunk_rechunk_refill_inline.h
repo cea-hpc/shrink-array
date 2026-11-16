@@ -31,7 +31,7 @@
 #include <vector>      // the refill buffers
 
 #include "chunk/internal/PMP_CHUNK.h"                  // get_thr_rank_fast, pmp::team, chunk_pmp_*_schedule
-#include "chunk/array_chunk_range_ops.h"               // copy_range -- the public bulk fill
+#include "chunk/range_ops.h"                           // copy_range -- the public bulk fill
 #include "chunk/bit.h"                                 // is_bool_like_v (the bulk read gate)
 #include "chunk/internal/chunk_traits.h"               // is_zero_any_family_v, has_motif_state_v
 #include "chunk/config.h"                              // build_config::threaded, chunk_config::use_zero*
@@ -94,7 +94,7 @@ int RechunkSupport<Derived, true>::Refill::slice_count() const noexcept
     // back BEFORE the next slice materialises: peak ~ old + new/slices.
     //
     // 16 slices with the fast allocator and threads, for every array that
-    // releases its sources (releases_sources: not ArrayChunkBits, which has
+    // releases its sources (releases_sources: not BitArray, which has
     // nothing to give back between slices -- the extra regions would be pure
     // cost). The std allocator needs no slice: each
     // release is a free() the next allocation reuses.

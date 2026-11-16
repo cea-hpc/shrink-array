@@ -51,15 +51,15 @@
 #include "chunk/zero_array.h"            // zero::Array
 #include "chunk/zero_one_value_array.h"  // zero_one_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
-#include "chunk/array_chunk_range_ops.h" // fill_range_mt
-#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/config.h"                // chunk_config::use_zero_one_value*, build_config::has_not_ompt
+#include "chunk/range_ops.h"             // fill_range_mt
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/config.h"                // chunk_config::use_zero_one_value*, build_config::needs_explicit_phases
 #include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h"    // env_number / arg_number (checked, not atoi)
 #include "chunk/print.h"                 // shrink_array::println
 
-#include "chunk/internal/zero_chunk.h" // release_chunk_pools, destroy_block_chunk
+#include "chunk/internal/zero_chunk.h" // release_chunk_pools, Runtime::shutdown
 #include "validation_harness.h"        // self_command; run() is called by validation_driver.cpp
 
 namespace validation::fill_range_mt_validation
@@ -69,14 +69,14 @@ using namespace shrink_array;
 
 static void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
 }
 static void end_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -444,7 +444,7 @@ static void run_perf(long count)
 static int run_body(int argc, char** argv)
 {
     const long count = argc > 1 ? shrink_array::arg_number<long>(argv[1], (1L << 20) + 777, "N") : (1L << 20) + 777;
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     if (argc > 2 && std::strcmp(argv[2], "perf") == 0)
     {
@@ -467,7 +467,7 @@ int run(int argc, char** argv)
     // one in the std-alloc builds (each buffer is a real malloc there).
     const int rc = run_body(argc, argv);
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
     return rc;
 }
 

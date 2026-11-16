@@ -30,7 +30,7 @@
  * The chunk library compresses from its write path in every OpenMP build: a
  * write that closes a constant run queues its chunk, and a thread whose
  * list fills runs a pass over the candidates. What a pass needs from the
- * application is the PHASES (chunk/manage_ompt.h): a write that lands on a
+ * application is the PHASES (chunk/phases.h): a write that lands on a
  * chunk the pass holds is deferred, and somebody has to replay the deferred
  * writes before they are read -- at the barriers -- and to drain the
  * candidates left when the region ends. Two ways to provide them, two
@@ -58,7 +58,7 @@
 
 #include "chunk/internal/PMP_CHUNK.h" // the OpenMP shims of the library (serial build: 1 thread, rank 0)
 #include "chunk/config.h"             // shrink_array::build_config::use_openmp, chunk_config::stats
-#include "chunk/manage_ompt.h"        // shrink_array::begin_parallel_phase, finalize_barrier_phase
+#include "chunk/phases.h"             // shrink_array::begin_parallel_phase, finalize_barrier_phase
 
 #if defined(MULTIMAT_EMBEDDED_COMPRESSION) && !CHUNK_OPT_OMPT
     #error \

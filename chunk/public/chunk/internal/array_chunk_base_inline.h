@@ -34,7 +34,7 @@
 #include "chunk/config.h"                            // build_config::chunk_dynamic, chunk_config::CheckNaN
 #include "chunk/internal/chunk_size_policy.h" // chunk_size_error, register_runtime_chunk_size / set_thread_chunk_size
 #include "chunk/internal/PMP_CHUNK.h"         // CHUNK_PMP_IN_PARALLEL_REGION, pmp::parallel_sum, pmp::current_team
-#include "chunk/manage_ompt.h"                // parallel_phase -- write_range_by_chunks
+#include "chunk/phases.h"                     // parallel_phase -- write_range_by_chunks
 #include "chunk/internal/parallel_storage_init.h" // use_own_team -- write_range_by_chunks
 #include "chunk/internal/cold_path_lock.h"        // ColdPathLock: construction, teardown, resize
 #include "chunk/internal/tab_users.h"             // TabUsers: a row per array
@@ -142,7 +142,7 @@ void ArrayChunkBase<Derived>::set_chunk_size([[maybe_unused]] unsigned int new_c
 }
 
 template <typename Derived>
-int ArrayChunkBase<Derived>::get_nb_chunk_written() const
+int ArrayChunkBase<Derived>::written_chunk_count() const
 {
     int        nb_written = 0;
     const auto lbd        = [&](int num_chunk) { return static_cast<int>(is_written_at(num_chunk)); };
@@ -165,7 +165,7 @@ int ArrayChunkBase<Derived>::get_nb_chunk_written() const
 }
 
 template <typename Derived>
-int ArrayChunkBase<Derived>::get_nb_chunk_written_seq() const
+int ArrayChunkBase<Derived>::written_chunk_count_seq() const
 {
     int nb_chunk_written = 0;
     for (int j = 0; j < nb_chunk_; ++j)
@@ -182,7 +182,7 @@ double ArrayChunkBase<Derived>::stats_seq() const
     {
         return 0.0;
     }
-    const int nb_chunk_written = get_nb_chunk_written_seq();
+    const int nb_chunk_written = written_chunk_count_seq();
     return 100.0 * static_cast<double>(nb_chunk_written) / nb_chunk_;
 }
 

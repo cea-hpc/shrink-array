@@ -63,10 +63,10 @@
 
 #include "chunk/internal/chunk_traits.h"      // forward decls (zero_any::Chunk) + default IntType = int
 #include "chunk/zero_any_array.h"             // zero_any::Array, zero_any::Chunk complete (its registry types)
-#include "chunk/param_chunk.h"                // ParamChunk::init_indexes
-#include "chunk/config.h"                     // chunk_config::use_zero_any, build_config::has_not_ompt
+#include "chunk/runtime.h"                    // Runtime::init
+#include "chunk/config.h"                     // chunk_config::use_zero_any, build_config::needs_explicit_phases
 #include "chunk/internal/PMP_CHUNK.h"         // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_NUM_THREADS
-#include "chunk/manage_ompt.h"                // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/phases.h"                     // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h"         // arg_number (checked, not atoi)
 #include "chunk/print.h"                      // shrink_array::println
 #include "chunk/internal/chunk_size_policy.h" // active_chunk_size, set_active_chunk_size (G)
@@ -85,14 +85,14 @@ using Registry = zero_any::Chunk<double>::Holder::VecHolder;
 
 static void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
 }
 static void end_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -243,12 +243,12 @@ int run(int argc, char** argv)
 {
     if (argc > 3 && std::string(argv[1]) == "--rounds")
     {
-        ParamChunk::init_indexes(true);
+        Runtime::init(true);
         return run_rounds_child(shrink_array::arg_number<long>(argv[2], 16, "chunks"),
                                 shrink_array::arg_number<long>(argv[3], 12, "rounds"));
     }
 
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     const long nch      = argc > 1 ? shrink_array::arg_number<long>(argv[1], 16, "chunks") : 16;
     const auto chunk_sz = static_cast<long>(Arr(0).chunk_size()); // empty: no chunk, so no registry reference

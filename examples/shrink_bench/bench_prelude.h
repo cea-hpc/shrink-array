@@ -74,7 +74,7 @@
 #include "chunk/build_options.h"                    // CHUNK_OPT_* (the bench TUs)
 #include "chunk/internal/term_color.h"              // tc (the bench TUs)
 #include "chunk/internal/PMP_CHUNK.h"               // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"                      // begin_parallel_phase, finalize_barrier_phase (bench_phases.h)
+#include "chunk/phases.h"                           // begin_parallel_phase, finalize_barrier_phase (bench_phases.h)
 #include "chunk/internal/singleton.h"               // SingletonChk (the bench TUs)
 #include "chunk/internal/global_stats_chunk_list.h" // GlobalStatsChunkList (shrink_bench.cpp)
 
@@ -239,7 +239,7 @@ inline BenchSched bench_sched_for(Int start, Int end) noexcept
     return {std::max<Int>(1, (end - start + nthreads - 1) / nthreads), start}; // contiguous slices
 }
 
-#include "chunk/param_chunk.h"        // ParamChunk (the bench TUs)
+#include "chunk/runtime.h"            // Runtime (the bench TUs)
 #include "chunk/config.h"             // chunk_config::, build_config:: (the bench TUs)
 #include "chunk/internal/type_name.h" // type_name<T>() (shrink_bench.cpp)
 

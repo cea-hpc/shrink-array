@@ -49,10 +49,10 @@ void TypeStateRegistry::register_manager()
     }
 
     // ensure_manager() runs ensure_ready() first; initialize<Types>() runs
-    // after init_indexes(). Reaching here unready is a library bug.
+    // after init(). Reaching here unready is a library bug.
     if (!ready_)
     {
-        CHUNK_INVARIANT_FAILED("a manager registered before ParamChunk::init_indexes() ran");
+        CHUNK_INVARIANT_FAILED("a manager registered before Runtime::init() ran");
     }
 
     ManagerT::init_static_state(); // the per-rank structures, before anyone can reach them
@@ -80,7 +80,7 @@ void TypeStateRegistry::ensure_manager()
     [[maybe_unused]] static const bool registered = []
     {
         link_check::CHUNK_LINK_CHECK(); // links only against a library built with this TU's settings
-        ensure_ready();                 // init_indexes(true) if the program has not run it
+        ensure_ready();                 // init(true) if the program has not run it
         SingletonChk<TypeStateRegistry>::get_ref().register_manager<ManagerT>();
         return true;
     }();

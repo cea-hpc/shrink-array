@@ -61,7 +61,7 @@ L'interface est proche d'un `std::vector` : `size()`, `resize()`, `at()`, itéra
   compression pour cette valeur. Un tableau qui ne déclare jamais de seconde valeur se
   comporte comme un `zero::Array` (compression vers 0 seulement).
 - **Les opérations sur plages** (`fill_range`, `copy_range`, `fill_range_mt` dans
-  `array_chunk_range_ops.h`) écrivent une plage en une décision par chunk, et
+  `range_ops.h`) écrivent une plage en une décision par chunk, et
   `fill_range_mt` peut être appelée par plusieurs threads à la fois (section 10).
 
 ---
@@ -605,5 +605,5 @@ Options CMake liées aux performances des bancs :
 | compresseur, écritures différées | `internal/compression_manager.h` |
 | géométrie | `internal/chunk_size_policy.h` |
 | rechunk, décideur | `internal/array_chunk_rechunk_inline.h`, `internal/array_chunk_rechunk_refill.h`, `chunk_size_advisor.h` |
-| opérations sur plages | `array_chunk_range_ops.h` |
+| opérations sur plages | `range_ops.h` |
 | tests de validation | `examples/validation/` (`rechunk_validation`, `compress_roundtrip`, `deferred_path_validation`, `pool_accounting`, `fill_range_mt_validation`, …) |

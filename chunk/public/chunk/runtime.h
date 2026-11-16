@@ -1,0 +1,461 @@
+/*
+ * Copyright 2024-2026 CEA (www.cea.fr)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#pragma once
+
+#include <cstddef>  // std::size_t
+#include <iostream> // std::cout
+#include <utility>  // std::cmp_not_equal
+
+#include "chunk/config.h"                       // build_config::threaded, chunk_dynamic
+#include "chunk/internal/chunk_size_config.h"   // static_chunk_size, static_chunk_shift, static_chunk_mask
+#include "chunk/internal/chunk_size_policy.h"   // active_chunk_size, chunk_size_error
+#include "chunk/internal/func_p2.h"             // log2int
+#include "chunk/internal/singleton.h"           // SingletonChk
+#include "chunk/internal/type_state_registry.h" // TypeStateRegistry
+#include "chunk/log.h"                          // CHUNK_LOG (the static build's ignored setters)
+#include "chunk/internal/pool_release.h"        // release_chunk_pools, destroy_block_chunk: the shutdown
+
+namespace shrink_array
+{
+
+/**
+ * @brief Library-wide setup and configuration entry point (all-static, never instantiated).
+ *
+ * @details This is the single façade an application talks to before using any
+ *          chunked array: it publishes the chunk geometry (size / shift / mask),
+ *          sizes the allocation blocks, creates the value allocators and the
+ *          per-thread reuse structures, and prints the instrumentation report at
+ *          the end of the run. A typical program calls at most two of these:
+ *          Runtime::init() at startup -- optional, the first array
+ *          runs init(true) when it was not called -- and
+ *          Runtime::chunk_stats() at exit.
+ *
+ *          The geometry accessors are compatibility shims: the chunk size is a
+ *          compile-time constant (see chunk_size_config.h) so that `i >>
+ *          static_chunk_shift` and `i & static_chunk_mask` fold into immediate
+ *          shifts/masks on the hot path. The setters change nothing (they warn
+ *          on a mismatch); the getters return the constants. Dynamic builds
+ *          (CHUNK_DYNAMIC) add a separate, per-array runtime geometry on top;
+ *          see Runtime::register_chunk_size() and
+ *          shrink_array::active_chunk_size().
+ *
+ * @note Everything here is a sequential-context operation: call it before the
+ *       arrays it configures are used in parallel.
+ * @see chunk_size_config.h for the compile-time geometry constants
+ * @see TypeStateRegistry, which holds the per-type managers this class drives
+ */
+// ===========================================================================
+// Build-dependent halves of the façade.
+//
+// Two of Runtime's verbs differ by build in their very NAME, which no `if constexpr` can
+// express, so they live in policies selected by a constexpr (as in TypeStateInterface and
+// TypeStateRegistry). All static: no CRTP down-cast. The bodies are in runtime.cpp, with one
+// explicit instantiation of the specialisation this build selects.
+// ===========================================================================
+
+/**
+ * @brief The thread-model half of the startup: one verb, two bodies.
+ * @tparam Enabled build_config::threaded.
+ * @tparam AllT    The TypeStateRegistry facade. LOAD-BEARING -- see below.
+ *
+ * @note AllT looks redundant (it is only ever TypeStateRegistry) and is not: it keeps the two
+ *       bodies TEMPLATES, so only the one this build selects is instantiated. A `template <>`
+ *       full specialisation would be compiled eagerly, and the two bodies cannot both compile
+ *       (each calls TypeStateRegistry verbs only its own TypeStateRegistryParallelInterface<Derived, B>
+ *       declares). The calls must also stay DEPENDENT on AllT (SingletonChk<AllT>, never
+ *       SingletonChk<TypeStateRegistry>), or phase-1 lookup rejects the other build's body. Same
+ *       reason as the Derived parameter of TypeStateRegistryParallelInterface.
+ */
+template <bool Enabled = build_config::threaded, typename AllT = TypeStateRegistry>
+struct RuntimeParallelInterface; // primary left undefined: only the 2 specializations exist
+
+/// @brief OpenMP builds: init_thread_structures() prints the allocator / thread-model banner.
+template <typename AllT>
+struct RuntimeParallelInterface<true, AllT>
+{
+    /**
+     * @brief What init() prints about the thread model (OpenMP build).
+     *
+     * @details A type is set up when its first array registers its manager
+     *          (TypeStateRegistry::init_manager, sequential, rank by rank), so
+     *          nothing per type is done here: only the allocator banner.
+     */
+    static void init_thread_structures();
+};
+
+/// @brief Serial builds: init_thread_structures() is a no-op.
+template <typename AllT>
+struct RuntimeParallelInterface<false, AllT>
+{
+    /**
+     * @brief Serial build: nothing to print, nothing to size.
+     * @see RuntimeParallelInterface<true>::init_thread_structures
+     */
+    static void init_thread_structures() {}
+};
+
+/**
+ * @brief The runtime-geometry verb, present only in dynamic builds.
+ * @tparam Enabled build_config::chunk_dynamic.
+ * @tparam AllT    The TypeStateRegistry facade. LOAD-BEARING, as on RuntimeParallelInterface
+ *                 (see the note there).
+ *
+ * @note The body calls TypeStateRegistry::register_chunk_size(), which only
+ *       TypeStateRegistryDynInterface<Derived, true> declares: keep it a template and the call
+ *       dependent on AllT, or the static build fails to compile.
+ */
+template <bool Enabled = build_config::chunk_dynamic, typename AllT = TypeStateRegistry>
+struct RuntimeDynInterface; // primary left undefined: only the 2 specializations exist
+
+/// @brief Dynamic-geometry builds: provides register_chunk_size().
+template <typename AllT>
+struct RuntimeDynInterface<true, AllT>
+{
+    /**
+     * @brief Declare a runtime chunk size so arrays of that geometry can allocate.
+     *
+     * @details Dynamic builds only. Registers @p size with every per-type manager:
+     *          in a fast-alloc build this creates and initialises that size's value
+     *          allocators, and in every build it gives the size its own slot in the
+     *          per-size reuse free-lists.
+     *
+     * @param size the runtime chunk size to register (a power of two or a multiple of 64)
+     *
+     * @note Idempotent per size, and to be called in a sequential context before
+     *       an array of that size is used in parallel.
+     * @warning The free-list slot is not optional even with the standard allocator:
+     *          without it every lookup falls back to the single legacy list, and a
+     *          buffer of one geometry is popped for a chunk of another (overflow in
+     *          init_block's memset).
+     * @see shrink_array::register_runtime_chunk_size, the build-agnostic wrapper
+     */
+    static void register_chunk_size(unsigned int size);
+};
+
+/// @brief Fixed-geometry builds: no runtime size to declare.
+template <typename AllT>
+struct RuntimeDynInterface<false, AllT>
+{
+    /**
+     * @brief Accepts the call and does nothing (fixed-geometry build).
+     *
+     * @details Deliberately a silent no-op rather than an absent member, so that
+     *          build-agnostic callers (register_runtime_chunk_size()) need no
+     *          <tt>\#ifdef CHUNK_DYNAMIC</tt>.
+     *
+     * @warning So a static build accepts and ignores the call; the compiler will not
+     *          say the size cannot be honoured. Guard on build_config::chunk_dynamic
+     *          where it matters (dyn_geometry_validation checks this at run time).
+     */
+    static void register_chunk_size(unsigned int /*size*/) {}
+};
+
+/// @brief Library-wide setup and configuration entry point (all-static), inheriting the build-dependent verbs
+///        of RuntimeParallelInterface and RuntimeDynInterface.
+class Runtime : public RuntimeParallelInterface<>, public RuntimeDynInterface<>
+{
+  public:
+    // The policies read the private #block_size. They are befriended as TEMPLATES: their
+    // bodies reach it through a non-dependent expression, access-checked against the
+    // template being defined, which a friend instantiation would not cover.
+    template <bool, typename>
+    friend struct RuntimeParallelInterface;
+    template <bool, typename>
+    friend struct RuntimeDynInterface;
+
+    /// @brief Lower sanity bound for a configured CHUNK_SIZE.
+    static constexpr int size_min = 32;
+    /**
+     * @brief Upper sanity bound for a configured CHUNK_SIZE.
+     *
+     * @details This is NOT the chunk geometry — use shrink_array::static_chunk_size for
+     *          that; it only validates a size coming from an example or a config.
+     *          The real hard limit is the per-chunk counter capacity (unsigned
+     *          short), enforced by a static_assert in conditional_counter.h, hence
+     *          65535.
+     */
+    static constexpr int size_max = 65535;
+
+    /**
+     * @brief Check that a candidate chunk size is valid: a power of two or a
+     *        multiple of 64, at most cst_buffer_size -- the rule of the setters
+     *        (chunk_size_error).
+     *
+     * @details The build checks CHUNK_SIZE with a static_assert; this helper is
+     *          for a size obtained at run time (command line, config file).
+     *          The bounds are size_min / size_max.
+     *
+     * @param chunk_size the candidate size
+     * @return true if it can be a chunk size
+     */
+    static bool check_chunk_size(int chunk_size) noexcept
+    {
+        return chunk_size > 0 && !chunk_size_error(static_cast<unsigned int>(chunk_size));
+    }
+
+    /**
+     * @brief Print the chunk geometry (size, shift, mask) on stdout.
+     *
+     * @details In a dynamic build the active runtime geometry may differ from the
+     *          compile-time static_chunk_size, so the active size is reported instead —
+     *          printing the constant there would be misleading. In a static build
+     *          active_chunk_size() == static_chunk_size, and both branches agree.
+     */
+    static void print_info_chunk()
+    {
+        if constexpr (build_config::chunk_dynamic)
+        {
+            const unsigned int cs = active_chunk_size();
+            std::cout << "chunk size     : " << cs << " (runtime)\n";
+            std::cout << "decalage chunk : " << static_cast<unsigned int>(log2int(static_cast<std::size_t>(cs)))
+                      << "\n";
+            std::cout << "modulo chunk   : " << (cs - 1u) << "\n";
+        }
+        else
+        {
+            std::cout << "chunk size     : " << static_chunk_size << "\n";
+            std::cout << "decalage chunk : " << static_chunk_shift << "\n";
+            std::cout << "modulo chunk   : " << static_chunk_mask << "\n";
+        }
+    }
+
+    /**
+     * @brief Initialise the library: block size, allocators and per-thread stores.
+     *
+     * @details Computes the allocation block size from @p big_chunk_block and the
+     *          thread count, publishes it via set_block_size(), then sizes the
+     *          per-type structures held by the TypeStateRegistry singleton: the
+     *          compression-candidate lists and, under OpenMP, the per-thread reuse
+     *          free-lists and chunk lists. In a fast-alloc build it also creates
+     *          and initialises the chunk allocators (one per thread under OpenMP);
+     *          with the standard allocator those steps are no-ops. With
+     *          -DCHUNK_STATS it resets the instrumentation counters.
+     *
+     * @param big_chunk_block ask for large allocation blocks (15 MB before the
+     *                        per-thread split) instead of the default 2 MB —
+     *                        fewer, bigger allocations for memory-heavy runs. The
+     *                        result is divided by the thread count and floored at
+     *                        a minimum, so it never degenerates on many threads.
+     *
+     * @note Optional. Called in a sequential context before the first array,
+     *       it chooses @p big_chunk_block; otherwise the first array of the
+     *       process runs init(true) itself (TypeStateRegistry::ensure_ready),
+     *       wherever it is constructed -- a global array included.
+     * @warning A chunk must fit in one allocation block; a warning is emitted
+     *          otherwise. A later call that would change the block size (the
+     *          other @p big_chunk_block, or after the first array ran
+     *          init(true)) is ignored with a warning: every allocator
+     *          must cut its slabs to one size.
+     */
+    static void init(bool big_chunk_block);
+
+    /// @brief Former name of init().
+    [[deprecated("renamed Runtime::init()")]] static void init_indexes(bool big_chunk_block)
+    {
+        init(big_chunk_block);
+    }
+
+    /// @brief Former name of init<Types>().
+    template <typename Types>
+    [[deprecated("renamed Runtime::init<Types>()")]] static void init_indexes(bool big_chunk_block)
+    {
+        init<Types>(big_chunk_block);
+    }
+
+    /**
+     * @brief The end of the program's use of the library: the allocation
+     *        blocks of every element type given back. Optional (the process
+     *        can simply exit), after release_chunk_pools(), once, outside any
+     *        parallel region; nothing while an array is alive.
+     */
+    static void shutdown()
+    {
+        internal::shutdown_runtime();
+    }
+
+    /**
+     * @brief init() plus the registration, up front, of a list of
+     *        element types.
+     *
+     * @details The element types need no declaring: the first array of a type
+     *          registers its manager (TypeStateRegistry::ensure_manager, from the
+     *          array's create). This overload registers a list now,
+     *          @code
+     *          using MyChunkTypes = std::tuple<double, int>;
+     *          Runtime::init<MyChunkTypes>(true);
+     *          @endcode
+     *          which buys having every manager in place before the first
+     *          parallel region, at the cost of managers for types the program
+     *          may never use. The process-wide setup runs first (the managers
+     *          are built with its block size), then the registrations.
+     *
+     * @tparam Types a std::tuple of the element types to register now
+     * @param big_chunk_block forwarded to init(bool)
+     *
+     * @note Idempotent: a type already registered, by a list or by an array,
+     *       is left alone.
+     */
+    template <typename Types>
+    static void init(bool big_chunk_block)
+    {
+        init(big_chunk_block); // the process-wide setup first: the managers need its block size
+        SingletonChk<TypeStateRegistry>::get_ref().initialize<Types>();
+    }
+
+    /**
+     * @brief Compress every pending candidate chunk now, instead of waiting.
+     *
+     * @details The fast-block-compression path does not compress on each write: it
+     *          queues candidate chunks and sweeps them in batches. This drains that
+     *          queue on demand — useful to reach a stable memory footprint at a
+     *          known point (a measurement, a checkpoint) rather than at whatever
+     *          moment the next sweep happens.
+     *
+     * @note Every build, so call sites need no guard: the OpenMP builds'
+     *       candidates, and a serial zero_any's (it queues them too); a serial
+     *       zero or zero_one_value compresses on the write and has none.
+     */
+    static void force_compression();
+
+    /**
+     * @brief Declare a second compressible value, besides zero.
+     *
+     * @tparam T the element type concerned
+     * @param second_value the additional value to store as a constant
+     * @warning Not implemented: deleted, so a use fails at compile time. A
+     *          placeholder for the second-constant support that zero_one_value::Array
+     *          offers per array (zero_one_value::Array::set_second_value) and zero_any per
+     *          chunk.
+     */
+    template <typename T>
+    static void set_second_value(T second_value) = delete;
+
+    /**
+     * @brief Print the instrumentation report accumulated during the run.
+     *
+     * @details Reduces the per-thread counters of each variant (zero, zero_one_value,
+     *          zero_any) and prints one block per variant, preceded by a legend;
+     *          variants that saw no activity are skipped. Reports allocations and
+     *          reuse, read/write counts with the share of reads served straight
+     *          from the constant (what the compression actually saves), compression
+     *          attempts and successes, and — in a dynamic build — the re-chunk
+     *          counters and the end-of-life chunk-size distribution.
+     *
+     * @note An empty no-op unless the build defines CHUNK_STATS; the counters
+     *       themselves are only maintained in that build.
+     */
+    static void chunk_stats();
+
+  private:
+    /**
+     * @brief No-op compatibility shim for the former runtime chunk-size setter.
+     *
+     * @details static_chunk_size is a compile-time constant. Warns when asked for a size
+     *          the binary was not built with, rather than ignoring it silently.
+     *
+     * @param value the chunk size the caller wanted; only compared, never applied
+     * @warning To actually change the geometry, rebuild with `-DCHUNK_SIZE=<value>`
+     *          (a power of two or a multiple of 64).
+     */
+    static void set_chunk_size(int value)
+    {
+        if (std::cmp_not_equal(value, static_chunk_size))
+        {
+            CHUNK_LOG(warn, general,
+                      "set_chunk_size({}) ignored; built with CHUNK_SIZE={} (rebuild with -DCHUNK_SIZE={})", value,
+                      static_chunk_size, value);
+        }
+    }
+
+    /**
+     * @brief Number of elements per chunk, as fixed at build time.
+     * @return shrink_array::static_chunk_size (CHUNK_SIZE, default 64)
+     * @note In a CHUNK_DYNAMIC build an individual array may have been re-chunked
+     *       to another size; this still returns the compile-time value. Use
+     *       shrink_array::active_chunk_size() for the geometry currently in effect.
+     */
+    static constexpr unsigned int get_chunk_size() noexcept
+    {
+        return static_chunk_size;
+    }
+
+    /**
+     * @brief No-op compatibility shim: the shift is derived from CHUNK_SIZE.
+     *
+     * @details Kept so existing call sites keep compiling; the value is
+     *          log2(static_chunk_size), computed at compile time.
+     *
+     * @param value the shift the caller wanted; only compared, never applied
+     * @warning Warns when asked for a shift the binary was not built with, as
+     *          set_chunk_size() does.
+     */
+    static void set_decalage_chunk(unsigned int value)
+    {
+        if (value != static_chunk_shift)
+        {
+            CHUNK_LOG(warn, general, "set_decalage_chunk({}) ignored; built with CHUNK_SIZE={} (shift {})", value,
+                      static_chunk_size, static_chunk_shift);
+        }
+    }
+
+    /**
+     * @brief No-op compatibility shim: the mask is derived from CHUNK_SIZE.
+     *
+     * @param value the mask the caller wanted; only compared, never applied
+     * @warning Warns rather than ignoring silently. @see set_decalage_chunk
+     */
+    static void set_modulo_chunk(int value)
+    {
+        if (std::cmp_not_equal(value, static_chunk_mask))
+        {
+            CHUNK_LOG(warn, general, "set_modulo_chunk({}) ignored; built with CHUNK_SIZE={} (mask {})", value,
+                      static_chunk_size, static_chunk_mask);
+        }
+    }
+
+    /**
+     * @brief Mask extracting the offset of an element inside its chunk.
+     * @return static_chunk_size - 1; `offset = i & get_modulo_chunk()`
+     */
+    static constexpr unsigned int get_modulo_chunk() noexcept
+    {
+        return static_chunk_mask;
+    }
+
+    /**
+     * @brief Set the allocation block size, in bytes.
+     * @param bz block size; normally computed by init()
+     */
+    static void set_block_size(int bz) noexcept
+    {
+        block_size = bz;
+    }
+
+    /// @brief Allocation block size in bytes, as set by init().
+    static int get_block_size() noexcept
+    {
+        return block_size;
+    }
+
+    /// @brief Allocation block size in bytes, shared by all types and threads.
+    static int block_size;
+};
+
+/// @brief Former name of Runtime.
+using ParamChunk [[deprecated("renamed Runtime (chunk/runtime.h)")]] = Runtime;
+
+} // namespace shrink_array

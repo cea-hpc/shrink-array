@@ -35,7 +35,7 @@
  *            fold_back        zero_any / zero_one_value: compress it at once
  *
  *          run() drives the slices (16 with the fast allocator and threads, 1
- *          otherwise or for ArrayChunkBits), each a pmp::team region whose closing slice_boundary()
+ *          otherwise or for BitArray), each a pmp::team region whose closing slice_boundary()
  *          sends the slice's released blocks home and recycles the slabs they
  *          emptied.
  *
@@ -188,7 +188,7 @@ class RechunkSupport<Derived, true>::Refill
     static constexpr bool second_index = internal::rechunk_second_index_v<Derived, ChunkType>;
     /// The refill frees each old chunk once transcribed (release_sources()):
     /// threaded builds, every variant and element type but Bit. An
-    /// ArrayChunkBits (zero_one_value::Array<Bit>) packs 8 elements per byte
+    /// BitArray (zero_one_value::Array<Bit>) packs 8 elements per byte
     /// and has a geometry of its own (packed_bit_birth_factor): its rebuild
     /// stays one pass that frees nothing early. Array<bool> is one byte per
     /// bool, released like any other type.

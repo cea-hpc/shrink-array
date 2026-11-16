@@ -45,7 +45,7 @@
 
 #include <sys/resource.h> // getrusage
 
-#include "chunk/param_chunk.h"                // ParamChunk
+#include "chunk/runtime.h"                    // Runtime
 #include "chunk/internal/chunk_size_config.h" // static_chunk_size
 
 #include "config.h"       // multi_mat::max_threads, embedded_compression
@@ -142,21 +142,21 @@ try
         std::cerr << "The chunk size can't be null\n";
     }
 
-    if (!ParamChunk::check_chunk_size(chunk_size))
+    if (!Runtime::check_chunk_size(chunk_size))
     {
         std::cerr << "The chunk size must be a power of two or a multiple of 64";
     }
 
-    if constexpr (chunk_size < ParamChunk::size_min || chunk_size > ParamChunk::size_max)
+    if constexpr (chunk_size < Runtime::size_min || chunk_size > Runtime::size_max)
     {
-        std::cerr << "The chunk size must must be superior or equal to " << ParamChunk::size_min
-                  << " and inferior or equal to " << ParamChunk::size_max << "\n";
+        std::cerr << "The chunk size must must be superior or equal to " << Runtime::size_min
+                  << " and inferior or equal to " << Runtime::size_max << "\n";
         std::abort();
     }
 
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
-    ParamChunk::print_info_chunk();
+    Runtime::print_info_chunk();
     Simu simu;
 
     simu.input_data();
@@ -290,7 +290,7 @@ try
     {
         if (have_chunk)
         {
-            ParamChunk::chunk_stats();
+            Runtime::chunk_stats();
         }
     }
     return 0;

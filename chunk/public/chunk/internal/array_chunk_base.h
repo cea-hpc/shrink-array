@@ -425,7 +425,13 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * Uses multi-threading if not already in a parallel region.
      * @return Total number of non-constant chunks.
      */
-    [[nodiscard]] int get_nb_chunk_written() const;
+    [[nodiscard]] int written_chunk_count() const;
+
+    /// @brief Former name of written_chunk_count().
+    [[deprecated("renamed written_chunk_count()")]] [[nodiscard]] int get_nb_chunk_written() const
+    {
+        return written_chunk_count();
+    }
 
     /**
      * @brief Calculate the filling rate of written chunks.
@@ -439,7 +445,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      */
     [[nodiscard]] double stats() const
     {
-        return nb_chunk_ ? (100.0 * get_nb_chunk_written() / nb_chunk_) : 0.0;
+        return nb_chunk_ ? (100.0 * written_chunk_count() / nb_chunk_) : 0.0;
     }
 
     // ── Capacity, and the growth by one ──────────────────────────────────────
@@ -552,7 +558,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @name Bulk reads
      * The read half of fill_range / copy_range. Call them through the free
      * functions shrink_array::for_each_value / for_each_span / read_range
-     * (array_chunk_range_ops.h), which take a std::vector as well.
+     * (range_ops.h), which take a std::vector as well.
      * @{
      */
     /**
@@ -997,10 +1003,10 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     [[nodiscard]] bool is_written_at(int num_chunk) const noexcept;
 
     /**
-     * @brief Sequential counterpart of get_nb_chunk_written().
+     * @brief Sequential counterpart of written_chunk_count().
      * @return Total number of non-constant chunks, counted on one thread.
      */
-    [[nodiscard]] int get_nb_chunk_written_seq() const;
+    [[nodiscard]] int written_chunk_count_seq() const;
 
     /**
      * @brief Centralized synchronization logic.

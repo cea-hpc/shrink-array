@@ -66,17 +66,17 @@
 #include "chunk/zero_array.h"                 // zero::Array
 #include "chunk/zero_one_value_array.h"       // zero_one_value::Array
 #include "chunk/zero_any_array.h"             // zero_any::Array
-#include "chunk/param_chunk.h"                // ParamChunk::register_chunk_size, init_indexes
+#include "chunk/runtime.h"                    // Runtime::register_chunk_size, init
 #include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
 #include "chunk/config.h"                     // chunk_config::use_zero*
-#include "chunk/array_chunk_range_ops.h"      // fill_range / copy_range
-#include "chunk/manage_ompt.h"                // finalize_parallel_phase (compression backlog drain)
+#include "chunk/range_ops.h"                  // fill_range / copy_range
+#include "chunk/phases.h"                     // finalize_parallel_phase (compression backlog drain)
 #include "chunk/internal/env_parse.h"         // env_number / arg_number (checked, not atoi)
 #include "chunk/print.h"                      // shrink_array::println
 
 using namespace shrink_array;
 
-#include "chunk/internal/zero_chunk.h" // release_chunk_pools, destroy_block_chunk
+#include "chunk/internal/zero_chunk.h" // release_chunk_pools, Runtime::shutdown
 #include "validation_harness.h"        // self_command; run() is called by validation_driver.cpp
 
 namespace validation::rechunk_validation
@@ -101,7 +101,7 @@ namespace
 // OMPT, which already drains.
 void drain_compression_backlog()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -125,7 +125,7 @@ void for_each_index(long count, F&& func)
     }
 #pragma omp parallel
     {
-        if constexpr (build_config::has_not_ompt)
+        if constexpr (build_config::needs_explicit_phases)
         {
             shrink_array::begin_parallel_phase();
         }
@@ -154,7 +154,7 @@ long count_if_index(long nindex, F&& bad)
     }
 #pragma omp parallel reduction(+ : count)
     {
-        if constexpr (build_config::has_not_ompt)
+        if constexpr (build_config::needs_explicit_phases)
         {
             shrink_array::begin_parallel_phase();
         }
@@ -823,13 +823,13 @@ struct Case
 /// @brief Declare @p size as the ambient geometry, to the arrays AND to the
 ///        allocators. set_active_chunk_size() only moves the ARRAY-side
 ///        geometry: without the registration, arrays report chunk_size() ==
-///        size but draw their buffers from whatever size init_indexes()
+///        size but draw their buffers from whatever size init()
 ///        primed, and every read past that width returns another chunk's data.
 void set_start_geometry(unsigned size)
 {
     set_active_chunk_size(size);
     set_thread_chunk_size(size);
-    ParamChunk::register_chunk_size(size);
+    Runtime::register_chunk_size(size);
 }
 } // namespace
 
@@ -1043,7 +1043,7 @@ static int run_body(int argc, char** argv)
         }
     }
 
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     println("=== rechunk_validation [variant = {}]  N_scale={}  64->{}  case={}  mode={} ===", variant_name(), n_scale,
             tgt, only ? only : "all", mode);
@@ -1086,7 +1086,7 @@ int run(int argc, char** argv)
     // one in the std-alloc builds (each buffer is a real malloc there).
     const int rc = run_body(argc, argv);
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
     return rc;
 }
 

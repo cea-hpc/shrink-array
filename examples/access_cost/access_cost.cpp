@@ -92,10 +92,10 @@
 #include "chunk/zero_array.h"           // zero::Array
 #include "chunk/zero_one_value_array.h" // zero_one_value::Array
 #include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
-#include "chunk/config.h"               // chunk_config::use_zero*, build_config::use_openmp / has_not_ompt
-#include "chunk/threads.h"              // pmp::max_threads, team_size, thread_rank (read-bulk)
-#include "chunk/manage_ompt.h"          // begin_parallel_phase, finalize_parallel_phase
+#include "chunk/runtime.h"              // Runtime::init
+#include "chunk/config.h"               // chunk_config::use_zero*, build_config::use_openmp / needs_explicit_phases
+#include "chunk/threads.h"              // shrink_array::max_threads, team_size, thread_rank (read-bulk)
+#include "chunk/phases.h"               // begin_parallel_phase, finalize_parallel_phase
 #include "chunk/print.h"                // shrink_array::println
 
 using namespace shrink_array;
@@ -150,7 +150,7 @@ namespace
 // ── Phase brackets: no-ops under OMPT (the callbacks do it) ─────────────────
 void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
@@ -158,7 +158,7 @@ void begin_phase()
 
 void end_phase(Array<double>& arr)
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -307,8 +307,8 @@ Sample arr_read_bulk(Array<double>& arr, int count)
 #pragma omp parallel reduction(+ : sum)
     {
         begin_phase();
-        const long nt   = pmp::team_size();
-        const long rank = pmp::thread_rank();
+        const long nt   = shrink_array::team_size();
+        const long rank = shrink_array::thread_rank();
         const auto lo   = static_cast<int>(count * rank / nt);
         const auto hi   = static_cast<int>(count * (rank + 1) / nt);
         double     part = 0.;
@@ -430,13 +430,13 @@ constexpr int         n_cases      = static_cast<int>(std::size(case_names));
 int main(int argc, char** argv)
 try
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     // At least 2^20 elements per thread: with a fixed 2^27, 288 threads had
     // 466k elements each, a case lasted a few milliseconds, and the region
     // and phase overheads made the medians too noisy to compare.
     constexpr long min_elems_per_thread = 1L << 20;
-    long           n_elems = std::max(1L << 27, static_cast<long>(pmp::max_threads()) * min_elems_per_thread);
+    long           n_elems = std::max(1L << 27, static_cast<long>(shrink_array::max_threads()) * min_elems_per_thread);
     n_elems                = std::min(n_elems, 0x7fffffffL);
     int  reps              = 5;
     bool csv               = false;
@@ -482,7 +482,7 @@ try
     else
     {
         println("=== access_cost [{}]  n={}  chunk_size={}  threads={}  reps={} ===", variant_name(), n_elems, chunk_sz,
-                pmp::max_threads(), reps);
+                shrink_array::max_threads(), reps);
     }
 
     const std::vector<int> idx = random_indices(n_elems);
@@ -509,8 +509,8 @@ try
         times[c][container].push_back(seconds);
         if (csv)
         {
-            println("{},{},{},{},{},{},{},{:.9f},{:.4f}", variant_name(), chunk_sz, pmp::max_threads(), n_elems, rep,
-                    case_names[c], container ? "array" : "vector", seconds,
+            println("{},{},{},{},{},{},{},{:.9f},{:.4f}", variant_name(), chunk_sz, shrink_array::max_threads(),
+                    n_elems, rep, case_names[c], container ? "array" : "vector", seconds,
                     seconds * 1e9 / static_cast<double>(n_elems));
         }
     };

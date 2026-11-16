@@ -530,13 +530,13 @@ try
     // (bench_array.h says why).
     BenchBoolArray tab_bool(sz);
     // tab_bool's twin, written with the same values at the same places:
-    // ArrayChunkBits (8 bools per byte) in a zero_one_value build, tab_bool's own type
+    // BitArray (8 bools per byte) in a zero_one_value build, tab_bool's own type
     // elsewhere (BenchBoolBitsArray). Compare the two in the stats, the
     // chunk filling rates and the pools of a single run.
     BenchBoolBitsArray tab_bool_bits(sz);
 
     // Large and mostly NOT constant: random masks and scattered flags between
-    // whole constant segments (bench_phase_mask.cpp). ArrayChunkBits in a
+    // whole constant segments (bench_phase_mask.cpp). BitArray in a
     // zero_one_value build, std::vector<bool> in the baseline (BenchMaskArray).
     // Size 1 under --no_mask: its phases are skipped (BenchArrays::with_mask).
     // mask_scale * sz (--mask_scale, default 1/32): computed in 64 bits and
@@ -842,14 +842,14 @@ try
                 }
             }
             // --advise_bool: the two bool containers, re-chunked like the rest.
-            // tab_bool_bits is an ArrayChunkBits in a zero_one_value build
+            // tab_bool_bits is an BitArray in a zero_one_value build
             // (value_type Bit, as tab_mask), tab_bool's own type elsewhere.
             if (bench_args.advise_bool)
             {
                 rechunk_decider.consider<bool>(tab_bool, tick, iter, "tab_bool");
                 rechunk_decider.consider<BenchBoolBitsArray::value_type>(tab_bool_bits, tick, iter, "tab_bool_bits");
             }
-            // tab_mask: an ArrayChunkBits in a zero_one_value build, whose advisor
+            // tab_mask: an BitArray in a zero_one_value build, whose advisor
             // knows the packed layout (the other variants' Array<bool> is not
             // what this array is for).
             if constexpr (chunk_config::use_zero_one_value)
@@ -1086,7 +1086,7 @@ try
         //     (every chunk, every rank), which dwarfed the parallel work of
         //     the iteration. The same call sites compile against std::vector
         //     (vector_range_ops.h) and against the chunked arrays
-        //     (array_chunk_range_ops.h): the reference data written by the
+        //     (range_ops.h): the reference data written by the
         //     vector build carry these writes, and the check builds compare
         //     them like any other.
         if (k % 5 == 4)
@@ -1199,7 +1199,7 @@ try
 
         bench_check_all(bench_arrays, k, bench_io_flags);
 
-        // ParamChunk::force_compression() and bench_phase_compress_all() are both
+        // Runtime::force_compression() and bench_phase_compress_all() are both
         // declared and defined in EVERY variant (the latter is a no-op in the
         // std::vector build), so the whole block can be a runtime-discarded
         // `if constexpr` rather than a directive.
@@ -1219,7 +1219,7 @@ try
                         [&]([[maybe_unused]] bench_par::Team& team)
                         {
                             // Compiled in the std::vector build too: a no-op there.
-                            ParamChunk::force_compression();
+                            Runtime::force_compression();
                         });
                 }
             }

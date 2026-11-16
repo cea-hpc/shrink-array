@@ -15,12 +15,12 @@
  */
 
 // ============================================================================
-// The bit-packed storage kernel of ArrayChunkBits (bit_words.h), alone: no
+// The bit-packed storage kernel of BitArray (bit_words.h), alone: no
 // chunk, no array, no variant.
 // ============================================================================
 //
 //   1. geometry: words_for / bytes_for / tail_mask at the chunk sizes the
-//      library uses (32 is ParamChunk::size_min) and at the edges of a word;
+//      library uses (32 is Runtime::size_min) and at the edges of a word;
 //   2. get/set against std::vector<bool>, over a random write sequence;
 //   3. scan_words: all-false / all-true / mixed, including a tail full of
 //      garbage (it must be masked) and a single differing bit at each end;

@@ -36,7 +36,7 @@
 | `SHRINK_ARRAY_BUILD_TESTS` | `ON` at top level | register the tests with CTest; `OFF` by default when the project is included in another one, whose `ctest` then does not run them |
 | `CHUNK_STD_ALLOC` | `OFF` | standard allocator for the chunk buffers instead of `fast_allocators` (useful under ASan: each buffer is a real `malloc`) |
 | `CHUNK_SECOND_VALUE_INDEXED` | `OFF` | `zero_any`: the second-value slot holds a 4-byte identifier instead of the value (less memory, +3% write time) |
-| `CHUNK_STATS` | `OFF` | instrumentation counters and the `ParamChunk::chunk_stats()` report |
+| `CHUNK_STATS` | `OFF` | instrumentation counters and the `Runtime::chunk_stats()` report |
 | `CHECK_OPTIM` | `OFF` | invariant checks in an optimised build |
 | `SANITIZER` | `none` | `thread`, `address`, `undefined` (UBSan, the first report stops the program) or `token` (AllocToken, Clang ≥ 22), for all build types |
 
