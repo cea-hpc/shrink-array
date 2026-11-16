@@ -34,10 +34,10 @@
 #include "chunk/internal/in_t.h"                        // InT<T>: the element snapshots
 #include "chunk/zero_one_value_array.h"                 // zero_one_value::Array, the class these bodies belong to
 #include "chunk/internal/type_name.h"                   // type_name<T>
-#include "chunk/internal/singleton.h"                   // SingletonChk<AllTypeChunk>::get_ref
+#include "chunk/internal/singleton.h"                   // SingletonChk<TypeStateRegistry>::get_ref
 #include "chunk/internal/zero_one_value_proxy.h"        // zero_one_value::Proxy<T>
 #include "chunk/internal/chunk_stats.h"                 // increm_chunk_teardown_clear, add_chunk_released
-#include "chunk/internal/all_type_chunk.h"              // AllTypeChunk::ensure_manager
+#include "chunk/internal/type_state_registry.h"         // TypeStateRegistry::ensure_manager
 #include "chunk/config.h"                               // chunk_config::use_fast_block_compression, chunk_config::stats
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED, value_repr
 #include "chunk/internal/chunk_index_sample.h"          // chunk_index_sample (the residual's sample)
@@ -100,8 +100,8 @@ void zero_one_value::Array<T, IntType>::create(IntType sz)
     this->check_length(sz, "constructor");
     const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
     // The first array of this element type registers its manager; every
-    // later one pays a guard load. See AllTypeChunk.
-    AllTypeChunk::ensure_manager<TypeState<zero_one_value::Chunk, T>>();
+    // later one pays a guard load. See TypeStateRegistry.
+    TypeStateRegistry::ensure_manager<TypeState<zero_one_value::Chunk, T>>();
 
     chunk_config::CheckNaN<chunk_config::do_check>::update(true);
 
@@ -637,7 +637,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
     {
         if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
         {
-            const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
+            const auto& ens_type_chunk = SingletonChk<TypeStateRegistry>::get_ref();
 
             // Not for a work array torn down in a region: that pass walks every
             // rank's list, of every type.
@@ -832,7 +832,7 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
         if (!chunk_config::aggressive_compression() && !CHUNK_PMP_IN_PARALLEL_REGION)
         // run-time switch: chunk/config.h
         {
-            if (const auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::get_ref();
+            if (const auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::TypeStateRegistry>::get_ref();
                 ens_type_chunk.have_chunk_to_compress_potentially())
             {
                 ens_type_chunk.compress_chunk_to_compress_potentially(true);

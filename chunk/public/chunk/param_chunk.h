@@ -20,14 +20,14 @@
 #include <iostream> // std::cout
 #include <utility>  // std::cmp_not_equal
 
-#include "chunk/config.h"                     // build_config::threaded, chunk_dynamic
-#include "chunk/internal/chunk_size_config.h" // static_chunk_size, static_chunk_shift, static_chunk_mask
-#include "chunk/internal/chunk_size_policy.h" // active_chunk_size, chunk_size_error
-#include "chunk/internal/func_p2.h"           // log2int
-#include "chunk/internal/singleton.h"         // SingletonChk
-#include "chunk/internal/all_type_chunk.h"    // AllTypeChunk
-#include "chunk/log.h"                        // CHUNK_LOG (the static build's ignored setters)
-#include "chunk/internal/pool_release.h"      // release_chunk_pools, destroy_block_chunk: the shutdown
+#include "chunk/config.h"                       // build_config::threaded, chunk_dynamic
+#include "chunk/internal/chunk_size_config.h"   // static_chunk_size, static_chunk_shift, static_chunk_mask
+#include "chunk/internal/chunk_size_policy.h"   // active_chunk_size, chunk_size_error
+#include "chunk/internal/func_p2.h"             // log2int
+#include "chunk/internal/singleton.h"           // SingletonChk
+#include "chunk/internal/type_state_registry.h" // TypeStateRegistry
+#include "chunk/log.h"                          // CHUNK_LOG (the static build's ignored setters)
+#include "chunk/internal/pool_release.h"        // release_chunk_pools, destroy_block_chunk: the shutdown
 
 namespace shrink_array
 {
@@ -56,31 +56,31 @@ namespace shrink_array
  * @note Everything here is a sequential-context operation: call it before the
  *       arrays it configures are used in parallel.
  * @see chunk_size_config.h for the compile-time geometry constants
- * @see AllTypeChunk, which holds the per-type managers this class drives
+ * @see TypeStateRegistry, which holds the per-type managers this class drives
  */
 // ===========================================================================
 // Build-dependent halves of the façade.
 //
 // Two of ParamChunk's verbs differ by build in their very NAME, which no `if constexpr` can
 // express, so they live in policies selected by a constexpr (as in TypeStateInterface and
-// AllTypeChunk). All static: no CRTP down-cast. The bodies are in param_chunk.cpp, with one
+// TypeStateRegistry). All static: no CRTP down-cast. The bodies are in param_chunk.cpp, with one
 // explicit instantiation of the specialisation this build selects.
 // ===========================================================================
 
 /**
  * @brief The thread-model half of the startup: one verb, two bodies.
  * @tparam Enabled build_config::threaded.
- * @tparam AllT    The AllTypeChunk facade. LOAD-BEARING -- see below.
+ * @tparam AllT    The TypeStateRegistry facade. LOAD-BEARING -- see below.
  *
- * @note AllT looks redundant (it is only ever AllTypeChunk) and is not: it keeps the two
+ * @note AllT looks redundant (it is only ever TypeStateRegistry) and is not: it keeps the two
  *       bodies TEMPLATES, so only the one this build selects is instantiated. A `template <>`
  *       full specialisation would be compiled eagerly, and the two bodies cannot both compile
- *       (each calls AllTypeChunk verbs only its own AllTypeChunkParallelInterface<Derived, B>
+ *       (each calls TypeStateRegistry verbs only its own TypeStateRegistryParallelInterface<Derived, B>
  *       declares). The calls must also stay DEPENDENT on AllT (SingletonChk<AllT>, never
- *       SingletonChk<AllTypeChunk>), or phase-1 lookup rejects the other build's body. Same
- *       reason as the Derived parameter of AllTypeChunkParallelInterface.
+ *       SingletonChk<TypeStateRegistry>), or phase-1 lookup rejects the other build's body. Same
+ *       reason as the Derived parameter of TypeStateRegistryParallelInterface.
  */
-template <bool Enabled = build_config::threaded, typename AllT = AllTypeChunk>
+template <bool Enabled = build_config::threaded, typename AllT = TypeStateRegistry>
 struct ParamChunkParallelInterface; // primary left undefined: only the 2 specializations exist
 
 /// @brief OpenMP builds: init_thread_structures() prints the allocator / thread-model banner.
@@ -91,7 +91,7 @@ struct ParamChunkParallelInterface<true, AllT>
      * @brief What init_indexes() prints about the thread model (OpenMP build).
      *
      * @details A type is set up when its first array registers its manager
-     *          (AllTypeChunk::init_manager, sequential, rank by rank), so
+     *          (TypeStateRegistry::init_manager, sequential, rank by rank), so
      *          nothing per type is done here: only the allocator banner.
      */
     static void init_thread_structures();
@@ -111,14 +111,14 @@ struct ParamChunkParallelInterface<false, AllT>
 /**
  * @brief The runtime-geometry verb, present only in dynamic builds.
  * @tparam Enabled build_config::chunk_dynamic.
- * @tparam AllT    The AllTypeChunk facade. LOAD-BEARING, as on ParamChunkParallelInterface
+ * @tparam AllT    The TypeStateRegistry facade. LOAD-BEARING, as on ParamChunkParallelInterface
  *                 (see the note there).
  *
- * @note The body calls AllTypeChunk::register_chunk_size(), which only
- *       AllTypeChunkDynInterface<Derived, true> declares: keep it a template and the call
+ * @note The body calls TypeStateRegistry::register_chunk_size(), which only
+ *       TypeStateRegistryDynInterface<Derived, true> declares: keep it a template and the call
  *       dependent on AllT, or the static build fails to compile.
  */
-template <bool Enabled = build_config::chunk_dynamic, typename AllT = AllTypeChunk>
+template <bool Enabled = build_config::chunk_dynamic, typename AllT = TypeStateRegistry>
 struct ParamChunkDynInterface; // primary left undefined: only the 2 specializations exist
 
 /// @brief Dynamic-geometry builds: provides register_chunk_size().
@@ -238,7 +238,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      *
      * @details Computes the allocation block size from @p big_chunk_block and the
      *          thread count, publishes it via set_block_size(), then sizes the
-     *          per-type structures held by the AllTypeChunk singleton: the
+     *          per-type structures held by the TypeStateRegistry singleton: the
      *          compression-candidate lists and, under OpenMP, the per-thread reuse
      *          free-lists and chunk lists. In a fast-alloc build it also creates
      *          and initialises the chunk allocators (one per thread under OpenMP);
@@ -253,7 +253,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      *
      * @note Optional. Called in a sequential context before the first array,
      *       it chooses @p big_chunk_block; otherwise the first array of the
-     *       process runs init_indexes(true) itself (AllTypeChunk::ensure_ready),
+     *       process runs init_indexes(true) itself (TypeStateRegistry::ensure_ready),
      *       wherever it is constructed -- a global array included.
      * @warning A chunk must fit in one allocation block; a warning is emitted
      *          otherwise. A later call that would change the block size (the
@@ -268,7 +268,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      *        element types.
      *
      * @details The element types need no declaring: the first array of a type
-     *          registers its manager (AllTypeChunk::ensure_manager, from the
+     *          registers its manager (TypeStateRegistry::ensure_manager, from the
      *          array's create). This overload registers a list now,
      *          @code
      *          using MyChunkTypes = std::tuple<double, int>;
@@ -289,7 +289,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     static void init_indexes(bool big_chunk_block)
     {
         init_indexes(big_chunk_block); // the process-wide setup first: the managers need its block size
-        SingletonChk<AllTypeChunk>::get_ref().initialize<Types>();
+        SingletonChk<TypeStateRegistry>::get_ref().initialize<Types>();
     }
 
     /**

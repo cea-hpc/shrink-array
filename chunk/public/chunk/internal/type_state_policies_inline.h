@@ -441,7 +441,7 @@ void TypeStateDynImpl<ChunkT, T, true>::register_chunk_size(unsigned int size, [
 }
 
 // Teardown of the reuse lists, in four phases inside ONE parallel region
-// (AllTypeChunk::clear_list_block_free_thr opens it, once for every type):
+// (TypeStateRegistry::clear_list_block_free_thr opens it, once for every type):
 //
 //   prepare  sequential, before the region: size the buckets.
 //   screen   one bucket per call: move rank r's legacy list and its slot in

@@ -47,26 +47,26 @@ class TypeState;
 /// @brief The per-type facade these verbs drive. Forward-declared, not included:
 ///        zero_chunk.h sits inside an include cycle (chunk_func.h -> zero_chunk.h ->
 ///        zero_proxy.h -> type_state.h). Only chunk_std.cpp needs the full type.
-class AllTypeChunk;
+class TypeStateRegistry;
 
 /**
  * @brief The chunk reuse pools' load-balancing and teardown surface, split on
  *        the thread model.
  *
  * @tparam Enabled build_config::threaded.
- * @tparam AllT    The AllTypeChunk facade. LOAD-BEARING (as on
+ * @tparam AllT    The TypeStateRegistry facade. LOAD-BEARING (as on
  *                 ParamChunkParallelInterface, param_chunk.h): it keeps the
  *                 bodies TEMPLATES, so a build instantiates only its own, and
  *                 the calls DEPENDENT, so phase-1 lookup does not resolve them
  *                 against the concrete facade. The two teardown halves are verbs
- *                 of DIFFERENT policies (AllTypeChunkParallelInterface<Derived,
+ *                 of DIFFERENT policies (TypeStateRegistryParallelInterface<Derived,
  *                 true> vs <Derived, false>), neither declaring the other's.
  *
  * @note EVERY verb exists in BOTH specialisations, so callers need no build
  *       guard; those with nothing to do in a model are no-ops.
  * @see release_chunk_pools(), the verb for "let go of the reuse pools" in any build.
  */
-template <bool Enabled = build_config::threaded, typename AllT = AllTypeChunk>
+template <bool Enabled = build_config::threaded, typename AllT = TypeStateRegistry>
 struct ChunkPoolParallelInterface; // primary left undefined: only the 2 specializations exist
 
 /// @brief OpenMP builds: the pools are per-rank.
@@ -531,7 +531,7 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     static void compress_chunk_to_compress(bool apply);
 
     /// @brief One rank's share of compress_chunk_to_compress(): the body its
-    ///        region runs on each thread. Public for AllTypeChunk's single
+    ///        region runs on each thread. Public for TypeStateRegistry's single
     ///        sweep region (TypeState::sweep_rank).
     /// @param thr rank whose candidate list to drain
     static void compress_sweep_rank(int thr);

@@ -140,7 +140,7 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
         bench_phase_compress_all(bench_arrays);
     }
 
-    // No #ifdef: both names below are declared unguarded (all_type_chunk.h
+    // No #ifdef: both names below are declared unguarded (type_state_registry.h
     // and zero_chunk.h) and defined in EVERY variant library -- the symbols are
     // in libchunk_vector.a too -- so the discarded branch both type-checks and
     // links in the std::vector build.

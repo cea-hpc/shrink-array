@@ -31,8 +31,8 @@
 #include "chunk/internal/env_parse.h" // env_flag
 #include "chunk/internal/exact_rss.h" // exact current and peak memory
 
-#include "chunk/internal/all_type_chunk.h" // reuse_pool_bytes, the retention split of memory_consumption
-#include "chunk/build_options.h"           // CHUNK_OPT_FAST_ALLOC
+#include "chunk/internal/type_state_registry.h" // reuse_pool_bytes, the retention split of memory_consumption
+#include "chunk/build_options.h"                // CHUNK_OPT_FAST_ALLOC
 #if CHUNK_OPT_FAST_ALLOC
     #include "fast_allocators/slab_arena.h" // report_all_arenas, its slab-side counterpart
 #endif
@@ -173,7 +173,7 @@ void memory_consumption(const std::string& msg)
                 static const bool keep_pools = shrink_array::env_flag("SHRINK_BENCH_KEEP_POOLS");
                 if (!keep_pools)
                 {
-                    (void)shrink_array::SingletonChk<shrink_array::AllTypeChunk>::get_ref().trim_reuse_pools(0);
+                    (void)shrink_array::SingletonChk<shrink_array::TypeStateRegistry>::get_ref().trim_reuse_pools(0);
                 }
             }
             malloc_trim(0);
@@ -241,7 +241,7 @@ void memory_consumption(const std::string& msg)
         if constexpr (chunk_config::is_shrink_enabled)
         {
             const std::size_t parked =
-                shrink_array::SingletonChk<shrink_array::AllTypeChunk>::get_ref().reuse_pool_bytes();
+                shrink_array::SingletonChk<shrink_array::TypeStateRegistry>::get_ref().reuse_pool_bytes();
             std::cout << ", parked " << convert_memory(static_cast<double>(parked)) << " Mo";
             // Preprocessor guard, not `if constexpr`: ChunkStatsThr and
             // reduce_chunk_stats() only exist in a CHUNK_STATS build, and a

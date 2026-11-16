@@ -30,7 +30,7 @@
 namespace shrink_array
 {
 
-/// @brief When fast allocation is enabled, call destroy_block_chunk() on the AllTypeChunk singleton; otherwise
+/// @brief When fast allocation is enabled, call destroy_block_chunk() on the TypeStateRegistry singleton; otherwise
 ///        do nothing. Nothing either while an array is alive (see release_chunk_pools()).
 extern void destroy_block_chunk();
 

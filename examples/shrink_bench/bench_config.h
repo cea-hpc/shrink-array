@@ -90,10 +90,10 @@ inline constexpr bool have_bzip2 = false;
 // In a NON-template, `if constexpr` still type-checks AND odr-uses the
 // discarded branch. It may replace a directive only when BOTH branches name
 // entities that exist and LINK in every configuration. That is a question of
-// fact, checkable: all_type_chunk.h declares print_all_reuse_pool_breakdown
+// fact, checkable: type_state_registry.h declares print_all_reuse_pool_breakdown
 // unguarded and `nm` finds it in libchunk_vector.a, so bench_teardown.cpp's
 // guard could go; fast_allocators' report_all_arenas is not even on the
-// std-alloc include path, so all_type_chunk.cpp's cannot.
+// std-alloc include path, so type_state_registry.cpp's cannot.
 //
 // In a TEMPLATE it is different, and this is the exception that retired eleven
 // directives from bench_io.h: a discarded branch whose expressions are

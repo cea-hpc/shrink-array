@@ -27,17 +27,17 @@
 #include "chunk/internal/for_each_type.h" // for_each_type, for fill_type_state
 
 /**
- * @file all_type_chunk_decl.h
+ * @file type_state_registry_decl.h
  * @brief Type-erased registry of every per-type chunk manager of the process:
  *        the declarations, without the template bodies.
  *
- * @details For a header that must name AllTypeChunk while a variant's array
+ * @details For a header that must name TypeStateRegistry while a variant's array
  *          class is still being defined: array_chunk_base_inline.h, whose
  *          ArrayChunkBase::create() calls ensure_manager(). The bodies
- *          (all_type_chunk_inline.h) reach the managers, then zero_any and
+ *          (type_state_registry_inline.h) reach the managers, then zero_any and
  *          zero_any_array.h -- included from there, inside second_value_array_base.h,
  *          they closed a cycle and SecondValueArrayBase was not yet declared. They
- *          come with all_type_chunk.h, which each variant's _inline.h
+ *          come with type_state_registry.h, which each variant's _inline.h
  *          includes after its class.
  *
  * @see type_state.h for the TypeStateInterface interface this class dispatches
@@ -62,33 +62,33 @@ class TypeState; // type_state.h; named by fill_type_state, complete where it is
 // Build-dependent halves of the registry's surface.
 //
 // A method cannot be declared conditionally, so the build-dependent halves of
-// AllTypeChunk live in policies selected by a constexpr; AllTypeChunk inherits
+// TypeStateRegistry live in policies selected by a constexpr; TypeStateRegistry inherits
 // both. They mirror (and forward to) TypeStateInterface's
 // TypeStateParallelInterface / DynInterface.
 //
-// The bodies stay in all_type_chunk.cpp, whose explicit instantiation names
+// The bodies stay in type_state_registry.cpp, whose explicit instantiation names
 // exactly one specialisation of each policy: the other is never type-checked,
 // which lets the OpenMP bodies call manager virtuals a serial build does not
 // declare.
 //
 // Each body reaches the registry with an inline static_cast, not a self()
 // helper or CRTPSupport<Derived> (same rule as ChunkAllocPolicy /
-// ChunkDeferredOpsPolicy): AllTypeChunk inherits both policies, so a helper
-// named in both would be ambiguous on AllTypeChunk.
+// ChunkDeferredOpsPolicy): TypeStateRegistry inherits both policies, so a helper
+// named in both would be ambiguous on TypeStateRegistry.
 // ===========================================================================
 
 /**
  * @brief The threading-dependent half of the registry.
- * @tparam Derived AllTypeChunk (CRTP, for get_list_type_chunk()).
+ * @tparam Derived TypeStateRegistry (CRTP, for get_list_type_chunk()).
  * @tparam Enabled build_config::threaded.
  */
 template <typename Derived, bool Enabled = build_config::threaded>
-class AllTypeChunkParallelInterface; // primary left undefined: only the 2 specializations exist
+class TypeStateRegistryParallelInterface; // primary left undefined: only the 2 specializations exist
 
 /// @brief OpenMP builds: per-thread allocators, per-thread free lists, and a
 ///        deferred-write queue to drain.
 template <typename Derived>
-class AllTypeChunkParallelInterface<Derived, true>
+class TypeStateRegistryParallelInterface<Derived, true>
 {
   public:
     /**
@@ -149,7 +149,7 @@ class AllTypeChunkParallelInterface<Derived, true>
 
 /// @brief Serial builds: one allocator per type, and nothing deferred.
 template <typename Derived>
-class AllTypeChunkParallelInterface<Derived, false>
+class TypeStateRegistryParallelInterface<Derived, false>
 {
   public:
     /// Destroys the single chunk allocator of every type (no-op in std-alloc builds).
@@ -178,11 +178,11 @@ class AllTypeChunkParallelInterface<Derived, false>
  * @tparam Enabled build_config::chunk_dynamic.
  */
 template <typename Derived, bool Enabled = build_config::chunk_dynamic>
-struct AllTypeChunkDynInterface; // primary left undefined: only the 2 specializations exist
+struct TypeStateRegistryDynInterface; // primary left undefined: only the 2 specializations exist
 
 /// @brief Dynamic-geometry builds: chunk sizes are declared at run time via register_chunk_size().
 template <typename Derived>
-struct AllTypeChunkDynInterface<Derived, true>
+struct TypeStateRegistryDynInterface<Derived, true>
 {
     /**
      * @brief Declares a chunk geometry to every type's manager.
@@ -203,7 +203,7 @@ struct AllTypeChunkDynInterface<Derived, true>
 
 /// @brief Fixed-geometry builds: no geometry to declare.
 template <typename Derived>
-struct AllTypeChunkDynInterface<Derived, false>
+struct TypeStateRegistryDynInterface<Derived, false>
 {
 };
 
@@ -212,7 +212,7 @@ struct AllTypeChunkDynInterface<Derived, false>
  *
  * A TypeState is parameterised by both a chunk template (zero / zero_one_value /
  * zero_any) and an element type, so there is one manager per combination and no
- * single type can name them all. AllTypeChunk owns them behind
+ * single type can name them all. TypeStateRegistry owns them behind
  * TypeStateInterface pointers and offers the "do it for every type" operations the
  * rest of the library needs: allocator setup, deferred-write flush,
  * compression passes, free-list load balancing and teardown.
@@ -221,7 +221,7 @@ struct AllTypeChunkDynInterface<Derived, false>
  * forwards to the matching TypeStateInterface virtual, so the semantics of each
  * one are those of the manager method it calls, applied to all types at once.
  *
- * Access is through <tt>SingletonChk\<AllTypeChunk\>\::get_ref()</tt>. The registry starts
+ * Access is through <tt>SingletonChk\<TypeStateRegistry\>\::get_ref()</tt>. The registry starts
  * empty and fills itself: the first array of each (chunk template, element
  * type) registers its manager from its create() (ensure_manager). The first
  * array of the process also runs ParamChunk::init_indexes(true) if the program
@@ -231,17 +231,18 @@ struct AllTypeChunkDynInterface<Derived, false>
  *
  * @note The available surface depends on the build, and the parts that vary
  *       live in the two policies above:
- *       AllTypeChunkParallelInterface picks the per-thread allocator and
+ *       TypeStateRegistryParallelInterface picks the per-thread allocator and
  *       free-list methods over the single-allocator ones,
- *       AllTypeChunkDynInterface adds register_chunk_size().
+ *       TypeStateRegistryDynInterface adds register_chunk_size().
  */
-class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public AllTypeChunkDynInterface<AllTypeChunk>
+class TypeStateRegistry : public TypeStateRegistryParallelInterface<TypeStateRegistry>,
+                          public TypeStateRegistryDynInterface<TypeStateRegistry>
 {
   public:
-    friend class ::fast_alloc::Singleton<AllTypeChunk>; // SingletonChk<AllTypeChunk>
+    friend class ::fast_alloc::Singleton<TypeStateRegistry>; // SingletonChk<TypeStateRegistry>
     /// The dynamic-geometry policy records the sizes it declares (registered_sizes_).
     template <typename D, bool E>
-    friend struct AllTypeChunkDynInterface;
+    friend struct TypeStateRegistryDynInterface;
 
     /// The managers' interface, reached through Derived by the policies so
     /// that their bodies stay dependent (each build declares a different half).
@@ -252,20 +253,20 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
      *        each type (ensure_manager), or up front through initialize<Types>().
      *
      * Private-by-convention: instances are created only by
-     * `SingletonChk<AllTypeChunk>`, which is a friend.
+     * `SingletonChk<TypeStateRegistry>`, which is a friend.
      *
-     * @note Out of line (all_type_chunk.cpp): it checks, once per process,
+     * @note Out of line (type_state_registry.cpp): it checks, once per process,
      *       that the OMPT tool of an OMPT build is loaded
      *       (check_ompt_tool_loaded, manage_ompt.h).
      */
-    AllTypeChunk();
+    TypeStateRegistry();
 
     /// Non-copyable: the registry owns the managers and is a singleton.
-    AllTypeChunk(const AllTypeChunk&)            = delete;
-    AllTypeChunk& operator=(const AllTypeChunk&) = delete;
-    AllTypeChunk(AllTypeChunk&&)                 = delete;
-    AllTypeChunk& operator=(AllTypeChunk&&)      = delete;
-    virtual ~AllTypeChunk()                      = default;
+    TypeStateRegistry(const TypeStateRegistry&)            = delete;
+    TypeStateRegistry& operator=(const TypeStateRegistry&) = delete;
+    TypeStateRegistry(TypeStateRegistry&&)                 = delete;
+    TypeStateRegistry& operator=(TypeStateRegistry&&)      = delete;
+    virtual ~TypeStateRegistry()                           = default;
 
     /// @brief ParamChunk::init_indexes() has set the block size: managers may
     ///        now be registered. Records the block size they are built with.
@@ -474,7 +475,7 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
     std::vector<unsigned int> registered_sizes_;
 
     // The block-free-list verbs (load_balance_list_block_free() & co.) live in
-    // AllTypeChunkParallelInterface: they forward to manager virtuals that only
+    // TypeStateRegistryParallelInterface: they forward to manager virtuals that only
     // TypeStateParallelInterface<true> declares.
 };
 
@@ -507,9 +508,9 @@ bool set_max_malloc_arenas(int max_arenas);
 /**
  * @brief Print every manager's reuse pools, broken down by geometry.
  *
- * @details A free function: the caller needs neither AllTypeChunk's singleton
+ * @details A free function: the caller needs neither TypeStateRegistry's singleton
  *          nor its full definition (docs/api.md, the reports a program asks
- *          for). Defined in all_type_chunk.cpp.
+ *          for). Defined in type_state_registry.cpp.
  *
  * @param label prefix for the printed lines, e.g. "before drain"
  */

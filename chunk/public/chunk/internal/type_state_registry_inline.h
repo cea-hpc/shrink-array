@@ -16,20 +16,20 @@
 
 #pragma once
 
-// Template method definitions for AllTypeChunk: the registration of a manager
+// Template method definitions for TypeStateRegistry: the registration of a manager
 // (register_manager / ensure_manager, called from the arrays' create) and the
 // up-front registration of a type list (initialize<Types>).
 
 #include <memory> // std::make_unique
 #include <mutex>  // std::scoped_lock (registry_mutex_)
 
-#include "chunk/internal/all_type_chunk_decl.h" // the declarations these bodies belong to
-#include "chunk/config.h"                       // build_config::chunk_dynamic, chunk_config::use_zero*
-#include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/type_state.h"          // TypeState<ChunkT, T>
-#include "chunk/internal/singleton.h"           // SingletonChk<AllTypeChunk>, for ensure_manager
-#include "chunk/internal/chunk_traits.h"        // the variants' declarations initialize<Types> names
-#include "chunk/internal/link_check.h"          // CHUNK_LINK_CHECK: the program's settings, the library's
+#include "chunk/internal/type_state_registry_decl.h" // the declarations these bodies belong to
+#include "chunk/config.h"                            // build_config::chunk_dynamic, chunk_config::use_zero*
+#include "chunk/internal/invariant_check.h"          // CHUNK_INVARIANT_FAILED
+#include "chunk/internal/type_state.h"               // TypeState<ChunkT, T>
+#include "chunk/internal/singleton.h"                // SingletonChk<TypeStateRegistry>, for ensure_manager
+#include "chunk/internal/chunk_traits.h"             // the variants' declarations initialize<Types> names
+#include "chunk/internal/link_check.h"               // CHUNK_LINK_CHECK: the program's settings, the library's
 // Not the chunk definitions: register_manager<> is instantiated in the TU that
 // builds the array (which has them), and including them here would be a cycle.
 
@@ -37,7 +37,7 @@ namespace shrink_array
 {
 
 template <typename ManagerT>
-void AllTypeChunk::register_manager()
+void TypeStateRegistry::register_manager()
 {
     const std::scoped_lock lock(registry_mutex_);
 
@@ -74,20 +74,20 @@ void AllTypeChunk::register_manager()
 }
 
 template <typename ManagerT>
-void AllTypeChunk::ensure_manager()
+void TypeStateRegistry::ensure_manager()
 {
     // A magic static per manager type: concurrent first arrays wait on it.
     [[maybe_unused]] static const bool registered = []
     {
         link_check::CHUNK_LINK_CHECK(); // links only against a library built with this TU's settings
         ensure_ready();                 // init_indexes(true) if the program has not run it
-        SingletonChk<AllTypeChunk>::get_ref().register_manager<ManagerT>();
+        SingletonChk<TypeStateRegistry>::get_ref().register_manager<ManagerT>();
         return true;
     }();
 }
 
 template <typename Types>
-void AllTypeChunk::initialize()
+void TypeStateRegistry::initialize()
 {
     // Only the variants this build compiles arrays for: a manager is not free
     // (init_manager primes a per-thread allocator, register_chunk_size a set

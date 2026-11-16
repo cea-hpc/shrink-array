@@ -71,7 +71,7 @@
 #include "chunk/internal/env_parse.h"                // env_number / arg_number (checked, not atoi)
 #include "chunk/print.h"                             // shrink_array::println
 #include "chunk/internal/singleton.h"                // SingletonChk
-#include "chunk/internal/all_type_chunk.h"           // AllTypeChunk::ready_block_size
+#include "chunk/internal/type_state_registry.h"      // TypeStateRegistry::ready_block_size
 
 // Defined by every executable of the library (the fast allocator reads it).
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
@@ -158,8 +158,9 @@ int run(int argc, char** argv)
     println("=== pool_accounting [variant = {}]  N={}  threads={} ===", variant_name(), count, CHUNK_PMP_MAX_THREADS);
 
     // --- 0. one block size per process ------------------------------------
-    const auto block_size = [] { return static_cast<long>(SingletonChk<AllTypeChunk>::get_ref().ready_block_size()); };
-    const long blocks     = block_size();
+    const auto block_size = []
+    { return static_cast<long>(SingletonChk<TypeStateRegistry>::get_ref().ready_block_size()); };
+    const long blocks = block_size();
     ParamChunk::init_indexes(false); // refused, with a warning
     expect(block_size() == blocks, "init_indexes(false) after (true) keeps the block size", block_size(), blocks);
     ParamChunk::init_indexes(true);

@@ -21,7 +21,7 @@
  * @brief The type-erased interface of the per-(variant, element type) chunk
  *        managers: TypeStateInterface and its two build-dependent halves.
  *
- * AllTypeChunk drives every manager through it; TypeState
+ * TypeStateRegistry drives every manager through it; TypeState
  * (chunk/internal/type_state.h) implements it.
  */
 
@@ -127,7 +127,7 @@ struct TypeStateParallelInterface<true>
     virtual void load_balance_list_block_free() = 0;
 
     // --- teardown of the reuse lists, in phases (see type_state_policies_inline.h) ---
-    // AllTypeChunk::clear_list_block_free_thr() drives them: prepare() outside
+    // TypeStateRegistry::clear_list_block_free_thr() drives them: prepare() outside
     // the region, then inside ONE region and separated by barriers: screen()
     // per bucket, sort() per bucket, dedup() per address slice, thr() per
     // bucket. Every per-bucket call is independent of the others in its phase,
@@ -173,7 +173,7 @@ struct TypeStateParallelInterface<false>
 /**
  * @brief Type-erased interface to a per-(variant, element-type) chunk manager.
  *
- * @details One TypeState class exists per (variant, type); AllTypeChunk, which
+ * @details One TypeState class exists per (variant, type); TypeStateRegistry, which
  *          acts on all of them (allocator init, compression passes, teardown),
  *          holds TypeStateInterface pointers and dispatches through these virtuals.
  *          The build-dependent methods come from the two interface policies above.
@@ -200,10 +200,10 @@ struct TypeStateInterface : public virtual TypeStateDynInterface<>, public virtu
     [[nodiscard]] virtual bool have_chunk_to_compress_potentially(int n_thr) const = 0;
     /// @brief Drain this type's compression-candidate backlog.
     /// @param apply true: compress the candidates found constant; false: walk
-    ///        the lists without compressing (see AllTypeChunk's).
+    ///        the lists without compressing (see TypeStateRegistry's).
     virtual void compress_chunk_to_compress_potentially(bool apply) = 0;
 
-    /// @name The single sweep region (AllTypeChunk::compress_chunk_to_compress_potentially)
+    /// @name The single sweep region (TypeStateRegistry::compress_chunk_to_compress_potentially)
     /// The pass compress_chunk_to_compress_potentially() makes, split so that
     /// every type runs in ONE region: prepare serially, then each thread runs
     /// sweep_rank() for its rank, then the mop-up of the ranks past the team

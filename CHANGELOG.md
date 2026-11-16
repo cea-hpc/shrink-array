@@ -83,7 +83,7 @@ the tag's checksum to the recipe.
   `target=x86_64_v3`, no target flag from the project, no AVX-512 instruction in the
   libraries, `getting_started` built against the install).
 - `CHUNK_PHASE_FENCES=0` runs without the four `seq_cst` fences that close the phase functions
-  (`chunk/private/all_type_chunk.cpp`), with a warning. They were kept as "empirically
+  (`chunk/private/type_state_registry.cpp`), with a warning. They were kept as "empirically
   load-bearing" since one unexplained checksum in August 2026; no handshake needs them as far
   as the code reads, and several defects that lost deferred writes at phase boundaries have been
   fixed since. The switch is there to settle it by measure before they are removed; the default
@@ -133,6 +133,12 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- `AllTypeChunk` is now `TypeStateRegistry`, and its two policies
+  `TypeStateRegistryParallelInterface` and `TypeStateRegistryDynInterface`: the class is the
+  process-wide registry of the per-type managers (`TypeState`), not a chunk. Its files
+  follow: `type_state_registry.h`, `type_state_registry_decl.h`,
+  `type_state_registry_inline.h` (`chunk/internal/`) and `chunk/private/type_state_registry.cpp`.
+  Internal: no public header names it.
 - `USE_LIBCXX` is `OFF` by default: a Clang build uses the standard library the compiler picks
   by itself (libstdc++ on Linux), `-DUSE_LIBCXX=ON` asks for libc++. The default was `ON`, and
   the first configure failed on a Clang installed without libc++; the build scripts, the CI
@@ -157,7 +163,7 @@ the tag's checksum to the recipe.
 - `fill_range_mt` skips a chunk already at the fill value with one test, as `fill_range` does,
   instead of arming it element by element; `fill_range` does the same on its `bool` path.
 - **The public interface, narrowed and frozen** (breaking). The public headers are what
-  `docs/api.md` documents; `PMP_CHUNK.h`, `all_type_chunk.h`, `chunk_traits.h`,
+  `docs/api.md` documents; `PMP_CHUNK.h`, `type_state_registry.h`, `chunk_traits.h`,
   `global_stats_chunk_list.h`, `ring_log_debug.h`, `singleton.h`, `term_color.h`,
   `type_name.h`, `zero_chunk.h`, `zero_one_value_chunk.h`, `zero_any_chunk.h`, `pattern_chunk.h`,
   `zero_chunk_def.h`, `zero_one_value_chunk_def.h` and `zero_any_chunk_def.h` are under

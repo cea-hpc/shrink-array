@@ -638,7 +638,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
 
     /// @brief One rank's share of compress_chunk_to_compress() for one second
     ///        value: the body its region runs on each thread. Public for
-    ///        AllTypeChunk's single sweep region (TypeState::sweep_rank).
+    ///        TypeStateRegistry's single sweep region (TypeState::sweep_rank).
     static void compress_sweep_rank(int thr_rank, const InfArrayT& inf_array, bool apply)
     {
         compress_chunk_to_compress_in_par(thr_rank, inf_array, apply);

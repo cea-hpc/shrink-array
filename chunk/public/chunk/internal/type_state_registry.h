@@ -17,17 +17,17 @@
 #pragma once
 
 /**
- * @file all_type_chunk.h
+ * @file type_state_registry.h
  * @brief Type-erased registry of every per-type chunk manager of the process.
  *
- * @details The declarations (all_type_chunk_decl.h) and the template bodies
- *          (all_type_chunk_inline.h), kept apart so that a header can name
- *          AllTypeChunk without pulling in the full zero/zero_one_value/zero_any
+ * @details The declarations (type_state_registry_decl.h) and the template bodies
+ *          (type_state_registry_inline.h), kept apart so that a header can name
+ *          TypeStateRegistry without pulling in the full zero/zero_one_value/zero_any
  *          definitions.
  *
  * @see type_state.h for the TypeStateInterface interface this class dispatches
  *      through, and manage_ompt.h for the phase transitions that drive it.
  */
 
-#include "chunk/internal/all_type_chunk_decl.h"   // AllTypeChunk, the declarations
-#include "chunk/internal/all_type_chunk_inline.h" // the template bodies
+#include "chunk/internal/type_state_registry_decl.h"   // TypeStateRegistry, the declarations
+#include "chunk/internal/type_state_registry_inline.h" // the template bodies

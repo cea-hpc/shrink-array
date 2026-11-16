@@ -6,7 +6,7 @@
 # (chunk_zero / chunk_zero_one_value / chunk_zero_any / chunk_vector). The variant target sets
 # CHUNK_VARIANT_ZERO* as PUBLIC, so:
 #   - it's baked into libchunk_<variant> itself (fixing is_shrink=0 in
-#     AllTypeChunk.cpp / manage_ompt.cpp)
+#     TypeStateRegistry.cpp / manage_ompt.cpp)
 #   - it propagates to the executable's own TUs
 
 # chunk_enable_fast_math() and ARMPL_ROOT live in examples/CMakeLists.txt now:

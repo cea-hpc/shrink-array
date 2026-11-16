@@ -176,7 +176,7 @@ void check_write(const ChunkT* chunk, long num) noexcept
 // A nested region is not a top-level one: it is allowed (nested_region_validation).
 namespace teams
 {
-/// @brief An array exists: set by the first manager's registration (all_type_chunk.cpp).
+/// @brief An array exists: set by the first manager's registration (type_state_registry.cpp).
 inline std::atomic<bool> arrays_exist{false};
 
 /// @brief Top-level regions running now (OMPT builds).

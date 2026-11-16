@@ -43,7 +43,7 @@
 #include "chunk/param_chunk.h"                         // the declarations defined here
 #include "chunk/internal/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS
 #include "chunk/internal/write_compress_sync_policy.h" // dekker::protocol_name (CHUNK_STATS report only)
-#include "chunk/internal/all_type_chunk.h"             // AllTypeChunk
+#include "chunk/internal/type_state_registry.h"        // TypeStateRegistry
 #include "chunk/log.h"                                 // CHUNK_LOG
 
 namespace shrink_array
@@ -53,7 +53,7 @@ namespace shrink_array
 int ParamChunk::block_size;
 // No #ifdef _OPENMP: the bodies are TEMPLATES on AllT (see param_chunk.h), and
 // only the one this build instantiates below is compiled. Use
-// SingletonChk<AllT>, never SingletonChk<AllTypeChunk>: the calls must stay
+// SingletonChk<AllT>, never SingletonChk<TypeStateRegistry>: the calls must stay
 // dependent, or phase-1 lookup rejects the other build's body.
 
 /// @copydoc ParamChunkParallelInterface<true>::init_thread_structures
@@ -69,8 +69,8 @@ void ParamChunkParallelInterface<true, AllT>::init_thread_structures()
 }
 
 // The one instantiation: the other thread model's body stays uninstantiated
-// (as AllTypeChunkParallelInterface in all_type_chunk.cpp).
-template struct ParamChunkParallelInterface<build_config::threaded, AllTypeChunk>;
+// (as TypeStateRegistryParallelInterface in type_state_registry.cpp).
+template struct ParamChunkParallelInterface<build_config::threaded, TypeStateRegistry>;
 
 /**
  * @copydoc ParamChunk::init_indexes
@@ -84,7 +84,7 @@ template struct ParamChunkParallelInterface<build_config::threaded, AllTypeChunk
  */
 void ParamChunk::init_indexes(bool big_chunk_block)
 {
-    auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
+    auto& ens_type_chunk = SingletonChk<TypeStateRegistry>::get_ref();
 
     int sz = 1024 * 1024 * 2;
     if (big_chunk_block)
@@ -156,7 +156,7 @@ void ParamChunk::force_compression()
 {
     // Every build: a serial zero_any queues its candidates too (see
     // compress_now_and_trim_pools()).
-    const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
+    const auto& ens_type_chunk = SingletonChk<TypeStateRegistry>::get_ref();
     ens_type_chunk.force_chunk_to_compress();
 }
 
@@ -489,7 +489,7 @@ void ParamChunk::chunk_stats()
     // separate, and can differ widely between builds whose event counters
     // match: here, the buffers parked in the reuse pools.
     {
-        const auto&       etc  = SingletonChk<AllTypeChunk>::get_ref();
+        const auto&       etc  = SingletonChk<TypeStateRegistry>::get_ref();
         const std::size_t pool = etc.reuse_pool_bytes();
         std::cout << "\n----- CHUNK_RETENTION -----\n";
         std::cout << "  reuse pools    = " << (pool / (std::size_t{1024} * 1024)) << " MB parked at exit\n";
@@ -504,7 +504,7 @@ void ParamChunk::chunk_stats() {}
 
 // Defined for every dynamic build; no #ifdef CHUNK_DYNAMIC: a TEMPLATE on AllT,
 // never instantiated by a static build. Same rule as init_thread_structures():
-// SingletonChk<AllT>, never SingletonChk<AllTypeChunk>, or phase-1 lookup
+// SingletonChk<AllT>, never SingletonChk<TypeStateRegistry>, or phase-1 lookup
 // rejects it in a static build.
 /// @copydoc ParamChunkDynInterface<true>::register_chunk_size
 template <typename AllT>
@@ -521,15 +521,15 @@ void ParamChunkDynInterface<true, AllT>::register_chunk_size([[maybe_unused]] un
 }
 
 // The one instantiation of the pair: in a static build this is the EMPTY
-// <false, AllTypeChunk>, and the body above is never compiled.
-template struct ParamChunkDynInterface<build_config::chunk_dynamic, AllTypeChunk>;
+// <false, TypeStateRegistry>, and the body above is never compiled.
+template struct ParamChunkDynInterface<build_config::chunk_dynamic, TypeStateRegistry>;
 
 /**
  * @brief Build-agnostic wrapper over ParamChunk::register_chunk_size().
  * @param size the runtime chunk size to declare; ignored in a static build.
  * @details Defined in EVERY build so an `if constexpr (chunk_dynamic)` call
  *          site links either way; in a static build the call is the no-op of
- *          ParamChunkDynInterface<false, AllTypeChunk>.
+ *          ParamChunkDynInterface<false, TypeStateRegistry>.
  */
 void register_runtime_chunk_size(unsigned int size)
 {
