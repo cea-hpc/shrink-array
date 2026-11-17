@@ -516,9 +516,10 @@ void GlobalVecHolder<T>::region_init()
     // (ArrayConstVal2Holder::id_of_ptr / value_of_id). Nothing is ever stored
     // in the region, so a slot only has to give each identifier a distinct
     // address: one cache line does, and no page is ever backed.
-    region_end     = static_cast<std::byte*>(raw) + region_usable;
-    const auto lim = env_number<std::size_t>("CHUNK_CONST_VAL2_ID_LIMIT", max_ids);
-    id_limit       = (lim >= 1 && lim < max_ids) ? lim : max_ids; // lowers only
+    region_end = static_cast<std::byte*>(raw) + region_usable;
+    const auto lim =
+        env_number<std::size_t>(env_name_or_former("CHUNK_CONST_VAL2_ID_LIMIT", "CHUNK_CST_VAL2_ID_LIMIT"), max_ids);
+    id_limit = (lim >= 1 && lim < max_ids) ? lim : max_ids; // lowers only
 
     // The value table: one T per identifier this run can hand out, plus [0].
     // Reserved the same way, so only the pages of identifiers actually handed

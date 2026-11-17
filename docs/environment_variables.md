@@ -22,6 +22,7 @@
 | `CHUNK_LOG_FILE` | stderr | file the messages are appended to; `%p` is replaced by the process id |
 | `CHUNK_BREAK_ON_FAILURE` | auto | what an invariant failure (or another fatal failure of the library) does once its report -- message, backtrace, sink -- is written, before it aborts: under a debugger, it raises `SIGTRAP`, so that the debugger stops on the failing thread with its frames live, after a line on stderr saying so; continued, the program aborts as without one. Auto (unset, or any value but `0` and `1`): on Linux, a debugger is the process `TracerPid` names in `/proc/self/status`, when it is `gdb`, `cuda-gdb`, `gdbserver`, `lldb` or `lldb-server`; strace, ltrace, perf or rr, which trace too, never stop the program. TotalView and Linaro DDT / Forge are not detected: they stop on `SIGABRT` already; `CHUNK_BREAK_ON_FAILURE=1` forces the stop if wanted. Elsewhere than on Linux, auto never stops. `0`: never (an exception to the rule above: `0` is not the default). `1`: always, debugger or not -- without one, `SIGTRAP` then kills the program (exit status 133), unless it handles the signal |
 | `CHUNK_THREAD_CAPACITY` | max(`omp_get_max_threads()`, cores, 256) | number of ranks the per-thread structures are sized for; can only raise the default (oversubscription). A rank at or past it stops the program with a message naming this variable |
+| `CHUNK_NUM_THREADS` | `OMP_NUM_THREADS`, else the hardware threads | std backend (`CHUNK_THREADS=std`): the team size of a region opened without an explicit thread count, what `max_threads()` returns; read once, at start-up (docs/threading_backends.md, 7b) |
 | `CHUNK_REQUIRE_OMPT` | — | OMPT builds: `1` aborts the program if the OMPT tool was not loaded by the runtime (otherwise, a warning in the log), since the end-of-phase events would then never happen |
 
 ## 2. CMake options
@@ -30,6 +31,7 @@
 |---|---|---|
 | `CHUNK_OPENMP` | `OFF` | build with OpenMP |
 | `CHUNK_THREADS` | empty | threading backend of the library: `openmp`, `std` (`std::jthread` workers of its own, no OpenMP) or `serial`; empty: `openmp` with `CHUNK_OPENMP=ON`, `serial` otherwise. Set, it sets `CHUNK_OPENMP` to match |
+| `CHUNK_MODULES` | `OFF` | experimental: also build the `shrink_array` C++ module (`import shrink_array;`), installed as `shrink_array::<variant>_module`; needs CMake 4.2, the Ninja generator and GCC 16 (`import std`). docs/developer_settings.md, section 6 |
 | `CHUNK_STATIC_SIZES` | `auto` | static chunk sizes built (targets `_<size>`); `auto`: `256;1024`, `256` alone in a Debug or sanitizer build |
 | `CHUNK_BUILD_DYN` | `ON` | also build a dynamic-geometry library (`_dyn`) per variant |
 | `SHRINK_ARRAY_BUILD_EXAMPLES` | `ON` at top level | build the examples, the benchmark and the validation harnesses; `OFF` by default when the project is included in another one (`add_subdirectory`, `FetchContent`) |

@@ -60,6 +60,12 @@ chunk_local_gcc() {
         | sort -t- -k2 -V | tail -1
 }
 
+# CHUNK_BUILD_REP (répertoire), the former name of CHUNK_BUILD_ROOT: still
+# read when the new one is unset, with a deprecation line. It goes at 0.3.
+if [ -n "${CHUNK_BUILD_REP:-}" ] && [ -z "${CHUNK_BUILD_ROOT:-}" ]; then
+    echo "[site] CHUNK_BUILD_REP is deprecated: set CHUNK_BUILD_ROOT (taken from it this time)" >&2
+    CHUNK_BUILD_ROOT=$CHUNK_BUILD_REP
+fi
 if [ "$CHUNK_SITE" = cea ]; then
     # Not under the sources in ~ (quota): stop rather than guess when the TGCC
     # environment did not set CCCWORKDIR.

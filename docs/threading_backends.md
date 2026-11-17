@@ -410,7 +410,17 @@ one, on a team of the backend. `phases.h` states the contract.
      the library's teams (the finalize's flush and pass, a re-chunk, a
      parallel initialisation), whose workers spin `CHUNK_PMP_SPIN_US` after
      every team on the cores TBB needs. A team now enqueues its n - 1 workers
-     as tasks of a TBB arena. TBB does not promise to run them at once, and a
+     as tasks of a TBB arena: the arena of the thread that opens the team
+     (`this_task_arena::enqueue`, oneTBB 2021.6; an arena of TBB's default
+     size before), so the one the program's algorithms just ran in -- or the
+     `task_arena` the program names with
+     `use_tbb_for_library_teams(oneapi::tbb::task_arena&)`, for regions run in
+     an explicit arena with `finalize_parallel_phase()` called outside it. Not
+     an arena of the library's own, as at first: TBB's workers then left the
+     program's arena for the library's and came back at every phase, and on
+     144 threads (AArch64) a rank waited 2.5 ms for its task to start, for
+     3 ms of work; one arena took the TBB bench from 88 s to 79.5 s there, and
+     a 5 ms join (below) to 50.9 s, still behind OpenMP. TBB does not promise to run them at once, and a
      barrier waiting for a task never started would never end, so the team's
      size is fixed after the tasks had `CHUNK_PMP_JOIN_US` (5 ms; 200 us at first) to start:
      those that came take ranks 1, 2, ... and the team runs with them (with

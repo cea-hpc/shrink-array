@@ -31,7 +31,7 @@ programme renseigne les champs, et `shrink_bench` les expose en options (§4). V
 | variable | défaut | effet |
 |---|---|---|
 | `CHUNK_RECLAIM_THREADS` | 1 | threads qui émettent les `madvise` d'un balayage ; `0` : `omp_get_max_threads()`. Sur Milan (64 threads), `0` est 3,5 % plus rapide pour `zero_one_value` et identique pour les autres variantes ; il reste à 1 tant qu'il n'est pas mesuré sur Grace, où 288 threads les émettraient |
-| `CHUNK_CONST_VAL2_ID_LIMIT` | non défini | crochet de test : abaisse le nombre d'identifiants du registre des secondes valeurs de `zero_any` (sinon la capacité de la région), et dimensionne la table des valeurs en conséquence, pour qu'un test de validation atteigne la limite du registre avec quelques valeurs (`const2_registry_validation`, `const2_reclaim_validation`) ; ne peut que l'abaisser |
+| `CHUNK_CONST_VAL2_ID_LIMIT` | non défini | crochet de test : abaisse le nombre d'identifiants du registre des secondes valeurs de `zero_any` (sinon la capacité de la région), et dimensionne la table des valeurs en conséquence, pour qu'un test de validation atteigne la limite du registre avec quelques valeurs (`const2_registry_validation`, `const2_reclaim_validation`) ; ne peut que l'abaisser. Ancien nom `CHUNK_CST_VAL2_ID_LIMIT`, encore lu quand celui-ci n'est pas défini (déprécié) |
 | `CHUNK_DEFERRED_POOL_KB` | 64 | taille des slabs des pools d'écritures différées, en Kio (les slabs d'opérations ne sont jamais rendus : plus gros, moins d'appels à l'allocateur mais plus de mémoire résidente) |
 | `CHUNK_PMP_JOIN_US` | 5000 | backend std avec les équipes de la bibliothèque sur TBB (`shrink_array::tbb::use_tbb_for_library_teams()`) : combien de temps une équipe attend que ses tâches TBB démarrent, en microsecondes ; celles qui ont démarré font l'équipe (un seul thread, l'appelant, au pire), une tâche plus tardive repart aussitôt. 5 ms plutôt que 200 µs : sinon une tâche en retard est prise puis abandonnée par un worker TBB pendant la région suivante du programme (144 threads : 79,5 s -> 50,9 s sur le banc TBB) |
 | `CHUNK_PMP_SPIN_US` | 1000 | backend std : durée pendant laquelle un thread qui attend à une barrière d'équipe, à sa fin ou l'équipe suivante tourne en attente active avant de s'endormir, en microsecondes (le blocktime d'OpenMP) ; `0` : s'endort tout de suite. Attente active : à 160 threads, le vidage aux frontières de tranches du rechunk est passé de 2,45 s à l'ordre des 0,24 s du build OpenMP |
@@ -72,7 +72,7 @@ active tous, et avec eux les compteurs de l'arène et d'OMPT, qui coûtent un pe
 | `CHUNK_LOG=ledger=info` (autrefois `CHUNK_LEDGER_REPORT`) | le rapport du registre des blocs (builds avec registre), à la sortie |
 | `CHUNK_LOG=ompt=info` (autrefois `CHUNK_OMPT_STATS`) | statistiques des régions de synchronisation (builds OMPT), à la sortie |
 | `CHUNK_LOG=compress=info` dans `shrink_bench` (autrefois `CHUNK_CST2_PROBE`) | `zero_any` : en plus, le rapport du registre des secondes valeurs à chaque passage de l'advisor (`gc_mark_report()`) |
-| `CHUNK_CONST2_RECLAIM` | `zero_any`, `N` : toutes les N itérations, libère les secondes valeurs qu'aucun chunk n'utilise plus (`reclaim_second_values()`) et affiche leur nombre, puis pour chaque type les identifiants en usage face à la capacité, libres, les libérations et les refus (`second_value_stats()`) (banc, tout build) |
+| `CHUNK_CONST2_RECLAIM` | `zero_any`, `N` : toutes les N itérations, libère les secondes valeurs qu'aucun chunk n'utilise plus (`reclaim_second_values()`) et affiche leur nombre, puis pour chaque type les identifiants en usage face à la capacité, libres, les libérations et les refus (`second_value_stats()`) (banc, tout build). Ancien nom `CHUNK_CST2_RECLAIM`, encore lu quand celui-ci n'est pas défini (déprécié) |
 | `ALLOC_TOKEN_REPORT` | les builds `CHUNK_SANITIZER=token` impriment toujours, à la sortie, les allocations par jeton (les 40 plus grosses) ; elle en fixe le nombre : `0` aucune, `N` les N plus grosses, `all` toutes |
 | `CHUNK_LOG=alloc=trace` (autrefois `FAST_ALLOC_TRACE`) | une ligne `munmap` par slab vidé que la réserve d'un pool ne garde pas et qui est libéré |
 
@@ -220,6 +220,14 @@ transmettant les options communes. `--help` donne la liste complète.
 | `--llvm-cs=<n>` | ajouter un build LLVM avec `CHUNK_SIZE=n` |
 | `--pool=<id>` | partager les configurations avec les autres runs qui ont le même `<id>` (un job batch par nœud, champ « Nœuds » de `shrink_gui`) : chacun construit celles qu'il réclame le premier ; `<id>` est un nom sous `$CHUNK_BUILD_ROOT/.pools/` ou un dossier partagé par tous les nœuds |
 
+D'où viennent les compilateurs, en plus des modules que le script charge : `CHUNK_LLVM_ROOT=<rép>`
+pour les builds llvm (`<rép>/bin/clang++`, l'archive de LLVM décompressée, par exemple là où le
+module llvm n'a pas de runtime OpenMP) ; sur ARM, `CHUNK_ACFL_ROOT=<préfixe>` pour la famille acfl
+(`spack location -i acfl` ; sinon `armclang++` dans le `PATH`, le plus récent
+`$CCCWORKDIR/opt/*/acfl-*`, un module acfl). oneTBB pour les cibles TBB des builds std :
+`TBBROOT`, `CHUNK_TBB_DIR` ou `$CCCWORKDIR/tbb-<arch>` ; `CHUNK_WITH_TBB=0` les écarte,
+`CHUNK_TBB_TSAN_DIR` est le oneTBB construit avec TSan du build std TSan.
+
 `compile_all_gnu.sh` accepte en plus `--no-ipa-icf` (`CHUNK_NO_IPA_ICF=ON`). La mémoire de
 compilation par job se règle par `CHUNK_MEM_PER_JOB_MB` (3 072 Mo par défaut, le double pour
 les builds sous sanitizer).
@@ -242,7 +250,7 @@ Lues par les outils Python, les scripts de vérification et quelques tests, pas 
 
 | variable | défaut | effet |
 |---|---|---|
-| `CHUNK_BUILD_ROOT` | répertoire courant | où sont les répertoires `cmake-build-<cible>` : défaut de `--build-root` dans `bench_and_test.py`, `multi_launch_stress.py` et `thread_speedup.py` (qui se replie sur `CHUNK_BUILD_ROOT`). `shrink_gui` l'exporte dans les scripts qu'il soumet |
+| `CHUNK_BUILD_ROOT` | répertoire courant | où sont les répertoires `cmake-build-<cible>` : défaut de `--build-root` dans `bench_and_test.py`, `multi_launch_stress.py` et `thread_speedup.py` ; `compile_all.sh` y met ses builds, `scripts/site_env.sh` la fixe selon le site. Son ancien nom `CHUNK_BUILD_REP` est encore lu quand elle n'est pas définie, déprécié. `shrink_gui` l'exporte dans les scripts qu'il soumet |
 | `CHUNK_BENCH_EVENTS` | non défini | fichier où les campagnes ajoutent leurs événements, un enregistrement JSON par ligne (défaut de `--events-file`) ; `shrink_gui` le positionne et suit le fichier |
 | `CHUNK_POOL_REF_WAIT` | 21 600 | campagnes `--pool` : secondes pendant lesquelles un job attend la référence qu'un autre job génère, avant de sauter ce qui en dépend |
 | `CHUNK_POOL_POLL` | 2 | campagnes `--pool` : secondes entre deux regards sur ce que les autres jobs ont fait |

@@ -196,7 +196,7 @@ cd "$R" || {{ echo "[gui] repository $R not found"; exit 97; }}
 # needs `module`): take the login profile then.
 type module >/dev/null 2>&1 || source /etc/profile >/dev/null 2>&1
 {env_before}[ -f scripts/site_env.sh ] && source scripts/site_env.sh
-{env_after}export CHUNK_BUILD_ROOT="${{CHUNK_BUILD_ROOT:-${{CHUNK_BUILD_ROOT:-.}}}}"
+{env_after}export CHUNK_BUILD_ROOT="${{CHUNK_BUILD_ROOT:-${{CHUNK_BUILD_REP:-.}}}}"
 # Python writes to a file here, not a terminal: unbuffered, or the log only
 # shows up by 8 KiB blocks.
 export PYTHONUNBUFFERED=1
