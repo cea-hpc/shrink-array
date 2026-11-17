@@ -61,12 +61,12 @@ T* zero::Proxy<T>::perform_core_assignment(T* vals, InT<T> value) const noexcept
 {
     if constexpr (chunk_config::use_compression_with_counter)
     {
-        if (same_value(value, static_cast<T>(zero::Chunk<T>::first_value)))
+        if (same_value(value, static_cast<T>(Chunk<T>::first_value)))
         {
             if (is_not_cst_val())
             {
                 // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-                if (!same_value(values_[num_], zero::Chunk<T>::first_value))
+                if (!same_value(values_[num_], Chunk<T>::first_value))
                 {
                     chunk_.inc_nb_val_eq_zero();
                 }
@@ -79,7 +79,7 @@ T* zero::Proxy<T>::perform_core_assignment(T* vals, InT<T> value) const noexcept
             }
         }
         // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-        else if (is_not_cst_val() && same_value(values_[num_], zero::Chunk<T>::first_value))
+        else if (is_not_cst_val() && same_value(values_[num_], Chunk<T>::first_value))
         {
             chunk_.dec_nb_val_eq_zero();
         }
@@ -112,7 +112,7 @@ T* zero::Proxy<T>::perform_core_assignment(T* vals, InT<T> value) const noexcept
                     {
                         proxy->chunk_.set_nb_val_eq_zero(proxy->chunk_size() - 1);
                     }
-                    else if (same_value(val, zero::Chunk<T>::first_value))
+                    else if (same_value(val, Chunk<T>::first_value))
                     {
                         proxy->chunk_.inc_nb_val_eq_zero();
                     }
@@ -288,7 +288,7 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::execute_arithmetic_compound
     }
     else
     {
-        const zero::Proxy proxy = Base::template make_proxy_with_info<Derived>(ctx);
+        const Proxy proxy = Base::template make_proxy_with_info<Derived>(ctx);
 
         auto&     chunk_loc = ctx->chunk;
         const int num       = ctx->num;
@@ -483,8 +483,7 @@ void zero::Proxy<T>::execute_simple_operation(Lambda operation)
     // counter drifts up and manage_full_zero() compresses a non-zero chunk).
     // Mirrors execute_inplace_operation.
     // raw-read: write session -- the write/compress handshake keeps compressors off this chunk
-    [[maybe_unused]] const bool was_first_value =
-        same_value(values_[num_], static_cast<T>(zero::Chunk<T>::first_value));
+    [[maybe_unused]] const bool was_first_value = same_value(values_[num_], static_cast<T>(Chunk<T>::first_value));
 
     const bool is_val1 = Base::is_cst_val1();
 
@@ -506,7 +505,7 @@ void zero::Proxy<T>::execute_simple_operation(Lambda operation)
         // 0 += 0 leaves it at the first value and neither transition below
         // fires, so the count would stay one short for good. Settle the bet.
         // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-        if (is_val1 && same_value(values_[num_], static_cast<T>(zero::Chunk<T>::first_value)))
+        if (is_val1 && same_value(values_[num_], static_cast<T>(Chunk<T>::first_value)))
         {
             chunk_.inc_nb_val_eq_zero();
             if (chunk_.is_full_zero(this->chunk_size()))
@@ -517,12 +516,12 @@ void zero::Proxy<T>::execute_simple_operation(Lambda operation)
         }
         // Already-armed transitions (arming handled above).
         // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-        if (was_first_value && !is_val1 && !same_value(values_[num_], static_cast<T>(zero::Chunk<T>::first_value)))
+        if (was_first_value && !is_val1 && !same_value(values_[num_], static_cast<T>(Chunk<T>::first_value)))
         {
             chunk_.dec_nb_val_eq_zero();
         }
         // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-        if (same_value(values_[num_], static_cast<T>(zero::Chunk<T>::first_value)) && !was_first_value)
+        if (same_value(values_[num_], static_cast<T>(Chunk<T>::first_value)) && !was_first_value)
         {
             chunk_.inc_nb_val_eq_zero();
             if (chunk_.is_full_zero(this->chunk_size()))
@@ -554,8 +553,7 @@ template <typename Lambda>
 void zero::Proxy<T>::execute_inplace_operation(Lambda operation)
 {
     // raw-read: write session -- the write/compress handshake keeps compressors off this chunk
-    [[maybe_unused]] const bool was_first_value =
-        same_value(values_[num_], static_cast<T>(zero::Chunk<T>::first_value));
+    [[maybe_unused]] const bool was_first_value = same_value(values_[num_], static_cast<T>(Chunk<T>::first_value));
 
     const bool         is_val = is_cst_val();
     [[maybe_unused]] T v_old  = T{};
@@ -567,9 +565,9 @@ void zero::Proxy<T>::execute_inplace_operation(Lambda operation)
         // operation (a pure function of the element) is tried on the constant.
         if (is_val)
         {
-            auto probe = static_cast<T>(zero::Chunk<T>::first_value);
+            auto probe = static_cast<T>(Chunk<T>::first_value);
             operation(probe);
-            if (same_value(probe, static_cast<T>(zero::Chunk<T>::first_value)))
+            if (same_value(probe, static_cast<T>(Chunk<T>::first_value)))
             {
                 return;
             }
@@ -602,7 +600,7 @@ void zero::Proxy<T>::execute_inplace_operation(Lambda operation)
     {
         // Unreachable after the probe above; kept as execute_simple_operation's twin.
         // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-        if (is_val && same_value(values_[num_], static_cast<T>(zero::Chunk<T>::first_value)))
+        if (is_val && same_value(values_[num_], static_cast<T>(Chunk<T>::first_value)))
         {
             chunk_.inc_nb_val_eq_zero();
             if (chunk_.is_full_zero(this->chunk_size()))
@@ -612,12 +610,12 @@ void zero::Proxy<T>::execute_inplace_operation(Lambda operation)
             return;
         }
         // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-        if (was_first_value && !is_val && !same_value(values_[num_], zero::Chunk<T>::first_value))
+        if (was_first_value && !is_val && !same_value(values_[num_], Chunk<T>::first_value))
         {
             chunk_.dec_nb_val_eq_zero();
         }
         // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-        if (same_value(values_[num_], static_cast<T>(zero::Chunk<T>::first_value)) && !was_first_value)
+        if (same_value(values_[num_], static_cast<T>(Chunk<T>::first_value)) && !was_first_value)
         {
             chunk_.inc_nb_val_eq_zero();
             if (chunk_.is_full_zero(this->chunk_size()))
@@ -644,7 +642,7 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::execute_inplace_operation_a
 
     const InT<T> v_old = Base::read_values_async(ctx);
 
-    const zero::Proxy proxy = Base::template make_proxy_with_info<Derived>(ctx);
+    const Proxy proxy = Base::template make_proxy_with_info<Derived>(ctx);
     if (const bool is_val = chunk_loc.is_cst_val1(); is_val)
     {
         // Through the proxy: pins the ambient geometry (see execute_inplace_operation).
@@ -774,7 +772,7 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::perform_compression() const
 
         std::atomic_thread_fence(std::memory_order_seq_cst);
 
-        zero::Chunk<T>::make_block_compression(thr_rank, this->self());
+        Chunk<T>::make_block_compression(thr_rank, this->self());
     }
     // Looked at, whether or not there was work: clear the flag. See
     // mark_list_dangerous_for_thread.

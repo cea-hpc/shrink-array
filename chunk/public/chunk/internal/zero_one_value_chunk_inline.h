@@ -411,7 +411,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_chunk_to
             compress_one(chunk_t, std::get<3>(tup).count());
 
             // AFTER the compression, never before -- see the ORDER note above.
-            zero_one_value::Proxy<T>::reset_tab_is_inside_list_to_compress(array_id, chunk_index);
+            Proxy<T>::reset_tab_is_inside_list_to_compress(array_id, chunk_index);
         }
     }
 
@@ -526,7 +526,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_t
             chunk_t->fill_list_to_compress(ll_compt1, ll_compt2, inf_array, chunk_index, array_id, n_elems);
             // Scanned, still marked: hand its queue flag back before the mark can go down,
             // here for the chunks the scan drops (queue_flag.h, F6).
-            queue_flag::hand_back(zero_one_value::Proxy<T>::get_tab_is_inside_list_to_compress(array_id)[chunk_index]);
+            queue_flag::hand_back(Proxy<T>::get_tab_is_inside_list_to_compress(array_id)[chunk_index]);
             // Not selected by the scan: the writers may have it back now.
             if (ll_compt1.size() == n1 && ll_compt2.size() == n2)
             {
@@ -555,7 +555,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_t
             const auto n2 = ll_compt2.size();
             chunk_t->fill_list_to_compress_bool(ll_compt1, ll_compt2, chunk_index, array_id, n_elems);
             // Scanned, still marked: hand its queue flag back first (queue_flag.h, F6).
-            queue_flag::hand_back(zero_one_value::Proxy<T>::get_tab_is_inside_list_to_compress(array_id)[chunk_index]);
+            queue_flag::hand_back(Proxy<T>::get_tab_is_inside_list_to_compress(array_id)[chunk_index]);
             if (ll_compt1.size() == n1 && ll_compt2.size() == n2)
             {
                 chunk_t->steal_unmark();
@@ -625,7 +625,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
 
         // A flush in progress makes start() decline: ask first, before
         // marking -- see block_pass_precheck.h.
-        if (block_pass_yields_to_flush<zero_one_value::Proxy<T>, zero_one_value::Chunk<T>>(CHUNK_PMP_MAX_THREADS))
+        if (block_pass_yields_to_flush<Proxy<T>, Chunk<T>>(CHUNK_PMP_MAX_THREADS))
         {
             if constexpr (build_config::chunk_dynamic)
             {
@@ -643,7 +643,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
                 chunk_t->steal_mark();
             }
         }
-        if (const bool ret = proxy2->compression_mgr.template start<zero_one_value::Proxy<T>>(); !ret)
+        if (const bool ret = proxy2->compression_mgr.template start<Proxy<T>>(); !ret)
         {
             for (int k = 0; k < sz; ++k)
             {
@@ -706,9 +706,8 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
 
     queue_flag::release_candidates(
         vec_tuple_to_compress, sz, [](int array_id, int chunk_index) -> auto&
-        { return zero_one_value::Proxy<T>::get_tab_is_inside_list_to_compress(array_id)[chunk_index]; },
-        [](int array_id, int chunk_index)
-        { zero_one_value::Proxy<T>::reset_tab_is_inside_list_to_compress(array_id, chunk_index); });
+        { return Proxy<T>::get_tab_is_inside_list_to_compress(array_id)[chunk_index]; },
+        [](int array_id, int chunk_index) { Proxy<T>::reset_tab_is_inside_list_to_compress(array_id, chunk_index); });
 
     if (proxy2)
     {
@@ -723,7 +722,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
             proxy2->add_to_compression_list(vec_tuple_to_compress);
         }
 
-        proxy2->compression_mgr.template finish<zero_one_value::Proxy<T>>();
+        proxy2->compression_mgr.template finish<Proxy<T>>();
     }
 
     if constexpr (build_config::chunk_dynamic)
@@ -811,7 +810,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
                 // arrays that declared this one may all be gone (clear_core
                 // drops their candidates by array_id, not the slot). No array,
                 // no info tuple, nothing to fold: skip it, do not dereference.
-                const auto* inf = zero_one_value::Proxy<T>::array_registry->find_inf_array(second_val);
+                const auto* inf = Proxy<T>::array_registry->find_inf_array(second_val);
                 if (inf == nullptr)
                 {
                     continue;
