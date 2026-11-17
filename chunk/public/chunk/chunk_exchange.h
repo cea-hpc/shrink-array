@@ -66,11 +66,13 @@
 #include "chunk/config.h"                     // build_config::chunk_dynamic
 #include "chunk/internal/same_value.h"        // same_value
 
+#include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT
+
 namespace shrink_array
 {
 
 /// @brief What a chunk holds.
-enum class ChunkKind : std::uint8_t
+SHRINK_ARRAY_EXPORT enum class ChunkKind : std::uint8_t
 {
     first_value,  ///< Compressed to the first value (ChunkState::value): no buffer.
     second_value, ///< Compressed to ChunkState::value: no buffer.
@@ -79,7 +81,7 @@ enum class ChunkKind : std::uint8_t
 };
 
 /// @brief One chunk, as export_chunk() reads it and import_chunk() writes it.
-template <typename T>
+SHRINK_ARRAY_EXPORT template <typename T>
 struct ChunkState
 {
     ChunkKind kind  = ChunkKind::first_value; ///< What the chunk holds.
@@ -90,7 +92,7 @@ struct ChunkState
 };
 
 /// @brief A whole array, as export_array() reads it and import_array() writes it.
-template <typename T>
+SHRINK_ARRAY_EXPORT template <typename T>
 struct ArrayState
 {
     std::size_t                size             = 0;     ///< Element count.
@@ -122,7 +124,7 @@ template <typename T>
 } // namespace detail
 
 /// @brief The arrays these functions take: every variant, every element type but Bit.
-template <typename Arr>
+SHRINK_ARRAY_EXPORT template <typename Arr>
 concept ExchangeableArray = internal::ChunkedArray<Arr> && !is_packed_bit_v<typename Arr::value_type>;
 
 /**
@@ -130,7 +132,7 @@ concept ExchangeableArray = internal::ChunkedArray<Arr> && !is_packed_bit_v<type
  * @param arr   the array, at a quiescent point (see the file comment)
  * @param index the chunk, below arr.chunk_count()
  */
-template <ExchangeableArray Arr>
+SHRINK_ARRAY_EXPORT template <ExchangeableArray Arr>
 [[nodiscard]] ChunkState<typename Arr::value_type> export_chunk(const Arr& arr, std::size_t index)
 {
     using T         = Arr::value_type;
@@ -208,7 +210,7 @@ template <ExchangeableArray Arr>
  * @return false, and nothing done, when the chunk is not at the first value
  *         (written and not compressed back since).
  */
-template <ExchangeableArray Arr>
+SHRINK_ARRAY_EXPORT template <ExchangeableArray Arr>
 [[nodiscard]] bool import_chunk(Arr& arr, std::size_t index, const ChunkState<typename Arr::value_type>& state)
 {
     using T         = Arr::value_type;
@@ -309,7 +311,7 @@ template <ExchangeableArray Arr>
  * @param arr the array, at a quiescent point (see the file comment)
  * @return The state; its chunks' data point into @p arr (see ChunkState).
  */
-template <ExchangeableArray Arr>
+SHRINK_ARRAY_EXPORT template <ExchangeableArray Arr>
 [[nodiscard]] ArrayState<typename Arr::value_type> export_array(const Arr& arr)
 {
     using T = Arr::value_type;
@@ -345,7 +347,7 @@ template <ExchangeableArray Arr>
  *         size than state.chunk_size (a dynamic build at another geometry), or
  *         when @p state has fewer chunks than its size needs (not an export).
  */
-template <ExchangeableArray Arr>
+SHRINK_ARRAY_EXPORT template <ExchangeableArray Arr>
 [[nodiscard]] bool import_array(Arr& arr, const ArrayState<typename Arr::value_type>& state)
 {
     using T = Arr::value_type;

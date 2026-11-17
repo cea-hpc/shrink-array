@@ -27,16 +27,24 @@
 // std::vector<bool>, safe here. Every value is then read back, the constant
 // chunks are folded, and the program prints what each array keeps.
 // Exit status 0 when every value reads back as written.
+//
+// Two forms: with CHUNK_MODULES=ON (SHRINK_ARRAY_IMPORT) it imports the module.
 
-#include <cstdio>    // std::fprintf (the catch)
-#include <exception> // std::exception
-#include <utility>   // std::as_const
+#ifdef SHRINK_ARRAY_IMPORT
+import std;          // std::as_const, std::println and std::cerr (the catch), std::exception
+import shrink_array; // zero_one_value::Array, BitArray, parallel_phase, Runtime, println, release_chunk_pools, ...
+#else
+    #include <exception> // std::exception
+    #include <iostream>  // std::cerr (the catch)
+    #include <print>     // std::println (the catch)
+    #include <utility>   // std::as_const
 
-#include "chunk/zero_one_value_array.h" // shrink_array::zero_one_value::Array (Array<bool>)
-#include "chunk/bit_array.h"            // shrink_array::BitArray
-#include "chunk/phases.h"               // parallel_phase
-#include "chunk/runtime.h"              // Runtime::init, release_chunk_pools, Runtime::shutdown
-#include "chunk/print.h"                // shrink_array::println
+    #include "chunk/zero_one_value_array.h" // shrink_array::zero_one_value::Array (Array<bool>)
+    #include "chunk/bit_array.h"            // shrink_array::BitArray
+    #include "chunk/phases.h"               // parallel_phase
+    #include "chunk/runtime.h"              // Runtime::init, release_chunk_pools, Runtime::shutdown
+    #include "chunk/print.h"                // shrink_array::println
+#endif
 
 namespace sa = shrink_array;
 using shrink_array::println;
@@ -126,6 +134,6 @@ try
 catch (const std::exception& e)
 {
     // A failed allocation or std::format: said, not std::terminate().
-    std::fprintf(stderr, "bool_arrays: %s\n", e.what());
+    std::println(std::cerr, "bool_arrays: {}", e.what()); // stderr is a macro: import std has no such name
     return 2;
 }

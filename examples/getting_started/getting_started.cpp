@@ -18,14 +18,23 @@
 // parallel, read back, folded, and the library shut down. Exit status 0 when
 // every value reads back as written.
 
-#include <cstdio>    // std::fprintf (the catch)
-#include <exception> // std::exception
-#include <utility>   // std::as_const
+// Two forms of the same program: with CHUNK_MODULES=ON the build defines
+// SHRINK_ARRAY_IMPORT and it imports the module (experimental); otherwise it
+// includes the headers. The body is the same.
+#ifdef SHRINK_ARRAY_IMPORT
+import std;          // std::as_const, std::println and std::cerr (the catch), std::exception
+import shrink_array; // zero_any::Array, parallel_phase, Runtime, println, release_chunk_pools, ...
+#else
+    #include <exception> // std::exception
+    #include <iostream>  // std::cerr (the catch)
+    #include <print>     // std::println (the catch)
+    #include <utility>   // std::as_const
 
-#include "chunk/zero_any_array.h" // shrink_array::zero_any::Array
-#include "chunk/phases.h"         // parallel_phase
-#include "chunk/runtime.h"        // Runtime::init, release_chunk_pools, Runtime::shutdown
-#include "chunk/print.h"          // shrink_array::println
+    #include "chunk/zero_any_array.h" // shrink_array::zero_any::Array
+    #include "chunk/phases.h"         // parallel_phase
+    #include "chunk/runtime.h"        // Runtime::init, release_chunk_pools, Runtime::shutdown
+    #include "chunk/print.h"          // shrink_array::println
+#endif
 
 namespace sa = shrink_array;
 using shrink_array::println;
@@ -93,6 +102,6 @@ try
 catch (const std::exception& e)
 {
     // A failed allocation or std::format: said, not std::terminate().
-    std::fprintf(stderr, "getting_started: %s\n", e.what());
+    std::println(std::cerr, "getting_started: {}", e.what()); // stderr is a macro: import std has no such name
     return 2;
 }

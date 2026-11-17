@@ -14,29 +14,38 @@
  * limitations under the License.
  */
 
-#include <algorithm> // std::min
-#include <bit>       // std::bit_cast (calculate_checksum)
-#include <chrono>    // std::chrono::steady_clock
-#include <cmath>     // std::cos, std::sin, std::sqrt
-#include <cstdint>   // std::int64_t, uint64_t
-#include <cstdlib>   // std::abort
-#include <random>    // std::mt19937, std::uniform_int_distribution
-#include <array>     // std::array
-#include <fstream>   // std::ifstream, std::ofstream
-#include <string>    // std::string, std::to_string
-
-#include <type_traits>    // std::conditional_t (Array)
-#include <vector>         // std::vector
-#include <sys/resource.h> // getrusage
+// The C headers outside the two forms, for their macros and global names: an
+// import brings neither.
+#include <cstdint>        // uint64_t (unqualified)
 #include <cstdio>         // stderr
-#include <print>          // std::println, std::print
+#include <sys/resource.h> // getrusage, RUSAGE_SELF
 
-// Both executables have the chunk headers: simple_array_vector links
-// chunk_vector, simple_array_chunk chunk_zero.
-#include "chunk/runtime.h"    // Runtime, Runtime::shutdown
-#include "chunk/zero_array.h" // zero::Array
-#include "chunk/threads.h"    // shrink_array::max_threads
-#include "chunk/config.h"     // chunk_config::use_zero*, stats
+// With CHUNK_MODULES=ON (SHRINK_ARRAY_IMPORT) both programs import the module
+// over their library: simple_array_chunk over chunk_zero, simple_array_vector
+// over chunk_vector (the std::vector mode). Otherwise both have the chunk
+// headers, and link those libraries.
+#ifdef SHRINK_ARRAY_IMPORT
+import std;          // std::bit_cast, std::chrono, std::mt19937, std::ofstream, std::conditional_t, std::println, ...
+import shrink_array; // zero::Array, Runtime, max_threads, chunk_config
+#else
+    #include <algorithm>   // std::min
+    #include <bit>         // std::bit_cast (calculate_checksum)
+    #include <chrono>      // std::chrono::steady_clock
+    #include <cmath>       // std::cos, std::sin, std::sqrt
+    #include <cstdlib>     // std::abort
+    #include <random>      // std::mt19937, std::uniform_int_distribution
+    #include <array>       // std::array
+    #include <fstream>     // std::ifstream, std::ofstream
+    #include <string>      // std::string, std::to_string
+    #include <type_traits> // std::conditional_t (Array)
+    #include <vector>      // std::vector
+    #include <print>       // std::println, std::print
+
+    #include "chunk/runtime.h"    // Runtime, Runtime::shutdown
+    #include "chunk/zero_array.h" // zero::Array
+    #include "chunk/threads.h"    // shrink_array::max_threads
+    #include "chunk/config.h"     // chunk_config::use_zero*, stats
+#endif
 
 
 /// @brief splitmix64's finaliser: a bijection on 64 bits that spreads every

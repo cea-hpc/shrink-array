@@ -183,7 +183,8 @@ The options of [environment_variables.md](environment_variables.md) §2 are not 
 | `CHUNK_GCC_TOOLCHAIN_DIR` | depends on the machine | Clang builds: the GCC installation whose libstdc++ and runtime clang uses (`--gcc-toolchain=`); empty: the driver's own choice. A path that does not exist is ignored, with a warning |
 | `CHUNK_USE_MOLD` | `AUTO` | link with mold: `AUTO` (when it is found and the build supports it), `ON` (an error otherwise), `OFF` |
 | `CHUNK_VEC_REPORT` | `OFF` | fast-math targets of the examples: the compiler reports the loops it did not vectorise |
-| `GETTING_STARTED_LIB`, `BOOL_ARRAYS_LIB` | `shrink_array::zero_any`, `shrink_array::zero_one_value` | `examples/getting_started` and `examples/bool_arrays` built on their own, against an installed library: the library target they link |
+| `CHUNK_MODULES` | `OFF` | the `shrink_array` C++ module, experimental (CMake 4.2, Ninja, GCC 16, `import std`): the `chunk_<variant>_module` targets, installed as `shrink_array::<variant>_module`, the `module_api_<variant>` tests; `getting_started`, `bool_arrays`, `advisor_demo`, `mdspan_tiles`, `simple_array` and `vectorisation_demo` then import it instead of including the headers |
+| `GETTING_STARTED_LIB`, `BOOL_ARRAYS_LIB` | `shrink_array::zero_any`, `shrink_array::zero_one_value` | `examples/getting_started` and `examples/bool_arrays` built on their own, against an installed library: the library target they link; with `-DCHUNK_MODULES=ON`, `GETTING_STARTED_MODULE` and `BOOL_ARRAYS_MODULE` (`shrink_array::zero_any_module`, `shrink_array::zero_one_value_module`): the module they import |
 | `CHUNK_USE_GPERF`, `CHUNK_ENABLE_IWYU` | `OFF` | gperftools profiling; include-what-you-use during compilation |
 | `CHUNK_ONEAPI_XHOST`, `CHUNK_ONEAPI_NO_INTEL_LIBS`, `CHUNK_ONEAPI_FAST_FP` | `OFF` | icpx: Intel-only binary (`-xHost`); no Intel runtime library; keep `-fp-model=fast` |
 

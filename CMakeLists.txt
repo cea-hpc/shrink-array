@@ -7,6 +7,16 @@ cmake_minimum_required(VERSION 3.20)
 if(POLICY CMP0126)
     cmake_policy(SET CMP0126 NEW)
 endif()
+# The shrink_array C++ module (experimental, chunk/CMakeLists.txt): its
+# programs `import std;`, which CMake supports behind an experimental gate set
+# before project() (project() looks for the standard library's modules). The
+# value is CMake 4.2's: it changes with CMake's version (chunk/CMakeLists.txt
+# stops when import std is not found). Off, the module, its programs and the
+# examples' import form are not built: the examples include the headers.
+option(CHUNK_MODULES "Build the shrink_array C++ module, and the examples through import (experimental: CMake 4.2, Ninja, GCC 16)" OFF)
+if(CHUNK_MODULES)
+    set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "d0edc3af-4c50-42ea-a356-e2862fe7a444")
+endif()
 project(shrink_array VERSION 0.2.1 LANGUAGES CXX)
 
 # Built on its own, or consumed by another project (add_subdirectory,
@@ -1123,6 +1133,11 @@ if(SHRINK_ARRAY_BUILD_TESTS AND BUILD_TESTING AND Python3_Interpreter_FOUND)
     add_test(NAME check_includes
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_includes.py ${PROJECT_SOURCE_DIR})
     set_property(TEST check_includes PROPERTY LABELS validation)
+    # The module unit's global module fragment includes every external header
+    # of the library's headers (scripts/check_module_deps.py).
+    add_test(NAME check_module_deps
+             COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_module_deps.py ${PROJECT_SOURCE_DIR})
+    set_property(TEST check_module_deps PROPERTY LABELS validation)
     # Constants are snake_case; UPPER_CASE is for macros, and no k-prefix
     # (scripts/check_naming.py).
     add_test(NAME check_naming

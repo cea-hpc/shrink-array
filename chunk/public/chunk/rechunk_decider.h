@@ -48,11 +48,13 @@
 
 #include "chunk/chunk_size_advisor.h" // ChunkSizeReport
 
+#include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT
+
 namespace shrink_array
 {
 
 /// @brief Thresholds of RechunkDecider: stability ticks, gain deadbands, cooldown, caps and dry-run switch.
-struct RechunkPolicy
+SHRINK_ARRAY_EXPORT struct RechunkPolicy
 {
     int         stability_ticks             = 3;        ///< best must hold this many ticks
     std::size_t min_gain_bytes              = 8u << 20; ///< deadband: ignore gains below 8 MB
@@ -133,7 +135,7 @@ struct RechunkPolicy
 };
 
 /// @brief Decides, per array, whether a re-chunk is worthwhile from ChunkSizeReport ticks and a RechunkPolicy.
-class RechunkDecider
+SHRINK_ARRAY_EXPORT class RechunkDecider
 {
   public:
     /// One committed re-chunk, for the end-of-run report.
@@ -223,5 +225,6 @@ class RechunkDecider
 };
 
 } // namespace shrink_array
+
 
 #include "chunk/internal/rechunk_decider_inline.h" // the method bodies

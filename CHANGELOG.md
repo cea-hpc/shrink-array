@@ -60,6 +60,15 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- The `shrink_array` C++ module, experimental and off by default: `-DCHUNK_MODULES=ON` (CMake 4.2,
+  Ninja, GCC 16, `import std`) builds `chunk_<variant>_module` over each variant library
+  (`chunk/modules/shrink_array.cppm`: the library read in the module's purview, what its headers
+  mark `SHRINK_ARRAY_EXPORT` exported) and installs them as `shrink_array::<variant>_module`.
+  `getting_started`, `bool_arrays`, `advisor_demo`, `mdspan_tiles`, `simple_array` and
+  `vectorisation_demo` then `import shrink_array;` instead of including the headers, and
+  `module_api_<variant>` checks the exported names; `.github/workflows/modules.yml` builds it.
+  The phase hooks moved to `chunk/internal/phase_hooks.h` (`chunk/phases.h` includes it).
+  This was the `cpp23-modules` branch, folded into cpp26.
 - `scripts/compile_all.sh --list-targets`, `--list-execs`, `--list`: the configurations
   `--target` accepts (configured here or not, x86-64 or ARM only), the targets `--exec` accepts
   in each configured build directory, or both, without building; they honour `--target=<glob>`

@@ -53,21 +53,27 @@
  *          Exit 0, 1 when a layout does not read back the field.
  */
 
-#include <algorithm> // std::min
-#include <array>     // std::array (the rectangles)
-#include <chrono>    // std::chrono::steady_clock (the kernel times)
-#include <cmath>     // std::sin, std::abs
-#include <cstdlib>   // std::atol
-#include <utility>   // std::as_const
-#include <vector>    // std::vector (the box buffers)
+// With CHUNK_MODULES=ON (SHRINK_ARRAY_IMPORT) it imports the module.
+#ifdef SHRINK_ARRAY_IMPORT
+import std; // std::min, std::array, std::chrono, std::sin, std::abs, std::atol, std::as_const, std::vector
+import shrink_array; // zero_any::Array, md (views, tile operations), team_size / thread_rank, parallel_phase, Runtime, println, ...
+#else
+    #include <algorithm> // std::min
+    #include <array>     // std::array (the rectangles)
+    #include <chrono>    // std::chrono::steady_clock (the kernel times)
+    #include <cmath>     // std::sin, std::abs
+    #include <cstdlib>   // std::atol
+    #include <utility>   // std::as_const
+    #include <vector>    // std::vector (the box buffers)
 
-#include "chunk/zero_any_array.h" // zero_any::Array
-#include "chunk/print.h"          // shrink_array::println
-#include "chunk/phases.h"         // parallel_phase
-#include "chunk/mdspan.h"         // shrink_array::md, SHRINK_ARRAY_HAS_MDSPAN
-#include "chunk/threads.h"        // shrink_array::team_size, shrink_array::thread_rank
-#include "chunk/mdspan_tile_ops.h" // md::for_each_tile(_mt), md::update_tiles, md::fill_box(_mt), md::copy_box_*(_mt), md::stencil_tiles_mt
-#include "chunk/runtime.h" // Runtime::init, release_chunk_pools, Runtime::shutdown
+    #include "chunk/zero_any_array.h" // zero_any::Array
+    #include "chunk/print.h"          // shrink_array::println
+    #include "chunk/phases.h"         // parallel_phase
+    #include "chunk/mdspan.h"         // shrink_array::md
+    #include "chunk/threads.h"        // shrink_array::team_size, shrink_array::thread_rank
+    #include "chunk/mdspan_tile_ops.h" // md::for_each_tile(_mt), md::update_tiles, md::fill_box(_mt), md::copy_box_*(_mt), md::stencil_tiles_mt
+    #include "chunk/runtime.h" // Runtime::init, release_chunk_pools, Runtime::shutdown
+#endif
 
 namespace sa = shrink_array;
 

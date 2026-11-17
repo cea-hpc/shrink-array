@@ -34,7 +34,7 @@
 #include "chunk/config.h"                            // build_config::chunk_dynamic, chunk_config::CheckNaN
 #include "chunk/internal/chunk_size_policy.h" // chunk_size_error, register_runtime_chunk_size / set_thread_chunk_size
 #include "chunk/internal/pmp_chunk.h"         // CHUNK_PMP_IN_PARALLEL_REGION, pmp::parallel_sum, pmp::current_team
-#include "chunk/phases.h"                     // parallel_phase -- write_range_by_chunks
+#include "chunk/internal/phase_hooks.h"       // phase_detail::parallel_phase_impl -- write_range_by_chunks
 #include "chunk/internal/parallel_storage_init.h" // use_own_team -- write_range_by_chunks
 #include "chunk/internal/cold_path_lock.h"        // ColdPathLock: construction, teardown, resize
 #include "chunk/internal/array_users.h"           // ArrayUsers: a row per array
@@ -230,8 +230,9 @@ void ArrayChunkBase<Derived>::write_range_by_chunks(this Derived& self, IndType 
     {
         if (parallel_storage_init::use_own_team(static_cast<long>(c_last) - c_first))
         {
-            // The team parallel_phase opens is the calling thread's current one.
-            parallel_phase([&] { pmp::current_team().for_static<int>(c_first, c_last, [&](int c) { span(c); }); });
+            // The team parallel_phase_impl opens is the calling thread's current one.
+            phase_detail::parallel_phase_impl(
+                0, [&] { pmp::current_team().for_static<int>(c_first, c_last, [&](int c) { span(c); }); });
             return;
         }
     }

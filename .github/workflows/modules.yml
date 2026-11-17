@@ -1,0 +1,91 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
+#
+# The shrink_array module of the cpp26 branch, CHUNK_MODULES=ON
+# (chunk/modules/shrink_array.cppm, experimental, off by default), through
+# `import std`. That needs GCC 16 (the official gcc image) and CMake 4.2, whose
+# experimental gate value the top CMakeLists.txt sets: Debian's CMake (3.31)
+# has no import std for GCC, so the job takes Kitware's release. A workflow of
+# its own, not a job of ci.yml: ci.yml comes from develop at every merge, this
+# file stays on cpp26.
+name: Modules
+
+on:
+  push:
+    branches: [cpp26]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gcc16-modules:
+    name: gcc 16, modules, ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    container: gcc:16.2.0-trixie
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: OpenMP
+            cmake_args: -DCHUNK_OPENMP=ON
+          - name: serial
+            cmake_args: -DCHUNK_OPENMP=OFF
+    env:
+      # The unity harnesses, as ci.yml: two at a time fit the runner's 16 GB.
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+      DEBIAN_FRONTEND: noninteractive
+      CMAKE_VERSION: 4.2.8
+    steps:
+      - uses: actions/checkout@v5
+      - name: Toolchain
+        run: |
+          apt-get update -q
+          apt-get install -y -q ninja-build libbz2-dev python3
+          curl -fsSL "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz" \
+            | tar xz -C /opt
+          echo "/opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin" >> "$GITHUB_PATH"
+          g++ --version
+          "/opt/cmake-${CMAKE_VERSION}-linux-x86_64/bin/cmake" --version
+          # The container runs as root, the checkout belongs to the runner's
+          # user: without this, git refuses the tree and the build stamp
+          # (git describe) has no revision.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          ${{ matrix.cmake_args }}
+          -DCHUNK_MODULES=ON
+          -DCHUNK_CHECK_OPTIM=ON
+          -DCHUNK_STATIC_SIZES=256
+          -DCHUNK_BUILD_DYN=OFF
+      # check: the validation label, with the programs that import the module
+      # (getting_started, bool_arrays, mdspan_tiles, simple_array,
+      # vectorisation_demo, module_api_<variant>) and
+      # check_module_deps. advisor_demo needs the _dyn library (CHUNK_BUILD_DYN=ON).
+      - name: Build and run the validation harnesses and the module programs (check target)
+        run: cmake --build build --target check
+      # What a user project does: the library alone, installed with its
+      # modules (shrink_array::<variant>_module), then examples/getting_started
+      # and examples/bool_arrays configured on their own with
+      # find_package(shrink_array) and -DCHUNK_MODULES=ON:
+      # each builds the BMI from the installed shrink_array.cppm and imports it.
+      - name: Install, then getting_started and bool_arrays against the install
+        run: |
+          cmake -S . -B build-lib -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo ${{ matrix.cmake_args }} -DCHUNK_MODULES=ON \
+            -DCHUNK_STATIC_SIZES=256 -DCHUNK_BUILD_DYN=OFF \
+            -DSHRINK_ARRAY_BUILD_EXAMPLES=OFF -DSHRINK_ARRAY_BUILD_TESTS=OFF
+          cmake --build build-lib
+          cmake --install build-lib --prefix "$RUNNER_TEMP/prefix"
+          for ex in getting_started bool_arrays; do
+            cmake -S examples/$ex -B build-$ex -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+              -DCHUNK_MODULES=ON -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/prefix"
+            cmake --build build-$ex
+            OMP_NUM_THREADS=4 ./build-$ex/$ex
+          done

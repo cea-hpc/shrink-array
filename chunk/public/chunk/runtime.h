@@ -27,6 +27,7 @@
 #include "chunk/internal/singleton.h"           // SingletonChk
 #include "chunk/internal/type_state_registry.h" // TypeStateRegistry
 #include "chunk/log.h"                          // CHUNK_LOG (the static build's ignored setters)
+#include "chunk/internal/module_export.h"       // SHRINK_ARRAY_EXPORT (Runtime)
 #include "chunk/internal/pool_release.h"        // release_chunk_pools, destroy_block_chunk: the shutdown
 
 namespace shrink_array
@@ -166,7 +167,7 @@ struct RuntimeDynInterface<false, AllT>
 
 /// @brief Library-wide setup and configuration entry point (all-static), inheriting the build-dependent verbs
 ///        of RuntimeParallelInterface and RuntimeDynInterface.
-class Runtime : public RuntimeParallelInterface<>, public RuntimeDynInterface<>
+SHRINK_ARRAY_EXPORT class Runtime : public RuntimeParallelInterface<>, public RuntimeDynInterface<>
 {
   public:
     // The policies read the private #block_size. They are befriended as TEMPLATES: their
@@ -456,6 +457,6 @@ class Runtime : public RuntimeParallelInterface<>, public RuntimeDynInterface<>
 };
 
 /// @brief Former name of Runtime.
-using ParamChunk [[deprecated("renamed Runtime (chunk/runtime.h)")]] = Runtime;
+SHRINK_ARRAY_EXPORT using ParamChunk [[deprecated("renamed Runtime (chunk/runtime.h)")]] = Runtime;
 
 } // namespace shrink_array

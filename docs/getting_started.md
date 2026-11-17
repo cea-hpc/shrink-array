@@ -80,6 +80,27 @@ add_executable(my_app main.cpp)
 target_link_libraries(my_app PRIVATE shrink_array::zero_any)
 ```
 
+A library built with `-DCHUNK_MODULES=ON` (experimental: CMake 4.2, the Ninja generator, GCC 16)
+also installs the `shrink_array` module: a program can then `import shrink_array;` instead of
+including the headers. It links the variant's module, `shrink_array::zero_any_module` (one per
+default-size variant library, installed with it), and is built with CMake 4.2 and `-G Ninja`:
+
+```cmake
+cmake_minimum_required(VERSION 3.20)
+# import std: CMake 4.2's experimental gate, before project() (the value changes with CMake's version).
+set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "d0edc3af-4c50-42ea-a356-e2862fe7a444")
+project(my_app LANGUAGES CXX)
+
+find_package(shrink_array 0.2 REQUIRED)
+
+add_executable(my_app main.cpp)
+set_target_properties(my_app PROPERTIES CXX_SCAN_FOR_MODULES ON CXX_MODULE_STD ON)
+target_compile_features(my_app PRIVATE cxx_std_23)
+target_link_libraries(my_app PRIVATE shrink_array::zero_any_module)
+```
+
+Macros do not cross an import: a program that needs `CHUNK_LOG` still includes `chunk/log.h`.
+
 The library you link **chooses the variant and the chunk size**. The headers are the same
 for all of them, and the library brings the compile definitions that select its own
 (`CHUNK_VARIANT_ZERO_ANY=1`, `CHUNK_SIZE=256` or `CHUNK_DYNAMIC`), together with C++20,
@@ -127,7 +148,7 @@ installation holds.
 
 This is [`examples/getting_started/getting_started.cpp`](../examples/getting_started/getting_started.cpp),
 shortened. The directory also has the `CMakeLists.txt` of §3: it builds against an install as
-well as inside the tree.
+well as inside the tree (with `-DCHUNK_MODULES=ON`, through `import shrink_array;`).
 
 ```cpp
 #include <cstdio>

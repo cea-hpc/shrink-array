@@ -72,11 +72,13 @@
 #include "chunk/log.h"                         // CHUNK_LOG (log(): channel advisor)
 #include "chunk/internal/chunk_traits.h"       // has_motif_state_v (pattern::Array: the motif rows)
 
+#include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT
+
 namespace shrink_array
 {
 
 /// @brief Model figures for one candidate chunk size: chunk counts and estimated memory.
-struct ChunkSizeEstimate
+SHRINK_ARRAY_EXPORT struct ChunkSizeEstimate
 {
     uint32_t size      = 0;  ///< candidate chunk size (elements)
     int64_t  n_chunks  = 0;  ///< total chunks at that size
@@ -90,7 +92,7 @@ struct ChunkSizeEstimate
 };
 
 /// @brief ChunkSizeAdvisor's result: one ChunkSizeEstimate per candidate size, with the best and current indices.
-struct ChunkSizeReport
+SHRINK_ARRAY_EXPORT struct ChunkSizeReport
 {
     /// @brief Bytes the best size would save over the current one (0 when
     ///        either is unknown).
@@ -170,7 +172,7 @@ template <typename Arr>
 
 /// @brief Estimates an array's model memory at other chunk sizes without re-chunking (see the header comment).
 /// @tparam T Element type.
-template <typename T>
+SHRINK_ARRAY_EXPORT template <typename T>
 struct ChunkSizeAdvisor
 {
     /// @brief Which sizes analyze() evaluates, its scan cap and the per-chunk metadata cost it adds.

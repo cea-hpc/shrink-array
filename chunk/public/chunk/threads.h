@@ -39,8 +39,9 @@
  */
 
 #include "fast_allocators/internal/pmp_runtime.h" // fast_alloc::pmp::max_threads, team_size, thread_rank
+#include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT (the three queries, twice)
 
-namespace shrink_array::pmp
+SHRINK_ARRAY_EXPORT namespace shrink_array::pmp
 {
 
 /// @brief Team size of the next parallel region opened without an explicit
@@ -56,7 +57,7 @@ using ::fast_alloc::pmp::thread_rank;
 
 } // namespace shrink_array::pmp
 
-namespace shrink_array
+SHRINK_ARRAY_EXPORT namespace shrink_array
 {
 
 // The same three, without the pmp:: of the library's thread backends: what a

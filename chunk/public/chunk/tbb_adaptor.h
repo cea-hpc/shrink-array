@@ -101,8 +101,8 @@
 #include <oneapi/tbb/task_arena.h>    // oneapi::tbb::task_arena, this_task_arena::enqueue (the library's teams)
 #include <oneapi/tbb/version.h>       // TBB_INTERFACE_VERSION (this_task_arena::enqueue: oneTBB 2021.6)
 
-#include "chunk/internal/pmp_chunk.h" // pmp::backend, pmp::BackendKind, pmp::set_team_launcher
-#include "chunk/phases.h"             // begin_parallel_phase, finalize_parallel_phase
+#include "chunk/internal/pmp_chunk.h"   // pmp::backend, pmp::BackendKind, pmp::set_team_launcher
+#include "chunk/internal/phase_hooks.h" // begin_parallel_phase, finalize_parallel_phase
 
 namespace shrink_array::tbb
 {

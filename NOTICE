@@ -17,4 +17,4 @@ version and the local patches applied to them.
 * ska::flat_hash_map -- https://github.com/skarupke/flat_hash_map
   Copyright Malte Skarupke 2017
   Boost Software License, Version 1.0 (third_party/licenses/flat_hash_map-BSL-1.0.txt)
-  Modified: local patch, marked "Local patch (shrink-array)".
+  Modified: local patches, marked "Local patch (shrink-array)".

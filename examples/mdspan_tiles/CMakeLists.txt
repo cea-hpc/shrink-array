@@ -2,10 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # mdspan_tiles: one 2D field written through the mdspan view of
 # chunk/mdspan.h, row-major and in tiles of 16 x 16, over a zero_any array of
-# chunk size 256; prints the chunks left materialised in each layout.
+# chunk size 256; prints the chunks left materialised in each layout. With
+# CHUNK_MODULES=ON it imports the module over chunk_zero_any_256.
 if (TARGET chunk_zero_any_256)
     add_executable(mdspan_tiles mdspan_tiles.cpp)
-    target_link_libraries(mdspan_tiles PRIVATE chunk_zero_any_256)
+    chunk_use_library(mdspan_tiles chunk_zero_any_256)
     target_compile_definitions(mdspan_tiles PRIVATE CHUNK_VARIANT_ZERO_ANY)
     if (OMP)
         find_package(OpenMP REQUIRED)

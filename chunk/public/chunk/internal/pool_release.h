@@ -21,11 +21,14 @@
  * @brief The two shutdown calls of a program: release_chunk_pools() and
  *        destroy_block_chunk(), defined in chunk/private/chunk_std.cpp.
  *
- * @details Declarations only, with no include: chunk/runtime.h (the public
- *          header a program includes for its start and its end) and
- *          chunk/internal/zero_chunk.h (the library's own callers) both take
- *          them from here.
+ * @details Declarations only, with no include but SHRINK_ARRAY_EXPORT's: the
+ *          shrink_array module exports them (chunk/modules/shrink_array.cppm),
+ *          chunk/runtime.h (the public header a program includes for its
+ *          start and its end) and chunk/internal/zero_chunk.h (the library's
+ *          own callers) take them from here.
  */
+
+#include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT
 
 namespace shrink_array
 {
@@ -39,7 +42,7 @@ extern void shutdown_runtime();
 } // namespace internal
 
 /// @brief Former name of Runtime::shutdown().
-[[deprecated("renamed Runtime::shutdown() (chunk/runtime.h)")]] inline void destroy_block_chunk()
+SHRINK_ARRAY_EXPORT [[deprecated("renamed Runtime::shutdown() (chunk/runtime.h)")]] inline void destroy_block_chunk()
 {
     internal::shutdown_runtime();
 }
@@ -64,6 +67,6 @@ extern void shutdown_runtime();
  *          delete_chunk_allocator(), clear_all_list_block_free_thr(),
  *          delete_list_block_chunk_free_itself() and an array's shrink_to_fit().
  */
-extern void release_chunk_pools();
+SHRINK_ARRAY_EXPORT extern void release_chunk_pools();
 
 } // namespace shrink_array

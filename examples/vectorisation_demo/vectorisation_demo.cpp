@@ -14,30 +14,34 @@
  * limitations under the License.
  */
 
-#include <chrono>    // std::chrono::steady_clock
-#include <cmath>     // std::cos, std::sin, std::sqrt
-#include <cstdlib>   // std::abort
-#include <exception> // std::exception (main's catch)
-#include <ctime>     // std::time
-#include <random>    // std::mt19937, std::uniform_int_distribution, std::default_random_engine
-#include <array>     // std::array
-#include <fstream>   // std::ifstream, std::ofstream
-#include <cstdio>    // stderr, std::fprintf (main's catch)
-#include <print>     // std::println, std::print
-#include <algorithm> // For std::shuffle
-#include <string>    // std::string, std::to_string
+// The C headers outside the two forms, for their macros: an import brings no macro.
+#include <cstdio>         // stderr, std::fprintf (main's catch)
+#include <sys/resource.h> // getrusage, RUSAGE_SELF
 
-#include <sys/resource.h> // getrusage
+// With CHUNK_MODULES=ON (SHRINK_ARRAY_IMPORT) it imports the module.
+#ifdef SHRINK_ARRAY_IMPORT
+import std;          // std::chrono, std::mt19937, std::shuffle, std::ofstream, std::println, std::vector, ...
+import shrink_array; // zero::Array, Runtime, max_threads, chunk_config::stats
+#else
+    #include <chrono>      // std::chrono::steady_clock
+    #include <cmath>       // std::cos, std::sin, std::sqrt
+    #include <cstdlib>     // std::abort
+    #include <exception>   // std::exception (main's catch)
+    #include <ctime>       // std::time
+    #include <random>      // std::mt19937, std::uniform_int_distribution, std::default_random_engine
+    #include <array>       // std::array
+    #include <fstream>     // std::ifstream, std::ofstream
+    #include <print>       // std::println, std::print
+    #include <algorithm>   // For std::shuffle
+    #include <string>      // std::string, std::to_string
+    #include <type_traits> // std::is_same_v (the simd clauses)
+    #include <vector>      // std::vector
 
-#include <type_traits> // std::is_same_v (the simd clauses)
-
-#include <vector> // std::vector
-
-
-#include "chunk/runtime.h"    // Runtime, Runtime::shutdown
-#include "chunk/zero_array.h" // zero::Array
-#include "chunk/threads.h"    // shrink_array::max_threads
-#include "chunk/config.h"     // chunk_config::stats
+    #include "chunk/runtime.h"    // Runtime, Runtime::shutdown
+    #include "chunk/zero_array.h" // zero::Array
+    #include "chunk/threads.h"    // shrink_array::max_threads
+    #include "chunk/config.h"     // chunk_config::stats
+#endif
 
 
 using namespace shrink_array;

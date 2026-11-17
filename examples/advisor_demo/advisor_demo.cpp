@@ -18,14 +18,19 @@
 // several REAL chunk sizes -- powers of two and multiples of 64 (192, 384,
 // ...) -- then compare the advisor's per-size predictions (each set made from
 // ONE reference size: 256, then 1024) against ground truth at each size.
-#include <cstdio>   // std::snprintf
-#include <iterator> // std::size
-#include <vector>   // std::vector
+#ifdef SHRINK_ARRAY_IMPORT
+import std;          // std::snprintf, std::size, std::vector
+import shrink_array; // zero_any::Array, ChunkSizeAdvisor, set_active_chunk_size, set_thread_chunk_size, Runtime, println
+#else
+    #include <cstdio>   // std::snprintf
+    #include <iterator> // std::size
+    #include <vector>   // std::vector
 
-#include "chunk/zero_any_array.h"     // zero_any::Array, zero_any::Chunk
-#include "chunk/chunk_size_advisor.h" // ChunkSizeAdvisor, set_active_chunk_size
-#include "chunk/runtime.h"            // Runtime::init
-#include "chunk/print.h"              // shrink_array::println
+    #include "chunk/zero_any_array.h"     // zero_any::Array, zero_any::Chunk
+    #include "chunk/chunk_size_advisor.h" // ChunkSizeAdvisor, set_active_chunk_size
+    #include "chunk/runtime.h"            // Runtime::init
+    #include "chunk/print.h"              // shrink_array::println
+#endif
 
 using namespace shrink_array;
 
@@ -156,7 +161,7 @@ int main()
         for (const auto& entry : rep.table)
         {
             // find matching real size
-            for (size_t k = 0; k < std::size(sizes); ++k)
+            for (std::size_t k = 0; k < std::size(sizes); ++k)
             {
                 if (sizes[k] != entry.size)
                 {

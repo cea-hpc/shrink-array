@@ -40,23 +40,23 @@
 
 #if defined(__cpp_lib_print)
     #include <print> // std::print, std::println
-
-namespace shrink_array
-{
-using std::print;
-using std::println;
-} // namespace shrink_array
-
 #else
     #include <cstdio>  // std::FILE, std::fwrite, stdout
     #include <format>  // std::format, std::format_string
     #include <string>  // std::string
     #include <utility> // std::forward
+#endif
+
+#include "chunk/internal/module_export.h" // SHRINK_ARRAY_EXPORT (print, println)
 
 namespace shrink_array
 {
+#if defined(__cpp_lib_print)
+SHRINK_ARRAY_EXPORT using std::print;
+SHRINK_ARRAY_EXPORT using std::println;
+#else
 /// @brief std::print(stream, fmt, args...): format, then one fwrite.
-template <typename... Args>
+SHRINK_ARRAY_EXPORT template <typename... Args>
 void print(std::FILE* stream, std::format_string<Args...> fmt, Args&&... args)
 {
     const std::string text = std::format(fmt, std::forward<Args>(args)...);
@@ -64,14 +64,14 @@ void print(std::FILE* stream, std::format_string<Args...> fmt, Args&&... args)
 }
 
 /// @brief std::print(fmt, args...): to stdout.
-template <typename... Args>
+SHRINK_ARRAY_EXPORT template <typename... Args>
 void print(std::format_string<Args...> fmt, Args&&... args)
 {
     print(stdout, fmt, std::forward<Args>(args)...);
 }
 
 /// @brief std::println(stream, fmt, args...): the text, then a newline.
-template <typename... Args>
+SHRINK_ARRAY_EXPORT template <typename... Args>
 void println(std::FILE* stream, std::format_string<Args...> fmt, Args&&... args)
 {
     std::string text = std::format(fmt, std::forward<Args>(args)...);
@@ -80,17 +80,16 @@ void println(std::FILE* stream, std::format_string<Args...> fmt, Args&&... args)
 }
 
 /// @brief std::println(fmt, args...): to stdout.
-template <typename... Args>
+SHRINK_ARRAY_EXPORT template <typename... Args>
 void println(std::format_string<Args...> fmt, Args&&... args)
 {
     println(stdout, fmt, std::forward<Args>(args)...);
 }
 
 /// @brief std::println(): a newline on stdout.
-inline void println()
+SHRINK_ARRAY_EXPORT inline void println()
 {
     std::fputc('\n', stdout);
 }
-} // namespace shrink_array
-
 #endif
+} // namespace shrink_array

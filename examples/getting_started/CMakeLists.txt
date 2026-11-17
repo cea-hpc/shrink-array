@@ -9,17 +9,30 @@
 #    does it:
 #        cmake -S examples/getting_started -B build-gs -DCMAKE_PREFIX_PATH=<prefix>
 #        cmake --build build-gs && ./build-gs/getting_started
+#
+# With -DCHUNK_MODULES=ON (experimental) getting_started.cpp imports the
+# shrink_array module (`import std;`, `import shrink_array;`) instead of
+# including the headers: CMake 4.2, the Ninja generator and import std, whose
+# experimental gate is set before project(), as in the library's own build.
+# On its own, the installed library must have been built with CHUNK_MODULES=ON.
 cmake_minimum_required(VERSION 3.20)
 
 if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  option(CHUNK_MODULES "Import the shrink_array module (experimental: CMake 4.2, Ninja)" OFF)
+  if (CHUNK_MODULES)
+    # import std: CMake 4.2's gate value (it changes with CMake's version).
+    set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "d0edc3af-4c50-42ea-a356-e2862fe7a444")
+  endif()
   project(getting_started LANGUAGES CXX)
   set(CMAKE_CXX_STANDARD 20)
   set(CMAKE_CXX_STANDARD_REQUIRED ON)
   # Brings shrink_array::zero, shrink_array::zero_one_value, shrink_array::zero_any (default size),
-  # shrink_array::zero_any_<size>, shrink_array::zero_any_dyn, ... and their dependencies
+  # shrink_array::zero_any_<size>, shrink_array::zero_any_dyn, ..., with CHUNK_MODULES the modules
+  # over the default-size ones (shrink_array::zero_any_module, ...), and their dependencies
   # (fast_allocators, OpenMP and Threads when the library was built with them).
   find_package(shrink_array 0.2 REQUIRED)
   set(GETTING_STARTED_LIB shrink_array::zero_any CACHE STRING "The shrink-array library to link")
+  set(GETTING_STARTED_MODULE shrink_array::zero_any_module CACHE STRING "The shrink-array module to import (CHUNK_MODULES)")
 else()
   set(GETTING_STARTED_LIB chunk_zero_any)
 endif()
@@ -28,14 +41,26 @@ add_executable(getting_started getting_started.cpp)
 # Linking the variant library is all it takes: it carries its compile
 # definitions (CHUNK_VARIANT_ZERO_ANY=1, CHUNK_SIZE or CHUNK_DYNAMIC), its include
 # directories (with the generated chunk/build_options.h, the options it was
-# built with) and -fopenmp when it was built with OpenMP.
-target_link_libraries(getting_started PRIVATE ${GETTING_STARTED_LIB})
+# built with) and -fopenmp when it was built with OpenMP. Its module, the same
+# through the library it links.
+if (NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  chunk_use_library(getting_started ${GETTING_STARTED_LIB})
+elseif (CHUNK_MODULES)
+  # Scan the source for its imports; import std needs C++23 asked as a feature.
+  set_target_properties(getting_started PROPERTIES CXX_SCAN_FOR_MODULES ON CXX_MODULE_STD ON)
+  target_compile_features(getting_started PRIVATE cxx_std_23)
+  target_compile_definitions(getting_started PRIVATE SHRINK_ARRAY_IMPORT=1)
+  target_link_libraries(getting_started PRIVATE ${GETTING_STARTED_MODULE})
+else()
+  target_link_libraries(getting_started PRIVATE ${GETTING_STARTED_LIB})
+endif()
 
 # getting_started_ompt.cpp: the same program with plain `omp parallel for`
 # loops, no parallel_phase(), checked against a std::vector. Only with the
 # OMPT tool (Clang, oneAPI): the runtime marks the phases. Its source refuses to
 # compile without it (static_assert), and its test stops on a runtime that did
 # not load the tool (CHUNK_REQUIRE_OMPT=1) instead of passing without phases.
+# Headers only: the module is built with GCC 16, which has no OMPT.
 if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   set(_gs_ompt "${shrink_array_OMPT}")
 else()
@@ -56,4 +81,18 @@ if (NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   add_test(NAME getting_started COMMAND getting_started)
   set_property(TEST getting_started PROPERTY LABELS examples)
   set_property(GLOBAL APPEND PROPERTY SHRINK_CHECK_TARGETS getting_started) # check builds it
+endif()
+
+# module_api.cpp: the names the module exports from its purview headers
+# (chunk exchange, advisor, decider, mdspan), each used through the import,
+# once per variant module (module_api_<variant>). Inside the tree, with
+# CHUNK_MODULES=ON only.
+if (CHUNK_MODULES AND NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  foreach(_mv IN LISTS CHUNK_VARIANTS)
+    add_executable(module_api_${_mv} module_api.cpp)
+    chunk_link_module(module_api_${_mv} chunk_${_mv})
+    add_test(NAME module_api_${_mv} COMMAND module_api_${_mv})
+    set_property(TEST module_api_${_mv} PROPERTY LABELS validation)
+    set_property(GLOBAL APPEND PROPERTY SHRINK_CHECK_TARGETS module_api_${_mv})
+  endforeach()
 endif()

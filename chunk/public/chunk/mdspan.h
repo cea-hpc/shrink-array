@@ -86,12 +86,13 @@
 #include <utility> // std::declval, std::pair
 
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (a tiled submdspan off the tiles)
+#include "chunk/internal/module_export.h"   // SHRINK_ARRAY_EXPORT
 
 namespace shrink_array::md
 {
 
 /// @brief The index type of @p Array: the type of a.size() (as range_ops.h).
-template <typename Array>
+SHRINK_ARRAY_EXPORT template <typename Array>
 using index_of = decltype(std::declval<const std::remove_const_t<Array>&>().size());
 
 /**
@@ -99,7 +100,7 @@ using index_of = decltype(std::declval<const std::remove_const_t<Array>&>().size
  *        view's element at offset 0 (non-zero for a sub-view).
  * @details *h is the array, as when the handle was the array's address.
  */
-template <typename Array>
+SHRINK_ARRAY_EXPORT template <typename Array>
 struct handle
 {
     using index_type = index_of<Array>;
@@ -136,7 +137,7 @@ struct handle
  * @tparam Array The array type; `const Array` gives a read-only view whose
  *         reference is the value (T), like the array's const operator[].
  */
-template <typename Array>
+SHRINK_ARRAY_EXPORT template <typename Array>
 struct accessor
 {
     using array_type   = std::remove_const_t<Array>;
@@ -326,7 +327,7 @@ class TiledMappingBase
  *          at run time.
  * @tparam Tile Tile extent in each dimension (rank = sizeof...(Tile)).
  */
-template <std::size_t... Tile>
+SHRINK_ARRAY_EXPORT template <std::size_t... Tile>
 struct layout_tiled
 {
     template <typename Extents>
@@ -409,7 +410,7 @@ struct layout_tiled
  *          shifts).
  * @tparam Rank The rank.
  */
-template <std::size_t Rank>
+SHRINK_ARRAY_EXPORT template <std::size_t Rank>
 struct layout_tiled_dyn
 {
     template <typename Extents>
@@ -479,7 +480,7 @@ struct layout_tiled_dyn
 };
 
 /// @brief The view type of view() and tiled_view().
-template <typename Array, typename Layout = std::layout_right, std::size_t Rank = 2>
+SHRINK_ARRAY_EXPORT template <typename Array, typename Layout = std::layout_right, std::size_t Rank = 2>
 using view_type =
     std::mdspan<typename accessor<Array>::element_type, std::dextents<index_of<Array>, Rank>, Layout, accessor<Array>>;
 
@@ -488,7 +489,7 @@ using view_type =
  *        exceed a.size()).
  * @return an mdspan whose f[i, j, ...] is a[i * e1 * ... + j * ... + ...].
  */
-template <typename Array, typename... Ext>
+SHRINK_ARRAY_EXPORT template <typename Array, typename... Ext>
 auto view(Array& a, Ext... ext)
 {
     using A  = std::remove_reference_t<Array>;
@@ -497,7 +498,7 @@ auto view(Array& a, Ext... ext)
 }
 
 /// @brief Elements a tiled view of extents @p ext... needs (padding included).
-template <std::size_t... Tile, typename... Ext>
+SHRINK_ARRAY_EXPORT template <std::size_t... Tile, typename... Ext>
 constexpr std::size_t tiled_size(Ext... ext) noexcept
 {
     static_assert(sizeof...(Tile) == sizeof...(Ext), "tiled_size: one tile extent per dimension");
@@ -505,14 +506,14 @@ constexpr std::size_t tiled_size(Ext... ext) noexcept
 }
 
 /// @brief The view type of tiled_view<Tile...>() over @p Array.
-template <typename Array, std::size_t... Tile>
+SHRINK_ARRAY_EXPORT template <typename Array, std::size_t... Tile>
 using tiled_view_type = view_type<Array, layout_tiled<Tile...>, sizeof...(Tile)>;
 
 /**
  * @brief Tiled view of @p a (layout_tiled<Tile...>) with extents @p ext...;
  *        @p a must hold at least tiled_size<Tile...>(ext...) elements.
  */
-template <std::size_t... Tile, typename Array, typename... Ext>
+SHRINK_ARRAY_EXPORT template <std::size_t... Tile, typename Array, typename... Ext>
 auto tiled_view(Array& a, Ext... ext)
 {
     static_assert(sizeof...(Tile) == sizeof...(Ext), "tiled_view: one tile extent per dimension");
@@ -531,7 +532,7 @@ auto tiled_view(Array& a, Ext... ext)
  *          product is exactly @p elems: tile k of a tiled view is chunk k.
  *          A prime @p elems has no better shape than 1 x elems.
  */
-template <std::size_t Rank, typename Index = std::size_t>
+SHRINK_ARRAY_EXPORT template <std::size_t Rank, typename Index = std::size_t>
 constexpr std::array<Index, Rank> tile_shape(std::size_t elems) noexcept
 {
     static_assert(Rank > 0, "tile_shape: rank 0 has no tile");
@@ -579,7 +580,7 @@ constexpr std::array<Index, Rank> tile_shape(std::size_t elems) noexcept
 
 /// @brief Elements a tiled view of extents @p ext needs with tile @p tile
 ///        (padding included): tiled_size() with the tile at run time.
-template <std::size_t Rank, typename Index>
+SHRINK_ARRAY_EXPORT template <std::size_t Rank, typename Index>
 constexpr std::size_t tiled_size_dyn(const std::array<Index, Rank>& tile, const std::array<Index, Rank>& ext) noexcept
 {
     std::size_t n = 1;
@@ -592,7 +593,7 @@ constexpr std::size_t tiled_size_dyn(const std::array<Index, Rank>& tile, const 
 }
 
 /// @brief The view type of tiled_view_dyn().
-template <typename Array, std::size_t Rank>
+SHRINK_ARRAY_EXPORT template <typename Array, std::size_t Rank>
 using tiled_dyn_view_type = view_type<Array, layout_tiled_dyn<Rank>, Rank>;
 
 /**
@@ -600,7 +601,7 @@ using tiled_dyn_view_type = view_type<Array, layout_tiled_dyn<Rank>, Rank>;
  *        (layout_tiled_dyn); @p a must hold at least
  *        tiled_size_dyn(tile, {ext...}) elements.
  */
-template <typename Array, typename I, std::size_t Rank, typename... Ext>
+SHRINK_ARRAY_EXPORT template <typename Array, typename I, std::size_t Rank, typename... Ext>
     requires(sizeof...(Ext) == Rank)
 auto tiled_view_dyn(Array& a, const std::array<I, Rank>& tile, Ext... ext)
 {
@@ -625,7 +626,7 @@ auto tiled_view_dyn(Array& a, const std::array<I, Rank>& tile, Ext... ext)
  *          (nothing moves), but a tile is no longer a chunk: make the view
  *          again only if the data is laid out for the new tile (a copy).
  */
-template <typename Array, typename... Ext>
+SHRINK_ARRAY_EXPORT template <typename Array, typename... Ext>
 auto tiled_view_dyn(Array& a, Ext... ext)
 {
     using Idx = index_of<std::remove_reference_t<Array>>;
@@ -655,7 +656,7 @@ concept view_of_array =
  * md::stencil_tiles_mt(md::as_const(f), g, 1, ...); // the source of a stencil
  * @endcode
  */
-template <detail::view_of_array View>
+SHRINK_ARRAY_EXPORT template <detail::view_of_array View>
 auto as_const(const View& f)
 {
     using A = typename View::accessor_type::array_type;
@@ -673,8 +674,8 @@ auto as_const(const View& f)
 /// @brief std::submdspan and std::full_extent under md:: too:
 ///        md::submdspan(f, std::pair{0, 64}, md::full_extent), the spelling
 ///        from when the mdspan could be Kokkos's.
-using std::full_extent;
-using std::submdspan;
+SHRINK_ARRAY_EXPORT using std::full_extent;
+SHRINK_ARRAY_EXPORT using std::submdspan;
 
 } // namespace shrink_array::md
 

@@ -20,7 +20,8 @@ chunk_require_cxx_std(vectorisation_demo PRIVATE)
 # shape of the library) while this example instantiates zero::Array<double>
 # itself -- the same mismatch multi_mat had (its allocators and lists never
 # set up: SIGSEGV in create_value from the first parallel write).
-target_link_libraries(vectorisation_demo PRIVATE chunk_zero_${CHUNK_DEFAULT_SIZE})
+# With CHUNK_MODULES=ON it imports the module over that library.
+chunk_use_library(vectorisation_demo chunk_zero_${CHUNK_DEFAULT_SIZE})
 
 add_test(NAME vectorisation_demo COMMAND vectorisation_demo)
 set_property(TEST vectorisation_demo PROPERTY LABELS examples)

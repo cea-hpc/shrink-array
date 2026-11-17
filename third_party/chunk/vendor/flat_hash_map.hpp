@@ -3,7 +3,7 @@
 //   upstream: https://github.com/skarupke/flat_hash_map (unmaintained)
 //   version : master, commit 2c4687431f978f02a3780e24b8b701d22aa32d9c
 //             (2018-07-15, the last upstream commit)
-//   changes : 1 local patch, marked "Local patch (shrink-array)"
+//   changes : 2 local patches, marked "Local patch (shrink-array)"
 //   license : Boost Software License 1.0 (third_party/licenses/flat_hash_map-BSL-1.0.txt)
 // See third_party/README.md in the shrink-array repository.
 //          Copyright Malte Skarupke 2017.
@@ -163,7 +163,11 @@ struct KeyOrValueEquality : functor_storage<bool, key_equal>
         return static_cast<equality_storage &>(*this)(lhs.first, rhs.first);
     }
 };
-static constexpr int8_t min_lookups = 4;
+// Local patch (shrink-array): inline, not static. A static constant has
+// internal linkage, and the templates below that read it then expose a
+// TU-local entity when the header sits in a module's global fragment
+// (GCC 16 -Wexpose-global-module-tu-local, chunk/modules/shrink_array.cppm).
+inline constexpr int8_t min_lookups = 4;
 template<typename T>
 struct sherwood_v3_entry
 {
