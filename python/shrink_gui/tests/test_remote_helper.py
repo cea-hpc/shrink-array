@@ -228,7 +228,7 @@ def test_msub_qos_directive(site):
     site.wait(lambda: _status(site, "q1")["status"] == "fini")
 
 
-def _fake_build_rep(site):
+def _fake_build_root(site):
     br = site.home / "br"
     for name, arch, exes in (("omp-llvm", "RHEL_9.4__aarch64", ["shrink_bench_omp_zero_64", "shrink_bench_omp_zero_dyn"]),
                              ("omp-gnu-debug", "RHEL_9.4__aarch64", ["shrink_bench_omp_zero_64"]),
@@ -242,7 +242,7 @@ def _fake_build_rep(site):
 
 
 def test_build_targets(site):
-    _fake_build_rep(site)
+    _fake_build_root(site)
     r = site.helper("build_targets", "~/shrink-array", "~/br", "aarch64")
     if (REPO / "scripts/compile_all.sh").exists():
         assert "omp-llvm" in r["configs"] and not any("$" in c for c in r["configs"])

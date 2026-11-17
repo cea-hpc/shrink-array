@@ -88,7 +88,7 @@ template <typename Derived>
 void zero_one_value::RechunkHooks<Derived, true>::rechunk_seed_fresh(this Derived& self, InT<value_type> state)
 {
     // On the FRESH array before refill. Not value_type{}: that is already its
-    // state, and re-declaring it would make a degenerate cst_val2 == cst_val1 buffer.
+    // state, and re-declaring it would make a degenerate const_val2 == const_val1 buffer.
     if constexpr (Derived::is_not_bool)
     {
         if (!same_value(state, value_type{}))
@@ -105,7 +105,7 @@ void zero_one_value::RechunkHooks<Derived, true>::rechunk_seed_fresh(this Derive
 template <typename Derived>
 bool zero_one_value::RechunkHooks<Derived, true>::rechunk_swap_identity(this Derived& self, Derived& tmp)
 {
-    // The array_id, ind_cst_val2_ and inf_array MEMBERS are NOT swapped: the
+    // The array_id, idx_const_val2_ and inf_array MEMBERS are NOT swapped: the
     // identity comes from array_registry, and the members may be
     // uninitialized (swapping would read indeterminate values). The mirrors are
     // re-read in rechunk_reown_after_swap().
@@ -124,7 +124,7 @@ void zero_one_value::RechunkHooks<Derived, true>::rechunk_reown_after_swap(this 
 {
     // Re-own the registration of `state`: map_inf_array_[state] points at
     // &tmp.inf_array, which dangles once the stack tmp dies, and the next
-    // compression of `state` would dereference it. Copy tmp's (value, ind) and
+    // compression of `state` would dereference it. Copy tmp's (value, idx) and
     // re-point the map at this array's member. Only when the fresh array
     // registered a value (state != value_type{}).
     if constexpr (chunk_config::use_fast_block_compression)
@@ -133,8 +133,8 @@ void zero_one_value::RechunkHooks<Derived, true>::rechunk_reown_after_swap(this 
         {
             if (!same_value(state, value_type{}))
             {
-                self.inf_array_    = tmp.inf_array_; // tmp's is valid (set_second_value ran)
-                self.ind_cst_val2_ = tmp.ind_cst_val2_;
+                self.inf_array_      = tmp.inf_array_; // tmp's is valid (set_second_value ran)
+                self.idx_const_val2_ = tmp.idx_const_val2_;
                 ProxyType::array_registry->insert(state, &self.inf_array_);
             }
         }

@@ -118,7 +118,7 @@ Count count(const sa::zero_any::Array<double>& a)
     for (long k = 0; k < c.chunks; ++k)
     {
         const auto& ch = a.chunk_list_[k];
-        if (!ch.is_cst_val1() && !ch.is_cst_val2())
+        if (!ch.is_const_val1() && !ch.is_const_val2())
         {
             ++c.materialised;
         }

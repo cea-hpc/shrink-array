@@ -41,7 +41,7 @@ def test_scan_then_clean(site):
     br = site.home / "builds"
     d = _fake_build(br)
     r = site.helper("clean_builds", str(br), "scan")
-    assert r["build_rep"] == str(br)
+    assert r["build_root"] == str(br)
     (row,) = r["dirs"]
     assert (row["name"], row["arch"], row["path"]) == ("omp", "RHEL_9.6__x86_64", str(d))
     assert row["removable"] == 3000 + 100 + 2000 + 1000 and row["files"] == 4
@@ -202,7 +202,7 @@ def test_dialog_totals(qapp):
     from PySide6.QtCore import Qt
 
     from shrink_gui.builds_panel import CleanBuildsDialog, fmt_bytes
-    scan = {"build_rep": "/b", "dirs": [
+    scan = {"build_root": "/b", "dirs": [
         {"name": "omp", "arch": "A__x86_64", "path": "/b/cmake-build-omp/A__x86_64", "removable": 3 << 30,
          "total": 5 << 30, "files": 10, "cleaned": None},
         {"name": "dbg", "arch": "A__x86_64", "path": "/b/cmake-build-dbg/A__x86_64", "removable": 0,
@@ -224,7 +224,7 @@ def test_button_cleans(gui, monkeypatch):
     br = os.path.join(site_home, "builds")
     import pathlib
     d = _fake_build(pathlib.Path(br))
-    monkeypatch.setattr(builds_panel, "BUILD_REP", br)
+    monkeypatch.setattr(builds_panel, "BUILD_ROOT", br)
     monkeypatch.setattr(builds_panel.CleanBuildsDialog, "exec", lambda self: QDialog.Accepted)
     w.bclean.click()
     assert pump(lambda: "nettoyé" in w.statusBar().currentMessage()), w.statusBar().currentMessage()

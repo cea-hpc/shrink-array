@@ -235,13 +235,13 @@ void write_binary_file(const std::string& filename,
 // compiled out by the preprocessor) and calls std::abort().
 //
 // Trace mode:
-//   - write_trace=true : dump the (ind, k) coordinate of the first divergence
+//   - write_trace=true : dump the (idx, k) coordinate of the first divergence
 //     to trace_err.txt so a follow-up run can jump straight to it.
 //   - read_trace=true  : replay from trace_err.txt written by a previous run.
 // -----------------------------------------------------------------------------
 template <typename Vec>
-void read_check_binary_file(Int                ind,
-                            const std::string& tab_name,
+void read_check_binary_file(Int                idx,
+                            const std::string& array_name,
                             const std::string& filename,
                             const Vec&         data_check,
                             std::uint64_t      lchs,
@@ -267,18 +267,18 @@ void read_check_binary_file(Int                ind,
 
     if (lchs_read == lchs && !read_trace)
     {
-        bench_par::critical([&] { std::println("{} Checksum OK !", tab_name); });
+        bench_par::critical([&] { std::println("{} Checksum OK !", array_name); });
         return;
     }
     if (!read_trace)
     {
-        std::print(stderr, "{}\nError checksum ! checksum read : {} checksum calculate : {}", tab_name, lchs_read,
+        std::print(stderr, "{}\nError checksum ! checksum read : {} checksum calculate : {}", array_name, lchs_read,
                    lchs);
     }
 
     if (!no_compress)
     {
-        std::print(stderr, " --> we decompress and read the file : {}", tab_name);
+        std::print(stderr, " --> we decompress and read the file : {}", array_name);
     }
     std::println(stderr, "");
     // A reference written with --checksum_only has no data to compare against:
@@ -294,7 +294,7 @@ void read_check_binary_file(Int                ind,
                     "{}: iteration {}: elements cannot be compared (checksum read {}, calculated {}): the "
                     "reference has no data file ({} / {}): it was written with --checksum_only. Regenerate a "
                     "full reference (vector baseline without --checksum_only) to locate the diverging element.",
-                    tab_name, ind, lchs_read, lchs, filename, filename_gz);
+                    array_name, idx, lchs_read, lchs, filename, filename_gz);
             });
         std::abort();
     }
@@ -351,21 +351,21 @@ void read_check_binary_file(Int                ind,
         if constexpr (chunk_config::is_shrink_enabled)
         {
             std::string line;
-            std::string current_tab;
+            std::string current_array;
 
             bool ok = false;
 
             std::getline(trace_file, line);
 
             std::getline(trace_file, line);
-            // Detect tab_name
+            // Detect array_name
             if (line.contains(" not equal !"))
             {
                 const size_t bracket_pos = line.find('[');
                 if (bracket_pos != std::string::npos)
                 {
-                    current_tab = line.substr(0, bracket_pos);
-                    if (current_tab == tab_name)
+                    current_array = line.substr(0, bracket_pos);
+                    if (current_array == array_name)
                     {
                         ok = true;
                     }
@@ -381,11 +381,11 @@ void read_check_binary_file(Int                ind,
             std::getline(trace_file, line);
 
             const Int chunk_index = index / static_cast<Int>(data_check.chunk_size());
-            const Int num         = index % static_cast<Int>(data_check.chunk_size());
+            const Int elem_offset = index % static_cast<Int>(data_check.chunk_size());
 
-            bool                  is_values   = false;
-            bool                  is_cst_val1 = false;
-            [[maybe_unused]] bool is_cst_val2 = false; // read only by the zero_one_value / zero_any traces
+            bool                  is_values     = false;
+            bool                  is_const_val1 = false;
+            [[maybe_unused]] bool is_const_val2 = false; // read only by the zero_one_value / zero_any traces
             while (std::getline(trace_file, line))
             {
                 if (line.contains("is_values"))
@@ -393,9 +393,9 @@ void read_check_binary_file(Int                ind,
                     is_values = true;
                     break;
                 }
-                if (line.contains("is_cst_val1"))
+                if (line.contains("is_const_val1"))
                 {
-                    is_cst_val1 = true;
+                    is_const_val1 = true;
                     break;
                 }
                 // Pure text search on the trace line -- no variant API at all -- and the
@@ -403,9 +403,9 @@ void read_check_binary_file(Int                ind,
                 // `if constexpr` written with the preprocessor.
                 if constexpr (chunk_config::use_second_value)
                 {
-                    if (line.contains("is_cst_val2"))
+                    if (line.contains("is_const_val2"))
                     {
-                        is_cst_val2 = true;
+                        is_const_val2 = true;
                         break;
                     }
                 }
@@ -413,10 +413,10 @@ void read_check_binary_file(Int                ind,
 
             const auto& chunk_t = data_check.get_chunk_list()[chunk_index];
 
-            const bool is_val1 = chunk_t.is_cst_val1();
+            const bool is_val1 = chunk_t.is_const_val1();
 
             // false everywhere but zero_one_value, exactly as the #else branch gave --
-            // and for a zero_any-family array in a zero_one_value build (tab_conn's
+            // and for a zero_any-family array in a zero_one_value build (array_conn's
             // pattern::Array): as in a zero_any build.
             bool is_val2 = false;
             if constexpr (chunk_config::use_zero_one_value &&
@@ -427,11 +427,11 @@ void read_check_binary_file(Int                ind,
 
                 if constexpr (is_not_bool)
                 {
-                    is_val2 = chunk_t.is_cst_val2(data_check.get_ind_second_value());
+                    is_val2 = chunk_t.is_const_val2(data_check.get_idx_second_value());
                 }
                 else
                 {
-                    is_val2 = chunk_t.is_cst_val2();
+                    is_val2 = chunk_t.is_const_val2();
                 }
             }
 
@@ -439,12 +439,12 @@ void read_check_binary_file(Int                ind,
             {
                 std::println(stderr, "value               : {}", bench_text(value));
                 std::println(stderr, "chunk number        : {}", chunk_index);
-                std::println(stderr, "number inside chunk : {}", num);
+                std::println(stderr, "number inside chunk : {}", elem_offset);
                 std::println(stderr, "is values           : {:d}", is_values);
-                std::println(stderr, "is_cst_val1         : {:d}", is_val1);
+                std::println(stderr, "is_const_val1         : {:d}", is_val1);
                 if constexpr (chunk_config::use_second_value)
                 {
-                    std::println(stderr, "is_cst_val2         : {:d}", is_val2);
+                    std::println(stderr, "is_const_val2         : {:d}", is_val2);
                 }
 
                 if constexpr (chunk_config::ring_log_debug)
@@ -454,32 +454,32 @@ void read_check_binary_file(Int                ind,
             };
 
             // Detect value category
-            if (is_cst_val1)
+            if (is_const_val1)
             {
                 if (is_val1)
                 {
-                    std::println(stderr, "\nwas cst_val1 it is");
+                    std::println(stderr, "\nwas const_val1 it is");
                     lbd_print();
                     exit(0);
                 }
 
-                std::println(stderr, "\nwas cst_val1 is not!");
+                std::println(stderr, "\nwas const_val1 is not!");
                 lbd_print();
                 exit(0);
             }
 
             if constexpr (chunk_config::use_second_value)
             {
-                if (is_cst_val2)
+                if (is_const_val2)
                 {
                     if (is_val2)
                     {
-                        std::println(stderr, "\nwas cst_val2 it is");
+                        std::println(stderr, "\nwas const_val2 it is");
                         lbd_print();
                         exit(0);
                     }
 
-                    std::println(stderr, "\nwas cst_val2 is not!");
+                    std::println(stderr, "\nwas const_val2 is not!");
                     lbd_print();
                     exit(0);
                 }
@@ -503,7 +503,7 @@ void read_check_binary_file(Int                ind,
 
                     if (te)
                     {
-                        std::println(stderr, "should be cst_val1");
+                        std::println(stderr, "should be const_val1");
                     }
                     else
                     {
@@ -546,7 +546,7 @@ void read_check_binary_file(Int                ind,
     std::ifstream trace_file_read;
 
     // Open the write-trace file once, up front, so both the bool and
-    // non-bool branches below share the same guarded write path (tab_bool
+    // non-bool branches below share the same guarded write path (array_bool
     // errors included under --write_trace).
     if (write_trace)
     {
@@ -565,16 +565,16 @@ void read_check_binary_file(Int                ind,
             std::println(stderr, "Failed to open trace_err.txt");
         }
     }
-    Int ind_read = -1;
+    Int idx_read = -1;
 
     if (read_trace)
     {
-        trace_file_read >> ind_read;
+        trace_file_read >> idx_read;
     }
     bool ok_read_trace = false;
     if (read_trace)
     {
-        if (ind_read == ind)
+        if (idx_read == idx)
         {
             ok_read_trace = true;
         }
@@ -601,7 +601,7 @@ void read_check_binary_file(Int                ind,
             T value;
             file.read(reinterpret_cast<char*>(&value), sizeof(T));
 
-            const std::string full_tab_name = tab_name + "[" + std::to_string(k) + "]";
+            const std::string full_array_name = array_name + "[" + std::to_string(k) + "]";
 
             const T value_check = data_check[k];
 
@@ -623,15 +623,15 @@ void read_check_binary_file(Int                ind,
 
                 if (write_trace && trace_file_write.is_open())
                 {
-                    trace_file_write << ind << "\n";
+                    trace_file_write << idx << "\n";
                     trace_file_write << k << "\n";
                 }
 
                 // Usage in your code
-                log_message(full_tab_name + " not equal! read: " + std::to_string(value) +
+                log_message(full_array_name + " not equal! read: " + std::to_string(value) +
                             " != " + std::to_string(data_check[k]) + "\n");
 
-                std::println(stderr, "iteration: {}", ind);
+                std::println(stderr, "iteration: {}", idx);
                 // One `if constexpr` over both former blocks: the zero_one_value one below
                 // reads chunk_t, declared here, so they cannot be split.
                 if constexpr (chunk_config::is_shrink_enabled)
@@ -639,8 +639,8 @@ void read_check_binary_file(Int                ind,
                     const Int chunk_index = k / static_cast<Int>(data_check.chunk_size());
 
                     log_message("\nchunk number        : " + std::to_string(chunk_index) + "\n");
-                    const Int num = k % static_cast<Int>(data_check.chunk_size());
-                    log_message("number inside chunk : " + std::to_string(num) + "\n");
+                    const Int elem_offset = k % static_cast<Int>(data_check.chunk_size());
+                    log_message("number inside chunk : " + std::to_string(elem_offset) + "\n");
                     const auto& chunk_t = data_check.get_chunk_list()[chunk_index];
                     using ValueType     = decltype(chunk_t.values_); // infer the type
 
@@ -661,21 +661,21 @@ void read_check_binary_file(Int                ind,
                     const std::string s0 = std::format("0x{:x}", addr);
 
                     log_message("address values       : " + s0 + "\n");
-                    addr                  = reinterpret_cast<std::uintptr_t>(&raw_ptr[num]);
+                    addr                  = reinterpret_cast<std::uintptr_t>(&raw_ptr[elem_offset]);
                     const std::string s1  = std::format("0x{:x}", addr);
                     const Int         val = *reinterpret_cast<Int*>(addr);
                     log_message("value  = " + std::to_string(val) + "\n");
-                    log_message("address values[" + std::to_string(num) + "] : " + s1 + "\n");
+                    log_message("address values[" + std::to_string(elem_offset) + "] : " + s1 + "\n");
 
                     if constexpr (chunk_config::use_zero_one_value)
                     {
-                        if (chunk_t.is_cst_val1())
+                        if (chunk_t.is_const_val1())
                         {
-                            log_message("is_cst_val1\n");
+                            log_message("is_const_val1\n");
                         }
-                        else if (chunk_t.is_cst_val2())
+                        else if (chunk_t.is_const_val2())
                         {
-                            log_message("is_cst_val2\n");
+                            log_message("is_const_val2\n");
                         }
                         else
                         {
@@ -758,7 +758,7 @@ void read_check_binary_file(Int                ind,
             {
                 if (write_trace && trace_file_write.is_open())
                 {
-                    trace_file_write << ind << "\n";
+                    trace_file_write << idx << "\n";
                     trace_file_write << k << "\n";
                 }
 
@@ -784,7 +784,7 @@ void read_check_binary_file(Int                ind,
                 {
                     log_message(std::string("")); // Same as above
                 }
-                log_message(std::format("{}[{}] not equal ! read : {} != {}\n", tab_name, k, bench_text(value),
+                log_message(std::format("{}[{}] not equal ! read : {} != {}\n", array_name, k, bench_text(value),
                                         bench_text(value_check)));
 
                 if constexpr (chunk_config::is_shrink_enabled)
@@ -792,8 +792,8 @@ void read_check_binary_file(Int                ind,
                     const Int   chunk_index = k / static_cast<Int>(data_check.chunk_size());
                     const auto& chunk_t     = data_check.get_chunk_list()[chunk_index];
                     log_message("chunk number        : " + std::to_string(chunk_index) + "\n");
-                    const Int num = k % static_cast<Int>(data_check.chunk_size());
-                    log_message("number inside chunk : " + std::to_string(num) + "\n");
+                    const Int elem_offset = k % static_cast<Int>(data_check.chunk_size());
+                    log_message("number inside chunk : " + std::to_string(elem_offset) + "\n");
 
                     // Detect whether a type is an atomic of a pointer, regardless of the pointed-to type
 
@@ -822,10 +822,10 @@ void read_check_binary_file(Int                ind,
 
                     log_message("address values       : " + s0 + "\n");
 
-                    addr                 = reinterpret_cast<std::uintptr_t>(&raw_ptr[num]);
+                    addr                 = reinterpret_cast<std::uintptr_t>(&raw_ptr[elem_offset]);
                     const std::string s1 = std::format("0x{:x}", addr);
 
-                    log_message("address values[" + std::to_string(num) + "] : " + s1 + "\n");
+                    log_message("address values[" + std::to_string(elem_offset) + "] : " + s1 + "\n");
                 }
 
                 if constexpr (std::is_same_v<T, double> || std::is_same_v<T, float> || is_complex)
@@ -845,34 +845,34 @@ void read_check_binary_file(Int                ind,
                     const Int chunk_index = k / static_cast<Int>(data_check.chunk_size());
 
                     if (const auto& chunk_t = data_check.chunk_list_[chunk_index];
-                        chunk_t.is_cst_val1() && value != zero)
+                        chunk_t.is_const_val1() && value != zero)
                     {
-                        log_message("\nis_cst_val1 should be not !\n");
+                        log_message("\nis_const_val1 should be not !\n");
                         {
                             const T* vals = chunk_t.values_;
                             log_values_compacted(log_message, vals, data_check.chunk_size());
                         }
                     }
-                    // IIFE: the two spellings of is_cst_val2 cannot each be an
+                    // IIFE: the two spellings of is_const_val2 cannot each be an
                     // `else if` condition. We are inside a function template, so the
                     // discarded branch is not instantiated.
                     else if (
                         [&]
                         {
                             // bool / Bit: one second value, no index; a zero_any-family
-                            // array (tab_conn's pattern::Array) has none either.
+                            // array (array_conn's pattern::Array) has none either.
                             if constexpr (chunk_config::use_zero_one_value && !shrink_array::is_bool_like_v<T> &&
                                           !shrink_array::is_zero_any_family_v<std::remove_cvref_t<decltype(chunk_t)>>)
                             {
-                                return chunk_t.is_cst_val2(data_check.get_ind_second_value());
+                                return chunk_t.is_const_val2(data_check.get_idx_second_value());
                             }
                             else
                             {
-                                return chunk_t.is_cst_val2();
+                                return chunk_t.is_const_val2();
                             }
                         }())
                     {
-                        log_message("\n[Debug] is_cst_val2 should be not !\n");
+                        log_message("\n[Debug] is_const_val2 should be not !\n");
 
                         bool test_zero = true;
 
@@ -894,14 +894,14 @@ void read_check_binary_file(Int                ind,
                         }
                         else
                         {
-                            log_message("\n[Info] should be cst_val1 (all zero)!\n");
+                            log_message("\n[Info] should be const_val1 (all zero)!\n");
                         }
 
                         if constexpr (chunk_config::use_zero_any)
                         {
-                            const T* m_ptr_cst_values = chunk_t.values_load(); // a cst2 chunk reads from its array
-                            log_message("\nm_ptr_cst_val2 contain : ");
-                            log_values_compacted(log_message, m_ptr_cst_values, data_check.chunk_size());
+                            const T* m_ptr_const_values = chunk_t.values_load(); // a const2 chunk reads from its array
+                            log_message("\nm_ptr_const_val2 contain : ");
+                            log_values_compacted(log_message, m_ptr_const_values, data_check.chunk_size());
                         }
                     }
                     else

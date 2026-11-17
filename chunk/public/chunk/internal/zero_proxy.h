@@ -29,11 +29,11 @@
 #include "chunk/internal/concept_is_clean_assignment.h" // IsCleanAssignment, ElementAddable, ElementModulable
 #include "chunk/internal/in_t.h"                        // InT<T>
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/conditional_counter.h"         // CounterValueT — resync_nb_val_eq_zero
+#include "chunk/internal/conditional_counter.h"         // CounterValueT — resync_n_val_eq_zero
 #include "chunk/internal/def_force_inline.h"            // CHUNK_FORCE_INLINE
 #include "chunk/internal/proxy_base.h"                  // ProxyBase
 #include "chunk/internal/read_reclaim.h"                // read_reclaim::ReadSection
-#include "chunk/internal/chunk_stats.h" // increm_chunk_read<> (a dependent call the include tools cannot attribute)
+#include "chunk/internal/chunk_stats.h" // inc_chunk_read<> (a dependent call the include tools cannot attribute)
 #include "chunk/internal/immortal.h"    // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/same_value.h"  // same_value
 
@@ -125,11 +125,11 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
     // --- fast-block-compression surface: this policy's Enabled is that axis
     // (chunk_config::use_fast_block_compression).
     using Base::array_id_;
+    using Base::array_is_inside_chunk_list_to_compress;
     using Base::ptr_on_array_;
     using Base::read_values;
     using Base::read_values_async;
     using Base::read_values_at;
-    using Base::tab_is_inside_chunk_list_to_compress;
 
     using ProxyBase<Derived, T, Chunk<T>>::ProxyBase;
 
@@ -253,9 +253,9 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      *          stores with memory_order_release, this one seq_cst (plain
      *          assignment). Dropping it would weaken zero's ordering of the flag.
      */
-    static void reset_tab_inside_list_to_compress(int array_id, int chunk_index) noexcept
+    static void reset_array_inside_list_to_compress(int array_id, int chunk_index) noexcept
     {
-        tab_is_inside_chunk_list_to_compress[array_id][chunk_index] = 0;
+        array_is_inside_chunk_list_to_compress[array_id][chunk_index] = 0;
     }
 
   protected:
@@ -387,7 +387,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     /// @return @p os.
     friend std::ostream& operator<<(std::ostream& os, const Proxy& proxy)
     {
-        // Through the read entry, like operator T(): values[num] is stale while a
+        // Through the read entry, like operator T(): values[elem_offset] is stale while a
         // deferred op pends on this offset.
         os << proxy.read_pure();
         return os;
@@ -407,8 +407,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     using Base::add_to_compression_list;
     using Base::set_array_id;
 
-    using Base::ptr_is_inside_chunk_list_to_compress_; ///< Per-chunk compression flag pointer
-    using Base::tab_is_inside_chunk_list_to_compress;  ///< Global compression tracking array
+    using Base::array_is_inside_chunk_list_to_compress; ///< Global compression tracking array
+    using Base::ptr_is_inside_chunk_list_to_compress_;  ///< Per-chunk compression flag pointer
 
     /// @brief Functor wrapping operator% for apply_compound_operation().
     struct modulo
@@ -427,16 +427,16 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     using Base::read_values;
     using Base::values_;
 
-    using Base::num_;
+    using Base::elem_offset_;
     /// Reference to the associated chunk.
     ///
     using Base::chunk_; ///< owning chunk
 
-    using Base::array_id_; ///< tab index for this array
+    using Base::array_id_; ///< array index for this array
 
     using Base::chunk_index_;       ///< chunk index
     using Base::chunk_size_frozen_; ///< non-zero on a proxy rebuilt from a replay context
-    using Base::ptr_on_array_;      ///< pointer to array (for tab lookup)
+    using Base::ptr_on_array_;      ///< pointer to array (for array lookup)
 
     using Base::arithmetic_assign;
 
@@ -447,7 +447,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     static constexpr bool is_bool     = std::is_same_v<T, bool>;
     static constexpr bool is_not_bool = !is_bool;
 
-    // reset_tab_inside_list_to_compress(), set_array_id() and the
+    // reset_array_inside_list_to_compress(), set_array_id() and the
     // mark_for_compression_* family live on ProxyFastCompPolicy<..., true>;
     // manage_full_zero() on the <..., false> (counter) specialisation.
 
@@ -456,9 +456,9 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *        constant.
      * @return true if the chunk is compressed.
      */
-    [[nodiscard]] bool is_cst_val() const noexcept
+    [[nodiscard]] bool is_const_val() const noexcept
     {
-        return chunk_.is_cst_val1();
+        return chunk_.is_const_val1();
     }
 
     /**
@@ -541,9 +541,9 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *       early-out sits before the engine. Constant-false serially.
      */
     template <typename U>
-    [[nodiscard]] bool is_cst_val_and_v_equal_zero(const U& value) const noexcept
+    [[nodiscard]] bool is_const_val_and_v_equal_zero(const U& value) const noexcept
     {
-        return same_value(static_cast<T>(value), zero) && is_cst_val() && !chunk_.pending_any();
+        return same_value(static_cast<T>(value), zero) && is_const_val() && !chunk_.pending_any();
     }
 
     /**
@@ -590,12 +590,15 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     using CHUNK_INHERIT_CTOR_TYPENAME FastCompPolicy::ProxyFastCompPolicy;
 
     /**
-     * @brief Construct a proxy for element `num_` of `chunk_`.
+     * @brief Construct a proxy for element `elem_offset_` of `chunk_`.
      * @param values Reference to the chunk's values pointer.
-     * @param num Element offset within the chunk.
+     * @param elem_offset Element offset within the chunk.
      * @param chunk Owning chunk.
      */
-    explicit Proxy(ValuesTypeRef values, int num, Chunk<T>& chunk) noexcept : FastCompPolicy(values, num, chunk) {}
+    explicit Proxy(ValuesTypeRef values, int elem_offset, Chunk<T>& chunk) noexcept
+        : FastCompPolicy(values, elem_offset, chunk)
+    {
+    }
 
     Proxy(const Proxy& other)     = default;
     Proxy(Proxy&& other) noexcept = default;
@@ -627,20 +630,20 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     const Proxy& operator=(const Proxy& from) noexcept;
 
     /**
-     * @brief Negation of is_cst_val().
+     * @brief Negation of is_const_val().
      * @return true if the chunk is materialised (not compressed).
      */
-    [[nodiscard]] bool is_not_cst_val() const noexcept
+    [[nodiscard]] bool is_not_const_val() const noexcept
     {
-        return chunk_.is_not_cst_val1();
+        return chunk_.is_not_const_val1();
     }
 
     /**
      * @brief Re-state the owning chunk's zero count after a BULK fill that did
      *        not go through this write path.
      *
-     * @details nb_val_eq_zero_ is maintained per write, and manage_full_zero()
-     *          fires on `nb_val_eq_zero_ == chunk_size` exactly. A direct store
+     * @details n_val_eq_zero_ is maintained per write, and manage_full_zero()
+     *          fires on `n_val_eq_zero_ == chunk_size` exactly. A direct store
      *          into the buffer leaves the counter wrong, and a later write can
      *          then compress a chunk that is not all zero. The counter is in a
      *          private base of Chunk<T> befriending only this proxy, hence the
@@ -651,9 +654,9 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *        window -- the same window is_full_zero() is asked about, so the
      *        untouched tail of a partially-filled last chunk counts too.
      */
-    void resync_nb_val_eq_zero(CounterValueT n_zeros) const noexcept
+    void resync_n_val_eq_zero(CounterValueT n_zeros) const noexcept
     {
-        chunk_.set_nb_val_eq_zero(n_zeros);
+        chunk_.set_n_val_eq_zero(n_zeros);
     }
 
     /**
@@ -661,7 +664,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *        is all zero -- what the write bringing the count to chunk_size()
      *        does (perform_core_assignment), for a BULK store that bypassed it.
      *
-     * @details Call after resync_nb_val_eq_zero(). Pins the ambient geometry and
+     * @details Call after resync_n_val_eq_zero(). Pins the ambient geometry and
      *          allocator set the free routes by, as the write path does.
      *          Always false when counters are compiled out (fast block
      *          compression: the pass folds the chunk).
@@ -760,7 +763,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @brief Implicit read conversion: returns the element's current value.
      *
      * @details The write entry does not flush, so a read must pull any deferred
-     *          write queued for this offset: a plain values[num] could return a
+     *          write queued for this offset: a plain values[elem_offset] could return a
      *          superseded value. zero_one_value::Proxy / zero_any::Proxy inherit ProxyBase::operator T()
      *          (read_pure()).
      *
@@ -770,7 +773,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      */
     operator T() const noexcept;
 
-    // No address, and do not add operator T&(): `tab[nc] = val` would route
+    // No address, and do not add operator T&(): `arr[nc] = val` would route
     // through it and materialise blocks for nothing. Hence foo(T&) rejects a[i].
     T*       operator&()       = delete;
     const T* operator&() const = delete;

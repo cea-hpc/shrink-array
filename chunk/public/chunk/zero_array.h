@@ -65,7 +65,7 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
 
     /// @brief Claim this array's identity before its storage is built:
     ///        register its address and take the next free array_id, which
-    ///        every per-tab metadata table is then indexed by. Called by
+    ///        every per-array metadata table is then indexed by. Called by
     ///        create() through ArrayChunkBase.
     void pre_create_hook()
     {
@@ -261,7 +261,7 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     /// @brief Release the buffers of chunks [@p first, @p last) -- the chunks
     ///        a shrinking resize() drops. Same release as clear_core(): freed
     ///        in place serially; under OpenMP parked in this array's geometry's
-    ///        reuse list and the chunk neutralised to cst_val1. Sequential
+    ///        reuse list and the chunk neutralised to const_val1. Sequential
     ///        point; the candidate lists must hold none of them.
     void release_chunk_range(int first, int last);
 

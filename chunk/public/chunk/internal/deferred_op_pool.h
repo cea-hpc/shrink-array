@@ -65,7 +65,7 @@ class TCTypeAllocator
     /// @brief No-op.
     static void set_arena(fast_alloc::ArenaKind) noexcept {}
     /// @brief Always true.
-    static bool is_free_able_elt(std::byte*) noexcept
+    static bool is_free_able_elem(std::byte*) noexcept
     {
         return true;
     }
@@ -328,7 +328,7 @@ class FastAllocatorConcrete : public FastAllocatorBase
      * allocate_raw() would hand out an unmapped pointer.
      *
      * So only blocks of THIS thread's slab are recycled
-     * (TCTypeAllocator::is_free_able_elt); a foreign one is dropped -- a bounded
+     * (TCTypeAllocator::is_free_able_elem); a foreign one is dropped -- a bounded
      * leak, its owner still frees the whole slab at teardown.
      */
     void recycle(void* block) override;

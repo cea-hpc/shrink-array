@@ -33,7 +33,7 @@ Notable features:
   * Explicit warning per missing binary — never a silent skip.
   * Only the current machine's arch is run (aarch64 vs x86_64), so a build_root
     holding both architectures does not trigger "Exec format error".
-  * One reference oracle PER CONFIG (output_dir/oracle/<config>/data_tab*),
+  * One reference oracle PER CONFIG (output_dir/oracle/<config>/data_array*),
     generated once by that config's own vector binary and kept across runs:
     the reference is not portable across compilers (see oracle_dir()).
   * Per-run timeout + capture of stderr from crashing runs.

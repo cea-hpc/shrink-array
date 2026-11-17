@@ -215,9 +215,9 @@ void memory_consumption(const std::string& msg)
         // stdout instead).
         if (msg == "end")
         {
-            if (std::ofstream fichier("memory_mo.txt"); fichier.is_open())
+            if (std::ofstream out_file("memory_mo.txt"); out_file.is_open())
             {
-                fichier << convert_memory(static_cast<double>(rss) * 1024.0);
+                out_file << convert_memory(static_cast<double>(rss) * 1024.0);
             }
             else
             {

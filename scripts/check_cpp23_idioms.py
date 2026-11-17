@@ -18,7 +18,7 @@ Rules, on chunk/, fast_allocators/ and examples/ (.h, .hpp, .cpp), comment and
    std::println / std::print instead (fprintf stays where nothing may
    allocate). Exceptions, as decided when the library moved to println
    (def53af7): ring_log_debug (a SEGV-hunt tool), the std::cout reports of
-   runtime.h and tab_cst_val2_holder.h (and its _inline.h, where the
+   runtime.h and tab_const_val2_holder.h (and its _inline.h, where the
    bodies moved), and print_compression_stats'
    `std::ostream& os = std::cout` default argument.
 2. No derived(): the CRTP helper is gone, members take `this Derived& self`.
@@ -59,8 +59,8 @@ IOSTREAM_FILES = {
     "chunk/private/ring_log_debug.cpp",
     "chunk/public/chunk/ring_log_debug.h",
     "chunk/public/chunk/runtime.h",
-    "chunk/public/chunk/internal/tab_cst_val2_holder.h",
-    "chunk/public/chunk/internal/tab_cst_val2_holder_inline.h",
+    "chunk/public/chunk/internal/tab_const_val2_holder.h",
+    "chunk/public/chunk/internal/tab_const_val2_holder_inline.h",
 }
 IOSTREAM_LINE_OK = re.compile(r"std::ostream&\s*\w+\s*=\s*std::cout\b")
 

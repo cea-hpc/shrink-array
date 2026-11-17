@@ -207,7 +207,7 @@ constexpr const char* variant_name()
 
 // set_second_value only exists on zero_one_value / zero_any: no-op elsewhere. REQUIRED
 // on zero_one_value before any write (see the contract at the top of the file); also
-// exercises the val2 path (second_value preservation + tab_m_ptr_cst_val2
+// exercises the val2 path (second_value preservation + array_m_ptr_const_val2
 // queue on growth, for zero_one_value).
 template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& arr, const Val& value)
@@ -534,7 +534,7 @@ int check_range_ops(const char* label, long count)
 ///        empty one, and by set_chunk_size() -- and so is set_chunk_size() of a
 ///        VALID other size on the filled array (it would remap the indices
 ///        without moving the elements), and, on the empty array,
-///        a valid size wider than cst_buffer_size (it would read the shared
+///        a valid size wider than const_buffer_size (it would read the shared
 ///        constant buffers out of bounds); geometry, content and the ambient
 ///        size stay as they were. A legal re-chunk must still work afterwards.
 int check_non_pow2_refused(const char* label)
@@ -599,7 +599,7 @@ int check_non_pow2_refused(const char* label)
     };
     expect_refused("try_rechunk_to(48)", arr.try_rechunk_to(48u), ChunkSizeError::not_pow2_or_x64);
     expect_refused("try_rechunk_to(0)", arr.try_rechunk_to(0u), ChunkSizeError::not_pow2_or_x64);
-    expect_refused("try_rechunk_to(2 * cst_buffer_size)", arr.try_rechunk_to(2u * cst_buffer_size),
+    expect_refused("try_rechunk_to(2 * const_buffer_size)", arr.try_rechunk_to(2u * const_buffer_size),
                    ChunkSizeError::exceeds_buffer);
     if (!arr.try_rechunk_to(old_size))
     {
@@ -618,10 +618,10 @@ int check_non_pow2_refused(const char* label)
     empty.rechunk_to(48u);
     empty.set_chunk_size(96u);
     expect_refused("empty.try_set_chunk_size(96)", empty.try_set_chunk_size(96u), ChunkSizeError::not_pow2_or_x64);
-    expect_refused("empty.try_set_chunk_size(2 * cst_buffer_size)", empty.try_set_chunk_size(2u * cst_buffer_size),
+    expect_refused("empty.try_set_chunk_size(2 * const_buffer_size)", empty.try_set_chunk_size(2u * const_buffer_size),
                    ChunkSizeError::exceeds_buffer);
-    empty.rechunk_to(2u * cst_buffer_size);
-    empty.set_chunk_size(2u * cst_buffer_size);
+    empty.rechunk_to(2u * const_buffer_size);
+    empty.set_chunk_size(2u * const_buffer_size);
     if (empty.chunk_size() != e0)
     {
         println("[{}/{}] FAIL: empty array: geometry {} -> {}", variant_name(), label, e0, empty.chunk_size());
@@ -650,14 +650,14 @@ int check_non_pow2_refused(const char* label)
     {
         println("[{}/{}] OK: 48/96/3/{} refused (filled and empty arrays, try_ forms with their reason), {} on "
                 "the empty one, content and geometry kept, {} -> {} still works",
-                variant_name(), label, old_size + 1u, 2u * cst_buffer_size, old_size, old_size * 2u);
+                variant_name(), label, old_size + 1u, 2u * const_buffer_size, old_size, old_size * 2u);
     }
     return bad ? 1 : 0;
 }
 
 /// @brief set_active_chunk_size() refuses, in every build, a size that is not
 ///        a chunk geometry (0: the next DynamicChunkSize divided by 0; 100)
-///        or wider than cst_buffer_size: the active size is kept, and an
+///        or wider than const_buffer_size: the active size is kept, and an
 ///        array born afterwards has it.
 int check_active_size_refused(const char* label)
 {
@@ -666,7 +666,7 @@ int check_active_size_refused(const char* label)
     const unsigned ambient  = active_chunk_size();
 
     int bad = 0;
-    for (const unsigned new_size : {0u, 100u, 2u * cst_buffer_size})
+    for (const unsigned new_size : {0u, 100u, 2u * const_buffer_size})
     {
         set_active_chunk_size(new_size);
         if (active_chunk_size() != ambient)
@@ -680,7 +680,7 @@ int check_active_size_refused(const char* label)
     // try_set_active_chunk_size() says why.
     const std::pair<unsigned, ChunkSizeError> tries[] = {{0u, ChunkSizeError::not_pow2_or_x64},
                                                          {100u, ChunkSizeError::not_pow2_or_x64},
-                                                         {2u * cst_buffer_size, ChunkSizeError::exceeds_buffer}};
+                                                         {2u * const_buffer_size, ChunkSizeError::exceeds_buffer}};
     for (const auto& [s, want] : tries)
     {
         const auto got = try_set_active_chunk_size(s);
@@ -703,7 +703,7 @@ int check_active_size_refused(const char* label)
     if (!bad)
     {
         println("[{}/{}] OK: set_active_chunk_size(0 / 100 / {}) refused, {} kept", variant_name(), label,
-                2u * cst_buffer_size, ambient);
+                2u * const_buffer_size, ambient);
     }
     return bad ? 1 : 0;
 }
@@ -957,8 +957,8 @@ static int run_body(int argc, char** argv)
                  "shrink-to-smaller", count, 256, [](long i) -> double { return double((i / 1000) % 2); },
                  /*sv_value=*/1.0);
          }},
-        // 4096, not 8192: rechunk_to() refuses anything above cst_buffer_size
-        // (CHUNK_DYN_MAX_SIZE, 4096 by default) because the shared cst_val1/cst_val2
+        // 4096, not 8192: rechunk_to() refuses anything above const_buffer_size
+        // (CHUNK_DYN_MAX_SIZE, 4096 by default) because the shared const_val1/const_val2
         // buffers are sized to that ceiling and a wider chunk would read them out of
         // bounds. Asking for 8192 makes this case fail ("geometry 512 -> 512",
         // with rechunk_to's refusal on stderr). Raise the target here only
@@ -976,7 +976,7 @@ static int run_body(int argc, char** argv)
              return check_invariance<double>(
                  "all-different", 100000, 1024, [](long i) -> double { return double(i); }, /*sv_value=*/1.0);
          }},
-        // Growth 512 -> 2048 with val2: targets the tab_m_ptr_cst_val2 queue
+        // Growth 512 -> 2048 with val2: targets the array_m_ptr_const_val2 queue
         // (zero_one_value) + the second_value round-trip.
         {"val2-grow", 512,
          [&]
@@ -986,7 +986,7 @@ static int run_body(int argc, char** argv)
          }},
         // A size that is neither a power of two nor a multiple of 64: refused, nothing changed.
         {"invalid-size-refused", 512, [] { return check_non_pow2_refused("invalid-size-refused"); }},
-        // set_active_chunk_size: 0, 100 and a size over cst_buffer_size refused in every build.
+        // set_active_chunk_size: 0, 100 and a size over const_buffer_size refused in every build.
         {"active-size-refused", 512, [] { return check_active_size_refused("active-size-refused"); }},
         {"multiple-of-64-chain", 256, [] { return check_multiple_of_64_chain("multiple-of-64-chain"); }},
         {"index-split", 256, [] { return check_index_split("index-split"); }},
@@ -1021,7 +1021,7 @@ static int run_body(int argc, char** argv)
         {"bool-uneven", 512,
          [] { return check_invariance<bool>("bool-uneven-512-to-768", 1000000L, 768, bool_runs, /*sv_value=*/true); }},
         // Array<bool> through the SLICED path (fast-alloc threaded builds): 4M
-        // bools 64 -> 256, 16384 new chunks, 4 slices. Sources at false (cst1),
+        // bools 64 -> 256, 16384 new chunks, 4 slices. Sources at false (const1),
         // at true (the second constant: a shared array, never released) and
         // live ones, released during the copy; then rewritten and recompressed.
         {"bool-sliced", 64,

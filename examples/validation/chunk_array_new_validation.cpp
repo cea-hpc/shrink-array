@@ -15,7 +15,7 @@
  */
 
 // ============================================================================
-// operator new[] / init_chunks_cst_val harness. Variant-agnostic: chunk /
+// operator new[] / init_chunks_const_val harness. Variant-agnostic: chunk /
 // zero_one_value / zero_any follow the compile-time macro, like the other harnesses
 // here -- the three carry the same pair of operators, built on the one
 // chunk_array_new::init_chunks (chunk_array_new.h).

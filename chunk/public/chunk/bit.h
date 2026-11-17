@@ -63,7 +63,7 @@ template <typename T>
 inline constexpr bool is_packed_bit_v = std::is_same_v<T, Bit>;
 
 /// @brief Dynamic geometry: an array of packed bits is born with chunks this
-///        many times the process-wide size, capped at cst_buffer_size.
+///        many times the process-wide size, capped at const_buffer_size.
 /// @details At the other arrays' size a chunk of bits holds S/8 bytes for ~19 bytes of
 ///          metadata (at S=64, 2.5 times a std::vector<bool>); eight times the size gives it
 ///          the bytes of a bool chunk. The re-chunk decider will not correct it: its deadband

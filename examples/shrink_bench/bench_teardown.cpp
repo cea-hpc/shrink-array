@@ -24,7 +24,7 @@
 #include "bench_stl_checks.h"          // run_stl_self_checks
 #include "chunk/internal/zero_chunk.h" // clear_all_list_block_free_thr, delete_chunk_allocator
 #include "chunk/runtime.h"             // Runtime::chunk_stats
-#include "chunk/print.h"               // shrink_array::println (the tab_conn note)
+#include "chunk/print.h"               // shrink_array::println (the array_conn note)
 
 // As in shrink_bench.cpp, where this body comes from.
 using namespace shrink_array;
@@ -32,55 +32,55 @@ using namespace shrink_array;
 void bench_teardown(BenchArrays& bench_arr, bool test_stl)
 {
     // Short local names for the arrays (see bench_phase_fill.cpp).
-    auto& tab1 = bench_arr.tab1;
-    auto& tab2 = bench_arr.tab2;
-    auto& tab3 = bench_arr.tab3;
-    auto& tab4 = bench_arr.tab4;
-    auto& tab5 = bench_arr.tab5;
+    auto& arr1 = bench_arr.arr1;
+    auto& arr2 = bench_arr.arr2;
+    auto& arr3 = bench_arr.arr3;
+    auto& arr4 = bench_arr.arr4;
+    auto& arr5 = bench_arr.arr5;
 
-    auto& tab_int       = bench_arr.tab_int;
-    auto& tab_bool      = bench_arr.tab_bool;
-    auto& tab_bool_bits = bench_arr.tab_bool_bits;
-    auto& tab_complex   = bench_arr.tab_complex;
-    auto& tab_float     = bench_arr.tab_float;
-    auto& tab_short     = bench_arr.tab_short;
-    auto& tab_char      = bench_arr.tab_char;
-    auto& tab_long      = bench_arr.tab_long;
-    auto& tab_ulong     = bench_arr.tab_ulong;
-    auto& tab_quant     = bench_arr.tab_quant;
-    auto& tab_point     = bench_arr.tab_point;
-    auto& tab_cell      = bench_arr.tab_cell;
-    auto& tab_mask      = bench_arr.tab_mask;
-    auto& tab_conn      = bench_arr.tab_conn;
+    auto& array_int       = bench_arr.array_int;
+    auto& array_bool      = bench_arr.array_bool;
+    auto& array_bool_bits = bench_arr.array_bool_bits;
+    auto& array_complex   = bench_arr.array_complex;
+    auto& array_float     = bench_arr.array_float;
+    auto& array_short     = bench_arr.array_short;
+    auto& array_char      = bench_arr.array_char;
+    auto& array_long      = bench_arr.array_long;
+    auto& array_ulong     = bench_arr.array_ulong;
+    auto& array_quant     = bench_arr.array_quant;
+    auto& array_point     = bench_arr.array_point;
+    auto& array_cell      = bench_arr.array_cell;
+    auto& array_mask      = bench_arr.array_mask;
+    auto& array_conn      = bench_arr.array_conn;
 
     [[maybe_unused]] auto& bench_arrays = bench_arr;
 
     // The self-checks run just before the release, as they did in main().
     run_stl_self_checks(test_stl);
 
-    tab1.clear();
-    tab2.clear();
-    tab3.clear();
-    tab4.clear();
-    tab5.clear();
+    arr1.clear();
+    arr2.clear();
+    arr3.clear();
+    arr4.clear();
+    arr5.clear();
 
-    tab_int.clear();
-    tab_bool.clear();
-    tab_bool_bits.clear();
+    array_int.clear();
+    array_bool.clear();
+    array_bool_bits.clear();
 
-    tab_complex.clear();
+    array_complex.clear();
 
-    tab_short.clear();
-    tab_float.clear();
-    tab_char.clear();
+    array_short.clear();
+    array_float.clear();
+    array_char.clear();
 
-    tab_long.clear();
-    tab_ulong.clear();
-    tab_quant.clear();
-    tab_point.clear();
-    tab_cell.clear();
-    tab_mask.clear();
-    // Zero builds: tab_conn is a zero::Array (bench_array.h), and a connectivity
+    array_long.clear();
+    array_ulong.clear();
+    array_quant.clear();
+    array_point.clear();
+    array_cell.clear();
+    array_mask.clear();
+    // Zero builds: array_conn is a zero::Array (bench_array.h), and a connectivity
     // has no all-zero chunk -- its census line, printed by clear(), finds
     // nothing compressed. Said before it, so the line is not read as a failure.
     if constexpr (chunk_config::use_zero)
@@ -88,14 +88,14 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
         if (bench_arr.with_conn)
         {
             shrink_array::println(
-                "[tab_conn] zero build: a connectivity has no all-zero chunk, nothing to compress here; "
+                "[array_conn] zero build: a connectivity has no all-zero chunk, nothing to compress here; "
                 "pattern::Array compresses its motifs in the zero_one_value / zero_any builds");
         }
     }
-    tab_conn.clear();
+    array_conn.clear();
 
     // Chunk instrumentation counters (CHUNK_STATS). Printed HERE, after the
-    // tab_*.clear() above: clear() runs clear_core(), which is what feeds
+    // array_*.clear() above: clear() runs clear_core(), which is what feeds
     // teardown_clear -- reporting before them always showed 0. Independent of the
     // bench's own `stats` mode (that one is application-level and check-only);
     // these are library counters we want in perf runs too. chunk_stats() is
@@ -111,7 +111,7 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
     // mode whose profile put 34% of a 64-thread zero_one_value run in that function,
     // against 0.37% under libgomp.
     //
-    // Printed AFTER the tab_*.clear() calls on purpose: `vec` holds one entry
+    // Printed AFTER the array_*.clear() calls on purpose: `vec` holds one entry
     // per live array, so a count taken mid-run cannot tell five live arrays
     // from five leaked entries. Here every array is gone, and anything left is
     // an entry that outlived the array that put it there -- erase_inf_array_by_ptr()

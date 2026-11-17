@@ -19,7 +19,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QMessageBox
 
 from shrink_gui import qos
-from shrink_gui.config import ARCH_DEFAULTS, BATCH, BUILD_REP, DEFAULTS, DETACHED, PROGRAMS, SITE
+from shrink_gui.config import ARCH_DEFAULTS, BATCH, BUILD_ROOT, DEFAULTS, DETACHED, PROGRAMS, SITE
 from shrink_gui.i18n import T
 from shrink_gui.runscripts import (directive_cores, env_words, make_launch_sh, make_local_launch_sh,
                                    make_node_sh, make_run_sh, node_launch, nodes_directives, parse_env)
@@ -342,11 +342,11 @@ class LaunchForm:
                 if r is not None:
                     self.build_info[sfx] = r
                     self.info(f"{len(r['configs'])} configurations, {len(r['dirs'])} build(s) {sfx} "
-                              f"dans {r['build_rep']}")
+                              f"dans {r['build_root']}")
                     self.pick(dest)
             # this machine: the builds are where site_env.sh puts them (the repository)
-            build_rep = "" if self.is_local() else BUILD_REP
-            self.remote.helper("build_targets", [self.repo.text().strip(), build_rep, sfx], done)
+            build_root = "" if self.is_local() else BUILD_ROOT
+            self.remote.helper("build_targets", [self.repo.text().strip(), build_root, sfx], done)
             return
         ac, w, _lab = self.form.widgets[dest]
         multi = "comma" in (ac.get("help") or "").lower()
@@ -378,7 +378,7 @@ class LaunchForm:
                                                      -kv[1], kv[0]))
         patterns = [(g, f"motif : {c} configurations") for g, c in unique_globs(order, names)[:24]]
         intro = (f"Configurations de compile_all.sh (cmake-build-<nom>). « configurée » : son build "
-                 f"existe déjà pour {sfx} dans {info['build_rep']}.")
+                 f"existe déjà pour {sfx} dans {info['build_root']}.")
         return PickerDialog(self, "--target : configurations", intro, items, patterns, value, multi)
 
     def exec_dialog(self, info, value, multi, sfx):
@@ -399,7 +399,7 @@ class LaunchForm:
                      f"pas les autres exécutables.")
         else:
             intro = (f"Aucun build {sfx} configuré" + (f" pour --target={target}" if target else "")
-                     + f" dans {info['build_rep']} : rien à lister. Lancez d'abord compile_all.sh sans "
+                     + f" dans {info['build_root']} : rien à lister. Lancez d'abord compile_all.sh sans "
                        "--exec (ou tapez le nom à la main).")
         return PickerDialog(self, "--exec : exécutables", intro, items, patterns, value, multi)
 

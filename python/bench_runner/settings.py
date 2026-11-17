@@ -388,7 +388,7 @@ SCALING_NUMA_INTERLEAVE = "off"
 
 # --- 64-bit index checks (int64 binaries) ----------------------------------
 # A few --mode check runs of the int64 binaries against the 32-bit oracle of
-# the same config: the data_tab* files hold element values, independent of the
+# the same config: the data_array* files hold element values, independent of the
 # index type, so the int64 build must reproduce them exactly. One per variant,
 # both geometries between them; zero_any@dyn is the richest path (a second
 # value per chunk, re-chunking). Not a sweep: the 32-bit checks cover the

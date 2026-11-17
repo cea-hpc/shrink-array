@@ -108,7 +108,7 @@ class RechunkSupport<Derived, true> : public RechunkHookDefaults<Derived>
   public:
     using Traits    = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
     using T         = Traits::value_type;        ///< Stored element type.
-    using IndType   = Traits::IndexType;         ///< Signed global index type.
+    using IndexType = Traits::IndexType;         ///< Signed global index type.
     using ChunkType = Traits::ChunkType;         ///< Chunk type held in the array's chunk_list_.
     using ProxyType = Traits::ProxyType;         ///< Proxy type owning the per-type array registry.
 
@@ -157,7 +157,7 @@ class RechunkSupport<Derived, true> : public RechunkHookDefaults<Derived>
     /**
      * @brief rechunk_to(), which says why it refuses a size.
      * @param new_size the new chunk size (a power of two or a multiple of 64,
-     *        at most cst_buffer_size: check_chunk_size)
+     *        at most const_buffer_size: check_chunk_size)
      * @return Nothing -- the array's geometry is now @p new_size, also when it
      *         already was --, or why @p new_size was refused, geometry and
      *         content kept. Writes no message: the caller decides.
@@ -172,7 +172,7 @@ class RechunkSupport<Derived, true> : public RechunkHookDefaults<Derived>
      *          chunks its span covers, in parallel over the new chunks (schedule
      *          guided,16) and, for zero with the fast allocator
      *          under OpenMP, in slices with a drain between them
-     *          (16). A span whose sources are all cst1 stays
+     *          (16). A span whose sources are all const1 stays
      *          compressed; a zero_any span whose sources are all the same second
      *          constant gets that constant installed without a buffer; the others
      *          are read from *this at OLD and filled through copy_range() at NEW,
@@ -191,7 +191,7 @@ class RechunkSupport<Derived, true> : public RechunkHookDefaults<Derived>
      *       (the lazy per-chunk pointers: ptr_second_value, compression
      *       bookkeeping), which copy_range() does; an unarmed chunk is double-freed
      *       by the later compression/clear (only at scale: rechunk_validation is
-     *       too small to show it). The skipped cst1 spans need no arming, and the
+     *       too small to show it). The skipped const1 spans need no arming, and the
      *       zero_any install commits what a type-2 compression does, with no buffer.
      */
     void rechunk_refill(this Derived& self, Derived& tmp, int old_size, int new_size, unsigned int old_key);

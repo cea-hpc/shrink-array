@@ -109,7 +109,7 @@ inline void StaticConstArray::free_block_with_int(int sz, void* ptr)
         return;
     }
 
-    with_bucket(bucket_index(static_cast<unsigned int>(sz)), [ptr](auto& bucket) { bucket.free_elt_pow2(ptr); });
+    with_bucket(bucket_index(static_cast<unsigned int>(sz)), [ptr](auto& bucket) { bucket.free_elem_pow2(ptr); });
 }
 
 /**
@@ -140,14 +140,14 @@ inline bool StaticConstArray::try_free_block(int sz, void* ptr)
             // they were built, before main; std backend: a registered rank
             // past them, or none, -1, the registry full): there is no batch to
             // index, so free at once, under the lock the full path takes.
-            if (thr_rank < 0 || thr_rank >= tab_info_free_elt().nb_thr) [[unlikely]]
+            if (thr_rank < 0 || thr_rank >= array_info_free_elem().n_thr) [[unlikely]]
             {
                 const std::scoped_lock lock(ladder_mutex());
                 free_block_with_int(sz, ptr);
                 return true;
             }
 
-            const bool is_full = tab_info_free_elt().push_back(ptr, sz, thr_rank);
+            const bool is_full = array_info_free_elem().push_back(ptr, sz, thr_rank);
 
             if (is_full)
             {
@@ -155,10 +155,10 @@ inline bool StaticConstArray::try_free_block(int sz, void* ptr)
                     const std::scoped_lock lock(ladder_mutex());
                     free_block_with_int(sz, ptr);
 
-                    clear_info_free_elt(thr_rank);
+                    clear_info_free_elem(thr_rank);
                 }
 
-                tab_info_free_elt().reset(thr_rank);
+                array_info_free_elem().reset(thr_rank);
             }
         }
         else
@@ -173,17 +173,17 @@ inline bool StaticConstArray::try_free_block(int sz, void* ptr)
 }
 
 // ---------------------------------------------------------------------------
-// fast_alloc::InfoFreeElt
+// fast_alloc::InfoFreeElem
 // ---------------------------------------------------------------------------
 
-inline bool InfoFreeElt::push_back(void* ptr, int sz, int thr_rank)
+inline bool InfoFreeElem::push_back(void* ptr, int sz, int thr_rank)
 {
-    if (int& ref_compt = compt[thr_rank]; ref_compt < max_free_elt && somme_sz_[thr_rank] < 4 * 1024 * 1024)
+    if (int& ref_compt = compt[thr_rank]; ref_compt < max_free_elem && total_sz_[thr_rank] < 4 * 1024 * 1024)
     {
-        tab_ptr[thr_rank][ref_compt] = ptr;
-        tab_sz[thr_rank][ref_compt]  = sz;
+        array_ptr[thr_rank][ref_compt] = ptr;
+        array_sz[thr_rank][ref_compt]  = sz;
 
-        somme_sz_[thr_rank] += sz;
+        total_sz_[thr_rank] += sz;
 
         ref_compt++;
         return false;
@@ -241,15 +241,15 @@ inline void BlkAllocator::free_block(void* ptr, size_t size)
     }
 }
 
-inline void* BlkAllocator::alloc_tab(size_t size)
+inline void* BlkAllocator::alloc_array(size_t size)
 {
     // size_t header: an int one would wrap past INT_MAX.
-    static_assert(fast_alloc::alignment >= sizeof(std::size_t), "alloc_tab: the header must hold a size_t");
+    static_assert(fast_alloc::alignment >= sizeof(std::size_t), "alloc_array: the header must hold a size_t");
     // size + header must not wrap: near SIZE_MAX it would route to a small
     // ladder block that the caller then writes past.
     if (size > static_cast<std::size_t>(-1) - fast_alloc::alignment) [[unlikely]]
     {
-        fast_alloc::out_of_memory("alloc_tab", size, 1, 0);
+        fast_alloc::out_of_memory("alloc_array", size, 1, 0);
     }
     const std::size_t total = size + fast_alloc::alignment;
 
@@ -266,7 +266,7 @@ inline void* BlkAllocator::alloc_tab(size_t size)
     return ptr + fast_alloc::alignment;
 }
 
-inline void BlkAllocator::free_tab(void* user_ptr)
+inline void BlkAllocator::free_array(void* user_ptr)
 {
     if (user_ptr == nullptr)
     {
@@ -277,7 +277,7 @@ inline void BlkAllocator::free_tab(void* user_ptr)
 
     const std::size_t total = fast_alloc::load_from_bytes<std::size_t>(m_ptr) + fast_alloc::alignment;
 
-    // Same routing as alloc_tab(), decided in size_t.
+    // Same routing as alloc_array(), decided in size_t.
     if (total > max_const_block_size || !try_free_block(static_cast<int>(total), m_ptr))
     {
         int_free_align(m_ptr);

@@ -43,7 +43,7 @@ class ChunkDef
     constexpr static int size_min_buffer_reuse = 500;
 
     /// Reuse budget per thread = chunks / (this * max threads); used for every variant, global and per size.
-    constexpr static int factor_div_somme_chunk_buffer_reuse = 50;
+    constexpr static int factor_div_total_chunk_buffer_reuse = 50;
 };
 
 } // namespace shrink_array::zero_any

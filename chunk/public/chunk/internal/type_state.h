@@ -124,7 +124,7 @@ class TypeState final : public virtual TypeStateInterface,
     ///        register_alloc_key() hands to the keyed allocator sets.
     static inline int registered_block_size_ = 0;
 
-    static inline long somme_chunk_create{0};
+    static inline long total_chunk_create{0};
 
   public:
     /**
@@ -170,20 +170,20 @@ class TypeState final : public virtual TypeStateInterface,
     static void compute_size_max_number_of_chunk_to_check_compress();
 
     /// @brief Add @p count to the running total of chunks created (statistics).
-    static void increm_somme_chunk_create(int count) noexcept
+    static void inc_total_chunk_create(int count) noexcept
     {
-        somme_chunk_create += count;
+        total_chunk_create += count;
     }
     /// @brief Subtract @p count from the running total of chunks created (statistics).
-    static void decrem_somme_chunk_create(int count) noexcept
+    static void dec_total_chunk_create(int count) noexcept
     {
-        somme_chunk_create -= count;
+        total_chunk_create -= count;
     }
     /// @brief Chunks created minus chunks destroyed -- what the compression
     ///        threshold is computed from, so it must track the chunks alive.
-    [[nodiscard]] static long get_somme_chunk_create() noexcept
+    [[nodiscard]] static long get_total_chunk_create() noexcept
     {
-        return somme_chunk_create;
+        return total_chunk_create;
     }
 
     /// @brief Everything an array with its own affinity key needs, in one call

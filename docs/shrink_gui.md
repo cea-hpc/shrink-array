@@ -116,7 +116,7 @@ the cluster.
 each, with the same directives and the same command plus `--pool=<the submission's id>`.
 They appear in the table as `compile_all.sh [k/N]`, runs `<id>-n1` to `<id>-nN`. Each job walks
 the configurations in the usual order and builds a configuration only if it is the first to
-claim it (an atomic `mkdir` in `$CHUNK_BUILD_REP/.pools/<id>/`); it skips those another job
+claim it (an atomic `mkdir` in `$CHUNK_BUILD_ROOT/.pools/<id>/`); it skips those another job
 claimed. The load balances itself: a job claims its next configuration once its node has a build slot
 for the one before (one claimed ahead at most), however much the builds cost, and nothing needs to
 know beforehand which configurations this architecture builds. A job that starts once the others have claimed
@@ -366,7 +366,7 @@ They are skipped when PySide6 is not installed.
 - A prototype, written for the TGCC machines; another site needs to write its own site file (§6). The
   scheduler must be Slurm underneath (`squeue`, `--dependency`, `--begin`).
 - One connection at a time. The interface does not open the master connection itself.
-- Several nodes (§3): the build directory `$CHUNK_BUILD_REP` (`compile_all.sh`) and
+- Several nodes (§3): the build directory `$CHUNK_BUILD_ROOT` (`compile_all.sh`) and
   `$CCCWORKDIR/thread_speedup/` (`thread_speedup.py`) must be on a file system that all the
   nodes share (the claims are directories there). Every job asks for the same time
   (-T) as a single job would. A job that fails lets the others go on; its configurations (its

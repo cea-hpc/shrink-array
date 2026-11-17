@@ -57,7 +57,7 @@ stateDiagram-v2
 Four consequences shape the whole library:
 
 1. **A read is a load of `values` and an indexed load.** It never branches on the chunk's state:
-   a compressed chunk's shared data hold at least as many elements as a chunk, so `chunk[num]`
+   a compressed chunk's shared data hold at least as many elements as a chunk, so `chunk[elem_offset]`
    is the same instruction for every state. Only `pattern` adds the offset, in a branch compiled for it alone.
 2. **A write goes through a proxy.** The non-const `operator[]` returns a proxy that knows the
    array, the chunk and the position. The proxy sees the value *before* storing it: writing the
@@ -82,7 +82,7 @@ flowchart TB
     subgraph per_type["per (variant, element type)"]
         mgr["TypeState<br/>reuse pools, compression candidates,<br/>per-rank allocators, deferred flush"]
         cmp["CompressionManager<br/>passes, deferred writes"]
-        reg["shared constants<br/>cst_val1, second-value registry, motif region"]
+        reg["shared constants<br/>const_val1, second-value registry, motif region"]
     end
     subgraph per_process["per process"]
         all["TypeStateRegistry<br/>registry of every manager"]
@@ -110,7 +110,7 @@ flowchart TB
 | chunks | `zero::Chunk`, `zero_one_value::Chunk`, `zero_any::Chunk`, `pattern::Chunk`, `ChunkBase` | `chunk/internal/zero_chunk.h`, `chunk/internal/zero_one_value_chunk.h`, `chunk/internal/zero_any_chunk.h`, `chunk/internal/pattern_chunk.h`, `internal/chunk_base.h` | an element of the array's chunk list |
 | proxies, write engine | `ProxyBase`, `WriteCompressSyncPolicy`, the variants' `Proxy` | `internal/proxy_base.h`, `internal/write_compress_sync_policy.h` | a temporary per write |
 | per-type state | `TypeState` (facade), `ReusePools`, `CompressCandidates`, `CompressionManager` | `internal/type_state.h`, `internal/reuse_pools.h`, `internal/compress_candidates.h`, `internal/compression_manager.h` | one per (variant, element type), static |
-| shared constants | `TabCstVal2Holder`, `GlobalVecHolder`, `MotifRegion` | `internal/tab_cst_val2_holder.h`, `internal/motif_region.h` | one per element type |
+| shared constants | `ArrayConstVal2Holder`, `GlobalVecHolder`, `MotifRegion` | `internal/array_const_val2_holder.h`, `internal/motif_region.h` | one per element type |
 | process registry, startup | `TypeStateRegistry`, `Runtime` | `internal/type_state_registry_decl.h`, `chunk/runtime.h` | one per process |
 | phases | `begin_parallel_phase`, `finalize_parallel_phase`, `parallel_phase` | `chunk/phases.h`, `chunk/private/manage_ompt.cpp` | one phase at a time |
 | backend, ranks | `pmp::Team`, `pmp::parallel_for` | `chunk/internal/pmp_chunk.h`, `fast_allocators/internal/pmp_loops.h`, `fast_allocators/internal/pmp_std.h` | process-wide |
@@ -188,7 +188,7 @@ per-variant declinations and keep the default names as aliases;
 
 ### 6.1 Read
 
-`operator[] const` splits the index (`chunk_index = i >> shift`, `num = i & mask`), passes the
+`operator[] const` splits the index (`chunk_index = i >> shift`, `elem_offset = i & mask`), passes the
 **read gate** (`sync_chunk`: a bit per chunk, the *dirty bitset*, says whether a deferred write
 may be pending on it; almost always zero, the read goes straight on; otherwise the chunk's
 counter decides whether to replay its pending writes first, `reader_sync`), then loads `values`

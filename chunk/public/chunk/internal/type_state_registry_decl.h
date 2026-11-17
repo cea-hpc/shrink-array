@@ -291,7 +291,7 @@ class TypeStateRegistry : public TypeStateRegistryParallelInterface<TypeStateReg
     {
         // The count first: every table published after the slot count-1 was
         // written holds that slot, so the table read next has all of them.
-        const auto count = static_cast<std::size_t>(nb_managers_.load(std::memory_order_acquire));
+        const auto count = static_cast<std::size_t>(n_managers_.load(std::memory_order_acquire));
         return {table_.load(std::memory_order_acquire), count};
     }
 
@@ -455,7 +455,7 @@ class TypeStateRegistry : public TypeStateRegistryParallelInterface<TypeStateReg
     /// The current slot table, for the lock-free readers.
     std::atomic<TypeStateInterface**> table_{nullptr};
     std::size_t                       table_capacity_ = 0;
-    std::atomic<int>                  nb_managers_{0};
+    std::atomic<int>                  n_managers_{0};
     std::mutex                        registry_mutex_;
 
     /// Set under registry_mutex_ when the manager type @p ManagerT is

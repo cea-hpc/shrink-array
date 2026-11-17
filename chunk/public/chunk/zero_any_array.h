@@ -23,7 +23,7 @@
 #include <expected>         // std::expected (try_reclaim_second_values)
 #include <utility>          // for move
 #include <vector>           // for vector, swap
-#include <unordered_set>    // for the cst2 GC live set
+#include <unordered_set>    // for the const2 GC live set
 #include <initializer_list> // the {a, b, c} constructor
 #include <iterator>         // std::forward_iterator, std::distance -- the (first, last) constructor
 #include <type_traits>      // std::is_same_v (reclaim_second_values: bool has no registry)
@@ -34,8 +34,8 @@
 #include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
 #include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
 #include "chunk/config.h"                               // for threaded, g_in_rechunk_rebuild
-#include "chunk/internal/pmp_chunk.h"           // CHUNK_PMP_IN_PARALLEL_REGION (reclaim_second_values), pmp::Team
-#include "chunk/internal/tab_cst_val2_holder.h" // for GlobalVecHolder (cst2 GC)
+#include "chunk/internal/pmp_chunk.h"               // CHUNK_PMP_IN_PARALLEL_REGION (reclaim_second_values), pmp::Team
+#include "chunk/internal/array_const_val2_holder.h" // for GlobalVecHolder (const2 GC)
 #include "chunk/internal/write_compress_sync_policy.h" // for WriteCompressSyncPolicy
 #include "chunk/internal/array_chunk_core.h"           // the core the bases share
 #include "chunk/internal/zero_any_proxy.h"             // zero_any::Proxy<T> and its tables
@@ -76,7 +76,7 @@ namespace zero_any
 {
 
 /// @brief reclaim_second_values(): identifier @p id is still referenced.
-inline void mark_cst2_id(std::vector<std::uint8_t>& referenced, std::uint32_t id) noexcept
+inline void mark_const2_id(std::vector<std::uint8_t>& referenced, std::uint32_t id) noexcept
 {
     if (id != 0 && id < referenced.size())
     {
@@ -92,10 +92,10 @@ inline void mark_cst2_id(std::vector<std::uint8_t>& referenced, std::uint32_t id
  *          ProxyT's registry of arrays):
  *            - a chunk compressed to a second value: its values pointer is the slot;
  *            - a per-chunk second-value slot (ProxyT's table) naming a registered value
- *              (init_values_cst_val() finds the slot from it by value).
+ *              (init_values_const_val() finds the slot from it by value).
  *          The members with the same element type share one registry
  *          (GlobalVecHolder<T>): each registers this function for itself
- *          (GlobalVecHolder::register_marker(), from acquire_cst2_registry()), and
+ *          (GlobalVecHolder::register_marker(), from acquire_const2_registry()), and
  *          a reclaim on any of them runs all the marks.
  * @tparam T      Element type (not bool: bool has no registry).
  * @tparam ProxyT The member's proxy: its registry of arrays and second-value table.
@@ -122,7 +122,7 @@ void mark_second_values(std::vector<std::uint8_t>& referenced)
                 const T* vals = arr->chunk_ref(static_cast<std::size_t>(j)).values_load();
                 if (Gvh::region_contains(vals))
                 {
-                    mark_cst2_id(referenced, Gvh::slot_id(vals));
+                    mark_const2_id(referenced, Gvh::slot_id(vals));
                 }
             }
         });
@@ -133,18 +133,18 @@ void mark_second_values(std::vector<std::uint8_t>& referenced)
     const std::size_t nrows = Spec::second_value_row_count();
     for (std::size_t r = 0; r < nrows; ++r)
     {
-        const auto& row = Spec::get_tab_second_value(static_cast<int>(r));
+        const auto& row = Spec::get_array_second_value(static_cast<int>(r));
         for (const auto& slot : row)
         {
             if constexpr (SecondValueTraits<T>::indexed)
             {
-                mark_cst2_id(referenced, slot); // the identifier itself; 0 = none
+                mark_const2_id(referenced, slot); // the identifier itself; 0 = none
             }
             else if (!same_value(static_cast<T>(slot), T{}))
             {
                 if (const T* hit = Gvh::index_lookup(slot))
                 {
-                    mark_cst2_id(referenced, Gvh::slot_id(hit));
+                    mark_const2_id(referenced, Gvh::slot_id(hit));
                 }
             }
         }
@@ -181,7 +181,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
     // `Arr::ChunkType` would be ambiguous between base subobjects (lookup precedes access).
     using Traits      = SecondValueBase::Traits;      ///< ArrayChunkTraits<Derived>.
     using T           = SecondValueBase::T;           ///< Stored element type.
-    using IntType     = SecondValueBase::IndType;     ///< Index type used for sizes and element positions.
+    using IntType     = SecondValueBase::IndexType;   ///< Index type used for sizes and element positions.
     using ChunkType   = SecondValueBase::ChunkType;   ///< The chunk type held in chunk_list_ (zero_any::Chunk<T>).
     using ManagerType = SecondValueBase::ManagerType; ///< The per-type manager (TypeState<zero_any::Chunk, T>).
     using ProxyType  = SecondValueBase::ProxyType; ///< The write proxy of the non-const accessors (zero_any::Proxy<T>).
@@ -239,7 +239,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
      * @brief The destructor's body: release the storage, then the registry entry.
      * @warning The erase() is required: a later array at this address (common for stack
      *          arrays, e.g. rechunk_to()'s @c tmp) would inherit the stale array_id
-     *          (get_array_id() returns the FIRST match) and corrupt another tab's metadata.
+     *          (get_array_id() returns the FIRST match) and corrupt another array's metadata.
      */
     void destroy_storage();
 
@@ -270,7 +270,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
   private:
     /// @brief Release the buffers of chunks [@p first, @p last) (a shrinking resize()). Same
     ///        release as clear_core(): freed serially; under OpenMP parked in this geometry's
-    ///        reuse list, chunk set to cst_val1. Sequential point; no candidate list may hold them.
+    ///        reuse list, chunk set to const_val1. Sequential point; no candidate list may hold them.
     void release_chunk_range(int first, int last);
 
   public:
@@ -330,7 +330,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
     }
 
     /**
-     * @brief Report how many cst2 buffers a sweep could reclaim.
+     * @brief Report how many const2 buffers a sweep could reclaim.
      * @details Runs gc_collect_live() and compares the live count with
      *          GlobalVecHolder's total; the difference is the reclaimable set.
      *          Diagnostic only -- a report the caller asked for (written in
@@ -342,7 +342,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
         std::unordered_set<const void*> live;
         gc_collect_live(live);
         const std::size_t held = GlobalVecHolder<T>::count_entries();
-        CHUNK_LOG_ALWAYS(compress, "cst2-gc: live={} / holder={}  (reclaimable={})", live.size(), held,
+        CHUNK_LOG_ALWAYS(compress, "const2-gc: live={} / holder={}  (reclaimable={})", live.size(), held,
                          held > live.size() ? held - live.size() : 0);
     }
 
@@ -353,7 +353,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
      *        reuses their identifiers instead of carving new ones.
      *
      * @details The registry (GlobalVecHolder) forgets nothing on its own: drifting constants
-     *          register new values until the identifiers run out (CHUNK_CST_VAL2_MAX_IDS),
+     *          register new values until the identifiers run out (CHUNK_CONST_VAL2_MAX_IDS),
      *          which stops the run. This marks what is referenced, over every live array of
      *          every member of the family sharing the registry, whatever its index type
      *          (mark_second_values(), one per member, GlobalVecHolder::mark_all()), and
@@ -461,14 +461,14 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
      */
     auto get_metadata(IntType index) const noexcept
     {
-        return ProxyType::BaseSpec::get_tab_second_value(array_id_, this->chunk_index_of(index));
+        return ProxyType::BaseSpec::get_array_second_value(array_id_, this->chunk_index_of(index));
     }
 
     /// @brief Storage teardown shared by clear() and rechunk_to().
     ///
     /// Everything clear() does EXCEPT the end-of-life I/O: drain, terminal compression,
     /// buffer release, metadata reset. rechunk_to() must release storage through this same
-    /// (ledger-correct) path. In non-OMP builds it does NOT tear down the shared cst_val2
+    /// (ledger-correct) path. In non-OMP builds it does NOT tear down the shared const_val2
     /// holder, so it does not affect other arrays.
     void clear_core();
 
@@ -479,7 +479,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
     void print_compression_stats(std::ostream& os = std::cout) const;
 
     /**
-     * @brief Take this array's reference on the cst2 registry, once, as soon
+     * @brief Take this array's reference on the const2 registry, once, as soon
      *        as it has chunks.
      * @details The registry is shared by every array of the zero_any family with element
      *          type T and reference-counted (the last release frees everything). Given back
@@ -488,36 +488,36 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
      *          Registers this member's mark with the registry on the way, for
      *          reclaim_second_values().
      */
-    void acquire_cst2_registry();
+    void acquire_const2_registry();
 
     /// @brief The identity step of swap(): array_id and the registry entry (the
-    ///        per-chunk metadata rows follow the chunks), the cst2 registry
+    ///        per-chunk metadata rows follow the chunks), the const2 registry
     ///        reference (it goes with the chunks that need it).
     void swap_identity(Derived& other)
     {
         using std::swap;
         swap(this->array_id_, other.array_id_);
-        swap(holds_cst2_registry_, other.holds_cst2_registry_);
+        swap(holds_const2_registry_, other.holds_const2_registry_);
         ProxyType::array_registry->swap_keys(this->registry_key(), other.registry_key());
     }
 
-    // ── cst2 mark-sweep GC: read-only mark + report ──────────────────────────
+    // ── const2 mark-sweep GC: read-only mark + report ──────────────────────────
 
     /**
-     * @brief Mark phase of the cst2 garbage collection: collect live buffers.
+     * @brief Mark phase of the const2 garbage collection: collect live buffers.
      *
      * @details Scans every live zero_any::Array<T> through the shared registry and inserts the
-     *          cst2 buffer pointer of each chunk compressed to its second value. Read-only:
+     *          const2 buffer pointer of each chunk compressed to its second value. Read-only:
      *          safe at any quiescent point.
      *
-     * @param[out] live set the referenced cst2 buffer pointers are inserted into
+     * @param[out] live set the referenced const2 buffer pointers are inserted into
      * @see gc_mark_report for the reporting counterpart
      */
     static void gc_collect_live(std::unordered_set<const void*>& live);
 
-    /// @brief This array holds one reference on the chunk type's cst2 registry
-    ///        (TabCstVal2Holder). See acquire_cst2_registry().
-    bool holds_cst2_registry_ = false;
+    /// @brief This array holds one reference on the chunk type's const2 registry
+    ///        (ArrayConstVal2Holder). See acquire_const2_registry().
+    bool holds_const2_registry_ = false;
 };
 
 /**
@@ -529,7 +529,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
  *          second-value table (zero_any::ProxySpec), garbage-collected through GlobalVecHolder.
  *
  *          Each array registers its address in zero_any::Proxy::array_registry to get a array_id,
- *          the index into every per-tab metadata table. That registration is the array's
+ *          the index into every per-array metadata table. That registration is the array's
  *          identity: taken in pre_create_hook(), exchanged by rechunk_swap_identity(),
  *          released in the destructor.
  *

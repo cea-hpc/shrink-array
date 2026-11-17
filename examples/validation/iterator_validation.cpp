@@ -98,9 +98,9 @@ using Array =
                        zero_any::Array<T>,
                        std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
-using Arr = Array<double>;
-using It  = Arr::const_iterator;
-using Ind = Arr::IndType;
+using Arr   = Array<double>;
+using It    = Arr::const_iterator;
+using Index = Arr::IndexType;
 
 // ── The compile-time half ────────────────────────────────────────────────────
 static_assert(std::random_access_iterator<It>, "const_iterator must model std::random_access_iterator");
@@ -206,7 +206,7 @@ void fill(Arr& arr, long count, Fn&& value)
 #pragma omp for schedule(static)
         for (long i = 0; i < count; ++i)
         {
-            arr[static_cast<Ind>(i)] = value(i);
+            arr[static_cast<Index>(i)] = value(i);
         }
     }
     end_phase();
@@ -255,7 +255,7 @@ int check_premise(const Arr& arr, long count)
     long       folded   = 0;
     for (long j = 0; j * chunk_sz < count; ++j)
     {
-        folded += arr.written(static_cast<Ind>(j * chunk_sz)) ? 0 : 1;
+        folded += arr.written(static_cast<Index>(j * chunk_sz)) ? 0 : 1;
     }
     if (const long want = (chunk_config::use_zero_one_value || chunk_config::use_zero_any) ? c0 + (c2 - c1) : c0;
         folded < want)
@@ -761,7 +761,7 @@ int check_sort_recipe(const std::vector<double>& ref)
     Report     report{"sort-recipe"};
     const auto count = static_cast<long>(ref.size());
     Arr        desc;
-    desc.resize(static_cast<Ind>(count));
+    desc.resize(static_cast<Index>(count));
     maybe_set_second_value(desc, second_value);
     fill(desc, count, [&](long i) { return ref[static_cast<std::size_t>(count - 1 - i)]; }); // descending
     compress_in_region(desc);
@@ -791,7 +791,7 @@ int run(int /*argc*/, char** /*argv*/)
         Arr        arr;
         const auto chunk_sz = static_cast<long>(arr.chunk_size());
         const long count    = (n_chunks * chunk_sz) + tail_len;
-        arr.resize(static_cast<Ind>(count));
+        arr.resize(static_cast<Index>(count));
         maybe_set_second_value(arr, second_value);
         // Every chunk materialised first (non-uniform content), then the sorted
         // pattern over it and a pass: the constant blocks are folded chunks.

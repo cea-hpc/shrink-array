@@ -499,7 +499,7 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
             const unsigned new_sz   = best_e.size;
 
             // The advisor proposes geometries only (is_valid_chunk_size), so a
-            // refusal is the ceiling (cst_buffer_size): said, and no event.
+            // refusal is the ceiling (const_buffer_size): said, and no event.
             const auto t0 = std::chrono::steady_clock::now();
             if (const auto done = arr.try_rechunk_to(new_sz); !done) [[unlikely]]
             {

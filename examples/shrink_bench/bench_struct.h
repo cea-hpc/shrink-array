@@ -36,7 +36,7 @@
  *
  * What a struct element does NOT get: the compound operators of the proxies
  * (+=, *=, ++ ...) exist for the types that have the operation; Point3 has
- * no operator+, so `tab_point[i] += p` does not compile. The bench's struct
+ * no operator+, so `array_point[i] += p` does not compile. The bench's struct
  * loops read the element, build the new one, assign it -- the shape the
  * library offers every element type.
  */

@@ -20,12 +20,12 @@
 #include <source_location> // std::source_location
 #include <type_traits>     // std::is_same_v
 
-#include "chunk/config.h"                       // build_config::any_check, chunk_config::use_fast_block_compression
-#include "chunk/internal/pmp_chunk.h"           // get_thr_rank_fast (the constant-buffer write check)
-#include "chunk/internal/chunk_base.h"          // ChunkBase
-#include "chunk/internal/cst_slot.h"            // CstSlot (clear_impl's type-of-constant slot)
-#include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef, the zero_any second-value slot handle
-#include "chunk/internal/type_name.h"           // type_name<T>
+#include "chunk/config.h"                           // build_config::any_check, chunk_config::use_fast_block_compression
+#include "chunk/internal/pmp_chunk.h"               // get_thr_rank_fast (the constant-buffer write check)
+#include "chunk/internal/chunk_base.h"              // ChunkBase
+#include "chunk/internal/const_slot.h"              // ConstSlot (clear_impl's type-of-constant slot)
+#include "chunk/internal/array_const_val2_holder.h" // SecondValueRef, the zero_any second-value slot handle
+#include "chunk/internal/type_name.h"               // type_name<T>
 
 namespace shrink_array
 {
@@ -44,10 +44,10 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
     using Base = ChunkBase<T, Derived>;
     using Base::first_value;
     using Base::is_bool;
-    using Base::is_cst_val1;
+    using Base::is_const_val1;
     using Base::is_not_bool;
-    using Base::is_not_cst_val1;
-    using Base::m_ptr_cst_val1;
+    using Base::is_not_const_val1;
+    using Base::m_ptr_const_val1;
     using Base::read_value;
     using Base::values_;
     using Base::values_load;
@@ -67,21 +67,21 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
 
     /// @brief Common block clear implementation for zero_one_value/zero_any
     /// @tparam IndexT Type of index parameter (can be std::nullopt_t for zero_any)
-    /// @param num_compress_value Which constant value to compress to (0 or 1)
+    /// @param const_index Which constant value to compress to (0 or 1)
     /// @param index_opt Optional index parameter (for zero_one_value) or std::nullopt (for zero_any)
     /// @param thr_rank Thread rank
-    /// @param ptr_type_cst Pointer to constant type indicator (zero_any only)
+    /// @param ptr_type_const Pointer to constant type indicator (zero_any only)
     /// @param ptr_second_value Pointer to second value (zero_any only)
-    /// @param cst2_ptr The shared array to install for a type-2 compression
+    /// @param const2_ptr The shared array to install for a type-2 compression
     ///        (zero_any only; the chunk keeps no copy of it)
     template <typename IndexT>
     void block_clear_common(this Derived&        self,
-                            int                  num_compress_value,
+                            int                  const_index,
                             IndexT               index_opt,
                             [[maybe_unused]] int thr_rank,
-                            CstSlot*             ptr_type_cst     = nullptr,
+                            ConstSlot*           ptr_type_const   = nullptr,
                             SecondValueRef<T>    ptr_second_value = {},
-                            T*                   cst2_ptr         = nullptr);
+                            T*                   const2_ptr       = nullptr);
 
     /**
      * @brief Atomically attempts to install a new buffer or recycles it on failure.
@@ -91,17 +91,16 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
      * @param cas_fn A lambda that returns TRUE if the swap failed (pointer already changed).
      */
     template <typename CasFunc>
-    void apply_cas_or_recup(T* values_loc, int thr_rank, CasFunc&& cas_fn) noexcept;
+    void apply_cas_or_reclaim(T* values_loc, int thr_rank, CasFunc&& cas_fn) noexcept;
 
     /// @brief Check-only teardown guard: a chunk about to have its buffer freed
     ///        must not be compressed to either constant (the buffer would be the
-    ///        shared cst_val1 / cst_val2 block).
-    /// @param num_compress_value Index reported in the failure message.
-    /// @param ind_opt zero_one_value's second-value slot index; empty for zero_any and
+    ///        shared const_val1 / const_val2 block).
+    /// @param const_index Index reported in the failure message.
+    /// @param idx_opt zero_one_value's second-value slot index; empty for zero_any and
     ///        bool, whose second value is not table-indexed.
-    void check_not_constant_before_clear(this const Derived& self,
-                                         int                 num_compress_value,
-                                         std::optional<int>  ind_opt) noexcept;
+    void
+    check_not_constant_before_clear(this const Derived& self, int const_index, std::optional<int> idx_opt) noexcept;
 
   private:
     static constexpr bool is_zero_any_family_derived = is_zero_any_family_v<Derived>;
@@ -111,13 +110,13 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
     /// @tparam IndexT Type of index parameter
     /// @param index_opt Optional index (zero_one_value) or std::nullopt (zero_any)
     /// @param thr_rank Thread rank
-    /// @param ptr_type_cst Constant type pointer (zero_any only)
+    /// @param ptr_type_const Constant type pointer (zero_any only)
     /// @param ptr_second_value Second value pointer (zero_any only)
     template <typename IndexT>
     void clear_impl(this Derived&     self,
                     IndexT            index_opt,
                     int               thr_rank,
-                    CstSlot*          ptr_type_cst     = nullptr,
+                    ConstSlot*        ptr_type_const   = nullptr,
                     SecondValueRef<T> ptr_second_value = {});
 
     /**

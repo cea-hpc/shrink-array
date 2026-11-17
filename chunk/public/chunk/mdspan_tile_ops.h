@@ -255,11 +255,11 @@ void check_tile_on_chunks(const Array& a, Index tile_elems, const char* who)
 
 /**
  * @brief Read storage elements [lo, lo + buf.size()) of @p a into @p buf.
- * @return true when they are all one constant @p cst; @p buf is then left
+ * @return true when they are all one constant @p constant; @p buf is then left
  *         unfilled if @p lazy, so a uniform tile costs O(1).
  */
 template <typename Array, typename Buf, typename T>
-bool gather(const Array& a, std::size_t lo, Buf& buf, T& cst, bool lazy)
+bool gather(const Array& a, std::size_t lo, Buf& buf, T& constant, bool lazy)
 {
     const std::size_t N       = buf.size();
     std::size_t       k       = 0;
@@ -271,14 +271,14 @@ bool gather(const Array& a, std::size_t lo, Buf& buf, T& cst, bool lazy)
         std::size_t& k;
         bool&        uniform;
         bool&        pending;
-        T&           cst;
+        T&           constant;
         bool         lazy;
 
         void flush_pending() const
         {
             if (pending)
             {
-                std::fill(buf.begin(), buf.begin() + static_cast<std::ptrdiff_t>(k), cst);
+                std::fill(buf.begin(), buf.begin() + static_cast<std::ptrdiff_t>(k), constant);
                 pending = false;
             }
         }
@@ -293,10 +293,10 @@ bool gather(const Array& a, std::size_t lo, Buf& buf, T& cst, bool lazy)
         {
             if (k == 0)
             {
-                cst     = v;
-                pending = lazy;
+                constant = v;
+                pending  = lazy;
             }
-            else if (uniform && !(v == cst))
+            else if (uniform && !(v == constant))
             {
                 uniform = false;
             }
@@ -309,7 +309,7 @@ bool gather(const Array& a, std::size_t lo, Buf& buf, T& cst, bool lazy)
             k += n;
         }
     };
-    for_each_span(a, lo, lo + N, Visitor{buf, k, uniform, pending, cst, lazy});
+    for_each_span(a, lo, lo + N, Visitor{buf, k, uniform, pending, constant, lazy});
     if (k != N) [[unlikely]]
     {
         CHUNK_INVARIANT_FAILED("md tile ops: the array has {} elements, the tiled view needs at least {} "
@@ -839,17 +839,17 @@ void read_tiles(const View& f, const char* who, Walk&& walk, OnBlock& on_block, 
     constexpr bool has_uniform = !std::same_as<std::remove_cvref_t<OnUniform>, NoUniform>;
 
     TileBuffer<View, T> buf(f);
-    T                   cst{};
+    T                   constant{};
     walk(
         [&](Index k)
         {
             const auto t       = tile_at(f, dims, k);
-            const bool uniform = gather(a, tile_storage(f, t), buf, cst, has_uniform);
+            const bool uniform = gather(a, tile_storage(f, t), buf, constant, has_uniform);
             if constexpr (has_uniform)
             {
                 if (uniform)
                 {
-                    on_uniform(t, std::as_const(cst));
+                    on_uniform(t, std::as_const(constant));
                     return;
                 }
             }
@@ -871,28 +871,28 @@ void write_tiles(const View& f, const char* who, Walk&& walk, OnBlock& on_block,
 
     detail::TileBuffer<View, T>                buf(f);
     detail::TileBuffer<View, T>                before(f); // a materialised tile as read: written back only if changed
-    T                                          cst{};
+    T                                          constant{};
     detail::RangeWriter<detail::ArrayOf<View>> out{a};
     walk(
         [&](Index k)
         {
             const auto        t       = detail::tile_at(f, dims, k);
             const std::size_t lo      = detail::tile_storage(f, t);
-            const bool        uniform = detail::gather(a, lo, buf, cst, has_uniform);
+            const bool        uniform = detail::gather(a, lo, buf, constant, has_uniform);
             if constexpr (has_uniform)
             {
                 if (uniform)
                 {
-                    T v = cst;
+                    T v = constant;
                     if (on_uniform(t, v))
                     {
-                        if (!(v == cst))
+                        if (!(v == constant))
                         {
                             out.fill(lo, lo + N, v);
                         }
                         return;
                     }
-                    std::fill(buf.begin(), buf.end(), cst);
+                    std::fill(buf.begin(), buf.end(), constant);
                 }
             }
             if (!uniform)
@@ -906,7 +906,7 @@ void write_tiles(const View& f, const char* who, Walk&& walk, OnBlock& on_block,
                 std::all_of(buf.begin() + 1, buf.end(), [&first_v](const T& x) { return x == first_v; });
             if (now_uniform)
             {
-                if (!(uniform && first_v == cst))
+                if (!(uniform && first_v == constant))
                 {
                     out.fill(lo, lo + N, first_v);
                 }
@@ -1148,7 +1148,7 @@ class TileCache
         explicit Entry(const View& f) : buf(f) {}
         Index               k       = std::numeric_limits<Index>::max();
         bool                uniform = false;
-        T                   cst{};
+        T                   constant{};
         TileBuffer<View, T> buf;
     };
 
@@ -1290,7 +1290,7 @@ void stencil_on(const Src&                       src,
             }
             auto&      me    = cache.fetch(tc);
             const bool me_u  = me.uniform;
-            const T    me_v  = me.cst;
+            const T    me_v  = me.constant;
             bool       leave = false; // the halo leaves the view
             for (std::size_t r = 0; r < rank; ++r)
             {
@@ -1316,8 +1316,8 @@ void stencil_on(const Src&                       src,
                     }
                     if (in)
                     {
-                        const auto& nb = cache.fetch(c);
-                        uniform        = nb.uniform && nb.cst == me_v;
+                        const auto& count = cache.fetch(c);
+                        uniform           = count.uniform && count.constant == me_v;
                     }
                 }
                 if (uniform)
@@ -1372,14 +1372,14 @@ void stencil_on(const Src&                       src,
                         c[rank - 1]      = static_cast<Index>(g / te[rank - 1]);
                         const auto local = static_cast<Index>(g % te[rank - 1]);
                         const auto n     = std::min<long long>(qb - q, te[rank - 1] - local);
-                        auto&      nb    = cache.fetch(c);
-                        if (nb.uniform)
+                        auto&      count = cache.fetch(c);
+                        if (count.uniform)
                         {
-                            std::fill_n(row + q, n, nb.cst);
+                            std::fill_n(row + q, n, count.constant);
                         }
                         else
                         {
-                            std::copy_n(nb.buf.data() + off + local, n, row + q);
+                            std::copy_n(count.buf.data() + off + local, n, row + q);
                         }
                         q += n;
                     }
@@ -1408,7 +1408,7 @@ void stencil_on(const Src&                       src,
                 auto& c = cache.fetch(tc);
                 if (c.uniform)
                 {
-                    std::fill(outb.begin(), outb.end(), c.cst);
+                    std::fill(outb.begin(), outb.end(), c.constant);
                 }
                 else
                 {
@@ -1794,7 +1794,7 @@ void copy_tiles_out(const View&                        f,
     const auto                  ts   = detail::tile_strides(f);
     const auto                  dims = detail::tiles_per_dim(f);
     detail::TileBuffer<View, T> buf(f);
-    T                           cst{};
+    T                           constant{};
     walk(lo, hi,
          [&](Index k)
          {
@@ -1802,7 +1802,7 @@ void copy_tiles_out(const View&                        f,
              std::array<Index, rank> ilo{};
              std::array<Index, rank> ihi{};
              detail::tile_box(t, lo, hi, ilo, ihi);
-             const bool uniform = detail::gather(a, detail::tile_storage(f, t), buf, cst, /*lazy=*/true);
+             const bool uniform = detail::gather(a, detail::tile_storage(f, t), buf, constant, /*lazy=*/true);
              const auto n       = static_cast<std::size_t>(ihi[rank - 1] - ilo[rank - 1]);
              detail::for_each_row(ilo, ihi,
                                   [&](const std::array<Index, rank>& idx)
@@ -1810,7 +1810,7 @@ void copy_tiles_out(const View&                        f,
                                       T* d = dst + detail::offset_in(idx, lo, bs);
                                       if (uniform)
                                       {
-                                          std::fill_n(d, n, cst);
+                                          std::fill_n(d, n, constant);
                                       }
                                       else
                                       {

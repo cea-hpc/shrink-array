@@ -56,9 +56,9 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     using Base::array_id_;
     using Base::chunk_;
     using Base::chunk_index_;
-    using Base::is_cst_val1;
-    using Base::is_not_cst_val1;
-    using Base::num_;
+    using Base::elem_offset_;
+    using Base::is_const_val1;
+    using Base::is_not_const_val1;
     using Base::values_;
 
     using typename Base::AtomicPtrRefT;
@@ -66,23 +66,23 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
 
     // Both members exist on ProxyBase in every mode (the serial specialisation
     // declares them too); only their USE is mode-specific.
+    using Base::array_is_inside_chunk_list_to_compress;
     using Base::ptr_is_inside_chunk_list_to_compress_;
-    using Base::tab_is_inside_chunk_list_to_compress;
 
     // ========================================================================
-    // Constant-state queries. is_cst_val2() itself is the derived proxy's:
-    // only it knows the index/ind for non-bool types. These reach it through
-    // self; the delegating is_cst_val2() this class used to declare for them
+    // Constant-state queries. is_const_val2() itself is the derived proxy's:
+    // only it knows the index/idx for non-bool types. These reach it through
+    // self; the delegating is_const_val2() this class used to declare for them
     // is gone.
     // ========================================================================
 
     /**
-     * @brief Negation of is_cst_val().
+     * @brief Negation of is_const_val().
      * @return true if the chunk is materialised (compressed to neither constant).
      */
-    [[nodiscard]] bool is_not_cst_val(this const Derived& self) noexcept
+    [[nodiscard]] bool is_not_const_val(this const Derived& self) noexcept
     {
-        return !self.is_cst_val();
+        return !self.is_const_val();
     }
 
     /**
@@ -166,29 +166,32 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
 
   protected:
     /**
-     * @brief Construct a proxy for element `num_` of `chunk_`.
+     * @brief Construct a proxy for element `elem_offset_` of `chunk_`.
      * @param values Reference to the chunk's values pointer.
-     * @param num Element offset within the chunk.
+     * @param elem_offset Element offset within the chunk.
      * @param chunk Owning chunk.
      */
-    explicit SecondValueProxyBase(ValuesTypeRef values, int num, ChunkT& chunk) noexcept : Base(values, num, chunk) {}
+    explicit SecondValueProxyBase(ValuesTypeRef values, int elem_offset, ChunkT& chunk) noexcept
+        : Base(values, elem_offset, chunk)
+    {
+    }
 
     /**
-     * @brief Negation of is_cst_val2().
+     * @brief Negation of is_const_val2().
      * @return true if the chunk is NOT compressed to the second constant.
      */
-    [[nodiscard]] bool is_not_cst_val2(this const Derived& self) noexcept
+    [[nodiscard]] bool is_not_const_val2(this const Derived& self) noexcept
     {
-        return !self.is_cst_val2();
+        return !self.is_const_val2();
     }
 
     /**
      * @brief Whether the chunk is compressed to EITHER constant (first or second).
      * @return true if the chunk is compressed.
      */
-    [[nodiscard]] bool is_cst_val(this const Derived& self) noexcept
+    [[nodiscard]] bool is_const_val(this const Derived& self) noexcept
     {
-        return self.is_cst_val1() || self.is_cst_val2();
+        return self.is_const_val1() || self.is_const_val2();
     }
 
     /**
@@ -201,7 +204,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      *          pass, on its first write of a constant over something else.
      *
      *          Not only a chunk ALREADY at one constant being written the
-     *          other: a chunk materialised by a plain value (2.5 over cst_val1)
+     *          other: a chunk materialised by a plain value (2.5 over const_val1)
      *          and then written back to a constant element by element must be
      *          queued too, or it stays materialised for the run. The cost is
      *          paid only by writes of a constant: an old-value read and a
@@ -266,7 +269,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     /**
      * @brief Marks block for compression with an explicit old boolean value
      *        (provided to avoid a race), rather than reading it back from
-     *        values[num].
+     *        values[elem_offset].
      * @param old_value The previous boolean value.
      * @param new_value The new boolean value.
      */
@@ -300,7 +303,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      * @details Combines fast/slow path locking with automatic metadata
      *          initialization (set_array_id_ptr_is_inside_chunk(), needed by
      *          the fast-block-compression path). Useful for operations that
-     *          need tab/chunk information before writing.
+     *          need array/chunk information before writing.
      */
     template <typename WriteFn>
     [[nodiscard]] CHUNK_FORCE_INLINE bool write_with_optional_lock_with_set_ptr(this Derived& self,

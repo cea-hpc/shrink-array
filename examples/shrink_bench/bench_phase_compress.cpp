@@ -24,17 +24,17 @@
 
 namespace
 {
-/// @brief tab.compress() in a shrink build, nothing in the std::vector baseline.
+/// @brief arr.compress() in a shrink build, nothing in the std::vector baseline.
 ///
 /// compress() exists on the zero::Array* alone, and `if constexpr` in a plain
 /// function still type-checks its discarded branch -- but the body of a
 /// TEMPLATE is genuinely not instantiated, so routing the thirteen calls through
 /// one abbreviated function template lets the guard below be `if constexpr`.
-void compress_one(auto& tab)
+void compress_one(auto& arr)
 {
     if constexpr (chunk_config::is_shrink_enabled)
     {
-        tab.compress();
+        arr.compress();
     }
 }
 
@@ -59,26 +59,26 @@ void bench_phase_compress_all(BenchArrays& bench_arr)
         chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
 
         // Short local names for the arrays (see bench_phase_fill.cpp).
-        auto& tab1 = bench_arr.tab1;
-        auto& tab2 = bench_arr.tab2;
-        auto& tab3 = bench_arr.tab3;
-        auto& tab4 = bench_arr.tab4;
-        auto& tab5 = bench_arr.tab5;
+        auto& arr1 = bench_arr.arr1;
+        auto& arr2 = bench_arr.arr2;
+        auto& arr3 = bench_arr.arr3;
+        auto& arr4 = bench_arr.arr4;
+        auto& arr5 = bench_arr.arr5;
 
-        auto& tab_int       = bench_arr.tab_int;
-        auto& tab_bool      = bench_arr.tab_bool;
-        auto& tab_bool_bits = bench_arr.tab_bool_bits;
-        auto& tab_complex   = bench_arr.tab_complex;
-        auto& tab_float     = bench_arr.tab_float;
-        auto& tab_short     = bench_arr.tab_short;
-        auto& tab_char      = bench_arr.tab_char;
-        auto& tab_long      = bench_arr.tab_long;
-        auto& tab_ulong     = bench_arr.tab_ulong;
-        auto& tab_quant     = bench_arr.tab_quant;
-        auto& tab_point     = bench_arr.tab_point;
-        auto& tab_cell      = bench_arr.tab_cell;
-        auto& tab_mask      = bench_arr.tab_mask;
-        auto& tab_conn      = bench_arr.tab_conn;
+        auto& array_int       = bench_arr.array_int;
+        auto& array_bool      = bench_arr.array_bool;
+        auto& array_bool_bits = bench_arr.array_bool_bits;
+        auto& array_complex   = bench_arr.array_complex;
+        auto& array_float     = bench_arr.array_float;
+        auto& array_short     = bench_arr.array_short;
+        auto& array_char      = bench_arr.array_char;
+        auto& array_long      = bench_arr.array_long;
+        auto& array_ulong     = bench_arr.array_ulong;
+        auto& array_quant     = bench_arr.array_quant;
+        auto& array_point     = bench_arr.array_point;
+        auto& array_cell      = bench_arr.array_cell;
+        auto& array_mask      = bench_arr.array_mask;
+        auto& array_conn      = bench_arr.array_conn;
 
         // Compress the queued candidates first, from outside the region: each
         // compress() below runs in an `omp single`, where compress_int cannot
@@ -104,52 +104,52 @@ void bench_phase_compress_all(BenchArrays& bench_arr)
         // point, where its pass runs on the library's own team.
         const auto all = [&](auto&& say)
         {
-            say("  tab1");
-            compress_one(tab1);
-            say("  tab2");
-            compress_one(tab2);
-            say("  tab3");
-            compress_one(tab3);
-            say("  tab4");
-            compress_one(tab4);
-            say("  tab5");
-            compress_one(tab5);
-            say("  tab_int");
-            compress_one(tab_int);
-            say("  tab_bool");
-            compress_one(tab_bool);
-            say("  tab_bool_bits");
-            compress_one(tab_bool_bits);
-            say(" tab_complex");
-            compress_one(tab_complex);
-            say(" tab_float");
-            compress_one(tab_float);
-            say(" tab_char");
-            compress_one(tab_char);
-            say(" tab_short");
-            compress_one(tab_short);
-            say(" tab_long");
-            compress_one(tab_long);
-            say(" tab_ulong");
-            compress_one(tab_ulong);
-            say(" tab_quant");
-            compress_one(tab_quant);
+            say("  arr1");
+            compress_one(arr1);
+            say("  arr2");
+            compress_one(arr2);
+            say("  arr3");
+            compress_one(arr3);
+            say("  arr4");
+            compress_one(arr4);
+            say("  arr5");
+            compress_one(arr5);
+            say("  array_int");
+            compress_one(array_int);
+            say("  array_bool");
+            compress_one(array_bool);
+            say("  array_bool_bits");
+            compress_one(array_bool_bits);
+            say(" array_complex");
+            compress_one(array_complex);
+            say(" array_float");
+            compress_one(array_float);
+            say(" array_char");
+            compress_one(array_char);
+            say(" array_short");
+            compress_one(array_short);
+            say(" array_long");
+            compress_one(array_long);
+            say(" array_ulong");
+            compress_one(array_ulong);
+            say(" array_quant");
+            compress_one(array_quant);
             if (bench_arr.with_struct) // --no_struct
             {
-                say(" tab_point");
-                compress_one(tab_point);
-                say(" tab_cell");
-                compress_one(tab_cell);
+                say(" array_point");
+                compress_one(array_point);
+                say(" array_cell");
+                compress_one(array_cell);
             }
             if (bench_arr.with_mask) // --no_mask
             {
-                say(" tab_mask");
-                compress_one(tab_mask);
+                say(" array_mask");
+                compress_one(array_mask);
             }
             if (bench_arr.with_conn) // --no_conn
             {
-                say(" tab_conn");
-                compress_one(tab_conn);
+                say(" array_conn");
+                compress_one(array_conn);
             }
         };
         if constexpr (bench_par::team_regions)

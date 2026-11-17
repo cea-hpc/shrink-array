@@ -76,8 +76,8 @@ using namespace shrink_array;
 namespace
 {
 
-using Arr = zero_one_value::Array<double>;
-using Ind = Arr::IndType;
+using Arr   = zero_one_value::Array<double>;
+using Index = Arr::IndexType;
 
 constexpr long   chunks_a = 512;  ///< chunks of `a`
 constexpr long   chunks_b = 4096; ///< chunks of `b`
@@ -112,14 +112,14 @@ struct Xorshift
     }
 };
 
-/// @brief Chunks of @p arr whose values pointer is @p cst: compressed to that
+/// @brief Chunks of @p arr whose values pointer is @p constant: compressed to that
 ///        constant, whatever the array itself would call them.
-long pointing_at(const Arr& arr, long n_chunks, const double* cst)
+long pointing_at(const Arr& arr, long n_chunks, const double* constant)
 {
     long count = 0;
     for (long c = 0; c < n_chunks; ++c)
     {
-        count += (arr.chunk_ref(static_cast<std::size_t>(c)).values_load() == cst) ? 1 : 0;
+        count += (arr.chunk_ref(static_cast<std::size_t>(c)).values_load() == constant) ? 1 : 0;
     }
     return count;
 }
@@ -130,7 +130,7 @@ long compressed(const Arr& arr, long n_chunks, long chunk_sz)
     long count = 0;
     for (long c = 0; c < n_chunks; ++c)
     {
-        count += arr.written(static_cast<Ind>(c * chunk_sz)) ? 0 : 1;
+        count += arr.written(static_cast<Index>(c * chunk_sz)) ? 0 : 1;
     }
     return count;
 }
@@ -152,8 +152,8 @@ int run(int /*argc*/, char** /*argv*/)
         Arr        arr;
         Arr        other;
         const auto chunk_sz = static_cast<long>(arr.chunk_size());
-        arr.resize(static_cast<Ind>(chunks_a * chunk_sz));
-        other.resize(static_cast<Ind>(chunks_b * chunk_sz));
+        arr.resize(static_cast<Index>(chunks_a * chunk_sz));
+        other.resize(static_cast<Index>(chunks_b * chunk_sz));
         arr.set_second_value(val_a);
         other.set_second_value(val_b);
         const Arr& ca   = arr;
@@ -170,12 +170,12 @@ int run(int /*argc*/, char** /*argv*/)
 #pragma omp for schedule(static)
             for (long i = 0; i < chunks_a * chunk_sz; ++i)
             {
-                arr[static_cast<Ind>(i)] = val_b;
+                arr[static_cast<Index>(i)] = val_b;
             }
 #pragma omp for schedule(static)
             for (long i = 0; i < chunks_b * chunk_sz; ++i)
             {
-                other[static_cast<Ind>(i)] = val_b;
+                other[static_cast<Index>(i)] = val_b;
             }
         }
         end_phase();
@@ -192,8 +192,8 @@ int run(int /*argc*/, char** /*argv*/)
         const char*  env_s   = std::getenv("FK_SECONDS");
         const double seconds = env_s ? std::atof(env_s) : 2.0;
         // `other`'s constant: the pointer every compressed chunk of `other` holds.
-        const double* const b_cst       = cb.chunk_ref(0).values_load();
-        const long          a_on_b_cst0 = pointing_at(ca, chunks_a, b_cst);
+        const double* const b_const       = cb.chunk_ref(0).values_load();
+        const long          a_on_b_const0 = pointing_at(ca, chunks_a, b_const);
         std::atomic<long>   toggles{0};
 #pragma omp parallel
         {
@@ -210,13 +210,13 @@ int run(int /*argc*/, char** /*argv*/)
                     // `other`: a chunk of this thread's, materialised then constant again.
                     const long cbk =
                         me + static_cast<long>(rng.next() % static_cast<std::uint64_t>(chunks_b / nthreads)) * nthreads;
-                    const auto b0 = static_cast<Ind>(cbk * chunk_sz);
+                    const auto b0 = static_cast<Index>(cbk * chunk_sz);
                     other[b0]     = 3.0;
                     other[b0]     = val_b;
                     // `arr`: an element of this thread's, rewritten to the same 2.0.
                     const auto cak = static_cast<long>(rng.next() % static_cast<std::uint64_t>(chunks_a));
                     const long off = me % chunk_sz;
-                    arr[static_cast<Ind>(cak * chunk_sz + off)] = val_b;
+                    arr[static_cast<Index>(cak * chunk_sz + off)] = val_b;
                     ++local;
                 }
             }
@@ -224,11 +224,11 @@ int run(int /*argc*/, char** /*argv*/)
         }
         end_phase();
 
-        const long a_compressed = pointing_at(ca, chunks_a, b_cst);
+        const long a_compressed = pointing_at(ca, chunks_a, b_const);
         const long b_compressed = compressed(cb, chunks_b, chunk_sz);
         println("[zero_one_value/foreign-key] {} toggles ({:.1f} s); b: {}/{} chunks compressed before, {} after; "
                 "a: {} of {} chunks on b's constant before the stress, {} after",
-                toggles.load(), seconds, b_compressed0, chunks_b, b_compressed, a_on_b_cst0, chunks_a, a_compressed);
+                toggles.load(), seconds, b_compressed0, chunks_b, b_compressed, a_on_b_const0, chunks_a, a_compressed);
         if (b_compressed0 == 0)
         {
             println("[zero_one_value/foreign-key] FAIL premise: `b` was not compressed to its second value");
@@ -245,18 +245,18 @@ int run(int /*argc*/, char** /*argv*/)
         // A write into every chunk of `arr` must not reach `other`.
         for (long c = 0; c < chunks_a; ++c)
         {
-            arr[static_cast<Ind>(c * chunk_sz + (chunk_sz - 1))] = 5.0;
+            arr[static_cast<Index>(c * chunk_sz + (chunk_sz - 1))] = 5.0;
         }
         long bad_b = 0;
         long bad_a = 0;
         for (long i = 0; i < chunks_b * chunk_sz; ++i)
         {
-            bad_b += (cb[static_cast<Ind>(i)] != val_b) ? 1 : 0;
+            bad_b += (cb[static_cast<Index>(i)] != val_b) ? 1 : 0;
         }
         for (long i = 0; i < chunks_a * chunk_sz; ++i)
         {
             const double want = (i % chunk_sz == chunk_sz - 1) ? 5.0 : val_b;
-            bad_a += (ca[static_cast<Ind>(i)] != want) ? 1 : 0;
+            bad_a += (ca[static_cast<Index>(i)] != want) ? 1 : 0;
         }
         if (bad_b != 0 || bad_a != 0)
         {

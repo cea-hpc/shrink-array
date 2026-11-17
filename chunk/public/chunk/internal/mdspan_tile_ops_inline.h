@@ -152,7 +152,7 @@ md::detail::TileCache<View, T>::Entry& md::detail::TileCache<View, T>::fetch(con
     Entry& x     = e_[next_];
     next_        = (next_ + 1) % e_.size();
     const auto t = tile_at(f_, dims_, k);
-    x.uniform    = gather(*f_.data_handle(), tile_storage(f_, t), x.buf, x.cst, /*lazy=*/true);
+    x.uniform    = gather(*f_.data_handle(), tile_storage(f_, t), x.buf, x.constant, /*lazy=*/true);
     x.k          = k;
     return x;
 }

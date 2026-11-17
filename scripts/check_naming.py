@@ -9,7 +9,7 @@ Over chunk/, fast_allocators/ and examples/:
 - Constants are snake_case; UPPER_CASE is for macros. The name a `constexpr`
   variable declares (namespace scope, static member or local) is snake_case,
   as the standard library's are (`std::dynamic_extent`, `std::is_same_v`):
-  `cst_buffer_size`, not `kCstBufferSize` nor `CST_BUFFER_SIZE`. So is a
+  `const_buffer_size`, not `kConstBufferSize` nor `CONST_BUFFER_SIZE`. So is a
   `const` object named in the k-prefixed style (`const Case kCases[]`), and
   so is an enumerator (`ev_flush_begin`, not `EV_FLUSH_BEGIN`). An UPPER_CASE
   name reads as a macro (CHUNK_SIZE, CHUNK_DYN_MAX_SIZE are macros) and may

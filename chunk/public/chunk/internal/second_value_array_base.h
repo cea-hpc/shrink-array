@@ -43,7 +43,7 @@ class SecondValueArrayBase : public ArrayChunkBase<Derived>
     using ChunkType   = Base::ChunkType;   ///< Chunk type held in chunk_list_.
     using ManagerType = Base::ManagerType; ///< Per-type manager owning the compression machinery.
     using T           = Base::T;           ///< Stored element type.
-    using IndType     = Base::IndType;     ///< Signed global index type.
+    using IndexType   = Base::IndexType;   ///< Signed global index type.
     using ProxyType   = Base::ProxyType;   ///< Write proxy returned by the non-const accessors.
 
     using Base::chunk_count_;
@@ -57,7 +57,7 @@ class SecondValueArrayBase : public ArrayChunkBase<Derived>
      * @brief Allocates storage for a specific chunk if it's currently constant.
      * Uses the metadata provided by the derived class.
      */
-    void alloc_chunk(this Derived& self, IndType index)
+    void alloc_chunk(this Derived& self, IndexType index)
     {
         const int chunk_index = self.chunk_index_of(index);
 
@@ -70,7 +70,7 @@ class SecondValueArrayBase : public ArrayChunkBase<Derived>
     /**
      * @brief Thread-aware allocation for a specific chunk.
      */
-    void alloc_chunk(this Derived& self, IndType index, int thr_rank)
+    void alloc_chunk(this Derived& self, IndexType index, int thr_rank)
     {
         const int chunk_index = self.chunk_index_of(index);
         // See alloc_chunk(index) above: deliberately no dirty-marking.
@@ -104,7 +104,7 @@ class SecondValueArrayBase : public ArrayChunkBase<Derived>
     ///        pending candidates, drain the deferred ops, then grow or shrink
     ///        chunk_list_ (with its dirty bitset and the manager's counters).
     ///        The variant's resize() materialises or seeds the new chunks.
-    void resize_common(this Derived& self, IndType newsz)
+    void resize_common(this Derived& self, IndexType newsz)
     {
         // Drain deferred ops on the CURRENT chunks while chunk_count, chunk_list_ and the dirty
         // bitset still have the OLD size (after chunk_count grows, is_chunk_dirty(j) would read
@@ -120,7 +120,7 @@ class SecondValueArrayBase : public ArrayChunkBase<Derived>
         // &chunk_list_[j] pointers that a reallocation would leave dangling. Needed in non-OMP
         // too, where the sequential compression path also queues chunks. This pass queues
         // nothing, so afterwards every list is empty and every dedup flag 0 -- the
-        // precondition of zero_any::Proxy::resize_tab_is_int(array_id, ...).
+        // precondition of zero_any::Proxy::resize_array_is_int(array_id, ...).
         if constexpr (chunk_config::use_fast_block_compression ||
                       (build_config::not_threaded && is_zero_any_family_v<ChunkType>))
         {
@@ -152,7 +152,7 @@ class SecondValueArrayBase : public ArrayChunkBase<Derived>
             self.Base::reallocate_dirty_bitset(old_chunk_count, self.chunk_count_);
 
             // Fewer chunks alive: so is the count the compression threshold and reuse budget use.
-            ManagerType::increm_somme_chunk_create(self.chunk_count_ - old_chunk_count);
+            ManagerType::inc_total_chunk_create(self.chunk_count_ - old_chunk_count);
             ManagerType::compute_size_buffer_reuse();
             ManagerType::compute_size_max_number_of_chunk_to_check_compress();
             return;
@@ -166,7 +166,7 @@ class SecondValueArrayBase : public ArrayChunkBase<Derived>
         self.chunk_list_.resize(self.chunk_count_);
         self.Base::reallocate_dirty_bitset(old_chunk_count, self.chunk_count_);
 
-        ManagerType::increm_somme_chunk_create(self.chunk_count_ - old_chunk_count);
+        ManagerType::inc_total_chunk_create(self.chunk_count_ - old_chunk_count);
         ManagerType::compute_size_buffer_reuse();
         ManagerType::compute_size_max_number_of_chunk_to_check_compress();
         // An array built empty (the default) only becomes worth its own slabs

@@ -65,7 +65,7 @@ name in the model stands for one place in the source, with the same memory order
 | `hard_inflight`, `stealing_inflight`, `must_defer_write()`, `is_stealing()` | `compression_manager.h`: `hard_inflight_`, `stealing_inflight_`, `must_defer_write()`, `is_hard_compression_inflight()` |
 | `compressor_start()`, `compressor_finish()`, `heavy_barrier()` | `compression_manager_inline.h`: `start()`, `finish()`; `dekker::heavy_barrier()` |
 | `mark`, `steal_mark()`, `steal_marked()`, `steal_unmark()` | `chunk_base.h`: `steal_mark_` and its three verbs |
-| `values`, `values_load()`, `cas_install()`, `steal()` | `chunk_base.h`: `values`, `values_load()`, `compare_and_swap_gen()`; `zero_any_chunk.h`: `try_mark_cst_and_get_old()` |
+| `values`, `values_load()`, `cas_install()`, `steal()` | `chunk_base.h`: `values`, `values_load()`, `compare_and_swap_gen()`; `zero_any_chunk.h`: `try_mark_const_and_get_old()` |
 | `materialise()`, the scan, the element store | `zero_any_chunk_inline.h`: `create_value()`, `wait_before_materialise()`, `fill_list_to_compress()`; `relaxed_element.h` |
 | `writer()` | `proxy_base_inline.h`: `write_with_optional_lock_impl()` |
 
@@ -189,8 +189,8 @@ that against a compression pass that holds the same chunk in its candidate list.
 reduced to two words, `values` (the first constant, two second-value slots, or a buffer) and
 `meta` (the type table and the slot, a plain variable: the checker reports a race on it), and a
 steal mark. The pass is `make_block_compression` as the source runs it: the three loads of
-`fill_list_to_compress` (`is_not_cst_val1`, `is_cst_val2`, the scan), then `block_clear_common`:
-the metadata is written **before** `try_mark_cst_and_get_old`'s CAS, and a failed CAS -- the chunk
+`fill_list_to_compress` (`is_not_const_val1`, `is_const_val2`, the scan), then `block_clear_common`:
+the metadata is written **before** `try_mark_const_and_get_old`'s CAS, and a failed CAS -- the chunk
 is already at a constant -- re-synchronises `values` from the metadata (the "critical re-sync").
 Three properties are asserted after the joins: **P1**, the switch the writer made is what the
 chunk holds; **P2**, `values` and `meta` agree; **P3**, the pass frees a buffer only and a buffer
@@ -234,7 +234,7 @@ read sections and the buffer's free are checked as in section 6.
 | `read_element()` | `internal/chunk_base_inline.h` `element_at_unguarded(offset, slot)`, `read_block()`, `read_block_or_constant()`; `internal/proxy_base_inline.h` `read_values_at()`; `pattern_chunk.h` `Chunk::motif_offset()` |
 | `writer()` | `internal/zero_any_chunk_inline.h` `create_value()`, the motif branch |
 | `pass()`, a motif | `internal/pattern_chunk_inline.h` `block_clear_motif()` |
-| `pass()`, a constant | `internal/second_value_chunk_base_inline.h` `block_clear_common()` (`reset_release()`); `internal/zero_any_chunk_inline.h` `find_or_set_ind_cst_val2_release()` |
+| `pass()`, a constant | `internal/second_value_chunk_base_inline.h` `block_clear_common()` (`reset_release()`); `internal/zero_any_chunk_inline.h` `find_or_set_idx_const_val2_release()` |
 
 | case | expected | verdict | executions |
 |---|---|---|---|
@@ -288,7 +288,7 @@ the compressor's wait is bounded (`CHUNK_COMPRESS_MAX_YIELDS`, 10,000 yields of 
 not a deadlock, but a stall of both threads for that whole budget, after which the pass is
 abandoned (the gate counter of aborts on an overly long wait, in the `CHUNK_STATS` report, counts these). It needs a
 chunk that is at a constant while sitting in a candidate list -- the case `fill_list_to_compress()`
-guards against with `is_not_cst_val1()` -- so it is rare, not impossible.
+guards against with `is_not_const_val1()` -- so it is rare, not impossible.
 
 The fix follows from the handshake itself: a fast-path writer holds its flag and has passed
 check no. 2, so a mark it sees now belongs to a compressor that is **parked** on that flag;
@@ -391,7 +391,7 @@ of the in-place switch's handshake -- the look at the mark, the window, the full
 the look at the mark before the announce -- and P1, P2 and P3 still hold; only the stronger isolation
 property of `STRICT_SCAN` notices. The reason is in two lines of the source. The writer switches
 only if `values` is not a buffer (`materialised()`), and the pass only ever changes `values` from
-a buffer to a constant, by a CAS (`try_mark_cst_and_get_old`): the two never act on the same
+a buffer to a constant, by a CAS (`try_mark_const_and_get_old`): the two never act on the same
 state, and what one publishes the other acquires. A pass that lists a chunk on a stale view -- it
 loaded the first constant at the start, the writer switched, it loaded the second -- clears it to
 the constant it scanned, which is the one the writer installed: the CAS finds a constant, returns
@@ -415,7 +415,7 @@ future caller that does not own the whole chunk knows what it takes.
 ### 8.8 F6: a chunk made constant during a pass's hand-back was never queued (fixed)
 
 The model is `formal/queue_handback.c`; it checks a protocol, not a memory ordering: the "queued"
-flag of a chunk (`tab_is_inside_chunk_list_to_compress`) and the pass's mark. A pass hands each
+flag of a chunk (`array_is_inside_chunk_list_to_compress`) and the pass's mark. A pass hands each
 candidate back with `steal_unmark()`, then resets its flag (the end of `make_block_compression()`;
 the order is kept on purpose: once the flag is down another pass may queue and mark the chunk,
 and a late unmark would erase its claim). It used to reset the flag to 0. Between the two, a
@@ -504,7 +504,7 @@ one chunk with the same constant each store their half, then load the other's ed
 store-buffering shape, which C11 relaxed, x86-TSO and AArch64 all allow. Both read the old
 edge, neither queues, and a uniform chunk stays materialised. The check builds' audit counted
 it on Milan once the partial-span hole of the aggregates was fixed: 6 to 52 blocks per
-`shrink_bench` run at 16 to 128 threads, all on `tab1` and `tab2` (`double`, filled by
+`shrink_bench` run at 16 to 128 threads, all on `arr1` and `arr2` (`double`, filled by
 `fill_range_mt()` with 0 or the second value), none on the element types without the filter.
 The model's chunk has 4 elements; it found the hole at once, and a native run of it on x86 hits
 it in a few hundred thousand tries.

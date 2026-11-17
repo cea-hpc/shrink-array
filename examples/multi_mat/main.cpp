@@ -51,7 +51,7 @@
 #include "config.h"       // multi_mat::max_threads, embedded_compression
 #include "MultiMatAlgo.h" // MultiMatAlgo
 #include "ComputeLoops.h" // Simu::compute_loops, the template main() instantiates
-#include "Containers.h"   // VectChunk
+#include "Containers.h"   // MatZeroArray
 #include "Dispatch.h"     // Dispatch
 #include "Simu.h"         // Simu
 
@@ -67,10 +67,10 @@ double convert_memory(double memory_value)
     const double kilobytes = memory_value * byte_to_kb;
     const double megabytes = kilobytes * kb_to_mb;
 
-    if (std::ofstream fichier("memory_mo.txt"); fichier.is_open())
+    if (std::ofstream file("memory_mo.txt"); file.is_open())
     {
-        fichier << megabytes;
-        fichier.close();
+        file << megabytes;
+        file.close();
     }
     else
     {
@@ -89,16 +89,16 @@ Dispatch dispatch;
 
 void Simu::create_tabs()
 {
-    for (auto& tab : tabs)
+    for (auto& arr : tabs)
     {
-        tab.create(nbmat, mesh_size);
+        arr.create(n_materials, mesh_size);
     }
-    frac.create(nbmat, mesh_size);
+    frac.create(n_materials, mesh_size);
 }
 
-int Simu::get_nbmat() const
+int Simu::get_n_materials() const
 {
-    return nbmat;
+    return n_materials;
 }
 
 bool Simu::is_verbose() const
@@ -159,7 +159,7 @@ try
 
     simu.input_data();
 
-    const int nbmat = simu.get_nbmat();
+    const int n_materials = simu.get_n_materials();
 
     MultiMatAlgo mm_algo;
 
@@ -171,7 +171,7 @@ try
 
     std::println("\nCreate array :");
 
-    dispatch.create(nbmat);
+    dispatch.create(n_materials);
     dispatch.set(simu.get_dis());
     simu.create_tabs();
 
@@ -195,10 +195,10 @@ try
     // end).
     const std::function<void(bool)> lbd_stats_chunk = [&](bool only_first_chunk)
     {
-        mm_algo.loop(0, nbmat,
+        mm_algo.loop(0, n_materials,
                      [&](int& mat, const auto& get_mat_vec, const auto&)
                      {
-                         const auto& tab0_ind = get_mat_vec(simu.get_tabs(0));
+                         const auto& arr0_idx = get_mat_vec(simu.get_tabs(0));
 
                          std::println("Material : {}", mat);
 
@@ -206,14 +206,14 @@ try
                          {
                              have_chunk = true;
 
-                             using CV = std::remove_reference_t<decltype(tab0_ind)>;
+                             using CV = std::remove_reference_t<decltype(arr0_idx)>;
                              using V  = std::remove_const_t<CV>;
 
-                             using VecChunkReal = VectChunk<double>;
+                             using VecChunkReal = MatZeroArray<double>;
 
                              if constexpr (std::is_same_v<V, VecChunkReal>)
                              {
-                                 const double sz0 = only_first_chunk ? tab0_ind.stats_seq() : tab0_ind.stats();
+                                 const double sz0 = only_first_chunk ? arr0_idx.stats_seq() : arr0_idx.stats();
 
                                  std::println("  Chunk filling rate : {:.2f}%", sz0);
 
@@ -221,15 +221,15 @@ try
                                  // interface chunks should be materialised, the
                                  // interior ones are compressed to 1 and the empty
                                  // ones to 0.
-                                 const auto&  frac_ind = get_mat_vec(simu.get_frac());
-                                 const double szf      = only_first_chunk ? frac_ind.stats_seq() : frac_ind.stats();
+                                 const auto&  frac_idx = get_mat_vec(simu.get_frac());
+                                 const double szf      = only_first_chunk ? frac_idx.stats_seq() : frac_idx.stats();
 
                                  std::println("  Fraction chunk filling rate (zero_one_value) : {:.2f}%", szf);
                              }
 
                              if (only_first_chunk)
                              {
-                                 mat = nbmat;
+                                 mat = n_materials;
                              }
                          }
 
@@ -239,7 +239,7 @@ try
 #pragma omp parallel for reduction(+ : sum)
                              for (int k = 0; k < mesh_size; ++k)
                              {
-                                 if (tab0_ind[k] != 0)
+                                 if (arr0_idx[k] != 0)
                                      sum++;
                              }
                              const double sz = static_cast<double>(sum) / static_cast<double>(mesh_size) * 100.;

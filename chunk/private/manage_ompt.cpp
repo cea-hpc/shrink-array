@@ -64,7 +64,7 @@
     // Directive, like type_state_registry.cpp's: a std-alloc build does not put
     // fast_allocators/public on the include path at all.
     #if !CHUNK_OPT_STD_ALLOC
-        #include "fast_allocators/internal/static_const_array.h" // StaticConstArray::clear_info_free_elt
+        #include "fast_allocators/internal/static_const_array.h" // StaticConstArray::clear_info_free_elem
     #endif
 
 /**
@@ -341,7 +341,7 @@ void flush_allocator_free_batches()
     #if !CHUNK_OPT_STD_ALLOC
     if (!CHUNK_PMP_IN_PARALLEL_REGION)
     {
-        fast_alloc::StaticConstArray::clear_info_free_elt();
+        fast_alloc::StaticConstArray::clear_info_free_elem();
     }
     #endif
 }

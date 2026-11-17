@@ -60,7 +60,7 @@ constexpr int get_array_id_helper(const ProxyT& proxy, Key array_ptr) noexcept
  * @details It stores ONLY the location of the write (chunk, index, logical
  *          array), the geometry frozen at enqueue, and, in the derived
  *          contexts, the operand / operation. It does NOT store the values
- *          pointer (reloaded from the chunk at replay), second_value / ind /
+ *          pointer (reloaded from the chunk at replay), second_value / idx /
  *          inf_array (recomputed at replay), a Proxy instance (rebuilt if
  *          needed) or any cached compression metadata: a deferred write never
  *          uses stale state.
@@ -72,7 +72,7 @@ struct BaseArithmeticContext
     /// @param prox Proxy the context is built from.
     /// @param array_ptr Owning array, stored in ptr_on_array and used to compute array_id.
     BaseArithmeticContext(const ProxyT& prox, ArrayKey<ChunkT> array_ptr)
-        : num(prox.get_num())
+        : elem_offset(prox.get_elem_offset())
         , chunk(prox.get_chunk())
         , chunk_index(prox.get_chunk_index())
         , array_id(get_array_id_helper(prox, array_ptr))
@@ -95,7 +95,7 @@ struct BaseArithmeticContext
     BaseArithmeticContext(BaseArithmeticContext&&)                 = delete;
     BaseArithmeticContext& operator=(BaseArithmeticContext&&)      = delete;
 
-    int              num;          ///< index of the element in its chunk
+    int              elem_offset;  ///< index of the element in its chunk
     ChunkT&          chunk;        ///< the chunk written
     int              chunk_index;  ///< index of the chunk in its array
     int              array_id;     ///< logical array index

@@ -26,7 +26,7 @@
 
 #include <cstdint>     // std::uint64_t (bench_mask_hash)
 #include <type_traits> // std::conditional_t
-#include <vector>      // std::vector<bool>: tab_mask in the baseline
+#include <vector>      // std::vector<bool>: array_mask in the baseline
 
 #include "baseline_vector.h" // BaselineVector: the std::vector baseline, zeroed in parallel
 #include "bench_prelude.h"   // Int, ComplexDouble, chunk_config::
@@ -38,8 +38,8 @@
 // top of the std::vector fallback they include. Also what drags in the
 // zero::Array* definitions the alias below selects between.
 #include "chunk/range_ops.h"     // the bulk range API and the zero::Array* definitions (see above)
-#include "chunk/bit_array.h"     // tab_bool_bits, tab_mask: bools packed 8 per byte
-#include "chunk/pattern_array.h" // pattern::Array: tab_conn in the zero_one_value and zero_any builds
+#include "chunk/bit_array.h"     // array_bool_bits, array_mask: bools packed 8 per byte
+#include "chunk/pattern_array.h" // pattern::Array: array_conn in the zero_one_value and zero_any builds
 
 namespace shrink_array
 {
@@ -80,7 +80,7 @@ using Array = shrink_array::ActiveArray<T>;
 // The workload's arrays and the values it fills them with.
 //
 // Shared state because the bench phases live in their own translation units:
-// a phase that writes tab1..tab_ulong has to be handed them, and handing them
+// a phase that writes arr1..array_ulong has to be handed them, and handing them
 // over as a struct of REFERENCES keeps the extracted phases ORDINARY FUNCTIONS.
 // A template over the array types would be re-instantiated in every caller and
 // buy nothing.
@@ -115,7 +115,7 @@ inline constexpr ComplexDouble other_second_value_c = std::complex<double>(10., 
 inline constexpr ComplexDouble zero_complex = std::complex<double>(0., 0.);
 /// @}
 
-/// @brief What main() declares tab_bool as. A shrink build uses a real
+/// @brief What main() declares array_bool as. A shrink build uses a real
 ///        Array<bool>; the std::vector baseline uses short, because
 ///        std::vector<bool>'s proxy is useless here. The asymmetry predates the
 ///        split -- this alias just names it so BenchArrays can hold a reference.
@@ -123,30 +123,30 @@ using BenchBoolArray =
     std::conditional_t<chunk_config::is_shrink_enabled, Array<bool>, shrink_array::BaselineVector<short>>;
 
 /**
- * @brief What main() declares tab_bool_bits as: tab_bool's twin, written with
+ * @brief What main() declares array_bool_bits as: array_bool's twin, written with
  *        the same values at the same places, in a bit-packed container.
  *
  * @details The two bool containers side by side in ONE run, on the same
  *          workload -- memory (chunk filling rate, pools) and write cost:
  *            - zero_one_value builds: BitArray (bit.h), 8 bools per byte in a
  *              materialised chunk, one atomic 64-bit read-modify-write per
- *              write; tab_bool stays zero_one_value::Array<bool>, one byte per bool;
+ *              write; array_bool stays zero_one_value::Array<bool>, one byte per bool;
  *            - zero / zero_any builds: the variant's Array<bool>, i.e.
- *              tab_bool's own type -- BitArray is zero_one_value's machinery;
- *            - the std::vector baseline: std::vector<short>, as tab_bool
+ *              array_bool's own type -- BitArray is zero_one_value's machinery;
+ *            - the std::vector baseline: std::vector<short>, as array_bool
  *              (std::vector<bool> would race: its element writes are not
  *              atomic, and the phases split the loops anywhere).
- *          Holding what tab_bool holds, it is checked against the same
- *          data_tab_bool_*.bin references (bench_checks.cpp) and never writes
- *          one of its own. Reads stay on tab_bool: the twin changes no value
+ *          Holding what array_bool holds, it is checked against the same
+ *          data_array_bool_*.bin references (bench_checks.cpp) and never writes
+ *          one of its own. Reads stay on array_bool: the twin changes no value
  *          the workload computes. In a dyn build an BitArray is born
- *          with chunks packed_bit_birth_factor times tab_bool's (bit.h); a
+ *          with chunks packed_bit_birth_factor times array_bool's (bit.h); a
  *          static build gives both the same chunk size.
  */
 using BenchBoolBitsArray =
     std::conditional_t<chunk_config::use_zero_one_value, shrink_array::BitArray<Int>, BenchBoolArray>;
 
-/// @brief Distinct levels tab_quant may take, hence the distinct second values
+/// @brief Distinct levels array_quant may take, hence the distinct second values
 ///        it registers.
 ///
 /// @details Exercises the registry at a scale the other arrays never reach:
@@ -159,7 +159,7 @@ using BenchBoolBitsArray =
 inline constexpr Int bench_double_bands = 200000;
 
 /**
- * @brief What tab_mask is: a large bool array of random masks and scattered
+ * @brief What array_mask is: a large bool array of random masks and scattered
  *        flags (bench_phase_mask.cpp), where bools are NOT mostly constant.
  *
  * @details The array a bit-packed container is for, and the one std::vector's
@@ -178,7 +178,7 @@ using BenchMaskArray =
                        std::conditional_t<chunk_config::is_shrink_enabled, Array<bool>, std::vector<bool>>>;
 
 /**
- * @brief What tab_conn is: the connectivity of a hexahedral mesh, the 8 node
+ * @brief What array_conn is: the connectivity of a hexahedral mesh, the 8 node
  *        numbers of each cell, cell after cell (bench_phase_conn.cpp) -- never
  *        uniform, yet a chunk of whole cells is the chunk before it plus a constant.
  *
@@ -194,18 +194,18 @@ using BenchConnArray = std::conditional_t<
     shrink_array::pattern::Array<int, Int>,
     std::conditional_t<chunk_config::use_zero, shrink_array::zero::Array<int, Int>, shrink_array::BaselineVector<int>>>;
 
-/// @brief Cells per row of tab_conn's mesh: a multiple of 32, so a chunk of up to
+/// @brief Cells per row of array_conn's mesh: a multiple of 32, so a chunk of up to
 ///        2048 elements that divides a row never spans two of them.
 inline constexpr Int bench_conn_nx = 256;
 
-/// @brief Elements per row of tab_conn: 8 nodes per cell.
+/// @brief Elements per row of array_conn: 8 nodes per cell.
 inline constexpr Int bench_conn_row = 8 * bench_conn_nx;
 
-/// @brief tab_conn's rows are in bench_conn_bands interleaved bands (row % bands):
+/// @brief array_conn's rows are in bench_conn_bands interleaved bands (row % bands):
 ///        iteration k renumbers band k % bands.
 inline constexpr Int bench_conn_bands = 16;
 
-/// @brief Element @p index of tab_conn: node (corner + @p rotation) % 8 of cell
+/// @brief Element @p index of array_conn: node (corner + @p rotation) % 8 of cell
 ///        index / 8, on a mesh of rows of bench_conn_nx cells and one layer;
 ///        @p layer = (nx + 1) * (rows + 1) is the node offset of the top face.
 [[nodiscard]] constexpr int bench_conn_value(Int index, Int layer, Int rotation) noexcept
@@ -218,7 +218,7 @@ inline constexpr Int bench_conn_bands = 16;
                             (layer * (corner >> 2)));
 }
 
-/// @brief The node rotation of row @p row of tab_conn after iteration @p iter
+/// @brief The node rotation of row @p row of array_conn after iteration @p iter
 ///        (-1: the initial fill): 1 when its band has been renumbered an odd
 ///        number of times.
 [[nodiscard]] constexpr Int bench_conn_rotation(Int row, Int iter) noexcept
@@ -227,16 +227,16 @@ inline constexpr Int bench_conn_bands = 16;
     return iter < band ? 0 : ((iter - band) / bench_conn_bands + 1) % 2;
 }
 
-/// @brief Segment of tab_mask with one kind of content: whole chunks at every
+/// @brief Segment of array_mask with one kind of content: whole chunks at every
 ///        geometry up to 4096, so a constant segment is constant chunks.
 inline constexpr Int bench_mask_segment = 4096;
 
-/// @brief Elements per block of the tab_mask phases: one 64-bit word of a
+/// @brief Elements per block of the array_mask phases: one 64-bit word of a
 ///        packed layout, written by one thread.
 inline constexpr Int bench_mask_block = 64;
 
 /// @brief A 64-bit mix (splitmix64's finaliser): the deterministic "random"
-///        of tab_mask -- integers only, so every build computes the same bits.
+///        of array_mask -- integers only, so every build computes the same bits.
 [[nodiscard]] constexpr std::uint64_t bench_mask_hash(std::uint64_t value) noexcept
 {
     value += 0x9E3779B97F4A7C15ull;
@@ -245,7 +245,7 @@ inline constexpr Int bench_mask_block = 64;
     return value ^ (value >> 31);
 }
 
-/// @brief What a segment of tab_mask holds.
+/// @brief What a segment of array_mask holds.
 enum class BenchMaskKind
 {
     all_false, ///< 30 %: a constant chunk -- compressible
@@ -281,7 +281,7 @@ enum class BenchMaskKind
     return BenchMaskKind::scattered;
 }
 
-/// @brief The starting value of tab_mask[@p index].
+/// @brief The starting value of array_mask[@p index].
 [[nodiscard]] constexpr bool bench_mask_initial(Int index) noexcept
 {
     const auto hash = bench_mask_hash(static_cast<std::uint64_t>(index));
@@ -306,42 +306,42 @@ enum class BenchMaskKind
  * @note References, not values: the arrays stay owned by main(), which builds
  *       and destroys them. This is a handle onto them, cheap to pass and
  *       impossible to copy by accident.
- * @warning tab_bool's and tab_bool_bits' types vary by build -- see
+ * @warning array_bool's and array_bool_bits' types vary by build -- see
  *          BenchBoolArray and BenchBoolBitsArray above.
  */
 struct BenchArrays
 {
-    Array<double>& tab1;
-    Array<double>& tab2;
-    Array<double>& tab3;
-    Array<double>& tab4;
-    Array<double>& tab5;
+    Array<double>& arr1;
+    Array<double>& arr2;
+    Array<double>& arr3;
+    Array<double>& arr4;
+    Array<double>& arr5;
 
-    Array<int>&           tab_int;
-    BenchBoolArray&       tab_bool;
-    BenchBoolBitsArray&   tab_bool_bits; ///< tab_bool's twin, bit-packed in a zero_one_value build
-    Array<ComplexDouble>& tab_complex;
-    Array<float>&         tab_float;
-    Array<short>&         tab_short;
-    Array<unsigned char>& tab_char;
-    Array<long>&          tab_long;
-    Array<unsigned long>& tab_ulong;
-    Array<double>&        tab_quant; ///< quantised: up to bench_double_bands distinct second values
-    Array<Point3>&        tab_point; ///< an aggregate element: three doubles (bench_struct.h)
-    Array<Cell>&          tab_cell;  ///< an aggregate element: an Int and a float
+    Array<int>&           array_int;
+    BenchBoolArray&       array_bool;
+    BenchBoolBitsArray&   array_bool_bits; ///< array_bool's twin, bit-packed in a zero_one_value build
+    Array<ComplexDouble>& array_complex;
+    Array<float>&         array_float;
+    Array<short>&         array_short;
+    Array<unsigned char>& array_char;
+    Array<long>&          array_long;
+    Array<unsigned long>& array_ulong;
+    Array<double>&        array_quant; ///< quantised: up to bench_double_bands distinct second values
+    Array<Point3>&        array_point; ///< an aggregate element: three doubles (bench_struct.h)
+    Array<Cell>&          array_cell;  ///< an aggregate element: an Int and a float
     BenchMaskArray&
-        tab_mask; ///< mask_scale * sz bools (--mask_scale, default 1/32): masks and flags (bench_phase_mask.cpp)
-    BenchConnArray& tab_conn; ///< a mesh connectivity, about sz ints, whole rows (bench_phase_conn.cpp)
+        array_mask; ///< mask_scale * sz bools (--mask_scale, default 1/32): masks and flags (bench_phase_mask.cpp)
+    BenchConnArray& array_conn; ///< a mesh connectivity, about sz ints, whole rows (bench_phase_conn.cpp)
 
     Int sz       = 0; ///< element count of the double arrays (others are sz, 2*sz or sz/2)
     Int interval = 0; ///< the workload's stride, get_size_interval()
-    /// false under --no_struct: tab_point and tab_cell are of size 1 and every
+    /// false under --no_struct: array_point and array_cell are of size 1 and every
     /// phase, check, stat and checksum of theirs is skipped.
     bool with_struct = true;
-    /// false under --no_mask: tab_mask is of size 1 and its phases, check and
+    /// false under --no_mask: array_mask is of size 1 and its phases, check and
     /// compression are skipped.
     bool with_mask = true;
-    /// false under --no_conn: tab_conn is of size 1 and its phases, check and
+    /// false under --no_conn: array_conn is of size 1 and its phases, check and
     /// compression are skipped.
     bool with_conn = true;
 };

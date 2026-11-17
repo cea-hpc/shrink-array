@@ -391,7 +391,7 @@ int verify_mixed(const char* label, const char* step, const Arr& arr, int which,
     for (long i = 0; i < count; ++i)
     {
         const double want = pattern(which, i, chunk_sz);
-        const double got  = arr[static_cast<Arr::IndType>(i)];
+        const double got  = arr[static_cast<Arr::IndexType>(i)];
         if (got != want)
         {
             if (nbad < 5)
@@ -507,10 +507,10 @@ int run(int argc, char** argv)
     if (argc > 2 && std::string_view(argv[1]) == "--size")
     {
         const auto size = shrink_array::arg_number<unsigned int>(argv[2], 0u, "size");
-        if (!build_config::chunk_dynamic || !is_valid_chunk_size(size) || size > cst_buffer_size / 2)
+        if (!build_config::chunk_dynamic || !is_valid_chunk_size(size) || size > const_buffer_size / 2)
         {
             println("index64_validation: --size {}: a dynamic build and a valid size up to {}", size,
-                    cst_buffer_size / 2);
+                    const_buffer_size / 2);
             return 1;
         }
         set_active_chunk_size(size);

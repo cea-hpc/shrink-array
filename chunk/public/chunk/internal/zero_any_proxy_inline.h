@@ -37,7 +37,7 @@
 #include "chunk/internal/deferred_op_pool.h"            // pool_new_ctx
 #include "chunk/internal/bad_ptr_check.h"               // CHUNK_CHECK_VALUES_PTR (check builds)
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/chunk_stats.h"                 // increm_chunk_* (CHUNK_STATS)
+#include "chunk/internal/chunk_stats.h"                 // inc_chunk_* (CHUNK_STATS)
 #include "chunk/internal/relaxed_element.h"             // store_element_relaxed (the deferred replay)
 #include "chunk/internal/chunk_size_policy.h"           // DynChunkSizeGuard, set_thread_chunk_size
 #include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
@@ -50,7 +50,7 @@
  * @brief Out-of-line definitions of zero_any::ProxyImpl and zero_any::ProxyFastCompPolicy.
  *
  * zero_any stores TWO constants: a global `first_value` and a per-chunk
- * `second_value`. A chunk is cst_val1, cst_val2, or materialised on the heap;
+ * `second_value`. A chunk is const_val1, const_val2, or materialised on the heap;
  * this file moves between those states without losing a concurrent write:
  * metadata arming (set_info_on_chunk() and siblings), compression driving
  * (trigger_compression_if_needed(), perform_compression()), materialisation
@@ -95,13 +95,13 @@ inline constexpr int replay_retry_spin = 64;
  * @param retry_count the loop's counter, starting at 0
  * @param where       the loop and path, for the message
  * @param chunk       chunk being written, for the message
- * @param num         element offset, for the message
+ * @param elem_offset         element offset, for the message
  * @param loc         the caller (defaulted: the retry site, not this function)
  */
 inline void replay_retry(int&                        retry_count,
                          const char*                 where,
                          const void*                 chunk,
-                         int                         num,
+                         int                         elem_offset,
                          const std::source_location& loc = std::source_location::current()) noexcept
 {
     if (retry_count <= replay_retry_cap)
@@ -112,8 +112,8 @@ inline void replay_retry(int&                        retry_count,
     {
         if constexpr (build_config::any_check)
         {
-            invariant_failed(loc, "{}: retry > {} on chunk={} num={} -- pathological contention?", where,
-                             replay_retry_cap, chunk, num);
+            invariant_failed(loc, "{}: retry > {} on chunk={} elem_offset={} -- pathological contention?", where,
+                             replay_retry_cap, chunk, elem_offset);
         }
         else
         {
@@ -121,9 +121,10 @@ inline void replay_retry(int&                        retry_count,
             if (!warned.exchange(true, std::memory_order_relaxed))
             {
                 CHUNK_LOG(warn, drain,
-                          "{}: deferred replay retried more than {} times on chunk={} num={} (still retrying; reported "
+                          "{}: deferred replay retried more than {} times on chunk={} elem_offset={} (still retrying; "
+                          "reported "
                           "once per process)",
-                          where, replay_retry_cap, chunk, num);
+                          where, replay_retry_cap, chunk, elem_offset);
             }
         }
     }
@@ -146,10 +147,10 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::set_info_on_chunk() noexcept
 
     Base::set_ptr_is_inside_chunk_list_to_compress();
 
-    ptr_type_cst_ = &tab_type_cst_val[array_id_][chunk_index_];
+    ptr_type_const_ = &array_type_const_val[array_id_][chunk_index_];
     if constexpr (is_not_bool)
     {
-        BaseSpec::ptr_second_value_ = BaseSpec::get_tab_second_value(array_id_, chunk_index_);
+        BaseSpec::ptr_second_value_ = BaseSpec::get_array_second_value(array_id_, chunk_index_);
     }
 }
 
@@ -164,7 +165,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::set_ptr_second_value() noexcept
 {
     if constexpr (is_not_bool)
     {
-        BaseSpec::ptr_second_value_ = BaseSpec::get_tab_second_value(array_id_, chunk_index_);
+        BaseSpec::ptr_second_value_ = BaseSpec::get_array_second_value(array_id_, chunk_index_);
     }
 }
 
@@ -208,48 +209,48 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::mark_for_compression_if_needed_wit
     }
 }
 
-// Grow the three per-tab tables in lockstep. They are indexed by the same
+// Grow the three per-array tables in lockstep. They are indexed by the same
 // array_id, so they must always share the same outer length.
 template <typename T, typename Derived, typename ChunkT>
-void zero_any::ProxyImpl<T, Derived, ChunkT>::resize_tab_is_int(int array_count)
+void zero_any::ProxyImpl<T, Derived, ChunkT>::resize_array_is_int(int array_count)
 {
     BaseSpec::resize(array_count);
-    tab_type_cst_val.resize(array_count);
-    Base::tab_is_inside_chunk_list_to_compress.resize(array_count);
+    array_type_const_val.resize(array_count);
+    Base::array_is_inside_chunk_list_to_compress.resize(array_count);
 }
 
-// Grow one tab's per-chunk tables. BaseSpec::resize() and tab_type_cst_val keep
-// existing entries, but tab_is_inside_chunk_list_to_compress is REALLOCATED:
+// Grow one array's per-chunk tables. BaseSpec::resize() and array_type_const_val keep
+// existing entries, but array_is_inside_chunk_list_to_compress is REALLOCATED:
 // every "queued for compression" flag goes back to 0. Safe only if no chunk of
-// this tab is queued -- a queued chunk with a cleared flag could be queued twice
+// this array is queued -- a queued chunk with a cleared flag could be queued twice
 // (pointing into the chunk_list_ just reallocated).
 // SecondValueArrayBase::resize_common() guarantees it by flushing the deferred ops
 // (whose replay can queue chunks) BEFORE the compression pass that empties every
 // list. Do not swap those two steps. Asserted below (flag 1 <=> entry in a list).
 template <typename T, typename Derived, typename ChunkT>
-void zero_any::ProxyImpl<T, Derived, ChunkT>::resize_tab_is_int(int array_id, int chunk_count_old, int chunk_count)
+void zero_any::ProxyImpl<T, Derived, ChunkT>::resize_array_is_int(int array_id, int chunk_count_old, int chunk_count)
 {
     BaseSpec::resize(array_id, chunk_count_old, chunk_count);
-    // Check builds: no chunk of this tab may still be queued (see above).
+    // Check builds: no chunk of this array may still be queued (see above).
     if constexpr (build_config::any_check)
     {
-        const auto& row = Base::tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(array_id)];
+        const auto& row = Base::array_is_inside_chunk_list_to_compress[static_cast<std::size_t>(array_id)];
         for (std::size_t j = 0; j < row.size(); ++j)
         {
             if (row[j].load(std::memory_order_relaxed) != 0) [[unlikely]]
             {
-                CHUNK_INVARIANT_FAILED("resize_tab_is_int: tab {} chunk {} still queued for compression while its "
+                CHUNK_INVARIANT_FAILED("resize_array_is_int: array {} chunk {} still queued for compression while its "
                                        "flag row is reallocated ({} -> {} chunks)",
                                        array_id, j, chunk_count_old, chunk_count);
             }
         }
     }
-    // Every flag 0; the new type-of-constant entries CstSlot::first. Both
+    // Every flag 0; the new type-of-constant entries ConstSlot::first. Both
     // constructed by a team for a large array (parallel_storage_init).
-    Base::tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(array_id)] =
+    Base::array_is_inside_chunk_list_to_compress[static_cast<std::size_t>(array_id)] =
         parallel_storage_init::make_filled<std::atomic<char>>(static_cast<std::size_t>(chunk_count), char{0});
-    parallel_storage_init::resize_filled(tab_type_cst_val[array_id], static_cast<std::size_t>(chunk_count),
-                                         CstSlot::first);
+    parallel_storage_init::resize_filled(array_type_const_val[array_id], static_cast<std::size_t>(chunk_count),
+                                         ConstSlot::first);
 }
 
 /**
@@ -264,13 +265,13 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::resize_tab_is_int(int array_id, in
 template <typename T, typename Derived, typename ChunkT>
 void zero_any::ProxyImpl<T, Derived, ChunkT>::trigger_compression_if_needed(int thr_rank)
 {
-    const auto& vec_to_compress_potantially = Manager::get_zero_any_candidates(thr_rank);
+    const auto& vec_to_compress_potentially = Manager::get_zero_any_candidates(thr_rank);
 
     if constexpr (build_config::threaded)
     {
         const int szm = Manager::get_size_max_number_of_chunk_to_check_compress();
 
-        const auto sz = static_cast<int>(vec_to_compress_potantially.size());
+        const auto sz = static_cast<int>(vec_to_compress_potentially.size());
 
         if (Base::should_trigger_compression(sz, szm))
         {
@@ -302,9 +303,9 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::perform_compression() noexcept
 
     const int thr_rank = get_thr_rank_fast();
 
-    const auto& vec_to_compress_potantially = Manager::get_zero_any_candidates(thr_rank);
+    const auto& vec_to_compress_potentially = Manager::get_zero_any_candidates(thr_rank);
 
-    const auto sz_before = static_cast<int>(vec_to_compress_potantially.size());
+    const auto sz_before = static_cast<int>(vec_to_compress_potentially.size());
 
     if (const int sz_threshold = szm / 2; sz_before > sz_threshold)
     {
@@ -334,7 +335,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::perform_compression() noexcept
     }
 }
 
-// Materialises a constant chunk onto the heap. is_cst_val2() is sampled BEFORE
+// Materialises a constant chunk onto the heap. is_const_val2() is sampled BEFORE
 // set_info_on_chunk(); the arming sits between the sample and create_value().
 template <typename T, typename Derived, typename ChunkT>
 void zero_any::ProxyImpl<T, Derived, ChunkT>::ensure_writable_storage()
@@ -354,7 +355,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::ensure_writable_storage()
         shrink_array::set_thread_chunk_size(this->chunk_size());
         shrink_array::set_thread_alloc_key(this->alloc_key());
     }
-    const bool is_val2 = is_cst_val2();
+    const bool is_val2 = is_const_val2();
 
     // The cached per-chunk pointers are armed here, never earlier. Under fast
     // block compression the write engine already armed array_id and the
@@ -363,7 +364,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::ensure_writable_storage()
     // and the second value are left -- set_info_on_chunk() redid both lookups.
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        ptr_type_cst_ = &tab_type_cst_val[array_id_][chunk_index_];
+        ptr_type_const_ = &array_type_const_val[array_id_][chunk_index_];
         set_ptr_second_value();
     }
     else
@@ -388,7 +389,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::ensure_writable_storage()
         {
             chunk_.create_value(true, BaseSpec::ptr_second_value_);
         }
-        else if (Base::is_cst_val1())
+        else if (Base::is_const_val1())
         {
             chunk_.create_value(false, BaseSpec::ptr_second_value_);
         }
@@ -399,7 +400,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::ensure_writable_storage()
         {
             chunk_.create_value_bool(true);
         }
-        else if (Base::is_cst_val1())
+        else if (Base::is_const_val1())
         {
             chunk_.create_value_bool(false);
         }
@@ -421,7 +422,7 @@ template <typename Derived, typename T, typename ChunkT, bool Enabled>
 void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::ensure_writable_storage_async(
     const Derived& proxy) const
 {
-    const bool is_val2 = proxy.is_cst_val2();
+    const bool is_val2 = proxy.is_const_val2();
 
     // THIS array's chunk-size pool: see ensure_writable_storage() above.
     if constexpr (build_config::chunk_dynamic)
@@ -436,7 +437,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::ensure_writable
         {
             this->chunk_.create_value(true, proxy.ptr_second_value_);
         }
-        else if (Base::is_cst_val1())
+        else if (Base::is_const_val1())
         {
             this->chunk_.create_value(false, proxy.ptr_second_value_);
         }
@@ -447,7 +448,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::ensure_writable
         {
             this->chunk_.create_value_bool(true);
         }
-        else if (Base::is_cst_val1())
+        else if (Base::is_const_val1())
         {
             this->chunk_.create_value_bool(false);
         }
@@ -459,7 +460,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::ensure_writable
  *
  * Three outcomes, cheapest first:
  *  -# the second value onto a chunk that already reads it back: no-op;
- *  -# from cst_val1 to the second value: materialise, then store;
+ *  -# from const_val1 to the second value: materialise, then store;
  *  -# otherwise materialise if still constant, then store.
  *
  * @param vals The chunk's values pointer, loaded by the caller inside the write
@@ -486,7 +487,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::perform_core_assignment(T* vals, I
         vals = chunk_.values_load();
     };
 
-    const bool is_cst2 = chunk_.is_cst_val2_ptr_of(vals);
+    const bool is_const2 = chunk_.is_const_val2_ptr_of(vals);
 
     if constexpr (has_motif_state_v<ChunkT>)
     {
@@ -498,7 +499,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::perform_core_assignment(T* vals, I
         {
             if constexpr (chunk_config::stats)
             {
-                increm_chunk_write<ChunkType>(value);
+                inc_chunk_write<ChunkType>(value);
             }
             materialise();
             Base::store_value_at(vals, value);
@@ -510,11 +511,11 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::perform_core_assignment(T* vals, I
     {
         if (same_value(value, static_cast<T>(BaseSpec::ptr_second_value_.get())))
         {
-            if (is_cst2 || same_value(Base::read_values_at(vals), static_cast<T>(BaseSpec::ptr_second_value_.get())))
+            if (is_const2 || same_value(Base::read_values_at(vals), static_cast<T>(BaseSpec::ptr_second_value_.get())))
             {
                 return;
             }
-            if (Base::is_cst_val1(vals))
+            if (Base::is_const_val1(vals))
             {
                 materialise();
 
@@ -526,11 +527,11 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::perform_core_assignment(T* vals, I
     }
     else if (value)
     {
-        if (is_cst2 || Base::read_values_at(vals))
+        if (is_const2 || Base::read_values_at(vals))
         {
             return;
         }
-        if (Base::is_cst_val1(vals))
+        if (Base::is_const_val1(vals))
         {
             materialise();
 
@@ -542,10 +543,10 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::perform_core_assignment(T* vals, I
 
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_write<ChunkType>(value);
+        inc_chunk_write<ChunkType>(value);
     }
 
-    if (is_cst2 || Base::is_cst_val1(vals))
+    if (is_const2 || Base::is_const_val1(vals))
     {
         materialise();
     }
@@ -560,7 +561,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::perform_core_assignment(T* vals, I
  * @brief Assignment body for non-bool element types.
  *
  * Arms the metadata the write engine has not, marks for compression, stores.
- * The second value is resolved first, for the cst_val2 early-out.
+ * The second value is resolved first, for the const_val2 early-out.
  *
  * @param value Value to assign.
  */
@@ -584,14 +585,14 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::handle_no_bool_assignment(this Der
         }
         self.set_ptr_second_value();
 
-        // Second value onto a cst_val2 chunk: nothing to do.
-        if (self.chunk_.is_cst_val2_ptr_of(vals) &&
+        // Second value onto a const_val2 chunk: nothing to do.
+        if (self.chunk_.is_const_val2_ptr_of(vals) &&
             same_value(value, static_cast<T>(self.BaseSpec::ptr_second_value_.get())))
         {
             return;
         }
 
-        self.ptr_type_cst_ = &tab_type_cst_val[self.array_id_][self.chunk_index_];
+        self.ptr_type_const_ = &array_type_const_val[self.array_id_][self.chunk_index_];
 
         self.mark_for_compression_if_needed(value, vals);
 
@@ -602,7 +603,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::handle_no_bool_assignment(this Der
 /**
  * @brief Assignment body for `T = bool`.
  *
- * As handle_no_bool_assignment(); for bool, cst_val2 means "all true".
+ * As handle_no_bool_assignment(); for bool, const_val2 means "all true".
  *
  * @param value Value to assign.
  */
@@ -622,12 +623,12 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::handle_bool_assignment(this Derive
             self.Base::set_ptr_is_inside_chunk_list_to_compress();
         }
 
-        if (self.chunk_.is_cst_val2_ptr_of(vals) && value)
+        if (self.chunk_.is_const_val2_ptr_of(vals) && value)
         {
             return;
         }
 
-        self.ptr_type_cst_ = &tab_type_cst_val[self.array_id_][self.chunk_index_];
+        self.ptr_type_const_ = &array_type_const_val[self.array_id_][self.chunk_index_];
 
         self.mark_for_compression_if_needed(value, vals);
 
@@ -635,7 +636,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::handle_bool_assignment(this Derive
     }
 }
 
-// Entry point of every assignment: early-out on first_value onto cst_val1, the
+// Entry point of every assignment: early-out on first_value onto const_val1, the
 // body through the write engine, a deferred op when the engine refuses. The
 // deferred body does not reuse handle_*_assignment: a replay cannot trust the
 // cached metadata, so it works off a fresh values pointer under the retry protocol.
@@ -644,7 +645,7 @@ template <typename U>
 T zero_any::ProxyImpl<T, Derived, ChunkT>::assign_impl(this Derived& self, InT<U> value) noexcept
 {
     self.check_not_stale();
-    if (self.Base::is_cst_val1_and_v_equal_first_value(value))
+    if (self.Base::is_const_val1_and_v_equal_first_value(value))
     {
         return value;
     }
@@ -677,9 +678,9 @@ T zero_any::ProxyImpl<T, Derived, ChunkT>::assign_impl(this Derived& self, InT<U
 
             auto lbd_equal_asynch = [ctx] // the operand lives in the context: no second copy in the closure
             {
-                auto&      chunk = ctx->chunk;
-                const int  num   = ctx->num;
-                const auto proxy = Base::template make_proxy_with_info<Derived>(ctx);
+                auto&      chunk       = ctx->chunk;
+                const int  elem_offset = ctx->elem_offset;
+                const auto proxy       = Base::template make_proxy_with_info<Derived>(ctx);
 
                 // The flusher's ambient chunk size is unrelated to THIS op's chunk:
                 // pin the frozen per-op geometry, restored on exit for the
@@ -690,16 +691,16 @@ T zero_any::ProxyImpl<T, Derived, ChunkT>::assign_impl(this Derived& self, InT<U
 
                 while (true)
                 {
-                    const bool is_cst1 = proxy.is_cst_val1();
-                    if (const bool is_cst2 = proxy.is_cst_val2(); is_cst1 || is_cst2)
+                    const bool is_const1 = proxy.is_const_val1();
+                    if (const bool is_const2 = proxy.is_const_val2(); is_const1 || is_const2)
                     {
                         if constexpr (is_not_bool)
                         {
-                            chunk.create_value(is_cst2, proxy.ptr_second_value_);
+                            chunk.create_value(is_const2, proxy.ptr_second_value_);
                         }
                         else
                         {
-                            chunk.create_value_bool(is_cst2);
+                            chunk.create_value_bool(is_const2);
                         }
                     }
 
@@ -709,7 +710,7 @@ T zero_any::ProxyImpl<T, Derived, ChunkT>::assign_impl(this Derived& self, InT<U
                     if (chunk.is_constant_ptr(values_before)) [[unlikely]]
                     {
                         internal::replay_retry(retry_count, "lbd_equal_asynch (pre-store)",
-                                               static_cast<const void*>(&chunk), num);
+                                               static_cast<const void*>(&chunk), elem_offset);
                         continue;
                     }
 
@@ -722,11 +723,12 @@ T zero_any::ProxyImpl<T, Derived, ChunkT>::assign_impl(this Derived& self, InT<U
                         // Catch an out-of-range index BEFORE it writes. Compare against
                         // proxy.chunk_size() (frozen at enqueue), NOT the static
                         // static_chunk_size, which is only the default in a dynamic build.
-                        if (const unsigned int csz_guard = proxy.chunk_size(); std::cmp_greater_equal(num, csz_guard))
+                        if (const unsigned int csz_guard = proxy.chunk_size();
+                            std::cmp_greater_equal(elem_offset, csz_guard))
                         {
-                            CHUNK_INVARIANT_FAILED("[deferred2A write] num OUT OF RANGE "
-                                                   "(num={}, chunk_size={}, chunk={})",
-                                                   num, csz_guard, &chunk);
+                            CHUNK_INVARIANT_FAILED("[deferred2A write] elem_offset OUT OF RANGE "
+                                                   "(elem_offset={}, chunk_size={}, chunk={})",
+                                                   elem_offset, csz_guard, &chunk);
                         }
 
                         CHUNK_CHECK_VALUES_PTR_C(values_before, "deferred2A.pre_store", &chunk);
@@ -734,16 +736,17 @@ T zero_any::ProxyImpl<T, Derived, ChunkT>::assign_impl(this Derived& self, InT<U
                         // Narrow-race re-check: a chunk (re)compressed since
                         // values_load() goes back through the retry loop instead of
                         // being written blind.
-                        if (proxy.is_cst_val1() || proxy.is_cst_val2()) [[unlikely]]
+                        if (proxy.is_const_val1() || proxy.is_const_val2()) [[unlikely]]
                         {
                             if (++retry_count > internal::replay_retry_cap)
                             {
-                                CHUNK_INVARIANT_FAILED("[deferred2A write] chunk keeps reverting to cst before "
-                                                       "store (chunk={}, num={}, values_before={}, cur_cst_val1={}, "
-                                                       "cur_values={})",
-                                                       &chunk, num, static_cast<const void*>(values_before),
-                                                       static_cast<const void*>(chunk.get_cst_val1()),
-                                                       static_cast<const void*>(chunk.values_load()));
+                                CHUNK_INVARIANT_FAILED(
+                                    "[deferred2A write] chunk keeps reverting to constant before "
+                                    "store (chunk={}, elem_offset={}, values_before={}, cur_const_val1={}, "
+                                    "cur_values={})",
+                                    &chunk, elem_offset, static_cast<const void*>(values_before),
+                                    static_cast<const void*>(chunk.get_const_val1()),
+                                    static_cast<const void*>(chunk.values_load()));
                             }
                             continue;
                         }
@@ -755,12 +758,12 @@ T zero_any::ProxyImpl<T, Derived, ChunkT>::assign_impl(this Derived& self, InT<U
                     // read this element meanwhile -- as the compound ops' replay does.
                     if constexpr (internal::relaxed_element_stores_v<ChunkT, T>)
                     {
-                        internal::store_element_relaxed(values_before + num, static_cast<T>(ctx->operand));
+                        internal::store_element_relaxed(values_before + elem_offset, static_cast<T>(ctx->operand));
                     }
                     else
                     {
                         // raw-read: deferred replay, after materialisation (as above)
-                        values_before[num] = static_cast<T>(ctx->operand);
+                        values_before[elem_offset] = static_cast<T>(ctx->operand);
                     }
                     Base::check_nan_written_async(ctx, static_cast<T>(ctx->operand));
 
@@ -769,35 +772,35 @@ T zero_any::ProxyImpl<T, Derived, ChunkT>::assign_impl(this Derived& self, InT<U
                     if (values_after != values_before) [[unlikely]]
                     {
                         internal::replay_retry(retry_count, "lbd_equal_asynch (post-store)",
-                                               static_cast<const void*>(&chunk), num);
+                                               static_cast<const void*>(&chunk), elem_offset);
                         continue;
                     }
 
                     // Diagnostic checks (any_check only).
                     if constexpr (build_config::any_check)
                     {
-                        if (proxy.is_cst_val1())
+                        if (proxy.is_const_val1())
                         {
-                            CHUNK_INVARIANT_FAILED("lbd_equal_asynch: is_cst_val1 TRUE after successful store! "
-                                                   "chunk={} num={} values_before={} values_after={}",
-                                                   &chunk, num, static_cast<const void*>(values_before),
+                            CHUNK_INVARIANT_FAILED("lbd_equal_asynch: is_const_val1 TRUE after successful store! "
+                                                   "chunk={} elem_offset={} values_before={} values_after={}",
+                                                   &chunk, elem_offset, static_cast<const void*>(values_before),
                                                    static_cast<const void*>(values_after));
                         }
-                        if (proxy.is_cst_val2())
+                        if (proxy.is_const_val2())
                         {
-                            CHUNK_INVARIANT_FAILED("lbd_equal_asynch: is_cst_val2 TRUE after successful store! "
-                                                   "chunk={} num={} values_before={} values_after={}",
-                                                   &chunk, num, static_cast<const void*>(values_before),
+                            CHUNK_INVARIANT_FAILED("lbd_equal_asynch: is_const_val2 TRUE after successful store! "
+                                                   "chunk={} elem_offset={} values_before={} values_after={}",
+                                                   &chunk, elem_offset, static_cast<const void*>(values_before),
                                                    static_cast<const void*>(values_after));
                         }
                         // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
-                        const InT<T> readback = values_after[num];
+                        const InT<T> readback = values_after[elem_offset];
                         const auto   expected = static_cast<T>(ctx->operand);
                         if (!same_value(static_cast<T>(readback), expected))
                         {
                             CHUNK_INVARIANT_FAILED("lbd_equal_asynch: readback mismatch after store! "
-                                                   "chunk={} num={} expected={} readback={}",
-                                                   &chunk, num, expected, readback);
+                                                   "chunk={} elem_offset={} expected={} readback={}",
+                                                   &chunk, elem_offset, expected, readback);
                         }
                     }
 
@@ -880,7 +883,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_simple_
         if (ctx->chunk.is_constant_ptr(values_before)) [[unlikely]]
         {
             internal::replay_retry(retry_count, "execute_simple_operation_async (pre-store)",
-                                   static_cast<const void*>(&ctx->chunk), ctx->num);
+                                   static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
             continue;
         }
 
@@ -889,7 +892,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_simple_
         if (const T* values_after = ctx->chunk.values_load(); values_after != values_before) [[unlikely]]
         {
             internal::replay_retry(retry_count, "execute_simple_operation_async (post-store)",
-                                   static_cast<const void*>(&ctx->chunk), ctx->num);
+                                   static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
             continue;
         }
 
@@ -902,9 +905,9 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_simple_
  * @brief Applies a compound arithmetic operation, materialising only when the result leaves the constant.
  *
  * Computes in `std::common_type_t<T, U>`, truncates to T, then:
- *  - cst_val2 chunk, result != second value: materialise, @p modify_fn stores;
+ *  - const_val2 chunk, result != second value: materialise, @p modify_fn stores;
  *  - materialised chunk: store and re-mark for compression;
- *  - cst_val2 chunk, result == second value: nothing (a compressed chunk whose
+ *  - const_val2 chunk, result == second value: nothing (a compressed chunk whose
  *    value does not change must not be materialised).
  *
  * @tparam Op       Binary operation type.
@@ -921,7 +924,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::execute_arithmetic_compound_operat
                                                                                     const U&      operand,
                                                                                     ModifyFn      modify_fn)
 {
-    using CalcType = std::common_type_t<T, BaseT<U>>;
+    using ComputeType = std::common_type_t<T, BaseT<U>>;
 
     if constexpr (build_config::chunk_dynamic)
     {
@@ -931,15 +934,15 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::execute_arithmetic_compound_operat
 
     const InT<T> v_old = self.read_values();
 
-    const CalcType v_new_precise   = op(static_cast<CalcType>(v_old), static_cast<CalcType>(operand));
-    const auto     v_new_truncated = static_cast<T>(v_new_precise);
+    const ComputeType v_new_precise   = op(static_cast<ComputeType>(v_old), static_cast<ComputeType>(operand));
+    const auto        v_new_truncated = static_cast<T>(v_new_precise);
 
-    const bool cst_val2 = self.is_cst_val2();
+    const bool const_val2 = self.is_const_val2();
 
     if constexpr (is_not_bool)
     {
         const bool will_be_not_second_value =
-            !same_value(v_new_truncated, static_cast<T>(self.BaseSpec::ptr_second_value_.get())) && cst_val2;
+            !same_value(v_new_truncated, static_cast<T>(self.BaseSpec::ptr_second_value_.get())) && const_val2;
 
         if (will_be_not_second_value)
         {
@@ -947,7 +950,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::execute_arithmetic_compound_operat
 
             modify_fn(op);
         }
-        else if (self.SecondValueBase::is_not_cst_val2())
+        else if (self.SecondValueBase::is_not_const_val2())
         {
             self.Base::store_value(v_new_truncated);
 
@@ -956,15 +959,15 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::execute_arithmetic_compound_operat
     }
     else
     {
-        // bool: cst_val2 means "all true".
-        const bool will_be_not_second_value = !v_new_truncated && cst_val2;
+        // bool: const_val2 means "all true".
+        const bool will_be_not_second_value = !v_new_truncated && const_val2;
 
         if (will_be_not_second_value)
         {
             self.chunk_.create_value_bool(true);
             modify_fn(op);
         }
-        else if (self.Base::is_not_cst_val2())
+        else if (self.Base::is_not_const_val2())
         {
             self.chunk_.assert_writable_buffer(self.chunk_.values_load());
 
@@ -996,7 +999,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
     const U& operand,
     Body     lbd) const
 {
-    using CalcType = std::common_type_t<T, BaseT<U>>;
+    using ComputeType = std::common_type_t<T, BaseT<U>>;
 
     int retry_count = 0;
 
@@ -1027,16 +1030,16 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
             }
         }
 
-        const InT<T>   v_old           = Base::read_values_async(ctx);
-        const CalcType v_new_precise   = op(static_cast<CalcType>(v_old), static_cast<CalcType>(operand));
-        const auto     v_new_truncated = static_cast<T>(v_new_precise);
+        const InT<T>      v_old           = Base::read_values_async(ctx);
+        const ComputeType v_new_precise   = op(static_cast<ComputeType>(v_old), static_cast<ComputeType>(operand));
+        const auto        v_new_truncated = static_cast<T>(v_new_precise);
 
-        const bool cst_val2 = proxy.is_cst_val2();
+        const bool const_val2 = proxy.is_const_val2();
 
         if constexpr (is_not_bool)
         {
             if (const bool will_be_not_second_value =
-                    !same_value(v_new_truncated, static_cast<T>(proxy.ptr_second_value_.get())) && cst_val2;
+                    !same_value(v_new_truncated, static_cast<T>(proxy.ptr_second_value_.get())) && const_val2;
                 will_be_not_second_value)
             {
                 ctx->chunk.create_value(true, proxy.ptr_second_value_);
@@ -1046,7 +1049,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
                 if (ctx->chunk.is_constant_ptr(values_before)) [[unlikely]]
                 {
                     internal::replay_retry(retry_count, "execute_arithmetic_compound_operation_async (decompress path)",
-                                           static_cast<const void*>(&ctx->chunk), ctx->num);
+                                           static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
                     continue;
                 }
 
@@ -1056,20 +1059,20 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
                 {
                     internal::replay_retry(retry_count,
                                            "execute_arithmetic_compound_operation_async (decompress path post-store)",
-                                           static_cast<const void*>(&ctx->chunk), ctx->num);
+                                           static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
                     continue;
                 }
 
                 break;
             }
-            if (proxy.is_not_cst_val2())
+            if (proxy.is_not_const_val2())
             {
                 const T* values_before = ctx->chunk.values_load();
 
                 if (ctx->chunk.is_constant_ptr(values_before)) [[unlikely]]
                 {
                     internal::replay_retry(retry_count, "execute_arithmetic_compound_operation_async (heap path)",
-                                           static_cast<const void*>(&ctx->chunk), ctx->num);
+                                           static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
                     continue;
                 }
 
@@ -1079,7 +1082,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
                 {
                     internal::replay_retry(retry_count,
                                            "execute_arithmetic_compound_operation_async (heap path post-store)",
-                                           static_cast<const void*>(&ctx->chunk), ctx->num);
+                                           static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
                     continue;
                 }
 
@@ -1087,14 +1090,14 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
                 break;
             }
             {
-                // No-op arm (result == second value on cst_val2): re-test before exiting.
-                if (proxy.is_cst_val2() && same_value(v_new_truncated, static_cast<T>(proxy.ptr_second_value_.get())))
+                // No-op arm (result == second value on const_val2): re-test before exiting.
+                if (proxy.is_const_val2() && same_value(v_new_truncated, static_cast<T>(proxy.ptr_second_value_.get())))
                 {
                     break;
                 }
                 // State changed between decision and now: retry.
                 internal::replay_retry(retry_count, "execute_arithmetic_compound_operation_async (no-op path)",
-                                       static_cast<const void*>(&ctx->chunk), ctx->num);
+                                       static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
             }
         }
         else
@@ -1102,7 +1105,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
             // bool: the same protocol, second value = true. Unreachable today (no
             // compound operator on a bool proxy); kept complete so a future one
             // does not skip the protocol.
-            if (const bool will_be_not_second_value = !v_new_truncated && cst_val2; will_be_not_second_value)
+            if (const bool will_be_not_second_value = !v_new_truncated && const_val2; will_be_not_second_value)
             {
                 ctx->chunk.create_value_bool(true);
 
@@ -1111,7 +1114,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
                 {
                     internal::replay_retry(retry_count,
                                            "execute_arithmetic_compound_operation_async (bool, decompress path)",
-                                           static_cast<const void*>(&ctx->chunk), ctx->num);
+                                           static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
                     continue;
                 }
 
@@ -1121,18 +1124,18 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
                 {
                     internal::replay_retry(
                         retry_count, "execute_arithmetic_compound_operation_async (bool, decompress path post-store)",
-                        static_cast<const void*>(&ctx->chunk), ctx->num);
+                        static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
                     continue;
                 }
                 break;
             }
-            if (proxy.is_not_cst_val2())
+            if (proxy.is_not_const_val2())
             {
                 const T* values_before = ctx->chunk.values_load();
                 if (ctx->chunk.is_constant_ptr(values_before)) [[unlikely]]
                 {
                     internal::replay_retry(retry_count, "execute_arithmetic_compound_operation_async (bool, heap path)",
-                                           static_cast<const void*>(&ctx->chunk), ctx->num);
+                                           static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
                     continue;
                 }
 
@@ -1142,20 +1145,20 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
                 {
                     internal::replay_retry(retry_count,
                                            "execute_arithmetic_compound_operation_async (bool, heap path post-store)",
-                                           static_cast<const void*>(&ctx->chunk), ctx->num);
+                                           static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
                     continue;
                 }
 
                 proxy.mark_for_compression_if_needed_with_value(v_old, v_new_truncated);
                 break;
             }
-            if (proxy.is_cst_val2() && v_new_truncated)
+            if (proxy.is_const_val2() && v_new_truncated)
             {
                 break;
             }
             // State changed between decision and now: retry.
             internal::replay_retry(retry_count, "execute_arithmetic_compound_operation_async (bool, no-op path)",
-                                   static_cast<const void*>(&ctx->chunk), ctx->num);
+                                   static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
         }
     }
 }
@@ -1179,7 +1182,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::execute_inplace_operation(this Der
 
     self.ensure_writable_storage();
 
-    internal::modify_element<ChunkT, T>(self.values_, self.num_, modify_fn);
+    internal::modify_element<ChunkT, T>(self.values_, self.elem_offset_, modify_fn);
 
     self.mark_for_compression_if_needed_with_value(v_old, self.read_values());
 }
@@ -1211,32 +1214,32 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_inplace
         if (ctx->chunk.is_constant_ptr(values_before)) [[unlikely]]
         {
             internal::replay_retry(retry_count, "execute_inplace_operation_async (pre-store)",
-                                   static_cast<const void*>(&ctx->chunk), ctx->num);
+                                   static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
             continue;
         }
 
-        internal::modify_element<ChunkT, T>(values_before, ctx->num, operation);
+        internal::modify_element<ChunkT, T>(values_before, ctx->elem_offset, operation);
 
         if (const T* values_after = ctx->chunk.values_load(); values_after != values_before) [[unlikely]]
         {
             internal::replay_retry(retry_count, "execute_inplace_operation_async (post-store)",
-                                   static_cast<const void*>(&ctx->chunk), ctx->num);
+                                   static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
             continue;
         }
 
         if constexpr (build_config::any_check)
         {
-            if (proxy.is_cst_val1())
+            if (proxy.is_const_val1())
             {
-                CHUNK_INVARIANT_FAILED("execute_inplace_operation_async: is_cst_val1 TRUE after store! "
-                                       "chunk={} num={}",
-                                       &ctx->chunk, ctx->num);
+                CHUNK_INVARIANT_FAILED("execute_inplace_operation_async: is_const_val1 TRUE after store! "
+                                       "chunk={} elem_offset={}",
+                                       &ctx->chunk, ctx->elem_offset);
             }
-            if (proxy.is_cst_val2())
+            if (proxy.is_const_val2())
             {
-                CHUNK_INVARIANT_FAILED("execute_inplace_operation_async: is_cst_val2 TRUE after store! "
-                                       "chunk={} num={}",
-                                       &ctx->chunk, ctx->num);
+                CHUNK_INVARIANT_FAILED("execute_inplace_operation_async: is_const_val2 TRUE after store! "
+                                       "chunk={} elem_offset={}",
+                                       &ctx->chunk, ctx->elem_offset);
             }
         }
 
@@ -1270,7 +1273,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::apply_compound_operation(this Deri
 
     // Apply any foreign deferred write to this offset before reading v_old, so
     // the RMW cannot clobber it (see arithmetic_assign). Outside begin_write.
-    self.chunk_.reader_sync(self.num_);
+    self.chunk_.reader_sync(self.elem_offset_);
 
     // Outside the write session: read under a ReadSection, or a pass may release
     // (and a materialisation zero-fill) the buffer between the pointer and the
@@ -1327,11 +1330,11 @@ template <typename ChunkT, size_t SmallN>
     const internal::RegistryReadLock registry_lock(internal::registry_mutex());
     if (!using_big_)
     {
-        for (const auto& [entry_key, tab] : small_)
+        for (const auto& [entry_key, arr] : small_)
         {
             if (entry_key == key)
             {
-                return tab;
+                return arr;
             }
         }
         CHUNK_INVARIANT_FAILED("[zero_any::PointerMap get_array_id] key NOT FOUND: this={} size={} key={}", this,
@@ -1388,9 +1391,9 @@ void zero_any::PointerMap<ChunkT, SmallN>::insert(Key key, int array_id)
         {
             using_big_ = true;
             big_.reserve(small_.size());
-            for (const auto& [key, tab] : small_)
+            for (const auto& [key, arr] : small_)
             {
-                big_[key] = tab;
+                big_[key] = arr;
             }
             small_.clear();
         }
@@ -1407,11 +1410,11 @@ bool zero_any::PointerMap<ChunkT, SmallN>::set_array_id(Key key, int new_array_i
     const internal::RegistryWriteLock registry_lock(internal::registry_mutex());
     if (!using_big_)
     {
-        for (auto& [k, tab] : small_)
+        for (auto& [k, arr] : small_)
         {
             if (k == key)
             {
-                tab = new_array_id;
+                arr = new_array_id;
                 return true;
             }
         }
@@ -1432,21 +1435,21 @@ bool zero_any::PointerMap<ChunkT, SmallN>::swap_keys(Key key_a, Key key_b) noexc
 {
     const internal::RegistryWriteLock registry_lock(internal::registry_mutex());
     int                               na = 0;
-    int                               nb = 0;
+    int                               n  = 0;
     bool                              fa = false;
     bool                              fb = false;
     if (!using_big_)
     {
-        for (const auto& [key, tab] : small_)
+        for (const auto& [key, arr] : small_)
         {
             if (key == key_a)
             {
-                na = tab;
+                na = arr;
                 fa = true;
             }
             if (key == key_b)
             {
-                nb = tab;
+                n  = arr;
                 fb = true;
             }
         }
@@ -1454,15 +1457,15 @@ bool zero_any::PointerMap<ChunkT, SmallN>::swap_keys(Key key_a, Key key_b) noexc
         {
             return false;
         }
-        for (auto& [key, tab] : small_)
+        for (auto& [key, arr] : small_)
         {
             if (key == key_a)
             {
-                tab = nb;
+                arr = n;
             }
             else if (key == key_b)
             {
-                tab = na;
+                arr = na;
             }
         }
         return true;
@@ -1484,14 +1487,14 @@ void zero_any::PointerMap<ChunkT, SmallN>::for_each_key(F&& func) const
 {
     if (!using_big_)
     {
-        for (const auto& [key, tab] : small_)
+        for (const auto& [key, arr] : small_)
         {
             func(key);
         }
     }
     else
     {
-        for (const auto& [key, tab] : big_)
+        for (const auto& [key, arr] : big_)
         {
             func(key);
         }
@@ -1505,7 +1508,7 @@ void zero_any::PointerMap<ChunkT, SmallN>::for_each_key(F&& func) const
 template <typename T, typename Derived, typename ChunkT>
 void zero_any::ProxySpec<T, Derived, ChunkT>::resize(int array_count, int chunk_count_old, int chunk_count)
 {
-    auto&      row  = tab_second_value[static_cast<std::size_t>(array_count)];
+    auto&      row  = array_second_value[static_cast<std::size_t>(array_count)];
     const auto held = static_cast<int>(row.size());
     // Keeps [0, min(old, new)); new slots value-initialised (by a team for a large array).
     parallel_storage_init::resize_filled(row, static_cast<std::size_t>(chunk_count), SecondValueSlotT{});
@@ -1523,9 +1526,9 @@ void zero_any::ProxySpec<T, Derived, ChunkT>::clear([[maybe_unused]] int array_i
     // Released, not just emptied: a re-chunk destroys the old storage under its own
     // array_id, so a row left allocated leaks at every re-chunk. Swap with an empty
     // row: `= {}` would keep the capacity.
-    if (array_id >= 0 && static_cast<std::size_t>(array_id) < tab_second_value.size())
+    if (array_id >= 0 && static_cast<std::size_t>(array_id) < array_second_value.size())
     {
-        SecondValueRowT().swap(tab_second_value[static_cast<std::size_t>(array_id)]);
+        SecondValueRowT().swap(array_second_value[static_cast<std::size_t>(array_id)]);
     }
 }
 
@@ -1536,13 +1539,13 @@ void zero_any::ProxySpec<T, Derived, ChunkT>::clear([[maybe_unused]] int array_i
 template <typename Derived, typename ChunkT>
 void zero_any::ProxySpec<bool, Derived, ChunkT>::resize(int array_count, int chunk_count_old, int chunk_count)
 {
-    realloc_unique(tab_second_value[array_count], chunk_count_old, chunk_count);
+    realloc_unique(array_second_value[array_count], chunk_count_old, chunk_count);
 
     // realloc_unique leaves the new tail indeterminate: fill it here.
     if (chunk_count > chunk_count_old)
     {
-        std::ranges::fill(tab_second_value[array_count].get() + chunk_count_old,
-                          tab_second_value[array_count].get() + chunk_count, false);
+        std::ranges::fill(array_second_value[array_count].get() + chunk_count_old,
+                          array_second_value[array_count].get() + chunk_count, false);
     }
 }
 
@@ -1591,14 +1594,14 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::set_array_id() noexcept
 }
 
 template <typename T, typename Derived, typename ChunkT>
-void zero_any::ProxyImpl<T, Derived, ChunkT>::clear_tab_is_int(int array_id)
+void zero_any::ProxyImpl<T, Derived, ChunkT>::clear_array_is_int(int array_id)
 {
     BaseSpec::clear(array_id);
     // Released, not just emptied (clear() keeps the capacity): every re-chunk would
     // leave one byte per old chunk behind.
-    parallel_storage_init::NoInitVector<CstSlot>().swap(tab_type_cst_val[array_id]);
+    parallel_storage_init::NoInitVector<ConstSlot>().swap(array_type_const_val[array_id]);
     // Same for the candidate flags.
-    Base::release_tab_is_int(array_id);
+    Base::release_array_is_int(array_id);
 }
 
 template <typename T, typename Derived, typename ChunkT>
@@ -1613,7 +1616,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::create_value(SecondValueRef<T> ptr
     }
     if constexpr (is_not_bool)
     {
-        chunk_.create_value(is_cst_val2(), ptr_second_value);
+        chunk_.create_value(is_const_val2(), ptr_second_value);
     }
     else
     {
@@ -1631,7 +1634,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::create_value_bool() const noexcept
     }
     if constexpr (is_bool)
     {
-        chunk_.create_value_bool(is_cst_val2());
+        chunk_.create_value_bool(is_const_val2());
     }
     else
     {
@@ -1697,7 +1700,7 @@ template <typename T, typename Derived, typename ChunkT>
         {
             return true;
         }
-        const int offset = this->num_;
+        const int offset = this->elem_offset_;
         const int r0     = (offset == 0) ? 1 : 0;
         const int r1     = (offset == chunk_sz - 1) ? chunk_sz - 2 : chunk_sz - 1;
         return same_value(static_cast<T>(this->chunk_.read_value_scan_relaxed(r0)), static_cast<T>(value)) &&

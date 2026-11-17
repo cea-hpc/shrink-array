@@ -51,10 +51,10 @@ double convert_memory(double memory_value)
     const double kilobytes = memory_value * byte_to_kb;
     const double megabytes = kilobytes * kb_to_mb;
 
-    if (std::ofstream fichier("memory_mo.txt"); fichier.is_open())
+    if (std::ofstream out_file("memory_mo.txt"); out_file.is_open())
     {
-        fichier << megabytes;
-        fichier.close();
+        out_file << megabytes;
+        out_file.close();
     }
     else
     {
@@ -121,23 +121,23 @@ template <typename V>
 void init(int                              start0,
           int                              end0,
           int                              iter,
-          const std::array<int, iter_max>& tab_nba1,
-          const std::array<int, iter_max>& tab_nba2,
-          V&                               tab1,
-          V&                               tab2,
-          V&                               tab3)
+          const std::array<int, iter_max>& array_nba1,
+          const std::array<int, iter_max>& array_nba2,
+          V&                               arr1,
+          V&                               arr2,
+          V&                               arr3)
 {
 #pragma omp for schedule(static) nowait
     for (int i = start0; i < end0; ++i)
     {
-        tab1[i] = std::sqrt(double(i));
-        if (i > tab_nba1[iter])
+        arr1[i] = std::sqrt(double(i));
+        if (i > array_nba1[iter])
         {
-            tab2[i] = std::cos(double(2 * i));
+            arr2[i] = std::cos(double(2 * i));
         }
-        if (i > tab_nba2[iter])
+        if (i > array_nba2[iter])
         {
-            tab3[i] = std::sin(tab1[i] + tab2[i]);
+            arr3[i] = std::sin(arr1[i] + arr2[i]);
         }
     }
 }
@@ -147,10 +147,10 @@ void calculate(double                  val,
                int                     start0,
                int                     end0,
                const std::vector<int>& index,
-               std::vector<double>&    tab_vec,
-               const V&                tab1,
-               const V&                tab2,
-               const V&                tab3)
+               std::vector<double>&    array_vec,
+               const V&                arr1,
+               const V&                arr2,
+               const V&                arr3)
 {
     // simd for a std::vector only: the chunk proxies do not vectorise, and asking
     // for it anyway draws clang's -Wpass-failed (multi_mat shows a way around).
@@ -158,7 +158,7 @@ void calculate(double                  val,
     for (int i = start0; i < end0; ++i)
     {
         const int pos = index[i - start0];
-        tab_vec[pos] += tab1[pos] + (tab2[pos] * tab3[i]) - tab2[i] + val;
+        array_vec[pos] += arr1[pos] + (arr2[pos] * arr3[i]) - arr2[i] + val;
     }
 }
 
@@ -167,10 +167,10 @@ void calculate1(double                     val,
                 int                        start0,
                 int                        end0,
                 const std::vector<int>&    index,
-                const std::vector<double>& tab_vec,
-                V&                         tab1,
-                const V&                   tab2,
-                const V&                   tab3)
+                const std::vector<double>& array_vec,
+                V&                         arr1,
+                const V&                   arr2,
+                const V&                   arr3)
 {
     // simd for a std::vector only: the chunk proxies do not vectorise, and asking
     // for it anyway draws clang's -Wpass-failed (multi_mat shows a way around).
@@ -178,7 +178,7 @@ void calculate1(double                     val,
     for (int i = start0; i < end0; ++i)
     {
         const int pos = index[i - start0];
-        tab1[pos] += tab_vec[pos] + (tab2[pos] * tab3[i]) - tab2[i] + val;
+        arr1[pos] += array_vec[pos] + (arr2[pos] * arr3[i]) - arr2[i] + val;
     }
 }
 
@@ -193,8 +193,8 @@ try
 
     constexpr int freq_compress = iter_max / 10;
 
-    constexpr int freq_raz = iter_max / 50;
-    constexpr int interval = 20000;
+    constexpr int freq_reset = iter_max / 50;
+    constexpr int interval   = 20000;
 
     const int max_thr = shrink_array::max_threads();
 
@@ -205,14 +205,14 @@ try
     std::println("Initialisation ...");
     std::println("Creation of arrays ...");
 
-    zero::Array<double> tab_chunk1(sz);
-    zero::Array<double> tab_chunk2(sz);
-    zero::Array<double> tab_chunk3(sz);
+    zero::Array<double> array_chunk1(sz);
+    zero::Array<double> array_chunk2(sz);
+    zero::Array<double> array_chunk3(sz);
 
-    std::vector<double> tab1(sz);
-    std::vector<double> tab2(sz);
-    std::vector<double> tab3(sz);
-    std::vector<double> tab_vec(sz);
+    std::vector<double> arr1(sz);
+    std::vector<double> arr2(sz);
+    std::vector<double> arr3(sz);
+    std::vector<double> array_vec(sz);
 
     std::vector<int> index;
 
@@ -224,8 +224,8 @@ try
 #pragma omp parallel for default(shared)
     for (int i = 0; i < sz; ++i)
     {
-        tab1[i] = tab2[i] = tab3[i] = 0;
-        tab_vec[i]                  = 0;
+        arr1[i] = arr2[i] = arr3[i] = 0;
+        array_vec[i]                = 0;
     }
 
     end             = std::chrono::steady_clock::now();
@@ -250,22 +250,22 @@ try
 
     std::println("Iteration ...");
 
-    std::array<int, iter_max> tab_size{};
-    std::array<int, iter_max> tab_start{};
-    std::array<int, iter_max> tab_nba1{};
-    std::array<int, iter_max> tab_nba2{};
+    std::array<int, iter_max> array_size{};
+    std::array<int, iter_max> array_start{};
+    std::array<int, iter_max> array_nba1{};
+    std::array<int, iter_max> array_nba2{};
 
     for (int k = 0; k < iter_max; ++k)
     {
         const int size   = size_distribution(rng);
         const int start0 = start_distribution(rng);
         const int end0   = start0 + size;
-        tab_size[k]      = size;
-        tab_start[k]     = start0;
+        array_size[k]    = size;
+        array_start[k]   = start0;
 
         std::uniform_int_distribution uni1(start0, end0);
-        tab_nba1[k] = uni1(rng);
-        tab_nba2[k] = uni1(rng);
+        array_nba1[k] = uni1(rng);
+        array_nba2[k] = uni1(rng);
     }
 
     end             = std::chrono::steady_clock::now();
@@ -277,8 +277,8 @@ try
 
     for (int k = 0; k < iter_max; ++k)
     {
-        const int size   = tab_size[k];
-        const int start0 = tab_start[k];
+        const int size   = array_size[k];
+        const int start0 = array_start[k];
 
         int end0 = start0 + size;
 
@@ -318,7 +318,7 @@ try
                          std::default_random_engine(std::time(nullptr)));
         }
 
-        if (k % freq_raz == 0)
+        if (k % freq_reset == 0)
         {
             std::println("Interval : [{}, {}] size : {}", start0, end0, size);
 
@@ -326,20 +326,20 @@ try
 
             for (; i < sz; ++i)
             {
-                if (tab1[i] != 0)
+                if (arr1[i] != 0)
                 {
                     break;
                 }
             }
 
             // Bounded: the run of non-zeros can reach the end of the arrays,
-            // and the unbounded form read tab1[sz] (the libstdc++ assertion
+            // and the unbounded form read arr1[sz] (the libstdc++ assertion
             // of the hardened Debug build caught it, intermittently -- the
             // layout depends on the shuffle's time seed).
-            while (i < sz && tab1[i] != 0)
+            while (i < sz && arr1[i] != 0)
             {
-                tab1[i] = tab2[i] = tab3[i] = 0;
-                tab_chunk1[i] = tab_chunk2[i] = tab_chunk3[i] = 0;
+                arr1[i] = arr2[i] = arr3[i] = 0;
+                array_chunk1[i] = array_chunk2[i] = array_chunk3[i] = 0;
                 i++;
             }
         }
@@ -349,18 +349,18 @@ try
             {
                 // To simulate behavior of a code where we read more than we write
 
-                init(start0, end0, k, tab_nba1, tab_nba2, tab1, tab2, tab3);
-                init(start0, end0, k, tab_nba1, tab_nba2, tab_chunk1, tab_chunk2, tab_chunk3);
+                init(start0, end0, k, array_nba1, array_nba2, arr1, arr2, arr3);
+                init(start0, end0, k, array_nba1, array_nba2, array_chunk1, array_chunk2, array_chunk3);
 
                 for (int p = 0; p < 5; ++p)
                 {
                     const auto val1 = static_cast<double>(p);
-                    calculate(val1, start0, end0, index, tab_vec, tab1, tab2, tab3);
+                    calculate(val1, start0, end0, index, array_vec, arr1, arr2, arr3);
                     const auto val2 = static_cast<double>(2 * p);
-                    calculate(val2, start0, end0, index, tab_vec, tab_chunk1, tab_chunk2, tab_chunk3);
+                    calculate(val2, start0, end0, index, array_vec, array_chunk1, array_chunk2, array_chunk3);
 
-                    calculate1(val1, start0, end0, index, tab_vec, tab1, tab2, tab3);
-                    calculate1(val2, start0, end0, index, tab_vec, tab_chunk1, tab_chunk2, tab_chunk3);
+                    calculate1(val1, start0, end0, index, array_vec, arr1, arr2, arr3);
+                    calculate1(val2, start0, end0, index, array_vec, array_chunk1, array_chunk2, array_chunk3);
                 }
             }
         }
@@ -376,9 +376,9 @@ try
         {
             std::println("Compression");
 
-            tab_chunk1.compress();
-            tab_chunk2.compress();
-            tab_chunk3.compress();
+            array_chunk1.compress();
+            array_chunk2.compress();
+            array_chunk3.compress();
         }
     }
 
@@ -388,17 +388,17 @@ try
     // always left std::fixed / setprecision(2) on std::cout before them.
     std::println("\nElapsed time computation : {:.2f}s", elapsed_seconds.count());
 
-    std::println("{:.2f}", static_cast<double>(tab2[2]));
+    std::println("{:.2f}", static_cast<double>(arr2[2]));
 
-    const auto lbd = [](const zero::Array<double>& tab)
+    const auto lbd = [](const zero::Array<double>& arr)
     {
-        const double sz0 = tab.stats();
+        const double sz0 = arr.stats();
         std::println("Chunk filling rate : {:.2f}%", sz0);
     };
 
-    lbd(tab_chunk1);
-    lbd(tab_chunk2);
-    lbd(tab_chunk3);
+    lbd(array_chunk1);
+    lbd(array_chunk2);
+    lbd(array_chunk3);
 
     if constexpr (chunk_config::stats)
     {
@@ -416,9 +416,9 @@ try
         std::println(stderr, "Unable to retrieve information from memory.");
     }
 
-    tab1.clear();
-    tab2.clear();
-    tab3.clear();
+    arr1.clear();
+    arr2.clear();
+    arr3.clear();
 
     Runtime::shutdown();
 

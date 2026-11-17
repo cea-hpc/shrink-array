@@ -103,17 +103,17 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
                       std::chrono::steady_clock::time_point& end,
                       std::chrono::duration<double>&         elapsed_seconds);
 
-/// @brief Store sqrt(@p value) at index @p index of @p tab. For a zero::Array, the raw reference tab(index) is used
+/// @brief Store sqrt(@p value) at index @p index of @p arr. For a zero::Array, the raw reference arr(index) is used
 /// only
 ///        when the chunk is written, operator[] otherwise.
-/// @param tab Destination array.
+/// @param arr Destination array.
 /// @param index Element index.
 /// @param value Value whose square root is stored.
 template <class Arr, typename T>
-void neutral_sqrt_assign(Arr& tab, Int index, T value)
+void neutral_sqrt_assign(Arr& arr, Int index, T value)
 {
-    // zero: the raw reference tab(index) is valid on a MATERIALISED chunk only. The
-    // write that computed value (tab2[index] = fmod(...)) can itself have compressed
+    // zero: the raw reference arr(index) is valid on a MATERIALISED chunk only. The
+    // write that computed value (arr2[index] = fmod(...)) can itself have compressed
     // the chunk -- a 0 completing an all-zero chunk, which the serial (counter)
     // build folds at once -- and the raw store then went into the shared
     // constant (harmless for sqrt(0) = 0, an CHUNK_INVARIANT_FAILED in checked
@@ -121,18 +121,18 @@ void neutral_sqrt_assign(Arr& tab, Int index, T value)
     // do not change.
     if constexpr (chunk_config::use_zero)
     {
-        if (tab.written(index))
+        if (arr.written(index))
         {
-            tab(index) = std::sqrt(value); // discarded quand Arr=std::vector : never typed
+            arr(index) = std::sqrt(value); // discarded quand Arr=std::vector : never typed
         }
         else
         {
-            tab[index] = std::sqrt(value);
+            arr[index] = std::sqrt(value);
         }
     }
     else
     {
-        tab[index] = std::sqrt(value);
+        arr[index] = std::sqrt(value);
     }
 }
 
@@ -143,9 +143,9 @@ void neutral_sqrt_assign(Arr& tab, Int index, T value)
  * @param iter the iteration index; the workload varies its pattern with iter % 16.
  * @param start0 start of the window this iteration writes.
  * @param end0 end of that window.
- * @param tab_nba1 the per-iteration thresholds main() precomputed; read at
+ * @param array_nba1 the per-iteration thresholds main() precomputed; read at
  *        [iter], never written here.
- * @param tab_nba2 see tab_nba1.
+ * @param array_nba2 see array_nba1.
  * @param val_sum the running accumulators (val_sum, long_val_sum, v_real,
  *        v_im), ADDED TO.
  * @param long_val_sum see val_sum.
@@ -162,8 +162,8 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                          Int                     iter,
                          Int                     start0,
                          Int                     end0,
-                         const std::vector<Int>& tab_nba1,
-                         const std::vector<Int>& tab_nba2,
+                         const std::vector<Int>& array_nba1,
+                         const std::vector<Int>& array_nba2,
                          double&                 val_sum,
                          long&                   long_val_sum,
                          double&                 v_real,
@@ -185,35 +185,35 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
                                 Int                     iter,
                                 Int                     start0,
                                 Int                     end0,
-                                const std::vector<Int>& tab_nba1,
-                                const std::vector<Int>& tab_nba2,
+                                const std::vector<Int>& array_nba1,
+                                const std::vector<Int>& array_nba2,
                                 double&                 point_sum);
 
-/// @brief The struct arrays' share of the raz sweep: [start0, end0) back to T{}.
-void bench_phase_struct_raz(BenchArrays& bench_arr, Int start0, Int end0);
+/// @brief The struct arrays' share of the reset sweep: [start0, end0) back to T{}.
+void bench_phase_struct_reset(BenchArrays& bench_arr, Int start0, Int end0);
 
 /**
- * @brief tab_mask's starting pattern (bench_phase_mask.cpp): whole segments of
+ * @brief array_mask's starting pattern (bench_phase_mask.cpp): whole segments of
  *        each constant, of random masks and of scattered flags
  *        (bench_mask_initial). Its own region, after bench_phase_fill.
  */
 void bench_phase_mask_fill(BenchArrays& bench_arr);
 
 /**
- * @brief tab_mask's iteration @p iter: flips in one mixed block in 16, a constant
+ * @brief array_mask's iteration @p iter: flips in one mixed block in 16, a constant
  *        segment in 32 turned whole to the other constant, then a read sweep of
  *        the blocks written into @p mask_count.
  */
 void bench_phase_mask_compute(BenchArrays& bench_arr, Int iter, long& mask_count);
 
 /**
- * @brief tab_conn's starting mesh (bench_phase_conn.cpp): every row in its first
+ * @brief array_conn's starting mesh (bench_phase_conn.cpp): every row in its first
  *        numbering. Its own region, after bench_phase_fill.
  */
 void bench_phase_conn_fill(BenchArrays& bench_arr);
 
 /**
- * @brief tab_conn's iteration @p iter: band iter % bench_conn_bands read into
+ * @brief array_conn's iteration @p iter: band iter % bench_conn_bands read into
  *        @p conn_sum (the gather), then renumbered (its node order rotated, or
  *        put back).
  */
@@ -288,13 +288,13 @@ struct BenchIoFlags
 /**
  * @brief Write or re-read-and-check every array's reference file.
  *
- * @param ind the iteration index, or -1 for the pass that runs before the loop.
+ * @param idx the iteration index, or -1 for the pass that runs before the loop.
  *
- * @details lbd_check is GENERIC (`const auto& tab`): it is called with all
+ * @details lbd_check is GENERIC (`const auto& arr`): it is called with all
  *          thirteen array types, so it lives in the same file as its caller,
  *          instantiated once there, behind this ordinary function.
  */
-void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io);
+void bench_check_all(BenchArrays& bench_arr, Int idx, const BenchIoFlags& io);
 
 /**
  * @brief Print the per-array value census and the chunk filling rates.
@@ -310,7 +310,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io);
 void bench_stats(BenchArrays& bench_arr, bool stats);
 
 /**
- * @brief The re-chunk sweep: find the next run in tab1, rewrite it.
+ * @brief The re-chunk sweep: find the next run in arr1, rewrite it.
  *
  * @param bench_arr the arrays.
  * @param iter the iteration index; k % 4, % 8 and % 16 pick which of the four
@@ -325,7 +325,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats);
  *          lives in their file: side by side, the four differ only by the value
  *          written and by the sentinel the scan stops on.
  */
-void bench_phase_raz_sweep(BenchArrays& bench_arr, Int iter, Int size, Int start0, Int end0);
+void bench_phase_reset_sweep(BenchArrays& bench_arr, Int iter, Int size, Int start0, Int end0);
 
 /**
  * @brief Print the thirteen checksums.
@@ -355,7 +355,7 @@ void bench_init_library();
  *
  * @details The ORDER inside is load-bearing, which is why it is one function
  *          rather than a handful of calls main() could reorder by accident:
- *            1. tab_*.clear() -- clear() runs clear_core(), which is what feeds
+ *            1. array_*.clear() -- clear() runs clear_core(), which is what feeds
  *               the teardown_clear counter;
  *            2. only THEN chunk_stats(), or the counter always reads 0;
  *            3. the compression check, the pool breakdown, and last the

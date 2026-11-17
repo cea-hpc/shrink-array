@@ -150,7 +150,7 @@ bool TypeState<ChunkT, T>::register_alloc_key([[maybe_unused]] unsigned int key,
         ChunkT<T>::register_chunk_size(size, capacity, registered_block_size_, key);
         Pools::register_free_list_key(key, size, capacity);
         // The array's own share per rank, where the global budget uses the
-        // process-wide somme_chunk_create.
+        // process-wide total_chunk_create.
         Pools::set_size_buffer_reuse(key, static_cast<int>(chunk_count / (Pools::reuse_share_div() * max_thr)));
         CHUNK_LOG(debug, affinity, "key={} size={} chunk_count={} budget={} threads={}", key, size, chunk_count,
                   Pools::get_size_buffer_reuse(key), max_thr);
@@ -169,7 +169,7 @@ template <template <typename> typename ChunkT, typename T>
 void TypeState<ChunkT, T>::compute_size_buffer_reuse()
 {
     // zero_any::ChunkDef's reuse constants serve every variant (zero_any_chunk_def.h).
-    const auto budget = static_cast<int>(somme_chunk_create / (Pools::reuse_share_div() * CHUNK_PMP_MAX_THREADS));
+    const auto budget = static_cast<int>(total_chunk_create / (Pools::reuse_share_div() * CHUNK_PMP_MAX_THREADS));
     Pools::size_buffer_reuse.store(std::max(budget, zero_any::ChunkDef::size_min_buffer_reuse),
                                    std::memory_order_relaxed);
 }
@@ -192,14 +192,14 @@ void TypeState<ChunkT, T>::compute_size_max_number_of_chunk_to_check_compress()
         std::conditional_t<IsZeroAnyFamily<ChunkT, T>, zero_any::ChunkDef,
                            std::conditional_t<IsZeroOneValue<ChunkT, T>, zero_one_value::ChunkDef, zero::ChunkDef>>;
 
-    auto threshold = static_cast<int>(somme_chunk_create /
+    auto threshold = static_cast<int>(total_chunk_create /
                                       (VariantDef::factor_div_chunk_count_for_compress * CHUNK_PMP_MAX_THREADS));
     threshold      = std::max(threshold, VariantDef::size_min_list_chunk_to_check_compress);
 
     Candidates::set_size_max_number_of_chunk_to_check_compress(threshold);
     const size_t element_size = sizeof(std::tuple<ChunkT<T>*, int, int>);
 
-    global_stats.record(type_name<ChunkT<T>>(), somme_chunk_create, threshold, element_size);
+    global_stats.record(type_name<ChunkT<T>>(), total_chunk_create, threshold, element_size);
 }
 
 } // namespace shrink_array

@@ -113,7 +113,7 @@ const Case case_table[] = {
     {"push_back beyond the capacity", true, false},
     {"rechunk_to", true, true},
 };
-constexpr int nb_cases = static_cast<int>(std::size(case_table));
+constexpr int n_cases = static_cast<int>(std::size(case_table));
 
 /// The child: one case. A template so that rechunk_to, which a static build
 /// does not have, is only named in a discarded branch of a dependent call.
@@ -274,7 +274,7 @@ int run(int argc, char** argv)
     }
 
     int fails = 0;
-    for (int k = 0; k < nb_cases; ++k)
+    for (int k = 0; k < n_cases; ++k)
     {
         if (case_table[k].dyn_only && !build_config::chunk_dynamic)
         {

@@ -192,7 +192,7 @@ class Runtime : public RuntimeParallelInterface<>, public RuntimeDynInterface<>
 
     /**
      * @brief Check that a candidate chunk size is valid: a power of two or a
-     *        multiple of 64, at most cst_buffer_size -- the rule of the setters
+     *        multiple of 64, at most const_buffer_size -- the rule of the setters
      *        (chunk_size_error).
      *
      * @details The build checks CHUNK_SIZE with a static_assert; this helper is

@@ -95,7 +95,7 @@ static long materialised(const Arr& arr, long nchunks)
     long       count    = 0;
     for (long j = 0; j < nchunks; ++j)
     {
-        count += arr.written(static_cast<Arr::IndType>(j * chunk_sz)) ? 1 : 0;
+        count += arr.written(static_cast<Arr::IndexType>(j * chunk_sz)) ? 1 : 0;
     }
     return count;
 }
@@ -128,7 +128,7 @@ static int run_case(const char* name, Arr& arr, long nchunks, double value, long
     const long count    = nchunks * chunk_sz;
     const long half     = chunk_sz / 2;
 
-    phase(count, [&](long i) { arr[static_cast<Arr::IndType>(i)] = plain(i); });
+    phase(count, [&](long i) { arr[static_cast<Arr::IndexType>(i)] = plain(i); });
     const long before = materialised(arr, nchunks);
 
     // Two spans per chunk, adjacent iterations: with schedule(static, 1) they
@@ -145,7 +145,7 @@ static int run_case(const char* name, Arr& arr, long nchunks, double value, long
     long bad = 0;
     for (long i = 0; i < count; ++i)
     {
-        const double got = arr[static_cast<Arr::IndType>(i)];
+        const double got = arr[static_cast<Arr::IndexType>(i)];
         if (got != value)
         {
             if (bad < 3)
@@ -181,33 +181,33 @@ try
     int fails = 0;
     {
         zero::Array<double> arr(0);
-        arr.resize(static_cast<zero::Array<double>::IndType>(nchunks * arr.chunk_size()));
+        arr.resize(static_cast<zero::Array<double>::IndexType>(nchunks * arr.chunk_size()));
         fails += run_case("zero::Array,  fill first value (0)", arr, nchunks, 0.0, omp ? 0 : -1);
         arr.clear();
     }
     {
         zero::Array<double> arr(0);
-        arr.resize(static_cast<zero::Array<double>::IndType>(nchunks * arr.chunk_size()));
+        arr.resize(static_cast<zero::Array<double>::IndexType>(nchunks * arr.chunk_size()));
         fails += run_case("zero::Array,  fill other value (5)", arr, nchunks, other_value, omp ? nchunks : -1);
         arr.clear();
     }
     {
         zero_one_value::Array<double> arr(0);
-        arr.resize(static_cast<zero_one_value::Array<double>::IndType>(nchunks * arr.chunk_size()));
+        arr.resize(static_cast<zero_one_value::Array<double>::IndexType>(nchunks * arr.chunk_size()));
         arr.set_second_value(second_value, false);
         fails += run_case("zero_one_value::Array, fill first value (0)", arr, nchunks, 0.0, omp ? 0 : -1);
         arr.clear();
     }
     {
         zero_one_value::Array<double> arr(0);
-        arr.resize(static_cast<zero_one_value::Array<double>::IndType>(nchunks * arr.chunk_size()));
+        arr.resize(static_cast<zero_one_value::Array<double>::IndexType>(nchunks * arr.chunk_size()));
         arr.set_second_value(second_value, false);
         fails += run_case("zero_one_value::Array, fill second value (9)", arr, nchunks, second_value, omp ? 0 : -1);
         arr.clear();
     }
     {
         zero_one_value::Array<double> arr(0);
-        arr.resize(static_cast<zero_one_value::Array<double>::IndType>(nchunks * arr.chunk_size()));
+        arr.resize(static_cast<zero_one_value::Array<double>::IndexType>(nchunks * arr.chunk_size()));
         arr.set_second_value(second_value, false);
         fails +=
             run_case("zero_one_value::Array, fill undeclared value (5)", arr, nchunks, other_value, omp ? nchunks : -1);

@@ -82,7 +82,7 @@ int main()
         a.shrink_to_fit();                    // replier les chunks devenus constants
         std::printf("chunks holding a buffer: %.1f %%\n", a.stats());
     }                                         // le tableau rend ses chunks ici
-    sa::release_chunk_pools();                // facultatif : rendre les pools avant la fin
+    sa::release_chunk_pools();                // facultatif : rendre les pools avant la end
     sa::Runtime::shutdown();
 }
 ```

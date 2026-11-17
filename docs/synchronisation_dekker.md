@@ -16,7 +16,7 @@
 A materialised chunk owns a private buffer, referenced by its atomic pointer `values`. Two
 kinds of actors touch it at the same time under OpenMP:
 
-- the **writers**: each `tab[i] = v` loads `values`, then writes into the buffer. This path
+- the **writers**: each `arr[i] = v` loads `values`, then writes into the buffer. This path
   is the hottest in the library: billions of writes per run;
 - the **compressor**: a compression pass rereads a candidate chunk, finds that it is
   uniform, replaces `values` with the pointer to the constant buffer (a CAS) and **returns the old
@@ -28,7 +28,7 @@ Without care, the following interleaving loses a write, or corrupts another chun
 |---|---|
 | loads `values` → buffer P | |
 | | rereads P: everything is 0 |
-| | CAS `values`: P → `cst_val1`, returns P |
+| | CAS `values`: P → `const_val1`, returns P |
 | writes `v` into P | |
 | | (P is reused by another chunk, which receives `v`) |
 

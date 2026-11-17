@@ -63,7 +63,7 @@ scales, not how fast the library is. It runs in the oracle directory that
 bench_and_test.py generated for the target (--oracle-dir, default
 <bench_results>/<arch>/oracle/cmake-build-<target>), at the size the oracle
 was made: --multiply 1, no --no_io. The build root is --build-root, else
-$CHUNK_BUILD_ROOT, else $CHUNK_BUILD_REP (scripts/site_env.sh), else the
+$CHUNK_BUILD_ROOT, else $CHUNK_BUILD_ROOT (scripts/site_env.sh), else the
 repository; the executable is looked up under
 <root>/cmake-build-<target>/<dir ending with this machine's arch, this system's first>/examples/shrink_bench/.
 
@@ -141,7 +141,7 @@ except ImportError:
     def this_os_first(dirs, name=None):         # copied alone: the sorted order
         return dirs
 SIZES = ["dyn", "1024", "256", "64"]
-ORACLE_MARKER = "data_tab_ORACLE_COMPLETE.marker"  # bench_runner/builds.py
+ORACLE_MARKER = "data_array_ORACLE_COMPLETE.marker"  # bench_runner/builds.py
 REPO = os.path.dirname(HERE)
 EXE_SUBPATH = os.path.join("examples", "shrink_bench")
 COMPUTE_RE = re.compile(r"Elapsed time computation\s*:\s*([0-9.eE+-]+)\s*s")
@@ -235,7 +235,7 @@ def default_oracle_dir(target):
 
 
 def build_root(arg):
-    for v in (arg, os.environ.get("CHUNK_BUILD_ROOT"), os.environ.get("CHUNK_BUILD_REP")):
+    for v in (arg, os.environ.get("CHUNK_BUILD_ROOT"), os.environ.get("CHUNK_BUILD_ROOT")):
         if v and v != ".":
             return os.path.abspath(os.path.expanduser(os.path.expandvars(v)))
     return REPO
@@ -828,7 +828,7 @@ def parse_args(argv=None):
                    help="perf (default): the measurement. check: the correctness mode, run in the target's "
                         "oracle directory, --multiply 1 (see --oracle-dir)")
     p.add_argument("--oracle-dir", default=None,
-                   help="--mode check: the directory holding the target's data_tab* reference (default "
+                   help="--mode check: the directory holding the target's data_array* reference (default "
                         "$CCCWORKDIR/bench_results/<arch>/oracle/cmake-build-<target>)")
     p.add_argument("--min-threads", type=int, required=True, help="first thread count (speedup reference)")
     p.add_argument("--max-threads", type=int, required=True, help="last thread count")
@@ -845,7 +845,7 @@ def parse_args(argv=None):
                         "off (default): first touch, as the scalability guard")
     p.add_argument("--timeout", type=float, default=0, help="seconds per run, 0 = none (default)")
     p.add_argument("--build-root", default=None,
-                   help="holds cmake-build-<target>/ (default $CHUNK_BUILD_ROOT, $CHUNK_BUILD_REP, "
+                   help="holds cmake-build-<target>/ (default $CHUNK_BUILD_ROOT, $CHUNK_BUILD_ROOT, "
                         "the repository)")
     p.add_argument("--out", default=None, help="output directory (default <CCC work or ~>/thread_speedup/speedup_<target>_<host>_<date>)")
     p.add_argument("--pool", default=None, metavar="ID",

@@ -12,7 +12,7 @@
 #
 #   CHUNK_SITE              cea when /ccc/products exists, else local
 #   CHUNK_SRC_DIR           the repository (from this script's location)
-#   CHUNK_BUILD_REP         where the cmake-build-<name>/<arch> trees go:
+#   CHUNK_BUILD_ROOT         where the cmake-build-<name>/<arch> trees go:
 #                             cea   $CCCWORKDIR/shrink-array (the TGCC work area)
 #                             local $CCCWORKDIR/shrink-array when CCCWORKDIR
 #                                   is set, else the repository itself (as
@@ -63,16 +63,16 @@ chunk_local_gcc() {
 if [ "$CHUNK_SITE" = cea ]; then
     # Not under the sources in ~ (quota): stop rather than guess when the TGCC
     # environment did not set CCCWORKDIR.
-    : "${CHUNK_BUILD_REP:=${CCCWORKDIR:?site_env.sh: CCCWORKDIR unset, set CHUNK_BUILD_REP}/shrink-array}"
+    : "${CHUNK_BUILD_ROOT:=${CCCWORKDIR:?site_env.sh: CCCWORKDIR unset, set CHUNK_BUILD_ROOT}/shrink-array}"
     : "${CHUNK_GCC_TOOLCHAIN_DIR:=/ccc/products/gcc-15.2.0/system/default}"
 else
     # A machine of the TGCC environment off the CEA network (CCCWORKDIR set,
     # no /ccc/products/gcc-15.2.0) keeps its trees in the work area, as cea
     # does: the sources in ~ have the quota.
     if [ -n "${CCCWORKDIR:-}" ]; then
-        : "${CHUNK_BUILD_REP:=$CCCWORKDIR/shrink-array}"
+        : "${CHUNK_BUILD_ROOT:=$CCCWORKDIR/shrink-array}"
     else
-        : "${CHUNK_BUILD_REP:=$CHUNK_SRC_DIR}"
+        : "${CHUNK_BUILD_ROOT:=$CHUNK_SRC_DIR}"
     fi
     # A GCC built from source is both the gnu compiler (CHUNK_GXX below) and
     # the libstdc++ of clang / icpx, as gcc-15.2.0 is at CEA. None: the
@@ -96,7 +96,7 @@ else
     module() { return 1; }
 fi
 
-export CHUNK_SITE CHUNK_SRC_DIR CHUNK_BUILD_REP CHUNK_GCC_TOOLCHAIN_DIR CHUNK_LOCAL_GCC_DIR CHUNK_HAVE_MODULES CHUNK_SCRIPT_DIR
+export CHUNK_SITE CHUNK_SRC_DIR CHUNK_BUILD_ROOT CHUNK_GCC_TOOLCHAIN_DIR CHUNK_LOCAL_GCC_DIR CHUNK_HAVE_MODULES CHUNK_SCRIPT_DIR
 
 # chunk_module_load_first <module>...: load the first module of the list that
 # exists; the last one is loaded unconditionally (the fallback, e.g. the bare
@@ -318,4 +318,4 @@ if [ "${CHUNK_WITH_TBB:-}" != 0 ]; then
     fi
 fi
 
-echo "[site] $CHUNK_SITE: sources $CHUNK_SRC_DIR, builds under $CHUNK_BUILD_REP, modules $CHUNK_HAVE_MODULES${CHUNK_GCC_TOOLCHAIN_DIR:+, libstdc++ from $CHUNK_GCC_TOOLCHAIN_DIR}${TBBROOT:+, oneTBB $TBBROOT}${CHUNK_SYSTEM_TBB:+, oneTBB of the system ($CHUNK_SYSTEM_TBB)}"
+echo "[site] $CHUNK_SITE: sources $CHUNK_SRC_DIR, builds under $CHUNK_BUILD_ROOT, modules $CHUNK_HAVE_MODULES${CHUNK_GCC_TOOLCHAIN_DIR:+, libstdc++ from $CHUNK_GCC_TOOLCHAIN_DIR}${TBBROOT:+, oneTBB $TBBROOT}${CHUNK_SYSTEM_TBB:+, oneTBB of the system ($CHUNK_SYSTEM_TBB)}"

@@ -229,7 +229,7 @@ std::size_t ReusePools<ChunkT, T>::release_parked_buffers([[maybe_unused]] std::
                         {
                             CHUNK_FREEPATH_INC(freed);
                             CHUNK_LEDGER_DISCARD(block, "trim_reuse_pools.owner");
-                            static_cast<AllocT*>(slab->owner)->free_elt_pow2(block, slab);
+                            static_cast<AllocT*>(slab->owner)->free_elem_pow2(block, slab);
                             bytes_freed += block_bytes;
                         }
                         else
@@ -476,9 +476,9 @@ void ReusePools<ChunkT, T>::drain_reuse_list_for_size([[maybe_unused]] unsigned 
             }
             else
             {
-                // fast-alloc: owner-routed drain (free_elt_pow2 is only safe on
+                // fast-alloc: owner-routed drain (free_elem_pow2 is only safe on
                 // an owned block). Do not "offer every block to every rank in
-                // turn": quadratic (is_free_able_elt() walks the slab chains),
+                // turn": quadratic (is_free_able_elem() walks the slab chains),
                 // and after a zero re-chunk most parked blocks are orphans
                 // (clear_st parks in the FREEING thread's list).
                 //
@@ -626,7 +626,7 @@ void ReusePools<ChunkT, T>::drain_free_rank(int           n_thr,
             CHUNK_LEDGER_DISCARD(block, "rechunk_to.drain_reuse.owner");
             auto* slab  = geometry->slab_of(block);
             auto* owner = static_cast<Alloc*>(slab->owner);
-            owner->free_elt_pow2(block, slab);
+            owner->free_elem_pow2(block, slab);
         }
         cell.clear();
         if (release_cells)

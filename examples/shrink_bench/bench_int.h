@@ -29,13 +29,13 @@
  *          `IntType`, so the two move together: there is no build where the
  *          bench indexes in 64 bits and the array in 32.
  *
- * @note ELEMENT types are NOT affected. `Array<int> tab_int` stays an array of
+ * @note ELEMENT types are NOT affected. `Array<int> array_int` stays an array of
  *       `int` in both builds: it is one of the element types the bench covers
  *       (next to short, long, float, ...), not an index.
  *
  * @note The 64-bit build is a PERF instrument first: its targets are not
  *       registered with ctest. `--mode check` works on it, against the
- *       reference files (data_tab*) of the 32-bit vector_check of the same
+ *       reference files (data_array*) of the 32-bit vector_check of the same
  *       configuration -- element values, independent of Int -- so a check
  *       there asserts that 64-bit indices give the 32-bit results
  *       (python/bench_and_test.py runs a few, INT64_CHECK_VARIANTS).

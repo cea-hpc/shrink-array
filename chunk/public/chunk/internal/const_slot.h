@@ -17,7 +17,7 @@
 #pragma once
 
 /**
- * @file cst_slot.h
+ * @file const_slot.h
  * @brief Which of its two constants a zero_any chunk is compressed to.
  */
 
@@ -28,22 +28,22 @@ namespace shrink_array
 
 /**
  * @brief Which of a zero_any chunk's two constants it is compressed to: the
- *        one byte per chunk of zero_any::Proxy<T>::tab_type_cst_val, read when
+ *        one byte per chunk of zero_any::Proxy<T>::array_type_const_val, read when
  *        the chunk's values are pointed back at its constant.
  * @details Meaningful only while the chunk is constant. `first` is also the
  *          value a fresh row is filled with.
  */
-enum class CstSlot : std::uint8_t
+enum class ConstSlot : std::uint8_t
 {
-    first  = 0, ///< the first constant (cst_val1)
-    second = 1, ///< the chunk's second constant (cst_val2)
+    first  = 0, ///< the first constant (const_val1)
+    second = 1, ///< the chunk's second constant (const_val2)
     motif  = 2, ///< a shared motif plus the chunk's offset (pattern::Array: has_motif_state_v)
 };
 
-/// @brief The slot of constant @p num_compress_value: 0 the first, any other the second.
-[[nodiscard]] constexpr CstSlot cst_slot_of(int num_compress_value) noexcept
+/// @brief The slot of constant @p const_index: 0 the first, any other the second.
+[[nodiscard]] constexpr ConstSlot const_slot_of(int const_index) noexcept
 {
-    return num_compress_value == 0 ? CstSlot::first : CstSlot::second;
+    return const_index == 0 ? ConstSlot::first : ConstSlot::second;
 }
 
 } // namespace shrink_array

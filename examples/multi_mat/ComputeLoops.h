@@ -30,15 +30,15 @@
  * to the library (config.h).
  */
 
-#include <array>       // Simu::tabs (std::array)
-#include <vector>      // Simu::ll, tab_size, tab_start (std::vector)
+#include <array>       // Simu::arrays (std::array)
+#include <vector>      // Simu::ll, array_size, array_start (std::vector)
 #include <cmath>       // std::cos, std::sin, std::tan
 #include <functional>  // std::function
 #include <type_traits> // std::is_same_v, std::remove_reference_t
 #include <print>       // std::println
 
 #include "config.h"       // multi_mat::begin_parallel_phase, barrier_phase, embedded_compression
-#include "Containers.h"   // VectChunk, dispatch
+#include "Containers.h"   // MatZeroArray, dispatch
 #include "Dispatch.h"     // Dispatch::is_chunk
 #include "MultiMatAlgo.h" // MultiMatAlgo
 #include "Simu.h"         // Simu: compute_loops() is defined here
@@ -56,23 +56,23 @@ void Simu::compute_loops(MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo,
         std::println("\nInitialisation... ");
     }
 
-    mm_algo.loop(0, nbmat,
+    mm_algo.loop(0, n_materials,
                  [this](int, const auto& get_mat_vec, const auto& loops)
                  {
                      // Recovery 3 arrays by material could be "chunk" or vector
 
-                     auto& tab0_ind = get_mat_vec(tabs[0]);
-                     auto& tab1_ind = get_mat_vec(tabs[1]);
-                     auto& tab2_ind = get_mat_vec(tabs[2]);
-                     auto& frac_ind = get_mat_vec(frac);
+                     auto& arr0_idx = get_mat_vec(tabs[0]);
+                     auto& arr1_idx = get_mat_vec(tabs[1]);
+                     auto& arr2_idx = get_mat_vec(tabs[2]);
+                     auto& frac_idx = get_mat_vec(frac);
 
                      loops.omp_for_nowait_simd(0, mesh_size,
                                                [&](int nn) __attribute__((always_inline))
                                                {
-                                                   tab0_ind[nn] = 0;
-                                                   tab1_ind[nn] = 0;
-                                                   tab2_ind[nn] = 0;
-                                                   frac_ind[nn] = 0;
+                                                   arr0_idx[nn] = 0;
+                                                   arr1_idx[nn] = 0;
+                                                   arr2_idx[nn] = 0;
+                                                   frac_idx[nn] = 0;
                                                });
                  });
 
@@ -88,16 +88,16 @@ void Simu::compute_loops(MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo,
             std::println("Iteration : {}", it);
         }
 #pragma omp for // Parallelization on this loop : it is not easy to parallelize the inside loop
-        for (int mat = 0; mat < nbmat; ++mat)
+        for (int mat = 0; mat < n_materials; ++mat)
         {
-            auto& ll_ind = ll[mat];
+            auto& ll_idx = ll[mat];
 
-            const int size  = tab_size[it, mat];
-            const int start = tab_start[it, mat];
+            const int size  = array_size[it, mat];
+            const int start = array_start[it, mat];
 
             const int end = start + size;
 
-            ll_ind.resize(size);
+            ll_idx.resize(size);
 
             // We fill the indirection vector
 
@@ -109,7 +109,7 @@ void Simu::compute_loops(MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo,
                 {
                     break;
                 }
-                ll_ind[pos] = k;
+                ll_idx[pos] = k;
             }
         }
 
@@ -119,23 +119,23 @@ void Simu::compute_loops(MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo,
             lbd_stats(true);
         }
 
-        mm_algo.loop(0, nbmat,
+        mm_algo.loop(0, n_materials,
                      [&](int mat, const auto& get_mat_vec, const auto& loops)
                      {
-                         const auto& ll_ind = ll[mat];
+                         const auto& ll_idx = ll[mat];
 
                          // Recovery 3 arrays by material could be "chunk" or vector
 
-                         auto& tab0_ind = get_mat_vec(tabs[0]);
-                         auto& tab1_ind = get_mat_vec(tabs[1]);
-                         auto& tab2_ind = get_mat_vec(tabs[2]);
-                         auto& frac_ind = get_mat_vec(frac);
+                         auto& arr0_idx = get_mat_vec(tabs[0]);
+                         auto& arr1_idx = get_mat_vec(tabs[1]);
+                         auto& arr2_idx = get_mat_vec(tabs[2]);
+                         auto& frac_idx = get_mat_vec(frac);
 
-                         // The material's interval this iteration: ll_ind[p] == start + p,
+                         // The material's interval this iteration: ll_idx[p] == start + p,
                          // so nn - start is the position of a cell in the interval, what
                          // the presence fraction depends on.
-                         const int start = tab_start[it, mat];
-                         const int size  = tab_size[it, mat];
+                         const int start = array_start[it, mat];
+                         const int size  = array_size[it, mat];
 
                          if (it % freq_rtz == 0)
                          {
@@ -145,38 +145,38 @@ void Simu::compute_loops(MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo,
                                  std::println("Reset to zero some elements ");
                              }
 
-                             // Vectorize loop when tab*_ind is vector
-                             // Scalar loop  when tab*_ind is "chunk"
+                             // Vectorize loop when array*_idx is vector
+                             // Scalar loop  when array*_idx is "chunk"
 
-                             loops.omp_simd_foreach_nowait(ll_ind,
+                             loops.omp_simd_foreach_nowait(ll_idx,
                                                            [&](int nn)
                                                            {
                                                                // Initialization of arrays
-                                                               tab0_ind[nn] = 0;
-                                                               tab1_ind[nn] = 0;
-                                                               tab2_ind[nn] = 0;
-                                                               frac_ind[nn] = 0;
+                                                               arr0_idx[nn] = 0;
+                                                               arr1_idx[nn] = 0;
+                                                               arr2_idx[nn] = 0;
+                                                               frac_idx[nn] = 0;
                                                            });
                          }
                          else
                          {
-                             // Vectorize loop when tab*_ind is vector
-                             // Scalar loop  when tab*_ind is "chunk"
+                             // Vectorize loop when array*_idx is vector
+                             // Scalar loop  when array*_idx is "chunk"
 
                              loops.omp_simd_foreach_nowait(
-                                 ll_ind,
+                                 ll_idx,
                                  [&](int nn)
                                  {
                                      // Set the arrays to some values
 
                                      const double value = static_cast<double>(nn) + static_cast<double>(it);
-                                     tab0_ind[nn]       = value;
-                                     tab1_ind[nn]       = static_cast<double>(2 * nn) + static_cast<double>(it);
-                                     tab2_ind[nn]       = static_cast<double>(3 * nn) + static_cast<double>(it);
+                                     arr0_idx[nn]       = value;
+                                     arr1_idx[nn]       = static_cast<double>(2 * nn) + static_cast<double>(it);
+                                     arr2_idx[nn]       = static_cast<double>(3 * nn) + static_cast<double>(it);
                                      // 1 inside the material, a ramp at its two interfaces:
                                      // on a chunk array the interior writes hit chunks already
                                      // compressed to 1 and return without materialising them.
-                                     frac_ind[nn] = presence_fraction(nn - start, size);
+                                     frac_idx[nn] = presence_fraction(nn - start, size);
                                  });
                          }
                      });
@@ -187,15 +187,15 @@ void Simu::compute_loops(MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo,
         // This first lambda allows you to have a unique coding for a double implementation :
         // the first with classic direct addressing, the second with compressed addressing
 
-        mm_algo.loop(0, nbmat,
+        mm_algo.loop(0, n_materials,
                      [&](int mat, const auto& get_mat_vec, const auto& loops)
                      {
-                         const auto& ll_ind = ll[mat];
+                         const auto& ll_idx = ll[mat];
 
-                         const auto& tab0_ind = get_mat_vec(tabs[0]);
-                         const auto& tab1_ind = get_mat_vec(tabs[1]);
-                         const auto& tab2_ind = get_mat_vec(tabs[2]);
-                         const auto& frac_ind = get_mat_vec(frac);
+                         const auto& arr0_idx = get_mat_vec(tabs[0]);
+                         const auto& arr1_idx = get_mat_vec(tabs[1]);
+                         const auto& arr2_idx = get_mat_vec(tabs[2]);
+                         const auto& frac_idx = get_mat_vec(frac);
 
                          // This second lambda allows you to vectorize (1)(2) the loop on
                          // the arrays in direct addressing and no to do it when the arrays
@@ -211,13 +211,13 @@ void Simu::compute_loops(MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo,
                              const auto val = static_cast<double>(p);
 
                              loops.omp_foreach_simd_red_sum(
-                                 ll_ind, value,
+                                 ll_idx, value,
                                  [&](int nn, double& vl)
                                  {
                                      // Gadget computation, weighted by the presence fraction
                                      // (a read through the zero_one_value array on a chunk material)
-                                     const double vv = frac_ind[nn] * (std::cos(tab0_ind[nn]) + std::sin(tab1_ind[nn]) +
-                                                                       std::tan(tab2_ind[nn])) +
+                                     const double vv = frac_idx[nn] * (std::cos(arr0_idx[nn]) + std::sin(arr1_idx[nn]) +
+                                                                       std::tan(arr2_idx[nn])) +
                                                        std::cos(val);
                                      vl += vv;
                                  });
@@ -239,29 +239,29 @@ void Simu::compute_loops(MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo,
                 std::println("Compression ");
             }
 
-            mm_algo.loop(0, nbmat,
+            mm_algo.loop(0, n_materials,
                          [&](int m, const auto& get_mat_vec, const auto&)
                          {
                              if (dispatch.is_chunk(m))
                              {
-                                 auto& tab0_ind = get_mat_vec(tabs[0]);
-                                 using V        = std::remove_reference_t<decltype(tab0_ind)>;
+                                 auto& arr0_idx = get_mat_vec(tabs[0]);
+                                 using V        = std::remove_reference_t<decltype(arr0_idx)>;
 
-                                 using VecChunkReal = VectChunk<double>;
+                                 using VecChunkReal = MatZeroArray<double>;
 
                                  // Compression only exists for 'chunk' arrays: `if constexpr` keeps the call out
                                  // of the std::vector instantiation.
 
                                  if constexpr (std::is_same_v<V, VecChunkReal>)
                                  {
-                                     auto& tab1_ind = get_mat_vec(tabs[1]);
-                                     auto& tab2_ind = get_mat_vec(tabs[2]);
+                                     auto& arr1_idx = get_mat_vec(tabs[1]);
+                                     auto& arr2_idx = get_mat_vec(tabs[2]);
 
                                      //  If we find "chunk_size" zero contiguous in the arrays then we compress it into
                                      //  a single value
-                                     tab0_ind.compress(verbose);
-                                     tab1_ind.compress(verbose);
-                                     tab2_ind.compress(verbose);
+                                     arr0_idx.compress(verbose);
+                                     arr1_idx.compress(verbose);
+                                     arr2_idx.compress(verbose);
                                  }
                              }
                          });

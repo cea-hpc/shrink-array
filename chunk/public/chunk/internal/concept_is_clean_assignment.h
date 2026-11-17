@@ -98,7 +98,7 @@ concept IsCleanShiftOp = std::is_integral_v<std::remove_cvref_t<T>> && std::is_i
 
 // --- 4. What the element type itself can do ---
 // The proxies' compound operators exist only for element types that have the
-// operation, so e.g. `tab[i] += p` on an aggregate is refused at the call
+// operation, so e.g. `arr[i] += p` on an aggregate is refused at the call
 // rather than deep inside std::plus or the atomic apply.
 /// @brief Not bool nor Bit: arithmetic on a truth value is refused at compile
 ///        time (`b += 1`, `b *= 2`, `b <<= 1` only mean "set" or "keep"); a bool

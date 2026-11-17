@@ -143,9 +143,9 @@ inline void check_begin() noexcept
 
 /// @brief A write about to be deferred: fail if it runs in a parallel region
 ///        on a thread that did not call begin_parallel_phase() in this phase.
-/// @param chunk the chunk written, @param num the element (for the message).
+/// @param chunk the chunk written, @param elem_offset the element (for the message).
 template <typename ChunkT>
-void check_write(const ChunkT* chunk, long num) noexcept
+void check_write(const ChunkT* chunk, long elem_offset) noexcept
 {
     if constexpr (active)
     {
@@ -156,8 +156,8 @@ void check_write(const ChunkT* chunk, long num) noexcept
                 "begin_parallel_phase() since the last finalize_parallel_phase(): without OMPT every thread of a "
                 "region that writes calls begin_parallel_phase() before its first write, and "
                 "finalize_parallel_phase() runs after the region, or this write replays after a later region's "
-                "writes -- or let shrink_array::parallel_phase() do both. chunk={} num={}",
-                chunk_pmp_team_rank(), chunk, num);
+                "writes -- or let shrink_array::parallel_phase() do both. chunk={} elem_offset={}",
+                chunk_pmp_team_rank(), chunk, elem_offset);
         }
     }
 }

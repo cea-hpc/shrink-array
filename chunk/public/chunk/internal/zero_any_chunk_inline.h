@@ -37,9 +37,9 @@
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
 #include "chunk/internal/write_compress_sync_policy.h" // WriteCompressSyncPolicy::is_thread_writing_on (wait_before_materialise)
 #include "chunk/internal/chunk_traits.h"               // ChunkTraits<ChunkT>::ProxyType (wait_before_materialise)
-#include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef
-#include "chunk/internal/queue_flag.h"          // queue_flag::hand_back / release: the pass's hand-back
-#include "chunk/internal/same_value.h"          // same_value
+#include "chunk/internal/array_const_val2_holder.h" // SecondValueRef
+#include "chunk/internal/queue_flag.h"              // queue_flag::hand_back / release: the pass's hand-back
+#include "chunk/internal/same_value.h"              // same_value
 
 /**
  * @file zero_any_chunk_inline.h
@@ -47,9 +47,9 @@
  *
  * A zero_any block is in one of three states; every function here moves it between them
  * or decides that it should move:
- *  - **cst_val1**: `values` points at the shared all-`first_value` block;
- *  - **cst_val2**: `values` points at the identifier slot of THIS chunk's own
- *    second value (tab_cst_val2_holder.h; zero_any's distinguishing feature —
+ *  - **const_val1**: `values` points at the shared all-`first_value` block;
+ *  - **const_val2**: `values` points at the identifier slot of THIS chunk's own
+ *    second value (array_const_val2_holder.h; zero_any's distinguishing feature —
  *    zero_one_value has one second value per array, zero_any one per chunk);
  *  - **materialised**: `values` points at a private heap buffer.
  *
@@ -87,7 +87,7 @@ template <typename T, typename Derived, bool Enabled>
 [[gnu::noinline]] void* zero_any::ChunkThreadPolicy<T, Derived, Enabled>::operator new[](std::size_t sz)
 {
     auto* chunks = static_cast<Derived*>(::operator new(sz));
-    init_chunks_cst_val(chunks, sz / sizeof(Derived));
+    init_chunks_const_val(chunks, sz / sizeof(Derived));
     return static_cast<void*>(chunks);
 }
 
@@ -107,7 +107,7 @@ template <typename T, typename Derived, bool Enabled>
  * value" -- and stops once both are disproved. A chunk satisfying both is filed compact1 only.
  *
  * The candidate second value is element 0; a compact2 hit is queued WITH that value, for
- * the caller to register. A chunk already at cst_val2 is not scanned (see the body).
+ * the caller to register. A chunk already at const_val2 is not scanned (see the body).
  *
  * @param ll_compt1  List of chunks compressible to first_value.
  * @param ll_compt2  List of chunks compressible to one other value.
@@ -130,7 +130,7 @@ void zero_any::ChunkImpl<T, Derived>::fill_list_to_compress(this Derived&       
                                                             ChunkElems            size,
                                                             [[maybe_unused]] bool claimed)
 {
-    if (self.is_not_cst_val1())
+    if (self.is_not_const_val1())
     {
         // The chunk scanned must be claimed: make_block_compression() marks every entry
         // before start(), whose barrier publishes the marks to the writers. Asserted: an
@@ -148,12 +148,12 @@ void zero_any::ChunkImpl<T, Derived>::fill_list_to_compress(this Derived&       
         }
 
         // CHUNK_STATS: one candidate scanned (compress/compress_attempt = scan yield).
-        increm_chunk_compress_attempt<Derived>();
+        inc_chunk_compress_attempt<Derived>();
 
         // Already at its second value (compress() ran over it while queued): do not scan.
         // `values` is a second-value slot that reads as all first_value; the chunk would go
         // on ll_compt1 and block_clear() would free the slot as a buffer.
-        if (self.is_cst_val2())
+        if (self.is_const_val2())
         {
             return;
         }
@@ -188,7 +188,7 @@ void zero_any::ChunkImpl<T, Derived>::fill_list_to_compress(this Derived&       
  * Scans every queued candidate into the two lists (fill_list_chunk_to_compress_in_par),
  * applies the clears, resets the per-chunk "already queued" flags and empties the list.
  *
- * A second-list chunk's new second value must be REGISTERED (find_or_set_ind_cst_val2)
+ * A second-list chunk's new second value must be REGISTERED (find_or_set_idx_const_val2)
  * before the clear, so clear_int_st() commits the right pointer. `T{}` entries are skipped.
  *
  * @param thr     Rank whose candidate list is processed.
@@ -286,11 +286,11 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
             shrink_array::set_thread_chunk_size(std::get<3>(tup).count());
         }
 
-        CstSlot* ptr_type_cst = &ProxyType::tab_type_cst_val[array_id][chunk_index];
+        ConstSlot* ptr_type_const = &ProxyType::array_type_const_val[array_id][chunk_index];
 
         // Long form in both modes: thr is 0 with OpenMP off.
-        const SecondValueRef<T> ptr_second_value = ProxyType::BaseSpec::get_tab_second_value(array_id, chunk_index);
-        chunk_ptr->clear_int_st(0, ptr_type_cst, ptr_second_value, thr);
+        const SecondValueRef<T> ptr_second_value = ProxyType::BaseSpec::get_array_second_value(array_id, chunk_index);
+        chunk_ptr->clear_int_st(0, ptr_type_const, ptr_second_value, thr);
         chunk_ptr->steal_unmark();
     }
 
@@ -308,37 +308,39 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
         {
             if (!same_value(second_v, T{}))
             {
-                CstSlot* ptr_type_cst = &ProxyType::tab_type_cst_val[array_id][chunk_index];
+                ConstSlot* ptr_type_const = &ProxyType::array_type_const_val[array_id][chunk_index];
 
                 // find_or_set records the second value in the chunk's slot and returns the
                 // shared array; clear_int_st installs it as `values` (the CAS).
                 const SecondValueRef<T> ptr_second_value =
-                    ProxyType::BaseSpec::get_tab_second_value(array_id, chunk_index);
+                    ProxyType::BaseSpec::get_array_second_value(array_id, chunk_index);
 
-                T* new_cst_val2_ptr = nullptr;
+                T* new_const_val2_ptr = nullptr;
                 if constexpr (has_motif_state_v<Derived>)
                 {
                     // A reader of the chunk's former motif may load the slot (F5).
-                    new_cst_val2_ptr = chunk_ptr->Holder::find_or_set_ind_cst_val2_release(second_v, ptr_second_value);
+                    new_const_val2_ptr =
+                        chunk_ptr->Holder::find_or_set_idx_const_val2_release(second_v, ptr_second_value);
                 }
                 else
                 {
-                    new_cst_val2_ptr = chunk_ptr->Holder::find_or_set_ind_cst_val2(second_v, ptr_second_value);
+                    new_const_val2_ptr = chunk_ptr->Holder::find_or_set_idx_const_val2(second_v, ptr_second_value);
                 }
 
-                chunk_ptr->clear_int_st(1, ptr_type_cst, ptr_second_value, thr, new_cst_val2_ptr);
+                chunk_ptr->clear_int_st(1, ptr_type_const, ptr_second_value, thr, new_const_val2_ptr);
             }
         }
         else
         {
             // bool: no second-value pointer, ordering issue does not apply. The
             // shared array of true needs no registering: clear_int_st() takes it
-            // from Holder::find_cst_val2_ptr().
+            // from Holder::find_const_val2_ptr().
 
-            CstSlot* ptr_type_cst = &ProxyType::tab_type_cst_val[array_id][chunk_index];
+            ConstSlot* ptr_type_const = &ProxyType::array_type_const_val[array_id][chunk_index];
 
-            const SecondValueRef<T> ptr_second_value = ProxyType::BaseSpec::get_tab_second_value(array_id, chunk_index);
-            chunk_ptr->clear_int_st(1, ptr_type_cst, ptr_second_value, thr);
+            const SecondValueRef<T> ptr_second_value =
+                ProxyType::BaseSpec::get_array_second_value(array_id, chunk_index);
+            chunk_ptr->clear_int_st(1, ptr_type_const, ptr_second_value, thr);
         }
         chunk_ptr->steal_unmark();
     }
@@ -351,13 +353,13 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
 
     queue_flag::release_candidates(
         vec_tuple_to_compress, sz, [](int array_id, int chunk_index) -> auto&
-        { return ProxyType::Base::get_tab_is_inside_list_to_compress(array_id)[chunk_index]; },
+        { return ProxyType::Base::get_array_is_inside_list_to_compress(array_id)[chunk_index]; },
         [](int array_id, int chunk_index)
-        { ProxyType::Base::reset_tab_inside_list_to_compress(array_id, chunk_index); });
+        { ProxyType::Base::reset_array_inside_list_to_compress(array_id, chunk_index); });
 
     if (proxy2a)
     {
-        if (proxy2a->is_not_cst_val())
+        if (proxy2a->is_not_const_val())
         {
             proxy2a->set_info_on_chunk();
             // Only one thread runs this section at a time, but another may be in
@@ -398,7 +400,7 @@ void zero_any::ChunkImpl<T, Derived>::compress(this Derived&         self,
                                                ChunkElems            size)
 {
     // OpenMP without OMPT, apply = false (the lists' purge walks): the body would only scan
-    // and register a cst_val2 that make_block_compression redoes -- a large cost for no
+    // and register a const_val2 that make_block_compression redoes -- a large cost for no
     // compression, so skip it. apply = true (rechunk fold, chunk no writer can reach) runs.
     if constexpr (build_config::threaded && chunk_config::not_use_compression_with_ompt)
     {
@@ -409,38 +411,39 @@ void zero_any::ChunkImpl<T, Derived>::compress(this Derived&         self,
     }
 
     // Only a MATERIALISED chunk can be compressed: a queued entry can outlive the chunk's
-    // materialisation. Do not test cst_val1 alone: a chunk at cst_val2 would be scanned and
+    // materialisation. Do not test const_val1 alone: a chunk at const_val2 would be scanned and
     // its shared second-value block cleared a second time.
     if (self.written())
     {
         // CHUNK_STATS: one candidate scanned (compress/compress_attempt = scan yield).
-        increm_chunk_compress_attempt<Derived>();
+        inc_chunk_compress_attempt<Derived>();
         bool compact1 = false;
         bool compact2 = false;
 
-        // new_cst_val2_ptr: result of find_or_set, the array clear_int_st
+        // new_const_val2_ptr: result of find_or_set, the array clear_int_st
         // installs as the chunk's values pointer.
-        T* new_cst_val2_ptr = nullptr;
+        T* new_const_val2_ptr = nullptr;
 
         if constexpr (Base::is_not_bool)
         {
             // Against values[0], as fill_list_to_compress does, not the registered second
             // value: a chunk uniform at another value is compressed to THAT value.
-            const SecondValueRef<T> ptr_second_value = ProxyType::BaseSpec::get_tab_second_value(array_id, chunk_index);
-            const InT<T>            second_v         = self.read_value_scan(0);
-            const auto              scan             = self.scan_constants(first_value, second_v, size.count());
-            compact1                                 = scan.first;
-            compact2                                 = scan.second;
+            const SecondValueRef<T> ptr_second_value =
+                ProxyType::BaseSpec::get_array_second_value(array_id, chunk_index);
+            const InT<T> second_v = self.read_value_scan(0);
+            const auto   scan     = self.scan_constants(first_value, second_v, size.count());
+            compact1              = scan.first;
+            compact2              = scan.second;
             if (compact2)
             {
                 if constexpr (has_motif_state_v<Derived>)
                 {
                     // A reader of the chunk's former motif may load the slot (F5).
-                    new_cst_val2_ptr = self.find_or_set_ind_cst_val2_release(second_v, ptr_second_value);
+                    new_const_val2_ptr = self.find_or_set_idx_const_val2_release(second_v, ptr_second_value);
                 }
                 else
                 {
-                    new_cst_val2_ptr = self.find_or_set_ind_cst_val2(second_v, ptr_second_value);
+                    new_const_val2_ptr = self.find_or_set_idx_const_val2(second_v, ptr_second_value);
                 }
             }
         }
@@ -449,24 +452,25 @@ void zero_any::ChunkImpl<T, Derived>::compress(this Derived&         self,
             const auto scan = self.scan_constants(static_cast<T>(false), static_cast<T>(true), size.count());
             compact1        = scan.first;
             compact2        = scan.second;
-            // new_cst_val2_ptr stays nullptr: clear_int_st() takes bool's one
-            // shared array from Holder::find_cst_val2_ptr().
+            // new_const_val2_ptr stays nullptr: clear_int_st() takes bool's one
+            // shared array from Holder::find_const_val2_ptr().
         }
 
         // Both modes go through the long self.clear_int_st(): the type-2 clear MUST commit
-        // new_cst_val2_ptr first, or init_values_cst_val() points the chunk at a never
+        // new_const_val2_ptr first, or init_values_const_val() points the chunk at a never
         // installed second-value slot (nullptr).
         if (apply)
         {
-            const SecondValueRef<T> ptr_second_value = ProxyType::BaseSpec::get_tab_second_value(array_id, chunk_index);
-            CstSlot*                ptr_type_cst     = &ProxyType::tab_type_cst_val[array_id][chunk_index];
+            const SecondValueRef<T> ptr_second_value =
+                ProxyType::BaseSpec::get_array_second_value(array_id, chunk_index);
+            ConstSlot* ptr_type_const = &ProxyType::array_type_const_val[array_id][chunk_index];
             if (compact1)
             {
-                self.clear_int_st(0, ptr_type_cst, ptr_second_value, thr_rank);
+                self.clear_int_st(0, ptr_type_const, ptr_second_value, thr_rank);
             }
             if (compact2)
             {
-                self.clear_int_st(1, ptr_type_cst, ptr_second_value, thr_rank, new_cst_val2_ptr);
+                self.clear_int_st(1, ptr_type_const, ptr_second_value, thr_rank, new_const_val2_ptr);
             }
         }
     }
@@ -507,40 +511,39 @@ void zero_any::ChunkImpl<T, Derived>::fill_constant_st(this Derived& self,
 {
     static_assert(Base::is_not_bool, "fill_constant_st: bool chunks are bit-packed, fill them element by element");
 
-    const SecondValueRef<T> ptr_second_value =
-        zero_any::Proxy<T>::BaseSpec::get_tab_second_value(array_id, chunk_index);
-    CstSlot*   ptr_type_cst = &zero_any::Proxy<T>::tab_type_cst_val[array_id][chunk_index];
-    const bool to_first     = same_value(v, static_cast<T>(first_value));
+    const SecondValueRef<T> ptr_second_value = Proxy<T>::BaseSpec::get_array_second_value(array_id, chunk_index);
+    ConstSlot*              ptr_type_const   = &Proxy<T>::array_type_const_val[array_id][chunk_index];
+    const bool              to_first         = same_value(v, static_cast<T>(first_value));
 
     if (self.written())
     {
         // CHUNK_STATS: a compression reached without a scan, its attempt
         // counted with it (as fill_range does on zero).
-        increm_chunk_compress_attempt<Derived>();
-        T* cst2_ptr = to_first ? nullptr : self.find_or_set_ind_cst_val2(v, ptr_second_value);
-        self.clear_int_st(to_first ? 0 : 1, ptr_type_cst, ptr_second_value, thr_rank, cst2_ptr);
+        inc_chunk_compress_attempt<Derived>();
+        T* const2_ptr = to_first ? nullptr : self.find_or_set_idx_const_val2(v, ptr_second_value);
+        self.clear_int_st(to_first ? 0 : 1, ptr_type_const, ptr_second_value, thr_rank, const2_ptr);
         return;
     }
 
     if (to_first)
     {
-        if (self.is_cst_val1())
+        if (self.is_const_val1())
         {
             return;
         }
         ptr_second_value.reset();
-        set_cst_val_to_cst_val1(ptr_type_cst);
-        self.values_store(self.get_cst_val1());
+        set_const_val_to_const_val1(ptr_type_const);
+        self.values_store(self.get_const_val1());
         return;
     }
 
-    T* cst2_ptr = self.find_or_set_ind_cst_val2(v, ptr_second_value);
-    if (self.values_load() == cst2_ptr)
+    T* const2_ptr = self.find_or_set_idx_const_val2(v, ptr_second_value);
+    if (self.values_load() == const2_ptr)
     {
         return; // already at v
     }
-    set_cst_val_to_cst_val2(ptr_type_cst);
-    self.values_store(cst2_ptr);
+    set_const_val_to_const_val2(ptr_type_const);
+    self.values_store(const2_ptr);
 }
 
 /**
@@ -673,7 +676,7 @@ void zero_any::ChunkImpl<T, Derived>::compress_chunk_to_compress_in_par([[maybe_
                             chunk_t->compress_to_motif(thr, chunk_index, array_id, csize);
                         }
                     }
-                    ProxyType::set_tab_is_inside_chunk_list_to_compress(array_id, chunk_index, 0);
+                    ProxyType::set_array_is_inside_chunk_list_to_compress(array_id, chunk_index, 0);
                 }
             }
         }
@@ -692,7 +695,7 @@ void zero_any::ChunkImpl<T, Derived>::compress_chunk_to_compress_in_par([[maybe_
 
             // Per-entry geometry, as above: a default size would under-scan dynamic chunks.
             std::get<0>(tup)->compress(0, chunk_index, array_id, apply, std::get<3>(tup));
-            ProxyType::set_tab_is_inside_chunk_list_to_compress(array_id, chunk_index, 0);
+            ProxyType::set_array_is_inside_chunk_list_to_compress(array_id, chunk_index, 0);
         }
     }
 
@@ -766,7 +769,7 @@ void zero_any::ChunkImpl<T, Derived>::fill_list_chunk_to_compress_in_par([[maybe
             {
                 if (chunk_index >= 0)
                 {
-                    queue_flag::hand_back(ProxyType::Base::get_tab_is_inside_list_to_compress(array_id)[chunk_index]);
+                    queue_flag::hand_back(ProxyType::Base::get_array_is_inside_list_to_compress(array_id)[chunk_index]);
                 }
             }
             // Not selected: nothing will be stolen, release it to the writers now.
@@ -852,7 +855,7 @@ void wait_before_materialise(const ChunkT& chunk, [[maybe_unused]] int thr_rank)
  *
  * The buffer is filled BEFORE publication, a single CAS against the constant pointer the
  * chunk holds: a reader sees the old constant or the finished buffer. Losing the CAS means
- * another thread materialised first; apply_cas_or_recup() recycles our buffer.
+ * another thread materialised first; apply_cas_or_reclaim() recycles our buffer.
  *
  * @warning Waits first until no compressor may steal THIS chunk
  *          (wait_before_materialise(); not when the caller's own writer flag is
@@ -890,7 +893,7 @@ void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::create_value(this Derived
                     }
                 };
                 T* const values_loc = self.SecondValueChunkBase<T, Derived>::allocate_chunk_internal(thr_rank, fill);
-                self.SecondValueChunkBase<T, Derived>::apply_cas_or_recup(
+                self.SecondValueChunkBase<T, Derived>::apply_cas_or_reclaim(
                     values_loc, thr_rank,
                     [&self, motif](T* new_ptr) { return self.compare_and_swap_gen(new_ptr, motif); });
                 return;
@@ -914,13 +917,13 @@ void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::create_value(this Derived
         // where zero_any::Chunk's alias is private (clang rejects it; gcc lets it through).
         T* values_loc = self.SecondValueChunkBase<T, Derived>::allocate_chunk_internal(thr_rank, init_func);
 
-        self.SecondValueChunkBase<T, Derived>::apply_cas_or_recup(values_loc, thr_rank,
-                                                                  [&self, need_set_second_value](T* cst_ptr)
-                                                                  {
-                                                                      // One CAS on the specific constant pointer.
-                                                                      return self.compare_and_swap(
-                                                                          cst_ptr, need_set_second_value);
-                                                                  });
+        self.SecondValueChunkBase<T, Derived>::apply_cas_or_reclaim(values_loc, thr_rank,
+                                                                    [&self, need_set_second_value](T* const_ptr)
+                                                                    {
+                                                                        // One CAS on the specific constant pointer.
+                                                                        return self.compare_and_swap(
+                                                                            const_ptr, need_set_second_value);
+                                                                    });
     }
 
     else
@@ -956,9 +959,9 @@ void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::create_value_bool(this De
 
         T* values_loc = self.SecondValueChunkBase<T, Derived>::allocate_chunk_internal(thr_rank, init_func);
 
-        self.SecondValueChunkBase<T, Derived>::apply_cas_or_recup(
-            values_loc, thr_rank, [&self, need_set_second_value](bool* cst_ptr)
-            { return self.compare_and_swap(cst_ptr, need_set_second_value); });
+        self.SecondValueChunkBase<T, Derived>::apply_cas_or_reclaim(
+            values_loc, thr_rank, [&self, need_set_second_value](bool* const_ptr)
+            { return self.compare_and_swap(const_ptr, need_set_second_value); });
     }
     else
     {
@@ -1037,12 +1040,12 @@ void zero_any::ChunkThreadPolicy<T, Derived, false>::create_value_bool(this Deri
  * Serial-build variant used at teardown: releases the buffer, resets the
  * chunk's second value to zero, and points it back at the first constant.
  *
- * @param ptr_type_cst     Slot of the per-chunk type table to update.
+ * @param ptr_type_const     Slot of the per-chunk type table to update.
  * @param ptr_second_value The chunk's second-value slot, reset to `T{}`.
  */
 template <typename T, typename Derived>
 void zero_any::ChunkThreadPolicy<T, Derived, false>::clear(this Derived&     self,
-                                                           CstSlot*          ptr_type_cst,
+                                                           ConstSlot*        ptr_type_const,
                                                            SecondValueRef<T> ptr_second_value)
 {
     if (self.written())
@@ -1050,8 +1053,8 @@ void zero_any::ChunkThreadPolicy<T, Derived, false>::clear(this Derived&     sel
         self.SecondValueChunkBase<T, Derived>::free_values(self.values_);
 
         ptr_second_value.reset();
-        Derived::set_cst_val_to_cst_val1(ptr_type_cst);
-        self.init_values_cst_val(ptr_type_cst, ptr_second_value);
+        Derived::set_const_val_to_const_val1(ptr_type_const);
+        self.init_values_const_val(ptr_type_const, ptr_second_value);
     }
 }
 
@@ -1061,12 +1064,12 @@ void zero_any::ChunkThreadPolicy<T, Derived, false>::clear(this Derived&     sel
  * For callers that have already established the chunk is materialised; the test
  * is kept as a debug-only assertion.
  *
- * @param ptr_type_cst     Slot of the per-chunk type table to update.
+ * @param ptr_type_const     Slot of the per-chunk type table to update.
  * @param ptr_second_value The chunk's second-value slot, reset to `T{}`.
  */
 template <typename T, typename Derived>
 void zero_any::ChunkThreadPolicy<T, Derived, false>::clear_st(this Derived&     self,
-                                                              CstSlot*          ptr_type_cst,
+                                                              ConstSlot*        ptr_type_const,
                                                               SecondValueRef<T> ptr_second_value)
 {
     self.SecondValueChunkBase<T, Derived>::debug_check_written();
@@ -1074,18 +1077,18 @@ void zero_any::ChunkThreadPolicy<T, Derived, false>::clear_st(this Derived&     
     self.SecondValueChunkBase<T, Derived>::free_values(self.values_);
 
     ptr_second_value.reset();
-    Derived::set_cst_val_to_cst_val1(ptr_type_cst);
-    self.init_values_cst_val(ptr_type_cst, ptr_second_value);
+    Derived::set_const_val_to_const_val1(ptr_type_const);
+    self.init_values_const_val(ptr_type_const, ptr_second_value);
 }
 
 template <typename T, typename Derived, bool Enabled>
 void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::release_st(this Derived&     self,
-                                                                  CstSlot*          ptr_type_cst,
+                                                                  ConstSlot*        ptr_type_const,
                                                                   SecondValueRef<T> ptr_second_value,
                                                                   int               thr_rank)
 {
     // CHUNK_STATS: a release, not a compression (block_clear counts those). The
-    // compression's own steps otherwise: type slot to cst1 and second-value slot
+    // compression's own steps otherwise: type slot to const1 and second-value slot
     // reset BEFORE the CAS, then the buffer to free_block_to_pool() (ambient
     // geometry: the caller's old one; the slab's owner key).
     if constexpr (chunk_config::stats)
@@ -1093,7 +1096,8 @@ void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::release_st(this Derived& 
         add_chunk_released<Derived>(1, static_cast<long>(sizeof(T)) *
                                            static_cast<long>(shrink_array::alloc_chunk_count()));
     }
-    self.SecondValueChunkBase<T, Derived>::block_clear_common(0, 0, thr_rank, ptr_type_cst, ptr_second_value, nullptr);
+    self.SecondValueChunkBase<T, Derived>::block_clear_common(0, 0, thr_rank, ptr_type_const, ptr_second_value,
+                                                              nullptr);
 }
 
 /**
@@ -1104,18 +1108,18 @@ void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::release_st(this Derived& 
  */
 template <typename T, typename Derived, bool Enabled>
 void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::block_clear(this Derived&        self,
-                                                                   int                  num_compress_value,
-                                                                   CstSlot*             ptr_type_cst,
+                                                                   int                  const_index,
+                                                                   ConstSlot*           ptr_type_const,
                                                                    SecondValueRef<T>    ptr_second_value,
                                                                    [[maybe_unused]] int thr_rank,
-                                                                   T*                   cst2_ptr)
+                                                                   T*                   const2_ptr)
 {
     // CHUNK_STATS: one block released (see the function comment).
-    increm_chunk_compress<Derived>();
+    inc_chunk_compress<Derived>();
     // Bytes released, as zero_one_value counts them (with bytes_alloc/bytes_reused: live buffers).
     add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(shrink_array::alloc_chunk_count()));
-    self.SecondValueChunkBase<T, Derived>::block_clear_common(num_compress_value, 0, thr_rank, ptr_type_cst,
-                                                              ptr_second_value, cst2_ptr);
+    self.SecondValueChunkBase<T, Derived>::block_clear_common(const_index, 0, thr_rank, ptr_type_const,
+                                                              ptr_second_value, const2_ptr);
 }
 
 /**
@@ -1126,58 +1130,58 @@ void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::block_clear(this Derived&
  */
 template <typename T, typename Derived, bool Enabled>
 void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::clear_int_st(this Derived&     self,
-                                                                    int               num_compress_value,
-                                                                    CstSlot*          ptr_type_cst,
+                                                                    int               const_index,
+                                                                    ConstSlot*        ptr_type_const,
                                                                     SecondValueRef<T> ptr_second_value,
                                                                     int               thr_rank,
-                                                                    T*                new_cst_val2_ptr)
+                                                                    T*                new_const_val2_ptr)
 {
-    self.SecondValueChunkBase<T, Derived>::check_not_constant_before_clear(num_compress_value, std::nullopt);
+    self.SecondValueChunkBase<T, Derived>::check_not_constant_before_clear(const_index, std::nullopt);
 
     // Type-2 array: the caller's, or the one registered for the second value (bool path).
-    if (num_compress_value == 1 && new_cst_val2_ptr == nullptr)
+    if (const_index == 1 && new_const_val2_ptr == nullptr)
     {
-        new_cst_val2_ptr = Derived::Holder::find_cst_val2_ptr(ptr_second_value.get());
+        new_const_val2_ptr = Derived::Holder::find_const_val2_ptr(ptr_second_value.get());
     }
 
-    self.block_clear(num_compress_value, ptr_type_cst, ptr_second_value, thr_rank, new_cst_val2_ptr);
+    self.block_clear(const_index, ptr_type_const, ptr_second_value, thr_rank, new_const_val2_ptr);
 }
 
 /// @brief Serial block_clear(): frees the buffer outright instead of parking it
 ///        in a rank pool, and points the chunk at a constant.
-/// @param num_compress_value 0 for the first constant, otherwise the second.
-/// @param ptr_type_cst       Slot of the per-chunk type table to update.
+/// @param const_index 0 for the first constant, otherwise the second.
+/// @param ptr_type_const       Slot of the per-chunk type table to update.
 /// @param ptr_second_value   The chunk's second-value slot.
-/// @param cst2_ptr           Second-value slot of the constant (type 2).
+/// @param const2_ptr           Second-value slot of the constant (type 2).
 /// @note The rank argument is unused: there is no rank pool serially.
 template <typename T, typename Derived>
 void zero_any::ChunkThreadPolicy<T, Derived, false>::block_clear(this Derived&     self,
-                                                                 int               num_compress_value,
-                                                                 CstSlot*          ptr_type_cst,
+                                                                 int               const_index,
+                                                                 ConstSlot*        ptr_type_const,
                                                                  SecondValueRef<T> ptr_second_value,
                                                                  int /*thr_rank*/,
-                                                                 T* cst2_ptr)
+                                                                 T* const2_ptr)
 {
-    // As try_mark_cst_and_get_old() on the OpenMP side: a chunk already at a constant has no
+    // As try_mark_const_and_get_old() on the OpenMP side: a chunk already at a constant has no
     // buffer; freeing that pointer corrupts the allocator (or faults). The type table already
     // describes the constant in place.
-    if (self.values_ == Base::get_cst_val1() || Derived::Holder::is_cst_val2_ptr(self.values_)) [[unlikely]]
+    if (self.values_ == Base::get_const_val1() || Derived::Holder::is_const_val2_ptr(self.values_)) [[unlikely]]
     {
         return;
     }
 
-    increm_chunk_compress<Derived>();
+    inc_chunk_compress<Derived>();
     self.SecondValueChunkBase<T, Derived>::free_values(self.values_);
-    Derived::set_cst_val_to_cst_val(num_compress_value, ptr_type_cst);
+    Derived::set_const_val_to_const_val(const_index, ptr_type_const);
 
     // Serial: no CAS; the caller's array for a type 2, from the tables otherwise.
-    if (num_compress_value == 1 && cst2_ptr != nullptr)
+    if (const_index == 1 && const2_ptr != nullptr)
     {
-        self.values_ = cst2_ptr;
+        self.values_ = const2_ptr;
     }
     else
     {
-        self.init_values_cst_val(ptr_type_cst, ptr_second_value);
+        self.init_values_const_val(ptr_type_const, ptr_second_value);
     }
 }
 
@@ -1188,21 +1192,21 @@ void zero_any::ChunkThreadPolicy<T, Derived, false>::block_clear(this Derived&  
  */
 template <typename T, typename Derived>
 void zero_any::ChunkThreadPolicy<T, Derived, false>::clear_int_st(this Derived&     self,
-                                                                  int               num_compress_value,
-                                                                  CstSlot*          ptr_type_cst,
+                                                                  int               const_index,
+                                                                  ConstSlot*        ptr_type_const,
                                                                   SecondValueRef<T> ptr_second_value,
                                                                   int               thr_rank,
-                                                                  T*                new_cst_val2_ptr)
+                                                                  T*                new_const_val2_ptr)
 {
-    self.SecondValueChunkBase<T, Derived>::check_not_constant_before_clear(num_compress_value, std::nullopt);
-    if (num_compress_value == 1 && new_cst_val2_ptr == nullptr)
+    self.SecondValueChunkBase<T, Derived>::check_not_constant_before_clear(const_index, std::nullopt);
+    if (const_index == 1 && new_const_val2_ptr == nullptr)
     {
-        new_cst_val2_ptr = Derived::Holder::find_cst_val2_ptr(ptr_second_value.get());
+        new_const_val2_ptr = Derived::Holder::find_const_val2_ptr(ptr_second_value.get());
     }
-    self.block_clear(num_compress_value, ptr_type_cst, ptr_second_value, thr_rank, new_cst_val2_ptr);
+    self.block_clear(const_index, ptr_type_const, ptr_second_value, thr_rank, new_const_val2_ptr);
 }
 
-// clear_st(num_compress_value, ptr_type_cst, ptr_second_value), which supplies the calling
+// clear_st(const_index, ptr_type_const, ptr_second_value), which supplies the calling
 // rank, is defined in-class on the OpenMP zero_any::ChunkThreadPolicy specialisation.
 
 // ---------------------------------------------------------------------------
@@ -1210,23 +1214,23 @@ void zero_any::ChunkThreadPolicy<T, Derived, false>::clear_int_st(this Derived& 
 // ---------------------------------------------------------------------------
 
 template <typename T, typename Derived>
-[[nodiscard]] T* zero_any::ChunkConcurrentOps<T, Derived>::try_mark_cst_and_get_old(this Derived& self,
-                                                                                    int           num_compress_value,
-                                                                                    T*            cst2_ptr) noexcept
+[[nodiscard]] T* zero_any::ChunkConcurrentOps<T, Derived>::try_mark_const_and_get_old(this Derived& self,
+                                                                                      int           const_index,
+                                                                                      T*            const2_ptr) noexcept
 {
     T* old = self.values_load();
-    if (old == Base::get_cst_val1() || Holder::is_cst_val2_ptr(old))
+    if (old == Base::get_const_val1() || Holder::is_const_val2_ptr(old))
     {
         return nullptr;
     }
 
-    T* new_ptr  = (num_compress_value == 0) ? Base::get_cst_val1() : cst2_ptr;
+    T* new_ptr  = (const_index == 0) ? Base::get_const_val1() : const2_ptr;
     T* expected = old;
 
     if constexpr (chunk_config::ring_log_debug)
     {
         const uint32_t chunk_id = self.ring_chunk_id();
-        const uint32_t info     = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(num_compress_value + 1) << 24U);
+        const uint32_t info     = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(const_index + 1) << 24U);
         ring_log(get_tid(), EventCode::compress_attempt, info);
     }
 
@@ -1238,21 +1242,21 @@ template <typename T, typename Derived>
     if constexpr (build_config::any_check)
     {
         T* observed = self.values_load();
-        if (observed != new_ptr && observed != Base::get_cst_val1() && !Holder::is_cst_val2_ptr(observed))
+        if (observed != new_ptr && observed != Base::get_const_val1() && !Holder::is_const_val2_ptr(observed))
         {
             invariant_failed(std::source_location::current(),
-                             "try_mark_cst_and_get_old: post-CAS values={} not in expected set "
-                             "(new_ptr={}, cst1={}, a cst2 array)",
+                             "try_mark_const_and_get_old: post-CAS values={} not in expected set "
+                             "(new_ptr={}, const1={}, a const2 array)",
                              static_cast<const void*>(observed), static_cast<const void*>(new_ptr),
-                             static_cast<const void*>(Base::get_cst_val1()));
+                             static_cast<const void*>(Base::get_const_val1()));
         }
     }
 
     if constexpr (chunk_config::ring_log_debug)
     {
         const uint32_t chunk_id = self.ring_chunk_id();
-        const uint32_t info     = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(num_compress_value + 1) << 24U);
-        ring_log(get_tid(), EventCode::cas_values_to_cst, info);
+        const uint32_t info     = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(const_index + 1) << 24U);
+        ring_log(get_tid(), EventCode::cas_values_to_const, info);
     }
     return old;
 }
@@ -1260,7 +1264,7 @@ template <typename T, typename Derived>
 template <typename T, typename Derived>
 [[nodiscard]] bool zero_any::ChunkConcurrentOps<T, Derived>::compare_and_swap(this Derived& self,
                                                                               T*            values_loc,
-                                                                              bool expected_is_cst_val2) noexcept
+                                                                              bool expected_is_const_val2) noexcept
 {
     // A chunk's second constant IS its values pointer (no per-chunk copy). The CAS must
     // still expect a CONSTANT, never "whatever values holds now": if another thread
@@ -1271,22 +1275,22 @@ template <typename T, typename Derived>
     T* expected = nullptr;
     if constexpr (is_not_bool)
     {
-        if (expected_is_cst_val2)
+        if (expected_is_const_val2)
         {
             expected = self.values_load();
-            if (!Holder::is_cst_val2_ptr(expected))
+            if (!Holder::is_const_val2_ptr(expected))
             {
                 return true; // failed: someone else materialised it first
             }
         }
         else
         {
-            expected = Base::get_cst_val1();
+            expected = Base::get_const_val1();
         }
     }
     else
     {
-        expected = expected_is_cst_val2 ? Holder::m_ptr.data() : Base::get_cst_val1();
+        expected = expected_is_const_val2 ? Holder::m_ptr.data() : Base::get_const_val1();
     }
 
     // Spelled out, not self.Base::: name lookup in `self` finds zero_any::Chunk's own
@@ -1298,21 +1302,21 @@ template <typename T, typename Derived>
         if (!failed)
         {
             T* current = self.values_load();
-            if (current != values_loc && current != Base::get_cst_val1() && !Holder::is_cst_val2_ptr(current))
+            if (current != values_loc && current != Base::get_const_val1() && !Holder::is_const_val2_ptr(current))
             {
                 invariant_failed(std::source_location::current(),
                                  "post-create_value CAS: values={}, expected one of "
-                                 "{{values_loc={}, cst1={}, a cst2 array}}",
+                                 "{{values_loc={}, const1={}, a const2 array}}",
                                  static_cast<const void*>(current), static_cast<const void*>(values_loc),
-                                 static_cast<const void*>(Base::get_cst_val1()));
+                                 static_cast<const void*>(Base::get_const_val1()));
             }
         }
     }
     if constexpr (chunk_config::ring_log_debug)
     {
         const uint32_t chunk_id = self.ring_chunk_id();
-        const uint32_t info = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(expected_is_cst_val2 ? 2 : 1) << 24U);
-        ring_log(get_tid(), failed ? EventCode::cas_values_fail : EventCode::cas_values_from_cst, info);
+        const uint32_t info = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(expected_is_const_val2 ? 2 : 1) << 24U);
+        ring_log(get_tid(), failed ? EventCode::cas_values_fail : EventCode::cas_values_from_const, info);
     }
     return failed;
 }
@@ -1322,20 +1326,20 @@ template <typename T, typename Derived>
 // ---------------------------------------------------------------------------
 
 template <typename T, typename Derived>
-[[nodiscard]] bool zero_any::ChunkStateQueries<T, Derived>::is_cst_val2(this const Derived& self) noexcept
+[[nodiscard]] bool zero_any::ChunkStateQueries<T, Derived>::is_const_val2(this const Derived& self) noexcept
 {
     const T* current_value = self.values_load();
     if constexpr (has_motif_state_v<Derived>)
     {
         // A motif chunk is compressed too, to no second value: for the write
         // engine a constant to materialise (create_value() fills it from its
-        // motif). is_cst_val2_ptr_of() stays the registry test alone: the
+        // motif). is_const_val2_ptr_of() stays the registry test alone: the
         // reads and the second-value shortcuts must not see a motif there.
-        return Holder::is_cst_val2_ptr(current_value) || Derived::is_motif_ptr(current_value);
+        return Holder::is_const_val2_ptr(current_value) || Derived::is_motif_ptr(current_value);
     }
     else if constexpr (is_not_bool)
     {
-        return Holder::is_cst_val2_ptr(current_value); // a range test on the region
+        return Holder::is_const_val2_ptr(current_value); // a range test on the region
     }
     else
     {
@@ -1344,11 +1348,11 @@ template <typename T, typename Derived>
 }
 
 template <typename T, typename Derived>
-[[nodiscard]] bool zero_any::ChunkStateQueries<T, Derived>::is_cst_val2_ptr_of(const T* ptr) noexcept
+[[nodiscard]] bool zero_any::ChunkStateQueries<T, Derived>::is_const_val2_ptr_of(const T* ptr) noexcept
 {
     if constexpr (is_not_bool)
     {
-        return Holder::is_cst_val2_ptr(ptr);
+        return Holder::is_const_val2_ptr(ptr);
     }
     else
     {
@@ -1372,17 +1376,17 @@ template <typename T, typename Derived>
 template <typename T, typename Derived>
 [[nodiscard]] bool zero_any::ChunkStateQueries<T, Derived>::is_constant_ptr(const T* ptr) noexcept
 {
-    if (ptr == Base::get_cst_val1())
+    if (ptr == Base::get_const_val1())
     {
         return true;
     }
     if constexpr (has_motif_state_v<Derived>)
     {
-        return Holder::is_cst_val2_ptr(ptr) || Derived::is_motif_ptr(ptr); // a motif is shared memory
+        return Holder::is_const_val2_ptr(ptr) || Derived::is_motif_ptr(ptr); // a motif is shared memory
     }
     else if constexpr (is_not_bool)
     {
-        return Holder::is_cst_val2_ptr(ptr);
+        return Holder::is_const_val2_ptr(ptr);
     }
     else
     {
@@ -1395,36 +1399,36 @@ template <typename T, typename Derived>
 // ---------------------------------------------------------------------------
 
 template <typename T, typename Derived>
-void zero_any::ChunkImpl<T, Derived>::init_values_cst_val(const CstSlot*    ptr_type_cst,
-                                                          SecondValueRef<T> ptr_second_value) noexcept
+void zero_any::ChunkImpl<T, Derived>::init_values_const_val(const ConstSlot*  ptr_type_const,
+                                                            SecondValueRef<T> ptr_second_value) noexcept
 {
-    if (*ptr_type_cst == CstSlot::first)
+    if (*ptr_type_const == ConstSlot::first)
     {
-        Base::values_ = Base::get_cst_val1();
+        Base::values_ = Base::get_const_val1();
         return;
     }
     if constexpr (has_motif_state_v<Derived>)
     {
         // A motif chunk's pointer is in no table (its slot holds an offset, not a second
         // value): nothing rebuilds it from the type. A path that gets here lost the motif.
-        if (*ptr_type_cst == CstSlot::motif) [[unlikely]]
+        if (*ptr_type_const == ConstSlot::motif) [[unlikely]]
         {
-            CHUNK_INVARIANT_FAILED("init_values_cst_val: a motif chunk cannot be rebuilt from its type");
+            CHUNK_INVARIANT_FAILED("init_values_const_val: a motif chunk cannot be rebuilt from its type");
         }
     }
     if constexpr (is_not_bool)
     {
-        T* cst_val2_ptr = Holder::find_cst_val2_ptr(ptr_second_value.get());
+        T* const_val2_ptr = Holder::find_const_val2_ptr(ptr_second_value.get());
         if constexpr (build_config::any_check)
         {
-            if (cst_val2_ptr == nullptr)
+            if (const_val2_ptr == nullptr)
             {
                 invariant_failed(std::source_location::current(),
-                                 "init_values_cst_val: type says cst_val2 but no array is registered for the "
+                                 "init_values_const_val: type says const_val2 but no array is registered for the "
                                  "chunk's second value");
             }
         }
-        Base::values_ = cst_val2_ptr;
+        Base::values_ = const_val2_ptr;
     }
     else
     {
@@ -1435,7 +1439,7 @@ void zero_any::ChunkImpl<T, Derived>::init_values_cst_val(const CstSlot*    ptr_
 template <typename T, typename Derived>
 void zero_any::ChunkImpl<T, Derived>::alloc_chunk(this Derived& self, SecondValueRef<T> ptr_second_value)
 {
-    if (self.is_cst_val())
+    if (self.is_const_val())
     {
         // bool has its own materialiser (the second value is the flag).
         if constexpr (is_not_bool)
@@ -1454,11 +1458,11 @@ void zero_any::ChunkImpl<T, Derived>::alloc_chunk(this Derived&        self,
                                                   SecondValueRef<T>    ptr_second_value,
                                                   [[maybe_unused]] int thr_rank)
 {
-    if (self.is_cst_val())
+    if (self.is_const_val())
     {
         if constexpr (chunk_config::stats)
         {
-            increm_chunk_write<ChunkType>();
+            inc_chunk_write<ChunkType>();
         }
 
         if constexpr (build_config::threaded)

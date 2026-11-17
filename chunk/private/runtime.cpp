@@ -178,7 +178,7 @@ void Runtime::chunk_stats()
         all.alloc += stats.alloc;
         all.write += stats.write;
         all.read += stats.read;
-        all.read_cst += stats.read_cst;
+        all.read_const += stats.read_const;
         all.read_sync += stats.read_sync;
         all.read_sync_cross += stats.read_sync_cross;
         all.dirty_gate += stats.dirty_gate;
@@ -298,7 +298,7 @@ void Runtime::chunk_stats()
     {
         const ChunkStatsThr stats = reduce_chunk_stats(v);
         // Skip a variant with no activity at all.
-        const bool any = stats.alloc != 0 || stats.write != 0 || stats.read != 0 || stats.read_cst != 0 ||
+        const bool any = stats.alloc != 0 || stats.write != 0 || stats.read != 0 || stats.read_const != 0 ||
                          stats.create != 0 || stats.list != 0 || stats.teardown_clear != 0 || stats.compress != 0 ||
                          stats.compress_attempt != 0 || stats.rechunk != 0 || stats.read_sync != 0 ||
                          stats.dirty_gate != 0 || stats.mark_ok != 0 || stats.mark_refused != 0 ||
@@ -324,7 +324,7 @@ void Runtime::chunk_stats()
         {
             std::println("    bytes        = {} MB", stats.bytes_reused / (1024L * 1024));
         }
-        const long   reads_all = stats.read + stats.read_cst;
+        const long   reads_all = stats.read + stats.read_const;
         const long   total_rw  = stats.write + reads_all;
         const double pct_w     = total_rw != 0 ? pct(stats.write, total_rw) : 0.0;
         const double pct_r     = total_rw != 0 ? pct(reads_all, total_rw) : 0.0;
@@ -344,8 +344,8 @@ void Runtime::chunk_stats()
         // Read hit rate: share served straight from the constant.
         if (reads_all != 0)
         {
-            const double hit = pct(stats.read_cst, reads_all);
-            std::println("    constant     = {}  ({:.1f}% hit)", stats.read_cst, hit);
+            const double hit = pct(stats.read_const, reads_all);
+            std::println("    constant     = {}  ({:.1f}% hit)", stats.read_const, hit);
             std::println("    materialised = {}  ({:.1f}%)", stats.read, 100.0 - hit);
         }
         // Reads that entered the slow sync path, and of those the cross-rank ones.

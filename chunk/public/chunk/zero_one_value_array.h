@@ -86,7 +86,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     friend SecondValueBase;       ///< The CRTP base reaches this class's private members.
     friend ArrayChunkBase<Array>; ///< For swap_identity().
 
-    // RechunkHooks::rechunk_reown_after_swap copies the private ind_cst_val2_.
+    // RechunkHooks::rechunk_reown_after_swap copies the private idx_const_val2_.
     template <typename, bool>
     friend class shrink_array::zero_one_value::RechunkHooks;
 
@@ -221,13 +221,13 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
 
     /**
      * @brief Set the array-wide second constant.
-     * @details Registers @p sec_value in the shared cst_val2 registry, reusing an
+     * @details Registers @p sec_value in the shared const_val2 registry, reusing an
      *          identical value's index. A reused block is re-filled to THIS
      *          array's geometry first: a larger array would otherwise read stale
      *          zeros past the registering array's size.
      * @param sec_value value chunks may now compress to
      * @param message   print the "useless for bool" warning (bool only)
-     * @warning cst_val2 blocks never move and are never released: a live chunk
+     * @warning const_val2 blocks never move and are never released: a live chunk
      *          of another array may hold the address as its `values`. One block
      *          per DISTINCT value ever declared, plus a candidate list per thread.
      */
@@ -252,7 +252,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
 
     /// @brief Index of this array's second value in the shared value table.
     /// @warning Aborts for bool, which registers no second value.
-    [[nodiscard]] int get_ind_second_value() const noexcept;
+    [[nodiscard]] int get_idx_second_value() const noexcept;
 
     /**
      * @brief Has the chunk holding element @p index been materialised?
@@ -266,7 +266,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
 
     /**
      * @brief Is chunk @p chunk_index materialised?
-     * @param chunk_index CHUNK index (not an element index -- see written(IndType))
+     * @param chunk_index CHUNK index (not an element index -- see written(IndexType))
      * @return false while that chunk is compressed to either constant
      * @note zero_one_value::Chunk::written() needs the array's second-value index: see
      *       has_chunk_written_v (array_chunk_base.h).
@@ -292,7 +292,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     /// @brief Release the buffers of chunks [@p first, @p last) -- the chunks
     ///        a shrinking resize() drops. Same release as clear_core(): freed
     ///        in place serially; under OpenMP parked in this array's geometry's
-    ///        reuse list and the chunk neutralised to cst_val1. Sequential
+    ///        reuse list and the chunk neutralised to const_val1. Sequential
     ///        point; the candidate lists must hold none of them.
     void release_chunk_range(int first, int last);
 
@@ -369,7 +369,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     /// @brief CRTP hook: the metadata the base needs for any element.
     /// @return this array's shared second-value tuple (element index unused,
     ///         since the value is array-wide -- unlike zero_any::Array)
-    auto get_metadata(IntType /*ind*/) const noexcept
+    auto get_metadata(IntType /*idx*/) const noexcept
     {
         return this->get_info_second_value();
     }
@@ -450,7 +450,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
 
     /// Index of the second value in the shared value table;
     /// chunk_config::no_second_value_index until set_second_value().
-    int ind_cst_val2_ = chunk_config::no_second_value_index;
+    int idx_const_val2_ = chunk_config::no_second_value_index;
 };
 
 } // namespace zero_one_value

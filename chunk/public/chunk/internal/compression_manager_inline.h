@@ -52,12 +52,12 @@ namespace detail
  *          < 2^47, aarch64 ones < 2^52. The op's own checks (write_body's
  *          DEFERRED_LIFECYCLE magic) run after the virtual call: too late here.
  * @param raw  the queued op
- * @param num  its offset in the chunk (the op_map key)
+ * @param elem_offset  its offset in the chunk (the op_map key)
  * @param rank the rank whose map holds it
  * @param path which drain: "own" (flush_deferred) or "xrank" (flush_chunk_all_ranks)
  */
 inline void flush_probe_op([[maybe_unused]] const DeferredOperationBase* raw,
-                           [[maybe_unused]] int                          num,
+                           [[maybe_unused]] int                          elem_offset,
                            [[maybe_unused]] int                          rank,
                            [[maybe_unused]] const char*                  path) noexcept
 {
@@ -73,15 +73,15 @@ inline void flush_probe_op([[maybe_unused]] const DeferredOperationBase* raw,
 
         if (const auto addr = ::fast_alloc::address_bits(raw); raw == nullptr || bad_ptr(addr))
         {
-            CHUNK_INVARIANT_FAILED("[FLUSH_PROBE {}] bad op_ptr in op_map: num={} op={} rank={}", path, num,
-                                   static_cast<const void*>(raw), rank);
+            CHUNK_INVARIANT_FAILED("[FLUSH_PROBE {}] bad op_ptr in op_map: elem_offset={} op={} rank={}", path,
+                                   elem_offset, static_cast<const void*>(raw), rank);
         }
         const auto vptr = ::fast_alloc::load_from_bytes<std::uintptr_t>(raw); // its first word
         if (bad_ptr(vptr))
         {
             CHUNK_INVARIANT_FAILED("[FLUSH_PROBE {}] op has null/garbage vptr (recycled under map?): "
-                                   "num={} op={} vptr={:#x} rank={}",
-                                   path, num, static_cast<const void*>(raw), vptr, rank);
+                                   "elem_offset={} op={} vptr={:#x} rank={}",
+                                   path, elem_offset, static_cast<const void*>(raw), vptr, rank);
         }
     }
 }
@@ -179,7 +179,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_deferred(int thr)
     // chunks per second per rank; per-chunk announces slow them by an order of magnitude.
     // Holding the flag across the loop only defers compressors a little longer.
     Policy::announce_flush(); // counter + heavy barrier, one Dekker verb
-    increm_chunk_gate_flush<ChunkT>();
+    inc_chunk_gate_flush<ChunkT>();
     struct FlushFlagGuard
     {
         FlushFlagGuard() = default;
@@ -254,13 +254,13 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_deferred(int thr)
             // Replay context: gate bypassed, writes applied directly — safe
             // here (begin_flush + hard drain above), see in_flush_replay.
             const FlushReplayGuard replay_guard;
-            for (auto& [num, op_ptr] : batch)
+            for (auto& [elem_offset, op_ptr] : batch)
             {
-                detail::flush_probe_op(op_ptr.get(), num, thr, "own"); // check builds: see its comment
+                detail::flush_probe_op(op_ptr.get(), elem_offset, thr, "own"); // check builds: see its comment
 
                 if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
                 {
-                    ring_log_op(get_tid(), EventCode::op_flush_one, static_cast<uint32_t>(num),
+                    ring_log_op(get_tid(), EventCode::op_flush_one, static_cast<uint32_t>(elem_offset),
                                 static_cast<const void*>(op_ptr.get()));
                 }
 
@@ -364,7 +364,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_chunk_all_ranks(C
     // Blocks any future compressor start(); once inflight compressors are drained, none
     // is mutating any chunk.
     Policy::announce_flush(); // counter + heavy barrier, one Dekker verb
-    increm_chunk_gate_flush<ChunkT>();
+    inc_chunk_gate_flush<ChunkT>();
 
     {
         int spin = 0;
@@ -428,13 +428,13 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_chunk_all_ranks(C
             // Replay context: gate bypassed, writes applied directly — safe
             // here (begin_flush + hard drain above), see in_flush_replay.
             const FlushReplayGuard replay_guard;
-            for (auto& [num, op_ptr] : batch)
+            for (auto& [elem_offset, op_ptr] : batch)
             {
-                detail::flush_probe_op(op_ptr.get(), num, r, "xrank"); // check builds: see its comment
+                detail::flush_probe_op(op_ptr.get(), elem_offset, r, "xrank"); // check builds: see its comment
 
                 if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
                 {
-                    ring_log_op(get_tid(), EventCode::op_flush_one, static_cast<uint32_t>(num),
+                    ring_log_op(get_tid(), EventCode::op_flush_one, static_cast<uint32_t>(elem_offset),
                                 static_cast<const void*>(op_ptr.get()));
                 }
 
@@ -491,7 +491,9 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_chunk_all_ranks(C
 
 // ── WAW guard: discard a superseded same-offset op on the own rank ───────────
 template <typename T, typename ChunkT, bool Enabled>
-void CompressionManagerThreadPolicy<T, ChunkT, Enabled>::erase_own_rank_op(int thr, ChunkT* chunk, int num) noexcept
+void CompressionManagerThreadPolicy<T, ChunkT, Enabled>::erase_own_rank_op(int     thr,
+                                                                           ChunkT* chunk,
+                                                                           int     elem_offset) noexcept
 {
     auto* arr = ChunkT::get_deferred_ops();
     if (arr == nullptr)
@@ -517,7 +519,7 @@ void CompressionManagerThreadPolicy<T, ChunkT, Enabled>::erase_own_rank_op(int t
     }
     auto* op_map = ops_map_ptr.get();
 
-    const auto it_op = op_map->find(num);
+    const auto it_op = op_map->find(elem_offset);
     if (it_op == op_map->end())
     {
         return; // no older op at this offset — the direct write is unshadowed
@@ -525,7 +527,7 @@ void CompressionManagerThreadPolicy<T, ChunkT, Enabled>::erase_own_rank_op(int t
 
     // APPLY-then-erase, do not just discard: the direct write that follows supersedes the
     // queued value, but its write body reads v_old to feed the incremental compression
-    // counters (mark_for_compression_if_needed_with_value). Discarded, values[num] stays at
+    // counters (mark_for_compression_if_needed_with_value). Discarded, values[elem_offset] stays at
     // its pre-op state, v_old is older than program order and the counters get a wrong
     // transition (silent corruption where pendings survive across parallel regions, e.g.
     // libgomp). Replaying restores program order: op applied, THEN our direct write. Under
@@ -542,7 +544,7 @@ void CompressionManagerThreadPolicy<T, ChunkT, Enabled>::erase_own_rank_op(int t
     catch (const std::exception& e)
     {
         CHUNK_INVARIANT_FAILED("erase_own_rank_op: erase failed: {} (rank {}, chunk {}, offset {})", e.what(), thr,
-                               chunk, num);
+                               chunk, elem_offset);
     }
 
     // Same bookkeeping as the flush erase path.
@@ -581,7 +583,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::start()
     }
 
     add_compression_active();
-    increm_chunk_gate_start<ChunkT>();
+    inc_chunk_gate_start<ChunkT>();
 
     const int max_thr = CHUNK_PMP_RANK_BOUND;
 
@@ -594,7 +596,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::start()
     // (end of this function).
     if (WriteCompressSyncPolicy<ProxyT>::any_thread_flushing(max_thr))
     {
-        increm_chunk_gate_start_flush_yield<ChunkT>();
+        inc_chunk_gate_start_flush_yield<ChunkT>();
         decrement_inflight();
         if constexpr (chunk_config::ring_log_debug)
         {
@@ -661,7 +663,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::start()
             if (++yields > max_yields)
             {
                 // Give up: undo add_compression_active() (as the flush early-out does).
-                increm_chunk_gate_start_deferred<ChunkT>();
+                inc_chunk_gate_start_deferred<ChunkT>();
                 decrement_inflight();
                 if constexpr (chunk_config::ring_log_debug)
                 {
@@ -694,8 +696,8 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::start()
     // flusher never backs off, we do.
     if (WriteCompressSyncPolicy<ProxyT>::any_thread_flushing(max_thr))
     {
-        increm_chunk_gate_start_flush_yield<ChunkT>();
-        increm_chunk_gate_start_yield_late<ChunkT>();
+        inc_chunk_gate_start_flush_yield<ChunkT>();
+        inc_chunk_gate_start_yield_late<ChunkT>();
         stealing_inflight_.fetch_sub(1, std::memory_order_seq_cst);
         decrement_inflight();
         if constexpr (chunk_config::ring_log_debug)
@@ -744,7 +746,7 @@ void CompressionManagerThreadPolicy<T, ChunkT, Enabled>::wait_out_compressor(con
             CHUNK_CPU_PAUSE();
         }
     }
-    increm_chunk_gate_wait<ChunkT>(yields, mark_hit);
+    inc_chunk_gate_wait<ChunkT>(yields, mark_hit);
 }
 
 template <typename T, typename ChunkT, bool Enabled>
@@ -840,7 +842,7 @@ void CompressionManagerThreadPolicy<T, ChunkT, Enabled>::DeferredOperation<Ctx, 
     // ── Per-op geometry pin ───────────────────────────────────────
     // The replay may run on a thread whose ambient geometry
     // (t_active_chunk_size) now belongs to another array, and
-    // create_value() sizes the buffer from it: `values[num]` would run
+    // create_value() sizes the buffer from it: `values[elem_offset]` would run
     // off a buffer of the wrong width. Pin the enqueue-time geometry
     // (ctx->chunk_size_frozen, as the proxy's chunk_size_frozen_) and
     // alloc key, and restore both exactly, including the "unset" 0.

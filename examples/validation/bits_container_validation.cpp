@@ -47,7 +47,7 @@
 //      (they keep the span's values in a per-thread buffer: it did not
 //      compile for bits, std::vector<bool> having no data());
 //  10. birth size (dyn builds): born at packed_bit_birth_factor times the
-//      active size (capped at cst_buffer_size), which it leaves unchanged --
+//      active size (capped at const_buffer_size), which it leaves unchanged --
 //      an array of another type created next is born at it.
 //
 // zero_one_value builds only (BitArray is zero_one_value::Array<Bit>). Exit 0 = pass.
@@ -275,7 +275,7 @@ int birth_size()
         return 0;
     }
     const unsigned int          active = active_chunk_size();
-    const unsigned int          expect = std::min(active * packed_bit_birth_factor, cst_buffer_size);
+    const unsigned int          expect = std::min(active * packed_bit_birth_factor, const_buffer_size);
     BitArray<>                  arr(1L << 16);
     zero_one_value::Array<bool> bools(1L << 16);
     int                         fails = 0;

@@ -317,10 +317,10 @@ long verify_elements(const char* what, const char* name, const Arr& arr, const s
 /// and the distinct motifs they point at.
 struct Census
 {
-    long mat    = 0;
-    long cst    = 0;
-    long motif  = 0;
-    long motifs = 0;
+    long mat      = 0;
+    long constant = 0;
+    long motif    = 0;
+    long motifs   = 0;
 };
 
 template <typename Arr>
@@ -346,7 +346,7 @@ Census census(const Arr& arr, long n_chunks)
         }
         else
         {
-            ++c.cst;
+            ++c.constant;
         }
     }
     std::sort(seen.begin(), seen.end());
@@ -559,9 +559,9 @@ try
         println("connectivity memory ({} chunks of {}):", n_chunks, chunk_sz);
         println("  {:<9} {:>14.0f} bytes", "vector", vbytes);
         println("  {:<9} {:>14.0f} bytes  ({:.1f} %)  materialised {}, constant {}", "zero_any", zbytes,
-                100. * zbytes / vbytes, zc.mat, zc.cst);
+                100. * zbytes / vbytes, zc.mat, zc.constant);
         println("  {:<9} {:>14.0f} bytes  ({:.1f} %)  materialised {}, constant {}, motif {}, distinct motifs {}",
-                "pattern", pbytes, 100. * pbytes / vbytes, pc.mat, pc.cst, pc.motif, pc.motifs);
+                "pattern", pbytes, 100. * pbytes / vbytes, pc.mat, pc.constant, pc.motif, pc.motifs);
     }
 
     if (sum_mismatch || bad_elements)

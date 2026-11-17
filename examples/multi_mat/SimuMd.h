@@ -34,7 +34,7 @@
     #include <optional>  // std::optional
     #include <vector>    // std::vector
 
-    #include "Containers.h"   // MultiArray, VectZeroOneValue
+    #include "Containers.h"   // MultiArray, MatZeroOneValueArray
     #include "MultiMatAlgo.h" // MultiMatAlgo
 
 namespace multi_mat::md
@@ -62,10 +62,10 @@ struct SimuMd
 {
     // ── Parameters (command line, main_md.cpp) ───────────────────────────
 
-    int nx       = 3200; ///< Rows of the mesh (3200 x 3200: about the 10 M cells of multi_mat)
-    int ny       = 3200; ///< Columns of the mesh
-    int nbmat    = 50;   ///< Materials
-    int iter_max = 100;  ///< Iterations
+    int nx          = 3200; ///< Rows of the mesh (3200 x 3200: about the 10 M cells of multi_mat)
+    int ny          = 3200; ///< Columns of the mesh
+    int n_materials = 50;   ///< Materials
+    int iter_max    = 100;  ///< Iterations
 
     int    option_chunk = 3;  ///< 1 all chunk, 2 all vector, 3 random 50/50, 4 random at chunk_rate
     int    chunk_rate   = 90; ///< Option 4: percentage of chunk materials
@@ -88,8 +88,8 @@ struct SimuMd
 
     std::vector<bool> dis; ///< Storage of every material: true = chunk
 
-    std::array<MultiArray<double>, 3>            tabs; ///< The three fields of every material
-    MultiArray<double, VectZeroOneValue<double>> frac; ///< The presence fraction of every material
+    std::array<MultiArray<double>, 3>                tabs; ///< The three fields of every material
+    MultiArray<double, MatZeroOneValueArray<double>> frac; ///< The presence fraction of every material
 
     double time_init     = 0; ///< Seconds in the initialisation (every array zeroed), barrier included (thread 0)
     double time_write    = 0; ///< Seconds in the writes, barrier included (thread 0)
@@ -102,7 +102,7 @@ struct SimuMd
 
     [[nodiscard]] auto boxes() const
     {
-        return mdns::mdspan(box_store.data(), mdns::dextents<int, 2>(iter_max, nbmat));
+        return mdns::mdspan(box_store.data(), mdns::dextents<int, 2>(iter_max, n_materials));
     }
 
     // ── Steps (main_md.cpp, ComputeLoopsMd.h) ────────────────────────────

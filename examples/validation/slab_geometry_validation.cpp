@@ -81,7 +81,7 @@ int check_pair(int small_bytes, int large_bytes, std::uintptr_t budget)
                     ptr_text(seen), alloc == &a_small ? large_bytes : small_bytes);
             ++bad;
         }
-        alloc->free_elt_pow2(block);
+        alloc->free_elem_pow2(block);
     }
     if (!bad)
     {

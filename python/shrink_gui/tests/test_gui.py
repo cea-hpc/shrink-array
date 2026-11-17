@@ -265,10 +265,10 @@ def test_target_and_exec_pickers(gui, site, monkeypatch):
     from PySide6.QtCore import Qt
     from shrink_gui import app as app_mod
     from shrink_gui import widgets as widgets_mod
-    from test_remote_helper import _fake_build_rep
-    _fake_build_rep(site)
+    from test_remote_helper import _fake_build_root
+    _fake_build_root(site)
     from shrink_gui import launch_form
-    monkeypatch.setattr(launch_form, "BUILD_REP", "~/br")       # read where the pickers are
+    monkeypatch.setattr(launch_form, "BUILD_ROOT", "~/br")       # read where the pickers are
     w, pump = gui
     w.program.setCurrentText("compile_all.sh")
     assert pump(lambda: w.form.schema is not None and "exec" in w.form.widgets)

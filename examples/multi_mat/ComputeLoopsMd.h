@@ -44,7 +44,7 @@
     #include <print>       // std::println
 
     #include "config.h"     // multi_mat::begin_parallel_phase, barrier_phase, embedded_compression
-    #include "Containers.h" // VectChunk, dispatch
+    #include "Containers.h" // MatZeroArray, dispatch
 
 namespace multi_mat::md
 {
@@ -56,7 +56,7 @@ void SimuMd::deal_parts(const BoxOf& box_of, const RowParts& row_parts, std::vec
     const long me  = multi_mat::thread_rank();
 
     long total = 0;
-    for (int mat = 0; mat < nbmat; ++mat)
+    for (int mat = 0; mat < n_materials; ++mat)
     {
         const Box b = box_of(mat);
         total += static_cast<long>(b.h) * b.w;
@@ -66,7 +66,7 @@ void SimuMd::deal_parts(const BoxOf& box_of, const RowParts& row_parts, std::vec
 
     mine.clear();
     long acc = 0; // cells before the current unit
-    for (int mat = 0; mat < nbmat && acc < hi; ++mat)
+    for (int mat = 0; mat < n_materials && acc < hi; ++mat)
     {
         const Box  b    = box_of(mat);
         const auto cols = tile_cols_of(b);
@@ -127,7 +127,7 @@ void SimuMd::compute_loops(const MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo, do
     std::vector<Share> mine;
     // The unit of a material's parts: its policy's (LoopsMd.h).
     const auto row_parts = [](int mat) { return dispatch.is_chunk(mat) ? LoopsChunk::row_parts : LoopsVec::row_parts; };
-    mine.reserve(static_cast<std::size_t>(nbmat));
+    mine.reserve(static_cast<std::size_t>(n_materials));
     const int me = multi_mat::thread_rank();
 
     // Every array zero over the whole mesh, as multi_mat's initialisation.
@@ -255,14 +255,14 @@ void SimuMd::compute_loops(const MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo, do
         const bool manual_pass = !multi_mat::embedded_compression && option_chunk != 2 && it % freq_compress == 0;
         if (manual_pass)
         {
-            mm_algo.loop(0, nbmat,
+            mm_algo.loop(0, n_materials,
                          [&](int m, const auto& get_mat_vec, const auto&)
                          {
                              if (dispatch.is_chunk(m))
                              {
                                  auto& t0 = get_mat_vec(tabs[0]);
                                  using V  = std::remove_cvref_t<decltype(t0)>;
-                                 if constexpr (std::is_same_v<V, VectChunk<double>>)
+                                 if constexpr (std::is_same_v<V, MatZeroArray<double>>)
                                  {
                                      t0.compress(false);
                                      get_mat_vec(tabs[1]).compress(false);
@@ -293,7 +293,7 @@ long SimuMd::verify(const MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo, double re
     std::vector<double> r2(n);
     std::vector<double> rf(n);
 
-    for (int mat = 0; mat < nbmat; ++mat)
+    for (int mat = 0; mat < n_materials; ++mat)
     {
         std::fill(r0.begin(), r0.end(), 0.);
         std::fill(r1.begin(), r1.end(), 0.);

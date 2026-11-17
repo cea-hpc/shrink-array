@@ -15,11 +15,11 @@
  */
 
 /// @file bench_phase_mask.cpp
-/// @brief tab_mask's phases: its fill and its per-iteration update. See
+/// @brief array_mask's phases: its fill and its per-iteration update. See
 ///        bench_array.h (BenchMaskArray, bench_mask_*) and bench_phases.h.
 ///
-/// tab_bool is 96 % constant chunks by the end of a run: there, packing bools
-/// saves almost nothing. tab_mask is the other case -- a large bool array that
+/// array_bool is 96 % constant chunks by the end of a run: there, packing bools
+/// saves almost nothing. array_mask is the other case -- a large bool array that
 /// is mostly NOT constant: segments of random masks (half the bits set) and of
 /// scattered flags (~3 % set), between whole constant segments (60 % of them,
 /// all false or all true -- bench_array.h, BenchMaskKind, says why 60). The constant half is what a chunked container
@@ -38,7 +38,7 @@
 namespace
 {
 
-/// @brief Is tab_mask[@p index] flipped at iteration @p iter? ~1 element in 61 of the
+/// @brief Is array_mask[@p index] flipped at iteration @p iter? ~1 element in 61 of the
 ///        mixed segments, a different set each iteration.
 constexpr bool mask_flips(Int index, Int iter) noexcept
 {
@@ -58,9 +58,9 @@ void bench_phase_mask_fill(BenchArrays& bench_arr)
         return;
     }
 
-    auto&     tab_mask = bench_arr.tab_mask;
-    const Int count    = static_cast<Int>(tab_mask.size());
-    const Int n_blocks = (count + bench_mask_block - 1) / bench_mask_block;
+    auto&     array_mask = bench_arr.array_mask;
+    const Int count      = static_cast<Int>(array_mask.size());
+    const Int n_blocks   = (count + bench_mask_block - 1) / bench_mask_block;
 
     bench_par::region(
         [&]([[maybe_unused]] bench_par::Team& team)
@@ -79,7 +79,7 @@ void bench_phase_mask_fill(BenchArrays& bench_arr)
                         // so a false segment stays a constant chunk nothing materialised.
                         if (bench_mask_initial(i))
                         {
-                            tab_mask[i] = true;
+                            array_mask[i] = true;
                         }
                     }
                 },
@@ -102,7 +102,7 @@ void bench_phase_mask_fill(BenchArrays& bench_arr)
 // compute phases read what they wrote.
 namespace
 {
-/// @brief Does iteration @p iter write block @p block of tab_mask?
+/// @brief Does iteration @p iter write block @p block of array_mask?
 bool mask_block_written(Int block, Int iter) noexcept
 {
     const Int seg = block * bench_mask_block / bench_mask_segment;
@@ -126,9 +126,9 @@ void bench_phase_mask_compute(BenchArrays& bench_arr, Int iter, long& mask_count
         return;
     }
 
-    auto&     tab_mask = bench_arr.tab_mask;
-    const Int nmask    = static_cast<Int>(tab_mask.size());
-    const Int n_blocks = (nmask + bench_mask_block - 1) / bench_mask_block;
+    auto&     array_mask = bench_arr.array_mask;
+    const Int nmask      = static_cast<Int>(array_mask.size());
+    const Int n_blocks   = (nmask + bench_mask_block - 1) / bench_mask_block;
 
     long count = 0;
 
@@ -151,10 +151,10 @@ void bench_phase_mask_compute(BenchArrays& bench_arr, Int iter, long& mask_count
                     const bool constant = kind == BenchMaskKind::all_false || kind == BenchMaskKind::all_true;
                     if (constant)
                     {
-                        const bool now = tab_mask[lo]; // the whole segment's value
+                        const bool now = array_mask[lo]; // the whole segment's value
                         for (Int i = lo; i < hi; ++i)
                         {
-                            tab_mask[i] = !now;
+                            array_mask[i] = !now;
                         }
                     }
                     else
@@ -163,8 +163,8 @@ void bench_phase_mask_compute(BenchArrays& bench_arr, Int iter, long& mask_count
                         {
                             if (mask_flips(i, iter))
                             {
-                                const bool now = tab_mask[i];
-                                tab_mask[i]    = !now;
+                                const bool now = array_mask[i];
+                                array_mask[i]  = !now;
                             }
                         }
                     }
@@ -183,7 +183,7 @@ void bench_phase_mask_compute(BenchArrays& bench_arr, Int iter, long& mask_count
                                           const Int hi = lo + bench_mask_block < nmask ? lo + bench_mask_block : nmask;
                                           for (Int i = lo; i < hi; ++i)
                                           {
-                                              count_part += tab_mask[i] ? 1 : 0;
+                                              count_part += array_mask[i] ? 1 : 0;
                                           }
                                       });
 

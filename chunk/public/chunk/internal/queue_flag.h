@@ -18,7 +18,7 @@
 /**
  * @file queue_flag.h
  * @brief The "queued for compression" flag of a chunk
- *        (tab_is_inside_chunk_list_to_compress): its protocol between the
+ *        (array_is_inside_chunk_list_to_compress): its protocol between the
  *        writers that queue the chunk and the compression pass that hands it
  *        back.
  *
@@ -149,7 +149,7 @@ inline void hand_back(std::atomic<char>& flag) noexcept
  *          A negative chunk number is a corrupt entry (purged entries are
  *          erased): reported in check builds, skipped otherwise.
  *
- * @tparam List vector of tuples (chunk pointer or null, chunk number, tab number, ...)
+ * @tparam List vector of tuples (chunk pointer or null, chunk number, array number, ...)
  * @param flag_of (array_id, chunk_index) -> the candidate's flag
  * @param reset (array_id, chunk_index): clears the flag of an entry with no pass
  *        protocol (serial build, null chunk). A callable and not one function:

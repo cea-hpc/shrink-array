@@ -59,11 +59,11 @@
 #include "chunk/zero_one_value_array.h"  // zero_one_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/runtime.h"               // Runtime::register_chunk_size, init
-#include "chunk/internal/chunk_size_policy.h" // cst_buffer_size, set_active_chunk_size, set_thread_chunk_size, chunk_size_error
+#include "chunk/internal/chunk_size_policy.h" // const_buffer_size, set_active_chunk_size, set_thread_chunk_size, chunk_size_error
 #include "chunk/config.h"                     // chunk_config::use_zero*
-#include "chunk/internal/env_parse.h"         // env_number / arg_number (checked, not atoi)
-#include "chunk/print.h"                      // shrink_array::println
-#include "chunk/log.h"                        // logging::set_sink (the refusals' warnings)
+#include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
+#include "chunk/print.h"              // shrink_array::println
+#include "chunk/log.h"                // logging::set_sink (the refusals' warnings)
 
 using namespace shrink_array;
 
@@ -183,7 +183,7 @@ static int round_trip_at(unsigned int csz, long count)
 }
 
 // The refusals the round-trips stop short of: a size wider than
-// cst_buffer_size, or not a power of two nor a multiple of 64. Each setter
+// const_buffer_size, or not a power of two nor a multiple of 64. Each setter
 // refuses it with one warning on the rechunk channel and keeps the geometry
 // (set_active_chunk_size, an array's rechunk_to); chunk_size_error says why,
 // to_string in words. The coverage report had these refusals at 0 %.
@@ -205,20 +205,20 @@ static int refused_sizes()
         ++fails;
         println("  FAIL refused sizes: {}", what);
     };
-    const unsigned int too_wide = 2 * cst_buffer_size;
+    const unsigned int too_wide = 2 * const_buffer_size;
 
     if (chunk_size_error(too_wide) != ChunkSizeError::exceeds_buffer)
     {
-        fail("chunk_size_error(2 x cst_buffer_size) is not exceeds_buffer");
+        fail("chunk_size_error(2 x const_buffer_size) is not exceeds_buffer");
     }
     if (chunk_size_error(100) != ChunkSizeError::not_pow2_or_x64 ||
         chunk_size_error(0) != ChunkSizeError::not_pow2_or_x64)
     {
         fail("chunk_size_error(100) / (0) is not not_pow2_or_x64");
     }
-    if (chunk_size_error(cst_buffer_size).has_value())
+    if (chunk_size_error(const_buffer_size).has_value())
     {
-        fail("chunk_size_error(cst_buffer_size) refuses the widest size allowed");
+        fail("chunk_size_error(const_buffer_size) refuses the widest size allowed");
     }
     if (std::string_view(to_string(ChunkSizeError::exceeds_buffer)).find("CHUNK_DYN_MAX_SIZE") ==
         std::string_view::npos)
@@ -232,7 +232,7 @@ static int refused_sizes()
     set_active_chunk_size(too_wide);
     if (active_chunk_size() != before || g_rechunk_warnings != 1)
     {
-        fail("set_active_chunk_size(2 x cst_buffer_size): the geometry moved, or not one warning");
+        fail("set_active_chunk_size(2 x const_buffer_size): the geometry moved, or not one warning");
     }
 
     set_active_chunk_size(64);
@@ -245,7 +245,7 @@ static int refused_sizes()
         arr.rechunk_to(too_wide);
         if (arr.chunk_size() != 64 || g_rechunk_warnings != 1 || arr[17] != 1.5)
         {
-            fail("rechunk_to(2 x cst_buffer_size): the array changed, or not one warning");
+            fail("rechunk_to(2 x const_buffer_size): the array changed, or not one warning");
         }
         g_rechunk_warnings = 0;
         arr.rechunk_to(100);
@@ -270,10 +270,10 @@ static int run_body(int argc, char** argv)
 
     int fails = 0;
 
-    // Up to cst_buffer_size: past that ceiling the shared constant buffers are
+    // Up to const_buffer_size: past that ceiling the shared constant buffers are
     // too narrow and the library refuses the geometry by design: refused_sizes()
     // tests that refusal, apart.
-    for (unsigned int csz = 64; csz <= shrink_array::cst_buffer_size; csz <<= 1)
+    for (unsigned int csz = 64; csz <= shrink_array::const_buffer_size; csz <<= 1)
     {
         fails += round_trip_at(csz, count);
     }
