@@ -143,6 +143,10 @@ inline constexpr bool finalize_apart = false;
  *          (this_task_arena::current_thread_index()): a worker came late, its
  *          rank's task was stolen and ran after another one -- the region
  *          then lasts about two ranks. "max ms" is the worst start of all.
+ *          TBB, under the table: the mean number of distinct arena threads
+ *          per region, and the slot indices most often missing from a region
+ *          and most often running two ranks -- the same slot every time is a
+ *          worker the arena never gets; a varying one, a worker held elsewhere.
  *          Off by default: one test of a static bool per region, no clock read.
  */
 namespace rank_timing
@@ -179,6 +183,7 @@ struct Site
     double      late      = 0; ///< sum over calls of the latest rank start
     double      max_late  = 0; ///< the latest rank start of all calls
     long long   shared    = 0; ///< calls in which a thread ran two ranks or more (TBB)
+    long long   threads   = 0; ///< sum over calls of the distinct threads that ran ranks (TBB)
 };
 
 /// @brief The starts and ends of one call's ranks, from t0, in seconds.
@@ -241,13 +246,6 @@ class Registry
             ssum += c.start[k];
             smax = std::max(smax, c.start[k]);
         }
-        bool shared = false;
-        if (!c.thread.empty())
-        {
-            std::vector<int> ids(c.thread);
-            std::sort(ids.begin(), ids.end());
-            shared = std::adjacent_find(ids.begin(), ids.end()) != ids.end();
-        }
         double isum = 0;
         for (std::size_t k = 0; k < n; ++k)
         {
@@ -255,7 +253,39 @@ class Registry
         }
 
         const std::scoped_lock lock(mutex_);
-        Site&                  s = site(loc);
+        bool                   shared   = false;
+        long long              distinct = 0;
+        if (!c.thread.empty())
+        {
+            // Ranks per arena slot (current_thread_index(); -1: not recorded).
+            std::size_t slots = n;
+            for (const int id : c.thread)
+            {
+                slots = std::max(slots, static_cast<std::size_t>(id + 1));
+            }
+            std::vector<int> per(slots, 0);
+            for (const int id : c.thread)
+            {
+                if (id >= 0)
+                {
+                    ++per[static_cast<std::size_t>(id)];
+                }
+            }
+            if (missing_.size() < slots)
+            {
+                missing_.resize(slots, 0);
+                doubled_.resize(slots, 0);
+            }
+            for (std::size_t i = 0; i < slots; ++i)
+            {
+                distinct += per[i] > 0 ? 1 : 0;
+                shared = shared || per[i] > 1;
+                missing_[i] += (i < n && per[i] == 0) ? 1 : 0;
+                doubled_[i] += per[i] > 1 ? 1 : 0;
+            }
+            ++slot_calls_;
+        }
+        Site& s = site(loc);
         ++s.calls;
         s.wall += w;
         s.busy += bsum;
@@ -267,6 +297,7 @@ class Registry
         s.late += smax;
         s.max_late = std::max(s.max_late, smax);
         s.shared += shared ? 1 : 0;
+        s.threads += distinct;
         finalize_ += seconds(fin_end - wall_end);
         last_end_  = fin_end;
         have_last_ = true;
@@ -363,14 +394,60 @@ class Registry
                          sp(s->busy), sp(s->imbalance), sp(s->launch), sp(s->tail), 1e3 * s->late / calls,
                          1e3 * s->max_late, shared);
         }
+        report_slots();
+    }
+
+    /// @brief TBB: the arena slots that miss a region or run two ranks, most often first.
+    void report_slots() const
+    {
+        if (slot_calls_ == 0)
+        {
+            return;
+        }
+        long long threads = 0;
+        for (const auto& s : sites_)
+        {
+            threads += s->threads;
+        }
+        const auto calls = static_cast<double>(slot_calls_);
+        std::fprintf(stderr,
+                     "[rank-timing] TBB arena slots: %.2f distinct threads per region (of %d ranks), %lld regions\n",
+                     static_cast<double>(threads) / calls, CHUNK_PMP_MAX_THREADS, slot_calls_);
+        const auto top = [calls](const char* what, const std::vector<long long>& v)
+        {
+            std::vector<std::size_t> idx;
+            for (std::size_t i = 0; i < v.size(); ++i)
+            {
+                if (v[i] > 0)
+                {
+                    idx.push_back(i);
+                }
+            }
+            std::sort(idx.begin(), idx.end(), [&v](std::size_t a, std::size_t b) { return v[a] > v[b]; });
+            std::fprintf(stderr, "[rank-timing]   %s:", what);
+            if (idx.empty())
+            {
+                std::fputs(" none", stderr);
+            }
+            for (std::size_t j = 0; j < idx.size() && j < 8; ++j)
+            {
+                std::fprintf(stderr, " slot %zu %.1f%%,", idx[j], 100.0 * static_cast<double>(v[idx[j]]) / calls);
+            }
+            std::fprintf(stderr, " (%zu slots in all)\n", idx.size());
+        };
+        top("missing from a region", missing_);
+        top("ran two ranks or more", doubled_);
     }
 
     std::mutex                         mutex_;
     std::vector<std::unique_ptr<Site>> sites_;
-    double                             serial_    = 0;
-    double                             finalize_  = 0;
-    Clock::time_point                  last_end_  = {};
-    bool                               have_last_ = false;
+    std::vector<long long>             missing_;        ///< TBB: regions each slot ran no rank of
+    std::vector<long long>             doubled_;        ///< TBB: regions each slot ran two ranks or more of
+    long long                          slot_calls_ = 0; ///< TBB: regions with the slots recorded
+    double                             serial_     = 0;
+    double                             finalize_   = 0;
+    Clock::time_point                  last_end_   = {};
+    bool                               have_last_  = false;
 };
 
 /// @brief Depth of region() calls on this thread: only the outermost is timed.
