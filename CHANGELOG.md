@@ -97,12 +97,14 @@ the tag's checksum to the recipe.
   stops the program; 256 and `_dyn`), and `spack` (the recipe installed from the checkout for
   `target=x86_64_v3`, no target flag from the project, no AVX-512 instruction in the
   libraries, `getting_started` built against the install).
-- `CHUNK_PHASE_FENCES=0` runs without the four `seq_cst` fences that close the phase functions
-  (`chunk/private/type_state_registry.cpp`), with a warning. They were kept as "empirically
-  load-bearing" since one unexplained checksum in August 2026; no handshake needs them as far
-  as the code reads, and several defects that lost deferred writes at phase boundaries have been
-  fixed since. The switch is there to settle it by measure before they are removed; the default
-  keeps them (`docs/developer_settings.md` §1).
+- The four `seq_cst` fences that closed the phase functions (`finalize_parallel_phase()`, its
+  `only_flush` / `after_flush` halves, `finalize_barrier_phase()`;
+  `chunk/private/type_state_registry.cpp`) are gone, and `CHUNK_PHASE_FENCES` with them. They
+  were kept as "empirically load-bearing" since one unexplained checksum in August 2026; no
+  handshake needs them as far as the code reads (each has its own barrier), and several defects
+  that lost deferred writes at phase boundaries were fixed since. Settled by measure: several tens
+  of thousands of `shrink_bench --mode check` runs on AArch64, the weaker memory model, with the
+  fences off (`CHUNK_PHASE_FENCES=0`), not one checksum different from `std::vector`'s.
 - `shrink_gui` 0.16: an environment field under the extra arguments (`NAME=value` words),
   exported in `run.sh` and `node.sh` before the command -- `CHUNK_LLVM_ROOT=~/llvm-22` for
   `compile_all.sh`, a run-time switch of the library for a bench. Exported before
@@ -148,6 +150,13 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- Std backend with the library's teams on TBB: `CHUNK_PMP_JOIN_US`, how long such a team waits
+  for its TBB tasks to start, is 5 ms by default instead of 200 us. On a 144-thread AArch64 node
+  the TBB bench (`shrink_bench_tbb_zero_any_int64_dyn --multiply 3 --mode perf`) ran 79.5 s with
+  200 us and 50.9 s with 5 ms: the finalize 21 s -> 13.9 s, and the program's own regions
+  52.5 s -> 31.1 s, since a task that missed its team was taken and dropped by a TBB worker
+  during the next region (`BENCH_RANK_TIMING`'s launch share 13% -> 2.2%). Only TBB's teams
+  wait so: the OpenMP backend and the std backend's own pool are untouched.
 - The CMake package is `shrink_array`, the project's name: `find_package(shrink_array)`, and
   targets without the repeated word -- `shrink_array::zero_any`, `shrink_array::zero_any_256`,
   `shrink_array::zero_any_dyn` (`zero` and `zero_one_value` alike), `shrink_array::vector`,
@@ -284,6 +293,18 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- TBB: the library's own teams run in the program's arena. `use_tbb_for_library_teams()`
+  launched them (the flush and compression pass of `finalize_parallel_phase()`, a re-chunk) in
+  a `task_arena` of its own, so TBB's workers left the program's arena for that one and came
+  back at every phase. On a 144-thread AArch64 node the TBB bench took about three times the
+  OpenMP one: per compute region, 12.7 ms for 3.2 ms of work per rank, a rank waiting 2.5 ms
+  for its task to start, and 23 s in `finalize_parallel_phase()` over the run. The tasks now go
+  to the calling thread's arena (`oneapi::tbb::this_task_arena::enqueue`, oneTBB 2021.6 and
+  later), and `use_tbb_for_library_teams(arena)` names the arena for a program that runs its
+  regions in an explicit `task_arena`; `shrink_bench` does. `BENCH_RANK_TIMING` printed the
+  time of `finalize_parallel_phase()` as a part of the serial time, which it is not, and left
+  it out of the thread-time it splits: its report gives the three wall times apart, and a
+  finalize share.
 - `multi-mat` built with gcc on x86-64: the compute loop (`LoopsSimd::omp_foreach_simd_red_sum`,
   `cos + sin + tan` under `omp simd`) never vectorised. glibc declares its vector `cos`, `sin`
   and `tan` (libmvec) to gcc only under `__FAST_MATH__`, which the flags of

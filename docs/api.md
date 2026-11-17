@@ -170,7 +170,10 @@ TBB itself (the library does not). Its first call also gives the library's own t
 and compression pass of `finalize_parallel_phase()`, a re-chunk, a parallel initialisation) to
 TBB's threads instead of the std backend's pool, so that the two do not compete for the cores;
 a TBB program that writes the arrays without the adaptor calls
-`shrink_array::tbb::use_tbb_for_library_teams()` itself, once.
+`shrink_array::tbb::use_tbb_for_library_teams()` itself, once. Those teams run in the arena of
+the thread that opens them, the one its TBB algorithms run in; a program whose regions run in a
+`task_arena` of its own while it calls `finalize_parallel_phase()` outside it passes that arena:
+`use_tbb_for_library_teams(arena)`. Otherwise TBB's threads change arena twice per region.
 
 The threads, whatever the backend (`chunk/threads.h`): size per-thread data and number the
 threads with these rather than with `omp_get_*`, so that the program builds with every backend.

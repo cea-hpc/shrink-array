@@ -201,7 +201,7 @@ one, on a team of the backend. `phases.h` states the contract.
    7b the application drives the arrays from ONE thread; the library's own
    teams run on the std backend. Application threads are 7c.
    *7c done*: the application's threads under the std backend.
-   - **Rank**: `shrink_array::thread_rank()` (`pmp_runtime.h`) is the rank in the
+   - **Rank**: `pmp::thread_rank()` (`pmp_runtime.h`) is the rank in the
      innermost active team of the std backend when the thread is in one
      (`std_backend::ThreadState::active_rank`, kept by `FrameGuard`), its
      `registered_rank()` otherwise -- the application's threads, and the
@@ -412,7 +412,7 @@ one, on a team of the backend. `phases.h` states the contract.
      every team on the cores TBB needs. A team now enqueues its n - 1 workers
      as tasks of a TBB arena. TBB does not promise to run them at once, and a
      barrier waiting for a task never started would never end, so the team's
-     size is fixed after the tasks had `CHUNK_PMP_JOIN_US` (200 us) to start:
+     size is fixed after the tasks had `CHUNK_PMP_JOIN_US` (5 ms; 200 us at first) to start:
      those that came take ranks 1, 2, ... and the team runs with them (with
      the caller alone, at worst); a later task finds the join closed, or a
      later generation, and returns, touching nothing but the pool
