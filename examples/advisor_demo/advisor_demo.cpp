@@ -75,7 +75,7 @@ struct Truth
 
 static Truth ground_truth(const zero_any::Array<double>& tab, double meta)
 {
-    Truth truth{tab.nb_chunk_, 0, 0.};
+    Truth truth{tab.chunk_count_, 0, 0.};
     for (long long j = 0; j < truth.chunks; ++j)
     {
         const auto& chunk = tab.chunk_list_[j];

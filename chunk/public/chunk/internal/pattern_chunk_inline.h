@@ -45,23 +45,23 @@ template <typename T>
 }
 
 template <typename T>
-void pattern::Chunk<T>::classify_motif(int num_chunk, int num_tab, ChunkElems size)
+void pattern::Chunk<T>::classify_motif(int chunk_index, int array_id, ChunkElems size)
 {
     if (const auto [motif, offset] = find_motif(size); motif != nullptr)
     {
-        motif_candidates_.emplace_back(this, motif, offset, num_chunk, num_tab, size);
+        motif_candidates_.emplace_back(this, motif, offset, chunk_index, array_id, size);
     }
 }
 
 template <typename T>
-void pattern::Chunk<T>::compress_to_motif(int thr, int num_chunk, int num_tab, ChunkElems size)
+void pattern::Chunk<T>::compress_to_motif(int thr, int chunk_index, int array_id, ChunkElems size)
 {
     using ProxyT = ChunkTraits<Chunk>::ProxyType;
     if (const auto [motif, offset] = find_motif(size); motif != nullptr)
     {
         // The geometry pin is the caller's (compress_chunk_to_compress_in_par()).
-        const SecondValueRef<T> slot = ProxyT::BaseSpec::get_tab_second_value(num_tab, num_chunk);
-        block_clear_motif(&ProxyT::tab_type_cst_val[num_tab][num_chunk], slot, motif, offset, thr);
+        const SecondValueRef<T> slot = ProxyT::BaseSpec::get_tab_second_value(array_id, chunk_index);
+        block_clear_motif(&ProxyT::tab_type_cst_val[array_id][chunk_index], slot, motif, offset, thr);
     }
 }
 
@@ -69,7 +69,7 @@ template <typename T>
 void pattern::Chunk<T>::compress_motif_candidates(int thr)
 {
     using ProxyT = ChunkTraits<Chunk>::ProxyType;
-    for (const auto& [chunk, motif, offset, num_chunk, num_tab, size] : motif_candidates_)
+    for (const auto& [chunk, motif, offset, chunk_index, array_id, size] : motif_candidates_)
     {
         // Per-chunk geometry pin, as make_block_compression() for the constants: the
         // buffer goes back to the pool of ITS size (dynamic builds).
@@ -77,8 +77,8 @@ void pattern::Chunk<T>::compress_motif_candidates(int thr)
         {
             shrink_array::set_thread_chunk_size(size.count());
         }
-        const SecondValueRef<T> slot = ProxyT::BaseSpec::get_tab_second_value(num_tab, num_chunk);
-        chunk->block_clear_motif(&ProxyT::tab_type_cst_val[num_tab][num_chunk], slot, motif, offset, thr);
+        const SecondValueRef<T> slot = ProxyT::BaseSpec::get_tab_second_value(array_id, chunk_index);
+        chunk->block_clear_motif(&ProxyT::tab_type_cst_val[array_id][chunk_index], slot, motif, offset, thr);
         chunk->steal_unmark();
     }
     motif_candidates_.clear();

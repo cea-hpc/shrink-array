@@ -83,7 +83,7 @@ namespace shrink_array
  * @see ArrayChunkBase::is_written_at
  */
 template <typename D>
-inline constexpr bool has_chunk_written_v = requires(const D& obj, int num_chunk) { obj.chunk_written(num_chunk); };
+inline constexpr bool has_chunk_written_v = requires(const D& obj, int chunk_index) { obj.chunk_written(chunk_index); };
 
 /**
  * @brief Common implementation of the chunked arrays, injected by CRTP.
@@ -121,13 +121,13 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
                        public RechunkSupport<Derived>
 {
   public:
-    // RechunkSupport swaps chunk_list_ / m_size / nb_chunk / size_policy_ with the
+    // RechunkSupport swaps chunk_list_ / m_size / chunk_count / size_policy_ with the
     // fresh array; as a base it cannot reach these protected members through a
     // Derived object without friendship (both specialisations: <typename, bool>).
     template <typename, bool>
     friend class RechunkSupport;
 
-    // Same for RechunkHooks::rechunk_swap_identity, which swaps num_tab.
+    // Same for RechunkHooks::rechunk_swap_identity, which swaps array_id.
     template <typename, bool>
     friend class RechunkHooks;
 
@@ -346,7 +346,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
         const_iterator(const Derived* owner, IndType lin) noexcept
             : owner_(owner)
             , lin_(lin)
-            , num_chunk_(lin < 0 ? -1 : owner->chunk_index_of(lin))
+            , chunk_index_(lin < 0 ? -1 : owner->chunk_index_of(lin))
             , num_(lin < 0 ? static_cast<int>(owner->size_policy_.modulo()) : owner->offset_in_chunk(lin))
             , modulo_(static_cast<int>(owner->size_policy_.modulo()))
         {
@@ -359,9 +359,9 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
         void check_no_write_since_entry() const noexcept;
 
         /**
-         * @brief Point chunk_ at chunk_list_[num_chunk_] and sync it once.
+         * @brief Point chunk_ at chunk_list_[chunk_index_] and sync it once.
          * @details Guarded so the end() position (one past the last element) never
-         *          dereferences an out-of-range chunk: at end, num_chunk_ may index
+         *          dereferences an out-of-range chunk: at end, chunk_index_ may index
          *          chunk_list_.size().
          */
         void enter_chunk() noexcept;
@@ -378,18 +378,18 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
         void seek(IndType lin) noexcept
         {
             // -1 handled apart: the chunk/offset split wants i >= 0.
-            lin_       = lin;
-            num_chunk_ = lin < 0 ? -1 : owner_->chunk_index_of(lin);
-            num_       = lin < 0 ? modulo_ : owner_->offset_in_chunk(lin);
+            lin_         = lin;
+            chunk_index_ = lin < 0 ? -1 : owner_->chunk_index_of(lin);
+            num_         = lin < 0 ? modulo_ : owner_->offset_in_chunk(lin);
             enter_chunk();
         }
 
-        const Derived*   owner_     = nullptr; ///< Array being traversed.
-        const ChunkType* chunk_     = nullptr; ///< Current chunk, already sync'd; null at end/rend.
-        IndType          lin_       = 0;       // absolute linear index (identity/compare)
-        int              num_chunk_ = 0;       ///< Index of @ref chunk_ in the chunk list.
-        int              num_       = 0;       // intra-chunk offset
-        int              modulo_    = 0;       ///< Cached geometry mask.
+        const Derived*   owner_       = nullptr; ///< Array being traversed.
+        const ChunkType* chunk_       = nullptr; ///< Current chunk, already sync'd; null at end/rend.
+        IndType          lin_         = 0;       // absolute linear index (identity/compare)
+        int              chunk_index_ = 0;       ///< Index of @ref chunk_ in the chunk list.
+        int              num_         = 0;       // intra-chunk offset
+        int              modulo_      = 0;       ///< Cached geometry mask.
     };
 
     using iterator               = const_iterator;                        ///< No mutable iterator exists (proxy store).
@@ -470,7 +470,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      */
     [[nodiscard]] double stats(this const Derived& self)
     {
-        return self.nb_chunk_ ? (100.0 * self.written_chunk_count() / self.nb_chunk_) : 0.0;
+        return self.chunk_count_ ? (100.0 * self.written_chunk_count() / self.chunk_count_) : 0.0;
     }
 
     // ── Capacity, and the growth by one ──────────────────────────────────────
@@ -484,7 +484,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     /// @return The element count the current chunks can hold without a resize().
     [[nodiscard]] size_type capacity() const noexcept
     {
-        return static_cast<size_type>(nb_chunk_) * static_cast<size_type>(size_policy_.size());
+        return static_cast<size_type>(chunk_count_) * static_cast<size_type>(size_policy_.size());
     }
 
     /**
@@ -742,7 +742,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @brief swap(): O(1) exchange of two containers.
      *
      * @details The chunk lists are exchanged with everything describing them:
-     *          the identity (num_tab indexes the proxies' per-array tables and the
+     *          the identity (array_id indexes the proxies' per-array tables and the
      *          registries map the address to it, as in rechunk_to()), the
      *          slab-affinity key and the dirty bitset. Exchanging the chunks alone
      *          would leave each array reading the other's metadata rows.
@@ -821,12 +821,12 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     // The core's members, named here so this class and the derived arrays use
     // them unqualified (the core is a dependent base).
     using Core::alloc_key_;
+    using Core::array_count;
+    using Core::array_id_;
     using Core::assign_alloc_key;
+    using Core::chunk_count_;
     using Core::chunk_list_;
-    using Core::nb_chunk_;
-    using Core::nb_tab;
     using Core::next_alloc_key_;
-    using Core::num_tab_;
     using Core::size_policy_;
 
     /**
@@ -890,7 +890,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      *        the variant's rebuild_storage() -- the geometry-dependent
      *        allocation alone, which rechunk_to also calls on an already
      *        registered, just torn-down array WITHOUT re-running create_common()
-     *        (that would re-register it under a fresh num_tab via pre_create_hook).
+     *        (that would re-register it under a fresh array_id via pre_create_hook).
      */
     void create(this Derived& self, IndType sz);
 
@@ -973,13 +973,13 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
         return self(index);
     }
 
-    /// @brief The second-value slot of chunk @p num_chunk, where a motif chunk
+    /// @brief The second-value slot of chunk @p chunk_index, where a motif chunk
     ///        keeps its offset (has_motif_state_v members only). Protected, not
     ///        private: the family's array re-exports it for the chunk-size advisor.
-    [[nodiscard]] const T* motif_offset_slot(int num_chunk) const noexcept
+    [[nodiscard]] const T* motif_offset_slot(int chunk_index) const noexcept
         requires has_motif_state_v<ChunkType>
     {
-        return ProxyType::BaseSpec::get_tab_second_value(this->num_tab_, num_chunk).slot;
+        return ProxyType::BaseSpec::get_tab_second_value(this->array_id_, chunk_index).slot;
     }
 
   private:
@@ -990,38 +990,38 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     ///        do not rely on every element going through operator[].
     static constexpr bool bulk_fast = !chunk_config::stats && !chunk_config::do_check;
 
-    /// @brief Call @p fn(chunk, num_chunk, lo, hi) for each chunk the range
+    /// @brief Call @p fn(chunk, chunk_index, lo, hi) for each chunk the range
     ///        [first, last) touches -- offsets [lo, hi) in it -- after one
     ///        sync_chunk, as the iterator does on chunk entry.
     template <typename Fn>
     void for_each_chunk_span(IndType first, IndType last, Fn&& fn) const;
 
 
-    /// @brief ch.read_block(), with chunk @p num_chunk's offset slot for a
+    /// @brief ch.read_block(), with chunk @p chunk_index's offset slot for a
     ///        member with the motif state.
-    void read_chunk_block(const ChunkType& ch, int num_chunk, int first, int count, T* out) const noexcept;
+    void read_chunk_block(const ChunkType& ch, int chunk_index, int first, int count, T* out) const noexcept;
 
-    /// @brief ch.read_block_or_constant(), with chunk @p num_chunk's offset
+    /// @brief ch.read_block_or_constant(), with chunk @p chunk_index's offset
     ///        slot for a member with the motif state.
-    bool read_chunk_block_or_constant(const ChunkType& ch, int num_chunk, int first, int count, T* out, T& cst)
+    bool read_chunk_block_or_constant(const ChunkType& ch, int chunk_index, int first, int count, T* out, T& cst)
         const noexcept;
 
     /// @brief Check builds, precise read gate: nothing was deferred onto
     ///        the chunk since its sync -- the iterator's check, per block.
     void check_no_write_during_bulk_read([[maybe_unused]] const ChunkType& ch,
-                                         [[maybe_unused]] int              num_chunk,
+                                         [[maybe_unused]] int              chunk_index,
                                          [[maybe_unused]] int              offset) const noexcept;
 
     /**
-     * @brief Is chunk @p num_chunk materialised?
-     * @details Routes to Derived::chunk_written(num_chunk) when it exists (zero_one_value::Array,
+     * @brief Is chunk @p chunk_index materialised?
+     * @details Routes to Derived::chunk_written(chunk_index) when it exists (zero_one_value::Array,
      *          whose chunks need the second-value index), else asks
-     *          chunk_list_[num_chunk].written() directly.
-     * @param num_chunk CHUNK index
-     * @return true if chunk @p num_chunk has been written (i.e. is not constant)
+     *          chunk_list_[chunk_index].written() directly.
+     * @param chunk_index CHUNK index
+     * @return true if chunk @p chunk_index has been written (i.e. is not constant)
      * @see has_chunk_written_v
      */
-    [[nodiscard]] bool is_written_at(this const Derived& self, int num_chunk) noexcept;
+    [[nodiscard]] bool is_written_at(this const Derived& self, int chunk_index) noexcept;
 
     /**
      * @brief Sequential counterpart of written_chunk_count().
@@ -1032,12 +1032,12 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     /**
      * @brief Centralized synchronization logic.
      * @param chunk_t Reference to the actual chunk for OMP checks.
-     * @param num_chunk Index of the chunk for bitset lookup.
+     * @param chunk_index Index of the chunk for bitset lookup.
      * @param offset Offset within the chunk.
      * @note Compiles to nothing in a serial build (`if constexpr (threaded)`).
      */
     CHUNK_FORCE_INLINE void
-    sync_chunk(this const Derived& self, const ChunkType& chunk_t, int num_chunk, int offset) noexcept;
+    sync_chunk(this const Derived& self, const ChunkType& chunk_t, int chunk_index, int offset) noexcept;
 
     /// @brief The core's rechunk_fn_: casts @p core back to Derived and calls rechunk_to(@p new_size).
     static void rechunk_thunk(Core& core, unsigned int new_size)

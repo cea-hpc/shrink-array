@@ -34,7 +34,7 @@
 #include "chunk/internal/array_chunk_rechunk_refill.h" // RechunkSupport::Refill (rechunk_refill)
 #include "chunk/internal/array_chunk_rechunk_trace.h"  // RechunkPhaseTrace
 #include "chunk/internal/chunk_stats.h"                // increm_chunk_rechunk (CHUNK_STATS)
-#include "chunk/internal/PMP_CHUNK.h"                  // CHUNK_PMP_RANK_BOUND
+#include "chunk/internal/pmp_chunk.h"                  // CHUNK_PMP_RANK_BOUND
 #include "chunk/internal/cold_path_lock.h"             // ColdPathLock: construction, teardown, resize
 #include "chunk/log.h"                                 // CHUNK_LOG (the pool census)
 #include "chunk/config.h"                              // build_config::threaded, use_fast_alloc, any_check
@@ -133,7 +133,7 @@ std::expected<void, ChunkSizeError> RechunkSupport<Derived, true>::try_rechunk_t
 
     {
         trace.mark(Mark::before_tmp);
-        // Born at S', own num_tab, primed pool. The new storage takes its own
+        // Born at S', own array_id, primed pool. The new storage takes its own
         // allocator set (lazy affinity: an array gets one at its first
         // re-chunk, see assign_alloc_key()), and is born at exactly S',
         // whatever the element type; both scopes end once it is built
@@ -173,11 +173,11 @@ std::expected<void, ChunkSizeError> RechunkSupport<Derived, true>::try_rechunk_t
         // What makes keeping them correct across the swap below:
         //  - the tuples point into tmp.chunk_list_'s storage, which the
         //    std::swap hands to *this unchanged (buffer swap, no move);
-        //  - they carry tmp's num_tab, and rechunk_swap_identity() makes that
+        //  - they carry tmp's array_id, and rechunk_swap_identity() makes that
         //    *this's identity (member swap for zero/zero_any, registry swap for
-        //    zero_one_value), so the sweep's reset_tab_inside_list_to_compress(num_tab,
-        //    num_chunk) lands on the row allocated for tmp at new_size;
-        //  - tmp's own destruction removes candidates by ITS post-swap num_tab
+        //    zero_one_value), so the sweep's reset_tab_inside_list_to_compress(array_id,
+        //    chunk_index) lands on the row allocated for tmp at new_size;
+        //  - tmp's own destruction removes candidates by ITS post-swap array_id
         //    (= *this's old identity, already emptied by rechunk_drop_candidates()
         //    above) and, for zero_any, by the OLD chunk_list_'s pointer range --
         //    neither touches these.
@@ -190,10 +190,10 @@ std::expected<void, ChunkSizeError> RechunkSupport<Derived, true>::try_rechunk_t
         // recycled, wrong-size chunk. Flush while the old geometry is in place.
         self.flush_pending_deferred_ops(/*force=*/true);
 
-        // 4) SWAP the common storage. nb_tab is static and NOT swapped.
-        //    num_tab + registry (+ any variant members) go through the
-        //    identity hook: zero / zero_any swap the num_tab member, zero_one_value
-        //    resolves num_tab from the registry and must NOT swap it.
+        // 4) SWAP the common storage. array_count is static and NOT swapped.
+        //    array_id + registry (+ any variant members) go through the
+        //    identity hook: zero / zero_any swap the array_id member, zero_one_value
+        //    resolves array_id from the registry and must NOT swap it.
         using std::swap;
         swap(self.chunk_list_, tmp.chunk_list_);
         // The new storage was built under tmp's own affinity key (its slabs);
@@ -203,7 +203,7 @@ std::expected<void, ChunkSizeError> RechunkSupport<Derived, true>::try_rechunk_t
         swap(self.alloc_key_, tmp.alloc_key_);
         self.swap_dirty_bitset(tmp);
         swap(self.m_size_, tmp.m_size_);
-        swap(self.nb_chunk_, tmp.nb_chunk_);
+        swap(self.chunk_count_, tmp.chunk_count_);
         swap(self.size_policy_, tmp.size_policy_);
         self.invalidate_proxies();
 
@@ -213,7 +213,7 @@ std::expected<void, ChunkSizeError> RechunkSupport<Derived, true>::try_rechunk_t
             if (!ok)
             {
                 // The storage is swapped already, the registry is not: the
-                // per-num_tab tables no longer follow the chunks.
+                // per-array_id tables no longer follow the chunks.
                 CHUNK_INVARIANT_FAILED("[RECHUNK] identity swap failed (this or tmp not registered) -- storage "
                                        "swapped, registry not");
             }
@@ -239,7 +239,7 @@ std::expected<void, ChunkSizeError> RechunkSupport<Derived, true>::try_rechunk_t
         set_thread_chunk_size(old_size);
 
         trace.mark(Mark::swapped);
-        // tmp destroyed here: clear_core drops tmp's candidates by num_tab
+        // tmp destroyed here: clear_core drops tmp's candidates by array_id
         // and parks its OLD-geometry blocks by size. Without the end-of-life
         // census: tmp's death is not an exit (ArrayChunkBase::exit_census_).
         tmp.exit_census_ = false;
@@ -372,7 +372,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self,
 template <typename Derived>
 void RechunkSupport<Derived, true>::rechunk_all_to(unsigned int new_size)
 {
-    ProxyType::share_info_array->for_each_key(
+    ProxyType::array_registry->for_each_key(
         [new_size](ArrayKey<ChunkType> key)
         {
             if (key != nullptr)

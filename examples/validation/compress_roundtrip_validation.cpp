@@ -77,7 +77,7 @@
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
 #include "chunk/config.h"                // chunk_config::use_zero*
-#include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
 #include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h"    // env_number / arg_number (checked, not atoi)
 #include "chunk/print.h"                 // shrink_array::println
@@ -85,7 +85,7 @@
 // Defined by every executable of the library (the fast allocator reads it).
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
-namespace validation::compress_roundtrip
+namespace validation::compress_roundtrip_validation
 {
 
 using namespace shrink_array;
@@ -275,7 +275,7 @@ int run(int argc, char** argv)
 
     Runtime::init(true);
 
-    println("=== compress_roundtrip [variant = {}]  N={}  threads={} ===", variant_name(), count,
+    println("=== compress_roundtrip_validation [variant = {}]  N={}  threads={} ===", variant_name(), count,
             CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
@@ -303,4 +303,4 @@ int run(int argc, char** argv)
     return fails;
 }
 
-} // namespace validation::compress_roundtrip
+} // namespace validation::compress_roundtrip_validation

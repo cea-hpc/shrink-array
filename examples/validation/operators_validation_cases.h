@@ -86,9 +86,9 @@
 #include "chunk/phases.h"             // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/runtime.h"            // Runtime::init
 #include "chunk/internal/type_name.h" // type_name<T>()
-#include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment, IsCleanShiftOp
-#include "chunk/print.h"                                 // shrink_array::println
-#include "chunk/internal/test_hooks.h"                   // force_defer_every, force_defer_compiled
+#include "chunk/internal/concept_is_clean_assignment.h" // IsCleanAssignment, IsCleanShiftOp
+#include "chunk/print.h"                                // shrink_array::println
+#include "chunk/internal/test_hooks.h"                  // force_defer_every, force_defer_compiled
 
 namespace validation::operators_validation
 {
@@ -462,7 +462,7 @@ struct Run
 };
 
 /// @brief The compound assignments an array of bool refuses at compile time
-///        (ElementArithmetic, concept_is_clean_assignement.h), where a plain
+///        (ElementArithmetic, concept_is_clean_assignment.h), where a plain
 ///        bool takes them: arithmetic on a truth value. Not run; the
 ///        static_asserts of refuses_bool_arithmetic() check the refusal.
 template <typename Op>
@@ -499,7 +499,7 @@ void refuses_bool_arithmetic()
 }
 
 /// @brief Does the library take a C operand of `T OP=` as a plain T does?
-/// @details The clean operands (concept_is_clean_assignement.h): the same
+/// @details The clean operands (concept_is_clean_assignment.h): the same
 ///          type, an integer into a floating or complex T, int into a small
 ///          integer, any integer as a shift or a bitwise operand. The others
 ///          compile with an HPC warning ([[deprecated]]) and convert the

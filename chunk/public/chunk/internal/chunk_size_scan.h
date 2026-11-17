@@ -70,7 +70,7 @@
 #include <vector>  // std::vector
 
 #include "chunk/internal/in_t.h"            // InT<T>: the first value's snapshot
-#include "chunk/internal/PMP_CHUNK.h"       // pmp::Team (the passes run in analyze()'s team)
+#include "chunk/internal/pmp_chunk.h"       // pmp::Team (the passes run in analyze()'s team)
 #include "chunk/internal/chunk_traits.h"    // has_motif_state_v (pattern::Array)
 #include "chunk/internal/relaxed_element.h" // load_element_relaxed (a motif chunk's offset)
 

@@ -8,8 +8,8 @@
 # the AArch64 node, glibc's libmvec (_ZGVdN4v_cos and friends) on x86 with
 # clang; gcc on x86 picks libmvec up by itself from glibc's math-vector.h
 # once __FAST_MATH__ is defined -- which only -ffast-math does, not the four
-# flags below (multi-mat adds it, see its CMakeLists.txt). Checked with
-# -Rpass=loop-vectorize on multi-mat: the compute loop goes from "library call
+# flags below (multi_mat adds it, see its CMakeLists.txt). Checked with
+# -Rpass=loop-vectorize on multi_mat: the compute loop goes from "library call
 # cannot be vectorized" to "vectorized loop (width 4, interleaved 4)". Clang
 # knows libmvec's tan since LLVM 19 (atan and the others since 21): with an
 # older clang one std::tan keeps the whole loop scalar. glibc ships them
@@ -150,12 +150,12 @@ add_subdirectory(access_cost)
 
 # Multi-dimensional array example (zero and zero_one_value in one program)
 if (TARGET chunk_zero_and_zero_one_value_${CHUNK_DEFAULT_SIZE})
-    add_subdirectory(multi-mat)
+    add_subdirectory(multi_mat)
 endif()
 
 # study vectorization whith OpenMP and chunk
 if ("zero" IN_LIST CHUNK_VARIANTS)
-    add_subdirectory(test_vecto_chunk)
+    add_subdirectory(vectorisation_demo)
 endif()
 
 # The chunk-size advisor's step-0 check (dyn zero_any only).

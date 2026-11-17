@@ -2,11 +2,11 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 """
-enum_tables.py -- the name tables a parser walks, checked against their enum
+earray_idles.py -- the name tables a parser walks, checked against their enum
 by C++26 reflection: CHUNK_LOG's channel and level names (log_core.h), the
 CHUNK_RECHUNK_SCHEDULE kinds (a table, where an if-chain was).
 
-Run from the root of the shrink-array tree (branch cpp26):  python3 enum_tables.py
+Run from the root of the shrink-array tree (branch cpp26):  python3 earray_idles.py
 Independent of the soa_*.py scripts.
 Idempotent; writes nothing unless every hunk applies.
 

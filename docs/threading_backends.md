@@ -21,7 +21,7 @@ calls, OMPT named in 23 files. Five different uses:
 
 | | use | where | replaced by |
 |---|---|---|---|
-| **A** | runtime queries: rank, thread count, in-region, level | `PMP_CHUNK.h` (`CHUNK_PMP_THREAD_RANK`, `CHUNK_PMP_MAX_THREADS`, `CHUNK_PMP_IN_PARALLEL_REGION`, ...), `fast_allocators/internal/pmp_alloc.h`, `slab_arena.h` (`omp_get_max_threads`, `omp_in_parallel`), `manage_ompt.cpp` | the same macros, routed to the backend; rank of a non-OpenMP thread: dense, `thread_local`, assigned on first use |
+| **A** | runtime queries: rank, thread count, in-region, level | `pmp_chunk.h` (`CHUNK_PMP_THREAD_RANK`, `CHUNK_PMP_MAX_THREADS`, `CHUNK_PMP_IN_PARALLEL_REGION`, ...), `fast_allocators/internal/pmp_alloc.h`, `slab_arena.h` (`omp_get_max_threads`, `omp_in_parallel`), `manage_ompt.cpp` | the same macros, routed to the backend; rank of a non-OpenMP thread: dense, `thread_local`, assigned on first use |
 | **B** | one-shot data-parallel loops at a serial point (`parallel for` [`reduction`] [`if`]) | `array_chunk_base_inline.h:110`, `zero_array_inline.h:117,524`, `zero_one_value_array_inline.h:450,487,535`, `zero_any_array_inline.h:150,209`, `second_value_array_base.h:175`, `parallel_storage_init.h:143,173`, `slab_arena.h:529,822` (dynamic) | `pmp::parallel_for(n, schedule, f)`, `pmp::parallel_reduce(n, init, f, op)` |
 | **C** | team regions with worksharing and synchronisation (`parallel` + `for` / `single` / `masked` / `barrier` / `nowait`) | rechunk slices (`array_chunk_rechunk_refill_inline.h`, `Refill::run_slice` / `slice_boundary`), compression passes (`zero_array_inline.h:216-357`, `zero_one_value_array_inline.h:705-1068`, `zero_any_array_inline.h:428-619`), team drain (`reuse_pools_inline.h`, `drain_reuse_list_for_size_team`; `type_state_policies_inline.h`, the deferred flush), advisor (`chunk_size_advisor.h:392-722`), `type_state_registry.cpp:305,520-545`, `second_value_array_base.h:96`, `chunk*_std_inline.h`, `zero_array.h:301`, `phases.h:171-176` | `pmp::team(nthreads, [&](pmp::Team& t) { t.for_static(...); t.barrier(); t.single(...); })` |
 | **D** | mutual exclusion | `#pragma omp critical` (`zero_array_inline.h:357`, `zero_one_value_array_inline.h:1009,1026,1068`, `zero_any_array_inline.h:588,619`, `static_const_array_inline.h:83,145,154` named `fast_alloc_ladder`), `#pragma omp atomic` (`chunk_size_advisor.h:463,722`) | `std::mutex` / `std::atomic` — no backend involved |
@@ -75,11 +75,11 @@ one, on a team of the backend. `phases.h` states the contract.
    `StaticConstArray::ladder_mutex()`, the advisor's two `omp atomic` are
    relaxed `std::atomic_ref::fetch_add`. Left for step 5: the ladder takes its
    lock only when `FAST_ALLOC_PMP_IN_PARALLEL_REGION`, an OpenMP query.
-3. **B**: `pmp::parallel_for` and a reduction in `PMP_CHUNK.h`,
+3. **B**: `pmp::parallel_for` and a reduction in `pmp_chunk.h`,
    OpenMP implementation (same `schedule`, same `if` thresholds), the B sites
    converted. `fast_allocators` gets the same through `pmp_alloc.h`. *Done*:
    one implementation, `fast_allocators/internal/pmp_loops.h` (namespace
-   `fast_alloc::pmp`, included by `pmp_alloc.h`, re-exported by `PMP_CHUNK.h`
+   `fast_alloc::pmp`, included by `pmp_alloc.h`, re-exported by `pmp_chunk.h`
    as `shrink_array::pmp`): `parallel_for`, `parallel_for_local` (a per-thread
    state, the release of a shrink) and `parallel_sum<T, N>` (the only
    reduction the sites need: N counters, `reduction(+ : acc[:N])`); a general
@@ -123,7 +123,7 @@ one, on a team of the backend. `phases.h` states the contract.
 5. **A**: the queries through the backend; the `thread_local` rank registry for
    non-OpenMP threads (dense, bounded by the configured maximum, reused when a
    thread exits). *Done*: `fast_allocators/internal/pmp_runtime.h` (namespace
-   `fast_alloc::pmp`, included by `pmp_alloc.h` and `PMP_CHUNK.h`), the only
+   `fast_alloc::pmp`, included by `pmp_alloc.h` and `pmp_chunk.h`), the only
    file that queries the runtime: `backend` / `threaded` (and
    `FAST_ALLOC_PMP_THREADED` for the declaration-level switches), `max_threads`,
    `num_procs`, `team_rank`, `team_size`, `in_parallel`, `level`,
@@ -131,7 +131,7 @@ one, on a team of the backend. `phases.h` states the contract.
    `set_max_active_levels`, `get_runtime_schedule` / `set_runtime_schedule`;
    OpenMP: the `omp_*` call with the same meaning, serial: one thread. The
    `CHUNK_PMP_*` and `FAST_ALLOC_PMP_*` macros keep their names and route to
-   it, the threaded branch of `PMP_CHUNK.h` (capacity, checked rank, library
+   it, the threaded branch of `pmp_chunk.h` (capacity, checked rank, library
    rank, rank bound, schedule) names no OpenMP call any more, and
    `slab_arena.h`'s sweeps and `manage_ompt.cpp` use the queries (no
    `#ifdef _OPENMP` left in `slab_arena.h`). The registry: `RankRegistry`
@@ -272,7 +272,7 @@ one, on a team of the backend. `phases.h` states the contract.
      `#pragma omp critical` inside `parallel_phase()` -- a real team of the
      std backend, where the pragma is ignored: eight arrays created at once, out of
      contract (TSan: `PointerMapChunk2A::insert`); a `std::mutex` now.
-     `pool_accounting` expected parking only under `use_openmp` (now
+     `pool_accounting_validation` expected parking only under `use_openmp` (now
      `threaded`, like the library since 7a) and materialised with an
      `omp parallel for`, one thread in the std build, which takes back the parked
      buffers of one rank only; it now fills through `parallel_phase()` and

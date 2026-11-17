@@ -39,7 +39,7 @@
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/phases.h"                // parallel_phase
 #include "chunk/config.h"                // chunk_config::use_zero*
-#include "chunk/internal/PMP_CHUNK.h"    // pmp::current_team
+#include "chunk/internal/pmp_chunk.h"    // pmp::current_team
 #include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp

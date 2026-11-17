@@ -29,10 +29,10 @@
  *          RechunkSupport<Derived, true>::rechunk_to(), which does not exist in
  *          a static-geometry build.
  *
- *          zero and zero_any share them: both keep num_tab as a member, in step with
+ *          zero and zero_any share them: both keep array_id as a member, in step with
  *          the registry, and queue their compression candidates in the
  *          manager's per-rank lists. They differ only in which lists, the
- *          compress() call of a candidate, where num_tab is read, and zero's
+ *          compress() call of a candidate, where array_id is read, and zero's
  *          flush tripwire (see rechunk_drop_candidates()).
  *
  *          RechunkHooks<Derived, chunk_dynamic> splits them the same way as the
@@ -85,7 +85,7 @@ class RechunkHooks<Derived, true>
     static constexpr bool is_zero_any_family = is_zero_any_family_v<typename Traits::ChunkType>;
 
     /**
-     * @brief Compress, then drop, this array's queued compression candidates, by num_tab.
+     * @brief Compress, then drop, this array's queued compression candidates, by array_id.
      * @details Must happen at the OWNING geometry: a candidate scanned later at
      *          another chunk size would walk past the end of its buffer.
      */
@@ -105,9 +105,9 @@ class RechunkHooks<Derived, true>
      * @brief Swap registry identity with the fresh array built at the new geometry.
      * @param tmp the temporary array rechunk_to() swaps storage with
      * @return whatever the registry swap reports
-     * @details num_tab is set by pre_create_hook() and indexes the per-array
+     * @details array_id is set by pre_create_hook() and indexes the per-array
      *          metadata, so the member is swapped as well as the registry
-     *          entry, keeping the two consistent (get_num_tab(registry_key())
+     *          entry, keeping the two consistent (get_array_id(registry_key())
      *          then names this array's new row).
      */
     bool rechunk_swap_identity(this Derived& self, Derived& tmp);
@@ -117,8 +117,8 @@ class RechunkHooks<Derived, true>
     [[nodiscard]] static auto& candidate_lists_thr() noexcept;
     /// @brief The manager's single candidate list of this variant (serial builds).
     [[nodiscard]] static auto& candidate_list() noexcept;
-    /// @brief Remove every candidate of the array @p num_tab from this variant's lists.
-    static void remove_candidates_of_tab(int num_tab) noexcept;
+    /// @brief Remove every candidate of the array @p array_id from this variant's lists.
+    static void remove_candidates_of_tab(int array_id) noexcept;
 };
 
 // ── Static-geometry build: nothing to hook ───────────────────────────────────

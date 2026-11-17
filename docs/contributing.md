@@ -48,8 +48,8 @@ What to run, depending on what the change touches:
 | change | run at least |
 |---|---|
 | write engine, Dekker handshake, compression manager, deferred writes | `deferred_path_validation`, `read_reclaim_validation` (also with `CHUNK_TEST_READ_DELAY_EVERY`, and under ASan in a std-alloc build), the TSan builds, `multi_launch_stress.py` |
-| compression marking, the passes | `mark_path_validation`, `compress_roundtrip`, the benchmark in check mode |
-| allocators, reuse lists, slabs | `pool_accounting`, `slab_geometry_validation`, `blk_allocator_validation`, the ledger build (`--with-ledger`), ASan in a std-alloc build |
+| compression marking, the passes | `mark_path_validation`, `compress_roundtrip_validation`, the benchmark in check mode |
+| allocators, reuse lists, slabs | `pool_accounting_validation`, `slab_geometry_validation`, `blk_allocator_validation`, the ledger build (`--with-ledger`), ASan in a std-alloc build |
 | re-chunk, dynamic geometry | `rechunk_validation`, `dyn_geometry_validation`, the benchmark with `--force_rechunk <size> --force_rechunk_toggle` |
 | range operations | `fill_range_mt_validation`, `fill_range_mt_zero_and_zero_one_value_validation`, `range_counters_validation` |
 | thread ranks, regions | `thread_growth_validation`, `nested_region_validation` |
@@ -86,7 +86,7 @@ The source checks run with the others (`ctest -R check_`):
 
   | what | case | example |
   |---|---|---|
-  | functions, methods, variables, parameters, namespaces | snake_case | `get_chunk_list`, `num_tab` |
+  | functions, methods, variables, parameters, namespaces | snake_case | `get_chunk_list`, `array_id` |
   | private and protected data members | snake_case ending in `_` | `chunk_list_`, `num_` |
   | constants (`constexpr`) and enumerators | snake_case | `cst_buffer_size`, `ev_flush_begin` |
   | classes, structs, concepts, type aliases, template parameters | PascalCase | `zero_any::Array`, `AllocT`, `ChunkT` |

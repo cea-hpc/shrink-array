@@ -36,7 +36,7 @@
 #include "chunk/internal/invariant_check.h"      // CHUNK_CHECK_FAILED
 #include "chunk/log.h"                           // CHUNK_LOG_FIRST_N, CHUNK_LOG
 #include "fast_allocators/internal/svalloc.h"    // svfree
-#include "chunk/internal/PMP_CHUNK.h"            // CHUNK_PMP_*, pmp::
+#include "chunk/internal/pmp_chunk.h"            // CHUNK_PMP_*, pmp::
 #include "chunk/internal/chunk_size_policy.h"    // alloc_chunk_count, cst_buffer_size
 #include "chunk/internal/value_slab.h"           // value_slab_request
 #include "chunk/internal/compression_manager.h"  // CompressionManager

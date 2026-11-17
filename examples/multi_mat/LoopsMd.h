@@ -18,7 +18,7 @@
 
 /**
  * @file LoopsMd.h
- * @brief The loop policies of multi-mat-md, the 2D version of the example:
+ * @brief The loop policies of multi_mat_md, the 2D version of the example:
  *        how a material's arrays are viewed (an mdspan) and how a box of
  *        cells is written, zeroed and read through those views.
  *

@@ -10,7 +10,7 @@
 #   - it propagates to the executable's own TUs
 
 # chunk_enable_fast_math() and ARMPL_ROOT live in examples/CMakeLists.txt now:
-# multi-mat uses them too.
+# multi_mat uses them too.
 add_link_options(-rdynamic)
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
         AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "16"

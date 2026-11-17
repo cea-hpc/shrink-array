@@ -180,7 +180,7 @@ les deux. Le mode n'est plus une variable d'environnement (`CHUNK_ALLOC_AFFINITY
 ## 6. Ce qui doit disparaître avec l'ancien stockage
 
 Un rechunk construit le nouveau stockage sous un **nouvel identifiant de tableau**
-(`num_tab`) et détruit l'ancien. Tout ce qui était indexé par l'ancien identifiant doit être
+(`array_id`) et détruit l'ancien. Tout ce qui était indexé par l'ancien identifiant doit être
 **libéré**, pas seulement vidé. Deux fuites de ce type ont été corrigées en septembre 2026 :
 
 - **`zero_any`** : les lignes de métadonnées par chunk (type de constante, 1 octet ; seconde

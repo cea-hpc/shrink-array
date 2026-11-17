@@ -21,7 +21,7 @@
 
 #include "chunk/bit.h"                           // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/config.h"                        // build_config::threaded, chunk_config::chunk_dynamic
-#include "chunk/internal/PMP_CHUNK.h"            // CHUNK_PMP_THREAD_CAPACITY (max_thr)
+#include "chunk/internal/pmp_chunk.h"            // CHUNK_PMP_THREAD_CAPACITY (max_thr)
 #include "chunk/internal/second_value_info.h"    // SecondValueInfo (InfArrayT)
 #include "chunk/internal/type_state_interface.h" // TypeStateInterface
 #include "chunk/internal/type_state_policies.h"  // TypeStateDynImpl, TypeStateParallelImpl
@@ -190,14 +190,14 @@ class TypeState final : public virtual TypeStateInterface,
     }
 
     /// @brief Everything an array with its own affinity key needs, in one call
-    ///        (sequential, from rebuild_storage once nb_chunk is known): its
+    ///        (sequential, from rebuild_storage once chunk_count is known): its
     ///        allocator set at (key, size), its per-rank reuse lists, and their
-    ///        budget nb_chunk / (factor_div x threads).
+    ///        budget chunk_count / (factor_div x threads).
     /// @note Dynamic OpenMP fast-alloc builds only; a no-op elsewhere.
     /// @return true when the keyed set, lists and budget exist; false otherwise
     ///         (no slab budget yet, or no dynamic registry) -- the caller must
     ///         then stay on key 0.
-    [[nodiscard]] static bool register_alloc_key(unsigned int key, unsigned int size, int nb_chunk);
+    [[nodiscard]] static bool register_alloc_key(unsigned int key, unsigned int size, int chunk_count);
 };
 
 } // namespace shrink_array

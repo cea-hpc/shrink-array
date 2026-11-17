@@ -66,7 +66,7 @@
 #include "chunk/zero_any_array.h"             // zero_any::Array, zero_any::Chunk complete (its registry types)
 #include "chunk/runtime.h"                    // Runtime::init
 #include "chunk/config.h"                     // chunk_config::use_zero_any, build_config::needs_explicit_phases
-#include "chunk/internal/PMP_CHUNK.h"         // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_NUM_THREADS
+#include "chunk/internal/pmp_chunk.h"         // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_NUM_THREADS
 #include "chunk/phases.h"                     // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h"         // arg_number (checked, not atoi)
 #include "chunk/print.h"                      // shrink_array::println
@@ -104,10 +104,10 @@ static void end_phase()
     }
 }
 
-/// @brief The constant chunk @p num_chunk holds after a fill at @p base.
-static double cst(double base, long num_chunk)
+/// @brief The constant chunk @p chunk_index holds after a fill at @p base.
+static double cst(double base, long chunk_index)
 {
-    return base + static_cast<double>(num_chunk);
+    return base + static_cast<double>(chunk_index);
 }
 
 /// @brief Write chunk j of @p arr whole at cst(base, j) -- the chunks for which
@@ -121,10 +121,10 @@ static void fill(Arr& arr, long nch, long chunk_sz, double base, bool only_even 
 #pragma omp for schedule(static)
         for (int i = 0; i < ni; ++i)
         {
-            const long num_chunk = i / chunk_sz;
-            if (!only_even || num_chunk % 2 == 0)
+            const long chunk_index = i / chunk_sz;
+            if (!only_even || chunk_index % 2 == 0)
             {
-                arr[i] = cst(base, num_chunk);
+                arr[i] = cst(base, chunk_index);
             }
         }
     }
@@ -140,8 +140,8 @@ static void expect_values(const char* where, const Arr& arr, long nch, long chun
     long bad = 0;
     for (long i = 0; i < nch * chunk_sz; ++i)
     {
-        const long num_chunk = i / chunk_sz;
-        bad += (arr[static_cast<int>(i)] != cst(num_chunk % 2 == 0 ? even_base : odd_base, num_chunk)) ? 1 : 0;
+        const long chunk_index = i / chunk_sz;
+        bad += (arr[static_cast<int>(i)] != cst(chunk_index % 2 == 0 ? even_base : odd_base, chunk_index)) ? 1 : 0;
     }
     if (bad != 0)
     {

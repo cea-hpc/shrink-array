@@ -16,7 +16,7 @@
 
 /**
  * @file main.cpp
- * @brief multi-mat: a mock multi-material simulation on the chunk library.
+ * @brief multi_mat: a mock multi-material simulation on the chunk library.
  *
  * Every material carries three fields and a presence fraction over the whole
  * mesh, but occupies only a random interval of it at each iteration: the
@@ -27,9 +27,9 @@
  * for the comparison. The run prints the chunk filling rates, the result of
  * the computation, the elapsed time and the peak memory.
  *
- * Two executables from this file (config.h): `multi-mat`, which compresses
+ * Two executables from this file (config.h): `multi_mat`, which compresses
  * its fields by explicit calls and makes the library's phase calls itself,
- * and `multi-mat-embedded`, which calls nothing and lets the OMPT tool of
+ * and `multi_mat_embedded`, which calls nothing and lets the OMPT tool of
  * manage_ompt.cpp drive the library.
  */
 
@@ -296,6 +296,6 @@ try
 catch (const std::exception& e)
 {
     // A failed allocation or std::format: said, not std::terminate().
-    std::fprintf(stderr, "multi-mat: %s\n", e.what());
+    std::fprintf(stderr, "multi_mat: %s\n", e.what());
     return 2;
 }

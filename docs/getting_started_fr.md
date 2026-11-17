@@ -439,4 +439,4 @@ les threads d'OpenMP : pour les autres, utilisez le backend std.
 | laisser la taille des chunks s'adapter à l'exécution | [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) (bibliothèques `_dyn`) |
 | toutes les variables de réglage et options de compilation | [variables_environnement_fr.md](variables_environnement_fr.md) |
 | le fonctionnement interne | [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md), [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md) |
-| un exemple plus complet : champs multi-matériaux, boucles écrites une fois pour les deux conteneurs | `examples/multi-mat` |
+| un exemple plus complet : champs multi-matériaux, boucles écrites une fois pour les deux conteneurs | `examples/multi_mat` |

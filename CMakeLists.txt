@@ -242,7 +242,7 @@ if(CHUNK_OPENMP)
         if(NOT CHUNK_SANITIZER STREQUAL "thread")
             # Recorded in chunk/build_options.h (CHUNK_OPT_OMPT); also read
             # for the targets that exist only with the OMPT tool
-            # (examples/multi-mat's embedded-compression executable).
+            # (examples/multi_mat's embedded-compression executable).
             set(CHUNK_HAVE_OMPT ON)
         endif()
         message(STATUS "Clang/IntelLLVM compiler detected")

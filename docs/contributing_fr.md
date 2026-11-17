@@ -48,8 +48,8 @@ Que lancer, selon ce que touche la modification :
 | modification | lancer au moins |
 |---|---|
 | moteur d'écriture, protocole de Dekker, gestionnaire de compression, écritures différées | `deferred_path_validation`, `read_reclaim_validation` (aussi avec `CHUNK_TEST_READ_DELAY_EVERY`, et sous ASan dans un build std-alloc), les builds TSan, `multi_launch_stress.py` |
-| marquage pour la compression, les passes | `mark_path_validation`, `compress_roundtrip`, le banc en mode check |
-| allocateurs, listes de réutilisation, slabs | `pool_accounting`, `slab_geometry_validation`, `blk_allocator_validation`, le build avec registre des blocs (ledger) (`--with-ledger`), ASan dans un build std-alloc |
+| marquage pour la compression, les passes | `mark_path_validation`, `compress_roundtrip_validation`, le banc en mode check |
+| allocateurs, listes de réutilisation, slabs | `pool_accounting_validation`, `slab_geometry_validation`, `blk_allocator_validation`, le build avec registre des blocs (ledger) (`--with-ledger`), ASan dans un build std-alloc |
 | rechunk, géométrie dynamique | `rechunk_validation`, `dyn_geometry_validation`, le banc avec `--force_rechunk <taille> --force_rechunk_toggle` |
 | opérations sur des plages | `fill_range_mt_validation`, `fill_range_mt_zero_and_zero_one_value_validation`, `range_counters_validation` |
 | rangs des threads, régions | `thread_growth_validation`, `nested_region_validation` |
@@ -86,7 +86,7 @@ Les vérifications des sources tournent avec les autres (`ctest -R check_`) :
 
   | quoi | casse | exemple |
   |---|---|---|
-  | fonctions, méthodes, variables, paramètres, namespaces | snake_case | `get_chunk_list`, `num_tab` |
+  | fonctions, méthodes, variables, paramètres, namespaces | snake_case | `get_chunk_list`, `array_id` |
   | données membres privées et protégées | snake_case terminé par `_` | `chunk_list_`, `num_` |
   | constantes (`constexpr`) et énumérateurs | snake_case | `cst_buffer_size`, `ev_flush_begin` |
   | classes, structs, concepts, alias de type, paramètres de template | PascalCase | `zero_any::Array`, `AllocT`, `ChunkT` |

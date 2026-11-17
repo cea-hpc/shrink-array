@@ -463,8 +463,8 @@ aussi une version Spack (`spack install shrink-array@cpp23`).
 | contribuer | [docs/contributing_fr.md](docs/contributing_fr.md) |
 
 Exemples : [simple_array](examples/simple_array) (le même calcul sur un `std::vector` et sur un
-tableau), [multi-mat](examples/multi-mat) (champs multi-matériaux, boucles écrites une fois pour
-les deux ; `multi-mat-md`, la même chose en 2D par `mdspan`), [validation](examples/validation) (un test par propriété, lancé par `ctest`).
+tableau), [multi_mat](examples/multi_mat) (champs multi-matériaux, boucles écrites une fois pour
+les deux ; `multi_mat_md`, la même chose en 2D par `mdspan`), [validation](examples/validation) (un test par propriété, lancé par `ctest`).
 Chaque document existe en anglais et en français ([docs/README.md](docs/README.md)) ; ce qui a
 changé d'une version à l'autre : [CHANGELOG.md](CHANGELOG.md) (en anglais).
 

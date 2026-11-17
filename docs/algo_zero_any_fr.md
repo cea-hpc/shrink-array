@@ -32,7 +32,7 @@ La bibliothèque : `shrink_array::zero_any` (elle définit `CHUNK_VARIANT_ZERO_A
 
 ## 2. Les métadonnées par chunk
 
-Chaque tableau a, indexées par son numéro (`num_tab`), trois lignes d'une entrée par chunk :
+Chaque tableau a, indexées par son numéro (`array_id`), trois lignes d'une entrée par chunk :
 
 | ligne | taille par chunk | contenu |
 |---|---|---|

@@ -28,14 +28,14 @@
 #include "chunk/internal/chunk_traits.h"            // ChunkTraits<Derived>::ManagerType (ChunkImpl, ChunkThreadPolicy)
 #include "chunk/internal/invariant_check.h"         // invariant_failed
 #include "chunk/internal/tab_cst_val2_holder.h"     // TabCstVal2Holder, SecondValueRef
-#include "chunk/internal/PMP_CHUNK.h"               // CHUNK_PMP_THREAD_RANK
+#include "chunk/internal/pmp_chunk.h"               // CHUNK_PMP_THREAD_RANK
 #include "chunk/internal/ring_log_debug.h"          // ScopedRingLog, ring_log_* (RING_LOG builds)
 #include "chunk/internal/chunk_size_policy.h"       // ChunkElems
 #include "chunk/internal/cst_slot.h"                // CstSlot, cst_slot_of
 #include "chunk/internal/second_value_chunk_base.h" // SecondValueChunkBase
 #include "chunk/internal/chunk_stats.h"             // increm_chunk_write
 
-#include "chunk/internal/TChunk.h"          // ZeroAnyCompOf, VectorTuple4ChunkInt2
+#include "chunk/internal/chunk_tuples.h"    // ZeroAnyCompOf, VectorTuple4ChunkInt2
 #include "chunk/internal/immortal.h"        // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/chunk_array_new.h" // chunk_array_new::init_chunks (init_chunks_cst_val)
 
@@ -402,7 +402,7 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>, public TabCstVal2Holder<
     friend ProxyType;
 
     using Manager = ChunkTraits<Derived>::ManagerType;
-    // Same tuple as TChunk.h's VectorTuple4ChunkInt2 (the manager storage).
+    // Same tuple as chunk_tuples.h's VectorTuple4ChunkInt2 (the manager storage).
     using CandidateTuples      = std::vector<std::tuple<Derived*, int, int, ChunkElems>>;
     using CandidateValueTuples = std::vector<std::tuple<Derived*, T, int, int, ChunkElems>>;
 
@@ -520,14 +520,14 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>, public TabCstVal2Holder<
     ///        builds).
     void alloc_chunk(this Derived& self, SecondValueRef<T> ptr_second_value, [[maybe_unused]] int thr_rank);
 
-    void compress(this Derived& self, int thr_rank, int num_chunk, int num_tab, bool apply, ChunkElems size);
+    void compress(this Derived& self, int thr_rank, int chunk_index, int array_id, bool apply, ChunkElems size);
 
     /// @brief Sets every element of this chunk to @p v by its state alone,
     ///        with no buffer touched: a whole-chunk fill (fill_range, a
     ///        uniform copy_range span). Non-bool T only.
     /// @pre   Serial contract (no concurrent writer, reader or pass on the
     ///        array); the array's deferred writes drained.
-    void fill_constant_st(this Derived& self, int thr_rank, int num_chunk, int num_tab, InT<T> v);
+    void fill_constant_st(this Derived& self, int thr_rank, int chunk_index, int array_id, InT<T> v);
 
     static void compress_chunk_to_compress(bool apply);
 
@@ -572,8 +572,8 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>, public TabCstVal2Holder<
     void fill_list_to_compress(this Derived&         self,
                                CandidateTuples&      ll_compt1,
                                CandidateValueTuples& ll_compt2,
-                               int                   num_chunk,
-                               int                   num_tab,
+                               int                   chunk_index,
+                               int                   array_id,
                                ChunkElems            size,
                                bool                  claimed = false);
 

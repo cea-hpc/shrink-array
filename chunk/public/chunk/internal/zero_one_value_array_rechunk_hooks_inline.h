@@ -23,9 +23,9 @@
 #include "chunk/internal/zero_one_value_array_rechunk_hooks.h" // zero_one_value::RechunkHooks, the class these bodies belong to
 #include "chunk/internal/type_state.h"                         // ManagerType — candidate store + reuse free-lists
 #include "chunk/config.h"                     // build_config::threaded, chunk_config::use_fast_block_compression
-#include "chunk/internal/PMP_CHUNK.h"         // get_thr_rank_fast
+#include "chunk/internal/pmp_chunk.h"         // get_thr_rank_fast
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size
-#include "chunk/internal/tab_users.h"         // TabUsers::mark_shared (the identity swap)
+#include "chunk/internal/array_users.h"       // ArrayUsers::mark_shared (the identity swap)
 #include "chunk/internal/in_t.h"              // InT<value_type>: the captured state
 #include "chunk/internal/same_value.h"        // same_value
 
@@ -35,13 +35,13 @@ namespace shrink_array
 template <typename Derived>
 void zero_one_value::RechunkHooks<Derived, true>::rechunk_drop_candidates(this Derived& self)
 {
-    // num_tab from the registry, never the member. The drop happens at the
+    // array_id from the registry, never the member. The drop happens at the
     // owning geometry (see RechunkSupport::rechunk_to). COMPRESS the candidates
     // first (see RechunkHooks): a dropped one would stay materialised and never
     // be re-queued. bool has no second value and is only dropped.
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        const int num_tab = ProxyType::share_info_array->get_num_tab(self.registry_key());
+        const int array_id = ProxyType::array_registry->get_array_id(self.registry_key());
         if constexpr (Derived::is_not_bool && build_config::threaded)
         {
             const auto inf = self.get_info_second_value();
@@ -57,7 +57,7 @@ void zero_one_value::RechunkHooks<Derived, true>::rechunk_drop_candidates(this D
                     }
                     for (auto& tup : *kv.second)
                     {
-                        if (std::get<2>(tup) == num_tab)
+                        if (std::get<2>(tup) == array_id)
                         {
                             std::get<0>(tup)->compress(thr, inf, /*apply=*/true, std::get<3>(tup).count());
                         }
@@ -65,7 +65,7 @@ void zero_one_value::RechunkHooks<Derived, true>::rechunk_drop_candidates(this D
                 }
             }
         }
-        ManagerType::remove_from_zero_one_value_candidates_by_num_tab(num_tab);
+        ManagerType::remove_from_zero_one_value_candidates_by_array_id(array_id);
     }
 }
 
@@ -105,16 +105,16 @@ void zero_one_value::RechunkHooks<Derived, true>::rechunk_seed_fresh(this Derive
 template <typename Derived>
 bool zero_one_value::RechunkHooks<Derived, true>::rechunk_swap_identity(this Derived& self, Derived& tmp)
 {
-    // The num_tab, ind_cst_val2_ and inf_array MEMBERS are NOT swapped: the
-    // identity comes from share_info_array, and the members may be
+    // The array_id, ind_cst_val2_ and inf_array MEMBERS are NOT swapped: the
+    // identity comes from array_registry, and the members may be
     // uninitialized (swapping would read indeterminate values). The mirrors are
     // re-read in rechunk_reown_after_swap().
     // As RechunkHooks::rechunk_swap_identity(): no longer one-rank arrays for a teardown.
-    internal::TabUsers<typename Derived::ChunkType>::mark_shared(
-        ProxyType::share_info_array->get_num_tab(self.registry_key()));
-    internal::TabUsers<typename Derived::ChunkType>::mark_shared(
-        ProxyType::share_info_array->get_num_tab(tmp.registry_key()));
-    return ProxyType::share_info_array->swap_entries(self.registry_key(), tmp.registry_key());
+    internal::ArrayUsers<typename Derived::ChunkType>::mark_shared(
+        ProxyType::array_registry->get_array_id(self.registry_key()));
+    internal::ArrayUsers<typename Derived::ChunkType>::mark_shared(
+        ProxyType::array_registry->get_array_id(tmp.registry_key()));
+    return ProxyType::array_registry->swap_entries(self.registry_key(), tmp.registry_key());
 }
 
 template <typename Derived>
@@ -135,7 +135,7 @@ void zero_one_value::RechunkHooks<Derived, true>::rechunk_reown_after_swap(this 
             {
                 self.inf_array_    = tmp.inf_array_; // tmp's is valid (set_second_value ran)
                 self.ind_cst_val2_ = tmp.ind_cst_val2_;
-                ProxyType::share_info_array->insert(state, &self.inf_array_);
+                ProxyType::array_registry->insert(state, &self.inf_array_);
             }
         }
     }

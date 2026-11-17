@@ -58,7 +58,7 @@
 #include "chunk/zero_any_array.h"        // zero_any::Chunk<T> complete (zero_any_chunk.h): its operator new[]
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/config.h"                // chunk_config::use_zero*
-#include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
 #include "chunk/print.h"                 // shrink_array::println
 
 // The array-new is the threaded *ThreadPolicy's (the serial specialisations declare

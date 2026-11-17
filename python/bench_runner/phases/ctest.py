@@ -125,8 +125,8 @@ def run_ctest_phase(args, extra_ldpath, errors):
     """Validation harnesses, through ctest.
 
     examples/validation registers exit-0/1 programs under the `validation`
-    label (rechunk_validation, dyn_geometry_validation, compress_roundtrip,
-    pool_accounting, deferred_path_validation, open_types_validation -- one
+    label (rechunk_validation, dyn_geometry_validation, compress_roundtrip_validation,
+    pool_accounting_validation, deferred_path_validation, open_types_validation -- one
     executable per variant, the last four tested at 1 and 8 threads). They
     are quick and they run FIRST: a library that cannot round-trip a
     compression pass or tear itself down is not worth benchmarking, and the

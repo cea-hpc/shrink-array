@@ -46,7 +46,7 @@
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
 #include "chunk/config.h"                // chunk_config::use_zero*
-#include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
 #include "chunk/phases.h"                // parallel_phase
 #include "chunk/internal/env_parse.h"    // shrink_array::arg_number
 #include "chunk/print.h"                 // shrink_array::println

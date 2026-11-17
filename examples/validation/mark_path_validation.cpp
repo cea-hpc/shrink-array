@@ -59,7 +59,7 @@
 //
 // THE PHASE PROTOCOL
 //
-//   Same brackets as compress_roundtrip: begin_parallel_phase() by every
+//   Same brackets as compress_roundtrip_validation: begin_parallel_phase() by every
 //   thread inside the region, finalize_parallel_phase() outside it -- that
 //   last one is the pass this harness relies on in a GNU build (under OMPT
 //   the callbacks run it, serially the counters compress inline). At 1
@@ -79,7 +79,7 @@
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
 #include "chunk/config.h"                // chunk_config::use_zero*
-#include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
 #include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/print.h"                 // shrink_array::println
 

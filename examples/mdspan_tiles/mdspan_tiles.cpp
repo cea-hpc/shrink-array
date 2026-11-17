@@ -112,7 +112,7 @@ struct Count
 
 Count count(const sa::zero_any::Array<double>& a)
 {
-    Count c{static_cast<long>(a.nb_chunk_), 0};
+    Count c{static_cast<long>(a.chunk_count_), 0};
     for (long k = 0; k < c.chunks; ++k)
     {
         const auto& ch = a.chunk_list_[k];

@@ -38,7 +38,7 @@ struct ChunkDef
     constexpr static int size_max = 65535;
 
     constexpr static int size_min_list_chunk_to_check_compress = 100; ///< Floor of the per-thread list threshold
-    constexpr static int factor_div_nb_chunk_for_compress      = 100; ///< Threshold = chunks / (this * max threads)
+    constexpr static int factor_div_chunk_count_for_compress   = 100; ///< Threshold = chunks / (this * max threads)
     constexpr static int size_min_buffer_reuse                 = 100; ///< Floor of a per-size reuse budget
 };
 

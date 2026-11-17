@@ -26,7 +26,7 @@
 // namespace, validation::<harness>, and its entry point is
 // validation::<harness>::run(argc, argv), called by the driver's main():
 //
-//     validation_zero_any_256 compress_roundtrip [args...]
+//     validation_zero_any_256 compress_roundtrip_validation [args...]
 //
 // run() sees the same argv a standalone main() did: argv[0] the executable,
 // then the arguments after the harness name.

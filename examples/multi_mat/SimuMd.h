@@ -18,7 +18,7 @@
 
 /**
  * @file SimuMd.h
- * @brief The simulation of multi-mat-md: multi-mat on a 2D mesh, every
+ * @brief The simulation of multi_mat_md: multi_mat on a 2D mesh, every
  *        material in a box per iteration, every array seen through an
  *        mdspan (LoopsMd.h).
  */
@@ -50,7 +50,7 @@ enum class ChunkMode
 /**
  * @brief The 2D mock: an nx x ny mesh, every material in a random box at
  *        each iteration, its three fields and its presence fraction written
- *        there and read back by the gadget computation of multi-mat.
+ *        there and read back by the gadget computation of multi_mat.
  * @details Same steps as Simu (main_md.cpp runs them): parameters (command
  *          line), storage of every material, the boxes of every iteration
  *          drawn up front, the iterations in one parallel region, and
@@ -61,7 +61,7 @@ struct SimuMd
 {
     // ── Parameters (command line, main_md.cpp) ───────────────────────────
 
-    int nx       = 3200; ///< Rows of the mesh (3200 x 3200: about the 10 M cells of multi-mat)
+    int nx       = 3200; ///< Rows of the mesh (3200 x 3200: about the 10 M cells of multi_mat)
     int ny       = 3200; ///< Columns of the mesh
     int nbmat    = 50;   ///< Materials
     int iter_max = 100;  ///< Iterations
@@ -170,7 +170,7 @@ struct SimuMd
 
     // ── The values ───────────────────────────────────────────────────────
 
-    /// @brief The cell number of (i, j): what multi-mat's fields are made of.
+    /// @brief The cell number of (i, j): what multi_mat's fields are made of.
     [[nodiscard]] double cell_number(int i, int j) const noexcept
     {
         return static_cast<double>(i * ny + j);
@@ -203,7 +203,7 @@ struct SimuMd
         return std::nullopt;
     }
 
-    /// @brief The gadget term of a cell (multi-mat's), weighted by the
+    /// @brief The gadget term of a cell (multi_mat's), weighted by the
     ///        presence fraction.
     [[nodiscard]] static double gadget(double fr, double a, double b, double c, double val) noexcept
     {

@@ -195,7 +195,7 @@ jobs:
 
   # clang 23 (apt.llvm.org) with libstdc++ and libomp, OpenMP: the
   # diagnostics gcc does not give, and the OMPT tool (CHUNK_HAVE_OMPT), which
-  # only a clang build has -- multi-mat's embedded-compression executable.
+  # only a clang build has -- multi_mat's embedded-compression executable.
   x86-clang-openmp:
     name: x86-64, clang 23, OpenMP + OMPT
     runs-on: ubuntu-24.04
@@ -229,7 +229,7 @@ jobs:
         run: cmake --build build --target check
       - name: Examples (ctest -L examples)
         run: |
-          cmake --build build --target getting_started simple_array_chunk multi-mat test_vecto_chunk
+          cmake --build build --target getting_started simple_array_chunk multi_mat vectorisation_demo
           ctest --test-dir build -L examples --output-on-failure
 
   # The _dyn build on x86, serial, Release-like (RelWithDebInfo): the re-chunk
@@ -312,7 +312,7 @@ jobs:
         run: cmake --build build --target check
       - name: Examples (ctest -L examples)
         run: |
-          cmake --build build --target getting_started simple_array_chunk multi-mat test_vecto_chunk
+          cmake --build build --target getting_started simple_array_chunk multi_mat vectorisation_demo
           ctest --test-dir build -L examples --output-on-failure
 
   # UndefinedBehaviorSanitizer (CHUNK_SANITIZER=undefined), OpenMP: signed overflow in
@@ -460,14 +460,14 @@ jobs:
       # compression residual's chunk sample (compress=info) run only when
       # their channel is at info, which no harness asks for: 0 % in the report.
       # A second pass of two quick harness families with those channels on adds
-      # their counters to the first pass's: compress_roundtrip reaches the
+      # their counters to the first pass's: compress_roundtrip_validation reaches the
       # predictor, bulk_write_team_validation a residual. Not the whole suite,
       # whose log-reading tests (log_validation) set CHUNK_LOG themselves.
       - name: Harnesses with the advisor and compress traces on
         continue-on-error: true
         env:
           CHUNK_LOG: warn,advisor=info,compress=info
-        run: ctest --test-dir build -j4 -R '^(compress_roundtrip|bulk_write_team_validation)_' --timeout 1800 --output-on-failure
+        run: ctest --test-dir build -j4 -R '^(compress_roundtrip_validation|bulk_write_team_validation)_' --timeout 1800 --output-on-failure
       - name: Coverage report
         if: always()
         run: |

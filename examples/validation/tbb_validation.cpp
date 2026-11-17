@@ -91,7 +91,7 @@
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
 #include "chunk/config.h"                // chunk_config::use_zero*
-#include "chunk/internal/PMP_CHUNK.h"    // pmp::*, CHUNK_PMP_* (THREAD_CAPACITY: the registry), get_thr_rank_fast
+#include "chunk/internal/pmp_chunk.h"    // pmp::*, CHUNK_PMP_* (THREAD_CAPACITY: the registry), get_thr_rank_fast
 #include "chunk/threads.h"               // shrink_array::thread_rank (each piece's rank, against the registry's)
 #include "chunk/tbb_adaptor.h"           // shrink_array::tbb::parallel_for, phase_body, use_tbb_for_library_teams
 #include "chunk/internal/env_parse.h"    // arg_number

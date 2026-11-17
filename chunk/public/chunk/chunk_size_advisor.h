@@ -66,7 +66,7 @@
 #include <vector>      // std::vector
 
 #include "chunk/internal/chunk_size_scan.h"    // internal::ChunkSizeScan: analyze()'s counting passes
-#include "chunk/internal/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS (write_table's re-chunk cost)
+#include "chunk/internal/pmp_chunk.h"          // CHUNK_PMP_MAX_THREADS (write_table's re-chunk cost)
 #include "chunk/internal/rechunk_cost_model.h" // rechunk_cost_ms, rechunk_is_worth_it
 #include "chunk/print.h"                       // shrink_array::println
 #include "chunk/log.h"                         // CHUNK_LOG (log(): channel advisor)
@@ -211,7 +211,7 @@ struct ChunkSizeAdvisor
         ChunkSizeReport rep;
 
         const uint32_t chunk_sz = tab.chunk_size();
-        const int64_t  nc       = tab.nb_chunk_;
+        const int64_t  nc       = tab.chunk_count_;
         rep.current_size        = chunk_sz;
         rep.meta_bytes          = static_cast<double>(sizeof(typename Arr::ChunkType)) + opt.meta_extra_bytes;
         rep.elem_bytes =

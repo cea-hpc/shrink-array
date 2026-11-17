@@ -40,7 +40,7 @@ INTERNAL_CLIENTS = (
     "examples/validation/",                       # the harnesses: white-box tests
     "examples/shrink_bench/",                     # the benchmark: counters, pools, ring log
     "examples/access_cost/access_cost_pattern.cpp",  # the motif census walks the chunk list
-    "examples/multi-mat/",                        # in_parallel_region, print_info_chunk: not public yet
+    "examples/multi_mat/",                        # in_parallel_region, print_info_chunk: not public yet
 )
 WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 INCLUDE_DIRS = ("chunk/public", "fast_allocators/public")

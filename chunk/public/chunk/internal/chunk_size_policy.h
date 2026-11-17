@@ -38,14 +38,14 @@
 // shared constant buffers are sized by cst_buffer_size (below).
 
 #include <bit>         // std::has_single_bit
-#include <cstddef>     // std::size_t (func_p2.h uses size_t unqualified)
+#include <cstddef>     // std::size_t (pow2.h uses size_t unqualified)
 #include <cstdint>     // std::uint64_t (DynamicChunkSize's divider), std::uint8_t (ChunkSizeError)
 #include <expected>    // std::expected, std::unexpected (the try_ forms)
 #include <optional>    // std::optional (chunk_size_error)
 #include <type_traits> // std::conditional_t, std::make_unsigned_t
 
 #include "chunk/config.h"                     // build_config::chunk_dynamic, build_config::any_check
-#include "chunk/internal/func_p2.h"           // log2int (constexpr, also usable at run time)
+#include "chunk/internal/pow2.h"              // log2int (constexpr, also usable at run time)
 #include "chunk/internal/chunk_size_config.h" // static_chunk_size / static_chunk_shift / static_chunk_mask
 #include "chunk/internal/invariant_check.h"   // CHUNK_INVARIANT_FAILED (an invalid geometry)
 #include "chunk/log.h"                        // CHUNK_LOG (the refusals)
@@ -241,7 +241,7 @@ class DynChunkSizeGuard
 
 /// @brief Strong type for a chunk's element count as it travels through the
 ///        compression pipeline.
-/// @details A plain `unsigned int` next to `int num_chunk` / `int num_tab`
+/// @details A plain `unsigned int` next to `int chunk_index` / `int array_id`
 ///          lets positional mix-ups and stray defaults compile (a
 ///          `= static_chunk_size` default under-scans runtime-sized chunks). No
 ///          default constructor, explicit conversion: every count is visible.

@@ -21,12 +21,12 @@
 // ============================================================================
 //
 // Both operations exchange chunk lists in O(1), and the chunks are described
-// by per-array state kept elsewhere: the proxies' tables indexed by num_tab
+// by per-array state kept elsewhere: the proxies' tables indexed by array_id
 // (constant types, zero_any's per-chunk second value, compression candidates)
-// and the registry mapping the array's address to num_tab (zero_one_value: to its
+// and the registry mapping the array's address to array_id (zero_one_value: to its
 // second-value tuple). Moving the chunks alone would make each array read the
 // other's metadata -- a zero_any chunk folded to its second value coming back
-// as the OTHER array's second value -- and leave the source with nb_chunk over
+// as the OTHER array's second value -- and leave the source with chunk_count over
 // an empty list.
 //
 // Two arrays with different second values, filled by whole chunks (first
@@ -53,7 +53,7 @@
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
 #include "chunk/config.h"                // chunk_config::use_zero*, build_config::needs_explicit_phases
-#include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
 #include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/print.h"                 // shrink_array::println
 
@@ -198,7 +198,7 @@ int check_swap()
     Array<double> first_arr;
     Array<double> second_arr;
     const auto    chunk_sz = static_cast<long>(first_arr.chunk_size());
-    // Different sizes: the per-array tables (indexed by num_tab) have one row
+    // Different sizes: the per-array tables (indexed by array_id) have one row
     // per chunk, so chunks exchanged without their identity would index rows
     // of the wrong length.
     const long count = (30 * chunk_sz) + 11;

@@ -42,10 +42,10 @@ pattern::Array<T, IntType>& pattern::Array<T, IntType>::operator=(Array&& other)
 }
 
 template <ArrayChunkElement T, typename IntType>
-bool pattern::Array<T, IntType>::install_motif(int num_chunk, const T* elems)
+bool pattern::Array<T, IntType>::install_motif(int chunk_index, const T* elems)
 {
     using ChunkT = typename Array::ChunkType;
-    auto& chunk  = this->chunk_list_[static_cast<std::size_t>(num_chunk)];
+    auto& chunk  = this->chunk_list_[static_cast<std::size_t>(chunk_index)];
     if (!chunk.is_cst_val1())
     {
         return false;
@@ -58,7 +58,7 @@ bool pattern::Array<T, IntType>::install_motif(int num_chunk, const T* elems)
     }
     const T* const entry = MotifRegion<T>::find_or_register(motif.data(), count);
     // The offset first, then the pointer: the order of the compression to come.
-    Array::ProxyType::BaseSpec::set(this->num_tab_, num_chunk, elems[0]);
+    Array::ProxyType::BaseSpec::set(this->array_id_, chunk_index, elems[0]);
     // Never written through: a motif chunk materialises first.
     chunk.values_store(const_cast<T*>(entry)); // NOSONAR(cpp:S859)
     return true;
@@ -80,7 +80,7 @@ std::size_t pattern::Array<T, IntType>::reclaim_motifs()
 {
     using ChunkT = typename Array::ChunkType;
     std::vector<std::uint8_t> referenced(MotifRegion<T>::ids_carved() + 1, 0);
-    Array::ProxyType::share_info_array->for_each_key(
+    Array::ProxyType::array_registry->for_each_key(
         [&referenced](ArrayKey<ChunkT> arr)
         {
             if (arr == nullptr)

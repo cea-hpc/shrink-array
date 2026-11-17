@@ -321,9 +321,9 @@ auto g = md::tiled_view_dyn(a, std::array<long, 2>{16, 24}, nx, ny); // ou toute
   parallèle les opérations sur tuiles s'arrêtent (deux threads partageraient un chunk) tant que
   le champ n'a pas été copié dans une vue de la nouvelle tuile.
 
-### Un programme complet : `multi-mat-md`
+### Un programme complet : `multi_mat_md`
 
-`examples/multi-mat` existe en 2D : `multi-mat-md` est la même maquette (chaque matériau porte
+`examples/multi_mat` existe en 2D : `multi_mat_md` est la même maquette (chaque matériau porte
 trois champs et une fraction de présence sur tout le maillage, en occupe une partie tirée au
 hasard à chaque itération, y est écrit puis relu par le même calcul gadget), sur un maillage
 `nx x ny` où un matériau occupe un rectangle. Chaque tableau est vu par un `mdspan` 2D :
@@ -406,4 +406,4 @@ sans `mdspan`.)
 | `examples/validation/mdspan_submdspan_validation.cpp` | sous-vues d'une vue ligne par ligne (bloc, ligne, colonne, lecture seule, `fill_box`) et d'une vue en tuiles (alignée, finissant à l'étendue, sous-vue d'une sous-vue ; les opérations sur tuiles dessus, en série et en phase parallèle) ; toutes les variantes à 1 et 8 threads, et `mdspan_submdspan_misaligned` (une tranche en tuiles hors des tuiles arrête le programme) |
 | `examples/validation/mdspan_tiled_dyn_validation.cpp` | `tile_shape` (2D, 3D, tous les multiples de 64 jusqu'à 4096), `layout_tiled_dyn` contre `layout_tiled` indice par indice et par leurs sous-vues, la tuile par chunk de `tiled_view_dyn`, les opérations sur tuiles sur une tuile par chunk, une tuile 3 x 5 et une au-delà du tampon local ; toutes les variantes à la taille par défaut et en dyn (un rechunk sous la vue), 1 et 8 threads |
 | `examples/mdspan_tiles/mdspan_tiles.cpp` | les comparaisons des sections 2 et 3, et le coût du multi-indice ; `mdspan_tiles 4096` pour un champ plus grand |
-| `examples/multi-mat/main_md.cpp`, `LoopsMd.h`, `ComputeLoopsMd.h`, `SimuMd.h` | `multi-mat-md`, la maquette multi-matériaux en 2D (section 3) ; tests `multi_mat_md_tiles`, `multi_mat_md_elements`, `multi_mat_md_rows` (`--verify`), `multi_mat_md_balance` |
+| `examples/multi_mat/main_md.cpp`, `LoopsMd.h`, `ComputeLoopsMd.h`, `SimuMd.h` | `multi_mat_md`, la maquette multi-matériaux en 2D (section 3) ; tests `multi_mat_md_tiles`, `multi_mat_md_elements`, `multi_mat_md_rows` (`--verify`), `multi_mat_md_balance` |

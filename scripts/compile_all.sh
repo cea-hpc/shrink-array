@@ -1090,7 +1090,7 @@ fi
 # vector libm. The ARM counterpart of the oneapi and aocc sections. CMake names
 # it ARMClang: the CMakeLists.txt blocks that MATCH "Clang" apply (libstdc++
 # through the gcc toolchain, as aocc and llvm), those that test "Clang" exactly
-# do not (no OMPT tool: no multi-mat-embedded here).
+# do not (no OMPT tool: no multi_mat_embedded here).
 # armclang++, in order: $CHUNK_ACFL_ROOT (an install prefix: `spack location -i
 # acfl`), armclang++ in PATH (`spack load acfl`), the newest
 # $CCCWORKDIR/opt/*/acfl-* (a Spack install_tree), the newest acfl /

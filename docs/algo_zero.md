@@ -24,7 +24,7 @@
 The `values` pointer therefore holds both the data and the state. A chunk does not know its
 own number of elements: the geometry lives in the array's size policy
 (`size_policy_`), which is why the lists of compression candidates carry the
-number of elements of each chunk (see `TChunk.h`).
+number of elements of each chunk (see `chunk_tuples.h`).
 
 The library: `shrink_array::zero` (it defines `CHUNK_VARIANT_ZERO`). Code: `chunk/internal/zero_chunk.h`, `chunk/zero_array.h`,
 `internal/zero_chunk_inline.h`, `internal/zero_array_inline.h`, `internal/zero_proxy.h`.
@@ -143,7 +143,7 @@ there): the zero counter compresses (§4).
 ## 6. The trigger threshold
 
 It is `somme_chunk_create / (100 × number of threads)`, with a floor of 100 candidates
-(`ChunkDef`: `factor_div_nb_chunk_for_compress`, `size_min_list_chunk_to_check_compress`).
+(`ChunkDef`: `factor_div_chunk_count_for_compress`, `size_min_list_chunk_to_check_compress`).
 `somme_chunk_create` is the number of existing chunks of this type. Two fixes from
 September 2026 keep it accurate:
 

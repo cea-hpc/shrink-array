@@ -16,7 +16,7 @@
 
 #pragma once
 
-// A table indexed by num_tab whose rows never move.
+// A table indexed by array_id whose rows never move.
 //
 // The outer per-array tables (one row per array: its candidate flags, its
 // constant slots, its second values) were std::vector<Row>. A proxy indexes
@@ -35,7 +35,7 @@
 //   - resize() only grows, and its callers hold the cold-path lock
 //     (cold_path_lock.h);
 //   - operator[] may run concurrently with resize() for any index below a
-//     size() the caller has observed (its own array's num_tab, always);
+//     size() the caller has observed (its own array's array_id, always);
 //   - a row is written by its array's owner only: the table protects the
 //     rows' addresses, not their contents.
 
@@ -80,11 +80,11 @@ class StableTable
   private:
     static constexpr std::size_t first_bits  = 8;                            ///< log2 of the first segment's size
     static constexpr std::size_t first_size  = std::size_t{1} << first_bits; ///< rows in segment 0
-    static constexpr std::size_t nb_segments = 32; ///< a power of two; an int num_tab needs 24
+    static constexpr std::size_t nb_segments = 32; ///< a power of two; an int array_id needs 24
 
     /// @brief Segment of the row whose index plus first_size is @p biased.
     /// @details Masked: in bounds whatever the index, so an index that is not
-    ///          one (a negative num_tab) cannot address past the segment table.
+    ///          one (a negative array_id) cannot address past the segment table.
     [[nodiscard]] static constexpr std::size_t segment_of(std::size_t biased) noexcept
     {
         return (static_cast<std::size_t>(std::bit_width(biased)) - (first_bits + 1)) & (nb_segments - 1);

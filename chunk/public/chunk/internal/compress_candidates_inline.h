@@ -44,7 +44,7 @@
 
 #include "chunk/internal/compress_candidates.h"  // the declarations these bodies belong to
 #include "chunk/config.h"                        // build_config, chunk_config
-#include "chunk/internal/PMP_CHUNK.h"            // CHUNK_PMP_*
+#include "chunk/internal/pmp_chunk.h"            // CHUNK_PMP_*
 #include "chunk/internal/zero_chunk.h"           // Chunk<T>: the ChunkT<T>:: calls
 #include "chunk/internal/zero_one_value_chunk.h" // zero_one_value::Chunk<T>: the ChunkT<T>:: calls
 #include "chunk/internal/zero_any_chunk.h"       // zero_any::Chunk<T>: the ChunkT<T>:: calls
@@ -146,7 +146,7 @@ bool CompressCandidates<ChunkT, T>::have_candidates(int n_thr)
         {
             if constexpr (is_not_bool)
             {
-                const auto& sh_inf           = *zero_one_value::Proxy<T>::share_info_array;
+                const auto& sh_inf           = *zero_one_value::Proxy<T>::array_registry;
                 const auto& v_all_second_val = sh_inf.get_all_second_value();
                 return std::ranges::any_of(v_all_second_val, [n_thr](const auto& second_value)
                                            { return ChunkT<T>::have_chunk_to_compress(second_value, n_thr); });
@@ -184,7 +184,7 @@ void CompressCandidates<ChunkT, T>::compress_pass([[maybe_unused]] bool apply)
         {
             if constexpr (is_not_bool)
             {
-                const auto& sh_inf          = *zero_one_value::Proxy<T>::share_info_array;
+                const auto& sh_inf          = *zero_one_value::Proxy<T>::array_registry;
                 const auto& v_all_inf_array = sh_inf.get_all_inf_array();
                 for (const auto& inf_array : v_all_inf_array)
                 {
@@ -266,8 +266,8 @@ void CompressCandidates<ChunkT, T>::remove_from_zero_any_candidates_by_ptr_range
 }
 
 template <template <typename> class ChunkT, typename T>
-void CompressCandidates<ChunkT, T>::remove_from_zero_any_candidates_by_num_tab(
-    int                   num_tab,
+void CompressCandidates<ChunkT, T>::remove_from_zero_any_candidates_by_array_id(
+    int                   array_id,
     [[maybe_unused]] bool own_rank_only) noexcept
 {
     if constexpr (build_config::threaded)
@@ -275,18 +275,18 @@ void CompressCandidates<ChunkT, T>::remove_from_zero_any_candidates_by_num_tab(
         const auto [first, last] = removal_ranks(static_cast<int>(zero_any_candidates_thr.size()), own_rank_only);
         for (int thr = first; thr < last; ++thr)
         {
-            erase_candidates_of_tab(zero_any_candidates_thr[thr], num_tab);
+            erase_candidates_of_tab(zero_any_candidates_thr[thr], array_id);
         }
     }
     else
     {
-        erase_candidates_of_tab(zero_any_candidates, num_tab);
+        erase_candidates_of_tab(zero_any_candidates, array_id);
     }
 }
 
 template <template <typename> class ChunkT, typename T>
-void CompressCandidates<ChunkT, T>::remove_from_zero_one_value_candidates_by_num_tab(
-    [[maybe_unused]] int  num_tab,
+void CompressCandidates<ChunkT, T>::remove_from_zero_one_value_candidates_by_array_id(
+    [[maybe_unused]] int  array_id,
     [[maybe_unused]] bool own_rank_only) noexcept
 {
     if constexpr (build_config::threaded)
@@ -302,27 +302,28 @@ void CompressCandidates<ChunkT, T>::remove_from_zero_one_value_candidates_by_num
                 {
                     continue;
                 }
-                erase_candidates_of_tab(*sp, num_tab);
+                erase_candidates_of_tab(*sp, array_id);
             }
         }
     }
 }
 
 template <template <typename> class ChunkT, typename T>
-void CompressCandidates<ChunkT, T>::remove_from_zero_candidates_by_num_tab(int                   num_tab,
-                                                                           [[maybe_unused]] bool own_rank_only) noexcept
+void CompressCandidates<ChunkT, T>::remove_from_zero_candidates_by_array_id(
+    int                   array_id,
+    [[maybe_unused]] bool own_rank_only) noexcept
 {
     if constexpr (build_config::threaded)
     {
         const auto [first, last] = removal_ranks(static_cast<int>(zero_candidates_thr.size()), own_rank_only);
         for (int thr = first; thr < last; ++thr)
         {
-            erase_candidates_of_tab(zero_candidates_thr[thr], num_tab);
+            erase_candidates_of_tab(zero_candidates_thr[thr], array_id);
         }
     }
     else
     {
-        erase_candidates_of_tab(zero_candidates, num_tab);
+        erase_candidates_of_tab(zero_candidates, array_id);
     }
 }
 

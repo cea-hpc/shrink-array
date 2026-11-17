@@ -43,7 +43,7 @@
 #include "chunk/internal/chunk_stats.h"                // per-variant stats reduce/print
 #include "chunk/internal/reflect_fields.h"             // add_fields, append_json (CHUNK_STATS report only)
 #include "chunk/runtime.h"                             // the declarations defined here
-#include "chunk/internal/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/pmp_chunk.h"                  // CHUNK_PMP_MAX_THREADS
 #include "chunk/internal/write_compress_sync_policy.h" // dekker::protocol_name (CHUNK_STATS report only)
 #include "chunk/internal/type_state_registry.h"        // TypeStateRegistry
 #include "chunk/log.h"                                 // CHUNK_LOG

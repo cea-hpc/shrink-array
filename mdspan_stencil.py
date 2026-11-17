@@ -81,7 +81,7 @@ HUNKS = [
     #include <utility>     // std::as_const, std::forward, std::pair
     #include <vector>      // std::vector (a run-time tile larger than the inline buffer)
 
-    #include "chunk/internal/PMP_CHUNK.h"                // CHUNK_PMP_IN_PARALLEL_REGION
+    #include "chunk/internal/pmp_chunk.h"                // CHUNK_PMP_IN_PARALLEL_REGION
     #include "chunk/range_ops.h"    // for_each_span, fill_range(_mt), copy_range(_mt)
 ''',
      r'''    #include <algorithm> // std::copy, std::copy_n, std::fill, std::fill_n, std::equal, std::all_of, std::min, std::max, std::clamp
@@ -95,7 +95,7 @@ HUNKS = [
     #include <utility>     // std::as_const, std::forward, std::pair
     #include <vector> // std::vector (a run-time tile larger than the inline buffer, a stencil's halo and tile cache)
 
-    #include "chunk/internal/PMP_CHUNK.h"                // CHUNK_PMP_IN_PARALLEL_REGION
+    #include "chunk/internal/pmp_chunk.h"                // CHUNK_PMP_IN_PARALLEL_REGION
     #include "chunk/range_ops.h"    // for_each_span, fill_range(_mt), copy_range(_mt)
 '''),
     ('chunk/public/chunk/mdspan_tile_ops.h',
@@ -784,7 +784,7 @@ Les trois laissent le même champ, avec les mêmes 2561 chunks matérialisés.
     ('examples/mdspan_tiles/mdspan_tiles.cpp',
      r'''#include "chunk/phases.h"    // parallel_phase
 #include "chunk/mdspan.h"         // shrink_array::md, SHRINK_ARRAY_HAS_MDSPAN
-#include "chunk/internal/PMP_CHUNK.h"      // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
+#include "chunk/internal/pmp_chunk.h"      // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
 #include "chunk/mdspan_tile_ops.h" // md::for_each_tile(_mt), md::update_tiles, md::fill_box(_mt), md::copy_box_out(_mt), md::copy_box_in(_mt)
 #include "chunk/runtime.h" // Runtime::init
 
@@ -792,7 +792,7 @@ namespace sa = shrink_array;
 ''',
      r'''#include "chunk/phases.h"    // parallel_phase
 #include "chunk/mdspan.h"         // shrink_array::md, SHRINK_ARRAY_HAS_MDSPAN
-#include "chunk/internal/PMP_CHUNK.h"      // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
+#include "chunk/internal/pmp_chunk.h"      // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
 #include "chunk/mdspan_tile_ops.h" // md::for_each_tile(_mt), md::update_tiles, md::fill_box(_mt), md::copy_box_*(_mt), md::stencil_tiles_mt
 #include "chunk/runtime.h" // Runtime::init
 

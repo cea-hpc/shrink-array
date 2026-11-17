@@ -25,11 +25,11 @@
 #include "chunk/internal/in_t.h"            // InT<T>
 #include "chunk/config.h"                   // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/PMP_CHUNK.h"       // get_thr_rank_fast
-#include "chunk/internal/zero_one_value_pointer_map.h"   // zero_one_value::PointerMap
-#include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment
-#include "chunk/internal/chunk_size_policy.h"            // set_thread_chunk_size
-#include "chunk/internal/TChunk.h"                       // VectorTuple4ChunkInt2
+#include "chunk/internal/pmp_chunk.h"       // get_thr_rank_fast
+#include "chunk/internal/zero_one_value_pointer_map.h"  // zero_one_value::PointerMap
+#include "chunk/internal/concept_is_clean_assignment.h" // IsCleanAssignment
+#include "chunk/internal/chunk_size_policy.h"           // set_thread_chunk_size
+#include "chunk/internal/chunk_tuples.h"                // VectorTuple4ChunkInt2
 
 #include "chunk/internal/zero_one_value_candidate_list_check.h" // zero_one_value_missing_candidate_list
 #include "chunk/internal/proxy_base.h"                          // ProxyBase
@@ -77,7 +77,7 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
      * @brief Initialize second_value and index without full metadata load
      * @details Lighter-weight alternative to set_info_on_chunk() when tab/chunk info
      *          is not immediately needed.
-     * @post second_value and ind are valid; num_tab unchanged
+     * @post second_value and ind are valid; array_id unchanged
      */
 
     void set_info_second_value_ind(this Derived& self);
@@ -86,16 +86,16 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
      * @brief Like set_info_second_value_ind(), for an explicit array key instead of
      *        ptr_on_array (e.g. rechunk's tmp).
      * @param key Array pointer to resolve metadata for.
-     * @post second_value and ind are valid; num_tab unchanged.
+     * @post second_value and ind are valid; array_id unchanged.
      */
     void set_info_second_value_ind_from_key(ArrayKey<Chunk<T>> key);
 
     /**
      * @brief Load all compression metadata from global map
-     * @details Retrieves (second_value, ind, num_tab) record from share_info_array
+     * @details Retrieves (second_value, ind, array_id) record from array_registry
      *          using ptr_on_array as key. Also initializes compression flag pointer.
      * @pre ptr_on_array must point to valid array
-     * @post second_value, ind, num_tab, and ptr_is_inside_chunk_list_to_compress_ are valid
+     * @post second_value, ind, array_id, and ptr_is_inside_chunk_list_to_compress_ are valid
      * @note For bool specialization, this is a no-op as metadata is fixed
      */
 
@@ -112,7 +112,7 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
     }
 
     /**
-     * @brief The cached (second_value, ind, num_tab) metadata tuple.
+     * @brief The cached (second_value, ind, array_id) metadata tuple.
      * @return Reference to inf_array.
      */
     const InfArrayT& get_inf_array() const noexcept
@@ -123,7 +123,7 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
     /// @brief Arm this proxy with the owning array's registry mirror
     ///        (zero_one_value::Array::registry_mirror()).
     /// @details Called by ArrayChunkBase::operator[]. An unarmed proxy (deferred-replay
-    ///          reconstruction, *_from_key path) resolves the tuple through share_info_array.
+    ///          reconstruction, *_from_key path) resolves the tuple through array_registry.
     /// @note Without it every write scans the registry, a large share of the write cost.
     void arm_inf_array(const InfArrayT* src) const noexcept
     {
@@ -142,7 +142,7 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
     }
 
     /**
-     * @brief This array's num_tab, for the per-write refresh (zero_one_value::Proxy::set_num_tab()):
+     * @brief This array's array_id, for the per-write refresh (zero_one_value::Proxy::set_array_id()):
      *        from the armed mirror when there is one, from inf_array otherwise.
      * @details Not read back from inf_array when armed: set_info_second_value_ind()
      *          has just copied the 16-byte record there with one q-register store,
@@ -150,21 +150,21 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
      *          -- the write then waits for the store to reach the cache. Same
      *          hazard as in set_info_on_chunk().
      */
-    [[nodiscard]] int armed_num_tab(this const Derived& self)
+    [[nodiscard]] int armed_array_id(this const Derived& self)
     {
         if (const InfArrayT* src = self.armed_inf_array()) [[likely]]
         {
-            return src->num_tab;
+            return src->array_id;
         }
-        return self.unarmed_num_tab();
+        return self.unarmed_array_id();
     }
 
-    /// @brief armed_num_tab()'s unarmed path, out of line: inlined, the compiler
-    ///        turns the branch into a select that loads inf_array.num_tab on
+    /// @brief armed_array_id()'s unarmed path, out of line: inlined, the compiler
+    ///        turns the branch into a select that loads inf_array.array_id on
     ///        every write anyway (and waits for the store again).
-    [[gnu::noinline, gnu::cold]] int unarmed_num_tab() const noexcept
+    [[gnu::noinline, gnu::cold]] int unarmed_array_id() const noexcept
     {
-        return inf_array_.num_tab;
+        return inf_array_.array_id;
     }
 
     /**
@@ -184,15 +184,15 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
 
     /**
      * @brief Cached compression metadata tuple
-     * @details Contains (second_value, ind, num_tab) to avoid repeated lookups.
+     * @details Contains (second_value, ind, array_id) to avoid repeated lookups.
      *          Populated by load_inf_array().
      */
     InfArrayT inf_array_; ///< Compression metadata associated with this proxy.
 
   private:
-    /// @brief The (second_value, ind, num_tab) record: from the armed mirror when
+    /// @brief The (second_value, ind, array_id) record: from the armed mirror when
     ///        there is one, from the registry otherwise. Under any_check the
-    ///        two are compared (model: zero_any::Proxy::set_num_tab).
+    ///        two are compared (model: zero_any::Proxy::set_array_id).
     [[nodiscard]] InfArrayT load_inf_array(this const Derived& self);
     /// @brief The armed mirror (checked under any_check), or nullptr. The
     ///        per-write refreshes read the fields through it, not through
@@ -203,7 +203,7 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
     mutable const InfArrayT* inf_array_src_ = nullptr;
 };
 
-// bool and Bit (bit.h): the second constant is `true`, only num_tab is per array.
+// bool and Bit (bit.h): the second constant is `true`, only array_id is per array.
 template <typename T, typename Derived>
     requires is_bool_like_v<T>
 class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
@@ -229,14 +229,14 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
     ///        set_info_second_value_ind() below for why this is NOT a no-op.
     void set_info_on_chunk(this Derived& self);
 
-    // Must NOT be a no-op: bool's second_value (true) and ind (0) are fixed, but num_tab is
-    // per array. With a second bool array (rechunk's tmp) a default num_tab 0 indexes the wrong
+    // Must NOT be a no-op: bool's second_value (true) and ind (0) are fixed, but array_id is
+    // per array. With a second bool array (rechunk's tmp) a default array_id 0 indexes the wrong
     // compression flag array (heap overflow) and queues candidates rechunk_drop_candidates(tmp)
-    // cannot remove. Only num_tab is consumed.
+    // cannot remove. Only array_id is consumed.
     /**
-     * @brief Resolve this proxy's real per-array num_tab from the global
+     * @brief Resolve this proxy's real per-array array_id from the global
      *        metadata map (second_value/ind stay their constexpr values).
-     * @post inf_array's num_tab is valid for this proxy's own array.
+     * @post inf_array's array_id is valid for this proxy's own array.
      */
     void set_info_second_value_ind(this Derived& self)
     {
@@ -244,10 +244,10 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
     }
 
     /**
-     * @brief Like set_info_second_value_ind(), but resolves num_tab for an
+     * @brief Like set_info_second_value_ind(), but resolves array_id for an
      *        explicitly given array pointer rather than this proxy's own
      *        ptr_on_array.
-     * @param key Array pointer to resolve num_tab for.
+     * @param key Array pointer to resolve array_id for.
      */
     void set_info_second_value_ind_from_key(this Derived& self, ArrayKey<Chunk<T>> key)
     {
@@ -268,7 +268,7 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
     }
 
     /**
-     * @brief This array's num_tab, for the per-write refresh (zero_one_value::Proxy::set_num_tab()):
+     * @brief This array's array_id, for the per-write refresh (zero_one_value::Proxy::set_array_id()):
      *        from the armed mirror when there is one, from inf_array otherwise.
      * @details Not read back from inf_array when armed: set_info_second_value_ind()
      *          has just copied the 16-byte record there with one q-register store,
@@ -276,33 +276,33 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
      *          -- the write then waits for the store to reach the cache. Same
      *          hazard as in set_info_on_chunk().
      */
-    [[nodiscard]] int armed_num_tab(this const Derived& self)
+    [[nodiscard]] int armed_array_id(this const Derived& self)
     {
         if (const InfArrayT* src = self.armed_inf_array()) [[likely]]
         {
-            return src->num_tab;
+            return src->array_id;
         }
-        return self.unarmed_num_tab();
+        return self.unarmed_array_id();
     }
 
-    /// @brief armed_num_tab()'s unarmed path, out of line: inlined, the compiler
-    ///        turns the branch into a select that loads inf_array.num_tab on
+    /// @brief armed_array_id()'s unarmed path, out of line: inlined, the compiler
+    ///        turns the branch into a select that loads inf_array.array_id on
     ///        every write anyway (and waits for the store again).
-    [[gnu::noinline, gnu::cold]] int unarmed_num_tab() const noexcept
+    [[gnu::noinline, gnu::cold]] int unarmed_array_id() const noexcept
     {
-        return inf_array_.num_tab;
+        return inf_array_.array_id;
     }
 
     /**
      * @brief Cached compression metadata tuple
-     * @details Contains (second_value, ind, num_tab) to avoid repeated lookups.
+     * @details Contains (second_value, ind, array_id) to avoid repeated lookups.
      *          Populated by load_inf_array().
      */
     InfArrayT inf_array_; ///< Compression metadata associated with this proxy.
 
-    /// @brief The (second_value, ind, num_tab) record: from the armed mirror when
+    /// @brief The (second_value, ind, array_id) record: from the armed mirror when
     ///        there is one, from the registry otherwise. Under any_check the
-    ///        two are compared (model: zero_any::Proxy::set_num_tab).
+    ///        two are compared (model: zero_any::Proxy::set_array_id).
     [[nodiscard]] InfArrayT load_inf_array(this const Derived& self);
     /// @brief The armed mirror (checked under any_check), or nullptr. The
     ///        per-write refreshes read the fields through it, not through
@@ -479,10 +479,10 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
 
     /**
      * @brief No-op, called at array teardown. The slot's buffer is released when
-     *        resize_tab_is_int() reassigns this num_tab; a slot never reused keeps it until exit.
-     * @param num_tab Tab index being torn down.
+     *        resize_tab_is_int() reassigns this array_id; a slot never reused keeps it until exit.
+     * @param array_id Tab index being torn down.
      */
-    static void clear_is_int([[maybe_unused]] int num_tab)
+    static void clear_is_int([[maybe_unused]] int array_id)
     {
         // Intentionally empty, but must exist: zero_one_value::Array::clear_core() calls it in its
         // `if constexpr (use_fast_block_compression)` branch.
@@ -490,27 +490,27 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
 
     /**
      * @brief Get the compression tracking array for a tab
-     * @param num_tab Tab index
+     * @param array_id Tab index
      * @return Reference to the atomic char array
-     * @pre num_tab must be < tab_is_inside_chunk_list_to_compress.size()
+     * @pre array_id must be < tab_is_inside_chunk_list_to_compress.size()
      */
 
-    static ChunkFlagRowT& get_tab_is_inside_list_to_compress(int num_tab)
+    static ChunkFlagRowT& get_tab_is_inside_list_to_compress(int array_id)
     {
-        return tab_is_inside_chunk_list_to_compress[num_tab];
+        return tab_is_inside_chunk_list_to_compress[array_id];
     }
 
     /**
      * @brief Reset compression flag for a specific chunk
-     * @param num_tab Tab index
-     * @param num_chunk Chunk index
+     * @param array_id Tab index
+     * @param chunk_index Chunk index
      * @post Chunk marked as not in compression list (can be re-added)
      * @note Thread safety: Memory order release ensures visibility to all threads
      */
 
-    static void reset_tab_is_inside_list_to_compress(int num_tab, int num_chunk) noexcept
+    static void reset_tab_is_inside_list_to_compress(int array_id, int chunk_index) noexcept
     {
-        tab_is_inside_chunk_list_to_compress[num_tab][num_chunk].store(0, std::memory_order_release);
+        tab_is_inside_chunk_list_to_compress[array_id][chunk_index].store(0, std::memory_order_release);
     }
 
     /**
@@ -663,7 +663,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     friend Base;
     friend SecondValueBase;
 
-    using Base::set_num_tab;
+    using Base::set_array_id;
 
     using BaseSpec = ProxySpec<T, Proxy>;
     using BaseSpec::second_value_;
@@ -672,10 +672,10 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     /// Alias for the chunk manager associated with type T.
     using Manager = TypeState<Chunk, T>;
 
+    using Base::array_id_;     ///< Index used for compression table lookup.
     using Base::chunk_;        ///< Reference to the associated chunk.
+    using Base::chunk_index_;  ///< Index of the chunk within the source array.
     using Base::num_;          ///< Index of the current element within the chunk.
-    using Base::num_chunk_;    ///< Index of the chunk within the source array.
-    using Base::num_tab_;      ///< Index used for compression table lookup.
     using Base::ptr_on_array_; ///< pointer to array (for tab lookup)
     using Base::read_values;
     using Base::values_; ///< Pointer to chunk's data array
@@ -934,36 +934,36 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     /**
      * @brief Extract and cache tab number from compression metadata
      * @pre inf_array must be populated via get_info_second_value()
-     * @post num_tab contains valid tab index
+     * @post array_id contains valid tab index
      */
-    void set_num_tab() noexcept
+    void set_array_id() noexcept
     {
-        num_tab_ = BaseSpec::armed_num_tab(); // not inf_array.num_tab: see armed_num_tab()
+        array_id_ = BaseSpec::armed_array_id(); // not inf_array.array_id: see armed_array_id()
     }
 
     /**
      * @brief This proxy's cached table number.
      * @return The table number.
      */
-    [[nodiscard]] int get_num_tab() const noexcept
+    [[nodiscard]] int get_array_id() const noexcept
     {
-        return Base::get_num_tab();
+        return Base::get_array_id();
     }
 
     /**
      * @brief Initialize both tab number and compression flag pointer
-     * @details Convenience method combining set_num_tab() and
+     * @details Convenience method combining set_array_id() and
      *          set_ptr_is_inside_chunk_list_to_compress()
-     * @post Both num_tab and ptr_is_inside_chunk_list_to_compress_ are valid
+     * @post Both array_id and ptr_is_inside_chunk_list_to_compress_ are valid
      *
      * @note No build-mode guard: the sole caller
      *       (SecondValueProxyBase::write_with_optional_lock_with_set_ptr) is under
      *       `if constexpr (chunk_config::use_fast_block_compression)`, so the empty
      *       tab_is_inside_chunk_list_to_compress of other modes is never indexed.
      */
-    void set_num_tab_ptr_is_inside_chunk() noexcept
+    void set_array_id_ptr_is_inside_chunk() noexcept
     {
-        set_num_tab();
+        set_array_id();
 
         Base::set_ptr_is_inside_chunk_list_to_compress();
     }
@@ -977,14 +977,14 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     [[nodiscard]] static bool has_candidate_list(InT<T> second_val) noexcept;
 
     /**
-     * @brief Look up the (second_value, ind, num_tab) metadata tuple
+     * @brief Look up the (second_value, ind, array_id) metadata tuple
      *        registered for array pointer @p ptr.
      * @param ptr Array pointer to look up.
      * @return The registered metadata tuple.
      */
     [[nodiscard]] static InfArrayT get_info_second_value(ArrayKey<Chunk<T>> ptr) noexcept
     {
-        return share_info_array->get_info_second_value(ptr);
+        return array_registry->get_info_second_value(ptr);
     }
 
     /**
@@ -992,7 +992,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      *
      * Used to retrieve compression-related information for a given value.
      */
-    static inline constinit internal::LazyImmortal<PointerMap<T>> share_info_array;
+    static inline constinit internal::LazyImmortal<PointerMap<T>> array_registry;
 };
 
 } // namespace zero_one_value
