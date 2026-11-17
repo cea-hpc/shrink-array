@@ -40,14 +40,14 @@ non-zero value**: its metadata are lighter than those of `zero_any`.
 ## 2. Usage
 
 ```cpp
-zero_one_value::Array<double> tab(n);
-tab.set_second_value(1.0);      // declare it before the parallel phases
+zero_one_value::Array<double> arr(n);
+arr.set_second_value(1.0);      // declare it before the parallel phases
 
 #pragma omp parallel for
 for (long i = 0; i < n; ++i)
-    tab[i] = f(i);              // write: goes through a proxy
+    arr[i] = f(i);              // write: goes through a proxy
 
-double s = std::as_const(tab)[i];   // read: returns a T
+double s = std::as_const(arr)[i];   // read: returns a T
 ```
 
 The interface is close to a `std::vector`: `size()`, `resize()`, `at()`, constant iterators,
@@ -82,7 +82,7 @@ The global index `i` is split by two single-cycle operations:
 
 ```cpp
 const int chunk_index = i >> size_policy_.decalage();   // chunk number
-const int num       = i &  size_policy_.modulo();     // position in the chunk
+const int elem_offset       = i &  size_policy_.modulo();     // position in the chunk
 ```
 
 ---
@@ -96,18 +96,18 @@ the chunk is in one of three states:
 
 | state | `values` points to | test |
 |---|---|---|
-| compressed to the first value | the constant buffer `cst_val1` (all 0) | `is_cst_val1()` |
-| compressed to the second value | the constant buffer `cst_val2[ind]` | `is_cst_val2(ind)` |
-| materialised | a private buffer, allocated for this chunk | `written(ind)` |
+| compressed to the first value | the constant buffer `const_val1` (all 0) | `is_const_val1()` |
+| compressed to the second value | the constant buffer `const_val2[idx]` | `is_const_val2(idx)` |
+| materialised | a private buffer, allocated for this chunk | `written(idx)` |
 
 The constant buffers are **allocated only once** and shared by all the chunks
-concerned. Their size is `cst_buffer_size` (the chunk size in fixed geometry,
-`chunk_dyn_max_size` in dynamic geometry). There is one `cst_val2` buffer per declared second
-value, identified by an **index** `ind`.
+concerned. Their size is `const_buffer_size` (the chunk size in fixed geometry,
+`chunk_dyn_max_size` in dynamic geometry). There is one `const_val2` buffer per declared second
+value, identified by an **index** `idx`.
 
 > Warning: `zero_one_value::Chunk::written()` **without an argument** is reserved for `bool` and returns `false`
 > for any other type. To know whether a non-boolean chunk is materialised, you need
-> `written(ind)` with the index of the array's second value
+> `written(idx)` with the index of the array's second value
 > (`zero_one_value::Array::chunk_written(j)` does it).
 
 ### 4.2 The second value registry
@@ -117,10 +117,10 @@ The second value **is not stored in the array**: it lives in the shared registry
 `InfArrayT` triplet:
 
 ```
-(second_value, ind, array_id)
+(second_value, idx, array_id)
 ```
 
-- `ind`: the index of the `cst_val2` constant buffer for this value;
+- `idx`: the index of the `const_val2` constant buffer for this value;
 - `array_id`: the array number, which indexes the per-array metadata tables
   (for example the "already a compression candidate" flags).
 
@@ -139,13 +139,13 @@ is compared with the registry.
 The read operator returns a **value**, never a reference:
 
 ```cpp
-CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](IndType i) const noexcept
+CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](IndexType i) const noexcept
 {
     const int chunk_index = i >> size_policy_.decalage();
-    const int num       = i & size_policy_.modulo();
+    const int elem_offset       = i & size_policy_.modulo();
     const auto& chunk_t = chunk_list[chunk_index];
-    sync_chunk(chunk_t, chunk_index, num);      // read barrier (OpenMP)
-    return chunk_t[num];
+    sync_chunk(chunk_t, chunk_index, elem_offset);      // read barrier (OpenMP)
+    return chunk_t[elem_offset];
 }
 ```
 
@@ -171,11 +171,11 @@ the buffer: **use it only on a materialised chunk**, since it bypasses the proxy
 ### 6.1 The write `operator[]`: an armed proxy
 
 ```cpp
-ProxyType operator[](this Derived& self, IndType i) noexcept
+ProxyType operator[](this Derived& self, IndexType i) noexcept
 {
     const int chunk_index = self.chunk_index_of(i);
-    const int num       = self.offset_in_chunk(i);
-    const ProxyType& val = self.chunk_list[chunk_index][num];
+    const int elem_offset       = self.offset_in_chunk(i);
+    const ProxyType& val = self.chunk_list[chunk_index][elem_offset];
     val.set_this_and_chunk_index(self.registry_key(), chunk_index, self.array_id); // array, chunk, array_id
     val.arm_inf_array(self.registry_mirror());                                 // zero_one_value: the mirror
     return val;
@@ -193,15 +193,15 @@ there is nothing to do, and above all nothing to allocate.
 const T* values_loc = chunk.values_load();
 
 // 1. first_value on a chunk already at first_value: nothing to do
-if (is_cst_val1_and_v_equal_first_value(values_loc, v)) return v;
+if (is_const_val1_and_v_equal_first_value(values_loc, v)) return v;
 
-set_info_second_value_ind();   // second_value and ind, from the mirror
+set_info_second_value_idx();   // second_value and idx, from the mirror
 
-// 2. second_value on a chunk at cst_val2, or on an element that already holds it:
+// 2. second_value on a chunk at const_val2, or on an element that already holds it:
 //    nothing to do -- unless deferred writes are pending on the chunk
 //    (an older op replayed later would overwrite the value left in place)
 if (!chunk.pending_any())
-    if (v == second_value && (values_loc == chunk.get_cst_val2(ind) || values_loc[num] == second_value))
+    if (v == second_value && (values_loc == chunk.get_const_val2(idx) || values_loc[elem_offset] == second_value))
         return v;
 
 // 3. otherwise: the write body, handed to the write engine
@@ -212,7 +212,7 @@ if (deferred) { /* capture the operation to replay it later (7.3) */ }
 
 ### 6.3 The body: `perform_core_assignment`
 
-- **second value written into a `cst_val1` chunk**: the chunk is materialised
+- **second value written into a `const_val1` chunk**: the chunk is materialised
   (`create_value()`, pre-filled with 0), then the value is written;
 - **compressed chunk (either constant) and a different value**: the chunk is materialised,
   pre-filled **with the constant it is leaving**, then the value is written;
@@ -328,13 +328,13 @@ Same example as in the old version, still valid:
 
 ```cpp
 for (long i = 0; i < n; ++i)
-    tab[i] = second_value;
+    arr[i] = second_value;
 ```
 
-At construction, all chunks are at `cst_val1`. The first write to each chunk
+At construction, all chunks are at `const_val1`. The first write to each chunk
 **materialises** it (it then holds `1 0 0 0 …`). Without compression during execution, the
 loop would end with **the whole array allocated**, although every chunk has become uniform again.
-In-flight compression returns these chunks to `cst_val2` as the loop proceeds.
+In-flight compression returns these chunks to `const_val2` as the loop proceeds.
 
 ### 8.2 Candidate lists
 
@@ -368,7 +368,7 @@ applied first:
   CAS of the chunk's flag, since a refusal after it would leave the flag set and the chunk
   never queued again.
 
-An atomic flag per chunk ("already a candidate", `tab_is_inside_chunk_list_to_compress`,
+An atomic flag per chunk ("already a candidate", `array_is_inside_chunk_list_to_compress`,
 indexed by `array_id`) guarantees that a chunk is queued **only once** until the
 next pass.
 
@@ -397,8 +397,8 @@ flowchart TD
     D -->|"all = first_value"| E["list ll_compt1"]
     D -->|"all = second_value"| F["list ll_compt2"]
     D -->|"otherwise"| G["nothing (flag reset to zero)"]
-    E --> H["clear : return the buffer,<br/>values -> cst_val1"]
-    F --> I["clear : return the buffer,<br/>values -> cst_val2[ind]"]
+    E --> H["clear : return the buffer,<br/>values -> const_val1"]
+    F --> I["clear : return the buffer,<br/>values -> const_val2[idx]"]
     H --> J["reset the flags to zero,<br/>empty the list, finish()"]
     I --> J
     G --> J
@@ -492,7 +492,7 @@ On zero_any, a chunk that `fill_range` covers whole takes the value as its const
 state alone** (`zero_any::Chunk::fill_constant_st`), whatever the value and the chunk's state: a
 materialised chunk goes through the compression's own clear (`clear_int_st`: buffer released,
 constant installed, no scan); a compressed one switches its constant in place -- second-value
-slot (registered by `find_or_set_ind_cst_val2`), type, then values pointer, the order the
+slot (registered by `find_or_set_idx_const_val2`), type, then values pointer, the order the
 clear keeps. No buffer is allocated, filled, scanned or freed, and nothing is queued. The
 constant the chunk held before stays registered: no chunk records a reference to it, and
 `reclaim_second_values()` frees it once no chunk points at it.
@@ -533,14 +533,14 @@ can compress (a fill is such a piece, so the rule is `fill_range_mt`'s).
 **Three points specific to `zero_one_value`**, fixed in September 2026, which previously justified
 keeping it on the element-by-element path:
 
-- the test "is this chunk materialised?" must call `written(ind)` with the array's second
-  value index (`internal::materialised(a, ch, ind2)`): `written()` without an argument
+- the test "is this chunk materialised?" must call `written(idx)` with the array's second
+  value index (`internal::materialised(a, ch, idx2)`): `written()` without an argument
   is reserved for `bool` and returns `false` for other types;
 - queuing (`internal::queue_for_compression`) must **load the second value** before
   adding the chunk (`set_info_on_chunk()`), since `zero_one_value`'s lists are indexed by
   it. Without that, the chunks landed in the list of `T{}`, which no pass drains;
 - in counter mode (the serial builds), a direct store must **recount** the chunk's two
-  counters, `nb_val_eq_first_value_` and `nb_val_eq_second_value_`, which zero_one_value::Proxy otherwise
+  counters, `n_val_eq_first_value_` and `n_val_eq_second_value_`, which zero_one_value::Proxy otherwise
   keeps up to date one write at a time (`internal::resync_counters`, as for `zero`'s count of
   zeros).
 
@@ -559,7 +559,7 @@ single-threaded forms (`fill_range`, `copy_range`) read those three elements pla
 **The wrong values of September 2026.** With the direct path open to `zero_one_value`,
 `bench_and_test.py` reported wrong values on Grace **after compression**:
 `rechunk_validation_zero_one_value_dyn` (`scale-64-to-tgt`, POST-FAIL) and the check mode of
-`shrink_bench_zero_one_value_256` ("is_cst_val2 should be not"). Not a race between threads:
+`shrink_bench_zero_one_value_256` ("is_const_val2 should be not"). Not a race between threads:
 the re-chunk test fails identically on a single core in the serial Debug build, and the
 failing Grace configurations were the serial ones. The cause was the counters of the third
 point above: the direct paths (`fill_range`, `copy_range`, used by the re-chunk's rebuild)

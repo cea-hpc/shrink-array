@@ -87,8 +87,8 @@ Les vérifications des sources tournent avec les autres (`ctest -R check_`) :
   | quoi | casse | exemple |
   |---|---|---|
   | fonctions, méthodes, variables, paramètres, namespaces | snake_case | `get_chunk_list`, `array_id` |
-  | données membres privées et protégées | snake_case terminé par `_` | `chunk_list_`, `num_` |
-  | constantes (`constexpr`) et énumérateurs | snake_case | `cst_buffer_size`, `ev_flush_begin` |
+  | données membres privées et protégées | snake_case terminé par `_` | `chunk_list_`, `elem_offset_` |
+  | constantes (`constexpr`) et énumérateurs | snake_case | `const_buffer_size`, `ev_flush_begin` |
   | classes, structs, concepts, alias de type, paramètres de template | PascalCase | `zero_any::Array`, `AllocT`, `ChunkT` |
   | macros | MAJUSCULES | `CHUNK_SIZE` |
 

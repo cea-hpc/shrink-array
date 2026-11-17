@@ -417,16 +417,16 @@ les threads d'OpenMP : pour les autres, utilisez le backend std.
 
 ## 6. Pièges
 
-- **`auto` garde un proxy.** Sur un tableau non constant, `tab[i]` rend un proxy d'écriture.
-  `T v = tab[i];` prend la valeur ; `auto v = tab[i];` garde le proxy, qui suit l'élément s'il
+- **`auto` garde un proxy.** Sur un tableau non constant, `arr[i]` rend un proxy d'écriture.
+  `T v = arr[i];` prend la valeur ; `auto v = arr[i];` garde le proxy, qui suit l'élément s'il
   change ensuite. Dans du code venu d'un `std::vector`, remplacer `auto` par le type de
   l'élément. Tous les builds refusent de compiler l'utilisation d'un tel `v`, avec un message explicite.
-- **Convertir un élément avant de le transmettre.** `std::printf("%f", tab[i])` passerait le
+- **Convertir un élément avant de le transmettre.** `std::printf("%f", arr[i])` passerait le
   proxy, pas la valeur : refusé (GCC par `-Werror=conditionally-supported`, que pose la
-  bibliothèque ; clang toujours). `std::format("{}", tab[i])`, `std::max(tab[i], 2.0)` et une
-  fonction générique qui prend `tab[i]` par valeur sont refusés aussi. Écrire `double(tab[i])`,
-  ou `T(tab[i])`.
-- **Pas de `T&` sur un élément.** `tab[i].x = 1` ne compile pas : lire l'élément, le modifier,
+  bibliothèque ; clang toujours). `std::format("{}", arr[i])`, `std::max(arr[i], 2.0)` et une
+  fonction générique qui prend `arr[i]` par valeur sont refusés aussi. Écrire `double(arr[i])`,
+  ou `T(arr[i])`.
+- **Pas de `T&` sur un élément.** `arr[i].x = 1` ne compile pas : lire l'élément, le modifier,
   le réécrire. `data()`, les itérateurs modifiables et un `std::sort` en place n'existent pas
   non plus : trier une copie en `std::vector`, puis la remettre par `assign()`.
 - **Un proxy ne doit pas survivre au stockage.** Chacune des opérations séquentielles du §5

@@ -35,7 +35,7 @@
  */
 
 #include "chunk/config.h"                              // build_config::threaded
-#include "chunk/internal/chunk_stats.h"                // increm_chunk_gate_start*
+#include "chunk/internal/chunk_stats.h"                // inc_chunk_gate_start*
 #include "chunk/internal/invariant_check.h"            // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/write_compress_sync_policy.h" // any_thread_flushing
 
@@ -64,8 +64,8 @@ template <typename ProxyT, typename ChunkT>
             return false;
         }
         // What a declined start() counts: an attempt, yielded to a flush.
-        increm_chunk_gate_start<ChunkT>();
-        increm_chunk_gate_start_flush_yield<ChunkT>();
+        inc_chunk_gate_start<ChunkT>();
+        inc_chunk_gate_start_flush_yield<ChunkT>();
         return true;
     }
 }

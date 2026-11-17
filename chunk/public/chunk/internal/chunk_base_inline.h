@@ -27,7 +27,7 @@
 
 #include "chunk/internal/chunk_base.h"                 // the declarations these bodies belong to
 #include "chunk/config.h"                              // build_config::use_fast_alloc, chunk_config::
-#include "chunk/internal/chunk_stats.h"                // increm_chunk_read_sync / _cross (CHUNK_STATS)
+#include "chunk/internal/chunk_stats.h"                // inc_chunk_read_sync / _cross (CHUNK_STATS)
 #include "chunk/internal/pool_ledger.h"                // CHUNK_LEDGER_PARK / CHUNK_LEDGER_RELEASE
 #include "chunk/internal/pmp_chunk.h"                  // CHUNK_PMP_IN_PARALLEL_REGION
 #include "chunk/internal/deferred_op_pool.h"           // DeferredOperationBase, DeferredOpDeleter, DeferredOpPtr
@@ -77,9 +77,9 @@ void ChunkBase<T, Derived>::free_block_to_pool(this Derived& self, [[maybe_unuse
             if (allocator.holds_live(slab))
             {
                 // Ledger: LIVE -> FREE. Trips on double-free.
-                CHUNK_LEDGER_RELEASE(val, "free_block_to_pool.free_elt_pow2");
+                CHUNK_LEDGER_RELEASE(val, "free_block_to_pool.free_elem_pow2");
                 CHUNK_FREEPATH_INC(freed);
-                allocator.free_elt_pow2(val, slab);
+                allocator.free_elem_pow2(val, slab);
             }
             else if (slab && slab->owner && (slab->owner_rank < 0 || !CHUNK_PMP_IN_PARALLEL_REGION))
             {
@@ -89,7 +89,7 @@ void ChunkBase<T, Derived>::free_block_to_pool(this Derived& self, [[maybe_unuse
                 CHUNK_FREEPATH_INC(freed);
                 CHUNK_LEDGER_RELEASE(val, "free_block_to_pool.free_to_owner");
                 using AllocT = std::remove_reference_t<decltype(allocator)>;
-                static_cast<AllocT*>(slab->owner)->free_elt_pow2(val, slab);
+                static_cast<AllocT*>(slab->owner)->free_elem_pow2(val, slab);
             }
             else
             {
@@ -103,11 +103,11 @@ void ChunkBase<T, Derived>::free_block_to_pool(this Derived& self, [[maybe_unuse
                 {
                     // Do NOT push a foreign block onto ANOTHER thread's free-list: the
                     // unsynchronised push races with the owner's own pop/push (vector
-                    // corruption), and a later free_elt_pow2 would route the block to the
+                    // corruption), and a later free_elem_pow2 would route the block to the
                     // wrong allocator's lists (delete / munmap of a live block). Same rule
                     // as recycle() on the op pool side.
                     //
-                    // Keep it on the LOCAL free-list: is_free_able_elt is false for it, so
+                    // Keep it on the LOCAL free-list: is_free_able_elem is false for it, so
                     // it is never freed locally, only reused directly; the owning slab
                     // releases it at teardown. Bounded leak, not a UAF.
                     CHUNK_FREEPATH_INC(kept_nomigrate);
@@ -135,7 +135,7 @@ void ChunkBase<T, Derived>::free_block_to_pool(this Derived& self, [[maybe_unuse
 template <typename T, typename Derived>
 void ChunkDeferredOpsPolicy<T, Derived, true>::to_be_queued_for_deferred_processing(
     int                                                thr_rank,
-    int                                                num,
+    int                                                elem_offset,
     CompressionManager<T, Derived>::CmpDeferredOpBase* op) const
 {
     ensure_deferred_array_initialized();
@@ -178,10 +178,10 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::to_be_queued_for_deferred_process
 
         // ── Same-offset re-enqueue: REPLACE, do not double-count ──────────────
         // A second deferred write to the SAME offset on the SAME rank supersedes the queued
-        // one. Do not use a blind `map[num] = op`: the counters would count both, drift up and
+        // one. Do not use a blind `map[elem_offset] = op`: the counters would count both, drift up and
         // never return to zero (any_pending_ops pinned), and the replaced op would leak.
         // Publish/inc only for NEW entries; for a replacement the count is already right.
-        const auto it_existing = ops_map_ptr->find(num);
+        const auto it_existing = ops_map_ptr->find(elem_offset);
         if (it_existing != ops_map_ptr->end())
         {
             it_existing->second->destroy(); // idempotent teardown of the superseded op
@@ -193,7 +193,7 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::to_be_queued_for_deferred_process
             // `dirty && pending_any()`, so pending>0 must hold for the op's whole lifetime
             // (flushers see the op via the Dekker write flag, not this counter).
             chunk_ptr->pending_publish(thr_rank); // owner-tagged; no-op when counterless
-            (*ops_map_ptr)[num] = DeferredOpPtr(static_cast<DeferredOperationBase*>(op), DeferredOpDeleter{});
+            (*ops_map_ptr)[elem_offset] = DeferredOpPtr(static_cast<DeferredOperationBase*>(op), DeferredOpDeleter{});
             // Publish globally BEFORE releasing the writing flag, so a flusher that
             // observes !is_thread_writing(r) and proceeds to scan also observes it.
             CompressionManager<T, Derived>::inc_pending_ops(thr_rank);
@@ -202,7 +202,7 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::to_be_queued_for_deferred_process
     catch (const std::exception& e)
     {
         CHUNK_INVARIANT_FAILED("deferred enqueue failed: {} (rank {}, chunk {}, offset {})", e.what(), thr_rank,
-                               chunk_ptr, num);
+                               chunk_ptr, elem_offset);
     }
 
     Policy::end_write(thr_rank);
@@ -227,7 +227,7 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::to_be_queued_for_deferred_process
 }
 
 template <typename T, typename Derived>
-void ChunkDeferredOpsPolicy<T, Derived, true>::wait_for_availability([[maybe_unused]] int num) const
+void ChunkDeferredOpsPolicy<T, Derived, true>::wait_for_availability([[maybe_unused]] int elem_offset) const
 {
     // No pre-wait for compressors here, and never on a predicate that counts DRIVERS: under
     // load it is quasi-permanently non-zero, every reader piles into the spin, and it is the
@@ -236,11 +236,11 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::wait_for_availability([[maybe_unu
     // compressor start(), then the drain waits out in-flight stealers (driver-only threads
     // steal nothing).
 
-    // CHUNK_STATS: the SLOW sync path. read_sync / (read + read_cst) is the share of accesses
+    // CHUNK_STATS: the SLOW sync path. read_sync / (read + read_const) is the share of accesses
     // that pay synchronisation at all.
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_read_sync<Derived>();
+        inc_chunk_read_sync<Derived>();
     }
 
     auto* chunk_ptr = static_cast<Derived*>(const_cast<ChunkDeferredOpsPolicy*>(this)); // NOSONAR(cpp:S859)
@@ -262,7 +262,7 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::wait_for_availability([[maybe_unu
     // CHUNK_STATS: read_sync_cross / read_sync tells how often stage 1 was not enough.
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_read_sync_cross<Derived>();
+        inc_chunk_read_sync_cross<Derived>();
     }
     static_cast<void>(CompressionManager<T, Derived>::flush_chunk_all_ranks(chunk_ptr));
 }
@@ -374,7 +374,7 @@ T* ChunkAllocPolicy<T, Derived, true>::allocate_chunk_internal(int        thr_ra
         auto& ll_block_free_thr = *free_list;
         if constexpr (chunk_config::stats)
         {
-            increm_chunk_list<Derived>();
+            inc_chunk_list<Derived>();
             add_chunk_bytes_reused<Derived>(static_cast<long>(sizeof(T)) *
                                             static_cast<long>(Derived::storage_units(alloc_chunk_count())));
         }
@@ -392,7 +392,7 @@ T* ChunkAllocPolicy<T, Derived, true>::allocate_chunk_internal(int        thr_ra
         // Allocate new memory
         if constexpr (chunk_config::stats)
         {
-            increm_chunk_alloc<Derived>();
+            inc_chunk_alloc<Derived>();
             add_chunk_bytes_alloc<Derived>(static_cast<long>(sizeof(T)) *
                                            static_cast<long>(Derived::storage_units(alloc_chunk_count())));
         }
@@ -413,7 +413,7 @@ T* ChunkAllocPolicy<T, Derived, true>::allocate_chunk_internal(int        thr_ra
     }
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_create<Derived>();
+        inc_chunk_create<Derived>();
     }
 
     // Debug ring log: the value buffer's address, so dump_ring_for_addr()
@@ -441,8 +441,8 @@ T* ChunkAllocPolicy<T, Derived, false>::allocate_chunk_internal([[maybe_unused]]
 
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_create<Derived>();
-        increm_chunk_alloc<Derived>();
+        inc_chunk_create<Derived>();
+        inc_chunk_alloc<Derived>();
         add_chunk_bytes_alloc<Derived>(static_cast<long>(sizeof(T)) *
                                        static_cast<long>(Derived::storage_units(alloc_chunk_count())));
     }
@@ -473,29 +473,29 @@ T* ChunkAllocPolicy<T, Derived, false>::allocate_chunk_internal([[maybe_unused]]
 
 template <typename T, typename Derived>
 [[nodiscard]] bool ChunkDeferredOpsPolicy<T, Derived, true>::compare_and_swap_gen(T* values_loc,
-                                                                                  T* m_ptr_cst_val) noexcept
+                                                                                  T* m_ptr_const_val) noexcept
 {
     auto& self = static_cast<Derived&>(*this);
     CHUNK_CHECK_VALUES_PTR_C(values_loc, "CAS.values_loc", &self);
-    CHUNK_CHECK_VALUES_PTR_C(m_ptr_cst_val, "CAS.expected_cst", &self);
+    CHUNK_CHECK_VALUES_PTR_C(m_ptr_const_val, "CAS.expected_const", &self);
 
-    if (self.values_.load(std::memory_order_relaxed) != m_ptr_cst_val) [[unlikely]]
+    if (self.values_.load(std::memory_order_relaxed) != m_ptr_const_val) [[unlikely]]
     {
         return true; // failed (already changed)
     }
 
-    return !self.values_.compare_exchange_strong(m_ptr_cst_val, values_loc, std::memory_order_acq_rel,
+    return !self.values_.compare_exchange_strong(m_ptr_const_val, values_loc, std::memory_order_acq_rel,
                                                  std::memory_order_acquire);
 }
 
 template <typename T, typename Derived>
-void ChunkDeferredOpsPolicy<T, Derived, true>::recup_value(T* values_loc, int thr_rank) const
+void ChunkDeferredOpsPolicy<T, Derived, true>::reclaim_value(T* values_loc, int thr_rank) const
 {
     const auto& self = static_cast<const Derived&>(*this);
     // Ledger: LIVE -> parked. This block was just allocated by create_value
     // and lost the install CAS; parking a block that is not LIVE (e.g. one
     // another thread already owns) trips here.
-    CHUNK_LEDGER_PARK(values_loc, "recup_value");
+    CHUNK_LEDGER_PARK(values_loc, "reclaim_value");
     // Back to the list it was taken from / would have been taken from: the
     // array's, on this rank.
     auto& ll_block_free_thr = self.get_manager().get_list_block_free_thr(thr_rank, thread_alloc_key());
@@ -520,8 +520,8 @@ void ChunkDynamicAllocPolicy<T, Derived, true>::register_chunk_size(unsigned int
     // map moves its buffer, not the allocators.
     std::vector<TCTypeCAllocator<T>> arr(static_cast<std::size_t>(max_thr));
     // One slab rule for every allocator of T, whatever its chunk size (value_slab.h).
-    const auto slab_bytes =
-        static_cast<uintptr_t>(value_slab_request<T>(block_size, Derived::storage_units(cst_buffer_size) * sizeof(T)));
+    const auto slab_bytes = static_cast<uintptr_t>(
+        value_slab_request<T>(block_size, Derived::storage_units(const_buffer_size) * sizeof(T)));
     for (int thr = 0; thr < max_thr; ++thr)
     {
         auto& allocator = arr[static_cast<std::size_t>(thr)];
@@ -765,13 +765,13 @@ template <typename T, typename Derived>
 {
     if constexpr (chunk_config::stats)
     {
-        if (self.is_cst_val1())
+        if (self.is_const_val1())
         {
-            increm_chunk_read_cst<Derived>();
+            inc_chunk_read_const<Derived>();
         }
         else
         {
-            increm_chunk_read<Derived>();
+            inc_chunk_read<Derived>();
         }
     }
     return self.element_at(offset, offset_slot);
@@ -783,17 +783,17 @@ template <typename T, typename Derived>
     if constexpr (chunk_config::stats)
     {
         // Split the read by what served it: a materialised chunk vs a
-        // compressed one (values points at the constant marker). read_cst /
-        // (read + read_cst) is the compression hit rate on reads.
-        // is_cst_val1(), not written(): zero_one_value::Chunk::written() (no arg) aborts on
+        // compressed one (values points at the constant marker). read_const /
+        // (read + read_const) is the compression hit rate on reads.
+        // is_const_val1(), not written(): zero_one_value::Chunk::written() (no arg) aborts on
         // non-bool types -- it needs the second-value index a read lacks.
-        if (self.is_cst_val1())
+        if (self.is_const_val1())
         {
-            increm_chunk_read_cst<Derived>();
+            inc_chunk_read_const<Derived>();
         }
         else
         {
-            increm_chunk_read<Derived>();
+            inc_chunk_read<Derived>();
         }
     }
     return self.element_at(offset);
@@ -805,13 +805,13 @@ T ChunkBase<T, Derived>::operator[](this const Derived& self, int offset) noexce
     if constexpr (chunk_config::stats)
     {
         // Same split as read_value().
-        if (self.is_cst_val1())
+        if (self.is_const_val1())
         {
-            increm_chunk_read_cst<Derived>();
+            inc_chunk_read_const<Derived>();
         }
         else
         {
-            increm_chunk_read<Derived>();
+            inc_chunk_read<Derived>();
         }
     }
 
@@ -844,7 +844,7 @@ void ChunkBase<T, Derived>::read_block(this const Derived& self, int first, int 
     {
         // Same single load as element_at_unguarded: a chunk compressed to a
         // second constant points at an identifier, not at values.
-        if (self.is_cst_val2_ptr_of(vals)) [[unlikely]]
+        if (self.is_const_val2_ptr_of(vals)) [[unlikely]]
         {
             const T value = self.second_value_from_ptr(vals);
             for (int j = 0; j < count; ++j)
@@ -874,7 +874,7 @@ void ChunkBase<T, Derived>::read_block(this const Derived& self,
     {
         const T* const vals = self.values_load();
         test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
-        if (self.is_cst_val2_ptr_of(vals)) [[unlikely]]
+        if (self.is_const_val2_ptr_of(vals)) [[unlikely]]
         {
             const T value = self.second_value_from_ptr(vals);
             for (int j = 0; j < count; ++j)
@@ -910,7 +910,7 @@ bool ChunkBase<T, Derived>::read_block_or_constant(this const Derived& self,
                                                    int                 first,
                                                    int                 count,
                                                    T*                  out,
-                                                   T&                  cst,
+                                                   T&                  constant,
                                                    const T*            offset_slot) noexcept
     requires has_motif_state_v<Derived>
 {
@@ -919,15 +919,15 @@ bool ChunkBase<T, Derived>::read_block_or_constant(this const Derived& self,
     {
         const T* const vals = self.values_load();
         test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
-        if (self.is_cst_val1(vals))
+        if (self.is_const_val1(vals))
         {
             // raw-read: read_block_or_constant -- the shared first-constant buffer
-            cst = load_at<false>(vals, 0);
+            constant = load_at<false>(vals, 0);
             return true;
         }
-        if (self.is_cst_val2_ptr_of(vals)) [[unlikely]]
+        if (self.is_const_val2_ptr_of(vals)) [[unlikely]]
         {
-            cst = self.second_value_from_ptr(vals);
+            constant = self.second_value_from_ptr(vals);
             return true;
         }
         if (Derived::is_motif_ptr(vals)) [[unlikely]]
@@ -957,7 +957,7 @@ bool ChunkBase<T, Derived>::read_block_or_constant(this const Derived& self,
                                                    int                 first,
                                                    int                 count,
                                                    T*                  out,
-                                                   T&                  cst) noexcept
+                                                   T&                  constant) noexcept
 {
     if constexpr (has_motif_state_v<Derived>)
     {
@@ -970,17 +970,17 @@ bool ChunkBase<T, Derived>::read_block_or_constant(this const Derived& self,
     const read_reclaim::ReadSection section;
     const T* const                  vals = self.values_load();
     test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
-    if (self.is_cst_val1(vals))
+    if (self.is_const_val1(vals))
     {
         // raw-read: read_block_or_constant -- the shared first-constant buffer
-        cst = load_at<false>(vals, 0);
+        constant = load_at<false>(vals, 0);
         return true;
     }
     if constexpr (is_zero_any_family_v<Derived>)
     {
-        if (self.is_cst_val2_ptr_of(vals)) [[unlikely]]
+        if (self.is_const_val2_ptr_of(vals)) [[unlikely]]
         {
-            cst = self.second_value_from_ptr(vals);
+            constant = self.second_value_from_ptr(vals);
             return true;
         }
     }
@@ -997,7 +997,7 @@ T& ChunkBase<T, Derived>::operator()(this const Derived& self, int offset) noexc
 {
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_read<Derived>();
+        inc_chunk_read<Derived>();
     }
     // Contract: a mutable reference that bypasses the write proxy, valid only
     // on a materialised chunk. On a compressed one it points into a shared
@@ -1061,19 +1061,19 @@ auto& ChunkBase<T, Derived>::get_chunk_allocator([[maybe_unused]] int          t
 }
 
 template <typename T, typename Derived>
-T* ChunkBase<T, Derived>::get_cst_val1() noexcept
+T* ChunkBase<T, Derived>::get_const_val1() noexcept
 {
     if constexpr (use_mm_protect)
     {
         // Mapped at the first call, never unmapped: a global array reaches
         // it before main (the member below is a null pointer then) and
         // after main returns.
-        static T* const buffer = map_cst_val1();
+        static T* const buffer = map_const_val1();
         return buffer;
     }
     else
     {
-        return m_ptr_cst_val1.data();
+        return m_ptr_const_val1.data();
     }
 }
 
@@ -1119,9 +1119,9 @@ void ChunkBase<T, Derived>::init_block(T* values_loc) noexcept
 }
 
 template <typename T, typename Derived>
-T* ChunkBase<T, Derived>::map_cst_val1()
+T* ChunkBase<T, Derived>::map_const_val1()
 {
-    const size_t bytes     = cst_buffer_size * sizeof(T);
+    const size_t bytes     = const_buffer_size * sizeof(T);
     const size_t pagesize  = sysconf(_SC_PAGESIZE);
     const size_t allocsize = ((bytes + pagesize - 1) / pagesize) * pagesize;
 
@@ -1134,7 +1134,7 @@ T* ChunkBase<T, Derived>::map_cst_val1()
     }
 
     auto* arr = static_cast<T*>(ptr);
-    for (size_t i = 0; i < cst_buffer_size; ++i)
+    for (size_t i = 0; i < const_buffer_size; ++i)
     {
         arr[i] = first_value;
     }
@@ -1239,7 +1239,7 @@ ChunkBase<T, Derived>::element_at_unguarded(this const Derived& self, int offset
         {
             test_hooks::maybe_read_delay(); // TEST KNOB, compiled out by default
         }
-        if (self.is_cst_val2_ptr_of(vals)) [[unlikely]]
+        if (self.is_const_val2_ptr_of(vals)) [[unlikely]]
         {
             return self.second_value_from_ptr(vals);
         }
@@ -1267,7 +1267,7 @@ template <bool Relaxed>
     // very well predicted (most reads go to materialised chunks).
     //
     // ONE load of `values`, tested through the CRTP hooks (chunk_base knows
-    // nothing of the registry). Do not test self.is_cst_val2() and then
+    // nothing of the registry). Do not test self.is_const_val2() and then
     // dereference values_load(): a compressor claiming the chunk between the
     // two loads swaps in a region identifier, and the second load indexes an
     // unmapped page. Same rule as read_values().
@@ -1289,9 +1289,9 @@ template <bool Relaxed>
     {
         static_assert(
             requires(const Derived& obj, const T* ptr) {
-                obj.is_cst_val2_ptr_of(ptr);
+                obj.is_const_val2_ptr_of(ptr);
                 obj.second_value_from_ptr(ptr);
-            }, "a chunk of the zero_any family must provide is_cst_val2_ptr_of() and second_value_from_ptr(), "
+            }, "a chunk of the zero_any family must provide is_const_val2_ptr_of() and second_value_from_ptr(), "
                "or its own branch of the reads: its compressed chunks point at registry entries, not at "
                "their values");
         const T* const vals = Relaxed ? self.values_load() : self.values_load_for_read();
@@ -1299,7 +1299,7 @@ template <bool Relaxed>
         {
             test_hooks::maybe_read_delay(); // TEST KNOB, compiled out by default
         }
-        if (self.is_cst_val2_ptr_of(vals)) [[unlikely]]
+        if (self.is_const_val2_ptr_of(vals)) [[unlikely]]
         {
             return self.second_value_from_ptr(vals);
         }
@@ -1353,7 +1353,7 @@ void ChunkBase<T, Derived>::release_to_owner(this Derived& self, int thr_rank, T
     {
         // No slab behind this pointer (bypass_slabs, or an instance never
         // initialised): the legacy route is the only one there is.
-        mine.free_elt_pow2(ptr);
+        mine.free_elem_pow2(ptr);
         return;
     }
     using AllocT = std::remove_reference_t<decltype(mine)>;
@@ -1361,7 +1361,7 @@ void ChunkBase<T, Derived>::release_to_owner(this Derived& self, int thr_rank, T
     if (slab->owner_rank < 0 || slab->owner_rank == thr_rank || !CHUNK_PMP_IN_PARALLEL_REGION)
     {
         CHUNK_FREEPATH_INC(freed);
-        owner->free_elt_pow2(ptr, slab);
+        owner->free_elem_pow2(ptr, slab);
         return;
     }
     CHUNK_FREEPATH_INC(park_foreign);

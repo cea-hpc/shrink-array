@@ -31,21 +31,21 @@
 void bench_phase_range_a(BenchArrays& bench_arr, Int beg, Int iter)
 {
     // Short local names for the arrays (see bench_phase_fill.cpp).
-    auto& tab1 = bench_arr.tab1;
-    auto& tab2 = bench_arr.tab2;
-    auto& tab3 = bench_arr.tab3;
-    auto& tab4 = bench_arr.tab4;
-    auto& tab5 = bench_arr.tab5;
+    auto& arr1 = bench_arr.arr1;
+    auto& arr2 = bench_arr.arr2;
+    auto& arr3 = bench_arr.arr3;
+    auto& arr4 = bench_arr.arr4;
+    auto& arr5 = bench_arr.arr5;
 
-    auto& tab_int       = bench_arr.tab_int;
-    auto& tab_bool      = bench_arr.tab_bool;
-    auto& tab_bool_bits = bench_arr.tab_bool_bits;
-    auto& tab_complex   = bench_arr.tab_complex;
-    auto& tab_float     = bench_arr.tab_float;
-    auto& tab_short     = bench_arr.tab_short;
-    auto& tab_char      = bench_arr.tab_char;
-    auto& tab_long      = bench_arr.tab_long;
-    auto& tab_ulong     = bench_arr.tab_ulong;
+    auto& array_int       = bench_arr.array_int;
+    auto& array_bool      = bench_arr.array_bool;
+    auto& array_bool_bits = bench_arr.array_bool_bits;
+    auto& array_complex   = bench_arr.array_complex;
+    auto& array_float     = bench_arr.array_float;
+    auto& array_short     = bench_arr.array_short;
+    auto& array_char      = bench_arr.array_char;
+    auto& array_long      = bench_arr.array_long;
+    auto& array_ulong     = bench_arr.array_ulong;
 
     bench_par::region(
         [&]([[maybe_unused]] bench_par::Team& team)
@@ -55,24 +55,24 @@ void bench_phase_range_a(BenchArrays& bench_arr, Int beg, Int iter)
                 beg, iter,
                 [&](const Int j) __attribute__((always_inline))
                 {
-                    tab1[j] = 0;
-                    tab2[j] = second_value_d;
-                    tab3[j] = 0;
-                    tab4[j] = 0;
-                    tab5[j] = second_value_d2;
+                    arr1[j] = 0;
+                    arr2[j] = second_value_d;
+                    arr3[j] = 0;
+                    arr4[j] = 0;
+                    arr5[j] = second_value_d2;
 
-                    tab_float[j] = second_value_f0;
-                    tab_char[j]  = 0;
-                    tab_short[j] = 0;
+                    array_float[j] = second_value_f0;
+                    array_char[j]  = 0;
+                    array_short[j] = 0;
 
-                    tab_int[j]       = 0;
-                    tab_bool[j]      = false;
-                    tab_bool_bits[j] = false;
+                    array_int[j]       = 0;
+                    array_bool[j]      = false;
+                    array_bool_bits[j] = false;
 
-                    tab_complex[j] = zero_complex;
+                    array_complex[j] = zero_complex;
 
-                    tab_long[j]  = 0L;
-                    tab_ulong[j] = 0UL;
+                    array_long[j]  = 0L;
+                    array_ulong[j] = 0UL;
                 },
                 bench_par::nowait);
 
@@ -85,21 +85,21 @@ void bench_phase_range_a(BenchArrays& bench_arr, Int beg, Int iter)
 void bench_phase_range_b(BenchArrays& bench_arr, Int beg, Int iter)
 {
     // Short local names for the arrays (see bench_phase_fill.cpp).
-    auto& tab1 = bench_arr.tab1;
-    auto& tab2 = bench_arr.tab2;
-    auto& tab3 = bench_arr.tab3;
-    auto& tab4 = bench_arr.tab4;
-    auto& tab5 = bench_arr.tab5;
+    auto& arr1 = bench_arr.arr1;
+    auto& arr2 = bench_arr.arr2;
+    auto& arr3 = bench_arr.arr3;
+    auto& arr4 = bench_arr.arr4;
+    auto& arr5 = bench_arr.arr5;
 
-    auto& tab_int       = bench_arr.tab_int;
-    auto& tab_bool      = bench_arr.tab_bool;
-    auto& tab_bool_bits = bench_arr.tab_bool_bits;
-    auto& tab_complex   = bench_arr.tab_complex;
-    auto& tab_float     = bench_arr.tab_float;
-    auto& tab_short     = bench_arr.tab_short;
-    auto& tab_char      = bench_arr.tab_char;
-    auto& tab_long      = bench_arr.tab_long;
-    auto& tab_ulong     = bench_arr.tab_ulong;
+    auto& array_int       = bench_arr.array_int;
+    auto& array_bool      = bench_arr.array_bool;
+    auto& array_bool_bits = bench_arr.array_bool_bits;
+    auto& array_complex   = bench_arr.array_complex;
+    auto& array_float     = bench_arr.array_float;
+    auto& array_short     = bench_arr.array_short;
+    auto& array_char      = bench_arr.array_char;
+    auto& array_long      = bench_arr.array_long;
+    auto& array_ulong     = bench_arr.array_ulong;
 
     bench_par::region(
         [&]([[maybe_unused]] bench_par::Team& team)
@@ -109,26 +109,26 @@ void bench_phase_range_b(BenchArrays& bench_arr, Int beg, Int iter)
                 beg, iter,
                 [&](const Int j) __attribute__((always_inline))
                 {
-                    tab1[j] = second_value_d;
+                    arr1[j] = second_value_d;
 
-                    tab2[j] = second_value_d;
-                    tab3[j] = second_value_d;
+                    arr2[j] = second_value_d;
+                    arr3[j] = second_value_d;
 
-                    tab4[j] = second_value_d1;
-                    tab5[j] = second_value_d2;
+                    arr4[j] = second_value_d1;
+                    arr5[j] = second_value_d2;
 
-                    tab_float[j] = second_value_f1;
-                    tab_short[j] = second_value_s1;
-                    tab_char[j]  = second_value_c1;
+                    array_float[j] = second_value_f1;
+                    array_short[j] = second_value_s1;
+                    array_char[j]  = second_value_c1;
 
-                    tab_int[j]       = second_value_i;
-                    tab_bool[j]      = second_value_b;
-                    tab_bool_bits[j] = second_value_b;
+                    array_int[j]       = second_value_i;
+                    array_bool[j]      = second_value_b;
+                    array_bool_bits[j] = second_value_b;
 
-                    tab_complex[j] = second_value_c;
+                    array_complex[j] = second_value_c;
 
-                    tab_long[j]  = second_value_l;
-                    tab_ulong[j] = second_value_ul;
+                    array_long[j]  = second_value_l;
+                    array_ulong[j] = second_value_ul;
                 },
                 bench_par::nowait);
 
@@ -141,21 +141,21 @@ void bench_phase_range_b(BenchArrays& bench_arr, Int beg, Int iter)
 void bench_phase_range_c(BenchArrays& bench_arr, Int beg, Int seg_end)
 {
     // Short local names for the arrays (see bench_phase_fill.cpp).
-    auto& tab1 = bench_arr.tab1;
-    auto& tab2 = bench_arr.tab2;
-    auto& tab3 = bench_arr.tab3;
-    auto& tab4 = bench_arr.tab4;
-    auto& tab5 = bench_arr.tab5;
+    auto& arr1 = bench_arr.arr1;
+    auto& arr2 = bench_arr.arr2;
+    auto& arr3 = bench_arr.arr3;
+    auto& arr4 = bench_arr.arr4;
+    auto& arr5 = bench_arr.arr5;
 
-    auto& tab_int       = bench_arr.tab_int;
-    auto& tab_bool      = bench_arr.tab_bool;
-    auto& tab_bool_bits = bench_arr.tab_bool_bits;
-    auto& tab_complex   = bench_arr.tab_complex;
-    auto& tab_float     = bench_arr.tab_float;
-    auto& tab_short     = bench_arr.tab_short;
-    auto& tab_char      = bench_arr.tab_char;
-    auto& tab_long      = bench_arr.tab_long;
-    auto& tab_ulong     = bench_arr.tab_ulong;
+    auto& array_int       = bench_arr.array_int;
+    auto& array_bool      = bench_arr.array_bool;
+    auto& array_bool_bits = bench_arr.array_bool_bits;
+    auto& array_complex   = bench_arr.array_complex;
+    auto& array_float     = bench_arr.array_float;
+    auto& array_short     = bench_arr.array_short;
+    auto& array_char      = bench_arr.array_char;
+    auto& array_long      = bench_arr.array_long;
+    auto& array_ulong     = bench_arr.array_ulong;
 
     bench_par::region(
         [&]([[maybe_unused]] bench_par::Team& team)
@@ -165,25 +165,25 @@ void bench_phase_range_c(BenchArrays& bench_arr, Int beg, Int seg_end)
                 beg, seg_end,
                 [&](const Int j) __attribute__((always_inline))
                 {
-                    tab1[j] = second_value_d0;
+                    arr1[j] = second_value_d0;
 
-                    tab2[j] = second_value_d0;
-                    tab3[j] = second_value_d0;
-                    tab4[j] = 2 * second_value_d0;
-                    tab5[j] = 3 * second_value_d0;
+                    arr2[j] = second_value_d0;
+                    arr3[j] = second_value_d0;
+                    arr4[j] = 2 * second_value_d0;
+                    arr5[j] = 3 * second_value_d0;
 
-                    tab_float[j] = second_value_f0;
-                    tab_short[j] = 3 * second_value_s0;
-                    tab_char[j]  = 4 * second_value_c0;
+                    array_float[j] = second_value_f0;
+                    array_short[j] = 3 * second_value_s0;
+                    array_char[j]  = 4 * second_value_c0;
 
-                    tab_int[j]       = other_second_value_i;
-                    tab_bool[j]      = second_value_b;
-                    tab_bool_bits[j] = second_value_b;
+                    array_int[j]       = other_second_value_i;
+                    array_bool[j]      = second_value_b;
+                    array_bool_bits[j] = second_value_b;
 
-                    tab_complex[j] = other_second_value_c;
+                    array_complex[j] = other_second_value_c;
 
-                    tab_long[j]  = 2L * second_value_l;
-                    tab_ulong[j] = 2UL * second_value_ul;
+                    array_long[j]  = 2L * second_value_l;
+                    array_ulong[j] = 2UL * second_value_ul;
                 },
                 bench_par::nowait);
 
@@ -196,21 +196,21 @@ void bench_phase_range_c(BenchArrays& bench_arr, Int beg, Int seg_end)
 void bench_phase_range_d(BenchArrays& bench_arr, Int beg, Int seg_end)
 {
     // Short local names for the arrays (see bench_phase_fill.cpp).
-    auto& tab1 = bench_arr.tab1;
-    auto& tab2 = bench_arr.tab2;
-    auto& tab3 = bench_arr.tab3;
-    auto& tab4 = bench_arr.tab4;
-    auto& tab5 = bench_arr.tab5;
+    auto& arr1 = bench_arr.arr1;
+    auto& arr2 = bench_arr.arr2;
+    auto& arr3 = bench_arr.arr3;
+    auto& arr4 = bench_arr.arr4;
+    auto& arr5 = bench_arr.arr5;
 
-    auto& tab_int       = bench_arr.tab_int;
-    auto& tab_bool      = bench_arr.tab_bool;
-    auto& tab_bool_bits = bench_arr.tab_bool_bits;
-    auto& tab_complex   = bench_arr.tab_complex;
-    auto& tab_float     = bench_arr.tab_float;
-    auto& tab_short     = bench_arr.tab_short;
-    auto& tab_char      = bench_arr.tab_char;
-    auto& tab_long      = bench_arr.tab_long;
-    auto& tab_ulong     = bench_arr.tab_ulong;
+    auto& array_int       = bench_arr.array_int;
+    auto& array_bool      = bench_arr.array_bool;
+    auto& array_bool_bits = bench_arr.array_bool_bits;
+    auto& array_complex   = bench_arr.array_complex;
+    auto& array_float     = bench_arr.array_float;
+    auto& array_short     = bench_arr.array_short;
+    auto& array_char      = bench_arr.array_char;
+    auto& array_long      = bench_arr.array_long;
+    auto& array_ulong     = bench_arr.array_ulong;
 
     bench_par::region(
         [&]([[maybe_unused]] bench_par::Team& team)
@@ -220,24 +220,24 @@ void bench_phase_range_d(BenchArrays& bench_arr, Int beg, Int seg_end)
                 beg, seg_end,
                 [&](const Int j) __attribute__((always_inline))
                 {
-                    tab1[j] = second_value_d;
-                    tab2[j] = second_value_d;
-                    tab3[j] = second_value_d;
-                    tab4[j] = 2 * second_value_d0;
-                    tab5[j] = 3 * second_value_d0;
+                    arr1[j] = second_value_d;
+                    arr2[j] = second_value_d;
+                    arr3[j] = second_value_d;
+                    arr4[j] = 2 * second_value_d0;
+                    arr5[j] = 3 * second_value_d0;
 
-                    tab_float[j] = second_value_f0;
-                    tab_short[j] = 3 * second_value_s0;
-                    tab_char[j]  = 4 * second_value_c0;
+                    array_float[j] = second_value_f0;
+                    array_short[j] = 3 * second_value_s0;
+                    array_char[j]  = 4 * second_value_c0;
 
-                    tab_int[j]       = second_value_i;
-                    tab_bool[j]      = second_value_b;
-                    tab_bool_bits[j] = second_value_b;
+                    array_int[j]       = second_value_i;
+                    array_bool[j]      = second_value_b;
+                    array_bool_bits[j] = second_value_b;
 
-                    tab_complex[j] = second_value_c;
+                    array_complex[j] = second_value_c;
 
-                    tab_long[j]  = second_value_l;
-                    tab_ulong[j] = second_value_ul;
+                    array_long[j]  = second_value_l;
+                    array_ulong[j] = second_value_ul;
                 },
                 bench_par::nowait);
 
@@ -247,12 +247,12 @@ void bench_phase_range_d(BenchArrays& bench_arr, Int beg, Int seg_end)
     finalize_parallel_phase_after_flush_g();
 }
 
-void bench_phase_raz_sweep(BenchArrays& bench_arr, Int iter, Int size, Int start0, Int end0)
+void bench_phase_reset_sweep(BenchArrays& bench_arr, Int iter, Int size, Int start0, Int end0)
 {
     // Short local names for the arrays (see bench_phase_fill.cpp). Only
-    // tab1 is scanned here; the four range fills reach the rest through
+    // arr1 is scanned here; the four range fills reach the rest through
     // bench_arrays.
-    const auto& tab1         = bench_arr.tab1;
+    const auto& arr1         = bench_arr.arr1;
     const Int   sz           = bench_arr.sz;
     auto&       bench_arrays = bench_arr;
 
@@ -262,20 +262,20 @@ void bench_phase_raz_sweep(BenchArrays& bench_arr, Int iter, Int size, Int start
 
     for (; pos < sz; ++pos)
     {
-        if (tab1[pos] != 0)
+        if (arr1[pos] != 0)
         {
             break;
         }
     }
 
-    const Int deb = pos;
+    const Int begin = pos;
 
     if (iter % 4 == 0)
     {
         if (iter % 8 == 0)
         {
             const Int beg = pos;
-            while (pos < sz && tab1[pos] != 0 && tab1[pos] != second_value_d)
+            while (pos < sz && arr1[pos] != 0 && arr1[pos] != second_value_d)
             {
                 pos++;
             }
@@ -286,7 +286,7 @@ void bench_phase_raz_sweep(BenchArrays& bench_arr, Int iter, Int size, Int start
         else if (iter % 16 == 0)
         {
             const Int beg = pos;
-            while (pos < sz && tab1[pos] != 0 && tab1[pos] != second_value_d)
+            while (pos < sz && arr1[pos] != 0 && arr1[pos] != second_value_d)
             {
                 pos++;
             }
@@ -298,7 +298,7 @@ void bench_phase_raz_sweep(BenchArrays& bench_arr, Int iter, Int size, Int start
         else
         {
             const Int beg = pos;
-            while (pos < sz && tab1[pos] != 0 && tab1[pos] != second_value_d0)
+            while (pos < sz && arr1[pos] != 0 && arr1[pos] != second_value_d0)
             {
                 pos++;
             }
@@ -312,7 +312,7 @@ void bench_phase_raz_sweep(BenchArrays& bench_arr, Int iter, Int size, Int start
     else
     {
         const Int beg = pos;
-        while (pos < sz && tab1[pos] != 0)
+        while (pos < sz && arr1[pos] != 0)
         {
             pos++;
         }
@@ -321,21 +321,21 @@ void bench_phase_raz_sweep(BenchArrays& bench_arr, Int iter, Int size, Int start
 
         bench_phase_range_d(bench_arrays, beg, seg_end);
 
-        std::println("set : {} values to : {:g}", seg_end - deb, second_value_d);
+        std::println("set : {} values to : {:g}", seg_end - begin, second_value_d);
     }
 }
 
 void bench_phase_range_mt(BenchArrays& bench_arr, Int iter, Int beg_s, Int end_s)
 {
-    auto& tab1          = bench_arr.tab1;
-    auto& tab2          = bench_arr.tab2;
-    auto& tab3          = bench_arr.tab3;
-    auto& tab_int       = bench_arr.tab_int;
-    auto& tab_bool      = bench_arr.tab_bool;
-    auto& tab_bool_bits = bench_arr.tab_bool_bits;
-    auto& tab_complex   = bench_arr.tab_complex;
-    auto& tab_float     = bench_arr.tab_float;
-    auto& tab_long      = bench_arr.tab_long;
+    auto& arr1            = bench_arr.arr1;
+    auto& arr2            = bench_arr.arr2;
+    auto& arr3            = bench_arr.arr3;
+    auto& array_int       = bench_arr.array_int;
+    auto& array_bool      = bench_arr.array_bool;
+    auto& array_bool_bits = bench_arr.array_bool_bits;
+    auto& array_complex   = bench_arr.array_complex;
+    auto& array_float     = bench_arr.array_float;
+    auto& array_long      = bench_arr.array_long;
 
     if (end_s <= beg_s)
     {
@@ -362,20 +362,20 @@ void bench_phase_range_mt(BenchArrays& bench_arr, Int iter, Int beg_s, Int end_s
 
                     // shrink_array:: spelled out: this file has no using-directive, and
                     // the std::vector baseline resolves to vector_range_ops.h.
-                    shrink_array::fill_range_mt(tab1, lo, hi, swap ? 0. : second_value_d);
-                    shrink_array::fill_range_mt(tab2, lo, hi, swap ? second_value_d : 0.);
+                    shrink_array::fill_range_mt(arr1, lo, hi, swap ? 0. : second_value_d);
+                    shrink_array::fill_range_mt(arr2, lo, hi, swap ? second_value_d : 0.);
                     // A plain value alternating between neighbouring blocks: chunks
                     // stay materialised, and are NOT queued (they cannot be uniform).
-                    shrink_array::fill_range_mt(tab3, lo, hi, (b & 1) ? 3.5 : 2.5);
-                    shrink_array::fill_range_mt(tab_int, lo, hi, swap ? 0 : second_value_i);
-                    shrink_array::fill_range_mt(tab_float, lo, hi, swap ? second_value_f1 : second_value_f0);
-                    shrink_array::fill_range_mt(tab_long, lo, hi, swap ? 0L : second_value_l);
-                    shrink_array::fill_range_mt(tab_complex, lo, hi, swap ? zero_complex : second_value_c);
-                    // bool: the element path on every variant; tab_bool_bits is
+                    shrink_array::fill_range_mt(arr3, lo, hi, (b & 1) ? 3.5 : 2.5);
+                    shrink_array::fill_range_mt(array_int, lo, hi, swap ? 0 : second_value_i);
+                    shrink_array::fill_range_mt(array_float, lo, hi, swap ? second_value_f1 : second_value_f0);
+                    shrink_array::fill_range_mt(array_long, lo, hi, swap ? 0L : second_value_l);
+                    shrink_array::fill_range_mt(array_complex, lo, hi, swap ? zero_complex : second_value_c);
+                    // bool: the element path on every variant; array_bool_bits is
                     // bit-packed in a zero_one_value build. The baseline's two are
                     // std::vector<short>.
-                    shrink_array::fill_range_mt(tab_bool, lo, hi, !swap);
-                    shrink_array::fill_range_mt(tab_bool_bits, lo, hi, !swap);
+                    shrink_array::fill_range_mt(array_bool, lo, hi, !swap);
+                    shrink_array::fill_range_mt(array_bool_bits, lo, hi, !swap);
                 },
                 bench_par::nowait);
 

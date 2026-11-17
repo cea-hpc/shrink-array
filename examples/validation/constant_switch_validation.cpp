@@ -52,7 +52,7 @@
 #include <utility>     // std::as_const
 #include <vector>      // std::vector (the copy sources)
 
-#include "chunk/internal/chunk_traits.h" // forward decls + default ind_type = int
+#include "chunk/internal/chunk_traits.h" // forward decls + default idx_type = int
 #include "chunk/zero_array.h"            // zero::Array
 #include "chunk/zero_one_value_array.h"  // zero_one_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array

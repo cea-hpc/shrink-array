@@ -37,34 +37,34 @@
 void bench_stats(BenchArrays& bench_arr, bool stats)
 {
     // Short local names for the arrays (see bench_phase_fill.cpp).
-    auto& tab1 = bench_arr.tab1;
-    auto& tab2 = bench_arr.tab2;
-    auto& tab3 = bench_arr.tab3;
-    auto& tab4 = bench_arr.tab4;
-    auto& tab5 = bench_arr.tab5;
+    auto& arr1 = bench_arr.arr1;
+    auto& arr2 = bench_arr.arr2;
+    auto& arr3 = bench_arr.arr3;
+    auto& arr4 = bench_arr.arr4;
+    auto& arr5 = bench_arr.arr5;
 
-    auto& tab_int       = bench_arr.tab_int;
-    auto& tab_bool      = bench_arr.tab_bool;
-    auto& tab_bool_bits = bench_arr.tab_bool_bits;
-    auto& tab_complex   = bench_arr.tab_complex;
-    auto& tab_float     = bench_arr.tab_float;
-    auto& tab_short     = bench_arr.tab_short;
-    auto& tab_char      = bench_arr.tab_char;
-    auto& tab_long      = bench_arr.tab_long;
-    auto& tab_ulong     = bench_arr.tab_ulong;
-    auto& tab_quant     = bench_arr.tab_quant;
-    auto& tab_point     = bench_arr.tab_point;
-    auto& tab_cell      = bench_arr.tab_cell;
-    auto& tab_mask      = bench_arr.tab_mask;
-    auto& tab_conn      = bench_arr.tab_conn;
+    auto& array_int       = bench_arr.array_int;
+    auto& array_bool      = bench_arr.array_bool;
+    auto& array_bool_bits = bench_arr.array_bool_bits;
+    auto& array_complex   = bench_arr.array_complex;
+    auto& array_float     = bench_arr.array_float;
+    auto& array_short     = bench_arr.array_short;
+    auto& array_char      = bench_arr.array_char;
+    auto& array_long      = bench_arr.array_long;
+    auto& array_ulong     = bench_arr.array_ulong;
+    auto& array_quant     = bench_arr.array_quant;
+    auto& array_point     = bench_arr.array_point;
+    auto& array_cell      = bench_arr.array_cell;
+    auto& array_mask      = bench_arr.array_mask;
+    auto& array_conn      = bench_arr.array_conn;
 
-    auto lbd_fill_values = [&](const std::string& name, const auto& tab, auto sec_val)
+    auto lbd_fill_values = [&](const std::string& name, const auto& arr, auto sec_val)
     {
-        using value_type           = std::remove_reference_t<std::remove_const_t<decltype(tab)>>::value_type;
+        using value_type           = std::remove_reference_t<std::remove_const_t<decltype(arr)>>::value_type;
         constexpr bool is_not_bool = !shrink_array::is_bool_like_v<value_type>; // bool, Bit
         constexpr bool is_complex  = std::is_same_v<value_type, ComplexDouble>;
 
-        const Int ssz = tab.size();
+        const Int ssz = arr.size();
 
         // `omp parallel for schedule(static) reduction(+ : ...)` with OpenMP.
         const auto census = shrink_array::pmp::parallel_sum<Int, 3>(Int{0}, ssz, shrink_array::pmp::Options{},
@@ -72,20 +72,20 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
                                                                     {
                                                                         auto& nbz = acc[0];
                                                                         auto& nbv = acc[1];
-                                                                        auto& nb  = acc[2];
+                                                                        auto& n   = acc[2];
                                                                         if constexpr (is_complex)
                                                                         {
-                                                                            if (tab[k] == zero_complex)
+                                                                            if (arr[k] == zero_complex)
                                                                             {
                                                                                 nbz++;
                                                                             }
-                                                                            else if (tab[k] == sec_val)
+                                                                            else if (arr[k] == sec_val)
                                                                             {
                                                                                 nbv++;
                                                                             }
                                                                             else
                                                                             {
-                                                                                nb++;
+                                                                                n++;
                                                                             }
                                                                         }
                                                                         else if constexpr (is_not_bool)
@@ -93,22 +93,22 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
                                                                             // T{}, not 0: the struct element types
                                                                             // compare with their own null element and
                                                                             // have no conversion from Int.
-                                                                            if (tab[k] == value_type{})
+                                                                            if (arr[k] == value_type{})
                                                                             {
                                                                                 nbz++;
                                                                             }
-                                                                            else if (tab[k] == sec_val)
+                                                                            else if (arr[k] == sec_val)
                                                                             {
                                                                                 nbv++;
                                                                             }
                                                                             else
                                                                             {
-                                                                                nb++;
+                                                                                n++;
                                                                             }
                                                                         }
                                                                         else
                                                                         {
-                                                                            if (tab[k] == 0)
+                                                                            if (arr[k] == 0)
                                                                             {
                                                                                 nbz++;
                                                                             }
@@ -120,11 +120,11 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
                                                                     });
         const Int  nbz    = census[0];
         const Int  nbv    = census[1];
-        const Int  nb     = census[2];
+        const Int  n      = census[2];
 
-        // Over the array's own size: tab_float and tab_char hold 2 * sz
-        // elements, tab_short sz / 2, tab_mask mask_scale * sz, tab_conn whole rows.
-        const double pc  = double(nb) / double(ssz);
+        // Over the array's own size: array_float and array_char hold 2 * sz
+        // elements, array_short sz / 2, array_mask mask_scale * sz, array_conn whole rows.
+        const double pc  = double(n) / double(ssz);
         const double pcz = double(nbz) / double(ssz);
         const double pcv = double(nbv) / double(ssz);
 
@@ -141,7 +141,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         // The colon is now output as a separate token to ensure alignment.
         if constexpr (is_not_bool)
         {
-            std::println("{:<{}}:{:>{}}{:>{}.2f} %", "Numbers of values", label_width, nb, value_width, pc * 100,
+            std::println("{:<{}}:{:>{}}{:>{}.2f} %", "Numbers of values", label_width, n, value_width, pc * 100,
                          value_width);
         }
 
@@ -160,22 +160,22 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         std::println("");
     }
 
-    // tab_quant has one second value per level it lands on (up to
+    // array_quant has one second value per level it lands on (up to
     // bench_double_bands), not one: its census is zeros and the rest.
-    auto lbd_fill_quant = [](const std::string& name, const auto& tab)
+    auto lbd_fill_quant = [](const std::string& name, const auto& arr)
     {
-        const Int ssz = tab.size();
+        const Int ssz = arr.size();
 
         // `omp parallel for schedule(static) reduction(+ : nbz)` with OpenMP.
         const Int nbz = shrink_array::pmp::parallel_sum<Int, 1>(Int{0}, ssz, shrink_array::pmp::Options{},
                                                                 [&](Int k, auto& acc)
                                                                 {
-                                                                    if (tab[k] == 0.0)
+                                                                    if (arr[k] == 0.0)
                                                                     {
                                                                         acc[0]++;
                                                                     }
                                                                 })[0];
-        const Int nb  = ssz - nbz;
+        const Int n   = ssz - nbz;
 
         constexpr int name_width   = 20;
         const int     name_padding = std::max<int>(0, (name_width - static_cast<int>(name.length())) / 2);
@@ -187,21 +187,21 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         constexpr int value_width = 10;
         std::println("{:<{}}:{:>{}}{:>{}.2f} %", "Numbers of 0", label_width, nbz, value_width,
                      100.0 * double(nbz) / double(ssz), value_width);
-        std::println("{:<{}}:{:>{}}{:>{}.2f} %", "Numbers of levels != 0", label_width, nb, value_width,
-                     100.0 * double(nb) / double(ssz), value_width);
+        std::println("{:<{}}:{:>{}}{:>{}.2f} %", "Numbers of levels != 0", label_width, n, value_width,
+                     100.0 * double(n) / double(ssz), value_width);
     };
 
     // One lambda instead of two. The body of a generic lambda is a TEMPLATE, so
-    // here `if constexpr` really discards: tab.stats(), which std::vector has
+    // here `if constexpr` really discards: arr.stats(), which std::vector has
     // no member for, is never instantiated in the baseline build. That is the
     // difference with a plain function, where the dead branch would still be
     // type-checked -- and is why most of the other SHRINK_ARRAY guards in this
     // directory have to stay directives.
-    auto lbd_fill_chunk = []([[maybe_unused]] const std::string& name, [[maybe_unused]] const auto& tab)
+    auto lbd_fill_chunk = []([[maybe_unused]] const std::string& name, [[maybe_unused]] const auto& arr)
     {
         if constexpr (chunk_config::is_shrink_enabled)
         {
-            const double sz0 = tab.stats();
+            const double sz0 = arr.stats();
             std::println("{} chunk filling rate : {:.3f}%", name, sz0);
             std::fflush(stdout);
         }
@@ -211,71 +211,71 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
     {
         if CONSTEXPR (stats)
         {
-            lbd_fill_values("tab1", tab1, second_value_d);
-            lbd_fill_values("tab2", tab2, second_value_d);
-            lbd_fill_values("tab3", tab3, second_value_d);
-            lbd_fill_values("tab4", tab4, second_value_d1);
-            lbd_fill_values("tab5", tab5, second_value_d2);
+            lbd_fill_values("arr1", arr1, second_value_d);
+            lbd_fill_values("arr2", arr2, second_value_d);
+            lbd_fill_values("arr3", arr3, second_value_d);
+            lbd_fill_values("arr4", arr4, second_value_d1);
+            lbd_fill_values("arr5", arr5, second_value_d2);
 
-            lbd_fill_values("tab_int", tab_int, second_value_i);
-            lbd_fill_values("tab_bool", tab_bool, second_value_b);
-            lbd_fill_values("tab_bool_bits", tab_bool_bits, second_value_b);
-            lbd_fill_values("tab_complex", tab_complex, second_value_c);
+            lbd_fill_values("array_int", array_int, second_value_i);
+            lbd_fill_values("array_bool", array_bool, second_value_b);
+            lbd_fill_values("array_bool_bits", array_bool_bits, second_value_b);
+            lbd_fill_values("array_complex", array_complex, second_value_c);
 
-            lbd_fill_values("tab_short", tab_short, second_value_s0);
-            lbd_fill_values("tab_float", tab_float, second_value_f0);
-            lbd_fill_values("tab_char", tab_char, second_value_c0);
-            lbd_fill_values("tab_long", tab_long, second_value_l);
-            lbd_fill_values("tab_ulong", tab_ulong, second_value_ul);
-            lbd_fill_quant("tab_quant", tab_quant);
+            lbd_fill_values("array_short", array_short, second_value_s0);
+            lbd_fill_values("array_float", array_float, second_value_f0);
+            lbd_fill_values("array_char", array_char, second_value_c0);
+            lbd_fill_values("array_long", array_long, second_value_l);
+            lbd_fill_values("array_ulong", array_ulong, second_value_ul);
+            lbd_fill_quant("array_quant", array_quant);
             if (bench_arr.with_mask) // --no_mask
             {
-                lbd_fill_values("tab_mask", tab_mask, second_value_b);
+                lbd_fill_values("array_mask", array_mask, second_value_b);
             }
             if (bench_arr.with_conn) // --no_conn
             {
-                lbd_fill_values("tab_conn", tab_conn, second_value_i);
+                lbd_fill_values("array_conn", array_conn, second_value_i);
             }
             if (bench_arr.with_struct) // --no_struct
             {
-                lbd_fill_values("tab_point", tab_point, second_value_p);
-                lbd_fill_values("tab_cell", tab_cell, second_value_cell);
+                lbd_fill_values("array_point", array_point, second_value_p);
+                lbd_fill_values("array_cell", array_cell, second_value_cell);
             }
 
             if (chunk_config::is_shrink_enabled)
             {
                 std::println("");
 
-                lbd_fill_chunk("tab1", tab1);
-                lbd_fill_chunk("tab2", tab2);
-                lbd_fill_chunk("tab3", tab3);
-                lbd_fill_chunk("tab4", tab4);
-                lbd_fill_chunk("tab5", tab5);
+                lbd_fill_chunk("arr1", arr1);
+                lbd_fill_chunk("arr2", arr2);
+                lbd_fill_chunk("arr3", arr3);
+                lbd_fill_chunk("arr4", arr4);
+                lbd_fill_chunk("arr5", arr5);
 
-                lbd_fill_chunk("tab_int", tab_int);
-                lbd_fill_chunk("tab_bool", tab_bool);
-                lbd_fill_chunk("tab_bool_bits", tab_bool_bits);
+                lbd_fill_chunk("array_int", array_int);
+                lbd_fill_chunk("array_bool", array_bool);
+                lbd_fill_chunk("array_bool_bits", array_bool_bits);
 
-                lbd_fill_chunk("tab_complex", tab_complex);
+                lbd_fill_chunk("array_complex", array_complex);
 
-                lbd_fill_chunk("tab_float", tab_float);
-                lbd_fill_chunk("tab_short", tab_short);
-                lbd_fill_chunk("tab_char", tab_char);
-                lbd_fill_chunk("tab_long", tab_long);
-                lbd_fill_chunk("tab_ulong", tab_ulong);
-                lbd_fill_chunk("tab_quant", tab_quant);
+                lbd_fill_chunk("array_float", array_float);
+                lbd_fill_chunk("array_short", array_short);
+                lbd_fill_chunk("array_char", array_char);
+                lbd_fill_chunk("array_long", array_long);
+                lbd_fill_chunk("array_ulong", array_ulong);
+                lbd_fill_chunk("array_quant", array_quant);
                 if (bench_arr.with_mask)
                 {
-                    lbd_fill_chunk("tab_mask", tab_mask);
+                    lbd_fill_chunk("array_mask", array_mask);
                 }
                 if (bench_arr.with_conn)
                 {
-                    lbd_fill_chunk("tab_conn", tab_conn);
+                    lbd_fill_chunk("array_conn", array_conn);
                 }
                 if (bench_arr.with_struct)
                 {
-                    lbd_fill_chunk("tab_point", tab_point);
-                    lbd_fill_chunk("tab_cell", tab_cell);
+                    lbd_fill_chunk("array_point", array_point);
+                    lbd_fill_chunk("array_cell", array_cell);
                 }
             }
         }
@@ -306,28 +306,28 @@ consteval std::vector<std::meta::info> bench_array_members()
 enum class ChecksumGroup : std::uint8_t
 {
     plain,   ///< every array but the two below
-    structs, ///< tab_point, tab_cell: the aggregate elements (--no_struct leaves them out)
-    conn,    ///< tab_conn: the mesh connectivity (--no_conn leaves it out)
+    structs, ///< array_point, array_cell: the aggregate elements (--no_struct leaves them out)
+    conn,    ///< array_conn: the mesh connectivity (--no_conn leaves it out)
 };
 
 /// The group of the array member named @p name.
 constexpr ChecksumGroup checksum_group(std::string_view name)
 {
-    if (name == "tab_point" || name == "tab_cell")
+    if (name == "array_point" || name == "array_cell")
     {
         return ChecksumGroup::structs;
     }
-    return name == "tab_conn" ? ChecksumGroup::conn : ChecksumGroup::plain;
+    return name == "array_conn" ? ChecksumGroup::conn : ChecksumGroup::plain;
 }
 
 /// `name check_sum = <hex>` for every array member of @p bench_arr in
-/// @p group, under its identifier; then a newline. tab_mask is not summed.
+/// @p group, under its identifier; then a newline. array_mask is not summed.
 void print_checksums(const BenchArrays& bench_arr, ChecksumGroup group)
 {
     template for (constexpr std::meta::info member : std::define_static_array(bench_array_members()))
     {
         constexpr std::string_view name = std::define_static_string(std::meta::identifier_of(member));
-        if constexpr (name != "tab_mask")
+        if constexpr (name != "array_mask")
         {
             if (checksum_group(name) == group)
             {
@@ -345,10 +345,10 @@ void bench_print_checksums(BenchArrays& bench_arr, bool check_sum)
     if CONSTEXPR (check_sum)
     {
         // Every array of BenchArrays under its member's name, in declaration
-        // order (reflection: an array added there is summed here); tab_point
-        // and tab_cell after the others, only with the structs, then tab_conn,
+        // order (reflection: an array added there is summed here); array_point
+        // and array_cell after the others, only with the structs, then array_conn,
         // only with it.
-        // tab_bool_bits' checksum equals tab_bool's: a Bit is one byte
+        // array_bool_bits' checksum equals array_bool's: a Bit is one byte
         // holding 0 or 1, as a bool.
         print_checksums(bench_arr, ChecksumGroup::plain);
         if (bench_arr.with_struct) // --no_struct

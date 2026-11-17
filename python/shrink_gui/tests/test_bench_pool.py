@@ -189,15 +189,15 @@ CONFIGS = ["cmake-build-omp-gnu", "cmake-build-omp-gnu-have-aggressive-compressi
 def _fake_tree(root, calls):
     """Three flat builds whose binaries record each call (an atomic mkdir
     of calls/c_<n>, what: name, arguments, cwd); vector_check writes the
-    oracle (data_tab_x, after 1 s), a check without it in its cwd exits 4,
+    oracle (data_array_x, after 1 s), a check without it in its cwd exits 4,
     the other modes exit 0 at once."""
     body = ("#!/bin/bash\n"
             f"k=1; until mkdir \"{calls}/c_$k\" 2>/dev/null; do k=$((k+1)); done\n"
             f"echo \"$(basename \"$0\") $* cwd=$PWD\" > \"{calls}/c_$k/what\"\n"
             "sleep ${FAKE_BENCH_SLEEP:-0.05}\n"
             "case \" $* \" in *\" --mode perf \"*|*\" --test_stl \"*|*\" --no_io \"*) exit 0;; esac\n"
-            "case \"$(basename \"$0\")\" in *vector_check) sleep 1; echo x > data_tab_x; exit 0;; esac\n"
-            "[ -f data_tab_x ] || { echo \"no oracle in $PWD\" >&2; exit 4; }\n")
+            "case \"$(basename \"$0\")\" in *vector_check) sleep 1; echo x > data_array_x; exit 0;; esac\n"
+            "[ -f data_array_x ] || { echo \"no oracle in $PWD\" >&2; exit 4; }\n")
     calls.mkdir()
     for c in CONFIGS:
         d = root / c

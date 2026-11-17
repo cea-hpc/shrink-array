@@ -407,7 +407,7 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/concept_is_clean_assignment.h
         public/chunk/internal/conditional_counter.h
         public/chunk/internal/cpu_pause.h
-        public/chunk/internal/cst_slot.h
+        public/chunk/internal/const_slot.h
         public/chunk/internal/def_force_inline.h
         public/chunk/internal/deferred_lifecycle_check.h
         public/chunk/internal/deferred_op_pool.h
@@ -450,7 +450,7 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/proxy_operators.h
         public/chunk/internal/rechunk_cost_model.h
         public/chunk/internal/rechunk_decider_inline.h
-        public/chunk/internal/tab_cst_val2_holder.h
+        public/chunk/internal/array_const_val2_holder.h
         public/chunk/internal/write_compress_sync_policy.h
         public/chunk/internal/pmp_chunk.h
         public/chunk/internal/type_state_registry.h
@@ -499,7 +499,7 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/second_value_info.h
         public/chunk/internal/stable_table.h
         public/chunk/internal/stable_table_inline.h
-        public/chunk/internal/tab_cst_val2_holder_inline.h
+        public/chunk/internal/array_const_val2_holder_inline.h
         public/chunk/internal/array_users.h
         public/chunk/internal/teardown_probe.h
         public/chunk/internal/test_hooks.h

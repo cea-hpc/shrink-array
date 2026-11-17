@@ -145,7 +145,7 @@ void FastAllocatorConcrete<T, Arena>::recycle(void* block)
     if constexpr (build_config::use_fast_alloc)
     {
         // Foreign block (cross-thread drain): drop it (see above).
-        if (!allocator().is_free_able_elt(static_cast<std::byte*>(block)))
+        if (!allocator().is_free_able_elem(static_cast<std::byte*>(block)))
         {
             if constexpr (build_config::any_check)
             {
@@ -211,7 +211,7 @@ FastAllocatorConcrete<T, Arena>::ByteAlloc& FastAllocatorConcrete<T, Arena>::all
         const uintptr_t slab_request =
             std::max<uintptr_t>(deferred_pool_slab_granularity(), uintptr_t{64} * element_size);
 
-        // nb_max_block_empty = -1: NEVER munmap an empty slab. A freed op
+        // n_max_block_empty = -1: NEVER munmap an empty slab. A freed op
         // slab's address could be remapped by fast_alloc::map_anonymous() for
         // the VALUE pool on another thread and overwrite a still-live op. Op
         // slabs are small and bounded.

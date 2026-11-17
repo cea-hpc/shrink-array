@@ -29,7 +29,7 @@
 
 #include "bench_int.h" // Int: the sizes this struct carries
 
-/// @brief tab_mask's default size, as a fraction of sz (--mask_scale sets it).
+/// @brief array_mask's default size, as a fraction of sz (--mask_scale sets it).
 /// @details 1/32. Its per-iteration update writes ~1/16 of the random and
 ///          scattered blocks and 1/32 of the constant segments, element by
 ///          element through the proxies in a zero / zero_any build: at the
@@ -38,7 +38,7 @@
 ///          1/32 keeps thousands of 4096-element segments of each kind.
 inline constexpr double bench_mask_default_scale = 1.0 / 32.0;
 
-/// @brief tab_conn's default size, as a fraction of sz (--conn_scale sets it).
+/// @brief array_conn's default size, as a fraction of sz (--conn_scale sets it).
 /// @details 1/32. Each iteration gathers and renumbers one band of rows in 16,
 ///          dense, through the proxies: at sz (its size when it came in) it
 ///          took ~87% of a run -- zero_any, 8 threads, --divisor 2: 64.8 s
@@ -71,20 +71,20 @@ struct BenchArgs
     /// made before they existed. Their arrays are then of size 1 and their
     /// phases, checks, stats and checksums are skipped.
     bool no_struct = false;
-    /// --no_mask: leave out tab_mask, the large bool array of random masks and
+    /// --no_mask: leave out array_mask, the large bool array of random masks and
     /// scattered flags (bench_phase_mask.cpp) -- for a run that must compare
     /// with the campaigns made before it existed. Its array is then of size 1
     /// and its phases, check and compression are skipped.
     bool no_mask = false;
-    /// --mask_scale: tab_mask holds mask_scale * sz bools (a real factor, like
-    /// --multiply). Default bench_mask_default_scale; 8 is the size tab_mask
+    /// --mask_scale: array_mask holds mask_scale * sz bools (a real factor, like
+    /// --multiply). Default bench_mask_default_scale; 8 is the size array_mask
     /// was created with.
     double mask_scale = bench_mask_default_scale;
-    /// --conn_scale: tab_conn holds about conn_scale * sz ints, whole rows (a
-    /// real factor). Default bench_conn_default_scale; 1 is the size tab_conn
+    /// --conn_scale: array_conn holds about conn_scale * sz ints, whole rows (a
+    /// real factor). Default bench_conn_default_scale; 1 is the size array_conn
     /// came in with.
     double conn_scale = bench_conn_default_scale;
-    /// --no_conn: leave out tab_conn, the mesh connectivity (bench_phase_conn.cpp)
+    /// --no_conn: leave out array_conn, the mesh connectivity (bench_phase_conn.cpp)
     /// -- for a run that must compare with the campaigns made before it existed.
     /// Its array is then of size 1 and its phases, check and compression are
     /// skipped.
@@ -104,11 +104,11 @@ struct BenchArgs
     /// --advisor_period: iterations between two advisor passes; 0: no advisor;
     /// -1 (not given): max(10, iter_max / 20).
     Int advisor_period = -1;
-    /// --advise_five: hand the decider only the five historical arrays (tab1,
-    /// tab2, tab_short, tab_complex, tab_point), for runs that must compare with
+    /// --advise_five: hand the decider only the five historical arrays (arr1,
+    /// arr2, array_short, array_complex, array_point), for runs that must compare with
     /// the campaigns made before the others were advised.
     bool advise_five = false;
-    /// --advise_bool: hand tab_bool and tab_bool_bits to the decider too. Off by
+    /// --advise_bool: hand array_bool and array_bool_bits to the decider too. Off by
     /// default: both stay at their birth geometry, so that the two bool
     /// containers are compared as they are, not after a re-chunk.
     bool advise_bool     = false;

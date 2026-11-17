@@ -179,7 +179,7 @@ PROGRAMS = {
         # Never on the login node: as a batch job (ccc_msub), or on this machine.
         "msub_only": True,
         # "Choisir…" beside these fields: the configurations / executables
-        # compile_all.sh can build, read on inti (see BUILD_REP).
+        # compile_all.sh can build, read on inti (see BUILD_ROOT).
         "pickers": {"target": "configs", "exec": "execs"},
         # "Nœuds" N > 1: N batch jobs of one node, the same command plus
         # --pool=<the submission>; each configuration is built by the first
@@ -219,9 +219,9 @@ ARCH_DEFAULTS.update({
 })
 
 # Where compile_all.sh puts its cmake-build-<name>/<arch> trees on inti
-# (CHUNK_BUILD_REP, default of scripts/site_env.sh there): the "Choisir…" of
+# (CHUNK_BUILD_ROOT, default of scripts/site_env.sh there): the "Choisir…" of
 # --exec lists the executables of the build dirs found there.
-BUILD_REP = SITE.build_root
+BUILD_ROOT = SITE.build_root
 
 DEFAULTS = {
     "host": SITE.host,

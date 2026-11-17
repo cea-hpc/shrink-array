@@ -28,7 +28,7 @@
  *          method of its own:
  *
  *            scan_sources     what the old chunks under the new one hold
- *            install_cst2     zero_any: one shared constant, installed, no buffer
+ *            install_const2     zero_any: one shared constant, installed, no buffer
  *            read_span        bulk read of the old chunks into the buffer
  *            release_sources  free the old chunks once fully transcribed
  *            copy_range       fill the new chunk (the public bulk API)
@@ -85,7 +85,7 @@ inline const RebuildSchedule& rebuild_schedule() noexcept
 /// @brief The refill folds through zero_one_value's second-value index: a
 ///        zero_one_value build, a chunk outside the zero_any family (not
 ///        pattern::Array) and a non-bool element (bool registers no second
-///        value: get_ind_second_value() aborts).
+///        value: get_idx_second_value() aborts).
 /// @details The test on Derived::is_not_bool is NESTED in a discarded branch:
 ///          `&&` short-circuits evaluation, never name lookup, and zero::Array
 ///          has no is_not_bool. Instantiated in the bodies only, where Derived
@@ -106,11 +106,11 @@ inline constexpr bool rechunk_second_index_v = []
 /// @brief The SOURCE array's second-value index (the scan reads it), or 0 when
 ///        the refill does not fold through one (rechunk_second_index_v).
 template <typename Derived, typename ChunkType>
-[[nodiscard]] int rechunk_second_ind(const Derived& array) noexcept
+[[nodiscard]] int rechunk_second_idx(const Derived& array) noexcept
 {
     if constexpr (rechunk_second_index_v<Derived, ChunkType>)
     {
-        return array.get_ind_second_value();
+        return array.get_idx_second_value();
     }
     else
     {
@@ -149,11 +149,11 @@ namespace shrink_array
  *          exactly one thread, the reads are const, and the write path
  *          partitions allocator / compression state by thread rank.
  *
- *          Materialisation is tracked with is_cst_val1() (values == the cst1
- *          sentinel), universal and index-free -- unlike written()/is_cst_val()
+ *          Materialisation is tracked with is_const_val1() (values == the const1
+ *          sentinel), universal and index-free -- unlike written()/is_const_val()
  *          on zero_one_value, which need the second_value index. While filled,
- *          a chunk only goes cst1 -> real buffer (never cst2, a compression
- *          result), so "still cst1" == "not yet materialised" for every variant.
+ *          a chunk only goes const1 -> real buffer (never const2, a compression
+ *          result), so "still const1" == "not yet materialised" for every variant.
  */
 template <typename Derived>
 class RechunkSupport<Derived, true>::Refill
@@ -209,28 +209,28 @@ class RechunkSupport<Derived, true>::Refill
     /// One new chunk's elements, and the old chunks they come from.
     struct Span
     {
-        IndType base;      ///< first element (global index)
-        IndType end;       ///< one past the last element
-        int     old_first; ///< first old chunk under the span
-        int     old_last;  ///< last old chunk under the span
+        IndexType base;      ///< first element (global index)
+        IndexType end;       ///< one past the last element
+        int       old_first; ///< first old chunk under the span
+        int       old_last;  ///< last old chunk under the span
     };
 
     /// What the old chunks under a span hold (scan_sources()).
     struct Sources
     {
         /// Every source is still the first constant: nothing to rebuild.
-        bool all_cst1 = true;
-        /// Every source is a compressed constant (cst1 or cst2): the new chunk,
+        bool all_const1 = true;
+        /// Every source is a compressed constant (const1 or const2): the new chunk,
         /// once filled, holds only constants and can be folded back at once.
-        /// Tracked for zero_any and zero_one_value (non-bool); zero has cst1
-        /// only (covered by all_cst1).
+        /// Tracked for zero_any and zero_one_value (non-bool); zero has const1
+        /// only (covered by all_const1).
         bool all_folded = true;
-        /// zero_any: some source is cst1.
-        bool any_cst1 = false;
-        /// zero_any: every cst2 source points at the SAME shared array (same value).
-        bool same_cst2 = true;
-        /// zero_any: the first cst2 source's values pointer.
-        const T* cst2 = nullptr;
+        /// zero_any: some source is const1.
+        bool any_const1 = false;
+        /// zero_any: every const2 source points at the SAME shared array (same value).
+        bool same_const2 = true;
+        /// zero_any: the first const2 source's values pointer.
+        const T* const2 = nullptr;
     };
 
     /// @brief Slices of the refill: 16 with releases_sources + fast allocator (fewer
@@ -252,7 +252,7 @@ class RechunkSupport<Derived, true>::Refill
 
     /// @brief zero_any: all sources are the same second constant -> install it
     ///        on the new chunk without a buffer. @return true if installed.
-    bool install_cst2(int new_chunk, const Span& span, const Sources& sources, Tally& tally);
+    bool install_const2(int new_chunk, const Span& span, const Sources& sources, Tally& tally);
 
     /// @brief Read the elements of @p span from the old chunks into @p buf.
     void read_span(int new_chunk, const Span& span, std::vector<T>& buf) const;
@@ -279,7 +279,7 @@ class RechunkSupport<Derived, true>::Refill
     const int          old_size_; ///< chunk size of src_
     const int          new_size_; ///< chunk size of tmp_
     const unsigned int old_key_;  ///< the allocator key of src_'s storage
-    const IndType      total_;    ///< elements of the array
+    const IndexType    total_;    ///< elements of the array
     const int          n_new_;    ///< chunks at the new geometry
 
     // The traces, read once for the whole refill (rechunk_to() reads them at
@@ -289,10 +289,10 @@ class RechunkSupport<Derived, true>::Refill
     const bool trace_mem_on_; ///< memory=debug
     const bool slice_trace_;  ///< rechunk=trace
 
-    // zero_one_value's cst2 predicate and its compress() both need the array's
+    // zero_one_value's const2 predicate and its compress() both need the array's
     // second-value registry entry; the lookups are hoisted here, once per
     // re-chunk.
-    [[maybe_unused]] const int        ind_old2_; ///< src_'s second-value index (the scan)
+    [[maybe_unused]] const int        idx_old2_; ///< src_'s second-value index (the scan)
     [[maybe_unused]] const SecondInfo inf_new2_; ///< tmp_'s second-value record (the fold)
 
     /// releases_sources: every old chunk lies inside one new chunk (the new size

@@ -42,7 +42,7 @@ namespace validation
 /// @brief The shell words that run this harness again: the executable, quoted,
 ///        then the harness name. For the harnesses that check a failure in a
 ///        child process (thread_growth, nested_region, stale_proxy,
-///        cst2_registry).
+///        const2_registry).
 /// @param argv0 the run()'s argv[0]
 /// @return e.g. `"/path/validation_zero_any_256" stale_proxy_validation`
 std::string self_command(const char* argv0);

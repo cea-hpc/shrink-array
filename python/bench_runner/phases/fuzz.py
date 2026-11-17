@@ -37,7 +37,7 @@ def run_fuzz_phase(args, extra_ldpath, errors):
     match the SEQUENTIAL run of the same parameters -- with the seed pinned, so
     a difference means behaviour, not scheduling.
 
-    NOT the data_tab_* oracle, hence --no_io. In --mode check a chunk build
+    NOT the data_array_* oracle, hence --no_io. In --mode check a chunk build
     reads the dumps the vector baseline wrote and compares element by element;
     that oracle was produced with the suite's default divisor / iter_max, and
     a case drawn here has other ones, so the arrays cannot match -- every case

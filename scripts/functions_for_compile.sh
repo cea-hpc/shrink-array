@@ -164,7 +164,7 @@ run_cmd() {
             fi
             # --pool: another run configures and builds it (launch_build says so).
             if [ -n "$_tdir" ] && [ -n "${CHUNK_POOL:-}" ]; then
-                local _pn=${_tdir#"${build_rep:-}"/}; _pn=${_pn%%/*}; _pn=${_pn#cmake-build-}
+                local _pn=${_tdir#"${build_root:-}"/}; _pn=${_pn%%/*}; _pn=${_pn#cmake-build-}
                 if ! __pool_claim "$_pn"; then
                     __PENDING_HEADER=""
                     return 0
@@ -266,10 +266,10 @@ __first_unmatched() {  # <list> <names...>
 }
 
 # Same predicate, taking a build DIRECTORY instead of a readable name: strips
-# $build_rep and the $arch component, exactly as launch_build and
+# $build_root and the $arch component, exactly as launch_build and
 # compile_with_cmake do, so the three agree on what a name is.
 __dir_wants() {  # <build-dir> -> 0 build it, 1 skip it
-    local __n=${1#"${build_rep:-}"/}; __n=${__n%%/*}; __n=${__n#cmake-build-}
+    local __n=${1#"${build_root:-}"/}; __n=${__n%%/*}; __n=${__n#cmake-build-}
     __target_wants "$__n"
 }
 
@@ -284,13 +284,13 @@ __dir_wants() {  # <build-dir> -> 0 build it, 1 skip it
 # before the walk goes on), whatever the builds cost. A run whose job starts
 # once the others have claimed everything builds nothing and ends with rc 0.
 #
-# The pool is $build_rep/.pools/<id> for a name, or the directory given when it
+# The pool is $build_root/.pools/<id> for a name, or the directory given when it
 # holds a /. A claim is the directory <pool>/<config>; its owner file names the
 # run that made it (CHUNK_POOL_ME: host and pid of the top-level script,
 # inherited by compile_all_gnu.sh, so that the two count as one run). --dryrun
 # claims nothing. One id per submission: in a pool where everything is
 # claimed, a new run builds nothing.
-# __HOST also tells apart the names this run makes in the shared build_rep
+# __HOST also tells apart the names this run makes in the shared build_root
 # (.build-slots.<host>.<pid>, logs/<date>-<host>-<pid>): two nodes can run a
 # script under the same pid at the same second.
 __HOST=$(uname -n | cut -d. -f1)
@@ -300,11 +300,11 @@ export CHUNK_POOL_ME
 __pool_dir() {
     case "$CHUNK_POOL" in
         */*) printf '%s' "$CHUNK_POOL" ;;
-        *)   printf '%s' "${build_rep:-$CHUNK_BUILD_REP}/.pools/$CHUNK_POOL" ;;
+        *)   printf '%s' "${build_root:-$CHUNK_BUILD_ROOT}/.pools/$CHUNK_POOL" ;;
     esac
 }
 
-# Checked and created once, after build_rep is known: a pool that cannot be
+# Checked and created once, after build_root is known: a pool that cannot be
 # written to would otherwise read as "every configuration taken".
 pool_init() {
     [ -n "${CHUNK_POOL:-}" ] || return 0
@@ -326,7 +326,7 @@ pool_init() {
     fi
     # The pools of earlier submissions: nobody claims there a week later.
     if [ "${CHUNK_ARGS_CHECKED_BY_PARENT:-}" != 1 ]; then
-        find "${build_rep:-$CHUNK_BUILD_REP}/.pools" -mindepth 1 -maxdepth 1 -type d -mtime +7 \
+        find "${build_root:-$CHUNK_BUILD_ROOT}/.pools" -mindepth 1 -maxdepth 1 -type d -mtime +7 \
              -exec rm -rf {} + 2>/dev/null
         echo "[POOL] $CHUNK_POOL: configurations shared with the other runs of the pool ($p);" \
              "this run is $CHUNK_POOL_ME"
@@ -498,7 +498,7 @@ __ninja_target_names() {  # <build-dir> → one name per line (empty if unknown)
 # `ninja -t targets all` list --exec is resolved against).
 list_build_inventory() {  # <list targets: true|false> <list execs: true|false> <names...>
     local want_t=$1 want_e=$2; shift 2
-    local root="${build_rep:-$CHUNK_BUILD_REP}" name dir note shown=0 conf=0
+    local root="${build_root:-$CHUNK_BUILD_ROOT}" name dir note shown=0 conf=0
     local is_arm_here=false
     [ "$(uname -m)" = "aarch64" ] && is_arm_here=true
     if [ "$want_t" = true ]; then
@@ -852,7 +852,7 @@ unset __ncores __derived __quota __mem_mb __mem_source __narrowed_from
 launch_build() {  # <build-dir> [cmake --build extra args…]
     local dir=$1; shift
     # Readable name: the cmake-build-* path component, without prefix or $arch.
-    local name=${dir#"$build_rep"/}; name=${name%%/*}; name=${name#cmake-build-}
+    local name=${dir#"$build_root"/}; name=${name%%/*}; name=${name#cmake-build-}
     __TARGET_SEEN=$(( __TARGET_SEEN + 1 ))
     if ! __target_wants "$name"; then
         # Counted, not printed: target_filter_summary() says how many were
@@ -983,7 +983,7 @@ launch_build() {  # <build-dir> [cmake --build extra args…]
     __wait_for_slot
 
     if [ -z "$LOG_DIR" ]; then
-        LOG_DIR="$build_rep/logs/$(date +%Y%m%d-%H%M%S)-$__HOST-$$"
+        LOG_DIR="$build_root/logs/$(date +%Y%m%d-%H%M%S)-$__HOST-$$"
         mkdir -p "$LOG_DIR"
         echo "[INFO] build logs → $LOG_DIR"
     fi
@@ -1189,7 +1189,7 @@ __reap_one() {
 # exported so the child script joins the SAME pool instead of opening its own.
 __slot_dir() {
     if [ -z "${CHUNK_SLOT_DIR:-}" ]; then
-        CHUNK_SLOT_DIR="${build_rep:-/tmp}/.build-slots.$__HOST.$$"
+        CHUNK_SLOT_DIR="${build_root:-/tmp}/.build-slots.$__HOST.$$"
         export CHUNK_SLOT_DIR
     fi
     mkdir -p "$CHUNK_SLOT_DIR" 2>/dev/null
@@ -1197,7 +1197,7 @@ __slot_dir() {
 }
 
 # The pool dir must not outlive the run (.build-slots.<pid>/ would pile up in
-# build_rep, one per interrupted run). Only the process that opened it removes
+# build_root, one per interrupted run). Only the process that opened it removes
 # it -- the one that found no CHUNK_SLOT_DIR in
 # its environment; compile_all_gnu.sh under compile_all.sh inherits it and
 # leaves it alone. On EXIT, so ^C (cancel_all exits) and early exits clean up
@@ -1206,7 +1206,7 @@ __slot_dir() {
 # still held by a live process keeps the dir.
 if [ -z "${CHUNK_SLOT_DIR:-}" ]; then
     __slot_dir_cleanup() {
-        local d="${CHUNK_SLOT_DIR:-${build_rep:-/tmp}/.build-slots.$__HOST.$$}"
+        local d="${CHUNK_SLOT_DIR:-${build_root:-/tmp}/.build-slots.$__HOST.$$}"
         [ -d "$d" ] || return 0
         rm -f "$d/target-matched" "$d/exec-matched" "$d/exec-candidates" \
               "$d/pool-mine" "$d/pool-others" 2>/dev/null
@@ -1473,18 +1473,18 @@ wait_all() {
     return "$N_FAILED"
 }
 
-create_build_rep()
+create_build_root()
 {
 # Check if the build directory exists, if not, create it
-if [ ! -d "$build_rep" ]; then
-    echo "The build directory $build_rep does not exist. Creating it..."
-    mkdir -p "$build_rep"
+if [ ! -d "$build_root" ]; then
+    echo "The build directory $build_root does not exist. Creating it..."
+    mkdir -p "$build_root"
     if [ $? -ne 0 ]; then
-        echo "Error creating the build directory $build_rep"
+        echo "Error creating the build directory $build_root"
         exit 1
     fi
 else
-    echo "The build directory $build_rep already exists."
+    echo "The build directory $build_root already exists."
 fi
 }
 
@@ -1499,7 +1499,7 @@ compile_with_cmake() {
     # code passed CXX="" to cmake when $4 was absent).
     local compiler=${4:-$CXX}
 
-    local __name=${build_dir#"$build_rep"/}; __name=${__name%%/*}; __name=${__name#cmake-build-}
+    local __name=${build_dir#"$build_root"/}; __name=${__name%%/*}; __name=${__name#cmake-build-}
     if ! __target_wants "$__name"; then
         return 0   # counted and summarised by launch_build / target_filter_summary
     fi

@@ -23,7 +23,7 @@
 
 #include "chunk/internal/type_state_registry.h"         // ensure_manager, from create
 #include "chunk/zero_array.h"                           // zero::Array, the class these bodies belong to
-#include "chunk/internal/chunk_stats.h"                 // increm_chunk_* (CHUNK_STATS)
+#include "chunk/internal/chunk_stats.h"                 // inc_chunk_* (CHUNK_STATS)
 #include "chunk/internal/chunk_stats_printer.h"         // print_formatted_chunk_stats
 #include "chunk/internal/type_state.h"                  // per-size free lists, candidate filter
 #include "chunk/internal/pmp_chunk.h"                   // CHUNK_PMP_*, pmp::parallel_sum
@@ -52,13 +52,13 @@ void zero::Array<T, IntType>::rebuild_storage(IntType sz)
         if (this->size_policy_.size())
         {
             chunk_count_ = this->chunks_for(sz);
-            Manager::increm_somme_chunk_create(chunk_count_);
+            Manager::inc_total_chunk_create(chunk_count_);
             Manager::compute_size_buffer_reuse();
             Manager::compute_size_max_number_of_chunk_to_check_compress();
 
             if constexpr (chunk_config::use_fast_block_compression)
             {
-                zero::Proxy<T>::resize_tab_is_int(this->array_id_, chunk_count_);
+                Proxy<T>::resize_array_is_int(this->array_id_, chunk_count_);
             }
         }
         else if (sz && !this->size_policy_.size())
@@ -76,7 +76,7 @@ void zero::Array<T, IntType>::rebuild_storage(IntType sz)
             // (an orphaned `omp for` would initialise 1/N of an array created by
             // each thread, and hang one created under `omp single`).
             parallel_storage_init::for_each_chunk(chunk_count_,
-                                                  [this](int i) { this->construct_chunk(i).init_values_cst_val(); });
+                                                  [this](int i) { this->construct_chunk(i).init_values_const_val(); });
         }
     }
 
@@ -91,7 +91,7 @@ void zero::Array<T, IntType>::print_compression_stats(std::ostream& os) const
         return;
     }
 
-    const auto& sh_inf   = *zero::Proxy<T>::array_registry;
+    const auto& sh_inf   = *Proxy<T>::array_registry;
     const int   array_id = sh_inf.get_array_id(this->registry_key());
 
     // Read before the clear() drain mutates state. Not written() = compressed
@@ -123,7 +123,7 @@ void zero::Array<T, IntType>::print_compression_stats(std::ostream& os) const
             {
                 return;
             }
-            if (same_value(*v0, zero::Chunk<T>::first_value))
+            if (same_value(*v0, Chunk<T>::first_value))
             {
                 ++acc[0]; // compressible now; the drain just had not caught it yet
             }
@@ -138,9 +138,9 @@ void zero::Array<T, IntType>::print_compression_stats(std::ostream& os) const
     // Plain Chunk has no type-2 (n_t1 = 0).
     if constexpr (chunk_config::stats)
     {
-        add_chunk_still_compressed_at_exit<zero::Chunk<T>>(n_compressed);
+        add_chunk_still_compressed_at_exit<Chunk<T>>(n_compressed);
         // Dyn-only end-of-life size distribution (see chunk_stats.h).
-        record_chunk_size_at_exit<zero::Chunk<T>>(static_cast<unsigned int>(this->size_policy_.size()));
+        record_chunk_size_at_exit<Chunk<T>>(static_cast<unsigned int>(this->size_policy_.size()));
     }
     print_formatted_chunk_stats(os, array_id, this->debug_name(), type_name<T>(), n_compressed, chunk_count_,
                                 /*n_t1=*/0, "zero",
@@ -177,7 +177,7 @@ void zero::Array<T, IntType>::clear_core()
     // counter can read 0 while ops are queued (array_chunk_parallel_common_inline.h),
     // so a point that frees chunks must not trust it.
     // Inside a region, a work array of this thread's: this rank's structures only.
-    const int  array_id = zero::Proxy<T>::array_registry->get_array_id(this->registry_key());
+    const int  array_id = Proxy<T>::array_registry->get_array_id(this->registry_key());
     const bool own_rank = this->teardown_on_own_rank(array_id);
     // rechunk=debug, tmp teardown only (armed by rechunk_to): the split's marks
     // (teardown_probe.h; the same steps as zero_any::ArrayImpl::clear_core()).
@@ -203,12 +203,12 @@ void zero::Array<T, IntType>::clear_core()
     }
 
     // Give this array's chunks back to the manager's count (as zero_one_value::Array /
-    // zero_any do): the compression threshold (somme_chunk_create / (factor_div *
+    // zero_any do): the compression threshold (total_chunk_create / (factor_div *
     // threads)) must track the chunks alive, not the program's history --
     // otherwise it climbs by orders of magnitude, compressions become rare and
     // buffers stop returning to the reuse lists. Also balances rechunk_to()
     // (clear_core() -> rebuild_storage()).
-    Manager::decrem_somme_chunk_create(chunk_count_);
+    Manager::dec_total_chunk_create(chunk_count_);
     // And recompute what derives from the total, as rebuild_storage() does: a
     // re-chunk would otherwise keep a threshold sized for the old geometry
     // (several times too large, a large throughput loss).
@@ -221,9 +221,9 @@ void zero::Array<T, IntType>::clear_core()
         pmp::team(pmp::Options{},
                   [&](pmp::Team& team)
                   {
-                      const int chunk_count0 = get_size_max_tab_omp(chunk_count_);
+                      const int chunk_count0 = get_size_max_array_omp(chunk_count_);
 
-                      std::vector<zero::Chunk<T>*> ll_chunk_loc;
+                      std::vector<Chunk<T>*> ll_chunk_loc;
                       ll_chunk_loc.reserve(chunk_count0);
 
                       team.for_static<int>(
@@ -234,20 +234,19 @@ void zero::Array<T, IntType>::clear_core()
                               {
                                   if constexpr (chunk_config::stats)
                                   {
-                                      increm_chunk_teardown_clear<zero::Chunk<T>>();
+                                      inc_chunk_teardown_clear<Chunk<T>>();
                                       // Released below without a compression: out of the live figures.
-                                      add_chunk_released<zero::Chunk<T>>(
-                                          1,
-                                          static_cast<long>(sizeof(T)) * static_cast<long>(this->size_policy_.size()));
+                                      add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) *
+                                                                          static_cast<long>(this->size_policy_.size()));
                                   }
                                   ll_chunk_loc.push_back(&chunk_list_[j]);
                               }
                           },
                           pmp::nowait);
 
-                      const auto nb = static_cast<int>(ll_chunk_loc.size());
+                      const auto n = static_cast<int>(ll_chunk_loc.size());
 
-                      if (nb > 0)
+                      if (n > 0)
                       {
                           const int thr_rank = CHUNK_PMP_THREAD_RANK;
 
@@ -256,9 +255,9 @@ void zero::Array<T, IntType>::clear_core()
                           // the LEGACY list, which drain_reuse_list_for_size() never
                           // drains: those blocks then stay until teardown.
                           const unsigned int my_sz = this->size_policy_.size();
-                          auto& lbf = zero::Chunk<T>::Manager::get_list_block_free_thr_for_size(thr_rank, my_sz);
+                          auto&              lbf = Chunk<T>::Manager::get_list_block_free_thr_for_size(thr_rank, my_sz);
 
-                          for (int k = 0; k < nb; ++k)
+                          for (int k = 0; k < n; ++k)
                           {
                               T*          values_loc = ll_chunk_loc[k]->values_;
                               constexpr T zero{};
@@ -271,9 +270,9 @@ void zero::Array<T, IntType>::clear_core()
                               // Neutralise the chunk NOW that its buffer is parked: still
                               // materialised, a residual candidate would free the SAME
                               // buffer a second time (a double free under std-alloc).
-                              // init_values_cst_val() frees nothing; written() then
+                              // init_values_const_val() frees nothing; written() then
                               // reports false, so every compress path short-circuits.
-                              ll_chunk_loc[k]->init_values_cst_val();
+                              ll_chunk_loc[k]->init_values_const_val();
                           }
                       }
                   });
@@ -286,7 +285,7 @@ void zero::Array<T, IntType>::clear_core()
             {
                 if constexpr (chunk_config::stats)
                 {
-                    increm_chunk_teardown_clear<zero::Chunk<T>>();
+                    inc_chunk_teardown_clear<Chunk<T>>();
                 }
                 // release_st: counted as teardown_clear above, not also as a
                 // compression.
@@ -308,14 +307,14 @@ void zero::Array<T, IntType>::clear_core()
     // own region. Key 0: nothing to give back per array.
     if (this->alloc_key_ != 0 && !CHUNK_PMP_IN_PARALLEL_REGION)
     {
-        TypeState<zero::Chunk, T>::drain_reuse_list_for_size(this->size_policy_.size());
+        TypeState<Chunk, T>::drain_reuse_list_for_size(this->size_policy_.size());
     }
     probe.mark(internal::TeardownStep::key_drain);
 
     // The candidate flags (one byte per chunk): released now that the purge
     // at the top has run and the chunks are gone -- a re-chunk's old storage
     // dies under its own array_id, which nothing reuses.
-    zero::Proxy<T>::release_tab_is_int(this->array_id_);
+    Proxy<T>::release_array_is_int(this->array_id_);
     probe.mark(internal::TeardownStep::tables);
 }
 
@@ -329,7 +328,7 @@ void zero::Array<T, IntType>::compress_int(pmp::Team& team, bool verbose)
     }
 
 
-    const int chunk_count0 = get_size_max_tab_omp(chunk_count_, true);
+    const int chunk_count0 = get_size_max_array_omp(chunk_count_, true);
 
     std::vector<int> ll;
     ll.reserve(chunk_count0);
@@ -346,7 +345,7 @@ void zero::Array<T, IntType>::compress_int(pmp::Team& team, bool verbose)
                 // bypasses compress(), which would otherwise count it.
                 if constexpr (chunk_config::stats)
                 {
-                    increm_chunk_compress_attempt<zero::Chunk<T>>();
+                    inc_chunk_compress_attempt<Chunk<T>>();
                 }
 
                 if (chunk.is_constant_to(T{}, static_cast<unsigned int>(this->size_policy_.size())))
@@ -357,7 +356,7 @@ void zero::Array<T, IntType>::compress_int(pmp::Team& team, bool verbose)
         },
         pmp::nowait);
 
-    const auto nb = static_cast<int>(ll.size());
+    const auto n = static_cast<int>(ll.size());
 
     // ── What this reports, and what it does NOT assert ───────────────────────
     // compress_int() only SCANS. It finds the residual: chunks constant at zero
@@ -367,14 +366,14 @@ void zero::Array<T, IntType>::compress_int(pmp::Team& team, bool verbose)
     // a large or growing count means the incremental path is not keeping up.
     // Written when the caller asks (`verbose`: a report, whatever CHUNK_LOG
     // says), one line per thread (its share of the chunks).
-    if (nb != 0 && verbose)
+    if (n != 0 && verbose)
     {
         std::array<char, 256> sample{};
         CHUNK_LOG_ALWAYS(
             compress,
             "residual zero::Array<{}, {}>: {} chunk(s) constant at zero, still materialised (awaiting the next "
             "compression pass): {}",
-            type_name<T>(), type_name<IntType>(), nb,
+            type_name<T>(), type_name<IntType>(), n,
             internal::chunk_index_sample(sample, ll, static_cast<IntType>(this->size_policy_.size())));
     }
 }
@@ -403,15 +402,15 @@ void zero::Array<T, IntType>::release_chunk_range(int first, int last)
         const unsigned int my_sz = this->size_policy_.size();
         parallel_storage_init::for_each_chunk_in(
             first, last, [my_sz]() -> auto&
-            { return zero::Chunk<T>::Manager::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz); },
+            { return Chunk<T>::Manager::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz); },
             [this, my_sz](int j, auto& lbf)
             {
                 if (chunk_list_[j].written())
                 {
                     if constexpr (chunk_config::stats)
                     {
-                        increm_chunk_teardown_clear<zero::Chunk<T>>();
-                        add_chunk_released<zero::Chunk<T>>(1, static_cast<long>(sizeof(T)) * static_cast<long>(my_sz));
+                        inc_chunk_teardown_clear<Chunk<T>>();
+                        add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) * static_cast<long>(my_sz));
                     }
                     // As clear_core(): zero's reuse lists hold zeroed buffers.
                     T*          values_loc = chunk_list_[j].values_;
@@ -419,7 +418,7 @@ void zero::Array<T, IntType>::release_chunk_range(int first, int last)
                     std::uninitialized_fill_n(values_loc, my_sz, zero);
                     CHUNK_LEDGER_PARK(values_loc, "resize.shrink_park");
                     lbf.push_back(values_loc);
-                    chunk_list_[j].init_values_cst_val();
+                    chunk_list_[j].init_values_const_val();
                 }
             });
     }
@@ -431,7 +430,7 @@ void zero::Array<T, IntType>::release_chunk_range(int first, int last)
             {
                 if constexpr (chunk_config::stats)
                 {
-                    increm_chunk_teardown_clear<zero::Chunk<T>>();
+                    inc_chunk_teardown_clear<Chunk<T>>();
                 }
                 chunk_list_[j].release_st();
             }
@@ -450,7 +449,7 @@ void zero::Array<T, IntType>::resize(const IntType newsz)
     // dirty bitset are reallocated: a queued op holds a reference to its chunk.
     // And BEFORE the compression pass (as SecondValueArrayBase::resize_common()): a
     // replayed write can queue its chunk again, and the realloc and
-    // resize_tab_is_int() rely on the pass leaving the lists empty.
+    // resize_array_is_int() rely on the pass leaving the lists empty.
     // force: see clear_core().
     this->flush_pending_deferred_ops(/*force=*/true);
 
@@ -459,7 +458,7 @@ void zero::Array<T, IntType>::resize(const IntType newsz)
         this->drain_candidates(); // not make_block_compression(): resize() may run in a region
     }
 
-    const auto& sh_inf = *zero::Proxy<T>::array_registry;
+    const auto& sh_inf = *Proxy<T>::array_registry;
 
     const int array_id = sh_inf.get_array_id(this->registry_key());
 
@@ -484,9 +483,9 @@ void zero::Array<T, IntType>::resize(const IntType newsz)
 
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        zero::Proxy<T>::resize_tab_is_int(array_id, chunk_count_);
+        Proxy<T>::resize_array_is_int(array_id, chunk_count_);
     }
-    Manager::increm_somme_chunk_create(chunk_count_ - old_chunk_count);
+    Manager::inc_total_chunk_create(chunk_count_ - old_chunk_count);
     Manager::compute_size_buffer_reuse();
     Manager::compute_size_max_number_of_chunk_to_check_compress();
     // An array built empty (the default) only becomes worth its own slabs
@@ -497,7 +496,7 @@ void zero::Array<T, IntType>::resize(const IntType newsz)
     // region, the calling thread inside one -- never an orphaned `omp for`
     // (it would construct only 1/N of a thread's own array).
     parallel_storage_init::for_each_chunk(chunk_count_ - old_chunk_count, [this, old_chunk_count](int k)
-                                          { this->construct_chunk(old_chunk_count + k).init_values_cst_val(); });
+                                          { this->construct_chunk(old_chunk_count + k).init_values_const_val(); });
 
     // std::vector semantics: the regrown range [old_size, newsz) reads T{}. The
     // chunk holding the OLD end keeps its tail (values from before a shrink),
@@ -508,7 +507,7 @@ void zero::Array<T, IntType>::resize(const IntType newsz)
         const auto csz = static_cast<IntType>(this->chunk_size());
         // Up to the end of the OLD chunk count: chunks_for() keeps a spare chunk
         // when old_size falls on a boundary, stale too. In long long:
-        // old_chunk_count * csz may pass IndType's range.
+        // old_chunk_count * csz may pass IndexType's range.
         const long long cover_ll  = static_cast<long long>(old_chunk_count) * static_cast<long long>(csz);
         const IntType   old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<IntType>(cover_ll) : newsz;
         const IntType   stale_end = newsz < old_cover ? newsz : old_cover;

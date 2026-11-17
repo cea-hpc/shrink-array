@@ -124,11 +124,11 @@ class ZeroOneValueInfArrayPolicy
     /**
      * @brief Register the inf_array record pointer for a second value.
      * @param key Second value to register.
-     * @param ind inf_array record pointer to associate with @p key.
+     * @param idx inf_array record pointer to associate with @p key.
      */
-    void insert(InT<T> key, InfArrayT* ind)
+    void insert(InT<T> key, InfArrayT* idx)
     {
-        map_inf_array_[key] = ind;
+        map_inf_array_[key] = idx;
     }
 
     /// Map from a second value to its registered inf_array record pointer.
@@ -162,7 +162,7 @@ class ZeroOneValueInfArrayPolicy<T, false>
 
   protected:
     /// @brief No registry: nothing recorded.
-    static void insert(InT<T> /*key*/, InfArrayT* /*ind*/) {}
+    static void insert(InT<T> /*key*/, InfArrayT* /*idx*/) {}
 };
 
 namespace zero_one_value
@@ -216,7 +216,7 @@ class PointerMap
     void report_key_not_found(Key key, const char* site) const noexcept;
 
     /// Map from values to constant index values.
-    MapType map_ind_cst_val2_;
+    MapType map_idx_const_val2_;
 
   public:
     /// @brief The policy's insert(second value, inf_array pointer), protected
@@ -250,32 +250,32 @@ class PointerMap
      *
      * @param key Pointer key to match.
      * @param val New value to assign.
-     * @param ind New index to assign.
+     * @param idx New index to assign.
      * @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
      */
-    void replace_all_other_elm(Key key, InT<T> val, int ind) noexcept;
+    void replace_all_other_elm(Key key, InT<T> val, int idx) noexcept;
 
-    /// @brief Record that second value @p key sits at index @p ind of the
+    /// @brief Record that second value @p key sits at index @p idx of the
     ///        shared value table.
-    void insert_map_ind_cst_val2(InT<T> key, int ind)
+    void insert_map_idx_const_val2(InT<T> key, int idx)
     {
-        map_ind_cst_val2_[key] = ind;
+        map_idx_const_val2_[key] = idx;
     }
 
     /// @brief Every registered second value, in map order.
     [[nodiscard]] std::vector<T> get_all_second_value() const
     {
-        return map_ind_cst_val2_ | std::views::keys | std::ranges::to<std::vector>();
+        return map_idx_const_val2_ | std::views::keys | std::ranges::to<std::vector>();
     }
 
     /// @brief Index of second value @p key in the shared value table, or -1
     ///        when it is not registered (0 for bool, which has no table).
-    [[nodiscard]] int find_ind_tab_cst2(InT<T> key) const;
+    [[nodiscard]] int find_idx_array_const2(InT<T> key) const;
 
     /// @brief Change the second value and its table index recorded for
     ///        array @p key.
     /// @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
-    void replace(Key key, InT<T> val, int ind) noexcept;
+    void replace(Key key, InT<T> val, int idx) noexcept;
 
     /// @brief The second value recorded for array @p key (true for bool).
     /// @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).

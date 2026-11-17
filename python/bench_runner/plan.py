@@ -341,7 +341,7 @@ def prepare_oracles(args, check_exes, baseline_check_exe_of):
     """Which configs must (re)generate their oracle. Returns the configs with
     check binaries and, per config, whether its baseline must run."""
     # The baseline check (vector, uncompressed) ONLY serves to generate the
-    # reference files data_tab* (an expensive output). One oracle PER CONFIG
+    # reference files data_array* (an expensive output). One oracle PER CONFIG
     # (see oracle_dir: the reference is not portable across compilers), each
     # generated once by the config's own vector binary and kept across runs:
     #   - only if the config has check binaries to compare (no oracle for a
@@ -350,7 +350,7 @@ def prepare_oracles(args, check_exes, baseline_check_exe_of):
     import glob as _glob
 
     def _oracle_files(d):
-        return [f for f in _glob.glob(os.path.join(d, "data_tab*")) if not f.endswith(".marker")]
+        return [f for f in _glob.glob(os.path.join(d, "data_array*")) if not f.endswith(".marker")]
 
     # --pool: the oracles are shared by the jobs, and another one may be
     # generating one right now (its files there, its marker not yet): nothing
@@ -360,10 +360,10 @@ def prepare_oracles(args, check_exes, baseline_check_exe_of):
     pooled = share.active()
     root = share.oracle_root(args)
 
-    # A legacy single oracle (data_tab*) in output_dir itself is read by
+    # A legacy single oracle (data_array*) in output_dir itself is read by
     # nothing; say so once rather than silently keeping it around.
     if not args.skip_check and os.path.isfile(os.path.join(root, ORACLE_MARKER)):
-        print(f"ℹ️  A legacy single oracle sits in {root} (data_tab*): it is no "
+        print(f"ℹ️  A legacy single oracle sits in {root} (data_array*): it is no "
               f"longer used -- each config now has its own under oracle/<config>/. "
               f"Delete it when convenient.")
 

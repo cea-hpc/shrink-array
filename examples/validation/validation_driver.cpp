@@ -62,7 +62,7 @@ const Harness harness_table[] = {
 #include VALIDATION_HARNESS_LIST // one VALIDATION_HARNESS(name) per harness: its table entry
 #undef VALIDATION_HARNESS
 };
-constexpr int nb_harnesses = static_cast<int>(std::size(harness_table));
+constexpr int n_harnesses = static_cast<int>(std::size(harness_table));
 
 const char* g_running = nullptr; // the harness name given on the command line, if any
 
@@ -133,7 +133,7 @@ int main(int argc, char** argv)
             }
         }
     }
-    if (nb_harnesses == 1)
+    if (n_harnesses == 1)
     {
         return harness_table[0].run(argc, argv);
     }

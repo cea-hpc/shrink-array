@@ -118,7 +118,7 @@ class RechunkHooks<Derived, true>
     /// @brief The manager's single candidate list of this variant (serial builds).
     [[nodiscard]] static auto& candidate_list() noexcept;
     /// @brief Remove every candidate of the array @p array_id from this variant's lists.
-    static void remove_candidates_of_tab(int array_id) noexcept;
+    static void remove_candidates_of_array(int array_id) noexcept;
 };
 
 // ── Static-geometry build: nothing to hook ───────────────────────────────────

@@ -27,12 +27,12 @@
 #include "chunk/config.h"                       // build_config::threaded, chunk_config
 #include "chunk/internal/chunk_size_config.h"   // ChunkElems
 #include "chunk/internal/chunk_size_policy.h"   // alloc_chunk_count
-#include "chunk/internal/chunk_stats.h"         // increm_chunk_write (CHUNK_STATS)
+#include "chunk/internal/chunk_stats.h"         // inc_chunk_write (CHUNK_STATS)
 #include "chunk/internal/conditional_counter.h" // ConditionalCounter
 #include "chunk/internal/zero_proxy.h"          // Proxy<T>
 #include "chunk/internal/immortal.h"            // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/pool_release.h"        // release_chunk_pools, destroy_block_chunk
-#include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (init_chunks_cst_val)
+#include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (init_chunks_const_val)
 
 namespace shrink_array
 {
@@ -151,22 +151,22 @@ class ChunkCounterPolicy
 {
   public:
     /// @brief Record one more zero element.
-    void inc_nb_val_eq_zero() noexcept
+    void inc_n_val_eq_zero() noexcept
     {
-        ++nb_val_eq_zero_;
+        ++n_val_eq_zero_;
     }
 
     /// @brief Record one fewer zero element.
-    void dec_nb_val_eq_zero() noexcept
+    void dec_n_val_eq_zero() noexcept
     {
-        --nb_val_eq_zero_;
+        --n_val_eq_zero_;
     }
 
     /// @brief Set the zero count outright.
     /// @param count new count
-    void set_nb_val_eq_zero(CounterValueT count) noexcept
+    void set_n_val_eq_zero(CounterValueT count) noexcept
     {
-        nb_val_eq_zero_ = count;
+        n_val_eq_zero_ = count;
     }
 
     /// @brief Is every element of the chunk zero?
@@ -174,14 +174,14 @@ class ChunkCounterPolicy
     /// @return true when the count has reached @p size -- the compression trigger
     [[nodiscard]] bool is_full_zero(unsigned int size = static_chunk_size) const noexcept
     {
-        return static_cast<CounterValueT>(nb_val_eq_zero_) == size;
+        return static_cast<CounterValueT>(n_val_eq_zero_) == size;
     }
 
   private:
     // [[no_unique_address]]: a DISABLED counter is an empty type, but an empty
     // MEMBER still takes a byte, which grows the chunk header from 16 to 24
     // bytes in OpenMP builds (counter off).
-    [[no_unique_address]] ConditionalCounter<EnableCounter> nb_val_eq_zero_;
+    [[no_unique_address]] ConditionalCounter<EnableCounter> n_val_eq_zero_;
 };
 
 /**
@@ -209,11 +209,11 @@ class ChunkThreadPolicy : public ChunkBase<T, Derived>
     using Manager   = TypeState<Chunk, T>;
 
     using Base::init_block;
-    using Base::is_cst_val1;
+    using Base::is_const_val1;
     using Base::values_;
 
     /// @brief Array-new for chunks: allocates and points every chunk at the
-    ///        first constant (init_chunks_cst_val).
+    ///        first constant (init_chunks_const_val).
     /// @warning `new Chunk<T>[n]` runs the DEFAULT CONSTRUCTORS after this,
     ///          overwriting that initialisation; it pays off only for a
     ///          placement-new array. The library never array-news a chunk.
@@ -274,16 +274,16 @@ class ChunkThreadPolicy : public ChunkBase<T, Derived>
      * @note This is the CAS-steal that makes a compressor's window dangerous to
      *       concurrent writers -- see CompressionManager's hard_inflight_.
      */
-    T* try_mark_cst_and_get_old(this Derived& self);
+    T* try_mark_const_and_get_old(this Derived& self);
 
     /// @brief Point @p count freshly allocated chunks at the first constant.
     /// @details Parallel past 500 chunks, and only from OUTSIDE a parallel
     ///          region (inside one, an orphaned `omp for` would hang waiting for
     ///          the other threads). An application that placement-news an array
     ///          of chunks initialises it here.
-    static void init_chunks_cst_val(Chunk<T>* chunks, std::size_t count) noexcept
+    static void init_chunks_const_val(Chunk<T>* chunks, std::size_t count) noexcept
     {
-        chunk_array_new::init_chunks(chunks, count, [](Chunk<T>& chunk) { chunk.init_values_cst_val(); });
+        chunk_array_new::init_chunks(chunks, count, [](Chunk<T>& chunk) { chunk.init_values_const_val(); });
     }
 
     /**
@@ -370,7 +370,7 @@ class ChunkFastCompPolicy : public ChunkThreadPolicy<T, Derived>
      * @brief Append this chunk to @p ll_compt if all @p n_elems elements are zero.
      * @param ll_compt  out: list of compressible chunks
      * @param chunk_index this chunk's index in its array
-     * @param array_id   its array's tab index
+     * @param array_id   its array's array index
      * @param n_elems   THIS chunk's element count -- never the ambient size, see
      *                  chunk_tuples.h's note on the field it is carried in
      */
@@ -426,9 +426,9 @@ class ChunkFastCompPolicy<T, Derived, false> : public ChunkThreadPolicy<T, Deriv
  * @brief One chunk of a ChunkArray: a block of chunk-size elements that collapses to zero.
  *
  * @details The simplest of the three variants. A chunk holds either a real
- *          buffer or, once every element is zero, the shared cst_val1 constant
+ *          buffer or, once every element is zero, the shared const_val1 constant
  *          -- so `values` doubles as the state flag: written() is just
- *          "values != cst_val1". zero_one_value and zero_any extend this with a second
+ *          "values != const_val1". zero_one_value and zero_any extend this with a second
  *          constant, shared or per-chunk respectively.
  *
  *          Three policies supply what depends on the build, so this class holds
@@ -466,8 +466,8 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     using Base::first_value;
 
     using Base::init_block;
-    using Base::is_cst_val1;
-    using Base::m_ptr_cst_val1;
+    using Base::is_const_val1;
+    using Base::m_ptr_const_val1;
     using Base::values_;
     using Base::values_load;
     using Base::values_store;
@@ -483,7 +483,7 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     /// @brief Copy the zero-counter base and the `values` pointer of @p other.
     ///
     /// The ChunkCounterPolicy base must be copied explicitly: a user-defined
-    /// copy ctor otherwise DEFAULT-constructs it, resetting nb_val_eq_zero_, and
+    /// copy ctor otherwise DEFAULT-constructs it, resetting n_val_eq_zero_, and
     /// manage_full_zero() later re-compresses a chunk that is not all-zero.
     /// ChunkFastCompPolicy holds the atomic `values` (non-copyable), copied by
     /// hand below.
@@ -494,22 +494,22 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     Chunk& operator=(const Chunk<T>& other);
 
     /// @brief Point this chunk at the shared zero constant (compressed state).
-    void init_values_cst_val(this auto& self)
+    void init_values_const_val(this auto& self)
     {
-        self.values_ = Base::get_cst_val1();
+        self.values_ = Base::get_const_val1();
     }
 
     /// @brief Does this chunk hold a real buffer?
-    /// @return false while it is compressed to cst_val1
+    /// @return false while it is compressed to const_val1
     [[nodiscard]] bool written(this const auto& self) noexcept
     {
-        return self.values_ != Base::get_cst_val1();
+        return self.values_ != Base::get_const_val1();
     }
 
     /// @brief Materialise storage if the chunk is still compressed.
     void alloc_chunk(this auto& self)
     {
-        if (self.is_cst_val1())
+        if (self.is_const_val1())
         {
             self.create_value();
         }

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// The second-value registry of zero_any::Array (tab_cst_val2_holder.h) on struct
+// The second-value registry of zero_any::Array (array_const_val2_holder.h) on struct
 // element types. Every chunk j of an array is filled with one value f(j), then
 // the array is folded (shrink_to_fit): each chunk compresses to f(j), and the
 // registry should hand out exactly one identifier per DISTINCT value, with its

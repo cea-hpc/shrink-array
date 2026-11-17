@@ -3,17 +3,17 @@
 # SPDX-License-Identifier: Apache-2.0
 # zero_any allocator diagnosis: build one configuration, then run it in a loop
 # with a progress line.
-# Usage: ./diag_alloc.sh <variant> [nb_runs]
+# Usage: ./diag_alloc.sh <variant> [n_runs]
 #   variants: fast | std | noreuse | tsan
 #   e.g.: ./diag_alloc.sh fast 100
 #         ./diag_alloc.sh tsan 5
-# Environment: CHUNK_BUILD_REP (where the build trees go; default: the
+# Environment: CHUNK_BUILD_ROOT (where the build trees go; default: the
 # repository), GCC_MODULE / GCC_TSAN_MODULE (the compiler modules; CEA defaults).
 set -u
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
-WORK="${CHUNK_BUILD_REP:-$SRC}"
+WORK="${CHUNK_BUILD_ROOT:-$SRC}"
 GCC_MODULE="${GCC_MODULE:-c++/gcc/15.2.0}"
 GCC_TSAN_MODULE="${GCC_TSAN_MODULE:-c++/gcc/14.1.0}"
 arch="$(source /etc/os-release && echo ${ID^^}_${VERSION_ID}__$(uname -m))"
@@ -27,7 +27,7 @@ case "$variant" in
   std)     name=std;      opt="-DCHUNK_STD_ALLOC=ON";     gccmod="$GCC_MODULE";      san="";     label="STD (malloc, the clean reference)"        ;;
   noreuse) name=noreuse;  opt="-DCHUNK_POOL_NO_REUSE=ON"; gccmod="$GCC_MODULE";      san="";     label="NO_REUSE (new/delete)"                    ;;
   tsan)    name=tsan;     opt="-DCHUNK_STD_ALLOC=ON -DCHUNK_SANITIZER=thread"; gccmod="$GCC_TSAN_MODULE"; san="tsan"; label="TSan (oracle, STD)" ;;
-  *) echo "usage: $0 {fast|std|noreuse|tsan} [nb_runs]"; exit 2 ;;
+  *) echo "usage: $0 {fast|std|noreuse|tsan} [n_runs]"; exit 2 ;;
 esac
 [ "$variant" = "tsan" ] && runs="${2:-5}"
 

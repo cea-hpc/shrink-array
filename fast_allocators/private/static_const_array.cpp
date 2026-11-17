@@ -28,11 +28,11 @@
 namespace fast_alloc
 {
 
-/// @copydoc InfoFreeElt::InfoFreeElt
+/// @copydoc InfoFreeElem::InfoFreeElem
 /// @note Sized by FAST_ALLOC_PMP_MAX_THREADS at construction (before main). A rank past
 ///       it -- a team raised later -- is not batched: try_free_block() frees its
 ///       blocks at once rather than index past these arrays.
-InfoFreeElt::InfoFreeElt()
+InfoFreeElem::InfoFreeElem()
 {
     // Serially there is no batching (try_free_block never enters the batching
     // branch), so the 2 x 10000-entry arrays are not worth allocating.
@@ -40,64 +40,64 @@ InfoFreeElt::InfoFreeElt()
     {
         const int max_thr = FAST_ALLOC_PMP_MAX_THREADS;
 
-        tab_sz  = svalloc<IntMaxFreeElt>(max_thr);
-        tab_ptr = svalloc<VoidMaxFreeElt>(max_thr);
+        array_sz  = svalloc<IntMaxFreeElem>(max_thr);
+        array_ptr = svalloc<VoidMaxFreeElem>(max_thr);
 
         compt     = svcalloc<int>(max_thr);
-        somme_sz_ = svcalloc<int>(max_thr);
+        total_sz_ = svcalloc<int>(max_thr);
 
-        nb_thr = max_thr;
+        n_thr = max_thr;
     }
 }
 
-/// @copydoc InfoFreeElt::~InfoFreeElt
-InfoFreeElt::~InfoFreeElt()
+/// @copydoc InfoFreeElem::~InfoFreeElem
+InfoFreeElem::~InfoFreeElem()
 {
-    if (tab_ptr == nullptr)
+    if (array_ptr == nullptr)
     {
         return; // serial build: nothing was allocated
     }
-    svfree(tab_ptr);
-    svfree(tab_sz);
+    svfree(array_ptr);
+    svfree(array_sz);
 
     svfree(compt);
-    svfree(somme_sz_);
+    svfree(total_sz_);
 
     // An ordinary global, unlike the ladder and the arenas, which are never
     // destroyed: a ladder free in a region, or a parallel_end flush, may still
     // come after this destructor (another library's static or TLS destructor,
     // the OpenMP runtime's shutdown). Leave an empty batch set behind, not
-    // dangling pointers: with nb_thr 0, try_free_block() frees at once and
-    // clear_info_free_elt() has nothing to walk.
-    tab_ptr   = nullptr;
-    tab_sz    = nullptr;
+    // dangling pointers: with n_thr 0, try_free_block() frees at once and
+    // clear_info_free_elem() has nothing to walk.
+    array_ptr = nullptr;
+    array_sz  = nullptr;
     compt     = nullptr;
-    somme_sz_ = nullptr;
-    nb_thr    = 0;
+    total_sz_ = nullptr;
+    n_thr     = 0;
 }
 
-/// @copydoc StaticConstArray::clear_info_free_elt(int)
-void StaticConstArray::clear_info_free_elt(int thr_rank)
+/// @copydoc StaticConstArray::clear_info_free_elem(int)
+void StaticConstArray::clear_info_free_elem(int thr_rank)
 {
-    for (int k = 0; k < tab_info_free_elt().compt[thr_rank]; ++k)
+    for (int k = 0; k < array_info_free_elem().compt[thr_rank]; ++k)
     {
-        const int szl  = tab_info_free_elt().tab_sz[thr_rank][k];
-        void*     ptrl = tab_info_free_elt().tab_ptr[thr_rank][k];
+        const int szl  = array_info_free_elem().array_sz[thr_rank][k];
+        void*     ptrl = array_info_free_elem().array_ptr[thr_rank][k];
         free_block_with_int(szl, ptrl);
     }
 }
 
-/// @copydoc StaticConstArray::clear_info_free_elt()
-void StaticConstArray::clear_info_free_elt()
+/// @copydoc StaticConstArray::clear_info_free_elem()
+void StaticConstArray::clear_info_free_elem()
 {
     // Over the ranks the batches were SIZED for, not FAST_ALLOC_PMP_MAX_THREADS: that may
     // have grown since (omp_set_num_threads) and would index past the arrays;
-    // nb_thr is 0 serially, where nothing was allocated. reset(), not compt = 0:
-    // somme_sz_ must come down too, or the emptied batch still counts as full.
-    for (int thr_rank = 0; thr_rank < tab_info_free_elt().nb_thr; ++thr_rank)
+    // n_thr is 0 serially, where nothing was allocated. reset(), not compt = 0:
+    // total_sz_ must come down too, or the emptied batch still counts as full.
+    for (int thr_rank = 0; thr_rank < array_info_free_elem().n_thr; ++thr_rank)
     {
-        clear_info_free_elt(thr_rank);
-        tab_info_free_elt().reset(thr_rank);
+        clear_info_free_elem(thr_rank);
+        array_info_free_elem().reset(thr_rank);
     }
 }
 

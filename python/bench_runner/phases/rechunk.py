@@ -37,7 +37,7 @@ def run_rechunk_phase(args, extra_ldpath, errors):
                                     the deadband alone refused every tick.
         (shrink_bench options, not environment variables: the library reads
         none of these from the environment.)
-      * check stage              : --mode check reads the oracle (data_<tab>_<k>
+      * check stage              : --mode check reads the oracle (data_<array>_<k>
                                    .bin, written once by the baseline run of
                                    the correctness phase in output_dir), so it
                                    runs THERE, read-only, and is skipped with a

@@ -13,7 +13,7 @@ Idempotent; writes nothing unless every hunk applies.
                                                     the column chosen per member; the new names
   examples/soa_array/soa_array_validation.cpp       Particle: column types, values, compression;
                                                     two storage annotations refused
-  examples/cst2_hash/cst2_hash_validation.cpp       zero_any::Array (was the deprecated ArrayChunk2A)
+  examples/const2_hash/const2_hash_validation.cpp       zero_any::Array (was the deprecated ArrayChunk2A)
   CHANGELOG.md                                      Unreleased Added (cpp26)
 """
 import os
@@ -42,7 +42,7 @@ HUNKS = [
   keeping the array's `Column`; `a[i].m`, `get`, `set`, `column<^^T::m>()`
   follow. Other libraries' annotations are left alone; two storage
   annotations on one member stop the build. `soa_array.h` and
-  `cst2_hash_validation` now name the arrays `zero_any::Array` and so on
+  `const2_hash_validation` now name the arrays `zero_any::Array` and so on
   (they used the deprecated `ArrayChunk2A`: a warning in every reflection
   build).
   `soa_array_validation` checks the column types, the values after parallel
@@ -765,11 +765,11 @@ int main()
     sa::release_chunk_pools();
     sa::destroy_block_chunk();
 '''),
-    ('examples/cst2_hash/cst2_hash_validation.cpp',
+    ('examples/const2_hash/const2_hash_validation.cpp',
      r''' * limitations under the License.
  */
 
-// The second-value registry of ArrayChunk2A (tab_cst_val2_holder.h) on struct
+// The second-value registry of ArrayChunk2A (tab_const_val2_holder.h) on struct
 // element types. Every chunk j of an array is filled with one value f(j), then
 // the array is folded (shrink_to_fit): each chunk compresses to f(j), and the
 // registry should hand out exactly one identifier per DISTINCT value, with its
@@ -777,12 +777,12 @@ int main()
      r''' * limitations under the License.
  */
 
-// The second-value registry of zero_any::Array (tab_cst_val2_holder.h) on struct
+// The second-value registry of zero_any::Array (tab_const_val2_holder.h) on struct
 // element types. Every chunk j of an array is filled with one value f(j), then
 // the array is folded (shrink_to_fit): each chunk compresses to f(j), and the
 // registry should hand out exactly one identifier per DISTINCT value, with its
 '''),
-    ('examples/cst2_hash/cst2_hash_validation.cpp',
+    ('examples/const2_hash/const2_hash_validation.cpp',
      r'''#include <cstring> // std::memset
 #include <utility> // std::as_const
 
@@ -799,7 +799,7 @@ int main()
 #include "chunk/config.h"        // build_config::has_reflection
 #include "chunk/manage_ompt.h"   // parallel_phase
 '''),
-    ('examples/cst2_hash/cst2_hash_validation.cpp',
+    ('examples/const2_hash/const2_hash_validation.cpp',
      r'''{
     int bad = 0;
     {
@@ -820,7 +820,7 @@ int main()
 
         sa::parallel_phase(
 '''),
-    ('examples/cst2_hash/cst2_hash_validation.cpp',
+    ('examples/const2_hash/const2_hash_validation.cpp',
      r'''            }
         }
 
@@ -839,7 +839,7 @@ int main()
                     n_chunks, s.in_use(), exact ? "" : "<= ", expected, s.degraded ? "DEGRADED" : "ok", bad,
                     (ids_ok && !s.degraded && bad == 0) ? "OK" : "FAIL");
 '''),
-    ('examples/cst2_hash/cst2_hash_validation.cpp',
+    ('examples/const2_hash/const2_hash_validation.cpp',
      r'''    int       bad = 0;
     const int k   = 2000; // distinct values: far past the index's probe budget (64)
 
@@ -915,7 +915,7 @@ def core(old, new):
 
 
 SENTINEL = "soa::plain"  # in every file once changed, in none before
-SENTINELS = {"examples/cst2_hash/cst2_hash_validation.cpp": "sa::zero_any::Array<T> a(0);"}
+SENTINELS = {"examples/const2_hash/const2_hash_validation.cpp": "sa::zero_any::Array<T> a(0);"}
 
 
 

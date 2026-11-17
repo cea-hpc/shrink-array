@@ -65,7 +65,7 @@
 #include "chunk/mdspan_tile_ops.h"            // md::update_tiles, md::for_each_tile, md::fill_box
 
 #include "config.h"     // PRAGMA_FORCEINLINE
-#include "Containers.h" // Vect, VectChunk, VectZeroOneValue
+#include "Containers.h" // MatVectorArray, MatZeroArray, MatZeroOneValueArray
 
 namespace multi_mat::md
 {
@@ -158,25 +158,25 @@ struct Part
 
 /// @brief The zero array of a field.
 template <typename T>
-shrink_array::zero::Array<T>& array_of(VectChunk<T>& v) noexcept
+shrink_array::zero::Array<T>& array_of(MatZeroArray<T>& v) noexcept
 {
     return v;
 }
 /// @brief The zero array of a field, read-only.
 template <typename T>
-const shrink_array::zero::Array<T>& array_of(const VectChunk<T>& v) noexcept
+const shrink_array::zero::Array<T>& array_of(const MatZeroArray<T>& v) noexcept
 {
     return v;
 }
 /// @brief The zero_one_value::Chunk array of a presence fraction.
 template <typename T>
-shrink_array::zero_one_value::Array<T>& array_of(VectZeroOneValue<T>& v) noexcept
+shrink_array::zero_one_value::Array<T>& array_of(MatZeroOneValueArray<T>& v) noexcept
 {
     return v;
 }
 /// @brief The zero_one_value::Chunk array of a presence fraction, read-only.
 template <typename T>
-const shrink_array::zero_one_value::Array<T>& array_of(const VectZeroOneValue<T>& v) noexcept
+const shrink_array::zero_one_value::Array<T>& array_of(const MatZeroOneValueArray<T>& v) noexcept
 {
     return v;
 }
@@ -425,7 +425,8 @@ struct LoopsMdTiles
 
                 if (tl[0].uniform && tl[1].uniform && tl[2].uniform && tl[3].uniform)
                 {
-                    red += static_cast<double>((ib - ia) * (jb - ja)) * fn(tl[0].cst, tl[1].cst, tl[2].cst, tl[3].cst);
+                    red += static_cast<double>((ib - ia) * (jb - ja)) *
+                           fn(tl[0].constant, tl[1].constant, tl[2].constant, tl[3].constant);
                     continue;
                 }
                 for (Tile& x : tl)
@@ -458,8 +459,8 @@ struct LoopsMdTiles
     ///        included; for a uniform tile, its constant too.
     struct Tile
     {
-        bool                           uniform = false;
-        double                         cst     = 0;
+        bool                           uniform  = false;
+        double                         constant = 0;
         std::array<double, tile_elems> values{};
     };
 
@@ -474,8 +475,8 @@ struct LoopsMdTiles
             f, k, k + 1, [&t](const auto&, auto blk) { std::copy_n(blk.data_handle(), tile_elems, t.values.data()); },
             [&t](const auto&, double v)
             {
-                t.uniform = true;
-                t.cst     = v;
+                t.uniform  = true;
+                t.constant = v;
             });
     }
 
@@ -484,7 +485,7 @@ struct LoopsMdTiles
     {
         if (t.uniform)
         {
-            std::fill(t.values.begin(), t.values.end(), t.cst);
+            std::fill(t.values.begin(), t.values.end(), t.constant);
         }
     }
 

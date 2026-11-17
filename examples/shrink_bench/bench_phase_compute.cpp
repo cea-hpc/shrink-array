@@ -64,29 +64,29 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                          Int                     iter,
                          Int                     start0,
                          Int                     end0,
-                         const std::vector<Int>& tab_nba1,
-                         const std::vector<Int>& tab_nba2,
+                         const std::vector<Int>& array_nba1,
+                         const std::vector<Int>& array_nba2,
                          double&                 val_sum_out,
                          long&                   long_val_sum_out,
                          double&                 v_real_out,
                          double&                 v_im_out)
 {
     // Short local names for the arrays (see bench_phase_fill.cpp).
-    auto& tab1 = bench_arr.tab1;
-    auto& tab2 = bench_arr.tab2;
-    auto& tab3 = bench_arr.tab3;
-    auto& tab4 = bench_arr.tab4;
-    auto& tab5 = bench_arr.tab5;
+    auto& arr1 = bench_arr.arr1;
+    auto& arr2 = bench_arr.arr2;
+    auto& arr3 = bench_arr.arr3;
+    auto& arr4 = bench_arr.arr4;
+    auto& arr5 = bench_arr.arr5;
 
-    auto& tab_int       = bench_arr.tab_int;
-    auto& tab_bool      = bench_arr.tab_bool;
-    auto& tab_bool_bits = bench_arr.tab_bool_bits;
-    auto& tab_complex   = bench_arr.tab_complex;
-    auto& tab_float     = bench_arr.tab_float;
-    auto& tab_short     = bench_arr.tab_short;
-    auto& tab_char      = bench_arr.tab_char;
-    auto& tab_long      = bench_arr.tab_long;
-    auto& tab_ulong     = bench_arr.tab_ulong;
+    auto& array_int       = bench_arr.array_int;
+    auto& array_bool      = bench_arr.array_bool;
+    auto& array_bool_bits = bench_arr.array_bool_bits;
+    auto& array_complex   = bench_arr.array_complex;
+    auto& array_float     = bench_arr.array_float;
+    auto& array_short     = bench_arr.array_short;
+    auto& array_char      = bench_arr.array_char;
+    auto& array_long      = bench_arr.array_long;
+    auto& array_ulong     = bench_arr.array_ulong;
 
     const Int sz = bench_arr.sz;
 
@@ -116,16 +116,16 @@ void bench_phase_compute(BenchArrays&            bench_arr,
         {
             begin_parallel_phase_g();
 
-            const Int dec = iter % 16;
-            const Int deb = std::max<Int>(start0 - 512, 0);
+            const Int dec   = iter % 16;
+            const Int begin = std::max<Int>(start0 - 512, 0);
 
             // nowait on this loop and the next: they write DISJOINT ranges
-            // ([deb, start0) here, [end0, end0 + 256) below) that nothing in this
+            // ([begin, start0) here, [end0, end0 + 256) below) that nothing in this
             // region reads back, so a thread done with its slice may go on. The
             // three loops after them stay barriered: the [start0, end0) loop
             // writes what the reduction loops then read, and the last one
             // rewrites the tail its own p = 0 pass produced.
-            // tab_complex peeled out of the loop below. std::complex<double> is an
+            // array_complex peeled out of the loop below. std::complex<double> is an
             // interleaved {re, im} pair, so a store over consecutive i needs
             // stride-2 interleaving, which the vectoriser will not build from a
             // value made of two separate libm calls -- and its presence kept the
@@ -138,100 +138,100 @@ void bench_phase_compute(BenchArrays&            bench_arr,
             // calls inside index-selected branches -- "control flow cannot be
             // substituted for a select", the calls may not be speculated.
             team.for_static<Int>(
-                deb, start0,
+                begin, start0,
                 [&](const Int i) __attribute__((always_inline))
                 {
-                    const Int offset = i - deb;
+                    const Int offset = i - begin;
 
                     if (offset < 60 + dec)
                     {
-                        tab_complex[i] = ComplexDouble(std::sin(i + iter), std::cos(i + iter));
+                        array_complex[i] = ComplexDouble(std::sin(i + iter), std::cos(i + iter));
                     }
                     else if (offset < 120 + dec)
                     {
-                        tab_complex[i] = zero_complex;
+                        array_complex[i] = zero_complex;
                     }
                     else if (offset < 240 + dec)
                     {
-                        tab_complex[i] = second_value_c;
+                        array_complex[i] = second_value_c;
                     }
                     else if (offset < 360 + dec)
                     {
-                        tab_complex[i] = zero_complex;
+                        array_complex[i] = zero_complex;
                     }
                     else
                     {
-                        tab_complex[i] = second_value_c;
+                        array_complex[i] = second_value_c;
                     }
                 },
                 bench_par::nowait);
 
             team.for_static<Int>(
-                deb, start0,
+                begin, start0,
                 [&](const Int i) __attribute__((always_inline))
                 {
-                    const Int offset = i - deb;
+                    const Int offset = i - begin;
 
                     if (offset < 60 + dec)
                     {
-                        tab1[i]    = 0;
-                        tab2[i]    = second_value_d;
-                        tab3[i]    = std::tan(i + iter);
-                        tab4[i]    = 0;
-                        tab5[i]    = std::sin(i + iter);
-                        tab_int[i] = 0;
+                        arr1[i]      = 0;
+                        arr2[i]      = second_value_d;
+                        arr3[i]      = std::tan(i + iter);
+                        arr4[i]      = 0;
+                        arr5[i]      = std::sin(i + iter);
+                        array_int[i] = 0;
 
-                        tab_float[offset] = static_cast<float>(std::cos(i - iter));
-                        tab_short[offset] = 0;
-                        tab_char[i]       = 0;
+                        array_float[offset] = static_cast<float>(std::cos(i - iter));
+                        array_short[offset] = 0;
+                        array_char[i]       = 0;
                     }
                     else if (offset < 120 + dec)
                     {
-                        tab1[i]           = second_value_d;
-                        tab2[i]           = 0;
-                        tab3[i]           = 0;
-                        tab4[i]           = second_value_d1;
-                        tab5[i]           = 0;
-                        tab_int[i]        = 1;
-                        tab_float[offset] = 0;
-                        tab_short[offset] = 1;
-                        tab_char[i]       = 0;
+                        arr1[i]             = second_value_d;
+                        arr2[i]             = 0;
+                        arr3[i]             = 0;
+                        arr4[i]             = second_value_d1;
+                        arr5[i]             = 0;
+                        array_int[i]        = 1;
+                        array_float[offset] = 0;
+                        array_short[offset] = 1;
+                        array_char[i]       = 0;
                     }
                     else if (offset < 240 + dec)
                     {
-                        tab1[i]           = 0;
-                        tab2[i]           = std::sin(i + iter);
-                        tab3[i]           = second_value_d;
-                        tab4[i]           = 0;
-                        tab5[i]           = second_value_d2;
-                        tab_int[i]        = static_cast<int>(offset);
-                        tab_float[offset] = second_value_f0;
-                        tab_short[offset] = second_value_s0;
-                        tab_char[i]       = second_value_c0;
+                        arr1[i]             = 0;
+                        arr2[i]             = std::sin(i + iter);
+                        arr3[i]             = second_value_d;
+                        arr4[i]             = 0;
+                        arr5[i]             = second_value_d2;
+                        array_int[i]        = static_cast<int>(offset);
+                        array_float[offset] = second_value_f0;
+                        array_short[offset] = second_value_s0;
+                        array_char[i]       = second_value_c0;
                     }
                     else if (offset < 360 + dec)
                     {
-                        tab1[i]           = std::cos(i + iter);
-                        tab2[i]           = 0;
-                        tab3[i]           = 0;
-                        tab4[i]           = 0;
-                        tab5[i]           = 0;
-                        tab_int[i]        = static_cast<int>(offset + 1);
-                        tab_float[offset] = 0;
-                        tab_short[offset] = 0;
-                        tab_char[i]       = 0;
+                        arr1[i]             = std::cos(i + iter);
+                        arr2[i]             = 0;
+                        arr3[i]             = 0;
+                        arr4[i]             = 0;
+                        arr5[i]             = 0;
+                        array_int[i]        = static_cast<int>(offset + 1);
+                        array_float[offset] = 0;
+                        array_short[offset] = 0;
+                        array_char[i]       = 0;
                     }
                     else
                     {
-                        tab1[i]           = 0;
-                        tab2[i]           = second_value_d;
-                        tab3[i]           = second_value_d;
-                        tab4[i]           = second_value_d1;
-                        tab5[i]           = second_value_d2;
-                        tab_float[offset] = second_value_f1;
-                        tab_short[offset] = second_value_s2;
-                        tab_char[i]       = 0;
-                        tab_int[i]        = 0;
+                        arr1[i]             = 0;
+                        arr2[i]             = second_value_d;
+                        arr3[i]             = second_value_d;
+                        arr4[i]             = second_value_d1;
+                        arr5[i]             = second_value_d2;
+                        array_float[offset] = second_value_f1;
+                        array_short[offset] = second_value_s2;
+                        array_char[i]       = 0;
+                        array_int[i]        = 0;
                     }
                 },
                 bench_par::nowait);
@@ -250,31 +250,31 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                 {
                     if (i % 3 == 0)
                     {
-                        tab1[i] = second_value_d;
-                        tab2[i] = std::sin(i + iter);
-                        tab3[i] = 0;
-                        tab4[i] = second_value_d1;
-                        tab5[i] = std::cos(i - iter);
+                        arr1[i] = second_value_d;
+                        arr2[i] = std::sin(i + iter);
+                        arr3[i] = 0;
+                        arr4[i] = second_value_d1;
+                        arr5[i] = std::cos(i - iter);
 
-                        tab_complex[i] = zero_complex;
-                        tab_int[i]     = 0;
+                        array_complex[i] = zero_complex;
+                        array_int[i]     = 0;
 
-                        tab_float[i] = static_cast<float>(std::tan(i));
-                        tab_short[i] = 0;
-                        tab_char[i]  = static_cast<unsigned char>(interpolation(i, sz, 128));
+                        array_float[i] = static_cast<float>(std::tan(i));
+                        array_short[i] = 0;
+                        array_char[i]  = static_cast<unsigned char>(interpolation(i, sz, 128));
                     }
                     else
                     {
-                        tab1[i]        = 0;
-                        tab2[i]        = 0;
-                        tab3[i]        = std::sin(i + iter);
-                        tab4[i]        = 0;
-                        tab5[i]        = std::cos(i + (2 * iter));
-                        tab_complex[i] = ComplexDouble(std::tan(i + (2 * iter)), std::cos(i - iter));
-                        tab_int[i]     = static_cast<int>(i - iter);
-                        tab_float[i]   = 0;
-                        tab_short[i]   = static_cast<short>(interpolation(i, sz, std::numeric_limits<short>::max()));
-                        tab_char[i]    = 0;
+                        arr1[i]          = 0;
+                        arr2[i]          = 0;
+                        arr3[i]          = std::sin(i + iter);
+                        arr4[i]          = 0;
+                        arr5[i]          = std::cos(i + (2 * iter));
+                        array_complex[i] = ComplexDouble(std::tan(i + (2 * iter)), std::cos(i - iter));
+                        array_int[i]     = static_cast<int>(i - iter);
+                        array_float[i]   = 0;
+                        array_short[i]   = static_cast<short>(interpolation(i, sz, std::numeric_limits<short>::max()));
+                        array_char[i]    = 0;
                     }
                 },
                 bench_par::nowait);
@@ -303,43 +303,44 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                         {
                             return;
                         }
-                        tab1[i] = std::sqrt(double(i));
+                        arr1[i] = std::sqrt(double(i));
 
-                        tab_float[i] += 1;
+                        array_float[i] += 1;
 
-                        tab_complex[i] = ComplexDouble(std::sqrt(double(i + 1)), std::sqrt(double(i - 1)));
+                        array_complex[i] = ComplexDouble(std::sqrt(double(i + 1)), std::sqrt(double(i - 1)));
 
-                        if (i > tab_nba1[iter])
+                        if (i > array_nba1[iter])
                         {
-                            tab2[i]     = std::cos(double(2 * i));
-                            tab_char[i] = static_cast<unsigned char>(
+                            arr2[i]       = std::cos(double(2 * i));
+                            array_char[i] = static_cast<unsigned char>(
                                 exponential_correlation(i, sz, std::numeric_limits<char>::max(), 2));
-                            tab_short[i] = static_cast<short>(
+                            array_short[i] = static_cast<short>(
                                 exponential_correlation(i, sz, std::numeric_limits<short>::max(), 2));
                         }
 
-                        if (i > tab_nba2[iter])
+                        if (i > array_nba2[iter])
                         {
-                            tab3[i] = std::sin(tab1[i] + tab2[i]);
-                            tab4[i] *= tab5[i] + 1;
-                            tab_bool[i]      = true;
-                            tab_bool_bits[i] = true;
-                            tab_int[i]       = static_cast<int>(i + 1);
+                            arr3[i] = std::sin(arr1[i] + arr2[i]);
+                            arr4[i] *= arr5[i] + 1;
+                            array_bool[i]      = true;
+                            array_bool_bits[i] = true;
+                            array_int[i]       = static_cast<int>(i + 1);
 
-                            tab_int[i] = static_cast<int>(std::floor(log10(static_cast<double>(tab_int[i]))));
-                            tab_int[i] *= tab_int[i]; // Before the previous line if i bigger than sqrt(soit 2^31 − 1)
+                            array_int[i] = static_cast<int>(std::floor(log10(static_cast<double>(array_int[i]))));
+                            array_int[i] *=
+                                array_int[i]; // Before the previous line if i bigger than sqrt(soit 2^31 − 1)
                             // (46340) --> overflow
 
-                            tab_int[i]--;
-                            tab_int[i] = -tab_int[i];
+                            array_int[i]--;
+                            array_int[i] = -array_int[i];
 
-                            ++tab_int[i];
-                            tab_int[i] = std::abs(tab_int[i]);
+                            ++array_int[i];
+                            array_int[i] = std::abs(array_int[i]);
 
-                            tab_long[i] = static_cast<long>(i);
-                            tab_long[i] += 1L;
-                            tab_long[i] *= 2L;
-                            --tab_long[i];
+                            array_long[i] = static_cast<long>(i);
+                            array_long[i] += 1L;
+                            array_long[i] *= 2L;
+                            --array_long[i];
 
                             // Bounded to CHUNK_BENCH_ULONG_BANDS distinct values. The
                             // band arithmetic below maps each 256-index band to one
@@ -352,25 +353,25 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                             // a band still maps to one value -- and stops the bench
                             // from manufacturing the very registry pressure it was
                             // then blamed for. 0 restores the unbounded behaviour.
-                            tab_ulong[i] = static_cast<unsigned long>(i) & bench_ulong_mask;
-                            tab_ulong[i] |= 0xFFUL;
-                            tab_ulong[i] &= ~0x0FUL;
+                            array_ulong[i] = static_cast<unsigned long>(i) & bench_ulong_mask;
+                            array_ulong[i] |= 0xFFUL;
+                            array_ulong[i] &= ~0x0FUL;
 
-                            tab_float[i] -= 1.5f;
-                            tab_char[i] =
+                            array_float[i] -= 1.5f;
+                            array_char[i] =
                                 static_cast<unsigned char>(linear_correlation(i, sz, std::numeric_limits<char>::max()));
-                            tab_short[i] =
+                            array_short[i] =
                                 static_cast<short>(linear_correlation(i, sz, std::numeric_limits<short>::max()));
-                            tab_complex[i] = ComplexDouble(tab1[i], tab2[i]);
+                            array_complex[i] = ComplexDouble(arr1[i], arr2[i]);
 
-                            tab_complex[i] = 3. * tab_complex[i];
-                            tab_complex[i] = tab_complex[i] + ComplexDouble(1., 3.);
-                            tab_complex[i] *= 2.;
-                            tab_complex[i] = ComplexDouble(2., 3.) * tab_complex[i];
-                            tab_complex[i] = 2. / tab_complex[i];
-                            tab_complex[i] = 2. - tab_complex[i];
-                            tab_complex[i] = tab_complex[i] - ComplexDouble(4., 3.);
-                            tab_complex[i] = -tab_complex[i];
+                            array_complex[i] = 3. * array_complex[i];
+                            array_complex[i] = array_complex[i] + ComplexDouble(1., 3.);
+                            array_complex[i] *= 2.;
+                            array_complex[i] = ComplexDouble(2., 3.) * array_complex[i];
+                            array_complex[i] = 2. / array_complex[i];
+                            array_complex[i] = 2. - array_complex[i];
+                            array_complex[i] = array_complex[i] - ComplexDouble(4., 3.);
+                            array_complex[i] = -array_complex[i];
                         }
                     },
                     bench_par::nowait);
@@ -385,25 +386,25 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                         {
                             return;
                         }
-                        tab_int[i]       = second_value_i;
-                        tab_bool[i]      = second_value_b;
-                        tab_bool_bits[i] = second_value_b;
+                        array_int[i]       = second_value_i;
+                        array_bool[i]      = second_value_b;
+                        array_bool_bits[i] = second_value_b;
 
-                        tab2[i] = .5;
-                        tab3[i] = 2;
-                        tab1[i] = tab2[i] * tab3[i];
-                        tab2[i] = second_value_d;
-                        tab3[i] = second_value_d;
+                        arr2[i] = .5;
+                        arr3[i] = 2;
+                        arr1[i] = arr2[i] * arr3[i];
+                        arr2[i] = second_value_d;
+                        arr3[i] = second_value_d;
 
-                        tab4[i] = second_value_d1;
-                        tab5[i] = second_value_d2;
-                        tab1[i] *= second_value_d;
+                        arr4[i] = second_value_d1;
+                        arr5[i] = second_value_d2;
+                        arr1[i] *= second_value_d;
 
-                        tab_float[i] = second_value_f1;
-                        tab_char[i]  = second_value_c1;
-                        tab_short[i] = second_value_s1;
+                        array_float[i] = second_value_f1;
+                        array_char[i]  = second_value_c1;
+                        array_short[i] = second_value_s1;
 
-                        tab_complex[i] = second_value_c;
+                        array_complex[i] = second_value_c;
                     },
                     bench_par::nowait);
             }
@@ -457,14 +458,14 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                         BENCH_OMP_SIMD_RED(p_val_sum, p_long_val_sum, p_v_real, p_v_im)
                         for (Int i = lo; i < hi; ++i)
                         {
-                            const double t1 = tab1[i];
-                            const double t2 = tab2[i];
-                            const double t3 = tab3[i];
-                            const double t5 = tab5[i];
+                            const double t1 = arr1[i];
+                            const double t2 = arr2[i];
+                            const double t3 = arr3[i];
+                            const double t5 = arr5[i];
 
-                            const ComplexDouble valc = tab_complex[i];
-                            const bool          flag = tab_bool[i];
-                            const Int           ti   = tab_int[i];
+                            const ComplexDouble valc = array_complex[i];
+                            const bool          flag = array_bool[i];
+                            const Int           ti   = array_int[i];
 
                             const double common = std::cos(t1) + std::sin(t2) + std::atan(t3) + std::cos(val);
                             const double arm    = flag ? (std::cos(t1) + std::sin(t2) + std::atan(t3) + std::cos(val)) -
@@ -473,8 +474,8 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                                                              (std::sin(t3) + std::atan(t5));
 
                             p_val_sum += common + arm;
-                            p_v_real += std::cos(valc.real()) - tab_float[i];
-                            p_v_im += std::sin(valc.imag()) - tab_short[i] - tab_char[i];
+                            p_v_real += std::cos(valc.real()) - array_float[i];
+                            p_v_im += std::sin(valc.imag()) - array_short[i] - array_char[i];
                             p_long_val_sum += ti > 0 ? static_cast<long>(ti) : 0L;
                         }
                     },
@@ -487,7 +488,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
 
             // No barrier before the last loop, and none between its two passes:
             // same iteration space, same static schedule, so its p = 1 pass reads
-            // back the tail its own p = 0 pass wrote, and the tab_bool / tab_int it
+            // back the tail its own p = 0 pass wrote, and the array_bool / array_int it
             // sets are read by the reductions above on the same slice. The whole
             // region is now barrier-free: every thread works its own slice from
             // the first loop to the last, and the deferred writes it leaves behind
@@ -504,134 +505,134 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                         {
                             return;
                         }
-                        val_sum_part += std::cos(tab1[i]) + std::sin(tab2[i]) + std::atan(tab3[i]) + std::cos(val);
-                        val_sum_part += std::sin(tab4[i]) * std::cos(tab5[i]);
-                        val_sum_part -= tab_float[i] + tab_short[i] - tab_char[i];
+                        val_sum_part += std::cos(arr1[i]) + std::sin(arr2[i]) + std::atan(arr3[i]) + std::cos(val);
+                        val_sum_part += std::sin(arr4[i]) * std::cos(arr5[i]);
+                        val_sum_part -= array_float[i] + array_short[i] - array_char[i];
                         if (i > end0 - interval10)
                         {
-                            tab1[i] = (tab2[i] * tab3[i] * std::sin(tab1[i])) + std::cos(val);
-                            tab1[i] += tab2[i] - std::exp(std::fmod(static_cast<double>(tab3[i]), 700.0));
-                            tab1[i] -= tab3[i] + std::tan(tab2[i]);
-                            tab1[i] += 1;
-                            --tab2[i];
-                            tab2[i] = -tab2[i];
-                            tab2[i]++;
-                            tab2[i] *= tab3[i];
-                            tab2[i] /= tab1[i];
-                            ++tab4[i];
-                            tab5[i] *= 2;
-                            tab_float[i] /= 1.01f;
-                            tab_float[i] -= .5f;
+                            arr1[i] = (arr2[i] * arr3[i] * std::sin(arr1[i])) + std::cos(val);
+                            arr1[i] += arr2[i] - std::exp(std::fmod(static_cast<double>(arr3[i]), 700.0));
+                            arr1[i] -= arr3[i] + std::tan(arr2[i]);
+                            arr1[i] += 1;
+                            --arr2[i];
+                            arr2[i] = -arr2[i];
+                            arr2[i]++;
+                            arr2[i] *= arr3[i];
+                            arr2[i] /= arr1[i];
+                            ++arr4[i];
+                            arr5[i] *= 2;
+                            array_float[i] /= 1.01f;
+                            array_float[i] -= .5f;
 
-                            tab_complex[i] /= ComplexDouble(2, 3);
-                            tab_complex[i] -= tab1[i];
-                            tab_complex[i] *= tab1[i];
+                            array_complex[i] /= ComplexDouble(2, 3);
+                            array_complex[i] -= arr1[i];
+                            array_complex[i] *= arr1[i];
 
-                            tab_complex[i] = ComplexDouble(3., 2.) * tab1[i] + tab2[i] / ComplexDouble(2., 2.);
-                            tab_complex[i] = tab1[i] - ComplexDouble(1., 2.) + tab3[i] + ComplexDouble(3., 1.);
+                            array_complex[i] = ComplexDouble(3., 2.) * arr1[i] + arr2[i] / ComplexDouble(2., 2.);
+                            array_complex[i] = arr1[i] - ComplexDouble(1., 2.) + arr3[i] + ComplexDouble(3., 1.);
 
-                            tab_complex[i] *= tab1[i];
+                            array_complex[i] *= arr1[i];
 
                             // --- bound accumulators to keep the stress workload
                             // numerically finite (values are a checksum; exact
                             // magnitude irrelevant). Prevents FE_OVERFLOW traps on
                             // the benign divergence of exp / repeated *=. Memory
                             // and rechunk behaviour are unchanged (same writes).
-                            tab1[i] = std::fmod(static_cast<double>(tab1[i]), 1e6);
-                            tab2[i] = std::fmod(static_cast<double>(tab2[i]), 1e6);
-                            tab3[i] = std::fmod(static_cast<double>(tab3[i]), 1e6);
-                            tab5[i] = std::fmod(static_cast<double>(tab5[i]), 1e6);
+                            arr1[i] = std::fmod(static_cast<double>(arr1[i]), 1e6);
+                            arr2[i] = std::fmod(static_cast<double>(arr2[i]), 1e6);
+                            arr3[i] = std::fmod(static_cast<double>(arr3[i]), 1e6);
+                            arr5[i] = std::fmod(static_cast<double>(arr5[i]), 1e6);
                             {
-                                const ComplexDouble cb = tab_complex[i];
-                                tab_complex[i] = ComplexDouble(std::fmod(cb.real(), 1e6), std::fmod(cb.imag(), 1e6));
+                                const ComplexDouble cb = array_complex[i];
+                                array_complex[i] = ComplexDouble(std::fmod(cb.real(), 1e6), std::fmod(cb.imag(), 1e6));
                             }
 
-                            if (tab2[i] >= 0)
+                            if (arr2[i] >= 0)
                             {
-                                neutral_sqrt_assign(tab2, i, static_cast<double>(tab2[i]));
+                                neutral_sqrt_assign(arr2, i, static_cast<double>(arr2[i]));
                             }
-                            tab_bool[i]      = true;
-                            tab_bool_bits[i] = true;
-                            tab_int[i]       = static_cast<int>(i);
+                            array_bool[i]      = true;
+                            array_bool_bits[i] = true;
+                            array_int[i]       = static_cast<int>(i);
                         }
 
                         if (i > beg_loc && i < end_loc)
                         {
-                            tab2[i] = 0;
-                            tab3[i] = 1;
+                            arr2[i] = 0;
+                            arr3[i] = 1;
 
-                            tab4[i] = 0;
-                            tab5[i] = 1;
+                            arr4[i] = 0;
+                            arr5[i] = 1;
 
-                            tab_int[i] = static_cast<int>(i & 0xF);
-                            tab_int[i] |= 0x1;
-                            tab_int[i] ^= 0x3;
-                            tab_int[i] <<= 2;
-                            tab_int[i] >>= 1;
-                            tab_int[i] = (tab_int[i] & 0xF) | 0x2;
-                            tab_int[i] %= 5; // same value as tab_int[i] % 5: the only %= of the bench
-                            tab_int[i] = ~tab_int[i];
-                            tab_int[i] = 1;
+                            array_int[i] = static_cast<int>(i & 0xF);
+                            array_int[i] |= 0x1;
+                            array_int[i] ^= 0x3;
+                            array_int[i] <<= 2;
+                            array_int[i] >>= 1;
+                            array_int[i] = (array_int[i] & 0xF) | 0x2;
+                            array_int[i] %= 5; // same value as array_int[i] % 5: the only %= of the bench
+                            array_int[i] = ~array_int[i];
+                            array_int[i] = 1;
 
                             if (i > beg_loc0)
                             {
-                                tab_int[i] = (tab_bool[i] ? 1 : 0);
+                                array_int[i] = (array_bool[i] ? 1 : 0);
 
-                                tab_float[i] = tab_int[i] + 0.5f;
+                                array_float[i] = array_int[i] + 0.5f;
 
-                                tab_int[i] = static_cast<int>(tab_float[i] * 2);
+                                array_int[i] = static_cast<int>(array_float[i] * 2);
 
-                                if (tab_int[i] == 0)
+                                if (array_int[i] == 0)
                                 {
-                                    tab_bool[i]      = true;
-                                    tab_bool_bits[i] = true;
+                                    array_bool[i]      = true;
+                                    array_bool_bits[i] = true;
                                 }
-                                if (tab_int[i] != 1)
+                                if (array_int[i] != 1)
                                 {
-                                    tab_bool[i]      = true;
-                                    tab_bool_bits[i] = true;
+                                    array_bool[i]      = true;
+                                    array_bool_bits[i] = true;
                                 }
-                                if (tab_int[i] < 10)
+                                if (array_int[i] < 10)
                                 {
-                                    tab_bool[i]      = true;
-                                    tab_bool_bits[i] = true;
+                                    array_bool[i]      = true;
+                                    array_bool_bits[i] = true;
                                 }
-                                if (tab_int[i] <= 100)
+                                if (array_int[i] <= 100)
                                 {
-                                    tab_bool[i]      = true;
-                                    tab_bool_bits[i] = true;
+                                    array_bool[i]      = true;
+                                    array_bool_bits[i] = true;
                                 }
 
-                                const bool flag = tab_bool[i];
+                                const bool flag = array_bool[i];
                                 if (!flag)
                                 {
-                                    tab_int[i]++;
+                                    array_int[i]++;
                                 }
-                                if (tab_bool[i] && tab_int[i] > 0)
+                                if (array_bool[i] && array_int[i] > 0)
                                 {
-                                    --tab_int[i];
+                                    --array_int[i];
                                 }
-                                if (tab_bool[i] || tab_int[i] < 0)
+                                if (array_bool[i] || array_int[i] < 0)
                                 {
-                                    tab_int[i]--;
+                                    array_int[i]--;
                                 }
 
-                                tab_float[i] = -tab_float[i];
-                                tab_int[i]   = tab_int[i] + 1;
-                                tab_float[i] = tab_float[i] - 0.5f;
-                                tab_int[i]   = tab_int[i] * 2;
-                                tab_int[i]   = tab_int[i] / 3;
-                                tab_int[i]   = tab_bool[i] ? (tab_float[i] > 0 ? 1 : 2) : 0;
-                                tab_float[i] = tab_int[i] + 0.5f;
-                                tab_int[i]   = static_cast<int>(tab_float[i] * tab1[i]);
+                                array_float[i] = -array_float[i];
+                                array_int[i]   = array_int[i] + 1;
+                                array_float[i] = array_float[i] - 0.5f;
+                                array_int[i]   = array_int[i] * 2;
+                                array_int[i]   = array_int[i] / 3;
+                                array_int[i]   = array_bool[i] ? (array_float[i] > 0 ? 1 : 2) : 0;
+                                array_float[i] = array_int[i] + 0.5f;
+                                array_int[i]   = static_cast<int>(array_float[i] * arr1[i]);
                             }
                             else
                             {
-                                tab_complex[i] = zero_complex;
+                                array_complex[i] = zero_complex;
 
-                                tab_float[i] = 0;
-                                tab_char[i]  = 0;
-                                tab_short[i] = 0;
+                                array_float[i] = 0;
+                                array_char[i]  = 0;
+                                array_short[i] = 0;
                             }
                         }
                     });

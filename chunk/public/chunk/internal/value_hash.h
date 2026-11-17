@@ -20,7 +20,7 @@
  * @file value_hash.h
  * @brief value_hash<T>(v): a hash of a whole element value, consistent with
  *        operator== where the type lets us -- the second-value index of
- *        zero_any (tab_cst_val2_holder.h).
+ *        zero_any (array_const_val2_holder.h).
  *
  * @details - A scalar of at most 8 bytes: a 64-bit finaliser over its bits
  *            (the former index_hash formula), a floating zero normalised so

@@ -89,7 +89,7 @@ option(CHUNK_FORCE_LEDGER "Keep the pool ledger active under OpenMP (off by defa
 #
 # It is safe by construction rather than by care: only a sweep advises, on the
 # VALUE family, on a set the caller knows abandoned (a re-chunk's old geometry,
-# a teardown). Its free list lives in the heap-allocated tab_firstFree and its
+# a teardown). Its free list lives in the heap-allocated array_firstFree and its
 # metadata in the slab header object -- both outside the pages being dropped --
 # and it makes no promise about element contents (callers initialise what they
 # get), so the zero pages MADV_DONTNEED brings back are as good as any. The
@@ -121,12 +121,12 @@ option(FAST_ALLOC_CHECK_LISTS "Debug builds: check every slab list in full on ea
 # 4 bytes per chunk instead of 8 or 16, -3.8% RSS on the 50 M-chunk reference
 # run, for one more dependent load on every write of a materialised chunk --
 # +3% CPU on the perf bench. Off by default; see SecondValueTraits in
-# chunk/internal/tab_cst_val2_holder.h.
+# chunk/internal/array_const_val2_holder.h.
 option(CHUNK_SECOND_VALUE_INDEXED "zero_any: store second values as 4-byte identifiers (less memory, +3% write CPU)" OFF)
 # CHECK_OPTIM (option above) turns build_config::any_check on in a release
 # build (chunk/build_options.h).
 
-# CHUNK_MM_PROTECT: zero/zero_one_value's shared constant buffers (cst_val1, the cst_val2
+# CHUNK_MM_PROTECT: zero/zero_one_value's shared constant buffers (const_val1, the const_val2
 # region) are mprotect'ed read-only, so a stray write into a compressed chunk
 # faults at the culprit instead of corrupting a value shared by thousands of
 # chunks. A debugging build: one mprotect per buffer, and page-rounded slots.

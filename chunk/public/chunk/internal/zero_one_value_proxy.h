@@ -34,7 +34,7 @@
 #include "chunk/internal/zero_one_value_candidate_list_check.h" // zero_one_value_missing_candidate_list
 #include "chunk/internal/proxy_base.h"                          // ProxyBase
 #include "chunk/internal/second_value_proxy_base.h"             // SecondValueProxyBase
-#include "chunk/internal/chunk_stats.h" // increm_chunk_write<> in the bodies (a dependent call the include tools cannot attribute)
+#include "chunk/internal/chunk_stats.h" // inc_chunk_write<> in the bodies (a dependent call the include tools cannot attribute)
 #include "chunk/internal/immortal.h"          // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/second_value_info.h" // SecondValueInfo (InfArrayT)
 
@@ -58,8 +58,8 @@ namespace zero_one_value
 {
 
 template <typename T, typename Derived>
-// second_value_ and ind_ have default initialisers although each is written before its first
-// read -- both by set_info_on_chunk() and set_info_second_value_ind(...), second_value_ alone
+// second_value_ and idx_ have default initialisers although each is written before its first
+// read -- both by set_info_on_chunk() and set_info_second_value_idx(...), second_value_ alone
 // by set_second_value() -- from the array's record (the armed mirror, else load_inf_array()):
 // the proxy is copied out of ArrayChunkBase::element_proxy() before that, and copying an
 // indeterminate value is undefined (GCC 16: -Wmaybe-uninitialized at ElementRef's constructor).
@@ -75,27 +75,27 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
 
     /**
      * @brief Initialize second_value and index without full metadata load
-     * @details Lighter-weight alternative to set_info_on_chunk() when tab/chunk info
+     * @details Lighter-weight alternative to set_info_on_chunk() when array/chunk info
      *          is not immediately needed.
-     * @post second_value and ind are valid; array_id unchanged
+     * @post second_value and idx are valid; array_id unchanged
      */
 
-    void set_info_second_value_ind(this Derived& self);
+    void set_info_second_value_idx(this Derived& self);
 
     /**
-     * @brief Like set_info_second_value_ind(), for an explicit array key instead of
+     * @brief Like set_info_second_value_idx(), for an explicit array key instead of
      *        ptr_on_array (e.g. rechunk's tmp).
      * @param key Array pointer to resolve metadata for.
-     * @post second_value and ind are valid; array_id unchanged.
+     * @post second_value and idx are valid; array_id unchanged.
      */
-    void set_info_second_value_ind_from_key(ArrayKey<Chunk<T>> key);
+    void set_info_second_value_idx_from_key(ArrayKey<Chunk<T>> key);
 
     /**
      * @brief Load all compression metadata from global map
-     * @details Retrieves (second_value, ind, array_id) record from array_registry
+     * @details Retrieves (second_value, idx, array_id) record from array_registry
      *          using ptr_on_array as key. Also initializes compression flag pointer.
      * @pre ptr_on_array must point to valid array
-     * @post second_value, ind, array_id, and ptr_is_inside_chunk_list_to_compress_ are valid
+     * @post second_value, idx, array_id, and ptr_is_inside_chunk_list_to_compress_ are valid
      * @note For bool specialization, this is a no-op as metadata is fixed
      */
 
@@ -103,7 +103,7 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
 
     /**
      * @brief The cached second_value field, as set by set_info_on_chunk() /
-     *        set_info_second_value_ind().
+     *        set_info_second_value_idx().
      * @return The second constant value.
      */
     [[nodiscard]] T get_second_value() const noexcept
@@ -112,7 +112,7 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
     }
 
     /**
-     * @brief The cached (second_value, ind, array_id) metadata tuple.
+     * @brief The cached (second_value, idx, array_id) metadata tuple.
      * @return Reference to inf_array.
      */
     const InfArrayT& get_inf_array() const noexcept
@@ -144,7 +144,7 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
     /**
      * @brief This array's array_id, for the per-write refresh (zero_one_value::Proxy::set_array_id()):
      *        from the armed mirror when there is one, from inf_array otherwise.
-     * @details Not read back from inf_array when armed: set_info_second_value_ind()
+     * @details Not read back from inf_array when armed: set_info_second_value_idx()
      *          has just copied the 16-byte record there with one q-register store,
      *          and a narrower load of it cannot be forwarded on AArch64 (Neoverse)
      *          -- the write then waits for the store to reach the cache. Same
@@ -180,17 +180,17 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
      *          identifies which slot this chunk uses.
      */
 
-    int ind_ = 0;
+    int idx_ = 0;
 
     /**
      * @brief Cached compression metadata tuple
-     * @details Contains (second_value, ind, array_id) to avoid repeated lookups.
+     * @details Contains (second_value, idx, array_id) to avoid repeated lookups.
      *          Populated by load_inf_array().
      */
     InfArrayT inf_array_; ///< Compression metadata associated with this proxy.
 
   private:
-    /// @brief The (second_value, ind, array_id) record: from the armed mirror when
+    /// @brief The (second_value, idx, array_id) record: from the armed mirror when
     ///        there is one, from the registry otherwise. Under any_check the
     ///        two are compared (model: zero_any::Proxy::set_array_id).
     [[nodiscard]] InfArrayT load_inf_array(this const Derived& self);
@@ -226,30 +226,30 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
     }
 
     /// @brief Bool specialization of set_info_on_chunk(). See
-    ///        set_info_second_value_ind() below for why this is NOT a no-op.
+    ///        set_info_second_value_idx() below for why this is NOT a no-op.
     void set_info_on_chunk(this Derived& self);
 
-    // Must NOT be a no-op: bool's second_value (true) and ind (0) are fixed, but array_id is
+    // Must NOT be a no-op: bool's second_value (true) and idx (0) are fixed, but array_id is
     // per array. With a second bool array (rechunk's tmp) a default array_id 0 indexes the wrong
     // compression flag array (heap overflow) and queues candidates rechunk_drop_candidates(tmp)
     // cannot remove. Only array_id is consumed.
     /**
      * @brief Resolve this proxy's real per-array array_id from the global
-     *        metadata map (second_value/ind stay their constexpr values).
+     *        metadata map (second_value/idx stay their constexpr values).
      * @post inf_array's array_id is valid for this proxy's own array.
      */
-    void set_info_second_value_ind(this Derived& self)
+    void set_info_second_value_idx(this Derived& self)
     {
         static_cast<ProxySpec&>(self).inf_array_ = self.load_inf_array();
     }
 
     /**
-     * @brief Like set_info_second_value_ind(), but resolves array_id for an
+     * @brief Like set_info_second_value_idx(), but resolves array_id for an
      *        explicitly given array pointer rather than this proxy's own
      *        ptr_on_array.
      * @param key Array pointer to resolve array_id for.
      */
-    void set_info_second_value_ind_from_key(this Derived& self, ArrayKey<Chunk<T>> key)
+    void set_info_second_value_idx_from_key(this Derived& self, ArrayKey<Chunk<T>> key)
     {
         static_cast<ProxySpec&>(self).inf_array_ = self.get_info_second_value(key);
     }
@@ -270,7 +270,7 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
     /**
      * @brief This array's array_id, for the per-write refresh (zero_one_value::Proxy::set_array_id()):
      *        from the armed mirror when there is one, from inf_array otherwise.
-     * @details Not read back from inf_array when armed: set_info_second_value_ind()
+     * @details Not read back from inf_array when armed: set_info_second_value_idx()
      *          has just copied the 16-byte record there with one q-register store,
      *          and a narrower load of it cannot be forwarded on AArch64 (Neoverse)
      *          -- the write then waits for the store to reach the cache. Same
@@ -295,12 +295,12 @@ class ProxySpec<T, Derived> : public SecondValueProxyBase<Derived, T, Chunk<T>>
 
     /**
      * @brief Cached compression metadata tuple
-     * @details Contains (second_value, ind, array_id) to avoid repeated lookups.
+     * @details Contains (second_value, idx, array_id) to avoid repeated lookups.
      *          Populated by load_inf_array().
      */
     InfArrayT inf_array_; ///< Compression metadata associated with this proxy.
 
-    /// @brief The (second_value, ind, array_id) record: from the armed mirror when
+    /// @brief The (second_value, idx, array_id) record: from the armed mirror when
     ///        there is one, from the registry otherwise. Under any_check the
     ///        two are compared (model: zero_any::Proxy::set_array_id).
     [[nodiscard]] InfArrayT load_inf_array(this const Derived& self);
@@ -324,11 +324,11 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
     using SecondValueBase = SecondValueProxyBase<Derived, T, Chunk<T>>;
     using Base            = ProxyBase<Derived, T, Chunk<T>>;
 
+    using Base::array_is_inside_chunk_list_to_compress;
     using Base::chunk_;
-    using Base::num_;
+    using Base::elem_offset_;
     using Base::read_values;
     using Base::read_values_async;
-    using Base::tab_is_inside_chunk_list_to_compress;
     using Base::values_;
     using ProxySpec<T, Derived>::inf_array_;
 
@@ -433,7 +433,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
     /**
      * @brief Get the compression candidate list for a specific thread
      * @param thr Thread rank [0, MAX_THREADS)
-     * @return Reference to vector of (chunk*, chunk_idx, tab_idx) tuples
+     * @return Reference to vector of (chunk*, chunk_idx, array_idx) tuples
      * @details Uses second_value as key to index into per-thread compression maps.
      *          This allows grouping chunks with the same second_value for batch compression.
      */
@@ -444,7 +444,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
      * @brief Async-context counterpart of get_vec_tuple_to_compress_potentially_thr().
      * @param ctx Async write context (supplies the second_value key).
      * @param thr Thread rank [0, MAX_THREADS).
-     * @return Reference to vector of (chunk*, chunk_idx, tab_idx) tuples.
+     * @return Reference to vector of (chunk*, chunk_idx, array_idx) tuples.
      */
     VectorTuple4ChunkInt2<Chunk, T>& get_vec_tuple_to_compress_potentially_async_thr(auto* ctx, int thr) const;
 
@@ -473,14 +473,14 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
     }
 
     // ------------------------------------------------------------------
-    // Compression-tracking surface: needs the per-tab tracking arrays, which exist only in
+    // Compression-tracking surface: needs the per-array tracking arrays, which exist only in
     // this mode. Same shape as ProxyBaseFastCompPolicy in proxy_base.h.
     // ------------------------------------------------------------------
 
     /**
      * @brief No-op, called at array teardown. The slot's buffer is released when
-     *        resize_tab_is_int() reassigns this array_id; a slot never reused keeps it until exit.
-     * @param array_id Tab index being torn down.
+     *        resize_array_is_int() reassigns this array_id; a slot never reused keeps it until exit.
+     * @param array_id Array index being torn down.
      */
     static void clear_is_int([[maybe_unused]] int array_id)
     {
@@ -489,28 +489,28 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
     }
 
     /**
-     * @brief Get the compression tracking array for a tab
-     * @param array_id Tab index
+     * @brief Get the compression tracking array for a array
+     * @param array_id Array index
      * @return Reference to the atomic char array
-     * @pre array_id must be < tab_is_inside_chunk_list_to_compress.size()
+     * @pre array_id must be < array_is_inside_chunk_list_to_compress.size()
      */
 
-    static ChunkFlagRowT& get_tab_is_inside_list_to_compress(int array_id)
+    static ChunkFlagRowT& get_array_is_inside_list_to_compress(int array_id)
     {
-        return tab_is_inside_chunk_list_to_compress[array_id];
+        return array_is_inside_chunk_list_to_compress[array_id];
     }
 
     /**
      * @brief Reset compression flag for a specific chunk
-     * @param array_id Tab index
+     * @param array_id Array index
      * @param chunk_index Chunk index
      * @post Chunk marked as not in compression list (can be re-added)
      * @note Thread safety: Memory order release ensures visibility to all threads
      */
 
-    static void reset_tab_is_inside_list_to_compress(int array_id, int chunk_index) noexcept
+    static void reset_array_is_inside_list_to_compress(int array_id, int chunk_index) noexcept
     {
-        tab_is_inside_chunk_list_to_compress[array_id][chunk_index].store(0, std::memory_order_release);
+        array_is_inside_chunk_list_to_compress[array_id][chunk_index].store(0, std::memory_order_release);
     }
 
     /**
@@ -647,7 +647,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     /// @return @p os.
     friend std::ostream& operator<<(std::ostream& os, const Proxy& proxy)
     {
-        // Through the proxy's read entry, like operator T(): the raw values[num] snapshot is stale
+        // Through the proxy's read entry, like operator T(): the raw values[elem_offset] snapshot is stale
         // while a deferred op pends on this offset.
         os << proxy.read_pure();
         return os;
@@ -675,8 +675,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     using Base::array_id_;     ///< Index used for compression table lookup.
     using Base::chunk_;        ///< Reference to the associated chunk.
     using Base::chunk_index_;  ///< Index of the chunk within the source array.
-    using Base::num_;          ///< Index of the current element within the chunk.
-    using Base::ptr_on_array_; ///< pointer to array (for tab lookup)
+    using Base::elem_offset_;  ///< Index of the current element within the chunk.
+    using Base::ptr_on_array_; ///< pointer to array (for array lookup)
     using Base::read_values;
     using Base::values_; ///< Pointer to chunk's data array
 
@@ -689,8 +689,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     // Do not add `using Base::read_values_async;`: it exists only in the Enabled=true
     // specialisation (imported in zero_one_value::ProxyFastCompPolicy<..., true>), so it breaks builds
     // without fast block compression.
-    using Base::ptr_is_inside_chunk_list_to_compress_; ///< Per-chunk compression flag pointer
-    using Base::tab_is_inside_chunk_list_to_compress;  ///< Global compression tracking array
+    using Base::array_is_inside_chunk_list_to_compress; ///< Global compression tracking array
+    using Base::ptr_is_inside_chunk_list_to_compress_;  ///< Per-chunk compression flag pointer
 
     // Declared per zero_one_value::ProxyFastCompPolicy specialisation: the deferred and counter forms are
     // different algorithms (and pass `operation` different arguments).
@@ -728,24 +728,24 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      * @brief Allocate chunk storage if currently compressed
      * @details Decompresses the chunk by allocating full array storage.
      *          Chooses initialization based on current compression state:
-     *          - cst_val1: Fill with first_value (typically 0)
-     *          - cst_val2: Fill with second_value
+     *          - const_val1: Fill with first_value (typically 0)
+     *          - const_val2: Fill with second_value
      * @post Chunk has allocated values array; no longer compressed
      * @note Thread safety: Uses atomic compare-exchange in multi-threaded builds
      */
     void create_value() const noexcept
     {
-        create_value(is_cst_val2());
+        create_value(is_const_val2());
     }
 
     /**
      * @brief create_value() with the compression state already known.
-     * @param is_cst2 Whether the chunk is at its second constant (else at the
+     * @param is_const2 Whether the chunk is at its second constant (else at the
      *        first), from the caller's load of `values`. A stale state is
      *        harmless: the chunk can only have been materialised since, and
      *        the CAS of chunk.create_value() then fails.
      */
-    void create_value(bool is_cst2) const noexcept;
+    void create_value(bool is_const2) const noexcept;
 
     /**
      * @brief Core assignment logic without compression tracking
@@ -758,12 +758,12 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      */
     void perform_core_assignment(InT<T> value) const noexcept;
 
-    /// @brief Materialise the chunk if it is compressed (cst_val1 / cst_val2), so `values`
+    /// @brief Materialise the chunk if it is compressed (const_val1 / const_val2), so `values`
     ///        points at writable heap storage.
     ///
     /// Twin of zero_any::Proxy::ensure_writable_storage: decompresses the second-value form, then
-    /// the first-value form, seeding the nb_val_eq_* counters to "full". is_cst_val1() is
-    /// re-tested AFTER the cst_val2 step on purpose: the states are mutually exclusive (single
+    /// the first-value form, seeding the n_val_eq_* counters to "full". is_const_val1() is
+    /// re-tested AFTER the const_val2 step on purpose: the states are mutually exclusive (single
     /// storage pointer), so at most one create_value runs.
     void ensure_writable_storage();
 
@@ -795,8 +795,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      *        proxy's index.
      * @details
      * Synchronous fast-path flow:
-     * 1. Fast-path: If value == first_value and chunk is cst_val1, no-op.
-     * 2. Load metadata (set_info_second_value_ind()) if needed.
+     * 1. Fast-path: If value == first_value and chunk is const_val1, no-op.
+     * 2. Load metadata (set_info_second_value_idx()) if needed.
      * 3. Fast-path: if value == second_value and chunk is already at/equal to
      *    it, no-op.
      * 4. Decompress chunk if compressed, write value, mark for compression.
@@ -819,7 +819,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
 
     /**
      * @brief Read-modify-write behind the compound operators (`+=`, `-=`...):
-     *        `values[num] = op(values[num], operand)`, with the second-value
+     *        `values[elem_offset] = op(values[elem_offset], operand)`, with the second-value
      *        bookkeeping of a write (a slot leaving or reaching the second
      *        value updates the chunk's counter, a full chunk folds).
      * @tparam U Type of the operand.
@@ -837,13 +837,13 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
 
   public:
     /**
-     * @brief Construct a proxy for element `num_` of `chunk_`.
+     * @brief Construct a proxy for element `elem_offset_` of `chunk_`.
      * @param values Reference to the chunk's values pointer.
-     * @param num Element offset within the chunk.
+     * @param elem_offset Element offset within the chunk.
      * @param chunk Owning chunk.
      */
-    explicit Proxy(ValuesTypeRef values, int num, Chunk<T>& chunk) noexcept
-        : ProxyFastCompPolicy<Proxy, T, Chunk<T>, chunk_config::use_fast_block_compression>(values, num, chunk)
+    explicit Proxy(ValuesTypeRef values, int elem_offset, Chunk<T>& chunk) noexcept
+        : ProxyFastCompPolicy<Proxy, T, Chunk<T>, chunk_config::use_fast_block_compression>(values, elem_offset, chunk)
     {
     }
 
@@ -900,41 +900,41 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     // ========================================================================
 
     /**
-     * @brief Check if chunk is compressed to the second constant at index `ind`.
-     * @param ind Index of the second constant to check.
-     * @return true if the chunk is compressed to the second constant at ind.
+     * @brief Check if chunk is compressed to the second constant at index `idx`.
+     * @param idx Index of the second constant to check.
+     * @return true if the chunk is compressed to the second constant at idx.
      * @note Non-bool only: a compile error on a bool chunk (bool has no
      *       indexed second constant -- use the no-arg overload below).
      */
-    [[nodiscard]] bool is_cst_val2(int ind) const noexcept;
+    [[nodiscard]] bool is_const_val2(int idx) const noexcept;
 
     /**
      * @brief Check if chunk is compressed to the second constant. Works for
      *        both bool and non-bool (unlike the indexed overload above):
-     *        non-bool resolves the index from BaseSpec::ind, bool has a
+     *        non-bool resolves the index from BaseSpec::idx, bool has a
      *        single shared second constant.
      * @return true if the chunk is compressed to the second constant.
      */
-    [[nodiscard]] bool is_cst_val2() const noexcept;
+    [[nodiscard]] bool is_const_val2() const noexcept;
 
     /**
-     * @brief is_cst_val2() judged from an already-loaded values pointer.
+     * @brief is_const_val2() judged from an already-loaded values pointer.
      * @details Saves the reload -- `values == ...` on the atomic is a seq_cst
      *          load (ldar on aarch64) -- and keeps the caller's tests on one
      *          snapshot.
      * @param vals The pointer the caller loaded.
      * @return true if @p vals is the chunk's second constant buffer.
      */
-    [[nodiscard]] bool is_cst_val2_at(const T* vals) const noexcept;
+    [[nodiscard]] bool is_const_val2_at(const T* vals) const noexcept;
 
     // ========================================================================
     // Metadata initialization
     // ========================================================================
 
     /**
-     * @brief Extract and cache tab number from compression metadata
+     * @brief Extract and cache array number from compression metadata
      * @pre inf_array must be populated via get_info_second_value()
-     * @post array_id contains valid tab index
+     * @post array_id contains valid array index
      */
     void set_array_id() noexcept
     {
@@ -951,7 +951,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     }
 
     /**
-     * @brief Initialize both tab number and compression flag pointer
+     * @brief Initialize both array number and compression flag pointer
      * @details Convenience method combining set_array_id() and
      *          set_ptr_is_inside_chunk_list_to_compress()
      * @post Both array_id and ptr_is_inside_chunk_list_to_compress_ are valid
@@ -959,7 +959,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      * @note No build-mode guard: the sole caller
      *       (SecondValueProxyBase::write_with_optional_lock_with_set_ptr) is under
      *       `if constexpr (chunk_config::use_fast_block_compression)`, so the empty
-     *       tab_is_inside_chunk_list_to_compress of other modes is never indexed.
+     *       array_is_inside_chunk_list_to_compress of other modes is never indexed.
      */
     void set_array_id_ptr_is_inside_chunk() noexcept
     {
@@ -977,7 +977,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     [[nodiscard]] static bool has_candidate_list(InT<T> second_val) noexcept;
 
     /**
-     * @brief Look up the (second_value, ind, array_id) metadata tuple
+     * @brief Look up the (second_value, idx, array_id) metadata tuple
      *        registered for array pointer @p ptr.
      * @param ptr Array pointer to look up.
      * @return The registered metadata tuple.

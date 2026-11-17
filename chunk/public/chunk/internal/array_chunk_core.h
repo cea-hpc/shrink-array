@@ -140,7 +140,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
 
     /**
      * @brief Name this array in the end-of-life stats line, next to its table
-     *        number: `[tab_quant #20 double]` instead of `[tab_20 double]`.
+     *        number: `[array_quant #20 double]` instead of `[array_20 double]`.
      * @details Every re-chunk gives the array a new table number, so the number
      *          alone does not identify the variable. The name stays with the object
      *          (re-chunk and swap() move storage, not it). Empty: the number alone.

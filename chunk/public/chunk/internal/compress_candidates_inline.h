@@ -275,12 +275,12 @@ void CompressCandidates<ChunkT, T>::remove_from_zero_any_candidates_by_array_id(
         const auto [first, last] = removal_ranks(static_cast<int>(zero_any_candidates_thr.size()), own_rank_only);
         for (int thr = first; thr < last; ++thr)
         {
-            erase_candidates_of_tab(zero_any_candidates_thr[thr], array_id);
+            erase_candidates_of_array(zero_any_candidates_thr[thr], array_id);
         }
     }
     else
     {
-        erase_candidates_of_tab(zero_any_candidates, array_id);
+        erase_candidates_of_array(zero_any_candidates, array_id);
     }
 }
 
@@ -302,7 +302,7 @@ void CompressCandidates<ChunkT, T>::remove_from_zero_one_value_candidates_by_arr
                 {
                     continue;
                 }
-                erase_candidates_of_tab(*sp, array_id);
+                erase_candidates_of_array(*sp, array_id);
             }
         }
     }
@@ -318,12 +318,12 @@ void CompressCandidates<ChunkT, T>::remove_from_zero_candidates_by_array_id(
         const auto [first, last] = removal_ranks(static_cast<int>(zero_candidates_thr.size()), own_rank_only);
         for (int thr = first; thr < last; ++thr)
         {
-            erase_candidates_of_tab(zero_candidates_thr[thr], array_id);
+            erase_candidates_of_array(zero_candidates_thr[thr], array_id);
         }
     }
     else
     {
-        erase_candidates_of_tab(zero_candidates, array_id);
+        erase_candidates_of_array(zero_candidates, array_id);
     }
 }
 

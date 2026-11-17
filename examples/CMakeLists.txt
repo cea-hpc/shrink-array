@@ -169,7 +169,7 @@ add_subdirectory(mdspan_tiles)
 
 # The second-value registry on struct element types (chunk/internal/value_hash.h).
 if ("zero_any" IN_LIST CHUNK_VARIANTS)
-    add_subdirectory(cst2_hash)
+    add_subdirectory(const2_hash)
 endif()
 
 # SoaArray<T> (chunk/soa_array.h): a struct stored one compressed array per

@@ -30,45 +30,45 @@
 #include "config.h" // multi_mat::in_parallel_region
 
 /**
- * @brief The share of @p nb iterations of thread @p trank among
- *        @p nb_max_tasks, as a half-open range.
- * @details The first `nb % nb_max_tasks` threads take one more iteration.
+ * @brief The share of @p n iterations of thread @p trank among
+ *        @p n_max_tasks, as a half-open range.
+ * @details The first `n % n_max_tasks` threads take one more iteration.
  *          Fewer iterations than threads: thread 0 takes them all.
  * @param trank        Rank of the calling thread.
- * @param nb_max_tasks Size of the team.
- * @param nb           Iteration count.
- * @param[out] kdeb    First iteration of the thread.
- * @param[out] kfin    One past its last.
+ * @param n_max_tasks Size of the team.
+ * @param n           Iteration count.
+ * @param[out] kbegin    First iteration of the thread.
+ * @param[out] kend    One past its last.
  */
-inline void get_parallel_loop_boundaries_int(int trank, int nb_max_tasks, int nb, int& kdeb, int& kfin)
+inline void get_parallel_loop_boundaries_int(int trank, int n_max_tasks, int n, int& kbegin, int& kend)
 {
-    if (nb > nb_max_tasks)
+    if (n > n_max_tasks)
     {
-        const int quot = nb / nb_max_tasks;
-        const int rem  = nb % nb_max_tasks;
+        const int quot = n / n_max_tasks;
+        const int rem  = n % n_max_tasks;
         if (trank < rem)
         {
-            const int nb_cells_spec = quot + 1;
-            kdeb                    = trank * nb_cells_spec;
-            kfin                    = kdeb + nb_cells_spec;
+            const int n_cells_spec = quot + 1;
+            kbegin                 = trank * n_cells_spec;
+            kend                   = kbegin + n_cells_spec;
         }
         else
         {
-            const int nb_cells_spec = quot;
-            kdeb                    = rem * (quot + 1) + (trank - rem) * nb_cells_spec;
-            kfin                    = kdeb + nb_cells_spec;
+            const int n_cells_spec = quot;
+            kbegin                 = rem * (quot + 1) + (trank - rem) * n_cells_spec;
+            kend                   = kbegin + n_cells_spec;
         }
     }
     else
     {
         if (trank)
         {
-            kdeb = kfin = 0;
+            kbegin = kend = 0;
         }
         else
         {
-            kdeb = 0;
-            kfin = nb;
+            kbegin = 0;
+            kend   = n;
         }
     }
 }
@@ -78,24 +78,24 @@ inline void get_parallel_loop_boundaries_int(int trank, int nb_max_tasks, int nb
  *        whole range outside one.
  * @copydetails get_parallel_loop_boundaries_int
  */
-inline void get_parallel_loop_boundaries(const int trank, const int nb_max_tasks, const int nb, int& kdeb, int& kfin)
+inline void get_parallel_loop_boundaries(const int trank, const int n_max_tasks, const int n, int& kbegin, int& kend)
 {
     if (multi_mat::in_parallel_region())
     {
-        get_parallel_loop_boundaries_int(trank, nb_max_tasks, nb, kdeb, kfin);
+        get_parallel_loop_boundaries_int(trank, n_max_tasks, n, kbegin, kend);
     }
     else
     {
-        kdeb = 0;
-        kfin = nb;
+        kbegin = 0;
+        kend   = n;
     }
 }
 
-/// @brief get_parallel_loop_boundaries() returning the pair {kdeb, kfin}.
-inline std::pair<int, int> get_parallel_loop_boundaries(const int trank, const int nb_max_tasks, const int nb)
+/// @brief get_parallel_loop_boundaries() returning the pair {kbegin, kend}.
+inline std::pair<int, int> get_parallel_loop_boundaries(const int trank, const int n_max_tasks, const int n)
 {
-    int kdeb = 0;
-    int kfin = 0;
-    get_parallel_loop_boundaries(trank, nb_max_tasks, nb, kdeb, kfin);
-    return std::make_pair(kdeb, kfin);
+    int kbegin = 0;
+    int kend   = 0;
+    get_parallel_loop_boundaries(trank, n_max_tasks, n, kbegin, kend);
+    return std::make_pair(kbegin, kend);
 }

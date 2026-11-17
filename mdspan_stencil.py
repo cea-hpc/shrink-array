@@ -182,7 +182,7 @@ class tile_cache
         explicit entry(const View& f) : buf(f) {}
         Index                k       = std::numeric_limits<Index>::max();
         bool                 uniform = false;
-        T                    cst{};
+        T                    const_value{};
         tile_buffer<View, T> buf;
     };
 
@@ -213,7 +213,7 @@ class tile_cache
         entry& x     = e_[next_];
         next_        = (next_ + 1) % e_.size();
         const auto t = tile_at(f_, dims_, k);
-        x.uniform    = gather(*f_.data_handle(), tile_storage(f_, t), x.buf, x.cst, /*lazy=*/true);
+        x.uniform    = gather(*f_.data_handle(), tile_storage(f_, t), x.buf, x.const_value, /*lazy=*/true);
         x.k          = k;
         return x;
     }
@@ -344,7 +344,7 @@ void stencil_on(const Src&                       src,
             }
             auto&      me    = cache.fetch(tc);
             const bool me_u  = me.uniform;
-            const T    me_v  = me.cst;
+            const T    me_v  = me.const_value;
             bool       leave = false; // the halo leaves the view
             for (std::size_t r = 0; r < rank; ++r)
             {
@@ -370,8 +370,8 @@ void stencil_on(const Src&                       src,
                     }
                     if (in)
                     {
-                        const auto& nb = cache.fetch(c);
-                        uniform        = nb.uniform && nb.cst == me_v;
+                        const auto& n_items = cache.fetch(c);
+                        uniform        = n_items.uniform && n_items.const_value == me_v;
                     }
                 }
                 if (uniform)
@@ -426,14 +426,14 @@ void stencil_on(const Src&                       src,
                         c[rank - 1]      = static_cast<Index>(g / te[rank - 1]);
                         const auto local = static_cast<Index>(g % te[rank - 1]);
                         const auto n     = std::min<long long>(qb - q, te[rank - 1] - local);
-                        auto&      nb    = cache.fetch(c);
-                        if (nb.uniform)
+                        auto&      n_items    = cache.fetch(c);
+                        if (n_items.uniform)
                         {
-                            std::fill_n(row + q, n, nb.cst);
+                            std::fill_n(row + q, n, n_items.const_value);
                         }
                         else
                         {
-                            std::copy_n(nb.buf.data() + off + local, n, row + q);
+                            std::copy_n(n_items.buf.data() + off + local, n, row + q);
                         }
                         q += n;
                     }
@@ -462,7 +462,7 @@ void stencil_on(const Src&                       src,
                 auto& c = cache.fetch(tc);
                 if (c.uniform)
                 {
-                    std::fill(outb.begin(), outb.end(), c.cst);
+                    std::fill(outb.begin(), outb.end(), c.const_value);
                 }
                 else
                 {

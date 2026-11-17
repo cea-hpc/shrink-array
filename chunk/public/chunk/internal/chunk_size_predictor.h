@@ -37,7 +37,7 @@
 //      block may be partial.
 //   3. Predicted memory = (non-constant blocks) * S' * sizeof(T)   [buffers]
 //                       + (blocks) * meta_per_block.               [records]
-//      Constant blocks cost only metadata (values live in the shared cst
+//      Constant blocks cost only metadata (values live in the shared constant
 //      buffer). The buffer term dominates and is what varies with S'.
 //
 // Sizes < current are out of scope here (need intra-chunk re-reading, usually
@@ -149,7 +149,7 @@ void report_size_prediction(const std::vector<std::optional<T>>& summary,
         if (gain_pct >= 10.0)
         {
             CHUNK_LOG(info, advisor,
-                      "size prediction {} tab={}: current S={} -> {} B ; optimal S'={} -> {} B (mem -{:.1f}%, {}/{} "
+                      "size prediction {} array={}: current S={} -> {} B ; optimal S'={} -> {} B (mem -{:.1f}%, {}/{} "
                       "blocks constant)",
                       variant, array_id, chunk_sz, current.mem_bytes, best.s_prime, best.mem_bytes, gain_pct,
                       best.n_const_blocks, best.n_blocks);

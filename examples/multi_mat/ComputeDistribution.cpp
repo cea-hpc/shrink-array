@@ -44,16 +44,16 @@ void Simu::compute_distribution()
     std::uniform_int_distribution size_distribution_vector(1, interval_vector);
     std::uniform_int_distribution start_distribution_vector(min, max - interval_vector);
 
-    ll.resize(nbmat);
+    ll.resize(n_materials);
 
-    tab_size.resize(iter_max, nbmat);
-    tab_start.resize(iter_max, nbmat);
+    array_size.resize(iter_max, n_materials);
+    array_start.resize(iter_max, n_materials);
 
     for (int it = 0; it < iter_max; ++it)
     {
         //  we store the distribution in tables this allows the parallelization of the next loops
 
-        for (int mat = 0; mat < nbmat; ++mat)
+        for (int mat = 0; mat < n_materials; ++mat)
         {
             int size  = 0;
             int begin = 0;
@@ -70,8 +70,8 @@ void Simu::compute_distribution()
                 assert(size <= interval_vector);
             }
 
-            tab_size[it, mat]  = size;
-            tab_start[it, mat] = begin;
+            array_size[it, mat]  = size;
+            array_start[it, mat] = begin;
 
             if (is_verbose())
             {

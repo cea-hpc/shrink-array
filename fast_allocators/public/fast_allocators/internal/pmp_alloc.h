@@ -18,7 +18,7 @@
 
 // Portable thread-count / rank / parallel-region macros for the fast allocator:
 // the StaticConstArray ladder (static_const_array.h, its _inline.h, and
-// InfoFreeElt's constructor in static_const_array.cpp). Mirrors chunk's
+// InfoFreeElem's constructor in static_const_array.cpp). Mirrors chunk's
 // public/chunk/internal/pmp_chunk.h.
 //
 // The data-parallel loops (fast_alloc::pmp::parallel_for, ...) come with it,

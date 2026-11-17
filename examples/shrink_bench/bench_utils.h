@@ -70,7 +70,7 @@ struct Uint64Padding
 };
 
 /// @brief A bench value as text, the way operator<< printed it: the narrow
-///        character types, bool and Bit as numbers (tab_char would otherwise show
+///        character types, bool and Bit as numbers (array_char would otherwise show
 ///        a control byte), floating point as %g, complex as "(re,im)".
 /// @return The text of @p v.
 template <class V>
@@ -138,10 +138,10 @@ struct is_atomic_pointer<std::atomic<U*>> : public std::true_type
 // copied to the wrong index while another took its place, compensating byte
 // errors -- the very class of geometry / re-chunk bugs the check runs hunt.
 // The sum stays order-free (a parallel reduction, modulo 2^64).
-//   - integral elements hash their VALUE, not their bytes: tab_bool is a
+//   - integral elements hash their VALUE, not their bytes: array_bool is a
 //     std::vector<short> in the baseline and an Array<bool> in a shrink build
 //     (bench_array.h), and their checksums must agree; so does a packed Bit
-//     (tab_bool_bits and tab_mask in a zero_one_value build), hashed as its bool --
+//     (array_bool_bits and array_mask in a zero_one_value build), hashed as its bool --
 //     its byte folded would never match the baseline's bool / short;
 //   - floating-point elements their bit pattern (-0.0 == T{} is skipped, as it
 //     always was: the library compresses it to +0.0 by design);

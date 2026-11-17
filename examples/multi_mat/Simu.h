@@ -30,7 +30,7 @@
 #include <version>    // __cpp_lib_mdspan
 #include <mdspan>     // std::mdspan, std::dextents
 
-#include "Containers.h" // MultiArray, VectZeroOneValue
+#include "Containers.h" // MultiArray, MatZeroOneValueArray
 
 template <typename LoopsVec, typename LoopsChunk>
 class MultiMatAlgo;
@@ -47,8 +47,8 @@ class MultiMatAlgo;
  */
 struct Simu
 {
-    static inline int iter_max_default = 100; ///< Iterations, unless asked
-    static inline int nbmat_default    = 50;  ///< Materials, unless asked
+    static inline int iter_max_default    = 100; ///< Iterations, unless asked
+    static inline int n_materials_default = 50;  ///< Materials, unless asked
 
     using VecInt2D = std::vector<std::vector<int>>;
 
@@ -71,14 +71,14 @@ struct Simu
         return tabs;
     }
 
-    /// @brief Field @p ind of every material.
-    const MultiArray<double>& get_tabs(int ind) const
+    /// @brief Field @p idx of every material.
+    const MultiArray<double>& get_tabs(int idx) const
     {
-        return tabs[ind];
+        return tabs[idx];
     }
 
     /// @brief The presence fraction of every material.
-    const MultiArray<double, VectZeroOneValue<double>>& get_frac() const
+    const MultiArray<double, MatZeroOneValueArray<double>>& get_frac() const
     {
         return frac;
     }
@@ -99,8 +99,8 @@ struct Simu
     /// @brief Whether per-iteration prints are on (verbose).
     bool is_verbose() const;
 
-    /// @brief Number of materials (nbmat).
-    int get_nbmat() const;
+    /// @brief Number of materials (n_materials).
+    int get_n_materials() const;
 
     /// @brief The parameters -- asked on stdin under
     ///        multi_mat::interactive_input, the defaults above otherwise --
@@ -129,7 +129,7 @@ struct Simu
                        const std::function<void(bool)>&    lbd_stats,
                        double&                             value);
 
-    int nbmat = nbmat_default; ///< Materials
+    int n_materials = n_materials_default; ///< Materials
 
     int mesh_size = 10000000; ///< Cells
 
@@ -165,7 +165,7 @@ struct Simu
     ///        the material's interval, a ramp of `interface_width` cells at
     ///        each end, 0 elsewhere. A zero_one_value array for the chunk materials,
     ///        second value 1.
-    MultiArray<double, VectZeroOneValue<double>> frac;
+    MultiArray<double, MatZeroOneValueArray<double>> frac;
 
     /// @brief Cells of the ramp at each end of an interval: well under a
     ///        chunk, so the interior of an interval is chunks of pure 1 and
@@ -199,8 +199,8 @@ struct Simu
         Extents          extents_{0, 0};
     };
 
-    IterMatTable tab_size;  ///< [iteration, material] size of the interval
-    IterMatTable tab_start; ///< [iteration, material] first cell of the interval
+    IterMatTable array_size;  ///< [iteration, material] size of the interval
+    IterMatTable array_start; ///< [iteration, material] first cell of the interval
 
     VecInt2D ll; ///< [material] the cells of its current interval (indirection)
 };

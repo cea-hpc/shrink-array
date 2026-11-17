@@ -22,18 +22,18 @@
 void bench_phase_stress_teams(BenchArrays& bench_arr, [[maybe_unused]] Int team, Int beg_s, Int end_s)
 {
     // Short local names for the arrays (see bench_phase_fill.cpp).
-    auto& tab1 = bench_arr.tab1;
-    auto& tab2 = bench_arr.tab2;
-    auto& tab3 = bench_arr.tab3;
-    auto& tab4 = bench_arr.tab4;
-    auto& tab5 = bench_arr.tab5;
+    auto& arr1 = bench_arr.arr1;
+    auto& arr2 = bench_arr.arr2;
+    auto& arr3 = bench_arr.arr3;
+    auto& arr4 = bench_arr.arr4;
+    auto& arr5 = bench_arr.arr5;
 
-    auto& tab_int       = bench_arr.tab_int;
-    auto& tab_bool      = bench_arr.tab_bool;
-    auto& tab_bool_bits = bench_arr.tab_bool_bits;
-    auto& tab_complex   = bench_arr.tab_complex;
-    auto& tab_long      = bench_arr.tab_long;
-    auto& tab_ulong     = bench_arr.tab_ulong;
+    auto& array_int       = bench_arr.array_int;
+    auto& array_bool      = bench_arr.array_bool;
+    auto& array_bool_bits = bench_arr.array_bool_bits;
+    auto& array_complex   = bench_arr.array_complex;
+    auto& array_long      = bench_arr.array_long;
+    auto& array_ulong     = bench_arr.array_ulong;
 
     bench_par::region(static_cast<int>(team - 1),
                       [&]([[maybe_unused]] bench_par::Team& team)
@@ -43,19 +43,19 @@ void bench_phase_stress_teams(BenchArrays& bench_arr, [[maybe_unused]] Int team,
                               beg_s, end_s,
                               [&](const Int j) __attribute__((always_inline))
                               {
-                                  tab1[j] = second_value_d;
-                                  tab2[j] = 0;
-                                  tab3[j] = second_value_d;
-                                  tab4[j] = second_value_d1;
-                                  tab5[j] = second_value_d2;
+                                  arr1[j] = second_value_d;
+                                  arr2[j] = 0;
+                                  arr3[j] = second_value_d;
+                                  arr4[j] = second_value_d1;
+                                  arr5[j] = second_value_d2;
 
-                                  tab_int[j]       = second_value_i;
-                                  tab_bool[j]      = second_value_b;
-                                  tab_bool_bits[j] = second_value_b;
-                                  tab_complex[j]   = second_value_c;
+                                  array_int[j]       = second_value_i;
+                                  array_bool[j]      = second_value_b;
+                                  array_bool_bits[j] = second_value_b;
+                                  array_complex[j]   = second_value_c;
 
-                                  tab_long[j]  = second_value_l;
-                                  tab_ulong[j] = second_value_ul;
+                                  array_long[j]  = second_value_l;
+                                  array_ulong[j] = second_value_ul;
                               },
                               bench_par::nowait);
                           finalize_parallel_phase_only_flush_g();
@@ -66,21 +66,21 @@ void bench_phase_stress_teams(BenchArrays& bench_arr, [[maybe_unused]] Int team,
 void bench_phase_stress_dynamic(BenchArrays& bench_arr, [[maybe_unused]] Int grain, Int beg_s, Int end_s)
 {
     // Short local names for the arrays (see bench_phase_fill.cpp).
-    auto& tab1 = bench_arr.tab1;
-    auto& tab2 = bench_arr.tab2;
-    auto& tab3 = bench_arr.tab3;
-    auto& tab4 = bench_arr.tab4;
-    auto& tab5 = bench_arr.tab5;
+    auto& arr1 = bench_arr.arr1;
+    auto& arr2 = bench_arr.arr2;
+    auto& arr3 = bench_arr.arr3;
+    auto& arr4 = bench_arr.arr4;
+    auto& arr5 = bench_arr.arr5;
 
-    auto& tab_int       = bench_arr.tab_int;
-    auto& tab_bool      = bench_arr.tab_bool;
-    auto& tab_bool_bits = bench_arr.tab_bool_bits;
-    auto& tab_complex   = bench_arr.tab_complex;
-    auto& tab_float     = bench_arr.tab_float;
-    auto& tab_short     = bench_arr.tab_short;
-    auto& tab_char      = bench_arr.tab_char;
-    auto& tab_long      = bench_arr.tab_long;
-    auto& tab_ulong     = bench_arr.tab_ulong;
+    auto& array_int       = bench_arr.array_int;
+    auto& array_bool      = bench_arr.array_bool;
+    auto& array_bool_bits = bench_arr.array_bool_bits;
+    auto& array_complex   = bench_arr.array_complex;
+    auto& array_float     = bench_arr.array_float;
+    auto& array_short     = bench_arr.array_short;
+    auto& array_char      = bench_arr.array_char;
+    auto& array_long      = bench_arr.array_long;
+    auto& array_ulong     = bench_arr.array_ulong;
 
     bench_par::region(
         [&]([[maybe_unused]] bench_par::Team& team)
@@ -90,24 +90,24 @@ void bench_phase_stress_dynamic(BenchArrays& bench_arr, [[maybe_unused]] Int gra
                 beg_s, end_s, static_cast<int>(grain),
                 [&](Int j)
                 {
-                    tab1[j] = second_value_d0;
-                    tab2[j] = second_value_d0;
-                    tab3[j] = second_value_d0;
-                    tab4[j] = 2 * second_value_d0;
-                    tab5[j] = 3 * second_value_d0;
+                    arr1[j] = second_value_d0;
+                    arr2[j] = second_value_d0;
+                    arr3[j] = second_value_d0;
+                    arr4[j] = 2 * second_value_d0;
+                    arr5[j] = 3 * second_value_d0;
 
-                    tab_float[j] = second_value_f0;
-                    tab_short[j] = 3 * second_value_s0;
-                    tab_char[j]  = 4 * second_value_c0;
+                    array_float[j] = second_value_f0;
+                    array_short[j] = 3 * second_value_s0;
+                    array_char[j]  = 4 * second_value_c0;
 
-                    tab_int[j]       = other_second_value_i;
-                    tab_bool[j]      = second_value_b;
-                    tab_bool_bits[j] = second_value_b;
+                    array_int[j]       = other_second_value_i;
+                    array_bool[j]      = second_value_b;
+                    array_bool_bits[j] = second_value_b;
 
-                    tab_complex[j] = other_second_value_c;
+                    array_complex[j] = other_second_value_c;
 
-                    tab_long[j]  = 2L * second_value_l;
-                    tab_ulong[j] = 2UL * second_value_ul;
+                    array_long[j]  = 2L * second_value_l;
+                    array_ulong[j] = 2UL * second_value_ul;
                 },
                 bench_par::nowait);
             finalize_parallel_phase_only_flush_g();

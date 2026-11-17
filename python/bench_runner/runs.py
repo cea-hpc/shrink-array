@@ -92,7 +92,7 @@ def _run_cmd_impl(cmd, env_vars, timeout, extra_ld_library_path=None, cwd=None, 
     libc++.so.1 in the llvm module's lib/ at runtime (or the gcc lib64 for
     libstdc++). Not needed once the binaries carry a proper RPATH.
 
-    cwd: working directory for the child. The binaries read/write data_tab_*
+    cwd: working directory for the child. The binaries read/write data_array_*
     and memory_mo.txt relative to their cwd, so pointing this at the shared
     output directory keeps every run's data together.
 

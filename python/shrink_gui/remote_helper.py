@@ -1777,13 +1777,13 @@ def act_build_targets(a):
     read, never built nor configured here:
       configs  the cmake-build-<name> names written in compile_all.sh and
                compile_all_gnu.sh (as known_build_names does);
-      dirs     the configured build dirs <build_rep>/cmake-build-<name>/<arch>
+      dirs     the configured build dirs <build_root>/cmake-build-<name>/<arch>
                whose <arch> ends with the one asked (aarch64, x86_64), with
                the executables of their build.ninja (the rules
                CXX_EXECUTABLE_LINKER__<target>_<Config>, as
                __ninja_target_names reads them through ninja)."""
     repo = os.path.expanduser(a[0])
-    build_rep = os.path.expanduser(os.path.expandvars(a[1])) if len(a) > 1 and a[1] else repo
+    build_root = os.path.expanduser(os.path.expandvars(a[1])) if len(a) > 1 and a[1] else repo
     arch = a[2] if len(a) > 2 else ""
     configs = set()
     for f in ("scripts/compile_all.sh", "scripts/compile_all_gnu.sh"):
@@ -1793,7 +1793,7 @@ def act_build_targets(a):
             if "$" not in name and name:
                 configs.add(name)
     dirs = []
-    for d in sorted(glob.glob(os.path.join(build_rep, "cmake-build-*", "*"))):
+    for d in sorted(glob.glob(os.path.join(build_root, "cmake-build-*", "*"))):
         sub = os.path.basename(d)
         if not os.path.isdir(d) or (arch and not sub.endswith(arch)):
             continue
@@ -1808,7 +1808,7 @@ def act_build_targets(a):
             mtime = None
         dirs.append({"name": os.path.basename(os.path.dirname(d))[len("cmake-build-"):], "arch": sub,
                      "configured": mtime is not None, "mtime": mtime, "execs": sorted(execs)})
-    print(json.dumps({"configs": sorted(configs), "dirs": dirs, "build_rep": build_rep}))
+    print(json.dumps({"configs": sorted(configs), "dirs": dirs, "build_root": build_root}))
 
 # --------------------------------------------------------------------------
 # Build cleaning ("Nettoyer les builds…"). What a build directory keeps once
@@ -1836,10 +1836,10 @@ CLEAN_MARK = ".shrink_gui_cleaned"
 NINJA_NOT_STALE_RE = re.compile(r"Build stamp|build_stamp\.cpp|Linking CXX executable")
 
 
-def build_dirs_of(build_rep):
-    """The configured build directories <build_rep>/cmake-build-<name>/<arch>."""
+def build_dirs_of(build_root):
+    """The configured build directories <build_root>/cmake-build-<name>/<arch>."""
     out = []
-    for d in sorted(glob.glob(os.path.join(build_rep, "cmake-build-*", "*"))):
+    for d in sorted(glob.glob(os.path.join(build_root, "cmake-build-*", "*"))):
         if os.path.isdir(d) and os.path.isfile(os.path.join(d, "build.ninja")):
             out.append(d)
     return out
@@ -1949,15 +1949,15 @@ def source_newer(d, t):
 
 def act_clean_builds(a):
     """The build directories and what cleaning them frees, or the clean itself.
-    a = [build_rep, mode, names]: mode "scan" lists every build directory
+    a = [build_root, mode, names]: mode "scan" lists every build directory
     {"name", "arch", "path", "removable", "total", "files", "cleaned"};
     mode "clean" removes the CLEAN_SUFFIXES files of the directories named in
     names (base64 JSON list of paths, each one of the scan's), writes CLEAN_MARK
     in each, and answers {"cleaned": [{"path", "freed", "files",
-    "up_to_date"}]}. A path outside build_rep's build directories is refused."""
-    build_rep = os.path.expanduser(os.path.expandvars(a[0]))
+    "up_to_date"}]}. A path outside build_root's build directories is refused."""
+    build_root = os.path.expanduser(os.path.expandvars(a[0]))
     mode = a[1] if len(a) > 1 else "scan"
-    dirs = build_dirs_of(build_rep)
+    dirs = build_dirs_of(build_root)
     if mode == "scan":
         rows = []
         for d in dirs:
@@ -1967,13 +1967,13 @@ def act_clean_builds(a):
                          "arch": os.path.basename(d), "path": d, "removable": removable,
                          "total": total, "files": len(files),
                          "cleaned": mark.get("time") if mark is not None else None})
-        print(json.dumps({"build_rep": build_rep, "dirs": rows}))
+        print(json.dumps({"build_root": build_root, "dirs": rows}))
         return
     wanted = json.loads(base64.b64decode(a[2]).decode()) if len(a) > 2 and a[2] else []
     known = set(dirs)
     bad = [p for p in wanted if p not in known]
     if bad:
-        print(json.dumps({"error": "pas un répertoire de build de %s : %s" % (build_rep, ", ".join(bad))}))
+        print(json.dumps({"error": "pas un répertoire de build de %s : %s" % (build_root, ", ".join(bad))}))
         return
     done = []
     for d in wanted:

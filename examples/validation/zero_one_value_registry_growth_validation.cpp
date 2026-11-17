@@ -25,9 +25,9 @@
 // THE DEFECT
 //
 //   Every distinct value given to zero_one_value::Array::set_second_value() gets a
-//   constant array in zero_one_value::Chunk<T>::tab_m_ptr_cst_val2, and a chunk compressed to
+//   constant array in zero_one_value::Chunk<T>::array_m_ptr_const_val2, and a chunk compressed to
 //   it stores that array's address as its `values`. The table was a
-//   std::vector<std::array<T, cst_buffer_size>> grown by resize(): past its
+//   std::vector<std::array<T, const_buffer_size>> grown by resize(): past its
 //   capacity the vector MOVED every array and freed the old storage. Every
 //   chunk of every other array compressed to its second value then pointed at
 //   freed memory -- 15 360 wrong reads out of 16 384 in this harness (0, or
@@ -71,8 +71,8 @@ using namespace shrink_array;
 namespace
 {
 
-using Arr = zero_one_value::Array<double>;
-using Ind = Arr::IndType;
+using Arr   = zero_one_value::Array<double>;
+using Index = Arr::IndexType;
 
 constexpr int n_chunks = 64; ///< chunks of `a`
 constexpr int n_others = 40; ///< arrays declaring a new second value each: several vector growths
@@ -103,7 +103,7 @@ void fill_and_compress(Arr& arr, double value)
 #pragma omp for schedule(static)
         for (long i = 0; i < count; ++i)
         {
-            arr[static_cast<Ind>(i)] = value;
+            arr[static_cast<Index>(i)] = value;
         }
     }
     end_phase();
@@ -124,7 +124,7 @@ int materialised(const Arr& arr)
     int        nmat     = 0;
     for (long j = 0; j * chunk_sz < count; ++j)
     {
-        nmat += arr.written(static_cast<Ind>(j * chunk_sz)) ? 1 : 0;
+        nmat += arr.written(static_cast<Index>(j * chunk_sz)) ? 1 : 0;
     }
     return nmat;
 }
@@ -136,7 +136,7 @@ long check_all(const char* what, const Arr& arr, double value)
     const auto count = static_cast<long>(arr.size());
     for (long i = 0; i < count; ++i)
     {
-        const double got = arr[static_cast<Ind>(i)];
+        const double got = arr[static_cast<Index>(i)];
         if (got != value)
         {
             if (bad < 4)
@@ -159,7 +159,7 @@ int run(int /*argc*/, char** /*argv*/)
     {
         Arr        arr;
         const auto chunk_sz = static_cast<long>(arr.chunk_size());
-        arr.resize(static_cast<Ind>(n_chunks * chunk_sz));
+        arr.resize(static_cast<Index>(n_chunks * chunk_sz));
         arr.set_second_value(1.0);
         println("=== zero_one_value_registry_growth_validation  chunk_size={}  threads={}  others={} ===", chunk_sz,
                 CHUNK_PMP_MAX_THREADS, n_others);
@@ -177,7 +177,7 @@ int run(int /*argc*/, char** /*argv*/)
         std::vector<std::unique_ptr<Arr>> others;
         for (int k = 0; k < n_others; ++k)
         {
-            others.push_back(std::make_unique<Arr>(static_cast<Ind>(4 * chunk_sz)));
+            others.push_back(std::make_unique<Arr>(static_cast<Index>(4 * chunk_sz)));
             others.back()->set_second_value(2.0 + k);
             fill_and_compress(*others.back(), 2.0 + k);
         }

@@ -19,7 +19,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QHeaderView, QLabel, QMessageBox, QTableWidget,
                                QTableWidgetItem, QVBoxLayout)
 
-from shrink_gui.config import BUILD_REP, program_of
+from shrink_gui.config import BUILD_ROOT, program_of
 from shrink_gui.i18n import T
 from shrink_gui.widgets import ask
 
@@ -53,7 +53,7 @@ INTRO = ("Supprime de chaque build coché ce que la compilation suivante refait 
 
 
 class CleanBuildsDialog(QDialog):
-    """The build directories of a scan ({"build_rep", "dirs"}), checkable; the
+    """The build directories of a scan ({"build_root", "dirs"}), checkable; the
     ones with something to free are checked."""
 
     COLS = ("Build", "Architecture", "Libérable", "Total", "Dernier nettoyage")
@@ -63,7 +63,7 @@ class CleanBuildsDialog(QDialog):
         self.setWindowTitle(T("Nettoyer les builds"))
         self.resize(820, 520)
         lay = QVBoxLayout(self)
-        intro = QLabel(T(INTRO) + "\n" + T(f"Racine des builds : {scan['build_rep']}"))
+        intro = QLabel(T(INTRO) + "\n" + T(f"Racine des builds : {scan['build_root']}"))
         intro.setWordWrap(True)
         intro.setTextFormat(Qt.PlainText)
         lay.addWidget(intro)
@@ -126,9 +126,9 @@ class CleanBuildsDialog(QDialog):
 
 class BuildsPanel:
     def build_root(self):
-        """The build root the helper scans: the site's (CHUNK_BUILD_REP) on the
+        """The build root the helper scans: the site's (CHUNK_BUILD_ROOT) on the
         cluster, the repository itself on this machine (as pick() does)."""
-        return self.repo.text().strip() if self.is_local() else BUILD_REP
+        return self.repo.text().strip() if self.is_local() else BUILD_ROOT
 
     def clean_builds(self):
         """"Nettoyer les builds…": scan, dialog, confirmation, clean."""
@@ -139,9 +139,9 @@ class BuildsPanel:
             if r is None:
                 return
             if not r["dirs"]:
-                self.info(f"aucun build configuré dans {r['build_rep']}")
+                self.info(f"aucun build configuré dans {r['build_root']}")
                 return
-            self.info(f"{len(r['dirs'])} build(s) dans {r['build_rep']}")
+            self.info(f"{len(r['dirs'])} build(s) dans {r['build_root']}")
             dlg = CleanBuildsDialog(self, r)
             if dlg.exec() != QDialog.Accepted:
                 return

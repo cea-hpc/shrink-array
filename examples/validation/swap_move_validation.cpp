@@ -202,37 +202,37 @@ int check_swap()
     // per chunk, so chunks exchanged without their identity would index rows
     // of the wrong length.
     const long count = (30 * chunk_sz) + 11;
-    const long nb    = (47 * chunk_sz) + 5;
+    const long n     = (47 * chunk_sz) + 5;
     first_arr.resize(static_cast<int>(count));
-    second_arr.resize(static_cast<int>(nb));
+    second_arr.resize(static_cast<int>(n));
     const Pattern pa{2.0, 10.0, chunk_sz};
     const Pattern pb{5.0, 500.0, chunk_sz};
     maybe_set_second_value(first_arr, pa.sv);
     maybe_set_second_value(second_arr, pb.sv);
     fill(first_arr, pa, count);
-    fill(second_arr, pb, nb);
+    fill(second_arr, pb, n);
     compress_in_region(first_arr);
     compress_in_region(second_arr);
 
     int bad = verify(step, "a (before)", std::as_const(first_arr), pa, count) +
-              verify(step, "b (before)", std::as_const(second_arr), pb, nb);
+              verify(step, "b (before)", std::as_const(second_arr), pb, n);
 
     first_arr.swap(second_arr);
-    bad += verify(step, "a (swapped)", std::as_const(first_arr), pb, nb) +
+    bad += verify(step, "a (swapped)", std::as_const(first_arr), pb, n) +
            verify(step, "b (swapped)", std::as_const(second_arr), pa, count);
 
     // The exchanged metadata must keep working: a pass, a rewrite, a pass.
     compress_in_region(first_arr);
     compress_in_region(second_arr);
-    bad += verify(step, "a (compressed)", std::as_const(first_arr), pb, nb) +
+    bad += verify(step, "a (compressed)", std::as_const(first_arr), pb, n) +
            verify(step, "b (compressed)", std::as_const(second_arr), pa, count);
     const Pattern pb2{pb.sv, 900.0, chunk_sz};
     const Pattern pa2{pa.sv, 90.0, chunk_sz};
-    fill(first_arr, pb2, nb);
+    fill(first_arr, pb2, n);
     fill(second_arr, pa2, count);
     compress_in_region(first_arr);
     compress_in_region(second_arr);
-    bad += verify(step, "a (rewritten)", std::as_const(first_arr), pb2, nb) +
+    bad += verify(step, "a (rewritten)", std::as_const(first_arr), pb2, n) +
            verify(step, "b (rewritten)", std::as_const(second_arr), pa2, count);
 
     if (!bad)

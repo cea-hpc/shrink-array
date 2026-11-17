@@ -17,7 +17,7 @@
 #pragma once
 
 /**
- * @file tab_cst_val2_holder.h
+ * @file array_const_val2_holder.h
  * @brief The registry of second-value slots behind "second constant value" compression.
  *
  * A zero_any chunk compressed to a constant other than zero does not own a buffer: it
@@ -32,12 +32,12 @@
  *    pointer another thread is holding.
  *  - GlobalVecHolder owns that chain, one instance per element type, plus the
  *    hash index that makes a lookup O(1) and the lock that serialises appends.
- *  - TabCstVal2Holder is the surface the chunks talk to: stateless, it owns
+ *  - ArrayConstVal2Holder is the surface the chunks talk to: stateless, it owns
  *    the allocation strategy.
  *
  * @par Two paths, and only one of them takes a lock
  * Registering a value that is ALREADY known -- every type-2 chunk after the
- * first one per value -- is a lock-free probe of GlobalVecHolder::index_tab.
+ * first one per value -- is a lock-free probe of GlobalVecHolder::index_table.
  * Only a genuinely new value, or an index miss, takes
  * GlobalVecHolder::insert_mutex, under which the whole find-or-append is
  * plain sequential code.
@@ -73,8 +73,8 @@
 // <iostream> directly: runtime.h would be a circular include (it reaches this header).
 
 #include "fast_allocators/internal/raw_memory.h" // address_bits
-#include "chunk/internal/chunk_size_policy.h"    // cst_buffer_size
-#include "chunk/internal/env_parse.h"            // env_number (CHUNK_CST_VAL2_ID_LIMIT)
+#include "chunk/internal/chunk_size_policy.h"    // const_buffer_size
+#include "chunk/internal/env_parse.h"            // env_number (CHUNK_CONST_VAL2_ID_LIMIT)
 #include "chunk/internal/in_t.h"                 // InT<T>: the value parameters
 #include "chunk/internal/value_hash.h"           // value_hash (index_hash)
 #include "chunk/config.h"                        // build_config::use_mm_protect
@@ -92,7 +92,7 @@ namespace shrink_array
  * @details Nothing here is atomic, deliberately. Segments are mutated and
  *          scanned only under GlobalVecHolder::insert_mutex, or on the
  *          single-threaded clear paths; the lock-free readers reach values
- *          through GlobalVecHolder::index_tab and never touch a Segment at all.
+ *          through GlobalVecHolder::index_table and never touch a Segment at all.
  *
  * @note The chain is append-only between clears and reclaims
  *       (GlobalVecHolder::reclaim_unmarked() rebuilds it packed), so
@@ -114,7 +114,7 @@ template <typename T>
 class GlobalVecHolder;
 
 template <typename T>
-class TabCstVal2Holder;
+class ArrayConstVal2Holder;
 
 /**
  * @brief How a chunk's second value is stored in the per-chunk table.
@@ -265,7 +265,7 @@ class GlobalVecHolder
     // `values`). The allocator is a bump pointer plus the free list of reclaimed identifiers
     // (reused first); region_reset() gives the pages back at the last clear.
     //
-    // Nothing is ever STORED in the region: a slot is an identifier. is_cst_val2() is a range
+    // Nothing is ever STORED in the region: a slot is an identifier. is_const_val2() is a range
     // test and id_of_ptr() is arithmetic -- neither dereferences it -- and the value comes from
     // value_by_id[]. The read path pays one well-predicted range test (ChunkBase::element_at).
     // Shared arrays FILLED with the value would avoid the test but cost tens of KiB per value
@@ -275,14 +275,14 @@ class GlobalVecHolder
     // out of the slot, or loads `values` twice around a test, returns something plausible.
     // Re-run rechunk_validation_*, a TSan pass and a --mode check run whenever it is touched.
     //
-    // Capacity: ONE bound, region_usable = min(CHUNK_CST_VAL2_REGION_BYTES, max_ids x id_stride),
+    // Capacity: ONE bound, region_usable = min(CHUNK_CONST_VAL2_REGION_BYTES, max_ids x id_stride),
     // used by the reservation, the range test (region_end) and region_alloc()'s abort. Running
     // out aborts: a fallback array outside the region would break the range test.
-#ifndef CHUNK_CST_VAL2_REGION_BYTES
-    #define CHUNK_CST_VAL2_REGION_BYTES (2uz << 30U)
+#ifndef CHUNK_CONST_VAL2_REGION_BYTES
+    #define CHUNK_CONST_VAL2_REGION_BYTES (2uz << 30U)
 #endif
 
-    static constexpr std::size_t region_bytes = CHUNK_CST_VAL2_REGION_BYTES;
+    static constexpr std::size_t region_bytes = CHUNK_CONST_VAL2_REGION_BYTES;
     static constexpr std::size_t id_stride    = 64; ///< One cache line per identifier (see region_init()).
 
   public:
@@ -317,16 +317,16 @@ class GlobalVecHolder
     /// @brief Largest identifier the region can hand out.
     ///
     /// @details One cache line per identifier (region_init()'s stride), so the region
-    ///          alone would allow 33 M. Capped by CHUNK_CST_VAL2_MAX_IDS, which
+    ///          alone would allow 33 M. Capped by CHUNK_CONST_VAL2_MAX_IDS, which
     ///          also sizes the reservations: max_ids x 64 bytes of region and
     ///          (max_ids + 1) x sizeof(T) of value table per type, address space
     ///          only (MAP_NORESERVE, backed as identifiers are handed out). The
     ///          default leaves ample headroom over real workloads.
-#ifndef CHUNK_CST_VAL2_MAX_IDS
-    #define CHUNK_CST_VAL2_MAX_IDS (4uz << 20U)
+#ifndef CHUNK_CONST_VAL2_MAX_IDS
+    #define CHUNK_CONST_VAL2_MAX_IDS (4uz << 20U)
 #endif
     static constexpr std::size_t max_ids =
-        (region_bytes / id_stride) < CHUNK_CST_VAL2_MAX_IDS ? (region_bytes / id_stride) : CHUNK_CST_VAL2_MAX_IDS;
+        (region_bytes / id_stride) < CHUNK_CONST_VAL2_MAX_IDS ? (region_bytes / id_stride) : CHUNK_CONST_VAL2_MAX_IDS;
     static_assert(max_ids < std::size_t{0xFFFFFFFFu}, "an identifier must fit id_of_ptr()'s uint32_t");
 
     /// @brief The registered users (#ref_count): the live zero_any::Array<T>
@@ -359,7 +359,7 @@ class GlobalVecHolder
     }
 
     /// @brief Identifiers this type can hand out: region_alloc()'s bound
-    ///        (max_ids, the region, or CHUNK_CST_VAL2_ID_LIMIT once read).
+    ///        (max_ids, the region, or CHUNK_CONST_VAL2_ID_LIMIT once read).
     [[nodiscard]] static std::size_t id_capacity() noexcept
     {
         const std::size_t region_ids = region_usable / region_stride;
@@ -408,7 +408,7 @@ class GlobalVecHolder
     ///        cache line of its own (check builds only; one slot otherwise).
     /// @details One counter shared by every thread made each lookup bounce its
     ///          cache line between the cores: two locked RMWs per second-value
-    ///          lookup, about 90 % of find_or_set_ind_cst_val2() in the check
+    ///          lookup, about 90 % of find_or_set_idx_const_val2() in the check
     ///          bench. A thread takes a slot once (round robin; past
     ///          in_flight_slots threads share one, which costs contention, not
     ///          correctness: the reclaim reads the sum).
@@ -521,7 +521,7 @@ class GlobalVecHolder
     // Every array of the family with element type T draws its second values from this one
     // registry: zero_any::Array<T> and pattern::Array<T> alike. A reclaim must mark what ALL
     // of them still name: each member registers its mark here on its first use of the
-    // registry (zero_any::ArrayImpl::acquire_cst2_registry()), and
+    // registry (zero_any::ArrayImpl::acquire_const2_registry()), and
     // zero_any::ArrayImpl::reclaim_second_values(), on any member, runs them all.
 
     /// @brief A member's mark: sets referenced[id] for each identifier its live arrays name.
@@ -552,7 +552,7 @@ class GlobalVecHolder
     [[nodiscard]] static T* take_free_slot() noexcept;
 
     /// @brief Is @p ptr a second-value slot of this type?
-    /// @note THE constant-2 test of zero_any: `is_cst_val2()` is
+    /// @note THE constant-2 test of zero_any: `is_const_val2()` is
     ///       `region_contains(values)`. Relaxed load of a pointer that is
     ///       written once, before any chunk exists.
     [[nodiscard]] static bool region_contains(const T* ptr) noexcept
@@ -648,7 +648,7 @@ class GlobalVecHolder
     /**
      * @brief Drop one user; free the whole registry when it was the last.
      *
-     * @param nb_val2 Incremented by the number of registered values freed.
+     * @param n_val2 Incremented by the number of registered values freed.
      *
      * @details Decrements #ref_count and returns immediately while other
      *          zero_any::Array<T> instances are alive. The last one out frees every
@@ -658,7 +658,7 @@ class GlobalVecHolder
      *          next generation of arrays is freed by its own last one out.
      *
      * @warning No thread may be SCANNING the chain while this runs --
-     *          find_or_set_ind_cst_val2(), reached from make_block_compression
+     *          find_or_set_idx_const_val2(), reached from make_block_compression
      *          on the write slow path. Call it serially, or from an
      *          `omp single` PRECEDED BY A BARRIER that ends every concurrent
      *          scan (a `nowait` loop before the single lets a late writer's
@@ -668,7 +668,7 @@ class GlobalVecHolder
      *       "I am the lone thread of a single". omp_in_parallel() is the wrong
      *       test, since the single legitimately runs inside a parallel region.
      */
-    static void clear_if_last(int& nb_val2);
+    static void clear_if_last(int& n_val2);
 
     /**
      * @brief Free everything unconditionally, ignoring #ref_count.
@@ -728,7 +728,7 @@ class GlobalVecHolder
     ///          (id_limit + 1) values made by region_init(), next to the
     ///          region and the same way: only the pages of identifiers handed
     ///          out are ever backed, region_reset() gives them back, and the
-    ///          size follows CHUNK_CST_VAL2_ID_LIMIT. A static array of
+    ///          size follows CHUNK_CONST_VAL2_ID_LIMIT. A static array of
     ///          max_ids + 1 values (32 MiB of bss for a double, 96 for a 24-byte
     ///          type, per element type) cost the same RSS for a trivial T, but
     ///          not for a T whose default constructor is not constexpr: its
@@ -757,15 +757,15 @@ class GlobalVecHolder
     static constexpr std::size_t region_usable =
         (max_ids * id_stride) < region_bytes ? (max_ids * id_stride) : region_bytes;
 
-#ifndef CHUNK_CST_VAL2_INDEX_LOG2
-    static constexpr int chunk_cst_val2_index_loc = 18;
+#ifndef CHUNK_CONST_VAL2_INDEX_LOG2
+    static constexpr int chunk_const_val2_index_loc = 18;
     // 2^18 = 262144 slots, 2 Mio/type; <11% load at 30k values
 #else
-    static constexpr int chunk_cst_val2_index_loc = CHUNK_CST_VAL2_INDEX_LOG2;
+    static constexpr int chunk_const_val2_index_loc = CHUNK_CONST_VAL2_INDEX_LOG2;
 #endif
 
-    static constexpr size_t index_cap       = 1uz << chunk_cst_val2_index_loc; ///< Initial capacity.
-    static constexpr int    index_max_probe = 64;                              ///< Bounded; giving up means fallback.
+    static constexpr size_t index_cap       = 1uz << chunk_const_val2_index_loc; ///< Initial capacity.
+    static constexpr int    index_max_probe = 64;                                ///< Bounded; giving up means fallback.
 
     /// @brief Bytes of the value table: identifiers 0 to id_limit.
     /// @pre region_init() has read id_limit.
@@ -820,7 +820,7 @@ class GlobalVecHolder
     static inline std::atomic<std::size_t> region_used{0};       ///< Bump offset, in bytes.
 
     /// @brief The identifiers region_alloc() hands out: max_ids, or fewer
-    ///        under CHUNK_CST_VAL2_ID_LIMIT (read once in region_init(); it
+    ///        under CHUNK_CONST_VAL2_ID_LIMIT (read once in region_init(); it
     ///        can only lower the bound -- the way a test reaches it).
     static inline std::size_t id_limit = max_ids;
 
@@ -837,7 +837,7 @@ class GlobalVecHolder
 
     /// @brief The live table. Null until the first publish; readers that see
     ///        null miss and take the cold path, which is always correct.
-    static inline std::atomic<IndexTable*> index_tab{nullptr};
+    static inline std::atomic<IndexTable*> index_table{nullptr};
     /// @brief Every table ever published, the live one last. Old generations
     ///        are kept until index_clear(): a lock-free reader may still hold
     ///        their pointer, and index_clear() is the one point where no
@@ -862,13 +862,13 @@ class GlobalVecHolder
  *  - GlobalVecHolder::head is never null after create() or clear(): clear()
  *    reinstalls an empty segment, so a later compression pass finds a valid
  *    head without testing.
- *  - Every slot handed out by find_or_set_ind_cst_val2() lies in the region,
- *    and nothing else does: is_cst_val2_ptr() is exact.
+ *  - Every slot handed out by find_or_set_idx_const_val2() lies in the region,
+ *    and nothing else does: is_const_val2_ptr() is exact.
  *
- * @see TabCstVal2Holder<bool>, which has none of this machinery.
+ * @see ArrayConstVal2Holder<bool>, which has none of this machinery.
  */
 template <typename T>
-class TabCstVal2Holder
+class ArrayConstVal2Holder
 {
   public:
     using VecHolder = GlobalVecHolder<T>;
@@ -889,16 +889,16 @@ class TabCstVal2Holder
      *
      * @note The O(N) chain scan runs only behind GlobalVecHolder::index_degraded.
      */
-    [[nodiscard]] T* find_or_set_ind_cst_val2(T second_v, SecondValueRef<T> ptr_second_value);
+    [[nodiscard]] T* find_or_set_idx_const_val2(T second_v, SecondValueRef<T> ptr_second_value);
 
-    /// @brief find_or_set_ind_cst_val2() recording the slot by a release store
+    /// @brief find_or_set_idx_const_val2() recording the slot by a release store
     ///        (SecondValueRef::set_from_array_release()): a member with the motif state.
-    [[nodiscard]] T* find_or_set_ind_cst_val2_release(T second_v, SecondValueRef<T> ptr_second_value);
+    [[nodiscard]] T* find_or_set_idx_const_val2_release(T second_v, SecondValueRef<T> ptr_second_value);
 
     /// @brief Is @p ptr one of this type's second-value slots?
-    /// @note `is_cst_val2()` of zero_any: one relaxed load of the region base
+    /// @note `is_const_val2()` of zero_any: one relaxed load of the region base
     ///       and two compares, no per-chunk state.
-    [[nodiscard]] static bool is_cst_val2_ptr(const T* ptr) noexcept
+    [[nodiscard]] static bool is_const_val2_ptr(const T* ptr) noexcept
     {
         return GlobalVecHolder<T>::region_contains(ptr);
     }
@@ -909,9 +909,9 @@ class TabCstVal2Holder
     ///          unindexed, and the authoritative slot scan runs under the
     ///          insert lock. Used where a chunk must be pointed back at its
     ///          constant from the per-chunk tables alone
-    ///          (init_values_cst_val): re-sync after a lost CAS, re-chunk,
+    ///          (init_values_const_val): re-sync after a lost CAS, re-chunk,
     ///          teardown -- never on the element write path.
-    [[nodiscard]] static T* find_cst_val2_ptr(InT<T> second_v);
+    [[nodiscard]] static T* find_const_val2_ptr(InT<T> second_v);
 
     // ── Lifecycle ─────────────────────────────────────────────────────────
 
@@ -941,7 +941,7 @@ class TabCstVal2Holder
      *
      * @details Same conversion, but returns T{} rather than indexing out of
      *          bounds if @p ptr is not where the caller thought. A pointer that
-     *          passes is_cst_val2_ptr() can only yield an id in [1, id_capacity()],
+     *          passes is_const_val2_ptr() can only yield an id in [1, id_capacity()],
      *          so this never fires in a correct call -- it guards a pointer
      *          that was not range-tested, where a compare is cheaper than a
      *          crash.
@@ -956,13 +956,13 @@ class TabCstVal2Holder
 
     /**
      * @brief Drop this user of the registry; the last one frees it.
-     * @param nb_val2 Incremented by the number of registered values freed.
+     * @param n_val2 Incremented by the number of registered values freed.
      * @warning Single thread only, and with no concurrent scan in flight.
      *          @see GlobalVecHolder::clear_if_last for the full contract.
      */
-    static void clear(int& nb_val2)
+    static void clear(int& n_val2)
     {
-        VecHolder::clear_if_last(nb_val2);
+        VecHolder::clear_if_last(n_val2);
     }
 
     /// @brief The identifier for @p value, registering its slot if it is new;
@@ -997,7 +997,7 @@ class TabCstVal2Holder
 };
 
 /**
- * @brief TabCstVal2Holder for bool, where the whole registry collapses.
+ * @brief ArrayConstVal2Holder for bool, where the whole registry collapses.
  *
  * @details A bool has exactly one value that is not the first constant, so
  *          there is nothing to register, look up, share or free: a single
@@ -1005,41 +1005,41 @@ class TabCstVal2Holder
  *          of the primary template is kept so call sites compile uniformly, and
  *          all of them are trivial.
  *
- * @warning find_or_set_ind_cst_val2() takes NO arguments here, unlike the
+ * @warning find_or_set_idx_const_val2() takes NO arguments here, unlike the
  *          primary template's two. A call site that serves both must dispatch,
  *          not just forward.
  */
 template <>
-class TabCstVal2Holder<bool>
+class ArrayConstVal2Holder<bool>
 {
   public:
-    /// @brief Nothing to create. @see TabCstVal2Holder::create
+    /// @brief Nothing to create. @see ArrayConstVal2Holder::create
     static void create() {}
     /// @brief Nothing to free, and no user count to keep.
-    static void clear(int& /*nb_val2*/) {}
+    static void clear(int& /*n_val2*/) {}
 
     /// @brief The shared array. There is only ever one, so nothing is searched.
-    static bool* find_or_set_ind_cst_val2()
+    static bool* find_or_set_idx_const_val2()
     {
         return m_ptr.data();
     }
 
     /// @brief Is @p ptr the shared array? There is only one.
-    [[nodiscard]] static bool is_cst_val2_ptr(const bool* ptr) noexcept
+    [[nodiscard]] static bool is_const_val2_ptr(const bool* ptr) noexcept
     {
         return ptr == m_ptr.data();
     }
     /// @brief The shared array, whatever the value: it is `true` or nothing.
-    [[nodiscard]] static bool* find_cst_val2_ptr(bool /*second_v*/) noexcept
+    [[nodiscard]] static bool* find_const_val2_ptr(bool /*second_v*/) noexcept
     {
         return m_ptr.data();
     }
 
     /// @brief The one shared array, all `true`. constinit: a global array can
     ///        reach it before any dynamic initialisation has run.
-    static inline constinit std::array<bool, cst_buffer_size> m_ptr = []
+    static inline constinit std::array<bool, const_buffer_size> m_ptr = []
     {
-        std::array<bool, cst_buffer_size> arr{};
+        std::array<bool, const_buffer_size> arr{};
         arr.fill(true);
         return arr;
     }();
@@ -1047,4 +1047,4 @@ class TabCstVal2Holder<bool>
 
 } // namespace shrink_array
 
-#include "chunk/internal/tab_cst_val2_holder_inline.h" // the template bodies
+#include "chunk/internal/array_const_val2_holder_inline.h" // the template bodies

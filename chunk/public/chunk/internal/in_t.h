@@ -57,8 +57,8 @@ namespace shrink_array
 //     ProxyBase::enqueue_async_arithmetic             (proxy_base.h)
 //     ProxyBase::apply_atomic_op (U parameter)        (proxy_base.h)
 //     ProxyOperators::friend +,-,*,/                  (proxy_operators.h)
-//     increm_chunk_write<V>(V v)                      (chunk_stats.h)
-//     Proxy::is_cst_val_and_v_equal_zero              (zero_proxy.h)
+//     inc_chunk_write<V>(V v)                      (chunk_stats.h)
+//     Proxy::is_const_val_and_v_equal_zero              (zero_proxy.h)
 //
 // The engines those operators call -- assign_impl (the three proxies),
 // ProxyBase::arithmetic_assign / bitwise_assign, Proxy::apply_compound_operation
@@ -80,20 +80,20 @@ namespace shrink_array
 // `ptr_second_value` (a SecondValueRef) after reading `second_v`, so a
 // `const T&` bound to that slot would change under it:
 //
-//     TabCstVal2Holder::find_or_set_ind_cst_val2      (tab_cst_val2_holder.h)
+//     ArrayConstVal2Holder::find_or_set_idx_const_val2      (array_const_val2_holder.h)
 //
 // Also kept as `T v` by policy: no aliasing today, but on write paths where a
 // large user T could introduce one:
 //
-//     TabCstVal2Holder::alloc_chunk(T val)            (tab_cst_val2_holder.h)
+//     ArrayConstVal2Holder::alloc_chunk(T val)            (array_const_val2_holder.h)
 //     zero_one_value::Array::set_second_value(T)                (zero_one_value_array.h and
 //                                                       zero_one_value_array_inline.h)
 //     zero_one_value::ChunkFastCompPolicy::have_chunk_to_compress(T) (zero_one_value_chunk.h)
 //
 // ─── COROLLARY FOR LOCAL VARIABLES ───────────────────────────────────────────
 //
-//     const T v_old = values[num];       // snapshot
-//     ...                                // code that mutates values[num]
+//     const T v_old = values[elem_offset];       // snapshot
+//     ...                                // code that mutates values[elem_offset]
 //     if (v_old == something) { ... }    // read snapshot
 //
 // The copy is INTENTIONAL. Do NOT turn these into `const T&`: that

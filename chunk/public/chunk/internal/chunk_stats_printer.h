@@ -141,13 +141,13 @@ inline void print_formatted_chunk_stats(std::ostream&      os,
     // several threads do not interleave.
     // The table number changes at every re-chunk; the name, when the caller
     // gave one, is what says which array this is.
-    const std::string tab_label = array_name.empty()
-                                      ? "[tab_" + std::to_string(array_id) + " " + type_name + "]"
-                                      : "[" + array_name + " #" + std::to_string(array_id) + " " + type_name + "]";
+    const std::string array_label = array_name.empty()
+                                        ? "[array_" + std::to_string(array_id) + " " + type_name + "]"
+                                        : "[" + array_name + " #" + std::to_string(array_id) + " " + type_name + "]";
 
     // Left-aligned prefix, then the overall compression statistics.
-    std::string line = std::format("{:<40}{}{:>6}/{:>6} chunks compressed ({:>5.1f}%)", tab_label, reset, n_compressed,
-                                   chunk_count, pct_total);
+    std::string line = std::format("{:<40}{}{:>6}/{:>6} chunks compressed ({:>5.1f}%)", array_label, reset,
+                                   n_compressed, chunk_count, pct_total);
 
     // Aligned type-2 statistics, or blanks of the same width.
     if (n_t1 > 0)

@@ -26,7 +26,7 @@ Two ways to name the binaries:
     CYCLE through the builds: run 1 on the first, run 2 on the second, ...
     and back to the first, so a long session spreads its draws over all of
     them. A build's binaries execute in THEIR directory, where the reference
-    files (data_tab_*, the oracle a check run reads) live, as in the
+    files (data_array_*, the oracle a check run reads) live, as in the
     historical mode; the outputs, the CSV and the log go to a directory of
     their own under the build root, multi_launch_runs/<arch>_<date_time>, one per
     session (--run-dir names another).
@@ -195,18 +195,18 @@ parser.add_argument("--build-root", default=os.environ.get("CHUNK_BUILD_ROOT"),
 parser.add_argument("--run-dir", default=None, metavar="DIR",
                     help="Where the output_*/error_* files, the CSV and the log go. Default: "
                          "the current directory in the historical mode (the binaries run there "
-                         "too and read the oracle data_tab* there); under --builds a directory "
+                         "too and read the oracle data_array* there); under --builds a directory "
                          "of its own, <build-root>/multi_launch_runs/<arch>_<date_time>, and each "
                          "build's binaries run in their own directory, with their own oracle.")
 parser.add_argument("--regen-ref", action="store_true",
-                    help="Regenerate the reference files (data_tab_*) with the vector check "
+                    help="Regenerate the reference files (data_array_*) with the vector check "
                          "binary before the runs: in the current directory (historical mode), "
                          "or in each build's binary directory (--builds), from that build's "
-                         "own vector binary. The old data_tab_* files are removed first.")
+                         "own vector binary. The old data_array_* files are removed first.")
 # No "regen" in this help: the GUI's option filter matches flags AND help text.
 parser.add_argument("--only-checksum", action="store_true",
                     help="With the reference rebuilt before the runs, the vector binary writes "
-                         "the data_tab_*_check_sum files only (shrink_bench --checksum_only), no "
+                         "the data_array_*_check_sum files only (shrink_bench --checksum_only), no "
                          "data: ~20 GB less per oracle. The checks are then bit-exact (no "
                          "1e-10 / 1e-6 element tolerance) and a mismatch aborts without "
                          "locating the element: rebuild a full reference to diagnose it.")
@@ -624,7 +624,7 @@ def _wait_ref(build):
     return True
 
 # 🧬 Reference regeneration: the vector (std::vector) check binary writes the
-# data_tab_* oracle the chunk binaries compare against. Once per build, in the
+# data_array_* oracle the chunk binaries compare against. Once per build, in the
 # directory its binaries run in, after removing the previous files -- a check
 # run against a partial oracle aborts on the first missing dump. Not under
 # NO_IO, which would disable the very writes this is about.
@@ -644,7 +644,7 @@ if args.regen_ref:
             # build's first run here, the other builds' references meanwhile.
             ref_pending.add(build)
             continue
-        old = glob.glob(os.path.join(ref_dir, "data_tab*"))
+        old = glob.glob(os.path.join(ref_dir, "data_array*"))
         for f in old:
             os.remove(f)
         label = build or os.path.basename(os.path.abspath(ref_dir))
@@ -666,7 +666,7 @@ if args.regen_ref:
             _pool_stop(f"reference regeneration failed for {label}, return code {result.returncode}")
             sys.exit(f"❌ Reference regeneration failed for {label} (return code {result.returncode}, "
                      f"see {log_name})")
-        n_new = len(glob.glob(os.path.join(ref_dir, "data_tab*")))
+        n_new = len(glob.glob(os.path.join(ref_dir, "data_array*")))
         print(f"✅ Reference for {label}: {n_new} file(s) in {wall:.1f}s")
         if pool:
             pool.mark(_ref_claim(build), "done", f"{n_new} file(s)\n")

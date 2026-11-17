@@ -79,7 +79,7 @@ void TypeStateRegistry::ensure_ready()
 
 void TypeStateRegistry::publish_manager(std::unique_ptr<TypeStateInterface> manager)
 {
-    const auto count = static_cast<std::size_t>(nb_managers_.load(std::memory_order_relaxed));
+    const auto count = static_cast<std::size_t>(n_managers_.load(std::memory_order_relaxed));
     if (count == table_capacity_)
     {
         // Full (or none yet): a table twice as large, the published slots
@@ -96,8 +96,8 @@ void TypeStateRegistry::publish_manager(std::unique_ptr<TypeStateInterface> mana
     }
     owned_.push_back(std::move(manager));
     tables_.back()[count] = owned_.back().get();
-    nb_managers_.store(static_cast<int>(count + 1), std::memory_order_release); // publishes the slot
-    phase_guard::teams::arrays_exist.store(true, std::memory_order_release);    // two top-level teams now refused
+    n_managers_.store(static_cast<int>(count + 1), std::memory_order_release); // publishes the slot
+    phase_guard::teams::arrays_exist.store(true, std::memory_order_release);   // two top-level teams now refused
 }
 
 namespace
@@ -560,9 +560,9 @@ void TypeStateRegistryParallelInterface<Derived, true>::clear_list_block_free_th
 
     // One prepare per type, in list order (views::transform is lazy: ranges::to
     // runs it once per element, front to back).
-    const auto nb_buckets =
-        types | std::views::transform([](const auto& elm) { return elm->clear_list_block_free_prepare(); }) |
-        std::ranges::to<std::vector>();
+    const auto n_buckets = types |
+                           std::views::transform([](const auto& elm) { return elm->clear_list_block_free_prepare(); }) |
+                           std::ranges::to<std::vector>();
 
     pmp::team(pmp::Options{},
               [&](pmp::Team& team)
@@ -574,7 +574,7 @@ void TypeStateRegistryParallelInterface<Derived, true>::clear_list_block_free_th
                   {
                       for (std::size_t i = 0; i < types.size(); ++i)
                       {
-                          for (auto b = static_cast<std::size_t>(thr_rank); b < nb_buckets[i];
+                          for (auto b = static_cast<std::size_t>(thr_rank); b < n_buckets[i];
                                b += static_cast<std::size_t>(nthr))
                           {
                               phase(types[i], static_cast<int>(b));

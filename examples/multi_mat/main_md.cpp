@@ -93,7 +93,7 @@ bool SimuMd::parse(int argc, char** argv)
             }
             else if (key == "--mat")
             {
-                nbmat = std::stoi(val());
+                n_materials = std::stoi(val());
             }
             else if (key == "--iter")
             {
@@ -174,7 +174,7 @@ bool SimuMd::parse(int argc, char** argv)
             return false;
         }
     }
-    const bool ok = nx > 0 && ny > 0 && nbmat > 0 && iter_max > 0 && option_chunk >= 1 && option_chunk <= 4 &&
+    const bool ok = nx > 0 && ny > 0 && n_materials > 0 && iter_max > 0 && option_chunk >= 1 && option_chunk <= 4 &&
                     freq_rtz > 0 && freq_compress > 0 && interface_width >= 0 && pc_chunk > 0 && pc_chunk <= 100 &&
                     pc_vector > 0 && pc_vector <= 100 &&
                     static_cast<long long>(storage_size()) <= static_cast<long long>(1 << 30);
@@ -194,12 +194,12 @@ std::size_t SimuMd::storage_size() const
 void SimuMd::draw_storage()
 {
     std::mt19937 gen(seed != 0 ? seed : std::random_device{}());
-    dis.assign(nbmat, option_chunk == 1);
+    dis.assign(n_materials, option_chunk == 1);
     if (option_chunk >= 3)
     {
         std::uniform_int_distribution<> distrib(0, option_chunk == 3 ? 1 : 100);
         const int                       threshold = option_chunk == 3 ? 1 : chunk_rate;
-        for (int m = 0; m < nbmat; ++m)
+        for (int m = 0; m < n_materials; ++m)
         {
             dis[m] = distrib(gen) < threshold;
         }
@@ -209,7 +209,7 @@ void SimuMd::draw_storage()
     {
         chunk_count += c ? 1 : 0;
     }
-    std::println("Number of chunk materials : {} on {}", chunk_count, nbmat);
+    std::println("Number of chunk materials : {} on {}", chunk_count, n_materials);
 }
 
 void SimuMd::create_tabs()
@@ -217,9 +217,9 @@ void SimuMd::create_tabs()
     const int size = static_cast<int>(storage_size());
     for (auto& t : tabs)
     {
-        t.create(nbmat, size);
+        t.create(n_materials, size);
     }
-    frac.create(nbmat, size);
+    frac.create(n_materials, size);
 }
 
 void SimuMd::compute_distribution()
@@ -236,11 +236,11 @@ void SimuMd::compute_distribution()
     std::println("Largest box : chunk {} x {}, vector {} x {}", hc, wc, hv, wv);
 
     std::mt19937 rng(seed != 0 ? seed + 1 : std::random_device{}());
-    box_store.resize(static_cast<std::size_t>(iter_max) * static_cast<std::size_t>(nbmat));
-    const auto bx = std::mdspan(box_store.data(), std::dextents<int, 2>(iter_max, nbmat));
+    box_store.resize(static_cast<std::size_t>(iter_max) * static_cast<std::size_t>(n_materials));
+    const auto bx = std::mdspan(box_store.data(), std::dextents<int, 2>(iter_max, n_materials));
     for (int it = 0; it < iter_max; ++it)
     {
-        for (int mat = 0; mat < nbmat; ++mat)
+        for (int mat = 0; mat < n_materials; ++mat)
         {
             const bool c = dis[mat];
             const int  h = std::uniform_int_distribution(1, c ? hc : hv)(rng);
@@ -265,7 +265,7 @@ void print_stats(const SimuMd& s, const MultiMatAlgoT& mm_algo)
     double frac   = 0;
     double real   = 0;
     int    n      = 0;
-    mm_algo.loop(0, s.nbmat,
+    mm_algo.loop(0, s.n_materials,
                  [&](int mat, const auto& get_mat_vec, const auto& loops)
                  {
                      if (!dispatch.is_chunk(mat))
@@ -274,7 +274,7 @@ void print_stats(const SimuMd& s, const MultiMatAlgoT& mm_algo)
                      }
                      const auto& t0 = get_mat_vec(s.tabs[0]);
                      using V        = std::remove_cvref_t<decltype(t0)>;
-                     if constexpr (std::is_same_v<V, VectChunk<double>>)
+                     if constexpr (std::is_same_v<V, MatZeroArray<double>>)
                      {
                          fields += (t0.stats() + get_mat_vec(s.tabs[1]).stats() + get_mat_vec(s.tabs[2]).stats()) / 3;
                          frac += get_mat_vec(s.frac).stats();
@@ -407,13 +407,13 @@ int main(int argc, char** argv)
                                                ? "embedded (OMPT tool of manage_ompt.cpp, no call from here)"
                                                : "manual (explicit compress() on the field arrays)");
     std::println("Mesh              : {} x {} ({} cells), {} materials, {} iterations", simu.nx, simu.ny,
-                 static_cast<long>(simu.nx) * simu.ny, simu.nbmat, simu.iter_max);
+                 static_cast<long>(simu.nx) * simu.ny, simu.n_materials, simu.iter_max);
     std::println("Tile              : {} x {} (chunk size {})", tile_shape[0], tile_shape[1], chunk_size);
 
     Runtime::init(true);
 
     simu.draw_storage();
-    dispatch.create(simu.nbmat);
+    dispatch.create(simu.n_materials);
     dispatch.set(simu.dis);
     simu.compute_distribution();
 

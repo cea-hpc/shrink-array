@@ -122,13 +122,13 @@ void ring_log(uint32_t tid, EventCode ev, uint32_t info)
 }
 
 // Record an op-lifecycle event with the op's full address.
-void ring_log_op(uint32_t tid, EventCode ev, uint32_t num, const void* addr)
+void ring_log_op(uint32_t tid, EventCode ev, uint32_t elem_offset, const void* addr)
 {
     const uint32_t idx = ring_head.fetch_add(1, std::memory_order_relaxed) & (ring_size - 1);
     ring_buf[idx].ts   = now_cycles();
     ring_buf[idx].tid  = tid;
     ring_buf[idx].ev   = ev;
-    ring_buf[idx].info = num;
+    ring_buf[idx].info = elem_offset;
     ring_buf[idx].addr = static_cast<uint64_t>(::fast_alloc::address_bits(addr));
 }
 
@@ -229,8 +229,9 @@ void dump_ring_for_addr(const void* target)
         {
             continue;
         }
-        std::cout << "[" << i << "] tid=" << entry.tid << " ev=" << event_name(entry.ev) << " num=" << entry.info
-                  << " addr=0x" << std::hex << entry.addr << std::dec << " ts=" << entry.ts << "\n";
+        std::cout << "[" << i << "] tid=" << entry.tid << " ev=" << event_name(entry.ev)
+                  << " elem_offset=" << entry.info << " addr=0x" << std::hex << entry.addr << std::dec
+                  << " ts=" << entry.ts << "\n";
     }
     std::cout << "\033[1m---- ring dump: block context 0x" << std::hex << (target_addr & bmask) << std::dec
               << " (other offsets in same slab) ----\033[0m\n";
@@ -249,8 +250,9 @@ void dump_ring_for_addr(const void* target)
         {
             continue; // already shown exact
         }
-        std::cout << "[" << i << "] tid=" << entry.tid << " ev=" << event_name(entry.ev) << " num=" << entry.info
-                  << " addr=0x" << std::hex << entry.addr << std::dec << " ts=" << entry.ts << "\n";
+        std::cout << "[" << i << "] tid=" << entry.tid << " ev=" << event_name(entry.ev)
+                  << " elem_offset=" << entry.info << " addr=0x" << std::hex << entry.addr << std::dec
+                  << " ts=" << entry.ts << "\n";
     }
     std::cout << "\033[1m---- end ring for addr ----\033[0m\n";
     std::cout.flush(); // abort() does NOT flush cout -- force it now

@@ -79,7 +79,7 @@ def test_pooled_summary_points_errors(tmp_path, capsys):
 def _fake_tree(root, calls, fail_at=0):
     """Two flat builds whose zero_one_value@dyn binary exits 0 at once --
     except the @p fail_at-th call over both builds and both jobs (counted by
-    an atomic mkdir), which exits 3 -- and whose vector binary writes a data_tab_x."""
+    an atomic mkdir), which exits 3 -- and whose vector binary writes a data_array_x."""
     body = ("#!/bin/bash\n"
             f"k=1; until mkdir \"{calls}/c_$k\" 2>/dev/null; do k=$((k+1)); done\n"
             "sleep 0.02\n"
@@ -89,7 +89,7 @@ def _fake_tree(root, calls, fail_at=0):
         d = root / f"cmake-build-{b}"
         d.mkdir(parents=True)
         (d / "shrink_bench_omp_zero_one_value_dyn").write_text(body)
-        (d / "shrink_bench_omp_vector_check").write_text("#!/bin/bash\nsleep 0.3\necho x > data_tab_x\n")
+        (d / "shrink_bench_omp_vector_check").write_text("#!/bin/bash\nsleep 0.3\necho x > data_array_x\n")
         for f in d.iterdir():
             f.chmod(0o755)
 

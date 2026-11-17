@@ -290,7 +290,7 @@ void Runtime::chunk_stats()
         {
             std::println("    bytes        = {} MB", stats.bytes_reused / (1024L * 1024));
         }
-        const long   reads_all = stats.read + stats.read_cst;
+        const long   reads_all = stats.read + stats.read_const;
         const long   total_rw  = stats.write + reads_all;
         const double pct_w     = total_rw != 0 ? pct(stats.write, total_rw) : 0.0;
         const double pct_r     = total_rw != 0 ? pct(reads_all, total_rw) : 0.0;
@@ -310,8 +310,8 @@ void Runtime::chunk_stats()
         // Read hit rate: share served straight from the constant.
         if (reads_all != 0)
         {
-            const double hit = pct(stats.read_cst, reads_all);
-            std::println("    constant     = {}  ({:.1f}% hit)", stats.read_cst, hit);
+            const double hit = pct(stats.read_const, reads_all);
+            std::println("    constant     = {}  ({:.1f}% hit)", stats.read_const, hit);
             std::println("    materialised = {}  ({:.1f}%)", stats.read, 100.0 - hit);
         }
         // Reads that entered the slow sync path, and of those the cross-rank ones.

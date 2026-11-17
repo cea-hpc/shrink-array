@@ -15,7 +15,7 @@
  */
 
 /**
- * @file cst2_reclaim_validation.cpp
+ * @file const2_reclaim_validation.cpp
  * @brief zero_any::Array::reclaim_second_values() frees exactly the second values
  *        nothing refers to any more, and the registry reuses their identifiers.
  *
@@ -52,7 +52,7 @@
  *               it keep exactly what the chunks at the new geometry hold, and
  *               one during a re-chunk rebuild is refused and counted.
  *
- *          Usage: cst2_reclaim_validation [chunks]
+ *          Usage: const2_reclaim_validation [chunks]
  */
 
 #include <cstdio>     // std::snprintf, std::remove, std::getline
@@ -74,12 +74,13 @@
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
-namespace validation::cst2_reclaim_validation
+namespace validation::const2_reclaim_validation
 {
 
 using namespace shrink_array;
 
-static_assert(chunk_config::use_zero_any, "cst2_reclaim_validation is zero_any's registry: link chunk_zero_any_<size>");
+static_assert(chunk_config::use_zero_any,
+              "const2_reclaim_validation is zero_any's registry: link chunk_zero_any_<size>");
 
 using Arr      = zero_any::Array<double>;
 using Registry = zero_any::Chunk<double>::Holder::VecHolder;
@@ -105,12 +106,12 @@ static void end_phase()
 }
 
 /// @brief The constant chunk @p chunk_index holds after a fill at @p base.
-static double cst(double base, long chunk_index)
+static double constant(double base, long chunk_index)
 {
     return base + static_cast<double>(chunk_index);
 }
 
-/// @brief Write chunk j of @p arr whole at cst(base, j) -- the chunks for which
+/// @brief Write chunk j of @p arr whole at constant(base, j) -- the chunks for which
 ///        @p only_even is false or j is even -- then the between-region pass.
 static void fill(Arr& arr, long nch, long chunk_sz, double base, bool only_even = false)
 {
@@ -124,7 +125,7 @@ static void fill(Arr& arr, long nch, long chunk_sz, double base, bool only_even 
             const long chunk_index = i / chunk_sz;
             if (!only_even || chunk_index % 2 == 0)
             {
-                arr[i] = cst(base, chunk_index);
+                arr[i] = constant(base, chunk_index);
             }
         }
     }
@@ -134,14 +135,14 @@ static void fill(Arr& arr, long nch, long chunk_sz, double base, bool only_even 
 static int fails = 0;
 
 /// @brief Every element of @p arr against the constant of its chunk:
-///        cst(even_base, j) for an even chunk, cst(odd_base, j) for an odd one.
+///        constant(even_base, j) for an even chunk, constant(odd_base, j) for an odd one.
 static void expect_values(const char* where, const Arr& arr, long nch, long chunk_sz, double even_base, double odd_base)
 {
     long bad = 0;
     for (long i = 0; i < nch * chunk_sz; ++i)
     {
         const long chunk_index = i / chunk_sz;
-        bad += (arr[static_cast<int>(i)] != cst(chunk_index % 2 == 0 ? even_base : odd_base, chunk_index)) ? 1 : 0;
+        bad += (arr[static_cast<int>(i)] != constant(chunk_index % 2 == 0 ? even_base : odd_base, chunk_index)) ? 1 : 0;
     }
     if (bad != 0)
     {
@@ -189,7 +190,7 @@ static long in_use()
     return static_cast<long>(Arr::second_value_stats().in_use());
 }
 
-/// @brief --rounds (child, run under a lowered CHUNK_CST_VAL2_ID_LIMIT):
+/// @brief --rounds (child, run under a lowered CHUNK_CONST_VAL2_ID_LIMIT):
 ///        @p rounds rounds of @p nch new constants, a reclaim after each.
 ///        Returning means it ran to the end.
 static int run_rounds_child(long nch, long rounds)
@@ -203,7 +204,7 @@ static int run_rounds_child(long nch, long rounds)
     }
     // second_value_stats() reports the lowered bound (read when the registry
     // was first used).
-    expect_eq("child: capacity (CHUNK_CST_VAL2_ID_LIMIT)", static_cast<long>(Arr::second_value_stats().capacity),
+    expect_eq("child: capacity (CHUNK_CONST_VAL2_ID_LIMIT)", static_cast<long>(Arr::second_value_stats().capacity),
               3 * nch);
     expect_values("child: last round", arr, nch, chunk_sz, 1.0e6 + 1000. * static_cast<double>(rounds - 1),
                   1.0e6 + 1000. * static_cast<double>(rounds - 1));
@@ -216,10 +217,11 @@ static int run_rounds_child(long nch, long rounds)
 ///        values): it must reach the end.
 static void check_rounds_under_limit(const char* self, long nch)
 {
-    const long        limit = 3 * nch;
-    const std::string log   = validation::temp_path("cst2_reclaim.log");
-    const std::string cmd = "CHUNK_CST_VAL2_ID_LIMIT=" + std::to_string(limit) + " " + validation::self_command(self) +
-                            " --rounds " + std::to_string(nch) + " 12 > \"" + log + "\" 2>&1";
+    const long        limit  = 3 * nch;
+    const std::string log    = validation::temp_path("const2_reclaim.log");
+    const std::string cmd    = "CHUNK_CONST_VAL2_ID_LIMIT=" + std::to_string(limit) + " " +
+                               validation::self_command(self) + " --rounds " + std::to_string(nch) + " 12 > \"" + log +
+                               "\" 2>&1";
     const int         status = std::system(cmd.c_str());
     const bool        ok     = status != -1 && WIFEXITED(status) && WEXITSTATUS(status) == 0;
     bool              said   = false;
@@ -254,7 +256,7 @@ int run(int argc, char** argv)
     const long nch      = argc > 1 ? shrink_array::arg_number<long>(argv[1], 16, "chunks") : 16;
     const auto chunk_sz = static_cast<long>(Arr(0).chunk_size()); // empty: no chunk, so no registry reference
 
-    println("=== cst2_reclaim_validation  chunks={}  chunk_size={}  threads={} ===", nch, chunk_sz,
+    println("=== const2_reclaim_validation  chunks={}  chunk_size={}  threads={} ===", nch, chunk_sz,
             CHUNK_PMP_MAX_THREADS);
     {
         Arr arr(static_cast<int>(nch * chunk_sz));
@@ -320,7 +322,7 @@ int run(int argc, char** argv)
         {
             begin_phase();
 #pragma omp single
-            arr[1] = cst(7000., 0); // back to the chunk's constant: folds again
+            arr[1] = constant(7000., 0); // back to the chunk's constant: folds again
         }
         end_phase();
         (void)reclaim();
@@ -424,8 +426,8 @@ int run(int argc, char** argv)
     // F: under a lowered identifier limit, reclaiming rounds run to the end.
     check_rounds_under_limit(argv[0], nch);
 
-    println("=== {} ===", fails ? "CST2_RECLAIM FAILED" : "CST2_RECLAIM OK");
+    println("=== {} ===", fails ? "CONST2_RECLAIM FAILED" : "CONST2_RECLAIM OK");
     return fails ? 1 : 0;
 }
 
-} // namespace validation::cst2_reclaim_validation
+} // namespace validation::const2_reclaim_validation

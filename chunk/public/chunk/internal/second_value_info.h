@@ -20,7 +20,7 @@ namespace shrink_array
 {
 /**
  * @brief zero_one_value's per-array second-value record (its `InfArrayT`): the
- *        second constant, its slot in the cst2 registry, the array's table
+ *        second constant, its slot in the const2 registry, the array's table
  *        number.
  * @details A named aggregate rather than a tuple so the two ints cannot be
  *          confused; brace-initialised in member order, structured bindings work.
@@ -30,7 +30,7 @@ template <typename T>
 struct SecondValueInfo
 {
     T   second_value{}; ///< the array's second constant
-    int ind      = 0;   ///< its slot in the cst2 registry (chunk_config::no_second_value_index: none)
+    int idx      = 0;   ///< its slot in the const2 registry (chunk_config::no_second_value_index: none)
     int array_id = 0;   ///< the array's table number
 };
 } // namespace shrink_array

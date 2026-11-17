@@ -34,7 +34,7 @@
  * @par Threading
  * A bucket is not thread-safe: every ladder access inside a parallel region
  * holds ladder_mutex(). To keep frees from serialising, a freed block is
- * batched in a per-thread fast_alloc::InfoFreeElt, released at once when the batch fills.
+ * batched in a per-thread fast_alloc::InfoFreeElem, released at once when the batch fills.
  *
  * Allocation and free hold the same mutex, so they exclude each other. It is
  * the ladder's own (it replaced `omp critical(fast_alloc_ladder)`, threads
@@ -71,39 +71,39 @@ namespace fast_alloc
  *          batch is handed back when it fills -- one critical section instead
  *          of one per free.
  *
- * @note One instance exists, StaticConstArray::tab_info_free_elt().
+ * @note One instance exists, StaticConstArray::array_info_free_elem().
  *
  * @warning A batch that is still filling holds blocks that are free but not
  *          reusable: they belong to no bucket's free list until the flush.
  *
- * @warning The per-rank arrays are sized ONCE (#nb_thr = FAST_ALLOC_PMP_MAX_THREADS,
+ * @warning The per-rank arrays are sized ONCE (#n_thr = FAST_ALLOC_PMP_MAX_THREADS,
  *          before main) and indexed unchecked: callers must bound the rank
- *          (try_free_block() frees a rank >= #nb_thr's blocks at once).
+ *          (try_free_block() frees a rank >= #n_thr's blocks at once).
  */
-class InfoFreeElt
+class InfoFreeElem
 {
   private:
     /// @brief Batch capacity, in blocks. The other bound is 4 MiB of payload.
-    static constexpr int max_free_elt = 10000;
+    static constexpr int max_free_elem = 10000;
 
-    int* somme_sz_{nullptr}; ///< Per rank: bytes batched, bounded at 4 MiB.
+    int* total_sz_{nullptr}; ///< Per rank: bytes batched, bounded at 4 MiB.
 
   public:
-    using IntMaxFreeElt  = std::array<int, max_free_elt>;   ///< One rank's batched sizes.
-    using VoidMaxFreeElt = std::array<void*, max_free_elt>; ///< One rank's batched blocks.
+    using IntMaxFreeElem  = std::array<int, max_free_elem>;   ///< One rank's batched sizes.
+    using VoidMaxFreeElem = std::array<void*, max_free_elem>; ///< One rank's batched blocks.
 
     /// @brief Allocates the four per-thread arrays, sized by FAST_ALLOC_PMP_MAX_THREADS.
     ///        A serial build allocates nothing (pointers stay null, never reached).
-    InfoFreeElt();
+    InfoFreeElem();
 
     /// @brief Frees them. Does NOT release blocks still held in a batch.
-    ~InfoFreeElt();
+    ~InfoFreeElem();
 
     // Owns the four arrays: a copy would free them twice.
-    InfoFreeElt(const InfoFreeElt&)            = delete;
-    InfoFreeElt& operator=(const InfoFreeElt&) = delete;
-    InfoFreeElt(InfoFreeElt&&)                 = delete;
-    InfoFreeElt& operator=(InfoFreeElt&&)      = delete;
+    InfoFreeElem(const InfoFreeElem&)            = delete;
+    InfoFreeElem& operator=(const InfoFreeElem&) = delete;
+    InfoFreeElem(InfoFreeElem&&)                 = delete;
+    InfoFreeElem& operator=(InfoFreeElem&&)      = delete;
 
     /**
      * @brief Record one freed block, if the batch still has room.
@@ -123,16 +123,16 @@ class InfoFreeElt
     /// @brief Forget the batch. Call only after its blocks have been released.
     void reset(int thr_rank) noexcept
     {
-        somme_sz_[thr_rank] = compt[thr_rank] = 0;
+        total_sz_[thr_rank] = compt[thr_rank] = 0;
     }
 
-    VoidMaxFreeElt* tab_ptr{nullptr}; ///< Per rank: the batched blocks.
-    IntMaxFreeElt*  tab_sz{nullptr};  ///< Per rank: their sizes.
-    int*            compt{nullptr};   ///< Per rank: how many are batched.
+    VoidMaxFreeElem* array_ptr{nullptr}; ///< Per rank: the batched blocks.
+    IntMaxFreeElem*  array_sz{nullptr};  ///< Per rank: their sizes.
+    int*             compt{nullptr};     ///< Per rank: how many are batched.
 
     /// @brief Ranks the four arrays were sized for (FAST_ALLOC_PMP_MAX_THREADS at
     ///        construction); 0 in a serial build, which allocates nothing.
-    int nb_thr = 0;
+    int n_thr = 0;
 };
 
 /**
@@ -153,15 +153,15 @@ class StaticConstArray
 
     /// @brief Return thread @p thr_rank's batched blocks to the ladder.
     /// @warning Does NOT reset the batch; the caller must call
-    ///          InfoFreeElt::reset() or the same blocks are freed twice.
-    static void clear_info_free_elt(int thr_rank);
+    ///          InfoFreeElem::reset() or the same blocks are freed twice.
+    static void clear_info_free_elem(int thr_rank);
 
     /// @brief Flush every thread's batch and reset it.
     /// @warning Quiescent point only: no rank may be freeing meanwhile (no
     ///          ladder_mutex() here). Called by the chunk library's OMPT
     ///          parallel_end callback, so a region's parked blocks do not
     ///          outlive it.
-    static void clear_info_free_elt();
+    static void clear_info_free_elem();
 
     /// @brief The ladder's buckets, smallest first: element sizes 4 << i bytes.
     using Ladder = std::tuple<TCTypeAllocatorEBC<4, size_block>,
@@ -246,7 +246,7 @@ class StaticConstArray
      * @return TRUE if the ladder took it; FALSE if @p sz is past the top bucket,
      *         meaning the block came from malloc and the caller must free it.
      * @note Inside a parallel region the block is batched rather than returned
-     *       immediately. @see InfoFreeElt
+     *       immediately. @see InfoFreeElem
      */
     static bool try_free_block(int sz, void* ptr);
 
@@ -267,9 +267,9 @@ class StaticConstArray
     /// @brief The per-thread batches. IMMORTAL and built at first use, like the
     ///        ladder: a global array frees through them before main and after
     ///        it returns.
-    [[nodiscard]] static InfoFreeElt& tab_info_free_elt()
+    [[nodiscard]] static InfoFreeElem& array_info_free_elem()
     {
-        static auto* const batches = new InfoFreeElt();
+        static auto* const batches = new InfoFreeElem();
         return *batches;
     }
 
@@ -295,7 +295,7 @@ static_assert(StaticConstArray::bucket_index(StaticConstArray::max_const_block_s
  *          free_block() works out which from the size again.
  *
  *          Two pairs, never mixed: alloc_block()/free_block(size) when the
- *          caller knows the size at free time, alloc_tab()/free_tab() when it
+ *          caller knows the size at free time, alloc_array()/free_array() when it
  *          does not (a `fast_alloc::alignment`-byte header keeps it as a
  *          size_t). Every size is compared with the ceiling in size_t, before
  *          any narrowing.
@@ -320,13 +320,13 @@ struct BlkAllocator : public StaticConstArray
     /**
      * @brief A block of @p size bytes that remembers its own size.
      * @return A pointer past a header of `fast_alloc::alignment` bytes holding @p size,
-     *         so free_tab() needs no size argument. The alignment padding is
+     *         so free_array() needs no size argument. The alignment padding is
      *         what makes the returned pointer suitably aligned.
      */
-    static void* alloc_tab(size_t size);
+    static void* alloc_array(size_t size);
 
-    /// @brief Give back an alloc_tab() block, reading its size from its header.
-    static void free_tab(void* user_ptr);
+    /// @brief Give back an alloc_array() block, reading its size from its header.
+    static void free_array(void* user_ptr);
 };
 
 /**

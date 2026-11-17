@@ -18,7 +18,7 @@ uniform at 3.5 and its neighbour uniform at −1 are both compressed, without de
 
 | state | type (1 byte per chunk) | `values` points to |
 |---|---|---|
-| compressed to zero | 0 | the shared constant buffer `cst_val1` |
+| compressed to zero | 0 | the shared constant buffer `const_val1` |
 | compressed to a second value | 1 | the shared array of the **registry** filled with this value (§3) |
 | materialised | — | a buffer owned by the chunk |
 
@@ -28,7 +28,7 @@ that have this value. The read is exactly the same as in the other variants.
 
 The library: `shrink_array::zero_any` (it defines `CHUNK_VARIANT_ZERO_ANY`). Code: `chunk/internal/zero_any_chunk.h`, `chunk/zero_any_array.h`,
 `internal/zero_any_chunk_inline.h`, `internal/zero_any_array_inline.h`, `internal/zero_any_proxy.h`,
-`internal/zero_any_proxy_inline.h`, `internal/tab_cst_val2_holder.h`.
+`internal/zero_any_proxy_inline.h`, `internal/array_const_val2_holder.h`.
 
 ## 2. Per-chunk metadata
 
@@ -36,9 +36,9 @@ Each array has, indexed by its number (`array_id`), three rows with one entry pe
 
 | row | size per chunk | content |
 |---|---|---|
-| `tab_type_cst_val` | 1 byte | the constant type (0 or 1) |
-| `tab_second_value` | `sizeof(T)` bytes by default | the chunk's second value |
-| `tab_is_inside_chunk_list_to_compress` | 1 byte | "already in compression list" |
+| `array_type_const_val` | 1 byte | the constant type (0 or 1) |
+| `array_second_value` | `sizeof(T)` bytes by default | the chunk's second value |
+| `array_is_inside_chunk_list_to_compress` | 1 byte | "already in compression list" |
 
 With the CMake option **`CHUNK_SECOND_VALUE_INDEXED`** (disabled by default), the second-value
 slot of types larger than 4 bytes holds the **identifier** of the registry array
@@ -52,13 +52,13 @@ of object, plus 2 bytes and `sizeof(T)`), and therefore the one that gains the m
 see [adaptive_rechunk.md](adaptive_rechunk.md).
 
 When a storage is destroyed (the array's end of life, or the old storage of a rechunk), its
-three rows are **freed** (`zero_any::Proxy::clear_tab_is_int`), not just emptied. Until
+three rows are **freed** (`zero_any::Proxy::clear_array_is_int`), not just emptied. Until
 September 2026, `clear()` kept their capacity, and each rechunk left the rows of
 the old storage behind: 3.5 GB on the benchmark, with 15 rechunked arrays.
 
 ## 3. The second-value registry
 
-`tab_cst_val2_holder.h`. For each element type, a registry **unique to the process**
+`array_const_val2_holder.h`. For each element type, a registry **unique to the process**
 (`GlobalVecHolder`) holds an array filled with each distinct second value encountered.
 
 - It is organised as chained **segments of 64 slots**, rather than as a resizable
@@ -75,7 +75,7 @@ the old storage behind: 3.5 GB on the benchmark, with 15 rechunked arrays.
   the **value table** (`value_by_id`, one `T` per identifier). The region and the table are
   two `mmap(MAP_NORESERVE)` reservations made at the type's first array: address space only,
   the pages backed as identifiers are handed out, given back at the last clear, and the table
-  sized by `CHUNK_CST_VAL2_ID_LIMIT` when it is set. Until November 2026 the table was a static
+  sized by `CHUNK_CONST_VAL2_ID_LIMIT` when it is set. Until November 2026 the table was a static
   array of 4 Mi values per element type (32 MiB of bss for a `double`, 332 MiB in all in the
   benchmark): free while untouched for a trivial type, but a type whose default constructor is
   not `constexpr` touched all of it at startup, and every type counted against `RLIMIT_AS` and,
@@ -88,9 +88,9 @@ the old storage behind: 3.5 GB on the benchmark, with 15 rechunked arrays.
   that produces a very large number of distinct values makes the registry grow until its
   identifiers run out, which stops the run. In the benchmark, `CHUNK_BENCH_ULONG_BANDS`
   limits the number of distinct values of the `unsigned long` array, `CHUNK_LOG=compress=info`
-  prints the state of the registry and `CHUNK_CST2_RECLAIM=N` reclaims every N iterations.
+  prints the state of the registry and `CHUNK_CONST2_RECLAIM=N` reclaims every N iterations.
 
-`find_or_set_ind_cst_val2(value, slot)` registers the value if needed, writes it into the
+`find_or_set_idx_const_val2(value, slot)` registers the value if needed, writes it into the
 chunk's second-value slot, and returns the shared array to install.
 
 ## 4. When a chunk becomes a compression candidate
@@ -120,14 +120,14 @@ Same sequence as for the other variants (reservation of the candidates, compress
 re-read), with two lists at the end of the re-read (`fill_list_to_compress`, which compares
 each element with the first element of the chunk):
 
-- chunks **uniform at zero** are compressed to type 0: `values` goes back to `cst_val1`;
+- chunks **uniform at zero** are compressed to type 0: `values` goes back to `const_val1`;
 - chunks **uniform at another value** are compressed to type 1:
-  `find_or_set_ind_cst_val2` registers the value and returns the shared array, which
+  `find_or_set_idx_const_val2` registers the value and returns the shared array, which
   `clear_int_st` installs by CAS as the chunk's `values` pointer.
 
 The freed buffer joins the thread's reuse list after the read sections' grace period. The
 trigger threshold is
-`somme_chunk_create / (50 × number of threads)`, with a floor of 500 candidates (constants of
+`total_chunk_create / (50 × number of threads)`, with a floor of 500 candidates (constants of
 `zero_any_chunk_def.h`).
 
 The course of the pass, in the style of §8.4 of [algo_zero_one_value.md](algo_zero_one_value.md):
@@ -143,8 +143,8 @@ flowchart TD
     E -->|"all = 0"| F["list ll_compt1"]
     E -->|"all = element 0"| G["list ll_compt2"]
     E -->|"otherwise"| N["steal_unmark at once"]
-    F --> F1["clear_int_st, type 0: slot reset,<br/>type cst_val1, CAS values -> cst_val1"]
-    G --> G1["find_or_set_ind_cst_val2: value registered,<br/>written in the slot, then clear_int_st, type 1:<br/>CAS values -> the registry array"]
+    F --> F1["clear_int_st, type 0: slot reset,<br/>type const_val1, CAS values -> const_val1"]
+    G --> G1["find_or_set_idx_const_val2: value registered,<br/>written in the slot, then clear_int_st, type 1:<br/>CAS values -> the registry array"]
     F1 --> R["free_block_to_pool after a grace period,<br/>steal_unmark"]
     G1 --> R
     R --> K["queue flags: hand_back after the scan, release at the end,<br/>written meanwhile -> queued again,<br/>trigger's chunk queued again, finish()"]
@@ -186,7 +186,7 @@ value).
 
 ```mermaid
 flowchart TD
-    A["zero_any::ProxyImpl::assign_impl"] --> B{"0 on a cst_val1 chunk,<br/>no deferred operation pending?<br/>(is_cst_val1_and_v_equal_first_value)"}
+    A["zero_any::ProxyImpl::assign_impl"] --> B{"0 on a const_val1 chunk,<br/>no deferred operation pending?<br/>(is_const_val1_and_v_equal_first_value)"}
     B -->|yes| B1["nothing to do"]
     B -->|no| C["engine of 7.2 (write_with_optional_lock_with_set_ptr):<br/>deferred operations, wait_out_compressor,<br/>announce_write"]
     C --> D{"re-check:<br/>compressor?"}
@@ -199,7 +199,7 @@ flowchart TD
     G -->|no| H
     G1 --> H{"perform_core_assignment:<br/>state of the chunk?"}
     H -->|"element already = value = second value"| K
-    H -->|"cst_val1"| H1["create_value: pre-filled with 0,<br/>CAS against cst_val1"]
+    H -->|"const_val1"| H1["create_value: pre-filled with 0,<br/>CAS against const_val1"]
     H -->|"second value"| H2["create_value: pre-filled with the<br/>chunk's second value, CAS against it"]
     H -->|"materialised"| I
     H1 --> I["store_value_at"]

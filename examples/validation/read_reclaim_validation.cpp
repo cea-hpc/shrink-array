@@ -150,8 +150,8 @@ using Array =
                        zero_any::Array<T>,
                        std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
 
-using Arr = Array<double>;
-using Ind = Arr::IndType;
+using Arr   = Array<double>;
+using Index = Arr::IndexType;
 
 constexpr const char* variant_name()
 {
@@ -238,7 +238,7 @@ int run_compound(int team, int writers, double seconds, long pollute)
         Arr        arr;
         const auto chunk_sz = static_cast<long>(arr.chunk_size());
         const long total    = writers * per_writer * chunk_sz;
-        arr.resize(static_cast<Ind>(total));
+        arr.resize(static_cast<Index>(total));
         maybe_set_second_value(arr, second_value);
         const Arr& ca = arr;
 
@@ -254,7 +254,7 @@ int run_compound(int team, int writers, double seconds, long pollute)
             {
                 for (long k = 0; k < chunk_sz; ++k)
                 {
-                    arr[static_cast<Ind>((w * per_writer + c) * chunk_sz + k)] = second_value;
+                    arr[static_cast<Index>((w * per_writer + c) * chunk_sz + k)] = second_value;
                 }
             }
         }
@@ -279,7 +279,7 @@ int run_compound(int team, int writers, double seconds, long pollute)
                 {
                     for (long c = 0; c < n_victims; ++c)
                     {
-                        const auto v0 = static_cast<Ind>((base_v + c) * chunk_sz);
+                        const auto v0 = static_cast<Index>((base_v + c) * chunk_sz);
                         arr[v0]       = 1.0;          // materialise (filled with V)
                         arr[v0]       = second_value; // uniform again: a candidate
 
@@ -291,9 +291,9 @@ int run_compound(int team, int writers, double seconds, long pollute)
                         for (long q = 0; q < pollute; ++q)
                         {
                             const auto old0 =
-                                static_cast<Ind>((base_p + (next_p + n_polluters / 2) % n_polluters) * chunk_sz);
+                                static_cast<Index>((base_p + (next_p + n_polluters / 2) % n_polluters) * chunk_sz);
                             arr[old0]     = 0.0;
-                            const auto p0 = static_cast<Ind>((base_p + next_p) * chunk_sz);
+                            const auto p0 = static_cast<Index>((base_p + next_p) * chunk_sz);
                             next_p        = (next_p + 1) % n_polluters;
                             arr[p0]       = pollute_value;
                         }
@@ -301,7 +301,7 @@ int run_compound(int team, int writers, double seconds, long pollute)
                     long count = 0;
                     for (long c = 0; c < n_victims; ++c)
                     {
-                        count += ca.written(static_cast<Ind>((base_v + c) * chunk_sz)) ? 0 : 1;
+                        count += ca.written(static_cast<Index>((base_v + c) * chunk_sz)) ? 0 : 1;
                     }
                     compressed_seen.fetch_add(count, std::memory_order_relaxed);
                     sweeps.fetch_add(1, std::memory_order_relaxed);
@@ -327,7 +327,7 @@ int run_compound(int team, int writers, double seconds, long pollute)
                     const auto victim = static_cast<long>(rng.next() % static_cast<std::uint64_t>(n_victims));
                     const auto kk     = static_cast<long>(rng.next() % static_cast<std::uint64_t>(n_own));
                     const long offset = 1 + rmw_rank + kk * n_rmw;
-                    const auto idx    = static_cast<Ind>((writer * per_writer + victim) * chunk_sz + offset);
+                    const auto idx    = static_cast<Index>((writer * per_writer + victim) * chunk_sz + offset);
                     arr[idx] *= 2.0;
                     arr[idx] *= 0.5;
                     local_ops += 2;
@@ -346,7 +346,7 @@ int run_compound(int team, int writers, double seconds, long pollute)
             {
                 for (long k = 0; k < chunk_sz; ++k)
                 {
-                    const auto   idx   = static_cast<Ind>((w * per_writer + c) * chunk_sz + k);
+                    const auto   idx   = static_cast<Index>((w * per_writer + c) * chunk_sz + k);
                     const double value = ca[idx];
                     if (value != second_value) [[unlikely]]
                     {
@@ -404,7 +404,7 @@ int run_remark(int team, double seconds)
     {
         Arr        arr;
         const auto chunk_sz = static_cast<long>(arr.chunk_size());
-        arr.resize(static_cast<Ind>(pool_chunks * chunk_sz));
+        arr.resize(static_cast<Index>(pool_chunks * chunk_sz));
         const Arr& ca = arr;
         test_hooks::pass_delay_us =
             static_cast<unsigned>(env_long("READ_RECLAIM_PASS_DELAY_US", CHUNK_TEST_PASS_DELAY_US));
@@ -437,7 +437,7 @@ int run_remark(int team, double seconds)
                 {
                     const auto victim = static_cast<long>(rng.next() % static_cast<std::uint64_t>(pool_chunks));
                     const long offset = me + static_cast<long>(rng.next() % static_cast<std::uint64_t>(n_own)) * team;
-                    const auto idx    = static_cast<Ind>(victim * chunk_sz + offset);
+                    const auto idx    = static_cast<Index>(victim * chunk_sz + offset);
                     arr[idx]          = 1.0;
                     const auto got    = static_cast<double>(arr[idx]); // read_pure: synchronised
                     if (got != 1.0) [[unlikely]]
@@ -462,7 +462,7 @@ int run_remark(int team, double seconds)
         long nonzero = 0;
         for (long i = 0; i < pool_chunks * chunk_sz; ++i)
         {
-            nonzero += (ca[static_cast<Ind>(i)] != 0.0) ? 1 : 0;
+            nonzero += (ca[static_cast<Index>(i)] != 0.0) ? 1 : 0;
         }
 
         println("[{}/read-reclaim remark] {} write pairs, {} lost read-backs, {} elements left non-zero",
@@ -533,7 +533,7 @@ int run(int argc, char** argv)
         Arr        arr;
         const auto chunk_sz = static_cast<long>(arr.chunk_size());
         const long total    = writers * per_writer * chunk_sz;
-        arr.resize(static_cast<Ind>(total));
+        arr.resize(static_cast<Index>(total));
         const Arr& ca = arr;
 
         println("=== read_reclaim_validation [variant = {}]  threads={} (writers {})  chunk_size={}  "
@@ -563,7 +563,7 @@ int run(int argc, char** argv)
                 {
                     for (long c = 0; c < n_victims; ++c)
                     {
-                        const auto v0 = static_cast<Ind>((base_v + c) * chunk_sz);
+                        const auto v0 = static_cast<Index>((base_v + c) * chunk_sz);
                         arr[v0]       = 1.0; // materialise
                         arr[v0]       = 0.0; // constant again: a candidate
 
@@ -578,24 +578,24 @@ int run(int argc, char** argv)
                         for (long q = 0; q < pollute; ++q)
                         {
                             const auto old0 =
-                                static_cast<Ind>((base_p + (next_p + n_polluters / 2) % n_polluters) * chunk_sz);
+                                static_cast<Index>((base_p + (next_p + n_polluters / 2) % n_polluters) * chunk_sz);
                             for (long k = 0; k < chunk_sz; ++k)
                             {
-                                arr[old0 + static_cast<Ind>(k)] = 0.0;
+                                arr[old0 + static_cast<Index>(k)] = 0.0;
                             }
-                            const auto p0 = static_cast<Ind>((base_p + next_p) * chunk_sz);
+                            const auto p0 = static_cast<Index>((base_p + next_p) * chunk_sz);
                             next_p        = (next_p + 1) % n_polluters;
                             arr[p0]       = pollute_value + 1.0;
                             for (long k = 1; k < chunk_sz; ++k)
                             {
-                                arr[p0 + static_cast<Ind>(k)] = pollute_value;
+                                arr[p0 + static_cast<Index>(k)] = pollute_value;
                             }
                         }
                     }
                     long count = 0;
                     for (long c = 0; c < n_victims; ++c)
                     {
-                        count += ca.written(static_cast<Ind>((base_v + c) * chunk_sz)) ? 0 : 1;
+                        count += ca.written(static_cast<Index>((base_v + c) * chunk_sz)) ? 0 : 1;
                     }
                     compressed_seen.fetch_add(count, std::memory_order_relaxed);
                     sweeps.fetch_add(1, std::memory_order_relaxed);
@@ -613,7 +613,7 @@ int run(int argc, char** argv)
                     const auto writer = static_cast<long>(rng.next() % static_cast<std::uint64_t>(writers));
                     const auto victim = static_cast<long>(rng.next() % static_cast<std::uint64_t>(n_victims));
                     const long offset = 1 + static_cast<long>(rng.next() % static_cast<std::uint64_t>(chunk_sz - 1));
-                    const auto idx    = static_cast<Ind>((writer * per_writer + victim) * chunk_sz + offset);
+                    const auto idx    = static_cast<Index>((writer * per_writer + victim) * chunk_sz + offset);
                     // Both read entries: the const operator[] and the write
                     // proxy's conversion (operator T -> read_pure), which a
                     // `double v = a[i]` on a non-const array goes through.

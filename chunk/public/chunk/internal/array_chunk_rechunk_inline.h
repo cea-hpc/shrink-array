@@ -33,7 +33,7 @@
 #include "chunk/internal/array_chunk_rechunk.h"        // RechunkSupport, the class these bodies belong to
 #include "chunk/internal/array_chunk_rechunk_refill.h" // RechunkSupport::Refill (rechunk_refill)
 #include "chunk/internal/array_chunk_rechunk_trace.h"  // RechunkPhaseTrace
-#include "chunk/internal/chunk_stats.h"                // increm_chunk_rechunk (CHUNK_STATS)
+#include "chunk/internal/chunk_stats.h"                // inc_chunk_rechunk (CHUNK_STATS)
 #include "chunk/internal/pmp_chunk.h"                  // CHUNK_PMP_RANK_BOUND
 #include "chunk/internal/cold_path_lock.h"             // ColdPathLock: construction, teardown, resize
 #include "chunk/log.h"                                 // CHUNK_LOG (the pool census)
@@ -70,8 +70,8 @@ std::expected<void, ChunkSizeError> RechunkSupport<Derived, true>::try_rechunk_t
     }
 
     // A power of two or a multiple of 64 (is_valid_chunk_size; 0 refused),
-    // and at most cst_buffer_size: the shared constant buffers (cst_val1 /
-    // cst_val2) are that wide (the dynamic-mode ceiling), and a wider chunk
+    // and at most const_buffer_size: the shared constant buffers (const_val1 /
+    // const_val2) are that wide (the dynamic-mode ceiling), and a wider chunk
     // would read them out of bounds. Raise CHUNK_DYN_MAX_SIZE if a legitimate
     // geometry needs to be larger.
     if (const auto ok = check_chunk_size(new_size); !ok) [[unlikely]]
@@ -83,7 +83,7 @@ std::expected<void, ChunkSizeError> RechunkSupport<Derived, true>::try_rechunk_t
     // (allocator_pool_serial_) routes each allocation to the right size, so the
     // old and new geometries coexist during the refill.
 
-    const IndType total = self.m_size_;
+    const IndexType total = self.m_size_;
     if (total <= 0)
     {
         self.set_chunk_size(new_size); // legal on an empty array (the size is checked above)
@@ -154,7 +154,7 @@ std::expected<void, ChunkSizeError> RechunkSupport<Derived, true>::try_rechunk_t
         //    constant (only materialised chunks are written).
         // CHUNK_STATS: one geometry change, plus the per-chunk work it costs
         // (counted inside rebuild_one below).
-        increm_chunk_rechunk<ChunkType>();
+        inc_chunk_rechunk<ChunkType>();
         trace.mark(Mark::refill_start);
         self.rechunk_refill(tmp, old_size, new_size, old_key);
         trace.mark(Mark::refill_end);
@@ -175,7 +175,7 @@ std::expected<void, ChunkSizeError> RechunkSupport<Derived, true>::try_rechunk_t
         //    std::swap hands to *this unchanged (buffer swap, no move);
         //  - they carry tmp's array_id, and rechunk_swap_identity() makes that
         //    *this's identity (member swap for zero/zero_any, registry swap for
-        //    zero_one_value), so the sweep's reset_tab_inside_list_to_compress(array_id,
+        //    zero_one_value), so the sweep's reset_array_inside_list_to_compress(array_id,
         //    chunk_index) lands on the row allocated for tmp at new_size;
         //  - tmp's own destruction removes candidates by ITS post-swap array_id
         //    (= *this's old identity, already emptied by rechunk_drop_candidates()
@@ -231,7 +231,7 @@ std::expected<void, ChunkSizeError> RechunkSupport<Derived, true>::try_rechunk_t
         // every write path re-sets t_active to ITS OWN array's chunk_size()
         // right before materialising (see zero_one_value::Proxy::ensure_writable_storage()),
         // so a value saved at entry may belong to an unrelated array and would
-        // route free_elt_pow2() (via get_chunk_allocator(), keyed on the
+        // route free_elem_pow2() (via get_chunk_allocator(), keyed on the
         // ambient) to the WRONG size pool. old_size comes from this array's
         // own size_policy_; g_active is touched only by rechunk_to(), so
         // saved_g_active is a trustworthy baseline.

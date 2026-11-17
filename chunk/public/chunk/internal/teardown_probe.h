@@ -42,7 +42,7 @@ enum class TeardownStep : std::size_t
     terminal,   ///< pool counters, terminal compression sweep, check-build audit
     park,       ///< the team region: scan for written chunks, park their buffers
     registry,   ///< inside it: the second-value registry release (Holder::clear)
-    tables,     ///< release_chunk_list() + clear_tab_is_int() (per-chunk metadata tables)
+    tables,     ///< release_chunk_list() + clear_array_is_int() (per-chunk metadata tables)
     key_drain,  ///< drain_reuse_list_for_size() of an array with its own allocator key
     erase,      ///< array_registry->erase (the identity registry)
     list_unmap, ///< the chunk_list_ buffer freed (unmapped from 1 MiB on)

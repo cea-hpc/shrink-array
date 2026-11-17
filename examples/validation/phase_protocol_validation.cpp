@@ -280,7 +280,7 @@ const Case case_table[] = {
     {"stale rank cache, no begin", Bracket::stale_rank, InRegion::nothing, Builds::check_only, msg_stale},
     {"stale rank cache, no begin", Bracket::stale_rank, InRegion::nothing, Builds::release_only, nullptr},
 };
-constexpr int nb_cases = static_cast<int>(std::size(case_table));
+constexpr int n_cases = static_cast<int>(std::size(case_table));
 
 /// The child: run case @p case_idx; 0 when every element read back right.
 int child(int case_idx)
@@ -361,7 +361,7 @@ int run(int argc, char** argv)
     println("=== phase_protocol_validation [variant = {}]  check build: {} ===", variant_name(),
             build_config::any_check ? "yes" : "no");
     int fails = 0;
-    for (int k = 0; k < nb_cases; ++k)
+    for (int k = 0; k < n_cases; ++k)
     {
         const Builds builds = case_table[k].builds;
         if (builds == Builds::check_only && !build_config::any_check)

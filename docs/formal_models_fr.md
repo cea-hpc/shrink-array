@@ -69,7 +69,7 @@ tout à zéro. Chaque nom du modèle correspond à un endroit du source, avec le
 | `hard_inflight`, `stealing_inflight`, `must_defer_write()`, `is_stealing()` | `compression_manager.h` : `hard_inflight_`, `stealing_inflight_`, `must_defer_write()`, `is_hard_compression_inflight()` |
 | `compressor_start()`, `compressor_finish()`, `heavy_barrier()` | `compression_manager_inline.h` : `start()`, `finish()` ; `dekker::heavy_barrier()` |
 | `mark`, `steal_mark()`, `steal_marked()`, `steal_unmark()` | `chunk_base.h` : `steal_mark_` et ses trois verbes |
-| `values`, `values_load()`, `cas_install()`, `steal()` | `chunk_base.h` : `values`, `values_load()`, `compare_and_swap_gen()` ; `zero_any_chunk.h` : `try_mark_cst_and_get_old()` |
+| `values`, `values_load()`, `cas_install()`, `steal()` | `chunk_base.h` : `values`, `values_load()`, `compare_and_swap_gen()` ; `zero_any_chunk.h` : `try_mark_const_and_get_old()` |
 | `materialise()`, le parcours, l'écriture d'élément | `zero_any_chunk_inline.h` : `create_value()`, `wait_before_materialise()`, `fill_list_to_compress()` ; `relaxed_element.h` |
 | `writer()` | `proxy_base_inline.h` : `write_with_optional_lock_impl()` |
 
@@ -200,8 +200,8 @@ dans sa liste de candidats. Le chunk est réduit à deux mots, `values` (la prem
 emplacements de seconde valeur, ou un tampon) et `meta` (la table de types et l'emplacement, une
 variable simple : le vérificateur y signale une course), et à une marque de vol. La passe est
 `make_block_compression` telle que le source la déroule : les trois chargements de
-`fill_list_to_compress` (`is_not_cst_val1`, `is_cst_val2`, le scan), puis `block_clear_common` : les
-métadonnées sont écrites **avant** le CAS de `try_mark_cst_and_get_old`, et un CAS qui échoue -- le
+`fill_list_to_compress` (`is_not_const_val1`, `is_const_val2`, le scan), puis `block_clear_common` : les
+métadonnées sont écrites **avant** le CAS de `try_mark_const_and_get_old`, et un CAS qui échoue -- le
 chunk est déjà à une constante -- resynchronise `values` d'après les métadonnées (la « resynchro
 critique »). Trois propriétés sont assertées après les jointures : **P1**, le changement fait par
 l'écrivain est ce que le chunk contient ; **P2**, `values` et `meta` concordent ; **P3**, la passe ne
@@ -247,7 +247,7 @@ de lecture et la libération du tampon sont vérifiées comme en section 6.
 | `read_element()` | `internal/chunk_base_inline.h` `element_at_unguarded(offset, slot)`, `read_block()`, `read_block_or_constant()` ; `internal/proxy_base_inline.h` `read_values_at()` ; `pattern_chunk.h` `Chunk::motif_offset()` |
 | `writer()` | `internal/zero_any_chunk_inline.h` `create_value()`, la branche motif |
 | `pass()`, un motif | `internal/pattern_chunk_inline.h` `block_clear_motif()` |
-| `pass()`, une constante | `internal/second_value_chunk_base_inline.h` `block_clear_common()` (`reset_release()`) ; `internal/zero_any_chunk_inline.h` `find_or_set_ind_cst_val2_release()` |
+| `pass()`, une constante | `internal/second_value_chunk_base_inline.h` `block_clear_common()` (`reset_release()`) ; `internal/zero_any_chunk_inline.h` `find_or_set_idx_const_val2_release()` |
 
 | cas | attendu | verdict | exécutions |
 |---|---|---|---|
@@ -304,7 +304,7 @@ compresseur est bornée (`CHUNK_COMPRESS_MAX_YIELDS`, 10 000 yields de 1 000 pau
 interblocage, mais un arrêt des deux threads pendant tout ce budget, après quoi la passe est
 abandonnée (le compteur de porte des abandons sur attente trop longue, dans le rapport
 `CHUNK_STATS`, les compte). Il faut un chunk à une constante tout en étant dans une liste de
-candidats -- le cas contre lequel `fill_list_to_compress()` se prémunit avec `is_not_cst_val1()` -- donc c'est
+candidats -- le cas contre lequel `fill_list_to_compress()` se prémunit avec `is_not_const_val1()` -- donc c'est
 rare, pas impossible.
 
 Le correctif découle du protocole lui-même : un écrivain du chemin rapide tient son drapeau et a
@@ -414,7 +414,7 @@ fenêtre, les barrières complètes, ou le regard sur la marque avant l'annonce 
 tiennent encore ; seule la propriété d'isolation plus forte, `STRICT_SCAN`, s'en aperçoit. La raison
 tient en deux lignes du source. L'écrivain ne change que si `values` n'est pas un tampon
 (`materialised()`), et la passe ne change jamais `values` que d'un tampon vers une constante, par un
-CAS (`try_mark_cst_and_get_old`) : les deux n'agissent jamais sur le même état, et ce que l'un
+CAS (`try_mark_const_and_get_old`) : les deux n'agissent jamais sur le même état, et ce que l'un
 publie, l'autre l'acquiert. Une passe qui liste un chunk sur une vue périmée -- elle a chargé la
 première constante au départ, l'écrivain a changé, elle charge la seconde -- le ramène à la constante
 qu'elle a scannée, qui est celle que l'écrivain a installée : le CAS trouve une constante, rend
@@ -439,7 +439,7 @@ possède pas tout le chunk sache ce qu'il faut.
 ### 8.8 F6 : un chunk rendu constant pendant la restitution d'une passe n'était jamais mis en file (corrigé)
 
 Le modèle est `formal/queue_handback.c` ; il ne vérifie aucun ordre mémoire, mais un protocole :
-le drapeau « en file » d'un chunk (`tab_is_inside_chunk_list_to_compress`) et la marque de la
+le drapeau « en file » d'un chunk (`array_is_inside_chunk_list_to_compress`) et la marque de la
 passe. Une passe restitue chaque candidat par `steal_unmark()`, puis remet son drapeau (la fin de
 `make_block_compression()` ; l'ordre est gardé exprès : une fois le drapeau baissé, une autre passe
 peut mettre le chunk en file et le marquer, et une levée de marque tardive effacerait sa
@@ -537,7 +537,7 @@ l'autre : une forme de store buffering, que permettent le relaxé de C11, x86-TS
 deux lisent l'ancien bord, aucun ne met le chunk en file, et un chunk uniforme reste
 matérialisé. L'audit des builds check l'a compté sur Milan une fois corrigé le trou des tranches
 partielles des agrégats : 6 à 52 blocs par run de `shrink_bench` de 16 à 128 threads, tous sur
-`tab1` et `tab2` (`double`, remplis par `fill_range_mt()` à 0 ou à la seconde valeur), aucun sur
+`arr1` et `arr2` (`double`, remplis par `fill_range_mt()` à 0 ou à la seconde valeur), aucun sur
 les types d'éléments sans ce filtre. Le chunk du modèle a 4 éléments ; il a trouvé le trou tout de
 suite, et une exécution native sur x86 le rencontre en quelques centaines de milliers d'essais.
 

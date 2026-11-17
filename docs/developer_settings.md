@@ -29,7 +29,7 @@ fields, and `shrink_bench` exposes them as options (§4). See
 | variable | default | effect |
 |---|---|---|
 | `CHUNK_RECLAIM_THREADS` | 1 | threads issuing a sweep's `madvise` calls; `0`: `omp_get_max_threads()`. On Milan (64 threads), `0` is 3.5% faster for `zero_one_value` and the same for the other variants; it stays at 1 until it is measured on Grace, where 288 threads would issue them |
-| `CHUNK_CST_VAL2_ID_LIMIT` | unset | test hook: lowers the number of identifiers of `zero_any`'s second-value registry (the region's capacity otherwise), and sizes the value table to match, so that a harness reaches the registry's limit with a few values (`cst2_registry_validation`, `cst2_reclaim_validation`); can only lower it |
+| `CHUNK_CONST_VAL2_ID_LIMIT` | unset | test hook: lowers the number of identifiers of `zero_any`'s second-value registry (the region's capacity otherwise), and sizes the value table to match, so that a harness reaches the registry's limit with a few values (`const2_registry_validation`, `const2_reclaim_validation`); can only lower it |
 | `CHUNK_DEFERRED_POOL_KB` | 64 | slab size of the deferred-write pools, in KiB (the operation slabs are never given back: larger means fewer allocator calls but more resident memory) |
 | `CHUNK_PMP_JOIN_US` | 5000 | std backend with the library's teams on TBB (`shrink_array::tbb::use_tbb_for_library_teams()`): how long a team waits for its TBB tasks to start, in microseconds; the tasks started by then make the team (one thread, the caller, at worst), a later one returns at once. 5 ms rather than 200 us: a late task is otherwise taken and dropped by a TBB worker during the program's next region (144 threads: 79.5 s -> 50.9 s on the TBB bench) |
 | `CHUNK_PMP_SPIN_US` | 1000 | std backend: how long a thread waiting at a team's barrier, at its end or for the next team spins before it sleeps, in microseconds (OpenMP's blocktime); `0`: sleep at once. Spinning: at 160 threads the re-chunk's slice-boundary drain went from 2.45 s to the order of the OpenMP build's 0.24 s |
@@ -70,7 +70,7 @@ arena's and OMPT's counters with them, which cost a little time.
 | `CHUNK_LOG=ledger=info` (formerly `CHUNK_LEDGER_REPORT`) | the report of the block registry (builds with the registry), at exit |
 | `CHUNK_LOG=ompt=info` (formerly `CHUNK_OMPT_STATS`) | statistics of the synchronisation regions (OMPT builds), at exit |
 | `CHUNK_LOG=compress=info` in `shrink_bench` (formerly `CHUNK_CST2_PROBE`) | `zero_any`: in addition, the report of the second-value registry at each advisor pass (`gc_mark_report()`) |
-| `CHUNK_CST2_RECLAIM` | `zero_any`, `N`: every N iterations, frees the second values no chunk uses any more (`reclaim_second_values()`) and prints how many, then each type's identifiers in use against the capacity, free, reclaims and refusals (`second_value_stats()`) (benchmark, any build) |
+| `CHUNK_CONST2_RECLAIM` | `zero_any`, `N`: every N iterations, frees the second values no chunk uses any more (`reclaim_second_values()`) and prints how many, then each type's identifiers in use against the capacity, free, reclaims and refusals (`second_value_stats()`) (benchmark, any build) |
 | `ALLOC_TOKEN_REPORT` | `CHUNK_SANITIZER=token` builds always print, on exit, the allocations per token (the 40 largest); this sets how many: `0` none, `N` the N largest, `all` every token |
 | `CHUNK_LOG=alloc=trace` (formerly `FAST_ALLOC_TRACE`) | one `munmap` line per emptied slab that a pool's reserve does not keep and that is freed |
 
@@ -93,8 +93,8 @@ to one, as the former `=name` values of `CHUNK_RECHUNK_CHURN` and `CHUNK_ADVISOR
 | variable or option | effect |
 |---|---|
 | `--advisor_period <n>` | period of the advisor passes, in iterations (default `max(10, iter_max / 20)`; 0 disables it) |
-| `--advise_five` | only the five historical arrays are handed to the decider (default: all arrays except `tab_bool` and `tab_bool_bits`) |
-| `--advise_bool` | `tab_bool` and `tab_bool_bits` are handed to the decider too (default: they stay at their birth geometry, so that the two bool containers are compared as they are) |
+| `--advise_five` | only the five historical arrays are handed to the decider (default: all arrays except `array_bool` and `array_bool_bits`) |
+| `--advise_bool` | `array_bool` and `array_bool_bits` are handed to the decider too (default: they stay at their birth geometry, so that the two bool containers are compared as they are) |
 | `--rechunk_dry_run` | the decider analyses and logs, but applies no rechunk (`RechunkPolicy::dry_run`) |
 | `--rechunk_max_coarsen <n>` | maximum factor of a coarsening (`max_coarsen_factor`, 4; 1 = no limit) |
 | `--rechunk_min_gain_mb <x>` | absolute threshold for the data-side gain, in MB (`min_gain_bytes`, 8; 0 removes it) |
@@ -115,8 +115,8 @@ to one, as the former `=name` values of `CHUNK_RECHUNK_CHURN` and `CHUNK_ADVISOR
 | `BENCH_SCHED_BLOCK` | size of the scheduling blocks of the benchmark phases (64; 0 = contiguous slices) |
 | `BENCH_RANK_TIMING` | `1`: every bench backend (OpenMP, std, TBB) times every region per rank (per virtual rank under TBB) and prints at exit, per call site, the split of the threads' time into busy / imbalance / launch / tail, and the serial time between regions (stderr, `[rank-timing]` lines). Under TBB the end of the phase (`finalize_parallel_phase`) is timed apart; elsewhere it falls in the tail (OMPT's, at each region's end) or in the serial time (the bench's own, between regions) |
 | `NO_IO`, `COMPRESS` | equivalents of `--no_io` and `--compress` |
-| `--no_mask`, `--mask_scale <x>` | without `tab_mask`; or its size, `x × sz` (default 1/32) |
-| `--no_conn`, `--conn_scale <x>` | without `tab_conn`, the mesh connectivity (`pattern::Array` in the `zero_one_value` and `zero_any` builds); or its size, about `x × sz` in whole rows (default 1/32) |
+| `--no_mask`, `--mask_scale <x>` | without `array_mask`; or its size, `x × sz` (default 1/32) |
+| `--no_conn`, `--conn_scale <x>` | without `array_conn`, the mesh connectivity (`pattern::Array` in the `zero_one_value` and `zero_any` builds); or its size, about `x × sz` in whole rows (default 1/32) |
 | `--no_struct` | without the arrays of structures (`Point3`, `Cell`) |
 
 ## 5. Compilation macros
@@ -127,7 +127,7 @@ and how the shared options reach the headers, are in
 
 | macro | effect |
 |---|---|
-| `CHUNK_DYN_MAX_SIZE=<n>` | dynamic geometry: largest chunk size a rechunk can reach, a power of two (4096); sizes the shared buffers of the constant values, `cst_buffer_size × sizeof(T)` per distinct second value |
+| `CHUNK_DYN_MAX_SIZE=<n>` | dynamic geometry: largest chunk size a rechunk can reach, a power of two (4096); sizes the shared buffers of the constant values, `const_buffer_size × sizeof(T)` per distinct second value |
 | `CHUNK_ALLOC_AFFINITY_MIN_BYTES=<bytes>` | metadata threshold above which an array can have its own allocators (16 MiB; 0 = never) |
 | `CHUNK_COMPRESS_MAX_YIELDS=<n>` | how long a parked compressor waits before giving up its pass (10,000 *yields*; 0: give up at the first writer seen). See [synchronisation_dekker.md](synchronisation_dekker.md) |
 | `CHUNK_WRITE_WAIT_MAX_YIELDS=<n>` | how long a writer facing a compressor waits before deferring its write (64 *yields*) |
@@ -155,7 +155,7 @@ The options of [environment_variables.md](environment_variables.md) §2 are not 
 | `CHUNK_ICPX_O0_WORKAROUND` | `OFF` | workaround for an icpx internal error on three files |
 | `CHUNK_MM_PROTECT` | `OFF` | `zero`, `zero_one_value`: shared buffers of the constant values made read-only (`mprotect`); a stray write into a compressed chunk causes a segmentation fault instead of corrupting the value (debugging build) |
 | `CHUNK_LIB_UNITY` | `ON` | each variant archive (`chunk_zero_any_256`, ...) compiled as a single unit (unity build, 4 to 6 times less compilation); a file that has its own compile options stays separate |
-| `SHRINK_BENCH_PRINT_MEM` | `ON` | `shrink_bench` prints its memory lines (after init, every freq_conso_mem iterations, after a compression); `OFF` to time a run without the RSS reads behind them |
+| `SHRINK_BENCH_PRINT_MEM` | `ON` | `shrink_bench` prints its memory lines (after init, every freq_mem_report iterations, after a compression); `OFF` to time a run without the RSS reads behind them |
 | `SHRINK_BENCH_UNITY` | `ON` | each `shrink_bench` executable compiled as a single unit (unity build, 3.5 to 4 times less compilation); `OFF` to compare timings with earlier campaigns, since inlining across benchmark files can change them; `SHRINK_BENCH_UNITY_BATCH` files per unit (0 = all) |
 | `CHUNK_DEBUG_INFO` | `auto` | debug information of the optimised builds: `full` (`-g`), `lines` (`-g1`: function names and line tables, enough for perf and gdb backtraces, not the locals), `none`; `auto`: `full` with `CHUNK_CHECK_OPTIM` or a sanitizer, `lines` otherwise. The machine code is the same; `lines` compiles 20 to 27 % faster with 40 % less peak memory. Debug builds always get `-g` |
 | `CHUNK_VALIDATION_UNITY` | `ON` | the validation harnesses grouped into one executable per variant and geometry (unity build); `OFF`: one executable per harness |
@@ -215,7 +215,7 @@ the common options. `--help` gives the full list.
 | `--jobs=<n>` | number of configurations compiled at the same time (4 by default); the core budget is shared between them |
 | `--no-hardening` | without `CHUNK_GLIBCXX_ASSERTIONS` or `CHUNK_UBSAN` on the Debug and sanitizer builds |
 | `--llvm-cs=<n>` | add an LLVM build with `CHUNK_SIZE=n` |
-| `--pool=<id>` | share the configurations with the other runs given the same `<id>` (one batch job per node, `shrink_gui`'s "Nodes" field): each builds those it claims first; `<id>` is a name under `$CHUNK_BUILD_REP/.pools/` or a directory all the nodes share |
+| `--pool=<id>` | share the configurations with the other runs given the same `<id>` (one batch job per node, `shrink_gui`'s "Nodes" field): each builds those it claims first; `<id>` is a name under `$CHUNK_BUILD_ROOT/.pools/` or a directory all the nodes share |
 
 `compile_all_gnu.sh` also accepts `--no-ipa-icf` (`CHUNK_NO_IPA_ICF=ON`). The compilation
 memory per job is set by `CHUNK_MEM_PER_JOB_MB` (3,072 MB by default, twice that for
@@ -238,7 +238,7 @@ Read by the Python tools, the check scripts and a few harnesses, not by the libr
 
 | variable | default | effect |
 |---|---|---|
-| `CHUNK_BUILD_ROOT` | current directory | where the `cmake-build-<target>` directories are: default of `--build-root` in `bench_and_test.py`, `multi_launch_stress.py` and `thread_speedup.py` (which falls back on `CHUNK_BUILD_REP`). `shrink_gui` exports it in the scripts it submits |
+| `CHUNK_BUILD_ROOT` | current directory | where the `cmake-build-<target>` directories are: default of `--build-root` in `bench_and_test.py`, `multi_launch_stress.py` and `thread_speedup.py` (which falls back on `CHUNK_BUILD_ROOT`). `shrink_gui` exports it in the scripts it submits |
 | `CHUNK_BENCH_EVENTS` | unset | file the campaigns append their events to, one JSON record per line (default of `--events-file`); `shrink_gui` sets it and follows the file |
 | `CHUNK_POOL_REF_WAIT` | 21,600 | `--pool` campaigns: seconds a job waits for the reference another job generates, before skipping what needs it |
 | `CHUNK_POOL_POLL` | 2 | `--pool` campaigns: seconds between two looks at what the other jobs did |

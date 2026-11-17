@@ -247,7 +247,7 @@ is limited to the rebuilds.
   (the `churn` line of `CHUNK_LOG=rechunk=debug`), but a workload that writes heavily into constant regions
   could make a coarsening regrettable: this is the role of learning
   (`coarsen_trust_ratio`) and of the anti-reversal rule.
-- **Boolean arrays in the benchmark**: `tab_bool` and `tab_bool_bits` stay at their birth
+- **Boolean arrays in the benchmark**: `array_bool` and `array_bool_bits` stay at their birth
   geometry unless `--advise_bool` hands them to the decider, so that the two bool containers
   are compared as they are. The rechunk of `Array<bool>` is checked by `rechunk_validation`
   (`bool-grow`, `bool-shrink`, `bool-uneven`, `bool-sliced`, every variant), that of

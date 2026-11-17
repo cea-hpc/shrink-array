@@ -26,7 +26,7 @@
  */
 
 #include <atomic>  // std::atomic (the pass threshold)
-#include <tuple>   // std::get (erase_candidates_of_tab)
+#include <tuple>   // std::get (erase_candidates_of_array)
 #include <utility> // std::pair (removal_ranks)
 
 #include "chunk/bit.h"                   // is_bool_like_v: bool and Bit share the bool path
@@ -92,10 +92,10 @@ class CompressCandidates
      *
      * @tparam Vec any sequence of candidate tuples.
      * @param candidates       the sequence to filter, modified in place.
-     * @param array_id tab index whose candidates are removed.
+     * @param array_id array index whose candidates are removed.
      */
     template <typename Vec>
-    static void erase_candidates_of_tab(Vec& candidates, int array_id) noexcept
+    static void erase_candidates_of_array(Vec& candidates, int array_id) noexcept
     {
         std::erase_if(candidates, [array_id](const auto& tup) { return std::get<2>(tup) == array_id; });
     }
@@ -163,7 +163,7 @@ class CompressCandidates
     /**
      * @brief Drop every queued zero_any candidate of array @p array_id, in every
      *        rank's list (zero_any::Array::clear_core and rechunk_to).
-     * @param array_id tab index whose candidates are removed
+     * @param array_id array index whose candidates are removed
      * @note Keeps other arrays' candidates. At teardown prefer
      *       remove_from_zero_any_candidates_by_ptr_range() (see why there).
      */
@@ -176,7 +176,7 @@ class CompressCandidates
      *          bucket, WITHOUT compressing. Called from zero_one_value::Array::clear_core()
      *          so no zero_one_value::Chunk* of a torn-down or re-chunked array dangles there.
      *
-     * @param array_id tab index whose candidates are removed
+     * @param array_id array index whose candidates are removed
      * @note OpenMP builds only: a serial build queues no zero_one_value candidate (fast
      *       block compression is OpenMP-only), so there is nothing to drop.
      */
