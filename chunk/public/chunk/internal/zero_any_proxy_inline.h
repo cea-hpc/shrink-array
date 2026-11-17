@@ -916,7 +916,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::execute_arithmetic_compound_operat
                                                                                     const U& operand,
                                                                                     ModifyFn modify_fn)
 {
-    using CalcType = std::common_type_t<T, BaseT<U>>;
+    using ComputeType = std::common_type_t<T, BaseT<U>>;
 
     if constexpr (build_config::chunk_dynamic)
     {
@@ -926,8 +926,8 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::execute_arithmetic_compound_operat
 
     const InT<T> v_old = read_values();
 
-    const CalcType v_new_precise   = op(static_cast<CalcType>(v_old), static_cast<CalcType>(operand));
-    const auto     v_new_truncated = static_cast<T>(v_new_precise);
+    const ComputeType v_new_precise   = op(static_cast<ComputeType>(v_old), static_cast<ComputeType>(operand));
+    const auto        v_new_truncated = static_cast<T>(v_new_precise);
 
     const bool const_val2 = is_const_val2();
 
@@ -991,7 +991,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
     const U& operand,
     Body     lbd) const
 {
-    using CalcType = std::common_type_t<T, BaseT<U>>;
+    using ComputeType = std::common_type_t<T, BaseT<U>>;
 
     int retry_count = 0;
 
@@ -1022,9 +1022,9 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
             }
         }
 
-        const InT<T>   v_old           = Base::read_values_async(ctx);
-        const CalcType v_new_precise   = op(static_cast<CalcType>(v_old), static_cast<CalcType>(operand));
-        const auto     v_new_truncated = static_cast<T>(v_new_precise);
+        const InT<T>      v_old           = Base::read_values_async(ctx);
+        const ComputeType v_new_precise   = op(static_cast<ComputeType>(v_old), static_cast<ComputeType>(operand));
+        const auto        v_new_truncated = static_cast<T>(v_new_precise);
 
         const bool const_val2 = proxy.is_const_val2();
 

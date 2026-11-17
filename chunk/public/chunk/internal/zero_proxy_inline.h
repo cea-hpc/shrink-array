@@ -174,7 +174,7 @@ template <typename T>
 template <typename Op, typename Body, typename U>
 void zero::Proxy<T>::execute_arithmetic_compound_operation(Op op, [[maybe_unused]] const U& operand, Body lbd)
 {
-    using CalcType = std::common_type_t<T, BaseT<U>>;
+    using ComputeType = std::common_type_t<T, BaseT<U>>;
 
     // No compression pass from here: this body runs inside the rank's writer
     // window, so start()'s "no writer" wait would see our own flag and run to
@@ -195,7 +195,7 @@ void zero::Proxy<T>::execute_arithmetic_compound_operation(Op op, [[maybe_unused
         // raw-read: write session -- the write/compress handshake keeps compressors off this chunk
         const T v_old = values_[num_];
 
-        const CalcType v_new_precise = op(static_cast<CalcType>(v_old), static_cast<CalcType>(operand));
+        const ComputeType v_new_precise = op(static_cast<ComputeType>(v_old), static_cast<ComputeType>(operand));
 
         const auto v_new = static_cast<T>(v_new_precise);
 
@@ -273,7 +273,7 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::execute_arithmetic_compound
     [[maybe_unused]] const U& operand,
     Lambda                    lbd) const
 {
-    using CalcType = std::common_type_t<T, BaseT<U>>;
+    using ComputeType = std::common_type_t<T, BaseT<U>>;
 
     const bool was_not_written = !ctx->chunk.written();
 
@@ -297,7 +297,7 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::execute_arithmetic_compound
 
         const T old_value = values_ptr[num];
 
-        const CalcType res = op(static_cast<CalcType>(old_value), static_cast<CalcType>(operand));
+        const ComputeType res = op(static_cast<ComputeType>(old_value), static_cast<ComputeType>(operand));
 
         const auto final_val = static_cast<T>(res);
 
@@ -679,10 +679,10 @@ void zero::Proxy<T>::apply_compound_operation(InT<U> operand, BinaryOp op)
                 op, static_cast<T>(operand),
                 [this, &operand](auto op_func) // operand: this call's parameter, alive for the call
                 {
-                    using LocalCalcType = std::common_type_t<T, BaseT<U>>;
+                    using LocalComputeType = std::common_type_t<T, BaseT<U>>;
 
-                    const InT<T> result = static_cast<T>(
-                        op_func(static_cast<LocalCalcType>(Base::load_value()), static_cast<LocalCalcType>(operand)));
+                    const InT<T> result = static_cast<T>(op_func(static_cast<LocalComputeType>(Base::load_value()),
+                                                                 static_cast<LocalComputeType>(operand)));
 
                     Base::store_value(result);
                 });

@@ -787,12 +787,12 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_a
         shrink_array::set_thread_alloc_key(this->alloc_key());
     }
 
-    using CalcType = std::common_type_t<T, U>;
+    using ComputeType = std::common_type_t<T, U>;
 
     const InT<T> v_old = read_values();
 
     // Perform math in high precision
-    const CalcType v_new_precise = op(static_cast<CalcType>(v_old), static_cast<CalcType>(operand));
+    const ComputeType v_new_precise = op(static_cast<ComputeType>(v_old), static_cast<ComputeType>(operand));
 
     if constexpr (is_not_bool)
     {
@@ -801,7 +801,7 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_a
 
     // Compare the PRECISE result with the second constant value
     const bool will_be_not_second_value =
-        !same_value(v_new_precise, static_cast<CalcType>(second_value_)) && derived().is_const_val2();
+        !same_value(v_new_precise, static_cast<ComputeType>(second_value_)) && derived().is_const_val2();
 
     if (will_be_not_second_value)
     {
@@ -823,14 +823,14 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_a
     const U& operand,
     Lambda   operation) const
 {
-    using CalcType     = std::common_type_t<T, U>;
+    using ComputeType  = std::common_type_t<T, U>;
     const Proxy  proxy = Base::template make_proxy_with_info<Derived>(ctx);
     const InT<T> v_old = read_values_async(ctx);
 
-    const CalcType v_new_precise = op(static_cast<CalcType>(v_old), static_cast<CalcType>(operand));
+    const ComputeType v_new_precise = op(static_cast<ComputeType>(v_old), static_cast<ComputeType>(operand));
 
     const bool will_be_not_second_value =
-        !same_value(v_new_precise, static_cast<CalcType>(proxy.get_second_value())) && proxy.is_const_val2();
+        !same_value(v_new_precise, static_cast<ComputeType>(proxy.get_second_value())) && proxy.is_const_val2();
 
     if (will_be_not_second_value)
     {
@@ -865,11 +865,12 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, false>::execute_ari
         shrink_array::set_thread_alloc_key(this->alloc_key());
     }
 
-    using CalcType = std::common_type_t<T, BaseT<U>>;
+    using ComputeType = std::common_type_t<T, BaseT<U>>;
 
     if (const bool was_not_written = !chunk_.written(this->idx_); was_not_written)
     {
-        const CalcType intermediate = op(static_cast<CalcType>(this->raw_elem()), static_cast<CalcType>(operand));
+        const ComputeType intermediate =
+            op(static_cast<ComputeType>(this->raw_elem()), static_cast<ComputeType>(operand));
         // Built where it is used: one write of a struct for one value.
         const auto res = static_cast<T>(intermediate);
 
@@ -1079,11 +1080,11 @@ void zero_one_value::Proxy<T>::apply_compound_operation([[maybe_unused]] Op op, 
                 // before it is written.
                 [this, &operand](auto op_func, T* val_ptr)
                 {
-                    using LocalCalcType = std::common_type_t<T, BaseT<U>>;
-                    const T current     = elem_get(val_ptr, static_cast<std::size_t>(num_));
+                    using LocalComputeType = std::common_type_t<T, BaseT<U>>;
+                    const T current        = elem_get(val_ptr, static_cast<std::size_t>(num_));
                     elem_set(val_ptr, static_cast<std::size_t>(num_),
-                             static_cast<T>(
-                                 op_func(static_cast<LocalCalcType>(current), static_cast<LocalCalcType>(operand))));
+                             static_cast<T>(op_func(static_cast<LocalComputeType>(current),
+                                                    static_cast<LocalComputeType>(operand))));
                 });
 
             // Read after the operation, compared before each branch's action

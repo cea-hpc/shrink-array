@@ -903,7 +903,7 @@ void ProxyBase<Derived, T, ChunkT>::apply_atomic_op(Op operation, const U& opera
         inc_chunk_write<ChunkT>(operand);
     }
 
-    using CalcType = std::common_type_t<T, BaseT<U>>;
+    using ComputeType = std::common_type_t<T, BaseT<U>>;
 
     const auto compute_operation =
         [this, operation, &operand, v_old] // operand: the call's parameter, alive for the call
@@ -915,8 +915,8 @@ void ProxyBase<Derived, T, ChunkT>::apply_atomic_op(Op operation, const U& opera
             [this, &operand,
              operation](auto) // operation functor is used instead of the passed one to ensure consistency
             {
-                const InT<T>   current = load_value();
-                const CalcType res     = operation(static_cast<CalcType>(current), static_cast<CalcType>(operand));
+                const InT<T>      current = load_value();
+                const ComputeType res = operation(static_cast<ComputeType>(current), static_cast<ComputeType>(operand));
 
                 // ─── Pre-store check: const_val should not be visible here under Dekker ───
                 if constexpr (build_config::any_check)
@@ -995,8 +995,8 @@ void ProxyBase<Derived, T, ChunkT>::apply_atomic_op(Op operation, const U& opera
 
                             const InT<T> current = proxy.read_values_async(ctx);
 
-                            const CalcType res =
-                                op_func(static_cast<CalcType>(current), static_cast<CalcType>(ctx->operand));
+                            const ComputeType res =
+                                op_func(static_cast<ComputeType>(current), static_cast<ComputeType>(ctx->operand));
 
                             const T* values_before = ctx->chunk.values_load();
 
@@ -1059,7 +1059,7 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(InT<U> operand, Op operati
     // reader_sync is a no-op when nothing is pending.
     chunk_.reader_sync(num_);
 
-    using CalcType = std::common_type_t<T, BaseT<U>>;
+    using ComputeType = std::common_type_t<T, BaseT<U>>;
 
     const auto op_lambda = [this, &operand, operation] // operand: the call's parameter, alive for the call
     {
@@ -1067,8 +1067,9 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(InT<U> operand, Op operati
             [this, &operand, operation]
             {
                 const InT<T> current = load_value();
-                // Compute in CalcType, truncate back to T.
-                const CalcType intermediate = operation(static_cast<CalcType>(current), static_cast<CalcType>(operand));
+                // Compute in ComputeType, truncate back to T.
+                const ComputeType intermediate =
+                    operation(static_cast<ComputeType>(current), static_cast<ComputeType>(operand));
 
                 const auto result = static_cast<T>(intermediate);
                 store_value(result);
@@ -1097,10 +1098,10 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(InT<U> operand, Op operati
                         {
                             static_cast<void>(proxy);
                             // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
-                            const InT<T>   current = elem_get(values, static_cast<std::size_t>(ctx->num));
-                            const CalcType intermediate =
-                                ctx->operation(static_cast<CalcType>(current), static_cast<CalcType>(ctx->operand));
-                            const auto final_val = static_cast<T>(intermediate);
+                            const InT<T>      current      = elem_get(values, static_cast<std::size_t>(ctx->num));
+                            const ComputeType intermediate = ctx->operation(static_cast<ComputeType>(current),
+                                                                            static_cast<ComputeType>(ctx->operand));
+                            const auto        final_val    = static_cast<T>(intermediate);
 
                             if constexpr (build_config::any_check)
                             {
@@ -1200,15 +1201,16 @@ void ProxyBase<Derived, T, ChunkT>::bitwise_assign(InT<U> operand, Op operation)
     // wrong order.
     chunk_.reader_sync(num_);
 
-    using CalcType = std::common_type_t<T, U>;
+    using ComputeType = std::common_type_t<T, U>;
 
     const auto op_lambda = [this, &operand, operation] // operand: the call's parameter, alive for the call
     {
         derived().execute_inplace_operation(
             [&operand, operation](T& elem)
             {
-                const CalcType intermediate = operation(static_cast<CalcType>(elem), static_cast<CalcType>(operand));
-                elem                        = static_cast<T>(intermediate);
+                const ComputeType intermediate =
+                    operation(static_cast<ComputeType>(elem), static_cast<ComputeType>(operand));
+                elem = static_cast<T>(intermediate);
             });
     };
 
@@ -1226,8 +1228,9 @@ void ProxyBase<Derived, T, ChunkT>::bitwise_assign(InT<U> operand, Op operation)
                                              ctx,
                                              [ctx](T& elem)
                                              {
-                                                 const CalcType intermediate = ctx->operation(
-                                                     static_cast<CalcType>(elem), static_cast<CalcType>(ctx->operand));
+                                                 const ComputeType intermediate =
+                                                     ctx->operation(static_cast<ComputeType>(elem),
+                                                                    static_cast<ComputeType>(ctx->operand));
                                                  elem = static_cast<T>(intermediate);
                                              });
                                      });
