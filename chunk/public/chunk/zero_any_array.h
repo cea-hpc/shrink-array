@@ -157,7 +157,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
     // `Arr::ChunkType` would be ambiguous between base subobjects (lookup precedes access).
     using Traits      = SecondValueBase::Traits;      ///< ArrayChunkTraits<Derived>.
     using T           = SecondValueBase::T;           ///< Stored element type.
-    using IntType     = SecondValueBase::IndType;     ///< Index type used for sizes and element positions.
+    using IntType     = SecondValueBase::IndexType;   ///< Index type used for sizes and element positions.
     using ChunkType   = SecondValueBase::ChunkType;   ///< The chunk type held in chunk_list_ (zero_any::Chunk<T>).
     using ManagerType = SecondValueBase::ManagerType; ///< The per-type manager (TypeState<zero_any::Chunk, T>).
     using ProxyType  = SecondValueBase::ProxyType; ///< The write proxy of the non-const accessors (zero_any::Proxy<T>).

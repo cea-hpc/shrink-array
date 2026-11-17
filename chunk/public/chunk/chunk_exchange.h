@@ -175,8 +175,8 @@ template <ExchangeableArray Arr>
         }
         else
         {
-            const int ind = arr.get_ind_second_value();
-            if (ind >= 0 && chunk.is_cst_val2(ind))
+            const int idx = arr.get_idx_second_value();
+            if (idx >= 0 && chunk.is_cst_val2(idx))
             {
                 return {ChunkKind::second_value, static_cast<T>(arr.second_value()), nullptr};
             }
@@ -272,7 +272,7 @@ template <ExchangeableArray Arr>
         CstSlot*   ptc      = &ProxyType::array_type_cst_val[array_id][index];
         if constexpr (!std::is_same_v<T, bool>)
         {
-            (void)chunk.find_or_set_ind_cst_val2(state.value, psv);
+            (void)chunk.find_or_set_idx_cst_val2(state.value, psv);
         }
         ChunkType::set_cst_val_to_cst_val2(ptc);
         chunk.init_values_cst_val(ptc, psv);
@@ -290,10 +290,10 @@ template <ExchangeableArray Arr>
         }
         else
         {
-            const int ind = arr.get_ind_second_value();
-            if (ind >= 0 && same_value(state.value, static_cast<T>(arr.second_value())))
+            const int idx = arr.get_idx_second_value();
+            if (idx >= 0 && same_value(state.value, static_cast<T>(arr.second_value())))
             {
-                chunk.init_values_cst_val(1, ind);
+                chunk.init_values_cst_val(1, idx);
                 chunk.reset_n_val_eq_second_value();
                 return true;
             }
@@ -318,7 +318,7 @@ template <ExchangeableArray Arr>
     state.chunk_size = arr.chunk_size();
     if constexpr (internal::is_v2_v<Arr> && !std::is_same_v<T, bool>)
     {
-        state.has_second_value = arr.get_ind_second_value() >= 0;
+        state.has_second_value = arr.get_idx_second_value() >= 0;
         state.second_value     = state.has_second_value ? static_cast<T>(arr.second_value()) : T{};
     }
     state.chunks.reserve(static_cast<std::size_t>(arr.chunk_count()));

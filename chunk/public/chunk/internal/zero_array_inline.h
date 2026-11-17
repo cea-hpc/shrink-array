@@ -507,7 +507,7 @@ void zero::Array<T, IntType>::resize(IntType newsz)
         const auto csz = static_cast<IntType>(this->chunk_size());
         // Up to the end of the OLD chunk count: chunks_for() keeps a spare chunk
         // when old_size falls on a boundary, stale too. In long long:
-        // old_chunk_count * csz may pass IndType's range.
+        // old_chunk_count * csz may pass IndexType's range.
         const long long cover_ll  = static_cast<long long>(old_chunk_count) * static_cast<long long>(csz);
         const IntType   old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<IntType>(cover_ll) : newsz;
         const IntType   stale_end = newsz < old_cover ? newsz : old_cover;

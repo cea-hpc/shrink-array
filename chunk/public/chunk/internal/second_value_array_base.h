@@ -43,7 +43,7 @@ class SecondValueArrayBase : public ArrayChunkBase<Derived>
     using ChunkType   = Base::ChunkType;   ///< Chunk type held in chunk_list_.
     using ManagerType = Base::ManagerType; ///< Per-type manager owning the compression machinery.
     using T           = Base::T;           ///< Stored element type.
-    using IndType     = Base::IndType;     ///< Signed global index type.
+    using IndexType   = Base::IndexType;   ///< Signed global index type.
     using ProxyType   = Base::ProxyType;   ///< Write proxy returned by the non-const accessors.
 
     using Base::derived;
@@ -59,7 +59,7 @@ class SecondValueArrayBase : public ArrayChunkBase<Derived>
      * @brief Allocates storage for a specific chunk if it's currently constant.
      * Uses the metadata provided by the derived class.
      */
-    void alloc_chunk(IndType index)
+    void alloc_chunk(IndexType index)
     {
         const int chunk_index = this->chunk_index_of(index);
 
@@ -72,7 +72,7 @@ class SecondValueArrayBase : public ArrayChunkBase<Derived>
     /**
      * @brief Thread-aware allocation for a specific chunk.
      */
-    void alloc_chunk(IndType index, int thr_rank)
+    void alloc_chunk(IndexType index, int thr_rank)
     {
         const int chunk_index = this->chunk_index_of(index);
         // See alloc_chunk(index) above: deliberately no dirty-marking.
@@ -105,7 +105,7 @@ class SecondValueArrayBase : public ArrayChunkBase<Derived>
     ///        pending candidates, drain the deferred ops, then grow or shrink
     ///        chunk_list_ (with its dirty bitset and the manager's counters).
     ///        The variant's resize() materialises or seeds the new chunks.
-    void resize_common(IndType newsz)
+    void resize_common(IndexType newsz)
     {
         // Drain deferred ops on the CURRENT chunks while chunk_count, chunk_list_ and the dirty
         // bitset still have the OLD size (after chunk_count grows, is_chunk_dirty(j) would read

@@ -68,10 +68,10 @@ struct Simu
         return tabs;
     }
 
-    /// @brief Field @p ind of every material.
-    const MultiArray<double>& get_tabs(int ind) const
+    /// @brief Field @p idx of every material.
+    const MultiArray<double>& get_tabs(int idx) const
     {
-        return tabs[ind];
+        return tabs[idx];
     }
 
     /// @brief The presence fraction of every material.

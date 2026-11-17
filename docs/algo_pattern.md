@@ -119,7 +119,7 @@ The course of the pass; the steps up to the scan are those of `zero_any`
 flowchart TD
     A["zero_any's pass up to the scan:<br/>flush check, steal_mark, start"] --> E["fill_list_to_compress at the entry's size:<br/>scan_constants against 0 and element 0"]
     E -->|"all = 0"| F["type 0: slot reset_release,<br/>CAS values -> cst_val1"]
-    E -->|"all = element 0"| G["type 1: find_or_set_ind_cst_val2_release,<br/>CAS values -> the registry array"]
+    E -->|"all = element 0"| G["type 1: find_or_set_idx_cst_val2_release,<br/>CAS values -> the registry array"]
     E -->|"neither"| M["classify_motif: read_block,<br/>subtract element 0, hash, find_or_admit"]
     M -->|"registered motif"| MC["motif_candidates_, claim kept"]
     M -->|"not admitted"| N["steal_unmark: stays materialised"]
@@ -134,7 +134,7 @@ flowchart TD
 
 `find_or_admit` returns a motif only from its second sighting, by another chunk (§3); the motif
 CAS is made on a claimed chunk, and its failure is an invariant failure. The two constants use
-the release forms of the slot writes (`reset_release`, `find_or_set_ind_cst_val2_release`), for
+the release forms of the slot writes (`reset_release`, `find_or_set_idx_cst_val2_release`), for
 the readers of §6.
 
 **With OMPT** (clang, Intel: `CHUNK_HAVE_OMPT`) the pass between regions is not

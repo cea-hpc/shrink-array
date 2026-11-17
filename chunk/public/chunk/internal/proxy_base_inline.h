@@ -339,9 +339,9 @@ ProxyT ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::make_proxy_with_inf
     // chunk_size() must not dereference a possibly-dead ptr_on_array.
     proxy.set_chunk_size_frozen(ctx->chunk_size_frozen, ctx->alloc_key_frozen);
 
-    if constexpr (requires { proxy.BaseSpec::set_info_second_value_ind_from_key(ctx->ptr_on_array); })
+    if constexpr (requires { proxy.BaseSpec::set_info_second_value_idx_from_key(ctx->ptr_on_array); })
     {
-        proxy.BaseSpec::set_info_second_value_ind_from_key(ctx->ptr_on_array);
+        proxy.BaseSpec::set_info_second_value_idx_from_key(ctx->ptr_on_array);
     }
 
     // A probe fails open: for the zero_any family, whose replayed proxy NEEDS its table

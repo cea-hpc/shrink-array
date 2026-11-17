@@ -60,7 +60,7 @@ constexpr int get_array_id_helper(const ProxyT& proxy, Key array_ptr) noexcept
  * @details It stores ONLY the location of the write (chunk, index, logical
  *          array), the geometry frozen at enqueue, and, in the derived
  *          contexts, the operand / operation. It does NOT store the values
- *          pointer (reloaded from the chunk at replay), second_value / ind /
+ *          pointer (reloaded from the chunk at replay), second_value / idx /
  *          inf_array (recomputed at replay), a Proxy instance (rebuilt if
  *          needed) or any cached compression metadata: a deferred write never
  *          uses stale state.

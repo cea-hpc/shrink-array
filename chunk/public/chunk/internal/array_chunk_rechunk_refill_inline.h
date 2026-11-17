@@ -65,7 +65,7 @@ RechunkSupport<Derived, true>::Refill::Refill(Derived&     src,
     , trace_on_(internal::rechunk_trace_on())
     , trace_mem_on_(internal::rechunk_trace_mem_on())
     , slice_trace_(internal::rechunk_slice_trace_on())
-    , ind_old2_(internal::rechunk_second_ind<Derived, ChunkType>(src))
+    , idx_old2_(internal::rechunk_second_idx<Derived, ChunkType>(src))
     , inf_new2_(internal::rechunk_second_info<Derived, ChunkType>(tmp))
     , aligned_coarsening_(new_size % old_size == 0)
     , n_slices_(slice_count())
@@ -383,16 +383,16 @@ void RechunkSupport<Derived, true>::Refill::rebuild_one(int new_chunk, std::vect
 {
     // Pure read of src_ (old) + armed write of tmp_ (new), into this
     // thread's own buffer.
-    const IndType base = static_cast<IndType>(new_chunk) * static_cast<IndType>(new_size_);
+    const IndexType base = static_cast<IndexType>(new_chunk) * static_cast<IndexType>(new_size_);
     if (base >= total_)
     {
         return;
     }
-    // In long long: base + new_size_ passes IndType's range when the array
+    // In long long: base + new_size_ passes IndexType's range when the array
     // ends less than a chunk below its top (int index, ~2^31 elements), and the
     // wrapped end then sized the copy below. Same as write_range_by_chunks().
     const long long end_ll = static_cast<long long>(base) + new_size_;
-    const IndType   end    = end_ll < static_cast<long long>(total_) ? static_cast<IndType>(end_ll) : total_;
+    const IndexType end    = end_ll < static_cast<long long>(total_) ? static_cast<IndexType>(end_ll) : total_;
     const Span      span{.base      = base,
                          .end       = end,
                          .old_first = static_cast<int>(base / old_size_),
@@ -482,7 +482,7 @@ auto RechunkSupport<Derived, true>::Refill::scan_sources(const Span& span) const
         {
             // Same test as zero_any, with the second-value index
             // zero_one_value needs and zero_any carries implicitly.
-            if (!och.is_cst_val2(ind_old2_))
+            if (!och.is_cst_val2(idx_old2_))
             {
                 sources.all_folded = false;
             }
@@ -519,7 +519,7 @@ bool RechunkSupport<Derived, true>::Refill::install_cst2([[maybe_unused]] int   
             auto&      nch   = tmp_.chunk_list_[static_cast<std::size_t>(new_chunk)];
             const auto psv   = ProxyType::BaseSpec::get_array_second_value(tmp_.array_id_, new_chunk);
             CstSlot*   ptc   = &ProxyType::array_type_cst_val[tmp_.array_id_][new_chunk];
-            (void)nch.find_or_set_ind_cst_val2(value, psv);
+            (void)nch.find_or_set_idx_cst_val2(value, psv);
             ChunkType::set_cst_val_to_cst_val2(ptc);
             nch.init_values_cst_val(ptc, psv);
             ++tally.folded;
@@ -560,14 +560,14 @@ void RechunkSupport<Derived, true>::Refill::read_span([[maybe_unused]] int new_c
         std::size_t pos = 0;
         for (int oc = span.old_first; oc <= span.old_last; ++oc)
         {
-            const auto&   och     = src_.chunk_list_[static_cast<std::size_t>(oc)];
-            const IndType oc_base = static_cast<IndType>(oc) * static_cast<IndType>(old_size_);
-            const IndType lo      = span.base > oc_base ? span.base : oc_base;
+            const auto&     och     = src_.chunk_list_[static_cast<std::size_t>(oc)];
+            const IndexType oc_base = static_cast<IndexType>(oc) * static_cast<IndexType>(old_size_);
+            const IndexType lo      = span.base > oc_base ? span.base : oc_base;
             // In long long: oc_base + old_size_ wraps for the last old chunk of
-            // an array within a chunk of IndType's top; hi - lo then went
+            // an array within a chunk of IndexType's top; hi - lo then went
             // negative, a huge size_t length for the memcpy below.
             const long long oc_end = static_cast<long long>(oc_base) + old_size_;
-            const IndType   hi = static_cast<long long>(span.end) < oc_end ? span.end : static_cast<IndType>(oc_end);
+            const IndexType hi = static_cast<long long>(span.end) < oc_end ? span.end : static_cast<IndexType>(oc_end);
             const auto      src_len = static_cast<std::size_t>(hi - lo);
             const auto      off     = static_cast<std::size_t>(lo - oc_base);
             const T* const  vals    = och.values_load();
@@ -607,8 +607,8 @@ void RechunkSupport<Derived, true>::Refill::read_span([[maybe_unused]] int new_c
     }
     else
     {
-        const IndType len = span.end - span.base;
-        for (IndType k = 0; k < len; ++k)
+        const IndexType len = span.end - span.base;
+        for (IndexType k = 0; k < len; ++k)
         {
             buf[static_cast<std::size_t>(k)] = static_cast<T>(std::as_const(src_)[span.base + k]);
         }
@@ -627,13 +627,13 @@ void RechunkSupport<Derived, true>::Refill::check_read([[maybe_unused]] int     
     // padding.
     if constexpr (!std::is_class_v<T> || std::has_unique_object_representations_v<T>)
     {
-        const IndType len = span.end - span.base;
+        const IndexType len = span.end - span.base;
         if (copied != static_cast<std::size_t>(len)) [[unlikely]]
         {
             CHUNK_INVARIANT_FAILED("rechunk refill bulk read: new chunk {} copied {} elements, span is {}", new_chunk,
                                    copied, static_cast<std::size_t>(len));
         }
-        const auto check_at = [&](IndType index)
+        const auto check_at = [&](IndexType index)
         {
             const auto ref = static_cast<T>(std::as_const(src_)[span.base + index]);
             if (std::memcmp(&ref, &buf[static_cast<std::size_t>(index)], sizeof(T)) != 0) [[unlikely]]
@@ -644,7 +644,7 @@ void RechunkSupport<Derived, true>::Refill::check_read([[maybe_unused]] int     
                                        static_cast<long long>(span.base + index), old_size_, new_size_);
             }
         };
-        for (IndType j = 0; j < len; j += 64)
+        for (IndexType j = 0; j < len; j += 64)
         {
             check_at(j);
         }
@@ -687,8 +687,8 @@ void RechunkSupport<Derived, true>::Refill::release_sources([[maybe_unused]] con
         const int thr = get_thr_rank_fast();
         for (int oc = span.old_first; oc <= span.old_last; ++oc)
         {
-            const IndType oc_base = static_cast<IndType>(oc) * static_cast<IndType>(old_size_);
-            // In long long: oc_base + old_size_ passes IndType's range for the
+            const IndexType oc_base = static_cast<IndexType>(oc) * static_cast<IndexType>(old_size_);
+            // In long long: oc_base + old_size_ passes IndexType's range for the
             // last old chunk of an array within a chunk of its top (see rebuild_one).
             const long long oc_end = static_cast<long long>(oc_base) + old_size_;
             if (!aligned_coarsening_)
@@ -696,10 +696,10 @@ void RechunkSupport<Derived, true>::Refill::release_sources([[maybe_unused]] con
                 // Old chunk oc's readers: the new chunks overlapping its
                 // elements [oc_base, min(oc_end, total)). Release it with the
                 // last of them to finish, whoever that is.
-                const IndType last_elem =
-                    (oc_end < static_cast<long long>(total_) ? static_cast<IndType>(oc_end) : total_) - 1;
-                const auto readers = static_cast<int>((last_elem / static_cast<IndType>(new_size_)) -
-                                                      (oc_base / static_cast<IndType>(new_size_)) + 1);
+                const IndexType last_elem =
+                    (oc_end < static_cast<long long>(total_) ? static_cast<IndexType>(oc_end) : total_) - 1;
+                const auto readers = static_cast<int>((last_elem / static_cast<IndexType>(new_size_)) -
+                                                      (oc_base / static_cast<IndexType>(new_size_)) + 1);
                 if (old_done_[static_cast<std::size_t>(oc)].fetch_add(1, std::memory_order_acq_rel) + 1 != readers)
                 {
                     continue;
@@ -733,7 +733,7 @@ void RechunkSupport<Derived, true>::Refill::release_sources([[maybe_unused]] con
                 // owns_live_buffer(): neither cst1 nor the second constant.
                 if (och.owns_live_buffer())
                 {
-                    och.release_st(ind_old2_, thr);
+                    och.release_st(idx_old2_, thr);
                 }
             }
         }
@@ -766,7 +766,7 @@ void RechunkSupport<Derived, true>::Refill::fold_back([[maybe_unused]] int      
     //
     // Wired for zero_any (compress() by chunk_index, array_id) and zero_one_value
     // (by the array's inf_array record). bool registers no second value
-    // (get_ind_second_value aborts) and is bit-packed: never this path.
+    // (get_idx_second_value aborts) and is bit-packed: never this path.
     if constexpr (is_zero_any_family_v<ChunkType>)
     {
         if (sources.all_folded)
@@ -807,7 +807,7 @@ void RechunkSupport<Derived, true>::Refill::fold_back([[maybe_unused]] int      
             auto& nch = tmp_.chunk_list_[static_cast<std::size_t>(new_chunk)];
             nch.compress(get_thr_rank_fast(), inf_new2_,
                          /*apply=*/true, static_cast<unsigned int>(new_size_));
-            if (!nch.is_cst_val1() && !nch.is_cst_val2(inf_new2_.ind))
+            if (!nch.is_cst_val1() && !nch.is_cst_val2(inf_new2_.idx))
             {
                 ++tally.refused;
             }
@@ -849,7 +849,7 @@ void RechunkSupport<Derived, true>::Refill::log_census() const
         }
         else if constexpr (second_index)
         {
-            compressed = compressed || ch.is_cst_val2(inf_new2_.ind);
+            compressed = compressed || ch.is_cst_val2(inf_new2_.idx);
         }
         if (!compressed)
         {

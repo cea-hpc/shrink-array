@@ -128,7 +128,7 @@ Le déroulé de la passe ; les étapes jusqu'au parcours sont celles de `zero_an
 flowchart TD
     A["passe de zero_any jusqu'au parcours :<br/>test du vidage, steal_mark, start"] --> E["fill_list_to_compress à la taille de l'entrée :<br/>scan_constants contre 0 et l'élément 0"]
     E -->|"tout = 0"| F["type 0 : reset_release de la case,<br/>CAS values -> cst_val1"]
-    E -->|"tout = élément 0"| G["type 1 : find_or_set_ind_cst_val2_release,<br/>CAS values -> le tableau du registre"]
+    E -->|"tout = élément 0"| G["type 1 : find_or_set_idx_cst_val2_release,<br/>CAS values -> le tableau du registre"]
     E -->|"ni l'un ni l'autre"| M["classify_motif : read_block,<br/>soustraire l'élément 0, hacher, find_or_admit"]
     M -->|"motif enregistré"| MC["motif_candidates_, réservation gardée"]
     M -->|"non admis"| N["steal_unmark : reste matérialisé"]
@@ -144,7 +144,7 @@ flowchart TD
 `find_or_admit` ne rend un motif qu'à partir de sa seconde observation, par un autre chunk (§3) ;
 le CAS du motif se fait sur un chunk réservé, et son échec est une violation d'invariant. Les deux
 constantes utilisent les formes release des écritures de la case (`reset_release`,
-`find_or_set_ind_cst_val2_release`), pour les lecteurs du §6.
+`find_or_set_idx_cst_val2_release`), pour les lecteurs du §6.
 
 **Avec OMPT** (clang, Intel : `CHUNK_HAVE_OMPT`), la passe entre régions n'est pas
 `make_block_compression()` : `ompt_callback_parallel_end` lance

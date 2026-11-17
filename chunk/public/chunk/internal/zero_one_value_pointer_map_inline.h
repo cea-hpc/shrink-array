@@ -113,7 +113,7 @@ void zero_one_value::PointerMap<T>::report_key_not_found(Key key, const char* si
 }
 
 template <typename T>
-void zero_one_value::PointerMap<T>::replace_all_other_elm(Key key, InT<T> val, int ind) noexcept
+void zero_one_value::PointerMap<T>::replace_all_other_elm(Key key, InT<T> val, int idx) noexcept
 {
     const internal::RegistryWriteLock registry_lock(internal::registry_mutex());
     for (auto& item : vec_)
@@ -122,7 +122,7 @@ void zero_one_value::PointerMap<T>::replace_all_other_elm(Key key, InT<T> val, i
         {
             auto& info        = item.second;
             info.second_value = val;
-            info.ind          = ind;
+            info.idx          = idx;
             return;
         }
     }
@@ -136,7 +136,7 @@ template <typename T>
 {
     std::vector<T> keys;
 
-    for (const auto& [key, v] : map_ind_cst_val2_)
+    for (const auto& [key, v] : map_idx_cst_val2_)
     {
         keys.push_back(key);
     }
@@ -145,11 +145,11 @@ template <typename T>
 }
 
 template <typename T>
-[[nodiscard]] int zero_one_value::PointerMap<T>::find_ind_array_cst2(InT<T> key) const
+[[nodiscard]] int zero_one_value::PointerMap<T>::find_idx_array_cst2(InT<T> key) const
 {
     if constexpr (is_not_bool)
     {
-        if (const auto it = map_ind_cst_val2_.find(key); it != map_ind_cst_val2_.end())
+        if (const auto it = map_idx_cst_val2_.find(key); it != map_idx_cst_val2_.end())
         {
             return it->second;
         }
@@ -162,7 +162,7 @@ template <typename T>
 }
 
 template <typename T>
-void zero_one_value::PointerMap<T>::replace(Key key, InT<T> val, int ind) noexcept
+void zero_one_value::PointerMap<T>::replace(Key key, InT<T> val, int idx) noexcept
 {
     const internal::RegistryWriteLock registry_lock(internal::registry_mutex());
     for (auto& item : vec_)
@@ -170,7 +170,7 @@ void zero_one_value::PointerMap<T>::replace(Key key, InT<T> val, int ind) noexce
         if (item.first == key)
         {
             item.second.second_value = val;
-            item.second.ind          = ind;
+            item.second.idx          = idx;
             return;
         }
     }
@@ -292,9 +292,9 @@ void zero_one_value::PointerMap<T>::insert_only_array_id(Key key, int array_id)
     // No second value yet: the sentinel index, not 0 (which is the slot
     // of whichever second value was registered first, by any array).
     const T                           val{};
-    const int                         ind = chunk_config::no_second_value_index;
+    const int                         idx = chunk_config::no_second_value_index;
     const internal::RegistryWriteLock registry_lock(internal::registry_mutex());
-    vec_.emplace_back(key, InfArrayT{val, ind, array_id});
+    vec_.emplace_back(key, InfArrayT{val, idx, array_id});
 }
 
 } // namespace shrink_array

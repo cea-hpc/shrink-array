@@ -391,7 +391,7 @@ int verify_mixed(const char* label, const char* step, const Arr& arr, int which,
     for (long i = 0; i < count; ++i)
     {
         const double want = pattern(which, i, chunk_sz);
-        const double got  = arr[static_cast<Arr::IndType>(i)];
+        const double got  = arr[static_cast<Arr::IndexType>(i)];
         if (got != want)
         {
             if (nbad < 5)

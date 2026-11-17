@@ -26,7 +26,7 @@
 #include "bench_io.h"     // write_binary_file, read_check_binary_file
 #include "bench_utils.h"  // calculate_checksum
 
-void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
+void bench_check_all(BenchArrays& bench_arr, Int idx, const BenchIoFlags& io)
 {
     // Short local names for the arrays (see bench_phase_fill.cpp).
     auto& arr1 = bench_arr.arr1;
@@ -216,17 +216,17 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
             bench_par::region(
                 [&]([[maybe_unused]] bench_par::Team& team)
                 {
-                    team.single([&] { lbd_check(ind, "arr1_0", arr1, arr1_ch); }, bench_par::nowait);
-                    team.single([&] { lbd_check(ind, "arr2_0", arr2, arr2_ch); }, bench_par::nowait);
-                    team.single([&] { lbd_check(ind, "arr3_0", arr3, arr3_ch); }, bench_par::nowait);
-                    team.single([&] { lbd_check(ind, "arr4_0", arr4, arr4_ch); }, bench_par::nowait);
-                    team.single([&] { lbd_check(ind, "arr5_0", arr5, arr5_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(idx, "arr1_0", arr1, arr1_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(idx, "arr2_0", arr2, arr2_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(idx, "arr3_0", arr3, arr3_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(idx, "arr4_0", arr4, arr4_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(idx, "arr5_0", arr5, arr5_ch); }, bench_par::nowait);
 
-                    team.single([&] { lbd_check(ind, "array_int", array_int, array_int_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(idx, "array_int", array_int, array_int_ch); }, bench_par::nowait);
                     team.single(
                         [&]
                         {
-                            lbd_check(ind, "array_bool", array_bool, array_bool_ch,
+                            lbd_check(idx, "array_bool", array_bool, array_bool_ch,
                                       true /* special writing for vector */);
                             // array_bool_bits holds what array_bool holds: read back
                             // against array_bool's reference file, never written
@@ -237,25 +237,25 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
                             if (!no_io && io_res == 2)
                             {
                                 read_check_binary_file(
-                                    ind, "array_bool_bits", "data_array_bool_" + std::to_string(ind) + ".bin",
+                                    idx, "array_bool_bits", "data_array_bool_" + std::to_string(idx) + ".bin",
                                     array_bool_bits, array_bool_bits_ch, no_compress, read_trace, write_trace);
                             }
                         },
                         bench_par::nowait);
-                    team.single([&] { lbd_check(ind, "array_complex", array_complex, array_complex_ch); },
+                    team.single([&] { lbd_check(idx, "array_complex", array_complex, array_complex_ch); },
                                 bench_par::nowait);
-                    team.single([&] { lbd_check(ind, "array_short", array_short, array_short_ch); }, bench_par::nowait);
-                    team.single([&] { lbd_check(ind, "array_float", array_float, array_float_ch); }, bench_par::nowait);
-                    team.single([&] { lbd_check(ind, "array_char", array_char, array_char_ch); }, bench_par::nowait);
-                    team.single([&] { lbd_check(ind, "array_long", array_long, array_long_ch); }, bench_par::nowait);
-                    team.single([&] { lbd_check(ind, "array_ulong", array_ulong, array_ulong_ch); }, bench_par::nowait);
-                    team.single([&] { lbd_check(ind, "array_quant", array_quant, array_quant_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(idx, "array_short", array_short, array_short_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(idx, "array_float", array_float, array_float_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(idx, "array_char", array_char, array_char_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(idx, "array_long", array_long, array_long_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(idx, "array_ulong", array_ulong, array_ulong_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(idx, "array_quant", array_quant, array_quant_ch); }, bench_par::nowait);
                     team.single(
                         [&]
                         {
                             if (bench_arr.with_struct) // --no_struct: no reference file either
                             {
-                                lbd_check(ind, "array_point", array_point, array_point_ch);
+                                lbd_check(idx, "array_point", array_point, array_point_ch);
                             }
                         },
                         bench_par::nowait);
@@ -264,7 +264,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
                         {
                             if (bench_arr.with_struct)
                             {
-                                lbd_check(ind, "array_cell", array_cell, array_cell_ch);
+                                lbd_check(idx, "array_cell", array_cell, array_cell_ch);
                             }
                         },
                         bench_par::nowait);
@@ -273,7 +273,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
                         {
                             if (bench_arr.with_mask) // --no_mask: no reference file either
                             {
-                                lbd_check(ind, "array_mask", array_mask, array_mask_ch, true /* one byte per bool */);
+                                lbd_check(idx, "array_mask", array_mask, array_mask_ch, true /* one byte per bool */);
                             }
                         },
                         bench_par::nowait);
@@ -282,7 +282,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
                         {
                             if (bench_arr.with_conn) // --no_conn: no reference file either
                             {
-                                lbd_check(ind, "array_conn", array_conn, array_conn_ch);
+                                lbd_check(idx, "array_conn", array_conn, array_conn_ch);
                             }
                         },
                         bench_par::nowait);

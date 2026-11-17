@@ -863,12 +863,12 @@ static int run_replay_marks(const char* label, long count)
 
     const auto chunk_sz = static_cast<long>(arr.chunk_size());
     const long n_chunks = (count + chunk_sz - 1) / chunk_sz;
-    const int  ind2     = internal::second_value_index(arr);
+    const int  idx2     = internal::second_value_index(arr);
     long       left     = 0;
     long       wrong    = 0;
     for (long c = 0; c < n_chunks; ++c)
     {
-        left += internal::materialised(arr, arr.chunk_ref(static_cast<std::size_t>(c)), ind2) ? 1 : 0;
+        left += internal::materialised(arr, arr.chunk_ref(static_cast<std::size_t>(c)), idx2) ? 1 : 0;
     }
     for (long i = 0; i < count; ++i)
     {

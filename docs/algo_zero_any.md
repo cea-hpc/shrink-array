@@ -90,7 +90,7 @@ the old storage behind: 3.5 GB on the benchmark, with 15 rechunked arrays.
   limits the number of distinct values of the `unsigned long` array, `CHUNK_LOG=compress=info`
   prints the state of the registry and `CHUNK_CST2_RECLAIM=N` reclaims every N iterations.
 
-`find_or_set_ind_cst_val2(value, slot)` registers the value if needed, writes it into the
+`find_or_set_idx_cst_val2(value, slot)` registers the value if needed, writes it into the
 chunk's second-value slot, and returns the shared array to install.
 
 ## 4. When a chunk becomes a compression candidate
@@ -120,7 +120,7 @@ each element with the first element of the chunk):
 
 - chunks **uniform at zero** are compressed to type 0: `values` goes back to `cst_val1`;
 - chunks **uniform at another value** are compressed to type 1:
-  `find_or_set_ind_cst_val2` registers the value and returns the shared array, which
+  `find_or_set_idx_cst_val2` registers the value and returns the shared array, which
   `clear_int_st` installs by CAS as the chunk's `values` pointer.
 
 The freed buffer joins the thread's reuse list after the read sections' grace period. The
@@ -142,7 +142,7 @@ flowchart TD
     E -->|"all = element 0"| G["list ll_compt2"]
     E -->|"otherwise"| N["steal_unmark at once"]
     F --> F1["clear_int_st, type 0: slot reset,<br/>type cst_val1, CAS values -> cst_val1"]
-    G --> G1["find_or_set_ind_cst_val2: value registered,<br/>written in the slot, then clear_int_st, type 1:<br/>CAS values -> the registry array"]
+    G --> G1["find_or_set_idx_cst_val2: value registered,<br/>written in the slot, then clear_int_st, type 1:<br/>CAS values -> the registry array"]
     F1 --> R["free_block_to_pool after a grace period,<br/>steal_unmark"]
     G1 --> R
     R --> K["queue flags: hand_back after the scan, release at the end,<br/>written meanwhile -> queued again,<br/>trigger's chunk queued again, finish()"]

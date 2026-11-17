@@ -105,7 +105,7 @@ void zero_one_value::RechunkHooks<Derived, true>::rechunk_seed_fresh(InT<value_t
 template <typename Derived>
 bool zero_one_value::RechunkHooks<Derived, true>::rechunk_swap_identity(Derived& tmp)
 {
-    // The array_id, ind_cst_val2_ and inf_array MEMBERS are NOT swapped: the
+    // The array_id, idx_cst_val2_ and inf_array MEMBERS are NOT swapped: the
     // identity comes from array_registry, and the members may be
     // uninitialized (swapping would read indeterminate values). The mirrors are
     // re-read in rechunk_reown_after_swap().
@@ -122,7 +122,7 @@ void zero_one_value::RechunkHooks<Derived, true>::rechunk_reown_after_swap(Deriv
 {
     // Re-own the registration of `state`: map_inf_array_[state] points at
     // &tmp.inf_array, which dangles once the stack tmp dies, and the next
-    // compression of `state` would dereference it. Copy tmp's (value, ind) and
+    // compression of `state` would dereference it. Copy tmp's (value, idx) and
     // re-point the map at this array's member. Only when the fresh array
     // registered a value (state != value_type{}).
     if constexpr (chunk_config::use_fast_block_compression)
@@ -134,7 +134,7 @@ void zero_one_value::RechunkHooks<Derived, true>::rechunk_reown_after_swap(Deriv
                 Derived& arr = self();
 
                 arr.inf_array_    = tmp.inf_array_; // tmp's is valid (set_second_value ran)
-                arr.ind_cst_val2_ = tmp.ind_cst_val2_;
+                arr.idx_cst_val2_ = tmp.idx_cst_val2_;
                 ProxyType::array_registry->insert(state, &arr.inf_array_);
             }
         }

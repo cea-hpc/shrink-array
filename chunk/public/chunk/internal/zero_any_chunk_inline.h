@@ -188,7 +188,7 @@ void zero_any::ChunkImpl<T, Derived>::fill_list_to_compress(CandidateTuples&    
  * Scans every queued candidate into the two lists (fill_list_chunk_to_compress_in_par),
  * applies the clears, resets the per-chunk "already queued" flags and empties the list.
  *
- * A second-list chunk's new second value must be REGISTERED (find_or_set_ind_cst_val2)
+ * A second-list chunk's new second value must be REGISTERED (find_or_set_idx_cst_val2)
  * before the clear, so clear_int_st() commits the right pointer. `T{}` entries are skipped.
  *
  * @param thr     Rank whose candidate list is processed.
@@ -319,11 +319,11 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
                 if constexpr (has_motif_state_v<Derived>)
                 {
                     // A reader of the chunk's former motif may load the slot (F5).
-                    new_cst_val2_ptr = chunk_ptr->Holder::find_or_set_ind_cst_val2_release(second_v, ptr_second_value);
+                    new_cst_val2_ptr = chunk_ptr->Holder::find_or_set_idx_cst_val2_release(second_v, ptr_second_value);
                 }
                 else
                 {
-                    new_cst_val2_ptr = chunk_ptr->Holder::find_or_set_ind_cst_val2(second_v, ptr_second_value);
+                    new_cst_val2_ptr = chunk_ptr->Holder::find_or_set_idx_cst_val2(second_v, ptr_second_value);
                 }
 
                 chunk_ptr->clear_int_st(1, ptr_type_cst, ptr_second_value, thr, new_cst_val2_ptr);
@@ -437,11 +437,11 @@ void zero_any::ChunkImpl<T, Derived>::compress([[maybe_unused]] int  thr_rank,
                 if constexpr (has_motif_state_v<Derived>)
                 {
                     // A reader of the chunk's former motif may load the slot (F5).
-                    new_cst_val2_ptr = Holder::find_or_set_ind_cst_val2_release(second_v, ptr_second_value);
+                    new_cst_val2_ptr = Holder::find_or_set_idx_cst_val2_release(second_v, ptr_second_value);
                 }
                 else
                 {
-                    new_cst_val2_ptr = Holder::find_or_set_ind_cst_val2(second_v, ptr_second_value);
+                    new_cst_val2_ptr = Holder::find_or_set_idx_cst_val2(second_v, ptr_second_value);
                 }
             }
         }

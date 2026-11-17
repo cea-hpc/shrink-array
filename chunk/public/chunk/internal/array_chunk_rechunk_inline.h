@@ -72,7 +72,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     // (allocator_pool_serial_) routes each allocation to the right size, so the
     // old and new geometries coexist during the refill.
 
-    const IndType total = self().m_size_;
+    const IndexType total = self().m_size_;
     if (total <= 0)
     {
         self().set_chunk_size(new_size); // legal on an empty array

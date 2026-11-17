@@ -513,7 +513,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
 
                 // BARRIER REQUIRED: the loop above is a for_static(..., nowait), so other threads may
                 // still be in it writing values_, whose slow path (make_block_compression ->
-                // find_or_set_ind_cst_val2) SCANS the shared segment list. clear() below tears
+                // find_or_set_idx_cst_val2) SCANS the shared segment list. clear() below tears
                 // that list down (head.exchange(nullptr) + delete of every Segment); without
                 // the barrier the teardown races the scan (freed-Segment dereference).
                 team.barrier();
@@ -794,7 +794,7 @@ void zero_any::ArrayImpl<Derived>::resize(IntType newsz)
         // Up to the end of the OLD chunk count: chunks_for() keeps a chunk past
         // the last element, so when old_size falls on a chunk boundary that
         // spare chunk holds stale values too.
-        // In long long: old_chunk_count * csz may pass IndType's range near its top.
+        // In long long: old_chunk_count * csz may pass IndexType's range near its top.
         const long long cover_ll  = static_cast<long long>(old_chunk_count) * static_cast<long long>(csz);
         const IntType   old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<IntType>(cover_ll) : newsz;
         const IntType   stale_end = newsz < old_cover ? newsz : old_cover;

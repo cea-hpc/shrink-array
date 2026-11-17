@@ -92,7 +92,7 @@ l'ancien stockage derrière lui : 3,5 Go sur le banc, avec 15 tableaux rechunké
   `unsigned long`, `CHUNK_LOG=compress=info` affiche l'état du registre et
   `CHUNK_CST2_RECLAIM=N` libère toutes les N itérations.
 
-`find_or_set_ind_cst_val2(valeur, emplacement)` enregistre la valeur si besoin, l'écrit dans
+`find_or_set_idx_cst_val2(valeur, emplacement)` enregistre la valeur si besoin, l'écrit dans
 l'emplacement de seconde valeur du chunk, et rend le tableau partagé à installer.
 
 ## 4. Quand un chunk devient candidat à la compression
@@ -122,7 +122,7 @@ chaque élément au premier élément du chunk) :
 
 - les chunks **uniformes à zéro** sont compressés au type 0 : `values` repasse à `cst_val1` ;
 - les chunks **uniformes à une autre valeur** sont compressés au type 1 :
-  `find_or_set_ind_cst_val2` enregistre la valeur et rend le tableau partagé, que
+  `find_or_set_idx_cst_val2` enregistre la valeur et rend le tableau partagé, que
   `clear_int_st` installe par CAS comme pointeur `values` du chunk.
 
 Le tampon libéré rejoint la liste de réutilisation du thread après la période de grâce des
@@ -144,7 +144,7 @@ flowchart TD
     E -->|"tout = élément 0"| G["items ll_compt2"]
     E -->|"sinon"| N["steal_unmark tout de suite"]
     F --> F1["clear_int_st, type 0 : case remise à zéro,<br/>type cst_val1, CAS values -> cst_val1"]
-    G --> G1["find_or_set_ind_cst_val2 : valeur enregistrée,<br/>écrite dans la case, puis clear_int_st, type 1 :<br/>CAS values -> le tableau du registre"]
+    G --> G1["find_or_set_idx_cst_val2 : valeur enregistrée,<br/>écrite dans la case, puis clear_int_st, type 1 :<br/>CAS values -> le tableau du registre"]
     F1 --> R["free_block_to_pool après une période de grâce,<br/>steal_unmark"]
     G1 --> R
     R --> K["drapeaux de file : hand_back après le parcours, release à la end,<br/>écrit entre-temps -> remis en items,<br/>chunk déclencheur remis en items, finish()"]

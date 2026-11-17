@@ -407,7 +407,7 @@ class GlobalVecHolder
     ///        cache line of its own (check builds only; one slot otherwise).
     /// @details One counter shared by every thread made each lookup bounce its
     ///          cache line between the cores: two locked RMWs per second-value
-    ///          lookup, about 90 % of find_or_set_ind_cst_val2() in the check
+    ///          lookup, about 90 % of find_or_set_idx_cst_val2() in the check
     ///          bench. A thread takes a slot once (round robin; past
     ///          in_flight_slots threads share one, which costs contention, not
     ///          correctness: the reclaim reads the sum).
@@ -650,7 +650,7 @@ class GlobalVecHolder
      *          next generation of arrays is freed by its own last one out.
      *
      * @warning No thread may be SCANNING the chain while this runs --
-     *          find_or_set_ind_cst_val2(), reached from make_block_compression
+     *          find_or_set_idx_cst_val2(), reached from make_block_compression
      *          on the write slow path. Call it serially, or from an
      *          `omp single` PRECEDED BY A BARRIER that ends every concurrent
      *          scan (a `nowait` loop before the single lets a late writer's
@@ -849,7 +849,7 @@ class GlobalVecHolder
  *  - GlobalVecHolder::head is never null after create() or clear(): clear()
  *    reinstalls an empty segment, so a later compression pass finds a valid
  *    head without testing.
- *  - Every slot handed out by find_or_set_ind_cst_val2() lies in the region,
+ *  - Every slot handed out by find_or_set_idx_cst_val2() lies in the region,
  *    and nothing else does: is_cst_val2_ptr() is exact.
  *
  * @see ArrayCstVal2Holder<bool>, which has none of this machinery.
@@ -876,11 +876,11 @@ class ArrayCstVal2Holder
      *
      * @note The O(N) chain scan runs only behind GlobalVecHolder::index_degraded.
      */
-    [[nodiscard]] T* find_or_set_ind_cst_val2(T second_v, SecondValueRef<T> ptr_second_value);
+    [[nodiscard]] T* find_or_set_idx_cst_val2(T second_v, SecondValueRef<T> ptr_second_value);
 
-    /// @brief find_or_set_ind_cst_val2() recording the slot by a release store
+    /// @brief find_or_set_idx_cst_val2() recording the slot by a release store
     ///        (SecondValueRef::set_from_array_release()): a member with the motif state.
-    [[nodiscard]] T* find_or_set_ind_cst_val2_release(T second_v, SecondValueRef<T> ptr_second_value);
+    [[nodiscard]] T* find_or_set_idx_cst_val2_release(T second_v, SecondValueRef<T> ptr_second_value);
 
     /// @brief Is @p ptr one of this type's second-value slots?
     /// @note `is_cst_val2()` of zero_any: one relaxed load of the region base
@@ -992,7 +992,7 @@ class ArrayCstVal2Holder
  *          of the primary template is kept so call sites compile uniformly, and
  *          all of them are trivial.
  *
- * @warning find_or_set_ind_cst_val2() takes NO arguments here, unlike the
+ * @warning find_or_set_idx_cst_val2() takes NO arguments here, unlike the
  *          primary template's two. A call site that serves both must dispatch,
  *          not just forward.
  */
@@ -1006,7 +1006,7 @@ class ArrayCstVal2Holder<bool>
     static void clear(int& /*n_val2*/) {}
 
     /// @brief The shared array. There is only ever one, so nothing is searched.
-    static bool* find_or_set_ind_cst_val2()
+    static bool* find_or_set_idx_cst_val2()
     {
         return m_ptr.data();
     }

@@ -180,7 +180,7 @@ void SecondValueChunkBase<T, Derived>::apply_cas_or_reclaim(T* values_loc, int t
 
 template <typename T, typename Derived>
 void SecondValueChunkBase<T, Derived>::check_not_constant_before_clear(int                num_compress_value,
-                                                                       std::optional<int> ind_opt) const noexcept
+                                                                       std::optional<int> idx_opt) const noexcept
 {
     if constexpr (build_config::any_check)
     {
@@ -202,12 +202,12 @@ void SecondValueChunkBase<T, Derived>::check_not_constant_before_clear(int      
         bool        is_violating = false;
         const void* cst2_ptr     = nullptr;
 
-        if (ind_opt.has_value())
+        if (idx_opt.has_value())
         {
             // Path for zero_one_value (Table indexed)
             if constexpr (is_zero_one_value_derived)
             {
-                const int ind = *ind_opt;
+                const int idx = *idx_opt;
                 if constexpr (is_bool)
                 {
                     is_violating = derived().is_cst_val2();
@@ -215,8 +215,8 @@ void SecondValueChunkBase<T, Derived>::check_not_constant_before_clear(int      
                 }
                 else
                 {
-                    is_violating = derived().is_cst_val2(ind);
-                    cst2_ptr     = static_cast<const void*>(Derived::BaseSpec::get_cst_val2(ind));
+                    is_violating = derived().is_cst_val2(idx);
+                    cst2_ptr     = static_cast<const void*>(Derived::BaseSpec::get_cst_val2(idx));
                 }
             }
         }

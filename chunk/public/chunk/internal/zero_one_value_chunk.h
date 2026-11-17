@@ -76,20 +76,20 @@ class ChunkSpec
 
     /*!
      * \brief Gets the pointer to the second constant value.
-     * \param ind Index of the second value.
+     * \param idx Index of the second value.
      * \return Pointer to the constant value array.
      */
-    [[nodiscard]] static T* get_cst_val2(int ind) noexcept;
+    [[nodiscard]] static T* get_cst_val2(int idx) noexcept;
     /*!
      * \brief Checks whether `values` IS the second constant's pointer at
-     *        index `ind` (i.e. the chunk is currently compressed to it).
+     *        index `idx` (i.e. the chunk is currently compressed to it).
      * \param values Pointer to compare.
-     * \param ind Index of the second value.
-     * \return True if values equals the second constant at ind.
+     * \param idx Index of the second value.
+     * \return True if values equals the second constant at idx.
      */
-    [[nodiscard]] bool is_cst_val2(const T* values, int ind) const noexcept
+    [[nodiscard]] bool is_cst_val2(const T* values, int idx) const noexcept
     {
-        return values == get_cst_val2(ind);
+        return values == get_cst_val2(idx);
     }
 
 
@@ -108,7 +108,7 @@ class ChunkSpec
 
     static inline constinit internal::LazyImmortal<VecArrayChunkSizeMax> array_m_ptr_cst_val2;
 
-    // mm_protect mode only: element count allocated at (*array_m_ptr_cst_val2)[ind] (a raw
+    // mm_protect mode only: element count allocated at (*array_m_ptr_cst_val2)[idx] (a raw
     // mmap'd T*; the plain mode uses fixed cst_buffer_size arrays). Lets set_second_value's
     // reuse path (a known second_value registered at a LARGER geometry) grow an undersized
     // allocation instead of overrunning it. Declared but unused in the other builds.
@@ -120,7 +120,7 @@ class ChunkSpec
     /*!
      * \brief Whether `vals` is ANY of the registered second-constant pointers,
      *        regardless of index. For teardown, where the chunk's own index is not
-     *        to hand: is_cst_val2(vals, ind) with a wrong index would read the marker
+     *        to hand: is_cst_val2(vals, idx) with a wrong index would read the marker
      *        of a chunk compressed at another index as a live buffer.
      * \param vals Pointer to test.
      * \return True if vals matches the second constant at some index.
@@ -132,14 +132,14 @@ class ChunkSpec
 
     /*!
      * \brief Checks that this chunk is NOT currently compressed to the
-     *        second constant at index `ind`.
-     * \param ind Index of the second value.
+     *        second constant at index `idx`.
+     * \param idx Index of the second value.
      * \return True if the chunk's own values pointer differs from the
-     *         second constant at ind.
+     *         second constant at idx.
      */
-    [[nodiscard]] bool is_not_cst_val2(int ind) const noexcept
+    [[nodiscard]] bool is_not_cst_val2(int idx) const noexcept
     {
-        return !is_cst_val2(ind);
+        return !is_cst_val2(idx);
     }
 };
 
@@ -388,24 +388,24 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>
     /*!
      * \brief Install the constant and release the old buffer (every compression path).
      * \param num_compress_value 0 for the first constant, non-zero for the second.
-     * \param ind Index of the second constant (unused when num_compress_value == 0).
+     * \param idx Index of the second constant (unused when num_compress_value == 0).
      * \param thr_rank Calling thread's rank (selects the allocator pool).
      */
-    void block_clear(int num_compress_value, int ind, int thr_rank);
+    void block_clear(int num_compress_value, int idx, int thr_rank);
 
     /*!
      * \brief Compress this chunk to a constant, for a specific thread. Non-bool.
      *        Called by make_block_compression_impl()'s clear_func.
-     * \param num_compress_value 0 for the first constant, non-zero for the second at `ind`.
-     * \param ind Index of the second constant (unused when num_compress_value == 0).
+     * \param num_compress_value 0 for the first constant, non-zero for the second at `idx`.
+     * \param idx Index of the second constant (unused when num_compress_value == 0).
      * \param thr_rank Calling thread's rank (selects the allocator pool).
      * \pre The chunk is materialised -- compressing an already-constant chunk would
      *      release a shared constant block. Checked by check_not_constant_before_clear().
      */
-    void clear_int_st(int num_compress_value, int ind, int thr_rank)
+    void clear_int_st(int num_compress_value, int idx, int thr_rank)
     {
-        Base::check_not_constant_before_clear(num_compress_value, ind);
-        block_clear(num_compress_value, ind, thr_rank);
+        Base::check_not_constant_before_clear(num_compress_value, idx);
+        block_clear(num_compress_value, idx, thr_rank);
     }
 
     /*!
@@ -417,25 +417,25 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>
 
     /*!
      * \brief Compress this chunk to a constant, with the calling thread's rank.
-     * \param num_compress_value 0 for the first constant, non-zero for the second at `ind`.
-     * \param ind Index of the second constant (unused when num_compress_value == 0).
+     * \param num_compress_value 0 for the first constant, non-zero for the second at `idx`.
+     * \param idx Index of the second constant (unused when num_compress_value == 0).
      */
-    void clear_st(int num_compress_value, int ind)
+    void clear_st(int num_compress_value, int idx)
     {
-        clear_int_st(num_compress_value, ind, CHUNK_PMP_THREAD_RANK);
+        clear_int_st(num_compress_value, idx, CHUNK_PMP_THREAD_RANK);
     }
 
     /*!
      * \brief Release this chunk's buffer to @p thr_rank's pool and point it at the
      *        first constant, WITHOUT counting a compression: the re-chunk rebuild
      *        releasing an old chunk it has transcribed (as zero::Chunk::release_st).
-     * \param ind      the array's second-value index (the chunk is not compressed
+     * \param idx      the array's second-value index (the chunk is not compressed
      *                 to it: the caller checked owns_live_buffer())
      * \param thr_rank rank whose pool receives the buffer
      * \pre The chunk owns a live buffer, and the array is quiescent (no writer, no
      *      pass): the refill's source.
      */
-    void release_st(int ind, int thr_rank);
+    void release_st(int idx, int thr_rank);
 
   private:
     /// @brief Point @p count freshly allocated chunks at the first constant.
@@ -456,17 +456,17 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>
      * \tparam InitFn callable (T*) pre-filling the allocated block.
      */
     template <bool IsBoolCas, typename InitFn>
-    void create_value_impl(int thr_rank, InitFn&& init_func, int ind, bool need_set_second_value) noexcept;
+    void create_value_impl(int thr_rank, InitFn&& init_func, int idx, bool need_set_second_value) noexcept;
 
     /*!
-     * \brief Compress this chunk to its second constant at index `ind`
+     * \brief Compress this chunk to its second constant at index `idx`
      *        (OpenMP/deferred-queue algorithm). Non-bool.
-     * \param ind Index of the second constant to compress to.
+     * \param idx Index of the second constant to compress to.
      * \param thr_rank Calling thread's rank.
      */
-    void clear(int ind, int thr_rank)
+    void clear(int idx, int thr_rank)
     {
-        Base::clear_impl(ind, thr_rank);
+        Base::clear_impl(idx, thr_rank);
     }
 };
 
@@ -505,36 +505,36 @@ class ChunkThreadPolicy<T, Derived, false> : public SecondValueChunkBase<T, Deri
 
     /*!
      * \brief Compress this chunk to a constant (serial/counter algorithm: eager, no queue).
-     * \param num_compress_value 0 for the first constant, non-zero for the second at `ind`.
-     * \param ind Index of the second constant (unused when num_compress_value == 0, and for bool).
+     * \param num_compress_value 0 for the first constant, non-zero for the second at `idx`.
+     * \param idx Index of the second constant (unused when num_compress_value == 0, and for bool).
      */
-    void clear_int_st(int num_compress_value, int ind);
+    void clear_int_st(int num_compress_value, int idx);
 
     /*!
      * \brief Compress this chunk to its first constant (serial/counter algorithm).
-     * \param ind Only for the debug_check_written(ind) sanity check; the target is
+     * \param idx Only for the debug_check_written(idx) sanity check; the target is
      *            always the first constant.
      */
-    void clear_st(int ind);
+    void clear_st(int idx);
 
     /*!
      * \brief Compress this chunk to a constant (serial twin of the OpenMP
      *        clear_st(int, int): no rank to supply).
      * \param num_compress_value 0 for the first constant, non-zero for the second.
-     * \param ind Index of the second constant (unused when num_compress_value == 0).
+     * \param idx Index of the second constant (unused when num_compress_value == 0).
      */
-    void clear_st(int num_compress_value, int ind)
+    void clear_st(int num_compress_value, int idx)
     {
-        clear_int_st(num_compress_value, ind);
+        clear_int_st(num_compress_value, idx);
     }
 
     /*!
      * \brief Install the constant and free the old buffer outright (no rank pool);
      *        resets the per-chunk element counters.
      * \param num_compress_value 0 for the first constant, non-zero for the second.
-     * \param ind Index of the second constant (unused when num_compress_value == 0).
+     * \param idx Index of the second constant (unused when num_compress_value == 0).
      */
-    void block_clear(int num_compress_value, int ind, int /*thr_rank*/);
+    void block_clear(int num_compress_value, int idx, int /*thr_rank*/);
 
   private:
     /**
@@ -584,15 +584,15 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      * @brief CAS a chunk's second-value slot from its expected constant state
      *        to a newly materialised buffer.
      * @param values_loc New buffer to install on success.
-     * @param ind Index used to resolve the expected second-value constant.
+     * @param idx Index used to resolve the expected second-value constant.
      * @param expected_is_cst_val2 Whether the expected current state is the
      *                             second constant (vs the first).
      * @return true on failure (caller owns values_loc), false on success.
      */
-    [[nodiscard]] bool compare_and_swap(T* values_loc, int ind, bool expected_is_cst_val2) noexcept;
+    [[nodiscard]] bool compare_and_swap(T* values_loc, int idx, bool expected_is_cst_val2) noexcept;
 
     /**
-     * @brief Bool path of compare_and_swap() -- no ind (bool has a single shared array).
+     * @brief Bool path of compare_and_swap() -- no idx (bool has a single shared array).
      * @param values_loc New buffer to install on success.
      * @param expected_is_cst_val2 Whether the expected current state is the second constant.
      * @return true on failure (caller owns values_loc), false on success.
@@ -1004,10 +1004,10 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
 
     /*!
      * \brief Non-bool: point this chunk's values at the requested constant.
-     * \param num_compress_value 0 for the first constant, non-zero for the second at `ind`.
-     * \param ind Index of the second constant (unused when num_compress_value == 0).
+     * \param num_compress_value 0 for the first constant, non-zero for the second at `idx`.
+     * \param idx Index of the second constant (unused when num_compress_value == 0).
      */
-    void init_values_cst_val(int num_compress_value, int ind);
+    void init_values_cst_val(int num_compress_value, int idx);
 
     /*!
      * \brief Bool-only: point this chunk's values at the requested constant.
@@ -1027,7 +1027,7 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
      * \brief Whether this chunk owns a real heap buffer that must be
      *        parked/freed at teardown, as opposed to pointing at cst_val1 or
      *        ANY cst_val2 marker.
-     * \note clear_core must key on THIS, not written(ind): a single index misclassifies
+     * \note clear_core must key on THIS, not written(idx): a single index misclassifies
      *       chunks compressed at other indices, and their static markers would be
      *       parked/freed as if allocated.
      * \return True if the chunk's values pointer is a live, owned buffer.
@@ -1036,19 +1036,19 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
 
     /*!
      * \brief Non-bool: whether this chunk is currently materialised (holds
-     *        real data, neither constant) at second-value index `ind`.
-     * \param ind Index of the second constant value.
+     *        real data, neither constant) at second-value index `idx`.
+     * \param idx Index of the second constant value.
      * \return True if values differs from both constants.
      */
-    [[nodiscard]] bool written(int ind) const;
+    [[nodiscard]] bool written(int idx) const;
 
     /*!
      * \brief Checks whether the chunk IS currently compressed to the second
-     *        constant at index `ind`.
-     * \param ind Index of the second value.
-     * \return True if values equals the second constant at ind.
+     *        constant at index `idx`.
+     * \param idx Index of the second value.
+     * \return True if values equals the second constant at idx.
      */
-    [[nodiscard]] bool is_cst_val2(int ind) const noexcept;
+    [[nodiscard]] bool is_cst_val2(int idx) const noexcept;
 
     /*!
      * \brief Bool-only: checks whether the chunk IS currently compressed to
@@ -1059,11 +1059,11 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
 
     /*!
      * \brief Checks that the chunk does NOT use the second constant at
-     *        index `ind`.
-     * \param ind Index of the second value.
-     * \return True if values differs from the second constant at ind.
+     *        index `idx`.
+     * \param idx Index of the second value.
+     * \return True if values differs from the second constant at idx.
      */
-    [[nodiscard]] bool is_not_cst_val2(int ind) const noexcept;
+    [[nodiscard]] bool is_not_cst_val2(int idx) const noexcept;
 
     /*!
      * \brief Bool-only: negation of is_cst_val2().
@@ -1108,14 +1108,14 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
 
     /*!
      * \brief Attempt to atomically compress the chunk to either cst_val1 or
-     *        cst_val2(ind).
-     * \param num_compress_value 0 to target cst_val1, non-zero for the second at `ind`.
-     * \param ind Index of the second constant (unused when num_compress_value == 0).
+     *        cst_val2(idx).
+     * \param num_compress_value 0 to target cst_val1, non-zero for the second at `idx`.
+     * \param idx Index of the second constant (unused when num_compress_value == 0).
      * \return nullptr if the chunk was already compressed or another thread
      *         won the race (caller must not free anything); otherwise the
      *         old pointer, which the caller now owns and must free/recycle.
      */
-    [[nodiscard]] T* try_mark_cst_and_get_old(int num_compress_value, int ind);
+    [[nodiscard]] T* try_mark_cst_and_get_old(int num_compress_value, int idx);
 
     /*!
      * \brief Bool-only: whether the chunk is currently compressed to EITHER
@@ -1126,11 +1126,11 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
 
     /*!
      * \brief Whether the chunk is currently compressed to EITHER constant
-     *        (cst1 or cst2). Valid for bool too: `ind` is then ignored.
-     * \param ind Index of the second constant (used only for non-bool chunks).
+     *        (cst1 or cst2). Valid for bool too: `idx` is then ignored.
+     * \param idx Index of the second constant (used only for non-bool chunks).
      * \return true if the chunk is compressed to either constant.
      */
-    [[nodiscard]] bool is_cst_val(int ind) const noexcept;
+    [[nodiscard]] bool is_cst_val(int idx) const noexcept;
 
     static inline constinit internal::LazyImmortal<Manager> s_manager_;
 };

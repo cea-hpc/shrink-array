@@ -45,11 +45,11 @@ namespace shrink_array
 {
 
 template <typename Derived>
-void ArrayChunkBase<Derived>::check_length(IndType count, const char* who)
+void ArrayChunkBase<Derived>::check_length(IndexType count, const char* who)
 {
     // A negative count used to go through: resize(-1) left size() == -1,
     // reserve(-1) a capacity of 2^32 (the count cast to size_type).
-    if constexpr (std::is_signed_v<IndType>)
+    if constexpr (std::is_signed_v<IndexType>)
     {
         if (count < 0) [[unlikely]]
         {
@@ -59,7 +59,7 @@ void ArrayChunkBase<Derived>::check_length(IndType count, const char* who)
 }
 
 template <typename Derived>
-void ArrayChunkBase<Derived>::create(IndType sz)
+void ArrayChunkBase<Derived>::create(IndexType sz)
 {
     check_length(sz, "constructor");
     const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
@@ -188,13 +188,13 @@ double ArrayChunkBase<Derived>::stats_seq() const
 
 template <typename Derived>
 template <typename ValueAt>
-void ArrayChunkBase<Derived>::write_range_by_chunks(IndType first, IndType last, ValueAt&& value_at)
+void ArrayChunkBase<Derived>::write_range_by_chunks(IndexType first, IndexType last, ValueAt&& value_at)
 {
     if (first >= last)
     {
         return;
     }
-    // In long long: (c + 1) * chunk_size() may pass IndType's range near its top.
+    // In long long: (c + 1) * chunk_size() may pass IndexType's range near its top.
     const auto csz     = static_cast<long long>(chunk_size());
     const int  c_first = chunk_index_of(first);
     const int  c_last  = chunk_index_of(last - 1) + 1;
@@ -202,9 +202,9 @@ void ArrayChunkBase<Derived>::write_range_by_chunks(IndType first, IndType last,
     {
         const long long lo_ll = static_cast<long long>(chunk_index) * csz;
         const long long hi_ll = lo_ll + csz;
-        const IndType   lo    = lo_ll > static_cast<long long>(first) ? static_cast<IndType>(lo_ll) : first;
-        const IndType   hi    = hi_ll < static_cast<long long>(last) ? static_cast<IndType>(hi_ll) : last;
-        for (IndType i = lo; i < hi; ++i)
+        const IndexType lo    = lo_ll > static_cast<long long>(first) ? static_cast<IndexType>(lo_ll) : first;
+        const IndexType hi    = hi_ll < static_cast<long long>(last) ? static_cast<IndexType>(hi_ll) : last;
+        for (IndexType i = lo; i < hi; ++i)
         {
             (*this)[i] = value_at(i);
         }
@@ -229,15 +229,15 @@ template <typename Derived>
 template <std::forward_iterator It>
 void ArrayChunkBase<Derived>::assign(It first, It last)
 {
-    const auto count = static_cast<IndType>(std::distance(first, last));
+    const auto count = static_cast<IndexType>(std::distance(first, last));
     derived().resize(count);
     if constexpr (std::random_access_iterator<It>)
     {
-        write_range_by_chunks(0, count, [&first](IndType i) { return static_cast<T>(first[i]); });
+        write_range_by_chunks(0, count, [&first](IndexType i) { return static_cast<T>(first[i]); });
     }
     else
     {
-        IndType i = 0;
+        IndexType i = 0;
         for (; first != last; ++first)
         {
             (*this)[i++] = static_cast<T>(*first);
@@ -246,7 +246,7 @@ void ArrayChunkBase<Derived>::assign(It first, It last)
 }
 
 template <typename Derived>
-void ArrayChunkBase<Derived>::reserve(IndType new_capacity)
+void ArrayChunkBase<Derived>::reserve(IndexType new_capacity)
 {
     check_length(new_capacity, "reserve");
     if (static_cast<size_type>(new_capacity) <= capacity())
@@ -254,7 +254,7 @@ void ArrayChunkBase<Derived>::reserve(IndType new_capacity)
         return;
     }
     // resize() builds the storage; reserve() then restores the size.
-    const IndType keep = m_size_;
+    const IndexType keep = m_size_;
     derived().resize(new_capacity);
     m_size_ = keep;
 }
@@ -262,15 +262,15 @@ void ArrayChunkBase<Derived>::reserve(IndType new_capacity)
 template <typename Derived>
 void ArrayChunkBase<Derived>::copy_from(const Derived& from)
 {
-    const IndType from_size = from.m_size_;
+    const IndexType from_size = from.m_size_;
     derived().resize(from_size);
     // Const reads of @p from (through its gate) from every thread of the team:
     // nothing writes it meanwhile.
-    write_range_by_chunks(0, from_size, [&from](IndType i) { return std::as_const(from)[i]; });
+    write_range_by_chunks(0, from_size, [&from](IndexType i) { return std::as_const(from)[i]; });
 }
 
 template <typename Derived>
-ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::at(IndType index) const
+ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::at(IndexType index) const
 {
     if (index < 0 || static_cast<size_type>(index) >= static_cast<size_type>(m_size_)) [[unlikely]]
     {
@@ -280,7 +280,7 @@ ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::at(IndType ind
 }
 
 template <typename Derived>
-ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::at(IndType index)
+ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::at(IndexType index)
 {
     if (index < 0 || static_cast<size_type>(index) >= static_cast<size_type>(m_size_)) [[unlikely]]
     {
@@ -434,15 +434,15 @@ void ArrayChunkBase<Derived>::const_iterator::check_same_owner([[maybe_unused]] 
 // ---------------------------------------------------------------------------
 
 template <typename Derived>
-void ArrayChunkBase<Derived>::resize(IndType newsz, InT<T> val)
+void ArrayChunkBase<Derived>::resize(IndexType newsz, InT<T> val)
 {
-    const IndType old_size = m_size_;
-    const T       value    = val; // before resize(): val may be a(i) (see push_back)
+    const IndexType old_size = m_size_;
+    const T         value    = val; // before resize(): val may be a(i) (see push_back)
     derived().resize(newsz);
 
     // A team of its own outside a region (the library's threshold, the
     // phase bracketed), the calling thread inside one.
-    write_range_by_chunks(old_size, newsz, [&value](IndType) { return value; });
+    write_range_by_chunks(old_size, newsz, [&value](IndexType) { return value; });
 }
 
 template <typename Derived>
@@ -465,7 +465,7 @@ void ArrayChunkBase<Derived>::push_back(InT<T> val)
 
 template <typename Derived>
 template <typename F>
-void ArrayChunkBase<Derived>::for_each_value(IndType first, IndType last, F&& func) const
+void ArrayChunkBase<Derived>::for_each_value(IndexType first, IndexType last, F&& func) const
 {
     if constexpr (bulk_fast)
     {
@@ -509,7 +509,7 @@ void ArrayChunkBase<Derived>::for_each_value(IndType first, IndType last, F&& fu
 
 template <typename Derived>
 template <typename F>
-void ArrayChunkBase<Derived>::for_each_span(IndType first, IndType last, F&& func) const
+void ArrayChunkBase<Derived>::for_each_span(IndexType first, IndexType last, F&& func) const
 {
     std::array<T, bulk_block> buf;
     if constexpr (bulk_fast)
@@ -563,7 +563,7 @@ void ArrayChunkBase<Derived>::for_each_span(IndType first, IndType last, F&& fun
 
 template <typename Derived>
 template <typename OutIt>
-OutIt ArrayChunkBase<Derived>::read_range(IndType first, IndType last, OutIt out) const
+OutIt ArrayChunkBase<Derived>::read_range(IndexType first, IndexType last, OutIt out) const
 {
     if constexpr (bulk_fast && std::is_same_v<OutIt, T*>)
     {
@@ -609,7 +609,7 @@ void ArrayChunkBase<Derived>::swap(Derived& other) noexcept
 
 template <typename Derived>
 CHUNK_FLATTEN CHUNK_FORCE_INLINE ArrayChunkBase<Derived>::T
-ArrayChunkBase<Derived>::operator()(IndType index) const noexcept
+ArrayChunkBase<Derived>::operator()(IndexType index) const noexcept
 {
     const int   chunk_index = chunk_index_of(index);
     const int   num         = offset_in_chunk(index);
@@ -629,7 +629,7 @@ ArrayChunkBase<Derived>::operator()(IndType index) const noexcept
 
 template <typename Derived>
 CHUNK_FLATTEN CHUNK_FORCE_INLINE ArrayChunkBase<Derived>::T
-ArrayChunkBase<Derived>::operator[](IndType index) const noexcept
+ArrayChunkBase<Derived>::operator[](IndexType index) const noexcept
 {
     const int chunk_index = chunk_index_of(index);
     const int num         = offset_in_chunk(index);
@@ -655,7 +655,7 @@ ArrayChunkBase<Derived>::operator[](IndType index) const noexcept
 
 template <typename Derived>
 CHUNK_FLATTEN CHUNK_FORCE_INLINE ArrayChunkBase<Derived>::reference
-ArrayChunkBase<Derived>::operator[](IndType index) noexcept
+ArrayChunkBase<Derived>::operator[](IndexType index) noexcept
 {
     if constexpr (build_config::strict_element_ref)
     {
@@ -669,7 +669,7 @@ ArrayChunkBase<Derived>::operator[](IndType index) noexcept
 
 template <typename Derived>
 CHUNK_FLATTEN CHUNK_FORCE_INLINE ArrayChunkBase<Derived>::ProxyType
-ArrayChunkBase<Derived>::element_proxy(IndType index) noexcept
+ArrayChunkBase<Derived>::element_proxy(IndexType index) noexcept
 {
     const int chunk_index = chunk_index_of(index);
     auto&     chunk_t     = chunk_list_[chunk_index];
@@ -686,7 +686,7 @@ ArrayChunkBase<Derived>::element_proxy(IndType index) noexcept
     val.arm_storage_generation(&storage_generation_); // check builds only
 
     // zero_one_value only: arm the proxy with this array's registry mirror, so the
-    // write path copies (second_value, ind, array_id) instead of scanning
+    // write path copies (second_value, idx, array_id) instead of scanning
     // array_registry. Tested on the DECLARED proxy type, not a `requires`:
     // a renamed member must fail to compile, not fall back silently.
     if constexpr (std::is_same_v<ProxyType, zero_one_value::Proxy<T>>)
@@ -728,7 +728,7 @@ void ArrayChunkBase<Derived>::swap_storage_and_identity(Derived& other)
 
 template <typename Derived>
 template <typename Fn>
-void ArrayChunkBase<Derived>::for_each_chunk_span(IndType first, IndType last, Fn&& fn) const
+void ArrayChunkBase<Derived>::for_each_chunk_span(IndexType first, IndexType last, Fn&& fn) const
 {
     if (first < 0)
     {

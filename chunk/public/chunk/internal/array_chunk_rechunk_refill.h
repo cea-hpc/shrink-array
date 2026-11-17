@@ -85,7 +85,7 @@ inline const RebuildSchedule& rebuild_schedule() noexcept
 /// @brief The refill folds through zero_one_value's second-value index: a
 ///        zero_one_value build, a chunk outside the zero_any family (not
 ///        pattern::Array) and a non-bool element (bool registers no second
-///        value: get_ind_second_value() aborts).
+///        value: get_idx_second_value() aborts).
 /// @details The test on Derived::is_not_bool is NESTED in a discarded branch:
 ///          `&&` short-circuits evaluation, never name lookup, and zero::Array
 ///          has no is_not_bool. Instantiated in the bodies only, where Derived
@@ -106,11 +106,11 @@ inline constexpr bool rechunk_second_index_v = []
 /// @brief The SOURCE array's second-value index (the scan reads it), or 0 when
 ///        the refill does not fold through one (rechunk_second_index_v).
 template <typename Derived, typename ChunkType>
-[[nodiscard]] int rechunk_second_ind(const Derived& array) noexcept
+[[nodiscard]] int rechunk_second_idx(const Derived& array) noexcept
 {
     if constexpr (rechunk_second_index_v<Derived, ChunkType>)
     {
-        return array.get_ind_second_value();
+        return array.get_idx_second_value();
     }
     else
     {
@@ -209,10 +209,10 @@ class RechunkSupport<Derived, true>::Refill
     /// One new chunk's elements, and the old chunks they come from.
     struct Span
     {
-        IndType base;      ///< first element (global index)
-        IndType end;       ///< one past the last element
-        int     old_first; ///< first old chunk under the span
-        int     old_last;  ///< last old chunk under the span
+        IndexType base;      ///< first element (global index)
+        IndexType end;       ///< one past the last element
+        int       old_first; ///< first old chunk under the span
+        int       old_last;  ///< last old chunk under the span
     };
 
     /// What the old chunks under a span hold (scan_sources()).
@@ -279,7 +279,7 @@ class RechunkSupport<Derived, true>::Refill
     const int          old_size_; ///< chunk size of src_
     const int          new_size_; ///< chunk size of tmp_
     const unsigned int old_key_;  ///< the allocator key of src_'s storage
-    const IndType      total_;    ///< elements of the array
+    const IndexType    total_;    ///< elements of the array
     const int          n_new_;    ///< chunks at the new geometry
 
     // The traces, read once for the whole refill (rechunk_to() reads them at
@@ -292,7 +292,7 @@ class RechunkSupport<Derived, true>::Refill
     // zero_one_value's cst2 predicate and its compress() both need the array's
     // second-value registry entry; the lookups are hoisted here, once per
     // re-chunk.
-    [[maybe_unused]] const int        ind_old2_; ///< src_'s second-value index (the scan)
+    [[maybe_unused]] const int        idx_old2_; ///< src_'s second-value index (the scan)
     [[maybe_unused]] const SecondInfo inf_new2_; ///< tmp_'s second-value record (the fold)
 
     /// releases_sources: every old chunk lies inside one new chunk (the new size

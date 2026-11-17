@@ -130,7 +130,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_comp
     const InT<T> second_v = inf_array.second_value;
     fill_list_to_compress_impl(
         ll_compt1, ll_compt2, chunk_index, array_id, [&second_v]() -> InT<T> { return second_v; },
-        derived().is_not_cst_val2(inf_array.ind), n_elems);
+        derived().is_not_cst_val2(inf_array.idx), n_elems);
 }
 
 /**
@@ -257,7 +257,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress([[maybe_
     // the stale entry. compress_impl only refuses cst_val1; a chunk already at
     // cst_val2 would pass, scan the SHARED second-value block, find it
     // constant and clear it a second time -- freeing that shared block.
-    if (!derived().written(inf_array.ind))
+    if (!derived().written(inf_array.idx))
     {
         return;
     }
@@ -265,7 +265,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress([[maybe_
     compress_impl(
         apply, n_elems, [&inf_array] { return inf_array.second_value; },
         [this, thr_rank, &inf_array](int num_compress_value)
-        { this->clear_int_st(num_compress_value, inf_array.ind, thr_rank); });
+        { this->clear_int_st(num_compress_value, inf_array.idx, thr_rank); });
 }
 
 /**
@@ -744,7 +744,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
         const InT<T> second_value = inf_array.second_value; // the caller's record, alive for the call
 
         const auto lbd_clear_func = [thr_rank, &inf_array](auto* chunk_t, int clear_type)
-        { chunk_t->clear_int_st(clear_type, inf_array.ind, thr_rank); };
+        { chunk_t->clear_int_st(clear_type, inf_array.idx, thr_rank); };
 
         make_block_compression_impl(
             thr_rank, second_value, proxy2, [thr_rank, &inf_array](auto& ll_compt1, auto& ll_compt2)
@@ -857,7 +857,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
  * @tparam InitFn    callable `(T*)` pre-filling the freshly allocated block.
  * @param thr_rank             Rank whose allocator provides the buffer.
  * @param init_func            Pre-fill applied before publication.
- * @param ind                  Index of the array's second value; unused when
+ * @param idx                  Index of the array's second value; unused when
  *                             @p IsBoolCas (bool has no index).
  * @param need_set_second_value Which constant the block was filled with.
  *
@@ -875,7 +875,7 @@ template <bool IsBoolCas, typename InitFn>
 void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::create_value_impl(
     int                   thr_rank,
     InitFn&&              init_func,
-    [[maybe_unused]] int  ind,
+    [[maybe_unused]] int  idx,
     [[maybe_unused]] bool need_set_second_value) noexcept
 {
     T* values_loc = Base::allocate_chunk_internal(thr_rank, std::forward<InitFn>(init_func));
@@ -883,18 +883,18 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::create_value_impl(
     if constexpr (chunk_config::use_fast_block_compression)
     {
         Base::apply_cas_or_reclaim(values_loc, thr_rank,
-                                   [this, ind, need_set_second_value](T* cst_ptr)
+                                   [this, idx, need_set_second_value](T* cst_ptr)
                                    {
                                        if constexpr (IsBoolCas)
                                        {
-                                           (void)ind; // only the non-bool CAS takes the index
+                                           (void)idx; // only the non-bool CAS takes the index
                                            return derived().compare_and_swap_bool(cst_ptr, need_set_second_value);
                                        }
                                        else
                                        {
                                            // Propagate the observed state to the CAS so it refuses a
                                            // wrong-side transition after a cst_val1 <-> cst_val2 race.
-                                           return derived().compare_and_swap(cst_ptr, ind, need_set_second_value);
+                                           return derived().compare_and_swap(cst_ptr, idx, need_set_second_value);
                                        }
                                    });
     }
@@ -939,7 +939,7 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::create_value(bool  
                     BaseSpec::init_block_2nd_value(ptr, inf_array);
                 }
             },
-            inf_array.ind, need_set_second_value);
+            inf_array.idx, need_set_second_value);
     }
     else
     {
@@ -970,7 +970,7 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::create_value_bool(b
                 BaseSpec::init_block_2nd_value(ptr);
             }
         },
-        /*ind=*/0, need_set_second_value);
+        /*idx=*/0, need_set_second_value);
 }
 
 // ---------------------------------------------------------------------------
@@ -1055,9 +1055,9 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, false>::create_value_bool(boo
  * survives as a debug-only assertion.
  */
 template <typename T, typename Derived>
-void zero_one_value::ChunkThreadPolicy<T, Derived, false>::clear_st(int ind)
+void zero_one_value::ChunkThreadPolicy<T, Derived, false>::clear_st(int idx)
 {
-    Base::debug_check_written(ind);
+    Base::debug_check_written(idx);
 
     Base::free_values(values_);
     derived().init_values_cst_val1();
@@ -1069,7 +1069,7 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, false>::clear_st(int ind)
 }
 
 template <typename T, typename Derived, bool Enabled>
-void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::release_st(int ind, int thr_rank)
+void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::release_st(int idx, int thr_rank)
 {
     // CHUNK_STATS: a release, not a compression (block_clear counts those): the
     // bytes still leave the live figure. block_clear_common's CAS cannot lose --
@@ -1080,7 +1080,7 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::release_st(int ind,
     {
         add_chunk_released<Derived>(1, static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
     }
-    Base::block_clear_common(0, ind, thr_rank);
+    Base::block_clear_common(0, idx, thr_rank);
 }
 
 /**
@@ -1092,7 +1092,7 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::release_st(int ind,
  */
 template <typename T, typename Derived, bool Enabled>
 void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::block_clear(int                  num_compress_value,
-                                                                         int                  ind,
+                                                                         int                  idx,
                                                                          [[maybe_unused]] int thr_rank)
 {
     // CHUNK_STATS: one materialised block released by a successful compression,
@@ -1100,7 +1100,7 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::block_clear(int    
     // threaded/serial modes funnel through.
     inc_chunk_compress<Derived>();
     add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
-    Base::block_clear_common(num_compress_value, ind, thr_rank);
+    Base::block_clear_common(num_compress_value, idx, thr_rank);
 }
 
 /// Serial build: frees the buffer outright instead of parking it in a rank
@@ -1108,7 +1108,7 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::block_clear(int    
 /// unused (documented with the declaration).
 template <typename T, typename Derived>
 void zero_one_value::ChunkThreadPolicy<T, Derived, false>::block_clear(int num_compress_value,
-                                                                       int ind,
+                                                                       int idx,
                                                                        int /*thr_rank*/)
 {
     // CHUNK_STATS: as the threaded block_clear above.
@@ -1116,7 +1116,7 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, false>::block_clear(int num_c
     add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
     Base::free_values(values_);
 
-    derived().init_values_cst_val(num_compress_value, ind);
+    derived().init_values_cst_val(num_compress_value, idx);
     if constexpr (chunk_config::use_compression_with_counter)
     {
         derived().reset_n_val_eq_value();
@@ -1147,7 +1147,7 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::clear_int_st_bool(i
  * @pre The chunk is materialised (debug-only assertion).
  */
 template <typename T, typename Derived>
-void zero_one_value::ChunkThreadPolicy<T, Derived, false>::clear_int_st(int num_compress_value, int ind)
+void zero_one_value::ChunkThreadPolicy<T, Derived, false>::clear_int_st(int num_compress_value, int idx)
 {
     // Debug-only check. Bool chunks share a single second value with no index:
     // no-arg written check and the bool-specific reinit; non-bool is indexed.
@@ -1157,11 +1157,11 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, false>::clear_int_st(int num_
     }
     else
     {
-        Base::debug_check_written(ind);
+        Base::debug_check_written(idx);
     }
 
     // CHUNK_STATS: counted here, since this path (compress_int's sweep via
-    // clear_st(num_compress_value, ind)) bypasses block_clear. No if constexpr
+    // clear_st(num_compress_value, idx)) bypasses block_clear. No if constexpr
     // needed: both are no-op overloads when CHUNK_STATS is off (chunk_stats.h).
     inc_chunk_compress<Derived>();
     add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
@@ -1183,11 +1183,11 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, false>::clear_int_st(int num_
     }
     else
     {
-        derived().init_values_cst_val(num_compress_value, ind);
+        derived().init_values_cst_val(num_compress_value, idx);
     }
 }
 
-// clear_st(int num_compress_value, int ind) -- the entry point that supplies
+// clear_st(int num_compress_value, int idx) -- the entry point that supplies
 // the calling thread's rank (or has none to supply) -- is defined in-class on
 // each zero_one_value::ChunkThreadPolicy specialisation.
 
@@ -1196,19 +1196,19 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, false>::clear_int_st(int num_
 // ---------------------------------------------------------------------------
 
 template <typename T>
-[[nodiscard]] T* zero_one_value::ChunkSpec<T>::get_cst_val2(int ind) noexcept
+[[nodiscard]] T* zero_one_value::ChunkSpec<T>::get_cst_val2(int idx) noexcept
 {
     // An array with no second value (chunk_config::no_second_value_index)
     // has no block: nullptr, which no chunk's `values` ever equals.
-    if (ind < 0)
+    if (idx < 0)
     {
         return nullptr;
     }
     if constexpr (build_config::any_check)
     {
-        if (static_cast<size_t>(ind) >= array_m_ptr_cst_val2->size()) [[unlikely]]
+        if (static_cast<size_t>(idx) >= array_m_ptr_cst_val2->size()) [[unlikely]]
         {
-            CHUNK_INVARIANT_FAILED("[chunk] suspect get_cst_val2<{}>: ind={} size={}", typeid(T).name(), ind,
+            CHUNK_INVARIANT_FAILED("[chunk] suspect get_cst_val2<{}>: index_value={} size={}", typeid(T).name(), idx,
                                    array_m_ptr_cst_val2->size());
             return nullptr;
         }
@@ -1217,11 +1217,11 @@ template <typename T>
     T* ret = nullptr;
     if constexpr (use_mm_protect)
     {
-        ret = (*array_m_ptr_cst_val2)[ind];
+        ret = (*array_m_ptr_cst_val2)[idx];
     }
     else
     {
-        ret = (*array_m_ptr_cst_val2)[ind].data();
+        ret = (*array_m_ptr_cst_val2)[idx].data();
     }
     CHUNK_CHECK_VALUES_PTR(ret, "get_cst_val2");
     return ret;
@@ -1315,7 +1315,7 @@ bool zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::have_chunk_to_com
 template <typename T, typename Derived, bool Enabled>
 [[nodiscard]] bool
 zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::compare_and_swap(T*   values_loc,
-                                                                           int  ind,
+                                                                           int  idx,
                                                                            bool expected_is_cst_val2) noexcept
 {
     if constexpr (is_not_bool)
@@ -1323,12 +1323,12 @@ zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::compare_and_swap(T*   
         // One CAS against the precise expected pointer (see zero_any::Chunk::compare_and_swap): two
         // CAS combined with && could succeed on the wrong side after a cst_val1 <-> cst_val2
         // race, installing a buffer whose init does not match the observed state.
-        T* expected = expected_is_cst_val2 ? BaseSpec::get_cst_val2(ind) : Base::get_cst_val1();
+        T* expected = expected_is_cst_val2 ? BaseSpec::get_cst_val2(idx) : Base::get_cst_val1();
         return Base::compare_and_swap_gen(values_loc, expected);
     }
     else
     {
-        CHUNK_INVARIANT_FAILED("zero_one_value::Chunk::compare_and_swap(values, ind, ...) on a bool chunk: "
+        CHUNK_INVARIANT_FAILED("zero_one_value::Chunk::compare_and_swap(values, index_value, ...) on a bool chunk: "
                                "compare_and_swap_bool is the bool path");
     }
 }
@@ -1420,7 +1420,7 @@ void zero_one_value::Chunk<T>::init_after_constructor()
 }
 
 template <typename T>
-void zero_one_value::Chunk<T>::init_values_cst_val(int num_compress_value, int ind)
+void zero_one_value::Chunk<T>::init_values_cst_val(int num_compress_value, int idx)
 {
     if (num_compress_value == 0)
     {
@@ -1430,7 +1430,7 @@ void zero_one_value::Chunk<T>::init_values_cst_val(int num_compress_value, int i
     {
         if constexpr (is_not_bool)
         {
-            values_ = BaseSpec::get_cst_val2(ind);
+            values_ = BaseSpec::get_cst_val2(idx);
         }
         else
         {
@@ -1465,7 +1465,7 @@ template <typename T>
     else
     {
         static_assert(dependent_false_v<T>, "Logic Error: written() called on a non-boolean chunk. For non-bool "
-                                            "types, use written(int ind) instead.");
+                                            "types, use written(int index_value) instead.");
     }
 }
 
@@ -1488,30 +1488,31 @@ template <typename T>
 }
 
 template <typename T>
-[[nodiscard]] bool zero_one_value::Chunk<T>::written(int ind) const
+[[nodiscard]] bool zero_one_value::Chunk<T>::written(int idx) const
 {
     if constexpr (is_not_bool)
     {
-        return values_ != Base::get_cst_val1() && is_not_cst_val2(ind);
+        return values_ != Base::get_cst_val1() && is_not_cst_val2(idx);
     }
     else
     {
-        static_assert(dependent_false_v<T>, "Logic Error: written(int ind) called on a boolean chunk. Boolean "
+        static_assert(dependent_false_v<T>, "Logic Error: written(int index_value) called on a boolean chunk. Boolean "
                                             "chunks use a single shared second value, use written() instead.");
     }
 }
 
 template <typename T>
-[[nodiscard]] bool zero_one_value::Chunk<T>::is_cst_val2(int ind) const noexcept
+[[nodiscard]] bool zero_one_value::Chunk<T>::is_cst_val2(int idx) const noexcept
 {
     if constexpr (is_not_bool)
     {
-        return values_ == BaseSpec::get_cst_val2(ind);
+        return values_ == BaseSpec::get_cst_val2(idx);
     }
     else
     {
-        static_assert(dependent_false_v<T>, "Logic Error: is_cst_val2(int ind) called on a boolean chunk. Boolean "
-                                            "chunks do not use indexed constants.");
+        static_assert(dependent_false_v<T>,
+                      "Logic Error: is_cst_val2(int index_value) called on a boolean chunk. Boolean "
+                      "chunks do not use indexed constants.");
     }
 }
 
@@ -1524,22 +1525,21 @@ template <typename T>
     }
     else
     {
-        static_assert(
-            dependent_false_v<T>,
-            "Logic Error: is_cst_val2() called on a non-boolean chunk. Non-bool types require an index (int ind).");
+        static_assert(dependent_false_v<T>, "Logic Error: is_cst_val2() called on a non-boolean chunk. Non-bool types "
+                                            "require an index (int index_value).");
     }
 }
 
 template <typename T>
-[[nodiscard]] bool zero_one_value::Chunk<T>::is_not_cst_val2(int ind) const noexcept
+[[nodiscard]] bool zero_one_value::Chunk<T>::is_not_cst_val2(int idx) const noexcept
 {
     if constexpr (is_not_bool)
     {
-        return !is_cst_val2(ind);
+        return !is_cst_val2(idx);
     }
     else
     {
-        static_assert(dependent_false_v<T>, "Logic Error: is_not_cst_val2(int ind) called on a boolean chunk.");
+        static_assert(dependent_false_v<T>, "Logic Error: is_not_cst_val2(int index_value) called on a boolean chunk.");
     }
 }
 
@@ -1559,7 +1559,7 @@ template <typename T>
 template <typename T>
 void zero_one_value::Chunk<T>::alloc_chunk(const InfArrayT& inf_array)
 {
-    if (is_cst_val(inf_array.ind))
+    if (is_cst_val(inf_array.idx))
     {
         // bool has its own materialiser.
         if constexpr (is_not_bool)
@@ -1576,7 +1576,7 @@ void zero_one_value::Chunk<T>::alloc_chunk(const InfArrayT& inf_array)
 template <typename T>
 void zero_one_value::Chunk<T>::alloc_chunk(const InfArrayT& inf_array, [[maybe_unused]] int thr_rank)
 {
-    if (is_cst_val(inf_array.ind))
+    if (is_cst_val(inf_array.idx))
     {
         if constexpr (chunk_config::stats)
         {
@@ -1622,7 +1622,7 @@ void zero_one_value::Chunk<T>::values_store(T* ptr) noexcept
 }
 
 template <typename T>
-[[nodiscard]] T* zero_one_value::Chunk<T>::try_mark_cst_and_get_old(int num_compress_value, int ind)
+[[nodiscard]] T* zero_one_value::Chunk<T>::try_mark_cst_and_get_old(int num_compress_value, int idx)
 {
     T* old = Base::values_load();
     if constexpr (is_bool)
@@ -1634,13 +1634,13 @@ template <typename T>
     }
     else
     {
-        if (old == Base::get_cst_val1() || BaseSpec::is_cst_val2(old, ind)) [[unlikely]]
+        if (old == Base::get_cst_val1() || BaseSpec::is_cst_val2(old, idx)) [[unlikely]]
         {
             return nullptr;
         }
         // No second value declared: no block to compress to. The scans never file such a
         // chunk under the second constant, so this is a guard, not a path.
-        if (num_compress_value != 0 && ind < 0) [[unlikely]]
+        if (num_compress_value != 0 && idx < 0) [[unlikely]]
         {
             if constexpr (build_config::any_check)
             {
@@ -1665,7 +1665,7 @@ template <typename T>
         }
         else
         {
-            new_ptr = BaseSpec::get_cst_val2(ind);
+            new_ptr = BaseSpec::get_cst_val2(idx);
         }
     }
 
@@ -1696,11 +1696,11 @@ template <typename T>
 }
 
 template <typename T>
-[[nodiscard]] bool zero_one_value::Chunk<T>::is_cst_val(int ind) const noexcept
+[[nodiscard]] bool zero_one_value::Chunk<T>::is_cst_val(int idx) const noexcept
 {
     if constexpr (is_not_bool)
     {
-        return Base::is_cst_val1() || BaseSpec::is_cst_val2(values_, ind);
+        return Base::is_cst_val1() || BaseSpec::is_cst_val2(values_, idx);
     }
     else
     {

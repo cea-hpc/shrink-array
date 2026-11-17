@@ -23,7 +23,7 @@
  * @details zero::PointerMap (zero_proxy.h) and zero_one_value::PointerMap (zero_one_value_pointer_map.h)
  *          map an array (its ArrayKey) to its metadata by walking flat (key, payload)
  *          pairs; the plain scans live here once. Payload: a table number (zero),
- *          a (second_value, ind, array_id) record (zero_one_value).
+ *          a (second_value, idx, array_id) record (zero_one_value).
  *
  * @note The CONTAINER is a template parameter on purpose: zero_one_value::PointerMap
  *       needs a std::deque, since a std::vector reallocates as it grows and a

@@ -39,7 +39,7 @@
 namespace shrink_array
 {
 
-// No acquire fence ends set_info_second_value_ind() or the two
+// No acquire fence ends set_info_second_value_idx() or the two
 // set_info_on_chunk(): they would follow plain (non-atomic) reads of the
 // array_registry registry and pair with no release. Do not add one: on
 // aarch64 it was the hottest instruction of assign_impl (several % of a run).
@@ -54,24 +54,25 @@ const zero_one_value::ProxySpec<T, Derived>::InfArrayT* zero_one_value::ProxySpe
     {
         if constexpr (build_config::any_check)
         {
-            // ind and array_id only: ind maps one-to-one to the value, and a
+            // idx and array_id only: idx maps one-to-one to the value, and a
             // value compare would raise a false alarm on a NaN second value.
-            // Once per (array, ind, array_id) and registry generation, not per
+            // Once per (array, idx, array_id) and registry generation, not per
             // write: see verify_once_per_generation().
             const auto ptr      = get_ptr_on_array();
-            const int  ind      = inf_array_src_->ind;
+            const int  idx      = inf_array_src_->idx;
             const int  array_id = inf_array_src_->array_id;
             internal::verify_once_per_generation(
-                ptr, std::tuple{ptr, ind, array_id},
-                [ptr, ind, array_id]
+                ptr, std::tuple{ptr, idx, array_id},
+                [ptr, idx, array_id]
                 {
                     const InfArrayT reg = Derived::get_info_second_value(ptr);
-                    if (reg.ind != ind || reg.array_id != array_id)
+                    if (reg.idx != idx || reg.array_id != array_id)
                     {
-                        CHUNK_INVARIANT_FAILED("zero_one_value::ProxySpec::load_inf_array: armed (ind {}, array_id {}) "
-                                               "differs from the registry's (ind {}, array_id {}) for array {} -- a "
-                                               "registry write without sync_registry_mirror()?",
-                                               ind, array_id, reg.ind, reg.array_id, ptr);
+                        CHUNK_INVARIANT_FAILED(
+                            "zero_one_value::ProxySpec::load_inf_array: armed (index_value {}, array_id {}) "
+                            "differs from the registry's (index_value {}, array_id {}) for array {} -- a "
+                            "registry write without sync_registry_mirror()?",
+                            idx, array_id, reg.idx, reg.array_id, ptr);
                     }
                 });
         }
@@ -97,24 +98,25 @@ const zero_one_value::ProxySpec<T, Derived>::InfArrayT* zero_one_value::ProxySpe
     {
         if constexpr (build_config::any_check)
         {
-            // ind and array_id only: ind maps one-to-one to the value, and a
+            // idx and array_id only: idx maps one-to-one to the value, and a
             // value compare would raise a false alarm on a NaN second value.
-            // Once per (array, ind, array_id) and registry generation, not per
+            // Once per (array, idx, array_id) and registry generation, not per
             // write: see verify_once_per_generation().
             const auto ptr      = get_ptr_on_array();
-            const int  ind      = inf_array_src_->ind;
+            const int  idx      = inf_array_src_->idx;
             const int  array_id = inf_array_src_->array_id;
             internal::verify_once_per_generation(
-                ptr, std::tuple{ptr, ind, array_id},
-                [ptr, ind, array_id]
+                ptr, std::tuple{ptr, idx, array_id},
+                [ptr, idx, array_id]
                 {
                     const InfArrayT reg = Derived::get_info_second_value(ptr);
-                    if (reg.ind != ind || reg.array_id != array_id)
+                    if (reg.idx != idx || reg.array_id != array_id)
                     {
-                        CHUNK_INVARIANT_FAILED("zero_one_value::ProxySpec::load_inf_array: armed (ind {}, array_id {}) "
-                                               "differs from the registry's (ind {}, array_id {}) for array {} -- a "
-                                               "registry write without sync_registry_mirror()?",
-                                               ind, array_id, reg.ind, reg.array_id, ptr);
+                        CHUNK_INVARIANT_FAILED(
+                            "zero_one_value::ProxySpec::load_inf_array: armed (index_value {}, array_id {}) "
+                            "differs from the registry's (index_value {}, array_id {}) for array {} -- a "
+                            "registry write without sync_registry_mirror()?",
+                            idx, array_id, reg.idx, reg.array_id, ptr);
                     }
                 });
         }
@@ -149,14 +151,14 @@ void zero_one_value::ProxySpec<T, Derived>::set_info_on_chunk()
     {
         inf_array_    = *src;
         second_value_ = src->second_value;
-        ind_          = src->ind;
+        idx_          = src->idx;
         derived().set_array_id(src->array_id); // what set_array_id() would read back from inf_array
     }
     else
     {
         inf_array_    = Derived::get_info_second_value(get_ptr_on_array());
         second_value_ = inf_array_.second_value;
-        ind_          = inf_array_.ind;
+        idx_          = inf_array_.idx;
         derived().set_array_id();
     }
 
@@ -167,26 +169,26 @@ void zero_one_value::ProxySpec<T, Derived>::set_info_on_chunk()
 }
 
 template <typename T, typename Derived>
-void zero_one_value::ProxySpec<T, Derived>::set_info_second_value_ind()
+void zero_one_value::ProxySpec<T, Derived>::set_info_second_value_idx()
 {
     if (const InfArrayT* src = armed_inf_array()) [[likely]]
     {
         inf_array_    = *src;
         second_value_ = src->second_value;
-        ind_          = src->ind;
+        idx_          = src->idx;
         return;
     }
     inf_array_    = Derived::get_info_second_value(get_ptr_on_array());
     second_value_ = inf_array_.second_value;
-    ind_          = inf_array_.ind;
+    idx_          = inf_array_.idx;
 }
 
 template <typename T, typename Derived>
-void zero_one_value::ProxySpec<T, Derived>::set_info_second_value_ind_from_key(ArrayKey<Chunk<T>> key)
+void zero_one_value::ProxySpec<T, Derived>::set_info_second_value_idx_from_key(ArrayKey<Chunk<T>> key)
 {
     inf_array_    = Derived::get_info_second_value(key);
     second_value_ = inf_array_.second_value;
-    ind_          = inf_array_.ind;
+    idx_          = inf_array_.idx;
 }
 
 // Hidden from Doxygen: the zero_one_value::Proxy alias (BaseSpec) and the bool specialization
@@ -460,8 +462,8 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> value) noexcept
         return value;
     }
 
-    // Initialize second_value / ind for this chunk/array
-    BaseSpec::set_info_second_value_ind();
+    // Initialize second_value / idx for this chunk/array
+    BaseSpec::set_info_second_value_idx();
 
     // If assigning the second compression value and we are already in that state,
     // or the current stored value is already second_value, nothing to do --
@@ -482,7 +484,7 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> value) noexcept
         {
             if (same_value(static_cast<T>(value), second_value_)) // as stored: an int for a std::complex T
             {
-                if (values_loc == chunk_.get_cst_val2(BaseSpec::ind_))
+                if (values_loc == chunk_.get_cst_val2(BaseSpec::idx_))
                 {
                     return value;
                 }
@@ -490,7 +492,7 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> value) noexcept
                 const T* const                  live = chunk_.values_load();
                 test_hooks::maybe_read_delay(); // TEST KNOB (test_hooks.h)
                 // raw-read: inside a read_reclaim::ReadSection
-                if (live == chunk_.get_cst_val2(BaseSpec::ind_) || same_value(live[num_], second_value_))
+                if (live == chunk_.get_cst_val2(BaseSpec::idx_) || same_value(live[num_], second_value_))
                 {
                     return value;
                 }
@@ -629,15 +631,15 @@ void zero_one_value::Proxy<T>::ensure_writable_storage()
 
     // The materialisation sequence at the top of execute_simple_operation (see
     // header note). Any behaviour change here is a regression.
-    if constexpr (chunk_config::use_compression_with_counter && requires { this->set_info_second_value_ind(); })
+    if constexpr (chunk_config::use_compression_with_counter && requires { this->set_info_second_value_idx(); })
     {
-        this->set_info_second_value_ind();
+        this->set_info_second_value_idx();
     }
 
     bool is_val2 = false;
     if constexpr (is_not_bool)
     {
-        is_val2 = is_cst_val2(BaseSpec::ind_);
+        is_val2 = is_cst_val2(BaseSpec::idx_);
     }
     else
     {
@@ -865,7 +867,7 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, false>::execute_ari
 
     using CalcType = std::common_type_t<T, BaseT<U>>;
 
-    if (const bool was_not_written = !chunk_.written(this->ind_); was_not_written)
+    if (const bool was_not_written = !chunk_.written(this->idx_); was_not_written)
     {
         const CalcType intermediate = op(static_cast<CalcType>(this->raw_elem()), static_cast<CalcType>(operand));
         // Built where it is used: one write of a struct for one value.
@@ -911,9 +913,9 @@ void zero_one_value::Proxy<T>::execute_inplace_operation(Lambda operation)
         shrink_array::set_thread_alloc_key(this->alloc_key());
     }
 
-    if constexpr (chunk_config::use_compression_with_counter && requires { this->set_info_second_value_ind(); })
+    if constexpr (chunk_config::use_compression_with_counter && requires { this->set_info_second_value_idx(); })
     {
-        this->set_info_second_value_ind();
+        this->set_info_second_value_idx();
     }
 
     const bool is_val2 = SecondValueBase::is_cst_val2();
@@ -979,7 +981,7 @@ void zero_one_value::Proxy<T>::execute_inplace_operation(Lambda operation)
         }
 
         // Transitions IN: the position now holds a constant it did not hold before.
-        // Test the actual stored value, NOT is_cst_val2(ind) (which checks the
+        // Test the actual stored value, NOT is_cst_val2(idx) (which checks the
         // storage pointer and is false right after create_value decompressed the
         // chunk, so it would miss the increment and desync the counter).
         if (!was_second_value && same_value(this->raw_elem(), second_value_))
@@ -1059,7 +1061,7 @@ void zero_one_value::Proxy<T>::apply_compound_operation([[maybe_unused]] Op op, 
 
     if constexpr (chunk_config::use_compression_with_counter)
     {
-        BaseSpec::set_info_second_value_ind(); // Initialize second_value / ind — needed by both branches below
+        BaseSpec::set_info_second_value_idx(); // Initialize second_value / idx — needed by both branches below
 
         const InT<T> v_old_snapshot = this->raw_elem();
         const bool   is_first_value = same_value(v_old_snapshot, static_cast<T>(Chunk<T>::first_value));
@@ -1251,11 +1253,11 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, false>::manage_full
     }
     if constexpr (is_not_bool)
     {
-        chunk_.clear_st(0, this->ind_);
+        chunk_.clear_st(0, this->idx_);
     }
     else
     {
-        chunk_.clear_st(0, 0); // bool: ind ignored by bool-aware clear_int_st
+        chunk_.clear_st(0, 0); // bool: idx ignored by bool-aware clear_int_st
     }
     chunk_.values_ = static_cast<T*>(chunk_.get_cst_val1());
 }
@@ -1270,11 +1272,11 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, false>::manage_full
     }
     if constexpr (is_not_bool)
     {
-        chunk_.clear_st(1, this->ind_);
+        chunk_.clear_st(1, this->idx_);
     }
     else
     {
-        chunk_.clear_st(1, 0); // bool: ind ignored by bool-aware clear_int_st
+        chunk_.clear_st(1, 0); // bool: idx ignored by bool-aware clear_int_st
     }
 }
 
@@ -1313,16 +1315,17 @@ const zero_one_value::Proxy<T>& zero_one_value::Proxy<T>::operator=(const Proxy&
 }
 
 template <typename T>
-[[nodiscard]] bool zero_one_value::Proxy<T>::is_cst_val2(int ind) const noexcept
+[[nodiscard]] bool zero_one_value::Proxy<T>::is_cst_val2(int idx) const noexcept
 {
     if constexpr (is_not_bool)
     {
-        return chunk_.is_cst_val2(ind);
+        return chunk_.is_cst_val2(idx);
     }
     else
     {
-        CHUNK_INVARIANT_FAILED("zero_one_value::Proxy<bool>::is_cst_val2(ind): bool has no indexed second constant "
-                               "-- use is_cst_val2()");
+        CHUNK_INVARIANT_FAILED(
+            "zero_one_value::Proxy<bool>::is_cst_val2(index_value): bool has no indexed second constant "
+            "-- use is_cst_val2()");
     }
 }
 
@@ -1331,7 +1334,7 @@ template <typename T>
 {
     if constexpr (is_not_bool)
     {
-        return chunk_.is_cst_val2(BaseSpec::ind_);
+        return chunk_.is_cst_val2(BaseSpec::idx_);
     }
     else
     {
@@ -1344,7 +1347,7 @@ template <typename T>
 {
     if constexpr (is_not_bool)
     {
-        return vals == chunk_.get_cst_val2(BaseSpec::ind_);
+        return vals == chunk_.get_cst_val2(BaseSpec::idx_);
     }
     else
     {

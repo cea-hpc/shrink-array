@@ -105,7 +105,7 @@ class RechunkSupport<Derived, true> : public RechunkHookDefaults<Derived>
   public:
     using Traits    = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
     using T         = Traits::value_type;        ///< Stored element type.
-    using IndType   = Traits::IndexType;         ///< Signed global index type.
+    using IndexType = Traits::IndexType;         ///< Signed global index type.
     using ChunkType = Traits::ChunkType;         ///< Chunk type held in the array's chunk_list_.
     using ProxyType = Traits::ProxyType;         ///< Proxy type owning the per-type array registry.
 

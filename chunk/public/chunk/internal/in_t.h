@@ -80,7 +80,7 @@ namespace shrink_array
 // `ptr_second_value` (a SecondValueRef) after reading `second_v`, so a
 // `const T&` bound to that slot would change under it:
 //
-//     ArrayCstVal2Holder::find_or_set_ind_cst_val2      (array_cst_val2_holder.h)
+//     ArrayCstVal2Holder::find_or_set_idx_cst_val2      (array_cst_val2_holder.h)
 //
 // Also kept as `T v` by policy: no aliasing today, but on write paths where a
 // large user T could introduce one:

@@ -48,7 +48,7 @@ ChunkSizeScan<Arr>::ChunkSizeScan(const Arr& arr, const Options& opt)
     , chunk_sz_(arr.chunk_size())
     , nc_(arr.chunk_count_)
     , len_(arr.chunk_count_ * static_cast<int64_t>(arr.chunk_size()))
-    , second_value_ind_(second_value_index(arr))
+    , second_value_idx_(second_value_index(arr))
     , cst1_value_(ChunkT::first_value)
     , cst2_value_(cst1_value_)
     , cand_(candidate_sizes(arr.chunk_size(), opt))
@@ -112,13 +112,13 @@ std::vector<uint32_t> ChunkSizeScan<Arr>::candidate_sizes(uint32_t chunk_sz, con
 template <typename Arr>
 int ChunkSizeScan<Arr>::second_value_index([[maybe_unused]] const Arr& arr)
 {
-    // bool / Bit: one second value, `true`, no index -- get_ind_second_value()
+    // bool / Bit: one second value, `true`, no index -- get_idx_second_value()
     // aborts for them; classify() asks the unindexed is_cst_val2().
     // A zero_any-family array in a zero_one_value build (pattern::Array): no
     // index, the zero_any branches of classify().
     if constexpr (chunk_config::use_zero_one_value && !is_zero_any_family_v<ChunkT> && !is_bool_like_v<T>)
     {
-        return arr.get_ind_second_value();
+        return arr.get_idx_second_value();
     }
     else if constexpr (chunk_config::use_zero_one_value && !is_zero_any_family_v<ChunkT>)
     {
@@ -188,7 +188,7 @@ int ChunkSizeScan<Arr>::classify(const ChunkT& chunk, const void*& key) const
         }
         else
         {
-            is_cst2 = second_value_ind_ >= 0 && chunk.is_cst_val2(second_value_ind_);
+            is_cst2 = second_value_idx_ >= 0 && chunk.is_cst_val2(second_value_idx_);
         }
         if (is_cst2)
         {

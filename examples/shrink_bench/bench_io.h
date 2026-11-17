@@ -235,12 +235,12 @@ void write_binary_file(const std::string& filename,
 // compiled out by the preprocessor) and calls std::abort().
 //
 // Trace mode:
-//   - write_trace=true : dump the (ind, k) coordinate of the first divergence
+//   - write_trace=true : dump the (idx, k) coordinate of the first divergence
 //     to trace_err.txt so a follow-up run can jump straight to it.
 //   - read_trace=true  : replay from trace_err.txt written by a previous run.
 // -----------------------------------------------------------------------------
 template <typename Vec>
-void read_check_binary_file(Int                ind,
+void read_check_binary_file(Int                idx,
                             const std::string& array_name,
                             const std::string& filename,
                             const Vec&         data_check,
@@ -294,7 +294,7 @@ void read_check_binary_file(Int                ind,
                     "has no data file ({} / {}): it was written with --checksum_only. Regenerate a "
                     "full reference (vector baseline without --checksum_only) to locate the "
                     "diverging element.\n",
-                    array_name, ind, lchs_read, lchs, filename, filename_gz);
+                    array_name, idx, lchs_read, lchs, filename, filename_gz);
             });
         std::abort();
     }
@@ -437,7 +437,7 @@ void read_check_binary_file(Int                ind,
 
                 if constexpr (is_not_bool)
                 {
-                    is_val2 = chunk_t.is_cst_val2(data_check.get_ind_second_value());
+                    is_val2 = chunk_t.is_cst_val2(data_check.get_idx_second_value());
                 }
                 else
                 {
@@ -575,16 +575,16 @@ void read_check_binary_file(Int                ind,
             std::cerr << "Failed to open trace_err.txt\n";
         }
     }
-    Int ind_read = -1;
+    Int idx_read = -1;
 
     if (read_trace)
     {
-        trace_file_read >> ind_read;
+        trace_file_read >> idx_read;
     }
     bool ok_read_trace = false;
     if (read_trace)
     {
-        if (ind_read == ind)
+        if (idx_read == idx)
         {
             ok_read_trace = true;
         }
@@ -633,7 +633,7 @@ void read_check_binary_file(Int                ind,
 
                 if (write_trace && trace_file_write.is_open())
                 {
-                    trace_file_write << ind << "\n";
+                    trace_file_write << idx << "\n";
                     trace_file_write << k << "\n";
                 }
 
@@ -641,7 +641,7 @@ void read_check_binary_file(Int                ind,
                 log_message(full_array_name + " not equal! read: " + std::to_string(value) +
                             " != " + std::to_string(data_check[k]) + "\n");
 
-                std::cerr << "iteration: " + std::to_string(ind) + "\n";
+                std::cerr << "iteration: " + std::to_string(idx) + "\n";
                 // One `if constexpr` over both former blocks: the zero_one_value one below
                 // reads chunk_t, declared here, so they cannot be split.
                 if constexpr (chunk_config::is_shrink_enabled)
@@ -770,7 +770,7 @@ void read_check_binary_file(Int                ind,
             {
                 if (write_trace && trace_file_write.is_open())
                 {
-                    trace_file_write << ind << "\n";
+                    trace_file_write << idx << "\n";
                     trace_file_write << k << "\n";
                 }
 
@@ -903,7 +903,7 @@ void read_check_binary_file(Int                ind,
                             if constexpr (chunk_config::use_zero_one_value && !shrink_array::is_bool_like_v<T> &&
                                           !shrink_array::is_zero_any_family_v<std::remove_cvref_t<decltype(chunk_t)>>)
                             {
-                                return chunk_t.is_cst_val2(data_check.get_ind_second_value());
+                                return chunk_t.is_cst_val2(data_check.get_idx_second_value());
                             }
                             else
                             {

@@ -623,7 +623,7 @@ void GlobalVecHolder<T>::index_clear() noexcept
 // ---------------------------------------------------------------------------
 
 template <typename T>
-[[nodiscard]] T* ArrayCstVal2Holder<T>::find_or_set_ind_cst_val2(T second_v, SecondValueRef<T> ptr_second_value)
+[[nodiscard]] T* ArrayCstVal2Holder<T>::find_or_set_idx_cst_val2(T second_v, SecondValueRef<T> ptr_second_value)
 {
     // Up to the record in the second-value table, which the reclaim's mark
     // scans: a reclaim must not run in between (LookupGuard).
@@ -634,9 +634,9 @@ template <typename T>
 }
 
 template <typename T>
-[[nodiscard]] T* ArrayCstVal2Holder<T>::find_or_set_ind_cst_val2_release(T second_v, SecondValueRef<T> ptr_second_value)
+[[nodiscard]] T* ArrayCstVal2Holder<T>::find_or_set_idx_cst_val2_release(T second_v, SecondValueRef<T> ptr_second_value)
 {
-    const typename VecHolder::LookupGuard in_flight; // as find_or_set_ind_cst_val2()
+    const typename VecHolder::LookupGuard in_flight; // as find_or_set_idx_cst_val2()
     T*                                    buf = find_or_register(second_v);
     ptr_second_value.set_from_array_release(buf);
     return buf;

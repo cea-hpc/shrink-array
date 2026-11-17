@@ -77,7 +77,7 @@ class ChunkConcurrentOps
     /// @brief Atomically mark this chunk constant and hand back its old buffer.
     /// @param num_compress_value 0 for the first constant, 1 for the second.
     /// @param cst2_ptr The shared array to install when @p num_compress_value
-    ///        is 1 (find_or_set_ind_cst_val2's result); ignored for 0.
+    ///        is 1 (find_or_set_idx_cst_val2's result); ignored for 0.
     [[nodiscard]] T* try_mark_cst_and_get_old(int num_compress_value, T* cst2_ptr) noexcept;
 
   protected:
@@ -300,7 +300,7 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>, public ChunkC
      * \param ptr_type_cst       Slot of the per-chunk type table to update.
      * \param ptr_second_value   The chunk's second-value slot.
      * \param thr_rank           Rank whose pool receives the buffer.
-     * \param new_cst_val2_ptr   Pointer returned by find_or_set_ind_cst_val2();
+     * \param new_cst_val2_ptr   Pointer returned by find_or_set_idx_cst_val2();
      *                           required when @p num_compress_value is 1.
      */
     void clear_int_st(int               num_compress_value,

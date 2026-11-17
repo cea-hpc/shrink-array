@@ -875,7 +875,7 @@ try
                     // branch is still checked, and Array<T> is zero::Array<T> --
                     // which has no gc_mark_report -- in a zero/zero_one_value build. `Int`
                     // is what matters here: zero_any::Array<double> would take the
-                    // default IndType (int), a DIFFERENT instantiation from the
+                    // default IndexType (int), a DIFFERENT instantiation from the
                     // one the bench fills in an int64 build, and the report would
                     // be of an array nothing ever touched.
                     zero_any::Array<double, Int>::gc_mark_report();

@@ -153,7 +153,7 @@ moins qu'entretenir des listes.
 ## 5. La lecture
 
 ```cpp
-__device__ T operator()(IndT i) const noexcept
+__device__ T operator()(IndexT i) const noexcept
 {
     const auto& d = desc_[i >> shift_];
     return d.buf ? d.buf[i & mask_] : d.cst;     // branchement uniforme par warp

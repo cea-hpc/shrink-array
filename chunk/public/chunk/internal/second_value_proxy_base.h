@@ -77,7 +77,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     /**
      * @brief Whether the owning chunk is currently compressed to its second
      *        constant (delegates to the derived class, which knows the
-     *        index/ind for non-bool types).
+     *        index/idx for non-bool types).
      * @return true if the chunk is compressed to the second constant.
      */
     [[nodiscard]] bool is_cst_val2() const noexcept

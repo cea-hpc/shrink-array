@@ -200,7 +200,7 @@ try
         mm_algo.loop(0, n_materials,
                      [&](int& mat, const auto& get_mat_vec, const auto&)
                      {
-                         const auto& arr0_ind = get_mat_vec(simu.get_tabs(0));
+                         const auto& arr0_idx = get_mat_vec(simu.get_tabs(0));
 
                          std::cout << "Material : " << mat << "\n";
 
@@ -208,14 +208,14 @@ try
                          {
                              have_chunk = true;
 
-                             using CV = std::remove_reference_t<decltype(arr0_ind)>;
+                             using CV = std::remove_reference_t<decltype(arr0_idx)>;
                              using V  = std::remove_const_t<CV>;
 
                              using VecChunkReal = VectChunk<double>;
 
                              if constexpr (std::is_same_v<V, VecChunkReal>)
                              {
-                                 const double sz0 = only_first_chunk ? arr0_ind.stats_seq() : arr0_ind.stats();
+                                 const double sz0 = only_first_chunk ? arr0_idx.stats_seq() : arr0_idx.stats();
 
                                  // std::format, not std::fixed: std::cout's flags stay as they were.
                                  std::cout << "  Chunk filling rate : " << std::format("{:.2f}", sz0) << "%" << '\n';
@@ -224,8 +224,8 @@ try
                                  // interface chunks should be materialised, the
                                  // interior ones are compressed to 1 and the empty
                                  // ones to 0.
-                                 const auto&  frac_ind = get_mat_vec(simu.get_frac());
-                                 const double szf      = only_first_chunk ? frac_ind.stats_seq() : frac_ind.stats();
+                                 const auto&  frac_idx = get_mat_vec(simu.get_frac());
+                                 const double szf      = only_first_chunk ? frac_idx.stats_seq() : frac_idx.stats();
 
                                  std::cout << "  Fraction chunk filling rate (zero_one_value) : "
                                            << std::format("{:.2f}", szf) << "%" << '\n';
@@ -243,7 +243,7 @@ try
 #pragma omp parallel for reduction(+ : sum)
                              for (int k = 0; k < mesh_size; ++k)
                              {
-                                 if (arr0_ind[k] != 0)
+                                 if (arr0_idx[k] != 0)
                                      sum++;
                              }
                              const double sz = static_cast<double>(sum) / static_cast<double>(mesh_size) * 100.;

@@ -149,7 +149,7 @@ pass looks at every materialised chunk (7.1), which on GPU costs less than maint
 ## 5. Reading
 
 ```cpp
-__device__ T operator()(IndT i) const noexcept
+__device__ T operator()(IndexT i) const noexcept
 {
     const auto& d = desc_[i >> shift_];
     return d.buf ? d.buf[i & mask_] : d.cst;     // branch uniform per warp

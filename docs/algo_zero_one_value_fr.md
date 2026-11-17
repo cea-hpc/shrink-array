@@ -97,17 +97,17 @@ le chunk est dans l'un de trois états :
 | état | `values` pointe vers | test |
 |---|---|---|
 | compressé à la première valeur | le tampon constant `cst_val1` (que des 0) | `is_cst_val1()` |
-| compressé à la seconde valeur | le tampon constant `cst_val2[ind]` | `is_cst_val2(ind)` |
-| matérialisé | un tampon privé, alloué pour ce chunk | `written(ind)` |
+| compressé à la seconde valeur | le tampon constant `cst_val2[idx]` | `is_cst_val2(idx)` |
+| matérialisé | un tampon privé, alloué pour ce chunk | `written(idx)` |
 
 Les tampons constants sont **alloués une seule fois** et partagés par tous les chunks
 concernés. Leur taille est `cst_buffer_size` (la taille de chunk en géométrie fixe,
 `chunk_dyn_max_size` en géométrie dynamique). Il existe un tampon `cst_val2` par seconde
-valeur déclarée, repéré par un **indice** `ind`.
+valeur déclarée, repéré par un **indice** `idx`.
 
 > Attention : `zero_one_value::Chunk::written()` **sans argument** est réservé à `bool` et renvoie `false`
 > pour tout autre type. Pour savoir si un chunk non booléen est matérialisé, il faut
-> `written(ind)` avec l'indice de la seconde valeur du tableau
+> `written(idx)` avec l'indice de la seconde valeur du tableau
 > (`zero_one_value::Array::chunk_written(j)` le fait).
 
 ### 4.2 Le registre des secondes valeurs
@@ -117,10 +117,10 @@ La seconde valeur **n'est pas stockée dans le tableau** : elle vit dans le regi
 triplet `InfArrayT` :
 
 ```
-(second_value, ind, array_id)
+(second_value, idx, array_id)
 ```
 
-- `ind` : l'indice du tampon constant `cst_val2` de cette valeur ;
+- `idx` : l'indice du tampon constant `cst_val2` de cette valeur ;
 - `array_id` : le numéro du tableau, qui indexe les tables de métadonnées par tableau
   (par exemple les drapeaux « déjà candidat à la compression »).
 
@@ -139,7 +139,7 @@ est comparée au registre.
 L'opérateur de lecture renvoie une **valeur**, jamais une référence :
 
 ```cpp
-CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](IndType i) const noexcept
+CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](IndexType i) const noexcept
 {
     const int chunk_index = i >> size_policy_.decalage();
     const int num       = i & size_policy_.modulo();
@@ -171,7 +171,7 @@ le tampon : **à n'utiliser que sur un chunk matérialisé**, puisqu'il contourn
 ### 6.1 L'`operator[]` d'écriture : un proxy armé
 
 ```cpp
-ProxyType operator[](IndType i) noexcept
+ProxyType operator[](IndexType i) noexcept
 {
     const int chunk_index = i >> size_policy_.decalage();
     const int num       = i & size_policy_.modulo();
@@ -195,13 +195,13 @@ const T* values_loc = chunk.values_load();
 // 1. first_value sur un chunk déjà à first_value : rien à faire
 if (is_cst_val1_and_v_equal_first_value(values_loc, v)) return v;
 
-set_info_second_value_ind();   // second_value et ind, depuis le miroir
+set_info_second_value_idx();   // second_value et idx, depuis le miroir
 
 // 2. second_value sur un chunk à cst_val2, ou sur un élément qui la contient déjà :
 //    rien à faire -- sauf si des écritures différées sont en attente sur le chunk
 //    (une ancienne opération appliquée plus tard écraserait la valeur laissée en place)
 if (!chunk.pending_any())
-    if (v == second_value && (values_loc == chunk.get_cst_val2(ind) || values_loc[num] == second_value))
+    if (v == second_value && (values_loc == chunk.get_cst_val2(idx) || values_loc[num] == second_value))
         return v;
 
 // 3. sinon : le corps de l'écriture, confié au moteur d'écriture
@@ -398,7 +398,7 @@ flowchart TD
     D -->|"tout = second_value"| F["items ll_compt2"]
     D -->|"sinon"| G["rien (drapeau remis à zéro)"]
     E --> H["clear : rendre le tampon,<br/>values -> cst_val1"]
-    F --> I["clear : rendre le tampon,<br/>values -> cst_val2[ind]"]
+    F --> I["clear : rendre le tampon,<br/>values -> cst_val2[idx]"]
     H --> J["remettre les drapeaux à zéro,<br/>vider la items, finish()"]
     I --> J
     G --> J
@@ -519,8 +519,8 @@ morceau, la règle est donc celle de `fill_range_mt`).
 **Trois points propres à `zero_one_value`**, corrigés en septembre 2026, qui justifiaient auparavant de
 le laisser sur le chemin élément par élément :
 
-- le test « ce chunk est-il matérialisé ? » doit appeler `written(ind)` avec l'indice de
-  seconde valeur du tableau (`internal::materialised(a, ch, ind2)`) : `written()` sans argument
+- le test « ce chunk est-il matérialisé ? » doit appeler `written(idx)` avec l'indice de
+  seconde valeur du tableau (`internal::materialised(a, ch, idx2)`) : `written()` sans argument
   est réservé à `bool` et renvoie `false` pour les autres types ;
 - la mise en file (`internal::queue_for_compression`) doit **charger la seconde valeur** avant
   d'ajouter le chunk (`set_info_on_chunk()`), puisque les listes de `zero_one_value` sont indexées par

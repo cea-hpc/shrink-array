@@ -97,9 +97,9 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
     ///        must not be compressed to either constant (the buffer would be the
     ///        shared cst_val1 / cst_val2 block).
     /// @param num_compress_value Index reported in the failure message.
-    /// @param ind_opt zero_one_value's second-value slot index; empty for zero_any and
+    /// @param idx_opt zero_one_value's second-value slot index; empty for zero_any and
     ///        bool, whose second value is not table-indexed.
-    void check_not_constant_before_clear(int num_compress_value, std::optional<int> ind_opt) const noexcept;
+    void check_not_constant_before_clear(int num_compress_value, std::optional<int> idx_opt) const noexcept;
 
   private:
     static constexpr bool is_zero_any_family_derived = is_zero_any_family_v<Derived>;

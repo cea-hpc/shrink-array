@@ -246,11 +246,11 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
 
     if constexpr (is_not_bool)
     {
-        int ind = sh_inf.find_ind_array_cst2(sec_value);
+        int idx = sh_inf.find_idx_array_cst2(sec_value);
 
-        if (ind == -1)
+        if (idx == -1)
         {
-            ind = static_cast<int>(Chunk<T>::array_m_ptr_cst_val2->size());
+            idx = static_cast<int>(Chunk<T>::array_m_ptr_cst_val2->size());
 
             if constexpr (build_config::use_mm_protect)
             {
@@ -271,44 +271,44 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
                 mprotect(ptr, alloc_size, PROT_READ);
 
                 Chunk<T>::array_m_ptr_cst_val2->push_back(arr);
-                if (Chunk<T>::array_m_ptr_cst_val2_mm_elems.size() <= static_cast<std::size_t>(ind))
+                if (Chunk<T>::array_m_ptr_cst_val2_mm_elems.size() <= static_cast<std::size_t>(idx))
                 {
-                    Chunk<T>::array_m_ptr_cst_val2_mm_elems.resize(ind + 1, 0);
+                    Chunk<T>::array_m_ptr_cst_val2_mm_elems.resize(idx + 1, 0);
                 }
-                Chunk<T>::array_m_ptr_cst_val2_mm_elems[ind] = this->size_policy_.size();
+                Chunk<T>::array_m_ptr_cst_val2_mm_elems[idx] = this->size_policy_.size();
             }
             else
             {
-                Chunk<T>::array_m_ptr_cst_val2->resize(ind + 1);
+                Chunk<T>::array_m_ptr_cst_val2->resize(idx + 1);
                 for (int i = 0; i < static_cast<int>(this->size_policy_.size()); ++i)
                 {
-                    (*Chunk<T>::array_m_ptr_cst_val2)[ind][i] = sec_value;
+                    (*Chunk<T>::array_m_ptr_cst_val2)[idx][i] = sec_value;
                 }
             }
 
-            sh_inf.replace(this->registry_key(), sec_value, ind);
-            sh_inf.insert_map_ind_cst_val2(sec_value, ind);
+            sh_inf.replace(this->registry_key(), sec_value, idx);
+            sh_inf.insert_map_idx_cst_val2(sec_value, idx);
 
-            ind_cst_val2_ = ind;
+            idx_cst_val2_ = idx;
             if constexpr (chunk_config::use_fast_block_compression)
             {
                 inf_array_.second_value = sec_value;
-                inf_array_.ind          = ind;
+                inf_array_.idx          = idx;
             }
 
             if constexpr (build_config::threaded)
             {
-                if (const auto sz = static_cast<int>(Manager::zero_one_value_candidates_thr[0].size()); sz <= ind)
+                if (const auto sz = static_cast<int>(Manager::zero_one_value_candidates_thr[0].size()); sz <= idx)
                 {
                     for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
                     {
-                        Manager::zero_one_value_candidates_thr[thr].resize(ind + 1);
+                        Manager::zero_one_value_candidates_thr[thr].resize(idx + 1);
                     }
                 }
 
                 for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
                 {
-                    const auto& vec_ref    = Manager::zero_one_value_candidates_thr[thr][ind];
+                    const auto& vec_ref    = Manager::zero_one_value_candidates_thr[thr][idx];
                     const auto  shared_vec = std::make_shared<VectorTuple4ChunkInt2<Chunk, T>>(vec_ref);
                     Manager::zero_one_value_candidates_map_thr[thr][sec_value] = shared_vec;
                 }
@@ -316,7 +316,7 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
         }
         else
         {
-            // ind already registered for sec_value -- possibly by a DIFFERENT
+            // idx already registered for sec_value -- possibly by a DIFFERENT
             // array at a smaller geometry: the block was only filled up to THAT
             // array's size. Reused as-is, a chunk of THIS array at cst_val2 would
             // read zeros past the original fill (every rechunk to a larger
@@ -327,8 +327,8 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
             if constexpr (build_config::use_mm_protect)
             {
                 const std::size_t cur_elems =
-                    Chunk<T>::array_m_ptr_cst_val2_mm_elems.size() > static_cast<std::size_t>(ind)
-                        ? Chunk<T>::array_m_ptr_cst_val2_mm_elems[ind]
+                    Chunk<T>::array_m_ptr_cst_val2_mm_elems.size() > static_cast<std::size_t>(idx)
+                        ? Chunk<T>::array_m_ptr_cst_val2_mm_elems[idx]
                         : 0;
                 const std::size_t need_elems = this->size_policy_.size();
 
@@ -348,36 +348,36 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
 
                     // Do NOT unmap the old buffer: a live array's chunk may hold its
                     // address as `values` (immortal-arena discipline).
-                    (*Chunk<T>::array_m_ptr_cst_val2)[ind] = arr;
-                    if (Chunk<T>::array_m_ptr_cst_val2_mm_elems.size() <= static_cast<std::size_t>(ind))
+                    (*Chunk<T>::array_m_ptr_cst_val2)[idx] = arr;
+                    if (Chunk<T>::array_m_ptr_cst_val2_mm_elems.size() <= static_cast<std::size_t>(idx))
                     {
-                        Chunk<T>::array_m_ptr_cst_val2_mm_elems.resize(ind + 1, 0);
+                        Chunk<T>::array_m_ptr_cst_val2_mm_elems.resize(idx + 1, 0);
                     }
-                    Chunk<T>::array_m_ptr_cst_val2_mm_elems[ind] = need_elems;
+                    Chunk<T>::array_m_ptr_cst_val2_mm_elems[idx] = need_elems;
                 }
             }
             else
             {
                 for (int i = 0; i < static_cast<int>(this->size_policy_.size()); ++i)
                 {
-                    (*Chunk<T>::array_m_ptr_cst_val2)[ind][i] = sec_value;
+                    (*Chunk<T>::array_m_ptr_cst_val2)[idx][i] = sec_value;
                 }
             }
 
-            ind_cst_val2_ = ind;
+            idx_cst_val2_ = idx;
 
             if constexpr (chunk_config::use_fast_block_compression)
             {
                 inf_array_.second_value = sec_value;
-                inf_array_.ind          = ind;
+                inf_array_.idx          = idx;
             }
         }
         const bool exi = sh_inf.exists(this->registry_key());
 
         if (exi && !same_value(sec_value, this->second_value()))
         {
-            sh_inf.replace_all_other_elm(this->registry_key(), sec_value, ind_cst_val2_);
-            sh_inf.insert_map_ind_cst_val2(sec_value, ind);
+            sh_inf.replace_all_other_elm(this->registry_key(), sec_value, idx_cst_val2_);
+            sh_inf.insert_map_idx_cst_val2(sec_value, idx);
         }
     }
     else
@@ -393,7 +393,7 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
         if constexpr (chunk_config::use_fast_block_compression)
         {
             inf_array_.second_value = true;
-            inf_array_.ind          = 0;
+            inf_array_.idx          = 0;
         }
         if constexpr (build_config::threaded)
         {
@@ -433,13 +433,13 @@ void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os
     const auto& sh_inf   = *Proxy<T>::array_registry;
     const int   array_id = sh_inf.get_array_id(this->registry_key());
 
-    // Classification. written(ind) is true for a MATERIALISED chunk (`values !=
-    // cst_val1 && is_not_cst_val2(ind)`, as Chunk::written()); !written(ind)
+    // Classification. written(idx) is true for a MATERIALISED chunk (`values !=
+    // cst_val1 && is_not_cst_val2(idx)`, as Chunk::written()); !written(idx)
     // covers BOTH compressed states. n_t0 = at the first constant, n_t1 = at the
-    // second (the "type-2" reporting downstream). Do not read !written(ind) as
-    // "first constant" and written(ind) as "second": n_t0 + n_t1 would then
+    // second (the "type-2" reporting downstream). Do not read !written(idx) as
+    // "first constant" and written(idx) as "second": n_t0 + n_t1 would then
     // count every chunk.
-    // A materialised chunk is also re-tested by content: written(ind) only says
+    // A materialised chunk is also re-tested by content: written(idx) only says
     // whether the opportunistic deferred compression happened to catch it, not
     // whether its CURRENT content is compressible. Trusting it alone makes the
     // count depend on the thread count for identical data. Same test as
@@ -456,12 +456,12 @@ void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os
 
     if constexpr (is_not_bool)
     {
-        const int  ind    = get_ind_second_value();
+        const int  idx    = get_idx_second_value();
         const auto counts = pmp::parallel_sum<int, 2>(0, chunk_count_, team_opt,
                                                       [&](int j, auto& acc)
                                                       {
                                                           const auto& ck = chunk_list_[j];
-                                                          if (ck.written(ind))
+                                                          if (ck.written(idx))
                                                           {
                                                               const auto v0 = ck.constant_value(csz_audit);
                                                               if (!v0)
@@ -515,14 +515,14 @@ void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os
     if constexpr (is_not_bool) // bool has no room for a distinct second value
     {
         const auto   csz          = static_cast<unsigned int>(this->size_policy_.size());
-        const int    ind          = get_ind_second_value();
+        const int    idx          = get_idx_second_value();
         const InT<T> second_value = this->second_value();
         n_would_be_2a             = pmp::parallel_sum<int, 1>(
             0, chunk_count_, team_opt,
             [&](int j, auto& acc)
             {
                 const auto& ck = chunk_list_[j];
-                if (!ck.written(ind))
+                if (!ck.written(idx))
                 {
                     return; // compressed: holds first_value or second_value by definition
                 }
@@ -656,11 +656,11 @@ void zero_one_value::Array<T, IntType>::clear_core()
     {
         if constexpr (is_not_bool)
         {
-            const int ind = get_ind_second_value();
+            const int idx = get_idx_second_value();
 
             for (int j = 0; j < chunk_count_; ++j)
             {
-                // owns_live_buffer(), not written(ind): written() tests the
+                // owns_live_buffer(), not written(idx): written() tests the
                 // CURRENT second value's index only, so a chunk compressed to
                 // the cst2 block of an earlier value would pass as written and
                 // clear_st() would free a pointer into the cst2 deque.
@@ -670,7 +670,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
                     {
                         inc_chunk_teardown_clear<Chunk<T>>();
                     }
-                    chunk_list_[j].clear_st(0, ind);
+                    chunk_list_[j].clear_st(0, idx);
                 }
             }
         }
@@ -678,7 +678,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
         {
             // Bool chunks share a single second value with no index: use the
             // no-arg written()/clear_st(0, 0) path and never call
-            // get_ind_second_value() (which aborts for bool).
+            // get_idx_second_value() (which aborts for bool).
             for (int j = 0; j < chunk_count_; ++j)
             {
                 if (chunk_list_[j].written())
@@ -703,7 +703,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
                       ll_chunk_loc.reserve(chunk_count0);
 
                       // owns_live_buffer(): index-agnostic, and the bool test too (bool has
-                      // one cst_val2 marker). Not written(ind): with a single global index
+                      // one cst_val2 marker). Not written(idx): with a single global index
                       // it misclassifies chunks compressed at other indices and parks
                       // their (never-allocated) cst_val2 markers.
                       team.for_static<int>(
@@ -843,12 +843,12 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
     array_nb1.reserve(n_res);
     array_nb2.reserve(n_res);
     T   second_value{};
-    int ind = 0;
+    int idx = 0;
 
     if constexpr (is_not_bool)
     {
         second_value = this->second_value();
-        ind          = get_ind_second_value();
+        idx          = get_idx_second_value();
 
         team.for_static<int>(
             0, chunk_count_,
@@ -856,7 +856,7 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
             {
                 const auto& chunk = chunk_list_[j];
 
-                if (chunk.written(ind))
+                if (chunk.written(idx))
                 {
                     // A run of first_value when the second value IS first_value
                     // (none registered, or 0) comes back as `first` only: filed in
@@ -920,7 +920,7 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
     {
         if constexpr (is_not_bool)
         {
-            return chunk_list_[jj].written(ind);
+            return chunk_list_[jj].written(idx);
         }
         else
         {
@@ -960,18 +960,18 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
 
         if constexpr (is_not_bool)
         {
-            // Call clear_st(num, ind), the one name both zero_one_value::ChunkThreadPolicy
+            // Call clear_st(num, idx), the one name both zero_one_value::ChunkThreadPolicy
             // specialisations declare, and let the policy choose: under OpenMP
-            // clear_int_st(num, ind, thr_rank); serially the 2-arg
-            // clear_int_st(num, ind), a different algorithm (eager, no queue,
+            // clear_int_st(num, idx, thr_rank); serially the 2-arg
+            // clear_int_st(num, idx), a different algorithm (eager, no queue,
             // counters to reset). They are not interchangeable.
             for (const int jj : array_nb1)
             {
-                heal(jj, [&] { chunk_list_[jj].clear_st(0, ind); });
+                heal(jj, [&] { chunk_list_[jj].clear_st(0, idx); });
             }
             for (const int jj : array_nb2)
             {
-                heal(jj, [&] { chunk_list_[jj].clear_st(1, ind); });
+                heal(jj, [&] { chunk_list_[jj].clear_st(1, idx); });
             }
         }
         else if constexpr (build_config::threaded)
@@ -1149,7 +1149,7 @@ void zero_one_value::Array<T, IntType>::release_chunk_range(int first, int last)
                 }
                 if constexpr (is_not_bool)
                 {
-                    chunk_list_[j].clear_st(0, get_ind_second_value());
+                    chunk_list_[j].clear_st(0, get_idx_second_value());
                 }
                 else
                 {
@@ -1237,7 +1237,7 @@ void zero_one_value::Array<T, IntType>::resize(IntType newsz)
         // Up to the end of the OLD chunk count: chunks_for() keeps a chunk past
         // the last element, so when old_size falls on a chunk boundary that
         // spare chunk keeps stale values too.
-        // In long long: old_chunk_count * csz may pass IndType's range near its top.
+        // In long long: old_chunk_count * csz may pass IndexType's range near its top.
         const long long cover_ll  = static_cast<long long>(old_chunk_count) * static_cast<long long>(csz);
         const IntType   old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<IntType>(cover_ll) : newsz;
         const IntType   stale_end = newsz < old_cover ? newsz : old_cover;
@@ -1311,15 +1311,15 @@ template <ArrayChunkElement T, typename IntType>
 }
 
 template <ArrayChunkElement T, typename IntType>
-[[nodiscard]] int zero_one_value::Array<T, IntType>::get_ind_second_value() const noexcept
+[[nodiscard]] int zero_one_value::Array<T, IntType>::get_idx_second_value() const noexcept
 {
     if constexpr (is_not_bool)
     {
-        return get_info_second_value().ind;
+        return get_info_second_value().idx;
     }
     else
     {
-        CHUNK_INVARIANT_FAILED("zero_one_value::Array<bool>::get_ind_second_value(): bool registers no second value");
+        CHUNK_INVARIANT_FAILED("zero_one_value::Array<bool>::get_idx_second_value(): bool registers no second value");
     }
 }
 
@@ -1328,7 +1328,7 @@ template <ArrayChunkElement T, typename IntType>
 {
     if constexpr (is_not_bool)
     {
-        return chunk_list_[chunk_index].written(get_ind_second_value());
+        return chunk_list_[chunk_index].written(get_idx_second_value());
     }
     else
     {
@@ -1360,7 +1360,7 @@ void zero_one_value::Array<T, IntType>::register_no_second_value_key()
             // The between-phase pass drains only the values of THIS map: T{}
             // must be in it, at the sentinel index (so set_second_value(T{})
             // still sees it unregistered and builds a real block).
-            sh_inf.insert_map_ind_cst_val2(T{}, chunk_config::no_second_value_index);
+            sh_inf.insert_map_idx_cst_val2(T{}, chunk_config::no_second_value_index);
         }
         if constexpr (build_config::threaded)
         {
@@ -1381,7 +1381,7 @@ void zero_one_value::Array<T, IntType>::swap_identity(Array& other)
 {
     auto& sh_inf = *Proxy<T>::array_registry;
     sh_inf.swap_entries(this->registry_key(), other.registry_key());
-    std::swap(ind_cst_val2_, other.ind_cst_val2_);
+    std::swap(idx_cst_val2_, other.idx_cst_val2_);
     sync_registry_mirror();
     other.sync_registry_mirror();
     if constexpr (chunk_config::use_fast_block_compression && is_not_bool)

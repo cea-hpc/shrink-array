@@ -336,7 +336,7 @@ class ChunkSizeScan
     int64_t        nc_;       ///< its chunks
     int64_t        len_;      ///< nc_ * chunk_sz_: the extent the windows cut
 
-    int    second_value_ind_; ///< second_value_index()
+    int    second_value_idx_; ///< second_value_index()
     InT<T> cst1_value_;       ///< the first constant
     bool   has_cst2_ = false; ///< a second value is designated, distinct from the first
     T      cst2_value_;       ///< ... that value

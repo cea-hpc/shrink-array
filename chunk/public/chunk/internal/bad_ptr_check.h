@@ -27,7 +27,7 @@
 //
 // A valid values pointer is one of:
 //   - nullptr (transient, tolerated by is_written checks)
-//   - a cst_val1 / cst_val2(ind) constant block (aligned to alignof(T))
+//   - a cst_val1 / cst_val2(idx) constant block (aligned to alignof(T))
 //   - a chunk buffer from allocate_chunk_internal (always ≥ 8-byte aligned,
 //     and at an address well above the low pages)
 //

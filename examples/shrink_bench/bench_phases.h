@@ -288,13 +288,13 @@ struct BenchIoFlags
 /**
  * @brief Write or re-read-and-check every array's reference file.
  *
- * @param ind the iteration index, or -1 for the pass that runs before the loop.
+ * @param idx the iteration index, or -1 for the pass that runs before the loop.
  *
  * @details lbd_check is GENERIC (`const auto& arr`): it is called with all
  *          thirteen array types, so it lives in the same file as its caller,
  *          instantiated once there, behind this ordinary function.
  */
-void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io);
+void bench_check_all(BenchArrays& bench_arr, Int idx, const BenchIoFlags& io);
 
 /**
  * @brief Print the per-array value census and the chunk filling rates.

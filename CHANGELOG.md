@@ -155,6 +155,8 @@ the tag's checksum to the recipe.
 - `CHUNK_BUILD_REP` (répertoire) is `CHUNK_BUILD_ROOT`, the name the Python tools read already:
   `compile_all.sh` and `scripts/site_env.sh` take their builds there. The former name is still
   read when the new one is unset, with a deprecation line; it goes at 0.3.
+- `ind` (indice) is `idx` in the names (`get_idx_second_value`, `set_info_second_value_idx`, a
+  bare `ind` is `idx`), and the arrays' `IndType` is `IndexType` (`Ind`, `IndT`: `Index`, `IndexT`).
 - `tab` (French: tableau) is `array` in the names of the sources, examples and documents:
   `array_int`, `array_bool`, ... of `shrink_bench` (`tab_int`, ...), `arr1` ... `arr5` and `arr`
   (`tab1`, `tab`), the library's `array_is_inside_chunk_list_to_compress`,
@@ -301,7 +303,7 @@ the tag's checksum to the recipe.
   former `Chunk` / `Proxy` (use the variant's namespace), `use_chunk`, `use_chunk2`,
   `use_chunk2a`, `use_chunk2or2a` (use `use_zero`, `use_zero_one_value`, `use_zero_any`,
   `use_second_value`), the arrays' `chunk_type`, `manager_type`, `proxy_type`, `ind_type`,
-  `chunk_list_type` (use `ChunkType`, `ManagerType`, `ProxyType`, `IndType`, `ChunkListType`),
+  `chunk_list_type` (use `ChunkType`, `ManagerType`, `ProxyType`, `IndexType`, `ChunkListType`),
   `getChunkList()` (use `get_chunk_list()`), `ManagerChunk2`, `ManagerChunk2A` (use `Manager`),
   `pattern::Array::install_motif_for_test()` (use `install_motif()`),
   `ParamChunk::ChunkStats()` (use `chunk_stats()`), `ParamChunk::check_pow2()` (use
