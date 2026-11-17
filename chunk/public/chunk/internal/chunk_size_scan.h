@@ -73,11 +73,14 @@
 #include "chunk/internal/pmp_chunk.h"       // pmp::Team (the passes run in analyze()'s team)
 #include "chunk/internal/chunk_traits.h"    // has_motif_state_v (pattern::Array)
 #include "chunk/internal/relaxed_element.h" // load_element_relaxed (a motif chunk's offset)
+#include "chunk/internal/module_export.h"   // SHRINK_ARRAY_EXPORT (ChunkSizeAdvisor)
 
 namespace shrink_array
 {
 
-template <typename T>
+// Marked as its definition is: the module exports a name from its first
+// declaration only (chunk/internal/module_export.h).
+SHRINK_ARRAY_EXPORT template <typename T>
 struct ChunkSizeAdvisor; // chunk_size_advisor.h: its Options are this scan's
 
 namespace internal

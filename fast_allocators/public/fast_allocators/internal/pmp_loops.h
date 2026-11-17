@@ -169,9 +169,11 @@ void parallel_for(Index first, Index last, [[maybe_unused]] const Options& opt, 
 {
     static_assert(std::is_integral_v<Index>, "the loop index is an integer");
     #ifdef _OPENMP
-    const bool on    = opt.use_team;
-    const int  nt    = detail::team_size(opt);
-    const int  chunk = detail::chunk_of(opt.sched);
+    // [[maybe_unused]]: only the if() clause reads it, and GCC 16 compiling this
+    // body from a module (chunk/modules/shrink_array.cppm) loses that use.
+    [[maybe_unused]] const bool on    = opt.use_team;
+    const int                   nt    = detail::team_size(opt);
+    const int                   chunk = detail::chunk_of(opt.sched);
     switch (opt.sched.kind)
     {
         case SchedKind::dynamic:
@@ -224,10 +226,12 @@ void parallel_for_local(Index                           first,
 {
     static_assert(std::is_integral_v<Index>, "the loop index is an integer");
     #ifdef _OPENMP
-    const bool      on    = opt.use_team;
-    const int       nt    = detail::team_size(opt);
-    const int       chunk = detail::chunk_of(opt.sched);
-    const SchedKind kind  = opt.sched.kind;
+    // [[maybe_unused]]: only the if() clause reads it, and GCC 16 compiling this
+    // body from a module (chunk/modules/shrink_array.cppm) loses that use.
+    [[maybe_unused]] const bool on    = opt.use_team;
+    const int                   nt    = detail::team_size(opt);
+    const int                   chunk = detail::chunk_of(opt.sched);
+    const SchedKind             kind  = opt.sched.kind;
         #pragma omp parallel if (on) num_threads(nt)
     {
         decltype(auto) local = make_local();

@@ -5,7 +5,8 @@
 # libraries are those of the chunk package installed beside it (its former and
 # only name until 0.3); each gets its shrink_array:: name here:
 #   shrink_array::zero_any_256  shrink_array::zero_any_dyn  shrink_array::zero_any
-#   (zero and zero_one_value alike), shrink_array::vector, shrink_array::chunk
+#   (zero and zero_one_value alike), shrink_array::vector, shrink_array::chunk;
+#   with CHUNK_MODULES, shrink_array::zero_any_module, ... shrink_array::vector_module
 @PACKAGE_INIT@
 
 set(_shrink_array_loads_chunk ON) # chunk-config.cmake: not the deprecated direct use
@@ -15,13 +16,37 @@ unset(_shrink_array_loads_chunk)
 foreach(_shrink_array_target IN ITEMS @_chunk_install_targets@)
   string(REGEX REPLACE "^chunk_" "" _shrink_array_name "${_shrink_array_target}")
   if(TARGET chunk::${_shrink_array_target} AND NOT TARGET shrink_array::${_shrink_array_name})
-    add_library(shrink_array::${_shrink_array_name} INTERFACE IMPORTED)
-    set_target_properties(shrink_array::${_shrink_array_name} PROPERTIES
-                          INTERFACE_LINK_LIBRARIES chunk::${_shrink_array_target})
+    if(_shrink_array_name MATCHES "_module$")
+      # A module (CHUNK_MODULES): CMake builds the BMI of an imported target
+      # that carries the module set itself, not of one it links. An ALIAS
+      # names that same target (of an imported one: CMake 3.18).
+      add_library(shrink_array::${_shrink_array_name} ALIAS chunk::${_shrink_array_target})
+    else()
+      add_library(shrink_array::${_shrink_array_name} INTERFACE IMPORTED)
+      set_target_properties(shrink_array::${_shrink_array_name} PROPERTIES
+                            INTERFACE_LINK_LIBRARIES chunk::${_shrink_array_target})
+    endif()
   endif()
 endforeach()
 unset(_shrink_array_target)
 unset(_shrink_array_name)
+
+# With the modules (CHUNK_MODULES): the program's import std module is built
+# from CMake's __CMAKE::CXX26 with the program's flags only, the shrink_array
+# module with the library's (-freflection, the contracts' semantic, -fopenmp).
+# GCC 16 refuses the two together ("conflicting type for imported declaration
+# '__mbstate_t'"): the std module gets the library's flags as well.
+if(TARGET chunk::chunk_vector_module)
+  foreach(_shrink_array_std IN ITEMS __CMAKE::CXX23 __CMAKE::CXX26)
+    if(TARGET ${_shrink_array_std})
+      set_property(TARGET ${_shrink_array_std} APPEND PROPERTY INTERFACE_COMPILE_OPTIONS "@SHRINK_ARRAY_STD_MODULE_FLAGS@")
+      if(chunk_OPENMP AND TARGET OpenMP::OpenMP_CXX)
+        set_property(TARGET ${_shrink_array_std} APPEND PROPERTY INTERFACE_LINK_LIBRARIES OpenMP::OpenMP_CXX)
+      endif()
+    endif()
+  endforeach()
+  unset(_shrink_array_std)
+endif()
 
 # What this installation holds, for a consumer that wants to choose:
 #   shrink_array_STATIC_SIZES  the compile-time sizes built (shrink_array::zero_any_<size>)

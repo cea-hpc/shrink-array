@@ -802,12 +802,26 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND CHUNK_USE_LIBCXX AND NOT "$CACHE{C
   message(FATAL_ERROR "CHUNK_USE_LIBCXX: configure with -DCMAKE_CXX_FLAGS=-stdlib=libc++, "
                       "so that import std is libc++'s")
 endif()
-# import std's module (CMake's __cmake_cxx23) gets the top directory's flags
-# only: clang then refuses its std.pcm in an OpenMP program ("OpenMP support
-# and version of OpenMP ... differs in precompiled file").
-if (CHUNK_OPENMP AND TARGET OpenMP::OpenMP_CXX AND TARGET __cmake_cxx23)
-  target_link_libraries(__cmake_cxx23 PRIVATE OpenMP::OpenMP_CXX)
-endif()
+# import std's module, built from CMake's imported __CMAKE::CXX26 (here;
+# __CMAKE::CXX23 for C++23) with CMAKE_CXX_FLAGS, the standard and that
+# target's usage requirements only: none of the flags the module unit gets --
+# the top directory's add_compile_options (-march=native), -freflection and the
+# contracts' semantic (chunk_require_cxx_std), -fopenmp. GCC 16 then finds the
+# glibc typedefs of the global module fragment different from those of std
+# ("conflicting type for imported declaration '__mbstate_t'"), and clang
+# refuses its std.pcm in an OpenMP program ("OpenMP support and version of
+# OpenMP ... differs in precompiled file"). The std module gets them all, as
+# usage requirements of the imported target (its importers have them anyway).
+get_directory_property(_chunk_top_compile_options DIRECTORY ${PROJECT_SOURCE_DIR} COMPILE_OPTIONS)
+foreach(_std_target __CMAKE::CXX23 __CMAKE::CXX26)
+  if (TARGET ${_std_target})
+    set_property(TARGET ${_std_target} APPEND PROPERTY INTERFACE_COMPILE_OPTIONS
+                 ${_chunk_top_compile_options} ${CHUNK_REFLECTION_FLAG} ${CHUNK_CONTRACTS_FLAG})
+    if (CHUNK_OPENMP AND TARGET OpenMP::OpenMP_CXX)
+      set_property(TARGET ${_std_target} APPEND PROPERTY INTERFACE_LINK_LIBRARIES OpenMP::OpenMP_CXX)
+    endif()
+  endif()
+endforeach()
 # chunk_add_module(<lib>): <lib>_module, the module over the variant library
 # <lib> (chunk_zero_any, chunk_zero_any_256, chunk_zero_any_dyn, ...): its BMI
 # carries <lib>'s defines (variant, CHUNK_SIZE / CHUNK_DYNAMIC). Every one is
@@ -1034,6 +1048,9 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/chunk-config.cmake
 # (shrink_array-config.cmake.in). Same version, same compatibility rule.
 string(REPLACE ";" " " _chunk_install_targets "${_chunk_install_targets}")
 set(SHRINK_ARRAY_CHUNK_CMAKE_DIR ${CMAKE_INSTALL_LIBDIR}/chunk/cmake)
+# The flags the libraries give their users, which the user's import std module
+# must be built with too (CHUNK_MODULES; see __CMAKE::CXX26 above).
+set(SHRINK_ARRAY_STD_MODULE_FLAGS ${CHUNK_REFLECTION_FLAG} ${CHUNK_CONTRACTS_FLAG})
 configure_package_config_file(shrink_array-config.cmake.in shrink_array-config.cmake
         INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/shrink_array
         PATH_VARS SHRINK_ARRAY_CHUNK_CMAKE_DIR)
