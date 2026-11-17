@@ -127,7 +127,7 @@ the tag's checksum to the recipe.
   access paths, the concurrency model, memory, dynamic geometry, backends, the decisions with
   the alternatives rejected, known limits. Linked from `docs/README.md` and both READMEs;
   `check_docs.py` checks the pair.
-- `shrink_bench --advise_bool`: hands `tab_bool` and `tab_bool_bits` to the re-chunk decider
+- `shrink_bench --advise_bool`: hands `array_bool` and `array_bool_bits` to the re-chunk decider
   (off by default: the two bool containers stay at their birth geometry, to be compared as
   they are). `rechunk_validation` gains `bool-sliced`: `Array<bool>` through the sliced
   rebuild, for the three variants.
@@ -150,6 +150,38 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- French names and abbreviations in English, in the sources, the examples and the documents
+  (internal names; nothing of the public interface): `nb` (nombre) is `n` (`n_val_eq_zero_`,
+  `n_blocks`, `n_threads`), the increm and decrem prefixes are inc and dec (the statistics
+  counters: `inc_chunk_write`, ...), `somme` is `total` (`total_chunk_create`), `raz` (remise à zéro) is
+  `reset`, `recup` is `reclaim` (`reclaim_value`), `kdeb` / `kfin` are `kbegin` / `kend`
+  (examples/multi_mat), `nbmat` is `n_materials`, `freq_conso_mem` is `freq_mem_report`.
+- `CHUNK_BUILD_REP` (répertoire) is `CHUNK_BUILD_ROOT`, the name the Python tools read already:
+  `compile_all.sh` and `scripts/site_env.sh` take their builds there. The former name is still
+  read when the new one is unset, with a deprecation line; it goes at 0.3.
+- `ind` (indice) is `idx` in the names (`get_idx_second_value`, `set_info_second_value_idx`, a
+  bare `ind` is `idx`), and the arrays' `IndType` is `IndexType` (`Ind`, `IndT`: `Index`, `IndexT`).
+- `cst` (constante) is `const` in the names: `const_val1`, `const_val2`, `is_const_val2`,
+  `ConstSlot` in `chunk/internal/const_slot.h`, `const_buffer_size`, a bare `cst` is `constant`;
+  the harnesses `const2_reclaim_validation` and `const2_registry_validation`. The variables
+  `CHUNK_CONST2_RECLAIM` and `CHUNK_CONST_VAL2_ID_LIMIT` (`CHUNK_CST2_RECLAIM`,
+  `CHUNK_CST_VAL2_ID_LIMIT`: still read when the new name is unset, with a warning; they go at
+  0.3), the build-time `CHUNK_CONST_VAL2_MAX_IDS`, `CHUNK_CONST_VAL2_REGION_BYTES`,
+  `CHUNK_CONST_VAL2_INDEX_LOG2`. `CHUNK_CST2_PROBE` keeps its name: it is a former variable
+  `CHUNK_LOG` reads for compatibility.
+- `elt` (élément) is `elem` in the allocator's names (`InfoFreeElem`, `free_elem_pow2`,
+  `clear_info_free_elem`, ...), as everywhere else; `CalcType` (calcul) is `ComputeType`.
+- `num` (numéro), the offset of an element in its chunk, is `elem_offset` (`elem_offset_`,
+  `get_elem_offset()`), and `num_compress_value` (which of the two constants) `const_index`.
+  examples/multi_mat: `MatArrayBase`, `MatZeroArray`, `MatZeroOneValueArray`, `MatVectorArray`
+  (`VectCom`, `VectChunk`, `VectZeroOneValue`, `Vect`).
+- `tab` (French: tableau) is `array` in the names of the sources, examples and documents:
+  `array_int`, `array_bool`, ... of `shrink_bench` (`tab_int`, ...), `arr1` ... `arr5` and `arr`
+  (`tab1`, `tab`), the library's `array_is_inside_chunk_list_to_compress`,
+  `get_array_second_value`, `ArrayConstVal2Holder` in `chunk/internal/array_const_val2_holder.h`
+  (`tab_cst_val2_holder.h`), ... The statistics name an array `[array_0 double]`
+  (`[tab_0 double]`), and `shrink_bench`'s reference files are `data_array_<name>_<k>.bin`
+  (`data_tab_*`): an oracle directory made before is made again by the next campaign.
 - Internal names, none of them part of the interface. Headers of `chunk/internal/`:
   `concept_is_clean_assignment.h` (its name was misspelt), `pmp_chunk.h` and `chunk_tuples.h`
   (`PMP_CHUNK.h` and `TChunk.h` were the two files not in snake_case), `pow2.h` (`func_p2.h`)
@@ -235,7 +267,7 @@ the tag's checksum to the recipe.
 - The end-of-life census line of a zero array says what the variant compresses: "few all-zero
   chunks — zero compresses only all-zero chunks" instead of "compression marginal vs
   std::vector", which read as a failure on an array zero cannot help. `shrink_bench` says
-  before `tab_conn`'s line, in zero builds, that a connectivity is pattern::Array's case.
+  before `array_conn`'s line, in zero builds, that a connectivity is pattern::Array's case.
 - `fill_range_mt` skips a chunk already at the fill value with one test, as `fill_range` does,
   instead of arming it element by element; `fill_range` does the same on its `bool` path.
 - **The public interface, narrowed and frozen** (breaking). The public headers are what
@@ -268,6 +300,9 @@ the tag's checksum to the recipe.
 
 ### Removed
 
+- `CHUNK_CRTP_USE_DEDUCING_THIS` and `CHUNK_CRTP_FORCE_DEDUCING_THIS`, and the deducing-this
+  variant of `add_to_compression_list_async()` they selected: develop is C++20, where it was
+  never compiled; the cpp23 branch has that form alone.
 - `python/run_test.py`: it ran a `test/test1` that no longer exists, under a path left as
   `????` when the tree went public; `bench_runner` averages the memory over runs.
 - `chunk/debug.h`, which nothing included (`print_backtrace` is
@@ -287,7 +322,7 @@ the tag's checksum to the recipe.
   former `Chunk` / `Proxy` (use the variant's namespace), `use_chunk`, `use_chunk2`,
   `use_chunk2a`, `use_chunk2or2a` (use `use_zero`, `use_zero_one_value`, `use_zero_any`,
   `use_second_value`), the arrays' `chunk_type`, `manager_type`, `proxy_type`, `ind_type`,
-  `chunk_list_type` (use `ChunkType`, `ManagerType`, `ProxyType`, `IndType`, `ChunkListType`),
+  `chunk_list_type` (use `ChunkType`, `ManagerType`, `ProxyType`, `IndexType`, `ChunkListType`),
   `getChunkList()` (use `get_chunk_list()`), `ManagerChunk2`, `ManagerChunk2A` (use `Manager`),
   `pattern::Array::install_motif_for_test()` (use `install_motif()`),
   `ParamChunk::ChunkStats()` (use `chunk_stats()`), `ParamChunk::check_pow2()` (use

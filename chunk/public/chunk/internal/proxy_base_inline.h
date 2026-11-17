@@ -147,11 +147,11 @@ constexpr int get_array_id_async_helper(auto* ctx, const ProxyT& proxy, auto ptr
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
 void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::set_ptr_is_inside_chunk_list_to_compress_async(auto* ctx)
 {
-    const int arr         = ctx->array_id;
+    const int arr_id      = ctx->array_id;
     const int chunk_index = ctx->chunk_index;
 
     auto& arr = array_is_inside_chunk_list_to_compress[static_cast<std::size_t>(
-        arr)]; // not const: the flags are written through the pointer
+        arr_id)]; // not const: the flags are written through the pointer
 
     ptr_is_inside_chunk_list_to_compress_ = &arr[chunk_index];
 }
@@ -1026,8 +1026,8 @@ void ProxyBase<Derived, T, ChunkT>::apply_atomic_op(this Derived& self, Op opera
                                         &ctx->chunk, ctx->elem_offset, static_cast<const void*>(values_before),
                                         static_cast<const void*>(values_after));
                                 }
-                                // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
                                 const InT<T> readback =
+                                    // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
                                     elem_get(values_after, static_cast<std::size_t>(ctx->elem_offset));
                                 const auto expected = static_cast<T>(res);
                                 if (!same_value(static_cast<T>(readback), expected))

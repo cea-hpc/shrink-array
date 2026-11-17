@@ -880,7 +880,19 @@ try
     // no chunk uses any more, for every element type of the bench
     // (reclaim_second_values() covers all the arrays of a type, whatever their
     // index type). Static builds too, unlike the advisor. 0 or unset: never.
-    const Int const2_reclaim_period = shrink_array::env_number<Int>("CHUNK_CONST2_RECLAIM", 0);
+    const Int const2_reclaim_period = []() -> Int
+    {
+        const char* const name = shrink_array::env_name_or_former("CHUNK_CONST2_RECLAIM", "CHUNK_CST2_RECLAIM");
+        if (const char* env = std::getenv(name); env != nullptr && *env != '\0')
+        {
+            if (Int value = 0; parse_number(env, value))
+            {
+                return value;
+            }
+            warn_invalid_env(name, env);
+        }
+        return 0;
+    }();
     // [&], not [const2_reclaim_period]: clang warns that the explicit capture is
     // not needed (-Wunused-lambda-capture) where the branch below is discarded.
     const auto const2_reclaim_tick = [&](Int k_iter)

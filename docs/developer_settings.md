@@ -29,7 +29,7 @@ fields, and `shrink_bench` exposes them as options (§4). See
 | variable | default | effect |
 |---|---|---|
 | `CHUNK_RECLAIM_THREADS` | 1 | threads issuing a sweep's `madvise` calls; `0`: `omp_get_max_threads()`. On Milan (64 threads), `0` is 3.5% faster for `zero_one_value` and the same for the other variants; it stays at 1 until it is measured on Grace, where 288 threads would issue them |
-| `CHUNK_CONST_VAL2_ID_LIMIT` | unset | test hook: lowers the number of identifiers of `zero_any`'s second-value registry (the region's capacity otherwise), and sizes the value table to match, so that a harness reaches the registry's limit with a few values (`const2_registry_validation`, `const2_reclaim_validation`); can only lower it |
+| `CHUNK_CONST_VAL2_ID_LIMIT` | unset | test hook: lowers the number of identifiers of `zero_any`'s second-value registry (the region's capacity otherwise), and sizes the value table to match, so that a harness reaches the registry's limit with a few values (`const2_registry_validation`, `const2_reclaim_validation`); can only lower it. Former name `CHUNK_CST_VAL2_ID_LIMIT`, still read when this one is unset (deprecated) |
 | `CHUNK_DEFERRED_POOL_KB` | 64 | slab size of the deferred-write pools, in KiB (the operation slabs are never given back: larger means fewer allocator calls but more resident memory) |
 | `CHUNK_PMP_JOIN_US` | 5000 | std backend with the library's teams on TBB (`shrink_array::tbb::use_tbb_for_library_teams()`): how long a team waits for its TBB tasks to start, in microseconds; the tasks started by then make the team (one thread, the caller, at worst), a later one returns at once. 5 ms rather than 200 us: a late task is otherwise taken and dropped by a TBB worker during the program's next region (144 threads: 79.5 s -> 50.9 s on the TBB bench) |
 | `CHUNK_PMP_SPIN_US` | 1000 | std backend: how long a thread waiting at a team's barrier, at its end or for the next team spins before it sleeps, in microseconds (OpenMP's blocktime); `0`: sleep at once. Spinning: at 160 threads the re-chunk's slice-boundary drain went from 2.45 s to the order of the OpenMP build's 0.24 s |
@@ -70,7 +70,7 @@ arena's and OMPT's counters with them, which cost a little time.
 | `CHUNK_LOG=ledger=info` (formerly `CHUNK_LEDGER_REPORT`) | the report of the block registry (builds with the registry), at exit |
 | `CHUNK_LOG=ompt=info` (formerly `CHUNK_OMPT_STATS`) | statistics of the synchronisation regions (OMPT builds), at exit |
 | `CHUNK_LOG=compress=info` in `shrink_bench` (formerly `CHUNK_CST2_PROBE`) | `zero_any`: in addition, the report of the second-value registry at each advisor pass (`gc_mark_report()`) |
-| `CHUNK_CONST2_RECLAIM` | `zero_any`, `N`: every N iterations, frees the second values no chunk uses any more (`reclaim_second_values()`) and prints how many, then each type's identifiers in use against the capacity, free, reclaims and refusals (`second_value_stats()`) (benchmark, any build) |
+| `CHUNK_CONST2_RECLAIM` | `zero_any`, `N`: every N iterations, frees the second values no chunk uses any more (`reclaim_second_values()`) and prints how many, then each type's identifiers in use against the capacity, free, reclaims and refusals (`second_value_stats()`) (benchmark, any build). Former name `CHUNK_CST2_RECLAIM`, still read when this one is unset (deprecated) |
 | `ALLOC_TOKEN_REPORT` | `CHUNK_SANITIZER=token` builds always print, on exit, the allocations per token (the 40 largest); this sets how many: `0` none, `N` the N largest, `all` every token |
 | `CHUNK_LOG=alloc=trace` (formerly `FAST_ALLOC_TRACE`) | one `munmap` line per emptied slab that a pool's reserve does not keep and that is freed |
 
@@ -216,6 +216,14 @@ the common options. `--help` gives the full list.
 | `--llvm-cs=<n>` | add an LLVM build with `CHUNK_SIZE=n` |
 | `--pool=<id>` | share the configurations with the other runs given the same `<id>` (one batch job per node, `shrink_gui`'s "Nodes" field): each builds those it claims first; `<id>` is a name under `$CHUNK_BUILD_ROOT/.pools/` or a directory all the nodes share |
 
+Where the compilers come from, beside the modules the script loads: `CHUNK_LLVM_ROOT=<dir>`
+for the llvm builds (`<dir>/bin/clang++`, LLVM's release tarball extracted, e.g. where the llvm
+module has no OpenMP runtime); on ARM, `CHUNK_ACFL_ROOT=<prefix>` for the acfl family
+(`spack location -i acfl`; else `armclang++` in `PATH`, the newest `$CCCWORKDIR/opt/*/acfl-*`,
+an acfl module). oneTBB for the std builds' TBB targets: `TBBROOT`, `CHUNK_TBB_DIR` or
+`$CCCWORKDIR/tbb-<arch>`; `CHUNK_WITH_TBB=0` leaves them out, `CHUNK_TBB_TSAN_DIR` is the
+oneTBB built with TSan of the std TSan build.
+
 `compile_all_gnu.sh` also accepts `--no-ipa-icf` (`CHUNK_NO_IPA_ICF=ON`). The compilation
 memory per job is set by `CHUNK_MEM_PER_JOB_MB` (3,072 MB by default, twice that for
 sanitizer builds).
@@ -237,7 +245,7 @@ Read by the Python tools, the check scripts and a few harnesses, not by the libr
 
 | variable | default | effect |
 |---|---|---|
-| `CHUNK_BUILD_ROOT` | current directory | where the `cmake-build-<target>` directories are: default of `--build-root` in `bench_and_test.py`, `multi_launch_stress.py` and `thread_speedup.py` (which falls back on `CHUNK_BUILD_ROOT`). `shrink_gui` exports it in the scripts it submits |
+| `CHUNK_BUILD_ROOT` | current directory | where the `cmake-build-<target>` directories are: default of `--build-root` in `bench_and_test.py`, `multi_launch_stress.py` and `thread_speedup.py`; `compile_all.sh` takes its builds there, `scripts/site_env.sh` sets it per site. Its former name `CHUNK_BUILD_REP` is still read when it is unset, deprecated. `shrink_gui` exports it in the scripts it submits |
 | `CHUNK_BENCH_EVENTS` | unset | file the campaigns append their events to, one JSON record per line (default of `--events-file`); `shrink_gui` sets it and follows the file |
 | `CHUNK_POOL_REF_WAIT` | 21,600 | `--pool` campaigns: seconds a job waits for the reference another job generates, before skipping what needs it |
 | `CHUNK_POOL_POLL` | 2 | `--pool` campaigns: seconds between two looks at what the other jobs did |

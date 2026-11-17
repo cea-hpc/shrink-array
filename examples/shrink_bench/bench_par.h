@@ -64,12 +64,13 @@
 
 #pragma once
 
-#include <algorithm>       // std::min (the block schedule's last block)
+#include <algorithm>       // std::min (the block schedule's last block), std::sort, std::adjacent_find (shared%)
 #include <atomic>          // std::atomic_ref (the reductions' partials, atomic_add)
 #include <cstddef>         // std::size_t (the TBB thread count)
 #include <cstdint>         // std::uint64_t (the TBB regions' construct numbers)
 #include <cstdlib>         // std::abort (a construct the TBB regions do not have)
 #include <cstdio>          // std::fputs (its message)
+#include <format>          // std::format (shared%)
 #include <memory>          // std::unique_ptr (the TBB regions' construct slots)
 #include <mutex>           // std::mutex (critical(), the TBB regions' slots)
 #include <unordered_map>   // std::unordered_map (the TBB regions' construct slots)
@@ -87,7 +88,8 @@
     #include <oneapi/tbb/blocked_range.h>  // oneapi::tbb::blocked_range (the virtual ranks)
     #include <oneapi/tbb/global_control.h> // oneapi::tbb::global_control (the thread count)
     #include <oneapi/tbb/parallel_for.h>   // oneapi::tbb::parallel_for, static_partitioner
-    #include <oneapi/tbb/task_arena.h>     // oneapi::tbb::task_arena
+    #include <oneapi/tbb/task_arena.h>     // oneapi::tbb::task_arena, this_task_arena::current_thread_index (shared%)
+    #include <oneapi/tbb/task_scheduler_observer.h> // oneapi::tbb::task_scheduler_observer (BENCH_RANK_TIMING)
 
     #include "chunk/phases.h"      // finalize_parallel_phase (the end of a region)
     #include "chunk/tbb_adaptor.h" // shrink_array::tbb::phase_body (the begin of each task), use_tbb_for_library_teams
@@ -137,6 +139,19 @@ inline constexpr bool finalize_apart = false;
  *          the implicit barrier): it falls in the tail, and the finalize line
  *          is 0. Under the std backend without OMPT the bench ends the phase
  *          between regions: it falls in the serial share.
+ *          Two more columns tell late workers apart: "late ms", the mean over
+ *          the calls of the latest rank start (max s_k), and, TBB only,
+ *          "shared%", the calls in which one TBB thread ran two ranks or more
+ *          (this_task_arena::current_thread_index()): a worker came late, its
+ *          rank's task was stolen and ran after another one -- the region
+ *          then lasts about two ranks. "max ms" is the worst start of all.
+ *          TBB, under the table: the mean number of distinct arena threads
+ *          per region, and the slot indices most often missing from a region
+ *          and most often running two ranks -- the same slot every time is a
+ *          worker the arena never gets; a varying one, a worker held elsewhere.
+ *          Then, from a task_scheduler_observer on the bench's arena, the TBB
+ *          workers in it at a region's start, and how many entered and left
+ *          it during the region, during its finalize and between the two.
  *          Off by default: one test of a static bool per region, no clock read.
  */
 namespace rank_timing
@@ -170,14 +185,34 @@ struct Site
     double      tail      = 0;
     double      max_busy  = 0; ///< sum over calls of the slowest rank's busy time
     double      mean_busy = 0; ///< sum over calls of the mean busy time
+    double      late      = 0; ///< sum over calls of the latest rank start
+    double      max_late  = 0; ///< the latest rank start of all calls
+    long long   shared    = 0; ///< calls in which a thread ran two ranks or more (TBB)
+    long long   threads   = 0; ///< sum over calls of the distinct threads that ran ranks (TBB)
+};
+
+/// @brief TBB: the workers in the bench's arena now, and how many entered and
+///        left it so far (a task_scheduler_observer's counts).
+struct ArenaCount
+{
+    long long in      = 0;
+    long long entered = 0;
+    long long left    = 0;
 };
 
 /// @brief The starts and ends of one call's ranks, from t0, in seconds.
 struct Call
 {
-    explicit Call(int n) : start(static_cast<std::size_t>(n)), end(static_cast<std::size_t>(n)) {}
+    /// @param threads TBB: record each rank's thread (shared%).
+    explicit Call(int n, bool threads = false)
+        : start(static_cast<std::size_t>(n))
+        , end(static_cast<std::size_t>(n))
+        , thread(threads ? static_cast<std::size_t>(n) : 0, -1)
+    {
+    }
     std::vector<double> start;
     std::vector<double> end;
+    std::vector<int>    thread;            ///< TBB: each rank's thread index in the arena; empty otherwise
     Clock::time_point   t0 = Clock::now(); ///< last: the vectors are allocated before it
 };
 
@@ -216,12 +251,14 @@ class Registry
         double            bmax = 0;
         double            bsum = 0;
         double            ssum = 0;
+        double            smax = 0;
         for (std::size_t k = 0; k < n; ++k)
         {
             emax = std::max(emax, c.end[k]);
             bmax = std::max(bmax, c.end[k] - c.start[k]);
             bsum += c.end[k] - c.start[k];
             ssum += c.start[k];
+            smax = std::max(smax, c.start[k]);
         }
         double isum = 0;
         for (std::size_t k = 0; k < n; ++k)
@@ -230,7 +267,39 @@ class Registry
         }
 
         const std::scoped_lock lock(mutex_);
-        Site&                  s = site(loc);
+        bool                   shared   = false;
+        long long              distinct = 0;
+        if (!c.thread.empty())
+        {
+            // Ranks per arena slot (current_thread_index(); -1: not recorded).
+            std::size_t slots = n;
+            for (const int id : c.thread)
+            {
+                slots = std::max(slots, static_cast<std::size_t>(id + 1));
+            }
+            std::vector<int> per(slots, 0);
+            for (const int id : c.thread)
+            {
+                if (id >= 0)
+                {
+                    ++per[static_cast<std::size_t>(id)];
+                }
+            }
+            if (missing_.size() < slots)
+            {
+                missing_.resize(slots, 0);
+                doubled_.resize(slots, 0);
+            }
+            for (std::size_t i = 0; i < slots; ++i)
+            {
+                distinct += per[i] > 0 ? 1 : 0;
+                shared = shared || per[i] > 1;
+                missing_[i] += (i < n && per[i] == 0) ? 1 : 0;
+                doubled_[i] += per[i] > 1 ? 1 : 0;
+            }
+            ++slot_calls_;
+        }
+        Site& s = site(loc);
         ++s.calls;
         s.wall += w;
         s.busy += bsum;
@@ -239,9 +308,32 @@ class Registry
         s.tail += static_cast<double>(n) * std::max(0.0, w - emax);
         s.max_busy += bmax;
         s.mean_busy += n > 0 ? bsum / static_cast<double>(n) : 0.0;
+        s.late += smax;
+        s.max_late = std::max(s.max_late, smax);
+        s.shared += shared ? 1 : 0;
+        s.threads += distinct;
         finalize_ += seconds(fin_end - wall_end);
         last_end_  = fin_end;
         have_last_ = true;
+    }
+
+    /// @brief TBB: the arena's counts at a region's start (@p a), its end (@p b)
+    ///        and its finalize's end (@p c).
+    void record_arena(const ArenaCount& a, const ArenaCount& b, const ArenaCount& c)
+    {
+        const std::scoped_lock lock(mutex_);
+        if (arena_calls_ > 0)
+        {
+            arena_left_between_ += a.left - arena_last_.left;
+            arena_entered_between_ += a.entered - arena_last_.entered;
+        }
+        ++arena_calls_;
+        arena_in_ += a.in;
+        arena_entered_region_ += b.entered - a.entered;
+        arena_left_region_ += b.left - a.left;
+        arena_entered_fin_ += c.entered - b.entered;
+        arena_left_fin_ += c.left - b.left;
+        arena_last_ = c;
     }
 
   private:
@@ -314,24 +406,104 @@ class Registry
         std::sort(order.begin(), order.end(), [](const Site* a, const Site* b)
                   { return a->imbalance + a->launch + a->tail > b->imbalance + b->launch + b->tail; });
 
-        std::fprintf(stderr, "[rank-timing] %-28s %8s %10s %9s %8s %8s %8s %8s\n", "site", "calls", "wall s",
-                     "max/mean", "busy%", "imbal%", "launch%", "tail%");
+        std::fprintf(stderr, "[rank-timing] %-28s %8s %10s %9s %8s %8s %8s %8s %8s %8s %8s\n", "site", "calls",
+                     "wall s", "max/mean", "busy%", "imbal%", "launch%", "tail%", "late ms", "max ms", "shared%");
         for (const Site* s : order)
         {
-            const double site_all = s->busy + s->imbalance + s->launch + s->tail;
-            const auto   sp       = [site_all](double x) { return site_all > 0 ? 100.0 * x / site_all : 0.0; };
-            std::fprintf(stderr, "[rank-timing] %-28s %8lld %10.3f %9.2f %8.1f %8.1f %8.1f %8.1f\n", s->name.c_str(),
-                         s->calls, s->wall, s->mean_busy > 0 ? s->max_busy / s->mean_busy : 0.0, sp(s->busy),
-                         sp(s->imbalance), sp(s->launch), sp(s->tail));
+            const double      site_all = s->busy + s->imbalance + s->launch + s->tail;
+            const auto        sp       = [site_all](double x) { return site_all > 0 ? 100.0 * x / site_all : 0.0; };
+            const double      calls    = s->calls > 0 ? static_cast<double>(s->calls) : 1.0;
+            const std::string shared   = finalize_apart
+                                             ? std::format("{:.1f}", 100.0 * static_cast<double>(s->shared) / calls)
+                                             : std::string("-");
+            std::fprintf(stderr, "[rank-timing] %-28s %8lld %10.3f %9.2f %8.1f %8.1f %8.1f %8.1f %8.3f %8.3f %8s\n",
+                         s->name.c_str(), s->calls, s->wall, s->mean_busy > 0 ? s->max_busy / s->mean_busy : 0.0,
+                         sp(s->busy), sp(s->imbalance), sp(s->launch), sp(s->tail), 1e3 * s->late / calls,
+                         1e3 * s->max_late, shared.c_str());
         }
+        report_slots();
+        report_arena();
+    }
+
+    /// @brief TBB: the workers' comings and goings in the bench's arena, per region.
+    void report_arena() const
+    {
+        if (arena_calls_ == 0)
+        {
+            return;
+        }
+        const auto calls = static_cast<double>(arena_calls_);
+        const auto per   = [calls](long long x) { return static_cast<double>(x) / calls; };
+        std::fprintf(stderr,
+                     "[rank-timing] TBB arena workers, per region: %.2f in the arena at its start (of %d); "
+                     "during it %.2f entered, %.2f left; during its finalize %.2f entered, %.2f left; "
+                     "from the finalize to the next region %.2f entered, %.2f left\n",
+                     per(arena_in_), CHUNK_PMP_MAX_THREADS - 1, per(arena_entered_region_), per(arena_left_region_),
+                     per(arena_entered_fin_), per(arena_left_fin_), per(arena_entered_between_),
+                     per(arena_left_between_));
+    }
+
+    /// @brief TBB: the arena slots that miss a region or run two ranks, most often first.
+    void report_slots() const
+    {
+        if (slot_calls_ == 0)
+        {
+            return;
+        }
+        long long threads = 0;
+        for (const auto& s : sites_)
+        {
+            threads += s->threads;
+        }
+        const auto calls = static_cast<double>(slot_calls_);
+        std::fprintf(stderr,
+                     "[rank-timing] TBB arena slots: %.2f distinct threads per region (of %d ranks), %lld regions\n",
+                     static_cast<double>(threads) / calls, CHUNK_PMP_MAX_THREADS, slot_calls_);
+        const auto top = [calls](const char* what, const std::vector<long long>& v)
+        {
+            std::vector<std::size_t> idx;
+            for (std::size_t i = 0; i < v.size(); ++i)
+            {
+                if (v[i] > 0)
+                {
+                    idx.push_back(i);
+                }
+            }
+            std::sort(idx.begin(), idx.end(), [&v](std::size_t a, std::size_t b) { return v[a] > v[b]; });
+            std::fprintf(stderr, "[rank-timing]   %s:", what);
+            if (idx.empty())
+            {
+                std::fputs(" none", stderr);
+            }
+            for (std::size_t j = 0; j < idx.size() && j < 8; ++j)
+            {
+                std::fprintf(stderr, " slot %zu %.1f%%,", idx[j], 100.0 * static_cast<double>(v[idx[j]]) / calls);
+            }
+            std::fprintf(stderr, " (%zu slots in all)\n", idx.size());
+        };
+        top("missing from a region", missing_);
+        top("ran two ranks or more", doubled_);
     }
 
     std::mutex                         mutex_;
     std::vector<std::unique_ptr<Site>> sites_;
-    double                             serial_    = 0;
-    double                             finalize_  = 0;
-    Clock::time_point                  last_end_  = {};
-    bool                               have_last_ = false;
+    std::vector<long long>             missing_;        ///< TBB: regions each slot ran no rank of
+    std::vector<long long>             doubled_;        ///< TBB: regions each slot ran two ranks or more of
+    long long                          slot_calls_ = 0; ///< TBB: regions with the slots recorded
+    // TBB: the arena's observer counts, summed over the regions (record_arena()).
+    long long         arena_calls_           = 0;
+    long long         arena_in_              = 0;
+    long long         arena_entered_region_  = 0;
+    long long         arena_left_region_     = 0;
+    long long         arena_entered_fin_     = 0;
+    long long         arena_left_fin_        = 0;
+    long long         arena_entered_between_ = 0;
+    long long         arena_left_between_    = 0;
+    ArenaCount        arena_last_;
+    double            serial_    = 0;
+    double            finalize_  = 0;
+    Clock::time_point last_end_  = {};
+    bool              have_last_ = false;
 };
 
 /// @brief Depth of region() calls on this thread: only the outermost is timed.
@@ -557,6 +729,71 @@ inline oneapi::tbb::task_arena& arena()
 ///        region.
 inline const bool library_teams_on_tbb = (shrink_array::tbb::use_tbb_for_library_teams(arena()), true);
 
+/// @brief BENCH_RANK_TIMING: counts the TBB workers entering and leaving the
+///        bench's arena (the main thread is not counted).
+class ArenaWatch final : public oneapi::tbb::task_scheduler_observer
+{
+  public:
+    explicit ArenaWatch(oneapi::tbb::task_arena& a) : oneapi::tbb::task_scheduler_observer(a)
+    {
+        observe(true);
+    }
+    ArenaWatch(const ArenaWatch&)            = delete;
+    ArenaWatch& operator=(const ArenaWatch&) = delete;
+    ~ArenaWatch() override
+    {
+        observe(false);
+    }
+
+    void on_scheduler_entry(bool worker) override
+    {
+        if (worker)
+        {
+            in_.fetch_add(1, std::memory_order_relaxed);
+            entered_.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+
+    void on_scheduler_exit(bool worker) override
+    {
+        if (worker)
+        {
+            in_.fetch_sub(1, std::memory_order_relaxed);
+            left_.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+
+    [[nodiscard]] rank_timing::ArenaCount now() const noexcept
+    {
+        return {in_.load(std::memory_order_relaxed), entered_.load(std::memory_order_relaxed),
+                left_.load(std::memory_order_relaxed)};
+    }
+
+  private:
+    std::atomic<long long> in_{0};
+    std::atomic<long long> entered_{0};
+    std::atomic<long long> left_{0};
+};
+
+/// @brief The bench arena's observer, BENCH_RANK_TIMING only (nullptr otherwise). Immortal.
+inline ArenaWatch* arena_watch()
+{
+    static ArenaWatch* const w = []() -> ArenaWatch*
+    {
+        if (!rank_timing::enabled())
+        {
+            return nullptr;
+        }
+        oneapi::tbb::task_arena& a = arena();
+        if (!a.is_active())
+        {
+            a.initialize();
+        }
+        return new ArenaWatch(a); // NOLINT: immortal, as the arena
+    }();
+    return w;
+}
+
 } // namespace detail
 
 /**
@@ -581,12 +818,14 @@ void region(int num_threads, Body&& body, const std::source_location loc = std::
     std::unique_ptr<rt::Call> call;
     if (timed)
     {
-        call = std::make_unique<rt::Call>(n);
+        call = std::make_unique<rt::Call>(n, true);
         rt::Registry::get().enter(call->t0);
     }
-    rt::Call* const   cp = call.get();
-    detail::RegionCtx ctx;
-    const auto        tasks = [&](const oneapi::tbb::blocked_range<int>& r)
+    detail::ArenaWatch* const watch    = timed ? detail::arena_watch() : nullptr;
+    const rt::ArenaCount      at_start = watch != nullptr ? watch->now() : rt::ArenaCount{};
+    rt::Call* const           cp       = call.get();
+    detail::RegionCtx         ctx;
+    const auto                tasks = [&](const oneapi::tbb::blocked_range<int>& r)
     {
         for (int k = r.begin(); k != r.end(); ++k)
         {
@@ -595,9 +834,10 @@ void region(int num_threads, Body&& body, const std::source_location loc = std::
                 const auto s = rt::Clock::now();
                 Team       t(&ctx, k, n);
                 body(t);
-                const auto e                           = rt::Clock::now();
-                cp->start[static_cast<std::size_t>(k)] = rt::seconds(s - cp->t0);
-                cp->end[static_cast<std::size_t>(k)]   = rt::seconds(e - cp->t0);
+                const auto e                            = rt::Clock::now();
+                cp->start[static_cast<std::size_t>(k)]  = rt::seconds(s - cp->t0);
+                cp->end[static_cast<std::size_t>(k)]    = rt::seconds(e - cp->t0);
+                cp->thread[static_cast<std::size_t>(k)] = oneapi::tbb::this_task_arena::current_thread_index();
             }
             else
             {
@@ -614,11 +854,16 @@ void region(int num_threads, Body&& body, const std::source_location loc = std::
                                       oneapi::tbb::static_partitioner{});
         });
     --rt::depth;
-    const auto wall_end = timed ? rt::Clock::now() : rt::Clock::time_point{};
+    const auto           wall_end = timed ? rt::Clock::now() : rt::Clock::time_point{};
+    const rt::ArenaCount at_end   = watch != nullptr ? watch->now() : rt::ArenaCount{};
     shrink_array::finalize_parallel_phase();
     if (timed)
     {
         rt::Registry::get().record(loc, *call, wall_end, rt::Clock::now());
+        if (watch != nullptr)
+        {
+            rt::Registry::get().record_arena(at_start, at_end, watch->now());
+        }
     }
 }
 
