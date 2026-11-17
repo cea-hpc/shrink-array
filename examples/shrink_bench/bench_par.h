@@ -68,7 +68,7 @@
 #include <atomic>          // std::atomic_ref (the reductions' partials, atomic_add)
 #include <cstddef>         // std::size_t (the TBB thread count)
 #include <cstdint>         // std::uint64_t (the TBB regions' construct numbers)
-#include <cstdlib>         // std::abort (a construct the TBB regions do not have)
+#include <cstdlib>         // std::abort (a construct the TBB regions do not have), std::getenv
 #include <cstdio>          // std::fputs (its message)
 #include <memory>          // std::unique_ptr (the TBB regions' construct slots)
 #include <mutex>           // std::mutex (critical(), the TBB regions' slots)
@@ -546,6 +546,30 @@ inline oneapi::tbb::task_arena& arena()
                                         static_cast<std::size_t>(n));
     static oneapi::tbb::task_arena* const a = new oneapi::tbb::task_arena(n); // NOLINT: immortal
     (void)gc;
+    #if defined(__TBB_PREVIEW_PARALLEL_PHASE) && __TBB_PREVIEW_PARALLEL_PHASE
+    // One parallel phase over the whole run (oneTBB >= 2022.2, preview): the
+    // workers stay in the arena between regions instead of going back to the
+    // dispatcher and sleeping. Without it, on a 72-thread Grace (AArch64) run
+    // every region woke 71 workers on futexes (private_server::wake_some), the
+    // last ~1 ms late: launch and imbalance 4x those of OpenMP, 58 s against
+    // 35 s. Immortal like the arena: never ended. BENCH_TBB_PARALLEL_PHASE=0
+    // leaves it out, for comparison.
+    static const bool phase = []
+    {
+        const char* const value = std::getenv("BENCH_TBB_PARALLEL_PHASE"); // NOLINT(concurrency-mt-unsafe): read once
+        if (value != nullptr && value[0] == '0')
+        {
+            return false;
+        }
+        if (!a->is_active())
+        {
+            a->initialize();
+        }
+        a->start_parallel_phase();
+        return true;
+    }();
+    (void)phase;
+    #endif
     return *a;
 }
 
