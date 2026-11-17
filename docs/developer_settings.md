@@ -216,6 +216,14 @@ the common options. `--help` gives the full list.
 | `--llvm-cs=<n>` | add an LLVM build with `CHUNK_SIZE=n` |
 | `--pool=<id>` | share the configurations with the other runs given the same `<id>` (one batch job per node, `shrink_gui`'s "Nodes" field): each builds those it claims first; `<id>` is a name under `$CHUNK_BUILD_REP/.pools/` or a directory all the nodes share |
 
+Where the compilers come from, beside the modules the script loads: `CHUNK_LLVM_ROOT=<dir>`
+for the llvm builds (`<dir>/bin/clang++`, LLVM's release tarball extracted, e.g. where the llvm
+module has no OpenMP runtime); on ARM, `CHUNK_ACFL_ROOT=<prefix>` for the acfl family
+(`spack location -i acfl`; else `armclang++` in `PATH`, the newest `$CCCWORKDIR/opt/*/acfl-*`,
+an acfl module). oneTBB for the std builds' TBB targets: `TBBROOT`, `CHUNK_TBB_DIR` or
+`$CCCWORKDIR/tbb-<arch>`; `CHUNK_WITH_TBB=0` leaves them out, `CHUNK_TBB_TSAN_DIR` is the
+oneTBB built with TSan of the std TSan build.
+
 `compile_all_gnu.sh` also accepts `--no-ipa-icf` (`CHUNK_NO_IPA_ICF=ON`). The compilation
 memory per job is set by `CHUNK_MEM_PER_JOB_MB` (3,072 MB by default, twice that for
 sanitizer builds).

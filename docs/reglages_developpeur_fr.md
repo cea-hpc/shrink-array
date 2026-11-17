@@ -219,6 +219,14 @@ transmettant les options communes. `--help` donne la liste complète.
 | `--llvm-cs=<n>` | ajouter un build LLVM avec `CHUNK_SIZE=n` |
 | `--pool=<id>` | partager les configurations avec les autres runs qui ont le même `<id>` (un job batch par nœud, champ « Nœuds » de `shrink_gui`) : chacun construit celles qu'il réclame le premier ; `<id>` est un nom sous `$CHUNK_BUILD_REP/.pools/` ou un dossier partagé par tous les nœuds |
 
+D'où viennent les compilateurs, en plus des modules que le script charge : `CHUNK_LLVM_ROOT=<rép>`
+pour les builds llvm (`<rép>/bin/clang++`, l'archive de LLVM décompressée, par exemple là où le
+module llvm n'a pas de runtime OpenMP) ; sur ARM, `CHUNK_ACFL_ROOT=<préfixe>` pour la famille acfl
+(`spack location -i acfl` ; sinon `armclang++` dans le `PATH`, le plus récent
+`$CCCWORKDIR/opt/*/acfl-*`, un module acfl). oneTBB pour les cibles TBB des builds std :
+`TBBROOT`, `CHUNK_TBB_DIR` ou `$CCCWORKDIR/tbb-<arch>` ; `CHUNK_WITH_TBB=0` les écarte,
+`CHUNK_TBB_TSAN_DIR` est le oneTBB construit avec TSan du build std TSan.
+
 `compile_all_gnu.sh` accepte en plus `--no-ipa-icf` (`CHUNK_NO_IPA_ICF=ON`). La mémoire de
 compilation par job se règle par `CHUNK_MEM_PER_JOB_MB` (3 072 Mo par défaut, le double pour
 les builds sous sanitizer).
