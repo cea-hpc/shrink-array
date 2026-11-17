@@ -64,16 +64,21 @@
 
 #pragma once
 
-#include <algorithm>     // std::min (the block schedule's last block)
-#include <atomic>        // std::atomic_ref (the reductions' partials, atomic_add)
-#include <cstddef>       // std::size_t (the TBB thread count)
-#include <cstdint>       // std::uint64_t (the TBB regions' construct numbers)
-#include <cstdlib>       // std::abort (a construct the TBB regions do not have)
-#include <cstdio>        // std::fputs (its message)
-#include <memory>        // std::unique_ptr (the TBB regions' construct slots)
-#include <mutex>         // std::mutex (critical(), the TBB regions' slots)
-#include <unordered_map> // std::unordered_map (the TBB regions' construct slots)
-#include <utility>       // std::forward
+#include <algorithm>       // std::min (the block schedule's last block)
+#include <atomic>          // std::atomic_ref (the reductions' partials, atomic_add)
+#include <cstddef>         // std::size_t (the TBB thread count)
+#include <cstdint>         // std::uint64_t (the TBB regions' construct numbers)
+#include <cstdlib>         // std::abort (a construct the TBB regions do not have)
+#include <cstdio>          // std::fputs (its message)
+#include <memory>          // std::unique_ptr (the TBB regions' construct slots)
+#include <mutex>           // std::mutex (critical(), the TBB regions' slots)
+#include <unordered_map>   // std::unordered_map (the TBB regions' construct slots)
+#include <utility>         // std::forward
+#include <chrono>          // std::chrono::steady_clock (BENCH_RANK_TIMING)
+#include <source_location> // std::source_location (the timed call sites)
+#include <string>          // std::string (a call site's name)
+#include <string_view>     // std::string_view (its file name)
+#include <vector>          // std::vector (a call's rank times, the sites)
 
 #include "bench_int.h"                // Int
 #include "chunk/internal/PMP_CHUNK.h" // shrink_array::pmp::team, pmp::Team, pmp::Options, pmp::backend
@@ -84,12 +89,6 @@
     #include <oneapi/tbb/parallel_for.h>   // oneapi::tbb::parallel_for, static_partitioner
     #include <oneapi/tbb/task_arena.h>     // oneapi::tbb::task_arena
 
-    #include <chrono>          // std::chrono::steady_clock (BENCH_RANK_TIMING)
-    #include <source_location> // std::source_location (the timed call sites)
-    #include <string>          // std::string (a call site's name)
-    #include <string_view>     // std::string_view (its file name)
-    #include <vector>          // std::vector (a call's rank times, the sites)
-
     #include "chunk/phases.h"      // finalize_parallel_phase (the end of a region)
     #include "chunk/tbb_adaptor.h" // shrink_array::tbb::phase_body (the begin of each task), use_tbb_for_library_teams
 #endif
@@ -98,6 +97,247 @@ namespace bench_par
 {
 /// @brief Team::single(f, nowait): no barrier after it.
 inline constexpr auto nowait = shrink_array::pmp::nowait;
+
+namespace detail
+{
+/// @brief true: region() times finalize_parallel_phase() apart (the TBB
+///        regions call it themselves); false: the phase ends elsewhere.
+#if defined(BENCH_PAR_TBB) && BENCH_PAR_TBB
+inline constexpr bool finalize_apart = true;
+#else
+inline constexpr bool finalize_apart = false;
+#endif
+
+/**
+ * @brief Per-rank timing of the regions (BENCH_RANK_TIMING=1), to tell where
+ *        the idle threads come from -- TBB's workers (thread_dispatcher::process
+ *        in a profile), or OpenMP's / the std backend's, to compare.
+ * @details Each outermost region() call is timed from the calling thread
+ *          (t0: before arena().execute(), W: when it returns), and each of its
+ *          n virtual ranks from inside its task (start s_k, end e_k, both from
+ *          t0). Per rank, W = s_k + (e_k - s_k) + (e_max - e_k) + (W - e_max),
+ *          so the region's n x W thread-time splits exactly into
+ *            - busy:      sum (e_k - s_k), the bench's work and the library's;
+ *            - imbalance: sum (e_max - e_k), the ranks done waiting for the slowest;
+ *            - launch:    sum s_k, a rank waiting for its task to start (worker
+ *                         wake-up, begin_parallel_phase(), a rank queued behind
+ *                         another on the same thread);
+ *            - tail:      n x (W - e_max), the last rank's end to execute()'s return.
+ *          After each region, finalize_parallel_phase(): its wall time x threads
+ *          is the finalize share (the library's teams work inside it, on TBB's
+ *          threads; how busy they are is not split). Between a finalize and the
+ *          next region the calling thread alone runs the bench's serial code: its
+ *          time, x (threads - 1), is the serial share of the idle workers. The
+ *          three wall times sum to the run's. Totals per call site (file:line of the region()
+ *          call), printed on stderr at exit, the costliest idle first.
+ *          OpenMP and the std backend (region() is a pmp::team): t0 before the
+ *          team, W when it returns, each rank from inside it; the team may be
+ *          smaller than asked (its real size is used). Under OMPT the phase
+ *          ends INSIDE the region (finalize_parallel_phase() at its end, after
+ *          the implicit barrier): it falls in the tail, and the finalize line
+ *          is 0. Under the std backend without OMPT the bench ends the phase
+ *          between regions: it falls in the serial share.
+ *          Off by default: one test of a static bool per region, no clock read.
+ */
+namespace rank_timing
+{
+using Clock = std::chrono::steady_clock;
+
+[[nodiscard]] inline bool enabled() noexcept
+{
+    static const bool on = []
+    {
+        const char* v = std::getenv("BENCH_RANK_TIMING");
+        return v != nullptr && v[0] != '\0' && v[0] != '0';
+    }();
+    return on;
+}
+
+[[nodiscard]] inline double seconds(Clock::duration d) noexcept
+{
+    return std::chrono::duration<double>(d).count();
+}
+
+/// @brief One region() call site's totals, in seconds (thread-time except wall).
+struct Site
+{
+    std::string name;
+    long long   calls     = 0;
+    double      wall      = 0; ///< sum of W
+    double      busy      = 0;
+    double      imbalance = 0;
+    double      launch    = 0;
+    double      tail      = 0;
+    double      max_busy  = 0; ///< sum over calls of the slowest rank's busy time
+    double      mean_busy = 0; ///< sum over calls of the mean busy time
+};
+
+/// @brief The starts and ends of one call's ranks, from t0, in seconds.
+struct Call
+{
+    explicit Call(int n) : start(static_cast<std::size_t>(n)), end(static_cast<std::size_t>(n)) {}
+    std::vector<double> start;
+    std::vector<double> end;
+    Clock::time_point   t0 = Clock::now(); ///< last: the vectors are allocated before it
+};
+
+class Registry
+{
+  public:
+    static Registry& get()
+    {
+        static Registry* const r = [] // NOLINT: immortal, reported from atexit
+        {
+            auto* p = new Registry();
+            std::atexit([] { get().report(); });
+            return p;
+        }();
+        return *r;
+    }
+
+    /// @brief The calling thread enters an outermost region: the time since
+    ///        the previous one ended was serial.
+    void enter(Clock::time_point t0)
+    {
+        const std::scoped_lock lock(mutex_);
+        if (have_last_)
+        {
+            serial_ += seconds(t0 - last_end_);
+        }
+    }
+
+    /// @brief Account one call (@p wall_end: execute() returned, @p fin_end:
+    ///        finalize_parallel_phase() returned).
+    void record(const std::source_location& loc, const Call& c, Clock::time_point wall_end, Clock::time_point fin_end)
+    {
+        const std::size_t n    = c.start.size();
+        const double      w    = seconds(wall_end - c.t0);
+        double            emax = 0;
+        double            bmax = 0;
+        double            bsum = 0;
+        double            ssum = 0;
+        for (std::size_t k = 0; k < n; ++k)
+        {
+            emax = std::max(emax, c.end[k]);
+            bmax = std::max(bmax, c.end[k] - c.start[k]);
+            bsum += c.end[k] - c.start[k];
+            ssum += c.start[k];
+        }
+        double isum = 0;
+        for (std::size_t k = 0; k < n; ++k)
+        {
+            isum += emax - c.end[k];
+        }
+
+        const std::scoped_lock lock(mutex_);
+        Site&                  s = site(loc);
+        ++s.calls;
+        s.wall += w;
+        s.busy += bsum;
+        s.imbalance += isum;
+        s.launch += ssum;
+        s.tail += static_cast<double>(n) * std::max(0.0, w - emax);
+        s.max_busy += bmax;
+        s.mean_busy += n > 0 ? bsum / static_cast<double>(n) : 0.0;
+        finalize_ += seconds(fin_end - wall_end);
+        last_end_  = fin_end;
+        have_last_ = true;
+    }
+
+  private:
+    Registry() = default;
+
+    Site& site(const std::source_location& loc)
+    {
+        const std::string_view file = loc.file_name();
+        const auto             cut  = file.find_last_of('/');
+        std::string            name(cut == std::string_view::npos ? file : file.substr(cut + 1));
+        name += ':';
+        name += std::to_string(loc.line());
+        for (auto& s : sites_)
+        {
+            if (s->name == name)
+            {
+                return *s;
+            }
+        }
+        sites_.push_back(std::make_unique<Site>());
+        sites_.back()->name = std::move(name);
+        return *sites_.back();
+    }
+
+    void report()
+    {
+        const std::scoped_lock lock(mutex_);
+        if (sites_.empty())
+        {
+            return;
+        }
+        const double threads = CHUNK_PMP_MAX_THREADS;
+        Site         tot;
+        for (const auto& s : sites_)
+        {
+            tot.wall += s->wall;
+            tot.busy += s->busy;
+            tot.imbalance += s->imbalance;
+            tot.launch += s->launch;
+            tot.tail += s->tail;
+        }
+        // serial_ runs from a finalize's end to the next region: finalize_ is not in it.
+        const double serial_idle  = (threads - 1) * serial_;
+        const double finalize_all = threads * finalize_;
+        const double all          = tot.busy + tot.imbalance + tot.launch + tot.tail + finalize_all + serial_idle;
+        const auto   pct          = [all](double x) { return all > 0 ? 100.0 * x / all : 0.0; };
+
+        std::fprintf(stderr,
+                     "[rank-timing] %d threads; wall %.3f s: in regions %.3f s, finalize_parallel_phase %.3f s, "
+                     "serial between them %.3f s\n",
+                     CHUNK_PMP_MAX_THREADS, tot.wall + finalize_ + serial_, tot.wall, finalize_, serial_);
+        if (!finalize_apart)
+        {
+            std::fputs("[rank-timing] (not TBB: the phase's end is not timed apart -- OMPT's runs at each region's "
+                       "end, in tail; the bench's own, between regions, in serial)\n",
+                       stderr);
+        }
+        std::fprintf(stderr,
+                     "[rank-timing] thread-time %.1f s: busy %.1f%%, imbalance %.1f%%, launch %.1f%%, "
+                     "tail %.1f%%, finalize (not split) %.1f%%, serial (threads-1 idle) %.1f%%\n",
+                     all, pct(tot.busy), pct(tot.imbalance), pct(tot.launch), pct(tot.tail), pct(finalize_all),
+                     pct(serial_idle));
+
+        std::vector<const Site*> order;
+        order.reserve(sites_.size());
+        for (const auto& s : sites_)
+        {
+            order.push_back(s.get());
+        }
+        std::sort(order.begin(), order.end(), [](const Site* a, const Site* b)
+                  { return a->imbalance + a->launch + a->tail > b->imbalance + b->launch + b->tail; });
+
+        std::fprintf(stderr, "[rank-timing] %-28s %8s %10s %9s %8s %8s %8s %8s\n", "site", "calls", "wall s",
+                     "max/mean", "busy%", "imbal%", "launch%", "tail%");
+        for (const Site* s : order)
+        {
+            const double site_all = s->busy + s->imbalance + s->launch + s->tail;
+            const auto   sp       = [site_all](double x) { return site_all > 0 ? 100.0 * x / site_all : 0.0; };
+            std::fprintf(stderr, "[rank-timing] %-28s %8lld %10.3f %9.2f %8.1f %8.1f %8.1f %8.1f\n", s->name.c_str(),
+                         s->calls, s->wall, s->mean_busy > 0 ? s->max_busy / s->mean_busy : 0.0, sp(s->busy),
+                         sp(s->imbalance), sp(s->launch), sp(s->tail));
+        }
+    }
+
+    std::mutex                         mutex_;
+    std::vector<std::unique_ptr<Site>> sites_;
+    double                             serial_    = 0;
+    double                             finalize_  = 0;
+    Clock::time_point                  last_end_  = {};
+    bool                               have_last_ = false;
+};
+
+/// @brief Depth of region() calls on this thread: only the outermost is timed.
+inline thread_local int depth = 0;
+} // namespace rank_timing
+} // namespace detail
 
 #if defined(BENCH_PAR_TBB) && BENCH_PAR_TBB
 
@@ -310,219 +550,13 @@ inline oneapi::tbb::task_arena& arena()
 }
 
 /// @brief The library's own teams take TBB's threads too, from the start (the
-///        arrays' creation opens some before the first region).
-inline const bool library_teams_on_tbb = (shrink_array::tbb::use_tbb_for_library_teams(), true);
+///        arrays' creation opens some before the first region) -- in the
+///        bench's arena: region() runs its tasks there and calls
+///        finalize_parallel_phase() outside it, so the calling thread's arena
+///        would be another one, and the workers would change arena twice per
+///        region.
+inline const bool library_teams_on_tbb = (shrink_array::tbb::use_tbb_for_library_teams(arena()), true);
 
-/**
- * @brief Per-rank timing of the TBB regions (BENCH_RANK_TIMING=1), to tell
- *        where TBB's idle workers (thread_dispatcher::process in a profile)
- *        come from.
- * @details Each outermost region() call is timed from the calling thread
- *          (t0: before arena().execute(), W: when it returns), and each of its
- *          n virtual ranks from inside its task (start s_k, end e_k, both from
- *          t0). Per rank, W = s_k + (e_k - s_k) + (e_max - e_k) + (W - e_max),
- *          so the region's n x W thread-time splits exactly into
- *            - busy:      sum (e_k - s_k), the bench's work and the library's;
- *            - imbalance: sum (e_max - e_k), the ranks done waiting for the slowest;
- *            - launch:    sum s_k, a rank waiting for its task to start (worker
- *                         wake-up, begin_parallel_phase(), a rank queued behind
- *                         another on the same thread);
- *            - tail:      n x (W - e_max), the last rank's end to execute()'s return.
- *          Outside the regions, the calling thread alone runs (finalize_parallel_phase(),
- *          the bench's serial code): its time, x (threads - 1), is the serial share
- *          of the idle workers. Totals per call site (file:line of the region()
- *          call), printed on stderr at exit, the costliest idle first.
- *          Off by default: one test of a static bool per region, no clock read.
- */
-namespace rank_timing
-{
-using Clock = std::chrono::steady_clock;
-
-[[nodiscard]] inline bool enabled() noexcept
-{
-    static const bool on = []
-    {
-        const char* v = std::getenv("BENCH_RANK_TIMING");
-        return v != nullptr && v[0] != '\0' && v[0] != '0';
-    }();
-    return on;
-}
-
-[[nodiscard]] inline double seconds(Clock::duration d) noexcept
-{
-    return std::chrono::duration<double>(d).count();
-}
-
-/// @brief One region() call site's totals, in seconds (thread-time except wall).
-struct Site
-{
-    std::string name;
-    long long   calls     = 0;
-    double      wall      = 0; ///< sum of W
-    double      busy      = 0;
-    double      imbalance = 0;
-    double      launch    = 0;
-    double      tail      = 0;
-    double      max_busy  = 0; ///< sum over calls of the slowest rank's busy time
-    double      mean_busy = 0; ///< sum over calls of the mean busy time
-};
-
-/// @brief The starts and ends of one call's ranks, from t0, in seconds.
-struct Call
-{
-    explicit Call(int n) : start(static_cast<std::size_t>(n)), end(static_cast<std::size_t>(n)) {}
-    std::vector<double> start;
-    std::vector<double> end;
-    Clock::time_point   t0 = Clock::now(); ///< last: the vectors are allocated before it
-};
-
-class Registry
-{
-  public:
-    static Registry& get()
-    {
-        static Registry* const r = [] // NOLINT: immortal, reported from atexit
-        {
-            auto* p = new Registry();
-            std::atexit([] { get().report(); });
-            return p;
-        }();
-        return *r;
-    }
-
-    /// @brief The calling thread enters an outermost region: the time since
-    ///        the previous one ended was serial.
-    void enter(Clock::time_point t0)
-    {
-        const std::scoped_lock lock(mutex_);
-        if (have_last_)
-        {
-            serial_ += seconds(t0 - last_end_);
-        }
-    }
-
-    /// @brief Account one call (@p wall_end: execute() returned, @p fin_end:
-    ///        finalize_parallel_phase() returned).
-    void record(const std::source_location& loc, const Call& c, Clock::time_point wall_end, Clock::time_point fin_end)
-    {
-        const std::size_t n    = c.start.size();
-        const double      w    = seconds(wall_end - c.t0);
-        double            emax = 0;
-        double            bmax = 0;
-        double            bsum = 0;
-        double            ssum = 0;
-        for (std::size_t k = 0; k < n; ++k)
-        {
-            emax = std::max(emax, c.end[k]);
-            bmax = std::max(bmax, c.end[k] - c.start[k]);
-            bsum += c.end[k] - c.start[k];
-            ssum += c.start[k];
-        }
-        double isum = 0;
-        for (std::size_t k = 0; k < n; ++k)
-        {
-            isum += emax - c.end[k];
-        }
-
-        const std::scoped_lock lock(mutex_);
-        Site&                  s = site(loc);
-        ++s.calls;
-        s.wall += w;
-        s.busy += bsum;
-        s.imbalance += isum;
-        s.launch += ssum;
-        s.tail += static_cast<double>(n) * std::max(0.0, w - emax);
-        s.max_busy += bmax;
-        s.mean_busy += n > 0 ? bsum / static_cast<double>(n) : 0.0;
-        finalize_ += seconds(fin_end - wall_end);
-        last_end_  = fin_end;
-        have_last_ = true;
-    }
-
-  private:
-    Registry() = default;
-
-    Site& site(const std::source_location& loc)
-    {
-        const std::string_view file = loc.file_name();
-        const auto             cut  = file.find_last_of('/');
-        std::string            name(cut == std::string_view::npos ? file : file.substr(cut + 1));
-        name += ':';
-        name += std::to_string(loc.line());
-        for (auto& s : sites_)
-        {
-            if (s->name == name)
-            {
-                return *s;
-            }
-        }
-        sites_.push_back(std::make_unique<Site>());
-        sites_.back()->name = std::move(name);
-        return *sites_.back();
-    }
-
-    void report()
-    {
-        const std::scoped_lock lock(mutex_);
-        if (sites_.empty())
-        {
-            return;
-        }
-        const double threads = CHUNK_PMP_MAX_THREADS;
-        Site         tot;
-        for (const auto& s : sites_)
-        {
-            tot.wall += s->wall;
-            tot.busy += s->busy;
-            tot.imbalance += s->imbalance;
-            tot.launch += s->launch;
-            tot.tail += s->tail;
-        }
-        const double serial_idle = (threads - 1) * serial_;
-        const double all         = tot.busy + tot.imbalance + tot.launch + tot.tail + serial_idle;
-        const auto   pct         = [all](double x) { return all > 0 ? 100.0 * x / all : 0.0; };
-
-        std::fprintf(stderr,
-                     "[rank-timing] %d threads; in regions %.3f s, serial between regions %.3f s "
-                     "(of which finalize_parallel_phase %.3f s)\n",
-                     CHUNK_PMP_MAX_THREADS, tot.wall, serial_, finalize_);
-        std::fprintf(stderr,
-                     "[rank-timing] thread-time %.1f s: busy %.1f%%, imbalance %.1f%%, launch %.1f%%, "
-                     "tail %.1f%%, serial (threads-1 idle) %.1f%%\n",
-                     all, pct(tot.busy), pct(tot.imbalance), pct(tot.launch), pct(tot.tail), pct(serial_idle));
-
-        std::vector<const Site*> order;
-        order.reserve(sites_.size());
-        for (const auto& s : sites_)
-        {
-            order.push_back(s.get());
-        }
-        std::sort(order.begin(), order.end(), [](const Site* a, const Site* b)
-                  { return a->imbalance + a->launch + a->tail > b->imbalance + b->launch + b->tail; });
-
-        std::fprintf(stderr, "[rank-timing] %-28s %8s %10s %9s %8s %8s %8s %8s\n", "site", "calls", "wall s",
-                     "max/mean", "busy%", "imbal%", "launch%", "tail%");
-        for (const Site* s : order)
-        {
-            const double site_all = s->busy + s->imbalance + s->launch + s->tail;
-            const auto   sp       = [site_all](double x) { return site_all > 0 ? 100.0 * x / site_all : 0.0; };
-            std::fprintf(stderr, "[rank-timing] %-28s %8lld %10.3f %9.2f %8.1f %8.1f %8.1f %8.1f\n", s->name.c_str(),
-                         s->calls, s->wall, s->mean_busy > 0 ? s->max_busy / s->mean_busy : 0.0, sp(s->busy),
-                         sp(s->imbalance), sp(s->launch), sp(s->tail));
-        }
-    }
-
-    std::mutex                         mutex_;
-    std::vector<std::unique_ptr<Site>> sites_;
-    double                             serial_    = 0;
-    double                             finalize_  = 0;
-    Clock::time_point                  last_end_  = {};
-    bool                               have_last_ = false;
-};
-
-/// @brief Depth of region() calls on this thread: only the outermost is timed.
-inline thread_local int depth = 0;
-} // namespace rank_timing
 } // namespace detail
 
 /**
@@ -606,18 +640,54 @@ inline constexpr bool team_regions = true;
 ///        calls (bench_phases.h), not by region().
 inline constexpr bool region_ends_phase = false;
 
-/// @brief Run @p body(Team&) on every thread of a new team of the backend's default size.
+/// @brief Run @p body(Team&) on every thread of a new team of @p num_threads
+///        threads (0: the backend's default size). With BENCH_RANK_TIMING=1 the
+///        outermost one is timed per rank (detail::rank_timing); @p loc names
+///        the call site.
 template <typename Body>
-void region(Body&& body)
+void region(int num_threads, Body&& body, const std::source_location loc = std::source_location::current())
 {
-    shrink_array::pmp::team(shrink_array::pmp::Options{}, std::forward<Body>(body));
+    namespace rt   = detail::rank_timing;
+    const auto opt = shrink_array::pmp::Options{.num_threads = num_threads};
+    if (!rt::enabled() || rt::depth != 0) [[likely]]
+    {
+        shrink_array::pmp::team(opt, std::forward<Body>(body));
+        return;
+    }
+    rt::Call call(num_threads > 0 ? num_threads : CHUNK_PMP_MAX_THREADS);
+    rt::Registry::get().enter(call.t0);
+    int size = 0; // the team's real size, written by its rank 0
+    ++rt::depth;
+    shrink_array::pmp::team(opt,
+                            [&](Team& team)
+                            {
+                                const auto s = rt::Clock::now();
+                                body(team);
+                                const auto        e    = rt::Clock::now();
+                                const std::size_t rank = static_cast<std::size_t>(team.rank());
+                                if (rank < call.start.size())
+                                {
+                                    call.start[rank] = rt::seconds(s - call.t0);
+                                    call.end[rank]   = rt::seconds(e - call.t0);
+                                }
+                                if (rank == 0)
+                                {
+                                    size = team.size();
+                                }
+                            });
+    --rt::depth;
+    const auto wall_end = rt::Clock::now();
+    const auto n        = static_cast<std::size_t>(size > 0 ? size : 1);
+    call.start.resize(std::min(n, call.start.size()));
+    call.end.resize(call.start.size());
+    rt::Registry::get().record(loc, call, wall_end, wall_end);
 }
 
-/// @brief Run @p body(Team&) on every thread of a new team of @p num_threads threads.
+/// @brief region() with the backend's default team size.
 template <typename Body>
-void region(int num_threads, Body&& body)
+void region(Body&& body, const std::source_location loc = std::source_location::current())
 {
-    shrink_array::pmp::team(shrink_array::pmp::Options{.num_threads = num_threads}, std::forward<Body>(body));
+    region(0, std::forward<Body>(body), loc);
 }
 
 #endif

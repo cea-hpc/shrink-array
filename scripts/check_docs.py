@@ -119,6 +119,8 @@ ALLOWED = {
     "CHUNK2A_COMPRESS_LEVEL", "CHUNK_RECLAIM_EMPTY_SLABS", "FAST_ALLOC_OPT_RECLAIM_EMPTY_SLABS",
     "CHUNK_OPT_RECLAIM_EMPTY_SLABS", "alloc_config::reclaim_empty_slabs", "build_config::reclaim_empty_slabs",
     "scripts/diag_zero_rechunk_slowdown.py",
+    # removed with the four phase fences it switched off (CHANGELOG.md, Unreleased)
+    "CHUNK_PHASE_FENCES",
     # renamed to PascalCase (ChunkTemplateOf, ForEachTypeImpl, ...), which CHANGELOG.md records
     "index_type", "cst_val1_type", "chunk_template_of", "for_each_type_impl",
     # former class names the CHANGELOG cites (now SecondValue*Base, zero_any::ChunkThreadPolicy, ...)
