@@ -141,11 +141,11 @@ class Chunk : public zero_any::ChunkImpl<T, Chunk<T>>
      *          and the chunk stays materialised. An
      *          all-zero motif is a uniform chunk, which zero_any's scan has already
      *          classified: it never gets here.
-     * @param num_chunk The chunk's index in its array.
-     * @param num_tab   Its array's table.
+     * @param chunk_index The chunk's index in its array.
+     * @param array_id   Its array's table.
      * @param size      Its array's geometry.
      */
-    void classify_motif(int num_chunk, int num_tab, ChunkElems size);
+    void classify_motif(int chunk_index, int array_id, ChunkElems size);
 
     /**
      * @brief The OMPT pass's motif step (zero_any::ChunkImpl::compress_chunk_to_compress_in_par()):
@@ -158,11 +158,11 @@ class Chunk : public zero_any::ChunkImpl<T, Chunk<T>>
      *          list alone (its queue flag), with no writer (parallel_end, the team joined),
      *          so block_clear_motif()'s CAS cannot fail there either.
      * @param thr       The pass's rank: whose pool receives the buffer.
-     * @param num_chunk The chunk's index in its array.
-     * @param num_tab   Its array's table.
+     * @param chunk_index The chunk's index in its array.
+     * @param array_id   Its array's table.
      * @param size      Its array's geometry (pinned by the caller).
      */
-    void compress_to_motif(int thr, int num_chunk, int num_tab, ChunkElems size);
+    void compress_to_motif(int thr, int chunk_index, int array_id, ChunkElems size);
 
     /// @brief How many motif candidates this thread's pass holds (fill_list_chunk_to_compress_in_par()).
     [[nodiscard]] static std::size_t motif_candidate_count() noexcept

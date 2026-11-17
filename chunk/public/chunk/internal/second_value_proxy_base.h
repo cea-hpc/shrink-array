@@ -22,12 +22,12 @@
 
 #include "chunk/bit.h"    // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/config.h" // chunk_config::use_fast_block_compression, build_config::do_check
-#include "chunk/internal/concept_is_clean_assignement.h" // BaseT, ElementMultipliable, ElementModulable
-#include "chunk/internal/def_force_inline.h"             // CHUNK_FORCE_INLINE
-#include "chunk/internal/in_t.h"                         // InT<T>
-#include "chunk/internal/proxy_base.h"                   // ProxyBase
-#include "chunk/log.h"                                   // CHUNK_LOG (the operators bool has not)
-#include "chunk/internal/same_value.h"                   // same_value
+#include "chunk/internal/concept_is_clean_assignment.h" // BaseT, ElementMultipliable, ElementModulable
+#include "chunk/internal/def_force_inline.h"            // CHUNK_FORCE_INLINE
+#include "chunk/internal/in_t.h"                        // InT<T>
+#include "chunk/internal/proxy_base.h"                  // ProxyBase
+#include "chunk/log.h"                                  // CHUNK_LOG (the operators bool has not)
+#include "chunk/internal/same_value.h"                  // same_value
 
 namespace shrink_array
 {
@@ -53,13 +53,13 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     friend Base;
 
     using Base::add_to_compression_list;
+    using Base::array_id_;
     using Base::chunk_;
+    using Base::chunk_index_;
     using Base::derived;
     using Base::is_cst_val1;
     using Base::is_not_cst_val1;
     using Base::num_;
-    using Base::num_chunk_;
-    using Base::num_tab_;
     using Base::values_;
 
     using typename Base::AtomicPtrRefT;
@@ -299,7 +299,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      * @tparam WriteFn Callable type for write operation.
      * @param write_fn Function to execute after metadata setup.
      * @details Combines fast/slow path locking with automatic metadata
-     *          initialization (set_num_tab_ptr_is_inside_chunk(), needed by
+     *          initialization (set_array_id_ptr_is_inside_chunk(), needed by
      *          the fast-block-compression path). Useful for operations that
      *          need tab/chunk information before writing.
      */

@@ -54,7 +54,7 @@
 #include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/config.h" // chunk_config::use_zero_one_value*, build_config::use_openmp / needs_explicit_phases
-#include "chunk/internal/PMP_CHUNK.h" // chunk_pmp_team_rank
+#include "chunk/internal/pmp_chunk.h" // chunk_pmp_team_rank
 #include "chunk/phases.h"             // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/print.h"              // shrink_array::println
 

@@ -33,7 +33,7 @@
 #include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
 #include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
 #include "chunk/config.h"                               // for threaded, g_in_rechunk_rebuild
-#include "chunk/internal/PMP_CHUNK.h"           // CHUNK_PMP_IN_PARALLEL_REGION (reclaim_second_values), pmp::Team
+#include "chunk/internal/pmp_chunk.h"           // CHUNK_PMP_IN_PARALLEL_REGION (reclaim_second_values), pmp::Team
 #include "chunk/internal/tab_cst_val2_holder.h" // for GlobalVecHolder (cst2 GC)
 #include "chunk/internal/write_compress_sync_policy.h" // for WriteCompressSyncPolicy
 #include "chunk/internal/array_chunk_core.h"           // the core the bases share
@@ -84,7 +84,7 @@ void mark_second_values(std::vector<std::uint8_t>& referenced)
     using Gvh = GlobalVecHolder<T>;
 
     // Chunks compressed to a second value.
-    ProxyT::share_info_array->for_each_key(
+    ProxyT::array_registry->for_each_key(
         [&referenced](ArrayKey<ChunkT> arr)
         {
             if (arr == nullptr)
@@ -133,7 +133,7 @@ void mark_second_values(std::vector<std::uint8_t>& referenced)
  *        ArrayImpl<itself>.
  * @details Everything that names the element, index, chunk, proxy or manager
  *          type takes it from ArrayChunkTraits<Derived>, so a member gets its
- *          own registry (ProxyType::share_info_array), metadata tables and
+ *          own registry (ProxyType::array_registry), metadata tables and
  *          candidate lists. The constructors, the destructor and the
  *          assignments stay in the final class -- a constructor is not
  *          inherited, and the copy and move ones name that class -- built on
@@ -165,14 +165,14 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
 
     using Manager = ManagerType; ///< Same type as ManagerType.
 
+    using SecondValueBase::chunk_count_;
     using SecondValueBase::chunk_list_;
     using SecondValueBase::m_size_;
     using SecondValueBase::motif_offset_slot; // has_motif_state_v members: the advisor reads a motif chunk's offset
-    using SecondValueBase::nb_chunk_;
     using SecondValueBase::resize;
 
-    using Base::nb_tab;
-    using Base::num_tab_;
+    using Base::array_count;
+    using Base::array_id_;
     using Base::size_policy_;
 
     // Mode-specific members of the mixins. Required: ArrayChunkBase re-exports RechunkSupport's
@@ -214,8 +214,8 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
     /**
      * @brief The destructor's body: release the storage, then the registry entry.
      * @warning The erase() is required: a later array at this address (common for stack
-     *          arrays, e.g. rechunk_to()'s @c tmp) would inherit the stale num_tab
-     *          (get_num_tab() returns the FIRST match) and corrupt another tab's metadata.
+     *          arrays, e.g. rechunk_to()'s @c tmp) would inherit the stale array_id
+     *          (get_array_id() returns the FIRST match) and corrupt another tab's metadata.
      */
     void destroy_storage();
 
@@ -394,16 +394,16 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
     /**
      * @brief Claim this array's identity before its storage is built.
      * @details Called by create() through ArrayChunkBase: registers the address and takes
-     *          the next free num_tab.
-     * @post num_tab is valid and the array is discoverable by address.
+     *          the next free array_id.
+     * @post array_id is valid and the array is discoverable by address.
      */
     void pre_create_hook()
     {
-        auto& sh_inf = *ProxyType::share_info_array;
+        auto& sh_inf = *ProxyType::array_registry;
 
-        sh_inf.insert(this->registry_key(), nb_tab);
-        num_tab_ = nb_tab;
-        ++nb_tab;
+        sh_inf.insert(this->registry_key(), array_count);
+        array_id_ = array_count;
+        ++array_count;
     }
 
     /**
@@ -411,7 +411,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
      *
      * @details create()'s allocation WITHOUT identity/registration. Used by create(), and
      *          by rechunk_to() to rebuild a registered, torn-down array at a new geometry
-     *          under the same num_tab.
+     *          under the same array_id.
      *
      * @param sz element count to allocate for
      */
@@ -424,7 +424,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
      */
     auto get_metadata(IntType index) const noexcept
     {
-        return ProxyType::BaseSpec::get_tab_second_value(num_tab_, this->chunk_index_of(index));
+        return ProxyType::BaseSpec::get_tab_second_value(array_id_, this->chunk_index_of(index));
     }
 
     /// @brief Storage teardown shared by clear() and rechunk_to().
@@ -453,15 +453,15 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
      */
     void acquire_cst2_registry();
 
-    /// @brief The identity step of swap(): num_tab and the registry entry (the
+    /// @brief The identity step of swap(): array_id and the registry entry (the
     ///        per-chunk metadata rows follow the chunks), the cst2 registry
     ///        reference (it goes with the chunks that need it).
     void swap_identity(Derived& other)
     {
         using std::swap;
-        swap(this->num_tab_, other.num_tab_);
+        swap(this->array_id_, other.array_id_);
         swap(holds_cst2_registry_, other.holds_cst2_registry_);
-        ProxyType::share_info_array->swap_keys(this->registry_key(), other.registry_key());
+        ProxyType::array_registry->swap_keys(this->registry_key(), other.registry_key());
     }
 
     // ── cst2 mark-sweep GC: read-only mark + report ──────────────────────────
@@ -491,7 +491,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
  *          compresses as soon as all its elements equal any one constant. Costs a per-chunk
  *          second-value table (zero_any::ProxySpec), garbage-collected through GlobalVecHolder.
  *
- *          Each array registers its address in zero_any::Proxy::share_info_array to get a num_tab,
+ *          Each array registers its address in zero_any::Proxy::array_registry to get a array_id,
  *          the index into every per-tab metadata table. That registration is the array's
  *          identity: taken in pre_create_hook(), exchanged by rechunk_swap_identity(),
  *          released in the destructor.
@@ -573,13 +573,13 @@ class Array : public ArrayImpl<Array<T, IntType>>
      *        then it takes @p other's -- chunks, geometry and identity, by the
      *        same exchange as swap(); @p other is left empty and valid.
      * @details This array's old chunks are released first (candidates purged); the moved
-     *          chunks keep their metadata rows (num_tab). Sequential context, as clear().
+     *          chunks keep their metadata rows (array_id). Sequential context, as clear().
      * @note noexcept, as the move constructor: a failure here terminates.
      */
     Array& operator=(Array&& other) noexcept;
 
     /// @brief Deep copy-assignment (see the copy constructor). Self-assignment
-    ///        is a no-op; num_tab is not copied, identity stays with the address.
+    ///        is a no-op; array_id is not copied, identity stays with the address.
     Array& operator=(const Array& from)
     {
         if (this != &from)

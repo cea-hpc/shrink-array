@@ -19,7 +19,7 @@ une autre valeur lui redonne un tampon. Pendant l'exécution, les chunks redeven
 sont compressés à nouveau, et leurs tampons retournent à l'allocateur.
 
 C'est rentable sur des données surtout nulles, ou faites de plages de quelques valeurs :
-champs creux, masques de matériaux, grandeurs multi-matériaux, indicateurs. Ça ne l'est pas sur
+champs creux, masques de matériaux, grandeurs multi_matériaux, indicateurs. Ça ne l'est pas sur
 des données où chaque chunk contient des valeurs variées. La mémoire est alors un peu plus
 grande qu'avec un `std::vector`, et chaque accès plus lent.
 
@@ -438,4 +438,4 @@ les threads d'OpenMP : pour les autres, utilisez le backend std.
 | laisser la taille des chunks s'adapter à l'exécution | [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) (bibliothèques `_dyn`) |
 | toutes les variables de réglage et options de compilation | [variables_environnement_fr.md](variables_environnement_fr.md) |
 | le fonctionnement interne | [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md), [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md) |
-| un exemple plus complet : champs multi-matériaux, boucles écrites une fois pour les deux conteneurs | `examples/multi-mat` |
+| un exemple plus complet : champs multi_matériaux, boucles écrites une fois pour les deux conteneurs | `examples/multi_mat` |

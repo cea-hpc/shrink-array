@@ -22,7 +22,7 @@
 // and the registry that gives a dense rank to a thread no team numbers.
 //
 // The one place that asks the threading runtime these questions: chunk's
-// PMP_CHUNK.h (CHUNK_PMP_*), pmp_alloc.h (FAST_ALLOC_PMP_*) and slab_arena.h
+// pmp_chunk.h (CHUNK_PMP_*), pmp_alloc.h (FAST_ALLOC_PMP_*) and slab_arena.h
 // go through it. The loops and teams are in pmp_loops.h.
 //
 // Backends: OpenMP (the default when the build compiles with OpenMP: every

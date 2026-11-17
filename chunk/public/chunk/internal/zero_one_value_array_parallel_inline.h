@@ -24,7 +24,7 @@
 
 #include "chunk/internal/zero_one_value_array_parallel.h" // zero_one_value::FastBlockSupport, the class these bodies belong to
 #include "chunk/internal/array_chunk_parallel_common_inline.h" // flush_pending_deferred_ops
-#include "chunk/internal/PMP_CHUNK.h"                          // CHUNK_PMP_* (make_block_compression)
+#include "chunk/internal/pmp_chunk.h"                          // CHUNK_PMP_* (make_block_compression)
 #include "chunk/internal/chunk_size_policy.h"                  // set_thread_chunk_size in make_block_compression
 #include "chunk/internal/read_reclaim.h"                       // read_reclaim::PassScope (drain_own_candidates)
 #include "chunk/internal/own_candidates.h"                     // with_own_candidates_only (drain_own_candidates)
@@ -95,12 +95,12 @@ void zero_one_value::FastBlockSupport<Derived, true>::drain_own_candidates()
     // value holding chunks of arrays other threads are writing. Other threads may be
     // reading, so the buffers released wait for a grace period (read_reclaim.h).
     const int  rank     = CHUNK_PMP_THREAD_RANK;
-    const int  num_tab  = ProxyT::share_info_array->get_num_tab(self().registry_key());
+    const int  array_id = ProxyT::array_registry->get_array_id(self().registry_key());
     const auto inf      = self().get_info_second_value();
     auto&      by_value = ManagerT::zero_one_value_candidates_map_thr[rank];
     if (const auto it = by_value.find(inf.second_value); it != by_value.end() && it->second)
     {
-        internal::with_own_candidates_only(*it->second, num_tab,
+        internal::with_own_candidates_only(*it->second, array_id,
                                            [&]
                                            {
                                                const read_reclaim::PassScope pass_scope;
@@ -125,14 +125,14 @@ void zero_one_value::FastBlockSupport<Derived, true>::sweep_leftover_candidates(
     // set_second_value() (or a copy-assignment) sit under an EARLIER key; left there,
     // resize() reallocates chunk_list_ under them (dangling &chunk_list_[j]). Sweep every
     // key: compress this array's leftovers against the current value, clear their flags,
-    // drop them by num_tab (as rechunk_drop_candidates()). Every rank at a sequential
+    // drop them by array_id (as rechunk_drop_candidates()). Every rank at a sequential
     // point; the calling thread's only inside a region, where the array is its own.
     if constexpr (Derived::is_not_bool)
     {
         using ProxyT   = Traits::ProxyType;
         using ManagerT = Traits::ManagerType;
 
-        const int  num_tab  = ProxyT::share_info_array->get_num_tab(self().registry_key());
+        const int  array_id = ProxyT::array_registry->get_array_id(self().registry_key());
         const auto inf      = self().get_info_second_value();
         const int  thr_self = get_thr_rank_fast();
         const auto nb_rank  = static_cast<int>(ManagerT::zero_one_value_candidates_map_thr.size());
@@ -149,10 +149,10 @@ void zero_one_value::FastBlockSupport<Derived, true>::sweep_leftover_candidates(
                 }
                 for (auto& tup : *kv.second)
                 {
-                    if (std::get<2>(tup) == num_tab)
+                    if (std::get<2>(tup) == array_id)
                     {
                         std::get<0>(tup)->compress(thr_self, inf, /*apply=*/true, std::get<3>(tup).count());
-                        ProxyT::reset_tab_inside_list_to_compress(num_tab, std::get<1>(tup));
+                        ProxyT::reset_tab_inside_list_to_compress(array_id, std::get<1>(tup));
                         found = true;
                     }
                 }
@@ -160,7 +160,7 @@ void zero_one_value::FastBlockSupport<Derived, true>::sweep_leftover_candidates(
         }
         if (found)
         {
-            ManagerT::remove_from_zero_one_value_candidates_by_num_tab(num_tab, own_rank_only);
+            ManagerT::remove_from_zero_one_value_candidates_by_array_id(array_id, own_rank_only);
         }
     }
 }

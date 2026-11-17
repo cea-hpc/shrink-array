@@ -32,7 +32,7 @@ The library: `shrink_array::zero_any` (it defines `CHUNK_VARIANT_ZERO_ANY`). Cod
 
 ## 2. Per-chunk metadata
 
-Each array has, indexed by its number (`num_tab`), three rows with one entry per chunk:
+Each array has, indexed by its number (`array_id`), three rows with one entry per chunk:
 
 | row | size per chunk | content |
 |---|---|---|

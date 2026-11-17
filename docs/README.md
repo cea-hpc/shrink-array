@@ -65,7 +65,7 @@
 | `chunk/public/chunk/internal/` | the implementation: chunks, proxies, write engine, compression, re-chunk |
 | `chunk/private/` | the compiled parts of the library (type registry, OMPT tool, statistics, traces) |
 | `fast_allocators/` | the buffer allocators (arenas, slabs, reuse lists) |
-| `examples/` | `getting_started`, `fetch_content` (the library pulled in with `FetchContent`), `bool_arrays` (the two boolean containers), `simple_array`, `multi-mat`, the `shrink_bench` benchmark, the `validation` harnesses, `advisor_demo`, `variant_compare` |
+| `examples/` | `getting_started`, `fetch_content` (the library pulled in with `FetchContent`), `bool_arrays` (the two boolean containers), `simple_array`, `multi_mat`, the `shrink_bench` benchmark, the `validation` harnesses, `advisor_demo`, `variant_compare` |
 | `scripts/` | `compile_all.sh` / `compile_all_gnu.sh`: the whole build matrix |
 | `python/` | `bench_and_test.py` (test and performance campaigns), `multi_launch_stress.py` (repeated runs at random thread counts), `shrink_gui/` (the GUI) |
 | `formal/` | the reduced models of the handshakes (`writer_compressor.c`, `compressor_flush.c`, `reader_reclaim.c`, ...), `run_genmc.sh`, `run_native.sh`, the `formal` ctest label |

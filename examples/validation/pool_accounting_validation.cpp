@@ -49,7 +49,7 @@
 //      argument leaves the block size alone (every allocator of a type must
 //      cut its slabs to one size); the same argument again is a harmless repeat.
 //
-// Then the library's own teardown, as compress_roundtrip does.
+// Then the library's own teardown, as compress_roundtrip_validation does.
 //
 // Compile OMP or non-OMP, static or dyn, check. Exit 0 = every count matches.
 
@@ -63,7 +63,7 @@
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown, need_load_balance_list_block_free
 #include "chunk/internal/chunk_size_policy.h"        // cst_buffer_size
 #include "chunk/config.h"                            // chunk_config::use_zero*
-#include "chunk/internal/PMP_CHUNK.h"                // CHUNK_PMP_MAX_THREADS, pmp::current_team
+#include "chunk/internal/pmp_chunk.h"                // CHUNK_PMP_MAX_THREADS, pmp::current_team
 #include "chunk/phases.h"                            // parallel_phase
 #include "chunk/internal/zero_chunk_def.h"           // ChunkDef
 #include "chunk/internal/zero_one_value_chunk_def.h" // zero_one_value::ChunkDef
@@ -76,7 +76,7 @@
 // Defined by every executable of the library (the fast allocator reads it).
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
-namespace validation::pool_accounting
+namespace validation::pool_accounting_validation
 {
 
 using namespace shrink_array;
@@ -155,7 +155,8 @@ int run(int argc, char** argv)
 
     Runtime::init(true);
 
-    println("=== pool_accounting [variant = {}]  N={}  threads={} ===", variant_name(), count, CHUNK_PMP_MAX_THREADS);
+    println("=== pool_accounting_validation [variant = {}]  N={}  threads={} ===", variant_name(), count,
+            CHUNK_PMP_MAX_THREADS);
 
     // --- 0. one block size per process ------------------------------------
     const auto block_size = []
@@ -252,7 +253,7 @@ int run(int argc, char** argv)
         "compression threshold back at the floor with no array alive",
         Manager::get_size_max_number_of_chunk_to_check_compress(), VariantDef::size_min_list_chunk_to_check_compress);
 
-    // The library's own teardown (see compress_roundtrip.cpp).
+    // The library's own teardown (see compress_roundtrip_validation.cpp).
     // No #ifdef: release_chunk_pools() does whichever half this build needs --
     // the per-rank lists under OpenMP, the single allocator otherwise. See
     // ChunkPoolParallelInterface in zero_chunk.h.
@@ -273,4 +274,4 @@ int run(int argc, char** argv)
     return g_fails;
 }
 
-} // namespace validation::pool_accounting
+} // namespace validation::pool_accounting_validation

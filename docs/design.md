@@ -113,7 +113,7 @@ flowchart TB
 | shared constants | `TabCstVal2Holder`, `GlobalVecHolder`, `MotifRegion` | `internal/tab_cst_val2_holder.h`, `internal/motif_region.h` | one per element type |
 | process registry, startup | `TypeStateRegistry`, `Runtime` | `internal/type_state_registry_decl.h`, `chunk/runtime.h` | one per process |
 | phases | `begin_parallel_phase`, `finalize_parallel_phase`, `parallel_phase` | `chunk/phases.h`, `chunk/private/manage_ompt.cpp` | one phase at a time |
-| backend, ranks | `pmp::Team`, `pmp::parallel_for` | `chunk/internal/PMP_CHUNK.h`, `fast_allocators/internal/pmp_loops.h`, `fast_allocators/internal/pmp_std.h` | process-wide |
+| backend, ranks | `pmp::Team`, `pmp::parallel_for` | `chunk/internal/pmp_chunk.h`, `fast_allocators/internal/pmp_loops.h`, `fast_allocators/internal/pmp_std.h` | process-wide |
 | allocation | slab arenas, per-rank allocators | `fast_allocators/slab_arena.h`, `fast_allocators/tc_allocator.h` | process-wide |
 | dynamic geometry | `ChunkSizeAdvisor`, `RechunkDecider`, `RechunkPolicy` | `chunk/chunk_size_advisor.h`, `chunk/rechunk_decider.h`, `internal/chunk_size_policy.h` | per array, driven by the program |
 
@@ -188,7 +188,7 @@ per-variant declinations and keep the default names as aliases;
 
 ### 6.1 Read
 
-`operator[] const` splits the index (`num_chunk = i >> shift`, `num = i & mask`), passes the
+`operator[] const` splits the index (`chunk_index = i >> shift`, `num = i & mask`), passes the
 **read gate** (`sync_chunk`: a bit per chunk, the *dirty bitset*, says whether a deferred write
 may be pending on it; almost always zero, the read goes straight on; otherwise the chunk's
 counter decides whether to replay its pending writes first, `reader_sync`), then loads `values`
@@ -246,13 +246,13 @@ The program alternates **serial points** and **parallel phases**:
 
 Building and destroying an array is neither: a thread may do it inside a phase, for a work
 array of its own. That **cold path** writes state shared by every array of the element type
-(the identity registry, the next `num_tab`, the outer per-array tables, the manager's totals),
+(the identity registry, the next `array_id`, the outer per-array tables, the manager's totals),
 so it takes one lock for the whole library (`internal/cold_path_lock.h`). The hot path takes
-none: the tables it indexes by `num_tab` never move their rows (`internal/stable_table.h`), the
+none: the tables it indexes by `array_id` never move their rows (`internal/stable_table.h`), the
 thresholds it reads are atomics, and the registry has a reader lock for the lookups made
 outside the cold path (replays, check builds). A teardown inside a phase cannot walk the other
 ranks' candidate lists and deferred queues, which their threads are appending to:
-`internal/tab_users.h` records which ranks hold something of each array, and an array that
+`internal/array_users.h` records which ranks hold something of each array, and an array that
 only the calling rank has used is torn down on that rank alone, with no pass over the other
 arrays. Before its chunk list is freed, one grace period of `read_reclaim` covers a
 compressor's `start()`, whose scan reads the chunk each writer announced. A `resize()` inside a
@@ -375,7 +375,7 @@ kept apart so that the library itself takes no decision from the environment:
   actually obtained;
 - `rechunk_to()` rebuilds the storage at a serial point: compress the pending candidates, build
   a new storage at the new size, refill it in parallel by slices, fold the chunks whose sources
-  were all compressed, swap identities (`num_tab`, registry keys), destroy the old storage --
+  were all compressed, swap identities (`array_id`, registry keys), destroy the old storage --
   freeing, not emptying, everything indexed by its identity.
 
 The memory of the old geometry leaves only by whole slab: this is why the affinity keys exist,

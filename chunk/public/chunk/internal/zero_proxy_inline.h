@@ -25,9 +25,9 @@
 #include "chunk/internal/in_t.h"       // InT<T>
 #include "chunk/internal/zero_proxy.h" // the declarations these bodies belong to
 #include "chunk/config.h" // chunk_config::use_compression_with_counter, chunk_config::use_fast_block_compression
-#include "chunk/internal/PMP_CHUNK.h"                    // get_thr_rank_fast
-#include "chunk/internal/arithmetic_context.h"           // ArithmeticAffectationProxyContext
-#include "chunk/internal/concept_is_clean_assignement.h" // BaseT
+#include "chunk/internal/pmp_chunk.h"                   // get_thr_rank_fast
+#include "chunk/internal/arithmetic_context.h"          // ArithmeticAffectationProxyContext
+#include "chunk/internal/concept_is_clean_assignment.h" // BaseT
 #include "chunk/internal/read_reclaim.h"    // read_reclaim::PassScope (perform_compression / compress in a region)
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 #include "chunk/log.h"                      // CHUNK_LOG, CHUNK_LOG_ALWAYS
@@ -786,7 +786,7 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::perform_compression() const
 // ---------------------------------------------------------------------------
 
 template <typename T>
-[[nodiscard]] int zero::PointerMap<T>::get_num_tab(Key key) const noexcept
+[[nodiscard]] int zero::PointerMap<T>::get_array_id(Key key) const noexcept
 {
     const internal::RegistryReadLock registry_lock(internal::registry_mutex());
     for (const auto& [entry_key, tab] : vec_)
@@ -797,7 +797,7 @@ template <typename T>
         }
     }
 
-    CHUNK_INVARIANT_FAILED("[PointerMapChunk get_num_tab] key NOT FOUND: this={} size={} key={}", this, vec_.size(),
+    CHUNK_INVARIANT_FAILED("[PointerMapChunk get_array_id] key NOT FOUND: this={} size={} key={}", this, vec_.size(),
                            key);
 }
 
@@ -806,43 +806,43 @@ template <typename T>
 // ---------------------------------------------------------------------------
 
 template <typename Derived, typename T, bool Enabled>
-void zero::ProxyFastCompPolicy<Derived, T, Enabled>::set_num_tab() noexcept
+void zero::ProxyFastCompPolicy<Derived, T, Enabled>::set_array_id() noexcept
 {
-    // Armed by the array's operator[] (see zero_any::Proxy::set_num_tab): the
+    // Armed by the array's operator[] (see zero_any::Proxy::set_array_id): the
     // registry lookup only for a proxy armed otherwise.
-    if (num_tab_ >= 0) [[likely]]
+    if (array_id_ >= 0) [[likely]]
     {
         return;
     }
-    num_tab_ = Derived::get_num_tab(ptr_on_array_);
+    array_id_ = Derived::get_array_id(ptr_on_array_);
 }
 
 template <typename Derived, typename T, bool Enabled>
 [[nodiscard]] int
-zero::ProxyFastCompPolicy<Derived, T, Enabled>::get_num_tab_async(auto*                               ctx,
-                                                                  [[maybe_unused]] ArrayKey<Chunk<T>> ptr) noexcept
+zero::ProxyFastCompPolicy<Derived, T, Enabled>::get_array_id_async(auto*                               ctx,
+                                                                   [[maybe_unused]] ArrayKey<Chunk<T>> ptr) noexcept
 {
-    // The context's num_tab, captured at enqueue: the one the replay proxy
+    // The context's array_id, captured at enqueue: the one the replay proxy
     // is armed with (make_proxy_with_info), without a registry scan per
     // replayed op. Check builds compare it with the registry while the
     // array is still registered.
     if constexpr (build_config::any_check)
     {
-        // Once per (array, num_tab) and registry generation, not per replayed
+        // Once per (array, array_id) and registry generation, not per replayed
         // op: see verify_once_per_generation().
-        const int num_tab = ctx->num_tab;
+        const int array_id = ctx->array_id;
         internal::verify_once_per_generation(
-            ptr, std::pair{ptr, num_tab},
-            [ptr, num_tab]
+            ptr, std::pair{ptr, array_id},
+            [ptr, array_id]
             {
-                if (Derived::share_info_array->exists(ptr) && Derived::share_info_array->get_num_tab(ptr) != num_tab)
+                if (Derived::array_registry->exists(ptr) && Derived::array_registry->get_array_id(ptr) != array_id)
                 {
-                    CHUNK_INVARIANT_FAILED("[Proxy get_num_tab_async] ctx num_tab={} but the registry says {} for {}",
-                                           num_tab, Derived::share_info_array->get_num_tab(ptr), ptr);
+                    CHUNK_INVARIANT_FAILED("[Proxy get_array_id_async] ctx array_id={} but the registry says {} for {}",
+                                           array_id, Derived::array_registry->get_array_id(ptr), ptr);
                 }
             });
     }
-    return ctx->num_tab;
+    return ctx->array_id;
 }
 
 // ---------------------------------------------------------------------------
@@ -912,7 +912,7 @@ zero::Proxy<T>::operator T() const noexcept
         // it runs inside a flush, so go straight to the gated read.
         if (chunk_size_frozen_ == 0U && ptr_on_array_ != nullptr) [[likely]]
         {
-            if (!ptr_on_array_->is_chunk_dirty(num_chunk_)) [[likely]]
+            if (!ptr_on_array_->is_chunk_dirty(chunk_index_)) [[likely]]
             {
                 // A pure read, like element_at: inside a ReadSection, or a
                 // pass in the region may release the buffer between the

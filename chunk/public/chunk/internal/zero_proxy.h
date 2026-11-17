@@ -26,13 +26,13 @@
 #include "chunk/config.h"                      // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
 #include "chunk/internal/array_chunk_for.h"    // ArrayKey (the registry keys)
 #include "chunk/internal/chunk_size_policy.h"  // set_thread_chunk_size, set_thread_alloc_key
-#include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment, ElementAddable, ElementModulable
-#include "chunk/internal/in_t.h"                         // InT<T>
-#include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/conditional_counter.h"          // CounterValueT — resync_nb_val_eq_zero
-#include "chunk/internal/def_force_inline.h"             // CHUNK_FORCE_INLINE
-#include "chunk/internal/proxy_base.h"                   // ProxyBase
-#include "chunk/internal/read_reclaim.h"                 // read_reclaim::ReadSection
+#include "chunk/internal/concept_is_clean_assignment.h" // IsCleanAssignment, ElementAddable, ElementModulable
+#include "chunk/internal/in_t.h"                        // InT<T>
+#include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
+#include "chunk/internal/conditional_counter.h"         // CounterValueT — resync_nb_val_eq_zero
+#include "chunk/internal/def_force_inline.h"            // CHUNK_FORCE_INLINE
+#include "chunk/internal/proxy_base.h"                  // ProxyBase
+#include "chunk/internal/read_reclaim.h"                // read_reclaim::ReadSection
 #include "chunk/internal/chunk_stats.h" // increm_chunk_read<> (a dependent call the include tools cannot attribute)
 #include "chunk/internal/immortal.h"    // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/same_value.h"  // same_value
@@ -63,14 +63,14 @@ class PointerMap : public PointerMapLinear<int, std::vector<std::pair<ArrayKey<C
     using Key = ArrayKey<Chunk<T>>;
 
     /**
-     * @brief Register @p key with table number @p num_tab.
+     * @brief Register @p key with table number @p array_id.
      * @param key Array address used as the key.
-     * @param num_tab Table number associated with the key.
+     * @param array_id Table number associated with the key.
      */
-    void insert(Key key, int num_tab)
+    void insert(Key key, int array_id)
     {
         const internal::RegistryWriteLock registry_lock(internal::registry_mutex());
-        vec_.emplace_back(key, num_tab);
+        vec_.emplace_back(key, array_id);
     }
 
     /**
@@ -79,7 +79,7 @@ class PointerMap : public PointerMapLinear<int, std::vector<std::pair<ArrayKey<C
      * @return The registered table number.
      * @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
      */
-    [[nodiscard]] int get_num_tab(Key key) const noexcept;
+    [[nodiscard]] int get_array_id(Key key) const noexcept;
 
     /**
      * @brief Swap the table numbers registered for two existing keys.
@@ -126,7 +126,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
 
     // --- fast-block-compression surface: this policy's Enabled is that axis
     // (chunk_config::use_fast_block_compression).
-    using Base::num_tab_;
+    using Base::array_id_;
     using Base::ptr_on_array_;
     using Base::read_values;
     using Base::read_values_async;
@@ -182,7 +182,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
     /**
      * @brief Resolve and cache this proxy's table number from ptr_on_array.
      */
-    void set_num_tab() noexcept;
+    void set_array_id() noexcept;
 
     /**
      * @brief Post-write entry point for callers that already have both the
@@ -220,7 +220,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      * @param ptr The array the context was enqueued from.
      * @return The table number @p ptr belongs to.
      */
-    [[nodiscard]] static int get_num_tab_async(auto* ctx, [[maybe_unused]] ArrayKey<Chunk<T>> ptr) noexcept;
+    [[nodiscard]] static int get_array_id_async(auto* ctx, [[maybe_unused]] ArrayKey<Chunk<T>> ptr) noexcept;
 
     /**
      * @brief Async-context counterpart of execute_inplace_operation().
@@ -245,16 +245,16 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
     /**
      * @brief Clear one chunk's "queued for compression" flag, so a later
      *        write can queue it again.
-     * @param num_tab Which table the chunk belongs to.
-     * @param num_chunk The chunk's index within that table.
+     * @param array_id Which table the chunk belongs to.
+     * @param chunk_index The chunk's index within that table.
      *
      * @warning Do not remove in favour of the ProxyBase one it hides: the base
      *          stores with memory_order_release, this one seq_cst (plain
      *          assignment). Dropping it would weaken zero's ordering of the flag.
      */
-    static void reset_tab_inside_list_to_compress(int num_tab, int num_chunk) noexcept
+    static void reset_tab_inside_list_to_compress(int array_id, int chunk_index) noexcept
     {
-        tab_is_inside_chunk_list_to_compress[num_tab][num_chunk] = 0;
+        tab_is_inside_chunk_list_to_compress[array_id][chunk_index] = 0;
     }
 
   protected:
@@ -265,8 +265,8 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      */
     void set_info_on_chunk() noexcept
     {
-        set_num_tab(); // this policy's no-arg overload (above); Proxy's `using Base::set_num_tab` would hide it through
-                       // derived()
+        set_array_id(); // this policy's no-arg overload (above); Proxy's `using Base::set_array_id` would hide it
+                        // through derived()
         derived().Base::set_ptr_is_inside_chunk_list_to_compress();
     }
 
@@ -398,7 +398,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     using FastCompPolicy::set_info_on_chunk;
 
     using Base::add_to_compression_list;
-    using Base::set_num_tab;
+    using Base::set_array_id;
 
     using Base::ptr_is_inside_chunk_list_to_compress_; ///< Per-chunk compression flag pointer
     using Base::tab_is_inside_chunk_list_to_compress;  ///< Global compression tracking array
@@ -425,10 +425,10 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     ///
     using Base::chunk_; ///< owning chunk
 
-    using Base::num_tab_; ///< tab index for this array
+    using Base::array_id_; ///< tab index for this array
 
+    using Base::chunk_index_;       ///< chunk index
     using Base::chunk_size_frozen_; ///< non-zero on a proxy rebuilt from a replay context
-    using Base::num_chunk_;         ///< chunk index
     using Base::ptr_on_array_;      ///< pointer to array (for tab lookup)
 
     using Base::arithmetic_assign;
@@ -440,7 +440,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     static constexpr bool is_bool     = std::is_same_v<T, bool>;
     static constexpr bool is_not_bool = !is_bool;
 
-    // reset_tab_inside_list_to_compress(), set_num_tab() and the
+    // reset_tab_inside_list_to_compress(), set_array_id() and the
     // mark_for_compression_* family live on ProxyFastCompPolicy<..., true>;
     // manage_full_zero() on the <..., false> (counter) specialisation.
 
@@ -773,9 +773,9 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @param ptr The array to look up.
      * @return The table number registered for @p ptr.
      */
-    [[nodiscard]] static int get_num_tab(ArrayKey<Chunk<T>> ptr) noexcept
+    [[nodiscard]] static int get_array_id(ArrayKey<Chunk<T>> ptr) noexcept
     {
-        return share_info_array->get_num_tab(ptr);
+        return array_registry->get_array_id(ptr);
     }
 
     /**
@@ -784,13 +784,13 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @param array_ptr This proxy's array (ptr_on_array).
      * @return The table number of @p array_ptr.
      */
-    [[nodiscard]] int get_num_tab_cached(ArrayKey<Chunk<T>> array_ptr) const noexcept
+    [[nodiscard]] int get_array_id_cached(ArrayKey<Chunk<T>> array_ptr) const noexcept
     {
-        return this->num_tab_ >= 0 ? this->num_tab_ : get_num_tab(array_ptr);
+        return this->array_id_ >= 0 ? this->array_id_ : get_array_id(array_ptr);
     }
 
     /// Registry of every zero::Array: array address -> table number.
-    static inline constinit internal::LazyImmortal<PointerMap<T>> share_info_array;
+    static inline constinit internal::LazyImmortal<PointerMap<T>> array_registry;
 };
 
 } // namespace zero

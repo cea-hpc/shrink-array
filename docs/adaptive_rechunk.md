@@ -179,7 +179,7 @@ way. The mode is no longer an environment variable (`CHUNK_ALLOC_AFFINITY_EAGER`
 ## 6. What must disappear with the old storage
 
 A rechunk builds the new storage under a **new array identifier**
-(`num_tab`) and destroys the old one. Everything indexed by the old identifier must be
+(`array_id`) and destroys the old one. Everything indexed by the old identifier must be
 **freed**, not just emptied. Two leaks of this kind were fixed in September 2026:
 
 - **`zero_any`**: the per-chunk metadata rows (constant type, 1 byte; second

@@ -81,7 +81,7 @@ The chunk size is held **by each array** (`size_policy_`, see
 The global index `i` is split by two single-cycle operations:
 
 ```cpp
-const int num_chunk = i >> size_policy_.decalage();   // chunk number
+const int chunk_index = i >> size_policy_.decalage();   // chunk number
 const int num       = i &  size_policy_.modulo();     // position in the chunk
 ```
 
@@ -113,15 +113,15 @@ value, identified by an **index** `ind`.
 ### 4.2 The second value registry
 
 The second value **is not stored in the array**: it lives in the shared registry
-<tt>zero_one_value::Proxy\<T\>\::share_info_array</tt>, indexed by the **address** of the array. Each entry is an
+<tt>zero_one_value::Proxy\<T\>\::array_registry</tt>, indexed by the **address** of the array. Each entry is an
 `InfArrayT` triplet:
 
 ```
-(second_value, ind, num_tab)
+(second_value, ind, array_id)
 ```
 
 - `ind`: the index of the `cst_val2` constant buffer for this value;
-- `num_tab`: the array number, which indexes the per-array metadata tables
+- `array_id`: the array number, which indexes the per-array metadata tables
   (for example the "already a compression candidate" flags).
 
 The registry remains the source of truth, but each array keeps a **mirror** of it
@@ -141,10 +141,10 @@ The read operator returns a **value**, never a reference:
 ```cpp
 CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](IndType i) const noexcept
 {
-    const int num_chunk = i >> size_policy_.decalage();
+    const int chunk_index = i >> size_policy_.decalage();
     const int num       = i & size_policy_.modulo();
-    const auto& chunk_t = chunk_list[num_chunk];
-    sync_chunk(chunk_t, num_chunk, num);      // read barrier (OpenMP)
+    const auto& chunk_t = chunk_list[chunk_index];
+    sync_chunk(chunk_t, chunk_index, num);      // read barrier (OpenMP)
     return chunk_t[num];
 }
 ```
@@ -173,10 +173,10 @@ the buffer: **use it only on a materialised chunk**, since it bypasses the proxy
 ```cpp
 ProxyType operator[](IndType i) noexcept
 {
-    const int num_chunk = i >> size_policy_.decalage();
+    const int chunk_index = i >> size_policy_.decalage();
     const int num       = i & size_policy_.modulo();
-    const ProxyType& val = chunk_list[num_chunk][num];
-    val.set_this_and_num_chunk(&derived(), num_chunk, num_tab);   // array, chunk, num_tab
+    const ProxyType& val = chunk_list[chunk_index][num];
+    val.set_this_and_chunk_index(&derived(), chunk_index, array_id);   // array, chunk, array_id
     val.arm_inf_array(derived().registry_mirror());                // zero_one_value: the mirror
     return val;
 }
@@ -344,7 +344,7 @@ Each thread keeps **one list of candidate chunks per second value**:
 Manager::zero_one_value_candidates_map_thr[rang][second_value]
 ```
 
-Each entry holds `(chunk, num_chunk, num_tab, number of elements)`. The number of elements
+Each entry holds `(chunk, chunk_index, array_id, number of elements)`. The number of elements
 is that of the array's geometry **at the time of queuing**: the thread that
 processes the entry may have another "ambient" size (after a rechunk).
 
@@ -369,7 +369,7 @@ applied first:
   never queued again.
 
 An atomic flag per chunk ("already a candidate", `tab_is_inside_chunk_list_to_compress`,
-indexed by `num_tab`) guarantees that a chunk is queued **only once** until the
+indexed by `array_id`) guarantees that a chunk is queued **only once** until the
 next pass.
 
 The flag has two more values inside a pass: as soon as it has scanned a candidate, the pass
@@ -461,11 +461,11 @@ from the state of the chunks). The steps:
    `copy_range`, and a new chunk whose sources were all compressed is
    **folded** immediately (the variant's `compress()` on this chunk, which refuses if the
    sources' constants differ);
-5. **swap identities**: `num_tab` and the registry keys change hands, and the
+5. **swap identities**: `array_id` and the registry keys change hands, and the
    mirror is re-read on both sides;
 6. destroy the old storage.
 
-The old storage is destroyed under its own identifier (`num_tab`), which nothing reuses:
+The old storage is destroyed under its own identifier (`array_id`), which nothing reuses:
 everything indexed by it must be **freed**, not just emptied. For `zero_one_value`, these are
 the "in compression list" indicators (one byte per chunk), freed at the end of
 `clear_core()`, after the candidates are purged. The threshold that triggers compression
@@ -603,4 +603,4 @@ CMake options related to benchmark performance:
 | geometry | `internal/chunk_size_policy.h` |
 | rechunk, decider | `internal/array_chunk_rechunk_inline.h`, `internal/array_chunk_rechunk_refill.h`, `chunk_size_advisor.h` |
 | range operations | `range_ops.h` |
-| validation harnesses | `examples/validation/` (`rechunk_validation`, `compress_roundtrip`, `deferred_path_validation`, `pool_accounting`, `fill_range_mt_validation`, …) |
+| validation harnesses | `examples/validation/` (`rechunk_validation`, `compress_roundtrip_validation`, `deferred_path_validation`, `pool_accounting_validation`, `fill_range_mt_validation`, …) |

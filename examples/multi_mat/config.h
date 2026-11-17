@@ -18,7 +18,7 @@
 
 /**
  * @file config.h
- * @brief Every compile-time switch of the multi-mat example, as constants.
+ * @brief Every compile-time switch of the multi_mat example, as constants.
  *
  * The only file of the example that reads a preprocessor symbol. Everything
  * else tests the `constexpr bool`s below with `if constexpr`, so the
@@ -56,13 +56,13 @@
  * both modes: its compress() is an audit pass, not the compressor.
  */
 
-#include "chunk/internal/PMP_CHUNK.h" // the OpenMP shims of the library (serial build: 1 thread, rank 0)
+#include "chunk/internal/pmp_chunk.h" // the OpenMP shims of the library (serial build: 1 thread, rank 0)
 #include "chunk/config.h"             // shrink_array::build_config::use_openmp, chunk_config::stats
 #include "chunk/phases.h"             // shrink_array::begin_parallel_phase, finalize_barrier_phase
 
 #if defined(MULTIMAT_EMBEDDED_COMPRESSION) && !CHUNK_OPT_OMPT
     #error \
-        "multi-mat-embedded rests on the OMPT tool of the chunk library, which this build has not (CHUNK_OPT_OMPT): build with Clang or IntelLLVM, CHUNK_OPENMP=ON, no TSan -- gcc's libgomp has no OMPT"
+        "multi_mat_embedded rests on the OMPT tool of the chunk library, which this build has not (CHUNK_OPT_OMPT): build with Clang or IntelLLVM, CHUNK_OPENMP=ON, no TSan -- gcc's libgomp has no OMPT"
 #endif
 
 // `#pragma forceinline` is the classic Intel compiler's; gcc and clang warn

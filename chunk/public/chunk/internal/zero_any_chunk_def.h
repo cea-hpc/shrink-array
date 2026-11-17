@@ -37,7 +37,7 @@ class ChunkDef
     constexpr static int size_min_list_chunk_to_check_compress = 500;
 
     /// List threshold = chunks created / (this * max threads), floored by size_min_list_chunk_to_check_compress.
-    constexpr static int factor_div_nb_chunk_for_compress = 50;
+    constexpr static int factor_div_chunk_count_for_compress = 50;
 
     /// Floor of the global (unsized) free-list reuse budget, in buffers per thread.
     constexpr static int size_min_buffer_reuse = 500;

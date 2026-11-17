@@ -72,7 +72,7 @@
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
 #include "chunk/config.h"                // chunk_config::use_zero*, build_config::needs_explicit_phases
-#include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
 #include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/range_ops.h"             // for_each_value / for_each_span / read_range (bulk-reads step)
 #include "chunk/print.h"                 // shrink_array::println
@@ -172,16 +172,16 @@ constexpr long   tail_len     = 13;    ///< ... then a partial chunk of tail_len
 
 double sorted_at(long index, long chunk_sz)
 {
-    const long num_chunk = index / chunk_sz;
-    if (num_chunk < c0)
+    const long chunk_index = index / chunk_sz;
+    if (chunk_index < c0)
     {
         return 0.0;
     }
-    if (num_chunk < c1)
+    if (chunk_index < c1)
     {
         return 10.0 + static_cast<double>((index - (c0 * chunk_sz)) / 3);
     }
-    if (num_chunk < c2)
+    if (chunk_index < c2)
     {
         return second_value;
     }

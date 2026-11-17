@@ -44,7 +44,7 @@
 #include "chunk/config.h"                   // g_ompt_suspended (defined here), chunk_config::is_shrink_enabled
 #include "chunk/internal/singleton.h"       // SingletonChk
 #include "chunk/phases.h"                   // begin_parallel_phase, finalize_parallel_phase, finalize_barrier_phase
-#include "chunk/internal/PMP_CHUNK.h"       // g_fast_omp_rank, CHUNK_PMP_IN_PARALLEL_REGION, CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/pmp_chunk.h"       // g_fast_omp_rank, CHUNK_PMP_IN_PARALLEL_REGION, CHUNK_PMP_MAX_THREADS
 #include "chunk/log.h"                      // CHUNK_LOG, CHUNK_LOG_ALWAYS
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (CHUNK_REQUIRE_OMPT)
 #include "chunk/internal/phase_guard.h"     // phase_guard::teams (one top-level team at a time)

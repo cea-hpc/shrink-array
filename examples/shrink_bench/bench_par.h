@@ -81,7 +81,7 @@
 #include <vector>          // std::vector (a call's rank times, the sites)
 
 #include "bench_int.h"                // Int
-#include "chunk/internal/PMP_CHUNK.h" // shrink_array::pmp::team, pmp::Team, pmp::Options, pmp::backend
+#include "chunk/internal/pmp_chunk.h" // shrink_array::pmp::team, pmp::Team, pmp::Options, pmp::backend
 
 #if defined(BENCH_PAR_TBB) && BENCH_PAR_TBB
     #include <oneapi/tbb/blocked_range.h>  // oneapi::tbb::blocked_range (the virtual ranks)

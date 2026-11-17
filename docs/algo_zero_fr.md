@@ -24,7 +24,7 @@
 Le pointeur `values` sert donc à la fois de données et d'état. Un chunk ne connaît pas son
 propre nombre d'éléments : la géométrie vit dans la politique de taille du tableau
 (`size_policy_`), et c'est pourquoi les listes de candidats à la compression transportent le
-nombre d'éléments de chaque chunk (voir `TChunk.h`).
+nombre d'éléments de chaque chunk (voir `chunk_tuples.h`).
 
 La bibliothèque : `shrink_array::zero` (elle définit `CHUNK_VARIANT_ZERO`). Code : `chunk/internal/zero_chunk.h`, `chunk/zero_array.h`,
 `internal/zero_chunk_inline.h`, `internal/zero_array_inline.h`, `internal/zero_proxy.h`.
@@ -145,7 +145,7 @@ cible, donc une seule liste de sortie. Les builds séquentiels n'ont pas de pass
 ## 6. Le seuil de déclenchement
 
 Il vaut `somme_chunk_create / (100 × nombre de threads)`, avec un plancher de 100 candidats
-(`ChunkDef` : `factor_div_nb_chunk_for_compress`, `size_min_list_chunk_to_check_compress`).
+(`ChunkDef` : `factor_div_chunk_count_for_compress`, `size_min_list_chunk_to_check_compress`).
 `somme_chunk_create` est le nombre de chunks existants de ce type. Deux corrections de
 septembre 2026 le maintiennent exact :
 

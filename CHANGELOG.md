@@ -139,13 +139,24 @@ the tag's checksum to the recipe.
   `CHUNK_PMP_MAX_THREADS`; `chunk/print.h` (was `chunk/internal/print.h`): `print` / `println`;
   `set_active_chunk_size()`, `set_thread_chunk_size()` (through `chunk/chunk_size_advisor.h`)
   and `zero_any::Chunk` (through `chunk/zero_any_array.h`, for `sizeof` in the advisor's
-  options), and the arrays' `set_chunk_size()` (an empty array's geometry). 18 public headers. `simple_array`, `test_vecto_chunk`, `variant_compare`,
+  options), and the arrays' `set_chunk_size()` (an empty array's geometry). 18 public headers. `simple_array`, `vectorisation_demo`, `variant_compare`,
   `access_cost`, `advisor_demo`, `getting_started` and `bool_arrays` include public headers
   only, and `check_public_api` fails when an example outside the harnesses and the benchmarks
   includes an internal one.
 
 ### Changed
 
+- Internal names, none of them part of the interface. Headers of `chunk/internal/`:
+  `concept_is_clean_assignment.h` (its name was misspelt), `pmp_chunk.h` and `chunk_tuples.h`
+  (`PMP_CHUNK.h` and `TChunk.h` were the two files not in snake_case), `pow2.h` (`func_p2.h`),
+  `crtp_support.h` (`crp_helper.h`). The French abbreviations: an array's number is `array_id`
+  (`num_tab`), their count `array_count` (`nb_tab`), `ArrayUsers` (`TabUsers`); a chunk's number
+  is `chunk_index` (`num_chunk`), their count `chunk_count_` (`nb_chunk_`). The registry of the
+  arrays is `array_registry` (`share_info_array`). Examples:
+  `examples/multi_mat` and its executables `multi_mat`, `multi_mat_embedded` (the one directory
+  with a hyphen), `examples/vectorisation_demo` (`test_vecto_chunk`: an example, not a test);
+  the harnesses `compress_roundtrip_validation` and `pool_accounting_validation` take the
+  suffix of the others, and their ctest names with it.
 - Std backend with the library's teams on TBB: `CHUNK_PMP_JOIN_US`, how long such a team waits
   for its TBB tasks to start, is 5 ms by default instead of 200 us. On a 144-thread AArch64 node
   the TBB bench (`shrink_bench_tbb_zero_any_int64_dyn --multiply 3 --mode perf`) ran 79.5 s with
@@ -224,7 +235,7 @@ the tag's checksum to the recipe.
 - `fill_range_mt` skips a chunk already at the fill value with one test, as `fill_range` does,
   instead of arming it element by element; `fill_range` does the same on its `bool` path.
 - **The public interface, narrowed and frozen** (breaking). The public headers are what
-  `docs/api.md` documents; `PMP_CHUNK.h`, `type_state_registry.h`, `chunk_traits.h`,
+  `docs/api.md` documents; `pmp_chunk.h`, `type_state_registry.h`, `chunk_traits.h`,
   `global_stats_chunk_list.h`, `ring_log_debug.h`, `singleton.h`, `term_color.h`,
   `type_name.h`, `zero_chunk.h`, `zero_one_value_chunk.h`, `zero_any_chunk.h`, `pattern_chunk.h`,
   `zero_chunk_def.h`, `zero_one_value_chunk_def.h` and `zero_any_chunk_def.h` are under
@@ -299,7 +310,7 @@ the tag's checksum to the recipe.
   time of `finalize_parallel_phase()` as a part of the serial time, which it is not, and left
   it out of the thread-time it splits: its report gives the three wall times apart, and a
   finalize share.
-- `multi-mat` built with gcc on x86-64: the compute loop (`LoopsSimd::omp_foreach_simd_red_sum`,
+- `multi_mat` built with gcc on x86-64: the compute loop (`LoopsSimd::omp_foreach_simd_red_sum`,
   `cos + sin + tan` under `omp simd`) never vectorised. glibc declares its vector `cos`, `sin`
   and `tan` (libmvec) to gcc only under `__FAST_MATH__`, which the flags of
   `chunk_enable_fast_math` do not define; gcc reported "function is not vectorizable" (the
@@ -316,11 +327,11 @@ the tag's checksum to the recipe.
   -> 21.0-22.5 s). `shrink_bench` is left as it was. The comment of
   `chunk_enable_fast_math` says it, and that clang knows libmvec's `tan` only since LLVM 19.
 - Check builds (`CHECK_OPTIM`, and the sanitizer and Debug builds) were several times slower
-  than the others under OpenMP: the cross-check of a proxy's `num_tab` against the registry,
+  than the others under OpenMP: the cross-check of a proxy's `array_id` against the registry,
   done on every write (`zero_any`) and every replayed op (`zero`), took the registries' shared
   lock, and every thread bounced its reader count (`pthread_rwlock_rdlock` + `unlock` were 91 %
   of `shrink_bench_omp_zero_any_dyn`). A thread now skips a check it already made on the same
-  array and `num_tab` while no registry has changed: a generation counter that
+  array and `array_id` while no registry has changed: a generation counter that
   `RegistryWriteLock` bumps, and a per-thread memo of 16 sets of 4 ways (a direct-mapped one
   let two arrays written in turn evict each other in about one run out of two, depending on
   where ASLR put them). The bench at 14 threads: 7–8 s → 0.6–1.1 s.
@@ -330,7 +341,7 @@ the tag's checksum to the recipe.
   the bench on a many-core machine. One counter per thread on a cache line of its own, summed
   by the reclaim; the seq_cst handshake is unchanged.
 - Check builds, `zero_one_value` (and `ArrayChunkBits`): the comparison of a proxy's armed
-  second-value index and `num_tab` with the registry, on every write
+  second-value index and `array_id` with the registry, on every write
   (`ProxySpec::armed_inf_array()`), took the registries' shared lock too: 95 % of
   `shrink_bench_omp_zero_one_value_1024` at 160 threads. It goes through the same per-thread memo.
   At 14 threads, `--mode perf --divisor 10 --iter_max 100`: 82–89 s → 1.7–1.8 s.
@@ -340,7 +351,7 @@ the tag's checksum to the recipe.
   capacity of 1,431,655,763) and pass the "does not fit" test. The sizes are now compared before
   the subtraction, and an element size below 1 is refused with them. No size the library asks
   for reaches it (Coverity 661091).
-- `test_vecto_chunk` and `multi-mat`: `main()` catches `std::exception` and says it, as the
+- `vectorisation_demo` and `multi_mat`: `main()` catches `std::exception` and says it, as the
   other examples do, instead of ending in `std::terminate()` (Coverity 661907, 661959, 661960).
 - Documentation brought back in line with the sources, in both languages.
   `docs/algo_pattern_fr.md` §5 lacked the paragraph on the OMPT pass
@@ -402,9 +413,9 @@ the tag's checksum to the recipe.
   constructor grew the per-array tables that every write of every other thread indexes, and
   wrote the identity registry and the manager's totals with no lock. Building and destroying an
   array now take a cold-path lock (`internal/cold_path_lock.h`); the tables indexed by
-  `num_tab` no longer move their rows (`internal/stable_table.h`); the two thresholds the write
+  `array_id` no longer move their rows (`internal/stable_table.h`); the two thresholds the write
   path reads are atomics; the identity registries have a reader lock. A work array destroyed
-  inside a region is torn down on its thread's rank alone (`internal/tab_users.h`: no walk of
+  inside a region is torn down on its thread's rank alone (`internal/array_users.h`: no walk of
   the other ranks' lists, no pass over the other arrays, no allocator set of its own) after one
   `read_reclaim` grace period. Arrays another rank has used keep the sequential-point teardown.
   `resize()`, copies and `rechunk_to()` stay sequential points. `region_storage_validation`
@@ -438,7 +449,7 @@ the tag's checksum to the recipe.
   same element type, against the one-slab-size-per-type invariant `slab_of()` relies on
   (`tc_allocator.h`). Out of contract (`docs/api.md`: once), now enforced: a call that would
   change the block size is ignored with a warning; the same size again is a harmless repeat.
-  `pool_accounting` checks both.
+  `pool_accounting_validation` checks both.
 - `a.push_back(a(i))` and `a.resize(n, a(i))` past the capacity, with an element of more than 16
   bytes (passed by reference): `resize()` ran first, and its compression pass could release the
   buffer `a(i)` points into, which the write of the new element could then reuse, filled with the

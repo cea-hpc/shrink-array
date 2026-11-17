@@ -26,11 +26,11 @@
 #include "chunk/internal/cold_path_lock.h"       // verify_once_per_generation (check builds)
 #include "chunk/internal/zero_one_value_proxy.h" // the declarations these bodies belong to
 #include "chunk/config.h"             // chunk_config::use_compression_with_counter, build_config::chunk_dynamic
-#include "chunk/internal/PMP_CHUNK.h" // get_thr_rank_fast
-#include "chunk/internal/arithmetic_context.h"           // ArithmeticAffectationContext
-#include "chunk/internal/chunk_size_policy.h"            // DynChunkSizeGuard, set_thread_chunk_size
-#include "chunk/internal/concept_is_clean_assignement.h" // BaseT
-#include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
+#include "chunk/internal/pmp_chunk.h" // get_thr_rank_fast
+#include "chunk/internal/arithmetic_context.h"          // ArithmeticAffectationContext
+#include "chunk/internal/chunk_size_policy.h"           // DynChunkSizeGuard, set_thread_chunk_size
+#include "chunk/internal/concept_is_clean_assignment.h" // BaseT
+#include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
 #include "chunk/internal/test_hooks.h"   // TEST KNOB: test_hooks::maybe_read_delay
 #include "chunk/log.h"                   // CHUNK_LOG_ALWAYS (verbose)
@@ -41,7 +41,7 @@ namespace shrink_array
 
 // No acquire fence ends set_info_second_value_ind() or the two
 // set_info_on_chunk(): they would follow plain (non-atomic) reads of the
-// share_info_array registry and pair with no release. Do not add one: on
+// array_registry registry and pair with no release. Do not add one: on
 // aarch64 it was the hottest instruction of assign_impl (several % of a run).
 
 // The armed mirror, checked against the registry under any_check; nullptr when
@@ -54,24 +54,24 @@ const zero_one_value::ProxySpec<T, Derived>::InfArrayT* zero_one_value::ProxySpe
     {
         if constexpr (build_config::any_check)
         {
-            // ind and num_tab only: ind maps one-to-one to the value, and a
+            // ind and array_id only: ind maps one-to-one to the value, and a
             // value compare would raise a false alarm on a NaN second value.
-            // Once per (array, ind, num_tab) and registry generation, not per
+            // Once per (array, ind, array_id) and registry generation, not per
             // write: see verify_once_per_generation().
-            const auto ptr     = get_ptr_on_array();
-            const int  ind     = inf_array_src_->ind;
-            const int  num_tab = inf_array_src_->num_tab;
+            const auto ptr      = get_ptr_on_array();
+            const int  ind      = inf_array_src_->ind;
+            const int  array_id = inf_array_src_->array_id;
             internal::verify_once_per_generation(
-                ptr, std::tuple{ptr, ind, num_tab},
-                [ptr, ind, num_tab]
+                ptr, std::tuple{ptr, ind, array_id},
+                [ptr, ind, array_id]
                 {
                     const InfArrayT reg = Derived::get_info_second_value(ptr);
-                    if (reg.ind != ind || reg.num_tab != num_tab)
+                    if (reg.ind != ind || reg.array_id != array_id)
                     {
-                        CHUNK_INVARIANT_FAILED("zero_one_value::ProxySpec::load_inf_array: armed (ind {}, num_tab {}) "
-                                               "differs from the registry's (ind {}, num_tab {}) for array {} -- a "
+                        CHUNK_INVARIANT_FAILED("zero_one_value::ProxySpec::load_inf_array: armed (ind {}, array_id {}) "
+                                               "differs from the registry's (ind {}, array_id {}) for array {} -- a "
                                                "registry write without sync_registry_mirror()?",
-                                               ind, num_tab, reg.ind, reg.num_tab, ptr);
+                                               ind, array_id, reg.ind, reg.array_id, ptr);
                     }
                 });
         }
@@ -97,24 +97,24 @@ const zero_one_value::ProxySpec<T, Derived>::InfArrayT* zero_one_value::ProxySpe
     {
         if constexpr (build_config::any_check)
         {
-            // ind and num_tab only: ind maps one-to-one to the value, and a
+            // ind and array_id only: ind maps one-to-one to the value, and a
             // value compare would raise a false alarm on a NaN second value.
-            // Once per (array, ind, num_tab) and registry generation, not per
+            // Once per (array, ind, array_id) and registry generation, not per
             // write: see verify_once_per_generation().
-            const auto ptr     = get_ptr_on_array();
-            const int  ind     = inf_array_src_->ind;
-            const int  num_tab = inf_array_src_->num_tab;
+            const auto ptr      = get_ptr_on_array();
+            const int  ind      = inf_array_src_->ind;
+            const int  array_id = inf_array_src_->array_id;
             internal::verify_once_per_generation(
-                ptr, std::tuple{ptr, ind, num_tab},
-                [ptr, ind, num_tab]
+                ptr, std::tuple{ptr, ind, array_id},
+                [ptr, ind, array_id]
                 {
                     const InfArrayT reg = Derived::get_info_second_value(ptr);
-                    if (reg.ind != ind || reg.num_tab != num_tab)
+                    if (reg.ind != ind || reg.array_id != array_id)
                     {
-                        CHUNK_INVARIANT_FAILED("zero_one_value::ProxySpec::load_inf_array: armed (ind {}, num_tab {}) "
-                                               "differs from the registry's (ind {}, num_tab {}) for array {} -- a "
+                        CHUNK_INVARIANT_FAILED("zero_one_value::ProxySpec::load_inf_array: armed (ind {}, array_id {}) "
+                                               "differs from the registry's (ind {}, array_id {}) for array {} -- a "
                                                "registry write without sync_registry_mirror()?",
-                                               ind, num_tab, reg.ind, reg.num_tab, ptr);
+                                               ind, array_id, reg.ind, reg.array_id, ptr);
                     }
                 });
         }
@@ -150,14 +150,14 @@ void zero_one_value::ProxySpec<T, Derived>::set_info_on_chunk()
         inf_array_    = *src;
         second_value_ = src->second_value;
         ind_          = src->ind;
-        derived().set_num_tab(src->num_tab); // what set_num_tab() would read back from inf_array
+        derived().set_array_id(src->array_id); // what set_array_id() would read back from inf_array
     }
     else
     {
         inf_array_    = Derived::get_info_second_value(get_ptr_on_array());
         second_value_ = inf_array_.second_value;
         ind_          = inf_array_.ind;
-        derived().set_num_tab();
+        derived().set_array_id();
     }
 
     if constexpr (chunk_config::use_fast_block_compression)
@@ -213,12 +213,12 @@ void zero_one_value::ProxySpec<T, Derived>::set_info_on_chunk()
     if (const InfArrayT* src = armed_inf_array()) [[likely]]
     {
         inf_array_ = *src;
-        derived().set_num_tab(src->num_tab); // not read back from inf_array (see above)
+        derived().set_array_id(src->array_id); // not read back from inf_array (see above)
     }
     else
     {
         inf_array_ = Derived::get_info_second_value(get_ptr_on_array());
-        derived().set_num_tab();
+        derived().set_array_id();
     }
 
     if constexpr (chunk_config::use_fast_block_compression)
@@ -289,7 +289,7 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::perform_c
                 {
                     static_cast<void>(CompressionManagerType::flush_deferred(thr_rank));
 
-                    const auto* inf_ptr = Derived::share_info_array->find_inf_array(second_val);
+                    const auto* inf_ptr = Derived::array_registry->find_inf_array(second_val);
                     zero_one_value::Chunk<T>::make_block_compression(thr_rank, *inf_ptr, self());
 
                     derived().set_info_on_chunk();

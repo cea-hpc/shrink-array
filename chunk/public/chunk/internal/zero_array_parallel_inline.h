@@ -23,7 +23,7 @@
 
 #include "chunk/internal/zero_array_parallel.h"                // FastBlockSupport, the class these bodies belong to
 #include "chunk/internal/array_chunk_parallel_common_inline.h" // flush_pending_deferred_ops
-#include "chunk/internal/PMP_CHUNK.h"                          // CHUNK_PMP_* (make_block_compression)
+#include "chunk/internal/pmp_chunk.h"                          // CHUNK_PMP_* (make_block_compression)
 #include "chunk/internal/chunk_size_policy.h"                  // set_thread_chunk_size (make_block_compression)
 #include "chunk/internal/read_reclaim.h"                       // read_reclaim::PassScope (drain_own_candidates)
 #include "chunk/internal/own_candidates.h"                     // with_own_candidates_only (drain_own_candidates)
@@ -83,8 +83,8 @@ void zero::FastBlockSupport<Derived, true>::drain_own_candidates()
     {
         return;
     }
-    const int num_tab = ProxyT::share_info_array->get_num_tab(self().registry_key());
-    internal::with_own_candidates_only(ManagerT::zero_candidates_thr[static_cast<std::size_t>(rank)], num_tab,
+    const int array_id = ProxyT::array_registry->get_array_id(self().registry_key());
+    internal::with_own_candidates_only(ManagerT::zero_candidates_thr[static_cast<std::size_t>(rank)], array_id,
                                        [rank]
                                        {
                                            const read_reclaim::PassScope pass_scope;

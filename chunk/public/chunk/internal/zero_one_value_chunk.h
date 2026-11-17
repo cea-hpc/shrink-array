@@ -34,12 +34,12 @@
 #include "chunk/config.h"                                       // build_config::threaded, chunk_config
 #include "chunk/internal/invariant_check.h"                     // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/bad_ptr_check.h"                       // CHUNK_CHECK_VALUES_PTR (check builds)
-#include "chunk/internal/PMP_CHUNK.h"                           // get_thr_rank_fast, CHUNK_PMP_THREAD_RANK
+#include "chunk/internal/pmp_chunk.h"                           // get_thr_rank_fast, CHUNK_PMP_THREAD_RANK
 #include "chunk/internal/zero_one_value_candidate_list_check.h" // zero_one_value_missing_candidate_list
 #include "chunk/internal/zero_one_value_proxy.h"                // zero_one_value::Proxy
 #include "chunk/internal/second_value_chunk_base.h"             // SecondValueChunkBase
 #include "chunk/internal/conditional_counter.h"                 // ConditionalCounter, CounterValueT
-#include "chunk/internal/TChunk.h"                              // VectorTuple4ChunkInt2 (the candidate lists)
+#include "chunk/internal/chunk_tuples.h"                        // VectorTuple4ChunkInt2 (the candidate lists)
 #include "chunk/internal/immortal.h"          // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/second_value_info.h" // SecondValueInfo (InfArrayT)
 #include "chunk/internal/chunk_array_new.h"   // chunk_array_new::init_chunks (init_chunks_cst_val)
@@ -559,7 +559,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
     using Base::values_;
 
     // Local aliases, as ChunkFastCompPolicy carries its own rather than reaching into Derived.
-    // (chunk, num_chunk, num_tab, n_elems) -- n_elems is the chunk's OWN geometry, carried
+    // (chunk, chunk_index, array_id, n_elems) -- n_elems is the chunk's OWN geometry, carried
     // from the candidate queue so the clear loop can pin the thread to it before freeing.
     using CandidateTuples = std::vector<std::tuple<Chunk<T>*, int, int, unsigned int>>;
     using InfArrayT       = SecondValueInfo<T>;
@@ -752,7 +752,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
     /**
      * \brief Shared body of the two fill_list_chunk_to_compress_in_par entry
      *        points: they differ only in the map key and the per-chunk scan.
-     * \tparam ScanFn callable (ChunkType*, num_chunk, num_tab, ChunkElems count).
+     * \tparam ScanFn callable (ChunkType*, chunk_index, array_id, ChunkElems count).
      */
     template <typename ScanFn>
     static void fill_list_chunk_to_compress_in_par_impl(int thr_rank, InT<T> key, ScanFn&& scan_one);
@@ -787,8 +787,8 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      * \tparam SecondValueFunc Callable returning the second constant.
      * \param ll_compt1 Output bucket for "uniform on the first constant".
      * \param ll_compt2 Output bucket for "uniform on the second constant".
-     * \param num_chunk This chunk's index within its array.
-     * \param num_tab Which array this chunk belongs to.
+     * \param chunk_index This chunk's index within its array.
+     * \param array_id Which array this chunk belongs to.
      * \param get_second_value Supplies the second constant to compare against.
      * \param check_cst_val2 Whether to test the second constant (skipped when the
      *                        chunk is already known to hold it).
@@ -797,8 +797,8 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
     template <typename SecondValueFunc>
     void fill_list_to_compress_impl(CandidateTuples&  ll_compt1,
                                     CandidateTuples&  ll_compt2,
-                                    int               num_chunk,
-                                    int               num_tab,
+                                    int               chunk_index,
+                                    int               array_id,
                                     SecondValueFunc&& get_second_value,
                                     bool              check_cst_val2,
                                     unsigned int      n_elems);
@@ -809,15 +809,15 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      * \param ll_compt1 Output bucket for "uniform on the first constant".
      * \param ll_compt2 Output bucket for "uniform on the second constant".
      * \param inf_array (second_value, ...) tuple supplying the second constant.
-     * \param num_chunk This chunk's index within its array.
-     * \param num_tab Which array this chunk belongs to.
+     * \param chunk_index This chunk's index within its array.
+     * \param array_id Which array this chunk belongs to.
      * \param n_elems Element count of this chunk (the owning array's geometry).
      */
     void fill_list_to_compress(CandidateTuples& ll_compt1,
                                CandidateTuples& ll_compt2,
                                const InfArrayT& inf_array,
-                               int              num_chunk,
-                               int              num_tab,
+                               int              chunk_index,
+                               int              array_id,
                                unsigned int     n_elems);
 
     /*!
@@ -825,18 +825,18 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      *        constant is always `true` for bool).
      * \param ll_compt1 Output bucket for "uniform on the first constant".
      * \param ll_compt2 Output bucket for "uniform on the second constant".
-     * \param num_chunk This chunk's index within its array.
-     * \param num_tab Which array this chunk belongs to.
+     * \param chunk_index This chunk's index within its array.
+     * \param array_id Which array this chunk belongs to.
      * \param n_elems Element count of this chunk (the owning array's geometry).
      */
     void fill_list_to_compress_bool(CandidateTuples& ll_compt1,
                                     CandidateTuples& ll_compt2,
-                                    int              num_chunk,
-                                    int              num_tab,
+                                    int              chunk_index,
+                                    int              array_id,
                                     unsigned int     n_elems)
     {
         fill_list_to_compress_impl(
-            ll_compt1, ll_compt2, num_chunk, num_tab, [] { return true; }, derived().is_not_cst_val2(), n_elems);
+            ll_compt1, ll_compt2, chunk_index, array_id, [] { return true; }, derived().is_not_cst_val2(), n_elems);
     }
 };
 
@@ -847,9 +847,9 @@ template <typename T, typename Derived>
 class ChunkFastCompPolicy<T, Derived, false> : public ChunkThreadPolicy<T, Derived>, public ChunkSpec<T>
 {
   public:
-    /// (chunk, num_chunk, num_tab, n_elems); see the true specialisation.
+    /// (chunk, chunk_index, array_id, n_elems); see the true specialisation.
     using CandidateTuples = std::vector<std::tuple<Chunk<T>*, int, int, unsigned int>>;
-    /// (second value, its index in the shared value table, num_tab).
+    /// (second value, its index in the shared value table, array_id).
     using InfArrayT = SecondValueInfo<T>;
 
     /// @name No-op counterparts of the true specialization's queries and passes
@@ -935,7 +935,7 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
     using CandidateTuples = std::vector<std::tuple<Chunk*, int, int>>;
 
     using Manager = TypeState<Chunk, T>;
-    // (second value, index, num_tab). Redeclared here on purpose: the policy
+    // (second value, index, array_id). Redeclared here on purpose: the policy
     // bases declare the same name, and this one hides theirs so zero_one_value's own
     // members see one type. It must stay THEIR type -- checked below.
     using InfArrayT = SecondValueInfo<T>;

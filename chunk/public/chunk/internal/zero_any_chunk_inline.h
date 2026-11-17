@@ -29,7 +29,7 @@
 #include "chunk/internal/dependent_false.h" // dependent_false_v (wrong-type branches)
 
 #include "chunk/internal/chunk_size_policy.h" // ChunkElems, set_thread_chunk_size
-#include "chunk/internal/PMP_CHUNK.h"         // CHUNK_PMP_*, get_thr_rank_fast, pmp::team
+#include "chunk/internal/pmp_chunk.h"         // CHUNK_PMP_*, get_thr_rank_fast, pmp::team
 #include "chunk/config.h"                     // build_config::threaded, chunk_config::use_chunk_steal_mark
 #include "chunk/internal/cpu_pause.h"         // CHUNK_CPU_PAUSE (spin in create_value*)
 #include "chunk/internal/zero_any_chunk.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
@@ -112,8 +112,8 @@ template <typename T, typename Derived, bool Enabled>
  *
  * @param ll_compt1  List of chunks compressible to first_value.
  * @param ll_compt2  List of chunks compressible to one other value.
- * @param num_chunk  Index of this chunk in its array.
- * @param num_tab    Table number of the owning array.
+ * @param chunk_index  Index of this chunk in its array.
+ * @param array_id    Table number of the owning array.
  * @param size       Geometry of the owning array, carried through to the clear.
  * @param claimed    Whether the caller claimed (steal-marked) the chunk first;
  *                   check builds assert it.
@@ -125,8 +125,8 @@ template <typename T, typename Derived, bool Enabled>
 template <typename T, typename Derived>
 void zero_any::ChunkImpl<T, Derived>::fill_list_to_compress(CandidateTuples&      ll_compt1,
                                                             CandidateValueTuples& ll_compt2,
-                                                            int                   num_chunk,
-                                                            int                   num_tab,
+                                                            int                   chunk_index,
+                                                            int                   array_id,
                                                             ChunkElems            size,
                                                             [[maybe_unused]] bool claimed)
 {
@@ -142,8 +142,8 @@ void zero_any::ChunkImpl<T, Derived>::fill_list_to_compress(CandidateTuples&    
             // skips the claim loop by design.
             if (claimed && !Base::steal_marked()) [[unlikely]]
             {
-                CHUNK_INVARIANT_FAILED("fill_list_to_compress on an unclaimed chunk (num_chunk=%d num_tab=%d)",
-                                       num_chunk, num_tab);
+                CHUNK_INVARIANT_FAILED("fill_list_to_compress on an unclaimed chunk (chunk_index=%d array_id=%d)",
+                                       chunk_index, array_id);
             }
         }
 
@@ -164,11 +164,11 @@ void zero_any::ChunkImpl<T, Derived>::fill_list_to_compress(CandidateTuples&    
 
         if (scan.first)
         {
-            ll_compt1.emplace_back(std::make_tuple(static_cast<Derived*>(this), num_chunk, num_tab, size));
+            ll_compt1.emplace_back(std::make_tuple(static_cast<Derived*>(this), chunk_index, array_id, size));
         }
         if (scan.second)
         {
-            ll_compt2.emplace_back(std::make_tuple(static_cast<Derived*>(this), second_v, num_chunk, num_tab, size));
+            ll_compt2.emplace_back(std::make_tuple(static_cast<Derived*>(this), second_v, chunk_index, array_id, size));
         }
         if constexpr (has_motif_state_v<Derived>)
         {
@@ -176,7 +176,7 @@ void zero_any::ChunkImpl<T, Derived>::fill_list_to_compress(CandidateTuples&    
             // for its own commit, Derived::compress_motif_candidates().)
             if (!scan.first && !scan.second)
             {
-                static_cast<Derived*>(this)->classify_motif(num_chunk, num_tab, size);
+                static_cast<Derived*>(this)->classify_motif(chunk_index, array_id, size);
             }
         }
     }
@@ -275,8 +275,8 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
 
     for (auto& tup : ll_compt1)
     {
-        const int num_chunk = std::get<1>(tup);
-        const int num_tab   = std::get<2>(tup);
+        const int chunk_index = std::get<1>(tup);
+        const int array_id    = std::get<2>(tup);
 
         auto* chunk_ptr = std::get<0>(tup);
 
@@ -286,17 +286,17 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
             shrink_array::set_thread_chunk_size(std::get<3>(tup).count());
         }
 
-        CstSlot* ptr_type_cst = &ProxyType::tab_type_cst_val[num_tab][num_chunk];
+        CstSlot* ptr_type_cst = &ProxyType::tab_type_cst_val[array_id][chunk_index];
 
         // Long form in both modes: thr is 0 with OpenMP off.
-        const SecondValueRef<T> ptr_second_value = ProxyType::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+        const SecondValueRef<T> ptr_second_value = ProxyType::BaseSpec::get_tab_second_value(array_id, chunk_index);
         chunk_ptr->clear_int_st(0, ptr_type_cst, ptr_second_value, thr);
         chunk_ptr->steal_unmark();
     }
 
     for (const auto& tup : ll_compt2)
     {
-        auto [chunk_ptr, second_v, num_chunk, num_tab, csize] = tup;
+        auto [chunk_ptr, second_v, chunk_index, array_id, csize] = tup;
 
         // Per-chunk geometry pin -- see this function's header comment.
         if constexpr (build_config::chunk_dynamic)
@@ -308,12 +308,12 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
         {
             if (!same_value(second_v, T{}))
             {
-                CstSlot* ptr_type_cst = &ProxyType::tab_type_cst_val[num_tab][num_chunk];
+                CstSlot* ptr_type_cst = &ProxyType::tab_type_cst_val[array_id][chunk_index];
 
                 // find_or_set records the second value in the chunk's slot and returns the
                 // shared array; clear_int_st installs it as `values` (the CAS).
                 const SecondValueRef<T> ptr_second_value =
-                    ProxyType::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+                    ProxyType::BaseSpec::get_tab_second_value(array_id, chunk_index);
 
                 T* new_cst_val2_ptr = nullptr;
                 if constexpr (has_motif_state_v<Derived>)
@@ -335,9 +335,9 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
             // shared array of true needs no registering: clear_int_st() takes it
             // from Holder::find_cst_val2_ptr().
 
-            CstSlot* ptr_type_cst = &ProxyType::tab_type_cst_val[num_tab][num_chunk];
+            CstSlot* ptr_type_cst = &ProxyType::tab_type_cst_val[array_id][chunk_index];
 
-            const SecondValueRef<T> ptr_second_value = ProxyType::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+            const SecondValueRef<T> ptr_second_value = ProxyType::BaseSpec::get_tab_second_value(array_id, chunk_index);
             chunk_ptr->clear_int_st(1, ptr_type_cst, ptr_second_value, thr);
         }
         chunk_ptr->steal_unmark();
@@ -350,9 +350,10 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
     }
 
     queue_flag::release_candidates(
-        vec_tuple_to_compress, sz, [](int num_tab, int num_chunk) -> auto&
-        { return ProxyType::Base::get_tab_is_inside_list_to_compress(num_tab)[num_chunk]; },
-        [](int num_tab, int num_chunk) { ProxyType::Base::reset_tab_inside_list_to_compress(num_tab, num_chunk); });
+        vec_tuple_to_compress, sz, [](int array_id, int chunk_index) -> auto&
+        { return ProxyType::Base::get_tab_is_inside_list_to_compress(array_id)[chunk_index]; },
+        [](int array_id, int chunk_index)
+        { ProxyType::Base::reset_tab_inside_list_to_compress(array_id, chunk_index); });
 
     if (proxy2a)
     {
@@ -377,8 +378,8 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
  * Single-chunk counterpart of make_block_compression(): same scan, the clear done here.
  *
  * @param thr_rank       Calling thread's rank (OMPT path only).
- * @param num_chunk      Index of this chunk in its array.
- * @param num_tab        Table number of the owning array.
+ * @param chunk_index      Index of this chunk in its array.
+ * @param array_id        Table number of the owning array.
  * @param apply          true: scan, and compress the chunk if constant;
  *                       false: nothing at all in an OpenMP build without OMPT (see the
  *                       body), the scan alone elsewhere.
@@ -390,8 +391,8 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
  */
 template <typename T, typename Derived>
 void zero_any::ChunkImpl<T, Derived>::compress([[maybe_unused]] int  thr_rank,
-                                               int                   num_chunk,
-                                               int                   num_tab,
+                                               int                   chunk_index,
+                                               int                   array_id,
                                                [[maybe_unused]] bool apply,
                                                ChunkElems            size)
 {
@@ -424,7 +425,7 @@ void zero_any::ChunkImpl<T, Derived>::compress([[maybe_unused]] int  thr_rank,
         {
             // Against values[0], as fill_list_to_compress does, not the registered second
             // value: a chunk uniform at another value is compressed to THAT value.
-            const SecondValueRef<T> ptr_second_value = ProxyType::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+            const SecondValueRef<T> ptr_second_value = ProxyType::BaseSpec::get_tab_second_value(array_id, chunk_index);
             const InT<T>            second_v         = Base::read_value_scan(0);
             const auto              scan             = Base::scan_constants(first_value, second_v, size.count());
             compact1                                 = scan.first;
@@ -456,8 +457,8 @@ void zero_any::ChunkImpl<T, Derived>::compress([[maybe_unused]] int  thr_rank,
         // installed second-value slot (nullptr).
         if (apply)
         {
-            const SecondValueRef<T> ptr_second_value = ProxyType::BaseSpec::get_tab_second_value(num_tab, num_chunk);
-            CstSlot*                ptr_type_cst     = &ProxyType::tab_type_cst_val[num_tab][num_chunk];
+            const SecondValueRef<T> ptr_second_value = ProxyType::BaseSpec::get_tab_second_value(array_id, chunk_index);
+            CstSlot*                ptr_type_cst     = &ProxyType::tab_type_cst_val[array_id][chunk_index];
             if (compact1)
             {
                 clear_int_st(0, ptr_type_cst, ptr_second_value, thr_rank);
@@ -575,10 +576,10 @@ void zero_any::ChunkImpl<T, Derived>::compress_chunk_to_compress_in_par([[maybe_
 
         for (const auto& tup : vec_tup)
         {
-            auto* const      chunk_t   = std::get<0>(tup);
-            const int        num_chunk = std::get<1>(tup);
-            const int        num_tab   = std::get<2>(tup);
-            const ChunkElems csize     = std::get<3>(tup);
+            auto* const      chunk_t     = std::get<0>(tup);
+            const int        chunk_index = std::get<1>(tup);
+            const int        array_id    = std::get<2>(tup);
+            const ChunkElems csize       = std::get<3>(tup);
 
             if (chunk_t)
             {
@@ -587,7 +588,7 @@ void zero_any::ChunkImpl<T, Derived>::compress_chunk_to_compress_in_par([[maybe_
                     set_thread_chunk_size(csize.count());
                 }
 
-                chunk_t->compress(thr, num_chunk, num_tab, apply, csize);
+                chunk_t->compress(thr, chunk_index, array_id, apply, csize);
                 // Same condition as the list clear below: see the @warning above.
                 if constexpr (chunk_config::use_compression_with_ompt)
                 {
@@ -597,10 +598,10 @@ void zero_any::ChunkImpl<T, Derived>::compress_chunk_to_compress_in_par([[maybe_
                         // has no make_block_compression() to do it (pattern::Chunk).
                         if (apply && chunk_t->written())
                         {
-                            chunk_t->compress_to_motif(thr, num_chunk, num_tab, csize);
+                            chunk_t->compress_to_motif(thr, chunk_index, array_id, csize);
                         }
                     }
-                    ProxyType::set_tab_is_inside_chunk_list_to_compress(num_tab, num_chunk, 0);
+                    ProxyType::set_tab_is_inside_chunk_list_to_compress(array_id, chunk_index, 0);
                 }
             }
         }
@@ -614,12 +615,12 @@ void zero_any::ChunkImpl<T, Derived>::compress_chunk_to_compress_in_par([[maybe_
     {
         for (auto& tup : vec_tup)
         {
-            const int num_chunk = std::get<1>(tup);
-            const int num_tab   = std::get<2>(tup);
+            const int chunk_index = std::get<1>(tup);
+            const int array_id    = std::get<2>(tup);
 
             // Per-entry geometry, as above: a default size would under-scan dynamic chunks.
-            std::get<0>(tup)->compress(0, num_chunk, num_tab, apply, std::get<3>(tup));
-            ProxyType::set_tab_is_inside_chunk_list_to_compress(num_tab, num_chunk, 0);
+            std::get<0>(tup)->compress(0, chunk_index, array_id, apply, std::get<3>(tup));
+            ProxyType::set_tab_is_inside_chunk_list_to_compress(array_id, chunk_index, 0);
         }
     }
 
@@ -672,8 +673,8 @@ void zero_any::ChunkImpl<T, Derived>::fill_list_chunk_to_compress_in_par([[maybe
         auto* const chunk_t = std::get<0>(tup);
         if (chunk_t)
         {
-            const int num_chunk = std::get<1>(tup);
-            const int num_tab   = std::get<2>(tup);
+            const int chunk_index = std::get<1>(tup);
+            const int array_id    = std::get<2>(tup);
             // Per-entry geometry: the chunk size of its owning array.
             const ChunkElems csize = std::get<3>(tup);
 
@@ -681,7 +682,7 @@ void zero_any::ChunkImpl<T, Derived>::fill_list_chunk_to_compress_in_par([[maybe
             const auto n2 = ll_compt2.size();
             // A motif candidate is stolen too (compress_motif_candidates()): it keeps its claim.
             [[maybe_unused]] const auto n3 = motif_count();
-            chunk_t->fill_list_to_compress(ll_compt1, ll_compt2, num_chunk, num_tab, csize, claimed);
+            chunk_t->fill_list_to_compress(ll_compt1, ll_compt2, chunk_index, array_id, csize, claimed);
             // Scanned, still marked: hand its queue flag back BEFORE the mark can go
             // down, as zero does (queue_flag.h, F6). After it, a writer that finds the
             // mark down and makes the chunk constant notes itself on the flag, and the
@@ -691,9 +692,9 @@ void zero_any::ChunkImpl<T, Derived>::fill_list_chunk_to_compress_in_par([[maybe
             // materialised in no list (formal/queue_handback.c, MUT_HANDBACK_AFTER_UNMARK).
             if constexpr (build_config::threaded)
             {
-                if (num_chunk >= 0)
+                if (chunk_index >= 0)
                 {
-                    queue_flag::hand_back(ProxyType::Base::get_tab_is_inside_list_to_compress(num_tab)[num_chunk]);
+                    queue_flag::hand_back(ProxyType::Base::get_tab_is_inside_list_to_compress(array_id)[chunk_index]);
                 }
             }
             // Not selected: nothing will be stolen, release it to the writers now.

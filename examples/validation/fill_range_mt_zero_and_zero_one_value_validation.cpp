@@ -47,7 +47,7 @@
  *          (fill_range_mt is the element loop there), so only the values are.
  *
  *          The library variant is built without the OMPT tool (NO_OMPT_TOOL),
- *          as multi-mat uses it: this program defines the switch the library
+ *          as multi_mat uses it: this program defines the switch the library
  *          reads, and makes the phase calls itself.
  *
  *          Usage: fill_range_mt_zero_and_zero_one_value_validation [chunks]
@@ -62,7 +62,7 @@
 #include "chunk/range_ops.h"            // fill_range_mt
 #include "chunk/runtime.h"              // Runtime::init
 #include "chunk/config.h"               // OmptSuspendCounter, chunk_config::use_zero / use_zero_one_value
-#include "chunk/internal/PMP_CHUNK.h"   // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/pmp_chunk.h"   // CHUNK_PMP_MAX_THREADS
 #include "chunk/phases.h"               // begin_parallel_phase, finalize_parallel_phase_only_flush / _after_flush
 #include "chunk/internal/env_parse.h"   // arg_number (checked, not atoi)
 #include "chunk/print.h"                // shrink_array::println

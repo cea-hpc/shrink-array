@@ -373,12 +373,12 @@ class ChunkFastCompPolicy : public ChunkThreadPolicy<T, Derived>
     /**
      * @brief Append this chunk to @p ll_compt if all @p n_elems elements are zero.
      * @param ll_compt  out: list of compressible chunks
-     * @param num_chunk this chunk's index in its array
-     * @param num_tab   its array's tab index
+     * @param chunk_index this chunk's index in its array
+     * @param array_id   its array's tab index
      * @param n_elems   THIS chunk's element count -- never the ambient size, see
-     *                  TChunk.h's note on the field it is carried in
+     *                  chunk_tuples.h's note on the field it is carried in
      */
-    void fill_list_to_compress(CandidateTuples& ll_compt, int num_chunk, int num_tab, unsigned int n_elems);
+    void fill_list_to_compress(CandidateTuples& ll_compt, int chunk_index, int array_id, unsigned int n_elems);
 
     /**
      * @brief Scan @p thr's queued candidates and collect those now compressible.
@@ -415,8 +415,10 @@ class ChunkFastCompPolicy<T, Derived, false> : public ChunkThreadPolicy<T, Deriv
     /// @brief No candidate list to fill in this mode.
     static void fill_list_chunk_to_compress_in_par(int /*thr*/, CandidateTuples& /*ll_compt*/) {}
     /// @copydoc fill_list_chunk_to_compress_in_par
-    static void
-    fill_list_to_compress(CandidateTuples& /*ll_compt*/, int /*num_chunk*/, int /*num_tab*/, unsigned int /*n_elems*/)
+    static void fill_list_to_compress(CandidateTuples& /*ll_compt*/,
+                                      int /*chunk_index*/,
+                                      int /*array_id*/,
+                                      unsigned int /*n_elems*/)
     {
     }
 };
@@ -439,7 +441,7 @@ class ChunkFastCompPolicy<T, Derived, false> : public ChunkThreadPolicy<T, Deriv
  * @note The chunk does NOT know its own element count: the geometry lives in
  *       the owning array's size_policy_, and is passed in by callers. Reading a
  *       buffer with the wrong count is the failure mode the candidate lists
- *       guard against by carrying it -- see TChunk.h.
+ *       guard against by carrying it -- see chunk_tuples.h.
  */
 template <typename T>
 // no move operations on purpose -- a move falls back to

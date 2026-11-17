@@ -30,7 +30,7 @@
 #include "chunk/internal/chunk_size_scan.h"   // the declarations these bodies belong to
 #include "chunk/bit.h"                        // is_bool_like_v, is_packed_bit_v
 #include "chunk/config.h"                     // chunk_config::use_zero_one_value
-#include "chunk/internal/PMP_CHUNK.h"         // CHUNK_PMP_NUM_THREADS (the parts per thread), pmp::team
+#include "chunk/internal/pmp_chunk.h"         // CHUNK_PMP_NUM_THREADS (the parts per thread), pmp::team
 #include "chunk/internal/bit_words.h"         // bits::scan_range, bits::Uniform, bits::WordT
 #include "chunk/internal/chunk_size_policy.h" // shrink_array::cst_buffer_size, is_valid_chunk_size
 #include "chunk/internal/chunk_traits.h"      // is_zero_any_family_v, has_motif_state_v (pattern::Array)
@@ -46,8 +46,8 @@ ChunkSizeScan<Arr>::ChunkSizeScan(const Arr& tab, const Options& opt)
     : tab_(tab)
     , opt_(opt)
     , chunk_sz_(tab.chunk_size())
-    , nc_(tab.nb_chunk_)
-    , len_(tab.nb_chunk_ * static_cast<int64_t>(tab.chunk_size()))
+    , nc_(tab.chunk_count_)
+    , len_(tab.chunk_count_ * static_cast<int64_t>(tab.chunk_size()))
     , second_value_ind_(second_value_index(tab))
     , cst1_value_(ChunkT::first_value)
     , cst2_value_(cst1_value_)

@@ -30,7 +30,7 @@
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_* / add_chunk_* (CHUNK_STATS)
 #include "chunk/internal/type_state.h"          // TypeState:: candidate lists (dependent calls)
 #include "chunk/internal/zero_proxy.h"          // Proxy<T>: the compression pass's proxy
-#include "chunk/internal/PMP_CHUNK.h"           // CHUNK_PMP_*, pmp::team, pmp::in_application_phase
+#include "chunk/internal/pmp_chunk.h"           // CHUNK_PMP_*, pmp::team, pmp::in_application_phase
 #include "chunk/internal/pool_ledger.h"         // CHUNK_LEDGER_*
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
 #include "chunk/internal/queue_flag.h"          // queue_flag::hand_back / release: the pass's hand-back
@@ -70,16 +70,16 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress
     {
         const auto& tup = vec_tup[k];
 
-        const auto& chunk_t   = std::get<0>(tup);
-        const int&  num_chunk = std::get<1>(tup);
-        const int   num_tab   = std::get<2>(tup);
+        const auto& chunk_t     = std::get<0>(tup);
+        const int&  chunk_index = std::get<1>(tup);
+        const int   array_id    = std::get<2>(tup);
 
         // The chunk's OWN geometry, captured at enqueue -- not the ambient size.
         const auto count = ll_compt.size();
-        chunk_t->fill_list_to_compress(ll_compt, num_chunk, num_tab, std::get<3>(tup).count());
+        chunk_t->fill_list_to_compress(ll_compt, chunk_index, array_id, std::get<3>(tup).count());
         // Scanned, still marked: hand its queue flag back before the mark can go down,
         // here for the chunks the scan drops (queue_flag.h, F6).
-        queue_flag::hand_back(zero::Proxy<T>::get_tab_is_inside_list_to_compress(num_tab)[num_chunk]);
+        queue_flag::hand_back(zero::Proxy<T>::get_tab_is_inside_list_to_compress(array_id)[chunk_index]);
         // Not selected by the scan: the writers may have it back now.
         if (ll_compt.size() == count)
         {
@@ -90,8 +90,8 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress
 
 template <typename T, typename Derived, bool Enabled>
 void zero::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(CandidateTuples& ll_compt,
-                                                                           int              num_chunk,
-                                                                           int              num_tab,
+                                                                           int              chunk_index,
+                                                                           int              array_id,
                                                                            unsigned int     n_elems)
 {
     if (derived().written())
@@ -100,7 +100,7 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(Candi
         increm_chunk_compress_attempt<Derived>();
         if (derived().is_constant_to(zero, n_elems))
         {
-            ll_compt.push_back(std::make_tuple(self(), num_chunk, num_tab, ChunkElems{n_elems}));
+            ll_compt.push_back(std::make_tuple(self(), chunk_index, array_id, ChunkElems{n_elems}));
         }
     }
 }
@@ -350,9 +350,10 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int 
     }
 
     queue_flag::release_candidates(
-        vec_tuple_to_compress, sz, [](int num_tab, int num_chunk) -> auto&
-        { return zero::Proxy<T>::get_tab_is_inside_list_to_compress(num_tab)[num_chunk]; },
-        [](int num_tab, int num_chunk) { zero::Proxy<T>::reset_tab_inside_list_to_compress(num_tab, num_chunk); });
+        vec_tuple_to_compress, sz, [](int array_id, int chunk_index) -> auto&
+        { return zero::Proxy<T>::get_tab_is_inside_list_to_compress(array_id)[chunk_index]; },
+        [](int array_id, int chunk_index)
+        { zero::Proxy<T>::reset_tab_inside_list_to_compress(array_id, chunk_index); });
 
     if (guarded)
     {

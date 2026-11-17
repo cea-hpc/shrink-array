@@ -153,7 +153,7 @@ void calculate(double                  val,
                const V&                tab3)
 {
     // simd for a std::vector only: the chunk proxies do not vectorise, and asking
-    // for it anyway draws clang's -Wpass-failed (multi-mat shows a way around).
+    // for it anyway draws clang's -Wpass-failed (multi_mat shows a way around).
 #pragma omp for simd if (simd : std::is_same_v<V, std::vector<double>>) nowait
     for (int i = start0; i < end0; ++i)
     {
@@ -173,7 +173,7 @@ void calculate1(double                     val,
                 const V&                   tab3)
 {
     // simd for a std::vector only: the chunk proxies do not vectorise, and asking
-    // for it anyway draws clang's -Wpass-failed (multi-mat shows a way around).
+    // for it anyway draws clang's -Wpass-failed (multi_mat shows a way around).
 #pragma omp for simd if (simd : std::is_same_v<V, std::vector<double>>) nowait
     for (int i = start0; i < end0; ++i)
     {
@@ -427,6 +427,6 @@ try
 catch (const std::exception& e)
 {
     // A failed allocation or std::format: said, not std::terminate().
-    std::cerr << "test_vecto_chunk: " << e.what() << '\n';
+    std::cerr << "vectorisation_demo: " << e.what() << '\n';
     return 2;
 }

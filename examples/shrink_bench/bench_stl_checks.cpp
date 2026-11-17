@@ -394,7 +394,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         // both the cst2 read path and materialised reads — the two that can go
         // stale. maybe_set_second_value is not required for correctness: a
         // zero_one_value array without it has T{} as second value (see
-        // insert_only_num_tab), so it writes fine but only its zeros compress.
+        // insert_only_array_id), so it writes fine but only its zeros compress.
         // It is declared here, before the writes, so that the runs of 2.0
         // actually reach the cst2 read path this check is about (no-op on
         // zero / vector mode, per-chunk on zero_any).

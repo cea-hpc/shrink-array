@@ -22,7 +22,7 @@
  *        in its own mixin so they vanish from a static-geometry build.
  *
  * @details Like RechunkHooks for zero, but zero_one_value overrides all SIX hooks: it
- *          resolves num_tab from the registry, carries the array-level second
+ *          resolves array_id from the registry, carries the array-level second
  *          value across the swap, and re-owns its map_inf_array_ entry. They run
  *          only under RechunkSupport<Derived, true>::rechunk_to(); the static
  *          specialisation keeps the signatures as no-ops so zero_one_value::Array's

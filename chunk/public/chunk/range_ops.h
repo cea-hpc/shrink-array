@@ -23,7 +23,7 @@
  * @details WHY THESE EXIST
  *
  *          Every write through `arr[i] = v` builds a Proxy, arms ptr_on_array /
- *          num_chunk, runs the compression-candidacy bookkeeping and only then
+ *          chunk_index, runs the compression-candidacy bookkeeping and only then
  *          stores. For a bulk fill that is paid chunk_size times for a decision
  *          that is the same across the chunk: a bulk copy through these
  *          functions is about an order of magnitude faster than through the
@@ -61,7 +61,7 @@
 #include "chunk/internal/element_access.h" // internal::as_words: Bit chunks are words of bits
 #include "chunk/internal/bit_words.h" // bits::count_ones, bits::scan_words, bits::fill_bit_range(_atomic), bits::store_bit_range_atomic
 #include "chunk/internal/in_t.h"                // InT<T>: the element snapshots
-#include "chunk/internal/PMP_CHUNK.h"           // get_thr_rank_fast
+#include "chunk/internal/pmp_chunk.h"           // get_thr_rank_fast
 #include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size
 #include "chunk/internal/conditional_counter.h" // CounterValueT
 #include "chunk/config.h"                       // build_config::threaded, chunk_config
@@ -421,7 +421,7 @@ template <typename Arr, typename ChunkClass>
  *          compresses through the same list and pass. The serial zero / zero_one_value
  *          counters are resynced by the caller instead (fold_if_full, when
  *          present). In a serial build the proxy is armed by
- *          set_info_on_chunk(): set_num_tab_ptr_is_inside_chunk() is a
+ *          set_info_on_chunk(): set_array_id_ptr_is_inside_chunk() is a
  *          fast-block member.
  */
 template <typename Arr>
@@ -441,16 +441,16 @@ void queue_for_compression(Arr& arr, std::size_t index)
             }
         }
         auto proxy = arr.element_proxy(static_cast<decltype(arr.size())>(index));
-        // Not for zero_one_value::Proxy: it also has set_num_tab_ptr_is_inside_chunk() (from
+        // Not for zero_one_value::Proxy: it also has set_array_id_ptr_is_inside_chunk() (from
         // the shared base), but that does not load the second value -- the key
         // of zero_one_value's candidate list -- and the chunk would land in the list of
         // T{}, which no pass drains. set_info_on_chunk() loads (second_value,
-        // ind, num_tab) and the flag pointer.
+        // ind, array_id) and the flag pointer.
         if constexpr (constexpr bool is_proxy2 =
                           std::is_same_v<typename Arr::ProxyType, zero_one_value::Proxy<typename Arr::value_type>>;
-                      !is_proxy2 && requires { proxy.set_num_tab_ptr_is_inside_chunk(); })
+                      !is_proxy2 && requires { proxy.set_array_id_ptr_is_inside_chunk(); })
         {
-            proxy.set_num_tab_ptr_is_inside_chunk(); // zero_any::Proxy
+            proxy.set_array_id_ptr_is_inside_chunk(); // zero_any::Proxy
         }
         else
         {

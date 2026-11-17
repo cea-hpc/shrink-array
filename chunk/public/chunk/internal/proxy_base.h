@@ -32,21 +32,21 @@
 #include "chunk/internal/element_access.h" // elem_get / elem_set, is_packed_bit_v: Bit buffers are words of bits
 #include "chunk/config.h"                  // chunk_config::use_fast_block_compression, build_config::any_check
 #include "chunk/internal/chunk_stats.h" // increm_chunk_* in the bodies (dependent calls the include tools cannot attribute)
-#include "chunk/internal/def_force_inline.h"             // CHUNK_FORCE_INLINE: the write engine and its wrappers
-#include "chunk/internal/array_chunk_for.h"              // ArrayKey (ptr_on_array_)
-#include "chunk/internal/in_t.h"                         // InT<T>
-#include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/proxy_operators.h"              // ProxyOperators
-#include "chunk/internal/tab_cst_val2_holder.h"          // TabCstVal2Holder: second-value identifiers
-#include "chunk/internal/relaxed_element.h"              // store_value: zero_any's relaxed element stores
-#include "chunk/internal/concept_is_clean_assignement.h" // IsCleanCompoundOp, IsCleanShiftOp, BaseT
-#include "chunk/internal/crp_helper.h"                   // CRTPSupport, CHUNK_CRTP_USE_DEDUCING_THIS
-#include "chunk/internal/test_hooks.h"                   // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (read_values)
-#include "chunk/internal/read_reclaim.h"                 // ReadSection: read_values_outside_session
-#include "chunk/internal/stable_table.h"                 // StableTable: the outer per-array tables
-#include "chunk/internal/immortal.h"                     // Immortal / LazyImmortal: statics safe for global arrays
-#include "chunk/internal/parallel_storage_init.h"        // NoInitVector, make_filled: the candidate-flag rows
-#include "chunk/internal/same_value.h"                   // same_value
+#include "chunk/internal/def_force_inline.h"            // CHUNK_FORCE_INLINE: the write engine and its wrappers
+#include "chunk/internal/array_chunk_for.h"             // ArrayKey (ptr_on_array_)
+#include "chunk/internal/in_t.h"                        // InT<T>
+#include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
+#include "chunk/internal/proxy_operators.h"             // ProxyOperators
+#include "chunk/internal/tab_cst_val2_holder.h"         // TabCstVal2Holder: second-value identifiers
+#include "chunk/internal/relaxed_element.h"             // store_value: zero_any's relaxed element stores
+#include "chunk/internal/concept_is_clean_assignment.h" // IsCleanCompoundOp, IsCleanShiftOp, BaseT
+#include "chunk/internal/crtp_support.h"                // CRTPSupport, CHUNK_CRTP_USE_DEDUCING_THIS
+#include "chunk/internal/test_hooks.h"                  // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (read_values)
+#include "chunk/internal/read_reclaim.h"                // ReadSection: read_values_outside_session
+#include "chunk/internal/stable_table.h"                // StableTable: the outer per-array tables
+#include "chunk/internal/immortal.h"                    // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/parallel_storage_init.h"       // NoInitVector, make_filled: the candidate-flag rows
+#include "chunk/internal/same_value.h"                  // same_value
 
 namespace shrink_array
 {
@@ -177,38 +177,38 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
 #endif
 
     /**
-     * @brief Grow the per-array table of candidate-flag arrays to @p nb_tab entries.
-     * @param nb_tab Number of arrays to make room for.
+     * @brief Grow the per-array table of candidate-flag arrays to @p array_count entries.
+     * @param array_count Number of arrays to make room for.
      */
-    static void resize_tab_is_int(int nb_tab)
+    static void resize_tab_is_int(int array_count)
     {
-        tab_is_inside_chunk_list_to_compress.resize(nb_tab);
+        tab_is_inside_chunk_list_to_compress.resize(array_count);
     }
 
     /**
      * @brief Allocate and zero one array's per-chunk candidate flags.
-     * @param num_tab Which array's flags to (re)allocate.
-     * @param nb_chunk How many chunks it holds.
+     * @param array_id Which array's flags to (re)allocate.
+     * @param chunk_count How many chunks it holds.
      * @note Replacing the vector frees the previous flags, so this doubles as
      *       the release path on a re-chunk.
      */
-    static void resize_tab_is_int(int num_tab, int nb_chunk);
+    static void resize_tab_is_int(int array_id, int chunk_count);
 
     /**
      * @brief Release one array's candidate flags (its teardown).
      * @details Called once the array's candidates are purged and its chunks
      *          freed. Required: a re-chunk builds the new storage under a NEW
-     *          num_tab, so an old row is otherwise never replaced (one byte per
+     *          array_id, so an old row is otherwise never replaced (one byte per
      *          old chunk leaked per re-chunk). Swapped with an empty row to free
      *          the capacity. A later resize_tab_is_int() reallocates.
-     * @param num_tab The dying array's index.
+     * @param array_id The dying array's index.
      */
-    static void release_tab_is_int(int num_tab) noexcept
+    static void release_tab_is_int(int array_id) noexcept
     {
         using RowT = std::remove_reference_t<decltype(tab_is_inside_chunk_list_to_compress)>::value_type;
-        if (num_tab >= 0 && static_cast<std::size_t>(num_tab) < tab_is_inside_chunk_list_to_compress.size())
+        if (array_id >= 0 && static_cast<std::size_t>(array_id) < tab_is_inside_chunk_list_to_compress.size())
         {
-            RowT{}.swap(tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)]);
+            RowT{}.swap(tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(array_id)]);
         }
     }
 
@@ -258,7 +258,7 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
 
     /**
      * @brief Per-tab array of atomic flags indicating whether each chunk is marked for compression.
-     * Each entry holds nb_chunk atomic<char> flags (ChunkFlagRowT), built
+     * Each entry holds chunk_count atomic<char> flags (ChunkFlagRowT), built
      * whole by make_filled (atomics are not movable).
      */
 
@@ -284,9 +284,9 @@ class ProxyBaseFastCompPolicy<Derived, T, ChunkT, false> : public CRTPSupport<De
     /// @note Still declared: ArrayChunkBase::create_common() calls it
     ///       unconditionally, because the call site is shared with variants
     ///       that do need it.
-    static void resize_tab_is_int([[maybe_unused]] int nb_tab) noexcept {}
+    static void resize_tab_is_int([[maybe_unused]] int array_count) noexcept {}
     /// @brief No candidate flags in this configuration; nothing to size.
-    static void resize_tab_is_int([[maybe_unused]] int num_tab, [[maybe_unused]] int nb_chunk) noexcept {}
+    static void resize_tab_is_int([[maybe_unused]] int array_id, [[maybe_unused]] int chunk_count) noexcept {}
     /// @brief Release one array's candidate flags, as the enabled policy does.
     /// @details Do not make this a no-op: zero_any's serial build has candidate
     ///          lists and sizes these rows itself (zero_any::Proxy::resize_tab_is_int).
@@ -294,12 +294,12 @@ class ProxyBaseFastCompPolicy<Derived, T, ChunkT, false> : public CRTPSupport<De
     ///          behind them (one byte per chunk leaked) and the next
     ///          resize_tab_is_int() on that tab fails its "still queued" check.
     ///          zero and zero_one_value never fill a row here: the guard makes it free.
-    static void release_tab_is_int(int num_tab) noexcept
+    static void release_tab_is_int(int array_id) noexcept
     {
         using RowT = std::remove_reference_t<decltype(tab_is_inside_chunk_list_to_compress)>::value_type;
-        if (num_tab >= 0 && static_cast<std::size_t>(num_tab) < tab_is_inside_chunk_list_to_compress.size())
+        if (array_id >= 0 && static_cast<std::size_t>(array_id) < tab_is_inside_chunk_list_to_compress.size())
         {
-            RowT{}.swap(tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)]);
+            RowT{}.swap(tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(array_id)]);
         }
     }
 
@@ -427,10 +427,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
 
     using CompressionManagerType = CompressionManager<T, ChunkT>;
 
-    /// @brief Record which array this proxy points into. @see get_num_tab
-    void set_num_tab(int nt) noexcept
+    /// @brief Record which array this proxy points into. @see get_array_id
+    void set_array_id(int nt) noexcept
     {
-        num_tab_ = nt;
+        array_id_ = nt;
     }
 
     // ========================================================================
@@ -487,13 +487,13 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     }
     /**
      * @brief Set up pointer to this chunk's compression tracking flag
-     * @pre num_tab and num_chunk must be valid
+     * @pre array_id and chunk_index must be valid
      * @post ptr_is_inside_chunk_list_to_compress_ points to correct atomic flag
      */
     void set_ptr_is_inside_chunk_list_to_compress() noexcept
     {
         ptr_is_inside_chunk_list_to_compress_ =
-            &FastCompPolicy::tab_is_inside_chunk_list_to_compress[num_tab_][num_chunk_];
+            &FastCompPolicy::tab_is_inside_chunk_list_to_compress[array_id_][chunk_index_];
     }
 
     /// @brief add_to_compression_list() on the calling thread's own list.
@@ -520,7 +520,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///        check_nan_written_async(): assignments and compound operations
     ///        (`a[i] += NAN`) alike, direct or replayed.
     /// @details Reports the index in the array when the proxy was armed by one
-    ///          (operator[], a replay: num_chunk_ set), the position in the
+    ///          (operator[], a replay: chunk_index_ set), the position in the
     ///          chunk otherwise.
     void check_nan_written([[maybe_unused]] InT<T> value) const noexcept;
 
@@ -662,8 +662,8 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ChunkT&   chunk_; ///< The chunk that owns the element.
 
     mutable ArrayKey<ChunkT> ptr_on_array_ = nullptr; ///< The array the chunk belongs to; null until set.
-    mutable int              num_chunk_    = -1;      ///< Index of the chunk within that array; -1 until set.
-    mutable int              num_tab_      = -1;      ///< Index of the array in the registry; -1 until armed.
+    mutable int              chunk_index_  = -1;      ///< Index of the chunk within that array; -1 until set.
+    mutable int              array_id_     = -1;      ///< Index of the array in the registry; -1 until armed.
 
     // Frozen chunk geometry for the deferred-replay path.
     // 0 means "not armed" -> chunk_size() falls back to the live ptr_on_array
@@ -711,12 +711,12 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     static constexpr bool bit_operand_v = std::is_same_v<BaseT<U>, bool> || is_packed_bit_v<BaseT<U>>;
 
     /// @brief Bind a proxy to one element.
-    /// @note #ptr_on_array_, #num_chunk_ and #num_tab_ stay at their "not set"
-    ///       defaults (null, -1, -1) -- set_this_and_num_chunk() and set_num_tab()
+    /// @note #ptr_on_array_, #chunk_index_ and #array_id_ stay at their "not set"
+    ///       defaults (null, -1, -1) -- set_this_and_chunk_index() and set_array_id()
     ///       finish the job, and the compression paths need them. The defaults cost
     ///       nothing on the access path: the proxy is a local the accessors inline,
     ///       and a store a setter overwrites, or nothing reads, is dropped. A proxy rebuilt from a deferred-write
-    ///       context (make_proxy_with_info()) gets set_num_chunk() alone, never
+    ///       context (make_proxy_with_info()) gets set_chunk_index() alone, never
     ///       #ptr_on_array_: its array may be gone since the enqueue. There,
     ///       #chunk_size_frozen_ -- frozen non-zero at enqueue, while the array
     ///       was alive -- keeps every read of the pointer away: chunk_size(),
@@ -750,9 +750,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     // ========================================================================
 
     /// @brief Index of this element's chunk within its array.
-    [[nodiscard]] int get_num_chunk() const noexcept
+    [[nodiscard]] int get_chunk_index() const noexcept
     {
-        return num_chunk_;
+        return chunk_index_;
     }
 
     /**
@@ -779,9 +779,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     }
 
     /// @brief Index of this element's array in the proxy registry.
-    [[nodiscard]] int get_num_tab() const noexcept
+    [[nodiscard]] int get_array_id() const noexcept
     {
-        return num_tab_;
+        return array_id_;
     }
 
     /// @brief The chunk that owns this element.
@@ -814,31 +814,31 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     }
 
     /// @brief Arm the proxy with its array and chunk index; the table number
-    ///        is left unresolved (set_num_tab() looks it up).
+    ///        is left unresolved (set_array_id() looks it up).
     /// @param array_ptr The owning array (its registry key).
-    /// @param num_chunk Chunk index within that array.
-    void set_this_and_num_chunk(ArrayKey<ChunkT> array_ptr, int num_chunk) const noexcept
+    /// @param chunk_index Chunk index within that array.
+    void set_this_and_chunk_index(ArrayKey<ChunkT> array_ptr, int chunk_index) const noexcept
     {
         ptr_on_array_ = array_ptr;
-        num_chunk_    = num_chunk;
-        num_tab_      = -1; // not armed: set_num_tab() looks the registry up
+        chunk_index_  = chunk_index;
+        array_id_     = -1; // not armed: set_array_id() looks the registry up
     }
 
     /// @brief Same, with the array's own table number, so the write path
     ///        needs no registry lookup.
     /// @param array_ptr  the owning array (its registry key)
-    /// @param num_chunk chunk index
-    /// @param num_tab   the array's num_tab (ArrayChunkBase::num_tab), the
+    /// @param chunk_index chunk index
+    /// @param array_id   the array's array_id (ArrayChunkBase::array_id), the
     ///                   value it registered under its address
-    /// @note Avoids the registry lookup (share_info_array->get_num_tab, a
+    /// @note Avoids the registry lookup (array_registry->get_array_id, a
     ///       linear scan or hash probe) on every write, a measurable cost. The
     ///       value is checked against the registry under any_check
-    ///       (zero_any::Proxy::set_num_tab).
-    void set_this_and_num_chunk(ArrayKey<ChunkT> array_ptr, int num_chunk, int num_tab) const noexcept
+    ///       (zero_any::Proxy::set_array_id).
+    void set_this_and_chunk_index(ArrayKey<ChunkT> array_ptr, int chunk_index, int array_id) const noexcept
     {
         ptr_on_array_ = array_ptr;
-        num_chunk_    = num_chunk;
-        num_tab_      = num_tab;
+        chunk_index_  = chunk_index;
+        array_id_     = array_id;
     }
 
     /// @brief Compare the element's value with @p operand. Reads through read_pure().
@@ -1152,28 +1152,28 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         requires ElementIncrementable<T>;
 
     /**
-     * @brief Set the candidate-list flag of chunk @p num_chunkl of array @p num_tabl.
-     * @param num_tabl Array (table) number.
-     * @param num_chunkl Chunk index within that array.
+     * @brief Set the candidate-list flag of chunk @p chunk_index of array @p array_id.
+     * @param array_id Array (table) number.
+     * @param chunk_index Chunk index within that array.
      * @param flag New flag value (0: not queued).
      */
-    static void set_tab_is_inside_chunk_list_to_compress(int num_tabl, int num_chunkl, char flag) noexcept
+    static void set_tab_is_inside_chunk_list_to_compress(int array_id, int chunk_index, char flag) noexcept
     {
-        FastCompPolicy::tab_is_inside_chunk_list_to_compress[num_tabl][num_chunkl] = flag;
+        FastCompPolicy::tab_is_inside_chunk_list_to_compress[array_id][chunk_index] = flag;
     }
 
-    /// @brief The whole candidate-flag row for array @p num_tab.
-    static ChunkFlagRowT& get_tab_is_inside_list_to_compress(int num_tab) noexcept
+    /// @brief The whole candidate-flag row for array @p array_id.
+    static ChunkFlagRowT& get_tab_is_inside_list_to_compress(int array_id) noexcept
     {
-        return FastCompPolicy::tab_is_inside_chunk_list_to_compress[num_tab];
+        return FastCompPolicy::tab_is_inside_chunk_list_to_compress[array_id];
     }
 
     /// @brief Clear one chunk's candidate flag, so it may be queued again.
     /// @note Release store: whatever made the chunk a candidate must be visible
     ///       to the thread that next reads the flag.
-    static void reset_tab_inside_list_to_compress(int num_tab, int num_chunk) noexcept
+    static void reset_tab_inside_list_to_compress(int array_id, int chunk_index) noexcept
     {
-        FastCompPolicy::tab_is_inside_chunk_list_to_compress[num_tab][num_chunk].store(0, std::memory_order_release);
+        FastCompPolicy::tab_is_inside_chunk_list_to_compress[array_id][chunk_index].store(0, std::memory_order_release);
     }
 
   private:
@@ -1218,10 +1218,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         alloc_key_frozen_  = key;
     }
 
-    /// @brief Record the chunk index alone. @see set_this_and_num_chunk
-    void set_num_chunk(int num_chunk) const noexcept
+    /// @brief Record the chunk index alone. @see set_this_and_chunk_index
+    void set_chunk_index(int chunk_index) const noexcept
     {
-        num_chunk_ = num_chunk;
+        chunk_index_ = chunk_index;
     }
 
     /// @brief enqueue_deferred_write() for a compound arithmetic operation,

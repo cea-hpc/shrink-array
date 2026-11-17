@@ -61,7 +61,7 @@ struct ArrayChunkFor
 
 /**
  * @brief The identity of an array of @p ChunkT: the proxies' ptr_on_array_,
- *        the deferred contexts' ptr_on_array, every share_info_array key.
+ *        the deferred contexts' ptr_on_array, every array_registry key.
  * @details The address of the array's core (ArrayChunkCore::registry_key()),
  *          typed: a key reads the array back with no cast, and the derived
  *          array's `this` -- a different address in check builds

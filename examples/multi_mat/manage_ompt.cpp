@@ -16,7 +16,7 @@
 
 /**
  * @file manage_ompt.cpp
- * @brief The OMPT tool of multi-mat-embedded: what the embedded compression
+ * @brief The OMPT tool of multi_mat_embedded: what the embedded compression
  *        needs from the OpenMP runtime, and nothing more.
  *
  * The chunk library compresses from its write path; what it asks of the
@@ -141,13 +141,13 @@ int ompt_initialize(ompt_function_lookup_t lookup, int, ompt_data_t*)
     auto set_callback = reinterpret_cast<ompt_set_callback_t>(lookup("ompt_set_callback"));
     if (set_callback == nullptr)
     {
-        std::fputs("multi-mat: ompt_set_callback not found, the embedded compression has no phases\n", stderr);
+        std::fputs("multi_mat: ompt_set_callback not found, the embedded compression has no phases\n", stderr);
         return 0; // the tool is dropped
     }
     set_callback(ompt_callback_implicit_task, reinterpret_cast<ompt_callback_t>(on_implicit_task));
     set_callback(ompt_callback_sync_region, reinterpret_cast<ompt_callback_t>(on_sync_region));
     set_callback(ompt_callback_parallel_end, reinterpret_cast<ompt_callback_t>(on_parallel_end));
-    std::puts("multi-mat: OMPT tool registered (implicit_task, sync_region, parallel_end)");
+    std::puts("multi_mat: OMPT tool registered (implicit_task, sync_region, parallel_end)");
     return 1;
 }
 

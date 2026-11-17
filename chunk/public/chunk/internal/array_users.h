@@ -26,11 +26,11 @@
 // by that thread alone -- a work array -- is in that thread's structures only,
 // and its teardown needs no other.
 //
-// This table records, per array (num_tab), whether that is the case: no rank
+// This table records, per array (array_id), whether that is the case: no rank
 // yet, one rank, or several. A rank notes itself when it queues a chunk of the
 // array (the first time only: a relaxed load afterwards) and when it defers a
 // write to it. An exchange of identities (swap, re-chunk) marks both arrays
-// shared: their candidates may carry the other's num_tab.
+// shared: their candidates may carry the other's array_id.
 //
 // The teardown reads it (only()): inside a region, an array that only the
 // calling rank has used takes the own-rank path; any other keeps the
@@ -47,26 +47,26 @@ namespace shrink_array::internal
 
 /// @brief Per array of chunk type @p ChunkT: the ranks that queued one of its
 ///        chunks or deferred a write to it.
-/// @tparam ChunkT The chunk type (one num_tab sequence per chunk type).
+/// @tparam ChunkT The chunk type (one array_id sequence per chunk type).
 template <typename ChunkT>
-class TabUsers
+class ArrayUsers
 {
   public:
-    /// @brief Make room for @p nb_tab arrays.
+    /// @brief Make room for @p array_count arrays.
     /// @pre The caller holds the cold-path lock.
-    static void resize(int nb_tab)
+    static void resize(int array_count)
     {
-        table.resize(static_cast<std::size_t>(nb_tab));
+        table.resize(static_cast<std::size_t>(array_count));
     }
 
-    /// @brief Rank @p rank queues a chunk of array @p num_tab, or defers a write to it.
-    static void note(int num_tab, int rank) noexcept
+    /// @brief Rank @p rank queues a chunk of array @p array_id, or defers a write to it.
+    static void note(int array_id, int rank) noexcept
     {
-        if (num_tab < 0) [[unlikely]]
+        if (array_id < 0) [[unlikely]]
         {
             return;
         }
-        auto&     users = table[static_cast<std::size_t>(num_tab)];
+        auto&     users = table[static_cast<std::size_t>(array_id)];
         const int mine  = rank + 1;
         int       seen  = users.load(std::memory_order_relaxed);
         if (seen == mine || seen == several) [[likely]]
@@ -83,24 +83,24 @@ class TabUsers
         }
     }
 
-    /// @brief Mark array @p num_tab as used by several ranks, whatever was noted.
-    static void mark_shared(int num_tab) noexcept
+    /// @brief Mark array @p array_id as used by several ranks, whatever was noted.
+    static void mark_shared(int array_id) noexcept
     {
-        if (num_tab >= 0 && static_cast<std::size_t>(num_tab) < table.size())
+        if (array_id >= 0 && static_cast<std::size_t>(array_id) < table.size())
         {
-            table[static_cast<std::size_t>(num_tab)].store(several, std::memory_order_relaxed);
+            table[static_cast<std::size_t>(array_id)].store(several, std::memory_order_relaxed);
         }
     }
 
-    /// @brief Has no rank other than @p rank queued a chunk of array @p num_tab
+    /// @brief Has no rank other than @p rank queued a chunk of array @p array_id
     ///        or deferred a write to it?
-    [[nodiscard]] static bool only(int num_tab, int rank) noexcept
+    [[nodiscard]] static bool only(int array_id, int rank) noexcept
     {
-        if (num_tab < 0 || static_cast<std::size_t>(num_tab) >= table.size())
+        if (array_id < 0 || static_cast<std::size_t>(array_id) >= table.size())
         {
             return false;
         }
-        const int seen = table[static_cast<std::size_t>(num_tab)].load(std::memory_order_relaxed);
+        const int seen = table[static_cast<std::size_t>(array_id)].load(std::memory_order_relaxed);
         return seen == none || seen == rank + 1;
     }
 

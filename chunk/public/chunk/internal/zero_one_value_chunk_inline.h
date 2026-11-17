@@ -23,7 +23,7 @@
 #include <atomic>      // std::memory_order_acq_rel, std::memory_order_acquire, std::memory_order_release
 
 #include "chunk/config.h"                        // build_config::chunk_dynamic, chunk_config::OMPTcc
-#include "chunk/internal/PMP_CHUNK.h"            // CHUNK_PMP_*, pmp::team
+#include "chunk/internal/pmp_chunk.h"            // CHUNK_PMP_*, pmp::team
 #include "chunk/internal/chunk_size_policy.h"    // ChunkElems, set_thread_chunk_size
 #include "chunk/internal/in_t.h"                 // InT<T>
 #include "chunk/internal/zero_one_value_chunk.h" // zero_one_value::Chunk, the class these bodies belong to
@@ -114,22 +114,22 @@ template <typename T, typename Derived, bool Enabled>
  * @param ll_compt1  Output list of chunks compressible to first_value.
  * @param ll_compt2  Output list of chunks compressible to the second value.
  * @param inf_array  (second_value, index, ...) of the owning array.
- * @param num_chunk  Index of this chunk in its array.
- * @param num_tab    Table number of the owning array.
+ * @param chunk_index  Index of this chunk in its array.
+ * @param array_id    Table number of the owning array.
  * @param n_elems    This chunk's own element count, captured when it was queued.
  */
 template <typename T, typename Derived, bool Enabled>
 void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(CandidateTuples& ll_compt1,
                                                                                      CandidateTuples& ll_compt2,
                                                                                      const InfArrayT& inf_array,
-                                                                                     int              num_chunk,
-                                                                                     int              num_tab,
+                                                                                     int              chunk_index,
+                                                                                     int              array_id,
                                                                                      unsigned int     n_elems)
 {
     // InT: a reference into the (const, caller-owned) tuple when T is large.
     const InT<T> second_v = inf_array.second_value;
     fill_list_to_compress_impl(
-        ll_compt1, ll_compt2, num_chunk, num_tab, [&second_v]() -> InT<T> { return second_v; },
+        ll_compt1, ll_compt2, chunk_index, array_id, [&second_v]() -> InT<T> { return second_v; },
         derived().is_not_cst_val2(inf_array.ind), n_elems);
 }
 
@@ -147,8 +147,8 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_comp
  * @tparam SecondValueFunc Nullary callable returning the second value.
  * @param ll_compt1        Output list of chunks compressible to first_value.
  * @param ll_compt2        Output list of chunks compressible to the second value.
- * @param num_chunk        Index of this chunk in its array.
- * @param num_tab          Table number of the owning array.
+ * @param chunk_index        Index of this chunk in its array.
+ * @param array_id          Table number of the owning array.
  * @param get_second_value Supplies the second value; deferred so the bool twin
  *                         can pass a constant and skip the tuple lookup.
  * @param check_cst_val2   True when the chunk is NOT currently compressed to its
@@ -161,8 +161,8 @@ template <typename SecondValueFunc>
 void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_compress_impl(
     CandidateTuples&  ll_compt1,
     CandidateTuples&  ll_compt2,
-    int               num_chunk,
-    int               num_tab,
+    int               chunk_index,
+    int               array_id,
     SecondValueFunc&& get_second_value,
     bool              check_cst_val2,
     unsigned int      n_elems)
@@ -179,11 +179,11 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_comp
 
         if (scan.first)
         {
-            ll_compt1.emplace_back(std::make_tuple(&derived(), num_chunk, num_tab, n_elems));
+            ll_compt1.emplace_back(std::make_tuple(&derived(), chunk_index, array_id, n_elems));
         }
         if (scan.second)
         {
-            ll_compt2.emplace_back(std::make_tuple(&derived(), num_chunk, num_tab, n_elems));
+            ll_compt2.emplace_back(std::make_tuple(&derived(), chunk_index, array_id, n_elems));
         }
     }
 }
@@ -400,8 +400,8 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_chunk_to
         auto* chunk_t = std::get<0>(tup);
         if (chunk_t)
         {
-            const int num_chunk = std::get<1>(tup);
-            const int num_tab   = std::get<2>(tup);
+            const int chunk_index = std::get<1>(tup);
+            const int array_id    = std::get<2>(tup);
 
             if constexpr (build_config::chunk_dynamic)
             {
@@ -411,7 +411,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_chunk_to
             compress_one(chunk_t, std::get<3>(tup).count());
 
             // AFTER the compression, never before -- see the ORDER note above.
-            zero_one_value::Proxy<T>::reset_tab_is_inside_list_to_compress(num_tab, num_chunk);
+            zero_one_value::Proxy<T>::reset_tab_is_inside_list_to_compress(array_id, chunk_index);
         }
     }
 
@@ -466,7 +466,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_chunk_to
  * two things the caller supplies. Null chunk pointers are batch sentinels and
  * are skipped; each live entry is scanned at the geometry it carries.
  *
- * @tparam ScanFn callable `(ChunkType*, int num_chunk, int num_tab, ChunkElems)`.
+ * @tparam ScanFn callable `(ChunkType*, int chunk_index, int array_id, ChunkElems)`.
  * @param thr_rank Rank whose candidate list is scanned.
  * @param key      Second value indexing the per-rank candidate map.
  * @param scan_one Per-chunk scan.
@@ -494,11 +494,11 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_t
         const auto& chunk_t = std::get<0>(tup);
         if (chunk_t)
         {
-            const int& num_chunk = std::get<1>(tup);
-            const int  num_tab   = std::get<2>(tup);
+            const int& chunk_index = std::get<1>(tup);
+            const int  array_id    = std::get<2>(tup);
             // Per-entry geometry (see zero_one_value_chunk.h): in dynamic builds each
             // queued chunk carries the chunk size of its owning array.
-            scan_one(chunk_t, num_chunk, num_tab, std::get<3>(tup).count());
+            scan_one(chunk_t, chunk_index, array_id, std::get<3>(tup).count());
         }
     }
 }
@@ -519,14 +519,14 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_t
 {
     fill_list_chunk_to_compress_in_par_impl(
         thr_rank, inf_array.second_value,
-        [&ll_compt1, &ll_compt2, &inf_array](auto* chunk_t, int num_chunk, int num_tab, unsigned int n_elems)
+        [&ll_compt1, &ll_compt2, &inf_array](auto* chunk_t, int chunk_index, int array_id, unsigned int n_elems)
         {
             const auto n1 = ll_compt1.size();
             const auto n2 = ll_compt2.size();
-            chunk_t->fill_list_to_compress(ll_compt1, ll_compt2, inf_array, num_chunk, num_tab, n_elems);
+            chunk_t->fill_list_to_compress(ll_compt1, ll_compt2, inf_array, chunk_index, array_id, n_elems);
             // Scanned, still marked: hand its queue flag back before the mark can go down,
             // here for the chunks the scan drops (queue_flag.h, F6).
-            queue_flag::hand_back(zero_one_value::Proxy<T>::get_tab_is_inside_list_to_compress(num_tab)[num_chunk]);
+            queue_flag::hand_back(zero_one_value::Proxy<T>::get_tab_is_inside_list_to_compress(array_id)[chunk_index]);
             // Not selected by the scan: the writers may have it back now.
             if (ll_compt1.size() == n1 && ll_compt2.size() == n2)
             {
@@ -549,13 +549,13 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_t
 {
     fill_list_chunk_to_compress_in_par_impl(
         thr_rank, static_cast<T>(true),
-        [&ll_compt1, &ll_compt2](auto* chunk_t, int num_chunk, int num_tab, unsigned int n_elems)
+        [&ll_compt1, &ll_compt2](auto* chunk_t, int chunk_index, int array_id, unsigned int n_elems)
         {
             const auto n1 = ll_compt1.size();
             const auto n2 = ll_compt2.size();
-            chunk_t->fill_list_to_compress_bool(ll_compt1, ll_compt2, num_chunk, num_tab, n_elems);
+            chunk_t->fill_list_to_compress_bool(ll_compt1, ll_compt2, chunk_index, array_id, n_elems);
             // Scanned, still marked: hand its queue flag back first (queue_flag.h, F6).
-            queue_flag::hand_back(zero_one_value::Proxy<T>::get_tab_is_inside_list_to_compress(num_tab)[num_chunk]);
+            queue_flag::hand_back(zero_one_value::Proxy<T>::get_tab_is_inside_list_to_compress(array_id)[chunk_index]);
             if (ll_compt1.size() == n1 && ll_compt2.size() == n2)
             {
                 chunk_t->steal_unmark();
@@ -705,10 +705,10 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
     }
 
     queue_flag::release_candidates(
-        vec_tuple_to_compress, sz, [](int num_tab, int num_chunk) -> auto&
-        { return zero_one_value::Proxy<T>::get_tab_is_inside_list_to_compress(num_tab)[num_chunk]; },
-        [](int num_tab, int num_chunk)
-        { zero_one_value::Proxy<T>::reset_tab_is_inside_list_to_compress(num_tab, num_chunk); });
+        vec_tuple_to_compress, sz, [](int array_id, int chunk_index) -> auto&
+        { return zero_one_value::Proxy<T>::get_tab_is_inside_list_to_compress(array_id)[chunk_index]; },
+        [](int array_id, int chunk_index)
+        { zero_one_value::Proxy<T>::reset_tab_is_inside_list_to_compress(array_id, chunk_index); });
 
     if (proxy2)
     {
@@ -809,9 +809,9 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
             {
                 // The map keeps a slot per second value ever declared; the
                 // arrays that declared this one may all be gone (clear_core
-                // drops their candidates by num_tab, not the slot). No array,
+                // drops their candidates by array_id, not the slot). No array,
                 // no info tuple, nothing to fold: skip it, do not dereference.
-                const auto* inf = zero_one_value::Proxy<T>::share_info_array->find_inf_array(second_val);
+                const auto* inf = zero_one_value::Proxy<T>::array_registry->find_inf_array(second_val);
                 if (inf == nullptr)
                 {
                     continue;

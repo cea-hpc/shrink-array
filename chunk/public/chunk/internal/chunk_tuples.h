@@ -26,8 +26,8 @@
 
 namespace shrink_array
 {
-/// @brief A list of queued compression candidates: (chunk, num_chunk,
-///        num_tab, the chunk's element count).
+/// @brief A list of queued compression candidates: (chunk, chunk_index,
+///        array_id, the chunk's element count).
 /// @details The 4th field is the chunk's OWN element count (ChunkElems),
 ///          captured at enqueue by push_to_compress_list. Consumers (compress(),
 ///          fill_list_to_compress_impl(), the drain paths) scan with it, never

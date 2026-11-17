@@ -73,7 +73,7 @@
 
 #include "chunk/build_options.h"                    // CHUNK_OPT_* (the bench TUs)
 #include "chunk/internal/term_color.h"              // tc (the bench TUs)
-#include "chunk/internal/PMP_CHUNK.h"               // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/pmp_chunk.h"               // CHUNK_PMP_MAX_THREADS
 #include "chunk/phases.h"                           // begin_parallel_phase, finalize_barrier_phase (bench_phases.h)
 #include "chunk/internal/singleton.h"               // SingletonChk (the bench TUs)
 #include "chunk/internal/global_stats_chunk_list.h" // GlobalStatsChunkList (shrink_bench.cpp)
@@ -93,7 +93,7 @@
 // compiler is entitled to act on the promise. The std::vector baseline is
 // plain memory (tab_bool is a std::vector<short> there, not the bit proxy),
 // so there the same loops are exactly what `simd` is for -- and clang 22 does
-// vectorise them (the multi-mat example uses the same split, LoopsSimd vs
+// vectorise them (the multi_mat example uses the same split, LoopsSimd vs
 // Loops, with the same rationale).
 //
 // One iteration space, one schedule(static), the same on every loop of a

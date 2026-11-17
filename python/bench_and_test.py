@@ -38,8 +38,8 @@ Notable features:
     the reference is not portable across compilers (see oracle_dir()).
   * Per-run timeout + capture of stderr from crashing runs.
   * Validation harnesses first (ctest -L validation in each build dir):
-    rechunk_validation, dyn_geometry_validation, compress_roundtrip,
-    pool_accounting, deferred_path_validation, open_types_validation,
+    rechunk_validation, dyn_geometry_validation, compress_roundtrip_validation,
+    pool_accounting_validation, deferred_path_validation, open_types_validation,
     operators_validation -- and,
     in the std-backend CHECK_OPTIM builds (cmake-build-std-*-check),
     std_thread_validation and tbb_validation.

@@ -81,7 +81,7 @@ La taille de chunk est portée **par chaque tableau** (`size_policy_`, voir
 L'indice global `i` se décompose en deux opérations d'un cycle :
 
 ```cpp
-const int num_chunk = i >> size_policy_.decalage();   // numéro du chunk
+const int chunk_index = i >> size_policy_.decalage();   // numéro du chunk
 const int num       = i &  size_policy_.modulo();     // position dans le chunk
 ```
 
@@ -113,15 +113,15 @@ valeur déclarée, repéré par un **indice** `ind`.
 ### 4.2 Le registre des secondes valeurs
 
 La seconde valeur **n'est pas stockée dans le tableau** : elle vit dans le registre partagé
-<tt>zero_one_value::Proxy\<T\>\::share_info_array</tt>, indexé par l'**adresse** du tableau. Chaque entrée est un
+<tt>zero_one_value::Proxy\<T\>\::array_registry</tt>, indexé par l'**adresse** du tableau. Chaque entrée est un
 triplet `InfArrayT` :
 
 ```
-(second_value, ind, num_tab)
+(second_value, ind, array_id)
 ```
 
 - `ind` : l'indice du tampon constant `cst_val2` de cette valeur ;
-- `num_tab` : le numéro du tableau, qui indexe les tables de métadonnées par tableau
+- `array_id` : le numéro du tableau, qui indexe les tables de métadonnées par tableau
   (par exemple les drapeaux « déjà candidat à la compression »).
 
 Le registre reste la source de vérité, mais chaque tableau en garde un **miroir**
@@ -141,10 +141,10 @@ L'opérateur de lecture renvoie une **valeur**, jamais une référence :
 ```cpp
 CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](IndType i) const noexcept
 {
-    const int num_chunk = i >> size_policy_.decalage();
+    const int chunk_index = i >> size_policy_.decalage();
     const int num       = i & size_policy_.modulo();
-    const auto& chunk_t = chunk_list[num_chunk];
-    sync_chunk(chunk_t, num_chunk, num);      // barrière de lecture (OpenMP)
+    const auto& chunk_t = chunk_list[chunk_index];
+    sync_chunk(chunk_t, chunk_index, num);      // barrière de lecture (OpenMP)
     return chunk_t[num];
 }
 ```
@@ -173,10 +173,10 @@ le tampon : **à n'utiliser que sur un chunk matérialisé**, puisqu'il contourn
 ```cpp
 ProxyType operator[](IndType i) noexcept
 {
-    const int num_chunk = i >> size_policy_.decalage();
+    const int chunk_index = i >> size_policy_.decalage();
     const int num       = i & size_policy_.modulo();
-    const ProxyType& val = chunk_list[num_chunk][num];
-    val.set_this_and_num_chunk(&derived(), num_chunk, num_tab);   // tableau, chunk, num_tab
+    const ProxyType& val = chunk_list[chunk_index][num];
+    val.set_this_and_chunk_index(&derived(), chunk_index, array_id);   // tableau, chunk, array_id
     val.arm_inf_array(derived().registry_mirror());                // zero_one_value : le miroir
     return val;
 }
@@ -344,7 +344,7 @@ Chaque thread tient une **liste de chunks candidats par seconde valeur** :
 Manager::zero_one_value_candidates_map_thr[rang][second_value]
 ```
 
-Chaque entrée porte `(chunk, num_chunk, num_tab, nombre d'éléments)`. Le nombre d'éléments
+Chaque entrée porte `(chunk, chunk_index, array_id, nombre d'éléments)`. Le nombre d'éléments
 est celui de la géométrie du tableau **au moment de la mise en file** : le thread qui
 traitera l'entrée peut avoir une autre taille « ambiante » (après un rechunk).
 
@@ -369,7 +369,7 @@ placés avant :
   chunk ne serait plus jamais mis en file.
 
 Un drapeau atomique par chunk (« déjà candidat », `tab_is_inside_chunk_list_to_compress`,
-indexé par `num_tab`) garantit qu'un chunk n'est mis en file **qu'une fois** jusqu'à la
+indexé par `array_id`) garantit qu'un chunk n'est mis en file **qu'une fois** jusqu'à la
 passe suivante.
 
 Le drapeau a deux valeurs de plus à l'intérieur d'une passe : dès qu'elle a parcouru un
@@ -461,11 +461,11 @@ décision du **décideur** (`ChunkSizeAdvisor::analyze`, qui estime la mémoire 
    `copy_range`, et un nouveau chunk dont toutes les sources étaient compressées est
    **replié** tout de suite (`compress()` de la variante sur ce chunk, qui refuse si les
    constantes des sources diffèrent) ;
-5. **échanger les identités** : `num_tab` et les clés du registre changent de main, et le
+5. **échanger les identités** : `array_id` et les clés du registre changent de main, et le
    miroir est relu des deux côtés ;
 6. détruire l'ancien stockage.
 
-L'ancien stockage est détruit sous son propre identifiant (`num_tab`), que rien ne réutilise :
+L'ancien stockage est détruit sous son propre identifiant (`array_id`), que rien ne réutilise :
 tout ce qui lui était indexé doit être **libéré**, pas seulement vidé. Pour `zero_one_value`, ce sont
 les indicateurs « en liste de compression » (un octet par chunk), libérés à la fin de
 `clear_core()`, après la purge des candidats. Le seuil de déclenchement des passes de
@@ -606,4 +606,4 @@ Options CMake liées aux performances des bancs :
 | géométrie | `internal/chunk_size_policy.h` |
 | rechunk, décideur | `internal/array_chunk_rechunk_inline.h`, `internal/array_chunk_rechunk_refill.h`, `chunk_size_advisor.h` |
 | opérations sur plages | `range_ops.h` |
-| tests de validation | `examples/validation/` (`rechunk_validation`, `compress_roundtrip`, `deferred_path_validation`, `pool_accounting`, `fill_range_mt_validation`, …) |
+| tests de validation | `examples/validation/` (`rechunk_validation`, `compress_roundtrip_validation`, `deferred_path_validation`, `pool_accounting_validation`, `fill_range_mt_validation`, …) |

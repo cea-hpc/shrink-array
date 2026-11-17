@@ -389,8 +389,8 @@ void read_check_binary_file(Int                ind,
             std::getline(trace_file, line);
             std::getline(trace_file, line);
 
-            const Int num_chunk = index / static_cast<Int>(data_check.chunk_size());
-            const Int num       = index % static_cast<Int>(data_check.chunk_size());
+            const Int chunk_index = index / static_cast<Int>(data_check.chunk_size());
+            const Int num         = index % static_cast<Int>(data_check.chunk_size());
 
             bool                  is_values   = false;
             bool                  is_cst_val1 = false;
@@ -420,7 +420,7 @@ void read_check_binary_file(Int                ind,
                 }
             }
 
-            const auto& chunk_t = data_check.get_chunk_list()[num_chunk];
+            const auto& chunk_t = data_check.get_chunk_list()[chunk_index];
 
             const bool is_val1 = chunk_t.is_cst_val1();
 
@@ -447,7 +447,7 @@ void read_check_binary_file(Int                ind,
             const auto lbd_print = [&]
             {
                 std::cerr << "value               : " << value << "\n";
-                std::cerr << "chunk number        : " << num_chunk << "\n";
+                std::cerr << "chunk number        : " << chunk_index << "\n";
                 std::cerr << "number inside chunk : " << num << "\n";
                 std::cerr << "is values           : " << is_values << "\n";
                 std::cerr << "is_cst_val1         : " << is_val1 << "\n";
@@ -645,12 +645,12 @@ void read_check_binary_file(Int                ind,
                 // reads chunk_t, declared here, so they cannot be split.
                 if constexpr (chunk_config::is_shrink_enabled)
                 {
-                    const Int num_chunk = k / static_cast<Int>(data_check.chunk_size());
+                    const Int chunk_index = k / static_cast<Int>(data_check.chunk_size());
 
-                    log_message("\nchunk number        : " + std::to_string(num_chunk) + "\n");
+                    log_message("\nchunk number        : " + std::to_string(chunk_index) + "\n");
                     const Int num = k % static_cast<Int>(data_check.chunk_size());
                     log_message("number inside chunk : " + std::to_string(num) + "\n");
-                    const auto& chunk_t = data_check.get_chunk_list()[num_chunk];
+                    const auto& chunk_t = data_check.get_chunk_list()[chunk_index];
                     using ValueType     = decltype(chunk_t.values_); // infer the type
 
                     T* raw_ptr = nullptr;
@@ -821,9 +821,9 @@ void read_check_binary_file(Int                ind,
 
                 if constexpr (chunk_config::is_shrink_enabled)
                 {
-                    const Int   num_chunk = k / static_cast<Int>(data_check.chunk_size());
-                    const auto& chunk_t   = data_check.get_chunk_list()[num_chunk];
-                    log_message("chunk number        : " + std::to_string(num_chunk) + "\n");
+                    const Int   chunk_index = k / static_cast<Int>(data_check.chunk_size());
+                    const auto& chunk_t     = data_check.get_chunk_list()[chunk_index];
+                    log_message("chunk number        : " + std::to_string(chunk_index) + "\n");
                     const Int num = k % static_cast<Int>(data_check.chunk_size());
                     log_message("number inside chunk : " + std::to_string(num) + "\n");
 
@@ -876,13 +876,14 @@ void read_check_binary_file(Int                ind,
 
                 if constexpr (chunk_config::use_second_value)
                 {
-                    // num_chunk is recomputed rather than hoisted out of the block
+                    // chunk_index is recomputed rather than hoisted out of the block
                     // above: the ratio report sitting between the two must keep
                     // running in the std::vector build, so the two cannot be merged
                     // into a single `if constexpr`.
-                    const Int num_chunk = k / static_cast<Int>(data_check.chunk_size());
+                    const Int chunk_index = k / static_cast<Int>(data_check.chunk_size());
 
-                    if (const auto& chunk_t = data_check.chunk_list_[num_chunk]; chunk_t.is_cst_val1() && value != zero)
+                    if (const auto& chunk_t = data_check.chunk_list_[chunk_index];
+                        chunk_t.is_cst_val1() && value != zero)
                     {
                         log_message("\nis_cst_val1 should be not !\n");
                         {

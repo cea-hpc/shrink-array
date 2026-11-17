@@ -23,7 +23,7 @@
 
 #include <bit> // std::has_single_bit
 
-#include "chunk/internal/func_p2.h" // constexpr log2int
+#include "chunk/internal/pow2.h" // constexpr log2int
 
 namespace shrink_array
 {

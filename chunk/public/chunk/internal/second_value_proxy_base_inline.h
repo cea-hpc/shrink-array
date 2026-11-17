@@ -91,7 +91,7 @@ SecondValueProxyBase<Derived, T, ChunkT>::write_with_optional_lock_with_set_ptr(
     {
         if constexpr (chunk_config::use_fast_block_compression)
         {
-            derived().set_num_tab_ptr_is_inside_chunk(); // common initialization required for the fast-path
+            derived().set_array_id_ptr_is_inside_chunk(); // common initialization required for the fast-path
         }
         else
         {

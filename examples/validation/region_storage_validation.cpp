@@ -61,7 +61,7 @@
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/config.h"                // chunk_config::use_zero*, build_config::needs_explicit_phases
 #include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_THREAD_RANK
+#include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_THREAD_RANK
 #include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp

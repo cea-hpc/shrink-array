@@ -41,14 +41,14 @@
 #include "chunk/internal/relaxed_element.h"             // element_at<true>: the marking filter's reads
 #include "fast_allocators/internal/svalloc.h"           // svcalloc_align, svfree
 #include "chunk/config.h"                               // build_config::threaded, chunk_config::stats
-#include "chunk/internal/PMP_CHUNK.h"        // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_IN_PARALLEL_REGION, pmp::team
+#include "chunk/internal/pmp_chunk.h"        // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_IN_PARALLEL_REGION, pmp::team
 #include "chunk/internal/ring_log_debug.h"   // EventCode::value_alloc/FREE (debug ring log)
 #include "chunk/internal/global_check.h"     // global_check_nan (DO_CHECK: config.h's CheckNaN<true>)
 #include "chunk/internal/invariant_check.h"  // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/deferred_op_pool.h" // DeferredOpPtr
 #include "chunk/internal/pool_ledger.h"      // CHUNK_LEDGER_* block-lifecycle checks (check builds)
 #include "chunk/internal/chunk_stats.h"      // increm_chunk_* / add_chunk_* (CHUNK_STATS)
-#include "chunk/internal/crp_helper.h"       // CRTPSupport
+#include "chunk/internal/crtp_support.h"     // CRTPSupport
 #include "chunk/internal/bad_ptr_check.h"    // CHUNK_CHECK_VALUES_PTR (check builds)
 
 #include "chunk/internal/test_hooks.h"   // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (element_at)

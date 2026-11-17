@@ -1,12 +1,12 @@
 # Copyright 2024-2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 # Two executables from the same sources (config.h):
-#   multi-mat           the manual version, every compiler: the program makes
+#   multi_mat           the manual version, every compiler: the program makes
 #                       the phase calls of chunk/phases.h itself (four
 #                       one-line wrappers) and compresses its field arrays by
 #                       explicit compress() calls every freq_compress
 #                       iterations. No OMPT tool in this binary.
-#   multi-mat-embedded  the embedded version: no call at all, the OMPT tool of
+#   multi_mat_embedded  the embedded version: no call at all, the OMPT tool of
 #                       manage_ompt.cpp (this directory) drives the
 #                       compression from the runtime's callbacks. Clang and
 #                       IntelLLVM only: gcc's libgomp has no OMPT, and the
@@ -46,7 +46,7 @@ function(multi_mat_setup_target tgt)
 
     # The compute loop is std::cos/sin/tan under `omp simd` (LoopsSimd, on the
     # std::vector path): without a vector libm it does not vectorise at all --
-    # see chunk_enable_fast_math in examples/CMakeLists.txt. multi-mat compares
+    # see chunk_enable_fast_math in examples/CMakeLists.txt. multi_mat compares
     # nothing bit for bit (it prints its result), so fast math is fine here.
     chunk_enable_fast_math(${tgt})
 
@@ -56,7 +56,7 @@ function(multi_mat_setup_target tgt)
     # (LoopsSimd::omp_foreach_simd_red_sum) stayed scalar, "function is not
     # vectorizable" in -fopt-info-vec-all. -ffast-math defines it; glibc then
     # declares only the variants it ships, so nothing can fail to link. Its
-    # extra -ffinite-math-only is harmless here: multi-mat tests no value for
+    # extra -ffinite-math-only is harmless here: multi_mat tests no value for
     # NaN or inf, and the library compares doubles by their bits
     # (same_value.h). It would fold away the NaN check of a CHUNK_DO_CHECK
     # build, hence the condition. Not in chunk_enable_fast_math: shrink_bench's
@@ -70,25 +70,25 @@ function(multi_mat_setup_target tgt)
     endif ()
 endfunction()
 
-add_executable(multi-mat ${_mm_sources} ompt_off.cpp)
-multi_mat_setup_target(multi-mat)
+add_executable(multi_mat ${_mm_sources} ompt_off.cpp)
+multi_mat_setup_target(multi_mat)
 
-add_test(NAME multi_mat COMMAND multi-mat)
+add_test(NAME multi_mat COMMAND multi_mat)
 set_property(TEST multi_mat PROPERTY LABELS examples)
 # check builds it (cmake/shrink_build_stamp.cmake), as it builds the harnesses: ctest -L examples
 # finds it.
-set_property(GLOBAL APPEND PROPERTY SHRINK_CHECK_TARGETS multi-mat)
+set_property(GLOBAL APPEND PROPERTY SHRINK_CHECK_TARGETS multi_mat)
 set_property(TEST multi_mat PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
 
 if (CHUNK_HAVE_OMPT)
-    add_executable(multi-mat-embedded ${_mm_sources} manage_ompt.cpp)
-    add_test(NAME multi_mat_embedded COMMAND multi-mat-embedded)
+    add_executable(multi_mat_embedded ${_mm_sources} manage_ompt.cpp)
+    add_test(NAME multi_mat_embedded COMMAND multi_mat_embedded)
     set_property(TEST multi_mat_embedded PROPERTY LABELS examples)
-    set_property(GLOBAL APPEND PROPERTY SHRINK_CHECK_TARGETS multi-mat-embedded)
+    set_property(GLOBAL APPEND PROPERTY SHRINK_CHECK_TARGETS multi_mat_embedded)
     set_property(TEST multi_mat_embedded PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
 else ()
-    add_executable(multi-mat-embedded EXCLUDE_FROM_ALL ${_mm_sources} manage_ompt.cpp)
-    message(STATUS "multi-mat-embedded: not in `all` (no OMPT tool with ${CMAKE_CXX_COMPILER_ID}; Clang or IntelLLVM, CHUNK_OPENMP=ON)")
+    add_executable(multi_mat_embedded EXCLUDE_FROM_ALL ${_mm_sources} manage_ompt.cpp)
+    message(STATUS "multi_mat_embedded: not in `all` (no OMPT tool with ${CMAKE_CXX_COMPILER_ID}; Clang or IntelLLVM, CHUNK_OPENMP=ON)")
 endif ()
-multi_mat_setup_target(multi-mat-embedded)
-target_compile_definitions(multi-mat-embedded PRIVATE MULTIMAT_EMBEDDED_COMPRESSION)
+multi_mat_setup_target(multi_mat_embedded)
+target_compile_definitions(multi_mat_embedded PRIVATE MULTIMAT_EMBEDDED_COMPRESSION)

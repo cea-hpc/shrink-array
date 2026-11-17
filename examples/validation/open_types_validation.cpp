@@ -43,7 +43,7 @@
 //   of T{} / second / varied (whole chunks, so the pass sees pure constant
 //   blocks), compress() from the whole team, rewrite a quarter, compare every
 //   element against a std::vector reference. Phase brackets as in
-//   compress_roundtrip.
+//   compress_roundtrip_validation.
 //
 //   No type is declared up front: Runtime::init(bool) alone, and
 //   each array registers its element type at its construction -- the first
@@ -78,7 +78,7 @@
 #include "chunk/internal/zero_chunk.h"        // release_chunk_pools, Runtime::shutdown
 #include "chunk/internal/chunk_size_policy.h" // active_chunk_size, set_active_chunk_size, set_thread_chunk_size
 #include "chunk/config.h" // chunk_config::use_zero_one_value*, build_config::chunk_dynamic / needs_explicit_phases
-#include "chunk/internal/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/pmp_chunk.h" // CHUNK_PMP_MAX_THREADS
 #include "chunk/phases.h"             // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/print.h"              // shrink_array::println
 

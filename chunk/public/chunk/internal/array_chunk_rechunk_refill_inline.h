@@ -30,7 +30,7 @@
 #include <utility>     // std::as_const
 #include <vector>      // the refill buffers
 
-#include "chunk/internal/PMP_CHUNK.h"                  // get_thr_rank_fast, pmp::team, chunk_pmp_*_schedule
+#include "chunk/internal/pmp_chunk.h"                  // get_thr_rank_fast, pmp::team, chunk_pmp_*_schedule
 #include "chunk/range_ops.h"                           // copy_range -- the public bulk fill
 #include "chunk/bit.h"                                 // is_bool_like_v (the bulk read gate)
 #include "chunk/internal/chunk_traits.h"               // is_zero_any_family_v, has_motif_state_v
@@ -61,7 +61,7 @@ RechunkSupport<Derived, true>::Refill::Refill(Derived&     src,
     , new_size_(new_size)
     , old_key_(old_key)
     , total_(src.m_size_)
-    , n_new_(tmp.nb_chunk_)
+    , n_new_(tmp.chunk_count_)
     , trace_on_(internal::rechunk_trace_on())
     , trace_mem_on_(internal::rechunk_trace_mem_on())
     , slice_trace_(internal::rechunk_slice_trace_on())
@@ -74,7 +74,7 @@ RechunkSupport<Derived, true>::Refill::Refill(Derived&     src,
     {
         if (!aligned_coarsening_)
         {
-            old_done_ = std::vector<std::atomic<int>>(static_cast<std::size_t>(src.nb_chunk_));
+            old_done_ = std::vector<std::atomic<int>>(static_cast<std::size_t>(src.chunk_count_));
         }
     }
 }
@@ -143,7 +143,7 @@ void RechunkSupport<Derived, true>::Refill::run()
     //
     // The rebuild loop is schedule(runtime): set the chosen schedule on this
     // task (the slice regions inherit it) and restore the caller's after the
-    // slices. Both calls are no-ops in a serial build (PMP_CHUNK.h).
+    // slices. Both calls are no-ops in a serial build (pmp_chunk.h).
     const ChunkPmpSchedule caller_schedule = chunk_pmp_get_schedule();
     if constexpr (build_config::threaded)
     {
@@ -517,8 +517,8 @@ bool RechunkSupport<Derived, true>::Refill::install_cst2([[maybe_unused]] int   
             // would be looked up even in a discarded branch.
             const auto value = static_cast<T>(std::as_const(src_)[span.base]);
             auto&      nch   = tmp_.chunk_list_[static_cast<std::size_t>(new_chunk)];
-            const auto psv   = ProxyType::BaseSpec::get_tab_second_value(tmp_.num_tab_, new_chunk);
-            CstSlot*   ptc   = &ProxyType::tab_type_cst_val[tmp_.num_tab_][new_chunk];
+            const auto psv   = ProxyType::BaseSpec::get_tab_second_value(tmp_.array_id_, new_chunk);
+            CstSlot*   ptc   = &ProxyType::tab_type_cst_val[tmp_.array_id_][new_chunk];
             (void)nch.find_or_set_ind_cst_val2(value, psv);
             ChunkType::set_cst_val_to_cst_val2(ptc);
             nch.init_values_cst_val(ptc, psv);
@@ -724,8 +724,8 @@ void RechunkSupport<Derived, true>::Refill::release_sources([[maybe_unused]] con
                 // written(): neither cst1 nor a cst2 (a pattern motif included).
                 if (och.written())
                 {
-                    och.release_st(&ProxyType::tab_type_cst_val[src_.num_tab_][oc],
-                                   ProxyType::BaseSpec::get_tab_second_value(src_.num_tab_, oc), thr);
+                    och.release_st(&ProxyType::tab_type_cst_val[src_.array_id_][oc],
+                                   ProxyType::BaseSpec::get_tab_second_value(src_.array_id_, oc), thr);
                 }
             }
             else
@@ -764,7 +764,7 @@ void RechunkSupport<Derived, true>::Refill::fold_back([[maybe_unused]] int      
     // on is_not_cst_val1(); the scan on a cst2 chunk re-derives the same
     // state).
     //
-    // Wired for zero_any (compress() by num_chunk, num_tab) and zero_one_value
+    // Wired for zero_any (compress() by chunk_index, array_id) and zero_one_value
     // (by the array's inf_array record). bool registers no second value
     // (get_ind_second_value aborts) and is bit-packed: never this path.
     if constexpr (is_zero_any_family_v<ChunkType>)
@@ -773,7 +773,7 @@ void RechunkSupport<Derived, true>::Refill::fold_back([[maybe_unused]] int      
         {
             ++tally.folded;
             auto& nch = tmp_.chunk_list_[static_cast<std::size_t>(new_chunk)];
-            nch.compress(get_thr_rank_fast(), new_chunk, tmp_.num_tab_,
+            nch.compress(get_thr_rank_fast(), new_chunk, tmp_.array_id_,
                          /*apply=*/true, ChunkElems{static_cast<unsigned>(new_size_)});
             // Every source chunk WAS a constant here, so a refusal means the
             // span merged constants that differ -- the genuine cost of

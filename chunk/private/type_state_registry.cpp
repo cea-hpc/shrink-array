@@ -30,7 +30,7 @@
 #include "chunk/internal/type_state.h"          // TypeStateInterface, TypeStateParallelImpl
 #include "chunk/internal/type_state_registry.h" // the declarations defined here
 #include "chunk/internal/churn_counters.h"      // churn::note_phase_end
-#include "chunk/internal/PMP_CHUNK.h" // CHUNK_PMP_THREAD_RANK / _RANK_BOUND / _NUM_THREADS, chunk_rank_cache, pmp::team, current_team
+#include "chunk/internal/pmp_chunk.h" // CHUNK_PMP_THREAD_RANK / _RANK_BOUND / _NUM_THREADS, chunk_rank_cache, pmp::team, current_team
 
 #include "chunk/internal/deferred_op_pool.h" // for reset_all
 #include "chunk/internal/phase_guard.h"      // check-build guard of the phase protocol

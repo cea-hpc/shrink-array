@@ -59,7 +59,7 @@
 #include "chunk/zero_any_array.h"        // zero_any::Array, zero_any::Chunk complete (its registry types)
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/config.h"                // chunk_config::use_zero_any, build_config::needs_explicit_phases
-#include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
 #include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h"    // arg_number (checked, not atoi)
 #include "chunk/print.h"                 // shrink_array::println

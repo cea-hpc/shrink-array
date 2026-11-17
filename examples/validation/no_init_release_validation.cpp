@@ -33,7 +33,7 @@
 #include <unistd.h>   // sysconf
 
 #include "chunk/internal/parallel_storage_init.h" // NoInitVector, make_filled
-#include "chunk/internal/PMP_CHUNK.h"             // pmp::team
+#include "chunk/internal/pmp_chunk.h"             // pmp::team
 #include "chunk/print.h"                          // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp

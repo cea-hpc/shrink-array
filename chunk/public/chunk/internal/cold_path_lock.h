@@ -19,8 +19,8 @@
 // The lock of the cold path: building and tearing down an array.
 //
 // An array's constructor and destructor write state shared by every array of
-// its element type -- the identity registry (share_info_array), the next
-// num_tab, the outer per-array tables, the manager's totals and thresholds.
+// its element type -- the identity registry (array_registry), the next
+// array_id, the outer per-array tables, the manager's totals and thresholds.
 // Two threads of a parallel region each building a work array of the same type
 // used to write all of that at once. The cold path now takes this lock; the hot
 // path (operator[], the proxies, the passes) never does: what it reads of that
@@ -54,7 +54,7 @@ namespace shrink_array::internal
 /// @brief Holds the cold-path lock for a scope.
 using ColdPathLock = std::scoped_lock<std::recursive_mutex>;
 
-// The identity registries (share_info_array: array address -> num_tab, and for
+// The identity registries (array_registry: array address -> array_id, and for
 // zero_one_value its second value) are written on the cold path, under the lock
 // above, and looked up outside it: by the replay of a deferred write, by a proxy
 // that was not armed by operator[], and by the cross-checks of the check builds

@@ -122,18 +122,18 @@ class RechunkSupport<Derived, true> : public RechunkHookDefaults<Derived>
      *          then SWAP storage + identity with *this. Do not resize in place: the
      *          library assumes geometry is immutable after construction (frozen
      *          size, cached proxy pointers, deferred-compression state). After the
-     *          swap *this carries the S' storage under tmp's num_tab, and tmp
+     *          swap *this carries the S' storage under tmp's array_id, and tmp
      *          destroys the old identity+geometry on scope exit.
      *
      *          Hooks (see each zero::Array*):
      *          - rechunk_drop_candidates() — remove this array's queued
-     *            compression candidates by num_tab
+     *            compression candidates by array_id
      *          - rechunk_drain_reuse_list(new_size) — drain the S' reuse free-list
      *            (its buffers were sized for an older geometry)
      *          - rechunk_capture_state() -> T — variant state to carry across
      *            (e.g. zero_one_value's array-level second_value)
      *          - rechunk_seed_fresh(state) — apply that state to the fresh array
-     *          - rechunk_swap_identity(tmp) -> bool — swap num_tab member (if any)
+     *          - rechunk_swap_identity(tmp) -> bool — swap array_id member (if any)
      *            + registry entry (swap_keys/entries)
      *          - rechunk_reown_after_swap(tmp,state) — post-swap fixup (zero_one_value
      *            re-owns its map_inf_array_ entry so it doesn't dangle when tmp dies)
