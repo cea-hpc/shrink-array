@@ -335,7 +335,7 @@ des boucles du banc, chaque page touchée en premier par le thread qui y travail
 éléments valent `T{}` exactement comme ceux d'un `std::vector`. Seul change qui écrit les zéros.
 
 **À utiliser** sur des données surtout nulles ou faites de plages de quelques valeurs : champs
-creux, masques de matériaux, grandeurs multi_matériaux, drapeaux. **À éviter** sur des données
+creux, masques de matériaux, grandeurs multi-matériaux, drapeaux. **À éviter** sur des données
 où chaque chunk contient des valeurs variées : elles y coûtent un peu plus de mémoire qu'un
 `std::vector`, et sont plus lentes. Formats creux, tables de hachage, zfp / Blosc2 ou OpenVDB
 peuvent mieux convenir : [docs/alternatives_fr.md](docs/alternatives_fr.md) les compare.
@@ -459,7 +459,7 @@ aussi une version Spack (`spack install shrink-array@cpp23`).
 | contribuer | [docs/contributing_fr.md](docs/contributing_fr.md) |
 
 Exemples : [simple_array](examples/simple_array) (le même calcul sur un `std::vector` et sur un
-tableau), [multi_mat](examples/multi_mat) (champs multi_matériaux, boucles écrites une fois pour
+tableau), [multi_mat](examples/multi_mat) (champs multi-matériaux, boucles écrites une fois pour
 les deux), [validation](examples/validation) (un test par propriété, lancé par `ctest`).
 Chaque document existe en anglais et en français ([docs/README.md](docs/README.md)) ; ce qui a
 changé d'une version à l'autre : [CHANGELOG.md](CHANGELOG.md) (en anglais).
