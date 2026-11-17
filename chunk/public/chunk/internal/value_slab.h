@@ -35,7 +35,7 @@ namespace shrink_array
  * @param block_size Runtime's block size: the bytes of a slab of 8-byte
  *        elements.
  * @param max_element_bytes The largest buffer these allocators hand out:
- *        storage_units(cst_buffer_size) * sizeof(T).
+ *        storage_units(const_buffer_size) * sizeof(T).
  * @details @p block_size scaled to the element width (a 1-byte type takes an
  *          eighth: the same element count per slab), then floored
  *          - at one page: an emptied slab goes back to the system by whole

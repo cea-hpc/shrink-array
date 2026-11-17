@@ -32,12 +32,12 @@
 #include "chunk/config.h"                     // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
 #include "chunk/internal/chunk_traits.h"      // ChunkTraits<ChunkT>::ManagerType (ProxyImpl)
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size, set_thread_alloc_key
-#include "chunk/internal/cst_slot.h"          // CstSlot (array_type_cst_val)
+#include "chunk/internal/const_slot.h"        // ConstSlot (array_type_const_val)
 #include "chunk/internal/concept_is_clean_assignment.h" // IsCleanAssignment
 #include "chunk/internal/crtp_support.h"                // CRTPSupport
 #include "chunk/internal/in_t.h"                        // InT<T>
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/array_cst_val2_holder.h"       // SecondValueRef
+#include "chunk/internal/array_const_val2_holder.h"     // SecondValueRef
 #include "chunk/internal/chunk_tuples.h"                // ZeroAnyCompOf
 #include "chunk/internal/proxy_base.h"                  // ProxyBase
 #include "chunk/internal/second_value_proxy_base.h"     // SecondValueProxyBase
@@ -599,10 +599,10 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
     /**
      * @brief Per-array row of flags indicating the type of constant value used.
      */
-    static inline constinit internal::Immortal<internal::StableTable<parallel_storage_init::NoInitVector<CstSlot>>>
-        array_type_cst_val_storage_{}; ///< type-of-constant flags
-    static inline internal::StableTable<parallel_storage_init::NoInitVector<CstSlot>>& array_type_cst_val =
-        array_type_cst_val_storage_.value;
+    static inline constinit internal::Immortal<internal::StableTable<parallel_storage_init::NoInitVector<ConstSlot>>>
+        array_type_const_val_storage_{}; ///< type-of-constant flags
+    static inline internal::StableTable<parallel_storage_init::NoInitVector<ConstSlot>>& array_type_const_val =
+        array_type_const_val_storage_.value;
 
     /**
      * @brief Mapping from pointer to array information for chunk lookup.
@@ -635,9 +635,9 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
     // Small helpers about chunk const-value modes
 
     /// @brief Is this proxy's chunk compressed to its second value?
-    [[nodiscard]] bool is_cst_val2() const noexcept
+    [[nodiscard]] bool is_const_val2() const noexcept
     {
-        return chunk_.is_cst_val2();
+        return chunk_.is_const_val2();
     }
 
     // The candidate-list accessors live on the zero_any::ProxyFastCompPolicy specialisations.
@@ -747,8 +747,8 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
     /**
      * @brief Ensures the chunk has allocated storage for modification
      *
-     * @details Materialises a chunk in constant mode (cst_val1 or cst_val2). Arms
-     * the cached metadata itself (set_info_on_chunk()), after sampling is_cst_val2().
+     * @details Materialises a chunk in constant mode (const_val1 or const_val2). Arms
+     * the cached metadata itself (set_info_on_chunk()), after sampling is_const_val2().
      *
      * @post Chunk has allocated storage for modifications
      */
@@ -783,7 +783,7 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
     template <typename U, typename Op>
     void apply_compound_operation(Op op, InT<U> operand) noexcept; // InT: see assign_impl
 
-    CstSlot* ptr_type_cst_ = nullptr; ///< pointer into array_type_cst_val[array_id]
+    ConstSlot* ptr_type_const_ = nullptr; ///< pointer into array_type_const_val[array_id]
 };
 
 /**

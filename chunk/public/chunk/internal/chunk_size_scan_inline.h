@@ -32,7 +32,7 @@
 #include "chunk/config.h"                     // chunk_config::use_zero_one_value
 #include "chunk/internal/pmp_chunk.h"         // CHUNK_PMP_NUM_THREADS (the parts per thread), pmp::team
 #include "chunk/internal/bit_words.h"         // bits::scan_range, bits::Uniform, bits::WordT
-#include "chunk/internal/chunk_size_policy.h" // shrink_array::cst_buffer_size, is_valid_chunk_size
+#include "chunk/internal/chunk_size_policy.h" // shrink_array::const_buffer_size, is_valid_chunk_size
 #include "chunk/internal/chunk_traits.h"      // is_zero_any_family_v, has_motif_state_v (pattern::Array)
 #include "chunk/internal/element_access.h"    // internal::as_words: Bit sub-blocks scanned by word
 #include "chunk/internal/relaxed_element.h"   // load_element_relaxed (a motif chunk's offset)
@@ -49,8 +49,8 @@ ChunkSizeScan<Arr>::ChunkSizeScan(const Arr& arr, const Options& opt)
     , nc_(arr.chunk_count_)
     , len_(arr.chunk_count_ * static_cast<int64_t>(arr.chunk_size()))
     , second_value_idx_(second_value_index(arr))
-    , cst1_value_(ChunkT::first_value)
-    , cst2_value_(cst1_value_)
+    , const1_value_(ChunkT::first_value)
+    , const2_value_(const1_value_)
     , cand_(candidate_sizes(arr.chunk_size(), opt))
     , n_cand_(static_cast<int>(cand_.size()))
 {
@@ -59,8 +59,8 @@ ChunkSizeScan<Arr>::ChunkSizeScan(const Arr& arr, const Options& opt)
     if constexpr ((chunk_config::use_zero_one_value || is_zero_any_family_v<ChunkT>) &&
                   requires { arr.second_value(); })
     {
-        cst2_value_ = arr.second_value();
-        has_cst2_   = !same_value(cst2_value_, cst1_value_);
+        const2_value_ = arr.second_value();
+        has_const2_   = !same_value(const2_value_, const1_value_);
     }
     for (const uint32_t cand_sz : cand_)
     {
@@ -74,7 +74,7 @@ template <typename Arr>
 std::vector<uint32_t> ChunkSizeScan<Arr>::candidate_sizes(uint32_t chunk_sz, const Options& opt)
 {
     std::vector<uint32_t> cand;
-    const auto            cap = static_cast<uint64_t>(shrink_array::cst_buffer_size);
+    const auto            cap = static_cast<uint64_t>(shrink_array::const_buffer_size);
     const uint32_t        lo  = opt.finer_levels > 0 && opt.finer_levels < 32 ? chunk_sz >> opt.finer_levels : chunk_sz;
     const uint64_t        hi_wanted = opt.coarser_levels > 0 && opt.coarser_levels < 32
                                           ? uint64_t{chunk_sz} << opt.coarser_levels
@@ -113,7 +113,7 @@ template <typename Arr>
 int ChunkSizeScan<Arr>::second_value_index([[maybe_unused]] const Arr& arr)
 {
     // bool / Bit: one second value, `true`, no index -- get_idx_second_value()
-    // aborts for them; classify() asks the unindexed is_cst_val2().
+    // aborts for them; classify() asks the unindexed is_const_val2().
     // A zero_any-family array in a zero_one_value build (pattern::Array): no
     // index, the zero_any branches of classify().
     if constexpr (chunk_config::use_zero_one_value && !is_zero_any_family_v<ChunkT> && !is_bool_like_v<T>)
@@ -144,11 +144,11 @@ bool ChunkSizeScan<Arr>::compressible_value([[maybe_unused]] const T& elem) cons
     }
     else
     {
-        if (same_value(elem, cst1_value_))
+        if (same_value(elem, const1_value_))
         {
             return true;
         }
-        return has_cst2_ && same_value(elem, cst2_value_);
+        return has_const2_ && same_value(elem, const2_value_);
     }
 }
 
@@ -156,13 +156,13 @@ template <typename Arr>
 int ChunkSizeScan<Arr>::classify(const ChunkT& chunk, const void*& key) const
 {
     key = nullptr;
-    if (chunk.is_cst_val1())
+    if (chunk.is_const_val1())
     {
-        return kind_cst1;
+        return kind_const1;
     }
     if constexpr (has_motif_state_v<ChunkT>)
     {
-        // A motif chunk (pattern::Array): is_cst_val2() for the write engine,
+        // A motif chunk (pattern::Array): is_const_val2() for the write engine,
         // but no constant, and no buffer of its own: a kind of its own,
         // counted and forecast apart (forecast_motifs()), never sampled as data.
         if (ChunkT::is_motif_ptr(chunk.values_load()))
@@ -173,31 +173,31 @@ int ChunkSizeScan<Arr>::classify(const ChunkT& chunk, const void*& key) const
     // The family, not the build (as compressible_value).
     if constexpr (is_zero_any_family_v<ChunkT>)
     {
-        if (chunk.is_cst_val2())
+        if (chunk.is_const_val2())
         {
             key = static_cast<const void*>(chunk.values_load());
-            return kind_cst2;
+            return kind_const2;
         }
     }
     else if constexpr (chunk_config::use_zero_one_value)
     {
-        bool is_cst2 = false;
+        bool is_const2 = false;
         if constexpr (is_bool_like_v<T>)
         {
-            is_cst2 = chunk.is_cst_val2();
+            is_const2 = chunk.is_const_val2();
         }
         else
         {
-            is_cst2 = second_value_idx_ >= 0 && chunk.is_cst_val2(second_value_idx_);
+            is_const2 = second_value_idx_ >= 0 && chunk.is_const_val2(second_value_idx_);
         }
-        if (is_cst2)
+        if (is_const2)
         {
-            static constexpr int cst2_sentinel = 0; // one address: array-level, all cst2 equal
-            key                                = &cst2_sentinel;
-            return kind_cst2;
+            static constexpr int const2_sentinel = 0; // one address: array-level, all const2 equal
+            key                                  = &const2_sentinel;
+            return kind_const2;
         }
     }
-    // zero: cst1 or mat only.
+    // zero: const1 or mat only.
     return kind_mat;
 }
 
@@ -387,7 +387,7 @@ void ChunkSizeScan<Arr>::pick_part(int64_t part)
     for (int64_t j = j0; j < j1; ++j)
     {
         const void* key = nullptr;
-        if (classify(array_.chunk_list_[j], key) != kind_mat) // skip cst1 / cst2 (only mat has data)
+        if (classify(array_.chunk_list_[j], key) != kind_mat) // skip const1 / const2 (only mat has data)
         {
             continue;
         }

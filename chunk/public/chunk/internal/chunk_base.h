@@ -24,7 +24,7 @@
 #include <atomic>      // std::atomic, std::memory_order
 #include <array>       // std::array
 #include <cstddef>     // std::size_t
-#include <cerrno>      // errno (use_mm_protect: the cst_val1 buffer's mmap)
+#include <cerrno>      // errno (use_mm_protect: the const_val1 buffer's mmap)
 #include <cstring>     // std::memset, std::strerror
 #include <memory>      // std::unique_ptr, std::make_unique
 #include <optional>    // std::optional (constant_value)
@@ -34,7 +34,7 @@
 #include "chunk/internal/chunk_traits.h"                // ChunkTraits, is_zero_any_family_v (element_at variant gate)
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement, asserted on ChunkBase
 #include "chunk/internal/churn_counters.h"              // churn::note_materialisation
-#include "chunk/internal/chunk_size_policy.h"           // cst_buffer_size, thread_chunk_size, alloc_chunk_count
+#include "chunk/internal/chunk_size_policy.h"           // const_buffer_size, thread_chunk_size, alloc_chunk_count
 #include "chunk/internal/in_t.h"                        // InT<T>: the scans' constants, by value or by reference
 #include "chunk/internal/bit_words.h"                   // bits::scan_words / WordT: the Bit scans
 #include "chunk/internal/element_access.h"              // elem_get: Bit buffers are words of bits
@@ -392,7 +392,7 @@ class ChunkDeferredOpsPolicy<T, Derived, true>
 
     /// @brief Atomic CAS of values from expected constant pointer to a new buffer.
     /// @param values_loc  New buffer to install on success.
-    /// @param m_ptr_cst_val Expected current value of values. Taken by value on
+    /// @param m_ptr_const_val Expected current value of values. Taken by value on
     ///                      purpose — compare_exchange_strong would otherwise
     ///                      clobber a caller-owned reference on failure.
     /// @return true on failure (caller owns values_loc and must reclaim it).
@@ -411,14 +411,14 @@ class ChunkDeferredOpsPolicy<T, Derived, true>
     ///   - A stale "mismatch" (load sees a newer value than what the CAS will
     ///     observe) is a benign spurious failure; the caller re-checks state.
     ///   - The acq_rel CAS on success provides the only ordering we rely on.
-    [[nodiscard]] bool compare_and_swap_gen(T* values_loc, T* m_ptr_cst_val) noexcept;
+    [[nodiscard]] bool compare_and_swap_gen(T* values_loc, T* m_ptr_const_val) noexcept;
 
     /// @brief Compare-and-swap against first constant value
     /// @param values_loc New pointer value to set
     /// @return true if swap failed, false if successful
     [[nodiscard]] bool compare_and_swap1(T* values_loc) noexcept
     {
-        return compare_and_swap_gen(values_loc, Derived::get_cst_val1());
+        return compare_and_swap_gen(values_loc, Derived::get_const_val1());
     }
 
     /// @brief Reclaim a memory block to the thread-local free list
@@ -647,7 +647,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         bool second = false; ///< every element equals the second constant -- never together with `first`
     };
 
-    using CstVal1Type = std::conditional_t<build_config::use_mm_protect, T*, std::array<T, cst_buffer_size>>;
+    using ConstVal1Type = std::conditional_t<build_config::use_mm_protect, T*, std::array<T, const_buffer_size>>;
 
     ChunkBase()                                = default;
     ~ChunkBase()                               = default;
@@ -678,17 +678,17 @@ class ChunkBase : public CRTPSupport<Derived>,
     // ========================================================================
     /// @brief Check if chunk points to the first constant value
     /// @return true if chunk is compressed to first constant value
-    [[nodiscard]] bool is_cst_val1() const noexcept
+    [[nodiscard]] bool is_const_val1() const noexcept
     {
         const T* current_value = values_load();
-        return current_value == ChunkBase::get_cst_val1();
+        return current_value == ChunkBase::get_const_val1();
     }
 
     /// @brief Check if chunk points to the first constant value
     /// @return true if chunk is compressed to first constant value
-    [[nodiscard]] bool is_cst_val1(const T* current_value) const noexcept
+    [[nodiscard]] bool is_const_val1(const T* current_value) const noexcept
     {
-        return current_value == ChunkBase::get_cst_val1();
+        return current_value == ChunkBase::get_const_val1();
     }
 
     // ========================================================================
@@ -818,7 +818,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @brief read_block_or_constant() for a member with the motif state, given
     ///        the chunk's second-value slot: a motif chunk is no constant, its
     ///        block is read as motif + offset (returns false).
-    bool read_block_or_constant(int first, int count, T* out, T& cst, const T* offset_slot) const noexcept
+    bool read_block_or_constant(int first, int count, T* out, T& constant, const T* offset_slot) const noexcept
         requires has_motif_state_v<Derived>;
 
     /**
@@ -826,13 +826,13 @@ class ChunkBase : public CRTPSupport<Derived>,
      *
      * @details The same single load of `values` under one read section. A
      *          chunk compressed to the first constant -- or, zero_any, to its
-     *          second -- sets @p cst and leaves @p out untouched, so the caller
+     *          second -- sets @p constant and leaves @p out untouched, so the caller
      *          takes the rest of the chunk at once
      *          (ArrayChunkBase::for_each_span). A zero_one_value chunk on its second constant
      *          points at a filled buffer and is read as a block.
-     * @return true when @p cst was set, false when @p out was filled
+     * @return true when @p constant was set, false when @p out was filled
      */
-    bool read_block_or_constant(int first, int count, T* out, T& cst) const noexcept;
+    bool read_block_or_constant(int first, int count, T* out, T& constant) const noexcept;
 
     /// @brief Proxy access for read-write operations
     /// @param offset Index in the chunk
@@ -902,7 +902,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @brief The (read-only) buffer every compressed-to-first-value chunk
     ///        points at.
     /// @return Pointer to the shared first-constant buffer.
-    static T* get_cst_val1() noexcept;
+    static T* get_const_val1() noexcept;
 
     /// @brief Set @p n_elems elements of @p values_loc to the first value,
     ///        T{}: memset for arithmetic types, std::fill_n otherwise.
@@ -933,14 +933,14 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// initialise its first member only, `T(0)` not compile.
     static inline T first_value{};
 
-    // MM_PROTECT: the read-only mapping that get_cst_val1() returns, mapped once.
-    static T* map_cst_val1();
+    // MM_PROTECT: the read-only mapping that get_const_val1() returns, mapped once.
+    static T* map_const_val1();
 
     // alignas: a Bit chunk compressed to the first constant points here, and
     // its reads load 64-bit words (element_access.h). constinit, every element
     // T{} (= first_value): a global array reaches it before any dynamic
-    // initialisation. Unused under MM_PROTECT (null; see get_cst_val1()).
-    alignas(bits::WordT) static inline constinit CstVal1Type m_ptr_cst_val1{};
+    // initialisation. Unused under MM_PROTECT (null; see get_const_val1()).
+    alignas(bits::WordT) static inline constinit ConstVal1Type m_ptr_const_val1{};
 
   protected:
     /**
@@ -984,9 +984,9 @@ class ChunkBase : public CRTPSupport<Derived>,
 
     /// @brief Check if chunk does not point to the first constant value
     /// @return true if chunk is not compressed to first constant value
-    [[nodiscard]] bool is_not_cst_val1() const noexcept
+    [[nodiscard]] bool is_not_const_val1() const noexcept
     {
-        return !is_cst_val1();
+        return !is_const_val1();
     }
 
     // ========================================================================
@@ -1149,7 +1149,7 @@ class ChunkBase : public CRTPSupport<Derived>,
      *
      * @details The single point every element READ goes through. A zero_any
      *          chunk compressed to a second constant points at an identifier
-     *          slot that holds nothing (array_cst_val2_holder.h), so its value
+     *          slot that holds nothing (array_const_val2_holder.h), so its value
      *          comes from the registry: one pointer range test on the read
      *          path, in this one place rather than seven.
      *

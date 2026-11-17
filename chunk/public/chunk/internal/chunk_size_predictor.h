@@ -36,7 +36,7 @@
 //      block may be partial.
 //   3. Predicted memory = (non-constant blocks) * S' * sizeof(T)   [buffers]
 //                       + (blocks) * meta_per_block.               [records]
-//      Constant blocks cost only metadata (values live in the shared cst
+//      Constant blocks cost only metadata (values live in the shared constant
 //      buffer). The buffer term dominates and is what varies with S'.
 //
 // Sizes < current are out of scope here (need intra-chunk re-reading, usually

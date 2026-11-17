@@ -61,7 +61,7 @@ void pattern::Chunk<T>::compress_to_motif(int thr, int chunk_index, int array_id
     {
         // The geometry pin is the caller's (compress_chunk_to_compress_in_par()).
         const SecondValueRef<T> slot = ProxyT::BaseSpec::get_array_second_value(array_id, chunk_index);
-        block_clear_motif(&ProxyT::array_type_cst_val[array_id][chunk_index], slot, motif, offset, thr);
+        block_clear_motif(&ProxyT::array_type_const_val[array_id][chunk_index], slot, motif, offset, thr);
     }
 }
 
@@ -78,26 +78,26 @@ void pattern::Chunk<T>::compress_motif_candidates(int thr)
             shrink_array::set_thread_chunk_size(size.count());
         }
         const SecondValueRef<T> slot = ProxyT::BaseSpec::get_array_second_value(array_id, chunk_index);
-        chunk->block_clear_motif(&ProxyT::array_type_cst_val[array_id][chunk_index], slot, motif, offset, thr);
+        chunk->block_clear_motif(&ProxyT::array_type_const_val[array_id][chunk_index], slot, motif, offset, thr);
         chunk->steal_unmark();
     }
     motif_candidates_.clear();
 }
 
 template <typename T>
-void pattern::Chunk<T>::block_clear_motif(CstSlot*          ptr_type_cst,
+void pattern::Chunk<T>::block_clear_motif(ConstSlot*        ptr_type_const,
                                           SecondValueRef<T> slot,
                                           const T*          motif,
                                           T                 offset,
                                           int               thr_rank)
 {
     std::atomic_ref<T>(*slot.slot).store(offset, std::memory_order_release);
-    *ptr_type_cst = CstSlot::motif;
+    *ptr_type_const = ConstSlot::motif;
     inc_chunk_compress<Chunk>();
     add_chunk_bytes_freed<Chunk>(static_cast<long>(sizeof(T)) * static_cast<long>(shrink_array::alloc_chunk_count()));
     if constexpr (build_config::threaded)
     {
-        T* const old = this->try_mark_cst_and_get_old(1, const_cast<T*>(motif)); // NOSONAR(cpp:S859)
+        T* const old = this->try_mark_const_and_get_old(1, const_cast<T*>(motif)); // NOSONAR(cpp:S859)
         if (old == nullptr) [[unlikely]]
         {
             CHUNK_INVARIANT_FAILED("block_clear_motif: the CAS from the buffer to the motif failed on a claimed "

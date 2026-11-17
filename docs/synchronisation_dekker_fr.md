@@ -28,7 +28,7 @@ Sans précaution, l'entrelacement suivant perd une écriture, ou corrompt un aut
 |---|---|
 | charge `values` → tampon P | |
 | | relit P : tout vaut 0 |
-| | CAS `values` : P → `cst_val1`, rend P |
+| | CAS `values` : P → `const_val1`, rend P |
 | écrit `v` dans P | |
 | | (P est réutilisé par un autre chunk, qui reçoit `v`) |
 

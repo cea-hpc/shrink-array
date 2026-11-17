@@ -37,7 +37,7 @@
 #include "chunk/log.h"                           // CHUNK_LOG_FIRST_N, CHUNK_LOG
 #include "fast_allocators/internal/svalloc.h"    // svfree
 #include "chunk/internal/pmp_chunk.h"            // CHUNK_PMP_*, pmp::
-#include "chunk/internal/chunk_size_policy.h"    // alloc_chunk_count, cst_buffer_size
+#include "chunk/internal/chunk_size_policy.h"    // alloc_chunk_count, const_buffer_size
 #include "chunk/internal/value_slab.h"           // value_slab_request
 #include "chunk/internal/compression_manager.h"  // CompressionManager
 #include "chunk/internal/deferred_op_pool.h"     // fast_alloc::ArenaKind
@@ -365,7 +365,7 @@ void TypeStateParallelImpl<ChunkT, T, true>::init_allocators([[maybe_unused]] in
 
         // One slab rule for every allocator of T (value_slab.h).
         const auto slab_bytes = static_cast<uintptr_t>(
-            value_slab_request<T>(block_size, ChunkT<T>::storage_units(shrink_array::cst_buffer_size) * sizeof(T)));
+            value_slab_request<T>(block_size, ChunkT<T>::storage_units(shrink_array::const_buffer_size) * sizeof(T)));
 
         for (int thr_rank = 0; thr_rank < max_thr; ++thr_rank)
         {

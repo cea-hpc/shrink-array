@@ -28,7 +28,7 @@ Without care, the following interleaving loses a write, or corrupts another chun
 |---|---|
 | loads `values` → buffer P | |
 | | rereads P: everything is 0 |
-| | CAS `values`: P → `cst_val1`, returns P |
+| | CAS `values`: P → `const_val1`, returns P |
 | writes `v` into P | |
 | | (P is reused by another chunk, which receives `v`) |
 

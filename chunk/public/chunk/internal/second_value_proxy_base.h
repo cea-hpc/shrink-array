@@ -57,8 +57,8 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     using Base::chunk_;
     using Base::chunk_index_;
     using Base::derived;
-    using Base::is_cst_val1;
-    using Base::is_not_cst_val1;
+    using Base::is_const_val1;
+    using Base::is_not_const_val1;
     using Base::num_;
     using Base::values_;
 
@@ -80,18 +80,18 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      *        index/idx for non-bool types).
      * @return true if the chunk is compressed to the second constant.
      */
-    [[nodiscard]] bool is_cst_val2() const noexcept
+    [[nodiscard]] bool is_const_val2() const noexcept
     {
-        return derived().is_cst_val2();
+        return derived().is_const_val2();
     }
 
     /**
-     * @brief Negation of is_cst_val().
+     * @brief Negation of is_const_val().
      * @return true if the chunk is materialised (compressed to neither constant).
      */
-    [[nodiscard]] bool is_not_cst_val() const noexcept
+    [[nodiscard]] bool is_not_const_val() const noexcept
     {
-        return !is_cst_val();
+        return !is_const_val();
     }
 
     /**
@@ -183,21 +183,21 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     explicit SecondValueProxyBase(ValuesTypeRef values, int num, ChunkT& chunk) noexcept : Base(values, num, chunk) {}
 
     /**
-     * @brief Negation of is_cst_val2().
+     * @brief Negation of is_const_val2().
      * @return true if the chunk is NOT compressed to the second constant.
      */
-    [[nodiscard]] bool is_not_cst_val2() const noexcept
+    [[nodiscard]] bool is_not_const_val2() const noexcept
     {
-        return !is_cst_val2();
+        return !is_const_val2();
     }
 
     /**
      * @brief Whether the chunk is compressed to EITHER constant (first or second).
      * @return true if the chunk is compressed.
      */
-    [[nodiscard]] bool is_cst_val() const noexcept
+    [[nodiscard]] bool is_const_val() const noexcept
     {
-        return is_cst_val1() || is_cst_val2();
+        return is_const_val1() || is_const_val2();
     }
 
     /**
@@ -210,7 +210,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      *          pass, on its first write of a constant over something else.
      *
      *          Not only a chunk ALREADY at one constant being written the
-     *          other: a chunk materialised by a plain value (2.5 over cst_val1)
+     *          other: a chunk materialised by a plain value (2.5 over const_val1)
      *          and then written back to a constant element by element must be
      *          queued too, or it stays materialised for the run. The cost is
      *          paid only by writes of a constant: an old-value read and a

@@ -792,12 +792,12 @@ static void advisor_agrees(const char* tname, long nch)
     {
         const auto& a = pr.table[i];
         const auto& b = zr.table[i];
-        same          = a.size == b.size && a.n_chunks == b.n_chunks && a.mat + a.motif == b.mat && a.cst == b.cst &&
-                        a.exact == b.exact && b.motif == 0;
+        same = a.size == b.size && a.n_chunks == b.n_chunks && a.mat + a.motif == b.mat && a.constant == b.constant &&
+               a.exact == b.exact && b.motif == 0;
         if (!same)
         {
-            println("  R  row {}: pattern {} chunks {} mat {} motif {} cst; zero_any {} chunks {} mat {} cst", a.size,
-                    a.n_chunks, a.mat, a.motif, a.cst, b.n_chunks, b.mat, b.cst);
+            println("  R  row {}: pattern {} chunks {} mat {} motif {} constant; zero_any {} chunks {} mat {} constant",
+                    a.size, a.n_chunks, a.mat, a.motif, a.constant, b.n_chunks, b.mat, b.constant);
         }
     }
     println("  {:<44} {} rows", "R  advisor table", pr.table.size());

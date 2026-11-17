@@ -780,24 +780,24 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      * @brief Allocate chunk storage if currently compressed
      * @details Decompresses the chunk by allocating full array storage.
      *          Chooses initialization based on current compression state:
-     *          - cst_val1: Fill with first_value (typically 0)
-     *          - cst_val2: Fill with second_value
+     *          - const_val1: Fill with first_value (typically 0)
+     *          - const_val2: Fill with second_value
      * @post Chunk has allocated values array; no longer compressed
      * @note Thread safety: Uses atomic compare-exchange in multi-threaded builds
      */
     void create_value() const noexcept
     {
-        create_value(is_cst_val2());
+        create_value(is_const_val2());
     }
 
     /**
      * @brief create_value() with the compression state already known.
-     * @param is_cst2 Whether the chunk is at its second constant (else at the
+     * @param is_const2 Whether the chunk is at its second constant (else at the
      *        first), from the caller's load of `values`. A stale state is
      *        harmless: the chunk can only have been materialised since, and
      *        the CAS of chunk.create_value() then fails.
      */
-    void create_value(bool is_cst2) const noexcept;
+    void create_value(bool is_const2) const noexcept;
 
     /**
      * @brief Core assignment logic without compression tracking
@@ -810,12 +810,12 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      */
     void perform_core_assignment(InT<T> value) const noexcept;
 
-    /// @brief Materialise the chunk if it is compressed (cst_val1 / cst_val2), so `values`
+    /// @brief Materialise the chunk if it is compressed (const_val1 / const_val2), so `values`
     ///        points at writable heap storage.
     ///
     /// Twin of zero_any::Proxy::ensure_writable_storage: decompresses the second-value form, then
-    /// the first-value form, seeding the n_val_eq_* counters to "full". is_cst_val1() is
-    /// re-tested AFTER the cst_val2 step on purpose: the states are mutually exclusive (single
+    /// the first-value form, seeding the n_val_eq_* counters to "full". is_const_val1() is
+    /// re-tested AFTER the const_val2 step on purpose: the states are mutually exclusive (single
     /// storage pointer), so at most one create_value runs.
     void ensure_writable_storage();
 
@@ -847,7 +847,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      *        proxy's index.
      * @details
      * Synchronous fast-path flow:
-     * 1. Fast-path: If value == first_value and chunk is cst_val1, no-op.
+     * 1. Fast-path: If value == first_value and chunk is const_val1, no-op.
      * 2. Load metadata (set_info_second_value_idx()) if needed.
      * 3. Fast-path: if value == second_value and chunk is already at/equal to
      *    it, no-op.
@@ -958,7 +958,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      * @note Non-bool only: aborts if called on a bool chunk (bool has no
      *       indexed second constant -- use the no-arg overload below).
      */
-    [[nodiscard]] bool is_cst_val2(int idx) const noexcept;
+    [[nodiscard]] bool is_const_val2(int idx) const noexcept;
 
     /**
      * @brief Check if chunk is compressed to the second constant. Works for
@@ -967,17 +967,17 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      *        single shared second constant.
      * @return true if the chunk is compressed to the second constant.
      */
-    [[nodiscard]] bool is_cst_val2() const noexcept;
+    [[nodiscard]] bool is_const_val2() const noexcept;
 
     /**
-     * @brief is_cst_val2() judged from an already-loaded values pointer.
+     * @brief is_const_val2() judged from an already-loaded values pointer.
      * @details Saves the reload -- `values == ...` on the atomic is a seq_cst
      *          load (ldar on aarch64) -- and keeps the caller's tests on one
      *          snapshot.
      * @param vals The pointer the caller loaded.
      * @return true if @p vals is the chunk's second constant buffer.
      */
-    [[nodiscard]] bool is_cst_val2_at(const T* vals) const noexcept;
+    [[nodiscard]] bool is_const_val2_at(const T* vals) const noexcept;
 
     // ========================================================================
     // Metadata initialization

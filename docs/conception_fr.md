@@ -82,7 +82,7 @@ flowchart TB
     subgraph per_type["par (variante, type d'élément)"]
         mgr["TypeState<br/>pools de réemploi, candidats à la compression,<br/>allocateurs par rang, vidage différé"]
         cmp["CompressionManager<br/>passes, écritures différées"]
-        reg["constantes partagées<br/>cst_val1, registre des secondes valeurs, région des motifs"]
+        reg["constantes partagées<br/>const_val1, registre des secondes valeurs, région des motifs"]
     end
     subgraph per_process["par processus"]
         all["TypeStateRegistry<br/>registre de tous les managers"]
@@ -110,7 +110,7 @@ flowchart TB
 | chunks | `zero::Chunk`, `zero_one_value::Chunk`, `zero_any::Chunk`, `pattern::Chunk`, `ChunkBase` | `chunk/internal/zero_chunk.h`, `chunk/internal/zero_one_value_chunk.h`, `chunk/internal/zero_any_chunk.h`, `chunk/internal/pattern_chunk.h`, `internal/chunk_base.h` | un élément de la liste de chunks du tableau |
 | proxies, moteur d'écriture | `ProxyBase`, `WriteCompressSyncPolicy`, les `Proxy` des variantes | `internal/proxy_base.h`, `internal/write_compress_sync_policy.h` | un temporaire par écriture |
 | état par type | `TypeState` (façade), `ReusePools`, `CompressCandidates`, `CompressionManager` | `internal/type_state.h`, `internal/reuse_pools.h`, `internal/compress_candidates.h`, `internal/compression_manager.h` | un par (variante, type d'élément), statique |
-| constantes partagées | `ArrayCstVal2Holder`, `GlobalVecHolder`, `MotifRegion` | `internal/array_cst_val2_holder.h`, `internal/motif_region.h` | une par type d'élément |
+| constantes partagées | `ArrayConstVal2Holder`, `GlobalVecHolder`, `MotifRegion` | `internal/array_const_val2_holder.h`, `internal/motif_region.h` | une par type d'élément |
 | registre du processus, démarrage | `TypeStateRegistry`, `Runtime` | `internal/type_state_registry_decl.h`, `chunk/runtime.h` | un par processus |
 | phases | `begin_parallel_phase`, `finalize_parallel_phase`, `parallel_phase` | `chunk/phases.h`, `chunk/private/manage_ompt.cpp` | une phase à la fois |
 | backend, rangs | `pmp::Team`, `pmp::parallel_for` | `chunk/internal/pmp_chunk.h`, `fast_allocators/internal/pmp_loops.h`, `fast_allocators/internal/pmp_std.h` | tout le processus |

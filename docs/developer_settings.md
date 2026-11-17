@@ -29,7 +29,7 @@ fields, and `shrink_bench` exposes them as options (§4). See
 | variable | default | effect |
 |---|---|---|
 | `CHUNK_RECLAIM_THREADS` | 1 | threads issuing a sweep's `madvise` calls; `0`: `omp_get_max_threads()`. On Milan (64 threads), `0` is 3.5% faster for `zero_one_value` and the same for the other variants; it stays at 1 until it is measured on Grace, where 288 threads would issue them |
-| `CHUNK_CST_VAL2_ID_LIMIT` | unset | test hook: lowers the number of identifiers of `zero_any`'s second-value registry (the region's capacity otherwise), and sizes the value table to match, so that a harness reaches the registry's limit with a few values (`cst2_registry_validation`, `cst2_reclaim_validation`); can only lower it |
+| `CHUNK_CONST_VAL2_ID_LIMIT` | unset | test hook: lowers the number of identifiers of `zero_any`'s second-value registry (the region's capacity otherwise), and sizes the value table to match, so that a harness reaches the registry's limit with a few values (`const2_registry_validation`, `const2_reclaim_validation`); can only lower it. Former name `CHUNK_CST_VAL2_ID_LIMIT`, still read when this one is unset (deprecated) |
 | `CHUNK_DEFERRED_POOL_KB` | 64 | slab size of the deferred-write pools, in KiB (the operation slabs are never given back: larger means fewer allocator calls but more resident memory) |
 | `CHUNK_PMP_JOIN_US` | 5000 | std backend with the library's teams on TBB (`shrink_array::tbb::use_tbb_for_library_teams()`): how long a team waits for its TBB tasks to start, in microseconds; the tasks started by then make the team (one thread, the caller, at worst), a later one returns at once. 5 ms rather than 200 us: a late task is otherwise taken and dropped by a TBB worker during the program's next region (144 threads: 79.5 s -> 50.9 s on the TBB bench) |
 | `CHUNK_PMP_SPIN_US` | 1000 | std backend: how long a thread waiting at a team's barrier, at its end or for the next team spins before it sleeps, in microseconds (OpenMP's blocktime); `0`: sleep at once. Spinning: at 160 threads the re-chunk's slice-boundary drain went from 2.45 s to the order of the OpenMP build's 0.24 s |
@@ -70,7 +70,7 @@ arena's and OMPT's counters with them, which cost a little time.
 | `CHUNK_LOG=ledger=info` (formerly `CHUNK_LEDGER_REPORT`) | the report of the block registry (builds with the registry), at exit |
 | `CHUNK_LOG=ompt=info` (formerly `CHUNK_OMPT_STATS`) | statistics of the synchronisation regions (OMPT builds), at exit |
 | `CHUNK_LOG=compress=info` in `shrink_bench` (formerly `CHUNK_CST2_PROBE`) | `zero_any`: in addition, the report of the second-value registry at each advisor pass (`gc_mark_report()`) |
-| `CHUNK_CST2_RECLAIM` | `zero_any`, `N`: every N iterations, frees the second values no chunk uses any more (`reclaim_second_values()`) and prints how many, then each type's identifiers in use against the capacity, free, reclaims and refusals (`second_value_stats()`) (benchmark, any build) |
+| `CHUNK_CONST2_RECLAIM` | `zero_any`, `N`: every N iterations, frees the second values no chunk uses any more (`reclaim_second_values()`) and prints how many, then each type's identifiers in use against the capacity, free, reclaims and refusals (`second_value_stats()`) (benchmark, any build). Former name `CHUNK_CST2_RECLAIM`, still read when this one is unset (deprecated) |
 | `ALLOC_TOKEN_REPORT` | `CHUNK_SANITIZER=token` builds always print, on exit, the allocations per token (the 40 largest); this sets how many: `0` none, `N` the N largest, `all` every token |
 | `CHUNK_LOG=alloc=trace` (formerly `FAST_ALLOC_TRACE`) | one `munmap` line per emptied slab that a pool's reserve does not keep and that is freed |
 
@@ -127,7 +127,7 @@ and how the shared options reach the headers, are in
 
 | macro | effect |
 |---|---|
-| `CHUNK_DYN_MAX_SIZE=<n>` | dynamic geometry: largest chunk size a rechunk can reach, a power of two (4096); sizes the shared buffers of the constant values, `cst_buffer_size × sizeof(T)` per distinct second value |
+| `CHUNK_DYN_MAX_SIZE=<n>` | dynamic geometry: largest chunk size a rechunk can reach, a power of two (4096); sizes the shared buffers of the constant values, `const_buffer_size × sizeof(T)` per distinct second value |
 | `CHUNK_ALLOC_AFFINITY_MIN_BYTES=<bytes>` | metadata threshold above which an array can have its own allocators (16 MiB; 0 = never) |
 | `CHUNK_COMPRESS_MAX_YIELDS=<n>` | how long a parked compressor waits before giving up its pass (10,000 *yields*; 0: give up at the first writer seen). See [synchronisation_dekker.md](synchronisation_dekker.md) |
 | `CHUNK_WRITE_WAIT_MAX_YIELDS=<n>` | how long a writer facing a compressor waits before deferring its write (64 *yields*) |

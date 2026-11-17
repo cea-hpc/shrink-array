@@ -27,17 +27,17 @@
 #include "chunk/config.h"                           // build_config::threaded, chunk_config
 #include "chunk/internal/chunk_traits.h"            // ChunkTraits<Derived>::ManagerType (ChunkImpl, ChunkThreadPolicy)
 #include "chunk/internal/invariant_check.h"         // invariant_failed
-#include "chunk/internal/array_cst_val2_holder.h"   // ArrayCstVal2Holder, SecondValueRef
+#include "chunk/internal/array_const_val2_holder.h" // ArrayConstVal2Holder, SecondValueRef
 #include "chunk/internal/pmp_chunk.h"               // CHUNK_PMP_THREAD_RANK
 #include "chunk/internal/ring_log_debug.h"          // ScopedRingLog, ring_log_* (RING_LOG builds)
 #include "chunk/internal/chunk_size_policy.h"       // ChunkElems
-#include "chunk/internal/cst_slot.h"                // CstSlot, cst_slot_of
+#include "chunk/internal/const_slot.h"              // ConstSlot, const_slot_of
 #include "chunk/internal/second_value_chunk_base.h" // SecondValueChunkBase
 #include "chunk/internal/chunk_stats.h"             // inc_chunk_write
 
 #include "chunk/internal/chunk_tuples.h"    // ZeroAnyCompOf, VectorTuple4ChunkInt2
 #include "chunk/internal/immortal.h"        // Immortal / LazyImmortal: statics safe for global arrays
-#include "chunk/internal/chunk_array_new.h" // chunk_array_new::init_chunks (init_chunks_cst_val)
+#include "chunk/internal/chunk_array_new.h" // chunk_array_new::init_chunks (init_chunks_const_val)
 
 
 namespace shrink_array
@@ -65,29 +65,29 @@ namespace zero_any
 // ─── Concurrent (OMP) chunk operations extracted from zero_any ──────────────
 // CRTP policy base with the lock-free CAS operations of OpenMP builds only: zero_any inherits it
 // through the OpenMP specialisation of zero_any::ChunkThreadPolicy, so in a serial build the methods do not
-// exist. Reaches zero_any's bases via self() (Base = SecondValueChunkBase, Holder = ArrayCstVal2Holder).
+// exist. Reaches zero_any's bases via self() (Base = SecondValueChunkBase, Holder = ArrayConstVal2Holder).
 /// @brief zero_any's lock-free CAS operations on `values` (OpenMP builds only).
 template <typename T, typename Derived>
 class ChunkConcurrentOps
 {
   public:
     using Base   = SecondValueChunkBase<T, Derived>;
-    using Holder = ArrayCstVal2Holder<T>;
+    using Holder = ArrayConstVal2Holder<T>;
 
     /// @brief Atomically mark this chunk constant and hand back its old buffer.
     /// @param num_compress_value 0 for the first constant, 1 for the second.
-    /// @param cst2_ptr The shared array to install when @p num_compress_value
-    ///        is 1 (find_or_set_idx_cst_val2's result); ignored for 0.
-    [[nodiscard]] T* try_mark_cst_and_get_old(int num_compress_value, T* cst2_ptr) noexcept;
+    /// @param const2_ptr The shared array to install when @p num_compress_value
+    ///        is 1 (find_or_set_idx_const_val2's result); ignored for 0.
+    [[nodiscard]] T* try_mark_const_and_get_old(int num_compress_value, T* const2_ptr) noexcept;
 
   protected:
     /// @brief Publish @p values_loc as this chunk's buffer, expecting the
     ///        chunk to still be compressed to the constant the caller saw
-    ///        (@p expected_is_cst_val2: the second value, else the first).
+    ///        (@p expected_is_const_val2: the second value, else the first).
     /// @return true when the swap FAILED (someone else materialised the chunk
     ///         first; the caller recycles @p values_loc), the convention of
     ///         ChunkBase::compare_and_swap_gen().
-    [[nodiscard]] bool compare_and_swap(T* values_loc, bool expected_is_cst_val2) noexcept;
+    [[nodiscard]] bool compare_and_swap(T* values_loc, bool expected_is_const_val2) noexcept;
 
   private:
     static constexpr bool is_not_bool = !std::is_same_v<T, bool>;
@@ -106,7 +106,7 @@ class ChunkConcurrentOps
     {
         return static_cast<Base*>(self());
     }
-    /// @brief `this` as a pointer to the ArrayCstVal2Holder base.
+    /// @brief `this` as a pointer to the ArrayConstVal2Holder base.
     Holder* holder() noexcept
     {
         return static_cast<Holder*>(self());
@@ -123,30 +123,30 @@ class ChunkConcurrentOps
 
 // Read-side counterpart of zero_any::ChunkConcurrentOps: lock-free classification of `values`. Needed in
 // every build, so mixed into zero_any UNCONDITIONALLY (not gated on threaded).
-/// @brief zero_any's lock-free reads of its constant state (cst_val1 / cst_val2 / written), every build.
+/// @brief zero_any's lock-free reads of its constant state (const_val1 / const_val2 / written), every build.
 template <typename T, typename Derived>
 class ChunkStateQueries
 {
   public:
     using Base   = SecondValueChunkBase<T, Derived>;
-    using Holder = ArrayCstVal2Holder<T>;
+    using Holder = ArrayConstVal2Holder<T>;
 
     /// @brief Is the chunk compressed to a second value (its values pointer
     ///        lies in the second-value region; for bool, IS the flag block)?
-    [[nodiscard]] bool is_cst_val2() const noexcept;
+    [[nodiscard]] bool is_const_val2() const noexcept;
 
-    /// @brief is_cst_val2() asked of a pointer the caller already loaded.
+    /// @brief is_const_val2() asked of a pointer the caller already loaded.
     /// @details element_at() must test and read the SAME load: asking the chunk
     ///          loads `values` a second time, and a compressor claiming it in
     ///          between swaps that pointer for a region identifier, which the
     ///          read then indexes as a buffer.
-    [[nodiscard]] bool is_cst_val2_ptr_of(const T* ptr) const noexcept;
+    [[nodiscard]] bool is_const_val2_ptr_of(const T* ptr) const noexcept;
 
     /**
      * @brief The constant a chunk whose values pointer is @p ptr stands for,
      *        read from the registry, for a pointer the caller already loaded.
      *
-     * @pre @p ptr satisfies is_cst_val2_ptr_of().
+     * @pre @p ptr satisfies is_const_val2_ptr_of().
      * @details Used by ChunkBase::element_at(). Must NOT dereference @p ptr (it names
      *          an identifier, not a buffer): id_of_ptr() is arithmetic, value_of_id()
      *          one load of the value table.
@@ -155,13 +155,13 @@ class ChunkStateQueries
 
     /// @brief Is @p ptr one of the constant arrays (first or a second one)?
     /// @note For a values pointer the caller already loaded -- the pre-store
-    ///       guards of the proxy -- where is_cst_val() would load it again.
+    ///       guards of the proxy -- where is_const_val() would load it again.
     [[nodiscard]] static bool is_constant_ptr(const T* ptr) noexcept;
 
     /// @brief Materialised (owns a buffer, i.e. compressed to neither constant)?
     [[nodiscard]] bool written() const noexcept
     {
-        return base()->values_load() != Base::get_cst_val1() && is_not_cst_val2();
+        return base()->values_load() != Base::get_const_val1() && is_not_const_val2();
     }
 
     /// @brief written() reading the values member directly, without the
@@ -169,14 +169,14 @@ class ChunkStateQueries
     ///        writer or compressor can be publishing.
     [[nodiscard]] bool written_test() const noexcept
     {
-        return self()->values_ != Base::get_cst_val1() && is_not_cst_val2();
+        return self()->values_ != Base::get_const_val1() && is_not_const_val2();
     }
 
   protected:
     /// @brief Compressed to either constant?
-    [[nodiscard]] bool is_cst_val() const noexcept
+    [[nodiscard]] bool is_const_val() const noexcept
     {
-        return base()->is_cst_val1() || is_cst_val2();
+        return base()->is_const_val1() || is_const_val2();
     }
 
   private:
@@ -195,10 +195,10 @@ class ChunkStateQueries
         return static_cast<const Holder*>(self());
     }
 
-    /// @brief Complement of is_cst_val2().
-    [[nodiscard]] bool is_not_cst_val2() const noexcept
+    /// @brief Complement of is_const_val2().
+    [[nodiscard]] bool is_not_const_val2() const noexcept
     {
-        return !is_cst_val2();
+        return !is_const_val2();
     }
 };
 
@@ -232,7 +232,7 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>, public ChunkC
     using Base::values_;
 
     /// @brief Array-new for chunks: allocates and points every chunk at the
-    ///        first constant (init_chunks_cst_val).
+    ///        first constant (init_chunks_const_val).
     /// @warning `new zero_any::Chunk<T>[n]` runs the DEFAULT CONSTRUCTORS after this, overwriting
     ///          that initialisation; it pays off only for a placement-new array. Nothing in
     ///          the library array-news a chunk (zero::Array* hold a std::vector).
@@ -270,67 +270,67 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>, public ChunkC
 
     /*!
      * \brief Compress this chunk back to a constant, if it is materialised.
-     * \param ptr_type_cst     Slot of the per-chunk type table to update.
+     * \param ptr_type_const     Slot of the per-chunk type table to update.
      * \param ptr_second_value The chunk's second-value slot.
      * \param thr_rank         Rank whose pool receives the released buffer.
      */
-    void clear(CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value, int thr_rank)
+    void clear(ConstSlot* ptr_type_const, SecondValueRef<T> ptr_second_value, int thr_rank)
     {
-        Base::clear_impl(std::nullopt, thr_rank, ptr_type_cst, ptr_second_value);
+        Base::clear_impl(std::nullopt, thr_rank, ptr_type_const, ptr_second_value);
     }
 
     /*!
      * \brief Release this chunk's buffer and point it back at a constant --
      *        the single point every compression path funnels through.
      * \param num_compress_value 0 for the first constant, otherwise the second.
-     * \param ptr_type_cst       Slot of the per-chunk type table to update.
+     * \param ptr_type_const       Slot of the per-chunk type table to update.
      * \param ptr_second_value   The chunk's second-value slot.
      * \param thr_rank           Rank whose pool receives the released buffer.
-     * \param cst2_ptr           Shared array of the second constant (type 2).
+     * \param const2_ptr           Shared array of the second constant (type 2).
      */
     void block_clear(int               num_compress_value,
-                     CstSlot*          ptr_type_cst,
+                     ConstSlot*        ptr_type_const,
                      SecondValueRef<T> ptr_second_value,
                      int               thr_rank,
-                     T*                cst2_ptr);
+                     T*                const2_ptr);
 
     /*!
      * \brief Compress this chunk, committing its second-value pointer first.
      * \param num_compress_value 0 for the first constant, 1 for the second.
-     * \param ptr_type_cst       Slot of the per-chunk type table to update.
+     * \param ptr_type_const       Slot of the per-chunk type table to update.
      * \param ptr_second_value   The chunk's second-value slot.
      * \param thr_rank           Rank whose pool receives the buffer.
-     * \param new_cst_val2_ptr   Pointer returned by find_or_set_idx_cst_val2();
+     * \param new_const_val2_ptr   Pointer returned by find_or_set_idx_const_val2();
      *                           required when @p num_compress_value is 1.
      */
     void clear_int_st(int               num_compress_value,
-                      CstSlot*          ptr_type_cst,
+                      ConstSlot*        ptr_type_const,
                       SecondValueRef<T> ptr_second_value,
                       int               thr_rank,
-                      T*                new_cst_val2_ptr = nullptr);
+                      T*                new_const_val2_ptr = nullptr);
 
     /*!
      * \brief clear_int_st() on the calling thread's rank.
      * \param num_compress_value 0 for the first constant, otherwise the second.
-     * \param ptr_type_cst       Slot of the per-chunk type table to update.
+     * \param ptr_type_const       Slot of the per-chunk type table to update.
      * \param ptr_second_value   The chunk's second-value slot.
      */
-    void clear_st(int num_compress_value, CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value)
+    void clear_st(int num_compress_value, ConstSlot* ptr_type_const, SecondValueRef<T> ptr_second_value)
     {
-        clear_int_st(num_compress_value, ptr_type_cst, ptr_second_value, CHUNK_PMP_THREAD_RANK);
+        clear_int_st(num_compress_value, ptr_type_const, ptr_second_value, CHUNK_PMP_THREAD_RANK);
     }
 
     /*!
      * \brief Release this chunk's buffer to @p thr_rank's pool and point it at the
      *        first constant, WITHOUT counting a compression: the re-chunk rebuild
      *        releasing an old chunk it has transcribed (as zero::Chunk::release_st).
-     * \param ptr_type_cst     Slot of the per-chunk type table (set to cst1).
+     * \param ptr_type_const     Slot of the per-chunk type table (set to const1).
      * \param ptr_second_value The chunk's second-value slot (reset).
      * \param thr_rank         Rank whose pool receives the buffer.
      * \pre The chunk is materialised (written()), and the array is quiescent (no
      *      writer, no pass, no reader): the refill's source.
      */
-    void release_st(CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value, int thr_rank);
+    void release_st(ConstSlot* ptr_type_const, SecondValueRef<T> ptr_second_value, int thr_rank);
 
   private:
     /// @brief Point @p count freshly allocated chunks at the first constant.
@@ -339,7 +339,7 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>, public ChunkC
     ///          allocation is made by one thread, and an orphaned `omp for`
     ///          would hang waiting for the others). Shared by the three
     ///          variants -- chunk_array_new::init_chunks.
-    static void init_chunks_cst_val(Derived* chunks, std::size_t count) noexcept
+    static void init_chunks_const_val(Derived* chunks, std::size_t count) noexcept
     {
         chunk_array_new::init_chunks(chunks, count, [](Derived& chunk) { chunk.init_after_constructor(); });
     }
@@ -381,28 +381,28 @@ class ChunkThreadPolicy<T, Derived, false> : public SecondValueChunkBase<T, Deri
 
     /*!
      * \brief The full type-2 clear (find_or_set path), so the sequential
-     *        compression can register a cst_val2 exactly like the OpenMP path.
+     *        compression can register a const_val2 exactly like the OpenMP path.
      *        thr_rank is 0 with OpenMP off.
      */
     void clear_int_st(int               num_compress_value,
-                      CstSlot*          ptr_type_cst,
+                      ConstSlot*        ptr_type_const,
                       SecondValueRef<T> ptr_second_value,
                       int               thr_rank,
-                      T*                new_cst_val2_ptr = nullptr);
+                      T*                new_const_val2_ptr = nullptr);
 
 
     /// @brief Compress to the FIRST constant and forget the second value, if materialised.
-    void clear(CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value);
+    void clear(ConstSlot* ptr_type_const, SecondValueRef<T> ptr_second_value);
 
     /// @brief Unconditional twin of clear(char*, T*): no written() test.
-    void clear_st(CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value);
+    void clear_st(ConstSlot* ptr_type_const, SecondValueRef<T> ptr_second_value);
 
     /// @brief Release the buffer outright (no rank pool) and point at a constant.
     void block_clear(int               num_compress_value,
-                     CstSlot*          ptr_type_cst,
+                     ConstSlot*        ptr_type_const,
                      SecondValueRef<T> ptr_second_value,
                      int /*thr_rank*/,
-                     T* cst2_ptr);
+                     T* const2_ptr);
 };
 
 /**
@@ -422,7 +422,7 @@ template <typename T, typename Derived>
 // the copy, which carries the per-chunk state the way the copy constructor documents.
 // NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
 class ChunkImpl : public ChunkThreadPolicy<T, Derived>,
-                  public ArrayCstVal2Holder<T>,
+                  public ArrayConstVal2Holder<T>,
                   public ChunkStateQueries<T, Derived>
 {
   public:
@@ -442,7 +442,7 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>,
     using Base::first_value;
     using Base::values_;
 
-    using Holder = ArrayCstVal2Holder<T>;
+    using Holder = ArrayConstVal2Holder<T>;
 
     // block_clear / clear_st / clear / clear_int_st / create_value* live on
     // zero_any::ChunkThreadPolicy, one specialisation per mode (see above). Both declare
@@ -484,44 +484,44 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>,
      */
     void init_after_constructor() noexcept
     {
-        Base::values_ = Base::get_cst_val1();
+        Base::values_ = Base::get_const_val1();
     }
 
     /**
      * @brief Set constant type to val1
-     * @param ptr_type_cst Pointer to type indicator
+     * @param ptr_type_const Pointer to type indicator
      */
-    static void set_cst_val_to_cst_val1(CstSlot* ptr_type_cst) noexcept
+    static void set_const_val_to_const_val1(ConstSlot* ptr_type_const) noexcept
     {
-        *ptr_type_cst = CstSlot::first;
+        *ptr_type_const = ConstSlot::first;
     }
     /**
      * @brief Set constant type to val2
-     * @param ptr_type_cst Pointer to type indicator
+     * @param ptr_type_const Pointer to type indicator
      */
-    static void set_cst_val_to_cst_val2(CstSlot* ptr_type_cst) noexcept
+    static void set_const_val_to_const_val2(ConstSlot* ptr_type_const) noexcept
     {
-        *ptr_type_cst = CstSlot::second;
+        *ptr_type_const = ConstSlot::second;
     }
     /**
      * @brief Records which of the two constants this chunk is being compressed to.
      * @param num_compress_value 0 for the first constant, anything else for the second.
-     * @param ptr_type_cst Slot of the per-chunk type table to write.
+     * @param ptr_type_const Slot of the per-chunk type table to write.
      */
-    static void set_cst_val_to_cst_val(int num_compress_value, CstSlot* ptr_type_cst) noexcept
+    static void set_const_val_to_const_val(int num_compress_value, ConstSlot* ptr_type_const) noexcept
     {
-        *ptr_type_cst = cst_slot_of(num_compress_value);
+        *ptr_type_const = const_slot_of(num_compress_value);
     }
 
     /**
      * @brief Initialize values depending on constant type
-     * @param ptr_type_cst Pointer to constant type indicator
+     * @param ptr_type_const Pointer to constant type indicator
      */
     /// @param ptr_second_value The chunk's second-value slot: the array to
-    ///        point at when the type says cst_val2 is found by value in the
+    ///        point at when the type says const_val2 is found by value in the
     ///        registry (there is no per-chunk copy of it). May be null when
-    ///        the type is cst_val1.
-    void init_values_cst_val(const CstSlot* ptr_type_cst, SecondValueRef<T> ptr_second_value) noexcept;
+    ///        the type is const_val1.
+    void init_values_const_val(const ConstSlot* ptr_type_const, SecondValueRef<T> ptr_second_value) noexcept;
 
     /// @brief Get reference to the chunk manager (static access)
     /// @return Reference to the Manager static instance
@@ -605,7 +605,7 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>,
 };
 
 /// @brief Chunk of values compressible to the first constant or to a second constant shared through the
-///        ArrayCstVal2Holder registry, detected automatically. All of it is ChunkImpl's, shared by the
+///        ArrayConstVal2Holder registry, detected automatically. All of it is ChunkImpl's, shared by the
 ///        zero_any family.
 /// @tparam T Element type.
 template <typename T>

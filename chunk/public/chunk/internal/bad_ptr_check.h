@@ -22,12 +22,12 @@
 // instead of a SEGV.
 //
 // Checks pointers installed into chunk.values at the *producer* side (values_store /
-// CAS / free-list pop / cst-getter), so the report names whoever fabricated the bad
+// CAS / free-list pop / constant-getter), so the report names whoever fabricated the bad
 // pointer, not the eventual reader in the deferred write_body.
 //
 // A valid values pointer is one of:
 //   - nullptr (transient, tolerated by is_written checks)
-//   - a cst_val1 / cst_val2(idx) constant block (aligned to alignof(T))
+//   - a const_val1 / const_val2(idx) constant block (aligned to alignof(T))
 //   - a chunk buffer from allocate_chunk_internal (always ≥ 8-byte aligned,
 //     and at an address well above the low pages)
 //
@@ -78,7 +78,7 @@ template <typename T>
         }
 
         // Valid: address above the low pages AND aligned to alignof(T). Do not hard-code 8:
-        // the cst_val1/cst_val2 sentinels are static std::array<T> whose .data() is only
+        // the const_val1/const_val2 sentinels are static std::array<T> whose .data() is only
         // alignof(T)-aligned; the linker usually over-aligns statics, but not always
         // (e.g. under sanitizer redzones).
         if (constexpr std::uintptr_t align_mask = alignof(T) - 1; addr >= 0x1000 && (addr & align_mask) == 0) [[likely]]

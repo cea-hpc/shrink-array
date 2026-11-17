@@ -63,7 +63,7 @@ T* zero::Proxy<T>::perform_core_assignment(T* vals, InT<T> value) const noexcept
     {
         if (same_value(value, static_cast<T>(Chunk<T>::first_value)))
         {
-            if (is_not_cst_val())
+            if (is_not_const_val())
             {
                 // raw-read: serial counter mode (no fast block compression, no concurrent pass)
                 if (!same_value(values_[num_], Chunk<T>::first_value))
@@ -79,7 +79,7 @@ T* zero::Proxy<T>::perform_core_assignment(T* vals, InT<T> value) const noexcept
             }
         }
         // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-        else if (is_not_cst_val() && same_value(values_[num_], Chunk<T>::first_value))
+        else if (is_not_const_val() && same_value(values_[num_], Chunk<T>::first_value))
         {
             chunk_.dec_n_val_eq_zero();
         }
@@ -90,7 +90,7 @@ T* zero::Proxy<T>::perform_core_assignment(T* vals, InT<T> value) const noexcept
         inc_chunk_write<ChunkType>(value);
     }
 
-    if (const bool need_alloc = this->is_cst_val1(vals); need_alloc)
+    if (const bool need_alloc = this->is_const_val1(vals); need_alloc)
     {
         // Counter-mode state across the allocation; empty work otherwise.
         class
@@ -100,7 +100,7 @@ T* zero::Proxy<T>::perform_core_assignment(T* vals, InT<T> value) const noexcept
             {
                 if constexpr (chunk_config::use_compression_with_counter)
                 {
-                    was_cst = proxy->is_cst_val();
+                    was_const = proxy->is_const_val();
                 }
             }
 
@@ -108,7 +108,7 @@ T* zero::Proxy<T>::perform_core_assignment(T* vals, InT<T> value) const noexcept
             {
                 if constexpr (chunk_config::use_compression_with_counter)
                 {
-                    if (was_cst)
+                    if (was_const)
                     {
                         proxy->chunk_.set_n_val_eq_zero(proxy->chunk_size() - 1);
                     }
@@ -119,7 +119,7 @@ T* zero::Proxy<T>::perform_core_assignment(T* vals, InT<T> value) const noexcept
                 }
             }
 
-            [[maybe_unused]] bool was_cst = false;
+            [[maybe_unused]] bool was_const = false;
         } state;
 
         state.capture(this);
@@ -314,19 +314,19 @@ template <typename U>
 T zero::Proxy<T>::assign_impl(InT<U> value) noexcept
 {
     this->check_not_stale();
-    if (is_cst_val_and_v_equal_zero(value))
+    if (is_const_val_and_v_equal_zero(value))
     {
         return value;
     }
 
-    // Do not hoist `need_alloc = is_cst_val()` here: an acquire load paid by
+    // Do not hoist `need_alloc = is_const_val()` here: an acquire load paid by
     // every write for a test only the `value == zero` branch makes.
     if constexpr (chunk_config::use_compression_with_counter)
     {
         // The stored value, not the operand: char = 256 stores a zero.
         if (same_value(static_cast<T>(value), zero))
         {
-            if (is_cst_val())
+            if (is_const_val())
             {
                 return zero;
             }
@@ -344,13 +344,13 @@ T zero::Proxy<T>::assign_impl(InT<U> value) noexcept
             }
         }
         // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-        else if (!is_cst_val() && same_value(values_[num_], zero))
+        else if (!is_const_val() && same_value(values_[num_], zero))
         {
             chunk_.dec_n_val_eq_zero();
         }
     }
     // Without the counter, the early-out for `= 0` on a compressed chunk is
-    // is_cst_val_and_v_equal_zero() above, and only it. It must not apply over a
+    // is_const_val_and_v_equal_zero() above, and only it. It must not apply over a
     // pending deferred op (the `= 0` would be skipped, then the replay lands).
 
     // By reference: value is this call's parameter, alive for the synchronous
@@ -412,7 +412,7 @@ T zero::Proxy<T>::assign_impl(InT<U> value) noexcept
                 // reloaded once after a materialisation, as in lbd_equal_core.
                 T* values = chunk.values_load();
 
-                const bool is_cst = chunk.is_cst_val1(values);
+                const bool is_constant = chunk.is_const_val1(values);
 
                 // Capture the old value BEFORE materialising: create_value()
                 // installs an all-zero buffer, and the non-zero -> zero transition
@@ -429,7 +429,7 @@ T zero::Proxy<T>::assign_impl(InT<U> value) noexcept
                     }
                 }();
 
-                if (is_cst)
+                if (is_constant)
                 {
                     chunk.create_value();
                     values = chunk.values_load();
@@ -455,7 +455,7 @@ T zero::Proxy<T>::assign_impl(InT<U> value) noexcept
         // and manage_full_zero would fire on a chunk that is not all-zero.
         // Apply the write directly (arm + store), with only the arm-time
         // counter init.
-        if (const bool need_alloc = is_cst_val(); need_alloc)
+        if (const bool need_alloc = is_const_val(); need_alloc)
         {
             create_value();
             if constexpr (chunk_config::use_compression_with_counter)
@@ -485,7 +485,7 @@ void zero::Proxy<T>::execute_simple_operation(Lambda operation)
     // raw-read: write session -- the write/compress handshake keeps compressors off this chunk
     [[maybe_unused]] const bool was_first_value = same_value(values_[num_], static_cast<T>(Chunk<T>::first_value));
 
-    const bool is_val1 = Base::is_cst_val1();
+    const bool is_val1 = Base::is_const_val1();
 
     if (is_val1)
     {
@@ -538,7 +538,7 @@ template <typename Derived, typename T, bool Enabled>
 template <typename Lambda>
 void zero::ProxyFastCompPolicy<Derived, T, Enabled>::execute_simple_operation_async(auto* ctx, Lambda operation)
 {
-    if (const bool is_val1 = ctx->chunk.is_cst_val1(); is_val1)
+    if (const bool is_val1 = ctx->chunk.is_const_val1(); is_val1)
     {
         ctx->chunk.create_value();
     }
@@ -555,7 +555,7 @@ void zero::Proxy<T>::execute_inplace_operation(Lambda operation)
     // raw-read: write session -- the write/compress handshake keeps compressors off this chunk
     [[maybe_unused]] const bool was_first_value = same_value(values_[num_], static_cast<T>(Chunk<T>::first_value));
 
-    const bool         is_val = is_cst_val();
+    const bool         is_val = is_const_val();
     [[maybe_unused]] T v_old  = T{};
 
     if constexpr (chunk_config::use_compression_with_counter)
@@ -643,7 +643,7 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::execute_inplace_operation_a
     const InT<T> v_old = Base::read_values_async(ctx);
 
     const Proxy proxy = Base::template make_proxy_with_info<Derived>(ctx);
-    if (const bool is_val = chunk_loc.is_cst_val1(); is_val)
+    if (const bool is_val = chunk_loc.is_const_val1(); is_val)
     {
         // Through the proxy: pins the ambient geometry (see execute_inplace_operation).
         proxy.create_value();
@@ -690,7 +690,7 @@ void zero::Proxy<T>::apply_compound_operation(InT<U> operand, BinaryOp op)
             // Test the result, not the operand: `x /= 0.0` is +-inf, and
             // counting it as a zero would recompress a chunk holding infinities.
             // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-            if (same_value(values_[num_], zero) && !is_cst_val())
+            if (same_value(values_[num_], zero) && !is_const_val())
             {
                 chunk_.inc_n_val_eq_zero();
                 if (chunk_.is_full_zero(this->chunk_size()))
@@ -880,7 +880,7 @@ template <typename T>
 {
     if constexpr (chunk_config::use_compression_with_counter)
     {
-        if (chunk_.is_not_cst_val1() && chunk_.is_full_zero(this->chunk_size()))
+        if (chunk_.is_not_const_val1() && chunk_.is_full_zero(this->chunk_size()))
         {
             if constexpr (build_config::chunk_dynamic)
             {

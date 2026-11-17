@@ -507,10 +507,10 @@ int run(int argc, char** argv)
     if (argc > 2 && std::string_view(argv[1]) == "--size")
     {
         const auto size = shrink_array::arg_number<unsigned int>(argv[2], 0u, "size");
-        if (!build_config::chunk_dynamic || !is_valid_chunk_size(size) || size > cst_buffer_size / 2)
+        if (!build_config::chunk_dynamic || !is_valid_chunk_size(size) || size > const_buffer_size / 2)
         {
             println("index64_validation: --size {}: a dynamic build and a valid size up to {}", size,
-                    cst_buffer_size / 2);
+                    const_buffer_size / 2);
             return 1;
         }
         set_active_chunk_size(size);

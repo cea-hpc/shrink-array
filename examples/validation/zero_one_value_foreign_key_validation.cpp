@@ -112,14 +112,14 @@ struct Xorshift
     }
 };
 
-/// @brief Chunks of @p arr whose values pointer is @p cst: compressed to that
+/// @brief Chunks of @p arr whose values pointer is @p constant: compressed to that
 ///        constant, whatever the array itself would call them.
-long pointing_at(const Arr& arr, long n_chunks, const double* cst)
+long pointing_at(const Arr& arr, long n_chunks, const double* constant)
 {
     long count = 0;
     for (long c = 0; c < n_chunks; ++c)
     {
-        count += (arr.chunk_ref(static_cast<std::size_t>(c)).values_load() == cst) ? 1 : 0;
+        count += (arr.chunk_ref(static_cast<std::size_t>(c)).values_load() == constant) ? 1 : 0;
     }
     return count;
 }
@@ -192,8 +192,8 @@ int run(int /*argc*/, char** /*argv*/)
         const char*  env_s   = std::getenv("FK_SECONDS");
         const double seconds = env_s ? std::atof(env_s) : 2.0;
         // `other`'s constant: the pointer every compressed chunk of `other` holds.
-        const double* const b_cst       = cb.chunk_ref(0).values_load();
-        const long          a_on_b_cst0 = pointing_at(ca, chunks_a, b_cst);
+        const double* const b_const       = cb.chunk_ref(0).values_load();
+        const long          a_on_b_const0 = pointing_at(ca, chunks_a, b_const);
         std::atomic<long>   toggles{0};
 #pragma omp parallel
         {
@@ -224,11 +224,11 @@ int run(int /*argc*/, char** /*argv*/)
         }
         end_phase();
 
-        const long a_compressed = pointing_at(ca, chunks_a, b_cst);
+        const long a_compressed = pointing_at(ca, chunks_a, b_const);
         const long b_compressed = compressed(cb, chunks_b, chunk_sz);
         println("[zero_one_value/foreign-key] {} toggles ({:.1f} s); b: {}/{} chunks compressed before, {} after; "
                 "a: {} of {} chunks on b's constant before the stress, {} after",
-                toggles.load(), seconds, b_compressed0, chunks_b, b_compressed, a_on_b_cst0, chunks_a, a_compressed);
+                toggles.load(), seconds, b_compressed0, chunks_b, b_compressed, a_on_b_const0, chunks_a, a_compressed);
         if (b_compressed0 == 0)
         {
             println("[zero_one_value/foreign-key] FAIL premise: `b` was not compressed to its second value");

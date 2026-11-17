@@ -46,7 +46,7 @@ template <typename T, typename Derived, bool Enabled>
 [[gnu::noinline]] void* zero::ChunkThreadPolicy<T, Derived, Enabled>::operator new[](std::size_t sz)
 {
     auto* chunks = static_cast<zero::Chunk<T>*>(::operator new(sz));
-    init_chunks_cst_val(chunks, sz / sizeof(zero::Chunk<T>));
+    init_chunks_const_val(chunks, sz / sizeof(zero::Chunk<T>));
     return static_cast<void*>(chunks);
 }
 
@@ -109,7 +109,7 @@ template <typename T, typename Derived, bool Enabled>
 void zero::ChunkThreadPolicy<T, Derived, Enabled>::compress(int thr_rank, unsigned int n_elems)
 {
     // Already compressed: nothing to do. Required: a chunk can be reached twice (its queued
-    // candidate outlives a compression by another path, e.g. the re-chunk fold). On a cst1
+    // candidate outlives a compression by another path, e.g. the re-chunk fold). On a const1
     // chunk `values` IS the shared zero sentinel: is_constant_to(0) would answer true and
     // clear_st() would park the SENTINEL into a reuse list, to be handed out as a buffer.
     if (!derived().written())
@@ -356,7 +356,7 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int 
 
     if (guarded)
     {
-        if (proxy->is_not_cst_val())
+        if (proxy->is_not_const_val())
         {
             proxy->add_to_compression_list(vec_tuple_to_compress);
         }
@@ -393,14 +393,14 @@ void zero::Chunk<T>::block_clear([[maybe_unused]] int thr_rank)
     else
     {
         Base::free_values();
-        derived().init_values_cst_val();
+        derived().init_values_const_val();
     }
 }
 
 template <typename T, typename Derived, bool Enabled>
 void zero::ChunkThreadPolicy<T, Derived, Enabled>::clear_int_st(int thr_rank)
 {
-    T* old = try_mark_cst_and_get_old();
+    T* old = try_mark_const_and_get_old();
     if (old)
     {
         if constexpr (chunk_config::stats)
@@ -418,7 +418,7 @@ void zero::ChunkThreadPolicy<T, Derived, Enabled>::clear_int_st(int thr_rank)
 template <typename T, typename Derived, bool Enabled>
 void zero::ChunkThreadPolicy<T, Derived, Enabled>::clear_st(int thr_rank, unsigned int n_elems)
 {
-    // CHUNK_STATS: a compression completing. Count here, not in init_values_cst_val (also
+    // CHUNK_STATS: a compression completing. Count here, not in init_values_const_val (also
     // reached from teardown/neutralisation, which are not compressions). The re-chunk
     // rebuild releases through release_st() directly so it is not counted as compression.
     if constexpr (chunk_config::stats)
@@ -462,7 +462,7 @@ void zero::ChunkThreadPolicy<T, Derived, Enabled>::release_st(int thr_rank, unsi
     CHUNK_LEDGER_PARK(values_.load(), "clear_st.park"); // LIVE -> parked before it re-enters the pool
     ll_block_free_thr.push_back(values_);
 
-    derived().init_values_cst_val();
+    derived().init_values_const_val();
 }
 
 template <typename T, typename Derived>
@@ -503,7 +503,7 @@ void zero::ChunkThreadPolicy<T, Derived, false>::release_st(bool count_release)
 
     Base::free_values();
 
-    derived().init_values_cst_val();
+    derived().init_values_const_val();
 }
 
 // ---------------------------------------------------------------------------
@@ -511,16 +511,16 @@ void zero::ChunkThreadPolicy<T, Derived, false>::release_st(bool count_release)
 // ---------------------------------------------------------------------------
 
 template <typename T, typename Derived, bool Enabled>
-T* zero::ChunkThreadPolicy<T, Derived, Enabled>::try_mark_cst_and_get_old()
+T* zero::ChunkThreadPolicy<T, Derived, Enabled>::try_mark_const_and_get_old()
 {
     T* old = Base::values_load();
-    if (old == Base::get_cst_val1()) [[unlikely]]
+    if (old == Base::get_const_val1()) [[unlikely]]
     {
         return nullptr;
     }
 
     T* expected = old;
-    T* new_ptr  = Base::get_cst_val1();
+    T* new_ptr  = Base::get_const_val1();
 
     if (!values_.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel, std::memory_order_acquire))
         [[unlikely]]
@@ -574,7 +574,7 @@ zero::Chunk<T>& zero::Chunk<T>::operator=(const Chunk<T>& other)
 template <typename T>
 void zero::Chunk<T>::alloc_chunk([[maybe_unused]] int thr_rank)
 {
-    if (is_cst_val1())
+    if (is_const_val1())
     {
         if constexpr (chunk_config::stats)
         {

@@ -78,7 +78,7 @@ void zero_any::ArrayImpl<Derived>::rebuild_storage(IntType sz)
             Manager::compute_size_buffer_reuse();
             Manager::compute_size_max_number_of_chunk_to_check_compress();
 
-            acquire_cst2_registry();
+            acquire_const2_registry();
             this->acquire_chunk_list(static_cast<std::size_t>(chunk_count_));
 
             this->alloc_dirty_bitset(chunk_count_);
@@ -98,7 +98,7 @@ void zero_any::ArrayImpl<Derived>::rebuild_storage(IntType sz)
             const auto init_chunk = [&](int chunk_index)
             {
                 ProxyType::Base::set_array_is_inside_chunk_list_to_compress(array_id_, chunk_index, 0);
-                ProxyType::array_type_cst_val[array_id_][chunk_index] = CstSlot::first;
+                ProxyType::array_type_const_val[array_id_][chunk_index] = ConstSlot::first;
                 ProxyType::BaseSpec::set(array_id_, chunk_index, T{});
                 this->construct_chunk(chunk_index).init_after_constructor();
             };
@@ -126,10 +126,10 @@ void zero_any::ArrayImpl<Derived>::print_compression_stats(std::ostream& os) con
         return;
     }
 
-    // Do not classify from array_type_cst_val alone: it is written only at
+    // Do not classify from array_type_const_val alone: it is written only at
     // construction and never reset on materialisation, so a MATERIALISED chunk
     // would be counted as compressed. written() tests the LIVE state
-    // (values_load() != cst_val1 && is_not_cst_val2()); array_type_cst_val is
+    // (values_load() != const_val1 && is_not_const_val2()); array_type_const_val is
     // trusted only for chunks that are NOT written.
     // A written chunk is then re-tested on its CONTENT (constant_value(), the
     // same scan as the size predictor): written() only says whether the
@@ -158,8 +158,8 @@ void zero_any::ArrayImpl<Derived>::print_compression_stats(std::ostream& os) con
                 ++acc[same_value(*v0, static_cast<T>(ChunkType::first_value)) ? 0 : 1];
                 return;
             }
-            const CstSlot ct = ProxyType::array_type_cst_val[array_id_][j];
-            ++acc[ct == CstSlot::first ? 0 : 1];
+            const ConstSlot ct = ProxyType::array_type_const_val[array_id_][j];
+            ++acc[ct == ConstSlot::first ? 0 : 1];
         });
     const int n_t1         = counts[1];
     const int n_compressed = counts[0] + n_t1;
@@ -346,7 +346,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
         //           the marking path has a hole.
         //   STUCK   constant at ANOTHER value: zero_any keeps a chunk's second
         //           value until the chunk passes through first_value (the clear
-        //           to cst1 resets it), so a chunk compressed to V once and
+        //           to const1 resets it), so a chunk compressed to V once and
         //           uniformly W later is not compressible as it stands -- not by
         //           the write path, not by compress(). This count is the
         //           memory that design choice costs on this array -- not a
@@ -377,17 +377,18 @@ void zero_any::ArrayImpl<Derived>::clear_core()
 
                     // Is it actually constant? (same notion fill_list_to_compress uses:
                     // every element equal to the block's first element.)
-                    const auto cst = ck.constant_value(csz);
-                    if (!cst)
+                    const auto constant = ck.constant_value(csz);
+                    if (!constant)
                     {
                         continue;
                     }
-                    if (same_value(*cst, static_cast<T>(ChunkType::first_value)))
+                    if (same_value(*constant, static_cast<T>(ChunkType::first_value)))
                     {
                         ++missed_first;
                     }
                     else if (same_value(
-                                 *cst, static_cast<T>(ProxyType::BaseSpec::get_array_second_value(array_id_, j).get())))
+                                 *constant,
+                                 static_cast<T>(ProxyType::BaseSpec::get_array_second_value(array_id_, j).get())))
                     {
                         ++missed_second;
                     }
@@ -430,19 +431,19 @@ void zero_any::ArrayImpl<Derived>::clear_core()
                 {
                     inc_chunk_teardown_clear<ChunkType>();
                 }
-                chunk_list_[j].clear_st(&ProxyType::array_type_cst_val[array_id_][j],
+                chunk_list_[j].clear_st(&ProxyType::array_type_const_val[array_id_][j],
                                         ProxyType::BaseSpec::get_array_second_value(array_id_, j));
             }
         }
 
         // Give back the registry reference this array took
-        // (acquire_cst2_registry), as the OpenMP branch does after its barrier;
+        // (acquire_const2_registry), as the OpenMP branch does after its barrier;
         // without it the last array out never frees the registry.
-        if (holds_cst2_registry_)
+        if (holds_const2_registry_)
         {
             int n_val2 = 0;
             ChunkType::Holder::clear(n_val2); // single thread here
-            holds_cst2_registry_ = false;
+            holds_const2_registry_ = false;
             if (n_val2 != 0)
             {
                 print_type_name<T>(n_val2);
@@ -504,29 +505,29 @@ void zero_any::ArrayImpl<Derived>::clear_core()
                         // Neutralise the chunk NOW that its buffer is parked: a residual
                         // compression candidate (one that slipped the removals above, or
                         // the terminal sweep) would otherwise free_block_to_pool the SAME
-                        // buffer again (double-free). With cst_val1 stored, every compress
-                        // path short-circuits (the CAS reads values == cst_val1 and
+                        // buffer again (double-free). With const_val1 stored, every compress
+                        // path short-circuits (the CAS reads values == const_val1 and
                         // returns nullptr). Mirrors the non-OMP clear_st path.
-                        ll_chunk_loc[k]->values_store(ChunkBase<T, ChunkType>::get_cst_val1());
+                        ll_chunk_loc[k]->values_store(ChunkBase<T, ChunkType>::get_const_val1());
                     }
                 }
 
                 // BARRIER REQUIRED: the loop above is a for_static(..., nowait), so other threads may
                 // still be in it writing values_, whose slow path (make_block_compression ->
-                // find_or_set_idx_cst_val2) SCANS the shared segment list. clear() below tears
+                // find_or_set_idx_const_val2) SCANS the shared segment list. clear() below tears
                 // that list down (head.exchange(nullptr) + delete of every Segment); without
                 // the barrier the teardown races the scan (freed-Segment dereference).
                 team.barrier();
                 team.single(
                     [&]
                     {
-                        // Only the reference this array took (acquire_cst2_registry).
-                        if (holds_cst2_registry_)
+                        // Only the reference this array took (acquire_const2_registry).
+                        if (holds_const2_registry_)
                         {
                             const auto r0 = time_registry ? std::chrono::steady_clock::now()
                                                           : std::chrono::steady_clock::time_point{};
                             ChunkType::Holder::clear(acc[0]);
-                            holds_cst2_registry_ = false;
+                            holds_const2_registry_ = false;
                             if (time_registry)
                             {
                                 registry_ms =
@@ -700,7 +701,7 @@ void zero_any::ArrayImpl<Derived>::release_chunk_range(int first, int last)
     if constexpr (build_config::not_threaded)
     {
         // Before Proxy::resize_array_is_int() truncates the per-chunk type
-        // table: clear_st() reads array_type_cst_val[array_id][j].
+        // table: clear_st() reads array_type_const_val[array_id][j].
         const int array_id = ProxyType::array_registry->get_array_id(this->registry_key());
         for (int j = first; j < last; ++j)
         {
@@ -710,7 +711,7 @@ void zero_any::ArrayImpl<Derived>::release_chunk_range(int first, int last)
                 {
                     inc_chunk_teardown_clear<ChunkType>();
                 }
-                chunk_list_[j].clear_st(&ProxyType::array_type_cst_val[array_id][j],
+                chunk_list_[j].clear_st(&ProxyType::array_type_const_val[array_id][j],
                                         ProxyType::BaseSpec::get_array_second_value(array_id, j));
             }
         }
@@ -740,7 +741,7 @@ void zero_any::ArrayImpl<Derived>::release_chunk_range(int first, int last)
                     lbf.push_back(values_loc);
                     // Neutralise, as clear_core(): the buffer belongs to the
                     // reuse list now.
-                    chunk_list_[j].values_store(ChunkBase<T, ChunkType>::get_cst_val1());
+                    chunk_list_[j].values_store(ChunkBase<T, ChunkType>::get_const_val1());
                 }
             });
     }
@@ -761,7 +762,7 @@ void zero_any::ArrayImpl<Derived>::resize(IntType newsz)
     SecondValueBase::resize_common(newsz);
     if (chunk_count_ > 0)
     {
-        acquire_cst2_registry(); // an array built empty gets its chunks here
+        acquire_const2_registry(); // an array built empty gets its chunks here
     }
 
     ProxyType::resize_array_is_int(array_id, old_chunk_count, chunk_count_);
@@ -777,7 +778,7 @@ void zero_any::ArrayImpl<Derived>::resize(IntType newsz)
                                               this->construct_chunk(chunk_index).init_after_constructor();
                                               ProxyType::Base::set_array_is_inside_chunk_list_to_compress(
                                                   array_id, chunk_index, 0);
-                                              ProxyType::array_type_cst_val[array_id][chunk_index] = CstSlot::first;
+                                              ProxyType::array_type_const_val[array_id][chunk_index] = ConstSlot::first;
                                               // T{}: the struct elements have no conversion from 0
                                               ProxyType::BaseSpec::set(array_id, chunk_index, T{});
                                           });
@@ -849,7 +850,7 @@ std::size_t zero_any::ArrayImpl<Derived>::reclaim_second_values()
 {
     if constexpr (std::is_same_v<T, bool>)
     {
-        return 0; // one shared constant array, no registry (ArrayCstVal2Holder<bool>)
+        return 0; // one shared constant array, no registry (ArrayConstVal2Holder<bool>)
     }
     else
     {
@@ -917,16 +918,16 @@ template <typename Derived>
 }
 
 template <typename Derived>
-inline void zero_any::ArrayImpl<Derived>::acquire_cst2_registry()
+inline void zero_any::ArrayImpl<Derived>::acquire_const2_registry()
 {
-    if (!holds_cst2_registry_)
+    if (!holds_const2_registry_)
     {
         if constexpr (!std::is_same_v<T, bool>)
         {
             GlobalVecHolder<T>::register_marker(&mark_second_values<T, ProxyType, ChunkType>);
         }
         ChunkType::Holder::create();
-        holds_cst2_registry_ = true;
+        holds_const2_registry_ = true;
     }
 }
 
@@ -941,7 +942,7 @@ void zero_any::ArrayImpl<Derived>::gc_collect_live(std::unordered_set<const void
             for (int j = 0; j < nc; ++j)
             {
                 const auto& ch = arr->chunk_ref(static_cast<std::size_t>(j));
-                if (ch.is_cst_val2())
+                if (ch.is_const_val2())
                 {
                     live.insert(static_cast<const void*>(ch.values_load()));
                 }

@@ -108,7 +108,7 @@ void ArrayChunkBase<Derived>::set_chunk_size([[maybe_unused]] unsigned int new_c
 {
     // Same rule as rechunk_to() (this is also its path on an empty array):
     // chunk_size_error, a power of two or a multiple of 64 and at most
-    // cst_buffer_size -- a wider chunk reads the shared constant buffers out
+    // const_buffer_size -- a wider chunk reads the shared constant buffers out
     // of bounds. Refused, geometry kept.
     if constexpr (build_config::chunk_dynamic)
     {
@@ -524,11 +524,11 @@ void ArrayChunkBase<Derived>::for_each_span(IndexType first, IndexType last, F&&
                                     {
                                         // A compressed chunk stays so for the rest of the
                                         // call (no writer): the constant covers [j, hi).
-                                        T cst{};
-                                        if (read_chunk_block_or_constant(ch, chunk_index, j, len, buf.data(), cst))
+                                        T constant{};
+                                        if (read_chunk_block_or_constant(ch, chunk_index, j, len, buf.data(), constant))
                                         {
                                             check_no_write_during_bulk_read(ch, chunk_index, j);
-                                            func(std::as_const(cst), static_cast<std::size_t>(hi - j));
+                                            func(std::as_const(constant), static_cast<std::size_t>(hi - j));
                                             return;
                                         }
                                     }
@@ -775,15 +775,15 @@ bool ArrayChunkBase<Derived>::read_chunk_block_or_constant(const ChunkType& ch,
                                                            int              first,
                                                            int              count,
                                                            T*               out,
-                                                           T&               cst) const noexcept
+                                                           T&               constant) const noexcept
 {
     if constexpr (has_motif_state_v<ChunkType>)
     {
-        return ch.read_block_or_constant(first, count, out, cst, motif_offset_slot(chunk_index));
+        return ch.read_block_or_constant(first, count, out, constant, motif_offset_slot(chunk_index));
     }
     else
     {
-        return ch.read_block_or_constant(first, count, out, cst);
+        return ch.read_block_or_constant(first, count, out, constant);
     }
 }
 

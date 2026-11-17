@@ -35,18 +35,18 @@ enum class EventCode : std::uint8_t
     compress_started,
     compress_aborted,
     compress_finished,
-    // ─── cst_val transitions ────────────────────────────────────────
-    cas_values_to_cst,   // info = chunk_idx, sub-value = which cst (1 or 2)
-    cas_values_from_cst, // info = chunk_idx (create_value success)
-    cas_values_fail,     // info = chunk_idx (create_value failed = reclaim)
-    flush_begin,         // info = chunk_idx
-    flush_end,           // info = chunk_idx
-    lambda_async_assign, // info = chunk_idx (in lambda exec)
-    lambda_async_arith,  // info = chunk_idx
-    values_load_is_cst,  // info = chunk_idx (RACE DETECTOR if observed in lambda)
-    store_value,         // info = (chunk_idx << 8) | num
-    policy_begin_write,  // info = thr_rank (entered begin_write)
-    policy_end_write,    // info = thr_rank (entered end_write)
+    // ─── const_val transitions ────────────────────────────────────────
+    cas_values_to_const,   // info = chunk_idx, sub-value = which constant (1 or 2)
+    cas_values_from_const, // info = chunk_idx (create_value success)
+    cas_values_fail,       // info = chunk_idx (create_value failed = reclaim)
+    flush_begin,           // info = chunk_idx
+    flush_end,             // info = chunk_idx
+    lambda_async_assign,   // info = chunk_idx (in lambda exec)
+    lambda_async_arith,    // info = chunk_idx
+    values_load_is_const,  // info = chunk_idx (RACE DETECTOR if observed in lambda)
+    store_value,           // info = (chunk_idx << 8) | num
+    policy_begin_write,    // info = thr_rank (entered begin_write)
+    policy_end_write,      // info = thr_rank (entered end_write)
     // ─── thread-ops bitmap tracking ──────────────────────────────────
     mark_thread_has_ops,  // info = thr_rank
     clear_thread_has_ops, // info = thr_rank

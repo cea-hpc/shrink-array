@@ -33,9 +33,9 @@ using namespace shrink_array;
 static constexpr int n_elems = 1 << 22; // 4M elements
 
 // Mixed, size-sensitive pattern:
-//  [0,50%)   : zeros                          -> cst1 at every size
-//  [50,75%)  : constant 3.5                   -> cst2 at every size
-//  [75,87.5%): 256-long alternating constants -> cst at S<=256, MAT above
+//  [0,50%)   : zeros                          -> const1 at every size
+//  [50,75%)  : constant 3.5                   -> const2 at every size
+//  [75,87.5%): 256-long alternating constants -> constant at S<=256, MAT above
 //  [87.5,100%): pseudo-random                 -> MAT at every size
 //  plus: one exceptional value every 4096 elements inside the zero region
 //        -> pollutes 1 chunk in 64 at S=64, 1 in 4 at S=1024...
@@ -79,7 +79,7 @@ static Truth ground_truth(const zero_any::Array<double>& arr, double meta)
     for (long long j = 0; j < truth.chunks; ++j)
     {
         const auto& chunk = arr.chunk_list_[j];
-        if (!chunk.is_cst_val1() && !chunk.is_cst_val2())
+        if (!chunk.is_const_val1() && !chunk.is_const_val2())
         {
             ++truth.mat;
         }

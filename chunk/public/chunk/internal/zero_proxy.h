@@ -449,9 +449,9 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *        constant.
      * @return true if the chunk is compressed.
      */
-    [[nodiscard]] bool is_cst_val() const noexcept
+    [[nodiscard]] bool is_const_val() const noexcept
     {
-        return chunk_.is_cst_val1();
+        return chunk_.is_const_val1();
     }
 
     /**
@@ -534,9 +534,9 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *       early-out sits before the engine. Constant-false serially.
      */
     template <typename U>
-    [[nodiscard]] bool is_cst_val_and_v_equal_zero(const U& value) const noexcept
+    [[nodiscard]] bool is_const_val_and_v_equal_zero(const U& value) const noexcept
     {
-        return same_value(static_cast<T>(value), zero) && is_cst_val() && !chunk_.pending_any();
+        return same_value(static_cast<T>(value), zero) && is_const_val() && !chunk_.pending_any();
     }
 
     /**
@@ -620,12 +620,12 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     const Proxy& operator=(const Proxy& from) noexcept;
 
     /**
-     * @brief Negation of is_cst_val().
+     * @brief Negation of is_const_val().
      * @return true if the chunk is materialised (not compressed).
      */
-    [[nodiscard]] bool is_not_cst_val() const noexcept
+    [[nodiscard]] bool is_not_const_val() const noexcept
     {
-        return chunk_.is_not_cst_val1();
+        return chunk_.is_not_const_val1();
     }
 
     /**

@@ -58,7 +58,7 @@ namespace shrink_array
 //     ProxyBase::apply_atomic_op (U parameter)        (proxy_base.h)
 //     ProxyOperators::friend +,-,*,/                  (proxy_operators.h)
 //     inc_chunk_write<V>(V v)                      (chunk_stats.h)
-//     Proxy::is_cst_val_and_v_equal_zero              (zero_proxy.h)
+//     Proxy::is_const_val_and_v_equal_zero              (zero_proxy.h)
 //
 // The engines those operators call -- assign_impl (the three proxies),
 // ProxyBase::arithmetic_assign / bitwise_assign, Proxy::apply_compound_operation
@@ -80,12 +80,12 @@ namespace shrink_array
 // `ptr_second_value` (a SecondValueRef) after reading `second_v`, so a
 // `const T&` bound to that slot would change under it:
 //
-//     ArrayCstVal2Holder::find_or_set_idx_cst_val2      (array_cst_val2_holder.h)
+//     ArrayConstVal2Holder::find_or_set_idx_const_val2      (array_const_val2_holder.h)
 //
 // Also kept as `T v` by policy: no aliasing today, but on write paths where a
 // large user T could introduce one:
 //
-//     ArrayCstVal2Holder::alloc_chunk(T val)            (array_cst_val2_holder.h)
+//     ArrayConstVal2Holder::alloc_chunk(T val)            (array_const_val2_holder.h)
 //     zero_one_value::Array::set_second_value(T)                (zero_one_value_array.h and
 //                                                       zero_one_value_array_inline.h)
 //     zero_one_value::ChunkFastCompPolicy::have_chunk_to_compress(T) (zero_one_value_chunk.h)

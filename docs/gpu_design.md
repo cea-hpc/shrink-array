@@ -103,15 +103,15 @@ template <typename T>
 struct ChunkDesc                 // 16 bytes for a T of 8 bytes or less
 {
     T*       buf;                // nullptr: compressed; otherwise a buffer of S elements
-    T        cst;                // the constant of the compressed chunk (or the one left: 6.2)
-    // zero: cst is always T{}; zero_one_value: T{} or the array's second value;
+    T        constant;                // the constant of the compressed chunk (or the one left: 6.2)
+    // zero: constant is always T{}; zero_one_value: T{} or the array's second value;
     // zero_any: any value.  pattern: see 8.4.
 };
 ```
 
 For a 16-byte `T` (`std::complex<double>`) the descriptor is 24 bytes, aligned to 32
 **(to be decided: 32 aligned bytes, or a tagged pointer + side table; measure)**. The
-materialisation CAS is on `buf` alone (8 bytes): `cst` is written only by the compression pass
+materialisation CAS is on `buf` alone (8 bytes): `constant` is written only by the compression pass
 (section 7), never by a writer, so never concurrently with a reader.
 
 The descriptor is a **trivially copyable** object, with no atomic in its type: atomic accesses
@@ -152,7 +152,7 @@ pass looks at every materialised chunk (7.1), which on GPU costs less than maint
 __device__ T operator()(IndexT i) const noexcept
 {
     const auto& d = desc_[i >> shift_];
-    return d.buf ? d.buf[i & mask_] : d.cst;     // branch uniform per warp
+    return d.buf ? d.buf[i & mask_] : d.constant;     // branch uniform per warp
 }
 ```
 
@@ -178,7 +178,7 @@ __device__ void assign(T v)
     T* buf = atomic_load_relaxed(d.buf);          // device scope
     if (buf == nullptr)
     {
-        if (v == d.cst) return;                   // 1. the constant onto its constant: nothing
+        if (v == d.constant) return;                   // 1. the constant onto its constant: nothing
         buf = materialise(d);                     // 2. materialise (6.2), then write
     }
     buf[pos] = v;                                 // 3. materialised chunk: direct write
@@ -189,7 +189,7 @@ Cases 1 and 3 are the hot path, uniform per warp, with no atomic. The rules of
 `zero_one_value` ("the second value onto an element that already holds it") and of `zero_any`
 ("discover", "leave", `may_become_uniform`) fed the candidate lists: they **disappear**, the
 end-of-phase pass needs no candidates. What remains to handle is `+=` and the other compound
-operators, which read before writing: same cases, with `v` computed from `d.cst` or
+operators, which read before writing: same cases, with `v` computed from `d.constant` or
 `buf[pos]`.
 
 ### 6.2 Materialisation
@@ -201,7 +201,7 @@ operators, which read before writing: same cases, with `v` computed from `d.cst`
 2. **Allocation**: the elected lane takes a buffer from the **free-buffer stack** (returned
    by the previous compressions, 7.2), otherwise by **bump** on the array's arena
    (`atomicAdd` on the counter, one per buffer). If the arena is exhausted: 6.4.
-3. **Pre-filling** of the buffer with `d.cst`: by **the whole warp** (S/32 elements per lane,
+3. **Pre-filling** of the buffer with `d.constant`: by **the whole warp** (S/32 elements per lane,
    coalesced), not by the elected lane alone.
 4. **Publication by CAS** of `nullptr` → `buf` on `d.buf`, device scope, `release` after the
    pre-fill (a `__threadfence()` before the CAS, or `atomic_ref::compare_exchange` with
@@ -257,7 +257,7 @@ measurement**):
 1. each lane reads its S/32 elements and compares them with `buf[0]`;
 2. `__all_sync` vote (`&&` reduction within the block);
 3. if uniform at a value the variant can compress (`zero`: `T{}`; `zero_one_value`: `T{}` or
-   the second value; `zero_any`: any value): `d.cst = buf[0]`, `d.buf = nullptr`, and the
+   the second value; `zero_any`: any value): `d.constant = buf[0]`, `d.buf = nullptr`, and the
    buffer is returned (7.2).
 
 The pass is bandwidth-bound: re-reading every materialised buffer of a 10 GB array takes a few
@@ -288,7 +288,7 @@ order of preference:
 2. **Vote before materialising.** When a block covers a whole chunk (the case of regular
    loops: S = 256, blocks of 256 threads aligned on the chunks, which the `parallel_for` of
    section 12 guarantees when it can), the block votes "all my values are equal to `v`"
-   **before** materialising: if so, it writes `d.cst = v` and nothing else. This is in-flight
+   **before** materialising: if so, it writes `d.constant = v` and nothing else. This is in-flight
    compression, with no concurrency, because the block is the chunk's only writer. This
    optimisation only holds for the kernels whose split is made by the library; a user kernel
    with arbitrary indices does not have it.
@@ -300,11 +300,11 @@ order of preference:
 
 ### 8.1 `zero`
 
-`cst` is always `T{}`; the pass only folds to `T{}`. Nothing else.
+`constant` is always `T{}`; the pass only folds to `T{}`. Nothing else.
 
 ### 8.2 `zero_one_value`
 
-`cst` is `T{}` or the array's second value (a field of the array, copied into the descriptor
+`constant` is `T{}` or the array's second value (a field of the array, copied into the descriptor
 by the pass). `set_second_value()` is a host operation between two phases. On GPU,
 `zero_one_value` has no interest of its own over `zero_any` any more (the registry that
 justified it no longer exists): it is kept for interoperability and for its semantics (compress
@@ -314,19 +314,19 @@ only to a declared value), **(to be decided)** whether it deserves separate code
 ### 8.3 `zero_any`
 
 The descriptor carries the constant: it is the natural shape of `zero_any`, and the variant to
-prototype first. What disappears: the second-value registry (`array_cst_val2_holder.h`), its
-segments, its hash index, `reclaim_second_values()`, the `array_type_cst_val` and
+prototype first. What disappears: the second-value registry (`array_const_val2_holder.h`), its
+segments, its hash index, `reclaim_second_values()`, the `array_type_const_val` and
 `array_second_value` lines, `CHUNK_SECOND_VALUE_INDEXED`. The cost per chunk becomes uniform
 again: the descriptor.
 
 ### 8.4 `pattern`
 
 A motif chunk = a shared motif (S integers) + an offset. The descriptor gains a shape: `buf`
-points to the motif, the **low bit of `buf`** (or a `kind` field) says "motif", and `cst`
+points to the motif, the **low bit of `buf`** (or a `kind` field) says "motif", and `constant`
 serves as the offset:
 
 ```cpp
-return is_motif(d) ? motif(d)[i & mask_] + d.offset : (d.buf ? d.buf[i & mask_] : d.cst);
+return is_motif(d) ? motif(d)[i & mask_] + d.offset : (d.buf ? d.buf[i & mask_] : d.constant);
 ```
 
 The read stays uniform per warp. **Writing** into a motif chunk materialises it, pre-filled
@@ -394,10 +394,10 @@ It comes **after** fixed geometry in the plan (section 13).
 
 ## 11. Interoperability with the CPU version
 
-- **Common format**: the device descriptor `{buf, cst}` is also a valid CPU format, with two
+- **Common format**: the device descriptor `{buf, constant}` is also a valid CPU format, with two
   differences: the CPU version points to a shared constant buffer where the device puts
   `nullptr`, and carries the OpenMP gates in the chunk object. A **converter** both ways is
-  simple: per chunk, `nullptr` ↔ `cst_val1` / registry buffer, and the materialised buffers
+  simple: per chunk, `nullptr` ↔ `const_val1` / registry buffer, and the materialised buffers
   are copied as they are (same S, same layout). It fits in one kernel plus a host loop, and
   makes the host ↔ device transfer **without decompressing**: only the materialised buffers
   and the descriptor table are transferred.

@@ -157,10 +157,18 @@ the tag's checksum to the recipe.
   read when the new one is unset, with a deprecation line; it goes at 0.3.
 - `ind` (indice) is `idx` in the names (`get_idx_second_value`, `set_info_second_value_idx`, a
   bare `ind` is `idx`), and the arrays' `IndType` is `IndexType` (`Ind`, `IndT`: `Index`, `IndexT`).
+- `cst` (constante) is `const` in the names: `const_val1`, `const_val2`, `is_const_val2`,
+  `ConstSlot` in `chunk/internal/const_slot.h`, `const_buffer_size`, a bare `cst` is `constant`;
+  the harnesses `const2_reclaim_validation` and `const2_registry_validation`. The variables
+  `CHUNK_CONST2_RECLAIM` and `CHUNK_CONST_VAL2_ID_LIMIT` (`CHUNK_CST2_RECLAIM`,
+  `CHUNK_CST_VAL2_ID_LIMIT`: still read when the new name is unset, with a warning; they go at
+  0.3), the build-time `CHUNK_CONST_VAL2_MAX_IDS`, `CHUNK_CONST_VAL2_REGION_BYTES`,
+  `CHUNK_CONST_VAL2_INDEX_LOG2`. `CHUNK_CST2_PROBE` keeps its name: it is a former variable
+  `CHUNK_LOG` reads for compatibility.
 - `tab` (French: tableau) is `array` in the names of the sources, examples and documents:
   `array_int`, `array_bool`, ... of `shrink_bench` (`tab_int`, ...), `arr1` ... `arr5` and `arr`
   (`tab1`, `tab`), the library's `array_is_inside_chunk_list_to_compress`,
-  `get_array_second_value`, `ArrayCstVal2Holder` in `chunk/internal/array_cst_val2_holder.h`
+  `get_array_second_value`, `ArrayConstVal2Holder` in `chunk/internal/array_const_val2_holder.h`
   (`tab_cst_val2_holder.h`), ... The statistics name an array `[array_0 double]`
   (`[tab_0 double]`), and `shrink_bench`'s reference files are `data_array_<name>_<k>.bin`
   (`data_tab_*`): an oracle directory made before is made again by the next campaign.

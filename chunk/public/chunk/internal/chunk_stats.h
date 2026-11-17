@@ -74,7 +74,7 @@ struct alignas(64) ChunkStatsThr
     long alloc           = 0;
     long write           = 0;
     long read            = 0; ///< reads served from a materialised buffer
-    long read_cst        = 0; ///< reads served straight from the constant (compressed chunk)
+    long read_const      = 0; ///< reads served straight from the constant (compressed chunk)
     long read_sync       = 0; ///< accesses that had to enter the slow sync path
     long read_sync_cross = 0; ///< of those, the ones needing the cross-rank walk
     long dirty_gate      = 0; ///< accesses on a chunk whose dirty bit is set: the precise gate is tested
@@ -165,9 +165,9 @@ void inc_chunk_read() noexcept
 }
 /// @brief Count one read served straight from the constant (compressed chunk).
 template <typename C>
-void inc_chunk_read_cst() noexcept
+void inc_chunk_read_const() noexcept
 {
-    chunk_stats_slot(C::stat_variant).read_cst++;
+    chunk_stats_slot(C::stat_variant).read_const++;
 }
 /// @brief Count one access that had to enter the slow sync path.
 template <typename C>
@@ -479,7 +479,7 @@ inline ChunkStatsThr reduce_chunk_stats(int variant) noexcept
         acc.alloc += slot.alloc;
         acc.write += slot.write;
         acc.read += slot.read;
-        acc.read_cst += slot.read_cst;
+        acc.read_const += slot.read_const;
         acc.read_sync += slot.read_sync;
         acc.read_sync_cross += slot.read_sync_cross;
         acc.dirty_gate += slot.dirty_gate;
@@ -540,7 +540,7 @@ void inc_chunk_read() noexcept
 {
 }
 template <typename C>
-void inc_chunk_read_cst() noexcept
+void inc_chunk_read_const() noexcept
 {
 }
 template <typename C>

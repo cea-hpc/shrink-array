@@ -76,7 +76,7 @@ void zero::Array<T, IntType>::rebuild_storage(IntType sz)
             // (an orphaned `omp for` would initialise 1/N of an array created by
             // each thread, and hang one created under `omp single`).
             parallel_storage_init::for_each_chunk(chunk_count_,
-                                                  [this](int i) { this->construct_chunk(i).init_values_cst_val(); });
+                                                  [this](int i) { this->construct_chunk(i).init_values_const_val(); });
         }
     }
 
@@ -270,9 +270,9 @@ void zero::Array<T, IntType>::clear_core()
                               // Neutralise the chunk NOW that its buffer is parked: still
                               // materialised, a residual candidate would free the SAME
                               // buffer a second time (a double free under std-alloc).
-                              // init_values_cst_val() frees nothing; written() then
+                              // init_values_const_val() frees nothing; written() then
                               // reports false, so every compress path short-circuits.
-                              ll_chunk_loc[k]->init_values_cst_val();
+                              ll_chunk_loc[k]->init_values_const_val();
                           }
                       }
                   });
@@ -418,7 +418,7 @@ void zero::Array<T, IntType>::release_chunk_range(int first, int last)
                     std::uninitialized_fill_n(values_loc, my_sz, zero);
                     CHUNK_LEDGER_PARK(values_loc, "resize.shrink_park");
                     lbf.push_back(values_loc);
-                    chunk_list_[j].init_values_cst_val();
+                    chunk_list_[j].init_values_const_val();
                 }
             });
     }
@@ -496,7 +496,7 @@ void zero::Array<T, IntType>::resize(IntType newsz)
     // region, the calling thread inside one -- never an orphaned `omp for`
     // (it would construct only 1/N of a thread's own array).
     parallel_storage_init::for_each_chunk(chunk_count_ - old_chunk_count, [this, old_chunk_count](int k)
-                                          { this->construct_chunk(old_chunk_count + k).init_values_cst_val(); });
+                                          { this->construct_chunk(old_chunk_count + k).init_values_const_val(); });
 
     // std::vector semantics: the regrown range [old_size, newsz) reads T{}. The
     // chunk holding the OLD end keeps its tail (values from before a shrink),

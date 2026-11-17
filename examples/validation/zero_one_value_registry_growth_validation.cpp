@@ -25,9 +25,9 @@
 // THE DEFECT
 //
 //   Every distinct value given to zero_one_value::Array::set_second_value() gets a
-//   constant array in zero_one_value::Chunk<T>::array_m_ptr_cst_val2, and a chunk compressed to
+//   constant array in zero_one_value::Chunk<T>::array_m_ptr_const_val2, and a chunk compressed to
 //   it stores that array's address as its `values`. The table was a
-//   std::vector<std::array<T, cst_buffer_size>> grown by resize(): past its
+//   std::vector<std::array<T, const_buffer_size>> grown by resize(): past its
 //   capacity the vector MOVED every array and freed the old storage. Every
 //   chunk of every other array compressed to its second value then pointed at
 //   freed memory -- 15 360 wrong reads out of 16 384 in this harness (0, or

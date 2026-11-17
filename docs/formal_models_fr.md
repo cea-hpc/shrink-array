@@ -69,7 +69,7 @@ tout à zéro. Chaque nom du modèle correspond à un endroit du source, avec le
 | `hard_inflight`, `stealing_inflight`, `must_defer_write()`, `is_stealing()` | `compression_manager.h` : `hard_inflight_`, `stealing_inflight_`, `must_defer_write()`, `is_hard_compression_inflight()` |
 | `compressor_start()`, `compressor_finish()`, `heavy_barrier()` | `compression_manager_inline.h` : `start()`, `finish()` ; `dekker::heavy_barrier()` |
 | `mark`, `steal_mark()`, `steal_marked()`, `steal_unmark()` | `chunk_base.h` : `steal_mark_` et ses trois verbes |
-| `values`, `values_load()`, `cas_install()`, `steal()` | `chunk_base.h` : `values`, `values_load()`, `compare_and_swap_gen()` ; `zero_any_chunk.h` : `try_mark_cst_and_get_old()` |
+| `values`, `values_load()`, `cas_install()`, `steal()` | `chunk_base.h` : `values`, `values_load()`, `compare_and_swap_gen()` ; `zero_any_chunk.h` : `try_mark_const_and_get_old()` |
 | `materialise()`, le parcours, l'écriture d'élément | `zero_any_chunk_inline.h` : `create_value()`, `wait_before_materialise()`, `fill_list_to_compress()` ; `relaxed_element.h` |
 | `writer()` | `proxy_base_inline.h` : `write_with_optional_lock_impl()` |
 
@@ -213,7 +213,7 @@ de lecture et la libération du tampon sont vérifiées comme en section 6.
 | `read_element()` | `internal/chunk_base_inline.h` `element_at_unguarded(offset, slot)`, `read_block()`, `read_block_or_constant()` ; `internal/proxy_base_inline.h` `read_values_at()` ; `pattern_chunk.h` `Chunk::motif_offset()` |
 | `writer()` | `internal/zero_any_chunk_inline.h` `create_value()`, la branche motif |
 | `pass()`, un motif | `internal/pattern_chunk_inline.h` `block_clear_motif()` |
-| `pass()`, une constante | `internal/second_value_chunk_base_inline.h` `block_clear_common()` (`reset_release()`) ; `internal/zero_any_chunk_inline.h` `find_or_set_idx_cst_val2_release()` |
+| `pass()`, une constante | `internal/second_value_chunk_base_inline.h` `block_clear_common()` (`reset_release()`) ; `internal/zero_any_chunk_inline.h` `find_or_set_idx_const_val2_release()` |
 
 | cas | attendu | verdict | exécutions |
 |---|---|---|---|
@@ -270,7 +270,7 @@ compresseur est bornée (`CHUNK_COMPRESS_MAX_YIELDS`, 10 000 yields de 1 000 pau
 interblocage, mais un arrêt des deux threads pendant tout ce budget, après quoi la passe est
 abandonnée (le compteur de porte des abandons sur attente trop longue, dans le rapport
 `CHUNK_STATS`, les compte). Il faut un chunk à une constante tout en étant dans une liste de
-candidats -- le cas contre lequel `fill_list_to_compress()` se prémunit avec `is_not_cst_val1()` -- donc c'est
+candidats -- le cas contre lequel `fill_list_to_compress()` se prémunit avec `is_not_const_val1()` -- donc c'est
 rare, pas impossible.
 
 Le correctif découle du protocole lui-même : un écrivain du chemin rapide tient son drapeau et a

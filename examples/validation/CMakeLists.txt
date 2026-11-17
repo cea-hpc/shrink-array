@@ -133,12 +133,12 @@
 #                           the build flags -- otherwise a zero_one_value::Array
 #                           filled with its second value stays materialised.
 #                           The one harness that is not variant-agnostic.
-#   cst2_registry_validation  zero_any's second-value registry is freed by the
+#   const2_registry_validation  zero_any's second-value registry is freed by the
 #                           last array of every generation, not only the
 #                           first (its reinstall took a phantom reference),
 #                           and overlapping arrays free nothing early.
 #                           zero_any only, default static size.
-#   cst2_reclaim_validation  zero_any::Array::reclaim_second_values() frees
+#   const2_reclaim_validation  zero_any::Array::reclaim_second_values() frees
 #                           exactly the second values nothing refers to,
 #                           every element still reads back, and the
 #                           identifiers are reused (a run past the
@@ -368,16 +368,16 @@ foreach(_geom IN LISTS _rt_geometries)
     if (_vname STREQUAL "zero_one_value")
       list(APPEND _group bits_container_validation)
     endif()
-    # cst2_registry_validation: zero_any's second-value registry lifecycle.
+    # const2_registry_validation: zero_any's second-value registry lifecycle.
     # zero_any only, at the default static size.
     if (_vname STREQUAL "zero_any" AND NOT _geom STREQUAL "dyn")
-      list(APPEND _group cst2_registry_validation)
+      list(APPEND _group const2_registry_validation)
     endif()
-    # cst2_reclaim_validation: reclaim_second_values() frees what nothing
+    # const2_reclaim_validation: reclaim_second_values() frees what nothing
     # refers to and the identifiers are reused. zero_any only, at the default
     # static size and at dyn (where it reclaims across a re-chunk too).
     if (_vname STREQUAL "zero_any")
-      list(APPEND _group cst2_reclaim_validation)
+      list(APPEND _group const2_reclaim_validation)
     endif()
     # zero_one_value_registry_growth_validation: zero_one_value's second-value registry must
     # not move the constant arrays chunks point at when a new value is

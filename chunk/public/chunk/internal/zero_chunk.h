@@ -32,7 +32,7 @@
 #include "chunk/internal/zero_proxy.h"          // Proxy<T>
 #include "chunk/internal/immortal.h"            // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/pool_release.h"        // release_chunk_pools, destroy_block_chunk
-#include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (init_chunks_cst_val)
+#include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (init_chunks_const_val)
 
 namespace shrink_array
 {
@@ -210,12 +210,12 @@ class ChunkThreadPolicy : public ChunkBase<T, Derived>
 
     using Base::derived;
     using Base::init_block;
-    using Base::is_cst_val1;
+    using Base::is_const_val1;
     using Base::self;
     using Base::values_;
 
     /// @brief Array-new for chunks: allocates and points every chunk at the
-    ///        first constant (init_chunks_cst_val).
+    ///        first constant (init_chunks_const_val).
     /// @warning `new Chunk<T>[n]` runs the DEFAULT CONSTRUCTORS after this,
     ///          overwriting that initialisation; it pays off only for a
     ///          placement-new array. The library never array-news a chunk.
@@ -276,16 +276,16 @@ class ChunkThreadPolicy : public ChunkBase<T, Derived>
      * @note This is the CAS-steal that makes a compressor's window dangerous to
      *       concurrent writers -- see CompressionManager's hard_inflight_.
      */
-    T* try_mark_cst_and_get_old();
+    T* try_mark_const_and_get_old();
 
     /// @brief Point @p count freshly allocated chunks at the first constant.
     /// @details Parallel past 500 chunks, and only from OUTSIDE a parallel
     ///          region (inside one, an orphaned `omp for` would hang waiting for
     ///          the other threads). An application that placement-news an array
     ///          of chunks initialises it here.
-    static void init_chunks_cst_val(Chunk<T>* chunks, std::size_t count) noexcept
+    static void init_chunks_const_val(Chunk<T>* chunks, std::size_t count) noexcept
     {
-        chunk_array_new::init_chunks(chunks, count, [](Chunk<T>& chunk) { chunk.init_values_cst_val(); });
+        chunk_array_new::init_chunks(chunks, count, [](Chunk<T>& chunk) { chunk.init_values_const_val(); });
     }
 
     /**
@@ -426,9 +426,9 @@ class ChunkFastCompPolicy<T, Derived, false> : public ChunkThreadPolicy<T, Deriv
  * @brief One chunk of a ChunkArray: a block of chunk-size elements that collapses to zero.
  *
  * @details The simplest of the three variants. A chunk holds either a real
- *          buffer or, once every element is zero, the shared cst_val1 constant
+ *          buffer or, once every element is zero, the shared const_val1 constant
  *          -- so `values` doubles as the state flag: written() is just
- *          "values != cst_val1". zero_one_value and zero_any extend this with a second
+ *          "values != const_val1". zero_one_value and zero_any extend this with a second
  *          constant, shared or per-chunk respectively.
  *
  *          Three policies supply what depends on the build, so this class holds
@@ -466,8 +466,8 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     using Base::first_value;
 
     using Base::init_block;
-    using Base::is_cst_val1;
-    using Base::m_ptr_cst_val1;
+    using Base::is_const_val1;
+    using Base::m_ptr_const_val1;
     using Base::values_;
     using Base::values_load;
     using Base::values_store;
@@ -497,22 +497,22 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     Chunk& operator=(const Chunk<T>& other);
 
     /// @brief Point this chunk at the shared zero constant (compressed state).
-    void init_values_cst_val()
+    void init_values_const_val()
     {
-        values_ = Base::get_cst_val1();
+        values_ = Base::get_const_val1();
     }
 
     /// @brief Does this chunk hold a real buffer?
-    /// @return false while it is compressed to cst_val1
+    /// @return false while it is compressed to const_val1
     [[nodiscard]] bool written() const noexcept
     {
-        return values_ != Base::get_cst_val1();
+        return values_ != Base::get_const_val1();
     }
 
     /// @brief Materialise storage if the chunk is still compressed.
     void alloc_chunk()
     {
-        if (is_cst_val1())
+        if (is_const_val1())
         {
             this->create_value();
         }

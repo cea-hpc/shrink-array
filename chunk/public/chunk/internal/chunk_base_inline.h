@@ -235,7 +235,7 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::wait_for_availability([[maybe_unu
     // compressor start(), then the drain waits out in-flight stealers (driver-only threads
     // steal nothing).
 
-    // CHUNK_STATS: the SLOW sync path. read_sync / (read + read_cst) is the share of accesses
+    // CHUNK_STATS: the SLOW sync path. read_sync / (read + read_const) is the share of accesses
     // that pay synchronisation at all.
     if constexpr (chunk_config::stats)
     {
@@ -471,18 +471,18 @@ T* ChunkAllocPolicy<T, Derived, false>::allocate_chunk_internal([[maybe_unused]]
 
 template <typename T, typename Derived>
 [[nodiscard]] bool ChunkDeferredOpsPolicy<T, Derived, true>::compare_and_swap_gen(T* values_loc,
-                                                                                  T* m_ptr_cst_val) noexcept
+                                                                                  T* m_ptr_const_val) noexcept
 {
     auto& self = static_cast<Derived&>(*this);
     CHUNK_CHECK_VALUES_PTR_C(values_loc, "CAS.values_loc", &self);
-    CHUNK_CHECK_VALUES_PTR_C(m_ptr_cst_val, "CAS.expected_cst", &self);
+    CHUNK_CHECK_VALUES_PTR_C(m_ptr_const_val, "CAS.expected_const", &self);
 
-    if (self.values_.load(std::memory_order_relaxed) != m_ptr_cst_val) [[unlikely]]
+    if (self.values_.load(std::memory_order_relaxed) != m_ptr_const_val) [[unlikely]]
     {
         return true; // failed (already changed)
     }
 
-    return !self.values_.compare_exchange_strong(m_ptr_cst_val, values_loc, std::memory_order_acq_rel,
+    return !self.values_.compare_exchange_strong(m_ptr_const_val, values_loc, std::memory_order_acq_rel,
                                                  std::memory_order_acquire);
 }
 
@@ -518,8 +518,8 @@ void ChunkDynamicAllocPolicy<T, Derived, true>::register_chunk_size(unsigned int
     // map moves its buffer, not the allocators.
     std::vector<TCTypeCAllocator<T>> arr(static_cast<std::size_t>(max_thr));
     // One slab rule for every allocator of T, whatever its chunk size (value_slab.h).
-    const auto slab_bytes =
-        static_cast<uintptr_t>(value_slab_request<T>(block_size, Derived::storage_units(cst_buffer_size) * sizeof(T)));
+    const auto slab_bytes = static_cast<uintptr_t>(
+        value_slab_request<T>(block_size, Derived::storage_units(const_buffer_size) * sizeof(T)));
     for (int thr = 0; thr < max_thr; ++thr)
     {
         auto& allocator = arr[static_cast<std::size_t>(thr)];
@@ -760,9 +760,9 @@ template <typename T, typename Derived>
 {
     if constexpr (chunk_config::stats)
     {
-        if (is_cst_val1())
+        if (is_const_val1())
         {
-            inc_chunk_read_cst<Derived>();
+            inc_chunk_read_const<Derived>();
         }
         else
         {
@@ -778,13 +778,13 @@ template <typename T, typename Derived>
     if constexpr (chunk_config::stats)
     {
         // Split the read by what served it: a materialised chunk vs a
-        // compressed one (values points at the constant marker). read_cst /
-        // (read + read_cst) is the compression hit rate on reads.
-        // is_cst_val1(), not written(): zero_one_value::Chunk::written() (no arg) aborts on
+        // compressed one (values points at the constant marker). read_const /
+        // (read + read_const) is the compression hit rate on reads.
+        // is_const_val1(), not written(): zero_one_value::Chunk::written() (no arg) aborts on
         // non-bool types -- it needs the second-value index a read lacks.
-        if (is_cst_val1())
+        if (is_const_val1())
         {
-            inc_chunk_read_cst<Derived>();
+            inc_chunk_read_const<Derived>();
         }
         else
         {
@@ -800,9 +800,9 @@ T ChunkBase<T, Derived>::operator[](int offset) const noexcept
     if constexpr (chunk_config::stats)
     {
         // Same split as read_value().
-        if (is_cst_val1())
+        if (is_const_val1())
         {
-            inc_chunk_read_cst<Derived>();
+            inc_chunk_read_const<Derived>();
         }
         else
         {
@@ -839,7 +839,7 @@ void ChunkBase<T, Derived>::read_block(int first, int count, T* out) const noexc
     {
         // Same single load as element_at_unguarded: a chunk compressed to a
         // second constant points at an identifier, not at values.
-        if (derived().is_cst_val2_ptr_of(vals)) [[unlikely]]
+        if (derived().is_const_val2_ptr_of(vals)) [[unlikely]]
         {
             const T value = derived().second_value_from_ptr(vals);
             for (int j = 0; j < count; ++j)
@@ -865,7 +865,7 @@ void ChunkBase<T, Derived>::read_block(int first, int count, T* out, const T* of
     {
         const T* const vals = values_load();
         test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
-        if (derived().is_cst_val2_ptr_of(vals)) [[unlikely]]
+        if (derived().is_const_val2_ptr_of(vals)) [[unlikely]]
         {
             const T value = derived().second_value_from_ptr(vals);
             for (int j = 0; j < count; ++j)
@@ -897,7 +897,7 @@ void ChunkBase<T, Derived>::read_block(int first, int count, T* out, const T* of
 }
 
 template <typename T, typename Derived>
-bool ChunkBase<T, Derived>::read_block_or_constant(int first, int count, T* out, T& cst, const T* offset_slot)
+bool ChunkBase<T, Derived>::read_block_or_constant(int first, int count, T* out, T& constant, const T* offset_slot)
     const noexcept
     requires has_motif_state_v<Derived>
 {
@@ -906,15 +906,15 @@ bool ChunkBase<T, Derived>::read_block_or_constant(int first, int count, T* out,
     {
         const T* const vals = values_load();
         test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
-        if (is_cst_val1(vals))
+        if (is_const_val1(vals))
         {
             // raw-read: read_block_or_constant -- the shared first-constant buffer
-            cst = load_at<false>(vals, 0);
+            constant = load_at<false>(vals, 0);
             return true;
         }
-        if (derived().is_cst_val2_ptr_of(vals)) [[unlikely]]
+        if (derived().is_const_val2_ptr_of(vals)) [[unlikely]]
         {
-            cst = derived().second_value_from_ptr(vals);
+            constant = derived().second_value_from_ptr(vals);
             return true;
         }
         if (Derived::is_motif_ptr(vals)) [[unlikely]]
@@ -940,7 +940,7 @@ bool ChunkBase<T, Derived>::read_block_or_constant(int first, int count, T* out,
 }
 
 template <typename T, typename Derived>
-bool ChunkBase<T, Derived>::read_block_or_constant(int first, int count, T* out, T& cst) const noexcept
+bool ChunkBase<T, Derived>::read_block_or_constant(int first, int count, T* out, T& constant) const noexcept
 {
     if constexpr (has_motif_state_v<Derived>)
     {
@@ -953,17 +953,17 @@ bool ChunkBase<T, Derived>::read_block_or_constant(int first, int count, T* out,
     const read_reclaim::ReadSection section;
     const T* const                  vals = values_load();
     test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
-    if (is_cst_val1(vals))
+    if (is_const_val1(vals))
     {
         // raw-read: read_block_or_constant -- the shared first-constant buffer
-        cst = load_at<false>(vals, 0);
+        constant = load_at<false>(vals, 0);
         return true;
     }
     if constexpr (is_zero_any_family_v<Derived>)
     {
-        if (derived().is_cst_val2_ptr_of(vals)) [[unlikely]]
+        if (derived().is_const_val2_ptr_of(vals)) [[unlikely]]
         {
-            cst = derived().second_value_from_ptr(vals);
+            constant = derived().second_value_from_ptr(vals);
             return true;
         }
     }
@@ -1044,19 +1044,19 @@ auto& ChunkBase<T, Derived>::get_chunk_allocator([[maybe_unused]] int          t
 }
 
 template <typename T, typename Derived>
-T* ChunkBase<T, Derived>::get_cst_val1() noexcept
+T* ChunkBase<T, Derived>::get_const_val1() noexcept
 {
     if constexpr (use_mm_protect)
     {
         // Mapped at the first call, never unmapped: a global array reaches
         // it before main (the member below is a null pointer then) and
         // after main returns.
-        static T* const buffer = map_cst_val1();
+        static T* const buffer = map_const_val1();
         return buffer;
     }
     else
     {
-        return m_ptr_cst_val1.data();
+        return m_ptr_const_val1.data();
     }
 }
 
@@ -1102,9 +1102,9 @@ void ChunkBase<T, Derived>::init_block(T* values_loc) noexcept
 }
 
 template <typename T, typename Derived>
-T* ChunkBase<T, Derived>::map_cst_val1()
+T* ChunkBase<T, Derived>::map_const_val1()
 {
-    const size_t bytes     = cst_buffer_size * sizeof(T);
+    const size_t bytes     = const_buffer_size * sizeof(T);
     const size_t pagesize  = sysconf(_SC_PAGESIZE);
     const size_t allocsize = ((bytes + pagesize - 1) / pagesize) * pagesize;
 
@@ -1117,7 +1117,7 @@ T* ChunkBase<T, Derived>::map_cst_val1()
     }
 
     auto* arr = static_cast<T*>(ptr);
-    for (size_t i = 0; i < cst_buffer_size; ++i)
+    for (size_t i = 0; i < const_buffer_size; ++i)
     {
         arr[i] = first_value;
     }
@@ -1245,7 +1245,7 @@ template <bool Relaxed>
         {
             test_hooks::maybe_read_delay(); // TEST KNOB, compiled out by default
         }
-        if (derived().is_cst_val2_ptr_of(vals)) [[unlikely]]
+        if (derived().is_const_val2_ptr_of(vals)) [[unlikely]]
         {
             return derived().second_value_from_ptr(vals);
         }
@@ -1273,7 +1273,7 @@ template <bool Relaxed>
     // very well predicted (most reads go to materialised chunks).
     //
     // ONE load of `values`, tested through the CRTP hooks (chunk_base knows
-    // nothing of the registry). Do not test derived().is_cst_val2() and then
+    // nothing of the registry). Do not test derived().is_const_val2() and then
     // dereference values_load(): a compressor claiming the chunk between the
     // two loads swaps in a region identifier, and the second load indexes an
     // unmapped page. Same rule as read_values().
@@ -1295,9 +1295,9 @@ template <bool Relaxed>
     {
         static_assert(
             requires(const Derived& obj, const T* ptr) {
-                obj.is_cst_val2_ptr_of(ptr);
+                obj.is_const_val2_ptr_of(ptr);
                 obj.second_value_from_ptr(ptr);
-            }, "a chunk of the zero_any family must provide is_cst_val2_ptr_of() and second_value_from_ptr(), "
+            }, "a chunk of the zero_any family must provide is_const_val2_ptr_of() and second_value_from_ptr(), "
                "or its own branch of the reads: its compressed chunks point at registry entries, not at "
                "their values");
         const T* const vals = Relaxed ? values_load() : values_load_for_read();
@@ -1305,7 +1305,7 @@ template <bool Relaxed>
         {
             test_hooks::maybe_read_delay(); // TEST KNOB, compiled out by default
         }
-        if (derived().is_cst_val2_ptr_of(vals)) [[unlikely]]
+        if (derived().is_const_val2_ptr_of(vals)) [[unlikely]]
         {
             return derived().second_value_from_ptr(vals);
         }

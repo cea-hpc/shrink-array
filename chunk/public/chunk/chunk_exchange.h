@@ -61,7 +61,7 @@
 #include "chunk/bit.h"                        // is_packed_bit_v
 #include "chunk/internal/chunk_traits.h"      // is_zero_any_family_v, has_motif_state_v
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size
-#include "chunk/internal/cst_slot.h"          // CstSlot
+#include "chunk/internal/const_slot.h"        // ConstSlot
 #include "chunk/internal/relaxed_element.h"   // load_element_relaxed (a motif chunk's offset)
 #include "chunk/config.h"                     // build_config::chunk_dynamic
 #include "chunk/internal/same_value.h"        // same_value
@@ -152,7 +152,7 @@ template <ExchangeableArray Arr>
         }
         if (ChunkType::is_constant_ptr(vals))
         {
-            if (chunk.is_cst_val2_ptr_of(vals))
+            if (chunk.is_const_val2_ptr_of(vals))
             {
                 return {ChunkKind::second_value, chunk.second_value_from_ptr(vals), nullptr};
             }
@@ -161,14 +161,14 @@ template <ExchangeableArray Arr>
     }
     else if constexpr (internal::is_v2_v<Arr>)
     {
-        if (chunk.is_cst_val1(vals))
+        if (chunk.is_const_val1(vals))
         {
             return first;
         }
         // A second load in both branches: quiescent, the same pointer.
         if constexpr (std::is_same_v<T, bool>)
         {
-            if (chunk.is_cst_val2())
+            if (chunk.is_const_val2())
             {
                 return {ChunkKind::second_value, true, nullptr};
             }
@@ -176,13 +176,13 @@ template <ExchangeableArray Arr>
         else
         {
             const int idx = arr.get_idx_second_value();
-            if (idx >= 0 && chunk.is_cst_val2(idx))
+            if (idx >= 0 && chunk.is_const_val2(idx))
             {
                 return {ChunkKind::second_value, static_cast<T>(arr.second_value()), nullptr};
             }
         }
     }
-    else if (chunk.is_cst_val1(vals))
+    else if (chunk.is_const_val1(vals))
     {
         return first; // zero
     }
@@ -216,7 +216,7 @@ template <ExchangeableArray Arr>
     using ProxyType = Arr::ProxyType;
 
     auto& chunk = arr.chunk_ref(index);
-    if (!chunk.is_cst_val1())
+    if (!chunk.is_const_val1())
     {
         return false;
     }
@@ -265,17 +265,17 @@ template <ExchangeableArray Arr>
     {
         // What a type-2 compression commits (find_or_set on the chunk's
         // second-value slot, type table, values pointer), minus the buffer:
-        // array_chunk_rechunk_refill_inline.h, Refill::install_cst2(). bool registers
+        // array_chunk_rechunk_refill_inline.h, Refill::install_const2(). bool registers
         // nothing: its one second value is a shared block of true.
         const int  array_id = arr.array_id_;
         const auto psv      = ProxyType::BaseSpec::get_array_second_value(array_id, static_cast<int>(index));
-        CstSlot*   ptc      = &ProxyType::array_type_cst_val[array_id][index];
+        ConstSlot* ptc      = &ProxyType::array_type_const_val[array_id][index];
         if constexpr (!std::is_same_v<T, bool>)
         {
-            (void)chunk.find_or_set_idx_cst_val2(state.value, psv);
+            (void)chunk.find_or_set_idx_const_val2(state.value, psv);
         }
-        ChunkType::set_cst_val_to_cst_val2(ptc);
-        chunk.init_values_cst_val(ptc, psv);
+        ChunkType::set_const_val_to_const_val2(ptc);
+        chunk.init_values_const_val(ptc, psv);
         return true;
     }
     else if constexpr (internal::is_v2_v<Arr>)
@@ -284,7 +284,7 @@ template <ExchangeableArray Arr>
         // pointer at the second constant, its counter reset; no buffer to free.
         if constexpr (std::is_same_v<T, bool>)
         {
-            chunk.init_values_cst_val_bool(1);
+            chunk.init_values_const_val_bool(1);
             chunk.reset_n_val_eq_second_value();
             return true;
         }
@@ -293,7 +293,7 @@ template <ExchangeableArray Arr>
             const int idx = arr.get_idx_second_value();
             if (idx >= 0 && same_value(state.value, static_cast<T>(arr.second_value())))
             {
-                chunk.init_values_cst_val(1, idx);
+                chunk.init_values_const_val(1, idx);
                 chunk.reset_n_val_eq_second_value();
                 return true;
             }

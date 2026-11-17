@@ -136,7 +136,7 @@ template <typename T>
 {
     std::vector<T> keys;
 
-    for (const auto& [key, v] : map_idx_cst_val2_)
+    for (const auto& [key, v] : map_idx_const_val2_)
     {
         keys.push_back(key);
     }
@@ -145,11 +145,11 @@ template <typename T>
 }
 
 template <typename T>
-[[nodiscard]] int zero_one_value::PointerMap<T>::find_idx_array_cst2(InT<T> key) const
+[[nodiscard]] int zero_one_value::PointerMap<T>::find_idx_array_const2(InT<T> key) const
 {
     if constexpr (is_not_bool)
     {
-        if (const auto it = map_idx_cst_val2_.find(key); it != map_idx_cst_val2_.end())
+        if (const auto it = map_idx_const_val2_.find(key); it != map_idx_const_val2_.end())
         {
             return it->second;
         }

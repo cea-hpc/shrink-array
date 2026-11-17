@@ -61,7 +61,7 @@
 #include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown, need_load_balance_list_block_free
-#include "chunk/internal/chunk_size_policy.h"        // cst_buffer_size
+#include "chunk/internal/chunk_size_policy.h"        // const_buffer_size
 #include "chunk/config.h"                            // chunk_config::use_zero*
 #include "chunk/internal/pmp_chunk.h"                // CHUNK_PMP_MAX_THREADS, pmp::current_team
 #include "chunk/phases.h"                            // parallel_phase
@@ -227,7 +227,7 @@ int run(int argc, char** argv)
         if constexpr (build_config::chunk_dynamic)
         {
             const unsigned old_size = half.chunk_size();
-            const unsigned new_size = old_size * 4 <= shrink_array::cst_buffer_size ? old_size * 4 : old_size / 2;
+            const unsigned new_size = old_size * 4 <= shrink_array::const_buffer_size ? old_size * 4 : old_size / 2;
             if (new_size != old_size)
             {
                 const long before = Manager::get_total_chunk_create();

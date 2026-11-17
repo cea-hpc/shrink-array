@@ -56,7 +56,7 @@
 #include "chunk/internal/ring_log_debug.h" // ring_init/analyze_ring_sweep decls
 #include "chunk/rechunk_decider.h"         // re-chunk decisions (acts in dyn builds only)
 #include "chunk/internal/env_parse.h"      // env_number / arg_number (checked, not atoi)
-#include "chunk/log.h"                     // CHUNK_LOG, logging::enabled (the cst2 report at compress=info)
+#include "chunk/log.h"                     // CHUNK_LOG, logging::enabled (the const2 report at compress=info)
 
 using namespace shrink_array;
 
@@ -866,10 +866,10 @@ try
                 if (shrink_array::logging::enabled(shrink_array::logging::Channel::compress,
                                                    shrink_array::logging::Level::info))
                 {
-                    // STEP B — cst2 GC mark report (read-only) : zero_any::Array-only API
-                    // (per-chunk cst_val2 pointer registry has no equivalent on zero /
+                    // STEP B — const2 GC mark report (read-only) : zero_any::Array-only API
+                    // (per-chunk const_val2 pointer registry has no equivalent on zero /
                     // zero_one_value, which have no per-chunk GC-able registry to report on).
-                    CHUNK_LOG(info, compress, "cst2-gc @ iter {}", k_iter);
+                    CHUNK_LOG(info, compress, "const2-gc @ iter {}", k_iter);
                     // Spelled out rather than Array<T>: the enclosing
                     // `if constexpr` is in a plain lambda, so its discarded
                     // branch is still checked, and Array<T> is zero::Array<T> --
@@ -885,29 +885,30 @@ try
             }
         }
     };
-    // CHUNK_CST2_RECLAIM=N: every N iterations, free the zero_any second values
+    // CHUNK_CONST2_RECLAIM=N: every N iterations, free the zero_any second values
     // no chunk uses any more, for every element type of the bench
     // (reclaim_second_values() covers all the arrays of a type, whatever their
     // index type). Static builds too, unlike the advisor. 0 or unset: never.
-    const Int cst2_reclaim_period = []() -> Int
+    const Int const2_reclaim_period = []() -> Int
     {
-        if (const char* env = std::getenv("CHUNK_CST2_RECLAIM"); env != nullptr && *env != '\0')
+        const char* const name = shrink_array::env_name_or_former("CHUNK_CONST2_RECLAIM", "CHUNK_CST2_RECLAIM");
+        if (const char* env = std::getenv(name); env != nullptr && *env != '\0')
         {
             if (Int value = 0; parse_number(env, value))
             {
                 return value;
             }
-            warn_invalid_env("CHUNK_CST2_RECLAIM", env);
+            warn_invalid_env(name, env);
         }
         return 0;
     }();
-    // [&], not [cst2_reclaim_period]: clang warns that the explicit capture is
+    // [&], not [const2_reclaim_period]: clang warns that the explicit capture is
     // not needed (-Wunused-lambda-capture) where the branch below is discarded.
-    const auto cst2_reclaim_tick = [&](Int k_iter)
+    const auto const2_reclaim_tick = [&](Int k_iter)
     {
         if constexpr (chunk_config::use_zero_any)
         {
-            if (cst2_reclaim_period <= 0 || (k_iter % cst2_reclaim_period) != 0)
+            if (const2_reclaim_period <= 0 || (k_iter % const2_reclaim_period) != 0)
             {
                 return;
             }
@@ -927,7 +928,7 @@ try
             freed += zero_any::Array<Point3, Int>::reclaim_second_values();
             freed += zero_any::Array<Cell, Int>::reclaim_second_values();
             const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
-            std::fprintf(stderr, "[cst2-reclaim @ iter %ld] %zu second value(s) freed in %.3f ms\n",
+            std::fprintf(stderr, "[const2-reclaim @ iter %ld] %zu second value(s) freed in %.3f ms\n",
                          static_cast<long>(k_iter), freed, ms);
             // Where each type's identifiers stand (second_value_stats()): the
             // trend of "in use" against the capacity is the early warning of the
@@ -969,7 +970,7 @@ try
         if (k > 0)
         {
             advisor_tick(k);
-            cst2_reclaim_tick(k);
+            const2_reclaim_tick(k);
         }
         if (k % 100 == 0)
         {

@@ -38,16 +38,16 @@
 #include <utility>     // std::pair (find_motif)
 #include <vector>      // std::vector (the motif candidates, the scan buffer)
 
-#include "chunk/internal/chunk_traits.h"          // ChunkTraits<pattern::Chunk<T>>, HasMotifState
-#include "chunk/internal/motif_region.h"          // pattern::MotifRegion
-#include "chunk/internal/relaxed_element.h"       // load_element_acquire (the offset)
-#include "chunk/internal/array_cst_val2_holder.h" // SecondValueTraits (the slot type), SecondValueRef
-#include "chunk/internal/cst_slot.h"              // CstSlot::motif
-#include "chunk/internal/chunk_stats.h"           // inc_chunk_compress, add_chunk_bytes_freed (CHUNK_STATS)
-#include "chunk/internal/invariant_check.h"       // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/chunk_size_policy.h"     // set_thread_chunk_size (the pass, dynamic builds)
-#include "chunk/config.h"                         // build_config::threaded, chunk_dynamic
-#include "chunk/internal/zero_any_chunk.h"        // zero_any::ChunkImpl
+#include "chunk/internal/chunk_traits.h"            // ChunkTraits<pattern::Chunk<T>>, HasMotifState
+#include "chunk/internal/motif_region.h"            // pattern::MotifRegion
+#include "chunk/internal/relaxed_element.h"         // load_element_acquire (the offset)
+#include "chunk/internal/array_const_val2_holder.h" // SecondValueTraits (the slot type), SecondValueRef
+#include "chunk/internal/const_slot.h"              // ConstSlot::motif
+#include "chunk/internal/chunk_stats.h"             // inc_chunk_compress, add_chunk_bytes_freed (CHUNK_STATS)
+#include "chunk/internal/invariant_check.h"         // CHUNK_INVARIANT_FAILED
+#include "chunk/internal/chunk_size_policy.h"       // set_thread_chunk_size (the pass, dynamic builds)
+#include "chunk/config.h"                           // build_config::threaded, chunk_dynamic
+#include "chunk/internal/zero_any_chunk.h"          // zero_any::ChunkImpl
 
 namespace shrink_array::pattern
 {
@@ -187,13 +187,13 @@ class Chunk : public zero_any::ChunkImpl<T, Chunk<T>>
      *          pass (make_block_compression()), or, on the OMPT pass (compress_to_motif()),
      *          in that rank's list alone with no writer: no other pass compresses it and
      *          no writer swaps its buffer, so the CAS cannot fail.
-     * @param ptr_type_cst The chunk's type slot: set to CstSlot::motif.
+     * @param ptr_type_const The chunk's type slot: set to ConstSlot::motif.
      * @param slot         The chunk's second-value slot: receives the offset.
      * @param motif        The registered motif.
      * @param offset       The chunk's offset (its element 0).
      * @param thr_rank     Rank whose pool receives the buffer.
      */
-    void block_clear_motif(CstSlot* ptr_type_cst, SecondValueRef<T> slot, const T* motif, T offset, int thr_rank);
+    void block_clear_motif(ConstSlot* ptr_type_const, SecondValueRef<T> slot, const T* motif, T offset, int thr_rank);
 
   private:
     /// @brief This materialised chunk's registered motif (null: none, or a first

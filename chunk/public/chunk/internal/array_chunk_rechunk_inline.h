@@ -58,8 +58,8 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         return;
     }
 
-    // A power of two or a multiple of 64, and at most cst_buffer_size: the
-    // shared constant buffers (cst_val1 / cst_val2) are that wide, and a wider
+    // A power of two or a multiple of 64, and at most const_buffer_size: the
+    // shared constant buffers (const_val1 / const_val2) are that wide, and a wider
     // chunk would read them out of bounds (chunk_size_error). Refused, with a
     // message in EVERY build: a caller bug, on a cold path.
     if (const auto err = chunk_size_error(new_size)) [[unlikely]]

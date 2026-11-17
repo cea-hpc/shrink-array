@@ -46,7 +46,7 @@ bool pattern::Array<T, IntType>::install_motif(int chunk_index, const T* elems)
 {
     using ChunkT = typename Array::ChunkType;
     auto& chunk  = this->chunk_list_[static_cast<std::size_t>(chunk_index)];
-    if (!chunk.is_cst_val1())
+    if (!chunk.is_const_val1())
     {
         return false;
     }

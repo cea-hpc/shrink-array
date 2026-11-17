@@ -599,7 +599,7 @@ ProxyBase<Derived, T, ChunkT>::write_with_optional_lock_impl(WriteCallable&&    
             {
                 // Dekker established: no compressor mutates chunk.values until
                 // end_write. Concurrent writers on the same chunk are handled by
-                // the is_cst_val re-checks in handle_{bool,no_bool}_assignment.
+                // the is_const_val re-checks in handle_{bool,no_bool}_assignment.
 
                 const ScopedRingLog<EventCode::begin_fast_path, EventCode::end_fast_path> fast_log;
 
@@ -855,19 +855,19 @@ void ProxyBase<Derived, T, ChunkT>::enqueue_async_arithmetic(const U& operand, O
 /**
  * @brief Tests a proxy's second-constant state, false for proxies that have none.
  *
- * Lets the shared invariant checks below name is_cst_val2() unconditionally:
+ * Lets the shared invariant checks below name is_const_val2() unconditionally:
  * only zero_one_value / zero_any carry a second constant value, and zero
  * proxy simply answers false.
  *
  * @param proxy Proxy to test.
- * @return True if @p proxy exposes is_cst_val2() and it holds.
+ * @return True if @p proxy exposes is_const_val2() and it holds.
  */
 template <typename P>
-constexpr bool check_is_cst_val2([[maybe_unused]] const P& proxy)
+constexpr bool check_is_const_val2([[maybe_unused]] const P& proxy)
 {
-    if constexpr (requires { proxy.is_cst_val2(); })
+    if constexpr (requires { proxy.is_const_val2(); })
     {
-        return proxy.is_cst_val2();
+        return proxy.is_const_val2();
     }
     else
     {
@@ -886,7 +886,7 @@ constexpr bool check_is_cst_val2([[maybe_unused]] const P& proxy)
  *
  * Both bodies re-mark the chunk for compression from the before/after value
  * pair, and, under `build_config::any_check`, assert the invariants that a
- * broken handshake would violate: no cst_val state visible while writing, and a
+ * broken handshake would violate: no const_val state visible while writing, and a
  * `chunk.values` pointer unchanged across the store (a change means a
  * compressor swapped the buffer and the store was lost).
  *
@@ -918,20 +918,20 @@ void ProxyBase<Derived, T, ChunkT>::apply_atomic_op(Op operation, const U& opera
                 const InT<T>   current = load_value();
                 const CalcType res     = operation(static_cast<CalcType>(current), static_cast<CalcType>(operand));
 
-                // ─── Pre-store check: cst_val should not be visible here under Dekker ───
+                // ─── Pre-store check: const_val should not be visible here under Dekker ───
                 if constexpr (build_config::any_check)
                 {
-                    if (derived().is_cst_val1())
+                    if (derived().is_const_val1())
                     {
                         CHUNK_INVARIANT_FAILED(
-                            "apply_atomic_op SYNC: chunk={} num={} is_cst_val1 BEFORE store_value (Dekker breach?)",
+                            "apply_atomic_op SYNC: chunk={} num={} is_const_val1 BEFORE store_value (Dekker breach?)",
                             &chunk_, num_);
                     }
 
-                    if (check_is_cst_val2(derived()))
+                    if (check_is_const_val2(derived()))
                     {
                         CHUNK_INVARIANT_FAILED(
-                            "apply_atomic_op SYNC: chunk={} num={} is_cst_val2 BEFORE store_value (Dekker breach?)",
+                            "apply_atomic_op SYNC: chunk={} num={} is_const_val2 BEFORE store_value (Dekker breach?)",
                             &chunk_, num_);
                     }
                 }
@@ -973,21 +973,23 @@ void ProxyBase<Derived, T, ChunkT>::apply_atomic_op(Op operation, const U& opera
                         ctx, ctx->operation, ctx->operand,
                         [ctx, &proxy](auto op_func)
                         {
-                            // ─── Pre-read invariant: not in a cst_val state (the async
+                            // ─── Pre-read invariant: not in a const_val state (the async
                             //     wrapper called create_value upstream). ───
                             if constexpr (build_config::any_check)
                             {
-                                if (proxy.is_cst_val1())
+                                if (proxy.is_const_val1())
                                 {
-                                    CHUNK_INVARIANT_FAILED("apply_atomic_op ASYNC lambda: chunk={} num={} is_cst_val1 "
-                                                           "before read+store (decompression skipped?)",
-                                                           &ctx->chunk, ctx->num);
+                                    CHUNK_INVARIANT_FAILED(
+                                        "apply_atomic_op ASYNC lambda: chunk={} num={} is_const_val1 "
+                                        "before read+store (decompression skipped?)",
+                                        &ctx->chunk, ctx->num);
                                 }
-                                if (check_is_cst_val2(proxy))
+                                if (check_is_const_val2(proxy))
                                 {
-                                    CHUNK_INVARIANT_FAILED("apply_atomic_op ASYNC lambda: chunk={} num={} is_cst_val2 "
-                                                           "before read+store (decompression skipped?)",
-                                                           &ctx->chunk, ctx->num);
+                                    CHUNK_INVARIANT_FAILED(
+                                        "apply_atomic_op ASYNC lambda: chunk={} num={} is_const_val2 "
+                                        "before read+store (decompression skipped?)",
+                                        &ctx->chunk, ctx->num);
                                 }
                             }
 
@@ -1111,20 +1113,20 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(InT<U> operand, Op operati
                                                      static_cast<const void*>(current_chunk_ptr), &ctx->chunk,
                                                      ctx->num);
                                 }
-                                if (proxy.is_cst_val1())
+                                if (proxy.is_const_val1())
                                 {
                                     invariant_failed(
                                         std::source_location::current(),
-                                        "Lambda async ARITH: chunk={} num={} is_cst_val1 just before store!",
+                                        "Lambda async ARITH: chunk={} num={} is_const_val1 just before store!",
                                         &ctx->chunk, ctx->num);
                                 }
-                                if constexpr (requires { proxy.is_cst_val2(); })
+                                if constexpr (requires { proxy.is_const_val2(); })
                                 {
-                                    if (proxy.is_cst_val2())
+                                    if (proxy.is_const_val2())
                                     {
                                         invariant_failed(
                                             std::source_location::current(),
-                                            "Lambda async ARITH: chunk={} num={} is_cst_val2 just before store!",
+                                            "Lambda async ARITH: chunk={} num={} is_const_val2 just before store!",
                                             &ctx->chunk, ctx->num);
                                     }
                                 }
@@ -1138,20 +1140,22 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(InT<U> operand, Op operati
                                 const uint32_t info =
                                     (chunk_id & 0x00FFFFFFU) | (static_cast<uint32_t>(ctx->num & 0xFF) << 24);
 
-                                // Race detector: values pointing to cst_val here means a
+                                // Race detector: values pointing to const_val here means a
                                 // re-compression since create_value.
-                                T* const cst1 = chunk_ref.get_cst_val1();
+                                T* const const1 = chunk_ref.get_const_val1();
 
-                                bool is_cst2 = false;
-                                if constexpr (requires { chunk_ref.array_cst_val2_holder::is_cst_val2_ptr(values); })
+                                bool is_const2 = false;
+                                if constexpr (requires {
+                                                  chunk_ref.array_const_val2_holder::is_const_val2_ptr(values);
+                                              })
                                 {
-                                    is_cst2 = chunk_ref.array_cst_val2_holder::is_cst_val2_ptr(values);
+                                    is_const2 = chunk_ref.array_const_val2_holder::is_const_val2_ptr(values);
                                 }
 
-                                if (values == cst1 || is_cst2)
+                                if (values == const1 || is_const2)
                                 {
-                                    ring_log(get_tid(), EventCode::values_load_is_cst, info);
-                                    return; // skip the write: keep cst_val clean
+                                    ring_log(get_tid(), EventCode::values_load_is_const, info);
+                                    return; // skip the write: keep const_val clean
                                 }
                                 ring_log(get_tid(), EventCode::lambda_async_arith, info);
                             }
@@ -1475,7 +1479,7 @@ Derived ProxyBase<Derived, T, ChunkT>::operator++() noexcept
 
     // Return the proxy, not a value. Never read `values[num]` here: `values`
     // is the ctor-time snapshot, and the call above may have materialised
-    // the chunk (snapshot stale, possibly the cst sentinel) or DEFERRED the
+    // the chunk (snapshot stale, possibly the constant sentinel) or DEFERRED the
     // op (cell not yet updated, another rank's replay may be writing it).
     // The returned proxy's operator T() is read_pure(): `y = ++a[i]` gets
     // the right value, and the synchronised read is only paid when used.

@@ -393,7 +393,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          as the calling thread's active size.
      *
      * @param new_chunk_size the new chunk size: a power of two or a multiple of
-     *        64, at most cst_buffer_size (chunk_size_error); refused otherwise,
+     *        64, at most const_buffer_size (chunk_size_error); refused otherwise,
      *        with a warning, geometry kept
      * @warning For an empty container, before any resize/allocation, since it
      *          changes how indices map to chunks: on an array that has chunks,
@@ -982,7 +982,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
 
     /// @brief ch.read_block_or_constant(), with chunk @p chunk_index's offset
     ///        slot for a member with the motif state.
-    bool read_chunk_block_or_constant(const ChunkType& ch, int chunk_index, int first, int count, T* out, T& cst)
+    bool read_chunk_block_or_constant(const ChunkType& ch, int chunk_index, int first, int count, T* out, T& constant)
         const noexcept;
 
     /// @brief Check builds, precise read gate: nothing was deferred onto
