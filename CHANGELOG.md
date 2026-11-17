@@ -165,6 +165,8 @@ the tag's checksum to the recipe.
   0.3), the build-time `CHUNK_CONST_VAL2_MAX_IDS`, `CHUNK_CONST_VAL2_REGION_BYTES`,
   `CHUNK_CONST_VAL2_INDEX_LOG2`. `CHUNK_CST2_PROBE` keeps its name: it is a former variable
   `CHUNK_LOG` reads for compatibility.
+- `elt` (élément) is `elem` in the allocator's names (`InfoFreeElem`, `free_elem_pow2`,
+  `clear_info_free_elem`, ...), as everywhere else; `CalcType` (calcul) is `ComputeType`.
 - `tab` (French: tableau) is `array` in the names of the sources, examples and documents:
   `array_int`, `array_bool`, ... of `shrink_bench` (`tab_int`, ...), `arr1` ... `arr5` and `arr`
   (`tab1`, `tab`), the library's `array_is_inside_chunk_list_to_compress`,

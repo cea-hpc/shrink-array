@@ -77,9 +77,9 @@ void ChunkBase<T, Derived>::free_block_to_pool([[maybe_unused]] int thr_rank, T*
             if (allocator.holds_live(slab))
             {
                 // Ledger: LIVE -> FREE. Trips on double-free.
-                CHUNK_LEDGER_RELEASE(val, "free_block_to_pool.free_elt_pow2");
+                CHUNK_LEDGER_RELEASE(val, "free_block_to_pool.free_elem_pow2");
                 CHUNK_FREEPATH_INC(freed);
-                allocator.free_elt_pow2(val, slab);
+                allocator.free_elem_pow2(val, slab);
             }
             else if (slab && slab->owner && (slab->owner_rank < 0 || !CHUNK_PMP_IN_PARALLEL_REGION))
             {
@@ -89,7 +89,7 @@ void ChunkBase<T, Derived>::free_block_to_pool([[maybe_unused]] int thr_rank, T*
                 CHUNK_FREEPATH_INC(freed);
                 CHUNK_LEDGER_RELEASE(val, "free_block_to_pool.free_to_owner");
                 using AllocT = std::remove_reference_t<decltype(allocator)>;
-                static_cast<AllocT*>(slab->owner)->free_elt_pow2(val, slab);
+                static_cast<AllocT*>(slab->owner)->free_elem_pow2(val, slab);
             }
             else
             {
@@ -103,11 +103,11 @@ void ChunkBase<T, Derived>::free_block_to_pool([[maybe_unused]] int thr_rank, T*
                 {
                     // Do NOT push a foreign block onto ANOTHER thread's free-list: the
                     // unsynchronised push races with the owner's own pop/push (vector
-                    // corruption), and a later free_elt_pow2 would route the block to the
+                    // corruption), and a later free_elem_pow2 would route the block to the
                     // wrong allocator's lists (delete / munmap of a live block). Same rule
                     // as recycle() on the op pool side.
                     //
-                    // Keep it on the LOCAL free-list: is_free_able_elt is false for it, so
+                    // Keep it on the LOCAL free-list: is_free_able_elem is false for it, so
                     // it is never freed locally, only reused directly; the owning slab
                     // releases it at teardown. Bounded leak, not a UAF.
                     CHUNK_FREEPATH_INC(kept_nomigrate);
@@ -1359,7 +1359,7 @@ void ChunkBase<T, Derived>::release_to_owner(int thr_rank, T* ptr)
     {
         // No slab behind this pointer (bypass_slabs, or an instance never
         // initialised): the legacy route is the only one there is.
-        mine.free_elt_pow2(ptr);
+        mine.free_elem_pow2(ptr);
         return;
     }
     using AllocT = std::remove_reference_t<decltype(mine)>;
@@ -1367,7 +1367,7 @@ void ChunkBase<T, Derived>::release_to_owner(int thr_rank, T* ptr)
     if (slab->owner_rank < 0 || slab->owner_rank == thr_rank || !CHUNK_PMP_IN_PARALLEL_REGION)
     {
         CHUNK_FREEPATH_INC(freed);
-        owner->free_elt_pow2(ptr, slab);
+        owner->free_elem_pow2(ptr, slab);
         return;
     }
     CHUNK_FREEPATH_INC(park_foreign);

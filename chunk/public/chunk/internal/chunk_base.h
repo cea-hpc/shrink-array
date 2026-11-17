@@ -628,7 +628,7 @@ class ChunkBase : public CRTPSupport<Derived>,
             return nullptr;
         }
         /// @brief Nothing to return to a pool.
-        static void free_elt_pow2(const T* /*ptr*/) noexcept {}
+        static void free_elem_pow2(const T* /*ptr*/) noexcept {}
         /// @brief No-op counterpart to TCTypeAllocator::set_arena, so call
         ///        sites that set the arena unconditionally (before init())
         ///        compile in std-alloc builds too.

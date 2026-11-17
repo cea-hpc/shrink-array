@@ -354,7 +354,7 @@ class ReusePools
      * @details Called by rechunk_to() (all variants) before allocating at a new
      *          geometry. Std-alloc: each buffer is svfree'd (parked in the
      *          ledger, hence DISCARD). Fast-alloc: each is returned to its OWNING
-     *          rank's slab (free_elt_pow2() is only safe on an owned block);
+     *          rank's slab (free_elem_pow2() is only safe on an owned block);
      *          blocks with no known owner stay parked.
      *
      * @param size geometry whose reuse list is drained

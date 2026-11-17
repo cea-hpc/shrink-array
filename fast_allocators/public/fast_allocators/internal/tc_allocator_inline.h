@@ -147,7 +147,7 @@ inline void* TCSlab<Links>::alloc() noexcept
     if constexpr (side_links)
     {
         // A sweep may have given this slab's pages back INCLUDING the trailing back-pointer
-        // (fast_alloc::EmptySlabSweep). Restore it before the block escapes: free_elt()
+        // (fast_alloc::EmptySlabSweep). Restore it before the block escapes: free_elem()
         // resolves the slab by reading that word. Idempotent store (always `this`), on the
         // slab's own rank: no atomic needed.
         if (backptr_dropped) [[unlikely]]
@@ -407,7 +407,7 @@ template <typename Derived, typename ElemT, typename Slab>
 }
 
 template <typename Derived, typename ElemT, typename Slab>
-void TCSlabPool<Derived, ElemT, Slab>::free_elt_pow2(const ElementType* ptr) noexcept
+void TCSlabPool<Derived, ElemT, Slab>::free_elem_pow2(const ElementType* ptr) noexcept
 {
     if (bypass_slabs())
     {
@@ -415,11 +415,11 @@ void TCSlabPool<Derived, ElemT, Slab>::free_elt_pow2(const ElementType* ptr) noe
         return;
     }
 
-    free_elt_pow2(ptr, get_allocator(ptr));
+    free_elem_pow2(ptr, get_allocator(ptr));
 }
 
 template <typename Derived, typename ElemT, typename Slab>
-void TCSlabPool<Derived, ElemT, Slab>::free_elt_pow2(const ElementType* ptr, Slab* slab) noexcept
+void TCSlabPool<Derived, ElemT, Slab>::free_elem_pow2(const ElementType* ptr, Slab* slab) noexcept
 {
     // The shift when this slab's element size is a power of two, the
     // magic multiplication otherwise (e.g. 192 doubles, a 24-byte struct,
@@ -517,7 +517,7 @@ template <typename Derived, typename ElemT, typename Slab>
 void TCSlabPool<Derived, ElemT, Slab>::destroy_int()
 {
     // Under FAST_ALLOC_STD_ALLOC there are no slabs: each element was a new[]
-    // that free_elt_pow2() already deleted.
+    // that free_elem_pow2() already deleted.
     if constexpr (alloc_config::use_slabs)
     {
         if (bypass_slabs())

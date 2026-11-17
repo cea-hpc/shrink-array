@@ -1244,7 +1244,7 @@ template <typename Derived, typename T, typename ChunkT>
 void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, false>::manage_full_first_value() const
 {
     // Pin the ambient chunk size before the free chain (clear_st -> ... ->
-    // get_chunk_allocator(thr_rank).free_elt_pow2()): get_chunk_allocator() routes by the
+    // get_chunk_allocator(thr_rank).free_elem_pow2()): get_chunk_allocator() routes by the
     // ambient thread_chunk_size(), not by the buffer. A stale ambient (left by another
     // array's write) selects the wrong pool, which then removes a node it does not own.
     // Fast-alloc only: std-alloc's svfree() does not route by ambient.

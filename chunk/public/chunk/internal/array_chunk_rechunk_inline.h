@@ -220,7 +220,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         // every write path re-sets t_active to ITS OWN array's chunk_size()
         // right before materialising (see zero_one_value::Proxy::ensure_writable_storage()),
         // so a value saved at entry may belong to an unrelated array and would
-        // route free_elt_pow2() (via get_chunk_allocator(), keyed on the
+        // route free_elem_pow2() (via get_chunk_allocator(), keyed on the
         // ambient) to the WRONG size pool. old_size comes from this array's
         // own size_policy_; g_active is touched only by rechunk_to(), so
         // saved_g_active is a trustworthy baseline.

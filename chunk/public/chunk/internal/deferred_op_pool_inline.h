@@ -145,7 +145,7 @@ void FastAllocatorConcrete<T, Arena>::recycle(void* block)
     if constexpr (build_config::use_fast_alloc)
     {
         // Foreign block (cross-thread drain): drop it (see above).
-        if (!allocator().is_free_able_elt(static_cast<std::byte*>(block)))
+        if (!allocator().is_free_able_elem(static_cast<std::byte*>(block)))
         {
             if constexpr (build_config::any_check)
             {

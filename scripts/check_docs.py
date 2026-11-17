@@ -111,7 +111,7 @@ ALLOWED = {
     "chunk/private/manager_chunk.cpp",
     # French names in English (CHANGELOG.md, Unreleased, Changed); the released entries cite them
     "factor_div_somme_chunk_buffer_reuse", "freq_conso_mem", "ind_", "IndType", "IndT",
-    "cst_buffer_size", "CstVal1Type", "cst2_reclaim_validation", "CHUNK_CST_VAL2_MAX_IDS",
+    "cst_buffer_size", "CstVal1Type", "cst2_reclaim_validation", "CHUNK_CST_VAL2_MAX_IDS", "free_elt_pow2", "CalcType",
     # removed with the deducing-this variant of develop (CHANGELOG.md, Unreleased, Removed)
     "CHUNK_CRTP_USE_DEDUCING_THIS", "CHUNK_CRTP_FORCE_DEDUCING_THIS",
     # tab -> array (CHANGELOG.md, Unreleased, Changed); the released entries cite them

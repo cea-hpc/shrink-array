@@ -152,7 +152,7 @@ inline void* map_anonymous(size_t size)
  *        its instruction cache holds nothing it does not need.
  * @details Slab creation (a `new`, an arena lock) and slab eviction (an
  *          fprintf, a `delete`) are rare, but inlined they would be the bulk of
- *          alloc() and free_elt_pow2().
+ *          alloc() and free_elem_pow2().
  */
 #if defined(__GNUC__) || defined(__clang__)
     #define FAST_ALLOC_COLD __attribute__((cold, noinline))
@@ -390,7 +390,7 @@ class alignas(64) TCSlab
     ///        exists (a slab moving to another instance would rewrite it).
     ///        Answers "does this element belong to me?" in O(1); do not replace
     ///        it by a list walk (quadratic over the reuse-pool drain). Not
-    ///        const: the freeing paths call that instance (free_elt_pow2()).
+    ///        const: the freeing paths call that instance (free_elem_pow2()).
     void* owner = nullptr;
     /// @brief Rank (thread) of #owner, or -1 when the owner has no rank. Lets a
     ///        freeing thread decide "mine, free it" vs "foreign, park it"
@@ -733,8 +733,8 @@ void remove_tc_type_allocator_inst(VTCTypeAllocator* /*inst*/);
  * @note One instance per (element size, thread) in the OpenMP value pools.
  *       Nothing here is synchronised: a thread only ever touches its own
  *       instance. A block released by another thread belongs to another
- *       instance's slab: route it with is_free_able_elt() / holds_live() before
- *       free_elt_pow2(); freeing through a non-owning instance corrupts the
+ *       instance's slab: route it with is_free_able_elem() / holds_live() before
+ *       free_elem_pow2(); freeing through a non-owning instance corrupts the
  *       owner's free list.
  *
  * @see bypass_slabs for when none of this machinery runs at all.
@@ -781,20 +781,20 @@ class TCSlabPool
     [[nodiscard]] ElementType* alloc();
 
     /**
-     * @brief free_elt() for a power-of-two element size, using a shift.
+     * @brief free_elem() for a power-of-two element size, using a shift.
      * @param ptr Must belong to THIS instance. This is the hot free path, and
-     *        it does not check -- see is_free_able_elt().
+     *        it does not check -- see is_free_able_elem().
      * @pre #element_size_ is a power of two when sizeof(ElementType) is, i.e.
      *      the element count given to init() is a power of two; otherwise the
      *      shift picks the wrong index and the free lands on another element
      *      (asserted in debug).
      */
-    void free_elt_pow2(const ElementType* ptr) noexcept;
+    void free_elem_pow2(const ElementType* ptr) noexcept;
 
-    /// @brief free_elt_pow2() for a caller that has already resolved @p slab
+    /// @brief free_elem_pow2() for a caller that has already resolved @p slab
     ///        (slab_of()): the slab is not looked up again.
     /// @pre @p slab is @p ptr's slab and belongs to this instance; slab mode.
-    void free_elt_pow2(const ElementType* ptr, Slab* slab) noexcept;
+    void free_elem_pow2(const ElementType* ptr, Slab* slab) noexcept;
 
     /**
      * @brief Can THIS allocator free @p ptr?
@@ -807,7 +807,7 @@ class TCSlabPool
      *       in block_empty has nn_ref == 0, so a pointer into one is not a live
      *       element of this instance.
      */
-    [[nodiscard]] bool is_free_able_elt(const ElementType* ptr) const noexcept
+    [[nodiscard]] bool is_free_able_elem(const ElementType* ptr) const noexcept
     {
         if (block == nullptr && block_full == nullptr)
         {
@@ -816,7 +816,7 @@ class TCSlabPool
         return holds_live(get_allocator(ptr));
     }
 
-    /// @brief is_free_able_elt() for a caller that has already resolved the
+    /// @brief is_free_able_elem() for a caller that has already resolved the
     ///        slab (slab_of()): no second resolution.
     [[nodiscard]] bool holds_live(const Slab* slab) const noexcept
     {
@@ -1342,7 +1342,7 @@ class TCTypeAllocatorEBC
      * @param ptr Resolved to its slab through the back-pointer, so it need not
      *        have come from this instance.
      */
-    void free_elt(const void* ptr)
+    void free_elem(const void* ptr)
     {
         auto* slab = TCAllocatorEBT::addr_to_block(ptr);
 
@@ -1354,10 +1354,10 @@ class TCTypeAllocatorEBC
     }
 
     /**
-     * @brief free_elt() using a shift instead of a division.
+     * @brief free_elem() using a shift instead of a division.
      * @pre The element size is a power of two.
      */
-    void free_elt_pow2(const void* ptr) noexcept
+    void free_elem_pow2(const void* ptr) noexcept
     {
         auto* slab = TCAllocatorEBT::addr_to_block(ptr);
 

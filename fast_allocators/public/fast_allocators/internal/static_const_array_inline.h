@@ -109,7 +109,7 @@ inline void StaticConstArray::free_block_with_int(int sz, void* ptr)
         return;
     }
 
-    with_bucket(bucket_index(static_cast<unsigned int>(sz)), [ptr](auto& bucket) { bucket.free_elt_pow2(ptr); });
+    with_bucket(bucket_index(static_cast<unsigned int>(sz)), [ptr](auto& bucket) { bucket.free_elem_pow2(ptr); });
 }
 
 /**
@@ -140,14 +140,14 @@ inline bool StaticConstArray::try_free_block(int sz, void* ptr)
             // they were built, before main; std backend: a registered rank
             // past them, or none, -1, the registry full): there is no batch to
             // index, so free at once, under the lock the full path takes.
-            if (thr_rank < 0 || thr_rank >= array_info_free_elt().n_thr) [[unlikely]]
+            if (thr_rank < 0 || thr_rank >= array_info_free_elem().n_thr) [[unlikely]]
             {
                 const std::scoped_lock lock(ladder_mutex());
                 free_block_with_int(sz, ptr);
                 return true;
             }
 
-            const bool is_full = array_info_free_elt().push_back(ptr, sz, thr_rank);
+            const bool is_full = array_info_free_elem().push_back(ptr, sz, thr_rank);
 
             if (is_full)
             {
@@ -155,10 +155,10 @@ inline bool StaticConstArray::try_free_block(int sz, void* ptr)
                     const std::scoped_lock lock(ladder_mutex());
                     free_block_with_int(sz, ptr);
 
-                    clear_info_free_elt(thr_rank);
+                    clear_info_free_elem(thr_rank);
                 }
 
-                array_info_free_elt().reset(thr_rank);
+                array_info_free_elem().reset(thr_rank);
             }
         }
         else
@@ -173,12 +173,12 @@ inline bool StaticConstArray::try_free_block(int sz, void* ptr)
 }
 
 // ---------------------------------------------------------------------------
-// fast_alloc::InfoFreeElt
+// fast_alloc::InfoFreeElem
 // ---------------------------------------------------------------------------
 
-inline bool InfoFreeElt::push_back(void* ptr, int sz, int thr_rank)
+inline bool InfoFreeElem::push_back(void* ptr, int sz, int thr_rank)
 {
-    if (int& ref_compt = compt[thr_rank]; ref_compt < max_free_elt && total_sz_[thr_rank] < 4 * 1024 * 1024)
+    if (int& ref_compt = compt[thr_rank]; ref_compt < max_free_elem && total_sz_[thr_rank] < 4 * 1024 * 1024)
     {
         array_ptr[thr_rank][ref_compt] = ptr;
         array_sz[thr_rank][ref_compt]  = sz;

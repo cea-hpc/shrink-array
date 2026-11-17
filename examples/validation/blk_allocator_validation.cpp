@@ -34,7 +34,7 @@
 //             resident, one block at a time);
 //   parallel  (OpenMP builds) the same from every thread at once -- the
 //             ladder's critical sections and the per-thread free batches --
-//             then clear_info_free_elt() at the quiescent point after the region.
+//             then clear_info_free_elem() at the quiescent point after the region.
 //
 // EXIT STATUS: 0 when every check holds, 1 otherwise.
 
@@ -232,7 +232,7 @@ void check_parallel()
     // Quiescent point: the blocks freed inside the region were batched per
     // thread; hand them back to the ladder (what the chunk library's
     // parallel_end callback does).
-    fast_alloc::StaticConstArray::clear_info_free_elt();
+    fast_alloc::StaticConstArray::clear_info_free_elem();
     expect(bad == 0, "every thread allocating, writing and freeing at once");
 }
 
@@ -261,7 +261,7 @@ void check_inside_caller_critical()
             }
         }
     }
-    fast_alloc::StaticConstArray::clear_info_free_elt();
+    fast_alloc::StaticConstArray::clear_info_free_elem();
     expect(bad == 0, "alloc and free from inside the caller's own unnamed omp critical");
 }
 

@@ -234,7 +234,7 @@ inline void on_op_free(void* ptr) noexcept
 //   b_alloc   : FREE   -> LIVE     fresh block from allocator/svcalloc
 //   b_pop     : parked -> LIVE     popped from a per-thread free-list
 //   b_park    : LIVE   -> parked   pushed into a per-thread free-list (reclaim / free_block_to_pool)
-//   b_release : LIVE   -> FREE     returned to allocator (free_elt_pow2)
+//   b_release : LIVE   -> FREE     returned to allocator (free_elem_pow2)
 //
 // Illegal (each trips the assert, naming previous state + previous rank):
 //   double-park  (park a parked block)     → two chunks think they own it
