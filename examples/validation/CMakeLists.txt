@@ -942,6 +942,16 @@ endforeach()
 # at run time) against layout_tiled, tiled_view_dyn's tile per chunk, the tile
 # operations on it; at the default static size, and at dyn for the variants
 # built there (a re-chunk under the view).
+# This harness and mdspan_tile_ops_validation share their loops out with
+# `omp for` (dynamic and static,1 schedules), `omp atomic` and `omp single`:
+# at 8 threads in OpenMP builds only. Elsewhere the pragmas are ignored, and
+# every thread of the phase would run the whole loop (each tile negated 8
+# times: back to its start).
+if (CHUNK_OPENMP)
+  set(_md_omp_threads "1;8")
+else()
+  set(_md_omp_threads "1")
+endif()
 foreach(_vi RANGE ${_rt_nvar_last})
   list(GET _rt_variant_names   ${_vi} _vname)
   list(GET _rt_variant_libbase ${_vi} _libbase)
@@ -957,13 +967,14 @@ foreach(_vi RANGE ${_rt_nvar_last})
       target_link_libraries(${_tgt} PRIVATE ${_libbase}_${_geom})
       validation_variant_defs(${_tgt} ${_vmacro} ${_geom})
       validation_setup_target(${_tgt})
-      validation_add_test(${_tgt} ${_tgt} "" "1;8")
+      validation_add_test(${_tgt} ${_tgt} "" "${_md_omp_threads}")
     endif()
   endforeach()
 endforeach()
 
 # --- mdspan_tile_ops_validation_<variant>: md::for_each_tile / md::update_tiles
-# (chunk/mdspan_tile_ops.h) against the element path, at 1 and 8 threads.
+# (chunk/mdspan_tile_ops.h) against the element path, at 1 and 8 threads (8:
+# OpenMP builds, see mdspan_tiled_dyn_validation above).
 # mdspan_tile_ops_misaligned: tiles smaller than a chunk inside a parallel
 # region must stop the program (OpenMP builds: a region is what is refused);
 # expect_stop.cmake, since ctest counts an abort as a failure.
@@ -977,8 +988,8 @@ foreach(_vi RANGE ${_rt_nvar_last})
     target_link_libraries(${_tgt} PRIVATE ${_libbase}_${CHUNK_DEFAULT_SIZE})
     validation_variant_defs(${_tgt} ${_vmacro} ${CHUNK_DEFAULT_SIZE})
     validation_setup_target(${_tgt})
-    validation_add_test(${_tgt} ${_tgt} "" "1;8")
-    if (OMP AND _vname STREQUAL "zero_any" AND CHUNK_DEFAULT_SIZE GREATER 64)
+    validation_add_test(${_tgt} ${_tgt} "" "${_md_omp_threads}")
+    if (CHUNK_OPENMP AND _vname STREQUAL "zero_any" AND CHUNK_DEFAULT_SIZE GREATER 64)
       add_test(NAME mdspan_tile_ops_misaligned
                COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:${_tgt}> -DARGS=misaligned
                        "-DEXPECT=two threads would share a chunk" -P ${CMAKE_CURRENT_SOURCE_DIR}/expect_stop.cmake)
