@@ -270,6 +270,9 @@ the tag's checksum to the recipe.
 
 ### Removed
 
+- `CHUNK_CRTP_USE_DEDUCING_THIS` and `CHUNK_CRTP_FORCE_DEDUCING_THIS`, and the deducing-this
+  variant of `add_to_compression_list_async()` they selected: develop is C++20, where it was
+  never compiled; the cpp23 branch has that form alone.
 - `python/run_test.py`: it ran a `test/test1` that no longer exists, under a path left as
   `????` when the tree went public; `bench_runner` averages the memory over runs.
 - `chunk/debug.h`, which nothing included (`print_backtrace` is

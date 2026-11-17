@@ -40,7 +40,7 @@
 #include "chunk/internal/array_cst_val2_holder.h"       // ArrayCstVal2Holder: second-value identifiers
 #include "chunk/internal/relaxed_element.h"             // store_value: zero_any's relaxed element stores
 #include "chunk/internal/concept_is_clean_assignment.h" // IsCleanCompoundOp, IsCleanShiftOp, BaseT
-#include "chunk/internal/crtp_support.h"                // CRTPSupport, CHUNK_CRTP_USE_DEDUCING_THIS
+#include "chunk/internal/crtp_support.h"                // CRTPSupport
 #include "chunk/internal/test_hooks.h"                  // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (read_values)
 #include "chunk/internal/read_reclaim.h"                // ReadSection: read_values_outside_session
 #include "chunk/internal/stable_table.h"                // StableTable: the outer per-array tables
@@ -169,12 +169,7 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
 
     /// @brief Queue the chunk @p ctx names as a compression candidate, on the
     ///        replay path.
-#if CHUNK_CRTP_USE_DEDUCING_THIS
-    // C++23: explicit object parameter replaces CRTPSupport::derived().
-    void add_to_compression_list_async(this const auto& self, auto* ctx);
-#else
     void add_to_compression_list_async(auto* ctx) const;
-#endif
 
     /**
      * @brief Grow the per-array table of candidate-flag arrays to @p array_count entries.

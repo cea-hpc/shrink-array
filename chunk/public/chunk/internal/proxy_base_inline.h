@@ -61,7 +61,6 @@
 #include "chunk/internal/array_chunk_for.h"    // ArrayChunkForT
 #include "chunk/internal/concept_chunk.h"      // IsZeroOneValue, ChunkTemplateOf
 #include "chunk/internal/concept_is_clean_assignment.h" // BaseT
-#include "chunk/internal/crtp_support.h"                // CHUNK_CRTP_USE_DEDUCING_THIS
 #include "chunk/internal/def_force_inline.h"            // CHUNK_FORCE_INLINE
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/write_compress_sync_policy.h"  // WriteCompressSyncPolicy
@@ -381,55 +380,7 @@ ProxyT ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::make_proxy_with_inf
  * `IsZeroOneValue` branch on which per-thread list to push onto.
  *
  * @param ctx  Deferred-operation context being replayed.
- * @note In the C++23 deducing-this variant the proxy is also passed
- *       explicitly, as `self`.
  */
-#if CHUNK_CRTP_USE_DEDUCING_THIS
-// C++23 deducing-this variant: `self` replaces derived() (Derived is still a
-// class parameter, for Derived::array_...).
-template <typename Derived, typename T, typename ChunkT, bool Enabled>
-void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::add_to_compression_list_async(this const auto& self,
-                                                                                         auto*            ctx)
-{
-    auto&     chunk = ctx->chunk;
-    const int num   = ctx->num;
-
-    using ProxyType = std::remove_cvref_t<decltype(self)>;
-
-    std::atomic<T*>& atomic_values = chunk.values;
-    ProxyType        proxy(atomic_values, num, chunk);
-
-    const int array_id = get_array_id_async_helper(ctx, proxy, ctx->ptr_on_array);
-
-    auto& flag = Derived::array_is_inside_chunk_list_to_compress[array_id][ctx->chunk_index];
-
-    // The queue flag's protocol (queue_flag.h): a relaxed probe, then the CAS.
-    if (queue_flag::try_queue(flag))
-    {
-        const int thr = get_thr_rank_fast();
-
-        auto& vec = [&]() -> auto&
-        {
-            if constexpr (IsZeroOneValue<ChunkTemplateOf<ChunkT>::template type, T>)
-            {
-                return self.get_vec_tuple_to_compress_potentially_async_thr(ctx, thr);
-            }
-            else
-            {
-                return self.get_vec_tuple_to_compress_potentially_thr(thr);
-            }
-        }();
-
-        internal::ArrayUsers<ChunkT>::note(array_id, thr); // a replay queues on the replaying rank
-        push_to_compress_list(vec, &ctx->chunk, ctx->chunk_index, array_id, self.chunk_size());
-        if constexpr (IsZeroOneValue<ChunkTemplateOf<ChunkT>::template type, T>)
-        {
-            Derived::note_candidate_pushed(vec); // the threshold test (zero_one_value::Proxy trigger)
-        }
-    }
-}
-#else
-// Pre-C++23 variant: `derived()` in place of the deduced `self`.
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
 void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::add_to_compression_list_async(auto* ctx) const
 {
@@ -470,7 +421,6 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::add_to_compression_li
         }
     }
 }
-#endif
 
 /**
  * @brief Runs a write body against the compressor, or reports that it must be deferred.
