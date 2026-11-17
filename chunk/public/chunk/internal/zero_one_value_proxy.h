@@ -375,7 +375,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
 
     using Base::array_is_inside_chunk_list_to_compress;
     using Base::chunk_;
-    using Base::num_;
+    using Base::elem_offset_;
     using Base::read_values;
     using Base::read_values_async;
     using Base::values_;
@@ -699,7 +699,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     /// @return @p os.
     friend std::ostream& operator<<(std::ostream& os, const Proxy& proxy)
     {
-        // Through the proxy's read entry, like operator T(): the raw values[num] snapshot is stale
+        // Through the proxy's read entry, like operator T(): the raw values[elem_offset] snapshot is stale
         // while a deferred op pends on this offset.
         os << proxy.read_pure();
         return os;
@@ -727,7 +727,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     using Base::array_id_;     ///< Index used for compression table lookup.
     using Base::chunk_;        ///< Reference to the associated chunk.
     using Base::chunk_index_;  ///< Index of the chunk within the source array.
-    using Base::num_;          ///< Index of the current element within the chunk.
+    using Base::elem_offset_;  ///< Index of the current element within the chunk.
     using Base::ptr_on_array_; ///< pointer to array (for array lookup)
     using Base::read_values;
     using Base::values_; ///< Pointer to chunk's data array
@@ -871,7 +871,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
 
     /**
      * @brief Read-modify-write behind the compound operators (`+=`, `-=`...):
-     *        `values[num] = op(values[num], operand)`, with the second-value
+     *        `values[elem_offset] = op(values[elem_offset], operand)`, with the second-value
      *        bookkeeping of a write (a slot leaving or reaching the second
      *        value updates the chunk's counter, a full chunk folds).
      * @tparam U Type of the operand.
@@ -889,13 +889,13 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
 
   public:
     /**
-     * @brief Construct a proxy for element `num_` of `chunk_`.
+     * @brief Construct a proxy for element `elem_offset_` of `chunk_`.
      * @param values Reference to the chunk's values pointer.
-     * @param num Element offset within the chunk.
+     * @param elem_offset Element offset within the chunk.
      * @param chunk Owning chunk.
      */
-    explicit Proxy(ValuesTypeRef values, int num, Chunk<T>& chunk) noexcept
-        : ProxyFastCompPolicy<Proxy, T, Chunk<T>, chunk_config::use_fast_block_compression>(values, num, chunk)
+    explicit Proxy(ValuesTypeRef values, int elem_offset, Chunk<T>& chunk) noexcept
+        : ProxyFastCompPolicy<Proxy, T, Chunk<T>, chunk_config::use_fast_block_compression>(values, elem_offset, chunk)
     {
     }
 

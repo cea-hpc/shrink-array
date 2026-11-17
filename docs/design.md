@@ -57,7 +57,7 @@ stateDiagram-v2
 Four consequences shape the whole library:
 
 1. **A read is a load of `values` and an indexed load.** It never branches on the chunk's state:
-   a compressed chunk's shared data hold at least as many elements as a chunk, so `chunk[num]`
+   a compressed chunk's shared data hold at least as many elements as a chunk, so `chunk[elem_offset]`
    is the same instruction for every state. Only `pattern` adds the offset, in a branch compiled for it alone.
 2. **A write goes through a proxy.** The non-const `operator[]` returns a proxy that knows the
    array, the chunk and the position. The proxy sees the value *before* storing it: writing the
@@ -188,7 +188,7 @@ per-variant declinations and keep the default names as aliases;
 
 ### 6.1 Read
 
-`operator[] const` splits the index (`chunk_index = i >> shift`, `num = i & mask`), passes the
+`operator[] const` splits the index (`chunk_index = i >> shift`, `elem_offset = i & mask`), passes the
 **read gate** (`sync_chunk`: a bit per chunk, the *dirty bitset*, says whether a deferred write
 may be pending on it; almost always zero, the read goes straight on; otherwise the chunk's
 counter decides whether to replay its pending writes first, `reader_sync`), then loads `values`

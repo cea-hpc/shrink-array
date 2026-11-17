@@ -40,10 +40,10 @@ enum class ConstSlot : std::uint8_t
     motif  = 2, ///< a shared motif plus the chunk's offset (pattern::Array: has_motif_state_v)
 };
 
-/// @brief The slot of constant @p num_compress_value: 0 the first, any other the second.
-[[nodiscard]] constexpr ConstSlot const_slot_of(int num_compress_value) noexcept
+/// @brief The slot of constant @p const_index: 0 the first, any other the second.
+[[nodiscard]] constexpr ConstSlot const_slot_of(int const_index) noexcept
 {
-    return num_compress_value == 0 ? ConstSlot::first : ConstSlot::second;
+    return const_index == 0 ? ConstSlot::first : ConstSlot::second;
 }
 
 } // namespace shrink_array

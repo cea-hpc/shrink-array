@@ -178,11 +178,11 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list([[maybe_unused]] aut
         {
             if (ptr_is_inside_chunk_list_to_compress_ == nullptr) [[unlikely]]
             {
-                CHUNK_INVARIANT_FAILED("add_to_compression_list(vec_tuple): chunk={} num={} "
+                CHUNK_INVARIANT_FAILED("add_to_compression_list(vec_tuple): chunk={} elem_offset={} "
                                        "chunk_index={} array_id={} "
                                        "ptr_is_inside_chunk_list_to_compress is null "
                                        "(set_info_on_chunk not called on this write path?)",
-                                       &chunk_, num_, chunk_index_, array_id_);
+                                       &chunk_, elem_offset_, chunk_index_, array_id_);
             }
         }
         // The queue flag's protocol (queue_flag.h): free -> queued pushes; a
@@ -244,11 +244,11 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list() const
         {
             if (ptr_is_inside_chunk_list_to_compress_ == nullptr) [[unlikely]]
             {
-                CHUNK_INVARIANT_FAILED("add_to_compression_list (fast-block): chunk={} num={} "
+                CHUNK_INVARIANT_FAILED("add_to_compression_list (fast-block): chunk={} elem_offset={} "
                                        "chunk_index={} array_id={} "
                                        "ptr_is_inside_chunk_list_to_compress is null "
                                        "(set_info_on_chunk not called on this write path?)",
-                                       &chunk_, num_, chunk_index_, array_id_);
+                                       &chunk_, elem_offset_, chunk_index_, array_id_);
             }
         }
         // CHUNK_STATS: see the vec_tuple overload for reading mark_refused / mark_ok.
@@ -327,12 +327,12 @@ template <typename Derived, typename T, typename ChunkT, bool Enabled>
 template <typename ProxyT, typename Ctx>
 ProxyT ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::make_proxy_with_info(Ctx* ctx)
 {
-    auto&     chunk = ctx->chunk;
-    const int num   = ctx->num;
+    auto&     chunk       = ctx->chunk;
+    const int elem_offset = ctx->elem_offset;
 
     std::atomic<T*>& atomic_values = chunk.values_;
 
-    ProxyT proxy(atomic_values, num, chunk);
+    ProxyT proxy(atomic_values, elem_offset, chunk);
 
     proxy.set_chunk_index(ctx->chunk_index);
 
@@ -384,13 +384,13 @@ ProxyT ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::make_proxy_with_inf
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
 void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::add_to_compression_list_async(auto* ctx) const
 {
-    auto&     chunk = ctx->chunk;
-    const int num   = ctx->num;
+    auto&     chunk       = ctx->chunk;
+    const int elem_offset = ctx->elem_offset;
 
     using ProxyType = std::remove_cvref_t<decltype(derived())>;
 
     std::atomic<T*>& atomic_values = chunk.values;
-    ProxyType        proxy(atomic_values, num, chunk);
+    ProxyType        proxy(atomic_values, elem_offset, chunk);
 
     const int array_id = get_array_id_async_helper(ctx, proxy, ctx->ptr_on_array);
 
@@ -502,9 +502,9 @@ ProxyBase<Derived, T, ChunkT>::write_with_optional_lock_impl(WriteCallable&&    
             if (entry_pending) [[unlikely]]
             {
                 const int thr_entry = get_thr_rank_fast();
-                if (chunk_.foreign_pending(thr_entry, num_))
+                if (chunk_.foreign_pending(thr_entry, elem_offset_))
                 {
-                    chunk_.reader_sync(num_);
+                    chunk_.reader_sync(elem_offset_);
                 }
                 if (chunk_.pending_any()) // own ops remain queued: exclude their replay
                 {
@@ -626,7 +626,7 @@ ProxyBase<Derived, T, ChunkT>::write_with_optional_lock_impl(WriteCallable&&    
                 {
                     if (entry_pending && chunk_.pending_any()) [[unlikely]]
                     {
-                        CompressionManagerType::erase_own_rank_op(thr, &chunk_, num_);
+                        CompressionManagerType::erase_own_rank_op(thr, &chunk_, elem_offset_);
                     }
                 }
 
@@ -797,7 +797,7 @@ void ProxyBase<Derived, T, ChunkT>::enqueue_deferred_write(CtxType* ctx, LambdaB
 
     // The moment the protocol matters: this write is about to be parked in a
     // per-thread queue that only the phase end drains. See phase_guard.h.
-    phase_guard::check_write(&chunk_, static_cast<long>(ctx->num));
+    phase_guard::check_write(&chunk_, static_cast<long>(ctx->elem_offset));
 
     const int thr_rank = get_thr_rank_fast();
 
@@ -807,7 +807,7 @@ void ProxyBase<Derived, T, ChunkT>::enqueue_deferred_write(CtxType* ctx, LambdaB
     using OpType = CompressionManagerType::template DeferredOperation<CtxType, std::decay_t<LambdaBody>>;
     auto* op_ptr = pool_new_op<OpType>(ctx, std::forward<LambdaBody>(body), thr_rank);
 
-    chunk_.to_be_queued_for_deferred_processing(thr_rank, ctx->num, op_ptr);
+    chunk_.to_be_queued_for_deferred_processing(thr_rank, ctx->elem_offset, op_ptr);
     CompressionManagerType::record_enqueue_deferred(thr_rank, ctx->chunk);
 }
 
@@ -923,16 +923,16 @@ void ProxyBase<Derived, T, ChunkT>::apply_atomic_op(Op operation, const U& opera
                 {
                     if (derived().is_const_val1())
                     {
-                        CHUNK_INVARIANT_FAILED(
-                            "apply_atomic_op SYNC: chunk={} num={} is_const_val1 BEFORE store_value (Dekker breach?)",
-                            &chunk_, num_);
+                        CHUNK_INVARIANT_FAILED("apply_atomic_op SYNC: chunk={} elem_offset={} is_const_val1 BEFORE "
+                                               "store_value (Dekker breach?)",
+                                               &chunk_, elem_offset_);
                     }
 
                     if (check_is_const_val2(derived()))
                     {
-                        CHUNK_INVARIANT_FAILED(
-                            "apply_atomic_op SYNC: chunk={} num={} is_const_val2 BEFORE store_value (Dekker breach?)",
-                            &chunk_, num_);
+                        CHUNK_INVARIANT_FAILED("apply_atomic_op SYNC: chunk={} elem_offset={} is_const_val2 BEFORE "
+                                               "store_value (Dekker breach?)",
+                                               &chunk_, elem_offset_);
                     }
                 }
 
@@ -947,9 +947,9 @@ void ProxyBase<Derived, T, ChunkT>::apply_atomic_op(Op operation, const U& opera
                     if (values_after != values_before)
                     {
                         CHUNK_INVARIANT_FAILED(
-                            "apply_atomic_op SYNC: chunk={} num={} values pointer CHANGED across store: "
+                            "apply_atomic_op SYNC: chunk={} elem_offset={} values pointer CHANGED across store: "
                             "before={} after={} ; the store may have been LOST",
-                            &chunk_, num_, static_cast<const void*>(values_before),
+                            &chunk_, elem_offset_, static_cast<const void*>(values_before),
                             static_cast<const void*>(values_after));
                     }
                 }
@@ -980,16 +980,16 @@ void ProxyBase<Derived, T, ChunkT>::apply_atomic_op(Op operation, const U& opera
                                 if (proxy.is_const_val1())
                                 {
                                     CHUNK_INVARIANT_FAILED(
-                                        "apply_atomic_op ASYNC lambda: chunk={} num={} is_const_val1 "
+                                        "apply_atomic_op ASYNC lambda: chunk={} elem_offset={} is_const_val1 "
                                         "before read+store (decompression skipped?)",
-                                        &ctx->chunk, ctx->num);
+                                        &ctx->chunk, ctx->elem_offset);
                                 }
                                 if (check_is_const_val2(proxy))
                                 {
                                     CHUNK_INVARIANT_FAILED(
-                                        "apply_atomic_op ASYNC lambda: chunk={} num={} is_const_val2 "
+                                        "apply_atomic_op ASYNC lambda: chunk={} elem_offset={} is_const_val2 "
                                         "before read+store (decompression skipped?)",
-                                        &ctx->chunk, ctx->num);
+                                        &ctx->chunk, ctx->elem_offset);
                                 }
                             }
 
@@ -1009,21 +1009,22 @@ void ProxyBase<Derived, T, ChunkT>::apply_atomic_op(Op operation, const U& opera
                                 if (values_after != values_before)
                                 {
                                     CHUNK_INVARIANT_FAILED(
-                                        "apply_atomic_op ASYNC lambda: chunk={} num={} values pointer "
+                                        "apply_atomic_op ASYNC lambda: chunk={} elem_offset={} values pointer "
                                         "CHANGED across store_value_async: before={} after={} ; "
                                         "the store may have landed in a stale buffer (LOST)",
-                                        &ctx->chunk, ctx->num, static_cast<const void*>(values_before),
+                                        &ctx->chunk, ctx->elem_offset, static_cast<const void*>(values_before),
                                         static_cast<const void*>(values_after));
                                 }
                                 // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
-                                const InT<T> readback = elem_get(values_after, static_cast<std::size_t>(ctx->num));
-                                const auto   expected = static_cast<T>(res);
+                                const InT<T> readback =
+                                    elem_get(values_after, static_cast<std::size_t>(ctx->elem_offset));
+                                const auto expected = static_cast<T>(res);
                                 if (!same_value(static_cast<T>(readback), expected))
                                 {
                                     CHUNK_INVARIANT_FAILED(
-                                        "apply_atomic_op ASYNC lambda: chunk={} num={} readback mismatch: "
+                                        "apply_atomic_op ASYNC lambda: chunk={} elem_offset={} readback mismatch: "
                                         "wrote={} but readback={}",
-                                        &ctx->chunk, ctx->num, expected, readback);
+                                        &ctx->chunk, ctx->elem_offset, expected, readback);
                                 }
                             }
                         });
@@ -1057,7 +1058,7 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(InT<U> operand, Op operati
     // queued on ANOTHER rank may be unmaterialised, and the RMW would clobber
     // it. Materialise HERE, BEFORE begin_write, so the drain is not re-entrant.
     // reader_sync is a no-op when nothing is pending.
-    chunk_.reader_sync(num_);
+    chunk_.reader_sync(elem_offset_);
 
     using ComputeType = std::common_type_t<T, BaseT<U>>;
 
@@ -1098,7 +1099,7 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(InT<U> operand, Op operati
                         {
                             static_cast<void>(proxy);
                             // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
-                            const InT<T>      current      = elem_get(values, static_cast<std::size_t>(ctx->num));
+                            const InT<T>      current = elem_get(values, static_cast<std::size_t>(ctx->elem_offset));
                             const ComputeType intermediate = ctx->operation(static_cast<ComputeType>(current),
                                                                             static_cast<ComputeType>(ctx->operand));
                             const auto        final_val    = static_cast<T>(intermediate);
@@ -1107,28 +1108,28 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(InT<U> operand, Op operati
                             {
                                 if (T* current_chunk_ptr = ctx->chunk.values_load(); current_chunk_ptr != values)
                                 {
-                                    invariant_failed(std::source_location::current(),
-                                                     "Lambda async ARITH: STALE values pointer! "
-                                                     "lambda_received={} chunk.values_load()={} chunk={} num={}",
-                                                     static_cast<const void*>(values),
-                                                     static_cast<const void*>(current_chunk_ptr), &ctx->chunk,
-                                                     ctx->num);
+                                    invariant_failed(
+                                        std::source_location::current(),
+                                        "Lambda async ARITH: STALE values pointer! "
+                                        "lambda_received={} chunk.values_load()={} chunk={} elem_offset={}",
+                                        static_cast<const void*>(values), static_cast<const void*>(current_chunk_ptr),
+                                        &ctx->chunk, ctx->elem_offset);
                                 }
                                 if (proxy.is_const_val1())
                                 {
                                     invariant_failed(
                                         std::source_location::current(),
-                                        "Lambda async ARITH: chunk={} num={} is_const_val1 just before store!",
-                                        &ctx->chunk, ctx->num);
+                                        "Lambda async ARITH: chunk={} elem_offset={} is_const_val1 just before store!",
+                                        &ctx->chunk, ctx->elem_offset);
                                 }
                                 if constexpr (requires { proxy.is_const_val2(); })
                                 {
                                     if (proxy.is_const_val2())
                                     {
-                                        invariant_failed(
-                                            std::source_location::current(),
-                                            "Lambda async ARITH: chunk={} num={} is_const_val2 just before store!",
-                                            &ctx->chunk, ctx->num);
+                                        invariant_failed(std::source_location::current(),
+                                                         "Lambda async ARITH: chunk={} elem_offset={} is_const_val2 "
+                                                         "just before store!",
+                                                         &ctx->chunk, ctx->elem_offset);
                                     }
                                 }
                             }
@@ -1139,7 +1140,7 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(InT<U> operand, Op operati
                                 const auto chunk_id =
                                     static_cast<uint32_t>(::fast_alloc::address_bits(&chunk_ref) >> 4);
                                 const uint32_t info =
-                                    (chunk_id & 0x00FFFFFFU) | (static_cast<uint32_t>(ctx->num & 0xFF) << 24);
+                                    (chunk_id & 0x00FFFFFFU) | (static_cast<uint32_t>(ctx->elem_offset & 0xFF) << 24);
 
                                 // Race detector: values pointing to const_val here means a
                                 // re-compression since create_value.
@@ -1163,11 +1164,11 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(InT<U> operand, Op operati
 
                             if constexpr (internal::relaxed_element_stores_v<ChunkT, T>)
                             {
-                                internal::store_element_relaxed(values + ctx->num, static_cast<T>(final_val));
+                                internal::store_element_relaxed(values + ctx->elem_offset, static_cast<T>(final_val));
                             }
                             else
                             {
-                                elem_set(values, static_cast<std::size_t>(ctx->num), static_cast<T>(final_val));
+                                elem_set(values, static_cast<std::size_t>(ctx->elem_offset), static_cast<T>(final_val));
                             }
                             ProxyBase::check_nan_written_async(ctx, static_cast<T>(final_val));
                         });
@@ -1196,10 +1197,10 @@ void ProxyBase<Derived, T, ChunkT>::bitwise_assign(InT<U> operand, Op operation)
     }
 
     // Cross-rank RMW materialisation, as in arithmetic_assign: this engine
-    // reads val[num] in place, and a deferred write to THIS offset still queued
+    // reads val[elem_offset] in place, and a deferred write to THIS offset still queued
     // (possibly the refused plain `= operand` before this op) would resolve in the
     // wrong order.
-    chunk_.reader_sync(num_);
+    chunk_.reader_sync(elem_offset_);
 
     using ComputeType = std::common_type_t<T, U>;
 
@@ -1254,7 +1255,7 @@ void ProxyBase<Derived, T, ChunkT>::apply_inplace_operation(SyncOp sync_op, [[ma
 {
     check_not_stale();
     // Cross-rank RMW materialisation, outside begin_write: see arithmetic_assign.
-    chunk_.reader_sync(num_);
+    chunk_.reader_sync(elem_offset_);
 
     // --- Synchronous fast‑path -------------------------------------------------
 
@@ -1332,11 +1333,11 @@ template <typename Derived, typename T, typename ChunkT, bool Enabled>
         if (ChunkT::is_motif_ptr(ctx->chunk.values_load())) [[unlikely]]
         {
             CHUNK_INVARIANT_FAILED("read_values_async: a motif chunk read by a replay before its "
-                                   "materialisation (chunk={}, num={})",
-                                   static_cast<const void*>(&ctx->chunk), ctx->num);
+                                   "materialisation (chunk={}, elem_offset={})",
+                                   static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
         }
     }
-    return internal::element_of(ctx->chunk.values_load(), static_cast<std::size_t>(ctx->num));
+    return internal::element_of(ctx->chunk.values_load(), static_cast<std::size_t>(ctx->elem_offset));
 }
 
 // ---------------------------------------------------------------------------
@@ -1353,7 +1354,7 @@ void ProxyBase<Derived, T, ChunkT>::check_not_stale() const noexcept
             CHUNK_INVARIANT_FAILED("write proxy of array {} (chunk {}, offset {}) used after the array rebuilt its "
                                    "storage (resize, reserve, shrink_to_fit, clear, assign, swap, an assignment or a "
                                    "re-chunk): keep a value with `T v = a[i];`, not `auto v = a[i];`",
-                                   ptr_on_array_, chunk_index_, num_);
+                                   ptr_on_array_, chunk_index_, elem_offset_);
         }
     }
 }
@@ -1367,7 +1368,7 @@ template <typename Derived, typename T, typename ChunkT>
     static_assert(chunk_config::use_compression_with_counter || sizeof(T) == 0,
                   "raw_elem(): serial counter mode only -- no concurrent pass may release the buffer");
     // raw-read: serial counter mode (no fast block compression, no concurrent pass)
-    return elem_get(static_cast<const T*>(values_), static_cast<std::size_t>(num_));
+    return elem_get(static_cast<const T*>(values_), static_cast<std::size_t>(elem_offset_));
 }
 
 template <typename Derived, typename T, typename ChunkT>
@@ -1386,19 +1387,19 @@ void ProxyBase<Derived, T, ChunkT>::store_value_at(T* const vals, InT<T> value) 
     {
         if (chunk_.steal_committed()) [[unlikely]]
         {
-            CHUNK_INVARIANT_FAILED("store_value on a chunk committed to a compressor (num={})", num_);
+            CHUNK_INVARIANT_FAILED("store_value on a chunk committed to a compressor (elem_offset={})", elem_offset_);
         }
     }
     // zero_any: the marking filter of another writer may be reading this
     // element -- relaxed atomic store, see relaxed_element.h.
     if constexpr (internal::relaxed_element_stores_v<ChunkT, T>)
     {
-        internal::store_element_relaxed(vals + num_, static_cast<T>(value));
+        internal::store_element_relaxed(vals + elem_offset_, static_cast<T>(value));
     }
     else
     {
-        // Bit: an atomic RMW of the word (element_access.h); values[num] otherwise.
-        elem_set(vals, static_cast<std::size_t>(num_), static_cast<T>(value));
+        // Bit: an atomic RMW of the word (element_access.h); values[elem_offset] otherwise.
+        elem_set(vals, static_cast<std::size_t>(elem_offset_), static_cast<T>(value));
     }
     check_nan_written(value);
 }
@@ -1426,33 +1427,33 @@ template <typename Derived, typename T, typename ChunkT>
     test_hooks::maybe_read_delay();
     if constexpr (has_motif_state_v<ChunkT>)
     {
-        // A motif chunk: motif[num] + the offset its second-value slot holds, if
+        // A motif chunk: motif[elem_offset] + the offset its second-value slot holds, if
         // the chunk still points at that motif; else the chunk as it is now (F5).
         if (ChunkT::is_motif_ptr(vals)) [[unlikely]]
         {
             T off{};
             if (chunk_.motif_offset(vals, derived().motif_offset_slot(), off)) [[likely]]
             {
-                return ChunkT::motif_value(vals, num_, off);
+                return ChunkT::motif_value(vals, elem_offset_, off);
             }
             return read_values_at(chunk_.values_load());
         }
     }
-    return internal::element_of(vals, static_cast<std::size_t>(num_));
+    return internal::element_of(vals, static_cast<std::size_t>(elem_offset_));
 }
 
 template <typename Derived, typename T, typename ChunkT>
 [[nodiscard]] inline T ProxyBase<Derived, T, ChunkT>::read_pure() const noexcept
 {
     check_not_stale();
-    chunk_.reader_sync(num_);
+    chunk_.reader_sync(elem_offset_);
     if constexpr (has_motif_state_v<ChunkT>)
     {
-        return chunk_.read_value(num_, derived().motif_offset_slot()); // a motif chunk's offset
+        return chunk_.read_value(elem_offset_, derived().motif_offset_slot()); // a motif chunk's offset
     }
     else
     {
-        return chunk_.read_value(num_); // read_value accounts the read in stats
+        return chunk_.read_value(elem_offset_); // read_value accounts the read in stats
     }
 }
 
@@ -1480,7 +1481,7 @@ Derived ProxyBase<Derived, T, ChunkT>::operator++() noexcept
 
     apply_inplace_operation(inc_operation, inc_operation_async);
 
-    // Return the proxy, not a value. Never read `values[num]` here: `values`
+    // Return the proxy, not a value. Never read `values[elem_offset]` here: `values`
     // is the ctor-time snapshot, and the call above may have materialised
     // the chunk (snapshot stale, possibly the constant sentinel) or DEFERRED the
     // op (cell not yet updated, another rank's replay may be writing it).
@@ -1563,12 +1564,12 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::check_nan_written_asy
         {
             chunk_config::CheckNaN<chunk_config::do_check>::maybe(
                 static_cast<T>(value),
-                (static_cast<long>(ctx->chunk_index) * static_cast<long>(ctx->chunk_size_frozen)) + ctx->num);
+                (static_cast<long>(ctx->chunk_index) * static_cast<long>(ctx->chunk_size_frozen)) + ctx->elem_offset);
         }
         else
         {
-            chunk_config::CheckNaN<chunk_config::do_check>::maybe(static_cast<T>(value), static_cast<long>(ctx->num),
-                                                                  false);
+            chunk_config::CheckNaN<chunk_config::do_check>::maybe(static_cast<T>(value),
+                                                                  static_cast<long>(ctx->elem_offset), false);
         }
     }
 }
@@ -1585,12 +1586,13 @@ void ProxyBase<Derived, T, ChunkT>::check_nan_written([[maybe_unused]] InT<T> va
         if (chunk_index_ >= 0)
         {
             chunk_config::CheckNaN<chunk_config::do_check>::maybe(
-                static_cast<T>(value), (static_cast<long>(chunk_index_) * static_cast<long>(chunk_size())) + num_);
+                static_cast<T>(value),
+                (static_cast<long>(chunk_index_) * static_cast<long>(chunk_size())) + elem_offset_);
         }
         else
         {
-            chunk_config::CheckNaN<chunk_config::do_check>::maybe(static_cast<T>(value), static_cast<long>(num_),
-                                                                  false);
+            chunk_config::CheckNaN<chunk_config::do_check>::maybe(static_cast<T>(value),
+                                                                  static_cast<long>(elem_offset_), false);
         }
     }
 }

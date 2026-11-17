@@ -75,10 +75,10 @@ class ChunkConcurrentOps
     using Holder = ArrayConstVal2Holder<T>;
 
     /// @brief Atomically mark this chunk constant and hand back its old buffer.
-    /// @param num_compress_value 0 for the first constant, 1 for the second.
-    /// @param const2_ptr The shared array to install when @p num_compress_value
+    /// @param const_index 0 for the first constant, 1 for the second.
+    /// @param const2_ptr The shared array to install when @p const_index
     ///        is 1 (find_or_set_idx_const_val2's result); ignored for 0.
-    [[nodiscard]] T* try_mark_const_and_get_old(int num_compress_value, T* const2_ptr) noexcept;
+    [[nodiscard]] T* try_mark_const_and_get_old(int const_index, T* const2_ptr) noexcept;
 
   protected:
     /// @brief Publish @p values_loc as this chunk's buffer, expecting the
@@ -282,13 +282,13 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>, public ChunkC
     /*!
      * \brief Release this chunk's buffer and point it back at a constant --
      *        the single point every compression path funnels through.
-     * \param num_compress_value 0 for the first constant, otherwise the second.
+     * \param const_index 0 for the first constant, otherwise the second.
      * \param ptr_type_const       Slot of the per-chunk type table to update.
      * \param ptr_second_value   The chunk's second-value slot.
      * \param thr_rank           Rank whose pool receives the released buffer.
      * \param const2_ptr           Shared array of the second constant (type 2).
      */
-    void block_clear(int               num_compress_value,
+    void block_clear(int               const_index,
                      ConstSlot*        ptr_type_const,
                      SecondValueRef<T> ptr_second_value,
                      int               thr_rank,
@@ -296,14 +296,14 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>, public ChunkC
 
     /*!
      * \brief Compress this chunk, committing its second-value pointer first.
-     * \param num_compress_value 0 for the first constant, 1 for the second.
+     * \param const_index 0 for the first constant, 1 for the second.
      * \param ptr_type_const       Slot of the per-chunk type table to update.
      * \param ptr_second_value   The chunk's second-value slot.
      * \param thr_rank           Rank whose pool receives the buffer.
      * \param new_const_val2_ptr   Pointer returned by find_or_set_idx_const_val2();
-     *                           required when @p num_compress_value is 1.
+     *                           required when @p const_index is 1.
      */
-    void clear_int_st(int               num_compress_value,
+    void clear_int_st(int               const_index,
                       ConstSlot*        ptr_type_const,
                       SecondValueRef<T> ptr_second_value,
                       int               thr_rank,
@@ -311,13 +311,13 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>, public ChunkC
 
     /*!
      * \brief clear_int_st() on the calling thread's rank.
-     * \param num_compress_value 0 for the first constant, otherwise the second.
+     * \param const_index 0 for the first constant, otherwise the second.
      * \param ptr_type_const       Slot of the per-chunk type table to update.
      * \param ptr_second_value   The chunk's second-value slot.
      */
-    void clear_st(int num_compress_value, ConstSlot* ptr_type_const, SecondValueRef<T> ptr_second_value)
+    void clear_st(int const_index, ConstSlot* ptr_type_const, SecondValueRef<T> ptr_second_value)
     {
-        clear_int_st(num_compress_value, ptr_type_const, ptr_second_value, CHUNK_PMP_THREAD_RANK);
+        clear_int_st(const_index, ptr_type_const, ptr_second_value, CHUNK_PMP_THREAD_RANK);
     }
 
     /*!
@@ -384,7 +384,7 @@ class ChunkThreadPolicy<T, Derived, false> : public SecondValueChunkBase<T, Deri
      *        compression can register a const_val2 exactly like the OpenMP path.
      *        thr_rank is 0 with OpenMP off.
      */
-    void clear_int_st(int               num_compress_value,
+    void clear_int_st(int               const_index,
                       ConstSlot*        ptr_type_const,
                       SecondValueRef<T> ptr_second_value,
                       int               thr_rank,
@@ -398,7 +398,7 @@ class ChunkThreadPolicy<T, Derived, false> : public SecondValueChunkBase<T, Deri
     void clear_st(ConstSlot* ptr_type_const, SecondValueRef<T> ptr_second_value);
 
     /// @brief Release the buffer outright (no rank pool) and point at a constant.
-    void block_clear(int               num_compress_value,
+    void block_clear(int               const_index,
                      ConstSlot*        ptr_type_const,
                      SecondValueRef<T> ptr_second_value,
                      int /*thr_rank*/,
@@ -505,12 +505,12 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>,
     }
     /**
      * @brief Records which of the two constants this chunk is being compressed to.
-     * @param num_compress_value 0 for the first constant, anything else for the second.
+     * @param const_index 0 for the first constant, anything else for the second.
      * @param ptr_type_const Slot of the per-chunk type table to write.
      */
-    static void set_const_val_to_const_val(int num_compress_value, ConstSlot* ptr_type_const) noexcept
+    static void set_const_val_to_const_val(int const_index, ConstSlot* ptr_type_const) noexcept
     {
-        *ptr_type_const = const_slot_of(num_compress_value);
+        *ptr_type_const = const_slot_of(const_index);
     }
 
     /**

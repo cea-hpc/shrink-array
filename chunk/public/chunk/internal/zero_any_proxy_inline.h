@@ -95,13 +95,13 @@ inline constexpr int replay_retry_spin = 64;
  * @param retry_count the loop's counter, starting at 0
  * @param where       the loop and path, for the message
  * @param chunk       chunk being written, for the message
- * @param num         element offset, for the message
+ * @param elem_offset         element offset, for the message
  * @param loc         the caller (defaulted: the retry site, not this function)
  */
 inline void replay_retry(int&                        retry_count,
                          const char*                 where,
                          const void*                 chunk,
-                         int                         num,
+                         int                         elem_offset,
                          const std::source_location& loc = std::source_location::current()) noexcept
 {
     if (retry_count <= replay_retry_cap)
@@ -112,8 +112,8 @@ inline void replay_retry(int&                        retry_count,
     {
         if constexpr (build_config::any_check)
         {
-            invariant_failed(loc, "{}: retry > {} on chunk={} num={} -- pathological contention?", where,
-                             replay_retry_cap, chunk, num);
+            invariant_failed(loc, "{}: retry > {} on chunk={} elem_offset={} -- pathological contention?", where,
+                             replay_retry_cap, chunk, elem_offset);
         }
         else
         {
@@ -121,9 +121,10 @@ inline void replay_retry(int&                        retry_count,
             if (!warned.exchange(true, std::memory_order_relaxed))
             {
                 CHUNK_LOG(warn, drain,
-                          "{}: deferred replay retried more than {} times on chunk={} num={} (still retrying; reported "
+                          "{}: deferred replay retried more than {} times on chunk={} elem_offset={} (still retrying; "
+                          "reported "
                           "once per process)",
-                          where, replay_retry_cap, chunk, num);
+                          where, replay_retry_cap, chunk, elem_offset);
             }
         }
     }
@@ -262,13 +263,13 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::resize_array_is_int(int array_id, 
 template <typename T, typename Derived, typename ChunkT>
 void zero_any::ProxyImpl<T, Derived, ChunkT>::trigger_compression_if_needed(int thr_rank)
 {
-    const auto& vec_to_compress_potantially = Manager::get_zero_any_candidates(thr_rank);
+    const auto& vec_to_compress_potentially = Manager::get_zero_any_candidates(thr_rank);
 
     if constexpr (build_config::threaded)
     {
         const int szm = Manager::get_size_max_number_of_chunk_to_check_compress();
 
-        const auto sz = static_cast<int>(vec_to_compress_potantially.size());
+        const auto sz = static_cast<int>(vec_to_compress_potentially.size());
 
         if (Base::should_trigger_compression(sz, szm))
         {
@@ -300,9 +301,9 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::perform_compression() noexcept
 
     const int thr_rank = get_thr_rank_fast();
 
-    const auto& vec_to_compress_potantially = Manager::get_zero_any_candidates(thr_rank);
+    const auto& vec_to_compress_potentially = Manager::get_zero_any_candidates(thr_rank);
 
-    const auto sz_before = static_cast<int>(vec_to_compress_potantially.size());
+    const auto sz_before = static_cast<int>(vec_to_compress_potentially.size());
 
     if (const int sz_threshold = szm / 2; sz_before > sz_threshold)
     {
@@ -674,9 +675,9 @@ T zero_any::ProxyImpl<T, Derived, ChunkT>::assign_impl(InT<U> value) noexcept
 
             auto lbd_equal_asynch = [ctx] // the operand lives in the context: no second copy in the closure
             {
-                auto&      chunk = ctx->chunk;
-                const int  num   = ctx->num;
-                const auto proxy = Base::template make_proxy_with_info<Derived>(ctx);
+                auto&      chunk       = ctx->chunk;
+                const int  elem_offset = ctx->elem_offset;
+                const auto proxy       = Base::template make_proxy_with_info<Derived>(ctx);
 
                 // The flusher's ambient chunk size is unrelated to THIS op's chunk:
                 // pin the frozen per-op geometry, restored on exit for the
@@ -706,7 +707,7 @@ T zero_any::ProxyImpl<T, Derived, ChunkT>::assign_impl(InT<U> value) noexcept
                     if (chunk.is_constant_ptr(values_before)) [[unlikely]]
                     {
                         internal::replay_retry(retry_count, "lbd_equal_asynch (pre-store)",
-                                               static_cast<const void*>(&chunk), num);
+                                               static_cast<const void*>(&chunk), elem_offset);
                         continue;
                     }
 
@@ -719,11 +720,12 @@ T zero_any::ProxyImpl<T, Derived, ChunkT>::assign_impl(InT<U> value) noexcept
                         // Catch an out-of-range index BEFORE it writes. Compare against
                         // proxy.chunk_size() (frozen at enqueue), NOT the static
                         // static_chunk_size, which is only the default in a dynamic build.
-                        if (const unsigned int csz_guard = proxy.chunk_size(); std::cmp_greater_equal(num, csz_guard))
+                        if (const unsigned int csz_guard = proxy.chunk_size();
+                            std::cmp_greater_equal(elem_offset, csz_guard))
                         {
-                            CHUNK_INVARIANT_FAILED("[deferred2A write] num OUT OF RANGE "
-                                                   "(num={}, chunk_size={}, chunk={})",
-                                                   num, csz_guard, &chunk);
+                            CHUNK_INVARIANT_FAILED("[deferred2A write] elem_offset OUT OF RANGE "
+                                                   "(elem_offset={}, chunk_size={}, chunk={})",
+                                                   elem_offset, csz_guard, &chunk);
                         }
 
                         CHUNK_CHECK_VALUES_PTR_C(values_before, "deferred2A.pre_store", &chunk);
@@ -735,12 +737,13 @@ T zero_any::ProxyImpl<T, Derived, ChunkT>::assign_impl(InT<U> value) noexcept
                         {
                             if (++retry_count > internal::replay_retry_cap)
                             {
-                                CHUNK_INVARIANT_FAILED("[deferred2A write] chunk keeps reverting to constant before "
-                                                       "store (chunk={}, num={}, values_before={}, cur_const_val1={}, "
-                                                       "cur_values={})",
-                                                       &chunk, num, static_cast<const void*>(values_before),
-                                                       static_cast<const void*>(chunk.get_const_val1()),
-                                                       static_cast<const void*>(chunk.values_load()));
+                                CHUNK_INVARIANT_FAILED(
+                                    "[deferred2A write] chunk keeps reverting to constant before "
+                                    "store (chunk={}, elem_offset={}, values_before={}, cur_const_val1={}, "
+                                    "cur_values={})",
+                                    &chunk, elem_offset, static_cast<const void*>(values_before),
+                                    static_cast<const void*>(chunk.get_const_val1()),
+                                    static_cast<const void*>(chunk.values_load()));
                             }
                             continue;
                         }
@@ -752,12 +755,12 @@ T zero_any::ProxyImpl<T, Derived, ChunkT>::assign_impl(InT<U> value) noexcept
                     // read this element meanwhile -- as the compound ops' replay does.
                     if constexpr (internal::relaxed_element_stores_v<ChunkT, T>)
                     {
-                        internal::store_element_relaxed(values_before + num, static_cast<T>(ctx->operand));
+                        internal::store_element_relaxed(values_before + elem_offset, static_cast<T>(ctx->operand));
                     }
                     else
                     {
                         // raw-read: deferred replay, after materialisation (as above)
-                        values_before[num] = static_cast<T>(ctx->operand);
+                        values_before[elem_offset] = static_cast<T>(ctx->operand);
                     }
                     Base::check_nan_written_async(ctx, static_cast<T>(ctx->operand));
 
@@ -766,7 +769,7 @@ T zero_any::ProxyImpl<T, Derived, ChunkT>::assign_impl(InT<U> value) noexcept
                     if (values_after != values_before) [[unlikely]]
                     {
                         internal::replay_retry(retry_count, "lbd_equal_asynch (post-store)",
-                                               static_cast<const void*>(&chunk), num);
+                                               static_cast<const void*>(&chunk), elem_offset);
                         continue;
                     }
 
@@ -776,25 +779,25 @@ T zero_any::ProxyImpl<T, Derived, ChunkT>::assign_impl(InT<U> value) noexcept
                         if (proxy.is_const_val1())
                         {
                             CHUNK_INVARIANT_FAILED("lbd_equal_asynch: is_const_val1 TRUE after successful store! "
-                                                   "chunk={} num={} values_before={} values_after={}",
-                                                   &chunk, num, static_cast<const void*>(values_before),
+                                                   "chunk={} elem_offset={} values_before={} values_after={}",
+                                                   &chunk, elem_offset, static_cast<const void*>(values_before),
                                                    static_cast<const void*>(values_after));
                         }
                         if (proxy.is_const_val2())
                         {
                             CHUNK_INVARIANT_FAILED("lbd_equal_asynch: is_const_val2 TRUE after successful store! "
-                                                   "chunk={} num={} values_before={} values_after={}",
-                                                   &chunk, num, static_cast<const void*>(values_before),
+                                                   "chunk={} elem_offset={} values_before={} values_after={}",
+                                                   &chunk, elem_offset, static_cast<const void*>(values_before),
                                                    static_cast<const void*>(values_after));
                         }
                         // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
-                        const InT<T> readback = values_after[num];
+                        const InT<T> readback = values_after[elem_offset];
                         const auto   expected = static_cast<T>(ctx->operand);
                         if (!same_value(static_cast<T>(readback), expected))
                         {
                             CHUNK_INVARIANT_FAILED("lbd_equal_asynch: readback mismatch after store! "
-                                                   "chunk={} num={} expected={} readback={}",
-                                                   &chunk, num, expected, readback);
+                                                   "chunk={} elem_offset={} expected={} readback={}",
+                                                   &chunk, elem_offset, expected, readback);
                         }
                     }
 
@@ -876,7 +879,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_simple_
         if (ctx->chunk.is_constant_ptr(values_before)) [[unlikely]]
         {
             internal::replay_retry(retry_count, "execute_simple_operation_async (pre-store)",
-                                   static_cast<const void*>(&ctx->chunk), ctx->num);
+                                   static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
             continue;
         }
 
@@ -885,7 +888,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_simple_
         if (const T* values_after = ctx->chunk.values_load(); values_after != values_before) [[unlikely]]
         {
             internal::replay_retry(retry_count, "execute_simple_operation_async (post-store)",
-                                   static_cast<const void*>(&ctx->chunk), ctx->num);
+                                   static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
             continue;
         }
 
@@ -1041,7 +1044,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
                 if (ctx->chunk.is_constant_ptr(values_before)) [[unlikely]]
                 {
                     internal::replay_retry(retry_count, "execute_arithmetic_compound_operation_async (decompress path)",
-                                           static_cast<const void*>(&ctx->chunk), ctx->num);
+                                           static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
                     continue;
                 }
 
@@ -1051,7 +1054,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
                 {
                     internal::replay_retry(retry_count,
                                            "execute_arithmetic_compound_operation_async (decompress path post-store)",
-                                           static_cast<const void*>(&ctx->chunk), ctx->num);
+                                           static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
                     continue;
                 }
 
@@ -1064,7 +1067,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
                 if (ctx->chunk.is_constant_ptr(values_before)) [[unlikely]]
                 {
                     internal::replay_retry(retry_count, "execute_arithmetic_compound_operation_async (heap path)",
-                                           static_cast<const void*>(&ctx->chunk), ctx->num);
+                                           static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
                     continue;
                 }
 
@@ -1074,7 +1077,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
                 {
                     internal::replay_retry(retry_count,
                                            "execute_arithmetic_compound_operation_async (heap path post-store)",
-                                           static_cast<const void*>(&ctx->chunk), ctx->num);
+                                           static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
                     continue;
                 }
 
@@ -1089,7 +1092,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
                 }
                 // State changed between decision and now: retry.
                 internal::replay_retry(retry_count, "execute_arithmetic_compound_operation_async (no-op path)",
-                                       static_cast<const void*>(&ctx->chunk), ctx->num);
+                                       static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
             }
         }
         else
@@ -1106,7 +1109,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
                 {
                     internal::replay_retry(retry_count,
                                            "execute_arithmetic_compound_operation_async (bool, decompress path)",
-                                           static_cast<const void*>(&ctx->chunk), ctx->num);
+                                           static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
                     continue;
                 }
 
@@ -1116,7 +1119,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
                 {
                     internal::replay_retry(
                         retry_count, "execute_arithmetic_compound_operation_async (bool, decompress path post-store)",
-                        static_cast<const void*>(&ctx->chunk), ctx->num);
+                        static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
                     continue;
                 }
                 break;
@@ -1127,7 +1130,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
                 if (ctx->chunk.is_constant_ptr(values_before)) [[unlikely]]
                 {
                     internal::replay_retry(retry_count, "execute_arithmetic_compound_operation_async (bool, heap path)",
-                                           static_cast<const void*>(&ctx->chunk), ctx->num);
+                                           static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
                     continue;
                 }
 
@@ -1137,7 +1140,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
                 {
                     internal::replay_retry(retry_count,
                                            "execute_arithmetic_compound_operation_async (bool, heap path post-store)",
-                                           static_cast<const void*>(&ctx->chunk), ctx->num);
+                                           static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
                     continue;
                 }
 
@@ -1150,7 +1153,7 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_arithme
             }
             // State changed between decision and now: retry.
             internal::replay_retry(retry_count, "execute_arithmetic_compound_operation_async (bool, no-op path)",
-                                   static_cast<const void*>(&ctx->chunk), ctx->num);
+                                   static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
         }
     }
 }
@@ -1174,7 +1177,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::execute_inplace_operation(ModifyFn
 
     ensure_writable_storage();
 
-    internal::modify_element<ChunkT, T>(values_, num_, modify_fn);
+    internal::modify_element<ChunkT, T>(values_, elem_offset_, modify_fn);
 
     mark_for_compression_if_needed_with_value(v_old, read_values());
 }
@@ -1204,16 +1207,16 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_inplace
         if (ctx->chunk.is_constant_ptr(values_before)) [[unlikely]]
         {
             internal::replay_retry(retry_count, "execute_inplace_operation_async (pre-store)",
-                                   static_cast<const void*>(&ctx->chunk), ctx->num);
+                                   static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
             continue;
         }
 
-        internal::modify_element<ChunkT, T>(values_before, ctx->num, operation);
+        internal::modify_element<ChunkT, T>(values_before, ctx->elem_offset, operation);
 
         if (const T* values_after = ctx->chunk.values_load(); values_after != values_before) [[unlikely]]
         {
             internal::replay_retry(retry_count, "execute_inplace_operation_async (post-store)",
-                                   static_cast<const void*>(&ctx->chunk), ctx->num);
+                                   static_cast<const void*>(&ctx->chunk), ctx->elem_offset);
             continue;
         }
 
@@ -1222,14 +1225,14 @@ void zero_any::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_inplace
             if (proxy.is_const_val1())
             {
                 CHUNK_INVARIANT_FAILED("execute_inplace_operation_async: is_const_val1 TRUE after store! "
-                                       "chunk={} num={}",
-                                       &ctx->chunk, ctx->num);
+                                       "chunk={} elem_offset={}",
+                                       &ctx->chunk, ctx->elem_offset);
             }
             if (proxy.is_const_val2())
             {
                 CHUNK_INVARIANT_FAILED("execute_inplace_operation_async: is_const_val2 TRUE after store! "
-                                       "chunk={} num={}",
-                                       &ctx->chunk, ctx->num);
+                                       "chunk={} elem_offset={}",
+                                       &ctx->chunk, ctx->elem_offset);
             }
         }
 
@@ -1261,7 +1264,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::apply_compound_operation(Op op, In
 
     // Apply any foreign deferred write to this offset before reading v_old, so
     // the RMW cannot clobber it (see arithmetic_assign). Outside begin_write.
-    chunk_.reader_sync(num_);
+    chunk_.reader_sync(elem_offset_);
 
     // Outside the write session: read under a ReadSection, or a pass may release
     // (and a materialisation zero-fill) the buffer between the pointer and the
@@ -1688,7 +1691,7 @@ template <typename T, typename Derived, typename ChunkT>
         {
             return true;
         }
-        const int offset = this->num_;
+        const int offset = this->elem_offset_;
         const int r0     = (offset == 0) ? 1 : 0;
         const int r1     = (offset == chunk_sz - 1) ? chunk_sz - 2 : chunk_sz - 1;
         return same_value(static_cast<T>(this->chunk_.read_value_scan_relaxed(r0)), static_cast<T>(value)) &&

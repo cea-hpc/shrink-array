@@ -32,20 +32,20 @@ extern Dispatch dispatch;
 
 /// @brief The common base of the per-material arrays.
 template <typename T>
-class VectCom
+class MatArrayBase
 {
   public:
     using value_type = T;
 
-    /// @brief Virtual: MultiArray deletes its arrays through VectCom<T>*,
+    /// @brief Virtual: MultiArray deletes its arrays through MatArrayBase<T>*,
     ///        and the derived classes hold a chunk array or a vector whose
     ///        destructor must run.
-    virtual ~VectCom() = default;
+    virtual ~MatArrayBase() = default;
 };
 
 /// @brief A field of a "chunk" material: compressed where it is zero.
 template <typename T>
-struct VectChunk : public VectCom<T>, public shrink_array::zero::Array<T>
+struct MatZeroArray : public MatArrayBase<T>, public shrink_array::zero::Array<T>
 {
     /// @brief @p mesh_size elements, all zero -- compressed.
     void create(int mesh_size)
@@ -63,7 +63,7 @@ struct VectChunk : public VectCom<T>, public shrink_array::zero::Array<T>
  *          the interface chunks are ever materialised.
  */
 template <typename T>
-struct VectZeroOneValue : public VectCom<T>, public shrink_array::zero_one_value::Array<T>
+struct MatZeroOneValueArray : public MatArrayBase<T>, public shrink_array::zero_one_value::Array<T>
 {
     /// @brief The fraction of a pure cell, the second constant of the array.
     static constexpr T full = 1;
@@ -79,7 +79,7 @@ struct VectZeroOneValue : public VectCom<T>, public shrink_array::zero_one_value
 
 /// @brief An array of a "vector" material: a plain std::vector.
 template <typename T>
-struct Vect : public VectCom<T>, public std::vector<T>
+struct MatVectorArray : public MatArrayBase<T>, public std::vector<T>
 {
     /// @brief @p mesh_size elements, all zero.
     void create(int mesh_size)
@@ -92,23 +92,23 @@ struct Vect : public VectCom<T>, public std::vector<T>
  * @brief One array per material, a std::vector or a chunk array as the
  *        dispatch says.
  * @tparam T        Element type.
- * @tparam VecChunkT The chunk array of the chunk materials: VectChunk<T> for a
- *                  field, VectZeroOneValue<T> for the presence fraction.
+ * @tparam VecChunkT The chunk array of the chunk materials: MatZeroArray<T> for a
+ *                  field, MatZeroOneValueArray<T> for the presence fraction.
  */
-template <typename T, typename VecChunkT = VectChunk<T>>
-class MultiArray : public std::vector<VectCom<T>*>
+template <typename T, typename VecChunkT = MatZeroArray<T>>
+class MultiArray : public std::vector<MatArrayBase<T>*>
 {
   public:
     using value_type = T;
 
-    using BaseClass = std::vector<VectCom<T>*>;
+    using BaseClass = std::vector<MatArrayBase<T>*>;
 
-    using VecDir   = Vect<T>;
+    using VecDir   = MatVectorArray<T>;
     using VecChunk = VecChunkT;
 
     MultiArray() = default;
 
-    /// @brief Frees the arrays create() made (through VectCom's virtual
+    /// @brief Frees the arrays create() made (through MatArrayBase's virtual
     ///        destructor, so the chunk arrays' teardown runs).
     ~MultiArray()
     {
@@ -131,7 +131,7 @@ class MultiArray : public std::vector<VectCom<T>*>
     /// @brief Delete every array and empty the vector.
     void release() noexcept
     {
-        for (VectCom<T>*& vec : *this)
+        for (MatArrayBase<T>*& vec : *this)
         {
             delete vec;
             vec = nullptr;

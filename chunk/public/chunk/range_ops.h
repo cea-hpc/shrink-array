@@ -610,7 +610,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
         // zero only. zero_any's clear_st also takes the compression state, which
         // this loop must not synthesise (as rechunk_refill); the other variants
         // take the paths below, without the free-the-buffer shortcut.
-        // Require BOTH spellings: zero_one_value's clear_st(int num_compress_value, int
+        // Require BOTH spellings: zero_one_value's clear_st(int const_index, int
         // idx) accepts (thr, n) by conversion and would take a THREAD RANK as
         // the constant to compress to. Only zero offers both.
         constexpr bool can_release = requires(ChunkType& chunk, int thr, unsigned int count) {

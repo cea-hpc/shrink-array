@@ -213,7 +213,7 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
     static void store_value_async(auto* ctx, InT<T> value) noexcept
     {
         T* const values_loc = ctx->chunk.values_load();
-        elem_set(values_loc, static_cast<std::size_t>(ctx->num), static_cast<T>(value));
+        elem_set(values_loc, static_cast<std::size_t>(ctx->elem_offset), static_cast<T>(value));
         check_nan_written_async(ctx, value);
     }
 
@@ -498,15 +498,15 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     // Common I/O operations
     //
 
-    /// @brief This element, read raw: `values[num]`, or its bit for Bit
+    /// @brief This element, read raw: `values[elem_offset]`, or its bit for Bit
     ///        (element_access.h). No sync, no check.
     [[nodiscard]] T raw_elem() const noexcept;
 
-    /// @brief This element, written raw: `values[num] = value`, or an atomic RMW
+    /// @brief This element, written raw: `values[elem_offset] = value`, or an atomic RMW
     ///        of its word for Bit. No sync; the NaN check of CHUNK_DO_CHECK builds.
     void raw_elem_set(InT<T> value) const noexcept
     {
-        elem_set(static_cast<T*>(values_), static_cast<std::size_t>(num_), static_cast<T>(value));
+        elem_set(static_cast<T*>(values_), static_cast<std::size_t>(elem_offset_), static_cast<T>(value));
         check_nan_written(value);
     }
 
@@ -560,7 +560,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///          not been applied. Use read_pure() unless you know otherwise.
     [[nodiscard]] T load_value() const noexcept
     {
-        return chunk_.read_value(num_);
+        return chunk_.read_value(elem_offset_);
     }
 
     /**
@@ -653,8 +653,8 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///          under it, so a write path must reload through it, never cache it.
     AtomicPtrRefT values_;
 
-    const int num_;   ///< Offset of this element WITHIN its chunk.
-    ChunkT&   chunk_; ///< The chunk that owns the element.
+    const int elem_offset_; ///< Offset of this element WITHIN its chunk.
+    ChunkT&   chunk_;       ///< The chunk that owns the element.
 
     mutable ArrayKey<ChunkT> ptr_on_array_ = nullptr; ///< The array the chunk belongs to; null until set.
     mutable int              chunk_index_  = -1;      ///< Index of the chunk within that array; -1 until set.
@@ -716,8 +716,8 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///       #chunk_size_frozen_ -- frozen non-zero at enqueue, while the array
     ///       was alive -- keeps every read of the pointer away: chunk_size(),
     ///       alloc_key() and their callers test it first.
-    explicit ProxyBase(AtomicPtrRefT values, int num, ChunkT& chunk) noexcept
-        : values_(values), num_(num), chunk_(chunk)
+    explicit ProxyBase(AtomicPtrRefT values, int elem_offset, ChunkT& chunk) noexcept
+        : values_(values), elem_offset_(elem_offset), chunk_(chunk)
     {
     }
 
@@ -768,9 +768,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     [[nodiscard]] unsigned int alloc_key() const noexcept;
 
     /// @brief Offset of this element within its chunk.
-    [[nodiscard]] int get_num() const noexcept
+    [[nodiscard]] int get_elem_offset() const noexcept
     {
-        return num_;
+        return elem_offset_;
     }
 
     /// @brief Index of this element's array in the proxy registry.

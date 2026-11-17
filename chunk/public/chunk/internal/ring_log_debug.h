@@ -44,17 +44,17 @@ enum class EventCode : std::uint8_t
     lambda_async_assign,   // info = chunk_idx (in lambda exec)
     lambda_async_arith,    // info = chunk_idx
     values_load_is_const,  // info = chunk_idx (RACE DETECTOR if observed in lambda)
-    store_value,           // info = (chunk_idx << 8) | num
+    store_value,           // info = (chunk_idx << 8) | elem_offset
     policy_begin_write,    // info = thr_rank (entered begin_write)
     policy_end_write,      // info = thr_rank (entered end_write)
     // ─── thread-ops bitmap tracking ──────────────────────────────────
     mark_thread_has_ops,  // info = thr_rank
     clear_thread_has_ops, // info = thr_rank
     // ─── op lifecycle (use-after-free via op_map) ────────────────────
-    op_alloc,     // info = num ; track op storage alloc
-    op_enqueue,   // info = (chunk_idx << 8) | num ; put in op_map
-    op_free,      // info = num ; op block recycled (free_op)
-    op_flush_one, // info = num ; about to write_body this op
+    op_alloc,     // info = elem_offset ; track op storage alloc
+    op_enqueue,   // info = (chunk_idx << 8) | elem_offset ; put in op_map
+    op_free,      // info = elem_offset ; op block recycled (free_op)
+    op_flush_one, // info = elem_offset ; about to write_body this op
     // ─── chunk VALUE storage (op/value address aliasing) ─────────────
     value_alloc, // a chunk values buffer was allocated at addr
     value_free,  // a chunk values buffer was freed at addr
@@ -92,7 +92,7 @@ extern void ring_log(uint32_t tid, EventCode ev, uint32_t info = 0);
 
 // Log an op-lifecycle event with its full address (48-bit), to correlate
 // alloc/enqueue/free/flush of the SAME op block across threads.
-extern void ring_log_op(uint32_t tid, EventCode ev, uint32_t num, const void* addr);
+extern void ring_log_op(uint32_t tid, EventCode ev, uint32_t elem_offset, const void* addr);
 
 /// @brief Id recorded for the calling thread: its OpenMP team rank, or a 32-bit hash of std::thread::id
 ///        without OpenMP.
@@ -130,7 +130,7 @@ inline void ring_log_end(uint32_t /*tid*/, EventCode /*ev*/, uint32_t /*info*/ =
 inline void ring_log_start(uint32_t /*tid*/, EventCode /*ev*/, uint32_t /*info*/ = 0) {}
 
 /// @brief Ring log disabled: no-op.
-inline void ring_log_op(uint32_t /*tid*/, EventCode /*ev*/, uint32_t /*num*/, const void* /*addr*/) {}
+inline void ring_log_op(uint32_t /*tid*/, EventCode /*ev*/, uint32_t /*elem_offset*/, const void* /*addr*/) {}
 
 /// @brief Ring log disabled: no-op.
 inline void dump_ring() {}

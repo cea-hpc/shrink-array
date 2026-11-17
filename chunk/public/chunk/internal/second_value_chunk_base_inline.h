@@ -31,7 +31,7 @@ namespace shrink_array
 
 template <typename T, typename Derived>
 template <typename IndexT>
-void SecondValueChunkBase<T, Derived>::block_clear_common(int                  num_compress_value,
+void SecondValueChunkBase<T, Derived>::block_clear_common(int                  const_index,
                                                           IndexT               index_opt,
                                                           [[maybe_unused]] int thr_rank,
                                                           ConstSlot*           ptr_type_const,
@@ -41,7 +41,7 @@ void SecondValueChunkBase<T, Derived>::block_clear_common(int                  n
     if constexpr (is_zero_any_family_derived)
     {
         // 1. Update the metadata BEFORE the CAS.
-        if (num_compress_value == 0)
+        if (const_index == 0)
         {
             if constexpr (has_motif_state_v<Derived>)
             {
@@ -59,7 +59,7 @@ void SecondValueChunkBase<T, Derived>::block_clear_common(int                  n
         }
 
         // 2. The CAS installs the constant pointer AND returns the old heap pointer.
-        T* old = derived().try_mark_const_and_get_old(num_compress_value, const2_ptr);
+        T* old = derived().try_mark_const_and_get_old(const_index, const2_ptr);
         if (!old)
         {
             // CAS failed: another thread has already compressed this chunk.
@@ -74,7 +74,7 @@ void SecondValueChunkBase<T, Derived>::block_clear_common(int                  n
     else
     {
         // Only the thread that wins the atomic transition frees; the others return.
-        T* old = derived().try_mark_const_and_get_old(num_compress_value, index_opt);
+        T* old = derived().try_mark_const_and_get_old(const_index, index_opt);
         if (old)
         {
             Base::free_block_to_pool(thr_rank, old);
@@ -180,7 +180,7 @@ void SecondValueChunkBase<T, Derived>::apply_cas_or_reclaim(T* values_loc, int t
 }
 
 template <typename T, typename Derived>
-void SecondValueChunkBase<T, Derived>::check_not_constant_before_clear(int                num_compress_value,
+void SecondValueChunkBase<T, Derived>::check_not_constant_before_clear(int                const_index,
                                                                        std::optional<int> idx_opt) const noexcept
 {
     if constexpr (build_config::any_check)
@@ -195,7 +195,7 @@ void SecondValueChunkBase<T, Derived>::check_not_constant_before_clear(int      
             invariant_failed(std::source_location::current(),
                              "Critical State Violation: Attempted to free 'const_val1' inside clear. "
                              "Index: {} | Type: {} | Chunk: {} | Values: {} | Const1: {} | Thr: {}",
-                             num_compress_value, type_name<T>(), chunk_ptr, values_ptr,
+                             const_index, type_name<T>(), chunk_ptr, values_ptr,
                              static_cast<const void*>(Derived::Base::get_const_val1()), thr);
         }
 
@@ -248,7 +248,7 @@ void SecondValueChunkBase<T, Derived>::check_not_constant_before_clear(int      
             invariant_failed(std::source_location::current(),
                              "Critical State Violation: Attempted to free 'const_val2' inside clear. "
                              "Index: {} | Type: {} | Chunk: {} | Values: {} | Const2: {} | Thr: {}",
-                             num_compress_value, type_name<T>(), chunk_ptr, values_ptr, const2_ptr, thr);
+                             const_index, type_name<T>(), chunk_ptr, values_ptr, const2_ptr, thr);
         }
     }
 }

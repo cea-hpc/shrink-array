@@ -1025,7 +1025,7 @@ void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::release_st(ConstSlot*    
  * the "block compressed" statistic is counted here and nowhere else.
  */
 template <typename T, typename Derived, bool Enabled>
-void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::block_clear(int                  num_compress_value,
+void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::block_clear(int                  const_index,
                                                                    ConstSlot*           ptr_type_const,
                                                                    SecondValueRef<T>    ptr_second_value,
                                                                    [[maybe_unused]] int thr_rank,
@@ -1035,7 +1035,7 @@ void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::block_clear(int          
     inc_chunk_compress<Derived>();
     // Bytes released, as zero_one_value counts them (with bytes_alloc/bytes_reused: live buffers).
     add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(shrink_array::alloc_chunk_count()));
-    Base::block_clear_common(num_compress_value, 0, thr_rank, ptr_type_const, ptr_second_value, const2_ptr);
+    Base::block_clear_common(const_index, 0, thr_rank, ptr_type_const, ptr_second_value, const2_ptr);
 }
 
 /**
@@ -1045,32 +1045,32 @@ void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::block_clear(int          
  * block_clear(), which installs it; otherwise it would pick up a stale one.
  */
 template <typename T, typename Derived, bool Enabled>
-void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::clear_int_st(int               num_compress_value,
+void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::clear_int_st(int               const_index,
                                                                     ConstSlot*        ptr_type_const,
                                                                     SecondValueRef<T> ptr_second_value,
                                                                     int               thr_rank,
                                                                     T*                new_const_val2_ptr)
 {
-    Base::check_not_constant_before_clear(num_compress_value, std::nullopt);
+    Base::check_not_constant_before_clear(const_index, std::nullopt);
 
     // Type-2 array: the caller's, or the one registered for the second value (bool path).
-    if (num_compress_value == 1 && new_const_val2_ptr == nullptr)
+    if (const_index == 1 && new_const_val2_ptr == nullptr)
     {
         new_const_val2_ptr = Derived::Holder::find_const_val2_ptr(ptr_second_value.get());
     }
 
-    block_clear(num_compress_value, ptr_type_const, ptr_second_value, thr_rank, new_const_val2_ptr);
+    block_clear(const_index, ptr_type_const, ptr_second_value, thr_rank, new_const_val2_ptr);
 }
 
 /// @brief Serial block_clear(): frees the buffer outright instead of parking it
 ///        in a rank pool, and points the chunk at a constant.
-/// @param num_compress_value 0 for the first constant, otherwise the second.
+/// @param const_index 0 for the first constant, otherwise the second.
 /// @param ptr_type_const       Slot of the per-chunk type table to update.
 /// @param ptr_second_value   The chunk's second-value slot.
 /// @param const2_ptr           Second-value slot of the constant (type 2).
 /// @note The rank argument is unused: there is no rank pool serially.
 template <typename T, typename Derived>
-void zero_any::ChunkThreadPolicy<T, Derived, false>::block_clear(int               num_compress_value,
+void zero_any::ChunkThreadPolicy<T, Derived, false>::block_clear(int               const_index,
                                                                  ConstSlot*        ptr_type_const,
                                                                  SecondValueRef<T> ptr_second_value,
                                                                  int /*thr_rank*/,
@@ -1086,10 +1086,10 @@ void zero_any::ChunkThreadPolicy<T, Derived, false>::block_clear(int            
 
     inc_chunk_compress<Derived>();
     Base::free_values(values_);
-    Derived::set_const_val_to_const_val(num_compress_value, ptr_type_const);
+    Derived::set_const_val_to_const_val(const_index, ptr_type_const);
 
     // Serial: no CAS; the caller's array for a type 2, from the tables otherwise.
-    if (num_compress_value == 1 && const2_ptr != nullptr)
+    if (const_index == 1 && const2_ptr != nullptr)
     {
         values_ = const2_ptr;
     }
@@ -1105,21 +1105,21 @@ void zero_any::ChunkThreadPolicy<T, Derived, false>::block_clear(int            
  * @copydetails zero_any::ChunkThreadPolicy::clear_int_st
  */
 template <typename T, typename Derived>
-void zero_any::ChunkThreadPolicy<T, Derived, false>::clear_int_st(int               num_compress_value,
+void zero_any::ChunkThreadPolicy<T, Derived, false>::clear_int_st(int               const_index,
                                                                   ConstSlot*        ptr_type_const,
                                                                   SecondValueRef<T> ptr_second_value,
                                                                   int               thr_rank,
                                                                   T*                new_const_val2_ptr)
 {
-    Base::check_not_constant_before_clear(num_compress_value, std::nullopt);
-    if (num_compress_value == 1 && new_const_val2_ptr == nullptr)
+    Base::check_not_constant_before_clear(const_index, std::nullopt);
+    if (const_index == 1 && new_const_val2_ptr == nullptr)
     {
         new_const_val2_ptr = Derived::Holder::find_const_val2_ptr(ptr_second_value.get());
     }
-    block_clear(num_compress_value, ptr_type_const, ptr_second_value, thr_rank, new_const_val2_ptr);
+    block_clear(const_index, ptr_type_const, ptr_second_value, thr_rank, new_const_val2_ptr);
 }
 
-// clear_st(num_compress_value, ptr_type_const, ptr_second_value), which supplies the calling
+// clear_st(const_index, ptr_type_const, ptr_second_value), which supplies the calling
 // rank, is defined in-class on the OpenMP zero_any::ChunkThreadPolicy specialisation.
 
 // ---------------------------------------------------------------------------
@@ -1127,7 +1127,7 @@ void zero_any::ChunkThreadPolicy<T, Derived, false>::clear_int_st(int           
 // ---------------------------------------------------------------------------
 
 template <typename T, typename Derived>
-[[nodiscard]] T* zero_any::ChunkConcurrentOps<T, Derived>::try_mark_const_and_get_old(int num_compress_value,
+[[nodiscard]] T* zero_any::ChunkConcurrentOps<T, Derived>::try_mark_const_and_get_old(int const_index,
                                                                                       T*  const2_ptr) noexcept
 {
     T* old = base()->values_load();
@@ -1136,13 +1136,13 @@ template <typename T, typename Derived>
         return nullptr;
     }
 
-    T* new_ptr  = (num_compress_value == 0) ? Base::get_const_val1() : const2_ptr;
+    T* new_ptr  = (const_index == 0) ? Base::get_const_val1() : const2_ptr;
     T* expected = old;
 
     if constexpr (chunk_config::ring_log_debug)
     {
         const uint32_t chunk_id = ring_chunk_id();
-        const uint32_t info     = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(num_compress_value + 1) << 24U);
+        const uint32_t info     = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(const_index + 1) << 24U);
         ring_log(get_tid(), EventCode::compress_attempt, info);
     }
 
@@ -1168,7 +1168,7 @@ template <typename T, typename Derived>
     if constexpr (chunk_config::ring_log_debug)
     {
         const uint32_t chunk_id = ring_chunk_id();
-        const uint32_t info     = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(num_compress_value + 1) << 24U);
+        const uint32_t info     = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(const_index + 1) << 24U);
         ring_log(get_tid(), EventCode::cas_values_to_const, info);
     }
     return old;

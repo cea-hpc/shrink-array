@@ -387,7 +387,7 @@ class ChunkDeferredOpsPolicy<T, Derived, true>
 {
   public:
     using UnorderedMapDeferredOperations = ankerl::unordered_dense::map<int, DeferredOpPtr>;
-    // per-thread map type: maps Derived* (chunk pointer) -> unique_ptr<map<num, op>>
+    // per-thread map type: maps Derived* (chunk pointer) -> unique_ptr<map<elem_offset, op>>
     using PerThreadMap = ska::flat_hash_map<Derived*, std::unique_ptr<UnorderedMapDeferredOperations>>;
 
     /// @brief Atomic CAS of values from expected constant pointer to a new buffer.
@@ -429,19 +429,19 @@ class ChunkDeferredOpsPolicy<T, Derived, true>
     /// @brief Enqueue a deferred write operation for later application to a chunk.
     /// @param thr_rank Calling thread's rank; selects which per-thread map to
     ///                 enqueue on.
-    /// @param num Element offset within the chunk the operation targets.
+    /// @param elem_offset Element offset within the chunk the operation targets.
     /// @param op Deferred operation to enqueue; ownership transfers to the queue.
     void to_be_queued_for_deferred_processing(int                                                thr_rank,
-                                              int                                                num,
+                                              int                                                elem_offset,
                                               CompressionManager<T, Derived>::CmpDeferredOpBase* op) const;
 
     /// @brief Block until every deferred operation pending on this chunk has
     ///        been applied (drains this chunk across all thread ranks).
-    /// @param num Element offset being read; currently unused -- the drain is
+    /// @param elem_offset Element offset being read; currently unused -- the drain is
     ///            per-chunk, not per-offset. Kept because the call sites have
     ///            the offset in hand and the DeferredReadGate modes must agree
     ///            on one signature.
-    void wait_for_availability(int num) const;
+    void wait_for_availability(int elem_offset) const;
 
     /// @brief Current per-thread deferred-ops array, or nullptr if it has not
     ///        been allocated yet (see ensure_deferred_array_initialized()).

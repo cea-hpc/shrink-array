@@ -217,7 +217,7 @@ flowchart TD
 
 La règle de complétion élargit à la fois le pré-test (`pattern::Proxy::pre_check_mark_for_compression`)
 et le prédicat (`should_mark_for_compression`). Sur un chunk motif, l'ancienne valeur que lit le
-marquage est `motif[num] + offset`, via `Chunk::motif_offset()`.
+marquage est `motif[elem_offset] + offset`, via `Chunk::motif_offset()`.
 
 ## 8. Géométrie dynamique : le rechunk et le conseiller
 

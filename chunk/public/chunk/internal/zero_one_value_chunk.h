@@ -387,42 +387,42 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>
 
     /*!
      * \brief Install the constant and release the old buffer (every compression path).
-     * \param num_compress_value 0 for the first constant, non-zero for the second.
-     * \param idx Index of the second constant (unused when num_compress_value == 0).
+     * \param const_index 0 for the first constant, non-zero for the second.
+     * \param idx Index of the second constant (unused when const_index == 0).
      * \param thr_rank Calling thread's rank (selects the allocator pool).
      */
-    void block_clear(int num_compress_value, int idx, int thr_rank);
+    void block_clear(int const_index, int idx, int thr_rank);
 
     /*!
      * \brief Compress this chunk to a constant, for a specific thread. Non-bool.
      *        Called by make_block_compression_impl()'s clear_func.
-     * \param num_compress_value 0 for the first constant, non-zero for the second at `idx`.
-     * \param idx Index of the second constant (unused when num_compress_value == 0).
+     * \param const_index 0 for the first constant, non-zero for the second at `idx`.
+     * \param idx Index of the second constant (unused when const_index == 0).
      * \param thr_rank Calling thread's rank (selects the allocator pool).
      * \pre The chunk is materialised -- compressing an already-constant chunk would
      *      release a shared constant block. Checked by check_not_constant_before_clear().
      */
-    void clear_int_st(int num_compress_value, int idx, int thr_rank)
+    void clear_int_st(int const_index, int idx, int thr_rank)
     {
-        Base::check_not_constant_before_clear(num_compress_value, idx);
-        block_clear(num_compress_value, idx, thr_rank);
+        Base::check_not_constant_before_clear(const_index, idx);
+        block_clear(const_index, idx, thr_rank);
     }
 
     /*!
      * \brief Bool counterpart of the 3-arg clear_int_st().
-     * \param num_compress_value 0 for the first constant, non-zero for the second.
+     * \param const_index 0 for the first constant, non-zero for the second.
      * \param thr_rank Calling thread's rank.
      */
-    void clear_int_st_bool(int num_compress_value, int thr_rank);
+    void clear_int_st_bool(int const_index, int thr_rank);
 
     /*!
      * \brief Compress this chunk to a constant, with the calling thread's rank.
-     * \param num_compress_value 0 for the first constant, non-zero for the second at `idx`.
-     * \param idx Index of the second constant (unused when num_compress_value == 0).
+     * \param const_index 0 for the first constant, non-zero for the second at `idx`.
+     * \param idx Index of the second constant (unused when const_index == 0).
      */
-    void clear_st(int num_compress_value, int idx)
+    void clear_st(int const_index, int idx)
     {
-        clear_int_st(num_compress_value, idx, CHUNK_PMP_THREAD_RANK);
+        clear_int_st(const_index, idx, CHUNK_PMP_THREAD_RANK);
     }
 
     /*!
@@ -505,10 +505,10 @@ class ChunkThreadPolicy<T, Derived, false> : public SecondValueChunkBase<T, Deri
 
     /*!
      * \brief Compress this chunk to a constant (serial/counter algorithm: eager, no queue).
-     * \param num_compress_value 0 for the first constant, non-zero for the second at `idx`.
-     * \param idx Index of the second constant (unused when num_compress_value == 0, and for bool).
+     * \param const_index 0 for the first constant, non-zero for the second at `idx`.
+     * \param idx Index of the second constant (unused when const_index == 0, and for bool).
      */
-    void clear_int_st(int num_compress_value, int idx);
+    void clear_int_st(int const_index, int idx);
 
     /*!
      * \brief Compress this chunk to its first constant (serial/counter algorithm).
@@ -520,21 +520,21 @@ class ChunkThreadPolicy<T, Derived, false> : public SecondValueChunkBase<T, Deri
     /*!
      * \brief Compress this chunk to a constant (serial twin of the OpenMP
      *        clear_st(int, int): no rank to supply).
-     * \param num_compress_value 0 for the first constant, non-zero for the second.
-     * \param idx Index of the second constant (unused when num_compress_value == 0).
+     * \param const_index 0 for the first constant, non-zero for the second.
+     * \param idx Index of the second constant (unused when const_index == 0).
      */
-    void clear_st(int num_compress_value, int idx)
+    void clear_st(int const_index, int idx)
     {
-        clear_int_st(num_compress_value, idx);
+        clear_int_st(const_index, idx);
     }
 
     /*!
      * \brief Install the constant and free the old buffer outright (no rank pool);
      *        resets the per-chunk element counters.
-     * \param num_compress_value 0 for the first constant, non-zero for the second.
-     * \param idx Index of the second constant (unused when num_compress_value == 0).
+     * \param const_index 0 for the first constant, non-zero for the second.
+     * \param idx Index of the second constant (unused when const_index == 0).
      */
-    void block_clear(int num_compress_value, int idx, int /*thr_rank*/);
+    void block_clear(int const_index, int idx, int /*thr_rank*/);
 
   private:
     /**
@@ -745,7 +745,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      *        how the second value is obtained and which clear_int_st overload
      *        applies it.
      * \tparam SecondValueFunc Nullary callable returning the second value.
-     * \tparam ClearFunc callable (int num_compress_value).
+     * \tparam ClearFunc callable (int const_index).
      */
     template <typename SecondValueFunc, typename ClearFunc>
     void compress_impl(bool apply, unsigned int n_elems, SecondValueFunc get_second_value, ClearFunc&& clear_one);
@@ -1004,17 +1004,17 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
 
     /*!
      * \brief Non-bool: point this chunk's values at the requested constant.
-     * \param num_compress_value 0 for the first constant, non-zero for the second at `idx`.
-     * \param idx Index of the second constant (unused when num_compress_value == 0).
+     * \param const_index 0 for the first constant, non-zero for the second at `idx`.
+     * \param idx Index of the second constant (unused when const_index == 0).
      */
-    void init_values_const_val(int num_compress_value, int idx);
+    void init_values_const_val(int const_index, int idx);
 
     /*!
      * \brief Bool-only: point this chunk's values at the requested constant.
-     * \param num_compress_value 0 for the first constant, non-zero for the
+     * \param const_index 0 for the first constant, non-zero for the
      *                            (single, shared) second constant.
      */
-    void init_values_const_val_bool(int num_compress_value);
+    void init_values_const_val_bool(int const_index);
 
     /*!
      * \brief Bool-only: whether this chunk is currently materialised (holds
@@ -1109,13 +1109,13 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
     /*!
      * \brief Attempt to atomically compress the chunk to either const_val1 or
      *        const_val2(idx).
-     * \param num_compress_value 0 to target const_val1, non-zero for the second at `idx`.
-     * \param idx Index of the second constant (unused when num_compress_value == 0).
+     * \param const_index 0 to target const_val1, non-zero for the second at `idx`.
+     * \param idx Index of the second constant (unused when const_index == 0).
      * \return nullptr if the chunk was already compressed or another thread
      *         won the race (caller must not free anything); otherwise the
      *         old pointer, which the caller now owns and must free/recycle.
      */
-    [[nodiscard]] T* try_mark_const_and_get_old(int num_compress_value, int idx);
+    [[nodiscard]] T* try_mark_const_and_get_old(int const_index, int idx);
 
     /*!
      * \brief Bool-only: whether the chunk is currently compressed to EITHER

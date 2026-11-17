@@ -127,7 +127,7 @@ void TypeStateParallelImpl<ChunkT, T, true>::destroy_after_flush(bool in_paralle
                     {
                         continue;
                     }
-                    for (auto& [num, op_ptr] : *ops_map_ptr)
+                    for (auto& [elem_offset, op_ptr] : *ops_map_ptr)
                     {
                         op_ptr->write_body();
                         op_ptr->destroy();

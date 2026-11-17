@@ -57,9 +57,9 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     using Base::chunk_;
     using Base::chunk_index_;
     using Base::derived;
+    using Base::elem_offset_;
     using Base::is_const_val1;
     using Base::is_not_const_val1;
-    using Base::num_;
     using Base::values_;
 
     using typename Base::AtomicPtrRefT;
@@ -175,12 +175,15 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
 
   protected:
     /**
-     * @brief Construct a proxy for element `num_` of `chunk_`.
+     * @brief Construct a proxy for element `elem_offset_` of `chunk_`.
      * @param values Reference to the chunk's values pointer.
-     * @param num Element offset within the chunk.
+     * @param elem_offset Element offset within the chunk.
      * @param chunk Owning chunk.
      */
-    explicit SecondValueProxyBase(ValuesTypeRef values, int num, ChunkT& chunk) noexcept : Base(values, num, chunk) {}
+    explicit SecondValueProxyBase(ValuesTypeRef values, int elem_offset, ChunkT& chunk) noexcept
+        : Base(values, elem_offset, chunk)
+    {
+    }
 
     /**
      * @brief Negation of is_const_val2().
@@ -271,7 +274,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     /**
      * @brief Marks block for compression with an explicit old boolean value
      *        (provided to avoid a race), rather than reading it back from
-     *        values[num].
+     *        values[elem_offset].
      * @param old_value The previous boolean value.
      * @param new_value The new boolean value.
      */

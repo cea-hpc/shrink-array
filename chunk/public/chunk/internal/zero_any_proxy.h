@@ -294,9 +294,10 @@ class ProxySpec<bool, Derived, ChunkT> : public SecondValueProxyBase<Derived, bo
 
     /// @brief Forward the element reference, index and chunk to SecondValueProxyBase.
     /// @param values Reference to the chunk's values.
-    /// @param num Index of the element in the chunk.
+    /// @param elem_offset Index of the element in the chunk.
     /// @param chunk Owning chunk.
-    explicit ProxySpec(ValuesTypeRef values, int num, ChunkType& chunk) noexcept : SecondValueBase(values, num, chunk)
+    explicit ProxySpec(ValuesTypeRef values, int elem_offset, ChunkType& chunk) noexcept
+        : SecondValueBase(values, elem_offset, chunk)
     {
     }
 
@@ -499,13 +500,13 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
     friend class shrink_array::ProxyBaseFastCompPolicy;
 
     /**
-     * @brief Construct the proxy of element @p num of @p chunk.
+     * @brief Construct the proxy of element @p elem_offset of @p chunk.
      * @param values reference to array pointer (atomic in OpenMP builds)
-     * @param num index within array
+     * @param elem_offset index within array
      * @param chunk owning chunk
      */
-    explicit ProxyImpl(BaseFastCompPolicy::ValuesTypeRef values, int num, ChunkT& chunk) noexcept
-        : BaseFastCompPolicy(values, num, chunk)
+    explicit ProxyImpl(BaseFastCompPolicy::ValuesTypeRef values, int elem_offset, ChunkT& chunk) noexcept
+        : BaseFastCompPolicy(values, elem_offset, chunk)
     {
     }
 
@@ -616,7 +617,7 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
     using Base::values_;
 
     using Base::chunk_; ///< owning chunk
-    using Base::num_;
+    using Base::elem_offset_;
 
     using Base::ptr_on_array_; ///< pointer to array (for array lookup)
 

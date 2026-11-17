@@ -330,7 +330,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
             : owner_(owner)
             , lin_(lin)
             , chunk_index_(lin < 0 ? -1 : owner->chunk_index_of(lin))
-            , num_(lin < 0 ? static_cast<int>(owner->size_policy_.modulo()) : owner->offset_in_chunk(lin))
+            , elem_offset_(lin < 0 ? static_cast<int>(owner->size_policy_.modulo()) : owner->offset_in_chunk(lin))
             , modulo_(static_cast<int>(owner->size_policy_.modulo()))
         {
             enter_chunk();
@@ -363,7 +363,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
             // -1 handled apart: the chunk/offset split wants i >= 0.
             lin_         = lin;
             chunk_index_ = lin < 0 ? -1 : owner_->chunk_index_of(lin);
-            num_         = lin < 0 ? modulo_ : owner_->offset_in_chunk(lin);
+            elem_offset_ = lin < 0 ? modulo_ : owner_->offset_in_chunk(lin);
             enter_chunk();
         }
 
@@ -376,7 +376,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         const ChunkType*      chunk_       = nullptr; ///< Current chunk, already sync'd; null at end/rend.
         IndexType             lin_         = 0;       // absolute linear index (identity/compare)
         int                   chunk_index_ = 0;       ///< Index of @ref chunk_ in the chunk list.
-        int                   num_         = 0;       // intra-chunk offset
+        int                   elem_offset_ = 0;       // intra-chunk offset
         int                   modulo_      = 0;       ///< Cached geometry mask.
     };
 
@@ -747,12 +747,12 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     CHUNK_FLATTEN CHUNK_FORCE_INLINE T& operator()(IndexType index) noexcept
     {
         const int   chunk_index = chunk_index_of(index);
-        const int   num         = offset_in_chunk(index);
+        const int   elem_offset = offset_in_chunk(index);
         const auto& chunk_t     = chunk_list_[chunk_index];
 
-        sync_chunk(chunk_t, chunk_index, num);
+        sync_chunk(chunk_t, chunk_index, elem_offset);
 
-        return chunk_t(num);
+        return chunk_t(elem_offset);
     }
 
     /**

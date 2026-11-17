@@ -205,7 +205,7 @@ flowchart TD
 
 The completion rule widens both the pre-check (`pattern::Proxy::pre_check_mark_for_compression`)
 and the predicate (`should_mark_for_compression`). On a motif chunk the old value the marking
-reads is `motif[num] + offset`, through `Chunk::motif_offset()`.
+reads is `motif[elem_offset] + offset`, through `Chunk::motif_offset()`.
 
 ## 8. Dynamic geometry: the rechunk and the advisor
 

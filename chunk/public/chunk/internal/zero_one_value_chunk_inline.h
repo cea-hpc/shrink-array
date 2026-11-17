@@ -197,7 +197,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_comp
  * hypotheses coincide and a constant run is reported as the first only.
  *
  * @tparam SecondValueFunc Nullary callable returning the array's second value.
- * @tparam ClearFunc       Callable `(int num_compress_value)` applying the clear.
+ * @tparam ClearFunc       Callable `(int const_index)` applying the clear.
  * @param apply            true: compress a constant chunk; false: scan only.
  * @param n_elems          This chunk's own element count, captured at enqueue.
  * @param get_second_value Supplies the second value (a constant for the bool twin).
@@ -264,8 +264,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress([[maybe_
 
     compress_impl(
         apply, n_elems, [&inf_array] { return inf_array.second_value; },
-        [this, thr_rank, &inf_array](int num_compress_value)
-        { this->clear_int_st(num_compress_value, inf_array.idx, thr_rank); });
+        [this, thr_rank, &inf_array](int const_index) { this->clear_int_st(const_index, inf_array.idx, thr_rank); });
 }
 
 /**
@@ -291,7 +290,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_bool([[m
         }
         compress_impl(
             apply, n_elems, [] { return true; },
-            [this, thr_rank](int num_compress_value) { this->clear_int_st_bool(num_compress_value, thr_rank); });
+            [this, thr_rank](int const_index) { this->clear_int_st_bool(const_index, thr_rank); });
     }
 }
 
@@ -1091,7 +1090,7 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::release_st(int idx,
  * statistics are counted here and nowhere else.
  */
 template <typename T, typename Derived, bool Enabled>
-void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::block_clear(int                  num_compress_value,
+void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::block_clear(int                  const_index,
                                                                          int                  idx,
                                                                          [[maybe_unused]] int thr_rank)
 {
@@ -1100,23 +1099,21 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::block_clear(int    
     // threaded/serial modes funnel through.
     inc_chunk_compress<Derived>();
     add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
-    Base::block_clear_common(num_compress_value, idx, thr_rank);
+    Base::block_clear_common(const_index, idx, thr_rank);
 }
 
 /// Serial build: frees the buffer outright instead of parking it in a rank
 /// pool, and resets the per-chunk element counters. The rank argument is
 /// unused (documented with the declaration).
 template <typename T, typename Derived>
-void zero_one_value::ChunkThreadPolicy<T, Derived, false>::block_clear(int num_compress_value,
-                                                                       int idx,
-                                                                       int /*thr_rank*/)
+void zero_one_value::ChunkThreadPolicy<T, Derived, false>::block_clear(int const_index, int idx, int /*thr_rank*/)
 {
     // CHUNK_STATS: as the threaded block_clear above.
     inc_chunk_compress<Derived>();
     add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
     Base::free_values(values_);
 
-    derived().init_values_const_val(num_compress_value, idx);
+    derived().init_values_const_val(const_index, idx);
     if constexpr (chunk_config::use_compression_with_counter)
     {
         derived().reset_n_val_eq_value();
@@ -1127,12 +1124,12 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, false>::block_clear(int num_c
  * @brief Bool twin of clear_int_st(): no second-value index to pass.
  */
 template <typename T, typename Derived, bool Enabled>
-void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::clear_int_st_bool(int num_compress_value, int thr_rank)
+void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::clear_int_st_bool(int const_index, int thr_rank)
 {
     if constexpr (is_bool)
     {
-        Base::check_not_constant_before_clear(num_compress_value, std::nullopt);
-        block_clear(num_compress_value, 0, thr_rank);
+        Base::check_not_constant_before_clear(const_index, std::nullopt);
+        block_clear(const_index, 0, thr_rank);
     }
 }
 
@@ -1147,7 +1144,7 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::clear_int_st_bool(i
  * @pre The chunk is materialised (debug-only assertion).
  */
 template <typename T, typename Derived>
-void zero_one_value::ChunkThreadPolicy<T, Derived, false>::clear_int_st(int num_compress_value, int idx)
+void zero_one_value::ChunkThreadPolicy<T, Derived, false>::clear_int_st(int const_index, int idx)
 {
     // Debug-only check. Bool chunks share a single second value with no index:
     // no-arg written check and the bool-specific reinit; non-bool is indexed.
@@ -1161,14 +1158,14 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, false>::clear_int_st(int num_
     }
 
     // CHUNK_STATS: counted here, since this path (compress_int's sweep via
-    // clear_st(num_compress_value, idx)) bypasses block_clear. No if constexpr
+    // clear_st(const_index, idx)) bypasses block_clear. No if constexpr
     // needed: both are no-op overloads when CHUNK_STATS is off (chunk_stats.h).
     inc_chunk_compress<Derived>();
     add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
 
     Base::free_values(values_);
 
-    if (num_compress_value == 0)
+    if (const_index == 0)
     {
         derived().reset_n_val_eq_first_value();
     }
@@ -1179,15 +1176,15 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, false>::clear_int_st(int num_
 
     if constexpr (is_bool)
     {
-        derived().init_values_const_val_bool(num_compress_value);
+        derived().init_values_const_val_bool(const_index);
     }
     else
     {
-        derived().init_values_const_val(num_compress_value, idx);
+        derived().init_values_const_val(const_index, idx);
     }
 }
 
-// clear_st(int num_compress_value, int idx) -- the entry point that supplies
+// clear_st(int const_index, int idx) -- the entry point that supplies
 // the calling thread's rank (or has none to supply) -- is defined in-class on
 // each zero_one_value::ChunkThreadPolicy specialisation.
 
@@ -1420,9 +1417,9 @@ void zero_one_value::Chunk<T>::init_after_constructor()
 }
 
 template <typename T>
-void zero_one_value::Chunk<T>::init_values_const_val(int num_compress_value, int idx)
+void zero_one_value::Chunk<T>::init_values_const_val(int const_index, int idx)
 {
-    if (num_compress_value == 0)
+    if (const_index == 0)
     {
         values_ = Base::get_const_val1();
     }
@@ -1442,11 +1439,11 @@ void zero_one_value::Chunk<T>::init_values_const_val(int num_compress_value, int
 }
 
 template <typename T>
-void zero_one_value::Chunk<T>::init_values_const_val_bool(int num_compress_value)
+void zero_one_value::Chunk<T>::init_values_const_val_bool(int const_index)
 {
     if constexpr (is_bool)
     {
-        values_ = num_compress_value == 0 ? Base::get_const_val1() : BaseSpec::m_ptr_const_val2.data();
+        values_ = const_index == 0 ? Base::get_const_val1() : BaseSpec::m_ptr_const_val2.data();
     }
     else
     {
@@ -1624,7 +1621,7 @@ void zero_one_value::Chunk<T>::values_store(T* ptr) noexcept
 }
 
 template <typename T>
-[[nodiscard]] T* zero_one_value::Chunk<T>::try_mark_const_and_get_old(int num_compress_value, int idx)
+[[nodiscard]] T* zero_one_value::Chunk<T>::try_mark_const_and_get_old(int const_index, int idx)
 {
     T* old = Base::values_load();
     if constexpr (is_bool)
@@ -1642,7 +1639,7 @@ template <typename T>
         }
         // No second value declared: no block to compress to. The scans never file such a
         // chunk under the second constant, so this is a guard, not a path.
-        if (num_compress_value != 0 && idx < 0) [[unlikely]]
+        if (const_index != 0 && idx < 0) [[unlikely]]
         {
             if constexpr (build_config::any_check)
             {
@@ -1655,7 +1652,7 @@ template <typename T>
     T* expected = old;
     T* new_ptr  = nullptr;
 
-    if (num_compress_value == 0)
+    if (const_index == 0)
     {
         new_ptr = Base::get_const_val1();
     }

@@ -58,7 +58,7 @@ Quatre conséquences façonnent toute la bibliothèque :
 
 1. **Une lecture est un chargement de `values` puis un chargement indexé.** Elle ne branche jamais
    sur l'état du chunk : les données partagées d'un chunk comprimé ont au moins autant d'éléments
-   qu'un chunk, donc `chunk[num]` est la même instruction dans tous les états. Seul `pattern` ajoute le décalage, dans une branche compilée pour lui seul.
+   qu'un chunk, donc `chunk[elem_offset]` est la même instruction dans tous les états. Seul `pattern` ajoute le décalage, dans une branche compilée pour lui seul.
 2. **Une écriture passe par un proxy.** L'`operator[]` non const renvoie un proxy qui connaît le
    tableau, le chunk et la position. Le proxy voit la valeur *avant* de la stocker : écrire la
    constante que le chunk contient déjà coûte une comparaison et n'alloue rien.
@@ -192,7 +192,7 @@ génèrent les déclinaisons par taille et par variante et gardent les noms par 
 
 ### 6.1 Lecture
 
-`operator[] const` découpe l'indice (`chunk_index = i >> shift`, `num = i & mask`), passe la
+`operator[] const` découpe l'indice (`chunk_index = i >> shift`, `elem_offset = i & mask`), passe la
 **porte de lecture** (`sync_chunk` : un bit par chunk, le *dirty bitset*, dit si une écriture
 différée peut être en attente sur lui ; presque toujours à zéro, la lecture continue ; sinon le
 compteur du chunk décide s'il faut d'abord rejouer ses écritures en attente, `reader_sync`), puis

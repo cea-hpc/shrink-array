@@ -391,7 +391,7 @@ void read_check_binary_file(Int                idx,
             std::getline(trace_file, line);
 
             const Int chunk_index = index / static_cast<Int>(data_check.chunk_size());
-            const Int num         = index % static_cast<Int>(data_check.chunk_size());
+            const Int elem_offset = index % static_cast<Int>(data_check.chunk_size());
 
             bool                  is_values     = false;
             bool                  is_const_val1 = false;
@@ -449,7 +449,7 @@ void read_check_binary_file(Int                idx,
             {
                 std::cerr << "value               : " << value << "\n";
                 std::cerr << "chunk number        : " << chunk_index << "\n";
-                std::cerr << "number inside chunk : " << num << "\n";
+                std::cerr << "number inside chunk : " << elem_offset << "\n";
                 std::cerr << "is values           : " << is_values << "\n";
                 std::cerr << "is_const_val1         : " << is_val1 << "\n";
                 if constexpr (chunk_config::use_second_value)
@@ -649,8 +649,8 @@ void read_check_binary_file(Int                idx,
                     const Int chunk_index = k / static_cast<Int>(data_check.chunk_size());
 
                     log_message("\nchunk number        : " + std::to_string(chunk_index) + "\n");
-                    const Int num = k % static_cast<Int>(data_check.chunk_size());
-                    log_message("number inside chunk : " + std::to_string(num) + "\n");
+                    const Int elem_offset = k % static_cast<Int>(data_check.chunk_size());
+                    log_message("number inside chunk : " + std::to_string(elem_offset) + "\n");
                     const auto& chunk_t = data_check.get_chunk_list()[chunk_index];
                     using ValueType     = decltype(chunk_t.values_); // infer the type
 
@@ -671,13 +671,13 @@ void read_check_binary_file(Int                idx,
                     const std::string s0 = std::format("0x{:x}", addr);
 
                     log_message("address values       : " + s0 + "\n");
-                    addr = reinterpret_cast<std::uintptr_t>(&raw_ptr[num]);
+                    addr = reinterpret_cast<std::uintptr_t>(&raw_ptr[elem_offset]);
                     std::ostringstream oss1;
                     oss1 << "0x" << std::hex << addr;
                     const std::string s1  = oss1.str();
                     const Int         val = *reinterpret_cast<Int*>(addr);
                     log_message("value  = " + std::to_string(val) + "\n");
-                    log_message("address values[" + std::to_string(num) + "] : " + s1 + "\n");
+                    log_message("address values[" + std::to_string(elem_offset) + "] : " + s1 + "\n");
 
                     if constexpr (chunk_config::use_zero_one_value)
                     {
@@ -825,8 +825,8 @@ void read_check_binary_file(Int                idx,
                     const Int   chunk_index = k / static_cast<Int>(data_check.chunk_size());
                     const auto& chunk_t     = data_check.get_chunk_list()[chunk_index];
                     log_message("chunk number        : " + std::to_string(chunk_index) + "\n");
-                    const Int num = k % static_cast<Int>(data_check.chunk_size());
-                    log_message("number inside chunk : " + std::to_string(num) + "\n");
+                    const Int elem_offset = k % static_cast<Int>(data_check.chunk_size());
+                    log_message("number inside chunk : " + std::to_string(elem_offset) + "\n");
 
                     // Detect whether a type is an atomic of a pointer, regardless of the pointed-to type
 
@@ -859,12 +859,12 @@ void read_check_binary_file(Int                idx,
 
                     log_message("address values       : " + s0 + "\n");
 
-                    addr = reinterpret_cast<std::uintptr_t>(&raw_ptr[num]);
+                    addr = reinterpret_cast<std::uintptr_t>(&raw_ptr[elem_offset]);
                     std::ostringstream oss1;
-                    oss1 << std::hex << &raw_ptr[num];
+                    oss1 << std::hex << &raw_ptr[elem_offset];
                     const std::string s1 = oss1.str();
 
-                    log_message("address values[" + std::to_string(num) + "] : " + s1 + "\n");
+                    log_message("address values[" + std::to_string(elem_offset) + "] : " + s1 + "\n");
                 }
 
                 if constexpr (std::is_same_v<T, double> || std::is_same_v<T, float> || is_complex)

@@ -380,7 +380,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     /// @return @p os.
     friend std::ostream& operator<<(std::ostream& os, const Proxy& proxy)
     {
-        // Through the read entry, like operator T(): values[num] is stale while a
+        // Through the read entry, like operator T(): values[elem_offset] is stale while a
         // deferred op pends on this offset.
         os << proxy.read_pure();
         return os;
@@ -420,7 +420,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     using Base::read_values;
     using Base::values_;
 
-    using Base::num_;
+    using Base::elem_offset_;
     /// Reference to the associated chunk.
     ///
     using Base::chunk_; ///< owning chunk
@@ -583,12 +583,15 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     using CHUNK_INHERIT_CTOR_TYPENAME FastCompPolicy::ProxyFastCompPolicy;
 
     /**
-     * @brief Construct a proxy for element `num_` of `chunk_`.
+     * @brief Construct a proxy for element `elem_offset_` of `chunk_`.
      * @param values Reference to the chunk's values pointer.
-     * @param num Element offset within the chunk.
+     * @param elem_offset Element offset within the chunk.
      * @param chunk Owning chunk.
      */
-    explicit Proxy(ValuesTypeRef values, int num, Chunk<T>& chunk) noexcept : FastCompPolicy(values, num, chunk) {}
+    explicit Proxy(ValuesTypeRef values, int elem_offset, Chunk<T>& chunk) noexcept
+        : FastCompPolicy(values, elem_offset, chunk)
+    {
+    }
 
     Proxy(const Proxy& other)     = default;
     Proxy(Proxy&& other) noexcept = default;
@@ -753,7 +756,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @brief Implicit read conversion: returns the element's current value.
      *
      * @details The write entry does not flush, so a read must pull any deferred
-     *          write queued for this offset: a plain values[num] could return a
+     *          write queued for this offset: a plain values[elem_offset] could return a
      *          superseded value. zero_one_value::Proxy / zero_any::Proxy inherit ProxyBase::operator T()
      *          (read_pure()).
      *

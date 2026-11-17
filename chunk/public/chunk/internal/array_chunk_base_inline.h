@@ -340,15 +340,15 @@ template <typename Derived>
 [[nodiscard]] inline ArrayChunkBase<Derived>::const_iterator::reference
 ArrayChunkBase<Derived>::const_iterator::operator*() const noexcept
 {
-    // chunk_ already sync'd by enter_chunk(): raw read, as chunk_t[num].
+    // chunk_ already sync'd by enter_chunk(): raw read, as chunk_t[elem_offset].
     check_no_write_since_entry();
     if constexpr (has_motif_state_v<ChunkType>)
     {
-        return chunk_->read_value(num_, owner_->motif_offset_slot(chunk_index_));
+        return chunk_->read_value(elem_offset_, owner_->motif_offset_slot(chunk_index_));
     }
     else
     {
-        return (*chunk_)[num_];
+        return (*chunk_)[elem_offset_];
     }
 }
 
@@ -358,10 +358,10 @@ ArrayChunkBase<Derived>::const_iterator& ArrayChunkBase<Derived>::const_iterator
     // lin_ is the ONLY thing operator==/!= compare: it must track the
     // cursor, or range-for runs past the logical end.
     ++lin_;
-    ++num_;
-    if (num_ > modulo_) [[unlikely]] // crossed a chunk boundary
+    ++elem_offset_;
+    if (elem_offset_ > modulo_) [[unlikely]] // crossed a chunk boundary
     {
-        num_ = 0;
+        elem_offset_ = 0;
         ++chunk_index_;
         enter_chunk(); // sync + repoint (skipped past the end)
     }
@@ -371,16 +371,16 @@ ArrayChunkBase<Derived>::const_iterator& ArrayChunkBase<Derived>::const_iterator
 template <typename Derived>
 ArrayChunkBase<Derived>::const_iterator& ArrayChunkBase<Derived>::const_iterator::operator--() noexcept
 {
-    --lin_;                     // see operator++: lin_ is what == and != read
-    if (num_ == 0) [[unlikely]] // crossed a chunk boundary backwards
+    --lin_;                             // see operator++: lin_ is what == and != read
+    if (elem_offset_ == 0) [[unlikely]] // crossed a chunk boundary backwards
     {
         --chunk_index_;
-        num_ = modulo_;
+        elem_offset_ = modulo_;
         enter_chunk();
     }
     else
     {
-        --num_;
+        --elem_offset_;
     }
     return *this;
 }
@@ -390,12 +390,12 @@ void ArrayChunkBase<Derived>::const_iterator::check_no_write_since_entry() const
 {
     if constexpr (build_config::any_check && ChunkType::precise)
     {
-        if (chunk_->read_gate_should_wait(num_)) [[unlikely]]
+        if (chunk_->read_gate_should_wait(elem_offset_)) [[unlikely]]
         {
             CHUNK_INVARIANT_FAILED("ArrayChunkBase::const_iterator: a write was deferred onto chunk {} of array {} "
                                    "during the iteration (offset {}); the iterator would not see it -- no other "
                                    "thread may write an array that is being iterated",
-                                   chunk_index_, owner_, num_);
+                                   chunk_index_, owner_, elem_offset_);
         }
     }
 }
@@ -406,7 +406,7 @@ void ArrayChunkBase<Derived>::const_iterator::enter_chunk() noexcept
     if (chunk_index_ >= 0 && static_cast<std::size_t>(chunk_index_) < owner_->chunk_list_.size()) [[likely]]
     {
         chunk_ = &owner_->chunk_list_[chunk_index_];
-        owner_->sync_chunk(*chunk_, chunk_index_, num_); // once per chunk
+        owner_->sync_chunk(*chunk_, chunk_index_, elem_offset_); // once per chunk
     }
     else
     {
@@ -612,18 +612,18 @@ CHUNK_FLATTEN CHUNK_FORCE_INLINE ArrayChunkBase<Derived>::T
 ArrayChunkBase<Derived>::operator()(IndexType index) const noexcept
 {
     const int   chunk_index = chunk_index_of(index);
-    const int   num         = offset_in_chunk(index);
+    const int   elem_offset = offset_in_chunk(index);
     const auto& chunk_t     = chunk_list_[chunk_index];
 
-    sync_chunk(chunk_t, chunk_index, num);
+    sync_chunk(chunk_t, chunk_index, elem_offset);
 
     if constexpr (has_motif_state_v<ChunkType>)
     {
-        return chunk_t.read_value(num, motif_offset_slot(chunk_index));
+        return chunk_t.read_value(elem_offset, motif_offset_slot(chunk_index));
     }
     else
     {
-        return chunk_t.read_value(num);
+        return chunk_t.read_value(elem_offset);
     }
 }
 
@@ -632,24 +632,24 @@ CHUNK_FLATTEN CHUNK_FORCE_INLINE ArrayChunkBase<Derived>::T
 ArrayChunkBase<Derived>::operator[](IndexType index) const noexcept
 {
     const int chunk_index = chunk_index_of(index);
-    const int num         = offset_in_chunk(index);
-    // Lets the compiler drop bounds/sign checks (0 <= num <= modulo by construction).
+    const int elem_offset = offset_in_chunk(index);
+    // Lets the compiler drop bounds/sign checks (0 <= elem_offset <= modulo by construction).
     // modulo() is read into a local first: clang ignores an assumption that
     // calls a function it cannot prove side-effect free (-Wassume).
     [[maybe_unused]] const int chunk_mod = static_cast<int>(size_policy_.modulo());
     CHUNK_ASSUME(chunk_index >= 0);
-    CHUNK_ASSUME(num >= 0 && num <= chunk_mod);
+    CHUNK_ASSUME(elem_offset >= 0 && elem_offset <= chunk_mod);
     const auto& chunk_t = chunk_list_[chunk_index];
 
-    sync_chunk(chunk_t, chunk_index, num);
+    sync_chunk(chunk_t, chunk_index, elem_offset);
 
     if constexpr (has_motif_state_v<ChunkType>)
     {
-        return chunk_t.read_value(num, motif_offset_slot(chunk_index));
+        return chunk_t.read_value(elem_offset, motif_offset_slot(chunk_index));
     }
     else
     {
-        return chunk_t[num];
+        return chunk_t[elem_offset];
     }
 }
 
@@ -673,11 +673,11 @@ ArrayChunkBase<Derived>::element_proxy(IndexType index) noexcept
 {
     const int chunk_index = chunk_index_of(index);
     auto&     chunk_t     = chunk_list_[chunk_index];
-    const int num         = offset_in_chunk(index);
+    const int elem_offset = offset_in_chunk(index);
     // Built here, returned by NRVO, so that a read through a[i] copies no proxy:
     // not every compiler folds the copies away, and on the stack they cost
     // (an unaligned store across a page, on the threads whose stack puts it there).
-    ProxyType val = chunk_t[num];
+    ProxyType val = chunk_t[elem_offset];
 
     // Arm ptr_on_array / chunk_index in ALL modes, not only under fast block
     // compression: in non-OpenMP builds too, set_array_id() and

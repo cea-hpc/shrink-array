@@ -55,9 +55,9 @@ struct Loops
 #pragma omp for schedule(static)
         for (int k = 0; k < nn; ++k)
         {
-            const int num = ll[k];
+            const int idx = ll[k];
             PRAGMA_FORCEINLINE
-            lbd(num);
+            lbd(idx);
         }
     }
 
@@ -68,9 +68,9 @@ struct Loops
 #pragma omp for schedule(static) nowait
         for (int k = 0; k < nn; ++k)
         {
-            const int num = ll[k];
+            const int idx = ll[k];
             PRAGMA_FORCEINLINE
-            lbd(num);
+            lbd(idx);
         }
     }
 
@@ -126,9 +126,9 @@ struct LoopsSimd
 #pragma omp for simd        schedule(static)
         for (int k = 0; k < nn; ++k)
         {
-            const int num = ll[k];
+            const int idx = ll[k];
             PRAGMA_FORCEINLINE
-            lbd(num);
+            lbd(idx);
         }
     }
 
@@ -139,9 +139,9 @@ struct LoopsSimd
 #pragma omp for simd nowait schedule(static)
         for (int k = 0; k < nn; ++k)
         {
-            const int num = ll[k];
+            const int idx = ll[k];
             PRAGMA_FORCEINLINE
-            lbd(num);
+            lbd(idx);
         }
     }
 

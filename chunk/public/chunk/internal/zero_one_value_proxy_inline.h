@@ -492,7 +492,7 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> value) noexcept
                 const T* const                  live = chunk_.values_load();
                 test_hooks::maybe_read_delay(); // TEST KNOB (test_hooks.h)
                 // raw-read: inside a read_reclaim::ReadSection
-                if (live == chunk_.get_const_val2(BaseSpec::idx_) || same_value(live[num_], second_value_))
+                if (live == chunk_.get_const_val2(BaseSpec::idx_) || same_value(live[elem_offset_], second_value_))
                 {
                     return value;
                 }
@@ -506,12 +506,12 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> value) noexcept
                 {
                     return true;
                 }
-                // elem_get: for Bit, values_loc[num] would be a whole byte of 8
+                // elem_get: for Bit, values_loc[elem_offset] would be a whole byte of 8
                 // elements, non-zero as soon as a NEIGHBOUR is true.
                 const read_reclaim::ReadSection section;
                 const T* const                  live = chunk_.values_load();
                 // raw-read: inside a read_reclaim::ReadSection
-                if (live == chunk_.get_const_val2() || elem_get(live, static_cast<std::size_t>(num_)))
+                if (live == chunk_.get_const_val2() || elem_get(live, static_cast<std::size_t>(elem_offset_)))
                 {
                     return true;
                 }
@@ -545,8 +545,8 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> value) noexcept
 
             auto lbd_equal_asynch = [ctx] // the operand lives in the context: no second copy in the closure
             {
-                auto&     chunk = ctx->chunk;
-                const int num   = ctx->num;
+                auto&     chunk       = ctx->chunk;
+                const int elem_offset = ctx->elem_offset;
 
                 const auto proxy = Base::template make_proxy_with_info<Proxy>(ctx);
 
@@ -574,16 +574,16 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> value) noexcept
                     if (const bool is_const1_loc = proxy.is_const_val1(); is_const1_loc)
                     {
                         CHUNK_INVARIANT_FAILED("[deferred write_body] chunk still const_val1 after create_value "
-                                               "(chunk={}, num={})",
-                                               &chunk, num);
+                                               "(chunk={}, elem_offset={})",
+                                               &chunk, elem_offset);
                     }
 
                     const bool is_const2_loc = proxy.is_const_val2();
                     if (is_const2_loc)
                     {
                         CHUNK_INVARIANT_FAILED("[deferred write_body] chunk still const_val2 after create_value "
-                                               "(chunk={}, num={})",
-                                               &chunk, num);
+                                               "(chunk={}, elem_offset={})",
+                                               &chunk, elem_offset);
                     }
                 }
 
@@ -596,7 +596,7 @@ T zero_one_value::Proxy<T>::assign_impl(InT<U> value) noexcept
                 // The element's value before this write -- the chunk's constant if it
                 // was just materialised -- for the marking below.
                 const InT<T> v_old = Base::read_values_async(ctx);
-                elem_set(values, static_cast<std::size_t>(num), static_cast<T>(ctx->operand));
+                elem_set(values, static_cast<std::size_t>(elem_offset), static_cast<T>(ctx->operand));
                 Base::check_nan_written_async(ctx, static_cast<T>(ctx->operand));
 
                 // As the compound ops' replay: a replayed write that makes the chunk
@@ -620,8 +620,8 @@ void zero_one_value::Proxy<T>::ensure_writable_storage()
     // twin of zero_any::ProxyFastCompPolicy::ensure_writable_storage_async. Required:
     // chunk.create_value() (called directly, bypassing zero_one_value::Proxy<T>::create_value()'s
     // self-correction) allocates at the per-thread thread_chunk_size, which an
-    // unrelated array may have left STALE, while num/store_value use this
-    // array's own size_policy_: a heap overflow once num exceeds a smaller
+    // unrelated array may have left STALE, while elem_offset/store_value use this
+    // array's own size_policy_: a heap overflow once elem_offset exceeds a smaller
     // stale allocation.
     if constexpr (build_config::chunk_dynamic)
     {
@@ -840,7 +840,7 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_a
     else if (!proxy.is_const_val2())
     {
         T* values_ptr = ctx->chunk.values_load();
-        elem_set(values_ptr, static_cast<std::size_t>(ctx->num), static_cast<T>(v_new_precise));
+        elem_set(values_ptr, static_cast<std::size_t>(ctx->elem_offset), static_cast<T>(v_new_precise));
         Base::check_nan_written_async(ctx, static_cast<T>(v_new_precise));
         proxy.mark_for_compression_if_needed_with_value(v_old, static_cast<T>(v_new_precise));
     }
@@ -955,7 +955,7 @@ void zero_one_value::Proxy<T>::execute_inplace_operation(Lambda operation)
     }
 
     // Capture position-level state AFTER any create_value: before it, `values`
-    // still points at the shared const_val1/const_val2 buffer, so values[num] would
+    // still points at the shared const_val1/const_val2 buffer, so values[elem_offset] would
     // read the wrong storage and corrupt the counter transitions below (the
     // chunk could be wrongly driven to "full second value" and re-compressed).
     [[maybe_unused]] bool was_second_value = false;
@@ -967,7 +967,7 @@ void zero_one_value::Proxy<T>::execute_inplace_operation(Lambda operation)
         was_first_value  = same_value(this->raw_elem(), static_cast<T>(Chunk<T>::first_value));
     }
 
-    elem_update(static_cast<T*>(Base::values_), static_cast<std::size_t>(num_), operation);
+    elem_update(static_cast<T*>(Base::values_), static_cast<std::size_t>(elem_offset_), operation);
 
     if constexpr (chunk_config::use_compression_with_counter)
     {
@@ -1018,8 +1018,8 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_i
     auto*  ctx,
     Lambda operation) const
 {
-    auto&     chunk = ctx->chunk;
-    const int num   = ctx->num;
+    auto&     chunk       = ctx->chunk;
+    const int elem_offset = ctx->elem_offset;
 
     const InT<T> v_old = read_values_async(ctx);
     const Proxy  proxy = Base::template make_proxy_with_info<Derived>(ctx);
@@ -1040,12 +1040,12 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_i
 
     T* values = chunk.values_load();
     // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
-    elem_update(values, static_cast<std::size_t>(num), operation);
+    elem_update(values, static_cast<std::size_t>(elem_offset), operation);
 
     // The value just written, read for the counters: nothing writes it
     // afterwards, so InT (a reference for a struct) rather than a copy.
     // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
-    const InT<T> v_new = elem_get(values, static_cast<std::size_t>(num));
+    const InT<T> v_new = elem_get(values, static_cast<std::size_t>(elem_offset));
     SecondValueBase::mark_for_compression_if_needed_with_value_async(proxy, v_old, v_new);
 }
 
@@ -1058,7 +1058,7 @@ void zero_one_value::Proxy<T>::apply_compound_operation([[maybe_unused]] Op op, 
     // deferred write to this offset to applied state before reading v_old, so the
     // RMW cannot clobber it. precise gate, outside begin_write. See
     // ProxyBase::arithmetic_assign for the full rationale.
-    chunk_.reader_sync(num_);
+    chunk_.reader_sync(elem_offset_);
 
     if constexpr (chunk_config::use_compression_with_counter)
     {
@@ -1081,8 +1081,8 @@ void zero_one_value::Proxy<T>::apply_compound_operation([[maybe_unused]] Op op, 
                 [this, &operand](auto op_func, T* val_ptr)
                 {
                     using LocalComputeType = std::common_type_t<T, BaseT<U>>;
-                    const T current        = elem_get(val_ptr, static_cast<std::size_t>(num_));
-                    elem_set(val_ptr, static_cast<std::size_t>(num_),
+                    const T current        = elem_get(val_ptr, static_cast<std::size_t>(elem_offset_));
+                    elem_set(val_ptr, static_cast<std::size_t>(elem_offset_),
                              static_cast<T>(op_func(static_cast<LocalComputeType>(current),
                                                     static_cast<LocalComputeType>(operand))));
                 });

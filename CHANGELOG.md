@@ -167,6 +167,10 @@ the tag's checksum to the recipe.
   `CHUNK_LOG` reads for compatibility.
 - `elt` (élément) is `elem` in the allocator's names (`InfoFreeElem`, `free_elem_pow2`,
   `clear_info_free_elem`, ...), as everywhere else; `CalcType` (calcul) is `ComputeType`.
+- `num` (numéro), the offset of an element in its chunk, is `elem_offset` (`elem_offset_`,
+  `get_elem_offset()`), and `num_compress_value` (which of the two constants) `const_index`.
+  examples/multi_mat: `MatArrayBase`, `MatZeroArray`, `MatZeroOneValueArray`, `MatVectorArray`
+  (`VectCom`, `VectChunk`, `VectZeroOneValue`, `Vect`).
 - `tab` (French: tableau) is `array` in the names of the sources, examples and documents:
   `array_int`, `array_bool`, ... of `shrink_bench` (`tab_int`, ...), `arr1` ... `arr5` and `arr`
   (`tab1`, `tab`), the library's `array_is_inside_chunk_list_to_compress`,

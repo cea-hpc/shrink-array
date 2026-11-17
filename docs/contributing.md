@@ -85,7 +85,7 @@ The source checks run with the others (`ctest -R check_`):
   | what | case | example |
   |---|---|---|
   | functions, methods, variables, parameters, namespaces | snake_case | `get_chunk_list`, `array_id` |
-  | private and protected data members | snake_case ending in `_` | `chunk_list_`, `num_` |
+  | private and protected data members | snake_case ending in `_` | `chunk_list_`, `elem_offset_` |
   | constants (`constexpr`) and enumerators | snake_case | `const_buffer_size`, `ev_flush_begin` |
   | classes, structs, concepts, type aliases, template parameters | PascalCase | `zero_any::Array`, `AllocT`, `ChunkT` |
   | macros | UPPER_CASE | `CHUNK_SIZE` |

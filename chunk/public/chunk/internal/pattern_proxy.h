@@ -72,7 +72,7 @@ class Proxy : public zero_any::ProxyImpl<T, Proxy<T>, Chunk<T>>
     ///        (docs/algo_pattern.md, section 4)?
     [[nodiscard]] bool is_completion_write() const noexcept
     {
-        return this->num_ == 0 || this->num_ == static_cast<int>(this->chunk_size()) - 1;
+        return this->elem_offset_ == 0 || this->elem_offset_ == static_cast<int>(this->chunk_size()) - 1;
     }
 
     /// @brief zero_any's fast pre-check (ProxyImpl::pre_check_mark_for_compression()),

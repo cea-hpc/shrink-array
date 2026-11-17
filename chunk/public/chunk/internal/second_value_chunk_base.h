@@ -68,7 +68,7 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
 
     /// @brief Common block clear implementation for zero_one_value/zero_any
     /// @tparam IndexT Type of index parameter (can be std::nullopt_t for zero_any)
-    /// @param num_compress_value Which constant value to compress to (0 or 1)
+    /// @param const_index Which constant value to compress to (0 or 1)
     /// @param index_opt Optional index parameter (for zero_one_value) or std::nullopt (for zero_any)
     /// @param thr_rank Thread rank
     /// @param ptr_type_const Pointer to constant type indicator (zero_any only)
@@ -76,7 +76,7 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
     /// @param const2_ptr The shared array to install for a type-2 compression
     ///        (zero_any only; the chunk keeps no copy of it)
     template <typename IndexT>
-    void block_clear_common(int                  num_compress_value,
+    void block_clear_common(int                  const_index,
                             IndexT               index_opt,
                             [[maybe_unused]] int thr_rank,
                             ConstSlot*           ptr_type_const   = nullptr,
@@ -96,10 +96,10 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
     /// @brief Check-only teardown guard: a chunk about to have its buffer freed
     ///        must not be compressed to either constant (the buffer would be the
     ///        shared const_val1 / const_val2 block).
-    /// @param num_compress_value Index reported in the failure message.
+    /// @param const_index Index reported in the failure message.
     /// @param idx_opt zero_one_value's second-value slot index; empty for zero_any and
     ///        bool, whose second value is not table-indexed.
-    void check_not_constant_before_clear(int num_compress_value, std::optional<int> idx_opt) const noexcept;
+    void check_not_constant_before_clear(int const_index, std::optional<int> idx_opt) const noexcept;
 
   private:
     static constexpr bool is_zero_any_family_derived = is_zero_any_family_v<Derived>;

@@ -82,7 +82,7 @@ L'indice global `i` se décompose en deux opérations d'un cycle :
 
 ```cpp
 const int chunk_index = i >> size_policy_.decalage();   // numéro du chunk
-const int num       = i &  size_policy_.modulo();     // position dans le chunk
+const int elem_offset       = i &  size_policy_.modulo();     // position dans le chunk
 ```
 
 ---
@@ -142,10 +142,10 @@ L'opérateur de lecture renvoie une **valeur**, jamais une référence :
 CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](IndexType i) const noexcept
 {
     const int chunk_index = i >> size_policy_.decalage();
-    const int num       = i & size_policy_.modulo();
+    const int elem_offset       = i & size_policy_.modulo();
     const auto& chunk_t = chunk_list[chunk_index];
-    sync_chunk(chunk_t, chunk_index, num);      // barrière de lecture (OpenMP)
-    return chunk_t[num];
+    sync_chunk(chunk_t, chunk_index, elem_offset);      // barrière de lecture (OpenMP)
+    return chunk_t[elem_offset];
 }
 ```
 
@@ -174,8 +174,8 @@ le tampon : **à n'utiliser que sur un chunk matérialisé**, puisqu'il contourn
 ProxyType operator[](IndexType i) noexcept
 {
     const int chunk_index = i >> size_policy_.decalage();
-    const int num       = i & size_policy_.modulo();
-    const ProxyType& val = chunk_list[chunk_index][num];
+    const int elem_offset       = i & size_policy_.modulo();
+    const ProxyType& val = chunk_list[chunk_index][elem_offset];
     val.set_this_and_chunk_index(&derived(), chunk_index, array_id);   // tableau, chunk, array_id
     val.arm_inf_array(derived().registry_mirror());                // zero_one_value : le miroir
     return val;
@@ -201,7 +201,7 @@ set_info_second_value_idx();   // second_value et idx, depuis le miroir
 //    rien à faire -- sauf si des écritures différées sont en attente sur le chunk
 //    (une ancienne opération appliquée plus tard écraserait la valeur laissée en place)
 if (!chunk.pending_any())
-    if (v == second_value && (values_loc == chunk.get_const_val2(idx) || values_loc[num] == second_value))
+    if (v == second_value && (values_loc == chunk.get_const_val2(idx) || values_loc[elem_offset] == second_value))
         return v;
 
 // 3. sinon : le corps de l'écriture, confié au moteur d'écriture

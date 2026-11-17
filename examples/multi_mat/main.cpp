@@ -51,7 +51,7 @@
 #include "config.h"       // multi_mat::max_threads, embedded_compression
 #include "MultiMatAlgo.h" // MultiMatAlgo
 #include "ComputeLoops.h" // Simu::compute_loops, the template main() instantiates
-#include "Containers.h"   // VectChunk
+#include "Containers.h"   // MatZeroArray
 #include "Dispatch.h"     // Dispatch
 #include "Simu.h"         // Simu
 
@@ -211,7 +211,7 @@ try
                              using CV = std::remove_reference_t<decltype(arr0_idx)>;
                              using V  = std::remove_const_t<CV>;
 
-                             using VecChunkReal = VectChunk<double>;
+                             using VecChunkReal = MatZeroArray<double>;
 
                              if constexpr (std::is_same_v<V, VecChunkReal>)
                              {

@@ -92,8 +92,8 @@ namespace shrink_array
 //
 // ─── COROLLARY FOR LOCAL VARIABLES ───────────────────────────────────────────
 //
-//     const T v_old = values[num];       // snapshot
-//     ...                                // code that mutates values[num]
+//     const T v_old = values[elem_offset];       // snapshot
+//     ...                                // code that mutates values[elem_offset]
 //     if (v_old == something) { ... }    // read snapshot
 //
 // The copy is INTENTIONAL. Do NOT turn these into `const T&`: that

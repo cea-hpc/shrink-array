@@ -82,7 +82,7 @@ The global index `i` is split by two single-cycle operations:
 
 ```cpp
 const int chunk_index = i >> size_policy_.decalage();   // chunk number
-const int num       = i &  size_policy_.modulo();     // position in the chunk
+const int elem_offset       = i &  size_policy_.modulo();     // position in the chunk
 ```
 
 ---
@@ -142,10 +142,10 @@ The read operator returns a **value**, never a reference:
 CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](IndexType i) const noexcept
 {
     const int chunk_index = i >> size_policy_.decalage();
-    const int num       = i & size_policy_.modulo();
+    const int elem_offset       = i & size_policy_.modulo();
     const auto& chunk_t = chunk_list[chunk_index];
-    sync_chunk(chunk_t, chunk_index, num);      // read barrier (OpenMP)
-    return chunk_t[num];
+    sync_chunk(chunk_t, chunk_index, elem_offset);      // read barrier (OpenMP)
+    return chunk_t[elem_offset];
 }
 ```
 
@@ -174,8 +174,8 @@ the buffer: **use it only on a materialised chunk**, since it bypasses the proxy
 ProxyType operator[](IndexType i) noexcept
 {
     const int chunk_index = i >> size_policy_.decalage();
-    const int num       = i & size_policy_.modulo();
-    const ProxyType& val = chunk_list[chunk_index][num];
+    const int elem_offset       = i & size_policy_.modulo();
+    const ProxyType& val = chunk_list[chunk_index][elem_offset];
     val.set_this_and_chunk_index(&derived(), chunk_index, array_id);   // array, chunk, array_id
     val.arm_inf_array(derived().registry_mirror());                // zero_one_value: the mirror
     return val;
@@ -201,7 +201,7 @@ set_info_second_value_idx();   // second_value and idx, from the mirror
 //    nothing to do -- unless deferred writes are pending on the chunk
 //    (an older op replayed later would overwrite the value left in place)
 if (!chunk.pending_any())
-    if (v == second_value && (values_loc == chunk.get_const_val2(idx) || values_loc[num] == second_value))
+    if (v == second_value && (values_loc == chunk.get_const_val2(idx) || values_loc[elem_offset] == second_value))
         return v;
 
 // 3. otherwise: the write body, handed to the write engine

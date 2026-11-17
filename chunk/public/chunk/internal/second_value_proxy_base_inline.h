@@ -55,7 +55,7 @@ template <typename Derived, typename T, typename ChunkT>
 void SecondValueProxyBase<Derived, T, ChunkT>::mark_for_compression_if_needed(bool new_value) const
 {
     const bool isv = passes_mark_pre_check(new_value, false, true);
-    // Base::read_values() (qualified: dependent base), never values[num]:
+    // Base::read_values() (qualified: dependent base), never values[elem_offset]:
     // it is the write path's read entry and the only one that resolves a
     // compressed chunk's constant (an unbacked identifier slot); indexing
     // reads a zero page and the decision below is taken against 0.

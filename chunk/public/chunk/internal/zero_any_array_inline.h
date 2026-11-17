@@ -580,12 +580,12 @@ void zero_any::ArrayImpl<Derived>::compress_int(pmp::Team& team)
         shrink_array::set_thread_chunk_size(static_cast<unsigned int>(this->size_policy_.size()));
     }
 
-    std::vector<int> array_nb1;
-    std::vector<int> array_nb2;
+    std::vector<int> chunks_at_first;
+    std::vector<int> chunks_at_second;
 
     const int n_res = (chunk_count_ / (50 * CHUNK_PMP_MAX_THREADS)) + 1;
-    array_nb1.reserve(n_res);
-    array_nb2.reserve(n_res);
+    chunks_at_first.reserve(n_res);
+    chunks_at_second.reserve(n_res);
 
     team.for_static<int>(
         0, chunk_count_,
@@ -605,11 +605,11 @@ void zero_any::ArrayImpl<Derived>::compress_int(pmp::Team& team)
                                                        static_cast<unsigned int>(this->size_policy_.size()));
                 if (scan.first)
                 {
-                    array_nb1.push_back(j);
+                    chunks_at_first.push_back(j);
                 }
                 if (scan.second)
                 {
-                    array_nb2.push_back(j);
+                    chunks_at_second.push_back(j);
                 }
             }
         },
@@ -644,8 +644,8 @@ void zero_any::ArrayImpl<Derived>::compress_int(pmp::Team& team)
                   type_name<T>(), type_name<IntType>(), chunks.size(), at,
                   internal::chunk_index_sample(sample, chunks, static_cast<IntType>(this->size_policy_.size())));
     };
-    report(array_nb1, "first_value");
-    report(array_nb2, "the second value");
+    report(chunks_at_first, "first_value");
+    report(chunks_at_second, "the second value");
 }
 
 template <typename Derived>

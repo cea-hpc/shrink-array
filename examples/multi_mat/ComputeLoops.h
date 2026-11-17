@@ -38,7 +38,7 @@
 #include <type_traits> // std::is_same_v, std::remove_reference_t
 
 #include "config.h"       // multi_mat::begin_parallel_phase, barrier_phase, embedded_compression
-#include "Containers.h"   // VectChunk, dispatch
+#include "Containers.h"   // MatZeroArray, dispatch
 #include "Dispatch.h"     // Dispatch::is_chunk
 #include "MultiMatAlgo.h" // MultiMatAlgo
 #include "Simu.h"         // Simu: compute_loops() is defined here
@@ -248,7 +248,7 @@ void Simu::compute_loops(MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo,
                                  auto& arr0_idx = get_mat_vec(tabs[0]);
                                  using V        = std::remove_reference_t<decltype(arr0_idx)>;
 
-                                 using VecChunkReal = VectChunk<double>;
+                                 using VecChunkReal = MatZeroArray<double>;
 
                                  // Compression only exists for 'chunk' arrays: `if constexpr` keeps the call out
                                  // of the std::vector instantiation.

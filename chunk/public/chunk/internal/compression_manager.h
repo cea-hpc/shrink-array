@@ -386,12 +386,12 @@ class CompressionManagerThreadPolicy : public FlushReplayState<T, ChunkT>
      *
      * @param thr   caller's rank -- the op must be on this rank
      * @param chunk chunk holding the queued op
-     * @param num   offset within the chunk; a no-op when nothing is queued there
+     * @param elem_offset   offset within the chunk; a no-op when nothing is queued there
      * @note Runs under this rank's owner-recursive shard lock, uncontended.
      * @warning Resolves only same-thread W(defer) -> W(direct). Cross-thread
      *          unsynchronised WAW stays non-deterministic, by design.
      */
-    static void erase_own_rank_op(int thr, ChunkT* chunk, int num) noexcept;
+    static void erase_own_rank_op(int thr, ChunkT* chunk, int elem_offset) noexcept;
 
     /**
      * @brief Might the calling rank hold deferred ops?

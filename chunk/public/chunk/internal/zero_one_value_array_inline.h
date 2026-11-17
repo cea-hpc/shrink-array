@@ -836,12 +836,12 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
         }
     }
 
-    std::vector<int> array_nb1;
-    std::vector<int> array_nb2;
+    std::vector<int> chunks_at_first;
+    std::vector<int> chunks_at_second;
 
     const int n_res = (chunk_count_ / (50 * CHUNK_PMP_MAX_THREADS)) + 1;
-    array_nb1.reserve(n_res);
-    array_nb2.reserve(n_res);
+    chunks_at_first.reserve(n_res);
+    chunks_at_second.reserve(n_res);
     T   second_value{};
     int idx = 0;
 
@@ -865,11 +865,11 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
                                                            static_cast<unsigned int>(this->size_policy_.size()));
                     if (scan.first)
                     {
-                        array_nb1.push_back(j);
+                        chunks_at_first.push_back(j);
                     }
                     if (scan.second)
                     {
-                        array_nb2.push_back(j);
+                        chunks_at_second.push_back(j);
                     }
                 }
             },
@@ -889,11 +889,11 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
                                                            static_cast<unsigned int>(this->size_policy_.size()));
                     if (scan.first)
                     {
-                        array_nb1.push_back(j);
+                        chunks_at_first.push_back(j);
                     }
                     if (scan.second)
                     {
-                        array_nb2.push_back(j);
+                        chunks_at_second.push_back(j);
                     }
                 }
             },
@@ -960,16 +960,16 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
 
         if constexpr (is_not_bool)
         {
-            // Call clear_st(num, idx), the one name both zero_one_value::ChunkThreadPolicy
+            // Call clear_st(elem_offset, idx), the one name both zero_one_value::ChunkThreadPolicy
             // specialisations declare, and let the policy choose: under OpenMP
-            // clear_int_st(num, idx, thr_rank); serially the 2-arg
-            // clear_int_st(num, idx), a different algorithm (eager, no queue,
+            // clear_int_st(elem_offset, idx, thr_rank); serially the 2-arg
+            // clear_int_st(elem_offset, idx), a different algorithm (eager, no queue,
             // counters to reset). They are not interchangeable.
-            for (const int jj : array_nb1)
+            for (const int jj : chunks_at_first)
             {
                 heal(jj, [&] { chunk_list_[jj].clear_st(0, idx); });
             }
-            for (const int jj : array_nb2)
+            for (const int jj : chunks_at_second)
             {
                 heal(jj, [&] { chunk_list_[jj].clear_st(1, idx); });
             }
@@ -979,11 +979,11 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
             // bool compresses via clear_int_st_bool (not clear_int_st); no clear_st
             // wrapper exists. In non-OMP, bool uses the counter path (manage_full_*
             // compresses inline) so there is nothing to reclaim -> empty else.
-            for (const int jj : array_nb1)
+            for (const int jj : chunks_at_first)
             {
                 heal(jj, [&] { chunk_list_[jj].clear_int_st_bool(0, CHUNK_PMP_THREAD_RANK); });
             }
-            for (const int jj : array_nb2)
+            for (const int jj : chunks_at_second)
             {
                 heal(jj, [&] { chunk_list_[jj].clear_int_st_bool(1, CHUNK_PMP_THREAD_RANK); });
             }
@@ -999,37 +999,37 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
     {
         // Left to their pass: neither healed here nor a miss.
         const auto to_pass = [&](int jj) { return std::ranges::find(left_to_pass, jj) != left_to_pass.end(); };
-        std::erase_if(array_nb1, to_pass);
-        std::erase_if(array_nb2, to_pass);
-        const auto       scanned1      = array_nb1.size();
-        const auto       scanned2      = array_nb2.size();
+        std::erase_if(chunks_at_first, to_pass);
+        std::erase_if(chunks_at_second, to_pass);
+        const auto       scanned1      = chunks_at_first.size();
+        const auto       scanned2      = chunks_at_second.size();
         const auto       still_written = materialised;
         std::vector<int> keep1;
         std::vector<int> keep2;
-        keep1.reserve(array_nb1.size());
-        keep2.reserve(array_nb2.size());
-        for (const int jj : array_nb1)
+        keep1.reserve(chunks_at_first.size());
+        keep2.reserve(chunks_at_second.size());
+        for (const int jj : chunks_at_first)
         {
             if (still_written(jj))
             {
                 keep1.push_back(jj);
             }
         }
-        for (const int jj : array_nb2)
+        for (const int jj : chunks_at_second)
         {
             if (still_written(jj))
             {
                 keep2.push_back(jj);
             }
         }
-        array_nb1.swap(keep1);
-        array_nb2.swap(keep2);
+        chunks_at_first.swap(keep1);
+        chunks_at_second.swap(keep2);
         // After the swap keep1 / keep2 hold the scanned lists.
         const auto& keep1_scanned = keep1;
         const auto& keep2_scanned = keep2;
 
-        const auto healed1 = scanned1 - array_nb1.size();
-        const auto healed2 = scanned2 - array_nb2.size();
+        const auto healed1 = scanned1 - chunks_at_first.size();
+        const auto healed2 = scanned2 - chunks_at_second.size();
         if (healed1 + healed2 != 0)
         {
             // The healed chunks are those the filter dropped: the scanned list
@@ -1059,8 +1059,8 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
                 info, compress,
                 "self-heal zero_one_value::Array<{}, {}>: {} chunk(s) at first_value [{} ], {} at second_value [{} ], "
                 "materialised and not compressed: compressed now{}",
-                type_name<T>(), type_name<IntType>(), healed1, healed_indices(keep1_scanned, array_nb1), healed2,
-                healed_indices(keep2_scanned, array_nb2),
+                type_name<T>(), type_name<IntType>(), healed1, healed_indices(keep1_scanned, chunks_at_first), healed2,
+                healed_indices(keep2_scanned, chunks_at_second),
                 drained ? " (pending list drained first: never marked)"
                         : " (in a parallel region, pending list NOT drained: maybe only queued)");
         }
@@ -1109,17 +1109,17 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
                       is_inside, count);
         }
     };
-    report(array_nb1, "first_value", false);
-    if (!array_nb2.empty())
+    report(chunks_at_first, "first_value", false);
+    if (!chunks_at_second.empty())
     {
         if constexpr (is_not_bool)
         {
             const std::string at = "the second value " + value_repr(second_value);
-            report(array_nb2, at, true);
+            report(chunks_at_second, at, true);
         }
         else
         {
-            report(array_nb2, "the second value true", true);
+            report(chunks_at_second, "the second value true", true);
         }
     }
 }
