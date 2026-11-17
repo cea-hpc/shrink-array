@@ -38,7 +38,7 @@ enum class EventCode : std::uint8_t
     // ─── cst_val transitions ────────────────────────────────────────
     cas_values_to_cst,   // info = chunk_idx, sub-value = which cst (1 or 2)
     cas_values_from_cst, // info = chunk_idx (create_value success)
-    cas_values_fail,     // info = chunk_idx (create_value failed = recup)
+    cas_values_fail,     // info = chunk_idx (create_value failed = reclaim)
     flush_begin,         // info = chunk_idx
     flush_end,           // info = chunk_idx
     lambda_async_assign, // info = chunk_idx (in lambda exec)

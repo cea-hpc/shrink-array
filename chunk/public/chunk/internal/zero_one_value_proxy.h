@@ -35,7 +35,7 @@
 #include "chunk/internal/zero_one_value_candidate_list_check.h" // zero_one_value_missing_candidate_list
 #include "chunk/internal/proxy_base.h"                          // ProxyBase
 #include "chunk/internal/second_value_proxy_base.h"             // SecondValueProxyBase
-#include "chunk/internal/chunk_stats.h" // increm_chunk_write<> in the bodies (a dependent call the include tools cannot attribute)
+#include "chunk/internal/chunk_stats.h" // inc_chunk_write<> in the bodies (a dependent call the include tools cannot attribute)
 #include "chunk/internal/immortal.h"          // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/second_value_info.h" // SecondValueInfo (InfArrayT)
 
@@ -814,7 +814,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     ///        points at writable heap storage.
     ///
     /// Twin of zero_any::Proxy::ensure_writable_storage: decompresses the second-value form, then
-    /// the first-value form, seeding the nb_val_eq_* counters to "full". is_cst_val1() is
+    /// the first-value form, seeding the n_val_eq_* counters to "full". is_cst_val1() is
     /// re-tested AFTER the cst_val2 step on purpose: the states are mutually exclusive (single
     /// storage pointer), so at most one create_value runs.
     void ensure_writable_storage();

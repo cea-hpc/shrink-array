@@ -417,7 +417,7 @@ void GlobalVecHolder<T>::install_head()
 }
 
 template <typename T>
-void GlobalVecHolder<T>::clear_if_last(int& nb_val2)
+void GlobalVecHolder<T>::clear_if_last(int& n_val2)
 {
     if (const int remaining = ref_count.fetch_sub(1, std::memory_order_acq_rel) - 1; remaining > 0)
     {
@@ -427,27 +427,27 @@ void GlobalVecHolder<T>::clear_if_last(int& nb_val2)
     // Last instance: free the segments and count what they held, for ONE
     // summary line. The slots themselves are region memory:
     // region_reset() below gives them back all at once.
-    int         nb_segs = 0;
-    Segment<T>* seg     = head.exchange(nullptr, std::memory_order_acq_rel);
+    int         n_segs = 0;
+    Segment<T>* seg    = head.exchange(nullptr, std::memory_order_acq_rel);
     while (seg != nullptr)
     {
-        ++nb_segs;
+        ++n_segs;
         const int used = seg->used;
         for (int i = 0; i < used; ++i)
         {
             if (seg->slots[i] != nullptr)
             {
-                ++nb_val2;
+                ++n_val2;
             }
         }
         auto owned = std::unique_ptr<Segment<T>>(seg);
         seg        = owned->next;
     }
 
-    if (nb_segs > 1)
+    if (n_segs > 1)
     {
-        std::cout << "[cst_val2] " << nb_val2 << " distinct second values across " << nb_segs << " segments (capacity "
-                  << nb_segs * Segment<T>::slots_per_segment
+        std::cout << "[cst_val2] " << n_val2 << " distinct second values across " << n_segs << " segments (capacity "
+                  << n_segs * Segment<T>::slots_per_segment
                   << "), index_degraded=" << index_degraded.load(std::memory_order_relaxed) << "\n";
     }
 

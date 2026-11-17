@@ -589,11 +589,11 @@ void sl_insert(Node*& list, Node* node) noexcept
  * @param block Head of the "room left" list.
  * @param block_full Head of the "no room left" list.
  * @param block_empty The reserve of emptied slabs kept for reuse.
- * @param nb_block_empty How many the reserve currently holds; updated here.
- * @param nb_max_block_empty Reserve capacity. NEGATIVE means "never release a
+ * @param n_block_empty How many the reserve currently holds; updated here.
+ * @param n_max_block_empty Reserve capacity. NEGATIVE means "never release a
  *        slab": the reserve is not used at all and @p on_kept is called instead.
  * @param slab The slab that was just freed into.
- * @param on_kept Run on a slab that emptied while @p nb_max_block_empty is
+ * @param on_kept Run on a slab that emptied while @p n_max_block_empty is
  *        negative, so the slab stays where it is. Value families
  *        MADV_DONTNEED it; op/ctx do nothing.
  * @param on_evict Run on a slab that emptied when the reserve is already full.
@@ -606,7 +606,7 @@ void sl_insert(Node*& list, Node* node) noexcept
  * @note Shared by every slab family; the two callables are the only divergence.
  *
  * @warning A slab that empties is not thereby reclaimed. With
- *          @p nb_max_block_empty negative (what the chunk layer passes, so a
+ *          @p n_max_block_empty negative (what the chunk layer passes, so a
  *          freed value slab's address is never reobtained by the op pool) its
  *          pages stay resident unless @p on_kept releases them, or a sweep
  *          (fast_alloc::EmptySlabSweep) gives them back.
@@ -615,8 +615,8 @@ template <typename Node, class Count, class OnKept, class OnEvict>
 void sl_manage_full_empty(Node*&  block,
                           Node*&  block_full,
                           Node**  block_empty,
-                          Count&  nb_block_empty,
-                          int     nb_max_block_empty,
+                          Count&  n_block_empty,
+                          int     n_max_block_empty,
                           Node*   slab,
                           OnKept  on_kept,
                           OnEvict on_evict) noexcept
@@ -629,17 +629,17 @@ void sl_manage_full_empty(Node*&  block,
 
     if (slab->is_empty()) [[unlikely]]
     {
-        // nb_max_block_empty < 0  ==  never munmap (op/value slab aliasing).
-        if (nb_max_block_empty < 0)
+        // n_max_block_empty < 0  ==  never munmap (op/value slab aliasing).
+        if (n_max_block_empty < 0)
         {
             on_kept(slab); // value: MADV_DONTNEED the slab; op/ctx: no-op
             return;
         }
-        // Plain comparison: every family declares nb_block_empty as int,
-        // matching nb_max_block_empty, so that -1 works.
-        if (nb_block_empty < nb_max_block_empty)
+        // Plain comparison: every family declares n_block_empty as int,
+        // matching n_max_block_empty, so that -1 works.
+        if (n_block_empty < n_max_block_empty)
         {
-            block_empty[nb_block_empty++] = slab;
+            block_empty[n_block_empty++] = slab;
             sl_remove(block, slab);
         }
         else
@@ -655,11 +655,11 @@ void sl_manage_full_empty(Node*&  block,
  * @param block Head of the "room left" list.
  * @param block_full Head of the "no room left" list.
  * @param block_empty The reserve of emptied slabs.
- * @param nb_block_empty How many the reserve holds.
+ * @param n_block_empty How many the reserve holds.
  * @warning Leaves the list heads dangling: the caller resets or discards them.
  */
 template <typename Node>
-void sl_delete_all(Node* block, Node* block_full, Node* const* block_empty, int nb_block_empty) noexcept
+void sl_delete_all(Node* block, Node* block_full, Node* const* block_empty, int n_block_empty) noexcept
 {
     for (const Node* list : {block, block_full})
     {
@@ -671,7 +671,7 @@ void sl_delete_all(Node* block, Node* block_full, Node* const* block_empty, int 
         }
     }
 
-    for (int i = 0; i < nb_block_empty; ++i)
+    for (int i = 0; i < n_block_empty; ++i)
     {
         delete block_empty[i];
     }
@@ -757,7 +757,7 @@ class TCSlabPool
      * @param element_size Number of ElementType per allocation -- a COUNT, not
      *        a byte size. Stored as bytes unless bypassing; see fast_alloc::bypass_slabs.
      * @param block_allocator Slab size in bytes, rounded up to a power of two.
-     * @param nb_max_block_emptyl Capacity of the emptied-slab reserve.
+     * @param n_max_block_emptyl Capacity of the emptied-slab reserve.
      *        NEGATIVE means "never release a slab", which also means the reserve
      *        is not allocated at all.
      *
@@ -767,7 +767,7 @@ class TCSlabPool
      *       one slab per (thread, geometry) pair that never allocates, and the
      *       value arena never takes a slab back.
      */
-    void init(size_t element_size, uintptr_t block_allocator, int nb_max_block_emptyl = 5);
+    void init(size_t element_size, uintptr_t block_allocator, int n_max_block_emptyl = 5);
 
     /**
      * @brief Hand out room for #element_size_ elements.
@@ -1004,10 +1004,10 @@ class TCSlabPool
     unsigned  key_             = 0;  ///< Affinity key served; stamped into slabs as owner_key.
 
     /// @brief Reserve capacity; negative = never release a slab. @see init
-    int nb_max_block_empty_ = 0;
+    int n_max_block_empty_ = 0;
 
-    std::vector<Slab*> block_empty_;       ///< The reserve. Empty when the capacity is <= 0.
-    int                nb_block_empty_{0}; ///< How much of the reserve is occupied.
+    std::vector<Slab*> block_empty_;      ///< The reserve. Empty when the capacity is <= 0.
+    int                n_block_empty_{0}; ///< How much of the reserve is occupied.
 };
 
 /**
@@ -1320,7 +1320,7 @@ class TCTypeAllocatorEBC
     /// @brief Deletes every slab, the reserve included.
     ~TCTypeAllocatorEBC()
     {
-        sl_delete_all(block_, block_full_, block_empty_.data(), nb_block_empty_);
+        sl_delete_all(block_, block_full_, block_empty_.data(), n_block_empty_);
     }
 
     // Owns its slabs: a copy would delete them twice.
@@ -1380,7 +1380,7 @@ class TCTypeAllocatorEBC
 
   private:
     /// @brief Reserve capacity. Fixed, unlike the other families' runtime value.
-    static constexpr int nb_max_block_empty = 5;
+    static constexpr int n_max_block_empty = 5;
 
     /**
      * @brief Re-file @p slab after a free, EBC's own way.
@@ -1410,8 +1410,8 @@ class TCTypeAllocatorEBC
     ///        the last one fills.
     TCAllocatorEBT* block_{nullptr};
 
-    int                                             nb_block_empty_{0}; ///< Reserve occupancy.
-    std::array<TCAllocatorEBT*, nb_max_block_empty> block_empty_{};     ///< The reserve, inline.
+    int                                            n_block_empty_{0}; ///< Reserve occupancy.
+    std::array<TCAllocatorEBT*, n_max_block_empty> block_empty_{};    ///< The reserve, inline.
 };
 
 /// @brief Default slab size (1 MiB).

@@ -71,7 +71,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
                                                                     {
                                                                         auto& nbz = acc[0];
                                                                         auto& nbv = acc[1];
-                                                                        auto& nb  = acc[2];
+                                                                        auto& n   = acc[2];
                                                                         if constexpr (is_complex)
                                                                         {
                                                                             if (arr[k] == zero_complex)
@@ -84,7 +84,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
                                                                             }
                                                                             else
                                                                             {
-                                                                                nb++;
+                                                                                n++;
                                                                             }
                                                                         }
                                                                         else if constexpr (is_not_bool)
@@ -102,7 +102,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
                                                                             }
                                                                             else
                                                                             {
-                                                                                nb++;
+                                                                                n++;
                                                                             }
                                                                         }
                                                                         else
@@ -119,11 +119,11 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
                                                                     });
         const Int  nbz    = census[0];
         const Int  nbv    = census[1];
-        const Int  nb     = census[2];
+        const Int  n      = census[2];
 
         // Over the array's own size: array_float and array_char hold 2 * sz
         // elements, array_short sz / 2, array_mask mask_scale * sz, array_conn whole rows.
-        const double pc  = double(nb) / double(ssz);
+        const double pc  = double(n) / double(ssz);
         const double pcz = double(nbz) / double(ssz);
         const double pcv = double(nbv) / double(ssz);
 
@@ -141,7 +141,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
 
         if constexpr (is_not_bool)
         {
-            line("Numbers of values", nb, pc * 100);
+            line("Numbers of values", n, pc * 100);
         }
         line("Numbers of 0", nbz, pcz * 100);
 
@@ -181,14 +181,14 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
                                                                         acc[0]++;
                                                                     }
                                                                 })[0];
-        const Int nb  = ssz - nbz;
+        const Int n   = ssz - nbz;
 
         constexpr int name_width   = 20;
         const int     name_padding = std::max<int>(0, (name_width - static_cast<int>(name.length())) / 2);
         std::cout << std::string(static_cast<std::size_t>(name_padding), ' ') << "\nstatistics " << name << "\n";
         std::cout << std::format("{:<22}:{:>10}{:>10.2f} %\n", "Numbers of 0", nbz, 100.0 * double(nbz) / double(ssz));
-        std::cout << std::format("{:<22}:{:>10}{:>10.2f} %\n", "Numbers of levels != 0", nb,
-                                 100.0 * double(nb) / double(ssz));
+        std::cout << std::format("{:<22}:{:>10}{:>10.2f} %\n", "Numbers of levels != 0", n,
+                                 100.0 * double(n) / double(ssz));
     };
 
     // One lambda instead of two. The body of a generic lambda is a TEMPLATE, so

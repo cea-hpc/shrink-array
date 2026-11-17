@@ -247,7 +247,7 @@ void bench_phase_range_d(BenchArrays& bench_arr, Int beg, Int seg_end)
     finalize_parallel_phase_after_flush_g();
 }
 
-void bench_phase_raz_sweep(BenchArrays& bench_arr, Int iter, Int size, Int start0, Int end0)
+void bench_phase_reset_sweep(BenchArrays& bench_arr, Int iter, Int size, Int start0, Int end0)
 {
     // Short local names for the arrays (see bench_phase_fill.cpp). Only
     // arr1 is scanned here; the four range fills reach the rest through
@@ -268,7 +268,7 @@ void bench_phase_raz_sweep(BenchArrays& bench_arr, Int iter, Int size, Int start
         }
     }
 
-    const Int deb = pos;
+    const Int begin = pos;
 
     if (iter % 4 == 0)
     {
@@ -321,7 +321,7 @@ void bench_phase_raz_sweep(BenchArrays& bench_arr, Int iter, Int size, Int start
 
         bench_phase_range_d(bench_arrays, beg, seg_end);
 
-        std::cout << "set : " << seg_end - deb << " values to : " << second_value_d << "\n";
+        std::cout << "set : " << seg_end - begin << " values to : " << second_value_d << "\n";
     }
 }
 

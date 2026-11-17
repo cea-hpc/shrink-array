@@ -125,7 +125,7 @@ endif()
 option(SHRINK_BENCH_UNITY "Compile each shrink_bench executable as one unity translation unit" ON)
 # The memory lines of a run (bench_config.h's print_mem): OFF to time a run
 # without the RSS reads that print them.
-option(SHRINK_BENCH_PRINT_MEM "shrink_bench prints its memory lines (after init, every freq_conso_mem iterations, after a compression)" ON)
+option(SHRINK_BENCH_PRINT_MEM "shrink_bench prints its memory lines (after init, every freq_mem_report iterations, after a compression)" ON)
 set(SHRINK_BENCH_UNITY_BATCH "0" CACHE STRING "Bench sources per unity translation unit (0: all)")
 function(sa2_setup_target tgt)
     if (CHUNK_OPENMP)

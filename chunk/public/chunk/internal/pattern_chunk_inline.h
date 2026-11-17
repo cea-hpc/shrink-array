@@ -93,7 +93,7 @@ void pattern::Chunk<T>::block_clear_motif(CstSlot*          ptr_type_cst,
 {
     std::atomic_ref<T>(*slot.slot).store(offset, std::memory_order_release);
     *ptr_type_cst = CstSlot::motif;
-    increm_chunk_compress<Chunk>();
+    inc_chunk_compress<Chunk>();
     add_chunk_bytes_freed<Chunk>(static_cast<long>(sizeof(T)) * static_cast<long>(shrink_array::alloc_chunk_count()));
     if constexpr (build_config::threaded)
     {

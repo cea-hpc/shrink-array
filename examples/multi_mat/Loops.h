@@ -36,12 +36,12 @@
 /// @brief Loop policy of the chunk materials: work-shared, never vectorised.
 struct Loops
 {
-    /// @brief `lbd(k)` for k in [kdeb, kfin), shared by the team, no barrier.
+    /// @brief `lbd(k)` for k in [kbegin, kend), shared by the team, no barrier.
     template <typename Body>
-    static void omp_for_nowait_simd(int kdeb, int kfin, const Body& lbd)
+    static void omp_for_nowait_simd(int kbegin, int kend, const Body& lbd)
     {
 #pragma omp for schedule(static) nowait
-        for (int k = kdeb; k < kfin; ++k)
+        for (int k = kbegin; k < kend; ++k)
         {
             PRAGMA_FORCEINLINE
             lbd(k);
@@ -100,11 +100,11 @@ struct Loops
     {
         const auto nn = static_cast<int>(ll.size());
 
-        int kdeb             = 0;
-        int kfin             = 0;
-        std::tie(kdeb, kfin) = get_parallel_loop_boundaries(multi_mat::thread_rank(), multi_mat::max_threads(), nn);
+        int kbegin             = 0;
+        int kend               = 0;
+        std::tie(kbegin, kend) = get_parallel_loop_boundaries(multi_mat::thread_rank(), multi_mat::max_threads(), nn);
 
-        for (int k = kdeb; k < kfin; ++k)
+        for (int k = kbegin; k < kend; ++k)
         {
             const int nnn = ll[k];
             PRAGMA_FORCEINLINE
@@ -161,10 +161,10 @@ struct LoopsSimd
 
     /// @copydoc Loops::omp_for_nowait_simd
     template <typename Body>
-    static void omp_for_nowait_simd(int kdeb, int kfin, const Body& lbd)
+    static void omp_for_nowait_simd(int kbegin, int kend, const Body& lbd)
     {
 #pragma omp for simd nowait schedule(static)
-        for (int k = kdeb; k < kfin; ++k)
+        for (int k = kbegin; k < kend; ++k)
         {
             PRAGMA_FORCEINLINE
             lbd(k);
@@ -181,9 +181,9 @@ struct LoopsSimd
     {
         const auto nn = static_cast<int>(ll.size());
 
-        int kdeb             = 0;
-        int kfin             = 0;
-        std::tie(kdeb, kfin) = get_parallel_loop_boundaries(multi_mat::thread_rank(), multi_mat::max_threads(), nn);
+        int kbegin             = 0;
+        int kend               = 0;
+        std::tie(kbegin, kend) = get_parallel_loop_boundaries(multi_mat::thread_rank(), multi_mat::max_threads(), nn);
 
         T redl = red;
         // The indirection read through a raw pointer taken once, not ll[k].
@@ -204,7 +204,7 @@ struct LoopsSimd
         // see the commit that added this comment.
         const int* const lp = ll.data();
 #pragma omp simd            reduction(+ : redl)
-        for (int k = kdeb; k < kfin; ++k)
+        for (int k = kbegin; k < kend; ++k)
         {
             const int nnn = lp[k];
             PRAGMA_FORCEINLINE

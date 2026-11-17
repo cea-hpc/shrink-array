@@ -197,9 +197,9 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
 }
 
 // ─── Reset ───────────────────────────────────────────────────────────────────
-// The struct arrays' share of the raz sweep: the window back to the null
+// The struct arrays' share of the reset sweep: the window back to the null
 // element, a whole run for the next pass.
-void bench_phase_struct_raz(BenchArrays& bench_arr, Int start0, Int end0)
+void bench_phase_struct_reset(BenchArrays& bench_arr, Int start0, Int end0)
 {
     if (!bench_arr.with_struct) // --no_struct
     {

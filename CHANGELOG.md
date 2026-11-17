@@ -146,6 +146,12 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- French names and abbreviations in English, in the sources, the examples and the documents
+  (internal names; nothing of the public interface): `nb` (nombre) is `n` (`n_val_eq_zero_`,
+  `n_blocks`, `n_threads`), the increm and decrem prefixes are inc and dec (the statistics
+  counters: `inc_chunk_write`, ...), `somme` is `total` (`total_chunk_create`), `raz` (remise à zéro) is
+  `reset`, `recup` is `reclaim` (`reclaim_value`), `kdeb` / `kfin` are `kbegin` / `kend`
+  (examples/multi_mat), `nbmat` is `n_materials`, `freq_conso_mem` is `freq_mem_report`.
 - `tab` (French: tableau) is `array` in the names of the sources, examples and documents:
   `array_int`, `array_bool`, ... of `shrink_bench` (`tab_int`, ...), `arr1` ... `arr5` and `arr`
   (`tab1`, `tab`), the library's `array_is_inside_chunk_list_to_compress`,

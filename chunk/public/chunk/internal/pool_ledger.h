@@ -226,14 +226,14 @@ inline void on_op_free(void* ptr) noexcept
 // BLOCK LEDGER — value-block lifecycle (check builds, zero_one_value / zero_any)
 // ----------------------------------------------------------------------------
 // Distinct from the ctx/op ledger above: this one tracks the heap chunk-blocks
-// that flow through allocate_chunk_internal / recup_value / free_block_to_pool.
+// that flow through allocate_chunk_internal / reclaim_value / free_block_to_pool.
 // It trips deterministically at the FIRST illegal transition, with the address
 // and BOTH ranks, where a race detector only samples the resulting race.
 //
 // State per block, with legal transitions (op : from -> to):
 //   b_alloc   : FREE   -> LIVE     fresh block from allocator/svcalloc
 //   b_pop     : parked -> LIVE     popped from a per-thread free-list
-//   b_park    : LIVE   -> parked   pushed into a per-thread free-list (recup / free_block_to_pool)
+//   b_park    : LIVE   -> parked   pushed into a per-thread free-list (reclaim / free_block_to_pool)
 //   b_release : LIVE   -> FREE     returned to allocator (free_elt_pow2)
 //
 // Illegal (each trips the assert, naming previous state + previous rank):

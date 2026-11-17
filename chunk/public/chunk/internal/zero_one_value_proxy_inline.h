@@ -330,7 +330,7 @@ void zero_one_value::Proxy<T>::perform_core_assignment(InT<T> value) const noexc
             {
                 if (!same_value(this->raw_elem(), Chunk<T>::first_value))
                 {
-                    chunk_.inc_nb_val_eq_first_value();
+                    chunk_.inc_n_val_eq_first_value();
                 }
 
                 if (chunk_.is_full_first_value(this->chunk_size()))
@@ -342,7 +342,7 @@ void zero_one_value::Proxy<T>::perform_core_assignment(InT<T> value) const noexc
         }
         else if (Base::is_not_cst_val1() && same_value(this->raw_elem(), Chunk<T>::first_value))
         {
-            chunk_.dec_nb_val_eq_first_value();
+            chunk_.dec_n_val_eq_first_value();
         }
     }
 
@@ -363,8 +363,8 @@ void zero_one_value::Proxy<T>::perform_core_assignment(InT<T> value) const noexc
 
             if constexpr (chunk_config::use_compression_with_counter)
             {
-                chunk_.inc_nb_val_eq_second_value();
-                chunk_.set_nb_val_eq_first_value(this->chunk_size() - 1);
+                chunk_.inc_n_val_eq_second_value();
+                chunk_.set_n_val_eq_first_value(this->chunk_size() - 1);
             }
 
             this->raw_elem_set(second_value_);
@@ -373,7 +373,7 @@ void zero_one_value::Proxy<T>::perform_core_assignment(InT<T> value) const noexc
 
         if constexpr (chunk_config::use_compression_with_counter)
         {
-            chunk_.inc_nb_val_eq_second_value();
+            chunk_.inc_n_val_eq_second_value();
 
             if (chunk_.is_full_second_value(this->chunk_size()))
             {
@@ -390,14 +390,14 @@ void zero_one_value::Proxy<T>::perform_core_assignment(InT<T> value) const noexc
             const InT<T> vv = this->raw_elem();
             if (same_value(vv, second_value_))
             {
-                chunk_.dec_nb_val_eq_second_value();
+                chunk_.dec_n_val_eq_second_value();
             }
         }
     }
 
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_write<ChunkType>(value);
+        inc_chunk_write<ChunkType>(value);
     }
 
     if (const bool is_cst2 = !is_cst1 && is_cst_val2_at(vals); is_cst1 || is_cst2)
@@ -412,33 +412,33 @@ void zero_one_value::Proxy<T>::perform_core_assignment(InT<T> value) const noexc
         {
             if (was_cst_val2)
             {
-                chunk_.set_nb_val_eq_second_value(this->chunk_size() - 1);
+                chunk_.set_n_val_eq_second_value(this->chunk_size() - 1);
                 // The write that leaves cst_val2 skipped the first-value block
                 // at the top (it only counts on a materialised chunk), and
-                // create_value's crossed reset just zeroed nb_val_eq_first_value_:
+                // create_value's crossed reset just zeroed n_val_eq_first_value_:
                 // count a first_value written here. Otherwise a chunk that went
                 // all-second then all-first stops at size - 1 and never
                 // compresses back (serial builds: the counters are the only path).
                 if (same_value(value, static_cast<T>(Chunk<T>::first_value)))
                 {
-                    chunk_.inc_nb_val_eq_first_value();
+                    chunk_.inc_n_val_eq_first_value();
                 }
             }
             else if (same_value(value, second_value_))
             {
-                chunk_.inc_nb_val_eq_second_value();
+                chunk_.inc_n_val_eq_second_value();
                 if (was_cst_val1)
                 {
-                    chunk_.set_nb_val_eq_first_value(this->chunk_size() - 1);
+                    chunk_.set_n_val_eq_first_value(this->chunk_size() - 1);
                 }
             }
             else if (was_cst_val1)
             {
-                chunk_.set_nb_val_eq_first_value(this->chunk_size() - 1);
+                chunk_.set_n_val_eq_first_value(this->chunk_size() - 1);
             }
             else if (same_value(value, Chunk<T>::first_value))
             {
-                chunk_.inc_nb_val_eq_first_value();
+                chunk_.inc_n_val_eq_first_value();
             }
         }
     }
@@ -649,7 +649,7 @@ void zero_one_value::Proxy<T>::ensure_writable_storage()
         chunk_.create_value(true, inf_array_);
         if constexpr (chunk_config::use_compression_with_counter)
         {
-            chunk_.set_nb_val_eq_second_value(this->chunk_size());
+            chunk_.set_n_val_eq_second_value(this->chunk_size());
         }
     }
 
@@ -660,7 +660,7 @@ void zero_one_value::Proxy<T>::ensure_writable_storage()
         chunk_.create_value(false, inf_array_);
         if constexpr (chunk_config::use_compression_with_counter)
         {
-            chunk_.set_nb_val_eq_first_value(this->chunk_size());
+            chunk_.set_n_val_eq_first_value(this->chunk_size());
         }
     }
 }
@@ -695,18 +695,18 @@ void zero_one_value::Proxy<T>::execute_simple_operation(Lambda operation)
         // Transitions OUT: position no longer holds the constant it held before.
         if (was_second_value && !same_value(this->raw_elem(), second_value_))
         {
-            chunk_.dec_nb_val_eq_second_value();
+            chunk_.dec_n_val_eq_second_value();
         }
         else if (was_first_value && !same_value(this->raw_elem(), static_cast<T>(Chunk<T>::first_value)))
         {
-            chunk_.dec_nb_val_eq_first_value();
+            chunk_.dec_n_val_eq_first_value();
         }
 
         // Transitions IN: position now holds a constant it did not hold before.
         // Guarded by !was_* to avoid double counting.
         if (!was_second_value && same_value(this->raw_elem(), second_value_))
         {
-            chunk_.inc_nb_val_eq_second_value();
+            chunk_.inc_n_val_eq_second_value();
             if (chunk_.is_full_second_value(this->chunk_size()))
             {
                 this->manage_full_second_value();
@@ -714,7 +714,7 @@ void zero_one_value::Proxy<T>::execute_simple_operation(Lambda operation)
         }
         else if (!was_first_value && same_value(this->raw_elem(), static_cast<T>(Chunk<T>::first_value)))
         {
-            chunk_.inc_nb_val_eq_first_value();
+            chunk_.inc_n_val_eq_first_value();
             if (chunk_.is_full_first_value(this->chunk_size()))
             {
                 this->manage_full_first_value();
@@ -878,7 +878,7 @@ void zero_one_value::ProxyFastCompPolicy<Derived, T, ChunkT, false>::execute_ari
             chunk_.create_value(true, inf_array_);
             if constexpr (chunk_config::use_compression_with_counter)
             {
-                chunk_.set_nb_val_eq_second_value(this->chunk_size() - 1);
+                chunk_.set_n_val_eq_second_value(this->chunk_size() - 1);
             }
             operation(op, Base::values_);
             return;
@@ -942,11 +942,11 @@ void zero_one_value::Proxy<T>::execute_inplace_operation(Lambda operation)
         {
             if (is_val2)
             {
-                chunk_.set_nb_val_eq_second_value(this->chunk_size());
+                chunk_.set_n_val_eq_second_value(this->chunk_size());
             }
             else if (is_val1)
             {
-                chunk_.set_nb_val_eq_first_value(this->chunk_size());
+                chunk_.set_n_val_eq_first_value(this->chunk_size());
             }
         }
     }
@@ -971,11 +971,11 @@ void zero_one_value::Proxy<T>::execute_inplace_operation(Lambda operation)
         // Transitions OUT: the position no longer holds the constant it held before.
         if (was_second_value && !same_value(this->raw_elem(), second_value_))
         {
-            chunk_.dec_nb_val_eq_second_value();
+            chunk_.dec_n_val_eq_second_value();
         }
         else if (was_first_value && !same_value(this->raw_elem(), static_cast<T>(Chunk<T>::first_value)))
         {
-            chunk_.dec_nb_val_eq_first_value();
+            chunk_.dec_n_val_eq_first_value();
         }
 
         // Transitions IN: the position now holds a constant it did not hold before.
@@ -984,7 +984,7 @@ void zero_one_value::Proxy<T>::execute_inplace_operation(Lambda operation)
         // chunk, so it would miss the increment and desync the counter).
         if (!was_second_value && same_value(this->raw_elem(), second_value_))
         {
-            chunk_.inc_nb_val_eq_second_value();
+            chunk_.inc_n_val_eq_second_value();
             if (chunk_.is_full_second_value(this->chunk_size()))
             {
                 this->manage_full_second_value();
@@ -992,7 +992,7 @@ void zero_one_value::Proxy<T>::execute_inplace_operation(Lambda operation)
         }
         else if (!was_first_value && same_value(this->raw_elem(), static_cast<T>(Chunk<T>::first_value)))
         {
-            chunk_.inc_nb_val_eq_first_value();
+            chunk_.inc_n_val_eq_first_value();
             if (chunk_.is_full_first_value(this->chunk_size()))
             {
                 this->manage_full_first_value();
@@ -1097,11 +1097,11 @@ void zero_one_value::Proxy<T>::apply_compound_operation([[maybe_unused]] Op op, 
             // element still different (lost).
             if (was_second_value0 && !same_value(v_new, second_value_))
             {
-                chunk_.dec_nb_val_eq_second_value();
+                chunk_.dec_n_val_eq_second_value();
             }
             if (Base::is_not_cst_val1() && same_value(v_new, Chunk<T>::first_value))
             {
-                chunk_.inc_nb_val_eq_first_value();
+                chunk_.inc_n_val_eq_first_value();
                 if (chunk_.is_full_first_value(this->chunk_size()))
                 {
                     this->manage_full_first_value();
@@ -1109,7 +1109,7 @@ void zero_one_value::Proxy<T>::apply_compound_operation([[maybe_unused]] Op op, 
             }
             else if (!was_second_value && same_value(v_new, second_value_))
             {
-                chunk_.inc_nb_val_eq_second_value();
+                chunk_.inc_n_val_eq_second_value();
                 if (chunk_.is_full_second_value(this->chunk_size()))
                 {
                     this->manage_full_second_value();

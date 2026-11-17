@@ -334,13 +334,13 @@ try
     // iter_max / 10 and iter_max / 4 round down to 0 for a small --iter_max --
     // `--iter_max 6` raised SIGFPE at the k % freq_stats site. Clamping to 1
     // means "every iteration", which is the sensible reading of "every
-    // iter_max/10" when iter_max < 10, and is what get_freq_raz() already does
+    // iter_max/10" when iter_max < 10, and is what get_freq_reset() already does
     // with its own `if (ret == 0) ret = 1`.
     const Int freq_stats = have_stats() ? std::max<Int>(1, iter_max / 10) : 1000000000;
 
     const Int freq_check_sum = have_check_sum() ? std::max<Int>(1, iter_max / 4) : 1000000000;
 
-    CONSTEXPR const Int freq_conso_mem = get_freq_conso_mem();
+    CONSTEXPR const Int freq_mem_report = get_freq_mem_report();
 
     // Cadence of the per-iteration checksum line. Defaults to the memory
     // line's, so the two land on the same iterations and a checksum can be read
@@ -354,7 +354,7 @@ try
         {
             return period;
         }
-        return 0; // 0 = follow freq_conso_mem, resolved just below
+        return 0; // 0 = follow freq_mem_report, resolved just below
     }();
 
     [[maybe_unused]] const Int freq_compress = need_compression ? 1 : std::max<Int>(1, iter_max / 10);
@@ -378,7 +378,7 @@ try
         return std::max<Int>(1, iter_max / 10);
     }();
 
-    const Int freq_raz = get_freq_raz(iter_max);
+    const Int freq_reset = get_freq_reset(iter_max);
 
     // CHUNK_PMP_MAX_THREADS (pmp_chunk.h) is omp_get_max_threads() with OpenMP
     // and the literal 1 without, so no #ifdef is needed here any more.
@@ -1001,10 +1001,10 @@ try
                 std::abort(); // triggers an abrupt program abort
             }
         }
-        if (k % freq_raz == 0)
+        if (k % freq_reset == 0)
         {
-            bench_phase_raz_sweep(bench_arrays, k, size, start0, end0);
-            bench_phase_struct_raz(bench_arrays, start0, end0);
+            bench_phase_reset_sweep(bench_arrays, k, size, start0, end0);
+            bench_phase_struct_reset(bench_arrays, start0, end0);
         }
         else
         {
@@ -1156,7 +1156,7 @@ try
         // a divergence that first appears between two sampled iterations would
         // otherwise be reported against the wrong one.
         {
-            const Int  ksum_period = freq_ksum > 0 ? freq_ksum : std::max<Int>(1, freq_conso_mem);
+            const Int  ksum_period = freq_ksum > 0 ? freq_ksum : std::max<Int>(1, freq_mem_report);
             const bool ksum_bad =
                 !std::isfinite(val_sum) || !std::isfinite(cv_val_sum.real()) || !std::isfinite(cv_val_sum.imag());
             if (k % ksum_period == 0 || k == 0 || k == iter_max - 1 || ksum_bad)
@@ -1176,7 +1176,7 @@ try
         }
         if constexpr (print_mem) // see the note on the first site
         {
-            if (k % freq_conso_mem == 0)
+            if (k % freq_mem_report == 0)
             {
                 const std::string msg_iter = "iteration : " + std::to_string(k);
                 memory_consumption(msg_iter);

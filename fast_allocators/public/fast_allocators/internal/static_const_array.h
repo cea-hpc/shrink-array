@@ -76,9 +76,9 @@ namespace fast_alloc
  * @warning A batch that is still filling holds blocks that are free but not
  *          reusable: they belong to no bucket's free list until the flush.
  *
- * @warning The per-rank arrays are sized ONCE (#nb_thr = FAST_ALLOC_PMP_MAX_THREADS,
+ * @warning The per-rank arrays are sized ONCE (#n_thr = FAST_ALLOC_PMP_MAX_THREADS,
  *          before main) and indexed unchecked: callers must bound the rank
- *          (try_free_block() frees a rank >= #nb_thr's blocks at once).
+ *          (try_free_block() frees a rank >= #n_thr's blocks at once).
  */
 class InfoFreeElt
 {
@@ -86,7 +86,7 @@ class InfoFreeElt
     /// @brief Batch capacity, in blocks. The other bound is 4 MiB of payload.
     static constexpr int max_free_elt = 10000;
 
-    int* somme_sz_{nullptr}; ///< Per rank: bytes batched, bounded at 4 MiB.
+    int* total_sz_{nullptr}; ///< Per rank: bytes batched, bounded at 4 MiB.
 
   public:
     using IntMaxFreeElt  = std::array<int, max_free_elt>;   ///< One rank's batched sizes.
@@ -123,7 +123,7 @@ class InfoFreeElt
     /// @brief Forget the batch. Call only after its blocks have been released.
     void reset(int thr_rank) noexcept
     {
-        somme_sz_[thr_rank] = compt[thr_rank] = 0;
+        total_sz_[thr_rank] = compt[thr_rank] = 0;
     }
 
     VoidMaxFreeElt* array_ptr{nullptr}; ///< Per rank: the batched blocks.
@@ -132,7 +132,7 @@ class InfoFreeElt
 
     /// @brief Ranks the four arrays were sized for (FAST_ALLOC_PMP_MAX_THREADS at
     ///        construction); 0 in a serial build, which allocates nothing.
-    int nb_thr = 0;
+    int n_thr = 0;
 };
 
 /**

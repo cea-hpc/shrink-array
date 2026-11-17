@@ -672,8 +672,8 @@ static int run(const char* label, long count, const Scenario<T>& sc)
     // it. The first loop never waits, so every flag is eventually set.
     {
         constexpr long                block_len = 1000; // not a chunk multiple: blocks straddle chunks
-        const long                    nb        = (count + block_len - 1) / block_len;
-        std::vector<std::atomic<int>> ready(nb);
+        const long                    n         = (count + block_len - 1) / block_len;
+        std::vector<std::atomic<int>> ready(n);
         for (auto& flag : ready)
         {
             flag.store(0, std::memory_order_relaxed);
@@ -682,7 +682,7 @@ static int run(const char* label, long count, const Scenario<T>& sc)
         {
             begin_phase();
 #pragma omp for schedule(static, 1) nowait
-            for (long b = 0; b < nb; ++b)
+            for (long b = 0; b < n; ++b)
             {
                 for (long i = b * block_len; i < std::min(count, (b + 1) * block_len); ++i)
                 {
@@ -691,9 +691,9 @@ static int run(const char* label, long count, const Scenario<T>& sc)
                 ready[b].store(1, std::memory_order_release);
             }
 #pragma omp for schedule(static, 1)
-            for (long j = 0; j < nb; ++j)
+            for (long j = 0; j < n; ++j)
             {
-                const long other_block = (j + 1) % nb; // another thread's block of the first loop
+                const long other_block = (j + 1) % n; // another thread's block of the first loop
                 while (ready[other_block].load(std::memory_order_acquire) == 0)
                 {
                     std::this_thread::yield();

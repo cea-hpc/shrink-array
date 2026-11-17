@@ -141,7 +141,7 @@ les voudrait petits ; c'est le même arbitrage que la géométrie dynamique CPU 
 
 | donnée | taille | où |
 |---|---|---|
-| `ChunkDesc[nb_chunks]` | 16 ou 24 o par chunk | device (ou mémoire cohérente, 11) |
+| `ChunkDesc[n_chunks]` | 16 ou 24 o par chunk | device (ou mémoire cohérente, 11) |
 | compteur de bump de l'arène, tête de pile des tampons libres | 2 mots | device |
 | append-buffer des écritures non appliquées (6.4) | borné, réglé à la création | device |
 | statistiques (`stats()`, chunks matérialisés, échecs d'arène) | quelques mots | device, relus par l'hôte en fin de phase |

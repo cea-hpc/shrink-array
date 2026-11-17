@@ -216,105 +216,105 @@ class ChunkCounterPolicy
 {
   public:
     /// @brief Reset the second-value counter to 0.
-    void reset_nb_val_eq_second_value() noexcept
+    void reset_n_val_eq_second_value() noexcept
     {
-        nb_val_eq_second_value_ = 0;
+        n_val_eq_second_value_ = 0;
     }
 
     /// @brief Set the second-value counter to an explicit value.
     /// @param count New counter value.
-    void set_nb_val_eq_second_value(CounterValueT count) noexcept
+    void set_n_val_eq_second_value(CounterValueT count) noexcept
     {
-        nb_val_eq_second_value_ = count;
+        n_val_eq_second_value_ = count;
     }
 
     /// @brief Whether every element in the chunk currently equals the second
     ///        constant (the chunk is a candidate for type-2 compression).
     /// @param size Chunk geometry; defaults to the compile-time size (callers that know the
     ///             runtime geometry, e.g. under DynamicChunkSize, pass it).
-    /// @return true if nb_val_eq_second_value_ == size.
+    /// @return true if n_val_eq_second_value_ == size.
     [[nodiscard]] bool is_full_second_value(unsigned int size = static_chunk_size) const noexcept
     {
-        return static_cast<CounterValueT>(nb_val_eq_second_value_) == size;
+        return static_cast<CounterValueT>(n_val_eq_second_value_) == size;
     }
 
     /// @brief Increment the second-value counter (one more element now
     ///        equals the second constant).
-    void inc_nb_val_eq_second_value() noexcept
+    void inc_n_val_eq_second_value() noexcept
     {
-        ++nb_val_eq_second_value_;
+        ++n_val_eq_second_value_;
     }
 
     /// @brief Decrement the second-value counter (one fewer element now
     ///        equals the second constant).
-    void dec_nb_val_eq_second_value() noexcept
+    void dec_n_val_eq_second_value() noexcept
     {
-        --nb_val_eq_second_value_;
+        --n_val_eq_second_value_;
     }
 
     /// @brief Increment the first-value counter (one more element now
     ///        equals the first constant).
-    void inc_nb_val_eq_first_value() noexcept
+    void inc_n_val_eq_first_value() noexcept
     {
-        ++nb_val_eq_first_value_;
+        ++n_val_eq_first_value_;
     }
 
     /// @brief Decrement the first-value counter (one fewer element now
     ///        equals the first constant).
-    void dec_nb_val_eq_first_value() noexcept
+    void dec_n_val_eq_first_value() noexcept
     {
-        --nb_val_eq_first_value_;
+        --n_val_eq_first_value_;
     }
 
     /// @brief Reset the first-value counter to 0.
-    void reset_nb_val_eq_first_value() noexcept
+    void reset_n_val_eq_first_value() noexcept
     {
-        nb_val_eq_first_value_ = 0;
+        n_val_eq_first_value_ = 0;
     }
 
     /// @brief Set the first-value counter to an explicit value.
     /// @param count New counter value.
-    void set_nb_val_eq_first_value(CounterValueT count) noexcept
+    void set_n_val_eq_first_value(CounterValueT count) noexcept
     {
-        nb_val_eq_first_value_ = count;
+        n_val_eq_first_value_ = count;
     }
 
     /// @brief Whether every element in the chunk currently equals the first
     ///        constant (the chunk is a candidate for type-1 compression).
     /// @param size Chunk geometry; see is_full_second_value().
-    /// @return true if nb_val_eq_first_value_ == size.
+    /// @return true if n_val_eq_first_value_ == size.
     [[nodiscard]] bool is_full_first_value(unsigned int size = static_chunk_size) const noexcept
     {
-        return static_cast<CounterValueT>(nb_val_eq_first_value_) == size;
+        return static_cast<CounterValueT>(n_val_eq_first_value_) == size;
     }
 
     /// @brief Current first-value counter.
     /// @return Number of elements currently equal to the first constant.
-    [[nodiscard]] CounterValueT get_nb_first_value() const noexcept
+    [[nodiscard]] CounterValueT get_n_first_value() const noexcept
     {
-        return static_cast<CounterValueT>(nb_val_eq_first_value_);
+        return static_cast<CounterValueT>(n_val_eq_first_value_);
     }
 
     /// @brief Current second-value counter.
     /// @return Number of elements currently equal to the second constant.
-    [[nodiscard]] CounterValueT get_nb_second_value() const noexcept
+    [[nodiscard]] CounterValueT get_n_second_value() const noexcept
     {
-        return static_cast<CounterValueT>(nb_val_eq_second_value_);
+        return static_cast<CounterValueT>(n_val_eq_second_value_);
     }
 
   private:
     /// @brief Reset both counters to 0.
-    void reset_nb_val_eq_value() noexcept
+    void reset_n_val_eq_value() noexcept
     {
-        reset_nb_val_eq_first_value();
-        reset_nb_val_eq_second_value();
+        reset_n_val_eq_first_value();
+        reset_n_val_eq_second_value();
     }
 
     // [[no_unique_address]] and two distinct tags: when disabled both counters are empty and
     // share offset 0, so the policy is empty and `values` stays at offset 0 (see
     // ChunkCounterPolicy for the padding this saves).
-    [[no_unique_address]] ConditionalCounter<EnableCounters, 0> nb_val_eq_first_value_;
-    [[no_unique_address]] ConditionalCounter<EnableCounters, 1> nb_val_eq_second_value_;
+    [[no_unique_address]] ConditionalCounter<EnableCounters, 0> n_val_eq_first_value_;
+    [[no_unique_address]] ConditionalCounter<EnableCounters, 1> n_val_eq_second_value_;
 };
 /**
  * @brief zero_one_value's OpenMP-only surface: per-thread materialisation and clearing.

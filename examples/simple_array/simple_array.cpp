@@ -90,10 +90,10 @@ double convert_memory(double memory_value)
     const double kilobytes = memory_value * byte_to_kb;
     const double megabytes = kilobytes * kb_to_mb;
 
-    if (std::ofstream fichier("memory_mo.txt"); fichier.is_open())
+    if (std::ofstream out_file("memory_mo.txt"); out_file.is_open())
     {
-        fichier << megabytes;
-        fichier.close();
+        out_file << megabytes;
+        out_file.close();
     }
     else
     {
@@ -191,7 +191,7 @@ int main()
     constexpr int freq_check_sum = iter_max / 5;
 
     constexpr int freq_compress = iter_max / 10; // chunk arrays only
-    constexpr int freq_raz      = iter_max / 50;
+    constexpr int freq_reset    = iter_max / 50;
     constexpr int interval      = 20000;
 
     const int max_thr = shrink_array::max_threads();
@@ -274,7 +274,7 @@ int main()
 
         end0 = std::min(end0, sz);
 
-        if (k != 0 && k % freq_raz == 0)
+        if (k != 0 && k % freq_reset == 0)
         {
             std::cout << "Interval "
                       << ": [" << start0 << ", " << end0 << "]"

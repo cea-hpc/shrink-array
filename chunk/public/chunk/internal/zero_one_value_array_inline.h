@@ -36,7 +36,7 @@
 #include "chunk/internal/type_name.h"                   // type_name<T>
 #include "chunk/internal/singleton.h"                   // SingletonChk<TypeStateRegistry>::get_ref
 #include "chunk/internal/zero_one_value_proxy.h"        // zero_one_value::Proxy<T>
-#include "chunk/internal/chunk_stats.h"                 // increm_chunk_teardown_clear, add_chunk_released
+#include "chunk/internal/chunk_stats.h"                 // inc_chunk_teardown_clear, add_chunk_released
 #include "chunk/internal/type_state_registry.h"         // TypeStateRegistry::ensure_manager
 #include "chunk/config.h"                               // chunk_config::use_fast_block_compression, chunk_config::stats
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED, value_repr
@@ -178,7 +178,7 @@ void zero_one_value::Array<T, IntType>::rebuild_storage(IntType sz)
 
         if (chunk_count_)
         {
-            Manager::increm_somme_chunk_create(chunk_count_);
+            Manager::inc_total_chunk_create(chunk_count_);
             Manager::compute_size_buffer_reuse();
             Manager::compute_size_max_number_of_chunk_to_check_compress();
 
@@ -645,7 +645,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
         }
     }
 
-    TypeState<Chunk, T>::decrem_somme_chunk_create(chunk_count_);
+    TypeState<Chunk, T>::dec_total_chunk_create(chunk_count_);
     // Recompute what derives from the total -- see zero::Array::clear_core():
     // otherwise a re-chunk leaves the threshold sized for the geometry it just left.
     TypeState<Chunk, T>::compute_size_buffer_reuse();
@@ -668,7 +668,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
                 {
                     if constexpr (chunk_config::stats)
                     {
-                        increm_chunk_teardown_clear<Chunk<T>>();
+                        inc_chunk_teardown_clear<Chunk<T>>();
                     }
                     chunk_list_[j].clear_st(0, ind);
                 }
@@ -685,7 +685,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
                 {
                     if constexpr (chunk_config::stats)
                     {
-                        increm_chunk_teardown_clear<Chunk<T>>();
+                        inc_chunk_teardown_clear<Chunk<T>>();
                     }
                     chunk_list_[j].clear_st(0, 0);
                 }
@@ -714,7 +714,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
                               {
                                   if constexpr (chunk_config::stats)
                                   {
-                                      increm_chunk_teardown_clear<Chunk<T>>();
+                                      inc_chunk_teardown_clear<Chunk<T>>();
                                       // Released below without a compression: out of the live figures.
                                       add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) *
                                                                           static_cast<long>(this->size_policy_.size()));
@@ -727,9 +727,9 @@ void zero_one_value::Array<T, IntType>::clear_core()
 
                       const int thr_rank = CHUNK_PMP_THREAD_RANK;
 
-                      const auto nb = static_cast<int>(ll_chunk_loc.size());
+                      const auto n = static_cast<int>(ll_chunk_loc.size());
 
-                      if (nb > 0)
+                      if (n > 0)
                       {
                           // Park into the reuse list of THIS array's geometry, not the
                           // ambient t_active (which may be another size mid-rechunk):
@@ -738,7 +738,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
                           const unsigned int my_sz = this->size_policy_.size();
                           auto&              lbf   = Manager::get_list_block_free_thr_for_size(thr_rank, my_sz);
 
-                          for (int k = 0; k < nb; ++k)
+                          for (int k = 0; k < n; ++k)
                           {
                               T* values_loc = ll_chunk_loc[k]->values_;
                               // Ledger LIVE -> parked, or a later pop trips an ILLEGAL b_pop.
@@ -839,9 +839,9 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
     std::vector<int> array_nb1;
     std::vector<int> array_nb2;
 
-    const int nb_res = (chunk_count_ / (50 * CHUNK_PMP_MAX_THREADS)) + 1;
-    array_nb1.reserve(nb_res);
-    array_nb2.reserve(nb_res);
+    const int n_res = (chunk_count_ / (50 * CHUNK_PMP_MAX_THREADS)) + 1;
+    array_nb1.reserve(n_res);
+    array_nb2.reserve(n_res);
     T   second_value{};
     int ind = 0;
 
@@ -1102,7 +1102,7 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
             if constexpr (chunk_config::use_compression_with_counter)
             {
                 const auto& chunk = chunk_list_[chunk_index];
-                count             = static_cast<int>(second ? chunk.get_nb_second_value() : chunk.get_nb_first_value());
+                count             = static_cast<int>(second ? chunk.get_n_second_value() : chunk.get_n_first_value());
             }
             CHUNK_LOG(debug, compress, "residual zero_one_value::Array: chunk {} (element {}): is_inside={} count={}",
                       chunk_index, static_cast<IntType>(chunk_index) * static_cast<IntType>(this->size_policy_.size()),
@@ -1145,7 +1145,7 @@ void zero_one_value::Array<T, IntType>::release_chunk_range(int first, int last)
             {
                 if constexpr (chunk_config::stats)
                 {
-                    increm_chunk_teardown_clear<Chunk<T>>();
+                    inc_chunk_teardown_clear<Chunk<T>>();
                 }
                 if constexpr (is_not_bool)
                 {
@@ -1173,7 +1173,7 @@ void zero_one_value::Array<T, IntType>::release_chunk_range(int first, int last)
                 {
                     if constexpr (chunk_config::stats)
                     {
-                        increm_chunk_teardown_clear<Chunk<T>>();
+                        inc_chunk_teardown_clear<Chunk<T>>();
                         // The size read here, not captured: stats builds only use it.
                         add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) *
                                                             static_cast<long>(this->size_policy_.size()));

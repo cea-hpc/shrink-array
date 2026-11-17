@@ -78,19 +78,19 @@ class StableTable
     void resize(std::size_t count);
 
   private:
-    static constexpr std::size_t first_bits  = 8;                            ///< log2 of the first segment's size
-    static constexpr std::size_t first_size  = std::size_t{1} << first_bits; ///< rows in segment 0
-    static constexpr std::size_t nb_segments = 32; ///< a power of two; an int array_id needs 24
+    static constexpr std::size_t first_bits = 8;                            ///< log2 of the first segment's size
+    static constexpr std::size_t first_size = std::size_t{1} << first_bits; ///< rows in segment 0
+    static constexpr std::size_t n_segments = 32; ///< a power of two; an int array_id needs 24
 
     /// @brief Segment of the row whose index plus first_size is @p biased.
     /// @details Masked: in bounds whatever the index, so an index that is not
     ///          one (a negative array_id) cannot address past the segment table.
     [[nodiscard]] static constexpr std::size_t segment_of(std::size_t biased) noexcept
     {
-        return (static_cast<std::size_t>(std::bit_width(biased)) - (first_bits + 1)) & (nb_segments - 1);
+        return (static_cast<std::size_t>(std::bit_width(biased)) - (first_bits + 1)) & (n_segments - 1);
     }
 
-    std::atomic<Row*> segments_[nb_segments]{}; // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+    std::atomic<Row*> segments_[n_segments]{}; // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
     std::atomic<std::size_t> size_{0};
 };
 

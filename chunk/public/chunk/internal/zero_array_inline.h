@@ -23,7 +23,7 @@
 
 #include "chunk/internal/type_state_registry.h"         // ensure_manager, from create
 #include "chunk/zero_array.h"                           // zero::Array, the class these bodies belong to
-#include "chunk/internal/chunk_stats.h"                 // increm_chunk_* (CHUNK_STATS)
+#include "chunk/internal/chunk_stats.h"                 // inc_chunk_* (CHUNK_STATS)
 #include "chunk/internal/chunk_stats_printer.h"         // print_formatted_chunk_stats
 #include "chunk/internal/type_state.h"                  // per-size free lists, candidate filter
 #include "chunk/internal/pmp_chunk.h"                   // CHUNK_PMP_*, pmp::parallel_sum
@@ -52,7 +52,7 @@ void zero::Array<T, IntType>::rebuild_storage(IntType sz)
         if (this->size_policy_.size())
         {
             chunk_count_ = this->chunks_for(sz);
-            Manager::increm_somme_chunk_create(chunk_count_);
+            Manager::inc_total_chunk_create(chunk_count_);
             Manager::compute_size_buffer_reuse();
             Manager::compute_size_max_number_of_chunk_to_check_compress();
 
@@ -203,12 +203,12 @@ void zero::Array<T, IntType>::clear_core()
     }
 
     // Give this array's chunks back to the manager's count (as zero_one_value::Array /
-    // zero_any do): the compression threshold (somme_chunk_create / (factor_div *
+    // zero_any do): the compression threshold (total_chunk_create / (factor_div *
     // threads)) must track the chunks alive, not the program's history --
     // otherwise it climbs by orders of magnitude, compressions become rare and
     // buffers stop returning to the reuse lists. Also balances rechunk_to()
     // (clear_core() -> rebuild_storage()).
-    Manager::decrem_somme_chunk_create(chunk_count_);
+    Manager::dec_total_chunk_create(chunk_count_);
     // And recompute what derives from the total, as rebuild_storage() does: a
     // re-chunk would otherwise keep a threshold sized for the old geometry
     // (several times too large, a large throughput loss).
@@ -234,7 +234,7 @@ void zero::Array<T, IntType>::clear_core()
                               {
                                   if constexpr (chunk_config::stats)
                                   {
-                                      increm_chunk_teardown_clear<Chunk<T>>();
+                                      inc_chunk_teardown_clear<Chunk<T>>();
                                       // Released below without a compression: out of the live figures.
                                       add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) *
                                                                           static_cast<long>(this->size_policy_.size()));
@@ -244,9 +244,9 @@ void zero::Array<T, IntType>::clear_core()
                           },
                           pmp::nowait);
 
-                      const auto nb = static_cast<int>(ll_chunk_loc.size());
+                      const auto n = static_cast<int>(ll_chunk_loc.size());
 
-                      if (nb > 0)
+                      if (n > 0)
                       {
                           const int thr_rank = CHUNK_PMP_THREAD_RANK;
 
@@ -257,7 +257,7 @@ void zero::Array<T, IntType>::clear_core()
                           const unsigned int my_sz = this->size_policy_.size();
                           auto&              lbf = Chunk<T>::Manager::get_list_block_free_thr_for_size(thr_rank, my_sz);
 
-                          for (int k = 0; k < nb; ++k)
+                          for (int k = 0; k < n; ++k)
                           {
                               T*          values_loc = ll_chunk_loc[k]->values_;
                               constexpr T zero{};
@@ -285,7 +285,7 @@ void zero::Array<T, IntType>::clear_core()
             {
                 if constexpr (chunk_config::stats)
                 {
-                    increm_chunk_teardown_clear<Chunk<T>>();
+                    inc_chunk_teardown_clear<Chunk<T>>();
                 }
                 // release_st: counted as teardown_clear above, not also as a
                 // compression.
@@ -345,7 +345,7 @@ void zero::Array<T, IntType>::compress_int(pmp::Team& team, bool verbose)
                 // bypasses compress(), which would otherwise count it.
                 if constexpr (chunk_config::stats)
                 {
-                    increm_chunk_compress_attempt<Chunk<T>>();
+                    inc_chunk_compress_attempt<Chunk<T>>();
                 }
 
                 if (chunk.is_constant_to(T{}, static_cast<unsigned int>(this->size_policy_.size())))
@@ -356,7 +356,7 @@ void zero::Array<T, IntType>::compress_int(pmp::Team& team, bool verbose)
         },
         pmp::nowait);
 
-    const auto nb = static_cast<int>(ll.size());
+    const auto n = static_cast<int>(ll.size());
 
     // ── What this reports, and what it does NOT assert ───────────────────────
     // compress_int() only SCANS. It finds the residual: chunks constant at zero
@@ -366,14 +366,14 @@ void zero::Array<T, IntType>::compress_int(pmp::Team& team, bool verbose)
     // a large or growing count means the incremental path is not keeping up.
     // Written when the caller asks (`verbose`: a report, whatever CHUNK_LOG
     // says), one line per thread (its share of the chunks).
-    if (nb != 0 && verbose)
+    if (n != 0 && verbose)
     {
         std::array<char, 256> sample{};
         CHUNK_LOG_ALWAYS(
             compress,
             "residual zero::Array<{}, {}>: {} chunk(s) constant at zero, still materialised (awaiting the next "
             "compression pass): {}",
-            type_name<T>(), type_name<IntType>(), nb,
+            type_name<T>(), type_name<IntType>(), n,
             internal::chunk_index_sample(sample, ll, static_cast<IntType>(this->size_policy_.size())));
     }
 }
@@ -409,7 +409,7 @@ void zero::Array<T, IntType>::release_chunk_range(int first, int last)
                 {
                     if constexpr (chunk_config::stats)
                     {
-                        increm_chunk_teardown_clear<Chunk<T>>();
+                        inc_chunk_teardown_clear<Chunk<T>>();
                         add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) * static_cast<long>(my_sz));
                     }
                     // As clear_core(): zero's reuse lists hold zeroed buffers.
@@ -430,7 +430,7 @@ void zero::Array<T, IntType>::release_chunk_range(int first, int last)
             {
                 if constexpr (chunk_config::stats)
                 {
-                    increm_chunk_teardown_clear<Chunk<T>>();
+                    inc_chunk_teardown_clear<Chunk<T>>();
                 }
                 chunk_list_[j].release_st();
             }
@@ -485,7 +485,7 @@ void zero::Array<T, IntType>::resize(IntType newsz)
     {
         Proxy<T>::resize_array_is_int(array_id, chunk_count_);
     }
-    Manager::increm_somme_chunk_create(chunk_count_ - old_chunk_count);
+    Manager::inc_total_chunk_create(chunk_count_ - old_chunk_count);
     Manager::compute_size_buffer_reuse();
     Manager::compute_size_max_number_of_chunk_to_check_compress();
     // An array built empty (the default) only becomes worth its own slabs

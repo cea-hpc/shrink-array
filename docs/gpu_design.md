@@ -138,7 +138,7 @@ want them small; it is the same trade-off as the CPU dynamic geometry (9.3).
 
 | data | size | where |
 |---|---|---|
-| `ChunkDesc[nb_chunks]` | 16 or 24 B per chunk | device (or coherent memory, 11) |
+| `ChunkDesc[n_chunks]` | 16 or 24 B per chunk | device (or coherent memory, 11) |
 | the arena's bump counter, top of the free-buffer stack | 2 words | device |
 | append-buffer of the writes not applied (6.4) | bounded, set at creation | device |
 | statistics (`stats()`, materialised chunks, arena failures) | a few words | device, read back by the host at the end of the phase |

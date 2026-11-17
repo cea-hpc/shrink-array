@@ -71,14 +71,14 @@ void DirtyBitsetSupport<Derived, true>::reallocate_dirty_bitset(int old_chunk_co
         return;
     }
 
-    const int old_nb_words = words_for(old_chunk_count);
-    const int new_nb_words = words_for(new_chunk_count);
+    const int old_n_words = words_for(old_chunk_count);
+    const int new_n_words = words_for(new_chunk_count);
 
-    auto new_bitset = parallel_storage_init::make_filled<PaddedDirtyWord>(static_cast<std::size_t>(new_nb_words) + 1);
+    auto new_bitset = parallel_storage_init::make_filled<PaddedDirtyWord>(static_cast<std::size_t>(new_n_words) + 1);
 
     if (!bitset_.empty())
     {
-        const auto words_to_copy = static_cast<std::size_t>(std::min(old_nb_words, new_nb_words));
+        const auto words_to_copy = static_cast<std::size_t>(std::min(old_n_words, new_n_words));
         for (std::size_t i = 0; i < words_to_copy; ++i)
         {
             const uint64_t val = bitset_[i].word.load(std::memory_order_relaxed);
@@ -86,12 +86,12 @@ void DirtyBitsetSupport<Derived, true>::reallocate_dirty_bitset(int old_chunk_co
         }
         // Carry the "some bit was set" flag (conservatively: it may now
         // cover only bits that were cut off, which costs one useless clear).
-        new_bitset[static_cast<std::size_t>(new_nb_words)].word.store(
-            bitset_[static_cast<std::size_t>(old_nb_words)].word.load(std::memory_order_relaxed),
+        new_bitset[static_cast<std::size_t>(new_n_words)].word.store(
+            bitset_[static_cast<std::size_t>(old_n_words)].word.load(std::memory_order_relaxed),
             std::memory_order_relaxed);
     }
-    bitset_   = std::move(new_bitset);
-    nb_words_ = new_nb_words;
+    bitset_  = std::move(new_bitset);
+    n_words_ = new_n_words;
 }
 
 template <typename Derived>
@@ -111,7 +111,7 @@ void DirtyBitsetSupport<Derived, true>::clear_dirty_bitset() noexcept
         return;
     }
     PaddedDirtyWord* const words = bitset_.data();
-    for (int i = 0; i < nb_words_; ++i)
+    for (int i = 0; i < n_words_; ++i)
     {
         words[i].word.store(0, std::memory_order_relaxed);
     }

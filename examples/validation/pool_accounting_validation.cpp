@@ -25,10 +25,10 @@
 //
 // WHAT IT CHECKS
 //
-//   1. somme_chunk_create tracks the chunks ALIVE: it grows by an array's chunk
+//   1. total_chunk_create tracks the chunks ALIVE: it grows by an array's chunk
 //      count at creation and comes back down by the same amount at clear().
 //      That count feeds the compression threshold
-//      (somme_chunk_create / (factor_div * threads), floored), so a count that
+//      (total_chunk_create / (factor_div * threads), floored), so a count that
 //      only ever grows -- zero's did, its clear_core() never decremented -- makes
 //      the threshold climb with the program's history (390 -> ~42 000 on a zero
 //      dyn run) until compression all but stops. After every array is gone
@@ -167,7 +167,7 @@ int run(int argc, char** argv)
     Runtime::init(true);
     expect(block_size() == blocks, "init(true) again keeps the block size", block_size(), blocks);
 
-    const long base = Manager::get_somme_chunk_create();
+    const long base = Manager::get_total_chunk_create();
     expect(Manager::reuse_pool_blocks() == 0, "pools empty at start", (long)Manager::reuse_pool_blocks(), 0);
 
     // --- 1. count alive: two arrays, then one cleared, then both ------------
@@ -176,13 +176,13 @@ int run(int argc, char** argv)
     {
         Array<double> arr(count);
         maybe_set_second_value(arr, 3.5);
-        chunks_a = Manager::get_somme_chunk_create() - base;
-        expect(chunks_a > 0, "somme_chunk_create grew by a's chunks", chunks_a, chunks_a);
+        chunks_a = Manager::get_total_chunk_create() - base;
+        expect(chunks_a > 0, "total_chunk_create grew by a's chunks", chunks_a, chunks_a);
 
         Array<double> half(count / 2);
         maybe_set_second_value(half, 3.5);
-        chunks_b = Manager::get_somme_chunk_create() - base - chunks_a;
-        expect(chunks_b > 0, "somme_chunk_create grew by b's chunks", chunks_b, chunks_b);
+        chunks_b = Manager::get_total_chunk_create() - base - chunks_a;
+        expect(chunks_b > 0, "total_chunk_create grew by b's chunks", chunks_b, chunks_b);
 
         materialise_all(arr, count);
         materialise_all(half, count / 2);
@@ -201,8 +201,8 @@ int run(int argc, char** argv)
         // puts every array above it, and this is what the check expects then.
         const bool a_owns_slabs = arr.alloc_key() != 0;
         arr.clear();
-        expect(Manager::get_somme_chunk_create() == base + chunks_b,
-               "somme_chunk_create back down by a's chunks after a.clear()", Manager::get_somme_chunk_create(),
+        expect(Manager::get_total_chunk_create() == base + chunks_b,
+               "total_chunk_create back down by a's chunks after a.clear()", Manager::get_total_chunk_create(),
                base + chunks_b);
         const auto parked      = static_cast<long>(Manager::reuse_pool_blocks());
         const long want_parked = (parks_on_clear && !a_owns_slabs) ? written_a : 0;
@@ -230,21 +230,21 @@ int run(int argc, char** argv)
             const unsigned new_size = old_size * 4 <= shrink_array::cst_buffer_size ? old_size * 4 : old_size / 2;
             if (new_size != old_size)
             {
-                const long before = Manager::get_somme_chunk_create();
+                const long before = Manager::get_total_chunk_create();
                 half.rechunk_to(new_size);
                 expect(half.chunk_size() == new_size, "b re-chunked to the new geometry", half.chunk_size(), new_size);
                 const auto at_old = static_cast<long>(Manager::reuse_pool_blocks_at(old_size));
                 expect(at_old == 0, "nothing parked at the OLD geometry after rechunk_to", at_old, 0);
                 // Chunks alive followed the geometry: fewer chunks at a larger size.
-                const long delta = Manager::get_somme_chunk_create() - before;
+                const long delta = Manager::get_total_chunk_create() - before;
                 const long want  = static_cast<long>(half.written_chunk_count()) - chunks_b;
-                expect(delta <= 0 && delta >= want - 1, "somme_chunk_create follows the new chunk count", delta, want);
+                expect(delta <= 0 && delta >= want - 1, "total_chunk_create follows the new chunk count", delta, want);
             }
         }
     } // b and c cleared here
 
-    expect(Manager::get_somme_chunk_create() == base,
-           "somme_chunk_create back to its start value once every array is gone", Manager::get_somme_chunk_create(),
+    expect(Manager::get_total_chunk_create() == base,
+           "total_chunk_create back to its start value once every array is gone", Manager::get_total_chunk_create(),
            base);
 
     Manager::compute_size_max_number_of_chunk_to_check_compress();

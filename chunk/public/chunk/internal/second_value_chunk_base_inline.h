@@ -87,8 +87,8 @@ void SecondValueChunkBase<T, Derived>::block_clear_common(int                  n
 
     if constexpr (is_zero_one_value_derived && chunk_config::use_compression_with_counter)
     {
-        derived().reset_nb_val_eq_second_value();
-        derived().reset_nb_val_eq_first_value();
+        derived().reset_n_val_eq_second_value();
+        derived().reset_n_val_eq_first_value();
     }
 }
 
@@ -149,7 +149,7 @@ void SecondValueChunkBase<T, Derived>::clear_impl(IndexT            index_opt,
 
         if constexpr (is_zero_one_value_derived && chunk_config::use_compression_with_counter)
         {
-            derived().reset_nb_val_eq_second_value();
+            derived().reset_n_val_eq_second_value();
         }
     }
 }
@@ -160,7 +160,7 @@ void SecondValueChunkBase<T, Derived>::clear_impl(IndexT            index_opt,
 
 template <typename T, typename Derived>
 template <typename CasFunc>
-void SecondValueChunkBase<T, Derived>::apply_cas_or_recup(T* values_loc, int thr_rank, CasFunc&& cas_fn) noexcept
+void SecondValueChunkBase<T, Derived>::apply_cas_or_reclaim(T* values_loc, int thr_rank, CasFunc&& cas_fn) noexcept
 {
     if constexpr (chunk_config::use_fast_block_compression)
     {
@@ -169,12 +169,12 @@ void SecondValueChunkBase<T, Derived>::apply_cas_or_recup(T* values_loc, int thr
         {
             // Publish the init before recycling the lost block (ARM).
             std::atomic_thread_fence(std::memory_order_release);
-            Base::recup_value(values_loc, thr_rank);
+            Base::reclaim_value(values_loc, thr_rank);
         }
     }
     else
     {
-        Base::recup_value(values_loc, 0);
+        Base::reclaim_value(values_loc, 0);
     }
 }
 

@@ -206,7 +206,7 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list([[maybe_unused]] aut
             }
             if constexpr (chunk_config::stats)
             {
-                increm_chunk_mark_ok<ChunkT>();
+                inc_chunk_mark_ok<ChunkT>();
             }
             internal::ArrayUsers<ChunkT>::note(array_id_, get_thr_rank_fast());
             push_to_compress_list(vec_tuple, &chunk_, chunk_index_, array_id_, ChunkElems{this->chunk_size()});
@@ -216,7 +216,7 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list([[maybe_unused]] aut
             // CHUNK_STATS: flag ALREADY 1, normal while the chunk waits in the list.
             // mark_refused growing while mark_ok stays flat means the flag is not
             // reset after the compression sweep.
-            increm_chunk_mark_refused<ChunkT>();
+            inc_chunk_mark_refused<ChunkT>();
         }
     }
 }
@@ -257,7 +257,7 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list() const
         {
             if constexpr (chunk_config::stats)
             {
-                increm_chunk_mark_refused<ChunkT>();
+                inc_chunk_mark_refused<ChunkT>();
             }
         }
         else
@@ -265,7 +265,7 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list() const
             {
                 if constexpr (chunk_config::stats)
                 {
-                    increm_chunk_mark_ok<ChunkT>();
+                    inc_chunk_mark_ok<ChunkT>();
                 }
                 const int thr = get_thr_rank_fast();
                 auto&     vec = derived().get_vec_tuple_to_compress_potentially_thr(thr);
@@ -793,7 +793,7 @@ void ProxyBase<Derived, T, ChunkT>::enqueue_deferred_write(CtxType* ctx, LambdaB
     // dirty bitset now, the write itself replays at the phase end.
     auto* arr = const_cast<ArrayChunkForT<ChunkT>*>(ptr_on_array_); // NOSONAR(cpp:S859)
     arr->mark_chunk_dirty(ctx->chunk_index);
-    increm_chunk_gate_deferred<ChunkT>();
+    inc_chunk_gate_deferred<ChunkT>();
 
     // The moment the protocol matters: this write is about to be parked in a
     // per-thread queue that only the phase end drains. See phase_guard.h.
@@ -900,7 +900,7 @@ void ProxyBase<Derived, T, ChunkT>::apply_atomic_op(Op operation, const U& opera
 {
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_write<ChunkT>(operand);
+        inc_chunk_write<ChunkT>(operand);
     }
 
     using CalcType = std::common_type_t<T, BaseT<U>>;
@@ -1047,7 +1047,7 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(InT<U> operand, Op operati
     check_not_stale();
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_write<ChunkT>(operand);
+        inc_chunk_write<ChunkT>(operand);
     }
 
     // ── Cross-rank RMW materialisation ──────────────────────────────────────
@@ -1187,7 +1187,7 @@ void ProxyBase<Derived, T, ChunkT>::bitwise_assign(InT<U> operand, Op operation)
     check_not_stale();
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_write<ChunkT>(operand);
+        inc_chunk_write<ChunkT>(operand);
     }
 
     // Cross-rank RMW materialisation, as in arithmetic_assign: this engine
@@ -1292,7 +1292,7 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::resize_array_is_int(i
     // outlives the caller's chunk_list_ realloc, and the cleared flag lets
     // the chunk be queued twice. The callers' compression pass (resize,
     // after its deferred-op drain) must empty the lists first; this checks
-    // it. Mirrors zero_any::Proxy::resize_array_is_int(array_id, old, nb).
+    // it. Mirrors zero_any::Proxy::resize_array_is_int(array_id, old, n).
     if constexpr (build_config::any_check)
     {
         if (static_cast<std::size_t>(array_id) < array_is_inside_chunk_list_to_compress.size())

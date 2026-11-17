@@ -39,7 +39,7 @@
 #include "chunk/internal/array_chunk_rechunk_trace.h"  // rechunk_trace_on, rss_mib_now, g_slice_times
 #include "chunk/internal/drain_probe.h"                // g_drain_probe (the boundary drain's split)
 #include "chunk/internal/chunk_size_policy.h"          // set_thread_chunk_size, DynChunkSizeGuard
-#include "chunk/internal/chunk_stats.h"                // increm_chunk_rechunk_* (CHUNK_STATS)
+#include "chunk/internal/chunk_stats.h"                // inc_chunk_rechunk_* (CHUNK_STATS)
 #include "chunk/internal/compression_manager.h"        // CompressionManager<>::FlushReplayGuard
 #include "chunk/internal/cst_slot.h"                   // CstSlot (zero_any's type-of-constant slot)
 #include "chunk/internal/invariant_check.h"            // CHUNK_INVARIANT_FAILED (the bulk read check)
@@ -403,10 +403,10 @@ void RechunkSupport<Derived, true>::Refill::rebuild_one(int new_chunk, std::vect
     {
         // Nothing to rebuild: the whole span was still the compressible
         // constant, so the new chunk stays compressed (work avoided).
-        increm_chunk_rechunk_skipped<ChunkType>();
+        inc_chunk_rechunk_skipped<ChunkType>();
         return; // fresh cst1, leave it
     }
-    increm_chunk_rechunk_rebuilt<ChunkType>();
+    inc_chunk_rechunk_rebuilt<ChunkType>();
     if (install_cst2(new_chunk, span, sources, tally))
     {
         return;

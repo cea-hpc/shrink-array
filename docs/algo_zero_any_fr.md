@@ -127,7 +127,7 @@ chaque élément au premier élément du chunk) :
 
 Le tampon libéré rejoint la liste de réutilisation du thread après la période de grâce des
 sections de lecture. Le seuil de déclenchement vaut
-`somme_chunk_create / (50 × nombre de threads)`, avec un plancher de 500 candidats (constantes de
+`total_chunk_create / (50 × nombre de threads)`, avec un plancher de 500 candidats (constantes de
 `zero_any_chunk_def.h`).
 
 Le déroulé de la passe, dans le style du §8.4 de [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md) :
@@ -140,14 +140,14 @@ flowchart TD
     C --> D{"CompressionManager::start"}
     D -->|refusé| D1["steal_unmark de tous, renoncer"]
     D -->|accepté| E["fill_list_to_compress à la taille de l'entrée :<br/>scan_constants contre 0 et l'élément 0"]
-    E -->|"tout = 0"| F["liste ll_compt1"]
-    E -->|"tout = élément 0"| G["liste ll_compt2"]
+    E -->|"tout = 0"| F["items ll_compt1"]
+    E -->|"tout = élément 0"| G["items ll_compt2"]
     E -->|"sinon"| N["steal_unmark tout de suite"]
     F --> F1["clear_int_st, type 0 : case remise à zéro,<br/>type cst_val1, CAS values -> cst_val1"]
     G --> G1["find_or_set_ind_cst_val2 : valeur enregistrée,<br/>écrite dans la case, puis clear_int_st, type 1 :<br/>CAS values -> le tableau du registre"]
     F1 --> R["free_block_to_pool après une période de grâce,<br/>steal_unmark"]
     G1 --> R
-    R --> K["drapeaux de file : hand_back après le parcours, release à la fin,<br/>écrit entre-temps -> remis en liste,<br/>chunk déclencheur remis en liste, finish()"]
+    R --> K["drapeaux de file : hand_back après le parcours, release à la end,<br/>écrit entre-temps -> remis en items,<br/>chunk déclencheur remis en items, finish()"]
     N --> K
 ```
 

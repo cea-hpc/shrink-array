@@ -33,7 +33,7 @@
 #include "chunk/internal/chunk_size_policy.h"       // ChunkElems
 #include "chunk/internal/cst_slot.h"                // CstSlot, cst_slot_of
 #include "chunk/internal/second_value_chunk_base.h" // SecondValueChunkBase
-#include "chunk/internal/chunk_stats.h"             // increm_chunk_write
+#include "chunk/internal/chunk_stats.h"             // inc_chunk_write
 
 #include "chunk/internal/chunk_tuples.h"    // ZeroAnyCompOf, VectorTuple4ChunkInt2
 #include "chunk/internal/immortal.h"        // Immortal / LazyImmortal: statics safe for global arrays

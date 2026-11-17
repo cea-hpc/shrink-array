@@ -282,7 +282,7 @@ flowchart TD
     E --> F{"revérification :<br/>compresseur ?"}
     F -->|non| G["corps : marquage + perform_core_assignment"]
     G --> H["end_write"]
-    H --> I["entretien : liste dangereuse ?<br/>trop d'opérations différées ?"]
+    H --> I["entretien : items dangereuse ?<br/>trop d'opérations différées ?"]
     F -->|oui| J["end_write + écriture DIFFÉRÉE (7.3)"]
 ```
 
@@ -391,15 +391,15 @@ parallèle.
 
 ```mermaid
 flowchart TD
-    A["liste (rang, second_value)"] --> B["protocole du compresseur<br/>(CompressionManager::start)"]
+    A["items (rang, second_value)"] --> B["protocole du compresseur<br/>(CompressionManager::start)"]
     B --> C["pour chaque entrée : figer la taille<br/>du chunk (n_elems de l'entrée)"]
     C --> D["fill_list_to_compress : parcourir le chunk"]
-    D -->|"tout = first_value"| E["liste ll_compt1"]
-    D -->|"tout = second_value"| F["liste ll_compt2"]
+    D -->|"tout = first_value"| E["items ll_compt1"]
+    D -->|"tout = second_value"| F["items ll_compt2"]
     D -->|"sinon"| G["rien (drapeau remis à zéro)"]
     E --> H["clear : rendre le tampon,<br/>values -> cst_val1"]
     F --> I["clear : rendre le tampon,<br/>values -> cst_val2[ind]"]
-    H --> J["remettre les drapeaux à zéro,<br/>vider la liste, finish()"]
+    H --> J["remettre les drapeaux à zéro,<br/>vider la items, finish()"]
     I --> J
     G --> J
 ```
@@ -526,7 +526,7 @@ le laisser sur le chemin élément par élément :
   d'ajouter le chunk (`set_info_on_chunk()`), puisque les listes de `zero_one_value` sont indexées par
   elle. Sans cela, les chunks aboutissaient dans la liste de `T{}`, qu'aucune passe ne vide ;
 - en mode compteur (les builds serial), une écriture directe doit **recompter** les deux
-  compteurs du chunk, `nb_val_eq_first_value_` et `nb_val_eq_second_value_`, que zero_one_value::Proxy tient
+  compteurs du chunk, `n_val_eq_first_value_` et `n_val_eq_second_value_`, que zero_one_value::Proxy tient
   sinon à jour écriture par écriture (`internal::resync_counters`, comme le compte des zéros de
   `zero`).
 

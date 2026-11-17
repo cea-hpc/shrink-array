@@ -37,7 +37,7 @@
 #include "chunk/internal/deferred_op_pool.h"            // pool_new_ctx
 #include "chunk/internal/bad_ptr_check.h"               // CHUNK_CHECK_VALUES_PTR (check builds)
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/chunk_stats.h"                 // increm_chunk_* (CHUNK_STATS)
+#include "chunk/internal/chunk_stats.h"                 // inc_chunk_* (CHUNK_STATS)
 #include "chunk/internal/relaxed_element.h"             // store_element_relaxed (the deferred replay)
 #include "chunk/internal/chunk_size_policy.h"           // DynChunkSizeGuard, set_thread_chunk_size
 #include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
@@ -496,7 +496,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::perform_core_assignment(T* vals, I
         {
             if constexpr (chunk_config::stats)
             {
-                increm_chunk_write<ChunkType>(value);
+                inc_chunk_write<ChunkType>(value);
             }
             materialise();
             Base::store_value_at(vals, value);
@@ -540,7 +540,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::perform_core_assignment(T* vals, I
 
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_write<ChunkType>(value);
+        inc_chunk_write<ChunkType>(value);
     }
 
     if (is_cst2 || Base::is_cst_val1(vals))
@@ -1423,7 +1423,7 @@ bool zero_any::PointerMap<ChunkT, SmallN>::swap_keys(Key key_a, Key key_b) noexc
 {
     const internal::RegistryWriteLock registry_lock(internal::registry_mutex());
     int                               na = 0;
-    int                               nb = 0;
+    int                               n  = 0;
     bool                              fa = false;
     bool                              fb = false;
     if (!using_big_)
@@ -1437,7 +1437,7 @@ bool zero_any::PointerMap<ChunkT, SmallN>::swap_keys(Key key_a, Key key_b) noexc
             }
             if (key == key_b)
             {
-                nb = arr;
+                n  = arr;
                 fb = true;
             }
         }
@@ -1449,7 +1449,7 @@ bool zero_any::PointerMap<ChunkT, SmallN>::swap_keys(Key key_a, Key key_b) noexc
         {
             if (key == key_a)
             {
-                arr = nb;
+                arr = n;
             }
             else if (key == key_b)
             {

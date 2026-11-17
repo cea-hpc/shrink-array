@@ -101,7 +101,7 @@ void Simu::input_data()
 {
     if constexpr (multi_mat::interactive_input)
     {
-        ask_int("Number of material", "materials", nbmat);
+        ask_int("Number of material", "materials", n_materials);
 
         int input_mesh_mode = 1;
         ask_int("Input mesh mode (1 by million 2 real)", "input mesh mode", input_mesh_mode);
@@ -137,20 +137,20 @@ void Simu::input_data()
         }
     }
 
-    dis.resize(nbmat);
+    dis.resize(n_materials);
 
     switch (get_option_chunk())
     {
         case 1:
         {
             all_chunk = true;
-            dis.assign(nbmat, true);
+            dis.assign(n_materials, true);
         }
         break;
         case 2:
         {
             all_vector = true;
-            dis.assign(nbmat, false);
+            dis.assign(n_materials, false);
         }
         break;
         case 3:
@@ -167,16 +167,16 @@ void Simu::input_data()
 
             int chunk_count = 0;
 
-            for (int m = 0; m < nbmat; ++m)
+            for (int m = 0; m < n_materials; ++m)
             {
                 dis[m] = distrib(gen) < threshold;
                 chunk_count += dis[m];
                 std::cout << "Material #" << m << ": " << (dis[m] ? "chunk" : "vector") << "\n";
             }
 
-            std::cout << "\nNumber of chunk array : " << chunk_count << " on " << nbmat << " materials \n\n";
+            std::cout << "\nNumber of chunk array : " << chunk_count << " on " << n_materials << " materials \n\n";
 
-            if (chunk_count == nbmat)
+            if (chunk_count == n_materials)
             {
                 all_chunk = true;
             }
@@ -219,7 +219,7 @@ void Simu::input_data()
     }
     else
     {
-        std::cout << nbmat << " materials\n";
+        std::cout << n_materials << " materials\n";
         std::cout << mesh_size << " mesh size\n";
         std::cout << iter_max << " number of iterations\n";
         std::cout << option_chunk << " option chunk\n";

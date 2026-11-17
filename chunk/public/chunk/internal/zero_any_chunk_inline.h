@@ -148,7 +148,7 @@ void zero_any::ChunkImpl<T, Derived>::fill_list_to_compress(CandidateTuples&    
         }
 
         // CHUNK_STATS: one candidate scanned (compress/compress_attempt = scan yield).
-        increm_chunk_compress_attempt<Derived>();
+        inc_chunk_compress_attempt<Derived>();
 
         // Already at its second value (compress() ran over it while queued): do not scan.
         // `values` is a second-value slot that reads as all first_value; the chunk would go
@@ -414,7 +414,7 @@ void zero_any::ChunkImpl<T, Derived>::compress([[maybe_unused]] int  thr_rank,
     if (this->written())
     {
         // CHUNK_STATS: one candidate scanned (compress/compress_attempt = scan yield).
-        increm_chunk_compress_attempt<Derived>();
+        inc_chunk_compress_attempt<Derived>();
         bool compact1 = false;
         bool compact2 = false;
 
@@ -783,7 +783,7 @@ void wait_before_materialise(const ChunkT& chunk, [[maybe_unused]] int thr_rank)
  *
  * The buffer is filled BEFORE publication, a single CAS against the constant pointer the
  * chunk holds: a reader sees the old constant or the finished buffer. Losing the CAS means
- * another thread materialised first; apply_cas_or_recup() recycles our buffer.
+ * another thread materialised first; apply_cas_or_reclaim() recycles our buffer.
  *
  * @warning Waits first until no compressor may steal THIS chunk
  *          (wait_before_materialise(); not when the caller's own writer flag is
@@ -820,8 +820,8 @@ void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::create_value(bool        
                     }
                 };
                 T* const values_loc = Base::allocate_chunk_internal(thr_rank, fill);
-                Base::apply_cas_or_recup(values_loc, thr_rank, [this, motif](T* new_ptr)
-                                         { return this->compare_and_swap_gen(new_ptr, motif); });
+                Base::apply_cas_or_reclaim(values_loc, thr_rank, [this, motif](T* new_ptr)
+                                           { return this->compare_and_swap_gen(new_ptr, motif); });
                 return;
             }
         }
@@ -841,12 +841,12 @@ void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::create_value(bool        
 
         T* values_loc = Base::allocate_chunk_internal(thr_rank, init_func);
 
-        Base::apply_cas_or_recup(values_loc, thr_rank,
-                                 [this, need_set_second_value](T* cst_ptr)
-                                 {
-                                     // Single CAS against the specific constant pointer.
-                                     return this->compare_and_swap(cst_ptr, need_set_second_value);
-                                 });
+        Base::apply_cas_or_reclaim(values_loc, thr_rank,
+                                   [this, need_set_second_value](T* cst_ptr)
+                                   {
+                                       // Single CAS against the specific constant pointer.
+                                       return this->compare_and_swap(cst_ptr, need_set_second_value);
+                                   });
     }
 
     else
@@ -881,8 +881,8 @@ void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::create_value_bool(bool ne
 
         T* values_loc = Base::allocate_chunk_internal(thr_rank, init_func);
 
-        Base::apply_cas_or_recup(values_loc, thr_rank, [this, need_set_second_value](bool* cst_ptr)
-                                 { return this->compare_and_swap(cst_ptr, need_set_second_value); });
+        Base::apply_cas_or_reclaim(values_loc, thr_rank, [this, need_set_second_value](bool* cst_ptr)
+                                   { return this->compare_and_swap(cst_ptr, need_set_second_value); });
     }
     else
     {
@@ -1029,7 +1029,7 @@ void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::block_clear(int          
                                                                    T*                   cst2_ptr)
 {
     // CHUNK_STATS: one block released (see the function comment).
-    increm_chunk_compress<Derived>();
+    inc_chunk_compress<Derived>();
     // Bytes released, as zero_one_value counts them (with bytes_alloc/bytes_reused: live buffers).
     add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(shrink_array::alloc_chunk_count()));
     Base::block_clear_common(num_compress_value, 0, thr_rank, ptr_type_cst, ptr_second_value, cst2_ptr);
@@ -1081,7 +1081,7 @@ void zero_any::ChunkThreadPolicy<T, Derived, false>::block_clear(int            
         return;
     }
 
-    increm_chunk_compress<Derived>();
+    inc_chunk_compress<Derived>();
     Base::free_values(values_);
     Derived::set_cst_val_to_cst_val(num_compress_value, ptr_type_cst);
 
@@ -1367,7 +1367,7 @@ void zero_any::ChunkImpl<T, Derived>::alloc_chunk(SecondValueRef<T> ptr_second_v
     {
         if constexpr (chunk_config::stats)
         {
-            increm_chunk_write<ChunkType>();
+            inc_chunk_write<ChunkType>();
         }
 
         if constexpr (build_config::threaded)

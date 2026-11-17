@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # zero_any allocator diagnosis: build one configuration, then run it in a loop
 # with a progress line.
-# Usage: ./diag_alloc.sh <variant> [nb_runs]
+# Usage: ./diag_alloc.sh <variant> [n_runs]
 #   variants: fast | std | noreuse | tsan
 #   e.g.: ./diag_alloc.sh fast 100
 #         ./diag_alloc.sh tsan 5
@@ -27,7 +27,7 @@ case "$variant" in
   std)     name=std;      opt="-DCHUNK_STD_ALLOC=ON";     gccmod="$GCC_MODULE";      san="";     label="STD (malloc, the clean reference)"        ;;
   noreuse) name=noreuse;  opt="-DCHUNK_POOL_NO_REUSE=ON"; gccmod="$GCC_MODULE";      san="";     label="NO_REUSE (new/delete)"                    ;;
   tsan)    name=tsan;     opt="-DCHUNK_STD_ALLOC=ON -DCHUNK_SANITIZER=thread"; gccmod="$GCC_TSAN_MODULE"; san="tsan"; label="TSan (oracle, STD)" ;;
-  *) echo "usage: $0 {fast|std|noreuse|tsan} [nb_runs]"; exit 2 ;;
+  *) echo "usage: $0 {fast|std|noreuse|tsan} [n_runs]"; exit 2 ;;
 esac
 [ "$variant" = "tsan" ] && runs="${2:-5}"
 

@@ -125,7 +125,7 @@ class MultiArray : public std::vector<VectCom<T>*>
     /// @brief One array of @p mesh_size elements per material, of the kind
     ///        the dispatch gives the material. Frees those of a previous
     ///        call first.
-    void create(int nbmat, int mesh_size);
+    void create(int n_materials, int mesh_size);
 
   private:
     /// @brief Delete every array and empty the vector.
@@ -141,12 +141,12 @@ class MultiArray : public std::vector<VectCom<T>*>
 };
 
 template <typename T, typename VecChunk>
-void MultiArray<T, VecChunk>::create(int nbmat, int mesh_size)
+void MultiArray<T, VecChunk>::create(int n_materials, int mesh_size)
 {
     release(); // a second create() does not leak the first one's arrays
-    BaseClass::resize(nbmat, nullptr);
+    BaseClass::resize(n_materials, nullptr);
 
-    for (int k = 0; k < nbmat; ++k)
+    for (int k = 0; k < n_materials; ++k)
     {
         if (dispatch.is_chunk(k))
         {

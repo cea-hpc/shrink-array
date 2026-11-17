@@ -39,7 +39,7 @@
 #include "chunk/internal/cold_path_lock.h"        // ColdPathLock: construction, teardown, resize
 #include "chunk/internal/array_users.h"           // ArrayUsers: a row per array
 #include "chunk/log.h"                            // CHUNK_LOG (set_chunk_size refusal)
-#include "chunk/internal/chunk_stats.h"           // increm_chunk_dirty_gate (sync_chunk, CHUNK_STATS)
+#include "chunk/internal/chunk_stats.h"           // inc_chunk_dirty_gate (sync_chunk, CHUNK_STATS)
 
 namespace shrink_array
 {
@@ -144,8 +144,8 @@ void ArrayChunkBase<Derived>::set_chunk_size([[maybe_unused]] unsigned int new_c
 template <typename Derived>
 int ArrayChunkBase<Derived>::written_chunk_count() const
 {
-    int        nb_written = 0;
-    const auto lbd        = [&](int chunk_index) { return static_cast<int>(is_written_at(chunk_index)); };
+    int        n_written = 0;
+    const auto lbd       = [&](int chunk_index) { return static_cast<int>(is_written_at(chunk_index)); };
 
     // Inside a region: the calling thread counts them all (an orphaned
     // `omp for` would give each caller a partial count).
@@ -153,15 +153,15 @@ int ArrayChunkBase<Derived>::written_chunk_count() const
     {
         for (int j = 0; j < chunk_count_; ++j)
         {
-            nb_written += lbd(j);
+            n_written += lbd(j);
         }
     }
     else
     {
-        nb_written =
+        n_written =
             pmp::parallel_sum<int, 1>(0, chunk_count_, pmp::Options{}, [&](int j, auto& acc) { acc[0] += lbd(j); })[0];
     }
-    return nb_written;
+    return n_written;
 }
 
 template <typename Derived>
@@ -823,7 +823,7 @@ ArrayChunkBase<Derived>::sync_chunk(const ChunkType& chunk_t, int chunk_index, i
             // CHUNK_STATS: dirty_open / dirty_gate is the share the sticky bit costs for nothing.
             if constexpr (chunk_config::stats)
             {
-                increm_chunk_dirty_gate<ChunkType>(!should_wait);
+                inc_chunk_dirty_gate<ChunkType>(!should_wait);
             }
             if (should_wait) [[unlikely]]
             {

@@ -285,7 +285,7 @@ template <ExchangeableArray Arr>
         if constexpr (std::is_same_v<T, bool>)
         {
             chunk.init_values_cst_val_bool(1);
-            chunk.reset_nb_val_eq_second_value();
+            chunk.reset_n_val_eq_second_value();
             return true;
         }
         else
@@ -294,7 +294,7 @@ template <ExchangeableArray Arr>
             if (ind >= 0 && same_value(state.value, static_cast<T>(arr.second_value())))
             {
                 chunk.init_values_cst_val(1, ind);
-                chunk.reset_nb_val_eq_second_value();
+                chunk.reset_n_val_eq_second_value();
                 return true;
             }
         }

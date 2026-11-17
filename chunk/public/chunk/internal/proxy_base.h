@@ -31,7 +31,7 @@
 
 #include "chunk/internal/element_access.h" // elem_get / elem_set, is_packed_bit_v: Bit buffers are words of bits
 #include "chunk/config.h"                  // chunk_config::use_fast_block_compression, build_config::any_check
-#include "chunk/internal/chunk_stats.h" // increm_chunk_* in the bodies (dependent calls the include tools cannot attribute)
+#include "chunk/internal/chunk_stats.h" // inc_chunk_* in the bodies (dependent calls the include tools cannot attribute)
 #include "chunk/internal/def_force_inline.h"            // CHUNK_FORCE_INLINE: the write engine and its wrappers
 #include "chunk/internal/array_chunk_for.h"             // ArrayKey (ptr_on_array_)
 #include "chunk/internal/in_t.h"                        // InT<T>

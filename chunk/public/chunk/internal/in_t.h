@@ -57,7 +57,7 @@ namespace shrink_array
 //     ProxyBase::enqueue_async_arithmetic             (proxy_base.h)
 //     ProxyBase::apply_atomic_op (U parameter)        (proxy_base.h)
 //     ProxyOperators::friend +,-,*,/                  (proxy_operators.h)
-//     increm_chunk_write<V>(V v)                      (chunk_stats.h)
+//     inc_chunk_write<V>(V v)                      (chunk_stats.h)
 //     Proxy::is_cst_val_and_v_equal_zero              (zero_proxy.h)
 //
 // The engines those operators call -- assign_impl (the three proxies),

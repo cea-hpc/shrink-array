@@ -43,9 +43,9 @@ class GlobalStatsChunkList
     };
 
     /// @brief Record one element type's figures under @p name.
-    void record(const std::string& name, long somme, int max_chunks, size_t elem_size)
+    void record(const std::string& name, long total, int max_chunks, size_t elem_size)
     {
-        all_stats_[name] = {.allocated_chunks = somme, .threshold_per_thr = max_chunks, .element_size = elem_size};
+        all_stats_[name] = {.allocated_chunks = total, .threshold_per_thr = max_chunks, .element_size = elem_size};
     }
 
     /**
@@ -71,13 +71,13 @@ class GlobalStatsChunkList
         const int     total_width = col_type + col_data + col_list + col_mem;
 
         long double total_metadata_mem = 0;
-        const int   nb_threads         = CHUNK_PMP_MAX_THREADS;
+        const int   n_threads          = CHUNK_PMP_MAX_THREADS;
 
         std::cout << "\n" << tc.cyan << std::string(total_width, '=') << tc.reset << "\n";
         std::cout << tc.bold << tc.cyan << std::string((total_width - 35) / 2, ' ')
                   << "GLOBAL COMPRESSION LISTS MONITORING" << tc.reset << "\n";
-        std::cout << tc.white << " Configuration: " << tc.bold << nb_threads << tc.reset << tc.white
-                  << " active threads" << tc.reset << "\n";
+        std::cout << tc.white << " Configuration: " << tc.bold << n_threads << tc.reset << tc.white << " active threads"
+                  << tc.reset << "\n";
         std::cout << tc.cyan << std::string(total_width, '=') << tc.reset << "\n";
 
         std::cout << tc.bold << std::left << std::setw(col_type) << "Chunk Type Instance" << std::right
@@ -88,7 +88,7 @@ class GlobalStatsChunkList
 
         for (const auto& [name, stats] : all_stats_)
         {
-            const long        total_list_capacity = static_cast<long>(nb_threads) * stats.threshold_per_thr;
+            const long        total_list_capacity = static_cast<long>(n_threads) * stats.threshold_per_thr;
             const long double type_list_bytes     = static_cast<long double>(total_list_capacity) * stats.element_size;
             total_metadata_mem += type_list_bytes;
 

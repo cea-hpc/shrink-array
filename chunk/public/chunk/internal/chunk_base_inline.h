@@ -27,7 +27,7 @@
 
 #include "chunk/internal/chunk_base.h"                 // the declarations these bodies belong to
 #include "chunk/config.h"                              // build_config::use_fast_alloc, chunk_config::
-#include "chunk/internal/chunk_stats.h"                // increm_chunk_read_sync / _cross (CHUNK_STATS)
+#include "chunk/internal/chunk_stats.h"                // inc_chunk_read_sync / _cross (CHUNK_STATS)
 #include "chunk/internal/pool_ledger.h"                // CHUNK_LEDGER_PARK / CHUNK_LEDGER_RELEASE
 #include "chunk/internal/pmp_chunk.h"                  // CHUNK_PMP_IN_PARALLEL_REGION
 #include "chunk/internal/deferred_op_pool.h"           // DeferredOperationBase, DeferredOpDeleter, DeferredOpPtr
@@ -239,7 +239,7 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::wait_for_availability([[maybe_unu
     // that pay synchronisation at all.
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_read_sync<Derived>();
+        inc_chunk_read_sync<Derived>();
     }
 
     auto* chunk_ptr = static_cast<Derived*>(const_cast<ChunkDeferredOpsPolicy*>(this)); // NOSONAR(cpp:S859)
@@ -261,7 +261,7 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::wait_for_availability([[maybe_unu
     // CHUNK_STATS: read_sync_cross / read_sync tells how often stage 1 was not enough.
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_read_sync_cross<Derived>();
+        inc_chunk_read_sync_cross<Derived>();
     }
     static_cast<void>(CompressionManager<T, Derived>::flush_chunk_all_ranks(chunk_ptr));
 }
@@ -372,7 +372,7 @@ T* ChunkAllocPolicy<T, Derived, true>::allocate_chunk_internal(int        thr_ra
         auto& ll_block_free_thr = *free_list;
         if constexpr (chunk_config::stats)
         {
-            increm_chunk_list<Derived>();
+            inc_chunk_list<Derived>();
             add_chunk_bytes_reused<Derived>(static_cast<long>(sizeof(T)) *
                                             static_cast<long>(Derived::storage_units(alloc_chunk_count())));
         }
@@ -390,7 +390,7 @@ T* ChunkAllocPolicy<T, Derived, true>::allocate_chunk_internal(int        thr_ra
         // Allocate new memory
         if constexpr (chunk_config::stats)
         {
-            increm_chunk_alloc<Derived>();
+            inc_chunk_alloc<Derived>();
             add_chunk_bytes_alloc<Derived>(static_cast<long>(sizeof(T)) *
                                            static_cast<long>(Derived::storage_units(alloc_chunk_count())));
         }
@@ -411,7 +411,7 @@ T* ChunkAllocPolicy<T, Derived, true>::allocate_chunk_internal(int        thr_ra
     }
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_create<Derived>();
+        inc_chunk_create<Derived>();
     }
 
     // Debug ring log: the value buffer's address, so dump_ring_for_addr()
@@ -439,8 +439,8 @@ T* ChunkAllocPolicy<T, Derived, false>::allocate_chunk_internal([[maybe_unused]]
 
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_create<Derived>();
-        increm_chunk_alloc<Derived>();
+        inc_chunk_create<Derived>();
+        inc_chunk_alloc<Derived>();
         add_chunk_bytes_alloc<Derived>(static_cast<long>(sizeof(T)) *
                                        static_cast<long>(Derived::storage_units(alloc_chunk_count())));
     }
@@ -487,13 +487,13 @@ template <typename T, typename Derived>
 }
 
 template <typename T, typename Derived>
-void ChunkDeferredOpsPolicy<T, Derived, true>::recup_value(T* values_loc, int thr_rank) const
+void ChunkDeferredOpsPolicy<T, Derived, true>::reclaim_value(T* values_loc, int thr_rank) const
 {
     const auto& self = static_cast<const Derived&>(*this);
     // Ledger: LIVE -> parked. This block was just allocated by create_value
     // and lost the install CAS; parking a block that is not LIVE (e.g. one
     // another thread already owns) trips here.
-    CHUNK_LEDGER_PARK(values_loc, "recup_value");
+    CHUNK_LEDGER_PARK(values_loc, "reclaim_value");
     // Back to the list it was taken from / would have been taken from: the
     // array's, on this rank.
     auto& ll_block_free_thr = self.get_manager().get_list_block_free_thr(thr_rank, thread_alloc_key());
@@ -762,11 +762,11 @@ template <typename T, typename Derived>
     {
         if (is_cst_val1())
         {
-            increm_chunk_read_cst<Derived>();
+            inc_chunk_read_cst<Derived>();
         }
         else
         {
-            increm_chunk_read<Derived>();
+            inc_chunk_read<Derived>();
         }
     }
     return element_at(offset, offset_slot);
@@ -784,11 +784,11 @@ template <typename T, typename Derived>
         // non-bool types -- it needs the second-value index a read lacks.
         if (is_cst_val1())
         {
-            increm_chunk_read_cst<Derived>();
+            inc_chunk_read_cst<Derived>();
         }
         else
         {
-            increm_chunk_read<Derived>();
+            inc_chunk_read<Derived>();
         }
     }
     return element_at(offset);
@@ -802,11 +802,11 @@ T ChunkBase<T, Derived>::operator[](int offset) const noexcept
         // Same split as read_value().
         if (is_cst_val1())
         {
-            increm_chunk_read_cst<Derived>();
+            inc_chunk_read_cst<Derived>();
         }
         else
         {
-            increm_chunk_read<Derived>();
+            inc_chunk_read<Derived>();
         }
     }
 
@@ -980,7 +980,7 @@ T& ChunkBase<T, Derived>::operator()(int offset) const noexcept
 {
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_read<Derived>();
+        inc_chunk_read<Derived>();
     }
     // Contract: a mutable reference that bypasses the write proxy, valid only
     // on a materialised chunk. On a compressed one it points into a shared

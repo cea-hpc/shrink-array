@@ -67,10 +67,10 @@ double convert_memory(double memory_value)
     const double kilobytes = memory_value * byte_to_kb;
     const double megabytes = kilobytes * kb_to_mb;
 
-    if (std::ofstream fichier("memory_mo.txt"); fichier.is_open())
+    if (std::ofstream file("memory_mo.txt"); file.is_open())
     {
-        fichier << megabytes;
-        fichier.close();
+        file << megabytes;
+        file.close();
     }
     else
     {
@@ -91,14 +91,14 @@ void Simu::create_tabs()
 {
     for (auto& arr : tabs)
     {
-        arr.create(nbmat, mesh_size);
+        arr.create(n_materials, mesh_size);
     }
-    frac.create(nbmat, mesh_size);
+    frac.create(n_materials, mesh_size);
 }
 
-int Simu::get_nbmat() const
+int Simu::get_n_materials() const
 {
-    return nbmat;
+    return n_materials;
 }
 
 bool Simu::is_verbose() const
@@ -161,7 +161,7 @@ try
 
     simu.input_data();
 
-    const int nbmat = simu.get_nbmat();
+    const int n_materials = simu.get_n_materials();
 
     MultiMatAlgo mm_algo;
 
@@ -173,7 +173,7 @@ try
 
     std::cout << "\nCreate array :" << '\n';
 
-    dispatch.create(nbmat);
+    dispatch.create(n_materials);
     dispatch.set(simu.get_dis());
     simu.create_tabs();
 
@@ -197,7 +197,7 @@ try
     // end).
     const std::function<void(bool)> lbd_stats_chunk = [&](bool only_first_chunk)
     {
-        mm_algo.loop(0, nbmat,
+        mm_algo.loop(0, n_materials,
                      [&](int& mat, const auto& get_mat_vec, const auto&)
                      {
                          const auto& arr0_ind = get_mat_vec(simu.get_tabs(0));
@@ -233,7 +233,7 @@ try
 
                              if (only_first_chunk)
                              {
-                                 mat = nbmat;
+                                 mat = n_materials;
                              }
                          }
 

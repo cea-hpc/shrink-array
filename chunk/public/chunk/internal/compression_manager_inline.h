@@ -178,7 +178,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_deferred(int thr)
     // chunks per second per rank; per-chunk announces slow them by an order of magnitude.
     // Holding the flag across the loop only defers compressors a little longer.
     Policy::announce_flush(); // counter + heavy barrier, one Dekker verb
-    increm_chunk_gate_flush<ChunkT>();
+    inc_chunk_gate_flush<ChunkT>();
     struct FlushFlagGuard
     {
         FlushFlagGuard() = default;
@@ -363,7 +363,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::flush_chunk_all_ranks(C
     // Blocks any future compressor start(); once inflight compressors are drained, none
     // is mutating any chunk.
     Policy::announce_flush(); // counter + heavy barrier, one Dekker verb
-    increm_chunk_gate_flush<ChunkT>();
+    inc_chunk_gate_flush<ChunkT>();
 
     {
         int spin = 0;
@@ -580,7 +580,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::start()
     }
 
     add_compression_active();
-    increm_chunk_gate_start<ChunkT>();
+    inc_chunk_gate_start<ChunkT>();
 
     const int max_thr = CHUNK_PMP_RANK_BOUND;
 
@@ -593,7 +593,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::start()
     // (end of this function).
     if (WriteCompressSyncPolicy<ProxyT>::any_thread_flushing(max_thr))
     {
-        increm_chunk_gate_start_flush_yield<ChunkT>();
+        inc_chunk_gate_start_flush_yield<ChunkT>();
         decrement_inflight();
         if constexpr (chunk_config::ring_log_debug)
         {
@@ -660,7 +660,7 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::start()
             if (++yields > max_yields)
             {
                 // Give up: undo add_compression_active() (as the flush early-out does).
-                increm_chunk_gate_start_deferred<ChunkT>();
+                inc_chunk_gate_start_deferred<ChunkT>();
                 decrement_inflight();
                 if constexpr (chunk_config::ring_log_debug)
                 {
@@ -693,8 +693,8 @@ bool CompressionManagerThreadPolicy<T, ChunkT, Enabled>::start()
     // flusher never backs off, we do.
     if (WriteCompressSyncPolicy<ProxyT>::any_thread_flushing(max_thr))
     {
-        increm_chunk_gate_start_flush_yield<ChunkT>();
-        increm_chunk_gate_start_yield_late<ChunkT>();
+        inc_chunk_gate_start_flush_yield<ChunkT>();
+        inc_chunk_gate_start_yield_late<ChunkT>();
         stealing_inflight_.fetch_sub(1, std::memory_order_seq_cst);
         decrement_inflight();
         if constexpr (chunk_config::ring_log_debug)
@@ -743,7 +743,7 @@ void CompressionManagerThreadPolicy<T, ChunkT, Enabled>::wait_out_compressor(con
             CHUNK_CPU_PAUSE();
         }
     }
-    increm_chunk_gate_wait<ChunkT>(yields, mark_hit);
+    inc_chunk_gate_wait<ChunkT>(yields, mark_hit);
 }
 
 template <typename T, typename ChunkT, bool Enabled>

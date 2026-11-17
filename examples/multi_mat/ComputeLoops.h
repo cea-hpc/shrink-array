@@ -56,7 +56,7 @@ void Simu::compute_loops(MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo,
         std::cout << "\nInitialisation... \n";
     }
 
-    mm_algo.loop(0, nbmat,
+    mm_algo.loop(0, n_materials,
                  [this](int, const auto& get_mat_vec, const auto& loops)
                  {
                      // Recovery 3 arrays by material could be "chunk" or vector
@@ -88,7 +88,7 @@ void Simu::compute_loops(MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo,
             std::cout << "Iteration : " << it << "\n";
         }
 #pragma omp for // Parallelization on this loop : it is not easy to parallelize the inside loop
-        for (int mat = 0; mat < nbmat; ++mat)
+        for (int mat = 0; mat < n_materials; ++mat)
         {
             auto& ll_ind = ll[mat];
 
@@ -119,7 +119,7 @@ void Simu::compute_loops(MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo,
             lbd_stats(true);
         }
 
-        mm_algo.loop(0, nbmat,
+        mm_algo.loop(0, n_materials,
                      [&](int mat, const auto& get_mat_vec, const auto& loops)
                      {
                          const auto& ll_ind = ll[mat];
@@ -188,7 +188,7 @@ void Simu::compute_loops(MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo,
         // This first lambda allows you to have a unique coding for a double implementation :
         // the first with classic direct addressing, the second with compressed addressing
 
-        mm_algo.loop(0, nbmat,
+        mm_algo.loop(0, n_materials,
                      [&](int mat, const auto& get_mat_vec, const auto& loops)
                      {
                          const auto& ll_ind = ll[mat];
@@ -240,7 +240,7 @@ void Simu::compute_loops(MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo,
                 std::cout << "Compression " << "\n";
             }
 
-            mm_algo.loop(0, nbmat,
+            mm_algo.loop(0, n_materials,
                          [&](int m, const auto& get_mat_vec, const auto&)
                          {
                              if (dispatch.is_chunk(m))

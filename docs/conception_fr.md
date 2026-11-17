@@ -76,7 +76,7 @@ flowchart TB
     app["code de l'application<br/>a[i], a[i] = v, fill_range_mt, parallel_phase"]
     subgraph per_array["par tableau"]
         arr["tableau de la variante<br/>zero::Array, zero_one_value::Array,<br/>zero_any::Array, pattern::Array"]
-        base["ArrayChunkBase / ArrayChunkCore<br/>géométrie, liste de chunks, dirty bitset, identité"]
+        base["ArrayChunkBase / ArrayChunkCore<br/>géométrie, items de chunks, dirty bitset, identité"]
         chk["chunks + proxies<br/>état, lecture, moteur d'écriture"]
     end
     subgraph per_type["par (variante, type d'élément)"]

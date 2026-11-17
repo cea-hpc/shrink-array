@@ -95,7 +95,7 @@ class ReusePools
 
     /// @brief Divisor of the proportional reuse budget: a rank parks up to
     ///        chunks / (this * threads) buffers
-    ///        (zero_any::ChunkDef::factor_div_somme_chunk_buffer_reuse).
+    ///        (zero_any::ChunkDef::factor_div_total_chunk_buffer_reuse).
     /// @details The chunks counted are all the chunks created, compressed
     ///          ones included: at 99 % compression this parks about twice the
     ///          buffers actually materialised. Halved or doubled, and with the
@@ -104,7 +104,7 @@ class ReusePools
     ///          2026): the former CHUNK_REUSE_SHARE_DIV and CHUNK_REUSE_FLOOR_KB.
     [[nodiscard]] static constexpr long reuse_share_div() noexcept
     {
-        return static_cast<long>(zero_any::ChunkDef::factor_div_somme_chunk_buffer_reuse);
+        return static_cast<long>(zero_any::ChunkDef::factor_div_total_chunk_buffer_reuse);
     }
 
     /// @brief Size the legacy (unsized) reuse list to @p max_thr threads.

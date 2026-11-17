@@ -125,7 +125,7 @@ each element with the first element of the chunk):
 
 The freed buffer joins the thread's reuse list after the read sections' grace period. The
 trigger threshold is
-`somme_chunk_create / (50 × number of threads)`, with a floor of 500 candidates (constants of
+`total_chunk_create / (50 × number of threads)`, with a floor of 500 candidates (constants of
 `zero_any_chunk_def.h`).
 
 The course of the pass, in the style of §8.4 of [algo_zero_one_value.md](algo_zero_one_value.md):

@@ -27,7 +27,7 @@
 #include "chunk/config.h"                       // build_config::threaded, chunk_config
 #include "chunk/internal/chunk_size_config.h"   // ChunkElems
 #include "chunk/internal/chunk_size_policy.h"   // alloc_chunk_count
-#include "chunk/internal/chunk_stats.h"         // increm_chunk_write (CHUNK_STATS)
+#include "chunk/internal/chunk_stats.h"         // inc_chunk_write (CHUNK_STATS)
 #include "chunk/internal/conditional_counter.h" // ConditionalCounter
 #include "chunk/internal/zero_proxy.h"          // Proxy<T>
 #include "chunk/internal/immortal.h"            // Immortal / LazyImmortal: statics safe for global arrays
@@ -151,22 +151,22 @@ class ChunkCounterPolicy
 {
   public:
     /// @brief Record one more zero element.
-    void inc_nb_val_eq_zero() noexcept
+    void inc_n_val_eq_zero() noexcept
     {
-        ++nb_val_eq_zero_;
+        ++n_val_eq_zero_;
     }
 
     /// @brief Record one fewer zero element.
-    void dec_nb_val_eq_zero() noexcept
+    void dec_n_val_eq_zero() noexcept
     {
-        --nb_val_eq_zero_;
+        --n_val_eq_zero_;
     }
 
     /// @brief Set the zero count outright.
     /// @param count new count
-    void set_nb_val_eq_zero(CounterValueT count) noexcept
+    void set_n_val_eq_zero(CounterValueT count) noexcept
     {
-        nb_val_eq_zero_ = count;
+        n_val_eq_zero_ = count;
     }
 
     /// @brief Is every element of the chunk zero?
@@ -174,14 +174,14 @@ class ChunkCounterPolicy
     /// @return true when the count has reached @p size -- the compression trigger
     [[nodiscard]] bool is_full_zero(unsigned int size = static_chunk_size) const noexcept
     {
-        return static_cast<CounterValueT>(nb_val_eq_zero_) == size;
+        return static_cast<CounterValueT>(n_val_eq_zero_) == size;
     }
 
   private:
     // [[no_unique_address]]: a DISABLED counter is an empty type, but an empty
     // MEMBER still takes a byte, which grows the chunk header from 16 to 24
     // bytes in OpenMP builds (counter off).
-    [[no_unique_address]] ConditionalCounter<EnableCounter> nb_val_eq_zero_;
+    [[no_unique_address]] ConditionalCounter<EnableCounter> n_val_eq_zero_;
 };
 
 /**
@@ -486,7 +486,7 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     /// @brief Copy the zero-counter base and the `values` pointer of @p other.
     ///
     /// The ChunkCounterPolicy base must be copied explicitly: a user-defined
-    /// copy ctor otherwise DEFAULT-constructs it, resetting nb_val_eq_zero_, and
+    /// copy ctor otherwise DEFAULT-constructs it, resetting n_val_eq_zero_, and
     /// manage_full_zero() later re-compresses a chunk that is not all-zero.
     /// ChunkFastCompPolicy holds the atomic `values` (non-copyable), copied by
     /// hand below.

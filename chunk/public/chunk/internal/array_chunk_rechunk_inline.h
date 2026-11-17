@@ -33,7 +33,7 @@
 #include "chunk/internal/array_chunk_rechunk.h"        // RechunkSupport, the class these bodies belong to
 #include "chunk/internal/array_chunk_rechunk_refill.h" // RechunkSupport::Refill (rechunk_refill)
 #include "chunk/internal/array_chunk_rechunk_trace.h"  // RechunkPhaseTrace
-#include "chunk/internal/chunk_stats.h"                // increm_chunk_rechunk (CHUNK_STATS)
+#include "chunk/internal/chunk_stats.h"                // inc_chunk_rechunk (CHUNK_STATS)
 #include "chunk/internal/pmp_chunk.h"                  // CHUNK_PMP_RANK_BOUND
 #include "chunk/internal/cold_path_lock.h"             // ColdPathLock: construction, teardown, resize
 #include "chunk/log.h"                                 // CHUNK_LOG (the pool census)
@@ -143,7 +143,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         //    constant (only materialised chunks are written).
         // CHUNK_STATS: one geometry change, plus the per-chunk work it costs
         // (counted inside rebuild_one below).
-        increm_chunk_rechunk<ChunkType>();
+        inc_chunk_rechunk<ChunkType>();
         trace.mark(Mark::refill_start);
         self().rechunk_refill(tmp, old_size, new_size, old_key);
         trace.mark(Mark::refill_end);

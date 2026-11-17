@@ -91,7 +91,7 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
      * @param cas_fn A lambda that returns TRUE if the swap failed (pointer already changed).
      */
     template <typename CasFunc>
-    void apply_cas_or_recup(T* values_loc, int thr_rank, CasFunc&& cas_fn) noexcept;
+    void apply_cas_or_reclaim(T* values_loc, int thr_rank, CasFunc&& cas_fn) noexcept;
 
     /// @brief Check-only teardown guard: a chunk about to have its buffer freed
     ///        must not be compressed to either constant (the buffer would be the

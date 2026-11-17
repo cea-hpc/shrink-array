@@ -75,14 +75,14 @@ flowchart TD
 ```
 
 In sequential builds there is no engine and no candidate list: `assign_impl` maintains the zero
-counter itself (`inc_nb_val_eq_zero`, `dec_nb_val_eq_zero`), compresses the chunk at once when
+counter itself (`inc_n_val_eq_zero`, `dec_n_val_eq_zero`), compresses the chunk at once when
 it becomes all-zero (`manage_full_zero`), and otherwise materialises it (`create_value`) and
 stores directly.
 
 ## 4. When a chunk becomes a compression candidate
 
 **Sequential builds**: each chunk keeps a **zero counter**
-(`ChunkCounterPolicy`, `nb_val_eq_zero_`). When it reaches the chunk's number of elements, the
+(`ChunkCounterPolicy`, `n_val_eq_zero_`). When it reaches the chunk's number of elements, the
 chunk is compressed at once (`manage_full_zero`). This counter must be exactly
 in sync with the content: an out-of-sync counter would compress a chunk that is not
 uniform, hence the care taken to propagate it in copies.
@@ -142,9 +142,9 @@ there): the zero counter compresses (§4).
 
 ## 6. The trigger threshold
 
-It is `somme_chunk_create / (100 × number of threads)`, with a floor of 100 candidates
+It is `total_chunk_create / (100 × number of threads)`, with a floor of 100 candidates
 (`ChunkDef`: `factor_div_chunk_count_for_compress`, `size_min_list_chunk_to_check_compress`).
-`somme_chunk_create` is the number of existing chunks of this type. Two fixes from
+`total_chunk_create` is the number of existing chunks of this type. Two fixes from
 September 2026 keep it accurate:
 
 - it is **decremented** when an array is destroyed (otherwise it only ever grew:

@@ -153,7 +153,7 @@ class SecondValueArrayBase : public ArrayChunkBase<Derived>
             Base::reallocate_dirty_bitset(old_chunk_count, chunk_count_);
 
             // Fewer chunks alive: so is the count the compression threshold and reuse budget use.
-            ManagerType::increm_somme_chunk_create(chunk_count_ - old_chunk_count);
+            ManagerType::inc_total_chunk_create(chunk_count_ - old_chunk_count);
             ManagerType::compute_size_buffer_reuse();
             ManagerType::compute_size_max_number_of_chunk_to_check_compress();
             return;
@@ -167,7 +167,7 @@ class SecondValueArrayBase : public ArrayChunkBase<Derived>
         chunk_list_.resize(chunk_count_);
         Base::reallocate_dirty_bitset(old_chunk_count, chunk_count_);
 
-        ManagerType::increm_somme_chunk_create(chunk_count_ - old_chunk_count);
+        ManagerType::inc_total_chunk_create(chunk_count_ - old_chunk_count);
         ManagerType::compute_size_buffer_reuse();
         ManagerType::compute_size_max_number_of_chunk_to_check_compress();
         // An array built empty (the default) only becomes worth its own slabs

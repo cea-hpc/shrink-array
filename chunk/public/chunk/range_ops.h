@@ -65,7 +65,7 @@
 #include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size
 #include "chunk/internal/conditional_counter.h" // CounterValueT
 #include "chunk/config.h"                       // build_config::threaded, chunk_config
-#include "chunk/internal/chunk_stats.h"         // increm_chunk_* (used directly, not via compression_manager.h)
+#include "chunk/internal/chunk_stats.h"         // inc_chunk_* (used directly, not via compression_manager.h)
 #include "chunk/internal/chunk_traits.h" // zero / zero_one_value / is_zero_any_family_v, has_motif_state_v: the type traits below
 #include "chunk/vector_range_ops.h"                    // internal::ChunkedArray + the std::vector fallback
 #include "chunk/internal/write_compress_sync_policy.h" // fill_range_mt: the writer side of the Dekker handshake
@@ -146,8 +146,8 @@ inline constexpr bool track_zero_one_value_counts_v = is_v2_v<Arr> && chunk_conf
  * @details In counter mode (use_compression_with_counter, i.e. without fast
  *          block compression -- the serial builds) the compression of a chunk
  *          is decided by counters the proxy maintains INCREMENTALLY: zero's
- *          nb_val_eq_zero_, zero_one_value's nb_val_eq_first_value_ and
- *          nb_val_eq_second_value_. A raw store moves none of them, and nothing
+ *          n_val_eq_zero_, zero_one_value's n_val_eq_first_value_ and
+ *          n_val_eq_second_value_. A raw store moves none of them, and nothing
  *          detects the drift: the full tests compare to chunk_size() exactly,
  *          so a chunk that is NOT all constant compresses when a count lands
  *          there, and every read then returns the constant. Recount, don't
@@ -167,7 +167,7 @@ void resync_counters(Arr& arr, ChunkClass& ch, std::size_t c_begin, const T* dst
                 ++nz;
             }
         }
-        arr.element_proxy(static_cast<Arr::IndType>(c_begin)).resync_nb_val_eq_zero(nz);
+        arr.element_proxy(static_cast<Arr::IndType>(c_begin)).resync_n_val_eq_zero(nz);
     }
     else if constexpr (track_zero_one_value_counts_v<Arr> && requires { arr.second_value(); })
     {
@@ -185,8 +185,8 @@ void resync_counters(Arr& arr, ChunkClass& ch, std::size_t c_begin, const T* dst
                 ++n2;
             }
         }
-        ch.set_nb_val_eq_first_value(n1);
-        ch.set_nb_val_eq_second_value(n2);
+        ch.set_n_val_eq_first_value(n1);
+        ch.set_n_val_eq_second_value(n2);
     }
 }
 
@@ -505,8 +505,8 @@ void packed_chunk_store(Arr&         arr,
         // to S compresses the chunk on the spot (manage_full_*), and there is
         // no pass to queue for -- so do what that last write would have done.
         const auto ones = static_cast<CounterValueT>(bits::count_ones(words, chunk_sz));
-        ch.set_nb_val_eq_first_value(static_cast<CounterValueT>(chunk_sz) - ones);
-        ch.set_nb_val_eq_second_value(ones);
+        ch.set_n_val_eq_first_value(static_cast<CounterValueT>(chunk_sz) - ones);
+        ch.set_n_val_eq_second_value(ones);
         if (ones == static_cast<CounterValueT>(chunk_sz))
         {
             arr.element_proxy(static_cast<IndType>(c_begin)).manage_full_second_value();
@@ -628,7 +628,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
                     // attempts/compress yield stays a yield.
                     if constexpr (chunk_config::stats)
                     {
-                        increm_chunk_compress_attempt<ChunkType>();
+                        inc_chunk_compress_attempt<ChunkType>();
                     }
                     if constexpr (build_config::threaded)
                     {

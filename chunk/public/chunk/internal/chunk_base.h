@@ -47,7 +47,7 @@
 #include "chunk/internal/invariant_check.h"  // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/deferred_op_pool.h" // DeferredOpPtr
 #include "chunk/internal/pool_ledger.h"      // CHUNK_LEDGER_* block-lifecycle checks (check builds)
-#include "chunk/internal/chunk_stats.h"      // increm_chunk_* / add_chunk_* (CHUNK_STATS)
+#include "chunk/internal/chunk_stats.h"      // inc_chunk_* / add_chunk_* (CHUNK_STATS)
 #include "chunk/internal/crtp_support.h"     // CRTPSupport
 #include "chunk/internal/bad_ptr_check.h"    // CHUNK_CHECK_VALUES_PTR (check builds)
 
@@ -395,7 +395,7 @@ class ChunkDeferredOpsPolicy<T, Derived, true>
     /// @param m_ptr_cst_val Expected current value of values. Taken by value on
     ///                      purpose — compare_exchange_strong would otherwise
     ///                      clobber a caller-owned reference on failure.
-    /// @return true on failure (caller owns values_loc and must recup it).
+    /// @return true on failure (caller owns values_loc and must reclaim it).
     ///         false on success (values now points to values_loc).
     ///
     /// Fast path: a relaxed load of values lets us skip the CAS altogether when
@@ -424,7 +424,7 @@ class ChunkDeferredOpsPolicy<T, Derived, true>
     /// @brief Reclaim a memory block to the thread-local free list
     /// @param values_loc Pointer to the block to reclaim
     /// @param thr_rank Thread rank/ID
-    void recup_value(T* values_loc, int thr_rank) const;
+    void reclaim_value(T* values_loc, int thr_rank) const;
 
     /// @brief Enqueue a deferred write operation for later application to a chunk.
     /// @param thr_rank Calling thread's rank; selects which per-thread map to
@@ -706,7 +706,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     {
         if constexpr (chunk_config::stats)
         {
-            increm_chunk_scan_read<Derived>();
+            inc_chunk_scan_read<Derived>();
         }
         return element_at(offset);
     }
@@ -718,7 +718,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     {
         if constexpr (chunk_config::stats)
         {
-            increm_chunk_scan_read<Derived>();
+            inc_chunk_scan_read<Derived>();
         }
         return element_at<true>(offset);
     }

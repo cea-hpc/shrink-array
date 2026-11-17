@@ -44,9 +44,9 @@ InfoFreeElt::InfoFreeElt()
         array_ptr = svalloc<VoidMaxFreeElt>(max_thr);
 
         compt     = svcalloc<int>(max_thr);
-        somme_sz_ = svcalloc<int>(max_thr);
+        total_sz_ = svcalloc<int>(max_thr);
 
-        nb_thr = max_thr;
+        n_thr = max_thr;
     }
 }
 
@@ -61,19 +61,19 @@ InfoFreeElt::~InfoFreeElt()
     svfree(array_sz);
 
     svfree(compt);
-    svfree(somme_sz_);
+    svfree(total_sz_);
 
     // An ordinary global, unlike the ladder and the arenas, which are never
     // destroyed: a ladder free in a region, or a parallel_end flush, may still
     // come after this destructor (another library's static or TLS destructor,
     // the OpenMP runtime's shutdown). Leave an empty batch set behind, not
-    // dangling pointers: with nb_thr 0, try_free_block() frees at once and
+    // dangling pointers: with n_thr 0, try_free_block() frees at once and
     // clear_info_free_elt() has nothing to walk.
     array_ptr = nullptr;
     array_sz  = nullptr;
     compt     = nullptr;
-    somme_sz_ = nullptr;
-    nb_thr    = 0;
+    total_sz_ = nullptr;
+    n_thr     = 0;
 }
 
 /// @copydoc StaticConstArray::clear_info_free_elt(int)
@@ -92,9 +92,9 @@ void StaticConstArray::clear_info_free_elt()
 {
     // Over the ranks the batches were SIZED for, not FAST_ALLOC_PMP_MAX_THREADS: that may
     // have grown since (omp_set_num_threads) and would index past the arrays;
-    // nb_thr is 0 serially, where nothing was allocated. reset(), not compt = 0:
-    // somme_sz_ must come down too, or the emptied batch still counts as full.
-    for (int thr_rank = 0; thr_rank < array_info_free_elt().nb_thr; ++thr_rank)
+    // n_thr is 0 serially, where nothing was allocated. reset(), not compt = 0:
+    // total_sz_ must come down too, or the emptied batch still counts as full.
+    for (int thr_rank = 0; thr_rank < array_info_free_elt().n_thr; ++thr_rank)
     {
         clear_info_free_elt(thr_rank);
         array_info_free_elt().reset(thr_rank);

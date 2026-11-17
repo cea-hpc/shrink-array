@@ -171,7 +171,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_comp
     if (Base::is_not_cst_val1() && check_cst_val2)
     {
         // CHUNK_STATS: one compression candidate scanned (see zero_any).
-        increm_chunk_compress_attempt<Derived>();
+        inc_chunk_compress_attempt<Derived>();
 
         // n_elems: see zero_one_value::Chunk<T>::compress() -- the chunk's own geometry,
         // captured at enqueue, never the ambient alloc_chunk_count().
@@ -219,7 +219,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_impl(boo
         // CHUNK_STATS: a SECOND candidate scan, independent of
         // fill_list_to_compress, so it counts its own attempt. It reads values[]
         // directly, so it never inflates `read` and needs no read_value_scan.
-        increm_chunk_compress_attempt<Derived>();
+        inc_chunk_compress_attempt<Derived>();
 
         // n_elems is THIS chunk's own geometry, captured at enqueue (tuple
         // field <3>), never alloc_chunk_count() -- the consuming thread's
@@ -882,26 +882,26 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::create_value_impl(
 
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        Base::apply_cas_or_recup(values_loc, thr_rank,
-                                 [this, ind, need_set_second_value](T* cst_ptr)
-                                 {
-                                     if constexpr (IsBoolCas)
-                                     {
-                                         (void)ind; // only the non-bool CAS takes the index
-                                         return derived().compare_and_swap_bool(cst_ptr, need_set_second_value);
-                                     }
-                                     else
-                                     {
-                                         // Propagate the observed state to the CAS so it refuses a
-                                         // wrong-side transition after a cst_val1 <-> cst_val2 race.
-                                         return derived().compare_and_swap(cst_ptr, ind, need_set_second_value);
-                                     }
-                                 });
+        Base::apply_cas_or_reclaim(values_loc, thr_rank,
+                                   [this, ind, need_set_second_value](T* cst_ptr)
+                                   {
+                                       if constexpr (IsBoolCas)
+                                       {
+                                           (void)ind; // only the non-bool CAS takes the index
+                                           return derived().compare_and_swap_bool(cst_ptr, need_set_second_value);
+                                       }
+                                       else
+                                       {
+                                           // Propagate the observed state to the CAS so it refuses a
+                                           // wrong-side transition after a cst_val1 <-> cst_val2 race.
+                                           return derived().compare_and_swap(cst_ptr, ind, need_set_second_value);
+                                       }
+                                   });
     }
     else
     {
-        // apply_cas_or_recup takes its non-CAS branch in this mode anyway.
-        Base::apply_cas_or_recup(values_loc, thr_rank, [](T*) { return false; });
+        // apply_cas_or_reclaim takes its non-CAS branch in this mode anyway.
+        Base::apply_cas_or_reclaim(values_loc, thr_rank, [](T*) { return false; });
     }
 }
 
@@ -913,11 +913,11 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::create_value_impl(
  * old constant or the finished buffer, never a half-built one. The CAS is told
  * which constant it is replacing, so it refuses a wrong-side transition after a
  * cst_val1/cst_val2 race; losing it means another thread materialised first,
- * and apply_cas_or_recup() recycles our buffer.
+ * and apply_cas_or_reclaim() recycles our buffer.
  *
  * @note In a serial build there is no CAS to call — the policy has no such
  *       member — so the publication falls back to the non-CAS branch of
- *       apply_cas_or_recup().
+ *       apply_cas_or_reclaim().
  */
 template <typename T, typename Derived, bool Enabled>
 void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::create_value(bool             need_set_second_value,
@@ -1003,12 +1003,12 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, false>::create_value_serial_i
         if (!need_set_second_value)
         {
             Base::init_block(ptr);
-            derived().reset_nb_val_eq_second_value();
+            derived().reset_n_val_eq_second_value();
         }
         else
         {
             init_2nd(ptr);
-            derived().reset_nb_val_eq_first_value();
+            derived().reset_n_val_eq_first_value();
         }
     };
 
@@ -1064,7 +1064,7 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, false>::clear_st(int ind)
 
     if constexpr (chunk_config::use_compression_with_counter)
     {
-        derived().reset_nb_val_eq_value();
+        derived().reset_n_val_eq_value();
     }
 }
 
@@ -1098,7 +1098,7 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, Enabled>::block_clear(int    
     // CHUNK_STATS: one materialised block released by a successful compression,
     // counted here: block_clear is the single point every variant and both
     // threaded/serial modes funnel through.
-    increm_chunk_compress<Derived>();
+    inc_chunk_compress<Derived>();
     add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
     Base::block_clear_common(num_compress_value, ind, thr_rank);
 }
@@ -1112,14 +1112,14 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, false>::block_clear(int num_c
                                                                        int /*thr_rank*/)
 {
     // CHUNK_STATS: as the threaded block_clear above.
-    increm_chunk_compress<Derived>();
+    inc_chunk_compress<Derived>();
     add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
     Base::free_values(values_);
 
     derived().init_values_cst_val(num_compress_value, ind);
     if constexpr (chunk_config::use_compression_with_counter)
     {
-        derived().reset_nb_val_eq_value();
+        derived().reset_n_val_eq_value();
     }
 }
 
@@ -1163,18 +1163,18 @@ void zero_one_value::ChunkThreadPolicy<T, Derived, false>::clear_int_st(int num_
     // CHUNK_STATS: counted here, since this path (compress_int's sweep via
     // clear_st(num_compress_value, ind)) bypasses block_clear. No if constexpr
     // needed: both are no-op overloads when CHUNK_STATS is off (chunk_stats.h).
-    increm_chunk_compress<Derived>();
+    inc_chunk_compress<Derived>();
     add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
 
     Base::free_values(values_);
 
     if (num_compress_value == 0)
     {
-        derived().reset_nb_val_eq_first_value();
+        derived().reset_n_val_eq_first_value();
     }
     else
     {
-        derived().reset_nb_val_eq_second_value();
+        derived().reset_n_val_eq_second_value();
     }
 
     if constexpr (is_bool)
@@ -1230,8 +1230,8 @@ template <typename T>
 template <typename T>
 [[nodiscard]] bool zero_one_value::ChunkSpec<T>::is_cst_val2_any(const T* vals) noexcept
 {
-    const auto nb_cst_val2 = static_cast<int>(array_m_ptr_cst_val2->size());
-    for (int i = 0; i < nb_cst_val2; ++i)
+    const auto n_cst_val2 = static_cast<int>(array_m_ptr_cst_val2->size());
+    for (int i = 0; i < n_cst_val2; ++i)
     {
         if (vals == get_cst_val2(i))
         {
@@ -1580,7 +1580,7 @@ void zero_one_value::Chunk<T>::alloc_chunk(const InfArrayT& inf_array, [[maybe_u
     {
         if constexpr (chunk_config::stats)
         {
-            increm_chunk_write<ChunkType>();
+            inc_chunk_write<ChunkType>();
         }
 
         if constexpr (build_config::threaded)

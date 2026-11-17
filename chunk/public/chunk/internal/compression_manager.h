@@ -33,7 +33,7 @@
 #include "chunk/internal/chunk_size_policy.h"        // t_active_chunk_size — per-op geometry pin in write_body
 #include "chunk/internal/deferred_op_pool.h"         // DeferredOperationBase
 #include "chunk/internal/deferred_lifecycle_check.h" // DEFERRED_LIFECYCLE sentinels
-#include "chunk/internal/chunk_stats.h"              // increm_chunk_gate_* (the handshake, rare side)
+#include "chunk/internal/chunk_stats.h"              // inc_chunk_gate_* (the handshake, rare side)
 #include "chunk/internal/immortal.h"                 // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/same_value.h"               // same_value
 
@@ -444,7 +444,7 @@ class CompressionManagerThreadPolicy : public FlushReplayState<T, ChunkT>
     template <typename F>
     static void run_slow_path(F&& fn)
     {
-        increm_chunk_gate_driver<ChunkT>();
+        inc_chunk_gate_driver<ChunkT>();
         std::forward<F>(fn)();
     }
 

@@ -37,7 +37,7 @@
 #include "chunk/internal/chunk_size_predictor.h"        // report_size_prediction
 #include "chunk/log.h"                                  // CHUNK_LOG, logging::enabled (the size prediction's gate)
 #include "chunk/internal/chunk_index_sample.h"          // chunk_index_sample (the residual's sample)
-#include "chunk/internal/chunk_stats.h"                 // increm_chunk_* (CHUNK_STATS)
+#include "chunk/internal/chunk_stats.h"                 // inc_chunk_* (CHUNK_STATS)
 #include "chunk/internal/chunk_stats_printer.h"         // print_formatted_chunk_stats
 #include "chunk/internal/type_state.h"                  // TypeState: per-size free lists, candidate filter
 #include "chunk/internal/pmp_chunk.h"                   // CHUNK_PMP_*, get_size_max_array_omp, pmp loops
@@ -74,7 +74,7 @@ void zero_any::ArrayImpl<Derived>::rebuild_storage(IntType sz)
 
         if (chunk_count_)
         {
-            Manager::increm_somme_chunk_create(chunk_count_);
+            Manager::inc_total_chunk_create(chunk_count_);
             Manager::compute_size_buffer_reuse();
             Manager::compute_size_max_number_of_chunk_to_check_compress();
 
@@ -109,13 +109,13 @@ void zero_any::ArrayImpl<Derived>::rebuild_storage(IntType sz)
     m_size_ = sz;
 }
 
-/// @brief Print the demangled name of T and @p nb_val2 on std::cout.
-/// @param nb_val2 Number of compression values to report.
+/// @brief Print the demangled name of T and @p n_val2 on std::cout.
+/// @param n_val2 Number of compression values to report.
 template <ArrayChunkElement T>
-void print_type_name(int nb_val2)
+void print_type_name(int n_val2)
 {
     // std::format, not std::left/std::setw: std::cout's flags stay as they were.
-    std::cout << std::format("{:<30} → Number of compression values : {}\n", "Type: " + type_name<T>(), nb_val2);
+    std::cout << std::format("{:<30} → Number of compression values : {}\n", "Type: " + type_name<T>(), n_val2);
 }
 
 template <typename Derived>
@@ -307,7 +307,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
         return;
     }
 
-    Manager::decrem_somme_chunk_create(chunk_count_);
+    Manager::dec_total_chunk_create(chunk_count_);
     // Recompute what derives from the total -- see zero::Array::clear_core():
     // otherwise a re-chunk leaves the threshold sized for the geometry it just left.
     Manager::compute_size_buffer_reuse();
@@ -428,7 +428,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
             {
                 if constexpr (chunk_config::stats)
                 {
-                    increm_chunk_teardown_clear<ChunkType>();
+                    inc_chunk_teardown_clear<ChunkType>();
                 }
                 chunk_list_[j].clear_st(&ProxyType::array_type_cst_val[array_id_][j],
                                         ProxyType::BaseSpec::get_array_second_value(array_id_, j));
@@ -440,12 +440,12 @@ void zero_any::ArrayImpl<Derived>::clear_core()
         // without it the last array out never frees the registry.
         if (holds_cst2_registry_)
         {
-            int nb_val2 = 0;
-            ChunkType::Holder::clear(nb_val2); // single thread here
+            int n_val2 = 0;
+            ChunkType::Holder::clear(n_val2); // single thread here
             holds_cst2_registry_ = false;
-            if (nb_val2 != 0)
+            if (n_val2 != 0)
             {
-                print_type_name<T>(nb_val2);
+                print_type_name<T>(n_val2);
             }
         }
     }
@@ -456,7 +456,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
         const bool time_registry = probe.on;
         double     registry_ms   = 0.0;
         // acc[0]: the second values the registry release counted (one thread's).
-        const int nb_val2 = pmp::team_sum<int, 1>(
+        const int n_val2 = pmp::team_sum<int, 1>(
             pmp::Options{},
             [&](pmp::Team& team, auto& acc)
             {
@@ -473,7 +473,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
                         {
                             if constexpr (chunk_config::stats)
                             {
-                                increm_chunk_teardown_clear<ChunkType>();
+                                inc_chunk_teardown_clear<ChunkType>();
                                 // Released below without a compression: out of the live figures.
                                 add_chunk_released<ChunkType>(1, static_cast<long>(sizeof(T)) *
                                                                      static_cast<long>(this->size_policy_.size()));
@@ -485,7 +485,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
 
                 const int thr_rank = CHUNK_PMP_THREAD_RANK;
 
-                if (const auto nb = static_cast<int>(ll_chunk_loc.size()); nb > 0)
+                if (const auto n = static_cast<int>(ll_chunk_loc.size()); n > 0)
                 {
                     // Park into the reuse list of THIS array's geometry, not the ambient
                     // t_active (may be another size mid-rechunk): a size-A buffer filed
@@ -493,7 +493,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
                     const unsigned int my_sz = this->size_policy_.size();
                     auto&              lbf   = Manager::get_list_block_free_thr_for_size(thr_rank, my_sz);
 
-                    for (int k = 0; k < nb; ++k)
+                    for (int k = 0; k < n; ++k)
                     {
                         T* values_loc = ll_chunk_loc[k]->values_;
                         // Ledger: LIVE -> parked, or a later pop of this block from the
@@ -539,9 +539,9 @@ void zero_any::ArrayImpl<Derived>::clear_core()
         probe.mark(internal::TeardownStep::park);
         probe.transfer(internal::TeardownStep::park, internal::TeardownStep::registry, registry_ms);
 
-        if (nb_val2 != 0)
+        if (n_val2 != 0)
         {
-            print_type_name<T>(nb_val2);
+            print_type_name<T>(n_val2);
         }
     }
 
@@ -582,9 +582,9 @@ void zero_any::ArrayImpl<Derived>::compress_int(pmp::Team& team)
     std::vector<int> array_nb1;
     std::vector<int> array_nb2;
 
-    const int nb_res = (chunk_count_ / (50 * CHUNK_PMP_MAX_THREADS)) + 1;
-    array_nb1.reserve(nb_res);
-    array_nb2.reserve(nb_res);
+    const int n_res = (chunk_count_ / (50 * CHUNK_PMP_MAX_THREADS)) + 1;
+    array_nb1.reserve(n_res);
+    array_nb2.reserve(n_res);
 
     team.for_static<int>(
         0, chunk_count_,
@@ -708,7 +708,7 @@ void zero_any::ArrayImpl<Derived>::release_chunk_range(int first, int last)
             {
                 if constexpr (chunk_config::stats)
                 {
-                    increm_chunk_teardown_clear<ChunkType>();
+                    inc_chunk_teardown_clear<ChunkType>();
                 }
                 chunk_list_[j].clear_st(&ProxyType::array_type_cst_val[array_id][j],
                                         ProxyType::BaseSpec::get_array_second_value(array_id, j));
@@ -730,7 +730,7 @@ void zero_any::ArrayImpl<Derived>::release_chunk_range(int first, int last)
                 {
                     if constexpr (chunk_config::stats)
                     {
-                        increm_chunk_teardown_clear<ChunkType>();
+                        inc_chunk_teardown_clear<ChunkType>();
                         // The size read here, not captured: stats builds only use it.
                         add_chunk_released<ChunkType>(1, static_cast<long>(sizeof(T)) *
                                                              static_cast<long>(this->size_policy_.size()));

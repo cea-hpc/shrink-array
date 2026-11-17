@@ -109,6 +109,8 @@ ALLOWED = {
     "manager_chunk_inline.h", "manager_chunk_interface.h", "manager_chunk_policies.h",
     "manager_chunk_policies_inline.h", "manager_chunk.cpp", "chunk/internal/manager_chunk.h",
     "chunk/private/manager_chunk.cpp",
+    # French names in English (CHANGELOG.md, Unreleased, Changed); the released entries cite them
+    "factor_div_somme_chunk_buffer_reuse", "freq_conso_mem",
     # removed with the deducing-this variant of develop (CHANGELOG.md, Unreleased, Removed)
     "CHUNK_CRTP_USE_DEDUCING_THIS", "CHUNK_CRTP_FORCE_DEDUCING_THIS",
     # tab -> array (CHANGELOG.md, Unreleased, Changed); the released entries cite them

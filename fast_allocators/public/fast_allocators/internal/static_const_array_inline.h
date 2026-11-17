@@ -140,7 +140,7 @@ inline bool StaticConstArray::try_free_block(int sz, void* ptr)
             // they were built, before main; std backend: a registered rank
             // past them, or none, -1, the registry full): there is no batch to
             // index, so free at once, under the lock the full path takes.
-            if (thr_rank < 0 || thr_rank >= array_info_free_elt().nb_thr) [[unlikely]]
+            if (thr_rank < 0 || thr_rank >= array_info_free_elt().n_thr) [[unlikely]]
             {
                 const std::scoped_lock lock(ladder_mutex());
                 free_block_with_int(sz, ptr);
@@ -178,12 +178,12 @@ inline bool StaticConstArray::try_free_block(int sz, void* ptr)
 
 inline bool InfoFreeElt::push_back(void* ptr, int sz, int thr_rank)
 {
-    if (int& ref_compt = compt[thr_rank]; ref_compt < max_free_elt && somme_sz_[thr_rank] < 4 * 1024 * 1024)
+    if (int& ref_compt = compt[thr_rank]; ref_compt < max_free_elt && total_sz_[thr_rank] < 4 * 1024 * 1024)
     {
         array_ptr[thr_rank][ref_compt] = ptr;
         array_sz[thr_rank][ref_compt]  = sz;
 
-        somme_sz_[thr_rank] += sz;
+        total_sz_[thr_rank] += sz;
 
         ref_compt++;
         return false;

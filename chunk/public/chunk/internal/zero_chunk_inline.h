@@ -27,7 +27,7 @@
 #include "chunk/config.h"              // build_config::chunk_dynamic, chunk_config::stats
 #include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/chunk_size_policy.h"   // alloc_chunk_count
-#include "chunk/internal/chunk_stats.h"         // increm_chunk_* / add_chunk_* (CHUNK_STATS)
+#include "chunk/internal/chunk_stats.h"         // inc_chunk_* / add_chunk_* (CHUNK_STATS)
 #include "chunk/internal/type_state.h"          // TypeState:: candidate lists (dependent calls)
 #include "chunk/internal/zero_proxy.h"          // Proxy<T>: the compression pass's proxy
 #include "chunk/internal/pmp_chunk.h"           // CHUNK_PMP_*, pmp::team, pmp::in_application_phase
@@ -97,7 +97,7 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(Candi
     if (derived().written())
     {
         // CHUNK_STATS: one candidate scanned (scan reads, not application reads).
-        increm_chunk_compress_attempt<Derived>();
+        inc_chunk_compress_attempt<Derived>();
         if (derived().is_constant_to(zero, n_elems))
         {
             ll_compt.push_back(std::make_tuple(self(), chunk_index, array_id, ChunkElems{n_elems}));
@@ -122,7 +122,7 @@ void zero::ChunkThreadPolicy<T, Derived, Enabled>::compress(int thr_rank, unsign
     // CHUNK_STATS: counted here so the scan yield reflects what actually runs.
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_compress_attempt<ChunkType>();
+        inc_chunk_compress_attempt<ChunkType>();
     }
 
     if (Base::is_constant_to(T{}, n_elems))
@@ -228,7 +228,7 @@ void zero::ChunkThreadPolicy<T, Derived, Enabled>::create_value(int thr_rank) no
 
     if (compare_and_swap(values_loc))
     {
-        Base::recup_value(values_loc, thr_rank);
+        Base::reclaim_value(values_loc, thr_rank);
     }
 
     // Release fence: the caller's following stores cannot be reordered before the CAS (AArch64).
@@ -373,16 +373,16 @@ void zero::Chunk<T>::block_clear([[maybe_unused]] int thr_rank)
 {
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_compress<Chunk<T>>();
+        inc_chunk_compress<Chunk<T>>();
         add_chunk_bytes_freed<Chunk<T>>(static_cast<long>(sizeof(T)) *
                                         static_cast<long>(shrink_array::alloc_chunk_count()));
         if constexpr (build_config::threaded)
         {
-            increm_chunk_release_pool<Chunk<T>>();
+            inc_chunk_release_pool<Chunk<T>>();
         }
         else
         {
-            increm_chunk_release_free<Chunk<T>>();
+            inc_chunk_release_free<Chunk<T>>();
         }
     }
 
@@ -405,10 +405,10 @@ void zero::ChunkThreadPolicy<T, Derived, Enabled>::clear_int_st(int thr_rank)
     {
         if constexpr (chunk_config::stats)
         {
-            increm_chunk_compress<Chunk<T>>();
+            inc_chunk_compress<Chunk<T>>();
             add_chunk_bytes_freed<Chunk<T>>(static_cast<long>(sizeof(T)) *
                                             static_cast<long>(shrink_array::alloc_chunk_count()));
-            increm_chunk_release_pool<Chunk<T>>();
+            inc_chunk_release_pool<Chunk<T>>();
         }
         Base::free_block_to_pool(thr_rank, old);
     }
@@ -423,9 +423,9 @@ void zero::ChunkThreadPolicy<T, Derived, Enabled>::clear_st(int thr_rank, unsign
     // rebuild releases through release_st() directly so it is not counted as compression.
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_compress<Chunk<T>>();
+        inc_chunk_compress<Chunk<T>>();
         add_chunk_bytes_freed<Chunk<T>>(static_cast<long>(sizeof(T)) * static_cast<long>(n_elems));
-        increm_chunk_release_park<Chunk<T>>();
+        inc_chunk_release_park<Chunk<T>>();
     }
     release_st(thr_rank, n_elems, /*count_release=*/false);
 }
@@ -471,10 +471,10 @@ void zero::ChunkThreadPolicy<T, Derived, false>::clear_st()
     // CHUNK_STATS: serial twin of the OpenMP clear_st above.
     if constexpr (chunk_config::stats)
     {
-        increm_chunk_compress<Chunk<T>>();
+        inc_chunk_compress<Chunk<T>>();
         add_chunk_bytes_freed<Chunk<T>>(static_cast<long>(sizeof(T)) *
                                         static_cast<long>(shrink_array::alloc_chunk_count()));
-        increm_chunk_release_free<Chunk<T>>();
+        inc_chunk_release_free<Chunk<T>>();
     }
     release_st(/*count_release=*/false);
 }
@@ -578,7 +578,7 @@ void zero::Chunk<T>::alloc_chunk([[maybe_unused]] int thr_rank)
     {
         if constexpr (chunk_config::stats)
         {
-            increm_chunk_write<ChunkType>();
+            inc_chunk_write<ChunkType>();
         }
 
         if constexpr (build_config::threaded)

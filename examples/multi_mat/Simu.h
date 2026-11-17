@@ -44,8 +44,8 @@ class MultiMatAlgo;
  */
 struct Simu
 {
-    static inline int iter_max_default = 100; ///< Iterations, unless asked
-    static inline int nbmat_default    = 50;  ///< Materials, unless asked
+    static inline int iter_max_default    = 100; ///< Iterations, unless asked
+    static inline int n_materials_default = 50;  ///< Materials, unless asked
 
     using VecInt2D = std::vector<std::vector<int>>;
 
@@ -96,8 +96,8 @@ struct Simu
     /// @brief Whether per-iteration prints are on (verbose).
     bool is_verbose() const;
 
-    /// @brief Number of materials (nbmat).
-    int get_nbmat() const;
+    /// @brief Number of materials (n_materials).
+    int get_n_materials() const;
 
     /// @brief The parameters -- asked on stdin under
     ///        multi_mat::interactive_input, the defaults above otherwise --
@@ -126,7 +126,7 @@ struct Simu
                        const std::function<void(bool)>&    lbd_stats,
                        double&                             value);
 
-    int nbmat = nbmat_default; ///< Materials
+    int n_materials = n_materials_default; ///< Materials
 
     int mesh_size = 10000000; ///< Cells
 

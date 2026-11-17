@@ -39,7 +39,7 @@
 // `#ifdef` around runtime code.
 
 // BENCH_PRINT_MEM: the memory lines of a run ("after init", every
-// freq_conso_mem iterations, "after compress"). Set by the CMake option SHRINK_BENCH_PRINT_MEM (ON by
+// freq_mem_report iterations, "after compress"). Set by the CMake option SHRINK_BENCH_PRINT_MEM (ON by
 // default) as 1 or 0; 1 when a build sets nothing.
 #ifndef BENCH_PRINT_MEM
     #define BENCH_PRINT_MEM 1
@@ -355,7 +355,7 @@ inline Int get_iter_stop(Int iter_max)
 /// @brief Period, in iterations, of the reset step.
 /// @param iter_max Iteration count, used in perf mode.
 /// @return 4 in check mode, max(iter_max / 10, 1) in perf mode, -1 with no mode chosen.
-inline Int get_freq_raz(Int iter_max)
+inline Int get_freq_reset(Int iter_max)
 {
     if (mode_check)
     {
@@ -376,7 +376,7 @@ inline Int get_freq_raz(Int iter_max)
 /// @brief Period, in iterations, of the memory line.
 /// @return CHUNK_BENCH_MEM_PERIOD when set and positive; otherwise 1 in check mode, 10 in perf mode, -1 with no
 ///         mode chosen.
-inline Int get_freq_conso_mem()
+inline Int get_freq_mem_report()
 {
     // CHUNK_BENCH_MEM_PERIOD=<n>: print the memory line every n iterations,
     // whatever the mode. =1 turns the ten iterations before an advisor tick

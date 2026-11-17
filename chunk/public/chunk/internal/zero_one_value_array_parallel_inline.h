@@ -135,9 +135,9 @@ void zero_one_value::FastBlockSupport<Derived, true>::sweep_leftover_candidates(
         const int  array_id = ProxyT::array_registry->get_array_id(self().registry_key());
         const auto inf      = self().get_info_second_value();
         const int  thr_self = get_thr_rank_fast();
-        const auto nb_rank  = static_cast<int>(ManagerT::zero_one_value_candidates_map_thr.size());
+        const auto n_rank   = static_cast<int>(ManagerT::zero_one_value_candidates_map_thr.size());
         const int  first    = own_rank_only ? thr_self : 0;
-        const int  last     = own_rank_only ? std::min(thr_self + 1, nb_rank) : nb_rank;
+        const int  last     = own_rank_only ? std::min(thr_self + 1, n_rank) : n_rank;
         bool       found    = false;
         for (int thr = first; thr < last; ++thr)
         {

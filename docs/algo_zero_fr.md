@@ -66,7 +66,7 @@ flowchart TD
     D -->|oui| D1["end_write + écriture DIFFÉRÉE<br/>(lbd_equal_asynch)"]
     D -->|non| E["corps lbd_equal_core : lire old_value<br/>AVANT toute matérialisation"]
     E --> F{"chunk à cst_val1 ?<br/>(perform_core_assignment)"}
-    F -->|oui| G["create_value : tampon de la liste de réutilisation,<br/>déjà à zéro, ou neuf et mis à zéro,<br/>CAS cst_val1 -> tampon, un CAS perdu le recycle"]
+    F -->|oui| G["create_value : tampon de la items de réutilisation,<br/>déjà à zéro, ou neuf et mis à zéro,<br/>CAS cst_val1 -> tampon, un CAS perdu le recycle"]
     F -->|non| H
     G --> H["store_value_at"]
     H --> I{"ancienne != 0 et nouvelle == 0, ou élément<br/>changé par un autre écrivain ?<br/>(mark_for_compression_core)"}
@@ -76,14 +76,14 @@ flowchart TD
 ```
 
 En build séquentiel, ni moteur ni liste de candidats : `assign_impl` tient lui-même le compteur
-de zéros (`inc_nb_val_eq_zero`, `dec_nb_val_eq_zero`), compresse le chunk tout de suite quand il
+de zéros (`inc_n_val_eq_zero`, `dec_n_val_eq_zero`), compresse le chunk tout de suite quand il
 devient entièrement nul (`manage_full_zero`), et sinon le matérialise (`create_value`) et écrit
 directement.
 
 ## 4. Quand un chunk devient candidat à la compression
 
 **Builds séquentiels** : chaque chunk tient un **compteur de zéros**
-(`ChunkCounterPolicy`, `nb_val_eq_zero_`). Quand il atteint le nombre d'éléments du chunk, le
+(`ChunkCounterPolicy`, `n_val_eq_zero_`). Quand il atteint le nombre d'éléments du chunk, le
 chunk est compressé tout de suite (`manage_full_zero`). Ce compteur doit être exactement
 synchronisé avec le contenu : un compteur désynchronisé compresserait un chunk qui ne l'est
 pas, d'où le soin mis à le propager dans les copies.
@@ -129,12 +129,12 @@ flowchart TD
     C --> D{"CompressionManager::start"}
     D -->|refusé| D1["steal_unmark de tous, renoncer"]
     D -->|accepté| E["fill_list_to_compress à la taille n_elems de l'entrée :<br/>written et is_constant_to 0 ?<br/>puis queue_flag::hand_back"]
-    E -->|oui| F["liste ll_compt"]
+    E -->|oui| F["items ll_compt"]
     E -->|non| G["steal_unmark tout de suite"]
     F --> H["clear_int_st : CAS values -> cst_val1,<br/>free_block_to_pool après une période de grâce,<br/>steal_unmark"]
-    H --> I["chaque candidat : steal_unmark, puis queue_flag::release :<br/>écrit entre-temps -> remis en liste"]
+    H --> I["chaque candidat : steal_unmark, puis queue_flag::release :<br/>écrit entre-temps -> remis en items"]
     G --> I
-    I --> J["chunk déclencheur remis en liste s'il est matérialisé,<br/>finish()"]
+    I --> J["chunk déclencheur remis en items s'il est matérialisé,<br/>finish()"]
 ```
 
 Ce qui diffère de `zero_one_value` : une liste de candidats par rang
@@ -144,9 +144,9 @@ cible, donc une seule liste de sortie. Les builds séquentiels n'ont pas de pass
 
 ## 6. Le seuil de déclenchement
 
-Il vaut `somme_chunk_create / (100 × nombre de threads)`, avec un plancher de 100 candidats
+Il vaut `total_chunk_create / (100 × nombre de threads)`, avec un plancher de 100 candidats
 (`ChunkDef` : `factor_div_chunk_count_for_compress`, `size_min_list_chunk_to_check_compress`).
-`somme_chunk_create` est le nombre de chunks existants de ce type. Deux corrections de
+`total_chunk_create` est le nombre de chunks existants de ce type. Deux corrections de
 septembre 2026 le maintiennent exact :
 
 - il est **décrémenté** à la destruction d'un tableau (sans quoi il ne faisait que croître :

@@ -116,11 +116,11 @@ void bench_phase_compute(BenchArrays&            bench_arr,
         {
             begin_parallel_phase_g();
 
-            const Int dec = iter % 16;
-            const Int deb = std::max<Int>(start0 - 512, 0);
+            const Int dec   = iter % 16;
+            const Int begin = std::max<Int>(start0 - 512, 0);
 
             // nowait on this loop and the next: they write DISJOINT ranges
-            // ([deb, start0) here, [end0, end0 + 256) below) that nothing in this
+            // ([begin, start0) here, [end0, end0 + 256) below) that nothing in this
             // region reads back, so a thread done with its slice may go on. The
             // three loops after them stay barriered: the [start0, end0) loop
             // writes what the reduction loops then read, and the last one
@@ -138,10 +138,10 @@ void bench_phase_compute(BenchArrays&            bench_arr,
             // calls inside index-selected branches -- "control flow cannot be
             // substituted for a select", the calls may not be speculated.
             team.for_static<Int>(
-                deb, start0,
+                begin, start0,
                 [&](const Int i) __attribute__((always_inline))
                 {
-                    const Int offset = i - deb;
+                    const Int offset = i - begin;
 
                     if (offset < 60 + dec)
                     {
@@ -167,10 +167,10 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                 bench_par::nowait);
 
             team.for_static<Int>(
-                deb, start0,
+                begin, start0,
                 [&](const Int i) __attribute__((always_inline))
                 {
-                    const Int offset = i - deb;
+                    const Int offset = i - begin;
 
                     if (offset < 60 + dec)
                     {

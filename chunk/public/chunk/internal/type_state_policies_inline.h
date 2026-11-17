@@ -486,26 +486,26 @@ std::size_t TypeStateParallelImpl<ChunkT, T, true>::clear_list_block_free_prepar
     using Mgr        = TypeState<ChunkT, T>;
     const auto& self = static_cast<const Mgr&>(*this);
 
-    auto nb = static_cast<std::size_t>(std::max(1, self.max_thr_));
-    nb      = std::max(nb, Mgr::get_list_block_free_thr().size());
+    auto n = static_cast<std::size_t>(std::max(1, self.max_thr_));
+    n      = std::max(n, Mgr::get_list_block_free_thr().size());
     if constexpr (build_config::chunk_dynamic)
     {
         for (const auto& size_kv : *Mgr::list_block_free_thr_by_size_)
         {
-            nb = std::max(nb, size_kv.second.size());
+            n = std::max(n, size_kv.second.size());
         }
     }
 
     for (const auto& key_kv : *Mgr::list_block_free_thr_keyed_)
     {
-        nb = std::max(nb, key_kv.second.size());
+        n = std::max(n, key_kv.second.size());
     }
-    Mgr::teardown_to_free_.assign(nb, std::vector<T*>{});
+    Mgr::teardown_to_free_.assign(n, std::vector<T*>{});
     // One repeat list per address slice, and the slices are the team, whose
     // size is only known inside the region: max_thr bounds it.
-    Mgr::teardown_repeats_.assign(std::max(nb, static_cast<std::size_t>(CHUNK_PMP_MAX_THREADS)),
+    Mgr::teardown_repeats_.assign(std::max(n, static_cast<std::size_t>(CHUNK_PMP_MAX_THREADS)),
                                   std::vector<internal::TeardownRepeat<T>>{});
-    return nb;
+    return n;
 }
 
 /**
@@ -520,7 +520,7 @@ std::size_t TypeStateParallelImpl<ChunkT, T, true>::clear_list_block_free_prepar
  * @warning The default list and the per-size lists must BOTH be drained. The
  *          size-aware accessor returns only a per-size list and leaves the
  *          default one untouched, which leaks the buffers recovered through
- *          recup_value -- hence the raw `.list` access below rather than that
+ *          reclaim_value -- hence the raw `.list` access below rather than that
  *          overload. The per-size lists exist only in dynamic-geometry builds.
  * @note Only queues anything when NOT using the fast allocator: there the
  *       blocks belong to the arena and are released with it. The lists are

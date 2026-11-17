@@ -640,7 +640,7 @@ class GlobalVecHolder
     /**
      * @brief Drop one user; free the whole registry when it was the last.
      *
-     * @param nb_val2 Incremented by the number of registered values freed.
+     * @param n_val2 Incremented by the number of registered values freed.
      *
      * @details Decrements #ref_count and returns immediately while other
      *          zero_any::Array<T> instances are alive. The last one out frees every
@@ -660,7 +660,7 @@ class GlobalVecHolder
      *       "I am the lone thread of a single". omp_in_parallel() is the wrong
      *       test, since the single legitimately runs inside a parallel region.
      */
-    static void clear_if_last(int& nb_val2);
+    static void clear_if_last(int& n_val2);
 
     /**
      * @brief Free everything unconditionally, ignoring #ref_count.
@@ -943,13 +943,13 @@ class ArrayCstVal2Holder
 
     /**
      * @brief Drop this user of the registry; the last one frees it.
-     * @param nb_val2 Incremented by the number of registered values freed.
+     * @param n_val2 Incremented by the number of registered values freed.
      * @warning Single thread only, and with no concurrent scan in flight.
      *          @see GlobalVecHolder::clear_if_last for the full contract.
      */
-    static void clear(int& nb_val2)
+    static void clear(int& n_val2)
     {
-        VecHolder::clear_if_last(nb_val2);
+        VecHolder::clear_if_last(n_val2);
     }
 
     /// @brief The identifier for @p value, registering its slot if it is new;
@@ -1003,7 +1003,7 @@ class ArrayCstVal2Holder<bool>
     /// @brief Nothing to create. @see ArrayCstVal2Holder::create
     static void create() {}
     /// @brief Nothing to free, and no user count to keep.
-    static void clear(int& /*nb_val2*/) {}
+    static void clear(int& /*n_val2*/) {}
 
     /// @brief The shared array. There is only ever one, so nothing is searched.
     static bool* find_or_set_ind_cst_val2()

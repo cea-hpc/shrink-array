@@ -29,11 +29,11 @@
 #include "chunk/internal/concept_is_clean_assignment.h" // IsCleanAssignment, ElementAddable, ElementModulable
 #include "chunk/internal/in_t.h"                        // InT<T>
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/conditional_counter.h"         // CounterValueT — resync_nb_val_eq_zero
+#include "chunk/internal/conditional_counter.h"         // CounterValueT — resync_n_val_eq_zero
 #include "chunk/internal/def_force_inline.h"            // CHUNK_FORCE_INLINE
 #include "chunk/internal/proxy_base.h"                  // ProxyBase
 #include "chunk/internal/read_reclaim.h"                // read_reclaim::ReadSection
-#include "chunk/internal/chunk_stats.h" // increm_chunk_read<> (a dependent call the include tools cannot attribute)
+#include "chunk/internal/chunk_stats.h" // inc_chunk_read<> (a dependent call the include tools cannot attribute)
 #include "chunk/internal/immortal.h"    // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/same_value.h"  // same_value
 
@@ -632,8 +632,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @brief Re-state the owning chunk's zero count after a BULK fill that did
      *        not go through this write path.
      *
-     * @details nb_val_eq_zero_ is maintained per write, and manage_full_zero()
-     *          fires on `nb_val_eq_zero_ == chunk_size` exactly. A direct store
+     * @details n_val_eq_zero_ is maintained per write, and manage_full_zero()
+     *          fires on `n_val_eq_zero_ == chunk_size` exactly. A direct store
      *          into the buffer leaves the counter wrong, and a later write can
      *          then compress a chunk that is not all zero. The counter is in a
      *          private base of Chunk<T> befriending only this proxy, hence the
@@ -644,9 +644,9 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *        window -- the same window is_full_zero() is asked about, so the
      *        untouched tail of a partially-filled last chunk counts too.
      */
-    void resync_nb_val_eq_zero(CounterValueT n_zeros) const noexcept
+    void resync_n_val_eq_zero(CounterValueT n_zeros) const noexcept
     {
-        chunk_.set_nb_val_eq_zero(n_zeros);
+        chunk_.set_n_val_eq_zero(n_zeros);
     }
 
     /**
@@ -654,7 +654,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *        is all zero -- what the write bringing the count to chunk_size()
      *        does (perform_core_assignment), for a BULK store that bypassed it.
      *
-     * @details Call after resync_nb_val_eq_zero(). Pins the ambient geometry and
+     * @details Call after resync_n_val_eq_zero(). Pins the ambient geometry and
      *          allocator set the free routes by, as the write path does.
      *          Always false when counters are compiled out (fast block
      *          compression: the pass folds the chunk).

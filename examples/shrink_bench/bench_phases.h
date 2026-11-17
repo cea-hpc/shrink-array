@@ -189,8 +189,8 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
                                 const std::vector<Int>& array_nba2,
                                 double&                 point_sum);
 
-/// @brief The struct arrays' share of the raz sweep: [start0, end0) back to T{}.
-void bench_phase_struct_raz(BenchArrays& bench_arr, Int start0, Int end0);
+/// @brief The struct arrays' share of the reset sweep: [start0, end0) back to T{}.
+void bench_phase_struct_reset(BenchArrays& bench_arr, Int start0, Int end0);
 
 /**
  * @brief array_mask's starting pattern (bench_phase_mask.cpp): whole segments of
@@ -325,7 +325,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats);
  *          lives in their file: side by side, the four differ only by the value
  *          written and by the sentinel the scan stops on.
  */
-void bench_phase_raz_sweep(BenchArrays& bench_arr, Int iter, Int size, Int start0, Int end0);
+void bench_phase_reset_sweep(BenchArrays& bench_arr, Int iter, Int size, Int start0, Int end0);
 
 /**
  * @brief Print the thirteen checksums.

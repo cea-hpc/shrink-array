@@ -30,7 +30,7 @@
  *
  * Inside it, the loops are written as a header macro followed by the body:
  *
- *     BENCH_FOR_STATIC_NOWAIT_SCALAR(t, i, deb, start0)
+ *     BENCH_FOR_STATIC_NOWAIT_SCALAR(t, i, first_index, start0)
  *     {
  *         arr[i] = ...;
  *     }
