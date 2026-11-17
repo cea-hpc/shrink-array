@@ -1015,8 +1015,8 @@ void ProxyBase<Derived, T, ChunkT>::apply_atomic_op(Op operation, const U& opera
                                         &ctx->chunk, ctx->elem_offset, static_cast<const void*>(values_before),
                                         static_cast<const void*>(values_after));
                                 }
-                                // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
                                 const InT<T> readback =
+                                    // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
                                     elem_get(values_after, static_cast<std::size_t>(ctx->elem_offset));
                                 const auto expected = static_cast<T>(res);
                                 if (!same_value(static_cast<T>(readback), expected))
