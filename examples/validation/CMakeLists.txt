@@ -19,11 +19,11 @@
 #                           done. No rechunk_to on purpose: when this one fails
 #                           the cause is in the geometry/allocation pairing and
 #                           nowhere else.
-#   compress_roundtrip      every element reads back after a compression pass
+#   compress_roundtrip_validation      every element reads back after a compression pass
 #                           and a partial re-materialisation, and the library
 #                           tears down cleanly -- at 1 thread and at 8, since
 #                           the answer must not depend on the team.
-#   pool_accounting         the manager's bookkeeping follows the arrays alive:
+#   pool_accounting_validation         the manager's bookkeeping follows the arrays alive:
 #                           chunk count up and down, buffers parked and taken
 #                           back in exact number, nothing left at an old
 #                           geometry after a re-chunk, threshold back at the
@@ -237,7 +237,7 @@ endfunction()
 # namespace, validation::<harness>, with a run() the shared driver calls
 # (validation_harness.h, validation_driver.cpp):
 #
-#     validation_zero_any_256 compress_roundtrip [args...]
+#     validation_zero_any_256 compress_roundtrip_validation [args...]
 #
 # The ctest names are the ones of the one-executable-per-harness layout
 # (compress_roundtrip_zero_any_256_8thr, rechunk_validation_zero_dyn_val2-grow,
@@ -283,7 +283,7 @@ math(EXPR _rt_nvar_last "${_rt_nvar} - 1")
 # there (rechunk_to, set_chunk_size, a chunk_dynamic branch). The others test
 # nothing geometry-specific and are built at the default static size only --
 # it exists in every configuration, CHUNK_BUILD_DYN or not.
-set(_rt_harnesses       compress_roundtrip pool_accounting open_types_validation
+set(_rt_harnesses       compress_roundtrip_validation pool_accounting_validation open_types_validation
                         mark_path_validation fill_range_mt_validation index64_validation
                         swap_move_validation range_counters_validation thread_growth_validation
                         nested_region_validation concurrent_teams_validation iterator_validation
@@ -292,7 +292,7 @@ set(_rt_harnesses       compress_roundtrip pool_accounting open_types_validation
                         fill_range_constant_validation copy_range_constant_validation
                         constant_switch_validation shrink_to_fit_validation chunk_exchange_validation
                         signed_zero_validation no_init_release_validation nan_check_validation)
-set(_rt_dyn_harnesses   pool_accounting open_types_validation index64_validation stale_proxy_validation)
+set(_rt_dyn_harnesses   pool_accounting_validation open_types_validation index64_validation stale_proxy_validation)
 
 # Compile definitions of a variant at a geometry.
 function(validation_variant_defs tgt vmacro geom)
@@ -656,7 +656,7 @@ endif()
 
 # --- fill_range_mt_zero_and_zero_one_value_validation: the two-variant library (CHUNK_VARIANT_ZERO=1;CHUNK_VARIANT_ZERO_ONE_VALUE=1,
 # default static size, no OMPT tool -- the harness defines the switch and makes
-# the phase calls, as multi-mat does), zero::Array and zero_one_value::Array in one
+# the phase calls, as multi_mat does), zero::Array and zero_one_value::Array in one
 # program. At 1 and 8 threads like the others.
 if (TARGET chunk_zero_and_zero_one_value_${CHUNK_DEFAULT_SIZE})
   set(_tgt fill_range_mt_zero_and_zero_one_value_validation)

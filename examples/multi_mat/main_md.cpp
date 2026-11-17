@@ -16,9 +16,9 @@
 
 /**
  * @file main_md.cpp
- * @brief multi-mat-md: multi-mat on a 2D mesh, through mdspan views.
+ * @brief multi_mat_md: multi_mat on a 2D mesh, through mdspan views.
  *
- * The mock of multi-mat (main.cpp) with an nx x ny mesh: at every iteration
+ * The mock of multi_mat (main.cpp) with an nx x ny mesh: at every iteration
  * each material occupies a random box, where its three fields and its
  * presence fraction are written and then read back by the gadget
  * computation. Every array is seen through a 2D mdspan (chunk/mdspan.h for
@@ -31,7 +31,7 @@
  * row-major. The run prints the chunks written, the result, the time and
  * the peak memory; --verify replays it serially and compares.
  *
- * Usage: multi-mat-md [--nx N] [--ny N] [--mat N] [--iter N] [--option 1-4]
+ * Usage: multi_mat_md [--nx N] [--ny N] [--mat N] [--iter N] [--option 1-4]
  *        [--chunk-rate P] [--pc-chunk P] [--pc-vector P] [--freq-rtz N]
  *        [--freq-compress N] [--interface N] [--chunk-mode tiles|elements|rows]
  *        [--seed S] [--verify] [--max-imbalance R] [--verbose]
@@ -172,7 +172,7 @@ bool SimuMd::parse(int argc, char** argv)
         }
         catch (const std::exception& e)
         {
-            std::println(stderr, "multi-mat-md: {}", e.what());
+            std::println(stderr, "multi_mat_md: {}", e.what());
             return false;
         }
     }
@@ -182,7 +182,7 @@ bool SimuMd::parse(int argc, char** argv)
                     static_cast<long long>(storage_size()) <= static_cast<long long>(1 << 30);
     if (!ok)
     {
-        std::println(stderr, "multi-mat-md: a parameter is out of range");
+        std::println(stderr, "multi_mat_md: a parameter is out of range");
     }
     return ok;
 }
@@ -206,12 +206,12 @@ void SimuMd::draw_storage()
             dis[m] = distrib(gen) < threshold;
         }
     }
-    int nb_chunk = 0;
+    int chunk_count = 0;
     for (const bool c : dis)
     {
-        nb_chunk += c ? 1 : 0;
+        chunk_count += c ? 1 : 0;
     }
-    std::println("Number of chunk materials : {} on {}", nb_chunk, nbmat);
+    std::println("Number of chunk materials : {} on {}", chunk_count, nbmat);
 }
 
 void SimuMd::create_tabs()
@@ -228,7 +228,7 @@ void SimuMd::compute_distribution()
 {
     // The largest box of a kind covers pc % of the mesh's area: its sides are
     // sqrt(pc %) of the mesh's. Sides and corners uniform, as the intervals
-    // of multi-mat.
+    // of multi_mat.
     const auto side = [](int n, double pc)
     { return std::max(1, static_cast<int>(std::round(static_cast<double>(n) * std::sqrt(pc / 100.)))); };
     const int hc = side(nx, pc_chunk);
@@ -435,7 +435,7 @@ int main(int argc, char** argv)
 
 int main()
 {
-    std::println("multi-mat-md: skipped (neither <mdspan> nor kokkos/mdspan on the include path)");
+    std::println("multi_mat_md: skipped (neither <mdspan> nor kokkos/mdspan on the include path)");
     return 77;
 }
 

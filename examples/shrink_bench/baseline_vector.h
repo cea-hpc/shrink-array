@@ -40,7 +40,7 @@
 #include <utility>     // std::forward
 #include <vector>      // std::vector: BaselineVector's base
 
-#include "chunk/internal/PMP_CHUNK.h" // pmp::parallel_for (zero_from)
+#include "chunk/internal/pmp_chunk.h" // pmp::parallel_for (zero_from)
 
 namespace shrink_array
 {

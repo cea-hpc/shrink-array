@@ -51,7 +51,7 @@ template <typename Derived>
 void DirtyBitsetSupport<Derived, true>::clear_all_dirty_bitsets()
 {
     using ProxyType = Derived::ProxyType;
-    ProxyType::share_info_array->for_each_key(
+    ProxyType::array_registry->for_each_key(
         [](ArrayKey<typename Derived::ChunkType> key)
         {
             if (key != nullptr)
@@ -64,15 +64,15 @@ void DirtyBitsetSupport<Derived, true>::clear_all_dirty_bitsets()
 }
 
 template <typename Derived>
-void DirtyBitsetSupport<Derived, true>::reallocate_dirty_bitset(int old_nb_chunk, int new_nb_chunk)
+void DirtyBitsetSupport<Derived, true>::reallocate_dirty_bitset(int old_chunk_count, int new_chunk_count)
 {
-    if (new_nb_chunk == old_nb_chunk)
+    if (new_chunk_count == old_chunk_count)
     {
         return;
     }
 
-    const int old_nb_words = words_for(old_nb_chunk);
-    const int new_nb_words = words_for(new_nb_chunk);
+    const int old_nb_words = words_for(old_chunk_count);
+    const int new_nb_words = words_for(new_chunk_count);
 
     auto new_bitset = parallel_storage_init::make_filled<PaddedDirtyWord>(static_cast<std::size_t>(new_nb_words) + 1);
 

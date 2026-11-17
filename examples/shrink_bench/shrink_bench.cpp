@@ -369,7 +369,7 @@ try
 
     const Int freq_raz = get_freq_raz(iter_max);
 
-    // CHUNK_PMP_MAX_THREADS (PMP_CHUNK.h) is omp_get_max_threads() with OpenMP
+    // CHUNK_PMP_MAX_THREADS (pmp_chunk.h) is omp_get_max_threads() with OpenMP
     // and the literal 1 without, so no #ifdef is needed here any more.
     const Int max_thr = CHUNK_PMP_MAX_THREADS;
 

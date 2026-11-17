@@ -62,7 +62,7 @@
 #include "chunk/internal/zero_chunk.h"  // release_chunk_pools
 #include "chunk/config.h"               // chunk_config::use_zero*, build_config::needs_explicit_phases, any_check
 #include "chunk/internal/test_hooks.h"  // test_hooks::force_defer_every
-#include "chunk/internal/PMP_CHUNK.h"   // chunk_rank_cache, chunk_pmp_team_rank (the stale-rank case)
+#include "chunk/internal/pmp_chunk.h"   // chunk_rank_cache, chunk_pmp_team_rank (the stale-rank case)
 #include "chunk/phases.h"               // begin_parallel_phase, finalize_parallel_phase, parallel_phase
 #include "chunk/runtime.h"              // Runtime::init
 #include "chunk/print.h"                // shrink_array::println

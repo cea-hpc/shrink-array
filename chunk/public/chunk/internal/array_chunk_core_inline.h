@@ -19,8 +19,8 @@
 #include <cstddef> // std::size_t
 
 #include "chunk/internal/array_chunk_core.h" // the class these bodies belong to
-#include "chunk/internal/PMP_CHUNK.h"        // CHUNK_PMP_IN_PARALLEL_REGION, CHUNK_PMP_THREAD_RANK
-#include "chunk/internal/tab_users.h"        // TabUsers (teardown_on_own_rank)
+#include "chunk/internal/pmp_chunk.h"        // CHUNK_PMP_IN_PARALLEL_REGION, CHUNK_PMP_THREAD_RANK
+#include "chunk/internal/array_users.h"      // ArrayUsers (teardown_on_own_rank)
 #include "chunk/config.h"                    // build_config::threaded
 #include "chunk/internal/read_reclaim.h"     // wait_for_readers (await_chunk_readers)
 
@@ -32,11 +32,11 @@ namespace shrink_array
 // ---------------------------------------------------------------------------
 
 template <typename ChunkT>
-[[nodiscard]] bool ArrayChunkCore<ChunkT>::teardown_on_own_rank([[maybe_unused]] int num_tab) noexcept
+[[nodiscard]] bool ArrayChunkCore<ChunkT>::teardown_on_own_rank([[maybe_unused]] int array_id) noexcept
 {
     if constexpr (build_config::threaded)
     {
-        return CHUNK_PMP_IN_PARALLEL_REGION && internal::TabUsers<ChunkT>::only(num_tab, CHUNK_PMP_THREAD_RANK);
+        return CHUNK_PMP_IN_PARALLEL_REGION && internal::ArrayUsers<ChunkT>::only(array_id, CHUNK_PMP_THREAD_RANK);
     }
     else
     {
@@ -66,7 +66,7 @@ void ArrayChunkCore<ChunkT>::assign_alloc_key()
     }
     // An array built inside a region shares the pool: registering an allocator
     // set writes tables the other threads' allocations are reading.
-    if (nb_chunk_ <= 0 || CHUNK_PMP_IN_PARALLEL_REGION)
+    if (chunk_count_ <= 0 || CHUNK_PMP_IN_PARALLEL_REGION)
     {
         return;
     }
@@ -78,7 +78,7 @@ void ArrayChunkCore<ChunkT>::assign_alloc_key()
     {
         return;
     }
-    if (const std::size_t meta_bytes = static_cast<std::size_t>(nb_chunk_) * sizeof(ChunkType);
+    if (const std::size_t meta_bytes = static_cast<std::size_t>(chunk_count_) * sizeof(ChunkType);
         meta_bytes < build_config::alloc_affinity_min_bytes)
     {
         return;
@@ -87,7 +87,7 @@ void ArrayChunkCore<ChunkT>::assign_alloc_key()
     // Keep the key ONLY if the manager built its allocator set: a key with no registered
     // set makes route_omp_dynamic_alloc fall through to the legacy single allocator,
     // which is neither this size's nor this array's.
-    alloc_key_ = ManagerType::register_alloc_key(key, size_policy_.size(), nb_chunk_) ? key : 0u;
+    alloc_key_ = ManagerType::register_alloc_key(key, size_policy_.size(), chunk_count_) ? key : 0u;
 }
 
 template <typename ChunkT>

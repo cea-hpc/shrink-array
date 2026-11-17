@@ -182,22 +182,22 @@ void Simu::input_data()
 
             const int threshold = option_chunk == 3 ? 1 : chunk_rate;
 
-            int nb_chunk = 0;
+            int chunk_count = 0;
 
             for (int m = 0; m < nbmat; ++m)
             {
                 dis[m] = distrib(gen) < threshold;
-                nb_chunk += dis[m];
+                chunk_count += dis[m];
                 std::println("Material #{}: {}", m, dis[m] ? "chunk" : "vector");
             }
 
-            std::println("\nNumber of chunk array : {} on {} materials \n", nb_chunk, nbmat);
+            std::println("\nNumber of chunk array : {} on {} materials \n", chunk_count, nbmat);
 
-            if (nb_chunk == nbmat)
+            if (chunk_count == nbmat)
             {
                 all_chunk = true;
             }
-            else if (nb_chunk == 0)
+            else if (chunk_count == 0)
             {
                 all_vector = true;
             }

@@ -41,21 +41,21 @@ namespace shrink_array::internal
 {
 
 /**
- * @brief Run @p pass with @p list reduced to the candidates of array @p num_tab.
+ * @brief Run @p pass with @p list reduced to the candidates of array @p array_id.
  * @details The candidates of the other arrays leave the list before @p pass
  *          and return to its end after it, in their order. @p list is one
  *          rank's own: nobody else appends to it meanwhile.
- * @tparam List A candidate list: tuples whose third element is the num_tab.
+ * @tparam List A candidate list: tuples whose third element is the array_id.
  * @tparam Pass Callable, no argument.
  * @param list The calling thread's candidate list.
- * @param num_tab The array whose candidates stay.
+ * @param array_id The array whose candidates stay.
  * @param pass The compression pass to run on what stays.
  */
 template <typename List, typename Pass>
-void with_own_candidates_only(List& list, int num_tab, Pass&& pass)
+void with_own_candidates_only(List& list, int array_id, Pass&& pass)
 {
-    const auto first_foreign = std::stable_partition(list.begin(), list.end(), [num_tab](const auto& candidate)
-                                                     { return std::get<2>(candidate) == num_tab; });
+    const auto first_foreign = std::stable_partition(list.begin(), list.end(), [array_id](const auto& candidate)
+                                                     { return std::get<2>(candidate) == array_id; });
     std::vector<typename List::value_type> aside(std::make_move_iterator(first_foreign),
                                                  std::make_move_iterator(list.end()));
     list.erase(first_foreign, list.end());

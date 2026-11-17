@@ -311,9 +311,9 @@ auto g = md::tiled_view_dyn(a, std::array<long, 2>{16, 24}, nx, ny); // or any t
   size, a chunk holds two consecutive tiles -- so in a parallel region the tile operations stop
   (two threads would share a chunk) until the field is copied into a view of the new tile.
 
-### A whole program: `multi-mat-md`
+### A whole program: `multi_mat_md`
 
-`examples/multi-mat` exists in 2D: `multi-mat-md` is the same mock (every material carries three
+`examples/multi_mat` exists in 2D: `multi_mat_md` is the same mock (every material carries three
 fields and a presence fraction over the whole mesh, occupies a random part of it at each iteration,
 is written there and read back by the same gadget computation), on an `nx x ny` mesh where a
 material occupies a box. Every array is seen through a 2D `mdspan`: `md::view` or `md::tiled_view`
@@ -377,9 +377,9 @@ the tiled layouts give both their `submdspan_mapping`.
 | toolchain | `mdspan` | result |
 |---|---|---|
 | GCC 14, libstdc++ 14 + kokkos/mdspan | kokkos, `submdspan` | every harness |
-| Clang 19, libc++ 19 | `std::mdspan`, no `submdspan` | the views, both tiled layouts, the tile operations, `mdspan_tiles`, `multi-mat-md`; the `submdspan` harnesses skipped |
+| Clang 19, libc++ 19 | `std::mdspan`, no `submdspan` | the views, both tiled layouts, the tile operations, `mdspan_tiles`, `multi_mat_md`; the `submdspan` harnesses skipped |
 | GCC 15, libstdc++ 15 + kokkos/mdspan | kokkos, `submdspan` | every harness |
-| GCC 15, libstdc++ 15 alone | none: libstdc++ 15 has no `<mdspan>` | the library and the rest build; every `mdspan` harness, `mdspan_tiles` and `multi-mat-md` skipped (exit 77) |
+| GCC 15, libstdc++ 15 alone | none: libstdc++ 15 has no `<mdspan>` | the library and the rest build; every `mdspan` harness, `mdspan_tiles` and `multi_mat_md` skipped (exit 77) |
 | GCC 16, libstdc++ 16, C++23 | `std::mdspan`, no `submdspan` | every harness but the `submdspan` ones, skipped |
 | GCC 16, libstdc++ 16, C++26 | `std::mdspan`, `std::submdspan` | every harness, the `submdspan` ones and the misaligned sub-view refused included |
 
@@ -415,4 +415,4 @@ C++26 run passed `-std=gnu++26` through a compiler wrapper.
 | `examples/validation/mdspan_submdspan_validation.cpp` | sub-views of a row-major view (block, row, column, read-only, `fill_box`) and of a tiled view (aligned, ending at the extent, a sub-view of a sub-view; the tile operations on it, serially and in a parallel phase); every variant at 1 and 8 threads, and `mdspan_submdspan_misaligned` (a tiled slice off the tiles stops) |
 | `examples/validation/mdspan_tiled_dyn_validation.cpp` | `tile_shape` (2D, 3D, every multiple of 64 to 4096), `layout_tiled_dyn` against `layout_tiled` index by index and through their sub-views, `tiled_view_dyn`'s tile per chunk, the tile operations on a tile per chunk, a 3 x 5 tile and one beyond the inline buffer; every variant at the default size and at dyn (a re-chunk under the view), 1 and 8 threads |
 | `examples/mdspan_tiles/mdspan_tiles.cpp` | the comparisons of sections 2 and 3, and the cost of the multi-index; `mdspan_tiles 4096` for a larger field |
-| `examples/multi-mat/main_md.cpp`, `LoopsMd.h`, `ComputeLoopsMd.h`, `SimuMd.h` | `multi-mat-md`, the multi-material mock in 2D (section 3); tests `multi_mat_md_tiles`, `multi_mat_md_elements`, `multi_mat_md_rows` (`--verify`), `multi_mat_md_balance` |
+| `examples/multi_mat/main_md.cpp`, `LoopsMd.h`, `ComputeLoopsMd.h`, `SimuMd.h` | `multi_mat_md`, the multi-material mock in 2D (section 3); tests `multi_mat_md_tiles`, `multi_mat_md_elements`, `multi_mat_md_rows` (`--verify`), `multi_mat_md_balance` |

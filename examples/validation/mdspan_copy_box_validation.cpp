@@ -56,7 +56,7 @@
 #include "chunk/print.h"                // shrink_array::println
 #include "chunk/phases.h"               // parallel_phase
 #include "chunk/mdspan_tile_ops.h"      // md::copy_box_out(_mt), md::copy_box_in(_mt), SHRINK_ARRAY_HAS_MDSPAN
-#include "chunk/internal/PMP_CHUNK.h"   // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
+#include "chunk/internal/pmp_chunk.h"   // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
 #include "chunk/runtime.h"              // Runtime::init
 
 using namespace shrink_array;

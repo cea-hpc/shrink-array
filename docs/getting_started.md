@@ -425,4 +425,4 @@ threads: for the others, use the std backend.
 | letting the chunk size adapt at run time | [adaptive_rechunk.md](adaptive_rechunk.md) (`_dyn` libraries) |
 | every tuning variable and build option | [environment_variables.md](environment_variables.md) |
 | how it works inside | [algo_zero_one_value.md](algo_zero_one_value.md), [synchronisation_dekker.md](synchronisation_dekker.md) |
-| a larger example: multi-material fields, loops written once for both containers | `examples/multi-mat` |
+| a larger example: multi-material fields, loops written once for both containers | `examples/multi_mat` |

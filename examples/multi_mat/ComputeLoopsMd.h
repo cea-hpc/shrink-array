@@ -18,10 +18,10 @@
 
 /**
  * @file ComputeLoopsMd.h
- * @brief The iterations of multi-mat-md (SimuMd::compute_loops()) and their
+ * @brief The iterations of multi_mat_md (SimuMd::compute_loops()) and their
  *        serial replay (SimuMd::verify()).
  *
- * The iteration of multi-mat, in 2D: the fields and the presence fraction
+ * The iteration of multi_mat, in 2D: the fields and the presence fraction
  * of every material are written on its box (or zeroed, every freq_rtz
  * iterations), a barrier, the gadget computation reads them back five
  * times, a barrier; in the manual executable the fields are compressed
@@ -130,7 +130,7 @@ void SimuMd::compute_loops(const MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo, do
     mine.reserve(static_cast<std::size_t>(nbmat));
     const int me = multi_mat::thread_rank();
 
-    // Every array zero over the whole mesh, as multi-mat's initialisation.
+    // Every array zero over the whole mesh, as multi_mat's initialisation.
     deal_parts([&mesh](int) { return mesh; }, row_parts, mine);
     for (const Share& sh : mine)
     {
@@ -251,7 +251,7 @@ void SimuMd::compute_loops(const MultiMatAlgo<LoopsVec, LoopsChunk>& mm_algo, do
         lap(time_read);
 
         // Manual executable only: the field arrays compressed by an explicit
-        // pass, as multi-mat does (config.h).
+        // pass, as multi_mat does (config.h).
         const bool manual_pass = !multi_mat::embedded_compression && option_chunk != 2 && it % freq_compress == 0;
         if (manual_pass)
         {

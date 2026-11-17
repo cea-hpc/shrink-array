@@ -353,7 +353,7 @@ install(TARGETS chunk_stacktrace EXPORT chunk-targets)
 
 # --- Shared file lists ---------------------------------------------------
 set(CHUNK_INTERNAL_HEADERS
-        public/chunk/internal/TChunk.h
+        public/chunk/internal/chunk_tuples.h
         public/chunk/internal/type_state_registry_decl.h
         public/chunk/internal/type_state_registry_inline.h
         public/chunk/internal/arithmetic_context.h
@@ -404,7 +404,7 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/concept_array_chunk_element.h
         public/chunk/internal/concept_chunk.h
         public/chunk/internal/concept_composite_arithmetic.h
-        public/chunk/internal/concept_is_clean_assignement.h
+        public/chunk/internal/concept_is_clean_assignment.h
         public/chunk/internal/conditional_counter.h
         public/chunk/internal/cpu_pause.h
         public/chunk/internal/cst_slot.h
@@ -414,7 +414,7 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/deferred_ops_storage.h
         public/chunk/internal/for_each_type.h
         public/chunk/internal/freepath_counters.h
-        public/chunk/internal/func_p2.h
+        public/chunk/internal/pow2.h
         public/chunk/internal/global_check.h
         public/chunk/internal/immortal.h
         public/chunk/internal/in_t.h
@@ -452,7 +452,7 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/rechunk_decider_inline.h
         public/chunk/internal/tab_cst_val2_holder.h
         public/chunk/internal/write_compress_sync_policy.h
-        public/chunk/internal/PMP_CHUNK.h
+        public/chunk/internal/pmp_chunk.h
         public/chunk/internal/type_state_registry.h
         public/chunk/internal/chunk_traits.h
         public/chunk/internal/global_stats_chunk_list.h
@@ -500,7 +500,7 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/stable_table.h
         public/chunk/internal/stable_table_inline.h
         public/chunk/internal/tab_cst_val2_holder_inline.h
-        public/chunk/internal/tab_users.h
+        public/chunk/internal/array_users.h
         public/chunk/internal/teardown_probe.h
         public/chunk/internal/test_hooks.h
         public/chunk/internal/value_less.h
@@ -755,12 +755,12 @@ foreach(_vname IN LISTS _chunk_variant_names)
 endforeach()
 
 # --- Two families in one program ------------------------------------------
-# examples/multi-mat keeps its field arrays in zero::Array<T> and its
+# examples/multi_mat keeps its field arrays in zero::Array<T> and its
 # presence fraction in zero_one_value::Array<T>: one library with both defines, at the
 # default static size only. The registry allows it (type_state_registry_inline.h:
 # "nothing forbids a build from selecting more than one"); what the second
 # define costs zero is the raw fill of its range ops (raw_fillable_v). Without
-# the OMPT tool: the example carries its own (examples/multi-mat/manage_ompt.cpp).
+# the OMPT tool: the example carries its own (examples/multi_mat/manage_ompt.cpp).
 if ("zero" IN_LIST CHUNK_VARIANTS AND "zero_one_value" IN_LIST CHUNK_VARIANTS)
   chunk_add_variant(chunk_zero_and_zero_one_value_${CHUNK_DEFAULT_SIZE} "CHUNK_VARIANT_ZERO=1;CHUNK_VARIANT_ZERO_ONE_VALUE=1" ${CHUNK_DEFAULT_SIZE} FALSE
                     NO_OMPT_TOOL)
@@ -774,7 +774,7 @@ chunk_add_variant(chunk "" "" FALSE)
 # chunk::chunk_zero_any_256, chunk::chunk_zero_any_dyn, ..., the bare chunk::chunk_zero /
 # chunk::chunk_zero_one_value / chunk::chunk_zero_any (default static size), chunk::chunk_vector
 # (std::vector mode) and chunk::chunk. Not chunk_zero_and_zero_one_value_*: built for
-# examples/multi-mat, without the OMPT tool.
+# examples/multi_mat, without the OMPT tool.
 include(GNUInstallDirs)
 set(_chunk_install_targets chunk chunk_vector)
 foreach(_vname IN LISTS _chunk_variant_names)

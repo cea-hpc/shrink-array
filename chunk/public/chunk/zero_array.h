@@ -28,7 +28,7 @@
 #include "chunk/internal/array_chunk_base.h"    // ArrayChunkBase
 #include "chunk/internal/zero_array_parallel.h" // FastBlockSupport -- fast-block-only mixin; ParallelSupport through it
 #include "chunk/internal/array_chunk_rechunk_hooks.h"   // RechunkHooks — CHUNK_DYNAMIC-only mixin
-#include "chunk/internal/PMP_CHUNK.h"                   // CHUNK_PMP_IN_PARALLEL_REGION, pmp::team / Team
+#include "chunk/internal/pmp_chunk.h"                   // CHUNK_PMP_IN_PARALLEL_REGION, pmp::team / Team
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 #include "chunk/config.h"                               // build_config::threaded
 #include "chunk/internal/write_compress_sync_policy.h"  // WriteCompressSyncPolicy
@@ -64,18 +64,18 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     using Hooks    = RechunkHooks<Array>;
 
     /// @brief Claim this array's identity before its storage is built:
-    ///        register its address and take the next free num_tab, which
+    ///        register its address and take the next free array_id, which
     ///        every per-tab metadata table is then indexed by. Called by
     ///        create() through ArrayChunkBase.
     void pre_create_hook()
     {
-        auto& sh_inf = *Proxy<T>::share_info_array;
+        auto& sh_inf = *Proxy<T>::array_registry;
 
-        sh_inf.insert(this->registry_key(), Base::nb_tab);
+        sh_inf.insert(this->registry_key(), Base::array_count);
 
-        this->num_tab_ = Base::nb_tab;
+        this->array_id_ = Base::array_count;
 
-        ++nb_tab;
+        ++array_count;
     }
 
     /// @brief Storage (re)allocation at the current active geometry, WITHOUT
@@ -87,7 +87,7 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     /// @brief Storage teardown shared by clear() and rechunk_to(): everything
     ///        clear() does except the pre-drain stats. Parks buffers by THIS
     ///        array's geometry and removes this array's compression candidates
-    ///        by num_tab.
+    ///        by array_id.
     void clear_core();
 
     /// @brief Per-array compression stats + "would zero_one_value have helped?" probe.
@@ -98,13 +98,13 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     /// start of clear(), before the drain mutates chunk state.
     void print_compression_stats(std::ostream& os = std::cout) const;
 
-    /// @brief The identity step of swap(): num_tab and the registry entry, so
-    ///        the per-num_tab tables follow the chunks.
+    /// @brief The identity step of swap(): array_id and the registry entry, so
+    ///        the per-array_id tables follow the chunks.
     void swap_identity(Array& other)
     {
         using std::swap;
-        swap(this->num_tab_, other.num_tab_);
-        Proxy<T>::share_info_array->swap_keys(this->registry_key(), other.registry_key());
+        swap(this->array_id_, other.array_id_);
+        Proxy<T>::array_registry->swap_keys(this->registry_key(), other.registry_key());
     }
 
   public:
@@ -114,10 +114,10 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     using ProxyType   = Base::ProxyType;   ///< Proxy<T>, the write proxy of the non-const accessors.
     using value_type  = T;                 ///< Stored element type.
 
+    using Base::array_count;
+    using Base::chunk_count_;
     using Base::chunk_list_;
     using Base::m_size_;
-    using Base::nb_chunk_;
-    using Base::nb_tab;
     using Base::size_policy_;
     using Manager = TypeState<Chunk, T>; ///< Same type as ManagerType.
 
@@ -200,7 +200,7 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     /// @param il Source values.
     Array(std::initializer_list<T> il) : Array(il.begin(), il.end()) {}
 
-    /// @brief clear() the array, then erase its entry from Proxy<T>::share_info_array.
+    /// @brief clear() the array, then erase its entry from Proxy<T>::array_registry.
     ~Array();
 
     /**
@@ -209,8 +209,8 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
      *        same exchange as swap(); @p other is left empty and valid.
      * @details Not just a steal of @p other's chunk list: this array's old
      *          chunks are released first (their candidates purged), the moved
-     *          chunks keep their metadata rows (num_tab) with them, and
-     *          @p other is left with nb_chunk 0. Sequential context, as clear().
+     *          chunks keep their metadata rows (array_id) with them, and
+     *          @p other is left with chunk_count 0. Sequential context, as clear().
      * @note noexcept, as the move constructor: a failure here terminates.
      */
     Array& operator=(Array&& other) noexcept;

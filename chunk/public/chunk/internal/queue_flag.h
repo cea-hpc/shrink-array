@@ -150,8 +150,8 @@ inline void hand_back(std::atomic<char>& flag) noexcept
  *          erased): reported in check builds, skipped otherwise.
  *
  * @tparam List vector of tuples (chunk pointer or null, chunk number, tab number, ...)
- * @param flag_of (num_tab, num_chunk) -> the candidate's flag
- * @param reset (num_tab, num_chunk): clears the flag of an entry with no pass
+ * @param flag_of (array_id, chunk_index) -> the candidate's flag
+ * @param reset (array_id, chunk_index): clears the flag of an entry with no pass
  *        protocol (serial build, null chunk). A callable and not one function:
  *        the variants do not store it with the same memory order (zero_proxy.h).
  */
@@ -162,16 +162,16 @@ inline void release_candidates(List& list, int sz, FlagOf flag_of, Reset reset)
 
     for (int k = 0; k < sz; ++k)
     {
-        const auto& tup       = list[k];
-        auto* const chunk     = std::get<0>(tup);
-        const int   num_chunk = std::get<1>(tup);
-        const int   num_tab   = std::get<2>(tup);
+        const auto& tup         = list[k];
+        auto* const chunk       = std::get<0>(tup);
+        const int   chunk_index = std::get<1>(tup);
+        const int   array_id    = std::get<2>(tup);
 
         if constexpr (build_config::any_check)
         {
-            if (num_chunk < 0) [[unlikely]]
+            if (chunk_index < 0) [[unlikely]]
             {
-                CHUNK_INVARIANT_FAILED("compression pass: candidate {} of {} has num_chunk={}", k, sz, num_chunk);
+                CHUNK_INVARIANT_FAILED("compression pass: candidate {} of {} has chunk_index={}", k, sz, chunk_index);
             }
         }
         if (chunk != nullptr)
@@ -188,18 +188,18 @@ inline void release_candidates(List& list, int sz, FlagOf flag_of, Reset reset)
                                        chunk);
             }
         }
-        if (num_chunk >= 0)
+        if (chunk_index >= 0)
         {
             if (build_config::threaded && chunk != nullptr)
             {
-                if (release(flag_of(num_tab, num_chunk)))
+                if (release(flag_of(array_id, chunk_index)))
                 {
                     requeued.push_back(tup);
                 }
             }
             else
             {
-                reset(num_tab, num_chunk);
+                reset(array_id, chunk_index);
             }
         }
     }

@@ -31,7 +31,7 @@
 #include "chunk/config.h"                                      // for use_fast_block_compression, threaded
 #include "chunk/internal/invariant_check.h"                    // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/write_compress_sync_policy.h"         // for WriteCompressSyncPolicy
-#include "chunk/internal/PMP_CHUNK.h"                          // CHUNK_PMP_THREAD_CAPACITY, pmp::Team
+#include "chunk/internal/pmp_chunk.h"                          // CHUNK_PMP_THREAD_CAPACITY, pmp::Team
 #include "chunk/internal/zero_one_value_chunk.h"               // zero_one_value::Chunk<T>
 #include "chunk/internal/zero_one_value_proxy.h"               // zero_one_value::Proxy<T> and its registry
 
@@ -51,8 +51,8 @@ namespace zero_one_value
  *          cheaper metadata, useful when one non-zero constant dominates.
  *
  *          The second value lives in the shared registry
- *          zero_one_value::Proxy<T>::share_info_array, keyed by the array's ADDRESS, with the
- *          num_tab: hence the destructor's two erases and rechunk_to()'s six
+ *          zero_one_value::Proxy<T>::array_registry, keyed by the array's ADDRESS, with the
+ *          array_id: hence the destructor's two erases and rechunk_to()'s six
  *          hooks (zero_any has three).
  *
  *          Booleans, two containers, chosen by type (docs/variants.md, section 2):
@@ -100,13 +100,13 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
 
     using SecondValueBase::chunk_list_;
 
-    using Base::nb_tab;
+    using Base::array_count;
     using Base::size_policy_;
+    using SecondValueBase::chunk_count_;
     using SecondValueBase::m_size_;
-    using SecondValueBase::nb_chunk_;
     using SecondValueBase::resize; // resize(sz, val), ArrayChunkBase's
 
-    /// Registry entry of an array: (second value, its index in the shared value table, num_tab).
+    /// Registry entry of an array: (second value, its index in the shared value table, array_id).
     using InfArrayT = SecondValueInfo<T>;
 
     using Manager = TypeState<Chunk, T>; ///< Same type as ManagerType.
@@ -189,12 +189,12 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     /**
      * @brief Release the array's storage, then drop both registry entries.
      *
-     * @details clear() first: it still needs get_num_tab(registry_key()) and a
+     * @details clear() first: it still needs get_array_id(registry_key()) and a
      *          valid inf_array pointer.
      *
      * @warning Neither erase is optional:
-     *          - share_info_array->erase(registry_key()): otherwise a later array
-     *            at this address inherits our num_tab and second value
+     *          - array_registry->erase(registry_key()): otherwise a later array
+     *            at this address inherits our array_id and second value
      *            (PointerMap's first-match lookup); rechunk_to()'s @c tmp
      *            makes address reuse routine.
      *          - erase_inf_array_by_ptr(&inf_array): map_inf_array_ entries
@@ -210,7 +210,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      *        then it takes @p other's -- chunks, geometry and identity, by the
      *        same exchange as swap(); @p other is left empty and valid.
      * @details The old chunks are released first (candidates purged); the moved
-     *          chunks keep their metadata rows (num_tab). Sequential context.
+     *          chunks keep their metadata rows (array_id). Sequential context.
      * @note noexcept, as the move constructor: a failure here terminates.
      */
     Array& operator=(Array&& other) noexcept;
@@ -244,10 +244,10 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
         return second_value();
     }
 
-    /// @brief Full registry tuple for this array: second value, its index, num_tab.
+    /// @brief Full registry tuple for this array: second value, its index, array_id.
     [[nodiscard]] InfArrayT get_info_second_value() const noexcept
     {
-        return Proxy<T>::share_info_array->get_info_second_value(this->registry_key());
+        return Proxy<T>::array_registry->get_info_second_value(this->registry_key());
     }
 
     /// @brief Index of this array's second value in the shared value table.
@@ -265,13 +265,13 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     }
 
     /**
-     * @brief Is chunk @p num_chunk materialised?
-     * @param num_chunk CHUNK index (not an element index -- see written(IndType))
+     * @brief Is chunk @p chunk_index materialised?
+     * @param chunk_index CHUNK index (not an element index -- see written(IndType))
      * @return false while that chunk is compressed to either constant
      * @note zero_one_value::Chunk::written() needs the array's second-value index: see
      *       has_chunk_written_v (array_chunk_base.h).
      */
-    [[nodiscard]] bool chunk_written(int num_chunk) const;
+    [[nodiscard]] bool chunk_written(int chunk_index) const;
 
     /**
      * @brief Resize the array, preserving the elements that still fit.
@@ -360,7 +360,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     /**
      * @brief (Re)allocate storage at the current active geometry.
      * @details create()'s allocation WITHOUT its registration side effects;
-     *          num_tab comes from the registry, so it suits an already-registered
+     *          array_id comes from the registry, so it suits an already-registered
      *          array switching geometry (rechunk_to()).
      * @param sz element count to allocate for
      */
@@ -379,7 +379,7 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
      * @details clear() without the pre-drain compression stats.
      * @warning Parks buffers by THIS array's geometry, not the ambient thread
      *          size (another array's mid-rechunk). Drops this array's candidates
-     *          by num_tab, so no zero_one_value::Chunk* of a dead array survives in the store.
+     *          by array_id, so no zero_one_value::Chunk* of a dead array survives in the store.
      */
     void clear_core();
 
@@ -420,16 +420,16 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
 
     /**
      * @brief The identity step of swap(): the registry tuple (second value,
-     *        its index, num_tab), which is what zero_one_value reads its identity
+     *        its index, array_id), which is what zero_one_value reads its identity
      *        from, then the members that mirror it.
-     * @details num_tab is not swapped (zero_one_value never reads it). map_inf_array_
+     * @details array_id is not swapped (zero_one_value never reads it). map_inf_array_
      *          points each second value at an array's inf_array MEMBER, which
      *          now holds the other tuple: both values are re-pointed.
      */
     void swap_identity(Array& other);
 
-    /// This array's (second value, index, num_tab) tuple: a MIRROR of its entry
-    /// in zero_one_value::Proxy<T>::share_info_array, complete in every build mode.
+    /// This array's (second value, index, array_id) tuple: a MIRROR of its entry
+    /// in zero_one_value::Proxy<T>::array_registry, complete in every build mode.
     /// @details The registry is the source of truth; the mirror is only re-read
     ///          from it (sync_registry_mirror()) after each registry write:
     ///          create(), set_second_value(), the identity swaps. Write proxies

@@ -70,6 +70,27 @@ DESIGN = {
 
 # Real names that are not defined in this tree.
 ALLOWED = {
+    # internal names before their renaming of November 2026, which CHANGELOG.md
+    # cites
+    "AllTypeChunk",
+    "PMP_CHUNK.h",
+    "TChunk.h",
+    "TabUsers",
+    "all_type_chunk",
+    "crp_helper.h",
+    "examples/multi-mat",
+    "func_p2.h",
+    "get_num_tab_async",
+    "get_num_tab_cached",
+    "multi-mat-embedded",
+    "nb_chunk_",
+    "nb_tab",
+    "num_chunk",
+    "num_chunk_",
+    "num_tab",
+    "pool_accounting",
+    "share_info_array",
+    "test_vecto_chunk",
     # removed names that CHANGELOG.md records as removed
     # the former C++ names, removed before 1.0 (CHANGELOG.md, Unreleased, Removed)
     "ArrayChunk", "ArrayChunk2", "ArrayChunk2A", "Chunk2", "Chunk2A", "Proxy2", "Proxy2A",
@@ -99,7 +120,7 @@ ALLOWED = {
     "chunk/internal/diag_mutex.h", "diag_mutex.h", "internal::diag_print_mutex", "chunk/internal/nano_sleeper.h",
     "chunk_config::have_aggressive_compression",  # now chunk_config::aggressive_compression()
     "is_cst_val_new_value_is_other_cst_val",  # now passes_mark_pre_check()
-    "is_power_of_two",  # func_p2.h's, never called: removed (lint lot 4)
+    "is_power_of_two",  # pow2.h's, never called: removed (lint lot 4)
     # the developer settings fixed after the Milan measurements, and CHUNK_THP's functions
     "CHUNK_RECHUNK_KEEP_RECYCLED_MB", "alloc_config::thp_advise", "thp_never", "advise_thp_region",
     # the rechunk decider's former environment variables (now RechunkPolicy fields and

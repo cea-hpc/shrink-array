@@ -30,7 +30,7 @@ template <typename T>
 struct SecondValueInfo
 {
     T   second_value{}; ///< the array's second constant
-    int ind     = 0;    ///< its slot in the cst2 registry (chunk_config::no_second_value_index: none)
-    int num_tab = 0;    ///< the array's table number
+    int ind      = 0;   ///< its slot in the cst2 registry (chunk_config::no_second_value_index: none)
+    int array_id = 0;   ///< the array's table number
 };
 } // namespace shrink_array

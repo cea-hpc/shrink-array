@@ -40,7 +40,7 @@
  *          emptied.
  *
  *          Nested in RechunkSupport<Derived, true>, so it has the access the
- *          array's friendship gives the mixin (chunk_list_, m_size_, num_tab_...).
+ *          array's friendship gives the mixin (chunk_list_, m_size_, array_id_...).
  *
  * @see array_chunk_rechunk.h, rechunk_refill() for the contract
  * @see array_chunk_rechunk_refill_inline.h for the bodies
@@ -53,7 +53,7 @@
 #include <utility> // std::declval (SecondInfo)
 #include <vector>  // the release counters, the recycling scratch
 
-#include "chunk/internal/PMP_CHUNK.h"                 // pmp::Team, ChunkPmpSchedule
+#include "chunk/internal/pmp_chunk.h"                 // pmp::Team, ChunkPmpSchedule
 #include "chunk/bit.h"                                // is_packed_bit_v (releases_sources)
 #include "chunk/internal/chunk_traits.h"              // is_zero_any_family_v
 #include "chunk/config.h"                             // chunk_config::use_zero_one_value

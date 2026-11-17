@@ -47,7 +47,7 @@ struct ChunkDef
 
     // Level 1: Divisor 2000 -> Threshold will be very low even for huge arrays
     /// List threshold = chunks created / (this * max threads), floored by size_min_list_chunk_to_check_compress.
-    constexpr static int factor_div_nb_chunk_for_compress = []
+    constexpr static int factor_div_chunk_count_for_compress = []
     {
         switch (chunk_config::tuning_level)
         {

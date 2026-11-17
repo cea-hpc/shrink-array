@@ -47,7 +47,7 @@
 #include "chunk/bit.h"                         // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/array_chunk_for.h"    // ArrayKey, zero_one_value::Chunk (the keys)
 #include "chunk/internal/pointer_map_linear.h" // linear scan shared with PointerMapChunk
-#include "chunk/internal/PMP_CHUNK.h"          // CHUNK_PMP_* — thread rank without an #ifdef _OPENMP
+#include "chunk/internal/pmp_chunk.h"          // CHUNK_PMP_* — thread rank without an #ifdef _OPENMP
 #include "chunk/internal/value_less.h"         // ValueLess
 #include "chunk/internal/map_helper.h"         // ValueToIntMapHelper
 #include "chunk/internal/in_t.h"               // InT<T>
@@ -73,7 +73,7 @@ struct ValueToInfTupleMapHelper
  * @brief Policy holding the fast-block-compression-only value -> inf_array
  *        lookup for zero_one_value::PointerMap.
  *
- * @details An inf_array is zero_one_value's `(second_value, index, num_tab)` tuple;
+ * @details An inf_array is zero_one_value's `(second_value, index, array_id)` tuple;
  *          the map, keyed by second value, is ValueToInfTupleMapHelper's.
  *          zero (zero::PointerMap, zero_proxy.h) has no such lookup.
  *
@@ -170,7 +170,7 @@ namespace zero_one_value
 
 /**
  * @brief Per-array registry of zero_one_value's second value: array address ->
- *        (second value, its index in the shared table, num_tab).
+ *        (second value, its index in the shared table, array_id).
  *
  * @tparam T Element type.
  */
@@ -211,7 +211,7 @@ class PointerMap
     // either a GARBAGE key or a VALID key that vanished (container raced). Printing
     // the searched key beside every stored one tells the two apart.
     /// @brief Check-only: write the searched @p key and every stored
-    ///        (key, num_tab) on the log (an error) before a lookup from @p
+    ///        (key, array_id) on the log (an error) before a lookup from @p
     ///        site fails.
     void report_key_not_found(Key key, const char* site) const noexcept;
 
@@ -228,9 +228,9 @@ class PointerMap
      * @brief Inserts a default value and table number for a given key.
      *
      * @param key Pointer used as a key in the vector.
-     * @param num_tab Table number associated with the key.
+     * @param array_id Table number associated with the key.
      */
-    void insert_only_num_tab(Key key, int num_tab);
+    void insert_only_array_id(Key key, int array_id);
 
     /**
      * @brief Entries get_info_second_value() scans, and the high-water mark.
@@ -280,11 +280,11 @@ class PointerMap
     /// @brief The second value recorded for array @p key (true for bool).
     /// @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
     [[nodiscard]] T get_second_value(Key key) const noexcept;
-    /// @brief The num_tab recorded for array @p key.
+    /// @brief The array_id recorded for array @p key.
     /// @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
-    [[nodiscard]] int get_num_tab(Key key) const noexcept;
+    [[nodiscard]] int get_array_id(Key key) const noexcept;
 
-    /// @brief The whole (second value, index, num_tab) tuple recorded for
+    /// @brief The whole (second value, index, array_id) tuple recorded for
     ///        array @p key.
     [[nodiscard]] InfArrayT get_info_second_value(Key key) const noexcept;
 

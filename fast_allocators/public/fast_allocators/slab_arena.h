@@ -156,7 +156,7 @@ inline std::atomic<std::size_t>& reclaim_partial_scanned() noexcept
 /// @brief A global counter alone on its cache lines.
 /// @details Do not use a bare `static std::atomic` for a hot counter: the linker
 ///          packs it next to other globals (e.g. the head of
-///          zero_one_value::Proxy<double>::share_info_array, read by every zero_one_value write) and
+///          zero_one_value::Proxy<double>::array_registry, read by every zero_one_value write) and
 ///          each fetch_add then invalidates that line on every core (false
 ///          sharing, large at high thread counts). 128, not 64: adjacent-line
 ///          prefetch, and 128-byte lines.

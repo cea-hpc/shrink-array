@@ -18,7 +18,7 @@
 
 #include <vector> // std::vector (the per-rank reuse lists)
 
-#include "chunk/internal/PMP_CHUNK.h"  // CHUNK_PMP_RANK_BOUND
+#include "chunk/internal/pmp_chunk.h"  // CHUNK_PMP_RANK_BOUND
 #include "chunk/internal/zero_chunk.h" // self-contained: needs zero::Chunk<T>::Manager
 
 // Function templates over the per-thread reuse lists, instantiated only by the

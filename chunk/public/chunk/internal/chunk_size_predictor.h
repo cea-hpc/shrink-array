@@ -104,13 +104,13 @@ template <typename T>
 template <typename T>
 void report_size_prediction(const std::vector<std::optional<T>>& summary,
                             unsigned                             chunk_sz,
-                            int                                  num_tab,
+                            int                                  array_id,
                             const char*                          variant,
                             std::size_t                          meta_per_block,
                             unsigned                             max_multiple = 16)
 {
-    const auto nb_chunk = static_cast<int>(summary.size());
-    if (nb_chunk <= 0)
+    const auto chunk_count = static_cast<int>(summary.size());
+    if (chunk_count <= 0)
     {
         return;
     }
@@ -121,7 +121,7 @@ void report_size_prediction(const std::vector<std::optional<T>>& summary,
 
     for (unsigned k = 1; k <= max_multiple; k *= 2)
     {
-        if (std::cmp_greater(k, nb_chunk) && k != 1)
+        if (std::cmp_greater(k, chunk_count) && k != 1)
         {
             break;
         }
@@ -151,7 +151,7 @@ void report_size_prediction(const std::vector<std::optional<T>>& summary,
             CHUNK_LOG(info, advisor,
                       "size prediction {} tab={}: current S={} -> {} B ; optimal S'={} -> {} B (mem -{:.1f}%, {}/{} "
                       "blocks constant)",
-                      variant, num_tab, chunk_sz, current.mem_bytes, best.s_prime, best.mem_bytes, gain_pct,
+                      variant, array_id, chunk_sz, current.mem_bytes, best.s_prime, best.mem_bytes, gain_pct,
                       best.n_const_blocks, best.n_blocks);
         }
     }

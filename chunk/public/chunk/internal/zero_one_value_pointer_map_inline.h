@@ -80,9 +80,9 @@ void zero_one_value::PointerMap<T>::report_key_not_found(Key key, const char* si
         {
             for (size_t i = 0; i < lim && n < keys.size(); ++i)
             {
-                n += static_cast<std::size_t>(std::format_to_n(keys.data() + n, keys.size() - n, " [{} num_tab={}]",
+                n += static_cast<std::size_t>(std::format_to_n(keys.data() + n, keys.size() - n, " [{} array_id={}]",
                                                                static_cast<const void*>(vec_[i].first),
-                                                               vec_[i].second.num_tab)
+                                                               vec_[i].second.array_id)
                                                   .size);
             }
         }
@@ -176,18 +176,18 @@ template <typename T>
 }
 
 template <typename T>
-[[nodiscard]] int zero_one_value::PointerMap<T>::get_num_tab(Key key) const noexcept
+[[nodiscard]] int zero_one_value::PointerMap<T>::get_array_id(Key key) const noexcept
 {
     const internal::RegistryReadLock registry_lock(internal::registry_mutex());
     for (const auto& item : vec_)
     {
         if (item.first == key)
         {
-            return item.second.num_tab;
+            return item.second.array_id;
         }
     }
-    report_key_not_found(key, "get_num_tab");
-    CHUNK_INVARIANT_FAILED("[share_info get_num_tab] key NOT FOUND: this={} size={} key={}", this, vec_.size(), key);
+    report_key_not_found(key, "get_array_id");
+    CHUNK_INVARIANT_FAILED("[share_info get_array_id] key NOT FOUND: this={} size={} key={}", this, vec_.size(), key);
 }
 
 template <typename T>
@@ -238,9 +238,9 @@ zero_one_value::PointerMap<T>::get_info_second_value(Key key) const noexcept
     }
     else
     {
-        // bool: second_value is always `true`, but num_tab is PER-ARRAY, so look
+        // bool: second_value is always `true`, but array_id is PER-ARRAY, so look
         // the key up. Do not return vec[0]: every bool array (rechunk_to's tmp
-        // included) would get the first one's num_tab and its compression-flag
+        // included) would get the first one's array_id and its compression-flag
         // write would index the wrong array's tab_is_inside_chunk_list_to_compress
         // (heap overflow). Same hazard as PointerMapLinear::erase().
         const size_t count = vec_.size();
@@ -260,14 +260,14 @@ zero_one_value::PointerMap<T>::get_info_second_value(Key key) const noexcept
 // ---------------------------------------------------------------------------
 
 template <typename T>
-void zero_one_value::PointerMap<T>::insert_only_num_tab(Key key, int num_tab)
+void zero_one_value::PointerMap<T>::insert_only_array_id(Key key, int array_id)
 {
     // No second value yet: the sentinel index, not 0 (which is the slot
     // of whichever second value was registered first, by any array).
     const T                           val{};
     const int                         ind = chunk_config::no_second_value_index;
     const internal::RegistryWriteLock registry_lock(internal::registry_mutex());
-    vec_.emplace_back(key, InfArrayT{val, ind, num_tab});
+    vec_.emplace_back(key, InfArrayT{val, ind, array_id});
 }
 
 } // namespace shrink_array

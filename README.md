@@ -446,7 +446,7 @@ Spack version (`spack install shrink-array@cpp23`).
 | contribute | [CONTRIBUTING.md](CONTRIBUTING.md) |
 
 Examples: [simple_array](examples/simple_array) (the same computation on a `std::vector` and on
-an array), [multi-mat](examples/multi-mat) (multi-material fields, loops written once for both; `multi-mat-md`, the
+an array), [multi_mat](examples/multi_mat) (multi-material fields, loops written once for both; `multi_mat_md`, the
 same in 2D through `mdspan`),
 [validation](examples/validation) (one harness per property, run by `ctest`). Every document
 exists in French ([docs/README.md](docs/README.md)); the changes from one version to the next:

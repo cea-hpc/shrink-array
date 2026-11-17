@@ -120,7 +120,7 @@ class Array : public zero_any::ArrayImpl<Array<T, IntType>>
     Array& operator=(Array&& other) noexcept;
 
     /// @brief Deep copy-assignment (see the copy constructor). Self-assignment
-    ///        is a no-op; num_tab is not copied, identity stays with the address.
+    ///        is a no-op; array_id is not copied, identity stays with the address.
     Array& operator=(const Array& from)
     {
         if (this != &from)
@@ -131,7 +131,7 @@ class Array : public zero_any::ArrayImpl<Array<T, IntType>>
     }
 
     /**
-     * @brief Put chunk @p num_chunk directly in the motif state for the
+     * @brief Put chunk @p chunk_index directly in the motif state for the
      *        elements @p elems, chunk_size() of them, without the write path and
      *        the pass that compress to motifs: import_chunk() (chunk_exchange.h)
      *        and pattern_validation (I to L).
@@ -141,11 +141,11 @@ class Array : public zero_any::ArrayImpl<Array<T, IntType>>
      *          pointer to the motif: element j reads motif[j] + offset = elems[j].
      * @pre A sequential point; the chunk at the first constant (not written since
      *      the array was built): no buffer is released, no candidate list holds it.
-     * @param num_chunk Chunk index.
+     * @param chunk_index Chunk index.
      * @param elems     The chunk's elements, chunk_size() of them.
      * @return false, and nothing done, when the chunk is not at the first constant.
      */
-    bool install_motif(int num_chunk, const T* elems);
+    bool install_motif(int chunk_index, const T* elems);
 
     /**
      * @brief zero_any's reclaim_second_values() -- the constants no array of the

@@ -157,15 +157,15 @@ def build_parser():
     parser.add_argument("--skip-ctest", action="store_true",
                         help="Skip the validation harnesses (ctest -L validation "
                              "in each config's build directory: rechunk_validation, "
-                             "dyn_geometry_validation, compress_roundtrip, "
-                             "pool_accounting, deferred_path_validation, "
+                             "dyn_geometry_validation, compress_roundtrip_validation, "
+                             "pool_accounting_validation, deferred_path_validation, "
                              "open_types_validation).")
     parser.add_argument("--ctest-label", default="validation",
                         help="ctest label selecting the harnesses (default: "
                              "validation, set by examples/validation/CMakeLists.txt).")
     parser.add_argument("--ctest-regex", default=None,
                         help="Restrict the harnesses to the tests matching this "
-                             "regex (ctest -R), e.g. compress_roundtrip.")
+                             "regex (ctest -R), e.g. compress_roundtrip_validation.")
     parser.add_argument("--ctest-jobs", type=int, default=4,
                         help="Parallel ctest jobs per config (default 4; the "
                              "harnesses are small, the 8-thread ones share cores).")

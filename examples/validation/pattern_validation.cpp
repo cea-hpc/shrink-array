@@ -121,7 +121,7 @@
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
 #include "chunk/config.h"                // chunk_config::use_zero_any, build_config::needs_explicit_phases
-#include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
 #include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h"    // arg_number (checked, not atoi)
 #include "chunk/print.h"                 // shrink_array::println
@@ -225,7 +225,7 @@ static void expect_true(const char* where, bool ok)
     }
 }
 
-/// @brief The kind of chunk @p num_chunk: zero, uniform, motif, random, in turn.
+/// @brief The kind of chunk @p chunk_index: zero, uniform, motif, random, in turn.
 enum class Kind
 {
     zero,
@@ -234,15 +234,15 @@ enum class Kind
     random
 };
 
-static Kind kind_of(long num_chunk)
+static Kind kind_of(long chunk_index)
 {
-    return static_cast<Kind>(num_chunk % 4);
+    return static_cast<Kind>(chunk_index % 4);
 }
 
-/// @brief Element @p j of chunk @p num_chunk of kind @p kind; @p round shifts
+/// @brief Element @p j of chunk @p chunk_index of kind @p kind; @p round shifts
 ///        the constants and offsets from one round to the next.
 template <typename T>
-static T value_of(Kind kind, long num_chunk, long j, long round, std::uint64_t& rng)
+static T value_of(Kind kind, long chunk_index, long j, long round, std::uint64_t& rng)
 {
     switch (kind)
     {
@@ -250,10 +250,10 @@ static T value_of(Kind kind, long num_chunk, long j, long round, std::uint64_t& 
         case zero:
             return T{};
         case uniform:
-            return static_cast<T>(num_chunk * 7 + 3 + round * 1000);
+            return static_cast<T>(chunk_index * 7 + 3 + round * 1000);
         case motif:
             // The same motif in every motif chunk, shifted by an offset of its own.
-            return static_cast<T>((j * j) % 13 + j / 3 + num_chunk * 100 + round * 1000);
+            return static_cast<T>((j * j) % 13 + j / 3 + chunk_index * 100 + round * 1000);
         case random:
         default:
             rng = rng * 6364136223846793005ULL + 1442695040888963407ULL;

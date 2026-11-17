@@ -36,7 +36,7 @@ e  * @file type_state_inline.h
 #include "chunk/internal/type_state.h"               // the declarations these bodies belong to
 #include "chunk/config.h"                            // build_config, chunk_config
 #include "chunk/log.h"                               // CHUNK_LOG
-#include "chunk/internal/PMP_CHUNK.h"                // CHUNK_PMP_*
+#include "chunk/internal/pmp_chunk.h"                // CHUNK_PMP_*
 #include "chunk/internal/zero_chunk.h"               // Chunk<T>: the ChunkT<T>:: calls
 #include "chunk/internal/zero_one_value_chunk.h"     // zero_one_value::Chunk<T>: the ChunkT<T>:: calls
 #include "chunk/internal/zero_any_chunk.h"           // zero_any::Chunk<T>: the ChunkT<T>:: calls
@@ -56,7 +56,7 @@ void TypeState<ChunkT, T>::sweep_prepare()
 {
     if constexpr (chunk_config::use_fast_block_compression && IsZeroOneValue<ChunkT, T> && is_not_bool)
     {
-        const auto inf_arrays = zero_one_value::Proxy<T>::share_info_array->get_all_inf_array();
+        const auto inf_arrays = zero_one_value::Proxy<T>::array_registry->get_all_inf_array();
         sweep_inf_arrays_.assign(inf_arrays.begin(), inf_arrays.end());
     }
 }
@@ -131,7 +131,7 @@ void TypeState<ChunkT, T>::destroy_block_chunk()
 template <template <typename> typename ChunkT, typename T>
 bool TypeState<ChunkT, T>::register_alloc_key([[maybe_unused]] unsigned int key,
                                               [[maybe_unused]] unsigned int size,
-                                              [[maybe_unused]] int          nb_chunk)
+                                              [[maybe_unused]] int          chunk_count)
 {
     if constexpr (build_config::chunk_dynamic && build_config::use_fast_alloc && build_config::threaded)
     {
@@ -151,8 +151,8 @@ bool TypeState<ChunkT, T>::register_alloc_key([[maybe_unused]] unsigned int key,
         Pools::register_free_list_key(key, size, capacity);
         // The array's own share per rank, where the global budget uses the
         // process-wide somme_chunk_create.
-        Pools::set_size_buffer_reuse(key, static_cast<int>(nb_chunk / (Pools::reuse_share_div() * max_thr)));
-        CHUNK_LOG(debug, affinity, "key={} size={} nb_chunk={} budget={} threads={}", key, size, nb_chunk,
+        Pools::set_size_buffer_reuse(key, static_cast<int>(chunk_count / (Pools::reuse_share_div() * max_thr)));
+        CHUNK_LOG(debug, affinity, "key={} size={} chunk_count={} budget={} threads={}", key, size, chunk_count,
                   Pools::get_size_buffer_reuse(key), max_thr);
         return true;
     }
@@ -192,9 +192,9 @@ void TypeState<ChunkT, T>::compute_size_max_number_of_chunk_to_check_compress()
         std::conditional_t<IsZeroAnyFamily<ChunkT, T>, zero_any::ChunkDef,
                            std::conditional_t<IsZeroOneValue<ChunkT, T>, zero_one_value::ChunkDef, zero::ChunkDef>>;
 
-    auto threshold =
-        static_cast<int>(somme_chunk_create / (VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS));
-    threshold = std::max(threshold, VariantDef::size_min_list_chunk_to_check_compress);
+    auto threshold = static_cast<int>(somme_chunk_create /
+                                      (VariantDef::factor_div_chunk_count_for_compress * CHUNK_PMP_MAX_THREADS));
+    threshold      = std::max(threshold, VariantDef::size_min_list_chunk_to_check_compress);
 
     Candidates::set_size_max_number_of_chunk_to_check_compress(threshold);
     const size_t element_size = sizeof(std::tuple<ChunkT<T>*, int, int>);

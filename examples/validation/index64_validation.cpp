@@ -32,11 +32,11 @@
 //
 //   mixed         `<double, int>` and `<double, long>` arrays alive in one
 //                 process, written in parallel, compressed, read back. The
-//                 per-T machinery (proxies, registries, per-num_tab tables,
+//                 per-T machinery (proxies, registries, per-array_id tables,
 //                 allocator keys) is shared by the two index types; it must
 //                 neither cast every array to `<T, int>` (a `long` array read
 //                 four bytes off) nor number the arrays of each index type
-//                 separately (two arrays sharing one num_tab). Under
+//                 separately (two arrays sharing one array_id). Under
 //                 CHUNK_DYNAMIC, rechunk_all_to() is then run over the mixed
 //                 registry: every array, of either index type, must come out
 //                 at the new geometry with its values.
@@ -69,7 +69,7 @@
 #include "chunk/runtime.h"               // Runtime::register_chunk_size, init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
 #include "chunk/config.h"                // chunk_config::use_zero*, build_config::chunk_dynamic / needs_explicit_phases
-#include "chunk/internal/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
 #include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
 #include "chunk/print.h"                      // shrink_array::println
@@ -370,15 +370,17 @@ int check_int_top_rechunk()
 /// chunks to fold (to the first value, and to the second where one exists).
 double pattern(int which, long index, long chunk_sz)
 {
-    const long num_chunk = index / chunk_sz;
+    const long chunk_index = index / chunk_sz;
     switch (which)
     {
         case 0:
-            return (num_chunk % 3 == 0) ? 0.0 : (num_chunk % 3 == 1) ? 1.0 : 1.0 + static_cast<double>(index % 97);
+            return (chunk_index % 3 == 0) ? 0.0 : (chunk_index % 3 == 1) ? 1.0 : 1.0 + static_cast<double>(index % 97);
         case 1:
-            return (num_chunk % 4 == 0) ? 0.0 : (num_chunk % 4 == 1) ? 100.0 : 100.0 + static_cast<double>(index % 89);
+            return (chunk_index % 4 == 0)   ? 0.0
+                   : (chunk_index % 4 == 1) ? 100.0
+                                            : 100.0 + static_cast<double>(index % 89);
         default:
-            return (num_chunk % 2 == 0) ? 7.0 : static_cast<double>(index % 5);
+            return (chunk_index % 2 == 0) ? 7.0 : static_cast<double>(index % 5);
     }
 }
 

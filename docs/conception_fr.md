@@ -113,7 +113,7 @@ flowchart TB
 | constantes partagées | `TabCstVal2Holder`, `GlobalVecHolder`, `MotifRegion` | `internal/tab_cst_val2_holder.h`, `internal/motif_region.h` | une par type d'élément |
 | registre du processus, démarrage | `TypeStateRegistry`, `Runtime` | `internal/type_state_registry_decl.h`, `chunk/runtime.h` | un par processus |
 | phases | `begin_parallel_phase`, `finalize_parallel_phase`, `parallel_phase` | `chunk/phases.h`, `chunk/private/manage_ompt.cpp` | une phase à la fois |
-| backend, rangs | `pmp::Team`, `pmp::parallel_for` | `chunk/internal/PMP_CHUNK.h`, `fast_allocators/internal/pmp_loops.h`, `fast_allocators/internal/pmp_std.h` | tout le processus |
+| backend, rangs | `pmp::Team`, `pmp::parallel_for` | `chunk/internal/pmp_chunk.h`, `fast_allocators/internal/pmp_loops.h`, `fast_allocators/internal/pmp_std.h` | tout le processus |
 | allocation | arènes de dalles, allocateurs par rang | `fast_allocators/slab_arena.h`, `fast_allocators/tc_allocator.h` | tout le processus |
 | géométrie dynamique | `ChunkSizeAdvisor`, `RechunkDecider`, `RechunkPolicy` | `chunk/chunk_size_advisor.h`, `chunk/rechunk_decider.h`, `internal/chunk_size_policy.h` | par tableau, piloté par le programme |
 
@@ -192,7 +192,7 @@ génèrent les déclinaisons par taille et par variante et gardent les noms par 
 
 ### 6.1 Lecture
 
-`operator[] const` découpe l'indice (`num_chunk = i >> shift`, `num = i & mask`), passe la
+`operator[] const` découpe l'indice (`chunk_index = i >> shift`, `num = i & mask`), passe la
 **porte de lecture** (`sync_chunk` : un bit par chunk, le *dirty bitset*, dit si une écriture
 différée peut être en attente sur lui ; presque toujours à zéro, la lecture continue ; sinon le
 compteur du chunk décide s'il faut d'abord rejouer ses écritures en attente, `reader_sync`), puis
@@ -254,14 +254,14 @@ Le programme alterne **points séquentiels** et **phases parallèles** :
 
 Construire et détruire un tableau n'est ni l'un ni l'autre : un thread peut le faire pendant une
 phase, pour un tableau de travail qui lui est propre. Ce **chemin froid** écrit un état partagé
-par tous les tableaux du type d'élément (le registre d'identité, le prochain `num_tab`, les
+par tous les tableaux du type d'élément (le registre d'identité, le prochain `array_id`, les
 tables externes par tableau, les totaux du gestionnaire) : il prend un verrou unique pour toute
 la bibliothèque (`internal/cold_path_lock.h`). Le chemin chaud n'en prend aucun : les tables
-qu'il indexe par `num_tab` ne déplacent jamais leurs lignes (`internal/stable_table.h`), les
+qu'il indexe par `array_id` ne déplacent jamais leurs lignes (`internal/stable_table.h`), les
 seuils qu'il lit sont des atomiques, et le registre a un verrou de lecture pour les recherches
 faites hors du chemin froid (rejeux, builds de contrôle). Un démontage pendant une phase ne
 peut pas parcourir les listes de candidats et les files différées des autres rangs, que leurs
-threads sont en train d'allonger : `internal/tab_users.h` note quels rangs détiennent quelque
+threads sont en train d'allonger : `internal/array_users.h` note quels rangs détiennent quelque
 chose de chaque tableau, et un tableau que seul le rang appelant a utilisé est démonté sur ce
 rang seul, sans passe sur les autres tableaux. Avant de libérer sa liste de chunks, un délai de
 grâce de `read_reclaim` couvre le `start()` d'un compresseur, dont le balayage lit le chunk
@@ -393,7 +393,7 @@ d'après l'environnement :
 - `rechunk_to()` reconstruit le stockage en un point séquentiel : comprimer les candidats en
   attente, construire un nouveau stockage à la nouvelle taille, le remplir en parallèle par
   tranches, replier les chunks dont toutes les sources étaient comprimées, échanger les identités
-  (`num_tab`, clés du registre), détruire l'ancien stockage -- en libérant, pas en vidant, tout ce
+  (`array_id`, clés du registre), détruire l'ancien stockage -- en libérant, pas en vidant, tout ce
   qui est indexé par son identité.
 
 La mémoire de l'ancienne géométrie ne part que par dalle entière : c'est pourquoi les clés

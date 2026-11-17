@@ -31,12 +31,12 @@ namespace shrink_array
 ///        zero_any.
 ///
 /// @param os            stream the report is written to.
-/// @param num_tab       table number of the array (its registry index).
+/// @param array_id       table number of the array (its registry index).
 /// @param array_name    the array's set_debug_name(), printed before the
 ///                      number when not empty.
 /// @param type_name     element type, as printed.
 /// @param n_compressed  chunks stored in a compressed (constant) form.
-/// @param nb_chunk      total chunks in the array.
+/// @param chunk_count      total chunks in the array.
 /// @param n_t1          type-2 chunks (a distinct second constant). 0 for
 ///                      zero (no second value), which suppresses the
 ///                      type-2 column.
@@ -53,25 +53,25 @@ namespace shrink_array
 ///                      every type-2 chunk zero_any does -- zero_any is never the
 ///                      verdict for them.
 inline void print_formatted_chunk_stats(std::ostream&      os,
-                                        int                num_tab,
+                                        int                array_id,
                                         const std::string& array_name,
                                         const std::string& type_name,
                                         int                n_compressed,
-                                        int                nb_chunk,
+                                        int                chunk_count,
                                         int                n_t1,
                                         const std::string& chunk_name,         // "zero", "zero_one_value", "zero_any"
                                         int                n_cross       = -1, // cross-variant probe count (-1 = none)
                                         const std::string& cross_name    = "", // richer variant the probe refers to
                                         bool               bool_elements = false) // bool: one second value, true
 {
-    if (nb_chunk == 0)
+    if (chunk_count == 0)
     {
         return;
     }
 
-    const double pct_total = 100.0 * n_compressed / nb_chunk;
-    const double pct_t1    = 100.0 * n_t1 / nb_chunk;
-    const double pct_cross = (n_cross >= 0) ? 100.0 * n_cross / nb_chunk : 0.0;
+    const double pct_total = 100.0 * n_compressed / chunk_count;
+    const double pct_t1    = 100.0 * n_t1 / chunk_count;
+    const double pct_cross = (n_cross >= 0) ? 100.0 * n_cross / chunk_count : 0.0;
 
     // Automatic colour-support detection (disabled when output is redirected to a file).
     const bool use_color = isatty(fileno(stdout)) != 0;
@@ -142,12 +142,12 @@ inline void print_formatted_chunk_stats(std::ostream&      os,
     // The table number changes at every re-chunk; the name, when the caller
     // gave one, is what says which array this is.
     const std::string tab_label = array_name.empty()
-                                      ? "[tab_" + std::to_string(num_tab) + " " + type_name + "]"
-                                      : "[" + array_name + " #" + std::to_string(num_tab) + " " + type_name + "]";
+                                      ? "[tab_" + std::to_string(array_id) + " " + type_name + "]"
+                                      : "[" + array_name + " #" + std::to_string(array_id) + " " + type_name + "]";
 
     // Left-aligned prefix, then the overall compression statistics.
     std::string line = std::format("{:<40}{}{:>6}/{:>6} chunks compressed ({:>5.1f}%)", tab_label, reset, n_compressed,
-                                   nb_chunk, pct_total);
+                                   chunk_count, pct_total);
 
     // Aligned type-2 statistics, or blanks of the same width.
     if (n_t1 > 0)

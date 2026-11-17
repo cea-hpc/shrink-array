@@ -124,10 +124,10 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
     if constexpr (chunk_config::use_zero_one_value)
     {
         std::println("\n[share_info] entries still mapped after clear():  double {}  Int {}  float {}  short {}",
-                     shrink_array::zero_one_value::Proxy<double>::share_info_array->share_info_entries(),
-                     shrink_array::zero_one_value::Proxy<int>::share_info_array->share_info_entries(),
-                     shrink_array::zero_one_value::Proxy<float>::share_info_array->share_info_entries(),
-                     shrink_array::zero_one_value::Proxy<short>::share_info_array->share_info_entries());
+                     shrink_array::zero_one_value::Proxy<double>::array_registry->share_info_entries(),
+                     shrink_array::zero_one_value::Proxy<int>::array_registry->share_info_entries(),
+                     shrink_array::zero_one_value::Proxy<float>::array_registry->share_info_entries(),
+                     shrink_array::zero_one_value::Proxy<short>::array_registry->share_info_entries());
     }
 
     // bench_phase_compress_all() is declared in bench_phases.h and defined in
@@ -150,7 +150,7 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
         // model where it has nothing to do -- so this pair is EXACTLY what ran
         // before on either side. Deliberately not release_chunk_pools(): that
         // also calls delete_list_block_chunk_free_itself(), which this example
-        // has never called (pool_accounting and compress_roundtrip do).
+        // has never called (pool_accounting_validation and compress_roundtrip_validation do).
         // Spelling the pair out keeps the behaviour identical rather than
         // quietly adding a teardown step.
         clear_all_list_block_free_thr();

@@ -47,7 +47,7 @@
 
 #include "chunk/vendor/ankerl/unordered_dense.h" // the live maps
 
-#include "chunk/internal/PMP_CHUNK.h" // CHUNK_PMP_IN_PARALLEL_REGION / _THREAD_RANK
+#include "chunk/internal/pmp_chunk.h" // CHUNK_PMP_IN_PARALLEL_REGION / _THREAD_RANK
 
 namespace shrink_array::pool_ledger
 {
@@ -88,7 +88,7 @@ inline ankerl::unordered_dense::map<void*, Rec>& op_live()
 /// @brief The calling thread's rank, or -1 outside a parallel region.
 inline int current_rank() noexcept
 {
-    // No directive needed: PMP_CHUNK.h's serial shims (false, 0) make this
+    // No directive needed: pmp_chunk.h's serial shims (false, 0) make this
     // compile in both builds, and it yields -1 outside a parallel region.
     return CHUNK_PMP_IN_PARALLEL_REGION ? CHUNK_PMP_THREAD_RANK : -1;
 }

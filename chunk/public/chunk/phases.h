@@ -75,7 +75,7 @@
 #include <utility> // std::forward
 
 #include "chunk/config.h"             // build_config::needs_explicit_phases
-#include "chunk/internal/PMP_CHUNK.h" // pmp::team (parallel_phase's region)
+#include "chunk/internal/pmp_chunk.h" // pmp::team (parallel_phase's region)
 
 namespace shrink_array
 {
@@ -166,7 +166,7 @@ extern bool finalize_barrier_phase();
  * Called by the TypeStateRegistry constructor. A no-op without the OMPT tool.
  *
  * Weak: a library built NO_OMPT_TOOL (the program ships its own tool, e.g.
- * examples/multi-mat/manage_ompt.cpp) has no definition, and the call is skipped.
+ * examples/multi_mat/manage_ompt.cpp) has no definition, and the call is skipped.
  */
 __attribute__((weak)) extern void check_ompt_tool_loaded();
 
