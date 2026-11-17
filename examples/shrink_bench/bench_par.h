@@ -64,12 +64,12 @@
 
 #pragma once
 
-#include <algorithm>       // std::min (the block schedule's last block)
+#include <algorithm>       // std::min (the block schedule's last block), std::sort, std::adjacent_find (shared%)
 #include <atomic>          // std::atomic_ref (the reductions' partials, atomic_add)
 #include <cstddef>         // std::size_t (the TBB thread count)
 #include <cstdint>         // std::uint64_t (the TBB regions' construct numbers)
-#include <cstdlib>         // std::abort (a construct the TBB regions do not have), std::getenv
-#include <cstdio>          // std::fputs (its message)
+#include <cstdlib>         // std::abort (a construct the TBB regions do not have)
+#include <cstdio>          // std::fputs (its message), std::snprintf (shared%)
 #include <memory>          // std::unique_ptr (the TBB regions' construct slots)
 #include <mutex>           // std::mutex (critical(), the TBB regions' slots)
 #include <unordered_map>   // std::unordered_map (the TBB regions' construct slots)
@@ -87,7 +87,7 @@
     #include <oneapi/tbb/blocked_range.h>  // oneapi::tbb::blocked_range (the virtual ranks)
     #include <oneapi/tbb/global_control.h> // oneapi::tbb::global_control (the thread count)
     #include <oneapi/tbb/parallel_for.h>   // oneapi::tbb::parallel_for, static_partitioner
-    #include <oneapi/tbb/task_arena.h>     // oneapi::tbb::task_arena
+    #include <oneapi/tbb/task_arena.h>     // oneapi::tbb::task_arena, this_task_arena::current_thread_index (shared%)
 
     #include "chunk/phases.h"      // finalize_parallel_phase (the end of a region)
     #include "chunk/tbb_adaptor.h" // shrink_array::tbb::phase_body (the begin of each task), use_tbb_for_library_teams
@@ -137,6 +137,12 @@ inline constexpr bool finalize_apart = false;
  *          the implicit barrier): it falls in the tail, and the finalize line
  *          is 0. Under the std backend without OMPT the bench ends the phase
  *          between regions: it falls in the serial share.
+ *          Two more columns tell late workers apart: "late ms", the mean over
+ *          the calls of the latest rank start (max s_k), and, TBB only,
+ *          "shared%", the calls in which one TBB thread ran two ranks or more
+ *          (this_task_arena::current_thread_index()): a worker came late, its
+ *          rank's task was stolen and ran after another one -- the region
+ *          then lasts about two ranks. "max ms" is the worst start of all.
  *          Off by default: one test of a static bool per region, no clock read.
  */
 namespace rank_timing
@@ -170,14 +176,24 @@ struct Site
     double      tail      = 0;
     double      max_busy  = 0; ///< sum over calls of the slowest rank's busy time
     double      mean_busy = 0; ///< sum over calls of the mean busy time
+    double      late      = 0; ///< sum over calls of the latest rank start
+    double      max_late  = 0; ///< the latest rank start of all calls
+    long long   shared    = 0; ///< calls in which a thread ran two ranks or more (TBB)
 };
 
 /// @brief The starts and ends of one call's ranks, from t0, in seconds.
 struct Call
 {
-    explicit Call(int n) : start(static_cast<std::size_t>(n)), end(static_cast<std::size_t>(n)) {}
+    /// @param threads TBB: record each rank's thread (shared%).
+    explicit Call(int n, bool threads = false)
+        : start(static_cast<std::size_t>(n))
+        , end(static_cast<std::size_t>(n))
+        , thread(threads ? static_cast<std::size_t>(n) : 0, -1)
+    {
+    }
     std::vector<double> start;
     std::vector<double> end;
+    std::vector<int>    thread;            ///< TBB: each rank's thread index in the arena; empty otherwise
     Clock::time_point   t0 = Clock::now(); ///< last: the vectors are allocated before it
 };
 
@@ -216,12 +232,21 @@ class Registry
         double            bmax = 0;
         double            bsum = 0;
         double            ssum = 0;
+        double            smax = 0;
         for (std::size_t k = 0; k < n; ++k)
         {
             emax = std::max(emax, c.end[k]);
             bmax = std::max(bmax, c.end[k] - c.start[k]);
             bsum += c.end[k] - c.start[k];
             ssum += c.start[k];
+            smax = std::max(smax, c.start[k]);
+        }
+        bool shared = false;
+        if (!c.thread.empty())
+        {
+            std::vector<int> ids(c.thread);
+            std::sort(ids.begin(), ids.end());
+            shared = std::adjacent_find(ids.begin(), ids.end()) != ids.end();
         }
         double isum = 0;
         for (std::size_t k = 0; k < n; ++k)
@@ -239,6 +264,9 @@ class Registry
         s.tail += static_cast<double>(n) * std::max(0.0, w - emax);
         s.max_busy += bmax;
         s.mean_busy += n > 0 ? bsum / static_cast<double>(n) : 0.0;
+        s.late += smax;
+        s.max_late = std::max(s.max_late, smax);
+        s.shared += shared ? 1 : 0;
         finalize_ += seconds(fin_end - wall_end);
         last_end_  = fin_end;
         have_last_ = true;
@@ -314,15 +342,26 @@ class Registry
         std::sort(order.begin(), order.end(), [](const Site* a, const Site* b)
                   { return a->imbalance + a->launch + a->tail > b->imbalance + b->launch + b->tail; });
 
-        std::fprintf(stderr, "[rank-timing] %-28s %8s %10s %9s %8s %8s %8s %8s\n", "site", "calls", "wall s",
-                     "max/mean", "busy%", "imbal%", "launch%", "tail%");
+        std::fprintf(stderr, "[rank-timing] %-28s %8s %10s %9s %8s %8s %8s %8s %8s %8s %8s\n", "site", "calls",
+                     "wall s", "max/mean", "busy%", "imbal%", "launch%", "tail%", "late ms", "max ms", "shared%");
         for (const Site* s : order)
         {
             const double site_all = s->busy + s->imbalance + s->launch + s->tail;
             const auto   sp       = [site_all](double x) { return site_all > 0 ? 100.0 * x / site_all : 0.0; };
-            std::fprintf(stderr, "[rank-timing] %-28s %8lld %10.3f %9.2f %8.1f %8.1f %8.1f %8.1f\n", s->name.c_str(),
-                         s->calls, s->wall, s->mean_busy > 0 ? s->max_busy / s->mean_busy : 0.0, sp(s->busy),
-                         sp(s->imbalance), sp(s->launch), sp(s->tail));
+            const double calls    = s->calls > 0 ? static_cast<double>(s->calls) : 1.0;
+            char         shared[16];
+            if (finalize_apart)
+            {
+                std::snprintf(shared, sizeof shared, "%.1f", 100.0 * static_cast<double>(s->shared) / calls);
+            }
+            else
+            {
+                std::snprintf(shared, sizeof shared, "-");
+            }
+            std::fprintf(stderr, "[rank-timing] %-28s %8lld %10.3f %9.2f %8.1f %8.1f %8.1f %8.1f %8.3f %8.3f %8s\n",
+                         s->name.c_str(), s->calls, s->wall, s->mean_busy > 0 ? s->max_busy / s->mean_busy : 0.0,
+                         sp(s->busy), sp(s->imbalance), sp(s->launch), sp(s->tail), 1e3 * s->late / calls,
+                         1e3 * s->max_late, shared);
         }
     }
 
@@ -546,30 +585,6 @@ inline oneapi::tbb::task_arena& arena()
                                         static_cast<std::size_t>(n));
     static oneapi::tbb::task_arena* const a = new oneapi::tbb::task_arena(n); // NOLINT: immortal
     (void)gc;
-    #if defined(__TBB_PREVIEW_PARALLEL_PHASE) && __TBB_PREVIEW_PARALLEL_PHASE
-    // One parallel phase over the whole run (oneTBB >= 2022.2, preview): the
-    // workers stay in the arena between regions instead of going back to the
-    // dispatcher and sleeping. Without it, on a 72-thread Grace (AArch64) run
-    // every region woke 71 workers on futexes (private_server::wake_some), the
-    // last ~1 ms late: launch and imbalance 4x those of OpenMP, 58 s against
-    // 35 s. Immortal like the arena: never ended. BENCH_TBB_PARALLEL_PHASE=0
-    // leaves it out, for comparison.
-    static const bool phase = []
-    {
-        const char* const value = std::getenv("BENCH_TBB_PARALLEL_PHASE"); // NOLINT(concurrency-mt-unsafe): read once
-        if (value != nullptr && value[0] == '0')
-        {
-            return false;
-        }
-        if (!a->is_active())
-        {
-            a->initialize();
-        }
-        a->start_parallel_phase();
-        return true;
-    }();
-    (void)phase;
-    #endif
     return *a;
 }
 
@@ -605,7 +620,7 @@ void region(int num_threads, Body&& body, const std::source_location loc = std::
     std::unique_ptr<rt::Call> call;
     if (timed)
     {
-        call = std::make_unique<rt::Call>(n);
+        call = std::make_unique<rt::Call>(n, true);
         rt::Registry::get().enter(call->t0);
     }
     rt::Call* const   cp = call.get();
@@ -619,9 +634,10 @@ void region(int num_threads, Body&& body, const std::source_location loc = std::
                 const auto s = rt::Clock::now();
                 Team       t(&ctx, k, n);
                 body(t);
-                const auto e                           = rt::Clock::now();
-                cp->start[static_cast<std::size_t>(k)] = rt::seconds(s - cp->t0);
-                cp->end[static_cast<std::size_t>(k)]   = rt::seconds(e - cp->t0);
+                const auto e                            = rt::Clock::now();
+                cp->start[static_cast<std::size_t>(k)]  = rt::seconds(s - cp->t0);
+                cp->end[static_cast<std::size_t>(k)]    = rt::seconds(e - cp->t0);
+                cp->thread[static_cast<std::size_t>(k)] = oneapi::tbb::this_task_arena::current_thread_index();
             }
             else
             {
