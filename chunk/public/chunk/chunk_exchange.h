@@ -268,8 +268,8 @@ template <ExchangeableArray Arr>
         // array_chunk_rechunk_refill_inline.h, Refill::install_cst2(). bool registers
         // nothing: its one second value is a shared block of true.
         const int  array_id = arr.array_id_;
-        const auto psv      = ProxyType::BaseSpec::get_tab_second_value(array_id, static_cast<int>(index));
-        CstSlot*   ptc      = &ProxyType::tab_type_cst_val[array_id][index];
+        const auto psv      = ProxyType::BaseSpec::get_array_second_value(array_id, static_cast<int>(index));
+        CstSlot*   ptc      = &ProxyType::array_type_cst_val[array_id][index];
         if constexpr (!std::is_same_v<T, bool>)
         {
             (void)chunk.find_or_set_ind_cst_val2(state.value, psv);

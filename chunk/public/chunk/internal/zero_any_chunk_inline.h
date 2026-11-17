@@ -38,9 +38,9 @@
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
 #include "chunk/internal/write_compress_sync_policy.h" // WriteCompressSyncPolicy::is_thread_writing_on (wait_before_materialise)
 #include "chunk/internal/chunk_traits.h"               // ChunkTraits<ChunkT>::ProxyType (wait_before_materialise)
-#include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef
-#include "chunk/internal/queue_flag.h"          // queue_flag::hand_back / release: the pass's hand-back
-#include "chunk/internal/same_value.h"          // same_value
+#include "chunk/internal/array_cst_val2_holder.h" // SecondValueRef
+#include "chunk/internal/queue_flag.h"            // queue_flag::hand_back / release: the pass's hand-back
+#include "chunk/internal/same_value.h"            // same_value
 
 /**
  * @file zero_any_chunk_inline.h
@@ -50,7 +50,7 @@
  * or decides that it should move:
  *  - **cst_val1**: `values` points at the shared all-`first_value` block;
  *  - **cst_val2**: `values` points at the identifier slot of THIS chunk's own
- *    second value (tab_cst_val2_holder.h; zero_any's distinguishing feature —
+ *    second value (array_cst_val2_holder.h; zero_any's distinguishing feature —
  *    zero_one_value has one second value per array, zero_any one per chunk);
  *  - **materialised**: `values` points at a private heap buffer.
  *
@@ -286,10 +286,10 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
             shrink_array::set_thread_chunk_size(std::get<3>(tup).count());
         }
 
-        CstSlot* ptr_type_cst = &ProxyType::tab_type_cst_val[array_id][chunk_index];
+        CstSlot* ptr_type_cst = &ProxyType::array_type_cst_val[array_id][chunk_index];
 
         // Long form in both modes: thr is 0 with OpenMP off.
-        const SecondValueRef<T> ptr_second_value = ProxyType::BaseSpec::get_tab_second_value(array_id, chunk_index);
+        const SecondValueRef<T> ptr_second_value = ProxyType::BaseSpec::get_array_second_value(array_id, chunk_index);
         chunk_ptr->clear_int_st(0, ptr_type_cst, ptr_second_value, thr);
         chunk_ptr->steal_unmark();
     }
@@ -308,12 +308,12 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
         {
             if (!same_value(second_v, T{}))
             {
-                CstSlot* ptr_type_cst = &ProxyType::tab_type_cst_val[array_id][chunk_index];
+                CstSlot* ptr_type_cst = &ProxyType::array_type_cst_val[array_id][chunk_index];
 
                 // find_or_set records the second value in the chunk's slot and returns the
                 // shared array; clear_int_st installs it as `values` (the CAS).
                 const SecondValueRef<T> ptr_second_value =
-                    ProxyType::BaseSpec::get_tab_second_value(array_id, chunk_index);
+                    ProxyType::BaseSpec::get_array_second_value(array_id, chunk_index);
 
                 T* new_cst_val2_ptr = nullptr;
                 if constexpr (has_motif_state_v<Derived>)
@@ -335,9 +335,10 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
             // shared array of true needs no registering: clear_int_st() takes it
             // from Holder::find_cst_val2_ptr().
 
-            CstSlot* ptr_type_cst = &ProxyType::tab_type_cst_val[array_id][chunk_index];
+            CstSlot* ptr_type_cst = &ProxyType::array_type_cst_val[array_id][chunk_index];
 
-            const SecondValueRef<T> ptr_second_value = ProxyType::BaseSpec::get_tab_second_value(array_id, chunk_index);
+            const SecondValueRef<T> ptr_second_value =
+                ProxyType::BaseSpec::get_array_second_value(array_id, chunk_index);
             chunk_ptr->clear_int_st(1, ptr_type_cst, ptr_second_value, thr);
         }
         chunk_ptr->steal_unmark();
@@ -351,9 +352,9 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
 
     queue_flag::release_candidates(
         vec_tuple_to_compress, sz, [](int array_id, int chunk_index) -> auto&
-        { return ProxyType::Base::get_tab_is_inside_list_to_compress(array_id)[chunk_index]; },
+        { return ProxyType::Base::get_array_is_inside_list_to_compress(array_id)[chunk_index]; },
         [](int array_id, int chunk_index)
-        { ProxyType::Base::reset_tab_inside_list_to_compress(array_id, chunk_index); });
+        { ProxyType::Base::reset_array_inside_list_to_compress(array_id, chunk_index); });
 
     if (proxy2a)
     {
@@ -425,11 +426,12 @@ void zero_any::ChunkImpl<T, Derived>::compress([[maybe_unused]] int  thr_rank,
         {
             // Against values[0], as fill_list_to_compress does, not the registered second
             // value: a chunk uniform at another value is compressed to THAT value.
-            const SecondValueRef<T> ptr_second_value = ProxyType::BaseSpec::get_tab_second_value(array_id, chunk_index);
-            const InT<T>            second_v         = Base::read_value_scan(0);
-            const auto              scan             = Base::scan_constants(first_value, second_v, size.count());
-            compact1                                 = scan.first;
-            compact2                                 = scan.second;
+            const SecondValueRef<T> ptr_second_value =
+                ProxyType::BaseSpec::get_array_second_value(array_id, chunk_index);
+            const InT<T> second_v = Base::read_value_scan(0);
+            const auto   scan     = Base::scan_constants(first_value, second_v, size.count());
+            compact1              = scan.first;
+            compact2              = scan.second;
             if (compact2)
             {
                 if constexpr (has_motif_state_v<Derived>)
@@ -457,8 +459,9 @@ void zero_any::ChunkImpl<T, Derived>::compress([[maybe_unused]] int  thr_rank,
         // installed second-value slot (nullptr).
         if (apply)
         {
-            const SecondValueRef<T> ptr_second_value = ProxyType::BaseSpec::get_tab_second_value(array_id, chunk_index);
-            CstSlot*                ptr_type_cst     = &ProxyType::tab_type_cst_val[array_id][chunk_index];
+            const SecondValueRef<T> ptr_second_value =
+                ProxyType::BaseSpec::get_array_second_value(array_id, chunk_index);
+            CstSlot* ptr_type_cst = &ProxyType::array_type_cst_val[array_id][chunk_index];
             if (compact1)
             {
                 clear_int_st(0, ptr_type_cst, ptr_second_value, thr_rank);
@@ -601,7 +604,7 @@ void zero_any::ChunkImpl<T, Derived>::compress_chunk_to_compress_in_par([[maybe_
                             chunk_t->compress_to_motif(thr, chunk_index, array_id, csize);
                         }
                     }
-                    ProxyType::set_tab_is_inside_chunk_list_to_compress(array_id, chunk_index, 0);
+                    ProxyType::set_array_is_inside_chunk_list_to_compress(array_id, chunk_index, 0);
                 }
             }
         }
@@ -620,7 +623,7 @@ void zero_any::ChunkImpl<T, Derived>::compress_chunk_to_compress_in_par([[maybe_
 
             // Per-entry geometry, as above: a default size would under-scan dynamic chunks.
             std::get<0>(tup)->compress(0, chunk_index, array_id, apply, std::get<3>(tup));
-            ProxyType::set_tab_is_inside_chunk_list_to_compress(array_id, chunk_index, 0);
+            ProxyType::set_array_is_inside_chunk_list_to_compress(array_id, chunk_index, 0);
         }
     }
 
@@ -694,7 +697,7 @@ void zero_any::ChunkImpl<T, Derived>::fill_list_chunk_to_compress_in_par([[maybe
             {
                 if (chunk_index >= 0)
                 {
-                    queue_flag::hand_back(ProxyType::Base::get_tab_is_inside_list_to_compress(array_id)[chunk_index]);
+                    queue_flag::hand_back(ProxyType::Base::get_array_is_inside_list_to_compress(array_id)[chunk_index]);
                 }
             }
             // Not selected: nothing will be stolen, release it to the writers now.

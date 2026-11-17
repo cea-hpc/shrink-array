@@ -65,7 +65,7 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
 
     /// @brief Claim this array's identity before its storage is built:
     ///        register its address and take the next free array_id, which
-    ///        every per-tab metadata table is then indexed by. Called by
+    ///        every per-array metadata table is then indexed by. Called by
     ///        create() through ArrayChunkBase.
     void pre_create_hook()
     {

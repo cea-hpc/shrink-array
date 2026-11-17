@@ -18,7 +18,7 @@
 
 #include <algorithm>   // std::fill_n
 #include <array>       // std::array
-#include <deque>       // tab_m_ptr_cst_val2: grows without moving its arrays
+#include <deque>       // array_m_ptr_cst_val2: grows without moving its arrays
 #include <cstddef>     // std::size_t
 #include <tuple>       // the candidate-list entries
 #include <type_traits> // std::is_same_v, std::conditional_t
@@ -60,7 +60,7 @@ namespace zero_one_value
 template <typename T>
 class Proxy;
 
-/// @brief Static table of the registered second-constant arrays of element type T (tab_m_ptr_cst_val2),
+/// @brief Static table of the registered second-constant arrays of element type T (array_m_ptr_cst_val2),
 ///        with the lookups and checks on it.
 template <typename T>
 class ChunkSpec
@@ -106,14 +106,15 @@ class ChunkSpec
         std::fill_n(values_loc, alloc_chunk_count(), value);
     }
 
-    static inline constinit internal::LazyImmortal<VecArrayChunkSizeMax> tab_m_ptr_cst_val2;
+    static inline constinit internal::LazyImmortal<VecArrayChunkSizeMax> array_m_ptr_cst_val2;
 
-    // mm_protect mode only: element count allocated at (*tab_m_ptr_cst_val2)[ind] (a raw
+    // mm_protect mode only: element count allocated at (*array_m_ptr_cst_val2)[ind] (a raw
     // mmap'd T*; the plain mode uses fixed cst_buffer_size arrays). Lets set_second_value's
     // reuse path (a known second_value registered at a LARGER geometry) grow an undersized
     // allocation instead of overrunning it. Declared but unused in the other builds.
-    static inline constinit internal::Immortal<std::vector<std::size_t>> tab_m_ptr_cst_val2_mm_elems_storage_{};
-    static inline std::vector<std::size_t>& tab_m_ptr_cst_val2_mm_elems = tab_m_ptr_cst_val2_mm_elems_storage_.value;
+    static inline constinit internal::Immortal<std::vector<std::size_t>> array_m_ptr_cst_val2_mm_elems_storage_{};
+    static inline std::vector<std::size_t>&                              array_m_ptr_cst_val2_mm_elems =
+        array_m_ptr_cst_val2_mm_elems_storage_.value;
 
   protected:
     /*!

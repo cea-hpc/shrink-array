@@ -171,8 +171,8 @@ struct Simu
 
     std::vector<bool> dis; ///< Storage of every material: true = chunk
 
-    VecInt2D tab_size;  ///< [iteration][material] size of the interval
-    VecInt2D tab_start; ///< [iteration][material] first cell of the interval
+    VecInt2D array_size;  ///< [iteration][material] size of the interval
+    VecInt2D array_start; ///< [iteration][material] first cell of the interval
 
     VecInt2D ll; ///< [material] the cells of its current interval (indirection)
 };

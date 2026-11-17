@@ -958,7 +958,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     [[nodiscard]] const T* motif_offset_slot(int chunk_index) const noexcept
         requires has_motif_state_v<ChunkType>
     {
-        return ProxyType::BaseSpec::get_tab_second_value(this->array_id_, chunk_index).slot;
+        return ProxyType::BaseSpec::get_array_second_value(this->array_id_, chunk_index).slot;
     }
 
   private:

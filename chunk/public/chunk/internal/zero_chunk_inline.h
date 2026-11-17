@@ -79,7 +79,7 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress
         chunk_t->fill_list_to_compress(ll_compt, chunk_index, array_id, std::get<3>(tup).count());
         // Scanned, still marked: hand its queue flag back before the mark can go down,
         // here for the chunks the scan drops (queue_flag.h, F6).
-        queue_flag::hand_back(Proxy<T>::get_tab_is_inside_list_to_compress(array_id)[chunk_index]);
+        queue_flag::hand_back(Proxy<T>::get_array_is_inside_list_to_compress(array_id)[chunk_index]);
         // Not selected by the scan: the writers may have it back now.
         if (ll_compt.size() == count)
         {
@@ -156,7 +156,7 @@ void zero::Chunk<T>::compress_sweep_rank(int thr)
         // again (compression stalls). Reset it TOGETHER with the list clear below: one
         // without the other lets a write re-append the chunk and make_block_compression
         // double-clears it (see zero_any::Chunk<T>::compress_chunk_to_compress_in_par).
-        Proxy<T>::reset_tab_inside_list_to_compress(std::get<2>(tup), std::get<1>(tup));
+        Proxy<T>::reset_array_inside_list_to_compress(std::get<2>(tup), std::get<1>(tup));
     }
 
     if constexpr (build_config::chunk_dynamic)
@@ -351,8 +351,8 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int 
 
     queue_flag::release_candidates(
         vec_tuple_to_compress, sz, [](int array_id, int chunk_index) -> auto&
-        { return Proxy<T>::get_tab_is_inside_list_to_compress(array_id)[chunk_index]; },
-        [](int array_id, int chunk_index) { Proxy<T>::reset_tab_inside_list_to_compress(array_id, chunk_index); });
+        { return Proxy<T>::get_array_is_inside_list_to_compress(array_id)[chunk_index]; },
+        [](int array_id, int chunk_index) { Proxy<T>::reset_array_inside_list_to_compress(array_id, chunk_index); });
 
     if (guarded)
     {

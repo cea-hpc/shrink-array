@@ -241,7 +241,7 @@ void write_binary_file(const std::string& filename,
 // -----------------------------------------------------------------------------
 template <typename Vec>
 void read_check_binary_file(Int                ind,
-                            const std::string& tab_name,
+                            const std::string& array_name,
                             const std::string& filename,
                             const Vec&         data_check,
                             std::uint64_t      lchs,
@@ -267,17 +267,18 @@ void read_check_binary_file(Int                ind,
 
     if (lchs_read == lchs && !read_trace)
     {
-        bench_par::critical([&] { std::cout << tab_name << " Checksum OK !\n"; });
+        bench_par::critical([&] { std::cout << array_name << " Checksum OK !\n"; });
         return;
     }
     if (!read_trace)
     {
-        std::cerr << tab_name << "\nError checksum ! checksum read : " << lchs_read << " checksum calculate : " << lchs;
+        std::cerr << array_name << "\nError checksum ! checksum read : " << lchs_read
+                  << " checksum calculate : " << lchs;
     }
 
     if (!no_compress)
     {
-        std::cerr << " --> we decompress and read the file : " << tab_name;
+        std::cerr << " --> we decompress and read the file : " << array_name;
     }
     std::cerr << "\n";
     // A reference written with --checksum_only has no data to compare against:
@@ -293,7 +294,7 @@ void read_check_binary_file(Int                ind,
                     "has no data file ({} / {}): it was written with --checksum_only. Regenerate a "
                     "full reference (vector baseline without --checksum_only) to locate the "
                     "diverging element.\n",
-                    tab_name, ind, lchs_read, lchs, filename, filename_gz);
+                    array_name, ind, lchs_read, lchs, filename, filename_gz);
             });
         std::abort();
     }
@@ -360,21 +361,21 @@ void read_check_binary_file(Int                ind,
         if constexpr (chunk_config::is_shrink_enabled)
         {
             std::string line;
-            std::string current_tab;
+            std::string current_array;
 
             bool ok = false;
 
             std::getline(trace_file, line);
 
             std::getline(trace_file, line);
-            // Detect tab_name
+            // Detect array_name
             if (line.find(" not equal !") != std::string::npos)
             {
                 const size_t bracket_pos = line.find('[');
                 if (bracket_pos != std::string::npos)
                 {
-                    current_tab = line.substr(0, bracket_pos);
-                    if (current_tab == tab_name)
+                    current_array = line.substr(0, bracket_pos);
+                    if (current_array == array_name)
                     {
                         ok = true;
                     }
@@ -425,7 +426,7 @@ void read_check_binary_file(Int                ind,
             const bool is_val1 = chunk_t.is_cst_val1();
 
             // false everywhere but zero_one_value, exactly as the #else branch gave --
-            // and for a zero_any-family array in a zero_one_value build (tab_conn's
+            // and for a zero_any-family array in a zero_one_value build (array_conn's
             // pattern::Array): as in a zero_any build.
             bool is_val2 = false;
             if constexpr (chunk_config::use_zero_one_value &&
@@ -555,7 +556,7 @@ void read_check_binary_file(Int                ind,
     std::ifstream trace_file_read;
 
     // Open the write-trace file once, up front, so both the bool and
-    // non-bool branches below share the same guarded write path (tab_bool
+    // non-bool branches below share the same guarded write path (array_bool
     // errors included under --write_trace).
     if (write_trace)
     {
@@ -610,7 +611,7 @@ void read_check_binary_file(Int                ind,
             T value;
             file.read(reinterpret_cast<char*>(&value), sizeof(T));
 
-            const std::string full_tab_name = tab_name + "[" + std::to_string(k) + "]";
+            const std::string full_array_name = array_name + "[" + std::to_string(k) + "]";
 
             const T value_check = data_check[k];
 
@@ -637,7 +638,7 @@ void read_check_binary_file(Int                ind,
                 }
 
                 // Usage in your code
-                log_message(full_tab_name + " not equal! read: " + std::to_string(value) +
+                log_message(full_array_name + " not equal! read: " + std::to_string(value) +
                             " != " + std::to_string(data_check[k]) + "\n");
 
                 std::cerr << "iteration: " + std::to_string(ind) + "\n";
@@ -797,7 +798,7 @@ void read_check_binary_file(Int                ind,
                 }
 
                 // unsigned char goes through operator<< as a CHARACTER: a mismatch
-                // on tab_char would print a control byte instead of the number.
+                // on array_char would print a control byte instead of the number.
                 // Promote the narrow types to a wide integer for display only;
                 // every other T prints as is.
                 const auto printable = [](const auto& value)
@@ -815,7 +816,7 @@ void read_check_binary_file(Int                ind,
                 };
 
                 std::ostringstream oss;
-                oss << tab_name << "[" << k << "]"
+                oss << array_name << "[" << k << "]"
                     << " not equal ! read : " << printable(value) << " != " << printable(data_check[k]);
                 log_message(oss.str() + "\n");
 
@@ -898,7 +899,7 @@ void read_check_binary_file(Int                ind,
                         [&]
                         {
                             // bool / Bit: one second value, no index; a zero_any-family
-                            // array (tab_conn's pattern::Array) has none either.
+                            // array (array_conn's pattern::Array) has none either.
                             if constexpr (chunk_config::use_zero_one_value && !shrink_array::is_bool_like_v<T> &&
                                           !shrink_array::is_zero_any_family_v<std::remove_cvref_t<decltype(chunk_t)>>)
                             {

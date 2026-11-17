@@ -86,7 +86,7 @@ def _generate_oracle(args, plan, counter, errors, cfg_b):
     sys.stdout.write(
         f"\r{get_progress_bar(counter.idx, counter.total)} "
         f"CHECK {short_config_label(cfg_b)[:30]:30} | "
-        f"{args.baseline_variant:10} | uncompressed (ref data_tab*) "
+        f"{args.baseline_variant:10} | uncompressed (ref data_array*) "
     )
     sys.stdout.flush()
     try:

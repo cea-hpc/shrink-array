@@ -146,10 +146,10 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::set_info_on_chunk() noexcept
 
     Base::set_ptr_is_inside_chunk_list_to_compress();
 
-    ptr_type_cst_ = &tab_type_cst_val[array_id_][chunk_index_];
+    ptr_type_cst_ = &array_type_cst_val[array_id_][chunk_index_];
     if constexpr (is_not_bool)
     {
-        BaseSpec::ptr_second_value_ = BaseSpec::get_tab_second_value(array_id_, chunk_index_);
+        BaseSpec::ptr_second_value_ = BaseSpec::get_array_second_value(array_id_, chunk_index_);
     }
 }
 
@@ -164,7 +164,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::set_ptr_second_value() noexcept
 {
     if constexpr (is_not_bool)
     {
-        BaseSpec::ptr_second_value_ = BaseSpec::get_tab_second_value(array_id_, chunk_index_);
+        BaseSpec::ptr_second_value_ = BaseSpec::get_array_second_value(array_id_, chunk_index_);
     }
 }
 
@@ -206,37 +206,37 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::mark_for_compression_if_needed_wit
     }
 }
 
-// Grow the three per-tab tables in lockstep. They are indexed by the same
+// Grow the three per-array tables in lockstep. They are indexed by the same
 // array_id, so they must always share the same outer length.
 template <typename T, typename Derived, typename ChunkT>
-void zero_any::ProxyImpl<T, Derived, ChunkT>::resize_tab_is_int(int array_count)
+void zero_any::ProxyImpl<T, Derived, ChunkT>::resize_array_is_int(int array_count)
 {
     BaseSpec::resize(array_count);
-    tab_type_cst_val.resize(array_count);
-    Base::tab_is_inside_chunk_list_to_compress.resize(array_count);
+    array_type_cst_val.resize(array_count);
+    Base::array_is_inside_chunk_list_to_compress.resize(array_count);
 }
 
-// Grow one tab's per-chunk tables. BaseSpec::resize() and tab_type_cst_val keep
-// existing entries, but tab_is_inside_chunk_list_to_compress is REALLOCATED:
+// Grow one array's per-chunk tables. BaseSpec::resize() and array_type_cst_val keep
+// existing entries, but array_is_inside_chunk_list_to_compress is REALLOCATED:
 // every "queued for compression" flag goes back to 0. Safe only if no chunk of
-// this tab is queued -- a queued chunk with a cleared flag could be queued twice
+// this array is queued -- a queued chunk with a cleared flag could be queued twice
 // (pointing into the chunk_list_ just reallocated).
 // SecondValueArrayBase::resize_common() guarantees it by flushing the deferred ops
 // (whose replay can queue chunks) BEFORE the compression pass that empties every
 // list. Do not swap those two steps. Asserted below (flag 1 <=> entry in a list).
 template <typename T, typename Derived, typename ChunkT>
-void zero_any::ProxyImpl<T, Derived, ChunkT>::resize_tab_is_int(int array_id, int chunk_count_old, int chunk_count)
+void zero_any::ProxyImpl<T, Derived, ChunkT>::resize_array_is_int(int array_id, int chunk_count_old, int chunk_count)
 {
     BaseSpec::resize(array_id, chunk_count_old, chunk_count);
-    // Check builds: no chunk of this tab may still be queued (see above).
+    // Check builds: no chunk of this array may still be queued (see above).
     if constexpr (build_config::any_check)
     {
-        const auto& row = Base::tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(array_id)];
+        const auto& row = Base::array_is_inside_chunk_list_to_compress[static_cast<std::size_t>(array_id)];
         for (std::size_t j = 0; j < row.size(); ++j)
         {
             if (row[j].load(std::memory_order_relaxed) != 0) [[unlikely]]
             {
-                CHUNK_INVARIANT_FAILED("resize_tab_is_int: tab {} chunk {} still queued for compression while its "
+                CHUNK_INVARIANT_FAILED("resize_array_is_int: array {} chunk {} still queued for compression while its "
                                        "flag row is reallocated ({} -> {} chunks)",
                                        array_id, j, chunk_count_old, chunk_count);
             }
@@ -244,9 +244,9 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::resize_tab_is_int(int array_id, in
     }
     // Every flag 0; the new type-of-constant entries CstSlot::first. Both
     // constructed by a team for a large array (parallel_storage_init).
-    Base::tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(array_id)] =
+    Base::array_is_inside_chunk_list_to_compress[static_cast<std::size_t>(array_id)] =
         parallel_storage_init::make_filled<std::atomic<char>>(static_cast<std::size_t>(chunk_count), char{0});
-    parallel_storage_init::resize_filled(tab_type_cst_val[array_id], static_cast<std::size_t>(chunk_count),
+    parallel_storage_init::resize_filled(array_type_cst_val[array_id], static_cast<std::size_t>(chunk_count),
                                          CstSlot::first);
 }
 
@@ -361,7 +361,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::ensure_writable_storage()
     // and the second value are left -- set_info_on_chunk() redid both lookups.
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        ptr_type_cst_ = &tab_type_cst_val[array_id_][chunk_index_];
+        ptr_type_cst_ = &array_type_cst_val[array_id_][chunk_index_];
         set_ptr_second_value();
     }
     else
@@ -588,7 +588,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::handle_no_bool_assignment(InT<T> v
             return;
         }
 
-        ptr_type_cst_ = &tab_type_cst_val[array_id_][chunk_index_];
+        ptr_type_cst_ = &array_type_cst_val[array_id_][chunk_index_];
 
         mark_for_compression_if_needed(value, vals);
 
@@ -624,7 +624,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::handle_bool_assignment(InT<T> valu
             return;
         }
 
-        ptr_type_cst_ = &tab_type_cst_val[array_id_][chunk_index_];
+        ptr_type_cst_ = &array_type_cst_val[array_id_][chunk_index_];
 
         mark_for_compression_if_needed(value, vals);
 
@@ -1318,11 +1318,11 @@ template <typename ChunkT, size_t SmallN>
     const internal::RegistryReadLock registry_lock(internal::registry_mutex());
     if (!using_big_)
     {
-        for (const auto& [entry_key, tab] : small_)
+        for (const auto& [entry_key, arr] : small_)
         {
             if (entry_key == key)
             {
-                return tab;
+                return arr;
             }
         }
         CHUNK_INVARIANT_FAILED("[zero_any::PointerMap get_array_id] key NOT FOUND: this={} size={} key={}", this,
@@ -1379,9 +1379,9 @@ void zero_any::PointerMap<ChunkT, SmallN>::insert(Key key, int array_id)
         {
             using_big_ = true;
             big_.reserve(small_.size());
-            for (const auto& [key, tab] : small_)
+            for (const auto& [key, arr] : small_)
             {
-                big_[key] = tab;
+                big_[key] = arr;
             }
             small_.clear();
         }
@@ -1398,11 +1398,11 @@ bool zero_any::PointerMap<ChunkT, SmallN>::set_array_id(Key key, int new_array_i
     const internal::RegistryWriteLock registry_lock(internal::registry_mutex());
     if (!using_big_)
     {
-        for (auto& [k, tab] : small_)
+        for (auto& [k, arr] : small_)
         {
             if (k == key)
             {
-                tab = new_array_id;
+                arr = new_array_id;
                 return true;
             }
         }
@@ -1428,16 +1428,16 @@ bool zero_any::PointerMap<ChunkT, SmallN>::swap_keys(Key key_a, Key key_b) noexc
     bool                              fb = false;
     if (!using_big_)
     {
-        for (const auto& [key, tab] : small_)
+        for (const auto& [key, arr] : small_)
         {
             if (key == key_a)
             {
-                na = tab;
+                na = arr;
                 fa = true;
             }
             if (key == key_b)
             {
-                nb = tab;
+                nb = arr;
                 fb = true;
             }
         }
@@ -1445,15 +1445,15 @@ bool zero_any::PointerMap<ChunkT, SmallN>::swap_keys(Key key_a, Key key_b) noexc
         {
             return false;
         }
-        for (auto& [key, tab] : small_)
+        for (auto& [key, arr] : small_)
         {
             if (key == key_a)
             {
-                tab = nb;
+                arr = nb;
             }
             else if (key == key_b)
             {
-                tab = na;
+                arr = na;
             }
         }
         return true;
@@ -1475,14 +1475,14 @@ void zero_any::PointerMap<ChunkT, SmallN>::for_each_key(F&& func) const
 {
     if (!using_big_)
     {
-        for (const auto& [key, tab] : small_)
+        for (const auto& [key, arr] : small_)
         {
             func(key);
         }
     }
     else
     {
-        for (const auto& [key, tab] : big_)
+        for (const auto& [key, arr] : big_)
         {
             func(key);
         }
@@ -1496,7 +1496,7 @@ void zero_any::PointerMap<ChunkT, SmallN>::for_each_key(F&& func) const
 template <typename T, typename Derived, typename ChunkT>
 void zero_any::ProxySpec<T, Derived, ChunkT>::resize(int array_count, int chunk_count_old, int chunk_count)
 {
-    auto&      row  = tab_second_value[static_cast<std::size_t>(array_count)];
+    auto&      row  = array_second_value[static_cast<std::size_t>(array_count)];
     const auto held = static_cast<int>(row.size());
     // Keeps [0, min(old, new)); new slots value-initialised (by a team for a large array).
     parallel_storage_init::resize_filled(row, static_cast<std::size_t>(chunk_count), SecondValueSlotT{});
@@ -1514,9 +1514,9 @@ void zero_any::ProxySpec<T, Derived, ChunkT>::clear([[maybe_unused]] int array_i
     // Released, not just emptied: a re-chunk destroys the old storage under its own
     // array_id, so a row left allocated leaks at every re-chunk. Swap with an empty
     // row: `= {}` would keep the capacity.
-    if (array_id >= 0 && static_cast<std::size_t>(array_id) < tab_second_value.size())
+    if (array_id >= 0 && static_cast<std::size_t>(array_id) < array_second_value.size())
     {
-        SecondValueRowT().swap(tab_second_value[static_cast<std::size_t>(array_id)]);
+        SecondValueRowT().swap(array_second_value[static_cast<std::size_t>(array_id)]);
     }
 }
 
@@ -1527,13 +1527,13 @@ void zero_any::ProxySpec<T, Derived, ChunkT>::clear([[maybe_unused]] int array_i
 template <typename Derived, typename ChunkT>
 void zero_any::ProxySpec<bool, Derived, ChunkT>::resize(int array_count, int chunk_count_old, int chunk_count)
 {
-    realloc_unique(tab_second_value[array_count], chunk_count_old, chunk_count);
+    realloc_unique(array_second_value[array_count], chunk_count_old, chunk_count);
 
     // realloc_unique leaves the new tail indeterminate: fill it here.
     if (chunk_count > chunk_count_old)
     {
-        std::ranges::fill(tab_second_value[array_count].get() + chunk_count_old,
-                          tab_second_value[array_count].get() + chunk_count, false);
+        std::ranges::fill(array_second_value[array_count].get() + chunk_count_old,
+                          array_second_value[array_count].get() + chunk_count, false);
     }
 }
 
@@ -1582,14 +1582,14 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::set_array_id() noexcept
 }
 
 template <typename T, typename Derived, typename ChunkT>
-void zero_any::ProxyImpl<T, Derived, ChunkT>::clear_tab_is_int(int array_id)
+void zero_any::ProxyImpl<T, Derived, ChunkT>::clear_array_is_int(int array_id)
 {
     BaseSpec::clear(array_id);
     // Released, not just emptied (clear() keeps the capacity): every re-chunk would
     // leave one byte per old chunk behind.
-    parallel_storage_init::NoInitVector<CstSlot>().swap(tab_type_cst_val[array_id]);
+    parallel_storage_init::NoInitVector<CstSlot>().swap(array_type_cst_val[array_id]);
     // Same for the candidate flags.
-    Base::release_tab_is_int(array_id);
+    Base::release_array_is_int(array_id);
 }
 
 template <typename T, typename Derived, typename ChunkT>

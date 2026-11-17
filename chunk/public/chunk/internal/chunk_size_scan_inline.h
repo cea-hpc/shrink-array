@@ -42,24 +42,24 @@ namespace shrink_array::internal
 {
 
 template <typename Arr>
-ChunkSizeScan<Arr>::ChunkSizeScan(const Arr& tab, const Options& opt)
-    : tab_(tab)
+ChunkSizeScan<Arr>::ChunkSizeScan(const Arr& arr, const Options& opt)
+    : array_(arr)
     , opt_(opt)
-    , chunk_sz_(tab.chunk_size())
-    , nc_(tab.chunk_count_)
-    , len_(tab.chunk_count_ * static_cast<int64_t>(tab.chunk_size()))
-    , second_value_ind_(second_value_index(tab))
+    , chunk_sz_(arr.chunk_size())
+    , nc_(arr.chunk_count_)
+    , len_(arr.chunk_count_ * static_cast<int64_t>(arr.chunk_size()))
+    , second_value_ind_(second_value_index(arr))
     , cst1_value_(ChunkT::first_value)
     , cst2_value_(cst1_value_)
-    , cand_(candidate_sizes(tab.chunk_size(), opt))
+    , cand_(candidate_sizes(arr.chunk_size(), opt))
     , n_cand_(static_cast<int>(cand_.size()))
 {
     // zero_one_value and the zero_any family: the array's second value, when
     // designated (otherwise only first_value: the conservative answer).
     if constexpr ((chunk_config::use_zero_one_value || is_zero_any_family_v<ChunkT>) &&
-                  requires { tab.second_value(); })
+                  requires { arr.second_value(); })
     {
-        cst2_value_ = tab.second_value();
+        cst2_value_ = arr.second_value();
         has_cst2_   = !same_value(cst2_value_, cst1_value_);
     }
     for (const uint32_t cand_sz : cand_)
@@ -110,7 +110,7 @@ std::vector<uint32_t> ChunkSizeScan<Arr>::candidate_sizes(uint32_t chunk_sz, con
 }
 
 template <typename Arr>
-int ChunkSizeScan<Arr>::second_value_index([[maybe_unused]] const Arr& tab)
+int ChunkSizeScan<Arr>::second_value_index([[maybe_unused]] const Arr& arr)
 {
     // bool / Bit: one second value, `true`, no index -- get_ind_second_value()
     // aborts for them; classify() asks the unindexed is_cst_val2().
@@ -118,7 +118,7 @@ int ChunkSizeScan<Arr>::second_value_index([[maybe_unused]] const Arr& tab)
     // index, the zero_any branches of classify().
     if constexpr (chunk_config::use_zero_one_value && !is_zero_any_family_v<ChunkT> && !is_bool_like_v<T>)
     {
-        return tab.get_ind_second_value();
+        return arr.get_ind_second_value();
     }
     else if constexpr (chunk_config::use_zero_one_value && !is_zero_any_family_v<ChunkT>)
     {
@@ -293,7 +293,7 @@ void ChunkSizeScan<Arr>::scan_part(int64_t part, std::vector<int64_t>& inside_lo
     for (int64_t j = j0; j < j1; ++j)
     {
         const void* key  = nullptr;
-        const int   kind = classify(tab_.chunk_list_[j], key);
+        const int   kind = classify(array_.chunk_list_[j], key);
         if (kind == kind_mat)
         {
             ++n_mat;
@@ -387,7 +387,7 @@ void ChunkSizeScan<Arr>::pick_part(int64_t part)
     for (int64_t j = j0; j < j1; ++j)
     {
         const void* key = nullptr;
-        if (classify(tab_.chunk_list_[j], key) != kind_mat) // skip cst1 / cst2 (only mat has data)
+        if (classify(array_.chunk_list_[j], key) != kind_mat) // skip cst1 / cst2 (only mat has data)
         {
             continue;
         }
@@ -513,10 +513,10 @@ void ChunkSizeScan<Arr>::value_runs(const T* vals, ValueRuns& runs) const
 template <typename Arr>
 void ChunkSizeScan<Arr>::scan_pick(int64_t chunk_idx, ValueRuns& runs, std::vector<int64_t>& found_loc) const
 {
-    const T* vj = tab_.chunk_list_[chunk_idx].values_load();
+    const T* vj = array_.chunk_list_[chunk_idx].values_load();
     if constexpr (has_motif_state_v<ChunkT>)
     {
-        vj = internal::motif_chunk_data(tab_, chunk_idx, 0); // pattern::Array
+        vj = internal::motif_chunk_data(array_, chunk_idx, 0); // pattern::Array
     }
     value_runs(vj, runs);
 
@@ -561,7 +561,7 @@ bool ChunkSizeScan<Arr>::owns_window(int64_t chunk_idx, int64_t a0) const
     // chunk_idx is the window's last chunk: the first one owns the window
     // when it is materialised in part too.
     const void* key = nullptr;
-    return !(a0 > ca * chunk_sz_ && classify(tab_.chunk_list_[ca], key) == kind_mat);
+    return !(a0 > ca * chunk_sz_ && classify(array_.chunk_list_[ca], key) == kind_mat);
 }
 
 template <typename Arr>
@@ -595,7 +595,7 @@ bool ChunkSizeScan<Arr>::part_value(int64_t          cc,
                                     const ValueRuns& runs,
                                     T&               part) const
 {
-    const auto& ch  = tab_.chunk_list_[cc];
+    const auto& ch  = array_.chunk_list_[cc];
     const void* key = nullptr;
     const int   kc  = classify(ch, key);
     if (kc != kind_mat && kc != kind_motif)
@@ -623,7 +623,7 @@ bool ChunkSizeScan<Arr>::part_value(int64_t          cc,
     const auto last  = static_cast<std::size_t>(p1 - (cc * chunk_sz_));
     if constexpr (has_motif_state_v<ChunkT>)
     {
-        return uniform_range(internal::motif_chunk_data(tab_, cc, 1), first, last, part);
+        return uniform_range(internal::motif_chunk_data(array_, cc, 1), first, last, part);
     }
     else
     {
@@ -657,9 +657,9 @@ void ChunkSizeScan<Arr>::forecast_motifs()
         for (int64_t j = 0; j < nc_; ++j)
         {
             const void* key = nullptr;
-            if (classify(tab_.chunk_list_[j], key) == kind_motif)
+            if (classify(array_.chunk_list_[j], key) == kind_motif)
             {
-                motifs_now.push_back(tab_.chunk_list_[j].values_load());
+                motifs_now.push_back(array_.chunk_list_[j].values_load());
             }
         }
         const auto motif0 = static_cast<int64_t>(motifs_now.size());
@@ -728,7 +728,7 @@ bool ChunkSizeScan<Arr>::motif_window_key(int64_t win, uint32_t cand_sz, std::ui
     std::uint64_t h = mix(0x51ED27C3A9F1B6D5ULL, static_cast<std::uint64_t>(a1 - a0));
     for (int64_t cc = ca; cc <= cb; ++cc)
     {
-        const auto&   ch      = tab_.chunk_list_[cc];
+        const auto&   ch      = array_.chunk_list_[cc];
         const void*   key_ptr = nullptr;
         const int     kc      = classify(ch, key_ptr);
         const int64_t p0      = a0 > cc * chunk_sz_ ? a0 : cc * chunk_sz_;
@@ -743,7 +743,7 @@ bool ChunkSizeScan<Arr>::motif_window_key(int64_t win, uint32_t cand_sz, std::ui
         if (kc == kind_motif)
         {
             const T* motif = ch.values_load();
-            const T  off   = internal::load_element_relaxed(tab_.motif_offset_slot(static_cast<int>(cc)));
+            const T  off   = internal::load_element_relaxed(array_.motif_offset_slot(static_cast<int>(cc)));
             v0             = ChunkT::motif_value(motif, static_cast<int>(from), off);
             h              = mix(h, reinterpret_cast<std::uintptr_t>(motif));
             h              = mix(h, from);

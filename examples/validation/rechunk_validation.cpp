@@ -205,7 +205,7 @@ constexpr const char* variant_name()
 
 // set_second_value only exists on zero_one_value / zero_any: no-op elsewhere. REQUIRED
 // on zero_one_value before any write (see the contract at the top of the file); also
-// exercises the val2 path (second_value preservation + tab_m_ptr_cst_val2
+// exercises the val2 path (second_value preservation + array_m_ptr_cst_val2
 // queue on growth, for zero_one_value).
 template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& arr, const Val& value)
@@ -929,7 +929,7 @@ static int run_body(int argc, char** argv)
              return check_invariance<double>(
                  "all-different", 100000, 1024, [](long i) -> double { return double(i); }, /*sv_value=*/1.0);
          }},
-        // Growth 512 -> 2048 with val2: targets the tab_m_ptr_cst_val2 queue
+        // Growth 512 -> 2048 with val2: targets the array_m_ptr_cst_val2 queue
         // (zero_one_value) + the second_value round-trip.
         {"val2-grow", 512,
          [&]

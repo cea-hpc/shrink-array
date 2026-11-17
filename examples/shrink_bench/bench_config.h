@@ -115,7 +115,7 @@ inline constexpr bool have_bzip2 = false;
 // Five shapes that stay #ifdef whatever you do, because no `if constexpr` can
 // select them:
 //   1. an #include                     (BZIP2 -> <bzlib.h>)
-//   2. a type                          (the four tab_bool declarations)
+//   2. a type                          (the four array_bool declarations)
 //   3. a `using namespace`             (shrink_bench.cpp)
 //   4. a member only one variant has   (chunk_base.h's pending_ops_)
 //   5. the DEFINITION of an object whose TYPE is itself conditional --
@@ -157,7 +157,7 @@ inline bool mode_perf  = false; ///< g_bench_mode == perf
  */
 inline void set_bench_mode(BenchMode mode)
 {
-    // An int64 build (BENCH_INT64) checks against the same data_tab* files as
+    // An int64 build (BENCH_INT64) checks against the same data_array* files as
     // the 32-bit one: they hold element values and a checksum, nothing sized by
     // Int, and the index type changes no value the bench computes. A mismatch
     // there is a real 32/64-bit divergence -- in the library's index path, or
@@ -241,7 +241,7 @@ inline Int get_size_data(double multiplier = 1.0, double divisor = 1.0)
  * @brief Refuse factors that push the bench's Int arithmetic past its range.
  * @details The largest Int the bench computes is below
  *          max(2 * sz + 65536, sz + max(interval, 2 * iter_max, 65536)):
- *            - tab_float and tab_char are CREATED at 2 * sz (shrink_bench.cpp,
+ *            - array_float and array_char are CREATED at 2 * sz (shrink_bench.cpp,
  *              resized to sz afterwards): the largest term. It is what made
  *              --mode perf --multiply 2 create a float array of 4e9 elements
  *              wrapped to a negative size (std::bad_alloc);

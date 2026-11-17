@@ -374,7 +374,7 @@ class ChunkFastCompPolicy : public ChunkThreadPolicy<T, Derived>
      * @brief Append this chunk to @p ll_compt if all @p n_elems elements are zero.
      * @param ll_compt  out: list of compressible chunks
      * @param chunk_index this chunk's index in its array
-     * @param array_id   its array's tab index
+     * @param array_id   its array's array index
      * @param n_elems   THIS chunk's element count -- never the ambient size, see
      *                  chunk_tuples.h's note on the field it is carried in
      */

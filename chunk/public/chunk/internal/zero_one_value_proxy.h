@@ -96,7 +96,7 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
 
     /**
      * @brief Initialize second_value and index without full metadata load
-     * @details Lighter-weight alternative to set_info_on_chunk() when tab/chunk info
+     * @details Lighter-weight alternative to set_info_on_chunk() when array/chunk info
      *          is not immediately needed.
      * @post second_value and ind are valid; array_id unchanged
      */
@@ -373,11 +373,11 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
     using SecondValueBase = SecondValueProxyBase<Derived, T, Chunk<T>>;
     using Base            = ProxyBase<Derived, T, Chunk<T>>;
 
+    using Base::array_is_inside_chunk_list_to_compress;
     using Base::chunk_;
     using Base::num_;
     using Base::read_values;
     using Base::read_values_async;
-    using Base::tab_is_inside_chunk_list_to_compress;
     using Base::values_;
     using ProxySpec<T, Derived>::inf_array_;
 
@@ -485,7 +485,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
     /**
      * @brief Get the compression candidate list for a specific thread
      * @param thr Thread rank [0, MAX_THREADS)
-     * @return Reference to vector of (chunk*, chunk_idx, tab_idx) tuples
+     * @return Reference to vector of (chunk*, chunk_idx, array_idx) tuples
      * @details Uses second_value as key to index into per-thread compression maps.
      *          This allows grouping chunks with the same second_value for batch compression.
      */
@@ -496,7 +496,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
      * @brief Async-context counterpart of get_vec_tuple_to_compress_potentially_thr().
      * @param ctx Async write context (supplies the second_value key).
      * @param thr Thread rank [0, MAX_THREADS).
-     * @return Reference to vector of (chunk*, chunk_idx, tab_idx) tuples.
+     * @return Reference to vector of (chunk*, chunk_idx, array_idx) tuples.
      */
     VectorTuple4ChunkInt2<Chunk, T>& get_vec_tuple_to_compress_potentially_async_thr(auto* ctx, int thr) const;
 
@@ -524,14 +524,14 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
     }
 
     // ------------------------------------------------------------------
-    // Compression-tracking surface: needs the per-tab tracking arrays, which exist only in
+    // Compression-tracking surface: needs the per-array tracking arrays, which exist only in
     // this mode. Same shape as ProxyBaseFastCompPolicy in proxy_base.h.
     // ------------------------------------------------------------------
 
     /**
      * @brief No-op, called at array teardown. The slot's buffer is released when
-     *        resize_tab_is_int() reassigns this array_id; a slot never reused keeps it until exit.
-     * @param array_id Tab index being torn down.
+     *        resize_array_is_int() reassigns this array_id; a slot never reused keeps it until exit.
+     * @param array_id Array index being torn down.
      */
     static void clear_is_int([[maybe_unused]] int array_id)
     {
@@ -540,28 +540,28 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
     }
 
     /**
-     * @brief Get the compression tracking array for a tab
-     * @param array_id Tab index
+     * @brief Get the compression tracking array for a array
+     * @param array_id Array index
      * @return Reference to the atomic char array
-     * @pre array_id must be < tab_is_inside_chunk_list_to_compress.size()
+     * @pre array_id must be < array_is_inside_chunk_list_to_compress.size()
      */
 
-    static ChunkFlagRowT& get_tab_is_inside_list_to_compress(int array_id)
+    static ChunkFlagRowT& get_array_is_inside_list_to_compress(int array_id)
     {
-        return tab_is_inside_chunk_list_to_compress[array_id];
+        return array_is_inside_chunk_list_to_compress[array_id];
     }
 
     /**
      * @brief Reset compression flag for a specific chunk
-     * @param array_id Tab index
+     * @param array_id Array index
      * @param chunk_index Chunk index
      * @post Chunk marked as not in compression list (can be re-added)
      * @note Thread safety: Memory order release ensures visibility to all threads
      */
 
-    static void reset_tab_is_inside_list_to_compress(int array_id, int chunk_index) noexcept
+    static void reset_array_is_inside_list_to_compress(int array_id, int chunk_index) noexcept
     {
-        tab_is_inside_chunk_list_to_compress[array_id][chunk_index].store(0, std::memory_order_release);
+        array_is_inside_chunk_list_to_compress[array_id][chunk_index].store(0, std::memory_order_release);
     }
 
     /**
@@ -728,7 +728,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     using Base::chunk_;        ///< Reference to the associated chunk.
     using Base::chunk_index_;  ///< Index of the chunk within the source array.
     using Base::num_;          ///< Index of the current element within the chunk.
-    using Base::ptr_on_array_; ///< pointer to array (for tab lookup)
+    using Base::ptr_on_array_; ///< pointer to array (for array lookup)
     using Base::read_values;
     using Base::values_; ///< Pointer to chunk's data array
 
@@ -741,8 +741,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     // Do not add `using Base::read_values_async;`: it exists only in the Enabled=true
     // specialisation (imported in zero_one_value::ProxyFastCompPolicy<..., true>), so it breaks builds
     // without fast block compression.
-    using Base::ptr_is_inside_chunk_list_to_compress_; ///< Per-chunk compression flag pointer
-    using Base::tab_is_inside_chunk_list_to_compress;  ///< Global compression tracking array
+    using Base::array_is_inside_chunk_list_to_compress; ///< Global compression tracking array
+    using Base::ptr_is_inside_chunk_list_to_compress_;  ///< Per-chunk compression flag pointer
 
     // Declared per zero_one_value::ProxyFastCompPolicy specialisation: the deferred and counter forms are
     // different algorithms (and pass `operation` different arguments).
@@ -984,9 +984,9 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     // ========================================================================
 
     /**
-     * @brief Extract and cache tab number from compression metadata
+     * @brief Extract and cache array number from compression metadata
      * @pre inf_array must be populated via get_info_second_value()
-     * @post array_id contains valid tab index
+     * @post array_id contains valid array index
      */
     void set_array_id() noexcept
     {
@@ -1003,7 +1003,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     }
 
     /**
-     * @brief Initialize both tab number and compression flag pointer
+     * @brief Initialize both array number and compression flag pointer
      * @details Convenience method combining set_array_id() and
      *          set_ptr_is_inside_chunk_list_to_compress()
      * @post Both array_id and ptr_is_inside_chunk_list_to_compress_ are valid
@@ -1011,7 +1011,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      * @note No build-mode guard: the sole caller
      *       (SecondValueProxyBase::write_with_optional_lock_with_set_ptr) is under
      *       `if constexpr (chunk_config::use_fast_block_compression)`, so the empty
-     *       tab_is_inside_chunk_list_to_compress of other modes is never indexed.
+     *       array_is_inside_chunk_list_to_compress of other modes is never indexed.
      */
     void set_array_id_ptr_is_inside_chunk() noexcept
     {

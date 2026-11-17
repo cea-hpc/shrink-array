@@ -58,7 +58,7 @@ void zero::Array<T, IntType>::rebuild_storage(IntType sz)
 
             if constexpr (chunk_config::use_fast_block_compression)
             {
-                Proxy<T>::resize_tab_is_int(this->array_id_, chunk_count_);
+                Proxy<T>::resize_array_is_int(this->array_id_, chunk_count_);
             }
         }
         else if (sz && !this->size_policy_.size())
@@ -221,7 +221,7 @@ void zero::Array<T, IntType>::clear_core()
         pmp::team(pmp::Options{},
                   [&](pmp::Team& team)
                   {
-                      const int chunk_count0 = get_size_max_tab_omp(chunk_count_);
+                      const int chunk_count0 = get_size_max_array_omp(chunk_count_);
 
                       std::vector<Chunk<T>*> ll_chunk_loc;
                       ll_chunk_loc.reserve(chunk_count0);
@@ -314,7 +314,7 @@ void zero::Array<T, IntType>::clear_core()
     // The candidate flags (one byte per chunk): released now that the purge
     // at the top has run and the chunks are gone -- a re-chunk's old storage
     // dies under its own array_id, which nothing reuses.
-    Proxy<T>::release_tab_is_int(this->array_id_);
+    Proxy<T>::release_array_is_int(this->array_id_);
     probe.mark(internal::TeardownStep::tables);
 }
 
@@ -328,7 +328,7 @@ void zero::Array<T, IntType>::compress_int(pmp::Team& team, bool verbose)
     }
 
 
-    const int chunk_count0 = get_size_max_tab_omp(chunk_count_, true);
+    const int chunk_count0 = get_size_max_array_omp(chunk_count_, true);
 
     std::vector<int> ll;
     ll.reserve(chunk_count0);
@@ -449,7 +449,7 @@ void zero::Array<T, IntType>::resize(IntType newsz)
     // dirty bitset are reallocated: a queued op holds a reference to its chunk.
     // And BEFORE the compression pass (as SecondValueArrayBase::resize_common()): a
     // replayed write can queue its chunk again, and the realloc and
-    // resize_tab_is_int() rely on the pass leaving the lists empty.
+    // resize_array_is_int() rely on the pass leaving the lists empty.
     // force: see clear_core().
     this->flush_pending_deferred_ops(/*force=*/true);
 
@@ -483,7 +483,7 @@ void zero::Array<T, IntType>::resize(IntType newsz)
 
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        Proxy<T>::resize_tab_is_int(array_id, chunk_count_);
+        Proxy<T>::resize_array_is_int(array_id, chunk_count_);
     }
     Manager::increm_somme_chunk_create(chunk_count_ - old_chunk_count);
     Manager::compute_size_buffer_reuse();

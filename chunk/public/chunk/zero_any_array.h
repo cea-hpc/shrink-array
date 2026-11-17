@@ -33,8 +33,8 @@
 #include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
 #include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
 #include "chunk/config.h"                               // for threaded, g_in_rechunk_rebuild
-#include "chunk/internal/pmp_chunk.h"           // CHUNK_PMP_IN_PARALLEL_REGION (reclaim_second_values), pmp::Team
-#include "chunk/internal/tab_cst_val2_holder.h" // for GlobalVecHolder (cst2 GC)
+#include "chunk/internal/pmp_chunk.h"             // CHUNK_PMP_IN_PARALLEL_REGION (reclaim_second_values), pmp::Team
+#include "chunk/internal/array_cst_val2_holder.h" // for GlobalVecHolder (cst2 GC)
 #include "chunk/internal/write_compress_sync_policy.h" // for WriteCompressSyncPolicy
 #include "chunk/internal/array_chunk_core.h"           // the core the bases share
 #include "chunk/internal/zero_any_proxy.h"             // zero_any::Proxy<T> and its tables
@@ -109,7 +109,7 @@ void mark_second_values(std::vector<std::uint8_t>& referenced)
     const std::size_t nrows = Spec::second_value_row_count();
     for (std::size_t r = 0; r < nrows; ++r)
     {
-        const auto& row = Spec::get_tab_second_value(static_cast<int>(r));
+        const auto& row = Spec::get_array_second_value(static_cast<int>(r));
         for (const auto& slot : row)
         {
             if constexpr (SecondValueTraits<T>::indexed)
@@ -215,7 +215,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
      * @brief The destructor's body: release the storage, then the registry entry.
      * @warning The erase() is required: a later array at this address (common for stack
      *          arrays, e.g. rechunk_to()'s @c tmp) would inherit the stale array_id
-     *          (get_array_id() returns the FIRST match) and corrupt another tab's metadata.
+     *          (get_array_id() returns the FIRST match) and corrupt another array's metadata.
      */
     void destroy_storage();
 
@@ -424,7 +424,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
      */
     auto get_metadata(IntType index) const noexcept
     {
-        return ProxyType::BaseSpec::get_tab_second_value(array_id_, this->chunk_index_of(index));
+        return ProxyType::BaseSpec::get_array_second_value(array_id_, this->chunk_index_of(index));
     }
 
     /// @brief Storage teardown shared by clear() and rechunk_to().
@@ -479,7 +479,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
     static void gc_collect_live(std::unordered_set<const void*>& live);
 
     /// @brief This array holds one reference on the chunk type's cst2 registry
-    ///        (TabCstVal2Holder). See acquire_cst2_registry().
+    ///        (ArrayCstVal2Holder). See acquire_cst2_registry().
     bool holds_cst2_registry_ = false;
 };
 
@@ -492,7 +492,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
  *          second-value table (zero_any::ProxySpec), garbage-collected through GlobalVecHolder.
  *
  *          Each array registers its address in zero_any::Proxy::array_registry to get a array_id,
- *          the index into every per-tab metadata table. That registration is the array's
+ *          the index into every per-array metadata table. That registration is the array's
  *          identity: taken in pre_create_hook(), exchanged by rechunk_swap_identity(),
  *          released in the destructor.
  *

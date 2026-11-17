@@ -40,14 +40,14 @@ non-zero value**: its metadata are lighter than those of `zero_any`.
 ## 2. Usage
 
 ```cpp
-zero_one_value::Array<double> tab(n);
-tab.set_second_value(1.0);      // declare it before the parallel phases
+zero_one_value::Array<double> arr(n);
+arr.set_second_value(1.0);      // declare it before the parallel phases
 
 #pragma omp parallel for
 for (long i = 0; i < n; ++i)
-    tab[i] = f(i);              // write: goes through a proxy
+    arr[i] = f(i);              // write: goes through a proxy
 
-double s = std::as_const(tab)[i];   // read: returns a T
+double s = std::as_const(arr)[i];   // read: returns a T
 ```
 
 The interface is close to a `std::vector`: `size()`, `resize()`, `at()`, constant iterators,
@@ -328,7 +328,7 @@ Same example as in the old version, still valid:
 
 ```cpp
 for (long i = 0; i < n; ++i)
-    tab[i] = second_value;
+    arr[i] = second_value;
 ```
 
 At construction, all chunks are at `cst_val1`. The first write to each chunk
@@ -368,7 +368,7 @@ applied first:
   CAS of the chunk's flag, since a refusal after it would leave the flag set and the chunk
   never queued again.
 
-An atomic flag per chunk ("already a candidate", `tab_is_inside_chunk_list_to_compress`,
+An atomic flag per chunk ("already a candidate", `array_is_inside_chunk_list_to_compress`,
 indexed by `array_id`) guarantees that a chunk is queued **only once** until the
 next pass.
 

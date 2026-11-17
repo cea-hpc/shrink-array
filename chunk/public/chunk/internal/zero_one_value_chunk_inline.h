@@ -411,7 +411,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_chunk_to
             compress_one(chunk_t, std::get<3>(tup).count());
 
             // AFTER the compression, never before -- see the ORDER note above.
-            Proxy<T>::reset_tab_is_inside_list_to_compress(array_id, chunk_index);
+            Proxy<T>::reset_array_is_inside_list_to_compress(array_id, chunk_index);
         }
     }
 
@@ -526,7 +526,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_t
             chunk_t->fill_list_to_compress(ll_compt1, ll_compt2, inf_array, chunk_index, array_id, n_elems);
             // Scanned, still marked: hand its queue flag back before the mark can go down,
             // here for the chunks the scan drops (queue_flag.h, F6).
-            queue_flag::hand_back(Proxy<T>::get_tab_is_inside_list_to_compress(array_id)[chunk_index]);
+            queue_flag::hand_back(Proxy<T>::get_array_is_inside_list_to_compress(array_id)[chunk_index]);
             // Not selected by the scan: the writers may have it back now.
             if (ll_compt1.size() == n1 && ll_compt2.size() == n2)
             {
@@ -555,7 +555,7 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_t
             const auto n2 = ll_compt2.size();
             chunk_t->fill_list_to_compress_bool(ll_compt1, ll_compt2, chunk_index, array_id, n_elems);
             // Scanned, still marked: hand its queue flag back first (queue_flag.h, F6).
-            queue_flag::hand_back(Proxy<T>::get_tab_is_inside_list_to_compress(array_id)[chunk_index]);
+            queue_flag::hand_back(Proxy<T>::get_array_is_inside_list_to_compress(array_id)[chunk_index]);
             if (ll_compt1.size() == n1 && ll_compt2.size() == n2)
             {
                 chunk_t->steal_unmark();
@@ -706,8 +706,8 @@ void zero_one_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compre
 
     queue_flag::release_candidates(
         vec_tuple_to_compress, sz, [](int array_id, int chunk_index) -> auto&
-        { return Proxy<T>::get_tab_is_inside_list_to_compress(array_id)[chunk_index]; },
-        [](int array_id, int chunk_index) { Proxy<T>::reset_tab_is_inside_list_to_compress(array_id, chunk_index); });
+        { return Proxy<T>::get_array_is_inside_list_to_compress(array_id)[chunk_index]; },
+        [](int array_id, int chunk_index) { Proxy<T>::reset_array_is_inside_list_to_compress(array_id, chunk_index); });
 
     if (proxy2)
     {
@@ -1206,10 +1206,10 @@ template <typename T>
     }
     if constexpr (build_config::any_check)
     {
-        if (static_cast<size_t>(ind) >= tab_m_ptr_cst_val2->size()) [[unlikely]]
+        if (static_cast<size_t>(ind) >= array_m_ptr_cst_val2->size()) [[unlikely]]
         {
             CHUNK_INVARIANT_FAILED("[chunk] suspect get_cst_val2<{}>: ind={} size={}", typeid(T).name(), ind,
-                                   tab_m_ptr_cst_val2->size());
+                                   array_m_ptr_cst_val2->size());
             return nullptr;
         }
     }
@@ -1217,11 +1217,11 @@ template <typename T>
     T* ret = nullptr;
     if constexpr (use_mm_protect)
     {
-        ret = (*tab_m_ptr_cst_val2)[ind];
+        ret = (*array_m_ptr_cst_val2)[ind];
     }
     else
     {
-        ret = (*tab_m_ptr_cst_val2)[ind].data();
+        ret = (*array_m_ptr_cst_val2)[ind].data();
     }
     CHUNK_CHECK_VALUES_PTR(ret, "get_cst_val2");
     return ret;
@@ -1230,7 +1230,7 @@ template <typename T>
 template <typename T>
 [[nodiscard]] bool zero_one_value::ChunkSpec<T>::is_cst_val2_any(const T* vals) noexcept
 {
-    const auto nb_cst_val2 = static_cast<int>(tab_m_ptr_cst_val2->size());
+    const auto nb_cst_val2 = static_cast<int>(array_m_ptr_cst_val2->size());
     for (int i = 0; i < nb_cst_val2; ++i)
     {
         if (vals == get_cst_val2(i))

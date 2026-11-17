@@ -28,7 +28,7 @@ that have this value. The read is exactly the same as in the other variants.
 
 The library: `shrink_array::zero_any` (it defines `CHUNK_VARIANT_ZERO_ANY`). Code: `chunk/internal/zero_any_chunk.h`, `chunk/zero_any_array.h`,
 `internal/zero_any_chunk_inline.h`, `internal/zero_any_array_inline.h`, `internal/zero_any_proxy.h`,
-`internal/zero_any_proxy_inline.h`, `internal/tab_cst_val2_holder.h`.
+`internal/zero_any_proxy_inline.h`, `internal/array_cst_val2_holder.h`.
 
 ## 2. Per-chunk metadata
 
@@ -36,9 +36,9 @@ Each array has, indexed by its number (`array_id`), three rows with one entry pe
 
 | row | size per chunk | content |
 |---|---|---|
-| `tab_type_cst_val` | 1 byte | the constant type (0 or 1) |
-| `tab_second_value` | `sizeof(T)` bytes by default | the chunk's second value |
-| `tab_is_inside_chunk_list_to_compress` | 1 byte | "already in compression list" |
+| `array_type_cst_val` | 1 byte | the constant type (0 or 1) |
+| `array_second_value` | `sizeof(T)` bytes by default | the chunk's second value |
+| `array_is_inside_chunk_list_to_compress` | 1 byte | "already in compression list" |
 
 With the CMake option **`CHUNK_SECOND_VALUE_INDEXED`** (disabled by default), the second-value
 slot of types larger than 4 bytes holds the **identifier** of the registry array
@@ -52,13 +52,13 @@ of object, plus 2 bytes and `sizeof(T)`), and therefore the one that gains the m
 see [adaptive_rechunk.md](adaptive_rechunk.md).
 
 When a storage is destroyed (the array's end of life, or the old storage of a rechunk), its
-three rows are **freed** (`zero_any::Proxy::clear_tab_is_int`), not just emptied. Until
+three rows are **freed** (`zero_any::Proxy::clear_array_is_int`), not just emptied. Until
 September 2026, `clear()` kept their capacity, and each rechunk left the rows of
 the old storage behind: 3.5 GB on the benchmark, with 15 rechunked arrays.
 
 ## 3. The second-value registry
 
-`tab_cst_val2_holder.h`. For each element type, a registry **unique to the process**
+`array_cst_val2_holder.h`. For each element type, a registry **unique to the process**
 (`GlobalVecHolder`) holds an array filled with each distinct second value encountered.
 
 - It is organised as chained **segments of 64 slots**, rather than as a resizable

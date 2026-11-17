@@ -28,7 +28,7 @@ namespace shrink_array
 
 /**
  * @brief Which of a zero_any chunk's two constants it is compressed to: the
- *        one byte per chunk of zero_any::Proxy<T>::tab_type_cst_val, read when
+ *        one byte per chunk of zero_any::Proxy<T>::array_type_cst_val, read when
  *        the chunk's values are pointed back at its constant.
  * @details Meaningful only while the chunk is constant. `first` is also the
  *          value a fresh row is filled with.

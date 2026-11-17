@@ -24,8 +24,8 @@
 #include <mutex>   // std::mutex, std::scoped_lock
 #include <vector>  // std::vector
 
-#include "chunk/internal/tab_cst_val2_holder.h" // the class these bodies belong to
-#include "chunk/internal/same_value.h"          // same_value
+#include "chunk/internal/array_cst_val2_holder.h" // the class these bodies belong to
+#include "chunk/internal/same_value.h"            // same_value
 
 namespace shrink_array
 {
@@ -39,7 +39,7 @@ template <typename T>
 {
     if constexpr (SecondValueTraits<T>::indexed)
     {
-        return TabCstVal2Holder<T>::value_of_id(*slot);
+        return ArrayCstVal2Holder<T>::value_of_id(*slot);
     }
     else
     {
@@ -54,7 +54,7 @@ void SecondValueRef<T>::set(T value) const
     {
         // Up to the record: a reclaim must not run in between (LookupGuard).
         const typename GlobalVecHolder<T>::LookupGuard in_flight;
-        *slot = TabCstVal2Holder<T>::id_for_value(value);
+        *slot = ArrayCstVal2Holder<T>::id_for_value(value);
     }
     else
     {
@@ -65,12 +65,12 @@ void SecondValueRef<T>::set(T value) const
 template <typename T>
 void SecondValueRef<T>::set_from_array(const T* src) const noexcept
 {
-    // bool has no registry (TabCstVal2Holder<bool>): value_of_ptr would index
+    // bool has no registry (ArrayCstVal2Holder<bool>): value_of_ptr would index
     // value_by_id with an address-sized id. Never called for bool today.
     static_assert(!std::is_same_v<T, bool>, "SecondValueRef<bool>::set_from_array: bool has no registry");
     if constexpr (SecondValueTraits<T>::indexed)
     {
-        *slot = TabCstVal2Holder<T>::id_of_ptr(src);
+        *slot = ArrayCstVal2Holder<T>::id_of_ptr(src);
     }
     else
     {
@@ -319,7 +319,7 @@ T* GlobalVecHolder<T>::index_lookup(InT<T> value) noexcept
     // The table named here is never freed while a reader can hold it (see
     // index_generations). A superseded generation misses newer values: a miss
     // only means "not found here".
-    const IndexTable* table = index_tab.load(std::memory_order_acquire);
+    const IndexTable* table = index_table.load(std::memory_order_acquire);
     if (table == nullptr)
     {
         return nullptr;
@@ -344,7 +344,7 @@ T* GlobalVecHolder<T>::index_lookup(InT<T> value) noexcept
 template <typename T>
 void GlobalVecHolder<T>::index_publish(InT<T> value, T* ptr) noexcept
 {
-    IndexTable* table = index_tab.load(std::memory_order_relaxed);
+    IndexTable* table = index_table.load(std::memory_order_relaxed);
     // Grow before the table passes half full: linear probing degrades
     // sharply beyond that.
     if (table == nullptr || (table->used + 1) * 2 > table->cap)
@@ -506,7 +506,7 @@ void GlobalVecHolder<T>::region_init()
     }
     // Every slot is carved at a multiple of region_stride (id_stride),
     // which is what turns a slot pointer into a small identifier and back
-    // (TabCstVal2Holder::id_of_ptr / value_of_id). Nothing is ever stored
+    // (ArrayCstVal2Holder::id_of_ptr / value_of_id). Nothing is ever stored
     // in the region, so a slot only has to give each identifier a distinct
     // address: one cache line does, and no page is ever backed.
     region_end     = static_cast<std::byte*>(raw) + region_usable;
@@ -578,7 +578,7 @@ size_t GlobalVecHolder<T>::index_hash(InT<T> value) noexcept
 template <typename T>
 GlobalVecHolder<T>::IndexTable* GlobalVecHolder<T>::index_grow() noexcept
 {
-    const IndexTable* old = index_tab.load(std::memory_order_relaxed);
+    const IndexTable* old = index_table.load(std::memory_order_relaxed);
     const std::size_t cap = old == nullptr ? index_cap : old->cap * 2;
     auto              nt  = std::make_unique<IndexTable>(cap);
     if (old != nullptr)
@@ -602,7 +602,7 @@ GlobalVecHolder<T>::IndexTable* GlobalVecHolder<T>::index_grow() noexcept
     }
     IndexTable* raw = nt.get();
     index_generations.push_back(std::move(nt));
-    index_tab.store(raw, std::memory_order_release);
+    index_table.store(raw, std::memory_order_release);
     return raw;
 }
 
@@ -614,16 +614,16 @@ void GlobalVecHolder<T>::index_clear() noexcept
     // Single-threaded by contract, so this is the one point where the
     // superseded generations can go: no reader holds any of them. The
     // live table goes too; the next publish starts again at index_cap.
-    index_tab.store(nullptr, std::memory_order_release);
+    index_table.store(nullptr, std::memory_order_release);
     index_generations.clear();
 }
 
 // ---------------------------------------------------------------------------
-// shrink_array::TabCstVal2Holder<T>
+// shrink_array::ArrayCstVal2Holder<T>
 // ---------------------------------------------------------------------------
 
 template <typename T>
-[[nodiscard]] T* TabCstVal2Holder<T>::find_or_set_ind_cst_val2(T second_v, SecondValueRef<T> ptr_second_value)
+[[nodiscard]] T* ArrayCstVal2Holder<T>::find_or_set_ind_cst_val2(T second_v, SecondValueRef<T> ptr_second_value)
 {
     // Up to the record in the second-value table, which the reclaim's mark
     // scans: a reclaim must not run in between (LookupGuard).
@@ -634,7 +634,7 @@ template <typename T>
 }
 
 template <typename T>
-[[nodiscard]] T* TabCstVal2Holder<T>::find_or_set_ind_cst_val2_release(T second_v, SecondValueRef<T> ptr_second_value)
+[[nodiscard]] T* ArrayCstVal2Holder<T>::find_or_set_ind_cst_val2_release(T second_v, SecondValueRef<T> ptr_second_value)
 {
     const typename VecHolder::LookupGuard in_flight; // as find_or_set_ind_cst_val2()
     T*                                    buf = find_or_register(second_v);
@@ -643,7 +643,7 @@ template <typename T>
 }
 
 template <typename T>
-[[nodiscard]] T* TabCstVal2Holder<T>::find_cst_val2_ptr(InT<T> second_v)
+[[nodiscard]] T* ArrayCstVal2Holder<T>::find_cst_val2_ptr(InT<T> second_v)
 {
     using Gvh = GlobalVecHolder<T>;
     const typename Gvh::LookupGuard in_flight; // holds an index generation / the chain
@@ -670,7 +670,7 @@ template <typename T>
 }
 
 template <typename T>
-[[nodiscard]] T TabCstVal2Holder<T>::value_of_ptr_checked(const T* ptr) noexcept
+[[nodiscard]] T ArrayCstVal2Holder<T>::value_of_ptr_checked(const T* ptr) noexcept
 {
     if (!is_cst_val2_ptr(ptr))
     {
@@ -685,7 +685,7 @@ template <typename T>
 }
 
 template <typename T>
-T* TabCstVal2Holder<T>::alloc_chunk(T val)
+T* ArrayCstVal2Holder<T>::alloc_chunk(T val)
 {
     // A reclaimed identifier first; the region only when none is free.
     T* buf = VecHolder::take_free_slot();
@@ -702,7 +702,7 @@ T* TabCstVal2Holder<T>::alloc_chunk(T val)
 }
 
 template <typename T>
-[[nodiscard]] T* TabCstVal2Holder<T>::find_or_register(InT<T> second_v)
+[[nodiscard]] T* ArrayCstVal2Holder<T>::find_or_register(InT<T> second_v)
 {
     const typename VecHolder::LookupGuard in_flight; // check builds; nests in the callers'
     // ── Hot path, lock-free ───────────────────────────────────────────

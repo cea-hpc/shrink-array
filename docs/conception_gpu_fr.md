@@ -321,8 +321,8 @@ qui le justifiait n'existe plus) : il est conservé pour l'interopérabilité et
 
 Le descripteur porte la constante : c'est la forme naturelle de `zero_any`, et la variante à
 prototyper en premier. Ce qui disparaît : le registre des secondes valeurs
-(`tab_cst_val2_holder.h`), ses segments, son index haché, `reclaim_second_values()`, les lignes
-`tab_type_cst_val` et `tab_second_value`, `CHUNK_SECOND_VALUE_INDEXED`. Le coût par chunk
+(`array_cst_val2_holder.h`), ses segments, son index haché, `reclaim_second_values()`, les lignes
+`array_type_cst_val` et `array_second_value`, `CHUNK_SECOND_VALUE_INDEXED`. Le coût par chunk
 redevient uniforme : le descripteur.
 
 ### 8.4 `pattern`

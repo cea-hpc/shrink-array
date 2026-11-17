@@ -46,13 +46,13 @@ void Simu::compute_distribution()
 
     ll.resize(nbmat);
 
-    tab_size.resize(iter_max);
-    tab_start.resize(iter_max);
+    array_size.resize(iter_max);
+    array_start.resize(iter_max);
 
     for (int it = 0; it < iter_max; ++it)
     {
-        tab_size[it].resize(nbmat);
-        tab_start[it].resize(nbmat);
+        array_size[it].resize(nbmat);
+        array_start[it].resize(nbmat);
 
         //  we store the distribution in tables this allows the parallelization of the next loops
 
@@ -73,8 +73,8 @@ void Simu::compute_distribution()
                 assert(size <= interval_vector);
             }
 
-            tab_size[it][mat]  = size;
-            tab_start[it][mat] = begin;
+            array_size[it][mat]  = size;
+            array_start[it][mat] = begin;
 
             if (is_verbose())
             {

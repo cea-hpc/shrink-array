@@ -163,7 +163,7 @@ void report_size_prediction(const std::vector<std::pair<bool, T>>& summary,
         if (gain_pct >= 10.0)
         {
             CHUNK_LOG(info, advisor,
-                      "size prediction {} tab={}: current S={} -> {} B ; optimal S'={} -> {} B (mem -{:.1f}%, {}/{} "
+                      "size prediction {} array={}: current S={} -> {} B ; optimal S'={} -> {} B (mem -{:.1f}%, {}/{} "
                       "blocks constant)",
                       variant, array_id, chunk_sz, current.mem_bytes, best.s_prime, best.mem_bytes, gain_pct,
                       best.n_const_blocks, best.n_blocks);

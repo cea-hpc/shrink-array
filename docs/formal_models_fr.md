@@ -375,7 +375,7 @@ l'écart du chunk (protocole 1), la case y est donc stable.
 ### 8.7 F6 : un chunk rendu constant pendant la restitution d'une passe n'était jamais mis en file (corrigé)
 
 Le modèle est `formal/queue_handback.c` ; il ne vérifie aucun ordre mémoire, mais un protocole :
-le drapeau « en file » d'un chunk (`tab_is_inside_chunk_list_to_compress`) et la marque de la
+le drapeau « en file » d'un chunk (`array_is_inside_chunk_list_to_compress`) et la marque de la
 passe. Une passe restitue chaque candidat par `steal_unmark()`, puis remet son drapeau (la fin de
 `make_block_compression()` ; l'ordre est gardé exprès : une fois le drapeau baissé, une autre passe
 peut mettre le chunk en file et le marquer, et une levée de marque tardive effacerait sa
@@ -473,7 +473,7 @@ l'autre : une forme de store buffering, que permettent le relaxé de C11, x86-TS
 deux lisent l'ancien bord, aucun ne met le chunk en file, et un chunk uniforme reste
 matérialisé. L'audit des builds check l'a compté sur Milan une fois corrigé le trou des tranches
 partielles des agrégats : 6 à 52 blocs par run de `shrink_bench` de 16 à 128 threads, tous sur
-`tab1` et `tab2` (`double`, remplis par `fill_range_mt()` à 0 ou à la seconde valeur), aucun sur
+`arr1` et `arr2` (`double`, remplis par `fill_range_mt()` à 0 ou à la seconde valeur), aucun sur
 les types d'éléments sans ce filtre. Le chunk du modèle a 4 éléments ; il a trouvé le trou tout de
 suite, et une exécution native sur x86 le rencontre en quelques centaines de milliers d'essais.
 

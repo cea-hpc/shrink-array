@@ -28,7 +28,7 @@ qui ont cette valeur. La lecture est exactement celle des autres variantes.
 
 La bibliothèque : `shrink_array::zero_any` (elle définit `CHUNK_VARIANT_ZERO_ANY`). Code : `chunk/internal/zero_any_chunk.h`, `chunk/zero_any_array.h`,
 `internal/zero_any_chunk_inline.h`, `internal/zero_any_array_inline.h`, `internal/zero_any_proxy.h`,
-`internal/zero_any_proxy_inline.h`, `internal/tab_cst_val2_holder.h`.
+`internal/zero_any_proxy_inline.h`, `internal/array_cst_val2_holder.h`.
 
 ## 2. Les métadonnées par chunk
 
@@ -36,9 +36,9 @@ Chaque tableau a, indexées par son numéro (`array_id`), trois lignes d'une ent
 
 | ligne | taille par chunk | contenu |
 |---|---|---|
-| `tab_type_cst_val` | 1 octet | le type de constante (0 ou 1) |
-| `tab_second_value` | `sizeof(T)` octets par défaut | la seconde valeur du chunk |
-| `tab_is_inside_chunk_list_to_compress` | 1 octet | « déjà en liste de compression » |
+| `array_type_cst_val` | 1 octet | le type de constante (0 ou 1) |
+| `array_second_value` | `sizeof(T)` octets par défaut | la seconde valeur du chunk |
+| `array_is_inside_chunk_list_to_compress` | 1 octet | « déjà en liste de compression » |
 
 Avec l'option CMake **`CHUNK_SECOND_VALUE_INDEXED`** (désactivée par défaut), l'emplacement de
 seconde valeur des types de plus de 4 octets contient l'**identifiant** du tableau du registre
@@ -52,13 +52,13 @@ d'objet, plus 2 octets et `sizeof(T)`), et donc celle qui gagne le plus à gross
 voir [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md).
 
 Quand un stockage est détruit (fin de vie du tableau, ou ancien stockage d'un rechunk), ses
-trois lignes sont **libérées** (`zero_any::Proxy::clear_tab_is_int`), pas seulement vidées. Jusqu'en
+trois lignes sont **libérées** (`zero_any::Proxy::clear_array_is_int`), pas seulement vidées. Jusqu'en
 septembre 2026, `clear()` gardait leur capacité, et chaque rechunk laissait les lignes de
 l'ancien stockage derrière lui : 3,5 Go sur le banc, avec 15 tableaux rechunkés.
 
 ## 3. Le registre des secondes valeurs
 
-`tab_cst_val2_holder.h`. Pour chaque type d'élément, un registre **unique au processus**
+`array_cst_val2_holder.h`. Pour chaque type d'élément, un registre **unique au processus**
 (`GlobalVecHolder`) contient un tableau rempli de chaque seconde valeur distincte rencontrée.
 
 - Il est organisé en **segments de 64 emplacements** chaînés, plutôt qu'en tableau

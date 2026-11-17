@@ -40,8 +40,8 @@ InfoFreeElt::InfoFreeElt()
     {
         const int max_thr = FAST_ALLOC_PMP_MAX_THREADS;
 
-        tab_sz  = svalloc<IntMaxFreeElt>(max_thr);
-        tab_ptr = svalloc<VoidMaxFreeElt>(max_thr);
+        array_sz  = svalloc<IntMaxFreeElt>(max_thr);
+        array_ptr = svalloc<VoidMaxFreeElt>(max_thr);
 
         compt     = svcalloc<int>(max_thr);
         somme_sz_ = svcalloc<int>(max_thr);
@@ -53,12 +53,12 @@ InfoFreeElt::InfoFreeElt()
 /// @copydoc InfoFreeElt::~InfoFreeElt
 InfoFreeElt::~InfoFreeElt()
 {
-    if (tab_ptr == nullptr)
+    if (array_ptr == nullptr)
     {
         return; // serial build: nothing was allocated
     }
-    svfree(tab_ptr);
-    svfree(tab_sz);
+    svfree(array_ptr);
+    svfree(array_sz);
 
     svfree(compt);
     svfree(somme_sz_);
@@ -69,8 +69,8 @@ InfoFreeElt::~InfoFreeElt()
     // the OpenMP runtime's shutdown). Leave an empty batch set behind, not
     // dangling pointers: with nb_thr 0, try_free_block() frees at once and
     // clear_info_free_elt() has nothing to walk.
-    tab_ptr   = nullptr;
-    tab_sz    = nullptr;
+    array_ptr = nullptr;
+    array_sz  = nullptr;
     compt     = nullptr;
     somme_sz_ = nullptr;
     nb_thr    = 0;
@@ -79,10 +79,10 @@ InfoFreeElt::~InfoFreeElt()
 /// @copydoc StaticConstArray::clear_info_free_elt(int)
 void StaticConstArray::clear_info_free_elt(int thr_rank)
 {
-    for (int k = 0; k < tab_info_free_elt().compt[thr_rank]; ++k)
+    for (int k = 0; k < array_info_free_elt().compt[thr_rank]; ++k)
     {
-        const int szl  = tab_info_free_elt().tab_sz[thr_rank][k];
-        void*     ptrl = tab_info_free_elt().tab_ptr[thr_rank][k];
+        const int szl  = array_info_free_elt().array_sz[thr_rank][k];
+        void*     ptrl = array_info_free_elt().array_ptr[thr_rank][k];
         free_block_with_int(szl, ptrl);
     }
 }
@@ -94,10 +94,10 @@ void StaticConstArray::clear_info_free_elt()
     // have grown since (omp_set_num_threads) and would index past the arrays;
     // nb_thr is 0 serially, where nothing was allocated. reset(), not compt = 0:
     // somme_sz_ must come down too, or the emptied batch still counts as full.
-    for (int thr_rank = 0; thr_rank < tab_info_free_elt().nb_thr; ++thr_rank)
+    for (int thr_rank = 0; thr_rank < array_info_free_elt().nb_thr; ++thr_rank)
     {
         clear_info_free_elt(thr_rank);
-        tab_info_free_elt().reset(thr_rank);
+        array_info_free_elt().reset(thr_rank);
     }
 }
 

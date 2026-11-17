@@ -87,7 +87,7 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates()
         {
             compress_list(candidate_list());
         }
-        remove_candidates_of_tab(array_id);
+        remove_candidates_of_array(array_id);
     }
 }
 
@@ -137,7 +137,7 @@ template <typename Derived>
 }
 
 template <typename Derived>
-void RechunkHooks<Derived, true>::remove_candidates_of_tab(int array_id) noexcept
+void RechunkHooks<Derived, true>::remove_candidates_of_array(int array_id) noexcept
 {
     if constexpr (is_zero_any_family)
     {

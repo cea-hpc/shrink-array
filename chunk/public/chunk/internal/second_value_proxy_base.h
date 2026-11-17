@@ -67,8 +67,8 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
 
     // Both members exist on ProxyBase in every mode (the serial specialisation
     // declares them too); only their USE is mode-specific.
+    using Base::array_is_inside_chunk_list_to_compress;
     using Base::ptr_is_inside_chunk_list_to_compress_;
-    using Base::tab_is_inside_chunk_list_to_compress;
 
     // ========================================================================
     // CRTP: Access to derived class
@@ -301,7 +301,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      * @details Combines fast/slow path locking with automatic metadata
      *          initialization (set_array_id_ptr_is_inside_chunk(), needed by
      *          the fast-block-compression path). Useful for operations that
-     *          need tab/chunk information before writing.
+     *          need array/chunk information before writing.
      */
     template <typename WriteFn>
     [[nodiscard]] CHUNK_FORCE_INLINE bool write_with_optional_lock_with_set_ptr(WriteFn write_fn) noexcept;

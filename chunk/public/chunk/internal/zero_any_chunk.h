@@ -27,7 +27,7 @@
 #include "chunk/config.h"                           // build_config::threaded, chunk_config
 #include "chunk/internal/chunk_traits.h"            // ChunkTraits<Derived>::ManagerType (ChunkImpl, ChunkThreadPolicy)
 #include "chunk/internal/invariant_check.h"         // invariant_failed
-#include "chunk/internal/tab_cst_val2_holder.h"     // TabCstVal2Holder, SecondValueRef
+#include "chunk/internal/array_cst_val2_holder.h"   // ArrayCstVal2Holder, SecondValueRef
 #include "chunk/internal/pmp_chunk.h"               // CHUNK_PMP_THREAD_RANK
 #include "chunk/internal/ring_log_debug.h"          // ScopedRingLog, ring_log_* (RING_LOG builds)
 #include "chunk/internal/chunk_size_policy.h"       // ChunkElems
@@ -65,14 +65,14 @@ namespace zero_any
 // ─── Concurrent (OMP) chunk operations extracted from zero_any ──────────────
 // CRTP policy base with the lock-free CAS operations of OpenMP builds only: zero_any inherits it
 // through the OpenMP specialisation of zero_any::ChunkThreadPolicy, so in a serial build the methods do not
-// exist. Reaches zero_any's bases via self() (Base = SecondValueChunkBase, Holder = TabCstVal2Holder).
+// exist. Reaches zero_any's bases via self() (Base = SecondValueChunkBase, Holder = ArrayCstVal2Holder).
 /// @brief zero_any's lock-free CAS operations on `values` (OpenMP builds only).
 template <typename T, typename Derived>
 class ChunkConcurrentOps
 {
   public:
     using Base   = SecondValueChunkBase<T, Derived>;
-    using Holder = TabCstVal2Holder<T>;
+    using Holder = ArrayCstVal2Holder<T>;
 
     /// @brief Atomically mark this chunk constant and hand back its old buffer.
     /// @param num_compress_value 0 for the first constant, 1 for the second.
@@ -106,7 +106,7 @@ class ChunkConcurrentOps
     {
         return static_cast<Base*>(self());
     }
-    /// @brief `this` as a pointer to the TabCstVal2Holder base.
+    /// @brief `this` as a pointer to the ArrayCstVal2Holder base.
     Holder* holder() noexcept
     {
         return static_cast<Holder*>(self());
@@ -129,7 +129,7 @@ class ChunkStateQueries
 {
   public:
     using Base   = SecondValueChunkBase<T, Derived>;
-    using Holder = TabCstVal2Holder<T>;
+    using Holder = ArrayCstVal2Holder<T>;
 
     /// @brief Is the chunk compressed to a second value (its values pointer
     ///        lies in the second-value region; for bool, IS the flag block)?
@@ -421,7 +421,9 @@ template <typename T, typename Derived>
 // no move operations on purpose -- a move falls back to
 // the copy, which carries the per-chunk state the way the copy constructor documents.
 // NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
-class ChunkImpl : public ChunkThreadPolicy<T, Derived>, public TabCstVal2Holder<T>, public ChunkStateQueries<T, Derived>
+class ChunkImpl : public ChunkThreadPolicy<T, Derived>,
+                  public ArrayCstVal2Holder<T>,
+                  public ChunkStateQueries<T, Derived>
 {
   public:
     using Base         = SecondValueChunkBase<T, Derived>;                      ///< The CRTP chunk base.
@@ -440,7 +442,7 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>, public TabCstVal2Holder<
     using Base::first_value;
     using Base::values_;
 
-    using Holder = TabCstVal2Holder<T>;
+    using Holder = ArrayCstVal2Holder<T>;
 
     // block_clear / clear_st / clear / clear_int_st / create_value* live on
     // zero_any::ChunkThreadPolicy, one specialisation per mode (see above). Both declare
@@ -603,7 +605,7 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>, public TabCstVal2Holder<
 };
 
 /// @brief Chunk of values compressible to the first constant or to a second constant shared through the
-///        TabCstVal2Holder registry, detected automatically. All of it is ChunkImpl's, shared by the
+///        ArrayCstVal2Holder registry, detected automatically. All of it is ChunkImpl's, shared by the
 ///        zero_any family.
 /// @tparam T Element type.
 template <typename T>

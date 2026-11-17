@@ -32,7 +32,7 @@
  *
  *     BENCH_FOR_STATIC_NOWAIT_SCALAR(t, i, deb, start0)
  *     {
- *         tab[i] = ...;
+ *         arr[i] = ...;
  *     }
  *
  * - OpenMP: the macro is the pragma the loop had, then

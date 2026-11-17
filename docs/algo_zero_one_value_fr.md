@@ -40,14 +40,14 @@ non nulle** : ses métadonnées sont plus légères que celles de `zero_any`.
 ## 2. Utilisation
 
 ```cpp
-zero_one_value::Array<double> tab(n);
-tab.set_second_value(1.0);      // à déclarer avant les phases parallèles
+zero_one_value::Array<double> arr(n);
+arr.set_second_value(1.0);      // à déclarer avant les phases parallèles
 
 #pragma omp parallel for
 for (long i = 0; i < n; ++i)
-    tab[i] = f(i);              // écriture : passe par un proxy
+    arr[i] = f(i);              // écriture : passe par un proxy
 
-double s = std::as_const(tab)[i];   // lecture : renvoie un T
+double s = std::as_const(arr)[i];   // lecture : renvoie un T
 ```
 
 L'interface est proche d'un `std::vector` : `size()`, `resize()`, `at()`, itérateurs constants,
@@ -328,7 +328,7 @@ Même exemple que dans l'ancienne version, toujours valable :
 
 ```cpp
 for (long i = 0; i < n; ++i)
-    tab[i] = second_value;
+    arr[i] = second_value;
 ```
 
 À la construction, tous les chunks sont à `cst_val1`. La première écriture de chaque chunk
@@ -368,7 +368,7 @@ placés avant :
   avant la CAS du drapeau du chunk, car un refus après elle laisserait le drapeau levé et le
   chunk ne serait plus jamais mis en file.
 
-Un drapeau atomique par chunk (« déjà candidat », `tab_is_inside_chunk_list_to_compress`,
+Un drapeau atomique par chunk (« déjà candidat », `array_is_inside_chunk_list_to_compress`,
 indexé par `array_id`) garantit qu'un chunk n'est mis en file **qu'une fois** jusqu'à la
 passe suivante.
 

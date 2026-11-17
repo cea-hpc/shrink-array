@@ -20,14 +20,14 @@
 // code outside shrink-array -- so this is the only thing that runs it.
 // ============================================================================
 //
-//   sizes     alloc_block / free_block and alloc_tab / free_tab at sizes on,
+//   sizes     alloc_block / free_block and alloc_array / free_array at sizes on,
 //             between and past the ladder's buckets (1 byte to 1 MiB, the
 //             largest bucket being 65536): every block is fully writable and
 //             keeps its content until freed;
 //   distinct  a few thousand live blocks of mixed sizes at once never overlap
 //             (each is filled with its own pattern and checked after all the
 //             others were written), then all are freed and taken again;
-//   tab       alloc_tab's result is aligned to fast_alloc::alignment;
+//   array       alloc_array's result is aligned to fast_alloc::alignment;
 //   huge      (opt-in, BLK_HUGE=1) 2 GiB - 64, 2 GiB + 64 and 4 GiB + 64
 //             through both pairs: the size_t -> int / unsigned truncations
 //             (first and last 4 KiB written and read back; up to ~4 GiB
@@ -96,9 +96,9 @@ void expect(bool ok, const char* what)
 /// @brief One block per size, both front-end pairs.
 void check_sizes()
 {
-    bool ok_blk  = true;
-    bool ok_tab  = true;
-    bool aligned = true;
+    bool ok_blk   = true;
+    bool ok_array = true;
+    bool aligned  = true;
     for (std::size_t i = 0; i < std::size(test_sizes); ++i)
     {
         const std::size_t size = test_sizes[i];
@@ -112,26 +112,26 @@ void check_sizes()
         ok_blk = ok_blk && intact(ptr, size, i);
         fast_alloc::BlkAllocator::free_block(ptr, size);
 
-        void* tab = fast_alloc::BlkAllocator::alloc_tab(size);
-        if (tab == nullptr)
+        void* arr = fast_alloc::BlkAllocator::alloc_array(size);
+        if (arr == nullptr)
         {
-            ok_tab = false;
+            ok_array = false;
             continue;
         }
-        aligned = aligned && (reinterpret_cast<std::uintptr_t>(tab) % fast_alloc::alignment) == 0;
-        fill(tab, size, i + 1000);
-        ok_tab = ok_tab && intact(tab, size, i + 1000);
-        fast_alloc::BlkAllocator::free_tab(tab);
+        aligned = aligned && (reinterpret_cast<std::uintptr_t>(arr) % fast_alloc::alignment) == 0;
+        fill(arr, size, i + 1000);
+        ok_array = ok_array && intact(arr, size, i + 1000);
+        fast_alloc::BlkAllocator::free_array(arr);
     }
     expect(ok_blk, "alloc_block/free_block: 1 B to 1 MiB, on, between and past the buckets");
-    expect(ok_tab, "alloc_tab/free_tab: same sizes, size read back from the header");
-    expect(aligned, "alloc_tab: aligned to fast_alloc::alignment");
+    expect(ok_array, "alloc_array/free_array: same sizes, size read back from the header");
+    expect(aligned, "alloc_array: aligned to fast_alloc::alignment");
 }
 
 /// @brief Sizes past INT_MAX and UINT_MAX, where the front end must not
 ///        narrow before routing (free_block() sending [2 GiB, 4 GiB) to the
 ///        ladder, alloc_block() serving 4 GiB + 64 from the 64-byte bucket,
-///        an int header in alloc_tab()). Opt-in (BLK_HUGE=1): it touches
+///        an int header in alloc_array()). Opt-in (BLK_HUGE=1): it touches
 ///        gigabytes. A regression crashes rather than reporting FAIL.
 void check_huge()
 {
@@ -152,8 +152,8 @@ void check_huge()
         return intact(bytes, window, id) && intact(bytes + size - window, window, id + 1);
     };
 
-    bool ok_blk = true;
-    bool ok_tab = true;
+    bool ok_blk   = true;
+    bool ok_array = true;
     for (std::size_t i = 0; i < std::size(sizes); ++i)
     {
         const std::size_t size = sizes[i];
@@ -162,12 +162,12 @@ void check_huge()
         ok_blk    = ok_blk && ptr != nullptr && ends_ok(ptr, size, 10 * i);
         fast_alloc::BlkAllocator::free_block(ptr, size);
 
-        void* tab = fast_alloc::BlkAllocator::alloc_tab(size);
-        ok_tab    = ok_tab && tab != nullptr && ends_ok(tab, size, 10 * i + 5);
-        fast_alloc::BlkAllocator::free_tab(tab);
+        void* arr = fast_alloc::BlkAllocator::alloc_array(size);
+        ok_array  = ok_array && arr != nullptr && ends_ok(arr, size, 10 * i + 5);
+        fast_alloc::BlkAllocator::free_array(arr);
     }
     expect(ok_blk, "alloc_block/free_block: 2 GiB - 64, 2 GiB + 64, 4 GiB + 64");
-    expect(ok_tab, "alloc_tab/free_tab: same sizes, size_t header");
+    expect(ok_array, "alloc_array/free_array: same sizes, size_t header");
 }
 
 /// @brief Many live blocks at once: no two overlap; then reuse after free.
@@ -177,25 +177,25 @@ void check_distinct()
     for (int round = 0; round < 2; ++round)
     {
         std::vector<void*>       blk(n_items);
-        std::vector<void*>       tab(n_items);
+        std::vector<void*>       arr(n_items);
         std::vector<std::size_t> sz(n_items);
         for (std::size_t j = 0; j < n_items; ++j)
         {
             sz[j]  = test_sizes[j % 20]; // up to 65537: the ladder and its fallback
             blk[j] = fast_alloc::BlkAllocator::alloc_block(sz[j]);
-            tab[j] = fast_alloc::BlkAllocator::alloc_tab(sz[j]);
+            arr[j] = fast_alloc::BlkAllocator::alloc_array(sz[j]);
             fill(blk[j], sz[j], 2 * j);
-            fill(tab[j], sz[j], 2 * j + 1);
+            fill(arr[j], sz[j], 2 * j + 1);
         }
         bool ok = true;
         for (std::size_t j = 0; j < n_items; ++j)
         {
-            ok = ok && intact(blk[j], sz[j], 2 * j) && intact(tab[j], sz[j], 2 * j + 1);
+            ok = ok && intact(blk[j], sz[j], 2 * j) && intact(arr[j], sz[j], 2 * j + 1);
         }
         for (std::size_t j = 0; j < n_items; ++j)
         {
             fast_alloc::BlkAllocator::free_block(blk[j], sz[j]);
-            fast_alloc::BlkAllocator::free_tab(tab[j]);
+            fast_alloc::BlkAllocator::free_array(arr[j]);
         }
         expect(ok, round == 0 ? "3000 + 3000 live blocks of mixed sizes never overlap"
                               : "same after every block was freed and taken again");
@@ -213,7 +213,7 @@ void check_parallel()
             const std::size_t size = test_sizes[static_cast<std::size_t>(it) % 20];
             const std::size_t id   = static_cast<std::size_t>(it) * 97u;
             void*             ptr =
-                (it % 2) ? fast_alloc::BlkAllocator::alloc_tab(size) : fast_alloc::BlkAllocator::alloc_block(size);
+                (it % 2) ? fast_alloc::BlkAllocator::alloc_array(size) : fast_alloc::BlkAllocator::alloc_block(size);
             fill(ptr, size, id);
             if (!intact(ptr, size, id))
             {
@@ -221,7 +221,7 @@ void check_parallel()
             }
             if (it % 2)
             {
-                fast_alloc::BlkAllocator::free_tab(ptr);
+                fast_alloc::BlkAllocator::free_array(ptr);
             }
             else
             {

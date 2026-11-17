@@ -152,7 +152,7 @@ void zero_one_value::FastBlockSupport<Derived, true>::sweep_leftover_candidates(
                     if (std::get<2>(tup) == array_id)
                     {
                         std::get<0>(tup)->compress(thr_self, inf, /*apply=*/true, std::get<3>(tup).count());
-                        ProxyT::reset_tab_inside_list_to_compress(array_id, std::get<1>(tup));
+                        ProxyT::reset_array_inside_list_to_compress(array_id, std::get<1>(tup));
                         found = true;
                     }
                 }

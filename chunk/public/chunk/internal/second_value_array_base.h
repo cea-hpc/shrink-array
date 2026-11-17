@@ -121,7 +121,7 @@ class SecondValueArrayBase : public ArrayChunkBase<Derived>
         // &chunk_list_[j] pointers that a reallocation would leave dangling. Needed in non-OMP
         // too, where the sequential compression path also queues chunks. This pass queues
         // nothing, so afterwards every list is empty and every dedup flag 0 -- the
-        // precondition of zero_any::Proxy::resize_tab_is_int(array_id, ...).
+        // precondition of zero_any::Proxy::resize_array_is_int(array_id, ...).
         if constexpr (chunk_config::use_fast_block_compression ||
                       (build_config::not_threaded && is_zero_any_family_v<ChunkType>))
         {

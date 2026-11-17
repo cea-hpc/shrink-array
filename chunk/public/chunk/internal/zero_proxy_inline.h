@@ -787,11 +787,11 @@ template <typename T>
 [[nodiscard]] int zero::PointerMap<T>::get_array_id(Key key) const noexcept
 {
     const internal::RegistryReadLock registry_lock(internal::registry_mutex());
-    for (const auto& [entry_key, tab] : vec_)
+    for (const auto& [entry_key, arr] : vec_)
     {
         if (entry_key == key)
         {
-            return tab;
+            return arr;
         }
     }
 

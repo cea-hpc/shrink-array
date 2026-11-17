@@ -18,7 +18,7 @@
 /// @brief The initial fill phase. See bench_phases.h for why it lives here.
 
 #include <algorithm> // std::min
-#include <cmath>     // std::round, std::sin (tab_quant)
+#include <cmath>     // std::round, std::sin (array_quant)
 #include <chrono>    // std::chrono::steady_clock
 #include <iostream>  // std::cout
 
@@ -30,22 +30,22 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
                       std::chrono::duration<double>&         elapsed_seconds)
 {
     // Short local names for the arrays, shared by every phase file.
-    auto& tab1 = bench_arr.tab1;
-    auto& tab2 = bench_arr.tab2;
-    auto& tab3 = bench_arr.tab3;
-    auto& tab4 = bench_arr.tab4;
-    auto& tab5 = bench_arr.tab5;
+    auto& arr1 = bench_arr.arr1;
+    auto& arr2 = bench_arr.arr2;
+    auto& arr3 = bench_arr.arr3;
+    auto& arr4 = bench_arr.arr4;
+    auto& arr5 = bench_arr.arr5;
 
-    auto& tab_int       = bench_arr.tab_int;
-    auto& tab_bool      = bench_arr.tab_bool;
-    auto& tab_bool_bits = bench_arr.tab_bool_bits;
-    auto& tab_complex   = bench_arr.tab_complex;
-    auto& tab_float     = bench_arr.tab_float;
-    auto& tab_short     = bench_arr.tab_short;
-    auto& tab_char      = bench_arr.tab_char;
-    auto& tab_long      = bench_arr.tab_long;
-    auto& tab_ulong     = bench_arr.tab_ulong;
-    auto& tab_quant     = bench_arr.tab_quant;
+    auto& array_int       = bench_arr.array_int;
+    auto& array_bool      = bench_arr.array_bool;
+    auto& array_bool_bits = bench_arr.array_bool_bits;
+    auto& array_complex   = bench_arr.array_complex;
+    auto& array_float     = bench_arr.array_float;
+    auto& array_short     = bench_arr.array_short;
+    auto& array_char      = bench_arr.array_char;
+    auto& array_long      = bench_arr.array_long;
+    auto& array_ulong     = bench_arr.array_ulong;
+    auto& array_quant     = bench_arr.array_quant;
 
     const Int sz       = bench_arr.sz;
     const Int interval = bench_arr.interval;
@@ -61,57 +61,57 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
                 {
                     if (i % 3 == 0)
                     {
-                        tab1[i] = second_value_d;
-                        tab2[i] = std::sin(i);
-                        tab3[i] = 0;
+                        arr1[i] = second_value_d;
+                        arr2[i] = std::sin(i);
+                        arr3[i] = 0;
                     }
                     else
                     {
-                        tab1[i] = 0;
-                        tab2[i] = 0;
-                        tab3[i] = std::sin(i);
+                        arr1[i] = 0;
+                        arr2[i] = 0;
+                        arr3[i] = std::sin(i);
                     }
 
-                    tab4[i] = 0;
-                    tab5[i] = 0;
+                    arr4[i] = 0;
+                    arr5[i] = 0;
 
-                    tab_float[i] = 0;
-                    tab_char[i]  = 0;
+                    array_float[i] = 0;
+                    array_char[i]  = 0;
 
-                    tab_short[i] = 0;
+                    array_short[i] = 0;
 
-                    tab_int[i] = 0;
+                    array_int[i] = 0;
 
-                    tab_bool[i]      = false;
-                    tab_bool_bits[i] = false;
-                    tab_complex[i]   = zero_complex;
+                    array_bool[i]      = false;
+                    array_bool_bits[i] = false;
+                    array_complex[i]   = zero_complex;
                 },
                 bench_par::nowait);
 
             bench_par::for_static_vec(team, 256, sz / 4,
-                                      [&](const Int i) __attribute__((always_inline)) { tab_short[i] = 0; });
+                                      [&](const Int i) __attribute__((always_inline)) { array_short[i] = 0; });
 
             bench_par::for_static_vec(team, sz / 4, sz / 2, [&](const Int i) __attribute__((always_inline))
-                                      { tab_short[i] = second_value_s0; });
+                                      { array_short[i] = second_value_s0; });
 
             team.for_static<Int>(
                 256, sz / 2,
                 [&](const Int i) __attribute__((always_inline))
                 {
-                    tab1[i] = second_value_d;
-                    tab2[i] = second_value_d;
-                    tab3[i] = 0;
-                    tab4[i] = 0;
-                    tab5[i] = 0;
+                    arr1[i] = second_value_d;
+                    arr2[i] = second_value_d;
+                    arr3[i] = 0;
+                    arr4[i] = 0;
+                    arr5[i] = 0;
 
-                    tab_int[i]       = 0;
-                    tab_bool[i]      = false;
-                    tab_bool_bits[i] = false;
+                    array_int[i]       = 0;
+                    array_bool[i]      = false;
+                    array_bool_bits[i] = false;
 
-                    tab_float[i] = 0;
-                    tab_char[i]  = 0;
+                    array_float[i] = 0;
+                    array_char[i]  = 0;
 
-                    tab_complex[i] = zero_complex;
+                    array_complex[i] = zero_complex;
                 },
                 bench_par::nowait);
 
@@ -132,21 +132,21 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
                 begin_i, end_i,
                 [&](const Int i) __attribute__((always_inline))
                 {
-                    tab1[i] = second_value_d;
-                    tab2[i] = 0;
-                    tab3[i] = second_value_d;
+                    arr1[i] = second_value_d;
+                    arr2[i] = 0;
+                    arr3[i] = second_value_d;
 
-                    tab4[i] = second_value_d1;
-                    tab5[i] = second_value_d2;
+                    arr4[i] = second_value_d1;
+                    arr5[i] = second_value_d2;
 
-                    tab_int[i]       = second_value_i;
-                    tab_bool[i]      = second_value_b;
-                    tab_bool_bits[i] = second_value_b;
+                    array_int[i]       = second_value_i;
+                    array_bool[i]      = second_value_b;
+                    array_bool_bits[i] = second_value_b;
 
-                    tab_complex[i] = second_value_c;
+                    array_complex[i] = second_value_c;
 
-                    tab_long[i]  = second_value_l;
-                    tab_ulong[i] = second_value_ul;
+                    array_long[i]  = second_value_l;
+                    array_ulong[i] = second_value_ul;
                     // One level per BAND of bench_quant_band elements, spread over the
                     // array: this is the line that exercises the registry, at up to
                     // 2 * bench_double_bands + 1 distinct second values instead of the
@@ -158,7 +158,7 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
                     // (std::vector reference, 64 / 256 / 1024, dyn), so the checksums
                     // still compare; 1024 is a multiple of each of those geometries.
                     constexpr Int bench_quant_band = 1024;
-                    tab_quant[i] =
+                    array_quant[i] =
                         std::round(std::sin(static_cast<double>(i / bench_quant_band)) * bench_double_bands) /
                         bench_double_bands;
                 },
@@ -171,21 +171,21 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
                 begin_i, end_i,
                 [&](const Int i) __attribute__((always_inline))
                 {
-                    tab1[i] = second_value_d0;
-                    tab2[i] = second_value_d0;
-                    tab3[i] = second_value_d0;
+                    arr1[i] = second_value_d0;
+                    arr2[i] = second_value_d0;
+                    arr3[i] = second_value_d0;
 
-                    tab4[i]      = 2 * second_value_d0;
-                    tab5[i]      = 3 * second_value_d0;
-                    tab_float[i] = 3 * second_value_f0;
+                    arr4[i]        = 2 * second_value_d0;
+                    arr5[i]        = 3 * second_value_d0;
+                    array_float[i] = 3 * second_value_f0;
 
-                    tab_int[i]       = other_second_value_i;
-                    tab_bool[i]      = second_value_b;
-                    tab_bool_bits[i] = second_value_b;
+                    array_int[i]       = other_second_value_i;
+                    array_bool[i]      = second_value_b;
+                    array_bool_bits[i] = second_value_b;
 
-                    tab_complex[i] = other_second_value_c;
+                    array_complex[i] = other_second_value_c;
 
-                    tab_char[i] = 2 * second_value_c0;
+                    array_char[i] = 2 * second_value_c0;
                 },
                 bench_par::nowait);
 
@@ -206,25 +206,25 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
                 begin_i, end_i,
                 [&](const Int i) __attribute__((always_inline))
                 {
-                    tab1[i] = 2;
-                    tab2[i] = 2;
-                    tab3[i] = 1;
-                    tab4[i] = 1;
-                    tab5[i] = second_value_d2 + 10;
+                    arr1[i] = 2;
+                    arr2[i] = 2;
+                    arr3[i] = 1;
+                    arr4[i] = 1;
+                    arr5[i] = second_value_d2 + 10;
 
-                    tab1[i] *= 2;
-                    tab2[i] /= 2;
-                    tab3[i] += 1;
+                    arr1[i] *= 2;
+                    arr2[i] /= 2;
+                    arr3[i] += 1;
 
-                    tab4[i] -= 1;
-                    tab5[i] -= 10;
-                    tab_char[i] += 1;
-                    tab_float[i] = second_value_f0 + 1;
+                    arr4[i] -= 1;
+                    arr5[i] -= 10;
+                    array_char[i] += 1;
+                    array_float[i] = second_value_f0 + 1;
 
-                    tab_int[i]       = 0;
-                    tab_bool[i]      = false;
-                    tab_bool_bits[i] = false;
-                    tab_complex[i]   = ComplexDouble(1, 2);
+                    array_int[i]       = 0;
+                    array_bool[i]      = false;
+                    array_bool_bits[i] = false;
+                    array_complex[i]   = ComplexDouble(1, 2);
                 },
                 bench_par::nowait);
 
@@ -235,18 +235,18 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
                 begin_i, end_i,
                 [&](const Int i) __attribute__((always_inline))
                 {
-                    tab1[i] = 1;
-                    tab2[i] = 2;
-                    tab3[i] = 2;
+                    arr1[i] = 1;
+                    arr2[i] = 2;
+                    arr3[i] = 2;
 
-                    tab4[i]          = second_value_d1;
-                    tab5[i]          = second_value_d2;
-                    tab_char[i]      = second_value_c1;
-                    tab_float[i]     = second_value_f1;
-                    tab_int[i]       = 0;
-                    tab_bool[i]      = false;
-                    tab_bool_bits[i] = false;
-                    tab_complex[i]   = zero_complex;
+                    arr4[i]            = second_value_d1;
+                    arr5[i]            = second_value_d2;
+                    array_char[i]      = second_value_c1;
+                    array_float[i]     = second_value_f1;
+                    array_int[i]       = 0;
+                    array_bool[i]      = false;
+                    array_bool_bits[i] = false;
+                    array_complex[i]   = zero_complex;
                 },
                 bench_par::nowait);
 
@@ -254,16 +254,16 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
                 end_i, sz,
                 [&](const Int i) __attribute__((always_inline))
                 {
-                    tab1[i] = 0;
-                    tab2[i] = 0;
-                    tab3[i] = 0;
-                    tab4[i] = 0;
-                    tab5[i] = 0;
+                    arr1[i] = 0;
+                    arr2[i] = 0;
+                    arr3[i] = 0;
+                    arr4[i] = 0;
+                    arr5[i] = 0;
 
-                    tab_int[i]       = 0;
-                    tab_bool[i]      = false;
-                    tab_bool_bits[i] = false;
-                    tab_complex[i]   = zero_complex;
+                    array_int[i]       = 0;
+                    array_bool[i]      = false;
+                    array_bool_bits[i] = false;
+                    array_complex[i]   = zero_complex;
                 },
                 bench_par::nowait);
 
@@ -274,8 +274,8 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
                 end_i, 2 * sz,
                 [&](const Int i) __attribute__((always_inline))
                 {
-                    tab_char[i]  = 0;
-                    tab_float[i] = 0;
+                    array_char[i]  = 0;
+                    array_float[i] = 0;
                 },
                 bench_par::nowait);
 

@@ -93,8 +93,8 @@ to one, as the former `=name` values of `CHUNK_RECHUNK_CHURN` and `CHUNK_ADVISOR
 | variable or option | effect |
 |---|---|
 | `--advisor_period <n>` | period of the advisor passes, in iterations (default `max(10, iter_max / 20)`; 0 disables it) |
-| `--advise_five` | only the five historical arrays are handed to the decider (default: all arrays except `tab_bool` and `tab_bool_bits`) |
-| `--advise_bool` | `tab_bool` and `tab_bool_bits` are handed to the decider too (default: they stay at their birth geometry, so that the two bool containers are compared as they are) |
+| `--advise_five` | only the five historical arrays are handed to the decider (default: all arrays except `array_bool` and `array_bool_bits`) |
+| `--advise_bool` | `array_bool` and `array_bool_bits` are handed to the decider too (default: they stay at their birth geometry, so that the two bool containers are compared as they are) |
 | `--rechunk_dry_run` | the decider analyses and logs, but applies no rechunk (`RechunkPolicy::dry_run`) |
 | `--rechunk_max_coarsen <n>` | maximum factor of a coarsening (`max_coarsen_factor`, 4; 1 = no limit) |
 | `--rechunk_min_gain_mb <x>` | absolute threshold for the data-side gain, in MB (`min_gain_bytes`, 8; 0 removes it) |
@@ -115,8 +115,8 @@ to one, as the former `=name` values of `CHUNK_RECHUNK_CHURN` and `CHUNK_ADVISOR
 | `BENCH_SCHED_BLOCK` | size of the scheduling blocks of the benchmark phases (64; 0 = contiguous slices) |
 | `BENCH_RANK_TIMING` | `1`: every bench backend (OpenMP, std, TBB) times every region per rank (per virtual rank under TBB) and prints at exit, per call site, the split of the threads' time into busy / imbalance / launch / tail, and the serial time between regions (stderr, `[rank-timing]` lines). Under TBB the end of the phase (`finalize_parallel_phase`) is timed apart; elsewhere it falls in the tail (OMPT's, at each region's end) or in the serial time (the bench's own, between regions) |
 | `NO_IO`, `COMPRESS` | equivalents of `--no_io` and `--compress` |
-| `--no_mask`, `--mask_scale <x>` | without `tab_mask`; or its size, `x × sz` (default 1/32) |
-| `--no_conn`, `--conn_scale <x>` | without `tab_conn`, the mesh connectivity (`pattern::Array` in the `zero_one_value` and `zero_any` builds); or its size, about `x × sz` in whole rows (default 1/32) |
+| `--no_mask`, `--mask_scale <x>` | without `array_mask`; or its size, `x × sz` (default 1/32) |
+| `--no_conn`, `--conn_scale <x>` | without `array_conn`, the mesh connectivity (`pattern::Array` in the `zero_one_value` and `zero_any` builds); or its size, about `x × sz` in whole rows (default 1/32) |
 | `--no_struct` | without the arrays of structures (`Point3`, `Cell`) |
 
 ## 5. Compilation macros

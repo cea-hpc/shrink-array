@@ -143,12 +143,12 @@ inline void print_formatted_chunk_stats(std::ostream&      os,
 
     // The table number changes at every re-chunk; the name, when the caller
     // gave one, is what says which array this is.
-    const std::string tab_label = array_name.empty()
-                                      ? "[tab_" + std::to_string(array_id) + " " + type_name + "]"
-                                      : "[" + array_name + " #" + std::to_string(array_id) + " " + type_name + "]";
+    const std::string array_label = array_name.empty()
+                                        ? "[array_" + std::to_string(array_id) + " " + type_name + "]"
+                                        : "[" + array_name + " #" + std::to_string(array_id) + " " + type_name + "]";
 
     // Step 1: the left-aligned prefix.
-    ss << std::left << std::setw(40) << tab_label << reset;
+    ss << std::left << std::setw(40) << array_label << reset;
 
     // Step 2: overall compression statistics.
     ss << std::right << std::setw(6) << n_compressed << "/" << std::setw(6) << chunk_count << " chunks compressed ("

@@ -91,7 +91,7 @@
 namespace shrink_array
 {
 // Identity setup only: claim a array_id in the shared registry, size the
-// per-tab tables to match, then hand the geometry-dependent work to
+// per-array tables to match, then hand the geometry-dependent work to
 // rebuild_storage(). Everything here happens exactly once per array:
 // rechunk_to() must NOT redo it.
 template <ArrayChunkElement T, typename IntType>
@@ -117,7 +117,7 @@ void zero_one_value::Array<T, IntType>::create(IntType sz)
 
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        Proxy<T>::resize_tab_is_int(array_count);
+        Proxy<T>::resize_array_is_int(array_count);
         register_no_second_value_key();
     }
 
@@ -167,7 +167,7 @@ void zero_one_value::Array<T, IntType>::rebuild_storage(IntType sz)
 
             if constexpr (chunk_config::use_fast_block_compression)
             {
-                Proxy<T>::resize_tab_is_int(array_id, chunk_count_);
+                Proxy<T>::resize_array_is_int(array_id, chunk_count_);
             }
             this->assign_alloc_key(); // own slabs if large enough (see alloc_key_)
         }
@@ -246,11 +246,11 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
 
     if constexpr (is_not_bool)
     {
-        int ind = sh_inf.find_ind_tab_cst2(sec_value);
+        int ind = sh_inf.find_ind_array_cst2(sec_value);
 
         if (ind == -1)
         {
-            ind = static_cast<int>(Chunk<T>::tab_m_ptr_cst_val2->size());
+            ind = static_cast<int>(Chunk<T>::array_m_ptr_cst_val2->size());
 
             if constexpr (build_config::use_mm_protect)
             {
@@ -270,19 +270,19 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
 
                 mprotect(ptr, alloc_size, PROT_READ);
 
-                Chunk<T>::tab_m_ptr_cst_val2->push_back(arr);
-                if (Chunk<T>::tab_m_ptr_cst_val2_mm_elems.size() <= static_cast<std::size_t>(ind))
+                Chunk<T>::array_m_ptr_cst_val2->push_back(arr);
+                if (Chunk<T>::array_m_ptr_cst_val2_mm_elems.size() <= static_cast<std::size_t>(ind))
                 {
-                    Chunk<T>::tab_m_ptr_cst_val2_mm_elems.resize(ind + 1, 0);
+                    Chunk<T>::array_m_ptr_cst_val2_mm_elems.resize(ind + 1, 0);
                 }
-                Chunk<T>::tab_m_ptr_cst_val2_mm_elems[ind] = this->size_policy_.size();
+                Chunk<T>::array_m_ptr_cst_val2_mm_elems[ind] = this->size_policy_.size();
             }
             else
             {
-                Chunk<T>::tab_m_ptr_cst_val2->resize(ind + 1);
+                Chunk<T>::array_m_ptr_cst_val2->resize(ind + 1);
                 for (int i = 0; i < static_cast<int>(this->size_policy_.size()); ++i)
                 {
-                    (*Chunk<T>::tab_m_ptr_cst_val2)[ind][i] = sec_value;
+                    (*Chunk<T>::array_m_ptr_cst_val2)[ind][i] = sec_value;
                 }
             }
 
@@ -327,8 +327,8 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
             if constexpr (build_config::use_mm_protect)
             {
                 const std::size_t cur_elems =
-                    Chunk<T>::tab_m_ptr_cst_val2_mm_elems.size() > static_cast<std::size_t>(ind)
-                        ? Chunk<T>::tab_m_ptr_cst_val2_mm_elems[ind]
+                    Chunk<T>::array_m_ptr_cst_val2_mm_elems.size() > static_cast<std::size_t>(ind)
+                        ? Chunk<T>::array_m_ptr_cst_val2_mm_elems[ind]
                         : 0;
                 const std::size_t need_elems = this->size_policy_.size();
 
@@ -348,19 +348,19 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
 
                     // Do NOT unmap the old buffer: a live array's chunk may hold its
                     // address as `values` (immortal-arena discipline).
-                    (*Chunk<T>::tab_m_ptr_cst_val2)[ind] = arr;
-                    if (Chunk<T>::tab_m_ptr_cst_val2_mm_elems.size() <= static_cast<std::size_t>(ind))
+                    (*Chunk<T>::array_m_ptr_cst_val2)[ind] = arr;
+                    if (Chunk<T>::array_m_ptr_cst_val2_mm_elems.size() <= static_cast<std::size_t>(ind))
                     {
-                        Chunk<T>::tab_m_ptr_cst_val2_mm_elems.resize(ind + 1, 0);
+                        Chunk<T>::array_m_ptr_cst_val2_mm_elems.resize(ind + 1, 0);
                     }
-                    Chunk<T>::tab_m_ptr_cst_val2_mm_elems[ind] = need_elems;
+                    Chunk<T>::array_m_ptr_cst_val2_mm_elems[ind] = need_elems;
                 }
             }
             else
             {
                 for (int i = 0; i < static_cast<int>(this->size_policy_.size()); ++i)
                 {
-                    (*Chunk<T>::tab_m_ptr_cst_val2)[ind][i] = sec_value;
+                    (*Chunk<T>::array_m_ptr_cst_val2)[ind][i] = sec_value;
                 }
             }
 
@@ -384,10 +384,10 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
     {
         if constexpr (is_not_bool)
         {
-            Chunk<T>::tab_m_ptr_cst_val2->resize(+1);
+            Chunk<T>::array_m_ptr_cst_val2->resize(+1);
             for (int i = 0; i < static_cast<int>(this->size_policy_.size()); ++i)
             {
-                (*Chunk<T>::tab_m_ptr_cst_val2)[0][i] = true;
+                (*Chunk<T>::array_m_ptr_cst_val2)[0][i] = true;
             }
         }
         if constexpr (chunk_config::use_fast_block_compression)
@@ -697,7 +697,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
         pmp::team(pmp::Options{},
                   [&](pmp::Team& team)
                   {
-                      const int chunk_count0 = get_size_max_tab_omp(chunk_count_);
+                      const int chunk_count0 = get_size_max_array_omp(chunk_count_);
 
                       std::vector<Chunk<T>*> ll_chunk_loc;
                       ll_chunk_loc.reserve(chunk_count0);
@@ -793,7 +793,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
     // row 0, another live array's.
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        Proxy<T>::release_tab_is_int(Proxy<T>::array_registry->get_array_id(this->registry_key()));
+        Proxy<T>::release_array_is_int(Proxy<T>::array_registry->get_array_id(this->registry_key()));
     }
     probe.mark(internal::TeardownStep::tables);
 }
@@ -836,12 +836,12 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
         }
     }
 
-    std::vector<int> tab_nb1;
-    std::vector<int> tab_nb2;
+    std::vector<int> array_nb1;
+    std::vector<int> array_nb2;
 
     const int nb_res = (chunk_count_ / (50 * CHUNK_PMP_MAX_THREADS)) + 1;
-    tab_nb1.reserve(nb_res);
-    tab_nb2.reserve(nb_res);
+    array_nb1.reserve(nb_res);
+    array_nb2.reserve(nb_res);
     T   second_value{};
     int ind = 0;
 
@@ -865,11 +865,11 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
                                                            static_cast<unsigned int>(this->size_policy_.size()));
                     if (scan.first)
                     {
-                        tab_nb1.push_back(j);
+                        array_nb1.push_back(j);
                     }
                     if (scan.second)
                     {
-                        tab_nb2.push_back(j);
+                        array_nb2.push_back(j);
                     }
                 }
             },
@@ -889,11 +889,11 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
                                                            static_cast<unsigned int>(this->size_policy_.size()));
                     if (scan.first)
                     {
-                        tab_nb1.push_back(j);
+                        array_nb1.push_back(j);
                     }
                     if (scan.second)
                     {
-                        tab_nb2.push_back(j);
+                        array_nb2.push_back(j);
                     }
                 }
             },
@@ -932,7 +932,7 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
         [[maybe_unused]] ChunkFlagRowT* flags = nullptr;
         if constexpr (chunk_config::use_fast_block_compression)
         {
-            flags = &Proxy<T>::get_tab_is_inside_list_to_compress(
+            flags = &Proxy<T>::get_array_is_inside_list_to_compress(
                 Proxy<T>::array_registry->get_array_id(this->registry_key()));
         }
         const auto heal = [&](int jj, auto&& clear)
@@ -965,11 +965,11 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
             // clear_int_st(num, ind, thr_rank); serially the 2-arg
             // clear_int_st(num, ind), a different algorithm (eager, no queue,
             // counters to reset). They are not interchangeable.
-            for (const int jj : tab_nb1)
+            for (const int jj : array_nb1)
             {
                 heal(jj, [&] { chunk_list_[jj].clear_st(0, ind); });
             }
-            for (const int jj : tab_nb2)
+            for (const int jj : array_nb2)
             {
                 heal(jj, [&] { chunk_list_[jj].clear_st(1, ind); });
             }
@@ -979,11 +979,11 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
             // bool compresses via clear_int_st_bool (not clear_int_st); no clear_st
             // wrapper exists. In non-OMP, bool uses the counter path (manage_full_*
             // compresses inline) so there is nothing to reclaim -> empty else.
-            for (const int jj : tab_nb1)
+            for (const int jj : array_nb1)
             {
                 heal(jj, [&] { chunk_list_[jj].clear_int_st_bool(0, CHUNK_PMP_THREAD_RANK); });
             }
-            for (const int jj : tab_nb2)
+            for (const int jj : array_nb2)
             {
                 heal(jj, [&] { chunk_list_[jj].clear_int_st_bool(1, CHUNK_PMP_THREAD_RANK); });
             }
@@ -999,37 +999,37 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
     {
         // Left to their pass: neither healed here nor a miss.
         const auto to_pass = [&](int jj) { return std::ranges::find(left_to_pass, jj) != left_to_pass.end(); };
-        std::erase_if(tab_nb1, to_pass);
-        std::erase_if(tab_nb2, to_pass);
-        const auto       scanned1      = tab_nb1.size();
-        const auto       scanned2      = tab_nb2.size();
+        std::erase_if(array_nb1, to_pass);
+        std::erase_if(array_nb2, to_pass);
+        const auto       scanned1      = array_nb1.size();
+        const auto       scanned2      = array_nb2.size();
         const auto       still_written = materialised;
         std::vector<int> keep1;
         std::vector<int> keep2;
-        keep1.reserve(tab_nb1.size());
-        keep2.reserve(tab_nb2.size());
-        for (const int jj : tab_nb1)
+        keep1.reserve(array_nb1.size());
+        keep2.reserve(array_nb2.size());
+        for (const int jj : array_nb1)
         {
             if (still_written(jj))
             {
                 keep1.push_back(jj);
             }
         }
-        for (const int jj : tab_nb2)
+        for (const int jj : array_nb2)
         {
             if (still_written(jj))
             {
                 keep2.push_back(jj);
             }
         }
-        tab_nb1.swap(keep1);
-        tab_nb2.swap(keep2);
+        array_nb1.swap(keep1);
+        array_nb2.swap(keep2);
         // After the swap keep1 / keep2 hold the scanned lists.
         const auto& keep1_scanned = keep1;
         const auto& keep2_scanned = keep2;
 
-        const auto healed1 = scanned1 - tab_nb1.size();
-        const auto healed2 = scanned2 - tab_nb2.size();
+        const auto healed1 = scanned1 - array_nb1.size();
+        const auto healed2 = scanned2 - array_nb2.size();
         if (healed1 + healed2 != 0)
         {
             // The healed chunks are those the filter dropped: the scanned list
@@ -1059,8 +1059,8 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
                 info, compress,
                 "self-heal zero_one_value::Array<{}, {}>: {} chunk(s) at first_value [{} ], {} at second_value [{} ], "
                 "materialised and not compressed: compressed now{}",
-                type_name<T>(), type_name<IntType>(), healed1, healed_indices(keep1_scanned, tab_nb1), healed2,
-                healed_indices(keep2_scanned, tab_nb2),
+                type_name<T>(), type_name<IntType>(), healed1, healed_indices(keep1_scanned, array_nb1), healed2,
+                healed_indices(keep2_scanned, array_nb2),
                 drained ? " (pending list drained first: never marked)"
                         : " (in a parallel region, pending list NOT drained: maybe only queued)");
         }
@@ -1069,9 +1069,9 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
     // compress=info: how many, and a sample; compress=debug: per chunk, the
     // candidate flag (fast-block builds) and the counter (counter builds).
     // One line per kind and thread (its share of the chunks).
-    const auto report = [&](const std::vector<int>& tab, std::string_view at, bool second)
+    const auto report = [&](const std::vector<int>& chunks, std::string_view at, bool second)
     {
-        if (tab.empty())
+        if (chunks.empty())
         {
             return;
         }
@@ -1080,21 +1080,21 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
                   "residual zero_one_value::Array<{}, {}>: {} chunk(s) constant at {}, still materialised: {} (the "
                   "algorithm can "
                   "miss a few blocks to compress: an issue only if there are many)",
-                  type_name<T>(), type_name<IntType>(), tab.size(), at,
-                  internal::chunk_index_sample(sample, tab, static_cast<IntType>(this->size_policy_.size())));
+                  type_name<T>(), type_name<IntType>(), chunks.size(), at,
+                  internal::chunk_index_sample(sample, chunks, static_cast<IntType>(this->size_policy_.size())));
         if (!logging::enabled(logging::Channel::compress, logging::Level::debug))
         {
             return;
         }
-        const std::size_t shown = tab.size() < 10 ? tab.size() : 10;
+        const std::size_t shown = chunks.size() < 10 ? chunks.size() : 10;
         for (std::size_t k = 0; k < shown; ++k)
         {
-            const int chunk_index = tab[k];
+            const int chunk_index = chunks[k];
             int       is_inside   = -1; // the candidate-list flag exists in fast-block builds only
             if constexpr (chunk_config::use_fast_block_compression)
             {
                 is_inside =
-                    static_cast<int>(Proxy<T>::get_tab_is_inside_list_to_compress(
+                    static_cast<int>(Proxy<T>::get_array_is_inside_list_to_compress(
                                          Proxy<T>::array_registry->get_array_id(this->registry_key()))[chunk_index]
                                          .load(std::memory_order_acquire));
             }
@@ -1109,17 +1109,17 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
                       is_inside, count);
         }
     };
-    report(tab_nb1, "first_value", false);
-    if (!tab_nb2.empty())
+    report(array_nb1, "first_value", false);
+    if (!array_nb2.empty())
     {
         if constexpr (is_not_bool)
         {
             const std::string at = "the second value " + value_repr(second_value);
-            report(tab_nb2, at, true);
+            report(array_nb2, at, true);
         }
         else
         {
-            report(tab_nb2, "the second value true", true);
+            report(array_nb2, "the second value true", true);
         }
     }
 }
@@ -1216,7 +1216,7 @@ void zero_one_value::Array<T, IntType>::resize(IntType newsz)
         const auto& sh_inf = *Proxy<T>::array_registry;
 
         const int array_id = sh_inf.get_array_id(this->registry_key());
-        Proxy<T>::resize_tab_is_int(array_id, chunk_count_);
+        Proxy<T>::resize_array_is_int(array_id, chunk_count_);
     }
 
     // The new chunks [old_chunk_count, chunk_count): a team of its own outside a

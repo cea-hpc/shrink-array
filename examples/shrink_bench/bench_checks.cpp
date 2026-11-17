@@ -29,26 +29,26 @@
 void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
 {
     // Short local names for the arrays (see bench_phase_fill.cpp).
-    auto& tab1 = bench_arr.tab1;
-    auto& tab2 = bench_arr.tab2;
-    auto& tab3 = bench_arr.tab3;
-    auto& tab4 = bench_arr.tab4;
-    auto& tab5 = bench_arr.tab5;
+    auto& arr1 = bench_arr.arr1;
+    auto& arr2 = bench_arr.arr2;
+    auto& arr3 = bench_arr.arr3;
+    auto& arr4 = bench_arr.arr4;
+    auto& arr5 = bench_arr.arr5;
 
-    auto& tab_int       = bench_arr.tab_int;
-    auto& tab_bool      = bench_arr.tab_bool;
-    auto& tab_bool_bits = bench_arr.tab_bool_bits;
-    auto& tab_complex   = bench_arr.tab_complex;
-    auto& tab_float     = bench_arr.tab_float;
-    auto& tab_short     = bench_arr.tab_short;
-    auto& tab_char      = bench_arr.tab_char;
-    auto& tab_long      = bench_arr.tab_long;
-    auto& tab_ulong     = bench_arr.tab_ulong;
-    auto& tab_quant     = bench_arr.tab_quant;
-    auto& tab_point     = bench_arr.tab_point;
-    auto& tab_cell      = bench_arr.tab_cell;
-    auto& tab_mask      = bench_arr.tab_mask;
-    auto& tab_conn      = bench_arr.tab_conn;
+    auto& array_int       = bench_arr.array_int;
+    auto& array_bool      = bench_arr.array_bool;
+    auto& array_bool_bits = bench_arr.array_bool_bits;
+    auto& array_complex   = bench_arr.array_complex;
+    auto& array_float     = bench_arr.array_float;
+    auto& array_short     = bench_arr.array_short;
+    auto& array_char      = bench_arr.array_char;
+    auto& array_long      = bench_arr.array_long;
+    auto& array_ulong     = bench_arr.array_ulong;
+    auto& array_quant     = bench_arr.array_quant;
+    auto& array_point     = bench_arr.array_point;
+    auto& array_cell      = bench_arr.array_cell;
+    auto& array_mask      = bench_arr.array_mask;
+    auto& array_conn      = bench_arr.array_conn;
 
     // The I/O flags, as locals the two lambdas capture.
     const char*                 no_io         = io.no_io;
@@ -58,18 +58,18 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
     [[maybe_unused]] const bool write_trace   = io.write_trace;
     const bool                  checksum_only = io.checksum_only;
 
-    auto lbd_check =
-        [&](Int kk, const std::string& tab_name, const auto& tab, std::uint64_t checksum, bool special_writing = false)
+    auto lbd_check = [&](Int kk, const std::string& array_name, const auto& arr, std::uint64_t checksum,
+                         bool special_writing = false)
     {
         if (no_io)
         {
             return;
         }
-        const std::string filename = "data_" + tab_name + "_" + std::to_string(kk) + ".bin";
+        const std::string filename = "data_" + array_name + "_" + std::to_string(kk) + ".bin";
 
         if (io_res == 1)
         {
-            write_binary_file(filename, tab, checksum, special_writing, no_compress, checksum_only);
+            write_binary_file(filename, arr, checksum, special_writing, no_compress, checksum_only);
         }
         // io_res == 2 is unreachable without a shrink build (get_io_mode returns
         // 1, never 2), so this is dead code there -- but it now COMPILES there:
@@ -78,7 +78,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
         // instantiated for a std::vector. That is what retired the directive.
         else if (io_res == 2)
         {
-            read_check_binary_file(kk, tab_name, filename, tab, checksum, no_compress, read_trace, write_trace);
+            read_check_binary_file(kk, array_name, filename, arr, checksum, no_compress, read_trace, write_trace);
         }
     };
 
@@ -91,47 +91,47 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
 
         if CONSTEXPR (io_res)
         {
-            std::uint64_t tab1_ch          = 0;
-            std::uint64_t tab2_ch          = 0;
-            std::uint64_t tab3_ch          = 0;
-            std::uint64_t tab4_ch          = 0;
-            std::uint64_t tab5_ch          = 0;
-            std::uint64_t tab_int_ch       = 0;
-            std::uint64_t tab_bool_ch      = 0;
-            std::uint64_t tab_bool_bits_ch = 0;
-            std::uint64_t tab_complex_ch   = 0;
-            std::uint64_t tab_float_ch     = 0;
-            std::uint64_t tab_char_ch      = 0;
-            std::uint64_t tab_short_ch     = 0;
-            std::uint64_t tab_long_ch      = 0;
-            std::uint64_t tab_ulong_ch     = 0;
-            std::uint64_t tab_quant_ch     = 0;
-            std::uint64_t tab_point_ch     = 0;
-            std::uint64_t tab_cell_ch      = 0;
-            std::uint64_t tab_mask_ch      = 0;
-            std::uint64_t tab_conn_ch      = 0;
+            std::uint64_t arr1_ch            = 0;
+            std::uint64_t arr2_ch            = 0;
+            std::uint64_t arr3_ch            = 0;
+            std::uint64_t arr4_ch            = 0;
+            std::uint64_t arr5_ch            = 0;
+            std::uint64_t array_int_ch       = 0;
+            std::uint64_t array_bool_ch      = 0;
+            std::uint64_t array_bool_bits_ch = 0;
+            std::uint64_t array_complex_ch   = 0;
+            std::uint64_t array_float_ch     = 0;
+            std::uint64_t array_char_ch      = 0;
+            std::uint64_t array_short_ch     = 0;
+            std::uint64_t array_long_ch      = 0;
+            std::uint64_t array_ulong_ch     = 0;
+            std::uint64_t array_quant_ch     = 0;
+            std::uint64_t array_point_ch     = 0;
+            std::uint64_t array_cell_ch      = 0;
+            std::uint64_t array_mask_ch      = 0;
+            std::uint64_t array_conn_ch      = 0;
 
-            VectorChecksum vec1_ch(tab1);
-            VectorChecksum vec2_ch(tab2);
-            VectorChecksum vec3_ch(tab3);
-            VectorChecksum vec4_ch(tab4);
-            VectorChecksum vec5_ch(tab5);
+            VectorChecksum vec1_ch(arr1);
+            VectorChecksum vec2_ch(arr2);
+            VectorChecksum vec3_ch(arr3);
+            VectorChecksum vec4_ch(arr4);
+            VectorChecksum vec5_ch(arr5);
 
-            VectorChecksum vec_int_ch(tab_int);
-            VectorChecksum vec_bool_ch(tab_bool);
-            VectorChecksum vec_bool_bits_ch(tab_bool_bits);
-            VectorChecksum vec_complex_ch(tab_complex);
+            VectorChecksum vec_int_ch(array_int);
+            VectorChecksum vec_bool_ch(array_bool);
+            VectorChecksum vec_bool_bits_ch(array_bool_bits);
+            VectorChecksum vec_complex_ch(array_complex);
 
-            VectorChecksum vec_float_ch(tab_float);
-            VectorChecksum vec_char_ch(tab_char);
-            VectorChecksum vec_short_ch(tab_short);
-            VectorChecksum vec_long_ch(tab_long);
-            VectorChecksum vec_ulong_ch(tab_ulong);
-            VectorChecksum vec_quant_ch(tab_quant);
-            VectorChecksum vec_point_ch(tab_point);
-            VectorChecksum vec_cell_ch(tab_cell);
-            VectorChecksum vec_mask_ch(tab_mask);
-            VectorChecksum vec_conn_ch(tab_conn);
+            VectorChecksum vec_float_ch(array_float);
+            VectorChecksum vec_char_ch(array_char);
+            VectorChecksum vec_short_ch(array_short);
+            VectorChecksum vec_long_ch(array_long);
+            VectorChecksum vec_ulong_ch(array_ulong);
+            VectorChecksum vec_quant_ch(array_quant);
+            VectorChecksum vec_point_ch(array_point);
+            VectorChecksum vec_cell_ch(array_cell);
+            VectorChecksum vec_mask_ch(array_mask);
+            VectorChecksum vec_conn_ch(array_conn);
 
             // One calculate_checksum_0 call per array, not a variadic fold over
             // them: a fold helper taking its VectorChecksum arguments by value
@@ -166,94 +166,96 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
 
             for (Int thr = 0; thr < CHUNK_PMP_MAX_THREADS; ++thr)
             {
-                tab1_ch += vec1_ch.checksum_thr[thr];
-                tab2_ch += vec2_ch.checksum_thr[thr];
-                tab3_ch += vec3_ch.checksum_thr[thr];
-                tab4_ch += vec4_ch.checksum_thr[thr];
-                tab5_ch += vec5_ch.checksum_thr[thr];
+                arr1_ch += vec1_ch.checksum_thr[thr];
+                arr2_ch += vec2_ch.checksum_thr[thr];
+                arr3_ch += vec3_ch.checksum_thr[thr];
+                arr4_ch += vec4_ch.checksum_thr[thr];
+                arr5_ch += vec5_ch.checksum_thr[thr];
 
-                tab_int_ch += vec_int_ch.checksum_thr[thr];
-                tab_bool_ch += vec_bool_ch.checksum_thr[thr];
-                tab_bool_bits_ch += vec_bool_bits_ch.checksum_thr[thr];
-                tab_complex_ch += vec_complex_ch.checksum_thr[thr];
+                array_int_ch += vec_int_ch.checksum_thr[thr];
+                array_bool_ch += vec_bool_ch.checksum_thr[thr];
+                array_bool_bits_ch += vec_bool_bits_ch.checksum_thr[thr];
+                array_complex_ch += vec_complex_ch.checksum_thr[thr];
 
-                tab_float_ch += vec_float_ch.checksum_thr[thr];
-                tab_short_ch += vec_short_ch.checksum_thr[thr];
-                tab_char_ch += vec_char_ch.checksum_thr[thr];
-                tab_long_ch += vec_long_ch.checksum_thr[thr];
-                tab_ulong_ch += vec_ulong_ch.checksum_thr[thr];
-                tab_quant_ch += vec_quant_ch.checksum_thr[thr];
-                tab_point_ch += vec_point_ch.checksum_thr[thr];
-                tab_cell_ch += vec_cell_ch.checksum_thr[thr];
-                tab_mask_ch += vec_mask_ch.checksum_thr[thr];
-                tab_conn_ch += vec_conn_ch.checksum_thr[thr];
+                array_float_ch += vec_float_ch.checksum_thr[thr];
+                array_short_ch += vec_short_ch.checksum_thr[thr];
+                array_char_ch += vec_char_ch.checksum_thr[thr];
+                array_long_ch += vec_long_ch.checksum_thr[thr];
+                array_ulong_ch += vec_ulong_ch.checksum_thr[thr];
+                array_quant_ch += vec_quant_ch.checksum_thr[thr];
+                array_point_ch += vec_point_ch.checksum_thr[thr];
+                array_cell_ch += vec_cell_ch.checksum_thr[thr];
+                array_mask_ch += vec_mask_ch.checksum_thr[thr];
+                array_conn_ch += vec_conn_ch.checksum_thr[thr];
             }
 
-            tab1_ch = ~tab1_ch;
-            tab2_ch = ~tab2_ch;
-            tab3_ch = ~tab3_ch;
-            tab4_ch = ~tab4_ch;
-            tab5_ch = ~tab5_ch;
+            arr1_ch = ~arr1_ch;
+            arr2_ch = ~arr2_ch;
+            arr3_ch = ~arr3_ch;
+            arr4_ch = ~arr4_ch;
+            arr5_ch = ~arr5_ch;
 
-            tab_int_ch       = ~tab_int_ch;
-            tab_bool_ch      = ~tab_bool_ch;
-            tab_bool_bits_ch = ~tab_bool_bits_ch;
-            tab_complex_ch   = ~tab_complex_ch;
+            array_int_ch       = ~array_int_ch;
+            array_bool_ch      = ~array_bool_ch;
+            array_bool_bits_ch = ~array_bool_bits_ch;
+            array_complex_ch   = ~array_complex_ch;
 
-            tab_short_ch = ~tab_short_ch;
-            tab_float_ch = ~tab_float_ch;
-            tab_char_ch  = ~tab_char_ch;
-            tab_long_ch  = ~tab_long_ch;
-            tab_ulong_ch = ~tab_ulong_ch;
-            tab_quant_ch = ~tab_quant_ch;
-            tab_point_ch = ~tab_point_ch;
-            tab_cell_ch  = ~tab_cell_ch;
-            tab_mask_ch  = ~tab_mask_ch;
-            tab_conn_ch  = ~tab_conn_ch;
+            array_short_ch = ~array_short_ch;
+            array_float_ch = ~array_float_ch;
+            array_char_ch  = ~array_char_ch;
+            array_long_ch  = ~array_long_ch;
+            array_ulong_ch = ~array_ulong_ch;
+            array_quant_ch = ~array_quant_ch;
+            array_point_ch = ~array_point_ch;
+            array_cell_ch  = ~array_cell_ch;
+            array_mask_ch  = ~array_mask_ch;
+            array_conn_ch  = ~array_conn_ch;
 
             std::cout << "\n";
 
             bench_par::region(
                 [&]([[maybe_unused]] bench_par::Team& team)
                 {
-                    team.single([&] { lbd_check(ind, "tab1_0", tab1, tab1_ch); }, bench_par::nowait);
-                    team.single([&] { lbd_check(ind, "tab2_0", tab2, tab2_ch); }, bench_par::nowait);
-                    team.single([&] { lbd_check(ind, "tab3_0", tab3, tab3_ch); }, bench_par::nowait);
-                    team.single([&] { lbd_check(ind, "tab4_0", tab4, tab4_ch); }, bench_par::nowait);
-                    team.single([&] { lbd_check(ind, "tab5_0", tab5, tab5_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(ind, "arr1_0", arr1, arr1_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(ind, "arr2_0", arr2, arr2_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(ind, "arr3_0", arr3, arr3_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(ind, "arr4_0", arr4, arr4_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(ind, "arr5_0", arr5, arr5_ch); }, bench_par::nowait);
 
-                    team.single([&] { lbd_check(ind, "tab_int", tab_int, tab_int_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(ind, "array_int", array_int, array_int_ch); }, bench_par::nowait);
                     team.single(
                         [&]
                         {
-                            lbd_check(ind, "tab_bool", tab_bool, tab_bool_ch, true /* special writing for vector */);
-                            // tab_bool_bits holds what tab_bool holds: read back
-                            // against tab_bool's reference file, never written
+                            lbd_check(ind, "array_bool", array_bool, array_bool_ch,
+                                      true /* special writing for vector */);
+                            // array_bool_bits holds what array_bool holds: read back
+                            // against array_bool's reference file, never written
                             // (io_res == 1 would write the same file twice). In
-                            // this section, after tab_bool's check: a checksum
+                            // this section, after array_bool's check: a checksum
                             // miss decompresses the file, which two of these must
                             // not do at once.
                             if (!no_io && io_res == 2)
                             {
-                                read_check_binary_file(ind, "tab_bool_bits",
-                                                       "data_tab_bool_" + std::to_string(ind) + ".bin", tab_bool_bits,
-                                                       tab_bool_bits_ch, no_compress, read_trace, write_trace);
+                                read_check_binary_file(
+                                    ind, "array_bool_bits", "data_array_bool_" + std::to_string(ind) + ".bin",
+                                    array_bool_bits, array_bool_bits_ch, no_compress, read_trace, write_trace);
                             }
                         },
                         bench_par::nowait);
-                    team.single([&] { lbd_check(ind, "tab_complex", tab_complex, tab_complex_ch); }, bench_par::nowait);
-                    team.single([&] { lbd_check(ind, "tab_short", tab_short, tab_short_ch); }, bench_par::nowait);
-                    team.single([&] { lbd_check(ind, "tab_float", tab_float, tab_float_ch); }, bench_par::nowait);
-                    team.single([&] { lbd_check(ind, "tab_char", tab_char, tab_char_ch); }, bench_par::nowait);
-                    team.single([&] { lbd_check(ind, "tab_long", tab_long, tab_long_ch); }, bench_par::nowait);
-                    team.single([&] { lbd_check(ind, "tab_ulong", tab_ulong, tab_ulong_ch); }, bench_par::nowait);
-                    team.single([&] { lbd_check(ind, "tab_quant", tab_quant, tab_quant_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(ind, "array_complex", array_complex, array_complex_ch); },
+                                bench_par::nowait);
+                    team.single([&] { lbd_check(ind, "array_short", array_short, array_short_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(ind, "array_float", array_float, array_float_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(ind, "array_char", array_char, array_char_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(ind, "array_long", array_long, array_long_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(ind, "array_ulong", array_ulong, array_ulong_ch); }, bench_par::nowait);
+                    team.single([&] { lbd_check(ind, "array_quant", array_quant, array_quant_ch); }, bench_par::nowait);
                     team.single(
                         [&]
                         {
                             if (bench_arr.with_struct) // --no_struct: no reference file either
                             {
-                                lbd_check(ind, "tab_point", tab_point, tab_point_ch);
+                                lbd_check(ind, "array_point", array_point, array_point_ch);
                             }
                         },
                         bench_par::nowait);
@@ -262,7 +264,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
                         {
                             if (bench_arr.with_struct)
                             {
-                                lbd_check(ind, "tab_cell", tab_cell, tab_cell_ch);
+                                lbd_check(ind, "array_cell", array_cell, array_cell_ch);
                             }
                         },
                         bench_par::nowait);
@@ -271,7 +273,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
                         {
                             if (bench_arr.with_mask) // --no_mask: no reference file either
                             {
-                                lbd_check(ind, "tab_mask", tab_mask, tab_mask_ch, true /* one byte per bool */);
+                                lbd_check(ind, "array_mask", array_mask, array_mask_ch, true /* one byte per bool */);
                             }
                         },
                         bench_par::nowait);
@@ -280,7 +282,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
                         {
                             if (bench_arr.with_conn) // --no_conn: no reference file either
                             {
-                                lbd_check(ind, "tab_conn", tab_conn, tab_conn_ch);
+                                lbd_check(ind, "array_conn", array_conn, array_conn_ch);
                             }
                         },
                         bench_par::nowait);

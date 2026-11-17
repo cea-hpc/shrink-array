@@ -71,7 +71,7 @@ namespace fast_alloc
  *          batch is handed back when it fills -- one critical section instead
  *          of one per free.
  *
- * @note One instance exists, StaticConstArray::tab_info_free_elt().
+ * @note One instance exists, StaticConstArray::array_info_free_elt().
  *
  * @warning A batch that is still filling holds blocks that are free but not
  *          reusable: they belong to no bucket's free list until the flush.
@@ -126,9 +126,9 @@ class InfoFreeElt
         somme_sz_[thr_rank] = compt[thr_rank] = 0;
     }
 
-    VoidMaxFreeElt* tab_ptr{nullptr}; ///< Per rank: the batched blocks.
-    IntMaxFreeElt*  tab_sz{nullptr};  ///< Per rank: their sizes.
-    int*            compt{nullptr};   ///< Per rank: how many are batched.
+    VoidMaxFreeElt* array_ptr{nullptr}; ///< Per rank: the batched blocks.
+    IntMaxFreeElt*  array_sz{nullptr};  ///< Per rank: their sizes.
+    int*            compt{nullptr};     ///< Per rank: how many are batched.
 
     /// @brief Ranks the four arrays were sized for (FAST_ALLOC_PMP_MAX_THREADS at
     ///        construction); 0 in a serial build, which allocates nothing.
@@ -267,7 +267,7 @@ class StaticConstArray
     /// @brief The per-thread batches. IMMORTAL and built at first use, like the
     ///        ladder: a global array frees through them before main and after
     ///        it returns.
-    [[nodiscard]] static InfoFreeElt& tab_info_free_elt()
+    [[nodiscard]] static InfoFreeElt& array_info_free_elt()
     {
         static auto* const batches = new InfoFreeElt();
         return *batches;
@@ -295,7 +295,7 @@ static_assert(StaticConstArray::bucket_index(StaticConstArray::max_const_block_s
  *          free_block() works out which from the size again.
  *
  *          Two pairs, never mixed: alloc_block()/free_block(size) when the
- *          caller knows the size at free time, alloc_tab()/free_tab() when it
+ *          caller knows the size at free time, alloc_array()/free_array() when it
  *          does not (a `fast_alloc::alignment`-byte header keeps it as a
  *          size_t). Every size is compared with the ceiling in size_t, before
  *          any narrowing.
@@ -320,13 +320,13 @@ struct BlkAllocator : public StaticConstArray
     /**
      * @brief A block of @p size bytes that remembers its own size.
      * @return A pointer past a header of `fast_alloc::alignment` bytes holding @p size,
-     *         so free_tab() needs no size argument. The alignment padding is
+     *         so free_array() needs no size argument. The alignment padding is
      *         what makes the returned pointer suitably aligned.
      */
-    static void* alloc_tab(size_t size);
+    static void* alloc_array(size_t size);
 
-    /// @brief Give back an alloc_tab() block, reading its size from its header.
-    static void free_tab(void* user_ptr);
+    /// @brief Give back an alloc_array() block, reading its size from its header.
+    static void free_array(void* user_ptr);
 };
 
 /**

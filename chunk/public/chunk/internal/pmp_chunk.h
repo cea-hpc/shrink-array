@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include <algorithm> // std::max (get_size_max_tab_omp)
+#include <algorithm> // std::max (get_size_max_array_omp)
 
 #include "chunk/config.h"                         // build_config::any_check, build_config::threaded
 #include "fast_allocators/internal/pmp_loops.h"   // fast_alloc::pmp: the loops and teams re-exported below
@@ -459,7 +459,7 @@ namespace shrink_array
 /// @param nn Number of elements.
 /// @return nn / max_threads + max_threads inside a parallel region when nn exceeds the thread count (>1),
 ///         otherwise @p nn.
-inline int get_size_max_tab_omp(int nn)
+inline int get_size_max_array_omp(int nn)
 {
     if constexpr (build_config::threaded)
     {
@@ -478,7 +478,7 @@ inline int get_size_max_tab_omp(int nn)
 /// @param nb_static Block size the per-thread share (nn / max_threads) is rounded up past.
 /// @return ((nn / max_threads) / nb_static + 1) * nb_static + max_threads inside a parallel region when nn
 ///         exceeds the thread count (>1), otherwise @p nn.
-inline int get_size_max_tab_omp(int nn, [[maybe_unused]] int nb_static)
+inline int get_size_max_array_omp(int nn, [[maybe_unused]] int nb_static)
 {
     if constexpr (build_config::threaded)
     {

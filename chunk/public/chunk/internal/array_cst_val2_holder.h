@@ -17,7 +17,7 @@
 #pragma once
 
 /**
- * @file tab_cst_val2_holder.h
+ * @file array_cst_val2_holder.h
  * @brief The registry of second-value slots behind "second constant value" compression.
  *
  * A zero_any chunk compressed to a constant other than zero does not own a buffer: it
@@ -32,12 +32,12 @@
  *    pointer another thread is holding.
  *  - GlobalVecHolder owns that chain, one instance per element type, plus the
  *    hash index that makes a lookup O(1) and the lock that serialises appends.
- *  - TabCstVal2Holder is the surface the chunks talk to: stateless, it owns
+ *  - ArrayCstVal2Holder is the surface the chunks talk to: stateless, it owns
  *    the allocation strategy.
  *
  * @par Two paths, and only one of them takes a lock
  * Registering a value that is ALREADY known -- every type-2 chunk after the
- * first one per value -- is a lock-free probe of GlobalVecHolder::index_tab.
+ * first one per value -- is a lock-free probe of GlobalVecHolder::index_table.
  * Only a genuinely new value, or an index miss, takes
  * GlobalVecHolder::insert_mutex, under which the whole find-or-append is
  * plain sequential code.
@@ -91,7 +91,7 @@ namespace shrink_array
  * @details Nothing here is atomic, deliberately. Segments are mutated and
  *          scanned only under GlobalVecHolder::insert_mutex, or on the
  *          single-threaded clear paths; the lock-free readers reach values
- *          through GlobalVecHolder::index_tab and never touch a Segment at all.
+ *          through GlobalVecHolder::index_table and never touch a Segment at all.
  *
  * @note The chain is append-only between clears and reclaims
  *       (GlobalVecHolder::reclaim_unmarked() rebuilds it packed), so
@@ -113,7 +113,7 @@ template <typename T>
 class GlobalVecHolder;
 
 template <typename T>
-class TabCstVal2Holder;
+class ArrayCstVal2Holder;
 
 /**
  * @brief How a chunk's second value is stored in the per-chunk table.
@@ -824,7 +824,7 @@ class GlobalVecHolder
 
     /// @brief The live table. Null until the first publish; readers that see
     ///        null miss and take the cold path, which is always correct.
-    static inline std::atomic<IndexTable*> index_tab{nullptr};
+    static inline std::atomic<IndexTable*> index_table{nullptr};
     /// @brief Every table ever published, the live one last. Old generations
     ///        are kept until index_clear(): a lock-free reader may still hold
     ///        their pointer, and index_clear() is the one point where no
@@ -852,10 +852,10 @@ class GlobalVecHolder
  *  - Every slot handed out by find_or_set_ind_cst_val2() lies in the region,
  *    and nothing else does: is_cst_val2_ptr() is exact.
  *
- * @see TabCstVal2Holder<bool>, which has none of this machinery.
+ * @see ArrayCstVal2Holder<bool>, which has none of this machinery.
  */
 template <typename T>
-class TabCstVal2Holder
+class ArrayCstVal2Holder
 {
   public:
     using VecHolder = GlobalVecHolder<T>;
@@ -984,7 +984,7 @@ class TabCstVal2Holder
 };
 
 /**
- * @brief TabCstVal2Holder for bool, where the whole registry collapses.
+ * @brief ArrayCstVal2Holder for bool, where the whole registry collapses.
  *
  * @details A bool has exactly one value that is not the first constant, so
  *          there is nothing to register, look up, share or free: a single
@@ -997,10 +997,10 @@ class TabCstVal2Holder
  *          not just forward.
  */
 template <>
-class TabCstVal2Holder<bool>
+class ArrayCstVal2Holder<bool>
 {
   public:
-    /// @brief Nothing to create. @see TabCstVal2Holder::create
+    /// @brief Nothing to create. @see ArrayCstVal2Holder::create
     static void create() {}
     /// @brief Nothing to free, and no user count to keep.
     static void clear(int& /*nb_val2*/) {}
@@ -1034,4 +1034,4 @@ class TabCstVal2Holder<bool>
 
 } // namespace shrink_array
 
-#include "chunk/internal/tab_cst_val2_holder_inline.h" // the template bodies
+#include "chunk/internal/array_cst_val2_holder_inline.h" // the template bodies

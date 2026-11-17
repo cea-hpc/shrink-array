@@ -194,7 +194,7 @@ struct LoopsSimd
         // meet: (1) these tunings no longer emit hardware gathers (the
         // Downfall/GDS mitigation; -mgather or -mtune=haswell bring them
         // back), so the vectoriser emulates the gathers of the body's
-        // tab[nnn] reads; (2) under `omp simd reduction` the load of ll's data
+        // arr[nnn] reads; (2) under `omp simd reduction` the load of ll's data
         // pointer stays inside the loop, and the emulated gather gives up on
         // it ("not vectorized: no vectype for stmt: ... _M_start", scalar type
         // int* const). Nothing writes an int* in the body: the load is

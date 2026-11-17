@@ -38,7 +38,7 @@
  * @par Why two slab kinds
  * fast_alloc::TCAllocator threads its free list THROUGH the freed elements, writing the
  * next free index into the element's first bytes. fast_alloc::TCCAllocator does not: it
- * keeps the links in a side array (TCSlab::tab_first_free_) and never writes
+ * keeps the links in a side array (TCSlab::array_first_free_) and never writes
  * into a free element, so an emptied slab's pages can be dropped with madvise()
  * without losing anything the allocator needs. That side array is indexed by
  * `unsigned short`, which is what caps a TCCAllocator slab at
@@ -168,7 +168,7 @@ enum class FreeLinks : std::uint8_t
     /// the index of the next free one. No extra memory, but an element must be
     /// at least an `int` wide and its contents do not survive a free.
     in_payload,
-    /// In a side array (TCSlab::tab_first_free_), never in the elements: the
+    /// In a side array (TCSlab::array_first_free_), never in the elements: the
     /// allocator never writes into a free element, so an emptied slab's pages
     /// can be dropped (fast_alloc::EmptySlabSweep) without losing a
     /// link. The array is `unsigned short`, which caps a slab at
@@ -205,7 +205,7 @@ template <FreeLinks Links>
 class alignas(64) TCSlab
 {
   public:
-    /// @brief The links live in #tab_first_free_ rather than in the elements.
+    /// @brief The links live in #array_first_free_ rather than in the elements.
     static constexpr bool side_links = Links == FreeLinks::side_array;
 
     /// @brief An element index on the free list.
@@ -224,7 +224,7 @@ class alignas(64) TCSlab
         destroy();
     }
 
-    // Owns its block (and #tab_first_free_): a copy would release them twice.
+    // Owns its block (and #array_first_free_): a copy would release them twice.
     TCSlab(const TCSlab&)            = delete;
     TCSlab& operator=(const TCSlab&) = delete;
     TCSlab(TCSlab&&)                 = delete;
@@ -420,7 +420,7 @@ class alignas(64) TCSlab
     /// @brief Set the free-list link of element @p elem to @p next_free.
     void set_link(int elem, IndexType next_free) noexcept;
 
-    /// @brief Free #tab_first_free_ and hand the block back to the arena named
+    /// @brief Free #array_first_free_ and hand the block back to the arena named
     ///        by #arena_kind.
     inline void destroy();
 
@@ -428,7 +428,7 @@ class alignas(64) TCSlab
      * @brief Obtain the block and lay it out.
      * @details Rounds the block size up to a power of two (slab_from() masks
      *          with it), derives #block_size from it -- capped to the index width
-     *          with side links, which also sizes #tab_first_free_ -- takes the
+     *          with side links, which also sizes #array_first_free_ -- takes the
      *          block from the arena and writes `this` into its last word. The
      *          block is not cleared, fresh or recycled: see the class @warning.
      */
@@ -442,7 +442,7 @@ class alignas(64) TCSlab
     /// @brief Free-list links, one per element, with side links. Kept out of
     ///        the payload, so an emptied slab's pages can be dropped without
     ///        losing them.
-    [[no_unique_address]] std::conditional_t<side_links, std::vector<unsigned short>, NoSideArray> tab_first_free_;
+    [[no_unique_address]] std::conditional_t<side_links, std::vector<unsigned short>, NoSideArray> array_first_free_;
 };
 
 /// @brief Slab with its free list threaded through the freed elements: the op

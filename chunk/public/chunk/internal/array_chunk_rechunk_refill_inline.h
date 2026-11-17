@@ -517,8 +517,8 @@ bool RechunkSupport<Derived, true>::Refill::install_cst2([[maybe_unused]] int   
             // would be looked up even in a discarded branch.
             const auto value = static_cast<T>(std::as_const(src_)[span.base]);
             auto&      nch   = tmp_.chunk_list_[static_cast<std::size_t>(new_chunk)];
-            const auto psv   = ProxyType::BaseSpec::get_tab_second_value(tmp_.array_id_, new_chunk);
-            CstSlot*   ptc   = &ProxyType::tab_type_cst_val[tmp_.array_id_][new_chunk];
+            const auto psv   = ProxyType::BaseSpec::get_array_second_value(tmp_.array_id_, new_chunk);
+            CstSlot*   ptc   = &ProxyType::array_type_cst_val[tmp_.array_id_][new_chunk];
             (void)nch.find_or_set_ind_cst_val2(value, psv);
             ChunkType::set_cst_val_to_cst_val2(ptc);
             nch.init_values_cst_val(ptc, psv);
@@ -724,8 +724,8 @@ void RechunkSupport<Derived, true>::Refill::release_sources([[maybe_unused]] con
                 // written(): neither cst1 nor a cst2 (a pattern motif included).
                 if (och.written())
                 {
-                    och.release_st(&ProxyType::tab_type_cst_val[src_.array_id_][oc],
-                                   ProxyType::BaseSpec::get_tab_second_value(src_.array_id_, oc), thr);
+                    och.release_st(&ProxyType::array_type_cst_val[src_.array_id_][oc],
+                                   ProxyType::BaseSpec::get_array_second_value(src_.array_id_, oc), thr);
                 }
             }
             else

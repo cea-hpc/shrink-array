@@ -22,9 +22,9 @@
 #include <source_location> // std::source_location
 
 #include "chunk/internal/second_value_chunk_base.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
-#include "chunk/config.h"                       // build_config::any_check, chunk_config::use_compression_with_counter
-#include "chunk/internal/pmp_chunk.h"           // get_thr_rank_fast
-#include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef
+#include "chunk/config.h"                         // build_config::any_check, chunk_config::use_compression_with_counter
+#include "chunk/internal/pmp_chunk.h"             // get_thr_rank_fast
+#include "chunk/internal/array_cst_val2_holder.h" // SecondValueRef
 
 namespace shrink_array
 {
@@ -265,9 +265,9 @@ void SecondValueChunkBase<T, Derived>::assert_writable_buffer(const T*          
         // zero_any: the secondary constants live in one region -- the test is
         // a range test on the target, not a pointer to compare with.
         bool target_in_cst2_region = false;
-        if constexpr (requires { derived().tab_cst_val2_holder::is_cst_val2_ptr(target_ptr); })
+        if constexpr (requires { derived().array_cst_val2_holder::is_cst_val2_ptr(target_ptr); })
         {
-            target_in_cst2_region = derived().tab_cst_val2_holder::is_cst_val2_ptr(target_ptr);
+            target_in_cst2_region = derived().array_cst_val2_holder::is_cst_val2_ptr(target_ptr);
             if (target_in_cst2_region)
             {
                 c2 = static_cast<const void*>(target_ptr);

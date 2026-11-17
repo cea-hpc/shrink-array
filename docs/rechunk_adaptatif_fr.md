@@ -249,7 +249,7 @@ se limite aux reconstructions.
   (la ligne `churn` de `CHUNK_LOG=rechunk=debug`), mais un calcul qui écrit beaucoup dans des zones constantes
   pourrait faire regretter un grossissement : c'est le rôle de l'apprentissage
   (`coarsen_trust_ratio`) et de l'anti-retour.
-- **Les tableaux de booléens du banc** : `tab_bool` et `tab_bool_bits` restent à leur
+- **Les tableaux de booléens du banc** : `array_bool` et `array_bool_bits` restent à leur
   géométrie de naissance, sauf si `--advise_bool` les confie au décideur, pour que les deux
   conteneurs de booléens soient comparés tels quels. Le rechunk de `Array<bool>` est vérifié
   par `rechunk_validation` (`bool-grow`, `bool-shrink`, `bool-uneven`, `bool-sliced`, toutes

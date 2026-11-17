@@ -83,7 +83,7 @@ struct ChunkSizeAdvisor; // chunk_size_advisor.h: its Options are this scan's
 namespace internal
 {
 /**
- * @brief The data of chunk @p idx of @p tab, a member with the motif state
+ * @brief The data of chunk @p idx of @p arr, a member with the motif state
  *        (pattern::Array): its buffer; for a motif chunk, its motif plus its
  *        offset, written into this thread's scratch buffer @p which (0 or 1:
  *        the analysis holds two chunks' data at once).
@@ -91,19 +91,19 @@ namespace internal
  *          from discarded branches for the other variants.
  */
 template <typename Arr>
-[[nodiscard]] const Arr::value_type* motif_chunk_data(const Arr& tab, int64_t idx, int which)
+[[nodiscard]] const Arr::value_type* motif_chunk_data(const Arr& arr, int64_t idx, int which)
 {
     using ChunkT = Arr::ChunkType;
     using T      = Arr::value_type;
     static thread_local std::array<std::vector<T>, 2> buffers;
     std::vector<T>&                                   scratch = buffers[static_cast<std::size_t>(which)];
-    const T* const                                    vals    = tab.chunk_list_[idx].values_load();
+    const T* const                                    vals    = arr.chunk_list_[idx].values_load();
     if (!ChunkT::is_motif_ptr(vals))
     {
         return vals;
     }
-    const T        off      = load_element_relaxed(tab.motif_offset_slot(static_cast<int>(idx)));
-    const uint32_t chunk_sz = tab.chunk_size();
+    const T        off      = load_element_relaxed(arr.motif_offset_slot(static_cast<int>(idx)));
+    const uint32_t chunk_sz = arr.chunk_size();
     scratch.resize(chunk_sz);
     for (uint32_t i = 0; i < chunk_sz; ++i)
     {
@@ -139,9 +139,9 @@ class ChunkSizeScan
     /// @brief Chunks from which the passes run in a team.
     static constexpr int64_t team_min_chunks = 16384;
 
-    /// @brief Bind to @p tab (at least one chunk, a non-zero chunk size) and
+    /// @brief Bind to @p arr (at least one chunk, a non-zero chunk size) and
     ///        list the candidate sizes @p opt asks for.
-    ChunkSizeScan(const Arr& tab, const Options& opt);
+    ChunkSizeScan(const Arr& arr, const Options& opt);
 
     /// @brief Run the passes (see the file comment). Once.
     void run();
@@ -221,7 +221,7 @@ class ChunkSizeScan
     /// @brief The key zero_one_value gives its cst2 chunks: the array-level
     ///        second-value index, fetched once (0 for bool / Bit, which have
     ///        one second value and no index; -1 for the other variants).
-    [[nodiscard]] static int second_value_index(const Arr& tab);
+    [[nodiscard]] static int second_value_index(const Arr& arr);
 
     /// @brief Would a uniform run of @p elem be storable as a constant?
     ///        (classify() asks whether a chunk already is one.) zero:
@@ -330,7 +330,7 @@ class ChunkSizeScan
     ///        into the shared ones; a barrier or the region's end publishes them.
     static void add_counts(std::vector<int64_t>& to, const std::vector<int64_t>& from);
 
-    const Arr&     tab_;
+    const Arr&     array_;
     const Options& opt_;
     uint32_t       chunk_sz_; ///< the array's chunk size now (S)
     int64_t        nc_;       ///< its chunks

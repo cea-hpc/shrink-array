@@ -164,7 +164,7 @@ endfunction()
 # way, both live side by side.
 #
 # NOT registered with ctest: these are perf instruments first. --mode check
-# works on them, against the data_tab* files of the 32-bit vector_check of the
+# works on them, against the data_array* files of the 32-bit vector_check of the
 # same configuration (element values, independent of Int);
 # python/bench_and_test.py runs a few such checks.
 # ============================================================================
@@ -277,8 +277,8 @@ if (CHUNK_WITH_TBB AND CHUNK_THREADS_BACKEND STREQUAL "std")
   endforeach()
 endif()
 
-# No chunk2bits targets: every shrink_bench_<backend>_zero_one_value_* run carries tab_bool
-# (zero_one_value::Array<bool>, one byte per bool) AND its twin tab_bool_bits
+# No chunk2bits targets: every shrink_bench_<backend>_zero_one_value_* run carries array_bool
+# (zero_one_value::Array<bool>, one byte per bool) AND its twin array_bool_bits
 # (BitArray, 8 per byte) on the same workload -- see BenchBoolBitsArray
 # (bench_array.h). The zero / zero_any builds give the twin their own
 # Array<bool>.
@@ -346,7 +346,7 @@ endif ()
 if (CHUNK_BUILD_DYN)
   # --- Tests: register the check declinations of each variant ---
   #
-  # The check runs compare against the reference files (data_tab*) that
+  # The check runs compare against the reference files (data_array*) that
   # shrink_bench_<backend>_vector_check writes -- relative paths, in the working directory
   # every test here shares (this build dir). So:
   #  - vector_check is the SETUP of fixture shrink_bench_oracle and every check

@@ -123,7 +123,7 @@ the tag's checksum to the recipe.
   access paths, the concurrency model, memory, dynamic geometry, backends, the decisions with
   the alternatives rejected, known limits. Linked from `docs/README.md` and both READMEs;
   `check_docs.py` checks the pair.
-- `shrink_bench --advise_bool`: hands `tab_bool` and `tab_bool_bits` to the re-chunk decider
+- `shrink_bench --advise_bool`: hands `array_bool` and `array_bool_bits` to the re-chunk decider
   (off by default: the two bool containers stay at their birth geometry, to be compared as
   they are). `rechunk_validation` gains `bool-sliced`: `Array<bool>` through the sliced
   rebuild, for the three variants.
@@ -146,6 +146,13 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- `tab` (French: tableau) is `array` in the names of the sources, examples and documents:
+  `array_int`, `array_bool`, ... of `shrink_bench` (`tab_int`, ...), `arr1` ... `arr5` and `arr`
+  (`tab1`, `tab`), the library's `array_is_inside_chunk_list_to_compress`,
+  `get_array_second_value`, `ArrayCstVal2Holder` in `chunk/internal/array_cst_val2_holder.h`
+  (`tab_cst_val2_holder.h`), ... The statistics name an array `[array_0 double]`
+  (`[tab_0 double]`), and `shrink_bench`'s reference files are `data_array_<name>_<k>.bin`
+  (`data_tab_*`): an oracle directory made before is made again by the next campaign.
 - Internal names, none of them part of the interface. Headers of `chunk/internal/`:
   `concept_is_clean_assignment.h` (its name was misspelt), `pmp_chunk.h` and `chunk_tuples.h`
   (`PMP_CHUNK.h` and `TChunk.h` were the two files not in snake_case), `pow2.h` (`func_p2.h`),
@@ -231,7 +238,7 @@ the tag's checksum to the recipe.
 - The end-of-life census line of a zero array says what the variant compresses: "few all-zero
   chunks — zero compresses only all-zero chunks" instead of "compression marginal vs
   std::vector", which read as a failure on an array zero cannot help. `shrink_bench` says
-  before `tab_conn`'s line, in zero builds, that a connectivity is pattern::Array's case.
+  before `array_conn`'s line, in zero builds, that a connectivity is pattern::Array's case.
 - `fill_range_mt` skips a chunk already at the fill value with one test, as `fill_range` does,
   instead of arming it element by element; `fill_range` does the same on its `bool` path.
 - **The public interface, narrowed and frozen** (breaking). The public headers are what

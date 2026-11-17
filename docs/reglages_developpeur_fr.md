@@ -96,8 +96,8 @@ et `CHUNK_ADVISOR_TABLE`.
 | variable ou option | effet |
 |---|---|
 | `--advisor_period <n>` | période des passages de l'advisor, en itérations (défaut `max(10, iter_max / 20)` ; 0 le désactive) |
-| `--advise_five` | seuls les cinq tableaux historiques sont confiés au décideur (défaut : tous les tableaux sauf `tab_bool` et `tab_bool_bits`) |
-| `--advise_bool` | `tab_bool` et `tab_bool_bits` sont aussi confiés au décideur (défaut : ils restent à leur géométrie de naissance, pour que les deux conteneurs de booléens soient comparés tels quels) |
+| `--advise_five` | seuls les cinq tableaux historiques sont confiés au décideur (défaut : tous les tableaux sauf `array_bool` et `array_bool_bits`) |
+| `--advise_bool` | `array_bool` et `array_bool_bits` sont aussi confiés au décideur (défaut : ils restent à leur géométrie de naissance, pour que les deux conteneurs de booléens soient comparés tels quels) |
 | `--rechunk_dry_run` | le décideur analyse et journalise, mais n'applique aucun rechunk (`RechunkPolicy::dry_run`) |
 | `--rechunk_max_coarsen <n>` | facteur maximal d'un grossissement (`max_coarsen_factor`, 4 ; 1 = sans limite) |
 | `--rechunk_min_gain_mb <x>` | seuil absolu de gain côté données, en Mo (`min_gain_bytes`, 8 ; 0 le supprime) |
@@ -118,8 +118,8 @@ et `CHUNK_ADVISOR_TABLE`.
 | `BENCH_SCHED_BLOCK` | taille des blocs d'ordonnancement des phases du banc (64 ; 0 = tranches contiguës) |
 | `BENCH_RANK_TIMING` | `1` : tous les backends du banc (OpenMP, std, TBB), chronomètre chaque région par rang (par rang virtuel sous TBB) et affiche en fin de run, par site d'appel, la répartition du temps des threads en travail / déséquilibre / démarrage / fin, et le temps en série entre les régions (stderr, lignes `[rank-timing]`). Sous TBB la fin de phase (`finalize_parallel_phase`) est chronométrée à part ; ailleurs elle tombe dans la fin (celle d'OMPT, à la fin de chaque région) ou dans le temps en série (celle du banc, entre les régions) |
 | `NO_IO`, `COMPRESS` | équivalents de `--no_io` et `--compress` |
-| `--no_mask`, `--mask_scale <x>` | sans `tab_mask` ; ou sa taille, `x × sz` (défaut 1/32) |
-| `--no_conn`, `--conn_scale <x>` | sans `tab_conn`, la connectivité de maillage (`pattern::Array` dans les builds `zero_one_value` et `zero_any`) ; ou sa taille, environ `x × sz` en rangées entières (défaut 1/32) |
+| `--no_mask`, `--mask_scale <x>` | sans `array_mask` ; ou sa taille, `x × sz` (défaut 1/32) |
+| `--no_conn`, `--conn_scale <x>` | sans `array_conn`, la connectivité de maillage (`pattern::Array` dans les builds `zero_one_value` et `zero_any`) ; ou sa taille, environ `x × sz` en rangées entières (défaut 1/32) |
 | `--no_struct` | sans les tableaux de structures (`Point3`, `Cell`) |
 
 ## 5. Macros de compilation

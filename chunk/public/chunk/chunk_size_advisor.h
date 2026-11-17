@@ -42,7 +42,7 @@
 // windows of C elements, each classified from the CURRENT chunks it overlaps
 // (details at "The window model" in internal/chunk_size_scan.h, whose
 // ChunkSizeScan does the counting). For zero_any the identity of a
-// cst_val2 constant IS the values_load() pointer (a TabCstVal2Holder slot), so
+// cst_val2 constant IS the values_load() pointer (a ArrayCstVal2Holder slot), so
 // a constant run is a pointer comparison:
 //         cst1 + cst1           -> cst1
 //         cst2(p) + cst2(p)     -> cst2
@@ -200,18 +200,18 @@ struct ChunkSizeAdvisor
                                         ///< lower floor over-shrinks to tiny chunks.
     };
 
-    /// @brief Estimate, from @p tab's constant runs, the memory each
+    /// @brief Estimate, from @p arr's constant runs, the memory each
     ///        candidate chunk size would give it. Read-only; call at a
     ///        quiescent point. Variant-generic via @p Arr (zero::Array /
     ///        zero_one_value::Array / zero_any::Array): the only per-variant part is the
     ///        cst2 classification, selected with if constexpr on chunk_config.
     template <typename Arr>
-    static ChunkSizeReport analyze(const Arr& tab, const Options& opt = {})
+    static ChunkSizeReport analyze(const Arr& arr, const Options& opt = {})
     {
         ChunkSizeReport rep;
 
-        const uint32_t chunk_sz = tab.chunk_size();
-        const int64_t  nc       = tab.chunk_count_;
+        const uint32_t chunk_sz = arr.chunk_size();
+        const int64_t  nc       = arr.chunk_count_;
         rep.current_size        = chunk_sz;
         rep.meta_bytes          = static_cast<double>(sizeof(typename Arr::ChunkType)) + opt.meta_extra_bytes;
         rep.elem_bytes =
@@ -226,7 +226,7 @@ struct ChunkSizeAdvisor
         }
 
         // The counts (internal/chunk_size_scan.h), then the table, ascending sizes.
-        internal::ChunkSizeScan<Arr> scan(tab, opt);
+        internal::ChunkSizeScan<Arr> scan(arr, opt);
         scan.run();
         const auto n_cand = static_cast<int>(scan.candidates().size());
         rep.best          = 0;

@@ -37,7 +37,7 @@
 #include "chunk/internal/in_t.h"                        // InT<T>
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/proxy_operators.h"             // ProxyOperators
-#include "chunk/internal/tab_cst_val2_holder.h"         // TabCstVal2Holder: second-value identifiers
+#include "chunk/internal/array_cst_val2_holder.h"       // ArrayCstVal2Holder: second-value identifiers
 #include "chunk/internal/relaxed_element.h"             // store_value: zero_any's relaxed element stores
 #include "chunk/internal/concept_is_clean_assignment.h" // IsCleanCompoundOp, IsCleanShiftOp, BaseT
 #include "chunk/internal/crtp_support.h"                // CRTPSupport, CHUNK_CRTP_USE_DEDUCING_THIS
@@ -101,13 +101,13 @@ template <typename T>
 [[nodiscard]] T element_of(const T* vals, std::size_t index) noexcept
 {
     if constexpr (requires(const T* ptr) {
-                      TabCstVal2Holder<T>::is_cst_val2_ptr(ptr);
-                      TabCstVal2Holder<T>::value_of_ptr_checked(ptr);
+                      ArrayCstVal2Holder<T>::is_cst_val2_ptr(ptr);
+                      ArrayCstVal2Holder<T>::value_of_ptr_checked(ptr);
                   })
     {
-        if (TabCstVal2Holder<T>::is_cst_val2_ptr(vals)) [[unlikely]]
+        if (ArrayCstVal2Holder<T>::is_cst_val2_ptr(vals)) [[unlikely]]
         {
-            return TabCstVal2Holder<T>::value_of_ptr_checked(vals);
+            return ArrayCstVal2Holder<T>::value_of_ptr_checked(vals);
         }
     }
     // elem_get, not vals[index]: for Bit, vals[index] indexes BYTES past the
@@ -164,7 +164,7 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
     using CRTPSupport<Derived>::derived;
 
     /// @brief set_ptr_is_inside_chunk_list_to_compress() for the replay path,
-    ///        taking the tab/chunk indices from @p ctx.
+    ///        taking the array/chunk indices from @p ctx.
     void set_ptr_is_inside_chunk_list_to_compress_async(auto* ctx);
 
     /// @brief Queue the chunk @p ctx names as a compression candidate, on the
@@ -180,9 +180,9 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
      * @brief Grow the per-array table of candidate-flag arrays to @p array_count entries.
      * @param array_count Number of arrays to make room for.
      */
-    static void resize_tab_is_int(int array_count)
+    static void resize_array_is_int(int array_count)
     {
-        tab_is_inside_chunk_list_to_compress.resize(array_count);
+        array_is_inside_chunk_list_to_compress.resize(array_count);
     }
 
     /**
@@ -192,7 +192,7 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
      * @note Replacing the vector frees the previous flags, so this doubles as
      *       the release path on a re-chunk.
      */
-    static void resize_tab_is_int(int array_id, int chunk_count);
+    static void resize_array_is_int(int array_id, int chunk_count);
 
     /**
      * @brief Release one array's candidate flags (its teardown).
@@ -200,15 +200,15 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
      *          freed. Required: a re-chunk builds the new storage under a NEW
      *          array_id, so an old row is otherwise never replaced (one byte per
      *          old chunk leaked per re-chunk). Swapped with an empty row to free
-     *          the capacity. A later resize_tab_is_int() reallocates.
+     *          the capacity. A later resize_array_is_int() reallocates.
      * @param array_id The dying array's index.
      */
-    static void release_tab_is_int(int array_id) noexcept
+    static void release_array_is_int(int array_id) noexcept
     {
-        using RowT = std::remove_reference_t<decltype(tab_is_inside_chunk_list_to_compress)>::value_type;
-        if (array_id >= 0 && static_cast<std::size_t>(array_id) < tab_is_inside_chunk_list_to_compress.size())
+        using RowT = std::remove_reference_t<decltype(array_is_inside_chunk_list_to_compress)>::value_type;
+        if (array_id >= 0 && static_cast<std::size_t>(array_id) < array_is_inside_chunk_list_to_compress.size())
         {
-            RowT{}.swap(tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(array_id)]);
+            RowT{}.swap(array_is_inside_chunk_list_to_compress[static_cast<std::size_t>(array_id)]);
         }
     }
 
@@ -252,20 +252,20 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
     static inline constinit internal::Immortal<CompressionManager<T, ChunkT>> compression_mgr_storage_{};
     static inline CompressionManager<T, ChunkT>& compression_mgr = compression_mgr_storage_.value;
 
-    /// @brief This proxy's entry in #tab_is_inside_chunk_list_to_compress, or
+    /// @brief This proxy's entry in #array_is_inside_chunk_list_to_compress, or
     ///        null before set_ptr_is_inside_chunk_list_to_compress() runs.
     std::atomic<char>* ptr_is_inside_chunk_list_to_compress_ = nullptr;
 
     /**
-     * @brief Per-tab array of atomic flags indicating whether each chunk is marked for compression.
+     * @brief Per-array row of atomic flags indicating whether each chunk is marked for compression.
      * Each entry holds chunk_count atomic<char> flags (ChunkFlagRowT), built
      * whole by make_filled (atomics are not movable).
      */
 
     static inline constinit internal::Immortal<internal::StableTable<ChunkFlagRowT>>
-                                                        tab_is_inside_chunk_list_to_compress_storage_{};
-    static inline internal::StableTable<ChunkFlagRowT>& tab_is_inside_chunk_list_to_compress =
-        tab_is_inside_chunk_list_to_compress_storage_.value;
+                                                        array_is_inside_chunk_list_to_compress_storage_{};
+    static inline internal::StableTable<ChunkFlagRowT>& array_is_inside_chunk_list_to_compress =
+        array_is_inside_chunk_list_to_compress_storage_.value;
 };
 
 /**
@@ -284,22 +284,22 @@ class ProxyBaseFastCompPolicy<Derived, T, ChunkT, false> : public CRTPSupport<De
     /// @note Still declared: ArrayChunkBase::create_common() calls it
     ///       unconditionally, because the call site is shared with variants
     ///       that do need it.
-    static void resize_tab_is_int([[maybe_unused]] int array_count) noexcept {}
+    static void resize_array_is_int([[maybe_unused]] int array_count) noexcept {}
     /// @brief No candidate flags in this configuration; nothing to size.
-    static void resize_tab_is_int([[maybe_unused]] int array_id, [[maybe_unused]] int chunk_count) noexcept {}
+    static void resize_array_is_int([[maybe_unused]] int array_id, [[maybe_unused]] int chunk_count) noexcept {}
     /// @brief Release one array's candidate flags, as the enabled policy does.
     /// @details Do not make this a no-op: zero_any's serial build has candidate
-    ///          lists and sizes these rows itself (zero_any::Proxy::resize_tab_is_int).
+    ///          lists and sizes these rows itself (zero_any::Proxy::resize_array_is_int).
     ///          Otherwise a cleared array's flags stay at 1 with no list entry
     ///          behind them (one byte per chunk leaked) and the next
-    ///          resize_tab_is_int() on that tab fails its "still queued" check.
+    ///          resize_array_is_int() on that array fails its "still queued" check.
     ///          zero and zero_one_value never fill a row here: the guard makes it free.
-    static void release_tab_is_int(int array_id) noexcept
+    static void release_array_is_int(int array_id) noexcept
     {
-        using RowT = std::remove_reference_t<decltype(tab_is_inside_chunk_list_to_compress)>::value_type;
-        if (array_id >= 0 && static_cast<std::size_t>(array_id) < tab_is_inside_chunk_list_to_compress.size())
+        using RowT = std::remove_reference_t<decltype(array_is_inside_chunk_list_to_compress)>::value_type;
+        if (array_id >= 0 && static_cast<std::size_t>(array_id) < array_is_inside_chunk_list_to_compress.size())
         {
-            RowT{}.swap(tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(array_id)]);
+            RowT{}.swap(array_is_inside_chunk_list_to_compress[static_cast<std::size_t>(array_id)]);
         }
     }
 
@@ -316,9 +316,9 @@ class ProxyBaseFastCompPolicy<Derived, T, ChunkT, false> : public CRTPSupport<De
     static inline CompressionManager<T, ChunkT>& compression_mgr = compression_mgr_storage_.value;
     std::atomic<char>*                           ptr_is_inside_chunk_list_to_compress_;
     static inline constinit internal::Immortal<internal::StableTable<ChunkFlagRowT>>
-                                                        tab_is_inside_chunk_list_to_compress_storage_{};
-    static inline internal::StableTable<ChunkFlagRowT>& tab_is_inside_chunk_list_to_compress =
-        tab_is_inside_chunk_list_to_compress_storage_.value;
+                                                        array_is_inside_chunk_list_to_compress_storage_{};
+    static inline internal::StableTable<ChunkFlagRowT>& array_is_inside_chunk_list_to_compress =
+        array_is_inside_chunk_list_to_compress_storage_.value;
 };
 
 namespace internal
@@ -493,7 +493,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     void set_ptr_is_inside_chunk_list_to_compress() noexcept
     {
         ptr_is_inside_chunk_list_to_compress_ =
-            &FastCompPolicy::tab_is_inside_chunk_list_to_compress[array_id_][chunk_index_];
+            &FastCompPolicy::array_is_inside_chunk_list_to_compress[array_id_][chunk_index_];
     }
 
     /// @brief add_to_compression_list() on the calling thread's own list.
@@ -1157,23 +1157,24 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @param chunk_index Chunk index within that array.
      * @param flag New flag value (0: not queued).
      */
-    static void set_tab_is_inside_chunk_list_to_compress(int array_id, int chunk_index, char flag) noexcept
+    static void set_array_is_inside_chunk_list_to_compress(int array_id, int chunk_index, char flag) noexcept
     {
-        FastCompPolicy::tab_is_inside_chunk_list_to_compress[array_id][chunk_index] = flag;
+        FastCompPolicy::array_is_inside_chunk_list_to_compress[array_id][chunk_index] = flag;
     }
 
     /// @brief The whole candidate-flag row for array @p array_id.
-    static ChunkFlagRowT& get_tab_is_inside_list_to_compress(int array_id) noexcept
+    static ChunkFlagRowT& get_array_is_inside_list_to_compress(int array_id) noexcept
     {
-        return FastCompPolicy::tab_is_inside_chunk_list_to_compress[array_id];
+        return FastCompPolicy::array_is_inside_chunk_list_to_compress[array_id];
     }
 
     /// @brief Clear one chunk's candidate flag, so it may be queued again.
     /// @note Release store: whatever made the chunk a candidate must be visible
     ///       to the thread that next reads the flag.
-    static void reset_tab_inside_list_to_compress(int array_id, int chunk_index) noexcept
+    static void reset_array_inside_list_to_compress(int array_id, int chunk_index) noexcept
     {
-        FastCompPolicy::tab_is_inside_chunk_list_to_compress[array_id][chunk_index].store(0, std::memory_order_release);
+        FastCompPolicy::array_is_inside_chunk_list_to_compress[array_id][chunk_index].store(0,
+                                                                                            std::memory_order_release);
     }
 
   private:

@@ -19,7 +19,7 @@
 #include "bench_prelude.h" // Int, tc, ComplexDouble, SHRINK_ARRAY
 
 #include <algorithm> // std::min, std::max
-#include <limits>    // std::numeric_limits (tab_mask's size)
+#include <limits>    // std::numeric_limits (array_mask's size)
 #include <cfenv>     // feenableexcept, FE_DIVBYZERO
 #include <chrono>    // std::chrono::steady_clock
 #include <cmath>     // std::sin (the range-API checks)
@@ -237,8 +237,8 @@ try
     const bool      no_struct       = bench_args.no_struct;
     const bool      no_mask         = bench_args.no_mask;
     const bool      no_conn         = bench_args.no_conn;
-    const double    mask_scale      = bench_args.mask_scale; // tab_mask's size / sz
-    const double    conn_scale      = bench_args.conn_scale; // tab_conn's size / sz
+    const double    mask_scale      = bench_args.mask_scale; // array_mask's size / sz
+    const double    conn_scale      = bench_args.conn_scale; // array_conn's size / sz
     const double    multiply_factor = bench_args.multiply_factor;
     const double    divisor_factor  = bench_args.divisor_factor;
     const Int       iter_max_arg    = bench_args.iter_max_arg;
@@ -471,47 +471,47 @@ try
             type_instances);
     };
 
-    Array<double>        tab1(sz);
-    Array<double>        tab2(sz);
-    Array<double>        tab3(sz);
-    Array<double>        tab4(sz);
-    Array<double>        tab5(sz);
-    Array<int>           tab_int(sz);
-    Array<ComplexDouble> tab_complex(sz);
+    Array<double>        arr1(sz);
+    Array<double>        arr2(sz);
+    Array<double>        arr3(sz);
+    Array<double>        arr4(sz);
+    Array<double>        arr5(sz);
+    Array<int>           array_int(sz);
+    Array<ComplexDouble> array_complex(sz);
 
-    Array<float>         tab_float(2 * sz);
-    Array<short>         tab_short(sz / 2);
-    Array<unsigned char> tab_char(2 * sz);
-    Array<long>          tab_long(sz);
-    Array<unsigned long> tab_ulong(sz);
+    Array<float>         array_float(2 * sz);
+    Array<short>         array_short(sz / 2);
+    Array<unsigned char> array_char(2 * sz);
+    Array<long>          array_long(sz);
+    Array<unsigned long> array_ulong(sz);
     // Quantised field: no single second value to declare, it registers one per
     // level it lands on (bench_array.h::bench_double_bands).
-    Array<double> tab_quant(sz);
+    Array<double> array_quant(sz);
 
     // Two aggregate element types (bench_struct.h): the library asks nothing
     // of them beyond the element contract, and their runs of null elements
     // and of a repeated value compress like the arithmetic arrays' 0 and
     // second value.
     // Size 1 under --no_struct: the phases skip them (BenchArrays::with_struct).
-    Array<Point3> tab_point(no_struct ? 1 : sz);
-    Array<Cell>   tab_cell(no_struct ? 1 : sz);
+    Array<Point3> array_point(no_struct ? 1 : sz);
+    Array<Cell>   array_cell(no_struct ? 1 : sz);
 
-    maybe_set_second_value(tab1, second_value_d);
-    maybe_set_second_value(tab2, second_value_d);
-    maybe_set_second_value(tab3, second_value_d);
+    maybe_set_second_value(arr1, second_value_d);
+    maybe_set_second_value(arr2, second_value_d);
+    maybe_set_second_value(arr3, second_value_d);
 
-    maybe_set_second_value(tab4, second_value_d1);
-    maybe_set_second_value(tab5, second_value_d2);
+    maybe_set_second_value(arr4, second_value_d1);
+    maybe_set_second_value(arr5, second_value_d2);
 
-    maybe_set_second_value(tab_int, second_value_i);
-    maybe_set_second_value(tab_complex, second_value_c);
-    maybe_set_second_value(tab_float, second_value_f0);
-    maybe_set_second_value(tab_short, second_value_s0);
-    maybe_set_second_value(tab_char, second_value_c0);
-    maybe_set_second_value(tab_long, second_value_l);
-    maybe_set_second_value(tab_ulong, second_value_ul);
-    maybe_set_second_value(tab_point, second_value_p);
-    maybe_set_second_value(tab_cell, second_value_cell);
+    maybe_set_second_value(array_int, second_value_i);
+    maybe_set_second_value(array_complex, second_value_c);
+    maybe_set_second_value(array_float, second_value_f0);
+    maybe_set_second_value(array_short, second_value_s0);
+    maybe_set_second_value(array_char, second_value_c0);
+    maybe_set_second_value(array_long, second_value_l);
+    maybe_set_second_value(array_ulong, second_value_ul);
+    maybe_set_second_value(array_point, second_value_p);
+    maybe_set_second_value(array_cell, second_value_cell);
 
     if constexpr (chunk_config::use_zero_any)
     {
@@ -528,12 +528,12 @@ try
 
     // Array<bool> in a shrink build, std::vector<short> in the baseline
     // (bench_array.h says why).
-    BenchBoolArray tab_bool(sz);
-    // tab_bool's twin, written with the same values at the same places:
-    // BitArray (8 bools per byte) in a zero_one_value build, tab_bool's own type
+    BenchBoolArray array_bool(sz);
+    // array_bool's twin, written with the same values at the same places:
+    // BitArray (8 bools per byte) in a zero_one_value build, array_bool's own type
     // elsewhere (BenchBoolBitsArray). Compare the two in the stats, the
     // chunk filling rates and the pools of a single run.
-    BenchBoolBitsArray tab_bool_bits(sz);
+    BenchBoolBitsArray array_bool_bits(sz);
 
     // Large and mostly NOT constant: random masks and scattered flags between
     // whole constant segments (bench_phase_mask.cpp). BitArray in a
@@ -541,7 +541,7 @@ try
     // Size 1 under --no_mask: its phases are skipped (BenchArrays::with_mask).
     // mask_scale * sz (--mask_scale, default 1/32): computed in 64 bits and
     // capped at the largest whole number of 1024-element blocks the build's Int
-    // holds -- at --mask_scale 8, the size tab_mask was created with, 8 x 10^9
+    // holds -- at --mask_scale 8, the size array_mask was created with, 8 x 10^9
     // wrapped a 32-bit Int to -589934592 and zero_any::Array<bool, int> threw
     // std::length_error. The int64 builds take the full size.
     const long long mask_want = std::max(std::llround(mask_scale * static_cast<double>(sz)), 1LL);
@@ -550,61 +550,61 @@ try
                                   : static_cast<Int>(mask_want);
     if (!no_mask && static_cast<long long>(mask_sz) != mask_want)
     {
-        std::cout << "Note: tab_mask capped at " << mask_sz << " elements (" << mask_want
+        std::cout << "Note: array_mask capped at " << mask_sz << " elements (" << mask_want
                   << " requested; Int is 32-bit here, the int64 build takes the full size)\n";
     }
-    BenchMaskArray tab_mask(no_mask ? 1 : mask_sz);
+    BenchMaskArray array_mask(no_mask ? 1 : mask_sz);
     if (!no_mask)
     {
-        std::cout << "tab_mask: " << mask_sz << " elements (--mask_scale " << mask_scale << ")\n";
+        std::cout << "array_mask: " << mask_sz << " elements (--mask_scale " << mask_scale << ")\n";
     }
 
     // A mesh connectivity (bench_phase_conn.cpp): pattern::Array<int> in the
     // zero_one_value and zero_any builds, zero::Array<int> in a zero build, a vector
     // in the baseline (BenchConnArray). About conn_scale * sz ints (--conn_scale,
     // default 1/32), whole rows of bench_conn_row, computed in 64 bits and capped
-    // at the build's Int as tab_mask; size 1 under --no_conn
+    // at the build's Int as array_mask; size 1 under --no_conn
     // (BenchArrays::with_conn) or when that is less than one row.
     const long long conn_rows_want =
         std::llround(conn_scale * static_cast<double>(sz)) / static_cast<long long>(bench_conn_row);
     const long long conn_rows_max = static_cast<long long>(std::numeric_limits<Int>::max()) / bench_conn_row;
     const Int       conn_sz       = static_cast<Int>((conn_rows_want < conn_rows_max ? conn_rows_want : conn_rows_max) *
                                                      static_cast<long long>(bench_conn_row));
-    const bool      no_tab_conn   = no_conn || conn_sz == 0;
-    BenchConnArray  tab_conn(no_tab_conn ? 1 : conn_sz);
-    if (!no_tab_conn)
+    const bool      no_array_conn = no_conn || conn_sz == 0;
+    BenchConnArray  array_conn(no_array_conn ? 1 : conn_sz);
+    if (!no_array_conn)
     {
-        std::cout << "tab_conn: " << conn_sz << " elements (" << conn_sz / bench_conn_row << " rows of "
+        std::cout << "array_conn: " << conn_sz << " elements (" << conn_sz / bench_conn_row << " rows of "
                   << bench_conn_nx << " cells, --conn_scale " << conn_scale << ")\n";
     }
 
     // Handle on the nineteen arrays, passed to the extracted phases. References,
     // so main() stays the owner -- it builds them and destroys them.
-    BenchArrays bench_arrays{tab1,          tab2,        tab3,        tab4,      tab5,     tab_int,  tab_bool,
-                             tab_bool_bits, tab_complex, tab_float,   tab_short, tab_char, tab_long, tab_ulong,
-                             tab_quant,     tab_point,   tab_cell,    tab_mask,  tab_conn, sz,       interval,
-                             !no_struct,    !no_mask,    !no_tab_conn};
+    BenchArrays bench_arrays{
+        arr1,          arr2,        arr3,        arr4,       arr5,       array_int,   array_bool,  array_bool_bits,
+        array_complex, array_float, array_short, array_char, array_long, array_ulong, array_quant, array_point,
+        array_cell,    array_mask,  array_conn,  sz,         interval,   !no_struct,  !no_mask,    !no_array_conn};
 
     // The end-of-life stats print these next to the table number.
-    maybe_set_debug_name(tab1, "tab1");
-    maybe_set_debug_name(tab2, "tab2");
-    maybe_set_debug_name(tab3, "tab3");
-    maybe_set_debug_name(tab4, "tab4");
-    maybe_set_debug_name(tab5, "tab5");
-    maybe_set_debug_name(tab_int, "tab_int");
-    maybe_set_debug_name(tab_bool, "tab_bool");
-    maybe_set_debug_name(tab_bool_bits, "tab_bool_bits");
-    maybe_set_debug_name(tab_complex, "tab_complex");
-    maybe_set_debug_name(tab_float, "tab_float");
-    maybe_set_debug_name(tab_short, "tab_short");
-    maybe_set_debug_name(tab_char, "tab_char");
-    maybe_set_debug_name(tab_long, "tab_long");
-    maybe_set_debug_name(tab_ulong, "tab_ulong");
-    maybe_set_debug_name(tab_quant, "tab_quant");
-    maybe_set_debug_name(tab_point, "tab_point");
-    maybe_set_debug_name(tab_cell, "tab_cell");
-    maybe_set_debug_name(tab_mask, "tab_mask");
-    maybe_set_debug_name(tab_conn, "tab_conn");
+    maybe_set_debug_name(arr1, "arr1");
+    maybe_set_debug_name(arr2, "arr2");
+    maybe_set_debug_name(arr3, "arr3");
+    maybe_set_debug_name(arr4, "arr4");
+    maybe_set_debug_name(arr5, "arr5");
+    maybe_set_debug_name(array_int, "array_int");
+    maybe_set_debug_name(array_bool, "array_bool");
+    maybe_set_debug_name(array_bool_bits, "array_bool_bits");
+    maybe_set_debug_name(array_complex, "array_complex");
+    maybe_set_debug_name(array_float, "array_float");
+    maybe_set_debug_name(array_short, "array_short");
+    maybe_set_debug_name(array_char, "array_char");
+    maybe_set_debug_name(array_long, "array_long");
+    maybe_set_debug_name(array_ulong, "array_ulong");
+    maybe_set_debug_name(array_quant, "array_quant");
+    maybe_set_debug_name(array_point, "array_point");
+    maybe_set_debug_name(array_cell, "array_cell");
+    maybe_set_debug_name(array_mask, "array_mask");
+    maybe_set_debug_name(array_conn, "array_conn");
 
     SingletonChk<GlobalStatsChunkList>::get_ref().print();
 
@@ -633,9 +633,9 @@ try
 
     bench_check_all(bench_arrays, -1, bench_io_flags);
 
-    tab_float.resize(sz);
-    tab_short.resize(sz, 0);
-    tab_char.resize(sz);
+    array_float.resize(sz);
+    array_short.resize(sz, 0);
+    array_char.resize(sz);
 
     // `if constexpr` rather than #ifdef: bench_config.h exposes print_mem for
     // exactly this, and memory_consumption is declared in every build. The body
@@ -669,10 +669,10 @@ try
 
     std::cout << "Iteration ..." << std::endl;
 
-    std::vector<Int> tab_size(iter_max);
-    std::vector<Int> tab_start(iter_max);
-    std::vector<Int> tab_nba1(iter_max);
-    std::vector<Int> tab_nba2(iter_max);
+    std::vector<Int> array_size(iter_max);
+    std::vector<Int> array_start(iter_max);
+    std::vector<Int> array_nba1(iter_max);
+    std::vector<Int> array_nba2(iter_max);
 
     // no parallel in OpenMP
     for (Int k = 0; k < iter_max; ++k)
@@ -680,12 +680,12 @@ try
         const Int size   = size_distribution(rng);
         const Int start0 = start_distribution(rng);
         const Int end0   = start0 + size;
-        tab_size[k]      = size;
-        tab_start[k]     = start0;
+        array_size[k]    = size;
+        array_start[k]   = start0;
 
         std::uniform_int_distribution uni1(start0, end0);
-        tab_nba1[k] = uni1(rng);
-        tab_nba2[k] = uni1(rng);
+        array_nba1[k] = uni1(rng);
+        array_nba2[k] = uni1(rng);
     }
 
     end             = std::chrono::steady_clock::now();
@@ -697,8 +697,8 @@ try
     ComplexDouble cv_val_sum   = zero_complex;
     long          long_val_sum = 0;
     double        point_sum    = 0; // the struct arrays' read sweep (bench_phase_struct.cpp)
-    long          mask_count   = 0; // tab_mask's read sweep (bench_phase_mask.cpp)
-    long          conn_sum     = 0; // tab_conn's gather (bench_phase_conn.cpp)
+    long          mask_count   = 0; // array_mask's read sweep (bench_phase_mask.cpp)
+    long          conn_sum     = 0; // array_conn's gather (bench_phase_conn.cpp)
     double        v_real       = 0;
     double        v_im         = 0;
 
@@ -804,59 +804,60 @@ try
             // the int64 build, and both counts stay far below INT_MAX.
             const int tick = static_cast<int>(advisor_call++);
             const int iter = static_cast<int>(k_iter);
-            rechunk_decider.consider<double>(tab1, tick, iter, "tab1");
-            rechunk_decider.consider<double>(tab2, tick, iter, "tab2");
-            rechunk_decider.consider<short>(tab_short, tick, iter, "tab_short");
-            rechunk_decider.consider<ComplexDouble>(tab_complex, tick, iter, "tab_complex");
+            rechunk_decider.consider<double>(arr1, tick, iter, "arr1");
+            rechunk_decider.consider<double>(arr2, tick, iter, "arr2");
+            rechunk_decider.consider<short>(array_short, tick, iter, "array_short");
+            rechunk_decider.consider<ComplexDouble>(array_complex, tick, iter, "array_complex");
             if (!no_struct)
             {
-                rechunk_decider.consider<Point3>(tab_point, tick, iter, "tab_point");
+                rechunk_decider.consider<Point3>(array_point, tick, iter, "array_point");
             }
             // Every other array too, advised by default: a dynamic run then
             // starts like the static S=64 build and ends below the static S=256
             // one (zero_any, 64 threads: 6.57 GB against 7.26 GB; with only the
             // five arrays above advised, the other ten stay at S=64, ~12.5 GB).
             // --advise_five advises only the five, for runs that must compare
-            // with earlier campaigns. tab_bool and tab_bool_bits excepted: both
+            // with earlier campaigns. array_bool and array_bool_bits excepted: both
             // stay at their birth geometry, so the two bool containers are
             // compared as they are, not after a re-chunk -- unless
             // --advise_bool hands them over too (below).
             if (!bench_args.advise_five)
             {
-                rechunk_decider.consider<double>(tab3, tick, iter, "tab3");
-                rechunk_decider.consider<double>(tab4, tick, iter, "tab4");
-                rechunk_decider.consider<double>(tab5, tick, iter, "tab5");
-                rechunk_decider.consider<int>(tab_int, tick, iter, "tab_int");
-                rechunk_decider.consider<float>(tab_float, tick, iter, "tab_float");
-                rechunk_decider.consider<unsigned char>(tab_char, tick, iter, "tab_char");
-                rechunk_decider.consider<long>(tab_long, tick, iter, "tab_long");
-                rechunk_decider.consider<unsigned long>(tab_ulong, tick, iter, "tab_ulong");
-                rechunk_decider.consider<double>(tab_quant, tick, iter, "tab_quant");
+                rechunk_decider.consider<double>(arr3, tick, iter, "arr3");
+                rechunk_decider.consider<double>(arr4, tick, iter, "arr4");
+                rechunk_decider.consider<double>(arr5, tick, iter, "arr5");
+                rechunk_decider.consider<int>(array_int, tick, iter, "array_int");
+                rechunk_decider.consider<float>(array_float, tick, iter, "array_float");
+                rechunk_decider.consider<unsigned char>(array_char, tick, iter, "array_char");
+                rechunk_decider.consider<long>(array_long, tick, iter, "array_long");
+                rechunk_decider.consider<unsigned long>(array_ulong, tick, iter, "array_ulong");
+                rechunk_decider.consider<double>(array_quant, tick, iter, "array_quant");
                 if (!no_struct)
                 {
-                    rechunk_decider.consider<Cell>(tab_cell, tick, iter, "tab_cell");
+                    rechunk_decider.consider<Cell>(array_cell, tick, iter, "array_cell");
                 }
-                if (!no_tab_conn)
+                if (!no_array_conn)
                 {
-                    rechunk_decider.consider<int>(tab_conn, tick, iter, "tab_conn");
+                    rechunk_decider.consider<int>(array_conn, tick, iter, "array_conn");
                 }
             }
             // --advise_bool: the two bool containers, re-chunked like the rest.
-            // tab_bool_bits is an BitArray in a zero_one_value build
-            // (value_type Bit, as tab_mask), tab_bool's own type elsewhere.
+            // array_bool_bits is an BitArray in a zero_one_value build
+            // (value_type Bit, as array_mask), array_bool's own type elsewhere.
             if (bench_args.advise_bool)
             {
-                rechunk_decider.consider<bool>(tab_bool, tick, iter, "tab_bool");
-                rechunk_decider.consider<BenchBoolBitsArray::value_type>(tab_bool_bits, tick, iter, "tab_bool_bits");
+                rechunk_decider.consider<bool>(array_bool, tick, iter, "array_bool");
+                rechunk_decider.consider<BenchBoolBitsArray::value_type>(array_bool_bits, tick, iter,
+                                                                         "array_bool_bits");
             }
-            // tab_mask: an BitArray in a zero_one_value build, whose advisor
+            // array_mask: an BitArray in a zero_one_value build, whose advisor
             // knows the packed layout (the other variants' Array<bool> is not
             // what this array is for).
             if constexpr (chunk_config::use_zero_one_value)
             {
                 if (!no_mask)
                 {
-                    rechunk_decider.consider<BenchMaskArray::value_type>(tab_mask, tick, iter, "tab_mask");
+                    rechunk_decider.consider<BenchMaskArray::value_type>(array_mask, tick, iter, "array_mask");
                 }
             }
             if constexpr (chunk_config::use_zero_any)
@@ -985,8 +986,8 @@ try
             ring_init();
         }
 
-        const Int size   = tab_size[k];
-        const Int start0 = tab_start[k];
+        const Int size   = array_size[k];
+        const Int start0 = array_start[k];
 
         Int end0 = start0 + size;
 
@@ -1008,12 +1009,13 @@ try
         else
         {
             // Compute loop: bench_phase_compute.cpp (see bench_phases.h).
-            bench_phase_compute(bench_arrays, k, start0, end0, tab_nba1, tab_nba2, val_sum, long_val_sum, v_real, v_im);
+            bench_phase_compute(bench_arrays, k, start0, end0, array_nba1, array_nba2, val_sum, long_val_sum, v_real,
+                                v_im);
             // The struct arrays' window, its own region (bench_phase_struct.cpp).
-            bench_phase_struct_compute(bench_arrays, k, start0, end0, tab_nba1, tab_nba2, point_sum);
-            // tab_mask's update, its own region (bench_phase_mask.cpp).
+            bench_phase_struct_compute(bench_arrays, k, start0, end0, array_nba1, array_nba2, point_sum);
+            // array_mask's update, its own region (bench_phase_mask.cpp).
             bench_phase_mask_compute(bench_arrays, k, mask_count);
-            // tab_conn's renumbering, its own region (bench_phase_conn.cpp).
+            // array_conn's renumbering, its own region (bench_phase_conn.cpp).
             bench_phase_conn_compute(bench_arrays, k, conn_sum);
         }
 
@@ -1105,12 +1107,12 @@ try
             // the first value (its buffer is released), a plain value
             // (materialised, then raw-stored), an Int and a bool (per-element
             // path: bool keeps its state in the proxy).
-            fill_range(tab1, r0, r1, second_value_d, assume_drained);
-            fill_range(tab2, r0, r1, 0., assume_drained);
-            fill_range(tab3, r0, r1, 2.5, assume_drained);
-            fill_range(tab_int, r0, r1, second_value_i, assume_drained);
-            fill_range(tab_bool, r0, r1, true, assume_drained);
-            fill_range(tab_bool_bits, r0, r1, true, assume_drained);
+            fill_range(arr1, r0, r1, second_value_d, assume_drained);
+            fill_range(arr2, r0, r1, 0., assume_drained);
+            fill_range(arr3, r0, r1, 2.5, assume_drained);
+            fill_range(array_int, r0, r1, second_value_i, assume_drained);
+            fill_range(array_bool, r0, r1, true, assume_drained);
+            fill_range(array_bool_bits, r0, r1, true, assume_drained);
 
             // Copies from a plain vector: one dense, one mostly the second value
             // (so the copy lands on chunks that compress right after).
@@ -1120,13 +1122,13 @@ try
                 src[i] = std::sin(static_cast<double>(r0 + i) + static_cast<double>(k));
             }
 
-            copy_range(tab4, r0, r1, src.begin(), assume_drained);
+            copy_range(arr4, r0, r1, src.begin(), assume_drained);
             for (std::size_t i = 0; i < src.size(); ++i)
             {
                 src[i] = (i % 97 == 0) ? static_cast<double>(i) : second_value_d2;
             }
 
-            copy_range(tab5, r0, r1, src.begin(), assume_drained);
+            copy_range(arr5, r0, r1, src.begin(), assume_drained);
         }
         // (d) fill_range_mt -- the bulk range API from EVERY thread at once:
         //     one write session per chunk span (pending ops, compressor wait,

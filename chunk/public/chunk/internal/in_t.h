@@ -80,12 +80,12 @@ namespace shrink_array
 // `ptr_second_value` (a SecondValueRef) after reading `second_v`, so a
 // `const T&` bound to that slot would change under it:
 //
-//     TabCstVal2Holder::find_or_set_ind_cst_val2      (tab_cst_val2_holder.h)
+//     ArrayCstVal2Holder::find_or_set_ind_cst_val2      (array_cst_val2_holder.h)
 //
 // Also kept as `T v` by policy: no aliasing today, but on write paths where a
 // large user T could introduce one:
 //
-//     TabCstVal2Holder::alloc_chunk(T val)            (tab_cst_val2_holder.h)
+//     ArrayCstVal2Holder::alloc_chunk(T val)            (array_cst_val2_holder.h)
 //     zero_one_value::Array::set_second_value(T)                (zero_one_value_array.h and
 //                                                       zero_one_value_array_inline.h)
 //     zero_one_value::ChunkFastCompPolicy::have_chunk_to_compress(T) (zero_one_value_chunk.h)

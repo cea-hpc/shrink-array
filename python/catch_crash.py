@@ -51,7 +51,7 @@ if $_isvoid($_exitcode)
   printf "\n=========== CRASH CONTEXT (signal) ===========\n"
   printf "\n--- faulting thread backtrace ---\n"
   bt
-  printf "\n--- bench frame: k / values / tab_complex vs tab1 ---\n"
+  printf "\n--- bench frame: k / values / array_complex vs arr1 ---\n"
   frame 11
   print k
   print v_real

@@ -109,6 +109,8 @@ ALLOWED = {
     "manager_chunk_inline.h", "manager_chunk_interface.h", "manager_chunk_policies.h",
     "manager_chunk_policies_inline.h", "manager_chunk.cpp", "chunk/internal/manager_chunk.h",
     "chunk/private/manager_chunk.cpp",
+    # tab -> array (CHANGELOG.md, Unreleased, Changed); the released entries cite them
+    "tab_int", "tab_conn", "tab_complex", "tab_cst_val2_holder.h", "tab1", "tab",
     # renamed TypeStateRegistry (CHANGELOG.md, Unreleased, Changed)
     "AllTypeChunk", "AllTypeChunkParallelInterface", "AllTypeChunkDynInterface", "all_type_chunk.h",
     "all_type_chunk_decl.h", "all_type_chunk_inline.h", "all_type_chunk.cpp", "chunk/private/all_type_chunk.cpp",

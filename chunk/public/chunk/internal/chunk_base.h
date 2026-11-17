@@ -1149,7 +1149,7 @@ class ChunkBase : public CRTPSupport<Derived>,
      *
      * @details The single point every element READ goes through. A zero_any
      *          chunk compressed to a second constant points at an identifier
-     *          slot that holds nothing (tab_cst_val2_holder.h), so its value
+     *          slot that holds nothing (array_cst_val2_holder.h), so its value
      *          comes from the registry: one pointer range test on the read
      *          path, in this one place rather than seven.
      *

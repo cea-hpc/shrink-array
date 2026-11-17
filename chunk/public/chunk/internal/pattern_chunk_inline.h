@@ -60,8 +60,8 @@ void pattern::Chunk<T>::compress_to_motif(int thr, int chunk_index, int array_id
     if (const auto [motif, offset] = find_motif(size); motif != nullptr)
     {
         // The geometry pin is the caller's (compress_chunk_to_compress_in_par()).
-        const SecondValueRef<T> slot = ProxyT::BaseSpec::get_tab_second_value(array_id, chunk_index);
-        block_clear_motif(&ProxyT::tab_type_cst_val[array_id][chunk_index], slot, motif, offset, thr);
+        const SecondValueRef<T> slot = ProxyT::BaseSpec::get_array_second_value(array_id, chunk_index);
+        block_clear_motif(&ProxyT::array_type_cst_val[array_id][chunk_index], slot, motif, offset, thr);
     }
 }
 
@@ -77,8 +77,8 @@ void pattern::Chunk<T>::compress_motif_candidates(int thr)
         {
             shrink_array::set_thread_chunk_size(size.count());
         }
-        const SecondValueRef<T> slot = ProxyT::BaseSpec::get_tab_second_value(array_id, chunk_index);
-        chunk->block_clear_motif(&ProxyT::tab_type_cst_val[array_id][chunk_index], slot, motif, offset, thr);
+        const SecondValueRef<T> slot = ProxyT::BaseSpec::get_array_second_value(array_id, chunk_index);
+        chunk->block_clear_motif(&ProxyT::array_type_cst_val[array_id][chunk_index], slot, motif, offset, thr);
         chunk->steal_unmark();
     }
     motif_candidates_.clear();

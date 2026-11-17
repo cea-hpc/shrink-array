@@ -141,7 +141,7 @@ except ImportError:
     def this_os_first(dirs, name=None):         # copied alone: the sorted order
         return dirs
 SIZES = ["dyn", "1024", "256", "64"]
-ORACLE_MARKER = "data_tab_ORACLE_COMPLETE.marker"  # bench_runner/builds.py
+ORACLE_MARKER = "data_array_ORACLE_COMPLETE.marker"  # bench_runner/builds.py
 REPO = os.path.dirname(HERE)
 EXE_SUBPATH = os.path.join("examples", "shrink_bench")
 COMPUTE_RE = re.compile(r"Elapsed time computation\s*:\s*([0-9.eE+-]+)\s*s")
@@ -828,7 +828,7 @@ def parse_args(argv=None):
                    help="perf (default): the measurement. check: the correctness mode, run in the target's "
                         "oracle directory, --multiply 1 (see --oracle-dir)")
     p.add_argument("--oracle-dir", default=None,
-                   help="--mode check: the directory holding the target's data_tab* reference (default "
+                   help="--mode check: the directory holding the target's data_array* reference (default "
                         "$CCCWORKDIR/bench_results/<arch>/oracle/cmake-build-<target>)")
     p.add_argument("--min-threads", type=int, required=True, help="first thread count (speedup reference)")
     p.add_argument("--max-threads", type=int, required=True, help="last thread count")

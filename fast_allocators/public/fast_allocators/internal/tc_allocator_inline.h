@@ -66,7 +66,7 @@ inline void TCSlab<Links>::alloc_block()
             block_size = free_list_end - 1;
         }
 
-        tab_first_free_.resize(static_cast<std::size_t>(block_size));
+        array_first_free_.resize(static_cast<std::size_t>(block_size));
     }
 
     // From the slab's own arena, never glibc: arena addresses are never returned to the OS
@@ -97,7 +97,7 @@ inline void TCSlab<Links>::destroy()
 {
     if constexpr (side_links)
     {
-        std::vector<unsigned short>().swap(tab_first_free_); // releases the free-list links
+        std::vector<unsigned short>().swap(array_first_free_); // releases the free-list links
         // (not `= {}`: that is operator=(initializer_list), which keeps the capacity)
     }
 
@@ -304,7 +304,7 @@ template <FreeLinks Links>
 {
     if constexpr (side_links)
     {
-        return tab_first_free_[static_cast<std::size_t>(elem)];
+        return array_first_free_[static_cast<std::size_t>(elem)];
     }
     else
     {
@@ -318,7 +318,7 @@ void TCSlab<Links>::set_link(int elem, IndexType next_free) noexcept
 {
     if constexpr (side_links)
     {
-        tab_first_free_[static_cast<std::size_t>(elem)] = next_free;
+        array_first_free_[static_cast<std::size_t>(elem)] = next_free;
     }
     else
     {

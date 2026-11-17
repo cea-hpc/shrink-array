@@ -50,8 +50,8 @@ void bench_phase_struct_fill(BenchArrays& bench_arr)
         return;
     }
 
-    auto& tab_point = bench_arr.tab_point;
-    auto& tab_cell  = bench_arr.tab_cell;
+    auto& array_point = bench_arr.array_point;
+    auto& array_cell  = bench_arr.array_cell;
 
     const Int sz       = bench_arr.sz;
     const Int interval = bench_arr.interval;
@@ -68,8 +68,8 @@ void bench_phase_struct_fill(BenchArrays& bench_arr)
                 begin_i, end_i,
                 [&](const Int i) __attribute__((always_inline))
                 {
-                    tab_point[i] = second_value_p;
-                    tab_cell[i]  = second_value_cell;
+                    array_point[i] = second_value_p;
+                    array_cell[i]  = second_value_cell;
                 },
                 bench_par::nowait);
 
@@ -80,8 +80,8 @@ void bench_phase_struct_fill(BenchArrays& bench_arr)
                 begin_i, end_i,
                 [&](const Int i) __attribute__((always_inline))
                 {
-                    tab_point[i] = Point3{2., 0., 0.};
-                    tab_cell[i]  = Cell{2, 1.f};
+                    array_point[i] = Point3{2., 0., 0.};
+                    array_cell[i]  = Cell{2, 1.f};
                 },
                 bench_par::nowait);
 
@@ -92,8 +92,8 @@ void bench_phase_struct_fill(BenchArrays& bench_arr)
                 begin_i, end_i,
                 [&](const Int i) __attribute__((always_inline))
                 {
-                    tab_point[i] = Point3{static_cast<double>(i), 0.5, static_cast<double>(i % 7)};
-                    tab_cell[i]  = Cell{static_cast<int32_t>(i % 5), static_cast<float>(i % 3) * 0.25f};
+                    array_point[i] = Point3{static_cast<double>(i), 0.5, static_cast<double>(i % 7)};
+                    array_cell[i]  = Cell{static_cast<int32_t>(i % 5), static_cast<float>(i % 3) * 0.25f};
                 },
                 bench_par::nowait);
 
@@ -104,7 +104,7 @@ void bench_phase_struct_fill(BenchArrays& bench_arr)
 
 // ─── Compute ─────────────────────────────────────────────────────────────────
 // On the iteration's window [start0, end0): a run of null elements up to
-// tab_nba1[iter], a run of the second value up to tab_nba2[iter], and the rest
+// array_nba1[iter], a run of the second value up to array_nba2[iter], and the rest
 // updated from its current value -- so that every iteration re-creates runs
 // the pass can take AND overwrites some it took. Then a read-only sweep of
 // the window into point_sum, twice the reads of the writes, as the other
@@ -113,8 +113,8 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
                                 Int                     iter,
                                 Int                     start0,
                                 Int                     end0,
-                                const std::vector<Int>& tab_nba1,
-                                const std::vector<Int>& tab_nba2,
+                                const std::vector<Int>& array_nba1,
+                                const std::vector<Int>& array_nba2,
                                 double&                 point_sum)
 {
     if (!bench_arr.with_struct) // --no_struct
@@ -122,11 +122,11 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
         return;
     }
 
-    auto& tab_point = bench_arr.tab_point;
-    auto& tab_cell  = bench_arr.tab_cell;
+    auto& array_point = bench_arr.array_point;
+    auto& array_cell  = bench_arr.array_cell;
 
-    const Int  nba1 = tab_nba1[iter];
-    const Int  nba2 = tab_nba2[iter];
+    const Int  nba1 = array_nba1[iter];
+    const Int  nba2 = array_nba2[iter];
     const auto dk   = static_cast<double>(iter % 3);
 
     // Shared accumulator of the region, reduced by the loop (bench_prelude.h
@@ -155,20 +155,20 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
                     }
                     if (i < nba1)
                     {
-                        tab_point[i] = Point3{};
-                        tab_cell[i]  = Cell{};
+                        array_point[i] = Point3{};
+                        array_cell[i]  = Cell{};
                     }
                     else if (i < nba2)
                     {
-                        tab_point[i] = second_value_p;
-                        tab_cell[i]  = second_value_cell;
+                        array_point[i] = second_value_p;
+                        array_cell[i]  = second_value_cell;
                     }
                     else
                     {
-                        const Point3& point = tab_point[i];
-                        const Cell&   cell  = tab_cell[i];
-                        tab_point[i]        = Point3{point.x + (0.5 * dk), (0.5 * point.y) + 1., point.z + point.x};
-                        tab_cell[i]         = Cell{(cell.material + 1) & 7, (0.5f * cell.fraction) + 0.25f};
+                        const Point3& point = array_point[i];
+                        const Cell&   cell  = array_cell[i];
+                        array_point[i]      = Point3{point.x + (0.5 * dk), (0.5 * point.y) + 1., point.z + point.x};
+                        array_cell[i]       = Cell{(cell.material + 1) & 7, (0.5f * cell.fraction) + 0.25f};
                     }
                 },
                 bench_par::nowait);
@@ -183,8 +183,8 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
                                                  {
                                                      return;
                                                  }
-                                                 const Point3& point = tab_point[i];
-                                                 const Cell&   cell  = tab_cell[i];
+                                                 const Point3& point = array_point[i];
+                                                 const Cell&   cell  = array_cell[i];
                                                  sum_part += point.x + (point.y * static_cast<double>(cell.fraction)) +
                                                              point.z + static_cast<double>(cell.material);
                                              });
@@ -206,8 +206,8 @@ void bench_phase_struct_raz(BenchArrays& bench_arr, Int start0, Int end0)
         return;
     }
 
-    auto& tab_point = bench_arr.tab_point;
-    auto& tab_cell  = bench_arr.tab_cell;
+    auto& array_point = bench_arr.array_point;
+    auto& array_cell  = bench_arr.array_cell;
 
     bench_par::region(
         [&]([[maybe_unused]] bench_par::Team& team)
@@ -218,8 +218,8 @@ void bench_phase_struct_raz(BenchArrays& bench_arr, Int start0, Int end0)
                 start0, end0,
                 [&](const Int i) __attribute__((always_inline))
                 {
-                    tab_point[i] = Point3{};
-                    tab_cell[i]  = Cell{};
+                    array_point[i] = Point3{};
+                    array_cell[i]  = Cell{};
                 },
                 bench_par::nowait);
 

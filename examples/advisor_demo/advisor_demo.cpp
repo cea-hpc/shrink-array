@@ -58,11 +58,11 @@ static double value_at(int index)
 }
 
 template <typename Tab>
-static void fill_and_compress(Tab& tab)
+static void fill_and_compress(Tab& arr)
 {
     for (int i = 0; i < n_elems; ++i)
     {
-        tab[i] = value_at(i);
+        arr[i] = value_at(i);
     }
     Tab::make_block_compression();
 }
@@ -73,18 +73,18 @@ struct Truth
     double    mem;
 };
 
-static Truth ground_truth(const zero_any::Array<double>& tab, double meta)
+static Truth ground_truth(const zero_any::Array<double>& arr, double meta)
 {
-    Truth truth{tab.chunk_count_, 0, 0.};
+    Truth truth{arr.chunk_count_, 0, 0.};
     for (long long j = 0; j < truth.chunks; ++j)
     {
-        const auto& chunk = tab.chunk_list_[j];
+        const auto& chunk = arr.chunk_list_[j];
         if (!chunk.is_cst_val1() && !chunk.is_cst_val2())
         {
             ++truth.mat;
         }
     }
-    truth.mem = (static_cast<double>(truth.chunks) * meta) + (double(truth.mat) * tab.chunk_size() * sizeof(double));
+    truth.mem = (static_cast<double>(truth.chunks) * meta) + (double(truth.mat) * arr.chunk_size() * sizeof(double));
     return truth;
 }
 
@@ -108,16 +108,16 @@ int main()
     {
         // An empty array takes its geometry (set_chunk_size refuses another
         // size once the array has chunks), THEN its elements.
-        zero_any::Array<double> tab(0);
-        tab.set_chunk_size(cs);
-        tab.resize(n_elems);
-        fill_and_compress(tab);
+        zero_any::Array<double> arr(0);
+        arr.set_chunk_size(cs);
+        arr.resize(n_elems);
+        fill_and_compress(arr);
         if (meta == 0.)
         {
             const ChunkSizeAdvisor<double>::Options opts;
             meta = sizeof(zero_any::Chunk<double>) + opts.meta_extra_bytes;
         }
-        truths.push_back(ground_truth(tab, meta));
+        truths.push_back(ground_truth(arr, meta));
     }
 
     // Advisor predictions against ground truth, from two reference sizes:

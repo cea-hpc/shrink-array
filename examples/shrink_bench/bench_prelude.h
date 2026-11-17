@@ -91,7 +91,7 @@
 // deferred op, an atomic or two. `omp simd` on such a loop would promise the
 // compiler that its iterations are independent, which they are not, and the
 // compiler is entitled to act on the promise. The std::vector baseline is
-// plain memory (tab_bool is a std::vector<short> there, not the bit proxy),
+// plain memory (array_bool is a std::vector<short> there, not the bit proxy),
 // so there the same loops are exactly what `simd` is for -- and clang 22 does
 // vectorise them (the multi_mat example uses the same split, LoopsSimd vs
 // Loops, with the same rationale).
@@ -115,7 +115,7 @@
 // the check-mode checksums stay comparable with a shrink build's.
 //
 // BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR is the same worksharing loop with no
-// `simd` in either build: for the loops that store into tab_bool. In the
+// `simd` in either build: for the loops that store into array_bool. In the
 // baseline that is a std::vector<bool>, a bit-packed proxy store LLVM cannot
 // vectorise -- and, in the big outlined region the bench's phases are, one
 // such loop under `simd` also leaves the std::complex copy-assignments of
@@ -253,7 +253,7 @@ namespace chunk_config = shrink_array::chunk_config;
 #elif defined CHUNK_VARIANT_ZERO_ONE_VALUE
     #include "chunk/zero_one_value_array.h" // zero_one_value::Array (the zero_one_value variant)
 #elif defined CHUNK_VARIANT_ZERO_ANY
-    #include "chunk/zero_one_value_array.h" // zero_one_value::Array (tab_bool, see bench_array.h)
+    #include "chunk/zero_one_value_array.h" // zero_one_value::Array (array_bool, see bench_array.h)
     #include "chunk/zero_any_array.h"       // zero_any::Array (the zero_any variant)
 #else
     #include <vector> // std::vector (the baseline build)

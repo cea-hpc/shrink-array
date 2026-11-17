@@ -20,12 +20,12 @@
 #include <source_location> // std::source_location
 #include <type_traits>     // std::is_same_v
 
-#include "chunk/config.h"                       // build_config::any_check, chunk_config::use_fast_block_compression
-#include "chunk/internal/pmp_chunk.h"           // get_thr_rank_fast (the constant-buffer write check)
-#include "chunk/internal/chunk_base.h"          // ChunkBase
-#include "chunk/internal/cst_slot.h"            // CstSlot (clear_impl's type-of-constant slot)
-#include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef, the zero_any second-value slot handle
-#include "chunk/internal/type_name.h"           // type_name<T>
+#include "chunk/config.h"                         // build_config::any_check, chunk_config::use_fast_block_compression
+#include "chunk/internal/pmp_chunk.h"             // get_thr_rank_fast (the constant-buffer write check)
+#include "chunk/internal/chunk_base.h"            // ChunkBase
+#include "chunk/internal/cst_slot.h"              // CstSlot (clear_impl's type-of-constant slot)
+#include "chunk/internal/array_cst_val2_holder.h" // SecondValueRef, the zero_any second-value slot handle
+#include "chunk/internal/type_name.h"             // type_name<T>
 
 namespace shrink_array
 {

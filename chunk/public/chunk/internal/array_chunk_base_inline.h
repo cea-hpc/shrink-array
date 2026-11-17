@@ -83,9 +83,9 @@ void ArrayChunkBase<Derived>::create_common()
     internal::ArrayUsers<ChunkType>::resize(array_count);
 
     // In ALL modes, do not gate on use_fast_block_compression: zero_any::Proxy needs
-    // its tab_* containers (tab_second_value, ...) even without OpenMP; for
+    // its array_* containers (array_second_value, ...) even without OpenMP; for
     // zero::Proxy / zero_one_value::Proxy it is a no-op stub outside OpenMP.
-    ProxyType::resize_tab_is_int(array_count);
+    ProxyType::resize_array_is_int(array_count);
 }
 
 template <typename Derived>

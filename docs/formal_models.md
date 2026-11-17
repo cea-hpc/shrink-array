@@ -355,7 +355,7 @@ slot is stable there.
 ### 8.7 F6: a chunk made constant during a pass's hand-back was never queued (fixed)
 
 The model is `formal/queue_handback.c`; it checks a protocol, not a memory ordering: the "queued"
-flag of a chunk (`tab_is_inside_chunk_list_to_compress`) and the pass's mark. A pass hands each
+flag of a chunk (`array_is_inside_chunk_list_to_compress`) and the pass's mark. A pass hands each
 candidate back with `steal_unmark()`, then resets its flag (the end of `make_block_compression()`;
 the order is kept on purpose: once the flag is down another pass may queue and mark the chunk,
 and a late unmark would erase its claim). It used to reset the flag to 0. Between the two, a
@@ -444,7 +444,7 @@ one chunk with the same constant each store their half, then load the other's ed
 store-buffering shape, which C11 relaxed, x86-TSO and AArch64 all allow. Both read the old
 edge, neither queues, and a uniform chunk stays materialised. The check builds' audit counted
 it on Milan once the partial-span hole of the aggregates was fixed: 6 to 52 blocks per
-`shrink_bench` run at 16 to 128 threads, all on `tab1` and `tab2` (`double`, filled by
+`shrink_bench` run at 16 to 128 threads, all on `arr1` and `arr2` (`double`, filled by
 `fill_range_mt()` with 0 or the second value), none on the element types without the filter.
 The model's chunk has 4 elements; it found the hole at once, and a native run of it on x86 hits
 it in a few hundred thousand tries.

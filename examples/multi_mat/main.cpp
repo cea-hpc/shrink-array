@@ -89,9 +89,9 @@ Dispatch dispatch;
 
 void Simu::create_tabs()
 {
-    for (auto& tab : tabs)
+    for (auto& arr : tabs)
     {
-        tab.create(nbmat, mesh_size);
+        arr.create(nbmat, mesh_size);
     }
     frac.create(nbmat, mesh_size);
 }
@@ -200,7 +200,7 @@ try
         mm_algo.loop(0, nbmat,
                      [&](int& mat, const auto& get_mat_vec, const auto&)
                      {
-                         const auto& tab0_ind = get_mat_vec(simu.get_tabs(0));
+                         const auto& arr0_ind = get_mat_vec(simu.get_tabs(0));
 
                          std::cout << "Material : " << mat << "\n";
 
@@ -208,14 +208,14 @@ try
                          {
                              have_chunk = true;
 
-                             using CV = std::remove_reference_t<decltype(tab0_ind)>;
+                             using CV = std::remove_reference_t<decltype(arr0_ind)>;
                              using V  = std::remove_const_t<CV>;
 
                              using VecChunkReal = VectChunk<double>;
 
                              if constexpr (std::is_same_v<V, VecChunkReal>)
                              {
-                                 const double sz0 = only_first_chunk ? tab0_ind.stats_seq() : tab0_ind.stats();
+                                 const double sz0 = only_first_chunk ? arr0_ind.stats_seq() : arr0_ind.stats();
 
                                  // std::format, not std::fixed: std::cout's flags stay as they were.
                                  std::cout << "  Chunk filling rate : " << std::format("{:.2f}", sz0) << "%" << '\n';
@@ -243,7 +243,7 @@ try
 #pragma omp parallel for reduction(+ : sum)
                              for (int k = 0; k < mesh_size; ++k)
                              {
-                                 if (tab0_ind[k] != 0)
+                                 if (arr0_ind[k] != 0)
                                      sum++;
                              }
                              const double sz = static_cast<double>(sum) / static_cast<double>(mesh_size) * 100.;

@@ -16,7 +16,7 @@
 Un chunk matérialisé possède un tampon privé, désigné par son pointeur atomique `values`. Deux
 sortes d'acteurs le touchent en même temps sous OpenMP :
 
-- les **écrivains** : chaque `tab[i] = v` charge `values`, puis écrit dans le tampon. Ce chemin
+- les **écrivains** : chaque `arr[i] = v` charge `values`, puis écrit dans le tampon. Ce chemin
   est le plus chaud de la bibliothèque : des milliards d'écritures par run ;
 - le **compresseur** : une passe de compression relit un chunk candidat, constate qu'il est
   uniforme, remplace `values` par le pointeur du tampon constant (un CAS) et **rend l'ancien

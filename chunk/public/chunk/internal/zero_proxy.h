@@ -127,11 +127,11 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
     // --- fast-block-compression surface: this policy's Enabled is that axis
     // (chunk_config::use_fast_block_compression).
     using Base::array_id_;
+    using Base::array_is_inside_chunk_list_to_compress;
     using Base::ptr_on_array_;
     using Base::read_values;
     using Base::read_values_async;
     using Base::read_values_at;
-    using Base::tab_is_inside_chunk_list_to_compress;
 
     using ProxyBase<Derived, T, Chunk<T>>::ProxyBase;
 
@@ -252,9 +252,9 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      *          stores with memory_order_release, this one seq_cst (plain
      *          assignment). Dropping it would weaken zero's ordering of the flag.
      */
-    static void reset_tab_inside_list_to_compress(int array_id, int chunk_index) noexcept
+    static void reset_array_inside_list_to_compress(int array_id, int chunk_index) noexcept
     {
-        tab_is_inside_chunk_list_to_compress[array_id][chunk_index] = 0;
+        array_is_inside_chunk_list_to_compress[array_id][chunk_index] = 0;
     }
 
   protected:
@@ -400,8 +400,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     using Base::add_to_compression_list;
     using Base::set_array_id;
 
-    using Base::ptr_is_inside_chunk_list_to_compress_; ///< Per-chunk compression flag pointer
-    using Base::tab_is_inside_chunk_list_to_compress;  ///< Global compression tracking array
+    using Base::array_is_inside_chunk_list_to_compress; ///< Global compression tracking array
+    using Base::ptr_is_inside_chunk_list_to_compress_;  ///< Per-chunk compression flag pointer
 
     /// @brief Functor wrapping operator% for apply_compound_operation().
     struct modulo
@@ -425,11 +425,11 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     ///
     using Base::chunk_; ///< owning chunk
 
-    using Base::array_id_; ///< tab index for this array
+    using Base::array_id_; ///< array index for this array
 
     using Base::chunk_index_;       ///< chunk index
     using Base::chunk_size_frozen_; ///< non-zero on a proxy rebuilt from a replay context
-    using Base::ptr_on_array_;      ///< pointer to array (for tab lookup)
+    using Base::ptr_on_array_;      ///< pointer to array (for array lookup)
 
     using Base::arithmetic_assign;
 
@@ -440,7 +440,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     static constexpr bool is_bool     = std::is_same_v<T, bool>;
     static constexpr bool is_not_bool = !is_bool;
 
-    // reset_tab_inside_list_to_compress(), set_array_id() and the
+    // reset_array_inside_list_to_compress(), set_array_id() and the
     // mark_for_compression_* family live on ProxyFastCompPolicy<..., true>;
     // manage_full_zero() on the <..., false> (counter) specialisation.
 
@@ -763,7 +763,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      */
     operator T() const noexcept;
 
-    // No address, and do not add operator T&(): `tab[nc] = val` would route
+    // No address, and do not add operator T&(): `arr[nc] = val` would route
     // through it and materialise blocks for nothing. Hence foo(T&) rejects a[i].
     T*       operator&()       = delete;
     const T* operator&() const = delete;

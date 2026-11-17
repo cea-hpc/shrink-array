@@ -15,10 +15,10 @@
  */
 
 /// @file bench_phase_conn.cpp
-/// @brief tab_conn's phases: its fill and its per-iteration update. See
+/// @brief array_conn's phases: its fill and its per-iteration update. See
 ///        bench_array.h (BenchConnArray, bench_conn_*) and bench_phases.h.
 ///
-/// tab_conn is a mesh connectivity: the 8 node numbers of each hexahedral cell,
+/// array_conn is a mesh connectivity: the 8 node numbers of each hexahedral cell,
 /// cell after cell, rows of bench_conn_nx cells. No chunk of it is uniform, so
 /// the constant-compressing variants keep it whole; but consecutive cells are the
 /// same 8 numbers plus one, so a chunk of whole cells is one motif plus an offset,
@@ -37,7 +37,7 @@
 namespace
 {
 
-/// @brief The rows of tab_conn and the node offset of its top layer.
+/// @brief The rows of array_conn and the node offset of its top layer.
 struct ConnGeometry
 {
     Int rows  = 0;
@@ -46,7 +46,7 @@ struct ConnGeometry
 
 ConnGeometry conn_geometry(const BenchArrays& bench_arr)
 {
-    const Int rows = static_cast<Int>(bench_arr.tab_conn.size()) / bench_conn_row;
+    const Int rows = static_cast<Int>(bench_arr.array_conn.size()) / bench_conn_row;
     return {rows, (bench_conn_nx + 1) * (rows + 1)};
 }
 
@@ -61,8 +61,8 @@ void bench_phase_conn_fill(BenchArrays& bench_arr)
         return;
     }
 
-    auto&              tab_conn = bench_arr.tab_conn;
-    const ConnGeometry geo      = conn_geometry(bench_arr);
+    auto&              array_conn = bench_arr.array_conn;
+    const ConnGeometry geo        = conn_geometry(bench_arr);
 
     bench_par::region(
         [&]([[maybe_unused]] bench_par::Team& team)
@@ -76,7 +76,7 @@ void bench_phase_conn_fill(BenchArrays& bench_arr)
                     const Int lo = row * bench_conn_row;
                     for (Int i = lo; i < lo + bench_conn_row; ++i)
                     {
-                        tab_conn[i] = bench_conn_value(i, geo.layer, 0);
+                        array_conn[i] = bench_conn_value(i, geo.layer, 0);
                     }
                 },
                 bench_par::nowait);
@@ -96,9 +96,9 @@ void bench_phase_conn_compute(BenchArrays& bench_arr, Int iter, long& conn_sum)
         return;
     }
 
-    auto&              tab_conn = bench_arr.tab_conn;
-    const ConnGeometry geo      = conn_geometry(bench_arr);
-    const Int          band     = iter % bench_conn_bands;
+    auto&              array_conn = bench_arr.array_conn;
+    const ConnGeometry geo        = conn_geometry(bench_arr);
+    const Int          band       = iter % bench_conn_bands;
 
     long sum = 0;
 
@@ -118,7 +118,7 @@ void bench_phase_conn_compute(BenchArrays& bench_arr, Int iter, long& conn_sum)
                                           const Int lo = row * bench_conn_row;
                                           for (Int i = lo; i < lo + bench_conn_row; ++i)
                                           {
-                                              sum_part += tab_conn[i];
+                                              sum_part += array_conn[i];
                                           }
                                       });
 
@@ -135,7 +135,7 @@ void bench_phase_conn_compute(BenchArrays& bench_arr, Int iter, long& conn_sum)
                     const Int lo       = row * bench_conn_row;
                     for (Int i = lo; i < lo + bench_conn_row; ++i)
                     {
-                        tab_conn[i] = bench_conn_value(i, geo.layer, rotation);
+                        array_conn[i] = bench_conn_value(i, geo.layer, rotation);
                     }
                 },
                 bench_par::nowait);
