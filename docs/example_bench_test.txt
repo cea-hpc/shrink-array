@@ -1,11 +1,11 @@
 python3 bench_and_test.py \
-    --build-root $build_rep \
+    --build-root $build_root \
     --mode fast \
-    --output-dir $build_rep/bench_results \
+    --output-dir $build_root/bench_results \
     --timeout-per-thread 2
 
 python3 bench_and_test.py \
-    --build-root $build_rep \
+    --build-root $build_root \
     --mode fast \
-    --output-dir $build_rep/bench_$(date +%Y%m%d_%H%M) \
+    --output-dir $build_root/bench_$(date +%Y%m%d_%H%M) \
     --timeout-per-thread 2

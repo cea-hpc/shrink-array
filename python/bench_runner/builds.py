@@ -14,7 +14,7 @@ from .term import dim
 
 EXE_SUBPATH = "examples/shrink_bench"
 
-# $arch sub-directory of the CURRENT machine. build_rep may hold builds for
+# $arch sub-directory of the CURRENT machine. build_root may hold builds for
 # several architectures (RHEL_9.6__aarch64 AND RHEL_8.10__x86_64); we must only
 # run the ones matching the machine the bench runs on, otherwise we get an
 # "Exec format error" (x86 binary launched on ARM or vice-versa). Among those,

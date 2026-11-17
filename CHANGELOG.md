@@ -152,6 +152,9 @@ the tag's checksum to the recipe.
   counters: `inc_chunk_write`, ...), `somme` is `total` (`total_chunk_create`), `raz` (remise à zéro) is
   `reset`, `recup` is `reclaim` (`reclaim_value`), `kdeb` / `kfin` are `kbegin` / `kend`
   (examples/multi_mat), `nbmat` is `n_materials`, `freq_conso_mem` is `freq_mem_report`.
+- `CHUNK_BUILD_REP` (répertoire) is `CHUNK_BUILD_ROOT`, the name the Python tools read already:
+  `compile_all.sh` and `scripts/site_env.sh` take their builds there. The former name is still
+  read when the new one is unset, with a deprecation line; it goes at 0.3.
 - `tab` (French: tableau) is `array` in the names of the sources, examples and documents:
   `array_int`, `array_bool`, ... of `shrink_bench` (`tab_int`, ...), `arr1` ... `arr5` and `arr`
   (`tab1`, `tab`), the library's `array_is_inside_chunk_list_to_compress`,

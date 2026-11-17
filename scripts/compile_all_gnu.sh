@@ -136,9 +136,9 @@ source "$CHUNK_SCRIPT_DIR/functions_for_compile.sh"
 # with the closest names (skipped when compile_all.sh already checked).
 check_target_arg $(known_build_names "$0")
 
-build_rep="$CHUNK_BUILD_REP"
+build_root="$CHUNK_BUILD_ROOT"
 
-create_build_rep
+create_build_root
 pool_init
 
 # The g++ PATH resolves to before the loads below: they decide the compiler
@@ -218,11 +218,11 @@ set_tbb_options
 #
 # Usage note: TSan's shadow memory scales with the thread count -- start these
 # at OMP_NUM_THREADS=8..16, not 249; a race shows up long before that.
-compile_with_cmake "$build_rep/cmake-build-omp-gnu-relwithdebinfo-std-alloc-thread-sanitizer${ICF_SUFFIX}/$arch" \
+compile_with_cmake "$build_root/cmake-build-omp-gnu-relwithdebinfo-std-alloc-thread-sanitizer${ICF_SUFFIX}/$arch" \
   "-DCHUNK_STD_ALLOC:BOOL=ON -DCHUNK_OPENMP:BOOL=ON -DCHUNK_SANITIZER=thread -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
   "gnu relwithdebinfo openmp std-alloc thread sanitizer"
 
-compile_with_cmake "$build_rep/cmake-build-omp-gnu-relwithdebinfo-std-alloc-address-sanitizer${ICF_SUFFIX}/$arch" \
+compile_with_cmake "$build_root/cmake-build-omp-gnu-relwithdebinfo-std-alloc-address-sanitizer${ICF_SUFFIX}/$arch" \
   "-DCHUNK_STD_ALLOC:BOOL=ON -DCHUNK_OPENMP:BOOL=ON -DCHUNK_SANITIZER=address -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
   "gnu relwithdebinfo openmp std-alloc address sanitizer"
 
@@ -237,7 +237,7 @@ compile_with_cmake "$build_rep/cmake-build-omp-gnu-relwithdebinfo-std-alloc-addr
 # output next to the LLVM+libomp twin in compile_all.sh, whose runtime carries
 # the barrier annotations; a report that only the GNU build shows is a
 # barrier the tool did not see, a report both show is a bug.
-compile_with_cmake "$build_rep/cmake-build-omp-gnu-relwithdebinfo-check-thread-sanitizer${ICF_SUFFIX}/$arch" \
+compile_with_cmake "$build_root/cmake-build-omp-gnu-relwithdebinfo-check-thread-sanitizer${ICF_SUFFIX}/$arch" \
   "-DCHUNK_CHECK_OPTIM=ON -DCHUNK_OPENMP:BOOL=ON -DCHUNK_SANITIZER=thread -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
   "gnu relwithdebinfo openmp check thread sanitizer"
 
@@ -246,11 +246,11 @@ compile_with_cmake "$build_rep/cmake-build-omp-gnu-relwithdebinfo-check-thread-s
 # TSan sees every synchronisation of the library's teams -- a report here is
 # not a barrier the tool missed. The run for std_thread_validation:
 # OMP_NUM_THREADS=8 (the std backend's team size, and the harness's thread count).
-compile_with_cmake "$build_rep/cmake-build-std-gnu-relwithdebinfo-thread-sanitizer${ICF_SUFFIX}/$arch" \
+compile_with_cmake "$build_root/cmake-build-std-gnu-relwithdebinfo-thread-sanitizer${ICF_SUFFIX}/$arch" \
   "-DCHUNK_THREADS=std -DCHUNK_CHECK_OPTIM=ON -DCHUNK_SANITIZER=thread -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT $TBB_TSAN_CMAKE_OPT" \
   "gnu relwithdebinfo std thread sanitizer"
 
-compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-thread-sanitizer${ICF_SUFFIX}/$arch" \
+compile_with_cmake "$build_root/cmake-build-omp-gnu-debug-thread-sanitizer${ICF_SUFFIX}/$arch" \
   "-DCHUNK_OPENMP:BOOL=ON -DCHUNK_SANITIZER=thread -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
   "gnu debug openmp thread sanitizer"
 
@@ -259,18 +259,18 @@ compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-thread-sanitizer${ICF_S
 # -- an overflow or use-after-free inside a slab goes unreported. ASan runs on
 # the std-alloc builds below, where every buffer is a real malloc.)
 
-compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-std-alloc-thread-sanitizer${ICF_SUFFIX}/$arch" \
+compile_with_cmake "$build_root/cmake-build-omp-gnu-debug-std-alloc-thread-sanitizer${ICF_SUFFIX}/$arch" \
   "-DCHUNK_STD_ALLOC:BOOL=ON -DCHUNK_OPENMP:BOOL=ON -DCHUNK_SANITIZER=thread -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
   "gnu debug openmp std-alloc thread sanitizer"
 
-compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-std-alloc-address-sanitizer${ICF_SUFFIX}/$arch" \
+compile_with_cmake "$build_root/cmake-build-omp-gnu-debug-std-alloc-address-sanitizer${ICF_SUFFIX}/$arch" \
   "-DCHUNK_STD_ALLOC:BOOL=ON -DCHUNK_OPENMP:BOOL=ON -DCHUNK_SANITIZER=address -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
   "gnu debug openmp std-alloc address sanitizer"
 
 if skip_release; then
     echo "[debug-only] skipping gnu openmp"
 else
-    compile_with_cmake "$build_rep/cmake-build-omp-gnu${ICF_SUFFIX}/$arch" \
+    compile_with_cmake "$build_root/cmake-build-omp-gnu${ICF_SUFFIX}/$arch" \
       "-DCHUNK_OPENMP:BOOL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT $INT64_OPT" \
       "gnu openmp"
 fi
@@ -278,7 +278,7 @@ fi
 if skip_release; then
     echo "[debug-only] skipping gnu openmp with check"
 else
-    compile_with_cmake "$build_rep/cmake-build-omp-gnu-check${ICF_SUFFIX}/$arch" \
+    compile_with_cmake "$build_root/cmake-build-omp-gnu-check${ICF_SUFFIX}/$arch" \
       "-DCHUNK_CHECK_OPTIM=ON -DCHUNK_OPENMP:BOOL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
       "gnu openmp with check"
 fi
@@ -290,7 +290,7 @@ fi
 if skip_release; then
     echo "[debug-only] skipping gnu openmp with stats"
 else
-    compile_with_cmake "$build_rep/cmake-build-omp-gnu-stats${ICF_SUFFIX}/$arch" \
+    compile_with_cmake "$build_root/cmake-build-omp-gnu-stats${ICF_SUFFIX}/$arch" \
       "-DCHUNK_STATS:BOOL=ON -DCHUNK_OPENMP:BOOL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
       "gnu openmp with stats"
 fi
@@ -298,7 +298,7 @@ fi
 if skip_release; then
     echo "[debug-only] skipping gnu openmp std allocator"
 else
-    compile_with_cmake "$build_rep/cmake-build-omp-gnu-std-alloc${ICF_SUFFIX}/$arch" \
+    compile_with_cmake "$build_root/cmake-build-omp-gnu-std-alloc${ICF_SUFFIX}/$arch" \
       "-DCHUNK_STD_ALLOC:BOOL=ON -DCHUNK_OPENMP:BOOL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT $INT64_OPT" \
       "gnu openmp std allocator"
 fi
@@ -310,7 +310,7 @@ fi
 if skip_release; then
     echo "[debug-only] skipping gnu"
 else
-    compile_with_cmake "$build_rep/cmake-build-gnu${ICF_SUFFIX}/$arch" \
+    compile_with_cmake "$build_root/cmake-build-gnu${ICF_SUFFIX}/$arch" \
       "-DCHUNK_OPENMP:BOOL=OFF -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
       "gnu"
 fi
@@ -318,7 +318,7 @@ fi
 if skip_release; then
     echo "[debug-only] skipping gnu with check (no openmp)"
 else
-    compile_with_cmake "$build_rep/cmake-build-gnu-check${ICF_SUFFIX}/$arch" \
+    compile_with_cmake "$build_root/cmake-build-gnu-check${ICF_SUFFIX}/$arch" \
       "-DCHUNK_CHECK_OPTIM=ON -DCHUNK_OPENMP:BOOL=OFF -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
       "gnu with check (no openmp)"
 fi
@@ -326,7 +326,7 @@ fi
 if skip_release; then
     echo "[debug-only] skipping gnu std allocator (no openmp)"
 else
-    compile_with_cmake "$build_rep/cmake-build-gnu-std-alloc${ICF_SUFFIX}/$arch" \
+    compile_with_cmake "$build_root/cmake-build-gnu-std-alloc${ICF_SUFFIX}/$arch" \
       "-DCHUNK_STD_ALLOC:BOOL=ON -DCHUNK_OPENMP:BOOL=OFF -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
       "gnu std allocator (no openmp)"
 fi
@@ -339,7 +339,7 @@ fi
 if skip_release; then
     echo "[debug-only] skipping gnu std"
 else
-    compile_with_cmake "$build_rep/cmake-build-std-gnu${ICF_SUFFIX}/$arch" \
+    compile_with_cmake "$build_root/cmake-build-std-gnu${ICF_SUFFIX}/$arch" \
       "-DCHUNK_THREADS=std -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT $INT64_OPT $TBB_CMAKE_OPT" \
       "gnu std (no openmp)"
 fi
@@ -347,7 +347,7 @@ fi
 if skip_release; then
     echo "[debug-only] skipping gnu std with check"
 else
-    compile_with_cmake "$build_rep/cmake-build-std-gnu-check${ICF_SUFFIX}/$arch" \
+    compile_with_cmake "$build_root/cmake-build-std-gnu-check${ICF_SUFFIX}/$arch" \
       "-DCHUNK_THREADS=std -DCHUNK_CHECK_OPTIM=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT $TBB_CMAKE_OPT" \
       "gnu std with check (no openmp)"
 fi
@@ -364,12 +364,12 @@ fi
 if skip_release; then
     echo "[debug-only] skipping gnu with stats (no openmp)"
 else
-    compile_with_cmake "$build_rep/cmake-build-gnu-stats${ICF_SUFFIX}/$arch" \
+    compile_with_cmake "$build_root/cmake-build-gnu-stats${ICF_SUFFIX}/$arch" \
       "-DCHUNK_STATS:BOOL=ON -DCHUNK_OPENMP:BOOL=OFF -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
       "gnu with stats (no openmp)"
 fi
 
-compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug${ICF_SUFFIX}/$arch" \
+compile_with_cmake "$build_root/cmake-build-omp-gnu-debug${ICF_SUFFIX}/$arch" \
   "-DCHUNK_OPENMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
   "gnu debug openmp"
 
@@ -384,7 +384,7 @@ compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug${ICF_SUFFIX}/$arch" \
 # sets CMAKE_CXX_FLAGS (-mcpu=native on ARM) and the second one would win.
 # Opt-in: built with --with-ledger, or when a --target glob selects it.
 if [ "$WITH_LEDGER" = true ] || { [ -n "${CHUNK_BUILD_TARGET:-}" ] && __target_wants "omp-gnu-debug-ledger${ICF_SUFFIX}"; }; then
-    compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-ledger${ICF_SUFFIX}/$arch" \
+    compile_with_cmake "$build_root/cmake-build-omp-gnu-debug-ledger${ICF_SUFFIX}/$arch" \
       "-DCHUNK_FORCE_LEDGER:BOOL=ON -DCHUNK_OPENMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT $SYNC_CMAKE_OPT" \
       "gnu debug openmp with ledger"
 else
@@ -396,15 +396,15 @@ fi
 # run of the std-alloc path had no build dir of its own -- and a sanitizer build
 # is not a substitute: it is ~10x slower and its allocator interposition hides
 # the very std-allocator behaviour this config is meant to exercise.
-compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-std-alloc${ICF_SUFFIX}/$arch" \
+compile_with_cmake "$build_root/cmake-build-omp-gnu-debug-std-alloc${ICF_SUFFIX}/$arch" \
   "-DCHUNK_STD_ALLOC:BOOL=ON -DCHUNK_OPENMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
   "gnu debug openmp std allocator"
 
-compile_with_cmake "$build_rep/cmake-build-gnu-debug${ICF_SUFFIX}/$arch" \
+compile_with_cmake "$build_root/cmake-build-gnu-debug${ICF_SUFFIX}/$arch" \
   "-DCHUNK_OPENMP:BOOL=OFF -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
   "gnu debug"
 
-compile_with_cmake "$build_rep/cmake-build-gnu-std-alloc-debug${ICF_SUFFIX}/$arch" \
+compile_with_cmake "$build_root/cmake-build-gnu-std-alloc-debug${ICF_SUFFIX}/$arch" \
   "-DCHUNK_STD_ALLOC:BOOL=ON -DCHUNK_OPENMP:BOOL=OFF -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
   "gnu debug std allocator (no openmp)"
 

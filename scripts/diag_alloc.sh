@@ -7,13 +7,13 @@
 #   variants: fast | std | noreuse | tsan
 #   e.g.: ./diag_alloc.sh fast 100
 #         ./diag_alloc.sh tsan 5
-# Environment: CHUNK_BUILD_REP (where the build trees go; default: the
+# Environment: CHUNK_BUILD_ROOT (where the build trees go; default: the
 # repository), GCC_MODULE / GCC_TSAN_MODULE (the compiler modules; CEA defaults).
 set -u
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
-WORK="${CHUNK_BUILD_REP:-$SRC}"
+WORK="${CHUNK_BUILD_ROOT:-${CHUNK_BUILD_REP:-$SRC}}" # CHUNK_BUILD_REP: the former name
 GCC_MODULE="${GCC_MODULE:-c++/gcc/15.2.0}"
 GCC_TSAN_MODULE="${GCC_TSAN_MODULE:-c++/gcc/14.1.0}"
 arch="$(source /etc/os-release && echo ${ID^^}_${VERSION_ID}__$(uname -m))"

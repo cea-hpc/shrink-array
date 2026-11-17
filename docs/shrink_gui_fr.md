@@ -118,7 +118,7 @@ nœud chacun, avec les mêmes directives et la même commande plus `--pool=<l'id
 soumission>`. Ils apparaissent dans le tableau comme `compile_all.sh [k/N]`, runs `<id>-n1` à
 `<id>-nN`. Chaque job parcourt les configurations dans l'ordre habituel et ne construit une
 configuration que s'il est le premier à la réclamer (un `mkdir` atomique dans
-`$CHUNK_BUILD_REP/.pools/<id>/`) ; il saute celles qu'un autre job a réclamées. La charge
+`$CHUNK_BUILD_ROOT/.pools/<id>/`) ; il saute celles qu'un autre job a réclamées. La charge
 s'équilibre seule : un job ne réclame sa configuration suivante qu'une fois la précédente lancée
 sur une place de build de son nœud (une seule réclamée d'avance), quel que soit le coût des builds, et rien n'a besoin de savoir d'avance quelles
 configurations cette architecture construit. Un job qui démarre quand les autres ont tout
@@ -384,7 +384,7 @@ Ils sont sautés si PySide6 n'est pas installé.
 - C'est un prototype, écrit pour les machines du TGCC ; un autre site écrit son fichier de
   site (§6). L'ordonnanceur doit être Slurm en dessous (`squeue`, `--dependency`, `--begin`).
 - Une seule connexion à la fois. L'interface n'ouvre pas la connexion maître elle-même.
-- Plusieurs nœuds (§3) : le dossier des builds `$CHUNK_BUILD_REP` (`compile_all.sh`) et
+- Plusieurs nœuds (§3) : le dossier des builds `$CHUNK_BUILD_ROOT` (`compile_all.sh`) et
   `$CCCWORKDIR/thread_speedup/` (`thread_speedup.py`) doivent être sur un système de fichiers
   partagé par tous les nœuds (les réservations y sont des dossiers). Chaque job
   demande la même durée (-T) qu'un job seul. Un job qui échoue laisse les autres continuer ;

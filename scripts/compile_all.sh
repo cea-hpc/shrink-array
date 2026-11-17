@@ -203,7 +203,7 @@ Usage: $0 [--dryrun] [--build] [--debug-only]
                    <id> (one batch job per node; shrink_gui's "Nodes" field):
                    each run builds those it claims first, in the usual order,
                    and skips the others' (functions_for_compile.sh, pool_init).
-                   <id>: a name (under \$CHUNK_BUILD_REP/.pools) or a directory
+                   <id>: a name (under \$CHUNK_BUILD_ROOT/.pools) or a directory
                    on a file system all the nodes share. A new id per submission.
   --list-targets   List the configurations --target accepts (each one's name,
                    whether it is configured here, x86-64 or ARM only), then
@@ -292,7 +292,7 @@ for arg in "$@"; do
             shift
             ;;
         --pool=*)
-            # Checked and created by pool_init, once build_rep is known.
+            # Checked and created by pool_init, once build_root is known.
             export CHUNK_POOL="${arg#*=}"
             [ -n "$CHUNK_POOL" ] || { echo "ERROR: --pool= (expected a name or a directory)" >&2; exit 2; }
             shift
@@ -449,10 +449,10 @@ else
     export CHUNK_HARDENING=on
 fi
 
-build_rep="$CHUNK_BUILD_REP"
-run_cmd "echo $build_rep"
+build_root="$CHUNK_BUILD_ROOT"
+run_cmd "echo $build_root"
 
-run_cmd "create_build_rep"
+run_cmd "create_build_root"
 pool_init
 
 # The gnu family runs FIRST: nothing of ours is in flight yet, so the drain
@@ -555,57 +555,57 @@ if skip_release; then
     echo "[debug-only] skipping oneapi release builds"
 else
     if [ "$BUILD_ONLY" = false ]; then
-        run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-oneapi/$arch $ONEAPI_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON $INT64_OPT -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+        run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-omp-oneapi/$arch $ONEAPI_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON $INT64_OPT -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
     fi
-    launch_build "$build_rep/cmake-build-omp-oneapi/$arch" $BUILD_FLAGS
+    launch_build "$build_root/cmake-build-omp-oneapi/$arch" $BUILD_FLAGS
     # No -manual-compression twins: -DHAVE_MANUAL_COMPRESSION is read by no
     # CMakeLists and no source (compression is embedded and incremental), so
     # they would compile the very same code a second time.
 
     set_build_header 'Compiling oneapi:'
     if [ "$BUILD_ONLY" = false ]; then
-        run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-oneapi/$arch $ONEAPI_STDLIB_OPT -DCHUNK_OPENMP:BOOL=OFF -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+        run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-oneapi/$arch $ONEAPI_STDLIB_OPT -DCHUNK_OPENMP:BOOL=OFF -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
     fi
-    launch_build "$build_rep/cmake-build-oneapi/$arch" $BUILD_FLAGS
+    launch_build "$build_root/cmake-build-oneapi/$arch" $BUILD_FLAGS
 
     # The std backend under icpx, with the TBB bench when oneTBB is found
     # (TBB_CMAKE_OPT, set_tbb_options): TBB's threads against OpenMP's, same compiler.
     set_build_header 'Compiling oneapi std backend (no openmp):'
     if [ "$BUILD_ONLY" = false ]; then
-        run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-std-oneapi/$arch $ONEAPI_STDLIB_OPT -DCHUNK_THREADS=std $INT64_OPT $TBB_CMAKE_OPT -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+        run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-std-oneapi/$arch $ONEAPI_STDLIB_OPT -DCHUNK_THREADS=std $INT64_OPT $TBB_CMAKE_OPT -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
     fi
-    launch_build "$build_rep/cmake-build-std-oneapi/$arch" $BUILD_FLAGS
+    launch_build "$build_root/cmake-build-std-oneapi/$arch" $BUILD_FLAGS
 
     # The std allocator under icpx (CHUNK_STD_ALLOC: every buffer a real
     # malloc, no fast_allocators pools), the twin of omp-llvm-std-alloc and
     # omp-gnu-std-alloc: the pool-vs-malloc comparison with this compiler too.
     set_build_header 'Compiling oneapi openmp std_alloc:'
     if [ "$BUILD_ONLY" = false ]; then
-        run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-oneapi-std-alloc/$arch $ONEAPI_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON -DCHUNK_STD_ALLOC:BOOL=ON $INT64_OPT -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+        run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-omp-oneapi-std-alloc/$arch $ONEAPI_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON -DCHUNK_STD_ALLOC:BOOL=ON $INT64_OPT -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
     fi
-    launch_build "$build_rep/cmake-build-omp-oneapi-std-alloc/$arch" $BUILD_FLAGS
+    launch_build "$build_root/cmake-build-omp-oneapi-std-alloc/$arch" $BUILD_FLAGS
 fi
 
 set_build_header 'Compiling oneapi debug openmp:'
 if [ "$BUILD_ONLY" = false ]; then
-    run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-oneapi-debug/$arch $ONEAPI_STDLIB_OPT -DCMAKE_BUILD_TYPE=Debug -DCHUNK_OPENMP:BOOL=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+    run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-omp-oneapi-debug/$arch $ONEAPI_STDLIB_OPT -DCMAKE_BUILD_TYPE=Debug -DCHUNK_OPENMP:BOOL=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
 fi
-launch_build "$build_rep/cmake-build-omp-oneapi-debug/$arch" $BUILD_FLAGS
+launch_build "$build_root/cmake-build-omp-oneapi-debug/$arch" $BUILD_FLAGS
 
 # Debug + std allocator, OpenMP and serial, no sanitizer: the icpx twins of
 # omp-llvm-debug-std-alloc and llvm-debug-std-alloc (gdb / ledger runs of the
 # std-alloc path, without the sanitizers' slowdown and allocator interposition).
 set_build_header 'Compiling oneapi debug openmp std_alloc:'
 if [ "$BUILD_ONLY" = false ]; then
-    run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-oneapi-debug-std-alloc/$arch $ONEAPI_STDLIB_OPT -DCMAKE_BUILD_TYPE=Debug -DCHUNK_OPENMP:BOOL=ON -DCHUNK_STD_ALLOC:BOOL=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+    run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-omp-oneapi-debug-std-alloc/$arch $ONEAPI_STDLIB_OPT -DCMAKE_BUILD_TYPE=Debug -DCHUNK_OPENMP:BOOL=ON -DCHUNK_STD_ALLOC:BOOL=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
 fi
-launch_build "$build_rep/cmake-build-omp-oneapi-debug-std-alloc/$arch" $BUILD_FLAGS
+launch_build "$build_root/cmake-build-omp-oneapi-debug-std-alloc/$arch" $BUILD_FLAGS
 
 set_build_header 'Compiling oneapi debug std_alloc (no openmp):'
 if [ "$BUILD_ONLY" = false ]; then
-    run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-oneapi-debug-std-alloc/$arch $ONEAPI_STDLIB_OPT -DCMAKE_BUILD_TYPE=Debug -DCHUNK_OPENMP:BOOL=OFF -DCHUNK_STD_ALLOC:BOOL=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+    run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-oneapi-debug-std-alloc/$arch $ONEAPI_STDLIB_OPT -DCMAKE_BUILD_TYPE=Debug -DCHUNK_OPENMP:BOOL=OFF -DCHUNK_STD_ALLOC:BOOL=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
 fi
-launch_build "$build_rep/cmake-build-oneapi-debug-std-alloc/$arch" $BUILD_FLAGS
+launch_build "$build_root/cmake-build-oneapi-debug-std-alloc/$arch" $BUILD_FLAGS
 
 else
     echo "[SKIP] oneapi builds disabled (enable_oneapi=$enable_oneapi, is_arm=$is_arm)"
@@ -633,22 +633,22 @@ if [ -n "$latest_nvhpc" ]; then
                 echo "[debug-only] skipping nvhpc release build"
             else
                 if [ "$BUILD_ONLY" = false ]; then
-                    run_cmd "CXX='$nvcxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-nvhpc/$arch -DCMAKE_CXX_COMPILER='$nvcxx' $NVHPC_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON $INT64_OPT -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja || echo '[WARN] nvhpc release configure failed'"
+                    run_cmd "CXX='$nvcxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-omp-nvhpc/$arch -DCMAKE_CXX_COMPILER='$nvcxx' $NVHPC_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON $INT64_OPT -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja || echo '[WARN] nvhpc release configure failed'"
                 fi
-                launch_build "$build_rep/cmake-build-omp-nvhpc/$arch" $BUILD_FLAGS
+                launch_build "$build_root/cmake-build-omp-nvhpc/$arch" $BUILD_FLAGS
 
                 set_build_header 'Compiling nvhpc std backend (no openmp):'
                 if [ "$BUILD_ONLY" = false ]; then
-                    run_cmd "CXX='$nvcxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-std-nvhpc/$arch -DCMAKE_CXX_COMPILER='$nvcxx' $NVHPC_STDLIB_OPT -DCHUNK_THREADS=std $INT64_OPT $TBB_CMAKE_OPT -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja || echo '[WARN] nvhpc std configure failed'"
+                    run_cmd "CXX='$nvcxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-std-nvhpc/$arch -DCMAKE_CXX_COMPILER='$nvcxx' $NVHPC_STDLIB_OPT -DCHUNK_THREADS=std $INT64_OPT $TBB_CMAKE_OPT -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja || echo '[WARN] nvhpc std configure failed'"
                 fi
-                launch_build "$build_rep/cmake-build-std-nvhpc/$arch" $BUILD_FLAGS
+                launch_build "$build_root/cmake-build-std-nvhpc/$arch" $BUILD_FLAGS
             fi
 
             set_build_header 'Compiling nvhpc debug openmp:'
             if [ "$BUILD_ONLY" = false ]; then
-                run_cmd "CXX='$nvcxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-nvhpc-debug/$arch -DCMAKE_CXX_COMPILER='$nvcxx' $NVHPC_STDLIB_OPT -DCMAKE_BUILD_TYPE=Debug -DCHUNK_OPENMP:BOOL=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja || echo '[WARN] nvhpc debug configure failed'"
+                run_cmd "CXX='$nvcxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-omp-nvhpc-debug/$arch -DCMAKE_CXX_COMPILER='$nvcxx' $NVHPC_STDLIB_OPT -DCMAKE_BUILD_TYPE=Debug -DCHUNK_OPENMP:BOOL=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja || echo '[WARN] nvhpc debug configure failed'"
             fi
-            launch_build "$build_rep/cmake-build-omp-nvhpc-debug/$arch" $BUILD_FLAGS
+            launch_build "$build_root/cmake-build-omp-nvhpc-debug/$arch" $BUILD_FLAGS
         fi
         run_cmd "module unload $latest_nvhpc"
     fi
@@ -778,9 +778,9 @@ if skip_release; then
    echo "[debug-only] skipping llvm relwithdebinfo check thread-sanitizer build"
 else
    if [ "$BUILD_ONLY" = false ]; then
-      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-relwithdebinfo-check-thread-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON -DCHUNK_CHECK_OPTIM=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DCHUNK_SANITIZER=thread"
+      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-omp-llvm-relwithdebinfo-check-thread-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON -DCHUNK_CHECK_OPTIM=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DCHUNK_SANITIZER=thread"
    fi
-   launch_build "$build_rep/cmake-build-omp-llvm-relwithdebinfo-check-thread-sanitizer/$arch"
+   launch_build "$build_root/cmake-build-omp-llvm-relwithdebinfo-check-thread-sanitizer/$arch"
 fi
 fi
 
@@ -798,9 +798,9 @@ if skip_release; then
    echo "[debug-only] skipping llvm relwithdebinfo std check thread-sanitizer build"
 else
    if [ "$BUILD_ONLY" = false ]; then
-      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-std-llvm-relwithdebinfo-check-thread-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_THREADS=std -DCHUNK_CHECK_OPTIM=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DCHUNK_SANITIZER=thread $TBB_TSAN_CMAKE_OPT"
+      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-std-llvm-relwithdebinfo-check-thread-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_THREADS=std -DCHUNK_CHECK_OPTIM=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DCHUNK_SANITIZER=thread $TBB_TSAN_CMAKE_OPT"
    fi
-   launch_build "$build_rep/cmake-build-std-llvm-relwithdebinfo-check-thread-sanitizer/$arch"
+   launch_build "$build_root/cmake-build-std-llvm-relwithdebinfo-check-thread-sanitizer/$arch"
 fi
 fi
 
@@ -813,18 +813,18 @@ if [ "$enable_sanitizers" = true ]; then
 if [ "$WITH_TOKEN" = true ] || { [ -n "${CHUNK_BUILD_TARGET:-}" ] && __target_wants "omp-llvm-debug-std-alloc-token-sanitizer"; }; then
 set_build_header 'Compiling llvm debug openmp std_alloc token sanitizer:'
 if [ "$BUILD_ONLY" = false ]; then
-   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-debug-std-alloc-token-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON -DCHUNK_STD_ALLOC:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DCHUNK_SANITIZER=token"
+   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-omp-llvm-debug-std-alloc-token-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON -DCHUNK_STD_ALLOC:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DCHUNK_SANITIZER=token"
 fi
-launch_build "$build_rep/cmake-build-omp-llvm-debug-std-alloc-token-sanitizer/$arch"
+launch_build "$build_root/cmake-build-omp-llvm-debug-std-alloc-token-sanitizer/$arch"
 else
     echo "[default] skipping llvm debug openmp std_alloc token sanitizer (--with-token-sanitizer builds it)"
 fi
 
 set_build_header 'Compiling llvm debug openmp thread sanitizer:'
 if [ "$BUILD_ONLY" = false ]; then
-   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-debug-thread-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DCHUNK_SANITIZER=thread"
+   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-omp-llvm-debug-thread-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DCHUNK_SANITIZER=thread"
 fi
-launch_build "$build_rep/cmake-build-omp-llvm-debug-thread-sanitizer/$arch"
+launch_build "$build_root/cmake-build-omp-llvm-debug-thread-sanitizer/$arch"
 
 # (No fast-allocator ASan build: with the fast allocator the chunk buffers
 # live inside the library's slab arenas, which ASan sees as a few large blocks
@@ -833,15 +833,15 @@ launch_build "$build_rep/cmake-build-omp-llvm-debug-thread-sanitizer/$arch"
 
 set_build_header 'Compiling llvm debug openmp std_alloc thread sanitizer:'
 if [ "$BUILD_ONLY" = false ]; then
-   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-debug-std-alloc-thread-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON -DCHUNK_STD_ALLOC:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DCHUNK_SANITIZER=thread"
+   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-omp-llvm-debug-std-alloc-thread-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON -DCHUNK_STD_ALLOC:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DCHUNK_SANITIZER=thread"
 fi
-launch_build "$build_rep/cmake-build-omp-llvm-debug-std-alloc-thread-sanitizer/$arch"
+launch_build "$build_root/cmake-build-omp-llvm-debug-std-alloc-thread-sanitizer/$arch"
 
 set_build_header 'Compiling llvm debug openmp std_alloc address sanitizer:'
 if [ "$BUILD_ONLY" = false ]; then
-   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-debug-std-alloc-address-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON -DCHUNK_STD_ALLOC:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DCHUNK_SANITIZER=address"
+   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-omp-llvm-debug-std-alloc-address-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON -DCHUNK_STD_ALLOC:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DCHUNK_SANITIZER=address"
 fi
-launch_build "$build_rep/cmake-build-omp-llvm-debug-std-alloc-address-sanitizer/$arch"
+launch_build "$build_root/cmake-build-omp-llvm-debug-std-alloc-address-sanitizer/$arch"
 else
     echo "[SKIP] sanitizer builds disabled (enable_sanitizers=$enable_sanitizers)"
 fi
@@ -851,9 +851,9 @@ if skip_release; then
    echo "[debug-only] skipping llvm release build"
 else
    if [ "$BUILD_ONLY" = false ]; then
-      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON $INT64_OPT -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-omp-llvm/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON $INT64_OPT -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
    fi
-   launch_build "$build_rep/cmake-build-omp-llvm/$arch"
+   launch_build "$build_root/cmake-build-omp-llvm/$arch"
 fi
 
 # Release + CHUNK_STATS: same flags as the plain release OMP build above, plus
@@ -870,9 +870,9 @@ if skip_release; then
    echo "[debug-only] skipping llvm release-stats build"
 else
    if [ "$BUILD_ONLY" = false ]; then
-      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-stats/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_STATS:BOOL=ON -DCHUNK_OPENMP:BOOL=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-omp-llvm-stats/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_STATS:BOOL=ON -DCHUNK_OPENMP:BOOL=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
    fi
-   launch_build "$build_rep/cmake-build-omp-llvm-stats/$arch"
+   launch_build "$build_root/cmake-build-omp-llvm-stats/$arch"
 fi
 
 set_build_header 'Compiling llvm openmp with check (CHECK_OPTIM):'
@@ -880,9 +880,9 @@ if skip_release; then
    echo "[debug-only] skipping llvm openmp with check"
 else
    if [ "$BUILD_ONLY" = false ]; then
-      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-check/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_CHECK_OPTIM=ON -DCHUNK_OPENMP:BOOL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-omp-llvm-check/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_CHECK_OPTIM=ON -DCHUNK_OPENMP:BOOL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
    fi
-   launch_build "$build_rep/cmake-build-omp-llvm-check/$arch"
+   launch_build "$build_root/cmake-build-omp-llvm-check/$arch"
 fi
 
 set_build_header 'Compiling llvm openmp std_alloc:'
@@ -890,9 +890,9 @@ if skip_release; then
    echo "[debug-only] skipping llvm std_alloc (release) build"
 else
    if [ "$BUILD_ONLY" = false ]; then
-      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-std-alloc/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON -DCHUNK_STD_ALLOC:BOOL=ON $INT64_OPT -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-omp-llvm-std-alloc/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON -DCHUNK_STD_ALLOC:BOOL=ON $INT64_OPT -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
    fi
-   launch_build "$build_rep/cmake-build-omp-llvm-std-alloc/$arch"
+   launch_build "$build_root/cmake-build-omp-llvm-std-alloc/$arch"
 fi
 
 # The std backend (CHUNK_THREADS=std, docs/threading_backends.md): the library's
@@ -909,9 +909,9 @@ if skip_release; then
    echo "[debug-only] skipping llvm std-backend release build"
 else
    if [ "$BUILD_ONLY" = false ]; then
-      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-std-llvm/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_THREADS=std $INT64_OPT $TBB_CMAKE_OPT -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-std-llvm/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_THREADS=std $INT64_OPT $TBB_CMAKE_OPT -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
    fi
-   launch_build "$build_rep/cmake-build-std-llvm/$arch"
+   launch_build "$build_root/cmake-build-std-llvm/$arch"
 fi
 
 set_build_header 'Compiling llvm std backend with check (CHECK_OPTIM):'
@@ -919,9 +919,9 @@ if skip_release; then
    echo "[debug-only] skipping llvm std-backend with check"
 else
    if [ "$BUILD_ONLY" = false ]; then
-      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-std-llvm-check/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_THREADS=std -DCHUNK_CHECK_OPTIM=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo $TBB_CMAKE_OPT -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-std-llvm-check/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_THREADS=std -DCHUNK_CHECK_OPTIM=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo $TBB_CMAKE_OPT -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
    fi
-   launch_build "$build_rep/cmake-build-std-llvm-check/$arch"
+   launch_build "$build_root/cmake-build-std-llvm-check/$arch"
 fi
 
 # No -have-aggressive-compression build any more: the switch is a run-time one
@@ -930,9 +930,9 @@ fi
 
 set_build_header 'Compiling llvm debug openmp:'
 if [ "$BUILD_ONLY" = false ]; then
-   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-debug/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-omp-llvm-debug/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
 fi
-launch_build "$build_rep/cmake-build-omp-llvm-debug/$arch"
+launch_build "$build_root/cmake-build-omp-llvm-debug/$arch"
 
 # ─── llvm custom CHUNK_SIZE variants (large-chunk validation, on demand) ─────
 # Two builds: RelWithDebInfo (perf/repro at scale) and Debug (-O0 -g, for gdb
@@ -945,33 +945,33 @@ if [ -n "$llvm_cs_size" ]; then
         echo "[SKIP] llvm cs$llvm_cs_size release (skipped by --debug-only)"
     else
         if [ "$BUILD_ONLY" = false ]; then
-           run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-cs$llvm_cs_size/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON -DCHUNK_SIZE=$llvm_cs_size -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+           run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-omp-llvm-cs$llvm_cs_size/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON -DCHUNK_SIZE=$llvm_cs_size -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
         fi
-        launch_build "$build_rep/cmake-build-omp-llvm-cs$llvm_cs_size/$arch"
+        launch_build "$build_root/cmake-build-omp-llvm-cs$llvm_cs_size/$arch"
     fi
 
     echo -e "\nCompilation llvm openmp CHUNK_SIZE=$llvm_cs_size (Debug):\n"
     if [ "$BUILD_ONLY" = false ]; then
-       run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-cs$llvm_cs_size-debug/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON -DCHUNK_SIZE=$llvm_cs_size -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+       run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-omp-llvm-cs$llvm_cs_size-debug/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON -DCHUNK_SIZE=$llvm_cs_size -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
     fi
-    launch_build "$build_rep/cmake-build-omp-llvm-cs$llvm_cs_size-debug/$arch"
+    launch_build "$build_root/cmake-build-omp-llvm-cs$llvm_cs_size-debug/$arch"
 fi
 
 set_build_header 'Compiling llvm debug:'
 if [ "$BUILD_ONLY" = false ]; then
    # -DCHUNK_OPENMP:BOOL=OFF (the -D syntax is NAME:TYPE=VALUE).
-   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-llvm-debug/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=OFF -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-llvm-debug/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=OFF -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
 fi
-launch_build "$build_rep/cmake-build-llvm-debug/$arch"
+launch_build "$build_root/cmake-build-llvm-debug/$arch"
 
 # Non-OMP std-alloc Debug (no sanitizer): serial ledger repro of the rechunk
 # double-free without the ASan slowdown. Runs deterministically at small sizes
 # (e.g. --divisor 100), so it is the fast gdb/ledger path.
 set_build_header 'Compiling llvm debug std_alloc (no openmp):'
 if [ "$BUILD_ONLY" = false ]; then
-   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-llvm-debug-std-alloc/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=OFF -DCHUNK_STD_ALLOC:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-llvm-debug-std-alloc/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=OFF -DCHUNK_STD_ALLOC:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
 fi
-launch_build "$build_rep/cmake-build-llvm-debug-std-alloc/$arch"
+launch_build "$build_root/cmake-build-llvm-debug-std-alloc/$arch"
 
 # OMP std-alloc Debug (no sanitizer): gdb + ledger repro of the rechunk
 # double-free in the PARALLEL teardown/compression path (the crash fires from an
@@ -979,18 +979,18 @@ launch_build "$build_rep/cmake-build-llvm-debug-std-alloc/$arch"
 # with rechunk on (e.g. --divisor 4).
 set_build_header 'Compiling llvm debug openmp std_alloc (no sanitizer):'
 if [ "$BUILD_ONLY" = false ]; then
-   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-debug-std-alloc/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON -DCHUNK_STD_ALLOC:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-omp-llvm-debug-std-alloc/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON -DCHUNK_STD_ALLOC:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
 fi
-launch_build "$build_rep/cmake-build-omp-llvm-debug-std-alloc/$arch"
+launch_build "$build_root/cmake-build-omp-llvm-debug-std-alloc/$arch"
 
 # Non-OMP std-alloc Debug + AddressSanitizer: the killer for the double-free.
 # Serial + small + deterministic means ASan is fast here, and it prints the
 # alloc / first-free / second-free sites directly (no guessing).
 set_build_header 'Compiling llvm debug std_alloc address sanitizer (no openmp):'
 if [ "$BUILD_ONLY" = false ]; then
-   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-llvm-debug-std-alloc-address-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=OFF -DCHUNK_STD_ALLOC:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DCHUNK_SANITIZER=address"
+   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-llvm-debug-std-alloc-address-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=OFF -DCHUNK_STD_ALLOC:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DCHUNK_SANITIZER=address"
 fi
-launch_build "$build_rep/cmake-build-llvm-debug-std-alloc-address-sanitizer/$arch"
+launch_build "$build_root/cmake-build-llvm-debug-std-alloc-address-sanitizer/$arch"
 
 # Non-OMP llvm RELEASE build. Builds the _check targets (declared
 # unconditionally in CMakeLists; OMP only adds linkage) so bench_and_test can
@@ -1000,9 +1000,9 @@ if skip_release; then
     echo "[debug-only] skipping llvm non-omp release build"
 else
     if [ "$BUILD_ONLY" = false ]; then
-       run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-llvm/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=OFF -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+       run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-llvm/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_OPENMP:BOOL=OFF -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
     fi
-    launch_build "$build_rep/cmake-build-llvm/$arch"
+    launch_build "$build_root/cmake-build-llvm/$arch"
 fi
 
 # Sequential twin of cmake-build-omp-llvm-stats above: same release build,
@@ -1016,9 +1016,9 @@ if skip_release; then
     echo "[debug-only] skipping llvm non-omp release-stats build"
 else
     if [ "$BUILD_ONLY" = false ]; then
-       run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-llvm-stats/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_STATS:BOOL=ON -DCHUNK_OPENMP:BOOL=OFF -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+       run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-llvm-stats/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_STATS:BOOL=ON -DCHUNK_OPENMP:BOOL=OFF -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
     fi
-    launch_build "$build_rep/cmake-build-llvm-stats/$arch"
+    launch_build "$build_root/cmake-build-llvm-stats/$arch"
 fi
 
 else
@@ -1055,22 +1055,22 @@ else
         echo "[debug-only] skipping aocc release build"
     else
         if [ "$BUILD_ONLY" = false ]; then
-            run_cmd "CXX='$aoccxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-aocc/$arch $AOCC_CXX_OPT $AOCC_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON $INT64_OPT -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+            run_cmd "CXX='$aoccxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-omp-aocc/$arch $AOCC_CXX_OPT $AOCC_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON $INT64_OPT -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
         fi
-        launch_build "$build_rep/cmake-build-omp-aocc/$arch" $BUILD_FLAGS
+        launch_build "$build_root/cmake-build-omp-aocc/$arch" $BUILD_FLAGS
 
         set_build_header 'Compiling aocc std backend (no openmp):'
         if [ "$BUILD_ONLY" = false ]; then
-            run_cmd "CXX='$aoccxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-std-aocc/$arch $AOCC_CXX_OPT $AOCC_STDLIB_OPT -DCHUNK_THREADS=std $INT64_OPT $TBB_CMAKE_OPT -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+            run_cmd "CXX='$aoccxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-std-aocc/$arch $AOCC_CXX_OPT $AOCC_STDLIB_OPT -DCHUNK_THREADS=std $INT64_OPT $TBB_CMAKE_OPT -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
         fi
-        launch_build "$build_rep/cmake-build-std-aocc/$arch" $BUILD_FLAGS
+        launch_build "$build_root/cmake-build-std-aocc/$arch" $BUILD_FLAGS
     fi
 
     set_build_header 'Compiling aocc debug openmp:'
     if [ "$BUILD_ONLY" = false ]; then
-        run_cmd "CXX='$aoccxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-aocc-debug/$arch $AOCC_CXX_OPT $AOCC_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+        run_cmd "CXX='$aoccxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-omp-aocc-debug/$arch $AOCC_CXX_OPT $AOCC_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
     fi
-    launch_build "$build_rep/cmake-build-omp-aocc-debug/$arch" $BUILD_FLAGS
+    launch_build "$build_root/cmake-build-omp-aocc-debug/$arch" $BUILD_FLAGS
 
     run_cmd "module unload $latest_aocc"
 fi
@@ -1129,22 +1129,22 @@ else
         echo "[debug-only] skipping acfl release builds"
     else
         if [ "$BUILD_ONLY" = false ]; then
-            run_cmd "CXX='$acflxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-acfl/$arch $ACFL_CXX_OPT $ACFL_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON $INT64_OPT -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+            run_cmd "CXX='$acflxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-omp-acfl/$arch $ACFL_CXX_OPT $ACFL_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON $INT64_OPT -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
         fi
-        launch_build "$build_rep/cmake-build-omp-acfl/$arch" $BUILD_FLAGS
+        launch_build "$build_root/cmake-build-omp-acfl/$arch" $BUILD_FLAGS
 
         set_build_header 'Compiling acfl std backend (no openmp):'
         if [ "$BUILD_ONLY" = false ]; then
-            run_cmd "CXX='$acflxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-std-acfl/$arch $ACFL_CXX_OPT $ACFL_STDLIB_OPT -DCHUNK_THREADS=std $INT64_OPT $TBB_CMAKE_OPT -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+            run_cmd "CXX='$acflxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-std-acfl/$arch $ACFL_CXX_OPT $ACFL_STDLIB_OPT -DCHUNK_THREADS=std $INT64_OPT $TBB_CMAKE_OPT -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
         fi
-        launch_build "$build_rep/cmake-build-std-acfl/$arch" $BUILD_FLAGS
+        launch_build "$build_root/cmake-build-std-acfl/$arch" $BUILD_FLAGS
     fi
 
     set_build_header 'Compiling acfl debug openmp:'
     if [ "$BUILD_ONLY" = false ]; then
-        run_cmd "CXX='$acflxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-acfl-debug/$arch $ACFL_CXX_OPT $ACFL_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+        run_cmd "CXX='$acflxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_root/cmake-build-omp-acfl-debug/$arch $ACFL_CXX_OPT $ACFL_STDLIB_OPT -DCHUNK_OPENMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
     fi
-    launch_build "$build_rep/cmake-build-omp-acfl-debug/$arch" $BUILD_FLAGS
+    launch_build "$build_root/cmake-build-omp-acfl-debug/$arch" $BUILD_FLAGS
 
     [ -n "$acfl_module" ] && run_cmd "module unload $acfl_module"
 fi

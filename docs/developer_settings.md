@@ -214,7 +214,7 @@ the common options. `--help` gives the full list.
 | `--jobs=<n>` | number of configurations compiled at the same time (4 by default); the core budget is shared between them |
 | `--no-hardening` | without `CHUNK_GLIBCXX_ASSERTIONS` or `CHUNK_UBSAN` on the Debug and sanitizer builds |
 | `--llvm-cs=<n>` | add an LLVM build with `CHUNK_SIZE=n` |
-| `--pool=<id>` | share the configurations with the other runs given the same `<id>` (one batch job per node, `shrink_gui`'s "Nodes" field): each builds those it claims first; `<id>` is a name under `$CHUNK_BUILD_REP/.pools/` or a directory all the nodes share |
+| `--pool=<id>` | share the configurations with the other runs given the same `<id>` (one batch job per node, `shrink_gui`'s "Nodes" field): each builds those it claims first; `<id>` is a name under `$CHUNK_BUILD_ROOT/.pools/` or a directory all the nodes share |
 
 Where the compilers come from, beside the modules the script loads: `CHUNK_LLVM_ROOT=<dir>`
 for the llvm builds (`<dir>/bin/clang++`, LLVM's release tarball extracted, e.g. where the llvm
@@ -245,7 +245,7 @@ Read by the Python tools, the check scripts and a few harnesses, not by the libr
 
 | variable | default | effect |
 |---|---|---|
-| `CHUNK_BUILD_ROOT` | current directory | where the `cmake-build-<target>` directories are: default of `--build-root` in `bench_and_test.py`, `multi_launch_stress.py` and `thread_speedup.py` (which falls back on `CHUNK_BUILD_REP`). `shrink_gui` exports it in the scripts it submits |
+| `CHUNK_BUILD_ROOT` | current directory | where the `cmake-build-<target>` directories are: default of `--build-root` in `bench_and_test.py`, `multi_launch_stress.py` and `thread_speedup.py`; `compile_all.sh` takes its builds there, `scripts/site_env.sh` sets it per site. Its former name `CHUNK_BUILD_REP` is still read when it is unset, deprecated. `shrink_gui` exports it in the scripts it submits |
 | `CHUNK_BENCH_EVENTS` | unset | file the campaigns append their events to, one JSON record per line (default of `--events-file`); `shrink_gui` sets it and follows the file |
 | `CHUNK_POOL_REF_WAIT` | 21,600 | `--pool` campaigns: seconds a job waits for the reference another job generates, before skipping what needs it |
 | `CHUNK_POOL_POLL` | 2 | `--pool` campaigns: seconds between two looks at what the other jobs did |

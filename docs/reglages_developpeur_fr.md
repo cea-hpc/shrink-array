@@ -217,7 +217,7 @@ transmettant les options communes. `--help` donne la liste complète.
 | `--jobs=<n>` | nombre de configurations compilées en même temps (4 par défaut) ; le budget de cœurs est partagé entre elles |
 | `--no-hardening` | sans `CHUNK_GLIBCXX_ASSERTIONS` ni `CHUNK_UBSAN` sur les builds Debug et sanitizer |
 | `--llvm-cs=<n>` | ajouter un build LLVM avec `CHUNK_SIZE=n` |
-| `--pool=<id>` | partager les configurations avec les autres runs qui ont le même `<id>` (un job batch par nœud, champ « Nœuds » de `shrink_gui`) : chacun construit celles qu'il réclame le premier ; `<id>` est un nom sous `$CHUNK_BUILD_REP/.pools/` ou un dossier partagé par tous les nœuds |
+| `--pool=<id>` | partager les configurations avec les autres runs qui ont le même `<id>` (un job batch par nœud, champ « Nœuds » de `shrink_gui`) : chacun construit celles qu'il réclame le premier ; `<id>` est un nom sous `$CHUNK_BUILD_ROOT/.pools/` ou un dossier partagé par tous les nœuds |
 
 D'où viennent les compilateurs, en plus des modules que le script charge : `CHUNK_LLVM_ROOT=<rép>`
 pour les builds llvm (`<rép>/bin/clang++`, l'archive de LLVM décompressée, par exemple là où le
@@ -249,7 +249,7 @@ Lues par les outils Python, les scripts de vérification et quelques tests, pas 
 
 | variable | défaut | effet |
 |---|---|---|
-| `CHUNK_BUILD_ROOT` | répertoire courant | où sont les répertoires `cmake-build-<cible>` : défaut de `--build-root` dans `bench_and_test.py`, `multi_launch_stress.py` et `thread_speedup.py` (qui se replie sur `CHUNK_BUILD_REP`). `shrink_gui` l'exporte dans les scripts qu'il soumet |
+| `CHUNK_BUILD_ROOT` | répertoire courant | où sont les répertoires `cmake-build-<cible>` : défaut de `--build-root` dans `bench_and_test.py`, `multi_launch_stress.py` et `thread_speedup.py` ; `compile_all.sh` y met ses builds, `scripts/site_env.sh` la fixe selon le site. Son ancien nom `CHUNK_BUILD_REP` est encore lu quand elle n'est pas définie, déprécié. `shrink_gui` l'exporte dans les scripts qu'il soumet |
 | `CHUNK_BENCH_EVENTS` | non défini | fichier où les campagnes ajoutent leurs événements, un enregistrement JSON par ligne (défaut de `--events-file`) ; `shrink_gui` le positionne et suit le fichier |
 | `CHUNK_POOL_REF_WAIT` | 21 600 | campagnes `--pool` : secondes pendant lesquelles un job attend la référence qu'un autre job génère, avant de sauter ce qui en dépend |
 | `CHUNK_POOL_POLL` | 2 | campagnes `--pool` : secondes entre deux regards sur ce que les autres jobs ont fait |
