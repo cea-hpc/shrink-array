@@ -720,6 +720,57 @@ if(NOT CHUNK_USE_MOLD STREQUAL "OFF")
     endif()
 endif()
 
+# ── Compiler cache: use ccache when available ────────────────────────────────
+# A switch of branch (develop, cpp23, cpp26) or a pull that leaves the library
+# headers alone recompiles the unity units of shrink_bench and validation, one
+# to three minutes each: ccache gives them back from its cache. It gains
+# nothing after an edit of a library header, which every unit includes.
+# AUTO = use it if it is found (on PATH, or given with -DCCACHE_EXECUTABLE=...);
+# a CMAKE_CXX_COMPILER_LAUNCHER of the caller is left alone.
+#
+# -march=native (-mcpu=native, -xHost, -tp=host) is the same text on every
+# host, and ccache hashes the command line: a cache shared by two kinds of node
+# (a home directory on a cluster) would give one the objects compiled for the
+# other. The launcher passes ccache a namespace made of the host's CPU (model
+# and flags, from /proc/cpuinfo), so each kind of CPU has its own entries; the
+# key=value form on ccache's command line needs ccache >= 4.8.
+set(CHUNK_USE_CCACHE "AUTO" CACHE STRING "Compile through ccache: AUTO, ON, OFF")
+set_property(CACHE CHUNK_USE_CCACHE PROPERTY STRINGS AUTO ON OFF)
+
+if(NOT CHUNK_USE_CCACHE STREQUAL "OFF" AND NOT CMAKE_CXX_COMPILER_LAUNCHER)
+    find_program(CCACHE_EXECUTABLE ccache)
+    set(_ccache_ver "")
+    if(CCACHE_EXECUTABLE)
+        execute_process(COMMAND "${CCACHE_EXECUTABLE}" --version
+                        OUTPUT_VARIABLE _ccache_out ERROR_QUIET)
+        string(REGEX MATCH "version ([0-9]+\\.[0-9]+(\\.[0-9]+)?)" _ccache_m "${_ccache_out}")
+        set(_ccache_ver "${CMAKE_MATCH_1}")
+    endif()
+    if(_ccache_ver AND _ccache_ver VERSION_GREATER_EQUAL "4.8")
+        set(_ccache_cpu "${CMAKE_HOST_SYSTEM_PROCESSOR}")
+        if(EXISTS "/proc/cpuinfo")
+            file(STRINGS "/proc/cpuinfo" _ccache_cpuinfo LIMIT_COUNT 64
+                 REGEX "^(model name|flags|Features|CPU implementer|CPU part)[ \t]*:")
+            list(REMOVE_DUPLICATES _ccache_cpuinfo)
+            string(APPEND _ccache_cpu "${_ccache_cpuinfo}")
+        endif()
+        string(MD5 _ccache_cpu "${_ccache_cpu}")
+        string(SUBSTRING "${_ccache_cpu}" 0 12 _ccache_cpu)
+        set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_EXECUTABLE};namespace=cpu-${_ccache_cpu}")
+        message(STATUS "Compiler cache: ccache ${_ccache_ver} — ${CCACHE_EXECUTABLE} "
+                       "(namespace cpu-${_ccache_cpu})")
+    elseif(CHUNK_USE_CCACHE STREQUAL "ON")
+        message(FATAL_ERROR "CHUNK_USE_CCACHE=ON but ccache >= 4.8 is not found "
+                            "(${CCACHE_EXECUTABLE} ${_ccache_ver}); give it with -DCCACHE_EXECUTABLE=...")
+    elseif(CCACHE_EXECUTABLE)
+        message(STATUS "Compiler cache: none (ccache ${_ccache_ver} found, 4.8 needed)")
+    else()
+        message(STATUS "Compiler cache: none (ccache not found)")
+    endif()
+elseif(CMAKE_CXX_COMPILER_LAUNCHER)
+    message(STATUS "Compiler cache: the caller's launcher (${CMAKE_CXX_COMPILER_LAUNCHER})")
+endif()
+
 # ── C++20 requirement (portable, with NVHPC workaround) ───────────────────────
 # CMake's compile-feature table for nvc++ (NVHPC 26.x) doesn't advertise
 # cxx_std_20, so target_compile_features(<t> ... cxx_std_20) hard-errors with

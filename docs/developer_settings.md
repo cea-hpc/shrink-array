@@ -181,6 +181,7 @@ The options of [environment_variables.md](environment_variables.md) §2 are not 
 | `CHUNK_NATIVE_TUNING` | ON | OFF: no target flag from the project at all (`-march=`/`-mcpu=native`, `-tp=host`, `-xHost`): the target is the caller's. The Spack recipe sets it OFF, so that the spec's `target=` is the one compiled for; the project's flag came after the wrapper's and won |
 | `CHUNK_USE_LIBCXX` | `OFF` | Clang builds: `ON` for libc++ (`-stdlib=libc++`) instead of the compiler's default standard library, libstdc++ on Linux |
 | `CHUNK_GCC_TOOLCHAIN_DIR` | depends on the machine | Clang builds: the GCC installation whose libstdc++ and runtime clang uses (`--gcc-toolchain=`); empty: the driver's own choice. A path that does not exist is ignored, with a warning |
+| `CHUNK_USE_CCACHE` | `AUTO` | compile through ccache (>= 4.8): `AUTO` (when it is found, on `PATH` or with `-DCCACHE_EXECUTABLE=...`), `ON` (an error otherwise), `OFF`. The cache is split by host CPU, so `-march=native` objects never cross nodes; a `CMAKE_CXX_COMPILER_LAUNCHER` already given is kept |
 | `CHUNK_USE_MOLD` | `AUTO` | link with mold: `AUTO` (when it is found and the build supports it), `ON` (an error otherwise), `OFF` |
 | `CHUNK_VEC_REPORT` | `OFF` | fast-math targets of the examples: the compiler reports the loops it did not vectorise |
 | `GETTING_STARTED_LIB`, `BOOL_ARRAYS_LIB` | `shrink_array::zero_any`, `shrink_array::zero_one_value` | `examples/getting_started` and `examples/bool_arrays` built on their own, against an installed library: the library target they link |
