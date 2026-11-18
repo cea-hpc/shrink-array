@@ -195,7 +195,11 @@ Usage: $0 [--dryrun] [--build] [--debug-only]
   --jobs=N         Build at most N configurations at once (default 4). The core
                    budget is split across them, so this bounds the total number
                    of compiler processes instead of multiplying it. Use 1 to
-                   serialise when a build gets OOM-killed.
+                   serialise when a build gets OOM-killed. With ninja >= 1.13
+                   the budget is a shared jobserver instead: a build that ends
+                   leaves its cores to the ones still running (CHUNK_NINJA=<a
+                   ninja >= 1.13> configures with it; CHUNK_JOBSERVER=off: the
+                   fixed shares only).
   --no-hardening   Do not add -DCHUNK_GLIBCXX_ASSERTIONS=ON to Debug/sanitizer builds,
                    nor -DCHUNK_UBSAN=ON to the address-sanitizer builds (default: added).
   --llvm-cs=<N>    Also build an llvm RelWithDebInfo variant with CHUNK_SIZE=N (power of two).
