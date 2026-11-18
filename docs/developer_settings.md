@@ -212,7 +212,7 @@ the common options. `--help` gives the full list.
 | `--with-token-sanitizer` | add `cmake-build-omp-llvm-debug-std-alloc-token-sanitizer` (`CHUNK_SANITIZER=token`), disabled by default; a `--target` that selects it also builds it; `--no-sanitizers` skips it |
 | `--target=<glob>` | only the configurations whose name matches (`omp-llvm`, or a quoted shell glob); a pattern that matches nothing is an error |
 | `--exec=<glob>` | only the matching Ninja targets in each build (`shrink_bench_omp_zero_256`, or a quoted shell glob: `'shrink_bench_*_zero_256'` matches it regardless of the backend) |
-| `--jobs=<n>` | number of configurations compiled at the same time (4 by default); the core budget is shared between them |
+| `--jobs=<n>` | number of configurations compiled at the same time (4 by default); the core budget is shared between them (a jobserver with ninja 1.13 or later, see below) |
 | `--no-hardening` | without `CHUNK_GLIBCXX_ASSERTIONS` or `CHUNK_UBSAN` on the Debug and sanitizer builds |
 | `--llvm-cs=<n>` | add an LLVM build with `CHUNK_SIZE=n` |
 | `--pool=<id>` | share the configurations with the other runs given the same `<id>` (one batch job per node, `shrink_gui`'s "Nodes" field): each builds those it claims first; `<id>` is a name under `$CHUNK_BUILD_ROOT/.pools/` or a directory all the nodes share |
@@ -228,6 +228,16 @@ oneTBB built with TSan of the std TSan build.
 `compile_all_gnu.sh` also accepts `--no-ipa-icf` (`CHUNK_NO_IPA_ICF=ON`). The compilation
 memory per job is set by `CHUNK_MEM_PER_JOB_MB` (3,072 MB by default, twice that for
 sanitizer builds).
+
+The compile jobs of the configurations built at the same time come from one budget, the cores
+or what the memory holds. With ninja 1.13 or later (the ninja a build dir is configured with,
+its `CMAKE_MAKE_PROGRAM`), the scripts share it through a GNU make jobserver: a configuration
+that ends leaves its cores to the ones still running, and the last one finishes on the whole
+node. With an older ninja each configuration keeps the share it was given at its start
+(`cores / --jobs`), and the last ones finish on that share alone. `CHUNK_NINJA=<ninja 1.13 or
+later>` configures the build dirs with that ninja (each dir that changes ninja rebuilds in full
+once: the two versions do not read each other's `.ninja_log`); `CHUNK_JOBSERVER=off` keeps the
+fixed shares.
 
 The std threading backend (`CHUNK_THREADS=std`) has its own builds: `std-gnu`, `std-gnu-check`
 and a ThreadSanitizer one from `compile_all_gnu.sh`, `std-llvm`, `std-llvm-check` and a
