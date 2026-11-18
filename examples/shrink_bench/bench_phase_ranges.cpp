@@ -372,7 +372,7 @@ void bench_phase_range_mt(BenchArrays& bench_arr, Int iter, Int beg_s, Int end_s
                     shrink_array::fill_range_mt(array_long, lo, hi, swap ? 0L : second_value_l);
                     shrink_array::fill_range_mt(array_complex, lo, hi, swap ? zero_complex : second_value_c);
                     // bool: the element path on every variant; array_bool_bits is
-                    // bit-packed in a zero_one_value build. The baseline's two are
+                    // bit-packed in a zero_or_value build. The baseline's two are
                     // std::vector<short>.
                     shrink_array::fill_range_mt(array_bool, lo, hi, !swap);
                     shrink_array::fill_range_mt(array_bool_bits, lo, hi, !swap);

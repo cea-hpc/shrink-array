@@ -17,8 +17,8 @@
 #pragma once
 
 /**
- * @file zero_one_value_array_parallel.h
- * @brief zero_one_value::Array's fast-block-only surface (make_block_compression),
+ * @file zero_or_value_array_parallel.h
+ * @brief zero_or_value::Array's fast-block-only surface (make_block_compression),
  *        isolated in its own mixin so that it disappears from a build without it.
  *
  * @details make_block_compression() does not join ParallelSupport
@@ -26,7 +26,7 @@
  *          chunk_config::use_fast_block_compression, which is STRICTER than
  *          threaded (it also needs embedded -- i.e. not manual -- compression).
  *
- * @see zero_one_value_array_parallel_inline.h for the body
+ * @see zero_or_value_array_parallel_inline.h for the body
  * @see zero_array_parallel.h for zero's version of the same split
  */
 
@@ -40,13 +40,13 @@ template <typename Derived>
 class SecondValueArrayBase; // second_value_array_base.h: the friend below
 } // namespace shrink_array
 
-namespace shrink_array::zero_one_value
+namespace shrink_array::zero_or_value
 {
 
 /**
- * @brief zero_one_value::Array's fast-block compression pass, present only in that mode.
+ * @brief zero_or_value::Array's fast-block compression pass, present only in that mode.
  *
- * @tparam Derived the concrete array type (only zero_one_value::Array today).
+ * @tparam Derived the concrete array type (only zero_or_value::Array today).
  * @tparam Enabled defaulted to chunk_config::use_fast_block_compression; never
  *         pass it explicitly outside of tests.
  *
@@ -59,7 +59,7 @@ class FastBlockSupport;
 // ── Fast-block build: the real pass ──────────────────────────────────────────
 /**
  * @brief Fast-block specialisation: the deferred-candidate compression pass.
- * @copydetails zero_one_value::FastBlockSupport
+ * @copydetails zero_or_value::FastBlockSupport
  */
 template <typename Derived>
 class FastBlockSupport<Derived, true>
@@ -128,4 +128,4 @@ class FastBlockSupport<Derived, false>
     }
 };
 
-} // namespace shrink_array::zero_one_value
+} // namespace shrink_array::zero_or_value

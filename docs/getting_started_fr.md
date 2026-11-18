@@ -28,10 +28,10 @@ Trois variantes, choisies au moment de l'édition de liens :
 | variante | classe | un chunk est compressé quand il est uniforme à… |
 |---|---|---|
 | `zero` | `zero::Array<T>` | `T{}` (zéro) seulement |
-| `zero_one_value` | `zero_one_value::Array<T>` | `T{}`, ou **une** seconde valeur par tableau, déclarée par `set_second_value()` |
+| `zero_or_value` | `zero_or_value::Array<T>` | `T{}`, ou **une** seconde valeur par tableau, déclarée par `set_second_value()` |
 | `zero_any` | `zero_any::Array<T>` | `T{}`, ou **n'importe quelle** valeur, chunk par chunk, sans rien déclarer |
 
-`zero_any` compresse le plus et c'est celle à essayer d'abord. `zero_one_value` a des métadonnées plus
+`zero_any` compresse le plus et c'est celle à essayer d'abord. `zero_or_value` a des métadonnées plus
 légères quand les données ont une seule valeur non nulle dominante, et `zero` est la plus
 simple quand seuls les zéros comptent. [variantes_fr.md](variantes_fr.md) les compare sur un
 cas réel.
@@ -92,7 +92,7 @@ programme les compile comme la bibliothèque.
 
 | cible | variante | taille de chunk |
 |---|---|---|
-| `shrink_array::zero`, `shrink_array::zero_one_value`, `shrink_array::zero_any` | `zero`, `zero_one_value`, `zero_any` | la première de `CHUNK_STATIC_SIZES` (256) |
+| `shrink_array::zero`, `shrink_array::zero_or_value`, `shrink_array::zero_any` | `zero`, `zero_or_value`, `zero_any` | la première de `CHUNK_STATIC_SIZES` (256) |
 | `shrink_array::zero_any_1024`, … | | cette taille, fixée à la compilation |
 | `shrink_array::zero_any_dyn`, … | | choisie à l'exécution, par tableau (modifiable par `rechunk_to()` ou par le décideur adaptatif) |
 | `shrink_array::vector` | aucune : les tableaux sont des `std::vector` | — |
@@ -109,14 +109,14 @@ passer par un alias sur la variante que la bibliothèque définit (`examples/shr
 #include <type_traits>
 #include <vector>
 #include "chunk/zero_array.h"
-#include "chunk/zero_one_value_array.h"
+#include "chunk/zero_or_value_array.h"
 #include "chunk/zero_any_array.h"
 #include "chunk/config.h"
 
 namespace sa = shrink_array;
 template <typename T>
 using Array = std::conditional_t<sa::chunk_config::use_zero_any, sa::zero_any::Array<T>,
-              std::conditional_t<sa::chunk_config::use_zero_one_value, sa::zero_one_value::Array<T>,
+              std::conditional_t<sa::chunk_config::use_zero_or_value, sa::zero_or_value::Array<T>,
               std::conditional_t<sa::chunk_config::use_zero, sa::zero::Array<T>, std::vector<T>>>>;
 ```
 
@@ -297,7 +297,7 @@ compiler contre une bibliothèque sans OMPT ; son test tourne avec `CHUNK_REQUIR
 **Les points séquentiels.** Tout ce qui reconstruit le stockage d'un tableau est un point
 séquentiel : `resize()`, `reserve()`, `push_back()` au-delà de la capacité, `clear()`,
 `assign()`, `swap()`, la construction par copie et l'affectation, `shrink_to_fit()`,
-`compress()`, `rechunk_to()`, et, pour `zero_one_value`, `set_second_value()`. Un point
+`compress()`, `rechunk_to()`, et, pour `zero_or_value`, `set_second_value()`. Un point
 séquentiel vide les écritures différées et lance une passe de compression sur des listes que
 partagent tous les tableaux du type d'élément. Il s'appelle hors de toute région parallèle, ou
 dans une région depuis un seul thread pendant que le reste de l'équipe laisse les tableaux en
@@ -415,7 +415,7 @@ les threads d'OpenMP : pour les autres, utilisez le backend std.
 - **Les types d'éléments** : tout type trivialement copiable, comparable par `==` et
   constructible par défaut (types arithmétiques, `bool`, `std::complex`, énumérations,
   `std::array` et agrégats de ceux-ci). Un type qui possède une ressource (`std::string`) est
-  refusé à la compilation. `zero_one_value` demande en plus un ordre sur la seconde valeur : une
+  refusé à la compilation. `zero_or_value` demande en plus un ordre sur la seconde valeur : une
   structure de doubles déclare `auto operator<=>(const T&) const = default;`. Un élément se
   relit avec les bits écrits : la bibliothèque distingue `-0.0` de `+0.0` (comparaison des
   bits pour `float`, `double`, `std::complex`, `std::array`), mais compare les membres d'un
@@ -424,8 +424,8 @@ les threads d'OpenMP : pour les autres, utilisez le backend std.
   nul. Sur un élément
   `bool`, `a[i] += 1` et les autres affectations arithmétiques (`-= *= /= %= <<= >>=`) ne
   compilent pas : écrire `=`, `&=`, `|=` ou `^=`.
-- **`zero_one_value` ne compresse qu'à sa seconde valeur déclarée.** Sans `set_second_value()`, un
-  tableau `zero_one_value` ne compresse qu'à zéro.
+- **`zero_or_value` ne compresse qu'à sa seconde valeur déclarée.** Sans `set_second_value()`, un
+  tableau `zero_or_value` ne compresse qu'à zéro.
 - **Mesurer la mémoire avec le bon outil.** `VmRSS` est en retard à plusieurs threads : voir
   [mesures_performance_fr.md](mesures_performance_fr.md).
 
@@ -437,5 +437,5 @@ les threads d'OpenMP : pour les autres, utilisez le backend std.
 | choisir une variante pour ses données | [variantes_fr.md](variantes_fr.md), et `examples/variant_compare` |
 | laisser la taille des chunks s'adapter à l'exécution | [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) (bibliothèques `_dyn`) |
 | toutes les variables de réglage et options de compilation | [variables_environnement_fr.md](variables_environnement_fr.md) |
-| le fonctionnement interne | [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md), [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md) |
+| le fonctionnement interne | [algo_zero_or_value_fr.md](algo_zero_or_value_fr.md), [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md) |
 | un exemple plus complet : champs multi-matériaux, boucles écrites une fois pour les deux conteneurs | `examples/multi_mat` |

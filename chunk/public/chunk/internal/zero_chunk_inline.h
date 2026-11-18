@@ -143,7 +143,7 @@ void zero::Chunk<T>::compress_sweep_rank(int thr)
     // Dynamic geometry: pin the ambient chunk size to EACH candidate's own (its ChunkElems),
     // restored after the loop. free_block_to_pool() parks in the list of the AMBIENT size,
     // which after a re-chunk may be another array's: a 64-buffer parked in the 128 list
-    // is later handed out as a 128-buffer. zero_one_value and zero_any pin the same way.
+    // is later handed out as a 128-buffer. zero_or_value and zero_any pin the same way.
     [[maybe_unused]] const unsigned int saved_sz = thread_chunk_size();
     for (auto& tup : chunk_t)
     {
@@ -223,7 +223,7 @@ template <typename T, typename Derived, bool Enabled>
 void zero::ChunkThreadPolicy<T, Derived, Enabled>::create_value(this Derived& self, int thr_rank) noexcept
 {
     // Reuse pool first, then a fresh allocation (ChunkAllocPolicy::allocate_chunk_internal,
-    // shared with zero_one_value/zero_any). Initialisers differ from zero_one_value/zero_any: a zero::Chunk is
+    // shared with zero_or_value/zero_any). Initialisers differ from zero_or_value/zero_any: a zero::Chunk is
     // compressed only when all-zero, so a recycled buffer is already zero and needs no fill.
     T* values_loc = self.Base::allocate_chunk_internal(
         thr_rank, [](T*) noexcept { /* recycled: already zero, see above */ },
@@ -334,7 +334,7 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int 
 
     // Geometry: a rank's list mixes chunks of EVERY array, at their own sizes. clear_int_st()
     // frees into the reuse list of the AMBIENT size, so pin each chunk to its own n_elems
-    // right before its clear (as zero_one_value / zero_any) -- never once to the triggering array's.
+    // right before its clear (as zero_or_value / zero_any) -- never once to the triggering array's.
     [[maybe_unused]] const unsigned int saved_sz = shrink_array::thread_chunk_size();
     for (const auto& tup : ll_compt)
     {

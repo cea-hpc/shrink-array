@@ -89,14 +89,14 @@
 #include <utility>      // std::as_const
 #include <vector>       // std::vector
 
-#include "chunk/zero_array.h"           // zero::Array
-#include "chunk/zero_one_value_array.h" // zero_one_value::Array
-#include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/runtime.h"              // Runtime::init
-#include "chunk/config.h"               // chunk_config::use_zero*, build_config::use_openmp / needs_explicit_phases
-#include "chunk/threads.h"              // shrink_array::max_threads, team_size, thread_rank (read-bulk)
-#include "chunk/phases.h"               // begin_parallel_phase, finalize_parallel_phase
-#include "chunk/print.h"                // shrink_array::println
+#include "chunk/zero_array.h"          // zero::Array
+#include "chunk/zero_or_value_array.h" // zero_or_value::Array
+#include "chunk/zero_any_array.h"      // zero_any::Array
+#include "chunk/runtime.h"             // Runtime::init
+#include "chunk/config.h"              // chunk_config::use_zero*, build_config::use_openmp / needs_explicit_phases
+#include "chunk/threads.h"             // shrink_array::max_threads, team_size, thread_rank (read-bulk)
+#include "chunk/phases.h"              // begin_parallel_phase, finalize_parallel_phase
+#include "chunk/print.h"               // shrink_array::println
 
 using namespace shrink_array;
 
@@ -120,14 +120,14 @@ T arg_value(const char* text, T fallback, const char* name)
 
 } // namespace
 
-static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
-              "access_cost: link chunk_zero_*, chunk_zero_one_value_* or chunk_zero_any_*");
+static_assert(chunk_config::use_zero || chunk_config::use_zero_or_value || chunk_config::use_zero_any,
+              "access_cost: link chunk_zero_*, chunk_zero_or_value_* or chunk_zero_any_*");
 
 template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -135,9 +135,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {

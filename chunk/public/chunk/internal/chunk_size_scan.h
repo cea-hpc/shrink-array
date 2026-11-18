@@ -116,7 +116,7 @@ template <typename Arr>
 ///        the file comment): per candidate size, the windows that would stay
 ///        compressed. Built on a non-empty array at a quiescent point; run()
 ///        once, then read the counts.
-/// @tparam Arr zero::Array, zero_one_value::Array, zero_any::Array or
+/// @tparam Arr zero::Array, zero_or_value::Array, zero_any::Array or
 ///         pattern::Array: the only per-variant parts are classify() and
 ///         compressible_value(), selected with if constexpr.
 template <typename Arr>
@@ -218,19 +218,19 @@ class ChunkSizeScan
     ///        const_buffer_size: rechunk_to would refuse it.
     [[nodiscard]] static std::vector<uint32_t> candidate_sizes(uint32_t chunk_sz, const Options& opt);
 
-    /// @brief The key zero_one_value gives its const2 chunks: the array-level
+    /// @brief The key zero_or_value gives its const2 chunks: the array-level
     ///        second-value index, fetched once (0 for bool / Bit, which have
     ///        one second value and no index; -1 for the other variants).
     [[nodiscard]] static int second_value_index(const Arr& arr);
 
     /// @brief Would a uniform run of @p elem be storable as a constant?
     ///        (classify() asks whether a chunk already is one.) zero:
-    ///        first_value only. zero_one_value: also the array's second
+    ///        first_value only. zero_or_value: also the array's second
     ///        value, when designated. zero_any: any value.
     [[nodiscard]] bool compressible_value(const T& elem) const;
 
     /// @brief @p chunk's kind; two kind_const2 chunks merge iff same @p key
-    ///        (zero_any: the buffer pointer; zero_one_value: one sentinel).
+    ///        (zero_any: the buffer pointer; zero_or_value: one sentinel).
     [[nodiscard]] int classify(const ChunkT& chunk, const void*& key) const;
 
     // ── Runs of constant chunks ───────────────────────────────────────────

@@ -476,9 +476,9 @@ def test_errors_failures_and_their_logs(site):
         ("CHECK_FAIL", True, ["run_logs/shrink_bench_omp_zero_any__omp4__00003__ok.log"]),
         ("MEM_GUARD", False, []), ("X", True, [])]
     # the failed executions of the run, for an older bench_runner: never __ok
-    (logs / "shrink_bench_omp_zero_one_value__omp8__00002__timeout.log").write_text("hung\n")
+    (logs / "shrink_bench_omp_zero_or_value__omp8__00002__timeout.log").write_text("hung\n")
     assert site.helper("errors", "~/shrink_runs", "f1", opts)["logs"] == [
-        "run_logs/shrink_bench_omp_zero_one_value__omp8__00002__timeout.log"]
+        "run_logs/shrink_bench_omp_zero_or_value__omp8__00002__timeout.log"]
     f = site.helper("errfile", "~/shrink_runs", "f1", base64.b64encode(json.dumps(
         {"paths": r["cases"][0]["logs"] + ["../../../../etc/passwd"]}).encode()).decode())["files"]
     assert "AddressSanitizer" in f[0]["data"] and f[1].get("missing") and f[1]["data"] == ""
@@ -526,11 +526,11 @@ def test_old_variant_labels_read_as_the_new_ones():
     from shrink_gui.config import exe_parts
     assert [rh.normalize_variant(v) for v in ("chunk", "chunk2", "chunk2a@256", "chunk_int64@dyn",
                                               "tbb_chunk2a", "zero_any", "vector", "std_alloc@1024")] == [
-        "zero", "zero_one_value", "zero_any@256", "zero_int64@dyn", "tbb_zero_any", "zero_any", "vector",
+        "zero", "zero_or_value", "zero_any@256", "zero_int64@dyn", "tbb_zero_any", "zero_any", "vector",
         "std_alloc@1024"]
     assert exe_parts("shrink_bench_chunk2a_dyn") == exe_parts("shrink_bench_zero_any_dyn") == ("zero_any", "dyn")
     assert exe_parts("./shrink_bench_zero_1024") == ("zero", "1024")
-    assert exe_parts("shrink_bench_zero_one_value") == ("zero_one_value", "default")
+    assert exe_parts("shrink_bench_zero_or_value") == ("zero_or_value", "default")
 
 
 def test_exe_names_carry_the_backend():
@@ -540,7 +540,7 @@ def test_exe_names_carry_the_backend():
     from shrink_gui.config import exe_parts
     assert exe_parts("shrink_bench_omp_zero_any_dyn") == ("zero_any", "dyn")
     assert exe_parts("./shrink_bench_std_zero_1024") == ("zero", "1024")
-    assert exe_parts("shrink_bench_serial_zero_one_value_256") == ("zero_one_value", "256")
+    assert exe_parts("shrink_bench_serial_zero_or_value_256") == ("zero_or_value", "256")
     assert exe_parts("shrink_bench_tbb_zero_any_256") == ("zero_any", "256")
     import sys
     sys.path.insert(0, str(REPO / "python"))

@@ -15,11 +15,11 @@
  */
 
 /**
- * @file zero_one_value_candidate_list_check.h
- * @brief The abort taken when a zero_one_value write reaches a per-second-value
+ * @file zero_or_value_candidate_list_check.h
+ * @brief The abort taken when a zero_or_value write reaches a per-second-value
  *        compression candidate list that does not exist.
- * @details Its own header because both zero_one_value_proxy.h and zero_one_value_chunk.h need it and
- *          zero_one_value_chunk.h can be parsed before zero_one_value_proxy.h's body.
+ * @details Its own header because both zero_or_value_proxy.h and zero_or_value_chunk.h need it and
+ *          zero_or_value_chunk.h can be parsed before zero_or_value_proxy.h's body.
  */
 
 #pragma once
@@ -29,13 +29,13 @@
 namespace shrink_array
 {
 
-/// @brief A zero_one_value write reached a candidate list that does not exist (see
-///        zero_one_value::Proxy::pre_check_mark_for_compression).
-[[noreturn]] inline void zero_one_value_missing_candidate_list(int thr) noexcept
+/// @brief A zero_or_value write reached a candidate list that does not exist (see
+///        zero_or_value::Proxy::pre_check_mark_for_compression).
+[[noreturn]] inline void zero_or_value_missing_candidate_list(int thr) noexcept
 {
-    CHUNK_INVARIANT_FAILED("[zero_one_value] rank {}: no compression candidate list for this array's second value -- "
+    CHUNK_INVARIANT_FAILED("[zero_or_value] rank {}: no compression candidate list for this array's second value -- "
                            "a write was queued for an array that never called set_second_value(); "
-                           "zero_one_value::Proxy::pre_check_mark_for_compression() must reject it",
+                           "zero_or_value::Proxy::pre_check_mark_for_compression() must reject it",
                            thr);
 }
 

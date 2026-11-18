@@ -12,7 +12,7 @@ binaries ROUND by round -- every variant once per round, at every thread count
 takes the median of every repetition of every round.
 
   python3 python/access_cost.py --build <build dir> [--threads 1,64]
-          [--variants zero,zero_one_value,zero_any] [--rounds 3] [--n N] [--reps R]
+          [--variants zero,zero_or_value,zero_any] [--rounds 3] [--n N] [--reps R]
           [--csv out.csv]
 
 The build dir is the configured tree (a perf configuration: Release, no CHECK);
@@ -71,7 +71,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--build", required=True, help="the configured build tree")
     ap.add_argument("--threads", default="1,%d" % (os.cpu_count() or 1), help="thread counts, comma-separated")
-    ap.add_argument("--variants", default="zero,zero_one_value,zero_any")
+    ap.add_argument("--variants", default="zero,zero_or_value,zero_any")
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument("--n", type=int, default=0, help="elements (default: the binary's, max(2^27, threads x 2^20))")
     ap.add_argument("--reps", type=int, default=5, help="repetitions per run")

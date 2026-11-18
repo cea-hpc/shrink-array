@@ -55,7 +55,7 @@ namespace shrink_array::internal
 using ColdPathLock = std::scoped_lock<std::recursive_mutex>;
 
 // The identity registries (array_registry: array address -> array_id, and for
-// zero_one_value its second value) are written on the cold path, under the lock
+// zero_or_value its second value) are written on the cold path, under the lock
 // above, and looked up outside it: by the replay of a deferred write, by a proxy
 // that was not armed by operator[], and by the cross-checks of the check builds
 // on every write. A lookup takes this lock shared, a change takes it exclusive.

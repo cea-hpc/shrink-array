@@ -28,13 +28,13 @@ class Chunk;
 
 } // namespace zero
 
-namespace zero_one_value
+namespace zero_or_value
 {
 
 template <typename T>
 class Chunk;
 
-} // namespace zero_one_value
+} // namespace zero_or_value
 
 namespace zero_any
 {

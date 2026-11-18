@@ -53,7 +53,7 @@ namespace shrink_array
 /**
  * @brief Re-chunking support, present only when the geometry is a runtime value.
  *
- * @tparam Derived the concrete array type (zero::Array, zero_one_value::Array, zero_any::Array).
+ * @tparam Derived the concrete array type (zero::Array, zero_or_value::Array, zero_any::Array).
  * @tparam Dynamic defaulted to build_config::chunk_dynamic; never pass it
  *         explicitly outside of tests.
  */
@@ -117,7 +117,7 @@ class RechunkSupport<Derived, true> : public RechunkHookDefaults<Derived>
     /**
      * @brief Re-chunk this array to a new geometry S' (sequential, quiescent point).
      *
-     * @details Shared by zero::Array / zero_one_value::Array / zero_any::Array via CRTP; the
+     * @details Shared by zero::Array / zero_or_value::Array / zero_any::Array via CRTP; the
      *          per-variant differences live in the rechunk_* hooks. The delicate
      *          invariants are documented once, in the body.
      *
@@ -134,11 +134,11 @@ class RechunkSupport<Derived, true> : public RechunkHookDefaults<Derived>
      *          - rechunk_drain_reuse_list(new_size) — drain the S' reuse free-list
      *            (its buffers were sized for an older geometry)
      *          - rechunk_capture_state() -> T — variant state to carry across
-     *            (e.g. zero_one_value's array-level second_value)
+     *            (e.g. zero_or_value's array-level second_value)
      *          - rechunk_seed_fresh(state) — apply that state to the fresh array
      *          - rechunk_swap_identity(tmp) -> bool — swap array_id member (if any)
      *            + registry entry (swap_keys/entries)
-     *          - rechunk_reown_after_swap(tmp,state) — post-swap fixup (zero_one_value
+     *          - rechunk_reown_after_swap(tmp,state) — post-swap fixup (zero_or_value
      *            re-owns its map_inf_array_ entry so it doesn't dangle when tmp dies)
      *
      * @param new_size the new chunk size (a power of two or a multiple of 64)
@@ -176,7 +176,7 @@ class RechunkSupport<Derived, true> : public RechunkHookDefaults<Derived>
      *          compressed; a zero_any span whose sources are all the same second
      *          constant gets that constant installed without a buffer; the others
      *          are read from *this at OLD and filled through copy_range() at NEW,
-     *          then folded back at once when every source was a constant (zero_one_value,
+     *          then folded back at once when every source was a constant (zero_or_value,
      *          zero_any). zero releases each source chunk as soon as it has been
      *          transcribed. Runs at a quiescent serial point: rechunk_to() has flushed the
      *          deferred ops.

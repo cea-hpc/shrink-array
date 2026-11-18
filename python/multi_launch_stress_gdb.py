@@ -96,12 +96,12 @@ def bench_exe(rest):
     return next((n for n in names if os.path.isfile(n)), names[0])
 
 
-base_exec_list = [bench_exe("zero_dyn"), bench_exe("zero_one_value_dyn"), bench_exe("zero_any_dyn")]
+base_exec_list = [bench_exe("zero_dyn"), bench_exe("zero_or_value_dyn"), bench_exe("zero_any_dyn")]
 
 # check and perf are one binary since they were merged; the mode is chosen here.
 MODE_ARGS = ["--mode", "check"]
 
-executables = base_exec_list[:] if args.all_exec else [bench_exe("zero_one_value_dyn")]
+executables = base_exec_list[:] if args.all_exec else [bench_exe("zero_or_value_dyn")]
 
 # ============================================================
 #  Ensure .gdbinit contains the GroupBT command

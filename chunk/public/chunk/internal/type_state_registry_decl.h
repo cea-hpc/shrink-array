@@ -209,7 +209,7 @@ struct TypeStateRegistryDynInterface<Derived, false>
 /**
  * @brief Process-wide registry of the per-type chunk managers, reached as a singleton.
  *
- * A TypeState is parameterised by both a chunk template (zero / zero_one_value /
+ * A TypeState is parameterised by both a chunk template (zero / zero_or_value /
  * zero_any) and an element type, so there is one manager per combination and no
  * single type can name them all. TypeStateRegistry owns them behind
  * TypeStateInterface pointers and offers the "do it for every type" operations the
@@ -314,7 +314,7 @@ class TypeStateRegistry : public TypeStateRegistryParallelInterface<TypeStateReg
      *
      * @param apply true: every candidate found constant is compressed -- what
      *        the between-region passes want; false: the lists are walked,
-     *        their flags reset and (zero_one_value) emptied, and NOTHING is
+     *        their flags reset and (zero_or_value) emptied, and NOTHING is
      *        compressed -- the terminal sweep of a dying array uses it to
      *        purge its chunks from the lists. false does NOT drain: a
      *        caller counting "misses" after it sees only what it un-queued.

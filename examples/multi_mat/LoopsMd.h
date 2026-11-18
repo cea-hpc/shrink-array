@@ -32,7 +32,7 @@
  * | policy                | storage                             | layout                 | box loops                 |
  * |-----------------------|-------------------------------------|------------------------|---------------------------|
  * | LoopsMdVector         | std::vector                         | row-major (std mdspan) | cells, `omp simd`         |
- * | LoopsMdTiles          | chunk arrays (zero, zero_one_value) | md::layout_tiled       | tiles (mdspan_tile_ops.h) |
+ * | LoopsMdTiles          | chunk arrays (zero, zero_or_value) | md::layout_tiled       | tiles (mdspan_tile_ops.h) |
  * | LoopsMdTilesElements  | chunk arrays                        | md::layout_tiled       | cells, `f[i, j]`          |
  * | LoopsMdRows           | chunk arrays                        | row-major (md::view)   | cells, `f[i, j]`          |
  *
@@ -66,7 +66,7 @@
     #include "chunk/mdspan_tile_ops.h"            // md::update_tiles, md::for_each_tile, md::fill_box
 
     #include "config.h"     // PRAGMA_FORCEINLINE
-    #include "Containers.h" // MatVectorArray, MatZeroArray, MatZeroOneValueArray
+    #include "Containers.h" // MatVectorArray, MatZeroArray, MatZeroOrValueArray
 
 namespace multi_mat::md
 {
@@ -170,15 +170,15 @@ const shrink_array::zero::Array<T>& array_of(const MatZeroArray<T>& v) noexcept
 {
     return v;
 }
-/// @brief The zero_one_value::Chunk array of a presence fraction.
+/// @brief The zero_or_value::Chunk array of a presence fraction.
 template <typename T>
-shrink_array::zero_one_value::Array<T>& array_of(MatZeroOneValueArray<T>& v) noexcept
+shrink_array::zero_or_value::Array<T>& array_of(MatZeroOrValueArray<T>& v) noexcept
 {
     return v;
 }
-/// @brief The zero_one_value::Chunk array of a presence fraction, read-only.
+/// @brief The zero_or_value::Chunk array of a presence fraction, read-only.
 template <typename T>
-const shrink_array::zero_one_value::Array<T>& array_of(const MatZeroOneValueArray<T>& v) noexcept
+const shrink_array::zero_or_value::Array<T>& array_of(const MatZeroOrValueArray<T>& v) noexcept
 {
     return v;
 }

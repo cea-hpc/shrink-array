@@ -25,20 +25,20 @@
 #include <vector>      // std::vector
 #include <cstring>     // std::memset (the Bit second constant)
 
-#include "chunk/internal/chunk_size_config.h"                   // static_chunk_size
-#include "chunk/internal/chunk_size_policy.h"                   // ChunkElems, DynamicChunkSize
-#include "chunk/internal/in_t.h"                                // InT
-#include "chunk/internal/element_access.h"                      // Bit buffers: words of bits
-#include "chunk/internal/bit_words.h"                           // bits::fill_bits, bits::WordT
-#include "chunk/config.h"                                       // build_config::threaded, chunk_config
-#include "chunk/internal/invariant_check.h"                     // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/bad_ptr_check.h"                       // CHUNK_CHECK_VALUES_PTR (check builds)
-#include "chunk/internal/pmp_chunk.h"                           // get_thr_rank_fast, CHUNK_PMP_THREAD_RANK
-#include "chunk/internal/zero_one_value_candidate_list_check.h" // zero_one_value_missing_candidate_list
-#include "chunk/internal/zero_one_value_proxy.h"                // zero_one_value::Proxy
-#include "chunk/internal/second_value_chunk_base.h"             // SecondValueChunkBase
-#include "chunk/internal/conditional_counter.h"                 // ConditionalCounter, CounterValueT
-#include "chunk/internal/chunk_tuples.h"                        // VectorTuple4ChunkInt2 (the candidate lists)
+#include "chunk/internal/chunk_size_config.h"                  // static_chunk_size
+#include "chunk/internal/chunk_size_policy.h"                  // ChunkElems, DynamicChunkSize
+#include "chunk/internal/in_t.h"                               // InT
+#include "chunk/internal/element_access.h"                     // Bit buffers: words of bits
+#include "chunk/internal/bit_words.h"                          // bits::fill_bits, bits::WordT
+#include "chunk/config.h"                                      // build_config::threaded, chunk_config
+#include "chunk/internal/invariant_check.h"                    // CHUNK_INVARIANT_FAILED
+#include "chunk/internal/bad_ptr_check.h"                      // CHUNK_CHECK_VALUES_PTR (check builds)
+#include "chunk/internal/pmp_chunk.h"                          // get_thr_rank_fast, CHUNK_PMP_THREAD_RANK
+#include "chunk/internal/zero_or_value_candidate_list_check.h" // zero_or_value_missing_candidate_list
+#include "chunk/internal/zero_or_value_proxy.h"                // zero_or_value::Proxy
+#include "chunk/internal/second_value_chunk_base.h"            // SecondValueChunkBase
+#include "chunk/internal/conditional_counter.h"                // ConditionalCounter, CounterValueT
+#include "chunk/internal/chunk_tuples.h"                       // VectorTuple4ChunkInt2 (the candidate lists)
 #include "chunk/internal/immortal.h"          // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/second_value_info.h" // SecondValueInfo (InfArrayT)
 #include "chunk/internal/chunk_array_new.h"   // chunk_array_new::init_chunks (init_chunks_const_val)
@@ -53,7 +53,7 @@ struct CompressionManager;
 template <template <typename> class ChunkT, typename T>
 class TypeState;
 
-namespace zero_one_value
+namespace zero_or_value
 {
 
 template <typename T>
@@ -68,7 +68,7 @@ class ChunkSpec
     // The registered second-constant arrays. A chunk compressed to one stores its ADDRESS as
     // `values`, so the container must never move them: use a std::deque grown at the end, not a
     // std::vector (a reallocation would leave every such chunk pointing at freed memory).
-    // zero_one_value_registry_growth_validation guards it. MM_PROTECT holds pointers to its own
+    // zero_or_value_registry_growth_validation guards it. MM_PROTECT holds pointers to its own
     // mappings, which never move.
     using VecArrayChunkSizeMax =
         std::conditional_t<build_config::use_mm_protect, std::vector<T*>, std::deque<std::array<T, const_buffer_size>>>;
@@ -142,7 +142,7 @@ class ChunkSpec
     }
 };
 
-/// @brief zero_one_value::ChunkSpec for bool and Bit (bit.h): the second constant is `true`, one for the type.
+/// @brief zero_or_value::ChunkSpec for bool and Bit (bit.h): the second constant is `true`, one for the type.
 template <typename T>
     requires is_bool_like_v<T>
 class ChunkSpec<T>
@@ -316,17 +316,17 @@ class ChunkCounterPolicy
     [[no_unique_address]] ConditionalCounter<EnableCounters, 1> n_val_eq_second_value_;
 };
 /**
- * @brief zero_one_value's OpenMP-only surface: per-thread materialisation and clearing.
+ * @brief zero_or_value's OpenMP-only surface: per-thread materialisation and clearing.
  *
  * @details A serial build has no thread ranks, no CAS window and no per-thread
  *          free-lists, and maintains per-chunk element counters that the parallel
  *          path does not; each specialisation declares exactly the verbs its mode
  *          has (as ChunkThreadPolicy does for zero). Sits between
- *          zero_one_value::ChunkFastCompPolicy and SecondValueChunkBase, so zero_one_value inherits both through one
+ *          zero_or_value::ChunkFastCompPolicy and SecondValueChunkBase, so zero_or_value inherits both through one
  * path.
  *
  * @tparam T       stored element type
- * @tparam Derived CRTP derived chunk type (zero_one_value::Chunk<T>)
+ * @tparam Derived CRTP derived chunk type (zero_or_value::Chunk<T>)
  * @tparam Enabled build_config::threaded
  */
 template <typename T, typename Derived, bool Enabled = build_config::threaded>
@@ -345,7 +345,7 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>
 
     /// @brief Array-new for chunks: allocates and points every chunk at the
     ///        first constant (init_chunks_const_val).
-    /// @warning `new zero_one_value::Chunk<T>[n]` runs the default constructors after this, which
+    /// @warning `new zero_or_value::Chunk<T>[n]` runs the default constructors after this, which
     ///          overwrite that initialisation; it only matters for placement-new
     ///          arrays. The library never array-news a chunk (zero::Array* use a
     ///          std::vector<ChunkType>).
@@ -477,7 +477,7 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>
 /**
  * @brief Serial specialisation: no rank, no CAS, and the element counters to reset.
  * @tparam T       stored element type
- * @tparam Derived CRTP derived chunk type (zero_one_value::Chunk<T>)
+ * @tparam Derived CRTP derived chunk type (zero_or_value::Chunk<T>)
  */
 template <typename T, typename Derived>
 class ChunkThreadPolicy<T, Derived, false> : public SecondValueChunkBase<T, Derived>
@@ -549,7 +549,7 @@ class ChunkThreadPolicy<T, Derived, false> : public SecondValueChunkBase<T, Deri
     void create_value_serial_impl(this Derived& self, bool need_set_second_value, Init2ndFn&& init_2nd) noexcept;
 };
 
-/// @brief zero_one_value's batched candidate queue and block compression (fast-block builds).
+/// @brief zero_or_value's batched candidate queue and block compression (fast-block builds).
 template <typename T, typename Derived, bool Enabled>
 class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Derived>
 {
@@ -673,8 +673,8 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      */
     [[nodiscard]] static bool is_vec_tuple_to_compress_potentially_empty_thr() noexcept
     {
-        return Manager::zero_one_value_candidates_map_thr.empty() ||
-               Manager::zero_one_value_candidates_map_thr[0].empty();
+        return Manager::zero_or_value_candidates_map_thr.empty() ||
+               Manager::zero_or_value_candidates_map_thr[0].empty();
     }
 
     /**
@@ -851,7 +851,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
     }
 };
 
-/// @brief zero_one_value::ChunkFastCompPolicy with fast block compression compiled out:
+/// @brief zero_or_value::ChunkFastCompPolicy with fast block compression compiled out:
 ///        no candidate list, so every query answers "empty" and every pass
 ///        is a no-op.
 template <typename T, typename Derived>
@@ -930,7 +930,7 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
     using Base::values_;
 
     using CounterPolicy =
-        ChunkCounterPolicy; ///< The counter base, zero_one_value::ChunkCounterPolicy<use_compression_with_counter>.
+        ChunkCounterPolicy; ///< The counter base, zero_or_value::ChunkCounterPolicy<use_compression_with_counter>.
 
     using FastCompPolicy = ChunkFastCompPolicy<T, Chunk, chunk_config::use_fast_block_compression>;
     using ThreadPolicy   = ChunkThreadPolicy<T, Chunk, build_config::threaded>;
@@ -947,11 +947,11 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
 
     using Manager = TypeState<Chunk, T>;
     // (second value, index, array_id). Redeclared here on purpose: the policy
-    // bases declare the same name, and this one hides theirs so zero_one_value's own
+    // bases declare the same name, and this one hides theirs so zero_or_value's own
     // members see one type. It must stay THEIR type -- checked below.
     using InfArrayT = SecondValueInfo<T>;
 
-    // Statistics variant tag (CHUNK_STATS): 1 = zero_one_value.
+    // Statistics variant tag (CHUNK_STATS): 1 = zero_or_value.
     static constexpr int stat_variant = 1;
 
     /*!
@@ -980,12 +980,12 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
 
     /**
      * @brief Copy constructor: copies the values pointer (shallow) AND the
-     *        zero_one_value::ChunkCounterPolicy counters.
+     *        zero_or_value::ChunkCounterPolicy counters.
      * @param other Chunk to copy from.
      * @warning The counter base MUST be copied: default-constructed, the counters restart
      *          at 0 and can no longer reach `size`, so the chunk's compression is missed
      *          for good. This ctor also suppresses the implicit move, so every
-     *          std::vector<zero_one_value::Chunk> reallocation goes through it. Same rule as zero
+     *          std::vector<zero_or_value::Chunk> reallocation goes through it. Same rule as zero
      *          (zero_chunk.h). `values` is atomic and is copied by hand.
      */
     Chunk(const Chunk& other);
@@ -1098,13 +1098,13 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
     static_assert(
         std::is_same_v<InfArrayT,
                        typename ChunkFastCompPolicy<T, Chunk<T>, chunk_config::use_fast_block_compression>::InfArrayT>,
-        "zero_one_value::Chunk::inf_array_t must be the policies' inf_array_t");
+        "zero_or_value::Chunk::inf_array_t must be the policies' inf_array_t");
 
-    // --- where the rest of zero_one_value lives ----------------------------------
+    // --- where the rest of zero_or_value lives ----------------------------------
     // Materialisation and clearing (create_value*, clear*, block_clear) are on
-    // zero_one_value::ChunkThreadPolicy, one specialisation per mode; the queue-driven compression
+    // zero_or_value::ChunkThreadPolicy, one specialisation per mode; the queue-driven compression
     // (compress*, fill_list*, compress_chunk_to_compress*) is on
-    // zero_one_value::ChunkFastCompPolicy<T, zero_one_value::Chunk, true>, next to make_block_compression.
+    // zero_or_value::ChunkFastCompPolicy<T, zero_or_value::Chunk, true>, next to make_block_compression.
 
   private:
     static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
@@ -1145,8 +1145,8 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
     static inline constinit internal::LazyImmortal<Manager> s_manager_;
 };
 
-} // namespace zero_one_value
+} // namespace zero_or_value
 
 } // end namespace shrink_array
 
-#include "chunk/internal/zero_one_value_chunk_inline.h" // the template bodies
+#include "chunk/internal/zero_or_value_chunk_inline.h" // the template bodies

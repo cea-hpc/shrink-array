@@ -317,7 +317,7 @@ auto g = md::tiled_view_dyn(a, std::array<long, 2>{16, 24}, nx, ny); // or any t
 fields and a presence fraction over the whole mesh, occupies a random part of it at each iteration,
 is written there and read back by the same gadget computation), on an `nx x ny` mesh where a
 material occupies a box. Every array is seen through a 2D `mdspan`: `md::view` or `md::tiled_view`
-for the chunk arrays (zero for the fields, zero_one_value for the fraction), a standard `mdspan`
+for the chunk arrays (zero for the fields, zero_or_value for the fraction), a standard `mdspan`
 over `data()` for the `std::vector` ones. The loop body is written once against the views; the
 policy of the material's storage (`LoopsMd.h`) says how a box is written, zeroed and read, as
 `Loops.h` does in 1D -- and the indirection list of the 1D version is gone: the box is the loop.

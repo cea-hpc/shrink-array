@@ -2,9 +2,9 @@
 
 > French version: [algo_zero_fr.md](algo_zero_fr.md).
 
-> Status: end of September 2026. This document describes what `zero` does **differently** from `zero_one_value`; the
+> Status: end of September 2026. This document describes what `zero` does **differently** from `zero_or_value`; the
 > common machinery (proxies, deferred writes, read barrier, in-flight compression,
-> range operations) is described in [algo_zero_one_value.md](algo_zero_one_value.md), and the
+> range operations) is described in [algo_zero_or_value.md](algo_zero_or_value.md), and the
 > dynamic geometry in [adaptive_rechunk.md](adaptive_rechunk.md). When in
 > doubt, the code is the reference.
 
@@ -13,7 +13,7 @@
 ## 1. What `zero` compresses
 
 `zero` is the simplest of the three variants: a chunk is either **compressed to zero** (`T{}`) or
-**materialised**. There is no second value, either per array (`zero_one_value`) or per chunk
+**materialised**. There is no second value, either per array (`zero_or_value`) or per chunk
 (`zero_any`).
 
 | state | `values` points to | test |
@@ -40,7 +40,7 @@ about 38 GB of its 40 GB is data.
 
 ## 3. Read and write
 
-The read is the same as in `zero_one_value` (§5 of [algo_zero_one_value.md](algo_zero_one_value.md)): one value,
+The read is the same as in `zero_or_value` (§5 of [algo_zero_or_value.md](algo_zero_or_value.md)): one value,
 read from the chunk's buffer or from `const_val1`, after the read barrier.
 
 The write goes through the `Proxy<T>` proxy:
@@ -53,7 +53,7 @@ The write goes through the `Proxy<T>` proxy:
 - writing into a materialised chunk: a plain write.
 
 The course of a write in an OpenMP build: the engine steps are those of §7.2 of
-[algo_zero_one_value.md](algo_zero_one_value.md), compressed here; the rest is what `zero` does
+[algo_zero_or_value.md](algo_zero_or_value.md), compressed here; the rest is what `zero` does
 in its own way.
 
 ```mermaid
@@ -117,7 +117,7 @@ A candidate list mixes the chunks of **all the arrays** of the same type, which
 can have different sizes after a rechunk: each chunk is compressed with
 **its own** number of elements, carried by the list entry.
 
-The course of the pass, in the style of §8.4 of [algo_zero_one_value.md](algo_zero_one_value.md):
+The course of the pass, in the style of §8.4 of [algo_zero_or_value.md](algo_zero_or_value.md):
 
 ```mermaid
 flowchart TD
@@ -135,7 +135,7 @@ flowchart TD
     I --> J["trigger's chunk queued again if materialised,<br/>finish()"]
 ```
 
-What differs from `zero_one_value`: one candidate list per rank
+What differs from `zero_or_value`: one candidate list per rank
 (`zero_candidates_thr`), not one per second value, and a single target constant,
 hence a single output list. Sequential builds have no pass (`make_block_compression` is empty
 there): the zero counter compresses (§4).
@@ -178,7 +178,7 @@ reasons for this small gain:
   metadata;
 - after its rechunk, dynamic `zero` **slows down** (1.5 to 2 times slower per iteration than
   static 1,024), for a reason still unknown: a dynamic build started directly at
-  1,024 runs as fast as the static one, and `zero_one_value` does not slow down after its rechunks.
+  1,024 runs as fast as the static one, and `zero_or_value` does not slow down after its rechunks.
 
 For a workload like the benchmark's, a **static** `zero` at the right size is still the
 best choice today.

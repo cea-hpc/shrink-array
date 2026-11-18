@@ -17,11 +17,11 @@
 #pragma once
 
 #include "chunk/config.h" // chunk_config::tuning_level
-namespace shrink_array::zero_one_value
+namespace shrink_array::zero_or_value
 {
 
 /**
- * @brief Compile-time settings of zero_one_value: the compression-list thresholds,
+ * @brief Compile-time settings of zero_or_value: the compression-list thresholds,
  *        adjusted by chunk_config::tuning_level.
  */
 struct ChunkDef
@@ -61,4 +61,4 @@ struct ChunkDef
     }();
 };
 
-} // namespace shrink_array::zero_one_value
+} // namespace shrink_array::zero_or_value

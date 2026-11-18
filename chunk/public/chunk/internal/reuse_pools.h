@@ -73,7 +73,7 @@ struct TeardownRepeat
  *          The members reached through TypeState only -- by its bodies
  *          and its policies, which it befriends -- are protected.
  *
- * @tparam ChunkT chunk variant template (zero, zero_one_value or zero_any)
+ * @tparam ChunkT chunk variant template (zero, zero_or_value or zero_any)
  * @tparam T      stored element type
  */
 template <template <typename> class ChunkT, typename T>

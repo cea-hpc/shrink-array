@@ -26,7 +26,7 @@
  * chunk variant ChunkT is. That is not incidental — the three variants keep
  * their candidates in genuinely different containers:
  *  - **Chunk** : one list per rank;
- *  - **zero_one_value**: a map per rank, KEYED BY SECOND VALUE, so anything that walks
+ *  - **zero_or_value**: a map per rank, KEYED BY SECOND VALUE, so anything that walks
  *    the candidates has to iterate the array's registered second values first
  *    (and `bool`, whose second value is always `true`, takes a separate branch);
  *  - **zero_any**: one list per rank again, since its second value is per chunk.
@@ -42,13 +42,13 @@
 #include <tuple>     // std::get
 #include <utility>   // std::pair
 
-#include "chunk/internal/compress_candidates.h"  // the declarations these bodies belong to
-#include "chunk/config.h"                        // build_config, chunk_config
-#include "chunk/internal/pmp_chunk.h"            // CHUNK_PMP_*
-#include "chunk/internal/zero_chunk.h"           // Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/internal/zero_one_value_chunk.h" // zero_one_value::Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/internal/zero_any_chunk.h"       // zero_any::Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/internal/concept_chunk.h"        // IsChunk, IsZeroOneValue, IsZeroAnyFamily
+#include "chunk/internal/compress_candidates.h" // the declarations these bodies belong to
+#include "chunk/config.h"                       // build_config, chunk_config
+#include "chunk/internal/pmp_chunk.h"           // CHUNK_PMP_*
+#include "chunk/internal/zero_chunk.h"          // Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/internal/zero_or_value_chunk.h" // zero_or_value::Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/internal/zero_any_chunk.h"      // zero_any::Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/internal/concept_chunk.h"       // IsChunk, IsZeroOrValue, IsZeroAnyFamily
 
 namespace shrink_array
 {
@@ -60,7 +60,7 @@ namespace shrink_array
  * memory back now rather than at the next phase boundary.
  *
  * @note zero and zero_any take a proxy argument (null here: no write triggered
- *       this), zero_one_value does not — hence the three-way `if constexpr`.
+ *       this), zero_or_value does not — hence the three-way `if constexpr`.
  */
 template <template <typename> typename ChunkT, typename T>
 void CompressCandidates<ChunkT, T>::force_compress()
@@ -77,7 +77,7 @@ void CompressCandidates<ChunkT, T>::force_compress()
     {
         ChunkT<T>::make_block_compression(thr, nullptr);
     }
-    else if constexpr (chunk_config::use_fast_block_compression && IsZeroOneValue<ChunkT, T>)
+    else if constexpr (chunk_config::use_fast_block_compression && IsZeroOrValue<ChunkT, T>)
     {
         ChunkT<T>::make_block_compression(thr);
     }
@@ -88,7 +88,7 @@ void CompressCandidates<ChunkT, T>::force_compress()
  *
  * Which containers exist depends on the variant (see the file header): a plain
  * per-rank list for zero and zero_any, plus the per-second-value map for
- * zero_one_value. A list keeps its capacity across the passes' clear(), so nothing
+ * zero_or_value. A list keeps its capacity across the passes' clear(), so nothing
  * pre-reserves it.
  */
 template <template <typename> typename ChunkT, typename T>
@@ -103,14 +103,14 @@ void CompressCandidates<ChunkT, T>::resize_lists()
         zero_candidates_thr.resize(nthr);
     }
 
-    // --- Complex types (zero_one_value/zero_any) multi-threading logic ---
+    // --- Complex types (zero_or_value/zero_any) multi-threading logic ---
     if constexpr (build_config::threaded)
     {
-        // Specific to zero_one_value: Dual-value compression with static maps
-        if constexpr (IsZeroOneValue<ChunkT, T>)
+        // Specific to zero_or_value: Dual-value compression with static maps
+        if constexpr (IsZeroOrValue<ChunkT, T>)
         {
-            zero_one_value_candidates_map_thr.resize(nthr);
-            zero_one_value_candidates_thr.resize(nthr);
+            zero_or_value_candidates_map_thr.resize(nthr);
+            zero_or_value_candidates_thr.resize(nthr);
         }
 
         // Specific to zero_any: Per-chunk secondary value compression
@@ -125,7 +125,7 @@ void CompressCandidates<ChunkT, T>::resize_lists()
  * @brief Is there anything queued for compression for this type?
  *
  * Cheap gate for the callers that would otherwise open a parallel region for
- * nothing. For zero_one_value it has to ask once per registered second value, since
+ * nothing. For zero_or_value it has to ask once per registered second value, since
  * that is what keys the candidate map.
  *
  * @param n_thr   Number of per-rank lists to examine.
@@ -137,16 +137,16 @@ void CompressCandidates<ChunkT, T>::resize_lists()
 template <template <typename> typename ChunkT, typename T>
 bool CompressCandidates<ChunkT, T>::have_candidates(int n_thr)
 {
-    // Mirror compress_chunk_to_compress_potentially's dispatch exactly (zero_one_value is handled
+    // Mirror compress_chunk_to_compress_potentially's dispatch exactly (zero_or_value is handled
     // whenever use_fast_block_compression is on, GNU included, not only under OMPT): see the
     // file header's @warning.
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        if constexpr (IsZeroOneValue<ChunkT, T>)
+        if constexpr (IsZeroOrValue<ChunkT, T>)
         {
             if constexpr (is_not_bool)
             {
-                const auto& sh_inf           = *zero_one_value::Proxy<T>::array_registry;
+                const auto& sh_inf           = *zero_or_value::Proxy<T>::array_registry;
                 const auto& v_all_second_val = sh_inf.get_all_second_value();
                 return std::ranges::any_of(v_all_second_val, [n_thr](const auto& second_value)
                                            { return ChunkT<T>::have_chunk_to_compress(second_value, n_thr); });
@@ -168,7 +168,7 @@ bool CompressCandidates<ChunkT, T>::have_candidates(int n_thr)
 /**
  * @brief Drain this type's compression-candidate backlog.
  *
- * The action whose predicate is have_chunk_to_compress_potentially(). zero_one_value is
+ * The action whose predicate is have_chunk_to_compress_potentially(). zero_or_value is
  * driven once per registered second value; the other variants have a single
  * entry point.
  *
@@ -180,11 +180,11 @@ void CompressCandidates<ChunkT, T>::compress_pass([[maybe_unused]] bool apply)
 {
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        if constexpr (IsZeroOneValue<ChunkT, T>)
+        if constexpr (IsZeroOrValue<ChunkT, T>)
         {
             if constexpr (is_not_bool)
             {
-                const auto& sh_inf          = *zero_one_value::Proxy<T>::array_registry;
+                const auto& sh_inf          = *zero_or_value::Proxy<T>::array_registry;
                 const auto& v_all_inf_array = sh_inf.get_all_inf_array();
                 for (const auto& inf_array : v_all_inf_array)
                 {
@@ -285,17 +285,17 @@ void CompressCandidates<ChunkT, T>::remove_from_zero_any_candidates_by_array_id(
 }
 
 template <template <typename> class ChunkT, typename T>
-void CompressCandidates<ChunkT, T>::remove_from_zero_one_value_candidates_by_array_id(
+void CompressCandidates<ChunkT, T>::remove_from_zero_or_value_candidates_by_array_id(
     [[maybe_unused]] int  array_id,
     [[maybe_unused]] bool own_rank_only) noexcept
 {
     if constexpr (build_config::threaded)
     {
         const auto [first, last] =
-            removal_ranks(static_cast<int>(zero_one_value_candidates_map_thr.size()), own_rank_only);
+            removal_ranks(static_cast<int>(zero_or_value_candidates_map_thr.size()), own_rank_only);
         for (int thr = first; thr < last; ++thr)
         {
-            for (const auto& kv : zero_one_value_candidates_map_thr[thr])
+            for (const auto& kv : zero_or_value_candidates_map_thr[thr])
             {
                 const auto& sp = kv.second;
                 if (!sp)

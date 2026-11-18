@@ -15,7 +15,7 @@
  */
 
 // ============================================================================
-// zero_one_value second-value registry growth harness. zero_one_value only (zero_one_value::Array<T>),
+// zero_or_value second-value registry growth harness. zero_or_value only (zero_or_value::Array<T>),
 // default static size; serial and OpenMP builds.
 // ============================================================================
 //
@@ -24,8 +24,8 @@
 //
 // THE DEFECT
 //
-//   Every distinct value given to zero_one_value::Array::set_second_value() gets a
-//   constant array in zero_one_value::Chunk<T>::array_m_ptr_const_val2, and a chunk compressed to
+//   Every distinct value given to zero_or_value::Array::set_second_value() gets a
+//   constant array in zero_or_value::Chunk<T>::array_m_ptr_const_val2, and a chunk compressed to
 //   it stores that array's address as its `values`. The table was a
 //   std::vector<std::array<T, const_buffer_size>> grown by resize(): past its
 //   capacity the vector MOVED every array and freed the old storage. Every
@@ -53,7 +53,7 @@
 #include <vector> // std::vector
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
-#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
 #include "chunk/config.h"                // build_config::needs_explicit_phases
@@ -63,7 +63,7 @@
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
-namespace validation::zero_one_value_registry_growth_validation
+namespace validation::zero_or_value_registry_growth_validation
 {
 
 using namespace shrink_array;
@@ -71,7 +71,7 @@ using namespace shrink_array;
 namespace
 {
 
-using Arr   = zero_one_value::Array<double>;
+using Arr   = zero_or_value::Array<double>;
 using Index = Arr::IndexType;
 
 constexpr int n_chunks = 64; ///< chunks of `a`
@@ -141,7 +141,7 @@ long check_all(const char* what, const Arr& arr, double value)
         {
             if (bad < 4)
             {
-                println("[zero_one_value/registry] FAIL {}[{}] = {:g}, expected {:g}", what, i, got, value);
+                println("[zero_or_value/registry] FAIL {}[{}] = {:g}, expected {:g}", what, i, got, value);
             }
             ++bad;
         }
@@ -161,14 +161,14 @@ int run(int /*argc*/, char** /*argv*/)
         const auto chunk_sz = static_cast<long>(arr.chunk_size());
         arr.resize(static_cast<Index>(n_chunks * chunk_sz));
         arr.set_second_value(1.0);
-        println("=== zero_one_value_registry_growth_validation  chunk_size={}  threads={}  others={} ===", chunk_sz,
+        println("=== zero_or_value_registry_growth_validation  chunk_size={}  threads={}  others={} ===", chunk_sz,
                 CHUNK_PMP_MAX_THREADS, n_others);
 
         // 1. `arr` compressed to its second value.
         fill_and_compress(arr, 1.0);
         if (const int nmat = materialised(arr); nmat != 0)
         {
-            println("[zero_one_value/registry] FAIL premise: {} of {} chunks of `a` still materialised after the pass",
+            println("[zero_or_value/registry] FAIL premise: {} of {} chunks of `a` still materialised after the pass",
                     nmat, n_chunks);
             ++fails;
         }
@@ -190,14 +190,14 @@ int run(int /*argc*/, char** /*argv*/)
         }
         if (bad)
         {
-            println("[zero_one_value/registry] FAIL {} wrong read(s) after the registry grew -- chunks pointing at "
+            println("[zero_or_value/registry] FAIL {} wrong read(s) after the registry grew -- chunks pointing at "
                     "a constant array that moved",
                     bad);
             ++fails;
         }
         else
         {
-            println("[zero_one_value/registry] OK: {} arrays, {} second values, every element reads back", n_others + 1,
+            println("[zero_or_value/registry] OK: {} arrays, {} second values, every element reads back", n_others + 1,
                     n_others + 1);
         }
 
@@ -209,21 +209,21 @@ int run(int /*argc*/, char** /*argv*/)
         const long bad2 = check_all("a (recompressed)", arr, 1.0);
         if (m2 != 0 || bad2 != 0)
         {
-            println("[zero_one_value/registry] FAIL after recompression: {} chunk(s) materialised, {} wrong read(s)",
-                    m2, bad2);
+            println("[zero_or_value/registry] FAIL after recompression: {} chunk(s) materialised, {} wrong read(s)", m2,
+                    bad2);
             ++fails;
         }
         else
         {
-            println("[zero_one_value/registry] OK: `a` recompressed to its second value after the growth");
+            println("[zero_or_value/registry] OK: `a` recompressed to its second value after the growth");
         }
     }
 
     release_chunk_pools();
     Runtime::shutdown();
 
-    println("\n[zero_one_value] {}", fails ? "=== REGISTRY GROWTH FAILED ===" : "=== REGISTRY GROWTH OK ===");
+    println("\n[zero_or_value] {}", fails ? "=== REGISTRY GROWTH FAILED ===" : "=== REGISTRY GROWTH OK ===");
     return fails ? 1 : 0;
 }
 
-} // namespace validation::zero_one_value_registry_growth_validation
+} // namespace validation::zero_or_value_registry_growth_validation

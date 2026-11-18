@@ -32,7 +32,7 @@ namespace shrink_array
 {
 
 #if CHUNK_OPT_STATS
-// Per-variant (zero/zero_one_value/zero_any) x per-thread counter table. Each thread
+// Per-variant (zero/zero_or_value/zero_any) x per-thread counter table. Each thread
 // bumps its own cache-line-aligned slot on the hot path (no atomics); the
 // end-of-run report reduces over threads. See chunk_stats.h.
 std::array<std::array<ChunkStatsThr, CHUNK_STATS_MAX_THR>, chunk_stats_n_variant> g_chunk_stats;
@@ -225,7 +225,7 @@ std::size_t compress_now_and_trim_pools()
     // Then the calling rank's sweep, in every build: a serial zero_any queues
     // its candidates too, and folds them in batches of half the list
     // (perform_compression); the last, partial batch waited here for good
-    // (nothing for a serial zero or zero_one_value: their counters compress on
+    // (nothing for a serial zero or zero_or_value: their counters compress on
     // the write).
     ens_type_chunk.force_chunk_to_compress();
     return ens_type_chunk.trim_reuse_pools(0);

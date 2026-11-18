@@ -115,7 +115,7 @@ template <typename Derived, typename T, typename ChunkT>
                                                                                    InT<T>              first_value,
                                                                                    InT<T> second_val) noexcept
 {
-    // CRTP dispatch: each variant owns its fast pre-check. zero_one_value keeps the
+    // CRTP dispatch: each variant owns its fast pre-check. zero_or_value keeps the
     // "a constant is written" test below; zero_any widens it (see
     // zero_any::Proxy::pre_check_mark_for_compression) because its
     // should_mark_for_compression() accepts a case this test would reject.

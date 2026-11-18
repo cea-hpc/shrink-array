@@ -33,14 +33,14 @@ namespace shrink_array
 {
 
 // ============================================================================
-// SecondValueProxyBase: logic shared by zero_one_value::Proxy and zero_any::Proxy (second_value, etc.)
+// SecondValueProxyBase: logic shared by zero_or_value::Proxy and zero_any::Proxy (second_value, etc.)
 // ============================================================================
 
 /**
  * @brief Base class for proxies with a second_value (CRTP)
- * @tparam Derived The derived proxy class (zero_one_value::Proxy<T> or zero_any::Proxy<T>)
+ * @tparam Derived The derived proxy class (zero_or_value::Proxy<T> or zero_any::Proxy<T>)
  * @tparam T The underlying type
- * @tparam ChunkT The chunk type (zero_one_value::Chunk<T> or zero_any::Chunk<T>)
+ * @tparam ChunkT The chunk type (zero_or_value::Chunk<T> or zero_any::Chunk<T>)
  *
  * Contains the logic specific to chunks with two constant values.
  */
@@ -332,7 +332,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      * @details The `isv` filter of every marking entry point: the CRTP call of
      *          Derived::pre_check_mark_for_compression(), which this class
      *          defaults to pre_check_mark_for_compression_strict() -- a constant
-     *          is written, WHATEVER the chunk's state (zero_one_value adds that
+     *          is written, WHATEVER the chunk's state (zero_or_value adds that
      *          the rank has a candidate list for the value; zero_any and
      *          pattern widen it). It does not look at the chunk's state: a
      *          chunk materialised by a plain value and written back to a
@@ -350,7 +350,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     passes_mark_pre_check(this const Derived& self, InT<T> new_value, InT<T> first_value, InT<T> second_val) noexcept;
 
     /**
-     * @brief Default pre-check hook (zero_one_value behaviour).
+     * @brief Default pre-check hook (zero_or_value behaviour).
      * @details Variants that widen should_mark_for_compression() MUST shadow
      *          this method and widen the pre-check to match -- otherwise the
      *          extra predicate clauses are unreachable.

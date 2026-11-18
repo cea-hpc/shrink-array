@@ -15,7 +15,7 @@
  */
 
 // ============================================================================
-// const_iterator harness. Variant-agnostic: zero / zero_one_value / zero_any follow the
+// const_iterator harness. Variant-agnostic: zero / zero_or_value / zero_any follow the
 // compile-time macro (CHUNK_VARIANT_ZERO*), like the other harnesses here.
 // ============================================================================
 //
@@ -69,7 +69,7 @@
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
 #include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
@@ -89,14 +89,14 @@ using namespace shrink_array;
 namespace
 {
 
-static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
-              "iterator_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_ONE_VALUE or _ZERO_ANY");
+static_assert(chunk_config::use_zero || chunk_config::use_zero_or_value || chunk_config::use_zero_any,
+              "iterator_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_OR_VALUE or _ZERO_ANY");
 
 template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 using Arr   = Array<double>;
 using It    = Arr::const_iterator;
@@ -118,9 +118,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -257,7 +257,7 @@ int check_premise(const Arr& arr, long count)
     {
         folded += arr.written(static_cast<Index>(j * chunk_sz)) ? 0 : 1;
     }
-    if (const long want = (chunk_config::use_zero_one_value || chunk_config::use_zero_any) ? c0 + (c2 - c1) : c0;
+    if (const long want = (chunk_config::use_zero_or_value || chunk_config::use_zero_any) ? c0 + (c2 - c1) : c0;
         folded < want)
     {
         report.fail("{} chunk(s) folded after the pass, expected at least {}: the jumps would not land in "

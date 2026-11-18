@@ -328,7 +328,7 @@ auto g = md::tiled_view_dyn(a, std::array<long, 2>{16, 24}, nx, ny); // ou toute
 trois champs et une fraction de présence sur tout le maillage, en occupe une partie tirée au
 hasard à chaque itération, y est écrit puis relu par le même calcul gadget), sur un maillage
 `nx x ny` où un matériau occupe un rectangle. Chaque tableau est vu par un `mdspan` 2D :
-`md::view` ou `md::tiled_view` pour les tableaux chunk (zero pour les champs, zero_one_value pour
+`md::view` ou `md::tiled_view` pour les tableaux chunk (zero pour les champs, zero_or_value pour
 la fraction), un `mdspan` standard sur `data()` pour les `std::vector`. Le corps de boucle est écrit
 une fois contre les vues ; la politique du stockage du matériau (`LoopsMd.h`) dit comment un
 rectangle est écrit, remis à zéro et lu, comme `Loops.h` en 1D -- et la liste d'indirection de

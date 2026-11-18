@@ -5,7 +5,7 @@
 > État : novembre 2026. Ce document explique comment les écrivains, les compresseurs,
 > les vidages d'écritures différées et les lecteurs s'excluent mutuellement **sans verrou sur le
 > chemin d'écriture**. La machinerie d'ensemble (proxys, écritures différées, compression en
-> vol) est décrite dans [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md) §7 et §8. Les noms cités sont
+> vol) est décrite dans [algo_zero_or_value_fr.md](algo_zero_or_value_fr.md) §7 et §8. Les noms cités sont
 > ceux de l'arbre actuel ; en cas de doute, c'est le code qui fait foi, et en particulier les
 > commentaires de `internal/write_compress_sync_policy.h`, qui portent la preuve d'ordonnancement.
 
@@ -484,5 +484,5 @@ avec la forme du protocole qui a tourné.
 | le côté écrivain | `internal/proxy_base_inline.h` (`write_with_optional_lock_impl`) |
 | le côté compresseur, les compteurs | `internal/compression_manager.h`, `internal/compression_manager_inline.h` (`start`, `finish`, `wait_out_compressor`) |
 | les marques par chunk | `internal/chunk_base.h` (`steal_mark_`) |
-| la passe de compression | `internal/zero_one_value_chunk_inline.h`, `internal/zero_any_chunk_inline.h`, `internal/zero_chunk_inline.h` (`make_block_compression*`), `internal/block_pass_precheck.h` |
+| la passe de compression | `internal/zero_or_value_chunk_inline.h`, `internal/zero_any_chunk_inline.h`, `internal/zero_chunk_inline.h` (`make_block_compression*`), `internal/block_pass_precheck.h` |
 | lecteurs et récupération | `internal/read_reclaim.h` |

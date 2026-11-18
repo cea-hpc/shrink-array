@@ -327,7 +327,7 @@ class Runtime : public RuntimeParallelInterface<>, public RuntimeDynInterface<>
      *
      * @note Every build, so call sites need no guard: the OpenMP builds'
      *       candidates, and a serial zero_any's (it queues them too); a serial
-     *       zero or zero_one_value compresses on the write and has none.
+     *       zero or zero_or_value compresses on the write and has none.
      */
     static void force_compression();
 
@@ -337,8 +337,8 @@ class Runtime : public RuntimeParallelInterface<>, public RuntimeDynInterface<>
      * @tparam T the element type concerned
      * @param second_value the additional value to store as a constant
      * @warning Not implemented: deleted, so a use fails at compile time. A
-     *          placeholder for the second-constant support that zero_one_value::Array
-     *          offers per array (zero_one_value::Array::set_second_value) and zero_any per
+     *          placeholder for the second-constant support that zero_or_value::Array
+     *          offers per array (zero_or_value::Array::set_second_value) and zero_any per
      *          chunk.
      */
     template <typename T>
@@ -347,7 +347,7 @@ class Runtime : public RuntimeParallelInterface<>, public RuntimeDynInterface<>
     /**
      * @brief Print the instrumentation report accumulated during the run.
      *
-     * @details Reduces the per-thread counters of each variant (zero, zero_one_value,
+     * @details Reduces the per-thread counters of each variant (zero, zero_or_value,
      *          zero_any) and prints one block per variant, preceded by a legend;
      *          variants that saw no activity are skipped. Reports allocations and
      *          reuse, read/write counts with the share of reads served straight

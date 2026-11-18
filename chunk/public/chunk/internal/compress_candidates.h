@@ -31,7 +31,7 @@
 
 #include "chunk/bit.h"                   // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/config.h"                // build_config::threaded
-#include "chunk/internal/chunk_tuples.h" // ZeroComp, ZeroOneValueCompMap, ZeroAnyComp
+#include "chunk/internal/chunk_tuples.h" // ZeroComp, ZeroOrValueCompMap, ZeroAnyComp
 #include "chunk/internal/immortal.h"     // Immortal: statics safe for global arrays
 
 namespace shrink_array
@@ -52,7 +52,7 @@ namespace shrink_array
  *          TypeState's overrides of TypeStateInterface forward to the passes
  *          below.
  *
- * @tparam ChunkT chunk variant template (zero, zero_one_value or zero_any)
+ * @tparam ChunkT chunk variant template (zero, zero_or_value or zero_any)
  * @tparam T      stored element type
  */
 template <template <typename> class ChunkT, typename T>
@@ -170,18 +170,18 @@ class CompressCandidates
     static void remove_from_zero_any_candidates_by_array_id(int array_id, bool own_rank_only = false) noexcept;
 
     /**
-     * @brief zero_one_value analogue: drop every queued zero_one_value candidate for @p array_id.
+     * @brief zero_or_value analogue: drop every queued zero_or_value candidate for @p array_id.
      *
      * @details Removes the matching tuples from every rank and second-value
-     *          bucket, WITHOUT compressing. Called from zero_one_value::Array::clear_core()
-     *          so no zero_one_value::Chunk* of a torn-down or re-chunked array dangles there.
+     *          bucket, WITHOUT compressing. Called from zero_or_value::Array::clear_core()
+     *          so no zero_or_value::Chunk* of a torn-down or re-chunked array dangles there.
      *
      * @param array_id array index whose candidates are removed
-     * @note OpenMP builds only: a serial build queues no zero_one_value candidate (fast
+     * @note OpenMP builds only: a serial build queues no zero_or_value candidate (fast
      *       block compression is OpenMP-only), so there is nothing to drop.
      */
-    static void remove_from_zero_one_value_candidates_by_array_id([[maybe_unused]] int array_id,
-                                                                  bool                 own_rank_only = false) noexcept;
+    static void remove_from_zero_or_value_candidates_by_array_id([[maybe_unused]] int array_id,
+                                                                 bool                 own_rank_only = false) noexcept;
 
     /// @brief Drop every queued zero candidate of array @p array_id
     ///        (zero::Array::clear_core and rechunk_to).
@@ -189,11 +189,11 @@ class CompressCandidates
     ///          other arrays' intact.
     static void remove_from_zero_candidates_by_array_id(int array_id, bool own_rank_only = false) noexcept;
 
-    /// @brief zero_one_value's candidate lists: per rank, one list per second value.
-    static inline constinit internal::Immortal<ZeroOneValueCompMap<ChunkT, T>>
-                                                  zero_one_value_candidates_map_thr_storage_{};
-    static inline ZeroOneValueCompMap<ChunkT, T>& zero_one_value_candidates_map_thr =
-        zero_one_value_candidates_map_thr_storage_.value;
+    /// @brief zero_or_value's candidate lists: per rank, one list per second value.
+    static inline constinit internal::Immortal<ZeroOrValueCompMap<ChunkT, T>>
+                                                 zero_or_value_candidates_map_thr_storage_{};
+    static inline ZeroOrValueCompMap<ChunkT, T>& zero_or_value_candidates_map_thr =
+        zero_or_value_candidates_map_thr_storage_.value;
 
     /**
      * @brief Rank @p thr's candidate list for second value @p key, or null
@@ -205,16 +205,16 @@ class CompressCandidates
     template <typename Key>
     [[nodiscard]] static auto* compress_candidates(int thr, const Key& key) noexcept
     {
-        auto&      by_value = zero_one_value_candidates_map_thr[thr];
+        auto&      by_value = zero_or_value_candidates_map_thr[thr];
         const auto it       = by_value.find(key);
         return it != by_value.end() ? it->second.get() : nullptr;
     }
-    /// @brief zero_one_value: per rank, one list per second-value index, copied by
-    ///        zero_one_value::Array into zero_one_value_candidates_map_thr when it
+    /// @brief zero_or_value: per rank, one list per second-value index, copied by
+    ///        zero_or_value::Array into zero_or_value_candidates_map_thr when it
     ///        registers a second value.
-    static inline constinit internal::Immortal<ZeroOneValueCompThr<ChunkT, T>> zero_one_value_candidates_thr_storage_{};
-    static inline ZeroOneValueCompThr<ChunkT, T>&                              zero_one_value_candidates_thr =
-        zero_one_value_candidates_thr_storage_.value;
+    static inline constinit internal::Immortal<ZeroOrValueCompThr<ChunkT, T>> zero_or_value_candidates_thr_storage_{};
+    static inline ZeroOrValueCompThr<ChunkT, T>&                              zero_or_value_candidates_thr =
+        zero_or_value_candidates_thr_storage_.value;
     /// @brief zero_any's per-rank candidate lists.
     static inline constinit internal::Immortal<ZeroAnyCompThr<ChunkT, T>> zero_any_candidates_thr_storage_{};
     static inline ZeroAnyCompThr<ChunkT, T>& zero_any_candidates_thr = zero_any_candidates_thr_storage_.value;

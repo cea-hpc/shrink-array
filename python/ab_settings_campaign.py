@@ -10,7 +10,7 @@ the computation time ("Elapsed time computation") and the memory at the end of
 the run, peak and current ("Memory consumption end"). A setting that changes
 neither is fixed at its default and its variable can go; one that wins becomes
 the default. The protocol is the one of the former Milan measurements
-(KEEP_RECYCLED, SLICES, SCHEDULE): zero, zero_any and zero_one_value at dyn,
+(KEEP_RECYCLED, SLICES, SCHEDULE): zero, zero_any and zero_or_value at dyn,
 64 threads, three runs per point, the points interleaved so that a drift of the
 node hits every one of them alike.
 
@@ -96,7 +96,7 @@ CLEARED_VARS = CAMPAIGN_VARS + [
     "SHRINK_BENCH_EXACT_RSS", "SHRINK_BENCH_RSS_SAMPLE_MS", "SHRINK_BENCH_MALLOC_TRIM", "SHRINK_BENCH_KEEP_POOLS",
 ]
 
-VARIANTS = ["zero", "zero_any", "zero_one_value"]
+VARIANTS = ["zero", "zero_any", "zero_or_value"]
 DEFAULT_ARGS = "--mode perf --no_io --multiply 2 --iter_max 500"  # bench_recycle.sh's workload
 
 

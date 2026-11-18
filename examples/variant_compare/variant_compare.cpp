@@ -16,13 +16,13 @@
 
 /**
  * @file variant_compare.cpp
- * @brief zero_one_value against zero_any on the SAME workload, where both can compress
+ * @brief zero_or_value against zero_any on the SAME workload, where both can compress
  *        the same chunks (--constants 1) or where zero_any can compress more
  *        (--constants K > 1).
  *
  * @details shrink_bench writes several distinct constants per array (d0, d1,
  *          d2...): zero_any, which takes a second value per chunk, compresses
- *          ~8.5 % more chunks there than zero_one_value, which has one per array, and
+ *          ~8.5 % more chunks there than zero_or_value, which has one per array, and
  *          then carries 2-2.5x less resident memory. That hides the question
  *          of the per-operation cost of each variant. This program asks it on
  *          its own:
@@ -84,13 +84,13 @@
 #include <utility>      // std::as_const
 #include <vector>       // std::vector
 
-#include "chunk/zero_one_value_array.h" // zero_one_value::Array
-#include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/runtime.h"              // Runtime::init
-#include "chunk/config.h"               // chunk_config::use_zero_any, build_config::use_openmp
-#include "chunk/threads.h"              // shrink_array::max_threads
-#include "chunk/phases.h"               // shrink_array::begin_parallel_phase, finalize_parallel_phase
-#include "chunk/print.h"                // shrink_array::println
+#include "chunk/zero_or_value_array.h" // zero_or_value::Array
+#include "chunk/zero_any_array.h"      // zero_any::Array
+#include "chunk/runtime.h"             // Runtime::init
+#include "chunk/config.h"              // chunk_config::use_zero_any, build_config::use_openmp
+#include "chunk/threads.h"             // shrink_array::max_threads
+#include "chunk/phases.h"              // shrink_array::begin_parallel_phase, finalize_parallel_phase
+#include "chunk/print.h"               // shrink_array::println
 
 
 using namespace shrink_array;
@@ -138,14 +138,14 @@ long rss_kib()
 } // namespace
 
 static_assert(chunk_config::use_second_value,
-              "variant_compare compares zero_one_value and zero_any: link chunk_zero_one_value_* or chunk_zero_any_*");
+              "variant_compare compares zero_or_value and zero_any: link chunk_zero_or_value_* or chunk_zero_any_*");
 
 template <typename T>
-using Array = std::conditional_t<chunk_config::use_zero_any, zero_any::Array<T>, zero_one_value::Array<T>>;
+using Array = std::conditional_t<chunk_config::use_zero_any, zero_any::Array<T>, zero_or_value::Array<T>>;
 
 constexpr const char* variant_name()
 {
-    return chunk_config::use_zero_any ? "zero_any" : "zero_one_value";
+    return chunk_config::use_zero_any ? "zero_any" : "zero_or_value";
 }
 
 /// The first value is 0; the second values, the first of them declared.
@@ -177,7 +177,7 @@ static void end_phase(Array<double>& arr)
     }
 }
 
-/// zero_one_value declares its one second value; zero_any finds one per chunk (no
+/// zero_or_value declares its one second value; zero_any finds one per chunk (no
 /// such member). A template, so the discarded call is not checked.
 template <typename Arr>
 static void maybe_declare_second_value(Arr& arr, double value)

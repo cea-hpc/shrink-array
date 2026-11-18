@@ -73,10 +73,10 @@ using Array = ActiveArray<T>;
 // alloc_chunk(i) materialises the chunk holding element i ahead of the loop
 // that writes it: the loop then only stores into buffers that exist, instead
 // of materialising chunks one write at a time inside the parallel region. It
-// exists on the three variants (zero::Array, zero_one_value::Array, zero_any::Array) and had
+// exists on the three variants (zero::Array, zero_or_value::Array, zero_any::Array) and had
 // no caller. The window is PARTIAL (an eighth of the array, from its first
 // quarter): the chunks around it must stay compressed, or preallocating would
-// prove nothing. bool goes through its own materialiser on zero_one_value / zero_any.
+// prove nothing. bool goes through its own materialiser on zero_or_value / zero_any.
 
 /// @brief One element type: preallocate the window, check which chunks are
 ///        materialised, run the loop over the window, read everything back
@@ -389,9 +389,9 @@ try
     {
         std::println("{}{}MODE: {}zero (Single Value)", tc.bold, tc.magenta, tc.reset);
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        std::println("{}{}MODE: {}zero_one_value (Dual Value)", tc.bold, tc.magenta, tc.reset);
+        std::println("{}{}MODE: {}zero_or_value (Dual Value)", tc.bold, tc.magenta, tc.reset);
     }
     else if constexpr (chunk_config::use_zero_any)
     {
@@ -507,9 +507,9 @@ try
     {
         print_chunk_size.operator()<zero_any::Chunk>("zero_any");
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        print_chunk_size.operator()<zero_one_value::Chunk>("zero_one_value");
+        print_chunk_size.operator()<zero_or_value::Chunk>("zero_or_value");
     }
     else if constexpr (chunk_config::use_zero)
     {
@@ -520,14 +520,14 @@ try
     // (bench_array.h says why).
     BenchBoolArray array_bool(sz);
     // array_bool's twin, written with the same values at the same places:
-    // BitArray (8 bools per byte) in a zero_one_value build, array_bool's own type
+    // BitArray (8 bools per byte) in a zero_or_value build, array_bool's own type
     // elsewhere (BenchBoolBitsArray). Compare the two in the stats, the
     // chunk filling rates and the pools of a single run.
     BenchBoolBitsArray array_bool_bits(sz);
 
     // Large and mostly NOT constant: random masks and scattered flags between
     // whole constant segments (bench_phase_mask.cpp). BitArray in a
-    // zero_one_value build, std::vector<bool> in the baseline (BenchMaskArray).
+    // zero_or_value build, std::vector<bool> in the baseline (BenchMaskArray).
     // Size 1 under --no_mask: its phases are skipped (BenchArrays::with_mask).
     // mask_scale * sz (--mask_scale, default 1/32): computed in 64 bits and
     // capped at the largest whole number of 1024-element blocks the build's Int
@@ -551,7 +551,7 @@ try
     }
 
     // A mesh connectivity (bench_phase_conn.cpp): pattern::Array<int> in the
-    // zero_one_value and zero_any builds, zero::Array<int> in a zero build, a vector
+    // zero_or_value and zero_any builds, zero::Array<int> in a zero build, a vector
     // in the baseline (BenchConnArray). About conn_scale * sz ints (--conn_scale,
     // default 1/32), whole rows of bench_conn_row, computed in 64 bits and capped
     // at the build's Int as array_mask; size 1 under --no_conn
@@ -833,7 +833,7 @@ try
                 }
             }
             // --advise_bool: the two bool containers, re-chunked like the rest.
-            // array_bool_bits is an BitArray in a zero_one_value build
+            // array_bool_bits is an BitArray in a zero_or_value build
             // (value_type Bit, as array_mask), array_bool's own type elsewhere.
             if (bench_args.advise_bool)
             {
@@ -841,10 +841,10 @@ try
                 rechunk_decider.consider<BenchBoolBitsArray::value_type>(array_bool_bits, tick, iter,
                                                                          "array_bool_bits");
             }
-            // array_mask: an BitArray in a zero_one_value build, whose advisor
+            // array_mask: an BitArray in a zero_or_value build, whose advisor
             // knows the packed layout (the other variants' Array<bool> is not
             // what this array is for).
-            if constexpr (chunk_config::use_zero_one_value)
+            if constexpr (chunk_config::use_zero_or_value)
             {
                 if (!no_mask)
                 {
@@ -859,12 +859,12 @@ try
                 {
                     // STEP B — const2 GC mark report (read-only) : zero_any::Array-only API
                     // (per-chunk const_val2 pointer registry has no equivalent on zero /
-                    // zero_one_value, which have no per-chunk GC-able registry to report on).
+                    // zero_or_value, which have no per-chunk GC-able registry to report on).
                     CHUNK_LOG(info, compress, "const2-gc @ iter {}", k_iter);
                     // Spelled out rather than Array<T>: the enclosing
                     // `if constexpr` is in a plain lambda, so its discarded
                     // branch is still checked, and Array<T> is zero::Array<T> --
-                    // which has no gc_mark_report -- in a zero/zero_one_value build. `Int`
+                    // which has no gc_mark_report -- in a zero/zero_or_value build. `Int`
                     // is what matters here: zero_any::Array<double> would take the
                     // default IndexType (int), a DIFFERENT instantiation from the
                     // one the bench fills in an int64 build, and the report would
@@ -1212,15 +1212,15 @@ try
             }
 
 
-            // zero and zero_one_value always; zero_any only with fast block
-            // compression (normally useless for zero_one_value and zero_any, whose writes
+            // zero and zero_or_value always; zero_any only with fast block
+            // compression (normally useless for zero_or_value and zero_any, whose writes
             // compress as they go).
             // Periodic, plus the last iteration so no end-of-run miss escapes.
             // A persisting miss stays visible at the next audit: a
             // materialised constant chunk stays so until it is written.
             const bool audit_now = (k % freq_audit == 0) || (k + 1 == iter_max);
 
-            if constexpr (chunk_config::use_zero || chunk_config::use_zero_one_value ||
+            if constexpr (chunk_config::use_zero || chunk_config::use_zero_or_value ||
                           (chunk_config::use_zero_any && chunk_config::use_fast_block_compression))
             {
                 if (audit_now)

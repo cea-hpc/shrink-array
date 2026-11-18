@@ -147,11 +147,11 @@
 #                           from its own constant, and on zero_any no switch
 #                           allocates a buffer and reclaim_second_values()
 #                           frees the constants no chunk holds any more.
-#   fill_range_mt_zero_and_zero_one_value_validation  the range ops in a TWO-variant build
-#                           (chunk_zero_and_zero_one_value): a zero::Array and a zero_one_value::Array side
+#   fill_range_mt_zero_and_zero_or_value_validation  the range ops in a TWO-variant build
+#                           (chunk_zero_and_zero_or_value): a zero::Array and a zero_or_value::Array side
 #                           by side, fill_range_mt of each compressible value.
 #                           The ops must dispatch on the array's type, not on
-#                           the build flags -- otherwise a zero_one_value::Array
+#                           the build flags -- otherwise a zero_or_value::Array
 #                           filled with its second value stays materialised.
 #                           The one harness that is not variant-agnostic.
 #   const2_registry_validation  zero_any's second-value registry is freed by the
@@ -257,9 +257,9 @@ endfunction()
 option(CHUNK_VALIDATION_UNITY "One unity-built executable per variant and geometry for the validation harnesses" ON)
 set(CHUNK_VALIDATION_UNITY_BATCH "0" CACHE STRING "Harnesses per unity translation unit (0: all of a group)")
 
-set(_rt_variant_names   zero       zero_one_value      zero_any)
-set(_rt_variant_libbase chunk_zero    chunk_zero_one_value    chunk_zero_any)
-set(_rt_variant_macro   CHUNK_VARIANT_ZERO CHUNK_VARIANT_ZERO_ONE_VALUE CHUNK_VARIANT_ZERO_ANY)
+set(_rt_variant_names   zero       zero_or_value      zero_any)
+set(_rt_variant_libbase chunk_zero    chunk_zero_or_value    chunk_zero_any)
+set(_rt_variant_macro   CHUNK_VARIANT_ZERO CHUNK_VARIANT_ZERO_OR_VALUE CHUNK_VARIANT_ZERO_ANY)
 
 # Every static size built (CHUNK_STATIC_SIZES: 256;1024 by default), then dyn.
 # A static size other than CHUNK_DEFAULT_SIZE gets the round-trip harnesses
@@ -385,9 +385,9 @@ foreach(_geom IN LISTS _rt_geometries)
     if (CHUNK_OPENMP)
       list(APPEND _group chunk_array_new_validation)
     endif()
-    # bits_container_validation: BitArray (zero_one_value::Array<Bit>) against
-    # std::vector<bool>. zero_one_value libraries only, every geometry.
-    if (_vname STREQUAL "zero_one_value")
+    # bits_container_validation: BitArray (zero_or_value::Array<Bit>) against
+    # std::vector<bool>. zero_or_value libraries only, every geometry.
+    if (_vname STREQUAL "zero_or_value")
       list(APPEND _group bits_container_validation)
     endif()
     # const2_registry_validation: zero_any's second-value registry lifecycle.
@@ -401,18 +401,18 @@ foreach(_geom IN LISTS _rt_geometries)
     if (_vname STREQUAL "zero_any")
       list(APPEND _group const2_reclaim_validation)
     endif()
-    # zero_one_value_registry_growth_validation: zero_one_value's second-value registry must
+    # zero_or_value_registry_growth_validation: zero_or_value's second-value registry must
     # not move the constant arrays chunks point at when a new value is
-    # declared (the harness says why). zero_one_value only, default static size, at 1
+    # declared (the harness says why). zero_or_value only, default static size, at 1
     # and 4 threads.
-    if (_vname STREQUAL "zero_one_value" AND NOT _geom STREQUAL "dyn")
-      list(APPEND _group zero_one_value_registry_growth_validation)
+    if (_vname STREQUAL "zero_or_value" AND NOT _geom STREQUAL "dyn")
+      list(APPEND _group zero_or_value_registry_growth_validation)
     endif()
-    # zero_one_value_foreign_key_validation: a chunk is only ever compressed to its own
-    # array's second value (the harness says why). zero_one_value only, default static
+    # zero_or_value_foreign_key_validation: a chunk is only ever compressed to its own
+    # array's second value (the harness says why). zero_or_value only, default static
     # size, at 8 threads; OpenMP builds only (the passes run in a region).
-    if (CHUNK_OPENMP AND _vname STREQUAL "zero_one_value" AND NOT _geom STREQUAL "dyn")
-      list(APPEND _group zero_one_value_foreign_key_validation)
+    if (CHUNK_OPENMP AND _vname STREQUAL "zero_or_value" AND NOT _geom STREQUAL "dyn")
+      list(APPEND _group zero_or_value_foreign_key_validation)
     endif()
     # deferred_path_validation: every write path through the deferred queue,
     # forced by the test hook (test_hooks.h, switched on by the harness), at
@@ -492,15 +492,15 @@ foreach(_geom IN LISTS _rt_geometries)
         validation_add_test(${_base}_np2 ${_exe} ${_h} "1;8" --size 384)
       elseif (_h STREQUAL "bits_container_validation")
         validation_add_test(bits_container_validation_${_geom} ${_exe} ${_h} "1;8")
-      elseif (_h STREQUAL "zero_one_value_registry_growth_validation")
-        validation_add_test(zero_one_value_registry_growth_validation ${_exe} ${_h} "1;4")
-      elseif (_h STREQUAL "zero_one_value_foreign_key_validation")
-        validation_add_test(zero_one_value_foreign_key_validation ${_exe} ${_h} "8")
+      elseif (_h STREQUAL "zero_or_value_registry_growth_validation")
+        validation_add_test(zero_or_value_registry_growth_validation ${_exe} ${_h} "1;4")
+      elseif (_h STREQUAL "zero_or_value_foreign_key_validation")
+        validation_add_test(zero_or_value_foreign_key_validation ${_exe} ${_h} "8")
       elseif (_h STREQUAL "tbb_validation")
         if (CHUNK_SANITIZER STREQUAL "thread")
           # ThreadSanitizer: N = 2^16 elements instead of 2^18 -- every form,
           # partitioner and phase still runs, on four times fewer elements: at
-          # 2^18, zero_one_value at 8 threads went past ctest's 1500 s on a
+          # 2^18, zero_or_value at 8 threads went past ctest's 1500 s on a
           # two-core runner. libtbb.so is not instrumented, and its
           # partitioners' bookkeeping shows up as races (tsan_tbb.supp says
           # why and what is left visible): appended to TSAN_OPTIONS, so the
@@ -654,14 +654,14 @@ if (TARGET chunk_zero_any_${CHUNK_DEFAULT_SIZE})
   endif()
 endif()
 
-# --- fill_range_mt_zero_and_zero_one_value_validation: the two-variant library (CHUNK_VARIANT_ZERO=1;CHUNK_VARIANT_ZERO_ONE_VALUE=1,
+# --- fill_range_mt_zero_and_zero_or_value_validation: the two-variant library (CHUNK_VARIANT_ZERO=1;CHUNK_VARIANT_ZERO_OR_VALUE=1,
 # default static size, no OMPT tool -- the harness defines the switch and makes
-# the phase calls, as multi_mat does), zero::Array and zero_one_value::Array in one
+# the phase calls, as multi_mat does), zero::Array and zero_or_value::Array in one
 # program. At 1 and 8 threads like the others.
-if (TARGET chunk_zero_and_zero_one_value_${CHUNK_DEFAULT_SIZE})
-  set(_tgt fill_range_mt_zero_and_zero_one_value_validation)
-  add_executable(${_tgt} fill_range_mt_zero_and_zero_one_value_validation.cpp)
-  target_link_libraries(${_tgt} PRIVATE chunk_zero_and_zero_one_value_${CHUNK_DEFAULT_SIZE}) # CHUNK_VARIANT_ZERO, _ZERO_ONE_VALUE, CHUNK_SIZE: PUBLIC
+if (TARGET chunk_zero_and_zero_or_value_${CHUNK_DEFAULT_SIZE})
+  set(_tgt fill_range_mt_zero_and_zero_or_value_validation)
+  add_executable(${_tgt} fill_range_mt_zero_and_zero_or_value_validation.cpp)
+  target_link_libraries(${_tgt} PRIVATE chunk_zero_and_zero_or_value_${CHUNK_DEFAULT_SIZE}) # CHUNK_VARIANT_ZERO, _ZERO_OR_VALUE, CHUNK_SIZE: PUBLIC
   validation_setup_target(${_tgt})
   foreach(_nthr 1 8)
     add_test(NAME ${_tgt}_${_nthr}thr COMMAND ${_tgt})

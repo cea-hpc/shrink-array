@@ -22,17 +22,17 @@
  *        each, 8 per byte.
  *
  * @details A container of its own, not a specialisation of a bool array:
- *          zero_one_value::Array<bool> stays what it is (one byte per bool), and the
+ *          zero_or_value::Array<bool> stays what it is (one byte per bool), and the
  *          choice is made by type, array by array --
- *            - zero_one_value::Array<bool>: a plain byte store per write;
+ *            - zero_or_value::Array<bool>: a plain byte store per write;
  *            - BitArray:    8x less memory per materialised chunk, an
  *                                 atomic read-modify-write of a 64-bit word
  *                                 per write (OpenMP builds).
  *          Constant chunks (all false, all true) cost no data in either.
  *
- *          It is the zero_one_value machinery over the element type Bit (bit.h):
- *          write protocol, compression, re-chunk and advisor are zero_one_value's, and
- *          zero_one_value::Chunk<Bit> has its own managers, pools and registries. The
+ *          It is the zero_or_value machinery over the element type Bit (bit.h):
+ *          write protocol, compression, re-chunk and advisor are zero_or_value's, and
+ *          zero_or_value::Chunk<Bit> has its own managers, pools and registries. The
  *          element is read as a Bit, which converts to and from bool:
  *          @code
  *            BitArray<> a(n);
@@ -47,15 +47,15 @@
  *          (operator()(i) returning a reference does not compile).
  */
 
-#include "chunk/bit.h"                  // Bit
-#include "chunk/zero_one_value_array.h" // zero_one_value::Array
+#include "chunk/bit.h"                 // Bit
+#include "chunk/zero_or_value_array.h" // zero_or_value::Array
 
 namespace shrink_array
 {
 
 /// @brief The bit-packed bool container (see the file comment).
 template <typename IntType = int>
-using BitArray = zero_one_value::Array<Bit, IntType>;
+using BitArray = zero_or_value::Array<Bit, IntType>;
 
 /// @brief Former name of BitArray.
 template <typename IntType = int>

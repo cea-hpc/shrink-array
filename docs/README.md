@@ -20,9 +20,9 @@
 | find a call: the API by task, on one page | [api.md](api.md) | trouver un appel : l'API par tâche, sur une page | [api_fr.md](api_fr.md) |
 | change the library: build, tests to run, code rules, measurements, docs | [contributing.md](contributing.md) | modifier la bibliothèque : build, tests à lancer, règles de code, mesures, docs | [contributing_fr.md](contributing_fr.md) |
 | understand how the library is built: parts, decisions and why, concurrency model, memory, limits | [design.md](design.md) | comprendre comment la bibliothèque est construite : parties, décisions et leurs raisons, modèle de concurrence, mémoire, limites | [conception_fr.md](conception_fr.md) |
-| choose a variant (`zero`, `zero_one_value`, `zero_any`) | [variants.md](variants.md) | choisir une variante (`zero`, `zero_one_value`, `zero_any`) | [variantes_fr.md](variantes_fr.md) |
+| choose a variant (`zero`, `zero_or_value`, `zero_any`) | [variants.md](variants.md) | choisir une variante (`zero`, `zero_or_value`, `zero_any`) | [variantes_fr.md](variantes_fr.md) |
 | know whether a sparse format, a compressor or a sparse grid fits better | [alternatives.md](alternatives.md) | savoir si un format creux, un compresseur ou une grille creuse convient mieux | [alternatives_fr.md](alternatives_fr.md) |
-| understand reads, writes, in-flight compression, deferred writes | [algo_zero_one_value.md](algo_zero_one_value.md) | comprendre lecture, écriture, compression en vol, écritures différées | [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md) |
+| understand reads, writes, in-flight compression, deferred writes | [algo_zero_or_value.md](algo_zero_or_value.md) | comprendre lecture, écriture, compression en vol, écritures différées | [algo_zero_or_value_fr.md](algo_zero_or_value_fr.md) |
 | know what `zero`, `zero_any` and `pattern` do differently | [algo_zero.md](algo_zero.md), [algo_zero_any.md](algo_zero_any.md), [algo_pattern.md](algo_pattern.md) | savoir ce que `zero`, `zero_any` et `pattern` font autrement | [algo_zero_fr.md](algo_zero_fr.md), [algo_zero_any_fr.md](algo_zero_any_fr.md), [algo_pattern_fr.md](algo_pattern_fr.md) |
 | understand how writers, compressors and readers exclude each other without a lock | [synchronisation_dekker.md](synchronisation_dekker.md) | comprendre comment écrivains, compresseurs et lecteurs s'excluent sans verrou | [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md) |
 | check the handshakes with a model checker: the reduced models, their calibration, the findings | [formal_models.md](formal_models.md) | vérifier les protocoles d'échange avec un vérificateur de modèles : les modèles réduits, leur calibration, les constats | [formal_models_fr.md](formal_models_fr.md) |
@@ -44,7 +44,7 @@
 | [design.md](design.md) / [conception_fr.md](conception_fr.md) | the overall design: requirements and non-goals, the parts and their scope (per array, per type, per process), CRTP and policies, build-time configuration, an access from the call to the memory, phases and the three handshakes, memory and allocators, dynamic geometry, backends, the decisions and the alternatives rejected, known limits |
 | [variants.md](variants.md) / [variantes_fr.md](variantes_fr.md) | what each variant compresses, what a chunk costs, which one to choose, orders of magnitude |
 | [alternatives.md](alternatives.md) / [alternatives_fr.md](alternatives_fr.md) | sparse formats, hash tables, zfp / Blosc2, OpenVDB: what each one does, and when to prefer it |
-| [algo_zero_one_value.md](algo_zero_one_value.md) / [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md) | the whole algorithm, through `zero_one_value`: geometry, chunk states, reads, writes through proxies, write engine, deferred writes, OMPT, in-flight compression, re-chunk, range operations |
+| [algo_zero_or_value.md](algo_zero_or_value.md) / [algo_zero_or_value_fr.md](algo_zero_or_value_fr.md) | the whole algorithm, through `zero_or_value`: geometry, chunk states, reads, writes through proxies, write engine, deferred writes, OMPT, in-flight compression, re-chunk, range operations |
 | [algo_zero.md](algo_zero.md) / [algo_zero_fr.md](algo_zero_fr.md) | `zero`: compression to zero only, serial counters, pass threshold, sliced re-chunk |
 | [algo_zero_any.md](algo_zero_any.md) / [algo_zero_any_fr.md](algo_zero_any_fr.md) | `zero_any`: one second value per chunk, second-value registry, its own queueing criteria |
 | [algo_pattern.md](algo_pattern.md) / [algo_pattern_fr.md](algo_pattern_fr.md) | `pattern::Array`, a member of the `zero_any` family: a chunk = a shared motif + an offset (integers, mesh connectivities), the motif registry, the completion rule, the offset slot and its handshake, dynamic geometry, results |
@@ -63,7 +63,7 @@
 
 | directory | contents |
 |---|---|
-| `chunk/public/chunk/` | the API: `zero_array.h`, `zero_one_value_array.h`, `zero_any_array.h`, `pattern_array.h`, `runtime.h`, `config.h`, `threads.h`, `mdspan.h`, `mdspan_tile_ops.h` |
+| `chunk/public/chunk/` | the API: `zero_array.h`, `zero_or_value_array.h`, `zero_any_array.h`, `pattern_array.h`, `runtime.h`, `config.h`, `threads.h`, `mdspan.h`, `mdspan_tile_ops.h` |
 | `chunk/public/chunk/internal/` | the implementation: chunks, proxies, write engine, compression, re-chunk |
 | `chunk/private/` | the compiled parts of the library (type registry, OMPT tool, statistics, traces) |
 | `fast_allocators/` | the buffer allocators (arenas, slabs, reuse lists) |

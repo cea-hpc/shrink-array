@@ -21,18 +21,18 @@
 #include <cstddef>     // std::size_t
 #include <vector>      // std::vector
 
-#include "chunk/internal/zero_one_value_pointer_map.h" // the class these bodies belong to
+#include "chunk/internal/zero_or_value_pointer_map.h" // the class these bodies belong to
 
 namespace shrink_array
 {
 
 // ---------------------------------------------------------------------------
-// shrink_array::ZeroOneValueInfArrayPolicy<T, Enabled>
+// shrink_array::ZeroOrValueInfArrayPolicy<T, Enabled>
 // ---------------------------------------------------------------------------
 
 template <typename T, bool Enabled>
-[[nodiscard]] ZeroOneValueInfArrayPolicy<T, Enabled>::InfArrayT*
-ZeroOneValueInfArrayPolicy<T, Enabled>::find_inf_array(InT<T> key) const
+[[nodiscard]] ZeroOrValueInfArrayPolicy<T, Enabled>::InfArrayT*
+ZeroOrValueInfArrayPolicy<T, Enabled>::find_inf_array(InT<T> key) const
 {
     if (const auto it = map_inf_array_.find(key); it != map_inf_array_.end())
     {
@@ -42,7 +42,7 @@ ZeroOneValueInfArrayPolicy<T, Enabled>::find_inf_array(InT<T> key) const
 }
 
 template <typename T, bool Enabled>
-void ZeroOneValueInfArrayPolicy<T, Enabled>::erase_inf_array_by_ptr(const InfArrayT* self_ptr)
+void ZeroOrValueInfArrayPolicy<T, Enabled>::erase_inf_array_by_ptr(const InfArrayT* self_ptr)
 {
     for (auto it = map_inf_array_.begin(); it != map_inf_array_.end();)
     {
@@ -62,7 +62,7 @@ void ZeroOneValueInfArrayPolicy<T, Enabled>::erase_inf_array_by_ptr(const InfArr
 // ---------------------------------------------------------------------------
 
 template <typename T>
-void zero_one_value::PointerMap<T>::report_key_not_found(Key key, const char* site) const noexcept
+void zero_or_value::PointerMap<T>::report_key_not_found(Key key, const char* site) const noexcept
 {
     if constexpr (build_config::any_check)
     {
@@ -99,7 +99,7 @@ void zero_one_value::PointerMap<T>::report_key_not_found(Key key, const char* si
 }
 
 template <typename T>
-void zero_one_value::PointerMap<T>::replace_all_other_elm(Key key, InT<T> val, int idx) noexcept
+void zero_or_value::PointerMap<T>::replace_all_other_elm(Key key, InT<T> val, int idx) noexcept
 {
     const internal::RegistryWriteLock registry_lock(internal::registry_mutex());
     for (auto& item : vec_)
@@ -118,7 +118,7 @@ void zero_one_value::PointerMap<T>::replace_all_other_elm(Key key, InT<T> val, i
 }
 
 template <typename T>
-[[nodiscard]] int zero_one_value::PointerMap<T>::find_idx_array_const2(InT<T> key) const
+[[nodiscard]] int zero_or_value::PointerMap<T>::find_idx_array_const2(InT<T> key) const
 {
     if constexpr (is_not_bool)
     {
@@ -135,7 +135,7 @@ template <typename T>
 }
 
 template <typename T>
-void zero_one_value::PointerMap<T>::replace(Key key, InT<T> val, int idx) noexcept
+void zero_or_value::PointerMap<T>::replace(Key key, InT<T> val, int idx) noexcept
 {
     const internal::RegistryWriteLock registry_lock(internal::registry_mutex());
     for (auto& item : vec_)
@@ -153,7 +153,7 @@ void zero_one_value::PointerMap<T>::replace(Key key, InT<T> val, int idx) noexce
 }
 
 template <typename T>
-[[nodiscard]] T zero_one_value::PointerMap<T>::get_second_value(Key key) const noexcept
+[[nodiscard]] T zero_or_value::PointerMap<T>::get_second_value(Key key) const noexcept
 {
     const internal::RegistryReadLock registry_lock(internal::registry_mutex());
     if constexpr (is_not_bool)
@@ -176,7 +176,7 @@ template <typename T>
 }
 
 template <typename T>
-[[nodiscard]] int zero_one_value::PointerMap<T>::get_array_id(Key key) const noexcept
+[[nodiscard]] int zero_or_value::PointerMap<T>::get_array_id(Key key) const noexcept
 {
     const internal::RegistryReadLock registry_lock(internal::registry_mutex());
     for (const auto& item : vec_)
@@ -191,8 +191,8 @@ template <typename T>
 }
 
 template <typename T>
-[[nodiscard]] zero_one_value::PointerMap<T>::InfArrayT
-zero_one_value::PointerMap<T>::get_info_second_value(Key key) const noexcept
+[[nodiscard]] zero_or_value::PointerMap<T>::InfArrayT
+zero_or_value::PointerMap<T>::get_info_second_value(Key key) const noexcept
 {
     const internal::RegistryReadLock registry_lock(internal::registry_mutex());
     if constexpr (is_not_bool)
@@ -260,7 +260,7 @@ zero_one_value::PointerMap<T>::get_info_second_value(Key key) const noexcept
 // ---------------------------------------------------------------------------
 
 template <typename T>
-void zero_one_value::PointerMap<T>::insert_only_array_id(Key key, int array_id)
+void zero_or_value::PointerMap<T>::insert_only_array_id(Key key, int array_id)
 {
     // No second value yet: the sentinel index, not 0 (which is the slot
     // of whichever second value was registered first, by any array).

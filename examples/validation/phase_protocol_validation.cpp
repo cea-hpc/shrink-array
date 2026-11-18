@@ -15,7 +15,7 @@
  */
 
 // ============================================================================
-// Phase-protocol harness. Variant-agnostic: zero / zero_one_value / zero_any by the
+// Phase-protocol harness. Variant-agnostic: zero / zero_or_value / zero_any by the
 // compile-time macro (CHUNK_VARIANT_ZERO*), like the other harnesses.
 // ============================================================================
 //
@@ -56,16 +56,16 @@
 
 #include <sys/wait.h> // WIFEXITED, WEXITSTATUS
 
-#include "chunk/zero_array.h"           // zero::Array
-#include "chunk/zero_one_value_array.h" // zero_one_value::Array
-#include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/internal/zero_chunk.h"  // release_chunk_pools
-#include "chunk/config.h"               // chunk_config::use_zero*, build_config::needs_explicit_phases, any_check
-#include "chunk/internal/test_hooks.h"  // test_hooks::force_defer_every
-#include "chunk/internal/pmp_chunk.h"   // chunk_rank_cache, chunk_pmp_team_rank (the stale-rank case)
-#include "chunk/phases.h"               // begin_parallel_phase, finalize_parallel_phase, parallel_phase
-#include "chunk/runtime.h"              // Runtime::init
-#include "chunk/print.h"                // shrink_array::println
+#include "chunk/zero_array.h"          // zero::Array
+#include "chunk/zero_or_value_array.h" // zero_or_value::Array
+#include "chunk/zero_any_array.h"      // zero_any::Array
+#include "chunk/internal/zero_chunk.h" // release_chunk_pools
+#include "chunk/config.h"              // chunk_config::use_zero*, build_config::needs_explicit_phases, any_check
+#include "chunk/internal/test_hooks.h" // test_hooks::force_defer_every
+#include "chunk/internal/pmp_chunk.h"  // chunk_rank_cache, chunk_pmp_team_rank (the stale-rank case)
+#include "chunk/phases.h"              // begin_parallel_phase, finalize_parallel_phase, parallel_phase
+#include "chunk/runtime.h"             // Runtime::init
+#include "chunk/print.h"               // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
@@ -77,14 +77,14 @@ using namespace shrink_array;
 namespace
 {
 
-static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
-              "phase_protocol_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_ONE_VALUE or _ZERO_ANY");
+static_assert(chunk_config::use_zero || chunk_config::use_zero_or_value || chunk_config::use_zero_any,
+              "phase_protocol_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_OR_VALUE or _ZERO_ANY");
 
 template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -92,9 +92,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {

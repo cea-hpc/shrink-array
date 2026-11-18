@@ -15,7 +15,7 @@
  */
 
 // ============================================================================
-// Marking-path harness. Variant-agnostic: zero / zero_one_value / zero_any follow the
+// Marking-path harness. Variant-agnostic: zero / zero_or_value / zero_any follow the
 // compile-time macro (CHUNK_VARIANT_ZERO*), like the other harnesses here.
 // ============================================================================
 //
@@ -48,7 +48,7 @@
 //
 //   C  an array that has declared NO second value, after another array
 //      declared 7.0: a plain value, then 0; then 7.0 -- the OTHER array's
-//      second value, which must not compress here on zero_one_value -- then 0, and a
+//      second value, which must not compress here on zero_or_value -- then 0, and a
 //      read-back of every element. The first 0 written over a materialised
 //      chunk of such an array must find its candidate list.
 //
@@ -74,7 +74,7 @@
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
 #include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
@@ -111,7 +111,7 @@ template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -119,9 +119,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -129,7 +129,7 @@ constexpr const char* variant_name()
     }
 }
 
-// set_second_value only exists on zero_one_value / zero_any; no-op elsewhere.
+// set_second_value only exists on zero_or_value / zero_any; no-op elsewhere.
 template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& arr, const Val& value)
 {
@@ -194,7 +194,7 @@ static void phase(Array<double>& arr, int count, Fn&& body)
 
 /// @brief What a constant written everywhere must leave materialised, per
 ///        variant: `first` compresses everywhere; `declared` (the array's
-///        declared second value) compresses on zero_one_value / zero_any; `other`
+///        declared second value) compresses on zero_or_value / zero_any; `other`
 ///        (a value the array never declared) compresses on zero_any alone,
 ///        which discovers its second value per chunk.
 enum class Kind : std::uint8_t

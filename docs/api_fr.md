@@ -25,13 +25,13 @@ Tous les noms sont dans l'espace de noms `shrink_array`, `build_config` et `chun
 | classe | en-tête | compresse les chunks uniformes à… |
 |---|---|---|
 | `zero::Array<T, IntType = int>` | `chunk/zero_array.h` | `T{}` |
-| `zero_one_value::Array<T, IntType = int>` | `chunk/zero_one_value_array.h` | `T{}` ou la seconde valeur du tableau |
+| `zero_or_value::Array<T, IntType = int>` | `chunk/zero_or_value_array.h` | `T{}` ou la seconde valeur du tableau |
 | `zero_any::Array<T, IntType = int>` | `chunk/zero_any_array.h` | `T{}` ou n'importe quelle valeur, chunk par chunk |
-| `BitArray` | `chunk/bit_array.h` | `bool`, stocké sur un bit par élément (builds `zero_one_value`) |
+| `BitArray` | `chunk/bit_array.h` | `bool`, stocké sur un bit par élément (builds `zero_or_value`) |
 
 `IntType` est le type d'indice : `long` pour plus de 2³¹ éléments. La variante compilée est
 celle de la bibliothèque liée (`shrink_array::zero_any`, ...) ; `chunk_config::use_zero`,
-`chunk_config::use_zero_one_value` et `chunk_config::use_zero_any` indiquent laquelle, à la compilation.
+`chunk_config::use_zero_or_value` et `chunk_config::use_zero_any` indiquent laquelle, à la compilation.
 
 `chunk/mdspan.h` pose une vue multidimensionnelle, `f[i, j]`, sur chacun d'eux (`mdspan` C++23,
 ligne par ligne ou en tuiles alignées sur les chunks), et `chunk/mdspan_tile_ops.h` lit et met à jour
@@ -56,12 +56,12 @@ il invalide les proxys du tableau.
 | ajout | `push_back(v)`, `emplace_back(...)`, `pop_back()` | **(S)** seulement quand il faut un nouveau chunk |
 | remplacement **(S)** | `assign(n, v)`, `assign(first, last)`, `swap(other)`, `operator=` | |
 | itération | `begin()`, `end()`, `cbegin()`, `rbegin()`, `rend()` | itérateurs const à accès aléatoire, par valeur |
-| compression **(S)** | `compress()` | une passe de compression complète, immédiate (`zero::Array`, `zero_one_value::Array`, `zero_any::Array`) |
+| compression **(S)** | `compress()` | une passe de compression complète, immédiate (`zero::Array`, `zero_or_value::Array`, `zero_any::Array`) |
 | libérer les secondes valeurs **(S)** | `reclaim_second_values()` (statique) | libère les secondes valeurs qu'aucun chunk d'aucun `zero_any::Array<T>` n'utilise plus, pour que leurs identifiants soient réutilisés ; renvoie leur nombre, 0 en cas de refus (`zero_any::Array`) ; un point séquentiel sur **tous** les tableaux du type, voir plus bas. `try_reclaim_second_values()` renvoie un `std::expected<std::size_t, ReclaimRefusal>` : leur nombre, ou la raison du refus (`parallel_region`, `rechunk_in_progress`, `degraded_index`) |
 | statistiques | `stats()`, `written_chunk_count()` | pourcentage et nombre de chunks qui détiennent un tampon (chaque tableau imprime aussi une ligne à sa destruction) |
 | géométrie | `chunk_size()`, `rechunk_to(n)` **(S)** | `rechunk_to()` seulement dans les bibliothèques `_dyn` (sans effet dans les statiques) ; une taille refusée est un avertissement du journal. `try_rechunk_to(n)`, `try_set_chunk_size(n)` et la fonction libre `try_set_active_chunk_size(n)` renvoient à la place un `std::expected<void, ChunkSizeError>` : rien, ou la raison (`not_pow2_or_x64`, `exceeds_buffer`, `fixed_geometry` dans un build statique), sans message |
 
-`zero_one_value` seulement : `set_second_value(v)` **(S)**, avant les écritures, et `second_value()`.
+`zero_or_value` seulement : `set_second_value(v)` **(S)**, avant les écritures, et `second_value()`.
 
 **`reclaim_second_values()` : une précondition sur tout le type.** Les autres opérations **(S)**
 concernent un tableau ; celle-ci est statique et libère les secondes valeurs de tous les
@@ -143,7 +143,7 @@ interne.
 |---|---|
 | `export_chunk(a, c)` | séquentiel : l'état du chunk `c` ; `data` pointe dans `a`, valable jusqu'à la prochaine écriture de `a` |
 | `import_chunk(a, c, state)` | séquentiel : le chunk `c` prend `state`, une constante sans tampon ; `false` si le chunk a été écrit |
-| `export_array(a)` | séquentiel : la taille, `chunk_size()`, la seconde valeur de zero_one_value, l'état de chaque chunk |
+| `export_array(a)` | séquentiel : la taille, `chunk_size()`, la seconde valeur de zero_or_value, l'état de chaque chunk |
 | `import_array(a, state)` | séquentiel : `a` devient le tableau que décrit `state`, quoi qu'il contînt ; `false` (et `a` inchangé) à une autre taille de chunk ; les chunks au-delà de la taille de `state` (un `reserve()`) ne sont pas importés |
 
 Toutes les variantes et tous les types d'élément sauf `Bit` (BitArray). À appeler après la
@@ -216,7 +216,7 @@ La politique, ses valeurs par défaut et les résultats mesurés : [rechunk_adap
 | `build_config::threaded` | la bibliothèque fait tourner des threads (`CHUNK_THREADS` `openmp` ou `std`) |
 | `build_config::has_ompt`, `build_config::needs_explicit_phases` | construit avec l'outil OMPT, ou non |
 | `build_config::chunk_dynamic` | géométrie dynamique (bibliothèque `_dyn`) |
-| `chunk_config::use_zero`, `chunk_config::use_zero_one_value`, `chunk_config::use_zero_any` | la variante |
+| `chunk_config::use_zero`, `chunk_config::use_zero_or_value`, `chunk_config::use_zero_any` | la variante |
 | `chunk_config::stats` | build `CHUNK_STATS` |
 
 Variables d'environnement et options de build : [variables_environnement_fr.md](variables_environnement_fr.md).
@@ -275,3 +275,5 @@ rien dire), et disparaissent à la version mineure suivante.
 | `get_second_value()` | `second_value()` |
 | `get_nb_chunk_written()` | `written_chunk_count()` |
 | `pmp::max_threads()`, `pmp::team_size()`, `pmp::thread_rank()` | `max_threads()`, `team_size()`, `thread_rank()` |
+| `zero_one_value::Array`, `chunk/zero_one_value_array.h` | `zero_or_value::Array`, `chunk/zero_or_value_array.h` |
+| `chunk_config::use_zero_one_value`, `CHUNK_VARIANT_ZERO_ONE_VALUE` | `chunk_config::use_zero_or_value`, `CHUNK_VARIANT_ZERO_OR_VALUE` |

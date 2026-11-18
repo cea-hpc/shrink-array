@@ -15,7 +15,7 @@
  */
 
 // ============================================================================
-// Signed zero and NaN payload harness. Variant-agnostic: zero / zero_one_value /
+// Signed zero and NaN payload harness. Variant-agnostic: zero / zero_or_value /
 // zero_any by the compile-time macro (CHUNK_VARIANT_ZERO*), like the others.
 // ============================================================================
 //
@@ -36,7 +36,7 @@
 //   onto-plus-zero    one -0.0 onto a materialised +0.0
 //   mixed-run         a chunk of alternating +0.0 / -0.0, compressed
 //   fill-range        fill_range and fill_range_mt of -0.0, then compressed
-//   second-value      -0.0 declared as the second value (zero_one_value), runs of
+//   second-value      -0.0 declared as the second value (zero_or_value), runs of
 //                     it and of +0.0 side by side, compressed
 //
 //   Plus: a run of one NaN payload compresses and reads back bit for bit, and
@@ -60,13 +60,13 @@
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
 #include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/range_ops.h"             // fill_range, fill_range_mt
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
 #include "chunk/internal/same_value.h"   // ValueIdentity, same_value
-#include "chunk/config.h"                // chunk_config::use_zero_one_value*, build_config::needs_explicit_phases
+#include "chunk/config.h"                // chunk_config::use_zero_or_value*, build_config::needs_explicit_phases
 #include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
 #include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/print.h"                 // shrink_array::println
@@ -123,7 +123,7 @@ template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -131,9 +131,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -395,7 +395,7 @@ static int run_type(const char* type_name)
         arr.clear();
     }
 
-    // second-value: -0.0 as the second constant (zero_one_value), next to runs of +0.0.
+    // second-value: -0.0 as the second constant (zero_or_value), next to runs of +0.0.
     if constexpr (requires(Array<T> a) { a.set_second_value(V::neg()); })
     {
         Array<T>       arr(n);

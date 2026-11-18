@@ -16,13 +16,13 @@
 
 #pragma once
 
-// Out-of-line bodies of zero_one_value::FastBlockSupport. Included at the end of zero_one_value_array.h, so self sees
+// Out-of-line bodies of zero_or_value::FastBlockSupport. Included at the end of zero_or_value_array.h, so self sees
 // a complete Derived.
 
 #include <algorithm> // std::min (sweep_leftover_candidates)
 #include <tuple>     // std::get on the candidate tuples (sweep of the other second-value keys)
 
-#include "chunk/internal/zero_one_value_array_parallel.h" // zero_one_value::FastBlockSupport, the class these bodies belong to
+#include "chunk/internal/zero_or_value_array_parallel.h" // zero_or_value::FastBlockSupport, the class these bodies belong to
 #include "chunk/internal/array_chunk_parallel_common_inline.h" // flush_pending_deferred_ops
 #include "chunk/internal/pmp_chunk.h"                          // CHUNK_PMP_* (make_block_compression)
 #include "chunk/internal/chunk_size_policy.h"                  // set_thread_chunk_size in make_block_compression
@@ -34,7 +34,7 @@ namespace shrink_array
 {
 
 template <typename Derived>
-void zero_one_value::FastBlockSupport<Derived, true>::make_block_compression(this Derived& self)
+void zero_or_value::FastBlockSupport<Derived, true>::make_block_compression(this Derived& self)
 {
     if (!block_pass_refused_in_region())
     {
@@ -43,7 +43,7 @@ void zero_one_value::FastBlockSupport<Derived, true>::make_block_compression(thi
 }
 
 template <typename Derived>
-void zero_one_value::FastBlockSupport<Derived, true>::drain_candidates(this Derived& self)
+void zero_or_value::FastBlockSupport<Derived, true>::drain_candidates(this Derived& self)
 {
     if constexpr (build_config::chunk_dynamic)
     {
@@ -81,7 +81,7 @@ void zero_one_value::FastBlockSupport<Derived, true>::drain_candidates(this Deri
 }
 
 template <typename Derived>
-void zero_one_value::FastBlockSupport<Derived, true>::drain_own_candidates(this Derived& self)
+void zero_or_value::FastBlockSupport<Derived, true>::drain_own_candidates(this Derived& self)
 {
     using ProxyT   = Traits::ProxyType;
     using ManagerT = Traits::ManagerType;
@@ -98,7 +98,7 @@ void zero_one_value::FastBlockSupport<Derived, true>::drain_own_candidates(this 
     const int  rank     = CHUNK_PMP_THREAD_RANK;
     const int  array_id = ProxyT::array_registry->get_array_id(self.registry_key());
     const auto inf      = self.get_info_second_value();
-    auto&      by_value = ManagerT::zero_one_value_candidates_map_thr[rank];
+    auto&      by_value = ManagerT::zero_or_value_candidates_map_thr[rank];
     if (const auto it = by_value.find(inf.second_value); it != by_value.end() && it->second)
     {
         internal::with_own_candidates_only(*it->second, array_id,
@@ -120,8 +120,8 @@ void zero_one_value::FastBlockSupport<Derived, true>::drain_own_candidates(this 
 }
 
 template <typename Derived>
-void zero_one_value::FastBlockSupport<Derived, true>::sweep_leftover_candidates([[maybe_unused]] this Derived& self,
-                                                                                [[maybe_unused]] bool own_rank_only)
+void zero_or_value::FastBlockSupport<Derived, true>::sweep_leftover_candidates([[maybe_unused]] this Derived& self,
+                                                                               [[maybe_unused]] bool own_rank_only)
 {
     // The passes drain this array's CURRENT second-value key only. Writes queued before a
     // set_second_value() (or a copy-assignment) sit under an EARLIER key; left there,
@@ -137,13 +137,13 @@ void zero_one_value::FastBlockSupport<Derived, true>::sweep_leftover_candidates(
         const int  array_id = ProxyT::array_registry->get_array_id(self.registry_key());
         const auto inf      = self.get_info_second_value();
         const int  thr_self = get_thr_rank_fast();
-        const auto n_rank   = static_cast<int>(ManagerT::zero_one_value_candidates_map_thr.size());
+        const auto n_rank   = static_cast<int>(ManagerT::zero_or_value_candidates_map_thr.size());
         const int  first    = own_rank_only ? thr_self : 0;
         const int  last     = own_rank_only ? std::min(thr_self + 1, n_rank) : n_rank;
         bool       found    = false;
         for (int thr = first; thr < last; ++thr)
         {
-            for (const auto& kv : ManagerT::zero_one_value_candidates_map_thr[thr])
+            for (const auto& kv : ManagerT::zero_or_value_candidates_map_thr[thr])
             {
                 if (!kv.second)
                 {
@@ -162,7 +162,7 @@ void zero_one_value::FastBlockSupport<Derived, true>::sweep_leftover_candidates(
         }
         if (found)
         {
-            ManagerT::remove_from_zero_one_value_candidates_by_array_id(array_id, own_rank_only);
+            ManagerT::remove_from_zero_or_value_candidates_by_array_id(array_id, own_rank_only);
         }
     }
 }

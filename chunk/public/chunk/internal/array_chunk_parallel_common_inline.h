@@ -56,7 +56,7 @@ void ParallelSupportCommon<Derived>::flush_pending_deferred_ops(bool force, bool
     if constexpr (chunk_config::use_fast_block_compression)
     {
         // Name CompressionManager<value_type, ChunkType> directly rather than via
-        // ChunkType::CompressionManagerType: that alias is public on zero_one_value but
+        // ChunkType::CompressionManagerType: that alias is public on zero_or_value but
         // private on zero_any. Both name the same type; this form avoids the
         // access check on the alias.
         using CM = CompressionManager<value_type, ChunkType>;

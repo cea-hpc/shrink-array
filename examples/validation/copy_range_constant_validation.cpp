@@ -15,7 +15,7 @@
  */
 
 // ============================================================================
-// copy_range over whole chunks. Variant-agnostic: zero / zero_one_value /
+// copy_range over whole chunks. Variant-agnostic: zero / zero_or_value /
 // zero_any follow the compile-time macro (CHUNK_VARIANT_ZERO*), like the
 // other harnesses here.
 // ============================================================================
@@ -35,9 +35,9 @@
 // The other variants queue the chunks for the pass: only property 1 is
 // checked there, and
 //
-//   3. on zero and zero_one_value, a source equal to the constant a chunk is
+//   3. on zero and zero_or_value, a source equal to the constant a chunk is
 //      compressed at writes nothing: the chunk stays compressed (whole or in
-//      part, at the first constant or zero_one_value::Chunk's second); a source equal to it
+//      part, at the first constant or zero_or_value::Chunk's second); a source equal to it
 //      on a prefix only materialises the chunk from the first other value.
 //
 // WHAT IT EXERCISES -- an array of n_chunks chunks plus a partial tail:
@@ -55,7 +55,7 @@
 //   same-first  first constant <- the first constant (0.0) everywhere, partial
 //               last chunk included: nothing materialised on any variant
 //   same-part   first constant <- 0.0 over [S/2, N - S/2): nothing materialised
-//   same-second second value   <- 1.0 everywhere: nothing on zero_one_value::Chunk and zero_any::Chunk
+//   same-second second value   <- 1.0 everywhere: nothing on zero_or_value::Chunk and zero_any::Chunk
 //   prefix      first constant <- 0.0 on the first half of each chunk, plain
 //               values after: every chunk materialised, every element right
 //
@@ -72,7 +72,7 @@
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default idx_type = int
 #include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/range_ops.h"             // copy_range
 #include "chunk/runtime.h"               // Runtime::init
@@ -92,7 +92,7 @@ template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -100,9 +100,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -248,7 +248,7 @@ int run(int /*argc*/, char** /*argv*/)
         int                 mat_expected;
         int                 count_to;    // chunks counted: [0, count_to)
         int                 mat_v1 = -1; // zero: chunks expected materialised, -1 unchecked
-        int                 mat_v2 = -1; // zero_one_value::Chunk: likewise
+        int                 mat_v2 = -1; // zero_or_value::Chunk: likewise
     };
 
     // Half of each chunk at the first constant, then plain values.
@@ -308,7 +308,7 @@ int run(int /*argc*/, char** /*argv*/)
         const long bad =
             mismatches(a, 0, Ntot, [&](long i)
                        { return (i >= c.lo && i < c.hi) ? c.src[static_cast<std::size_t>(i)] : before(i); });
-        constexpr bool v1           = !chunk_config::use_zero_any && !chunk_config::use_zero_one_value;
+        constexpr bool v1           = !chunk_config::use_zero_any && !chunk_config::use_zero_or_value;
         const int      mat_expected = chunk_config::use_zero_any ? c.mat_expected : v1 ? c.mat_v1 : c.mat_v2;
         fails += report(c.name, bad, materialised(a, 0, c.count_to), mat_expected, mat_expected >= 0);
         a.clear();

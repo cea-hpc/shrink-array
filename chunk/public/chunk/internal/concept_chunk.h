@@ -31,13 +31,13 @@ class Chunk;
 
 } // namespace zero
 
-namespace zero_one_value
+namespace zero_or_value
 {
 
 template <typename T>
 class Chunk;
 
-} // namespace zero_one_value
+} // namespace zero_or_value
 
 namespace zero_any
 {
@@ -56,13 +56,13 @@ concept IsChunk = std::is_same_v<ChunkT<T>, zero::Chunk<T>>;
 template <template <typename> typename ChunkT, typename T>
 concept IsZeroAnyFamily = is_zero_any_family_v<ChunkT<T>>;
 
-/// @brief ChunkT<T> is zero_one_value::Chunk<T>.
+/// @brief ChunkT<T> is zero_or_value::Chunk<T>.
 template <template <typename> typename ChunkT, typename T>
-concept IsZeroOneValue = std::is_same_v<ChunkT<T>, zero_one_value::Chunk<T>>;
+concept IsZeroOrValue = std::is_same_v<ChunkT<T>, zero_or_value::Chunk<T>>;
 
-/// @brief ChunkT<T> is zero_one_value::Chunk<T> or of the zero_any family.
+/// @brief ChunkT<T> is zero_or_value::Chunk<T> or of the zero_any family.
 template <template <typename> typename ChunkT, typename T>
-concept IsSecondValueFamily = IsZeroOneValue<ChunkT, T> || IsZeroAnyFamily<ChunkT, T>;
+concept IsSecondValueFamily = IsZeroOrValue<ChunkT, T> || IsZeroAnyFamily<ChunkT, T>;
 
 /// @brief The chunk template of a chunk type (specialised below).
 template <typename>

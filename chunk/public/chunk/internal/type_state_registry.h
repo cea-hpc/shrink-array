@@ -22,7 +22,7 @@
  *
  * @details The declarations (type_state_registry_decl.h) and the template bodies
  *          (type_state_registry_inline.h), kept apart so that a header can name
- *          TypeStateRegistry without pulling in the full zero/zero_one_value/zero_any
+ *          TypeStateRegistry without pulling in the full zero/zero_or_value/zero_any
  *          definitions.
  *
  * @see type_state.h for the TypeStateInterface interface this class dispatches

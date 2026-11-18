@@ -337,7 +337,7 @@ void TypeStateRegistry::compress_chunk_to_compress_potentially(bool apply) const
     }
 
     // ONE region for every type (precedent: clear_list_block_free_thr), not
-    // one per type -- and per second value for zero_one_value. Each thread runs every
+    // one per type -- and per second value for zero_or_value. Each thread runs every
     // type's per-rank body for its own rank; those touch rank-local lists
     // only, so the types need no barrier between them. Then the serial mop-up
     // of the ranks past the team, for the variants whose pass had one.

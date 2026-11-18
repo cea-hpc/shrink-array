@@ -94,8 +94,8 @@ DEFAULT_CONFIGS = [
 # (shrink_bench_tbb_<variant>_<size>, examples/shrink_bench/CMakeLists.txt). It
 # exists only in the std-backend builds made with CHUNK_WITH_TBB, so these
 # variants are looked for there and nowhere else (builds.skip_variant_on_config).
-TBB_VARIANTS = ["tbb_zero", "tbb_zero_one_value", "tbb_zero_any"]
-SHRINK_VARIANTS = ["zero", "zero_one_value", "zero_any"]   # the three array variants
+TBB_VARIANTS = ["tbb_zero", "tbb_zero_or_value", "tbb_zero_any"]
+SHRINK_VARIANTS = ["zero", "zero_or_value", "zero_any"]   # the three array variants
 DEFAULT_VARIANTS       = ["vector"] + SHRINK_VARIANTS + ["std_alloc"] + TBB_VARIANTS
 
 
@@ -180,9 +180,11 @@ def find_bench_exe(directory, rest):
 # normalize_variant() reads them as the new names, so that old and new runs
 # compare. On a command line an old label is refused (check_variant_label).
 LEGACY_VARIANTS = {
-    "chunk": "zero", "chunk2": "zero_one_value", "chunk2a": "zero_any",
-    "tbb_chunk": "tbb_zero", "tbb_chunk2": "tbb_zero_one_value",
+    "chunk": "zero", "chunk2": "zero_or_value", "chunk2a": "zero_any",
+    "tbb_chunk": "tbb_zero", "tbb_chunk2": "tbb_zero_or_value",
     "tbb_chunk2a": "tbb_zero_any",
+    # zero_or_value was zero_one_value until 0.3
+    "zero_one_value": "zero_or_value", "tbb_zero_one_value": "tbb_zero_or_value",
 }
 
 
@@ -190,7 +192,7 @@ def normalize_variant(label):
     """The current name of a variant label READ FROM DATA (a perf database, a
     summary, a log): an old one (chunk2a, chunk2a@256, chunk2a_int64@dyn,
     tbb_chunk2) becomes its new name (zero_any, zero_any@256, zero_any_int64@dyn,
-    tbb_zero_one_value); anything else comes back unchanged. For a label given on
+    tbb_zero_or_value); anything else comes back unchanged. For a label given on
     a command line, see check_variant_label()."""
     if not isinstance(label, str):
         return label
@@ -393,7 +395,7 @@ SCALING_NUMA_INTERLEAVE = "off"
 # both geometries between them; zero_any@dyn is the richest path (a second
 # value per chunk, re-chunking). Not a sweep: the 32-bit checks cover the
 # rest, and this only asks whether 64-bit indices change a result.
-INT64_CHECK_VARIANTS = ["zero@1024", "zero_one_value@1024", "zero_any@dyn"]
+INT64_CHECK_VARIANTS = ["zero@1024", "zero_or_value@1024", "zero_any@dyn"]
 
 # --- Mode presets --------------------------------------------------------
 # Each preset overrides threads / reps_perf / full_reps_threads unless the user
@@ -523,4 +525,4 @@ def fit_threads(wanted, cap, machine_points):
     return sorted(kept)
 
 
-DEFAULT_STATS_MARK_RATIO_MIN = {"zero_one_value": 0.3, "zero_any": 0.3}
+DEFAULT_STATS_MARK_RATIO_MIN = {"zero_or_value": 0.3, "zero_any": 0.3}

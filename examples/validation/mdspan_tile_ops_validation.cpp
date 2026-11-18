@@ -48,13 +48,13 @@
 #include <type_traits> // std::conditional_t
 #include <vector>      // std::vector (the reference of fill_box)
 
-#include "chunk/zero_array.h"           // zero::Array
-#include "chunk/zero_one_value_array.h" // zero_one_value::Array
-#include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/internal/zero_chunk.h"  // release_chunk_pools, Runtime::shutdown
-#include "chunk/config.h"               // chunk_config::use_zero_one_value*
-#include "chunk/print.h"                // shrink_array::println
-#include "chunk/phases.h"               // parallel_phase
+#include "chunk/zero_array.h"          // zero::Array
+#include "chunk/zero_or_value_array.h" // zero_or_value::Array
+#include "chunk/zero_any_array.h"      // zero_any::Array
+#include "chunk/internal/zero_chunk.h" // release_chunk_pools, Runtime::shutdown
+#include "chunk/config.h"              // chunk_config::use_zero_or_value*
+#include "chunk/print.h"               // shrink_array::println
+#include "chunk/phases.h"              // parallel_phase
 #include "chunk/mdspan_tile_ops.h" // md::for_each_tile(_mt), md::update_tiles(_mt), md::fill_box(_mt), SHRINK_ARRAY_HAS_MDSPAN
 #include "chunk/runtime.h"         // Runtime::init
 #include "chunk/internal/pmp_chunk.h" // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
@@ -69,7 +69,7 @@ template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 int fails = 0;
 

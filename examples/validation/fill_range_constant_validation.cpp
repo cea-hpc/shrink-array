@@ -22,10 +22,10 @@
 // fill_range compresses a fully covered zero_any::Chunk chunk at once, whatever the
 // value (zero_any::Chunk::compress, as the rechunk fold): no chunk of the range is
 // left materialised, the buffer of one is back in the pool before the next is
-// armed. zero does the same for a fill of first_value, zero_one_value for a fill of
+// armed. zero does the same for a fill of first_value, zero_or_value for a fill of
 // either of its constants. Guards, on every variant: the values read back. On
 // zero_any::Chunk: no covered chunk stays materialised, from each starting state; on
-// zero and zero_one_value, after a fill of one of their constants.
+// zero and zero_or_value, after a fill of one of their constants.
 //
 //   fresh     all chunks at first_value, filled with a plain value;
 //   second    all compressed at V (a second value), filled with W;
@@ -38,7 +38,7 @@
 //             back every value (the teardown checks the registry is empty).
 //   second-value  an array whose second value is 1.0: materialised chunks
 //             filled with 1.0, then chunks at first_value filled with 1.0 --
-//             compressed at once on zero_one_value and zero_any, not on zero (1.0 is no
+//             compressed at once on zero_or_value and zero_any, not on zero (1.0 is no
 //             constant of zero);
 //   constant  a fresh array filled with first_value, whole and in part, then
 //             fill_range_mt from every thread: nothing to write, no chunk
@@ -53,12 +53,12 @@
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default idx_type = int
 #include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/range_ops.h"             // fill_range, fill_range_mt
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
-#include "chunk/config.h"                // chunk_config::use_zero_one_value*
+#include "chunk/config.h"                // chunk_config::use_zero_or_value*
 #include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/print.h"                 // shrink_array::println
 
@@ -75,7 +75,7 @@ template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -83,9 +83,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -131,7 +131,7 @@ long materialised(const Array<double>& a, long c0, long c1)
 
 int fails = 0;
 
-// zero_one_value::Chunk and zero_any::Chunk: register @p v as the array's second value (zero has none).
+// zero_or_value::Chunk and zero_any::Chunk: register @p v as the array's second value (zero has none).
 template <typename Arr>
 void maybe_set_second_value(Arr& a, double v)
 {
@@ -160,8 +160,8 @@ void expect_values(const char* scenario, const Array<double>& a, auto want)
 }
 
 // The covered chunks [c0, c1) are all compressed: on zero_any::Chunk whatever the
-// value, on zero and zero_one_value after a fill of a constant of theirs
-// (@p constant_fill: first_value, or zero_one_value::Chunk's second value).
+// value, on zero and zero_or_value after a fill of a constant of theirs
+// (@p constant_fill: first_value, or zero_or_value::Chunk's second value).
 void expect_compressed(const char* scenario, const Array<double>& a, long c0, long c1, bool constant_fill = false)
 {
     if (chunk_config::use_zero_any || constant_fill)
@@ -248,9 +248,9 @@ int run(int /*argc*/, char** /*argv*/)
         expect_compressed("distinct", a, 0, n_chunks, true);
     }
 
-    // second-value: zero_one_value::Chunk's second constant (zero_any::Chunk: any value; zero: none).
+    // second-value: zero_or_value::Chunk's second constant (zero_any::Chunk: any value; zero: none).
     {
-        constexpr bool v1 = !chunk_config::use_zero_any && !chunk_config::use_zero_one_value;
+        constexpr bool v1 = !chunk_config::use_zero_any && !chunk_config::use_zero_or_value;
         Array<double>  a(static_cast<int>(N));
         maybe_set_second_value(a, 1.0);
         region(N, [&](long i) { a[static_cast<int>(i)] = 0.5 * static_cast<double>(i % 7) + 1.0; });

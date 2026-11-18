@@ -177,7 +177,7 @@ struct ArithmeticOperationProxyContext : public BaseArithmeticContext<T, zero::P
     Op       operation; ///< functor implementing the operation
 };
 
-/// @brief Context of a deferred zero_one_value::Proxy / zero_any::Proxy write without operation.
+/// @brief Context of a deferred zero_or_value::Proxy / zero_any::Proxy write without operation.
 template <typename T, typename ChunkT, typename ProxyT>
 struct ArithmeticContext : public BaseArithmeticContext<T, ProxyT, ChunkT>
 {
@@ -189,7 +189,7 @@ struct ArithmeticContext : public BaseArithmeticContext<T, ProxyT, ChunkT>
     ArithmeticContext(const ProxyT& proxy, ArrayKey<ChunkT> array_ptr) : Base(proxy, array_ptr) {}
 };
 
-/// @brief Context of a deferred zero_one_value::Proxy / zero_any::Proxy compound operation: the
+/// @brief Context of a deferred zero_or_value::Proxy / zero_any::Proxy compound operation: the
 ///        operand and the operation.
 /// @tparam OperandT the operand as stored (ProxyBase::enqueue_async_arithmetic).
 template <typename T, typename Op, typename ChunkT, typename ProxyT, typename OperandT = T>
@@ -211,7 +211,7 @@ struct ArithmeticOperationContext : public BaseArithmeticContext<T, ProxyT, Chun
     Op       operation; ///< functor implementing the operation
 };
 
-/// @brief Context of a deferred zero_one_value::Proxy / zero_any::Proxy assignment: the assigned value.
+/// @brief Context of a deferred zero_or_value::Proxy / zero_any::Proxy assignment: the assigned value.
 template <typename T, typename U, typename ChunkT, typename ProxyT>
 struct ArithmeticAffectationContext : public BaseArithmeticContext<T, ProxyT, ChunkT>
 {

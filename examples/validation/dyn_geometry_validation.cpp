@@ -15,7 +15,7 @@
  */
 
 // ============================================================================
-// Dynamic-geometry validation harness. Variant-agnostic: tests zero / zero_one_value /
+// Dynamic-geometry validation harness. Variant-agnostic: tests zero / zero_or_value /
 // zero_any depending on the compile-time macro (CHUNK_VARIANT_ZERO*), like
 // rechunk_validation.cpp and shrink_bench.cpp.
 // ============================================================================
@@ -56,7 +56,7 @@
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
 #include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/runtime.h"               // Runtime::register_chunk_size, init
 #include "chunk/internal/chunk_size_policy.h" // const_buffer_size, set_active_chunk_size, set_thread_chunk_size, chunk_size_error
@@ -74,8 +74,8 @@ namespace validation::dyn_geometry_validation
 {
 
 // --- Active variant selection (same shape as rechunk_validation.cpp) ---------
-static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
-              "dyn_geometry_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_ONE_VALUE or _ZERO_ANY");
+static_assert(chunk_config::use_zero || chunk_config::use_zero_or_value || chunk_config::use_zero_any,
+              "dyn_geometry_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_OR_VALUE or _ZERO_ANY");
 
 static_assert(build_config::chunk_dynamic,
               "dyn_geometry_validation is meaningless without CHUNK_DYNAMIC: with the "
@@ -85,7 +85,7 @@ template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -93,9 +93,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -103,8 +103,8 @@ constexpr const char* variant_name()
     }
 }
 
-// set_second_value only exists on zero_one_value / zero_any; no-op elsewhere. Required on
-// zero_one_value before any write (its candidate list is keyed by second_value), so it
+// set_second_value only exists on zero_or_value / zero_any; no-op elsewhere. Required on
+// zero_or_value before any write (its candidate list is keyed by second_value), so it
 // is done here for the same reason rechunk_validation does it.
 template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& arr, const Val& value)

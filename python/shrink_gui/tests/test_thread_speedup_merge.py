@@ -21,7 +21,7 @@ SCRIPT = PYDIR / "thread_speedup.py"
 SUMMARY_HEADER = ["target", "exe", "threads", "ok_runs", "best_s", "median_s", "best_wall_s",
                   "best_compute_s", "peak_mem_mo", "speedup", "efficiency"]
 RESULTS_HEADER = ["target", "exe", "threads", "rep", "wall_s", "compute_s", "mem_mo", "rc"]
-PLAN = ["shrink_bench_omp_vector_perf", "shrink_bench_omp_zero_dyn", "shrink_bench_omp_zero_one_value_dyn",
+PLAN = ["shrink_bench_omp_vector_perf", "shrink_bench_omp_zero_dyn", "shrink_bench_omp_zero_or_value_dyn",
         "shrink_bench_omp_zero_any_dyn"]
 
 
@@ -67,7 +67,7 @@ def test_merge_of_three_pool_jobs(tmp_path, python):
     # directory given, n3's left out.
     a = fake_run(tmp_path, "inti5012", ["shrink_bench_omp_zero_dyn", "shrink_bench_omp_zero_any_dyn"], 8.0)
     b = fake_run(tmp_path, "inti5013", ["shrink_bench_omp_vector_perf"], 4.0)
-    c = fake_run(tmp_path, "inti5014", ["shrink_bench_omp_zero_one_value_dyn", "shrink_bench_omp_zero_any_dyn"],
+    c = fake_run(tmp_path, "inti5014", ["shrink_bench_omp_zero_or_value_dyn", "shrink_bench_omp_zero_any_dyn"],
                  6.0, cpu="AMD EPYC 7763", multiply=1.0)
     out = tmp_path / "merged"
     p = subprocess.run([python, str(SCRIPT), "--merge", str(a), str(b), str(c), "--out", str(out)],
@@ -91,7 +91,7 @@ def test_merge_of_three_pool_jobs(tmp_path, python):
     meta = json.loads((out / "meta.json").read_text())
     assert meta["host"] == "inti5012+inti5013+inti5014" and meta["threads"] == [1, 2, 4]
     assert [m["dir"] for m in meta["merge"]] == [str(a), str(b), str(c)]
-    assert meta["merge"][2]["execs"] == ["shrink_bench_omp_zero_one_value_dyn"]
+    assert meta["merge"][2]["execs"] == ["shrink_bench_omp_zero_or_value_dyn"]
     gp = (out / "plot.gp").read_text()
     assert "omp-llvm -- inti5012+inti5013+inti5014 (perf, --multiply 2, compute time)" in gp
     # the gnuplot curves in the runs' plan order: vector first

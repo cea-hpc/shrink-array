@@ -5,7 +5,7 @@
 > Status: November 2026. This document explains how writers, compressors,
 > deferred-write flushes and readers exclude each other **without a lock on the
 > write path**. The overall machinery (proxies, deferred writes, in-flight
-> compression) is described in [algo_zero_one_value.md](algo_zero_one_value.md) §7 and §8. The names used
+> compression) is described in [algo_zero_or_value.md](algo_zero_or_value.md) §7 and §8. The names used
 > are those of the current tree; when in doubt, the code is the reference, in particular the
 > comments in `internal/write_compress_sync_policy.h`, which carry the ordering proof.
 
@@ -481,5 +481,5 @@ together with the form of the protocol that ran.
 | the writer side | `internal/proxy_base_inline.h` (`write_with_optional_lock_impl`) |
 | the compressor side, the counters | `internal/compression_manager.h`, `internal/compression_manager_inline.h` (`start`, `finish`, `wait_out_compressor`) |
 | per-chunk marks | `internal/chunk_base.h` (`steal_mark_`) |
-| the compression pass | `internal/zero_one_value_chunk_inline.h`, `internal/zero_any_chunk_inline.h`, `internal/zero_chunk_inline.h` (`make_block_compression*`), `internal/block_pass_precheck.h` |
+| the compression pass | `internal/zero_or_value_chunk_inline.h`, `internal/zero_any_chunk_inline.h`, `internal/zero_chunk_inline.h` (`make_block_compression*`), `internal/block_pass_precheck.h` |
 | readers and reclamation | `internal/read_reclaim.h` |

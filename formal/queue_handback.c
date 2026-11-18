@@ -32,7 +32,7 @@
  *   queued                      proxy_base.h      tab_is_inside_chunk_list_to_compress[t][c]
  *   mark_candidate()            queue_flag.h      try_queue(), from add_to_compression_list()
  *   listed[r]                   the entries of the chunk in rank r's candidate list
- *   run_pass()                  zero_chunk_inline.h, zero_one_value_chunk_inline.h,
+ *   run_pass()                  zero_chunk_inline.h, zero_or_value_chunk_inline.h,
  *                               zero_any_chunk_inline.h  make_block_compression():
  *                                 claim             steal_mark() of every candidate
  *                                 start()           compression_manager start(): heavy barrier,
