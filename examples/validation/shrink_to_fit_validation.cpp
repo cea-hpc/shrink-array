@@ -32,15 +32,15 @@
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::as_const
 
-#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
-#include "chunk/zero_array.h"           // zero::Array
-#include "chunk/zero_one_value_array.h" // zero_one_value::Array
-#include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
-#include "chunk/manage_ompt.h"          // parallel_phase
-#include "chunk/config.h"               // chunk_config::use_zero*
-#include "chunk/PMP_CHUNK.h"            // pmp::current_team
-#include "chunk/internal/print.h"       // shrink_array::println
+#include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
+#include "chunk/zero_array.h"            // zero::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
+#include "chunk/zero_any_array.h"        // zero_any::Array
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/phases.h"                // parallel_phase
+#include "chunk/config.h"                // chunk_config::use_zero*
+#include "chunk/internal/pmp_chunk.h"    // pmp::current_team
+#include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
 
@@ -55,7 +55,7 @@ namespace
 using Arr = std::conditional_t<
     chunk_config::use_zero_any,
     zero_any::Array<double>,
-    std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<double>, zero::Array<double>>>;
+    std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<double>, zero::Array<double>>>;
 
 constexpr const char* variant_name()
 {
@@ -63,9 +63,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -75,8 +75,8 @@ constexpr const char* variant_name()
 
 /// The value of chunk @p chunk. zero_any: zero for the even ones (the first
 /// constant), chunk + 1 for the odd ones (one second constant per chunk, the
-/// queued kind). zero and zero_one_value: zero everywhere -- zero compresses
-/// to that constant only, and zero_one_value to a second one only when the
+/// queued kind). zero and zero_or_value: zero everywhere -- zero compresses
+/// to that constant only, and zero_or_value to a second one only when the
 /// array declares it.
 double chunk_value(int chunk)
 {
@@ -91,9 +91,9 @@ double chunk_value(int chunk)
 /// still holding a buffer, plus the elements that read back wrong.
 int one_case(int n_chunks)
 {
-    Arr       arr(0);
-    const int chunk_size = static_cast<int>(arr.chunk_size());
-    const int count      = n_chunks * chunk_size;
+    Arr        arr(0);
+    const auto chunk_size = static_cast<int>(arr.chunk_size());
+    const int  count      = n_chunks * chunk_size;
     arr.resize(count);
     // The team's worksharing, not `omp for`: the std backend has no OpenMP, the
     // pragma would vanish and every rank would write every chunk.
@@ -112,7 +112,7 @@ int one_case(int n_chunks)
         });
     arr.shrink_to_fit();
 
-    const int   written = arr.get_nb_chunk_written();
+    const int   written = arr.written_chunk_count();
     int         wrong   = 0;
     const auto& carr    = std::as_const(arr);
     for (int index = 0; index < count; ++index)
@@ -131,7 +131,7 @@ int one_case(int n_chunks)
 
 int run(int /*argc*/, char** /*argv*/)
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
     int fails = 0;
     for (const int n_chunks : {1, 10, 100})
     {

@@ -215,7 +215,7 @@ class Method:
     member_requires: str | None
     brace: int             # index of '{'
     end: int               # index of matching '}'
-    nb_lines: int
+    n_lines: int
     name: str = ""
     outer_ns: str = ""     # the namespace block the definition goes in
 
@@ -385,7 +385,12 @@ def parse_method_head(head: str):
         return None
     # the declaration must END with a parameter list + qualifiers (not `= value` nor a brace init)
     tail = norm_ws(rest)
-    if not re.search(r"\)(\s*(const|volatile|noexcept(\([^{}]*\))?|override|final|&&?|->\s*[^{]+|requires\b[^{]*|:\s*[^{]+))*\s*$", tail):
+    # The qualifiers, then at most one tail (trailing return, requires-clause, ctor
+    # initialisers) running to the end: no repeated group of overlapping unbounded
+    # alternatives, which backtracked exponentially on a tail that does not match
+    # (12 "-> a" took 30 s; Sonar python:S5852).
+    if not re.search(r"\)(?:\s*(?:const|volatile|noexcept(?:\([^{}]*\))?|override|final|&&?))*\s*"
+                     r"(?:->\s*[^{]+|requires\b[^{]*|:\s*[^{]+)?$", tail):
         return None
     probe = rest[:30]
     offset = head.find(probe)
@@ -588,7 +593,6 @@ def build_definition(m: Method, raw: str):
     qual = "::".join([*nss[1:], *[c.qualifier() for c in m.cls_chain]])
     # return type: outside the class scope, a class-local name is written Class<T>::Name
     # (C++20: no `typename` needed) and a name of the class's namespace gets that namespace
-    trailing = None
     if ret and ret not in ("auto", "decltype(auto)"):
         ret = qualify_return_type(ret, m, nss)
     has_inline = bool({"constexpr", "consteval", "inline", "CHUNK_FORCE_INLINE"} & set(specs))
@@ -604,13 +608,6 @@ def build_definition(m: Method, raw: str):
     if def_quals:
         # a trailing return already present in the suffix: keep order ... -> R requires
         sig += " " + def_quals
-    if trailing:
-        # insert before a requires-clause if any
-        if " requires " in (" " + def_quals):
-            k = sig.rfind(" requires ")
-            sig = sig[:k] + f" -> {trailing}" + sig[k:]
-        else:
-            sig += f" -> {trailing}"
     sig = wrap_signature(sig)
     if init:
         sig += "\n    " + init
@@ -772,7 +769,7 @@ def migrate(root: str, threshold: int, dry_run: bool, verbose: bool):
         sdir = os.path.join(root, scope_dir)
         for h in sorted(x for x in parsed if x.startswith(sdir + os.sep)):
             raw = open(h, encoding="utf-8").read()
-            methods = [m for m in parsed[h] if m.nb_lines > threshold]
+            methods = [m for m in parsed[h] if m.n_lines > threshold]
             if not methods:
                 continue
             comp = companion_path(h, sdir)
@@ -783,7 +780,7 @@ def migrate(root: str, threshold: int, dry_run: bool, verbose: bool):
             for m in methods:
                 text, tail = build_definition(m, raw)
                 if text is None:
-                    kept.append((os.path.relpath(h, root), m.name or m.head[:60], m.nb_lines, tail))
+                    kept.append((os.path.relpath(h, root), m.name or m.head[:60], m.n_lines, tail))
                     continue
                 decl_quals, init = tail
                 # in-class: cut from the end of the parameter list's suffix (before init list) to '}'
@@ -807,7 +804,7 @@ def migrate(root: str, threshold: int, dry_run: bool, verbose: bool):
                             pos = q
                             break
                     if pos is None:
-                        kept.append((os.path.relpath(h, root), m.name, m.nb_lines, "init list not located"))
+                        kept.append((os.path.relpath(h, root), m.name, m.n_lines, "init list not located"))
                         continue
                     cut_from = m.head_start + pos
                     # back over whitespace
@@ -820,14 +817,14 @@ def migrate(root: str, threshold: int, dry_run: bool, verbose: bool):
                         cut_from -= 1
                     edits.append((cut_from, m.end + 1, ";"))
                 defs.append((m, text))
-                moved.append((os.path.relpath(h, root), m.name, m.nb_lines, os.path.relpath(comp, root)))
+                moved.append((os.path.relpath(h, root), m.name, m.n_lines, os.path.relpath(comp, root)))
             if not defs:
                 continue
             if not exists and len(defs) < MIN_BODIES:
                 # too few for a companion of their own: they stay in the class
                 del moved[len(moved) - len(defs):]
                 for m, _ in defs:
-                    kept.append((os.path.relpath(h, root), m.name, m.nb_lines,
+                    kept.append((os.path.relpath(h, root), m.name, m.n_lines,
                                  f"{len(defs)} long bod{'y' if len(defs) == 1 else 'ies'}, "
                                  f"under {MIN_BODIES}: no _inline.h for so few"))
                 continue
@@ -905,9 +902,9 @@ DOC_FR_TABLE_ROW = ("| `check_inline_bodies` | aucun corps de méthode de plus d
 DOC_FR_RULE_ANCHOR = "- **Pas de préprocesseur"
 DOC_FR_RULE = """- **Les corps longs vont dans le compagnon `<en-tête>_inline.h`.** Une méthode dont le corps dépasse
   5 lignes est déclarée dans la classe et définie dans `internal/<en-tête>_inline.h`, inclus en
-  fin d'en-tête ; le commentaire Doxygen reste sur la déclaration. Les accesseurs de quelques
+  stop d'en-tête ; le commentaire Doxygen reste sur la déclaration. Les accesseurs de quelques
   lignes restent dans la classe. `check_inline_bodies` le vérifie ;
-  `scripts/check_inline_bodies.py --apply` déplace ce qu'il liste (puis clang-format sur les fichiers).
+  `scripts/check_inline_bodies.py --apply` déplace ce qu'il item_list (puis clang-format sur les fichiers).
 """
 
 
@@ -972,26 +969,26 @@ def main():
         if moved:
             print(f"{len(moved)} member function bodies longer than {a.threshold} lines are defined in their class;")
             print(f"run `python3 {CHECK_SCRIPT} --apply` from the repository root to move them:")
-            for h, name, nb, comp in moved:
+            for h, name, n_items, comp in moved:
                 print(f"  {h}: {name} ({nb} lines)")
             sys.exit(1)
         print(f"check_inline_bodies: no member function body longer than {a.threshold} lines in a class")
         return
     by_file: dict[str, list] = {}
-    for h, name, nb, comp in moved:
-        by_file.setdefault(h, []).append((name, nb, comp))
+    for h, name, n_items, comp in moved:
+        by_file.setdefault(h, []).append((name, n_items, comp))
     new_files = []
     for h, lst in by_file.items():
         comp = lst[0][2]
         print(f"{h}: {len(lst)} bodies -> {comp}")
         if a.verbose:
-            for name, nb, _ in lst:
+            for name, n_items, _ in lst:
                 print(f"    {nb:4d}  {name}")
         if not a.dry_run and comp not in new_files and \
                 subprocess_untracked(root, comp):
             new_files.append(comp)
     print(f"{'would move' if a.dry_run else 'moved'}: {len(moved)}; left in class: {len(kept)}")
-    for h, name, nb, why in kept:
+    for h, name, n_items, why in kept:
         print(f"  kept  {h}: {name} ({nb} lines): {why}")
     if a.dry_run:
         return

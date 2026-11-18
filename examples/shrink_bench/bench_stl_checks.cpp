@@ -22,7 +22,7 @@
 #include <cstddef>     // std::size_t
 #include <iostream>    // std::cout
 #include <numeric>     // std::accumulate -- STL self-checks
-#include <stdexcept>   // std::out_of_range -- STL self-checks
+#include <stdexcept>   // std::out_of_range, std::length_error -- STL self-checks
 #include <type_traits> // std::is_same_v -- STL self-checks
 #include <utility>     // std::as_const -- STL self-checks
 #include <vector>      // std::vector
@@ -148,7 +148,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         }
         // front()/back() on empty: our chunk container throws (safety choice);
         // std::vector leaves it UB, so only assert the throw in chunk mode.
-        if constexpr (chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any)
+        if constexpr (chunk_config::use_zero || chunk_config::use_zero_or_value || chunk_config::use_zero_any)
         {
             Array<double> empty_arr(0);
             bool          threw = false;
@@ -161,6 +161,30 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
                 threw = true;
             }
             expect(threw, "front() on empty throws (chunk mode)");
+        }
+
+        // A negative count: std::length_error from resize(), reserve() and the
+        // constructor, as std::vector (whose size_type turns -1 into a count
+        // past max_size()); the array is left as it was.
+        {
+            Array<double> arr(5);
+            const auto    throws = [](auto&& call)
+            {
+                try
+                {
+                    call();
+                }
+                catch (const std::length_error&)
+                {
+                    return true;
+                }
+                return false;
+            };
+            expect(throws([&] { arr.resize(static_cast<Int>(-1)); }), "resize(-1) throws std::length_error");
+            expect(throws([&] { arr.reserve(static_cast<Int>(-1)); }), "reserve(-1) throws std::length_error");
+            expect(arr.size() == 5 && arr.capacity() < (std::size_t{1} << 32),
+                   "resize(-1) / reserve(-1) leave the array as it was");
+            expect(throws([] { Array<double> neg(static_cast<Int>(-1)); }), "Array(-1) throws std::length_error");
         }
 
         // --- non-const at() returns a write proxy (assignment goes through it) -
@@ -298,12 +322,12 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
             copy.clear();
             dst.clear();
 
-            // zero_one_value: the array-level second value travels with the copy. A
+            // zero_or_value: the array-level second value travels with the copy. A
             // generic lambda, so that the `if constexpr` really discards the
-            // body on the arrays that have no get_second_value().
+            // body on the arrays that have no second_value().
             [&]<typename A>(A*)
             {
-                if constexpr (requires(A probe) { probe.get_second_value(); })
+                if constexpr (requires(A probe) { probe.second_value(); })
                 {
                     A s2(n_stl);
                     maybe_set_second_value(s2, second_value_d1);
@@ -312,12 +336,12 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
                         s2[i] = (i % 3 == 0) ? second_value_d1 : 0.0;
                     }
                     A    t2(s2);
-                    bool ok = t2.get_second_value() == second_value_d1;
+                    bool ok = t2.second_value() == second_value_d1;
                     for (Int i = 0; ok && i < n_stl; ++i)
                     {
                         ok = std::as_const(t2)[i] == std::as_const(s2)[i];
                     }
-                    expect(ok, "copy constructor carries zero_one_value's second value and its runs");
+                    expect(ok, "copy constructor carries zero_or_value's second value and its runs");
                     s2.clear();
                     t2.clear();
                 }
@@ -367,12 +391,12 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
 
         // Size spans many chunks (≈195 at chunk_size 512) so reads cross chunk
         // boundaries. Mixed data (mostly second_value, some distinct) exercises
-        // both the cst2 read path and materialised reads — the two that can go
+        // both the const2 read path and materialised reads — the two that can go
         // stale. maybe_set_second_value is not required for correctness: a
-        // zero_one_value array without it has T{} as second value (see
-        // insert_only_num_tab), so it writes fine but only its zeros compress.
+        // zero_or_value array without it has T{} as second value (see
+        // insert_only_array_id), so it writes fine but only its zeros compress.
         // It is declared here, before the writes, so that the runs of 2.0
-        // actually reach the cst2 read path this check is about (no-op on
+        // actually reach the const2 read path this check is about (no-op on
         // zero / vector mode, per-chunk on zero_any).
         const long    nr = 100000;
         Array<double> reads(nr);

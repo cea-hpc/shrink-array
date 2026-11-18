@@ -2,7 +2,7 @@
 
 > French version: [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md).
 
-> Status: end of September 2026, for the three variants (`zero`, `zero_one_value`, `zero_any`). The figures
+> Status: end of September 2026, for the three variants (`zero`, `zero_or_value`, `zero_any`). The figures
 > come from `shrink_bench` on Grace (64 threads, `OMP_PROC_BIND=close`,
 > `OMP_PLACES=cores`), with memory measured exactly and times compared on the same
 > binary: see [performance_measurement.md](performance_measurement.md). When in doubt,
@@ -20,7 +20,7 @@ size.
 
 The point: start from **small chunks** (64 elements in the benchmark, `SHRINK_BENCH_DYN_SIZE`),
 which compress finely, then **grow** when the metadata outweighs what the
-fine granularity gains. The goals, reached for `zero_one_value` and `zero_any`:
+fine granularity gains. The goals, reached for `zero_or_value` and `zero_any`:
 
 - **at the start**, use as much memory as the static build at the same size;
 - **at the end**, use less than the best static build.
@@ -45,7 +45,7 @@ Each row cuts the array into windows of C elements, read from the current chunks
 - a window that **covers a whole materialised chunk** is materialised;
 - a window that **overlaps a materialised chunk in part** (a finer or a misaligned size) is
   settled by reading the data, on a **sample** of the materialised chunks (65,536 at most):
-  it is compressed if it holds a single value, and that value is representable. For `zero` and `zero_one_value` that
+  it is compressed if it holds a single value, and that value is representable. For `zero` and `zero_or_value` that
   is the first or the second value; for **`zero_any`** any value, since each chunk records its
   own second value.
 
@@ -62,7 +62,7 @@ fall back to the next best size, and two arrays stayed at 256.
 Chunk classification is done on the fly, with no work array: until
 September 2026, each analysis allocated one byte and one pointer per chunk (140 MB for an
 array of 15.6 million chunks), and the analyses cost 1 to 2 s on a 6.5 s run.
-They now cost ~0.7 s on an 8.4 s `zero_one_value` run.
+They now cost ~0.7 s on an 8.4 s `zero_or_value` run.
 
 `CHUNK_LOG=advisor=debug` writes the full table of each array analysed at each tick (only one
 array's with `RechunkPolicy::trace_array`, `--rechunk_trace_array <name>` in the benchmark).
@@ -137,13 +137,21 @@ measurement on unchanged data and the ability to go back.
 6. **old-pool drain**: drain the pools of the old size and return the
    slabs that have become empty to the system.
 
-**`zero`** rebuilds **in slices** (16) and frees
-each old chunk as soon as it has been copied. Between slices, the pools of the old
+Every variant frees each old chunk as soon as it has been copied (`release_st()`: the
+buffer back to the pool, the chunk to the first constant; a chunk at a second constant
+points at a shared array and is left alone) and, with the fast allocator under threads,
+rebuilds **in slices** (16; `BitArray`, bit-packed, keeps one pass). Between
+slices, the pools of the old
 size are drained and the emptied slabs returned to the system, including in the **shared
 pool** when the old storage lives there: without this, the old storage's memory
 stayed allocated until the end of the rebuild (on `rechunk_validation`, rebuild peak
 78 → 22 MB). Measured on `zero` at 64 threads: peak of +6.9 GB in one pass,
-+1.7 GB with 16 slices.
++1.7 GB with 16 slices. On `zero_or_value` (x86-64, 2 threads, 10^8 elements, 1,000
+iterations, three runs each, November 2026) the run's peak goes from 1,772 to 1,724 MB: a
+rechunk of a storage that has its own slabs adds 0 to 60 MB instead of 65 to 196 MB. An
+array's first rechunk still starts from the shared pool (lazy affinity, section 5), whose
+slabs do not empty; the eager mode did no better there (peak 1,732 MB). `zero_any`'s peak,
+on this benchmark, is the initialisation's: its rechunks materialise little.
 
 ## 5. Per-array allocators (affinity)
 
@@ -160,18 +168,18 @@ Hence two modes, fixed per variant:
 
 | mode | when an array gets its key | default for | why |
 |---|---|---|---|
-| **lazy** | at its first rechunk | `zero_one_value`, `zero_any` | they are mostly made of metadata: a start without per-array sets uses exactly as much as the static build (`zero_any`: 11,590 MB after initialisation, against 12,435 MB in eager mode) |
+| **lazy** | at its first rechunk | `zero_or_value`, `zero_any` | they are mostly made of metadata: a start without per-array sets uses exactly as much as the static build (`zero_any`: 11,590 MB after initialisation, against 12,435 MB in eager mode) |
 | **eager** | at its creation | `zero` | `zero` is mostly made of data, and its slice-by-slice rebuild only returns memory progressively if the old storage has its own slabs. In lazy mode, the first rechunk starts from shared slabs, which mix the blocks of several arrays and do not empty: +6.0 GB on top of 39.3 GB. `zero` peak: 41.2 GB in eager mode, 45.6 GB in lazy mode, for the same end memory |
 
 The choice was measured against the other mode (Milan, `shrink_bench` int64 dyn, 64 threads,
 three runs each, October 2026): `zero` in lazy mode costs +9.8% in time, +14.6% at the peak and
-+11.8% at the end; `zero_any` in eager mode +7.4% at the peak; `zero_one_value` is the same either
++11.8% at the end; `zero_any` in eager mode +7.4% at the peak; `zero_or_value` is the same either
 way. The mode is no longer an environment variable (`CHUNK_ALLOC_AFFINITY_EAGER` is gone).
 
 ## 6. What must disappear with the old storage
 
 A rechunk builds the new storage under a **new array identifier**
-(`num_tab`) and destroys the old one. Everything indexed by the old identifier must be
+(`array_id`) and destroys the old one. Everything indexed by the old identifier must be
 **freed**, not just emptied. Two leaks of this kind were fixed in September 2026:
 
 - **`zero_any`**: the per-chunk metadata rows (constant type, 1 byte; second
@@ -193,19 +201,19 @@ benchmark default; `--advise_five` goes back to the five historical arrays):
 | variant | static 64 (end) | dynamic without advisor (end) | **dynamic with advisor (end)** | static 256 (end) |
 |---|---|---|---|---|
 | `zero_any` | 12.7 | 12.7 | **6.0** | 7.3 |
-| `zero_one_value` | 21.4 | 21.4 | **16.3** | 17.3 |
+| `zero_or_value` | 21.4 | 21.4 | **16.3** | 17.3 |
 | `zero` | 43.6 | 44.6 | **40.3** | 40.2 |
 
 Time cost of the advisor, measured on **the same binary** (averages over 3 rounds):
 
-| dynamic `zero_one_value` | time | cost |
+| dynamic `zero_or_value` | time | cost |
 |---|---|---|
 | without advisor (`--advisor_period 0`) | 8.38 s | — |
 | analyses only (`--rechunk_dry_run`) | 9.07 s | +0.69 s |
 | analyses and rechunks (30) | 11.43 s | +2.36 s |
 
 For `zero_any`, the cost of the rechunks (33) ranges from 1 to 3.5 s depending on the measurement series. For
-`zero_one_value`, the intervals that follow the rechunks are as fast as those before: the cost
+`zero_or_value`, the intervals that follow the rechunks are as fast as those before: the cost
 is limited to the rebuilds.
 
 ## 8. Known limitations
@@ -213,7 +221,7 @@ is limited to the rebuilds.
 - **`zero` slows down after its rechunk.** After switching to 1,024, dynamic `zero` runs 1.5 to
   2 times slower per iteration than static 1,024 (about 40 busy cores at an IPC of
   3.65, against 52 cores at 4.24). A dynamic build **started** at 1,024 runs as fast as the
-  static one, and `zero_one_value` does not slow down after its rechunks: the state left by the
+  static one, and `zero_or_value` does not slow down after its rechunks: the state left by the
   `zero` rebuild is to blame. Neither the scheduling of the rebuild nor the
   compression thresholds explain the gap. Cause still unknown.
   Measured again in October 2026 (inti, aarch64, LLVM, 64 threads, `--mode perf`,
@@ -226,14 +234,30 @@ is limited to the rebuilds.
   `max_backoff_ticks` (same node, `OMP_PROC_BIND=close`, 4,000 iterations, last
   re-chunk at iteration 1,700): +22% -> **+7%**. What remains is compression
   churn the static run does not have (~15,000 buffers freed per iteration
-  against none), not yet explained.
+  against none), not yet explained. Still there in November 2026 after the teardown split
+  of `zero`'s rechunk, as an indication only (x86-64, GCC 16, 8 threads, `--mode perf
+  --divisor 16 --iter_max 2000`, best of 3): +11 to +13% per iteration after the last
+  re-chunk (iteration 600), 4% more resident memory than static 1,024. The churn could not be
+  measured at that size: the `churn` line counts per allocation key, and an array draws from
+  the shared pool (key 0, not counted) until its metadata passes
+  `CHUNK_ALLOC_AFFINITY_MIN_BYTES` (16 MiB) and it has been re-chunked -- the line says so
+  now. Measure it at full size (`diag_zero_rechunk_slowdown.py` as it stands).
 - **The model is static.** The advisor bases its judgement on the current state of the chunks, not on
   future writes. On this benchmark, the transient materialisations measured do not matter
   (the `churn` line of `CHUNK_LOG=rechunk=debug`), but a workload that writes heavily into constant regions
   could make a coarsening regrettable: this is the role of learning
   (`coarsen_trust_ratio`) and of the anti-reversal rule.
-- **Rechunking boolean arrays** is validated for `ArrayChunkBits` only
-  (`bits_container_validation`, `zero_one_value` at dyn); `zero_one_value::Array<bool>` and `zero_any::Array<bool>`
-  have no harness, and the benchmark does not hand `tab_bool` to the decider.
-- **The peak remains the initial one**: a dynamic run that starts from 64 first reaches the
-  memory of static 64, then goes down.
+- **Boolean arrays in the benchmark**: `array_bool` and `array_bool_bits` stay at their birth
+  geometry unless `--advise_bool` hands them to the decider, so that the two bool containers
+  are compared as they are. The rechunk of `Array<bool>` is checked by `rechunk_validation`
+  (`bool-grow`, `bool-shrink`, `bool-uneven`, `bool-sliced`, every variant), that of
+  `BitArray` by `bits_container_validation` (`zero_or_value` at dyn).
+- **The peak is not always the starting geometry's**: a dynamic run that starts from 64 has
+  the memory of static 64 after its initialisation; its rechunks then give memory back (the
+  resident memory goes down) or slow its growth. The run's peak is the starting geometry's
+  only when it comes at the initialisation; where the memory grows during the run, the peak
+  stays below. Measured with `top` and `smaps_rollup` (x86-64, 8 threads, `shrink_bench`
+  `--multiply 10 --iter_max 1000 --advisor_period 2`, against the same binary with
+  `--rechunk_dry_run`, November 2026): `zero_any` goes down from 481 to 303 MiB after its
+  rechunks and ends at 238 MiB instead of 545, its peak being the initialisation's (582 MiB);
+  `zero_or_value` peaks at 1,342 MiB instead of 1,523, `zero` at 2,531 MiB instead of 2,736.

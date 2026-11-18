@@ -93,8 +93,7 @@ namespace detail
 {
     const std::size_t bytes = checked_bytes(what, count, elem);
     void*             ptr   = nullptr; // the only object posix_memalign may legally write
-    const int         rc    = posix_memalign(&ptr, alignment, bytes);
-    if (rc != 0 || (ptr == nullptr && bytes != 0)) [[unlikely]]
+    if (const int rc = posix_memalign(&ptr, alignment, bytes); rc != 0 || (ptr == nullptr && bytes != 0)) [[unlikely]]
     {
         out_of_memory(what, count, elem, rc != 0 ? rc : ENOMEM);
     }
@@ -136,7 +135,7 @@ template <typename T>
 inline void svfree_align(const void* ptr) noexcept
 {
     assert(ptr != nullptr);
-    std::free(const_cast<void*>(ptr));
+    std::free(const_cast<void*>(ptr)); // NOSONAR(cpp:S859)
 }
 
 /// @brief @p count elements of T, uninitialised (malloc). Release with svfree().
@@ -166,7 +165,7 @@ template <typename T>
 inline void svfree(const void* ptr) noexcept
 {
     assert(ptr != nullptr);
-    std::free(const_cast<void*>(ptr));
+    std::free(const_cast<void*>(ptr)); // NOSONAR(cpp:S859)
 }
 
 } // namespace fast_alloc

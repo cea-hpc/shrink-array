@@ -26,6 +26,9 @@
 #include <cstdint>    // std::uintptr_t
 #include <utility>    // std::cmp_less (the element-size check), std::cmp_greater_equal
 #include <vector>     // std::vector
+#include <atomic>     // std::memory_order_relaxed
+#include <cstring>    // std::memset, std::strerror
+#include <limits>     // std::numeric_limits
 
 #include "fast_allocators/internal/raw_memory.h" // store_to_bytes
 #include "fast_allocators/tc_allocator.h"        // the declarations these bodies belong to
@@ -43,15 +46,18 @@ inline void TCSlab<Links>::alloc_block()
     // slab to ask (TCSlabPool::slab_bytes_).
     block_allocator = slab_bytes_for(block_allocator);
 
-    block_size = static_cast<int>((block_allocator - sizeof(void*)) / element_size);
-
     // Not even one element fits next to the back-pointer: the first one would
-    // overwrite it. Nothing to round to -- refuse, with the sizes.
-    if (block_size < 1) [[unlikely]]
+    // overwrite it. Nothing to round to -- refuse, with the sizes. Compared
+    // before the subtraction below: unsigned, it wraps for a slab smaller than
+    // the back-pointer, and the quotient, cast to int, could pass a test made
+    // on it.
+    if (element_size < 1 || block_allocator < sizeof(void*) + static_cast<uintptr_t>(element_size)) [[unlikely]]
     {
         FAST_ALLOC_FATAL("TCAllocator: element of {} bytes does not fit in a slab of {} bytes (back-pointer included)",
                          element_size, block_allocator);
     }
+
+    block_size = static_cast<int>((block_allocator - sizeof(void*)) / static_cast<uintptr_t>(element_size));
 
     if constexpr (side_links)
     {
@@ -60,7 +66,7 @@ inline void TCSlab<Links>::alloc_block()
             block_size = free_list_end - 1;
         }
 
-        tab_first_free_.resize(static_cast<std::size_t>(block_size));
+        array_first_free_.resize(static_cast<std::size_t>(block_size));
     }
 
     // From the slab's own arena, never glibc: arena addresses are never returned to the OS
@@ -91,7 +97,7 @@ inline void TCSlab<Links>::destroy()
 {
     if constexpr (side_links)
     {
-        std::vector<unsigned short>().swap(tab_first_free_); // releases the free-list links
+        std::vector<unsigned short>().swap(array_first_free_); // releases the free-list links
         // (not `= {}`: that is operator=(initializer_list), which keeps the capacity)
     }
 
@@ -141,7 +147,7 @@ inline void* TCSlab<Links>::alloc() noexcept
     if constexpr (side_links)
     {
         // A sweep may have given this slab's pages back INCLUDING the trailing back-pointer
-        // (fast_alloc::EmptySlabSweep). Restore it before the block escapes: free_elt()
+        // (fast_alloc::EmptySlabSweep). Restore it before the block escapes: free_elem()
         // resolves the slab by reading that word. Idempotent store (always `this`), on the
         // slab's own rank: no atomic needed.
         if (backptr_dropped) [[unlikely]]
@@ -298,7 +304,7 @@ template <FreeLinks Links>
 {
     if constexpr (side_links)
     {
-        return tab_first_free_[static_cast<std::size_t>(elem)];
+        return array_first_free_[static_cast<std::size_t>(elem)];
     }
     else
     {
@@ -312,7 +318,7 @@ void TCSlab<Links>::set_link(int elem, IndexType next_free) noexcept
 {
     if constexpr (side_links)
     {
-        tab_first_free_[static_cast<std::size_t>(elem)] = next_free;
+        array_first_free_[static_cast<std::size_t>(elem)] = next_free;
     }
     else
     {
@@ -325,9 +331,9 @@ void TCSlab<Links>::set_link(int elem, IndexType next_free) noexcept
 // ---------------------------------------------------------------------------
 
 template <typename Derived, typename ElemT, typename Slab>
-void TCSlabPool<Derived, ElemT, Slab>::init(size_t element_size, uintptr_t block_allocator, int nb_max_block_emptyl)
+void TCSlabPool<Derived, ElemT, Slab>::init(size_t element_size, uintptr_t block_allocator, int n_max_block_emptyl)
 {
-    nb_max_block_empty_ = nb_max_block_emptyl;
+    n_max_block_empty_ = n_max_block_emptyl;
 
     if (bypass_slabs())
     {
@@ -357,14 +363,14 @@ void TCSlabPool<Derived, ElemT, Slab>::init(size_t element_size, uintptr_t block
             insert(block, new_slab());
         }
 
-        // nb_max_block_empty < 0 ("never munmap"): block_empty is never used.
-        if (nb_max_block_empty_ > 0)
+        // n_max_block_empty < 0 ("never munmap"): block_empty is never used.
+        if (n_max_block_empty_ > 0)
         {
-            block_empty_.assign(static_cast<std::size_t>(nb_max_block_empty_), nullptr);
+            block_empty_.assign(static_cast<std::size_t>(n_max_block_empty_), nullptr);
         }
     }
 
-    nb_block_empty_ = 0;
+    n_block_empty_ = 0;
 }
 
 template <typename Derived, typename ElemT, typename Slab>
@@ -401,7 +407,7 @@ template <typename Derived, typename ElemT, typename Slab>
 }
 
 template <typename Derived, typename ElemT, typename Slab>
-void TCSlabPool<Derived, ElemT, Slab>::free_elt_pow2(const ElementType* ptr) noexcept
+void TCSlabPool<Derived, ElemT, Slab>::free_elem_pow2(const ElementType* ptr) noexcept
 {
     if (bypass_slabs())
     {
@@ -409,11 +415,11 @@ void TCSlabPool<Derived, ElemT, Slab>::free_elt_pow2(const ElementType* ptr) noe
         return;
     }
 
-    free_elt_pow2(ptr, get_allocator(ptr));
+    free_elem_pow2(ptr, get_allocator(ptr));
 }
 
 template <typename Derived, typename ElemT, typename Slab>
-void TCSlabPool<Derived, ElemT, Slab>::free_elt_pow2(const ElementType* ptr, Slab* slab) noexcept
+void TCSlabPool<Derived, ElemT, Slab>::free_elem_pow2(const ElementType* ptr, Slab* slab) noexcept
 {
     // The shift when this slab's element size is a power of two, the
     // magic multiplication otherwise (e.g. 192 doubles, a 24-byte struct,
@@ -501,24 +507,24 @@ void TCSlabPool<Derived, ElemT, Slab>::destroy()
 
     decltype(block_empty_)().swap(block_empty_); // releases the reserve's storage
 
-    element_size_   = 0;
-    block_full      = nullptr;
-    block           = nullptr;
-    nb_block_empty_ = 0;
+    element_size_  = 0;
+    block_full     = nullptr;
+    block          = nullptr;
+    n_block_empty_ = 0;
 }
 
 template <typename Derived, typename ElemT, typename Slab>
 void TCSlabPool<Derived, ElemT, Slab>::destroy_int()
 {
     // Under FAST_ALLOC_STD_ALLOC there are no slabs: each element was a new[]
-    // that free_elt_pow2() already deleted.
+    // that free_elem_pow2() already deleted.
     if constexpr (alloc_config::use_slabs)
     {
         if (bypass_slabs())
         {
             return;
         }
-        sl_delete_all(block, block_full, block_empty_.data(), nb_block_empty_);
+        sl_delete_all(block, block_full, block_empty_.data(), n_block_empty_);
     }
 }
 
@@ -527,7 +533,7 @@ Slab* TCSlabPool<Derived, ElemT, Slab>::new_slab()
 {
     auto* slab       = new Slab;
     slab->arena_kind = arena_kind_; // route slab to its op/ctx/value arena
-    slab->owner      = self();
+    slab->owner      = static_cast<Derived*>(this);
     slab->owner_rank = rank_;
     slab->owner_key  = key_;
     slab->init(static_cast<int>(element_size_), block_allocator_);
@@ -538,9 +544,9 @@ Slab* TCSlabPool<Derived, ElemT, Slab>::new_slab()
 template <typename Derived, typename ElemT, typename Slab>
 FAST_ALLOC_COLD TCSlabPool<Derived, ElemT, Slab>::ElementType* TCSlabPool<Derived, ElemT, Slab>::alloc_slow()
 {
-    if (nb_block_empty_ > 0)
+    if (n_block_empty_ > 0)
     {
-        auto* slab = block_empty_[--nb_block_empty_];
+        auto* slab = block_empty_[--n_block_empty_];
 
         insert(block, slab);
 
@@ -572,7 +578,7 @@ template <typename Derived, typename ElemT, typename Slab>
 void TCSlabPool<Derived, ElemT, Slab>::manage_full_empty(Slab* slab) noexcept
 {
     sl_manage_full_empty(
-        block, block_full, block_empty_.data(), nb_block_empty_, nb_max_block_empty_, slab,
+        block, block_full, block_empty_.data(), n_block_empty_, n_max_block_empty_, slab,
         [](Slab* kept) noexcept
         {
             // NO madvise here: only a sweep gives slabs back. On this hot
@@ -596,8 +602,8 @@ FAST_ALLOC_COLD void TCSlabPool<Derived, ElemT, Slab>::evict_slab(Slab* slab) no
 {
     if (fast_alloc::trace_evictions())
     {
-        CHUNK_LOG(trace, alloc, "munmap: {} delete slab p={} nb_max_block_empty={}", Derived::pool_name,
-                  static_cast<void*>(slab), nb_max_block_empty_);
+        CHUNK_LOG(trace, alloc, "munmap: {} delete slab p={} n_max_block_empty={}", Derived::pool_name,
+                  static_cast<void*>(slab), n_max_block_empty_);
     }
     delete slab;
 }
@@ -768,7 +774,7 @@ int TCAllocatorEB<ElementBytes, BlockBytes>::alloc_block()
 
         const uintptr_t block_bytes = block_size;
 
-        std::byte* mapping = static_cast<std::byte*>(fast_alloc::map_anonymous(2 * block_size));
+        auto* mapping = static_cast<std::byte*>(fast_alloc::map_anonymous(2 * block_size));
 
         data = mapping + ((0 - fast_alloc::address_bits(mapping)) & (block_bytes - 1)); // align up
 
@@ -813,9 +819,9 @@ void* TCTypeAllocatorEBC<ElementSize, BlockSize>::alloc()
 {
     if (block_ == nullptr)
     {
-        if (nb_block_empty_ > 0)
+        if (n_block_empty_ > 0)
         {
-            auto* slab = block_empty_[--nb_block_empty_];
+            auto* slab = block_empty_[--n_block_empty_];
 
             insert(block_, slab);
 
@@ -849,7 +855,7 @@ void TCTypeAllocatorEBC<ElementSize, BlockSize>::add_allocated_size(size_t& sum_
                                                                     size_t& sum_nn_ref,
                                                                     size_t& alloc_sz) const noexcept
 {
-    size_t nb_blocks   = 0;
+    size_t n_blocks    = 0;
     size_t s_used_size = 0;
     size_t s_nn_ref    = 0;
 
@@ -860,7 +866,7 @@ void TCTypeAllocatorEBC<ElementSize, BlockSize>::add_allocated_size(size_t& sum_
     {
         s_used_size += node->used_size;
         s_nn_ref += node->nn_ref;
-        nb_blocks++;
+        n_blocks++;
 
         const TCAllocatorEBT* next = node->next;
         node                       = next;
@@ -870,7 +876,7 @@ void TCTypeAllocatorEBC<ElementSize, BlockSize>::add_allocated_size(size_t& sum_
 
     while (node != nullptr)
     {
-        nb_blocks++;
+        n_blocks++;
 
         const TCAllocatorEBT* next = node->next;
         node                       = next;
@@ -878,7 +884,7 @@ void TCTypeAllocatorEBC<ElementSize, BlockSize>::add_allocated_size(size_t& sum_
 
     sum_used_size += s_used_size * size_t(ElementSize);
     sum_nn_ref += s_nn_ref * size_t(ElementSize);
-    alloc_sz += nb_blocks * size_t(BlockSize);
+    alloc_sz += n_blocks * size_t(BlockSize);
 }
 
 template <unsigned int ElementSize, unsigned int BlockSize>
@@ -896,9 +902,9 @@ void TCTypeAllocatorEBC<ElementSize, BlockSize>::manage_full_empty(TCAllocatorEB
 
     if (slab->is_empty())
     {
-        if (nb_block_empty_ < nb_max_block_empty)
+        if (n_block_empty_ < n_max_block_empty)
         {
-            block_empty_[nb_block_empty_++] = slab;
+            block_empty_[n_block_empty_++] = slab;
             remove(block_, slab);
         }
         else

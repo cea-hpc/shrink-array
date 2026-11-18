@@ -16,17 +16,18 @@
 
 #pragma once
 
-// Out-of-line bodies of zero::Array's mode-gated surfaces (ParallelSupport,
-// FastBlockSupport). Included at the end of zero_array.h, after the class and
+// Out-of-line bodies of zero::Array's FastBlockSupport. Included at the end of zero_array.h, after the class and
 // its own inline file, so the CRTP self() down-cast sees a complete Derived and
 // so the compression manager stays out of the container declaration itself.
+#include <cstddef> // std::size_t
+
 #include "chunk/internal/zero_array_parallel.h"                // FastBlockSupport, the class these bodies belong to
 #include "chunk/internal/array_chunk_parallel_common_inline.h" // flush_pending_deferred_ops
-#include "chunk/PMP_CHUNK.h"                                   // CHUNK_PMP_* (make_block_compression)
+#include "chunk/internal/pmp_chunk.h"                          // CHUNK_PMP_* (make_block_compression)
 #include "chunk/internal/chunk_size_policy.h"                  // set_thread_chunk_size (make_block_compression)
-#include "chunk/internal/invariant_check.h" // CHUNK_CHECK_FAILED (make_block_compression in a region)
-#include "chunk/internal/read_reclaim.h"    // read_reclaim::PassScope (drain_candidates in a region)
-#include "chunk/config.h"                   // build_config::chunk_dynamic
+#include "chunk/internal/read_reclaim.h"                       // read_reclaim::PassScope (drain_own_candidates)
+#include "chunk/internal/own_candidates.h"                     // with_own_candidates_only (drain_own_candidates)
+#include "chunk/config.h"                                      // build_config::chunk_dynamic
 
 namespace shrink_array
 {
@@ -34,18 +35,10 @@ namespace shrink_array
 template <typename Derived>
 void zero::FastBlockSupport<Derived, true>::make_block_compression()
 {
-    if (CHUNK_PMP_IN_PARALLEL_REGION)
+    if (!block_pass_refused_in_region())
     {
-        // Refused inside a region: without a proxy the pass takes no writer
-        // handshake (steal_mark / start) and no reader grace period, so it
-        // would compress chunks other threads are writing or reading. The
-        // writers' own passes (perform_compression) compress in the region.
-        CHUNK_CHECK_FAILED(compress,
-                           "make_block_compression() called inside a parallel region: a sequential point, call it "
-                           "after the region");
-        return;
+        drain_candidates();
     }
-    drain_candidates();
 }
 
 template <typename Derived>
@@ -70,12 +63,33 @@ void zero::FastBlockSupport<Derived, true>::drain_candidates()
     }
     else
     {
-        // An array resized inside a region by its owning thread (resize()):
-        // this thread's list only, and other threads may be reading, so the
-        // buffers released wait for a grace period (read_reclaim.h).
-        const read_reclaim::PassScope pass_scope;
-        ChunkType::make_block_compression(CHUNK_PMP_THREAD_RANK, nullptr);
+        drain_own_candidates();
     }
+}
+
+template <typename Derived>
+void zero::FastBlockSupport<Derived, true>::drain_own_candidates()
+{
+    using ProxyT   = Traits::ProxyType;
+    using ManagerT = Traits::ManagerType;
+
+    // An array resized inside a region by its owning thread (resize()). The
+    // pass takes no writer handshake: this array's candidates only, the
+    // thread's list holding chunks of arrays other threads are writing. Other
+    // threads may be reading, so the buffers released wait for a grace period
+    // (read_reclaim.h).
+    const int rank = CHUNK_PMP_THREAD_RANK;
+    if (rank < 0 || static_cast<std::size_t>(rank) >= ManagerT::zero_candidates_thr.size())
+    {
+        return;
+    }
+    const int array_id = ProxyT::array_registry->get_array_id(self().registry_key());
+    internal::with_own_candidates_only(ManagerT::zero_candidates_thr[static_cast<std::size_t>(rank)], array_id,
+                                       [rank]
+                                       {
+                                           const read_reclaim::PassScope pass_scope;
+                                           ChunkType::make_block_compression(rank, nullptr);
+                                       });
 }
 
 } // namespace shrink_array

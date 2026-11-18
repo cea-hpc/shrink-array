@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """The Graphique tab of thread_speedup.py: its summary.csv as one line per
 executable against threads -- speedup (with the ideal line), efficiency or
-time. Colour = the variant (vector, zero, zero_one_value, zero_any), marker =
+time. Colour = the variant (vector, zero, zero_or_value, zero_any), marker =
 the size (dyn, 1024, 256, 64): with --all-exec a run has a dozen curves, and
 colour alone cannot tell them apart. "Comparer avec" overlays another run of the same
 architecture, dashed (another compiler, another commit), and gives the ratio
@@ -28,7 +28,7 @@ from shrink_gui.i18n import T, tip
 from shrink_gui.widgets import ScatterView, TLabel
 
 # Colour follows the variant, never its rank; vector is the reference, in ink.
-VARIANT_SLOT = {"zero": 0, "zero_one_value": 1, "zero_any": 2}
+VARIANT_SLOT = {"zero": 0, "zero_or_value": 1, "zero_any": 2}
 SIZE_SHAPES = ["dyn", "1024", "256", "64"]
 # shrink_bench_<backend>_<variant>... (<backend> omp / std / serial, config.EXE_RE);
 # the old names too (shrink_bench_zero_any_dyn without a backend, shrink_bench_chunk2a_dyn),
@@ -36,7 +36,7 @@ SIZE_SHAPES = ["dyn", "1024", "256", "64"]
 # its variant and size, drawn dash-dot. An old std_alloc name (shrink_bench_std_alloc_256)
 # is still std_alloc: the regex backtracks out of the std_ backend for it.
 EXE_RE = re.compile(r"^shrink_bench_(?:(?:omp|std|serial)_)?(?:tbb_)?"
-                    r"(vector|std_alloc|zero_any|zero_one_value|zero|chunk2a|chunk2|chunk)"
+                    r"(vector|std_alloc|zero_any|zero_or_value|zero|chunk2a|chunk2|chunk)"
                     r"(?:_int64)?(?:_(\w+))?$")
 
 # What the y axis shows: (row index in speedup_points, axis title, log scale by default).
@@ -84,7 +84,7 @@ class SpeedupChart:
             self.sc_metric.addItem(T(k), k)
         self.sc_metric.currentIndexChanged.connect(self.draw_speedup)
         self.sc_variant = QComboBox()
-        for v in ("toutes", "vector", "zero", "zero_one_value", "zero_any"):
+        for v in ("toutes", "vector", "zero", "zero_or_value", "zero_any"):
             self.sc_variant.addItem(T(v), v)
         self.sc_variant.currentIndexChanged.connect(self.draw_speedup)
         self.sc_size = QComboBox()

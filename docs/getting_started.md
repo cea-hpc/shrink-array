@@ -1,6 +1,6 @@
 # Getting started with shrink-array
 
-> October 2026. This guide is about **using** the library. How it works inside is described
+> November 2026. This guide is about **using** the library. How it works inside is described
 > in the design documents, indexed in [README.md](README.md). A French version of
 > this guide is [getting_started_fr.md](getting_started_fr.md).
 
@@ -26,10 +26,10 @@ Three variants, chosen when you link:
 | variant | class | a chunk is compressed when all its elements equal… |
 |---|---|---|
 | `zero` | `zero::Array<T>` | `T{}` (zero) only |
-| `zero_one_value` | `zero_one_value::Array<T>` | `T{}`, or **one** second value per array, declared with `set_second_value()` |
+| `zero_or_value` | `zero_or_value::Array<T>` | `T{}`, or **one** second value per array, declared with `set_second_value()` |
 | `zero_any` | `zero_any::Array<T>` | `T{}`, or **any** value, chunk by chunk, with nothing to declare |
 
-`zero_any` compresses the most and is the one to try first. `zero_one_value` has lighter metadata when
+`zero_any` compresses the most and is the one to try first. `zero_or_value` has lighter metadata when
 the data has a single dominant non-zero value, and `zero` is the simplest when only zeros
 matter. [variants.md](variants.md) compares them on a real workload.
 
@@ -43,7 +43,7 @@ branch needs C++23, GCC 14 or later) and CMake ≥ 3.20:
 ```sh
 cmake -S shrink-array -B build -G Ninja \
       -DCMAKE_BUILD_TYPE=Release \
-      -DOMP=ON \
+      -DCHUNK_OPENMP=ON \
       -DCMAKE_INSTALL_PREFIX=$HOME/opt/shrink-array
 cmake --build build
 cmake --install build
@@ -53,8 +53,8 @@ The options that matter to a user:
 
 | option | default | effect |
 |---|---|---|
-| `OMP` | `OFF` | build with OpenMP. A program that uses the arrays from OpenMP regions needs a library built with it |
-| `CHUNK_THREADS` | empty | threading backend of the library: `openmp`, `std` (`std::jthread` workers of its own, no OpenMP) or `serial`; empty: `openmp` with `OMP=ON`, `serial` otherwise. Set, it sets `OMP` to match |
+| `CHUNK_OPENMP` | `OFF` | build with OpenMP. A program that uses the arrays from OpenMP regions needs a library built with it |
+| `CHUNK_THREADS` | empty | threading backend of the library: `openmp`, `std` (`std::jthread` workers of its own, no OpenMP) or `serial`; empty: `openmp` with `CHUNK_OPENMP=ON`, `serial` otherwise. Set, it sets `CHUNK_OPENMP` to match |
 | `CHUNK_STATIC_SIZES` | `auto` | the compile-time chunk sizes built, one library per size and variant; `auto`: `256;1024`, but `256` alone in a Debug or sanitizer build of this project (not of a project that includes it) |
 | `CHUNK_BUILD_DYN` | `ON` | also build the libraries whose chunk size is chosen at run time, and can change (`_dyn`) |
 | `CHUNK_STD_ALLOC` | `OFF` | allocate the chunk buffers with the standard allocator instead of the bundled `fast_allocators` (useful under AddressSanitizer) |
@@ -73,10 +73,10 @@ your program the phase calls of §5.
 cmake_minimum_required(VERSION 3.20)
 project(my_app LANGUAGES CXX)
 
-find_package(chunk 0.2 REQUIRED)        # -DCMAKE_PREFIX_PATH=<install prefix>
+find_package(shrink_array 0.3 REQUIRED)        # -DCMAKE_PREFIX_PATH=<install prefix>
 
 add_executable(my_app main.cpp)
-target_link_libraries(my_app PRIVATE chunk::chunk_zero_any)
+target_link_libraries(my_app PRIVATE shrink_array::zero_any)
 ```
 
 The library you link **chooses the variant and the chunk size**. The headers are the same
@@ -88,13 +88,13 @@ as the library did.
 
 | target | variant | chunk size |
 |---|---|---|
-| `chunk::chunk_zero`, `chunk::chunk_zero_one_value`, `chunk::chunk_zero_any` | `zero`, `zero_one_value`, `zero_any` | the first of `CHUNK_STATIC_SIZES` (256) |
-| `chunk::chunk_zero_any_1024`, … | | that compile-time size |
-| `chunk::chunk_zero_any_dyn`, … | | chosen at run time, per array (can be changed with `rechunk_to()` or by the adaptive decider) |
-| `chunk::chunk_vector` | none: the arrays are `std::vector` | — |
+| `shrink_array::zero`, `shrink_array::zero_or_value`, `shrink_array::zero_any` | `zero`, `zero_or_value`, `zero_any` | the first of `CHUNK_STATIC_SIZES` (256) |
+| `shrink_array::zero_any_1024`, … | | that compile-time size |
+| `shrink_array::zero_any_dyn`, … | | chosen at run time, per array (can be changed with `rechunk_to()` or by the adaptive decider) |
+| `shrink_array::vector` | none: the arrays are `std::vector` | — |
 
 Link **one** variant library per program, and write **that variant's class**:
-`zero_any::Array<T>` with `chunk::chunk_zero_any`. The class you write is what you get -- a program
+`zero_any::Array<T>` with `shrink_array::zero_any`. The class you write is what you get -- a program
 naming `zero_any::Array` keeps it regardless of what it links -- and an array of a variant other than the
 library's is not supported: depending on the calls, it does not compile or it crashes.
 To let the link choose, write the arrays through an alias for the variant the library
@@ -104,22 +104,22 @@ defines (`examples/shrink_bench` and `examples/simple_array` do so):
 #include <type_traits>
 #include <vector>
 #include "chunk/zero_array.h"
-#include "chunk/zero_one_value_array.h"
+#include "chunk/zero_or_value_array.h"
 #include "chunk/zero_any_array.h"
 #include "chunk/config.h"
 
 namespace sa = shrink_array;
 template <typename T>
 using Array = std::conditional_t<sa::chunk_config::use_zero_any, sa::zero_any::Array<T>,
-              std::conditional_t<sa::chunk_config::use_zero_one_value, sa::zero_one_value::Array<T>,
+              std::conditional_t<sa::chunk_config::use_zero_or_value, sa::zero_or_value::Array<T>,
               std::conditional_t<sa::chunk_config::use_zero, sa::zero::Array<T>, std::vector<T>>>>;
 ```
 
-With it, `chunk::chunk_vector` builds the same program on plain `std::vector`s, which is the
+With it, `shrink_array::vector` builds the same program on plain `std::vector`s, which is the
 easiest way to compare memory and time.
 
-`find_package(chunk)` also sets `chunk_STATIC_SIZES`, `chunk_DEFAULT_SIZE`, `chunk_HAS_DYN`,
-`chunk_OPENMP`, `chunk_OMPT` and `chunk_STD_ALLOC`, for a project that wants to check what the
+`find_package(shrink_array)` also sets `shrink_array_STATIC_SIZES`, `shrink_array_DEFAULT_SIZE`, `shrink_array_HAS_DYN`,
+`shrink_array_OPENMP`, `shrink_array_OMPT` and `shrink_array_STD_ALLOC`, for a project that wants to check what the
 installation holds.
 
 ## 4. A first program, parallel and multi-threaded
@@ -133,15 +133,14 @@ well as inside the tree.
 #include <utility>                 // std::as_const
 
 #include "chunk/zero_any_array.h"   // shrink_array::zero_any::Array
-#include "chunk/zero_chunk.h"       // release_chunk_pools, destroy_block_chunk
-#include "chunk/manage_ompt.h"     // parallel_phase
-#include "chunk/param_chunk.h"     // ParamChunk::init_indexes
+#include "chunk/phases.h"     // parallel_phase
+#include "chunk/runtime.h"     // Runtime::init, release_chunk_pools, Runtime::shutdown
 
 namespace sa = shrink_array;
 
 int main()
 {
-    sa::ParamChunk::init_indexes(true);          // (1) once, before the first array
+    sa::Runtime::init(true);          // (1) once, before the first array
 
     {
         const int n = 1 << 24;                   // 16 M doubles: 128 MiB as a std::vector
@@ -165,13 +164,13 @@ int main()
     }                                            // (6) the array releases its chunks
 
     sa::release_chunk_pools();                   // (7) shut the library down
-    sa::destroy_block_chunk();
+    sa::Runtime::shutdown();
 }
 ```
 
-1. **`init_indexes(true)`**, once, before the first array: it sets up the allocation blocks
+1. **`init(true)`**, once, before the first array: it sets up the allocation blocks
    (`true`: large blocks, the usual choice). Optional: without it, the first array of the
-   program runs `init_indexes(true)` itself. Element types need no declaration: each one is
+   program runs `init(true)` itself. Element types need no declaration: each one is
    registered the first time an array of it is built.
 2. **A new array** reads `T{}` everywhere and allocates no buffer.
 3. **`parallel_phase()`** opens a parallel region and runs the lambda on every thread. Without
@@ -180,7 +179,7 @@ int main()
    build, those two calls compile to nothing.
 4. **Reading**: through a `const` array, `operator[]` returns a `T`. On a non-const array it
    returns a *proxy* (§6).
-5. **`shrink_to_fit()`** runs a full compression pass, outside any parallel region. You do not
+5. **`shrink_to_fit()`** runs a full compression pass, at a sequential point (§5). You do not
    need to call it: chunks are compressed as the program runs. It is there for when you want
    the memory back at a specific point.
 6. **Destroying the array** gives its buffers back. The library prints one line per array at
@@ -262,9 +261,9 @@ higher than it should. When the team size changes from one region to the next, a
 `finalize_parallel_phase()` replays a deferred write that was already freed, and with both
 calls forgotten, values come out wrong, silently. The program stops, in every build, on a
 `begin_parallel_phase()` with no `finalize_parallel_phase()` since the previous region; check
-builds (Debug, `CHECK_OPTIM`) also stop on a deferred write by a thread that skipped
+builds (Debug, `CHUNK_CHECK_OPTIM`) also stop on a deferred write by a thread that skipped
 `begin_parallel_phase()`.
-Writing them behind `if constexpr (sa::build_config::has_not_ompt)`, as above, keeps one
+Writing them behind `if constexpr (sa::build_config::needs_explicit_phases)`, as above, keeps one
 source for both runtimes.
 
 `shrink_array::parallel_phase()` writes the region and both calls for you, and leaves them out
@@ -289,12 +288,27 @@ is the program of §4 written that way: one function fills a `std::vector<double
 `zero_any::Array<double>`, and the program checks that they read back the same. It refuses to
 compile against a library without OMPT; its test runs with `CHUNK_REQUIRE_OMPT=1`.
 
-**Sequential points.** Everything that rebuilds an array's storage must be called outside any
-parallel region: `resize()`, `reserve()`, `push_back()` beyond the capacity, `clear()`,
-`assign()`, `swap()`, assignment, `shrink_to_fit()`, `compress()`, `rechunk_to()`, and, for
-`zero_one_value`, `set_second_value()`. So is an explicit `make_block_compression()`: inside a
-region it is refused (check builds stop, others log an error and skip the pass) -- there the
-writers' own passes compress.
+**Sequential points.** Everything that rebuilds an array's storage is a sequential point:
+`resize()`, `reserve()`, `push_back()` beyond the capacity, `clear()`, `assign()`, `swap()`,
+copy construction and assignment, `shrink_to_fit()`, `compress()`, `rechunk_to()`, and, for
+`zero_or_value`, `set_second_value()`. One drains the deferred writes and runs a compression
+pass over lists that every array of the element type shares. Call it outside any parallel
+region, or inside one from a single thread while the rest of the team leaves the arrays alone:
+under `omp single` or `omp masked`, or behind a lock of the program's that every other thread
+waits on. Two threads of a region never run sequential points at the same time, and no thread
+writes or reads an array meanwhile. An explicit `make_block_compression()` is the exception:
+inside a region it is refused (check builds stop, others log an error and skip the pass) --
+there the writers' own passes compress.
+
+**Work arrays inside a region.** A thread of a region may build arrays of its own
+(`zero_any::Array<double> work(n);`), write and read them, and let them be destroyed, while
+the other threads do the same and the team writes shared arrays. Construction and destruction
+take a lock of the library, one array at a time for the whole process; the element accesses
+take none. Such an array is its thread's: only that thread writes it, and the sequential
+points above are still sequential points for it -- but `resize()`, which its thread may call
+there: the pass it runs first covers that array's chunks only, not the shared arrays' the
+thread has also written. Its destruction costs one `membarrier()`, and skips the final
+compression pass that a destruction outside a region runs.
 
 **Threads.** The per-thread structures are sized once for `max(omp_get_max_threads(), number
 of cores, 256)` threads (in a std build, the team size -- `CHUNK_NUM_THREADS`, else
@@ -324,9 +338,9 @@ all of it. What that asks of them:
 - **The first array fixes the thread capacity** (above): at least 256 threads, or the cores, or
   `OMP_NUM_THREADS`; a component that opens larger teams needs `CHUNK_THREAD_CAPACITY` set
   before the first array.
-- **Process-wide calls.** `ParamChunk::init_indexes()` sets the allocation block size of the
+- **Process-wide calls.** `Runtime::init()` sets the allocation block size of the
   whole process: one call, at the start, by the program (a later one leaves the arrays already
-  built intact). `release_chunk_pools()` and `destroy_block_chunk()` empty everyone's free
+  built intact). `release_chunk_pools()` and `Runtime::shutdown()` empty everyone's free
   lists (an array still alive keeps what it needs): once, at the end of the program, or not at
   all. `reclaim_second_values()` covers every array of a type; `CHUNK_LOG` and
   `logging::set_sink()` are one setting for all.
@@ -363,21 +377,21 @@ sa::tbb::parallel_for(oneapi::tbb::blocked_range<long>(0, n), [&](const auto& r)
 ```
 
 Between `begin` and `finalize` the library counts the program's threads as a parallel region
-(the sequential points above must not be called there, as inside an OpenMP region), and each of them
+(the sequential points above follow the same rule there as inside an OpenMP region), and each of them
 holds one of the per-thread slots while it is alive. An OpenMP build numbers only OpenMP's
 threads: for the others, use the std backend.
 
 ## 6. Pitfalls
 
-- **`auto` keeps a proxy.** On a non-const array, `tab[i]` returns a write proxy. `T v = tab[i];`
-  takes the value; `auto v = tab[i];` keeps the proxy, which follows the element if it changes
+- **`auto` keeps a proxy.** On a non-const array, `arr[i]` returns a write proxy. `T v = arr[i];`
+  takes the value; `auto v = arr[i];` keeps the proxy, which follows the element if it changes
   later. In code ported from `std::vector`, replace `auto` with the element type. Every build
   refuses to compile a use of such a `v`, and says so.
-- **Convert an element before handing it on.** `std::printf("%f", tab[i])` would pass the proxy,
+- **Convert an element before handing it on.** `std::printf("%f", arr[i])` would pass the proxy,
   not the value: refused (GCC through `-Werror=conditionally-supported`, which the library sets;
-  clang always). `std::format("{}", tab[i])`, `std::max(tab[i], 2.0)` and a generic function
-  that takes `tab[i]` by value are refused too. Write `double(tab[i])`, or `T(tab[i])`.
-- **No `T&` on an element.** `tab[i].x = 1` does not compile; read the element, change it,
+  clang always). `std::format("{}", arr[i])`, `std::max(arr[i], 2.0)` and a generic function
+  that takes `arr[i]` by value are refused too. Write `double(arr[i])`, or `T(arr[i])`.
+- **No `T&` on an element.** `arr[i].x = 1` does not compile; read the element, change it,
   write it back. `data()`, mutable iterators and an in-place `std::sort` do not exist either:
   sort a `std::vector` copy and `assign()` it back.
 - **A proxy must not outlive the storage.** Any of the sequential operations of §5 invalidates
@@ -389,12 +403,16 @@ threads: for the others, use the std backend.
   parameter: `zero_any::Array<double, long>`.
 - **Element types**: anything trivially copyable, `==`-comparable and default-constructible
   (arithmetic types, `bool`, `std::complex`, enums, `std::array` and aggregates of those). A
-  type that owns a resource (`std::string`) is refused at compile time. `zero_one_value` also needs an
+  type that owns a resource (`std::string`) is refused at compile time. `zero_or_value` also needs an
   order on the second value: a struct of doubles declares `auto operator<=>(const T&) const =
-  default;`. On a `bool` element, `a[i] += 1` and the other arithmetic assignments (`-= *= /=
+  default;`. An element reads back the bits written: the library tells `-0.0` from `+0.0`
+  (bit comparison for `float`, `double`, `std::complex`, `std::array`), but compares the
+  members of an aggregate with its `==`, which merges the two zeros -- specialise
+  `shrink_array::ValueIdentity<T>` (`chunk/internal/same_value.h`) to keep the sign of a zero
+  member. On a `bool` element, `a[i] += 1` and the other arithmetic assignments (`-= *= /=
   %= <<= >>=`) do not compile: write `=`, `&=`, `|=` or `^=`.
-- **`zero_one_value` compresses only to its declared second value.** Without `set_second_value()`, a
-  `zero_one_value` array compresses to zero only.
+- **`zero_or_value` compresses only to its declared second value.** Without `set_second_value()`, a
+  `zero_or_value` array compresses to zero only.
 - **Measure memory with the right tool.** `VmRSS` lags behind on many threads; see
   [performance_measurement.md](performance_measurement.md).
 
@@ -406,5 +424,5 @@ threads: for the others, use the std backend.
 | choosing a variant on your data | [variants.md](variants.md), and `examples/variant_compare` |
 | letting the chunk size adapt at run time | [adaptive_rechunk.md](adaptive_rechunk.md) (`_dyn` libraries) |
 | every tuning variable and build option | [environment_variables.md](environment_variables.md) |
-| how it works inside | [algo_zero_one_value.md](algo_zero_one_value.md), [synchronisation_dekker.md](synchronisation_dekker.md) |
-| a larger example: multi-material fields, loops written once for both containers | `examples/multi-mat` |
+| how it works inside | [algo_zero_or_value.md](algo_zero_or_value.md), [synchronisation_dekker.md](synchronisation_dekker.md) |
+| a larger example: multi-material fields, loops written once for both containers | `examples/multi_mat` |

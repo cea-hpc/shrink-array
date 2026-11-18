@@ -24,14 +24,14 @@ def run_scaling_phase(args, extra_ldpath, errors):
     The averaged perf phase answers "how fast", this one answers "does it
     still scale". It runs EVERY perf binary of the sweep (--variants x --sizes,
     as the perf phase does, plus vector as the reference curve even when
-    --variants leaves it out) over SCALING_THREADS (4..128) with a shrunk
+    --variants leaves it out) over SCALING_THREADS (4..320) with a shrunk
     workload, prints each curve with the speedup against its first point, and
     FAILS when a point is slower than the BEST point of the same variant so far
     by more than SCALING_MAX_SLOWDOWN (1.25: a single run has spread, the top
     of the curve legitimately plateaus, and on a hybrid machine the points past
     the performance cores are genuinely slower -- a serialised pass shows up as
     1.5x and beyond). Each variant is its own curve: a regression confined to
-    one container (a lock only zero_one_value takes, a pass only zero runs) is
+    one container (a lock only zero_or_value takes, a pass only zero runs) is
     exactly what a single-variant guard would miss.
 
     Everything it needs is a constant at the top of this file, deliberately:

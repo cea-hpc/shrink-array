@@ -18,13 +18,14 @@
 // parallel, read back, folded, and the library shut down. Exit status 0 when
 // every value reads back as written.
 
-#include <utility> // std::as_const
+#include <cstdio>    // std::fprintf (the catch)
+#include <exception> // std::exception
+#include <utility>   // std::as_const
 
 #include "chunk/zero_any_array.h" // shrink_array::zero_any::Array
-#include "chunk/zero_chunk.h"     // release_chunk_pools, destroy_block_chunk
-#include "chunk/manage_ompt.h"    // parallel_phase
-#include "chunk/param_chunk.h"    // ParamChunk::init_indexes
-#include "chunk/internal/print.h" // shrink_array::println
+#include "chunk/phases.h"         // parallel_phase
+#include "chunk/runtime.h"        // Runtime::init, release_chunk_pools, Runtime::shutdown
+#include "chunk/print.h"          // shrink_array::println
 
 namespace sa = shrink_array;
 using shrink_array::println;
@@ -44,8 +45,9 @@ static double expected(int index, int count)
 }
 
 int main()
+try
 {
-    sa::ParamChunk::init_indexes(true); // once, before the first array
+    sa::Runtime::init(true); // once, before the first array
 
     int bad = 0;
     {
@@ -85,6 +87,12 @@ int main()
     } // the array releases its chunks here
 
     sa::release_chunk_pools(); // give the reuse pools back
-    sa::destroy_block_chunk();
+    sa::Runtime::shutdown();
     return bad == 0 ? 0 : 1;
+}
+catch (const std::exception& e)
+{
+    // A failed allocation or std::format: said, not std::terminate().
+    std::fprintf(stderr, "getting_started: %s\n", e.what());
+    return 2;
 }

@@ -3,18 +3,22 @@
 # CMakeLists.txt for the shrink_bench bench component.
 #
 # NOTE: each executable links against its matching chunk variant target
-# (chunk_zero / chunk_zero_one_value / chunk_zero_any / chunk_vector). The variant target sets
+# (chunk_zero / chunk_zero_or_value / chunk_zero_any / chunk_vector). The variant target sets
 # CHUNK_VARIANT_ZERO* as PUBLIC, so:
 #   - it's baked into libchunk_<variant> itself (fixing is_shrink=0 in
-#     AllTypeChunk.cpp / manage_ompt.cpp)
+#     TypeStateRegistry.cpp / manage_ompt.cpp)
 #   - it propagates to the executable's own TUs
 
 # chunk_enable_fast_math() and ARMPL_ROOT live in examples/CMakeLists.txt now:
-# multi-mat uses them too.
+# multi_mat uses them too.
 add_link_options(-rdynamic)
+# Before 16.2 only. With 16.2 the driver compiles without the flag in every
+# variant, so it is back in the unity unit: as a file of its own (CMake leaves
+# a file with its own options out of the unity build), it re-instantiated the
+# whole library a second time -- ~30% of each bench executable's compile time.
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
         AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "16"
-        AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "17"
+        AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "16.2"
         AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
     set_source_files_properties(
         shrink_bench.cpp
@@ -63,13 +67,13 @@ set(SHRINK_BENCH_HEADERS
 # ============================================================================
 # Multi-size executable generation.
 #
-# For each shrink variant (zero/zero_one_value/zero_any) and each mode (check/perf) we
+# For each shrink variant (zero/zero_or_value/zero_any) and each mode (check/perf) we
 # build one executable per declination:
 #   _64, _256, _1024  -> static libs chunk_<variant>_<size> (compile-time geometry)
 #   _dyn              -> dynamic lib chunk_<variant>_dyn (runtime geometry), with the
 #                        runtime size baked via -DDYN_CHUNK_SIZE=<SHRINK_BENCH_DYN_SIZE>.
 # Naming: shrink_bench_<backend>_<variant>_<declination>, e.g.
-#   shrink_bench_omp_zero_one_value_256, shrink_bench_std_zero_any_dyn. The check / perf
+#   shrink_bench_omp_zero_or_value_256, shrink_bench_std_zero_any_dyn. The check / perf
 #   mode is chosen at run time with --mode.
 #
 # <backend> is the threading backend of the build (CHUNK_THREADS_BACKEND, top
@@ -88,7 +92,7 @@ set(SHRINK_BENCH_HEADERS
 # ============================================================================
 
 find_package(BZip2 REQUIRED)
-if (OMP)
+if (CHUNK_OPENMP)
     find_package(OpenMP REQUIRED)
 endif ()
 
@@ -125,10 +129,10 @@ endif()
 option(SHRINK_BENCH_UNITY "Compile each shrink_bench executable as one unity translation unit" ON)
 # The memory lines of a run (bench_config.h's print_mem): OFF to time a run
 # without the RSS reads that print them.
-option(SHRINK_BENCH_PRINT_MEM "shrink_bench prints its memory lines (after init, every freq_conso_mem iterations, after a compression)" ON)
+option(SHRINK_BENCH_PRINT_MEM "shrink_bench prints its memory lines (after init, every freq_mem_report iterations, after a compression)" ON)
 set(SHRINK_BENCH_UNITY_BATCH "0" CACHE STRING "Bench sources per unity translation unit (0: all)")
 function(sa2_setup_target tgt)
-    if (OMP)
+    if (CHUNK_OPENMP)
         target_link_libraries(${tgt} PUBLIC OpenMP::OpenMP_CXX)
     endif ()
     chunk_require_cxx20(${tgt} PRIVATE)
@@ -164,7 +168,7 @@ endfunction()
 # way, both live side by side.
 #
 # NOT registered with ctest: these are perf instruments first. --mode check
-# works on them, against the data_tab* files of the 32-bit vector_check of the
+# works on them, against the data_array* files of the 32-bit vector_check of the
 # same configuration (element values, independent of Int);
 # python/bench_and_test.py runs a few such checks.
 # ============================================================================
@@ -185,7 +189,7 @@ function(sa2_add_int64_target name lib)
 endfunction()
 
 # The backend marker of every name below (but the TBB bench's): openmp is
-# spelled omp, as the cmake-build-omp-* directories and OMP=ON spell it.
+# spelled omp, as the cmake-build-omp-* directories and CHUNK_OPENMP=ON spell it.
 if (CHUNK_THREADS_BACKEND STREQUAL "openmp")
   set(_SA2_BACKEND omp)
 elseif (CHUNK_THREADS_BACKEND STREQUAL "std" OR CHUNK_THREADS_BACKEND STREQUAL "serial")
@@ -195,15 +199,15 @@ else ()
 endif ()
 set(_sa2_prefix shrink_bench_${_SA2_BACKEND})
 
-set(_sa2_variant_names   zero       zero_one_value      zero_any)
-set(_sa2_variant_libbase chunk_zero    chunk_zero_one_value    chunk_zero_any)
+set(_sa2_variant_names   zero       zero_or_value      zero_any)
+set(_sa2_variant_libbase chunk_zero    chunk_zero_or_value    chunk_zero_any)
 
 list(LENGTH _sa2_variant_names _sa2_nvar)
 math(EXPR _sa2_nvar_last "${_sa2_nvar} - 1")
 
 # One target per (variant, declination) -- no longer one per mode as well.
 # Naming: shrink_bench_<backend>_<variant>_<declination>, e.g.
-# shrink_bench_omp_zero_one_value_256, shrink_bench_serial_zero_any_dyn. Pick check or
+# shrink_bench_omp_zero_or_value_256, shrink_bench_serial_zero_any_dyn. Pick check or
 # perf at run time with --mode.
 foreach(_vi RANGE ${_sa2_nvar_last})
   list(GET _sa2_variant_names   ${_vi} _vname)
@@ -277,9 +281,9 @@ if (CHUNK_WITH_TBB AND CHUNK_THREADS_BACKEND STREQUAL "std")
   endforeach()
 endif()
 
-# No chunk2bits targets: every shrink_bench_<backend>_zero_one_value_* run carries tab_bool
-# (zero_one_value::Array<bool>, one byte per bool) AND its twin tab_bool_bits
-# (ArrayChunkBits, 8 per byte) on the same workload -- see BenchBoolBitsArray
+# No chunk2bits targets: every shrink_bench_<backend>_zero_or_value_* run carries array_bool
+# (zero_or_value::Array<bool>, one byte per bool) AND its twin array_bool_bits
+# (BitArray, 8 per byte) on the same workload -- see BenchBoolBitsArray
 # (bench_array.h). The zero / zero_any builds give the twin their own
 # Array<bool>.
 
@@ -346,7 +350,7 @@ endif ()
 if (CHUNK_BUILD_DYN)
   # --- Tests: register the check declinations of each variant ---
   #
-  # The check runs compare against the reference files (data_tab*) that
+  # The check runs compare against the reference files (data_array*) that
   # shrink_bench_<backend>_vector_check writes -- relative paths, in the working directory
   # every test here shares (this build dir). So:
   #  - vector_check is the SETUP of fixture shrink_bench_oracle and every check

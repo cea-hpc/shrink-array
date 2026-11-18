@@ -19,7 +19,7 @@
 /**
  * @file array_chunk_base.h
  * @brief CRTP base shared by every chunked array variant (zero::Array,
- *        zero_one_value::Array, zero_any::Array).
+ *        zero_or_value::Array, zero_any::Array).
  *
  * @details It gathers everything the three variants have in common: the
  *          index-independent core (ArrayChunkCore: geometry policy, chunk list,
@@ -37,18 +37,17 @@
  * @see chunk_size_policy.h for the geometry policy (static vs dynamic)
  */
 
-#include <compare>  // std::strong_ordering (const_iterator's operator<=>)
-#include <array>    // std::array (the bulk-read buffer)
-#include <concepts> // std::invocable (for_each_span's run overload)
-#include <cstddef>  // std::size_t (size_type)
-#include <span>     // std::span (for_each_span)
-#include <utility>  // std::swap, std::as_const
-#include <iterator> // std::reverse_iterator, iterator tags — const_iterator, input_iterator (assign)
+#include <compare>     // std::strong_ordering (const_iterator's operator<=>)
+#include <cstddef>     // std::size_t (size_type)
+#include <span>        // std::span (for_each_span)
+#include <utility>     // std::swap, std::as_const
+#include <iterator>    // std::reverse_iterator, iterator tags — const_iterator, input_iterator (assign)
+#include <type_traits> // std::conditional_t
 
 #include "chunk/config.h"                       // build_config::any_check, chunk_config::do_check
 #include "chunk/internal/in_t.h"                // InT<T>
-#include "chunk/chunk_traits.h"                 // ArrayChunkTraits, zero_one_value::Proxy
-#include "chunk/internal/crp_helper.h"          // CRTPSupport
+#include "chunk/internal/chunk_traits.h"        // ArrayChunkTraits, zero_or_value::Proxy
+#include "chunk/internal/crtp_support.h"        // CRTPSupport
 #include "chunk/internal/array_chunk_core.h"    // ArrayChunkCore — geometry, chunks, bitset, identity
 #include "chunk/internal/array_chunk_rechunk.h" // RechunkSupport — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED — used HERE (swap check)
@@ -62,7 +61,7 @@ namespace shrink_array
 /**
  * @brief Trait: does @p D provide a CHUNK-indexed `chunk_written(int)`?
  *
- * @details zero_one_value::Array does (zero_one_value::Chunk::written() needs the array's second-value
+ * @details zero_or_value::Array does (zero_or_value::Chunk::written() needs the array's second-value
  *          index); for zero::Array and zero_any::Array is_written_at() asks the chunk.
  *          Do not test `written(int)` instead: every variant has it, but it takes
  *          an ELEMENT index.
@@ -76,14 +75,14 @@ namespace shrink_array
  * @see ArrayChunkBase::is_written_at
  */
 template <typename D>
-inline constexpr bool has_chunk_written_v = requires(const D& obj, int num_chunk) { obj.chunk_written(num_chunk); };
+inline constexpr bool has_chunk_written_v = requires(const D& obj, int chunk_index) { obj.chunk_written(chunk_index); };
 
 /**
  * @brief Common implementation of the chunked arrays, injected by CRTP.
  *
  * @details Storage is a vector of chunks of `chunk_size()` elements each; a
- *          global index @c i splits into `i >> chunk_decalage()` (chunk number)
- *          and `i & chunk_modulo()` (offset inside the chunk). A chunk may be
+ *          global index @c i splits into `i / chunk_size()` (chunk number)
+ *          and `i % chunk_size()` (offset inside the chunk). A chunk may be
  *          constant-folded or compressed, so elements have no stable address —
  *          which is why the positional accessors below return a value on the
  *          const side and a write proxy on the non-const side rather than
@@ -94,7 +93,7 @@ inline constexpr bool has_chunk_written_v = requires(const D& obj, int num_chunk
  *          dirty bitset, registry identity) is ArrayChunkCore, the only part the
  *          proxies and registries see; this class adds m_size and the element API.
  *
- * @tparam Derived the concrete array type (zero::Array, zero_one_value::Array,
+ * @tparam Derived the concrete array type (zero::Array, zero_or_value::Array,
  *         zero_any::Array), which must specialise ArrayChunkTraits.
  * @see ArrayChunkTraits
  */
@@ -105,19 +104,19 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
                        public RechunkSupport<Derived>
 {
   public:
-    // RechunkSupport swaps chunk_list_ / m_size / nb_chunk / size_policy_ with the
+    // RechunkSupport swaps chunk_list_ / m_size / chunk_count / size_policy_ with the
     // fresh array; as a base it cannot reach these protected members through a
     // Derived object without friendship (both specialisations: <typename, bool>).
     template <typename, bool>
     friend class RechunkSupport;
 
-    // Same for RechunkHooks::rechunk_swap_identity, which swaps num_tab.
+    // Same for RechunkHooks::rechunk_swap_identity, which swaps array_id.
     template <typename, bool>
     friend class RechunkHooks;
 
     using Traits      = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
     using T           = Traits::value_type;        ///< Stored element type.
-    using IndType     = Traits::IndexType;         ///< Signed global index type.
+    using IndexType   = Traits::IndexType;         ///< Signed global index type.
     using ChunkType   = Traits::ChunkType;         ///< Chunk type held in @ref chunk_list_.
     using ProxyType   = Traits::ProxyType;         ///< Write proxy returned by the non-const accessors.
     using ManagerType = Traits::ManagerType;       ///< Per-type manager owning the compression machinery.
@@ -228,14 +227,14 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         /** @brief Jump @p offset elements (negative: backwards). O(1), one chunk sync. */
         const_iterator& operator+=(difference_type offset) noexcept
         {
-            seek(lin_ + static_cast<IndType>(offset));
+            seek(lin_ + static_cast<IndexType>(offset));
             return *this;
         }
 
         /** @brief Jump back @p offset elements. */
         const_iterator& operator-=(difference_type offset) noexcept
         {
-            seek(lin_ - static_cast<IndType>(offset));
+            seek(lin_ - static_cast<IndexType>(offset));
             return *this;
         }
 
@@ -327,11 +326,11 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
          * @param owner the array being traversed
          * @param lin absolute linear index (may be m_size, i.e. end())
          */
-        const_iterator(const ArrayChunkBase* owner, IndType lin) noexcept
+        const_iterator(const ArrayChunkBase* owner, IndexType lin) noexcept
             : owner_(owner)
             , lin_(lin)
-            , num_chunk_(lin < 0 ? -1 : owner->chunk_index_of(lin))
-            , num_(lin < 0 ? static_cast<int>(owner->size_policy_.modulo()) : owner->offset_in_chunk(lin))
+            , chunk_index_(lin < 0 ? -1 : owner->chunk_index_of(lin))
+            , elem_offset_(lin < 0 ? static_cast<int>(owner->size_policy_.modulo()) : owner->offset_in_chunk(lin))
             , modulo_(static_cast<int>(owner->size_policy_.modulo()))
         {
             enter_chunk();
@@ -343,9 +342,9 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         void check_no_write_since_entry() const noexcept;
 
         /**
-         * @brief Point chunk_ at chunk_list_[num_chunk_] and sync it once.
+         * @brief Point chunk_ at chunk_list_[chunk_index_] and sync it once.
          * @details Guarded so the end() position (one past the last element) never
-         *          dereferences an out-of-range chunk: at end, num_chunk_ may index
+         *          dereferences an out-of-range chunk: at end, chunk_index_ may index
          *          chunk_list_.size().
          */
         void enter_chunk() noexcept;
@@ -359,12 +358,12 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
          *          enter_chunk().
          * @param lin absolute linear index
          */
-        void seek(IndType lin) noexcept
+        void seek(IndexType lin) noexcept
         {
             // -1 handled apart: the chunk/offset split wants i >= 0.
-            lin_       = lin;
-            num_chunk_ = lin < 0 ? -1 : owner_->chunk_index_of(lin);
-            num_       = lin < 0 ? modulo_ : owner_->offset_in_chunk(lin);
+            lin_         = lin;
+            chunk_index_ = lin < 0 ? -1 : owner_->chunk_index_of(lin);
+            elem_offset_ = lin < 0 ? modulo_ : owner_->offset_in_chunk(lin);
             enter_chunk();
         }
 
@@ -373,12 +372,12 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         static void check_same_owner([[maybe_unused]] const const_iterator& lhs,
                                      [[maybe_unused]] const const_iterator& rhs) noexcept;
 
-        const ArrayChunkBase* owner_     = nullptr; ///< Array being traversed.
-        const ChunkType*      chunk_     = nullptr; ///< Current chunk, already sync'd; null at end/rend.
-        IndType               lin_       = 0;       // absolute linear index (identity/compare)
-        int                   num_chunk_ = 0;       ///< Index of @ref chunk_ in the chunk list.
-        int                   num_       = 0;       // intra-chunk offset
-        int                   modulo_    = 0;       ///< Cached geometry mask.
+        const ArrayChunkBase* owner_       = nullptr; ///< Array being traversed.
+        const ChunkType*      chunk_       = nullptr; ///< Current chunk, already sync'd; null at end/rend.
+        IndexType             lin_         = 0;       // absolute linear index (identity/compare)
+        int                   chunk_index_ = 0;       ///< Index of @ref chunk_ in the chunk list.
+        int                   elem_offset_ = 0;       // intra-chunk offset
+        int                   modulo_      = 0;       ///< Cached geometry mask.
     };
 
     using iterator               = const_iterator;                        ///< No mutable iterator exists (proxy store).
@@ -394,19 +393,14 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          as the calling thread's active size.
      *
      * @param new_chunk_size the new chunk size: a power of two or a multiple of
-     *        64, at most cst_buffer_size (chunk_size_error); refused otherwise,
+     *        64, at most const_buffer_size (chunk_size_error); refused otherwise,
      *        with a warning, geometry kept
-     * @warning Must be called on an empty container, before any
-     *          resize/allocation, since it changes how indices map to chunks.
+     * @warning For an empty container, before any resize/allocation, since it
+     *          changes how indices map to chunks: on an array that has chunks,
+     *          another size is refused with a warning, geometry kept (rechunk_to()
+     *          moves the elements).
      */
     void set_chunk_size([[maybe_unused]] unsigned int new_chunk_size) noexcept;
-
-    /** @brief log2(chunk_size()): the index shift of a power-of-two size, meaningless otherwise. */
-    [[deprecated("chunk sizes may be multiples of 64: use i / chunk_size()")]] [[nodiscard]] unsigned int
-    chunk_decalage() const noexcept
-    {
-        return size_policy_.decalage();
-    }
 
     /** @brief chunk_size() - 1, the last offset in a chunk (a mask only for a power of two: use i % chunk_size()). */
     [[nodiscard]] unsigned int chunk_modulo() const noexcept
@@ -415,7 +409,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     }
 
     /** @brief Number of elements currently held. */
-    [[nodiscard]] IndType size() const noexcept
+    [[nodiscard]] IndexType size() const noexcept
     {
         return m_size_;
     }
@@ -431,7 +425,13 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * Uses multi-threading if not already in a parallel region.
      * @return Total number of non-constant chunks.
      */
-    [[nodiscard]] int get_nb_chunk_written() const;
+    [[nodiscard]] int written_chunk_count() const;
+
+    /// @brief Former name of written_chunk_count().
+    [[deprecated("renamed written_chunk_count()")]] [[nodiscard]] int get_nb_chunk_written() const
+    {
+        return written_chunk_count();
+    }
 
     /**
      * @brief Calculate the filling rate of written chunks.
@@ -445,7 +445,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      */
     [[nodiscard]] double stats() const
     {
-        return nb_chunk_ ? (100.0 * get_nb_chunk_written() / nb_chunk_) : 0.0;
+        return chunk_count_ ? (100.0 * written_chunk_count() / chunk_count_) : 0.0;
     }
 
     // ── Capacity, and the growth by one ──────────────────────────────────────
@@ -459,7 +459,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     /// @return The element count the current chunks can hold without a resize().
     [[nodiscard]] size_type capacity() const noexcept
     {
-        return static_cast<size_type>(nb_chunk_) * static_cast<size_type>(size_policy_.size());
+        return static_cast<size_type>(chunk_count_) * static_cast<size_type>(size_policy_.size());
     }
 
     /**
@@ -468,7 +468,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          storage of a resize() to @p new_capacity, with the size left where it is.
      *          The new chunks are at the first constant, like any fresh chunk.
      */
-    void reserve(IndType new_capacity);
+    void reserve(IndexType new_capacity);
 
     /**
      * @brief resize(), then @p val written to the NEW elements only
@@ -476,15 +476,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @details The derived arrays' resize(newsz) does the resizing (they name
      *          this overload back with a using-declaration).
      */
-    void resize(IndType newsz, InT<T> val)
-    {
-        const IndType old_size = m_size_;
-        derived().resize(newsz);
-
-        // A team of its own outside a region (the library's threshold, the
-        // phase bracketed), the calling thread inside one.
-        write_range_by_chunks(old_size, newsz, [&val](IndType) { return static_cast<T>(val); });
-    }
+    void resize(IndexType newsz, InT<T> val);
 
     /**
      * @brief Append one element, growing the container by one.
@@ -566,7 +558,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @name Bulk reads
      * The read half of fill_range / copy_range. Call them through the free
      * functions shrink_array::for_each_value / for_each_span / read_range
-     * (array_chunk_range_ops.h), which take a std::vector as well.
+     * (range_ops.h), which take a std::vector as well.
      * @{
      */
     /**
@@ -585,13 +577,13 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          every thread on its own slice.
      */
     template <typename F>
-    void for_each_value(IndType first, IndType last, F&& func) const;
+    void for_each_value(IndexType first, IndexType last, F&& func) const;
 
     /// @brief for_each_value() over every element.
     template <typename F>
     void for_each_value(F&& func) const
     {
-        for_each_value(IndType{0}, m_size_, std::forward<F>(func));
+        for_each_value(IndexType{0}, m_size_, std::forward<F>(func));
     }
 
     /**
@@ -613,13 +605,13 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          thread on its own slice.
      */
     template <typename F>
-    void for_each_span(IndType first, IndType last, F&& func) const;
+    void for_each_span(IndexType first, IndexType last, F&& func) const;
 
     /// @brief for_each_span() over every element.
     template <typename F>
     void for_each_span(F&& func) const
     {
-        for_each_span(IndType{0}, m_size_, std::forward<F>(func));
+        for_each_span(IndexType{0}, m_size_, std::forward<F>(func));
     }
 
     /**
@@ -629,7 +621,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @return @p out advanced past the last element written.
      */
     template <typename OutIt>
-    OutIt read_range(IndType first, IndType last, OutIt out) const;
+    OutIt read_range(IndexType first, IndexType last, OutIt out) const;
     /** @} */
 
     /**
@@ -667,7 +659,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @return the element value
      * @throws std::out_of_range if @p index is negative or >= size()
      */
-    [[nodiscard]] const_reference at(IndType index) const;
+    [[nodiscard]] const_reference at(IndexType index) const;
 
     /**
      * @brief Checked write access.
@@ -675,7 +667,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @return the write proxy for that element
      * @throws std::out_of_range if @p index is negative or >= size()
      */
-    [[nodiscard]] reference at(IndType index);
+    [[nodiscard]] reference at(IndexType index);
 
     /**
      * @name First / last element
@@ -703,10 +695,10 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @param count new element count
      * @param val value written to every position
      */
-    void assign(IndType count, T val) // T, not InT<T>: val may be a(i) -- resize() can free it
+    void assign(IndexType count, T val) // T, not InT<T>: val may be a(i) -- resize() can free it
     {
         derived().resize(count);
-        write_range_by_chunks(0, count, [&val](IndType) { return val; });
+        write_range_by_chunks(0, count, [&val](IndexType) { return val; });
     }
 
     /**
@@ -723,7 +715,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @brief swap(): O(1) exchange of two containers.
      *
      * @details The chunk lists are exchanged with everything describing them:
-     *          the identity (num_tab indexes the proxies' per-array tables and the
+     *          the identity (array_id indexes the proxies' per-array tables and the
      *          registries map the address to it, as in rechunk_to()), the
      *          slab-affinity key and the dirty bitset. Exchanging the chunks alone
      *          would leave each array reading the other's metadata rows.
@@ -743,7 +735,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @param index global element index (unchecked)
      * @return the element value, after the read gate has been honoured
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator()(IndType index) const noexcept;
+    CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator()(IndexType index) const noexcept;
 
     /**
      * @brief Raw reference access: arr(i) = value.
@@ -752,15 +744,15 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @warning Bypasses the write proxy: valid only where the chunk is known to
      *          be materialised. Prefer operator[] otherwise.
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE T& operator()(IndType index) noexcept
+    CHUNK_FLATTEN CHUNK_FORCE_INLINE T& operator()(IndexType index) noexcept
     {
-        const int num_chunk = chunk_index_of(index);
-        const int num       = offset_in_chunk(index);
-        auto&     chunk_t   = chunk_list_[num_chunk];
+        const int   chunk_index = chunk_index_of(index);
+        const int   elem_offset = offset_in_chunk(index);
+        const auto& chunk_t     = chunk_list_[chunk_index];
 
-        sync_chunk(chunk_t, num_chunk, num);
+        sync_chunk(chunk_t, chunk_index, elem_offset);
 
-        return chunk_t(num);
+        return chunk_t(elem_offset);
     }
 
     /**
@@ -774,7 +766,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @param index global element index; the caller guarantees 0 <= index < size()
      * @return the element VALUE (see the member-typedef note on const_reference)
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](IndType index) const noexcept;
+    CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](IndexType index) const noexcept;
 
     /**
      * @brief Unchecked write access: THE write entry of the container.
@@ -793,7 +785,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          the same kind of proxy. The ElementRef wrapper makes a use of
      *          `auto v = a[i];` fail to compile (internal/element_ref.h).
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE reference operator[](IndType index) noexcept;
+    CHUNK_FLATTEN CHUNK_FORCE_INLINE reference operator[](IndexType index) noexcept;
 
     /**
      * @brief The write proxy of element @p index, in every build: operator[]'s
@@ -802,22 +794,31 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @param index global element index; the caller guarantees 0 <= index < size()
      * @return the write proxy for that element, armed as operator[]'s
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE ProxyType element_proxy(IndType index) noexcept;
+    CHUNK_FLATTEN CHUNK_FORCE_INLINE ProxyType element_proxy(IndexType index) noexcept;
 
   protected:
     // The core's members, named here so this class and the derived arrays use
     // them unqualified (the core is a dependent base).
     using Core::alloc_key_;
+    using Core::array_count;
+    using Core::array_id_;
     using Core::assign_alloc_key;
+    using Core::chunk_count_;
     using Core::chunk_list_;
-    using Core::nb_chunk_;
-    using Core::nb_tab;
     using Core::next_alloc_key_;
-    using Core::num_tab_;
     using Core::size_policy_;
 
+    /**
+     * @brief Throw std::length_error, as std::vector does, for a negative
+     *        element count: the constructors, resize() and reserve() call it
+     *        first, before touching the storage.
+     * @param count the requested element count or capacity
+     * @param who the call, for the message ("resize", "reserve", ...)
+     */
+    static void check_length(IndexType count, const char* who);
+
     /// @brief Installs the core's way back to rechunk_to() (rechunk_erased).
-    /// @note Protected, not private with `friend Derived`: zero_one_value and zero_any
+    /// @note Protected, not private with `friend Derived`: zero_or_value and zero_any
     ///       reach this base through SecondValueArrayBase<Derived>, which has to
     ///       construct it too.
     ArrayChunkBase() noexcept
@@ -827,25 +828,25 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
 
     /**
      * @name Index splitting
-     * IndType (int or long) -> int chunk number and offset: the one place of
+     * IndexType (int or long) -> int chunk number and offset: the one place of
      * the narrowing, valid while size() < INT_MAX * chunk_size().
      * @{
      */
     /// @brief The chunk holding element @p index (>= 0): index / chunk_size() (ActiveSizePolicy::chunk_of).
-    [[nodiscard]] int chunk_index_of(IndType index) const noexcept
+    [[nodiscard]] int chunk_index_of(IndexType index) const noexcept
     {
         return static_cast<int>(size_policy_.chunk_of(index));
     }
 
     /// @brief Element @p index's (>= 0) offset inside its chunk: index % chunk_size() (ActiveSizePolicy::offset_of).
-    [[nodiscard]] int offset_in_chunk(IndType index) const noexcept
+    [[nodiscard]] int offset_in_chunk(IndexType index) const noexcept
     {
         return static_cast<int>(size_policy_.offset_of(index));
     }
 
     /// @brief Chunks allocated for @p count elements: count / chunk_size() + 1 (the last
     ///        chunk is never full -- see capacity()).
-    [[nodiscard]] int chunks_for(IndType count) const noexcept
+    [[nodiscard]] int chunks_for(IndexType count) const noexcept
     {
         return chunk_index_of(count) + 1;
     }
@@ -863,14 +864,14 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     /**
      * @brief Claim this array's identity and build its storage for @p sz
      *        elements: the constructors' body of zero::Array and zero_any::Array
-     *        (zero_one_value::Array has its own). Registers the element type's manager on
-     *        the way (AllTypeChunk::ensure_manager), runs create_common(), then
+     *        (zero_or_value::Array has its own). Registers the element type's manager on
+     *        the way (TypeStateRegistry::ensure_manager), runs create_common(), then
      *        the variant's rebuild_storage() -- the geometry-dependent
      *        allocation alone, which rechunk_to also calls on an already
      *        registered, just torn-down array WITHOUT re-running create_common()
-     *        (that would re-register it under a fresh num_tab via pre_create_hook).
+     *        (that would re-register it under a fresh array_id via pre_create_hook).
      */
-    void create(IndType sz);
+    void create(IndexType sz);
 
     /**
      * @brief The deep copy the derived arrays' copy constructor and
@@ -883,7 +884,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          Repeated values are written materialised and folded back by the
      *          next compression pass. Called at a sequential point (resize() is
      *          one); the writes go chunk by chunk on a team of its own for a
-     *          large array (write_range_by_chunks). zero_one_value's second value is
+     *          large array (write_range_by_chunks). zero_or_value's second value is
      *          re-declared first by the derived copy hooks.
      */
     void copy_from(const Derived& from);
@@ -906,7 +907,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *                 on any thread of the team
      */
     template <typename ValueAt>
-    void write_range_by_chunks(IndType first, IndType last, ValueAt&& value_at);
+    void write_range_by_chunks(IndexType first, IndexType last, ValueAt&& value_at);
 
     /**
      * @brief The exchange behind swap() and the derived move-assignments:
@@ -916,7 +917,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      */
     void swap_storage_and_identity(Derived& other);
 
-    IndType m_size_; ///< Number of elements exposed by size().
+    IndexType m_size_ = 0; ///< Number of elements exposed by size().
 
     /// @brief Bumped by every operation that invalidates a proxy (see operator[]).
     ///        Check builds' proxies abort on use when it changed
@@ -946,18 +947,18 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @note Protected, not private: zero_any::Array::operator== reads both of its
      *       operands through it.
      */
-    T read_value(IndType index) const noexcept
+    T read_value(IndexType index) const noexcept
     {
         return (*this)(index);
     }
 
-    /// @brief The second-value slot of chunk @p num_chunk, where a motif chunk
+    /// @brief The second-value slot of chunk @p chunk_index, where a motif chunk
     ///        keeps its offset (has_motif_state_v members only). Protected, not
     ///        private: the family's array re-exports it for the chunk-size advisor.
-    [[nodiscard]] const T* motif_offset_slot(int num_chunk) const noexcept
+    [[nodiscard]] const T* motif_offset_slot(int chunk_index) const noexcept
         requires has_motif_state_v<ChunkType>
     {
-        return ProxyType::BaseSpec::get_tab_second_value(this->num_tab_, num_chunk).slot;
+        return ProxyType::BaseSpec::get_array_second_value(this->array_id_, chunk_index).slot;
     }
 
   private:
@@ -968,53 +969,53 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     ///        do not rely on every element going through operator[].
     static constexpr bool bulk_fast = !chunk_config::stats && !chunk_config::do_check;
 
-    /// @brief Call @p fn(chunk, num_chunk, lo, hi) for each chunk the range
+    /// @brief Call @p fn(chunk, chunk_index, lo, hi) for each chunk the range
     ///        [first, last) touches -- offsets [lo, hi) in it -- after one
     ///        sync_chunk, as the iterator does on chunk entry.
     template <typename Fn>
-    void for_each_chunk_span(IndType first, IndType last, Fn&& fn) const;
+    void for_each_chunk_span(IndexType first, IndexType last, Fn&& fn) const;
 
 
-    /// @brief ch.read_block(), with chunk @p num_chunk's offset slot for a
+    /// @brief ch.read_block(), with chunk @p chunk_index's offset slot for a
     ///        member with the motif state.
-    void read_chunk_block(const ChunkType& ch, int num_chunk, int first, int count, T* out) const noexcept;
+    void read_chunk_block(const ChunkType& ch, int chunk_index, int first, int count, T* out) const noexcept;
 
-    /// @brief ch.read_block_or_constant(), with chunk @p num_chunk's offset
+    /// @brief ch.read_block_or_constant(), with chunk @p chunk_index's offset
     ///        slot for a member with the motif state.
-    bool read_chunk_block_or_constant(const ChunkType& ch, int num_chunk, int first, int count, T* out, T& cst)
+    bool read_chunk_block_or_constant(const ChunkType& ch, int chunk_index, int first, int count, T* out, T& constant)
         const noexcept;
 
     /// @brief Check builds, precise read gate: nothing was deferred onto
     ///        the chunk since its sync -- the iterator's check, per block.
     void check_no_write_during_bulk_read([[maybe_unused]] const ChunkType& ch,
-                                         [[maybe_unused]] int              num_chunk,
+                                         [[maybe_unused]] int              chunk_index,
                                          [[maybe_unused]] int              offset) const noexcept;
 
     /**
-     * @brief Is chunk @p num_chunk materialised?
-     * @details Routes to Derived::chunk_written(num_chunk) when it exists (zero_one_value::Array,
+     * @brief Is chunk @p chunk_index materialised?
+     * @details Routes to Derived::chunk_written(chunk_index) when it exists (zero_or_value::Array,
      *          whose chunks need the second-value index), else asks
-     *          chunk_list_[num_chunk].written() directly.
-     * @param num_chunk CHUNK index
-     * @return true if chunk @p num_chunk has been written (i.e. is not constant)
+     *          chunk_list_[chunk_index].written() directly.
+     * @param chunk_index CHUNK index
+     * @return true if chunk @p chunk_index has been written (i.e. is not constant)
      * @see has_chunk_written_v
      */
-    [[nodiscard]] bool is_written_at(int num_chunk) const noexcept;
+    [[nodiscard]] bool is_written_at(int chunk_index) const noexcept;
 
     /**
-     * @brief Sequential counterpart of get_nb_chunk_written().
+     * @brief Sequential counterpart of written_chunk_count().
      * @return Total number of non-constant chunks, counted on one thread.
      */
-    [[nodiscard]] int get_nb_chunk_written_seq() const;
+    [[nodiscard]] int written_chunk_count_seq() const;
 
     /**
      * @brief Centralized synchronization logic.
      * @param chunk_t Reference to the actual chunk for OMP checks.
-     * @param num_chunk Index of the chunk for bitset lookup.
+     * @param chunk_index Index of the chunk for bitset lookup.
      * @param offset Offset within the chunk.
      * @note Compiles to nothing in a serial build (`if constexpr (threaded)`).
      */
-    CHUNK_FORCE_INLINE void sync_chunk(const ChunkType& chunk_t, int num_chunk, int offset) const noexcept;
+    CHUNK_FORCE_INLINE void sync_chunk(const ChunkType& chunk_t, int chunk_index, int offset) const noexcept;
 
     /// @brief The core's rechunk_fn_: casts @p core back to Derived and calls rechunk_to(@p new_size).
     static void rechunk_thunk(Core& core, unsigned int new_size)

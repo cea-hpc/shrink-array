@@ -10,7 +10,7 @@ the computation time ("Elapsed time computation") and the memory at the end of
 the run, peak and current ("Memory consumption end"). A setting that changes
 neither is fixed at its default and its variable can go; one that wins becomes
 the default. The protocol is the one of the former Milan measurements
-(KEEP_RECYCLED, SLICES, SCHEDULE): zero, zero_any and zero_one_value at dyn,
+(KEEP_RECYCLED, SLICES, SCHEDULE): zero, zero_any and zero_or_value at dyn,
 64 threads, three runs per point, the points interleaved so that a drift of the
 node hits every one of them alike.
 
@@ -65,7 +65,7 @@ from pathlib import Path
 # The executables carry the backend of their build (shrink_bench_<backend>_...):
 # bench_runner's lookup tries the three, a build directory holding one.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from bench_runner.settings import find_bench_exe  # noqa: E402
+from bench_runner.settings import find_bench_exe, this_os_first  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # The plan
@@ -92,11 +92,11 @@ CAMPAIGN_VARS = sorted({k for p in POINTS for k in p.env})
 # The other settings that would bias the runs if the calling shell had them.
 CLEARED_VARS = CAMPAIGN_VARS + [
     "CHUNK_LOG", "CHUNK_LOG_FILE", "CHUNK_ARENA_REPORT", "CHUNK_LEDGER_REPORT", "CHUNK_OMPT_STATS",
-    "CHUNK_AGGRESSIVE_COMPRESSION", "CHUNK_CST2_PROBE", "CHUNK_CST2_RECLAIM",
+    "CHUNK_AGGRESSIVE_COMPRESSION", "CHUNK_CST2_PROBE", "CHUNK_CONST2_RECLAIM",
     "SHRINK_BENCH_EXACT_RSS", "SHRINK_BENCH_RSS_SAMPLE_MS", "SHRINK_BENCH_MALLOC_TRIM", "SHRINK_BENCH_KEEP_POOLS",
 ]
 
-VARIANTS = ["zero", "zero_any", "zero_one_value"]
+VARIANTS = ["zero", "zero_any", "zero_or_value"]
 DEFAULT_ARGS = "--mode perf --no_io --multiply 2 --iter_max 500"  # bench_recycle.sh's workload
 
 
@@ -131,7 +131,8 @@ def find_exe(args, variant: str) -> Path | None:
     else:
         cfg = Path(args.build_root) / ("cmake-build-" + args.config.removeprefix("cmake-build-"))
         arch = platform.machine()
-        dirs = sorted(d for d in cfg.glob("*/examples/shrink_bench") if arch in str(d))
+        dirs = this_os_first(sorted(d for d in cfg.glob("*/examples/shrink_bench") if arch in str(d)),
+                             name=lambda d: d.parents[1].name)
         dirs += [cfg / "examples" / "shrink_bench"]
     for d in dirs:
         exe = find_bench_exe(str(d), name)

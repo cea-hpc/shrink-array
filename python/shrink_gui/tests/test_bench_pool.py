@@ -17,6 +17,7 @@ import time
 
 import pytest
 
+from bench_runner.settings import results_dir_name
 from conftest import FAKE_BENCH, PYDIR
 
 HEAD = ["Config", "Variant", "Threads", "AvgTime_s", "PeakMem_Mo", "Speedup_vs_baseline",
@@ -188,15 +189,15 @@ CONFIGS = ["cmake-build-omp-gnu", "cmake-build-omp-gnu-have-aggressive-compressi
 def _fake_tree(root, calls):
     """Three flat builds whose binaries record each call (an atomic mkdir
     of calls/c_<n>, what: name, arguments, cwd); vector_check writes the
-    oracle (data_tab_x, after 1 s), a check without it in its cwd exits 4,
+    oracle (data_array_x, after 1 s), a check without it in its cwd exits 4,
     the other modes exit 0 at once."""
     body = ("#!/bin/bash\n"
             f"k=1; until mkdir \"{calls}/c_$k\" 2>/dev/null; do k=$((k+1)); done\n"
             f"echo \"$(basename \"$0\") $* cwd=$PWD\" > \"{calls}/c_$k/what\"\n"
             "sleep ${FAKE_BENCH_SLEEP:-0.05}\n"
             "case \" $* \" in *\" --mode perf \"*|*\" --test_stl \"*|*\" --no_io \"*) exit 0;; esac\n"
-            "case \"$(basename \"$0\")\" in *vector_check) sleep 1; echo x > data_tab_x; exit 0;; esac\n"
-            "[ -f data_tab_x ] || { echo \"no oracle in $PWD\" >&2; exit 4; }\n")
+            "case \"$(basename \"$0\")\" in *vector_check) sleep 1; echo x > data_array_x; exit 0;; esac\n"
+            "[ -f data_array_x ] || { echo \"no oracle in $PWD\" >&2; exit 4; }\n")
     calls.mkdir()
     for c in CONFIGS:
         d = root / c
@@ -292,7 +293,7 @@ def test_a_stopped_pool_stops_a_job(tmp_path):
     """Another job stopped the pool (interrupted, crashed): this one claims
     nothing, writes its (empty) summary and ends with code 1."""
     _fake_tree(tmp_path / "root", tmp_path / "calls")
-    arch = tmp_path / "out" / os.uname().machine
+    arch = tmp_path / "out" / results_dir_name()
     (arch / ".pools" / "P2").mkdir(parents=True)
     (arch / ".pools" / "P2" / "stop").write_text("n7: n7 interrupted\n")
     codes, outs = _run_pool(tmp_path, "P2", jobs=1)
@@ -328,7 +329,7 @@ def test_an_interrupted_job_stops_the_pool(tmp_path):
 def test_rerun_failed_replays_the_whole_pool(tmp_path):
     """--rerun-failed with --pool: the failures every job recorded, in one job."""
     _fake_tree(tmp_path / "root", tmp_path / "calls")
-    arch = tmp_path / "out" / os.uname().machine
+    arch = tmp_path / "out" / results_dir_name()
     for k, code in ((1, 0), (2, 3)):
         jd = arch / "pool_P3" / f"n{k}"
         jd.mkdir(parents=True)
@@ -357,7 +358,7 @@ def test_without_pool_the_paths_are_unchanged(tmp_path):
                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env, cwd=str(tmp_path), timeout=300)
     o = p.stdout.decode()
     assert p.returncode == 0, o
-    arch = tmp_path / "out" / os.uname().machine
+    arch = tmp_path / "out" / results_dir_name()
     assert sorted(x.name for x in arch.iterdir()) == ["bench_errors.log", "bench_output.log", "bench_summary.csv",
                                                        "failed_cases.jsonl", "oracle", "run_logs"]
     assert "[pool]" not in o

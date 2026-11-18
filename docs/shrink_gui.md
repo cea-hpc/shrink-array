@@ -2,7 +2,7 @@
 
 > French version: [shrink_gui_fr.md](shrink_gui_fr.md).
 
-> October 2026, `shrink_gui` 0.15 (prototype). A window on the laptop to submit
+> November 2026, `shrink_gui` 0.17 (prototype). A window on the laptop to submit
 > `compile_all.sh`, `bench_and_test.py`, `multi_launch_stress.py` and `thread_speedup.py` on the cluster, or to
 > run them on the laptop itself (§3, "This machine"), follow
 > their log, read their summary and fetch their results. The code is described in the
@@ -71,7 +71,7 @@ runs again by itself.
 | QoS (-Q) | "auto" picks the QoS from the duration, according to the limits `ccc_mqinfo` reports |
 | Nodes | the pooled programs in batch mode: the number of nodes that share the work, as one job of N nodes or N one-node jobs (below) |
 | Start | after a `compile_all.sh` run that has not finished yet (Slurm dependency `afterok`/`afterany`), and/or not before a given time |
-| Builds up to date | before the command, `ninja -n` on the builds used: refuse (code 96), warn, or skip |
+| Builds up to date | before the command, `ninja -n` on the builds used: refuse (code 96), warn, or skip. "Nettoyer les builds…" beside it: §5 |
 | Directives, Launcher (job) | the `#MSUB` lines and the launcher on the node; per partition, remembered |
 | Repository (inti), Runs (inti) | the shrink-array repository and the runs directory, on the cluster |
 | Git (inti) | branch, commit, local changes, ahead of or behind the upstream; `git pull` and `git pull --rebase` buttons (§5) |
@@ -86,6 +86,20 @@ alphabetical order (dashes and case aside), after the positional arguments, kept
 script's order. Changed options are in
 bold; an option left at its default is not put on the command line. "Save as defaults"
 replaces this program's defaults on this architecture. "Command" shows exactly what will run.
+
+Under the extra arguments, the **environment** field takes variables to export before the
+command, on the node: `NAME=value` words separated by spaces (`NAME="a b"` for a value with
+spaces). For instance `CHUNK_LLVM_ROOT=~/llvm-22` for `compile_all.sh`, or a run-time switch of
+the library for a bench. They are exported before `scripts/site_env.sh`, which may read them,
+and again after it: the run's value wins over the site's. A leading `~/` is the home directory
+of the machine the run is on; nothing else of a value is expanded. The field is kept per
+program, written to `meta.json` and taken back by "Reuse its options"; "Command" shows the
+variables before the command, and the run's log has them (`[gui] env: ...`). A word that is not
+`NAME=value`, or a name the run's script uses for itself (`RUN_DIR`, `PY`...), blocks the
+submission.
+
+When the window is not tall enough for the two groups (a laptop screen), they scroll together;
+"Submit" stays below them, always in view.
 
 Before submitting an argparse script, the window has the script itself check the command on
 the cluster: its module-level `parse_args(argv)` function when it has one (`thread_speedup.py`:
@@ -102,7 +116,7 @@ the cluster.
 each, with the same directives and the same command plus `--pool=<the submission's id>`.
 They appear in the table as `compile_all.sh [k/N]`, runs `<id>-n1` to `<id>-nN`. Each job walks
 the configurations in the usual order and builds a configuration only if it is the first to
-claim it (an atomic `mkdir` in `$CHUNK_BUILD_REP/.pools/<id>/`); it skips those another job
+claim it (an atomic `mkdir` in `$CHUNK_BUILD_ROOT/.pools/<id>/`); it skips those another job
 claimed. The load balances itself: a job claims its next configuration once its node has a build slot
 for the one before (one claimed ahead at most), however much the builds cost, and nothing needs to
 know beforehand which configurations this architecture builds. A job that starts once the others have claimed
@@ -259,6 +273,36 @@ the last `fetch`; a `git pull` brings them up to date.
   repository stays as it was, and a window shows git's output.
 - When the commit changed, the connection is checked again and the script options read again.
 
+### Cleaning the builds
+
+Once `compile_all.sh` is done, a build directory still holds what only the build itself needed:
+the object files (about half of a build's size: 172 MiB of `.o` against 124 MiB of executables
+in a `zero_any` build with its validations), their dependency files, the precompiled headers,
+the static libraries. "Nettoyer les builds…", beside "Builds up to date", lists every
+configured build of the build root (`<build root>/cmake-build-<name>/<arch>`, every
+architecture) with what cleaning it would free, its total size and its last clean; the builds
+with something to free are checked.
+
+- **Removed**: `*.o`, `*.obj`, `*.o.d`, `*.gch`, `*.pch`, `*.a`.
+- **Kept**: the executables, the shared libraries (an executable may load one through its
+  RPATH), `build.ninja`, `CMakeCache.txt`, `.ninja_log`, `.ninja_deps`, the generated sources
+  (`Unity/`, the build stamp). The build stays a build: the next `compile_all.sh` recompiles
+  everything and relinks, with no new configuration.
+- The interface asks first, and warns when a `compile_all.sh` run is still active: cleaning a
+  build it compiles makes it fail.
+- **"Builds up to date" after a clean.** `ninja -n` would rebuild every missing object: every
+  cleaned build would be stale. So the clean first runs the same `ninja -n` and writes its
+  verdict to `.shrink_gui_cleaned` in the build directory. Until the next build (a
+  `.ninja_log` newer than that file), the check of `run.sh` judges a cleaned build by its
+  sources: up to date if it was when cleaned and no C/C++ source or header, `CMakeLists.txt`
+  or `*.cmake` / `*.in` file of the repository (`CMAKE_HOME_DIRECTORY`) is newer than the
+  file; otherwise not up to date, with the reason ("cleaned, chunk/foo.h changed since").
+  A clean without `ninja` on the login node, or of a build with no executable, records "not
+  checked": the build counts as stale until its next compilation.
+- After a partial rebuild (one `--target`), the builds of the other targets have no objects
+  any more and the mark is gone: the check sees them stale. Rebuild them, or set the check to
+  "warn".
+
 ## 6. Adapting it to a site
 
 What depends on the site is in a TOML file, the first one found among:
@@ -322,7 +366,7 @@ They are skipped when PySide6 is not installed.
 - A prototype, written for the TGCC machines; another site needs to write its own site file (§6). The
   scheduler must be Slurm underneath (`squeue`, `--dependency`, `--begin`).
 - One connection at a time. The interface does not open the master connection itself.
-- Several nodes (§3): the build directory `$CHUNK_BUILD_REP` (`compile_all.sh`) and
+- Several nodes (§3): the build directory `$CHUNK_BUILD_ROOT` (`compile_all.sh`) and
   `$CCCWORKDIR/thread_speedup/` (`thread_speedup.py`) must be on a file system that all the
   nodes share (the claims are directories there). Every job asks for the same time
   (-T) as a single job would. A job that fails lets the others go on; its configurations (its

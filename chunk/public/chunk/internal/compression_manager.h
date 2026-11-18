@@ -16,27 +16,26 @@
 
 #pragma once
 
-#include <vector>    // std::vector
-#include <cstddef>   // std::size_t
-#include <cstdint>   // std::int32_t, std::uint64_t, int64_t
-#include <exception> // std::exception (record_enqueue_deferred)
-#include <utility>   // std::move, std::forward
-#include <atomic>    // std::atomic, std::memory_order
-#include <memory>    // std::destroy_at
-#include <mutex>     // std::call_once, std::once_flag (ensure_initialised)
+#include <vector>  // std::vector
+#include <cstddef> // std::size_t
+#include <cstdint> // std::int32_t, std::uint64_t, int64_t
+#include <utility> // std::move, std::forward
+#include <atomic>  // std::atomic, std::memory_order
+#include <mutex>   // std::call_once, std::once_flag (ensure_initialised)
 
 #include "chunk/vendor/ankerl/unordered_dense.h" // ankerl::unordered_dense::set
 
 #include "chunk/config.h"                            // build_config::any_check, chunk_config::ring_log_debug
-#include "chunk/PMP_CHUNK.h"                         // get_thr_rank_fast
+#include "chunk/internal/pmp_chunk.h"                // get_thr_rank_fast
 #include "chunk/internal/in_t.h"                     // InT<T>
-#include "chunk/ring_log_debug.h"                    // ring_log, get_tid, EV_*_THREAD_HAS_OPS
+#include "chunk/internal/ring_log_debug.h"           // ring_log, get_tid, EV_*_THREAD_HAS_OPS
 #include "chunk/internal/invariant_check.h"          // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/chunk_size_policy.h"        // t_active_chunk_size — per-op geometry pin in write_body
 #include "chunk/internal/deferred_op_pool.h"         // DeferredOperationBase
 #include "chunk/internal/deferred_lifecycle_check.h" // DEFERRED_LIFECYCLE sentinels
-#include "chunk/internal/chunk_stats.h"              // increm_chunk_gate_* (the handshake, rare side)
+#include "chunk/internal/chunk_stats.h"              // inc_chunk_gate_* (the handshake, rare side)
 #include "chunk/internal/immortal.h"                 // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/same_value.h"               // same_value
 
 namespace shrink_array
 {
@@ -102,7 +101,7 @@ struct FlushReplayState
  *          pending counters, dangerous-list tracking and the start()/finish()
  *          session verbs exist only when there are threads to coordinate (same
  *          split as ChunkFastCompPolicy, ChunkDeferredOpsPolicy,
- *          zero_one_value::ProxyFastCompPolicy), so the serial build carries no such state.
+ *          zero_or_value::ProxyFastCompPolicy), so the serial build carries no such state.
  *
  *          The serial specialisation is (nearly) empty: every call site of a
  *          member below sits in a branch discarded by `if constexpr` there.
@@ -223,7 +222,7 @@ class CompressionManagerThreadPolicy : public FlushReplayState<T, ChunkT>
     /**
      * @brief Size the per-rank tracking structures this policy owns, once.
      * @details Called when the manager of (T, ChunkT) is registered
-     *          (AllTypeChunk::register_manager): before the first array of the
+     *          (TypeStateRegistry::register_manager): before the first array of the
      *          type, and before any fan-out can reach these structures. Not by
      *          the constructor of a static: that runs at an unspecified point
      *          of the static initialisation, possibly after a global array's
@@ -387,12 +386,12 @@ class CompressionManagerThreadPolicy : public FlushReplayState<T, ChunkT>
      *
      * @param thr   caller's rank -- the op must be on this rank
      * @param chunk chunk holding the queued op
-     * @param num   offset within the chunk; a no-op when nothing is queued there
+     * @param elem_offset   offset within the chunk; a no-op when nothing is queued there
      * @note Runs under this rank's owner-recursive shard lock, uncontended.
      * @warning Resolves only same-thread W(defer) -> W(direct). Cross-thread
      *          unsynchronised WAW stays non-deterministic, by design.
      */
-    static void erase_own_rank_op(int thr, ChunkT* chunk, int num) noexcept;
+    static void erase_own_rank_op(int thr, ChunkT* chunk, int elem_offset) noexcept;
 
     /**
      * @brief Might the calling rank hold deferred ops?
@@ -445,7 +444,7 @@ class CompressionManagerThreadPolicy : public FlushReplayState<T, ChunkT>
     template <typename F>
     static void run_slow_path(F&& fn)
     {
-        increm_chunk_gate_driver<ChunkT>();
+        inc_chunk_gate_driver<ChunkT>();
         std::forward<F>(fn)();
     }
 
@@ -828,8 +827,8 @@ struct CompressionManager : public CompressionManagerThreadPolicy<T, ChunkT, bui
     [[nodiscard]] static bool
     should_mark_for_compression(InT<T> old_value, InT<T> new_value, InT<T> second_value, InT<T> first_value) noexcept
     {
-        return (old_value != first_value && new_value == first_value) ||
-               (old_value != second_value && new_value == second_value);
+        return (!same_value(old_value, first_value) && same_value(new_value, first_value)) ||
+               (!same_value(old_value, second_value) && same_value(new_value, second_value));
     }
 };
 

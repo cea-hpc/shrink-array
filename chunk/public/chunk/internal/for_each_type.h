@@ -21,7 +21,7 @@
 
 // Compile-time iteration over a std::tuple<Ts...> of types. Used by consumer
 // TUs to drive per-type instantiation from a type list they own (e.g. a
-// std::tuple passed to ParamChunk::init_indexes<Types>()).
+// std::tuple passed to Runtime::init<Types>()).
 //
 // The library owns no "supported types" list; consumer code is
 // responsible for declaring which T it uses.
@@ -38,8 +38,10 @@ template <typename... Ts>
 struct ForEachTypeImpl<std::tuple<Ts...>>
 {
     /// @brief Call `fn.template operator()<T>()` for each T of the tuple, in order.
+    /// @note Not forwarded: @p fn is called once per type, and forwarding it
+    ///       could move it more than once.
     template <typename F>
-    static void apply(F&& fn)
+    static void apply(F&& fn) // NOSONAR(cpp:S5425)
     {
         (fn.template operator()<Ts>(), ...);
     }

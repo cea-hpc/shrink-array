@@ -109,8 +109,8 @@ M4=motif_offset.c
 echo "== handshake 4: motif readers <-> rewrites of the offset slot ($M4) =="
 run ok    "source, another motif"                            --check-liveness -- $M4
 run ok    "source, the same motif (ABA)"                     --check-liveness -- -DTARGET_SAME_MOTIF $M4
-run ok    "source, first constant"                           --check-liveness -- -DTARGET_CST1 $M4
-run ok    "source, second constant"                          --check-liveness -- -DTARGET_CST2 $M4
+run ok    "source, first constant"                           --check-liveness -- -DTARGET_CONST1 $M4
+run ok    "source, second constant"                          --check-liveness -- -DTARGET_CONST2 $M4
 run ok    "source, 3 reads"                                  --check-liveness -- -DNREADS=3 $M4
 run ok    "source, 2 readers x 2 reads"                      --check-liveness -- -DNREADERS=2 -DNREADS=2 $M4
 run ok    "source, 3 readers"                                --check-liveness -- -DNREADERS=3 $M4
@@ -121,11 +121,11 @@ run error "MUT_CAS_BEFORE_SLOT (algo_pattern.md section 6: the slot first)" -- -
 run error "MUT_NO_GRACE (calibration)"                       -- -DMUT_NO_GRACE $M4
 echo "-- the behaviours the model changed in the source (F5) --"
 run error "MUT_NO_RECHECK, another motif (F5, before)"       -- -DMUT_NO_RECHECK $M4
-run error "MUT_NO_RECHECK, first constant (F5, before)"      -- -DMUT_NO_RECHECK -DTARGET_CST1 $M4
-run error "MUT_NO_RECHECK, second constant (F5, before)"     -- -DMUT_NO_RECHECK -DTARGET_CST2 $M4
+run error "MUT_NO_RECHECK, first constant (F5, before)"      -- -DMUT_NO_RECHECK -DTARGET_CONST1 $M4
+run error "MUT_NO_RECHECK, second constant (F5, before)"     -- -DMUT_NO_RECHECK -DTARGET_CONST2 $M4
 run ok    "MUT_NO_RECHECK, the same motif: harmless"         -- -DMUT_NO_RECHECK -DTARGET_SAME_MOTIF $M4
-run error "MUT_SLOT_STORE_PLAIN, first constant (F5, before: reset())" -- -DMUT_SLOT_STORE_PLAIN -DTARGET_CST1 $M4
-run error "MUT_SLOT_STORE_PLAIN, second constant (F5, before: set_from_array())" -- -DMUT_SLOT_STORE_PLAIN -DTARGET_CST2 $M4
+run error "MUT_SLOT_STORE_PLAIN, first constant (F5, before: reset())" -- -DMUT_SLOT_STORE_PLAIN -DTARGET_CONST1 $M4
+run error "MUT_SLOT_STORE_PLAIN, second constant (F5, before: set_from_array())" -- -DMUT_SLOT_STORE_PLAIN -DTARGET_CONST2 $M4
 
 M5=queue_handback.c
 
@@ -136,6 +136,10 @@ echo "-- mutations: each must be refused --"
 run error "MUT_OLD_HANDBACK (F6, before: unmark, then reset)"   -- -DMUT_OLD_HANDBACK $M5
 run error "MUT_HANDBACK_AFTER_UNMARK (the window is back)"      -- -DMUT_HANDBACK_AFTER_UNMARK $M5
 run error "MUT_WRITER_IGNORES_2 (nobody notes the write)"       -- -DMUT_WRITER_IGNORES_2 $M5
+echo "-- two passes: the order of the hand-back (mark first, then flag) --"
+run ok    "source, two passes (W's pass B after its push)"      --check-liveness -- -DTWO_PASSES $M5
+run ok    "MUT_RELEASE_BEFORE_UNMARK, one pass: no claim to erase" -- -DMUT_RELEASE_BEFORE_UNMARK $M5
+run error "MUT_RELEASE_BEFORE_UNMARK, two passes (B's claim erased)" -- -DTWO_PASSES -DMUT_RELEASE_BEFORE_UNMARK $M5
 
 M6=range_edges.c
 

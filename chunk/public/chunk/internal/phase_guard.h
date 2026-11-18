@@ -18,7 +18,7 @@
 
 /**
  * @file phase_guard.h
- * @brief Guard of the parallel-phase protocol (manage_ompt.h).
+ * @brief Guard of the parallel-phase protocol (phases.h).
  *
  * Without OMPT the library does not see region boundaries. A write can be
  * DEFERRED to the writing thread's queue (once the chunk's candidate list is
@@ -51,26 +51,26 @@
  *    without the brackets is legitimate (region_storage_validation). What
  *    needs the brackets is a write left queued in a rank's queue.
  *
- * Only where the protocol is manual (build_config::has_not_ompt, OpenMP):
+ * Only where the protocol is manual (build_config::needs_explicit_phases, OpenMP):
  * under OMPT the runtime callbacks make the calls themselves (`tracked`).
  * The finalize check runs in EVERY such build, release included: it costs
  * one level query and one comparison per thread and per region, never per
  * write, and what it stops is a freed op replayed or values silently wrong.
  * The begin check is a check-build one (`active`, build_config::any_check):
  * alone, a forgotten begin leaves the values right. shrink_array::
- * parallel_phase() (manage_ompt.h) makes both calls for the program.
+ * parallel_phase() (phases.h) makes both calls for the program.
  *
  * One top-level team at a time: the generation is global, so with two
  * teams started by different host threads one team's phase end makes the
  * other's threads stale (check_write fails) and can hide its forgotten
- * finalize. Such a program is outside the protocol anyway (manage_ompt.h).
+ * finalize. Such a program is outside the protocol anyway (phases.h).
  */
 
 #include <atomic>  // std::atomic, std::memory_order_relaxed
 #include <cstddef> // std::size_t (teams::rank_holders)
 
-#include "chunk/PMP_CHUNK.h"                // CHUNK_PMP_*, chunk_pmp_team_rank
-#include "chunk/config.h"                   // build_config::any_check, build_config::has_not_ompt
+#include "chunk/internal/pmp_chunk.h"       // CHUNK_PMP_*, chunk_pmp_team_rank
+#include "chunk/config.h"                   // build_config::any_check, build_config::needs_explicit_phases
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 
 namespace shrink_array::phase_guard
@@ -101,7 +101,7 @@ inline void next_phase() noexcept
 
 /// @brief The protocol is manual in this build (OpenMP without OMPT): the
 ///        generations are kept and the finalize check runs, in every build type.
-inline constexpr bool tracked = build_config::threaded && build_config::has_not_ompt;
+inline constexpr bool tracked = build_config::threaded && build_config::needs_explicit_phases;
 
 /// @brief ... and it is a check build: the begin check (check_write) runs too.
 inline constexpr bool active = tracked && build_config::any_check;
@@ -143,9 +143,9 @@ inline void check_begin() noexcept
 
 /// @brief A write about to be deferred: fail if it runs in a parallel region
 ///        on a thread that did not call begin_parallel_phase() in this phase.
-/// @param chunk the chunk written, @param num the element (for the message).
+/// @param chunk the chunk written, @param elem_offset the element (for the message).
 template <typename ChunkT>
-void check_write(const ChunkT* chunk, long num) noexcept
+void check_write(const ChunkT* chunk, long elem_offset) noexcept
 {
     if constexpr (active)
     {
@@ -156,8 +156,8 @@ void check_write(const ChunkT* chunk, long num) noexcept
                 "begin_parallel_phase() since the last finalize_parallel_phase(): without OMPT every thread of a "
                 "region that writes calls begin_parallel_phase() before its first write, and "
                 "finalize_parallel_phase() runs after the region, or this write replays after a later region's "
-                "writes -- or let shrink_array::parallel_phase() do both. chunk={} num={}",
-                chunk_pmp_team_rank(), chunk, num);
+                "writes -- or let shrink_array::parallel_phase() do both. chunk={} elem_offset={}",
+                chunk_pmp_team_rank(), chunk, elem_offset);
         }
     }
 }
@@ -176,7 +176,7 @@ void check_write(const ChunkT* chunk, long num) noexcept
 // A nested region is not a top-level one: it is allowed (nested_region_validation).
 namespace teams
 {
-/// @brief An array exists: set by the first manager's registration (all_type_chunk.cpp).
+/// @brief An array exists: set by the first manager's registration (type_state_registry.cpp).
 inline std::atomic<bool> arrays_exist{false};
 
 /// @brief Top-level regions running now (OMPT builds).

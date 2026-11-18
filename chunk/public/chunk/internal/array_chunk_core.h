@@ -22,7 +22,7 @@
  *
  * @details zero::Array*<T, IntType> are distinct types for every IntType, but
  *          the machinery around them -- proxies, chunks, managers, the per-T
- *          registries (<tt>Proxy*\<T\>\::share_info_array</tt>) -- is templated on T alone
+ *          registries (<tt>Proxy*\<T\>\::array_registry</tt>) -- is templated on T alone
  *          and reaches the array through a type-erased pointer (the proxy's
  *          ptr_on_array, the registries' keys). Do not cast that pointer back to
  *          `zero::Array*<T, int>`: on a `<T, long>` array the fields sit elsewhere.
@@ -33,9 +33,9 @@
  *          static_cast from the void* back to ArrayChunkCore is well-defined.
  *          The index-typed part (m_size, the element API) stays in ArrayChunkBase.
  *
- *          The per-T counters nb_tab (source of num_tab) and next_alloc_key_ live
+ *          The per-T counters array_count (source of array_id) and next_alloc_key_ live
  *          here too: they must be shared by `<T, int>` and `<T, long>` arrays, or
- *          two arrays of one process get the same num_tab.
+ *          two arrays of one process get the same array_id.
  *
  * @see array_chunk_base.h, which derives from it
  * @see array_chunk_for.h, which maps a chunk type to it for the proxies
@@ -51,7 +51,7 @@
 #include <vector>      // std::vector (chunk_list_)
 
 #include "chunk/config.h"                            // build_config::alloc_affinity_min_bytes, build_config::any_check
-#include "chunk/chunk_traits.h"                      // ChunkTraits (ProxyType, ManagerType)
+#include "chunk/internal/chunk_traits.h"             // ChunkTraits (ProxyType, ManagerType)
 #include "chunk/internal/chunk_size_policy.h"        // ActiveSizePolicy
 #include "chunk/internal/array_chunk_dirty_bitset.h" // DirtyBitsetSupport
 #include "chunk/internal/array_chunk_for.h"          // ArrayKey (registry_key)
@@ -64,14 +64,16 @@ namespace alloc_affinity_detail
 {
 /// Eager (an allocator set per large array at creation) or lazy (only the
 /// storage a re-chunk builds gets one, see assign_alloc_key()) -- eager by
-/// default for zero, lazy for zero_one_value / zero_any, fixed at build time.
+/// default for zero, lazy for zero_or_value / zero_any, fixed at build time.
 /// zero's memory is mostly data and its rebuild is sliced: from the shared pool,
 /// whose slabs mix several arrays' blocks, no slab empties during the first
-/// re-chunk, so eager lowers its peak. zero_one_value / zero_any are not sliced and
-/// are metadata-heavy: lazy saves them the per-array slabs. Measured on Milan
+/// re-chunk, so eager lowers its peak. zero_or_value / zero_any are metadata-heavy:
+/// lazy saves them the per-array slabs. Their rebuilds are sliced too, but eager
+/// zero_or_value did no better on x86-64 (2 threads, 10^8 elements, November 2026:
+/// peak 1,732 MB against 1,724 lazy, end 1,495 against 1,511). Measured on Milan
 /// (shrink_bench int64 dyn, 64 threads, three runs each, October 2026): zero lazy
 /// costs +9.8% of time, +14.6% at the peak and +11.8% at the end; zero_any eager
-/// +7.4% at the peak; zero_one_value is the same either way.
+/// +7.4% at the peak; zero_or_value is the same either way.
 inline constexpr bool g_eager = chunk_config::use_zero;
 
 /// True while rechunk_to() constructs its new storage (tmp): the storage that
@@ -129,12 +131,12 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
     /// @brief Number of live chunks.
     [[nodiscard]] int chunk_count() const noexcept
     {
-        return nb_chunk_;
+        return chunk_count_;
     }
 
     /**
      * @brief Name this array in the end-of-life stats line, next to its table
-     *        number: `[tab_quant #20 double]` instead of `[tab_20 double]`.
+     *        number: `[array_quant #20 double]` instead of `[array_20 double]`.
      * @details Every re-chunk gives the array a new table number, so the number
      *          alone does not identify the variable. The name stays with the object
      *          (re-chunk and swap() move storage, not it). Empty: the number alone.
@@ -154,11 +156,11 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
      * @brief Direct access to one chunk, for bulk range operations.
      *
      * @details NOT part of the container interface: it exposes the chunked
-     *          representation, for the bulk operations of array_chunk_range_ops.h
+     *          representation, for the bulk operations of range_ops.h
      *          (one decision per chunk, not per element). Everything else goes
      *          through operator[].
      *
-     * @param index chunk index; the caller guarantees 0 <= index < nb_chunk
+     * @param index chunk index; the caller guarantees 0 <= index < chunk_count
      */
     [[nodiscard]] ChunkType& chunk_ref(std::size_t index) noexcept
     {
@@ -186,7 +188,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
     /**
      * @brief The identity under which this array is known outside its own type
      *        (ArrayKey): the proxies' ptr_on_array_ and every
-     *        <tt>Proxy*\<T\>\::share_info_array</tt> key.
+     *        <tt>Proxy*\<T\>\::array_registry</tt> key.
      * @details Always this subobject, never the derived array: the same core
      *          for every index type of the array.
      */
@@ -195,9 +197,34 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
         return this;
     }
 
+    /**
+     * @brief Does the teardown of array @p array_id walk the calling thread's
+     *        per-rank structures only?
+     * @details True inside a parallel region, for an array no other rank has
+     *          queued a chunk of or deferred a write to (internal::ArrayUsers): a
+     *          work array of the calling thread. Its teardown then drains this
+     *          rank's deferred writes and candidate list, and runs no pass over
+     *          the other arrays. False at a sequential point, and for any array
+     *          another rank has used: the teardown walks every rank, which
+     *          requires that no other thread be writing.
+     * @param array_id The array's table number.
+     */
+    [[nodiscard]] static bool teardown_on_own_rank(int array_id) noexcept;
+
+    /**
+     * @brief Inside a region, wait until no other thread can still be reading
+     *        one of this array's chunks through a pointer it loaded earlier.
+     * @details Call before chunk_list_'s buffer is freed or reallocated. The
+     *          owner no longer writes, so no new pointer to a chunk is
+     *          published; a compressor's start() may still hold the one it read
+     *          from this thread's writer flag (its scan is a read section). One
+     *          grace period of read_reclaim. Nothing at a sequential point.
+     */
+    void await_chunk_readers() const noexcept;
+
     /// @brief Give this array its own allocator set if it is worth a slab per
     ///        rank; registers allocators, reuse lists and their budget with the
-    ///        manager. Call from rebuild_storage() once nb_chunk is known
+    ///        manager. Call from rebuild_storage() once chunk_count is known
     ///        (sequential). Idempotent for an array that already has a key.
     void assign_alloc_key();
 
@@ -236,19 +263,19 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
      * @brief Chunk-size policy — the single home for chunk geometry.
      *
      * @details Shared by all containers that derive from ArrayChunkBase
-     *          (zero::Array, zero_one_value::Array, zero_any::Array). Geometry use-sites go
+     *          (zero::Array, zero_or_value::Array, zero_any::Array). Geometry use-sites go
      *          through size_policy_.decalage()/modulo()/size().
      */
     [[no_unique_address]] ActiveSizePolicy size_policy_{};
 
-    ChunkListType chunk_list_;  ///< The chunks, in index order.
-    int           nb_chunk_{0}; ///< Number of live chunks in `chunk_list_`.
+    ChunkListType chunk_list_;     ///< The chunks, in index order.
+    int           chunk_count_{0}; ///< Number of live chunks in `chunk_list_`.
 
-    int num_tab_{0}; ///< Identity of this array in the per-type registries.
+    int array_id_{0}; ///< Identity of this array in the per-type registries.
     /// @brief Number of arrays of this element type created so far (source of
-    ///        num_tab), all index types together: num_tab indexes the per-T
+    ///        array_id), all index types together: array_id indexes the per-T
     ///        tables of the proxies.
-    static inline int nb_tab{0};
+    static inline int array_count{0};
     /// @brief Slab-affinity key: 0 = the rank's shared allocator pool; otherwise
     ///        this array's own allocator set (rank x size), so re-chunking or
     ///        destroying it empties whole slabs. Assigned by assign_alloc_key()

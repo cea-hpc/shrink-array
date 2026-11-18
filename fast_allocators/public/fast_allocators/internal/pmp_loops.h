@@ -61,7 +61,6 @@
 #include <array>       // std::array (parallel_sum's result)
 #include <cstddef>     // std::size_t
 #include <type_traits> // std::is_integral_v
-#include <utility>     // std::forward (the std backend's loops)
 
 #ifdef _OPENMP
     #include <omp.h> // omp_get_max_threads (the default team size), omp_get_thread_num, omp_get_num_threads

@@ -18,60 +18,24 @@
 
 /**
  * @file zero_array_parallel.h
- * @brief zero::Array's two mode-gated surfaces -- the OpenMP-only one (the
- *        deferred-op flush) and the fast-block-only one
- *        (make_block_compression) -- isolated in their own mixins so they
- *        disappear entirely from a build that has neither.
+ * @brief zero::Array's fast-block-only surface (make_block_compression),
+ *        isolated in its own mixin so that it disappears from a build without it.
  *
- * @details ParallelSupport<Derived, threaded> carries
- *          flush_pending_deferred_ops(), which drains the deferred writes
- *          queued on this array's chunks (ParallelSupportCommon, shared with the
- *          two other variants); the serial specialisation is an empty class
- *          whose flush is a no-op. FastBlockSupport<Derived,
- *          use_fast_block_compression> carries the fast-block compression pass,
- *          whose gate is stricter than threaded.
+ * @details FastBlockSupport<Derived, use_fast_block_compression> carries the
+ *          fast-block compression pass, whose gate is stricter than threaded.
+ *          ParallelSupport (array_chunk_parallel_common.h) carries what all the
+ *          variants share under threads.
  *
  * @see zero_array_parallel_inline.h for the body
  * @see array_chunk_parallel_common.h for the shared part
  */
 
-#include "chunk/config.h"       // build_config::threaded, chunk_config::use_fast_block_compression
-#include "chunk/chunk_traits.h" // ArrayChunkTraits
-#include "chunk/internal/array_chunk_parallel_common.h" // ParallelSupportCommon, ParallelSupportCommonSerial
+#include "chunk/config.h"                               // chunk_config::use_fast_block_compression
+#include "chunk/internal/chunk_traits.h"                // ArrayChunkTraits
+#include "chunk/internal/array_chunk_parallel_common.h" // ParallelSupport (zero_array.h uses it through this header)
 
 namespace shrink_array::zero
 {
-
-/**
- * @brief The OpenMP-only members of an array, present only when the build has OpenMP.
- *
- * @tparam Derived the concrete array type (only zero::Array today).
- * @tparam Enabled defaulted to build_config::threaded; never pass it
- *         explicitly outside of tests — the point of the parameter is that the
- *         two specialisations below are selected by the build mode.
- */
-template <typename Derived, bool Enabled = build_config::threaded>
-struct ParallelSupport;
-
-// ── OpenMP build: the real parallel surface ──────────────────────────────────
-/**
- * @brief OpenMP specialisation: the deferred-op flush.
- * @copydetails ParallelSupport
- */
-template <typename Derived>
-struct ParallelSupport<Derived, true> : public ParallelSupportCommon<Derived>
-{
-    // flush_pending_deferred_ops() and self() come from ParallelSupportCommon.
-};
-
-// ── Serial build: nothing to parallelise ─────────────────────────────────────
-/**
- * @brief Serial specialisation: the same verb, inert.
- */
-template <typename Derived>
-struct ParallelSupport<Derived, false> : public ParallelSupportCommonSerial<Derived>
-{
-};
 
 /**
  * @brief zero::Array's fast-block compression pass, present only in that mode.
@@ -80,7 +44,7 @@ struct ParallelSupport<Derived, false> : public ParallelSupportCommonSerial<Deri
  * @tparam Enabled defaulted to chunk_config::use_fast_block_compression; never
  *         pass it explicitly outside of tests.
  *
- * @details zero's copy of zero_one_value::FastBlockSupport (zero_one_value_array_parallel.h). The only
+ * @details zero's copy of zero_or_value::FastBlockSupport (zero_or_value_array_parallel.h). The only
  *          call site (zero::Array::resize) guards with the same constexpr and
  *          so still names a declared member in every mode.
  */
@@ -113,12 +77,21 @@ class FastBlockSupport<Derived, true>
     /**
      * @brief The pass behind make_block_compression(), and resize()'s drain.
      * @details Outside a region, every thread's candidate list; inside one (an
-     *          array resized by the thread that owns it), the calling thread's
-     *          list only, its released buffers held for one reader grace period
-     *          (read_reclaim::PassScope). resize() needs it there: the lists hold
-     *          &chunk_list_[j] pointers its reallocation would leave dangling.
+     *          array resized by the thread that owns it), drain_own_candidates().
+     *          resize() needs it: the lists hold &chunk_list_[j] pointers its
+     *          reallocation would leave dangling.
      */
     void drain_candidates();
+
+    /**
+     * @brief The drain inside a region: the pass on this array's candidates
+     *        only, in the calling thread's list.
+     * @details The other arrays' candidates stay queued, untouched
+     *          (internal/own_candidates.h): the pass takes no writer handshake,
+     *          and another thread may be writing them. The buffers released are
+     *          held for one reader grace period (read_reclaim::PassScope).
+     */
+    void drain_own_candidates();
 
     /** @brief CRTP down-cast: the concrete array this mixin is a base of. */
     [[nodiscard]] Derived& self() noexcept

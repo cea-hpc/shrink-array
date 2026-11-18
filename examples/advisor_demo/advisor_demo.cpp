@@ -22,12 +22,10 @@
 #include <iterator> // std::size
 #include <vector>   // std::vector
 
-#include "chunk/zero_any_array.h"             // zero_any::Array
-#include "chunk/zero_any_chunk.h"             // zero_any
-#include "chunk/chunk_size_advisor.h"         // ChunkSizeAdvisor
-#include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
-#include "chunk/param_chunk.h"                // ParamChunk::init_indexes
-#include "chunk/internal/print.h"             // shrink_array::println
+#include "chunk/zero_any_array.h"     // zero_any::Array, zero_any::Chunk
+#include "chunk/chunk_size_advisor.h" // ChunkSizeAdvisor, set_active_chunk_size
+#include "chunk/runtime.h"            // Runtime::init
+#include "chunk/print.h"              // shrink_array::println
 
 using namespace shrink_array;
 
@@ -35,9 +33,9 @@ using namespace shrink_array;
 static constexpr int n_elems = 1 << 22; // 4M elements
 
 // Mixed, size-sensitive pattern:
-//  [0,50%)   : zeros                          -> cst1 at every size
-//  [50,75%)  : constant 3.5                   -> cst2 at every size
-//  [75,87.5%): 256-long alternating constants -> cst at S<=256, MAT above
+//  [0,50%)   : zeros                          -> const1 at every size
+//  [50,75%)  : constant 3.5                   -> const2 at every size
+//  [75,87.5%): 256-long alternating constants -> constant at S<=256, MAT above
 //  [87.5,100%): pseudo-random                 -> MAT at every size
 //  plus: one exceptional value every 4096 elements inside the zero region
 //        -> pollutes 1 chunk in 64 at S=64, 1 in 4 at S=1024...
@@ -60,11 +58,11 @@ static double value_at(int index)
 }
 
 template <typename Tab>
-static void fill_and_compress(Tab& tab)
+static void fill_and_compress(Tab& arr)
 {
     for (int i = 0; i < n_elems; ++i)
     {
-        tab[i] = value_at(i);
+        arr[i] = value_at(i);
     }
     Tab::make_block_compression();
 }
@@ -75,18 +73,18 @@ struct Truth
     double    mem;
 };
 
-static Truth ground_truth(const zero_any::Array<double>& tab, double meta)
+static Truth ground_truth(const zero_any::Array<double>& arr, double meta)
 {
-    Truth truth{tab.nb_chunk_, 0, 0.};
+    Truth truth{arr.chunk_count_, 0, 0.};
     for (long long j = 0; j < truth.chunks; ++j)
     {
-        const auto& chunk = tab.chunk_list_[j];
-        if (!chunk.is_cst_val1() && !chunk.is_cst_val2())
+        const auto& chunk = arr.chunk_list_[j];
+        if (!chunk.is_const_val1() && !chunk.is_const_val2())
         {
             ++truth.mat;
         }
     }
-    truth.mem = (static_cast<double>(truth.chunks) * meta) + (double(truth.mat) * tab.chunk_size() * sizeof(double));
+    truth.mem = (static_cast<double>(truth.chunks) * meta) + (double(truth.mat) * arr.chunk_size() * sizeof(double));
     return truth;
 }
 
@@ -97,7 +95,7 @@ int main()
     // Mandatory library init: the block size and the allocator indexes for
     // the first size. Element types register themselves at their first array.
     set_active_chunk_size(64);
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     // Ground truth at every real size
     // The powers of two, and the multiples of 64 the advisor's grid evaluates
@@ -108,17 +106,18 @@ int main()
     double             meta = 0.;
     for (const unsigned cs : sizes)
     {
-        set_thread_chunk_size(cs);
-        zero_any::Array<double> tab(1); // proven pattern (test_multisize):
-        tab.set_chunk_size(cs);         // register per-array size FIRST,
-        tab.resize(n_elems);            // THEN size the geometry
-        fill_and_compress(tab);
+        // An empty array takes its geometry (set_chunk_size refuses another
+        // size once the array has chunks), THEN its elements.
+        zero_any::Array<double> arr(0);
+        arr.set_chunk_size(cs);
+        arr.resize(n_elems);
+        fill_and_compress(arr);
         if (meta == 0.)
         {
             const ChunkSizeAdvisor<double>::Options opts;
             meta = sizeof(zero_any::Chunk<double>) + opts.meta_extra_bytes;
         }
-        truths.push_back(ground_truth(tab, meta));
+        truths.push_back(ground_truth(arr, meta));
     }
 
     // Advisor predictions against ground truth, from two reference sizes:
@@ -139,9 +138,8 @@ int main()
     int grid_rows = 0; // rows at a size that is not a power of two, checked
     for (const Ref run : {Ref{256u, 65536}, Ref{1024u, 65536}, Ref{256u, 300}})
     {
-        const unsigned ref_size = run.ref_size;
-        set_thread_chunk_size(ref_size);
-        zero_any::Array<double> ref(1);
+        const unsigned          ref_size = run.ref_size;
+        zero_any::Array<double> ref(0);
         ref.set_chunk_size(ref_size);
         ref.resize(n_elems);
         fill_and_compress(ref);

@@ -7,9 +7,13 @@
 # -fno-math-errno (the errno store is a side effect) AND a -fveclib -- ArmPL on
 # the AArch64 node, glibc's libmvec (_ZGVdN4v_cos and friends) on x86 with
 # clang; gcc on x86 picks libmvec up by itself from glibc's math-vector.h
-# once __FAST_MATH__ is defined. Checked with -Rpass=loop-vectorize on
-# multi-mat: the compute loop goes from "library call cannot be vectorized"
-# to "vectorized loop (width 4, interleaved 4)".
+# once __FAST_MATH__ is defined -- which only -ffast-math does, not the four
+# flags below (multi_mat adds it, see its CMakeLists.txt). Checked with
+# -Rpass=loop-vectorize on multi_mat: the compute loop goes from "library call
+# cannot be vectorized" to "vectorized loop (width 4, interleaved 4)". Clang
+# knows libmvec's tan since LLVM 19 (atan and the others since 21): with an
+# older clang one std::tan keeps the whole loop scalar. glibc ships them
+# since 2.35, which the check below is about.
 #
 # Not for a check target: the vector cos differs from the scalar one in the
 # last ulp, and check mode compares a std::vector run with a shrink run whose
@@ -113,8 +117,8 @@ if ("zero_any" IN_LIST CHUNK_VARIANTS)
     add_subdirectory(getting_started)
 endif()
 
-# The two boolean containers of zero_one_value: Array<bool> and ArrayChunkBits
-if ("zero_one_value" IN_LIST CHUNK_VARIANTS)
+# The two boolean containers of zero_or_value: Array<bool> and BitArray
+if ("zero_or_value" IN_LIST CHUNK_VARIANTS)
     add_subdirectory(bool_arrays)
 endif()
 
@@ -135,23 +139,23 @@ set(CHUNK_VALIDATION_BUILT ${_build_validation} CACHE INTERNAL "examples/validat
 if(_build_validation)
     add_subdirectory(validation)
 else()
-    message(STATUS "Validation harnesses: not built (Debug, CHECK_OPTIM or a sanitizer only; -DCHUNK_BUILD_VALIDATION=ON forces them)")
+    message(STATUS "Validation harnesses: not built (Debug, CHUNK_CHECK_OPTIM or a sanitizer only; -DCHUNK_BUILD_VALIDATION=ON forces them)")
 endif()
 
-# zero_one_value against zero_any on one workload (per-operation cost, compression)
+# zero_or_value against zero_any on one workload (per-operation cost, compression)
 add_subdirectory(variant_compare)
 
 # The cost of an element access against a std::vector, in the same binary
 add_subdirectory(access_cost)
 
-# Multi-dimensional array example (zero and zero_one_value in one program)
-if (TARGET chunk_zero_and_zero_one_value_${CHUNK_DEFAULT_SIZE})
-    add_subdirectory(multi-mat)
+# Multi-dimensional array example (zero and zero_or_value in one program)
+if (TARGET chunk_zero_and_zero_or_value_${CHUNK_DEFAULT_SIZE})
+    add_subdirectory(multi_mat)
 endif()
 
 # study vectorization whith OpenMP and chunk
 if ("zero" IN_LIST CHUNK_VARIANTS)
-    add_subdirectory(test_vecto_chunk)
+    add_subdirectory(vectorisation_demo)
 endif()
 
 # The chunk-size advisor's step-0 check (dyn zero_any only).

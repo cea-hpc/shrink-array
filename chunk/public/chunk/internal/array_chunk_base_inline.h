@@ -19,28 +19,53 @@
 // Out-of-line template method bodies for ArrayChunkBase<Derived>. Included at the
 // end of array_chunk_base.h (after the class), so every TU that uses the class
 // sees the definitions. Kept separate to keep array_chunk_base.h to declarations.
-#include <iterator>  // std::forward_iterator, std::distance (assign)
-#include <stdexcept> // std::out_of_range (at())
+#include <iterator>    // std::forward_iterator, std::distance (assign)
+#include <stdexcept>   // std::out_of_range (at()), std::length_error (check_length)
+#include <string>      // std::string (check_length's message)
+#include <type_traits> // std::is_signed_v (check_length)
+#include <array>       // std::array (the bulk-read buffer)
+#include <concepts>    // std::invocable (for_each_span's run overload)
+#include <cstddef>     // std::size_t
+#include <span>        // std::span
+#include <utility>     // std::swap
 
-#include "chunk/internal/array_chunk_base.h"    // ArrayChunkBase, the class these bodies belong to
-#include "chunk/internal/all_type_chunk_decl.h" // AllTypeChunk::ensure_manager, from create (bodies: all_type_chunk.h)
-#include "chunk/config.h"                       // build_config::chunk_dynamic, chunk_config::CheckNaN
-#include "chunk/internal/chunk_size_policy.h"   // chunk_size_error, register_runtime_chunk_size / set_thread_chunk_size
-#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_IN_PARALLEL_REGION, pmp::parallel_sum, pmp::current_team
-#include "chunk/manage_ompt.h"                  // parallel_phase -- write_range_by_chunks
+#include "chunk/internal/array_chunk_base.h" // ArrayChunkBase, the class these bodies belong to
+#include "chunk/internal/type_state_registry_decl.h" // TypeStateRegistry::ensure_manager, from create (bodies: type_state_registry.h)
+#include "chunk/config.h"                            // build_config::chunk_dynamic, chunk_config::CheckNaN
+#include "chunk/internal/chunk_size_policy.h" // chunk_size_error, register_runtime_chunk_size / set_thread_chunk_size
+#include "chunk/internal/pmp_chunk.h"         // CHUNK_PMP_IN_PARALLEL_REGION, pmp::parallel_sum, pmp::current_team
+#include "chunk/phases.h"                     // parallel_phase -- write_range_by_chunks
 #include "chunk/internal/parallel_storage_init.h" // use_own_team -- write_range_by_chunks
+#include "chunk/internal/cold_path_lock.h"        // ColdPathLock: construction, teardown, resize
+#include "chunk/internal/array_users.h"           // ArrayUsers: a row per array
 #include "chunk/log.h"                            // CHUNK_LOG (set_chunk_size refusal)
-#include "chunk/internal/chunk_stats.h"           // increm_chunk_dirty_gate (sync_chunk, CHUNK_STATS)
+#include "chunk/internal/chunk_stats.h"           // inc_chunk_dirty_gate (sync_chunk, CHUNK_STATS)
 
 namespace shrink_array
 {
 
 template <typename Derived>
-void ArrayChunkBase<Derived>::create(IndType sz)
+void ArrayChunkBase<Derived>::check_length(IndexType count, const char* who)
 {
+    // A negative count used to go through: resize(-1) left size() == -1,
+    // reserve(-1) a capacity of 2^32 (the count cast to size_type).
+    if constexpr (std::is_signed_v<IndexType>)
+    {
+        if (count < 0) [[unlikely]]
+        {
+            throw std::length_error(std::string("shrink_array: ") + who + ": negative element count");
+        }
+    }
+}
+
+template <typename Derived>
+void ArrayChunkBase<Derived>::create(IndexType sz)
+{
+    check_length(sz, "constructor");
+    const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
     // The first array of this element type registers its manager; every
-    // later one pays a guard load. See AllTypeChunk.
-    AllTypeChunk::ensure_manager<ManagerType>();
+    // later one pays a guard load. See TypeStateRegistry.
+    TypeStateRegistry::ensure_manager<ManagerType>();
 
     create_common();
 
@@ -50,30 +75,31 @@ void ArrayChunkBase<Derived>::create(IndType sz)
 template <typename Derived>
 void ArrayChunkBase<Derived>::create_common()
 {
-    nb_chunk_ = 0;
+    chunk_count_ = 0;
 
     chunk_config::CheckNaN<chunk_config::do_check>::update(true);
 
     derived().pre_create_hook();
+    internal::ArrayUsers<ChunkType>::resize(array_count);
 
     // In ALL modes, do not gate on use_fast_block_compression: zero_any::Proxy needs
-    // its tab_* containers (tab_second_value, ...) even without OpenMP; for
-    // zero::Proxy / zero_one_value::Proxy it is a no-op stub outside OpenMP.
-    ProxyType::resize_tab_is_int(nb_tab);
+    // its array_* containers (array_second_value, ...) even without OpenMP; for
+    // zero::Proxy / zero_or_value::Proxy it is a no-op stub outside OpenMP.
+    ProxyType::resize_array_is_int(array_count);
 }
 
 template <typename Derived>
-bool ArrayChunkBase<Derived>::is_written_at(int num_chunk) const noexcept
+bool ArrayChunkBase<Derived>::is_written_at(int chunk_index) const noexcept
 {
     if constexpr (has_chunk_written_v<Derived>)
     {
-        // zero_one_value::Array: zero_one_value::Chunk::written() needs the second-value index.
-        return derived().chunk_written(num_chunk);
+        // zero_or_value::Array: zero_or_value::Chunk::written() needs the second-value index.
+        return derived().chunk_written(chunk_index);
     }
     else
     {
         // zero::Array and zero_any::Array: the chunk knows by itself.
-        return chunk_list_[num_chunk].written();
+        return chunk_list_[chunk_index].written();
     }
 }
 
@@ -82,13 +108,26 @@ void ArrayChunkBase<Derived>::set_chunk_size([[maybe_unused]] unsigned int new_c
 {
     // Same rule as rechunk_to() (this is also its path on an empty array):
     // chunk_size_error, a power of two or a multiple of 64 and at most
-    // cst_buffer_size -- a wider chunk reads the shared constant buffers out
+    // const_buffer_size -- a wider chunk reads the shared constant buffers out
     // of bounds. Refused, geometry kept.
     if constexpr (build_config::chunk_dynamic)
     {
         if (const auto err = chunk_size_error(new_chunk_size)) [[unlikely]]
         {
             warn_chunk_size_refused("set_chunk_size", new_chunk_size, *err);
+            return;
+        }
+        // An array that has chunks keeps its geometry: the new size would only
+        // change how indices map onto chunks laid out at the old one (a[i]
+        // reads another element), and become every later array's birth size.
+        // rechunk_to() moves the elements. The same size stays accepted: it
+        // changes no mapping.
+        if (chunk_count_ != 0 && new_chunk_size != size_policy_.size()) [[unlikely]]
+        {
+            CHUNK_LOG(warn, rechunk,
+                      "set_chunk_size({}) refused: the array has {} chunk(s) at size {} (rechunk_to() "
+                      "moves the elements)",
+                      new_chunk_size, chunk_count_, size_policy_.size());
             return;
         }
     }
@@ -103,69 +142,69 @@ void ArrayChunkBase<Derived>::set_chunk_size([[maybe_unused]] unsigned int new_c
 }
 
 template <typename Derived>
-int ArrayChunkBase<Derived>::get_nb_chunk_written() const
+int ArrayChunkBase<Derived>::written_chunk_count() const
 {
-    int        nb_written = 0;
-    const auto lbd        = [&](int num_chunk) { return static_cast<int>(is_written_at(num_chunk)); };
+    int        n_written = 0;
+    const auto lbd       = [&](int chunk_index) { return static_cast<int>(is_written_at(chunk_index)); };
 
     // Inside a region: the calling thread counts them all (an orphaned
     // `omp for` would give each caller a partial count).
     if (CHUNK_PMP_IN_PARALLEL_REGION)
     {
-        for (int j = 0; j < nb_chunk_; ++j)
+        for (int j = 0; j < chunk_count_; ++j)
         {
-            nb_written += lbd(j);
+            n_written += lbd(j);
         }
     }
     else
     {
-        nb_written =
-            pmp::parallel_sum<int, 1>(0, nb_chunk_, pmp::Options{}, [&](int j, auto& acc) { acc[0] += lbd(j); })[0];
+        n_written =
+            pmp::parallel_sum<int, 1>(0, chunk_count_, pmp::Options{}, [&](int j, auto& acc) { acc[0] += lbd(j); })[0];
     }
-    return nb_written;
+    return n_written;
 }
 
 template <typename Derived>
-int ArrayChunkBase<Derived>::get_nb_chunk_written_seq() const
+int ArrayChunkBase<Derived>::written_chunk_count_seq() const
 {
-    int nb_chunk_written = 0;
-    for (int j = 0; j < nb_chunk_; ++j)
+    int written_count = 0;
+    for (int j = 0; j < chunk_count_; ++j)
     {
-        nb_chunk_written += static_cast<int>(is_written_at(j));
+        written_count += static_cast<int>(is_written_at(j));
     }
-    return nb_chunk_written;
+    return written_count;
 }
 
 template <typename Derived>
 double ArrayChunkBase<Derived>::stats_seq() const
 {
-    if (nb_chunk_ == 0)
+    if (chunk_count_ == 0)
     {
         return 0.0;
     }
-    const int nb_chunk_written = get_nb_chunk_written_seq();
-    return 100.0 * static_cast<double>(nb_chunk_written) / nb_chunk_;
+    const int written_count = written_chunk_count_seq();
+    return 100.0 * static_cast<double>(written_count) / chunk_count_;
 }
 
 template <typename Derived>
 template <typename ValueAt>
-void ArrayChunkBase<Derived>::write_range_by_chunks(IndType first, IndType last, ValueAt&& value_at)
+void ArrayChunkBase<Derived>::write_range_by_chunks(IndexType first, IndexType last, ValueAt&& value_at)
 {
     if (first >= last)
     {
         return;
     }
-    // In long long: (c + 1) * chunk_size() may pass IndType's range near its top.
+    // In long long: (c + 1) * chunk_size() may pass IndexType's range near its top.
     const auto csz     = static_cast<long long>(chunk_size());
     const int  c_first = chunk_index_of(first);
     const int  c_last  = chunk_index_of(last - 1) + 1;
-    const auto span    = [&](int num_chunk)
+    const auto span    = [&](int chunk_index)
     {
-        const long long lo_ll = static_cast<long long>(num_chunk) * csz;
+        const long long lo_ll = static_cast<long long>(chunk_index) * csz;
         const long long hi_ll = lo_ll + csz;
-        const IndType   lo    = lo_ll > static_cast<long long>(first) ? static_cast<IndType>(lo_ll) : first;
-        const IndType   hi    = hi_ll < static_cast<long long>(last) ? static_cast<IndType>(hi_ll) : last;
-        for (IndType i = lo; i < hi; ++i)
+        const IndexType lo    = lo_ll > static_cast<long long>(first) ? static_cast<IndexType>(lo_ll) : first;
+        const IndexType hi    = hi_ll < static_cast<long long>(last) ? static_cast<IndexType>(hi_ll) : last;
+        for (IndexType i = lo; i < hi; ++i)
         {
             (*this)[i] = value_at(i);
         }
@@ -190,15 +229,15 @@ template <typename Derived>
 template <std::forward_iterator It>
 void ArrayChunkBase<Derived>::assign(It first, It last)
 {
-    const auto count = static_cast<IndType>(std::distance(first, last));
+    const auto count = static_cast<IndexType>(std::distance(first, last));
     derived().resize(count);
     if constexpr (std::random_access_iterator<It>)
     {
-        write_range_by_chunks(0, count, [&first](IndType i) { return static_cast<T>(first[i]); });
+        write_range_by_chunks(0, count, [&first](IndexType i) { return static_cast<T>(first[i]); });
     }
     else
     {
-        IndType i = 0;
+        IndexType i = 0;
         for (; first != last; ++first)
         {
             (*this)[i++] = static_cast<T>(*first);
@@ -207,14 +246,15 @@ void ArrayChunkBase<Derived>::assign(It first, It last)
 }
 
 template <typename Derived>
-void ArrayChunkBase<Derived>::reserve(IndType new_capacity)
+void ArrayChunkBase<Derived>::reserve(IndexType new_capacity)
 {
+    check_length(new_capacity, "reserve");
     if (static_cast<size_type>(new_capacity) <= capacity())
     {
         return;
     }
     // resize() builds the storage; reserve() then restores the size.
-    const IndType keep = m_size_;
+    const IndexType keep = m_size_;
     derived().resize(new_capacity);
     m_size_ = keep;
 }
@@ -222,15 +262,15 @@ void ArrayChunkBase<Derived>::reserve(IndType new_capacity)
 template <typename Derived>
 void ArrayChunkBase<Derived>::copy_from(const Derived& from)
 {
-    const IndType from_size = from.m_size_;
+    const IndexType from_size = from.m_size_;
     derived().resize(from_size);
     // Const reads of @p from (through its gate) from every thread of the team:
     // nothing writes it meanwhile.
-    write_range_by_chunks(0, from_size, [&from](IndType i) { return std::as_const(from)[i]; });
+    write_range_by_chunks(0, from_size, [&from](IndexType i) { return std::as_const(from)[i]; });
 }
 
 template <typename Derived>
-ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::at(IndType index) const
+ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::at(IndexType index) const
 {
     if (index < 0 || static_cast<size_type>(index) >= static_cast<size_type>(m_size_)) [[unlikely]]
     {
@@ -240,7 +280,7 @@ ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::at(IndType ind
 }
 
 template <typename Derived>
-ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::at(IndType index)
+ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::at(IndexType index)
 {
     if (index < 0 || static_cast<size_type>(index) >= static_cast<size_type>(m_size_)) [[unlikely]]
     {
@@ -293,19 +333,22 @@ ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::back()
 // shrink_array::ArrayChunkBase<Derived>::const_iterator
 // ---------------------------------------------------------------------------
 
+// `inline` is not needed for the ODR (a template), but it is GCC's and Clang's
+// inlining hint: in class, the body had it implicitly, and lost it when it was
+// moved out of class. Kept on purpose for the iterator read (02fffc622).
 template <typename Derived>
 [[nodiscard]] inline ArrayChunkBase<Derived>::const_iterator::reference
 ArrayChunkBase<Derived>::const_iterator::operator*() const noexcept
 {
-    // chunk_ already sync'd by enter_chunk(): raw read, as chunk_t[num].
+    // chunk_ already sync'd by enter_chunk(): raw read, as chunk_t[elem_offset].
     check_no_write_since_entry();
     if constexpr (has_motif_state_v<ChunkType>)
     {
-        return chunk_->read_value(num_, owner_->motif_offset_slot(num_chunk_));
+        return chunk_->read_value(elem_offset_, owner_->motif_offset_slot(chunk_index_));
     }
     else
     {
-        return (*chunk_)[num_];
+        return (*chunk_)[elem_offset_];
     }
 }
 
@@ -315,11 +358,11 @@ ArrayChunkBase<Derived>::const_iterator& ArrayChunkBase<Derived>::const_iterator
     // lin_ is the ONLY thing operator==/!= compare: it must track the
     // cursor, or range-for runs past the logical end.
     ++lin_;
-    ++num_;
-    if (num_ > modulo_) [[unlikely]] // crossed a chunk boundary
+    ++elem_offset_;
+    if (elem_offset_ > modulo_) [[unlikely]] // crossed a chunk boundary
     {
-        num_ = 0;
-        ++num_chunk_;
+        elem_offset_ = 0;
+        ++chunk_index_;
         enter_chunk(); // sync + repoint (skipped past the end)
     }
     return *this;
@@ -328,16 +371,16 @@ ArrayChunkBase<Derived>::const_iterator& ArrayChunkBase<Derived>::const_iterator
 template <typename Derived>
 ArrayChunkBase<Derived>::const_iterator& ArrayChunkBase<Derived>::const_iterator::operator--() noexcept
 {
-    --lin_;                     // see operator++: lin_ is what == and != read
-    if (num_ == 0) [[unlikely]] // crossed a chunk boundary backwards
+    --lin_;                             // see operator++: lin_ is what == and != read
+    if (elem_offset_ == 0) [[unlikely]] // crossed a chunk boundary backwards
     {
-        --num_chunk_;
-        num_ = modulo_;
+        --chunk_index_;
+        elem_offset_ = modulo_;
         enter_chunk();
     }
     else
     {
-        --num_;
+        --elem_offset_;
     }
     return *this;
 }
@@ -347,12 +390,12 @@ void ArrayChunkBase<Derived>::const_iterator::check_no_write_since_entry() const
 {
     if constexpr (build_config::any_check && ChunkType::precise)
     {
-        if (chunk_->read_gate_should_wait(num_)) [[unlikely]]
+        if (chunk_->read_gate_should_wait(elem_offset_)) [[unlikely]]
         {
             CHUNK_INVARIANT_FAILED("ArrayChunkBase::const_iterator: a write was deferred onto chunk {} of array {} "
                                    "during the iteration (offset {}); the iterator would not see it -- no other "
                                    "thread may write an array that is being iterated",
-                                   num_chunk_, owner_, num_);
+                                   chunk_index_, owner_, elem_offset_);
         }
     }
 }
@@ -360,10 +403,10 @@ void ArrayChunkBase<Derived>::const_iterator::check_no_write_since_entry() const
 template <typename Derived>
 void ArrayChunkBase<Derived>::const_iterator::enter_chunk() noexcept
 {
-    if (num_chunk_ >= 0 && static_cast<std::size_t>(num_chunk_) < owner_->chunk_list_.size()) [[likely]]
+    if (chunk_index_ >= 0 && static_cast<std::size_t>(chunk_index_) < owner_->chunk_list_.size()) [[likely]]
     {
-        chunk_ = &owner_->chunk_list_[num_chunk_];
-        owner_->sync_chunk(*chunk_, num_chunk_, num_); // once per chunk
+        chunk_ = &owner_->chunk_list_[chunk_index_];
+        owner_->sync_chunk(*chunk_, chunk_index_, elem_offset_); // once per chunk
     }
     else
     {
@@ -391,34 +434,50 @@ void ArrayChunkBase<Derived>::const_iterator::check_same_owner([[maybe_unused]] 
 // ---------------------------------------------------------------------------
 
 template <typename Derived>
+void ArrayChunkBase<Derived>::resize(IndexType newsz, InT<T> val)
+{
+    const IndexType old_size = m_size_;
+    const T         value    = val; // before resize(): val may be a(i) (see push_back)
+    derived().resize(newsz);
+
+    // A team of its own outside a region (the library's threshold, the
+    // phase bracketed), the calling thread inside one.
+    write_range_by_chunks(old_size, newsz, [&value](IndexType) { return value; });
+}
+
+template <typename Derived>
 void ArrayChunkBase<Derived>::push_back(InT<T> val)
 {
     if (static_cast<size_type>(m_size_) < capacity()) [[likely]]
     {
         ++m_size_;
+        (*this)[m_size_ - 1] = val;
+        return;
     }
-    else
-    {
-        derived().resize(m_size_ + 1);
-    }
-    (*this)[m_size_ - 1] = val;
+    // Copied before resize(), as assign() takes its T by value: past 16 bytes
+    // val is a reference, and push_back(a(i)) points it into a chunk buffer
+    // that resize()'s compression pass can release -- and the write below
+    // re-use, filled with the constant, before val is read.
+    const T value = val;
+    derived().resize(m_size_ + 1);
+    (*this)[m_size_ - 1] = value;
 }
 
 template <typename Derived>
 template <typename F>
-void ArrayChunkBase<Derived>::for_each_value(IndType first, IndType last, F&& func) const
+void ArrayChunkBase<Derived>::for_each_value(IndexType first, IndexType last, F&& func) const
 {
     if constexpr (bulk_fast)
     {
         std::array<T, bulk_block> buf;
         for_each_chunk_span(first, last,
-                            [&](const ChunkType& ch, int num_chunk, int lo, int hi)
+                            [&](const ChunkType& ch, int chunk_index, int lo, int hi)
                             {
                                 for (int j = lo; j < hi; j += bulk_block)
                                 {
                                     const int len = (hi - j) < bulk_block ? (hi - j) : bulk_block;
-                                    read_chunk_block(ch, num_chunk, j, len, buf.data());
-                                    check_no_write_during_bulk_read(ch, num_chunk, j);
+                                    read_chunk_block(ch, chunk_index, j, len, buf.data());
+                                    check_no_write_during_bulk_read(ch, chunk_index, j);
                                     for (int k = 0; k < len; ++k)
                                     {
                                         func(buf[k]);
@@ -450,13 +509,13 @@ void ArrayChunkBase<Derived>::for_each_value(IndType first, IndType last, F&& fu
 
 template <typename Derived>
 template <typename F>
-void ArrayChunkBase<Derived>::for_each_span(IndType first, IndType last, F&& func) const
+void ArrayChunkBase<Derived>::for_each_span(IndexType first, IndexType last, F&& func) const
 {
     std::array<T, bulk_block> buf;
     if constexpr (bulk_fast)
     {
         for_each_chunk_span(first, last,
-                            [&](const ChunkType& ch, int num_chunk, int lo, int hi)
+                            [&](const ChunkType& ch, int chunk_index, int lo, int hi)
                             {
                                 for (int j = lo; j < hi; j += bulk_block)
                                 {
@@ -465,19 +524,19 @@ void ArrayChunkBase<Derived>::for_each_span(IndType first, IndType last, F&& fun
                                     {
                                         // A compressed chunk stays so for the rest of the
                                         // call (no writer): the constant covers [j, hi).
-                                        T cst{};
-                                        if (read_chunk_block_or_constant(ch, num_chunk, j, len, buf.data(), cst))
+                                        T constant{};
+                                        if (read_chunk_block_or_constant(ch, chunk_index, j, len, buf.data(), constant))
                                         {
-                                            check_no_write_during_bulk_read(ch, num_chunk, j);
-                                            func(std::as_const(cst), static_cast<std::size_t>(hi - j));
+                                            check_no_write_during_bulk_read(ch, chunk_index, j);
+                                            func(std::as_const(constant), static_cast<std::size_t>(hi - j));
                                             return;
                                         }
                                     }
                                     else
                                     {
-                                        read_chunk_block(ch, num_chunk, j, len, buf.data());
+                                        read_chunk_block(ch, chunk_index, j, len, buf.data());
                                     }
-                                    check_no_write_during_bulk_read(ch, num_chunk, j);
+                                    check_no_write_during_bulk_read(ch, chunk_index, j);
                                     func(std::span<const T>(buf.data(), static_cast<std::size_t>(len)));
                                 }
                             });
@@ -504,18 +563,18 @@ void ArrayChunkBase<Derived>::for_each_span(IndType first, IndType last, F&& fun
 
 template <typename Derived>
 template <typename OutIt>
-OutIt ArrayChunkBase<Derived>::read_range(IndType first, IndType last, OutIt out) const
+OutIt ArrayChunkBase<Derived>::read_range(IndexType first, IndexType last, OutIt out) const
 {
     if constexpr (bulk_fast && std::is_same_v<OutIt, T*>)
     {
         for_each_chunk_span(first, last,
-                            [&](const ChunkType& ch, int num_chunk, int lo, int hi)
+                            [&](const ChunkType& ch, int chunk_index, int lo, int hi)
                             {
                                 for (int j = lo; j < hi; j += bulk_block)
                                 {
                                     const int len = (hi - j) < bulk_block ? (hi - j) : bulk_block;
-                                    read_chunk_block(ch, num_chunk, j, len, out);
-                                    check_no_write_during_bulk_read(ch, num_chunk, j);
+                                    read_chunk_block(ch, chunk_index, j, len, out);
+                                    check_no_write_during_bulk_read(ch, chunk_index, j);
                                     out += len;
                                 }
                             });
@@ -536,6 +595,7 @@ OutIt ArrayChunkBase<Derived>::read_range(IndType first, IndType last, OutIt out
 template <typename Derived>
 void ArrayChunkBase<Derived>::swap(Derived& other) noexcept
 {
+    const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
     if constexpr (build_config::any_check)
     {
         if (size_policy_.size() != other.size_policy_.size())
@@ -549,57 +609,57 @@ void ArrayChunkBase<Derived>::swap(Derived& other) noexcept
 
 template <typename Derived>
 CHUNK_FLATTEN CHUNK_FORCE_INLINE ArrayChunkBase<Derived>::T
-ArrayChunkBase<Derived>::operator()(IndType index) const noexcept
+ArrayChunkBase<Derived>::operator()(IndexType index) const noexcept
 {
-    const int   num_chunk = chunk_index_of(index);
-    const int   num       = offset_in_chunk(index);
-    const auto& chunk_t   = chunk_list_[num_chunk];
+    const int   chunk_index = chunk_index_of(index);
+    const int   elem_offset = offset_in_chunk(index);
+    const auto& chunk_t     = chunk_list_[chunk_index];
 
-    sync_chunk(chunk_t, num_chunk, num);
+    sync_chunk(chunk_t, chunk_index, elem_offset);
 
     if constexpr (has_motif_state_v<ChunkType>)
     {
-        return chunk_t.read_value(num, motif_offset_slot(num_chunk));
+        return chunk_t.read_value(elem_offset, motif_offset_slot(chunk_index));
     }
     else
     {
-        return chunk_t.read_value(num);
+        return chunk_t.read_value(elem_offset);
     }
 }
 
 template <typename Derived>
 CHUNK_FLATTEN CHUNK_FORCE_INLINE ArrayChunkBase<Derived>::T
-ArrayChunkBase<Derived>::operator[](IndType index) const noexcept
+ArrayChunkBase<Derived>::operator[](IndexType index) const noexcept
 {
-    const int num_chunk = chunk_index_of(index);
-    const int num       = offset_in_chunk(index);
-    // Lets the compiler drop bounds/sign checks (0 <= num <= modulo by construction).
+    const int chunk_index = chunk_index_of(index);
+    const int elem_offset = offset_in_chunk(index);
+    // Lets the compiler drop bounds/sign checks (0 <= elem_offset <= modulo by construction).
     // modulo() is read into a local first: clang ignores an assumption that
     // calls a function it cannot prove side-effect free (-Wassume).
     [[maybe_unused]] const int chunk_mod = static_cast<int>(size_policy_.modulo());
-    CHUNK_ASSUME(num_chunk >= 0);
-    CHUNK_ASSUME(num >= 0 && num <= chunk_mod);
-    const auto& chunk_t = chunk_list_[num_chunk];
+    CHUNK_ASSUME(chunk_index >= 0);
+    CHUNK_ASSUME(elem_offset >= 0 && elem_offset <= chunk_mod);
+    const auto& chunk_t = chunk_list_[chunk_index];
 
-    sync_chunk(chunk_t, num_chunk, num);
+    sync_chunk(chunk_t, chunk_index, elem_offset);
 
     if constexpr (has_motif_state_v<ChunkType>)
     {
-        return chunk_t.read_value(num, motif_offset_slot(num_chunk));
+        return chunk_t.read_value(elem_offset, motif_offset_slot(chunk_index));
     }
     else
     {
-        return chunk_t[num];
+        return chunk_t[elem_offset];
     }
 }
 
 template <typename Derived>
 CHUNK_FLATTEN CHUNK_FORCE_INLINE ArrayChunkBase<Derived>::reference
-ArrayChunkBase<Derived>::operator[](IndType index) noexcept
+ArrayChunkBase<Derived>::operator[](IndexType index) noexcept
 {
     if constexpr (build_config::strict_element_ref)
     {
-        return reference(element_proxy(index));
+        return reference(element_ref_detail::from_array, *this, index);
     }
     else
     {
@@ -609,24 +669,27 @@ ArrayChunkBase<Derived>::operator[](IndType index) noexcept
 
 template <typename Derived>
 CHUNK_FLATTEN CHUNK_FORCE_INLINE ArrayChunkBase<Derived>::ProxyType
-ArrayChunkBase<Derived>::element_proxy(IndType index) noexcept
+ArrayChunkBase<Derived>::element_proxy(IndexType index) noexcept
 {
-    const int        num_chunk = chunk_index_of(index);
-    auto&            chunk_t   = chunk_list_[num_chunk];
-    const int        num       = offset_in_chunk(index);
-    const ProxyType& val       = chunk_t[num];
+    const int chunk_index = chunk_index_of(index);
+    auto&     chunk_t     = chunk_list_[chunk_index];
+    const int elem_offset = offset_in_chunk(index);
+    // Built here, returned by NRVO, so that a read through a[i] copies no proxy:
+    // not every compiler folds the copies away, and on the stack they cost
+    // (an unaligned store across a page, on the threads whose stack puts it there).
+    ProxyType val = chunk_t[elem_offset];
 
-    // Arm ptr_on_array / num_chunk in ALL modes, not only under fast block
-    // compression: in non-OpenMP builds too, set_num_tab() and
-    // get_info_second_value() look ptr_on_array up in share_info_array.
-    val.set_this_and_num_chunk(registry_key(), num_chunk, num_tab_);
+    // Arm ptr_on_array / chunk_index in ALL modes, not only under fast block
+    // compression: in non-OpenMP builds too, set_array_id() and
+    // get_info_second_value() look ptr_on_array up in array_registry.
+    val.set_this_and_chunk_index(registry_key(), chunk_index, array_id_);
     val.arm_storage_generation(&storage_generation_); // check builds only
 
-    // zero_one_value only: arm the proxy with this array's registry mirror, so the
-    // write path copies (second_value, ind, num_tab) instead of scanning
-    // share_info_array. Tested on the DECLARED proxy type, not a `requires`:
+    // zero_or_value only: arm the proxy with this array's registry mirror, so the
+    // write path copies (second_value, idx, array_id) instead of scanning
+    // array_registry. Tested on the DECLARED proxy type, not a `requires`:
     // a renamed member must fail to compile, not fall back silently.
-    if constexpr (std::is_same_v<ProxyType, zero_one_value::Proxy<T>>)
+    if constexpr (std::is_same_v<ProxyType, zero_or_value::Proxy<T>>)
     {
         val.arm_inf_array(derived().registry_mirror());
     }
@@ -634,8 +697,9 @@ ArrayChunkBase<Derived>::element_proxy(IndType index) noexcept
     // No sync on the write entry: the read entries pull visibility
     // (ChunkBase::reader_sync), and a same-offset WAW is handled on the
     // direct write path. The const accessors and T& operator() keep sync_chunk.
-
-    chunk_config::CheckNaN<chunk_config::do_check>::maybe(val, static_cast<long>(index));
+    // No NaN check here: the written values are checked where they are stored
+    // (ProxyBase::check_nan_written). A check of `val` -- the proxy -- picked
+    // global_check_nan's do-nothing template and never fired.
 
     return val;
 }
@@ -657,14 +721,14 @@ void ArrayChunkBase<Derived>::swap_storage_and_identity(Derived& other)
     swap(alloc_key_, other.alloc_key_);
     swap_dirty_bitset(other);
     swap(m_size_, other.m_size_);
-    swap(nb_chunk_, other.nb_chunk_);
+    swap(chunk_count_, other.chunk_count_);
     swap(size_policy_, other.size_policy_);
     derived().swap_identity(other);
 }
 
 template <typename Derived>
 template <typename Fn>
-void ArrayChunkBase<Derived>::for_each_chunk_span(IndType first, IndType last, Fn&& fn) const
+void ArrayChunkBase<Derived>::for_each_chunk_span(IndexType first, IndexType last, Fn&& fn) const
 {
     if (first < 0)
     {
@@ -692,12 +756,12 @@ void ArrayChunkBase<Derived>::for_each_chunk_span(IndType first, IndType last, F
 }
 
 template <typename Derived>
-void ArrayChunkBase<Derived>::read_chunk_block(const ChunkType& ch, int num_chunk, int first, int count, T* out)
+void ArrayChunkBase<Derived>::read_chunk_block(const ChunkType& ch, int chunk_index, int first, int count, T* out)
     const noexcept
 {
     if constexpr (has_motif_state_v<ChunkType>)
     {
-        ch.read_block(first, count, out, motif_offset_slot(num_chunk));
+        ch.read_block(first, count, out, motif_offset_slot(chunk_index));
     }
     else
     {
@@ -707,25 +771,25 @@ void ArrayChunkBase<Derived>::read_chunk_block(const ChunkType& ch, int num_chun
 
 template <typename Derived>
 bool ArrayChunkBase<Derived>::read_chunk_block_or_constant(const ChunkType& ch,
-                                                           int              num_chunk,
+                                                           int              chunk_index,
                                                            int              first,
                                                            int              count,
                                                            T*               out,
-                                                           T&               cst) const noexcept
+                                                           T&               constant) const noexcept
 {
     if constexpr (has_motif_state_v<ChunkType>)
     {
-        return ch.read_block_or_constant(first, count, out, cst, motif_offset_slot(num_chunk));
+        return ch.read_block_or_constant(first, count, out, constant, motif_offset_slot(chunk_index));
     }
     else
     {
-        return ch.read_block_or_constant(first, count, out, cst);
+        return ch.read_block_or_constant(first, count, out, constant);
     }
 }
 
 template <typename Derived>
 void ArrayChunkBase<Derived>::check_no_write_during_bulk_read([[maybe_unused]] const ChunkType& ch,
-                                                              [[maybe_unused]] int              num_chunk,
+                                                              [[maybe_unused]] int              chunk_index,
                                                               [[maybe_unused]] int              offset) const noexcept
 {
     if constexpr (build_config::any_check && ChunkType::precise)
@@ -735,14 +799,14 @@ void ArrayChunkBase<Derived>::check_no_write_during_bulk_read([[maybe_unused]] c
             CHUNK_INVARIANT_FAILED("ArrayChunkBase bulk read: a write was deferred onto chunk {} of array {} "
                                    "during the read (offset {}); it would not be seen -- no other thread may "
                                    "write an array that is being read in bulk",
-                                   num_chunk, this, offset);
+                                   chunk_index, this, offset);
         }
     }
 }
 
 template <typename Derived>
 CHUNK_FORCE_INLINE void
-ArrayChunkBase<Derived>::sync_chunk(const ChunkType& chunk_t, int num_chunk, int offset) const noexcept
+ArrayChunkBase<Derived>::sync_chunk(const ChunkType& chunk_t, int chunk_index, int offset) const noexcept
 {
     if constexpr (build_config::threaded)
     {
@@ -752,14 +816,14 @@ ArrayChunkBase<Derived>::sync_chunk(const ChunkType& chunk_t, int num_chunk, int
         // keeps the hot read path cheap. The bit is sticky until
         // clear_dirty_bitset(); the authoritative gate is the chunk's own
         // pending counter, below.
-        if (derived().is_chunk_dirty(num_chunk)) [[unlikely]]
+        if (derived().is_chunk_dirty(chunk_index)) [[unlikely]]
         {
             // precise per-chunk gate (DeferredReadGate, chunk_base.h).
             const bool should_wait = chunk_t.read_gate_should_wait(offset);
             // CHUNK_STATS: dirty_open / dirty_gate is the share the sticky bit costs for nothing.
             if constexpr (chunk_config::stats)
             {
-                increm_chunk_dirty_gate<ChunkType>(!should_wait);
+                inc_chunk_dirty_gate<ChunkType>(!should_wait);
             }
             if (should_wait) [[unlikely]]
             {

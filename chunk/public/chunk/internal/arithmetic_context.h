@@ -35,23 +35,23 @@ class Proxy;
 
 } // namespace zero
 
-/// @brief The proxy's num_tab: its armed value where the proxy keeps one
-///        (get_num_tab_cached, zero), get_num_tab(array_ptr) where the proxy
-///        takes the array, get_num_tab() otherwise.
+/// @brief The proxy's array_id: its armed value where the proxy keeps one
+///        (get_array_id_cached, zero), get_array_id(array_ptr) where the proxy
+///        takes the array, get_array_id() otherwise.
 template <typename ProxyT, typename Key>
-constexpr int get_num_tab_helper(const ProxyT& proxy, Key array_ptr) noexcept
+constexpr int get_array_id_helper(const ProxyT& proxy, Key array_ptr) noexcept
 {
-    if constexpr (requires { proxy.get_num_tab_cached(array_ptr); })
+    if constexpr (requires { proxy.get_array_id_cached(array_ptr); })
     {
-        return proxy.get_num_tab_cached(array_ptr);
+        return proxy.get_array_id_cached(array_ptr);
     }
-    else if constexpr (requires { proxy.get_num_tab(array_ptr); })
+    else if constexpr (requires { proxy.get_array_id(array_ptr); })
     {
-        return proxy.get_num_tab(array_ptr);
+        return proxy.get_array_id(array_ptr);
     }
     else
     {
-        return proxy.get_num_tab();
+        return proxy.get_array_id();
     }
 }
 
@@ -60,7 +60,7 @@ constexpr int get_num_tab_helper(const ProxyT& proxy, Key array_ptr) noexcept
  * @details It stores ONLY the location of the write (chunk, index, logical
  *          array), the geometry frozen at enqueue, and, in the derived
  *          contexts, the operand / operation. It does NOT store the values
- *          pointer (reloaded from the chunk at replay), second_value / ind /
+ *          pointer (reloaded from the chunk at replay), second_value / idx /
  *          inf_array (recomputed at replay), a Proxy instance (rebuilt if
  *          needed) or any cached compression metadata: a deferred write never
  *          uses stale state.
@@ -70,12 +70,12 @@ struct BaseArithmeticContext
 {
     /// @brief Capture the proxy's position, chunk, geometry and allocation key.
     /// @param prox Proxy the context is built from.
-    /// @param array_ptr Owning array, stored in ptr_on_array and used to compute num_tab.
+    /// @param array_ptr Owning array, stored in ptr_on_array and used to compute array_id.
     BaseArithmeticContext(const ProxyT& prox, ArrayKey<ChunkT> array_ptr)
-        : num(prox.get_num())
+        : elem_offset(prox.get_elem_offset())
         , chunk(prox.get_chunk())
-        , num_chunk(prox.get_num_chunk())
-        , num_tab(get_num_tab_helper(prox, array_ptr))
+        , chunk_index(prox.get_chunk_index())
+        , array_id(get_array_id_helper(prox, array_ptr))
         , ptr_on_array(array_ptr)
         , chunk_size_frozen(prox.chunk_size()) // resolve while the array is alive
         , alloc_key_frozen(prox.alloc_key())
@@ -95,10 +95,10 @@ struct BaseArithmeticContext
     BaseArithmeticContext(BaseArithmeticContext&&)                 = delete;
     BaseArithmeticContext& operator=(BaseArithmeticContext&&)      = delete;
 
-    int              num;          ///< index of the element in its chunk
+    int              elem_offset;  ///< index of the element in its chunk
     ChunkT&          chunk;        ///< the chunk written
-    int              num_chunk;    ///< index of the chunk in its array
-    int              num_tab;      ///< logical array index
+    int              chunk_index;  ///< index of the chunk in its array
+    int              array_id;     ///< logical array index
     ArrayKey<ChunkT> ptr_on_array; ///< the owning array
 
     /// @brief Chunk geometry resolved AT ENQUEUE, while the source array is
@@ -177,7 +177,7 @@ struct ArithmeticOperationProxyContext : public BaseArithmeticContext<T, zero::P
     Op       operation; ///< functor implementing the operation
 };
 
-/// @brief Context of a deferred zero_one_value::Proxy / zero_any::Proxy write without operation.
+/// @brief Context of a deferred zero_or_value::Proxy / zero_any::Proxy write without operation.
 template <typename T, typename ChunkT, typename ProxyT>
 struct ArithmeticContext : public BaseArithmeticContext<T, ProxyT, ChunkT>
 {
@@ -189,7 +189,7 @@ struct ArithmeticContext : public BaseArithmeticContext<T, ProxyT, ChunkT>
     ArithmeticContext(const ProxyT& proxy, ArrayKey<ChunkT> array_ptr) : Base(proxy, array_ptr) {}
 };
 
-/// @brief Context of a deferred zero_one_value::Proxy / zero_any::Proxy compound operation: the
+/// @brief Context of a deferred zero_or_value::Proxy / zero_any::Proxy compound operation: the
 ///        operand and the operation.
 /// @tparam OperandT the operand as stored (ProxyBase::enqueue_async_arithmetic).
 template <typename T, typename Op, typename ChunkT, typename ProxyT, typename OperandT = T>
@@ -211,7 +211,7 @@ struct ArithmeticOperationContext : public BaseArithmeticContext<T, ProxyT, Chun
     Op       operation; ///< functor implementing the operation
 };
 
-/// @brief Context of a deferred zero_one_value::Proxy / zero_any::Proxy assignment: the assigned value.
+/// @brief Context of a deferred zero_or_value::Proxy / zero_any::Proxy assignment: the assigned value.
 template <typename T, typename U, typename ChunkT, typename ProxyT>
 struct ArithmeticAffectationContext : public BaseArithmeticContext<T, ProxyT, ChunkT>
 {

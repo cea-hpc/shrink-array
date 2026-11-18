@@ -20,7 +20,7 @@
 // constructor or its destructor: usable before any dynamic initialisation has
 // run, and never destroyed.
 //
-// Why. A static data member of a class template (ManagerChunk<..., T>::...,
+// Why. A static data member of a class template (TypeState<..., T>::...,
 // zero_any::Proxy<T>::..., ChunkBase<T, ...>::...) has UNORDERED dynamic
 // initialisation, and is destroyed at exit in the reverse order of the end of
 // its initialisation. A global array is built during static initialisation and
@@ -58,7 +58,7 @@ union Immortal
 {
     constexpr Immortal() : value() {}
     // Never destroys value: the point of the type.
-    constexpr ~Immortal() {} // NOLINT(modernize-use-equals-default): = default would destroy value
+    constexpr ~Immortal() {} // NOLINT(modernize-use-equals-default) NOSONAR(cpp:S3490): = default would destroy value
 
     Immortal(const Immortal&)            = delete;
     Immortal& operator=(const Immortal&) = delete;

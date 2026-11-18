@@ -2,8 +2,8 @@
 
 > English version: [contributing.md](contributing.md).
 
-> Octobre 2026. Comment construire, tester, mesurer et documenter une modification. Lire d'abord
-> [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md) : l'essentiel de la bibliothèque est la mécanique qu'il décrit.
+> Novembre 2026. Comment construire, tester, mesurer et documenter une modification. Lire d'abord
+> [algo_zero_or_value_fr.md](algo_zero_or_value_fr.md) : l'essentiel de la bibliothèque est la mécanique qu'il décrit.
 
 ***
 
@@ -12,13 +12,13 @@
 Un build de développement d'une seule configuration :
 
 ```sh
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DOMP=ON
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCHUNK_OPENMP=ON
 cmake --build build
 ```
 
 Un build Debug construit une seule taille statique, 256, au lieu de deux (`CHUNK_STATIC_SIZES=auto`), ce qui
 économise une bonne part du temps de build ; `-DCHUNK_VARIANTS=zero_any` construit une seule variante au lieu de trois, avec ses seuls exemples et
-tests. Un build Debug, `-DCHECK_OPTIM=ON` ou un sanitizer construit aussi les tests de validation
+tests. Un build Debug, `-DCHUNK_CHECK_OPTIM=ON` ou un sanitizer construit aussi les tests de validation
 (`examples/validation`).
 
 La matrice complète (GNU, LLVM, oneAPI, AOCC, NVHPC, sanitizers, statistiques, std-alloc...) est
@@ -48,10 +48,10 @@ Que lancer, selon ce que touche la modification :
 | modification | lancer au moins |
 |---|---|
 | moteur d'écriture, protocole de Dekker, gestionnaire de compression, écritures différées | `deferred_path_validation`, `read_reclaim_validation` (aussi avec `CHUNK_TEST_READ_DELAY_EVERY`, et sous ASan dans un build std-alloc), les builds TSan, `multi_launch_stress.py` |
-| marquage pour la compression, les passes | `mark_path_validation`, `compress_roundtrip`, le banc en mode check |
-| allocateurs, listes de réutilisation, slabs | `pool_accounting`, `slab_geometry_validation`, `blk_allocator_validation`, le build avec registre des blocs (ledger) (`--with-ledger`), ASan dans un build std-alloc |
+| marquage pour la compression, les passes | `mark_path_validation`, `compress_roundtrip_validation`, le banc en mode check |
+| allocateurs, listes de réutilisation, slabs | `pool_accounting_validation`, `slab_geometry_validation`, `blk_allocator_validation`, le build avec registre des blocs (ledger) (`--with-ledger`), ASan dans un build std-alloc |
 | rechunk, géométrie dynamique | `rechunk_validation`, `dyn_geometry_validation`, le banc avec `--force_rechunk <taille> --force_rechunk_toggle` |
-| opérations sur des plages | `fill_range_mt_validation`, `fill_range_mt_zero_and_zero_one_value_validation`, `range_counters_validation` |
+| opérations sur des plages | `fill_range_mt_validation`, `fill_range_mt_zero_and_zero_or_value_validation`, `range_counters_validation` |
 | rangs des threads, régions | `thread_growth_validation`, `nested_region_validation` |
 | interface du conteneur | `iterator_validation`, `swap_move_validation`, `stale_proxy_validation`, `open_types_validation`, `index64_validation` |
 | documentation | `check_docs` |
@@ -66,6 +66,9 @@ Les vérifications des sources tournent avec les autres (`ctest -R check_`) :
 | `check_headers` | chaque fichier C++ commence par l'en-tête de licence Apache (années à jour) et ne porte pas de tampon `Created by` de l'IDE ; les scripts et fichiers de build (`.py`, `.sh`, `.cmake`, `CMakeLists.txt`) portent `# Copyright ... CEA` et `# SPDX-License-Identifier: Apache-2.0` ; les en-têtes vendorés, la ligne SPDX de leur licence d'origine ; `scripts/check_headers.py --fix` corrige |
 | `check_raw_reads` | chaque lecture brute d'un tampon de chunk dans la bibliothèque dit pourquoi elle est sûre |
 | `check_tracked` | chaque fichier cité par les sources (un `#include` entre guillemets, un import Python relatif, une source ou un test CMake, un lien Markdown) est suivi par git, pas seulement présent sur le disque |
+| `check_public_api` | les en-têtes et les noms publics sont ceux que liste `scripts/public_api.txt` : échoue quand l'un d'eux est ajouté, déplacé, retiré ou renommé |
+| `check_format` | chaque fichier C++ de `chunk/`, `fast_allocators/` et `examples/` est tel que clang-format 23 le laisse (`scripts/check_format.py --fix` les réécrit) ; enregistré seulement quand CMake trouve cette version |
+| `check_doxygen` | la documentation Doxygen se construit sans avertissement ; enregistré seulement quand CMake trouve Doxygen, sauté avant la 1.9 |
 | `check_docs` | liens, noms de code cités dans les documents, paires anglais/français, pas de marqueurs d'historique dans les commentaires, les fichiers cités dans les commentaires existent |
 
 ## 3. Règles de code
@@ -81,9 +84,9 @@ Les vérifications des sources tournent avec les autres (`ctest -R check_`) :
 
   | quoi | casse | exemple |
   |---|---|---|
-  | fonctions, méthodes, variables, paramètres, namespaces | snake_case | `get_chunk_list`, `num_tab` |
-  | données membres privées et protégées | snake_case terminé par `_` | `chunk_list_`, `num_` |
-  | constantes (`constexpr`) et énumérateurs | snake_case | `cst_buffer_size`, `ev_flush_begin` |
+  | fonctions, méthodes, variables, paramètres, namespaces | snake_case | `get_chunk_list`, `array_id` |
+  | données membres privées et protégées | snake_case terminé par `_` | `chunk_list_`, `elem_offset_` |
+  | constantes (`constexpr`) et énumérateurs | snake_case | `const_buffer_size`, `ev_flush_begin` |
   | classes, structs, concepts, alias de type, paramètres de template | PascalCase | `zero_any::Array`, `AllocT`, `ChunkT` |
   | macros | MAJUSCULES | `CHUNK_SIZE` |
 
@@ -94,9 +97,15 @@ Les vérifications des sources tournent avec les autres (`ctest -R check_`) :
   `rebind`). Dans un nom en snake_case, la
   variante s'écrit `zero_any`, comme dans les noms de fichiers (`zero_any_array.h`). Les
   globales prennent le préfixe `g_` ; aucun nom ne commence par `__` (réservé). Un nom public qui
-  change garde son ancienne graphie en alias `[[deprecated]]` jusqu'à la 1.0. `check_naming`
+  change garde son ancienne graphie en alias `[[deprecated]]` aussi longtemps que le dit la
+  politique de versions de [CHANGELOG.md](../CHANGELOG.md). `check_naming`
   vérifie ce qu'une ligne montre ; le `readability-identifier-naming` de clang-tidy vérifie le
   reste (le suffixe des membres, les paramètres) avec `scripts/clang_tidy_naming.yaml`.
+- **L'interface publique est figée.** `scripts/public_api.txt` liste les en-têtes et les noms
+  publics ; `check_public_api` échoue quand l'un d'eux est ajouté, déplacé, retiré ou renommé.
+  Un tel changement change l'interface : mettre la liste à jour et le consigner dans
+  CHANGELOG.md (politique de versions). Un nouvel en-tête qu'un programme n'inclut pas va sous
+  `internal/`.
 - **Les corps longs vont dans le compagnon `<en-tête>_inline.h`.** Une méthode dont le corps dépasse
   5 lignes est déclarée dans la classe et définie dans `internal/<en-tête>_inline.h`, inclus en
   fin d'en-tête ; le commentaire Doxygen reste sur la déclaration. Les accesseurs de quelques

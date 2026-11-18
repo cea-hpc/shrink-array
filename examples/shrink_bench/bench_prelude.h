@@ -71,16 +71,16 @@
 
 #include "bench_int.h" // Int / UInt: the bench index type (32- or 64-bit)
 
-#include "chunk/build_options.h"           // CHUNK_OPT_* (the bench TUs)
-#include "chunk/term_color.h"              // tc (the bench TUs)
-#include "chunk/PMP_CHUNK.h"               // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"             // begin_parallel_phase, finalize_barrier_phase (bench_phases.h)
-#include "chunk/singleton.h"               // SingletonChk (the bench TUs)
-#include "chunk/global_stats_chunk_list.h" // GlobalStatsChunkList (shrink_bench.cpp)
+#include "chunk/build_options.h"                    // CHUNK_OPT_* (the bench TUs)
+#include "chunk/internal/term_color.h"              // tc (the bench TUs)
+#include "chunk/internal/pmp_chunk.h"               // CHUNK_PMP_MAX_THREADS
+#include "chunk/phases.h"                           // begin_parallel_phase, finalize_barrier_phase (bench_phases.h)
+#include "chunk/internal/singleton.h"               // SingletonChk (the bench TUs)
+#include "chunk/internal/global_stats_chunk_list.h" // GlobalStatsChunkList (shrink_bench.cpp)
 
 #include "bench_par.h" // bench_par::region, BENCH_FOR_* (the phases' regions and loops)
 
-#if (defined CHUNK_VARIANT_ZERO || defined CHUNK_VARIANT_ZERO_ONE_VALUE || defined CHUNK_VARIANT_ZERO_ANY)
+#if (defined CHUNK_VARIANT_ZERO || defined CHUNK_VARIANT_ZERO_OR_VALUE || defined CHUNK_VARIANT_ZERO_ANY)
     #define SHRINK_ARRAY
 #endif
 
@@ -91,9 +91,9 @@
 // deferred op, an atomic or two. `omp simd` on such a loop would promise the
 // compiler that its iterations are independent, which they are not, and the
 // compiler is entitled to act on the promise. The std::vector baseline is
-// plain memory (tab_bool is a std::vector<short> there, not the bit proxy),
+// plain memory (array_bool is a std::vector<short> there, not the bit proxy),
 // so there the same loops are exactly what `simd` is for -- and clang 22 does
-// vectorise them (the multi-mat example uses the same split, LoopsSimd vs
+// vectorise them (the multi_mat example uses the same split, LoopsSimd vs
 // Loops, with the same rationale).
 //
 // One iteration space, one schedule(static), the same on every loop of a
@@ -115,7 +115,7 @@
 // the check-mode checksums stay comparable with a shrink build's.
 //
 // BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR is the same worksharing loop with no
-// `simd` in either build: for the loops that store into tab_bool. In the
+// `simd` in either build: for the loops that store into array_bool. In the
 // baseline that is a std::vector<bool>, a bit-packed proxy store LLVM cannot
 // vectorise -- and, in the big outlined region the bench's phases are, one
 // such loop under `simd` also leaves the std::complex copy-assignments of
@@ -185,7 +185,7 @@ void for_static_vec(Team& team, Int first, Int last, Body&& body)
 // to a power of two; 0 -> the previous contiguous slices (no alignment).
 // 64 threads, --mode perf, 5 runs each:
 //                      0 (slices)   64       128      256      512      1024
-//   zero_one_value_256  18.33 s   9.33 s   9.48 s  10.07 s
+//   zero_or_value_256  18.33 s   9.33 s   9.48 s  10.07 s
 //   zero_any_dyn                 12.02 s  12.10 s  12.56 s  13.69 s  16.12 s
 // (the 0 column predates later library fixes; compare within a row.)
 //
@@ -239,9 +239,9 @@ inline BenchSched bench_sched_for(Int start, Int end) noexcept
     return {std::max<Int>(1, (end - start + nthreads - 1) / nthreads), start}; // contiguous slices
 }
 
-#include "chunk/param_chunk.h" // ParamChunk (the bench TUs)
-#include "chunk/config.h"      // chunk_config::, build_config:: (the bench TUs)
-#include "chunk/type_name.h"   // type_name<T>() (shrink_bench.cpp)
+#include "chunk/runtime.h"            // Runtime (the bench TUs)
+#include "chunk/config.h"             // chunk_config::, build_config:: (the bench TUs)
+#include "chunk/internal/type_name.h" // type_name<T>() (shrink_bench.cpp)
 
 // The library's configuration lives in namespace shrink_array; the bench TUs
 // read it under its short names.
@@ -250,11 +250,11 @@ namespace chunk_config = shrink_array::chunk_config;
 
 #if defined CHUNK_VARIANT_ZERO
     #include "chunk/zero_array.h" // zero::Array (the CHUNK variant)
-#elif defined CHUNK_VARIANT_ZERO_ONE_VALUE
-    #include "chunk/zero_one_value_array.h" // zero_one_value::Array (the zero_one_value variant)
+#elif defined CHUNK_VARIANT_ZERO_OR_VALUE
+    #include "chunk/zero_or_value_array.h" // zero_or_value::Array (the zero_or_value variant)
 #elif defined CHUNK_VARIANT_ZERO_ANY
-    #include "chunk/zero_one_value_array.h" // zero_one_value::Array (tab_bool, see bench_array.h)
-    #include "chunk/zero_any_array.h"       // zero_any::Array (the zero_any variant)
+    #include "chunk/zero_or_value_array.h" // zero_or_value::Array (array_bool, see bench_array.h)
+    #include "chunk/zero_any_array.h"      // zero_any::Array (the zero_any variant)
 #else
     #include <vector> // std::vector (the baseline build)
 #endif

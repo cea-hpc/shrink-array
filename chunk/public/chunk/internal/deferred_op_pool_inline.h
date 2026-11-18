@@ -15,6 +15,12 @@
  */
 
 #pragma once
+#include <algorithm> // std::max
+#include <bit>       // std::has_single_bit
+#include <cstddef>   // std::byte, std::max_align_t, std::size_t
+#include <cstdint>   // std::uintptr_t
+#include <mutex>     // std::scoped_lock
+
 #include "chunk/internal/deferred_op_pool.h" // the class these bodies belong to
 
 namespace shrink_array
@@ -98,8 +104,7 @@ void* FastAllocatorConcrete<T, Arena>::allocate_raw()
         // use-after-recycle that the free-list would hide (stale but mapped data).
         return ::operator new(sizeof(T));
     }
-    auto& fl = free_list();
-    if (!fl.empty())
+    if (auto& fl = free_list(); !fl.empty())
     {
         T* block = fl.back();
         fl.pop_back();
@@ -140,7 +145,7 @@ void FastAllocatorConcrete<T, Arena>::recycle(void* block)
     if constexpr (build_config::use_fast_alloc)
     {
         // Foreign block (cross-thread drain): drop it (see above).
-        if (!allocator().is_free_able_elt(static_cast<std::byte*>(block)))
+        if (!allocator().is_free_able_elem(static_cast<std::byte*>(block)))
         {
             if constexpr (build_config::any_check)
             {
@@ -206,7 +211,7 @@ FastAllocatorConcrete<T, Arena>::ByteAlloc& FastAllocatorConcrete<T, Arena>::all
         const uintptr_t slab_request =
             std::max<uintptr_t>(deferred_pool_slab_granularity(), uintptr_t{64} * element_size);
 
-        // nb_max_block_empty = -1: NEVER munmap an empty slab. A freed op
+        // n_max_block_empty = -1: NEVER munmap an empty slab. A freed op
         // slab's address could be remapped by fast_alloc::map_anonymous() for
         // the VALUE pool on another thread and overwrite a still-live op. Op
         // slabs are small and bounded.
@@ -242,7 +247,8 @@ void FastAllocatorConcrete<T, Arena>::probe_returned_block(const void* ptr, cons
         const void* pg0  = base - (addr & mask);
         const void* pg1  = base + (sizeof(T) - 1) - ((addr + sizeof(T) - 1) & mask);
 
-        if (::msync(const_cast<void*>(pg0), 1, MS_ASYNC) != 0 || ::msync(const_cast<void*>(pg1), 1, MS_ASYNC) != 0)
+        if (::msync(const_cast<void*>(pg0), 1, MS_ASYNC) != 0 || // NOSONAR(cpp:S859)
+            ::msync(const_cast<void*>(pg1), 1, MS_ASYNC) != 0)   // NOSONAR(cpp:S859)
         {
             CHUNK_INVARIANT_FAILED("[ALLOC_PROBE {}] block NOT MAPPED (wild ptr): p={} T size={} slab={}", path, ptr,
                                    sizeof(T), build_config::use_fast_alloc ? &allocator() : nullptr);
@@ -276,7 +282,7 @@ FastAllocatorBase* AllocatorRegistry<Tag>::find_or_create()
     auto&        allocators = allocs();
     const size_t sz         = sizeof(T);
 
-    for (auto& alloc : allocators)
+    for (const auto& alloc : allocators)
     {
         if (alloc->block_size == sz)
         {

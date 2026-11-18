@@ -1,0 +1,141 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
+#
+# SonarQube Cloud (sonarcloud.io, project cea-hpc_shrink-array): the rules of
+# SonarQube for IDE (SonarLint) over the whole tree, on every push to develop
+# and main, and on demand for any branch. The C++ is analysed from CMake's
+# compilation database -- nothing is compiled: the job configures, generates
+# the build stamp, and hands the database to the scanner. The issues are on
+# the project's page; scripts/sonar_export.py fetches them as JSON or CSV.
+# The line coverage of chunk/ and fast_allocators/ comes from the latest
+# nightly coverage job (see the step "Coverage of the latest nightly").
+#
+# Needs the repository secret SONAR_TOKEN (sonarcloud.io, My Account,
+# Security). Without it the job says so and stops, green. On the SonarQube
+# Cloud side: the project imported from cea-hpc's GitHub organisation, its
+# Automatic Analysis off (C++ is analysed from CI only), and develop declared
+# a long-lived branch (Administration, Branches and Pull Requests) so that its
+# issues are kept.
+
+name: Sonar
+
+on:
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+
+# One analysis at a time per branch, never cancelled: the C++ analysis takes
+# several minutes, and with cancel-in-progress every push to develop stopped the
+# one running -- none finished. A push meanwhile waits; GitHub keeps only the
+# latest one waiting.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read # the nightly's coverage artifact
+
+jobs:
+  sonar:
+    name: SonarQube Cloud
+    # Any repository with the SONAR_TOKEN secret (cea-hpc's or a fork): the
+    # SonarQube Cloud organisation and project key come from the repository
+    # variables SONAR_ORGANIZATION and SONAR_PROJECT_KEY, by default cea-hpc's.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      CC: gcc-14
+      CXX: g++-14
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    steps:
+      - name: Token present
+        id: token
+        run: |
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "::notice::no SONAR_TOKEN secret: SonarQube Cloud analysis skipped"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        if: steps.token.outputs.ok == 'true'
+        with:
+          # The whole history: the scanner blames each issue's line (new code,
+          # assignee).
+          fetch-depth: 0
+      - name: Toolchain
+        if: steps.token.outputs.ok == 'true'
+        run: |
+          .github/apt_install.sh g++-14 ninja-build libbz2-dev libtbb-dev
+      # The configuration of the CI's gcc 14 OpenMP job, with the harnesses
+      # (CHECK_OPTIM) and without the unity builds: a unity translation unit is
+      # a generated file outside the sources, and the files it includes would
+      # not be analysed as themselves.
+      - name: Configure
+        if: steps.token.outputs.ok == 'true'
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          -DCHUNK_OPENMP=ON
+          -DCHUNK_CHECK_OPTIM=ON
+          -DCHUNK_STATIC_SIZES=256
+          -DCHUNK_BUILD_DYN=OFF
+          -DCHUNK_LIB_UNITY=OFF
+          -DCHUNK_VALIDATION_UNITY=OFF
+      # The only source generated at build time: the build stamp (git
+      # describe). chunk/build_options.h is written at configure.
+      - name: Generated sources
+        if: steps.token.outputs.ok == 'true'
+        run: cmake --build build --target shrink_build_stamp_gen
+      # A source compiled for several variant libraries appears once per
+      # library: the first entry is kept, so that each file is analysed once
+      # (the variant code paths of the others are left out).
+      - name: One entry per source file
+        if: steps.token.outputs.ok == 'true'
+        run: |
+          python3 - <<'EOF'
+          import json
+          with open("build/compile_commands.json") as f:
+              entries = json.load(f)
+          seen, kept = set(), []
+          for e in entries:
+              if e["file"] not in seen:
+                  seen.add(e["file"])
+                  kept.append(e)
+          with open("build/compile_commands_sonar.json", "w") as f:
+              json.dump(kept, f, indent=1)
+          print(f"compile_commands: {len(entries)} entries, {len(kept)} files")
+          EOF
+      # The line coverage: the latest report of nightly.yml's coverage job
+      # (artifact coverage-sonarqube, gcovr's SonarQube format), not a coverage
+      # run of this commit -- that job takes about 3 hours. It may lag the
+      # analysed commit by up to a day: the lines changed since are matched as
+      # they stand. Without a report (expired, never made) the analysis goes on
+      # without coverage.
+      - name: Coverage of the latest nightly
+        id: coverage
+        if: steps.token.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_id=$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=coverage-sonarqube&per_page=10" \
+                     --jq '[.artifacts[] | select(.expired | not)][0].workflow_run.id // empty')
+          if [ -z "$run_id" ] || ! gh run download "$run_id" -R "$GITHUB_REPOSITORY" -n coverage-sonarqube -D sonar-coverage; then
+            echo "::notice::no nightly coverage report: analysis without coverage"
+            echo "args=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "coverage of nightly run $run_id, commit $(cat sonar-coverage/commit.txt 2>/dev/null || echo '?'); analysed: $GITHUB_SHA"
+          echo "args=-Dsonar.coverageReportPaths=sonar-coverage/coverage.xml" >> "$GITHUB_OUTPUT"
+      - name: Analyse
+        if: steps.token.outputs.ok == 'true'
+        uses: SonarSource/sonarqube-scan-action@59202af334b4ba7b5db01b701b8e79f8b3bef0f4 # v8.5.0
+        with:
+          args: >
+            -Dsonar.organization=${{ vars.SONAR_ORGANIZATION || 'cea-hpc' }}
+            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY || 'cea-hpc_shrink-array' }}
+            -Dsonar.cfamily.compile-commands=build/compile_commands_sonar.json
+            -Dsonar.cfamily.threads=4
+            ${{ steps.coverage.outputs.args }}

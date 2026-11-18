@@ -121,6 +121,17 @@ struct RechunkSliceTimes
     double work_max_ms  = 0.0; ///< see the class description
     double work_avg_ms  = 0.0; ///< see the class description
     double setup_max_ms = 0.0; ///< see the class description
+    // The team drain at the boundaries, per thread (drain_probe.h): max and
+    // mean over the team of its own-rank passes, summed over the boundaries.
+    double drain_sort_max_ms = 0.0; ///< sorting the parked blocks by owner, slowest thread
+    double drain_sort_avg_ms = 0.0; ///< same, mean thread
+    double drain_free_max_ms = 0.0; ///< freeing the blocks its rank owns, slowest thread
+    double drain_free_avg_ms = 0.0; ///< same, mean thread
+    double drain_blocks_max  = 0.0; ///< blocks freed by the busiest rank
+    double drain_blocks_avg  = 0.0; ///< blocks freed by the mean rank
+    // "collect" split: detaching (team) vs recycling into the arena (one thread).
+    double collect_detach_ms = 0.0; ///< drain end -> the recycling single (detach pass + barrier)
+    double collect_slabs     = 0.0; ///< slabs handed to the arena, all boundaries
 };
 
 /// @brief The slice times of the re-chunk in progress (re-chunks are serial).
@@ -171,6 +182,7 @@ struct SliceProbe
         long long cur = slot.load(std::memory_order_relaxed);
         while (value > cur && !slot.compare_exchange_weak(cur, value, std::memory_order_relaxed))
         {
+            // a failed compare_exchange_weak reloaded cur: retry
         }
     }
 };
@@ -210,11 +222,6 @@ class RechunkPhaseTrace
         mark(Mark::entry);
     }
 
-    /// @brief The timings are on (rechunk=debug).
-    [[nodiscard]] bool phases_on() const noexcept
-    {
-        return phases_;
-    }
     /// @brief The memory side is on (memory=debug).
     [[nodiscard]] bool memory_on() const noexcept
     {

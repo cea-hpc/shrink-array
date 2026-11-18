@@ -15,11 +15,13 @@ import base64, glob, io, json, os, re, shlex, signal, socket, subprocess, sys, t
 
 # The variants were named chunk / chunk2 / chunk2a (tbb_chunk...) until they took
 # the name of their namespace: the summaries, logs and executables of before read
-# as the new names until 1.0. The table of bench_runner/settings.py, copied: this
-# file imports nothing of the repository.
+# as the new names, so that old and new runs compare. The table of
+# bench_runner/settings.py, copied: this file imports nothing of the repository.
 LEGACY_VARIANTS = {
-    "chunk": "zero", "chunk2": "zero_one_value", "chunk2a": "zero_any",
-    "tbb_chunk": "tbb_zero", "tbb_chunk2": "tbb_zero_one_value", "tbb_chunk2a": "tbb_zero_any",
+    "chunk": "zero", "chunk2": "zero_or_value", "chunk2a": "zero_any",
+    "tbb_chunk": "tbb_zero", "tbb_chunk2": "tbb_zero_or_value", "tbb_chunk2a": "tbb_zero_any",
+    # zero_or_value was zero_one_value until 0.3
+    "zero_one_value": "zero_or_value", "tbb_zero_one_value": "tbb_zero_or_value",
 }
 
 def normalize_variant(label):
@@ -383,7 +385,7 @@ def act_options(a):
         runpy.run_path(path, run_name="__main__")
     except Done:
         return
-    except SystemExit:
+    except SystemExit:  # the user's script exited before parsing: nothing to dump
         pass
     except BaseException as e:
         import traceback
@@ -460,7 +462,7 @@ def act_validate(a):
         return answer(skipped="%s n'a pas appelé parse_args" % a[1])
     except Done:
         return answer(ok=True)
-    except SystemExit as e:
+    except SystemExit as e:  # the script's exit is the answer, sent back as JSON
         if e.code in (0, None):
             return answer(ok=True)
         return answer(refused=refusal(e))
@@ -1503,7 +1505,7 @@ def act_errors(a):
         if not logs:
             print(json.dumps({"note": "aucun échec dans le log du run", "files": [], "count": 0}))
             return
-        found, od, pats = {p: True for p in logs}, os.path.dirname(logs[0]), []
+        found, od, pats = dict.fromkeys(logs, True), os.path.dirname(logs[0]), []
     elif not pats:
         print(json.dumps({"note": "pas de log d'erreurs pour ce programme", "files": []}))
         return
@@ -1777,13 +1779,13 @@ def act_build_targets(a):
     read, never built nor configured here:
       configs  the cmake-build-<name> names written in compile_all.sh and
                compile_all_gnu.sh (as known_build_names does);
-      dirs     the configured build dirs <build_rep>/cmake-build-<name>/<arch>
+      dirs     the configured build dirs <build_root>/cmake-build-<name>/<arch>
                whose <arch> ends with the one asked (aarch64, x86_64), with
                the executables of their build.ninja (the rules
                CXX_EXECUTABLE_LINKER__<target>_<Config>, as
                __ninja_target_names reads them through ninja)."""
     repo = os.path.expanduser(a[0])
-    build_rep = os.path.expanduser(os.path.expandvars(a[1])) if len(a) > 1 and a[1] else repo
+    build_root = os.path.expanduser(os.path.expandvars(a[1])) if len(a) > 1 and a[1] else repo
     arch = a[2] if len(a) > 2 else ""
     configs = set()
     for f in ("scripts/compile_all.sh", "scripts/compile_all_gnu.sh"):
@@ -1793,7 +1795,7 @@ def act_build_targets(a):
             if "$" not in name and name:
                 configs.add(name)
     dirs = []
-    for d in sorted(glob.glob(os.path.join(build_rep, "cmake-build-*", "*"))):
+    for d in sorted(glob.glob(os.path.join(build_root, "cmake-build-*", "*"))):
         sub = os.path.basename(d)
         if not os.path.isdir(d) or (arch and not sub.endswith(arch)):
             continue
@@ -1808,7 +1810,194 @@ def act_build_targets(a):
             mtime = None
         dirs.append({"name": os.path.basename(os.path.dirname(d))[len("cmake-build-"):], "arch": sub,
                      "configured": mtime is not None, "mtime": mtime, "execs": sorted(execs)})
-    print(json.dumps({"configs": sorted(configs), "dirs": dirs, "build_rep": build_rep}))
+    print(json.dumps({"configs": sorted(configs), "dirs": dirs, "build_root": build_root}))
+
+# --------------------------------------------------------------------------
+# Build cleaning ("Nettoyer les builds…"). What a build directory keeps once
+# compile_all.sh is done, and what the next build re-creates by itself: the
+# object files and their dependency files, the precompiled headers, the static
+# libraries (the executables are linked, they no longer read them). Removed;
+# the next compile_all.sh recompiles everything, the executables included.
+# Kept: the executables, the shared libraries (an executable may load one
+# through its RPATH), and what keeps the directory a build -- build.ninja,
+# CMakeCache.txt, .ninja_log / .ninja_deps, the generated sources (Unity/, the
+# build stamp: written at configure time, not by ninja).
+#
+# The build check of run.sh ("Builds à jour", runscripts.py) runs `ninja -n` on
+# the executables: on a cleaned build ninja would rebuild every missing object,
+# and every build would be stale. So the clean leaves CLEAN_MARK, a JSON
+# {"time", "up_to_date"} -- up_to_date: what `ninja -n` said just before,
+# null without ninja -- and, until the next build (a .ninja_log newer than the
+# mark), the check judges by the sources instead: stale if the build was not
+# up to date when cleaned, or if a source of the repository is newer than the
+# mark.
+# --------------------------------------------------------------------------
+CLEAN_SUFFIXES = (".o", ".obj", ".o.d", ".gch", ".pch", ".a")
+CLEAN_MARK = ".shrink_gui_cleaned"
+# The lines of `ninja -n` that are not stale (runscripts.CHECK_BUILDS_SH).
+NINJA_NOT_STALE_RE = re.compile(r"Build stamp|build_stamp\.cpp|Linking CXX executable")
+
+
+def build_dirs_of(build_root):
+    """The configured build directories <build_root>/cmake-build-<name>/<arch>."""
+    out = []
+    for d in sorted(glob.glob(os.path.join(build_root, "cmake-build-*", "*"))):
+        if os.path.isdir(d) and os.path.isfile(os.path.join(d, "build.ninja")):
+            out.append(d)
+    return out
+
+
+def clean_scan(d):
+    """(removable [(path, bytes)], removable bytes, total bytes) of build dir @p d."""
+    files, removable, total = [], 0, 0
+    for root, dirs, names in os.walk(d):
+        dirs[:] = [x for x in dirs if not os.path.islink(os.path.join(root, x))]
+        for n in names:
+            p = os.path.join(root, n)
+            try:
+                st = os.lstat(p)
+            except OSError:
+                continue
+            if not os.path.isfile(p) or os.path.islink(p):
+                continue
+            total += st.st_size
+            if n.endswith(CLEAN_SUFFIXES):
+                files.append((p, st.st_size))
+                removable += st.st_size
+    return files, removable, total
+
+
+def build_executables(d):
+    """The executables already built under examples/ of build dir @p d (what
+    the build check looks at), relative to @p d."""
+    out = []
+    for root, dirs, names in os.walk(os.path.join(d, "examples")):
+        dirs[:] = [x for x in dirs if x != "CMakeFiles"]
+        for n in names:
+            p = os.path.join(root, n)
+            if os.path.isfile(p) and not os.path.islink(p) and os.access(p, os.X_OK):
+                out.append(os.path.relpath(p, d))
+    return sorted(out)
+
+
+def ninja_up_to_date(d):
+    """What the build check would say of build dir @p d now: True, False, or
+    None (no ninja, ninja failed, nothing built). build.ninja read under another
+    name, as runscripts.CHECK_BUILDS_SH does (CMake's re-run step otherwise)."""
+    exes = build_executables(d)
+    if not exes:
+        return None
+    import tempfile
+    tmp = tempfile.mkdtemp()
+    try:
+        os.symlink(os.path.abspath(os.path.join(d, "build.ninja")), os.path.join(tmp, "m.ninja"))
+        p = subprocess.Popen(["ninja", "-C", d, "-f", os.path.join(tmp, "m.ninja"), "-n"] + exes,
+                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
+        out = p.communicate()[0]
+    except OSError:
+        return None
+    finally:
+        import shutil
+        shutil.rmtree(tmp, ignore_errors=True)
+    if p.returncode != 0:
+        return None
+    steps = [l for l in out.splitlines() if l.startswith("[")]
+    return not any(not NINJA_NOT_STALE_RE.search(l) for l in steps)
+
+
+def clean_mark(d):
+    """The CLEAN_MARK of build dir @p d while it holds (no build since), else None."""
+    mark = os.path.join(d, CLEAN_MARK)
+    try:
+        t_mark = os.path.getmtime(mark)
+    except OSError:
+        return None
+    try:
+        if os.path.getmtime(os.path.join(d, ".ninja_log")) > t_mark:
+            return None
+    except OSError:
+        pass
+    try:
+        return json.loads(read(mark, "{}") or "{}")
+    except ValueError:
+        return {}
+
+
+# The files of the repository a build depends on, as gui_check_cleaned
+# (runscripts.CHECK_BUILDS_SH) finds them.
+SOURCE_SUFFIXES = (".h", ".hpp", ".hxx", ".inc", ".c", ".cc", ".cpp", ".cxx", ".cmake", ".in")
+
+
+def source_newer(d, t):
+    """True if a source of build dir @p d's repository (CMAKE_HOME_DIRECTORY)
+    is newer than @p t, or the repository is unknown."""
+    src = None
+    for line in (read(os.path.join(d, "CMakeCache.txt"), "") or "").splitlines():
+        if line.startswith("CMAKE_HOME_DIRECTORY:INTERNAL="):
+            src = line.split("=", 1)[1]
+    if not src or not os.path.isdir(src):
+        return True
+    for root, dirs, names in os.walk(src):
+        dirs[:] = [x for x in dirs if x != ".git" and not x.startswith("cmake-build-")]
+        for n in names:
+            if n == "CMakeLists.txt" or n.endswith(SOURCE_SUFFIXES):
+                try:
+                    if os.path.getmtime(os.path.join(root, n)) > t:
+                        return True
+                except OSError:
+                    pass
+    return False
+
+
+def act_clean_builds(a):
+    """The build directories and what cleaning them frees, or the clean itself.
+    a = [build_root, mode, names]: mode "scan" lists every build directory
+    {"name", "arch", "path", "removable", "total", "files", "cleaned"};
+    mode "clean" removes the CLEAN_SUFFIXES files of the directories named in
+    names (base64 JSON list of paths, each one of the scan's), writes CLEAN_MARK
+    in each, and answers {"cleaned": [{"path", "freed", "files",
+    "up_to_date"}]}. A path outside build_root's build directories is refused."""
+    build_root = os.path.expanduser(os.path.expandvars(a[0]))
+    mode = a[1] if len(a) > 1 else "scan"
+    dirs = build_dirs_of(build_root)
+    if mode == "scan":
+        rows = []
+        for d in dirs:
+            files, removable, total = clean_scan(d)
+            mark = clean_mark(d)
+            rows.append({"name": os.path.basename(os.path.dirname(d))[len("cmake-build-"):],
+                         "arch": os.path.basename(d), "path": d, "removable": removable,
+                         "total": total, "files": len(files),
+                         "cleaned": mark.get("time") if mark is not None else None})
+        print(json.dumps({"build_root": build_root, "dirs": rows}))
+        return
+    wanted = json.loads(base64.b64decode(a[2]).decode()) if len(a) > 2 and a[2] else []
+    known = set(dirs)
+    bad = [p for p in wanted if p not in known]
+    if bad:
+        print(json.dumps({"error": "pas un répertoire de build de %s : %s" % (build_root, ", ".join(bad))}))
+        return
+    done = []
+    for d in wanted:
+        up = ninja_up_to_date(d)
+        mark = clean_mark(d)
+        if mark is not None and up is False:
+            # cleaned before, no build since: ninja -n sees the missing objects;
+            # judged as run.sh's check judges a cleaned build
+            up = bool(mark.get("up_to_date")) and not source_newer(d, os.path.getmtime(os.path.join(d, CLEAN_MARK)))
+        files, _, _ = clean_scan(d)
+        freed, n = 0, 0
+        for p, size in files:
+            try:
+                os.remove(p)
+                freed += size
+                n += 1
+            except OSError:
+                pass
+        write(os.path.join(d, CLEAN_MARK), json.dumps({"time": time_now(), "up_to_date": up}) + "\n")
+        done.append({"path": d, "freed": freed, "files": n, "up_to_date": up})
+    print(json.dumps({"cleaned": done}))
+
 
 ACTIONS = {"build_targets": act_build_targets, "check": act_check, "git_pull": act_git_pull,
            "git_branches": act_git_branches, "git_switch": act_git_switch, "options": act_options,
@@ -1816,6 +2005,6 @@ ACTIONS = {"build_targets": act_build_targets, "check": act_check, "git_pull": a
            "tail": act_tail, "stop": act_stop, "pack": act_pack, "summary": act_summary,
            "points": act_points, "delete": act_delete,
            "delete_many": act_delete_many, "errors": act_errors,
-           "errfile": act_errfile}
+           "errfile": act_errfile, "clean_builds": act_clean_builds}
 if __name__ == "__main__":
     ACTIONS[sys.argv[1]](sys.argv[2:])

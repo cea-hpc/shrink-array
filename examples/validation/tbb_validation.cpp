@@ -37,7 +37,7 @@
 //   - the index form, step 1 and step 3 (the elements the step skips keep the
 //     previous phase's values);
 //   - in every piece: in_parallel() and the application phase are on, the
-//     rank is the thread's (get_thr_rank_fast() == pmp::thread_rank()), below
+//     rank is the thread's (get_thr_rank_fast() == shrink_array::thread_rank()), below
 //     the capacity, the same for a thread all phase long and distinct between
 //     threads; after the call: no phase, no parallel;
 //   - work in the phase: one index per array (grain 1), each compresses its
@@ -49,7 +49,18 @@
 //   - a body that throws: the exception reaches the caller, the phase is
 //     closed, and the next call runs normally; a step of 0 is refused
 //     (std::invalid_argument, as TBB) before any phase opens;
-//   - a narrower task_arena (2 threads) for one call.
+//   - the library's own teams on TBB's threads (use_tbb_for_library_teams()):
+//     2000 teams with a static loop, a barrier, a single and a dynamic loop,
+//     every rank above 0 on a TBB thread; then 500 more from a second thread
+//     while every TBB thread is busy (the teams shrink, they still end);
+//   - a narrower task_arena (2 threads) for one call;
+//   - 64-bit indices: an Array<char, long> of more than INT_MAX elements,
+//     written through the index form with a step that lands on both sides of
+//     2^31 and through the range form on a blocked_range<long> straddling
+//     2^31, then read back. Almost every chunk stays at the first constant,
+//     so the array costs its chunk metadata (a few hundred MB), not 2 GB, as
+//     in index64_validation. Skipped under ThreadSanitizer (its shadow memory
+//     over that metadata).
 //
 //   After every phase the array is compared, element by element, with a
 //   std::vector that received the same writes.
@@ -59,11 +70,13 @@
 
 #include <algorithm>   // std::max, std::min
 #include <atomic>      // std::atomic
+#include <climits>     // INT_MAX (past_int_max)
 #include <map>         // std::map (thread -> rank)
 #include <mutex>       // std::mutex, std::scoped_lock
 #include <stdexcept>   // std::runtime_error (the throwing body), std::invalid_argument (step 0)
-#include <thread>      // std::this_thread::get_id
+#include <thread>      // std::this_thread::get_id, std::thread (library_teams)
 #include <type_traits> // std::conditional_t
+#include <utility>     // std::as_const (past_int_max)
 #include <vector>      // std::vector (the reference)
 
 #include <oneapi/tbb/blocked_range.h>  // oneapi::tbb::blocked_range
@@ -71,18 +84,19 @@
 #include <oneapi/tbb/parallel_for.h>   // oneapi::tbb::parallel_for (nested), the partitioners
 #include <oneapi/tbb/task_arena.h>     // oneapi::tbb::task_arena
 
-#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
-#include "chunk/zero_array.h"           // zero::Array
-#include "chunk/zero_one_value_array.h" // zero_one_value::Array
-#include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"           // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"               // chunk_config::use_zero*
-#include "chunk/PMP_CHUNK.h"            // pmp::*, CHUNK_PMP_* (THREAD_CAPACITY: the registry), get_thr_rank_fast
-#include "chunk/tbb_adaptor.h"          // shrink_array::tbb::parallel_for, phase_body
-#include "chunk/internal/env_parse.h"   // arg_number
-#include "chunk/internal/print.h"       // shrink_array::println
-#include "chunk/internal/test_hooks.h"  // force_defer_every (the in-phase case)
+#include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
+#include "chunk/zero_array.h"            // zero::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
+#include "chunk/zero_any_array.h"        // zero_any::Array
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
+#include "chunk/config.h"                // chunk_config::use_zero*
+#include "chunk/internal/pmp_chunk.h"    // pmp::*, CHUNK_PMP_* (THREAD_CAPACITY: the registry), get_thr_rank_fast
+#include "chunk/threads.h"               // shrink_array::thread_rank (each piece's rank, against the registry's)
+#include "chunk/tbb_adaptor.h"           // shrink_array::tbb::parallel_for, phase_body, use_tbb_for_library_teams
+#include "chunk/internal/env_parse.h"    // arg_number
+#include "chunk/print.h"                 // shrink_array::println
+#include "chunk/internal/test_hooks.h"   // force_defer_every (the in-phase case)
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
 
@@ -92,11 +106,11 @@ namespace validation::tbb_validation
 using namespace shrink_array;
 using oneapi::tbb::blocked_range;
 
-template <typename T>
-using Array =
-    std::conditional_t<chunk_config::use_zero_any,
-                       zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+template <typename T, typename I = int>
+using Array = std::conditional_t<
+    chunk_config::use_zero_any,
+    zero_any::Array<T, I>,
+    std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T, I>, zero::Array<T, I>>>;
 
 constexpr const char* variant_name()
 {
@@ -104,9 +118,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -194,9 +208,9 @@ class PhaseRecord
             }
         }
         const int r = get_thr_rank_fast();
-        if (r < 0 || r >= CHUNK_PMP_THREAD_CAPACITY || r != pmp::thread_rank())
+        if (r < 0 || r >= CHUNK_PMP_THREAD_CAPACITY || r != shrink_array::thread_rank())
         {
-            println("FAIL: piece rank {} (thread_rank {}, capacity {})", r, pmp::thread_rank(),
+            println("FAIL: piece rank {} (thread_rank {}, capacity {})", r, shrink_array::thread_rank(),
                     CHUNK_PMP_THREAD_CAPACITY);
             fails_.fetch_add(1, std::memory_order_relaxed);
         }
@@ -609,12 +623,154 @@ int throwing_body(const char* label, long N, const Scenario<T>& sc)
     return fails == 0 ? 0 : 1;
 }
 
+/// @brief 64-bit indices through the adaptor: an Array<char, long> past
+///        INT_MAX, written by the index form (a step landing on both sides of
+///        2^31) and by the range form (a blocked_range<long> straddling 2^31),
+///        read back; an element neither form wrote reads 0.
+int past_int_max()
+{
+    using Big        = Array<char, long>;
+    const long count = static_cast<long>(INT_MAX) + (3L * 4096) + 5; // three chunks past INT_MAX at 4096
+    const long step  = (1L << 20) + 7;                               // ~2048 positions, some past INT_MAX
+    const long lo    = static_cast<long>(INT_MAX) - 2048;            // the range form's first index
+    const auto value = [](long i) { return static_cast<char>(1 + (i % 120)); };
+    Big        big(count);
+
+    shrink_array::tbb::parallel_for(0L, count, step, [&](long i) { big[i] = value(i); });
+    shrink_array::tbb::parallel_for(blocked_range<long>(lo, count),
+                                    [&](const blocked_range<long>& r)
+                                    {
+                                        for (long i = r.begin(); i != r.end(); ++i)
+                                        {
+                                            big[i] = value(i);
+                                        }
+                                    });
+
+    const auto& cb  = std::as_const(big);
+    long        bad = 0;
+    long        n   = 0;
+    for (long i = 0; i < count; i += step, ++n)
+    {
+        bad += cb[i] != value(i) ? 1 : 0;
+    }
+    for (long i = lo; i < count; ++i)
+    {
+        bad += cb[i] != value(i) ? 1 : 0;
+    }
+    for (const long i : {1L, step + 1, lo - 1})
+    {
+        bad += cb[i] != 0 ? 1 : 0;
+    }
+    if (bad != 0)
+    {
+        println("[{}/past-int-max] FAIL: {} element(s) wrong of N={} (INT_MAX + {})", variant_name(), bad, count,
+                count - static_cast<long>(INT_MAX));
+        return 1;
+    }
+    println("[{}/past-int-max] OK: N={} (INT_MAX + {}), {} index-form positions, range [{}, {})", variant_name(), count,
+            count - static_cast<long>(INT_MAX), n, lo, count);
+    return 0;
+}
+
+/**
+ * @brief The library's own teams on TBB's threads (use_tbb_for_library_teams()):
+ *        @p teams teams of @p nt threads opened from the calling thread, each a
+ *        static loop, a barrier, a single and a dynamic loop over @p m
+ *        iterations; then the same from a second thread while every TBB
+ *        thread is busy, where the teams must still end (smaller: TBB starts
+ *        the tasks late, and a late task leaves the team without it).
+ * @details Every iteration runs once per loop, every single once per team,
+ *          and every rank above 0 runs on a TBB thread (not the std backend's
+ *          pool). Std builds only.
+ */
+int library_teams(int nt, int teams)
+{
+    if constexpr (!std_build)
+    {
+        (void)nt;
+        (void)teams;
+        return 0;
+    }
+    shrink_array::tbb::use_tbb_for_library_teams();
+    constexpr int     m = 4096;
+    std::atomic<long> bad{0};
+    std::atomic<long> off_tbb{0};
+    std::atomic<long> wide{0};
+    std::atomic<int>  largest{1};
+    const auto        one_team = [&]
+    {
+        std::vector<std::atomic<int>> hits(2 * m);
+        std::atomic<int>              singles{0};
+        pmp::team(pmp::Options{.num_threads = nt},
+                  [&](pmp::Team& t)
+                  {
+                      if (t.rank() > 0 && oneapi::tbb::this_task_arena::current_thread_index() ==
+                                              oneapi::tbb::task_arena::not_initialized)
+                      {
+                          off_tbb.fetch_add(1);
+                      }
+                      if (t.rank() == 0)
+                      {
+                          wide.fetch_add(t.size() > 1 ? 1 : 0);
+                          largest.store(std::max(largest.load(), t.size()));
+                      }
+                      t.for_static<int>(0, m, [&](int i) { hits[static_cast<std::size_t>(i)].fetch_add(1); });
+                      t.barrier();
+                      t.single([&] { singles.fetch_add(1); });
+                      t.for_dynamic<int>(m, 2 * m, 16, [&](int i) { hits[static_cast<std::size_t>(i)].fetch_add(1); });
+                  });
+        for (const auto& h : hits)
+        {
+            bad += h.load() != 1 ? 1 : 0;
+        }
+        bad += singles.load() != 1 ? 1 : 0;
+    };
+    for (int k = 0; k < teams; ++k)
+    {
+        one_team();
+    }
+    const long wide_idle = wide.load();
+
+    // Every TBB thread busy (no phase: a team may open) while a second thread
+    // opens teams: their tasks start late or never, the teams still end.
+    // The busy tasks capture nothing: the index form calls the caller's
+    // lambda itself, which an uninstrumented libtbb hands over unseen by
+    // ThreadSanitizer (tsan_tbb.supp); a static flag needs no hand-over.
+    static std::atomic<bool> stop{false};
+    stop.store(false);
+    std::thread opener(
+        [&]
+        {
+            for (int k = 0; k < teams / 4; ++k)
+            {
+                one_team();
+            }
+            stop.store(true);
+        });
+    oneapi::tbb::parallel_for(0, nt, 1,
+                              [](int)
+                              {
+                                  while (!stop.load())
+                                  {
+                                      std::this_thread::yield();
+                                  }
+                              });
+    opener.join();
+
+    const bool ok = bad.load() == 0 && off_tbb.load() == 0;
+    println("[{}/library-teams] {}: {} + {} teams of up to {} threads, {} wide when TBB idle, largest {}, {} wrong, "
+            "{} rank(s) off TBB",
+            variant_name(), ok ? "OK" : "FAIL", teams, teams / 4, nt, wide_idle, largest.load(), bad.load(),
+            off_tbb.load());
+    return ok ? 0 : 1;
+}
+
 int run(int argc, char** argv)
 {
     const long N      = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 18, "N") : (1L << 18);
     const int  phases = argc > 2 ? shrink_array::arg_number<int>(argv[2], 6, "phases") : 6;
 
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     // TBB's threads: the backend's team size (OMP_NUM_THREADS of the test),
     // the calling thread among them -- within the capacity of the registry.
@@ -654,6 +810,15 @@ int run(int argc, char** argv)
             fails += nested<double>("double", N, phases, sd);
             fails += nested<int>("int", N, phases, si);
             fails += throwing_body<double>("double", N, sd);
+            fails += library_teams(nt, 2000);
+            if constexpr (chunk_config::tsan_build)
+            {
+                println("[{}/past-int-max] skipped under ThreadSanitizer", variant_name());
+            }
+            else
+            {
+                fails += past_int_max();
+            }
         });
 
     // A narrower arena for one call: its threads are TBB's same workers.
@@ -671,7 +836,7 @@ int run(int argc, char** argv)
     }
 
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
 
     println("\n[{}] {}", variant_name(), fails == 0 ? "=== TBB OK ===" : "=== TBB FAILURES ===");
     return fails == 0 ? 0 : 1;

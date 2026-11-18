@@ -16,29 +16,32 @@
 
 #pragma once
 
-#include <optional> // std::nullopt_t (the index-less overloads)
+#include <optional>        // std::nullopt_t (the index-less overloads)
+#include <atomic>          // std::atomic_thread_fence, std::memory_order_release
+#include <utility>         // std::forward
+#include <source_location> // std::source_location
 
 #include "chunk/internal/second_value_chunk_base.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
-#include "chunk/config.h"                       // build_config::any_check, chunk_config::use_compression_with_counter
-#include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast
-#include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef
+#include "chunk/config.h"             // build_config::any_check, chunk_config::use_compression_with_counter
+#include "chunk/internal/pmp_chunk.h" // get_thr_rank_fast
+#include "chunk/internal/array_const_val2_holder.h" // SecondValueRef
 
 namespace shrink_array
 {
 
 template <typename T, typename Derived>
 template <typename IndexT>
-void SecondValueChunkBase<T, Derived>::block_clear_common(int                  num_compress_value,
+void SecondValueChunkBase<T, Derived>::block_clear_common(int                  const_index,
                                                           IndexT               index_opt,
                                                           [[maybe_unused]] int thr_rank,
-                                                          CstSlot*             ptr_type_cst,
+                                                          ConstSlot*           ptr_type_const,
                                                           SecondValueRef<T>    ptr_second_value,
-                                                          [[maybe_unused]] T*  cst2_ptr)
+                                                          [[maybe_unused]] T*  const2_ptr)
 {
     if constexpr (is_zero_any_family_derived)
     {
         // 1. Update the metadata BEFORE the CAS.
-        if (num_compress_value == 0)
+        if (const_index == 0)
         {
             if constexpr (has_motif_state_v<Derived>)
             {
@@ -48,20 +51,20 @@ void SecondValueChunkBase<T, Derived>::block_clear_common(int                  n
             {
                 ptr_second_value.reset();
             }
-            derived().set_cst_val_to_cst_val1(ptr_type_cst);
+            derived().set_const_val_to_const_val1(ptr_type_const);
         }
         else
         {
-            derived().set_cst_val_to_cst_val2(ptr_type_cst);
+            derived().set_const_val_to_const_val2(ptr_type_const);
         }
 
         // 2. The CAS installs the constant pointer AND returns the old heap pointer.
-        T* old = derived().try_mark_cst_and_get_old(num_compress_value, cst2_ptr);
+        T* old = derived().try_mark_const_and_get_old(const_index, const2_ptr);
         if (!old)
         {
             // CAS failed: another thread has already compressed this chunk.
             // Re-sync 'values' with the metadata written above.
-            derived().init_values_cst_val(ptr_type_cst, ptr_second_value); // Critical re-sync
+            derived().init_values_const_val(ptr_type_const, ptr_second_value); // Critical re-sync
             return;
         }
 
@@ -71,7 +74,7 @@ void SecondValueChunkBase<T, Derived>::block_clear_common(int                  n
     else
     {
         // Only the thread that wins the atomic transition frees; the others return.
-        T* old = derived().try_mark_cst_and_get_old(num_compress_value, index_opt);
+        T* old = derived().try_mark_const_and_get_old(const_index, index_opt);
         if (old)
         {
             Base::free_block_to_pool(thr_rank, old);
@@ -82,10 +85,10 @@ void SecondValueChunkBase<T, Derived>::block_clear_common(int                  n
         }
     }
 
-    if constexpr (is_zero_one_value_derived && chunk_config::use_compression_with_counter)
+    if constexpr (is_zero_or_value_derived && chunk_config::use_compression_with_counter)
     {
-        derived().reset_nb_val_eq_second_value();
-        derived().reset_nb_val_eq_first_value();
+        derived().reset_n_val_eq_second_value();
+        derived().reset_n_val_eq_first_value();
     }
 }
 
@@ -93,7 +96,7 @@ template <typename T, typename Derived>
 template <typename IndexT>
 void SecondValueChunkBase<T, Derived>::clear_impl(IndexT            index_opt,
                                                   int               thr_rank,
-                                                  CstSlot*          ptr_type_cst,
+                                                  ConstSlot*        ptr_type_const,
                                                   SecondValueRef<T> ptr_second_value)
 {
     bool is_written = false;
@@ -114,16 +117,17 @@ void SecondValueChunkBase<T, Derived>::clear_impl(IndexT            index_opt,
     if constexpr (build_config::any_check)
     {
         const auto* current_ptr = static_cast<const void*>(values_load());
-        if (is_cst_val1())
+        if (is_const_val1())
         {
             invariant_failed(
-                "Free List Corruption: Attempted to add 'cst_val1' (zero-constant) to the thread-local free pool. "
-                "Type: {} | Chunk Addr: {} | Ptr being freed: {} | Cst1 Ptr: {} | Thread Rank: {}",
-                type_name<T>(), this, current_ptr, static_cast<const void*>(Base::get_cst_val1()), get_thr_rank_fast());
+                "Free List Corruption: Attempted to add 'const_val1' (zero-constant) to the thread-local free pool. "
+                "Type: {} | Chunk Addr: {} | Ptr being freed: {} | Const1 Ptr: {} | Thread Rank: {}",
+                type_name<T>(), this, current_ptr, static_cast<const void*>(Base::get_const_val1()),
+                get_thr_rank_fast());
         }
 
         invariant_failed(
-            "Free List Corruption: Attempted to add 'cst_val2' (secondary constant) to the thread-local free pool. "
+            "Free List Corruption: Attempted to add 'const_val2' (secondary constant) to the thread-local free pool. "
             "Type: {} | Chunk Addr: {} | Ptr being freed: {} | Thread Rank: {}",
             type_name<T>(), this, current_ptr, get_thr_rank_fast());
     }
@@ -135,18 +139,18 @@ void SecondValueChunkBase<T, Derived>::clear_impl(IndexT            index_opt,
     if constexpr (std::is_same_v<IndexT, std::nullopt_t>)
     {
         ptr_second_value.reset();
-        derived().set_cst_val_to_cst_val1(ptr_type_cst);
-        derived().init_values_cst_val(ptr_type_cst, ptr_second_value);
+        derived().set_const_val_to_const_val1(ptr_type_const);
+        derived().init_values_const_val(ptr_type_const, ptr_second_value);
     }
     else
     {
-        // zero_one_value specific cleanup
-        derived().set_cst_val_to_cst_val1();
-        derived().init_values_cst_val();
+        // zero_or_value specific cleanup
+        derived().set_const_val_to_const_val1();
+        derived().init_values_const_val();
 
-        if constexpr (is_zero_one_value_derived && chunk_config::use_compression_with_counter)
+        if constexpr (is_zero_or_value_derived && chunk_config::use_compression_with_counter)
         {
-            derived().reset_nb_val_eq_second_value();
+            derived().reset_n_val_eq_second_value();
         }
     }
 }
@@ -157,7 +161,7 @@ void SecondValueChunkBase<T, Derived>::clear_impl(IndexT            index_opt,
 
 template <typename T, typename Derived>
 template <typename CasFunc>
-void SecondValueChunkBase<T, Derived>::apply_cas_or_recup(T* values_loc, int thr_rank, CasFunc&& cas_fn) noexcept
+void SecondValueChunkBase<T, Derived>::apply_cas_or_reclaim(T* values_loc, int thr_rank, CasFunc&& cas_fn) noexcept
 {
     if constexpr (chunk_config::use_fast_block_compression)
     {
@@ -166,18 +170,18 @@ void SecondValueChunkBase<T, Derived>::apply_cas_or_recup(T* values_loc, int thr
         {
             // Publish the init before recycling the lost block (ARM).
             std::atomic_thread_fence(std::memory_order_release);
-            Base::recup_value(values_loc, thr_rank);
+            Base::reclaim_value(values_loc, thr_rank);
         }
     }
     else
     {
-        Base::recup_value(values_loc, 0);
+        Base::reclaim_value(values_loc, 0);
     }
 }
 
 template <typename T, typename Derived>
-void SecondValueChunkBase<T, Derived>::check_not_constant_before_clear(int                num_compress_value,
-                                                                       std::optional<int> ind_opt) const noexcept
+void SecondValueChunkBase<T, Derived>::check_not_constant_before_clear(int                const_index,
+                                                                       std::optional<int> idx_opt) const noexcept
 {
     if constexpr (build_config::any_check)
     {
@@ -185,35 +189,35 @@ void SecondValueChunkBase<T, Derived>::check_not_constant_before_clear(int      
         const void* values_ptr = static_cast<const void*>(derived().values_load());
         const int   thr        = get_thr_rank_fast();
 
-        // --- 1. Check primary constant (cst_val1) ---
-        if (derived().Base::is_cst_val1())
+        // --- 1. Check primary constant (const_val1) ---
+        if (derived().Base::is_const_val1())
         {
             invariant_failed(std::source_location::current(),
-                             "Critical State Violation: Attempted to free 'cst_val1' inside clear. "
-                             "Index: {} | Type: {} | Chunk: {} | Values: {} | Cst1: {} | Thr: {}",
-                             num_compress_value, type_name<T>(), chunk_ptr, values_ptr,
-                             static_cast<const void*>(Derived::Base::get_cst_val1()), thr);
+                             "Critical State Violation: Attempted to free 'const_val1' inside clear. "
+                             "Index: {} | Type: {} | Chunk: {} | Values: {} | Const1: {} | Thr: {}",
+                             const_index, type_name<T>(), chunk_ptr, values_ptr,
+                             static_cast<const void*>(Derived::Base::get_const_val1()), thr);
         }
 
-        // --- 2. Check secondary constant (cst_val2) ---
+        // --- 2. Check secondary constant (const_val2) ---
         bool        is_violating = false;
-        const void* cst2_ptr     = nullptr;
+        const void* const2_ptr   = nullptr;
 
-        if (ind_opt.has_value())
+        if (idx_opt.has_value())
         {
-            // Path for zero_one_value (Table indexed)
-            if constexpr (is_zero_one_value_derived)
+            // Path for zero_or_value (Table indexed)
+            if constexpr (is_zero_or_value_derived)
             {
-                const int ind = *ind_opt;
+                const int idx = *idx_opt;
                 if constexpr (is_bool)
                 {
-                    is_violating = derived().is_cst_val2();
-                    cst2_ptr     = static_cast<const void*>(Derived::BaseSpec::get_cst_val2());
+                    is_violating = derived().is_const_val2();
+                    const2_ptr   = static_cast<const void*>(Derived::BaseSpec::get_const_val2());
                 }
                 else
                 {
-                    is_violating = derived().is_cst_val2(ind);
-                    cst2_ptr     = static_cast<const void*>(Derived::BaseSpec::get_cst_val2(ind));
+                    is_violating = derived().is_const_val2(idx);
+                    const2_ptr   = static_cast<const void*>(Derived::BaseSpec::get_const_val2(idx));
                 }
             }
         }
@@ -222,19 +226,19 @@ void SecondValueChunkBase<T, Derived>::check_not_constant_before_clear(int      
             // Path for the zero_any family or Bool (Non-indexed)
             if constexpr (is_bool || is_zero_any_family_derived)
             {
-                is_violating = derived().is_cst_val2();
+                is_violating = derived().is_const_val2();
                 if constexpr (is_zero_any_family_derived)
                 {
                     // A chunk compressed to a second constant reads from it
                     // through its values pointer; there is no other handle.
                     if (is_violating)
                     {
-                        cst2_ptr = static_cast<const void*>(derived().values_load());
+                        const2_ptr = static_cast<const void*>(derived().values_load());
                     }
                 }
                 else
                 {
-                    cst2_ptr = static_cast<const void*>(Derived::BaseSpec::get_cst_val2());
+                    const2_ptr = static_cast<const void*>(Derived::BaseSpec::get_const_val2());
                 }
             }
         }
@@ -242,9 +246,9 @@ void SecondValueChunkBase<T, Derived>::check_not_constant_before_clear(int      
         if (is_violating)
         {
             invariant_failed(std::source_location::current(),
-                             "Critical State Violation: Attempted to free 'cst_val2' inside clear. "
-                             "Index: {} | Type: {} | Chunk: {} | Values: {} | Cst2: {} | Thr: {}",
-                             num_compress_value, type_name<T>(), chunk_ptr, values_ptr, cst2_ptr, thr);
+                             "Critical State Violation: Attempted to free 'const_val2' inside clear. "
+                             "Index: {} | Type: {} | Chunk: {} | Values: {} | Const2: {} | Thr: {}",
+                             const_index, type_name<T>(), chunk_ptr, values_ptr, const2_ptr, thr);
         }
     }
 }
@@ -255,32 +259,32 @@ void SecondValueChunkBase<T, Derived>::assert_writable_buffer(const T*          
 {
     if constexpr (build_config::any_check)
     {
-        const auto* c1 = static_cast<const void*>(SecondValueChunkBase::get_cst_val1());
+        const auto* c1 = static_cast<const void*>(SecondValueChunkBase::get_const_val1());
 
         const void* c2 = nullptr;
 
         // zero_any: the secondary constants live in one region -- the test is
         // a range test on the target, not a pointer to compare with.
-        bool target_in_cst2_region = false;
-        if constexpr (requires { derived().tab_cst_val2_holder::is_cst_val2_ptr(target_ptr); })
+        bool target_in_const2_region = false;
+        if constexpr (requires { derived().array_const_val2_holder::is_const_val2_ptr(target_ptr); })
         {
-            target_in_cst2_region = derived().tab_cst_val2_holder::is_cst_val2_ptr(target_ptr);
-            if (target_in_cst2_region)
+            target_in_const2_region = derived().array_const_val2_holder::is_const_val2_ptr(target_ptr);
+            if (target_in_const2_region)
             {
                 c2 = static_cast<const void*>(target_ptr);
             }
         }
-        else if constexpr (requires { derived().get_cst_val2(); })
+        else if constexpr (requires { derived().get_const_val2(); })
         {
-            // zero_one_value bool: one shared second constant.
-            c2 = static_cast<const void*>(derived().get_cst_val2());
+            // zero_or_value bool: one shared second constant.
+            c2 = static_cast<const void*>(derived().get_const_val2());
         }
 
         if (target_ptr == c1 || (c2 != nullptr && target_ptr == c2)) [[unlikely]]
         {
             invariant_failed(loc,
                              "Illegal Memory Write: Attempted to write into an immutable shared constant buffer. "
-                             "Type: {} | Chunk Addr: {} | Target Ptr: {} | Cst1: {} | Cst2: {} | Thread: {}",
+                             "Type: {} | Chunk Addr: {} | Target Ptr: {} | Const1: {} | Const2: {} | Thread: {}",
                              type_name<T>(), this, static_cast<const void*>(target_ptr), c1, c2, get_thr_rank_fast());
         }
     }

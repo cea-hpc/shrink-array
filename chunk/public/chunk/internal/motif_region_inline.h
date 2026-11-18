@@ -15,6 +15,14 @@
  */
 
 #pragma once
+#include <atomic>      // std::memory_order_acquire, std::memory_order_relaxed, std::memory_order_release
+#include <cstddef>     // std::byte, std::size_t
+#include <cstdint>     // std::uint16_t, std::uint32_t, std::uint64_t, std::uint8_t
+#include <cstring>     // std::memcmp, std::memcpy
+#include <mutex>       // std::scoped_lock
+#include <type_traits> // std::make_unsigned_t
+#include <vector>      // std::vector
+
 #include "chunk/internal/motif_region.h" // the class these bodies belong to
 
 namespace shrink_array
@@ -73,10 +81,10 @@ pattern::MotifRegion<T>::find_or_admit(const T* motif, std::size_t count, std::u
     {
         return entry;
     }
-    auto&               entry = probation_[static_cast<std::size_t>(h >> (64U - probation_bits))];
-    const auto          check = static_cast<std::uint16_t>(((h >> (56U - probation_bits)) & 0xFFU) << 8U);
-    const std::uint16_t seen  = entry.load(std::memory_order_relaxed);
-    if ((seen & 0xFF00U) != check || (seen & 0xFFU) == 0 || (seen & 0xFFU) == tag)
+    auto&      entry = probation_[static_cast<std::size_t>(h >> (64U - probation_bits))];
+    const auto check = static_cast<std::uint16_t>(((h >> (56U - probation_bits)) & 0xFFU) << 8U);
+    if (const std::uint16_t seen = entry.load(std::memory_order_relaxed);
+        (seen & 0xFF00U) != check || (seen & 0xFFU) == 0 || (seen & 0xFFU) == tag)
     {
         // A first sighting (or another motif's entry, taken over), or the same
         // sighter again. A race only admits one sighting early.
@@ -192,7 +200,7 @@ T* pattern::MotifRegion<T>::take_slot(std::size_t count)
     {
         const std::uint32_t id = cls.free_ids.back();
         cls.free_ids.pop_back();
-        return const_cast<T*>(entry_by_id()[id]);
+        return const_cast<T*>(entry_by_id()[id]); // NOSONAR(cpp:S859)
     }
     const std::size_t bytes = (count * sizeof(T) + entry_align - 1) / entry_align * entry_align;
     if (bytes > segment_bytes)
@@ -211,9 +219,9 @@ T* pattern::MotifRegion<T>::take_slot(std::size_t count)
         // Before any entry of the segment is published (index_publish's release).
         seg.count.store(count, std::memory_order_relaxed);
     }
-    Segment&            seg = segments_[cls.open];
-    const std::uint32_t id  = static_cast<std::uint32_t>(next_id_.load(std::memory_order_relaxed));
-    std::byte* const    at  = begin_.load(std::memory_order_relaxed) + cls.open * segment_bytes + seg.carved * bytes;
+    Segment&         seg = segments_[cls.open];
+    const auto       id  = static_cast<std::uint32_t>(next_id_.load(std::memory_order_relaxed));
+    std::byte* const at  = begin_.load(std::memory_order_relaxed) + cls.open * segment_bytes + seg.carved * bytes;
     ++seg.carved;
     segment_ids()[cls.open].push_back(id);
     live().push_back(0);

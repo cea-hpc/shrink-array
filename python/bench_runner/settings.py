@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Defaults, presets and the machine fitting of the thread counts."""
 import os
+import platform
 
 
 # --- Default configuration -----------------------------------------------
@@ -69,8 +70,12 @@ DEFAULT_CONFIGS = [
     "cmake-build-omp-aocc",                            # RelWithDebInfo AOCC (AMD clang)
     "cmake-build-std-oneapi",                          # oneAPI, std backend (+ TBB bench)
     "cmake-build-std-aocc",                            # AOCC, std backend (+ TBB bench)
+    # ARM only, the counterpart: Arm Compiler for Linux (armclang++), when
+    # compile_all.sh found it. On x86-64 absent, dropped with the same note.
+    "cmake-build-omp-acfl",                            # RelWithDebInfo ACfL
+    "cmake-build-std-acfl",                            # ACfL, std backend (+ TBB bench)
     # Non-OpenMP builds — cover the `if constexpr(!use_openmp)` code paths so a
-    # serial-path regression is caught. Build them with -DOMP:BOOL=OFF; if the
+    # serial-path regression is caught. Build them with -DCHUNK_OPENMP:BOOL=OFF; if the
     # directory is absent it is skipped with a single note (see
     # drop_absent_configs), not one MISSING warning per variant.
     "cmake-build-gnu",                                 # non-OMP GNU
@@ -89,8 +94,8 @@ DEFAULT_CONFIGS = [
 # (shrink_bench_tbb_<variant>_<size>, examples/shrink_bench/CMakeLists.txt). It
 # exists only in the std-backend builds made with CHUNK_WITH_TBB, so these
 # variants are looked for there and nowhere else (builds.skip_variant_on_config).
-TBB_VARIANTS = ["tbb_zero", "tbb_zero_one_value", "tbb_zero_any"]
-SHRINK_VARIANTS = ["zero", "zero_one_value", "zero_any"]   # the three array variants
+TBB_VARIANTS = ["tbb_zero", "tbb_zero_or_value", "tbb_zero_any"]
+SHRINK_VARIANTS = ["zero", "zero_or_value", "zero_any"]   # the three array variants
 DEFAULT_VARIANTS       = ["vector"] + SHRINK_VARIANTS + ["std_alloc"] + TBB_VARIANTS
 
 
@@ -115,6 +120,39 @@ def is_tbb_variant(var):
 BENCH_BACKENDS = ("omp", "std", "serial")
 
 
+def arch_dir_name(os_release="/etc/os-release"):
+    """compile_all.sh's $arch for this machine (ID_VERSION__machine from
+    os-release, e.g. RHEL_9.6__x86_64), or None without an os-release."""
+    fields = {}
+    try:
+        with open(os_release) as f:
+            for line in f:
+                key, _, value = line.strip().partition("=")
+                fields[key] = value.strip("\"'")
+    except OSError:
+        return None
+    if "ID" not in fields:
+        return None
+    return f"{fields['ID'].upper()}_{fields.get('VERSION_ID', '')}__{platform.machine()}"
+
+
+def results_dir_name():
+    """The directory of this system under bench_results: its $arch (a system's
+    runs, oracles and timings are not those of another: Milan on RHEL 8 and
+    Turin on RHEL 9 are both x86_64), the machine without an os-release."""
+    return arch_dir_name() or platform.machine()
+
+
+def this_os_first(dirs, name=os.path.basename):
+    """@p dirs with this machine's $arch directory first. A site can have one
+    architecture on several systems (the Milan nodes on RHEL 8, the Turin ones
+    on RHEL 9): the machine suffix alone would take the first in sorted order,
+    the RHEL 8 build. The others stay after it, as a fallback (a system
+    upgraded since the build). @p name: the $arch of an element of @p dirs."""
+    mine = arch_dir_name()
+    return sorted(dirs, key=lambda d: name(d) != mine)
+
+
 def bench_exe_names(rest):
     """The names the executable `rest` (its name after "shrink_bench_", without
     the backend: "zero_any_256", "vector_check", "tbb_zero_any_dyn") may have
@@ -137,22 +175,25 @@ def find_bench_exe(directory, rest):
 
 
 # The variants were named chunk / chunk2 / chunk2a until they took the name of
-# their namespace. Command lines, perf databases, bench_summary.csv files, JSON
-# logs and CHUNK_STATS tags of older builds still carry the old labels: they
-# are read as their new names until 1.0.
+# their namespace. Perf databases, bench_summary.csv files, JSON logs and
+# CHUNK_STATS tags recorded before the rename still carry the old labels:
+# normalize_variant() reads them as the new names, so that old and new runs
+# compare. On a command line an old label is refused (check_variant_label).
 LEGACY_VARIANTS = {
-    "chunk": "zero", "chunk2": "zero_one_value", "chunk2a": "zero_any",
-    "tbb_chunk": "tbb_zero", "tbb_chunk2": "tbb_zero_one_value",
+    "chunk": "zero", "chunk2": "zero_or_value", "chunk2a": "zero_any",
+    "tbb_chunk": "tbb_zero", "tbb_chunk2": "tbb_zero_or_value",
     "tbb_chunk2a": "tbb_zero_any",
+    # zero_or_value was zero_one_value until 0.3
+    "zero_one_value": "zero_or_value", "tbb_zero_one_value": "tbb_zero_or_value",
 }
 
 
-def normalize_variant(label, warn=None):
-    """The current name of a variant label: an old one (chunk2a, chunk2a@256,
-    chunk2a_int64@dyn, tbb_chunk2) becomes its new name (zero_any, zero_any@256,
-    zero_any_int64@dyn, tbb_zero_one_value); anything else comes back unchanged.
-    `warn`: a context string -- when given and the label is an old one, a
-    one-line deprecation note goes to stderr."""
+def normalize_variant(label):
+    """The current name of a variant label READ FROM DATA (a perf database, a
+    summary, a log): an old one (chunk2a, chunk2a@256, chunk2a_int64@dyn,
+    tbb_chunk2) becomes its new name (zero_any, zero_any@256, zero_any_int64@dyn,
+    tbb_zero_or_value); anything else comes back unchanged. For a label given on
+    a command line, see check_variant_label()."""
     if not isinstance(label, str):
         return label
     base, at, size = label.partition("@")
@@ -162,12 +203,16 @@ def normalize_variant(label, warn=None):
     new = LEGACY_VARIANTS.get(base)
     if new is None:
         return label
-    out = new + suffix + at + size
-    if warn:
-        import sys
-        print(f"note: {warn}: variant '{label}' is the old name of '{out}' "
-              "(accepted until 1.0)", file=sys.stderr)
-    return out
+    return new + suffix + at + size
+
+
+def check_variant_label(label, option):
+    """A variant label given on a command line, returned as it is; an old one
+    (chunk2a, tbb_chunk2...) stops the program with its new name."""
+    new = normalize_variant(label)
+    if new != label:
+        raise SystemExit(f"{option}: '{label}' is the former name of '{new}': write '{new}'")
+    return label
 
 # ── Sanitizer CHECK configs ──────────────────────────────────────────────────
 # Two llvm sanitizer build dirs (created by compile_all.sh) run in the CHECK
@@ -306,7 +351,11 @@ SCALING_CONFIGS  = ["cmake-build-omp-llvm", "cmake-build-omp-gnu"]
 # The curve every container is read against: no chunk, no compression, so a
 # bend it shares is the machine's, and one only the chunk variants show is ours.
 SCALING_REFERENCE_VARIANT = "vector"
-SCALING_THREADS  = [4, 8, 16, 32, 64, 128]
+# Past 128, for the 2 x 160-core AMD Turin: 160 fills one socket, 256 and 320 cross
+# to the second one, where a bend can be the machine's: read them against vector.
+# A machine with fewer CPUs drops these points (see run_scaling_phase), its curve
+# is unchanged; 160 and 256 run on the 288-core node.
+SCALING_THREADS  = [4, 8, 16, 32, 64, 128, 160, 256, 320]
 # The guard runs the int64 binaries (shrink_bench_<backend>_<variant>_int64_<size>, see
 # int64_variant) at --multiply 2: arrays past INT_MAX elements, so the curves
 # also cover the 64-bit index path at the scale it exists for. --iter_max 500
@@ -341,12 +390,12 @@ SCALING_NUMA_INTERLEAVE = "off"
 
 # --- 64-bit index checks (int64 binaries) ----------------------------------
 # A few --mode check runs of the int64 binaries against the 32-bit oracle of
-# the same config: the data_tab* files hold element values, independent of the
+# the same config: the data_array* files hold element values, independent of the
 # index type, so the int64 build must reproduce them exactly. One per variant,
 # both geometries between them; zero_any@dyn is the richest path (a second
 # value per chunk, re-chunking). Not a sweep: the 32-bit checks cover the
 # rest, and this only asks whether 64-bit indices change a result.
-INT64_CHECK_VARIANTS = ["zero@1024", "zero_one_value@1024", "zero_any@dyn"]
+INT64_CHECK_VARIANTS = ["zero@1024", "zero_or_value@1024", "zero_any@dyn"]
 
 # --- Mode presets --------------------------------------------------------
 # Each preset overrides threads / reps_perf / full_reps_threads unless the user
@@ -407,7 +456,7 @@ MODE_PRESETS = {
         "perf_drop":         [],
         # From 16 threads: the low points of int64 --multiply 2 are the
         # longest runs of the guard (minutes each); full keeps them.
-        "scaling": {"configs": SCALING_CONFIGS, "threads": [16, 32, 64, 128], "sizes": None},
+        "scaling": {"configs": SCALING_CONFIGS, "threads": [16, 32, 64, 128, 160, 256, 320], "sizes": None},
         "seq_omp": {"threads": DEFAULT_SEQ_OMP_THREADS, "sizes": DEFAULT_SEQ_OMP_SIZES},
     },
     "full": {
@@ -476,4 +525,4 @@ def fit_threads(wanted, cap, machine_points):
     return sorted(kept)
 
 
-DEFAULT_STATS_MARK_RATIO_MIN = {"zero_one_value": 0.3, "zero_any": 0.3}
+DEFAULT_STATS_MARK_RATIO_MIN = {"zero_or_value": 0.3, "zero_any": 0.3}

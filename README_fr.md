@@ -15,7 +15,8 @@ d'éléments qui demande **125,9 Go** en `std::vector` tient dans **6 à 7,3 Go*
 moins de mémoire, sans toucher aux boucles.
 
 - **Remplacement direct** : `a[i] = v`, `a[i] += x`, `resize`, `push_back`, range-for. Pas de
-  nouvelle indexation, pas d'étape de reconstruction, aucune perte.
+  nouvelle indexation, pas d'étape de reconstruction, aucune perte : un élément se relit avec
+  les bits écrits, `-0.0` et charges utiles des NaN compris.
 - **Compresse pendant que le programme tourne** : un chunk qui devient uniforme rend son
   tampon ; un chunk réécrit en reprend un.
 - **N'importe quelle valeur répétée**, pas seulement zéro (`zero_any`), pour tout type trivialement
@@ -24,9 +25,8 @@ moins de mémoire, sans toucher aux boucles.
   quelques centaines de threads -- ceux d'OpenMP, ou, avec le backend std, les `std::thread` et
   les tâches TBB du programme lui-même (`CHUNK_THREADS=std`, sans OpenMP). C++20, Linux, CMake, Spack.
 
-*Le projet s'appelle `shrink-array` (dépôt, paquet Spack) ; le namespace C++ est
-`shrink_array` ; le paquet CMake installé est `chunk` (`find_package(chunk)`, cibles
-`chunk::…`).*
+*Le projet s'appelle `shrink-array` (dépôt, paquet Spack) ; le namespace C++ et le paquet
+CMake sont `shrink_array` (`find_package(shrink_array)`, cibles `shrink_array::…`).*
 
 ## Aperçu
 
@@ -48,7 +48,7 @@ change :
 (Le `#pragma omp parallel for` seul demande un build OMPT ; avec le `libgomp` de GCC,
 ouvrez la région avec `parallel_phase()`, voir [Un premier programme, parallèle et multi-thread](#un-premier-programme-parallèle-et-multi-thread).)
 
-![Mémoire du process au banc de référence : std::vector 125,9 Go, zero 40,2 Go, zero_one_value 17,3 Go, zero_any 7,26 Go](docs/images/memory_bench_fr.png)
+![Mémoire du process au banc de référence : std::vector 125,9 Go, zero 40,2 Go, zero_or_value 17,3 Go, zero_any 7,26 Go](docs/images/memory_bench_fr.png)
 
 *Banc de référence ([`shrink_bench`](examples/shrink_bench)) : environ 10⁹ éléments d'une
 douzaine de types, chunks statiques de 256, mémoire du process entier à la fin. Le prix est le
@@ -59,15 +59,14 @@ temps d'accès, voir [En chiffres](#en-chiffres).*
 ```cpp
 #include <cstdio>
 #include "chunk/zero_any_array.h"   // shrink_array::zero_any::Array
-#include "chunk/zero_chunk.h"       // release_chunk_pools, destroy_block_chunk
-#include "chunk/manage_ompt.h"     // parallel_phase
-#include "chunk/param_chunk.h"     // ParamChunk::init_indexes
+#include "chunk/phases.h"     // parallel_phase
+#include "chunk/runtime.h"     // Runtime::init, release_chunk_pools, Runtime::shutdown
 
 namespace sa = shrink_array;
 
 int main()
 {
-    sa::ParamChunk::init_indexes(true);       // facultatif : le premier tableau le fait sinon
+    sa::Runtime::init(true);       // facultatif : le premier tableau le fait sinon
     {
         const int                n = 1 << 24;
         sa::zero_any::Array<double> a(n);        // tous les éléments à 0.0, aucun tampon encore
@@ -83,8 +82,8 @@ int main()
         a.shrink_to_fit();                    // replier les chunks devenus constants
         std::printf("chunks holding a buffer: %.1f %%\n", a.stats());
     }                                         // le tableau rend ses chunks ici
-    sa::release_chunk_pools();                // facultatif : rendre les pools avant la fin
-    sa::destroy_block_chunk();
+    sa::release_chunk_pools();                // facultatif : rendre les pools avant la end
+    sa::Runtime::shutdown();
 }
 ```
 
@@ -165,16 +164,16 @@ dans le corps prend `sa::tbb::phase_body(inner)`. L'en-tête est fourni avec la 
 ne dépend pas de TBB : c'est au programme de se lier à TBB.
 
 ```cmake
-find_package(chunk 0.2 REQUIRED)
+find_package(shrink_array 0.3 REQUIRED)
 find_package(TBB REQUIRED)
-target_link_libraries(my_app PRIVATE chunk::chunk_zero_any TBB::tbb)
+target_link_libraries(my_app PRIVATE shrink_array::zero_any TBB::tbb)
 ```
 
 Un build OpenMP refuse l'adaptateur à la compilation : OpenMP ne numérote que ses propres
 threads. Les `std::thread` et vos propres pools de threads :
 [docs/getting_started_fr.md](docs/getting_started_fr.md#5-threads--les-règles).
 
-Le lier à `chunk::chunk_zero_any` (voir [Installer](#installer)). La version complète, qui vérifie
+Le lier à `shrink_array::zero_any` (voir [Installer](#installer)). La version complète, qui vérifie
 ce qu'elle relit, est [examples/getting_started](examples/getting_started/getting_started.cpp) ;
 [docs/getting_started_fr.md](docs/getting_started_fr.md) la commente pas à pas, puis détaille les
 règles ci-dessous.
@@ -205,13 +204,13 @@ métadonnées. Les trois variantes diffèrent par les constantes retenues :
 | variante | classe | un chunk est compressé quand il est uniforme à… |
 |---|---|---|
 | `zero` | `zero::Array<T>` | `T{}` (zéro) seulement |
-| `zero_one_value` | `zero_one_value::Array<T>` | `T{}`, ou **une** seconde valeur par tableau, déclarée par `set_second_value()` |
+| `zero_or_value` | `zero_or_value::Array<T>` | `T{}`, ou **une** seconde valeur par tableau, déclarée par `set_second_value()` |
 | `zero_any` | `zero_any::Array<T>` | `T{}`, ou **n'importe quelle** valeur, chunk par chunk, sans rien déclarer -- **commencer par elle** |
 
 La variante et la taille de chunk (256, 1024, ou dynamique et adaptative : `_dyn`) sont choisies
-par la bibliothèque liée : `chunk::chunk_zero_any_256`, `chunk::chunk_zero_any_dyn`, ...
+par la bibliothèque liée : `shrink_array::zero_any_256`, `shrink_array::zero_any_dyn`, ...
 [docs/variantes_fr.md](docs/variantes_fr.md) dit ce que coûte chacune ;
-[docs/algo_zero_one_value_fr.md](docs/algo_zero_one_value_fr.md) comment lectures, écritures et compression
+[docs/algo_zero_or_value_fr.md](docs/algo_zero_or_value_fr.md) comment lectures, écritures et compression
 cohabitent.
 
 **Des entiers qui se répètent avec un décalage : `pattern::Array`.** Une connectivité de
@@ -287,7 +286,7 @@ Grace, 64 threads ([comment c'est mesuré](docs/mesures_performance_fr.md)) :
 | | chunks statiques de 256 (`_256`) | chunks dynamiques (`_dyn`) |
 |---|---|---|
 | `zero_any` | **7,26 Go** | **6,0 Go** |
-| `zero_one_value` | 17,3 Go | 16,3 Go |
+| `zero_or_value` | 17,3 Go | 16,3 Go |
 | `zero` | 40,2 Go | 40,3 Go |
 | `std::vector` | 125,9 Go | — |
 
@@ -347,7 +346,7 @@ Prérequis : **Linux** (x86-64 ou aarch64), un compilateur **C++20** (GCC 13 ou 
 testés ; oneAPI, AOCC et NVHPC compilés), **CMake 3.20**, et en option **OpenMP**.
 
 ```shell
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DOMP=ON -DCMAKE_INSTALL_PREFIX=$HOME/opt/shrink-array
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCHUNK_OPENMP=ON -DCMAKE_INSTALL_PREFIX=$HOME/opt/shrink-array
 cmake --build build
 ctest --test-dir build
 cmake --install build
@@ -356,8 +355,8 @@ cmake --install build
 Puis, dans votre projet :
 
 ```cmake
-find_package(chunk 0.2 REQUIRED)            # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
-target_link_libraries(my_app PRIVATE chunk::chunk_zero_any)
+find_package(shrink_array 0.3 REQUIRED)            # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
+target_link_libraries(my_app PRIVATE shrink_array::zero_any)
 ```
 
 `add_subdirectory(shrink-array)` marche aussi, et `FetchContent` aussi, sans rien installer
@@ -368,11 +367,16 @@ include(FetchContent)
 FetchContent_Declare(shrink_array
   GIT_REPOSITORY https://github.com/cea-hpc/shrink-array.git
   GIT_TAG        main)                 # ou un commit, pour figer la version
-set(OMP ON)                            # compiler les bibliothèques OpenMP
+set(CHUNK_OPENMP ON)                            # compiler les bibliothèques OpenMP
 FetchContent_MakeAvailable(shrink_array)
 
-target_link_libraries(my_app PRIVATE chunk::chunk_zero_any)
+target_link_libraries(my_app PRIVATE shrink_array::zero_any)
 ```
+
+Avec CMake 3.28 ou plus récent, ajoutez `EXCLUDE_FROM_ALL` à `FetchContent_Declare` : seules les
+bibliothèques que vous liez sont compilées, et votre propre `cmake --install` n'installe rien de
+shrink-array. [`examples/fetch_content`](examples/fetch_content/CMakeLists.txt) est un tel projet,
+compilé par la CI.
 
 Avec Spack, la recette est dans le dépôt :
 
@@ -381,7 +385,7 @@ spack repo add <clone>/spack/spack_repo/shrink_array
 spack install shrink-array threads=openmp sizes=256,1024 %gcc@15   # threads=std : écrits depuis des std::thread ou TBB
 ```
 
-Les options CMake (`OMP`, `CHUNK_THREADS`, `CHUNK_STATIC_SIZES`, `CHUNK_VARIANTS`, `CHUNK_BUILD_DYN`,
+Les options CMake (`CHUNK_OPENMP`, `CHUNK_THREADS`, `CHUNK_STATIC_SIZES`, `CHUNK_VARIANTS`, `CHUNK_BUILD_DYN`,
 `CHUNK_STD_ALLOC`...) et les variables d'environnement :
 [docs/variables_environnement_fr.md](docs/variables_environnement_fr.md).
 
@@ -442,9 +446,10 @@ aussi une version Spack (`spack install shrink-array@cpp23`).
 |---|---|
 | installer, lier, écrire un premier programme, suivre les règles OpenMP | [docs/getting_started_fr.md](docs/getting_started_fr.md) |
 | trouver un appel | [docs/api_fr.md](docs/api_fr.md) |
+| comprendre comment elle est construite : parties, décisions, modèle de concurrence | [docs/conception_fr.md](docs/conception_fr.md) |
 | choisir une variante | [docs/variantes_fr.md](docs/variantes_fr.md) |
 | comparer aux formats creux, aux compresseurs, aux grilles creuses | [docs/alternatives_fr.md](docs/alternatives_fr.md) |
-| comprendre lecture, écriture, compression en vol, écritures différées | [docs/algo_zero_one_value_fr.md](docs/algo_zero_one_value_fr.md) |
+| comprendre lecture, écriture, compression en vol, écritures différées | [docs/algo_zero_or_value_fr.md](docs/algo_zero_or_value_fr.md) |
 | savoir pourquoi l'écriture n'a besoin d'aucun verrou | [docs/synchronisation_dekker_fr.md](docs/synchronisation_dekker_fr.md) |
 | vérifier un protocole avec un vérificateur de modèles | [docs/formal_models_fr.md](docs/formal_models_fr.md) |
 | utiliser les tailles de chunk dynamiques | [docs/rechunk_adaptatif_fr.md](docs/rechunk_adaptatif_fr.md) |
@@ -454,19 +459,21 @@ aussi une version Spack (`spack install shrink-array@cpp23`).
 | contribuer | [docs/contributing_fr.md](docs/contributing_fr.md) |
 
 Exemples : [simple_array](examples/simple_array) (le même calcul sur un `std::vector` et sur un
-tableau), [multi-mat](examples/multi-mat) (champs multi-matériaux, boucles écrites une fois pour
+tableau), [multi_mat](examples/multi_mat) (champs multi-matériaux, boucles écrites une fois pour
 les deux), [validation](examples/validation) (un test par propriété, lancé par `ctest`).
 Chaque document existe en anglais et en français ([docs/README.md](docs/README.md)) ; ce qui a
 changé d'une version à l'autre : [CHANGELOG.md](CHANGELOG.md) (en anglais).
 
 ## État du projet et contributions
 
-shrink-array en est à la version 0.1 : avant la 1.0, une version mineure peut changer
+shrink-array en est à la version 0.3 : avant la 1.0, une version mineure peut changer
 l'interface ([politique de versions](CHANGELOG.md)). Chaque push lance les vérifications des
 sources, les builds GCC 14 (OpenMP, série et threads std avec oneTBB), les tests de validation, le backend std
-sous ThreadSanitizer et les modèles GenMC, le build OpenMP sur x86-64 et sur AArch64
-([CI](.github/workflows/ci.yml)) ; chaque nuit, les builds AArch64 trop longs pour un push -- le
-backend std sous ThreadSanitizer, le build `_dyn`
+sous ThreadSanitizer et les modèles GenMC, le build OpenMP sur x86-64 et sur AArch64, un projet qui
+consomme la bibliothèque par `FetchContent` ([CI](.github/workflows/ci.yml)) ; chaque nuit, les
+builds AArch64 trop longs pour un push -- le backend std sous ThreadSanitizer, le build `_dyn` --
+et, sur x86-64, AddressSanitizer, UndefinedBehaviorSanitizer, Clang 23, les plus anciens
+compilateurs pris en charge (GCC 13, Clang 18) et la recette Spack installée depuis le dépôt
 ([nightly](.github/workflows/nightly.yml)).
 
 Le retour le plus utile est un essai sur vos données : si la bibliothèque économise de
@@ -475,6 +482,12 @@ la mémoire dans votre code -- ou n'en économise pas --
 taille et ce que contient le tableau. Les rapports de bugs et les pull requests suivent
 [docs/contributing_fr.md](docs/contributing_fr.md). Si la bibliothèque vous sert, une étoile sur
 le dépôt aide d'autres personnes à la trouver.
+
+## Citer
+
+Si shrink-array entre dans un travail que vous publiez, citez le dépôt et la version utilisée :
+[CITATION.cff](CITATION.cff) donne la référence, que GitHub affiche sous « Cite this
+repository ».
 
 ## Licence
 

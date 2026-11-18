@@ -9,14 +9,18 @@ Two version numbers, both `MAJOR.MINOR.PATCH`:
 
 | component | where it is set | installed as |
 |---|---|---|
-| the chunk library | the top-level `CMakeLists.txt` (`project(shrink_array VERSION X.Y.Z)`) | the `chunk` CMake package (`find_package(chunk X.Y)`) |
+| the chunk library | the top-level `CMakeLists.txt` (`project(shrink_array VERSION X.Y.Z)`) | the `shrink_array` CMake package (`find_package(shrink_array X.Y)`) |
 | fast_allocators | `fast_allocators/CMakeLists.txt` (`ALLOCATORS_*_VERSION`) | the `fast_allocators` package |
 
 The **public interface** that the version describes is:
 
-- the headers of `chunk/public/chunk/` that are not in `internal/`, and what they declare;
-- the installed CMake targets (`chunk::chunk_v2a_256`, `chunk::chunk_v2a`, ...) and the
-  variables `find_package(chunk)` sets;
+- the headers of `chunk/public/chunk/` that are not in `internal/`, and the names of
+  `docs/api.md` they declare: `scripts/public_api.txt` lists them, and `check_public_api` fails
+  when one is added, moved, removed or renamed without the list. The members of the public
+  classes that name the library's machinery (`ManagerType`, `Manager`, `ChunkType`,
+  `ChunkListType`, `ProxyType`, `get_chunk_list()`) are not part of it;
+- the installed CMake targets (`shrink_array::zero_any_256`, `shrink_array::zero_any`, ...) and
+  the variables `find_package(shrink_array)` sets;
 - the CMake options and the environment variables of `docs/environment_variables.md` (the user
   settings); those of `docs/developer_settings.md` are development tools, which can change in any
   release;
@@ -27,17 +31,17 @@ release.
 
 | bump | when | examples |
 |---|---|---|
-| **MAJOR** | a change that can break a correct consumer: a public name, target, option or variable removed or renamed with no compatibility path, a changed contract | removing `ArrayChunk2::set_second_value`; dropping `chunk::chunk_v1` |
+| **MAJOR** | a change that can break a correct consumer: a public name, target, option or variable removed or renamed with no compatibility path, a changed contract | removing `zero_one_value::Array::set_second_value`; dropping `chunk::chunk_zero` |
 | **MINOR** | an addition, or a change with a compatibility path (the old name kept, deprecated) | new targets installed; a user option renamed with the old spelling still accepted |
 | **PATCH** | a fix that changes no interface | a race fixed; a wrong value in a trace |
 
-The installed package declares `SameMajorVersion` compatibility: `find_package(chunk 1.2)`
+The installed package declares `SameMajorVersion` compatibility: `find_package(shrink_array 1.2)`
 accepts any 1.x at or above 1.2. A deprecated name stays for at least one MINOR release and is
 removed only by the next MAJOR.
 
 **Before 1.0** (0.x versions), as SemVer allows, a MINOR release plays the role of a MAJOR one
 (it may break) and PATCH covers additions and fixes; the package then declares
-`SameMinorVersion`: `find_package(chunk 0.1)` accepts 0.1.x only.
+`SameMinorVersion`: `find_package(shrink_array 0.3)` accepts 0.3.x only.
 
 **fast_allocators** follows the same rules for its own interface. The chunk library pins the
 exact fast_allocators version it was built with (`CHUNK_FAST_ALLOCATORS_VERSION` in
@@ -49,6 +53,536 @@ numbers in the two `CMakeLists.txt`, tag `vX.Y.Z` (the Spack recipe downloads ta
 the tag's checksum to the recipe.
 
 ## Unreleased
+
+## 0.3.0 -- 2026-11-18
+
+### Added
+
+- `scripts/compile_all.sh --list-targets`, `--list-execs`, `--list`: the configurations
+  `--target` accepts (configured here or not, x86-64 or ARM only), the targets `--exec` accepts
+  in each configured build directory, or both, without building; they honour `--target=<glob>`
+  and `--exec=<glob>`.
+- `scripts/compile_all.sh` builds with Arm Compiler for Linux on ARM (the `acfl` family:
+  `omp-acfl`, `std-acfl`, `omp-acfl-debug`; `--only=acfl`, `--no-acfl`), the ARM counterpart
+  of the x86-only `oneapi` and `aocc`. `armclang++` comes from `CHUNK_ACFL_ROOT` (an install
+  prefix, as `spack location -i acfl` prints it), from the `PATH` (`spack load acfl`), from
+  the newest `$CCCWORKDIR/opt/*/acfl-*` (a Spack install tree there) or from an `acfl` module;
+  none found, the family is skipped. `bench_runner` and `build_arm.txt` list the two
+  optimised builds.
+- `shrink_array::tbb::use_tbb_for_library_teams()` (`chunk/tbb_adaptor.h`), called by every
+  adaptor call: under the std backend, the library's own teams (the flush and compression pass of
+  `finalize_parallel_phase()`, a re-chunk, a parallel initialisation) take their workers from TBB
+  instead of the std backend's pool, so that a TBB program no longer runs two sets of threads
+  competing for the cores. A team is made of the TBB tasks that started within
+  `CHUNK_PMP_JOIN_US` (developer setting, 200 us): TBB does not promise to start them at once,
+  and a later task returns without joining. TBB bench, 24 threads: computation -9.4%,
+  involuntary context switches 16.3 M -> 0.6 M. Underneath, `pmp::set_team_launcher()` (any
+  runtime that can start tasks).
+- `shrink_gui` 0.17: "Nettoyer les builds…", beside "Builds up to date". Lists every configured
+  build of the build root (every architecture) with what cleaning it frees, and removes from
+  the checked ones what the next build re-creates: the object files (about half of a build),
+  their dependency files, the precompiled headers, the static libraries. The executables, the
+  shared libraries and the build files stay: the next `compile_all.sh` recompiles everything,
+  with no new configuration. The build check of `run.sh` knows a cleaned build: until its next
+  build it is up to date if `ninja -n` said so just before the clean (`.shrink_gui_cleaned`)
+  and no source, header or CMake file of the repository changed since
+  (`docs/shrink_gui.md` §5).
+- CI (P3 of the audit): four gaps closed. Per push, `fetch-content`: `examples/fetch_content`
+  (new) consumes the checkout with `FetchContent`, and the job checks that the consumer keeps
+  its build type, flags, `doc` target and tests, and installs nothing of the library. Nightly:
+  `oldest-compilers` (GCC 13 and Clang 18, the minimum the README and the recipe state, never
+  built by the CI), `x86-openmp-ubsan` (`SANITIZER=undefined`, new: UBSan, the first report
+  stops the program; 256 and `_dyn`), and `spack` (the recipe installed from the checkout for
+  `target=x86_64_v3`, no target flag from the project, no AVX-512 instruction in the
+  libraries, `getting_started` built against the install).
+- The four `seq_cst` fences that closed the phase functions (`finalize_parallel_phase()`, its
+  `only_flush` / `after_flush` halves, `finalize_barrier_phase()`;
+  `chunk/private/type_state_registry.cpp`) are gone, and `CHUNK_PHASE_FENCES` with them. They
+  were kept as "empirically load-bearing" since one unexplained checksum in August 2026; no
+  handshake needs them as far as the code reads (each has its own barrier), and several defects
+  that lost deferred writes at phase boundaries were fixed since. Settled by measure: several tens
+  of thousands of `shrink_bench --mode check` runs on AArch64, the weaker memory model, with the
+  fences off (`CHUNK_PHASE_FENCES=0`), not one checksum different from `std::vector`'s.
+- `shrink_gui` 0.16: an environment field under the extra arguments (`NAME=value` words),
+  exported in `run.sh` and `node.sh` before the command -- `CHUNK_LLVM_ROOT=~/llvm-22` for
+  `compile_all.sh`, a run-time switch of the library for a bench. Exported before
+  `scripts/site_env.sh` and again after it (the run's value wins); a leading `~/` is the home
+  directory of the machine the run is on. Kept per program, written to `meta.json` (`env`),
+  taken back by "Reprendre ses options", shown before the command and in the run's log.
+- `shrink_gui`: the left panel ("Où et comment", "Quoi") scrolls when the window is shorter
+  than it, and "Soumettre" stays below it, always in view: with one more field the button was
+  pushed out of a laptop screen.
+- SonarQube Cloud (project `cea-hpc_shrink-array`): `.github/workflows/sonar.yml` analyses
+  the tree on every push to develop and main, and on demand, with the rules of SonarQube for IDE
+  (SonarLint) -- the C++ from CMake's compilation database, one entry per source file, nothing
+  compiled; `sonar-project.properties` says what is analysed. Needs the `SONAR_TOKEN` secret
+  (without it the job stops, green). `scripts/sonar_export.py` writes every issue of a branch
+  to one JSON or CSV file (`--hotspots` adds the security hotspots), through the Web API and
+  the shell's Kerberos proxy, as `coverity_submit.sh` does; past the API's 10,000 issues per
+  query it splits the query by language, type, severity, rule or directory.
+- `docs/design.md` (`docs/conception_fr.md` in French), the design document: requirements and
+  non-goals, the parts and their scope, static polymorphism, build-time configuration, the
+  access paths, the concurrency model, memory, dynamic geometry, backends, the decisions with
+  the alternatives rejected, known limits. Linked from `docs/README.md` and both READMEs;
+  `check_docs.py` checks the pair.
+- `shrink_bench --advise_bool`: hands `array_bool` and `array_bool_bits` to the re-chunk decider
+  (off by default: the two bool containers stay at their birth geometry, to be compared as
+  they are). `rechunk_validation` gains `bool-sliced`: `Array<bool>` through the sliced
+  rebuild, for the three variants.
+- `docs/gpu_design.md`, the English version of the GPU design document
+  (`docs/conception_gpu_fr.md`); `check_docs.py` checks the pair like the others.
+- `multi_launch_stress.py --peak_threads N [--peak_share F]`: most thread counts drawn near N,
+  the top of the speedup curve, the others still uniform over the range. In `shrink_gui` too.
+- `diag_zero_rechunk_slowdown.py`: the resident memory against the static run, the churn per array
+  after the last re-chunk and, with `--perf`, the samples' share in the compression passes.
+- **Three additions to the public interface**, what the examples needed from `internal/`:
+  `chunk/threads.h` (new): `pmp::max_threads()`, `pmp::team_size()`, `pmp::thread_rank()`, the
+  threads of whatever backend the build has (OpenMP, std, serial), instead of
+  `CHUNK_PMP_MAX_THREADS`; `chunk/print.h` (was `chunk/internal/print.h`): `print` / `println`;
+  `set_active_chunk_size()`, `set_thread_chunk_size()` (through `chunk/chunk_size_advisor.h`)
+  and `zero_any::Chunk` (through `chunk/zero_any_array.h`, for `sizeof` in the advisor's
+  options), and the arrays' `set_chunk_size()` (an empty array's geometry). 18 public headers. `simple_array`, `vectorisation_demo`, `variant_compare`,
+  `access_cost`, `advisor_demo`, `getting_started` and `bool_arrays` include public headers
+  only, and `check_public_api` fails when an example outside the harnesses and the benchmarks
+  includes an internal one.
+- `CHUNK_USE_CCACHE` (`AUTO`, `ON`, `OFF`): the build compiles through ccache (>= 4.8) when it
+  finds it, on the `PATH` or with `-DCCACHE_EXECUTABLE=...`. A branch switch or a pull that leaves
+  the library headers alone gets the unity units of `shrink_bench` and the validation back from
+  the cache (a rebuild after `ninja clean`: 93 s to 0 s). The cache is split by host CPU, so
+  `-march=native` objects never go from one kind of node to another; `coverity_submit.sh`
+  configures with it `OFF`.
+
+### Changed
+
+- fast_allocators is 2.4.0: it had changed since 0.2.1 (the team launcher of the std backend,
+  among others) with its number left at 2.3.0.
+- The variant `zero_one_value` is `zero_or_value`: the name read "zero-one value", an array
+  of 0s and 1s, when the second value is any value. Namespace, header
+  (`chunk/zero_or_value_array.h`), `chunk_config::use_zero_or_value`,
+  `CHUNK_VARIANT_ZERO_OR_VALUE`, the value of `CHUNK_VARIANTS`, the targets and library files
+  (`chunk_zero_or_value_256`), the executables and tests (`validation_zero_or_value_256`), the
+  documents (`docs/algo_zero_or_value.md`), the Spack recipe and the Python tools. The former
+  name still works where a program or a script may say it -- the header, the namespace and the
+  flag (deprecated), the macro, `CHUNK_VARIANTS` and the target names (with a deprecation
+  message), the labels of the perf databases recorded before -- until the next minor version.
+  Not the library files: `libchunk_zero_one_value_256.a` has no former copy.
+- The statistics line of an array says "N second value", the words of the documents; it was
+  "N type-2".
+- French names and abbreviations in English, in the sources, the examples and the documents
+  (internal names; nothing of the public interface): `nb` (nombre) is `n` (`n_val_eq_zero_`,
+  `n_blocks`, `n_threads`), the increm and decrem prefixes are inc and dec (the statistics
+  counters: `inc_chunk_write`, ...), `somme` is `total` (`total_chunk_create`), `raz` (remise à zéro) is
+  `reset`, `recup` is `reclaim` (`reclaim_value`), `kdeb` / `kfin` are `kbegin` / `kend`
+  (examples/multi_mat), `nbmat` is `n_materials`, `freq_conso_mem` is `freq_mem_report`.
+- `CHUNK_BUILD_REP` (répertoire) is `CHUNK_BUILD_ROOT`, the name the Python tools read already:
+  `compile_all.sh` and `scripts/site_env.sh` take their builds there. The former name is still
+  read when the new one is unset, with a deprecation line; it goes at 0.3.
+- `ind` (indice) is `idx` in the names (`get_idx_second_value`, `set_info_second_value_idx`, a
+  bare `ind` is `idx`), and the arrays' `IndType` is `IndexType` (`Ind`, `IndT`: `Index`, `IndexT`).
+- `cst` (constante) is `const` in the names: `const_val1`, `const_val2`, `is_const_val2`,
+  `ConstSlot` in `chunk/internal/const_slot.h`, `const_buffer_size`, a bare `cst` is `constant`;
+  the harnesses `const2_reclaim_validation` and `const2_registry_validation`. The variables
+  `CHUNK_CONST2_RECLAIM` and `CHUNK_CONST_VAL2_ID_LIMIT` (`CHUNK_CST2_RECLAIM`,
+  `CHUNK_CST_VAL2_ID_LIMIT`: still read when the new name is unset, with a warning; they go at
+  0.3), the build-time `CHUNK_CONST_VAL2_MAX_IDS`, `CHUNK_CONST_VAL2_REGION_BYTES`,
+  `CHUNK_CONST_VAL2_INDEX_LOG2`. `CHUNK_CST2_PROBE` keeps its name: it is a former variable
+  `CHUNK_LOG` reads for compatibility.
+- `elt` (élément) is `elem` in the allocator's names (`InfoFreeElem`, `free_elem_pow2`,
+  `clear_info_free_elem`, ...), as everywhere else; `CalcType` (calcul) is `ComputeType`.
+- `num` (numéro), the offset of an element in its chunk, is `elem_offset` (`elem_offset_`,
+  `get_elem_offset()`), and `num_compress_value` (which of the two constants) `const_index`.
+  examples/multi_mat: `MatArrayBase`, `MatZeroArray`, `MatZeroOrValueArray`, `MatVectorArray`
+  (`VectCom`, `VectChunk`, `VectZeroOrValue`, `Vect`).
+- `tab` (French: tableau) is `array` in the names of the sources, examples and documents:
+  `array_int`, `array_bool`, ... of `shrink_bench` (`tab_int`, ...), `arr1` ... `arr5` and `arr`
+  (`tab1`, `tab`), the library's `array_is_inside_chunk_list_to_compress`,
+  `get_array_second_value`, `ArrayConstVal2Holder` in `chunk/internal/array_const_val2_holder.h`
+  (`tab_cst_val2_holder.h`), ... The statistics name an array `[array_0 double]`
+  (`[tab_0 double]`), and `shrink_bench`'s reference files are `data_array_<name>_<k>.bin`
+  (`data_tab_*`): an oracle directory made before is made again by the next campaign.
+- Internal names, none of them part of the interface. Headers of `chunk/internal/`:
+  `concept_is_clean_assignment.h` (its name was misspelt), `pmp_chunk.h` and `chunk_tuples.h`
+  (`PMP_CHUNK.h` and `TChunk.h` were the two files not in snake_case), `pow2.h` (`func_p2.h`),
+  `crtp_support.h` (`crp_helper.h`). The French abbreviations: an array's number is `array_id`
+  (`num_tab`), their count `array_count` (`nb_tab`), `ArrayUsers` (`TabUsers`); a chunk's number
+  is `chunk_index` (`num_chunk`), their count `chunk_count_` (`nb_chunk_`). The registry of the
+  arrays is `array_registry` (`share_info_array`). Examples:
+  `examples/multi_mat` and its executables `multi_mat`, `multi_mat_embedded` (the one directory
+  with a hyphen), `examples/vectorisation_demo` (`test_vecto_chunk`: an example, not a test);
+  the harnesses `compress_roundtrip_validation` and `pool_accounting_validation` take the
+  suffix of the others, and their ctest names with it.
+- Std backend with the library's teams on TBB: `CHUNK_PMP_JOIN_US`, how long such a team waits
+  for its TBB tasks to start, is 5 ms by default instead of 200 us. On a 144-thread AArch64 node
+  the TBB bench (`shrink_bench_tbb_zero_any_int64_dyn --multiply 3 --mode perf`) ran 79.5 s with
+  200 us and 50.9 s with 5 ms: the finalize 21 s -> 13.9 s, and the program's own regions
+  52.5 s -> 31.1 s, since a task that missed its team was taken and dropped by a TBB worker
+  during the next region (`BENCH_RANK_TIMING`'s launch share 13% -> 2.2%). Only TBB's teams
+  wait so: the OpenMP backend and the std backend's own pool are untouched.
+- The CMake package is `shrink_array`, the project's name: `find_package(shrink_array)`, and
+  targets without the repeated word -- `shrink_array::zero_any`, `shrink_array::zero_any_256`,
+  `shrink_array::zero_any_dyn` (`zero` and `zero_or_value` alike), `shrink_array::vector`,
+  `shrink_array::chunk` -- installed and in the build tree (`add_subdirectory()`,
+  `FetchContent`). Its variables are `shrink_array_STATIC_SIZES`, `shrink_array_DEFAULT_SIZE`,
+  `shrink_array_HAS_DYN`, `shrink_array_OPENMP`, `shrink_array_THREADS`, `shrink_array_OMPT`,
+  `shrink_array_STD_ALLOC`. The project had three names (`shrink-array`, `shrink_array`,
+  `chunk`), and `chunk` is one another package may take in a shared prefix.
+  `find_package(chunk)` and the `chunk::chunk_…` targets still work, with a deprecation
+  message, until the next minor version. Unchanged: the `#include "chunk/…"` paths, the
+  `CHUNK_` options, the names of the library files.
+- CMake options without a prefix have one: `OMP` is `CHUNK_OPENMP`, `SANITIZER` is
+  `CHUNK_SANITIZER`, `CHECK_OPTIM` is `CHUNK_CHECK_OPTIM`, and likewise `CHUNK_USE_LIBCXX`,
+  `CHUNK_USE_MOLD`, `CHUNK_USE_GPERF`, `CHUNK_ENABLE_IWYU`, `CHUNK_GCC_TOOLCHAIN_DIR`,
+  `CHUNK_INTEL_ICPX`, `CHUNK_INTEL_ICPX_GLOB`, `CHUNK_INTEL_LIBM_DIR`, `CHUNK_ONEAPI_FAST_FP`,
+  `CHUNK_ONEAPI_NO_INTEL_LIBS`, `CHUNK_ONEAPI_XHOST`, `CHUNK_ARMPL_LIBM_DIR`;
+  `HAVE_AGGRESSIVE_COMPRESSION` is `CHUNK_AGGRESSIVE_COMPRESSION_DEFAULT`. A project that took
+  the library in with `add_subdirectory()` or `FetchContent` shared those names with it in its
+  cache. The former names are still read, with a deprecation message, when the project is
+  built on its own (`-DOMP=ON` sets `CHUNK_OPENMP`); as a subproject it ignores them.
+- Public names, before the interface is published more widely. `ParamChunk` is `Runtime`
+  (`chunk/runtime.h`), `ParamChunk::init_indexes()` is `Runtime::init()` and
+  `destroy_block_chunk()` is `Runtime::shutdown()`: the façade's name said neither what it is
+  nor what the two calls do. The phase calls are in `chunk/phases.h` (`chunk/manage_ompt.h`
+  named the one build that does not need them) and `build_config::has_not_ompt` is
+  `build_config::needs_explicit_phases`. `ArrayChunkBits` is `BitArray` (`chunk/bit_array.h`);
+  `chunk/array_chunk_range_ops.h` is `chunk/range_ops.h`. `get_second_value()` is
+  `second_value()` and `get_nb_chunk_written()` is `written_chunk_count()`, as `size()` and
+  `chunk_size()` have no `get_`. `max_threads()`, `team_size()` and `thread_rank()` are
+  reachable from `shrink_array::` (they were `shrink_array::pmp::` only). Every former name
+  still compiles: the four headers include the new ones, the others are `[[deprecated]]` and
+  forward. They go at the next minor version; `docs/api.md` has the table.
+- `AllTypeChunk` is now `TypeStateRegistry`, and its two policies
+  `TypeStateRegistryParallelInterface` and `TypeStateRegistryDynInterface`: the class is the
+  process-wide registry of the per-type managers (`TypeState`), not a chunk. Its files
+  follow: `type_state_registry.h`, `type_state_registry_decl.h`,
+  `type_state_registry_inline.h` (`chunk/internal/`) and `chunk/private/type_state_registry.cpp`.
+  Internal: no public header names it.
+- `ChunkSizeAdvisor::analyze()` was one function of 837 lines; it is now 38, and its counting
+  passes are the member functions of `internal::ChunkSizeScan` (`chunk/internal/chunk_size_scan.h`,
+  bodies in `chunk_size_scan_inline.h`): the candidate sizes, the classification, the runs of
+  constant chunks per part and their serial merge, the sampling, the ambiguous windows of a
+  picked chunk, the motif forecast of `pattern::Array` -- one function each, the longest of 57
+  lines. The table's rows come from `internal::advisor_row()`. Same interface, same report:
+  the old and the new `analyze()` were run in one process on the same arrays of the four
+  containers (`double`, `int`, `long`, `bool`, `Bit`; six sets of options; 1, 2 and 4 threads)
+  and compared field by field, 5,040 reports without a difference, in the same time.
+- `USE_LIBCXX` is `OFF` by default: a Clang build uses the standard library the compiler picks
+  by itself (libstdc++ on Linux), `-DUSE_LIBCXX=ON` asks for libc++. The default was `ON`, and
+  the first configure failed on a Clang installed without libc++; the build scripts, the CI
+  jobs and the Spack recipe all passed `OFF` already.
+- `CITATION.cff` at the root (GitHub's "Cite this repository"), and a "Citing" section in the
+  READMEs.
+- Spack recipe: `maintainers`, and the form the builtin repository's style check accepts (lines
+  of 99 columns at most, the test of the `sizes` values as a function), so that the file can be
+  submitted there unchanged.
+- std backend: `Team::barrier()` spins for `CHUNK_PMP_SPIN_US` (default 1000 us) before sleeping,
+  as OpenMP's blocktime does, instead of a `std::barrier` that slept on a futex almost at once;
+  `single()` is lock-free (one CAS on a team-wide mark, no mutex, no map slot per construct); the
+  pool's hand-offs spin for the same budget. At 160 threads the re-chunk's slice-boundary drain
+  took 2.45 s in the TBB bench against 0.24 s with OpenMP, the time in the team's
+  synchronisation. `CHUNK_PMP_SPIN_US=0` sleeps at once (the former behaviour, for A/B).
+  `team_sync_validation` (and `team_sync_validation_nospin`) checks barriers, singles and many
+  teams in a row; `--bench` prints their cost.
+- The end-of-life census line of a zero array says what the variant compresses: "few all-zero
+  chunks — zero compresses only all-zero chunks" instead of "compression marginal vs
+  std::vector", which read as a failure on an array zero cannot help. `shrink_bench` says
+  before `array_conn`'s line, in zero builds, that a connectivity is pattern::Array's case.
+- `fill_range_mt` skips a chunk already at the fill value with one test, as `fill_range` does,
+  instead of arming it element by element; `fill_range` does the same on its `bool` path.
+- **The public interface, narrowed and frozen** (breaking). The public headers are what
+  `docs/api.md` documents; `pmp_chunk.h`, `type_state_registry.h`, `chunk_traits.h`,
+  `global_stats_chunk_list.h`, `ring_log_debug.h`, `singleton.h`, `term_color.h`,
+  `type_name.h`, `zero_chunk.h`, `zero_or_value_chunk.h`, `zero_any_chunk.h`, `pattern_chunk.h`,
+  `zero_chunk_def.h`, `zero_or_value_chunk_def.h` and `zero_any_chunk_def.h` are under
+  `chunk/internal/` (a program that included one includes the array's header instead).
+  `release_chunk_pools()` and `destroy_block_chunk()` come with `chunk/param_chunk.h` (they
+  were in `chunk/zero_chunk.h`). `ManagerType`, `Manager`, `ChunkType`, `ChunkListType`,
+  `ProxyType` and `get_chunk_list()` are not part of the interface any more. The interface is
+  `scripts/public_api.txt`, checked by `check_public_api` (ctest).
+- **`ManagerChunk` is `TypeState`**: the shared state of one (variant, element type) -- reuse
+  pools, compression candidates, per-rank allocators, deferred flush -- named after what it is.
+  `ManagerChunkInt` is `TypeStateInterface`, `ManagerChunkDynInterface` /
+  `ManagerChunkParallelInterface` / `ManagerChunkDynImpl` / `ManagerChunkParallelImpl` are
+  `TypeStateDynInterface` / `TypeStateParallelInterface` / `TypeStateDynImpl` /
+  `TypeStateParallelImpl`, and `internal/manager_chunk*.h` are `internal/type_state*.h`
+  (`chunk/private/manager_chunk.cpp`: `type_state.cpp`). All internal: no interface change.
+- Re-chunk: `zero_or_value` and `zero_any` (and `pattern`) free each old chunk as soon as the
+  rebuild has copied it, as `zero` did, and rebuild in 16 slices with the fast allocator under
+  threads: each slice boundary recycles the slabs the slice emptied into the next slice's
+  allocations (`array_chunk_rechunk_refill.h`; the chunks' new `release_st()`), `bool`
+  arrays included; `ArrayChunkBits` (bit-packed) keeps one pass. `zero_or_value_dyn`, x86-64, 2 threads, 10^8 elements: run peak 1,772 ->
+  1,724 MB, end +0.9% (the recycled slabs stay resident, as for `zero`); `zero_any`'s peak
+  on this benchmark is the initialisation's, unchanged. `rechunk_validation` gains
+  `sliced-val2-grow` and `sliced-val2-uneven`: sliced rebuilds mixing zero, second-value and
+  live sources.
+- With gcc 16.2 and later, `shrink_bench.cpp` is compiled inside the unity unit of its
+  executable again: the `-fno-tree-vectorize` that dodged gcc 16's AVX2 ICE stays for gcc 16.0
+  and 16.1 only. Compiled apart, the driver instantiated the whole library a second time: about
+  30 % less compilation per bench executable (113 s to 79 s for `shrink_bench_omp_zero_any_256`).
+- `CHUNK_DEBUG_INFO=auto` gives `lines` (`-g1`) to the address, thread and undefined sanitizer
+  builds too, with `CHUNK_CHECK_OPTIM` or without: their reports need only the function names
+  and the line tables (the same stacks, inlined frames included, with gcc and Clang), and the
+  optimised sanitizer builds are the slowest to compile: the unity unit of
+  `shrink_bench_omp_zero_any_256` under ThreadSanitizer takes 128 s and 3.5 GB instead of 162 s
+  and 5.0 GB (gcc 16.2). `full` stays for `CHUNK_CHECK_OPTIM` without a sanitizer and for the
+  `token` sanitizer; `-DCHUNK_DEBUG_INFO=full` brings the locals back for a debugger.
+
+### Removed
+
+- `CHUNK_CRTP_USE_DEDUCING_THIS` and `CHUNK_CRTP_FORCE_DEDUCING_THIS`, and the deducing-this
+  variant of `add_to_compression_list_async()` they selected: develop is C++20, where it was
+  never compiled; the cpp23 branch has that form alone.
+- `python/run_test.py`: it ran a `test/test1` that no longer exists, under a path left as
+  `????` when the tree went public; `bench_runner` averages the memory over runs.
+- `chunk/debug.h`, which nothing included (`print_backtrace` is
+  `fast_alloc::logging::print_backtrace`).
+- **The other compatibility paths kept until 1.0** (breaking). The variant macros
+  `CHUNK_VARIANT_V1`, `CHUNK_VARIANT_V2`, `CHUNK_VARIANT_V2A` (use `CHUNK_VARIANT_ZERO`,
+  `CHUNK_VARIANT_ZERO_OR_VALUE`, `CHUNK_VARIANT_ZERO_ANY`); the `CHUNK_VARIANTS` spellings
+  `chunk`, `chunk2`, `chunk2a`, now refused with the new name; the targets `chunk::chunk_v1*`,
+  `chunk::chunk_v2*`, `chunk::chunk_v2a*` (link `chunk::chunk_zero*`, `chunk::chunk_zero_or_value*`,
+  `chunk::chunk_zero_any*`). In the scripts, an old variant label on a command line (`chunk2a`,
+  `chunk2a@dyn`, `tbb_chunk2`...) is refused with its new name, and `bench_and_test.py`'s
+  hidden `--mem-chunk2a-vs-chunk2-max` is gone; the data recorded before the rename (perf
+  databases, summaries, logs) are still read, their old labels as the new names.
+- **The former C++ names kept until 1.0** (breaking: the next release is 0.3.0). The 45
+  `[[deprecated]]` aliases: `ArrayChunk`, `ArrayChunk2`, `ArrayChunk2A` (use `zero::Array`,
+  `zero_or_value::Array`, `zero_any::Array`), `Chunk2`, `Chunk2A`, `Proxy2`, `Proxy2A` and the
+  former `Chunk` / `Proxy` (use the variant's namespace), `use_chunk`, `use_chunk2`,
+  `use_chunk2a`, `use_chunk2or2a` (use `use_zero`, `use_zero_or_value`, `use_zero_any`,
+  `use_second_value`), the arrays' `chunk_type`, `manager_type`, `proxy_type`, `ind_type`,
+  `chunk_list_type` (use `ChunkType`, `ManagerType`, `ProxyType`, `IndexType`, `ChunkListType`),
+  `getChunkList()` (use `get_chunk_list()`), `ManagerChunk2`, `ManagerChunk2A` (use `Manager`),
+  `pattern::Array::install_motif_for_test()` (use `install_motif()`),
+  `ParamChunk::ChunkStats()` (use `chunk_stats()`), `ParamChunk::check_pow2()` (use
+  `check_chunk_size()`), `ParamChunk::get_decalage_chunk()` and `chunk_decalage()` (use
+  `i / chunk_size()`), `factor_div_somme_chunk_buffer_resuse`; in fast_allocators,
+  `addAllocatedSize()`, `add_TCTypeAllocator_inst()`, `remove_TCTypeAllocator_inst()`,
+  `SIZE_BLOCK` (use `add_allocated_size()`, `add_tc_type_allocator_inst()`,
+  `remove_tc_type_allocator_inst()`, `size_block`). And the headers of the former names:
+  `chunk/array_chunk.h`, `chunk/array_chunk2.h`, `chunk/array_chunk2A.h`, `chunk/chunk_def.h`,
+  `chunk/chunk2_def.h`, `chunk/chunk2A_def.h`, `chunk/chunk_std.h`, `chunk/chunk2_std.h`,
+  `chunk/chunk2A_std.h` (include `chunk/zero_array.h`, `chunk/zero_chunk.h`, ... instead). The
+  proxies' `HPC WARNING` diagnostics on mixed-type operators stay.
+
+### Fixed
+
+- The Spack recipe built the released versions wrong since the CMake options took their
+  `CHUNK_` prefix: 0.1.0 to 0.2.1 know `OMP`, `USE_LIBCXX`, `USE_MOLD` and `CHECK_OPTIM` only,
+  ignored the new names and took their defaults -- serial libraries with `threads=openmp`,
+  libc++ with Clang, no `+checks`. The recipe gives these versions their own names.
+- TBB: the library's own teams run in the program's arena. `use_tbb_for_library_teams()`
+  launched them (the flush and compression pass of `finalize_parallel_phase()`, a re-chunk) in
+  a `task_arena` of its own, so TBB's workers left the program's arena for that one and came
+  back at every phase. On a 144-thread AArch64 node the TBB bench took about three times the
+  OpenMP one: per compute region, 12.7 ms for 3.2 ms of work per rank, a rank waiting 2.5 ms
+  for its task to start, and 23 s in `finalize_parallel_phase()` over the run. The tasks now go
+  to the calling thread's arena (`oneapi::tbb::this_task_arena::enqueue`, oneTBB 2021.6 and
+  later), and `use_tbb_for_library_teams(arena)` names the arena for a program that runs its
+  regions in an explicit `task_arena`; `shrink_bench` does. `BENCH_RANK_TIMING` printed the
+  time of `finalize_parallel_phase()` as a part of the serial time, which it is not, and left
+  it out of the thread-time it splits: its report gives the three wall times apart, and a
+  finalize share.
+- `multi_mat` built with gcc on x86-64: the compute loop (`LoopsSimd::omp_foreach_simd_red_sum`,
+  `cos + sin + tan` under `omp simd`) never vectorised. glibc declares its vector `cos`, `sin`
+  and `tan` (libmvec) to gcc only under `__FAST_MATH__`, which the flags of
+  `chunk_enable_fast_math` do not define; gcc reported "function is not vectorizable" (the
+  "loop vectorized" it printed at the same pragma was the reduction across the lanes). The
+  target now adds `-ffast-math` with gcc on x86-64 Linux, except in a `CHUNK_DO_CHECK` build
+  (its NaN check would fold away). That was enough with gcc 13.3 (8 lanes with AVX-512, the
+  run on the `std::vector` materials about 2.3 times faster), not with gcc 14 to 16 on Intel
+  tunings (alderlake, generic, skylake): they no longer emit hardware gathers (the
+  Downfall/GDS mitigation), and the emulated gathers gave up on the load of the indirection's
+  data pointer, left inside the `omp simd reduction` loop ("no vectype for stmt ...
+  _M_start"). The loop now reads the indirection through `ll.data()`, taken once: gcc 14, 15
+  and 16 vectorise it on every tuning (libmvec's _ZGVdN4v_cos, _sin and _tan with AVX2; gcc 16,
+  i9-12900H, 2 M cells, 8 materials, 100 iterations, 2 threads: the whole run 24.3-27.6 s
+  -> 21.0-22.5 s). `shrink_bench` is left as it was. The comment of
+  `chunk_enable_fast_math` says it, and that clang knows libmvec's `tan` only since LLVM 19.
+- Check builds (`CHECK_OPTIM`, and the sanitizer and Debug builds) were several times slower
+  than the others under OpenMP: the cross-check of a proxy's `array_id` against the registry,
+  done on every write (`zero_any`) and every replayed op (`zero`), took the registries' shared
+  lock, and every thread bounced its reader count (`pthread_rwlock_rdlock` + `unlock` were 91 %
+  of `shrink_bench_omp_zero_any_dyn`). A thread now skips a check it already made on the same
+  array and `array_id` while no registry has changed: a generation counter that
+  `RegistryWriteLock` bumps, and a per-thread memo of 16 sets of 4 ways (a direct-mapped one
+  let two arrays written in turn evict each other in about one run out of two, depending on
+  where ASLR put them). The bench at 14 threads: 7–8 s → 0.6–1.1 s.
+- Check builds: the count of second-value lookups in flight (`GlobalVecHolder::LookupGuard`,
+  which lets a reclaim detect a lookup running alongside it) was one atomic shared by every
+  thread, two locked RMWs per lookup: about 90 % of `find_or_set_ind_cst_val2()`, and 13 % of
+  the bench on a many-core machine. One counter per thread on a cache line of its own, summed
+  by the reclaim; the seq_cst handshake is unchanged.
+- Check builds, `zero_or_value` (and `ArrayChunkBits`): the comparison of a proxy's armed
+  second-value index and `array_id` with the registry, on every write
+  (`ProxySpec::armed_inf_array()`), took the registries' shared lock too: 95 % of
+  `shrink_bench_omp_zero_or_value_1024` at 160 threads. It goes through the same per-thread memo.
+  At 14 threads, `--mode perf --divisor 10 --iter_max 100`: 82–89 s → 1.7–1.8 s.
+- `TCSlab::alloc_block()` tested its capacity after computing it: `block_allocator -
+  sizeof(void*)` is unsigned and wraps for a slab smaller than the back-pointer, and the
+  quotient, cast to `int`, could come out positive (a slab of 1 byte and elements of 3: a
+  capacity of 1,431,655,763) and pass the "does not fit" test. The sizes are now compared before
+  the subtraction, and an element size below 1 is refused with them. No size the library asks
+  for reaches it (Coverity 661091).
+- `vectorisation_demo` and `multi_mat`: `main()` catches `std::exception` and says it, as the
+  other examples do, instead of ending in `std::terminate()` (Coverity 661907, 661959, 661960).
+- Documentation brought back in line with the sources, in both languages.
+  `docs/algo_pattern_fr.md` §5 lacked the paragraph on the OMPT pass
+  (`Chunk::compress_to_motif()`). `docs/developer_settings.md` lists the CMake options it
+  missed (`SHRINK_BENCH_INT64_SIZES`, `CHUNK_VALIDATION_UNITY_BATCH`, `GCC_TOOLCHAIN_DIR`,
+  `USE_MOLD`, `CHUNK_VEC_REPORT`, `GETTING_STARTED_LIB`, `BOOL_ARRAYS_LIB`) and, in a new §8,
+  the variables the tools and the harnesses read (`CHUNK_BUILD_ROOT`, `CHUNK_BENCH_EVENTS`,
+  `CHUNK_POOL_REF_WAIT`, `CHUNK_POOL_POLL`, `CATCH_CRASH_EXE`, `CLANG_FORMAT`, `FK_SECONDS`,
+  `BLK_HUGE`, `CHUNK_VALIDATION_CHILD`); `docs/environment_variables.md` §2 has
+  `SHRINK_ARRAY_BUILD_EXAMPLES` and `SHRINK_ARRAY_BUILD_TESTS`. `docs/contributing.md` names
+  `check_public_api`, `check_format` and `check_doxygen` in its table of checks;
+  `docs/formal_models.md` says the native models keep their assertions (`-UNDEBUG`);
+  `docs/synchronisation_dekker.md` §4.3 says a `membarrier` that fails once registered stops the
+  program. `docs/README.md` no longer claims every document has a French version
+  (`docs/threading_backends.md` is in English only) and its code table names `pattern_array.h`,
+  `threads.h`, the `fetch_content` example and the other formal models. The Doxygen comments of
+  the constructors and of `resize()` state what a thread may do inside a region.
+- `resize()` inside a parallel region compressed chunks of other arrays under their writers.
+  Its drain ran the compression pass, which takes no writer handshake there, on the calling
+  thread's WHOLE candidate list: right for the array being resized, which only that thread
+  writes, wrong for a shared array the thread had also written -- another thread could be
+  writing that chunk (ThreadSanitizer: 9 races on a probe; a lost or torn value in principle).
+  The copy constructor goes through the same drain. The pass now runs on the resized array's
+  candidates only, the others set aside for its duration (`internal/own_candidates.h`,
+  `drain_own_candidates()` in the three variants). For zero_or_value the same call also
+  sweeps, on the calling rank, that array's candidates queued under an earlier second value,
+  which the in-region drain left pointing into the reallocated chunk list.
+  `region_storage_validation`'s whole-team case now grows each thread's array with chunks of
+  the shared one in its list.
+- OpenMP without OMPT (libgomp): a thread whose rank cache was left over from another team --
+  `begin_parallel_phase()` forgotten, then a team that changed -- used another thread's per-rank
+  structures (deferred queue, candidate list, flush lock), which that thread uses without a
+  lock: hangs, crashes and aborts in about half the runs of `phase_protocol_validation`'s new
+  "stale rank cache, no begin" case. Nothing clears the cache there (no implicit-task callback),
+  so the builds without checks now re-read the rank on every use (`get_thr_rank_fast()`: one
+  `omp_get_level()` and one `omp_get_thread_num()`; 2 to 5 % of `shrink_bench`'s computation
+  time at 8 threads); check builds keep stopping on the stale cache. 45 runs out of 45 pass.
+- Packaging (P1 and P4 of the audit). **Spack**: the package was built for the build host
+  whatever `target=` said -- the project's `-march=native` (`-mcpu=native`, `-tp=host`) came
+  after the wrapper's flag and won; `CHUNK_NATIVE_TUNING=OFF` (new, default ON) adds no target
+  flag and the recipe sets it. The recipe also declares what it used without saying: the C
+  compiler (`formal/`), `bzip2` for `+examples`, Python for the tests. **`-DNDEBUG`**: the
+  project's own Release and RelWithDebInfo flags dropped CMake's `-DNDEBUG`, so a release
+  library carried its `assert()`s; they are compiled out again, except in the builds that are
+  there to check (`CHECK_OPTIM`, sanitizers, Debug). The reverse for `formal/`: its native models
+  state their property with `assert()` and were built with CMake's C Release flags, `-DNDEBUG`
+  included -- the six `formal_native_*` tests passed whatever the model did; they now build
+  with `-UNDEBUG`. **Workflows**: the 21 `uses:` are pinned by commit, the release in a comment,
+  and `.github/dependabot.yml` proposes the updates. The `doc` target is defined at the top
+  level only (a consumer's own `doc` target stopped its configure).
+- std backend: a thread building, re-chunking or destroying a large array outside a region could
+  deadlock with another thread's team. It held the cold-path lock and waited for the pool (one
+  team at a time) while a member of the team holding the pool waited for that lock to build its
+  own array (ThreadSanitizer's lock-order inversion in `bulk_write_team_validation`). The pool
+  no longer makes a team wait: when another thread's team holds it, the new team runs as a team
+  of one on its caller, as a nested or application-phase team already does.
+- Building or destroying arrays from several threads of a region at once corrupted the heap
+  (a crash in most runs: 15 of 16 with a work array per thread and per iteration). The
+  constructor grew the per-array tables that every write of every other thread indexes, and
+  wrote the identity registry and the manager's totals with no lock. Building and destroying an
+  array now take a cold-path lock (`internal/cold_path_lock.h`); the tables indexed by
+  `array_id` no longer move their rows (`internal/stable_table.h`); the two thresholds the write
+  path reads are atomics; the identity registries have a reader lock. A work array destroyed
+  inside a region is torn down on its thread's rank alone (`internal/array_users.h`: no walk of
+  the other ranks' lists, no pass over the other arrays, no allocator set of its own) after one
+  `read_reclaim` grace period. Arrays another rank has used keep the sequential-point teardown.
+  `resize()`, copies and `rechunk_to()` stay sequential points. `region_storage_validation`
+  gains the whole-team case; `docs/getting_started.md` states the contract.
+- A deferred enqueue raised its writer flag on the chunk it was deferred for -- a chunk the
+  compressor had marked -- so a pass parked in `start()` (whose window is "no writer on a chunk
+  I marked") waited for the very writers its mark had sent to the slow path, on its yield
+  budget, and could give up. The enqueue publishes a tag instead of the chunk: the flushers
+  still see a raised flag, the compressor's window skips it. `formal/writer_compressor.c`
+  already lowered the flag before the capture.
+- `wait_before_materialise()` (`zero_any`, `pattern`) waited for the compressor's mark with a
+  pause and no yield, against the library's rule (1000 pauses, then a yield): with more threads
+  than cores (the std backend, TBB) a thread could spin a whole time slice while the pass that
+  holds the mark waited for a core. It yields after 1000 pauses now.
+- `dekker::heavy_barrier()` ignored the return of `membarrier(MEMBARRIER_CMD_PRIVATE_EXPEDITED)`.
+  Under the asymmetric handshake the writers announce with a compiler barrier only, so a failed
+  call -- after a successful registration it cannot fail but under a seccomp filter installed
+  later -- would let a pass free a buffer a writer is in, silently. It stops now, in every
+  build, with the errno.
+- `zero_any` (and `pattern`): a pass handed its candidates' queue flags back after all its
+  scans, while the scan had already lowered the mark of a candidate it dropped. A writer that
+  found that mark down and made the chunk constant met the flag still "queued" and gave up; the
+  pass then released the flag, and the chunk stayed constant and materialised in no list until
+  its next write: memory not reclaimed, no wrong value -- F6's window, open again for those
+  chunks (`formal/queue_handback.c`'s `MUT_HANDBACK_AFTER_UNMARK`). Each candidate's flag is
+  handed back in the scan, before its mark can go down, as `zero` and `zero_or_value` do.
+  `docs/formal_models.md` section 8.7.
+- A second `ParamChunk::init_indexes()` with the other argument (or `init_indexes(false)` after
+  the first array had run `init_indexes(true)`) changed the allocation block size: the
+  allocators registered afterwards cut their slabs to another size than the earlier ones of the
+  same element type, against the one-slab-size-per-type invariant `slab_of()` relies on
+  (`tc_allocator.h`). Out of contract (`docs/api.md`: once), now enforced: a call that would
+  change the block size is ignored with a warning; the same size again is a harmless repeat.
+  `pool_accounting_validation` checks both.
+- `a.push_back(a(i))` and `a.resize(n, a(i))` past the capacity, with an element of more than 16
+  bytes (passed by reference): `resize()` ran first, and its compression pass could release the
+  buffer `a(i)` points into, which the write of the new element could then reuse, filled with the
+  constant, before the value was read. Both copy the value before `resize()`, as `assign()`
+  already did. `open_types_validation` checks both on a 24-byte struct (`zero` and `zero_any`:
+  `zero_or_value` has no `a(i)` on a non-`bool` element).
+- `docs/api.md` section 7 said `set_thread_chunk_size(n)` gives "the chunk size of the arrays the
+  calling thread builds next"; a new array still took the process-wide size. It routes the
+  calling thread's chunk allocations, and the library sets it before each of them: the table
+  and the function's comment say so, and point to `set_active_chunk_size()` and
+  `a.set_chunk_size()` for a new array's geometry.
+- `import_array(b, export_array(a))` returned `false` whenever `a` had another chunk count than a
+  fresh array of its size: after `a.reserve(10000)` (40 chunks for 10 elements), or for an array
+  grown by 256 `push_back` (1 chunk, against 2 for a fresh array of 256). A checkpoint could
+  refuse to load. `import_array()` imports the chunks that hold elements, the first
+  `ceil(size / chunk_size)`, and refuses only another chunk size or a state with fewer chunks
+  than its size needs. `chunk_exchange_validation` imports both kinds of array.
+- A negative size was accepted: `a.resize(-1)` threw nothing and left `size() == -1`,
+  `a.reserve(-1)` raised the capacity to 4,294,967,296, `Array(-1)` built an array. They throw
+  `std::length_error` now, as `std::vector`, and leave the array as it was. `shrink_bench
+  --test_stl` checks the three, against `std::vector` too.
+- `a.set_chunk_size(n)` on an array that had chunks changed its geometry without moving them:
+  on 100,000 written elements, 64 -> 1024 left the 1563 chunks where they were, and `a[99000]`
+  read another element; the size also became the birth size of every array built afterwards.
+  The documentation said "the geometry of an EMPTY array", nothing enforced it. Another size on
+  an array that has chunks is now refused with a warning, geometry kept (`rechunk_to()` moves
+  the elements); the same size stays accepted. `advisor_demo`, which built an `Array(1)` then
+  set another size, builds an `Array(0)`. `rechunk_validation`'s refusal case checks it.
+- `rechunk_to()` corrupted the heap on an array ending less than a chunk below `INT_MAX` (an `int`
+  index, `_dyn` build): a `zero_any::Array<int8_t>` of `INT_MAX` elements, its last ten written,
+  re-chunked 4096 -> 2048, stopped on a glibc `malloc.c` assertion. The end of the last chunk,
+  `base + chunk_size`, was computed in the index type and wrapped negative, and `hi - lo` became a
+  huge `memcpy` length. Computed in `long long`, as `write_range_by_chunks` already did.
+  `index64_validation`'s `int-top-rechunk` case re-chunks such an array to the other geometry and
+  back.
+- The sign of a zero was lost: a `-0.0` written to an array read back `+0.0` (`1.0 / x` went
+  from `-inf` to `+inf`, `std::signbit`, `std::copysign`, `std::atan2` changed), for `float`,
+  `double` and `std::complex`, in the three variants -- a write onto a chunk compressed to zero,
+  a whole chunk written in parallel, a materialised chunk rewritten then compressed, a single
+  element onto a `+0.0`, `fill_range`/`fill_range_mt`. Every "already there" / "the run is the
+  constant" decision compared with `==`, and `-0.0 == +0.0`. They now go through
+  `same_value()` (`internal/same_value.h`): the bits for `float` and `double` (a run of `-0.0`
+  is no longer compressed to the zero constant -- in `zero_any` it compresses to its own
+  constant; a run of one NaN payload now compresses and reads back bit for bit), `==` and the
+  sign bit for `long double`, part by part for `std::complex` and `std::array`, `==` for the
+  other types. An aggregate of floating-point members keeps comparing them with its `==`
+  unless it specialises `shrink_array::ValueIdentity<T>`. `zero_or_value` orders its second
+  values to match (`ValueLess`): `-0.0` can be a second value. `signed_zero_validation` checks
+  every case, bit for bit, in each variant.
+- `ChunkSizeAdvisor` counted a `pattern::Array`'s motif chunks as materialised, at every size:
+  its model of an array of motifs was off by two orders of magnitude, and blind to what a
+  coarsening loses. With the decider applying, a `pattern::Array<int>` of 2^26 elements (8
+  local motifs, irregular offsets) was re-chunked 256 -> 1024, from 5.25 MB to 270 MB, and
+  kept there. The advisor now counts them (`ChunkSizeEstimate::motif`, new, appended; `mat`
+  no longer includes them; `mem_bytes` adds one entry per distinct motif) and forecasts them
+  at the other sizes from the motif pointers and offsets. `pattern_validation` gains S.
+- CI: the `check_*` step ran 8 of the 10 `scripts/check_*.py`; `check_public_api` (the frozen
+  interface) and `check_inline_bodies` ran under ctest only. Both are in the loop.
+- `README.md` and `README_fr.md` gave the version as 0.1.
+- `check_doxygen.py` run by hand with no Doxygen installed ended on a
+  `FileNotFoundError` traceback: it says Doxygen is not found and exits 77 (skipped).
 
 ## 0.2.1 -- 2026-11-05
 

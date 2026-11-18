@@ -15,35 +15,76 @@
  */
 
 #pragma once
+#include <exception> // std::terminate (a body that throws)
+#include <atomic> // std::memory_order_acq_rel, std::memory_order_acquire, std::memory_order_relaxed, std::memory_order_release
+#include <cstddef> // std::size_t
+#include <cstdint> // std::uint32_t, std::uint64_t
+#include <mutex>   // std::try_to_lock, std::unique_lock
+#include <thread>  // std::this_thread::yield (a dynamic slot still in use)
+
 #include "fast_allocators/internal/pmp_std.h" // the class these bodies belong to
 
 namespace fast_alloc
 {
 
 // ---------------------------------------------------------------------------
+// fast_alloc::SpinBarrier
+// ---------------------------------------------------------------------------
+
+inline void pmp::std_backend::SpinBarrier::arrive_and_wait() noexcept
+{
+    const std::uint32_t gen = gen_.load(std::memory_order_acquire);
+    if (count_.fetch_sub(1, std::memory_order_acq_rel) == 1)
+    {
+        count_.store(n_, std::memory_order_relaxed);
+        gen_.store(gen + 1U, std::memory_order_release);
+        gen_.notify_all();
+        return;
+    }
+    if (spin_until(n_, [&]() noexcept { return gen_.load(std::memory_order_acquire) != gen; }))
+    {
+        return;
+    }
+    while (gen_.load(std::memory_order_acquire) == gen)
+    {
+        gen_.wait(gen, std::memory_order_acquire);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // fast_alloc::TeamCtx
 // ---------------------------------------------------------------------------
 
-inline pmp::std_backend::Slot& pmp::std_backend::TeamCtx::enter(int rank, std::uint64_t& seq)
+inline pmp::std_backend::DynSlot& pmp::std_backend::TeamCtx::enter_dynamic(int rank, std::uint64_t& seq) noexcept
 {
-    seq = met[static_cast<std::size_t>(rank)]++;
-    const std::scoped_lock lock(mutex);
-    auto&                  s = slots[seq];
-    if (!s)
+    seq              = met[static_cast<std::size_t>(rank)]++;
+    DynSlot&   slot  = dyn[seq % dyn_ring];
+    const auto ready = 2 * (seq + 1);
+    for (unsigned spins = 1;; ++spins)
     {
-        s       = std::make_unique<Slot>();
-        s->left = size;
-    }
-    return *s;
-}
-
-inline void pmp::std_backend::TeamCtx::leave(std::uint64_t seq)
-{
-    const std::scoped_lock lock(mutex);
-    const auto             it = slots.find(seq);
-    if (--it->second->left == 0)
-    {
-        slots.erase(it);
+        std::uint64_t tag = slot.tag.load(std::memory_order_acquire);
+        if (tag == ready)
+        {
+            return slot; // claimed and reset by the first thread of this loop
+        }
+        // Free: even (not being reset), an older loop's, and nobody left in it.
+        // A tag above `ready` cannot be: a later loop on this slot needs this
+        // thread out of this one first.
+        if ((tag & 1U) == 0U && tag < ready && slot.left.load(std::memory_order_acquire) == 0 &&
+            slot.tag.compare_exchange_strong(tag, ready - 1, std::memory_order_acq_rel, std::memory_order_acquire))
+        {
+            slot.next.store(0, std::memory_order_relaxed);
+            slot.left.store(size, std::memory_order_relaxed);
+            slot.tag.store(ready, std::memory_order_release);
+            return slot;
+        }
+        // Being reset by another thread, or still in use by a thread
+        // dyn_ring constructs behind: it leaves without anyone's help.
+        cpu_relax();
+        if ((spins & 255U) == 0U)
+        {
+            std::this_thread::yield();
+        }
     }
 }
 
@@ -52,9 +93,13 @@ inline void pmp::std_backend::TeamCtx::leave(std::uint64_t seq)
 // ---------------------------------------------------------------------------
 
 template <typename Job>
-void pmp::std_backend::Pool::run(int n, Job& job)
+bool pmp::std_backend::Pool::try_run(int n, Job& job)
 {
-    const std::scoped_lock lock(team_mutex_);
+    const std::unique_lock lock(team_mutex_, std::try_to_lock);
+    if (!lock.owns_lock())
+    {
+        return false;
+    }
     while (static_cast<int>(workers_.size()) < n - 1)
     {
         const int           r     = static_cast<int>(workers_.size()) + 1;
@@ -68,9 +113,89 @@ void pmp::std_backend::Pool::run(int n, Job& job)
     word_.store((gen << 16) | static_cast<std::uint64_t>(n), std::memory_order_release);
     word_.notify_all();
     call(0);
+    // Spin first (spin_budget_ns): the team's last worker is usually done
+    // within microseconds of rank 0, and a futex wake-up costs more.
+    if (spin_until(n, [this]() noexcept { return pending_.load(std::memory_order_acquire) == 0; }))
+    {
+        return true;
+    }
     for (int p = pending_.load(std::memory_order_acquire); p != 0; p = pending_.load(std::memory_order_acquire))
     {
         pending_.wait(p, std::memory_order_acquire);
+    }
+    return true;
+}
+
+template <typename Run>
+bool pmp::std_backend::Pool::try_run_launched(int n, TeamLauncher launch, Run& run)
+{
+    const std::unique_lock lock(team_mutex_, std::try_to_lock);
+    if (!lock.owns_lock())
+    {
+        return false;
+    }
+    const std::uint64_t gen = ++launch_gen_;
+    join_.store(gen << join_gen_shift, std::memory_order_release);
+    try
+    {
+        launch(n - 1, &Pool::join_task, gen);
+    }
+    catch (...) // NOLINT(bugprone-empty-catch): the tasks already started make the team
+    {
+    }
+    const auto all = static_cast<std::uint64_t>(n - 1);
+    (void)spin_for(join_budget_ns(),
+                   [this, all]() noexcept { return (join_.load(std::memory_order_acquire) & join_count_mask) == all; });
+    const auto joined = static_cast<int>(join_.fetch_or(join_closed, std::memory_order_acq_rel) & join_count_mask);
+    if (joined == 0)
+    {
+        return false;
+    }
+    TeamCtx ctx(joined + 1);
+    auto    job = [&run, &ctx](int rank) { run(ctx, rank); };
+    fn_         = [](void* j, int rank) { (*static_cast<decltype(job)*>(j))(rank); };
+    arg_        = &job;
+    pending_.store(joined, std::memory_order_relaxed);
+    go_.store(gen, std::memory_order_release);
+    go_.notify_all();
+    call(0);
+    if (spin_until(joined + 1, [this]() noexcept { return pending_.load(std::memory_order_acquire) == 0; }))
+    {
+        return true;
+    }
+    for (int p = pending_.load(std::memory_order_acquire); p != 0; p = pending_.load(std::memory_order_acquire))
+    {
+        pending_.wait(p, std::memory_order_acquire);
+    }
+    return true;
+}
+
+inline void pmp::std_backend::Pool::join_task(std::uint64_t gen) noexcept
+{
+    Pool&         p = get();
+    std::uint64_t w = p.join_.load(std::memory_order_acquire);
+    do
+    {
+        if ((w >> join_gen_shift) != gen || (w & join_closed) != 0U)
+        {
+            return; // late: the team started without this task
+        }
+    } while (!p.join_.compare_exchange_weak(w, w + 1, std::memory_order_acq_rel, std::memory_order_acquire));
+    const int rank = static_cast<int>(w & join_count_mask) + 1;
+    // The opener publishes the job once the join is closed; the next
+    // generation cannot start before this task is done (it is pending).
+    if (!spin_until(1, [&p, gen]() noexcept { return p.go_.load(std::memory_order_acquire) == gen; }))
+    {
+        for (std::uint64_t g = p.go_.load(std::memory_order_acquire); g != gen;
+             g               = p.go_.load(std::memory_order_acquire))
+        {
+            p.go_.wait(g, std::memory_order_acquire);
+        }
+    }
+    p.call(rank);
+    if (p.pending_.fetch_sub(1, std::memory_order_acq_rel) == 1)
+    {
+        p.pending_.notify_one();
     }
 }
 
@@ -90,7 +215,14 @@ inline void pmp::std_backend::Pool::worker_loop(int rank, std::uint64_t seen) no
 {
     for (;;)
     {
-        word_.wait(seen, std::memory_order_acquire);
+        // Spin first (spin_budget_ns): teams opened back to back (a re-chunk's
+        // slices) find their workers awake; past the budget, sleep on the word.
+        // The last team's size stands for the next one's (oversubscription).
+        const auto last_team = static_cast<int>(seen & 0xFFFFU);
+        if (!spin_until(last_team, [this, seen]() noexcept { return word_.load(std::memory_order_acquire) != seen; }))
+        {
+            word_.wait(seen, std::memory_order_acquire);
+        }
         seen = word_.load(std::memory_order_acquire);
         if (rank < static_cast<int>(seen & 0xFFFFU))
         {
@@ -156,8 +288,8 @@ void pmp::Team::for_dynamic(Index first, Index last, int chunk, Body&& body, Wai
         }
         return;
     }
-    std::uint64_t      seq  = 0;
-    std_backend::Slot& slot = ctx_->enter(rank_, seq);
+    std::uint64_t         seq  = 0;
+    std_backend::DynSlot& slot = ctx_->enter_dynamic(rank_, seq);
     for (long long b = slot.next.fetch_add(c, std::memory_order_relaxed); b < n;
          b           = slot.next.fetch_add(c, std::memory_order_relaxed))
     {
@@ -167,7 +299,9 @@ void pmp::Team::for_dynamic(Index first, Index last, int chunk, Body&& body, Wai
             body(static_cast<Index>(first + static_cast<Index>(k)));
         }
     }
-    ctx_->leave(seq);
+    // acq_rel: this thread's uses of the slot happen before its reuse
+    // (the next claimer reads left == 0, acquire).
+    slot.left.fetch_sub(1, std::memory_order_acq_rel);
     end_construct(w);
 }
 
@@ -199,13 +333,28 @@ void pmp::Team::single(F&& f, WaitMode w)
         f();
         return;
     }
-    std::uint64_t      seq  = 0;
-    std_backend::Slot& slot = ctx_->enter(rank_, seq);
-    if (!slot.claimed.exchange(true, std::memory_order_acq_rel))
+    // Lock-free: every thread meets the constructs in the same order, so this
+    // one's number seq is the same for all (the count enter_dynamic() keeps too). The
+    // mark is "every single numbered below it has been claimed"; the thread
+    // that moves it past seq claims this one. A thread that finds it already
+    // past seq loses: whoever moved it there went through this single first
+    // (same order), and claimed it or found it claimed.
+    const std::uint64_t seq  = ctx_->met[static_cast<std::size_t>(rank_)]++;
+    std::uint64_t       mark = ctx_->single_mark.load(std::memory_order_acquire);
+    bool                mine = false;
+    while (mark <= seq)
+    {
+        if (ctx_->single_mark.compare_exchange_weak(mark, seq + 1, std::memory_order_acq_rel,
+                                                    std::memory_order_acquire))
+        {
+            mine = true;
+            break;
+        }
+    }
+    if (mine)
     {
         f();
     }
-    ctx_->leave(seq);
     end_construct(w);
 }
 

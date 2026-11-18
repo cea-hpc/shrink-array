@@ -33,8 +33,9 @@
 #include "chunk/internal/array_chunk_rechunk.h"        // RechunkSupport, the class these bodies belong to
 #include "chunk/internal/array_chunk_rechunk_refill.h" // RechunkSupport::Refill (rechunk_refill)
 #include "chunk/internal/array_chunk_rechunk_trace.h"  // RechunkPhaseTrace
-#include "chunk/internal/chunk_stats.h"                // increm_chunk_rechunk (CHUNK_STATS)
-#include "chunk/PMP_CHUNK.h"                           // CHUNK_PMP_RANK_BOUND
+#include "chunk/internal/chunk_stats.h"                // inc_chunk_rechunk (CHUNK_STATS)
+#include "chunk/internal/pmp_chunk.h"                  // CHUNK_PMP_RANK_BOUND
+#include "chunk/internal/cold_path_lock.h"             // ColdPathLock: construction, teardown, resize
 #include "chunk/log.h"                                 // CHUNK_LOG (the pool census)
 #include "chunk/config.h"                              // build_config::threaded, use_fast_alloc, any_check
 #include "chunk/internal/chunk_size_policy.h"          // set_*_chunk_size, DynChunkSizeGuard, BirthAtActiveSize
@@ -46,7 +47,8 @@ namespace shrink_array
 template <typename Derived>
 void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
 {
-    const unsigned int old_size = self().size_policy_.size();
+    const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
+    const unsigned int           old_size = self().size_policy_.size();
     // Captured before the swap below hands `self` tmp's key: the allocator set
     // holding the OLD geometry's blocks is (old_key, old_size), and it is the
     // one whose slabs must empty for the re-chunk to give memory back.
@@ -56,8 +58,8 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         return;
     }
 
-    // A power of two or a multiple of 64, and at most cst_buffer_size: the
-    // shared constant buffers (cst_val1 / cst_val2) are that wide, and a wider
+    // A power of two or a multiple of 64, and at most const_buffer_size: the
+    // shared constant buffers (const_val1 / const_val2) are that wide, and a wider
     // chunk would read them out of bounds (chunk_size_error). Refused, with a
     // message in EVERY build: a caller bug, on a cold path.
     if (const auto err = chunk_size_error(new_size)) [[unlikely]]
@@ -70,7 +72,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     // (allocator_pool_serial_) routes each allocation to the right size, so the
     // old and new geometries coexist during the refill.
 
-    const IndType total = self().m_size_;
+    const IndexType total = self().m_size_;
     if (total <= 0)
     {
         self().set_chunk_size(new_size); // legal on an empty array
@@ -101,7 +103,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
 
     // No dense O(n) snapshot: the refill streams old -> new chunk by chunk.
 
-    // Variant state captured BEFORE the geometry switch (zero_one_value's
+    // Variant state captured BEFORE the geometry switch (zero_or_value's
     // array-level second_value; T{} / ignored for zero & zero_any).
     const InT<T> state = self().rechunk_capture_state();
 
@@ -120,7 +122,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
 
     {
         trace.mark(Mark::before_tmp);
-        // Born at S', own num_tab, primed pool. The new storage takes its own
+        // Born at S', own array_id, primed pool. The new storage takes its own
         // allocator set (lazy affinity: an array gets one at its first
         // re-chunk, see assign_alloc_key()), and is born at exactly S',
         // whatever the element type; both scopes end once it is built
@@ -132,7 +134,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
             return Derived(total);
         }();
 
-        // Seed variant state into tmp BEFORE refill (zero_one_value second_value,
+        // Seed variant state into tmp BEFORE refill (zero_or_value second_value,
         // so its compression decisions use the same value).
         tmp.rechunk_seed_fresh(state);
 
@@ -141,7 +143,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         //    constant (only materialised chunks are written).
         // CHUNK_STATS: one geometry change, plus the per-chunk work it costs
         // (counted inside rebuild_one below).
-        increm_chunk_rechunk<ChunkType>();
+        inc_chunk_rechunk<ChunkType>();
         trace.mark(Mark::refill_start);
         self().rechunk_refill(tmp, old_size, new_size, old_key);
         trace.mark(Mark::refill_end);
@@ -150,7 +152,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
 
         // tmp's refill CANDIDATES are deliberately KEPT. Dropped, every rebuilt
         // chunk holding a constant stays materialised until teardown (a
-        // zero_one_value/zero_any chunk only re-enters the list on a write that transitions
+        // zero_or_value/zero_any chunk only re-enters the list on a write that transitions
         // it to a constant) -- a large memory cost per re-chunk.
         //
         // No geometry-mismatch hazard: every candidate tuple carries the
@@ -160,11 +162,11 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         // What makes keeping them correct across the swap below:
         //  - the tuples point into tmp.chunk_list_'s storage, which the
         //    std::swap hands to *this unchanged (buffer swap, no move);
-        //  - they carry tmp's num_tab, and rechunk_swap_identity() makes that
+        //  - they carry tmp's array_id, and rechunk_swap_identity() makes that
         //    *this's identity (member swap for zero/zero_any, registry swap for
-        //    zero_one_value), so the sweep's reset_tab_inside_list_to_compress(num_tab,
-        //    num_chunk) lands on the row allocated for tmp at new_size;
-        //  - tmp's own destruction removes candidates by ITS post-swap num_tab
+        //    zero_or_value), so the sweep's reset_array_inside_list_to_compress(array_id,
+        //    chunk_index) lands on the row allocated for tmp at new_size;
+        //  - tmp's own destruction removes candidates by ITS post-swap array_id
         //    (= *this's old identity, already emptied by rechunk_drop_candidates()
         //    above) and, for zero_any, by the OLD chunk_list_'s pointer range --
         //    neither touches these.
@@ -177,10 +179,10 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         // recycled, wrong-size chunk. Flush while the old geometry is in place.
         self().flush_pending_deferred_ops(/*force=*/true);
 
-        // 4) SWAP the common storage. nb_tab is static and NOT swapped.
-        //    num_tab + registry (+ any variant members) go through the
-        //    identity hook: zero / zero_any swap the num_tab member, zero_one_value
-        //    resolves num_tab from the registry and must NOT swap it.
+        // 4) SWAP the common storage. array_count is static and NOT swapped.
+        //    array_id + registry (+ any variant members) go through the
+        //    identity hook: zero / zero_any swap the array_id member, zero_or_value
+        //    resolves array_id from the registry and must NOT swap it.
         using std::swap;
         swap(self().chunk_list_, tmp.chunk_list_);
         // The new storage was built under tmp's own affinity key (its slabs);
@@ -190,7 +192,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         swap(self().alloc_key_, tmp.alloc_key_);
         self().swap_dirty_bitset(tmp);
         swap(self().m_size_, tmp.m_size_);
-        swap(self().nb_chunk_, tmp.nb_chunk_);
+        swap(self().chunk_count_, tmp.chunk_count_);
         swap(self().size_policy_, tmp.size_policy_);
         self().invalidate_proxies();
 
@@ -200,14 +202,14 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
             if (!ok)
             {
                 // The storage is swapped already, the registry is not: the
-                // per-num_tab tables no longer follow the chunks.
+                // per-array_id tables no longer follow the chunks.
                 CHUNK_INVARIANT_FAILED("[RECHUNK] identity swap failed (this or tmp not registered) -- storage "
                                        "swapped, registry not");
             }
         }
         (void)ok;
 
-        // Variant finalisation after the swap (zero_one_value re-owns its
+        // Variant finalisation after the swap (zero_or_value re-owns its
         // map_inf_array_ entry so it does not dangle when tmp dies).
         self().rechunk_reown_after_swap(tmp, state);
 
@@ -216,9 +218,9 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         //
         // t_active is restored to old_size, NOT to a value saved at entry:
         // every write path re-sets t_active to ITS OWN array's chunk_size()
-        // right before materialising (see zero_one_value::Proxy::ensure_writable_storage()),
+        // right before materialising (see zero_or_value::Proxy::ensure_writable_storage()),
         // so a value saved at entry may belong to an unrelated array and would
-        // route free_elt_pow2() (via get_chunk_allocator(), keyed on the
+        // route free_elem_pow2() (via get_chunk_allocator(), keyed on the
         // ambient) to the WRONG size pool. old_size comes from this array's
         // own size_policy_; g_active is touched only by rechunk_to(), so
         // saved_g_active is a trustworthy baseline.
@@ -226,7 +228,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         set_thread_chunk_size(old_size);
 
         trace.mark(Mark::swapped);
-        // tmp destroyed here: clear_core drops tmp's candidates by num_tab
+        // tmp destroyed here: clear_core drops tmp's candidates by array_id
         // and parks its OLD-geometry blocks by size. Without the end-of-life
         // census: tmp's death is not an exit (ArrayChunkBase::exit_census_).
         tmp.exit_census_ = false;
@@ -303,7 +305,10 @@ void RechunkSupport<Derived, true>::log_old_pool_census(unsigned int old_key, un
         std::size_t live  = 0;
         std::size_t empty = 0;
     };
-    const auto scan = [old_size]([[maybe_unused]] unsigned int key)
+    // [&], not [old_size]: old_size is unused where the branch below is
+    // discarded (serial or std-alloc builds), and clang warns of an explicit
+    // capture then (-Wunused-lambda-capture).
+    const auto scan = [&]([[maybe_unused]] unsigned int key)
     {
         Occupancy occ;
         if constexpr (build_config::use_fast_alloc && build_config::threaded)
@@ -351,7 +356,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
 template <typename Derived>
 void RechunkSupport<Derived, true>::rechunk_all_to(unsigned int new_size)
 {
-    ProxyType::share_info_array->for_each_key(
+    ProxyType::array_registry->for_each_key(
         [new_size](ArrayKey<ChunkType> key)
         {
             if (key != nullptr)
@@ -360,7 +365,7 @@ void RechunkSupport<Derived, true>::rechunk_all_to(unsigned int new_size)
                 // element type may differ in index type: reach each one's
                 // own rechunk_to() through the core (the registry hands out
                 // const keys; a re-chunk rebuilds the array).
-                const_cast<ArrayChunkCore<ChunkType>*>(key)->rechunk_erased(new_size);
+                const_cast<ArrayChunkCore<ChunkType>*>(key)->rechunk_erased(new_size); // NOSONAR(cpp:S859)
             }
         });
 }

@@ -12,13 +12,15 @@ Doxygen 1.9 or later (the output is made with 1.9.8, docs/mermaid_footer.html):
 an older one misreads the C++20 sources (the output was made warning-free with
 1.9.8; 1.8.14 reports 176 warning lines on the same sources), so the check is
 skipped there -- exit 77, which ctest reports as "Skipped" -- rather than
-failing on the version.
+failing on the version. With no Doxygen at all (run by hand: ctest only registers
+the test when CMake finds one), it is skipped the same way, with a message.
 
 Usage: scripts/check_doxygen.py [repo root] [doxygen executable]   (exit 1 on a warning)
 """
 
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -41,6 +43,9 @@ def doxygen_version(doxygen):
 def main() -> int:
     root = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
     doxygen = sys.argv[2] if len(sys.argv) > 2 else "doxygen"
+    if shutil.which(doxygen) is None:
+        print("check_doxygen: skipped, Doxygen not found (%s)" % doxygen)
+        return SKIPPED
     version = doxygen_version(doxygen)
     if version is not None and version < MIN_VERSION:
         print("check_doxygen: skipped, Doxygen %d.%d found, %d.%d or later needed (an older one misreads "

@@ -15,6 +15,8 @@
  */
 
 #pragma once
+#include <atomic> // std::memory_order_relaxed, std::memory_order_release, std::memory_order_seq_cst
+
 #include "chunk/internal/read_reclaim.h" // the class these bodies belong to
 
 namespace shrink_array

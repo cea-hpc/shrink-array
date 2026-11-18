@@ -15,6 +15,11 @@
  */
 
 #pragma once
+#include <bit>         // std::has_single_bit
+#include <cstddef>     // std::size_t
+#include <cstdint>     // std::uint64_t
+#include <type_traits> // std::make_unsigned_t
+
 #include "chunk/internal/chunk_size_policy.h" // the class these bodies belong to
 
 namespace shrink_array
@@ -91,11 +96,11 @@ inline void DynamicChunkSize::set_divider(unsigned int size) noexcept
     pow2_             = std::has_single_bit(size); // NOT is_valid_chunk_size: a multiple of 64 is valid too
     m32_              = UINT64_MAX / size + 1u;
     unsigned int log2 = 0;
-    while ((1ull << log2) < size)
+    while ((1ULL << log2) < size)
     {
         ++log2;
     }
-    magic_ = static_cast<std::uint64_t>((static_cast<unsigned __int128>((1ull << log2) - size) << 64) / size) + 1u;
+    magic_ = static_cast<std::uint64_t>((static_cast<unsigned __int128>((1ULL << log2) - size) << 64) / size) + 1U;
     magic_shift_ = log2 - 1u;
 }
 

@@ -1,0 +1,13 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
+# The actions of the workflows are pinned by commit (a tag can be moved, a
+# commit cannot); the comment after each gives the release. Dependabot proposes
+# the next release, commit and comment together.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "ci"

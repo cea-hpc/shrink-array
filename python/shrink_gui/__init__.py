@@ -23,6 +23,15 @@ when an option is added; the options you changed show in bold. Each
 (program, architecture) has its own default values: built in (ARCH_DEFAULTS),
 replaced by yours with "Enregistrer comme défauts".
 
+Environment ("environnement : NOM=valeur …", under the extra arguments):
+variables exported in run.sh (and node.sh) before the command -- before
+scripts/site_env.sh, which may read them, and again after it, so the run's
+value wins. CHUNK_LLVM_ROOT=~/llvm-22 for compile_all.sh, a run-time switch
+of the library for a bench. Kept per program (settings env/<program>), written
+to meta.json ("env") and taken back by "Reprendre ses options"; the run's log
+has them ("[gui] env: ..."). A leading ~/ is the home directory of the machine
+the run is on; nothing else of a value is expanded.
+
 Submission: ccc_msub (batch, the default) or ccc_mprun detached on the login
 node (the first prototype's way). A run is a directory on inti
 (<runs dir>/<id>/):
@@ -54,6 +63,8 @@ afterok:j1:...:jN).
 "Builds à jour": run.sh first runs `ninja -n` on the executables
 already built in each build the program will use (--configs / --builds under
 --build-root) and refuses to start (exit code 96) or warns when one is stale.
+A build "Nettoyer les builds…" cleaned (no objects left, .shrink_gui_cleaned)
+is judged by its sources instead, until its next build.
 
 "Récupérer" fetches the run directory, plus the summary files of the
 program's own output directory, read from the log ("📁 Outputs, CSV and log
@@ -93,6 +104,7 @@ Modules:
     launch_form.py      program, options form, start conditions, pickers, submission
     run_actions.py      stop, reuse the options, delete, fetch the results
     git_panel.py        the Git (inti) rows
+    builds_panel.py     "Nettoyer les builds…": what the next build re-creates, removed
     tab_summary.py      the Résumé tab
     tab_chart.py        the Graphique tab (multi_launch_stress.py)
     tab_bench_chart.py  ... its bench_and_test.py page
@@ -101,4 +113,4 @@ Modules:
     tooltips.py         the tooltip texts
 """
 
-__version__ = "0.15"
+__version__ = "0.17"

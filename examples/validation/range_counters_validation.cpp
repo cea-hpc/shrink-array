@@ -15,19 +15,19 @@
  */
 
 // ============================================================================
-// Range ops and the per-chunk counters. Variant-agnostic: tests zero / zero_one_value
+// Range ops and the per-chunk counters. Variant-agnostic: tests zero / zero_or_value
 // / zero_any depending on the compile-time macro (CHUNK_VARIANT_ZERO*),
 // like the other harnesses here.
 // ============================================================================
 //
 // In counter mode (use_compression_with_counter: no fast block compression --
-// the serial builds) zero and zero_one_value decide a chunk's compression on counters the
+// the serial builds) zero and zero_or_value decide a chunk's compression on counters the
 // write proxy maintains incrementally: how many elements equal the first value
-// (zero, zero_one_value) and the array's second value (zero_one_value). fill_range / copy_range
+// (zero, zero_or_value) and the array's second value (zero_or_value). fill_range / copy_range
 // store most of a chunk straight into its buffer, past those counters, so they
-// must recount afterwards (internal::resync_counters). zero_one_value was once left out:
+// must recount afterwards (internal::resync_counters). zero_or_value was once left out:
 // its stale counts reached chunk_size on a MIXED chunk and the pass folded it
-// to a constant, losing everything else in it (rechunk_validation_zero_one_value_dyn,
+// to a constant, losing everything else in it (rechunk_validation_zero_or_value_dyn,
 // 34819 elements of 1e6).
 //
 // Each case: a whole chunk filled with a plain value through the raw path,
@@ -35,7 +35,7 @@
 // pass. Every element but that one must still read the plain value. With a
 // stale count the chunk comes back all constant.
 //   first  -- fill_range, then one first value;
-//   second -- fill_range, then one second value (zero_one_value / zero_any);
+//   second -- fill_range, then one second value (zero_or_value / zero_any);
 //   copy   -- copy_range from a plain source, then one first value.
 // Then fill_range over chunks already constant (run_fill_constant_case).
 // Then the compound operators on a compressed chunk (run_compound_case).
@@ -49,16 +49,16 @@
 #include <utility>     // std::as_const
 #include <vector>      // std::vector
 
-#include "chunk/chunk_traits.h"          // forward decls + default IntType = int
+#include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
 #include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
-#include "chunk/array_chunk_range_ops.h" // fill_range, copy_range
-#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"            // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"                // chunk_config::use_zero_one_value*, use_compression_with_counter
-#include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/internal/print.h"        // shrink_array::println
+#include "chunk/range_ops.h"             // fill_range, copy_range
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
+#include "chunk/config.h"                // chunk_config::use_zero_or_value*, use_compression_with_counter
+#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
@@ -70,14 +70,14 @@ using namespace shrink_array;
 namespace
 {
 
-static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
-              "range_counters_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_ONE_VALUE or _ZERO_ANY");
+static_assert(chunk_config::use_zero || chunk_config::use_zero_or_value || chunk_config::use_zero_any,
+              "range_counters_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_OR_VALUE or _ZERO_ANY");
 
 template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -85,9 +85,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -97,7 +97,7 @@ constexpr const char* variant_name()
 
 void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
@@ -105,7 +105,7 @@ void begin_phase()
 
 void end_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -171,14 +171,14 @@ const char* case_name(Case test_case)
 /// it) through the raw path, one proxied constant, a compression pass.
 int run_case(Case test_case)
 {
-    const bool second_applies = chunk_config::use_zero_one_value || chunk_config::use_zero_any;
+    const bool second_applies = chunk_config::use_zero_or_value || chunk_config::use_zero_any;
     if (test_case == Case::second && !second_applies)
     {
         return 0;
     }
 
     Array<double> arr;
-    const long    chunk_sz = static_cast<long>(arr.chunk_size());
+    const auto    chunk_sz = static_cast<long>(arr.chunk_size());
     const long    count    = 3 * chunk_sz;
     arr.resize(static_cast<int>(count));
     maybe_set_second_value(arr, second_value);
@@ -187,7 +187,7 @@ int run_case(Case test_case)
     const auto hi = static_cast<std::size_t>(2 * chunk_sz);
     if (test_case == Case::copy)
     {
-        const std::vector<double> src(static_cast<std::size_t>(chunk_sz), plain_value);
+        const std::vector src(static_cast<std::size_t>(chunk_sz), plain_value);
         shrink_array::copy_range(arr, lo, hi, src.begin());
     }
     else
@@ -231,14 +231,14 @@ int run_case(Case test_case)
 /// fill of the chunk's own constant must leave it constant.
 int run_fill_constant_case()
 {
-    const bool second_applies = chunk_config::use_zero_one_value || chunk_config::use_zero_any;
+    const bool second_applies = chunk_config::use_zero_or_value || chunk_config::use_zero_any;
 
     Array<double> arr;
-    const long    csz   = static_cast<long>(arr.chunk_size());
+    const auto    csz   = static_cast<long>(arr.chunk_size());
     const long    count = 6 * csz;
     arr.resize(static_cast<int>(count));
     maybe_set_second_value(arr, second_value);
-    std::vector<double> ref(static_cast<std::size_t>(count), 0.0);
+    std::vector ref(static_cast<std::size_t>(count), 0.0);
 
     const auto fill = [&](long lo, long hi, double value)
     {
@@ -301,35 +301,35 @@ int run_fill_constant_case()
 
     // The chunk's own constant: nothing to write, the chunk stays constant.
     fill(0, csz, 0.0);
-    check("first value, whole cst1 chunk");
-    expect_constant(0, "first value, whole cst1 chunk");
+    check("first value, whole const1 chunk");
+    expect_constant(0, "first value, whole const1 chunk");
     fill(4 * csz + 3, 5 * csz - 5, 0.0);
-    check("first value, part of a cst1 chunk");
-    expect_constant(4, "first value, part of a cst1 chunk");
+    check("first value, part of a const1 chunk");
+    expect_constant(4, "first value, part of a const1 chunk");
     fill(5 * csz - 7, 6 * csz, 0.0);
-    check("first value, across two cst1 chunks");
-    expect_constant(4, "first value, across two cst1 chunks");
-    expect_constant(5, "first value, across two cst1 chunks");
+    check("first value, across two const1 chunks");
+    expect_constant(4, "first value, across two const1 chunks");
+    expect_constant(5, "first value, across two const1 chunks");
     if (second_applies)
     {
         fill(csz + 5, 2 * csz - 3, second_value);
-        check("second value, part of its cst2 chunk");
-        expect_constant(1, "second value, part of its cst2 chunk");
+        check("second value, part of its const2 chunk");
+        expect_constant(1, "second value, part of its const2 chunk");
         fill(csz, 2 * csz, second_value);
-        check("second value, its whole cst2 chunk");
-        expect_constant(1, "second value, its whole cst2 chunk");
+        check("second value, its whole const2 chunk");
+        expect_constant(1, "second value, its whole const2 chunk");
     }
 
     // A value the chunk does not hold: written.
     if (chunk_config::use_zero_any)
     {
         fill(2 * csz + 2, 3 * csz - 9, second_value); // onto the chunk at 3.0
-        check("second value onto another cst2 chunk");
+        check("second value onto another const2 chunk");
     }
     fill(csz + 1, csz + 11, 0.0);
-    check("first value onto a cst2 chunk");
+    check("first value onto a const2 chunk");
     fill(5 * csz + 4, 5 * csz + 20, second_value);
-    check("second value onto a cst1 chunk");
+    check("second value onto a const1 chunk");
     fill(3 * csz + 1, 3 * csz + csz / 2, 0.0);
     check("first value onto a mixed chunk");
 
@@ -343,20 +343,20 @@ int run_fill_constant_case()
     return bad != 0 ? 1 : 0;
 }
 
-/// `second * 0` through the proxy (zero_one_value): the element leaves the second value
+/// `second * 0` through the proxy (zero_or_value): the element leaves the second value
 /// AND enters the first. Both counters must move; the second-value count once
-/// did not (zero_one_value::Proxy::apply_compound_operation), so it stayed one too high and the
+/// did not (zero_or_value::Proxy::apply_compound_operation), so it stayed one too high and the
 /// LAST of the following second-value writes reached chunk_size with the zero
-/// still in the chunk: folded to cst2, the zero read back as the second value
-/// (shrink_bench_zero_one_value_dyn, one element of a chunk in a check run).
+/// still in the chunk: folded to const2, the zero read back as the second value
+/// (shrink_bench_zero_or_value_dyn, one element of a chunk in a check run).
 int run_mul_zero_case()
 {
-    if constexpr (!chunk_config::use_zero_one_value)
+    if constexpr (!chunk_config::use_zero_or_value)
     {
         return 0;
     }
     Array<double> arr;
-    const long    chunk_sz = static_cast<long>(arr.chunk_size());
+    const auto    chunk_sz = static_cast<long>(arr.chunk_size());
     const long    count    = 3 * chunk_sz;
     arr.resize(static_cast<int>(count));
     maybe_set_second_value(arr, second_value);
@@ -393,7 +393,7 @@ int run_mul_zero_case()
 }
 
 // ── Compound operators on a compressed chunk (zero, counter mode) ───────────
-// zero arms a compressed chunk at nb_val_eq_zero_ = chunk_size - 1, betting that
+// zero arms a compressed chunk at n_val_eq_zero_ = chunk_size - 1, betting that
 // the element written turns non-zero. An operator that leaves it at 0 (0 &= x,
 // 0 <<= k, 0 >>= k, 0 += 0, 0 -= 0, 0 |= 0, 0 ^= 0) lost the bet with nothing
 // to correct it: one zero short for good, the chunk could never be compressed
@@ -416,17 +416,18 @@ const char* op_name(Op op)
 {
     switch (op)
     {
-        case Op::and_:
+        using enum Op;
+        case and_:
             return "&= 5";
-        case Op::shl:
+        case shl:
             return "<<= 3";
-        case Op::shr:
+        case shr:
             return ">>= 1";
-        case Op::add0:
+        case add0:
             return "+= 0";
-        case Op::sub0:
+        case sub0:
             return "-= 0";
-        case Op::or0:
+        case or0:
             return "|= 0";
         default:
             return "^= 0";
@@ -437,31 +438,32 @@ int run_compound_case(Op op)
 {
     using I = long long;
     Array<I>   arr;
-    const long chunk_sz = static_cast<long>(arr.chunk_size());
+    const auto chunk_sz = static_cast<long>(arr.chunk_size());
     arr.resize(static_cast<int>(3 * chunk_sz));
     maybe_set_second_value(arr, I{7});
     const int span = static_cast<int>(chunk_sz) + 3;
     switch (op)
     {
-        case Op::and_:
+        using enum Op;
+        case and_:
             arr[span] &= I{5};
             break;
-        case Op::shl:
+        case shl:
             arr[span] <<= 3;
             break;
-        case Op::shr:
+        case shr:
             arr[span] >>= 1;
             break;
-        case Op::add0:
+        case add0:
             arr[span] += I{0};
             break;
-        case Op::sub0:
+        case sub0:
             arr[span] -= I{0};
             break;
-        case Op::or0:
+        case or0:
             arr[span] |= I{0};
             break;
-        case Op::xor0:
+        case xor0:
             arr[span] ^= I{0};
             break;
     }
@@ -501,7 +503,8 @@ int run_compound_case(Op op)
 
 int run(int /*argc*/, char** /*argv*/)
 {
-    ParamChunk::init_indexes(true);
+    using enum Op;
+    Runtime::init(true);
 
     println("=== range_counters_validation [variant = {}]  counters={} ===", variant_name(),
             chunk_config::use_compression_with_counter ? "on" : "off (nothing to check)");
@@ -512,13 +515,13 @@ int run(int /*argc*/, char** /*argv*/)
     fails += run_case(Case::copy);
     fails += run_fill_constant_case();
     fails += run_mul_zero_case();
-    for (const Op op : {Op::and_, Op::shl, Op::shr, Op::add0, Op::sub0, Op::or0, Op::xor0})
+    for (const Op op : {and_, shl, shr, add0, sub0, or0, xor0})
     {
         fails += run_compound_case(op);
     }
 
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
 
     println("\n[{}] {}", variant_name(), fails ? "=== RANGE COUNTERS FAILED ===" : "=== RANGE COUNTERS OK ===");
     return fails ? 1 : 0;

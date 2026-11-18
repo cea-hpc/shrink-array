@@ -65,24 +65,23 @@ class SummaryTab:
         if not secs:
             return
         r = secs[max(0, min(self.sum_view.currentIndex(), len(secs) - 1))]
-        if True:
-            self.sum_note.setText(r.get("note", ""))
-            cols, rows = r.get("columns", []), r.get("rows", [])
-            self.sum_table.setSortingEnabled(False)
-            self.sum_table.clear()
-            self.sum_table.setColumnCount(len(cols))
-            self.sum_table.setHorizontalHeaderLabels([T(c) for c in cols])
-            self.sum_table.setRowCount(len(rows))
-            fails = set(r.get("fail_rows", []))
-            for i, row in enumerate(rows):
-                for j, v in enumerate(row):
-                    it = NumItem(T(v) if r.get("title") == "Phases" and j == 1 else v)
-                    if i in fails:
-                        it.setForeground(QColor("#c0392b"))
-                    if row and row[0] == "TOTAL":
-                        f = it.font()
-                        f.setBold(True)
-                        it.setFont(f)
-                    self.sum_table.setItem(i, j, it)
-            self.sum_table.resizeColumnsToContents()
-            self.sum_table.setSortingEnabled(True)
+        self.sum_note.setText(r.get("note", ""))
+        cols, rows = r.get("columns", []), r.get("rows", [])
+        self.sum_table.setSortingEnabled(False)
+        self.sum_table.clear()
+        self.sum_table.setColumnCount(len(cols))
+        self.sum_table.setHorizontalHeaderLabels([T(c) for c in cols])
+        self.sum_table.setRowCount(len(rows))
+        fails = set(r.get("fail_rows", []))
+        for i, row in enumerate(rows):
+            for j, v in enumerate(row):
+                it = NumItem(T(v) if r.get("title") == "Phases" and j == 1 else v)
+                if i in fails:
+                    it.setForeground(QColor("#c0392b"))
+                if row and row[0] == "TOTAL":
+                    f = it.font()
+                    f.setBold(True)
+                    it.setFont(f)
+                self.sum_table.setItem(i, j, it)
+        self.sum_table.resizeColumnsToContents()
+        self.sum_table.setSortingEnabled(True)

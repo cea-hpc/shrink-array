@@ -1,7 +1,22 @@
 #!/bin/bash
-# Fake ninja -C DIR -n TARGETS...: work to do when DIR holds a file STALE.
-while [ $# -gt 0 ]; do [ "$1" = -C ] && { dir=$2; shift; }; shift; done
-if [ -e "$dir/STALE" ]; then
+# Fake ninja -C DIR [-f MANIFEST] -n TARGETS...: work to do when DIR holds a file
+# STALE, only the build stamp's when it holds STAMP (HEAD moved). Without -f, as the real one on build.ninja when CMake's glob check is due
+# (always, with CONFIGURE_DEPENDS): that step, and nothing about the targets.
+manifest=build.ninja
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -C) dir=$2; shift ;;
+        -f) manifest=$2; shift ;;
+    esac
+    shift
+done
+if [ "$manifest" = build.ninja ]; then
+    echo "[0/2] Re-checking globbed directories..."; echo "[1/2] Re-running CMake..."
+elif [ -e "$dir/STAMP" ]; then
+    echo "[1/3] Build stamp (git describe + source fingerprint)"
+    echo "[2/3] Building CXX object CMakeFiles/shrink_build_stamp.dir/generated/build_stamp/build_stamp.cpp.o"
+    echo "[3/3] Linking CXX executable examples/validation/foo"
+elif [ -e "$dir/STALE" ]; then
     echo "[1/2] Building CXX object examples/foo.o"; echo "[2/2] Linking CXX executable examples/foo"
 else
     echo "ninja: no work to do."

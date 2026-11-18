@@ -12,7 +12,7 @@ binaries ROUND by round -- every variant once per round, at every thread count
 takes the median of every repetition of every round.
 
   python3 python/access_cost.py --build <build dir> [--threads 1,64]
-          [--variants zero,zero_one_value,zero_any] [--rounds 3] [--n N] [--reps R]
+          [--variants zero,zero_or_value,zero_any] [--rounds 3] [--n N] [--reps R]
           [--csv out.csv]
 
 The build dir is the configured tree (a perf configuration: Release, no CHECK);
@@ -29,11 +29,15 @@ import subprocess
 import sys
 
 try:
-    # --variants chunk2a & co.: the old variant labels, read as their new names until 1.0.
+    # The old variant labels: refused on the command line, read as the new names
+    # in the CSV rows of earlier runs.
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from bench_runner.settings import normalize_variant
+    from bench_runner.settings import check_variant_label, normalize_variant
 except ImportError:
-    def normalize_variant(label, warn=None):   # copied alone: the new labels only
+    def check_variant_label(label, option):   # copied alone: the new labels only
+        return label
+
+    def normalize_variant(label):
         return label
 
 CASES = ["read-varied", "read-constant", "read-random", "write-varied", "write-fresh", "rmw", "read-second", "read-bulk"]
@@ -67,15 +71,15 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--build", required=True, help="the configured build tree")
     ap.add_argument("--threads", default="1,%d" % (os.cpu_count() or 1), help="thread counts, comma-separated")
-    ap.add_argument("--variants", default="zero,zero_one_value,zero_any")
+    ap.add_argument("--variants", default="zero,zero_or_value,zero_any")
     ap.add_argument("--rounds", type=int, default=3)
-    ap.add_argument("--n", type=int, default=0, help="elements (default: the binary's, 2^27)")
+    ap.add_argument("--n", type=int, default=0, help="elements (default: the binary's, max(2^27, threads x 2^20))")
     ap.add_argument("--reps", type=int, default=5, help="repetitions per run")
     ap.add_argument("--csv", help="write every repetition here")
     a = ap.parse_args()
 
     threads = [int(t) for t in a.threads.split(",") if t.strip()]
-    variants = [normalize_variant(v.strip(), "--variants") for v in a.variants.split(",") if v.strip()]
+    variants = [check_variant_label(v.strip(), "--variants") for v in a.variants.split(",") if v.strip()]
     binaries = {}
     for v in variants:
         b = find_binary(a.build, v)

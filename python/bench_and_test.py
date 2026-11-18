@@ -11,8 +11,8 @@ see bench_runner/settings.py's bench_exe_names.)
 
 Example:
     $CCCWORKDIR/shrink-array/
-      ├── cmake-build-omp-gnu/RHEL_9__aarch64/examples/shrink_bench/shrink_bench_omp_zero_one_value_dyn
-      ├── cmake-build-omp-gnu-have-aggressive-compression/.../shrink_bench_omp_zero_one_value_dyn
+      ├── cmake-build-omp-gnu/RHEL_9__aarch64/examples/shrink_bench/shrink_bench_omp_zero_or_value_dyn
+      ├── cmake-build-omp-gnu-have-aggressive-compression/.../shrink_bench_omp_zero_or_value_dyn
       ├── cmake-build-omp-gnu-std-alloc/...
       ├── cmake-build-omp-llvm/...
       └── ...
@@ -33,13 +33,13 @@ Notable features:
   * Explicit warning per missing binary — never a silent skip.
   * Only the current machine's arch is run (aarch64 vs x86_64), so a build_root
     holding both architectures does not trigger "Exec format error".
-  * One reference oracle PER CONFIG (output_dir/oracle/<config>/data_tab*),
+  * One reference oracle PER CONFIG (output_dir/oracle/<config>/data_array*),
     generated once by that config's own vector binary and kept across runs:
     the reference is not portable across compilers (see oracle_dir()).
   * Per-run timeout + capture of stderr from crashing runs.
   * Validation harnesses first (ctest -L validation in each build dir):
-    rechunk_validation, dyn_geometry_validation, compress_roundtrip,
-    pool_accounting, deferred_path_validation, open_types_validation,
+    rechunk_validation, dyn_geometry_validation, compress_roundtrip_validation,
+    pool_accounting_validation, deferred_path_validation, open_types_validation,
     operators_validation -- and,
     in the std-backend CHECK_OPTIM builds (cmake-build-std-*-check),
     std_thread_validation and tbb_validation.
@@ -47,7 +47,7 @@ Notable features:
   * The std threading backend (CHUNK_THREADS=std, no OpenMP) is part of the
     defaults: cmake-build-std-gnu / cmake-build-std-llvm for the bench, the
     -check builds for the validations, and the TBB bench -- the tbb_zero,
-    tbb_zero_one_value, tbb_zero_any variants, shrink_bench_tbb_<variant>_<size> -- in
+    tbb_zero_or_value, tbb_zero_any variants, shrink_bench_tbb_<variant>_<size> -- in
     the std builds made with oneTBB (a std build without it is noted once, its
     tbb_* variants skipped).
   * Correctness before timings: check runs, then the seq-vs-OMP

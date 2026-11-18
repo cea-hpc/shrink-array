@@ -2,9 +2,9 @@
 
 > French version: [algo_zero_fr.md](algo_zero_fr.md).
 
-> Status: end of September 2026. This document describes what `zero` does **differently** from `zero_one_value`; the
+> Status: end of September 2026. This document describes what `zero` does **differently** from `zero_or_value`; the
 > common machinery (proxies, deferred writes, read barrier, in-flight compression,
-> range operations) is described in [algo_zero_one_value.md](algo_zero_one_value.md), and the
+> range operations) is described in [algo_zero_or_value.md](algo_zero_or_value.md), and the
 > dynamic geometry in [adaptive_rechunk.md](adaptive_rechunk.md). When in
 > doubt, the code is the reference.
 
@@ -13,20 +13,20 @@
 ## 1. What `zero` compresses
 
 `zero` is the simplest of the three variants: a chunk is either **compressed to zero** (`T{}`) or
-**materialised**. There is no second value, either per array (`zero_one_value`) or per chunk
+**materialised**. There is no second value, either per array (`zero_or_value`) or per chunk
 (`zero_any`).
 
 | state | `values` points to | test |
 |---|---|---|
-| compressed | the shared constant buffer `cst_val1`, filled with zeros | `is_cst_val1()` |
-| materialised | a buffer owned by the chunk | `written()`, that is `values != cst_val1` |
+| compressed | the shared constant buffer `const_val1`, filled with zeros | `is_const_val1()` |
+| materialised | a buffer owned by the chunk | `written()`, that is `values != const_val1` |
 
 The `values` pointer therefore holds both the data and the state. A chunk does not know its
 own number of elements: the geometry lives in the array's size policy
 (`size_policy_`), which is why the lists of compression candidates carry the
-number of elements of each chunk (see `TChunk.h`).
+number of elements of each chunk (see `chunk_tuples.h`).
 
-The library: `chunk::chunk_zero` (it defines `CHUNK_VARIANT_ZERO`). Code: `chunk/zero_chunk.h`, `chunk/zero_array.h`,
+The library: `shrink_array::zero` (it defines `CHUNK_VARIANT_ZERO`). Code: `chunk/internal/zero_chunk.h`, `chunk/zero_array.h`,
 `internal/zero_chunk_inline.h`, `internal/zero_array_inline.h`, `internal/zero_proxy.h`.
 
 ## 2. What a chunk costs
@@ -40,8 +40,8 @@ about 38 GB of its 40 GB is data.
 
 ## 3. Read and write
 
-The read is the same as in `zero_one_value` (§5 of [algo_zero_one_value.md](algo_zero_one_value.md)): one value,
-read from the chunk's buffer or from `cst_val1`, after the read barrier.
+The read is the same as in `zero_or_value` (§5 of [algo_zero_or_value.md](algo_zero_or_value.md)): one value,
+read from the chunk's buffer or from `const_val1`, after the read barrier.
 
 The write goes through the `Proxy<T>` proxy:
 
@@ -53,19 +53,19 @@ The write goes through the `Proxy<T>` proxy:
 - writing into a materialised chunk: a plain write.
 
 The course of a write in an OpenMP build: the engine steps are those of §7.2 of
-[algo_zero_one_value.md](algo_zero_one_value.md), compressed here; the rest is what `zero` does
+[algo_zero_or_value.md](algo_zero_or_value.md), compressed here; the rest is what `zero` does
 in its own way.
 
 ```mermaid
 flowchart TD
-    A["zero::Proxy::assign_impl"] --> B{"0 on a compressed chunk,<br/>no deferred operation pending?<br/>(is_cst_val_and_v_equal_zero)"}
+    A["zero::Proxy::assign_impl"] --> B{"0 on a compressed chunk,<br/>no deferred operation pending?<br/>(is_const_val_and_v_equal_zero)"}
     B -->|yes| B1["nothing to do"]
     B -->|no| C["engine of 7.2 (write_with_optional_lock):<br/>set_info_on_chunk, deferred operations,<br/>wait_out_compressor, announce_write"]
     C --> D{"re-check:<br/>compressor?"}
     D -->|yes| D1["end_write + DEFERRED write<br/>(lbd_equal_asynch)"]
     D -->|no| E["body lbd_equal_core: read old_value<br/>BEFORE any materialisation"]
-    E --> F{"chunk at cst_val1?<br/>(perform_core_assignment)"}
-    F -->|yes| G["create_value: buffer from the reuse list,<br/>already zero, or new and zero-filled,<br/>CAS cst_val1 -> buffer, a lost CAS recycles it"]
+    E --> F{"chunk at const_val1?<br/>(perform_core_assignment)"}
+    F -->|yes| G["create_value: buffer from the reuse list,<br/>already zero, or new and zero-filled,<br/>CAS const_val1 -> buffer, a lost CAS recycles it"]
     F -->|no| H
     G --> H["store_value_at"]
     H --> I{"old != 0 and new == 0, or element<br/>changed by another writer?<br/>(mark_for_compression_core)"}
@@ -75,14 +75,14 @@ flowchart TD
 ```
 
 In sequential builds there is no engine and no candidate list: `assign_impl` maintains the zero
-counter itself (`inc_nb_val_eq_zero`, `dec_nb_val_eq_zero`), compresses the chunk at once when
+counter itself (`inc_n_val_eq_zero`, `dec_n_val_eq_zero`), compresses the chunk at once when
 it becomes all-zero (`manage_full_zero`), and otherwise materialises it (`create_value`) and
 stores directly.
 
 ## 4. When a chunk becomes a compression candidate
 
 **Sequential builds**: each chunk keeps a **zero counter**
-(`ChunkCounterPolicy`, `nb_val_eq_zero_`). When it reaches the chunk's number of elements, the
+(`ChunkCounterPolicy`, `n_val_eq_zero_`). When it reaches the chunk's number of elements, the
 chunk is compressed at once (`manage_full_zero`). This counter must be exactly
 in sync with the content: an out-of-sync counter would compress a chunk that is not
 uniform, hence the care taken to propagate it in copies.
@@ -107,7 +107,7 @@ When a thread's list exceeds the trigger threshold (§6), a
 3. `fill_list_to_compress` re-reads each candidate and keeps only those that are **entirely
    zero**; the others are unmarked at once, and every scanned candidate's queue flag is handed
    back (`queue_flag::hand_back`);
-4. each of these is compressed (`clear_int_st`: `values` goes back to `cst_val1` by CAS, and
+4. each of these is compressed (`clear_int_st`: `values` goes back to `const_val1` by CAS, and
    the buffer joins the reuse list after the read sections' grace period);
 5. the remaining reservations are released, then the queue flags (`queue_flag::release`): a
    candidate written meanwhile is queued again, and so is the chunk of the write that triggered
@@ -117,7 +117,7 @@ A candidate list mixes the chunks of **all the arrays** of the same type, which
 can have different sizes after a rechunk: each chunk is compressed with
 **its own** number of elements, carried by the list entry.
 
-The course of the pass, in the style of §8.4 of [algo_zero_one_value.md](algo_zero_one_value.md):
+The course of the pass, in the style of §8.4 of [algo_zero_or_value.md](algo_zero_or_value.md):
 
 ```mermaid
 flowchart TD
@@ -129,22 +129,22 @@ flowchart TD
     D -->|accepted| E["fill_list_to_compress at the entry's n_elems:<br/>written and is_constant_to 0?<br/>then queue_flag::hand_back"]
     E -->|yes| F["list ll_compt"]
     E -->|no| G["steal_unmark at once"]
-    F --> H["clear_int_st: CAS values -> cst_val1,<br/>free_block_to_pool after a grace period,<br/>steal_unmark"]
+    F --> H["clear_int_st: CAS values -> const_val1,<br/>free_block_to_pool after a grace period,<br/>steal_unmark"]
     H --> I["each candidate: steal_unmark, then queue_flag::release:<br/>written meanwhile -> queued again"]
     G --> I
     I --> J["trigger's chunk queued again if materialised,<br/>finish()"]
 ```
 
-What differs from `zero_one_value`: one candidate list per rank
+What differs from `zero_or_value`: one candidate list per rank
 (`zero_candidates_thr`), not one per second value, and a single target constant,
 hence a single output list. Sequential builds have no pass (`make_block_compression` is empty
 there): the zero counter compresses (§4).
 
 ## 6. The trigger threshold
 
-It is `somme_chunk_create / (100 × number of threads)`, with a floor of 100 candidates
-(`ChunkDef`: `factor_div_nb_chunk_for_compress`, `size_min_list_chunk_to_check_compress`).
-`somme_chunk_create` is the number of existing chunks of this type. Two fixes from
+It is `total_chunk_create / (100 × number of threads)`, with a floor of 100 candidates
+(`ChunkDef`: `factor_div_chunk_count_for_compress`, `size_min_list_chunk_to_check_compress`).
+`total_chunk_create` is the number of existing chunks of this type. Two fixes from
 September 2026 keep it accurate:
 
 - it is **decremented** when an array is destroyed (otherwise it only ever grew:
@@ -178,7 +178,7 @@ reasons for this small gain:
   metadata;
 - after its rechunk, dynamic `zero` **slows down** (1.5 to 2 times slower per iteration than
   static 1,024), for a reason still unknown: a dynamic build started directly at
-  1,024 runs as fast as the static one, and `zero_one_value` does not slow down after its rechunks.
+  1,024 runs as fast as the static one, and `zero_or_value` does not slow down after its rechunks.
 
 For a workload like the benchmark's, a **static** `zero` at the right size is still the
 best choice today.

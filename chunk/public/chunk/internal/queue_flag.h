@@ -18,7 +18,7 @@
 /**
  * @file queue_flag.h
  * @brief The "queued for compression" flag of a chunk
- *        (tab_is_inside_chunk_list_to_compress): its protocol between the
+ *        (array_is_inside_chunk_list_to_compress): its protocol between the
  *        writers that queue the chunk and the compression pass that hands it
  *        back.
  *
@@ -52,9 +52,11 @@
  */
 
 #include <atomic> // std::atomic, std::memory_order
+#include <tuple>  // std::get
 
-#include "chunk/config.h"                   // build_config::any_check
+#include "chunk/config.h"                   // build_config::any_check, build_config::threaded
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
+#include "chunk/internal/test_hooks.h"      // TEST KNOB: test_hooks::maybe_pass_delay
 
 namespace shrink_array::queue_flag
 {
@@ -130,6 +132,84 @@ inline void hand_back(std::atomic<char>& flag) noexcept
     }
     flag.store(queued, std::memory_order_release);
     return true;
+}
+
+/**
+ * @brief The end of a compression pass: hand the @p sz candidates of @p list
+ *        back, then leave in @p list only those a writer queued meanwhile.
+ *
+ * @details Each candidate gives back its mark FIRST, then its flag. While the
+ *          flag is up the chunk is in no other thread's list, so no other pass
+ *          can have marked it and the unmark only drops this pass's claim
+ *          (idempotent for the ones released while scanning). Do not swap them:
+ *          once the flag is down another thread can queue the chunk, start its
+ *          pass and mark it, and a late unmark would erase that claim -- writers
+ *          would then write into a chunk that pass is scanning and stealing.
+ *
+ *          A negative chunk number is a corrupt entry (purged entries are
+ *          erased): reported in check builds, skipped otherwise.
+ *
+ * @tparam List vector of tuples (chunk pointer or null, chunk number, array number, ...)
+ * @param flag_of (array_id, chunk_index) -> the candidate's flag
+ * @param reset (array_id, chunk_index): clears the flag of an entry with no pass
+ *        protocol (serial build, null chunk). A callable and not one function:
+ *        the variants do not store it with the same memory order (zero_proxy.h).
+ */
+template <typename List, typename FlagOf, typename Reset>
+inline void release_candidates(List& list, int sz, FlagOf flag_of, Reset reset)
+{
+    List requeued;
+
+    for (int k = 0; k < sz; ++k)
+    {
+        const auto& tup         = list[k];
+        auto* const chunk       = std::get<0>(tup);
+        const int   chunk_index = std::get<1>(tup);
+        const int   array_id    = std::get<2>(tup);
+
+        if constexpr (build_config::any_check)
+        {
+            if (chunk_index < 0) [[unlikely]]
+            {
+                CHUNK_INVARIANT_FAILED("compression pass: candidate {} of {} has chunk_index={}", k, sz, chunk_index);
+            }
+        }
+        if (chunk != nullptr)
+        {
+            chunk->steal_unmark();
+        }
+        test_hooks::maybe_pass_delay(); // TEST KNOB (test_hooks.h)
+        if constexpr (build_config::any_check)
+        {
+            if (chunk != nullptr && chunk->steal_marked()) [[unlikely]]
+            {
+                CHUNK_INVARIANT_FAILED("compression pass: candidate {} was marked while this pass still held its "
+                                       "dedup flag -- two passes on one chunk",
+                                       chunk);
+            }
+        }
+        if (chunk_index >= 0)
+        {
+            if (build_config::threaded && chunk != nullptr)
+            {
+                if (release(flag_of(array_id, chunk_index)))
+                {
+                    requeued.push_back(tup);
+                }
+            }
+            else
+            {
+                reset(array_id, chunk_index);
+            }
+        }
+    }
+
+    list.clear();
+    list.reserve((sz / 10) + 1);
+    for (const auto& tup : requeued)
+    {
+        list.push_back(tup);
+    }
 }
 
 } // namespace shrink_array::queue_flag

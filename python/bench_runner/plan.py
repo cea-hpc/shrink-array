@@ -17,7 +17,7 @@ from .phases.stl import stl_representative_exes
 from .settings import (
     DEFAULT_CONFIGS, DEFAULT_SEQ_OMP_THREADS, DEFAULT_VARIANTS, DEFAULT_THREADS_CHECK, MODE_PRESETS,
     PERF_EXCLUDED_CONFIGS, REFERENCE_THREADS, SANITIZER_CONFIGS, SANITIZER_REPS, sanitizer_skip_reason,
-    SANITIZER_THREADS, fit_threads, is_stats_config, is_tbb_variant, machine_cpus,
+    SANITIZER_THREADS, arch_dir_name, fit_threads, is_stats_config, is_tbb_variant, machine_cpus,
 )
 from .term import bold, cyan, dim, red, yellow
 
@@ -77,7 +77,7 @@ def resolve_run_parameters(args):
         print(yellow(f"⚠️  Thread count(s) {over} passed explicitly exceed the {cap} usable CPUs: "
                      "those runs are oversubscribed"))
     # --- Expand variants across the requested size declinations -----------
-    # Shrink variants (zero/zero_one_value/zero_any/std_alloc) gain a "@<size>" suffix
+    # Shrink variants (zero/zero_or_value/zero_any/std_alloc) gain a "@<size>" suffix
     # so each (variant, size) pair is handled independently by the existing
     # machinery (resolve_exe decodes "base@size"). "vector" has no chunk
     # geometry and is left as-is. light_variants get the same treatment so a
@@ -130,7 +130,7 @@ def reduce_matrix(args):
                           f"({', '.join(dropped)}) — ≈ release on this workload"))
             args.configs = kept
         args.light_variants = sorted(set(args.light_variants) | {"std_alloc"})
-        # No rule demoting zero/zero_one_value/zero_any on a -std-alloc config to a
+        # No rule demoting zero/zero_or_value/zero_any on a -std-alloc config to a
         # light smoke run: the allocator moves the numbers well outside
         # smoke-test territory -- on aarch64, zero@1024 at 64 threads is
         # 14.53 s under gnu and 12.60 s under gnu-std-alloc (+15%), and
@@ -217,7 +217,7 @@ def discover_binaries(args, perf_excluded):
     # --- Phase 0: binary discovery ---------------------------------------
     print(f"🔎 Resolving executables under build_root={args.build_root!r}")
     print(f"   Current machine: {CURRENT_MACHINE} → only *__{CURRENT_MACHINE} "
-          f"builds will be run")
+          f"builds will be run, {arch_dir_name() or 'this system'} first")
     perf_exes  = {}   # (config, var) -> path
     check_exes = {}   # (config, var) -> path   (non-baseline variants)
     # config -> path of ITS vector check binary: every config generates its
@@ -341,7 +341,7 @@ def prepare_oracles(args, check_exes, baseline_check_exe_of):
     """Which configs must (re)generate their oracle. Returns the configs with
     check binaries and, per config, whether its baseline must run."""
     # The baseline check (vector, uncompressed) ONLY serves to generate the
-    # reference files data_tab* (an expensive output). One oracle PER CONFIG
+    # reference files data_array* (an expensive output). One oracle PER CONFIG
     # (see oracle_dir: the reference is not portable across compilers), each
     # generated once by the config's own vector binary and kept across runs:
     #   - only if the config has check binaries to compare (no oracle for a
@@ -350,7 +350,7 @@ def prepare_oracles(args, check_exes, baseline_check_exe_of):
     import glob as _glob
 
     def _oracle_files(d):
-        return [f for f in _glob.glob(os.path.join(d, "data_tab*")) if not f.endswith(".marker")]
+        return [f for f in _glob.glob(os.path.join(d, "data_array*")) if not f.endswith(".marker")]
 
     # --pool: the oracles are shared by the jobs, and another one may be
     # generating one right now (its files there, its marker not yet): nothing
@@ -360,10 +360,10 @@ def prepare_oracles(args, check_exes, baseline_check_exe_of):
     pooled = share.active()
     root = share.oracle_root(args)
 
-    # A legacy single oracle (data_tab*) in output_dir itself is read by
+    # A legacy single oracle (data_array*) in output_dir itself is read by
     # nothing; say so once rather than silently keeping it around.
     if not args.skip_check and os.path.isfile(os.path.join(root, ORACLE_MARKER)):
-        print(f"ℹ️  A legacy single oracle sits in {root} (data_tab*): it is no "
+        print(f"ℹ️  A legacy single oracle sits in {root} (data_array*): it is no "
               f"longer used -- each config now has its own under oracle/<config>/. "
               f"Delete it when convenient.")
 

@@ -7,7 +7,7 @@ cmake_minimum_required(VERSION 3.20)
 if(POLICY CMP0126)
     cmake_policy(SET CMP0126 NEW)
 endif()
-project(shrink_array VERSION 0.2.1 LANGUAGES CXX)
+project(shrink_array VERSION 0.3.0 LANGUAGES CXX)
 
 # Built on its own, or consumed by another project (add_subdirectory,
 # FetchContent)? PROJECT_IS_TOP_LEVEL says it from CMake 3.21; this is the same
@@ -21,9 +21,54 @@ endif()
 option(SHRINK_ARRAY_BUILD_EXAMPLES "Build the examples, benchmarks and validation harnesses" ${SHRINK_ARRAY_IS_TOP_LEVEL})
 option(SHRINK_ARRAY_BUILD_TESTS "Register the tests (include(CTest))" ${SHRINK_ARRAY_IS_TOP_LEVEL})
 
+# The options had no prefix until 0.3 (OMP, SANITIZER, CHECK_OPTIM, ...): a name
+# a project that takes this one in may use for something else, in the cache they
+# share. They are CHUNK_ ones now. The former names are still read, with a
+# message, when this project is the top-level one -- never as a subproject,
+# where the name may be the consumer's.
+if(SHRINK_ARRAY_IS_TOP_LEVEL)
+    foreach(_chunk_renamed IN ITEMS
+            "INTEL_ICPX_GLOB=CHUNK_INTEL_ICPX_GLOB"
+            "INTEL_ICPX=CHUNK_INTEL_ICPX"
+            "INTEL_LIBM_DIR=CHUNK_INTEL_LIBM_DIR"
+            "ONEAPI_NO_INTEL_LIBS=CHUNK_ONEAPI_NO_INTEL_LIBS"
+            "ONEAPI_FAST_FP=CHUNK_ONEAPI_FAST_FP"
+            "ONEAPI_XHOST=CHUNK_ONEAPI_XHOST"
+            "ARMPL_LIBM_DIR=CHUNK_ARMPL_LIBM_DIR"
+            "HAVE_AGGRESSIVE_COMPRESSION=CHUNK_AGGRESSIVE_COMPRESSION_DEFAULT"
+            "GCC_TOOLCHAIN_DIR=CHUNK_GCC_TOOLCHAIN_DIR"
+            "ENABLE_IWYU=CHUNK_ENABLE_IWYU"
+            "USE_LIBCXX=CHUNK_USE_LIBCXX"
+            "USE_GPERF=CHUNK_USE_GPERF"
+            "USE_MOLD=CHUNK_USE_MOLD"
+            "CHECK_OPTIM=CHUNK_CHECK_OPTIM"
+            "SANITIZER=CHUNK_SANITIZER"
+            "OMP=CHUNK_OPENMP")
+        string(REPLACE "=" ";" _chunk_renamed "${_chunk_renamed}")
+        list(GET _chunk_renamed 0 _chunk_former)
+        list(GET _chunk_renamed 1 _chunk_name)
+        if(DEFINED CACHE{${_chunk_former}})
+            message(DEPRECATION "-D${_chunk_former} is -D${_chunk_name} now (the former name goes at the next minor version)")
+            # The former entry's type (BOOL, PATH, STRING): an old build tree
+            # has it from its own option() / set(CACHE). A -D without a type
+            # leaves it UNINITIALIZED, and the option() / set(CACHE) of the
+            # new name further down gives it its type then.
+            get_property(_chunk_type CACHE ${_chunk_former} PROPERTY TYPE)
+            if(NOT DEFINED CACHE{${_chunk_name}})
+                set(${_chunk_name} "$CACHE{${_chunk_former}}" CACHE ${_chunk_type} "(given as ${_chunk_former})")
+            endif()
+            unset(${_chunk_former} CACHE)
+        endif()
+    endforeach()
+    unset(_chunk_renamed)
+    unset(_chunk_former)
+    unset(_chunk_name)
+    unset(_chunk_type)
+endif()
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-option(CHECK_OPTIM "Enable runtime invariant checks in release builds" OFF)
+option(CHUNK_CHECK_OPTIM "Enable runtime invariant checks in release builds" OFF)
 option(CHUNK_FORCE_LEDGER "Keep the pool ledger active under OpenMP (off by default there: its global mutex serialises every alloc/free)" OFF)
 
 # An emptied slab would otherwise keep its resident pages: the allocator never
@@ -40,7 +85,7 @@ option(CHUNK_FORCE_LEDGER "Keep the pool ledger active under OpenMP (off by defa
 #
 # It is safe by construction rather than by care: only a sweep advises, on the
 # VALUE family, on a set the caller knows abandoned (a re-chunk's old geometry,
-# a teardown). Its free list lives in the heap-allocated tab_firstFree and its
+# a teardown). Its free list lives in the heap-allocated array_firstFree and its
 # metadata in the slab header object -- both outside the pages being dropped --
 # and it makes no promise about element contents (callers initialise what they
 # get), so the zero pages MADV_DONTNEED brings back are as good as any. The
@@ -72,12 +117,12 @@ option(FAST_ALLOC_CHECK_LISTS "Debug builds: check every slab list in full on ea
 # 4 bytes per chunk instead of 8 or 16, -3.8% RSS on the 50 M-chunk reference
 # run, for one more dependent load on every write of a materialised chunk --
 # +3% CPU on the perf bench. Off by default; see SecondValueTraits in
-# chunk/internal/tab_cst_val2_holder.h.
+# chunk/internal/array_const_val2_holder.h.
 option(CHUNK_SECOND_VALUE_INDEXED "zero_any: store second values as 4-byte identifiers (less memory, +3% write CPU)" OFF)
 # CHECK_OPTIM (option above) turns build_config::any_check on in a release
 # build (chunk/build_options.h).
 
-# CHUNK_MM_PROTECT: zero/zero_one_value's shared constant buffers (cst_val1, the cst_val2
+# CHUNK_MM_PROTECT: zero/zero_or_value's shared constant buffers (const_val1, the const_val2
 # region) are mprotect'ed read-only, so a stray write into a compressed chunk
 # faults at the culprit instead of corrupting a value shared by thousands of
 # chunks. A debugging build: one mprotect per buffer, and page-rounded slots.
@@ -86,40 +131,40 @@ option(CHUNK_SECOND_VALUE_INDEXED "zero_any: store second values as 4-byte ident
 # builds it so they keep compiling.
 option(CHUNK_MM_PROTECT "Read-only (mprotect) constant buffers: a stray write to a compressed chunk faults" OFF)
 
-# CHUNK_STATS: compression statistics (chunk_stats.h), printed by ParamChunk::chunk_stats().
-option(CHUNK_STATS "Collect compression statistics (ParamChunk::chunk_stats())" OFF)
+# CHUNK_STATS: compression statistics (chunk_stats.h), printed by Runtime::chunk_stats().
+option(CHUNK_STATS "Collect compression statistics (Runtime::chunk_stats())" OFF)
 
 # ── Sanitizer option ──────────────────────────────────────────────────────────
-set(SANITIZER "none" CACHE STRING "Sanitizer to enable: none, thread, address, token")
-set_property(CACHE SANITIZER PROPERTY STRINGS none thread address token)
+set(CHUNK_SANITIZER "none" CACHE STRING "Sanitizer to enable: none, thread, address, undefined, token")
+set_property(CACHE CHUNK_SANITIZER PROPERTY STRINGS none thread address undefined token)
 
-message(STATUS "Sanitizer: ${SANITIZER}")
+message(STATUS "Sanitizer: ${CHUNK_SANITIZER}")
 
 # ── Threading backend ─────────────────────────────────────────────────────────
 # CHUNK_THREADS picks the backend the library runs its threads on
 # (docs/threading_backends.md): openmp, std (std::jthread workers of the
 # library's own, no OpenMP: OMP is set OFF) or serial. Empty (the default):
-# from OMP, as before -- the scripts pass -DOMP=ON. Set, it wins and sets OMP
+# from OMP, as before -- the scripts pass -DCHUNK_OPENMP=ON. Set, it wins and sets OMP
 # to match.
-set(CHUNK_THREADS "" CACHE STRING "Threading backend: openmp, std, serial (empty: openmp when OMP=ON, serial otherwise)")
+set(CHUNK_THREADS "" CACHE STRING "Threading backend: openmp, std, serial (empty: openmp when CHUNK_OPENMP=ON, serial otherwise)")
 set_property(CACHE CHUNK_THREADS PROPERTY STRINGS "" openmp std serial)
 if(NOT CHUNK_THREADS STREQUAL "")
     if(CHUNK_THREADS STREQUAL "std")
-        set(OMP OFF CACHE BOOL "Build with OpenMP (the parallel library and examples)" FORCE)
+        set(CHUNK_OPENMP OFF CACHE BOOL "Build with OpenMP (the parallel library and examples)" FORCE)
     elseif(CHUNK_THREADS STREQUAL "openmp")
-        set(OMP ON CACHE BOOL "Build with OpenMP (the parallel library and examples)" FORCE)
+        set(CHUNK_OPENMP ON CACHE BOOL "Build with OpenMP (the parallel library and examples)" FORCE)
     elseif(CHUNK_THREADS STREQUAL "serial")
-        set(OMP OFF CACHE BOOL "Build with OpenMP (the parallel library and examples)" FORCE)
+        set(CHUNK_OPENMP OFF CACHE BOOL "Build with OpenMP (the parallel library and examples)" FORCE)
     else()
         message(FATAL_ERROR "CHUNK_THREADS='${CHUNK_THREADS}': expected openmp, std or serial")
     endif()
 endif()
 
 # ── OpenMP ────────────────────────────────────────────────────────────────────
-# Read by every target of the tree; the scripts pass -DOMP=ON. OFF (as an
+# Read by every target of the tree; the scripts pass -DCHUNK_OPENMP=ON. OFF (as an
 # undeclared variable read) builds the serial library.
-option(OMP "Build with OpenMP (the parallel library and examples)" OFF)
-if(OMP)
+option(CHUNK_OPENMP "Build with OpenMP (the parallel library and examples)" OFF)
+if(CHUNK_OPENMP)
     set(CHUNK_THREADS_BACKEND openmp)
 elseif(CHUNK_THREADS STREQUAL "std")
     set(CHUNK_THREADS_BACKEND std)
@@ -152,16 +197,19 @@ if(CHUNK_WITH_TBB)
         message(STATUS "oneTBB ${TBB_VERSION}: the TBB adaptor's validation is built")
     endif()
 endif()
-if(OMP)
+if(CHUNK_OPENMP)
     find_package(OpenMP 4.5 REQUIRED)
     set(CMAKE_LIBRARY_PATH /usr/local/lib/x86_64-unknown-linux-gnu ${CMAKE_LIBRARY_PATH})
 endif()
 
 # ── Options ───────────────────────────────────────────────────────────────────
 
-set(CHUNK_OMP ${OMP})
+set(CHUNK_OMP ${CHUNK_OPENMP})
 
 if(SHRINK_ARRAY_BUILD_TESTS)
+    # No CDash dashboard targets (Nightly*, Continuous*, Experimental*): there
+    # is no CDash server; BUILD_TESTING and ctest are kept.
+    set_property(GLOBAL PROPERTY CTEST_TARGETS_ADDED 1)
     include(CTest)
 else()
     set(BUILD_TESTING OFF) # this subtree only: the parent's own setting is left alone
@@ -184,7 +232,7 @@ endif()
 set(CHUNK_STATIC_SIZES "auto" CACHE STRING
     "Compile-time chunk sizes built (semicolon list, powers of two or multiples of 64), or auto: 256;1024, 256 alone in a top-level Debug or sanitizer build")
 if(CHUNK_STATIC_SIZES STREQUAL "auto")
-    if(SHRINK_ARRAY_IS_TOP_LEVEL AND (CMAKE_BUILD_TYPE STREQUAL "Debug" OR NOT SANITIZER STREQUAL "none"))
+    if(SHRINK_ARRAY_IS_TOP_LEVEL AND (CMAKE_BUILD_TYPE STREQUAL "Debug" OR NOT CHUNK_SANITIZER STREQUAL "none"))
         set(CHUNK_STATIC_SIZES "256")
     else()
         set(CHUNK_STATIC_SIZES "256;1024")
@@ -194,13 +242,13 @@ endif()
 set(CHUNK_STATIC_SIZES_BUILT "${CHUNK_STATIC_SIZES}" CACHE INTERNAL "CHUNK_STATIC_SIZES as resolved")
 
 # ── OMPT detection (Clang/IntelLLVM only) ────────────────────────────────────
-if(OMP)
+if(CHUNK_OPENMP)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
         # TSan is incompatible with OMPT instrumentation
-        if(NOT SANITIZER STREQUAL "thread")
+        if(NOT CHUNK_SANITIZER STREQUAL "thread")
             # Recorded in chunk/build_options.h (CHUNK_OPT_OMPT); also read
             # for the targets that exist only with the OMPT tool
-            # (examples/multi-mat's embedded-compression executable).
+            # (examples/multi_mat's embedded-compression executable).
             set(CHUNK_HAVE_OMPT ON)
         endif()
         message(STATUS "Clang/IntelLLVM compiler detected")
@@ -219,9 +267,12 @@ endif()
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 
-    option(USE_LIBCXX "Use Clang libc++ instead of libstdc++" ON)
+    # OFF: the standard library is the one the compiler picks by itself
+    # (libstdc++ on Linux). ON asked for a libc++ most installations of Clang
+    # do not come with, and the first configure of a newcomer failed on it.
+    option(CHUNK_USE_LIBCXX "Use Clang libc++ instead of libstdc++" OFF)
 
-    if(USE_LIBCXX)
+    if(CHUNK_USE_LIBCXX)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lc++ -lc++abi")
     else()
@@ -232,14 +283,14 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         else()
             set(_chunk_default_gcc_toolchain "")
         endif()
-        set(GCC_TOOLCHAIN_DIR "${_chunk_default_gcc_toolchain}" CACHE PATH "Path to GCC toolchain (empty: the driver's default)")
+        set(CHUNK_GCC_TOOLCHAIN_DIR "${_chunk_default_gcc_toolchain}" CACHE PATH "Path to GCC toolchain (empty: the driver's default)")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libstdc++")
-        if(GCC_TOOLCHAIN_DIR AND NOT EXISTS "${GCC_TOOLCHAIN_DIR}")
+        if(CHUNK_GCC_TOOLCHAIN_DIR AND NOT EXISTS "${CHUNK_GCC_TOOLCHAIN_DIR}")
             # A cache made before this check (or copied from the CEA) would
             # otherwise hide every standard header.
-            message(WARNING "GCC_TOOLCHAIN_DIR=${GCC_TOOLCHAIN_DIR} does not exist: using the driver's default")
-        elseif(GCC_TOOLCHAIN_DIR)
-            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --gcc-toolchain=${GCC_TOOLCHAIN_DIR}")
+            message(WARNING "CHUNK_GCC_TOOLCHAIN_DIR=${CHUNK_GCC_TOOLCHAIN_DIR} does not exist: using the driver's default")
+        elseif(CHUNK_GCC_TOOLCHAIN_DIR)
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --gcc-toolchain=${CHUNK_GCC_TOOLCHAIN_DIR}")
         endif()
     endif()
 endif()
@@ -249,37 +300,44 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "Int
 endif()
 
 # ── Sanitizer flags ───────────────────────────────────────────────────────────
-if(SANITIZER STREQUAL "thread")
+if(CHUNK_SANITIZER STREQUAL "thread")
     message(STATUS "Thread Sanitizer enabled")
     set(SANITIZER_FLAGS "-fsanitize=thread")
     # TSan requires position-independent code
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIE")
 
-elseif(SANITIZER STREQUAL "address")
+elseif(CHUNK_SANITIZER STREQUAL "address")
     message(STATUS "Address Sanitizer enabled")
     set(SANITIZER_FLAGS "-fsanitize=address")
 
-elseif(SANITIZER STREQUAL "token")
+elseif(CHUNK_SANITIZER STREQUAL "undefined")
+    # UndefinedBehaviorSanitizer: signed overflow, shifts, misaligned and null
+    # accesses, out-of-range conversions... The first report stops the program
+    # (-fno-sanitize-recover): a test that prints one and goes on would pass.
+    message(STATUS "Undefined Behavior Sanitizer enabled")
+    set(SANITIZER_FLAGS "-fsanitize=undefined -fno-sanitize-recover=undefined")
+
+elseif(CHUNK_SANITIZER STREQUAL "token")
     # AllocToken (Clang >= 22): every malloc / calloc / realloc / operator new
     # is rewritten into __alloc_token_<name>(..., token), the token being a
     # hash of the allocated TYPE. It is instrumentation only: neither
     # compiler-rt nor the packaged Scudo ships the __alloc_token_* entry
     # points, so the program has to provide them or the link fails.
     if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR CMAKE_CXX_COMPILER_VERSION VERSION_LESS 22)
-        message(FATAL_ERROR "SANITIZER=token needs Clang >= 22 (-fsanitize=alloc-token); "
+        message(FATAL_ERROR "CHUNK_SANITIZER=token needs Clang >= 22 (-fsanitize=alloc-token); "
                             "got ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
     endif()
     message(STATUS "Alloc Token instrumentation enabled")
     set(SANITIZER_FLAGS "-fsanitize=alloc-token")
 
-elseif(NOT SANITIZER STREQUAL "none")
-    message(FATAL_ERROR "Unknown sanitizer '${SANITIZER}'. Valid values: none, thread, address, token")
+elseif(NOT CHUNK_SANITIZER STREQUAL "none")
+    message(FATAL_ERROR "Unknown sanitizer '${CHUNK_SANITIZER}'. Valid values: none, thread, address, undefined, token")
 endif()
 
 # Apply the sanitizer flags for EVERY build type.
 #
 # Not only into CMAKE_CXX_FLAGS_DEBUG below, which CMake reads only when
-# CMAKE_BUILD_TYPE=Debug: a RelWithDebInfo build with -DSANITIZER=address would
+# CMAKE_BUILD_TYPE=Debug: a RelWithDebInfo build with -DCHUNK_SANITIZER=address would
 # then configure cleanly, print "Address Sanitizer enabled", and produce an
 # UNinstrumented binary (`nm -C <exe> | grep -c __asan` returns 1 instead of
 # thousands).
@@ -296,9 +354,9 @@ if(SANITIZER_FLAGS)
 endif()
 
 # ── GPerftools option ─────────────────────────────────────────────────────────
-option(USE_GPERF "Enable gperftools CPU profiling" OFF)
+option(CHUNK_USE_GPERF "Enable gperftools CPU profiling" OFF)
 
-if(USE_GPERF)
+if(CHUNK_USE_GPERF)
     message(STATUS "GPerftools profiling enabled")
     # The 'profiler' library
     find_library(GPERF_PROFILER profiler)
@@ -332,8 +390,12 @@ endif()
 # same machine code bit for bit (debug information does not change code
 # generation). -g1 keeps the function names and the line tables: perf, gdb
 # backtraces and crash reports, not the locals.
-#   auto   full where a debugger reads locals -- CHECK_OPTIM and sanitizer
-#          builds --, lines elsewhere (perf and stats builds)
+#   auto   full where a debugger reads locals -- CHECK_OPTIM builds without a
+#          sanitizer, and the token sanitizer, whose names script reads the
+#          types with --dwarf --, lines elsewhere: perf and stats builds, and the
+#          address, thread and undefined sanitizers, CHECK_OPTIM or not, whose
+#          reports need only the function names and the line tables (inlined
+#          frames included, the same stacks as -g)
 #   full   -g        lines  -g1 (nvc++: -g, it has no such level)
 #   none   -g0 (with Clang it also cancels the -gdwarf-4 added above, which on
 #          its own turns full debug information on)
@@ -342,7 +404,7 @@ set(CHUNK_DEBUG_INFO "auto" CACHE STRING "Debug information of the optimised bui
 set_property(CACHE CHUNK_DEBUG_INFO PROPERTY STRINGS auto full lines none)
 set(_chunk_debug_info "${CHUNK_DEBUG_INFO}")
 if(_chunk_debug_info STREQUAL "auto")
-    if(CHECK_OPTIM OR NOT SANITIZER STREQUAL "none")
+    if(CHUNK_SANITIZER STREQUAL "token" OR (CHUNK_CHECK_OPTIM AND CHUNK_SANITIZER STREQUAL "none"))
         set(_chunk_debug_info "full")
     else()
         set(_chunk_debug_info "lines")
@@ -363,6 +425,16 @@ else()
 endif()
 message(STATUS "Debug information of the optimised builds: ${_chunk_debug_info} (${_chunk_opt_g})")
 
+# assert(): compiled out (-DNDEBUG) in the optimised builds, as CMake's own
+# Release flags do -- these lines replace them, and used to drop it, so a
+# release library carried its asserts. Kept where a build is there to check:
+# Debug, CHECK_OPTIM and the sanitizer builds.
+if(CHUNK_CHECK_OPTIM OR NOT CHUNK_SANITIZER STREQUAL "none")
+    set(_chunk_ndebug "")
+else()
+    set(_chunk_ndebug " -DNDEBUG")
+endif()
+
 # Top level: in the cache, as before. Consumed by another project: plain
 # variables of this subtree -- the cache is the consumer's.
 if(SHRINK_ARRAY_IS_TOP_LEVEL)
@@ -371,16 +443,16 @@ if(SHRINK_ARRAY_IS_TOP_LEVEL)
         CACHE STRING "Debug flags" FORCE)
 
     set(CMAKE_CXX_FLAGS_RELEASE
-        "-O3 ${_chunk_opt_g}"
+        "-O3 ${_chunk_opt_g}${_chunk_ndebug}"
         CACHE STRING "Release flags" FORCE)
 
     set(CMAKE_CXX_FLAGS_RELWITHDEBINFO
-        "-O3 ${_chunk_opt_g}"
+        "-O3 ${_chunk_opt_g}${_chunk_ndebug}"
         CACHE STRING "RelWithDebInfo flags" FORCE)
 else()
     set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
-    set(CMAKE_CXX_FLAGS_RELEASE "-O3 ${_chunk_opt_g}")
-    set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O3 ${_chunk_opt_g}")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 ${_chunk_opt_g}${_chunk_ndebug}")
+    set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O3 ${_chunk_opt_g}${_chunk_ndebug}")
 endif()
 
 # ── Runtime RPATH: embed the compiler's own runtime libraries ─────────────────
@@ -399,7 +471,7 @@ set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 set(_rt_probe_libs "")
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     # This project links clang with -stdlib=libstdc++ (--gcc-toolchain=...) when
-    # USE_LIBCXX=OFF, so the runtime C++ lib is gcc's libstdc++. libc++ names are
+    # CHUNK_USE_LIBCXX=OFF, so the runtime C++ lib is gcc's libstdc++. libc++ names are
     # probed harmlessly in case a libc++ build is ever re-enabled.
     list(APPEND _rt_probe_libs libstdc++.so.6 libomp.so
                                libc++.so.1 libc++abi.so.1 libunwind.so.1)
@@ -421,18 +493,18 @@ include(CheckCXXCompilerFlag)
 # callbacks have already printed their lines. -x<target> is what asks for that
 # vendor dispatch, so the default here is -march=native: the clang spelling
 # icpx also takes, same instruction set for the machine it is built on, no
-# -x. ONEAPI_XHOST=ON restores -xHost for a binary that will only ever run on
+# -x. CHUNK_ONEAPI_XHOST=ON restores -xHost for a binary that will only ever run on
 # the Intel machine that built it.
 #
 # If the message persists with -march=native (the feature requirement is
 # recorded either way; only the run on the AMD machine can tell), the last
-# resort is ONEAPI_NO_INTEL_LIBS=ON: it links NO Intel runtime library at all.
+# resort is CHUNK_ONEAPI_NO_INTEL_LIBS=ON: it links NO Intel runtime library at all.
 # That is what it takes -- dropping libirc alone does not link, since libsvml
 # itself needs it (undefined __intel_cpu_features_init_x) -- and the price is
 # the vectorised math: -fveclib=none, so sin/cos go through libm one element
 # at a time.
-option(ONEAPI_XHOST "icpx: build an Intel-only binary (-xHost) instead of one that also runs on AMD" OFF)
-option(ONEAPI_NO_INTEL_LIBS "icpx: link no Intel runtime library (no libirc, no libsvml: no vector math) -- the last resort when the vendor check still fires on a non-Intel CPU" OFF)
+option(CHUNK_ONEAPI_XHOST "icpx: build an Intel-only binary (-xHost) instead of one that also runs on AMD" OFF)
+option(CHUNK_ONEAPI_NO_INTEL_LIBS "icpx: link no Intel runtime library (no libirc, no libsvml: no vector math) -- the last resort when the vendor check still fires on a non-Intel CPU" OFF)
 
 # icpx floating-point model. Unlike GCC and Clang, icpx defaults to
 # -fp-model=fast (-ffast-math): reassociation, and SVML for the vectorised
@@ -443,12 +515,12 @@ option(ONEAPI_NO_INTEL_LIBS "icpx: link no Intel runtime library (no libirc, no 
 # Clang do by default; -fimf-use-svml=true sends the scalar calls to SVML too,
 # so scalar and vector paths call the same routines (not under
 # ONEAPI_NO_INTEL_LIBS: no SVML there, everything goes to libm already).
-# ONEAPI_FAST_FP=ON restores icpx's default, for timings comparable with
+# CHUNK_ONEAPI_FAST_FP=ON restores icpx's default, for timings comparable with
 # campaigns measured before -- the check is then expected to fail.
-option(ONEAPI_FAST_FP "icpx: keep the default -fp-model=fast (the vector oracle check then fails)" OFF)
-if(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM" AND NOT ONEAPI_FAST_FP)
+option(CHUNK_ONEAPI_FAST_FP "icpx: keep the default -fp-model=fast (the vector oracle check then fails)" OFF)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM" AND NOT CHUNK_ONEAPI_FAST_FP)
     add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fp-model=precise>)
-    if(NOT ONEAPI_NO_INTEL_LIBS)
+    if(NOT CHUNK_ONEAPI_NO_INTEL_LIBS)
         add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fimf-use-svml=true>)
     endif()
 endif()
@@ -465,16 +537,33 @@ elseif(NOT DEFINED CHUNK_X86_MARCH)
     set(CHUNK_X86_MARCH "native")
 endif()
 
-if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+# CHUNK_NATIVE_TUNING=OFF: no target flag at all from this file -- no
+# -march= / -mcpu=native, no -tp=host, no -xHost. For a build whose target is
+# chosen by who builds it: Spack's compiler wrapper passes the -march= of the
+# spec's target, and a flag added here comes after it and wins, so the package
+# was tied to the build host whatever target= said. The recipe sets it OFF.
+if(SHRINK_ARRAY_IS_TOP_LEVEL)
+    option(CHUNK_NATIVE_TUNING "Optimised builds: tune for the build host (-march=native, -mcpu=native, -tp=host). OFF: no target flag, the caller's apply" ON)
+elseif(NOT DEFINED CHUNK_NATIVE_TUNING)
+    set(CHUNK_NATIVE_TUNING ON)
+endif()
+
+if(NOT CHUNK_NATIVE_TUNING)
+    message(STATUS "Target flags: none (CHUNK_NATIVE_TUNING=OFF, the caller's apply)")
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM" AND CHUNK_ONEAPI_NO_INTEL_LIBS)
+        add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-no-intel-lib;-fveclib=none>")
+        add_link_options($<$<LINK_LANGUAGE:CXX>:-no-intel-lib>)
+    endif()
+elseif(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
     if(CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
         add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-tp=host>)
     elseif(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
-        if(ONEAPI_XHOST)
+        if(CHUNK_ONEAPI_XHOST)
             add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-xHost>)
         else()
             add_compile_options(-march=native)
         endif()
-        if(ONEAPI_NO_INTEL_LIBS)
+        if(CHUNK_ONEAPI_NO_INTEL_LIBS)
             add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-no-intel-lib;-fveclib=none>")
             add_link_options($<$<LINK_LANGUAGE:CXX>:-no-intel-lib>)
         endif()
@@ -528,11 +617,11 @@ endif ()
 # mold cuts each link from seconds to tenths. AUTO = use it if found and the
 # toolchain supports -fuse-ld=mold: GNU >= 12.1, Clang, IntelLLVM (clang-based).
 # NVHPC/PGI drive their own link step — never forced there. Sanitizer builds
-# are fine with mold. Force with -DUSE_MOLD=ON/OFF.
-set(USE_MOLD "AUTO" CACHE STRING "Link with mold: AUTO, ON, OFF")
-set_property(CACHE USE_MOLD PROPERTY STRINGS AUTO ON OFF)
+# are fine with mold. Force with -DCHUNK_USE_MOLD=ON/OFF.
+set(CHUNK_USE_MOLD "AUTO" CACHE STRING "Link with mold: AUTO, ON, OFF")
+set_property(CACHE CHUNK_USE_MOLD PROPERTY STRINGS AUTO ON OFF)
 
-if(NOT USE_MOLD STREQUAL "OFF")
+if(NOT CHUNK_USE_MOLD STREQUAL "OFF")
     # CHUNK_MOLD_PATH is set by scripts/compile_all.sh, which resolves mold in a
     # subshell: on x86 the mold module conflicts with the gnu version the build
     # uses, so its path is extracted without letting the module state leak here.
@@ -626,13 +715,64 @@ if(NOT USE_MOLD STREQUAL "OFF")
             message(STATUS "Linker: mold found but ${_mold_link_opts} rejected by "
                            "${CMAKE_CXX_COMPILER_ID} — using the default linker")
         endif()
-    elseif(USE_MOLD STREQUAL "ON")
-        message(FATAL_ERROR "USE_MOLD=ON but mold is absent or unsupported by "
+    elseif(CHUNK_USE_MOLD STREQUAL "ON")
+        message(FATAL_ERROR "CHUNK_USE_MOLD=ON but mold is absent or unsupported by "
                             "${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
     else()
         message(STATUS "Linker: default (mold not found or not supported by "
                        "${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION})")
     endif()
+endif()
+
+# ── Compiler cache: use ccache when available ────────────────────────────────
+# A switch of branch (develop, cpp23, cpp26) or a pull that leaves the library
+# headers alone recompiles the unity units of shrink_bench and validation, one
+# to three minutes each: ccache gives them back from its cache. It gains
+# nothing after an edit of a library header, which every unit includes.
+# AUTO = use it if it is found (on PATH, or given with -DCCACHE_EXECUTABLE=...);
+# a CMAKE_CXX_COMPILER_LAUNCHER of the caller is left alone.
+#
+# -march=native (-mcpu=native, -xHost, -tp=host) is the same text on every
+# host, and ccache hashes the command line: a cache shared by two kinds of node
+# (a home directory on a cluster) would give one the objects compiled for the
+# other. The launcher passes ccache a namespace made of the host's CPU (model
+# and flags, from /proc/cpuinfo), so each kind of CPU has its own entries; the
+# key=value form on ccache's command line needs ccache >= 4.8.
+set(CHUNK_USE_CCACHE "AUTO" CACHE STRING "Compile through ccache: AUTO, ON, OFF")
+set_property(CACHE CHUNK_USE_CCACHE PROPERTY STRINGS AUTO ON OFF)
+
+if(NOT CHUNK_USE_CCACHE STREQUAL "OFF" AND NOT CMAKE_CXX_COMPILER_LAUNCHER)
+    find_program(CCACHE_EXECUTABLE ccache)
+    set(_ccache_ver "")
+    if(CCACHE_EXECUTABLE)
+        execute_process(COMMAND "${CCACHE_EXECUTABLE}" --version
+                        OUTPUT_VARIABLE _ccache_out ERROR_QUIET)
+        string(REGEX MATCH "version ([0-9]+\\.[0-9]+(\\.[0-9]+)?)" _ccache_m "${_ccache_out}")
+        set(_ccache_ver "${CMAKE_MATCH_1}")
+    endif()
+    if(_ccache_ver AND _ccache_ver VERSION_GREATER_EQUAL "4.8")
+        set(_ccache_cpu "${CMAKE_HOST_SYSTEM_PROCESSOR}")
+        if(EXISTS "/proc/cpuinfo")
+            file(STRINGS "/proc/cpuinfo" _ccache_cpuinfo LIMIT_COUNT 64
+                 REGEX "^(model name|flags|Features|CPU implementer|CPU part)[ \t]*:")
+            list(REMOVE_DUPLICATES _ccache_cpuinfo)
+            string(APPEND _ccache_cpu "${_ccache_cpuinfo}")
+        endif()
+        string(MD5 _ccache_cpu "${_ccache_cpu}")
+        string(SUBSTRING "${_ccache_cpu}" 0 12 _ccache_cpu)
+        set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_EXECUTABLE};namespace=cpu-${_ccache_cpu}")
+        message(STATUS "Compiler cache: ccache ${_ccache_ver} — ${CCACHE_EXECUTABLE} "
+                       "(namespace cpu-${_ccache_cpu})")
+    elseif(CHUNK_USE_CCACHE STREQUAL "ON")
+        message(FATAL_ERROR "CHUNK_USE_CCACHE=ON but ccache >= 4.8 is not found "
+                            "(${CCACHE_EXECUTABLE} ${_ccache_ver}); give it with -DCCACHE_EXECUTABLE=...")
+    elseif(CCACHE_EXECUTABLE)
+        message(STATUS "Compiler cache: none (ccache ${_ccache_ver} found, 4.8 needed)")
+    else()
+        message(STATUS "Compiler cache: none (ccache not found)")
+    endif()
+elseif(CMAKE_CXX_COMPILER_LAUNCHER)
+    message(STATUS "Compiler cache: the caller's launcher (${CMAKE_CXX_COMPILER_LAUNCHER})")
 endif()
 
 # ── C++20 requirement (portable, with NVHPC workaround) ───────────────────────
@@ -671,16 +811,16 @@ endif()
 #   -DCMAKE_JOB_POOLS="compile=2;link=1;heavy=1" -DCHUNK_HEAVY_JOB_POOL=heavy
 set(CHUNK_HEAVY_JOB_POOL "" CACHE STRING "Ninja job pool for the unity-built shrink_bench and validation executables (empty: the default compile pool)")
 
-# Opt-in header hygiene. -DENABLE_IWYU=ON runs include-what-you-use alongside
+# Opt-in header hygiene. -DCHUNK_ENABLE_IWYU=ON runs include-what-you-use alongside
 # each C++ compile, using the project mapping file iwyu.imp (routes *_inline.h
 # implementations to their public facade, ankerl internals to
 # unordered_dense.h, plus the STL bits mappings). IWYU must be on PATH; if it is
 # absent we warn and continue (the build is never blocked). IWYU is slow and
 # noisy, so it stays OFF by default — turn it on for a dedicated hygiene pass:
-#   cmake -B build-iwyu -DENABLE_IWYU=ON ...   &&   cmake --build build-iwyu
+#   cmake -B build-iwyu -DCHUNK_ENABLE_IWYU=ON ...   &&   cmake --build build-iwyu
 # Must be set before the first add_subdirectory() so every target inherits it.
-option(ENABLE_IWYU "Run include-what-you-use during the build (needs iwyu on PATH)" OFF)
-if(ENABLE_IWYU)
+option(CHUNK_ENABLE_IWYU "Run include-what-you-use during the build (needs iwyu on PATH)" OFF)
+if(CHUNK_ENABLE_IWYU)
     find_program(IWYU_EXE NAMES include-what-you-use iwyu)
     if(IWYU_EXE)
         # IWYU parses with its OWN embedded clang, not the project compiler. If
@@ -705,7 +845,7 @@ if(ENABLE_IWYU)
         endif()
         set(_iwyu_map "${CMAKE_CURRENT_SOURCE_DIR}/iwyu.imp")
         if(NOT EXISTS "${_iwyu_map}")
-            message(WARNING "ENABLE_IWYU=ON but mapping file not found: ${_iwyu_map} "
+            message(WARNING "CHUNK_ENABLE_IWYU=ON but mapping file not found: ${_iwyu_map} "
                             "— running IWYU without a mapping file")
             set(CMAKE_CXX_INCLUDE_WHAT_YOU_USE
                 "${IWYU_EXE}" "-Xiwyu" "--max_line_length=100")
@@ -717,7 +857,7 @@ if(ENABLE_IWYU)
             message(STATUS "IWYU: enabled (${IWYU_EXE}), mapping ${_iwyu_map}")
         endif()
     else()
-        message(WARNING "ENABLE_IWYU=ON but include-what-you-use was not found on "
+        message(WARNING "CHUNK_ENABLE_IWYU=ON but include-what-you-use was not found on "
                         "PATH — continuing without it")
     endif()
 endif()
@@ -730,12 +870,12 @@ endif()
 # executable of the build uses the same libm, so check-mode comparisons within
 # a build are unaffected.
 option(SHRINK_INTEL_LIBM "x86-64, non-icpx: link the executables with Intel's libm (libimf) when found" ON)
-set(INTEL_LIBM_DIR "" CACHE PATH "Directory holding libimf.so and libintlc.so (default: $CMPLR_ROOT/lib, then next to icpx)")
+set(CHUNK_INTEL_LIBM_DIR "" CACHE PATH "Directory holding libimf.so and libintlc.so (default: $CMPLR_ROOT/lib, then next to icpx)")
 if(SHRINK_INTEL_LIBM AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
    AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
     set(_imf_hints "")
-    if(INTEL_LIBM_DIR)
-        list(APPEND _imf_hints "${INTEL_LIBM_DIR}")
+    if(CHUNK_INTEL_LIBM_DIR)
+        list(APPEND _imf_hints "${CHUNK_INTEL_LIBM_DIR}")
     endif()
     if(DEFINED ENV{CMPLR_ROOT})
         list(APPEND _imf_hints "$ENV{CMPLR_ROOT}/lib")
@@ -746,15 +886,15 @@ if(SHRINK_INTEL_LIBM AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
     # there, and the omp-llvm build on Milan silently linked glibc's libm
     # (34.6% of the zero_any_256 profile). INTEL_ICPX names one; otherwise the
     # newest match of INTEL_ICPX_GLOB is taken.
-    set(INTEL_ICPX "" CACHE FILEPATH "icpx whose libimf to link when icpx is not in PATH (default: newest match of INTEL_ICPX_GLOB)")
-    set(INTEL_ICPX_GLOB "/ccc/products/icx-*/system/default/*/bin/icpx" CACHE STRING
+    set(CHUNK_INTEL_ICPX "" CACHE FILEPATH "icpx whose libimf to link when icpx is not in PATH (default: newest match of CHUNK_INTEL_ICPX_GLOB)")
+    set(CHUNK_INTEL_ICPX_GLOB "/ccc/products/icx-*/system/default/*/bin/icpx" CACHE STRING
         "Where to look for an installed icpx when it is not in PATH (SHRINK_INTEL_LIBM)")
     set(_shrink_icpx_used "${_shrink_icpx}")
     if(NOT _shrink_icpx)
-        if(INTEL_ICPX AND EXISTS "${INTEL_ICPX}")
-            set(_shrink_icpx_used "${INTEL_ICPX}")
-        elseif(INTEL_ICPX_GLOB)
-            file(GLOB _icpx_candidates LIST_DIRECTORIES false ${INTEL_ICPX_GLOB})
+        if(CHUNK_INTEL_ICPX AND EXISTS "${CHUNK_INTEL_ICPX}")
+            set(_shrink_icpx_used "${CHUNK_INTEL_ICPX}")
+        elseif(CHUNK_INTEL_ICPX_GLOB)
+            file(GLOB _icpx_candidates LIST_DIRECTORIES false ${CHUNK_INTEL_ICPX_GLOB})
             if(_icpx_candidates)
                 if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.18)
                     list(SORT _icpx_candidates COMPARE NATURAL ORDER DESCENDING)
@@ -803,7 +943,7 @@ if(SHRINK_INTEL_LIBM AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
         # directory is among the compiler's implicit ones; a raw -L is not.
         add_link_options("-L${_imf_dir}")
     else()
-        message(STATUS "Intel libm: not found -- glibc libm (set INTEL_LIBM_DIR, or load the oneAPI environment)")
+        message(STATUS "Intel libm: not found -- glibc libm (set CHUNK_INTEL_LIBM_DIR, or load the oneAPI environment)")
     endif()
 endif()
 
@@ -814,17 +954,17 @@ endif()
 # GNU). NVHPC is left alone: it links its own optimised math library.
 # SHRINK_ARM_LIBM is OFF by default: measured on Grace (clang 22, 64 threads,
 # same seed, RHEL 9.6 glibc vs armpl 25.07), zero_any_dyn 8.30 -> 8.12 s,
-# zero_any_256 6.20 -> 6.23 s, zero_one_value_256 5.76 -> 5.75 s -- noise; RHEL 9's
+# zero_any_256 6.20 -> 6.23 s, zero_or_value_256 5.76 -> 5.75 s -- noise; RHEL 9's
 # aarch64 libm is on par with ArmPL's for these calls. Kept for re-measuring:
-# -DSHRINK_ARM_LIBM=ON -DARMPL_LIBM_DIR=<dir of libamath.so>; the executables
+# -DSHRINK_ARM_LIBM=ON -DCHUNK_ARMPL_LIBM_DIR=<dir of libamath.so>; the executables
 # then carry an rpath and run without the module.
 option(SHRINK_ARM_LIBM "aarch64, GNU/Clang: link the executables with ArmPL's libamath when found (default OFF: no measured gain on Grace)" OFF)
-set(ARMPL_LIBM_DIR "" CACHE PATH "Directory holding libamath.so (default: from the armpl module, $ARMPL_DIR/lib)")
+set(CHUNK_ARMPL_LIBM_DIR "" CACHE PATH "Directory holding libamath.so (default: from the armpl module, $ARMPL_DIR/lib)")
 if(SHRINK_ARM_LIBM AND CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64"
    AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
     set(_amath_hints "")
-    if(ARMPL_LIBM_DIR)
-        list(APPEND _amath_hints "${ARMPL_LIBM_DIR}")
+    if(CHUNK_ARMPL_LIBM_DIR)
+        list(APPEND _amath_hints "${CHUNK_ARMPL_LIBM_DIR}")
     endif()
     if(DEFINED ENV{ARMPL_DIR})
         list(APPEND _amath_hints "$ENV{ARMPL_DIR}/lib")
@@ -845,15 +985,19 @@ if(SHRINK_ARM_LIBM AND CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64"
         link_libraries("${SHRINK_LIBAMATH}")
         add_link_options("LINKER:-rpath,${_amath_dir}")
     else()
-        message(STATUS "ArmPL libm: libamath not found -- glibc libm (load the armpl module before cmake, or set ARMPL_LIBM_DIR)")
+        message(STATUS "ArmPL libm: libamath not found -- glibc libm (load the armpl module before cmake, or set CHUNK_ARMPL_LIBM_DIR)")
     endif()
 endif()
 
 # ── Documentation ─────────────────────────────────────────────────────────────
 # `cmake --build <build> --target doc` -> docs/html/index.html. The Doxyfile's
-# paths are relative to docs/, hence the working directory.
-find_package(Doxygen OPTIONAL_COMPONENTS dot)
-if (DOXYGEN_FOUND)
+# paths are relative to docs/, hence the working directory. Top level only: a
+# consumer (add_subdirectory, FetchContent) may have a `doc` target of its own,
+# and two targets of one name stop its configure.
+if(SHRINK_ARRAY_IS_TOP_LEVEL)
+    find_package(Doxygen OPTIONAL_COMPONENTS dot)
+endif()
+if (SHRINK_ARRAY_IS_TOP_LEVEL AND DOXYGEN_FOUND)
     add_custom_target(doc
             COMMAND ${DOXYGEN_EXECUTABLE} Doxyfile
             WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/docs
@@ -873,7 +1017,7 @@ endif()
 # change. Decided here, before the library: see CHUNK_TEST_HOOKS below.
 if(DEFINED CHUNK_BUILD_VALIDATION)
     set(_build_validation ${CHUNK_BUILD_VALIDATION})
-elseif(CMAKE_BUILD_TYPE STREQUAL "Debug" OR CHECK_OPTIM OR NOT SANITIZER STREQUAL "none")
+elseif(CMAKE_BUILD_TYPE STREQUAL "Debug" OR CHUNK_CHECK_OPTIM OR NOT CHUNK_SANITIZER STREQUAL "none")
     set(_build_validation ON)
 else()
     set(_build_validation OFF)
@@ -891,7 +1035,7 @@ set(CHUNK_TEST_HOOKS ${_build_validation})
 add_subdirectory(chunk)
 
 if(NOT CHUNK_STD_ALLOC)
-    set(ALLOCATORS_OMP ${OMP})
+    set(ALLOCATORS_OMP ${CHUNK_OPENMP})
     set(ALLOCATORS_THREADED ${CHUNK_THREADED})
     set(ALLOCATORS_THREADS_BACKEND ${CHUNK_THREADS_BACKEND})
     add_subdirectory(fast_allocators)
@@ -929,6 +1073,11 @@ if(SHRINK_ARRAY_BUILD_TESTS AND BUILD_TESTING AND Python3_Interpreter_FOUND)
     add_test(NAME check_naming
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_naming.py ${PROJECT_SOURCE_DIR})
     set_property(TEST check_naming PROPERTY LABELS validation)
+    # The public headers and names are the ones scripts/public_api.txt freezes
+    # (scripts/check_public_api.py).
+    add_test(NAME check_public_api
+             COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_public_api.py ${PROJECT_SOURCE_DIR})
+    set_property(TEST check_public_api PROPERTY LABELS validation)
     # A member function body longer than 5 lines is defined out of class, in the
     # header's _inline.h companion (scripts/check_inline_bodies.py; apply moves them).
     add_test(NAME check_inline_bodies

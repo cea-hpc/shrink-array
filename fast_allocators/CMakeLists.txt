@@ -18,7 +18,7 @@ add_library(fast_allocators)
 add_library(fast_allocators::fast_allocators ALIAS fast_allocators)
 
 set(ALLOCATORS_MAJOR_VERSION 2)  # inc. when incompatible change (reset to 0 others)
-set(ALLOCATORS_MINOR_VERSION 3)  # inc. when compatible change (also reset patch vers.)
+set(ALLOCATORS_MINOR_VERSION 4)  # inc. when compatible change (also reset patch vers.)
 set(ALLOCATORS_PATCH_VERSION 0)  # inc. when just fixing bug
 
 set(ALLOCATORS_VERSION
@@ -48,6 +48,11 @@ set(ALLOCATORS_INTERNAL_HEADERS
   public/fast_allocators/internal/static_const_array_inline.h
   public/fast_allocators/internal/svalloc.h
   public/fast_allocators/internal/tc_allocator_inline.h
+  public/fast_allocators/internal/pmp_loops_inline.h
+  public/fast_allocators/internal/pmp_std_inline.h
+  public/fast_allocators/internal/slab_arena_inline.h
+  public/fast_allocators/internal/flat_address_set.h
+  public/fast_allocators/internal/flat_address_set_inline.h
 )
 
 target_sources(fast_allocators PRIVATE

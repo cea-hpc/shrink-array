@@ -21,8 +21,8 @@
  * @brief The element type of the bit-packed container: a bool stored as one
  *        bit, 8 per byte.
  *
- * @details ArrayChunkBits is zero_one_value::Array<Bit>: the whole zero_one_value machinery with its own
- *          managers, pools and registries. zero_one_value::Array<bool> keeps one byte per bool and a
+ * @details BitArray is zero_or_value::Array<Bit>: the whole zero_or_value machinery with its own
+ *          managers, pools and registries. zero_or_value::Array<bool> keeps one byte per bool and a
  *          plain store per write; the packed one holds 8x less per materialised chunk and
  *          pays an atomic read-modify-write of a 64-bit word per write.
  *
@@ -39,7 +39,7 @@
 namespace shrink_array
 {
 
-/// @brief A bool stored as one bit (the element type of ArrayChunkBits).
+/// @brief A bool stored as one bit (the element type of BitArray).
 class Bit
 {
   public:
@@ -63,7 +63,7 @@ template <typename T>
 inline constexpr bool is_packed_bit_v = std::is_same_v<T, Bit>;
 
 /// @brief Dynamic geometry: an array of packed bits is born with chunks this
-///        many times the process-wide size, capped at cst_buffer_size.
+///        many times the process-wide size, capped at const_buffer_size.
 /// @details At the other arrays' size a chunk of bits holds S/8 bytes for ~19 bytes of
 ///          metadata (at S=64, 2.5 times a std::vector<bool>); eight times the size gives it
 ///          the bytes of a bool chunk. The re-chunk decider will not correct it: its deadband
@@ -71,7 +71,7 @@ inline constexpr bool is_packed_bit_v = std::is_same_v<T, Bit>;
 ///          size for every array.
 inline constexpr unsigned int packed_bit_birth_factor = 8;
 
-/// @brief T takes zero_one_value's bool path: a single second value, `true`.
+/// @brief T takes zero_or_value's bool path: a single second value, `true`.
 template <typename T>
 inline constexpr bool is_bool_like_v = std::is_same_v<T, bool> || is_packed_bit_v<T>;
 

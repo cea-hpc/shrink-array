@@ -47,20 +47,20 @@
 #include <type_traits> // std::conditional_t
 #include <vector>      // std::vector
 
-#include "chunk/chunk_traits.h"          // forward decls + default IntType = int
+#include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
 #include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
-#include "chunk/array_chunk_range_ops.h" // fill_range_mt
-#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/config.h"                // chunk_config::use_zero_one_value*, build_config::has_not_ompt
-#include "chunk/PMP_CHUNK.h"             // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/range_ops.h"             // fill_range_mt
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/config.h"                // chunk_config::use_zero_or_value*, build_config::needs_explicit_phases
+#include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
+#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h"    // env_number / arg_number (checked, not atoi)
-#include "chunk/internal/print.h"        // shrink_array::println
+#include "chunk/print.h"                 // shrink_array::println
 
-#include "chunk/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
-#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
+#include "chunk/internal/zero_chunk.h" // release_chunk_pools, Runtime::shutdown
+#include "validation_harness.h"        // self_command; run() is called by validation_driver.cpp
 
 namespace validation::fill_range_mt_validation
 {
@@ -69,14 +69,14 @@ using namespace shrink_array;
 
 static void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
 }
 static void end_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -86,7 +86,7 @@ template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -94,9 +94,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -138,8 +138,9 @@ enum class Mode
 };
 static Mode mode_of(int round)
 {
+    using enum Mode;
     const int mode_idx = (round / 3) % 3;
-    return mode_idx == 0 ? Mode::fill : mode_idx == 1 ? Mode::copy : Mode::transform;
+    return mode_idx == 0 ? fill : mode_idx == 1 ? copy : transform;
 }
 static const char* mode_name(Mode mode)
 {
@@ -148,12 +149,12 @@ static const char* mode_name(Mode mode)
 
 static int run_validation(long count, int rounds)
 {
-    Array<double>       arr(count);
-    std::vector<double> ref(static_cast<std::size_t>(count), 0.0);
-    std::vector<double> src(static_cast<std::size_t>(count), 0.0); // copy rounds
-    Array<double>       src_arr(count);                            // transform rounds: a chunked source
-    const long          nblk = (count + blk - 1) / blk;
-    long                bad  = 0;
+    Array<double> arr(count);
+    std::vector   ref(static_cast<std::size_t>(count), 0.0);
+    std::vector   src(static_cast<std::size_t>(count), 0.0); // copy rounds
+    Array<double> src_arr(count);                            // transform rounds: a chunked source
+    const long    nblk = (count + blk - 1) / blk;
+    long          bad  = 0;
 
     for (int r = 0; r < rounds && bad == 0; ++r)
     {
@@ -295,7 +296,7 @@ static int run_partial_span_queueing()
     {
         using C = std::complex<double>;
         Array<C>   arr(1);
-        const long cs = static_cast<long>(arr.chunk_size());
+        const auto cs = static_cast<long>(arr.chunk_size());
         arr.resize(4 * cs);
         const long last_of_1 = (2 * cs) - 1; // the last element of chunk 1
 
@@ -443,7 +444,7 @@ static void run_perf(long count)
 static int run_body(int argc, char** argv)
 {
     const long count = argc > 1 ? shrink_array::arg_number<long>(argv[1], (1L << 20) + 777, "N") : (1L << 20) + 777;
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     if (argc > 2 && std::strcmp(argv[2], "perf") == 0)
     {
@@ -466,7 +467,7 @@ int run(int argc, char** argv)
     // one in the std-alloc builds (each buffer is a real malloc there).
     const int rc = run_body(argc, argv);
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
     return rc;
 }
 

@@ -22,7 +22,7 @@
 // and the registry that gives a dense rank to a thread no team numbers.
 //
 // The one place that asks the threading runtime these questions: chunk's
-// PMP_CHUNK.h (CHUNK_PMP_*), pmp_alloc.h (FAST_ALLOC_PMP_*) and slab_arena.h
+// pmp_chunk.h (CHUNK_PMP_*), pmp_alloc.h (FAST_ALLOC_PMP_*) and slab_arena.h
 // go through it. The loops and teams are in pmp_loops.h.
 //
 // Backends: OpenMP (the default when the build compiles with OpenMP: every
@@ -79,15 +79,16 @@ enum class BackendKind : int
 /// @brief The backend of this build (fixed at compile time).
 inline constexpr BackendKind backend = []
 {
+    using enum BackendKind;
     if (FAST_ALLOC_PMP_BACKEND_STD != 0)
     {
-        return BackendKind::std_threads;
+        return std_threads;
     }
     if (FAST_ALLOC_PMP_THREADED != 0)
     {
-        return BackendKind::openmp;
+        return openmp;
     }
-    return BackendKind::serial;
+    return serial;
 }();
 
 /// @brief Whether the backend runs threads: false only for the serial backend.
@@ -204,6 +205,29 @@ inline void leave_application_phase() noexcept
     if constexpr (backend == BackendKind::std_threads)
     {
         std_backend::settings().application_phase.store(false, std::memory_order_seq_cst);
+    }
+}
+
+/**
+ * @brief Std backend: take the workers of the next teams from another runtime
+ *        (std_backend::TeamLauncher; the TBB adaptor's arena), so that the
+ *        library's teams and the application's threads share the cores
+ *        instead of two sets of threads competing for them.
+ * @param launch the launcher; nullptr: back to the backend's own threads
+ * @return true for the std backend; false, nothing done, for the others
+ *         (OpenMP's teams are OpenMP's, the serial backend has none).
+ */
+inline bool set_team_launcher(std_backend::TeamLauncher launch) noexcept
+{
+    if constexpr (backend == BackendKind::std_threads)
+    {
+        std_backend::settings().team_launcher.store(launch, std::memory_order_release);
+        return true;
+    }
+    else
+    {
+        (void)launch;
+        return false;
     }
 }
 
@@ -385,6 +409,7 @@ class RankRegistry
                 int seen = high_water_.load(std::memory_order_relaxed);
                 while (r >= seen && !high_water_.compare_exchange_weak(seen, r + 1, std::memory_order_relaxed))
                 {
+                    // a failed compare_exchange_weak reloaded seen: retry
                 }
                 return r;
             }

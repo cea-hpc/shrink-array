@@ -40,13 +40,13 @@
 #include <utility>     // std::move
 #include <vector>      // std::vector (push_back / emplace_back)
 
-#include "chunk/zero_array.h"           // zero::Array
-#include "chunk/zero_one_value_array.h" // zero_one_value::Array
-#include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/config.h"               // chunk_config::use_zero_one_value*, build_config::strict_element_ref
-#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"           // release_chunk_pools, destroy_block_chunk
-#include "chunk/internal/print.h"       // shrink_array::println
+#include "chunk/zero_array.h"          // zero::Array
+#include "chunk/zero_or_value_array.h" // zero_or_value::Array
+#include "chunk/zero_any_array.h"      // zero_any::Array
+#include "chunk/config.h"              // chunk_config::use_zero_or_value*, build_config::strict_element_ref
+#include "chunk/runtime.h"             // Runtime::init
+#include "chunk/internal/zero_chunk.h" // release_chunk_pools, Runtime::shutdown
+#include "chunk/print.h"               // shrink_array::println
 
 using namespace shrink_array;
 
@@ -56,7 +56,7 @@ template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 int fails = 0;
 
@@ -167,8 +167,8 @@ void misuse()
 {
     Array<double> arr(10);
     #if ELEMENT_REF_CASE == 1
-    auto   elem = arr[0]; // conversion
-    double read = elem;
+    auto         elem = arr[0]; // conversion
+    const double read = elem;
     (void)read;
     #elif ELEMENT_REF_CASE == 2
     auto elem = arr[0]; // assignment
@@ -177,8 +177,8 @@ void misuse()
     auto elem = arr[0]; // arithmetic
     println("{:g}", elem + 1.0);
     #elif ELEMENT_REF_CASE == 4
-    auto   elem = (arr[0] += 1.0); // a compound result kept
-    double read = elem;
+    auto         elem = (arr[0] += 1.0); // a compound result kept
+    const double read = elem;
     (void)read;
     #elif ELEMENT_REF_CASE == 5
     auto elem = arr[0]; // as the right-hand side of an assignment
@@ -209,10 +209,10 @@ void misuse()
 int main()
 try
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
     const int rc = usage();
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
     return rc;
 }
 catch (const std::exception& e)

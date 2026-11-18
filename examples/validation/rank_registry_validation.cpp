@@ -82,7 +82,7 @@ void check_concurrent_acquire()
 {
     constexpr int            count = 16;
     pmp::RankRegistry        registry(count);
-    std::vector<int>         got(count, -2);
+    std::vector              got(count, -2);
     std::barrier             start(count);
     std::vector<std::thread> ts;
     for (int k = 0; k < count; ++k)
@@ -98,8 +98,8 @@ void check_concurrent_acquire()
     {
         thread.join();
     }
-    std::vector<int> seen(count, 0);
-    bool             ok = true;
+    std::vector seen(count, 0);
+    bool        ok = true;
     for (const int got_rank : got)
     {
         ok = ok && got_rank >= 0 && got_rank < count && seen[got_rank]++ == 0;
@@ -120,7 +120,7 @@ void check_registered_rank()
 
     // cap threads alive at once: distinct ranks, the same at every call; one
     // more thread meanwhile gets -1, then a rank once one is free.
-    std::vector<int>         got(cap, -2);
+    std::vector              got(cap, -2);
     std::barrier             held(cap + 1);
     std::barrier             done(cap + 1);
     std::vector<std::thread> ts;
@@ -140,8 +140,8 @@ void check_registered_rank()
     std::thread late([&] { extra = pmp::registered_rank(); });
     late.join();
     expect(extra == -1, "a thread past the capacity gets -1");
-    std::vector<int> seen(cap, 0);
-    bool             ok = true;
+    std::vector seen(cap, 0);
+    bool        ok = true;
     for (const int got_rank : got)
     {
         ok = ok && got_rank >= 0 && got_rank < cap && seen[got_rank]++ == 0;
@@ -171,8 +171,8 @@ void check_registered_rank()
     {
         slot.store(0);
     }
-    std::atomic<int> clash{0};
-    std::atomic<int> out_of_range{0};
+    std::atomic clash{0};
+    std::atomic out_of_range{0};
     for (int w = 0; w < waves; ++w)
     {
         std::vector<std::thread> wave;

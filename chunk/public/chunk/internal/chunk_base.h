@@ -24,36 +24,35 @@
 #include <atomic>      // std::atomic, std::memory_order
 #include <array>       // std::array
 #include <cstddef>     // std::size_t
-#include <cerrno>      // errno (use_mm_protect: the cst_val1 buffer's mmap)
+#include <cerrno>      // errno (use_mm_protect: the const_val1 buffer's mmap)
 #include <cstring>     // std::memset, std::strerror
 #include <memory>      // std::unique_ptr, std::make_unique
 #include <optional>    // std::optional (constant_value)
 #include <sys/mman.h>  // mmap, mprotect, PROT_READ
 
 #include "chunk/internal/def_force_inline.h"            // CHUNK_FORCE_INLINE (element_at)
-#include "chunk/chunk_traits.h"                         // is_zero_any_family_v (element_at variant gate)
+#include "chunk/internal/chunk_traits.h"                // ChunkTraits, is_zero_any_family_v (element_at variant gate)
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement, asserted on ChunkBase
 #include "chunk/internal/churn_counters.h"              // churn::note_materialisation
-#include "chunk/internal/chunk_size_policy.h"           // cst_buffer_size, thread_chunk_size, alloc_chunk_count
+#include "chunk/internal/chunk_size_policy.h"           // const_buffer_size, thread_chunk_size, alloc_chunk_count
 #include "chunk/internal/in_t.h"                        // InT<T>: the scans' constants, by value or by reference
 #include "chunk/internal/bit_words.h"                   // bits::scan_words / WordT: the Bit scans
 #include "chunk/internal/element_access.h"              // elem_get: Bit buffers are words of bits
 #include "chunk/internal/relaxed_element.h"             // element_at<true>: the marking filter's reads
 #include "fast_allocators/internal/svalloc.h"           // svcalloc_align, svfree
 #include "chunk/config.h"                               // build_config::threaded, chunk_config::stats
-#include "chunk/PMP_CHUNK.h"                 // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_IN_PARALLEL_REGION, pmp::team
-#include "chunk/ring_log_debug.h"            // EventCode::value_alloc/FREE (debug ring log)
+#include "chunk/internal/pmp_chunk.h"        // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_IN_PARALLEL_REGION, pmp::team
+#include "chunk/internal/ring_log_debug.h"   // EventCode::value_alloc/FREE (debug ring log)
 #include "chunk/internal/global_check.h"     // global_check_nan (DO_CHECK: config.h's CheckNaN<true>)
 #include "chunk/internal/invariant_check.h"  // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/deferred_op_pool.h" // DeferredOpPtr
 #include "chunk/internal/pool_ledger.h"      // CHUNK_LEDGER_* block-lifecycle checks (check builds)
-#include "chunk/internal/chunk_stats.h"      // increm_chunk_* / add_chunk_* (CHUNK_STATS)
-#include "chunk/internal/crp_helper.h"       // CRTPSupport
+#include "chunk/internal/chunk_stats.h"      // inc_chunk_* / add_chunk_* (CHUNK_STATS)
+#include "chunk/internal/crtp_support.h"     // CRTPSupport
 #include "chunk/internal/bad_ptr_check.h"    // CHUNK_CHECK_VALUES_PTR (check builds)
 
-#include "chunk/internal/freepath_counters.h" // [FREEPATH] counters, needed in std-alloc builds too
-#include "chunk/internal/test_hooks.h"        // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (element_at)
-#include "chunk/internal/read_reclaim.h"      // ReadSection (element_at), defer_release (free_block_to_pool)
+#include "chunk/internal/test_hooks.h"   // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (element_at)
+#include "chunk/internal/read_reclaim.h" // ReadSection (element_at), defer_release (free_block_to_pool)
 
 #if CHUNK_OPT_FAST_ALLOC
     #include "fast_allocators/slab_arena.h"   // the slab header slab_of() returns (owner, owner_key)
@@ -92,26 +91,6 @@ namespace shrink_array
 template <typename T, typename ChunkT>
 struct CompressionManager;
 
-template <typename Derived>
-struct ProxyTypeTrait;
-
-namespace zero
-{
-
-template <typename T>
-class Chunk;
-template <typename T>
-class Proxy;
-
-} // namespace zero
-
-// Specialisation for Chunk
-template <typename T>
-struct ProxyTypeTrait<zero::Chunk<T>>
-{
-    using Type = zero::Proxy<T>;
-};
-
 // STAYS a directive. Not a twin of the declaration at the top of this file:
 // that one is in fast_alloc, this one is inside `namespace shrink_array`.
 //
@@ -135,7 +114,7 @@ using fast_alloc::TCTypeAllocator;
 // DeferredReadGate: read-side visibility gate, selected by compile-time mode
 // ----------------------------------------------------------------------------
 // The read gate (reader_sync + ArrayChunkBase::sync_chunk) as a CRTP policy, in
-// the same style as zero::ChunkCounterPolicy / zero_one_value::ChunkCounterPolicy. Not `if
+// the same style as zero::ChunkCounterPolicy / zero_or_value::ChunkCounterPolicy. Not `if
 // constexpr`: pending_ops_ / wait_for_availability exist in
 // some builds only, and a discarded branch would still phase-1-look-up a
 // missing member. Each specialization names ONLY the members of its config.
@@ -200,15 +179,15 @@ class DeferredReadGate<Derived, DeferReadGate::none>
 
     /// @brief No-op: nothing to synchronise against in a serial build.
     /// @param offset Element offset being read; unused.
-    void reader_sync([[maybe_unused]] int offset) const noexcept {}
+    static void reader_sync([[maybe_unused]] int offset) noexcept {}
 
     /// @brief No-op: no per-chunk pending counter exists in a serial build.
     /// @param thr Calling thread's rank; unused.
-    void pending_publish([[maybe_unused]] int thr) noexcept {}
+    static void pending_publish([[maybe_unused]] int thr) noexcept {}
 
     /// @brief No-op: no per-chunk pending counter exists in a serial build.
     /// @param count Number of operations retired; unused.
-    void pending_retire([[maybe_unused]] int32_t count) noexcept {}
+    static void pending_retire([[maybe_unused]] int32_t count) noexcept {}
 
     /// @brief Always false: nothing can ever be pending in a serial build.
     /// @return Always false.
@@ -340,13 +319,13 @@ struct ChunkAllocPolicy<T, Derived, true>
     /// @note The two-functor form is what lets zero share this path. A zero::Chunk is
     ///       compressed only when it is all-zero, so a buffer coming back from
     ///       the reuse pool is already zero and re-filling it would memset the
-    ///       hot path (most materialisations) for nothing. zero_one_value/zero_any compress to
+    ///       hot path (most materialisations) for nothing. zero_or_value/zero_any compress to
     ///       an arbitrary constant and must initialise both branches alike: they
     ///       call the single-functor overload below.
     template <typename InitReused, typename InitFresh>
     T* allocate_chunk_internal(int thr_rank, InitReused init_reused, InitFresh init_fresh);
 
-    /// @brief Same initialiser on both branches -- the zero_one_value/zero_any form.
+    /// @brief Same initialiser on both branches -- the zero_or_value/zero_any form.
     /// @tparam InitFunc Initialization function type
     /// @param thr_rank Thread rank/ID
     /// @param init_func Function to initialize the allocated block
@@ -376,7 +355,7 @@ struct ChunkAllocPolicy<T, Derived, false>
                                [[maybe_unused]] InitReused init_reused,
                                InitFresh                   init_fresh);
 
-    /// @brief Same initialiser on both branches -- the zero_one_value/zero_any form.
+    /// @brief Same initialiser on both branches -- the zero_or_value/zero_any form.
     /// @tparam InitFunc Initialization function type
     /// @param thr_rank Thread rank (unused in single-threaded mode)
     /// @param init_func Function to initialize the allocated block
@@ -408,15 +387,15 @@ class ChunkDeferredOpsPolicy<T, Derived, true>
 {
   public:
     using UnorderedMapDeferredOperations = ankerl::unordered_dense::map<int, DeferredOpPtr>;
-    // per-thread map type: maps Derived* (chunk pointer) -> unique_ptr<map<num, op>>
+    // per-thread map type: maps Derived* (chunk pointer) -> unique_ptr<map<elem_offset, op>>
     using PerThreadMap = ska::flat_hash_map<Derived*, std::unique_ptr<UnorderedMapDeferredOperations>>;
 
     /// @brief Atomic CAS of values from expected constant pointer to a new buffer.
     /// @param values_loc  New buffer to install on success.
-    /// @param m_ptr_cst_val Expected current value of values. Taken by value on
+    /// @param m_ptr_const_val Expected current value of values. Taken by value on
     ///                      purpose — compare_exchange_strong would otherwise
     ///                      clobber a caller-owned reference on failure.
-    /// @return true on failure (caller owns values_loc and must recup it).
+    /// @return true on failure (caller owns values_loc and must reclaim it).
     ///         false on success (values now points to values_loc).
     ///
     /// Fast path: a relaxed load of values lets us skip the CAS altogether when
@@ -432,37 +411,37 @@ class ChunkDeferredOpsPolicy<T, Derived, true>
     ///   - A stale "mismatch" (load sees a newer value than what the CAS will
     ///     observe) is a benign spurious failure; the caller re-checks state.
     ///   - The acq_rel CAS on success provides the only ordering we rely on.
-    [[nodiscard]] bool compare_and_swap_gen(T* values_loc, T* m_ptr_cst_val) noexcept;
+    [[nodiscard]] bool compare_and_swap_gen(T* values_loc, T* m_ptr_const_val) noexcept;
 
     /// @brief Compare-and-swap against first constant value
     /// @param values_loc New pointer value to set
     /// @return true if swap failed, false if successful
     [[nodiscard]] bool compare_and_swap1(T* values_loc) noexcept
     {
-        return compare_and_swap_gen(values_loc, Derived::get_cst_val1());
+        return compare_and_swap_gen(values_loc, Derived::get_const_val1());
     }
 
     /// @brief Reclaim a memory block to the thread-local free list
     /// @param values_loc Pointer to the block to reclaim
     /// @param thr_rank Thread rank/ID
-    void recup_value(T* values_loc, int thr_rank) const;
+    void reclaim_value(T* values_loc, int thr_rank) const;
 
     /// @brief Enqueue a deferred write operation for later application to a chunk.
     /// @param thr_rank Calling thread's rank; selects which per-thread map to
     ///                 enqueue on.
-    /// @param num Element offset within the chunk the operation targets.
+    /// @param elem_offset Element offset within the chunk the operation targets.
     /// @param op Deferred operation to enqueue; ownership transfers to the queue.
     void to_be_queued_for_deferred_processing(int                                                thr_rank,
-                                              int                                                num,
+                                              int                                                elem_offset,
                                               CompressionManager<T, Derived>::CmpDeferredOpBase* op) const;
 
     /// @brief Block until every deferred operation pending on this chunk has
     ///        been applied (drains this chunk across all thread ranks).
-    /// @param num Element offset being read; currently unused -- the drain is
+    /// @param elem_offset Element offset being read; currently unused -- the drain is
     ///            per-chunk, not per-offset. Kept because the call sites have
     ///            the offset in hand and the DeferredReadGate modes must agree
     ///            on one signature.
-    void wait_for_availability(int num) const;
+    void wait_for_availability(int elem_offset) const;
 
     /// @brief Current per-thread deferred-ops array, or nullptr if it has not
     ///        been allocated yet (see ensure_deferred_array_initialized()).
@@ -610,7 +589,7 @@ class ChunkDynamicAllocPolicy<T, Derived, false>
 // ChunkBase
 // ============================================================================
 
-/// @brief CRTP base common to all chunk types (zero, zero_one_value, zero_any).
+/// @brief CRTP base common to all chunk types (zero, zero_or_value, zero_any).
 /// @tparam T       Element type.
 /// @tparam Derived The chunk type.
 template <typename T, typename Derived>
@@ -628,7 +607,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     // Atomic pointer type conditional on OpenMP availability
     using AtomicPtrT = std::conditional_t<build_config::threaded, std::atomic<T*>, T*>;
 
-    using ProxyType = ProxyTypeTrait<Derived>::Type;
+    using ProxyType = ChunkTraits<Derived>::ProxyType;
 
     using CRTPSupport<Derived>::derived;
     using CRTPSupport<Derived>::self;
@@ -649,7 +628,7 @@ class ChunkBase : public CRTPSupport<Derived>,
             return nullptr;
         }
         /// @brief Nothing to return to a pool.
-        static void free_elt_pow2(const T* /*ptr*/) noexcept {}
+        static void free_elem_pow2(const T* /*ptr*/) noexcept {}
         /// @brief No-op counterpart to TCTypeAllocator::set_arena, so call
         ///        sites that set the arena unconditionally (before init())
         ///        compile in std-alloc builds too.
@@ -668,7 +647,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         bool second = false; ///< every element equals the second constant -- never together with `first`
     };
 
-    using CstVal1Type = std::conditional_t<build_config::use_mm_protect, T*, std::array<T, cst_buffer_size>>;
+    using ConstVal1Type = std::conditional_t<build_config::use_mm_protect, T*, std::array<T, const_buffer_size>>;
 
     ChunkBase()                                = default;
     ~ChunkBase()                               = default;
@@ -699,17 +678,17 @@ class ChunkBase : public CRTPSupport<Derived>,
     // ========================================================================
     /// @brief Check if chunk points to the first constant value
     /// @return true if chunk is compressed to first constant value
-    [[nodiscard]] bool is_cst_val1() const noexcept
+    [[nodiscard]] bool is_const_val1() const noexcept
     {
         const T* current_value = values_load();
-        return current_value == ChunkBase::get_cst_val1();
+        return current_value == ChunkBase::get_const_val1();
     }
 
     /// @brief Check if chunk points to the first constant value
     /// @return true if chunk is compressed to first constant value
-    [[nodiscard]] bool is_cst_val1(const T* current_value) const noexcept
+    [[nodiscard]] bool is_const_val1(const T* current_value) const noexcept
     {
-        return current_value == ChunkBase::get_cst_val1();
+        return current_value == ChunkBase::get_const_val1();
     }
 
     // ========================================================================
@@ -727,7 +706,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     {
         if constexpr (chunk_config::stats)
         {
-            increm_chunk_scan_read<Derived>();
+            inc_chunk_scan_read<Derived>();
         }
         return element_at(offset);
     }
@@ -739,7 +718,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     {
         if constexpr (chunk_config::stats)
         {
-            increm_chunk_scan_read<Derived>();
+            inc_chunk_scan_read<Derived>();
         }
         return element_at<true>(offset);
     }
@@ -839,7 +818,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @brief read_block_or_constant() for a member with the motif state, given
     ///        the chunk's second-value slot: a motif chunk is no constant, its
     ///        block is read as motif + offset (returns false).
-    bool read_block_or_constant(int first, int count, T* out, T& cst, const T* offset_slot) const noexcept
+    bool read_block_or_constant(int first, int count, T* out, T& constant, const T* offset_slot) const noexcept
         requires has_motif_state_v<Derived>;
 
     /**
@@ -847,13 +826,13 @@ class ChunkBase : public CRTPSupport<Derived>,
      *
      * @details The same single load of `values` under one read section. A
      *          chunk compressed to the first constant -- or, zero_any, to its
-     *          second -- sets @p cst and leaves @p out untouched, so the caller
+     *          second -- sets @p constant and leaves @p out untouched, so the caller
      *          takes the rest of the chunk at once
-     *          (ArrayChunkBase::for_each_span). A zero_one_value chunk on its second constant
+     *          (ArrayChunkBase::for_each_span). A zero_or_value chunk on its second constant
      *          points at a filled buffer and is read as a block.
-     * @return true when @p cst was set, false when @p out was filled
+     * @return true when @p constant was set, false when @p out was filled
      */
-    bool read_block_or_constant(int first, int count, T* out, T& cst) const noexcept;
+    bool read_block_or_constant(int first, int count, T* out, T& constant) const noexcept;
 
     /// @brief Proxy access for read-write operations
     /// @param offset Index in the chunk
@@ -923,7 +902,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @brief The (read-only) buffer every compressed-to-first-value chunk
     ///        points at.
     /// @return Pointer to the shared first-constant buffer.
-    static T* get_cst_val1() noexcept;
+    static T* get_const_val1() noexcept;
 
     /// @brief Set @p n_elems elements of @p values_loc to the first value,
     ///        T{}: memset for arithmetic types, std::fill_n otherwise.
@@ -954,14 +933,14 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// initialise its first member only, `T(0)` not compile.
     static inline T first_value{};
 
-    // MM_PROTECT: the read-only mapping that get_cst_val1() returns, mapped once.
-    static T* map_cst_val1();
+    // MM_PROTECT: the read-only mapping that get_const_val1() returns, mapped once.
+    static T* map_const_val1();
 
     // alignas: a Bit chunk compressed to the first constant points here, and
     // its reads load 64-bit words (element_access.h). constinit, every element
     // T{} (= first_value): a global array reaches it before any dynamic
-    // initialisation. Unused under MM_PROTECT (null; see get_cst_val1()).
-    alignas(bits::WordT) static inline constinit CstVal1Type m_ptr_cst_val1{};
+    // initialisation. Unused under MM_PROTECT (null; see get_const_val1()).
+    alignas(bits::WordT) static inline constinit ConstVal1Type m_ptr_const_val1{};
 
   protected:
     /**
@@ -986,7 +965,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     static void sweep_every_rank(InRegion&& in_region, Sweep&& sweep, bool mop_up = true);
 
     // Type traits
-    // bool and Bit (bit.h) share zero_one_value's bool path: one second value, true.
+    // bool and Bit (bit.h) share zero_or_value's bool path: one second value, true.
     static constexpr bool is_bool     = is_bool_like_v<T>;
     static constexpr bool is_not_bool = !is_bool;
 
@@ -1005,9 +984,9 @@ class ChunkBase : public CRTPSupport<Derived>,
 
     /// @brief Check if chunk does not point to the first constant value
     /// @return true if chunk is not compressed to first constant value
-    [[nodiscard]] bool is_not_cst_val1() const noexcept
+    [[nodiscard]] bool is_not_const_val1() const noexcept
     {
-        return !is_cst_val1();
+        return !is_const_val1();
     }
 
     // ========================================================================
@@ -1160,7 +1139,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @brief Whether this chunk is currently materialised (not compressed
     ///        to a constant), at the granularity Derived supports.
     /// @param offset Element offset; used only when Derived distinguishes
-    ///          writtenness per-offset (e.g. zero_one_value/zero_any's second-value
+    ///          writtenness per-offset (e.g. zero_or_value/zero_any's second-value
     ///          slot); ignored otherwise (falls back to derived().written()).
     /// @return true if the chunk (or @p offset) holds real, materialised data.
     [[nodiscard]] bool is_written_at(int offset) const noexcept;
@@ -1170,7 +1149,7 @@ class ChunkBase : public CRTPSupport<Derived>,
      *
      * @details The single point every element READ goes through. A zero_any
      *          chunk compressed to a second constant points at an identifier
-     *          slot that holds nothing (tab_cst_val2_holder.h), so its value
+     *          slot that holds nothing (array_const_val2_holder.h), so its value
      *          comes from the registry: one pointer range test on the read
      *          path, in this one place rather than seven.
      *

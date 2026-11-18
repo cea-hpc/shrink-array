@@ -2,9 +2,9 @@
 
 > English version: [algo_zero_any.md](algo_zero_any.md).
 
-> État : fin septembre 2026. Ce document décrit ce que `zero_any` fait **autrement** que `zero_one_value` ;
+> État : fin septembre 2026. Ce document décrit ce que `zero_any` fait **autrement** que `zero_or_value` ;
 > la machinerie commune (proxys, écritures différées, barrière de lecture, compression en vol,
-> opérations sur plages) est décrite dans [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md), et la
+> opérations sur plages) est décrite dans [algo_zero_or_value_fr.md](algo_zero_or_value_fr.md), et la
 > géométrie dynamique dans [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md). En cas de
 > doute, c'est le code qui fait foi.
 
@@ -12,13 +12,13 @@
 
 ## 1. Ce que `zero_any` compresse
 
-`zero_one_value` compresse à zéro ou à **une** seconde valeur, déclarée pour tout le tableau. `zero_any`
+`zero_or_value` compresse à zéro ou à **une** seconde valeur, déclarée pour tout le tableau. `zero_any`
 compresse à zéro ou à **n'importe quelle valeur**, choisie **chunk par chunk** : un chunk
 uniforme à 3,5 et son voisin uniforme à −1 sont tous les deux compressés, sans rien déclarer.
 
 | état | type (1 octet par chunk) | `values` pointe vers |
 |---|---|---|
-| compressé à zéro | 0 | le tampon constant partagé `cst_val1` |
+| compressé à zéro | 0 | le tampon constant partagé `const_val1` |
 | compressé à une seconde valeur | 1 | le tableau partagé du **registre** rempli de cette valeur (§3) |
 | matérialisé | — | un tampon propre au chunk |
 
@@ -26,19 +26,19 @@ Un chunk compressé à une seconde valeur ne possède donc pas de tampon : il po
 tableau en lecture seule, partagé par **tous** les chunks, de tous les tableaux du même type,
 qui ont cette valeur. La lecture est exactement celle des autres variantes.
 
-La bibliothèque : `chunk::chunk_zero_any` (elle définit `CHUNK_VARIANT_ZERO_ANY`). Code : `chunk/zero_any_chunk.h`, `chunk/zero_any_array.h`,
+La bibliothèque : `shrink_array::zero_any` (elle définit `CHUNK_VARIANT_ZERO_ANY`). Code : `chunk/internal/zero_any_chunk.h`, `chunk/zero_any_array.h`,
 `internal/zero_any_chunk_inline.h`, `internal/zero_any_array_inline.h`, `internal/zero_any_proxy.h`,
-`internal/zero_any_proxy_inline.h`, `internal/tab_cst_val2_holder.h`.
+`internal/zero_any_proxy_inline.h`, `internal/array_const_val2_holder.h`.
 
 ## 2. Les métadonnées par chunk
 
-Chaque tableau a, indexées par son numéro (`num_tab`), trois lignes d'une entrée par chunk :
+Chaque tableau a, indexées par son numéro (`array_id`), trois lignes d'une entrée par chunk :
 
 | ligne | taille par chunk | contenu |
 |---|---|---|
-| `tab_type_cst_val` | 1 octet | le type de constante (0 ou 1) |
-| `tab_second_value` | `sizeof(T)` octets par défaut | la seconde valeur du chunk |
-| `tab_is_inside_chunk_list_to_compress` | 1 octet | « déjà en liste de compression » |
+| `array_type_const_val` | 1 octet | le type de constante (0 ou 1) |
+| `array_second_value` | `sizeof(T)` octets par défaut | la seconde valeur du chunk |
+| `array_is_inside_chunk_list_to_compress` | 1 octet | « déjà en liste de compression » |
 
 Avec l'option CMake **`CHUNK_SECOND_VALUE_INDEXED`** (désactivée par défaut), l'emplacement de
 seconde valeur des types de plus de 4 octets contient l'**identifiant** du tableau du registre
@@ -52,13 +52,13 @@ d'objet, plus 2 octets et `sizeof(T)`), et donc celle qui gagne le plus à gross
 voir [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md).
 
 Quand un stockage est détruit (fin de vie du tableau, ou ancien stockage d'un rechunk), ses
-trois lignes sont **libérées** (`zero_any::Proxy::clear_tab_is_int`), pas seulement vidées. Jusqu'en
+trois lignes sont **libérées** (`zero_any::Proxy::clear_array_is_int`), pas seulement vidées. Jusqu'en
 septembre 2026, `clear()` gardait leur capacité, et chaque rechunk laissait les lignes de
 l'ancien stockage derrière lui : 3,5 Go sur le banc, avec 15 tableaux rechunkés.
 
 ## 3. Le registre des secondes valeurs
 
-`tab_cst_val2_holder.h`. Pour chaque type d'élément, un registre **unique au processus**
+`array_const_val2_holder.h`. Pour chaque type d'élément, un registre **unique au processus**
 (`GlobalVecHolder`) contient un tableau rempli de chaque seconde valeur distincte rencontrée.
 
 - Il est organisé en **segments de 64 emplacements** chaînés, plutôt qu'en tableau
@@ -75,7 +75,7 @@ l'ancien stockage derrière lui : 3,5 Go sur le banc, avec 15 tableaux rechunké
   lit dans la **table des valeurs** (`value_by_id`, un `T` par identifiant). La région et la
   table sont deux réservations `mmap(MAP_NORESERVE)` faites au premier tableau du type : de
   l'espace d'adressage seulement, les pages adossées au fil des identifiants attribués, rendues
-  au dernier `clear`, et la table dimensionnée par `CHUNK_CST_VAL2_ID_LIMIT` quand il est
+  au dernier `clear`, et la table dimensionnée par `CHUNK_CONST_VAL2_ID_LIMIT` quand il est
   positionné. Jusqu'en novembre 2026 la table était un tableau statique de 4 Mi valeurs par
   type d'élément (32 Mio de bss pour un `double`, 332 Mio en tout dans le benchmark) : gratuit
   tant qu'on n'y touche pas pour un type trivial, mais un type dont le constructeur par défaut
@@ -90,9 +90,9 @@ l'ancien stockage derrière lui : 3,5 Go sur le banc, avec 15 tableaux rechunké
   fait grossir le registre jusqu'à épuiser ses identifiants, ce qui arrête le run. Dans le
   banc, `CHUNK_BENCH_ULONG_BANDS` limite le nombre de valeurs distinctes du tableau
   `unsigned long`, `CHUNK_LOG=compress=info` affiche l'état du registre et
-  `CHUNK_CST2_RECLAIM=N` libère toutes les N itérations.
+  `CHUNK_CONST2_RECLAIM=N` libère toutes les N itérations.
 
-`find_or_set_ind_cst_val2(valeur, emplacement)` enregistre la valeur si besoin, l'écrit dans
+`find_or_set_idx_const_val2(valeur, emplacement)` enregistre la valeur si besoin, l'écrit dans
 l'emplacement de seconde valeur du chunk, et rend le tableau partagé à installer.
 
 ## 4. Quand un chunk devient candidat à la compression
@@ -120,17 +120,17 @@ Même déroulé que pour les autres variantes (réservation des candidats, fenê
 relecture), avec deux listes à l'issue de la relecture (`fill_list_to_compress`, qui compare
 chaque élément au premier élément du chunk) :
 
-- les chunks **uniformes à zéro** sont compressés au type 0 : `values` repasse à `cst_val1` ;
+- les chunks **uniformes à zéro** sont compressés au type 0 : `values` repasse à `const_val1` ;
 - les chunks **uniformes à une autre valeur** sont compressés au type 1 :
-  `find_or_set_ind_cst_val2` enregistre la valeur et rend le tableau partagé, que
+  `find_or_set_idx_const_val2` enregistre la valeur et rend le tableau partagé, que
   `clear_int_st` installe par CAS comme pointeur `values` du chunk.
 
 Le tampon libéré rejoint la liste de réutilisation du thread après la période de grâce des
 sections de lecture. Le seuil de déclenchement vaut
-`somme_chunk_create / (50 × nombre de threads)`, avec un plancher de 500 candidats (constantes de
+`total_chunk_create / (50 × nombre de threads)`, avec un plancher de 500 candidats (constantes de
 `zero_any_chunk_def.h`).
 
-Le déroulé de la passe, dans le style du §8.4 de [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md) :
+Le déroulé de la passe, dans le style du §8.4 de [algo_zero_or_value_fr.md](algo_zero_or_value_fr.md) :
 
 ```mermaid
 flowchart TD
@@ -140,18 +140,18 @@ flowchart TD
     C --> D{"CompressionManager::start"}
     D -->|refusé| D1["steal_unmark de tous, renoncer"]
     D -->|accepté| E["fill_list_to_compress à la taille de l'entrée :<br/>scan_constants contre 0 et l'élément 0"]
-    E -->|"tout = 0"| F["liste ll_compt1"]
-    E -->|"tout = élément 0"| G["liste ll_compt2"]
+    E -->|"tout = 0"| F["items ll_compt1"]
+    E -->|"tout = élément 0"| G["items ll_compt2"]
     E -->|"sinon"| N["steal_unmark tout de suite"]
-    F --> F1["clear_int_st, type 0 : case remise à zéro,<br/>type cst_val1, CAS values -> cst_val1"]
-    G --> G1["find_or_set_ind_cst_val2 : valeur enregistrée,<br/>écrite dans la case, puis clear_int_st, type 1 :<br/>CAS values -> le tableau du registre"]
+    F --> F1["clear_int_st, type 0 : case remise à zéro,<br/>type const_val1, CAS values -> const_val1"]
+    G --> G1["find_or_set_idx_const_val2 : valeur enregistrée,<br/>écrite dans la case, puis clear_int_st, type 1 :<br/>CAS values -> le tableau du registre"]
     F1 --> R["free_block_to_pool après une période de grâce,<br/>steal_unmark"]
     G1 --> R
-    R --> K["drapeaux de file : hand_back après le parcours, release à la fin,<br/>écrit entre-temps -> remis en liste,<br/>chunk déclencheur remis en liste, finish()"]
+    R --> K["drapeaux de file : hand_back après le parcours, release à la end,<br/>écrit entre-temps -> remis en items,<br/>chunk déclencheur remis en items, finish()"]
     N --> K
 ```
 
-Ce qui diffère de `zero_one_value` : une liste de candidats par rang
+Ce qui diffère de `zero_or_value` : une liste de candidats par rang
 (`get_zero_any_candidates`), et non une par seconde valeur ; la seconde constante est
 l'élément 0 du chunk, enregistré seulement à ce moment ; les métadonnées du chunk (case, type)
 sont écrites **avant** le CAS (`block_clear_common`). Les builds séquentiels exécutent la même
@@ -159,7 +159,7 @@ passe, sans les marques et sans `start` / `finish`.
 
 ## 6. L'écriture
 
-Le chemin d'écriture est celui de `zero_one_value` (§6 de [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md)), à
+Le chemin d'écriture est celui de `zero_or_value` (§6 de [algo_zero_or_value_fr.md](algo_zero_or_value_fr.md)), à
 ces différences près :
 
 - la seconde valeur à comparer est celle **du chunk**, lue dans sa ligne de métadonnées, et non
@@ -180,13 +180,13 @@ a été retirée : son gain (~0,4 % sur `shrink_bench_omp_zero_any_256` à 64 th
 l'invariant de resynchronisation qu'elle imposait à chaque réallocation des lignes.
 
 Le déroulé d'une écriture dans un build OpenMP : les étapes du moteur sont celles du §7.2 de
-[algo_zero_one_value_fr.md](algo_zero_one_value_fr.md), résumées ici ; le reste est ce en quoi
+[algo_zero_or_value_fr.md](algo_zero_or_value_fr.md), résumées ici ; le reste est ce en quoi
 `zero_any` diffère (pour `bool`, `handle_bool_assignment` joue le même rôle, avec `true` comme
 seconde valeur).
 
 ```mermaid
 flowchart TD
-    A["zero_any::ProxyImpl::assign_impl"] --> B{"0 sur un chunk à cst_val1,<br/>aucune opération différée en attente ?<br/>(is_cst_val1_and_v_equal_first_value)"}
+    A["zero_any::ProxyImpl::assign_impl"] --> B{"0 sur un chunk à const_val1,<br/>aucune opération différée en attente ?<br/>(is_const_val1_and_v_equal_first_value)"}
     B -->|oui| B1["rien à faire"]
     B -->|non| C["moteur du 7.2 (write_with_optional_lock_with_set_ptr) :<br/>opérations différées, wait_out_compressor,<br/>announce_write"]
     C --> D{"revérification :<br/>compresseur ?"}
@@ -199,7 +199,7 @@ flowchart TD
     G -->|non| H
     G1 --> H{"perform_core_assignment :<br/>état du chunk ?"}
     H -->|"élément déjà = valeur = seconde valeur"| K
-    H -->|"cst_val1"| H1["create_value : pré-rempli de 0,<br/>CAS contre cst_val1"]
+    H -->|"const_val1"| H1["create_value : pré-rempli de 0,<br/>CAS contre const_val1"]
     H -->|"seconde valeur"| H2["create_value : pré-rempli avec la seconde<br/>valeur du chunk, CAS contre elle"]
     H -->|"matérialisé"| I
     H1 --> I["store_value_at"]

@@ -41,8 +41,8 @@
 
 #include <cstddef> // std::size_t
 
-#include "chunk/chunk_traits.h"           // ArrayChunkTraits<pattern::Array>, ArrayChunkElement
-#include "chunk/pattern_chunk.h"          // pattern::Chunk
+#include "chunk/internal/chunk_traits.h"  // ArrayChunkTraits<pattern::Array>, ArrayChunkElement
+#include "chunk/internal/pattern_chunk.h" // pattern::Chunk
 #include "chunk/internal/pattern_proxy.h" // pattern::Proxy (the only include of it: Array's ProxyType must be complete)
 #include "chunk/zero_any_array.h"         // zero_any::ArrayImpl
 
@@ -67,6 +67,9 @@ class Array : public zero_any::ArrayImpl<Array<T, IntType>>
     /**
      * @brief Build an array of @p sz elements.
      * @param sz initial element count; 0 by default, as std::vector
+     * @note May run inside a parallel region, for a work array of the calling
+     *       thread: construction and destruction take the library's cold-path
+     *       lock (internal/cold_path_lock.h), one array at a time.
      */
     explicit Array(IntType sz = 0)
     {
@@ -117,7 +120,7 @@ class Array : public zero_any::ArrayImpl<Array<T, IntType>>
     Array& operator=(Array&& other) noexcept;
 
     /// @brief Deep copy-assignment (see the copy constructor). Self-assignment
-    ///        is a no-op; num_tab is not copied, identity stays with the address.
+    ///        is a no-op; array_id is not copied, identity stays with the address.
     Array& operator=(const Array& from)
     {
         if (this != &from)
@@ -128,7 +131,7 @@ class Array : public zero_any::ArrayImpl<Array<T, IntType>>
     }
 
     /**
-     * @brief Put chunk @p num_chunk directly in the motif state for the
+     * @brief Put chunk @p chunk_index directly in the motif state for the
      *        elements @p elems, chunk_size() of them, without the write path and
      *        the pass that compress to motifs: import_chunk() (chunk_exchange.h)
      *        and pattern_validation (I to L).
@@ -138,17 +141,11 @@ class Array : public zero_any::ArrayImpl<Array<T, IntType>>
      *          pointer to the motif: element j reads motif[j] + offset = elems[j].
      * @pre A sequential point; the chunk at the first constant (not written since
      *      the array was built): no buffer is released, no candidate list holds it.
-     * @param num_chunk Chunk index.
+     * @param chunk_index Chunk index.
      * @param elems     The chunk's elements, chunk_size() of them.
      * @return false, and nothing done, when the chunk is not at the first constant.
      */
-    bool install_motif(int num_chunk, const T* elems);
-
-    /// @brief The former name of install_motif(), kept until 1.0.
-    [[deprecated("install_motif_for_test is install_motif")]] bool install_motif_for_test(int num_chunk, const T* elems)
-    {
-        return install_motif(num_chunk, elems);
-    }
+    bool install_motif(int chunk_index, const T* elems);
 
     /**
      * @brief zero_any's reclaim_second_values() -- the constants no array of the

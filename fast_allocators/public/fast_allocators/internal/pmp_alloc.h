@@ -18,11 +18,11 @@
 
 // Portable thread-count / rank / parallel-region macros for the fast allocator:
 // the StaticConstArray ladder (static_const_array.h, its _inline.h, and
-// InfoFreeElt's constructor in static_const_array.cpp). Mirrors chunk's
-// public/chunk/PMP_CHUNK.h.
+// InfoFreeElem's constructor in static_const_array.cpp). Mirrors chunk's
+// public/chunk/internal/pmp_chunk.h.
 //
 // The data-parallel loops (fast_alloc::pmp::parallel_for, ...) come with it,
-// from pmp_loops.h, which chunk's PMP_CHUNK.h re-exports as shrink_array::pmp.
+// from pmp_loops.h, which chunk's pmp_chunk.h re-exports as shrink_array::pmp.
 // The macros are the runtime queries of pmp_runtime.h (the backend's).
 
 #include "fast_allocators/internal/pmp_loops.h"   // fast_alloc::pmp: parallel_for, parallel_for_local, parallel_sum
@@ -45,7 +45,7 @@
 #else
 
     // A serial build has one thread, rank 0 -- values, not empty expansions, so
-    // code that names them compiles in both modes (mirrors chunk's PMP_CHUNK.h).
+    // code that names them compiles in both modes (mirrors chunk's pmp_chunk.h).
     #ifndef FAST_ALLOC_PMP_MAX_THREADS
         #define FAST_ALLOC_PMP_MAX_THREADS 1
     #endif

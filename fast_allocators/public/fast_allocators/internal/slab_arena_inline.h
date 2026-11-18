@@ -15,7 +15,17 @@
  */
 
 #pragma once
-#include <ranges> // std::views::reverse (the recycled list, from the back)
+#include <ranges>     // std::views::reverse (the recycled list, from the back)
+#include <algorithm>  // std::max, std::ranges::sort, std::stable_partition
+#include <atomic>     // std::memory_order_relaxed
+#include <chrono>     // std::chrono::duration_cast, std::chrono::nanoseconds, std::chrono::steady_clock
+#include <cstddef>    // std::byte, std::size_t
+#include <cstdint>    // std::uintptr_t
+#include <cstring>    // std::strerror
+#include <functional> // std::less
+#include <mutex>      // std::scoped_lock
+#include <utility>    // std::cmp_less
+#include <vector>     // std::vector
 
 #include "fast_allocators/slab_arena.h" // the class these bodies belong to
 
@@ -177,8 +187,7 @@ inline void* SlabArena::allocate(std::size_t size, std::size_t align, int rank)
     }
 
     // Reuse a same-size slab from this arena's free-list if available.
-    const auto it = free_lists_.find(size);
-    if (it != free_lists_.end() && !it->second.empty())
+    if (const auto it = free_lists_.find(size); it != free_lists_.end() && !it->second.empty())
     {
         void* block = it->second.back();
         it->second.pop_back();
@@ -368,8 +377,8 @@ inline std::size_t SlabArena::advise_recycled(std::size_t keep_bytes) noexcept
     // (EmptySlabSweep::advise_runs): still under the lock, which the team
     // does not need, so no allocate() takes a slab mid-advise.
     const auto n_runs = static_cast<long>(runs);
-    const int  nthr   = detail::reclaim_sweep_threads();
-    if (pmp::threaded && nthr > 1 && !pmp::in_parallel() && n_runs >= 4L * nthr)
+    if (const int nthr = detail::reclaim_sweep_threads();
+        pmp::threaded && nthr > 1 && !pmp::in_parallel() && n_runs >= 4L * nthr)
     {
         const Span* run = spans.data();
         pmp::parallel_for(0L, n_runs, pmp::Options{.num_threads = nthr, .sched = pmp::Schedule::dynamic(16)},

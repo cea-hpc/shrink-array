@@ -20,6 +20,7 @@
 
 #include "chunk/internal/second_value_proxy_base.h" // the declarations these bodies belong to
 #include "chunk/internal/in_t.h"                    // InT<T>
+#include "chunk/internal/same_value.h"              // same_value
 
 namespace shrink_array
 {
@@ -40,7 +41,7 @@ void SecondValueProxyBase<Derived, T, ChunkT>::mark_for_compression_core(InT<T> 
     // Check if transition is valid for compression OR if memory changed unexpectedly (Race)
     // isv (Is Valid) guards the entire check for performance.
     if (isv && (derived().should_mark_for_compression(old_value, new_value, std::forward<Args>(compression_args)...) ||
-                (Base::load_value() != expected_in_memory))) [[unlikely]]
+                !same_value(static_cast<T>(Base::load_value()), static_cast<T>(expected_in_memory)))) [[unlikely]]
     {
         add_to_compression_list();
     }
@@ -54,7 +55,7 @@ template <typename Derived, typename T, typename ChunkT>
 void SecondValueProxyBase<Derived, T, ChunkT>::mark_for_compression_if_needed(bool new_value) const
 {
     const bool isv = passes_mark_pre_check(new_value, false, true);
-    // Base::read_values() (qualified: dependent base), never values[num]:
+    // Base::read_values() (qualified: dependent base), never values[elem_offset]:
     // it is the write path's read entry and the only one that resolves a
     // compressed chunk's constant (an unbacked identifier slot); indexing
     // reads a zero page and the decision below is taken against 0.
@@ -75,7 +76,7 @@ void SecondValueProxyBase<Derived, T, ChunkT>::mark_for_compression_before_store
     }
     const T old = Base::read_values_at(vals);
     if (derived().should_mark_for_compression(old, new_value, second_val, first_value) ||
-        (Base::read_values_at(vals) != old)) [[unlikely]]
+        !same_value(static_cast<T>(Base::read_values_at(vals)), old)) [[unlikely]]
     {
         add_to_compression_list();
     }
@@ -90,7 +91,7 @@ SecondValueProxyBase<Derived, T, ChunkT>::write_with_optional_lock_with_set_ptr(
     {
         if constexpr (chunk_config::use_fast_block_compression)
         {
-            derived().set_num_tab_ptr_is_inside_chunk(); // common initialization required for the fast-path
+            derived().set_array_id_ptr_is_inside_chunk(); // common initialization required for the fast-path
         }
         else
         {
@@ -110,7 +111,7 @@ template <typename Derived, typename T, typename ChunkT>
                                                                                    InT<T> first_value,
                                                                                    InT<T> second_val) const noexcept
 {
-    // CRTP dispatch: each variant owns its fast pre-check. zero_one_value keeps the
+    // CRTP dispatch: each variant owns its fast pre-check. zero_or_value keeps the
     // "a constant is written" test below; zero_any widens it (see
     // zero_any::Proxy::pre_check_mark_for_compression) because its
     // should_mark_for_compression() accepts a case this test would reject.

@@ -23,24 +23,29 @@
  *
  * @details flush_pending_deferred_ops() must run before anything frees or
  *          re-points chunk storage (clear(), resize(), rechunk_to(), swap());
- *          it is the same for zero::Array, zero_one_value::Array and zero_any::Array, so it
- *          lives here once, under the per-variant mixins
- *          (zero_array_parallel.h, zero_one_value_array_parallel.h,
- *          zero_any_array_parallel.h). The serial counterpart is a no-op.
+ *          it is the same for zero::Array, zero_or_value::Array and zero_any::Array, so it
+ *          lives here once. The fast-block pass stays per variant
+ *          (zero_array_parallel.h, zero_or_value_array_parallel.h). The serial
+ *          counterpart is a no-op.
  *
  * @see array_chunk_parallel_common_inline.h for the body
  */
 
-#include "chunk/chunk_traits.h" // ArrayChunkTraits
+#include "chunk/internal/chunk_traits.h" // ArrayChunkTraits
+#include "chunk/config.h"                // build_config::threaded
 
 namespace shrink_array
 {
 
+/// @brief Refuse a public make_block_compression() inside a region (the body:
+///        array_chunk_parallel_common_inline.h).
+[[nodiscard]] inline bool block_pass_refused_in_region();
+
 /**
  * @brief The OpenMP machinery shared by the three array variants.
  *
- * @tparam Derived the concrete array type (zero::Array, zero_one_value::Array or
- *         zero_any::Array). Only reached through the per-variant mixin.
+ * @tparam Derived the concrete array type (zero::Array, zero_or_value::Array or
+ *         zero_any::Array). Only reached through ParallelSupport.
  */
 template <typename Derived>
 class ParallelSupportCommon
@@ -69,10 +74,14 @@ class ParallelSupportCommon
      *              on whatever chunk is allocated there. The counter can read 0 while such
      *              an op is still queued, so the gate cannot be trusted here.
      *
+     * @param own_rank_only Drain the calling thread's rank alone: the teardown, inside a
+     *              region, of an array no other rank holds a write of (see
+     *              owned_by_calling_rank()).
+     *
      * @note Guarded on chunk_config::use_fast_block_compression inside: only
      *       that mode queues deferred ops at all.
      */
-    void flush_pending_deferred_ops(bool force = false);
+    void flush_pending_deferred_ops(bool force = false, bool own_rank_only = false);
 
   protected:
     /** @brief CRTP down-cast: the concrete array this mixin is a base of. */
@@ -95,7 +104,31 @@ template <typename Derived>
 struct ParallelSupportCommonSerial
 {
     /** @brief No-op: nothing is deferred without OpenMP. */
-    void flush_pending_deferred_ops(bool /*force*/ = false) noexcept {}
+    static void flush_pending_deferred_ops(bool /*force*/ = false, bool /*own_rank_only*/ = false) noexcept {}
+};
+
+/**
+ * @brief The OpenMP-only members of an array: the deferred-op flush, inert
+ *        without threads.
+ *
+ * @tparam Derived the concrete array type.
+ * @tparam Enabled defaulted to build_config::threaded; never pass it
+ *         explicitly outside of tests -- the point of the parameter is that the
+ *         two specialisations below are selected by the build mode.
+ */
+template <typename Derived, bool Enabled = build_config::threaded>
+struct ParallelSupport;
+
+/// @brief Threaded build: the real surface (flush_pending_deferred_ops() and self()).
+template <typename Derived>
+struct ParallelSupport<Derived, true> : public ParallelSupportCommon<Derived>
+{
+};
+
+/// @brief Serial build: the same verb, inert.
+template <typename Derived>
+struct ParallelSupport<Derived, false> : public ParallelSupportCommonSerial<Derived>
+{
 };
 
 } // namespace shrink_array

@@ -2,7 +2,7 @@
 
 > English version: [getting_started.md](getting_started.md).
 
-> Octobre 2026. Ce guide explique comment **utiliser** la bibliothèque. Son fonctionnement
+> Novembre 2026. Ce guide explique comment **utiliser** la bibliothèque. Son fonctionnement
 > interne est décrit dans les documents de conception, indexés dans [README.md](README.md). La
 > version anglaise de ce guide est [getting_started.md](getting_started.md).
 
@@ -28,10 +28,10 @@ Trois variantes, choisies au moment de l'édition de liens :
 | variante | classe | un chunk est compressé quand il est uniforme à… |
 |---|---|---|
 | `zero` | `zero::Array<T>` | `T{}` (zéro) seulement |
-| `zero_one_value` | `zero_one_value::Array<T>` | `T{}`, ou **une** seconde valeur par tableau, déclarée par `set_second_value()` |
+| `zero_or_value` | `zero_or_value::Array<T>` | `T{}`, ou **une** seconde valeur par tableau, déclarée par `set_second_value()` |
 | `zero_any` | `zero_any::Array<T>` | `T{}`, ou **n'importe quelle** valeur, chunk par chunk, sans rien déclarer |
 
-`zero_any` compresse le plus et c'est celle à essayer d'abord. `zero_one_value` a des métadonnées plus
+`zero_any` compresse le plus et c'est celle à essayer d'abord. `zero_or_value` a des métadonnées plus
 légères quand les données ont une seule valeur non nulle dominante, et `zero` est la plus
 simple quand seuls les zéros comptent. [variantes_fr.md](variantes_fr.md) les compare sur un
 cas réel.
@@ -46,7 +46,7 @@ la branche `cpp23` demande le C++23, GCC 14 ou plus récent) et CMake ≥ 3.20 :
 ```sh
 cmake -S shrink-array -B build -G Ninja \
       -DCMAKE_BUILD_TYPE=Release \
-      -DOMP=ON \
+      -DCHUNK_OPENMP=ON \
       -DCMAKE_INSTALL_PREFIX=$HOME/opt/shrink-array
 cmake --build build
 cmake --install build
@@ -56,8 +56,8 @@ Les options utiles à l'utilisateur :
 
 | option | défaut | effet |
 |---|---|---|
-| `OMP` | `OFF` | construire avec OpenMP. Un programme qui utilise les tableaux dans des régions OpenMP a besoin d'une bibliothèque construite avec |
-| `CHUNK_THREADS` | vide | backend de threads de la bibliothèque : `openmp`, `std` (des workers `std::jthread` à elle, sans OpenMP) ou `serial` ; vide : `openmp` avec `OMP=ON`, `serial` sinon. Renseigné, il fixe `OMP` en conséquence |
+| `CHUNK_OPENMP` | `OFF` | construire avec OpenMP. Un programme qui utilise les tableaux dans des régions OpenMP a besoin d'une bibliothèque construite avec |
+| `CHUNK_THREADS` | vide | backend de threads de la bibliothèque : `openmp`, `std` (des workers `std::jthread` à elle, sans OpenMP) ou `serial` ; vide : `openmp` avec `CHUNK_OPENMP=ON`, `serial` sinon. Renseigné, il fixe `CHUNK_OPENMP` en conséquence |
 | `CHUNK_STATIC_SIZES` | `auto` | les tailles de chunk fixées à la compilation, une bibliothèque par taille et par variante ; `auto` : `256;1024`, mais `256` seule dans un build Debug ou sanitizer de ce projet (pas d'un projet qui l'inclut) |
 | `CHUNK_BUILD_DYN` | `ON` | construire aussi les bibliothèques dont la taille de chunk est choisie à l'exécution, et peut changer (`_dyn`) |
 | `CHUNK_STD_ALLOC` | `OFF` | allouer les tampons des chunks avec l'allocateur standard plutôt qu'avec `fast_allocators`, fourni avec la bibliothèque (utile sous AddressSanitizer) |
@@ -77,10 +77,10 @@ dispense le programme des appels de phase du §5.
 cmake_minimum_required(VERSION 3.20)
 project(mon_appli LANGUAGES CXX)
 
-find_package(chunk 0.2 REQUIRED)        # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
+find_package(shrink_array 0.3 REQUIRED)        # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
 
 add_executable(mon_appli main.cpp)
-target_link_libraries(mon_appli PRIVATE chunk::chunk_zero_any)
+target_link_libraries(mon_appli PRIVATE shrink_array::zero_any)
 ```
 
 La bibliothèque liée **choisit la variante et la taille de chunk**. Les en-têtes sont les mêmes
@@ -92,13 +92,13 @@ programme les compile comme la bibliothèque.
 
 | cible | variante | taille de chunk |
 |---|---|---|
-| `chunk::chunk_zero`, `chunk::chunk_zero_one_value`, `chunk::chunk_zero_any` | `zero`, `zero_one_value`, `zero_any` | la première de `CHUNK_STATIC_SIZES` (256) |
-| `chunk::chunk_zero_any_1024`, … | | cette taille, fixée à la compilation |
-| `chunk::chunk_zero_any_dyn`, … | | choisie à l'exécution, par tableau (modifiable par `rechunk_to()` ou par le décideur adaptatif) |
-| `chunk::chunk_vector` | aucune : les tableaux sont des `std::vector` | — |
+| `shrink_array::zero`, `shrink_array::zero_or_value`, `shrink_array::zero_any` | `zero`, `zero_or_value`, `zero_any` | la première de `CHUNK_STATIC_SIZES` (256) |
+| `shrink_array::zero_any_1024`, … | | cette taille, fixée à la compilation |
+| `shrink_array::zero_any_dyn`, … | | choisie à l'exécution, par tableau (modifiable par `rechunk_to()` ou par le décideur adaptatif) |
+| `shrink_array::vector` | aucune : les tableaux sont des `std::vector` | — |
 
 Lier **une seule** bibliothèque de variante par programme, et écrire **la classe de cette
-variante** : `zero_any::Array<T>` avec `chunk::chunk_zero_any`. La classe écrite est celle que l'on
+variante** : `zero_any::Array<T>` avec `shrink_array::zero_any`. La classe écrite est celle que l'on
 obtient -- un programme qui nomme `zero_any::Array` la garde quelle que soit la bibliothèque --,
 et un tableau d'une autre variante que celle de la bibliothèque n'est pas pris en charge :
 selon les appels, il ne compile pas ou il plante. Pour laisser l'édition de liens choisir,
@@ -109,22 +109,22 @@ passer par un alias sur la variante que la bibliothèque définit (`examples/shr
 #include <type_traits>
 #include <vector>
 #include "chunk/zero_array.h"
-#include "chunk/zero_one_value_array.h"
+#include "chunk/zero_or_value_array.h"
 #include "chunk/zero_any_array.h"
 #include "chunk/config.h"
 
 namespace sa = shrink_array;
 template <typename T>
 using Array = std::conditional_t<sa::chunk_config::use_zero_any, sa::zero_any::Array<T>,
-              std::conditional_t<sa::chunk_config::use_zero_one_value, sa::zero_one_value::Array<T>,
+              std::conditional_t<sa::chunk_config::use_zero_or_value, sa::zero_or_value::Array<T>,
               std::conditional_t<sa::chunk_config::use_zero, sa::zero::Array<T>, std::vector<T>>>>;
 ```
 
-Avec lui, `chunk::chunk_vector` construit le même programme sur de simples `std::vector`, ce
+Avec lui, `shrink_array::vector` construit le même programme sur de simples `std::vector`, ce
 qui est la façon la plus simple de comparer mémoire et temps.
 
-`find_package(chunk)` définit aussi `chunk_STATIC_SIZES`, `chunk_DEFAULT_SIZE`,
-`chunk_HAS_DYN`, `chunk_OPENMP`, `chunk_OMPT` et `chunk_STD_ALLOC`, pour un projet qui veut
+`find_package(shrink_array)` définit aussi `shrink_array_STATIC_SIZES`, `shrink_array_DEFAULT_SIZE`,
+`shrink_array_HAS_DYN`, `shrink_array_OPENMP`, `shrink_array_OMPT` et `shrink_array_STD_ALLOC`, pour un projet qui veut
 vérifier ce que contient l'installation.
 
 ## 4. Un premier programme, parallèle et multi-thread
@@ -138,15 +138,14 @@ installation que dans l'arbre des sources.
 #include <utility>                 // std::as_const
 
 #include "chunk/zero_any_array.h"   // shrink_array::zero_any::Array
-#include "chunk/zero_chunk.h"       // release_chunk_pools, destroy_block_chunk
-#include "chunk/manage_ompt.h"     // parallel_phase
-#include "chunk/param_chunk.h"     // ParamChunk::init_indexes
+#include "chunk/phases.h"     // parallel_phase
+#include "chunk/runtime.h"     // Runtime::init, release_chunk_pools, Runtime::shutdown
 
 namespace sa = shrink_array;
 
 int main()
 {
-    sa::ParamChunk::init_indexes(true);          // (1) une fois, avant le premier tableau
+    sa::Runtime::init(true);          // (1) une fois, avant le premier tableau
 
     {
         const int n = 1 << 24;                   // 16 M doubles : 128 Mio en std::vector
@@ -170,13 +169,13 @@ int main()
     }                                            // (6) le tableau rend ses chunks
 
     sa::release_chunk_pools();                   // (7) arrêter la bibliothèque
-    sa::destroy_block_chunk();
+    sa::Runtime::shutdown();
 }
 ```
 
-1. **`init_indexes(true)`**, une fois, avant le premier tableau : prépare les blocs
+1. **`init(true)`**, une fois, avant le premier tableau : prépare les blocs
    d'allocation (`true` : gros blocs, le choix habituel). Facultatif : sans lui, le premier
-   tableau du programme lance lui-même `init_indexes(true)`. Les types d'éléments ne se
+   tableau du programme lance lui-même `init(true)`. Les types d'éléments ne se
    déclarent pas : chacun est enregistré à la construction du premier tableau de ce type.
 2. **Un tableau neuf** lit `T{}` partout et n'alloue aucun tampon.
 3. **`parallel_phase()`** ouvre une région parallèle et exécute la lambda sur chaque thread.
@@ -185,7 +184,7 @@ int main()
    dans un build séquentiel, ces deux appels ne génèrent aucun code.
 4. **La lecture** : sur un tableau `const`, `operator[]` rend un `T`. Sur un tableau non
    constant, il rend un *proxy* (§6).
-5. **`shrink_to_fit()`** lance une passe de compression complète, hors région parallèle. Il
+5. **`shrink_to_fit()`** lance une passe de compression complète, en un point séquentiel (§5). Il
    n'est pas nécessaire de l'appeler : les chunks sont compressés pendant l'exécution. Il sert
    à récupérer la mémoire à un moment précis.
 6. **La destruction du tableau** rend ses tampons. La bibliothèque affiche alors une ligne par
@@ -268,9 +267,9 @@ l'autre, un `finalize_parallel_phase()` oublié applique une écriture différé
 si les deux appels sont oubliés, des valeurs sont fausses, sans message. Le programme
 s'arrête, dans tous les builds, sur un `begin_parallel_phase()` sans
 `finalize_parallel_phase()` depuis la région précédente ; les builds de contrôle (Debug,
-`CHECK_OPTIM`) s'arrêtent aussi sur une écriture différée par un thread qui n'a pas appelé
+`CHUNK_CHECK_OPTIM`) s'arrêtent aussi sur une écriture différée par un thread qui n'a pas appelé
 `begin_parallel_phase()`. Placer ces appels sous
-`if constexpr (sa::build_config::has_not_ompt)`, comme ci-dessus, permet de garder un seul source
+`if constexpr (sa::build_config::needs_explicit_phases)`, comme ci-dessus, permet de garder un seul source
 pour les deux runtimes.
 
 `shrink_array::parallel_phase()` écrit la région et les deux appels à votre place, et les omet
@@ -295,12 +294,30 @@ est le programme du §4 écrit ainsi : une même fonction remplit un `std::vecto
 `zero_any::Array<double>`, et le programme vérifie qu'ils se relisent à l'identique. Il refuse de
 compiler contre une bibliothèque sans OMPT ; son test tourne avec `CHUNK_REQUIRE_OMPT=1`.
 
-**Les points séquentiels.** Tout ce qui reconstruit le stockage d'un tableau s'appelle hors de
-toute région parallèle : `resize()`, `reserve()`, `push_back()` au-delà de la capacité,
-`clear()`, `assign()`, `swap()`, l'affectation, `shrink_to_fit()`, `compress()`,
-`rechunk_to()`, et, pour `zero_one_value`, `set_second_value()`. De même pour un appel explicite
-à `make_block_compression()` : dans une région, il est refusé (arrêt dans un build de contrôle,
-erreur dans le journal et pas de passe ailleurs) -- les passes des écrivains y compressent.
+**Les points séquentiels.** Tout ce qui reconstruit le stockage d'un tableau est un point
+séquentiel : `resize()`, `reserve()`, `push_back()` au-delà de la capacité, `clear()`,
+`assign()`, `swap()`, la construction par copie et l'affectation, `shrink_to_fit()`,
+`compress()`, `rechunk_to()`, et, pour `zero_or_value`, `set_second_value()`. Un point
+séquentiel vide les écritures différées et lance une passe de compression sur des listes que
+partagent tous les tableaux du type d'élément. Il s'appelle hors de toute région parallèle, ou
+dans une région depuis un seul thread pendant que le reste de l'équipe laisse les tableaux en
+paix : sous `omp single` ou `omp masked`, ou derrière un verrou du programme que chaque autre
+thread attend. Deux threads d'une région n'exécutent jamais de points séquentiels en même temps,
+et aucun thread n'écrit ni ne lit un tableau pendant ce temps. Un appel explicite à
+`make_block_compression()` fait exception : dans une région, il est refusé (arrêt dans un build
+de contrôle, erreur dans le journal et pas de passe ailleurs) -- les passes des écrivains y
+compressent.
+
+**Les tableaux de travail dans une région.** Un thread d'une région peut construire ses propres
+tableaux (`zero_any::Array<double> work(n);`), les écrire, les lire et les laisser détruire,
+pendant que les autres threads font de même et que l'équipe écrit des tableaux partagés. La
+construction et la destruction prennent un verrou de la bibliothèque, un tableau à la fois pour
+tout le processus ; les accès aux éléments n'en prennent aucun. Un tel tableau appartient à son
+thread : lui seul l'écrit, et les points séquentiels ci-dessus restent des points séquentiels
+pour lui -- sauf `resize()`, que son thread peut y appeler : la passe qu'il lance d'abord ne
+couvre que les chunks de ce tableau, pas ceux des tableaux partagés que le thread a aussi
+écrits. Sa destruction coûte un `membarrier()`, et ne lance pas la passe de compression
+finale que fait une destruction hors région.
 
 **Les threads.** Les structures par thread sont dimensionnées une fois pour
 `max(omp_get_max_threads(), nombre de cœurs, 256)` threads (dans un build std, la taille
@@ -330,9 +347,9 @@ shrink-array, par exemple -- partagent tout cela, ce qui impose quelques règles
 - **Le premier tableau fixe la capacité en threads** (ci-dessus) : au moins 256 threads, ou les
   cœurs, ou `OMP_NUM_THREADS` ; un composant qui ouvre des équipes plus grandes demande
   `CHUNK_THREAD_CAPACITY` fixé avant le premier tableau.
-- **Des appels à l'échelle du processus.** `ParamChunk::init_indexes()` fixe la taille des blocs
+- **Des appels à l'échelle du processus.** `Runtime::init()` fixe la taille des blocs
   d'allocation de tout le processus : un appel, au début, par le programme (un appel ultérieur
-  laisse intacts les tableaux déjà construits). `release_chunk_pools()` et `destroy_block_chunk()`
+  laisse intacts les tableaux déjà construits). `release_chunk_pools()` et `Runtime::shutdown()`
   vident les listes libres de tout le monde (un tableau encore vivant garde ce qu'il lui faut) :
   une fois, à la fin du programme, ou pas du tout. `reclaim_second_values()` couvre tous les
   tableaux d'un type ; `CHUNK_LOG` et `logging::set_sink()` sont des réglages communs à tous.
@@ -370,22 +387,22 @@ sa::tbb::parallel_for(oneapi::tbb::blocked_range<long>(0, n), [&](const auto& r)
 ```
 
 Entre `begin` et `finalize`, la bibliothèque compte les threads du programme comme une région
-parallèle (les points séquentiels ci-dessus ne doivent pas y être appelés, comme dans une région OpenMP), et
+parallèle (les points séquentiels ci-dessus y suivent la même règle que dans une région OpenMP), et
 chacun d'eux occupe une des places par thread tant qu'il vit. Un build OpenMP ne numérote que
 les threads d'OpenMP : pour les autres, utilisez le backend std.
 
 ## 6. Pièges
 
-- **`auto` garde un proxy.** Sur un tableau non constant, `tab[i]` rend un proxy d'écriture.
-  `T v = tab[i];` prend la valeur ; `auto v = tab[i];` garde le proxy, qui suit l'élément s'il
+- **`auto` garde un proxy.** Sur un tableau non constant, `arr[i]` rend un proxy d'écriture.
+  `T v = arr[i];` prend la valeur ; `auto v = arr[i];` garde le proxy, qui suit l'élément s'il
   change ensuite. Dans du code venu d'un `std::vector`, remplacer `auto` par le type de
   l'élément. Tous les builds refusent de compiler l'utilisation d'un tel `v`, avec un message explicite.
-- **Convertir un élément avant de le transmettre.** `std::printf("%f", tab[i])` passerait le
+- **Convertir un élément avant de le transmettre.** `std::printf("%f", arr[i])` passerait le
   proxy, pas la valeur : refusé (GCC par `-Werror=conditionally-supported`, que pose la
-  bibliothèque ; clang toujours). `std::format("{}", tab[i])`, `std::max(tab[i], 2.0)` et une
-  fonction générique qui prend `tab[i]` par valeur sont refusés aussi. Écrire `double(tab[i])`,
-  ou `T(tab[i])`.
-- **Pas de `T&` sur un élément.** `tab[i].x = 1` ne compile pas : lire l'élément, le modifier,
+  bibliothèque ; clang toujours). `std::format("{}", arr[i])`, `std::max(arr[i], 2.0)` et une
+  fonction générique qui prend `arr[i]` par valeur sont refusés aussi. Écrire `double(arr[i])`,
+  ou `T(arr[i])`.
+- **Pas de `T&` sur un élément.** `arr[i].x = 1` ne compile pas : lire l'élément, le modifier,
   le réécrire. `data()`, les itérateurs modifiables et un `std::sort` en place n'existent pas
   non plus : trier une copie en `std::vector`, puis la remettre par `assign()`.
 - **Un proxy ne doit pas survivre au stockage.** Chacune des opérations séquentielles du §5
@@ -398,12 +415,17 @@ les threads d'OpenMP : pour les autres, utilisez le backend std.
 - **Les types d'éléments** : tout type trivialement copiable, comparable par `==` et
   constructible par défaut (types arithmétiques, `bool`, `std::complex`, énumérations,
   `std::array` et agrégats de ceux-ci). Un type qui possède une ressource (`std::string`) est
-  refusé à la compilation. `zero_one_value` demande en plus un ordre sur la seconde valeur : une
-  structure de doubles déclare `auto operator<=>(const T&) const = default;`. Sur un élément
+  refusé à la compilation. `zero_or_value` demande en plus un ordre sur la seconde valeur : une
+  structure de doubles déclare `auto operator<=>(const T&) const = default;`. Un élément se
+  relit avec les bits écrits : la bibliothèque distingue `-0.0` de `+0.0` (comparaison des
+  bits pour `float`, `double`, `std::complex`, `std::array`), mais compare les membres d'un
+  agrégat avec son `==`, qui confond les deux zéros -- spécialiser
+  `shrink_array::ValueIdentity<T>` (`chunk/internal/same_value.h`) garde le signe d'un membre
+  nul. Sur un élément
   `bool`, `a[i] += 1` et les autres affectations arithmétiques (`-= *= /= %= <<= >>=`) ne
   compilent pas : écrire `=`, `&=`, `|=` ou `^=`.
-- **`zero_one_value` ne compresse qu'à sa seconde valeur déclarée.** Sans `set_second_value()`, un
-  tableau `zero_one_value` ne compresse qu'à zéro.
+- **`zero_or_value` ne compresse qu'à sa seconde valeur déclarée.** Sans `set_second_value()`, un
+  tableau `zero_or_value` ne compresse qu'à zéro.
 - **Mesurer la mémoire avec le bon outil.** `VmRSS` est en retard à plusieurs threads : voir
   [mesures_performance_fr.md](mesures_performance_fr.md).
 
@@ -415,5 +437,5 @@ les threads d'OpenMP : pour les autres, utilisez le backend std.
 | choisir une variante pour ses données | [variantes_fr.md](variantes_fr.md), et `examples/variant_compare` |
 | laisser la taille des chunks s'adapter à l'exécution | [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) (bibliothèques `_dyn`) |
 | toutes les variables de réglage et options de compilation | [variables_environnement_fr.md](variables_environnement_fr.md) |
-| le fonctionnement interne | [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md), [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md) |
-| un exemple plus complet : champs multi-matériaux, boucles écrites une fois pour les deux conteneurs | `examples/multi-mat` |
+| le fonctionnement interne | [algo_zero_or_value_fr.md](algo_zero_or_value_fr.md), [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md) |
+| un exemple plus complet : champs multi-matériaux, boucles écrites une fois pour les deux conteneurs | `examples/multi_mat` |

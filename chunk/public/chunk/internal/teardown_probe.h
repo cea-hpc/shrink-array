@@ -28,21 +28,23 @@
 #include <array>   // std::array (the per-step times)
 #include <chrono>  // std::chrono::steady_clock
 #include <cstddef> // std::size_t
+#include <ratio>   // std::milli
 
 namespace shrink_array::internal
 {
-/// @brief The steps of a teardown, in the order they run (zero_any::ArrayImpl).
+/// @brief The steps of a teardown, in the order they run (zero_any::ArrayImpl;
+///        zero::Array and zero_or_value::Array mark the steps they have).
 enum class TeardownStep : std::size_t
 {
     entry,      ///< from the swap to clear_core(): invalidate_proxies, the check-build scan
     flush,      ///< flush_pending_deferred_ops(force)
-    candidates, ///< removal from the compression candidate list (by num_tab, by address range)
+    candidates, ///< removal from the compression candidate list (by array_id, by address range)
     terminal,   ///< pool counters, terminal compression sweep, check-build audit
     park,       ///< the team region: scan for written chunks, park their buffers
     registry,   ///< inside it: the second-value registry release (Holder::clear)
-    tables,     ///< release_chunk_list() + clear_tab_is_int() (per-chunk metadata tables)
+    tables,     ///< release_chunk_list() + clear_array_is_int() (per-chunk metadata tables)
     key_drain,  ///< drain_reuse_list_for_size() of an array with its own allocator key
-    erase,      ///< share_info_array->erase (the identity registry)
+    erase,      ///< array_registry->erase (the identity registry)
     list_unmap, ///< the chunk_list_ buffer freed (unmapped from 1 MiB on)
     count       ///< number of steps
 };

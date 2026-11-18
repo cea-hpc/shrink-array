@@ -58,19 +58,20 @@
 #include <cstdint>   // std::uint64_t
 #include <cstdio>    // std::fprintf, stderr
 #include <exception> // std::exception (main)
+#include <iterator>  // std::size
 #include <string>    // std::string
 #include <utility>   // std::as_const
 #include <vector>    // std::vector
 
-#include "chunk/chunk_traits.h"       // the IntType = int default of the arrays
-#include "chunk/zero_any_array.h"     // zero_any::Array
-#include "chunk/pattern_array.h"      // pattern::Array, pattern::MotifRegion
-#include "chunk/param_chunk.h"        // ParamChunk::init_indexes
-#include "chunk/config.h"             // chunk_config::use_zero_any, build_config::use_openmp / has_not_ompt
-#include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"        // begin_parallel_phase, finalize_parallel_phase
-#include "chunk/internal/env_parse.h" // arg_number (checked, not atoi)
-#include "chunk/internal/print.h"     // shrink_array::println
+#include "chunk/internal/chunk_traits.h" // the IntType = int default of the arrays
+#include "chunk/zero_any_array.h"        // zero_any::Array
+#include "chunk/pattern_array.h"         // pattern::Array, pattern::MotifRegion
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/config.h"                // chunk_config::use_zero_any, build_config::use_openmp / needs_explicit_phases
+#include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
+#include "chunk/phases.h"                // begin_parallel_phase, finalize_parallel_phase
+#include "chunk/internal/env_parse.h"    // arg_number (checked, not atoi)
+#include "chunk/print.h"                 // shrink_array::println
 
 using namespace shrink_array;
 
@@ -85,7 +86,7 @@ namespace
 // ── Phase brackets: no-ops under OMPT (the callbacks do it) ─────────────────
 void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
@@ -94,7 +95,7 @@ void begin_phase()
 template <typename Arr>
 void end_phase(Arr& arr)
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -149,7 +150,7 @@ struct Mesh
 std::vector<int> random_indices(long count)
 {
     std::vector<int> idx(static_cast<std::size_t>(count));
-    const int        ni = static_cast<int>(count);
+    const auto       ni = static_cast<int>(count);
 #pragma omp parallel for schedule(static)
     for (int k = 0; k < ni; ++k)
     {
@@ -179,7 +180,7 @@ struct Sample
 Sample vec_read(const std::vector<T>& vec)
 {
     const auto t0    = Clk::now();
-    const int  count = static_cast<int>(vec.size());
+    const auto count = static_cast<int>(vec.size());
     long long  sum   = 0;
 #pragma omp parallel for schedule(static) reduction(+ : sum)
     for (int i = 0; i < count; ++i)
@@ -192,7 +193,7 @@ Sample vec_read(const std::vector<T>& vec)
 Sample vec_read_random(const std::vector<T>& vec, const std::vector<int>& idx)
 {
     const auto t0    = Clk::now();
-    const int  count = static_cast<int>(idx.size());
+    const auto count = static_cast<int>(idx.size());
     long long  sum   = 0;
 #pragma omp parallel for schedule(static) reduction(+ : sum)
     for (int k = 0; k < count; ++k)
@@ -206,7 +207,7 @@ template <typename F>
 Sample vec_write(std::vector<T>& vec, F value)
 {
     const auto t0    = Clk::now();
-    const int  count = static_cast<int>(vec.size());
+    const auto count = static_cast<int>(vec.size());
 #pragma omp parallel for schedule(static)
     for (int i = 0; i < count; ++i)
     {
@@ -239,7 +240,7 @@ template <typename Arr>
 Sample arr_read_random(Arr& arr, const std::vector<int>& idx)
 {
     const auto  t0    = Clk::now();
-    const int   count = static_cast<int>(idx.size());
+    const auto  count = static_cast<int>(idx.size());
     long long   sum   = 0;
     const auto& ca    = std::as_const(arr);
 #pragma omp parallel
@@ -316,10 +317,10 @@ long verify_elements(const char* what, const char* name, const Arr& arr, const s
 /// and the distinct motifs they point at.
 struct Census
 {
-    long mat    = 0;
-    long cst    = 0;
-    long motif  = 0;
-    long motifs = 0;
+    long mat      = 0;
+    long constant = 0;
+    long motif    = 0;
+    long motifs   = 0;
 };
 
 template <typename Arr>
@@ -345,7 +346,7 @@ Census census(const Arr& arr, long n_chunks)
         }
         else
         {
-            ++c.cst;
+            ++c.constant;
         }
     }
     std::sort(seen.begin(), seen.end());
@@ -366,7 +367,7 @@ double minimum(const std::vector<double>& samples)
 }
 
 constexpr const char* case_names[]      = {"read-varied", "read-conn", "read-conn-random", "write-conn"};
-constexpr int         n_cases           = static_cast<int>(sizeof(case_names) / sizeof(case_names[0]));
+constexpr int         n_cases           = static_cast<int>(std::size(case_names));
 constexpr const char* container_names[] = {"vector", "zero_any", "pattern"};
 constexpr int         n_containers      = 3;
 } // namespace
@@ -374,7 +375,7 @@ constexpr int         n_containers      = 3;
 int main(int argc, char** argv)
 try
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     long n_elems = 1L << 26;
     int  reps    = 5;
@@ -413,10 +414,10 @@ try
         std::fprintf(stderr, "access_cost_pattern: need reps >= 1, 2048 <= n < 2^31\n");
         return 2;
     }
-    n_elems         = 8 * mesh.cells();
-    const int count = static_cast<int>(n_elems);
+    n_elems          = 8 * mesh.cells();
+    const auto count = static_cast<int>(n_elems);
 
-    const long chunk_sz = static_cast<long>(PArr(0).chunk_size());
+    const auto chunk_sz = static_cast<long>(PArr(0).chunk_size());
     const long n_chunks = (n_elems + chunk_sz - 1) / chunk_sz;
     if (csv)
     {
@@ -558,9 +559,9 @@ try
         println("connectivity memory ({} chunks of {}):", n_chunks, chunk_sz);
         println("  {:<9} {:>14.0f} bytes", "vector", vbytes);
         println("  {:<9} {:>14.0f} bytes  ({:.1f} %)  materialised {}, constant {}", "zero_any", zbytes,
-                100. * zbytes / vbytes, zc.mat, zc.cst);
+                100. * zbytes / vbytes, zc.mat, zc.constant);
         println("  {:<9} {:>14.0f} bytes  ({:.1f} %)  materialised {}, constant {}, motif {}, distinct motifs {}",
-                "pattern", pbytes, 100. * pbytes / vbytes, pc.mat, pc.cst, pc.motif, pc.motifs);
+                "pattern", pbytes, 100. * pbytes / vbytes, pc.mat, pc.constant, pc.motif, pc.motifs);
     }
 
     if (sum_mismatch || bad_elements)

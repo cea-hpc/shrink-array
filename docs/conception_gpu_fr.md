@@ -1,6 +1,6 @@
 # Portage GPU : premier document de conception
 
-> English version: à écrire quand la conception sera stabilisée (`gpu_design.md`).
+> English version: [gpu_design.md](gpu_design.md).
 
 > État : octobre 2026, **avant tout prototype**. Ce document fixe ce qu'un backend GPU de
 > shrink-array devrait être, ce qu'il reprend de la version CPU et ce qu'il abandonne, et le
@@ -19,7 +19,7 @@ répétée compressée par `zero_any`) que la version CPU. Le gain visé est d'a
 
 **Ce qui est dans le périmètre de cette première conception :**
 
-- les trois variantes `zero`, `zero_one_value`, `zero_any`, et `pattern` (section 8) ;
+- les trois variantes `zero`, `zero_or_value`, `zero_any`, et `pattern` (section 8) ;
 - géométrie fixe (S constante de compilation) d'abord, dynamique ensuite (section 9.3) ;
 - un modèle d'exécution **par phases**, aligné sur les kernels (section 3) ;
 - l'interopérabilité avec la version CPU : même format de chunk, transferts dans les deux
@@ -30,7 +30,7 @@ répétée compressée par `zero_any`) que la version CPU. Le gain visé est d'a
 - faire tourner le code CPU existant sur GPU : la machinerie d'exécution (section 2) n'est
   pas portable et n'a pas à l'être ;
 - les écritures concurrentes à une compression **à l'intérieur** d'un kernel ;
-- `bool` compacté bit à bit (`ArrayChunkBits`) ;
+- `bool` compacté bit à bit (`BitArray`) ;
 - un backend SYCL/Intel (possible via la couche de portabilité, non visé).
 
 ## 2. Ce qui se porte, ce qui ne se porte pas
@@ -106,15 +106,15 @@ template <typename T>
 struct ChunkDesc                 // 16 octets pour T de 8 octets au plus
 {
     T*       buf;                // nullptr : compressé ; sinon tampon de S éléments
-    T        cst;                // la constante du chunk compressé (ou quittée : 6.2)
-    // zero : cst est toujours T{} ; zero_one_value : T{} ou la seconde valeur du tableau ;
+    T        constant;                // la constante du chunk compressé (ou quittée : 6.2)
+    // zero : constant est toujours T{} ; zero_or_value : T{} ou la seconde valeur du tableau ;
     // zero_any : n'importe quelle valeur.  pattern : voir 8.4.
 };
 ```
 
 Pour `T` de 16 octets (`std::complex<double>`) le descripteur fait 24 octets, alignés à 32
 **(à trancher : 32 octets alignés, ou pointeur tagué + table latérale ; mesurer)**. Le CAS de
-matérialisation porte sur `buf` seul (8 octets) : `cst` n'est écrit que par la passe de
+matérialisation porte sur `buf` seul (8 octets) : `constant` n'est écrit que par la passe de
 compression (section 7), jamais par un écrivain, donc jamais en concurrence avec un lecteur.
 
 Le descripteur est un objet **trivialement copiable**, sans atomique dans son type : les
@@ -141,7 +141,7 @@ les voudrait petits ; c'est le même arbitrage que la géométrie dynamique CPU 
 
 | donnée | taille | où |
 |---|---|---|
-| `ChunkDesc[nb_chunks]` | 16 ou 24 o par chunk | device (ou mémoire cohérente, 11) |
+| `ChunkDesc[n_chunks]` | 16 ou 24 o par chunk | device (ou mémoire cohérente, 11) |
 | compteur de bump de l'arène, tête de pile des tampons libres | 2 mots | device |
 | append-buffer des écritures non appliquées (6.4) | borné, réglé à la création | device |
 | statistiques (`stats()`, chunks matérialisés, échecs d'arène) | quelques mots | device, relus par l'hôte en fin de phase |
@@ -153,10 +153,10 @@ moins qu'entretenir des listes.
 ## 5. La lecture
 
 ```cpp
-__device__ T operator()(IndT i) const noexcept
+__device__ T operator()(IndexT i) const noexcept
 {
     const auto& d = desc_[i >> shift_];
-    return d.buf ? d.buf[i & mask_] : d.cst;     // branchement uniforme par warp
+    return d.buf ? d.buf[i & mask_] : d.constant;     // branchement uniforme par warp
 }
 ```
 
@@ -183,7 +183,7 @@ __device__ void assign(T v)
     T* buf = atomic_load_relaxed(d.buf);          // portée device
     if (buf == nullptr)
     {
-        if (v == d.cst) return;                   // 1. la constante sur sa constante : rien
+        if (v == d.constant) return;                   // 1. la constante sur sa constante : rien
         buf = materialise(d);                     // 2. matérialiser (6.2), puis écrire
     }
     buf[pos] = v;                                 // 3. chunk matérialisé : écriture directe
@@ -191,11 +191,11 @@ __device__ void assign(T v)
 ```
 
 Les cas 1 et 3 sont le chemin chaud, uniformes par warp, sans atomique. Les règles de
-`zero_one_value` (« la seconde valeur sur un élément qui la contient déjà ») et de `zero_any`
+`zero_or_value` (« la seconde valeur sur un élément qui la contient déjà ») et de `zero_any`
 (« découverte », « départ », `may_become_uniform`) servaient à alimenter les listes de candidats
 : elles **disparaissent**, la passe de fin de phase n'a pas besoin de candidats. Il reste à
 prendre en compte `+=` et les autres opérateurs composés, qui lisent avant d'écrire : même
-cas, avec `v` calculée à partir de `d.cst` ou `buf[pos]`.
+cas, avec `v` calculée à partir de `d.constant` ou `buf[pos]`.
 
 ### 6.2 La matérialisation
 
@@ -206,7 +206,7 @@ cas, avec `v` calculée à partir de `d.cst` ou `buf[pos]`.
 2. **Allocation** : le lane élu prend un tampon dans la **pile des tampons libres** (rendus
    par les compressions précédentes, 7.2), sinon par **bump** sur l'arène du tableau
    (`atomicAdd` sur le compteur, un seul par tampon). Si l'arène est épuisée : 6.4.
-3. **Pré-remplissage** du tampon avec `d.cst` : par **tout le warp** (S/32 éléments par lane,
+3. **Pré-remplissage** du tampon avec `d.constant` : par **tout le warp** (S/32 éléments par lane,
    coalescé), pas par le seul élu.
 4. **Publication par CAS** de `nullptr` → `buf` sur `d.buf`, portée device, `release` après
    le pré-remplissage (une `__threadfence()` avant le CAS, ou `atomic_ref::compare_exchange`
@@ -261,8 +261,8 @@ chunk matérialisé** (ou un warp par chunk pour S ≤ 1024, **à trancher par l
 
 1. chaque lane lit ses S/32 éléments et compare à `buf[0]` ;
 2. vote `__all_sync` (réduction `&&` dans le bloc) ;
-3. si uniforme à une valeur que la variante sait compresser (`zero` : `T{}` ; `zero_one_value`
-   : `T{}` ou la seconde valeur ; `zero_any` : toute valeur) : `d.cst = buf[0]`, `d.buf =
+3. si uniforme à une valeur que la variante sait compresser (`zero` : `T{}` ; `zero_or_value`
+   : `T{}` ou la seconde valeur ; `zero_any` : toute valeur) : `d.constant = buf[0]`, `d.buf =
    nullptr`, et le tampon est rendu (7.2).
 
 La passe est bornée par la bande passante : relire tous les tampons matérialisés d'un tableau
@@ -294,7 +294,7 @@ de préférence :
 2. **Vote avant matérialisation.** Quand un bloc couvre un chunk entier (le cas des boucles
    régulières : S = 256, blocs de 256 threads alignés sur les chunks, ce que `parallel_for`
    de la section 12 garantit quand il peut), le bloc vote « toutes mes valeurs sont égales à
-   `v` » **avant** de matérialiser : si oui, il écrit `d.cst = v` et rien d'autre. C'est la
+   `v` » **avant** de matérialiser : si oui, il écrit `d.constant = v` et rien d'autre. C'est la
    compression en vol, sans concurrence, parce que le bloc est le seul écrivain du chunk.
    Cette optimisation ne vaut que pour les kernels dont le découpage est fait par la
    bibliothèque ; un kernel utilisateur à indices arbitraires ne l'a pas.
@@ -306,13 +306,13 @@ de préférence :
 
 ### 8.1 `zero`
 
-`cst` vaut toujours `T{}` ; la passe ne replie qu'à `T{}`. Rien d'autre.
+`constant` vaut toujours `T{}` ; la passe ne replie qu'à `T{}`. Rien d'autre.
 
-### 8.2 `zero_one_value`
+### 8.2 `zero_or_value`
 
-`cst` vaut `T{}` ou la seconde valeur du tableau (un champ du tableau, copié dans le
+`constant` vaut `T{}` ou la seconde valeur du tableau (un champ du tableau, copié dans le
 descripteur par la passe). `set_second_value()` est une opération d'hôte entre deux phases.
-Sur GPU, `zero_one_value` n'a plus d'intérêt propre par rapport à `zero_any` (le registre
+Sur GPU, `zero_or_value` n'a plus d'intérêt propre par rapport à `zero_any` (le registre
 qui le justifiait n'existe plus) : il est conservé pour l'interopérabilité et la sémantique
 (ne compresser qu'à une valeur déclarée), **(à trancher)** s'il mérite un code séparé ou un
 `if constexpr` dans `zero_any`.
@@ -321,18 +321,18 @@ qui le justifiait n'existe plus) : il est conservé pour l'interopérabilité et
 
 Le descripteur porte la constante : c'est la forme naturelle de `zero_any`, et la variante à
 prototyper en premier. Ce qui disparaît : le registre des secondes valeurs
-(`tab_cst_val2_holder.h`), ses segments, son index haché, `reclaim_second_values()`, les lignes
-`tab_type_cst_val` et `tab_second_value`, `CHUNK_SECOND_VALUE_INDEXED`. Le coût par chunk
+(`array_const_val2_holder.h`), ses segments, son index haché, `reclaim_second_values()`, les lignes
+`array_type_const_val` et `array_second_value`, `CHUNK_SECOND_VALUE_INDEXED`. Le coût par chunk
 redevient uniforme : le descripteur.
 
 ### 8.4 `pattern`
 
 Un chunk motif = un motif partagé (S entiers) + un offset. Le descripteur gagne une forme :
 `buf` pointe vers le motif, le **bit de poids faible de `buf`** (ou un champ `kind`) dit
-« motif », et `cst` sert d'offset :
+« motif », et `constant` sert d'offset :
 
 ```cpp
-return is_motif(d) ? motif(d)[i & mask_] + d.offset : (d.buf ? d.buf[i & mask_] : d.cst);
+return is_motif(d) ? motif(d)[i & mask_] + d.offset : (d.buf ? d.buf[i & mask_] : d.constant);
 ```
 
 La lecture reste uniforme par warp. **Écrire** dans un chunk motif le matérialise, pré-rempli
@@ -402,10 +402,10 @@ Elle vient **après** la géométrie fixe dans le plan (section 13).
 
 ## 11. Interopérabilité avec la version CPU
 
-- **Format commun** : le descripteur device `{buf, cst}` est aussi un format CPU valide, à
+- **Format commun** : le descripteur device `{buf, constant}` est aussi un format CPU valide, à
   deux différences près : la version CPU pointe sur un tampon constant partagé là où le
   device met `nullptr`, et porte les portes OpenMP dans l'objet chunk. Un **convertisseur**
-  dans les deux sens est simple : par chunk, `nullptr` ↔ `cst_val1` / tampon du registre, et
+  dans les deux sens est simple : par chunk, `nullptr` ↔ `const_val1` / tampon du registre, et
   les tampons matérialisés sont copiés tels quels (même S, même disposition). Il tient en un
   kernel plus une boucle d'hôte, et fait le transfert hôte ↔ device **sans décompresser** :
   on ne transfère que les tampons matérialisés et la table des descripteurs.
@@ -444,7 +444,7 @@ Elle vient **après** la géométrie fixe dans le plan (section 13).
   applications est la bonne. **(À trancher)** : clang comme compilateur CUDA unique, qui
   évite nvcc et ses limites, au prix d'une prise en charge de CUDA en retard d'une version.
 - CMake : une option `CHUNK_DEVICE=none|cuda|hip` (et `CHUNK_DEVICE_KOKKOS=ON` pour la
-  façade), des cibles `chunk::chunk_zero_any_device_256`, … ; Spack : une variante `device`.
+  façade), des cibles `shrink_array::zero_any_device_256`, … ; Spack : une variante `device`.
 
 ### 12.2 Esquisse d'API
 
@@ -481,9 +481,9 @@ l'est côté CPU (`docs/getting_started_fr.md` §5).
 |---|---|---|
 | **0. Prototype** (1 à 2 semaines) | hors arbre, HIP ou CUDA, `zero_any` seul, S = 256 et 1024 fixes, trois kernels (lecture ; écriture avec bump + agrégation par warp + CAS ; `compress()` par vote + compaction CUB/hipCUB) ; banc : lecture streaming, réécriture par plages aléatoires comme `shrink_bench`, contre un tableau plat | lecture ≤ 1,5× le tableau plat ; écriture dans un chunk matérialisé ≤ 2× ; `compress()` de 10 Go matérialisés ≤ 10 ms. **Si la lecture dépasse 2×, la conception est à revoir avant d'aller plus loin** |
 | 1. Cœur dans l'arbre | `chunk/public/chunk/device/` : descripteur, view, proxy, arène, append-buffer, `compress()`, `intrinsics.h` CUDA + HIP ; `zero_any` et `zero` ; convertisseur hôte ↔ device ; tests de validation contre la version CPU sur les mêmes séquences d'écritures ; CI sur un runner GPU si disponible, sinon compilation seule | les validations passent à l'identique CPU/GPU ; même mémoire finale que la variante CPU à géométrie égale |
-| 2. Phases et banc | `parallel_for` aligné et vote avant matérialisation ; `shrink_bench` device (phases du banc contre `DeviceArray`) ; mesures H100 / MI250X ou MI300A ; documentation (ce document mis à jour avec les chiffres, version anglaise) | chiffres publiés dans `variantes_fr.md` |
+| 2. Phases et banc | `parallel_for` aligné et vote avant matérialisation ; `shrink_bench` device (phases du banc contre `DeviceArray`) ; mesures H100 / MI250X ou MI300A ; documentation (ce document et sa version anglaise mis à jour avec les chiffres) | chiffres publiés dans `variantes_fr.md` |
 | 3. Façade Kokkos | `kokkos_adaptor.h`, `parallel_for` Kokkos marquant les phases, `memory_fence` à la place de release/acquire | un exemple Kokkos ; mêmes validations |
-| 4. `zero_one_value`, `pattern` | 8.2, 8.4 | validations ; gain mesuré de `pattern` sur une connectivité |
+| 4. `zero_or_value`, `pattern` | 8.2, 8.4 | validations ; gain mesuré de `pattern` sur une connectivité |
 | 5. Géométrie dynamique | 9.3 | `rechunk_validation` device |
 | 6. Hybride | mémoire cohérente (GH200, MI300A), mode phase de la version CPU | un tableau lu et écrit alternativement par CPU et GPU sans copie |
 

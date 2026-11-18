@@ -13,7 +13,7 @@ comments of the sources:
    (chunk/, fast_allocators/, examples/, scripts/, python/, cmake/ and the
    CMakeLists.txt). A renamed or removed name leaves its documentation
    behind; this is how it is found. A span made of several words, a command
-   line or a value (`0`, `-DOMP=ON`, `256;1024`) is not a name and is not
+   line or a value (`0`, `-DCHUNK_OPENMP=ON`, `256;1024`) is not a name and is not
    checked; ALLOWED lists the names that are real but live outside the tree
    (standard library, OpenMP, Linux, tools).
 3. Pairs: a document and its French version (x.md / x_fr.md, or the explicit
@@ -48,6 +48,8 @@ PAIRS = {
     "environment_variables.md": "variables_environnement_fr.md",
     "developer_settings.md": "reglages_developpeur_fr.md",
     "performance_measurement.md": "mesures_performance_fr.md",
+    "gpu_design.md": "conception_gpu_fr.md",
+    "design.md": "conception_fr.md",
 }
 
 # Documents with no French version, and why.
@@ -59,21 +61,96 @@ ENGLISH_ONLY = {
 
 # Design documents: they describe code that does not exist yet -- planned
 # files, the APIs of the platforms it will target -- so their names are not
-# looked up in the tree (their links are), and they may stay in one language
-# until the design settles.
+# looked up in the tree (their links are).
 DESIGN = {
-    # the GPU backend, before any prototype; its English version (gpu_design.md)
-    # is written once the design is stable
+    # the GPU backend, before any prototype
+    "gpu_design.md",
     "conception_gpu_fr.md",
 }
 
 # Real names that are not defined in this tree.
 ALLOWED = {
+    # names of the variant zero_or_value while it was zero_one_value, which the
+    # released sections of CHANGELOG.md cite
+    "CHUNK_LINK_CHECK_ZERO/_ZERO_ONE_VALUE/_ZERO_ANY",
+    "CHUNK_VARIANT_ZERO_ONE_VALUE",
+    "IsZeroOneValue",
+    "VectZeroOneValue",
+    "ZeroOneValueComp",
+    "ZeroOneValueCompByValue",
+    "ZeroOneValueCompMap",
+    "ZeroOneValueCompThr",
+    "ZeroOneValueInfArrayPolicy",
+    "algo_zero_one_value.md",
+    "chunk/zero_one_value_array.h",
+    "chunk_zero_one_value_",
+    "docs/algo_zero_one_value.md",
+    "mem-zero-any-vs-zero-one-value-max",
+    "shrink_bench_serial_zero_one_value_1024",
+    "use_zero_one_value",
+    "zero_one_value",
+    "zero_one_value_array.h",
+    "zero_one_value_array_parallel.h",
+    "zero_one_value_candidates_map_thr",
+    "zero_one_value_candidates_thr",
+    "zero_one_value_chunk.h",
+    # internal names before their renaming of November 2026, which CHANGELOG.md
+    # cites
+    "AllTypeChunk",
+    "PMP_CHUNK.h",
+    "TChunk.h",
+    "TabUsers",
+    "all_type_chunk",
+    "crp_helper.h",
+    "func_p2.h",
+    "get_num_tab_async",
+    "get_num_tab_cached",
+    "multi-mat-embedded",
+    "nb_chunk_",
+    "nb_tab",
+    "num_chunk",
+    "num_chunk_",
+    "num_tab",
+    "pool_accounting",
+    "share_info_array",
+    "test_vecto_chunk",
     # removed names that CHANGELOG.md records as removed
+    # the former C++ names, removed before 1.0 (CHANGELOG.md, Unreleased, Removed)
+    "ArrayChunk", "ArrayChunk2", "ArrayChunk2A", "Chunk2", "Chunk2A", "Proxy2", "Proxy2A",
+    "ManagerChunk2", "ManagerChunk2A", "use_chunk", "use_chunk2", "use_chunk2a", "use_chunk2or2a",
+    "chunk_list_type", "manager_type", "proxy_type", "ind_type", "getChunkList", "ChunkStats",
+    "check_pow2", "get_decalage_chunk", "chunk_decalage", "install_motif_for_test",
+    "factor_div_somme_chunk_buffer_resuse", "addAllocatedSize", "add_TCTypeAllocator_inst",
+    "remove_TCTypeAllocator_inst", "SIZE_BLOCK", "chunk/array_chunk.h", "chunk/array_chunk2.h",
+    "chunk/array_chunk2A.h", "array_chunk.h", "array_chunk2.h", "array_chunk2A.h", "chunk_def.h",
+    "chunk2_def.h", "chunk2A_def.h", "chunk_std.h", "chunk2_std.h", "chunk2A_std.h",
+    "chunk/chunk_def.h", "chunk/chunk2_def.h", "chunk/chunk2A_def.h", "chunk/chunk_std.h",
+    "chunk/chunk2_std.h", "chunk/chunk2A_std.h",
+    "CHUNK_VARIANT_V1", "CHUNK_VARIANT_V2", "CHUNK_VARIANT_V2A", "_V2A", "DEPRECATION",
+    # renamed TypeState (CHANGELOG.md, Unreleased, Changed)
+    "ManagerChunk", "ManagerChunkInt", "ManagerChunkDynInterface", "ManagerChunkParallelInterface",
+    "ManagerChunkDynImpl", "ManagerChunkParallelImpl", "fill_manager_chunk", "manager_chunk.h",
+    "manager_chunk_inline.h", "manager_chunk_interface.h", "manager_chunk_policies.h",
+    "manager_chunk_policies_inline.h", "manager_chunk.cpp", "chunk/internal/manager_chunk.h",
+    "chunk/private/manager_chunk.cpp",
+    # French names in English (CHANGELOG.md, Unreleased, Changed); the released entries cite them
+    "factor_div_somme_chunk_buffer_reuse", "freq_conso_mem", "ind_", "IndType", "IndT",
+    "cst_buffer_size", "CstVal1Type", "cst2_reclaim_validation", "CHUNK_CST_VAL2_MAX_IDS", "free_elt_pow2", "CalcType", "VectZeroOrValue", "VectCom", "VectChunk", "Vect", "num_compress_value",
+    # removed with the deducing-this variant of develop (CHANGELOG.md, Unreleased, Removed)
+    "CHUNK_CRTP_USE_DEDUCING_THIS", "CHUNK_CRTP_FORCE_DEDUCING_THIS",
+    # tab -> array (CHANGELOG.md, Unreleased, Changed); the released entries cite them
+    "tab_int", "tab_conn", "tab_complex", "tab_cst_val2_holder.h", "tab1", "tab",
+    # renamed TypeStateRegistry (CHANGELOG.md, Unreleased, Changed)
+    "AllTypeChunk", "AllTypeChunkParallelInterface", "AllTypeChunkDynInterface", "all_type_chunk.h",
+    "all_type_chunk_decl.h", "all_type_chunk_inline.h", "all_type_chunk.cpp", "chunk/private/all_type_chunk.cpp",
+    "chunk/debug.h", "debug.h",  # removed, nothing included it (CHANGELOG.md, Unreleased)
+    "python/run_test.py", "run_test.py",  # removed, it ran a test that no longer exists (CHANGELOG.md, Unreleased)
+    "chunk/internal/print.h",  # now chunk/print.h, public (CHANGELOG.md, Unreleased)
     "FAST_ALLOC_MAX_CONST_BLOCK_SIZE", "internal/static_const_array_define.h",
     "chunk/internal/diag_mutex.h", "diag_mutex.h", "internal::diag_print_mutex", "chunk/internal/nano_sleeper.h",
     "chunk_config::have_aggressive_compression",  # now chunk_config::aggressive_compression()
     "is_cst_val_new_value_is_other_cst_val",  # now passes_mark_pre_check()
+    "is_power_of_two",  # pow2.h's, never called: removed (lint lot 4)
     # the developer settings fixed after the Milan measurements, and CHUNK_THP's functions
     "CHUNK_RECHUNK_KEEP_RECYCLED_MB", "alloc_config::thp_advise", "thp_never", "advise_thp_region",
     # the rechunk decider's former environment variables (now RechunkPolicy fields and
@@ -93,6 +170,8 @@ ALLOWED = {
     "CHUNK2A_COMPRESS_LEVEL", "CHUNK_RECLAIM_EMPTY_SLABS", "FAST_ALLOC_OPT_RECLAIM_EMPTY_SLABS",
     "CHUNK_OPT_RECLAIM_EMPTY_SLABS", "alloc_config::reclaim_empty_slabs", "build_config::reclaim_empty_slabs",
     "scripts/diag_zero_rechunk_slowdown.py",
+    # removed with the four phase fences it switched off (CHANGELOG.md, Unreleased)
+    "CHUNK_PHASE_FENCES",
     # renamed to PascalCase (ChunkTemplateOf, ForEachTypeImpl, ...), which CHANGELOG.md records
     "index_type", "cst_val1_type", "chunk_template_of", "for_each_type_impl",
     # former class names the CHANGELOG cites (now SecondValue*Base, zero_any::ChunkThreadPolicy, ...)
@@ -141,10 +220,12 @@ ALLOWED = {
 # per-variant executables (shrink_bench_omp_zero_any_256, validation_zero_dyn, ...). The
 # shrink_bench ones carry the threading backend of their build (omp, std, serial) or the
 # TBB bench's tbb; the unprefixed form stays accepted, a measured run citing an old name.
-GENERATED = re.compile(r"^(chunk::)?chunk_(zero|zero_one_value|zero_any|v1|v2|v2a)(_(\d+|dyn))?$"
+GENERATED = re.compile(r"^(chunk::)?chunk_(zero|zero_or_value|zero_one_value|zero_any|v1|v2|v2a)(_(\d+|dyn))?$"
+                       r"|^shrink_array::(zero|zero_or_value|zero_one_value|zero_any)(_(\d+|dyn))?$"
+                       r"|^shrink_array::(vector|chunk)$"
                        r"|^(shrink_bench|validation|variant_compare|rechunk_validation|dyn_geometry_validation)"
-                       r"_(zero|zero_one_value|zero_any|chunk|chunk2|chunk2a|vector)(_\w+)?$"
-                       r"|^shrink_bench_(omp|std|serial|tbb)_(zero|zero_one_value|zero_any|vector|std_alloc)"
+                       r"_(zero|zero_or_value|zero_one_value|zero_any|chunk|chunk2|chunk2a|vector)(_\w+)?$"
+                       r"|^shrink_bench_(omp|std|serial|tbb)_(zero|zero_or_value|zero_one_value|zero_any|vector|std_alloc)"
                        r"(_\w+)?$")
 
 CODE_SPAN = re.compile(r"`([^`\n]+)`")

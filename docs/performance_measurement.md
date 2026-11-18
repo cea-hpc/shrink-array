@@ -67,7 +67,7 @@ the next, to within a megabyte. A single run is enough.
   6.4-6.8 s and three at 7.7-8.0 s (+18%). `perf stat`: same frequency (3.26 GHz), same number
   of instructions, same last-level cache misses, but an IPC of 3.45 instead of
   3.95 and +10 points of cycles stalled on memory. Each memory access costs more,
-  probably depending on the physical layout of the pages received at start-up. `zero_one_value` has an even
+  probably depending on the physical layout of the pages received at start-up. `zero_or_value` has an even
   more pronounced slow mode (~+40%, runs at 16 s instead of 11).
 - **Drift between time windows.** The same binary, with no recompilation at all: 10.75 to
   11.53 s in one window, 9.49 to 10.08 s an hour later.
@@ -212,7 +212,7 @@ python3 python/bimodal_probe.py --runs 12 -- $BIN --mode perf --no_io
   `CMakeCache.txt`. When in doubt, reconfigure in a fresh directory. To compare two
   builds, the command `ninja -C <build> -t commands <target>` shows the options actually
   used.
-- **A fresh build does not have the intended options**: `OMP` is `OFF` by default, and a benchmark without
+- **A fresh build does not have the intended options**: `CHUNK_OPENMP` is `OFF` by default, and a benchmark without
   OpenMP runs on a single core. Check `ldd $BIN | grep gomp`.
 - **The assembler is too old** for `-mcpu=native` with GCC 16 ("unknown architecture"):
   load recent `binutils`.

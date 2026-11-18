@@ -23,19 +23,40 @@
 #include "chunk/internal/array_chunk_parallel_common.h" // ParallelSupportCommon, the class these bodies belong to
 #include "chunk/internal/compression_manager.h"         // CompressionManager<> in flush_pending_deferred_ops
 #include "chunk/config.h"                   // build_config::any_check, chunk_config::use_fast_block_compression
-#include "chunk/PMP_CHUNK.h"                // CHUNK_PMP_RANK_BOUND, CHUNK_PMP_IN_PARALLEL_REGION
-#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (check builds)
+#include "chunk/internal/pmp_chunk.h"       // CHUNK_PMP_RANK_BOUND, CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED, CHUNK_CHECK_FAILED
 
 namespace shrink_array
 {
 
+/**
+ * @brief Refuse a public make_block_compression() inside a region.
+ * @details Without a proxy the pass takes no writer handshake (steal_mark /
+ *          start) and no reader grace period, so it would compress chunks other
+ *          threads are writing or reading. The writers' own passes
+ *          (perform_compression) compress in the region.
+ * @return true if the caller is in a region: an invariant failure in check
+ *         builds, an error in the log otherwise, and the caller runs no pass.
+ */
+[[nodiscard]] inline bool block_pass_refused_in_region()
+{
+    if (CHUNK_PMP_IN_PARALLEL_REGION)
+    {
+        CHUNK_CHECK_FAILED(compress,
+                           "make_block_compression() called inside a parallel region: a sequential point, call it "
+                           "after the region");
+        return true;
+    }
+    return false;
+}
+
 template <typename Derived>
-void ParallelSupportCommon<Derived>::flush_pending_deferred_ops(bool force)
+void ParallelSupportCommon<Derived>::flush_pending_deferred_ops(bool force, bool own_rank_only)
 {
     if constexpr (chunk_config::use_fast_block_compression)
     {
         // Name CompressionManager<value_type, ChunkType> directly rather than via
-        // ChunkType::CompressionManagerType: that alias is public on zero_one_value but
+        // ChunkType::CompressionManagerType: that alias is public on zero_or_value but
         // private on zero_any. Both name the same type; this form avoids the
         // access check on the alias.
         using CM = CompressionManager<value_type, ChunkType>;
@@ -54,7 +75,14 @@ void ParallelSupportCommon<Derived>::flush_pending_deferred_ops(bool force)
         // holds exactly the chunks with ops queued. It also drains the other
         // arrays of this (T, chunk type): their ops are applied earlier, still
         // in order.
-        if (force || CM::any_pending_ops())
+        if (own_rank_only)
+        {
+            // An array of the calling thread's own, torn down in a region: its
+            // deferred writes are all on this rank. The other ranks' queues are
+            // theirs to drain.
+            static_cast<void>(CM::flush_deferred(CHUNK_PMP_THREAD_RANK));
+        }
+        else if (force || CM::any_pending_ops())
         {
             const int max_thr = CHUNK_PMP_RANK_BOUND;
             for (int r = 0; r < max_thr; ++r)

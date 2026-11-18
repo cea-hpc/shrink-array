@@ -66,43 +66,68 @@
  *
  *          Memory: the vector (8 n_elems bytes), the array (about the same at its
  *          largest), the random indices (4 n_elems bytes), and the constant vectors
- *          of read-constant and read-second (8 n_elems bytes each). The default
- *          n_elems = 2^27 takes about 4 GB.
+ *          of read-constant and read-second (8 n_elems bytes each): about 36
+ *          bytes per element. The default n_elems is max(2^27, threads x 2^20),
+ *          at least 2^20 elements per thread so that a case lasts long enough
+ *          to time at a high thread count: 2^27 (about 4.5 GB) up to 128
+ *          threads, about 3.0e8 (11 GB) at 288.
  *
  *          Usage: access_cost [--n n_elems] [--reps R] [--csv] [--verify]
  */
 
-#include <algorithm>   // std::sort, std::min_element
-#include <chrono>      // std::chrono::steady_clock
-#include <cstdint>     // std::uint64_t
-#include <cstdio>      // std::fprintf, stderr
-#include <string>      // std::string
-#include <type_traits> // std::conditional_t
-#include <utility>     // std::as_const
-#include <vector>      // std::vector
+#include <algorithm>    // std::sort, std::min_element, std::max, std::min
+#include <chrono>       // std::chrono::steady_clock
+#include <cstdint>      // std::uint64_t
+#include <charconv>     // std::from_chars (arg_value)
+#include <cstdio>       // std::fprintf, stderr
+#include <cstring>      // std::strlen
+#include <exception>    // std::exception (main's catch)
+#include <iterator>     // std::size
+#include <string>       // std::string
+#include <system_error> // std::errc (arg_value)
+#include <type_traits>  // std::conditional_t
+#include <utility>      // std::as_const
+#include <vector>       // std::vector
 
-#include "chunk/chunk_traits.h"                   // the IntType = int default of the arrays
-#include "chunk/zero_array.h"                     // zero::Array
-#include "chunk/zero_one_value_array.h"           // zero_one_value::Array
-#include "chunk/zero_any_array.h"                 // zero_any::Array
-#include "chunk/param_chunk.h"                    // ParamChunk::init_indexes
-#include "chunk/config.h"                         // chunk_config::use_zero*, build_config::use_openmp / has_not_ompt
-#include "chunk/PMP_CHUNK.h"                      // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"                    // begin_parallel_phase, finalize_parallel_phase
-#include "chunk/internal/env_parse.h"             // arg_number (checked, not atoi)
-#include "chunk/internal/print.h"                 // shrink_array::println
-#include "fast_allocators/internal/pmp_runtime.h" // team_size / team_rank (read-bulk)
+#include "chunk/zero_array.h"          // zero::Array
+#include "chunk/zero_or_value_array.h" // zero_or_value::Array
+#include "chunk/zero_any_array.h"      // zero_any::Array
+#include "chunk/runtime.h"             // Runtime::init
+#include "chunk/config.h"              // chunk_config::use_zero*, build_config::use_openmp / needs_explicit_phases
+#include "chunk/threads.h"             // shrink_array::max_threads, team_size, thread_rank (read-bulk)
+#include "chunk/phases.h"              // begin_parallel_phase, finalize_parallel_phase
+#include "chunk/print.h"               // shrink_array::println
 
 using namespace shrink_array;
 
-static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
-              "access_cost: link chunk_zero_*, chunk_zero_one_value_* or chunk_zero_any_*");
+namespace
+{
+
+/// @brief A number of the command line, checked (std::from_chars, not atoi):
+///        @p fallback kept, with a warning, when @p text is not a whole number.
+template <typename T>
+T arg_value(const char* text, T fallback, const char* name)
+{
+    T           value{};
+    const char* end = text + std::strlen(text);
+    if (const auto [ptr, ec] = std::from_chars(text, end, value); ec == std::errc{} && ptr == end)
+    {
+        return value;
+    }
+    println(stderr, "access_cost: {} '{}' is not a number, {} kept", name, text, fallback);
+    return fallback;
+}
+
+} // namespace
+
+static_assert(chunk_config::use_zero || chunk_config::use_zero_or_value || chunk_config::use_zero_any,
+              "access_cost: link chunk_zero_*, chunk_zero_or_value_* or chunk_zero_any_*");
 
 template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -110,9 +135,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -125,7 +150,7 @@ namespace
 // ── Phase brackets: no-ops under OMPT (the callbacks do it) ─────────────────
 void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
@@ -133,7 +158,7 @@ void begin_phase()
 
 void end_phase(Array<double>& arr)
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -164,7 +189,7 @@ double varied2(long index)
 std::vector<int> random_indices(long count)
 {
     std::vector<int> idx(static_cast<std::size_t>(count));
-    const int        ni = static_cast<int>(count);
+    const auto       ni = static_cast<int>(count);
 #pragma omp parallel for schedule(static)
     for (int k = 0; k < ni; ++k)
     {
@@ -205,7 +230,7 @@ struct SamplePair
 Sample vec_read(const std::vector<double>& vec)
 {
     const auto t0    = Clk::now();
-    const int  count = static_cast<int>(vec.size());
+    const auto count = static_cast<int>(vec.size());
     double     sum   = 0.;
 #pragma omp parallel for schedule(static) reduction(+ : sum)
     for (int i = 0; i < count; ++i)
@@ -218,7 +243,7 @@ Sample vec_read(const std::vector<double>& vec)
 Sample vec_read_random(const std::vector<double>& vec, const std::vector<int>& idx)
 {
     const auto t0    = Clk::now();
-    const int  count = static_cast<int>(idx.size());
+    const auto count = static_cast<int>(idx.size());
     double     sum   = 0.;
 #pragma omp parallel for schedule(static) reduction(+ : sum)
     for (int k = 0; k < count; ++k)
@@ -232,7 +257,7 @@ template <typename F>
 Sample vec_write(std::vector<double>& vec, F value)
 {
     const auto t0    = Clk::now();
-    const int  count = static_cast<int>(vec.size());
+    const auto count = static_cast<int>(vec.size());
 #pragma omp parallel for schedule(static)
     for (int i = 0; i < count; ++i)
     {
@@ -244,7 +269,7 @@ Sample vec_write(std::vector<double>& vec, F value)
 Sample vec_rmw(std::vector<double>& vec)
 {
     const auto t0    = Clk::now();
-    const int  count = static_cast<int>(vec.size());
+    const auto count = static_cast<int>(vec.size());
 #pragma omp parallel for schedule(static)
     for (int i = 0; i < count; ++i)
     {
@@ -282,8 +307,8 @@ Sample arr_read_bulk(Array<double>& arr, int count)
 #pragma omp parallel reduction(+ : sum)
     {
         begin_phase();
-        const long nt   = fast_alloc::pmp::team_size();
-        const long rank = fast_alloc::pmp::team_rank();
+        const long nt   = shrink_array::team_size();
+        const long rank = shrink_array::thread_rank();
         const auto lo   = static_cast<int>(count * rank / nt);
         const auto hi   = static_cast<int>(count * (rank + 1) / nt);
         double     part = 0.;
@@ -297,7 +322,7 @@ Sample arr_read_bulk(Array<double>& arr, int count)
 Sample arr_read_random(Array<double>& arr, const std::vector<int>& idx)
 {
     const auto  t0    = Clk::now();
-    const int   count = static_cast<int>(idx.size());
+    const auto  count = static_cast<int>(idx.size());
     double      sum   = 0.;
     const auto& ca    = std::as_const(arr);
 #pragma omp parallel
@@ -399,27 +424,33 @@ double minimum(const std::vector<double>& samples)
 
 constexpr const char* case_names[] = {"read-varied", "read-constant", "read-random", "write-varied",
                                       "write-fresh", "rmw",           "read-second", "read-bulk"};
-constexpr int         n_cases      = static_cast<int>(sizeof(case_names) / sizeof(case_names[0]));
+constexpr int         n_cases      = static_cast<int>(std::size(case_names));
 } // namespace
 
 int main(int argc, char** argv)
+try
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
-    long n_elems = 1L << 27;
-    int  reps    = 5;
-    bool csv     = false;
-    bool verify  = false;
+    // At least 2^20 elements per thread: with a fixed 2^27, 288 threads had
+    // 466k elements each, a case lasted a few milliseconds, and the region
+    // and phase overheads made the medians too noisy to compare.
+    constexpr long min_elems_per_thread = 1L << 20;
+    long           n_elems = std::max(1L << 27, static_cast<long>(shrink_array::max_threads()) * min_elems_per_thread);
+    n_elems                = std::min(n_elems, 0x7fffffffL);
+    int  reps              = 5;
+    bool csv               = false;
+    bool verify            = false;
     for (int a = 1; a < argc; ++a)
     {
         const std::string opt = argv[a];
         if (opt == "--n" && a + 1 < argc)
         {
-            n_elems = shrink_array::arg_number<long>(argv[++a], n_elems, "--n");
+            n_elems = arg_value<long>(argv[++a], n_elems, "--n");
         }
         else if (opt == "--reps" && a + 1 < argc)
         {
-            reps = shrink_array::arg_number<int>(argv[++a], reps, "--reps");
+            reps = arg_value<int>(argv[++a], reps, "--reps");
         }
         else if (opt == "--csv")
         {
@@ -440,10 +471,10 @@ int main(int argc, char** argv)
         std::fprintf(stderr, "access_cost: need reps >= 1, 1 <= n < 2^31\n");
         return 2;
     }
-    const int count = static_cast<int>(n_elems);
+    const auto count = static_cast<int>(n_elems);
 
     // Read off an EMPTY array: no chunk, no end-of-run stats line of its own.
-    const long chunk_sz = static_cast<long>(Array<double>(0).chunk_size());
+    const auto chunk_sz = static_cast<long>(Array<double>(0).chunk_size());
     if (csv)
     {
         println("variant,chunk_size,threads,n,rep,case,container,seconds,ns_per_elem");
@@ -451,13 +482,13 @@ int main(int argc, char** argv)
     else
     {
         println("=== access_cost [{}]  n={}  chunk_size={}  threads={}  reps={} ===", variant_name(), n_elems, chunk_sz,
-                CHUNK_PMP_MAX_THREADS, reps);
+                shrink_array::max_threads(), reps);
     }
 
     const std::vector<int> idx = random_indices(n_elems);
     std::vector<double>    vec(static_cast<std::size_t>(n_elems));
-    std::vector<double>    zeros(static_cast<std::size_t>(n_elems), 0.);
-    std::vector<double>    seconds(static_cast<std::size_t>(n_elems), 1.5);
+    std::vector            zeros(static_cast<std::size_t>(n_elems), 0.);
+    std::vector            seconds(static_cast<std::size_t>(n_elems), 1.5);
 
     // [case][container 0 = vector, 1 = array] -> seconds per repetition
     std::vector<double> times[n_cases][2];
@@ -478,8 +509,8 @@ int main(int argc, char** argv)
         times[c][container].push_back(seconds);
         if (csv)
         {
-            println("{},{},{},{},{},{},{},{:.9f},{:.4f}", variant_name(), chunk_sz, CHUNK_PMP_MAX_THREADS, n_elems, rep,
-                    case_names[c], container ? "array" : "vector", seconds,
+            println("{},{},{},{},{},{},{},{:.9f},{:.4f}", variant_name(), chunk_sz, shrink_array::max_threads(),
+                    n_elems, rep, case_names[c], container ? "array" : "vector", seconds,
                     seconds * 1e9 / static_cast<double>(n_elems));
         }
     };
@@ -542,8 +573,8 @@ int main(int argc, char** argv)
         // write-fresh: varied values into an array all at 0 (every chunk
         // materialised by its first write) and into a zeroed vector.
         {
-            Array<double>       filled(count);
-            std::vector<double> fv(static_cast<std::size_t>(n_elems), 0.);
+            Array<double> filled(count);
+            std::vector   fv(static_cast<std::size_t>(n_elems), 0.);
             pair(4, [&] { return vec_write(fv, varied); }, [&] { return arr_write(filled, count, varied); });
             check_sum(4, vec_sum(fv), arr_sum(filled, count));
             if (verify)
@@ -598,4 +629,10 @@ int main(int argc, char** argv)
         return 1;
     }
     return 0;
+}
+catch (const std::exception& e)
+{
+    // A failed allocation, std::format or a bad argument: said, not std::terminate().
+    std::fprintf(stderr, "access_cost: %s\n", e.what());
+    return 2;
 }

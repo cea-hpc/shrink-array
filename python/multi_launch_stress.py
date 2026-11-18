@@ -26,7 +26,7 @@ Two ways to name the binaries:
     CYCLE through the builds: run 1 on the first, run 2 on the second, ...
     and back to the first, so a long session spreads its draws over all of
     them. A build's binaries execute in THEIR directory, where the reference
-    files (data_tab_*, the oracle a check run reads) live, as in the
+    files (data_array_*, the oracle a check run reads) live, as in the
     historical mode; the outputs, the CSV and the log go to a directory of
     their own under the build root, multi_launch_runs/<arch>_<date_time>, one per
     session (--run-dir names another).
@@ -79,14 +79,14 @@ except ImportError:
     import types as _types  # noqa: E402
 
     _numa = _types.SimpleNamespace(MODES=("auto", "off"), interleave_prefix=lambda env, mode="auto": [])
-# --exec chunk2a & co.: the old variant labels, read as their new names until 1.0.
+# --exec chunk2a & co.: an old variant label is refused, with its new name.
 # find_bench_exe: an executable under its name for each backend
 # (shrink_bench_<backend>_<rest>), the one the build holds.
 try:
-    from bench_runner.settings import bench_exe_names, find_bench_exe, normalize_variant  # noqa: E402
+    from bench_runner.settings import bench_exe_names, check_variant_label, find_bench_exe  # noqa: E402
 except ImportError:
     # Copied alone: the new labels only, and bench_runner's two helpers as they are.
-    def normalize_variant(label, warn=None):
+    def check_variant_label(label, option):
         return label
 
     def bench_exe_names(rest):
@@ -169,6 +169,13 @@ parser = SuggestingArgumentParser(description="Run executable(s) with random thr
 parser.add_argument("--runs", type=int, default=10000, help="Total number of runs (default: 10000)")
 parser.add_argument("--min_threads", type=int, default=2, help="Minimum number of threads (default: 2)")
 parser.add_argument("--max_threads", type=int, default=512, help="Maximum number of threads (default: 512)")
+parser.add_argument("--peak_threads", type=int, default=None, metavar="N",
+                    help="Draw most thread counts near N, typically the top of the speedup curve; "
+                         "the others stay uniform over --min_threads..--max_threads, so that "
+                         "the small and very large counts are still run, less often. "
+                         "Default: uniform over the whole range.")
+parser.add_argument("--peak_share", type=float, default=0.7, metavar="F",
+                    help="With --peak_threads: the share of the draws near it, 0 to 1 (default: 0.7)")
 parser.add_argument("--no_io", action="store_true", help="Disable stdout/stderr file output and set NO_IO=1")
 parser.add_argument("--all_exec", action="store_true",
                     help="Shortcut for --exec all --size all: run every variant in every "
@@ -188,18 +195,18 @@ parser.add_argument("--build-root", default=os.environ.get("CHUNK_BUILD_ROOT"),
 parser.add_argument("--run-dir", default=None, metavar="DIR",
                     help="Where the output_*/error_* files, the CSV and the log go. Default: "
                          "the current directory in the historical mode (the binaries run there "
-                         "too and read the oracle data_tab* there); under --builds a directory "
+                         "too and read the oracle data_array* there); under --builds a directory "
                          "of its own, <build-root>/multi_launch_runs/<arch>_<date_time>, and each "
                          "build's binaries run in their own directory, with their own oracle.")
 parser.add_argument("--regen-ref", action="store_true",
-                    help="Regenerate the reference files (data_tab_*) with the vector check "
+                    help="Regenerate the reference files (data_array_*) with the vector check "
                          "binary before the runs: in the current directory (historical mode), "
                          "or in each build's binary directory (--builds), from that build's "
-                         "own vector binary. The old data_tab_* files are removed first.")
+                         "own vector binary. The old data_array_* files are removed first.")
 # No "regen" in this help: the GUI's option filter matches flags AND help text.
 parser.add_argument("--only-checksum", action="store_true",
                     help="With the reference rebuilt before the runs, the vector binary writes "
-                         "the data_tab_*_check_sum files only (shrink_bench --checksum_only), no "
+                         "the data_array_*_check_sum files only (shrink_bench --checksum_only), no "
                          "data: ~20 GB less per oracle. The checks are then bit-exact (no "
                          "1e-10 / 1e-6 element tolerance) and a mismatch aborts without "
                          "locating the element: rebuild a full reference to diagnose it.")
@@ -213,16 +220,16 @@ parser.add_argument("--only-checksum", action="store_true",
 #   --exec zero_any             -> the 5 zero_any binaries
 #   --exec zero,zero_any --size 64,dyn -> 4 binaries
 #   --all_exec                  -> the full matrix
-_VARIANTS = ["zero", "zero_one_value", "zero_any"]
+_VARIANTS = ["zero", "zero_or_value", "zero_any"]
 # The TBB bench (shrink_bench_tbb_<variant>_<size>, std-backend builds made
 # with CHUNK_WITH_TBB): the same sources with the regions run as TBB tasks.
 # Part of the selection like the others: 'all' and --all_exec include it, and
-# so does the default (zero_one_value AND tbb_zero_one_value). A build without
+# so does the default (zero_or_value AND tbb_zero_or_value). A build without
 # it (OpenMP, serial, a std build made without oneTBB) simply has no such
 # binary: skipped silently unless the variant was named in --exec.
 _TBB_VARIANTS = ["tbb_" + v for v in _VARIANTS]
 _ALL_VARIANTS = _VARIANTS + _TBB_VARIANTS
-_DEFAULT_VARIANTS = ["zero_one_value", "tbb_zero_one_value"]
+_DEFAULT_VARIANTS = ["zero_or_value", "tbb_zero_or_value"]
 _SIZES         = ["64", "256", "1024", "dyn"]   # VALID choices (64 can still be asked with --size 64)
 _DEFAULT_SIZES = ["256", "1024", "dyn"]              # the sizes built by default (64 dropped)
 
@@ -240,7 +247,7 @@ def _csv_choices(name, valid):
             return out
         items = [v.strip() for v in value.split(",") if v.strip()]
         if name == "--exec":
-            items = [normalize_variant(v, name) for v in items]
+            items = [check_variant_label(v, name) for v in items]
         bad = [v for v in items if v not in valid]
         if bad:
             raise argparse.ArgumentTypeError(
@@ -254,9 +261,9 @@ parser.add_argument(
     "--exec",
     type=_csv_choices("--exec", _ALL_VARIANTS),
     default=None,
-    metavar="{zero,zero_one_value,zero_any,tbb_zero,tbb_zero_one_value,tbb_zero_any,all}[,...]",
-    help="Variant(s) to run, comma-separated or 'all' (the six). Default: zero_one_value "
-         "and tbb_zero_one_value unless --all_exec is given. tbb_<variant>: the TBB bench "
+    metavar="{zero,zero_or_value,zero_any,tbb_zero,tbb_zero_or_value,tbb_zero_any,all}[,...]",
+    help="Variant(s) to run, comma-separated or 'all' (the six). Default: zero_or_value "
+         "and tbb_zero_or_value unless --all_exec is given. tbb_<variant>: the TBB bench "
          "(shrink_bench_tbb_<variant>_<size>, std-backend builds made with "
          "CHUNK_WITH_TBB); a build without it is skipped for those, silently "
          "unless the variant is named here."
@@ -288,6 +295,10 @@ parser.add_argument("--pool", default=None, metavar="ID",
                          "(suffixed with the job).")
 
 args = parser.parse_args()
+if args.peak_threads is not None and not args.min_threads <= args.peak_threads <= args.max_threads:
+    parser.error(f"peak_threads {args.peak_threads} is outside {args.min_threads}..{args.max_threads}")
+if not 0 <= args.peak_share <= 1:
+    parser.error(f"peak_share {args.peak_share} is not between 0 and 1")
 
 if args.pool:
     if Pool is None:
@@ -370,6 +381,26 @@ n = args.runs
 min_threads = args.min_threads
 max_threads = args.max_threads
 no_io = args.no_io
+
+# --peak_threads: the draws near the peak, in peak +/- this share of it.
+PEAK_WIDTH = 0.25
+
+
+def draw_threads():
+    """A run's thread count: uniform over the range, or, under --peak_threads
+    and for --peak_share of the draws, near the peak (triangular, clipped to
+    the range)."""
+    peak = args.peak_threads
+    if peak is not None and random.random() < args.peak_share:
+        low = max(min_threads, round(peak * (1 - PEAK_WIDTH)))
+        high = min(max_threads, round(peak * (1 + PEAK_WIDTH)))
+        return round(random.triangular(low, high, peak))
+    return random.randint(min_threads, max_threads)
+
+
+if args.peak_threads is not None:
+    print(f"🎯 Thread counts: {args.peak_share:.0%} near {args.peak_threads}, "
+          f"the others uniform over {min_threads}..{max_threads}")
 
 # 🧹 Clean up previous output and error files (only if IO is enabled)
 if not no_io:
@@ -593,7 +624,7 @@ def _wait_ref(build):
     return True
 
 # 🧬 Reference regeneration: the vector (std::vector) check binary writes the
-# data_tab_* oracle the chunk binaries compare against. Once per build, in the
+# data_array_* oracle the chunk binaries compare against. Once per build, in the
 # directory its binaries run in, after removing the previous files -- a check
 # run against a partial oracle aborts on the first missing dump. Not under
 # NO_IO, which would disable the very writes this is about.
@@ -613,7 +644,7 @@ if args.regen_ref:
             # build's first run here, the other builds' references meanwhile.
             ref_pending.add(build)
             continue
-        old = glob.glob(os.path.join(ref_dir, "data_tab*"))
+        old = glob.glob(os.path.join(ref_dir, "data_array*"))
         for f in old:
             os.remove(f)
         label = build or os.path.basename(os.path.abspath(ref_dir))
@@ -635,7 +666,7 @@ if args.regen_ref:
             _pool_stop(f"reference regeneration failed for {label}, return code {result.returncode}")
             sys.exit(f"❌ Reference regeneration failed for {label} (return code {result.returncode}, "
                      f"see {log_name})")
-        n_new = len(glob.glob(os.path.join(ref_dir, "data_tab*")))
+        n_new = len(glob.glob(os.path.join(ref_dir, "data_array*")))
         print(f"✅ Reference for {label}: {n_new} file(s) in {wall:.1f}s")
         if pool:
             pool.mark(_ref_claim(build), "done", f"{n_new} file(s)\n")
@@ -729,14 +760,14 @@ for i in _run_indices():
         random.shuffle(executables)
 
     # Draw a thread count for this run
-    run_threads = random.randint(min_threads, max_threads)
+    run_threads = draw_threads()
 
     # Run each executable in sequence
     for exe in executables:
 
         # In shuffle mode → new draw per executable
         if args.shuffle_exec:
-            exe_threads = random.randint(min_threads, max_threads)
+            exe_threads = draw_threads()
         else:
             exe_threads = run_threads
 

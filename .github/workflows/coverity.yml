@@ -51,7 +51,7 @@ jobs:
           else
             echo "ok=true" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         if: steps.token.outputs.ok == 'true'
         with:
           # A schedule runs on the default branch (main); the development is on develop.
@@ -59,8 +59,7 @@ jobs:
       - name: Toolchain
         if: steps.token.outputs.ok == 'true'
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q g++-14 ninja-build libbz2-dev jq
+          .github/apt_install.sh g++-14 ninja-build libbz2-dev jq
       # The analysis tool (about 1 GB), cached under the checksum Scan gives
       # for its current version: downloaded again only when Scan moves on.
       - name: Coverity tool version
@@ -70,7 +69,7 @@ jobs:
           md5=$(curl -sSf --data-urlencode "token=$COVERITY_TOKEN" -d project=cea-hpc/shrink-array -d md5=1 \
                 https://scan.coverity.com/download/linux64)
           echo "md5=$md5" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         if: steps.token.outputs.ok == 'true'
         id: cache
         with:
@@ -89,7 +88,7 @@ jobs:
         env:
           COVERITY_EMAIL: ${{ secrets.COVERITY_SCAN_EMAIL }}
         run: COV_BIN="$RUNNER_TEMP/cov-analysis/bin" scripts/coverity_submit.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always() && steps.token.outputs.ok == 'true'
         with:
           name: cov-build-log

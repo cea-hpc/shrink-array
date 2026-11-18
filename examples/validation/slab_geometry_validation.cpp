@@ -46,7 +46,7 @@
 #include <string>  // std::string
 
 #include "fast_allocators/tc_allocator.h" // TCTypeCAllocator, TCCAllocator
-#include "chunk/internal/print.h"         // shrink_array::println
+#include "chunk/print.h"                  // shrink_array::println
 
 using shrink_array::println;
 
@@ -69,11 +69,11 @@ int check_pair(int small_bytes, int large_bytes, std::uintptr_t budget)
     int bad = 0;
     for (auto* alloc : {&a_small, &a_large})
     {
-        const auto* const         other = (alloc == &a_small) ? &a_large : &a_small;
-        const char*               block = alloc->alloc();
-        fast_alloc::TCCAllocator* own   = alloc->slab_of(block);
-        fast_alloc::TCCAllocator* seen  = other->slab_of(block);
-        const bool                ok = own != nullptr && seen == own && own->owner == static_cast<const void*>(alloc);
+        const auto* const               other = (alloc == &a_small) ? &a_large : &a_small;
+        const char*                     block = alloc->alloc();
+        const fast_alloc::TCCAllocator* own   = alloc->slab_of(block);
+        const fast_alloc::TCCAllocator* seen  = other->slab_of(block);
+        const bool ok = own != nullptr && seen == own && own->owner == static_cast<const void*>(alloc);
         if (!ok)
         {
             println("FAIL budget {}: {}-byte block, slab {} from its allocator, {} through the {}-byte one",
@@ -81,7 +81,7 @@ int check_pair(int small_bytes, int large_bytes, std::uintptr_t budget)
                     ptr_text(seen), alloc == &a_small ? large_bytes : small_bytes);
             ++bad;
         }
-        alloc->free_elt_pow2(block);
+        alloc->free_elem_pow2(block);
     }
     if (!bad)
     {

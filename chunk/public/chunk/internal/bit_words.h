@@ -18,7 +18,7 @@
 
 /**
  * @file bit_words.h
- * @brief Bit-packed storage kernel of ArrayChunkBits: n bools in
+ * @brief Bit-packed storage kernel of BitArray: n bools in
  *        ceil(n / 64) 64-bit words, bit k of element i in word i / 64.
  *
  * @details Plain functions over a word pointer, no chunk, no array: the chunk
@@ -91,7 +91,7 @@ inline constexpr std::size_t word_bytes = sizeof(WordT); ///< bytes per word
 [[nodiscard]] inline bool get_bit_relaxed(const WordT* words, std::size_t bit) noexcept
 {
     // atomic_ref needs a non-const object; the load does not write.
-    auto& word = const_cast<WordT&>(words[bit / word_bits]);
+    auto& word = const_cast<WordT&>(words[bit / word_bits]); // NOSONAR(cpp:S859)
     return (std::atomic_ref<WordT>(word).load(std::memory_order_relaxed) & bit_mask(bit)) != 0;
 }
 
@@ -118,9 +118,9 @@ inline void set_bit(WordT* words, std::size_t bit, bool value) noexcept
  */
 inline bool set_bit_atomic(WordT* words, std::size_t bit, bool value) noexcept
 {
-    const std::atomic_ref<WordT> word(words[bit / word_bits]);
-    const WordT                  mask = bit_mask(bit);
-    const WordT                  old =
+    const std::atomic_ref word(words[bit / word_bits]);
+    const WordT           mask = bit_mask(bit);
+    const WordT           old =
         value ? word.fetch_or(mask, std::memory_order_relaxed) : word.fetch_and(~mask, std::memory_order_relaxed);
     return (old & mask) != 0;
 }
@@ -181,11 +181,11 @@ inline void fill_bit_range_atomic(WordT* words, std::size_t lo, std::size_t hi, 
     std::size_t i = lo;
     while (i < hi)
     {
-        const std::size_t word_idx = i / word_bits;
-        const std::size_t off      = i % word_bits;
-        const std::size_t end  = (hi - (word_idx * word_bits)) < word_bits ? hi - (word_idx * word_bits) : word_bits;
-        const WordT       mask = span_mask(off, end);
-        const std::atomic_ref<WordT> word(words[word_idx]);
+        const std::size_t     word_idx = i / word_bits;
+        const std::size_t     off      = i % word_bits;
+        const std::size_t     end = (hi - (word_idx * word_bits)) < word_bits ? hi - (word_idx * word_bits) : word_bits;
+        const WordT           mask = span_mask(off, end);
+        const std::atomic_ref word(words[word_idx]);
         if (mask == word_ones)
         {
             word.store(value ? word_ones : 0, std::memory_order_relaxed);
@@ -250,8 +250,8 @@ inline void store_bit_range_atomic(WordT* words, std::size_t lo, std::size_t hi,
         {
             bits |= static_cast<WordT>(static_cast<bool>(get((word_idx * word_bits) + b))) << b;
         }
-        const WordT                  mask = span_mask(off, end);
-        const std::atomic_ref<WordT> word(words[word_idx]);
+        const WordT           mask = span_mask(off, end);
+        const std::atomic_ref word(words[word_idx]);
         if (mask == word_ones)
         {
             word.store(bits, std::memory_order_relaxed);
@@ -281,10 +281,11 @@ enum class Uniform : std::uint8_t
  */
 [[nodiscard]] inline Uniform scan_words(const WordT* words, std::size_t nbits) noexcept
 {
+    using enum Uniform;
     const std::size_t nw = words_for(nbits);
     if (nw == 0)
     {
-        return Uniform::all_false;
+        return all_false;
     }
     const WordT last = words[nw - 1] & tail_mask(nbits);
     WordT       any  = last;                     // OR: some 1 bit
@@ -296,13 +297,13 @@ enum class Uniform : std::uint8_t
     }
     if (any == 0)
     {
-        return Uniform::all_false;
+        return all_false;
     }
     if (all == word_ones)
     {
-        return Uniform::all_true;
+        return all_true;
     }
-    return Uniform::mixed;
+    return mixed;
 }
 
 /**

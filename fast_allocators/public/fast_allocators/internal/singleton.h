@@ -41,7 +41,7 @@ namespace fast_alloc
  * @details Created on the first get_instance() and never destroyed unless
  *          delete_instance() is called: an intentional leak, marked for LSan.
  *          The chunk library reaches it as shrink_array::SingletonChk
- *          (chunk/singleton.h). delete_instance() is for outside code only.
+ *          (chunk/internal/singleton.h). delete_instance() is for outside code only.
  * @tparam T The type to host; default-constructible.
  */
 template <typename T>

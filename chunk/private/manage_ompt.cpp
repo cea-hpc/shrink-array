@@ -21,14 +21,14 @@
  * Compiled as a real tool only under `CHUNK_OPT_OMPT`.
  * The runtime discovers it through ompt_start_tool(), which registers three
  * callbacks; each of them maps a point of the OpenMP lifecycle onto one of the
- * phase transitions declared in chunk/manage_ompt.h, so an application built
+ * phase transitions declared in chunk/phases.h, so an application built
  * this way needs no explicit call at all.
  *
  * In any other build this file only defines `g_ompt_suspended{1}` (callbacks
  * permanently suspended: none exists); the application drives the phase
- * transitions itself (see manage_ompt.h).
+ * transitions itself (see phases.h).
  *
- * @see chunk/manage_ompt.h for the semantics of the phase transitions.
+ * @see chunk/phases.h for the semantics of the phase transitions.
  */
 
 #include <array>       // std::array
@@ -42,15 +42,15 @@
 #include <string_view> // std::string_view (the CHUNK_REQUIRE_OMPT messages)
 
 #include "chunk/config.h"                   // g_ompt_suspended (defined here), chunk_config::is_shrink_enabled
-#include "chunk/singleton.h"                // SingletonChk
-#include "chunk/manage_ompt.h"              // begin_parallel_phase, finalize_parallel_phase, finalize_barrier_phase
-#include "chunk/PMP_CHUNK.h"                // g_fast_omp_rank, CHUNK_PMP_IN_PARALLEL_REGION, CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/singleton.h"       // SingletonChk
+#include "chunk/phases.h"                   // begin_parallel_phase, finalize_parallel_phase, finalize_barrier_phase
+#include "chunk/internal/pmp_chunk.h"       // g_fast_omp_rank, CHUNK_PMP_IN_PARALLEL_REGION, CHUNK_PMP_MAX_THREADS
 #include "chunk/log.h"                      // CHUNK_LOG, CHUNK_LOG_ALWAYS
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (CHUNK_REQUIRE_OMPT)
 #include "chunk/internal/phase_guard.h"     // phase_guard::teams (one top-level team at a time)
 
-#include "chunk/all_type_chunk.h"          // AllTypeChunk
-#include "chunk/internal/churn_counters.h" // churn::note_phase_end
+#include "chunk/internal/type_state_registry.h" // TypeStateRegistry
+#include "chunk/internal/churn_counters.h"      // churn::note_phase_end
 
 #if CHUNK_OPT_OMPT
     #include <omp-tools.h> // ompt_set_callback, ompt_start_tool_result_t
@@ -61,10 +61,10 @@
 // sit in. A build without OMPT compiles only the stand-ins of the #else branch.
 #if CHUNK_OPT_OMPT
 
-    // Directive, like all_type_chunk.cpp's: a std-alloc build does not put
+    // Directive, like type_state_registry.cpp's: a std-alloc build does not put
     // fast_allocators/public on the include path at all.
     #if !CHUNK_OPT_STD_ALLOC
-        #include "fast_allocators/internal/static_const_array.h" // StaticConstArray::clear_info_free_elt
+        #include "fast_allocators/internal/static_const_array.h" // StaticConstArray::clear_info_free_elem
     #endif
 
 /**
@@ -307,7 +307,7 @@ void parallel_end_chunk_work()
         return;
     }
 
-    const auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::get_ref();
+    const auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::TypeStateRegistry>::get_ref();
 
     if (!ens_type_chunk.have_chunk_to_compress_potentially())
     {
@@ -338,7 +338,7 @@ void flush_allocator_free_batches()
     #if !CHUNK_OPT_STD_ALLOC
     if (!CHUNK_PMP_IN_PARALLEL_REGION)
     {
-        fast_alloc::StaticConstArray::clear_info_free_elt();
+        fast_alloc::StaticConstArray::clear_info_free_elem();
     }
     #endif
 }
@@ -540,7 +540,7 @@ extern "C" ompt_start_tool_result_t* ompt_start_tool(unsigned int, const char*)
 }
 
 /**
- * @brief See manage_ompt.h. Once per process (a magic static).
+ * @brief See phases.h. Once per process (a magic static).
  */
 void shrink_array::check_ompt_tool_loaded()
 {
@@ -602,7 +602,7 @@ void shrink_array::check_ompt_tool_loaded()
  */
 shrink_array::OmptSuspendCounter shrink_array::g_ompt_suspended{1}; // no callback exists in this build
 
-/// @brief No OMPT tool in this build: nothing to check (see manage_ompt.h).
+/// @brief No OMPT tool in this build: nothing to check (see phases.h).
 void shrink_array::check_ompt_tool_loaded() {}
 
 #endif

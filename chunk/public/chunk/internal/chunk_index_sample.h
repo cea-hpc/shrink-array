@@ -40,16 +40,16 @@ chunk_index_sample(std::array<char, N>& buf, const std::vector<int>& idx, I chun
     using fast_alloc::append_int;
     using fast_alloc::append_text;
     char* const       first = buf.data();
-    char* const       end   = first + N;
+    const char* const end   = first + N;
     char*             out   = first;
     const std::size_t shown = idx.size() < max ? idx.size() : max;
     for (std::size_t k = 0; k < shown && out < end; ++k)
     {
-        const auto num_chunk = idx[k];
-        out                  = append_text(out, end, k == 0 ? "" : " ");
-        out                  = append_int(out, end, num_chunk);
-        out                  = append_text(out, end, "@");
-        out                  = append_int(out, end, static_cast<I>(num_chunk) * chunk_size);
+        const auto chunk_index = idx[k];
+        out                    = append_text(out, end, k == 0 ? "" : " ");
+        out                    = append_int(out, end, chunk_index);
+        out                    = append_text(out, end, "@");
+        out                    = append_int(out, end, static_cast<I>(chunk_index) * chunk_size);
     }
     if (idx.size() > shown)
     {

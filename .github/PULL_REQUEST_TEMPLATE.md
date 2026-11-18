@@ -10,7 +10,7 @@
 - [ ] Source checks pass: `check_docs`, `check_headers`, `check_includes`,
       `check_tracked`, `check_raw_reads` (`ctest` runs them, or each script
       under scripts/ directly).
-- [ ] `ctest -L validation` green in **both** modes, OMP=ON and OMP=OFF
+- [ ] `ctest -L validation` green in **both** modes, CHUNK_OPENMP=ON and CHUNK_OPENMP=OFF
       (the serial specialisations only compile without OpenMP).
 - [ ] No `fixup!` / `squash!` / `amend!` subject lines: the CI refuses them.
 - [ ] Every file a commit builds or references is in the commit

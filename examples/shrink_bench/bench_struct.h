@@ -36,7 +36,7 @@
  *
  * What a struct element does NOT get: the compound operators of the proxies
  * (+=, *=, ++ ...) exist for the types that have the operation; Point3 has
- * no operator+, so `tab_point[i] += p` does not compile. The bench's struct
+ * no operator+, so `array_point[i] += p` does not compile. The bench's struct
  * loops read the element, build the new one, assign it -- the shape the
  * library offers every element type.
  */
@@ -47,7 +47,7 @@
 #include <ostream> // std::ostream
 
 /// Three doubles. The defaulted <=> gives the == every element type needs and
-/// the < zero_one_value asks of a floating-point aggregate (value_less.h).
+/// the < zero_or_value asks of a floating-point aggregate (value_less.h).
 struct Point3
 {
     auto operator<=>(const Point3&) const = default;

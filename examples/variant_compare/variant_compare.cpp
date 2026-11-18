@@ -16,13 +16,13 @@
 
 /**
  * @file variant_compare.cpp
- * @brief zero_one_value against zero_any on the SAME workload, where both can compress
+ * @brief zero_or_value against zero_any on the SAME workload, where both can compress
  *        the same chunks (--constants 1) or where zero_any can compress more
  *        (--constants K > 1).
  *
  * @details shrink_bench writes several distinct constants per array (d0, d1,
  *          d2...): zero_any, which takes a second value per chunk, compresses
- *          ~8.5 % more chunks there than zero_one_value, which has one per array, and
+ *          ~8.5 % more chunks there than zero_or_value, which has one per array, and
  *          then carries 2-2.5x less resident memory. That hides the question
  *          of the per-operation cost of each variant. This program asks it on
  *          its own:
@@ -70,54 +70,99 @@
  *          Usage: variant_compare [--n n_elems] [--iters I] [--constants K] [--verify]
  */
 
-#include <chrono>      // std::chrono::steady_clock
-#include <cstdint>     // std::uint64_t
-#include <cstdio>      // std::fprintf, stderr
-#include <string>      // std::string
-#include <type_traits> // std::conditional_t
-#include <utility>     // std::as_const
-#include <vector>      // std::vector
+#include <chrono>       // std::chrono::steady_clock
+#include <cstdint>      // std::uint64_t
+#include <array>        // std::array (rss_kib's line)
+#include <charconv>     // std::from_chars (arg_value)
+#include <cstdio>       // std::fprintf, std::fopen, std::fgets, std::sscanf, stderr
+#include <cstring>      // std::strlen
+#include <exception>    // std::exception (main's catch)
+#include <iterator>     // std::size
+#include <string>       // std::string
+#include <system_error> // std::errc (arg_value)
+#include <type_traits>  // std::conditional_t
+#include <utility>      // std::as_const
+#include <vector>       // std::vector
 
-#include "chunk/chunk_traits.h"         // the IntType = int default of zero_one_value::Array<T> / zero_any::Array<T>
-#include "chunk/zero_one_value_array.h" // zero_one_value::Array
-#include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
-#include "chunk/config.h"               // chunk_config::use_zero_any, build_config::use_openmp
-#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"          // shrink_array::begin_parallel_phase, finalize_parallel_phase
-#include "chunk/internal/env_parse.h"   // arg_number (checked, not atoi)
-#include "chunk/internal/exact_rss.h"   // exact_rss_kib (smaps_rollup)
-#include "chunk/internal/print.h"       // shrink_array::println
+#include "chunk/zero_or_value_array.h" // zero_or_value::Array
+#include "chunk/zero_any_array.h"      // zero_any::Array
+#include "chunk/runtime.h"             // Runtime::init
+#include "chunk/config.h"              // chunk_config::use_zero_any, build_config::use_openmp
+#include "chunk/threads.h"             // shrink_array::max_threads
+#include "chunk/phases.h"              // shrink_array::begin_parallel_phase, finalize_parallel_phase
+#include "chunk/print.h"               // shrink_array::println
 
 
 using namespace shrink_array;
 
+namespace
+{
+
+/// @brief A number of the command line, checked (std::from_chars, not atoi):
+///        @p fallback kept, with a warning, when @p text is not a whole number.
+template <typename T>
+T arg_value(const char* text, T fallback, const char* name)
+{
+    T           value{};
+    const char* end = text + std::strlen(text);
+    if (const auto [ptr, ec] = std::from_chars(text, end, value); ec == std::errc{} && ptr == end)
+    {
+        return value;
+    }
+    println(stderr, "variant_compare: {} '{}' is not a number, {} kept", name, text, fallback);
+    return fallback;
+}
+
+/// @brief The resident size in KiB, from /proc/self/smaps_rollup's "Rss:"
+///        line (exact, where statm lags at many threads); -1 if unreadable.
+long rss_kib()
+{
+    std::FILE* file = std::fopen("/proc/self/smaps_rollup", "r");
+    if (file == nullptr)
+    {
+        return -1;
+    }
+    long                  kib = -1;
+    std::array<char, 256> line{};
+    while (std::fgets(line.data(), static_cast<int>(line.size()), file) != nullptr)
+    {
+        if (std::sscanf(line.data(), "Rss: %ld kB", &kib) == 1)
+        {
+            break;
+        }
+    }
+    (void)std::fclose(file); // read-only: nothing to flush, nothing to report
+    return kib;
+}
+
+} // namespace
+
 static_assert(chunk_config::use_second_value,
-              "variant_compare compares zero_one_value and zero_any: link chunk_zero_one_value_* or chunk_zero_any_*");
+              "variant_compare compares zero_or_value and zero_any: link chunk_zero_or_value_* or chunk_zero_any_*");
 
 template <typename T>
-using Array = std::conditional_t<chunk_config::use_zero_any, zero_any::Array<T>, zero_one_value::Array<T>>;
+using Array = std::conditional_t<chunk_config::use_zero_any, zero_any::Array<T>, zero_or_value::Array<T>>;
 
 constexpr const char* variant_name()
 {
-    return chunk_config::use_zero_any ? "zero_any" : "zero_one_value";
+    return chunk_config::use_zero_any ? "zero_any" : "zero_or_value";
 }
 
 /// The first value is 0; the second values, the first of them declared.
 constexpr double second_value[] = {9., 11., 13., 17., 19., 23., 29., 31.};
-constexpr int    max_constants  = static_cast<int>(sizeof(second_value) / sizeof(second_value[0]));
+constexpr int    max_constants  = static_cast<int>(std::size(second_value));
 
 // ── Phase brackets: no-ops under OMPT (the callbacks do it) ─────────────────
 static void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
 }
 static void end_phase(Array<double>& arr)
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -132,7 +177,7 @@ static void end_phase(Array<double>& arr)
     }
 }
 
-/// zero_one_value declares its one second value; zero_any finds one per chunk (no
+/// zero_or_value declares its one second value; zero_any finds one per chunk (no
 /// such member). A template, so the discarded call is not checked.
 template <typename Arr>
 static void maybe_declare_second_value(Arr& arr, double value)
@@ -157,7 +202,7 @@ static Role role(long chunk, int iter, int nconst)
     hash ^= hash >> 31;
     hash *= 0x94D049BB133111EBULL;
     hash ^= hash >> 29;
-    const int role_id = static_cast<int>(hash % 10);
+    const auto role_id = static_cast<int>(hash % 10);
     if (role_id <= 1)
     {
         return {0, 0.};
@@ -180,8 +225,9 @@ static double plain(long index, int iter)
 }
 
 int main(int argc, char** argv)
+try
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     long n_elems = 1L << 28;
     int  iters   = 20;
@@ -192,15 +238,15 @@ int main(int argc, char** argv)
         const std::string opt = argv[a];
         if (opt == "--n" && a + 1 < argc)
         {
-            n_elems = shrink_array::arg_number<long>(argv[++a], n_elems, "--n");
+            n_elems = arg_value<long>(argv[++a], n_elems, "--n");
         }
         else if (opt == "--iters" && a + 1 < argc)
         {
-            iters = shrink_array::arg_number<int>(argv[++a], iters, "--iters");
+            iters = arg_value<int>(argv[++a], iters, "--iters");
         }
         else if (opt == "--constants" && a + 1 < argc)
         {
-            nconst = shrink_array::arg_number<int>(argv[++a], nconst, "--constants");
+            nconst = arg_value<int>(argv[++a], nconst, "--constants");
         }
         else if (opt == "--verify")
         {
@@ -220,12 +266,12 @@ int main(int argc, char** argv)
     }
 
     // Read off an EMPTY array: no chunk, no end-of-run stats line of its own.
-    const long chunk_sz = static_cast<long>(Array<double>(0).chunk_size());
+    const auto chunk_sz = static_cast<long>(Array<double>(0).chunk_size());
     n_elems             = (n_elems + chunk_sz - 1) / chunk_sz * chunk_sz;
     const long nchunks  = n_elems / chunk_sz;
 
     println("=== variant_compare [{}]  n={}  chunk_size={}  chunks={}  iters={}  constants={}  threads={}{} ===",
-            variant_name(), n_elems, chunk_sz, nchunks, iters, nconst, CHUNK_PMP_MAX_THREADS,
+            variant_name(), n_elems, chunk_sz, nchunks, iters, nconst, shrink_array::max_threads(),
             verify ? "  (verify)" : "");
 
     Array<double> arr(static_cast<int>(n_elems));
@@ -239,12 +285,12 @@ int main(int argc, char** argv)
     using Clk       = std::chrono::steady_clock;
     const auto secs = [](Clk::time_point t0) { return std::chrono::duration<double>(Clk::now() - t0).count(); };
 
-    double    t_const  = 0.;
-    double    t_plain  = 0.;
-    double    t_read   = 0.;
-    double    t_rmw    = 0.;
-    double    checksum = 0.;
-    const int count    = static_cast<int>(n_elems);
+    double     t_const  = 0.;
+    double     t_plain  = 0.;
+    double     t_read   = 0.;
+    double     t_rmw    = 0.;
+    double     checksum = 0.;
+    const auto count    = static_cast<int>(n_elems);
 
     // Exact RSS at each iteration end, outside the timed passes (a read
     // walks the page tables). A peak inside a pass is not seen.
@@ -320,7 +366,7 @@ int main(int argc, char** argv)
         end_phase(arr);
         t_rmw += secs(t0);
 
-        const long rss_it = shrink_array::exact_rss_kib();
+        const long rss_it = rss_kib();
         rss_peak_kib      = rss_it > rss_peak_kib ? rss_it : rss_peak_kib;
 
         if (verify)
@@ -340,19 +386,17 @@ int main(int argc, char** argv)
         }
     }
 
-    long compressed = 0;
-    for (long j = 0; j < nchunks; ++j)
-    {
-        compressed += arr.written(static_cast<int>(j * chunk_sz)) ? 0 : 1;
-    }
+    // The chunks holding data: the others are compressed (the array's last
+    // chunk, past n_elems, holds none).
+    const long compressed = nchunks - arr.written_chunk_count();
 
     const double total = t_const + t_plain + t_read + t_rmw;
     println("time (s)    const {:8.3f} | plain {:8.3f} | read {:8.3f} | rmw {:8.3f} | total {:8.3f}", t_const, t_plain,
             t_read, t_rmw, total);
     println("compressed  {} / {} chunks ({:.2f} %)", compressed, nchunks,
             100. * static_cast<double>(compressed) / static_cast<double>(nchunks));
-    println("memory      RSS {} MiB at the end | peak {} MiB over the iteration ends (exact)",
-            shrink_array::exact_rss_kib() >> 10, rss_peak_kib >> 10);
+    println("memory      RSS {} MiB at the end | peak {} MiB over the iteration ends (exact)", rss_kib() >> 10,
+            rss_peak_kib >> 10);
     println("checksum    {:.1f}", checksum);
 
     int bad = 0;
@@ -377,4 +421,10 @@ int main(int argc, char** argv)
     }
     arr.clear();
     return bad;
+}
+catch (const std::exception& e)
+{
+    // A failed allocation, std::format or a bad argument: said, not std::terminate().
+    std::fprintf(stderr, "variant_compare: %s\n", e.what());
+    return 2;
 }

@@ -1,0 +1,143 @@
+/*
+ * Copyright 2024-2026 CEA (www.cea.fr)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#pragma once
+
+#pragma once
+
+#include <complex>     // std::complex
+#include <concepts>    // std::convertible_to
+#include <type_traits> // std::remove_cvref_t, std::is_same_v, std::is_integral_v
+
+#include "chunk/bit.h"                                   // Bit: the packed bool, assigned from bool
+#include "chunk/internal/concept_composite_arithmetic.h" // IsProxy
+
+namespace shrink_array
+{
+
+// --- 1. Extract the underlying type (Unwrapper) ---
+/// @brief The value type of T: T itself, or a proxy's value_type.
+template <typename T>
+struct get_base
+{
+    using type = std::remove_cvref_t<T>;
+};
+
+/// @brief A proxy's value type.
+template <IsProxy T>
+struct get_base<T>
+{
+    using type = std::remove_cvref_t<T>::value_type;
+};
+
+/// @brief get_base<T>::type.
+template <typename T>
+using BaseT = get_base<T>::type;
+
+// --- 2. Simple Complex Detection ---
+/// @brief Is T a std::complex? No by default.
+template <typename T>
+struct is_cplx : public std::false_type
+{
+};
+/// @brief std::complex<T> is complex.
+template <typename T>
+struct is_cplx<std::complex<T>> : public std::true_type
+{
+};
+
+// --- 3. The Core Concept ---
+/// @brief Assigning a U (or a proxy of U) to a T needs no explicit
+///        conversion: the same type, or one of the conversions listed below.
+template <typename T, typename U>
+concept IsCleanAssignment =
+    // Rule 1: Perfect match (e.g., double = Proxy<double> or complex = complex)
+    std::is_same_v<std::remove_cvref_t<T>, BaseT<U>> ||
+
+    // Rule 2: Floating point (double/float) receiving any integer
+    (std::is_floating_point_v<std::remove_cvref_t<T>> && std::is_integral_v<BaseT<U>>) ||
+
+    // Rule 3: Complex receiving its own scalar type (e.g., complex<double> = double/Proxy<double>)
+    (is_cplx<std::remove_cvref_t<T>>::value && std::is_same_v<typename std::remove_cvref_t<T>::value_type, BaseT<U>>) ||
+
+    // Rule 4: Complex receiving any integer (e.g., complex<double> = 0)
+    (is_cplx<std::remove_cvref_t<T>>::value && std::is_integral_v<BaseT<U>>) ||
+
+    // Rule 5: Small integers from standard int
+    ((std::is_same_v<std::remove_cvref_t<T>, short> || std::is_same_v<std::remove_cvref_t<T>, unsigned char> ||
+      std::is_same_v<std::remove_cvref_t<T>, char>) &&
+     std::is_same_v<BaseT<U>, int>) ||
+
+    // Rule 6: the packed bool (BitArray) receiving a bool
+    (shrink_array::is_packed_bit_v<std::remove_cvref_t<T>> && std::is_same_v<BaseT<U>, bool>);
+
+/// @brief A compound operation T op= U is clean when the assignment is.
+template <typename T, typename U>
+concept IsCleanCompoundOp = IsCleanAssignment<T, U>;
+
+/**
+ * @brief Defines which shift operations (<<=, >>=) are considered "safe".
+ * 1. The array element (T) must be an integral type.
+ * 2. The shift amount (U) must be an integral type after unwrapping Proxy.
+ */
+template <typename T, typename U>
+concept IsCleanShiftOp = std::is_integral_v<std::remove_cvref_t<T>> && std::is_integral_v<BaseT<U>>;
+
+// --- 4. What the element type itself can do ---
+// The proxies' compound operators exist only for element types that have the
+// operation, so e.g. `arr[i] += p` on an aggregate is refused at the call
+// rather than deep inside std::plus or the atomic apply.
+/// @brief Not bool nor Bit: arithmetic on a truth value is refused at compile
+///        time (`b += 1`, `b *= 2`, `b <<= 1` only mean "set" or "keep"); a bool
+///        array has =, &=, |=, ^= and reads.
+template <typename T>
+concept ElementArithmetic = !shrink_array::is_bool_like_v<std::remove_cvref_t<T>>;
+/// @brief T + T converts back to T.
+template <typename T>
+concept ElementAddable = ElementArithmetic<T> && requires(T lhs, T rhs) {
+    { lhs + rhs } -> std::convertible_to<T>;
+};
+/// @brief T - T converts back to T.
+template <typename T>
+concept ElementSubtractable = ElementArithmetic<T> && requires(T lhs, T rhs) {
+    { lhs - rhs } -> std::convertible_to<T>;
+};
+/// @brief T * T converts back to T.
+template <typename T>
+concept ElementMultipliable = ElementArithmetic<T> && requires(T lhs, T rhs) {
+    { lhs * rhs } -> std::convertible_to<T>;
+};
+/// @brief T / T converts back to T.
+template <typename T>
+concept ElementDivisible = ElementArithmetic<T> && requires(T lhs, T rhs) {
+    { lhs / rhs } -> std::convertible_to<T>;
+};
+/// @brief T % T converts back to T.
+template <typename T>
+concept ElementModulable = ElementArithmetic<T> && requires(T lhs, T rhs) {
+    { lhs % rhs } -> std::convertible_to<T>;
+};
+/// @brief T is an integer other than bool: <<= and >>= exist.
+template <typename T>
+concept ElementShiftable = std::is_integral_v<std::remove_cvref_t<T>> && ElementArithmetic<T>;
+/// @brief T has ++ and --.
+template <typename T>
+concept ElementIncrementable = requires(T elem) {
+    ++elem;
+    --elem;
+};
+
+} // namespace shrink_array

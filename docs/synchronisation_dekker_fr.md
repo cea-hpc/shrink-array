@@ -2,10 +2,10 @@
 
 > English version: [synchronisation_dekker.md](synchronisation_dekker.md).
 
-> État : début octobre 2026. Ce document explique comment les écrivains, les compresseurs,
+> État : novembre 2026. Ce document explique comment les écrivains, les compresseurs,
 > les vidages d'écritures différées et les lecteurs s'excluent mutuellement **sans verrou sur le
 > chemin d'écriture**. La machinerie d'ensemble (proxys, écritures différées, compression en
-> vol) est décrite dans [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md) §7 et §8. Les noms cités sont
+> vol) est décrite dans [algo_zero_or_value_fr.md](algo_zero_or_value_fr.md) §7 et §8. Les noms cités sont
 > ceux de l'arbre actuel ; en cas de doute, c'est le code qui fait foi, et en particulier les
 > commentaires de `internal/write_compress_sync_policy.h`, qui portent la preuve d'ordonnancement.
 
@@ -16,7 +16,7 @@
 Un chunk matérialisé possède un tampon privé, désigné par son pointeur atomique `values`. Deux
 sortes d'acteurs le touchent en même temps sous OpenMP :
 
-- les **écrivains** : chaque `tab[i] = v` charge `values`, puis écrit dans le tampon. Ce chemin
+- les **écrivains** : chaque `arr[i] = v` charge `values`, puis écrit dans le tampon. Ce chemin
   est le plus chaud de la bibliothèque : des milliards d'écritures par run ;
 - le **compresseur** : une passe de compression relit un chunk candidat, constate qu'il est
   uniforme, remplace `values` par le pointeur du tampon constant (un CAS) et **rend l'ancien
@@ -28,7 +28,7 @@ Sans précaution, l'entrelacement suivant perd une écriture, ou corrompt un aut
 |---|---|
 | charge `values` → tampon P | |
 | | relit P : tout vaut 0 |
-| | CAS `values` : P → `cst_val1`, rend P |
+| | CAS `values` : P → `const_val1`, rend P |
 | écrit `v` dans P | |
 | | (P est réutilisé par un autre chunk, qui reçoit `v`) |
 
@@ -210,8 +210,13 @@ tableau de chaque variante, avant toute écriture parallèle. Le résultat est r
 | build TSan (`CHUNK_TSAN_BUILD`), ou système non Linux | symétrique, choisie **à la compilation** (`chunk_config::asymmetric_dekker = false`) |
 
 Le protocole n'est donc jamais plus faible que la forme symétrique : il est seulement plus
-rapide quand il peut l'être. `ParamChunk::chunk_stats()` indique la forme qui a tourné
+rapide quand il peut l'être. `Runtime::chunk_stats()` indique la forme qui a tourné
 (`dekker::protocol_name()`).
+
+Un cas n'a pas de repli : l'enregistrement a réussi, les écrivains annoncent donc sans barrière,
+et un appel `membarrier` ultérieur échoue (un filtre seccomp installé après l'enregistrement).
+Le protocole ne tient plus, et une passe pourrait libérer le tampon dans lequel un écrivain se
+trouve : `heavy_barrier()` arrête le programme (`CHUNK_INVARIANT_FAILED`), dans tous les builds.
 
 ### 4.4 Le prix, et la condition
 
@@ -467,7 +472,7 @@ est une violation du protocole.
 | `CHUNK_READ_RECLAIM_SLOTS` | 1 024 | nombre de threads lecteurs ayant chacun leur numéro de séquence |
 
 Les compteurs de la porte (passes démarrées, abandons pour un vidage, abandons sur attente
-trop longue, écritures différées) sont dans le rapport `CHUNK_STATS` (`ParamChunk::chunk_stats()`),
+trop longue, écritures différées) sont dans le rapport `CHUNK_STATS` (`Runtime::chunk_stats()`),
 avec la forme du protocole qui a tourné.
 
 ## 8. Où lire le code
@@ -479,5 +484,5 @@ avec la forme du protocole qui a tourné.
 | le côté écrivain | `internal/proxy_base_inline.h` (`write_with_optional_lock_impl`) |
 | le côté compresseur, les compteurs | `internal/compression_manager.h`, `internal/compression_manager_inline.h` (`start`, `finish`, `wait_out_compressor`) |
 | les marques par chunk | `internal/chunk_base.h` (`steal_mark_`) |
-| la passe de compression | `internal/zero_one_value_chunk_inline.h`, `internal/zero_any_chunk_inline.h`, `internal/zero_chunk_inline.h` (`make_block_compression*`), `internal/block_pass_precheck.h` |
+| la passe de compression | `internal/zero_or_value_chunk_inline.h`, `internal/zero_any_chunk_inline.h`, `internal/zero_chunk_inline.h` (`make_block_compression*`), `internal/block_pass_precheck.h` |
 | lecteurs et récupération | `internal/read_reclaim.h` |

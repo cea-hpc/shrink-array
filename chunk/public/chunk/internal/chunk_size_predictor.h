@@ -36,7 +36,7 @@
 //      block may be partial.
 //   3. Predicted memory = (non-constant blocks) * S' * sizeof(T)   [buffers]
 //                       + (blocks) * meta_per_block.               [records]
-//      Constant blocks cost only metadata (values live in the shared cst
+//      Constant blocks cost only metadata (values live in the shared constant
 //      buffer). The buffer term dominates and is what varies with S'.
 //
 // Sizes < current are out of scope here (need intra-chunk re-reading, usually
@@ -48,7 +48,8 @@
 #include <utility>  // std::pair
 #include <vector>   // std::vector
 
-#include "chunk/log.h" // CHUNK_LOG
+#include "chunk/log.h"                 // CHUNK_LOG
+#include "chunk/internal/same_value.h" // same_value
 
 namespace shrink_array
 {
@@ -95,7 +96,7 @@ template <typename T>
             {
                 ref = summary[idx].second;
             }
-            else if (*ref != summary[idx].second)
+            else if (!same_value(*ref, summary[idx].second))
             {
                 all_const = false;
                 break;
@@ -117,13 +118,13 @@ template <typename T>
 template <typename T>
 void report_size_prediction(const std::vector<std::pair<bool, T>>& summary,
                             unsigned                               chunk_sz,
-                            int                                    num_tab,
+                            int                                    array_id,
                             const char*                            variant,
                             std::size_t                            meta_per_block,
                             unsigned                               max_multiple = 16)
 {
-    const int nb_chunk = static_cast<int>(summary.size());
-    if (nb_chunk <= 0)
+    const auto chunk_count = static_cast<int>(summary.size());
+    if (chunk_count <= 0)
     {
         return;
     }
@@ -134,7 +135,7 @@ void report_size_prediction(const std::vector<std::pair<bool, T>>& summary,
 
     for (unsigned k = 1; k <= max_multiple; k *= 2)
     {
-        if (std::cmp_greater(k, nb_chunk) && k != 1)
+        if (std::cmp_greater(k, chunk_count) && k != 1)
         {
             break;
         }
@@ -162,9 +163,9 @@ void report_size_prediction(const std::vector<std::pair<bool, T>>& summary,
         if (gain_pct >= 10.0)
         {
             CHUNK_LOG(info, advisor,
-                      "size prediction {} tab={}: current S={} -> {} B ; optimal S'={} -> {} B (mem -{:.1f}%, {}/{} "
+                      "size prediction {} array={}: current S={} -> {} B ; optimal S'={} -> {} B (mem -{:.1f}%, {}/{} "
                       "blocks constant)",
-                      variant, num_tab, chunk_sz, current.mem_bytes, best.s_prime, best.mem_bytes, gain_pct,
+                      variant, array_id, chunk_sz, current.mem_bytes, best.s_prime, best.mem_bytes, gain_pct,
                       best.n_const_blocks, best.n_blocks);
         }
     }

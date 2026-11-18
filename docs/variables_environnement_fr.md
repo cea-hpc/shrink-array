@@ -2,7 +2,7 @@
 
 > English version: [environment_variables.md](environment_variables.md).
 
-> État : octobre 2026. Cette page liste ce que règle un **utilisateur** de la bibliothèque : les
+> État : novembre 2026. Cette page liste ce que règle un **utilisateur** de la bibliothèque : les
 > réglages que couvre la politique de versionnage de [CHANGELOG.md](../CHANGELOG.md). Tout le
 > reste -- le réglage du décideur et des allocateurs, les traces, le banc, les crochets de test,
 > les options de mise au point, les scripts de compilation -- est dans
@@ -23,27 +23,30 @@
 | `CHUNK_LOG_FILE` | stderr | fichier où les messages sont ajoutés ; `%p` est remplacé par le numéro du processus |
 | `CHUNK_BREAK_ON_FAILURE` | auto | ce que fait une violation d'invariant (ou une autre erreur fatale de la bibliothèque) une fois son rapport -- message, pile d'appels, sink -- écrit, avant d'arrêter le programme : sous un débogueur, elle lève `SIGTRAP`, pour que le débogueur s'arrête sur le thread fautif avec ses frames vivantes, après une ligne sur stderr qui le dit ; si l'on continue, le programme s'arrête (`abort`) comme sans débogueur. Auto (absente, ou toute valeur autre que `0` et `1`) : sous Linux, un débogueur est le processus que `TracerPid` désigne dans `/proc/self/status`, quand c'est `gdb`, `cuda-gdb`, `gdbserver`, `lldb` ou `lldb-server` ; strace, ltrace, perf ou rr, qui tracent aussi, n'arrêtent jamais le programme. TotalView et Linaro DDT / Forge ne sont pas détectés : ils s'arrêtent déjà sur `SIGABRT` ; `CHUNK_BREAK_ON_FAILURE=1` force l'arrêt si on le veut. Ailleurs que sous Linux, auto ne s'arrête jamais. `0` : jamais (une exception à la règle ci-dessus : `0` n'est pas le défaut). `1` : toujours, débogueur ou non -- sans débogueur, `SIGTRAP` tue alors le programme (code de sortie 133), sauf s'il traite le signal |
 | `CHUNK_THREAD_CAPACITY` | max(`omp_get_max_threads()`, cœurs, 256) | nombre de rangs pour lequel les structures par thread sont dimensionnées ; ne peut qu'augmenter le défaut (sursouscription). Un rang qui l'atteint ou la dépasse arrête le programme avec un message qui nomme cette variable |
+| `CHUNK_NUM_THREADS` | `OMP_NUM_THREADS`, sinon les threads matériels | backend std (`CHUNK_THREADS=std`) : la taille d'équipe d'une région ouverte sans nombre de threads explicite, ce que rend `max_threads()` ; lue une fois, au démarrage (docs/threading_backends.md, 7b) |
 | `CHUNK_REQUIRE_OMPT` | — | builds OMPT : `1` arrête le programme si l'outil OMPT n'a pas été chargé par le runtime (sinon, un avertissement du journal), puisque les fins de phase n'auraient alors jamais lieu |
 
 ## 2. Options CMake
 
 | option | défaut | effet |
 |---|---|---|
-| `OMP` | `OFF` | construire avec OpenMP |
-| `CHUNK_THREADS` | vide | backend de threads de la bibliothèque : `openmp`, `std` (des workers `std::jthread` à elle, sans OpenMP) ou `serial` ; vide : `openmp` avec `OMP=ON`, `serial` sinon. Renseigné, il fixe `OMP` en conséquence |
+| `CHUNK_OPENMP` | `OFF` | construire avec OpenMP |
+| `CHUNK_THREADS` | vide | backend de threads de la bibliothèque : `openmp`, `std` (des workers `std::jthread` à elle, sans OpenMP) ou `serial` ; vide : `openmp` avec `CHUNK_OPENMP=ON`, `serial` sinon. Renseigné, il fixe `CHUNK_OPENMP` en conséquence |
 | `CHUNK_STATIC_SIZES` | `auto` | tailles de chunk statiques construites (cibles `_<taille>`) ; `auto` : `256;1024`, `256` seule dans un build Debug ou sanitizer |
 | `CHUNK_BUILD_DYN` | `ON` | construire aussi une bibliothèque à géométrie dynamique (`_dyn`) par variante |
+| `SHRINK_ARRAY_BUILD_EXAMPLES` | `ON` au niveau racine | construire les exemples, le banc et les tests de validation ; `OFF` par défaut quand le projet est inclus dans un autre (`add_subdirectory`, `FetchContent`) |
+| `SHRINK_ARRAY_BUILD_TESTS` | `ON` au niveau racine | enregistrer les tests auprès de CTest ; `OFF` par défaut quand le projet est inclus dans un autre, dont le `ctest` ne les lance alors pas |
 | `CHUNK_STD_ALLOC` | `OFF` | allocateur standard pour les tampons de chunks au lieu de `fast_allocators` (utile sous ASan : chaque tampon est un vrai `malloc`) |
 | `CHUNK_SECOND_VALUE_INDEXED` | `OFF` | `zero_any` : l'emplacement de seconde valeur contient un identifiant de 4 octets au lieu de la valeur (moins de mémoire, +3 % de temps d'écriture) |
-| `CHUNK_STATS` | `OFF` | compteurs d'instrumentation et rapport `ParamChunk::chunk_stats()` |
-| `CHECK_OPTIM` | `OFF` | vérifications d'invariants en build optimisé |
-| `SANITIZER` | `none` | `thread`, `address` ou `token` (AllocToken, Clang ≥ 22), pour tous les types de build |
+| `CHUNK_STATS` | `OFF` | compteurs d'instrumentation et rapport `Runtime::chunk_stats()` |
+| `CHUNK_CHECK_OPTIM` | `OFF` | vérifications d'invariants en build optimisé |
+| `CHUNK_SANITIZER` | `none` | `thread`, `address`, `undefined` (UBSan, le premier rapport arrête le programme) ou `token` (AllocToken, Clang ≥ 22), pour tous les types de build |
 
 ## 3. Variante et géométrie
 
 Le programme ne les règle pas : elles viennent avec la cible de bibliothèque qu'il lie
-(`chunk::chunk_zero_any_256`, `chunk::chunk_zero_dyn`, ...), qui porte les macros
-`CHUNK_VARIANT_ZERO` / `CHUNK_VARIANT_ZERO_ONE_VALUE` / `CHUNK_VARIANT_ZERO_ANY`, et `CHUNK_DYNAMIC` pour une
+(`shrink_array::zero_any_256`, `shrink_array::zero_dyn`, ...), qui porte les macros
+`CHUNK_VARIANT_ZERO` / `CHUNK_VARIANT_ZERO_OR_VALUE` / `CHUNK_VARIANT_ZERO_ANY`, et `CHUNK_DYNAMIC` pour une
 géométrie dynamique (taille choisie à l'exécution, tableau par tableau ; `DYN_CHUNK_SIZE`
 est une macro du bench, pas de la bibliothèque). Voir [getting_started_fr.md](getting_started_fr.md).
 

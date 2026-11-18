@@ -24,10 +24,11 @@
 #include <utility> // std::swap
 
 #include "chunk/internal/array_chunk_rechunk_hooks.h" // RechunkHooks, the class these bodies belong to
-#include "chunk/internal/manager_chunk.h"             // ManagerType — candidate store + reuse free-lists
+#include "chunk/internal/type_state.h"                // ManagerType — candidate store + reuse free-lists
 #include "chunk/config.h"                       // build_config::threaded, chunk_config::use_fast_block_compression
-#include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast
+#include "chunk/internal/pmp_chunk.h"           // get_thr_rank_fast
 #include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size
+#include "chunk/internal/array_users.h"         // ArrayUsers::mark_shared (the identity swap)
 #include "chunk/internal/block_pass_precheck.h" // check_no_flush_outside_start
 
 namespace shrink_array
@@ -43,10 +44,10 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates()
     // at the owning geometry.
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        int num_tab = 0;
+        int array_id = 0;
         if constexpr (is_zero_any_family)
         {
-            num_tab = self().num_tab_; // zero_any keys its candidates by the num_tab MEMBER
+            array_id = self().array_id_; // zero_any keys its candidates by the array_id MEMBER
         }
         else
         {
@@ -54,7 +55,7 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates()
             // replay bodies rely on no compressor changing `values` during a flush
             // drain (see check_no_flush_outside_start, zero_proxy_inline.h).
             check_no_flush_outside_start<ProxyType>("RechunkHooks::rechunk_drop_candidates");
-            num_tab = ProxyType::share_info_array->get_num_tab(self().registry_key());
+            array_id = ProxyType::array_registry->get_array_id(self().registry_key());
         }
         const int thr = get_thr_rank_fast();
         shrink_array::set_thread_chunk_size(self().size_policy_.size());
@@ -62,11 +63,11 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates()
         {
             for (auto& tup : list)
             {
-                if (std::get<2>(tup) == num_tab)
+                if (std::get<2>(tup) == array_id)
                 {
                     if constexpr (is_zero_any_family)
                     {
-                        std::get<0>(tup)->compress(thr, std::get<1>(tup), num_tab, /*apply=*/true, std::get<3>(tup));
+                        std::get<0>(tup)->compress(thr, std::get<1>(tup), array_id, /*apply=*/true, std::get<3>(tup));
                     }
                     else
                     {
@@ -86,19 +87,23 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates()
         {
             compress_list(candidate_list());
         }
-        remove_candidates_of_tab(num_tab);
+        remove_candidates_of_array(array_id);
     }
 }
 
 template <typename Derived>
 bool RechunkHooks<Derived, true>::rechunk_swap_identity(Derived& tmp)
 {
-    // num_tab is set in pre_create_hook and indexes the per-array metadata, so
-    // swap the member AND make the registry agree (get_num_tab(registry_key())
+    // array_id is set in pre_create_hook and indexes the per-array metadata, so
+    // swap the member AND make the registry agree (get_array_id(registry_key())
     // -> the new row).
+    // The candidates queued before the exchange carry the other array's array_id:
+    // neither is a one-rank array any more, as far as a teardown can tell.
+    internal::ArrayUsers<typename Derived::ChunkType>::mark_shared(self().array_id_);
+    internal::ArrayUsers<typename Derived::ChunkType>::mark_shared(tmp.array_id_);
     using std::swap;
-    swap(self().num_tab_, tmp.num_tab_);
-    return ProxyType::share_info_array->swap_keys(self().registry_key(), tmp.registry_key());
+    swap(self().array_id_, tmp.array_id_);
+    return ProxyType::array_registry->swap_keys(self().registry_key(), tmp.registry_key());
 }
 
 // ---------------------------------------------------------------------------
@@ -132,15 +137,15 @@ template <typename Derived>
 }
 
 template <typename Derived>
-void RechunkHooks<Derived, true>::remove_candidates_of_tab(int num_tab) noexcept
+void RechunkHooks<Derived, true>::remove_candidates_of_array(int array_id) noexcept
 {
     if constexpr (is_zero_any_family)
     {
-        ManagerType::remove_from_zero_any_candidates_by_num_tab(num_tab);
+        ManagerType::remove_from_zero_any_candidates_by_array_id(array_id);
     }
     else
     {
-        ManagerType::remove_from_zero_candidates_by_num_tab(num_tab);
+        ManagerType::remove_from_zero_candidates_by_array_id(array_id);
     }
 }
 

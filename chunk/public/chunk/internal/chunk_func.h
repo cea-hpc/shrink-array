@@ -18,16 +18,16 @@
 
 #include <vector> // std::vector (the per-rank reuse lists)
 
-#include "chunk/PMP_CHUNK.h"  // CHUNK_PMP_RANK_BOUND
-#include "chunk/zero_chunk.h" // self-contained: needs Chunk<T>::manager_chunk
+#include "chunk/internal/pmp_chunk.h"  // CHUNK_PMP_RANK_BOUND
+#include "chunk/internal/zero_chunk.h" // self-contained: needs zero::Chunk<T>::Manager
 
 // Function templates over the per-thread reuse lists, instantiated only by the
-// OpenMP manager (ManagerChunkParallelImpl<..., true>); every list access is a
+// OpenMP manager (TypeStateParallelImpl<..., true>); every list access is a
 // dependent name, so no preprocessor guard is needed.
 //
 // Callers instantiate from these definitions. If one sees only the forward
-// declaration in manager_chunk_policies.h, include this header in
-// manager_chunk_policies_inline.h -- do not
+// declaration in type_state_policies.h, include this header in
+// type_state_policies_inline.h -- do not
 // add a hand-maintained explicit instantiation list.
 
 namespace shrink_array
@@ -57,7 +57,7 @@ bool need_load_balance_list_block_free_thr()
 
     for (int thr_rank = 0; thr_rank < max_thr; ++thr_rank)
     {
-        const int sz = zero::Chunk<T>::Manager::get_list_block_free_thr_size(thr_rank);
+        const auto sz = static_cast<int>(zero::Chunk<T>::Manager::get_list_block_free_thr_size(thr_rank));
         if (sz < 0.9 * lg || sz > 1.1 * lg)
         {
             return true;
@@ -95,11 +95,11 @@ void load_balance_list_block_free_thr()
     {
         auto& lbf = zero::Chunk<T>::Manager::get_list_block_free_thr(thr_rank);
 
-        const int sz = lbf.size();
+        const auto sz = static_cast<int>(lbf.size());
 
         if (sz > lg)
         {
-            const int ll_sz = ll.size();
+            const auto ll_sz = static_cast<int>(ll.size());
 
             ll.resize(ll_sz + sz - lg);
 
@@ -118,13 +118,13 @@ void load_balance_list_block_free_thr()
     {
         auto& lbf = zero::Chunk<T>::Manager::get_list_block_free_thr(thr_rank);
 
-        const int sz = lbf.size();
+        const auto sz = static_cast<int>(lbf.size());
 
         if (sz < lg)
         {
             lbf.resize(lbf.size() + lg - sz);
 
-            const int pp = ll.size() - (lg - sz);
+            const int pp = static_cast<int>(ll.size()) - (lg - sz);
 
             T* const* ll_loc = ll.data() + ll.size() - lg;
 

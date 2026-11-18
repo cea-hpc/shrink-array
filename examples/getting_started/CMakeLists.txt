@@ -15,11 +15,11 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   project(getting_started LANGUAGES CXX)
   set(CMAKE_CXX_STANDARD 20)
   set(CMAKE_CXX_STANDARD_REQUIRED ON)
-  # Brings chunk::chunk_zero, chunk::chunk_zero_one_value, chunk::chunk_zero_any (default size),
-  # chunk::chunk_zero_any_<size>, chunk::chunk_zero_any_dyn, ... and their dependencies
+  # Brings shrink_array::zero, shrink_array::zero_or_value, shrink_array::zero_any (default size),
+  # shrink_array::zero_any_<size>, shrink_array::zero_any_dyn, ... and their dependencies
   # (fast_allocators, OpenMP and Threads when the library was built with them).
-  find_package(chunk 0.2 REQUIRED)
-  set(GETTING_STARTED_LIB chunk::chunk_zero_any CACHE STRING "The shrink-array library to link")
+  find_package(shrink_array 0.3 REQUIRED)
+  set(GETTING_STARTED_LIB shrink_array::zero_any CACHE STRING "The shrink-array library to link")
 else()
   set(GETTING_STARTED_LIB chunk_zero_any)
 endif()
@@ -37,7 +37,7 @@ target_link_libraries(getting_started PRIVATE ${GETTING_STARTED_LIB})
 # compile without it (static_assert), and its test stops on a runtime that did
 # not load the tool (CHUNK_REQUIRE_OMPT=1) instead of passing without phases.
 if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-  set(_gs_ompt "${chunk_OMPT}")
+  set(_gs_ompt "${shrink_array_OMPT}")
 else()
   set(_gs_ompt "${CHUNK_HAVE_OMPT}")
 endif()
@@ -49,7 +49,7 @@ if (_gs_ompt)
     set_property(TEST getting_started_ompt PROPERTY ENVIRONMENT "CHUNK_REQUIRE_OMPT=1;OMP_NUM_THREADS=8")
   endif()
 else()
-  message(STATUS "getting_started_ompt: not built (no OMPT tool: Clang or oneAPI, OMP=ON)")
+  message(STATUS "getting_started_ompt: not built (no OMPT tool: Clang or oneAPI, CHUNK_OPENMP=ON)")
 endif()
 
 if (NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)

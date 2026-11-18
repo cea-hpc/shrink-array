@@ -2,11 +2,11 @@
 
 > English version: [algo_pattern.md](algo_pattern.md).
 
-> État : fin octobre 2026. `pattern::Array` est un membre de la famille `zero_any` : ce document
+> État : novembre 2026. `pattern::Array` est un membre de la famille `zero_any` : ce document
 > décrit ce qu'il fait **autrement** que `zero_any`, dont il reprend toute la mécanique (registre
 > des secondes valeurs, moteur d'écriture, passe de compression, sections de lecture), décrite
 > dans [algo_zero_any_fr.md](algo_zero_any_fr.md) et
-> [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md). Son protocole sans verrou propre est
+> [algo_zero_or_value_fr.md](algo_zero_or_value_fr.md). Son protocole sans verrou propre est
 > vérifié par modèle : [formal_models_fr.md](formal_models_fr.md), section 7. En cas de doute, le
 > code fait foi.
 
@@ -37,10 +37,10 @@ exacts, y compris pour les types signés et les offsets négatifs. Entiers seule
 d'équivalent flottant.
 
 La classe est `pattern::Array<T, IntType>`, construite dans la bibliothèque `zero_any`
-(`chunk::chunk_zero_any`, `CHUNK_VARIANT_ZERO_ANY`), en géométrie statique ou dynamique. Code :
-`chunk/pattern_array.h`, `chunk/pattern_chunk.h`, `internal/pattern_proxy.h`,
+(`shrink_array::zero_any`, `CHUNK_VARIANT_ZERO_ANY`), en géométrie statique ou dynamique. Code :
+`chunk/pattern_array.h`, `chunk/internal/pattern_chunk.h`, `internal/pattern_proxy.h`,
 `internal/motif_region.h` et leurs compagnons _inline.h ; le code partagé de la famille
-bifurque sur le trait `has_motif_state_v` (`chunk/chunk_traits.h`), toujours à la compilation :
+bifurque sur le trait `has_motif_state_v` (`chunk/internal/chunk_traits.h`), toujours à la compilation :
 le code machine de `zero_any` est le même avec ou sans `pattern` (vérifié fonction par fonction
 sur ses bibliothèques, son benchmark et ses programmes de validation).
 
@@ -116,7 +116,7 @@ Après les constantes de la même passe, `compress_motif_candidates()` compresse
 propre taille de chunk, dans cet ordre :
 
 1. l'offset écrit dans la case du chunk (release) ;
-2. la case de type mise à `CstSlot::motif` ;
+2. la case de type mise à `ConstSlot::motif` ;
 3. le pointeur des valeurs basculé par CAS du tampon vers le motif (acq_rel) ;
 4. le tampon rendu au pool après la période de grâce, comme pour une compression vers une
    constante.
@@ -127,13 +127,13 @@ Le déroulé de la passe ; les étapes jusqu'au parcours sont celles de `zero_an
 ```mermaid
 flowchart TD
     A["passe de zero_any jusqu'au parcours :<br/>test du vidage, steal_mark, start"] --> E["fill_list_to_compress à la taille de l'entrée :<br/>scan_constants contre 0 et l'élément 0"]
-    E -->|"tout = 0"| F["type 0 : reset_release de la case,<br/>CAS values -> cst_val1"]
-    E -->|"tout = élément 0"| G["type 1 : find_or_set_ind_cst_val2_release,<br/>CAS values -> le tableau du registre"]
+    E -->|"tout = 0"| F["type 0 : reset_release de la case,<br/>CAS values -> const_val1"]
+    E -->|"tout = élément 0"| G["type 1 : find_or_set_idx_const_val2_release,<br/>CAS values -> le tableau du registre"]
     E -->|"ni l'un ni l'autre"| M["classify_motif : read_block,<br/>soustraire l'élément 0, hacher, find_or_admit"]
     M -->|"motif enregistré"| MC["motif_candidates_, réservation gardée"]
     M -->|"non admis"| N["steal_unmark : reste matérialisé"]
     MC --> O["compress_motif_candidates, après les constantes :<br/>block_clear_motif"]
-    O --> O1["1 offset -> case, écriture release<br/>2 case de type = CstSlot::motif<br/>3 CAS tampon -> motif"]
+    O --> O1["1 offset -> case, écriture release<br/>2 case de type = ConstSlot::motif<br/>3 CAS tampon -> motif"]
     F --> R["free_block_to_pool après une période de grâce,<br/>steal_unmark"]
     G --> R
     O1 --> R
@@ -144,7 +144,17 @@ flowchart TD
 `find_or_admit` ne rend un motif qu'à partir de sa seconde observation, par un autre chunk (§3) ;
 le CAS du motif se fait sur un chunk réservé, et son échec est une violation d'invariant. Les deux
 constantes utilisent les formes release des écritures de la case (`reset_release`,
-`find_or_set_ind_cst_val2_release`), pour les lecteurs du §6.
+`find_or_set_idx_const_val2_release`), pour les lecteurs du §6.
+
+**Avec OMPT** (clang, Intel : `CHUNK_HAVE_OMPT`), la passe entre régions n'est pas
+`make_block_compression()` : `ompt_callback_parallel_end` lance
+`compress_chunk_to_compress_in_par()`, qui compresse chunk par chunk (`compress()`), sans
+réservation ni `fill_list_to_compress()`. Là, un chunk que `compress()` laisse matérialisé passe
+par `Chunk::compress_to_motif()` : la même lecture, la même règle d'admission et le même ordre
+de `block_clear_motif()` que ci-dessus, tout de suite au lieu d'être mis en file. Elle tourne là
+où tourne la remise à zéro de `compress()` elle-même -- le chunk dans la liste de ce seul rang
+(son drapeau de file), aucun écrivain (l'équipe a rejoint) -- donc le CAS ne peut pas échouer là
+non plus. Sans elle, un build OMPT ne compressait jamais un chunk vers un motif.
 
 ## 6. La lecture, et les réécritures de la case
 
@@ -180,19 +190,19 @@ les appelants sans drapeau (`alloc_chunk`, l'application d'un vidage). L'offset 
 case (§2).
 
 Le déroulé d'une écriture dans un build OpenMP : les étapes du moteur sont celles du §7.2 de
-[algo_zero_one_value_fr.md](algo_zero_one_value_fr.md), le corps celui de `zero_any` (§6 de
+[algo_zero_or_value_fr.md](algo_zero_or_value_fr.md), le corps celui de `zero_any` (§6 de
 [algo_zero_any_fr.md](algo_zero_any_fr.md)), résumés ici ; le diagramme montre où `pattern`
 diffère.
 
 ```mermaid
 flowchart TD
-    A["pattern::Proxy : zero_any::ProxyImpl::assign_impl"] --> B{"0 sur un chunk à cst_val1,<br/>aucune opération différée en attente ?"}
+    A["pattern::Proxy : zero_any::ProxyImpl::assign_impl"] --> B{"0 sur un chunk à const_val1,<br/>aucune opération différée en attente ?"}
     B -->|oui| B1["rien à faire"]
     B -->|non| C["moteur du 7.2<br/>(write_with_optional_lock_with_set_ptr)"]
     C --> D{"revérification :<br/>compresseur ?"}
     D -->|oui| D1["end_write + écriture DIFFÉRÉE"]
     D -->|non| E["corps handle_no_bool_assignment :<br/>charger values, armer la case"]
-    E --> F{"constante du registre = valeur ?<br/>(is_cst_val2_ptr_of : jamais un motif)"}
+    E --> F{"constante du registre = valeur ?<br/>(is_const_val2_ptr_of : jamais un motif)"}
     F -->|oui| F1["rien à faire"]
     F -->|non| G{"premier ou dernier élément<br/>(is_completion_write),<br/>ou un critère de zero_any ?"}
     G -->|oui| G1["add_to_compression_list"]
@@ -207,7 +217,7 @@ flowchart TD
 
 La règle de complétion élargit à la fois le pré-test (`pattern::Proxy::pre_check_mark_for_compression`)
 et le prédicat (`should_mark_for_compression`). Sur un chunk motif, l'ancienne valeur que lit le
-marquage est `motif[num] + offset`, via `Chunk::motif_offset()`.
+marquage est `motif[elem_offset] + offset`, via `Chunk::motif_offset()`.
 
 ## 8. Géométrie dynamique : le rechunk et le conseiller
 
@@ -216,22 +226,30 @@ et la passe compresse chaque candidat à sa propre taille.
 
 - **Rechunk.** `rechunk_to()` reconstruit le tableau depuis les valeurs des anciens chunks : un
   chunk motif est lu comme son motif plus son offset, jamais comme le raccourci « même seconde
-  constante » de `zero_any` (`is_cst_val2()` est vrai pour un chunk motif, compressé pour le
+  constante » de `zero_any` (`is_const_val2()` est vrai pour un chunk motif, compressé pour le
   moteur d'écriture). Les chunks reconstruits, écrits par les proxies, sont mis en file par la
   règle de complétion et compressés en motifs de la nouvelle taille par la passe suivante.
-- **Conseiller.** `ChunkSizeAdvisor` lit un chunk motif comme une donnée (motif plus offset),
-  jamais comme une constante : ses prévisions de constantes sont celles que `zero_any` fait sur
-  les mêmes valeurs. Il ne prévoit aucune compression en motif (§10) : jamais optimiste.
+- **Conseiller.** `ChunkSizeAdvisor` compte à part les chunks motifs
+  (`ChunkSizeEstimate::motif`), exactement à la taille courante, avec une entrée de motif par
+  motif distinct dans le modèle de mémoire. À une autre taille, une fenêtre sans chunk
+  matérialisé est découpée en ses parties -- pour un chunk motif (motif, premier élément dans le
+  motif, longueur), pour un chunk constant sa longueur -- chacune avec sa première valeur moins
+  celle de la fenêtre : deux fenêtres aux mêmes parties portent les mêmes données normalisées.
+  Une clé vue c >= 2 fois prévoit c - 1 fenêtres motifs et une matérialisée (la première
+  observation), à partir des pointeurs et des cases d'offset, sans lire les données. Jusqu'en
+  novembre 2026, il lisait un chunk motif comme des données à toutes les tailles : aveugle aux
+  motifs qu'un grossissement perd, il a rechunké un tableau de 8 motifs locaux à offsets
+  irréguliers de 256 à 1024, de 5,25 Mo à 270 Mo (2^26 int, 128 threads).
 
 ## 9. Résultats
 
-`shrink_bench` porte une connectivité de maillage, `tab_conn`
+`shrink_bench` porte une connectivité de maillage, `array_conn`
 (`examples/shrink_bench/bench_phase_conn.cpp`, `--no_conn` pour l'omettre) : environ `sz / 32` entiers
 par défaut (`--conn_scale`),
 des rangées entières de 256 mailles hexaédriques ; chaque itération lit une bande de rangées sur 16
 et la renumérote (l'ordre des nœuds tourné, ou rétabli), si bien que la passe recompresse une bande
 vers un autre motif partagé à chaque itération. C'est un `pattern::Array<int>` dans les builds
-`zero_one_value` et `zero_any` (sa mécanique est celle de `zero_any`, en en-têtes : il vit dans
+`zero_or_value` et `zero_any` (sa mécanique est celle de `zero_any`, en en-têtes : il vit dans
 l'une ou l'autre bibliothèque), un `zero::Array<int>` dans un build `zero`, un vecteur dans la
 référence ; ses checksums sont comparés à ceux de la référence à chaque point de contrôle, comme
 pour tous les tableaux. Sur un run de contrôle (`--divisor 50 --iter_max 40`, 4 threads), 384 de
@@ -262,10 +280,10 @@ classification des chunks.
 - **L'emplacement de l'offset** (§2) : la case, contre l'objet chunk (+8 octets par chunk, une
   ligne de cache de moins par lecture de motif) ; à mesurer avec `access_cost_pattern` sur des
   lectures dominées par les motifs.
-- **La prévision de motifs du conseiller** (§8) : à une taille candidate, une fenêtre serait
-  compressée en motif si son contenu normalisé est partagé avec une autre fenêtre. Une estimation
-  sur les chunks échantillonnés coûte peu, mais change `ChunkSizeEstimate` (une struct publique)
-  et le décideur.
+- **La prévision de motifs du conseiller** (§8) ne voit que les fenêtres faites de chunks
+  motifs et constants : une fenêtre qui contient un chunk matérialisé est prévue comme `zero_any`
+  la prévoit, et deux motifs à sous-plage égale ne sont pas reconnus comme un seul (un partage
+  manqué, jamais inventé).
 - **Les motifs plus courts qu'un chunk** (un pas qui ne divise pas la taille du chunk, un offset
   qui croît dans le chunk) ne sont pas couverts : `chunk[j] = P[j mod s] + (j div s) * pas` serait
   une seconde sorte de motif. Mesurer d'abord sur de vraies connectivités.

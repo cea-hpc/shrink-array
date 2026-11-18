@@ -20,22 +20,23 @@
  * @file pointer_map_linear.h
  * @brief The linear-scan core shared by the array→metadata registries.
  *
- * @details zero::PointerMap (zero_proxy.h) and zero_one_value::PointerMap (zero_one_value_pointer_map.h)
+ * @details zero::PointerMap (zero_proxy.h) and zero_or_value::PointerMap (zero_or_value_pointer_map.h)
  *          map an array (its ArrayKey) to its metadata by walking flat (key, payload)
  *          pairs; the plain scans live here once. Payload: a table number (zero),
- *          a (second_value, ind, num_tab) record (zero_one_value).
+ *          a (second_value, idx, array_id) record (zero_or_value).
  *
- * @note The CONTAINER is a template parameter on purpose: zero_one_value::PointerMap
+ * @note The CONTAINER is a template parameter on purpose: zero_or_value::PointerMap
  *       needs a std::deque, since a std::vector reallocates as it grows and a
  *       concurrent reader (get_info_second_value, from a deferred compression
- *       body) would read freed memory. See zero_one_value::PointerMap's storage note.
+ *       body) would read freed memory. See zero_or_value::PointerMap's storage note.
  *       zero::PointerMap uses a std::vector.
  *
  * @note NOT used by zero_any::PointerMap (zero_any_proxy.h), whose small vector turns
  *       into a hash map past a threshold.
  */
 
-#include <utility> // std::swap
+
+#include "chunk/internal/cold_path_lock.h" // registry_mutex: a lookup against a registration
 
 namespace shrink_array
 {
@@ -85,6 +86,7 @@ class PointerMapLinear
      */
     [[nodiscard]] bool exists(Key key) const noexcept
     {
+        const internal::RegistryReadLock registry_lock(internal::registry_mutex());
         return find_payload(key) != nullptr;
     }
 

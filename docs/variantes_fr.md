@@ -1,4 +1,4 @@
-# Les trois variantes : `zero`, `zero_one_value`, `zero_any`
+# Les trois variantes : `zero`, `zero_or_value`, `zero_any`
 
 > English version: [variants.md](variants.md).
 
@@ -7,9 +7,9 @@
 > [mesures_performance_fr.md](mesures_performance_fr.md)). En cas de doute, c'est le code qui
 > fait foi.
 
-> Noms dans le code : chaque variante porte le nom de son namespace, `zero::Array`, `zero_one_value::Array`,
+> Noms dans le code : chaque variante porte le nom de son namespace, `zero::Array`, `zero_or_value::Array`,
 > `zero_any::Array`. Les documents plus anciens les appellent Chunk (ou v1), Chunk2 et Chunk2A (les anciens
-> noms de classe `ArrayChunk`, `ArrayChunk2`, `ArrayChunk2A` sont des alias dépréciés jusqu'à la 1.0).
+> noms de classe `ArrayChunk`, `ArrayChunk2`, `ArrayChunk2A` ont été retirés avant la 1.0, voir CHANGELOG.md).
 
 ***
 
@@ -30,39 +30,39 @@ dynamique. Elles diffèrent par **ce qu'elles savent compresser**.
 
 | variante | bibliothèque (macro qu'elle définit) | un chunk est compressé s'il est uniforme à… | coût d'une constante |
 |---|---|---|---|
-| **`zero`** | `chunk::chunk_zero` (`CHUNK_VARIANT_ZERO`) | **zéro** (`T{}`) | rien : un tampon constant partagé |
-| **`zero_one_value`** | `chunk::chunk_zero_one_value` (`CHUNK_VARIANT_ZERO_ONE_VALUE`) | zéro, **ou** une **seconde valeur** propre au tableau (`set_second_value`) | rien au-delà du tableau |
-| **`zero_any`** | `chunk::chunk_zero_any` (`CHUNK_VARIANT_ZERO_ANY`) | zéro, **ou n'importe quelle autre valeur**, choisie chunk par chunk | un tableau du registre des secondes valeurs (`tab_cst_val2_holder.h`) par valeur distincte, partagé par tout le processus |
+| **`zero`** | `shrink_array::zero` (`CHUNK_VARIANT_ZERO`) | **zéro** (`T{}`) | rien : un tampon constant partagé |
+| **`zero_or_value`** | `shrink_array::zero_or_value` (`CHUNK_VARIANT_ZERO_OR_VALUE`) | zéro, **ou** une **seconde valeur** propre au tableau (`set_second_value`) | rien au-delà du tableau |
+| **`zero_any`** | `shrink_array::zero_any` (`CHUNK_VARIANT_ZERO_ANY`) | zéro, **ou n'importe quelle autre valeur**, choisie chunk par chunk | un tableau du registre des secondes valeurs (`array_const_val2_holder.h`) par valeur distincte, partagé par tout le processus |
 
 ### Booléens : deux conteneurs
 
-Un build `zero_one_value` a deux conteneurs de booléens, choisis par type, tableau par tableau.
-Les deux sont la machinerie de `zero_one_value` : un chunk tout à `false` est comprimé vers la
+Un build `zero_or_value` a deux conteneurs de booléens, choisis par type, tableau par tableau.
+Les deux sont la machinerie de `zero_or_value` : un chunk tout à `false` est comprimé vers la
 première valeur, un chunk tout à `true` vers la seconde, qui vaut `true` par construction (pas de
 `set_second_value()`), et un chunk comprimé ne coûte aucune donnée dans l'un comme dans l'autre.
 Ils diffèrent par ce que contient un chunk **matérialisé** :
 
 | conteneur | en-tête | un chunk matérialisé de S éléments | une écriture | écritures voisines par deux threads |
 |---|---|---|---|---|
-| `zero_one_value::Array<bool>` | `chunk/zero_one_value_array.h` | S octets, un par `bool` | un simple stockage d'octet | sûres, comme pour tout élément |
-| `ArrayChunkBits<>` (`zero_one_value::Array<Bit>`) | `chunk/array_chunk_bits.h` | S/8 octets, 8 `bool` par octet -- le rangement de `std::vector<bool>` | une lecture-modification-écriture atomique du mot de 64 bits qui contient le bit (builds OpenMP) | sûres : le mot est mis à jour atomiquement, aucune écriture n'est perdue |
+| `zero_or_value::Array<bool>` | `chunk/zero_or_value_array.h` | S octets, un par `bool` | un simple stockage d'octet | sûres, comme pour tout élément |
+| `BitArray<>` (`zero_or_value::Array<Bit>`) | `chunk/bit_array.h` | S/8 octets, 8 `bool` par octet -- le rangement de `std::vector<bool>` | une lecture-modification-écriture atomique du mot de 64 bits qui contient le bit (builds OpenMP) | sûres : le mot est mis à jour atomiquement, aucune écriture n'est perdue |
 | `std::vector<bool>`, pour comparaison | `<vector>` | tout le tableau, en bits, sans compression | une lecture-modification-écriture d'un mot, non atomique | **une course** : deux écritures dans un même mot peuvent en perdre une |
 
-`ArrayChunkBits` prend 8 fois moins de mémoire par élément d'un chunk matérialisé, pour une
+`BitArray` prend 8 fois moins de mémoire par élément d'un chunk matérialisé, pour une
 écriture plus chère : c'est le conteneur des grands tableaux de booléens à nombreuses zones mélangées
 (masques, indicateurs sur un maillage), écrits moins souvent que lus.
-`zero_one_value::Array<bool>` est celui des booléens écrits dans des boucles chaudes, ou presque
+`zero_or_value::Array<bool>` est celui des booléens écrits dans des boucles chaudes, ou presque
 uniformes : ses chunks constants ne coûtent rien non plus. Contrairement à `std::vector<bool>`,
-`ArrayChunkBits` n'est pas une spécialisation qui change le comportement d'`Array<bool>` à son
-insu : c'est un type à part, et `zero_one_value::Array<bool>` reste un stockage d'octets.
+`BitArray` n'est pas une spécialisation qui change le comportement d'`Array<bool>` à son
+insu : c'est un type à part, et `zero_or_value::Array<bool>` reste un stockage d'octets.
 L'élément se lit comme un `Bit`, qui se convertit vers et depuis `bool` ; comme pour tout
 conteneur à proxy ici, un élément n'a pas d'adresse. Dans un build à géométrie dynamique, un
-`ArrayChunkBits` naît avec des chunks 8 fois plus grands que la taille du processus
+`BitArray` naît avec des chunks 8 fois plus grands que la taille du processus
 (`packed_bit_birth_factor`), pour qu'un chunk contienne autant d'octets qu'un chunk de `bool`.
 
 ```cpp
-shrink_array::zero_one_value::Array<bool> flags(n); // un octet par élément dans un chunk matérialisé
-shrink_array::ArrayChunkBits<>            mask(n);  // un bit par élément, 8 par octet
+shrink_array::zero_or_value::Array<bool> flags(n); // un octet par élément dans un chunk matérialisé
+shrink_array::BitArray<>            mask(n);  // un bit par élément, 8 par octet
 flags[i] = true;
 mask[i]  = true;              // deux threads peuvent écrire des bits voisins en même temps
 const bool b = std::as_const(mask)[i];
@@ -100,7 +100,7 @@ compressent finement, puis grossir quand les métadonnées dominent.
 | les données sont… | variante |
 |---|---|
 | surtout nulles, avec des zones de données quelconques | **`zero`** : la plus simple, et aucune métadonnée de seconde valeur |
-| nulles ou égales à **une** autre valeur dominante, connue du tableau | **`zero_one_value`** |
+| nulles ou égales à **une** autre valeur dominante, connue du tableau | **`zero_or_value`** |
 | faites de nombreuses **zones uniformes à des valeurs différentes** | **`zero_any`** |
 
 Ordre de grandeur sur `shrink_bench` (tableaux de 10⁹ éléments, 64 threads), mémoire en fin
@@ -109,11 +109,11 @@ de run :
 | variante | statique 256 | dynamique (départ à 64, tous les tableaux confiés au décideur) |
 |---|---|---|
 | `zero_any` | 7,26 Go | **6,0 Go** |
-| `zero_one_value` | 17,3 Go | **16,3 Go** |
+| `zero_or_value` | 17,3 Go | **16,3 Go** |
 | `zero` | 40,2 Go | 40,3 Go (et 39,7 Go en statique 1 024, la taille qu'il atteint) |
 | `std::vector` (`shrink_bench_omp_vector_perf`) | 125,9 Go | — |
 
-La géométrie dynamique fait gagner nettement `zero_one_value` et `zero_any`. Pour `zero`, dont la mémoire est
+La géométrie dynamique fait gagner nettement `zero_or_value` et `zero_any`. Pour `zero`, dont la mémoire est
 surtout faite de données, elle fait jeu égal avec le statique 256 : voir les limites connues
 dans [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md).
 
@@ -121,7 +121,7 @@ dans [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md).
 
 | sujet | document |
 |---|---|
-| lecture, écriture, parallélisme, compression en vol, opérations sur plages | [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md) : décrit `zero_one_value`, mais la machinerie de ses §5 à §8 et §10 est commune aux trois variantes |
+| lecture, écriture, parallélisme, compression en vol, opérations sur plages | [algo_zero_or_value_fr.md](algo_zero_or_value_fr.md) : décrit `zero_or_value`, mais la machinerie de ses §5 à §8 et §10 est commune aux trois variantes |
 | ce que `zero` et `zero_any` font autrement | [algo_zero_fr.md](algo_zero_fr.md), [algo_zero_any_fr.md](algo_zero_any_fr.md) |
 | géométrie dynamique et rechunk, pour les trois variantes | [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) |
 | synchronisation sans verrou (Dekker asymétrique) | [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md) |

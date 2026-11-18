@@ -4,7 +4,7 @@
  *
  * switch_mt.c -- reduced GenMC model: a writer switching a compressed zero_any
  * chunk to another constant in place (store_range_mt's in-place switch,
- * array_chunk_range_ops.h) against a compression pass that holds the same
+ * range_ops.h) against a compression pass that holds the same
  * chunk in its candidate list (zero_any::Chunk::make_block_compression).
  *
  * The chunk is reduced to its `values` word:

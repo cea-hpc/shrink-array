@@ -27,8 +27,8 @@
 #include <type_traits> // std::true_type, std::false_type
 #include <vector>      // std::vector
 
-#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_THREAD_RANK
-#include "chunk/bit.h"       // is_packed_bit_v (checksum_word)
+#include "chunk/internal/pmp_chunk.h" // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_THREAD_RANK
+#include "chunk/bit.h"                // is_packed_bit_v (checksum_word)
 
 // -----------------------------------------------------------------------------
 // Cache-line-padded uint64 used as a per-thread accumulator to avoid false
@@ -110,10 +110,10 @@ struct is_atomic_pointer<std::atomic<U*>> : public std::true_type
 // copied to the wrong index while another took its place, compensating byte
 // errors -- the very class of geometry / re-chunk bugs the check runs hunt.
 // The sum stays order-free (a parallel reduction, modulo 2^64).
-//   - integral elements hash their VALUE, not their bytes: tab_bool is a
+//   - integral elements hash their VALUE, not their bytes: array_bool is a
 //     std::vector<short> in the baseline and an Array<bool> in a shrink build
 //     (bench_array.h), and their checksums must agree; so does a packed Bit
-//     (tab_bool_bits and tab_mask in a zero_one_value build), hashed as its bool --
+//     (array_bool_bits and array_mask in a zero_or_value build), hashed as its bool --
 //     its byte folded would never match the baseline's bool / short;
 //   - floating-point elements their bit pattern (-0.0 == T{} is skipped, as it
 //     always was: the library compresses it to +0.0 by design);
@@ -272,7 +272,7 @@ struct VectorChecksum
 
 // -----------------------------------------------------------------------------
 // Detect at compile time whether the array type has a set_second_value(v)
-// member (only zero_one_value::Array / zero_any::Array do; plain std::vector doesn't).
+// member (only zero_or_value::Array / zero_any::Array do; plain std::vector doesn't).
 // -----------------------------------------------------------------------------
 template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& arr, const Val& value)

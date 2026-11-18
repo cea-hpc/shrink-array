@@ -26,51 +26,51 @@
 namespace shrink_array
 {
 
-/// @brief Formatted per-array compression stats, shared by zero / zero_one_value /
+/// @brief Formatted per-array compression stats, shared by zero / zero_or_value /
 ///        zero_any.
 ///
 /// @param os            stream the report is written to.
-/// @param num_tab       table number of the array (its registry index).
+/// @param array_id       table number of the array (its registry index).
 /// @param array_name    the array's set_debug_name(), printed before the
 ///                      number when not empty.
 /// @param type_name     element type, as printed.
 /// @param n_compressed  chunks stored in a compressed (constant) form.
-/// @param nb_chunk      total chunks in the array.
+/// @param chunk_count      total chunks in the array.
 /// @param n_t1          type-2 chunks (a distinct second constant). 0 for
 ///                      zero (no second value), which suppresses the
 ///                      type-2 column.
-/// @param chunk_name    "zero", "zero_one_value" or "zero_any" — used in the verdict.
+/// @param chunk_name    "zero", "zero_or_value" or "zero_any" — used in the verdict.
 /// @param n_cross       cross-variant probe: how many *materialised* (un-
 ///                      compressed) blocks were in fact constant to a value the
 ///                      current variant cannot capture but a richer one would
-///                      (e.g. for zero: blocks zero_one_value would have compressed).
+///                      (e.g. for zero: blocks zero_or_value would have compressed).
 ///                      -1 means "not measured" and hides the line.
-/// @param cross_name    the richer variant the probe refers to ("zero_one_value"
+/// @param cross_name    the richer variant the probe refers to ("zero_or_value"
 ///                      / "zero_any"). Only used when n_cross >= 0.
 /// @param bool_elements the elements are bool: their second constant can only
-///                      be `true`, one for the type, so zero_one_value stores
+///                      be `true`, one for the type, so zero_or_value stores
 ///                      every type-2 chunk zero_any does -- zero_any is never the
 ///                      verdict for them.
 inline void print_formatted_chunk_stats(std::ostream&      os,
-                                        int                num_tab,
+                                        int                array_id,
                                         const std::string& array_name,
                                         const std::string& type_name,
                                         int                n_compressed,
-                                        int                nb_chunk,
+                                        int                chunk_count,
                                         int                n_t1,
-                                        const std::string& chunk_name,         // "zero", "zero_one_value", "zero_any"
+                                        const std::string& chunk_name,         // "zero", "zero_or_value", "zero_any"
                                         int                n_cross       = -1, // cross-variant probe count (-1 = none)
                                         const std::string& cross_name    = "", // richer variant the probe refers to
                                         bool               bool_elements = false) // bool: one second value, true
 {
-    if (nb_chunk == 0)
+    if (chunk_count == 0)
     {
         return;
     }
 
-    const double pct_total = 100.0 * n_compressed / nb_chunk;
-    const double pct_t1    = 100.0 * n_t1 / nb_chunk;
-    const double pct_cross = (n_cross >= 0) ? 100.0 * n_cross / nb_chunk : 0.0;
+    const double pct_total = 100.0 * n_compressed / chunk_count;
+    const double pct_t1    = 100.0 * n_t1 / chunk_count;
+    const double pct_cross = (n_cross >= 0) ? 100.0 * n_cross / chunk_count : 0.0;
 
     // Automatic colour-support detection (disabled when output is redirected to a file).
     const bool use_color = isatty(fileno(stdout)) != 0;
@@ -87,28 +87,38 @@ inline void print_formatted_chunk_stats(std::ostream&      os,
     // A std::vector stores every element; the chunk store only pays off when a
     // material fraction of chunks collapse to a constant. Same threshold logic
     // for all three variants.
-    std::string verdict;
+    // zero says what it compresses: an array with almost no all-zero chunk is
+    // one the variant cannot help (a connectivity, a mesh coordinate), not a
+    // compression that failed.
+    const bool        zero_variant = chunk_name == "zero";
+    const std::string zero_only    = "zero compresses only all-zero chunks";
+    std::string       verdict;
     if (n_compressed == 0)
     {
-        verdict = red + "no compression — plain std::vector would be lighter" + reset;
+        verdict = red +
+                  (zero_variant ? "no all-zero chunk — " + zero_only + ": plain std::vector would be lighter"
+                                : std::string("no compression — plain std::vector would be lighter")) +
+                  reset;
     }
     else if (pct_total < 25.0)
     {
-        verdict = yellow + "compression marginal vs std::vector — plain storage may be lighter" + reset;
+        verdict = yellow +
+                  (zero_variant ? "few all-zero chunks — " + zero_only + ": plain storage may be lighter"
+                                : std::string("compression marginal vs std::vector — plain storage may be lighter")) +
+                  reset;
     }
     else if (chunk_name != "zero" && (n_t1 == 0 || pct_t1 < 10.0))
     {
-        // zero_one_value/zero_any carrying no, or almost no, type-2: the second value
+        // zero_or_value/zero_any carrying no, or almost no, type-2: the second value
         // never paid.
         verdict = grey + chunk_name + " overkill — plain zero would suffice" + reset;
     }
     else if (chunk_name == "zero_any" && bool_elements)
     {
-        // Type-2 chunks of bools are all-true chunks: zero_one_value's single
+        // Type-2 chunks of bools are all-true chunks: zero_or_value's single
         // second value (true) stores every one of them. The per-chunk second
         // value of zero_any has nothing to add.
-        verdict =
-            grey + std::string("zero_any no better than zero_one_value for bool (one second value: true)") + reset;
+        verdict = grey + std::string("zero_any no better than zero_or_value for bool (one second value: true)") + reset;
     }
     else if (chunk_name != "zero" && pct_t1 < 40.0)
     {
@@ -132,25 +142,25 @@ inline void print_formatted_chunk_stats(std::ostream&      os,
 
     // The table number changes at every re-chunk; the name, when the caller
     // gave one, is what says which array this is.
-    const std::string tab_label = array_name.empty()
-                                      ? "[tab_" + std::to_string(num_tab) + " " + type_name + "]"
-                                      : "[" + array_name + " #" + std::to_string(num_tab) + " " + type_name + "]";
+    const std::string array_label = array_name.empty()
+                                        ? "[array_" + std::to_string(array_id) + " " + type_name + "]"
+                                        : "[" + array_name + " #" + std::to_string(array_id) + " " + type_name + "]";
 
     // Step 1: the left-aligned prefix.
-    ss << std::left << std::setw(40) << tab_label << reset;
+    ss << std::left << std::setw(40) << array_label << reset;
 
     // Step 2: overall compression statistics.
-    ss << std::right << std::setw(6) << n_compressed << "/" << std::setw(6) << nb_chunk << " chunks compressed ("
+    ss << std::right << std::setw(6) << n_compressed << "/" << std::setw(6) << chunk_count << " chunks compressed ("
        << std::fixed << std::setprecision(1) << std::setw(5) << pct_total << "%)";
 
     // Step 3: aligned type-2 statistics.
     if (n_t1 > 0)
     {
-        ss << ", " << bold << std::setw(6) << n_t1 << reset << " type-2 (" << std::setw(5) << pct_t1 << "%)";
+        ss << ", " << bold << std::setw(6) << n_t1 << reset << " second value (" << std::setw(5) << pct_t1 << "%)";
     }
     else
     {
-        ss << std::setw(23) << " ";
+        ss << std::setw(29) << " ";
     }
 
     // Step 4: final verdict.

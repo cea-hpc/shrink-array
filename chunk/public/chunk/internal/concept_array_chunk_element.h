@@ -23,22 +23,24 @@ namespace shrink_array
 {
 
 /**
- * @brief What an element type of zero::Array / zero_one_value::Array / zero_any::Array must be.
+ * @brief What an element type of zero::Array / zero_or_value::Array / zero_any::Array must be.
  *
  * The contract, and why each clause:
  *  - **trivially copyable**: a chunk is raw memory -- its buffer is copied,
  *    pooled, replaced by a shared constant buffer and taken back without ever
  *    running a constructor or destructor of T. Resource owners (std::string)
  *    are out.
- *  - **equality comparable**: compression is "every element == the constant",
- *    scanned with the type's own operator== (padding is not part of the value;
- *    never a memcmp).
+ *  - **equality comparable**: compression is "every element is the constant",
+ *    decided by same_value() (same_value.h): the bits for float and double
+ *    (-0.0 is not +0.0), part by part for std::complex and std::array, the
+ *    type's own operator== otherwise (padding is not part of the value; never a
+ *    memcmp of a struct). ValueIdentity<T> specialises it for an aggregate.
  *  - **default constructible**: T{} is the first constant, the value a fresh
  *    array reads everywhere and the one a run compresses to.
  *
  * That admits arithmetic types, bool, std::complex, enums, std::array of those,
  * and aggregates of them with a defaulted operator==. The proxies' arithmetic
- * and bitwise operators are constrained separately, per operator. zero_one_value also
+ * and bitwise operators are constrained separately, per operator. zero_or_value also
  * needs an ordering (operator< for a floating-point aggregate): see ValueLess
  * in value_less.h.
  *

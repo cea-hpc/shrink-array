@@ -16,7 +16,7 @@
 
 // ============================================================================
 // SEQUENTIAL re-chunk validation harness (path C, non-OMP) -- v3.
-// Variant-agnostic: tests zero / zero_one_value / zero_any depending on the
+// Variant-agnostic: tests zero / zero_or_value / zero_any depending on the
 // compile-time macro (CHUNK_VARIANT_ZERO*), like shrink_bench.cpp.
 // ============================================================================
 //
@@ -26,12 +26,12 @@
 //   - shows the first mismatches along with the corresponding chunk boundary.
 //
 // The variant is selected by the macro passed by CMake (one executable per
-// variant, linked against the matching dyn lib: chunk_zero_one_value_dyn / chunk_zero_any_dyn /
+// variant, linked against the matching dyn lib: chunk_zero_or_value_dyn / chunk_zero_any_dyn /
 // chunk_zero_dyn). No std::vector fallback: re-chunk is specific to the chunked
 // variants, hence the static_assert.
 //
-// zero_one_value CONTRACT: the compression-candidate list is indexed by
-// second_value (zero_one_value_candidates_map_thr[thr][second_value]),
+// zero_or_value CONTRACT: the compression-candidate list is indexed by
+// second_value (zero_or_value_candidates_map_thr[thr][second_value]),
 // populated ONLY by set_second_value. A second_value must therefore be
 // declared BEFORE writing, otherwise get_vec_tuple_to_compress_potentially_thr
 // asserts (vec == nullptr). This is what the bench does via
@@ -62,22 +62,22 @@
 #include <cmath>       // std::floor, std::sin
 #include <type_traits> // std::conditional_t
 
-#include "chunk/chunk_traits.h"               // forward decls + default IntType = int
+#include "chunk/internal/chunk_traits.h"      // forward decls + default IntType = int
 #include "chunk/zero_array.h"                 // zero::Array
-#include "chunk/zero_one_value_array.h"       // zero_one_value::Array
+#include "chunk/zero_or_value_array.h"        // zero_or_value::Array
 #include "chunk/zero_any_array.h"             // zero_any::Array
-#include "chunk/param_chunk.h"                // ParamChunk::register_chunk_size, init_indexes
+#include "chunk/runtime.h"                    // Runtime::register_chunk_size, init
 #include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
 #include "chunk/config.h"                     // chunk_config::use_zero*
-#include "chunk/array_chunk_range_ops.h"      // fill_range / copy_range
-#include "chunk/manage_ompt.h"                // finalize_parallel_phase (compression backlog drain)
+#include "chunk/range_ops.h"                  // fill_range / copy_range
+#include "chunk/phases.h"                     // finalize_parallel_phase (compression backlog drain)
 #include "chunk/internal/env_parse.h"         // env_number / arg_number (checked, not atoi)
-#include "chunk/internal/print.h"             // shrink_array::println
+#include "chunk/print.h"                      // shrink_array::println
 
 using namespace shrink_array;
 
-#include "chunk/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
-#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
+#include "chunk/internal/zero_chunk.h" // release_chunk_pools, Runtime::shutdown
+#include "validation_harness.h"        // self_command; run() is called by validation_driver.cpp
 
 namespace validation::rechunk_validation
 {
@@ -101,7 +101,7 @@ namespace
 // OMPT, which already drains.
 void drain_compression_backlog()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -125,7 +125,7 @@ void for_each_index(long count, F&& func)
     }
 #pragma omp parallel
     {
-        if constexpr (build_config::has_not_ompt)
+        if constexpr (build_config::needs_explicit_phases)
         {
             shrink_array::begin_parallel_phase();
         }
@@ -154,7 +154,7 @@ long count_if_index(long nindex, F&& bad)
     }
 #pragma omp parallel reduction(+ : count)
     {
-        if constexpr (build_config::has_not_ompt)
+        if constexpr (build_config::needs_explicit_phases)
         {
             shrink_array::begin_parallel_phase();
         }
@@ -177,15 +177,15 @@ std::string pass_label(const char* label)
 } // namespace
 
 // --- Active variant selection (same shape as shrink_bench.cpp) -------
-static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
-              "rechunk_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_ONE_VALUE or _ZERO_ANY "
+static_assert(chunk_config::use_zero || chunk_config::use_zero_or_value || chunk_config::use_zero_any,
+              "rechunk_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_OR_VALUE or _ZERO_ANY "
               "(re-chunk is chunk-only; no std::vector fallback here)");
 
 template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -193,9 +193,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -203,14 +203,14 @@ constexpr const char* variant_name()
     }
 }
 
-// set_second_value only exists on zero_one_value / zero_any: no-op elsewhere. REQUIRED
-// on zero_one_value before any write (see the contract at the top of the file); also
-// exercises the val2 path (second_value preservation + tab_m_ptr_cst_val2
-// queue on growth, for zero_one_value).
+// set_second_value only exists on zero_or_value / zero_any: no-op elsewhere. REQUIRED
+// on zero_or_value before any write (see the contract at the top of the file); also
+// exercises the val2 path (second_value preservation + array_m_ptr_const_val2
+// queue on growth, for zero_or_value).
 template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& arr, const Val& value)
 {
-    // bool's second value is true, always: zero_one_value warns on the call.
+    // bool's second value is true, always: zero_or_value warns on the call.
     if constexpr (!std::is_same_v<Val, bool> && requires(Arr probe) { probe.set_second_value(value); })
     {
         arr.set_second_value(value);
@@ -219,7 +219,7 @@ void maybe_set_second_value(Arr& arr, const Val& value)
 
 // sv_value: the value declared as second_value. Choosing a value present in
 // the data makes val2 compression actually kick in (a stronger test); any
-// value is enough to satisfy the zero_one_value contract (populate the map).
+// value is enough to satisfy the zero_or_value contract (populate the map).
 template <typename T>
 int check_invariance(const char* label,
                      long        count,
@@ -232,7 +232,7 @@ int check_invariance(const char* label,
     label                   = lab_s.c_str();
 
     Array<T> arr(count);
-    maybe_set_second_value(arr, sv_value); // no-op on zero; required on zero_one_value
+    maybe_set_second_value(arr, sv_value); // no-op on zero; required on zero_or_value
 
     fprintf(stderr, "[%s/%s] arr built: chunk_size=%u (g_active should be 512)\n", variant_name(), label,
             arr.chunk_size());
@@ -319,7 +319,7 @@ int check_invariance(const char* label,
         // the result -- see drain_compression_backlog() above.
         drain_compression_backlog();
         // compress_int signature differs across variants: zero takes a
-        // verbose bool; zero_one_value / zero_any take none.
+        // verbose bool; zero_or_value / zero_any take none.
         if constexpr (requires { arr.compress_int(false); })
         {
             arr.compress_int(false);
@@ -355,7 +355,7 @@ int check_invariance(const char* label,
 // advisor re-chunks the arrays it tracks and leaves the others at the original
 // size, so arrays of DIFFERENT geometries are alive and written to in the same
 // loop. That is what crashes (ASan: heap-buffer-overflow in store_value, a
-// 64-element buffer written at index 76), on zero AND on zero_one_value/zero_any alike.
+// 64-element buffer written at index 76), on zero AND on zero_or_value/zero_any alike.
 //
 // This reproduces that state in the small: two arrays, one re-chunked and one
 // left alone, written alternately. Passing means geometry coexistence is safe;
@@ -368,7 +368,7 @@ int check_coexistence(const char* label, long count, unsigned moved_size, int ro
     const std::string lab_s = pass_label(label);
     label                   = lab_s.c_str();
 
-    // `fixed` first: it takes the lower registry index (num_tab), so a re-chunk
+    // `fixed` first: it takes the lower registry index (array_id), so a re-chunk
     // of `moved` whose teardown released the wrong row of the per-type flag
     // table would pull it from under `fixed` -- the writes below then fault.
     Arr fixed(static_cast<int>(count)); // stays at the ambient geometry
@@ -529,8 +529,10 @@ int check_range_ops(const char* label, long count)
 
 /// @brief A size that is neither a power of two nor a multiple of 64 (48, 96,
 ///        3, S + 1) is refused -- by rechunk_to() on a filled array and on an
-///        empty one, and by set_chunk_size() -- and so is, on the empty array,
-///        a valid size wider than cst_buffer_size (it would read the shared
+///        empty one, and by set_chunk_size() -- and so is set_chunk_size() of a
+///        VALID other size on the filled array (it would remap the indices
+///        without moving the elements), and, on the empty array,
+///        a valid size wider than const_buffer_size (it would read the shared
 ///        constant buffers out of bounds); geometry, content and the ambient
 ///        size stay as they were. A legal re-chunk must still work afterwards.
 int check_non_pow2_refused(const char* label)
@@ -563,6 +565,19 @@ int check_non_pow2_refused(const char* label)
             ++bad;
         }
     }
+    // A valid size, but the array has chunks: refused (rechunk_to() moves the
+    // elements; set_chunk_size() would only remap the indices, and make it the
+    // ambient size).
+    for (const unsigned new_size : {old_size * 2u, old_size / 2u})
+    {
+        arr.set_chunk_size(new_size);
+        if (arr.chunk_size() != old_size)
+        {
+            println("[{}/{}] FAIL: set_chunk_size({}) on a filled array applied: geometry {} -> {}", variant_name(),
+                    label, new_size, old_size, arr.chunk_size());
+            ++bad;
+        }
+    }
     const long mism = count_if_index(count, [&](long i) { return arr[i] != ref[i]; });
     if (mism)
     {
@@ -574,8 +589,8 @@ int check_non_pow2_refused(const char* label)
     const unsigned e0 = empty.chunk_size();
     empty.rechunk_to(48u);
     empty.set_chunk_size(96u);
-    empty.rechunk_to(2u * cst_buffer_size);
-    empty.set_chunk_size(2u * cst_buffer_size);
+    empty.rechunk_to(2u * const_buffer_size);
+    empty.set_chunk_size(2u * const_buffer_size);
     if (empty.chunk_size() != e0)
     {
         println("[{}/{}] FAIL: empty array: geometry {} -> {}", variant_name(), label, e0, empty.chunk_size());
@@ -604,14 +619,14 @@ int check_non_pow2_refused(const char* label)
     {
         println("[{}/{}] OK: 48/96/3/{} refused (filled and empty arrays), {} on the empty one, content and "
                 "geometry kept, {} -> {} still works",
-                variant_name(), label, old_size + 1u, 2u * cst_buffer_size, old_size, old_size * 2u);
+                variant_name(), label, old_size + 1u, 2u * const_buffer_size, old_size, old_size * 2u);
     }
     return bad ? 1 : 0;
 }
 
 /// @brief set_active_chunk_size() refuses, in every build, a size that is not
 ///        a chunk geometry (0: the next DynamicChunkSize divided by 0; 100)
-///        or wider than cst_buffer_size: the active size is kept, and an
+///        or wider than const_buffer_size: the active size is kept, and an
 ///        array born afterwards has it.
 int check_active_size_refused(const char* label)
 {
@@ -620,7 +635,7 @@ int check_active_size_refused(const char* label)
     const unsigned ambient  = active_chunk_size();
 
     int bad = 0;
-    for (const unsigned new_size : {0u, 100u, 2u * cst_buffer_size})
+    for (const unsigned new_size : {0u, 100u, 2u * const_buffer_size})
     {
         set_active_chunk_size(new_size);
         if (active_chunk_size() != ambient)
@@ -641,7 +656,7 @@ int check_active_size_refused(const char* label)
     if (!bad)
     {
         println("[{}/{}] OK: set_active_chunk_size(0 / 100 / {}) refused, {} kept", variant_name(), label,
-                2u * cst_buffer_size, ambient);
+                2u * const_buffer_size, ambient);
     }
     return bad ? 1 : 0;
 }
@@ -781,6 +796,23 @@ bool bool_runs(long i)
     }
 }
 
+/// double content for the sliced-val2 cases: runs of 0, runs of the second
+/// value 0.5 and varied data, 2600 elements each (several chunks at every
+/// geometry the cases use).
+double sliced_val2_mix(long i)
+{
+    switch ((i / 2600) % 5)
+    {
+        case 0:
+            return 0.0;
+        case 1:
+        case 3:
+            return 0.5;
+        default:
+            return double(i % 977) + 0.75;
+    }
+}
+
 struct Case
 {
     const char*          name;
@@ -791,13 +823,13 @@ struct Case
 /// @brief Declare @p size as the ambient geometry, to the arrays AND to the
 ///        allocators. set_active_chunk_size() only moves the ARRAY-side
 ///        geometry: without the registration, arrays report chunk_size() ==
-///        size but draw their buffers from whatever size init_indexes()
+///        size but draw their buffers from whatever size init()
 ///        primed, and every read past that width returns another chunk's data.
 void set_start_geometry(unsigned size)
 {
     set_active_chunk_size(size);
     set_thread_chunk_size(size);
-    ParamChunk::register_chunk_size(size);
+    Runtime::register_chunk_size(size);
 }
 } // namespace
 
@@ -843,7 +875,7 @@ static int run_body(int argc, char** argv)
 
     const long count = 1000000;
     // Each case declares a second_value present in its data (value -> val2
-    // compression actually kicks in). On zero_one_value this is REQUIRED; on zero_any / zero
+    // compression actually kicks in). On zero_or_value this is REQUIRED; on zero_any / zero
     // it is a no-op. The first three start at 64 (the scale case grows it to
     // the target, as the perf bench does), the others at 512.
     const std::vector<Case> cases = {
@@ -878,8 +910,8 @@ static int run_body(int argc, char** argv)
                  "shrink-to-smaller", count, 256, [](long i) -> double { return double((i / 1000) % 2); },
                  /*sv_value=*/1.0);
          }},
-        // 4096, not 8192: rechunk_to() refuses anything above cst_buffer_size
-        // (CHUNK_DYN_MAX_SIZE, 4096 by default) because the shared cst_val1/cst_val2
+        // 4096, not 8192: rechunk_to() refuses anything above const_buffer_size
+        // (CHUNK_DYN_MAX_SIZE, 4096 by default) because the shared const_val1/const_val2
         // buffers are sized to that ceiling and a wider chunk would read them out of
         // bounds. Asking for 8192 makes this case fail ("geometry 512 -> 512",
         // with rechunk_to's refusal on stderr). Raise the target here only
@@ -897,8 +929,8 @@ static int run_body(int argc, char** argv)
              return check_invariance<double>(
                  "all-different", 100000, 1024, [](long i) -> double { return double(i); }, /*sv_value=*/1.0);
          }},
-        // Growth 512 -> 2048 with val2: targets the tab_m_ptr_cst_val2 queue
-        // (zero_one_value) + the second_value round-trip.
+        // Growth 512 -> 2048 with val2: targets the array_m_ptr_const_val2 queue
+        // (zero_or_value) + the second_value round-trip.
         {"val2-grow", 512,
          [&]
          {
@@ -907,7 +939,7 @@ static int run_body(int argc, char** argv)
          }},
         // A size that is neither a power of two nor a multiple of 64: refused, nothing changed.
         {"invalid-size-refused", 512, [] { return check_non_pow2_refused("invalid-size-refused"); }},
-        // set_active_chunk_size: 0, 100 and a size over cst_buffer_size refused in every build.
+        // set_active_chunk_size: 0, 100 and a size over const_buffer_size refused in every build.
         {"active-size-refused", 512, [] { return check_active_size_refused("active-size-refused"); }},
         {"multiple-of-64-chain", 256, [] { return check_multiple_of_64_chain("multiple-of-64-chain"); }},
         {"index-split", 256, [] { return check_index_split("index-split"); }},
@@ -941,6 +973,16 @@ static int run_body(int argc, char** argv)
          [] { return check_invariance<bool>("bool-shrink-512-to-64", 1000000L, 64, bool_runs, /*sv_value=*/true); }},
         {"bool-uneven", 512,
          [] { return check_invariance<bool>("bool-uneven-512-to-768", 1000000L, 768, bool_runs, /*sv_value=*/true); }},
+        // Array<bool> through the SLICED path (fast-alloc threaded builds): 4M
+        // bools 64 -> 256, 16384 new chunks, 4 slices. Sources at false (const1),
+        // at true (the second constant: a shared array, never released) and
+        // live ones, released during the copy; then rewritten and recompressed.
+        {"bool-sliced", 64,
+         []
+         {
+             return check_invariance<bool>("bool-sliced-64-to-256", 4L << 20, 256, bool_runs, /*sv_value=*/true,
+                                           /*post_rounds=*/2);
+         }},
         {"sliced-grow", 64,
          []
          {
@@ -956,6 +998,26 @@ static int run_body(int argc, char** argv)
                  "sliced-shrink-512-to-64", 2L << 20, 64,
                  [](long i) -> double { return (i / 5000) % 3 == 0 ? 0.0 : double(i % 613) + 0.25; },
                  /*sv_value=*/0.25, /*post_rounds=*/2);
+         }},
+        // The same sliced path with sources of all three kinds side by side:
+        // runs of zero, runs of the second value (compressed to it by the
+        // rechunk's prologue) and varied data. zero_or_value and zero_any
+        // release their materialised sources during the copy like zero, and
+        // must leave the second-constant ones alone (a shared array, never
+        // freed). Grown 64 -> 256 (aligned, 4 slices), and shrunk 512 -> 192,
+        // a size the old one does not divide: new chunks straddle old ones,
+        // released by the last of their readers.
+        {"sliced-val2-grow", 64,
+         []
+         {
+             return check_invariance<double>("sliced-val2-grow-64-to-256", 4L << 20, 256, sliced_val2_mix,
+                                             /*sv_value=*/0.5, /*post_rounds=*/2);
+         }},
+        {"sliced-val2-uneven", 512,
+         []
+         {
+             return check_invariance<double>("sliced-val2-uneven-512-to-192", 2L << 20, 192, sliced_val2_mix,
+                                             /*sv_value=*/0.5, /*post_rounds=*/2);
          }},
     };
 
@@ -981,7 +1043,7 @@ static int run_body(int argc, char** argv)
         }
     }
 
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     println("=== rechunk_validation [variant = {}]  N_scale={}  64->{}  case={}  mode={} ===", variant_name(), n_scale,
             tgt, only ? only : "all", mode);
@@ -1024,7 +1086,7 @@ int run(int argc, char** argv)
     // one in the std-alloc builds (each buffer is a real malloc there).
     const int rc = run_body(argc, argv);
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
     return rc;
 }
 

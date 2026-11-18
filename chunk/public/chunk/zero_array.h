@@ -23,12 +23,12 @@
 #include <initializer_list> // the {a, b, c} constructor
 #include <iterator>         // std::forward_iterator, std::distance -- the (first, last) constructor
 
-#include "chunk/zero_chunk.h"                   // Chunk<T>
+#include "chunk/internal/zero_chunk.h"          // Chunk<T>
 #include "chunk/internal/read_reclaim.h"        // read_reclaim::PassScope (perform_compression / compress in a region)
 #include "chunk/internal/array_chunk_base.h"    // ArrayChunkBase
-#include "chunk/internal/zero_array_parallel.h" // ParallelSupport — OpenMP-only mixin
+#include "chunk/internal/zero_array_parallel.h" // FastBlockSupport -- fast-block-only mixin; ParallelSupport through it
 #include "chunk/internal/array_chunk_rechunk_hooks.h"   // RechunkHooks — CHUNK_DYNAMIC-only mixin
-#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_IN_PARALLEL_REGION, pmp::team / Team
+#include "chunk/internal/pmp_chunk.h"                   // CHUNK_PMP_IN_PARALLEL_REGION, pmp::team / Team
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 #include "chunk/config.h"                               // build_config::threaded
 #include "chunk/internal/write_compress_sync_policy.h"  // WriteCompressSyncPolicy
@@ -38,7 +38,7 @@ namespace shrink_array
 {
 
 template <template <typename> typename ChunkT, typename T>
-class ManagerChunk;
+class TypeState;
 
 namespace zero
 {
@@ -60,22 +60,22 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     friend ArrayChunkBase<Array>; // swap_identity()
 
     using Base     = ArrayChunkBase<Array>;
-    using Parallel = zero::ParallelSupport<Array>;
+    using Parallel = ParallelSupport<Array>;
     using Hooks    = RechunkHooks<Array>;
 
     /// @brief Claim this array's identity before its storage is built:
-    ///        register its address and take the next free num_tab, which
-    ///        every per-tab metadata table is then indexed by. Called by
+    ///        register its address and take the next free array_id, which
+    ///        every per-array metadata table is then indexed by. Called by
     ///        create() through ArrayChunkBase.
     void pre_create_hook()
     {
-        auto& sh_inf = *Proxy<T>::share_info_array;
+        auto& sh_inf = *Proxy<T>::array_registry;
 
-        sh_inf.insert(this->registry_key(), Base::nb_tab);
+        sh_inf.insert(this->registry_key(), Base::array_count);
 
-        this->num_tab_ = Base::nb_tab;
+        this->array_id_ = Base::array_count;
 
-        ++nb_tab;
+        ++array_count;
     }
 
     /// @brief Storage (re)allocation at the current active geometry, WITHOUT
@@ -87,46 +87,39 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     /// @brief Storage teardown shared by clear() and rechunk_to(): everything
     ///        clear() does except the pre-drain stats. Parks buffers by THIS
     ///        array's geometry and removes this array's compression candidates
-    ///        by num_tab.
+    ///        by array_id.
     void clear_core();
 
-    /// @brief Per-array compression stats + "would zero_one_value have helped?" probe.
+    /// @brief Per-array compression stats + "would zero_or_value have helped?" probe.
     /// Plain Chunk compresses a block only when it is constant to first_value;
     /// this reports the compression ratio (vs a plain std::vector) and scans the
     /// materialised (uncompressed) blocks for ones that are in fact constant to
-    /// some OTHER value — those a zero_one_value/zero_any would have captured. Read at the
+    /// some OTHER value — those a zero_or_value/zero_any would have captured. Read at the
     /// start of clear(), before the drain mutates chunk state.
     void print_compression_stats(std::ostream& os = std::cout) const;
 
-    /// @brief The identity step of swap(): num_tab and the registry entry, so
-    ///        the per-num_tab tables follow the chunks.
+    /// @brief The identity step of swap(): array_id and the registry entry, so
+    ///        the per-array_id tables follow the chunks.
     void swap_identity(Array& other)
     {
         using std::swap;
-        swap(this->num_tab_, other.num_tab_);
-        Proxy<T>::share_info_array->swap_keys(this->registry_key(), other.registry_key());
+        swap(this->array_id_, other.array_id_);
+        Proxy<T>::array_registry->swap_keys(this->registry_key(), other.registry_key());
     }
 
   public:
     using Traits      = Base::Traits;      ///< ArrayChunkTraits<zero::Array>.
     using ChunkType   = Base::ChunkType;   ///< Chunk<T>, the chunk type held in chunk_list_.
-    using ManagerType = Base::ManagerType; ///< ManagerChunk<Chunk, T>, the per-type manager.
+    using ManagerType = Base::ManagerType; ///< TypeState<Chunk, T>, the per-type manager.
     using ProxyType   = Base::ProxyType;   ///< Proxy<T>, the write proxy of the non-const accessors.
     using value_type  = T;                 ///< Stored element type.
 
-    // The former snake_case spellings, kept until 1.0 (types are PascalCase).
-    using chunk_type [[deprecated("types are PascalCase: use ChunkType")]]          = ChunkType;
-    using manager_type [[deprecated("types are PascalCase: use ManagerType")]]      = ManagerType;
-    using proxy_type [[deprecated("types are PascalCase: use ProxyType")]]          = ProxyType;
-    using ind_type [[deprecated("types are PascalCase: use IndType")]]              = IntType;
-    using chunk_list_type [[deprecated("types are PascalCase: use ChunkListType")]] = Base::ChunkListType;
-
+    using Base::array_count;
+    using Base::chunk_count_;
     using Base::chunk_list_;
     using Base::m_size_;
-    using Base::nb_chunk_;
-    using Base::nb_tab;
     using Base::size_policy_;
-    using Manager = ManagerChunk<Chunk, T>; ///< Same type as ManagerType.
+    using Manager = TypeState<Chunk, T>; ///< Same type as ManagerType.
 
     // Mode-specific members live in the two mixins above. Do not drop these
     // using-declarations: ArrayChunkBase re-exports RechunkSupport's hook
@@ -146,6 +139,9 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
      * @brief Build an array of @p sz elements.
      * @param sz initial element count; 0 by default, as std::vector (a fresh
      *           array is empty, so a push_back on it yields one element)
+     * @note May run inside a parallel region, for a work array of the calling
+     *       thread: construction and destruction take the library's cold-path
+     *       lock (internal/cold_path_lock.h), one array at a time.
      */
     explicit Array(IntType sz = 0)
     {
@@ -204,7 +200,7 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     /// @param il Source values.
     Array(std::initializer_list<T> il) : Array(il.begin(), il.end()) {}
 
-    /// @brief clear() the array, then erase its entry from Proxy<T>::share_info_array.
+    /// @brief clear() the array, then erase its entry from Proxy<T>::array_registry.
     ~Array();
 
     /**
@@ -213,8 +209,8 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
      *        same exchange as swap(); @p other is left empty and valid.
      * @details Not just a steal of @p other's chunk list: this array's old
      *          chunks are released first (their candidates purged), the moved
-     *          chunks keep their metadata rows (num_tab) with them, and
-     *          @p other is left with nb_chunk 0. Sequential context, as clear().
+     *          chunks keep their metadata rows (array_id) with them, and
+     *          @p other is left with chunk_count 0. Sequential context, as clear().
      * @note noexcept, as the move constructor: a failure here terminates.
      */
     Array& operator=(Array&& other) noexcept;
@@ -250,8 +246,12 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     }
 
     /// @brief Resize to @p newsz elements; new elements read the first
-    ///        constant. A sequential point: the rank's candidates are
-    ///        compressed and the deferred ops drained first.
+    ///        constant. A sequential point: the candidates are compressed
+    ///        and the deferred ops drained first.
+    /// @note Inside a parallel region, only by the thread that owns the array
+    ///       (a work array of its own): the drain then covers this array's
+    ///       candidates alone (drain_own_candidates()), not the shared
+    ///       arrays' the thread has also written.
     /// @note Shrinking releases the dropped chunks' buffers (release_chunk_range():
     ///       freed serially, parked in the geometry's reuse list under OpenMP);
     ///       chunk_list_ keeps its capacity.
@@ -261,7 +261,7 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     /// @brief Release the buffers of chunks [@p first, @p last) -- the chunks
     ///        a shrinking resize() drops. Same release as clear_core(): freed
     ///        in place serially; under OpenMP parked in this array's geometry's
-    ///        reuse list and the chunk neutralised to cst_val1. Sequential
+    ///        reuse list and the chunk neutralised to const_val1. Sequential
     ///        point; the candidate lists must hold none of them.
     void release_chunk_range(int first, int last);
 
@@ -291,13 +291,6 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
     {
         return chunk_list_;
     }
-
-    /// @brief Former name of get_chunk_list(), kept for the programs that still spell it.
-    [[deprecated("methods are snake_case: use get_chunk_list")]] [[nodiscard]] const Base::ChunkListType&
-    getChunkList() const noexcept
-    {
-        return chunk_list_;
-    }
 };
 
 } // namespace zero
@@ -311,5 +304,5 @@ class Array : public ArrayChunkBase<Array<T, IntType>>,
 
 // Bodies of the two mode-specific mixins. After zero_array_inline.h, so their
 // CRTP self() sees a complete zero::Array.
-#include "chunk/internal/zero_array_parallel_inline.h"       // ParallelSupport's bodies
+#include "chunk/internal/zero_array_parallel_inline.h"       // FastBlockSupport's bodies
 #include "chunk/internal/array_chunk_rechunk_hooks_inline.h" // RechunkHooks' bodies

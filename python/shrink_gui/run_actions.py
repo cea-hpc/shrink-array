@@ -48,6 +48,7 @@ class RunActions:
         self.rescale_armed = True
         self.form.set_values(m.get("values", {}))
         self.extra.setText(m.get("extra", ""))
+        self.env.setText(m.get("env", ""))
         if m.get("check_builds") and self.check_builds.isEnabled():
             self.check_builds.setCurrentIndex(max(0, self.check_builds.findData(m["check_builds"])))
         self.info(f"options de {run['id']} reprises")

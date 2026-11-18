@@ -24,6 +24,25 @@ EN = {
     "pas de dépôt git (ou pas encore de connexion)": "no git repository (or not connected yet)",
     "pas de dépôt git sur inti : vérifiez la connexion": "no git repository on inti: check the connection",
     "Branche (inti)": "Branch (inti)", "Changer de branche": "Switch branch",
+    # builds_panel.py
+    "Nettoyer les builds…": "Clean builds…", "Nettoyer les builds": "Clean builds",
+    "Nettoyer la sélection": "Clean the selection", "Fermer": "Close",
+    "Build": "Build", "Architecture": "Architecture", "Libérable": "Freeable", "Total": "Total",
+    "Dernier nettoyage": "Last clean",
+    "Supprime de chaque build coché ce que la compilation suivante refait : les fichiers objets "
+    "(.o, .o.d), les en-têtes précompilés et les bibliothèques statiques (.a). Restent les exécutables, "
+    "les bibliothèques partagées et les fichiers de build : le prochain compile_all.sh recompile tout, "
+    "sans reconfigurer.":
+        "Removes from each checked build what the next compilation re-creates: the object files (.o, .o.d), "
+        "the precompiled headers and the static libraries (.a). The executables, the shared libraries and "
+        "the build files stay: the next compile_all.sh recompiles everything, without configuring again.",
+    "Supprime des builds ce que la compilation suivante refait (fichiers objets, en-têtes précompilés, "
+    "bibliothèques statiques) ; garde les exécutables. Le prochain compile_all.sh recompile tout. "
+    "« Builds à jour » reconnaît un build nettoyé : il le juge sur ses sources jusqu'à sa prochaine "
+    "compilation.":
+        "Removes from the builds what the next compilation re-creates (object files, precompiled headers, "
+        "static libraries); keeps the executables. The next compile_all.sh recompiles everything. "
+        "\"Builds up to date\" knows a cleaned build: it judges it by its sources until its next compilation.",
     "Relire les branches": "Reload branches",
     "Extrait dans le dépôt d'inti la branche choisie dans la liste. Une branche distante (origin/x) sans "
     "branche locale donne une branche locale x qui la suit. Refusé si le dépôt a des modifications non "
@@ -53,6 +72,7 @@ EN = {
     "Lire les options": "Read options", "filtrer les options (nom ou aide)…": "filter the options (name or help)…",
     "Défauts de l'architecture": "Architecture defaults", "Enregistrer comme défauts": "Save as defaults",
     "arguments en plus, tels quels (facultatif)": "extra arguments, as they are (optional)",
+    "environnement : NOM=valeur … (facultatif)": "environment: NAME=value … (optional)",
     "Commande :": "Command:", "Soumettre": "Submit",
     # runs
     "Run": "Run", "Programme": "Program", "Job": "Job", "Statut": "Status",
@@ -232,6 +252,17 @@ EN = {
     "formulaire ne connaît pas (--no-gnu de compile_all.sh, par exemple).":
         "Arguments appended as they are to the command: for an option the form does not "
         "know (compile_all.sh's --no-gnu, for instance).",
+    "Variables d'environnement exportées avant la commande, sur le nœud : NOM=valeur, "
+    "séparées par des espaces (NOM=\"a b\" pour une valeur avec des espaces ; un ~/ en "
+    "tête devient le répertoire personnel de la machine du run).\n\n"
+    "Par exemple CHUNK_LLVM_ROOT=~/llvm-22 pour compile_all.sh. Elles l'emportent sur "
+    "celles de scripts/site_env.sh. Mémorisées par programme, et reprises avec "
+    "« Reprendre ses options ».":
+        "Environment variables exported before the command, on the node: NAME=value, "
+        "separated by spaces (NAME=\"a b\" for a value with spaces; a leading ~/ becomes the "
+        "home directory of the machine the run is on).\n\n"
+        "For instance CHUNK_LLVM_ROOT=~/llvm-22 for compile_all.sh. They win over those of "
+        "scripts/site_env.sh. Kept per program, and taken back by \"Reuse its options\".",
     "La commande exacte qui sera exécutée sur le nœud. Seules les options modifiées "
     "(en gras) y figurent : les autres gardent le défaut du script.":
         "The exact command run on the node. Only the changed options (in bold) are in it: "
@@ -246,8 +277,8 @@ EN = {
     "reste où vous êtes.":
         "Scrolls the log to the end on every new line. Unchecked, the log stays where you are.",
     "Ne montre que les runs de ce build.": "Shows only the runs of this build.",
-    "Ne montre que les runs de cette variante (zero, zero_one_value, zero_any).":
-        "Shows only the runs of this variant (zero, zero_one_value, zero_any).",
+    "Ne montre que les runs de cette variante (zero, zero_or_value, zero_any).":
+        "Shows only the runs of this variant (zero, zero_or_value, zero_any).",
     "Ce que la couleur distingue : la variante, la taille de chunk, ou rien. Trois "
     "couleurs au plus ; le reste est groupé en gris « autres ».":
         "What the colour tells apart: the variant, the chunk size, or nothing. Three colours "
@@ -439,17 +470,46 @@ EN = {
     "de chaque build que le programme utilisera (--configs de bench_and_test.py, "
     "--builds de multi_launch_stress.py, sous --build-root). Un build dont une "
     "source, un en-tête ou la configuration a changé depuis sa compilation n'est "
-    "pas à jour.\n\n« refuser » : le run s'arrête (code 96) en listant ces builds.":
+    "pas à jour.\n\n« refuser » : le run s'arrête (code 96) en listant ces builds.\n\n"
+    "Un build passé par « Nettoyer les builds… » n'a plus ses fichiers objets : "
+    "jusqu'à sa prochaine compilation, il est à jour s'il l'était au nettoyage et "
+    "qu'aucune source, aucun en-tête ni fichier CMake du dépôt n'a changé depuis.":
         "Before the command, on the node: ninja -n on the executables already built in "
         "each build the program will use (--configs of bench_and_test.py, --builds of "
         "multi_launch_stress.py, under --build-root). A build whose sources, headers or "
         "configuration changed since it was compiled is not up to date.\n\n\"refuse\": "
-        "the run stops (code 96), listing those builds.",
+        "the run stops (code 96), listing those builds.\n\n"
+        "A build \"Clean builds…\" went through has no object files left: until its next "
+        "compilation, it is up to date if it was when cleaned and no source, header or "
+        "CMake file of the repository changed since.",
 }
 
 # Messages built on the fly (and those inti sends back): regex on the French,
 # English replacement. Applied in order, on the whole text.
 EN_RE = [(re.compile(a), b) for a, b in (
+    # builds_panel.py
+    (r"^Racine des builds : (.+)$", r"Build root: \1"),
+    (r"^(\d+) build\(s\) coché\(s\), (.+) à libérer$", r"\1 build(s) checked, \2 to free"),
+    (r"^lecture des builds de (.+) sur (.+)…$", r"reading the builds of \1 on \2…"),
+    (r"^aucun build configuré dans (.+)$", r"no configured build in \1"),
+    (r"^(\d+) build\(s\) dans (.+)$", r"\1 build(s) in \2"),
+    (r"^nettoyage de (\d+) build\(s\)…$", r"cleaning \1 build(s)…"),
+    (r"^Nettoyer (\d+) build\(s\) et libérer (.+) \? Le prochain compile_all\.sh de ces builds recompilera "
+     r"tout\.", r"Clean \1 build(s) and free \2? The next compile_all.sh of these builds will recompile "
+     r"everything."),
+    (r"(\d+) compile_all\.sh encore actif\(s\) : nettoyer un build qu'il compile le fera échouer\.",
+     r"\1 compile_all.sh still active: cleaning a build it compiles will make it fail."),
+    (r"^(\d+) build\(s\) nettoyé\(s\), (.+) libérés", r"\1 build(s) cleaned, \2 freed"),
+    (r" ; (\d+) pas à jour avant le nettoyage : « Builds à jour » les tiendra pour pas à jour jusqu'au "
+     r"prochain compile_all\.sh$",
+     r'; \1 not up to date before the clean: "Builds up to date" will hold them stale until the next '
+     r"compile_all.sh"),
+    (r" ; (\d+) non vérifié\(s\) \(pas de ninja ici, ou rien de construit\) : « Builds à jour » les "
+     r"tiendra pour pas à jour jusqu'au prochain compile_all\.sh$",
+     r'; \1 not checked (no ninja here, or nothing built): "Builds up to date" will hold them stale '
+     r"until the next compile_all.sh"),
+    (r"(\d(?:\.\d)?) (K|M|T)io\b", r"\1 \2iB"),
+    (r"(\d) o libérés", r"\1 B libérés"), (r"(\d) o à libérer", r"\1 B à libérer"),
     (r"^Image enregistrée : (.+)$", r"Image saved: \1"), (r"^image non enregistrée : (.+)$", r"image not saved: \1"),
     (r"cette machine", "this machine"), (r"(\d+) cœurs\b", r"\1 cores"), (r"(\d) Gio\b", r"\1 GiB"),
     (r"^shrink-array — runs sur (.+) \(prototype\)$", r"shrink-array — runs on \1 (prototype)"),
@@ -702,6 +762,9 @@ EN_RE = [(re.compile(a), b) for a, b in (
     (r"^vérification des options de (\S+)…$", r"checking the options of \1…"),
     (r"^options non vérifiées \((.*)\) : soumis quand même$", r"options not checked (\1): submitted anyway"),
     (r"^commande illisible : ", "unreadable command: "),
+    (r"^environnement illisible : ", "unreadable environment: "),
+    (r"^environnement : « (.*) » n'est pas de la forme NOM=valeur$", r"environment: \"\1\" is not NAME=value"),
+    (r"^environnement : (\S+) est réservé au script du run$", r"environment: \1 is reserved for the run's script"),
     (r"^(\S+) : il faut (\S+) ou (\S+) \(sinon le job s'arrête aussitôt sur une erreur d'usage\)",
      r"\1: needs \2 or \3 (else the job stops at once on a usage error)"),
     (r" -- (.+) ne servent qu'avec (\S+) : est-ce lui qu'il fallait cocher \?$",

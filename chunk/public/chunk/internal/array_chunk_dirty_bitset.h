@@ -44,7 +44,6 @@
 #include <cstddef>   // std::size_t
 #include <cstdint>   // uint64_t
 #include <utility>   // std::swap
-#include <vector>    // std::vector
 
 #include "chunk/config.h"                         // build_config::threaded
 #include "chunk/internal/array_chunk_for.h"       // ArrayKey (clear_all_dirty_bitsets)
@@ -106,7 +105,7 @@ class DirtyBitsetSupport<Derived, true>
      *       load sees the bit set too (read-read coherence; only
      *       clear_dirty_bitset() resets it, at a quiescent point), and the
      *       bit is a pre-filter only -- the op itself is published by the
-     *       chunk's pending counter (increm_chunk_gate_deferred), after this.
+     *       chunk's pending counter (inc_chunk_gate_deferred), after this.
      */
     void mark_chunk_dirty(int chunk_idx) noexcept;
 
@@ -135,26 +134,26 @@ class DirtyBitsetSupport<Derived, true>
 
   protected:
     /**
-     * @brief Allocate a fresh, all-clear bitset for @p nb_chunk chunks.
-     * @param nb_chunk number of chunks the owning array now has
+     * @brief Allocate a fresh, all-clear bitset for @p chunk_count chunks.
+     * @param chunk_count number of chunks the owning array now has
      * @note Drops whatever bits were set: the creation / full-resize paths call
      *       this exactly where the chunk list itself is rebuilt.
      */
-    void alloc_dirty_bitset(int nb_chunk)
+    void alloc_dirty_bitset(int chunk_count)
     {
-        nb_words_ = words_for(nb_chunk);
+        n_words_ = words_for(chunk_count);
         // + 1: the "some bit was set" flag (any_marked_word), after the bits.
         // Built whole (atomic words are not movable), all clear, by a team for
         // a large array.
-        bitset_ = parallel_storage_init::make_filled<PaddedDirtyWord>(static_cast<std::size_t>(nb_words_) + 1);
+        bitset_ = parallel_storage_init::make_filled<PaddedDirtyWord>(static_cast<std::size_t>(n_words_) + 1);
     }
 
     /**
      * @brief Reallocates and copies the dirty bitset during resize.
-     * @param old_nb_chunk chunk count the current bitset was sized for
-     * @param new_nb_chunk chunk count to size the new bitset for
+     * @param old_chunk_count chunk count the current bitset was sized for
+     * @param new_chunk_count chunk count to size the new bitset for
      */
-    void reallocate_dirty_bitset(int old_nb_chunk, int new_nb_chunk);
+    void reallocate_dirty_bitset(int old_chunk_count, int new_chunk_count);
 
     /**
      * @brief Zero the whole dirty bitset.
@@ -174,7 +173,7 @@ class DirtyBitsetSupport<Derived, true>
     {
         using std::swap;
         swap(bitset_, other.bitset_);
-        swap(nb_words_, other.nb_words_);
+        swap(n_words_, other.n_words_);
     }
 
   private:
@@ -190,20 +189,20 @@ class DirtyBitsetSupport<Derived, true>
     /// @pre bitset_ is allocated.
     [[nodiscard]] std::atomic<uint64_t>& any_marked_word() const noexcept
     {
-        return bitset_[static_cast<std::size_t>(nb_words_)].word;
+        return bitset_[static_cast<std::size_t>(n_words_)].word;
     }
 
-    /** @brief Number of 64-bit words needed to hold @p nb_chunk bits (one per chunk). */
-    [[nodiscard]] static constexpr int words_for(int nb_chunk) noexcept
+    /** @brief Number of 64-bit words needed to hold @p chunk_count bits (one per chunk). */
+    [[nodiscard]] static constexpr int words_for(int chunk_count) noexcept
     {
-        return (nb_chunk + chunks_per_word - 1) / chunks_per_word;
+        return (chunk_count + chunks_per_word - 1) / chunks_per_word;
     }
 
     /// One bit per chunk, one cache line per 64 chunks, then the flag word.
     /// mutable: the words are atomics, marked and read through const paths
     /// (any_marked_word).
     mutable parallel_storage_init::NoInitVector<PaddedDirtyWord> bitset_;
-    int nb_words_{0}; ///< Words of bits in @ref bitset_ (its size - 1), so clearing needs no chunk count.
+    int n_words_{0}; ///< Words of bits in @ref bitset_ (its size - 1), so clearing needs no chunk count.
 
     static_assert(chunks_per_word == 1 << word_shift, "word_shift must be log2(chunks_per_word)");
 };
@@ -243,11 +242,11 @@ class DirtyBitsetSupport<Derived, false>
   protected:
     /// @name No-op verbs (no bitset in this mode)
     /// @{
-    static void alloc_dirty_bitset(int /*nb_chunk*/) noexcept
+    static void alloc_dirty_bitset(int /*chunk_count*/) noexcept
     {
         // no bitset in this mode: nothing to mark, size or clear
     }
-    static void reallocate_dirty_bitset(int /*old_nb_chunk*/, int /*new_nb_chunk*/) noexcept
+    static void reallocate_dirty_bitset(int /*old_chunk_count*/, int /*new_chunk_count*/) noexcept
     {
         // no bitset in this mode: nothing to mark, size or clear
     }

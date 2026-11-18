@@ -22,12 +22,14 @@
 #   COV_BUILD_DIR   the build tree (default: /tmp/$USER/build-cov; emptied)
 #   GCC_MODULE      compiler module, where modules exist (default: gcc/gcc-14.2.0-x86_64)
 #   CXX             the C++ compiler (default: the g++ on PATH after the module)
-#   CMAKE_ARGS      extra CMake arguments (default: -DOMP=ON, size 256)
+#   CMAKE_ARGS      extra CMake arguments (default: -DCHUNK_OPENMP=ON, size 256)
 #   JOBS            build parallelism (default: 2)
 #
 # The proxy is the shell's (https_proxy): scan.coverity.com and
-# storage.googleapis.com go through it. .github/workflows/coverity.yml runs
-# this script weekly (COV_BIN from the download, CXX=g++-14).
+# storage.googleapis.com go through it, with Kerberos (--proxy-negotiate: the
+# CEA proxy accepts nothing else and answers 407; without a proxy, or with one
+# that asks for nothing, the option does nothing). .github/workflows/coverity.yml
+# runs this script weekly (COV_BIN from the download, CXX=g++-14).
 set -euo pipefail
 
 PROJECT=cea-hpc-shrink-array
@@ -42,7 +44,7 @@ esac
 
 COV_BUILD_DIR=${COV_BUILD_DIR:-/tmp/$USER/build-cov}
 GCC_MODULE=${GCC_MODULE:-gcc/gcc-14.2.0-x86_64}
-CMAKE_ARGS=${CMAKE_ARGS:--DOMP=ON -DCHUNK_STATIC_SIZES=256 -DCHUNK_BUILD_DYN=OFF}
+CMAKE_ARGS=${CMAKE_ARGS:--DCHUNK_OPENMP=ON -DCHUNK_STATIC_SIZES=256 -DCHUNK_BUILD_DYN=OFF}
 JOBS=${JOBS:-2}
 
 die() { echo "coverity_submit: $*" >&2; exit 1; }
@@ -72,8 +74,10 @@ capture() {
         module load "$GCC_MODULE" || echo "coverity_submit: no module $GCC_MODULE, using ${CXX:-the g++ on PATH}" >&2
     fi
     # shellcheck disable=SC2086
+    # No ccache: a cache hit skips the compiler, and cov-build captures only
+    # the compilations it sees run.
     cmake -S "$REPO" -B "$COV_BUILD_DIR" -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_CXX_COMPILER="${CXX:-$(command -v g++)}" $CMAKE_ARGS
+        -DCMAKE_CXX_COMPILER="${CXX:-$(command -v g++)}" -DCHUNK_USE_CCACHE=OFF $CMAKE_ARGS
     cd "$COV_BUILD_DIR"
     nice -n 19 cov-build --dir cov-int cmake --build . -j"$JOBS"
     tail -3 cov-int/build-log.txt
@@ -96,7 +100,7 @@ submit() {
     desc="shrink-array $(git -C "$REPO" rev-parse --short HEAD) ($(git -C "$REPO" rev-parse --abbrev-ref HEAD))"
 
     # 1. A new build. Refused while an earlier one is still queued.
-    resp=$(curl -sS -X POST --data-urlencode "token=$token" --data-urlencode "email=$email" \
+    resp=$(curl -sS --proxy-negotiate -U : -X POST --data-urlencode "token=$token" --data-urlencode "email=$email" \
         -d file_name=cov-int.tgz --data-urlencode "version=$version" --data-urlencode "description=$desc" \
         "https://scan.coverity.com/projects/$PROJECT/builds/init")
     echo "$resp" | jq -e .build_id > /dev/null 2>&1 || die "builds/init refused: $resp"
@@ -105,13 +109,13 @@ submit() {
 
     # 2. The archive to the signed URL (jq turns the & back into &).
     # curl alone exits 0 on an HTTP error: the code is checked.
-    code=$(curl -sS -X PUT --header 'Content-Type: application/json' --upload-file cov-int.tgz \
+    code=$(curl -sS --proxy-negotiate -U : -X PUT --header 'Content-Type: application/json' --upload-file cov-int.tgz \
         -o /dev/null -w '%{http_code}' "$(jq -r .url resp.json)")
     [ "$code" = 200 ] || die "upload: HTTP $code"
     echo "upload: HTTP 200"
 
     # 3. Into the analysis queue.
-    resp=$(curl -sS -X PUT --data-urlencode "token=$token" \
+    resp=$(curl -sS --proxy-negotiate -U : -X PUT --data-urlencode "token=$token" \
         "https://scan.coverity.com/projects/$PROJECT/builds/$(jq -r .build_id resp.json)/enqueue")
     echo "$resp" | jq -e .id > /dev/null 2>&1 || die "enqueue refused: $resp"
     echo "enqueued: $resp -- the result mail goes to $email"

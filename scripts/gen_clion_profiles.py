@@ -7,7 +7,7 @@ under the scripts' names.
 
 The build scripts (compile_all.sh, compile_all_gnu.sh) are the one source of
 truth: this runs `compile_all.sh --dryrun --with-nvhpc`, reads every
-`CXX=<compiler> cmake -S <src> -B <build_rep>/cmake-build-<name>/<arch> <options>`
+`CXX=<compiler> cmake -S <src> -B <build_root>/cmake-build-<name>/<arch> <options>`
 it prints, and writes one CLion CMake profile per configuration into
 .idea/workspace.xml (component CMakeSettings):
 

@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QGroupBox, QH
 
 from shrink_gui import config, i18n, qos
 from shrink_gui.config import APP, DEFAULTS, LOCAL, PROGRAMS, QOS_FALLBACK
+from shrink_gui.builds_panel import BuildsPanel
 from shrink_gui.git_panel import GitPanel
 from shrink_gui.i18n import T, status_short, status_text, tip
 from shrink_gui.launch_form import LaunchForm
@@ -25,10 +26,10 @@ from shrink_gui.tab_errors import ErrorsTab
 from shrink_gui.tab_speedup_chart import SpeedupChart
 from shrink_gui.tab_summary import SummaryTab
 from shrink_gui.tooltips import Tooltips
-from shrink_gui.widgets import DurationBox, LogView, OptionsForm, RowVisibleFormLayout, TLabel
+from shrink_gui.widgets import DurationBox, LogView, OptionsForm, RowVisibleFormLayout, TLabel, VScrollArea
 
 
-class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab, BenchChart, ErrorsTab,
+class Main(MachinePanel, LaunchForm, RunActions, GitPanel, BuildsPanel, SummaryTab, ChartTab, BenchChart, ErrorsTab,
            SpeedupChart, Tooltips, QMainWindow):
     COLS = ["Run", "Programme", "Partition", "Commit", "Job", "Statut", "Avancement", "Erreurs",
             "Durée", "Dernière ligne"]
@@ -165,7 +166,13 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
         where.addRow("QoS (-Q)", qrow)
         where.addRow("Nœuds", self.nodes_row)
         where.addRow("Démarrage", arow)
-        where.addRow("Builds à jour", self.check_builds)
+        # "Nettoyer les builds…" (builds_panel.py): what the next build re-creates
+        self.bclean = QPushButton("Nettoyer les builds…")
+        self.bclean.clicked.connect(self.clean_builds)
+        cbrow = QHBoxLayout()
+        cbrow.addWidget(self.check_builds, 1)
+        cbrow.addWidget(self.bclean)
+        where.addRow("Builds à jour", cbrow)
         where.addRow("Directives", self.directives)
         self.launcher = QLineEdit()
         self.launcher.setPlaceholderText("vide : la commande tourne directement dans le job")
@@ -235,6 +242,7 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(self.form)
+        scroll.setMinimumHeight(150)     # a few options stay in view when the panel itself scrolls
         bdef_reset = QPushButton("Défauts de l'architecture")
         bdef_reset.clicked.connect(self.apply_arch_defaults)
         bdef_save = QPushButton("Enregistrer comme défauts")
@@ -245,6 +253,9 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
         self.extra = QLineEdit()
         self.extra.setPlaceholderText("arguments en plus, tels quels (facultatif)")
         self.extra.textChanged.connect(self.update_preview)
+        self.env = QLineEdit()
+        self.env.setPlaceholderText("environnement : NOM=valeur … (facultatif)")
+        self.env.textChanged.connect(self.env_changed)
         self.preview = QPlainTextEdit()
         self.preview.setReadOnly(True)
         self.preview.setFont(QFont("Monospace", 9))
@@ -258,17 +269,27 @@ class Main(MachinePanel, LaunchForm, RunActions, GitPanel, SummaryTab, ChartTab,
         what.addWidget(scroll, 1)
         what.addLayout(drow)
         what.addWidget(self.extra)
+        what.addWidget(self.env)
         what.addWidget(QLabel("Commande :"))
         what.addWidget(self.preview)
-        what.addWidget(blaunch)
         gp = QGroupBox("Quoi")
         gp.setLayout(what)
 
+        # The two groups scroll together when the window is not tall enough
+        # for them (a laptop screen); "Soumettre" stays below, always in view.
+        panel = QWidget()
+        pl = QVBoxLayout(panel)
+        pl.setContentsMargins(0, 0, 0, 0)
+        pl.addWidget(gw)
+        pl.addWidget(gp, 1)
+        self.left_scroll = VScrollArea()
+        self.left_scroll.setWidget(panel)
+        self.blaunch = blaunch
         left = QWidget()
         ll = QVBoxLayout(left)
         ll.setContentsMargins(0, 0, 0, 0)
-        ll.addWidget(gw)
-        ll.addWidget(gp, 1)
+        ll.addWidget(self.left_scroll, 1)
+        ll.addWidget(blaunch)
 
         # --- runs table + actions
         self.table = QTableWidget(0, len(self.COLS))

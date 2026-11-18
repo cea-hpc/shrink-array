@@ -18,21 +18,21 @@
 #include <cstddef> // std::size_t
 #include <cstdio>  // std::fprintf (teardown_outside_region)
 
-#include "chunk/all_type_chunk.h"           // AllTypeChunk
-#include "chunk/zero_chunk.h"               // the declarations defined here (ChunkPoolParallelInterface)
-#include "chunk/config.h"                   // build_config::threaded, use_fast_alloc
-#include "chunk/internal/chunk_stats.h"     // ChunkStatsThr (CHUNK_STATS only)
-#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (teardown_outside_region)
-#include "chunk/internal/live_arrays.h"     // live_array_count: the teardown waits for the last array
-#include "chunk/internal/process_verbs.h"   // compress_now_and_trim_pools, defined here
-#include "chunk/singleton.h"                // SingletonChk
-#include "chunk/PMP_CHUNK.h"                // CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/internal/type_state_registry.h" // TypeStateRegistry
+#include "chunk/internal/zero_chunk.h"          // the declarations defined here (ChunkPoolParallelInterface)
+#include "chunk/config.h"                       // build_config::threaded, use_fast_alloc
+#include "chunk/internal/chunk_stats.h"         // ChunkStatsThr (CHUNK_STATS only)
+#include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED (teardown_outside_region)
+#include "chunk/internal/live_arrays.h"         // live_array_count: the teardown waits for the last array
+#include "chunk/internal/process_verbs.h"       // compress_now_and_trim_pools, defined here
+#include "chunk/internal/singleton.h"           // SingletonChk
+#include "chunk/internal/pmp_chunk.h"           // CHUNK_PMP_IN_PARALLEL_REGION
 
 namespace shrink_array
 {
 
 #if CHUNK_OPT_STATS
-// Per-variant (zero/zero_one_value/zero_any) x per-thread counter table. Each thread
+// Per-variant (zero/zero_or_value/zero_any) x per-thread counter table. Each thread
 // bumps its own cache-line-aligned slot on the hot path (no atomics); the
 // end-of-run report reduces over threads. See chunk_stats.h.
 std::array<std::array<ChunkStatsThr, CHUNK_STATS_MAX_THR>, chunk_stats_n_variant> g_chunk_stats;
@@ -41,7 +41,7 @@ std::array<std::array<ChunkStatsThr, CHUNK_STATS_MAX_THR>, chunk_stats_n_variant
 // No #ifdef _OPENMP here. The bodies below are members of
 // ChunkPoolParallelInterface (zero_chunk.h), so they are TEMPLATES: a build
 // instantiates only its own specialisation and never compiles the other's. They
-// reach the facade through SingletonChk<AllT>, never SingletonChk<AllTypeChunk>:
+// reach the facade through SingletonChk<AllT>, never SingletonChk<TypeStateRegistry>:
 // the calls must stay dependent, or phase-1 lookup resolves them against the
 // concrete type at definition time and the other model fails to compile.
 
@@ -104,8 +104,8 @@ void ChunkPoolParallelInterface<false, AllT>::release_chunk_pools()
 }
 
 // The one instantiation of the pair: the other thread model's bodies are left
-// uninstantiated rather than #ifdef'd out. Same device as param_chunk.cpp.
-template struct ChunkPoolParallelInterface<build_config::threaded, AllTypeChunk>;
+// uninstantiated rather than #ifdef'd out. Same device as runtime.cpp.
+template struct ChunkPoolParallelInterface<build_config::threaded, TypeStateRegistry>;
 
 // --- Build-agnostic free functions over the policy -----------------------
 // Thin forwarders, defined in EVERY build, so delete_chunk_allocator() and
@@ -213,7 +213,7 @@ std::size_t compress_now_and_trim_pools()
     {
         return 0;
     }
-    const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
+    const auto& ens_type_chunk = SingletonChk<TypeStateRegistry>::get_ref();
     // Every rank's candidates (the threaded builds; outside a region, one region
     // in which each rank sweeps its own list): the pass that ends a phase, which
     // CHUNK_AGGRESSIVE_COMPRESSION skips -- force_chunk_to_compress() alone
@@ -225,27 +225,27 @@ std::size_t compress_now_and_trim_pools()
     // Then the calling rank's sweep, in every build: a serial zero_any queues
     // its candidates too, and folds them in batches of half the list
     // (perform_compression); the last, partial batch waited here for good
-    // (nothing for a serial zero or zero_one_value: their counters compress on
+    // (nothing for a serial zero or zero_or_value: their counters compress on
     // the write).
     ens_type_chunk.force_chunk_to_compress();
     return ens_type_chunk.trim_reuse_pools(0);
 }
 
-void destroy_block_chunk()
+void internal::shutdown_runtime()
 {
-    if (!teardown_outside_region("destroy_block_chunk"))
+    if (!teardown_outside_region("Runtime::shutdown"))
     {
         return;
     }
     // Not part of the thread-model split: destroy_block_chunk() is a verb of
-    // ManagerChunkInt, present in every build, so it stays a plain function.
+    // TypeStateInterface, present in every build, so it stays a plain function.
     if constexpr (build_config::use_fast_alloc)
     {
         if (internal::live_array_count() > 0)
         {
             return; // see release_chunk_pools()
         }
-        const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::get_ref();
+        const auto& ens_type_chunk = SingletonChk<TypeStateRegistry>::get_ref();
         ens_type_chunk.destroy_block_chunk();
     }
 }

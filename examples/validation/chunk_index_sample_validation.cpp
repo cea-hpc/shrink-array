@@ -37,7 +37,7 @@
 #include <vector>      // std::vector
 
 #include "chunk/internal/chunk_index_sample.h" // internal::chunk_index_sample
-#include "chunk/internal/print.h"              // shrink_array::println
+#include "chunk/print.h"                       // shrink_array::println
 
 using shrink_array::println;
 using shrink_array::internal::chunk_index_sample;
@@ -97,11 +97,12 @@ void check_buffer()
     {
         std::array<char, 8> buf{};
         std::array<char, 8> canary{'C', 'C', 'C', 'C', 'C', 'C', 'C', 'C'};
-    } g;
+    };
+    Guarded                g;
     const std::string_view got = chunk_index_sample(g.buf, {123, 456, 789}, 1024);
     check(got.size() == g.buf.size() && got == std::string_view("123@1259", 8), "cut at the buffer's 8 bytes", got);
     bool intact = true;
-    for (char c : g.canary)
+    for (const char c : g.canary)
     {
         intact = intact && c == 'C';
     }

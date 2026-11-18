@@ -24,7 +24,7 @@
  *     zero included (`4 % 2`, `x * 0`): the chunks that become all zero fold
  *     as on any write. Then `shrink_to_fit()`, read again.
  *   - A floating `x /= 0.0` is IEEE (inf), never refused.
- *   - zero_one_value: `set_second_value(T{})` on a fresh array declares nothing (T{}
+ *   - zero_or_value: `set_second_value(T{})` on a fresh array declares nothing (T{}
  *     is already its first constant) and the array reads right.
  *   - Check builds only (build_config::any_check): an integer `/= 0` or
  *     `%= 0` -- undefined behaviour in C++ -- stops the program with an
@@ -37,17 +37,16 @@
 #include <string>      // std::string
 #include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
 #include <type_traits> // std::conditional_t
-#include <unistd.h>    // getpid
 #include <utility>     // std::as_const
 #include <vector>      // the reference
 
-#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
-#include "chunk/zero_array.h"           // zero::Array
-#include "chunk/zero_one_value_array.h" // zero_one_value::Array
-#include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
-#include "chunk/config.h"               // chunk_config::use_zero*, build_config::any_check
-#include "chunk/internal/print.h"       // shrink_array::println
+#include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
+#include "chunk/zero_array.h"            // zero::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
+#include "chunk/zero_any_array.h"        // zero_any::Array
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/config.h"                // chunk_config::use_zero*, build_config::any_check
+#include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
@@ -63,7 +62,7 @@ template <typename T>
 using Arr =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -71,9 +70,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -105,9 +104,9 @@ int report(const char* what, long bad)
 /// `*=`, `/=`, `%=` against a std::vector, results on zero included.
 int integer_ops()
 {
-    const int        count = 50000;
-    Arr<int>         arr(count);
-    std::vector<int> ref(static_cast<std::size_t>(count), 0);
+    const int   count = 50000;
+    Arr<int>    arr(count);
+    std::vector ref(static_cast<std::size_t>(count), 0);
     for (int i = 0; i < count; ++i)
     {
         const int value                  = (i / 1000) % 3 == 0 ? 0 : 4 + (i % 9);
@@ -154,18 +153,18 @@ int float_div_by_zero()
     return report("double /= 0.0 gives +-inf", ok ? 0 : 1);
 }
 
-/// zero_one_value: set_second_value(T{}) on a fresh array declares nothing. A
-/// template, so that the zero_one_value-only calls are discarded on the other variants.
+/// zero_or_value: set_second_value(T{}) on a fresh array declares nothing. A
+/// template, so that the zero_or_value-only calls are discarded on the other variants.
 template <typename A = Arr<double>>
 int second_value_zero()
 {
-    if constexpr (chunk_config::use_zero_one_value && !chunk_config::use_zero_any)
+    if constexpr (chunk_config::use_zero_or_value && !chunk_config::use_zero_any)
     {
-        const int           count = 20000;
-        A                   arr(count);
-        std::vector<double> ref(static_cast<std::size_t>(count), 0.0);
+        const int   count = 20000;
+        A           arr(count);
+        std::vector ref(static_cast<std::size_t>(count), 0.0);
         arr.set_second_value(0.0, /*message=*/false);
-        long bad = arr.get_second_value() != 0.0;
+        long bad = arr.second_value() != 0.0;
         for (int i = 0; i < count; i += 3)
         {
             arr[i]                           = 1.5;
@@ -199,7 +198,7 @@ int run_child(int which)
 int check_stops(const char* self, int which)
 {
     const char*       what = which == 0 ? "int /= 0 stops (check build)" : "int %= 0 stops (check build)";
-    const std::string log  = "/tmp/compound_ops_" + std::to_string(getpid()) + "_" + std::to_string(which) + ".log";
+    const std::string log  = validation::temp_path("compound_ops_" + std::to_string(which) + ".log");
     const std::string cmd =
         validation::self_command(self) + " --child " + std::to_string(which) + " > \"" + log + "\" 2>&1";
     const int   status = std::system(cmd.c_str());
@@ -230,10 +229,10 @@ int run(int argc, char** argv)
 {
     if (argc > 2 && std::string(argv[1]) == "--child")
     {
-        ParamChunk::init_indexes(true);
+        Runtime::init(true);
         return run_child(std::atoi(argv[2]));
     }
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
     println("=== compound_ops_validation [variant = {}] ===", variant_name());
 
     int fails = integer_ops() + float_div_by_zero() + second_value_zero();

@@ -2,7 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 from spack_repo.builtin.build_systems.cmake import CMakePackage
 
-from spack.package import *
+from spack.package import *  # the convention of every Spack recipe
+
+
+def _valid_chunk_size(x):
+    """What the library accepts (is_valid_chunk_size): a power of two or a multiple of 64."""
+    return x.isdigit() and int(x) > 0 and (int(x) % 64 == 0 or int(x) & (int(x) - 1) == 0)
 
 
 class ShrinkArray(CMakePackage):
@@ -13,73 +18,81 @@ class ShrinkArray(CMakePackage):
     threads -- or, with threads=std, from std::threads or TBB.
 
     Installs one library per variant and chunk size, found with
-    find_package(chunk): chunk::chunk_zero_<S>, chunk::chunk_zero_one_value_<S>,
-    chunk::chunk_zero_any_<S> (static S), chunk::chunk_<variant>_dyn (runtime S),
-    chunk::chunk_<variant> (the first static size)."""
+    find_package(shrink_array): shrink_array::zero_<S>, shrink_array::zero_or_value_<S>,
+    shrink_array::zero_any_<S> (static S), shrink_array::<variant>_dyn (runtime S),
+    shrink_array::<variant> (the first static size). Up to 0.2.1 the package is
+    find_package(chunk) and the targets chunk::chunk_<variant>_<S>; the later
+    versions still provide these names, deprecated."""
 
     homepage = "https://github.com/cea-hpc/shrink-array"
     git = "https://github.com/cea-hpc/shrink-array.git"
 
+    maintainers("phil12692")
+
     license("Apache-2.0")
 
-    # The releases (tags, from git: the repository is not public yet), then the
-    # branches: main (the last release and what follows), cpp23 (C++23),
-    # develop (merged into main at each release).
+    # Branches first (Spack's convention): develop (merged into main at each
+    # release), main (the last release and what follows), cpp23 (C++23); then
+    # the releases, newest first (tags, each with its commit).
+    version("develop", branch="develop")
+    version("main", branch="main")
+    version("cpp23", branch="cpp23")
+    version("0.3.0", tag="v0.3.0", commit="7c979b1bf831fee3d452627cd9f3bcf73c181d8f")
     version("0.2.1", tag="v0.2.1", commit="0a524305e7f4e94713c993f14bb83040dc3fc09b")
     version("0.2.0", tag="v0.2.0", commit="061d2fd77e2c78f7417bf9e5ca1755a2f929d317")
     version("0.1.3", tag="v0.1.3", commit="c6ea28ded4ee48e1c9d7807071b5cdeeaa022d53")
     version("0.1.2", tag="v0.1.2", commit="94b6445820db7459a848a921a86d86574115828d")
     version("0.1.1", tag="v0.1.1", commit="23ff5fef32bcd410073b563db01beedb02010ba0")
     version("0.1.0", tag="v0.1.0", commit="b95605bd4255abf4365fae098a41b6bfffad9ca9")
-    version("main", branch="main")
-    version("cpp23", branch="cpp23")
-    version("develop", branch="develop")
 
     variant(
         "threads",
         default="openmp",
         values=("openmp", "std", "serial"),
         multi=False,
-        description="Threading backend of the libraries (CHUNK_THREADS): openmp; std, std::jthread "
-        "workers of the library's own, for programs whose threads are std::threads or TBB; serial",
+        description="Threading backend of the libraries (CHUNK_THREADS): openmp; std, "
+        "std::jthread workers of the library's own, for programs whose threads are "
+        "std::threads or TBB; serial",
     )
     variant(
         "tbb",
         default=False,
-        description="With +examples and threads=std: also the TBB bench and the TBB adaptor's validation "
-        "(CHUNK_WITH_TBB). The libraries never link TBB: a TBB program includes chunk/tbb_adaptor.h "
-        "and links TBB itself",
+        description="With +examples and threads=std: also the TBB bench and the TBB adaptor's "
+        "validation (CHUNK_WITH_TBB). The libraries never link TBB: a TBB program includes "
+        "chunk/tbb_adaptor.h and links TBB itself",
     )
     variant(
         "sizes",
         default="256,1024",
-        # What the library accepts (is_valid_chunk_size): a power of two or a multiple of 64.
-        values=lambda x: x.isdigit() and int(x) > 0 and (int(x) % 64 == 0 or int(x) & (int(x) - 1) == 0),
+        values=_valid_chunk_size,
         multi=True,
-        description="Static chunk sizes, each a power of two or a multiple of 64: one library per variant "
-        "and size (chunk::chunk_zero_any_256, ...); "
-        "the smallest is the one of the bare chunk::chunk_<variant> targets",
+        description="Static chunk sizes, each a power of two or a multiple of 64: one library "
+        "per variant and size (shrink_array::zero_any_256, ...); "
+        "the smallest is the one of the bare shrink_array::<variant> targets",
     )
     variant(
         "dyn",
         default=True,
-        description="Also a runtime-size library per variant (chunk::chunk_<variant>_dyn): adaptive re-chunk",
+        description="Also a runtime-size library per variant (shrink_array::<variant>_dyn): "
+        "adaptive re-chunk",
     )
     variant(
         "fast_alloc",
         default=True,
-        description="The fast_allocators slab allocator for the chunk buffers (off: the standard allocator)",
+        description="The fast_allocators slab allocator for the chunk buffers "
+        "(off: the standard allocator)",
     )
     variant("stats", default=False, description="Collect compression statistics (CHUNK_STATS)")
     variant(
         "second_value_indexed",
         default=False,
-        description="zero_any: second values as 4-byte identifiers (less memory, about +3% write time)",
+        description="zero_any: second values as 4-byte identifiers "
+        "(less memory, about +3% write time)",
     )
     variant(
         "checks",
         default=False,
-        description="Runtime invariant checks in an optimised build (CHECK_OPTIM)",
+        description="Runtime invariant checks in an optimised build (CHUNK_CHECK_OPTIM)",
     )
     variant(
         "examples",
@@ -88,8 +101,18 @@ class ShrinkArray(CMakePackage):
     )
 
     depends_on("cxx", type="build")
+    # C: the reduced models of formal/, built with the tests only.
+    depends_on("c", type="build")
     depends_on("cmake@3.20:", type="build")
     depends_on("tbb", when="+tbb")
+    # shrink_bench compresses its reference data (find_package(BZip2 REQUIRED)).
+    depends_on("bzip2", when="+examples")
+    # The source checks registered as tests (scripts/check_*.py) and the scripts
+    # the validation runs.
+    depends_on("python@3.8:", type="test")
+    # threads=openmp: the OpenMP runtime is the compiler's own (libgomp, libomp,
+    # libiomp5), found by find_package(OpenMP). No package to depend on: a
+    # Clang without libomp fails at configure, with CMake's message.
 
     # Linux only: membarrier, madvise, mincore, /proc.
     requires("platform=linux", msg="shrink-array relies on Linux system calls and /proc")
@@ -110,24 +133,43 @@ class ShrinkArray(CMakePackage):
         sizes = sorted(spec.variants["sizes"].value, key=int)
         threads = spec.variants["threads"].value
         args = [
-            # OMP for every version; CHUNK_THREADS (which sets OMP to match)
-            # only where the std backend exists.
-            self.define("OMP", threads == "openmp"),
+            # CHUNK_OPENMP for every version (see below for the versions up to
+            # 0.2.1); CHUNK_THREADS (which sets it to match) only where the std
+            # backend exists.
+            self.define("CHUNK_OPENMP", threads == "openmp"),
             self.define("CHUNK_STATIC_SIZES", ";".join(sizes)),
             self.define("CHUNK_DEFAULT_SIZE", sizes[0]),
             self.define_from_variant("CHUNK_BUILD_DYN", "dyn"),
             self.define("CHUNK_STD_ALLOC", spec.satisfies("~fast_alloc")),
             self.define_from_variant("CHUNK_STATS", "stats"),
             self.define_from_variant("CHUNK_SECOND_VALUE_INDEXED", "second_value_indexed"),
-            self.define_from_variant("CHECK_OPTIM", "checks"),
+            self.define_from_variant("CHUNK_CHECK_OPTIM", "checks"),
             self.define_from_variant("SHRINK_ARRAY_BUILD_EXAMPLES", "examples"),
             self.define("SHRINK_ARRAY_BUILD_TESTS", self.run_tests),
+            # The target is the spec's: Spack's compiler wrapper passes its
+            # -march=. Without this the project adds -march=native (-mcpu=native,
+            # -tp=host) after it, and the package only runs on the build host's
+            # CPU. Read by the versions after 0.2.1; the earlier ones ignore it
+            # and stay tied to the build host.
+            self.define("CHUNK_NATIVE_TUNING", False),
             # The compiler and standard library Spack chose: no libc++ switch
-            # (the project's default with Clang), no mold, no Intel libm.
-            self.define("USE_LIBCXX", False),
-            self.define("USE_MOLD", "OFF"),
+            # (the project's default with Clang up to 0.2.1), no mold, no Intel
+            # libm.
+            self.define("CHUNK_USE_LIBCXX", False),
+            self.define("CHUNK_USE_MOLD", "OFF"),
             self.define("SHRINK_INTEL_LIBM", False),
         ]
+        # Up to 0.2.1 these four options had no CHUNK_ prefix: those versions
+        # ignore the names above and would take their defaults -- serial
+        # libraries (OMP was OFF), libc++ with Clang (USE_LIBCXX was ON), mold
+        # on AUTO, no checks.
+        if spec.satisfies("@:0.2.1"):
+            args += [
+                self.define("OMP", threads == "openmp"),
+                self.define("USE_LIBCXX", False),
+                self.define("USE_MOLD", "OFF"),
+                self.define_from_variant("CHECK_OPTIM", "checks"),
+            ]
         if threads == "std":
             args.append(self.define("CHUNK_THREADS", "std"))
         if spec.satisfies("+tbb"):

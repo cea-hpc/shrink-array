@@ -15,18 +15,18 @@
  */
 
 // ============================================================================
-// swap() / move-assignment harness. Variant-agnostic: tests zero / zero_one_value /
+// swap() / move-assignment harness. Variant-agnostic: tests zero / zero_or_value /
 // zero_any depending on the compile-time macro (CHUNK_VARIANT_ZERO*), like
 // the other harnesses here.
 // ============================================================================
 //
 // Both operations exchange chunk lists in O(1), and the chunks are described
-// by per-array state kept elsewhere: the proxies' tables indexed by num_tab
+// by per-array state kept elsewhere: the proxies' tables indexed by array_id
 // (constant types, zero_any's per-chunk second value, compression candidates)
-// and the registry mapping the array's address to num_tab (zero_one_value: to its
+// and the registry mapping the array's address to array_id (zero_or_value: to its
 // second-value tuple). Moving the chunks alone would make each array read the
 // other's metadata -- a zero_any chunk folded to its second value coming back
-// as the OTHER array's second value -- and leave the source with nb_chunk over
+// as the OTHER array's second value -- and leave the source with chunk_count over
 // an empty list.
 //
 // Two arrays with different second values, filled by whole chunks (first
@@ -46,16 +46,16 @@
 #include <utility>     // std::as_const, std::move
 #include <vector>      // std::vector
 
-#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
-#include "chunk/zero_array.h"           // zero::Array
-#include "chunk/zero_one_value_array.h" // zero_one_value::Array
-#include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"           // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"               // chunk_config::use_zero*, build_config::has_not_ompt
-#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"          // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/internal/print.h"       // shrink_array::println
+#include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
+#include "chunk/zero_array.h"            // zero::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
+#include "chunk/zero_any_array.h"        // zero_any::Array
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
+#include "chunk/config.h"                // chunk_config::use_zero*, build_config::needs_explicit_phases
+#include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
+#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
@@ -67,14 +67,14 @@ using namespace shrink_array;
 namespace
 {
 
-static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
-              "swap_move_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_ONE_VALUE or _ZERO_ANY");
+static_assert(chunk_config::use_zero || chunk_config::use_zero_or_value || chunk_config::use_zero_any,
+              "swap_move_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_OR_VALUE or _ZERO_ANY");
 
 template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -82,9 +82,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -94,7 +94,7 @@ constexpr const char* variant_name()
 
 void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
@@ -102,7 +102,7 @@ void begin_phase()
 
 void end_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -197,42 +197,42 @@ int check_swap()
     const char*   step = "swap";
     Array<double> first_arr;
     Array<double> second_arr;
-    const long    chunk_sz = static_cast<long>(first_arr.chunk_size());
-    // Different sizes: the per-array tables (indexed by num_tab) have one row
+    const auto    chunk_sz = static_cast<long>(first_arr.chunk_size());
+    // Different sizes: the per-array tables (indexed by array_id) have one row
     // per chunk, so chunks exchanged without their identity would index rows
     // of the wrong length.
     const long count = (30 * chunk_sz) + 11;
-    const long nb    = (47 * chunk_sz) + 5;
+    const long n     = (47 * chunk_sz) + 5;
     first_arr.resize(static_cast<int>(count));
-    second_arr.resize(static_cast<int>(nb));
+    second_arr.resize(static_cast<int>(n));
     const Pattern pa{2.0, 10.0, chunk_sz};
     const Pattern pb{5.0, 500.0, chunk_sz};
     maybe_set_second_value(first_arr, pa.sv);
     maybe_set_second_value(second_arr, pb.sv);
     fill(first_arr, pa, count);
-    fill(second_arr, pb, nb);
+    fill(second_arr, pb, n);
     compress_in_region(first_arr);
     compress_in_region(second_arr);
 
     int bad = verify(step, "a (before)", std::as_const(first_arr), pa, count) +
-              verify(step, "b (before)", std::as_const(second_arr), pb, nb);
+              verify(step, "b (before)", std::as_const(second_arr), pb, n);
 
     first_arr.swap(second_arr);
-    bad += verify(step, "a (swapped)", std::as_const(first_arr), pb, nb) +
+    bad += verify(step, "a (swapped)", std::as_const(first_arr), pb, n) +
            verify(step, "b (swapped)", std::as_const(second_arr), pa, count);
 
     // The exchanged metadata must keep working: a pass, a rewrite, a pass.
     compress_in_region(first_arr);
     compress_in_region(second_arr);
-    bad += verify(step, "a (compressed)", std::as_const(first_arr), pb, nb) +
+    bad += verify(step, "a (compressed)", std::as_const(first_arr), pb, n) +
            verify(step, "b (compressed)", std::as_const(second_arr), pa, count);
     const Pattern pb2{pb.sv, 900.0, chunk_sz};
     const Pattern pa2{pa.sv, 90.0, chunk_sz};
-    fill(first_arr, pb2, nb);
+    fill(first_arr, pb2, n);
     fill(second_arr, pa2, count);
     compress_in_region(first_arr);
     compress_in_region(second_arr);
-    bad += verify(step, "a (rewritten)", std::as_const(first_arr), pb2, nb) +
+    bad += verify(step, "a (rewritten)", std::as_const(first_arr), pb2, n) +
            verify(step, "b (rewritten)", std::as_const(second_arr), pa2, count);
 
     if (!bad)
@@ -248,7 +248,7 @@ int check_move()
     const char*   step = "move";
     Array<double> src;
     Array<double> dst;
-    const long    chunk_sz    = static_cast<long>(src.chunk_size());
+    const auto    chunk_sz    = static_cast<long>(src.chunk_size());
     const long    count       = (25 * chunk_sz) + 3;
     const long    other_count = (12 * chunk_sz) + 5;
     src.resize(static_cast<int>(count));
@@ -297,7 +297,7 @@ int check_move_construct()
 {
     const char*   step = "move-construct";
     Array<double> src;
-    const long    chunk_sz    = static_cast<long>(src.chunk_size());
+    const auto    chunk_sz    = static_cast<long>(src.chunk_size());
     const long    count       = (20 * chunk_sz) + 9;
     const long    other_count = (7 * chunk_sz) + 1;
     src.resize(static_cast<int>(count));
@@ -344,7 +344,7 @@ int check_vector_realloc()
     std::vector<Array<double>> arrays;
     arrays.reserve(1);
     arrays.emplace_back(0);
-    const long    chunk_sz    = static_cast<long>(arrays[0].chunk_size());
+    const auto    chunk_sz    = static_cast<long>(arrays[0].chunk_size());
     const long    count       = (18 * chunk_sz) + 7;
     const long    other_count = (9 * chunk_sz) + 2;
     const Pattern p0{2.0, 20.0, chunk_sz};
@@ -381,7 +381,7 @@ int check_vector_realloc()
 
 int run(int /*argc*/, char** /*argv*/)
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     println("=== swap_move_validation [variant = {}]  threads={} ===", variant_name(), CHUNK_PMP_MAX_THREADS);
 
@@ -392,7 +392,7 @@ int run(int /*argc*/, char** /*argv*/)
     fails += check_vector_realloc();
 
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
 
     println("\n[{}] {}", variant_name(), fails ? "=== SWAP/MOVE FAILED ===" : "=== SWAP/MOVE OK ===");
     return fails ? 1 : 0;

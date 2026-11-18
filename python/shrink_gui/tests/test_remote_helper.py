@@ -4,6 +4,7 @@
 import ast
 import base64
 import json
+import os
 import subprocess
 import tarfile
 import io
@@ -172,6 +173,46 @@ def test_run_sh_is_valid_bash():
     subprocess.run(["bash", "-n"], input=sh.encode(), check=True)
 
 
+def test_env_field_parses_and_refuses():
+    from shrink_gui.runscripts import env_exports, env_words, parse_env
+    env = parse_env('CHUNK_LLVM_ROOT=~/llvm-22  A="b c" EMPTY= N=$HOME/x')
+    assert env == [("CHUNK_LLVM_ROOT", "~/llvm-22"), ("A", "b c"), ("EMPTY", ""), ("N", "$HOME/x")]
+    assert parse_env("") == [] and parse_env(None) == []
+    assert env_words(env) == "CHUNK_LLVM_ROOT='~/llvm-22' A='b c' EMPTY='' N='$HOME/x'"
+    # a leading ~/ is the home of the machine the run is on; nothing else expands
+    assert env_exports(env).splitlines() == ['export CHUNK_LLVM_ROOT="$HOME"/llvm-22', "export A='b c'",
+                                             "export EMPTY=''", "export N='$HOME/x'"]
+    for bad, why in (("FOO", "NOM=valeur"), ("1A=2", "NOM=valeur"), ("=3", "NOM=valeur"), ("A-B=1", "NOM=valeur"),
+                     ('A="b', "illisible"), ("RUN_DIR=/tmp", "réservé"), ("PY=python2", "réservé")):
+        with pytest.raises(ValueError, match=why):
+            parse_env(bad)
+
+
+def test_run_sh_exports_the_env(tmp_path):
+    """The variables reach the command, after site_env.sh (the run's value
+    wins) and before it (site_env.sh may read them); node.sh has them too."""
+    from shrink_gui.runscripts import make_node_sh, parse_env
+    repo = tmp_path / "repo"
+    (repo / "scripts").mkdir(parents=True)
+    (repo / "scripts" / "site_env.sh").write_text('echo "site saw ${SEEN:-nothing}"\nexport WINS=site\n')
+    env = parse_env("SEEN=yes WINS='the run' HOME_DIR=~/x")
+    cmd = 'echo "cmd: $SEEN|$WINS|$HOME_DIR"'
+    for name, sh in (("run.sh", make_run_sh(str(repo), ".", cmd, env=env)),
+                     ("node.sh", make_node_sh(str(repo), ".", cmd, env))):
+        subprocess.run(["bash", "-n"], input=sh.encode(), check=True)
+        run = tmp_path / name.split(".")[0]
+        run.mkdir()
+        (run / name).write_text(sh)
+        out = subprocess.run(["bash", str(run / name)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             universal_newlines=True, env=dict(os.environ, HOME="/home/me")).stdout
+        if name == "node.sh":
+            out = (run / "n1" / "out.log").read_text()
+        assert "site saw yes" in out and "cmd: yes|the run|/home/me/x" in out, out
+        assert "[gui] env: SEEN=yes WINS='the run' HOME_DIR='~/x'" in out
+    plain = make_run_sh(str(repo), ".", cmd)                    # no field, nothing added
+    assert "[gui] env" not in plain and "Environnement" not in plain
+
+
 def test_check_reads_mqinfo(site):
     from shrink_gui import qos
     rows = qos.parse_mqinfo(site.helper("check", "~/shrink-array", BATCH_ARG)["mqinfo"])
@@ -187,7 +228,7 @@ def test_msub_qos_directive(site):
     site.wait(lambda: _status(site, "q1")["status"] == "fini")
 
 
-def _fake_build_rep(site):
+def _fake_build_root(site):
     br = site.home / "br"
     for name, arch, exes in (("omp-llvm", "RHEL_9.4__aarch64", ["shrink_bench_omp_zero_64", "shrink_bench_omp_zero_dyn"]),
                              ("omp-gnu-debug", "RHEL_9.4__aarch64", ["shrink_bench_omp_zero_64"]),
@@ -201,7 +242,7 @@ def _fake_build_rep(site):
 
 
 def test_build_targets(site):
-    _fake_build_rep(site)
+    _fake_build_root(site)
     r = site.helper("build_targets", "~/shrink-array", "~/br", "aarch64")
     if (REPO / "scripts/compile_all.sh").exists():
         assert "omp-llvm" in r["configs"] and not any("$" in c for c in r["configs"])
@@ -435,9 +476,9 @@ def test_errors_failures_and_their_logs(site):
         ("CHECK_FAIL", True, ["run_logs/shrink_bench_omp_zero_any__omp4__00003__ok.log"]),
         ("MEM_GUARD", False, []), ("X", True, [])]
     # the failed executions of the run, for an older bench_runner: never __ok
-    (logs / "shrink_bench_omp_zero_one_value__omp8__00002__timeout.log").write_text("hung\n")
+    (logs / "shrink_bench_omp_zero_or_value__omp8__00002__timeout.log").write_text("hung\n")
     assert site.helper("errors", "~/shrink_runs", "f1", opts)["logs"] == [
-        "run_logs/shrink_bench_omp_zero_one_value__omp8__00002__timeout.log"]
+        "run_logs/shrink_bench_omp_zero_or_value__omp8__00002__timeout.log"]
     f = site.helper("errfile", "~/shrink_runs", "f1", base64.b64encode(json.dumps(
         {"paths": r["cases"][0]["logs"] + ["../../../../etc/passwd"]}).encode()).decode())["files"]
     assert "AddressSanitizer" in f[0]["data"] and f[1].get("missing") and f[1]["data"] == ""
@@ -485,11 +526,11 @@ def test_old_variant_labels_read_as_the_new_ones():
     from shrink_gui.config import exe_parts
     assert [rh.normalize_variant(v) for v in ("chunk", "chunk2", "chunk2a@256", "chunk_int64@dyn",
                                               "tbb_chunk2a", "zero_any", "vector", "std_alloc@1024")] == [
-        "zero", "zero_one_value", "zero_any@256", "zero_int64@dyn", "tbb_zero_any", "zero_any", "vector",
+        "zero", "zero_or_value", "zero_any@256", "zero_int64@dyn", "tbb_zero_any", "zero_any", "vector",
         "std_alloc@1024"]
     assert exe_parts("shrink_bench_chunk2a_dyn") == exe_parts("shrink_bench_zero_any_dyn") == ("zero_any", "dyn")
     assert exe_parts("./shrink_bench_zero_1024") == ("zero", "1024")
-    assert exe_parts("shrink_bench_zero_one_value") == ("zero_one_value", "default")
+    assert exe_parts("shrink_bench_zero_or_value") == ("zero_or_value", "default")
 
 
 def test_exe_names_carry_the_backend():
@@ -499,7 +540,7 @@ def test_exe_names_carry_the_backend():
     from shrink_gui.config import exe_parts
     assert exe_parts("shrink_bench_omp_zero_any_dyn") == ("zero_any", "dyn")
     assert exe_parts("./shrink_bench_std_zero_1024") == ("zero", "1024")
-    assert exe_parts("shrink_bench_serial_zero_one_value_256") == ("zero_one_value", "256")
+    assert exe_parts("shrink_bench_serial_zero_or_value_256") == ("zero_or_value", "256")
     assert exe_parts("shrink_bench_tbb_zero_any_256") == ("zero_any", "256")
     import sys
     sys.path.insert(0, str(REPO / "python"))

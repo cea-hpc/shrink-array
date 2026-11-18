@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # TSan suppressions for oneTBB's partitioners, used by the tbb_validation tests
-# of a SANITIZER=thread build (examples/validation/CMakeLists.txt).
+# of a CHUNK_SANITIZER=thread build (examples/validation/CMakeLists.txt).
 #
 # A parallel_for task is built by one worker -- the root by the caller, each
 # split-off child by the worker that splits (start_for's constructors: its
@@ -43,3 +43,13 @@ race:tbb::detail::d1::is_stolen
 # the small_object_allocator's recycling happens inside libtbb.so, unseen. Not
 # start_for::run, which the caller thread runs the body under.
 race:tbb::detail::d1::start_for*::finalize
+
+# The library's own teams on TBB's threads (tbb_adaptor.h, launch_team_tasks):
+# each worker of a team is a task_arena::enqueue()d task, built by the thread
+# that opens the team (enqueue_task's constructor: the allocator, the copy of
+# the lambda) and run by a TBB worker, which then destroys it (finalize: the
+# allocator read back, the memory handed back for the next task at the same
+# address). The enqueue and the pick-up synchronise inside libtbb.so, unseen.
+# The team itself (the join word, the published job, the barrier) synchronises
+# through the library's atomics, which TSan sees: they stay checked.
+race:tbb::detail::d1::enqueue_task*::enqueue_task

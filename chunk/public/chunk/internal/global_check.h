@@ -29,48 +29,60 @@ namespace shrink_array
 {
 
 /// @brief Report element @p i as NaN (location, backtrace) and abort.
-/// @param i Index of the element.
-inline void global_check_nan(long i) noexcept
+/// @param i        Index of the element.
+/// @param in_array true: @p i is the index in the array; false: only the
+///                 position in its chunk is known (a chunk read, a proxy not
+///                 armed by an array).
+inline void global_check_nan(long i, bool in_array) noexcept
 {
-    CHUNK_INVARIANT_FAILED("element {} of the array is NaN (CHUNK_DO_CHECK)", i);
+    if (in_array)
+    {
+        CHUNK_INVARIANT_FAILED("element {} of the array is NaN (CHUNK_DO_CHECK)", i);
+    }
+    CHUNK_INVARIANT_FAILED("the element at position {} of its chunk is NaN (CHUNK_DO_CHECK; "
+                           "the index in the array is not known here)",
+                           i);
 }
 
 /// @brief Abort when @p val is NaN.
-/// @param val Value to check.
-/// @param i Index of the element, reported on failure.
-inline void global_check_nan(const double& val, long i) noexcept
+/// @param val      Value to check.
+/// @param i        Index of the element, reported on failure.
+/// @param in_array See global_check_nan(long, bool).
+inline void global_check_nan(const double& val, long i, bool in_array) noexcept
 {
     if (std::isnan(val))
     {
-        global_check_nan(i);
+        global_check_nan(i, in_array);
     }
 }
 
 /// @brief Abort when @p val is NaN.
-/// @param val Value to check.
-/// @param i Index of the element, reported on failure.
-inline void global_check_nan(const float& val, long i) noexcept
+/// @param val      Value to check.
+/// @param i        Index of the element, reported on failure.
+/// @param in_array See global_check_nan(long, bool).
+inline void global_check_nan(const float& val, long i, bool in_array) noexcept
 {
     if (std::isnan(val))
     {
-        global_check_nan(i);
+        global_check_nan(i, in_array);
     }
 }
 
 /// @brief Abort when both the real and imaginary parts of @p val are NaN.
-/// @param val Value to check.
-/// @param i Index of the element, reported on failure.
-inline void global_check_nan(const std::complex<double>& val, long i) noexcept
+/// @param val      Value to check.
+/// @param i        Index of the element, reported on failure.
+/// @param in_array See global_check_nan(long, bool).
+inline void global_check_nan(const std::complex<double>& val, long i, bool in_array) noexcept
 {
     if (std::isnan(val.real()) && std::isnan(val.imag()))
     {
-        global_check_nan(i);
+        global_check_nan(i, in_array);
     }
 }
 
 /// @brief Other element types: no check.
 template <typename T>
-void global_check_nan([[maybe_unused]] const T& val, [[maybe_unused]] long i) noexcept
+void global_check_nan([[maybe_unused]] const T& val, [[maybe_unused]] long i, [[maybe_unused]] bool in_array) noexcept
 {
 }
 

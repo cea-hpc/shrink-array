@@ -1,0 +1,168 @@
+/*
+ * Copyright 2024-2026 CEA (www.cea.fr)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#pragma once
+
+// Out-of-line bodies of zero_or_value::FastBlockSupport. Included at the end of zero_or_value_array.h, so self() sees
+// a complete Derived.
+
+#include <algorithm> // std::min (sweep_leftover_candidates)
+#include <tuple>     // std::get on the candidate tuples (sweep of the other second-value keys)
+
+#include "chunk/internal/zero_or_value_array_parallel.h" // zero_or_value::FastBlockSupport, the class these bodies belong to
+#include "chunk/internal/array_chunk_parallel_common_inline.h" // flush_pending_deferred_ops
+#include "chunk/internal/pmp_chunk.h"                          // CHUNK_PMP_* (make_block_compression)
+#include "chunk/internal/chunk_size_policy.h"                  // set_thread_chunk_size in make_block_compression
+#include "chunk/internal/read_reclaim.h"                       // read_reclaim::PassScope (drain_own_candidates)
+#include "chunk/internal/own_candidates.h"                     // with_own_candidates_only (drain_own_candidates)
+#include "chunk/config.h"                                      // build_config::chunk_dynamic
+
+namespace shrink_array
+{
+
+template <typename Derived>
+void zero_or_value::FastBlockSupport<Derived, true>::make_block_compression()
+{
+    if (!block_pass_refused_in_region())
+    {
+        drain_candidates();
+    }
+}
+
+template <typename Derived>
+void zero_or_value::FastBlockSupport<Derived, true>::drain_candidates()
+{
+    if constexpr (build_config::chunk_dynamic)
+    {
+        // The scan reads the active size: make it THIS array's.
+        shrink_array::set_thread_chunk_size(self().chunk_size());
+    }
+
+    // bool has its own pass (the (thr, inf_array, proxy) overload static_asserts for it).
+    // [&], not [this]: `this` is unused in the bool instantiation (-Wunused-lambda-capture).
+    const auto pass_on_rank = [&](int thr)
+    {
+        if constexpr (Derived::is_not_bool)
+        {
+            ChunkType::make_block_compression(thr, self().get_info_second_value(), nullptr);
+        }
+        else
+        {
+            ChunkType::make_block_compression_bool(thr, nullptr);
+        }
+    };
+
+    // Do not open a region here (an `omp parallel` form hits an LLVM OpenMP runtime bug):
+    // outside a region every rank's list is drained serially, inside one each thread its own.
+    if (CHUNK_PMP_IN_PARALLEL_REGION)
+    {
+        drain_own_candidates();
+        return;
+    }
+    for (int thr = 0; thr < CHUNK_PMP_RANK_BOUND; ++thr)
+    {
+        pass_on_rank(thr);
+    }
+    sweep_leftover_candidates(/*own_rank_only=*/false);
+}
+
+template <typename Derived>
+void zero_or_value::FastBlockSupport<Derived, true>::drain_own_candidates()
+{
+    using ProxyT   = Traits::ProxyType;
+    using ManagerT = Traits::ManagerType;
+
+    if constexpr (build_config::chunk_dynamic)
+    {
+        shrink_array::set_thread_chunk_size(self().chunk_size()); // as drain_candidates()
+    }
+
+    // An array resized inside a region by its owning thread (resize()). The pass takes no
+    // writer handshake: this array's candidates only, the thread's list for this second
+    // value holding chunks of arrays other threads are writing. Other threads may be
+    // reading, so the buffers released wait for a grace period (read_reclaim.h).
+    const int  rank     = CHUNK_PMP_THREAD_RANK;
+    const int  array_id = ProxyT::array_registry->get_array_id(self().registry_key());
+    const auto inf      = self().get_info_second_value();
+    auto&      by_value = ManagerT::zero_or_value_candidates_map_thr[rank];
+    if (const auto it = by_value.find(inf.second_value); it != by_value.end() && it->second)
+    {
+        internal::with_own_candidates_only(*it->second, array_id,
+                                           [&]
+                                           {
+                                               const read_reclaim::PassScope pass_scope;
+                                               if constexpr (Derived::is_not_bool)
+                                               {
+                                                   ChunkType::make_block_compression(rank, inf, nullptr);
+                                               }
+                                               else
+                                               {
+                                                   ChunkType::make_block_compression_bool(rank, nullptr);
+                                               }
+                                           });
+    }
+    const read_reclaim::PassScope sweep_scope;
+    sweep_leftover_candidates(/*own_rank_only=*/true);
+}
+
+template <typename Derived>
+void zero_or_value::FastBlockSupport<Derived, true>::sweep_leftover_candidates([[maybe_unused]] bool own_rank_only)
+{
+    // The passes drain this array's CURRENT second-value key only. Writes queued before a
+    // set_second_value() (or a copy-assignment) sit under an EARLIER key; left there,
+    // resize() reallocates chunk_list_ under them (dangling &chunk_list_[j]). Sweep every
+    // key: compress this array's leftovers against the current value, clear their flags,
+    // drop them by array_id (as rechunk_drop_candidates()). Every rank at a sequential
+    // point; the calling thread's only inside a region, where the array is its own.
+    if constexpr (Derived::is_not_bool)
+    {
+        using ProxyT   = Traits::ProxyType;
+        using ManagerT = Traits::ManagerType;
+
+        const int  array_id = ProxyT::array_registry->get_array_id(self().registry_key());
+        const auto inf      = self().get_info_second_value();
+        const int  thr_self = get_thr_rank_fast();
+        const auto n_rank   = static_cast<int>(ManagerT::zero_or_value_candidates_map_thr.size());
+        const int  first    = own_rank_only ? thr_self : 0;
+        const int  last     = own_rank_only ? std::min(thr_self + 1, n_rank) : n_rank;
+        bool       found    = false;
+        for (int thr = first; thr < last; ++thr)
+        {
+            for (const auto& kv : ManagerT::zero_or_value_candidates_map_thr[thr])
+            {
+                if (!kv.second)
+                {
+                    continue;
+                }
+                for (auto& tup : *kv.second)
+                {
+                    if (std::get<2>(tup) == array_id)
+                    {
+                        std::get<0>(tup)->compress(thr_self, inf, /*apply=*/true, std::get<3>(tup).count());
+                        ProxyT::reset_array_inside_list_to_compress(array_id, std::get<1>(tup));
+                        found = true;
+                    }
+                }
+            }
+        }
+        if (found)
+        {
+            ManagerT::remove_from_zero_or_value_candidates_by_array_id(array_id, own_rank_only);
+        }
+    }
+}
+
+} // namespace shrink_array

@@ -28,7 +28,7 @@
 // the phase fails the phase protocol. Each result is compared element by
 // element with a std::vector, before and after a compression pass. The same
 // operations on a small array inside a region run on the calling thread, one
-// thread at a time (array creation is not thread-safe).
+// thread at a time (the copy and assign() are sequential points).
 //
 // Exit 0 = every check holds. Any thread count (the tests run it at 1 and 8).
 // ============================================================================
@@ -39,17 +39,17 @@
 #include <utility>      // std::as_const
 #include <vector>       // std::vector
 
-#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
-#include "chunk/zero_array.h"           // zero::Array
-#include "chunk/zero_one_value_array.h" // zero_one_value::Array
-#include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"           // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"               // chunk_config::use_zero*
-#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"          // parallel_phase
-#include "chunk/internal/env_parse.h"   // shrink_array::arg_number
-#include "chunk/internal/print.h"       // shrink_array::println
+#include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
+#include "chunk/zero_array.h"            // zero::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
+#include "chunk/zero_any_array.h"        // zero_any::Array
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
+#include "chunk/config.h"                // chunk_config::use_zero*
+#include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
+#include "chunk/phases.h"                // parallel_phase
+#include "chunk/internal/env_parse.h"    // shrink_array::arg_number
+#include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
 
@@ -61,14 +61,14 @@ using namespace shrink_array;
 namespace
 {
 
-static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
-              "bulk_write_team_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_ONE_VALUE or _ZERO_ANY");
+static_assert(chunk_config::use_zero || chunk_config::use_zero_or_value || chunk_config::use_zero_any,
+              "bulk_write_team_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_OR_VALUE or _ZERO_ANY");
 
 template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -76,9 +76,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -223,10 +223,12 @@ int run_type(const char* type, long count)
     // Inside a region: each thread its own small array, on the calling thread.
     // One thread at a time (a mutex, not `omp critical`: the region is a team
     // of the build's backend, the std backend's too, where an OpenMP pragma is
-    // ignored): creating, resizing or destroying arrays from several threads
-    // at once is outside the library's contract -- create_common() takes no
-    // lock and the zero_any registry (zero_any::PointerMap) is not thread-safe
-    // (see region_storage_validation).
+    // ignored). Building and destroying arrays from several threads at once
+    // would be allowed -- both take the cold-path lock (cold_path_lock.h), and
+    // region_storage_validation covers the whole team doing it -- but the copy
+    // constructor (copy_from() resizes) and assign() are sequential points:
+    // inside a region, one thread at a time while the others wait
+    // (docs/getting_started.md, section 5).
     int        region_fails = 0;
     std::mutex one_at_a_time;
     parallel_phase(
@@ -264,7 +266,7 @@ int run_type(const char* type, long count)
 
 int run(int argc, char** argv)
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
     const long count = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 20, "N") : (1L << 20);
 
     println("=== bulk_write_team_validation [variant = {}]  threads={} ===", variant_name(), CHUNK_PMP_MAX_THREADS);
@@ -274,7 +276,7 @@ int run(int argc, char** argv)
     fails += run_type<int>("int", count);
 
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
 
     println("\n[{}] {}", variant_name(), fails ? "=== BULK WRITES FAILED ===" : "=== BULK WRITES OK ===");
     return fails ? 1 : 0;

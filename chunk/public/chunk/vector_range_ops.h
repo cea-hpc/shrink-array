@@ -20,7 +20,7 @@
  * @file vector_range_ops.h
  * @brief fill_range / copy_range for plain containers -- std::vector first.
  *
- * @details The generic half of the bulk range API. array_chunk_range_ops.h
+ * @details The generic half of the bulk range API. range_ops.h
  *          adds the overloads for the chunked arrays (one decision per chunk);
  *          this file carries the fallback for anything else, and nothing here
  *          depends on the chunk library. A program built on std::vector -- the
@@ -32,7 +32,7 @@
  *          Kept in the shrink_array namespace on purpose: the point is that
  *          the call site does not change with the container.
  *
- * @see array_chunk_range_ops.h for the chunked overloads and the compression
+ * @see range_ops.h for the chunked overloads and the compression
  *      rationale.
  */
 
@@ -79,7 +79,7 @@ namespace internal
 {
 
 /**
- * @brief Is this one of the chunked arrays (zero, zero_one_value, zero_any)?
+ * @brief Is this one of the chunked arrays (zero, zero_or_value, zero_any)?
  *
  * @details Detected structurally, on chunk_ref()/chunk_size(), rather than by
  *          naming the three class templates: they take a constrained element
@@ -168,7 +168,7 @@ void copy_range(C& container, std::size_t first, std::size_t last, It src_first,
 /**
  * @brief fill_range_mt on a plain container: fill_range, callable from several
  *        threads at once on DISJOINT indices.
- * @details The chunked overload (array_chunk_range_ops.h) runs a per-chunk
+ * @details The chunked overload (range_ops.h) runs a per-chunk
  *          write session; a plain container needs nothing -- disjoint
  *          std::fill ranges do not race. NOT for std::vector<bool>, whose
  *          bit-packed words make neighbouring indices share storage.
@@ -216,7 +216,7 @@ void transform_range_mt(C& container, std::size_t first, std::size_t last, It sr
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Bulk reads, generic half: for_each_value / read_range on any container.
-// array_chunk_range_ops.h adds the chunked overloads (one read section per
+// range_ops.h adds the chunked overloads (one read section per
 // block of elements instead of one per element).
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -249,16 +249,16 @@ template <typename C, typename F>
     requires(!internal::ChunkedArray<C>)
 void for_each_value(const C& container, F&& func)
 {
-    for (auto it = std::begin(container); it != std::end(container); ++it)
+    for (const auto& value : container)
     {
-        func(*it);
+        func(value);
     }
 }
 
 /**
  * @brief Call @p func(std::span<const T>) on [@p first, @p last): a contiguous
  *        container is handed over as one span.
- * @details The chunked overload (array_chunk_range_ops.h) hands over blocks,
+ * @details The chunked overload (range_ops.h) hands over blocks,
  *          and compressed chunks as func(value, count) when func accepts it: code
  *          written for it runs unchanged on a std::vector.
  * @param container source container (std::vector<bool> is not contiguous)

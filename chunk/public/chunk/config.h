@@ -116,7 +116,10 @@ inline constexpr bool strict_element_ref = true;
 inline constexpr bool has_ompt = CHUNK_OPT_OMPT != 0;
 
 // For call-site readability.
-inline constexpr bool has_not_ompt = !has_ompt;
+inline constexpr bool needs_explicit_phases = !has_ompt;
+
+/// @brief Former name of needs_explicit_phases.
+[[deprecated("renamed build_config::needs_explicit_phases")]] inline constexpr bool has_not_ompt = !has_ompt;
 
 /// Every written value checked for NaN (CMake: CHUNK_DO_CHECK).
 inline constexpr bool do_check = CHUNK_OPT_DO_CHECK != 0;
@@ -186,35 +189,42 @@ extern OmptSuspendCounter g_ompt_suspended;
 } // namespace shrink_array
 
 
-// Former names of the variant macros (CHUNK_VARIANT_V1 / _V2 / _V2A), until 1.0:
-// a program that defines an old one gets the new one, and one that tests an old
-// one finds it defined.
-#if defined(CHUNK_VARIANT_V1) && !defined(CHUNK_VARIANT_ZERO)
-    #define CHUNK_VARIANT_ZERO CHUNK_VARIANT_V1
-#endif
-#if defined(CHUNK_VARIANT_V2) && !defined(CHUNK_VARIANT_ZERO_ONE_VALUE)
-    #define CHUNK_VARIANT_ZERO_ONE_VALUE CHUNK_VARIANT_V2
-#endif
-#if defined(CHUNK_VARIANT_V2A) && !defined(CHUNK_VARIANT_ZERO_ANY)
-    #define CHUNK_VARIANT_ZERO_ANY CHUNK_VARIANT_V2A
-#endif
-#if defined(CHUNK_VARIANT_ZERO) && !defined(CHUNK_VARIANT_V1)
-    #define CHUNK_VARIANT_V1 CHUNK_VARIANT_ZERO
-#endif
-#if defined(CHUNK_VARIANT_ZERO_ONE_VALUE) && !defined(CHUNK_VARIANT_V2)
-    #define CHUNK_VARIANT_V2 CHUNK_VARIANT_ZERO_ONE_VALUE
-#endif
-#if defined(CHUNK_VARIANT_ZERO_ANY) && !defined(CHUNK_VARIANT_V2A)
-    #define CHUNK_VARIANT_V2A CHUNK_VARIANT_ZERO_ANY
-#endif
-
 /**
  * @namespace chunk_config
  * @brief Represents the internal logic of the compression engine (The "How").
  */
 namespace shrink_array::chunk_config
 {
-using namespace build_config;
+// chunk_config extends build_config: its names are chunk_config's too
+// (chunk_config::chunk_dynamic, chunk_config::has_ompt, ...), one declaration
+// each rather than a using-directive -- a name added to build_config is not
+// part of chunk_config until it is listed here.
+using build_config::align_check;
+using build_config::alloc_affinity_min_bytes;
+using build_config::any_check;
+using build_config::check_optim;
+using build_config::chunk_dynamic;
+using build_config::deferred_drain_threshold;
+using build_config::deferred_pool_granularity;
+using build_config::dirty_word_align;
+using build_config::do_check;
+using build_config::force_defer_every;
+using build_config::free_guard;
+using build_config::has_ompt;
+using build_config::is_debug;
+using build_config::needs_explicit_phases;
+using build_config::not_threaded;
+using build_config::not_use_openmp;
+using build_config::pool_no_reuse;
+using build_config::rechunk_ledger_trace;
+using build_config::second_value_indexed;
+using build_config::strict_element_ref;
+using build_config::threaded;
+using build_config::use_fast_alloc;
+using build_config::use_mm_protect;
+using build_config::use_openmp;
+using build_config::use_std_alloc;
+using build_config::verbose;
 
 // --- Array Type Selection ---
 // Per library, from its CMake target (PUBLIC definitions): what a program
@@ -226,12 +236,20 @@ inline constexpr bool use_zero = true;
 inline constexpr bool use_zero = false;
 #endif
 
-/// True with CHUNK_VARIANT_ZERO_ONE_VALUE: zero_one_value::Array is the selected array type.
-#ifdef CHUNK_VARIANT_ZERO_ONE_VALUE
-inline constexpr bool use_zero_one_value = true;
-#else
-inline constexpr bool use_zero_one_value = false;
+// The macro's former name (0.2), for a program that selects the variant itself.
+#if defined(CHUNK_VARIANT_ZERO_ONE_VALUE) && !defined(CHUNK_VARIANT_ZERO_OR_VALUE)
+    #define CHUNK_VARIANT_ZERO_OR_VALUE CHUNK_VARIANT_ZERO_ONE_VALUE
 #endif
+
+/// True with CHUNK_VARIANT_ZERO_OR_VALUE: zero_or_value::Array is the selected array type.
+#ifdef CHUNK_VARIANT_ZERO_OR_VALUE
+inline constexpr bool use_zero_or_value = true;
+#else
+inline constexpr bool use_zero_or_value = false;
+#endif
+
+/// @brief Former name of use_zero_or_value.
+[[deprecated("renamed chunk_config::use_zero_or_value")]] inline constexpr bool use_zero_one_value = use_zero_or_value;
 
 /// True with CHUNK_VARIANT_ZERO_ANY: zero_any::Array is the selected array type.
 #ifdef CHUNK_VARIANT_ZERO_ANY
@@ -241,23 +259,16 @@ inline constexpr bool use_zero_any = false;
 #endif
 
 inline constexpr bool is_shrink_enabled =
-    use_zero || use_zero_one_value || use_zero_any; ///< A chunked variant is selected.
-inline constexpr bool use_second_value =
-    use_zero_one_value || use_zero_any; ///< zero_one_value or zero_any is selected.
-
-// Former names, until 1.0.
-[[deprecated("use use_zero")]] inline constexpr bool           use_chunk      = use_zero;
-[[deprecated("use use_zero_one_value")]] inline constexpr bool use_chunk2     = use_zero_one_value;
-[[deprecated("use use_zero_any")]] inline constexpr bool       use_chunk2a    = use_zero_any;
-[[deprecated("use use_second_value")]] inline constexpr bool   use_chunk2or2a = use_second_value;
+    use_zero || use_zero_or_value || use_zero_any;                          ///< A chunked variant is selected.
+inline constexpr bool use_second_value = use_zero_or_value || use_zero_any; ///< zero_or_value or zero_any is selected.
 
 /**
- * @brief zero_one_value's second-value index for an array that has declared none.
+ * @brief zero_or_value's second-value index for an array that has declared none.
  *
- * @details A zero_one_value::Array registers (T{}, this index) at construction and
+ * @details A zero_or_value::Array registers (T{}, this index) at construction and
  *          keeps it until set_second_value(). Every consumer of the index
- *          answers "no second constant" for it: get_cst_val2() is nullptr,
- *          is_cst_val2() false, written() reduces to "not cst_val1", and the
+ *          answers "no second constant" for it: get_const_val2() is nullptr,
+ *          is_const_val2() false, written() reduces to "not const_val1", and the
  *          compression pass compresses only the runs of first_value.
  */
 inline constexpr int no_second_value_index = -1;
@@ -328,7 +339,7 @@ inline constexpr bool use_chunk_steal_mark = build_config::threaded;
     #define CHUNK_TUNING_LEVEL 3 // default: level 3
 #endif
 
-/// CHUNK_TUNING_LEVEL (1, 2 or 3, default 3) as a constexpr; selects zero_one_value::ChunkDef's thresholds.
+/// CHUNK_TUNING_LEVEL (1, 2 or 3, default 3) as a constexpr; selects zero_or_value::ChunkDef's thresholds.
 inline constexpr int tuning_level = CHUNK_TUNING_LEVEL;
 // Debug ring log: two independent switches (CMake options).
 //   CHUNK_RING_LOG_DEBUG -> ALL events, hot path included. Heavy: can mask timing bugs.
@@ -417,7 +428,7 @@ inline constexpr bool read_dep_order = false;
  *          feedback loop, an order of magnitude slower. Symmetric only on non-Linux (the
  *          syscall) and under ThreadSanitizer (which does not model membarrier). An
  *          asymmetric build falls back to symmetric AT RUN TIME if membarrier registration
- *          fails (kernel < 4.14, seccomp); ParamChunk::chunk_stats() says which one ran.
+ *          fails (kernel < 4.14, seccomp); Runtime::chunk_stats() says which one ran.
  */
 #if defined(__linux__) && !defined(CHUNK_TSAN_BUILD)
 inline constexpr bool asymmetric_dekker = true;
@@ -477,6 +488,7 @@ struct OMPTcc<true>
         while (cur > 0 &&
                !::shrink_array::g_ompt_suspended.compare_exchange_weak(cur, cur - 1, std::memory_order_relaxed))
         {
+            // a failed compare_exchange_weak reloaded cur: retry
         }
     }
 };
@@ -489,7 +501,10 @@ struct CheckNaN
     /// @brief No switch to move.
     static void update([[maybe_unused]] bool state) noexcept {}
     /// @brief No check.
-    static void maybe([[maybe_unused]] auto val, [[maybe_unused]] long index) noexcept {}
+    static void
+    maybe([[maybe_unused]] auto val, [[maybe_unused]] long index, [[maybe_unused]] bool in_array = true) noexcept
+    {
+    }
 };
 
 } // namespace shrink_array::chunk_config
@@ -503,12 +518,12 @@ namespace shrink_array
 // definition below must already see them, whichever header a TU includes first.
 // (global_check.h cannot simply be included here: it includes invariant_check.h,
 // which includes this file.)
-inline void global_check_nan(long i) noexcept;
-inline void global_check_nan(const double& val, long i) noexcept;
-inline void global_check_nan(const float& val, long i) noexcept;
-inline void global_check_nan(const std::complex<double>& val, long i) noexcept;
+inline void global_check_nan(long i, bool in_array) noexcept;
+inline void global_check_nan(const double& val, long i, bool in_array) noexcept;
+inline void global_check_nan(const float& val, long i, bool in_array) noexcept;
+inline void global_check_nan(const std::complex<double>& val, long i, bool in_array) noexcept;
 template <typename T>
-void global_check_nan(const T& val, long i) noexcept;
+void global_check_nan(const T& val, long i, bool in_array) noexcept;
 } // namespace shrink_array
 #endif
 
@@ -527,12 +542,14 @@ class CheckNaN<true>
     {
         check_nan = state;
     }
-    /// @brief global_check_nan(@p val, @p index) if the switch is on.
-    static void maybe(auto val, long index) noexcept
+    /// @brief global_check_nan(@p val, @p index, @p in_array) if the switch is on.
+    /// @param in_array true: @p index is the index in the array; false: the
+    ///                 position in the chunk (the array index is not known).
+    static void maybe(auto val, long index, bool in_array = true) noexcept
     {
         if (check_nan)
         {
-            global_check_nan(val, index);
+            global_check_nan(val, index, in_array);
         }
     }
 

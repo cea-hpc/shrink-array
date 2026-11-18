@@ -69,26 +69,26 @@
 
 #include <complex>     // std::complex<double>
 #include <cstddef>     // std::size_t
-#include <memory>      // std::unique_ptr (the reference arrays)
+#include <memory>      // std::unique_ptr, std::make_unique (the reference arrays)
 #include <sstream>     // std::ostringstream (os << a[i])
 #include <string>      // std::string
 #include <type_traits> // std::conditional_t, std::is_same_v, std::is_integral_v
 #include <utility>     // std::forward, std::as_const
 
-#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
-#include "chunk/zero_array.h"           // zero::Array
-#include "chunk/zero_one_value_array.h" // zero_one_value::Array
-#include "chunk/zero_any_array.h"       // zero_any::Array
+#include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
+#include "chunk/zero_array.h"            // zero::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
+#include "chunk/zero_any_array.h"        // zero_any::Array
 #if defined(OPERATORS_VALIDATION_PATTERN)
     #include "chunk/pattern_array.h" // pattern::Array
 #endif
-#include "chunk/config.h"      // chunk_config::use_zero*, build_config::use_openmp, has_not_ompt
-#include "chunk/manage_ompt.h" // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/param_chunk.h" // ParamChunk::init_indexes
-#include "chunk/type_name.h"   // type_name<T>()
-#include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment, IsCleanShiftOp
-#include "chunk/internal/print.h"                        // shrink_array::println
-#include "chunk/internal/test_hooks.h"                   // force_defer_every, force_defer_compiled
+#include "chunk/config.h"             // chunk_config::use_zero*, build_config::use_openmp, needs_explicit_phases
+#include "chunk/phases.h"             // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/runtime.h"            // Runtime::init
+#include "chunk/internal/type_name.h" // type_name<T>()
+#include "chunk/internal/concept_is_clean_assignment.h" // IsCleanAssignment, IsCleanShiftOp
+#include "chunk/print.h"                                // shrink_array::println
+#include "chunk/internal/test_hooks.h"                  // force_defer_every, force_defer_compiled
 
 namespace validation::operators_validation
 {
@@ -104,7 +104,7 @@ template <typename T>
 using Arr =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 constexpr bool pattern_build = false;
 #endif
 
@@ -118,9 +118,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -134,7 +134,7 @@ inline std::string only_type; ///< --type NAME: that element type alone (type_na
 
 inline void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
@@ -142,7 +142,7 @@ inline void begin_phase()
 
 inline void end_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -194,7 +194,7 @@ template <typename T>
 T start_value(long i, long chunk_sz)
 {
     const long j    = i % chunk_sz;
-    const auto base = static_cast<long>((j * 7) % 23) - 11;
+    const auto base = ((j * 7) % 23) - 11;
     switch (i / chunk_sz)
     {
         case 0:
@@ -240,7 +240,7 @@ struct Pair
     std::unique_ptr<T[]> ref;
     long                 count;
 
-    explicit Pair(long n) : arr(n), ref(new T[static_cast<std::size_t>(n)]()), count(n) {}
+    explicit Pair(long n) : arr(n), ref(std::make_unique<T[]>(static_cast<std::size_t>(n))), count(n) {}
 };
 
 /// @brief Write @p value_at into both sides of @p pair, then one compression
@@ -292,8 +292,8 @@ long compare(const Pair<T>& pair, const std::string& what)
     long bad = 0;
     for (long i = 0; i < pair.count; ++i)
     {
-        const T got  = static_cast<T>(std::as_const(pair.arr)[i]);
-        const T want = pair.ref[static_cast<std::size_t>(i)];
+        const auto got  = static_cast<T>(std::as_const(pair.arr)[i]);
+        const T    want = pair.ref[static_cast<std::size_t>(i)];
         if (!(got == want))
         {
             if (bad < 4)
@@ -312,7 +312,7 @@ long compare(const Pair<T>& pair, const std::string& what)
 template <typename T>
 long check(Pair<T>& pair, const std::string& what)
 {
-    long bad = compare(pair, what);
+    const long bad = compare(pair, what);
 #pragma omp parallel
     {
         begin_phase();
@@ -462,7 +462,7 @@ struct Run
 };
 
 /// @brief The compound assignments an array of bool refuses at compile time
-///        (ElementArithmetic, concept_is_clean_assignement.h), where a plain
+///        (ElementArithmetic, concept_is_clean_assignment.h), where a plain
 ///        bool takes them: arithmetic on a truth value. Not run; the
 ///        static_asserts of refuses_bool_arithmetic() check the refusal.
 template <typename Op>
@@ -499,7 +499,7 @@ void refuses_bool_arithmetic()
 }
 
 /// @brief Does the library take a C operand of `T OP=` as a plain T does?
-/// @details The clean operands (concept_is_clean_assignement.h): the same
+/// @details The clean operands (concept_is_clean_assignment.h): the same
 ///          type, an integer into a floating or complex T, int into a small
 ///          integer, any integer as a shift or a bitwise operand. The others
 ///          compile with an HPC warning ([[deprecated]]) and convert the
@@ -536,9 +536,9 @@ void compound_scalar(Run& run, const char* operand_name, C operand)
                 return;
             }
         }
-        Pair<T>              pair(run.count);
-        std::unique_ptr<T[]> got(new T[static_cast<std::size_t>(run.count)]());
-        std::unique_ptr<T[]> want(new T[static_cast<std::size_t>(run.count)]());
+        Pair<T>                    pair(run.count);
+        const std::unique_ptr<T[]> got(new T[static_cast<std::size_t>(run.count)]());
+        const std::unique_ptr<T[]> want(new T[static_cast<std::size_t>(run.count)]());
         fill(pair, run.chunk_sz, &start_value<T>);
 #pragma omp parallel
         {
@@ -622,9 +622,9 @@ void inc_dec(Run& run)
 {
     if constexpr (Op::template valid<T>)
     {
-        Pair<T>              pair(run.count);
-        std::unique_ptr<T[]> got(new T[static_cast<std::size_t>(run.count)]());
-        std::unique_ptr<T[]> want(new T[static_cast<std::size_t>(run.count)]());
+        Pair<T>                    pair(run.count);
+        const std::unique_ptr<T[]> got(new T[static_cast<std::size_t>(run.count)]());
+        const std::unique_ptr<T[]> want(new T[static_cast<std::size_t>(run.count)]());
         fill(pair, run.chunk_sz, &start_value<T>);
 #pragma omp parallel
         {
@@ -774,7 +774,10 @@ void reads(Run& run)
     long bad = 0;
     for (const T c : {T{}, second_value<T>(), value_of<T>(1)})
     {
-        long got_eq = 0, want_eq = 0, got_ne = 0, want_ne = 0;
+        long got_eq  = 0;
+        long want_eq = 0;
+        long got_ne  = 0;
+        long want_ne = 0;
         for (long i = 0; i < run.count; ++i)
         {
             const T& x = pair.ref[static_cast<std::size_t>(i)];
@@ -785,8 +788,11 @@ void reads(Run& run)
         }
         bad += (got_eq != want_eq) + (got_ne != want_ne);
     }
-    long got_elem = 0, want_elem = 0, got_true = 0, want_true = 0;
-    long got_conv = 0;
+    long got_elem  = 0;
+    long want_elem = 0;
+    long got_true  = 0;
+    long want_true = 0;
+    long got_conv  = 0;
     for (long i = 0; i < run.count; ++i)
     {
         const T& x = pair.ref[static_cast<std::size_t>(i)];

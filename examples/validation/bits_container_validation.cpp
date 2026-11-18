@@ -15,7 +15,7 @@
  */
 
 // ============================================================================
-// ArrayChunkBits (bools packed 8 per byte) against std::vector<bool>.
+// BitArray (bools packed 8 per byte) against std::vector<bool>.
 // ============================================================================
 //
 //   1. round trip: materialise, write runs of all-false / all-true / mixed
@@ -34,7 +34,7 @@
 //      S/8 bytes per materialised chunk) and the finer row S/2, whose
 //      sub-blocks it classifies word by word -- chunks half all-true, half
 //      mixed must read as one compressible half each. Also an
-//      zero_one_value::Array<bool> (it did not compile: no second-value index for bool);
+//      zero_or_value::Array<bool> (it did not compile: no second-value index for bool);
 //   7. re-chunk (dyn builds): down and up, contents against the reference;
 //   8. fill_range / copy_range (bits stored 64 per word): random spans --
 //      whole chunks, partial edges, across chunk boundaries -- over constant
@@ -47,10 +47,10 @@
 //      (they keep the span's values in a per-thread buffer: it did not
 //      compile for bits, std::vector<bool> having no data());
 //  10. birth size (dyn builds): born at packed_bit_birth_factor times the
-//      active size (capped at cst_buffer_size), which it leaves unchanged --
+//      active size (capped at const_buffer_size), which it leaves unchanged --
 //      an array of another type created next is born at it.
 //
-// zero_one_value builds only (ArrayChunkBits is zero_one_value::Array<Bit>). Exit 0 = pass.
+// zero_or_value builds only (BitArray is zero_or_value::Array<Bit>). Exit 0 = pass.
 
 #include <algorithm> // std::min
 #include <cstdint>   // std::uint64_t, std::uint32_t, std::uint8_t (the copy source)
@@ -59,17 +59,17 @@
 #include <utility>   // std::pair
 #include <vector>    // std::vector
 
-#include "chunk/chunk_traits.h"          // forward decls + default IntType = int (zero_one_value::Array<bool>)
-#include "chunk/array_chunk_bits.h"      // ArrayChunkBits, Bit (and zero_one_value::Array with them)
+#include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int (zero_or_value::Array<bool>)
+#include "chunk/bit_array.h"             // BitArray, Bit (and zero_or_value::Array with them)
 #include "chunk/chunk_size_advisor.h"    // ChunkSizeAdvisor
-#include "chunk/array_chunk_range_ops.h" // fill_range, copy_range, and their _mt forms
-#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"            // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"                // build_config::chunk_dynamic, build_config::has_not_ompt
-#include "chunk/PMP_CHUNK.h"             // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/range_ops.h"             // fill_range, copy_range, and their _mt forms
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
+#include "chunk/config.h"                // build_config::chunk_dynamic, build_config::needs_explicit_phases
+#include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
+#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h"    // arg_number (checked, not atoi)
-#include "chunk/internal/print.h"        // shrink_array::println
+#include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
@@ -83,14 +83,14 @@ namespace
 
 void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
 }
 void end_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -105,7 +105,7 @@ bool varied(long index)
     return (index % 3) == 0 || (index % 7) == 2;
 }
 
-long compare(const ArrayChunkBits<>& arr, const std::vector<bool>& ref, const char* step)
+long compare(const BitArray<>& arr, const std::vector<bool>& ref, const char* step)
 {
     long bad   = 0;
     long first = -1;
@@ -131,7 +131,7 @@ long compare(const ArrayChunkBits<>& arr, const std::vector<bool>& ref, const ch
 
 int round_trip(long count)
 {
-    ArrayChunkBits<>  arr(count);
+    BitArray<>        arr(count);
     std::vector<bool> ref(static_cast<std::size_t>(count), false);
     int               fails = 0;
 
@@ -172,8 +172,7 @@ int round_trip(long count)
     end_phase();
     for (long i = 0; i < count; ++i)
     {
-        const long run = (i / run_len) % 3;
-        if (run != 2)
+        if (const long run = (i / run_len) % 3; run != 2)
         {
             ref[static_cast<std::size_t>(i)] = (run == 1);
         }
@@ -193,8 +192,8 @@ int round_trip(long count)
     // chunks, so the share of written chunks is that of the mixed runs.
     const double written = arr.stats_seq();
     const long   n_runs  = count / run_len;
-    const double expect  = 100.0 * static_cast<double>(n_runs / 3) / static_cast<double>(n_runs);
-    if (written > expect + 1.0 || written < expect - 1.0)
+    if (const double expect = 100.0 * static_cast<double>(n_runs / 3) / static_cast<double>(n_runs);
+        written > expect + 1.0 || written < expect - 1.0)
     {
         println("[bits] FAIL compression: {:.1f}% of the chunks written, expected ~{:.1f}%", written, expect);
         ++fails;
@@ -228,8 +227,8 @@ int round_trip(long count)
 
 int neighbours(long count)
 {
-    ArrayChunkBits<> arr(count);
-    int              fails = 0;
+    BitArray<> arr(count);
+    int        fails = 0;
     // Two passes, set then clear half: each word written by every thread in both.
 #pragma omp parallel
     {
@@ -275,11 +274,11 @@ int birth_size()
     {
         return 0;
     }
-    const unsigned int          active = active_chunk_size();
-    const unsigned int          expect = std::min(active * packed_bit_birth_factor, cst_buffer_size);
-    ArrayChunkBits<>            arr(1L << 16);
-    zero_one_value::Array<bool> bools(1L << 16);
-    int                         fails = 0;
+    const unsigned int         active = active_chunk_size();
+    const unsigned int         expect = std::min(active * packed_bit_birth_factor, const_buffer_size);
+    BitArray<>                 arr(1L << 16);
+    zero_or_value::Array<bool> bools(1L << 16);
+    int                        fails = 0;
     if (arr.chunk_size() != expect || active_chunk_size() != active || bools.chunk_size() != active)
     {
         println("[bits] FAIL birth size: bits {} (expected {}), then active {} and bool {} (expected {})",
@@ -297,12 +296,12 @@ int birth_size()
 
 int surface()
 {
-    ArrayChunkBits<> arr(1000);
-    int              fails = 0;
-    arr[3]                 = true;
-    const bool b3          = arr[3];
-    const bool b4          = arr[4];
-    arr[4]                 = !b4;
+    BitArray<> arr(1000);
+    int        fails = 0;
+    arr[3]           = true;
+    const bool b3    = arr[3];
+    const bool b4    = arr[4];
+    arr[4]           = !b4;
     fails += !(b3 && !b4 && arr[4] == true && arr[3] == b3 && arr[5] == false);
     if (fails)
     {
@@ -314,7 +313,7 @@ int surface()
 
 int logical_ops(long count)
 {
-    ArrayChunkBits<>  arr(count);
+    BitArray<>        arr(count);
     std::vector<bool> ref(static_cast<std::size_t>(count), false);
     const auto        opnd  = [](long i, int k) { return (((i * 7) + (k * 3)) % 5) < 2; };
     int               fails = 0;
@@ -370,7 +369,7 @@ int logical_ops(long count)
     }
 
     // A proxy of the same container as the operand.
-    ArrayChunkBits<> small(8);
+    BitArray<> small(8);
     small[0] = true;
     arr[0]   = false;
     arr[0] |= small[0];
@@ -389,20 +388,19 @@ int logical_ops(long count)
 
 int advisor_and_rechunk(long count)
 {
-    ArrayChunkBits<> arr(count);
-    int              fails = 0;
+    BitArray<> arr(count);
+    int        fails = 0;
     if constexpr (build_config::chunk_dynamic)
     {
         arr.rechunk_to(256); // room for a finer row (the advisor stops at 64)
     }
-    const long chunk_sz = static_cast<long>(arr.chunk_size());
+    const auto chunk_sz = static_cast<long>(arr.chunk_size());
 
     // Runs of whole chunks: all false, all true, and chunks whose first half
     // is all true and second half mixed.
     const auto pattern = [chunk_sz](long i)
     {
-        const long run = (i / run_len) % 3;
-        if (run != 2)
+        if (const long run = (i / run_len) % 3; run != 2)
         {
             return run == 1;
         }
@@ -447,9 +445,9 @@ int advisor_and_rechunk(long count)
         println("[bits] FAIL advisor: no row for the current size {}", chunk_sz);
         return fails + 1;
     }
-    const auto&  cur        = rep.table[static_cast<std::size_t>(rep.cur)];
-    const double data_bytes = cur.mem_bytes - (static_cast<double>(cur.n_chunks) * rep.meta_bytes);
-    if (cur.mat != mat_expected || data_bytes != static_cast<double>(mat_expected) * static_cast<double>(chunk_sz) / 8.)
+    const auto& cur = rep.table[static_cast<std::size_t>(rep.cur)];
+    if (const double data_bytes = cur.mem_bytes - (static_cast<double>(cur.n_chunks) * rep.meta_bytes);
+        cur.mat != mat_expected || data_bytes != static_cast<double>(mat_expected) * static_cast<double>(chunk_sz) / 8.)
     {
         println("[bits] FAIL advisor exact row: mat {} (expected {}), data {:.0f} B (expected {:.0f})",
                 static_cast<long long>(cur.mat), mat_expected, data_bytes,
@@ -481,7 +479,7 @@ int advisor_and_rechunk(long count)
 
     // bool (one byte per element): the advisor analyses it too.
     {
-        zero_one_value::Array<bool> bools(count);
+        zero_or_value::Array<bool> bools(count);
         for (long i = 0; i < count; ++i)
         {
             bools[i] = pattern(i);
@@ -519,9 +517,9 @@ int advisor_and_rechunk(long count)
 
 int bulk_ranges(long count)
 {
-    ArrayChunkBits<>  arr(count);
+    BitArray<>        arr(count);
     std::vector<bool> ref(static_cast<std::size_t>(count), false);
-    const long        chunk_sz = static_cast<long>(arr.chunk_size());
+    const auto        chunk_sz = static_cast<long>(arr.chunk_size());
     int               fails    = 0;
 
     // A start with constant and mixed chunks.
@@ -541,7 +539,7 @@ int bulk_ranges(long count)
 
     for (int round = 0; round < 400; ++round)
     {
-        long first = static_cast<long>(rng() % static_cast<std::uint64_t>(count));
+        auto first = static_cast<long>(rng() % static_cast<std::uint64_t>(count));
         long len   = static_cast<long>(rng() % static_cast<std::uint64_t>(4 * chunk_sz)) + 1;
         if (round % 5 == 0) // whole chunks
         {
@@ -612,7 +610,7 @@ int bulk_ranges(long count)
 
 int parallel_fill(long count)
 {
-    ArrayChunkBits<>  arr(count);
+    BitArray<>        arr(count);
     std::vector<bool> ref(static_cast<std::size_t>(count), false);
     int               fails = 0;
 
@@ -657,7 +655,7 @@ int parallel_fill(long count)
 
 int parallel_copy_transform(long count)
 {
-    ArrayChunkBits<>  arr(count);
+    BitArray<>        arr(count);
     std::vector<bool> ref(static_cast<std::size_t>(count), false);
     int               fails = 0;
 
@@ -722,7 +720,7 @@ int run(int argc, char** argv)
     // 85 runs: whole runs and whole chunks at every size the harness is built at.
     constexpr long default_n = 85 * run_len;
     const long     count     = argc > 1 ? shrink_array::arg_number<long>(argv[1], default_n, "N") : default_n;
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     println("=== bits_container_validation  N={}  threads={} ===", count, CHUNK_PMP_MAX_THREADS);
     int fails = 0;
@@ -737,7 +735,7 @@ int run(int argc, char** argv)
     fails += parallel_copy_transform(count);
 
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
 
     println("[bits] {}", fails == 0 ? "=== ALL CHECKS PASSED ===" : "=== FAILURES ===");
     return fails;

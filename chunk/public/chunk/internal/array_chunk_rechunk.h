@@ -40,7 +40,7 @@
  */
 
 #include "chunk/config.h"                   // build_config::chunk_dynamic
-#include "chunk/chunk_traits.h"             // ArrayChunkTraits
+#include "chunk/internal/chunk_traits.h"    // ArrayChunkTraits
 #include "chunk/internal/in_t.h"            // InT<T>: the captured state
 #include "chunk/internal/array_chunk_for.h" // ArrayKey, ArrayChunkCore -- rechunk_all_to's registry keys
 
@@ -50,7 +50,7 @@ namespace shrink_array
 /**
  * @brief Re-chunking support, present only when the geometry is a runtime value.
  *
- * @tparam Derived the concrete array type (zero::Array, zero_one_value::Array, zero_any::Array).
+ * @tparam Derived the concrete array type (zero::Array, zero_or_value::Array, zero_any::Array).
  * @tparam Dynamic defaulted to build_config::chunk_dynamic; never pass it
  *         explicitly outside of tests.
  */
@@ -105,7 +105,7 @@ class RechunkSupport<Derived, true> : public RechunkHookDefaults<Derived>
   public:
     using Traits    = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
     using T         = Traits::value_type;        ///< Stored element type.
-    using IndType   = Traits::IndexType;         ///< Signed global index type.
+    using IndexType = Traits::IndexType;         ///< Signed global index type.
     using ChunkType = Traits::ChunkType;         ///< Chunk type held in the array's chunk_list_.
     using ProxyType = Traits::ProxyType;         ///< Proxy type owning the per-type array registry.
 
@@ -114,7 +114,7 @@ class RechunkSupport<Derived, true> : public RechunkHookDefaults<Derived>
     /**
      * @brief Re-chunk this array to a new geometry S' (sequential, quiescent point).
      *
-     * @details Shared by zero::Array / zero_one_value::Array / zero_any::Array via CRTP; the
+     * @details Shared by zero::Array / zero_or_value::Array / zero_any::Array via CRTP; the
      *          per-variant differences live in the rechunk_* hooks. The delicate
      *          invariants are documented once, in the body.
      *
@@ -122,20 +122,20 @@ class RechunkSupport<Derived, true> : public RechunkHookDefaults<Derived>
      *          then SWAP storage + identity with *this. Do not resize in place: the
      *          library assumes geometry is immutable after construction (frozen
      *          size, cached proxy pointers, deferred-compression state). After the
-     *          swap *this carries the S' storage under tmp's num_tab, and tmp
+     *          swap *this carries the S' storage under tmp's array_id, and tmp
      *          destroys the old identity+geometry on scope exit.
      *
      *          Hooks (see each zero::Array*):
      *          - rechunk_drop_candidates() — remove this array's queued
-     *            compression candidates by num_tab
+     *            compression candidates by array_id
      *          - rechunk_drain_reuse_list(new_size) — drain the S' reuse free-list
      *            (its buffers were sized for an older geometry)
      *          - rechunk_capture_state() -> T — variant state to carry across
-     *            (e.g. zero_one_value's array-level second_value)
+     *            (e.g. zero_or_value's array-level second_value)
      *          - rechunk_seed_fresh(state) — apply that state to the fresh array
-     *          - rechunk_swap_identity(tmp) -> bool — swap num_tab member (if any)
+     *          - rechunk_swap_identity(tmp) -> bool — swap array_id member (if any)
      *            + registry entry (swap_keys/entries)
-     *          - rechunk_reown_after_swap(tmp,state) — post-swap fixup (zero_one_value
+     *          - rechunk_reown_after_swap(tmp,state) — post-swap fixup (zero_or_value
      *            re-owns its map_inf_array_ entry so it doesn't dangle when tmp dies)
      *
      * @param new_size the new chunk size (a power of two or a multiple of 64)
@@ -156,11 +156,11 @@ class RechunkSupport<Derived, true> : public RechunkHookDefaults<Derived>
      *          chunks its span covers, in parallel over the new chunks (schedule
      *          guided,16) and, for zero with the fast allocator
      *          under OpenMP, in slices with a drain between them
-     *          (16). A span whose sources are all cst1 stays
+     *          (16). A span whose sources are all const1 stays
      *          compressed; a zero_any span whose sources are all the same second
      *          constant gets that constant installed without a buffer; the others
      *          are read from *this at OLD and filled through copy_range() at NEW,
-     *          then folded back at once when every source was a constant (zero_one_value,
+     *          then folded back at once when every source was a constant (zero_or_value,
      *          zero_any). zero releases each source chunk as soon as it has been
      *          transcribed. Runs at a quiescent serial point: rechunk_to() has flushed the
      *          deferred ops.
@@ -175,7 +175,7 @@ class RechunkSupport<Derived, true> : public RechunkHookDefaults<Derived>
      *       (the lazy per-chunk pointers: ptr_second_value, compression
      *       bookkeeping), which copy_range() does; an unarmed chunk is double-freed
      *       by the later compression/clear (only at scale: rechunk_validation is
-     *       too small to show it). The skipped cst1 spans need no arming, and the
+     *       too small to show it). The skipped const1 spans need no arming, and the
      *       zero_any install commits what a type-2 compression does, with no buffer.
      */
     void rechunk_refill(Derived& tmp, int old_size, int new_size, unsigned int old_key);

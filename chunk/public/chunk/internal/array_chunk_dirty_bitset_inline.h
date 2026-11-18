@@ -15,6 +15,11 @@
  */
 
 #pragma once
+#include <algorithm> // std::min
+#include <atomic>    // std::memory_order_acq_rel, std::memory_order_relaxed, std::memory_order_release
+#include <cstddef>   // std::size_t
+#include <utility>   // std::move
+
 #include "chunk/internal/array_chunk_dirty_bitset.h" // the class these bodies belong to
 
 namespace shrink_array
@@ -29,8 +34,7 @@ void DirtyBitsetSupport<Derived, true>::mark_chunk_dirty(int chunk_idx) noexcept
 {
     const int      word_idx = chunk_idx >> word_shift;
     const uint64_t bit_mask = 1ULL << (chunk_idx & bit_in_word_mask);
-    auto&          word     = bitset_[word_idx].word;
-    if ((word.load(std::memory_order_relaxed) & bit_mask) == 0)
+    if (auto& word = bitset_[word_idx].word; (word.load(std::memory_order_relaxed) & bit_mask) == 0)
     {
         word.fetch_or(bit_mask, std::memory_order_acq_rel);
     }
@@ -47,34 +51,34 @@ template <typename Derived>
 void DirtyBitsetSupport<Derived, true>::clear_all_dirty_bitsets()
 {
     using ProxyType = Derived::ProxyType;
-    ProxyType::share_info_array->for_each_key(
+    ProxyType::array_registry->for_each_key(
         [](ArrayKey<typename Derived::ChunkType> key)
         {
             if (key != nullptr)
             {
                 // The registry hands out const keys; clearing the bitset is
                 // the quiescent point's own write.
-                const_cast<Derived*>(key)->clear_dirty_bitset();
+                const_cast<Derived*>(key)->clear_dirty_bitset(); // NOSONAR(cpp:S859)
             }
         });
 }
 
 template <typename Derived>
-void DirtyBitsetSupport<Derived, true>::reallocate_dirty_bitset(int old_nb_chunk, int new_nb_chunk)
+void DirtyBitsetSupport<Derived, true>::reallocate_dirty_bitset(int old_chunk_count, int new_chunk_count)
 {
-    if (new_nb_chunk == old_nb_chunk)
+    if (new_chunk_count == old_chunk_count)
     {
         return;
     }
 
-    const int old_nb_words = words_for(old_nb_chunk);
-    const int new_nb_words = words_for(new_nb_chunk);
+    const int old_n_words = words_for(old_chunk_count);
+    const int new_n_words = words_for(new_chunk_count);
 
-    auto new_bitset = parallel_storage_init::make_filled<PaddedDirtyWord>(static_cast<std::size_t>(new_nb_words) + 1);
+    auto new_bitset = parallel_storage_init::make_filled<PaddedDirtyWord>(static_cast<std::size_t>(new_n_words) + 1);
 
     if (!bitset_.empty())
     {
-        const auto words_to_copy = static_cast<std::size_t>(std::min(old_nb_words, new_nb_words));
+        const auto words_to_copy = static_cast<std::size_t>(std::min(old_n_words, new_n_words));
         for (std::size_t i = 0; i < words_to_copy; ++i)
         {
             const uint64_t val = bitset_[i].word.load(std::memory_order_relaxed);
@@ -82,12 +86,12 @@ void DirtyBitsetSupport<Derived, true>::reallocate_dirty_bitset(int old_nb_chunk
         }
         // Carry the "some bit was set" flag (conservatively: it may now
         // cover only bits that were cut off, which costs one useless clear).
-        new_bitset[static_cast<std::size_t>(new_nb_words)].word.store(
-            bitset_[static_cast<std::size_t>(old_nb_words)].word.load(std::memory_order_relaxed),
+        new_bitset[static_cast<std::size_t>(new_n_words)].word.store(
+            bitset_[static_cast<std::size_t>(old_n_words)].word.load(std::memory_order_relaxed),
             std::memory_order_relaxed);
     }
-    bitset_   = std::move(new_bitset);
-    nb_words_ = new_nb_words;
+    bitset_  = std::move(new_bitset);
+    n_words_ = new_n_words;
 }
 
 template <typename Derived>
@@ -107,7 +111,7 @@ void DirtyBitsetSupport<Derived, true>::clear_dirty_bitset() noexcept
         return;
     }
     PaddedDirtyWord* const words = bitset_.data();
-    for (int i = 0; i < nb_words_; ++i)
+    for (int i = 0; i < n_words_; ++i)
     {
         words[i].word.store(0, std::memory_order_relaxed);
     }

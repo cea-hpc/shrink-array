@@ -2,7 +2,8 @@
 # ARM cluster: every optimised (Release / RelWithDebInfo) threaded build that
 # compile_all.sh and compile_all_gnu.sh make there: the OpenMP ones and the
 # std-backend ones (CHUNK_THREADS=std; their TBB bench tbb_* runs too, when the
-# build has it). oneapi and aocc are x86-only, nvhpc is left out on purpose,
+# build has it), the acfl ones (Arm Compiler for Linux) where compile_all.sh found
+# armclang++. oneapi and aocc are x86-only, nvhpc is left out on purpose,
 # and the -cs build only exists when asked for (--llvm-cs=<size>). No debug,
 # no sanitizer build: those have runners of their own (bench_and_test.py
 # --sanitizers). The serial builds are not in: the random thread count is
@@ -22,3 +23,5 @@ std-gnu
 std-gnu-check
 std-llvm
 std-llvm-check
+omp-acfl
+std-acfl

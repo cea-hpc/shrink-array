@@ -2,8 +2,8 @@
 
 > French version: [contributing_fr.md](contributing_fr.md).
 
-> October 2026. How to build, test, measure and document a change. Read
-> [algo_zero_one_value.md](algo_zero_one_value.md) first: most of the library is the machinery it describes.
+> November 2026. How to build, test, measure and document a change. Read
+> [algo_zero_or_value.md](algo_zero_or_value.md) first: most of the library is the machinery it describes.
 
 ***
 
@@ -12,13 +12,13 @@
 A development build of one configuration:
 
 ```sh
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DOMP=ON
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCHUNK_OPENMP=ON
 cmake --build build
 ```
 
 A Debug build builds one static size, 256, instead of two (`CHUNK_STATIC_SIZES=auto`), which
 saves much of the build time; `-DCHUNK_VARIANTS=zero_any` builds one variant instead of three, with its examples and
-harnesses only. A Debug build, `-DCHECK_OPTIM=ON` or a sanitizer also builds the validation harnesses
+harnesses only. A Debug build, `-DCHUNK_CHECK_OPTIM=ON` or a sanitizer also builds the validation harnesses
 (`examples/validation`).
 
 The whole matrix (GNU, LLVM, oneAPI, AOCC, NVHPC, sanitizers, statistics, std-alloc...) is
@@ -48,10 +48,10 @@ What to run, depending on what the change touches:
 | change | run at least |
 |---|---|
 | write engine, Dekker handshake, compression manager, deferred writes | `deferred_path_validation`, `read_reclaim_validation` (also with `CHUNK_TEST_READ_DELAY_EVERY`, and under ASan in a std-alloc build), the TSan builds, `multi_launch_stress.py` |
-| compression marking, the passes | `mark_path_validation`, `compress_roundtrip`, the benchmark in check mode |
-| allocators, reuse lists, slabs | `pool_accounting`, `slab_geometry_validation`, `blk_allocator_validation`, the ledger build (`--with-ledger`), ASan in a std-alloc build |
+| compression marking, the passes | `mark_path_validation`, `compress_roundtrip_validation`, the benchmark in check mode |
+| allocators, reuse lists, slabs | `pool_accounting_validation`, `slab_geometry_validation`, `blk_allocator_validation`, the ledger build (`--with-ledger`), ASan in a std-alloc build |
 | re-chunk, dynamic geometry | `rechunk_validation`, `dyn_geometry_validation`, the benchmark with `--force_rechunk <size> --force_rechunk_toggle` |
-| range operations | `fill_range_mt_validation`, `fill_range_mt_zero_and_zero_one_value_validation`, `range_counters_validation` |
+| range operations | `fill_range_mt_validation`, `fill_range_mt_zero_and_zero_or_value_validation`, `range_counters_validation` |
 | thread ranks, regions | `thread_growth_validation`, `nested_region_validation` |
 | container interface | `iterator_validation`, `swap_move_validation`, `stale_proxy_validation`, `open_types_validation`, `index64_validation` |
 | documentation | `check_docs` |
@@ -66,6 +66,9 @@ The source checks run with the others (`ctest -R check_`):
 | `check_headers` | every C++ file opens with the Apache license header (years up to date) and carries no IDE `Created by` stamp; scripts and build files (`.py`, `.sh`, `.cmake`, `CMakeLists.txt`) carry `# Copyright ... CEA` and `# SPDX-License-Identifier: Apache-2.0`; the vendored headers, their upstream SPDX line; `scripts/check_headers.py --fix` repairs |
 | `check_raw_reads` | every raw read of a chunk buffer in the library says why it is safe |
 | `check_tracked` | every file the sources name (a quoted `#include`, a relative Python import, a CMake source or harness, a Markdown link) is tracked by git, not only present on disk |
+| `check_public_api` | the public headers and names are those `scripts/public_api.txt` lists: fails when one is added, moved, removed or renamed |
+| `check_format` | every C++ file of `chunk/`, `fast_allocators/` and `examples/` is as clang-format 23 leaves it (`scripts/check_format.py --fix` rewrites them); registered only when CMake finds that version |
+| `check_doxygen` | the Doxygen documentation builds without a warning; registered only when CMake finds Doxygen, skipped before 1.9 |
 | `check_docs` | links, code names cited in the documents, English/French pairs, no history markers in comments, the files cited in comments exist |
 
 ## 3. Code rules
@@ -81,9 +84,9 @@ The source checks run with the others (`ctest -R check_`):
 
   | what | case | example |
   |---|---|---|
-  | functions, methods, variables, parameters, namespaces | snake_case | `get_chunk_list`, `num_tab` |
-  | private and protected data members | snake_case ending in `_` | `chunk_list_`, `num_` |
-  | constants (`constexpr`) and enumerators | snake_case | `cst_buffer_size`, `ev_flush_begin` |
+  | functions, methods, variables, parameters, namespaces | snake_case | `get_chunk_list`, `array_id` |
+  | private and protected data members | snake_case ending in `_` | `chunk_list_`, `elem_offset_` |
+  | constants (`constexpr`) and enumerators | snake_case | `const_buffer_size`, `ev_flush_begin` |
   | classes, structs, concepts, type aliases, template parameters | PascalCase | `zero_any::Array`, `AllocT`, `ChunkT` |
   | macros | UPPER_CASE | `CHUNK_SIZE` |
 
@@ -92,9 +95,14 @@ The source checks run with the others (`ctest -R check_`):
   protocols (`value_type`, `size_type`, ...; our own member types are PascalCase, `ChunkType`),
   the traits and tags (`is_cplx`, `rebind`). Inside a snake_case name the variant is `zero_any`, as in the file names (`zero_any_array.h`).
   Globals take a `g_` prefix; no name starts with `__` (reserved). A public name
-  that changes keeps its former spelling as a `[[deprecated]]` alias until 1.0.
+  that changes keeps its former spelling as a `[[deprecated]]` alias for as long as the
+  versioning policy of [CHANGELOG.md](../CHANGELOG.md) says.
   `check_naming` enforces what a line shows; clang-tidy's `readability-identifier-naming`
   checks the rest (the member suffix, the parameters) with `scripts/clang_tidy_naming.yaml`.
+- **The public interface is frozen.** `scripts/public_api.txt` lists the public headers and
+  names; `check_public_api` fails when one is added, moved, removed or renamed. A change there
+  is an interface change: update the list and record it in CHANGELOG.md (versioning policy).
+  A new header that a program does not include goes under `internal/`.
 - **Long bodies go to the `<header>_inline.h` companion.** A member function whose body exceeds 5
   lines is declared in the class and defined in `internal/<header>_inline.h`, included at the
   end of the header; the Doxygen comment stays on the declaration. Accessors of a few lines

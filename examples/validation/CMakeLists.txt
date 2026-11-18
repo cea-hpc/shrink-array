@@ -14,16 +14,16 @@
 #   dyn_geometry_validation an array reads back what was written at EVERY
 #                           registered runtime chunk size -- the pairing between
 #                           set_active_chunk_size (array side) and
-#                           ParamChunk::register_chunk_size (allocator side),
+#                           Runtime::register_chunk_size (allocator side),
 #                           which fails silently when only one of the two is
 #                           done. No rechunk_to on purpose: when this one fails
 #                           the cause is in the geometry/allocation pairing and
 #                           nowhere else.
-#   compress_roundtrip      every element reads back after a compression pass
+#   compress_roundtrip_validation      every element reads back after a compression pass
 #                           and a partial re-materialisation, and the library
 #                           tears down cleanly -- at 1 thread and at 8, since
 #                           the answer must not depend on the team.
-#   pool_accounting         the manager's bookkeeping follows the arrays alive:
+#   pool_accounting_validation         the manager's bookkeeping follows the arrays alive:
 #                           chunk count up and down, buffers parked and taken
 #                           back in exact number, nothing left at an old
 #                           geometry after a re-chunk, threshold back at the
@@ -34,6 +34,11 @@
 #                           through writes, a compression pass and a partial
 #                           rewrite like an array of double -- the element
 #                           type contract: trivially copyable, ==, T{}.
+#   signed_zero_validation  -0.0 (double, float, std::complex, an aggregate
+#                           with a ValueIdentity) and a NaN payload read back
+#                           bit for bit through element writes, fill_range(_mt),
+#                           a -0.0 second value and compression passes: the
+#                           library decides with same_value(), not ==.
 #   deferred_path_validation a write parked in a rank queue (the deferred
 #                           path: enqueue, replay, backlog drain, read gate, WAW
 #                           guard) lands in program order with every other
@@ -62,6 +67,11 @@
 #                           assign, swap, assignments, shrink_to_fit, a
 #                           re-chunk) stops on an invariant failure; each case
 #                           in a child, which re-runs this executable.
+#   nan_check_validation    CHUNK_DO_CHECK builds (passes elsewhere): a NaN
+#                           written through any operator (=, +=, *=, /= 0)
+#                           stops with a report naming its index in the
+#                           array; ordinary values and infinities do not. Each
+#                           case in a child, which re-runs this executable.
 #   thread_growth_validation arrays created under a 2-thread team keep
 #                           working when the team grows to the thread
 #                           capacity afterwards (the per-rank structures are
@@ -83,6 +93,9 @@
 #                           reads back what std::vector would, and counts its
 #                           written chunks right. The storage paths once fell
 #                           back on an orphaned `omp for` there, and hung.
+#                           And the whole team at once: each thread builds,
+#                           fills and destroys work arrays of its own while
+#                           the team writes a shared one (the cold-path lock).
 #   bulk_write_team_validation the whole-array writes that take a team of
 #                           their own outside a region (copy construction and
 #                           assignment, assign, resize(n, val), a shrinking
@@ -113,19 +126,19 @@
 #                           keeps its own per-rank structures afterwards; two
 #                           ACTIVE levels stop with an invariant failure
 #                           (re-run with --nested-active).
-#   fill_range_mt_zero_and_zero_one_value_validation  the range ops in a TWO-variant build
-#                           (chunk_zero_and_zero_one_value): a zero::Array and a zero_one_value::Array side
+#   fill_range_mt_zero_and_zero_or_value_validation  the range ops in a TWO-variant build
+#                           (chunk_zero_and_zero_or_value): a zero::Array and a zero_or_value::Array side
 #                           by side, fill_range_mt of each compressible value.
 #                           The ops must dispatch on the array's type, not on
-#                           the build flags -- otherwise a zero_one_value::Array
+#                           the build flags -- otherwise a zero_or_value::Array
 #                           filled with its second value stays materialised.
 #                           The one harness that is not variant-agnostic.
-#   cst2_registry_validation  zero_any's second-value registry is freed by the
+#   const2_registry_validation  zero_any's second-value registry is freed by the
 #                           last array of every generation, not only the
 #                           first (its reinstall took a phantom reference),
 #                           and overlapping arrays free nothing early.
 #                           zero_any only, default static size.
-#   cst2_reclaim_validation  zero_any::Array::reclaim_second_values() frees
+#   const2_reclaim_validation  zero_any::Array::reclaim_second_values() frees
 #                           exactly the second values nothing refers to,
 #                           every element still reads back, and the
 #                           identifiers are reused (a run past the
@@ -187,7 +200,7 @@ endif()
 
 # Finish wiring a harness target: OpenMP when on, C++20, check build.
 function(validation_setup_target tgt)
-    if (OMP)
+    if (CHUNK_OPENMP)
         target_link_libraries(${tgt} PUBLIC OpenMP::OpenMP_CXX)
     endif ()
     chunk_require_cxx20(${tgt} PRIVATE)
@@ -203,7 +216,7 @@ endfunction()
 # namespace, validation::<harness>, with a run() the shared driver calls
 # (validation_harness.h, validation_driver.cpp):
 #
-#     validation_zero_any_256 compress_roundtrip [args...]
+#     validation_zero_any_256 compress_roundtrip_validation [args...]
 #
 # The ctest names are the ones of the one-executable-per-harness layout
 # (compress_roundtrip_zero_any_256_8thr, rechunk_validation_zero_dyn_val2-grow,
@@ -223,9 +236,9 @@ endfunction()
 option(CHUNK_VALIDATION_UNITY "One unity-built executable per variant and geometry for the validation harnesses" ON)
 set(CHUNK_VALIDATION_UNITY_BATCH "0" CACHE STRING "Harnesses per unity translation unit (0: all of a group)")
 
-set(_rt_variant_names   zero       zero_one_value      zero_any)
-set(_rt_variant_libbase chunk_zero    chunk_zero_one_value    chunk_zero_any)
-set(_rt_variant_macro   CHUNK_VARIANT_ZERO CHUNK_VARIANT_ZERO_ONE_VALUE CHUNK_VARIANT_ZERO_ANY)
+set(_rt_variant_names   zero       zero_or_value      zero_any)
+set(_rt_variant_libbase chunk_zero    chunk_zero_or_value    chunk_zero_any)
+set(_rt_variant_macro   CHUNK_VARIANT_ZERO CHUNK_VARIANT_ZERO_OR_VALUE CHUNK_VARIANT_ZERO_ANY)
 
 # Every static size built (CHUNK_STATIC_SIZES: 256;1024 by default), then dyn.
 # A static size other than CHUNK_DEFAULT_SIZE gets the round-trip harnesses
@@ -249,14 +262,15 @@ math(EXPR _rt_nvar_last "${_rt_nvar} - 1")
 # there (rechunk_to, set_chunk_size, a chunk_dynamic branch). The others test
 # nothing geometry-specific and are built at the default static size only --
 # it exists in every configuration, CHUNK_BUILD_DYN or not.
-set(_rt_harnesses       compress_roundtrip pool_accounting open_types_validation
+set(_rt_harnesses       compress_roundtrip_validation pool_accounting_validation open_types_validation
                         mark_path_validation fill_range_mt_validation index64_validation
                         swap_move_validation range_counters_validation thread_growth_validation
                         nested_region_validation concurrent_teams_validation iterator_validation
                         stale_proxy_validation
                         region_storage_validation compound_ops_validation bulk_write_team_validation
-                        shrink_to_fit_validation chunk_exchange_validation)
-set(_rt_dyn_harnesses   pool_accounting open_types_validation index64_validation stale_proxy_validation)
+                        shrink_to_fit_validation chunk_exchange_validation signed_zero_validation
+                        no_init_release_validation nan_check_validation)
+set(_rt_dyn_harnesses   pool_accounting_validation open_types_validation index64_validation stale_proxy_validation)
 
 # Compile definitions of a variant at a geometry.
 function(validation_variant_defs tgt vmacro geom)
@@ -346,37 +360,37 @@ foreach(_geom IN LISTS _rt_geometries)
     # array whose every chunk is at the first constant. OpenMP builds only: the
     # operators are the threaded *ThreadPolicy's (the serial specialisations
     # declare none), and the harness calls them from an `omp single`.
-    if (OMP)
+    if (CHUNK_OPENMP)
       list(APPEND _group chunk_array_new_validation)
     endif()
-    # bits_container_validation: ArrayChunkBits (zero_one_value::Array<Bit>) against
-    # std::vector<bool>. zero_one_value libraries only, every geometry.
-    if (_vname STREQUAL "zero_one_value")
+    # bits_container_validation: BitArray (zero_or_value::Array<Bit>) against
+    # std::vector<bool>. zero_or_value libraries only, every geometry.
+    if (_vname STREQUAL "zero_or_value")
       list(APPEND _group bits_container_validation)
     endif()
-    # cst2_registry_validation: zero_any's second-value registry lifecycle.
+    # const2_registry_validation: zero_any's second-value registry lifecycle.
     # zero_any only, at the default static size.
     if (_vname STREQUAL "zero_any" AND NOT _geom STREQUAL "dyn")
-      list(APPEND _group cst2_registry_validation)
+      list(APPEND _group const2_registry_validation)
     endif()
-    # cst2_reclaim_validation: reclaim_second_values() frees what nothing
+    # const2_reclaim_validation: reclaim_second_values() frees what nothing
     # refers to and the identifiers are reused. zero_any only, at the default
     # static size and at dyn (where it reclaims across a re-chunk too).
     if (_vname STREQUAL "zero_any")
-      list(APPEND _group cst2_reclaim_validation)
+      list(APPEND _group const2_reclaim_validation)
     endif()
-    # zero_one_value_registry_growth_validation: zero_one_value's second-value registry must
+    # zero_or_value_registry_growth_validation: zero_or_value's second-value registry must
     # not move the constant arrays chunks point at when a new value is
-    # declared (the harness says why). zero_one_value only, default static size, at 1
+    # declared (the harness says why). zero_or_value only, default static size, at 1
     # and 4 threads.
-    if (_vname STREQUAL "zero_one_value" AND NOT _geom STREQUAL "dyn")
-      list(APPEND _group zero_one_value_registry_growth_validation)
+    if (_vname STREQUAL "zero_or_value" AND NOT _geom STREQUAL "dyn")
+      list(APPEND _group zero_or_value_registry_growth_validation)
     endif()
-    # zero_one_value_foreign_key_validation: a chunk is only ever compressed to its own
-    # array's second value (the harness says why). zero_one_value only, default static
+    # zero_or_value_foreign_key_validation: a chunk is only ever compressed to its own
+    # array's second value (the harness says why). zero_or_value only, default static
     # size, at 8 threads; OpenMP builds only (the passes run in a region).
-    if (OMP AND _vname STREQUAL "zero_one_value" AND NOT _geom STREQUAL "dyn")
-      list(APPEND _group zero_one_value_foreign_key_validation)
+    if (CHUNK_OPENMP AND _vname STREQUAL "zero_or_value" AND NOT _geom STREQUAL "dyn")
+      list(APPEND _group zero_or_value_foreign_key_validation)
     endif()
     # deferred_path_validation: every write path through the deferred queue,
     # forced by the test hook (test_hooks.h, switched on by the harness), at
@@ -403,14 +417,14 @@ foreach(_geom IN LISTS _rt_geometries)
     # pass that releases the buffer, and a pass that must not erase another
     # pass's claim (the harness says why). OpenMP builds only, default static
     # size, at 8 threads (2 writers, 6 readers); 77 = skipped.
-    if (OMP AND NOT _geom STREQUAL "dyn")
+    if (CHUNK_OPENMP AND NOT _geom STREQUAL "dyn")
       list(APPEND _group read_reclaim_validation)
     endif()
     # phase_protocol_validation: the guard of the phase protocol (phase_guard.h)
     # stops a forgotten finalize / begin and lets the correct uses run, each
     # case in a child. OpenMP builds only, default static size, at 8 threads;
     # 77 = skipped (OMPT: the protocol is not manual there).
-    if (OMP AND NOT _geom STREQUAL "dyn")
+    if (CHUNK_OPENMP AND NOT _geom STREQUAL "dyn")
       list(APPEND _group phase_protocol_validation)
     endif()
     # rechunk_validation (content invariance across rechunk_to(), one test per
@@ -443,7 +457,8 @@ foreach(_geom IN LISTS _rt_geometries)
         foreach(_case coexistence range-ops scale-64-to-tgt mostly-constant sin-quantized
                       shrink-to-smaller all-same all-different val2-grow val2-shrink
                       invalid-size-refused active-size-refused multiple-of-64-chain index-split
-                      bool-grow bool-shrink bool-uneven sliced-grow sliced-shrink)
+                      bool-grow bool-shrink bool-uneven bool-sliced sliced-grow sliced-shrink
+                      sliced-val2-grow sliced-val2-uneven)
           validation_add_test(${_base}_${_case} ${_exe} ${_h} "" --case ${_case})
         endforeach()
       elseif (_h STREQUAL "dyn_geometry_validation")
@@ -455,15 +470,15 @@ foreach(_geom IN LISTS _rt_geometries)
         validation_add_test(${_base}_np2 ${_exe} ${_h} "1;8" --size 384)
       elseif (_h STREQUAL "bits_container_validation")
         validation_add_test(bits_container_validation_${_geom} ${_exe} ${_h} "1;8")
-      elseif (_h STREQUAL "zero_one_value_registry_growth_validation")
-        validation_add_test(zero_one_value_registry_growth_validation ${_exe} ${_h} "1;4")
-      elseif (_h STREQUAL "zero_one_value_foreign_key_validation")
-        validation_add_test(zero_one_value_foreign_key_validation ${_exe} ${_h} "8")
+      elseif (_h STREQUAL "zero_or_value_registry_growth_validation")
+        validation_add_test(zero_or_value_registry_growth_validation ${_exe} ${_h} "1;4")
+      elseif (_h STREQUAL "zero_or_value_foreign_key_validation")
+        validation_add_test(zero_or_value_foreign_key_validation ${_exe} ${_h} "8")
       elseif (_h STREQUAL "tbb_validation")
-        if (SANITIZER STREQUAL "thread")
+        if (CHUNK_SANITIZER STREQUAL "thread")
           # ThreadSanitizer: N = 2^16 elements instead of 2^18 -- every form,
           # partitioner and phase still runs, on four times fewer elements: at
-          # 2^18, zero_one_value at 8 threads went past ctest's 1500 s on a
+          # 2^18, zero_or_value at 8 threads went past ctest's 1500 s on a
           # two-core runner. libtbb.so is not instrumented, and its
           # partitioners' bookkeeping shows up as races (tsan_tbb.supp says
           # why and what is left visible): appended to TSAN_OPTIONS, so the
@@ -617,14 +632,14 @@ if (TARGET chunk_zero_any_${CHUNK_DEFAULT_SIZE})
   endif()
 endif()
 
-# --- fill_range_mt_zero_and_zero_one_value_validation: the two-variant library (CHUNK_VARIANT_ZERO=1;CHUNK_VARIANT_ZERO_ONE_VALUE=1,
+# --- fill_range_mt_zero_and_zero_or_value_validation: the two-variant library (CHUNK_VARIANT_ZERO=1;CHUNK_VARIANT_ZERO_OR_VALUE=1,
 # default static size, no OMPT tool -- the harness defines the switch and makes
-# the phase calls, as multi-mat does), zero::Array and zero_one_value::Array in one
+# the phase calls, as multi_mat does), zero::Array and zero_or_value::Array in one
 # program. At 1 and 8 threads like the others.
-if (TARGET chunk_zero_and_zero_one_value_${CHUNK_DEFAULT_SIZE})
-  set(_tgt fill_range_mt_zero_and_zero_one_value_validation)
-  add_executable(${_tgt} fill_range_mt_zero_and_zero_one_value_validation.cpp)
-  target_link_libraries(${_tgt} PRIVATE chunk_zero_and_zero_one_value_${CHUNK_DEFAULT_SIZE}) # CHUNK_VARIANT_ZERO, _ZERO_ONE_VALUE, CHUNK_SIZE: PUBLIC
+if (TARGET chunk_zero_and_zero_or_value_${CHUNK_DEFAULT_SIZE})
+  set(_tgt fill_range_mt_zero_and_zero_or_value_validation)
+  add_executable(${_tgt} fill_range_mt_zero_and_zero_or_value_validation.cpp)
+  target_link_libraries(${_tgt} PRIVATE chunk_zero_and_zero_or_value_${CHUNK_DEFAULT_SIZE}) # CHUNK_VARIANT_ZERO, _ZERO_OR_VALUE, CHUNK_SIZE: PUBLIC
   validation_setup_target(${_tgt})
   foreach(_nthr 1 8)
     add_test(NAME ${_tgt}_${_nthr}thr COMMAND ${_tgt})
@@ -633,18 +648,18 @@ if (TARGET chunk_zero_and_zero_one_value_${CHUNK_DEFAULT_SIZE})
   endforeach()
 endif()
 
-# --- bit_words_validation: the bit-packed storage kernel of ArrayChunkBits
+# --- bit_words_validation: the bit-packed storage kernel of BitArray
 # alone (header only, no variant, no library): get/set against
 # std::vector<bool>, the word scans, and concurrent writes to neighbouring
 # bits of one word through the atomic read-modify-write.
 find_package(Threads REQUIRED)
-# SANITIZER=token: -fsanitize=alloc-token rewrites every allocation into
+# CHUNK_SANITIZER=token: -fsanitize=alloc-token rewrites every allocation into
 # __alloc_token_<name>(..., token), whose definitions (alloc_token_rt.cpp) are
 # compiled INTO each chunk variant archive. The executables below link none, so
 # they get their own copy -- uninstrumented, or its own malloc calls would
 # recurse. A no-op for every other sanitizer.
 function(chunk_add_alloc_token_rt target)
-  if (SANITIZER STREQUAL "token")
+  if (CHUNK_SANITIZER STREQUAL "token")
     set(_rt ${PROJECT_SOURCE_DIR}/chunk/private/alloc_token_rt.cpp)
     target_sources(${target} PRIVATE ${_rt})
     set_source_files_properties(${_rt} DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -685,7 +700,7 @@ target_include_directories(env_parse_validation PRIVATE ${PROJECT_SOURCE_DIR}/ch
                                                         ${PROJECT_BINARY_DIR}/chunk/generated # chunk/build_options.h
                                                         ${PROJECT_SOURCE_DIR}/fast_allocators/public)
 target_link_libraries(env_parse_validation PRIVATE Threads::Threads)
-if (OMP)
+if (CHUNK_OPENMP)
   target_link_libraries(env_parse_validation PRIVATE OpenMP::OpenMP_CXX) # build_options.h asks for the library's OpenMP
 endif()
 if (CHUNK_THREADS_BACKEND STREQUAL "std")
@@ -704,7 +719,7 @@ add_executable(rank_registry_validation rank_registry_validation.cpp)
 chunk_add_alloc_token_rt(rank_registry_validation)
 target_include_directories(rank_registry_validation PRIVATE ${PROJECT_SOURCE_DIR}/fast_allocators/public)
 target_link_libraries(rank_registry_validation PRIVATE Threads::Threads)
-if (OMP)
+if (CHUNK_OPENMP)
   target_link_libraries(rank_registry_validation PRIVATE OpenMP::OpenMP_CXX)
 endif ()
 chunk_require_cxx20(rank_registry_validation PRIVATE)
@@ -718,11 +733,12 @@ set_property(TEST rank_registry_validation PROPERTY LABELS validation)
 # and CHUNK_CHECK_FAILED, each case in a child (the executable re-runs
 # itself with --fatal K). Header-only: no library, no variant.
 add_executable(log_validation log_validation.cpp)
+chunk_add_alloc_token_rt(log_validation)
 target_include_directories(log_validation PRIVATE ${PROJECT_SOURCE_DIR}/chunk/public
                                                   ${PROJECT_BINARY_DIR}/chunk/generated # chunk/build_options.h
                                                   ${PROJECT_SOURCE_DIR}/fast_allocators/public)
 target_link_libraries(log_validation PRIVATE Threads::Threads)
-if (OMP)
+if (CHUNK_OPENMP)
   target_link_libraries(log_validation PRIVATE OpenMP::OpenMP_CXX) # build_options.h asks for the library's OpenMP
 endif()
 # ... and for the library's backend: the std backend's macro, which the chunk:: targets
@@ -758,9 +774,10 @@ set_property(TEST log_break_on_failure PROPERTY SKIP_RETURN_CODE 77)
 # rank OpenMP gives it, the same share in two nowait loops in a row -- what
 # the bench's barrier-free regions rely on. Header-only: no library, no variant.
 add_executable(team_loops_validation team_loops_validation.cpp)
+chunk_add_alloc_token_rt(team_loops_validation)
 target_include_directories(team_loops_validation PRIVATE ${PROJECT_SOURCE_DIR}/fast_allocators/public)
 target_link_libraries(team_loops_validation PRIVATE Threads::Threads)
-if (OMP)
+if (CHUNK_OPENMP)
   target_link_libraries(team_loops_validation PRIVATE OpenMP::OpenMP_CXX)
 endif()
 if (CHUNK_THREADS_BACKEND STREQUAL "std")
@@ -770,6 +787,40 @@ chunk_require_cxx20(team_loops_validation PRIVATE)
 add_test(NAME team_loops_validation COMMAND team_loops_validation)
 set_property(TEST team_loops_validation PROPERTY LABELS validation)
 
+# --- team_sync_validation: pmp::Team's synchronisation (barrier, single in
+# its wait and nowait forms, singles mixed with dynamic loops, teams in a row)
+# on the build's backend; under the std backend, with its spinning waits and
+# again with CHUNK_PMP_SPIN_US=0 (sleep at once). `--bench [threads]` prints
+# the cost of a barrier, a single and a team. Header-only, as team_loops.
+add_executable(team_sync_validation team_sync_validation.cpp)
+chunk_add_alloc_token_rt(team_sync_validation)
+target_include_directories(team_sync_validation PRIVATE ${PROJECT_SOURCE_DIR}/fast_allocators/public)
+target_link_libraries(team_sync_validation PRIVATE Threads::Threads)
+if (CHUNK_OPENMP)
+  target_link_libraries(team_sync_validation PRIVATE OpenMP::OpenMP_CXX)
+endif()
+if (CHUNK_THREADS_BACKEND STREQUAL "std")
+  target_compile_definitions(team_sync_validation PRIVATE FAST_ALLOC_PMP_STD=1)
+endif()
+chunk_require_cxx20(team_sync_validation PRIVATE)
+add_test(NAME team_sync_validation COMMAND team_sync_validation)
+set_property(TEST team_sync_validation PROPERTY LABELS validation)
+
+# --- flat_address_set_validation: the flat set of SlabArena's live slabs
+# (fast_allocators/internal/flat_address_set.h) against std::unordered_set:
+# random inserts / erases / lookups, growth, erase-all-then-refill.
+# `--bench [n]` times both. Header-only.
+add_executable(flat_address_set_validation flat_address_set_validation.cpp)
+chunk_add_alloc_token_rt(flat_address_set_validation)
+target_include_directories(flat_address_set_validation PRIVATE ${PROJECT_SOURCE_DIR}/fast_allocators/public)
+chunk_require_cxx20(flat_address_set_validation PRIVATE)
+add_test(NAME flat_address_set_validation COMMAND flat_address_set_validation)
+set_property(TEST flat_address_set_validation PROPERTY LABELS validation)
+if (CHUNK_THREADS_BACKEND STREQUAL "std")
+  add_test(NAME team_sync_validation_nospin COMMAND team_sync_validation)
+  set_tests_properties(team_sync_validation_nospin PROPERTIES LABELS validation ENVIRONMENT "CHUNK_PMP_SPIN_US=0")
+endif()
+
 # --- blk_allocator_validation: fast_allocators' public size-dispatching front
 # end (BlkAllocator) alone. Nothing in the library calls it, so this is what
 # runs it: sizes on, between and past the buckets, many live blocks at once,
@@ -777,12 +828,12 @@ set_property(TEST team_loops_validation PROPERTY LABELS validation)
 if (NOT CHUNK_STD_ALLOC)
   add_executable(blk_allocator_validation blk_allocator_validation.cpp)
   target_link_libraries(blk_allocator_validation PRIVATE fast_allocators)
-  if (OMP)
+  if (CHUNK_OPENMP)
     target_link_libraries(blk_allocator_validation PRIVATE OpenMP::OpenMP_CXX)
   endif ()
   chunk_add_alloc_token_rt(blk_allocator_validation)
   chunk_require_cxx20(blk_allocator_validation PRIVATE)
-  # chunk/internal/print.h (println), header-only: the include path, not the library.
+  # chunk/print.h (println), header-only: the include path, not the library.
   target_include_directories(blk_allocator_validation PRIVATE ${PROJECT_SOURCE_DIR}/chunk/public)
   foreach(_nthr 1 8)
     add_test(NAME blk_allocator_validation_${_nthr}thr COMMAND blk_allocator_validation)
@@ -796,12 +847,12 @@ endif()
 # the element size, or slab_of() through the ambient-size allocator misses the
 # block's slab after a re-chunk (see the harness). TCTypeCAllocator exists
 # under OpenMP only, and fast_allocators is not built with CHUNK_STD_ALLOC.
-if (OMP AND NOT CHUNK_STD_ALLOC)
+if (CHUNK_OPENMP AND NOT CHUNK_STD_ALLOC)
   add_executable(slab_geometry_validation slab_geometry_validation.cpp)
   target_link_libraries(slab_geometry_validation PRIVATE fast_allocators OpenMP::OpenMP_CXX)
   chunk_add_alloc_token_rt(slab_geometry_validation)
   chunk_require_cxx20(slab_geometry_validation PRIVATE)
-  # chunk/internal/print.h (println), header-only: the include path, not the library.
+  # chunk/print.h (println), header-only: the include path, not the library.
   target_include_directories(slab_geometry_validation PRIVATE ${PROJECT_SOURCE_DIR}/chunk/public)
   add_test(NAME slab_geometry_validation COMMAND slab_geometry_validation)
   set_property(TEST slab_geometry_validation PROPERTY LABELS validation)

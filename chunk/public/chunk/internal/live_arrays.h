@@ -49,7 +49,8 @@ class LiveArrayToken
     {
         g_live_arrays.fetch_add(1, std::memory_order_relaxed);
     }
-    LiveArrayToken(const LiveArrayToken& /*other*/) noexcept : LiveArrayToken() {}
+    // Not the default copy: a copy is one more live array, counted.
+    LiveArrayToken(const LiveArrayToken& /*other*/) noexcept : LiveArrayToken() {} // NOSONAR(cpp:S3490)
     LiveArrayToken(LiveArrayToken&& /*other*/) noexcept : LiveArrayToken() {}
     LiveArrayToken& operator=(const LiveArrayToken& /*other*/) noexcept = default;
     LiveArrayToken& operator=(LiveArrayToken&& /*other*/) noexcept      = default;

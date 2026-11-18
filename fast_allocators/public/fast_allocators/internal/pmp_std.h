@@ -30,7 +30,8 @@
 //     every thread of the team in the same order; each thread counts the
 //     constructs it met, and a construct that needs shared state (a dynamic
 //     loop's next block, a single's claim) finds it by that count;
-//   - barrier(): a std::barrier of the team; the end of a team is a join;
+//   - barrier(): the team's SpinBarrier (spins for CHUNK_PMP_SPIN_US, then
+//     sleeps); single(): one CAS on a team-wide mark; the end of a team is a join;
 //   - a team opened inside a team (nested) runs as a team of one, as OpenMP's
 //     default (max_active_levels 1); one team of the pool at a time: a second
 //     thread opening one meanwhile waits for it.
@@ -41,14 +42,13 @@
     #error "pmp_std.h is included by pmp_loops.h, after the types it shares with the other backends"
 #endif
 
-#include <barrier>       // std::barrier (Team::barrier)
-#include <cstdint>       // std::uint64_t (the pool's job word)
-#include <exception>     // std::terminate (a body that throws)
-#include <memory>        // std::unique_ptr (the construct slots)
-#include <mutex>         // std::mutex, std::scoped_lock (the slots; one team at a time)
-#include <thread>        // std::jthread (the workers)
-#include <unordered_map> // std::unordered_map (the construct slots)
-#include <vector>        // std::vector (the workers, the per-rank counts and results)
+#include <atomic>  // std::atomic (SpinBarrier, the single mark, the dynamic-loop ring)
+#include <cstdint> // std::uint64_t (the pool's job word, the construct numbers)
+#include <mutex>   // std::mutex, std::unique_lock (one team at a time)
+#include <thread>  // std::jthread (the workers)
+#include <vector>  // std::vector (the workers, the per-rank counts and results)
+#include <array>   // std::array
+#include <cstddef> // std::size_t
 
 #include "fast_allocators/internal/pmp_std_state.h" // std_backend::tls, FrameGuard, settings, nthreads_var
 
@@ -56,13 +56,53 @@ namespace fast_alloc::pmp
 {
 namespace std_backend
 {
-/// @brief The shared state of one worksharing construct of a team: a dynamic
-///        loop's next block, a single's claim.
-struct Slot
+/**
+ * @brief The shared state of one dynamic loop of a team, in a ring of
+ *        TeamCtx::dyn_ring slots: construct seq uses slot seq % dyn_ring.
+ * @details tag: 2 (seq + 1) once construct seq's slot is ready, odd while the
+ *          thread that claimed it resets it, 0 never used. The first thread of
+ *          construct seq claims the slot when its tag is even and below
+ *          2 (seq + 1) and the loop that used it has no thread left in it
+ *          (left == 0, read acquire): one CAS of the tag. It resets next and
+ *          left, then publishes the tag (release); the others join on seeing it
+ *          (acquire). Leaving is a fetch_sub of left (acq_rel). No lock: the
+ *          former slot map took the team mutex twice per thread and per loop,
+ *          218 us an empty loop at 160 threads against 7 us a barrier.
+ *          The counter has a cache line of its own (every chunk hits it); the
+ *          tag and count share the next one (once per thread and loop).
+ */
+struct alignas(64) DynSlot
 {
-    std::atomic<long long> next{0};        ///< Next unclaimed offset of a dynamic loop.
-    std::atomic<bool>      claimed{false}; ///< A single: some thread took it.
-    int                    left = 0;       ///< Threads that have not left it yet (under TeamCtx::mutex).
+    std::atomic<long long> next{0};                ///< Next unclaimed offset of the loop.
+    alignas(64) std::atomic<std::uint64_t> tag{0}; ///< See above.
+    std::atomic<int> left{0};                      ///< Threads of the loop that have not left it.
+};
+
+/**
+ * @brief The barrier of a team: a counter and a generation; the waiters spin
+ *        on the generation for spin_budget_ns(), then sleep on it.
+ * @details The last thread in resets the counter, then publishes the next
+ *          generation (release): a thread that sees it (acquire) sees the
+ *          counter reset, so it may enter the next barrier at once. A thread
+ *          reads the generation BEFORE it counts itself in: the generation
+ *          cannot move before every thread, this one included, has counted.
+ *          The notify costs nothing when nobody sleeps (libstdc++ counts the
+ *          waiters). Replaces std::barrier<>, whose libstdc++ implementation
+ *          sleeps almost at once: a futex wake-up cascade per barrier, ~0.4 ms
+ *          at 160 threads.
+ */
+class SpinBarrier
+{
+  public:
+    explicit SpinBarrier(int n) noexcept : n_(n), count_(n) {}
+
+    /// @brief Wait until all n threads have arrived (pmp_std_inline.h).
+    void arrive_and_wait() noexcept;
+
+  private:
+    const int n_;
+    alignas(64) std::atomic<int> count_;            ///< Threads still to arrive.
+    alignas(64) std::atomic<std::uint32_t> gen_{0}; ///< Bumped by the last thread in.
 };
 
 /// @brief What the threads of one team share.
@@ -70,17 +110,21 @@ struct TeamCtx
 {
     explicit TeamCtx(int n) : size(n), bar(n), met(static_cast<std::size_t>(n), 0) {}
 
-    const int                                                size;  ///< Threads in the team.
-    std::barrier<>                                           bar;   ///< Team::barrier().
-    std::mutex                                               mutex; ///< Guards slots.
-    std::unordered_map<std::uint64_t, std::unique_ptr<Slot>> slots; ///< The constructs some thread is in.
-    std::vector<std::uint64_t>                               met;   ///< met[rank]: constructs rank has entered.
+    const int   size; ///< Threads in the team.
+    SpinBarrier bar;  ///< Team::barrier().
+    /// Team::single(): every single numbered below this has been claimed; the
+    /// thread that moves it past construct s runs single s (pmp_std_inline.h).
+    alignas(64) std::atomic<std::uint64_t> single_mark{0};
+    std::vector<std::uint64_t> met; ///< met[rank]: constructs rank has entered.
 
-    /// @brief Enter the next construct of @p rank; its slot, and its number in @p seq.
-    Slot& enter(int rank, std::uint64_t& seq);
+    /// @brief Dynamic loops in flight at once: a thread more than this many
+    ///        constructs ahead of a slow one waits for it to leave the slot.
+    static constexpr std::size_t  dyn_ring = 64;
+    std::array<DynSlot, dyn_ring> dyn; ///< The dynamic loops' slots (DynSlot).
 
-    /// @brief Leave construct @p seq; the last thread out frees its slot.
-    void leave(std::uint64_t seq);
+    /// @brief Enter the next construct of @p rank, a dynamic loop: its slot,
+    ///        claimed or joined (DynSlot), and its number in @p seq.
+    DynSlot& enter_dynamic(int rank, std::uint64_t& seq) noexcept;
 };
 
 /**
@@ -110,8 +154,27 @@ class Pool
 
     /// @brief Run @p job(rank) for every rank of [0, @p n): rank 0 on the
     ///        calling thread, the others on the workers; return when all are done.
+    /// @return false, without running @p job, when another thread's team holds
+    ///         the pool (the caller runs a team of one instead of waiting).
     template <typename Job>
-    void run(int n, Job& job);
+    [[nodiscard]] bool try_run(int n, Job& job);
+
+    /**
+     * @brief try_run() with workers of another runtime: @p launch starts
+     *        n - 1 tasks; those that start within join_budget_ns() take ranks
+     *        1, 2, ... and @p run(ctx, rank) runs on a team of them and the
+     *        calling thread (rank 0) -- ctx a TeamCtx of their number.
+     * @return false, without running @p run, when another thread's team holds
+     *         the pool or no task started in time (the caller runs a team of one).
+     * @details The runtime need not start the tasks at once (TBB does not
+     *          promise it): a team waiting at a barrier for a task never
+     *          started would wait forever. So the team's size is fixed once,
+     *          after the wait, to the tasks that came; a task that starts later
+     *          finds the join closed (or a later generation) and returns
+     *          without touching anything but the pool, which outlives it.
+     */
+    template <typename Run>
+    [[nodiscard]] bool try_run_launched(int n, TeamLauncher launch, Run& run);
 
   private:
     Pool() = default;
@@ -120,12 +183,25 @@ class Pool
 
     void worker_loop(int rank, std::uint64_t seen) noexcept;
 
-    std::mutex                 team_mutex_; ///< One team at a time.
-    std::vector<std::jthread>  workers_;    ///< Worker k: rank k + 1.
-    std::atomic<std::uint64_t> word_{0};    ///< (generation << 16) | team size.
-    std::atomic<int>           pending_{0}; ///< Workers of the current team not done yet.
-    void (*fn_)(void*, int) = nullptr;      ///< The current job (read by its workers only).
-    void* arg_              = nullptr;      ///< Its argument.
+    /// @brief The task try_run_launched() has the runtime start: join
+    ///        generation @p gen if still open, then run its rank.
+    static void join_task(std::uint64_t gen) noexcept;
+
+    /// @brief join_: the tasks joined so far (low bits), the join closed
+    ///        (bit 16), the generation (above).
+    static constexpr std::uint64_t join_count_mask = 0xFFFFU;
+    static constexpr std::uint64_t join_closed     = 0x10000U;
+    static constexpr int           join_gen_shift  = 17;
+
+    std::mutex                 team_mutex_;     ///< One team at a time.
+    std::vector<std::jthread>  workers_;        ///< Worker k: rank k + 1.
+    std::atomic<std::uint64_t> word_{0};        ///< (generation << 16) | team size.
+    std::atomic<int>           pending_{0};     ///< Workers of the current team not done yet.
+    void (*fn_)(void*, int)         = nullptr;  ///< The current job (read by its workers only).
+    void*                      arg_ = nullptr;  ///< Its argument.
+    std::atomic<std::uint64_t> join_{0};        ///< Launched teams: see join_count_mask.
+    std::atomic<std::uint64_t> go_{0};          ///< Generation whose job is published (fn_, arg_).
+    std::uint64_t              launch_gen_ = 0; ///< Last generation launched (under team_mutex_).
 };
 
 /// @brief [b, e) of @p rank in a static block split of n iterations over @p nt
@@ -152,19 +228,44 @@ inline void static_block(long long n, int nt, int rank, long long& b, long long&
  * @details A team of one when @p on is false, @p nt is 1, the calling
  *          thread is already in max_active_levels active teams, or an
  *          application phase is open (application threads hold the ranks the
- *          workers would take); it still counts as a level, as OpenMP's
- *          serialised regions do.
+ *          workers would take), or the pool runs another thread's team; it
+ *          still counts as a level, as OpenMP's serialised regions do.
+ *          Never waiting for the pool keeps it out of every lock order: a
+ *          thread holding the library's cold-path lock (an array built or
+ *          re-chunked outside a region) used to wait for the pool while a
+ *          member of the team holding it waited for that lock.
+ *          With a TeamLauncher set (set_team_launcher(), the TBB adaptor),
+ *          the workers are that runtime's tasks: the team may be smaller
+ *          than @p nt, down to one (Pool::try_run_launched()).
  */
 template <typename TeamT, typename Body>
 void open_team(bool on, int nt, Body& body)
 {
-    const auto& s = tls();
-    if (!on || nt <= 1 || s.active_level >= settings().max_active_levels.load(std::memory_order_relaxed) ||
-        settings().application_phase.load(std::memory_order_acquire))
+    const auto& s      = tls();
+    const auto  serial = [&body]
     {
         const FrameGuard frame(nullptr, 0, 1);
         TeamT            t(nullptr, 0);
         body(t);
+    };
+    if (!on || nt <= 1 || s.active_level >= settings().max_active_levels.load(std::memory_order_relaxed) ||
+        settings().application_phase.load(std::memory_order_acquire))
+    {
+        serial();
+        return;
+    }
+    if (const TeamLauncher launch = settings().team_launcher.load(std::memory_order_acquire); launch != nullptr)
+    {
+        auto run = [&body](TeamCtx& ctx, int rank)
+        {
+            const FrameGuard frame(&ctx, rank, ctx.size);
+            TeamT            t(&ctx, rank);
+            body(t);
+        };
+        if (!Pool::get().try_run_launched(nt, launch, run))
+        {
+            serial();
+        }
         return;
     }
     TeamCtx ctx(nt);
@@ -174,7 +275,10 @@ void open_team(bool on, int nt, Body& body)
         TeamT            t(&ctx, rank);
         body(t);
     };
-    Pool::get().run(nt, job);
+    if (!Pool::get().try_run(nt, job))
+    {
+        serial();
+    }
 }
 } // namespace std_backend
 

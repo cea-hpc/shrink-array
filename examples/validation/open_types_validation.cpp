@@ -15,7 +15,7 @@
  */
 
 // ============================================================================
-// Open element types harness. Variant-agnostic: zero / zero_one_value / zero_any by
+// Open element types harness. Variant-agnostic: zero / zero_or_value / zero_any by
 // the compile-time macro (CHUNK_VARIANT_ZERO*), like the other harnesses.
 // ============================================================================
 //
@@ -43,13 +43,17 @@
 //   of T{} / second / varied (whole chunks, so the pass sees pure constant
 //   blocks), compress() from the whole team, rewrite a quarter, compare every
 //   element against a std::vector reference. Phase brackets as in
-//   compress_roundtrip.
+//   compress_roundtrip_validation.
 //
-//   No type is declared up front: ParamChunk::init_indexes(bool) alone, and
+//   No type is declared up front: Runtime::init(bool) alone, and
 //   each array registers its element type at its construction -- the first
 //   Point3 array after a parallel region has run, a Quad array after a Color
 //   one was torn down, and (dyn builds) a type whose first array comes after
 //   a second geometry was declared, so the registration replays it.
+//
+//   Plus: push_back(a(i)) and resize(n, a(i)) past the capacity on Point3,
+//   a type passed by reference -- the value must be read before resize()
+//   (zero and zero_any: zero_or_value has no a(i) on a non-bool element).
 //
 // WHAT IT DOES NOT COVER
 //
@@ -66,17 +70,17 @@
 #include <utility>     // std::as_const
 #include <vector>      // std::vector
 
-#include "chunk/chunk_traits.h"               // forward decls + default IntType = int
+#include "chunk/internal/chunk_traits.h"      // forward decls + default IntType = int
 #include "chunk/zero_array.h"                 // zero::Array
-#include "chunk/zero_one_value_array.h"       // zero_one_value::Array
+#include "chunk/zero_or_value_array.h"        // zero_or_value::Array
 #include "chunk/zero_any_array.h"             // zero_any::Array
-#include "chunk/param_chunk.h"                // ParamChunk::init_indexes, register_chunk_size
-#include "chunk/zero_chunk.h"                 // release_chunk_pools, destroy_block_chunk
+#include "chunk/runtime.h"                    // Runtime::init, register_chunk_size
+#include "chunk/internal/zero_chunk.h"        // release_chunk_pools, Runtime::shutdown
 #include "chunk/internal/chunk_size_policy.h" // active_chunk_size, set_active_chunk_size, set_thread_chunk_size
-#include "chunk/config.h"         // chunk_config::use_zero_one_value*, build_config::chunk_dynamic / has_not_ompt
-#include "chunk/PMP_CHUNK.h"      // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"    // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/internal/print.h" // shrink_array::println
+#include "chunk/config.h" // chunk_config::use_zero_or_value*, build_config::chunk_dynamic / needs_explicit_phases
+#include "chunk/internal/pmp_chunk.h" // CHUNK_PMP_MAX_THREADS
+#include "chunk/phases.h"             // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/print.h"              // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
@@ -88,13 +92,17 @@ using namespace shrink_array;
 // ── The types ───────────────────────────────────────────────────────────────
 
 /// Three doubles, no padding: the mesh-point case. The defaulted <=> is what
-/// zero_one_value asks of a floating-point struct (it orders second values, see
+/// zero_or_value asks of a floating-point struct (it orders second values, see
 /// value_less.h); zero and zero_any need == alone.
 struct Point3
 {
     auto operator<=>(const Point3&) const = default;
 
-    double x, y, z;
+    double x;
+
+    double y;
+
+    double z;
 };
 
 /// A tag byte then a double: seven bytes of padding inside the value, which
@@ -120,24 +128,26 @@ enum class Color : int
 using Quad = std::array<float, 4>;
 
 /// Two shorts: a 4-byte element, smaller than a double. No operator<: every
-/// bit is value (no padding, no floating point), zero_one_value orders it by bytes.
+/// bit is value (no padding, no floating point), zero_or_value orders it by bytes.
 struct Pair16
 {
     bool operator==(const Pair16&) const = default;
 
-    std::int16_t a, b;
+    std::int16_t a;
+
+    std::int16_t b;
 };
 
 static void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
 }
 static void end_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -147,7 +157,7 @@ template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -155,9 +165,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -281,7 +291,7 @@ static int round_trip(const char* label, long count, const Scenario<T>& sc)
         }
     }
 
-    const long csz = static_cast<long>(arr.chunk_size());
+    const auto csz = static_cast<long>(arr.chunk_size());
     if (bad)
     {
         println("[{}/{}] FAIL: {}/{} mismatches, first at i={} (chunk #{}, offset {}, run {})", variant_name(), label,
@@ -302,8 +312,8 @@ int run(int argc, char** argv)
     const long count = argc > 1 ? std::strtol(argv[1], nullptr, 10) : (1L << 19);
 
     // No type list: each array registers its own element type at its
-    // construction (AllTypeChunk::ensure_manager). The process-wide setup alone.
-    ParamChunk::init_indexes(true);
+    // construction (TypeStateRegistry::ensure_manager). The process-wide setup alone.
+    Runtime::init(true);
 
     println("=== open_types_validation [variant = {}]  N={}  threads={} ===", variant_name(), count,
             CHUNK_PMP_MAX_THREADS);
@@ -348,7 +358,7 @@ int run(int argc, char** argv)
     const unsigned int base_size = active_chunk_size();
     if constexpr (build_config::chunk_dynamic)
     {
-        ParamChunk::register_chunk_size(2 * base_size);
+        Runtime::register_chunk_size(2 * base_size);
     }
 
     fails += round_trip<Quad>("Quad", count, sq);
@@ -387,8 +397,8 @@ int run(int argc, char** argv)
         Array<Pair16> cells{Pair16{1, 5}, Pair16{2, 6}, Pair16{}};
         check(cells.size() == 3 && std::as_const(cells)[1] == Pair16{2, 6} && std::as_const(cells)[2] == Pair16{},
               "initializer-list constructor");
-        std::vector<Pair16> src(500, Pair16{7, 1});
-        Array<Pair16>       rng(src.begin(), src.end());
+        std::vector   src(500, Pair16{7, 1});
+        Array<Pair16> rng(src.begin(), src.end());
         check(rng.size() == 500 && std::as_const(rng)[499] == Pair16{7, 1}, "(first, last) constructor");
         if (!bad)
         {
@@ -402,6 +412,66 @@ int run(int argc, char** argv)
         rng.clear();
     }
 
+    // push_back(a(i)) and resize(n, a(i)) past the capacity. a(i) is a
+    // reference into chunk i's buffer, and a Point3 (24 bytes) is passed by
+    // reference: resize()'s compression pass could release that buffer (its
+    // chunk rewritten to the second value, a candidate), and the write of the
+    // new element re-use it, filled with the first constant, before the value
+    // was read. Under ASan with the standard allocator, a use-after-free.
+    // zero_or_value has no a(i) on a non-bool element (its written() needs the
+    // second-value index): nothing to alias there.
+    if constexpr (!chunk_config::use_zero_or_value)
+    {
+        int           bad = 0;
+        Array<Point3> al;
+        maybe_set_second_value(al, sp.second);
+        const auto cs = static_cast<int>(al.chunk_size());
+        al.resize(4 * cs);
+        for (int i = 0; i < 4 * cs; ++i)
+        {
+            al[i] = sp.varied(i); // materialised
+        }
+        while (static_cast<std::size_t>(al.size()) < al.capacity())
+        {
+            al.push_back(Point3{});
+        }
+        // Each chunk made constant right before its a(i): still materialised when
+        // a(i) is taken (a checked build stops on a(i) of a compressed chunk), a
+        // candidate when resize() runs its pass.
+        for (int i = 0; i < cs; ++i)
+        {
+            al[i] = sp.second;
+        }
+        al.push_back(al(3)); // past the capacity: resize() first
+        if (std::as_const(al).back() != sp.second)
+        {
+            ++bad;
+            println("[{}/aliased push_back] FAIL: push_back(a(3)) past the capacity stored another value",
+                    variant_name());
+        }
+        const auto old_size = static_cast<int>(al.size());
+        for (int i = cs; i < 2 * cs; ++i)
+        {
+            al[i] = sp.second;
+        }
+        al.resize(old_size + (2 * cs), al(cs + 3));
+        for (int i = old_size; i < old_size + (2 * cs); ++i)
+        {
+            if (std::as_const(al)[i] != sp.second)
+            {
+                ++bad;
+                println("[{}/aliased push_back] FAIL: resize(n, a(cs + 3)): [{}] is another value", variant_name(), i);
+                break;
+            }
+        }
+        if (!bad)
+        {
+            println("[{}/aliased push_back] OK: push_back(a(i)) and resize(n, a(i)) past the capacity", variant_name());
+        }
+        fails += bad ? 1 : 0;
+        al.clear();
+    }
+
     if constexpr (build_config::chunk_dynamic)
     {
         // And an array of a late type AT that late geometry.
@@ -413,7 +483,7 @@ int run(int argc, char** argv)
     }
 
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
 
     println("\n[{}] {}", variant_name(),
             fails == 0 ? "=== OPEN TYPES OK, TEARDOWN OK ===" : "=== OPEN TYPES FAILURES ===");

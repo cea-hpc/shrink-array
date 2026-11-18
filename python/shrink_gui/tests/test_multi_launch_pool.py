@@ -31,7 +31,7 @@ def _pool_job(runs, out, pool, k, nodes, rows, errors=()):
         w = csv.writer(f)
         w.writerow(HEAD)
         for i, b, rc in rows:
-            w.writerow([i, b, "shrink_bench_omp_zero_one_value_dyn", 4, "1.5", rc, "", "", f"n{k}"])
+            w.writerow([i, b, "shrink_bench_omp_zero_or_value_dyn", 4, "1.5", rc, "", "", f"n{k}"])
     for name in errors:
         (od / name).write_text(f"boom in {name}\n")
     return d
@@ -48,7 +48,7 @@ def test_pooled_summary_points_errors(tmp_path, capsys):
     # Two jobs, the run indices interleaved as the claims fell; job 2 failed run 6.
     _pool_job(runs, out, "P", 1, 2, [(1, "a", 0), (3, "a", 0), (4, "b", 0)])
     _pool_job(runs, out, "P", 2, 2, [(2, "b", 0), (5, "a", 0), (6, "b", 3)],
-              errors=["error_6_b_shrink_bench_omp_zero_one_value_dyn.txt"])
+              errors=["error_6_b_shrink_bench_omp_zero_or_value_dyn.txt"])
     s = _call(rh, capsys, "summary", str(runs), "P-n1")
     assert s["rows"][-1][:3] == ["TOTAL", "6", "1"]
     assert {r[0]: r[1] for r in s["rows"]} == {"a": "3", "b": "3", "TOTAL": "6"}
@@ -58,7 +58,7 @@ def test_pooled_summary_points_errors(tmp_path, capsys):
     assert sorted(p["builds"]) == ["a", "b"] and p["rows"][-1][5] == 3
     blob = base64.b64encode(json.dumps({"files": ["error_*.txt"]}).encode()).decode()
     e = _call(rh, capsys, "errors", str(runs), "P-n1", blob)    # job 1's own directory has none
-    assert [f["name"] for f in e["files"]] == ["error_6_b_shrink_bench_omp_zero_one_value_dyn.txt"]
+    assert [f["name"] for f in e["files"]] == ["error_6_b_shrink_bench_omp_zero_or_value_dyn.txt"]
     assert e["count"] == 1
     d1 = runs / "P-n1"
     meta = json.loads((d1 / "meta.json").read_text())
@@ -77,9 +77,9 @@ def test_pooled_summary_points_errors(tmp_path, capsys):
 
 
 def _fake_tree(root, calls, fail_at=0):
-    """Two flat builds whose zero_one_value@dyn binary exits 0 at once --
+    """Two flat builds whose zero_or_value@dyn binary exits 0 at once --
     except the @p fail_at-th call over both builds and both jobs (counted by
-    an atomic mkdir), which exits 3 -- and whose vector binary writes a data_tab_x."""
+    an atomic mkdir), which exits 3 -- and whose vector binary writes a data_array_x."""
     body = ("#!/bin/bash\n"
             f"k=1; until mkdir \"{calls}/c_$k\" 2>/dev/null; do k=$((k+1)); done\n"
             "sleep 0.02\n"
@@ -88,8 +88,8 @@ def _fake_tree(root, calls, fail_at=0):
     for b in ("omp-a", "omp-b"):
         d = root / f"cmake-build-{b}"
         d.mkdir(parents=True)
-        (d / "shrink_bench_omp_zero_one_value_dyn").write_text(body)
-        (d / "shrink_bench_omp_vector_check").write_text("#!/bin/bash\nsleep 0.3\necho x > data_tab_x\n")
+        (d / "shrink_bench_omp_zero_or_value_dyn").write_text(body)
+        (d / "shrink_bench_omp_vector_check").write_text("#!/bin/bash\nsleep 0.3\necho x > data_array_x\n")
         for f in d.iterdir():
             f.chmod(0o755)
 
@@ -152,3 +152,34 @@ def test_a_failure_stops_both_jobs(tmp_path):
     assert [r["returncode"] for r in rows].count("3") >= 1
     assert "🛑 [pool] P2: stopped by " in outs[codes.index(1)]
     assert "stopped for every job" in outs[codes.index(3)]
+
+
+def _draws(tmp_path, *extra):
+    """The thread counts of 300 runs of a binary that exits at once."""
+    d = tmp_path / "cmake-build-omp-a"
+    d.mkdir()
+    exe = d / "shrink_bench_omp_zero_or_value_dyn"
+    exe.write_text("#!/bin/bash\n")
+    exe.chmod(0o755)
+    env = dict(os.environ)
+    env.pop("CHUNK_BUILD_ROOT", None)
+    subprocess.run([sys.executable, str(PYDIR / "multi_launch_stress.py"), "--builds", "omp-a",
+                    "--build-root", str(tmp_path), "--run-dir", str(tmp_path / "out"), "--runs", "300",
+                    "--min_threads", "10", "--max_threads", "320", "--numa-interleave", "off", *extra],
+                   check=True, stdout=subprocess.DEVNULL, env=env, cwd=str(tmp_path), timeout=120)
+    with open(tmp_path / "out" / "timings_summary.csv", newline="") as f:
+        return [int(r["num_threads"]) for r in csv.DictReader(f)]
+
+
+def test_peak_threads_weights_the_draw(tmp_path):
+    draws = _draws(tmp_path, "--peak_threads", "96", "--peak_share", "0.7")
+    near = sum(72 <= t <= 120 for t in draws)
+    assert len(draws) == 300 and all(10 <= t <= 320 for t in draws)
+    assert near > 150                         # 75 % expected, uniform would give 15 %
+    assert any(t > 120 for t in draws) and any(t < 72 for t in draws)   # the range is still run
+
+
+def test_peak_threads_outside_the_range_is_refused():
+    r = subprocess.run([sys.executable, str(PYDIR / "multi_launch_stress.py"), "--min_threads", "10",
+                        "--max_threads", "20", "--peak_threads", "96"], capture_output=True, text=True)
+    assert r.returncode != 0 and "outside 10..20" in r.stderr

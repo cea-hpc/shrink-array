@@ -19,10 +19,10 @@
 /**
  * @file reuse_pools.h
  * @brief ReusePools: the buffer reuse pools of one (variant, element type),
- *        a base of ManagerChunk.
+ *        a base of TypeState.
  *
- * Its bodies are in reuse_pools_inline.h, which manager_chunk.h includes once
- * ManagerChunk is complete.
+ * Its bodies are in reuse_pools_inline.h, which type_state.h includes once
+ * TypeState is complete.
  */
 
 #include <algorithm>     // std::max
@@ -34,17 +34,17 @@
 #include <unordered_map> // std::unordered_map
 #include <vector>        // std::vector
 
-#include "chunk/zero_chunk_def.h"     // ChunkDef::size_min_buffer_reuse
-#include "chunk/zero_any_chunk_def.h" // zero_any::ChunkDef: the reuse budget constants
-#include "chunk/PMP_CHUNK.h"          // pmp::Team (drain_reuse_list_for_size_team)
-#include "chunk/internal/immortal.h"  // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/zero_chunk_def.h"     // ChunkDef::size_min_buffer_reuse
+#include "chunk/internal/zero_any_chunk_def.h" // zero_any::ChunkDef: the reuse budget constants
+#include "chunk/internal/pmp_chunk.h"          // pmp::Team (drain_reuse_list_for_size_team)
+#include "chunk/internal/immortal.h"           // Immortal / LazyImmortal: statics safe for global arrays
 
 namespace shrink_array
 {
 namespace internal
 {
 /// @brief One repeat seen by the teardown dedup phase: skip @p ptr when freeing bucket @p bucket.
-/// @see ManagerChunkParallelImpl::clear_list_block_free_dedup
+/// @see TypeStateParallelImpl::clear_list_block_free_dedup
 template <typename T>
 struct TeardownRepeat
 {
@@ -55,7 +55,7 @@ struct TeardownRepeat
 
 /**
  * @brief The buffer reuse pools of one (variant, element type), shared by
- *        all its arrays: a base of ManagerChunk, static state only.
+ *        all its arrays: a base of TypeState, static state only.
  *
  * @details Chunk buffers released by a compression or a teardown are parked
  *          here for the next materialisation instead of going back to the
@@ -66,12 +66,12 @@ struct TeardownRepeat
  *          affinity have their own lists (list_block_free_thr_keyed_). The
  *          pools also hold the reuse budgets, the drains of a re-chunk, the
  *          trims, and the hand-off buffers of the teardown
- *          (ManagerChunkParallelImpl::clear_list_block_free_*).
+ *          (TypeStateParallelImpl::clear_list_block_free_*).
  *
- *          The members reached through ManagerChunk only -- by its bodies
+ *          The members reached through TypeState only -- by its bodies
  *          and its policies, which it befriends -- are protected.
  *
- * @tparam ChunkT chunk variant template (zero, zero_one_value or zero_any)
+ * @tparam ChunkT chunk variant template (zero, zero_or_value or zero_any)
  * @tparam T      stored element type
  */
 template <template <typename> class ChunkT, typename T>
@@ -95,7 +95,7 @@ class ReusePools
 
     /// @brief Divisor of the proportional reuse budget: a rank parks up to
     ///        chunks / (this * threads) buffers
-    ///        (zero_any::ChunkDef::factor_div_somme_chunk_buffer_reuse).
+    ///        (zero_any::ChunkDef::factor_div_total_chunk_buffer_reuse).
     /// @details The chunks counted are all the chunks created, compressed
     ///          ones included: at 99 % compression this parks about twice the
     ///          buffers actually materialised. Halved or doubled, and with the
@@ -104,7 +104,7 @@ class ReusePools
     ///          2026): the former CHUNK_REUSE_SHARE_DIV and CHUNK_REUSE_FLOOR_KB.
     [[nodiscard]] static constexpr long reuse_share_div() noexcept
     {
-        return static_cast<long>(zero_any::ChunkDef::factor_div_somme_chunk_buffer_reuse);
+        return static_cast<long>(zero_any::ChunkDef::factor_div_total_chunk_buffer_reuse);
     }
 
     /// @brief Size the legacy (unsized) reuse list to @p max_thr threads.
@@ -218,7 +218,8 @@ class ReusePools
         return (static_cast<std::uint64_t>(key) << 32U) | size;
     }
 
-    static inline int size_buffer_reuse;
+    // Atomic: set on the cold path (under its lock), read when a buffer is parked.
+    static inline constinit std::atomic<int> size_buffer_reuse{0};
     static inline constinit internal::LazyImmortal<std::unordered_map<unsigned int, int>>
         size_buffer_reuse_by_key_; ///< see get_size_buffer_reuse(key)
 
@@ -273,7 +274,7 @@ class ReusePools
     /// @brief Maximum number of buffers a thread keeps parked for reuse.
     [[nodiscard]] static int get_size_buffer_reuse() noexcept
     {
-        return size_buffer_reuse;
+        return size_buffer_reuse.load(std::memory_order_relaxed);
     }
     /// @brief Reuse budget of the list (thr, key): the array's own share per rank,
     ///        set by set_size_buffer_reuse(key, ...); key 0 and unknown keys get
@@ -353,7 +354,7 @@ class ReusePools
      * @details Called by rechunk_to() (all variants) before allocating at a new
      *          geometry. Std-alloc: each buffer is svfree'd (parked in the
      *          ledger, hence DISCARD). Fast-alloc: each is returned to its OWNING
-     *          rank's slab (free_elt_pow2() is only safe on an owned block);
+     *          rank's slab (free_elem_pow2() is only safe on an owned block);
      *          blocks with no known owner stay parked.
      *
      * @param size geometry whose reuse list is drained

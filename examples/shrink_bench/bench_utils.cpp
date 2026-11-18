@@ -31,8 +31,8 @@
 #include "chunk/internal/env_parse.h" // env_flag
 #include "chunk/internal/exact_rss.h" // exact current and peak memory
 
-#include "chunk/all_type_chunk.h" // reuse_pool_bytes, the retention split of memory_consumption
-#include "chunk/build_options.h"  // CHUNK_OPT_FAST_ALLOC
+#include "chunk/internal/type_state_registry.h" // reuse_pool_bytes, the retention split of memory_consumption
+#include "chunk/build_options.h"                // CHUNK_OPT_FAST_ALLOC
 #if CHUNK_OPT_FAST_ALLOC
     #include "fast_allocators/slab_arena.h" // report_all_arenas, its slab-side counterpart
 #endif
@@ -49,9 +49,10 @@ const std::vector<std::string> valid_args = {
     "--test_stl", "--test_prealloc", "--no_struct", "--no_mask", "--mask_scale", "--no_conn", "--conn_scale",
     "--checksum_only", "--help",
     // The adaptive re-chunk (dyn builds), bench_args.h.
-    "--advisor_period", "--advise_five", "--rechunk_dry_run", "--rechunk_min_gain_mb", "--rechunk_coarsen_min_meta_mb",
-    "--rechunk_coarsen_min_meta_rate", "--rechunk_max_coarsen", "--rechunk_grid_bits", "--rechunk_backoff_max",
-    "--rechunk_trace_array", "--force_rechunk", "--force_rechunk_at", "--force_rechunk_alt", "--force_rechunk_toggle"};
+    "--advisor_period", "--advise_five", "--advise_bool", "--rechunk_dry_run", "--rechunk_min_gain_mb",
+    "--rechunk_coarsen_min_meta_mb", "--rechunk_coarsen_min_meta_rate", "--rechunk_max_coarsen", "--rechunk_grid_bits",
+    "--rechunk_backoff_max", "--rechunk_trace_array", "--force_rechunk", "--force_rechunk_at", "--force_rechunk_alt",
+    "--force_rechunk_toggle"};
 
 // -----------------------------------------------------------------------------
 // Seed persistence.
@@ -172,7 +173,7 @@ void memory_consumption(const std::string& msg)
                 static const bool keep_pools = shrink_array::env_flag("SHRINK_BENCH_KEEP_POOLS");
                 if (!keep_pools)
                 {
-                    (void)shrink_array::SingletonChk<shrink_array::AllTypeChunk>::get_ref().trim_reuse_pools(0);
+                    (void)shrink_array::SingletonChk<shrink_array::TypeStateRegistry>::get_ref().trim_reuse_pools(0);
                 }
             }
             malloc_trim(0);
@@ -214,9 +215,9 @@ void memory_consumption(const std::string& msg)
         // stdout instead).
         if (msg == "end")
         {
-            if (std::ofstream fichier("memory_mo.txt"); fichier.is_open())
+            if (std::ofstream out_file("memory_mo.txt"); out_file.is_open())
             {
-                fichier << convert_memory(static_cast<double>(rss) * 1024.0);
+                out_file << convert_memory(static_cast<double>(rss) * 1024.0);
             }
             else
             {
@@ -240,7 +241,7 @@ void memory_consumption(const std::string& msg)
         if constexpr (chunk_config::is_shrink_enabled)
         {
             const std::size_t parked =
-                shrink_array::SingletonChk<shrink_array::AllTypeChunk>::get_ref().reuse_pool_bytes();
+                shrink_array::SingletonChk<shrink_array::TypeStateRegistry>::get_ref().reuse_pool_bytes();
             std::cout << ", parked " << convert_memory(static_cast<double>(parked)) << " Mo";
             // Preprocessor guard, not `if constexpr`: ChunkStatsThr and
             // reduce_chunk_stats() only exist in a CHUNK_STATS build, and a

@@ -22,24 +22,25 @@
 
 #include "chunk/bit.h"    // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/config.h" // chunk_config::use_fast_block_compression, build_config::do_check
-#include "chunk/internal/concept_is_clean_assignement.h" // BaseT, ElementMultipliable, ElementModulable
-#include "chunk/internal/def_force_inline.h"             // CHUNK_FORCE_INLINE
-#include "chunk/internal/in_t.h"                         // InT<T>
-#include "chunk/internal/proxy_base.h"                   // ProxyBase
-#include "chunk/log.h"                                   // CHUNK_LOG (the operators bool has not)
+#include "chunk/internal/concept_is_clean_assignment.h" // BaseT, ElementMultipliable, ElementModulable
+#include "chunk/internal/def_force_inline.h"            // CHUNK_FORCE_INLINE
+#include "chunk/internal/in_t.h"                        // InT<T>
+#include "chunk/internal/proxy_base.h"                  // ProxyBase
+#include "chunk/log.h"                                  // CHUNK_LOG (the operators bool has not)
+#include "chunk/internal/same_value.h"                  // same_value
 
 namespace shrink_array
 {
 
 // ============================================================================
-// SecondValueProxyBase: logic shared by zero_one_value::Proxy and zero_any::Proxy (second_value, etc.)
+// SecondValueProxyBase: logic shared by zero_or_value::Proxy and zero_any::Proxy (second_value, etc.)
 // ============================================================================
 
 /**
  * @brief Base class for proxies with a second_value (CRTP)
- * @tparam Derived The derived proxy class (zero_one_value::Proxy<T> or zero_any::Proxy<T>)
+ * @tparam Derived The derived proxy class (zero_or_value::Proxy<T> or zero_any::Proxy<T>)
  * @tparam T The underlying type
- * @tparam ChunkT The chunk type (zero_one_value::Chunk<T> or zero_any::Chunk<T>)
+ * @tparam ChunkT The chunk type (zero_or_value::Chunk<T> or zero_any::Chunk<T>)
  *
  * Contains the logic specific to chunks with two constant values.
  */
@@ -52,13 +53,13 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     friend Base;
 
     using Base::add_to_compression_list;
+    using Base::array_id_;
     using Base::chunk_;
+    using Base::chunk_index_;
     using Base::derived;
-    using Base::is_cst_val1;
-    using Base::is_not_cst_val1;
-    using Base::num_;
-    using Base::num_chunk_;
-    using Base::num_tab_;
+    using Base::elem_offset_;
+    using Base::is_const_val1;
+    using Base::is_not_const_val1;
     using Base::values_;
 
     using typename Base::AtomicPtrRefT;
@@ -66,8 +67,8 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
 
     // Both members exist on ProxyBase in every mode (the serial specialisation
     // declares them too); only their USE is mode-specific.
+    using Base::array_is_inside_chunk_list_to_compress;
     using Base::ptr_is_inside_chunk_list_to_compress_;
-    using Base::tab_is_inside_chunk_list_to_compress;
 
     // ========================================================================
     // CRTP: Access to derived class
@@ -76,21 +77,21 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     /**
      * @brief Whether the owning chunk is currently compressed to its second
      *        constant (delegates to the derived class, which knows the
-     *        index/ind for non-bool types).
+     *        index/idx for non-bool types).
      * @return true if the chunk is compressed to the second constant.
      */
-    [[nodiscard]] bool is_cst_val2() const noexcept
+    [[nodiscard]] bool is_const_val2() const noexcept
     {
-        return derived().is_cst_val2();
+        return derived().is_const_val2();
     }
 
     /**
-     * @brief Negation of is_cst_val().
+     * @brief Negation of is_const_val().
      * @return true if the chunk is materialised (compressed to neither constant).
      */
-    [[nodiscard]] bool is_not_cst_val() const noexcept
+    [[nodiscard]] bool is_not_const_val() const noexcept
     {
-        return !is_cst_val();
+        return !is_const_val();
     }
 
     /**
@@ -174,29 +175,32 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
 
   protected:
     /**
-     * @brief Construct a proxy for element `num_` of `chunk_`.
+     * @brief Construct a proxy for element `elem_offset_` of `chunk_`.
      * @param values Reference to the chunk's values pointer.
-     * @param num Element offset within the chunk.
+     * @param elem_offset Element offset within the chunk.
      * @param chunk Owning chunk.
      */
-    explicit SecondValueProxyBase(ValuesTypeRef values, int num, ChunkT& chunk) noexcept : Base(values, num, chunk) {}
+    explicit SecondValueProxyBase(ValuesTypeRef values, int elem_offset, ChunkT& chunk) noexcept
+        : Base(values, elem_offset, chunk)
+    {
+    }
 
     /**
-     * @brief Negation of is_cst_val2().
+     * @brief Negation of is_const_val2().
      * @return true if the chunk is NOT compressed to the second constant.
      */
-    [[nodiscard]] bool is_not_cst_val2() const noexcept
+    [[nodiscard]] bool is_not_const_val2() const noexcept
     {
-        return !is_cst_val2();
+        return !is_const_val2();
     }
 
     /**
      * @brief Whether the chunk is compressed to EITHER constant (first or second).
      * @return true if the chunk is compressed.
      */
-    [[nodiscard]] bool is_cst_val() const noexcept
+    [[nodiscard]] bool is_const_val() const noexcept
     {
-        return is_cst_val1() || is_cst_val2();
+        return is_const_val1() || is_const_val2();
     }
 
     /**
@@ -209,7 +213,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      *          pass, on its first write of a constant over something else.
      *
      *          Not only a chunk ALREADY at one constant being written the
-     *          other: a chunk materialised by a plain value (2.5 over cst_val1)
+     *          other: a chunk materialised by a plain value (2.5 over const_val1)
      *          and then written back to a constant element by element must be
      *          queued too, or it stays materialised for the run. The cost is
      *          paid only by writes of a constant: an old-value read and a
@@ -224,7 +228,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     [[nodiscard]] static bool
     pre_check_mark_for_compression_strict(InT<T> new_value, InT<T> first_value, InT<T> second_val) noexcept
     {
-        return new_value == first_value || new_value == second_val;
+        return same_value(new_value, first_value) || same_value(new_value, second_val);
     }
 
     // --- Boolean overloads ---
@@ -270,7 +274,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     /**
      * @brief Marks block for compression with an explicit old boolean value
      *        (provided to avoid a race), rather than reading it back from
-     *        values[num].
+     *        values[elem_offset].
      * @param old_value The previous boolean value.
      * @param new_value The new boolean value.
      */
@@ -298,9 +302,9 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      * @tparam WriteFn Callable type for write operation.
      * @param write_fn Function to execute after metadata setup.
      * @details Combines fast/slow path locking with automatic metadata
-     *          initialization (set_num_tab_ptr_is_inside_chunk(), needed by
+     *          initialization (set_array_id_ptr_is_inside_chunk(), needed by
      *          the fast-block-compression path). Useful for operations that
-     *          need tab/chunk information before writing.
+     *          need array/chunk information before writing.
      */
     template <typename WriteFn>
     [[nodiscard]] CHUNK_FORCE_INLINE bool write_with_optional_lock_with_set_ptr(WriteFn write_fn) noexcept;
@@ -328,7 +332,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      * @details The `isv` filter of every marking entry point: the CRTP call of
      *          Derived::pre_check_mark_for_compression(), which this class
      *          defaults to pre_check_mark_for_compression_strict() -- a constant
-     *          is written, WHATEVER the chunk's state (zero_one_value adds that
+     *          is written, WHATEVER the chunk's state (zero_or_value adds that
      *          the rank has a candidate list for the value; zero_any and
      *          pattern widen it). It does not look at the chunk's state: a
      *          chunk materialised by a plain value and written back to a
@@ -345,7 +349,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     [[nodiscard]] bool passes_mark_pre_check(InT<T> new_value, InT<T> first_value, InT<T> second_val) const noexcept;
 
     /**
-     * @brief Default pre-check hook (zero_one_value behaviour).
+     * @brief Default pre-check hook (zero_or_value behaviour).
      * @details Variants that widen should_mark_for_compression() MUST shadow
      *          this method and widen the pre-check to match -- otherwise the
      *          extra predicate clauses are unreachable.

@@ -15,7 +15,7 @@
  */
 
 // ============================================================================
-// Marking-path harness. Variant-agnostic: zero / zero_one_value / zero_any follow the
+// Marking-path harness. Variant-agnostic: zero / zero_or_value / zero_any follow the
 // compile-time macro (CHUNK_VARIANT_ZERO*), like the other harnesses here.
 // ============================================================================
 //
@@ -41,14 +41,14 @@
 //      A pre-check accepting only the constant-to-constant transition
 //      leaves this chunk materialised for the run.
 //
-//   B  the second constant everywhere (a fresh chunk goes cst1 -> cst2:
+//   B  the second constant everywhere (a fresh chunk goes const1 -> const2:
 //      a constant-to-constant transition), then a plain value,
 //      then the second constant again -- the case A for the second
 //      constant -- then the first.
 //
 //   C  an array that has declared NO second value, after another array
 //      declared 7.0: a plain value, then 0; then 7.0 -- the OTHER array's
-//      second value, which must not compress here on zero_one_value -- then 0, and a
+//      second value, which must not compress here on zero_or_value -- then 0, and a
 //      read-back of every element. The first 0 written over a materialised
 //      chunk of such an array must find its candidate list.
 //
@@ -59,7 +59,7 @@
 //
 // THE PHASE PROTOCOL
 //
-//   Same brackets as compress_roundtrip: begin_parallel_phase() by every
+//   Same brackets as compress_roundtrip_validation: begin_parallel_phase() by every
 //   thread inside the region, finalize_parallel_phase() outside it -- that
 //   last one is the pass this harness relies on in a GNU build (under OMPT
 //   the callbacks run it, serially the counters compress inline). At 1
@@ -72,16 +72,16 @@
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::as_const
 
-#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
-#include "chunk/zero_array.h"           // zero::Array
-#include "chunk/zero_one_value_array.h" // zero_one_value::Array
-#include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"           // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"               // chunk_config::use_zero*
-#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"          // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/internal/print.h"       // shrink_array::println
+#include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
+#include "chunk/zero_array.h"            // zero::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
+#include "chunk/zero_any_array.h"        // zero_any::Array
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
+#include "chunk/config.h"                // chunk_config::use_zero*
+#include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
+#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/print.h"                 // shrink_array::println
 
 // Defined by every executable of the library (the fast allocator reads it).
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
@@ -94,14 +94,14 @@ using namespace shrink_array;
 // The phase brackets, no-ops under OMPT (the callbacks do it) and serially.
 static void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
 }
 static void end_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -111,7 +111,7 @@ template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -119,9 +119,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -129,7 +129,7 @@ constexpr const char* variant_name()
     }
 }
 
-// set_second_value only exists on zero_one_value / zero_any; no-op elsewhere.
+// set_second_value only exists on zero_or_value / zero_any; no-op elsewhere.
 template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& arr, const Val& value)
 {
@@ -153,8 +153,8 @@ static double plain(int index)
 ///        written (the array has one more, empty, that no phase touches).
 static int materialised(const Array<double>& arr)
 {
-    const int chunk_sz = static_cast<int>(arr.chunk_size());
-    int       count    = 0;
+    const auto chunk_sz = static_cast<int>(arr.chunk_size());
+    int        count    = 0;
     for (int j = 0; j < n_chunks; ++j)
     {
         count += arr.written(j * chunk_sz);
@@ -194,7 +194,7 @@ static void phase(Array<double>& arr, int count, Fn&& body)
 
 /// @brief What a constant written everywhere must leave materialised, per
 ///        variant: `first` compresses everywhere; `declared` (the array's
-///        declared second value) compresses on zero_one_value / zero_any; `other`
+///        declared second value) compresses on zero_or_value / zero_any; `other`
 ///        (a value the array never declared) compresses on zero_any alone,
 ///        which discovers its second value per chunk.
 enum class Kind : std::uint8_t
@@ -209,13 +209,14 @@ static int expect_after(Kind kind)
 {
     switch (kind)
     {
-        case Kind::first:
+        using enum Kind;
+        case first:
             return 0;
-        case Kind::declared:
+        case declared:
             return chunk_config::use_second_value ? 0 : n_chunks;
-        case Kind::other:
+        case other:
             return chunk_config::use_zero_any ? 0 : n_chunks;
-        case Kind::plain:
+        case plain:
             return n_chunks;
     }
     return -1;
@@ -224,8 +225,7 @@ static int expect_after(Kind kind)
 static int check(const char* scenario, const char* step, const Array<double>& arr, Kind kind)
 {
     const int got = materialised(arr);
-    const int exp = expect_after(kind);
-    if (got != exp)
+    if (const int exp = expect_after(kind); got != exp)
     {
         println("[{}/{}] FAIL after '{}': {} chunk(s) materialised, expected {}", variant_name(), scenario, step, got,
                 exp);
@@ -237,11 +237,11 @@ static int check(const char* scenario, const char* step, const Array<double>& ar
 
 int run(int /*argc*/, char** /*argv*/)
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     // The geometry this build runs at, read off a throwaway array.
-    const int chunk_sz = static_cast<int>(Array<double>(1).chunk_size());
-    const int count    = n_chunks * chunk_sz;
+    const auto chunk_sz = static_cast<int>(Array<double>(1).chunk_size());
+    const int  count    = n_chunks * chunk_sz;
 
     println("=== mark_path_validation [variant = {}]  chunk_size={}  chunks={}  threads={} ===", variant_name(),
             chunk_sz, n_chunks, CHUNK_PMP_MAX_THREADS);
@@ -304,7 +304,7 @@ int run(int /*argc*/, char** /*argv*/)
 
     // The library's own teardown, as in the other harnesses.
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
 
     println("\n[{}] {}", variant_name(),
             fails == 0 ? "=== MARK PATH OK, TEARDOWN OK ===" : "=== MARK PATH FAILURES ===");

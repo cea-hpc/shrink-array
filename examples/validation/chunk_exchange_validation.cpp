@@ -25,7 +25,7 @@
  *          value, three uniform (at a, a and b), two holding the same motif at
  *          offsets 100 and 200, the others varied. What they compress to
  *          depends on the variant and the type (expected_kind()): zero keeps
- *          only the first value, zero_one_value its declared second value (a;
+ *          only the first value, zero_or_value its declared second value (a;
  *          bool: true), zero_any any value, pattern any value and the motif
  *          (installed directly: the registry's admission rule would take two
  *          passes). After shrink_to_fit() every chunk is exported, and the kinds
@@ -39,6 +39,9 @@
  *               value, the value written back and shrink_to_fit() put it back).
  *            2. import_array() into an array already written with other values,
  *               and into the source itself: the same again.
+ *            3. import_array() of an array grown by push_back to whole chunks
+ *               (one chunk fewer than a fresh array of its size) and of one
+ *               after a reserve() (chunks past its size): the same elements.
  *
  *          Every array is destroyed at the end (a second value or motif shared
  *          by several counted right, or a later destruction fails).
@@ -54,20 +57,20 @@
 #include <utility>     // std::as_const
 #include <vector>      // std::vector (the exported states)
 
-#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
-#include "chunk/zero_array.h"           // zero::Array
-#include "chunk/zero_one_value_array.h" // zero_one_value::Array
-#include "chunk/zero_any_array.h"       // zero_any::Array
+#include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
+#include "chunk/zero_array.h"            // zero::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
+#include "chunk/zero_any_array.h"        // zero_any::Array
 #if defined(CHUNK_EXCHANGE_PATTERN)
     #include "chunk/pattern_array.h" // pattern::Array
 #endif
-#include "chunk/chunk_exchange.h" // export_chunk, import_chunk, export_array, import_array
-#include "chunk/param_chunk.h"    // ParamChunk::init_indexes
-#include "chunk/manage_ompt.h"    // parallel_phase
-#include "chunk/config.h"         // chunk_config::use_zero*
-#include "chunk/PMP_CHUNK.h"      // pmp::current_team
-#include "chunk/type_name.h"      // type_name<T>()
-#include "chunk/internal/print.h" // shrink_array::println
+#include "chunk/chunk_exchange.h"     // export_chunk, import_chunk, export_array, import_array
+#include "chunk/runtime.h"            // Runtime::init
+#include "chunk/phases.h"             // parallel_phase
+#include "chunk/config.h"             // chunk_config::use_zero*
+#include "chunk/internal/pmp_chunk.h" // pmp::current_team
+#include "chunk/internal/type_name.h" // type_name<T>()
+#include "chunk/print.h"              // shrink_array::println
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
 
@@ -87,7 +90,7 @@ template <typename T>
 using VariantArray =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 #endif
 
 constexpr const char* variant_name()
@@ -100,9 +103,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -115,7 +118,7 @@ constexpr int n_full_chunks = 8; ///< then a partial chunk of half a chunk
 template <typename T>
 constexpr bool is_bool = std::is_same_v<T, bool>;
 
-/// @brief The uniform values: a (chunks 1 and 5, zero_one_value's second
+/// @brief The uniform values: a (chunks 1 and 5, zero_or_value's second
 ///        value), b (chunk 2), and the one a write pokes in.
 template <typename T>
 T value_a()
@@ -184,23 +187,24 @@ T source_value(long i, long chunk_size)
 template <typename T>
 ChunkKind expected_kind(int chunk)
 {
-    const bool second_a = chunk_config::use_zero_any || chunk_config::use_zero_one_value;
-    const bool second_b = chunk_config::use_zero_any || (chunk_config::use_zero_one_value && is_bool<T>);
+    const bool second_a = chunk_config::use_zero_any || chunk_config::use_zero_or_value;
+    const bool second_b = chunk_config::use_zero_any || (chunk_config::use_zero_or_value && is_bool<T>);
     switch (chunk)
     {
+        using enum ChunkKind;
         case 0:
         case 4:
-            return ChunkKind::first_value;
+            return first_value;
         case 1:
         case 5:
-            return second_a ? ChunkKind::second_value : ChunkKind::materialised;
+            return second_a ? second_value : materialised;
         case 2:
-            return second_b ? ChunkKind::second_value : ChunkKind::materialised;
+            return second_b ? second_value : materialised;
         case 3:
         case 7:
-            return pattern_build ? ChunkKind::motif : ChunkKind::materialised;
+            return pattern_build ? motif : materialised;
         default:
-            return ChunkKind::materialised;
+            return materialised;
     }
 }
 
@@ -208,24 +212,25 @@ const char* kind_name(ChunkKind kind)
 {
     switch (kind)
     {
-        case ChunkKind::first_value:
+        using enum ChunkKind;
+        case first_value:
             return "first_value";
-        case ChunkKind::second_value:
+        case second_value:
             return "second_value";
-        case ChunkKind::motif:
+        case motif:
             return "motif";
-        case ChunkKind::materialised:
+        case materialised:
             return "materialised";
     }
     return "?";
 }
 
-/// @brief zero_one_value (not bool): declare the second value a on @p arr.
+/// @brief zero_or_value (not bool): declare the second value a on @p arr.
 template <typename A>
 void prepare(A& arr)
 {
     using T = A::value_type;
-    if constexpr (chunk_config::use_zero_one_value && !pattern_build && !is_bool<T>)
+    if constexpr (chunk_config::use_zero_or_value && !pattern_build && !is_bool<T>)
     {
         arr.set_second_value(value_a<T>());
     }
@@ -247,20 +252,21 @@ long compare_states(const std::vector<ChunkState<T>>& lhs,
     long bad = lhs.size() != rhs.size() ? 1 : 0;
     for (std::size_t c = 0; c < lhs.size() && c < rhs.size(); ++c)
     {
+        using enum ChunkKind;
         const auto& a = lhs[c];
         const auto& b = rhs[c];
-        if (promoted != nullptr && a.kind == ChunkKind::materialised && b.kind == ChunkKind::motif)
+        if (promoted != nullptr && a.kind == materialised && b.kind == motif)
         {
             ++*promoted;
             continue;
         }
-        if (a.kind != b.kind || (a.kind != ChunkKind::materialised && a.value != b.value))
+        if (a.kind != b.kind || (a.kind != materialised && a.value != b.value))
         {
             println("  FAIL chunk {}: {} {} vs {} {}", c, kind_name(a.kind), a.value, kind_name(b.kind), b.value);
             ++bad;
             continue;
         }
-        if ((a.kind == ChunkKind::materialised || a.kind == ChunkKind::motif) && a.data != nullptr)
+        if ((a.kind == materialised || a.kind == motif) && a.data != nullptr)
         {
             const long begin = static_cast<long>(c) * chunk_size;
             const long n     = begin + chunk_size < size ? chunk_size : size - begin;
@@ -305,12 +311,12 @@ long check_copy(const A&                                               arr,
                 long                                                   chunk_size,
                 const char*                                            what)
 {
-    const long size     = static_cast<long>(arr.size());
+    const auto size     = static_cast<long>(arr.size());
     const long wrong    = wrong_elements(arr, chunk_size);
     int        promoted = 0; // pattern: materialised chunks found compressed to a motif since
     const long differ =
         compare_states(expected, export_array(arr).chunks, chunk_size, size, pattern_build ? &promoted : nullptr);
-    const int  got  = arr.get_nb_chunk_written();
+    const int  got  = arr.written_chunk_count();
     const int  want = written - promoted;
     const bool ok   = wrong == 0 && differ == 0 && got == want;
     println("[{}/{}] {}: {} wrong element(s), {} state difference(s), {} vs {} chunks with a buffer{}  {}",
@@ -327,7 +333,7 @@ long round_trip()
     long fails = 0;
     A    src(0);
     prepare(src);
-    const long chunk_size = static_cast<long>(src.chunk_size());
+    const auto chunk_size = static_cast<long>(src.chunk_size());
     const long size       = (n_full_chunks * chunk_size) + (chunk_size / 2);
     src.resize(static_cast<int>(size));
     if constexpr (pattern_build)
@@ -357,7 +363,7 @@ long round_trip()
     src.shrink_to_fit();
 
     const auto states  = export_array(src).chunks;
-    const int  written = src.get_nb_chunk_written();
+    const int  written = src.written_chunk_count();
     for (int c = 0; c < static_cast<int>(states.size()); ++c)
     {
         if (states[static_cast<std::size_t>(c)].kind != expected_kind<T>(c))
@@ -432,6 +438,40 @@ long round_trip()
         fails += self ? 0 : 1;
         fails += check_copy(src, kinds, written, chunk_size, "import_array over itself");
     }
+
+    // 3. Arrays with another chunk count than a fresh one of their size: grown
+    //    by push_back to whole chunks (no spare last chunk), and after a
+    //    reserve() (chunks past the size). import_array() refused both.
+    {
+        const auto import_back = [&](const A& from, const char* how)
+        {
+            A          into(1);
+            const bool done = import_array(into, export_array(from));
+            const long bad  = (done ? 0 : 1) + (into.size() != from.size() ? 1 : 0) + wrong_elements(into, chunk_size);
+            println("[{}/{}] import_array of an array {} ({} chunks for {} elements): {} problem(s)  {}",
+                    variant_name(), type_name<T>(), how, from.chunk_count(), static_cast<long>(from.size()), bad,
+                    bad == 0 ? "ok" : "FAIL");
+            return bad;
+        };
+
+        A grown(0);
+        prepare(grown);
+        for (long i = 0; i < n_full_chunks * chunk_size; ++i)
+        {
+            grown.push_back(source_value<T>(i, chunk_size));
+        }
+        fails += import_back(grown, "grown by push_back");
+
+        A reserved(0);
+        prepare(reserved);
+        reserved.resize(static_cast<int>(size));
+        for (long i = 0; i < size; ++i)
+        {
+            reserved[static_cast<int>(i)] = source_value<T>(i, chunk_size);
+        }
+        reserved.reserve(static_cast<int>(40 * chunk_size));
+        fails += import_back(reserved, "after reserve()");
+    }
     return fails;
 }
 
@@ -439,7 +479,7 @@ long round_trip()
 
 int run(int /*argc*/, char** /*argv*/)
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
     long fails = 0;
 #if defined(CHUNK_EXCHANGE_PATTERN)
     fails += round_trip<pattern::Array<int>>();

@@ -21,11 +21,11 @@ calls, OMPT named in 23 files. Five different uses:
 
 | | use | where | replaced by |
 |---|---|---|---|
-| **A** | runtime queries: rank, thread count, in-region, level | `PMP_CHUNK.h` (`CHUNK_PMP_THREAD_RANK`, `CHUNK_PMP_MAX_THREADS`, `CHUNK_PMP_IN_PARALLEL_REGION`, ...), `fast_allocators/internal/pmp_alloc.h`, `slab_arena.h` (`omp_get_max_threads`, `omp_in_parallel`), `manage_ompt.cpp` | the same macros, routed to the backend; rank of a non-OpenMP thread: dense, `thread_local`, assigned on first use |
-| **B** | one-shot data-parallel loops at a serial point (`parallel for` [`reduction`] [`if`]) | `array_chunk_base_inline.h:110`, `zero_array_inline.h:117,524`, `zero_one_value_array_inline.h:450,487,535`, `zero_any_array_inline.h:150,209`, `second_value_array_base.h:175`, `parallel_storage_init.h:143,173`, `slab_arena.h:529,822` (dynamic) | `pmp::parallel_for(n, schedule, f)`, `pmp::parallel_reduce(n, init, f, op)` |
-| **C** | team regions with worksharing and synchronisation (`parallel` + `for` / `single` / `masked` / `barrier` / `nowait`) | rechunk slices (`array_chunk_rechunk_refill_inline.h`, `Refill::run_slice` / `slice_boundary`), compression passes (`zero_array_inline.h:216-357`, `zero_one_value_array_inline.h:705-1068`, `zero_any_array_inline.h:428-619`), team drain (`reuse_pools_inline.h`, `drain_reuse_list_for_size_team`; `manager_chunk_policies_inline.h`, the deferred flush), advisor (`chunk_size_advisor.h:392-722`), `all_type_chunk.cpp:305,520-545`, `second_value_array_base.h:96`, `chunk*_std_inline.h`, `zero_array.h:301`, `manage_ompt.h:171-176` | `pmp::team(nthreads, [&](pmp::Team& t) { t.for_static(...); t.barrier(); t.single(...); })` |
-| **D** | mutual exclusion | `#pragma omp critical` (`zero_array_inline.h:357`, `zero_one_value_array_inline.h:1009,1026,1068`, `zero_any_array_inline.h:588,619`, `static_const_array_inline.h:83,145,154` named `fast_alloc_ladder`), `#pragma omp atomic` (`chunk_size_advisor.h:463,722`) | `std::mutex` / `std::atomic` — no backend involved |
-| **E** | phase boundaries of the **application**: OMPT `parallel_begin` / `parallel_end` callbacks drive the deferred-op flush and the compression pass | `manage_ompt.cpp`, `manage_ompt.h`, `all_type_chunk.cpp:156` and `manage_ompt.cpp:295` (`#pragma omp barrier` run by **every** thread of the application's team) | the phase contract below; OMPT becomes its automatic implementation |
+| **A** | runtime queries: rank, thread count, in-region, level | `pmp_chunk.h` (`CHUNK_PMP_THREAD_RANK`, `CHUNK_PMP_MAX_THREADS`, `CHUNK_PMP_IN_PARALLEL_REGION`, ...), `fast_allocators/internal/pmp_alloc.h`, `slab_arena.h` (`omp_get_max_threads`, `omp_in_parallel`), `manage_ompt.cpp` | the same macros, routed to the backend; rank of a non-OpenMP thread: dense, `thread_local`, assigned on first use |
+| **B** | one-shot data-parallel loops at a serial point (`parallel for` [`reduction`] [`if`]) | `array_chunk_base_inline.h:110`, `zero_array_inline.h:117,524`, `zero_or_value_array_inline.h:450,487,535`, `zero_any_array_inline.h:150,209`, `second_value_array_base.h:175`, `parallel_storage_init.h:143,173`, `slab_arena.h:529,822` (dynamic) | `pmp::parallel_for(n, schedule, f)`, `pmp::parallel_reduce(n, init, f, op)` |
+| **C** | team regions with worksharing and synchronisation (`parallel` + `for` / `single` / `masked` / `barrier` / `nowait`) | rechunk slices (`array_chunk_rechunk_refill_inline.h`, `Refill::run_slice` / `slice_boundary`), compression passes (`zero_array_inline.h:216-357`, `zero_or_value_array_inline.h:705-1068`, `zero_any_array_inline.h:428-619`), team drain (`reuse_pools_inline.h`, `drain_reuse_list_for_size_team`; `type_state_policies_inline.h`, the deferred flush), advisor (`chunk_size_advisor.h:392-722`), `type_state_registry.cpp:305,520-545`, `second_value_array_base.h:96`, `chunk*_std_inline.h`, `zero_array.h:301`, `phases.h:171-176` | `pmp::team(nthreads, [&](pmp::Team& t) { t.for_static(...); t.barrier(); t.single(...); })` |
+| **D** | mutual exclusion | `#pragma omp critical` (`zero_array_inline.h:357`, `zero_or_value_array_inline.h:1009,1026,1068`, `zero_any_array_inline.h:588,619`, `static_const_array_inline.h:83,145,154` named `fast_alloc_ladder`), `#pragma omp atomic` (`chunk_size_advisor.h:463,722`) | `std::mutex` / `std::atomic` — no backend involved |
+| **E** | phase boundaries of the **application**: OMPT `parallel_begin` / `parallel_end` callbacks drive the deferred-op flush and the compression pass | `manage_ompt.cpp`, `phases.h`, `type_state_registry.cpp:156` and `manage_ompt.cpp:295` (`#pragma omp barrier` run by **every** thread of the application's team) | the phase contract below; OMPT becomes its automatic implementation |
 
 E is the only part with no mechanical replacement: no other runtime tells a
 library that the application's parallel section ended (TBB's
@@ -62,7 +62,7 @@ split end (`finalize_parallel_phase_only_flush()` in the region,
 `finalize_parallel_phase_after_flush()` after it) and `finalize_barrier_phase()`
 -- need a barrier of the application's team: OpenMP only. OMPT is the automatic
 caller of the contract for OpenMP applications; `parallel_phase()` the manual
-one, on a team of the backend. `manage_ompt.h` states the contract.
+one, on a team of the backend. `phases.h` states the contract.
 
 ## 3. Steps
 
@@ -75,11 +75,11 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    `StaticConstArray::ladder_mutex()`, the advisor's two `omp atomic` are
    relaxed `std::atomic_ref::fetch_add`. Left for step 5: the ladder takes its
    lock only when `FAST_ALLOC_PMP_IN_PARALLEL_REGION`, an OpenMP query.
-3. **B**: `pmp::parallel_for` and a reduction in `PMP_CHUNK.h`,
+3. **B**: `pmp::parallel_for` and a reduction in `pmp_chunk.h`,
    OpenMP implementation (same `schedule`, same `if` thresholds), the B sites
    converted. `fast_allocators` gets the same through `pmp_alloc.h`. *Done*:
    one implementation, `fast_allocators/internal/pmp_loops.h` (namespace
-   `fast_alloc::pmp`, included by `pmp_alloc.h`, re-exported by `PMP_CHUNK.h`
+   `fast_alloc::pmp`, included by `pmp_alloc.h`, re-exported by `pmp_chunk.h`
    as `shrink_array::pmp`): `parallel_for`, `parallel_for_local` (a per-thread
    state, the release of a shrink) and `parallel_sum<T, N>` (the only
    reduction the sites need: N counters, `reduction(+ : acc[:N])`); a general
@@ -88,7 +88,7 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    callbacks fire as before), `num_threads`, `schedule` (`static_blocks`,
    `static_chunks(c)`, `dynamic(c)`). The loops that had no `schedule` clause
    get `schedule(static)`, the libgomp and libomp default. Converted: the
-   exit-census counts of the three variants, `get_nb_chunk_written`, the
+   exit-census counts of the three variants, `written_chunk_count`, the
    `zero_any` size-prediction scan, `for_each_chunk`, `for_each_chunk_in`,
    `construct_range`, the two `madvise` sweeps of `slab_arena.h`.
 4. **C**: `pmp::team` and `pmp::Team` (`for_static`, `for_dynamic`, `barrier`,
@@ -107,9 +107,9 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    `write_range_by_chunks`. *4b done*: `team_any(opt, body)` (the
    `parallel reduction(|| : ...)` region of the deferred flush); converted
    the per-rank sweeps of `compress_chunk_to_compress` (`chunk*_std_inline.h`),
-   the manager drains (`manager_chunk.h`, `manager_chunk_inline.h`, its
+   the manager drains (`type_state.h`, `type_state_inline.h`, its
    orphaned `single` on `current_team()`), the sweep and the teardown free
-   team of `all_type_chunk.cpp`, and the size advisor's region. *4c done*:
+   team of `type_state_registry.cpp`, and the size advisor's region. *4c done*:
    `Team::for_runtime` (`schedule(runtime)`: the refill's `guided,16`); the
    rechunk refill's slice team and `drain_reuse_list_for_size_team`, which now
    takes the team it runs on. *4d done*: `Team::for_static_chunks`
@@ -118,12 +118,12 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    the same shares; std and serial: the auto-vectoriser's loop) on all
    three -- what the bench's phases need to be written against `pmp::Team`;
    `team_loops_validation` checks the shares on every backend. Left after step 4, for step 6 (use E): the
-   regions of `parallel_phase` (`manage_ompt.h`) and the `omp barrier` of
-   `all_type_chunk.cpp`'s phase end, run by the application's team.
+   regions of `parallel_phase` (`phases.h`) and the `omp barrier` of
+   `type_state_registry.cpp`'s phase end, run by the application's team.
 5. **A**: the queries through the backend; the `thread_local` rank registry for
    non-OpenMP threads (dense, bounded by the configured maximum, reused when a
    thread exits). *Done*: `fast_allocators/internal/pmp_runtime.h` (namespace
-   `fast_alloc::pmp`, included by `pmp_alloc.h` and `PMP_CHUNK.h`), the only
+   `fast_alloc::pmp`, included by `pmp_alloc.h` and `pmp_chunk.h`), the only
    file that queries the runtime: `backend` / `threaded` (and
    `FAST_ALLOC_PMP_THREADED` for the declaration-level switches), `max_threads`,
    `num_procs`, `team_rank`, `team_size`, `in_parallel`, `level`,
@@ -131,7 +131,7 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    `set_max_active_levels`, `get_runtime_schedule` / `set_runtime_schedule`;
    OpenMP: the `omp_*` call with the same meaning, serial: one thread. The
    `CHUNK_PMP_*` and `FAST_ALLOC_PMP_*` macros keep their names and route to
-   it, the threaded branch of `PMP_CHUNK.h` (capacity, checked rank, library
+   it, the threaded branch of `pmp_chunk.h` (capacity, checked rank, library
    rank, rank bound, schedule) names no OpenMP call any more, and
    `slab_arena.h`'s sweeps and `manage_ompt.cpp` use the queries (no
    `#ifdef _OPENMP` left in `slab_arena.h`). The registry: `RankRegistry`
@@ -152,7 +152,7 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    serial allocators), which become `FAST_ALLOC_PMP_THREADED`.
 6. **E**: the phase contract (section 2) written down and implemented; OMPT
    becomes one way of calling it. *Done*: the contract in section 2 and in
-   `manage_ompt.h`; `parallel_phase()` opens its region with `pmp::team`
+   `phases.h`; `parallel_phase()` opens its region with `pmp::team`
    (`num_threads` 0: the backend's default, OpenMP `omp_get_max_threads()`,
    where it used a region with no `num_threads` clause), and the barrier of
    `finalize_parallel_phase_only_flush()` is `pmp::current_team().barrier()`.
@@ -165,10 +165,10 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    In four parts: 7a the CMake option and `threaded` separated from `use_openmp`
    (no new backend), 7b the std backend, 7c the rank registry and
    `in_parallel()` in it, 7d the `std::thread` harness and `compile_all.sh`.
-   *7a done*: `CHUNK_THREADS` (`openmp` or `serial`; empty: from `OMP`, as
+   *7a done*: `CHUNK_THREADS` (`openmp` or `serial`; empty: from `CHUNK_OPENMP`, as
    before; `std` refused until 7b), recorded as `CHUNK_OPT_THREADED` /
    `FAST_ALLOC_OPT_THREADED` in the generated build options
-   (`chunk/public/chunk/build_options.h.in`) and as `chunk_THREADS` in
+   (`chunk/public/chunk/build_options.h.in`) and as `shrink_array_THREADS` in
    `chunk/chunk-config.cmake.in`; `build_config::threaded` /
    `not_threaded` and `alloc_config::threaded`, each checked against
    `pmp::threaded` by a `static_assert`. Every library test of `use_openmp`
@@ -187,8 +187,11 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    1..n-1 of one process-wide pool of `std::jthread`s (worker k is always
    rank k, so successive static loops give a rank the same block: first
    touch); for_static splits as libgomp does, for_dynamic / single find
-   their shared state by the count of constructs each thread has encountered, barrier is
-   a `std::barrier`, the end of a team a join; a nested team runs as a team
+   their shared state by the count of constructs each thread has encountered (single
+   by one CAS on a team-wide mark, no lock), barrier is a `SpinBarrier` (spins for
+   `CHUNK_PMP_SPIN_US`, default 1 ms, then sleeps -- OpenMP's blocktime; a
+   `std::barrier` slept at once, ~0.4 ms per barrier at 160 threads), the end of
+   a team a join; a nested team runs as a team
    of one (max_active_levels 1); one std-backend team at a time. `pmp_std_state.h`
    holds what the queries read: each thread's stack of team frames and the
    settings (`set_num_threads`, the run-time schedule); the default team
@@ -223,7 +226,9 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
      clears on entering a team and restores on leaving it -- what OMPT's
      implicit-task callback does for `g_fast_omp_rank` -- and
      `release_registered_rank()` clears. `get_thr_rank_fast()` and
-     `begin_parallel_phase()` go through it.
+     `begin_parallel_phase()` go through it. OpenMP without OMPT, nothing clears
+     `g_fast_omp_rank`: a check build stops on a stale value, the others re-read
+     the rank on every `get_thr_rank_fast()`.
    - **Application phase** (`std_backend::Settings::application_phase`): opened by
      `begin_parallel_phase()` from a thread in no team of the std backend
      (`pmp::enter_application_phase()`), closed first thing by
@@ -267,7 +272,7 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
      `#pragma omp critical` inside `parallel_phase()` -- a real team of the
      std backend, where the pragma is ignored: eight arrays created at once, out of
      contract (TSan: `PointerMapChunk2A::insert`); a `std::mutex` now.
-     `pool_accounting` expected parking only under `use_openmp` (now
+     `pool_accounting_validation` expected parking only under `use_openmp` (now
      `threaded`, like the library since 7a) and materialised with an
      `omp parallel for`, one thread in the std build, which takes back the parked
      buffers of one rank only; it now fills through `parallel_phase()` and
@@ -367,7 +372,7 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
    thread or an application phase is open (`pmp::in_application_phase()`,
    always false outside the std backend: OpenMP unchanged), decided once for
    the `start()` and its `finish()`. The harness `std_thread_validation` (chunk, 256, 1 thread)
-   under TSan: 6 runs of 6 clean, against 6 of 6 with races before. `zero_one_value`
+   under TSan: 6 runs of 6 clean, against 6 of 6 with races before. `zero_or_value`
    and `zero_any` take the protection in every threaded build.
 8. **TBB**: the adaptor of section 2 (8a), then, if needed, a TBB backend for
    the library's own loops, inside the application's arena,
@@ -398,12 +403,45 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
      without TBB: the library is not thread-safe there). OpenMP refuses it
      at compile time, when it is called: OpenMP numbers only its own
      threads.
+   - The library's own teams on TBB's threads
+     (`shrink_array::tbb::use_tbb_for_library_teams()`, called by every
+     adaptor call; `pmp::set_team_launcher()` underneath). Without it a TBB
+     program runs two sets of threads: TBB's, and the std backend's pool for
+     the library's teams (the finalize's flush and pass, a re-chunk, a
+     parallel initialisation), whose workers spin `CHUNK_PMP_SPIN_US` after
+     every team on the cores TBB needs. A team now enqueues its n - 1 workers
+     as tasks of a TBB arena: the arena of the thread that opens the team
+     (`this_task_arena::enqueue`, oneTBB 2021.6; an arena of TBB's default
+     size before), so the one the program's algorithms just ran in -- or the
+     `task_arena` the program names with
+     `use_tbb_for_library_teams(oneapi::tbb::task_arena&)`, for regions run in
+     an explicit arena with `finalize_parallel_phase()` called outside it. Not
+     an arena of the library's own, as at first: TBB's workers then left the
+     program's arena for the library's and came back at every phase, and on
+     144 threads (AArch64) a rank waited 2.5 ms for its task to start, for
+     3 ms of work; one arena took the TBB bench from 88 s to 79.5 s there, and
+     a 5 ms join (below) to 50.9 s, still behind OpenMP. TBB does not promise to run them at once, and a
+     barrier waiting for a task never started would never end, so the team's
+     size is fixed after the tasks had `CHUNK_PMP_JOIN_US` (5 ms; 200 us at first) to start:
+     those that came take ranks 1, 2, ... and the team runs with them (with
+     the caller alone, at worst); a later task finds the join closed, or a
+     later generation, and returns, touching nothing but the pool
+     (`Pool::try_run_launched()`, `join_task()`). Measured on the TBB bench
+     (`shrink_bench_tbb_zero_any_int64_dyn --mode perf --multiply 3`, 24
+     threads, Ryzen 9 9900X under WSL2, GCC 14, two interleaved runs each):
+     computation 116.1 s -> 105.2 s (-9.4%), wall 2:30 -> 2:18, involuntary
+     context switches 16.3 M -> 0.6 M; a perf profile before it had
+     `Pool::worker_loop` spinning at 11% of the cycles.
    - CMake `CHUNK_WITH_TBB` (OFF): `find_package(TBB)` and the harness,
      `tbb_validation` (std and serial builds, every variant and geometry, 1
      and 8 threads, in a `task_arena` of that many threads): each
      partitioner (auto, simple with a small grain, static), the index form
      with steps 1 and 3, compression and forced deferrals in the phase, a
-     nested `oneapi::tbb::parallel_for`, a throwing body, a narrower arena;
+     nested `oneapi::tbb::parallel_for`, a throwing body, a narrower arena,
+     the library's teams on TBB's threads (2000 teams with a barrier, a
+     single and both loops, every rank above 0 on a TBB thread, then 500
+     from a second thread while every TBB thread is busy: they shrink and
+     still end);
      the arrays against `std::vector`s after every phase, one rank per thread
      for the whole phase and distinct between threads, the application phase
      open in the pieces and closed after the call. Mutations: the adaptor
@@ -413,7 +451,7 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
      `-DTBB_SANITIZE=thread`). With an uninstrumented libtbb TSan sees no
      hand-off between tasks, and it reports TBB's own scheduling and every
      value one task passes to another (hundreds of reports on the first
-     loop). Against an instrumented oneTBB 2021.11: no report (`zero_one_value` and
+     loop). Against an instrumented oneTBB 2021.11: no report (`zero_or_value` and
      `zero_any`, 8 threads), while a plain counter incremented in the pieces is
      reported at once. `compile_all_gnu.sh` gives the std TSan build TBB
      only from `CHUNK_TBB_TSAN_DIR`, the package directory of such a build.
@@ -500,11 +538,11 @@ one, on a team of the backend. `manage_ompt.h` states the contract.
      (`set_tbb_options`, `functions_for_compile.sh`), announced at the start of the run.
    - `bench_and_test.py` runs `cmake-build-std-gnu`, `cmake-build-std-llvm` and their
      `-check` builds by default, and the TBB bench as the variants `tbb_zero`,
-     `tbb_zero_one_value` and `tbb_zero_any` (`shrink_bench_tbb_<variant>_<size>`, looked
+     `tbb_zero_or_value` and `tbb_zero_any` (`shrink_bench_tbb_<variant>_<size>`, looked
      for in the std builds only; a std build made without oneTBB is noted once). The std
      builds count as threaded: the thread sweep and the repetitions are those of the OpenMP
      builds. The std ThreadSanitizer build joins the sanitizer phase.
-   - `multi_launch_stress.py` runs `tbb_zero_one_value` next to `zero_one_value` by default
+   - `multi_launch_stress.py` runs `tbb_zero_or_value` next to `zero_or_value` by default
      and the six variants with `--all_exec` or `--exec all`; `build_arm.txt` and
      `build_x86_64.txt` list the four std builds.
 

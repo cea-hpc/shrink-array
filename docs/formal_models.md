@@ -48,6 +48,7 @@ genmc --check-liveness -- -DSHAPE_SYMMETRIC -DINIT_CONSTANT formal/writer_compre
 With CMake, `ctest -L formal` runs `formal_genmc` (when `genmc` is on the PATH or
 `-DGENMC_EXECUTABLE=` names it) and `formal_native_*`: each model compiled as an ordinary program
 and run 300 times, which proves the model is a real program and is a weak oracle for the protocol.
+They are compiled with `-UNDEBUG` whatever the build type: their `assert()` are the test.
 Nothing in `formal/` is built into the library or installed.
 
 ## 3. The model of handshake 1: writer against compressor
@@ -64,7 +65,7 @@ name in the model stands for one place in the source, with the same memory order
 | `hard_inflight`, `stealing_inflight`, `must_defer_write()`, `is_stealing()` | `compression_manager.h`: `hard_inflight_`, `stealing_inflight_`, `must_defer_write()`, `is_hard_compression_inflight()` |
 | `compressor_start()`, `compressor_finish()`, `heavy_barrier()` | `compression_manager_inline.h`: `start()`, `finish()`; `dekker::heavy_barrier()` |
 | `mark`, `steal_mark()`, `steal_marked()`, `steal_unmark()` | `chunk_base.h`: `steal_mark_` and its three verbs |
-| `values`, `values_load()`, `cas_install()`, `steal()` | `chunk_base.h`: `values`, `values_load()`, `compare_and_swap_gen()`; `zero_any_chunk.h`: `try_mark_cst_and_get_old()` |
+| `values`, `values_load()`, `cas_install()`, `steal()` | `chunk_base.h`: `values`, `values_load()`, `compare_and_swap_gen()`; `zero_any_chunk.h`: `try_mark_const_and_get_old()` |
 | `materialise()`, the scan, the element store | `zero_any_chunk_inline.h`: `create_value()`, `wait_before_materialise()`, `fill_list_to_compress()`; `relaxed_element.h` |
 | `writer()` | `proxy_base_inline.h`: `write_with_optional_lock_impl()` |
 
@@ -201,7 +202,7 @@ read sections and the buffer's free are checked as in section 6.
 | `read_element()` | `internal/chunk_base_inline.h` `element_at_unguarded(offset, slot)`, `read_block()`, `read_block_or_constant()`; `internal/proxy_base_inline.h` `read_values_at()`; `pattern_chunk.h` `Chunk::motif_offset()` |
 | `writer()` | `internal/zero_any_chunk_inline.h` `create_value()`, the motif branch |
 | `pass()`, a motif | `internal/pattern_chunk_inline.h` `block_clear_motif()` |
-| `pass()`, a constant | `internal/second_value_chunk_base_inline.h` `block_clear_common()` (`reset_release()`); `internal/zero_any_chunk_inline.h` `find_or_set_ind_cst_val2_release()` |
+| `pass()`, a constant | `internal/second_value_chunk_base_inline.h` `block_clear_common()` (`reset_release()`); `internal/zero_any_chunk_inline.h` `find_or_set_idx_const_val2_release()` |
 
 | case | expected | verdict | executions |
 |---|---|---|---|
@@ -255,7 +256,7 @@ the compressor's wait is bounded (`CHUNK_COMPRESS_MAX_YIELDS`, 10,000 yields of 
 not a deadlock, but a stall of both threads for that whole budget, after which the pass is
 abandoned (the gate counter of aborts on an overly long wait, in the `CHUNK_STATS` report, counts these). It needs a
 chunk that is at a constant while sitting in a candidate list -- the case `fill_list_to_compress()`
-guards against with `is_not_cst_val1()` -- so it is rare, not impossible.
+guards against with `is_not_const_val1()` -- so it is rare, not impossible.
 
 The fix follows from the handshake itself: a fast-path writer holds its flag and has passed
 check no. 2, so a mark it sees now belongs to a compressor that is **parked** on that flag;
@@ -354,7 +355,7 @@ slot is stable there.
 ### 8.7 F6: a chunk made constant during a pass's hand-back was never queued (fixed)
 
 The model is `formal/queue_handback.c`; it checks a protocol, not a memory ordering: the "queued"
-flag of a chunk (`tab_is_inside_chunk_list_to_compress`) and the pass's mark. A pass hands each
+flag of a chunk (`array_is_inside_chunk_list_to_compress`) and the pass's mark. A pass hands each
 candidate back with `steal_unmark()`, then resets its flag (the end of `make_block_compression()`;
 the order is kept on purpose: once the flag is down another pass may queue and mark the chunk,
 and a late unmark would erase its claim). It used to reset the flag to 0. Between the two, a
@@ -367,12 +368,12 @@ compresses is unmarked right after its clear.
 
 The fix (`chunk/internal/queue_flag.h`): as soon as the pass has scanned a candidate, and while
 its mark still keeps the writers out, the candidate's flag goes from 1 to 2, "handed back"
-(`queue_flag::hand_back`; in the scan itself for `zero` and `zero_one_value`, whose scans
-release the mark of a chunk they drop, after all the scans for `zero_any`); a writer whose marking finds 2 turns it into 3, "written meanwhile",
+(`queue_flag::hand_back`, in the scan itself, before the scan releases the mark of a chunk it
+drops, in the three variants); a writer whose marking finds 2 turns it into 3, "written meanwhile",
 rather than giving up (`queue_flag::try_queue`, every writer's site: `add_to_compression_list()`,
 its async form, the range writes through it); the pass then resets 2 -> 0 by CAS and, on a 3,
 queues the chunk again in its own rank's list (`queue_flag::release`). In the passes of `zero`,
-`zero_one_value` and `zero_any` (with `pattern`'s motif commit), threaded builds; the serial
+`zero_or_value` and `zero_any` (with `pattern`'s motif commit), threaded builds; the serial
 build has no concurrent pass. 2 and 3 exist only inside a pass: outside, the flag is 0 or 1 and
 "1 <=> listed" holds. Cost: on a writer's path one compare more, on the refused marking only; in
 the pass, an exchange and a CAS per candidate instead of one store. The check builds assert the
@@ -392,10 +393,13 @@ the flag is up exactly when the chunk is listed, once.
 | `MUT_HANDBACK_AFTER_UNMARK`: the flag set to 2 after the mark is down | fail | safety violation | -- |
 | `MUT_WRITER_IGNORES_2`: the writer gives up on a 2 as on a 1 | fail | safety violation | -- |
 
-The same verdicts under IMM. In the library, `read_reclaim_validation`'s `remark` mode (passes
+The same verdicts under IMM. `zero_any` (and `pattern`) first handed the flags back after all
+the scans, while its scan already released the mark of a candidate it dropped: for those, the
+order of `MUT_HANDBACK_AFTER_UNMARK`, and the F6 window open again. It hands each one back in
+the scan now, as `zero` does. In the library, `read_reclaim_validation`'s `remark` mode (passes
 with a delay in the hand-back window, writers on the same chunks) went through the new branch --
 a write noted on a handed-back flag, the chunk queued again by its pass -- 267,536 times for
-`zero_any` and 1,849 for `zero_one_value` in 8 s at 4 threads, each a queueing the old code lost.
+`zero_any` and 1,849 for `zero_or_value` in 8 s at 4 threads, each a queueing the old code lost.
 
 Measured before the fix: the check builds' audit ("never queued for compression") first counted 34
 to 140 such chunks per `shrink_bench` run, at 1 thread as well -- which F6 cannot be: they came
@@ -403,6 +407,32 @@ from another hole, the partial spans of `fill_range_mt()` on `std::complex<doubl
 CHANGELOG.md). With it and F7's fix (section 8.8), the audit counted none on Milan up to 128
 threads (`zero_any` at 256, 1024 and dynamic geometry, three seeds each): F6 was real but rare in
 that benchmark.
+
+**Two passes: the order of the hand-back.** `queue_flag::release_candidates()` (the hand-back of
+the three variants since the passes share it) gives each candidate its mark back **before** its
+flag. While the flag is not free the chunk is in no other list, no other pass can have marked it,
+and the unmark drops this pass's claim only. The one-pass model could not say whether that order
+matters: there is no other claim to erase, and the swapped order passes. `-DTWO_PASSES` gives it
+one: when W's write queues the chunk (into its own rank's list), W's thread runs pass B on it, as
+the in-loop trigger does. The model also does what the source does where the first version took a
+shortcut: a candidate the scan drops is unmarked in the scan, and the hand-back loop unmarks every
+candidate again -- the redundant unmark that, done after the flag, lands on pass B's claim.
+
+| case | expected | verdict (native, forced schedule) |
+|---|---|---|
+| source, two passes | pass | pass (W's write is noted on the handed-back flag, pass B never runs) |
+| `MUT_RELEASE_BEFORE_UNMARK`, one pass | pass | -- |
+| `MUT_RELEASE_BEFORE_UNMARK`, two passes: the flag released, then the mark | fail | **P2 in every run**, and a store into the freed buffer (AddressSanitizer: heap-use-after-free) |
+
+The scenario: pass A drops the chunk and unmarks it in the scan; W, deferred until then, writes the
+last 7 to 0 just after A's release, finds the flag free and queues the chunk; pass B marks it and
+passes start(); A's late unmark erases B's mark; W2 announces, finds no mark and goes on; B finds
+the chunk constant, clears it and frees the buffer; W2 stores into it, and its value is lost. With
+the source's order, A's unmark comes while the flag is still 2 or 3: nothing can queue the chunk
+before it. The GenMC verdicts (`run_genmc.sh`, three lines more) are still to be taken: the native
+runs above force that one interleaving with sleeps (`-DDEMO_SCHEDULE`: the test
+`formal_native_queue_handback_two_passes_schedule`, next to the free two-pass runs); they are an
+oracle for it, not an exhaustive check.
 
 ### 8.8 F7: two threads filling the two ends of one chunk could both leave it unqueued (fixed)
 
@@ -414,7 +444,7 @@ one chunk with the same constant each store their half, then load the other's ed
 store-buffering shape, which C11 relaxed, x86-TSO and AArch64 all allow. Both read the old
 edge, neither queues, and a uniform chunk stays materialised. The check builds' audit counted
 it on Milan once the partial-span hole of the aggregates was fixed: 6 to 52 blocks per
-`shrink_bench` run at 16 to 128 threads, all on `tab1` and `tab2` (`double`, filled by
+`shrink_bench` run at 16 to 128 threads, all on `arr1` and `arr2` (`double`, filled by
 `fill_range_mt()` with 0 or the second value), none on the element types without the filter.
 The model's chunk has 4 elements; it found the hole at once, and a native run of it on x86 hits
 it in a few hundred thousand tries.

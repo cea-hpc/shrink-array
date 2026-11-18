@@ -15,7 +15,7 @@
  */
 
 // ============================================================================
-// const_iterator harness. Variant-agnostic: zero / zero_one_value / zero_any follow the
+// const_iterator harness. Variant-agnostic: zero / zero_or_value / zero_any follow the
 // compile-time macro (CHUNK_VARIANT_ZERO*), like the other harnesses here.
 // ============================================================================
 //
@@ -65,17 +65,17 @@
 #include <format>           // std::format
 #include <utility>          // std::forward
 
-#include "chunk/chunk_traits.h"          // forward decls + default IntType = int
+#include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
 #include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
-#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"            // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"                // chunk_config::use_zero*, build_config::has_not_ompt
-#include "chunk/PMP_CHUNK.h"             // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/array_chunk_range_ops.h" // for_each_value / for_each_span / read_range (bulk-reads step)
-#include "chunk/internal/print.h"        // shrink_array::println
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
+#include "chunk/config.h"                // chunk_config::use_zero*, build_config::needs_explicit_phases
+#include "chunk/internal/pmp_chunk.h"    // CHUNK_PMP_MAX_THREADS
+#include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/range_ops.h"             // for_each_value / for_each_span / read_range (bulk-reads step)
+#include "chunk/print.h"                 // shrink_array::println
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
@@ -87,18 +87,18 @@ using namespace shrink_array;
 namespace
 {
 
-static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
-              "iterator_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_ONE_VALUE or _ZERO_ANY");
+static_assert(chunk_config::use_zero || chunk_config::use_zero_or_value || chunk_config::use_zero_any,
+              "iterator_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_OR_VALUE or _ZERO_ANY");
 
 template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
-using Arr = Array<double>;
-using It  = Arr::const_iterator;
-using Ind = Arr::IndType;
+using Arr   = Array<double>;
+using It    = Arr::const_iterator;
+using Index = Arr::IndexType;
 
 // ── The compile-time half ────────────────────────────────────────────────────
 static_assert(std::random_access_iterator<It>, "const_iterator must model std::random_access_iterator");
@@ -116,9 +116,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -128,7 +128,7 @@ constexpr const char* variant_name()
 
 void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
@@ -136,7 +136,7 @@ void begin_phase()
 
 void end_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -172,16 +172,16 @@ constexpr long   tail_len     = 13;    ///< ... then a partial chunk of tail_len
 
 double sorted_at(long index, long chunk_sz)
 {
-    const long num_chunk = index / chunk_sz;
-    if (num_chunk < c0)
+    const long chunk_index = index / chunk_sz;
+    if (chunk_index < c0)
     {
         return 0.0;
     }
-    if (num_chunk < c1)
+    if (chunk_index < c1)
     {
         return 10.0 + static_cast<double>((index - (c0 * chunk_sz)) / 3);
     }
-    if (num_chunk < c2)
+    if (chunk_index < c2)
     {
         return second_value;
     }
@@ -204,7 +204,7 @@ void fill(Arr& arr, long count, Fn&& value)
 #pragma omp for schedule(static)
         for (long i = 0; i < count; ++i)
         {
-            arr[static_cast<Ind>(i)] = value(i);
+            arr[static_cast<Index>(i)] = value(i);
         }
     }
     end_phase();
@@ -249,14 +249,14 @@ struct Report
 int check_premise(const Arr& arr, long count)
 {
     Report     report{"premise"};
-    const long chunk_sz = static_cast<long>(arr.chunk_size());
+    const auto chunk_sz = static_cast<long>(arr.chunk_size());
     long       folded   = 0;
     for (long j = 0; j * chunk_sz < count; ++j)
     {
-        folded += arr.written(static_cast<Ind>(j * chunk_sz)) ? 0 : 1;
+        folded += arr.written(static_cast<Index>(j * chunk_sz)) ? 0 : 1;
     }
-    const long want = (chunk_config::use_zero_one_value || chunk_config::use_zero_any) ? c0 + (c2 - c1) : c0;
-    if (folded < want)
+    if (const long want = (chunk_config::use_zero_or_value || chunk_config::use_zero_any) ? c0 + (c2 - c1) : c0;
+        folded < want)
     {
         report.fail("{} chunk(s) folded after the pass, expected at least {}: the jumps would not land in "
                     "compressed chunks",
@@ -272,12 +272,12 @@ int check_premise(const Arr& arr, long count)
 int check_content(const Arr& arr, const std::vector<double>& ref)
 {
     Report     report{"content"};
-    const long count = static_cast<long>(ref.size());
+    const auto count = static_cast<long>(ref.size());
     if (!std::equal(arr.begin(), arr.end(), ref.begin(), ref.end()))
     {
         report.fail("the sequential read differs from the reference");
     }
-    const It first = arr.begin();
+    const auto first = arr.begin();
     for (long i = 0; i < count; ++i)
     {
         if (first[i] != ref[static_cast<std::size_t>(i)])
@@ -297,8 +297,8 @@ int check_content(const Arr& arr, const std::vector<double>& ref)
 int check_jumps(const Arr& arr, const std::vector<double>& ref)
 {
     Report     report{"jumps"};
-    const long chunk_sz = static_cast<long>(arr.chunk_size());
-    const long nref     = static_cast<long>(ref.size());
+    const auto chunk_sz = static_cast<long>(arr.chunk_size());
+    const auto nref     = static_cast<long>(ref.size());
     const auto at       = [&](long index) { return ref[static_cast<std::size_t>(index)]; };
 
     const long pos[] = {0,
@@ -331,8 +331,8 @@ int check_jumps(const Arr& arr, const std::vector<double>& ref)
                         11 * chunk_sz,
                         -(11 * chunk_sz)};
 
-    const It first = arr.begin();
-    long     count = 0;
+    const auto first = arr.begin();
+    long       count = 0;
     for (const long position : pos)
     {
         const It it = first + position;
@@ -358,8 +358,7 @@ int check_jumps(const Arr& arr, const std::vector<double>& ref)
             j3 += delta;
             It j4 = it;
             j4 -= -delta;
-            const It j5 = it - (-delta);
-            if (j1 - first != target || j2 != j1 || j3 != j1 || j4 != j1 || j5 != j1)
+            if (const It j5 = it - (-delta); j1 - first != target || j2 != j1 || j3 != j1 || j4 != j1 || j5 != j1)
             {
                 report.fail("from {} by {}: the five forms of the jump disagree (landed at {})", position, delta,
                             static_cast<long>(j1 - first));
@@ -439,7 +438,7 @@ int check_jumps(const Arr& arr, const std::vector<double>& ref)
     {
         report.fail("*(end() - 1) = {:g}, expected {:g}", *(arr.end() - 1), ref.back());
     }
-    It adv = arr.begin();
+    auto adv = arr.begin();
     std::advance(adv, nref - 1);
     if (*adv != ref.back())
     {
@@ -454,7 +453,7 @@ int check_jumps(const Arr& arr, const std::vector<double>& ref)
 /// @brief Values present, between, below and above the range.
 std::vector<double> queries(const std::vector<double>& ref)
 {
-    std::vector<double> queries{
+    std::vector queries{
         -1.0, 0.0, 0.5, 10.0, second_value - 0.5, second_value, second_value + 0.5, ref.back(), ref.back() + 1.0};
     const std::size_t step = std::max<std::size_t>(1, ref.size() / 1500);
     for (std::size_t i = 0; i < ref.size(); i += step)
@@ -473,15 +472,15 @@ int search_mismatch(const Arr& arr, const std::vector<double>& ref, double query
     const auto rb = ref.begin();
     const auto re = ref.end();
 
-    const auto er_a  = std::equal_range(ab, ae, query);
-    const auto er_r  = std::equal_range(rb, re, query);
-    const auto rer_a = std::ranges::equal_range(arr, query);
+    const auto [er_a_lo, er_a_hi] = std::equal_range(ab, ae, query);
+    const auto [er_r_lo, er_r_hi] = std::equal_range(rb, re, query);
+    const auto rer_a              = std::ranges::equal_range(arr, query);
 
     const long got_idx[] = {
         static_cast<long>(std::lower_bound(ab, ae, query) - ab),
         static_cast<long>(std::upper_bound(ab, ae, query) - ab),
-        static_cast<long>(er_a.first - ab),
-        static_cast<long>(er_a.second - ab),
+        static_cast<long>(er_a_lo - ab),
+        static_cast<long>(er_a_hi - ab),
         std::binary_search(ab, ae, query) ? 1L : 0L,
         static_cast<long>(std::ranges::lower_bound(arr, query) - ab),
         static_cast<long>(std::ranges::upper_bound(arr, query) - ab),
@@ -492,13 +491,13 @@ int search_mismatch(const Arr& arr, const std::vector<double>& ref, double query
     const long want_idx[] = {
         static_cast<long>(std::lower_bound(rb, re, query) - rb),
         static_cast<long>(std::upper_bound(rb, re, query) - rb),
-        static_cast<long>(er_r.first - rb),
-        static_cast<long>(er_r.second - rb),
+        static_cast<long>(er_r_lo - rb),
+        static_cast<long>(er_r_hi - rb),
         std::binary_search(rb, re, query) ? 1L : 0L,
         static_cast<long>(std::lower_bound(rb, re, query) - rb),
         static_cast<long>(std::upper_bound(rb, re, query) - rb),
-        static_cast<long>(er_r.first - rb),
-        static_cast<long>(er_r.second - rb),
+        static_cast<long>(er_r_lo - rb),
+        static_cast<long>(er_r_hi - rb),
         std::binary_search(rb, re, query) ? 1L : 0L,
         static_cast<long>(std::lower_bound(ref.rbegin(), ref.rend(), query, std::greater<>{}) - ref.rbegin())};
     static_assert(std::size(got_idx) == std::size(want_idx));
@@ -550,7 +549,7 @@ int check_parallel_searches(const Arr& arr, const std::vector<double>& ref)
 {
     Report                    report{"parallel-searches"};
     const std::vector<double> query_set = queries(ref);
-    const long                nq        = static_cast<long>(query_set.size());
+    const auto                nq        = static_cast<long>(query_set.size());
     long                      bad       = 0;
 #pragma omp parallel reduction(+ : bad)
     {
@@ -577,8 +576,8 @@ int check_parallel_searches(const Arr& arr, const std::vector<double>& ref)
 int check_reverse(const Arr& arr, const std::vector<double>& ref)
 {
     Report     report{"reverse"};
-    const long chunk_sz = static_cast<long>(arr.chunk_size());
-    const long count    = static_cast<long>(ref.size());
+    const auto chunk_sz = static_cast<long>(arr.chunk_size());
+    const auto count    = static_cast<long>(ref.size());
     if (!std::equal(arr.rbegin(), arr.rend(), ref.rbegin(), ref.rend()))
     {
         report.fail("the reverse read differs from the reference");
@@ -625,8 +624,8 @@ struct SpanCollector
 int check_bulk_reads(const Arr& arr, const std::vector<double>& ref)
 {
     Report     report{"bulk-reads"};
-    const long chunk_sz = static_cast<long>(arr.chunk_size());
-    const long nref     = static_cast<long>(ref.size());
+    const auto chunk_sz = static_cast<long>(arr.chunk_size());
+    const auto nref     = static_cast<long>(ref.size());
     const auto sz       = [](long count) { return static_cast<std::size_t>(count); };
 
     // Whole range, both containers, through the same call.
@@ -698,13 +697,12 @@ int check_bulk_reads(const Arr& arr, const std::vector<double>& ref)
             const long want  = std::max(0L, std::min(last, nref) - first);
             ++count;
 
-            std::vector<double> buf(sz(want) + 1, -1.0);
-            double* const       end_a = shrink_array::read_range(arr, sz(first), sz(last), buf.data());
-            if (end_a - buf.data() != want || !std::equal(buf.begin(), buf.begin() + want, ref.begin() + first) ||
+            std::vector buf(sz(want) + 1, -1.0);
+            if (const double* const end_a = shrink_array::read_range(arr, sz(first), sz(last), buf.data());
+                end_a - buf.data() != want || !std::equal(buf.begin(), buf.begin() + want, ref.begin() + first) ||
                 buf[sz(want)] != -1.0)
             {
-                report.fail("read_range(array, {}, {}, T*): {} written, content {}", first, last,
-                            static_cast<long>(end_a - buf.data()),
+                report.fail("read_range(array, {}, {}, T*): {} written, content {}", first, last, end_a - buf.data(),
                             std::equal(buf.begin(), buf.begin() + want, ref.begin() + first) ? "ok" : "WRONG");
             }
 
@@ -741,8 +739,8 @@ int check_bulk_reads(const Arr& arr, const std::vector<double>& ref)
 
     // Every thread reads its own slice at once (odd slice length: the slices
     // cut chunks in the middle).
-    std::vector<double> par(sz(nref), -1.0);
-    const long          slice = (chunk_sz / 2) + 3;
+    std::vector par(sz(nref), -1.0);
+    const long  slice = (chunk_sz / 2) + 3;
 #pragma omp parallel
     {
         begin_phase();
@@ -767,9 +765,9 @@ int check_bulk_reads(const Arr& arr, const std::vector<double>& ref)
 int check_sort_recipe(const std::vector<double>& ref)
 {
     Report     report{"sort-recipe"};
-    const long count = static_cast<long>(ref.size());
+    const auto count = static_cast<long>(ref.size());
     Arr        desc;
-    desc.resize(static_cast<Ind>(count));
+    desc.resize(static_cast<Index>(count));
     maybe_set_second_value(desc, second_value);
     fill(desc, count, [&](long i) { return ref[static_cast<std::size_t>(count - 1 - i)]; }); // descending
     compress_in_region(desc);
@@ -790,16 +788,16 @@ int check_sort_recipe(const std::vector<double>& ref)
 
 int run(int /*argc*/, char** /*argv*/)
 {
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     println("=== iterator_validation [variant = {}]  threads={} ===", variant_name(), CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
     {
         Arr        arr;
-        const long chunk_sz = static_cast<long>(arr.chunk_size());
+        const auto chunk_sz = static_cast<long>(arr.chunk_size());
         const long count    = (n_chunks * chunk_sz) + tail_len;
-        arr.resize(static_cast<Ind>(count));
+        arr.resize(static_cast<Index>(count));
         maybe_set_second_value(arr, second_value);
         // Every chunk materialised first (non-uniform content), then the sorted
         // pattern over it and a pass: the constant blocks are folded chunks.
@@ -825,7 +823,7 @@ int run(int /*argc*/, char** /*argv*/)
     }
 
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
 
     println("\n[{}] {}", variant_name(), fails ? "=== ITERATOR FAILED ===" : "=== ITERATOR OK ===");
     return fails ? 1 : 0;

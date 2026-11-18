@@ -47,7 +47,7 @@
 
 #include "chunk/vendor/ankerl/unordered_dense.h" // the live maps
 
-#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_IN_PARALLEL_REGION / _THREAD_RANK
+#include "chunk/internal/pmp_chunk.h" // CHUNK_PMP_IN_PARALLEL_REGION / _THREAD_RANK
 
 namespace shrink_array::pool_ledger
 {
@@ -88,7 +88,7 @@ inline ankerl::unordered_dense::map<void*, Rec>& op_live()
 /// @brief The calling thread's rank, or -1 outside a parallel region.
 inline int current_rank() noexcept
 {
-    // No directive needed: PMP_CHUNK.h's serial shims (false, 0) make this
+    // No directive needed: pmp_chunk.h's serial shims (false, 0) make this
     // compile in both builds, and it yields -1 outside a parallel region.
     return CHUNK_PMP_IN_PARALLEL_REGION ? CHUNK_PMP_THREAD_RANK : -1;
 }
@@ -223,18 +223,18 @@ inline void on_op_free(void* ptr) noexcept
 }
 
 // ============================================================================
-// BLOCK LEDGER — value-block lifecycle (check builds, zero_one_value / zero_any)
+// BLOCK LEDGER — value-block lifecycle (check builds, zero_or_value / zero_any)
 // ----------------------------------------------------------------------------
 // Distinct from the ctx/op ledger above: this one tracks the heap chunk-blocks
-// that flow through allocate_chunk_internal / recup_value / free_block_to_pool.
+// that flow through allocate_chunk_internal / reclaim_value / free_block_to_pool.
 // It trips deterministically at the FIRST illegal transition, with the address
 // and BOTH ranks, where a race detector only samples the resulting race.
 //
 // State per block, with legal transitions (op : from -> to):
 //   b_alloc   : FREE   -> LIVE     fresh block from allocator/svcalloc
 //   b_pop     : parked -> LIVE     popped from a per-thread free-list
-//   b_park    : LIVE   -> parked   pushed into a per-thread free-list (recup / free_block_to_pool)
-//   b_release : LIVE   -> FREE     returned to allocator (free_elt_pow2)
+//   b_park    : LIVE   -> parked   pushed into a per-thread free-list (reclaim / free_block_to_pool)
+//   b_release : LIVE   -> FREE     returned to allocator (free_elem_pow2)
 //
 // Illegal (each trips the assert, naming previous state + previous rank):
 //   double-park  (park a parked block)     → two chunks think they own it
@@ -258,11 +258,12 @@ inline const char* bstate_name(BState state) noexcept
 {
     switch (state)
     {
-        case BState::free:
+        using enum BState;
+        case free:
             return "FREE";
-        case BState::live:
+        case live:
             return "LIVE";
-        case BState::parked:
+        case parked:
             return "PARKED";
     }
     return "??";
@@ -308,9 +309,8 @@ inline void report_live_blocks() noexcept
         };
         std::array<Row, 64> rows{};
         int                 n_rows = 0;
-        for (const auto& kv : block_live())
+        for (const auto& [block, rec] : block_live())
         {
-            const BRec& rec = kv.second;
             if (rec.state == BState::free)
             {
                 continue;

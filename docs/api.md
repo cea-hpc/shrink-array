@@ -2,7 +2,7 @@
 
 > French version: [api_fr.md](api_fr.md).
 
-> October 2026. One page for what a program calls, grouped by task. The details (parameters, preconditions, complexity) are in the Doxygen reference
+> November 2026. One page for what a program calls, grouped by task. The details (parameters, preconditions, complexity) are in the Doxygen reference
 > (`cmake --build build --target doc`), searchable by these names. Usage in context:
 > [getting_started.md](getting_started.md).
 
@@ -14,29 +14,30 @@ All names are in namespace `shrink_array`, `build_config` and `chunk_config` inc
 
 | call | header | when |
 |---|---|---|
-| `ParamChunk::init_indexes(true)` | `chunk/param_chunk.h` | optional, once, before the first array, to choose the blocks (`true`: large allocation blocks); without it the first array runs `init_indexes(true)` |
-| `release_chunk_pools()` | `chunk/zero_chunk.h` | optional, once, at the end; while an array is alive (a global or `static` one) it only empties the free lists |
-| `destroy_block_chunk()` | `chunk/zero_chunk.h` | optional, right after `release_chunk_pools()`; does nothing while an array is alive |
-| `ParamChunk::force_compression()` | `chunk/param_chunk.h` | to compress every pending candidate now, for a measurement or a checkpoint |
-| `ParamChunk::chunk_stats()` | `chunk/param_chunk.h` | prints the `CHUNK_STATS` counters (no-op in other builds) |
+| `Runtime::init(true)` | `chunk/runtime.h` | optional, once, before the first array, to choose the blocks (`true`: large allocation blocks); without it the first array runs `init(true)` |
+| `release_chunk_pools()` | `chunk/runtime.h` | optional, once, at the end; while an array is alive (a global or `static` one) it only empties the free lists |
+| `Runtime::shutdown()` | `chunk/runtime.h` | optional, right after `release_chunk_pools()`; does nothing while an array is alive |
+| `Runtime::force_compression()` | `chunk/runtime.h` | to compress every pending candidate now, for a measurement or a checkpoint |
+| `Runtime::chunk_stats()` | `chunk/runtime.h` | prints the `CHUNK_STATS` counters (no-op in other builds) |
 
 ## 2. The containers
 
 | class | header | compresses chunks uniform at… |
 |---|---|---|
 | `zero::Array<T, IntType = int>` | `chunk/zero_array.h` | `T{}` |
-| `zero_one_value::Array<T, IntType = int>` | `chunk/zero_one_value_array.h` | `T{}` or the array's second value |
+| `zero_or_value::Array<T, IntType = int>` | `chunk/zero_or_value_array.h` | `T{}` or the array's second value |
 | `zero_any::Array<T, IntType = int>` | `chunk/zero_any_array.h` | `T{}` or any value, per chunk |
-| `ArrayChunkBits` | `chunk/array_chunk_bits.h` | `bool`, stored one bit per element (`zero_one_value` builds) |
+| `BitArray` | `chunk/bit_array.h` | `bool`, stored one bit per element (`zero_or_value` builds) |
 
 `IntType` is the index type: `long` for more than 2³¹ elements. The variant compiled in is
-that of the linked library (`chunk::chunk_zero_any`, ...); `chunk_config::use_zero`,
-`chunk_config::use_zero_one_value` and `chunk_config::use_zero_any` tell which, at compile time.
+that of the linked library (`shrink_array::zero_any`, ...); `chunk_config::use_zero`,
+`chunk_config::use_zero_or_value` and `chunk_config::use_zero_any` tell which, at compile time.
 
 ## 3. Container operations
 
 What a `std::vector` has, with the differences that matter. **(S)** marks a sequential point:
-outside any parallel region, and it invalidates the array's proxies.
+outside any parallel region, or inside one from a single thread while the others leave the arrays
+alone ([getting started, §5](getting_started.md)); it invalidates the array's proxies.
 
 | operation | members | notes |
 |---|---|---|
@@ -45,16 +46,16 @@ outside any parallel region, and it invalidates the array's proxies.
 | read | `operator[](i) const`, `at(i) const`, `front()`, `back()`, `operator()(i) const` | return a `T` |
 | write | `operator[](i)`, `at(i)` | return a write proxy (§4) |
 | raw reference | `operator()(i)` (non-const) | a `T&` into the buffer: **only on a materialised chunk**, bypasses the library |
-| grow, shrink **(S)** | `resize(n)`, `reserve(n)`, `clear()`, `shrink_to_fit()` | `shrink_to_fit()` also folds every chunk that became constant |
+| grow, shrink **(S)** | `resize(n)`, `reserve(n)`, `clear()`, `shrink_to_fit()` | `shrink_to_fit()` also folds every chunk that became constant; a negative `n` (here and in the constructor) throws `std::length_error`, as `std::vector` |
 | append | `push_back(v)`, `emplace_back(...)`, `pop_back()` | **(S)** only when it needs a new chunk |
 | replace **(S)** | `assign(n, v)`, `assign(first, last)`, `swap(other)`, `operator=` | |
 | iterate | `begin()`, `end()`, `cbegin()`, `rbegin()`, `rend()` | const random-access iterators, by value |
-| compress **(S)** | `compress()` | a full compression pass now (`zero::Array`, `zero_one_value::Array`, `zero_any::Array`) |
+| compress **(S)** | `compress()` | a full compression pass now (`zero::Array`, `zero_or_value::Array`, `zero_any::Array`) |
 | free second values **(S)** | `reclaim_second_values()` (static) | frees the second values no chunk of any `zero_any::Array<T>` uses any more, so that their identifiers are reused; returns how many (`zero_any::Array`); a sequential point over **every** array of the type, see below |
-| statistics | `stats()`, `get_nb_chunk_written()` | percentage and number of chunks holding a buffer (each array also prints one line when it is destroyed) |
+| statistics | `stats()`, `written_chunk_count()` | percentage and number of chunks holding a buffer (each array also prints one line when it is destroyed) |
 | geometry | `chunk_size()`, `rechunk_to(n)` **(S)** | `rechunk_to()` only in the `_dyn` libraries (a no-op in static ones) |
 
-`zero_one_value` only: `set_second_value(v)` **(S)**, before the writes, and `get_second_value()`.
+`zero_or_value` only: `set_second_value(v)` **(S)**, before the writes, and `second_value()`.
 
 **`reclaim_second_values()`: a precondition over the whole type.** The other **(S)** operations
 concern one array; this one is static and frees second values for every `zero_any::Array<T>` of the
@@ -71,7 +72,7 @@ their own `zero_any::Array<double>`, the sequential point must hold for all of t
   an OpenMP team started by another host thread. Under the std backend the application's
   threads are seen between `begin_parallel_phase()` and `finalize_parallel_phase()`: the call is
   refused there.
-- *What detects it*: check builds (Debug, `CHECK_OPTIM`) stop on any second-value lookup or
+- *What detects it*: check builds (Debug, `CHUNK_CHECK_OPTIM`) stop on any second-value lookup or
   registration that overlaps a reclaim. Run the application once in a check build with its
   reclaim calls in place; release builds pay nothing and check nothing.
 - *Watching the identifiers*: `zero_any::Array<T>::second_value_stats()` (static, any time, any
@@ -107,7 +108,7 @@ does not compile, with a message. A proxy kept on purpose: `std::move(x) = v;`, 
 
 ## 5. Range operations
 
-`chunk/array_chunk_range_ops.h`. One decision per chunk instead of one per element.
+`chunk/range_ops.h`. One decision per chunk instead of one per element.
 
 | call | context |
 |---|---|
@@ -132,15 +133,15 @@ depend on how the library encodes the chunk inside.
 |---|---|
 | `export_chunk(a, c)` | sequential: chunk `c`'s state; `data` points into `a`, valid until `a` is written |
 | `import_chunk(a, c, state)` | sequential: chunk `c` takes `state`, a constant without a buffer; `false` if the chunk was written |
-| `export_array(a)` | sequential: size, `chunk_size()`, zero_one_value's second value, every chunk's state |
-| `import_array(a, state)` | sequential: `a` becomes the array `state` describes, whatever it held; `false` (and `a` unchanged) at another chunk size |
+| `export_array(a)` | sequential: size, `chunk_size()`, zero_or_value's second value, every chunk's state |
+| `import_array(a, state)` | sequential: `a` becomes the array `state` describes, whatever it held; `false` (and `a` unchanged) at another chunk size; the chunks past `state`'s size (a `reserve()`) are not imported |
 
-Every variant and element type but `Bit` (ArrayChunkBits). Call them after the phase, as
+Every variant and element type but `Bit` (BitArray). Call them after the phase, as
 `fill_range`.
 
 ## 6. OpenMP phases
 
-`chunk/manage_ompt.h`. Needed only when `build_config::has_not_ompt` (GCC's libgomp); no-ops
+`chunk/phases.h`. Needed only when `build_config::needs_explicit_phases` (GCC's libgomp); no-ops
 otherwise, and in serial builds.
 
 | call | where |
@@ -153,14 +154,30 @@ otherwise, and in serial builds.
 | `tbb::parallel_for(...)` | a TBB program, std or serial backend (`chunk/tbb_adaptor.h`): the arguments of `oneapi::tbb::parallel_for`, with `begin_parallel_phase()` before every piece and `finalize_parallel_phase()` after the call |
 
 A `begin_parallel_phase()` with no `finalize_parallel_phase()` since the previous region stops
-the program, in every build. Check builds (Debug, `CHECK_OPTIM`) also stop on a deferred write
+the program, in every build. Check builds (Debug, `CHUNK_CHECK_OPTIM`) also stop on a deferred write
 in a region by a thread that did not call `begin_parallel_phase()`.
 
 The application's own threads (`std::thread`, TBB) need the std backend (`CHUNK_THREADS=std`):
 every thread that writes calls `begin_parallel_phase()` before its first write, and one thread
 calls `finalize_parallel_phase()` once they have stopped. `shrink_array::tbb::parallel_for`
 makes both calls for a TBB loop; the header is installed with the others, and the program links
-TBB itself (the library does not).
+TBB itself (the library does not). Its first call also gives the library's own teams (the flush
+and compression pass of `finalize_parallel_phase()`, a re-chunk, a parallel initialisation) to
+TBB's threads instead of the std backend's pool, so that the two do not compete for the cores;
+a TBB program that writes the arrays without the adaptor calls
+`shrink_array::tbb::use_tbb_for_library_teams()` itself, once. Those teams run in the arena of
+the thread that opens them, the one its TBB algorithms run in; a program whose regions run in a
+`task_arena` of its own while it calls `finalize_parallel_phase()` outside it passes that arena:
+`use_tbb_for_library_teams(arena)`. Otherwise TBB's threads change arena twice per region.
+
+The threads, whatever the backend (`chunk/threads.h`): size per-thread data and number the
+threads with these rather than with `omp_get_*`, so that the program builds with every backend.
+
+| call | OpenMP | std backend | serial |
+|---|---|---|---|
+| `shrink_array::max_threads()` | `omp_get_max_threads()` | the team size of the next region | 1 |
+| `shrink_array::team_size()` | `omp_get_num_threads()` | the size of the innermost team | 1 |
+| `shrink_array::thread_rank()` | `omp_get_thread_num()` | the rank in the innermost team (the registered rank outside one) | 0 |
 
 ## 7. Adaptive chunk size (`_dyn` libraries)
 
@@ -171,6 +188,10 @@ TBB itself (the library does not).
 | `decider.consider<T>(a, tick, iter, "name")` | | analyses the array and applies the re-chunk if the policy agrees **(S)** |
 | `decider.print_rechunk_log()` | | the table of the re-chunks performed |
 | `a.rechunk_to(n)` **(S)** | | re-chunk one array to `n` elements per chunk |
+| `a.set_chunk_size(n)` | | the geometry of an EMPTY array, before its first `resize()`; refused (warning) on an array that has chunks -- `rechunk_to()` moves the elements; a no-op in a static build |
+| `set_active_chunk_size(n)` | `chunk/chunk_size_advisor.h` | the process-wide chunk size, before `Runtime::init()`: the first geometry |
+| `set_thread_chunk_size(n)` | `chunk/chunk_size_advisor.h` | the size the calling thread's next chunk allocations are routed to; the library sets it before each allocation. Not a new array's geometry: arrays are born at `set_active_chunk_size()`, `a.set_chunk_size(n)` sets an empty one's |
+| `sizeof(zero_any::Chunk<T>)` | `chunk/zero_any_array.h` | the metadata of one chunk, for the advisor's options |
 
 The policy, its defaults and the measured results: [adaptive_rechunk.md](adaptive_rechunk.md).
 
@@ -180,9 +201,9 @@ The policy, its defaults and the measured results: [adaptive_rechunk.md](adaptiv
 |---|---|
 | `build_config::use_openmp` | built with OpenMP |
 | `build_config::threaded` | the library runs threads (`CHUNK_THREADS` `openmp` or `std`) |
-| `build_config::has_ompt`, `build_config::has_not_ompt` | built with the OMPT tool, or not |
+| `build_config::has_ompt`, `build_config::needs_explicit_phases` | built with the OMPT tool, or not |
 | `build_config::chunk_dynamic` | dynamic geometry (`_dyn` library) |
-| `chunk_config::use_zero`, `chunk_config::use_zero_one_value`, `chunk_config::use_zero_any` | the variant |
+| `chunk_config::use_zero`, `chunk_config::use_zero_or_value`, `chunk_config::use_zero_any` | the variant |
 | `chunk_config::stats` | `CHUNK_STATS` build |
 
 Environment variables and build options: [environment_variables.md](environment_variables.md).
@@ -213,3 +234,32 @@ their channels: `arena=info` (the buffer arena), `ledger=info` (the block regist
 stderr headed `[CRITICAL_FAILURE]` (`[DEBUG_INVARIANT_FAILURE]` in a debug build), the
 backtrace, then the record (level fatal) to the sink or `CHUNK_LOG_FILE`. The channels'
 contents: [developer_settings.md](developer_settings.md), section 2.
+
+## 10. Printing
+
+`chunk/print.h`: `shrink_array::print` and `println`, the C++23 `std::print` / `std::println` in
+every build -- the standard ones where the library has them, the same signatures over
+`std::format` otherwise. `println("{} chunks", n)` to stdout, `println(stderr, ...)` to a stream.
+The examples print through them.
+
+## Names changed in 0.3
+
+The former names still compile, with a deprecation warning (the headers: silently), and go at
+the next minor version.
+
+| former name | name |
+|---|---|
+| `chunk/manage_ompt.h` | `chunk/phases.h` |
+| `chunk/param_chunk.h` | `chunk/runtime.h` |
+| `chunk/array_chunk_bits.h` | `chunk/bit_array.h` |
+| `chunk/array_chunk_range_ops.h` | `chunk/range_ops.h` |
+| `ParamChunk` | `Runtime` |
+| `ParamChunk::init_indexes()` | `Runtime::init()` |
+| `destroy_block_chunk()` | `Runtime::shutdown()` |
+| `build_config::has_not_ompt` | `build_config::needs_explicit_phases` |
+| `ArrayChunkBits<>` | `BitArray<>` |
+| `get_second_value()` | `second_value()` |
+| `get_nb_chunk_written()` | `written_chunk_count()` |
+| `pmp::max_threads()`, `pmp::team_size()`, `pmp::thread_rank()` | `max_threads()`, `team_size()`, `thread_rank()` |
+| `zero_one_value::Array`, `chunk/zero_one_value_array.h` | `zero_or_value::Array`, `chunk/zero_or_value_array.h` |
+| `chunk_config::use_zero_one_value`, `CHUNK_VARIANT_ZERO_ONE_VALUE` | `chunk_config::use_zero_or_value`, `CHUNK_VARIANT_ZERO_OR_VALUE` |

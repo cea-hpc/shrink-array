@@ -1,0 +1,218 @@
+/*
+ * Copyright 2024-2026 CEA (www.cea.fr)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#pragma once
+
+/**
+ * @file Loops.h
+ * @brief The two loop policies of the example: scalar for the chunk arrays,
+ *        `omp simd` for the std::vector ones.
+ *
+ * Every loop of ComputeLoops.h is written once, against a policy object;
+ * MultiMatAlgo picks the policy per material. Same names, same shapes, and
+ * the one difference: LoopsSimd adds `simd` to the OpenMP directives, which
+ * vectorises the std::vector path and would only cost on the chunk path
+ * (a chunk element access is a proxy, not a lane).
+ */
+
+#include <tuple> // std::tie
+
+#include "config.h" // PRAGMA_FORCEINLINE, multi_mat::thread_rank
+#include "PMP.h"    // get_parallel_loop_boundaries
+
+/// @brief Loop policy of the chunk materials: work-shared, never vectorised.
+struct Loops
+{
+    /// @brief `lbd(k)` for k in [kbegin, kend), shared by the team, no barrier.
+    template <typename Body>
+    static void omp_for_nowait_simd(int kbegin, int kend, const Body& lbd)
+    {
+#pragma omp for schedule(static) nowait
+        for (int k = kbegin; k < kend; ++k)
+        {
+            PRAGMA_FORCEINLINE
+            lbd(k);
+        }
+    }
+
+    /// @brief `lbd(ll[k])` for the first @p nn entries, shared by the team.
+    template <typename Body, typename IndexList>
+    static void omp_simd_foreach_int(const IndexList& ll, const Body& lbd, int nn)
+    {
+#pragma omp for schedule(static)
+        for (int k = 0; k < nn; ++k)
+        {
+            const int idx = ll[k];
+            PRAGMA_FORCEINLINE
+            lbd(idx);
+        }
+    }
+
+    /// @brief omp_simd_foreach_int() without the barrier at the end.
+    template <typename Body, typename IndexList>
+    static void omp_simd_foreach_nowait_int(const IndexList& ll, const Body& lbd, int nn)
+    {
+#pragma omp for schedule(static) nowait
+        for (int k = 0; k < nn; ++k)
+        {
+            const int idx = ll[k];
+            PRAGMA_FORCEINLINE
+            lbd(idx);
+        }
+    }
+
+    /// @brief `lbd(i)` for every index i of the indirection @p ll.
+    template <typename Body, typename IndexList>
+    void omp_simd_foreach(const IndexList& ll, const Body& lbd) const
+    {
+        omp_simd_foreach_int(ll, lbd, static_cast<int>(ll.size()));
+    }
+
+    /// @brief omp_simd_foreach() without the barrier at the end.
+    template <typename Body, typename IndexList>
+    void omp_simd_foreach_nowait(const IndexList& ll, const Body& lbd) const
+    {
+        omp_simd_foreach_nowait_int(ll, lbd, static_cast<int>(ll.size()));
+    }
+
+    /**
+     * @brief `lbd(ll[k], red)` over the thread's share of @p ll, then a
+     *        barrier.
+     * @details The range is split by hand (PMP.h) so that @p red, the
+     *          caller's per-thread accumulator, is touched by one thread
+     *          only; the caller reduces across threads.
+     */
+    template <typename Body, typename IndexList, typename T>
+    static void omp_foreach_simd_red_sum(const IndexList& ll, T& red, const Body& lbd) noexcept
+    {
+        const auto nn = static_cast<int>(ll.size());
+
+        int kbegin             = 0;
+        int kend               = 0;
+        std::tie(kbegin, kend) = get_parallel_loop_boundaries(multi_mat::thread_rank(), multi_mat::max_threads(), nn);
+
+        for (int k = kbegin; k < kend; ++k)
+        {
+            const int nnn = ll[k];
+            PRAGMA_FORCEINLINE
+            lbd(nnn, red);
+        }
+
+#pragma omp barrier
+    }
+};
+
+/// @brief Loop policy of the std::vector materials: work-shared and
+///        vectorised (`omp simd`).
+struct LoopsSimd
+{
+    /// @copydoc Loops::omp_simd_foreach_int
+    template <typename Body, typename IndexList>
+    static void omp_simd_foreach_int(const IndexList& ll, const Body& lbd, int nn)
+    {
+#pragma omp for simd        schedule(static)
+        for (int k = 0; k < nn; ++k)
+        {
+            const int idx = ll[k];
+            PRAGMA_FORCEINLINE
+            lbd(idx);
+        }
+    }
+
+    /// @copydoc Loops::omp_simd_foreach_nowait_int
+    template <typename Body, typename IndexList>
+    static void omp_simd_foreach_nowait_int(const IndexList& ll, const Body& lbd, int nn)
+    {
+#pragma omp for simd nowait schedule(static)
+        for (int k = 0; k < nn; ++k)
+        {
+            const int idx = ll[k];
+            PRAGMA_FORCEINLINE
+            lbd(idx);
+        }
+    }
+
+    /// @copydoc Loops::omp_simd_foreach
+    template <typename Body, typename IndexList>
+    void omp_simd_foreach(const IndexList& ll, const Body& lbd) const
+    {
+        omp_simd_foreach_int(ll, lbd, static_cast<int>(ll.size()));
+    }
+
+    /// @copydoc Loops::omp_simd_foreach_nowait
+    template <typename Body, typename IndexList>
+    void omp_simd_foreach_nowait(const IndexList& ll, const Body& lbd) const
+    {
+        omp_simd_foreach_nowait_int(ll, lbd, static_cast<int>(ll.size()));
+    }
+
+    /// @copydoc Loops::omp_for_nowait_simd
+    template <typename Body>
+    static void omp_for_nowait_simd(int kbegin, int kend, const Body& lbd)
+    {
+#pragma omp for simd nowait schedule(static)
+        for (int k = kbegin; k < kend; ++k)
+        {
+            PRAGMA_FORCEINLINE
+            lbd(k);
+        }
+    }
+
+    /**
+     * @copydoc Loops::omp_foreach_simd_red_sum
+     * @note The accumulation goes through a local under `omp simd
+     *       reduction`, so the lanes reduce before the thread does.
+     */
+    template <typename Body, typename IndexList, typename T>
+    void omp_foreach_simd_red_sum(const IndexList& ll, T& red, const Body& lbd) const noexcept
+    {
+        const auto nn = static_cast<int>(ll.size());
+
+        int kbegin             = 0;
+        int kend               = 0;
+        std::tie(kbegin, kend) = get_parallel_loop_boundaries(multi_mat::thread_rank(), multi_mat::max_threads(), nn);
+
+        T redl = red;
+        // The indirection read through a raw pointer taken once, not ll[k].
+        // A regression of recent gcc (not expected): with ll[k], gcc 14, 15
+        // and 16 leave this loop scalar on Intel tunings (alderlake, generic,
+        // skylake, ...), where gcc 11 vectorised it -- and gcc 13.3 did too on
+        // the AVX-512 machine the libmvec change was measured on. Two causes
+        // meet: (1) these tunings no longer emit hardware gathers (the
+        // Downfall/GDS mitigation; -mgather or -mtune=haswell bring them
+        // back), so the vectoriser emulates the gathers of the body's
+        // arr[nnn] reads; (2) under `omp simd reduction` the load of ll's data
+        // pointer stays inside the loop, and the emulated gather gives up on
+        // it ("not vectorized: no vectype for stmt: ... _M_start", scalar type
+        // int* const). Nothing writes an int* in the body: the load is
+        // invariant, gcc just does not hoist it. Taken once here, it is, and
+        // gcc 14 to 16 vectorise the loop on every tuning (cos/sin/tan through
+        // libmvec, _ZGVdN4v_* with AVX2). Reduced test case and gcc versions:
+        // see the commit that added this comment.
+        const int* const lp = ll.data();
+#pragma omp simd            reduction(+ : redl)
+        for (int k = kbegin; k < kend; ++k)
+        {
+            const int nnn = lp[k];
+            PRAGMA_FORCEINLINE
+            lbd(nnn, redl);
+        }
+
+        red = redl;
+
+#pragma omp barrier
+    }
+};

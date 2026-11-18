@@ -1,0 +1,432 @@
+/*
+ * Copyright 2024-2026 CEA (www.cea.fr)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#include <chrono>    // std::chrono::steady_clock
+#include <cmath>     // std::cos, std::sin, std::sqrt
+#include <cstdlib>   // std::abort
+#include <exception> // std::exception (main's catch)
+#include <ctime>     // std::time
+#include <iostream>  // std::cout, std::cerr
+#include <random>    // std::mt19937, std::uniform_int_distribution, std::default_random_engine
+#include <array>     // std::array
+#include <fstream>   // std::ifstream, std::ofstream
+#include <algorithm> // For std::shuffle
+#include <string>    // std::string, std::to_string
+
+#include <sys/resource.h> // getrusage
+
+#include <type_traits> // std::is_same_v (the simd clauses)
+
+#include <vector> // std::vector
+#include <format> // std::format (the filling rates)
+
+
+#include "chunk/runtime.h"    // Runtime, Runtime::shutdown
+#include "chunk/zero_array.h" // zero::Array
+#include "chunk/threads.h"    // shrink_array::max_threads
+#include "chunk/config.h"     // chunk_config::stats
+
+
+using namespace shrink_array;
+
+
+double convert_memory(double memory_value)
+{
+    const double byte_to_kb = 1.0 / 1024;
+    const double kb_to_mb   = 1.0 / 1024;
+
+    const double kilobytes = memory_value * byte_to_kb;
+    const double megabytes = kilobytes * kb_to_mb;
+
+    if (std::ofstream out_file("memory_mo.txt"); out_file.is_open())
+    {
+        out_file << megabytes;
+        out_file.close();
+    }
+    else
+    {
+        std::cerr << "Error: cannot open the file.\n";
+    }
+
+    return megabytes;
+}
+
+// Save seed to file
+void save_seed_to_file(unsigned seed, const std::string& filename)
+{
+    std::cout << "\nSave seed in file\n";
+
+    if (std::ofstream file(filename); file.is_open())
+    {
+        file << seed;
+        file.close();
+    }
+    else
+    {
+        std::cerr << "Unable to open file for saving seed." << '\n';
+    }
+}
+
+// Load seed from file
+unsigned load_seed_to_file(const std::string& filename)
+{
+    unsigned seed = 0;
+    if (std::ifstream file(filename); file.is_open())
+    {
+        file >> seed;
+        file.close();
+    }
+    else
+    {
+        std::cerr << "Unable to open file for loading seed. --> create new one" << '\n';
+    }
+    std::cout << "\nLoad seed in file\n";
+
+    return seed;
+}
+
+// Initialize random number generator with saved or new seed
+void initialize_rng(std::mt19937& rng, const std::string& seed_file_name)
+{
+    // Try to load seed from file
+    unsigned seed = load_seed_to_file(seed_file_name);
+    if (seed == 0)
+    {
+        // If loading failed, generate a new seed
+        std::random_device rd;
+        seed = rd();
+        // Save the new seed to file
+        save_seed_to_file(seed, seed_file_name);
+    }
+    // Initialize RNG with the seed
+    rng.seed(seed);
+}
+
+constexpr int iter_max = 10000;
+
+template <typename V>
+void init(int                              start0,
+          int                              end0,
+          int                              iter,
+          const std::array<int, iter_max>& array_nba1,
+          const std::array<int, iter_max>& array_nba2,
+          V&                               arr1,
+          V&                               arr2,
+          V&                               arr3)
+{
+#pragma omp for schedule(static) nowait
+    for (int i = start0; i < end0; ++i)
+    {
+        arr1[i] = std::sqrt(double(i));
+        if (i > array_nba1[iter])
+        {
+            arr2[i] = std::cos(double(2 * i));
+        }
+        if (i > array_nba2[iter])
+        {
+            arr3[i] = std::sin(arr1[i] + arr2[i]);
+        }
+    }
+}
+
+template <typename V>
+void calculate(double                  val,
+               int                     start0,
+               int                     end0,
+               const std::vector<int>& index,
+               std::vector<double>&    array_vec,
+               const V&                arr1,
+               const V&                arr2,
+               const V&                arr3)
+{
+    // simd for a std::vector only: the chunk proxies do not vectorise, and asking
+    // for it anyway draws clang's -Wpass-failed (multi_mat shows a way around).
+#pragma omp for simd if (simd : std::is_same_v<V, std::vector<double>>) nowait
+    for (int i = start0; i < end0; ++i)
+    {
+        const int pos = index[i - start0];
+        array_vec[pos] += arr1[pos] + (arr2[pos] * arr3[i]) - arr2[i] + val;
+    }
+}
+
+template <typename V>
+void calculate1(double                     val,
+                int                        start0,
+                int                        end0,
+                const std::vector<int>&    index,
+                const std::vector<double>& array_vec,
+                V&                         arr1,
+                const V&                   arr2,
+                const V&                   arr3)
+{
+    // simd for a std::vector only: the chunk proxies do not vectorise, and asking
+    // for it anyway draws clang's -Wpass-failed (multi_mat shows a way around).
+#pragma omp for simd if (simd : std::is_same_v<V, std::vector<double>>) nowait
+    for (int i = start0; i < end0; ++i)
+    {
+        const int pos = index[i - start0];
+        arr1[pos] += array_vec[pos] + (arr2[pos] * arr3[i]) - arr2[i] + val;
+    }
+}
+
+int main()
+try
+{
+    // Once, before the first array. The library checks its compiled chunk size
+    // itself.
+    Runtime::init(true);
+
+    constexpr int sz = 100000000;
+
+    constexpr int freq_compress = iter_max / 10;
+
+    constexpr int freq_reset = iter_max / 50;
+    constexpr int interval   = 20000;
+
+    const int max_thr = shrink_array::max_threads();
+
+    std::cout << "Number of threads : " << max_thr << '\n';
+
+    auto start = std::chrono::steady_clock::now();
+
+    std::cout << "Initialisation ..." << '\n';
+    std::cout << "Creation of arrays ..." << '\n';
+
+    zero::Array<double> array_chunk1(sz);
+    zero::Array<double> array_chunk2(sz);
+    zero::Array<double> array_chunk3(sz);
+
+    std::vector<double> arr1(sz);
+    std::vector<double> arr2(sz);
+    std::vector<double> arr3(sz);
+    std::vector<double> array_vec(sz);
+
+    std::vector<int> index;
+
+    auto                          end             = std::chrono::steady_clock::now();
+    std::chrono::duration<double> elapsed_seconds = end - start;
+    start                                         = end;
+    std::cout << "\nElapsed time creation : " << elapsed_seconds.count() << "s\n";
+
+#pragma omp parallel for default(shared)
+    for (int i = 0; i < sz; ++i)
+    {
+        arr1[i] = arr2[i] = arr3[i] = 0;
+        array_vec[i]                = 0;
+    }
+
+    end             = std::chrono::steady_clock::now();
+    elapsed_seconds = end - start;
+    start           = end;
+    std::cout << "\nElapsed time Initialisation to zero: " << elapsed_seconds.count() << "s\n";
+
+    const int min = 1;
+    const int max = sz;
+
+    // Initialize the random number generator
+    const std::string str            = std::to_string(iter_max);
+    const std::string seed_file_name = "seed" + str + ".txt"; // File to store the seed
+    std::mt19937      rng;                                    // Random number generator
+    initialize_rng(rng, seed_file_name);
+
+    // Create a uniform distribution for interval sizes
+    std::uniform_int_distribution size_distribution(1, interval);
+
+    // Create a uniform distribution for the starting points of the intervals
+    std::uniform_int_distribution start_distribution(min, max);
+
+    std::cout << "Iteration ..." << '\n';
+
+    std::array<int, iter_max> array_size{};
+    std::array<int, iter_max> array_start{};
+    std::array<int, iter_max> array_nba1{};
+    std::array<int, iter_max> array_nba2{};
+
+    for (int k = 0; k < iter_max; ++k)
+    {
+        const int size   = size_distribution(rng);
+        const int start0 = start_distribution(rng);
+        const int end0   = start0 + size;
+        array_size[k]    = size;
+        array_start[k]   = start0;
+
+        std::uniform_int_distribution uni1(start0, end0);
+        array_nba1[k] = uni1(rng);
+        array_nba2[k] = uni1(rng);
+    }
+
+    end             = std::chrono::steady_clock::now();
+    elapsed_seconds = end - start;
+    start           = end;
+    std::cout << "\nElapsed time distribution : " << elapsed_seconds.count() << "s\n";
+
+    const int progress_interval = iter_max / 10;
+
+    for (int k = 0; k < iter_max; ++k)
+    {
+        const int size   = array_size[k];
+        const int start0 = array_start[k];
+
+        int end0 = start0 + size;
+
+        end0 = std::min(end0, sz);
+
+        const int nsz = end0 - start0;
+
+        // The random generator, seeded with the current time (std::mt19937, not
+        // std::rand: a generator of its own, not the C library's shared state).
+        std::mt19937 gen(static_cast<std::mt19937::result_type>(std::time(nullptr)));
+
+        // The indirection: the cells of the interval in order, then shuffled
+        // by windows below.
+        index.resize(nsz);
+
+        for (int p = 0; p < nsz; ++p)
+        {
+            index[p] = p + start0;
+        }
+
+        for (int p = 0; p < 10; ++p)
+        {
+            const int win_sz = std::uniform_int_distribution<int>(1, 1 + (nsz / 100))(gen);
+            // A window [win_start, win_start + win_sz) strictly inside [1, nsz). Drawn
+            // directly: the former rejection loop (draw win_start in [1, nsz],
+            // retry while win_start + win_sz >= nsz) never terminates once nsz is
+            // small -- the interval sizes go down to a few elements, and
+            // one such iteration hung the run for good.
+            if (nsz - win_sz - 1 < 1)
+            {
+                break;
+            }
+            const int win_start = std::uniform_int_distribution<int>(1, nsz - win_sz - 1)(gen);
+
+            // Shuffle the vector to ensure the array is not ordered
+            std::shuffle(index.begin() + win_start, index.begin() + win_start + win_sz,
+                         std::default_random_engine(std::time(nullptr)));
+        }
+
+        if (k % freq_reset == 0)
+        {
+            std::cout << "Interval "
+                      << ": [" << start0 << ", " << end0 << "]"
+                      << " size : " << size << "\n";
+
+            int i = start0;
+
+            for (; i < sz; ++i)
+            {
+                if (arr1[i] != 0)
+                {
+                    break;
+                }
+            }
+
+            // Bounded: the run of non-zeros can reach the end of the arrays,
+            // and the unbounded form read arr1[sz] (the libstdc++ assertion
+            // of the hardened Debug build caught it, intermittently -- the
+            // layout depends on the shuffle's time seed).
+            while (i < sz && arr1[i] != 0)
+            {
+                arr1[i] = arr2[i] = arr3[i] = 0;
+                array_chunk1[i] = array_chunk2[i] = array_chunk3[i] = 0;
+                i++;
+            }
+        }
+        else
+        {
+#pragma omp parallel
+            {
+                // To simulate behavior of a code where we read more than we write
+
+                init(start0, end0, k, array_nba1, array_nba2, arr1, arr2, arr3);
+                init(start0, end0, k, array_nba1, array_nba2, array_chunk1, array_chunk2, array_chunk3);
+
+                for (int p = 0; p < 5; ++p)
+                {
+                    const auto val1 = static_cast<double>(p);
+                    calculate(val1, start0, end0, index, array_vec, arr1, arr2, arr3);
+                    const auto val2 = static_cast<double>(2 * p);
+                    calculate(val2, start0, end0, index, array_vec, array_chunk1, array_chunk2, array_chunk3);
+
+                    calculate1(val1, start0, end0, index, array_vec, arr1, arr2, arr3);
+                    calculate1(val2, start0, end0, index, array_vec, array_chunk1, array_chunk2, array_chunk3);
+                }
+            }
+        }
+        const double progress = (static_cast<double>(k) / iter_max) * 100;
+
+        // Print the progress every 10%
+        if (k % progress_interval == 0)
+        {
+            std::cout << "Progression : " << std::format("{:.2f}", progress) << "%" << '\n';
+        }
+
+        if (k % freq_compress == 0)
+        {
+            std::cout << "Compression\n";
+
+            array_chunk1.compress();
+            array_chunk2.compress();
+            array_chunk3.compress();
+        }
+    }
+
+    end             = std::chrono::steady_clock::now();
+    elapsed_seconds = end - start;
+    std::cout << "\nElapsed time computation : " << elapsed_seconds.count() << "s\n";
+
+    std::cout << arr2[2] << '\n';
+
+    const auto lbd = [](const zero::Array<double>& arr)
+    {
+        const double sz0 = arr.stats();
+        std::cout << "Chunk filling rate : " << std::format("{:.2f}", sz0) << "%" << '\n';
+    };
+
+    lbd(array_chunk1);
+    lbd(array_chunk2);
+    lbd(array_chunk3);
+
+    if constexpr (chunk_config::stats)
+    {
+        Runtime::chunk_stats();
+    }
+
+    struct rusage usage{};
+    if (getrusage(RUSAGE_SELF, &usage) == 0)
+    {
+        const long rss = usage.ru_maxrss; // Resident Set Size in kilobytes
+        std::cout << "\nMemory consumption : " << convert_memory(static_cast<double>(rss * 1024)) << " Mo \n\n";
+    }
+    else
+    {
+        std::cerr << "Unable to retrieve information from memory." << '\n';
+    }
+
+    arr1.clear();
+    arr2.clear();
+    arr3.clear();
+
+    Runtime::shutdown();
+
+    return 0;
+}
+catch (const std::exception& e)
+{
+    // A failed allocation or std::format: said, not std::terminate().
+    std::cerr << "vectorisation_demo: " << e.what() << '\n';
+    return 2;
+}

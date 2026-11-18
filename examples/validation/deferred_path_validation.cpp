@@ -15,7 +15,7 @@
  */
 
 // ============================================================================
-// Deferred-write path harness. Variant-agnostic: zero / zero_one_value / zero_any by
+// Deferred-write path harness. Variant-agnostic: zero / zero_or_value / zero_any by
 // the compile-time macro (CHUNK_VARIANT_ZERO*), like the other harnesses.
 // ============================================================================
 //
@@ -95,17 +95,17 @@
 #include <utility>     // std::forward (the returns lambdas: an element proxy is a temporary), std::as_const
 #include <vector>      // std::vector
 
-#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
-#include "chunk/zero_array.h"           // zero::Array
-#include "chunk/zero_one_value_array.h" // zero_one_value::Array
-#include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
-#include "chunk/zero_chunk.h"           // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"      // chunk_config::use_zero_one_value*, build_config::force_defer_every / has_not_ompt
-#include "chunk/PMP_CHUNK.h"   // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h" // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
+#include "chunk/zero_array.h"            // zero::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
+#include "chunk/zero_any_array.h"        // zero_any::Array
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
+#include "chunk/config.h" // chunk_config::use_zero_or_value*, build_config::force_defer_every / needs_explicit_phases
+#include "chunk/internal/pmp_chunk.h" // CHUNK_PMP_MAX_THREADS
+#include "chunk/phases.h"             // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
-#include "chunk/internal/print.h"     // shrink_array::println
+#include "chunk/print.h"              // shrink_array::println
 #if CHUNK_OPT_STATS
     #include "chunk/internal/chunk_stats.h" // chunk_stats_n_variant, reduce_chunk_stats
 #endif
@@ -120,14 +120,14 @@ using namespace shrink_array;
 
 static void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
 }
 static void end_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -137,7 +137,7 @@ template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -145,9 +145,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -422,7 +422,7 @@ struct Scenario
 template <typename T>
 static long compare(const char* label, const char* stage, const Array<T>& arr, const std::vector<T>& ref)
 {
-    const long count = static_cast<long>(ref.size());
+    const auto count = static_cast<long>(ref.size());
     long       bad   = 0;
     long       first = -1;
     T          got_first{};
@@ -443,7 +443,7 @@ static long compare(const char* label, const char* stage, const Array<T>& arr, c
     }
     if (bad)
     {
-        const long csz = static_cast<long>(arr.chunk_size());
+        const auto csz = static_cast<long>(arr.chunk_size());
         println("[{}/{}] FAIL after {}: {}/{} mismatches, first at i={} (chunk #{}, offset {}) "
                 "got={:g} expected={:g}",
                 variant_name(), label, stage, bad, count, first, first / csz, first % csz, (double)got_first,
@@ -672,8 +672,8 @@ static int run(const char* label, long count, const Scenario<T>& sc)
     // it. The first loop never waits, so every flag is eventually set.
     {
         constexpr long                block_len = 1000; // not a chunk multiple: blocks straddle chunks
-        const long                    nb        = (count + block_len - 1) / block_len;
-        std::vector<std::atomic<int>> ready(nb);
+        const long                    n         = (count + block_len - 1) / block_len;
+        std::vector<std::atomic<int>> ready(n);
         for (auto& flag : ready)
         {
             flag.store(0, std::memory_order_relaxed);
@@ -682,7 +682,7 @@ static int run(const char* label, long count, const Scenario<T>& sc)
         {
             begin_phase();
 #pragma omp for schedule(static, 1) nowait
-            for (long b = 0; b < nb; ++b)
+            for (long b = 0; b < n; ++b)
             {
                 for (long i = b * block_len; i < std::min(count, (b + 1) * block_len); ++i)
                 {
@@ -691,9 +691,9 @@ static int run(const char* label, long count, const Scenario<T>& sc)
                 ready[b].store(1, std::memory_order_release);
             }
 #pragma omp for schedule(static, 1)
-            for (long j = 0; j < nb; ++j)
+            for (long j = 0; j < n; ++j)
             {
-                const long other_block = (j + 1) % nb; // another thread's block of the first loop
+                const long other_block = (j + 1) % n; // another thread's block of the first loop
                 while (ready[other_block].load(std::memory_order_acquire) == 0)
                 {
                     std::this_thread::yield();
@@ -807,7 +807,7 @@ static int run_resize(const char* label, long count)
  *          a deferred write runs no body on the spot, so only its replay can
  *          mark it. Without that, the chunks rewritten here by replays alone
  *          are on no candidate list and the pass never sees them.
- * @note zero_one_value's compress() is an audit that compresses every constant
+ * @note zero_or_value's compress() is an audit that compresses every constant
  *       chunk, queued or not: there the count passes either way, and a missed
  *       mark shows as its self-heal report (CHUNK_LOG=compress=info).
  * @return 0 if no chunk is left materialised, 1 otherwise.
@@ -861,14 +861,14 @@ static int run_replay_marks(const char* label, long count)
     }
     end_phase();
 
-    const long chunk_sz = static_cast<long>(arr.chunk_size());
+    const auto chunk_sz = static_cast<long>(arr.chunk_size());
     const long n_chunks = (count + chunk_sz - 1) / chunk_sz;
-    const int  ind2     = internal::second_value_index(arr);
+    const int  idx2     = internal::second_value_index(arr);
     long       left     = 0;
     long       wrong    = 0;
     for (long c = 0; c < n_chunks; ++c)
     {
-        left += internal::materialised(arr, arr.chunk_ref(static_cast<std::size_t>(c)), ind2) ? 1 : 0;
+        left += internal::materialised(arr, arr.chunk_ref(static_cast<std::size_t>(c)), idx2) ? 1 : 0;
     }
     for (long i = 0; i < count; ++i)
     {
@@ -913,7 +913,7 @@ int run(int argc, char** argv)
     // entry and a replay -- forty times the cost of the write it stands for).
     const long count = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 17, "N") : (1L << 17);
 
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
     println("=== deferred_path_validation [variant = {}]  N={}  threads={}  force_defer_every={} ===", variant_name(),
             count, CHUNK_PMP_MAX_THREADS, test_hooks::force_defer_compiled ? test_hooks::force_defer_every : 0U);
@@ -975,7 +975,7 @@ int run(int argc, char** argv)
 #endif
 
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
 
     println("\n[{}] {}", variant_name(), fails == 0 ? "=== DEFERRED PATH OK ===" : "=== DEFERRED PATH FAILURES ===");
     return fails;

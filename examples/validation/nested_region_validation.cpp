@@ -15,7 +15,7 @@
  */
 
 // ============================================================================
-// Nested-region harness. Variant-agnostic: zero / zero_one_value / zero_any by the
+// Nested-region harness. Variant-agnostic: zero / zero_or_value / zero_any by the
 // compile-time macro (CHUNK_VARIANT_ZERO*), like the other harnesses.
 // ============================================================================
 //
@@ -66,22 +66,21 @@
 #include <string>      // std::string, std::to_string
 #include <type_traits> // std::conditional_t
 #include <vector>      // std::vector
-#include <unistd.h>    // getpid
 #include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
 
-#include "chunk/chunk_traits.h"         // forward decls + default IntType = int
-#include "chunk/zero_array.h"           // zero::Array
-#include "chunk/zero_one_value_array.h" // zero_one_value::Array
-#include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/param_chunk.h"          // ParamChunk::init_indexes
-#include "chunk/config.h"               // chunk_config::use_zero_one_value*, build_config::use_openmp / has_not_ompt
-#include "chunk/PMP_CHUNK.h"            // chunk_pmp_set_max_active_levels
-#include "chunk/manage_ompt.h"          // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/internal/print.h"       // shrink_array::println
-#include "chunk/internal/test_hooks.h"  // force_defer_every, forced_deferrals (C, D)
+#include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
+#include "chunk/zero_array.h"            // zero::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
+#include "chunk/zero_any_array.h"        // zero_any::Array
+#include "chunk/runtime.h"               // Runtime::init
+#include "chunk/config.h" // chunk_config::use_zero_or_value*, build_config::use_openmp / needs_explicit_phases
+#include "chunk/internal/pmp_chunk.h"  // chunk_pmp_set_max_active_levels
+#include "chunk/phases.h"              // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/print.h"               // shrink_array::println
+#include "chunk/internal/test_hooks.h" // force_defer_every, forced_deferrals (C, D)
 
-#include "chunk/zero_chunk.h"   // release_chunk_pools, destroy_block_chunk
-#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
+#include "chunk/internal/zero_chunk.h" // release_chunk_pools, Runtime::shutdown
+#include "validation_harness.h"        // self_command; run() is called by validation_driver.cpp
 
 namespace validation::nested_region_validation
 {
@@ -90,14 +89,14 @@ using namespace shrink_array;
 
 static void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::begin_parallel_phase();
     }
 }
 static void end_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (build_config::needs_explicit_phases)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -107,7 +106,7 @@ template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -115,9 +114,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -158,7 +157,7 @@ enum class Inner
 /// share, opens a nested region that writes again, then writes after it.
 static long run_nested(Array<int>& arr, std::vector<int>& ref, int rounds, Inner inner)
 {
-    const long count = static_cast<long>(ref.size());
+    const auto count = static_cast<long>(ref.size());
     for (int round = 0; round < rounds; ++round)
     {
 #pragma omp parallel num_threads(4)
@@ -235,7 +234,7 @@ static long run_nested(Array<int>& arr, std::vector<int>& ref, int rounds, Inner
 /// the nested-active invariant.
 [[maybe_unused]] static int check_nested_active(const char* self) // OpenMP builds only
 {
-    const std::string log    = "/tmp/nested_region_active_" + std::to_string(getpid()) + ".log";
+    const std::string log    = validation::temp_path("nested_region_active.log");
     const std::string cmd    = validation::self_command(self) + " --nested-active > \"" + log + "\" 2>&1";
     const int         status = std::system(cmd.c_str());
     std::string       out;
@@ -267,11 +266,11 @@ static int run_body(int argc, char** argv)
     const bool nested_active = argc > 1 && std::string(argv[1]) == "--nested-active";
 
     chunk_pmp_set_max_active_levels(nested_active ? 2 : 1);
-    ParamChunk::init_indexes(true);
+    Runtime::init(true);
 
-    const long       count = 1L << 16;
-    Array<int>       arr(count);
-    std::vector<int> ref(count, 0);
+    const long  count = 1L << 16;
+    Array<int>  arr(count);
+    std::vector ref(count, 0);
 
     println("=== nested_region_validation [variant = {}]  outer team 4, nested regions {} ===", variant_name(),
             nested_active ? "ACTIVE (--nested-active)" : "serialised");
@@ -294,7 +293,7 @@ static int run_body(int argc, char** argv)
         {
             const unsigned long before = test_hooks::forced_deferrals.load();
             Array<int>          arr_c(count);
-            std::vector<int>    ref_c(count, 0);
+            std::vector         ref_c(count, 0);
             const long          nfail  = run_nested(arr_c, ref_c, 3, inner);
             const unsigned long forced = test_hooks::forced_deferrals.load() - before;
             println("[{}] deferred writes queued at the nested ends: {} forced, {} wrong",
@@ -335,7 +334,7 @@ int run(int argc, char** argv)
     // one in the std-alloc builds (each buffer is a real malloc there).
     const int rc = run_body(argc, argv);
     release_chunk_pools();
-    destroy_block_chunk();
+    Runtime::shutdown();
     return rc;
 }
 

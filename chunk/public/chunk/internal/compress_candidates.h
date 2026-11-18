@@ -19,26 +19,27 @@
 /**
  * @file compress_candidates.h
  * @brief CompressCandidates: the compression-candidate lists of one
- *        (variant, element type), a base of ManagerChunk.
+ *        (variant, element type), a base of TypeState.
  *
- * Its bodies are in compress_candidates_inline.h, which manager_chunk.h
- * includes once ManagerChunk is complete.
+ * Its bodies are in compress_candidates_inline.h, which type_state.h
+ * includes once TypeState is complete.
  */
 
-#include <tuple>  // std::get (erase_candidates_of_tab)
-#include <vector> // std::erase_if
+#include <atomic>  // std::atomic (the pass threshold)
+#include <tuple>   // std::get (erase_candidates_of_array)
+#include <utility> // std::pair (removal_ranks)
 
-#include "chunk/bit.h"               // is_bool_like_v: bool and Bit share the bool path
-#include "chunk/config.h"            // build_config::threaded
-#include "chunk/internal/TChunk.h"   // ZeroComp, ZeroOneValueCompMap, ZeroAnyComp
-#include "chunk/internal/immortal.h" // Immortal: statics safe for global arrays
+#include "chunk/bit.h"                   // is_bool_like_v: bool and Bit share the bool path
+#include "chunk/config.h"                // build_config::threaded
+#include "chunk/internal/chunk_tuples.h" // ZeroComp, ZeroOrValueCompMap, ZeroAnyComp
+#include "chunk/internal/immortal.h"     // Immortal: statics safe for global arrays
 
 namespace shrink_array
 {
 
 /**
  * @brief The compression-candidate lists of one (variant, element type),
- *        shared by all its arrays: a base of ManagerChunk, static state only.
+ *        shared by all its arrays: a base of TypeState, static state only.
  *
  * @details Chunks a write left eligible for compression, queued per rank and
  *          processed in batches by the compression passes. Since the store is
@@ -47,11 +48,11 @@ namespace shrink_array
  *          three variants keep them in different containers (see
  *          compress_candidates_inline.h).
  *
- *          The members reached through ManagerChunk only are protected:
- *          ManagerChunk's overrides of ManagerChunkInt forward to the passes
+ *          The members reached through TypeState only are protected:
+ *          TypeState's overrides of TypeStateInterface forward to the passes
  *          below.
  *
- * @tparam ChunkT chunk variant template (zero, zero_one_value or zero_any)
+ * @tparam ChunkT chunk variant template (zero, zero_or_value or zero_any)
  * @tparam T      stored element type
  */
 template <template <typename> class ChunkT, typename T>
@@ -62,16 +63,16 @@ class CompressCandidates
     static constexpr bool is_not_bool = !is_bool;
 
     /// @brief Compress every compressible chunk of this type now, ignoring the
-    ///        candidate lists (ManagerChunk::force_chunk_to_compress).
+    ///        candidate lists (TypeState::force_chunk_to_compress).
     static void force_compress();
     /// @brief Size the per-rank candidate lists to the team
-    ///        (ManagerChunk::resize_chunk_to_compress_potentially).
+    ///        (TypeState::resize_chunk_to_compress_potentially).
     static void resize_lists();
     /// @brief Does any of the @p n_thr per-rank candidate lists hold a chunk?
-    ///        (ManagerChunk::have_chunk_to_compress_potentially)
+    ///        (TypeState::have_chunk_to_compress_potentially)
     [[nodiscard]] static bool have_candidates(int n_thr);
     /// @brief Drain this type's candidate backlog
-    ///        (ManagerChunk::compress_chunk_to_compress_potentially).
+    ///        (TypeState::compress_chunk_to_compress_potentially).
     static void compress_pass(bool apply);
 
     /// @brief Set the candidate-list length that triggers a compression pass.
@@ -79,25 +80,36 @@ class CompressCandidates
     ///          candidate list, hence how often compression runs at all.
     static void set_size_max_number_of_chunk_to_check_compress(int max_chunks)
     {
-        size_max_number_of_chunk_to_check_compress = max_chunks;
+        size_max_number_of_chunk_to_check_compress.store(max_chunks, std::memory_order_relaxed);
     }
 
     /**
-     * @brief Drop from @p candidates every queued candidate that belongs to @p num_tab.
+     * @brief Drop from @p candidates every queued candidate that belongs to @p array_id.
      *
      * @details The one place that knows a candidate tuple names its owning array
-     *          in field <2>; the remove_from_compress_list_*_by_num_tab helpers
+     *          in field <2>; the remove_from_compress_list_*_by_array_id helpers
      *          differ only in their traversal.
      *
      * @tparam Vec any sequence of candidate tuples.
      * @param candidates       the sequence to filter, modified in place.
-     * @param num_tab tab index whose candidates are removed.
+     * @param array_id array index whose candidates are removed.
      */
     template <typename Vec>
-    static void erase_candidates_of_tab(Vec& candidates, int num_tab) noexcept
+    static void erase_candidates_of_array(Vec& candidates, int array_id) noexcept
     {
-        std::erase_if(candidates, [num_tab](const auto& tup) { return std::get<2>(tup) == num_tab; });
+        std::erase_if(candidates, [array_id](const auto& tup) { return std::get<2>(tup) == array_id; });
     }
+
+    /**
+     * @brief The ranks whose lists a teardown removal walks: [first, last).
+     * @details Every rank, unless @p own_rank_only: then the calling thread's
+     *          alone. That is the teardown, inside a region, of an array no
+     *          other rank has queued (internal::ArrayUsers) -- the other ranks
+     *          are appending to their lists, which hold nothing of it.
+     * @param nthr number of per-rank lists.
+     * @param own_rank_only walk the calling thread's list only.
+     */
+    [[nodiscard]] static std::pair<int, int> removal_ranks(int nthr, bool own_rank_only) noexcept;
 
     // Serial counterpart of zero_candidates_thr (likewise
     // zero_any_candidates). Declared in EVERY build, empty under
@@ -105,13 +117,14 @@ class CompressCandidates
     static inline constinit internal::Immortal<ZeroComp<ChunkT, T>> zero_candidates_storage_{};
     static inline ZeroComp<ChunkT, T>&                              zero_candidates = zero_candidates_storage_.value;
 
-    static inline int size_max_number_of_chunk_to_check_compress;
+    // Atomic: set on the cold path (under its lock), read by every write.
+    static inline constinit std::atomic<int> size_max_number_of_chunk_to_check_compress{0};
 
   public:
     /// @brief Candidate-list length that triggers a compression pass.
     [[nodiscard]] static int get_size_max_number_of_chunk_to_check_compress() noexcept
     {
-        return size_max_number_of_chunk_to_check_compress;
+        return size_max_number_of_chunk_to_check_compress.load(std::memory_order_relaxed);
     }
     // Serial-only on purpose: under OpenMP it would return the always-empty
     // serial store while the candidates sit per thread, so the constraint makes
@@ -134,8 +147,8 @@ class CompressCandidates
      *
      * @details Teardown removal by CHUNK-POINTER RANGE: candidates hold
      *          &chunk_list_[j], so filtering on the array's chunk_list_ span
-     *          guarantees no pointer into it survives teardown. The by-num_tab
-     *          form can MISS entries whose num_tab a rechunk identity swap
+     *          guarantees no pointer into it survives teardown. The by-array_id
+     *          form can MISS entries whose array_id a rechunk identity swap
      *          shifted; the dangling zero_any::Chunk* would then be double-freed by a
      *          later compression pass.
      *
@@ -144,41 +157,43 @@ class CompressCandidates
      * @note In plain fast-block-compression builds (GNU, no OMPT) this cleanup is
      *       the ONLY one: the built-in vec_tup.clear() runs only under OMPT.
      */
-    static void remove_from_zero_any_candidates_by_ptr_range(const void* lo, const void* hi) noexcept;
+    static void
+    remove_from_zero_any_candidates_by_ptr_range(const void* lo, const void* hi, bool own_rank_only = false) noexcept;
 
     /**
-     * @brief Drop every queued zero_any candidate of array @p num_tab, in every
+     * @brief Drop every queued zero_any candidate of array @p array_id, in every
      *        rank's list (zero_any::Array::clear_core and rechunk_to).
-     * @param num_tab tab index whose candidates are removed
+     * @param array_id array index whose candidates are removed
      * @note Keeps other arrays' candidates. At teardown prefer
      *       remove_from_zero_any_candidates_by_ptr_range() (see why there).
      */
-    static void remove_from_zero_any_candidates_by_num_tab(int num_tab) noexcept;
+    static void remove_from_zero_any_candidates_by_array_id(int array_id, bool own_rank_only = false) noexcept;
 
     /**
-     * @brief zero_one_value analogue: drop every queued zero_one_value candidate for @p num_tab.
+     * @brief zero_or_value analogue: drop every queued zero_or_value candidate for @p array_id.
      *
      * @details Removes the matching tuples from every rank and second-value
-     *          bucket, WITHOUT compressing. Called from zero_one_value::Array::clear_core()
-     *          so no zero_one_value::Chunk* of a torn-down or re-chunked array dangles there.
+     *          bucket, WITHOUT compressing. Called from zero_or_value::Array::clear_core()
+     *          so no zero_or_value::Chunk* of a torn-down or re-chunked array dangles there.
      *
-     * @param num_tab tab index whose candidates are removed
-     * @note OpenMP builds only: a serial build queues no zero_one_value candidate (fast
+     * @param array_id array index whose candidates are removed
+     * @note OpenMP builds only: a serial build queues no zero_or_value candidate (fast
      *       block compression is OpenMP-only), so there is nothing to drop.
      */
-    static void remove_from_zero_one_value_candidates_by_num_tab([[maybe_unused]] int num_tab) noexcept;
+    static void remove_from_zero_or_value_candidates_by_array_id([[maybe_unused]] int array_id,
+                                                                 bool                 own_rank_only = false) noexcept;
 
-    /// @brief Drop every queued zero candidate of array @p num_tab
+    /// @brief Drop every queued zero candidate of array @p array_id
     ///        (zero::Array::clear_core and rechunk_to).
     /// @details Removes this array's candidates without compressing, and keeps
     ///          other arrays' intact.
-    static void remove_from_zero_candidates_by_num_tab(int num_tab) noexcept;
+    static void remove_from_zero_candidates_by_array_id(int array_id, bool own_rank_only = false) noexcept;
 
-    /// @brief zero_one_value's candidate lists: per rank, one list per second value.
-    static inline constinit internal::Immortal<ZeroOneValueCompMap<ChunkT, T>>
-                                                  zero_one_value_candidates_map_thr_storage_{};
-    static inline ZeroOneValueCompMap<ChunkT, T>& zero_one_value_candidates_map_thr =
-        zero_one_value_candidates_map_thr_storage_.value;
+    /// @brief zero_or_value's candidate lists: per rank, one list per second value.
+    static inline constinit internal::Immortal<ZeroOrValueCompMap<ChunkT, T>>
+                                                 zero_or_value_candidates_map_thr_storage_{};
+    static inline ZeroOrValueCompMap<ChunkT, T>& zero_or_value_candidates_map_thr =
+        zero_or_value_candidates_map_thr_storage_.value;
 
     /**
      * @brief Rank @p thr's candidate list for second value @p key, or null
@@ -190,16 +205,16 @@ class CompressCandidates
     template <typename Key>
     [[nodiscard]] static auto* compress_candidates(int thr, const Key& key) noexcept
     {
-        auto&      by_value = zero_one_value_candidates_map_thr[thr];
+        auto&      by_value = zero_or_value_candidates_map_thr[thr];
         const auto it       = by_value.find(key);
         return it != by_value.end() ? it->second.get() : nullptr;
     }
-    /// @brief zero_one_value: per rank, one list per second-value index, copied by
-    ///        zero_one_value::Array into zero_one_value_candidates_map_thr when it
+    /// @brief zero_or_value: per rank, one list per second-value index, copied by
+    ///        zero_or_value::Array into zero_or_value_candidates_map_thr when it
     ///        registers a second value.
-    static inline constinit internal::Immortal<ZeroOneValueCompThr<ChunkT, T>> zero_one_value_candidates_thr_storage_{};
-    static inline ZeroOneValueCompThr<ChunkT, T>&                              zero_one_value_candidates_thr =
-        zero_one_value_candidates_thr_storage_.value;
+    static inline constinit internal::Immortal<ZeroOrValueCompThr<ChunkT, T>> zero_or_value_candidates_thr_storage_{};
+    static inline ZeroOrValueCompThr<ChunkT, T>&                              zero_or_value_candidates_thr =
+        zero_or_value_candidates_thr_storage_.value;
     /// @brief zero_any's per-rank candidate lists.
     static inline constinit internal::Immortal<ZeroAnyCompThr<ChunkT, T>> zero_any_candidates_thr_storage_{};
     static inline ZeroAnyCompThr<ChunkT, T>& zero_any_candidates_thr = zero_any_candidates_thr_storage_.value;

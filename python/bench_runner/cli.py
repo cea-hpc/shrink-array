@@ -29,23 +29,10 @@ from .settings import (
     DEFAULT_SEQ_OMP_VARIANTS, DEFAULT_STATS_MARK_RATIO_MIN, DEFAULT_THREADS_CHECK,
     DEFAULT_TIMEOUT, DEFAULT_TIMEOUT_PER_THREAD, DEFAULT_VARIANTS, INT64_CHECK_VARIANTS,
     MODE_PRESETS, REFERENCE_THREADS, SANITIZER_REPS, SANITIZER_THREADS, SCALING_CONFIGS,
-    SCALING_MAX_SLOWDOWN, SCALING_THREADS, normalize_variant,
+    SCALING_MAX_SLOWDOWN, SCALING_THREADS, check_variant_label, results_dir_name,
 )
 from .state import _numa, _set_full_log_dir
 from .term import _Tee
-
-
-class _OldOptionName(argparse.Action):
-    """An option's old spelling, hidden from --help: stores into the new
-    option's dest and says so on stderr (accepted until 1.0)."""
-    def __init__(self, option_strings, dest, new_name=None, **kw):
-        self.new_name = new_name
-        super().__init__(option_strings, dest, **kw)
-
-    def __call__(self, parser, namespace, values, option_string=None):
-        print(f"note: {option_string} is the old name of {self.new_name} (accepted until 1.0)",
-              file=sys.stderr)
-        setattr(namespace, self.dest, values)
 
 
 def build_parser():
@@ -67,7 +54,7 @@ def build_parser():
     parser.add_argument("--skip-stl-test", action="store_true",
                         help="Skip the --test_stl STL-interface self-check (2c).")
     parser.add_argument("--variants", nargs="+", default=DEFAULT_VARIANTS,
-                        help="Variants to test. tbb_zero, tbb_zero_one_value, tbb_zero_any: the TBB "
+                        help="Variants to test. tbb_zero, tbb_zero_or_value, tbb_zero_any: the TBB "
                              "bench (shrink_bench_tbb_<variant>_<size>), looked for in the "
                              "std-backend builds (cmake-build-std-*) only.")
     parser.add_argument("--sizes", nargs="+", default=["256", "1024", "dyn"],
@@ -89,14 +76,11 @@ def build_parser():
                                  f"{k}={v}" for k, v in DEFAULT_STATS_MARK_RATIO_MIN.items()))
     parser.add_argument("--no-stats-guard", action="store_true",
                         help="Disable the mark/create compression-health guard.")
-    parser.add_argument("--mem-zero-any-vs-zero-one-value-max", type=float, default=1.10,
-                        dest="mem_zero_any_vs_zero_one_value_max",
-                        help="FAIL if zero_any peak memory exceeds zero_one_value's by more than "
+    parser.add_argument("--mem-zero-any-vs-zero-or-value-max", type=float, default=1.10,
+                        dest="mem_zero_any_vs_zero_or_value_max",
+                        help="FAIL if zero_any peak memory exceeds zero_or_value's by more than "
                              "this ratio on the same (config, threads, size) "
                              "(default 1.10). Set <= 0 to disable.")
-    parser.add_argument("--mem-chunk2a-vs-chunk2-max", type=float, action=_OldOptionName,
-                        dest="mem_zero_any_vs_zero_one_value_max", default=argparse.SUPPRESS,
-                        new_name="--mem-zero-any-vs-zero-one-value-max", help=argparse.SUPPRESS)
     parser.add_argument("--mem-vs-baseline-max", type=float, default=None,
                         help="FAIL if a chunk variant's peak memory exceeds the baseline "
                              "variant's by more than this ratio (default: off).")
@@ -173,15 +157,15 @@ def build_parser():
     parser.add_argument("--skip-ctest", action="store_true",
                         help="Skip the validation harnesses (ctest -L validation "
                              "in each config's build directory: rechunk_validation, "
-                             "dyn_geometry_validation, compress_roundtrip, "
-                             "pool_accounting, deferred_path_validation, "
+                             "dyn_geometry_validation, compress_roundtrip_validation, "
+                             "pool_accounting_validation, deferred_path_validation, "
                              "open_types_validation).")
     parser.add_argument("--ctest-label", default="validation",
                         help="ctest label selecting the harnesses (default: "
                              "validation, set by examples/validation/CMakeLists.txt).")
     parser.add_argument("--ctest-regex", default=None,
                         help="Restrict the harnesses to the tests matching this "
-                             "regex (ctest -R), e.g. compress_roundtrip.")
+                             "regex (ctest -R), e.g. compress_roundtrip_validation.")
     parser.add_argument("--ctest-jobs", type=int, default=4,
                         help="Parallel ctest jobs per config (default 4; the "
                              "harnesses are small, the 8-thread ones share cores).")
@@ -202,7 +186,7 @@ def build_parser():
     parser.add_argument("--skip-seq-omp-compare", action="store_true",
                         help="Skip the seed-pinned sequential-vs-OpenMP "
                              "compression-classification comparison (LLVM "
-                             "seq/omp config pairs, zero/zero_one_value/zero_any, "
+                             "seq/omp config pairs, zero/zero_or_value/zero_any, "
                              "256/1024/dyn, several thread counts).")
     parser.add_argument("--seq-omp-threads", nargs="+", type=int, default=None,
                         help="OMP thread counts for the seq-vs-omp compare "
@@ -243,7 +227,7 @@ def build_parser():
                         help="--divisor passed to every seq-vs-omp compare "
                              "run, to keep it quick.")
     parser.add_argument("--regen-ref", action="store_true",
-                        help="Force regeneration of the data_tab* reference "
+                        help="Force regeneration of the data_array* reference "
                              "oracles: delete the existing (possibly partial) "
                              "one of every config under --output-dir/oracle/, "
                              "then run each config's vector check to regenerate "
@@ -253,7 +237,7 @@ def build_parser():
     parser.add_argument("--output-dir", default=None,
                         help="Directory where ALL run outputs go: the summary "
                              "CSV, the errors log, the reference oracles "
-                             "(oracle/<config>/data_tab*, one per config, "
+                             "(oracle/<config>/data_array*, one per config, "
                              "generated by that config's own vector binary: the "
                              "reference is not portable across compilers) and "
                              "the binaries' memory_mo.txt. Default: "
@@ -313,14 +297,14 @@ def build_parser():
 
 def apply_regression_guards(args, parser):
     """Hand --numa-interleave and the stats-guard floors to the run helpers
-    (state), and return the zero_any-vs-zero_one_value memory ceiling (None: off).
-    The variant options given with an old label (chunk2a, tbb_chunk2...) are
-    read as their new names here, with a note on stderr."""
-    args.variants = [normalize_variant(v, "--variants") for v in args.variants]
+    (state), and return the zero_any-vs-zero_or_value memory ceiling (None: off).
+    A variant option given with an old label (chunk2a, tbb_chunk2...) stops the
+    run, with the new name."""
+    args.variants = [check_variant_label(v, "--variants") for v in args.variants]
     if args.light_variants is not None:
-        args.light_variants = [normalize_variant(v, "--light-variants") for v in args.light_variants]
-    args.seq_omp_variants = [normalize_variant(v, "--seq-omp-variants") for v in args.seq_omp_variants]
-    args.baseline_variant = normalize_variant(args.baseline_variant, "--baseline-variant")
+        args.light_variants = [check_variant_label(v, "--light-variants") for v in args.light_variants]
+    args.seq_omp_variants = [check_variant_label(v, "--seq-omp-variants") for v in args.seq_omp_variants]
+    args.baseline_variant = check_variant_label(args.baseline_variant, "--baseline-variant")
     # Regression guards: apply CLI overrides to the module-level floor map used
     # inside run_cmd (which has no access to args).
     state._NUMA_MODE = args.numa_interleave
@@ -333,13 +317,13 @@ def apply_regression_guards(args, parser):
                 parser.error(f"--stats-mark-ratio-min expects TAG=RATIO, got {item!r}")
             tag, val = item.split("=", 1)
             try:
-                floors[normalize_variant(tag.strip(), "--stats-mark-ratio-min")] = float(val)
+                floors[check_variant_label(tag.strip(), "--stats-mark-ratio-min")] = float(val)
             except ValueError:
                 parser.error(f"--stats-mark-ratio-min: bad ratio in {item!r}")
         state._STATS_MARK_RATIO_MIN = floors
-    mem_za_vs_zov = (args.mem_zero_any_vs_zero_one_value_max
-                     if args.mem_zero_any_vs_zero_one_value_max
-                     and args.mem_zero_any_vs_zero_one_value_max > 0
+    mem_za_vs_zov = (args.mem_zero_any_vs_zero_or_value_max
+                     if args.mem_zero_any_vs_zero_or_value_max
+                     and args.mem_zero_any_vs_zero_or_value_max > 0
                      else None)
     return mem_za_vs_zov
 
@@ -377,13 +361,14 @@ def setup_outputs(args):
         _ccc_work = os.environ.get("CCCWORKDIR", "")
         out_dir = (os.path.join(_ccc_work, "bench_results")
                    if _ccc_work and os.path.isdir(_ccc_work) else os.getcwd())
-    # Separate run outputs by architecture. aarch64 and x86_64 runs commonly
-    # share a build_root and are launched with the SAME --output-dir; without an
-    # arch level they write the same bench_summary.csv / bench_errors.log and,
-    # worse, the same data_tab_* oracle in cwd=output_dir. Concurrent runs then
-    # corrupt each other's files, causing spurious mid-run crashes. Appending the
-    # current machine keeps each architecture's results (and oracle) isolated.
-    out_dir = os.path.join(out_dir, CURRENT_MACHINE)
+    # Separate run outputs by system. aarch64 and x86_64 runs commonly share a
+    # build_root and are launched with the SAME --output-dir; without an arch
+    # level they write the same bench_summary.csv / bench_errors.log and, worse,
+    # the same data_array_* oracle in cwd=output_dir. Concurrent runs then corrupt
+    # each other's files, causing spurious mid-run crashes. Appending the
+    # build's $arch keeps each system's results (and oracle) isolated, down to
+    # the two x86_64 ones (Milan on RHEL 8, Turin on RHEL 9).
+    out_dir = os.path.join(out_dir, results_dir_name())
     os.makedirs(out_dir, exist_ok=True)
     # The architecture's directory: oracle/ and, under --pool, .pools/. The
     # same as args.output_dir without --pool.
@@ -591,7 +576,7 @@ def main():
         print(share.summary_line())
     flush_summary(results, errors, args.summary_csv, args.errors_log,
                   total_min, interrupted, baseline_variant=args.baseline_variant,
-                  mem_zero_any_vs_zero_one_value_max=mem_za_vs_zov,
+                  mem_zero_any_vs_zero_or_value_max=mem_za_vs_zov,
                   mem_vs_baseline_max=args.mem_vs_baseline_max)
 
     events.emit("end", errors=len(errors), interrupted=interrupted, minutes=round(total_min, 2),

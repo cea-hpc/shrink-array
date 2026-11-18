@@ -17,9 +17,7 @@
 #pragma once
 
 #include <algorithm>   // std::min, std::copy_n, std::ranges::fill (the resize copy)
-#include <atomic>      // std::memory_order_relaxed
 #include <cstdlib>     // std::abort (debug stubs)
-#include <exception>   // std::exception (zero_any::PointerMap::erase)
 #include <iostream>    // std::cerr (debug stubs)
 #include <memory>      // std::unique_ptr, std::addressof (operator=: operator& is deleted)
 #include <type_traits> // std::is_same_v
@@ -32,20 +30,23 @@
 #include "chunk/vendor/ankerl/unordered_dense.h" // zero_any::PointerMap::big
 
 #include "chunk/config.h"                     // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
-#include "chunk/chunk_traits.h"               // ChunkTraits<ChunkT>::ManagerType (ProxyImpl)
+#include "chunk/internal/chunk_traits.h"      // ChunkTraits<ChunkT>::ManagerType (ProxyImpl)
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size, set_thread_alloc_key
-#include "chunk/internal/cst_slot.h"          // CstSlot (tab_type_cst_val)
-#include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment
-#include "chunk/internal/crp_helper.h"                   // CRTPSupport
-#include "chunk/internal/in_t.h"                         // InT<T>
-#include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/tab_cst_val2_holder.h"          // SecondValueRef
-#include "chunk/internal/TChunk.h"                       // ZeroAnyCompOf
-#include "chunk/internal/proxy_base.h"                   // ProxyBase
-#include "chunk/internal/second_value_proxy_base.h"      // SecondValueProxyBase
-#include "chunk/internal/dependent_false.h"              // dependent_false_v (wrong-type branches)
-#include "chunk/internal/immortal.h"                     // Immortal / LazyImmortal: statics safe for global arrays
-#include "chunk/internal/parallel_storage_init.h"        // NoInitVector, resize_filled, for_each_chunk
+#include "chunk/internal/const_slot.h"        // ConstSlot (array_type_const_val)
+#include "chunk/internal/concept_is_clean_assignment.h" // IsCleanAssignment
+#include "chunk/internal/crtp_support.h"                // CRTPSupport
+#include "chunk/internal/in_t.h"                        // InT<T>
+#include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
+#include "chunk/internal/array_const_val2_holder.h"     // SecondValueRef
+#include "chunk/internal/chunk_tuples.h"                // ZeroAnyCompOf
+#include "chunk/internal/proxy_base.h"                  // ProxyBase
+#include "chunk/internal/second_value_proxy_base.h"     // SecondValueProxyBase
+#include "chunk/internal/dependent_false.h"             // dependent_false_v (wrong-type branches)
+#include "chunk/internal/stable_table.h"                // StableTable: the outer per-array tables
+#include "chunk/internal/cold_path_lock.h"              // registry_mutex (zero_any::PointerMap)
+#include "chunk/internal/immortal.h"                    // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/parallel_storage_init.h"       // NoInitVector, resize_filled, for_each_chunk
+#include "chunk/internal/same_value.h"                  // same_value
 
 namespace shrink_array
 {
@@ -55,7 +56,7 @@ template <typename T, typename ChunkT>
 struct CompressionManager;
 
 template <template <typename> class ChunkT, typename T>
-class ManagerChunk;
+class TypeState;
 
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
@@ -95,38 +96,38 @@ class PointerMap
      * @return The registered table number.
      * @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
      */
-    [[nodiscard]] int get_num_tab(Key key) const noexcept;
+    [[nodiscard]] int get_array_id(Key key) const noexcept;
 
     /**
      * @brief Remove the entry for `key`, if present. Idempotent. Must be called
      *        when an array is destroyed: a later array at the same address (stack
-     *        arrays, e.g. rechunk_to's tmp) would otherwise get the stale num_tab
-     *        from get_num_tab() (FIRST match in phase "small") and read another
-     *        tab's metadata.
+     *        arrays, e.g. rechunk_to's tmp) would otherwise get the stale array_id
+     *        from get_array_id() (FIRST match in phase "small") and read another
+     *        array's metadata.
      * @param key Key to remove.
      */
     void erase(Key key) noexcept;
 
     /**
-     * @brief Register a new key -> num_tab mapping; past SmallN entries, migrates
+     * @brief Register a new key -> array_id mapping; past SmallN entries, migrates
      *        everything to the hash map (one-way).
      * @param key Key to register.
-     * @param num_tab Table number to associate with `key`.
+     * @param array_id Table number to associate with `key`.
      */
-    void insert(Key key, int num_tab);
+    void insert(Key key, int array_id);
 
     /**
-     * @brief Re-map an EXISTING key to a new num_tab, in place. Do not use insert()
-     *        for this: in phase "small" it appends a duplicate, and get_num_tab()
+     * @brief Re-map an EXISTING key to a new array_id, in place. Do not use insert()
+     *        for this: in phase "small" it appends a duplicate, and get_array_id()
      *        returns the stale first match.
      * @param key Key to update.
-     * @param new_num_tab New table number.
+     * @param new_array_id New table number.
      * @return false if the key was not present (caller error); true otherwise.
      */
-    bool set_num_tab(Key key, int new_num_tab) noexcept;
+    bool set_array_id(Key key, int new_array_id) noexcept;
 
     /**
-     * @brief Swap the num_tab values of two existing keys (rechunk_to's array swap,
+     * @brief Swap the array_id values of two existing keys (rechunk_to's array swap,
      *        where two arrays exchange storage and identities).
      * @param key_a First key.
      * @param key_b Second key.
@@ -151,8 +152,8 @@ class PointerMap
 } // namespace zero_any
 
 /*!
- * \brief zero_any::ProxySpec: static per-tab, per-chunk second-value storage for zero_any::Proxy
- *        (indexed tab_second_value[num_tab][num_chunk]), so the proxy never manages
+ * \brief zero_any::ProxySpec: static per-array, per-chunk second-value storage for zero_any::Proxy
+ *        (indexed array_second_value[array_id][chunk_index]), so the proxy never manages
  *        the container itself.
  *
  * \tparam T Type of the second value stored in the chunk.
@@ -168,8 +169,7 @@ void realloc_unique(std::unique_ptr<T[]>& ptr, std::size_t old_size, std::size_t
 {
     std::unique_ptr<T[]> new_ptr(new T[new_size]);
 
-    const std::size_t kept = std::min(old_size, new_size);
-    if (kept != 0)
+    if (const std::size_t kept = std::min(old_size, new_size); kept != 0)
     {
         std::copy_n(ptr.get(), kept, new_ptr.get()); // a memmove for a trivial T
     }
@@ -200,83 +200,83 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, ChunkT>
 
     /*!
      * \brief Retrieves a pointer to a specific second value in the chunk.
-     * \param num_tab Index of the tab.
-     * \param num_chunk Index of the chunk within the tab.
+     * \param array_id Index of the arr.
+     * \param chunk_index Index of the chunk within the arr.
      * \return Pointer to the second value.
      */
-    [[nodiscard]] static SecondValueRef<T> get_tab_second_value(int num_tab, int num_chunk) noexcept
+    [[nodiscard]] static SecondValueRef<T> get_array_second_value(int array_id, int chunk_index) noexcept
     {
-        return SecondValueRef<T>{&tab_second_value[num_tab][num_chunk]};
+        return SecondValueRef<T>{&array_second_value[array_id][chunk_index]};
     }
 
     /*!
-     * \brief Retrieves the vector of second values for a specific tab.
-     * \param num_tab Index of the tab.
+     * \brief Retrieves the vector of second values for a specific arr.
+     * \param array_id Index of the arr.
      * \return Reference to the vector of second values.
      */
-    [[nodiscard]] static SecondValueRowT& get_tab_second_value(int num_tab) noexcept
+    [[nodiscard]] static SecondValueRowT& get_array_second_value(int array_id) noexcept
     {
-        return tab_second_value[static_cast<std::size_t>(num_tab)];
+        return array_second_value[static_cast<std::size_t>(array_id)];
     }
 
-    /// @brief How many rows there are: one per num_tab ever handed out. A
+    /// @brief How many rows there are: one per array_id ever handed out. A
     ///        released row is empty (clear()).
     [[nodiscard]] static std::size_t second_value_row_count() noexcept
     {
-        return tab_second_value.size();
+        return array_second_value.size();
     }
 
     /*!
-     * \brief Sets a specific second value in a tab and chunk.
-     * \param num_tab Index of the tab.
-     * \param num_chunk Index of the chunk within the tab.
+     * \brief Sets a specific second value in a array and chunk.
+     * \param array_id Index of the arr.
+     * \param chunk_index Index of the chunk within the arr.
      * \param value Value to assign.
      */
-    static void set(int num_tab, int num_chunk, InT<T> value)
+    static void set(int array_id, int chunk_index, InT<T> value)
     {
-        get_tab_second_value(num_tab, num_chunk).set(value);
+        get_array_second_value(array_id, chunk_index).set(value);
     }
 
   protected:
     /*!
-     * \brief Resizes the number of tabs in the second value container.
-     * \param nb_tab New number of tabs.
+     * \brief Resizes the number of arrays in the second value container.
+     * \param array_count New number of arrays.
      */
-    static void resize(int nb_tab)
+    static void resize(int array_count)
     {
-        tab_second_value.resize(nb_tab);
+        array_second_value.resize(array_count);
     }
 
     /*!
-     * \brief Resizes the number of chunks in a specific tab and initializes values to zero.
-     * \param nb_tab Index of the tab to resize.
-     * \param nb_chunk_old Number of chunks before the resize.
-     * \param nb_chunk New number of chunks in the tab.
+     * \brief Resizes the number of chunks in a specific array and initializes values to zero.
+     * \param array_count Index of the array to resize.
+     * \param chunk_count_old Number of chunks before the resize.
+     * \param chunk_count New number of chunks in the arr.
      */
-    static void resize(int nb_tab, int nb_chunk_old, int nb_chunk);
+    static void resize(int array_count, int chunk_count_old, int chunk_count);
 
     /*!
-     * \brief Clears all second values in a specific tab.
-     * \param num_tab Index of the tab to clear.
+     * \brief Clears all second values in a specific arr.
+     * \param array_id Index of the array to clear.
      */
-    static void clear([[maybe_unused]] int num_tab);
+    static void clear([[maybe_unused]] int array_id);
 
-    SecondValueRef<T> ptr_second_value_; ///< this chunk's slot in tab_second_value[num_tab]
+    SecondValueRef<T> ptr_second_value_; ///< this chunk's slot in array_second_value[array_id]
 
   private:
     /*!
-     * \brief Static container holding second values for each tab and chunk.
-     * Indexed as tab_second_value[num_tab][num_chunk].
+     * \brief Static container holding second values for each array and chunk.
+     * Indexed as array_second_value[array_id][chunk_index].
      */
-    static inline constinit internal::Immortal<std::vector<SecondValueRowT>> tab_second_value_storage_{};
-    static inline std::vector<SecondValueRowT>& tab_second_value = tab_second_value_storage_.value;
+    static inline constinit internal::Immortal<internal::StableTable<SecondValueRowT>> array_second_value_storage_{};
+    static inline internal::StableTable<SecondValueRowT>& array_second_value = array_second_value_storage_.value;
 };
 
 } // namespace zero_any
 
 /*!
  * \brief Specialization of zero_any::ProxySpec for bool: one flag per chunk in a plain
- *        unique_ptr<bool[]> row per tab.
+ *        unique_ptr<bool[]> row per arr.
  */
 
 namespace zero_any
@@ -294,82 +294,85 @@ class ProxySpec<bool, Derived, ChunkT> : public SecondValueProxyBase<Derived, bo
 
     /// @brief Forward the element reference, index and chunk to SecondValueProxyBase.
     /// @param values Reference to the chunk's values.
-    /// @param num Index of the element in the chunk.
+    /// @param elem_offset Index of the element in the chunk.
     /// @param chunk Owning chunk.
-    explicit ProxySpec(ValuesTypeRef values, int num, ChunkType& chunk) noexcept : SecondValueBase(values, num, chunk)
+    explicit ProxySpec(ValuesTypeRef values, int elem_offset, ChunkType& chunk) noexcept
+        : SecondValueBase(values, elem_offset, chunk)
     {
     }
 
     /*!
      * \brief Retrieves a pointer to a specific second value in the chunk.
-     * \param num_tab Index of the tab.
-     * \param num_chunk Index of the chunk within the tab.
+     * \param array_id Index of the arr.
+     * \param chunk_index Index of the chunk within the arr.
      * \return Pointer to the second value.
      */
-    [[nodiscard]] static SecondValueRef<bool> get_tab_second_value(int num_tab, int num_chunk) noexcept
+    [[nodiscard]] static SecondValueRef<bool> get_array_second_value(int array_id, int chunk_index) noexcept
     {
-        return SecondValueRef<bool>{&tab_second_value[num_tab][num_chunk]};
+        return SecondValueRef<bool>{&array_second_value[array_id][chunk_index]};
     }
 
     /*!
-     * \brief Retrieves the vector of second values for a specific tab.
-     * \param num_tab Index of the tab.
+     * \brief Retrieves the vector of second values for a specific arr.
+     * \param array_id Index of the arr.
      * \return Reference to the vector of second values.
      */
-    [[nodiscard]] static std::unique_ptr<bool[]>& get_tab_second_value(int num_tab) noexcept
+    [[nodiscard]] static std::unique_ptr<bool[]>& get_array_second_value(int array_id) noexcept
     {
-        return tab_second_value[num_tab];
+        return array_second_value[array_id];
     }
 
     /*!
-     * \brief Sets a specific second value in a tab and chunk.
-     * \param num_tab Index of the tab.
-     * \param num_chunk Index of the chunk within the tab.
+     * \brief Sets a specific second value in a array and chunk.
+     * \param array_id Index of the arr.
+     * \param chunk_index Index of the chunk within the arr.
      * \param value Value to assign.
      */
-    static void set(int num_tab, int num_chunk, bool value) noexcept
+    static void set(int array_id, int chunk_index, bool value) noexcept
     {
-        tab_second_value[num_tab][num_chunk] = value;
+        array_second_value[array_id][chunk_index] = value;
     }
 
   protected:
     /*!
-     * \brief Resizes the number of tabs in the second value container.
-     * \param nb_tab New number of tabs.
+     * \brief Resizes the number of arrays in the second value container.
+     * \param array_count New number of arrays.
      */
-    static void resize(int nb_tab)
+    static void resize(int array_count)
     {
-        tab_second_value.resize(nb_tab);
+        array_second_value.resize(array_count);
     }
 
     /*!
-     * \brief Resizes the number of chunks in a specific tab and initializes values to zero.
-     * \param nb_tab Index of the tab to resize.
-     * \param nb_chunk_old Old number of chunks in the tab.
-     * \param nb_chunk New number of chunks in the tab.
+     * \brief Resizes the number of chunks in a specific array and initializes values to zero.
+     * \param array_count Index of the array to resize.
+     * \param chunk_count_old Old number of chunks in the arr.
+     * \param chunk_count New number of chunks in the arr.
      */
-    static void resize(int nb_tab, int nb_chunk_old, int nb_chunk);
+    static void resize(int array_count, int chunk_count_old, int chunk_count);
 
     /*!
-     * \brief Clears all second values in a specific tab.
-     * \param num_tab Index of the tab to clear.
+     * \brief Clears all second values in a specific arr.
+     * \param array_id Index of the array to clear.
      */
-    static void clear([[maybe_unused]] int num_tab)
+    static void clear([[maybe_unused]] int array_id)
     {
         // Released, not just emptied -- see the non-bool specialisation.
-        if (num_tab >= 0 && static_cast<std::size_t>(num_tab) < tab_second_value.size())
+        if (array_id >= 0 && static_cast<std::size_t>(array_id) < array_second_value.size())
         {
-            tab_second_value[static_cast<std::size_t>(num_tab)].reset();
+            array_second_value[static_cast<std::size_t>(array_id)].reset();
         }
     }
 
   private:
     /*!
-     * \brief Static container holding second values for each tab and chunk.
-     * Indexed as tab_second_value[num_tab][num_chunk].
+     * \brief Static container holding second values for each array and chunk.
+     * Indexed as array_second_value[array_id][chunk_index].
      */
-    static inline constinit internal::Immortal<std::vector<std::unique_ptr<bool[]>>> tab_second_value_storage_{};
-    static inline std::vector<std::unique_ptr<bool[]>>& tab_second_value = tab_second_value_storage_.value;
+    static inline constinit internal::Immortal<internal::StableTable<std::unique_ptr<bool[]>>>
+                                                                  array_second_value_storage_{};
+    static inline internal::StableTable<std::unique_ptr<bool[]>>& array_second_value =
+        array_second_value_storage_.value;
 };
 
 } // namespace zero_any
@@ -419,9 +422,9 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived, ChunkT>
 
     /// @brief Common initialisation of the fast path: table number, then the
     ///        "already queued" flag pointer.
-    void set_num_tab_ptr_is_inside_chunk() noexcept
+    void set_array_id_ptr_is_inside_chunk() noexcept
     {
-        derived().set_num_tab(); // zero_any::ProxyImpl's no-arg overload (looks the table up)
+        derived().set_array_id(); // zero_any::ProxyImpl's no-arg overload (looks the table up)
         Base::set_ptr_is_inside_chunk_list_to_compress();
     }
 
@@ -497,13 +500,13 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
     friend class shrink_array::ProxyBaseFastCompPolicy;
 
     /**
-     * @brief Construct the proxy of element @p num of @p chunk.
+     * @brief Construct the proxy of element @p elem_offset of @p chunk.
      * @param values reference to array pointer (atomic in OpenMP builds)
-     * @param num index within array
+     * @param elem_offset index within array
      * @param chunk owning chunk
      */
-    explicit ProxyImpl(BaseFastCompPolicy::ValuesTypeRef values, int num, ChunkT& chunk) noexcept
-        : BaseFastCompPolicy(values, num, chunk)
+    explicit ProxyImpl(BaseFastCompPolicy::ValuesTypeRef values, int elem_offset, ChunkT& chunk) noexcept
+        : BaseFastCompPolicy(values, elem_offset, chunk)
     {
     }
 
@@ -542,70 +545,70 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
     const T* operator&() const = delete;
 
     /**
-     * @brief Compute and store num_tab using share_info_array and ptr_on_array.
+     * @brief Compute and store array_id using array_registry and ptr_on_array.
      */
-    void set_num_tab() noexcept;
+    void set_array_id() noexcept;
 
     /**
-     * @brief Initialize per-chunk pointers for this proxy (must call set_num_tab first).
+     * @brief Initialize per-chunk pointers for this proxy (must call set_array_id first).
      */
     void set_info_on_chunk() noexcept;
 
-    /// @brief Arm ptr_second_value from num_tab / num_chunk (no-op for bool).
+    /// @brief Arm ptr_second_value from array_id / chunk_index (no-op for bool).
     void set_ptr_second_value() noexcept;
 
     /// @brief The second-value slot of this proxy's chunk, where a motif chunk
     ///        keeps its offset (has_motif_state_v members only). Does not arm
-    ///        anything: num_tab is looked up when the proxy has not resolved it.
+    ///        anything: array_id is looked up when the proxy has not resolved it.
     [[nodiscard]] const T* motif_offset_slot() const noexcept
         requires has_motif_state_v<ChunkT>
     {
-        const int tab = num_tab_ >= 0 ? num_tab_ : share_info_array->get_num_tab(ptr_on_array_);
-        return BaseSpec::get_tab_second_value(tab, num_chunk_).slot;
+        const int arr = array_id_ >= 0 ? array_id_ : array_registry->get_array_id(ptr_on_array_);
+        return BaseSpec::get_array_second_value(arr, chunk_index_).slot;
     }
 
-    /// @brief This proxy's array index (ProxyBase::get_num_tab(), re-exported
+    /// @brief This proxy's array index (ProxyBase::get_array_id(), re-exported
     ///        past the policy layers).
-    [[nodiscard]] int get_num_tab() const noexcept
+    [[nodiscard]] int get_array_id() const noexcept
     {
-        return Base::get_num_tab();
+        return Base::get_array_id();
     }
 
     /**
-     * @brief Resize per-tab containers for nb_tab tabs.
-     * @param nb_tab number of tabs
+     * @brief Resize per-array containers for array_count arrays.
+     * @param array_count number of arrays
      */
-    static void resize_tab_is_int(int nb_tab);
+    static void resize_array_is_int(int array_count);
 
     /**
-     * @brief Resize per-tab per-chunk containers for a given tab.
-     * @param num_tab tab index
-     * @param nb_chunk_old previous chunk count for the tab
-     * @param nb_chunk new chunk count for the tab
-     * @warning The "already queued" flags of this tab are REALLOCATED: every chunk's
-     *          flag is reset to 0. Safe only while no chunk of the tab sits in a
+     * @brief Resize per-array per-chunk containers for a given arr.
+     * @param array_id array index
+     * @param chunk_count_old previous chunk count for the array
+     * @param chunk_count new chunk count for the array
+     * @warning The "already queued" flags of this array are REALLOCATED: every chunk's
+     *          flag is reset to 0. Safe only while no chunk of the array sits in a
      *          candidate list (it could be queued a second time).
      */
-    static void resize_tab_is_int(int num_tab, int nb_chunk_old, int nb_chunk);
+    static void resize_array_is_int(int array_id, int chunk_count_old, int chunk_count);
 
     /**
-     * @brief Clear per-chunk arrays for a tab.
-     * @param num_tab tab index
+     * @brief Clear per-chunk arrays for a arr.
+     * @param array_id array index
      */
-    static void clear_tab_is_int(int num_tab);
+    static void clear_array_is_int(int array_id);
 
     /**
-     * @brief Per-tab array of flags indicating the type of constant value used.
+     * @brief Per-array row of flags indicating the type of constant value used.
      */
-    static inline constinit internal::Immortal<std::vector<parallel_storage_init::NoInitVector<CstSlot>>>
-        tab_type_cst_val_storage_{}; ///< type-of-constant flags
-    static inline std::vector<parallel_storage_init::NoInitVector<CstSlot>>& tab_type_cst_val =
-        tab_type_cst_val_storage_.value;
+    static inline constinit internal::Immortal<internal::StableTable<parallel_storage_init::NoInitVector<ConstSlot>>>
+        array_type_const_val_storage_{}; ///< type-of-constant flags
+    static inline internal::StableTable<parallel_storage_init::NoInitVector<ConstSlot>>& array_type_const_val =
+        array_type_const_val_storage_.value;
 
     /**
-     * @brief Mapping from pointer to tab information for chunk lookup.
+     * @brief Mapping from pointer to array information for chunk lookup.
      */
-    static inline constinit internal::LazyImmortal<PointerMap<ChunkT>> share_info_array; ///< pointer->tab mapping
+    static inline constinit internal::LazyImmortal<PointerMap<ChunkT>> array_registry; ///< pointer->array mapping
 
   private:
     using Manager = ChunkTraits<ChunkT>::ManagerType;
@@ -614,17 +617,17 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
     using Base::values_;
 
     using Base::chunk_; ///< owning chunk
-    using Base::num_;
+    using Base::elem_offset_;
 
-    using Base::ptr_on_array_; ///< pointer to array (for tab lookup)
+    using Base::ptr_on_array_; ///< pointer to array (for array lookup)
 
-    using Base::num_tab_; ///< tab index for this array
+    using Base::array_id_; ///< array index for this array
 
-    using Base::num_chunk_; ///< chunk index
+    using Base::chunk_index_; ///< chunk index
 
     using CompressionManagerType = CompressionManager<T, ChunkType>;
 
-    using Base::set_num_tab;
+    using Base::set_array_id;
 
     static constexpr bool is_bool     = std::is_same_v<T, bool>;
     static constexpr bool is_not_bool = !is_bool;
@@ -633,9 +636,9 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
     // Small helpers about chunk const-value modes
 
     /// @brief Is this proxy's chunk compressed to its second value?
-    [[nodiscard]] bool is_cst_val2() const noexcept
+    [[nodiscard]] bool is_const_val2() const noexcept
     {
-        return chunk_.is_cst_val2();
+        return chunk_.is_const_val2();
     }
 
     // The candidate-list accessors live on the zero_any::ProxyFastCompPolicy specialisations.
@@ -738,15 +741,15 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
         // The "leave" clause depends on the old value, which this filter does not see: let
         // any write of a non-second value through; the predicate decides on the old value.
         return this->pre_check_mark_for_compression_strict(new_value, first_value, second_val) ||
-               (second_val == first_value && new_value != first_value) ||
-               (second_val != first_value && new_value != second_val);
+               (same_value(second_val, first_value) && !same_value(new_value, first_value)) ||
+               (!same_value(second_val, first_value) && !same_value(new_value, second_val));
     }
 
     /**
      * @brief Ensures the chunk has allocated storage for modification
      *
-     * @details Materialises a chunk in constant mode (cst_val1 or cst_val2). Arms
-     * the cached metadata itself (set_info_on_chunk()), after sampling is_cst_val2().
+     * @details Materialises a chunk in constant mode (const_val1 or const_val2). Arms
+     * the cached metadata itself (set_info_on_chunk()), after sampling is_const_val2().
      *
      * @post Chunk has allocated storage for modifications
      */
@@ -781,7 +784,7 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
     template <typename U, typename Op>
     void apply_compound_operation(Op op, InT<U> operand) noexcept; // InT: see assign_impl
 
-    CstSlot* ptr_type_cst_ = nullptr; ///< pointer into tab_type_cst_val[num_tab]
+    ConstSlot* ptr_type_const_ = nullptr; ///< pointer into array_type_const_val[array_id]
 };
 
 /**

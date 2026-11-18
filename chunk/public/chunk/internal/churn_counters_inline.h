@@ -15,6 +15,8 @@
  */
 
 #pragma once
+#include <cstddef> // std::size_t
+
 #include "chunk/internal/churn_counters.h" // the class these bodies belong to
 
 namespace shrink_array

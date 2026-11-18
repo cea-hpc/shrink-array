@@ -23,6 +23,10 @@ if(CMAKE_C_COMPILER)
     foreach(_m IN LISTS _formal_models)
         add_executable(formal_native_${_m} ${_m}.c)
         target_compile_definitions(formal_native_${_m} PRIVATE NATIVE SHAPE_SYMMETRIC)
+        # A model's property is an assert(): CMake's C flags of a Release build
+        # carry -DNDEBUG, which compiled every one of them out -- the test then
+        # passed whatever the model did.
+        target_compile_options(formal_native_${_m} PRIVATE -UNDEBUG)
         set_target_properties(formal_native_${_m} PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
         find_package(Threads REQUIRED)
         target_link_libraries(formal_native_${_m} PRIVATE Threads::Threads)
@@ -39,6 +43,26 @@ if(CMAKE_C_COMPILER)
                  COMMAND ${CMAKE_COMMAND} -E env SHRINK_FORMAL_RUNS=${_runs}
                          ${CMAKE_CURRENT_SOURCE_DIR}/run_native.sh $<TARGET_FILE:formal_native_${_m}>)
         set_property(TEST formal_native_${_m} PROPERTY LABELS formal)
+    endforeach()
+    # queue_handback with two passes: the source under the forced schedule that
+    # makes the order of the hand-back matter (DEMO_SCHEDULE: one deterministic
+    # interleaving, slept through: one process of 20 runs, ~4.5 s), then free runs.
+    foreach(_t IN ITEMS formal_native_queue_handback_two_passes formal_native_queue_handback_two_passes_schedule)
+        add_executable(${_t} queue_handback.c)
+        target_compile_definitions(${_t} PRIVATE NATIVE SHAPE_SYMMETRIC TWO_PASSES)
+        if(_t MATCHES "_schedule$")
+            target_compile_definitions(${_t} PRIVATE DEMO_SCHEDULE)
+            set(_runs 1)
+        else()
+            set(_runs 300)
+        endif()
+        target_compile_options(${_t} PRIVATE -UNDEBUG)
+        set_target_properties(${_t} PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
+        target_link_libraries(${_t} PRIVATE Threads::Threads)
+        add_test(NAME ${_t}
+                 COMMAND ${CMAKE_COMMAND} -E env SHRINK_FORMAL_RUNS=${_runs}
+                         ${CMAKE_CURRENT_SOURCE_DIR}/run_native.sh $<TARGET_FILE:${_t}>)
+        set_property(TEST ${_t} PROPERTY LABELS formal)
     endforeach()
 else()
     message(STATUS "formal/: no C compiler, the native model tests are not registered")

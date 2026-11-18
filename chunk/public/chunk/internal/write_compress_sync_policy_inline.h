@@ -16,7 +16,10 @@
 
 #pragma once
 
-#include <mutex> // std::once_flag, std::call_once (ensure_initialized)
+#include <mutex>  // std::once_flag, std::call_once (ensure_initialized)
+#include <atomic> // std::atomic_signal_fence, std::atomic_thread_fence, std::memory_order_acquire, std::memory_order_relaxed, std::memory_order_seq_cst
+#include <cstddef> // std::size_t
+#include <vector>  // std::vector
 
 #include "chunk/internal/write_compress_sync_policy.h" // the class these bodies belong to
 
@@ -67,8 +70,10 @@ bool WriteCompressSyncPolicy<ProxyT, Enabled>::any_thread_writing_on_marked(int 
 {
     for (int i = 0; i < max_thr; ++i)
     {
-        const auto* chunk = static_cast<const ChunkT*>(per_thread_writing[i].v.load(std::memory_order_acquire));
-        if (chunk != nullptr && chunk->steal_marked())
+        const void* flag = per_thread_writing[i].v.load(std::memory_order_acquire);
+        // enqueue_tag(): a deferred enqueue, on no chunk -- not dereferenced.
+        const auto* chunk = static_cast<const ChunkT*>(flag);
+        if (flag != nullptr && flag != enqueue_tag() && chunk->steal_marked())
         {
             return true;
         }

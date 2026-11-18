@@ -2,10 +2,10 @@
 
 > French version: [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md).
 
-> Status: early October 2026. This document explains how writers, compressors,
+> Status: November 2026. This document explains how writers, compressors,
 > deferred-write flushes and readers exclude each other **without a lock on the
 > write path**. The overall machinery (proxies, deferred writes, in-flight
-> compression) is described in [algo_zero_one_value.md](algo_zero_one_value.md) §7 and §8. The names used
+> compression) is described in [algo_zero_or_value.md](algo_zero_or_value.md) §7 and §8. The names used
 > are those of the current tree; when in doubt, the code is the reference, in particular the
 > comments in `internal/write_compress_sync_policy.h`, which carry the ordering proof.
 
@@ -16,7 +16,7 @@
 A materialised chunk owns a private buffer, referenced by its atomic pointer `values`. Two
 kinds of actors touch it at the same time under OpenMP:
 
-- the **writers**: each `tab[i] = v` loads `values`, then writes into the buffer. This path
+- the **writers**: each `arr[i] = v` loads `values`, then writes into the buffer. This path
   is the hottest in the library: billions of writes per run;
 - the **compressor**: a compression pass rereads a candidate chunk, finds that it is
   uniform, replaces `values` with the pointer to the constant buffer (a CAS) and **returns the old
@@ -28,7 +28,7 @@ Without care, the following interleaving loses a write, or corrupts another chun
 |---|---|
 | loads `values` → buffer P | |
 | | rereads P: everything is 0 |
-| | CAS `values`: P → `cst_val1`, returns P |
+| | CAS `values`: P → `const_val1`, returns P |
 | writes `v` into P | |
 | | (P is reused by another chunk, which receives `v`) |
 
@@ -210,8 +210,13 @@ array of each variant, before any parallel write. The result is stored in
 | TSan build (`CHUNK_TSAN_BUILD`), or non-Linux system | symmetric, chosen **at compile time** (`chunk_config::asymmetric_dekker = false`) |
 
 So the protocol is never weaker than the symmetric form: it is only faster
-when it can be. `ParamChunk::chunk_stats()` reports the form that ran
+when it can be. `Runtime::chunk_stats()` reports the form that ran
 (`dekker::protocol_name()`).
+
+One case has no fallback: the registration succeeded, the writers therefore announce without a
+barrier, and a later `membarrier` call fails (a seccomp filter installed after the
+registration). The handshake no longer holds, and a pass could free the buffer a writer is in:
+`heavy_barrier()` stops the program (`CHUNK_INVARIANT_FAILED`), in every build.
 
 ### 4.4 The price, and the condition
 
@@ -464,7 +469,7 @@ is a protocol violation.
 | `CHUNK_READ_RECLAIM_SLOTS` | 1,024 | number of reader threads that each have their own sequence number |
 
 The gate counters (passes started, aborts due to a flush, aborts on an overly
-long wait, deferred writes) are in the `CHUNK_STATS` report (`ParamChunk::chunk_stats()`),
+long wait, deferred writes) are in the `CHUNK_STATS` report (`Runtime::chunk_stats()`),
 together with the form of the protocol that ran.
 
 ## 8. Where to read the code
@@ -476,5 +481,5 @@ together with the form of the protocol that ran.
 | the writer side | `internal/proxy_base_inline.h` (`write_with_optional_lock_impl`) |
 | the compressor side, the counters | `internal/compression_manager.h`, `internal/compression_manager_inline.h` (`start`, `finish`, `wait_out_compressor`) |
 | per-chunk marks | `internal/chunk_base.h` (`steal_mark_`) |
-| the compression pass | `internal/zero_one_value_chunk_inline.h`, `internal/zero_any_chunk_inline.h`, `internal/zero_chunk_inline.h` (`make_block_compression*`), `internal/block_pass_precheck.h` |
+| the compression pass | `internal/zero_or_value_chunk_inline.h`, `internal/zero_any_chunk_inline.h`, `internal/zero_chunk_inline.h` (`make_block_compression*`), `internal/block_pass_precheck.h` |
 | readers and reclamation | `internal/read_reclaim.h` |

@@ -18,6 +18,10 @@
 
 // Out-of-line bodies of the re-chunk's traces (array_chunk_rechunk_trace.h).
 
+#include <atomic>  // std::memory_order_relaxed
+#include <chrono>  // std::chrono::steady_clock
+#include <cstddef> // std::size_t
+
 #include "chunk/internal/array_chunk_rechunk_trace.h" // the classes these bodies belong to
 
 namespace shrink_array::internal
@@ -117,6 +121,13 @@ inline void RechunkPhaseTrace::log(unsigned int old_size, unsigned int new_size)
                       "setup max {:.1f} | barrier {:.1f} | boundary {:.1f} | join {:.1f}",
                       old_size, new_size, st.count, st.fork_ms, st.loop_ms, st.work_max_ms, st.work_avg_ms,
                       st.setup_max_ms, st.barrier_ms, st.boundary_ms, st.join_ms);
+            CHUNK_LOG(debug, rechunk,
+                      "{} -> {} drain split (ms): sort max {:.1f} | sort avg {:.1f} | free max {:.1f} | "
+                      "free avg {:.1f} | blocks max {:.0f} | blocks avg {:.0f} | collect detach {:.1f} | "
+                      "collect slabs {:.0f}",
+                      old_size, new_size, st.drain_sort_max_ms, st.drain_sort_avg_ms, st.drain_free_max_ms,
+                      st.drain_free_avg_ms, st.drain_blocks_max, st.drain_blocks_avg, st.collect_detach_ms,
+                      st.collect_slabs);
         }
     }
     if (memory_)

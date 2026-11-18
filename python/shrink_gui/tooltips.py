@@ -72,7 +72,14 @@ class Tooltips:
                         "de chaque build que le programme utilisera (--configs de bench_and_test.py, "
                         "--builds de multi_launch_stress.py, sous --build-root). Un build dont une "
                         "source, un en-tête ou la configuration a changé depuis sa compilation n'est "
-                        "pas à jour.\n\n« refuser » : le run s'arrête (code 96) en listant ces builds.",
+                        "pas à jour.\n\n« refuser » : le run s'arrête (code 96) en listant ces builds.\n\n"
+                        "Un build passé par « Nettoyer les builds… » n'a plus ses fichiers objets : "
+                        "jusqu'à sa prochaine compilation, il est à jour s'il l'était au nettoyage et "
+                        "qu'aucune source, aucun en-tête ni fichier CMake du dépôt n'a changé depuis.",
+        "bclean": "Supprime des builds ce que la compilation suivante refait (fichiers objets, "
+                  "en-têtes précompilés, bibliothèques statiques) ; garde les exécutables. Le "
+                  "prochain compile_all.sh recompile tout. « Builds à jour » reconnaît un build "
+                  "nettoyé : il le juge sur ses sources jusqu'à sa prochaine compilation.",
         "directives": "Lignes #MSUB du script batch (ou options ccc_mprun en mode détaché). Propres à "
                       "la partition, mémorisées.\n\n-T, -r, -o et -e sont ajoutés d'après le formulaire.",
         "repo": "Le dépôt shrink-array SUR INTI. Les options sont lues dans ces scripts-là, et c'est "
@@ -87,6 +94,12 @@ class Tooltips:
         "opt_filter": "Ne montre que les options dont le nom ou l'aide contient ce texte.",
         "extra": "Arguments ajoutés tels quels à la fin de la commande : pour une option que le "
                  "formulaire ne connaît pas (--no-gnu de compile_all.sh, par exemple).",
+        "env": "Variables d'environnement exportées avant la commande, sur le nœud : NOM=valeur, "
+               "séparées par des espaces (NOM=\"a b\" pour une valeur avec des espaces ; un ~/ en "
+               "tête devient le répertoire personnel de la machine du run).\n\n"
+               "Par exemple CHUNK_LLVM_ROOT=~/llvm-22 pour compile_all.sh. Elles l'emportent sur "
+               "celles de scripts/site_env.sh. Mémorisées par programme, et reprises avec "
+               "« Reprendre ses options ».",
         "preview": "La commande exacte qui sera exécutée sur le nœud. Seules les options modifiées "
                    "(en gras) y figurent : les autres gardent le défaut du script.",
         "table": "Les runs du dossier « Runs (inti) », du plus récent au plus ancien. Cliquez sur un "
@@ -95,7 +108,7 @@ class Tooltips:
         "follow": "Fait défiler le log jusqu'à la fin à chaque nouvelle ligne. Décochée, le log "
                   "reste où vous êtes.",
         "pt_build": "Ne montre que les runs de ce build.",
-        "pt_variant": "Ne montre que les runs de cette variante (zero, zero_one_value, zero_any).",
+        "pt_variant": "Ne montre que les runs de cette variante (zero, zero_or_value, zero_any).",
         "pt_color": "Ce que la couleur distingue : la variante, la taille de chunk, ou rien. Trois "
                     "couleurs au plus ; le reste est groupé en gris « autres ».",
         "pt_log": "Axe du temps en échelle logarithmique : utile quand les temps s'étalent sur "
