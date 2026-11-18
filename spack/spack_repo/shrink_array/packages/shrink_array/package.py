@@ -37,6 +37,7 @@ class ShrinkArray(CMakePackage):
     version("develop", branch="develop")
     version("main", branch="main")
     version("cpp23", branch="cpp23")
+    version("0.3.0", tag="v0.3.0", commit="7c979b1bf831fee3d452627cd9f3bcf73c181d8f")
     version("0.2.1", tag="v0.2.1", commit="0a524305e7f4e94713c993f14bb83040dc3fc09b")
     version("0.2.0", tag="v0.2.0", commit="061d2fd77e2c78f7417bf9e5ca1755a2f929d317")
     version("0.1.3", tag="v0.1.3", commit="c6ea28ded4ee48e1c9d7807071b5cdeeaa022d53")
