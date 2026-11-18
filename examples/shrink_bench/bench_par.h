@@ -723,10 +723,10 @@ inline oneapi::tbb::task_arena& arena()
 
 /// @brief The library's own teams take TBB's threads too, from the start (the
 ///        arrays' creation opens some before the first region) -- in the
-///        bench's arena: region() runs its tasks there and calls
-///        finalize_parallel_phase() outside it, so the calling thread's arena
-///        would be another one, and the workers would change arena twice per
-///        region.
+///        bench's arena, which region() runs its tasks and its
+///        finalize_parallel_phase() in; a team opened outside a region (the
+///        creation, a serial pass) would otherwise go to the calling thread's
+///        arena, another one, and the workers would change arena for it.
 inline const bool library_teams_on_tbb = (shrink_array::tbb::use_tbb_for_library_teams(arena()), true);
 
 /// @brief BENCH_RANK_TIMING: counts the TBB workers entering and leaving the
@@ -847,16 +847,21 @@ void region(int num_threads, Body&& body, const std::source_location loc = std::
         }
     };
     ++rt::depth;
+    rt::Clock::time_point wall_end;
+    rt::ArenaCount        at_end;
+    // The finalize inside the arena, right after the tasks: the workers that
+    // finished their rank still spin in it and join the library's team at
+    // once, rather than leaving and being woken back for it.
     detail::arena().execute(
         [&]
         {
             oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<int>(0, n, 1), shrink_array::tbb::phase_body(tasks),
                                       oneapi::tbb::static_partitioner{});
+            wall_end = timed ? rt::Clock::now() : rt::Clock::time_point{};
+            at_end   = watch != nullptr ? watch->now() : rt::ArenaCount{};
+            shrink_array::finalize_parallel_phase();
         });
     --rt::depth;
-    const auto           wall_end = timed ? rt::Clock::now() : rt::Clock::time_point{};
-    const rt::ArenaCount at_end   = watch != nullptr ? watch->now() : rt::ArenaCount{};
-    shrink_array::finalize_parallel_phase();
     if (timed)
     {
         rt::Registry::get().record(loc, *call, wall_end, rt::Clock::now());
