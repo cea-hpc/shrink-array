@@ -74,8 +74,10 @@ capture() {
         module load "$GCC_MODULE" || echo "coverity_submit: no module $GCC_MODULE, using ${CXX:-the g++ on PATH}" >&2
     fi
     # shellcheck disable=SC2086
+    # No ccache: a cache hit skips the compiler, and cov-build captures only
+    # the compilations it sees run.
     cmake -S "$REPO" -B "$COV_BUILD_DIR" -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_CXX_COMPILER="${CXX:-$(command -v g++)}" $CMAKE_ARGS
+        -DCMAKE_CXX_COMPILER="${CXX:-$(command -v g++)}" -DCHUNK_USE_CCACHE=OFF $CMAKE_ARGS
     cd "$COV_BUILD_DIR"
     nice -n 19 cov-build --dir cov-int cmake --build . -j"$JOBS"
     tail -3 cov-int/build-log.txt
