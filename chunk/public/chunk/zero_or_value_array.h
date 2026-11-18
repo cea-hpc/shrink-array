@@ -468,10 +468,15 @@ namespace shrink_array
 {
 
 /// @brief Former name of zero_or_value (0.2): `zero_one_value::Array<T>` is
-///        `zero_or_value::Array<T>`. Gone at the next minor version.
+///        `zero_or_value::Array<T>`. Gone at the next minor version. The
+///        public names one by one, not a using-directive: the former namespace
+///        brings in nothing else.
 namespace [[deprecated("renamed shrink_array::zero_or_value")]] zero_one_value
 {
-using namespace zero_or_value;
+using zero_or_value::Array;
+using zero_or_value::Chunk;
+using zero_or_value::ChunkDef;
+using zero_or_value::Proxy;
 } // namespace zero_one_value
 
 } // namespace shrink_array
