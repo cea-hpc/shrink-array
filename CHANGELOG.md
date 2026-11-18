@@ -9,7 +9,7 @@ Two version numbers, both `MAJOR.MINOR.PATCH`:
 
 | component | where it is set | installed as |
 |---|---|---|
-| the chunk library | the top-level `CMakeLists.txt` (`project(shrink_array VERSION X.Y.Z)`) | the `chunk` CMake package (`find_package(chunk X.Y)`) |
+| the chunk library | the top-level `CMakeLists.txt` (`project(shrink_array VERSION X.Y.Z)`) | the `shrink_array` CMake package (`find_package(shrink_array X.Y)`) |
 | fast_allocators | `fast_allocators/CMakeLists.txt` (`ALLOCATORS_*_VERSION`) | the `fast_allocators` package |
 
 The **public interface** that the version describes is:
@@ -19,8 +19,8 @@ The **public interface** that the version describes is:
   when one is added, moved, removed or renamed without the list. The members of the public
   classes that name the library's machinery (`ManagerType`, `Manager`, `ChunkType`,
   `ChunkListType`, `ProxyType`, `get_chunk_list()`) are not part of it;
-- the installed CMake targets (`chunk::chunk_zero_any_256`, `chunk::chunk_zero_any`, ...) and the
-  variables `find_package(chunk)` sets;
+- the installed CMake targets (`shrink_array::zero_any_256`, `shrink_array::zero_any`, ...) and
+  the variables `find_package(shrink_array)` sets;
 - the CMake options and the environment variables of `docs/environment_variables.md` (the user
   settings); those of `docs/developer_settings.md` are development tools, which can change in any
   release;
@@ -35,13 +35,13 @@ release.
 | **MINOR** | an addition, or a change with a compatibility path (the old name kept, deprecated) | new targets installed; a user option renamed with the old spelling still accepted |
 | **PATCH** | a fix that changes no interface | a race fixed; a wrong value in a trace |
 
-The installed package declares `SameMajorVersion` compatibility: `find_package(chunk 1.2)`
+The installed package declares `SameMajorVersion` compatibility: `find_package(shrink_array 1.2)`
 accepts any 1.x at or above 1.2. A deprecated name stays for at least one MINOR release and is
 removed only by the next MAJOR.
 
 **Before 1.0** (0.x versions), as SemVer allows, a MINOR release plays the role of a MAJOR one
 (it may break) and PATCH covers additions and fixes; the package then declares
-`SameMinorVersion`: `find_package(chunk 0.1)` accepts 0.1.x only.
+`SameMinorVersion`: `find_package(shrink_array 0.3)` accepts 0.3.x only.
 
 **fast_allocators** follows the same rules for its own interface. The chunk library pins the
 exact fast_allocators version it was built with (`CHUNK_FAST_ALLOCATORS_VERSION` in
@@ -345,6 +345,10 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- The Spack recipe built the released versions wrong since the CMake options took their
+  `CHUNK_` prefix: 0.1.0 to 0.2.1 know `OMP`, `USE_LIBCXX`, `USE_MOLD` and `CHECK_OPTIM` only,
+  ignored the new names and took their defaults -- serial libraries with `threads=openmp`,
+  libc++ with Clang, no `+checks`. The recipe gives these versions their own names.
 - TBB: the library's own teams run in the program's arena. `use_tbb_for_library_teams()`
   launched them (the flush and compression pass of `finalize_parallel_phase()`, a re-chunk) in
   a `task_arena` of its own, so TBB's workers left the program's arena for that one and came
