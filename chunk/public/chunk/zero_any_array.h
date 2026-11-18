@@ -486,7 +486,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
 /**
  * @brief Chunked array whose chunks may each compress to their OWN second value.
  *
- * @details Same layout as zero_one_value::Array, but where zero_one_value::Array shares a SINGLE second value
+ * @details Same layout as zero_or_value::Array, but where zero_or_value::Array shares a SINGLE second value
  *          across the array, here every chunk registers its own (find-or-set), so a chunk
  *          compresses as soon as all its elements equal any one constant. Costs a per-chunk
  *          second-value table (zero_any::ProxySpec), garbage-collected through GlobalVecHolder.

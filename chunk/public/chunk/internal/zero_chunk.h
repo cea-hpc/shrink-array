@@ -428,7 +428,7 @@ class ChunkFastCompPolicy<T, Derived, false> : public ChunkThreadPolicy<T, Deriv
  * @details The simplest of the three variants. A chunk holds either a real
  *          buffer or, once every element is zero, the shared const_val1 constant
  *          -- so `values` doubles as the state flag: written() is just
- *          "values != const_val1". zero_one_value and zero_any extend this with a second
+ *          "values != const_val1". zero_or_value and zero_any extend this with a second
  *          constant, shared or per-chunk respectively.
  *
  *          Three policies supply what depends on the build, so this class holds

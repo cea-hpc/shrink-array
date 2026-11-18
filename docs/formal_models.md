@@ -373,7 +373,7 @@ drops, in the three variants); a writer whose marking finds 2 turns it into 3, "
 rather than giving up (`queue_flag::try_queue`, every writer's site: `add_to_compression_list()`,
 its async form, the range writes through it); the pass then resets 2 -> 0 by CAS and, on a 3,
 queues the chunk again in its own rank's list (`queue_flag::release`). In the passes of `zero`,
-`zero_one_value` and `zero_any` (with `pattern`'s motif commit), threaded builds; the serial
+`zero_or_value` and `zero_any` (with `pattern`'s motif commit), threaded builds; the serial
 build has no concurrent pass. 2 and 3 exist only inside a pass: outside, the flag is 0 or 1 and
 "1 <=> listed" holds. Cost: on a writer's path one compare more, on the refused marking only; in
 the pass, an exchange and a CAS per candidate instead of one store. The check builds assert the
@@ -399,7 +399,7 @@ order of `MUT_HANDBACK_AFTER_UNMARK`, and the F6 window open again. It hands eac
 the scan now, as `zero` does. In the library, `read_reclaim_validation`'s `remark` mode (passes
 with a delay in the hand-back window, writers on the same chunks) went through the new branch --
 a write noted on a handed-back flag, the chunk queued again by its pass -- 267,536 times for
-`zero_any` and 1,849 for `zero_one_value` in 8 s at 4 threads, each a queueing the old code lost.
+`zero_any` and 1,849 for `zero_or_value` in 8 s at 4 threads, each a queueing the old code lost.
 
 Measured before the fix: the check builds' audit ("never queued for compression") first counted 34
 to 140 such chunks per `shrink_bench` run, at 1 thread as well -- which F6 cannot be: they came

@@ -2,7 +2,7 @@
 
 > English version: [adaptive_rechunk.md](adaptive_rechunk.md).
 
-> État : fin septembre 2026, pour les trois variantes (`zero`, `zero_one_value`, `zero_any`). Les chiffres
+> État : fin septembre 2026, pour les trois variantes (`zero`, `zero_or_value`, `zero_any`). Les chiffres
 > viennent de `shrink_bench` sur Grace (64 threads, `OMP_PROC_BIND=close`,
 > `OMP_PLACES=cores`), avec la mémoire mesurée exactement et les temps comparés sur un même
 > binaire : voir [mesures_performance_fr.md](mesures_performance_fr.md). En cas de doute,
@@ -20,7 +20,7 @@ taille.
 
 L'intérêt : partir de **petits chunks** (64 éléments dans le banc, `SHRINK_BENCH_DYN_SIZE`),
 qui compressent finement, puis **grossir** quand les métadonnées l'emportent sur ce que la
-finesse fait gagner. Les objectifs, atteints pour `zero_one_value` et `zero_any` :
+finesse fait gagner. Les objectifs, atteints pour `zero_or_value` et `zero_any` :
 
 - **au départ**, consommer comme le statique à la même taille ;
 - **à la fin**, consommer moins que le meilleur statique.
@@ -45,7 +45,7 @@ bornes tout multiple de 64 dont C / 64 a au plus `Options::grid_bits` bits signi
 - une fenêtre qui **chevauche en partie un chunk matérialisé** (taille plus fine ou mal
   alignée) est tranchée en lisant les données, sur un **échantillon** des chunks matérialisés
   (65 536 au plus) : elle est compressée si elle ne contient qu'une valeur, et une valeur
-  représentable. Pour `zero` et `zero_one_value`, c'est la première ou la seconde valeur ; pour
+  représentable. Pour `zero` et `zero_or_value`, c'est la première ou la seconde valeur ; pour
   **`zero_any`**, toute valeur, puisque chaque chunk enregistre sa propre seconde valeur.
 
 Quand S divise C (S×2, S×3, S×4...), le dernier cas ne se présente jamais : la ligne est un
@@ -62,7 +62,7 @@ tableaux sont restés à 256.
 La classification des chunks se fait à la volée, sans tableau de travail : jusqu'en
 septembre 2026, chaque analyse allouait un octet et un pointeur par chunk (140 Mo pour un
 tableau de 15,6 millions de chunks), et les analyses coûtaient 1 à 2 s sur un run de 6,5 s.
-Elles coûtent maintenant ~0,7 s sur un run de `zero_one_value` de 8,4 s.
+Elles coûtent maintenant ~0,7 s sur un run de `zero_or_value` de 8,4 s.
 
 `CHUNK_LOG=advisor=debug` écrit la table complète de chaque tableau analysé à chaque passage
 (celle d'un seul tableau avec `RechunkPolicy::trace_array`, `--rechunk_trace_array <nom>` dans le banc).
@@ -146,7 +146,7 @@ taille sont vidées et les slabs vidés rendus au système, y compris dans la **
 partagée** quand l'ancien stockage s'y trouve : sans cela, la mémoire de l'ancien stockage
 restait acquise jusqu'à la fin de la reconstruction (sur `rechunk_validation`, pic de la
 reconstruction 78 → 22 Mo). Mesuré sur `zero` à 64 threads : pic de +6,9 Go en une passe,
-+1,7 Go avec 16 tranches. Sur `zero_one_value` (x86-64, 2 threads, 10^8 éléments, 1 000
++1,7 Go avec 16 tranches. Sur `zero_or_value` (x86-64, 2 threads, 10^8 éléments, 1 000
 itérations, trois runs chacun, novembre 2026), le pic du run passe de 1 772 à 1 724 Mo : un
 rechunk d'un stockage qui a ses propres slabs ajoute 0 à 60 Mo au lieu de 65 à 196 Mo. Le
 premier rechunk d'un tableau part encore de la réserve partagée (affinité paresseuse,
@@ -169,12 +169,12 @@ D'où deux modes, fixés par variante :
 
 | mode | quand un tableau reçoit sa clé | défaut pour | pourquoi |
 |---|---|---|---|
-| **paresseux** | à son premier rechunk | `zero_one_value`, `zero_any` | ils sont surtout faits de métadonnées : un départ sans jeux par tableau consomme exactement comme le statique (`zero_any` : 11 590 Mo après l'initialisation, contre 12 435 Mo en mode immédiat) |
+| **paresseux** | à son premier rechunk | `zero_or_value`, `zero_any` | ils sont surtout faits de métadonnées : un départ sans jeux par tableau consomme exactement comme le statique (`zero_any` : 11 590 Mo après l'initialisation, contre 12 435 Mo en mode immédiat) |
 | **immédiat** | à sa création | `zero` | `zero` est surtout fait de données, et sa reconstruction par tranches ne rend la mémoire au fil de l'eau que si l'ancien stockage a ses propres slabs. En mode paresseux, le premier rechunk part de slabs partagés, qui mêlent les blocs de plusieurs tableaux et ne se vident pas : +6,0 Go sur 39,3 Go. Pic de `zero` : 41,2 Go en immédiat, 45,6 Go en paresseux, pour la même mémoire de fin |
 
 Ce choix a été mesuré contre l'autre mode (Milan, `shrink_bench` int64 dyn, 64 threads, trois
 runs chacun, octobre 2026) : `zero` en mode paresseux prend +9,8 % de temps, +14,6 % au pic et
-+11,8 % en fin ; `zero_any` en mode immédiat +7,4 % au pic ; `zero_one_value` est identique dans
++11,8 % en fin ; `zero_any` en mode immédiat +7,4 % au pic ; `zero_or_value` est identique dans
 les deux. Le mode n'est plus une variable d'environnement (`CHUNK_ALLOC_AFFINITY_EAGER` a disparu).
 
 ## 6. Ce qui doit disparaître avec l'ancien stockage
@@ -202,19 +202,19 @@ défaut du banc ; `--advise_five` revient aux cinq tableaux historiques) :
 | variante | statique 64 (fin) | dynamique sans advisor (fin) | **dynamique avec advisor (fin)** | statique 256 (fin) |
 |---|---|---|---|---|
 | `zero_any` | 12,7 | 12,7 | **6,0** | 7,3 |
-| `zero_one_value` | 21,4 | 21,4 | **16,3** | 17,3 |
+| `zero_or_value` | 21,4 | 21,4 | **16,3** | 17,3 |
 | `zero` | 43,6 | 44,6 | **40,3** | 40,2 |
 
 Coût en temps de l'advisor, mesuré sur **un même binaire** (moyennes sur 3 tours) :
 
-| `zero_one_value` dynamique | temps | coût |
+| `zero_or_value` dynamique | temps | coût |
 |---|---|---|
 | sans advisor (`--advisor_period 0`) | 8,38 s | — |
 | analyses seules (`--rechunk_dry_run`) | 9,07 s | +0,69 s |
 | analyses et rechunks (30) | 11,43 s | +2,36 s |
 
 Pour `zero_any`, le coût des rechunks (33) va de 1 à 3,5 s selon les séries de mesures. Pour
-`zero_one_value`, les intervalles qui suivent les rechunks sont aussi rapides que ceux d'avant : le coût
+`zero_or_value`, les intervalles qui suivent les rechunks sont aussi rapides que ceux d'avant : le coût
 se limite aux reconstructions.
 
 ## 8. Limites connues
@@ -222,7 +222,7 @@ se limite aux reconstructions.
 - **`zero` ralentit après son rechunk.** Après le passage à 1 024, `zero` dynamique tourne 1,5 à
   2 fois moins vite par itération que le statique 1 024 (environ 40 cœurs occupés à un IPC de
   3,65, contre 52 cœurs à 4,24). Un build dynamique **démarré** à 1 024 va aussi vite que le
-  statique, et `zero_one_value` ne ralentit pas après ses rechunks : c'est l'état laissé par la
+  statique, et `zero_or_value` ne ralentit pas après ses rechunks : c'est l'état laissé par la
   reconstruction de `zero` qui est en cause. Ni l'ordonnancement de la reconstruction, ni les
   seuils de compression n'expliquent l'écart. Cause encore inconnue.
   Remesuré en octobre 2026 (inti, aarch64, LLVM, 64 threads, `--mode perf`,
@@ -253,7 +253,7 @@ se limite aux reconstructions.
   géométrie de naissance, sauf si `--advise_bool` les confie au décideur, pour que les deux
   conteneurs de booléens soient comparés tels quels. Le rechunk de `Array<bool>` est vérifié
   par `rechunk_validation` (`bool-grow`, `bool-shrink`, `bool-uneven`, `bool-sliced`, toutes
-  variantes), celui d'`BitArray` par `bits_container_validation` (`zero_one_value` en dyn).
+  variantes), celui d'`BitArray` par `bits_container_validation` (`zero_or_value` en dyn).
 - **Le pic n'est pas toujours celui de la géométrie de départ** : un run dynamique qui part
   de 64 a la mémoire du statique 64 après son initialisation ; ses rechunks rendent ensuite
   de la mémoire (la mémoire résidente redescend) ou freinent sa croissance. Le pic du run
@@ -262,5 +262,5 @@ se limite aux reconstructions.
   (x86-64, 8 threads, `shrink_bench` `--multiply 10 --iter_max 1000 --advisor_period 2`,
   contre le même binaire avec `--rechunk_dry_run`, novembre 2026) : `zero_any` redescend de
   481 à 303 Mio après ses rechunks et finit à 238 Mio au lieu de 545, son pic étant celui de
-  l'initialisation (582 Mio) ; `zero_one_value` culmine à 1 342 Mio au lieu de 1 523, `zero`
+  l'initialisation (582 Mio) ; `zero_or_value` culmine à 1 342 Mio au lieu de 1 523, `zero`
   à 2 531 Mio au lieu de 2 736.

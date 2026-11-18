@@ -15,7 +15,7 @@
  */
 
 // ============================================================================
-// Concurrent-teams harness. Variant-agnostic: zero / zero_one_value / zero_any by the
+// Concurrent-teams harness. Variant-agnostic: zero / zero_or_value / zero_any by the
 // compile-time macro (CHUNK_VARIANT_ZERO*), like the other harnesses.
 // ============================================================================
 //
@@ -50,10 +50,10 @@
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
 #include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/runtime.h"               // Runtime::init
-#include "chunk/config.h" // chunk_config::use_zero_one_value*, build_config::use_openmp / needs_explicit_phases
+#include "chunk/config.h" // chunk_config::use_zero_or_value*, build_config::use_openmp / needs_explicit_phases
 #include "chunk/internal/pmp_chunk.h" // chunk_pmp_team_rank
 #include "chunk/phases.h"             // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/print.h"              // shrink_array::println
@@ -70,7 +70,7 @@ template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -78,9 +78,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {

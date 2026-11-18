@@ -46,7 +46,7 @@ The loops of a code written for `std::vector` stay as they are; only the array t
 (The bare `#pragma omp parallel for` needs an OMPT build; with GCC's `libgomp`, open the
 region with `parallel_phase()`, see [A first program, parallel and multi-threaded](#a-first-program-parallel-and-multi-threaded).)
 
-![Process memory of the reference benchmark: std::vector 125.9 GB, zero 40.2 GB, zero_one_value 17.3 GB, zero_any 7.26 GB](docs/images/memory_bench.png)
+![Process memory of the reference benchmark: std::vector 125.9 GB, zero 40.2 GB, zero_or_value 17.3 GB, zero_any 7.26 GB](docs/images/memory_bench.png)
 
 *Reference benchmark ([`shrink_bench`](examples/shrink_bench)): about 10⁹ elements of a dozen
 types, static chunks of 256, whole-process memory at the end. The price is access time, see
@@ -201,13 +201,13 @@ constants count:
 | variant | class | a chunk is compressed when all its elements equal… |
 |---|---|---|
 | `zero` | `zero::Array<T>` | `T{}` (zero) only |
-| `zero_one_value` | `zero_one_value::Array<T>` | `T{}`, or **one** second value per array, declared with `set_second_value()` |
+| `zero_or_value` | `zero_or_value::Array<T>` | `T{}`, or **one** second value per array, declared with `set_second_value()` |
 | `zero_any` | `zero_any::Array<T>` | `T{}`, or **any** value, chunk by chunk, with nothing to declare -- **start here** |
 
 The variant and the chunk size (256, 1024, or dynamic and adaptive: `_dyn`) are chosen by the
 library you link: `shrink_array::zero_any_256`, `shrink_array::zero_any_dyn`, ...
 [docs/variants.md](docs/variants.md) says what each one costs;
-[docs/algo_zero_one_value.md](docs/algo_zero_one_value.md) how reads, writes and compression run side by side.
+[docs/algo_zero_or_value.md](docs/algo_zero_or_value.md) how reads, writes and compression run side by side.
 
 **Integers that repeat with a shift: `pattern::Array`.** A mesh connectivity is never uniform,
 yet cell `c + 1` holds the node numbers of cell `c` plus one. `pattern::Array<T>`, for integer
@@ -277,7 +277,7 @@ over 2,000 iterations. Whole-process memory at the end, on Grace, 64 threads
 | | static chunks of 256 (`_256`) | dynamic chunks (`_dyn`) |
 |---|---|---|
 | `zero_any` | **7.26 GB** | **6.0 GB** |
-| `zero_one_value` | 17.3 GB | 16.3 GB |
+| `zero_or_value` | 17.3 GB | 16.3 GB |
 | `zero` | 40.2 GB | 40.3 GB |
 | `std::vector` | 125.9 GB | — |
 
@@ -434,7 +434,7 @@ Spack version (`spack install shrink-array@cpp23`).
 | understand how it is built: parts, decisions, concurrency model | [docs/design.md](docs/design.md) |
 | choose a variant | [docs/variants.md](docs/variants.md) |
 | compare with sparse formats, compressors, sparse grids | [docs/alternatives.md](docs/alternatives.md) |
-| understand reads, writes, in-flight compression, deferred writes | [docs/algo_zero_one_value.md](docs/algo_zero_one_value.md) |
+| understand reads, writes, in-flight compression, deferred writes | [docs/algo_zero_or_value.md](docs/algo_zero_or_value.md) |
 | know why the write path needs no lock | [docs/synchronisation_dekker.md](docs/synchronisation_dekker.md) |
 | check a handshake with a model checker | [docs/formal_models.md](docs/formal_models.md) |
 | use dynamic chunk sizes | [docs/adaptive_rechunk.md](docs/adaptive_rechunk.md) |

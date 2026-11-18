@@ -220,16 +220,16 @@ parser.add_argument("--only-checksum", action="store_true",
 #   --exec zero_any             -> the 5 zero_any binaries
 #   --exec zero,zero_any --size 64,dyn -> 4 binaries
 #   --all_exec                  -> the full matrix
-_VARIANTS = ["zero", "zero_one_value", "zero_any"]
+_VARIANTS = ["zero", "zero_or_value", "zero_any"]
 # The TBB bench (shrink_bench_tbb_<variant>_<size>, std-backend builds made
 # with CHUNK_WITH_TBB): the same sources with the regions run as TBB tasks.
 # Part of the selection like the others: 'all' and --all_exec include it, and
-# so does the default (zero_one_value AND tbb_zero_one_value). A build without
+# so does the default (zero_or_value AND tbb_zero_or_value). A build without
 # it (OpenMP, serial, a std build made without oneTBB) simply has no such
 # binary: skipped silently unless the variant was named in --exec.
 _TBB_VARIANTS = ["tbb_" + v for v in _VARIANTS]
 _ALL_VARIANTS = _VARIANTS + _TBB_VARIANTS
-_DEFAULT_VARIANTS = ["zero_one_value", "tbb_zero_one_value"]
+_DEFAULT_VARIANTS = ["zero_or_value", "tbb_zero_or_value"]
 _SIZES         = ["64", "256", "1024", "dyn"]   # VALID choices (64 can still be asked with --size 64)
 _DEFAULT_SIZES = ["256", "1024", "dyn"]              # the sizes built by default (64 dropped)
 
@@ -261,9 +261,9 @@ parser.add_argument(
     "--exec",
     type=_csv_choices("--exec", _ALL_VARIANTS),
     default=None,
-    metavar="{zero,zero_one_value,zero_any,tbb_zero,tbb_zero_one_value,tbb_zero_any,all}[,...]",
-    help="Variant(s) to run, comma-separated or 'all' (the six). Default: zero_one_value "
-         "and tbb_zero_one_value unless --all_exec is given. tbb_<variant>: the TBB bench "
+    metavar="{zero,zero_or_value,zero_any,tbb_zero,tbb_zero_or_value,tbb_zero_any,all}[,...]",
+    help="Variant(s) to run, comma-separated or 'all' (the six). Default: zero_or_value "
+         "and tbb_zero_or_value unless --all_exec is given. tbb_<variant>: the TBB bench "
          "(shrink_bench_tbb_<variant>_<size>, std-backend builds made with "
          "CHUNK_WITH_TBB); a build without it is skipped for those, silently "
          "unless the variant is named here."

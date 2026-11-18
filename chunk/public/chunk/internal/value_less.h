@@ -27,9 +27,9 @@
 namespace shrink_array
 {
 /**
- * @brief The strict weak order zero_one_value keys its second-value tables with.
+ * @brief The strict weak order zero_or_value keys its second-value tables with.
  *
- * zero_one_value keys a std::map of candidate tables by second value, so it needs an
+ * zero_or_value keys a std::map of candidate tables by second value, so it needs an
  * ordering the value type may not provide, and whose equivalence is
  * same_value() (same_value.h): two second values the library keeps apart must
  * be two keys. In order of preference:
@@ -71,7 +71,7 @@ struct ValueLess
         else
         {
             static_assert(std::totally_ordered<T>,
-                          "zero_one_value orders second values: this element type needs an operator< "
+                          "zero_or_value orders second values: this element type needs an operator< "
                           "(a defaulted operator<=> will do), or no padding and no floating point");
         }
         // Unreachable (the static_assert fires). For nvc++ (EDG), which does not prune

@@ -85,7 +85,7 @@ void SecondValueChunkBase<T, Derived>::block_clear_common(int                  c
         }
     }
 
-    if constexpr (is_zero_one_value_derived && chunk_config::use_compression_with_counter)
+    if constexpr (is_zero_or_value_derived && chunk_config::use_compression_with_counter)
     {
         derived().reset_n_val_eq_second_value();
         derived().reset_n_val_eq_first_value();
@@ -144,11 +144,11 @@ void SecondValueChunkBase<T, Derived>::clear_impl(IndexT            index_opt,
     }
     else
     {
-        // zero_one_value specific cleanup
+        // zero_or_value specific cleanup
         derived().set_const_val_to_const_val1();
         derived().init_values_const_val();
 
-        if constexpr (is_zero_one_value_derived && chunk_config::use_compression_with_counter)
+        if constexpr (is_zero_or_value_derived && chunk_config::use_compression_with_counter)
         {
             derived().reset_n_val_eq_second_value();
         }
@@ -205,8 +205,8 @@ void SecondValueChunkBase<T, Derived>::check_not_constant_before_clear(int      
 
         if (idx_opt.has_value())
         {
-            // Path for zero_one_value (Table indexed)
-            if constexpr (is_zero_one_value_derived)
+            // Path for zero_or_value (Table indexed)
+            if constexpr (is_zero_or_value_derived)
             {
                 const int idx = *idx_opt;
                 if constexpr (is_bool)
@@ -276,7 +276,7 @@ void SecondValueChunkBase<T, Derived>::assert_writable_buffer(const T*          
         }
         else if constexpr (requires { derived().get_const_val2(); })
         {
-            // zero_one_value bool: one shared second constant.
+            // zero_or_value bool: one shared second constant.
             c2 = static_cast<const void*>(derived().get_const_val2());
         }
 

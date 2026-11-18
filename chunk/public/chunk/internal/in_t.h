@@ -50,7 +50,7 @@ namespace shrink_array
 // (illustrative; grep `template <typename U>` in the Proxy hierarchy):
 //
 //     Proxy::operator=/+=/-=/*=//=/%=                 (zero_proxy.h)
-//     zero_one_value::Proxy::operator=                (zero_one_value_proxy.h)
+//     zero_or_value::Proxy::operator=                (zero_or_value_proxy.h)
 //     zero_any::Proxy::operator=                      (zero_any_proxy.h)
 //     SecondValueProxyBase::operator*=///=/%=         (second_value_proxy_base.h)
 //     ProxyBase::operator+=/-=/&=/|=/^=/<<=/>>=       (proxy_base.h)
@@ -86,9 +86,9 @@ namespace shrink_array
 // large user T could introduce one:
 //
 //     ArrayConstVal2Holder::alloc_chunk(T val)            (array_const_val2_holder.h)
-//     zero_one_value::Array::set_second_value(T)                (zero_one_value_array.h and
-//                                                       zero_one_value_array_inline.h)
-//     zero_one_value::ChunkFastCompPolicy::have_chunk_to_compress(T) (zero_one_value_chunk.h)
+//     zero_or_value::Array::set_second_value(T)                (zero_or_value_array.h and
+//                                                       zero_or_value_array_inline.h)
+//     zero_or_value::ChunkFastCompPolicy::have_chunk_to_compress(T) (zero_or_value_chunk.h)
 //
 // ─── COROLLARY FOR LOCAL VARIABLES ───────────────────────────────────────────
 //

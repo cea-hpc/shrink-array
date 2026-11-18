@@ -16,12 +16,12 @@
 
 #pragma once
 
-// Bodies of zero_one_value::RechunkHooks<Derived, true>. Included at the end of zero_one_value_array.h:
+// Bodies of zero_or_value::RechunkHooks<Derived, true>. Included at the end of zero_or_value_array.h:
 // self() needs a complete Derived, and the manager include stays out of the class.
 #include <tuple> // std::get on candidate tuples
 
-#include "chunk/internal/zero_one_value_array_rechunk_hooks.h" // zero_one_value::RechunkHooks, the class these bodies belong to
-#include "chunk/internal/type_state.h"                         // ManagerType — candidate store + reuse free-lists
+#include "chunk/internal/zero_or_value_array_rechunk_hooks.h" // zero_or_value::RechunkHooks, the class these bodies belong to
+#include "chunk/internal/type_state.h"                        // ManagerType — candidate store + reuse free-lists
 #include "chunk/config.h"                     // build_config::threaded, chunk_config::use_fast_block_compression
 #include "chunk/internal/pmp_chunk.h"         // get_thr_rank_fast
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size
@@ -33,7 +33,7 @@ namespace shrink_array
 {
 
 template <typename Derived>
-void zero_one_value::RechunkHooks<Derived, true>::rechunk_drop_candidates()
+void zero_or_value::RechunkHooks<Derived, true>::rechunk_drop_candidates()
 {
     // array_id from the registry, never the member. The drop happens at the
     // owning geometry (see RechunkSupport::rechunk_to). COMPRESS the candidates
@@ -47,7 +47,7 @@ void zero_one_value::RechunkHooks<Derived, true>::rechunk_drop_candidates()
             const auto inf = self().get_info_second_value();
             const int  thr = get_thr_rank_fast();
             shrink_array::set_thread_chunk_size(self().size_policy_.size());
-            for (const auto& per_rank : ManagerType::zero_one_value_candidates_map_thr)
+            for (const auto& per_rank : ManagerType::zero_or_value_candidates_map_thr)
             {
                 for (const auto& kv : per_rank)
                 {
@@ -65,13 +65,13 @@ void zero_one_value::RechunkHooks<Derived, true>::rechunk_drop_candidates()
                 }
             }
         }
-        ManagerType::remove_from_zero_one_value_candidates_by_array_id(array_id);
+        ManagerType::remove_from_zero_or_value_candidates_by_array_id(array_id);
     }
 }
 
 template <typename Derived>
-zero_one_value::RechunkHooks<Derived, true>::value_type
-zero_one_value::RechunkHooks<Derived, true>::rechunk_capture_state() const
+zero_or_value::RechunkHooks<Derived, true>::value_type
+zero_or_value::RechunkHooks<Derived, true>::rechunk_capture_state() const
 {
     // The array-level second value; bool's is re-established by create().
     if constexpr (Derived::is_not_bool)
@@ -85,7 +85,7 @@ zero_one_value::RechunkHooks<Derived, true>::rechunk_capture_state() const
 }
 
 template <typename Derived>
-void zero_one_value::RechunkHooks<Derived, true>::rechunk_seed_fresh(InT<value_type> state)
+void zero_or_value::RechunkHooks<Derived, true>::rechunk_seed_fresh(InT<value_type> state)
 {
     // On the FRESH array before refill. Not value_type{}: that is already its
     // state, and re-declaring it would make a degenerate const_val2 == const_val1 buffer.
@@ -103,7 +103,7 @@ void zero_one_value::RechunkHooks<Derived, true>::rechunk_seed_fresh(InT<value_t
 }
 
 template <typename Derived>
-bool zero_one_value::RechunkHooks<Derived, true>::rechunk_swap_identity(Derived& tmp)
+bool zero_or_value::RechunkHooks<Derived, true>::rechunk_swap_identity(Derived& tmp)
 {
     // The array_id, idx_const_val2_ and inf_array MEMBERS are NOT swapped: the
     // identity comes from array_registry, and the members may be
@@ -118,7 +118,7 @@ bool zero_one_value::RechunkHooks<Derived, true>::rechunk_swap_identity(Derived&
 }
 
 template <typename Derived>
-void zero_one_value::RechunkHooks<Derived, true>::rechunk_reown_after_swap(Derived& tmp, InT<value_type> state)
+void zero_or_value::RechunkHooks<Derived, true>::rechunk_reown_after_swap(Derived& tmp, InT<value_type> state)
 {
     // Re-own the registration of `state`: map_inf_array_[state] points at
     // &tmp.inf_array, which dangles once the stack tmp dies, and the next

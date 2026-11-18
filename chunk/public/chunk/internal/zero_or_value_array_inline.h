@@ -32,10 +32,10 @@
 #include "chunk/internal/cold_path_lock.h"              // ColdPathLock: construction, teardown, resize
 #include "chunk/internal/array_users.h"                 // ArrayUsers: a row per array
 #include "chunk/internal/in_t.h"                        // InT<T>: the element snapshots
-#include "chunk/zero_one_value_array.h"                 // zero_one_value::Array, the class these bodies belong to
+#include "chunk/zero_or_value_array.h"                  // zero_or_value::Array, the class these bodies belong to
 #include "chunk/internal/type_name.h"                   // type_name<T>
 #include "chunk/internal/singleton.h"                   // SingletonChk<TypeStateRegistry>::get_ref
-#include "chunk/internal/zero_one_value_proxy.h"        // zero_one_value::Proxy<T>
+#include "chunk/internal/zero_or_value_proxy.h"         // zero_or_value::Proxy<T>
 #include "chunk/internal/chunk_stats.h"                 // inc_chunk_teardown_clear, add_chunk_released
 #include "chunk/internal/type_state_registry.h"         // TypeStateRegistry::ensure_manager
 #include "chunk/config.h"                               // chunk_config::use_fast_block_compression, chunk_config::stats
@@ -54,10 +54,10 @@
 #include "chunk/internal/same_value.h"        // same_value
 
 /**
- * @file zero_one_value_array_inline.h
- * @brief Out-of-line definitions of zero_one_value::Array.
+ * @file zero_or_value_array_inline.h
+ * @brief Out-of-line definitions of zero_or_value::Array.
  *
- * zero_one_value::Array is the array of zero_one_value blocks: every chunk compresses either to
+ * zero_or_value::Array is the array of zero_or_value blocks: every chunk compresses either to
  * the global `first_value` or to ONE array-wide `second_value` — the difference
  * with zero_any, which lets each chunk pick its own. That single shared constant
  * is what shapes most of this file.
@@ -84,7 +84,7 @@
  *    or parks buffers sets it from `size_policy_.size()` first; getting this
  *    wrong frees through the wrong size pool.
  *
- * @see zero_one_value_array.h for the declarations and each member's contract,
+ * @see zero_or_value_array.h for the declarations and each member's contract,
  *      second_value_array_base.h for the parts shared with zero_any::Array.
  */
 
@@ -95,7 +95,7 @@ namespace shrink_array
 // rebuild_storage(). Everything here happens exactly once per array:
 // rechunk_to() must NOT redo it.
 template <ArrayChunkElement T, typename IntType>
-void zero_one_value::Array<T, IntType>::create(IntType sz)
+void zero_or_value::Array<T, IntType>::create(IntType sz)
 {
     this->check_length(sz, "constructor");
     const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
@@ -112,7 +112,7 @@ void zero_one_value::Array<T, IntType>::create(IntType sz)
     internal::ArrayUsers<ChunkType>::resize(array_count);
 
     // Registry entry written: refresh the mirror the write proxies are armed
-    // with (see zero_one_value::Array::inf_array).
+    // with (see zero_or_value::Array::inf_array).
     sync_registry_mirror();
 
     if constexpr (chunk_config::use_fast_block_compression)
@@ -153,7 +153,7 @@ void zero_one_value::Array<T, IntType>::create(IntType sz)
 // parallel_storage_init::for_each_chunk(): a team of its own outside a region
 // for a large enough array, the calling thread otherwise.
 template <ArrayChunkElement T, typename IntType>
-void zero_one_value::Array<T, IntType>::rebuild_storage(IntType sz)
+void zero_or_value::Array<T, IntType>::rebuild_storage(IntType sz)
 {
     // Already registered: array_id is the registry value, not array_count-1 (only
     // valid right after create()'s ++array_count).
@@ -217,7 +217,7 @@ void zero_one_value::Array<T, IntType>::rebuild_storage(IntType sz)
 // bool takes the `else` branch entirely: its second value is `true`, index 0,
 // with nothing to look up.
 template <ArrayChunkElement T, typename IntType>
-void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool message)
+void zero_or_value::Array<T, IntType>::set_second_value(T sec_value, bool message)
 {
     if (message)
     {
@@ -298,19 +298,19 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
 
             if constexpr (build_config::threaded)
             {
-                if (const auto sz = static_cast<int>(Manager::zero_one_value_candidates_thr[0].size()); sz <= idx)
+                if (const auto sz = static_cast<int>(Manager::zero_or_value_candidates_thr[0].size()); sz <= idx)
                 {
                     for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
                     {
-                        Manager::zero_one_value_candidates_thr[thr].resize(idx + 1);
+                        Manager::zero_or_value_candidates_thr[thr].resize(idx + 1);
                     }
                 }
 
                 for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
                 {
-                    const auto& vec_ref    = Manager::zero_one_value_candidates_thr[thr][idx];
+                    const auto& vec_ref    = Manager::zero_or_value_candidates_thr[thr][idx];
                     const auto  shared_vec = std::make_shared<VectorTuple4ChunkInt2<Chunk, T>>(vec_ref);
-                    Manager::zero_one_value_candidates_map_thr[thr][sec_value] = shared_vec;
+                    Manager::zero_or_value_candidates_map_thr[thr][sec_value] = shared_vec;
                 }
             }
         }
@@ -399,10 +399,10 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
         {
             for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
             {
-                Manager::zero_one_value_candidates_thr[thr].resize(1);
-                const auto& vec_ref    = Manager::zero_one_value_candidates_thr[thr][0];
+                Manager::zero_or_value_candidates_thr[thr].resize(1);
+                const auto& vec_ref    = Manager::zero_or_value_candidates_thr[thr][0];
                 const auto  shared_vec = std::make_shared<VectorTuple4ChunkInt2<Chunk, T>>(vec_ref);
-                Manager::zero_one_value_candidates_map_thr[thr][sec_value] = shared_vec;
+                Manager::zero_or_value_candidates_map_thr[thr][sec_value] = shared_vec;
             }
         }
 
@@ -423,7 +423,7 @@ void zero_one_value::Array<T, IntType>::set_second_value(T sec_value, bool messa
 // the first / second constant), then the "would zero_any have helped?" probe.
 // Both re-read chunk content instead of trusting the written() flag (see below).
 template <ArrayChunkElement T, typename IntType>
-void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os) const
+void zero_or_value::Array<T, IntType>::print_compression_stats(std::ostream& os) const
 {
     if (chunk_count_ == 0)
     {
@@ -503,11 +503,11 @@ void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os
     }
     const int n_compressed = n_t0 + n_t1;
 
-    // Cross-variant probe ("would zero_any have helped?"): zero_one_value shares ONE
+    // Cross-variant probe ("would zero_any have helped?"): zero_or_value shares ONE
     // second value across the array, whereas zero_any registers a second value
     // per chunk (find_or_set path). So zero_any pays off exactly on the blocks
     // that are constant to a value which is NEITHER first_value NOR the array's
-    // registered second value: zero_one_value cannot compress those in any state (they
+    // registered second value: zero_or_value cannot compress those in any state (they
     // are always materialised here), zero_any would have. Counted by content
     // alone, like the classification above, so the answer does not depend on
     // the thread count. O(materialised * chunk_size), once, at teardown.
@@ -529,7 +529,7 @@ void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os
                 const InT<T> value = ck.read_value_scan(0);
                 if (same_value(value, Chunk<T>::first_value) || same_value(value, second_value))
                 {
-                    return; // zero_one_value material, caught or not
+                    return; // zero_or_value material, caught or not
                 }
                 if (ck.is_constant_to(value, csz))
                 {
@@ -546,7 +546,7 @@ void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os
         record_chunk_size_at_exit<Chunk<T>>(static_cast<unsigned int>(this->size_policy_.size()));
     }
     print_formatted_chunk_stats(os, array_id, this->debug_name(), type_name<T>(), n_compressed, chunk_count_, n_t1,
-                                "zero_one_value",
+                                "zero_or_value",
                                 /*n_cross=*/n_would_be_2a, /*cross_name=*/"zero_any");
 }
 
@@ -557,7 +557,7 @@ void zero_one_value::Array<T, IntType>::print_compression_stats(std::ostream& os
 // each buffer in the per-geometry reuse list and neutralises the chunk to
 // const_val1 so no residual candidate can free it a second time.
 template <ArrayChunkElement T, typename IntType>
-void zero_one_value::Array<T, IntType>::clear_core()
+void zero_or_value::Array<T, IntType>::clear_core()
 {
     const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
     // Pin the ambient size to THIS array's geometry before the clear_st() /
@@ -566,7 +566,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
     // thread_chunk_size(), not on the buffer, so an ambient left by ANOTHER
     // array (destructor, or rechunk_to()'s teardown of tmp) would free through
     // the WRONG size pool (fast-alloc only; std-alloc's svfree() does not route).
-    // Same rule as zero_one_value::Proxy::manage_full_first_value() / manage_full_second_value(),
+    // Same rule as zero_or_value::Proxy::manage_full_first_value() / manage_full_second_value(),
     // applied to the array-wide sweep.
     if constexpr (build_config::chunk_dynamic)
     {
@@ -608,13 +608,13 @@ void zero_one_value::Array<T, IntType>::clear_core()
         Proxy<T>::clear_is_int(array_id);
 
         // Remove THIS array's queued compression candidates by array_id, before
-        // its chunks are freed below. zero_one_value's candidate store is
-        // zero_one_value_candidates_map_thr[thr][second_value] (keyed by
+        // its chunks are freed below. zero_or_value's candidate store is
+        // zero_or_value_candidates_map_thr[thr][second_value] (keyed by
         // value, shared across arrays); in GNU / non-OMPT fast-block builds
-        // nothing else clears it, so a destroyed array's zero_one_value::Chunk* would dangle
+        // nothing else clears it, so a destroyed array's zero_or_value::Chunk* would dangle
         // there for a later pass to walk. Targeted (no compression, other arrays
         // untouched); it also makes rechunk_to's tmp teardown safe.
-        Manager::remove_from_zero_one_value_candidates_by_array_id(array_id, own_rank);
+        Manager::remove_from_zero_or_value_candidates_by_array_id(array_id, own_rank);
     }
     probe.mark(internal::TeardownStep::candidates);
 
@@ -789,7 +789,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
     // purge (clear_is_int() above runs before it and must stay a no-op) and
     // after the chunks -- a re-chunk's old storage dies under its own array_id.
     // array_id from the REGISTRY, like clear_is_int() above. Not this->array_id:
-    // zero_one_value::Array never sets that base member (it stays 0), so it would free
+    // zero_or_value::Array never sets that base member (it stays 0), so it would free
     // row 0, another live array's.
     if constexpr (chunk_config::use_fast_block_compression)
     {
@@ -799,7 +799,7 @@ void zero_one_value::Array<T, IntType>::clear_core()
 }
 
 template <ArrayChunkElement T, typename IntType>
-void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
+void zero_or_value::Array<T, IntType>::compress_int(pmp::Team& team)
 {
     // Diagnostic pass: scans for constant-but-materialised chunks the
     // incremental compression missed, reports them and self-heals them (below).
@@ -960,7 +960,7 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
 
         if constexpr (is_not_bool)
         {
-            // Call clear_st(elem_offset, idx), the one name both zero_one_value::ChunkThreadPolicy
+            // Call clear_st(elem_offset, idx), the one name both zero_or_value::ChunkThreadPolicy
             // specialisations declare, and let the policy choose: under OpenMP
             // clear_int_st(elem_offset, idx, thr_rank); serially the 2-arg
             // clear_int_st(elem_offset, idx), a different algorithm (eager, no queue,
@@ -1057,7 +1057,7 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
             };
             CHUNK_LOG(
                 info, compress,
-                "self-heal zero_one_value::Array<{}, {}>: {} chunk(s) at first_value [{} ], {} at second_value [{} ], "
+                "self-heal zero_or_value::Array<{}, {}>: {} chunk(s) at first_value [{} ], {} at second_value [{} ], "
                 "materialised and not compressed: compressed now{}",
                 type_name<T>(), type_name<IntType>(), healed1, healed_indices(keep1_scanned, chunks_at_first), healed2,
                 healed_indices(keep2_scanned, chunks_at_second),
@@ -1077,7 +1077,7 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
         }
         std::array<char, 256> sample{};
         CHUNK_LOG(info, compress,
-                  "residual zero_one_value::Array<{}, {}>: {} chunk(s) constant at {}, still materialised: {} (the "
+                  "residual zero_or_value::Array<{}, {}>: {} chunk(s) constant at {}, still materialised: {} (the "
                   "algorithm can "
                   "miss a few blocks to compress: an issue only if there are many)",
                   type_name<T>(), type_name<IntType>(), chunks.size(), at,
@@ -1104,7 +1104,7 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
                 const auto& chunk = chunk_list_[chunk_index];
                 count             = static_cast<int>(second ? chunk.get_n_second_value() : chunk.get_n_first_value());
             }
-            CHUNK_LOG(debug, compress, "residual zero_one_value::Array: chunk {} (element {}): is_inside={} count={}",
+            CHUNK_LOG(debug, compress, "residual zero_or_value::Array: chunk {} (element {}): is_inside={} count={}",
                       chunk_index, static_cast<IntType>(chunk_index) * static_cast<IntType>(this->size_policy_.size()),
                       is_inside, count);
         }
@@ -1125,7 +1125,7 @@ void zero_one_value::Array<T, IntType>::compress_int(pmp::Team& team)
 }
 
 template <ArrayChunkElement T, typename IntType>
-void zero_one_value::Array<T, IntType>::release_chunk_range(int first, int last)
+void zero_or_value::Array<T, IntType>::release_chunk_range(int first, int last)
 {
     if (first >= last)
     {
@@ -1201,7 +1201,7 @@ void zero_one_value::Array<T, IntType>::release_chunk_range(int first, int last)
 // already released the dropped chunks (release_chunk_range()) and chunk_count <=
 // old_chunk_count leaves that loop empty.
 template <ArrayChunkElement T, typename IntType>
-void zero_one_value::Array<T, IntType>::resize(IntType newsz)
+void zero_or_value::Array<T, IntType>::resize(IntType newsz)
 {
     this->check_length(newsz, "resize");
     const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
@@ -1253,7 +1253,7 @@ void zero_one_value::Array<T, IntType>::resize(IntType newsz)
 // ---------------------------------------------------------------------------
 
 template <ArrayChunkElement T, typename IntType>
-zero_one_value::Array<T, IntType>::~Array()
+zero_or_value::Array<T, IntType>::~Array()
 {
     const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
     clear();
@@ -1276,7 +1276,7 @@ zero_one_value::Array<T, IntType>::~Array()
 }
 
 template <ArrayChunkElement T, typename IntType>
-zero_one_value::Array<T, IntType>& zero_one_value::Array<T, IntType>::operator=(Array&& other) noexcept
+zero_or_value::Array<T, IntType>& zero_or_value::Array<T, IntType>::operator=(Array&& other) noexcept
 {
     if (this != &other)
     {
@@ -1287,7 +1287,7 @@ zero_one_value::Array<T, IntType>& zero_one_value::Array<T, IntType>::operator=(
 }
 
 template <ArrayChunkElement T, typename IntType>
-zero_one_value::Array<T, IntType>& zero_one_value::Array<T, IntType>::operator=(const Array& from)
+zero_or_value::Array<T, IntType>& zero_or_value::Array<T, IntType>::operator=(const Array& from)
 {
     if (this != &from)
     {
@@ -1298,7 +1298,7 @@ zero_one_value::Array<T, IntType>& zero_one_value::Array<T, IntType>::operator=(
 }
 
 template <ArrayChunkElement T, typename IntType>
-[[nodiscard]] T zero_one_value::Array<T, IntType>::second_value() const noexcept
+[[nodiscard]] T zero_or_value::Array<T, IntType>::second_value() const noexcept
 {
     if constexpr (!is_bool_like_v<T>)
     {
@@ -1311,7 +1311,7 @@ template <ArrayChunkElement T, typename IntType>
 }
 
 template <ArrayChunkElement T, typename IntType>
-[[nodiscard]] int zero_one_value::Array<T, IntType>::get_idx_second_value() const noexcept
+[[nodiscard]] int zero_or_value::Array<T, IntType>::get_idx_second_value() const noexcept
 {
     if constexpr (is_not_bool)
     {
@@ -1319,12 +1319,12 @@ template <ArrayChunkElement T, typename IntType>
     }
     else
     {
-        CHUNK_INVARIANT_FAILED("zero_one_value::Array<bool>::get_idx_second_value(): bool registers no second value");
+        CHUNK_INVARIANT_FAILED("zero_or_value::Array<bool>::get_idx_second_value(): bool registers no second value");
     }
 }
 
 template <ArrayChunkElement T, typename IntType>
-[[nodiscard]] bool zero_one_value::Array<T, IntType>::chunk_written(int chunk_index) const
+[[nodiscard]] bool zero_or_value::Array<T, IntType>::chunk_written(int chunk_index) const
 {
     if constexpr (is_not_bool)
     {
@@ -1337,7 +1337,7 @@ template <ArrayChunkElement T, typename IntType>
 }
 
 template <ArrayChunkElement T, typename IntType>
-void zero_one_value::Array<T, IntType>::copy_second_value_from(const Array& from)
+void zero_or_value::Array<T, IntType>::copy_second_value_from(const Array& from)
 {
     if constexpr (!is_bool_like_v<T>)
     {
@@ -1350,7 +1350,7 @@ void zero_one_value::Array<T, IntType>::copy_second_value_from(const Array& from
 }
 
 template <ArrayChunkElement T, typename IntType>
-void zero_one_value::Array<T, IntType>::register_no_second_value_key()
+void zero_or_value::Array<T, IntType>::register_no_second_value_key()
 {
     if constexpr (is_not_bool && chunk_config::use_fast_block_compression)
     {
@@ -1366,7 +1366,7 @@ void zero_one_value::Array<T, IntType>::register_no_second_value_key()
         {
             for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
             {
-                auto& slot = Manager::zero_one_value_candidates_map_thr[thr][T{}];
+                auto& slot = Manager::zero_or_value_candidates_map_thr[thr][T{}];
                 if (!slot)
                 {
                     slot = std::make_shared<typename std::remove_reference_t<decltype(slot)>::element_type>();
@@ -1377,7 +1377,7 @@ void zero_one_value::Array<T, IntType>::register_no_second_value_key()
 }
 
 template <ArrayChunkElement T, typename IntType>
-void zero_one_value::Array<T, IntType>::swap_identity(Array& other)
+void zero_or_value::Array<T, IntType>::swap_identity(Array& other)
 {
     auto& sh_inf = *Proxy<T>::array_registry;
     sh_inf.swap_entries(this->registry_key(), other.registry_key());

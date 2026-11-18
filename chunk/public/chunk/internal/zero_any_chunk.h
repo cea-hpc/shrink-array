@@ -208,7 +208,7 @@ class ChunkStateQueries
  * @details A serial build has no thread ranks, no CAS window and no in-flight
  *          compression to wait out, so it materialises and clears a chunk
  *          differently; each specialisation below declares exactly the verbs
- *          its mode has -- the technique of ChunkThreadPolicy / zero_one_value::ChunkThreadPolicy.
+ *          its mode has -- the technique of ChunkThreadPolicy / zero_or_value::ChunkThreadPolicy.
  *          The OpenMP specialisation also carries the CAS operations
  *          (zero_any::ChunkConcurrentOps).
  *

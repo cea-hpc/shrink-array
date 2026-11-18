@@ -19,7 +19,7 @@ répétée compressée par `zero_any`) que la version CPU. Le gain visé est d'a
 
 **Ce qui est dans le périmètre de cette première conception :**
 
-- les trois variantes `zero`, `zero_one_value`, `zero_any`, et `pattern` (section 8) ;
+- les trois variantes `zero`, `zero_or_value`, `zero_any`, et `pattern` (section 8) ;
 - géométrie fixe (S constante de compilation) d'abord, dynamique ensuite (section 9.3) ;
 - un modèle d'exécution **par phases**, aligné sur les kernels (section 3) ;
 - l'interopérabilité avec la version CPU : même format de chunk, transferts dans les deux
@@ -107,7 +107,7 @@ struct ChunkDesc                 // 16 octets pour T de 8 octets au plus
 {
     T*       buf;                // nullptr : compressé ; sinon tampon de S éléments
     T        constant;                // la constante du chunk compressé (ou quittée : 6.2)
-    // zero : constant est toujours T{} ; zero_one_value : T{} ou la seconde valeur du tableau ;
+    // zero : constant est toujours T{} ; zero_or_value : T{} ou la seconde valeur du tableau ;
     // zero_any : n'importe quelle valeur.  pattern : voir 8.4.
 };
 ```
@@ -191,7 +191,7 @@ __device__ void assign(T v)
 ```
 
 Les cas 1 et 3 sont le chemin chaud, uniformes par warp, sans atomique. Les règles de
-`zero_one_value` (« la seconde valeur sur un élément qui la contient déjà ») et de `zero_any`
+`zero_or_value` (« la seconde valeur sur un élément qui la contient déjà ») et de `zero_any`
 (« découverte », « départ », `may_become_uniform`) servaient à alimenter les listes de candidats
 : elles **disparaissent**, la passe de fin de phase n'a pas besoin de candidats. Il reste à
 prendre en compte `+=` et les autres opérateurs composés, qui lisent avant d'écrire : même
@@ -261,7 +261,7 @@ chunk matérialisé** (ou un warp par chunk pour S ≤ 1024, **à trancher par l
 
 1. chaque lane lit ses S/32 éléments et compare à `buf[0]` ;
 2. vote `__all_sync` (réduction `&&` dans le bloc) ;
-3. si uniforme à une valeur que la variante sait compresser (`zero` : `T{}` ; `zero_one_value`
+3. si uniforme à une valeur que la variante sait compresser (`zero` : `T{}` ; `zero_or_value`
    : `T{}` ou la seconde valeur ; `zero_any` : toute valeur) : `d.constant = buf[0]`, `d.buf =
    nullptr`, et le tampon est rendu (7.2).
 
@@ -308,11 +308,11 @@ de préférence :
 
 `constant` vaut toujours `T{}` ; la passe ne replie qu'à `T{}`. Rien d'autre.
 
-### 8.2 `zero_one_value`
+### 8.2 `zero_or_value`
 
 `constant` vaut `T{}` ou la seconde valeur du tableau (un champ du tableau, copié dans le
 descripteur par la passe). `set_second_value()` est une opération d'hôte entre deux phases.
-Sur GPU, `zero_one_value` n'a plus d'intérêt propre par rapport à `zero_any` (le registre
+Sur GPU, `zero_or_value` n'a plus d'intérêt propre par rapport à `zero_any` (le registre
 qui le justifiait n'existe plus) : il est conservé pour l'interopérabilité et la sémantique
 (ne compresser qu'à une valeur déclarée), **(à trancher)** s'il mérite un code séparé ou un
 `if constexpr` dans `zero_any`.
@@ -483,7 +483,7 @@ l'est côté CPU (`docs/getting_started_fr.md` §5).
 | 1. Cœur dans l'arbre | `chunk/public/chunk/device/` : descripteur, view, proxy, arène, append-buffer, `compress()`, `intrinsics.h` CUDA + HIP ; `zero_any` et `zero` ; convertisseur hôte ↔ device ; tests de validation contre la version CPU sur les mêmes séquences d'écritures ; CI sur un runner GPU si disponible, sinon compilation seule | les validations passent à l'identique CPU/GPU ; même mémoire finale que la variante CPU à géométrie égale |
 | 2. Phases et banc | `parallel_for` aligné et vote avant matérialisation ; `shrink_bench` device (phases du banc contre `DeviceArray`) ; mesures H100 / MI250X ou MI300A ; documentation (ce document et sa version anglaise mis à jour avec les chiffres) | chiffres publiés dans `variantes_fr.md` |
 | 3. Façade Kokkos | `kokkos_adaptor.h`, `parallel_for` Kokkos marquant les phases, `memory_fence` à la place de release/acquire | un exemple Kokkos ; mêmes validations |
-| 4. `zero_one_value`, `pattern` | 8.2, 8.4 | validations ; gain mesuré de `pattern` sur une connectivité |
+| 4. `zero_or_value`, `pattern` | 8.2, 8.4 | validations ; gain mesuré de `pattern` sur une connectivité |
 | 5. Géométrie dynamique | 9.3 | `rechunk_validation` device |
 | 6. Hybride | mémoire cohérente (GH200, MI300A), mode phase de la version CPU | un tableau lu et écrit alternativement par CPU et GPU sans copie |
 

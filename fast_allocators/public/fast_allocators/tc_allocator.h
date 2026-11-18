@@ -195,7 +195,7 @@ enum class FreeLinks : std::uint8_t
  *          pointer, a slab revived from the reserve, or a slab the arena
  *          recycles. Only a slab fresh from the arena (mmap) is zero. Callers
  *          initialise what they get: ChunkThreadPolicy::zero_fill_fresh() for zero,
- *          the fill functors of allocate_chunk_internal() for zero_one_value/zero_any; the op
+ *          the fill functors of allocate_chunk_internal() for zero_or_value/zero_any; the op
  *          pools construct every op at its own block.
  *
  * @tparam Links Where the free list keeps its links: fast_alloc::TCAllocator threads it

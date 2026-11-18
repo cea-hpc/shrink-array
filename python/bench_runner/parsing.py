@@ -67,7 +67,7 @@ def detect_nonfinite_checksum(stdout_text):
 # collapse of IN-FLIGHT compression: the final sweep compresses everything
 # anyway, so that counter stays identical while memory blows up. The counters
 # that DO move when in-flight marking breaks are `mark` (writes that newly
-# flagged a chunk) against `create` (chunks materialised): a healthy zero_one_value run
+# flagged a chunk) against `create` (chunks materialised): a healthy zero_or_value run
 # sits around mark/create ~0.65; the Sept-2026 zero_any regression (isv
 # pre-check rejecting the zero_any-only predicate clause) dropped it to ~0.07
 # while `still compressed (at exit)` did not budge. We flag a run whose ratio
@@ -87,7 +87,7 @@ _STATS_MIN_CREATE_FOR_GUARD = 10_000
 
 def parse_chunk_stats_counters(stdout_text):
     """Return {stat_tag: {"mark": int, "create": int, "compress_exec": int|None}}
-    for every CHUNK_STATS block in the output (tag = 'zero', 'zero_one_value',
+    for every CHUNK_STATS block in the output (tag = 'zero', 'zero_or_value',
     'zero_any'; the old tags of an older build, 'chunk', 'chunk2', 'chunk2a',
     are read as these). Missing counters are omitted from the inner dict."""
     out = {}

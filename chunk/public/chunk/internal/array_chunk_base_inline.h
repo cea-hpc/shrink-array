@@ -84,7 +84,7 @@ void ArrayChunkBase<Derived>::create_common()
 
     // In ALL modes, do not gate on use_fast_block_compression: zero_any::Proxy needs
     // its array_* containers (array_second_value, ...) even without OpenMP; for
-    // zero::Proxy / zero_one_value::Proxy it is a no-op stub outside OpenMP.
+    // zero::Proxy / zero_or_value::Proxy it is a no-op stub outside OpenMP.
     ProxyType::resize_array_is_int(array_count);
 }
 
@@ -93,7 +93,7 @@ bool ArrayChunkBase<Derived>::is_written_at(int chunk_index) const noexcept
 {
     if constexpr (has_chunk_written_v<Derived>)
     {
-        // zero_one_value::Array: zero_one_value::Chunk::written() needs the second-value index.
+        // zero_or_value::Array: zero_or_value::Chunk::written() needs the second-value index.
         return derived().chunk_written(chunk_index);
     }
     else
@@ -685,11 +685,11 @@ ArrayChunkBase<Derived>::element_proxy(IndexType index) noexcept
     val.set_this_and_chunk_index(registry_key(), chunk_index, array_id_);
     val.arm_storage_generation(&storage_generation_); // check builds only
 
-    // zero_one_value only: arm the proxy with this array's registry mirror, so the
+    // zero_or_value only: arm the proxy with this array's registry mirror, so the
     // write path copies (second_value, idx, array_id) instead of scanning
     // array_registry. Tested on the DECLARED proxy type, not a `requires`:
     // a renamed member must fail to compile, not fall back silently.
-    if constexpr (std::is_same_v<ProxyType, zero_one_value::Proxy<T>>)
+    if constexpr (std::is_same_v<ProxyType, zero_or_value::Proxy<T>>)
     {
         val.arm_inf_array(derived().registry_mirror());
     }

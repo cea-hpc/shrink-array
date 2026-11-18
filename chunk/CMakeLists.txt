@@ -43,29 +43,33 @@ endif()
 option(CHUNK_BUILD_DYN "Also build a CHUNK_DYNAMIC (runtime size) lib per variant." ON)
 message(STATUS "CHUNK_STATIC_SIZES = ${CHUNK_STATIC_SIZES}; CHUNK_BUILD_DYN = ${CHUNK_BUILD_DYN}")
 # The variants built, named after their namespace: zero (zero::Array, chunk_zero_*),
-# zero_one_value (zero_one_value::Array, chunk_zero_one_value_*), zero_any
+# zero_or_value (zero_or_value::Array, chunk_zero_or_value_*), zero_any
 # (zero_any::Array, chunk_zero_any_*). The examples, benchmarks and harnesses of
 # a variant left out are not built nor registered as tests. A build that checks
 # one variant's option (CHUNK_SECOND_VALUE_INDEXED is zero_any's) needs only that
 # one; trim it during development too. The former names chunk, chunk2, chunk2a
 # are refused, with the new name in the message.
-set(CHUNK_VARIANTS "zero;zero_one_value;zero_any" CACHE STRING
-    "Semicolon list of the variants to build: zero, zero_one_value, zero_any.")
+set(CHUNK_VARIANTS "zero;zero_or_value;zero_any" CACHE STRING
+    "Semicolon list of the variants to build: zero, zero_or_value, zero_any.")
 set(_chunk_variants_read "")
 foreach(_v IN LISTS CHUNK_VARIANTS)
   if (_v MATCHES "^(chunk|chunk2|chunk2a)$")
     string(REPLACE "chunk2a" "zero_any" _new "${_v}")
-    string(REPLACE "chunk2" "zero_one_value" _new "${_new}")
+    string(REPLACE "chunk2" "zero_or_value" _new "${_new}")
     string(REPLACE "chunk" "zero" _new "${_new}")
     message(FATAL_ERROR "CHUNK_VARIANTS: '${_v}' is the former name of '${_new}': write '${_new}'")
   endif()
-  if (NOT _v MATCHES "^(zero|zero_one_value|zero_any)$")
-    message(FATAL_ERROR "CHUNK_VARIANTS: unknown variant '${_v}' (zero, zero_one_value, zero_any)")
+  if (_v STREQUAL "zero_one_value")
+    message(DEPRECATION "CHUNK_VARIANTS: 'zero_one_value' is 'zero_or_value' now (the former name goes at the next minor version)")
+    set(_v zero_or_value)
+  endif()
+  if (NOT _v MATCHES "^(zero|zero_or_value|zero_any)$")
+    message(FATAL_ERROR "CHUNK_VARIANTS: unknown variant '${_v}' (zero, zero_or_value, zero_any)")
   endif()
   list(APPEND _chunk_variants_read ${_v})
 endforeach()
 if (NOT _chunk_variants_read)
-  message(FATAL_ERROR "CHUNK_VARIANTS is empty: name at least one of zero, zero_one_value, zero_any")
+  message(FATAL_ERROR "CHUNK_VARIANTS is empty: name at least one of zero, zero_or_value, zero_any")
 endif()
 # The normal (non-cache) variable, read by the examples, holds the new names.
 set(CHUNK_VARIANTS ${_chunk_variants_read})
@@ -307,11 +311,11 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/pattern_proxy.h
         public/chunk/internal/motif_region.h
         public/chunk/internal/second_value_array_base.h
-        public/chunk/internal/zero_one_value_array_inline.h
-        public/chunk/internal/zero_one_value_array_parallel.h
-        public/chunk/internal/zero_one_value_array_parallel_inline.h
-        public/chunk/internal/zero_one_value_array_rechunk_hooks.h
-        public/chunk/internal/zero_one_value_array_rechunk_hooks_inline.h
+        public/chunk/internal/zero_or_value_array_inline.h
+        public/chunk/internal/zero_or_value_array_parallel.h
+        public/chunk/internal/zero_or_value_array_parallel_inline.h
+        public/chunk/internal/zero_or_value_array_rechunk_hooks.h
+        public/chunk/internal/zero_or_value_array_rechunk_hooks_inline.h
         public/chunk/internal/array_chunk_base.h
         public/chunk/internal/array_chunk_base_inline.h
         public/chunk/internal/array_chunk_dirty_bitset.h
@@ -333,7 +337,7 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/zero_any_chunk_inline.h
         public/chunk/internal/second_value_chunk_base.h
         public/chunk/internal/second_value_chunk_base_inline.h
-        public/chunk/internal/zero_one_value_chunk_inline.h
+        public/chunk/internal/zero_or_value_chunk_inline.h
         public/chunk/internal/chunk_base.h
         public/chunk/internal/chunk_base_inline.h
         public/chunk/internal/chunk_func.h
@@ -381,16 +385,16 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/same_value.h
         public/chunk/internal/map_helper.h
         public/chunk/internal/phase_guard.h
-        public/chunk/internal/zero_one_value_pointer_map.h
+        public/chunk/internal/zero_or_value_pointer_map.h
         public/chunk/internal/pointer_map_linear.h
         public/chunk/internal/pool_ledger.h
         public/chunk/internal/zero_proxy.h
-        public/chunk/internal/zero_one_value_proxy.h
+        public/chunk/internal/zero_or_value_proxy.h
         public/chunk/internal/zero_any_proxy.h
         public/chunk/internal/zero_any_proxy_inline.h
         public/chunk/internal/second_value_proxy_base.h
         public/chunk/internal/second_value_proxy_base_inline.h
-        public/chunk/internal/zero_one_value_proxy_inline.h
+        public/chunk/internal/zero_or_value_proxy_inline.h
         public/chunk/internal/proxy_base.h
         public/chunk/internal/proxy_base_inline.h
         public/chunk/internal/zero_proxy_inline.h
@@ -408,11 +412,11 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/term_color.h
         public/chunk/internal/type_name.h
         public/chunk/internal/zero_chunk.h
-        public/chunk/internal/zero_one_value_chunk.h
+        public/chunk/internal/zero_or_value_chunk.h
         public/chunk/internal/zero_any_chunk.h
         public/chunk/internal/pattern_chunk.h
         public/chunk/internal/zero_chunk_def.h
-        public/chunk/internal/zero_one_value_chunk_def.h
+        public/chunk/internal/zero_or_value_chunk_def.h
         public/chunk/internal/zero_any_chunk_def.h
         public/chunk/internal/pool_release.h
         public/chunk/internal/array_chunk_core.h
@@ -455,12 +459,13 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/value_slab.h
         public/chunk/internal/values_arena_bytes.h
         public/chunk/internal/write_compress_sync_policy_inline.h
-        public/chunk/internal/zero_one_value_candidate_list_check.h
-        public/chunk/internal/zero_one_value_pointer_map_inline.h
+        public/chunk/internal/zero_or_value_candidate_list_check.h
+        public/chunk/internal/zero_or_value_pointer_map_inline.h
 )
 
 set(CHUNK_PUBLIC_HEADERS
         public/chunk/zero_array.h
+        public/chunk/zero_or_value_array.h
         public/chunk/zero_one_value_array.h
         public/chunk/zero_any_array.h
         public/chunk/pattern_array.h
@@ -486,7 +491,7 @@ set(CHUNK_PUBLIC_HEADERS
 
 set(CHUNK_SOURCES
         private/zero_array.cpp
-        private/zero_one_value_array.cpp
+        private/zero_or_value_array.cpp
         private/zero_any_array.cpp
         private/type_state.cpp
         private/type_state_registry.cpp
@@ -501,11 +506,11 @@ set(CHUNK_SOURCES
 # like every other target.
 # If the icpx EmitCtorList ICE comes back, CHUNK_ICPX_O0_WORKAROUND=ON builds
 # only the three TUs it hit at -O0, under icpx only.
-option(CHUNK_ICPX_O0_WORKAROUND "icpx only: compile zero_any_array.cpp, zero_one_value_array.cpp and type_state.cpp at -O0 (EmitCtorList ICE)" OFF)
+option(CHUNK_ICPX_O0_WORKAROUND "icpx only: compile zero_any_array.cpp, zero_or_value_array.cpp and type_state.cpp at -O0 (EmitCtorList ICE)" OFF)
 if (CHUNK_ICPX_O0_WORKAROUND AND CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
-  set_property(SOURCE private/zero_any_array.cpp private/zero_one_value_array.cpp private/type_state.cpp
+  set_property(SOURCE private/zero_any_array.cpp private/zero_or_value_array.cpp private/type_state.cpp
                APPEND PROPERTY COMPILE_OPTIONS "-O0;-fno-use-init-array")
-  message(STATUS "CHUNK_ICPX_O0_WORKAROUND: zero_any_array.cpp, zero_one_value_array.cpp, type_state.cpp at -O0 (icpx)")
+  message(STATUS "CHUNK_ICPX_O0_WORKAROUND: zero_any_array.cpp, zero_or_value_array.cpp, type_state.cpp at -O0 (icpx)")
 endif()
 
 # --- Variant factory -----------------------------------------------------
@@ -645,7 +650,7 @@ chunk_add_variant(chunk_vector "" "" FALSE)
 # Only those of CHUNK_VARIANTS.
 set(_chunk_variant_names   "")
 set(_chunk_variant_defines "")
-foreach(_pair "zero:chunk_zero:CHUNK_VARIANT_ZERO=1" "zero_one_value:chunk_zero_one_value:CHUNK_VARIANT_ZERO_ONE_VALUE=1"
+foreach(_pair "zero:chunk_zero:CHUNK_VARIANT_ZERO=1" "zero_or_value:chunk_zero_or_value:CHUNK_VARIANT_ZERO_OR_VALUE=1"
               "zero_any:chunk_zero_any:CHUNK_VARIANT_ZERO_ANY=1")
   string(REPLACE ":" ";" _f "${_pair}")
   list(GET _f 0 _short)
@@ -676,7 +681,7 @@ foreach(_vi RANGE ${_nvar_last})
 endforeach()
 
 # --- Backwards-compatible bare-name targets ------------------------------
-# The examples link the bare names chunk_zero / chunk_zero_one_value / chunk_zero_any; forward
+# The examples link the bare names chunk_zero / chunk_zero_or_value / chunk_zero_any; forward
 # them to the default static size. NOTE: a raw (unknown) name given to
 # target_link_libraries is silently treated by CMake as a system library
 # (-lchunk_v1), so no usage requirement (-I, PUBLIC defines) propagates and
@@ -699,13 +704,13 @@ endforeach()
 
 # --- Two families in one program ------------------------------------------
 # examples/multi_mat keeps its field arrays in zero::Array<T> and its
-# presence fraction in zero_one_value::Array<T>: one library with both defines, at the
+# presence fraction in zero_or_value::Array<T>: one library with both defines, at the
 # default static size only. The registry allows it (type_state_registry_inline.h:
 # "nothing forbids a build from selecting more than one"); what the second
 # define costs zero is the raw fill of its range ops (raw_fillable_v). Without
 # the OMPT tool: the example carries its own (examples/multi_mat/manage_ompt.cpp).
-if ("zero" IN_LIST CHUNK_VARIANTS AND "zero_one_value" IN_LIST CHUNK_VARIANTS)
-  chunk_add_variant(chunk_zero_and_zero_one_value_${CHUNK_DEFAULT_SIZE} "CHUNK_VARIANT_ZERO=1;CHUNK_VARIANT_ZERO_ONE_VALUE=1" ${CHUNK_DEFAULT_SIZE} FALSE
+if ("zero" IN_LIST CHUNK_VARIANTS AND "zero_or_value" IN_LIST CHUNK_VARIANTS)
+  chunk_add_variant(chunk_zero_and_zero_or_value_${CHUNK_DEFAULT_SIZE} "CHUNK_VARIANT_ZERO=1;CHUNK_VARIANT_ZERO_OR_VALUE=1" ${CHUNK_DEFAULT_SIZE} FALSE
                     NO_OMPT_TOOL)
 endif()
 
@@ -715,8 +720,8 @@ chunk_add_variant(chunk "" "" FALSE)
 
 # --- Install: every variant library, under the chunk:: namespace ---------
 # chunk::chunk_zero_any_256, chunk::chunk_zero_any_dyn, ..., the bare chunk::chunk_zero /
-# chunk::chunk_zero_one_value / chunk::chunk_zero_any (default static size), chunk::chunk_vector
-# (std::vector mode) and chunk::chunk. Not chunk_zero_and_zero_one_value_*: built for
+# chunk::chunk_zero_or_value / chunk::chunk_zero_any (default static size), chunk::chunk_vector
+# (std::vector mode) and chunk::chunk. Not chunk_zero_and_zero_or_value_*: built for
 # examples/multi_mat, without the OMPT tool.
 include(GNUInstallDirs)
 set(_chunk_install_targets chunk chunk_vector)
@@ -736,6 +741,17 @@ endforeach()
 foreach(_t IN LISTS _chunk_install_targets)
   if (NOT TARGET chunk::${_t})
     add_library(chunk::${_t} ALIAS ${_t})
+  endif()
+  # zero_or_value was zero_one_value until 0.3: the former names of its targets,
+  # plain and under both namespaces, for a project that takes this one in.
+  if (_t MATCHES "^chunk_zero_or_value")
+    string(REPLACE "zero_or_value" "zero_one_value" _former "${_t}")
+    string(REGEX REPLACE "^chunk_" "" _former_short "${_former}")
+    foreach(_alias IN ITEMS ${_former} chunk::${_former} shrink_array::${_former_short})
+      if (NOT TARGET ${_alias})
+        add_library(${_alias} ALIAS ${_t})
+      endif()
+    endforeach()
   endif()
   # ... and under the project's name, the one of find_package(shrink_array):
   # shrink_array::zero_any_256 for chunk_zero_any_256.
@@ -810,6 +826,9 @@ install(DIRECTORY ${PROJECT_SOURCE_DIR}/third_party/licenses/
 
 include(CMakePackageConfigHelpers)
 
+# "_256;_1024" written "256 _1024" after the "_" of the template: the suffixes of the
+# static sizes, for the former target names the two config files declare.
+string(REPLACE ";" " _" _chunk_static_suffixes "${CHUNK_STATIC_SIZES}")
 configure_package_config_file(chunk-config.cmake.in chunk-config.cmake
         INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/chunk/cmake)
 

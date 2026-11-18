@@ -15,7 +15,7 @@
  */
 
 // ============================================================================
-// Deferred-write path harness. Variant-agnostic: zero / zero_one_value / zero_any by
+// Deferred-write path harness. Variant-agnostic: zero / zero_or_value / zero_any by
 // the compile-time macro (CHUNK_VARIANT_ZERO*), like the other harnesses.
 // ============================================================================
 //
@@ -97,11 +97,11 @@
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
 #include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
-#include "chunk/config.h" // chunk_config::use_zero_one_value*, build_config::force_defer_every / needs_explicit_phases
+#include "chunk/config.h" // chunk_config::use_zero_or_value*, build_config::force_defer_every / needs_explicit_phases
 #include "chunk/internal/pmp_chunk.h" // CHUNK_PMP_MAX_THREADS
 #include "chunk/phases.h"             // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
@@ -137,7 +137,7 @@ template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -145,9 +145,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -807,7 +807,7 @@ static int run_resize(const char* label, long count)
  *          a deferred write runs no body on the spot, so only its replay can
  *          mark it. Without that, the chunks rewritten here by replays alone
  *          are on no candidate list and the pass never sees them.
- * @note zero_one_value's compress() is an audit that compresses every constant
+ * @note zero_or_value's compress() is an audit that compresses every constant
  *       chunk, queued or not: there the count passes either way, and a missed
  *       mark shows as its self-heal report (CHUNK_LOG=compress=info).
  * @return 0 if no chunk is left materialised, 1 otherwise.

@@ -15,7 +15,7 @@
  */
 
 // ============================================================================
-// Read / reclaim harness. Variant-agnostic: zero / zero_one_value / zero_any follow the
+// Read / reclaim harness. Variant-agnostic: zero / zero_or_value / zero_any follow the
 // compile-time macro (CHUNK_VARIANT_ZERO*), like the other harnesses here.
 // OpenMP builds only: the property is about two threads.
 // ============================================================================
@@ -73,8 +73,8 @@
 //
 // MODE `compound` (argument): the same window, on the WRITE side
 //
-//   `a[i] *= x` (and /=, %=) on zero_one_value / zero_any reads the element first
-//   (zero_one_value::Proxy / zero_any::Proxy apply_compound_operation: v_old = read_values()), outside
+//   `a[i] *= x` (and /=, %=) on zero_or_value / zero_any reads the element first
+//   (zero_or_value::Proxy / zero_any::Proxy apply_compound_operation: v_old = read_values()), outside
 //   the write session, and drops the operation when it reads first_value (0):
 //   "0 * x is 0". If a pass in the region compressed the chunk and released
 //   its buffer between that read's pointer load and its element load, and a
@@ -123,11 +123,11 @@
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
 #include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
-#include "chunk/config.h" // chunk_config::use_zero_one_value*, build_config::use_openmp / needs_explicit_phases
+#include "chunk/config.h" // chunk_config::use_zero_or_value*, build_config::use_openmp / needs_explicit_phases
 #include "chunk/phases.h" // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/test_hooks.h" // test_hooks::read_delay_* / pass_delay_*
 #include "chunk/print.h"               // shrink_array::println
@@ -148,7 +148,7 @@ template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 using Arr   = Array<double>;
 using Index = Arr::IndexType;
@@ -159,9 +159,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -185,7 +185,7 @@ void end_phase()
     }
 }
 
-// Victims per writer: twice the largest in-region trigger floor (zero_one_value:
+// Victims per writer: twice the largest in-region trigger floor (zero_or_value:
 // 2000), so a single sweep crosses it on every variant.
 constexpr long n_victims   = 4096;
 constexpr long n_polluters = 512;
@@ -212,7 +212,7 @@ struct Xorshift
     }
 };
 
-// set_second_value only exists on zero_one_value / zero_any.
+// set_second_value only exists on zero_or_value / zero_any.
 template <typename A, typename Val>
 void maybe_set_second_value(A& arr, const Val& value)
 {
@@ -227,7 +227,7 @@ constexpr double second_value = 2.0;
 /// @brief The `compound` mode (see the file header). @return the exit status.
 int run_compound(int team, int writers, double seconds, long pollute)
 {
-    if constexpr (!chunk_config::use_zero_one_value && !chunk_config::use_zero_any)
+    if constexpr (!chunk_config::use_zero_or_value && !chunk_config::use_zero_any)
     {
         println("[{}/read-reclaim compound] SKIP: no second value on this variant", variant_name());
         return 77;

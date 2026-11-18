@@ -114,7 +114,7 @@ using fast_alloc::TCTypeAllocator;
 // DeferredReadGate: read-side visibility gate, selected by compile-time mode
 // ----------------------------------------------------------------------------
 // The read gate (reader_sync + ArrayChunkBase::sync_chunk) as a CRTP policy, in
-// the same style as zero::ChunkCounterPolicy / zero_one_value::ChunkCounterPolicy. Not `if
+// the same style as zero::ChunkCounterPolicy / zero_or_value::ChunkCounterPolicy. Not `if
 // constexpr`: pending_ops_ / wait_for_availability exist in
 // some builds only, and a discarded branch would still phase-1-look-up a
 // missing member. Each specialization names ONLY the members of its config.
@@ -319,13 +319,13 @@ struct ChunkAllocPolicy<T, Derived, true>
     /// @note The two-functor form is what lets zero share this path. A zero::Chunk is
     ///       compressed only when it is all-zero, so a buffer coming back from
     ///       the reuse pool is already zero and re-filling it would memset the
-    ///       hot path (most materialisations) for nothing. zero_one_value/zero_any compress to
+    ///       hot path (most materialisations) for nothing. zero_or_value/zero_any compress to
     ///       an arbitrary constant and must initialise both branches alike: they
     ///       call the single-functor overload below.
     template <typename InitReused, typename InitFresh>
     T* allocate_chunk_internal(int thr_rank, InitReused init_reused, InitFresh init_fresh);
 
-    /// @brief Same initialiser on both branches -- the zero_one_value/zero_any form.
+    /// @brief Same initialiser on both branches -- the zero_or_value/zero_any form.
     /// @tparam InitFunc Initialization function type
     /// @param thr_rank Thread rank/ID
     /// @param init_func Function to initialize the allocated block
@@ -355,7 +355,7 @@ struct ChunkAllocPolicy<T, Derived, false>
                                [[maybe_unused]] InitReused init_reused,
                                InitFresh                   init_fresh);
 
-    /// @brief Same initialiser on both branches -- the zero_one_value/zero_any form.
+    /// @brief Same initialiser on both branches -- the zero_or_value/zero_any form.
     /// @tparam InitFunc Initialization function type
     /// @param thr_rank Thread rank (unused in single-threaded mode)
     /// @param init_func Function to initialize the allocated block
@@ -589,7 +589,7 @@ class ChunkDynamicAllocPolicy<T, Derived, false>
 // ChunkBase
 // ============================================================================
 
-/// @brief CRTP base common to all chunk types (zero, zero_one_value, zero_any).
+/// @brief CRTP base common to all chunk types (zero, zero_or_value, zero_any).
 /// @tparam T       Element type.
 /// @tparam Derived The chunk type.
 template <typename T, typename Derived>
@@ -828,7 +828,7 @@ class ChunkBase : public CRTPSupport<Derived>,
      *          chunk compressed to the first constant -- or, zero_any, to its
      *          second -- sets @p constant and leaves @p out untouched, so the caller
      *          takes the rest of the chunk at once
-     *          (ArrayChunkBase::for_each_span). A zero_one_value chunk on its second constant
+     *          (ArrayChunkBase::for_each_span). A zero_or_value chunk on its second constant
      *          points at a filled buffer and is read as a block.
      * @return true when @p constant was set, false when @p out was filled
      */
@@ -965,7 +965,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     static void sweep_every_rank(InRegion&& in_region, Sweep&& sweep, bool mop_up = true);
 
     // Type traits
-    // bool and Bit (bit.h) share zero_one_value's bool path: one second value, true.
+    // bool and Bit (bit.h) share zero_or_value's bool path: one second value, true.
     static constexpr bool is_bool     = is_bool_like_v<T>;
     static constexpr bool is_not_bool = !is_bool;
 
@@ -1139,7 +1139,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @brief Whether this chunk is currently materialised (not compressed
     ///        to a constant), at the granularity Derived supports.
     /// @param offset Element offset; used only when Derived distinguishes
-    ///          writtenness per-offset (e.g. zero_one_value/zero_any's second-value
+    ///          writtenness per-offset (e.g. zero_or_value/zero_any's second-value
     ///          slot); ignored otherwise (falls back to derived().written()).
     /// @return true if the chunk (or @p offset) holds real, materialised data.
     [[nodiscard]] bool is_written_at(int offset) const noexcept;

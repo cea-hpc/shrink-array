@@ -6,7 +6,7 @@
 > décrit ce qu'il fait **autrement** que `zero_any`, dont il reprend toute la mécanique (registre
 > des secondes valeurs, moteur d'écriture, passe de compression, sections de lecture), décrite
 > dans [algo_zero_any_fr.md](algo_zero_any_fr.md) et
-> [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md). Son protocole sans verrou propre est
+> [algo_zero_or_value_fr.md](algo_zero_or_value_fr.md). Son protocole sans verrou propre est
 > vérifié par modèle : [formal_models_fr.md](formal_models_fr.md), section 7. En cas de doute, le
 > code fait foi.
 
@@ -190,7 +190,7 @@ les appelants sans drapeau (`alloc_chunk`, l'application d'un vidage). L'offset 
 case (§2).
 
 Le déroulé d'une écriture dans un build OpenMP : les étapes du moteur sont celles du §7.2 de
-[algo_zero_one_value_fr.md](algo_zero_one_value_fr.md), le corps celui de `zero_any` (§6 de
+[algo_zero_or_value_fr.md](algo_zero_or_value_fr.md), le corps celui de `zero_any` (§6 de
 [algo_zero_any_fr.md](algo_zero_any_fr.md)), résumés ici ; le diagramme montre où `pattern`
 diffère.
 
@@ -249,7 +249,7 @@ par défaut (`--conn_scale`),
 des rangées entières de 256 mailles hexaédriques ; chaque itération lit une bande de rangées sur 16
 et la renumérote (l'ordre des nœuds tourné, ou rétabli), si bien que la passe recompresse une bande
 vers un autre motif partagé à chaque itération. C'est un `pattern::Array<int>` dans les builds
-`zero_one_value` et `zero_any` (sa mécanique est celle de `zero_any`, en en-têtes : il vit dans
+`zero_or_value` et `zero_any` (sa mécanique est celle de `zero_any`, en en-têtes : il vit dans
 l'une ou l'autre bibliothèque), un `zero::Array<int>` dans un build `zero`, un vecteur dans la
 référence ; ses checksums sont comparés à ceux de la référence à chaque point de contrôle, comme
 pour tous les tableaux. Sur un run de contrôle (`--divisor 50 --iter_max 40`, 4 threads), 384 de

@@ -103,7 +103,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
 
     // No dense O(n) snapshot: the refill streams old -> new chunk by chunk.
 
-    // Variant state captured BEFORE the geometry switch (zero_one_value's
+    // Variant state captured BEFORE the geometry switch (zero_or_value's
     // array-level second_value; T{} / ignored for zero & zero_any).
     const InT<T> state = self().rechunk_capture_state();
 
@@ -134,7 +134,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
             return Derived(total);
         }();
 
-        // Seed variant state into tmp BEFORE refill (zero_one_value second_value,
+        // Seed variant state into tmp BEFORE refill (zero_or_value second_value,
         // so its compression decisions use the same value).
         tmp.rechunk_seed_fresh(state);
 
@@ -152,7 +152,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
 
         // tmp's refill CANDIDATES are deliberately KEPT. Dropped, every rebuilt
         // chunk holding a constant stays materialised until teardown (a
-        // zero_one_value/zero_any chunk only re-enters the list on a write that transitions
+        // zero_or_value/zero_any chunk only re-enters the list on a write that transitions
         // it to a constant) -- a large memory cost per re-chunk.
         //
         // No geometry-mismatch hazard: every candidate tuple carries the
@@ -164,7 +164,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         //    std::swap hands to *this unchanged (buffer swap, no move);
         //  - they carry tmp's array_id, and rechunk_swap_identity() makes that
         //    *this's identity (member swap for zero/zero_any, registry swap for
-        //    zero_one_value), so the sweep's reset_array_inside_list_to_compress(array_id,
+        //    zero_or_value), so the sweep's reset_array_inside_list_to_compress(array_id,
         //    chunk_index) lands on the row allocated for tmp at new_size;
         //  - tmp's own destruction removes candidates by ITS post-swap array_id
         //    (= *this's old identity, already emptied by rechunk_drop_candidates()
@@ -181,7 +181,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
 
         // 4) SWAP the common storage. array_count is static and NOT swapped.
         //    array_id + registry (+ any variant members) go through the
-        //    identity hook: zero / zero_any swap the array_id member, zero_one_value
+        //    identity hook: zero / zero_any swap the array_id member, zero_or_value
         //    resolves array_id from the registry and must NOT swap it.
         using std::swap;
         swap(self().chunk_list_, tmp.chunk_list_);
@@ -209,7 +209,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         }
         (void)ok;
 
-        // Variant finalisation after the swap (zero_one_value re-owns its
+        // Variant finalisation after the swap (zero_or_value re-owns its
         // map_inf_array_ entry so it does not dangle when tmp dies).
         self().rechunk_reown_after_swap(tmp, state);
 
@@ -218,7 +218,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         //
         // t_active is restored to old_size, NOT to a value saved at entry:
         // every write path re-sets t_active to ITS OWN array's chunk_size()
-        // right before materialising (see zero_one_value::Proxy::ensure_writable_storage()),
+        // right before materialising (see zero_or_value::Proxy::ensure_writable_storage()),
         // so a value saved at entry may belong to an unrelated array and would
         // route free_elem_pow2() (via get_chunk_allocator(), keyed on the
         // ambient) to the WRONG size pool. old_size comes from this array's

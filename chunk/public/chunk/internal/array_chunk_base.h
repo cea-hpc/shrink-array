@@ -19,7 +19,7 @@
 /**
  * @file array_chunk_base.h
  * @brief CRTP base shared by every chunked array variant (zero::Array,
- *        zero_one_value::Array, zero_any::Array).
+ *        zero_or_value::Array, zero_any::Array).
  *
  * @details It gathers everything the three variants have in common: the
  *          index-independent core (ArrayChunkCore: geometry policy, chunk list,
@@ -46,7 +46,7 @@
 
 #include "chunk/config.h"                       // build_config::any_check, chunk_config::do_check
 #include "chunk/internal/in_t.h"                // InT<T>
-#include "chunk/internal/chunk_traits.h"        // ArrayChunkTraits, zero_one_value::Proxy
+#include "chunk/internal/chunk_traits.h"        // ArrayChunkTraits, zero_or_value::Proxy
 #include "chunk/internal/crtp_support.h"        // CRTPSupport
 #include "chunk/internal/array_chunk_core.h"    // ArrayChunkCore — geometry, chunks, bitset, identity
 #include "chunk/internal/array_chunk_rechunk.h" // RechunkSupport — CHUNK_DYNAMIC-only mixin
@@ -61,7 +61,7 @@ namespace shrink_array
 /**
  * @brief Trait: does @p D provide a CHUNK-indexed `chunk_written(int)`?
  *
- * @details zero_one_value::Array does (zero_one_value::Chunk::written() needs the array's second-value
+ * @details zero_or_value::Array does (zero_or_value::Chunk::written() needs the array's second-value
  *          index); for zero::Array and zero_any::Array is_written_at() asks the chunk.
  *          Do not test `written(int)` instead: every variant has it, but it takes
  *          an ELEMENT index.
@@ -93,7 +93,7 @@ inline constexpr bool has_chunk_written_v = requires(const D& obj, int chunk_ind
  *          dirty bitset, registry identity) is ArrayChunkCore, the only part the
  *          proxies and registries see; this class adds m_size and the element API.
  *
- * @tparam Derived the concrete array type (zero::Array, zero_one_value::Array,
+ * @tparam Derived the concrete array type (zero::Array, zero_or_value::Array,
  *         zero_any::Array), which must specialise ArrayChunkTraits.
  * @see ArrayChunkTraits
  */
@@ -818,7 +818,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     static void check_length(IndexType count, const char* who);
 
     /// @brief Installs the core's way back to rechunk_to() (rechunk_erased).
-    /// @note Protected, not private with `friend Derived`: zero_one_value and zero_any
+    /// @note Protected, not private with `friend Derived`: zero_or_value and zero_any
     ///       reach this base through SecondValueArrayBase<Derived>, which has to
     ///       construct it too.
     ArrayChunkBase() noexcept
@@ -864,7 +864,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     /**
      * @brief Claim this array's identity and build its storage for @p sz
      *        elements: the constructors' body of zero::Array and zero_any::Array
-     *        (zero_one_value::Array has its own). Registers the element type's manager on
+     *        (zero_or_value::Array has its own). Registers the element type's manager on
      *        the way (TypeStateRegistry::ensure_manager), runs create_common(), then
      *        the variant's rebuild_storage() -- the geometry-dependent
      *        allocation alone, which rechunk_to also calls on an already
@@ -884,7 +884,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          Repeated values are written materialised and folded back by the
      *          next compression pass. Called at a sequential point (resize() is
      *          one); the writes go chunk by chunk on a team of its own for a
-     *          large array (write_range_by_chunks). zero_one_value's second value is
+     *          large array (write_range_by_chunks). zero_or_value's second value is
      *          re-declared first by the derived copy hooks.
      */
     void copy_from(const Derived& from);
@@ -993,7 +993,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
 
     /**
      * @brief Is chunk @p chunk_index materialised?
-     * @details Routes to Derived::chunk_written(chunk_index) when it exists (zero_one_value::Array,
+     * @details Routes to Derived::chunk_written(chunk_index) when it exists (zero_or_value::Array,
      *          whose chunks need the second-value index), else asks
      *          chunk_list_[chunk_index].written() directly.
      * @param chunk_index CHUNK index

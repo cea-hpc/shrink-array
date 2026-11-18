@@ -148,7 +148,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         }
         // front()/back() on empty: our chunk container throws (safety choice);
         // std::vector leaves it UB, so only assert the throw in chunk mode.
-        if constexpr (chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any)
+        if constexpr (chunk_config::use_zero || chunk_config::use_zero_or_value || chunk_config::use_zero_any)
         {
             Array<double> empty_arr(0);
             bool          threw = false;
@@ -322,7 +322,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
             copy.clear();
             dst.clear();
 
-            // zero_one_value: the array-level second value travels with the copy. A
+            // zero_or_value: the array-level second value travels with the copy. A
             // generic lambda, so that the `if constexpr` really discards the
             // body on the arrays that have no second_value().
             [&]<typename A>(A*)
@@ -341,7 +341,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
                     {
                         ok = std::as_const(t2)[i] == std::as_const(s2)[i];
                     }
-                    expect(ok, "copy constructor carries zero_one_value's second value and its runs");
+                    expect(ok, "copy constructor carries zero_or_value's second value and its runs");
                     s2.clear();
                     t2.clear();
                 }
@@ -393,7 +393,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         // boundaries. Mixed data (mostly second_value, some distinct) exercises
         // both the const2 read path and materialised reads — the two that can go
         // stale. maybe_set_second_value is not required for correctness: a
-        // zero_one_value array without it has T{} as second value (see
+        // zero_or_value array without it has T{} as second value (see
         // insert_only_array_id), so it writes fine but only its zeros compress.
         // It is declared here, before the writes, so that the runs of 2.0
         // actually reach the const2 read path this check is about (no-op on

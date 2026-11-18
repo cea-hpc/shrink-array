@@ -50,7 +50,7 @@ base@size (zero_any@dyn -> shrink_bench_<backend>_zero_any_dyn), or "vector"
 backend is the target's, whichever of shrink_bench_omp_ / _std_ / _serial_ its
 build directory holds (bench_runner/settings.py, bench_exe_names; never the
 names without a backend, which a rebuilt directory still holds, stale). --all-exec takes every one the target has
-for this machine: vector, then zero / zero_one_value / zero_any in each size
+for this machine: vector, then zero / zero_or_value / zero_any in each size
 (--size narrows it), then the TBB bench of each (shrink_bench_tbb_<variant>_<size>,
 in std builds made with oneTBB); with --int64 their 64-bit declinations
 (shrink_bench_<backend>_*_int64_* and shrink_bench_tbb_*_int64_*, the only ones past
@@ -116,7 +116,7 @@ import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VARIANTS = ["zero", "zero_one_value", "zero_any"]          # as multi_launch_stress.py --all_exec
+VARIANTS = ["zero", "zero_or_value", "zero_any"]          # as multi_launch_stress.py --all_exec
 try:
     # --exec chunk2a@dyn & co.: an old variant label is refused, with its new name.
     from bench_runner.settings import check_variant_label
@@ -816,7 +816,7 @@ def parse_args(argv=None):
                         "base@size (zero_any@dyn), vector (shrink_bench_<backend>_vector_perf), a glob "
                         "pattern (shrink_bench_*_zero_any_*), or a path")
     p.add_argument("--all-exec", action="store_true",
-                   help="every executable the target has here: vector, then zero / zero_one_value / "
+                   help="every executable the target has here: vector, then zero / zero_or_value / "
                         "zero_any in each size, then their TBB bench (shrink_bench_tbb_*, when the build has "
                         "it; with --int64, its int64 twins too) (with --exec: added to them)")
     p.add_argument("--size", type=lambda v: [x for x in v.split(",") if x], default=None,

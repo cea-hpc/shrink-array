@@ -15,7 +15,7 @@
  */
 
 // ============================================================================
-// Compression round-trip harness. Variant-agnostic: tests zero / zero_one_value /
+// Compression round-trip harness. Variant-agnostic: tests zero / zero_or_value /
 // zero_any depending on the compile-time macro (CHUNK_VARIANT_ZERO*), like
 // the other harnesses here.
 // ============================================================================
@@ -36,7 +36,7 @@
 //   rewritten afterwards, which re-materialises blocks the pass had just
 //   compressed. Every element is then compared against the expected value.
 //
-//   A second double array never declares a second value (zero_one_value's
+//   A second double array never declares a second value (zero_or_value's
 //   set_second_value): its second constant then coincides with the first, the
 //   corner every two-hypothesis scan has to handle (a run of 0 must be filed
 //   as first-constant ONLY, never cleared twice).
@@ -72,7 +72,7 @@
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
 #include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
@@ -110,7 +110,7 @@ template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -118,9 +118,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -128,7 +128,7 @@ constexpr const char* variant_name()
     }
 }
 
-// set_second_value only exists on zero_one_value / zero_any; no-op elsewhere.
+// set_second_value only exists on zero_or_value / zero_any; no-op elsewhere.
 template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& arr, const Val& value)
 {

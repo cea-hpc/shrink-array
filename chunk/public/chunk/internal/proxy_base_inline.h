@@ -59,7 +59,7 @@
 #include "chunk/internal/ring_log_debug.h"     // ScopedRingLog, ring_log, get_tid
 #include "chunk/internal/arithmetic_context.h" // ArithmeticProxyContext, ArithmeticContext
 #include "chunk/internal/array_chunk_for.h"    // ArrayChunkForT
-#include "chunk/internal/concept_chunk.h"      // IsZeroOneValue, ChunkTemplateOf
+#include "chunk/internal/concept_chunk.h"      // IsZeroOrValue, ChunkTemplateOf
 #include "chunk/internal/concept_is_clean_assignment.h" // BaseT
 #include "chunk/internal/def_force_inline.h"            // CHUNK_FORCE_INLINE
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
@@ -287,9 +287,9 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list() const
 
                 internal::ArrayUsers<ChunkT>::note(array_id_, thr);
                 push_to_compress_list(vec, &chunk_, chunk_index_, array_id_, ChunkElems{this->chunk_size()});
-                if constexpr (IsZeroOneValue<ChunkTemplateOf<ChunkT>::template type, T>)
+                if constexpr (IsZeroOrValue<ChunkTemplateOf<ChunkT>::template type, T>)
                 {
-                    Derived::note_candidate_pushed(vec); // the threshold test (zero_one_value::Proxy trigger)
+                    Derived::note_candidate_pushed(vec); // the threshold test (zero_or_value::Proxy trigger)
                 }
             }
         }
@@ -314,7 +314,7 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list() const
  * A deferred op cannot keep the original proxy alive, so the replay recreates
  * one and restores everything the write body needs: chunk index, table number,
  * second-value info, and the compression flag pointer. Which of those steps
- * apply is decided per proxy type with `requires`, since zero::Proxy, zero_one_value::Proxy and
+ * apply is decided per proxy type with `requires`, since zero::Proxy, zero_or_value::Proxy and
  * zero_any::Proxy do not all carry the same state.
  *
  * The frozen geometry is restored too: chunk_size() must not read it back from
@@ -376,8 +376,8 @@ ProxyT ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::make_proxy_with_inf
  * from the proxy's own state, because the write is being applied long after it
  * was issued. Same once-only CAS discipline, same relaxed-load fast path.
  *
- * zero_one_value keeps its candidates in a context-dependent list, hence the
- * `IsZeroOneValue` branch on which per-thread list to push onto.
+ * zero_or_value keeps its candidates in a context-dependent list, hence the
+ * `IsZeroOrValue` branch on which per-thread list to push onto.
  *
  * @param ctx  Deferred-operation context being replayed.
  */
@@ -403,7 +403,7 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::add_to_compression_li
 
         auto& vec = [&]() -> auto&
         {
-            if constexpr (IsZeroOneValue<ChunkTemplateOf<ChunkT>::template type, T>)
+            if constexpr (IsZeroOrValue<ChunkTemplateOf<ChunkT>::template type, T>)
             {
                 return derived().get_vec_tuple_to_compress_potentially_async_thr(ctx, thr);
             }
@@ -415,9 +415,9 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::add_to_compression_li
 
         internal::ArrayUsers<ChunkT>::note(array_id, thr); // a replay queues on the replaying rank
         push_to_compress_list(vec, &ctx->chunk, ctx->chunk_index, array_id, derived().chunk_size());
-        if constexpr (IsZeroOneValue<ChunkTemplateOf<ChunkT>::template type, T>)
+        if constexpr (IsZeroOrValue<ChunkTemplateOf<ChunkT>::template type, T>)
         {
-            Derived::note_candidate_pushed(vec); // the threshold test (zero_one_value::Proxy trigger)
+            Derived::note_candidate_pushed(vec); // the threshold test (zero_or_value::Proxy trigger)
         }
     }
 }
@@ -725,7 +725,7 @@ ProxyBase<Derived, T, ChunkT>::write_with_optional_lock_impl(WriteCallable&&    
         std::forward<WriteCallable>(write_body)();
 
         // The zero_any family only: its compression algorithm is identical in
-        // OMP and non-OMP. zero/zero_one_value have distinct non-OMP paths and
+        // OMP and non-OMP. zero/zero_or_value have distinct non-OMP paths and
         // must NOT be triggered here.
         if constexpr (build_config::not_threaded && is_zero_any_family_v<ChunkT>)
         {
@@ -856,7 +856,7 @@ void ProxyBase<Derived, T, ChunkT>::enqueue_async_arithmetic(const U& operand, O
  * @brief Tests a proxy's second-constant state, false for proxies that have none.
  *
  * Lets the shared invariant checks below name is_const_val2() unconditionally:
- * only zero_one_value / zero_any carry a second constant value, and zero
+ * only zero_or_value / zero_any carry a second constant value, and zero
  * proxy simply answers false.
  *
  * @param proxy Proxy to test.
@@ -1248,7 +1248,7 @@ void ProxyBase<Derived, T, ChunkT>::bitwise_assign(InT<U> operand, Op operation)
 // picks the sync one or, when the write is refused, allocates the context and
 // enqueues the async one. Context type follows the proxy family: the light
 // ArithmeticProxyContext for Proxy<T>, the chunk-aware ArithmeticContext for
-// zero_one_value::Proxy<T> / zero_any::Proxy<T>.
+// zero_or_value::Proxy<T> / zero_any::Proxy<T>.
 template <typename Derived, typename T, typename ChunkT>
 template <typename SyncOp, typename AsyncOp>
 void ProxyBase<Derived, T, ChunkT>::apply_inplace_operation(SyncOp sync_op, [[maybe_unused]] AsyncOp async_op) noexcept

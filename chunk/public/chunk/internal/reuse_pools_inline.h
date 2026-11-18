@@ -32,19 +32,19 @@
 #include <vector>      // std::vector
 #include <memory>      // std::make_unique
 
-#include "chunk/internal/reuse_pools.h"          // the declarations these bodies belong to
-#include "chunk/config.h"                        // build_config, chunk_config
-#include "chunk/log.h"                           // CHUNK_LOG_ALWAYS
-#include "fast_allocators/internal/svalloc.h"    // svfree
-#include "chunk/internal/pmp_chunk.h"            // CHUNK_PMP_*, pmp::
-#include "chunk/internal/chunk_size_policy.h"    // alloc_chunk_count, thread_chunk_size
-#include "chunk/internal/pool_ledger.h"          // CHUNK_LEDGER_*
-#include "chunk/internal/drain_probe.h"          // g_drain_probe (rechunk=debug, the team drain's split)
-#include "chunk/internal/freepath_counters.h"    // CHUNK_FREEPATH_*
-#include "chunk/internal/zero_chunk.h"           // Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/internal/zero_one_value_chunk.h" // zero_one_value::Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/internal/zero_any_chunk.h"       // zero_any::Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/internal/type_name.h"            // type_name<T>
+#include "chunk/internal/reuse_pools.h"         // the declarations these bodies belong to
+#include "chunk/config.h"                       // build_config, chunk_config
+#include "chunk/log.h"                          // CHUNK_LOG_ALWAYS
+#include "fast_allocators/internal/svalloc.h"   // svfree
+#include "chunk/internal/pmp_chunk.h"           // CHUNK_PMP_*, pmp::
+#include "chunk/internal/chunk_size_policy.h"   // alloc_chunk_count, thread_chunk_size
+#include "chunk/internal/pool_ledger.h"         // CHUNK_LEDGER_*
+#include "chunk/internal/drain_probe.h"         // g_drain_probe (rechunk=debug, the team drain's split)
+#include "chunk/internal/freepath_counters.h"   // CHUNK_FREEPATH_*
+#include "chunk/internal/zero_chunk.h"          // Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/internal/zero_or_value_chunk.h" // zero_or_value::Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/internal/zero_any_chunk.h"      // zero_any::Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/internal/type_name.h"           // type_name<T>
 
 namespace shrink_array
 {

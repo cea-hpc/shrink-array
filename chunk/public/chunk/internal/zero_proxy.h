@@ -22,7 +22,7 @@
 #include <utility>    // std::pair
 #include <vector>     // std::vector
 
-#include "chunk/internal/pointer_map_linear.h" // linear scan shared with zero_one_value::PointerMap
+#include "chunk/internal/pointer_map_linear.h" // linear scan shared with zero_or_value::PointerMap
 #include "chunk/config.h"                      // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
 #include "chunk/internal/array_chunk_for.h"    // ArrayKey (the registry keys)
 #include "chunk/internal/chunk_size_policy.h"  // set_thread_chunk_size, set_thread_alloc_key
@@ -51,7 +51,7 @@ namespace zero
 
 /**
  * @brief Registry mapping array-element keys (pointers) to their table
- *        number. Unlike zero_one_value::PointerMap, it has no value -> inf_array
+ *        number. Unlike zero_or_value::PointerMap, it has no value -> inf_array
  *        lookup: zero's compression does not group chunks by value.
  * @tparam T Element type this registry is keyed on.
  */
@@ -83,7 +83,7 @@ class PointerMap : public PointerMapLinear<int, std::vector<std::pair<ArrayKey<C
 
     /**
      * @brief Swap the table numbers registered for two existing keys.
-     * @details The name the zero / zero_any re-chunk hooks call; zero_one_value calls
+     * @details The name the zero / zero_any re-chunk hooks call; zero_or_value calls
      *          swap_entries(). Same operation.
      * @param key_a First key (an array address).
      * @param key_b Second key.
@@ -101,7 +101,7 @@ class PointerMap : public PointerMapLinear<int, std::vector<std::pair<ArrayKey<C
     /// What a key maps to: its table number.
     using InfArrayT = int;
 
-    // Storage: a std::vector (zero_one_value::PointerMap uses a std::deque, see there).
+    // Storage: a std::vector (zero_or_value::PointerMap uses a std::deque, see there).
     using Linear = PointerMapLinear<InfArrayT, std::vector<std::pair<Key, InfArrayT>>>;
     /// Brings the base's storage back into this class's scope (dependent base).
     using Linear::vec_;
@@ -757,7 +757,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *
      * @details The write entry does not flush, so a read must pull any deferred
      *          write queued for this offset: a plain values[elem_offset] could return a
-     *          superseded value. zero_one_value::Proxy / zero_any::Proxy inherit ProxyBase::operator T()
+     *          superseded value. zero_or_value::Proxy / zero_any::Proxy inherit ProxyBase::operator T()
      *          (read_pure()).
      *
      *          Same pre-filter as ArrayChunkBase::sync_chunk(): the dirty bit is

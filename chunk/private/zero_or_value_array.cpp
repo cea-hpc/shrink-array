@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// The template bodies are in zero_one_value_array_inline.h, through zero_one_value_array.h. No
-// explicit instantiations: each zero_one_value::Array<T> is instantiated where it is used.
+// The template bodies are in zero_or_value_array_inline.h, through zero_or_value_array.h. No
+// explicit instantiations: each zero_or_value::Array<T> is instantiated where it is used.
 
-#include "chunk/zero_one_value_array.h" // its own header: zero_one_value::Array<T>, bodies in zero_one_value_array_inline.h
+#include "chunk/zero_or_value_array.h" // its own header: zero_or_value::Array<T>, bodies in zero_or_value_array_inline.h

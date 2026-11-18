@@ -17,22 +17,22 @@
 #pragma once
 
 // ─────────────────────────────────────────────────────────────────────────────
-// zero_one_value::PointerMap — per-array registry of zero_one_value's SECOND constant
+// zero_or_value::PointerMap — per-array registry of zero_or_value's SECOND constant
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// zero_one_value compresses a chunk to one of TWO constants: first_value is fixed for the
+// zero_or_value compresses a chunk to one of TWO constants: first_value is fixed for the
 // type, the second is chosen per array at run time and a chunk folded to it stores
 // only an index. This header holds that lookup, keyed by the array's identity
 // (a void* handle) and by the value:
 //
-//   zero_one_value::PointerMap<T>                  the map itself (key -> SecondValueInfo).
-//   ZeroOneValueInfArrayPolicy<T,B>  the value -> inf_array side, as a policy:
+//   zero_or_value::PointerMap<T>                  the map itself (key -> SecondValueInfo).
+//   ZeroOrValueInfArrayPolicy<T,B>  the value -> inf_array side, as a policy:
 //                                        the <T,false> specialisation is all no-ops.
 //   ValueToInfTupleMapHelper<T>          its std::map type, ordered by ValueLess
 //                                        (value_less.h: complex has no operator<).
 //
 // The key -> value store is a LINEAR scan over a std::deque (PointerMapLinear; see
-// the storage note in zero_one_value::PointerMap). Only the value -> inf_array side is a std::map.
+// the storage note in zero_or_value::PointerMap). Only the value -> inf_array side is a std::map.
 
 #include <deque>   // std::deque: share_info storage, no realloc invalidation
 #include <map>     // std::map
@@ -41,7 +41,7 @@
 #include <cstddef> // std::size_t
 
 #include "chunk/bit.h"                         // is_bool_like_v: bool and Bit share the bool path
-#include "chunk/internal/array_chunk_for.h"    // ArrayKey, zero_one_value::Chunk (the keys)
+#include "chunk/internal/array_chunk_for.h"    // ArrayKey, zero_or_value::Chunk (the keys)
 #include "chunk/internal/pointer_map_linear.h" // linear scan shared with PointerMapChunk
 #include "chunk/internal/pmp_chunk.h"          // CHUNK_PMP_* — thread rank without an #ifdef _OPENMP
 #include "chunk/internal/value_less.h"         // ValueLess
@@ -67,19 +67,19 @@ struct ValueToInfTupleMapHelper
 
 /**
  * @brief Policy holding the fast-block-compression-only value -> inf_array
- *        lookup for zero_one_value::PointerMap.
+ *        lookup for zero_or_value::PointerMap.
  *
- * @details An inf_array is zero_one_value's `(second_value, index, array_id)` tuple;
+ * @details An inf_array is zero_or_value's `(second_value, index, array_id)` tuple;
  *          the map, keyed by second value, is ValueToInfTupleMapHelper's.
  *          zero (zero::PointerMap, zero_proxy.h) has no such lookup.
  *
- * @tparam T       Element type zero_one_value::PointerMap is keyed on.
+ * @tparam T       Element type zero_or_value::PointerMap is keyed on.
  * @tparam Enabled Whether the map actually exists (fast-block-compression
  *                 builds) or is a zero-overhead no-op (counter-mode builds):
  *                 chunk_config::use_fast_block_compression.
  */
 template <typename T, bool Enabled>
-class ZeroOneValueInfArrayPolicy
+class ZeroOrValueInfArrayPolicy
 {
   public:
     using InfArrayT = SecondValueInfo<T>;
@@ -100,7 +100,7 @@ class ZeroOneValueInfArrayPolicy
     /**
      * @brief Drop every entry still pointing at @p self_ptr.
      *
-     * @details Called from zero_one_value::Array::clear_core so a destroyed array's
+     * @details Called from zero_or_value::Array::clear_core so a destroyed array's
      *          inf_array MEMBER cannot dangle here, where
      *          compress_chunk_to_compress_potentially() would dereference it via
      *          get_all_inf_array(). Only entries this array currently OWNS are
@@ -135,7 +135,7 @@ class ZeroOneValueInfArrayPolicy
  *          of their own; they simply do nothing and report an empty registry.
  */
 template <typename T>
-class ZeroOneValueInfArrayPolicy<T, false>
+class ZeroOrValueInfArrayPolicy<T, false>
 {
   public:
     using InfArrayT = SecondValueInfo<T>;
@@ -158,11 +158,11 @@ class ZeroOneValueInfArrayPolicy<T, false>
     static void insert(InT<T> /*key*/, InfArrayT* /*idx*/) {}
 };
 
-namespace zero_one_value
+namespace zero_or_value
 {
 
 /**
- * @brief Per-array registry of zero_one_value's second value: array address ->
+ * @brief Per-array registry of zero_or_value's second value: array address ->
  *        (second value, its index in the shared table, array_id).
  *
  * @tparam T Element type.
@@ -170,7 +170,7 @@ namespace zero_one_value
 template <typename T>
 class PointerMap
     : public PointerMapLinear<SecondValueInfo<T>, std::deque<std::pair<ArrayKey<Chunk<T>>, SecondValueInfo<T>>>>,
-      public ZeroOneValueInfArrayPolicy<T, chunk_config::use_fast_block_compression>
+      public ZeroOrValueInfArrayPolicy<T, chunk_config::use_fast_block_compression>
 {
   private:
     /// Internal alias for tuple representing a value with index and table number.
@@ -187,7 +187,7 @@ class PointerMap
 
   private:
     /// @brief Policy carrying the fast-block-compression-only inf_array map.
-    using InfArrayPolicy = ZeroOneValueInfArrayPolicy<T, chunk_config::use_fast_block_compression>;
+    using InfArrayPolicy = ZeroOrValueInfArrayPolicy<T, chunk_config::use_fast_block_compression>;
 
     // The storage must be a std::deque, NOT a std::vector: a vector's emplace_back
     // reallocates and frees the old buffer under a reader walking it in parallel
@@ -213,7 +213,7 @@ class PointerMap
 
   public:
     /// @brief The policy's insert(second value, inf_array pointer), protected
-    ///        there, is part of this registry's public surface (zero_one_value::Array
+    ///        there, is part of this registry's public surface (zero_or_value::Array
     ///        registers its inf_array through it).
     using InfArrayPolicy::insert;
 
@@ -282,8 +282,8 @@ class PointerMap
     // PointerMapLinear (shared with zero::PointerMap).
 };
 
-} // namespace zero_one_value
+} // namespace zero_or_value
 
 } // namespace shrink_array
 
-#include "chunk/internal/zero_one_value_pointer_map_inline.h" // the template bodies
+#include "chunk/internal/zero_or_value_pointer_map_inline.h" // the template bodies

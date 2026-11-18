@@ -22,7 +22,7 @@
  * mesh, but occupies only a random interval of it at each iteration: the
  * fields are written there, the gadget computation reads them back, the
  * rest of the mesh stays zero. Half the materials (by default) keep their
- * arrays in chunk arrays -- zero for the fields, zero_one_value for the fraction --
+ * arrays in chunk arrays -- zero for the fields, zero_or_value for the fraction --
  * where the untouched chunks cost nothing; the other half in std::vectors,
  * for the comparison. The run prints the chunk filling rates, the result of
  * the computation, the elapsed time and the peak memory.
@@ -220,15 +220,16 @@ try
                                  // std::format, not std::fixed: std::cout's flags stay as they were.
                                  std::cout << "  Chunk filling rate : " << std::format("{:.2f}", sz0) << "%" << '\n';
 
-                                 // The presence fraction, a zero_one_value array: only its
+                                 // The presence fraction, a zero_or_value array: only its
                                  // interface chunks should be materialised, the
                                  // interior ones are compressed to 1 and the empty
                                  // ones to 0.
                                  const auto&  frac_idx = get_mat_vec(simu.get_frac());
                                  const double szf      = only_first_chunk ? frac_idx.stats_seq() : frac_idx.stats();
 
-                                 std::cout << "  Fraction chunk filling rate (zero_one_value) : "
-                                           << std::format("{:.2f}", szf) << "%" << '\n';
+                                 std::cout
+                                     << "  Fraction chunk filling rate (zero_or_value) : " << std::format("{:.2f}", szf)
+                                     << "%" << '\n';
                              }
 
                              if (only_first_chunk)

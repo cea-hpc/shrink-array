@@ -92,7 +92,7 @@ void zero_any::ArrayImpl<Derived>::rebuild_storage(IntType sz)
             // Per-chunk init: every iteration writes slot i of tables sized just
             // above and nothing else, so it parallelises as is (a serial loop is
             // a visible master-only cost on large arrays). Same pattern as
-            // zero_one_value::Array::rebuild_storage; serial inside a region (the caller
+            // zero_or_value::Array::rebuild_storage; serial inside a region (the caller
             // need not be the whole team) and below the one threshold,
             // parallel_storage_init::parallel_init_min_chunks.
             const auto init_chunk = [&](int chunk_index)
@@ -248,7 +248,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
 {
     const internal::ColdPathLock cold_path_lock(internal::cold_path_mutex());
     // Pin the ambient size to THIS array's own geometry before the sweep
-    // below. Same rule as zero_one_value::Array::clear_core() -- see that
+    // below. Same rule as zero_or_value::Array::clear_core() -- see that
     // function's comment.
     if constexpr (build_config::chunk_dynamic)
     {
@@ -265,7 +265,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
     // either misreads NOTHING is flushed -- the audit below then scans a chunk
     // whose writes are still queued, constant_value() (raw values_load()) sees a
     // non-constant buffer, and the chunk is under-counted as still-compressed.
-    // zero_any carries far more deferred traffic than zero/zero_one_value, so it exposes this first.
+    // zero_any carries far more deferred traffic than zero/zero_or_value, so it exposes this first.
     // Inside a region, a work array of this thread's: this rank's structures only.
     const bool own_rank = this->teardown_on_own_rank(array_id_);
     this->flush_pending_deferred_ops(/*force=*/true, own_rank);

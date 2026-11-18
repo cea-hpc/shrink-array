@@ -780,7 +780,7 @@ template <typename T, typename Derived>
         // Split the read by what served it: a materialised chunk vs a
         // compressed one (values points at the constant marker). read_const /
         // (read + read_const) is the compression hit rate on reads.
-        // is_const_val1(), not written(): zero_one_value::Chunk::written() (no arg) aborts on
+        // is_const_val1(), not written(): zero_or_value::Chunk::written() (no arg) aborts on
         // non-bool types -- it needs the second-value index a read lacks.
         if (is_const_val1())
         {
@@ -984,7 +984,7 @@ T& ChunkBase<T, Derived>::operator()(int offset) const noexcept
     }
     // Contract: a mutable reference that bypasses the write proxy, valid only
     // on a materialised chunk. On a compressed one it points into a shared
-    // constant (zero/zero_one_value) or an unbacked identifier slot (zero_any): a
+    // constant (zero/zero_or_value) or an unbacked identifier slot (zero_any): a
     // write through it corrupts the constant for every chunk, or faults.
     // Checked builds stop on it.
     if constexpr (build_config::any_check && requires { derived().written(); })

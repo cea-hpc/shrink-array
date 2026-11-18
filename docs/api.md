@@ -25,13 +25,13 @@ All names are in namespace `shrink_array`, `build_config` and `chunk_config` inc
 | class | header | compresses chunks uniform at… |
 |---|---|---|
 | `zero::Array<T, IntType = int>` | `chunk/zero_array.h` | `T{}` |
-| `zero_one_value::Array<T, IntType = int>` | `chunk/zero_one_value_array.h` | `T{}` or the array's second value |
+| `zero_or_value::Array<T, IntType = int>` | `chunk/zero_or_value_array.h` | `T{}` or the array's second value |
 | `zero_any::Array<T, IntType = int>` | `chunk/zero_any_array.h` | `T{}` or any value, per chunk |
-| `BitArray` | `chunk/bit_array.h` | `bool`, stored one bit per element (`zero_one_value` builds) |
+| `BitArray` | `chunk/bit_array.h` | `bool`, stored one bit per element (`zero_or_value` builds) |
 
 `IntType` is the index type: `long` for more than 2³¹ elements. The variant compiled in is
 that of the linked library (`shrink_array::zero_any`, ...); `chunk_config::use_zero`,
-`chunk_config::use_zero_one_value` and `chunk_config::use_zero_any` tell which, at compile time.
+`chunk_config::use_zero_or_value` and `chunk_config::use_zero_any` tell which, at compile time.
 
 ## 3. Container operations
 
@@ -50,12 +50,12 @@ alone ([getting started, §5](getting_started.md)); it invalidates the array's p
 | append | `push_back(v)`, `emplace_back(...)`, `pop_back()` | **(S)** only when it needs a new chunk |
 | replace **(S)** | `assign(n, v)`, `assign(first, last)`, `swap(other)`, `operator=` | |
 | iterate | `begin()`, `end()`, `cbegin()`, `rbegin()`, `rend()` | const random-access iterators, by value |
-| compress **(S)** | `compress()` | a full compression pass now (`zero::Array`, `zero_one_value::Array`, `zero_any::Array`) |
+| compress **(S)** | `compress()` | a full compression pass now (`zero::Array`, `zero_or_value::Array`, `zero_any::Array`) |
 | free second values **(S)** | `reclaim_second_values()` (static) | frees the second values no chunk of any `zero_any::Array<T>` uses any more, so that their identifiers are reused; returns how many (`zero_any::Array`); a sequential point over **every** array of the type, see below |
 | statistics | `stats()`, `written_chunk_count()` | percentage and number of chunks holding a buffer (each array also prints one line when it is destroyed) |
 | geometry | `chunk_size()`, `rechunk_to(n)` **(S)** | `rechunk_to()` only in the `_dyn` libraries (a no-op in static ones) |
 
-`zero_one_value` only: `set_second_value(v)` **(S)**, before the writes, and `second_value()`.
+`zero_or_value` only: `set_second_value(v)` **(S)**, before the writes, and `second_value()`.
 
 **`reclaim_second_values()`: a precondition over the whole type.** The other **(S)** operations
 concern one array; this one is static and frees second values for every `zero_any::Array<T>` of the
@@ -133,7 +133,7 @@ depend on how the library encodes the chunk inside.
 |---|---|
 | `export_chunk(a, c)` | sequential: chunk `c`'s state; `data` points into `a`, valid until `a` is written |
 | `import_chunk(a, c, state)` | sequential: chunk `c` takes `state`, a constant without a buffer; `false` if the chunk was written |
-| `export_array(a)` | sequential: size, `chunk_size()`, zero_one_value's second value, every chunk's state |
+| `export_array(a)` | sequential: size, `chunk_size()`, zero_or_value's second value, every chunk's state |
 | `import_array(a, state)` | sequential: `a` becomes the array `state` describes, whatever it held; `false` (and `a` unchanged) at another chunk size; the chunks past `state`'s size (a `reserve()`) are not imported |
 
 Every variant and element type but `Bit` (BitArray). Call them after the phase, as
@@ -203,7 +203,7 @@ The policy, its defaults and the measured results: [adaptive_rechunk.md](adaptiv
 | `build_config::threaded` | the library runs threads (`CHUNK_THREADS` `openmp` or `std`) |
 | `build_config::has_ompt`, `build_config::needs_explicit_phases` | built with the OMPT tool, or not |
 | `build_config::chunk_dynamic` | dynamic geometry (`_dyn` library) |
-| `chunk_config::use_zero`, `chunk_config::use_zero_one_value`, `chunk_config::use_zero_any` | the variant |
+| `chunk_config::use_zero`, `chunk_config::use_zero_or_value`, `chunk_config::use_zero_any` | the variant |
 | `chunk_config::stats` | `CHUNK_STATS` build |
 
 Environment variables and build options: [environment_variables.md](environment_variables.md).
@@ -261,3 +261,5 @@ the next minor version.
 | `get_second_value()` | `second_value()` |
 | `get_nb_chunk_written()` | `written_chunk_count()` |
 | `pmp::max_threads()`, `pmp::team_size()`, `pmp::thread_rank()` | `max_threads()`, `team_size()`, `thread_rank()` |
+| `zero_one_value::Array`, `chunk/zero_one_value_array.h` | `zero_or_value::Array`, `chunk/zero_or_value_array.h` |
+| `chunk_config::use_zero_one_value`, `CHUNK_VARIANT_ZERO_ONE_VALUE` | `chunk_config::use_zero_or_value`, `CHUNK_VARIANT_ZERO_OR_VALUE` |

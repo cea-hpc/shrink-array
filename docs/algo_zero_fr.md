@@ -2,9 +2,9 @@
 
 > English version: [algo_zero.md](algo_zero.md).
 
-> État : fin septembre 2026. Ce document décrit ce que `zero` fait **autrement** que `zero_one_value` ; la
+> État : fin septembre 2026. Ce document décrit ce que `zero` fait **autrement** que `zero_or_value` ; la
 > machinerie commune (proxys, écritures différées, barrière de lecture, compression en vol,
-> opérations sur plages) est décrite dans [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md), et la
+> opérations sur plages) est décrite dans [algo_zero_or_value_fr.md](algo_zero_or_value_fr.md), et la
 > géométrie dynamique dans [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md). En cas de
 > doute, c'est le code qui fait foi.
 
@@ -13,7 +13,7 @@
 ## 1. Ce que `zero` compresse
 
 `zero` est la plus simple des trois variantes : un chunk est **compressé à zéro** (`T{}`) ou
-**matérialisé**. Il n'y a pas de seconde valeur, ni par tableau (`zero_one_value`), ni par chunk
+**matérialisé**. Il n'y a pas de seconde valeur, ni par tableau (`zero_or_value`), ni par chunk
 (`zero_any`).
 
 | état | `values` pointe vers | test |
@@ -40,7 +40,7 @@ environ 38 Go de ses 40 Go sont des données.
 
 ## 3. Lecture et écriture
 
-La lecture est celle de `zero_one_value` (§5 de [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md)) : une valeur,
+La lecture est celle de `zero_or_value` (§5 de [algo_zero_or_value_fr.md](algo_zero_or_value_fr.md)) : une valeur,
 lue dans le tampon du chunk ou dans `const_val1`, après la barrière de lecture.
 
 L'écriture passe par le proxy `Proxy<T>` :
@@ -54,7 +54,7 @@ L'écriture passe par le proxy `Proxy<T>` :
 - écrire dans un chunk matérialisé : simple écriture.
 
 Le déroulé d'une écriture dans un build OpenMP : les étapes du moteur sont celles du §7.2 de
-[algo_zero_one_value_fr.md](algo_zero_one_value_fr.md), résumées ici ; le reste est ce que `zero`
+[algo_zero_or_value_fr.md](algo_zero_or_value_fr.md), résumées ici ; le reste est ce que `zero`
 fait à sa façon.
 
 ```mermaid
@@ -119,7 +119,7 @@ Une liste de candidats mélange les chunks de **tous les tableaux** d'un même t
 peuvent avoir des tailles différentes après un rechunk : chaque chunk est compressé avec
 **son** nombre d'éléments, porté par l'entrée de la liste.
 
-Le déroulé de la passe, dans le style du §8.4 de [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md) :
+Le déroulé de la passe, dans le style du §8.4 de [algo_zero_or_value_fr.md](algo_zero_or_value_fr.md) :
 
 ```mermaid
 flowchart TD
@@ -137,7 +137,7 @@ flowchart TD
     I --> J["chunk déclencheur remis en items s'il est matérialisé,<br/>finish()"]
 ```
 
-Ce qui diffère de `zero_one_value` : une liste de candidats par rang
+Ce qui diffère de `zero_or_value` : une liste de candidats par rang
 (`zero_candidates_thr`), et non une par seconde valeur, et une seule constante
 cible, donc une seule liste de sortie. Les builds séquentiels n'ont pas de passe
 (`make_block_compression` y est vide) : c'est le compteur de zéros qui compresse (§4).
@@ -180,7 +180,7 @@ raisons à ce gain faible :
   gagner ;
 - après son rechunk, `zero` dynamique **ralentit** (1,5 à 2 fois par itération par rapport au
   statique 1 024), pour une raison encore inconnue : un build dynamique démarré directement à
-  1 024 va aussi vite que le statique, et `zero_one_value` ne ralentit pas après ses rechunks.
+  1 024 va aussi vite que le statique, et `zero_or_value` ne ralentit pas après ses rechunks.
 
 Pour un cas comme celui du banc, un `zero` **statique** à la bonne taille reste aujourd'hui le
 meilleur choix.

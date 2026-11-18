@@ -16,7 +16,7 @@
 
 // ============================================================================
 // SEQUENTIAL re-chunk validation harness (path C, non-OMP) -- v3.
-// Variant-agnostic: tests zero / zero_one_value / zero_any depending on the
+// Variant-agnostic: tests zero / zero_or_value / zero_any depending on the
 // compile-time macro (CHUNK_VARIANT_ZERO*), like shrink_bench.cpp.
 // ============================================================================
 //
@@ -26,12 +26,12 @@
 //   - shows the first mismatches along with the corresponding chunk boundary.
 //
 // The variant is selected by the macro passed by CMake (one executable per
-// variant, linked against the matching dyn lib: chunk_zero_one_value_dyn / chunk_zero_any_dyn /
+// variant, linked against the matching dyn lib: chunk_zero_or_value_dyn / chunk_zero_any_dyn /
 // chunk_zero_dyn). No std::vector fallback: re-chunk is specific to the chunked
 // variants, hence the static_assert.
 //
-// zero_one_value CONTRACT: the compression-candidate list is indexed by
-// second_value (zero_one_value_candidates_map_thr[thr][second_value]),
+// zero_or_value CONTRACT: the compression-candidate list is indexed by
+// second_value (zero_or_value_candidates_map_thr[thr][second_value]),
 // populated ONLY by set_second_value. A second_value must therefore be
 // declared BEFORE writing, otherwise get_vec_tuple_to_compress_potentially_thr
 // asserts (vec == nullptr). This is what the bench does via
@@ -64,7 +64,7 @@
 
 #include "chunk/internal/chunk_traits.h"      // forward decls + default IntType = int
 #include "chunk/zero_array.h"                 // zero::Array
-#include "chunk/zero_one_value_array.h"       // zero_one_value::Array
+#include "chunk/zero_or_value_array.h"        // zero_or_value::Array
 #include "chunk/zero_any_array.h"             // zero_any::Array
 #include "chunk/runtime.h"                    // Runtime::register_chunk_size, init
 #include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
@@ -177,15 +177,15 @@ std::string pass_label(const char* label)
 } // namespace
 
 // --- Active variant selection (same shape as shrink_bench.cpp) -------
-static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
-              "rechunk_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_ONE_VALUE or _ZERO_ANY "
+static_assert(chunk_config::use_zero || chunk_config::use_zero_or_value || chunk_config::use_zero_any,
+              "rechunk_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_OR_VALUE or _ZERO_ANY "
               "(re-chunk is chunk-only; no std::vector fallback here)");
 
 template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -193,9 +193,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -203,14 +203,14 @@ constexpr const char* variant_name()
     }
 }
 
-// set_second_value only exists on zero_one_value / zero_any: no-op elsewhere. REQUIRED
-// on zero_one_value before any write (see the contract at the top of the file); also
+// set_second_value only exists on zero_or_value / zero_any: no-op elsewhere. REQUIRED
+// on zero_or_value before any write (see the contract at the top of the file); also
 // exercises the val2 path (second_value preservation + array_m_ptr_const_val2
-// queue on growth, for zero_one_value).
+// queue on growth, for zero_or_value).
 template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& arr, const Val& value)
 {
-    // bool's second value is true, always: zero_one_value warns on the call.
+    // bool's second value is true, always: zero_or_value warns on the call.
     if constexpr (!std::is_same_v<Val, bool> && requires(Arr probe) { probe.set_second_value(value); })
     {
         arr.set_second_value(value);
@@ -219,7 +219,7 @@ void maybe_set_second_value(Arr& arr, const Val& value)
 
 // sv_value: the value declared as second_value. Choosing a value present in
 // the data makes val2 compression actually kick in (a stronger test); any
-// value is enough to satisfy the zero_one_value contract (populate the map).
+// value is enough to satisfy the zero_or_value contract (populate the map).
 template <typename T>
 int check_invariance(const char* label,
                      long        count,
@@ -232,7 +232,7 @@ int check_invariance(const char* label,
     label                   = lab_s.c_str();
 
     Array<T> arr(count);
-    maybe_set_second_value(arr, sv_value); // no-op on zero; required on zero_one_value
+    maybe_set_second_value(arr, sv_value); // no-op on zero; required on zero_or_value
 
     fprintf(stderr, "[%s/%s] arr built: chunk_size=%u (g_active should be 512)\n", variant_name(), label,
             arr.chunk_size());
@@ -319,7 +319,7 @@ int check_invariance(const char* label,
         // the result -- see drain_compression_backlog() above.
         drain_compression_backlog();
         // compress_int signature differs across variants: zero takes a
-        // verbose bool; zero_one_value / zero_any take none.
+        // verbose bool; zero_or_value / zero_any take none.
         if constexpr (requires { arr.compress_int(false); })
         {
             arr.compress_int(false);
@@ -355,7 +355,7 @@ int check_invariance(const char* label,
 // advisor re-chunks the arrays it tracks and leaves the others at the original
 // size, so arrays of DIFFERENT geometries are alive and written to in the same
 // loop. That is what crashes (ASan: heap-buffer-overflow in store_value, a
-// 64-element buffer written at index 76), on zero AND on zero_one_value/zero_any alike.
+// 64-element buffer written at index 76), on zero AND on zero_or_value/zero_any alike.
 //
 // This reproduces that state in the small: two arrays, one re-chunked and one
 // left alone, written alternately. Passing means geometry coexistence is safe;
@@ -875,7 +875,7 @@ static int run_body(int argc, char** argv)
 
     const long count = 1000000;
     // Each case declares a second_value present in its data (value -> val2
-    // compression actually kicks in). On zero_one_value this is REQUIRED; on zero_any / zero
+    // compression actually kicks in). On zero_or_value this is REQUIRED; on zero_any / zero
     // it is a no-op. The first three start at 64 (the scale case grows it to
     // the target, as the perf bench does), the others at 512.
     const std::vector<Case> cases = {
@@ -930,7 +930,7 @@ static int run_body(int argc, char** argv)
                  "all-different", 100000, 1024, [](long i) -> double { return double(i); }, /*sv_value=*/1.0);
          }},
         // Growth 512 -> 2048 with val2: targets the array_m_ptr_const_val2 queue
-        // (zero_one_value) + the second_value round-trip.
+        // (zero_or_value) + the second_value round-trip.
         {"val2-grow", 512,
          [&]
          {
@@ -1001,7 +1001,7 @@ static int run_body(int argc, char** argv)
          }},
         // The same sliced path with sources of all three kinds side by side:
         // runs of zero, runs of the second value (compressed to it by the
-        // rechunk's prologue) and varied data. zero_one_value and zero_any
+        // rechunk's prologue) and varied data. zero_or_value and zero_any
         // release their materialised sources during the copy like zero, and
         // must leave the second-constant ones alone (a shared array, never
         // freed). Grown 64 -> 256 (aligned, 4 slices), and shrunk 512 -> 192,

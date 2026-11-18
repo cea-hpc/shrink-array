@@ -15,7 +15,7 @@
  */
 
 // ============================================================================
-// zero_one_value foreign-key harness. zero_one_value only (zero_one_value::Array<T>), default static
+// zero_or_value foreign-key harness. zero_or_value only (zero_or_value::Array<T>), default static
 // size, OpenMP builds (the passes it is about run inside a region).
 // ============================================================================
 //
@@ -24,7 +24,7 @@
 //
 // THE QUESTION
 //
-//   A rank keeps one candidate list per second value. zero_one_value::Proxy's
+//   A rank keeps one candidate list per second value. zero_or_value::Proxy's
 //   perform_compression() runs the pass of every key of the rank and hands
 //   each one the WRITER's proxy, and the pass ends by queueing that proxy's
 //   chunk -- into the list of the key it just processed. If that key is not
@@ -58,7 +58,7 @@
 #include <cstdlib> // std::getenv, std::atof
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
-#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
 #include "chunk/config.h"                // build_config::needs_explicit_phases, build_config::use_openmp
@@ -68,7 +68,7 @@
 
 #include "validation_harness.h" // run() is called by validation_driver.cpp
 
-namespace validation::zero_one_value_foreign_key_validation
+namespace validation::zero_or_value_foreign_key_validation
 {
 
 using namespace shrink_array;
@@ -76,7 +76,7 @@ using namespace shrink_array;
 namespace
 {
 
-using Arr   = zero_one_value::Array<double>;
+using Arr   = zero_or_value::Array<double>;
 using Index = Arr::IndexType;
 
 constexpr long   chunks_a = 512;  ///< chunks of `a`
@@ -143,7 +143,7 @@ int run(int /*argc*/, char** /*argv*/)
 
     if constexpr (!build_config::use_openmp)
     {
-        println("[zero_one_value/foreign-key] SKIP: the passes this is about run inside a parallel region");
+        println("[zero_or_value/foreign-key] SKIP: the passes this is about run inside a parallel region");
         return 77;
     }
 
@@ -159,7 +159,7 @@ int run(int /*argc*/, char** /*argv*/)
         const Arr& ca   = arr;
         const Arr& cb   = other;
         const int  team = CHUNK_PMP_MAX_THREADS;
-        println("=== zero_one_value_foreign_key_validation  chunk_size={}  threads={}  a: {} chunks of {:g} (declares "
+        println("=== zero_or_value_foreign_key_validation  chunk_size={}  threads={}  a: {} chunks of {:g} (declares "
                 "{:g})  b: {} chunks (declares {:g}) ===",
                 chunk_sz, team, chunks_a, val_b, val_a, chunks_b, val_b);
 
@@ -226,17 +226,17 @@ int run(int /*argc*/, char** /*argv*/)
 
         const long a_compressed = pointing_at(ca, chunks_a, b_const);
         const long b_compressed = compressed(cb, chunks_b, chunk_sz);
-        println("[zero_one_value/foreign-key] {} toggles ({:.1f} s); b: {}/{} chunks compressed before, {} after; "
+        println("[zero_or_value/foreign-key] {} toggles ({:.1f} s); b: {}/{} chunks compressed before, {} after; "
                 "a: {} of {} chunks on b's constant before the stress, {} after",
                 toggles.load(), seconds, b_compressed0, chunks_b, b_compressed, a_on_b_const0, chunks_a, a_compressed);
         if (b_compressed0 == 0)
         {
-            println("[zero_one_value/foreign-key] FAIL premise: `b` was not compressed to its second value");
+            println("[zero_or_value/foreign-key] FAIL premise: `b` was not compressed to its second value");
             ++fails;
         }
         if (a_compressed != 0)
         {
-            println("[zero_one_value/foreign-key] FAIL {} chunk(s) of `a` point at `b`'s constant array: compressed to "
+            println("[zero_or_value/foreign-key] FAIL {} chunk(s) of `a` point at `b`'s constant array: compressed to "
                     "another array's second value",
                     a_compressed);
             ++fails;
@@ -260,22 +260,22 @@ int run(int /*argc*/, char** /*argv*/)
         }
         if (bad_b != 0 || bad_a != 0)
         {
-            println("[zero_one_value/foreign-key] FAIL after writing 5.0 into each chunk of `a`: {} element(s) of `b` "
+            println("[zero_or_value/foreign-key] FAIL after writing 5.0 into each chunk of `a`: {} element(s) of `b` "
                     "and {} of `a` read wrong -- the write landed in a shared constant array",
                     bad_b, bad_a);
             ++fails;
         }
         else
         {
-            println("[zero_one_value/foreign-key] OK: no chunk of `a` compressed to `b`'s value, writes stay in `a`");
+            println("[zero_or_value/foreign-key] OK: no chunk of `a` compressed to `b`'s value, writes stay in `a`");
         }
     }
 
     release_chunk_pools();
     Runtime::shutdown();
 
-    println("\n[zero_one_value] {}", fails ? "=== FOREIGN KEY FAILED ===" : "=== FOREIGN KEY OK ===");
+    println("\n[zero_or_value] {}", fails ? "=== FOREIGN KEY FAILED ===" : "=== FOREIGN KEY OK ===");
     return fails ? 1 : 0;
 }
 
-} // namespace validation::zero_one_value_foreign_key_validation
+} // namespace validation::zero_or_value_foreign_key_validation

@@ -75,7 +75,7 @@ Four consequences shape the whole library:
 flowchart TB
     app["application code<br/>a[i], a[i] = v, fill_range_mt, parallel_phase"]
     subgraph per_array["per array"]
-        arr["variant array<br/>zero::Array, zero_one_value::Array,<br/>zero_any::Array, pattern::Array"]
+        arr["variant array<br/>zero::Array, zero_or_value::Array,<br/>zero_any::Array, pattern::Array"]
         base["ArrayChunkBase / ArrayChunkCore<br/>geometry, chunk list, dirty bitset, identity"]
         chk["chunks + proxies<br/>state, read, write engine"]
     end
@@ -105,9 +105,9 @@ flowchart TB
 
 | part | main classes | files | scope |
 |---|---|---|---|
-| the variant arrays | `zero::Array`, `zero_one_value::Array`, `zero_any::Array`, `pattern::Array`, `BitArray` | `chunk/zero_array.h`, `chunk/zero_one_value_array.h`, `chunk/zero_any_array.h`, `chunk/pattern_array.h`, `chunk/bit_array.h` | one object per array |
+| the variant arrays | `zero::Array`, `zero_or_value::Array`, `zero_any::Array`, `pattern::Array`, `BitArray` | `chunk/zero_array.h`, `chunk/zero_or_value_array.h`, `chunk/zero_any_array.h`, `chunk/pattern_array.h`, `chunk/bit_array.h` | one object per array |
 | the common array | `ArrayChunkBase`, `ArrayChunkCore`, `SecondValueArrayBase`, `RechunkSupport` | `internal/array_chunk_base.h`, `internal/array_chunk_core.h`, `internal/second_value_array_base.h`, `internal/array_chunk_rechunk.h` | bases of every array |
-| chunks | `zero::Chunk`, `zero_one_value::Chunk`, `zero_any::Chunk`, `pattern::Chunk`, `ChunkBase` | `chunk/internal/zero_chunk.h`, `chunk/internal/zero_one_value_chunk.h`, `chunk/internal/zero_any_chunk.h`, `chunk/internal/pattern_chunk.h`, `internal/chunk_base.h` | an element of the array's chunk list |
+| chunks | `zero::Chunk`, `zero_or_value::Chunk`, `zero_any::Chunk`, `pattern::Chunk`, `ChunkBase` | `chunk/internal/zero_chunk.h`, `chunk/internal/zero_or_value_chunk.h`, `chunk/internal/zero_any_chunk.h`, `chunk/internal/pattern_chunk.h`, `internal/chunk_base.h` | an element of the array's chunk list |
 | proxies, write engine | `ProxyBase`, `WriteCompressSyncPolicy`, the variants' `Proxy` | `internal/proxy_base.h`, `internal/write_compress_sync_policy.h` | a temporary per write |
 | per-type state | `TypeState` (facade), `ReusePools`, `CompressCandidates`, `CompressionManager` | `internal/type_state.h`, `internal/reuse_pools.h`, `internal/compress_candidates.h`, `internal/compression_manager.h` | one per (variant, element type), static |
 | shared constants | `ArrayConstVal2Holder`, `GlobalVecHolder`, `MotifRegion` | `internal/array_const_val2_holder.h`, `internal/motif_region.h` | one per element type |
@@ -172,7 +172,7 @@ What decides the cost of an access is fixed when the library is built, not when 
 
 | choice | how | why at build time |
 |---|---|---|
-| variant | one library per variant (`shrink_array::zero`, `shrink_array::zero_one_value`, `shrink_array::zero_any`), which defines `CHUNK_VARIANT_ZERO`, `CHUNK_VARIANT_ZERO_ONE_VALUE` or `CHUNK_VARIANT_ZERO_ANY`; `CHUNK_VARIANTS` | the variant changes the chunk layout and the write path |
+| variant | one library per variant (`shrink_array::zero`, `shrink_array::zero_or_value`, `shrink_array::zero_any`), which defines `CHUNK_VARIANT_ZERO`, `CHUNK_VARIANT_ZERO_OR_VALUE` or `CHUNK_VARIANT_ZERO_ANY`; `CHUNK_VARIANTS` | the variant changes the chunk layout and the write path |
 | geometry | static sizes (`CHUNK_STATIC_SIZES`, libraries `_256`, `_1024`...) or dynamic (`CHUNK_BUILD_DYN`, libraries `_dyn`, `CHUNK_DYNAMIC`) | a static size makes `i >> shift` and `i & mask` immediates; a dynamic one reads them from the array |
 | threading backend | `CHUNK_THREADS`: `openmp`, `std` or `serial` | the per-rank structures, the handshakes and the counters exist only in threaded builds |
 | phase driver | `CHUNK_OPT_OMPT` | with OMPT the runtime marks the phases; without it the program does |
@@ -180,7 +180,7 @@ What decides the cost of an access is fixed when the library is built, not when 
 | checks | the check builds (`any_check`, `CHUNK_DO_CHECK`) | invariant checks and protocol assertions cost time on every access |
 
 `pattern::Array` and `BitArray` are not separate libraries: they come with the `zero_any`
-and the `zero_one_value` libraries respectively. The CMake files generate the per-size and
+and the `zero_or_value` libraries respectively. The CMake files generate the per-size and
 per-variant declinations and keep the default names as aliases;
 [environment_variables.md](environment_variables.md) lists the options.
 
@@ -220,7 +220,7 @@ flowchart LR
   make one decision per chunk and write the rest straight into the buffer, inside the same
   announced session as an element write.
 
-[algo_zero_one_value.md](algo_zero_one_value.md) follows these steps in the code; [algo_zero.md](algo_zero.md),
+[algo_zero_or_value.md](algo_zero_or_value.md) follows these steps in the code; [algo_zero.md](algo_zero.md),
 [algo_zero_any.md](algo_zero_any.md) and [algo_pattern.md](algo_pattern.md) give what each variant does
 differently.
 
@@ -348,13 +348,13 @@ geometry** (a buffer sized for one chunk size is never popped at another). A buf
 rank other than its owner is parked and returned to its owner's pool. An array above
 `CHUNK_ALLOC_AFFINITY_MIN_BYTES` (16 MiB by default) can get its own allocator set (an
 *affinity key*), so that its memory leaves in whole slabs when it is rebuilt or destroyed --
-eagerly for `zero`, lazily (at its first rechunk) for `zero_one_value` and `zero_any`, whose memory is
+eagerly for `zero`, lazily (at its first rechunk) for `zero_or_value` and `zero_any`, whose memory is
 mostly metadata.
 
 ### 8.3 Shared constants
 
 - `zero`: one constant buffer of `T{}` per element type.
-- `zero_one_value`: the array's second value, one buffer per declared value, found through the
+- `zero_or_value`: the array's second value, one buffer per declared value, found through the
   per-type registry and mirrored in the array.
 - `zero_any`: the **second-value registry** of the element type, chained segments of 64 slots
   (registering a value never moves another), a lock-free hashed lookup for a known value, an
@@ -476,7 +476,7 @@ backend rather than add a TBB backend: a TBB program links TBB, the library does
 | using the library: install, CMake, first program, the threading rules | [getting_started.md](getting_started.md) |
 | every call, by task | [api.md](api.md) |
 | choosing a variant, what a chunk costs | [variants.md](variants.md) |
-| the algorithm, read and write paths, passes, deferred writes, range operations | [algo_zero_one_value.md](algo_zero_one_value.md) |
+| the algorithm, read and write paths, passes, deferred writes, range operations | [algo_zero_or_value.md](algo_zero_or_value.md) |
 | what `zero`, `zero_any` and `pattern` do differently | [algo_zero.md](algo_zero.md), [algo_zero_any.md](algo_zero_any.md), [algo_pattern.md](algo_pattern.md) |
 | the handshakes, their proofs, the rules for changing them | [synchronisation_dekker.md](synchronisation_dekker.md) |
 | the model checking of the handshakes | [formal_models.md](formal_models.md) |

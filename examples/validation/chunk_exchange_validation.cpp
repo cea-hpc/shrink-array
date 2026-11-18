@@ -25,7 +25,7 @@
  *          value, three uniform (at a, a and b), two holding the same motif at
  *          offsets 100 and 200, the others varied. What they compress to
  *          depends on the variant and the type (expected_kind()): zero keeps
- *          only the first value, zero_one_value its declared second value (a;
+ *          only the first value, zero_or_value its declared second value (a;
  *          bool: true), zero_any any value, pattern any value and the motif
  *          (installed directly: the registry's admission rule would take two
  *          passes). After shrink_to_fit() every chunk is exported, and the kinds
@@ -59,7 +59,7 @@
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
 #include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
 #if defined(CHUNK_EXCHANGE_PATTERN)
     #include "chunk/pattern_array.h" // pattern::Array
@@ -90,7 +90,7 @@ template <typename T>
 using VariantArray =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 #endif
 
 constexpr const char* variant_name()
@@ -103,9 +103,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -118,7 +118,7 @@ constexpr int n_full_chunks = 8; ///< then a partial chunk of half a chunk
 template <typename T>
 constexpr bool is_bool = std::is_same_v<T, bool>;
 
-/// @brief The uniform values: a (chunks 1 and 5, zero_one_value's second
+/// @brief The uniform values: a (chunks 1 and 5, zero_or_value's second
 ///        value), b (chunk 2), and the one a write pokes in.
 template <typename T>
 T value_a()
@@ -187,8 +187,8 @@ T source_value(long i, long chunk_size)
 template <typename T>
 ChunkKind expected_kind(int chunk)
 {
-    const bool second_a = chunk_config::use_zero_any || chunk_config::use_zero_one_value;
-    const bool second_b = chunk_config::use_zero_any || (chunk_config::use_zero_one_value && is_bool<T>);
+    const bool second_a = chunk_config::use_zero_any || chunk_config::use_zero_or_value;
+    const bool second_b = chunk_config::use_zero_any || (chunk_config::use_zero_or_value && is_bool<T>);
     switch (chunk)
     {
         using enum ChunkKind;
@@ -225,12 +225,12 @@ const char* kind_name(ChunkKind kind)
     return "?";
 }
 
-/// @brief zero_one_value (not bool): declare the second value a on @p arr.
+/// @brief zero_or_value (not bool): declare the second value a on @p arr.
 template <typename A>
 void prepare(A& arr)
 {
     using T = A::value_type;
-    if constexpr (chunk_config::use_zero_one_value && !pattern_build && !is_bool<T>)
+    if constexpr (chunk_config::use_zero_or_value && !pattern_build && !is_bool<T>)
     {
         arr.set_second_value(value_a<T>());
     }

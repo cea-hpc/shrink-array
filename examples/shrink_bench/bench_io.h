@@ -395,7 +395,7 @@ void read_check_binary_file(Int                idx,
 
             bool                  is_values     = false;
             bool                  is_const_val1 = false;
-            [[maybe_unused]] bool is_const_val2 = false; // read only by the zero_one_value / zero_any traces
+            [[maybe_unused]] bool is_const_val2 = false; // read only by the zero_or_value / zero_any traces
             while (std::getline(trace_file, line))
             {
                 if (line.find("is_values") != std::string::npos)
@@ -425,11 +425,11 @@ void read_check_binary_file(Int                idx,
 
             const bool is_val1 = chunk_t.is_const_val1();
 
-            // false everywhere but zero_one_value, exactly as the #else branch gave --
-            // and for a zero_any-family array in a zero_one_value build (array_conn's
+            // false everywhere but zero_or_value, exactly as the #else branch gave --
+            // and for a zero_any-family array in a zero_or_value build (array_conn's
             // pattern::Array): as in a zero_any build.
             bool is_val2 = false;
-            if constexpr (chunk_config::use_zero_one_value &&
+            if constexpr (chunk_config::use_zero_or_value &&
                           !shrink_array::is_zero_any_family_v<std::remove_cvref_t<decltype(chunk_t)>>)
             {
                 static constexpr bool is_bool     = shrink_array::is_bool_like_v<T>; // bool, Bit
@@ -642,7 +642,7 @@ void read_check_binary_file(Int                idx,
                             " != " + std::to_string(data_check[k]) + "\n");
 
                 std::cerr << "iteration: " + std::to_string(idx) + "\n";
-                // One `if constexpr` over both former blocks: the zero_one_value one below
+                // One `if constexpr` over both former blocks: the zero_or_value one below
                 // reads chunk_t, declared here, so they cannot be split.
                 if constexpr (chunk_config::is_shrink_enabled)
                 {
@@ -679,7 +679,7 @@ void read_check_binary_file(Int                idx,
                     log_message("value  = " + std::to_string(val) + "\n");
                     log_message("address values[" + std::to_string(elem_offset) + "] : " + s1 + "\n");
 
-                    if constexpr (chunk_config::use_zero_one_value)
+                    if constexpr (chunk_config::use_zero_or_value)
                     {
                         if (chunk_t.is_const_val1())
                         {
@@ -900,7 +900,7 @@ void read_check_binary_file(Int                idx,
                         {
                             // bool / Bit: one second value, no index; a zero_any-family
                             // array (array_conn's pattern::Array) has none either.
-                            if constexpr (chunk_config::use_zero_one_value && !shrink_array::is_bool_like_v<T> &&
+                            if constexpr (chunk_config::use_zero_or_value && !shrink_array::is_bool_like_v<T> &&
                                           !shrink_array::is_zero_any_family_v<std::remove_cvref_t<decltype(chunk_t)>>)
                             {
                                 return chunk_t.is_const_val2(data_check.get_idx_second_value());

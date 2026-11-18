@@ -44,11 +44,11 @@
 #include "chunk/internal/deferred_ops_storage.h" // DeferredOpsStorage
 #include "chunk/internal/pool_ledger.h"          // CHUNK_LEDGER_*
 #include "chunk/internal/zero_chunk.h"           // Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/internal/zero_one_value_chunk.h" // zero_one_value::Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/internal/zero_or_value_chunk.h"  // zero_or_value::Chunk<T>: the ChunkT<T>:: calls
 #include "chunk/internal/zero_any_chunk.h"       // zero_any::Chunk<T>: the ChunkT<T>:: calls
 #include "chunk/zero_array.h"                    // ArrayChunkCore complete: ArrayType::clear_all_dirty_bitsets
 #include "chunk/internal/array_chunk_for.h"      // ArrayChunkForT
-#include "chunk/internal/concept_chunk.h"        // IsChunk, IsZeroOneValue, IsZeroAnyFamily
+#include "chunk/internal/concept_chunk.h"        // IsChunk, IsZeroOrValue, IsZeroAnyFamily
 #include "chunk/internal/chunk_func.h"           // load_balance_list_block_free_thr (the policies' header declares it)
 
 namespace shrink_array

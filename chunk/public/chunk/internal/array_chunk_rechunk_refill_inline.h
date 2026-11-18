@@ -481,7 +481,7 @@ auto RechunkSupport<Derived, true>::Refill::scan_sources(const Span& span) const
         else if constexpr (second_index)
         {
             // Same test as zero_any, with the second-value index
-            // zero_one_value needs and zero_any carries implicitly.
+            // zero_or_value needs and zero_any carries implicitly.
             if (!och.is_const_val2(idx_old2_))
             {
                 sources.all_folded = false;
@@ -513,7 +513,7 @@ bool RechunkSupport<Derived, true>::Refill::install_const2([[maybe_unused]] int 
         {
             set_thread_chunk_size(static_cast<unsigned int>(old_size_));
             // auto: SecondValueRef is not declared in every TU that
-            // instantiates this file (zero_one_value_array.cpp), and the name
+            // instantiates this file (zero_or_value_array.cpp), and the name
             // would be looked up even in a discarded branch.
             const auto value = static_cast<T>(std::as_const(src_)[span.base]);
             auto&      nch   = tmp_.chunk_list_[static_cast<std::size_t>(new_chunk)];
@@ -552,7 +552,7 @@ void RechunkSupport<Derived, true>::Refill::read_span([[maybe_unused]] int new_c
     // Per source chunk, the same decision element_at_unguarded() makes per
     // element, on the same single load: a zero_any const2 pointer names an
     // identifier region that was never written -> fill with the constant;
-    // anything else (materialised buffer, const1 sentinel, zero_one_value's
+    // anything else (materialised buffer, const1 sentinel, zero_or_value's
     // filled const2 array) is readable as is -> memcpy. bool / Bit keep the
     // per-element path (bit-packed storage).
     if constexpr (std::is_trivially_copyable_v<T> && !is_bool_like_v<T>)
@@ -676,7 +676,7 @@ void RechunkSupport<Derived, true>::Refill::release_sources([[maybe_unused]] con
     //
     // Each variant's release_st() frees the buffer and points the chunk at the
     // first constant without counting a compression -- exactly what "already
-    // transcribed" means here. zero_one_value / zero_any's go through their
+    // transcribed" means here. zero_or_value / zero_any's go through their
     // compression's own block_clear_common(0, ...) (type slot to const1, second-
     // value slot reset, CAS, free_block_to_pool), which is sound on the source:
     // quiescent, so the CAS cannot lose, and torn down right after the swap,
@@ -764,7 +764,7 @@ void RechunkSupport<Derived, true>::Refill::fold_back([[maybe_unused]] int      
     // on is_not_const_val1(); the scan on a const2 chunk re-derives the same
     // state).
     //
-    // Wired for zero_any (compress() by chunk_index, array_id) and zero_one_value
+    // Wired for zero_any (compress() by chunk_index, array_id) and zero_or_value
     // (by the array's inf_array record). bool registers no second value
     // (get_idx_second_value aborts) and is bit-packed: never this path.
     if constexpr (is_zero_any_family_v<ChunkType>)
@@ -791,10 +791,10 @@ void RechunkSupport<Derived, true>::Refill::fold_back([[maybe_unused]] int      
     // keeps the guard that a second visit to a const1 chunk must not park the
     // zero sentinel -- load-bearing for the sweep regardless of this loop.
     //
-    // zero_one_value: bool has no second value to fold to (second_index is
+    // zero_or_value: bool has no second value to fold to (second_index is
     // false), so it simply does nothing here. Also gated on
     // use_fast_block_compression: this four-argument compress() lives in
-    // zero_one_value::ChunkFastCompPolicy<..., Enabled>, which zero_one_value
+    // zero_or_value::ChunkFastCompPolicy<..., Enabled>, which zero_or_value
     // inherits with Enabled = use_fast_block_compression (= threaded): a
     // SERIAL build has no such overload. There, copy_range() already folded
     // every chunk it left uniform, through the counters

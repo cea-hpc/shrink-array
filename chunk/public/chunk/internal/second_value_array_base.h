@@ -28,7 +28,7 @@
 namespace shrink_array
 {
 /**
- * @brief The part of zero_one_value::Array and zero_any::Array that the two share, on top of
+ * @brief The part of zero_or_value::Array and zero_any::Array that the two share, on top of
  *        ArrayChunkBase: chunk allocation, compress(), and the common part of
  *        resize().
  */

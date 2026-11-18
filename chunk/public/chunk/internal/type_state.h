@@ -58,7 +58,7 @@ struct CompressionManager;
  *          The static members of the bases are named through this class as
  *          before (TypeState<ChunkT, T>::get_list_block_free_thr(...)).
  *
- * @tparam ChunkT chunk variant template (zero, zero_one_value or zero_any)
+ * @tparam ChunkT chunk variant template (zero, zero_or_value or zero_any)
  * @tparam T       stored element type
  */
 template <template <typename> class ChunkT, typename T>
@@ -116,7 +116,7 @@ class TypeState final : public virtual TypeStateInterface,
 
     const int max_thr_ = CHUNK_PMP_THREAD_CAPACITY;
 
-    /// @brief zero_one_value: the second-value lists sweep_rank() drains, snapshotted
+    /// @brief zero_or_value: the second-value lists sweep_rank() drains, snapshotted
     ///        serially by sweep_prepare().
     std::vector<SecondValueInfo<T>*> sweep_inf_arrays_;
 

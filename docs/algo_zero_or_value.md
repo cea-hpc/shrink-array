@@ -1,6 +1,6 @@
-# The zero_one_value::Array algorithm
+# The zero_or_value::Array algorithm
 
-> French version: [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md).
+> French version: [algo_zero_or_value_fr.md](algo_zero_or_value_fr.md).
 
 > Code status: early October 2026. Dynamic geometry is detailed in
 > [adaptive_rechunk.md](adaptive_rechunk.md), lock-free synchronisation between
@@ -15,7 +15,7 @@
 
 ## 1. Goal
 
-`zero_one_value::Array<T>` is an array split into **chunks** (fixed-size blocks, a power of 2 or a multiple of 64)
+`zero_or_value::Array<T>` is an array split into **chunks** (fixed-size blocks, a power of 2 or a multiple of 64)
 that are **compressed** as soon as all their elements equal one of **two constants**:
 
 - the **first value** `first_value` (0, the initialisation value);
@@ -29,10 +29,10 @@ The three variants of the library differ in what they can compress:
 | variant | compressible constants | second value metadata |
 |---|---|---|
 | `zero::Array` | `first_value` only | none |
-| **`zero_one_value::Array`** | `first_value` **and one second value per array** | one entry per array |
+| **`zero_or_value::Array`** | `first_value` **and one second value per array** | one entry per array |
 | `zero_any::Array` | `first_value` and **one second value per chunk** | one entry per chunk |
 
-`zero_one_value::Array` is therefore the right choice when the data have **a single dominant
+`zero_or_value::Array` is therefore the right choice when the data have **a single dominant
 non-zero value**: its metadata are lighter than those of `zero_any`.
 
 ---
@@ -40,7 +40,7 @@ non-zero value**: its metadata are lighter than those of `zero_any`.
 ## 2. Usage
 
 ```cpp
-zero_one_value::Array<double> arr(n);
+zero_or_value::Array<double> arr(n);
 arr.set_second_value(1.0);      // declare it before the parallel phases
 
 #pragma omp parallel for
@@ -53,7 +53,7 @@ double s = std::as_const(arr)[i];   // read: returns a T
 The interface is close to a `std::vector`: `size()`, `resize()`, `at()`, constant iterators,
 `swap()`, etc. Three points differ:
 
-- **Non-const `operator[]` returns a proxy** (`zero_one_value::Proxy<T>`), not a reference. All writes
+- **Non-const `operator[]` returns a proxy** (`zero_or_value::Proxy<T>`), not a reference. All writes
   go through it. The compound operators (`+=`, `*=`, …) are
   reimplemented on the proxy.
 - **`set_second_value()` must be called outside a parallel region**, before the writes: it
@@ -72,7 +72,7 @@ The chunk size is held **by each array** (`size_policy_`, see
 `chunk_size_policy.h`), not by a global variable:
 
 - **fixed geometry**: the size is a compile-time constant, one library per
-  size (`chunk_zero_one_value_256`, …, list `CHUNK_STATIC_SIZES`, the first one giving
+  size (`chunk_zero_or_value_256`, …, list `CHUNK_STATIC_SIZES`, the first one giving
   `CHUNK_DEFAULT_SIZE`);
 - **dynamic geometry** (`CHUNK_DYNAMIC`, `_dyn` libraries): the size is set at
   run time and can **change during the lifetime of the array** (`rechunk_to()`, section 9),
@@ -91,7 +91,7 @@ const int elem_offset       = i &  size_policy_.modulo();     // position in the
 
 ### 4.1 Three states
 
-Each `zero_one_value::Chunk<T>` essentially holds an atomic pointer `values`. Depending on its target,
+Each `zero_or_value::Chunk<T>` essentially holds an atomic pointer `values`. Depending on its target,
 the chunk is in one of three states:
 
 | state | `values` points to | test |
@@ -105,15 +105,15 @@ concerned. Their size is `const_buffer_size` (the chunk size in fixed geometry,
 `chunk_dyn_max_size` in dynamic geometry). There is one `const_val2` buffer per declared second
 value, identified by an **index** `idx`.
 
-> Warning: `zero_one_value::Chunk::written()` **without an argument** is reserved for `bool` and returns `false`
+> Warning: `zero_or_value::Chunk::written()` **without an argument** is reserved for `bool` and returns `false`
 > for any other type. To know whether a non-boolean chunk is materialised, you need
 > `written(idx)` with the index of the array's second value
-> (`zero_one_value::Array::chunk_written(j)` does it).
+> (`zero_or_value::Array::chunk_written(j)` does it).
 
 ### 4.2 The second value registry
 
 The second value **is not stored in the array**: it lives in the shared registry
-<tt>zero_one_value::Proxy\<T\>\::array_registry</tt>, indexed by the **address** of the array. Each entry is an
+<tt>zero_or_value::Proxy\<T\>\::array_registry</tt>, indexed by the **address** of the array. Each entry is an
 `InfArrayT` triplet:
 
 ```
@@ -125,7 +125,7 @@ The second value **is not stored in the array**: it lives in the shared registry
   (for example the "already a compression candidate" flags).
 
 The registry remains the source of truth, but each array keeps a **mirror** of it
-(`zero_one_value::Array::inf_array`), re-read (`sync_registry_mirror()`) after the only three places that
+(`zero_or_value::Array::inf_array`), re-read (`sync_registry_mirror()`) after the only three places that
 write the registry: `create()`, `set_second_value()` and the rechunk identity swap.
 The write `operator[]` **arms each proxy with the address of this mirror**
 (`registry_mirror()`, `arm_inf_array()`): the write path copies the triplet instead of
@@ -177,7 +177,7 @@ ProxyType operator[](IndexType i) noexcept
     const int elem_offset       = i & size_policy_.modulo();
     const ProxyType& val = chunk_list[chunk_index][elem_offset];
     val.set_this_and_chunk_index(&derived(), chunk_index, array_id);   // array, chunk, array_id
-    val.arm_inf_array(derived().registry_mirror());                // zero_one_value: the mirror
+    val.arm_inf_array(derived().registry_mirror());                // zero_or_value: the mirror
     return val;
 }
 ```
@@ -268,7 +268,7 @@ are detailed in [synchronisation_dekker.md](synchronisation_dekker.md).
 
 ```mermaid
 flowchart TD
-    A["zero_one_value::Proxy::assign_impl : body ready"] --> B{"replay of a deferred<br/>operation in progress?"}
+    A["zero_or_value::Proxy::assign_impl : body ready"] --> B{"replay of a deferred<br/>operation in progress?"}
     B -->|yes| B1["run the body directly"]
     B -->|no| C{"deferred operations<br/>pending on the chunk?"}
     C -->|"other threads'"| C1["apply them (reader_sync)"]
@@ -341,7 +341,7 @@ In-flight compression returns these chunks to `const_val2` as the loop proceeds.
 Each thread keeps **one list of candidate chunks per second value**:
 
 ```
-Manager::zero_one_value_candidates_map_thr[rang][second_value]
+Manager::zero_or_value_candidates_map_thr[rang][second_value]
 ```
 
 Each entry holds `(chunk, chunk_index, array_id, number of elements)`. The number of elements
@@ -432,11 +432,11 @@ compressions. A buffer freed by a rank other than its owner is set aside
 (affinity key), which makes it possible to release their memory in one block when they are
 rebuilt or destroyed; empty slabs are then returned to the system.
 
-For `zero_one_value`, this set is only created at the array's **first rechunk** (lazy affinity):
+For `zero_or_value`, this set is only created at the array's **first rechunk** (lazy affinity):
 each set costs one started slab per rank and per size, i.e. ~780 MiB over the 16 arrays of
 `shrink_bench` at 64 threads, and an array that is never rebuilt gets no benefit from it. A
 dynamic run thus consumes, at the start, exactly as much as the static one at the same size
-(`zero_one_value`: 19,999 vs 20,009 MB after initialisation). Details and measurements: [adaptive_rechunk.md](adaptive_rechunk.md) §5.
+(`zero_or_value`: 19,999 vs 20,009 MB after initialisation). Details and measurements: [adaptive_rechunk.md](adaptive_rechunk.md) §5.
 
 ### 9.2 Rechunk (dynamic geometry)
 
@@ -450,7 +450,7 @@ from the state of the chunks). The steps:
    September 2026 they were only removed: a chunk queued by the write
    that had made it uniform then stayed materialised during the rebuild, was
    copied instead of being folded, and was never queued again. Measured on
-   `rechunk_validation` (1 thread): `zero_one_value`, 0 → 2,408 chunks folded and 7,107 → 4,701 left
+   `rechunk_validation` (1 thread): `zero_or_value`, 0 → 2,408 chunks folded and 7,107 → 4,701 left
    materialised;
 2. drain the reuse lists and prepare the pools for the new size;
 3. build a **temporary array** at the new size (chunk initialisation in
@@ -466,7 +466,7 @@ from the state of the chunks). The steps:
 6. destroy the old storage.
 
 The old storage is destroyed under its own identifier (`array_id`), which nothing reuses:
-everything indexed by it must be **freed**, not just emptied. For `zero_one_value`, these are
+everything indexed by it must be **freed**, not just emptied. For `zero_or_value`, these are
 the "in compression list" indicators (one byte per chunk), freed at the end of
 `clear_core()`, after the candidates are purged. The threshold that triggers compression
 passes and the pool budget, which depend on the total number of chunks, are
@@ -484,7 +484,7 @@ counters.
 making **one decision per chunk**: they materialise the chunk through the normal path if
 needed, write the rest **directly into the buffer**, then only queue the
 chunks that **may** be uniform (first, middle and last elements equal) **at a
-value that `zero_one_value` can compress** (the first value or the array's second value).
+value that `zero_or_value` can compress** (the first value or the array's second value).
 They are **sequential**: no concurrent writer or compression on the array.
 The rechunk uses `copy_range` to rebuild the new array.
 
@@ -515,25 +515,25 @@ computation would hold the compressor off and a proxy write would clear the anno
 The queuing decision looks at the piece's own values: all equal, and a value the variant
 can compress (a fill is such a piece, so the rule is `fill_range_mt`'s).
 
-**Three points specific to `zero_one_value`**, fixed in September 2026, which previously justified
+**Three points specific to `zero_or_value`**, fixed in September 2026, which previously justified
 keeping it on the element-by-element path:
 
 - the test "is this chunk materialised?" must call `written(idx)` with the array's second
   value index (`internal::materialised(a, ch, idx2)`): `written()` without an argument
   is reserved for `bool` and returns `false` for other types;
 - queuing (`internal::queue_for_compression`) must **load the second value** before
-  adding the chunk (`set_info_on_chunk()`), since `zero_one_value`'s lists are indexed by
+  adding the chunk (`set_info_on_chunk()`), since `zero_or_value`'s lists are indexed by
   it. Without that, the chunks landed in the list of `T{}`, which no pass drains;
 - in counter mode (the serial builds), a direct store must **recount** the chunk's two
-  counters, `n_val_eq_first_value_` and `n_val_eq_second_value_`, which zero_one_value::Proxy otherwise
+  counters, `n_val_eq_first_value_` and `n_val_eq_second_value_`, which zero_or_value::Proxy otherwise
   keeps up to date one write at a time (`internal::resync_counters`, as for `zero`'s count of
   zeros).
 
 Only `bool` (bit-packed chunks) stays on the element-by-element path.
 
 **The queuing decision in the `_mt` forms** never reads an element another thread may be
-writing, except on `zero_any`. For `zero` and `zero_one_value` it looks only at the piece's own values: all
-equal, and the first value (`zero`), or the first or second value (`zero_one_value`), as the
+writing, except on `zero_any`. For `zero` and `zero_or_value` it looks only at the piece's own values: all
+equal, and the first value (`zero`), or the first or second value (`zero_or_value`), as the
 element-by-element path decides. `zero_any` reads three elements (0, S/2, S−1) to know whether the
 chunk may be uniform: it writes these elements as relaxed atomics (`relaxed_element.h`:
 `fill_span_relaxed_edges`, `may_be_uniform_relaxed`), which makes the read safe; for types
@@ -541,17 +541,17 @@ without lock-free atomics, it queues only a piece covering the whole chunk with 
 single-threaded forms (`fill_range`, `copy_range`) read those three elements plainly
 (`may_be_uniform`): no other thread writes the array during the call.
 
-**The wrong values of September 2026.** With the direct path open to `zero_one_value`,
+**The wrong values of September 2026.** With the direct path open to `zero_or_value`,
 `bench_and_test.py` reported wrong values on Grace **after compression**:
-`rechunk_validation_zero_one_value_dyn` (`scale-64-to-tgt`, POST-FAIL) and the check mode of
-`shrink_bench_zero_one_value_256` ("is_const_val2 should be not"). Not a race between threads:
+`rechunk_validation_zero_or_value_dyn` (`scale-64-to-tgt`, POST-FAIL) and the check mode of
+`shrink_bench_zero_or_value_256` ("is_const_val2 should be not"). Not a race between threads:
 the re-chunk test fails identically on a single core in the serial Debug build, and the
 failing Grace configurations were the serial ones. The cause was the counters of the third
 point above: the direct paths (`fill_range`, `copy_range`, used by the re-chunk's rebuild)
 stored past them, the stale counts reached the chunk size on a mixed chunk, and the pass
 folded it to the first value, losing every element of the second. Since then the direct
 stores recount the counters, and the `_mt` forms write inside a session announced to the
-compressor (steps 3 to 6 above), on `zero_one_value` as on the other variants. Excluding `zero_one_value` from
+compressor (steps 3 to 6 above), on `zero_or_value` as on the other variants. Excluding `zero_or_value` from
 `internal::raw_fillable_v`, the fallback considered at the time, is not needed.
 
 **October 2026: normally fixed.** The direct stores recount the counters, the `_mt` forms write
@@ -564,7 +564,7 @@ the variants that failed.
 
 The full list, with the macros and the CMake options, is in
 [developer_settings.md](developer_settings.md). Those most relevant to
-`zero_one_value`:
+`zero_or_value`:
 
 | variable | effect |
 |---|---|
@@ -592,10 +592,10 @@ CMake options related to benchmark performance:
 
 | topic | files |
 |---|---|
-| the array | `zero_one_value_array.h`, `internal/zero_one_value_array_inline.h`, `internal/second_value_array_base.h` |
+| the array | `zero_or_value_array.h`, `internal/zero_or_value_array_inline.h`, `internal/second_value_array_base.h` |
 | common base, read, `operator[]` | `internal/array_chunk_base.h`, `internal/array_chunk_base_inline.h` |
-| the chunk, materialisation, compression | `zero_one_value_chunk.h`, `internal/zero_one_value_chunk_inline.h`, `internal/chunk_base.h` |
-| the write proxy | `internal/zero_one_value_proxy.h`, `internal/zero_one_value_proxy_inline.h`, `internal/second_value_proxy_base.h` |
+| the chunk, materialisation, compression | `zero_or_value_chunk.h`, `internal/zero_or_value_chunk_inline.h`, `internal/chunk_base.h` |
+| the write proxy | `internal/zero_or_value_proxy.h`, `internal/zero_or_value_proxy_inline.h`, `internal/second_value_proxy_base.h` |
 | the write engine | `internal/proxy_base.h`, `internal/proxy_base_inline.h` |
 | Dekker, writers / compressors | `internal/write_compress_sync_policy.h` (explained in [synchronisation_dekker.md](synchronisation_dekker.md)) |
 | readers and buffer reclamation | `internal/read_reclaim.h` |

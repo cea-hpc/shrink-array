@@ -15,17 +15,17 @@
  */
 
 /**
- * @file fill_range_mt_zero_and_zero_one_value_validation.cpp
- * @brief fill_range_mt() in a build that holds TWO variants (chunk_zero_and_zero_one_value:
- *        CHUNK_VARIANT_ZERO=1;CHUNK_VARIANT_ZERO_ONE_VALUE=1), on a zero::Array and a zero_one_value::Array side by
+ * @file fill_range_mt_zero_and_zero_or_value_validation.cpp
+ * @brief fill_range_mt() in a build that holds TWO variants (chunk_zero_and_zero_or_value:
+ *        CHUNK_VARIANT_ZERO=1;CHUNK_VARIANT_ZERO_OR_VALUE=1), on a zero::Array and a zero_or_value::Array side by
  * side.
  *
  * @details The range ops once chose their per-variant behaviour from the build
- *          flags (chunk_config::use_zero / use_zero_one_value) instead of the array's
- *          type. In a build with both flags set, that sent a zero_one_value::Array down
+ *          flags (chunk_config::use_zero / use_zero_or_value) instead of the array's
+ *          type. In a build with both flags set, that sent a zero_or_value::Array down
  *          zero's paths -- a fill_range_mt() of its SECOND value was never queued
  *          for compression, its chunks stayed materialised -- and a zero::Array
- *          down zero_one_value's, which did not even compile. This harness is that
+ *          down zero_or_value's, which did not even compile. This harness is that
  *          build: compiling it is the first half of the test, the second is
  *          what each fill leaves behind.
  *
@@ -38,9 +38,9 @@
  *            array         fill value              chunks left materialised
  *            zero::Array    first value (0)         none
  *            zero::Array    anything else           all  (zero has one constant)
- *            zero_one_value::Array   first value (0)         none
- *            zero_one_value::Array   its second value (9)    none  <- the regression
- *            zero_one_value::Array   an undeclared value     all
+ *            zero_or_value::Array   first value (0)         none
+ *            zero_or_value::Array   its second value (9)    none  <- the regression
+ *            zero_or_value::Array   an undeclared value     all
  *
  *          and every element reads back the value written. The counts are
  *          asserted in OpenMP builds only: a serial build has no fill session
@@ -50,35 +50,35 @@
  *          as multi_mat uses it: this program defines the switch the library
  *          reads, and makes the phase calls itself.
  *
- *          Usage: fill_range_mt_zero_and_zero_one_value_validation [chunks]
+ *          Usage: fill_range_mt_zero_and_zero_or_value_validation [chunks]
  */
 
 
 #include <cstdio>    // std::fprintf (main)
 #include <exception> // std::exception (main)
 
-#include "chunk/zero_array.h"           // zero::Array
-#include "chunk/zero_one_value_array.h" // zero_one_value::Array
-#include "chunk/range_ops.h"            // fill_range_mt
-#include "chunk/runtime.h"              // Runtime::init
-#include "chunk/config.h"               // OmptSuspendCounter, chunk_config::use_zero / use_zero_one_value
-#include "chunk/internal/pmp_chunk.h"   // CHUNK_PMP_MAX_THREADS
-#include "chunk/phases.h"               // begin_parallel_phase, finalize_parallel_phase_only_flush / _after_flush
-#include "chunk/internal/env_parse.h"   // arg_number (checked, not atoi)
-#include "chunk/print.h"                // shrink_array::println
+#include "chunk/zero_array.h"          // zero::Array
+#include "chunk/zero_or_value_array.h" // zero_or_value::Array
+#include "chunk/range_ops.h"           // fill_range_mt
+#include "chunk/runtime.h"             // Runtime::init
+#include "chunk/config.h"              // OmptSuspendCounter, chunk_config::use_zero / use_zero_or_value
+#include "chunk/internal/pmp_chunk.h"  // CHUNK_PMP_MAX_THREADS
+#include "chunk/phases.h"              // begin_parallel_phase, finalize_parallel_phase_only_flush / _after_flush
+#include "chunk/internal/env_parse.h"  // arg_number (checked, not atoi)
+#include "chunk/print.h"               // shrink_array::println
 
 
 /// The suspension counter read by chunk_config::OMPTcc: non-zero, no OMPT
-/// callback exists in this binary (chunk_zero_and_zero_one_value is built without the tool).
+/// callback exists in this binary (chunk_zero_and_zero_or_value is built without the tool).
 shrink_array::OmptSuspendCounter shrink_array::g_ompt_suspended{1};
 
 using namespace shrink_array;
 
-static_assert(chunk_config::use_zero && chunk_config::use_zero_one_value,
-              "fill_range_mt_zero_and_zero_one_value_validation is the two-variant build: link "
-              "chunk_zero_and_zero_one_value_<size>");
+static_assert(chunk_config::use_zero && chunk_config::use_zero_or_value,
+              "fill_range_mt_zero_and_zero_or_value_validation is the two-variant build: link "
+              "chunk_zero_and_zero_or_value_<size>");
 
-constexpr double second_value = 9.0; ///< the zero_one_value::Array's declared second value
+constexpr double second_value = 9.0; ///< the zero_or_value::Array's declared second value
 constexpr double other_value  = 5.0; ///< a value neither array can compress to
 
 /// @brief Non-uniform content: two values alternating, so no chunk compresses.
@@ -174,7 +174,7 @@ try
     Runtime::init(true);
 
     constexpr bool omp = build_config::use_openmp;
-    println("=== fill_range_mt_zero_and_zero_one_value_validation  chunks={}  threads={}  ({}) ===", nchunks,
+    println("=== fill_range_mt_zero_and_zero_or_value_validation  chunks={}  threads={}  ({}) ===", nchunks,
             CHUNK_PMP_MAX_THREADS, omp ? "OpenMP: counts asserted" : "serial: values only");
 
     // One array per case: every case starts from fresh chunks.
@@ -192,35 +192,35 @@ try
         arr.clear();
     }
     {
-        zero_one_value::Array<double> arr(0);
-        arr.resize(static_cast<zero_one_value::Array<double>::IndexType>(nchunks * arr.chunk_size()));
+        zero_or_value::Array<double> arr(0);
+        arr.resize(static_cast<zero_or_value::Array<double>::IndexType>(nchunks * arr.chunk_size()));
         arr.set_second_value(second_value, false);
-        fails += run_case("zero_one_value::Array, fill first value (0)", arr, nchunks, 0.0, omp ? 0 : -1);
+        fails += run_case("zero_or_value::Array, fill first value (0)", arr, nchunks, 0.0, omp ? 0 : -1);
         arr.clear();
     }
     {
-        zero_one_value::Array<double> arr(0);
-        arr.resize(static_cast<zero_one_value::Array<double>::IndexType>(nchunks * arr.chunk_size()));
+        zero_or_value::Array<double> arr(0);
+        arr.resize(static_cast<zero_or_value::Array<double>::IndexType>(nchunks * arr.chunk_size()));
         arr.set_second_value(second_value, false);
-        fails += run_case("zero_one_value::Array, fill second value (9)", arr, nchunks, second_value, omp ? 0 : -1);
+        fails += run_case("zero_or_value::Array, fill second value (9)", arr, nchunks, second_value, omp ? 0 : -1);
         arr.clear();
     }
     {
-        zero_one_value::Array<double> arr(0);
-        arr.resize(static_cast<zero_one_value::Array<double>::IndexType>(nchunks * arr.chunk_size()));
+        zero_or_value::Array<double> arr(0);
+        arr.resize(static_cast<zero_or_value::Array<double>::IndexType>(nchunks * arr.chunk_size()));
         arr.set_second_value(second_value, false);
         fails +=
-            run_case("zero_one_value::Array, fill undeclared value (5)", arr, nchunks, other_value, omp ? nchunks : -1);
+            run_case("zero_or_value::Array, fill undeclared value (5)", arr, nchunks, other_value, omp ? nchunks : -1);
         arr.clear();
     }
 
     println("=== {} ===",
-            fails ? "FILL_RANGE_MT_ZERO_AND_ZERO_ONE_VALUE FAILED" : "FILL_RANGE_MT_ZERO_AND_ZERO_ONE_VALUE OK");
+            fails ? "FILL_RANGE_MT_ZERO_AND_ZERO_OR_VALUE FAILED" : "FILL_RANGE_MT_ZERO_AND_ZERO_OR_VALUE OK");
     return fails ? 1 : 0;
 }
 catch (const std::exception& e)
 {
     // A failed std::format or a bad argument: said, not std::terminate().
-    std::fprintf(stderr, "fill_range_mt_zero_and_zero_one_value_validation: %s\n", e.what());
+    std::fprintf(stderr, "fill_range_mt_zero_and_zero_or_value_validation: %s\n", e.what());
     return 1;
 }

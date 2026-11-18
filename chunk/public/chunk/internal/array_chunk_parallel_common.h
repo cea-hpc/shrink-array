@@ -23,9 +23,9 @@
  *
  * @details flush_pending_deferred_ops() must run before anything frees or
  *          re-points chunk storage (clear(), resize(), rechunk_to(), swap());
- *          it is the same for zero::Array, zero_one_value::Array and zero_any::Array, so it
+ *          it is the same for zero::Array, zero_or_value::Array and zero_any::Array, so it
  *          lives here once. The fast-block pass stays per variant
- *          (zero_array_parallel.h, zero_one_value_array_parallel.h). The serial
+ *          (zero_array_parallel.h, zero_or_value_array_parallel.h). The serial
  *          counterpart is a no-op.
  *
  * @see array_chunk_parallel_common_inline.h for the body
@@ -44,7 +44,7 @@ namespace shrink_array
 /**
  * @brief The OpenMP machinery shared by the three array variants.
  *
- * @tparam Derived the concrete array type (zero::Array, zero_one_value::Array or
+ * @tparam Derived the concrete array type (zero::Array, zero_or_value::Array or
  *         zero_any::Array). Only reached through ParallelSupport.
  */
 template <typename Derived>

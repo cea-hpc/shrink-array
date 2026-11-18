@@ -33,30 +33,30 @@ e  * @file type_state_inline.h
 #include <type_traits> // std::conditional_t
 #include <atomic>      // std::memory_order_relaxed
 
-#include "chunk/internal/type_state.h"               // the declarations these bodies belong to
-#include "chunk/config.h"                            // build_config, chunk_config
-#include "chunk/log.h"                               // CHUNK_LOG
-#include "chunk/internal/pmp_chunk.h"                // CHUNK_PMP_*
-#include "chunk/internal/zero_chunk.h"               // Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/internal/zero_one_value_chunk.h"     // zero_one_value::Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/internal/zero_any_chunk.h"           // zero_any::Chunk<T>: the ChunkT<T>:: calls
-#include "chunk/internal/zero_chunk_def.h"           // zero::ChunkDef
-#include "chunk/internal/zero_one_value_chunk_def.h" // zero_one_value::ChunkDef
-#include "chunk/internal/zero_any_chunk_def.h"       // zero_any::ChunkDef
-#include "chunk/internal/concept_chunk.h"            // IsChunk, IsZeroOneValue, IsZeroAnyFamily
-#include "chunk/internal/global_stats_chunk_list.h"  // GlobalStatsChunkList
-#include "chunk/internal/type_name.h"                // type_name<T>
-#include "chunk/internal/singleton.h"                // SingletonChk
+#include "chunk/internal/type_state.h"              // the declarations these bodies belong to
+#include "chunk/config.h"                           // build_config, chunk_config
+#include "chunk/log.h"                              // CHUNK_LOG
+#include "chunk/internal/pmp_chunk.h"               // CHUNK_PMP_*
+#include "chunk/internal/zero_chunk.h"              // Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/internal/zero_or_value_chunk.h"     // zero_or_value::Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/internal/zero_any_chunk.h"          // zero_any::Chunk<T>: the ChunkT<T>:: calls
+#include "chunk/internal/zero_chunk_def.h"          // zero::ChunkDef
+#include "chunk/internal/zero_or_value_chunk_def.h" // zero_or_value::ChunkDef
+#include "chunk/internal/zero_any_chunk_def.h"      // zero_any::ChunkDef
+#include "chunk/internal/concept_chunk.h"           // IsChunk, IsZeroOrValue, IsZeroAnyFamily
+#include "chunk/internal/global_stats_chunk_list.h" // GlobalStatsChunkList
+#include "chunk/internal/type_name.h"               // type_name<T>
+#include "chunk/internal/singleton.h"               // SingletonChk
 
 namespace shrink_array
 {
-/// @brief zero_one_value: snapshot the second-value lists the sweep drains.
+/// @brief zero_or_value: snapshot the second-value lists the sweep drains.
 template <template <typename> typename ChunkT, typename T>
 void TypeState<ChunkT, T>::sweep_prepare()
 {
-    if constexpr (chunk_config::use_fast_block_compression && IsZeroOneValue<ChunkT, T> && is_not_bool)
+    if constexpr (chunk_config::use_fast_block_compression && IsZeroOrValue<ChunkT, T> && is_not_bool)
     {
-        const auto inf_arrays = zero_one_value::Proxy<T>::array_registry->get_all_inf_array();
+        const auto inf_arrays = zero_or_value::Proxy<T>::array_registry->get_all_inf_array();
         sweep_inf_arrays_.assign(inf_arrays.begin(), inf_arrays.end());
     }
 }
@@ -67,7 +67,7 @@ void TypeState<ChunkT, T>::sweep_rank([[maybe_unused]] int thr, [[maybe_unused]]
 {
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        if constexpr (IsZeroOneValue<ChunkT, T>)
+        if constexpr (IsZeroOrValue<ChunkT, T>)
         {
             if constexpr (is_not_bool)
             {
@@ -92,14 +92,14 @@ void TypeState<ChunkT, T>::sweep_rank([[maybe_unused]] int thr, [[maybe_unused]]
     }
 }
 
-/// @brief zero_one_value always swept the ranks past the team; zero_any in one pass;
+/// @brief zero_or_value always swept the ranks past the team; zero_any in one pass;
 ///        Chunk never.
 template <template <typename> typename ChunkT, typename T>
 bool TypeState<ChunkT, T>::sweep_mops_up([[maybe_unused]] bool apply) const
 {
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        if constexpr (IsZeroOneValue<ChunkT, T>)
+        if constexpr (IsZeroOrValue<ChunkT, T>)
         {
             return true;
         }
@@ -184,13 +184,13 @@ void TypeState<ChunkT, T>::compute_size_max_number_of_chunk_to_check_compress()
     auto& global_stats = SingletonChk<GlobalStatsChunkList>::get_ref();
 
     // Take the tuning constants from THIS manager's own variant: they differ a great deal
-    // (see ChunkDef / zero_one_value::ChunkDef / zero_any::ChunkDef). The value is divided by the thread count, so at
+    // (see ChunkDef / zero_or_value::ChunkDef / zero_any::ChunkDef). The value is divided by the thread count, so at
     // high thread counts the floor IS the threshold. Another variant's higher floor means a
     // rank's list almost never reaches it: compression almost never runs during execution and
     // every materialisation allocates afresh.
     using VariantDef =
         std::conditional_t<IsZeroAnyFamily<ChunkT, T>, zero_any::ChunkDef,
-                           std::conditional_t<IsZeroOneValue<ChunkT, T>, zero_one_value::ChunkDef, zero::ChunkDef>>;
+                           std::conditional_t<IsZeroOrValue<ChunkT, T>, zero_or_value::ChunkDef, zero::ChunkDef>>;
 
     auto threshold = static_cast<int>(total_chunk_create /
                                       (VariantDef::factor_div_chunk_count_for_compress * CHUNK_PMP_MAX_THREADS));

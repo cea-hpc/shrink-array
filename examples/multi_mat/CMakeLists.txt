@@ -15,7 +15,7 @@
 #                       without its test, so building it by name gives that
 #                       error rather than a binary that loses its deferred
 #                       writes.
-# Both link chunk_zero_and_zero_one_value_<size>, a variant built WITHOUT the library's own
+# Both link chunk_zero_and_zero_or_value_<size>, a variant built WITHOUT the library's own
 # tool, so that ompt_start_tool and g_ompt_suspended come from here.
 # The sources both executables share; each adds the file that defines the
 # OMPT switch of the library: manage_ompt.cpp (the tool) or ompt_off.cpp.
@@ -36,13 +36,13 @@ function(multi_mat_setup_target tgt)
     chunk_require_cxx20(${tgt} PRIVATE)
 
     # A library carrying BOTH variant defines: the three field arrays are
-    # zero::Array<double>, the presence fraction zero_one_value::Array<double>.
+    # zero::Array<double>, the presence fraction zero_or_value::Array<double>.
     # Not the bare `chunk` target: that one carries no variant define (the
     # std::vector shape of the library) while this example instantiates the
     # arrays itself, so its per-rank allocators and candidate lists were
     # never set up -- every write from a rank other than 0 died in
     # get_chunk_allocator().
-    target_link_libraries(${tgt} PRIVATE chunk_zero_and_zero_one_value_${CHUNK_DEFAULT_SIZE})
+    target_link_libraries(${tgt} PRIVATE chunk_zero_and_zero_or_value_${CHUNK_DEFAULT_SIZE})
 
     # The compute loop is std::cos/sin/tan under `omp simd` (LoopsSimd, on the
     # std::vector path): without a vector libm it does not vectorise at all --

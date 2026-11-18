@@ -32,7 +32,7 @@ class ChartTab:
         self.pt_build = QComboBox()
         self.pt_build.currentIndexChanged.connect(self.draw_points)
         self.pt_variant = QComboBox()
-        for v in ("toutes", "zero", "zero_one_value", "zero_any"):
+        for v in ("toutes", "zero", "zero_or_value", "zero_any"):
             self.pt_variant.addItem(T(v), v)
         self.pt_variant.currentIndexChanged.connect(self.draw_points)
         self.pt_cmp = QComboBox()

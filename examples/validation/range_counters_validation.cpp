@@ -15,19 +15,19 @@
  */
 
 // ============================================================================
-// Range ops and the per-chunk counters. Variant-agnostic: tests zero / zero_one_value
+// Range ops and the per-chunk counters. Variant-agnostic: tests zero / zero_or_value
 // / zero_any depending on the compile-time macro (CHUNK_VARIANT_ZERO*),
 // like the other harnesses here.
 // ============================================================================
 //
 // In counter mode (use_compression_with_counter: no fast block compression --
-// the serial builds) zero and zero_one_value decide a chunk's compression on counters the
+// the serial builds) zero and zero_or_value decide a chunk's compression on counters the
 // write proxy maintains incrementally: how many elements equal the first value
-// (zero, zero_one_value) and the array's second value (zero_one_value). fill_range / copy_range
+// (zero, zero_or_value) and the array's second value (zero_or_value). fill_range / copy_range
 // store most of a chunk straight into its buffer, past those counters, so they
-// must recount afterwards (internal::resync_counters). zero_one_value was once left out:
+// must recount afterwards (internal::resync_counters). zero_or_value was once left out:
 // its stale counts reached chunk_size on a MIXED chunk and the pass folded it
-// to a constant, losing everything else in it (rechunk_validation_zero_one_value_dyn,
+// to a constant, losing everything else in it (rechunk_validation_zero_or_value_dyn,
 // 34819 elements of 1e6).
 //
 // Each case: a whole chunk filled with a plain value through the raw path,
@@ -35,7 +35,7 @@
 // pass. Every element but that one must still read the plain value. With a
 // stale count the chunk comes back all constant.
 //   first  -- fill_range, then one first value;
-//   second -- fill_range, then one second value (zero_one_value / zero_any);
+//   second -- fill_range, then one second value (zero_or_value / zero_any);
 //   copy   -- copy_range from a plain source, then one first value.
 // Then fill_range over chunks already constant (run_fill_constant_case).
 // Then the compound operators on a compressed chunk (run_compound_case).
@@ -51,12 +51,12 @@
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
 #include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/range_ops.h"             // fill_range, copy_range
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown
-#include "chunk/config.h"                // chunk_config::use_zero_one_value*, use_compression_with_counter
+#include "chunk/config.h"                // chunk_config::use_zero_or_value*, use_compression_with_counter
 #include "chunk/phases.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/print.h"                 // shrink_array::println
 
@@ -70,14 +70,14 @@ using namespace shrink_array;
 namespace
 {
 
-static_assert(chunk_config::use_zero || chunk_config::use_zero_one_value || chunk_config::use_zero_any,
-              "range_counters_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_ONE_VALUE or _ZERO_ANY");
+static_assert(chunk_config::use_zero || chunk_config::use_zero_or_value || chunk_config::use_zero_any,
+              "range_counters_validation must be built with CHUNK_VARIANT_ZERO, _ZERO_OR_VALUE or _ZERO_ANY");
 
 template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -85,9 +85,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -171,7 +171,7 @@ const char* case_name(Case test_case)
 /// it) through the raw path, one proxied constant, a compression pass.
 int run_case(Case test_case)
 {
-    const bool second_applies = chunk_config::use_zero_one_value || chunk_config::use_zero_any;
+    const bool second_applies = chunk_config::use_zero_or_value || chunk_config::use_zero_any;
     if (test_case == Case::second && !second_applies)
     {
         return 0;
@@ -231,7 +231,7 @@ int run_case(Case test_case)
 /// fill of the chunk's own constant must leave it constant.
 int run_fill_constant_case()
 {
-    const bool second_applies = chunk_config::use_zero_one_value || chunk_config::use_zero_any;
+    const bool second_applies = chunk_config::use_zero_or_value || chunk_config::use_zero_any;
 
     Array<double> arr;
     const auto    csz   = static_cast<long>(arr.chunk_size());
@@ -343,15 +343,15 @@ int run_fill_constant_case()
     return bad != 0 ? 1 : 0;
 }
 
-/// `second * 0` through the proxy (zero_one_value): the element leaves the second value
+/// `second * 0` through the proxy (zero_or_value): the element leaves the second value
 /// AND enters the first. Both counters must move; the second-value count once
-/// did not (zero_one_value::Proxy::apply_compound_operation), so it stayed one too high and the
+/// did not (zero_or_value::Proxy::apply_compound_operation), so it stayed one too high and the
 /// LAST of the following second-value writes reached chunk_size with the zero
 /// still in the chunk: folded to const2, the zero read back as the second value
-/// (shrink_bench_zero_one_value_dyn, one element of a chunk in a check run).
+/// (shrink_bench_zero_or_value_dyn, one element of a chunk in a check run).
 int run_mul_zero_case()
 {
-    if constexpr (!chunk_config::use_zero_one_value)
+    if constexpr (!chunk_config::use_zero_or_value)
     {
         return 0;
     }
