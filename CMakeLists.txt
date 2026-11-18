@@ -59,8 +59,13 @@ if(SHRINK_ARRAY_IS_TOP_LEVEL)
         list(GET _chunk_renamed 1 _chunk_name)
         if(DEFINED CACHE{${_chunk_former}})
             message(DEPRECATION "-D${_chunk_former} is -D${_chunk_name} now (the former name goes at the next minor version)")
+            # The former entry's type (BOOL, PATH, STRING): an old build tree
+            # has it from its own option() / set(CACHE). A -D without a type
+            # leaves it UNINITIALIZED, and the option() / set(CACHE) of the
+            # new name further down gives it its type then.
+            get_property(_chunk_type CACHE ${_chunk_former} PROPERTY TYPE)
             if(NOT DEFINED CACHE{${_chunk_name}})
-                set(${_chunk_name} "$CACHE{${_chunk_former}}" CACHE STRING "(given as ${_chunk_former})")
+                set(${_chunk_name} "$CACHE{${_chunk_former}}" CACHE ${_chunk_type} "(given as ${_chunk_former})")
             endif()
             unset(${_chunk_former} CACHE)
         endif()
@@ -68,6 +73,7 @@ if(SHRINK_ARRAY_IS_TOP_LEVEL)
     unset(_chunk_renamed)
     unset(_chunk_former)
     unset(_chunk_name)
+    unset(_chunk_type)
 endif()
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
