@@ -12,9 +12,13 @@
 # chunk_enable_fast_math() and ARMPL_ROOT live in examples/CMakeLists.txt now:
 # multi_mat uses them too.
 add_link_options(-rdynamic)
+# Before 16.2 only. With 16.2 the driver compiles without the flag in every
+# variant, so it is back in the unity unit: as a file of its own (CMake leaves
+# a file with its own options out of the unity build), it re-instantiated the
+# whole library a second time -- ~30% of each bench executable's compile time.
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
         AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "16"
-        AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "17"
+        AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "16.2"
         AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
     set_source_files_properties(
         shrink_bench.cpp
