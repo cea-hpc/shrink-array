@@ -143,6 +143,12 @@ the tag's checksum to the recipe.
   `access_cost`, `advisor_demo`, `getting_started` and `bool_arrays` include public headers
   only, and `check_public_api` fails when an example outside the harnesses and the benchmarks
   includes an internal one.
+- `CHUNK_USE_CCACHE` (`AUTO`, `ON`, `OFF`): the build compiles through ccache (>= 4.8) when it
+  finds it, on the `PATH` or with `-DCCACHE_EXECUTABLE=...`. A branch switch or a pull that leaves
+  the library headers alone gets the unity units of `shrink_bench` and the validation back from
+  the cache (a rebuild after `ninja clean`: 93 s to 0 s). The cache is split by host CPU, so
+  `-march=native` objects never go from one kind of node to another; `coverity_submit.sh`
+  configures with it `OFF`.
 
 ### Changed
 
@@ -304,6 +310,17 @@ the tag's checksum to the recipe.
   on this benchmark is the initialisation's, unchanged. `rechunk_validation` gains
   `sliced-val2-grow` and `sliced-val2-uneven`: sliced rebuilds mixing zero, second-value and
   live sources.
+- With gcc 16.2 and later, `shrink_bench.cpp` is compiled inside the unity unit of its
+  executable again: the `-fno-tree-vectorize` that dodged gcc 16's AVX2 ICE stays for gcc 16.0
+  and 16.1 only. Compiled apart, the driver instantiated the whole library a second time: about
+  30 % less compilation per bench executable (113 s to 79 s for `shrink_bench_omp_zero_any_256`).
+- `CHUNK_DEBUG_INFO=auto` gives `lines` (`-g1`) to the address, thread and undefined sanitizer
+  builds too, with `CHUNK_CHECK_OPTIM` or without: their reports need only the function names
+  and the line tables (the same stacks, inlined frames included, with gcc and Clang), and the
+  optimised sanitizer builds are the slowest to compile: the unity unit of
+  `shrink_bench_omp_zero_any_256` under ThreadSanitizer takes 128 s and 3.5 GB instead of 162 s
+  and 5.0 GB (gcc 16.2). `full` stays for `CHUNK_CHECK_OPTIM` without a sanitizer and for the
+  `token` sanitizer; `-DCHUNK_DEBUG_INFO=full` brings the locals back for a debugger.
 
 ### Removed
 

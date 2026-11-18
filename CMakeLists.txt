@@ -390,8 +390,12 @@ endif()
 # same machine code bit for bit (debug information does not change code
 # generation). -g1 keeps the function names and the line tables: perf, gdb
 # backtraces and crash reports, not the locals.
-#   auto   full where a debugger reads locals -- CHECK_OPTIM and sanitizer
-#          builds --, lines elsewhere (perf and stats builds)
+#   auto   full where a debugger reads locals -- CHECK_OPTIM builds without a
+#          sanitizer, and the token sanitizer, whose names script reads the
+#          types with --dwarf --, lines elsewhere: perf and stats builds, and the
+#          address, thread and undefined sanitizers, CHECK_OPTIM or not, whose
+#          reports need only the function names and the line tables (inlined
+#          frames included, the same stacks as -g)
 #   full   -g        lines  -g1 (nvc++: -g, it has no such level)
 #   none   -g0 (with Clang it also cancels the -gdwarf-4 added above, which on
 #          its own turns full debug information on)
@@ -400,7 +404,7 @@ set(CHUNK_DEBUG_INFO "auto" CACHE STRING "Debug information of the optimised bui
 set_property(CACHE CHUNK_DEBUG_INFO PROPERTY STRINGS auto full lines none)
 set(_chunk_debug_info "${CHUNK_DEBUG_INFO}")
 if(_chunk_debug_info STREQUAL "auto")
-    if(CHUNK_CHECK_OPTIM OR NOT CHUNK_SANITIZER STREQUAL "none")
+    if(CHUNK_SANITIZER STREQUAL "token" OR (CHUNK_CHECK_OPTIM AND CHUNK_SANITIZER STREQUAL "none"))
         set(_chunk_debug_info "full")
     else()
         set(_chunk_debug_info "lines")
