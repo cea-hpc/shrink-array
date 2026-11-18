@@ -52,7 +52,7 @@ jobs:
       CMAKE_BUILD_PARALLEL_LEVEL: 2
       TSAN_OPTIONS: halt_on_error=1 second_deadlock_stack=1
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Toolchain
@@ -85,7 +85,7 @@ jobs:
       CXX: g++-14
       CMAKE_BUILD_PARALLEL_LEVEL: 2
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Toolchain
@@ -127,7 +127,7 @@ jobs:
       # first faulting thread alone; the core has the stacks of all of them.
       ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:detect_stack_use_after_return=1:print_module_map=1:dump_registers=1:disable_coredump=0
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Toolchain
@@ -205,7 +205,7 @@ jobs:
       CXX: clang++-23
       CMAKE_BUILD_PARALLEL_LEVEL: 2
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Toolchain
@@ -244,7 +244,7 @@ jobs:
       CXX: g++-14
       CMAKE_BUILD_PARALLEL_LEVEL: 2
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Toolchain
@@ -291,7 +291,7 @@ jobs:
       CXX: ${{ matrix.cxx }}
       CMAKE_BUILD_PARALLEL_LEVEL: 2
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Toolchain
@@ -331,7 +331,7 @@ jobs:
       CMAKE_BUILD_PARALLEL_LEVEL: 2
       UBSAN_OPTIONS: print_stacktrace=1
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Toolchain
@@ -371,7 +371,7 @@ jobs:
       SPACK_USER_CACHE_PATH: ${{ github.workspace }}/.spack-cache
       SPACK_DISABLE_LOCAL_CONFIG: 1
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Spack
@@ -431,7 +431,7 @@ jobs:
       CXX: g++-14
       CMAKE_BUILD_PARALLEL_LEVEL: 2
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.NIGHTLY_REF }}
       - name: Toolchain
