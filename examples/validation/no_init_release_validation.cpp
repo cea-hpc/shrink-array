@@ -27,7 +27,7 @@
 
 #include <chrono>     // std::chrono::steady_clock (--bench)
 #include <cstddef>    // std::size_t
-#include <cstdio>     // std::FILE, std::fopen, std::fscanf
+#include <cstdio>     // std::FILE, std::fopen, std::fgets, std::fscanf, std::sscanf
 #include <cstring>    // std::strcmp, std::memset
 #include <sys/mman.h> // mmap, munmap (--bench reference)
 #include <unistd.h>   // sysconf
@@ -46,9 +46,29 @@ using namespace shrink_array;
 namespace
 {
 
-/// @brief Resident memory of the process, bytes (/proc/self/statm); 0 if unknown.
+/// @brief Resident memory of the process, bytes; 0 if unknown.
+/// @details smaps_rollup walks the page tables, so it is exact. statm (and
+///          VmRSS) read the per-CPU RSS counters without summing them (Linux
+///          6.2+): each CPU may hold back up to max(32, 2 * nr_cpus) pages, so
+///          on 2 x 160 cores they read 0 for the whole process and miss most of
+///          a vector filled from a team. statm is only the fallback.
 std::size_t resident_bytes()
 {
+    if (std::FILE* rollup = std::fopen("/proc/self/smaps_rollup", "r"))
+    {
+        char          line[256];
+        unsigned long kib   = 0;
+        bool          found = false;
+        while (!found && std::fgets(line, sizeof line, rollup) != nullptr)
+        {
+            found = std::sscanf(line, "Rss: %lu kB", &kib) == 1;
+        }
+        std::fclose(rollup);
+        if (found)
+        {
+            return static_cast<std::size_t>(kib) << 10U;
+        }
+    }
     std::FILE* f = std::fopen("/proc/self/statm", "r");
     if (f == nullptr)
     {
