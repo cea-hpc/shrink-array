@@ -20,7 +20,7 @@ endif()
 
 # What this installation holds, for a consumer that wants to choose:
 #   chunk_STATIC_SIZES  the compile-time sizes built (chunk::chunk_zero_any_<size>)
-#   chunk_DEFAULT_SIZE  the size of the bare chunk::chunk_zero / _zero_one_value / _zero_any
+#   chunk_DEFAULT_SIZE  the size of the bare chunk::chunk_zero / _zero_or_value / _zero_any
 #   chunk_HAS_DYN       chunk::chunk_<variant>_dyn exist (runtime chunk size)
 #   chunk_OPENMP        built with OpenMP (consumers are compiled with it too)
 #   chunk_THREADS       the threading backend: openmp, std or serial
@@ -35,5 +35,17 @@ set(chunk_OMPT "@CHUNK_HAVE_OMPT@")
 set(chunk_STD_ALLOC "@CHUNK_STD_ALLOC@")
 
 include("${CMAKE_CURRENT_LIST_DIR}/chunk-targets.cmake")
+
+# zero_or_value was zero_one_value until 0.3: the former names of its targets,
+# each linking the new one, with a message when a project links it.
+foreach(_chunk_former IN ITEMS "" "_dyn" _@_chunk_static_suffixes@)
+  if(TARGET chunk::chunk_zero_or_value${_chunk_former} AND NOT TARGET chunk::chunk_zero_one_value${_chunk_former})
+    add_library(chunk::chunk_zero_one_value${_chunk_former} INTERFACE IMPORTED)
+    set_target_properties(chunk::chunk_zero_one_value${_chunk_former} PROPERTIES
+                          INTERFACE_LINK_LIBRARIES chunk::chunk_zero_or_value${_chunk_former}
+                          DEPRECATION "renamed chunk::chunk_zero_or_value${_chunk_former}")
+  endif()
+endforeach()
+unset(_chunk_former)
 
 check_required_components(chunk)

@@ -50,7 +50,7 @@
  *  - **const_val1**: `values` points at the shared all-`first_value` block;
  *  - **const_val2**: `values` points at the identifier slot of THIS chunk's own
  *    second value (array_const_val2_holder.h; zero_any's distinguishing feature —
- *    zero_one_value has one second value per array, zero_any one per chunk);
+ *    zero_or_value has one second value per array, zero_any one per chunk);
  *  - **materialised**: `values` points at a private heap buffer.
  *
  * The two directions:
@@ -204,7 +204,7 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
     // Geometry is pinned PER CHUNK, never once here (see the @file comment): each entry
     // carries its array's ChunkElems (from push_to_compress_list()), pinned right before
     // clear_int_st() reaches ChunkBase::free_values(), which routes by the ambient
-    // thread_chunk_size() (see zero_one_value::Proxy::manage_full_first_value() in zero_one_value_proxy.h).
+    // thread_chunk_size() (see zero_or_value::Proxy::manage_full_first_value() in zero_or_value_proxy.h).
     auto& vec_tuple_to_compress = Manager::get_zero_any_candidates(thr);
 
     const auto sz = static_cast<int>(vec_tuple_to_compress.size());
@@ -564,7 +564,7 @@ void zero_any::ChunkImpl<T, Derived>::compress_sweep_rank(int thr, bool apply)
         // The only between-region compressor for zero_any in this mode. No writer is live
         // between regions, so the pass runs without handshake (nullptr proxy), each rank on
         // its own list (the second-value registry takes its mutex); ranks beyond the team
-        // are done serially (compress_sweep_mops_up), as zero_one_value does.
+        // are done serially (compress_sweep_mops_up), as zero_or_value does.
         if (apply)
         {
             make_block_compression(thr, nullptr);
@@ -1114,7 +1114,7 @@ void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::block_clear(this Derived&
 {
     // CHUNK_STATS: one block released (see the function comment).
     inc_chunk_compress<Derived>();
-    // Bytes released, as zero_one_value counts them (with bytes_alloc/bytes_reused: live buffers).
+    // Bytes released, as zero_or_value counts them (with bytes_alloc/bytes_reused: live buffers).
     add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(shrink_array::alloc_chunk_count()));
     self.SecondValueChunkBase<T, Derived>::block_clear_common(const_index, 0, thr_rank, ptr_type_const,
                                                               ptr_second_value, const2_ptr);

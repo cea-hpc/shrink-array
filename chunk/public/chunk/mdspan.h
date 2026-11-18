@@ -132,7 +132,7 @@ struct handle
 };
 
 /**
- * @brief mdspan accessor over an array of this library (zero::Array, zero_one_value::Array,
+ * @brief mdspan accessor over an array of this library (zero::Array, zero_or_value::Array,
  *        zero_any::Array, or any type with value_type, reference and operator[]).
  * @tparam Array The array type; `const Array` gives a read-only view whose
  *         reference is the value (T), like the array's const operator[].

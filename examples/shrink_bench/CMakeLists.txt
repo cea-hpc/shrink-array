@@ -3,7 +3,7 @@
 # CMakeLists.txt for the shrink_bench bench component.
 #
 # NOTE: each executable links against its matching chunk variant target
-# (chunk_zero / chunk_zero_one_value / chunk_zero_any / chunk_vector). The variant target sets
+# (chunk_zero / chunk_zero_or_value / chunk_zero_any / chunk_vector). The variant target sets
 # CHUNK_VARIANT_ZERO* as PUBLIC, so:
 #   - it's baked into libchunk_<variant> itself (fixing is_shrink=0 in
 #     TypeStateRegistry.cpp / manage_ompt.cpp)
@@ -67,13 +67,13 @@ set(SHRINK_BENCH_HEADERS
 # ============================================================================
 # Multi-size executable generation.
 #
-# For each shrink variant (zero/zero_one_value/zero_any) and each mode (check/perf) we
+# For each shrink variant (zero/zero_or_value/zero_any) and each mode (check/perf) we
 # build one executable per declination:
 #   _64, _256, _1024  -> static libs chunk_<variant>_<size> (compile-time geometry)
 #   _dyn              -> dynamic lib chunk_<variant>_dyn (runtime geometry), with the
 #                        runtime size baked via -DDYN_CHUNK_SIZE=<SHRINK_BENCH_DYN_SIZE>.
 # Naming: shrink_bench_<backend>_<variant>_<declination>, e.g.
-#   shrink_bench_omp_zero_one_value_256, shrink_bench_std_zero_any_dyn. The check / perf
+#   shrink_bench_omp_zero_or_value_256, shrink_bench_std_zero_any_dyn. The check / perf
 #   mode is chosen at run time with --mode.
 #
 # <backend> is the threading backend of the build (CHUNK_THREADS_BACKEND, top
@@ -199,15 +199,15 @@ else ()
 endif ()
 set(_sa2_prefix shrink_bench_${_SA2_BACKEND})
 
-set(_sa2_variant_names   zero       zero_one_value      zero_any)
-set(_sa2_variant_libbase chunk_zero    chunk_zero_one_value    chunk_zero_any)
+set(_sa2_variant_names   zero       zero_or_value      zero_any)
+set(_sa2_variant_libbase chunk_zero    chunk_zero_or_value    chunk_zero_any)
 
 list(LENGTH _sa2_variant_names _sa2_nvar)
 math(EXPR _sa2_nvar_last "${_sa2_nvar} - 1")
 
 # One target per (variant, declination) -- no longer one per mode as well.
 # Naming: shrink_bench_<backend>_<variant>_<declination>, e.g.
-# shrink_bench_omp_zero_one_value_256, shrink_bench_serial_zero_any_dyn. Pick check or
+# shrink_bench_omp_zero_or_value_256, shrink_bench_serial_zero_any_dyn. Pick check or
 # perf at run time with --mode.
 foreach(_vi RANGE ${_sa2_nvar_last})
   list(GET _sa2_variant_names   ${_vi} _vname)
@@ -281,8 +281,8 @@ if (CHUNK_WITH_TBB AND CHUNK_THREADS_BACKEND STREQUAL "std")
   endforeach()
 endif()
 
-# No chunk2bits targets: every shrink_bench_<backend>_zero_one_value_* run carries array_bool
-# (zero_one_value::Array<bool>, one byte per bool) AND its twin array_bool_bits
+# No chunk2bits targets: every shrink_bench_<backend>_zero_or_value_* run carries array_bool
+# (zero_or_value::Array<bool>, one byte per bool) AND its twin array_bool_bits
 # (BitArray, 8 per byte) on the same workload -- see BenchBoolBitsArray
 # (bench_array.h). The zero / zero_any builds give the twin their own
 # Array<bool>.

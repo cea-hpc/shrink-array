@@ -34,7 +34,7 @@
 //      S/8 bytes per materialised chunk) and the finer row S/2, whose
 //      sub-blocks it classifies word by word -- chunks half all-true, half
 //      mixed must read as one compressible half each. Also an
-//      zero_one_value::Array<bool> (it did not compile: no second-value index for bool);
+//      zero_or_value::Array<bool> (it did not compile: no second-value index for bool);
 //   7. re-chunk (dyn builds): down and up, contents against the reference;
 //   8. fill_range / copy_range (bits stored 64 per word): random spans --
 //      whole chunks, partial edges, across chunk boundaries -- over constant
@@ -50,7 +50,7 @@
 //      active size (capped at const_buffer_size), which it leaves unchanged --
 //      an array of another type created next is born at it.
 //
-// zero_one_value builds only (BitArray is zero_one_value::Array<Bit>). Exit 0 = pass.
+// zero_or_value builds only (BitArray is zero_or_value::Array<Bit>). Exit 0 = pass.
 
 #include <algorithm> // std::min
 #include <cstdint>   // std::uint64_t, std::uint32_t, std::uint8_t (the copy source)
@@ -59,8 +59,8 @@
 #include <utility>   // std::pair
 #include <vector>    // std::vector
 
-#include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int (zero_one_value::Array<bool>)
-#include "chunk/bit_array.h"             // BitArray, Bit (and zero_one_value::Array with them)
+#include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int (zero_or_value::Array<bool>)
+#include "chunk/bit_array.h"             // BitArray, Bit (and zero_or_value::Array with them)
 #include "chunk/chunk_size_advisor.h"    // ChunkSizeAdvisor
 #include "chunk/range_ops.h"             // fill_range, copy_range, and their _mt forms
 #include "chunk/runtime.h"               // Runtime::init
@@ -274,11 +274,11 @@ int birth_size()
     {
         return 0;
     }
-    const unsigned int          active = active_chunk_size();
-    const unsigned int          expect = std::min(active * packed_bit_birth_factor, const_buffer_size);
-    BitArray<>                  arr(1L << 16);
-    zero_one_value::Array<bool> bools(1L << 16);
-    int                         fails = 0;
+    const unsigned int         active = active_chunk_size();
+    const unsigned int         expect = std::min(active * packed_bit_birth_factor, const_buffer_size);
+    BitArray<>                 arr(1L << 16);
+    zero_or_value::Array<bool> bools(1L << 16);
+    int                        fails = 0;
     if (arr.chunk_size() != expect || active_chunk_size() != active || bools.chunk_size() != active)
     {
         println("[bits] FAIL birth size: bits {} (expected {}), then active {} and bool {} (expected {})",
@@ -479,7 +479,7 @@ int advisor_and_rechunk(long count)
 
     // bool (one byte per element): the advisor analyses it too.
     {
-        zero_one_value::Array<bool> bools(count);
+        zero_or_value::Array<bool> bools(count);
         for (long i = 0; i < count; ++i)
         {
             bools[i] = pattern(i);

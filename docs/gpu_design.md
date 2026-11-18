@@ -19,7 +19,7 @@ where "20 times less" changes what a code can handle.
 
 **In the scope of this first design:**
 
-- the three variants `zero`, `zero_one_value`, `zero_any`, and `pattern` (section 8);
+- the three variants `zero`, `zero_or_value`, `zero_any`, and `pattern` (section 8);
 - fixed geometry (S a compile-time constant) first, dynamic geometry next (section 9.3);
 - an execution model **by phases**, aligned on the kernels (section 3);
 - interoperability with the CPU version: same chunk format, transfers both ways, hybrid mode
@@ -104,7 +104,7 @@ struct ChunkDesc                 // 16 bytes for a T of 8 bytes or less
 {
     T*       buf;                // nullptr: compressed; otherwise a buffer of S elements
     T        constant;                // the constant of the compressed chunk (or the one left: 6.2)
-    // zero: constant is always T{}; zero_one_value: T{} or the array's second value;
+    // zero: constant is always T{}; zero_or_value: T{} or the array's second value;
     // zero_any: any value.  pattern: see 8.4.
 };
 ```
@@ -186,7 +186,7 @@ __device__ void assign(T v)
 ```
 
 Cases 1 and 3 are the hot path, uniform per warp, with no atomic. The rules of
-`zero_one_value` ("the second value onto an element that already holds it") and of `zero_any`
+`zero_or_value` ("the second value onto an element that already holds it") and of `zero_any`
 ("discover", "leave", `may_become_uniform`) fed the candidate lists: they **disappear**, the
 end-of-phase pass needs no candidates. What remains to handle is `+=` and the other compound
 operators, which read before writing: same cases, with `v` computed from `d.constant` or
@@ -256,7 +256,7 @@ measurement**):
 
 1. each lane reads its S/32 elements and compares them with `buf[0]`;
 2. `__all_sync` vote (`&&` reduction within the block);
-3. if uniform at a value the variant can compress (`zero`: `T{}`; `zero_one_value`: `T{}` or
+3. if uniform at a value the variant can compress (`zero`: `T{}`; `zero_or_value`: `T{}` or
    the second value; `zero_any`: any value): `d.constant = buf[0]`, `d.buf = nullptr`, and the
    buffer is returned (7.2).
 
@@ -302,11 +302,11 @@ order of preference:
 
 `constant` is always `T{}`; the pass only folds to `T{}`. Nothing else.
 
-### 8.2 `zero_one_value`
+### 8.2 `zero_or_value`
 
 `constant` is `T{}` or the array's second value (a field of the array, copied into the descriptor
 by the pass). `set_second_value()` is a host operation between two phases. On GPU,
-`zero_one_value` has no interest of its own over `zero_any` any more (the registry that
+`zero_or_value` has no interest of its own over `zero_any` any more (the registry that
 justified it no longer exists): it is kept for interoperability and for its semantics (compress
 only to a declared value), **(to be decided)** whether it deserves separate code or an
 `if constexpr` in `zero_any`.
@@ -475,7 +475,7 @@ the only usage trap, and it is documented the way the thread rule is on the CPU 
 | 1. Core in the tree | `chunk/public/chunk/device/`: descriptor, view, proxy, arena, append-buffer, `compress()`, `intrinsics.h` CUDA + HIP; `zero_any` and `zero`; host ↔ device converter; validation tests against the CPU version on the same write sequences; CI on a GPU runner if available, otherwise compilation only | the validations pass identically on CPU and GPU; same final memory as the CPU variant at equal geometry |
 | 2. Phases and benchmark | aligned `parallel_for` and vote before materialising; device `shrink_bench` (the benchmark's phases against `DeviceArray`); measurements on H100 / MI250X or MI300A; documentation (this document updated with the figures) | figures published in `variants.md` |
 | 3. Kokkos facade | `kokkos_adaptor.h`, Kokkos `parallel_for` marking the phases, `memory_fence` instead of release/acquire | a Kokkos example; same validations |
-| 4. `zero_one_value`, `pattern` | 8.2, 8.4 | validations; measured gain of `pattern` on a connectivity |
+| 4. `zero_or_value`, `pattern` | 8.2, 8.4 | validations; measured gain of `pattern` on a connectivity |
 | 5. Dynamic geometry | 9.3 | device `rechunk_validation` |
 | 6. Hybrid | coherent memory (GH200, MI300A), phase mode of the CPU version | an array read and written alternately by CPU and GPU with no copy |
 

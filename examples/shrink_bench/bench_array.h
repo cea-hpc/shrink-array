@@ -39,7 +39,7 @@
 // zero::Array* definitions the alias below selects between.
 #include "chunk/range_ops.h"     // the bulk range API and the zero::Array* definitions (see above)
 #include "chunk/bit_array.h"     // array_bool_bits, array_mask: bools packed 8 per byte
-#include "chunk/pattern_array.h" // pattern::Array: array_conn in the zero_one_value and zero_any builds
+#include "chunk/pattern_array.h" // pattern::Array: array_conn in the zero_or_value and zero_any builds
 
 namespace shrink_array
 {
@@ -52,8 +52,8 @@ template <typename T>
 using ActiveArray = std::conditional_t<
     chunk_config::use_zero_any,
     zero_any::Array<T, Int>,
-    std::conditional_t<chunk_config::use_zero_one_value,
-                       zero_one_value::Array<T, Int>,
+    std::conditional_t<chunk_config::use_zero_or_value,
+                       zero_or_value::Array<T, Int>,
                        std::conditional_t<chunk_config::use_zero, zero::Array<T, Int>, BaselineVector<T>>>>;
 
 
@@ -128,11 +128,11 @@ using BenchBoolArray =
  *
  * @details The two bool containers side by side in ONE run, on the same
  *          workload -- memory (chunk filling rate, pools) and write cost:
- *            - zero_one_value builds: BitArray (bit.h), 8 bools per byte in a
+ *            - zero_or_value builds: BitArray (bit.h), 8 bools per byte in a
  *              materialised chunk, one atomic 64-bit read-modify-write per
- *              write; array_bool stays zero_one_value::Array<bool>, one byte per bool;
+ *              write; array_bool stays zero_or_value::Array<bool>, one byte per bool;
  *            - zero / zero_any builds: the variant's Array<bool>, i.e.
- *              array_bool's own type -- BitArray is zero_one_value's machinery;
+ *              array_bool's own type -- BitArray is zero_or_value's machinery;
  *            - the std::vector baseline: std::vector<short>, as array_bool
  *              (std::vector<bool> would race: its element writes are not
  *              atomic, and the phases split the loops anywhere).
@@ -144,7 +144,7 @@ using BenchBoolArray =
  *          static build gives both the same chunk size.
  */
 using BenchBoolBitsArray =
-    std::conditional_t<chunk_config::use_zero_one_value, shrink_array::BitArray<Int>, BenchBoolArray>;
+    std::conditional_t<chunk_config::use_zero_or_value, shrink_array::BitArray<Int>, BenchBoolArray>;
 
 /// @brief Distinct levels array_quant may take, hence the distinct second values
 ///        it registers.
@@ -164,16 +164,16 @@ inline constexpr Int bench_double_bands = 200000;
  *
  * @details The array a bit-packed container is for, and the one std::vector's
  *          own bit packing is the reference of:
- *            - zero_one_value builds: BitArray (bit.h), 8 bools per byte in a
+ *            - zero_or_value builds: BitArray (bit.h), 8 bools per byte in a
  *              materialised chunk, and constant chunks at no data cost;
  *            - zero / zero_any builds: the variant's Array<bool>, one byte
- *              per bool -- BitArray is zero_one_value's machinery;
+ *              per bool -- BitArray is zero_or_value's machinery;
  *            - the std::vector baseline: std::vector<bool>, one bit per bool
  *              and nothing compressed. Its phases write whole 64-element
  *              blocks, one thread per block, so no word of it has two writers.
  */
 using BenchMaskArray =
-    std::conditional_t<chunk_config::use_zero_one_value,
+    std::conditional_t<chunk_config::use_zero_or_value,
                        shrink_array::BitArray<Int>,
                        std::conditional_t<chunk_config::is_shrink_enabled, Array<bool>, std::vector<bool>>>;
 
@@ -183,14 +183,14 @@ using BenchMaskArray =
  *        uniform, yet a chunk of whole cells is the chunk before it plus a constant.
  *
  * @details The array pattern::Array is for (docs/algo_pattern.md):
- *            - zero_one_value and zero_any builds: pattern::Array<int>, a member of the
+ *            - zero_or_value and zero_any builds: pattern::Array<int>, a member of the
  *              zero_any family that compresses a chunk to a shared motif plus an offset
  *              (it lives in either library: its machinery is zero_any's, header-only);
  *            - zero builds: zero::Array<int>, which compresses nothing of it;
  *            - the std::vector baseline: a vector of int.
  */
 using BenchConnArray = std::conditional_t<
-    chunk_config::use_zero_any || chunk_config::use_zero_one_value,
+    chunk_config::use_zero_any || chunk_config::use_zero_or_value,
     shrink_array::pattern::Array<int, Int>,
     std::conditional_t<chunk_config::use_zero, shrink_array::zero::Array<int, Int>, shrink_array::BaselineVector<int>>>;
 
@@ -319,7 +319,7 @@ struct BenchArrays
 
     Array<int>&           array_int;
     BenchBoolArray&       array_bool;
-    BenchBoolBitsArray&   array_bool_bits; ///< array_bool's twin, bit-packed in a zero_one_value build
+    BenchBoolBitsArray&   array_bool_bits; ///< array_bool's twin, bit-packed in a zero_or_value build
     Array<ComplexDouble>& array_complex;
     Array<float>&         array_float;
     Array<short>&         array_short;

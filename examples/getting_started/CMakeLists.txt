@@ -26,7 +26,7 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   project(getting_started LANGUAGES CXX)
   set(CMAKE_CXX_STANDARD 20)
   set(CMAKE_CXX_STANDARD_REQUIRED ON)
-  # Brings shrink_array::zero, shrink_array::zero_one_value, shrink_array::zero_any (default size),
+  # Brings shrink_array::zero, shrink_array::zero_or_value, shrink_array::zero_any (default size),
   # shrink_array::zero_any_<size>, shrink_array::zero_any_dyn, ..., with CHUNK_MODULES the modules
   # over the default-size ones (shrink_array::zero_any_module, ...), and their dependencies
   # (fast_allocators, OpenMP and Threads when the library was built with them).

@@ -18,7 +18,7 @@ class ShrinkArray(CMakePackage):
     threads -- or, with threads=std, from std::threads or TBB.
 
     Installs one library per variant and chunk size, found with
-    find_package(shrink_array): shrink_array::zero_<S>, shrink_array::zero_one_value_<S>,
+    find_package(shrink_array): shrink_array::zero_<S>, shrink_array::zero_or_value_<S>,
     shrink_array::zero_any_<S> (static S), shrink_array::<variant>_dyn (runtime S),
     shrink_array::<variant> (the first static size)."""
 

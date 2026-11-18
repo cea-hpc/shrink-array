@@ -95,7 +95,7 @@ HUNKS = [
     ('chunk/public/chunk/soa_array.h',
      r''' *          coordinate of a moving particle -- with no chunk at all;
  *          soa::column<C> takes any one-parameter template of the member
- *          type (zero::Array, zero_one_value::Array, zero_any::Array, an
+ *          type (zero::Array, zero_or_value::Array, zero_any::Array, an
  *          alias). Other
  *          annotations, of other libraries, are left alone.
  *
@@ -108,7 +108,7 @@ HUNKS = [
 ''',
      r''' *          coordinate of a moving particle -- with no chunk at all;
  *          soa::column<C> takes any one-parameter template of the member
- *          type (zero::Array, zero_one_value::Array, zero_any::Array, an
+ *          type (zero::Array, zero_or_value::Array, zero_any::Array, an
  *          alias). On a member stored part by part, the annotation goes to
  *          every part, unless a part carries its own. Other annotations, of
  *          other libraries, are left alone.
@@ -359,7 +359,7 @@ using SoaDefaultColumn = zero_any::Array<M>;
  * @brief An array of T stored as one compressed array per member of T.
  * @tparam T      The element: a struct of ArrayChunkElement members (see the file comment).
  * @tparam Column The array of one member, a template of the member type
- *                (default zero_any::Array; zero_one_value::Array, zero::Array
+ *                (default zero_any::Array; zero_or_value::Array, zero::Array
  *                too), for
  *                the members without a storage annotation.
  */
@@ -644,7 +644,7 @@ ref_type_of(std::meta::info t, bool marked, std::meta::info column, std::meta::i
  * @tparam T      The element: a struct of ArrayChunkElement members, structs
  *                and arrays of them (see the file comment).
  * @tparam Column The array of one column, a template of the value type
- *                (default zero_any::Array; zero_one_value::Array, zero::Array
+ *                (default zero_any::Array; zero_or_value::Array, zero::Array
  *                too), for the members without a storage annotation.
  */
 template <typename T, template <typename> class Column = SoaDefaultColumn>

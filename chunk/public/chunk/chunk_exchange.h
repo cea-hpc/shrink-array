@@ -26,7 +26,7 @@
  *          array is, chunk by chunk: compressed to which value, a motif and its
  *          offset, or the buffer of its S elements. Inside the library that
  *          answer is encoded in where the chunk's values pointer points (the
- *          shared first-value block, zero_one_value's second-value block, an
+ *          shared first-value block, zero_or_value's second-value block, an
  *          identifier inside zero_any's second-value region, a motif of
  *          pattern's registry, or a buffer of its own), an encoding that
  *          changes with the implementation. These functions are the one place
@@ -39,7 +39,7 @@
  *          chunk of an array whose size is not a multiple of chunk_size() holds
  *          its trailing elements first.
  *
- *          Every variant -- zero, zero_one_value, zero_any, pattern -- and
+ *          Every variant -- zero, zero_or_value, zero_any, pattern -- and
  *          every element type but Bit (BitArray packs 64 elements per
  *          word: its buffer is not S elements of T). bool: its one second value
  *          is true.
@@ -97,7 +97,7 @@ struct ArrayState
 {
     std::size_t                size             = 0;     ///< Element count.
     unsigned int               chunk_size       = 0;     ///< S, the elements per chunk.
-    bool                       has_second_value = false; ///< zero_one_value (not bool): a second value declared.
+    bool                       has_second_value = false; ///< zero_or_value (not bool): a second value declared.
     T                          second_value     = T{};   ///< That second value.
     std::vector<ChunkState<T>> chunks;                   ///< One per chunk, in order.
 };
@@ -194,14 +194,14 @@ SHRINK_ARRAY_EXPORT template <ExchangeableArray Arr>
 /**
  * @brief Give chunk @p index of @p arr the state @p state.
  * @details A constant is installed as a compression would commit it, without a
- *          buffer (zero_any: the re-chunk refill's install; zero_one_value:
+ *          buffer (zero_any: the re-chunk refill's install; zero_or_value:
  *          clear_int_st()'s state, nothing to free); a motif through the
  *          registry (pattern::Array::install_motif()); a materialised chunk is
  *          filled through copy_range(), which arms it. A state the array cannot
- *          hold as such -- a second value zero_one_value has not declared, a
+ *          hold as such -- a second value zero_or_value has not declared, a
  *          motif outside pattern -- is filled as elements: the values are
  *          right, the chunk materialised until a pass.
- * @pre @p arr at the chunk size the state was exported at (and zero_one_value:
+ * @pre @p arr at the chunk size the state was exported at (and zero_or_value:
  *      with the same second value declared). To import over written chunks,
  *      import_array(): it starts from a fresh array.
  * @param arr   the array, at a quiescent point (see the file comment)
@@ -282,7 +282,7 @@ SHRINK_ARRAY_EXPORT template <ExchangeableArray Arr>
     }
     else if constexpr (internal::is_v2_v<Arr>)
     {
-        // clear_int_st()'s state (zero_one_value_chunk_inline.h): the values
+        // clear_int_st()'s state (zero_or_value_chunk_inline.h): the values
         // pointer at the second constant, its counter reset; no buffer to free.
         if constexpr (std::is_same_v<T, bool>)
         {
@@ -307,7 +307,7 @@ SHRINK_ARRAY_EXPORT template <ExchangeableArray Arr>
 
 /**
  * @brief Every chunk of @p arr, with its size, its chunk size and
- *        zero_one_value's declared second value.
+ *        zero_or_value's declared second value.
  * @param arr the array, at a quiescent point (see the file comment)
  * @return The state; its chunks' data point into @p arr (see ChunkState).
  */
@@ -333,7 +333,7 @@ SHRINK_ARRAY_EXPORT template <ExchangeableArray Arr>
 
 /**
  * @brief Make @p arr the array @p state describes, whatever it held.
- * @details A fresh array of state.size elements (zero_one_value: with the
+ * @details A fresh array of state.size elements (zero_or_value: with the
  *          second value declared) imports every chunk, then is moved into
  *          @p arr, which releases what it held. @p state may come from @p arr
  *          itself: its buffers are copied before the move. Only the chunks

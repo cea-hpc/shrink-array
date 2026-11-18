@@ -64,16 +64,16 @@ namespace alloc_affinity_detail
 {
 /// Eager (an allocator set per large array at creation) or lazy (only the
 /// storage a re-chunk builds gets one, see assign_alloc_key()) -- eager by
-/// default for zero, lazy for zero_one_value / zero_any, fixed at build time.
+/// default for zero, lazy for zero_or_value / zero_any, fixed at build time.
 /// zero's memory is mostly data and its rebuild is sliced: from the shared pool,
 /// whose slabs mix several arrays' blocks, no slab empties during the first
-/// re-chunk, so eager lowers its peak. zero_one_value / zero_any are metadata-heavy:
+/// re-chunk, so eager lowers its peak. zero_or_value / zero_any are metadata-heavy:
 /// lazy saves them the per-array slabs. Their rebuilds are sliced too, but eager
-/// zero_one_value did no better on x86-64 (2 threads, 10^8 elements, November 2026:
+/// zero_or_value did no better on x86-64 (2 threads, 10^8 elements, November 2026:
 /// peak 1,732 MB against 1,724 lazy, end 1,495 against 1,511). Measured on Milan
 /// (shrink_bench int64 dyn, 64 threads, three runs each, October 2026): zero lazy
 /// costs +9.8% of time, +14.6% at the peak and +11.8% at the end; zero_any eager
-/// +7.4% at the peak; zero_one_value is the same either way.
+/// +7.4% at the peak; zero_or_value is the same either way.
 inline constexpr bool g_eager = chunk_config::use_zero;
 
 /// True while rechunk_to() constructs its new storage (tmp): the storage that
@@ -261,7 +261,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
      * @brief Chunk-size policy — the single home for chunk geometry.
      *
      * @details Shared by all containers that derive from ArrayChunkBase
-     *          (zero::Array, zero_one_value::Array, zero_any::Array). Geometry use-sites go
+     *          (zero::Array, zero_or_value::Array, zero_any::Array). Geometry use-sites go
      *          through size_policy_.decalage()/modulo()/size().
      */
     [[no_unique_address]] ActiveSizePolicy size_policy_{};

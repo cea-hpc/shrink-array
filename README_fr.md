@@ -48,7 +48,7 @@ change :
 (Le `#pragma omp parallel for` seul demande un build OMPT ; avec le `libgomp` de GCC,
 ouvrez la région avec `parallel_phase()`, voir [Un premier programme, parallèle et multi-thread](#un-premier-programme-parallèle-et-multi-thread).)
 
-![Mémoire du process au banc de référence : std::vector 125,9 Go, zero 40,2 Go, zero_one_value 17,3 Go, zero_any 7,26 Go](docs/images/memory_bench_fr.png)
+![Mémoire du process au banc de référence : std::vector 125,9 Go, zero 40,2 Go, zero_or_value 17,3 Go, zero_any 7,26 Go](docs/images/memory_bench_fr.png)
 
 *Banc de référence ([`shrink_bench`](examples/shrink_bench)) : environ 10⁹ éléments d'une
 douzaine de types, chunks statiques de 256, mémoire du process entier à la fin. Le prix est le
@@ -204,13 +204,13 @@ métadonnées. Les trois variantes diffèrent par les constantes retenues :
 | variante | classe | un chunk est compressé quand il est uniforme à… |
 |---|---|---|
 | `zero` | `zero::Array<T>` | `T{}` (zéro) seulement |
-| `zero_one_value` | `zero_one_value::Array<T>` | `T{}`, ou **une** seconde valeur par tableau, déclarée par `set_second_value()` |
+| `zero_or_value` | `zero_or_value::Array<T>` | `T{}`, ou **une** seconde valeur par tableau, déclarée par `set_second_value()` |
 | `zero_any` | `zero_any::Array<T>` | `T{}`, ou **n'importe quelle** valeur, chunk par chunk, sans rien déclarer -- **commencer par elle** |
 
 La variante et la taille de chunk (256, 1024, ou dynamique et adaptative : `_dyn`) sont choisies
 par la bibliothèque liée : `shrink_array::zero_any_256`, `shrink_array::zero_any_dyn`, ...
 [docs/variantes_fr.md](docs/variantes_fr.md) dit ce que coûte chacune ;
-[docs/algo_zero_one_value_fr.md](docs/algo_zero_one_value_fr.md) comment lectures, écritures et compression
+[docs/algo_zero_or_value_fr.md](docs/algo_zero_or_value_fr.md) comment lectures, écritures et compression
 cohabitent.
 
 **Des entiers qui se répètent avec un décalage : `pattern::Array`.** Une connectivité de
@@ -286,7 +286,7 @@ Grace, 64 threads ([comment c'est mesuré](docs/mesures_performance_fr.md)) :
 | | chunks statiques de 256 (`_256`) | chunks dynamiques (`_dyn`) |
 |---|---|---|
 | `zero_any` | **7,26 Go** | **6,0 Go** |
-| `zero_one_value` | 17,3 Go | 16,3 Go |
+| `zero_or_value` | 17,3 Go | 16,3 Go |
 | `zero` | 40,2 Go | 40,3 Go |
 | `std::vector` | 125,9 Go | — |
 
@@ -456,7 +456,7 @@ aussi une version Spack (`spack install shrink-array@cpp23`).
 | comprendre comment elle est construite : parties, décisions, modèle de concurrence | [docs/conception_fr.md](docs/conception_fr.md) |
 | choisir une variante | [docs/variantes_fr.md](docs/variantes_fr.md) |
 | comparer aux formats creux, aux compresseurs, aux grilles creuses | [docs/alternatives_fr.md](docs/alternatives_fr.md) |
-| comprendre lecture, écriture, compression en vol, écritures différées | [docs/algo_zero_one_value_fr.md](docs/algo_zero_one_value_fr.md) |
+| comprendre lecture, écriture, compression en vol, écritures différées | [docs/algo_zero_or_value_fr.md](docs/algo_zero_or_value_fr.md) |
 | savoir pourquoi l'écriture n'a besoin d'aucun verrou | [docs/synchronisation_dekker_fr.md](docs/synchronisation_dekker_fr.md) |
 | vérifier un protocole avec un vérificateur de modèles | [docs/formal_models_fr.md](docs/formal_models_fr.md) |
 | utiliser les tailles de chunk dynamiques | [docs/rechunk_adaptatif_fr.md](docs/rechunk_adaptatif_fr.md) |

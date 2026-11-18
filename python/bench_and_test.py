@@ -11,8 +11,8 @@ see bench_runner/settings.py's bench_exe_names.)
 
 Example:
     $CCCWORKDIR/shrink-array/
-      ├── cmake-build-omp-gnu/RHEL_9__aarch64/examples/shrink_bench/shrink_bench_omp_zero_one_value_dyn
-      ├── cmake-build-omp-gnu-have-aggressive-compression/.../shrink_bench_omp_zero_one_value_dyn
+      ├── cmake-build-omp-gnu/RHEL_9__aarch64/examples/shrink_bench/shrink_bench_omp_zero_or_value_dyn
+      ├── cmake-build-omp-gnu-have-aggressive-compression/.../shrink_bench_omp_zero_or_value_dyn
       ├── cmake-build-omp-gnu-std-alloc/...
       ├── cmake-build-omp-llvm/...
       └── ...
@@ -47,7 +47,7 @@ Notable features:
   * The std threading backend (CHUNK_THREADS=std, no OpenMP) is part of the
     defaults: cmake-build-std-gnu / cmake-build-std-llvm for the bench, the
     -check builds for the validations, and the TBB bench -- the tbb_zero,
-    tbb_zero_one_value, tbb_zero_any variants, shrink_bench_tbb_<variant>_<size> -- in
+    tbb_zero_or_value, tbb_zero_any variants, shrink_bench_tbb_<variant>_<size> -- in
     the std builds made with oneTBB (a std build without it is noted once, its
     tbb_* variants skipped).
   * Correctness before timings: check runs, then the seq-vs-OMP

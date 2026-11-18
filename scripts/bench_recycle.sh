@@ -12,7 +12,7 @@
 #   VARIANTS ["zero@dyn"]: base@size, run as shrink_bench_<backend>_<base>_int64_<size>,
 #            <backend> the one the config was built with (omp, std or serial: each
 #            name is tried, a build dir holding one; never the old name without it)
-#            (zero_one_value@1024, zero_any@dyn, ...). The rebuild's slab recycling, this
+#            (zero_or_value@1024, zero_any@dyn, ...). The rebuild's slab recycling, this
 #            script's first purpose, is always on now (CHUNK_RECHUNK_RECYCLE is gone).
 #   MULTIPLY [2]: --multiply of the workload
 #   NUMA ["auto"]: auto = numactl --interleave over the nodes the run spans, as

@@ -159,6 +159,18 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- The variant `zero_one_value` is `zero_or_value`: the name read "zero-one value", an array
+  of 0s and 1s, when the second value is any value. Namespace, header
+  (`chunk/zero_or_value_array.h`), `chunk_config::use_zero_or_value`,
+  `CHUNK_VARIANT_ZERO_OR_VALUE`, the value of `CHUNK_VARIANTS`, the targets and library files
+  (`chunk_zero_or_value_256`), the executables and tests (`validation_zero_or_value_256`), the
+  documents (`docs/algo_zero_or_value.md`), the Spack recipe and the Python tools. The former
+  name still works where a program or a script may say it -- the header, the namespace and the
+  flag (deprecated), the macro, `CHUNK_VARIANTS` and the target names (with a deprecation
+  message), the labels of the perf databases recorded before -- until the next minor version.
+  Not the library files: `libchunk_zero_one_value_256.a` has no former copy.
+- The statistics line of an array says "N second value", the words of the documents; it was
+  "N type-2".
 - French names and abbreviations in English, in the sources, the examples and the documents
   (internal names; nothing of the public interface): `nb` (nombre) is `n` (`n_val_eq_zero_`,
   `n_blocks`, `n_threads`), the increm and decrem prefixes are inc and dec (the statistics
@@ -182,8 +194,8 @@ the tag's checksum to the recipe.
   `clear_info_free_elem`, ...), as everywhere else; `CalcType` (calcul) is `ComputeType`.
 - `num` (numéro), the offset of an element in its chunk, is `elem_offset` (`elem_offset_`,
   `get_elem_offset()`), and `num_compress_value` (which of the two constants) `const_index`.
-  examples/multi_mat: `MatArrayBase`, `MatZeroArray`, `MatZeroOneValueArray`, `MatVectorArray`
-  (`VectCom`, `VectChunk`, `VectZeroOneValue`, `Vect`).
+  examples/multi_mat: `MatArrayBase`, `MatZeroArray`, `MatZeroOrValueArray`, `MatVectorArray`
+  (`VectCom`, `VectChunk`, `VectZeroOrValue`, `Vect`).
 - `tab` (French: tableau) is `array` in the names of the sources, examples and documents:
   `array_int`, `array_bool`, ... of `shrink_bench` (`tab_int`, ...), `arr1` ... `arr5` and `arr`
   (`tab1`, `tab`), the library's `array_is_inside_chunk_list_to_compress`,
@@ -211,7 +223,7 @@ the tag's checksum to the recipe.
   wait so: the OpenMP backend and the std backend's own pool are untouched.
 - The CMake package is `shrink_array`, the project's name: `find_package(shrink_array)`, and
   targets without the repeated word -- `shrink_array::zero_any`, `shrink_array::zero_any_256`,
-  `shrink_array::zero_any_dyn` (`zero` and `zero_one_value` alike), `shrink_array::vector`,
+  `shrink_array::zero_any_dyn` (`zero` and `zero_or_value` alike), `shrink_array::vector`,
   `shrink_array::chunk` -- installed and in the build tree (`add_subdirectory()`,
   `FetchContent`). Its variables are `shrink_array_STATIC_SIZES`, `shrink_array_DEFAULT_SIZE`,
   `shrink_array_HAS_DYN`, `shrink_array_OPENMP`, `shrink_array_THREADS`, `shrink_array_OMPT`,
@@ -282,8 +294,8 @@ the tag's checksum to the recipe.
 - **The public interface, narrowed and frozen** (breaking). The public headers are what
   `docs/api.md` documents; `pmp_chunk.h`, `type_state_registry.h`, `chunk_traits.h`,
   `global_stats_chunk_list.h`, `ring_log_debug.h`, `singleton.h`, `term_color.h`,
-  `type_name.h`, `zero_chunk.h`, `zero_one_value_chunk.h`, `zero_any_chunk.h`, `pattern_chunk.h`,
-  `zero_chunk_def.h`, `zero_one_value_chunk_def.h` and `zero_any_chunk_def.h` are under
+  `type_name.h`, `zero_chunk.h`, `zero_or_value_chunk.h`, `zero_any_chunk.h`, `pattern_chunk.h`,
+  `zero_chunk_def.h`, `zero_or_value_chunk_def.h` and `zero_any_chunk_def.h` are under
   `chunk/internal/` (a program that included one includes the array's header instead).
   `release_chunk_pools()` and `destroy_block_chunk()` come with `chunk/param_chunk.h` (they
   were in `chunk/zero_chunk.h`). `ManagerType`, `Manager`, `ChunkType`, `ChunkListType`,
@@ -298,11 +310,11 @@ the tag's checksum to the recipe.
   `TypeStateDynInterface` / `TypeStateParallelInterface` / `TypeStateDynImpl` /
   `TypeStateParallelImpl`, and `internal/manager_chunk*.h` are `internal/type_state*.h`
   (`chunk/private/manager_chunk.cpp`: `type_state.cpp`). All internal: no interface change.
-- Re-chunk: `zero_one_value` and `zero_any` (and `pattern`) free each old chunk as soon as the
+- Re-chunk: `zero_or_value` and `zero_any` (and `pattern`) free each old chunk as soon as the
   rebuild has copied it, as `zero` did, and rebuild in 16 slices with the fast allocator under
   threads: each slice boundary recycles the slabs the slice emptied into the next slice's
   allocations (`array_chunk_rechunk_refill.h`; the chunks' new `release_st()`), `bool`
-  arrays included; `ArrayChunkBits` (bit-packed) keeps one pass. `zero_one_value_dyn`, x86-64, 2 threads, 10^8 elements: run peak 1,772 ->
+  arrays included; `ArrayChunkBits` (bit-packed) keeps one pass. `zero_or_value_dyn`, x86-64, 2 threads, 10^8 elements: run peak 1,772 ->
   1,724 MB, end +0.9% (the recycled slabs stay resident, as for `zero`); `zero_any`'s peak
   on this benchmark is the initialisation's, unchanged. `rechunk_validation` gains
   `sliced-val2-grow` and `sliced-val2-uneven`: sliced rebuilds mixing zero, second-value and
@@ -319,18 +331,18 @@ the tag's checksum to the recipe.
   `fast_alloc::logging::print_backtrace`).
 - **The other compatibility paths kept until 1.0** (breaking). The variant macros
   `CHUNK_VARIANT_V1`, `CHUNK_VARIANT_V2`, `CHUNK_VARIANT_V2A` (use `CHUNK_VARIANT_ZERO`,
-  `CHUNK_VARIANT_ZERO_ONE_VALUE`, `CHUNK_VARIANT_ZERO_ANY`); the `CHUNK_VARIANTS` spellings
+  `CHUNK_VARIANT_ZERO_OR_VALUE`, `CHUNK_VARIANT_ZERO_ANY`); the `CHUNK_VARIANTS` spellings
   `chunk`, `chunk2`, `chunk2a`, now refused with the new name; the targets `chunk::chunk_v1*`,
-  `chunk::chunk_v2*`, `chunk::chunk_v2a*` (link `chunk::chunk_zero*`, `chunk::chunk_zero_one_value*`,
+  `chunk::chunk_v2*`, `chunk::chunk_v2a*` (link `chunk::chunk_zero*`, `chunk::chunk_zero_or_value*`,
   `chunk::chunk_zero_any*`). In the scripts, an old variant label on a command line (`chunk2a`,
   `chunk2a@dyn`, `tbb_chunk2`...) is refused with its new name, and `bench_and_test.py`'s
   hidden `--mem-chunk2a-vs-chunk2-max` is gone; the data recorded before the rename (perf
   databases, summaries, logs) are still read, their old labels as the new names.
 - **The former C++ names kept until 1.0** (breaking: the next release is 0.3.0). The 45
   `[[deprecated]]` aliases: `ArrayChunk`, `ArrayChunk2`, `ArrayChunk2A` (use `zero::Array`,
-  `zero_one_value::Array`, `zero_any::Array`), `Chunk2`, `Chunk2A`, `Proxy2`, `Proxy2A` and the
+  `zero_or_value::Array`, `zero_any::Array`), `Chunk2`, `Chunk2A`, `Proxy2`, `Proxy2A` and the
   former `Chunk` / `Proxy` (use the variant's namespace), `use_chunk`, `use_chunk2`,
-  `use_chunk2a`, `use_chunk2or2a` (use `use_zero`, `use_zero_one_value`, `use_zero_any`,
+  `use_chunk2a`, `use_chunk2or2a` (use `use_zero`, `use_zero_or_value`, `use_zero_any`,
   `use_second_value`), the arrays' `chunk_type`, `manager_type`, `proxy_type`, `ind_type`,
   `chunk_list_type` (use `ChunkType`, `ManagerType`, `ProxyType`, `IndexType`, `ChunkListType`),
   `getChunkList()` (use `get_chunk_list()`), `ManagerChunk2`, `ManagerChunk2A` (use `Manager`),
@@ -390,10 +402,10 @@ the tag's checksum to the recipe.
   thread, two locked RMWs per lookup: about 90 % of `find_or_set_ind_cst_val2()`, and 13 % of
   the bench on a many-core machine. One counter per thread on a cache line of its own, summed
   by the reclaim; the seq_cst handshake is unchanged.
-- Check builds, `zero_one_value` (and `ArrayChunkBits`): the comparison of a proxy's armed
+- Check builds, `zero_or_value` (and `ArrayChunkBits`): the comparison of a proxy's armed
   second-value index and `array_id` with the registry, on every write
   (`ProxySpec::armed_inf_array()`), took the registries' shared lock too: 95 % of
-  `shrink_bench_omp_zero_one_value_1024` at 160 threads. It goes through the same per-thread memo.
+  `shrink_bench_omp_zero_or_value_1024` at 160 threads. It goes through the same per-thread memo.
   At 14 threads, `--mode perf --divisor 10 --iter_max 100`: 82–89 s → 1.7–1.8 s.
 - `TCSlab::alloc_block()` tested its capacity after computing it: `block_allocator -
   sizeof(void*)` is unsigned and wraps for a slab smaller than the back-pointer, and the
@@ -426,7 +438,7 @@ the tag's checksum to the recipe.
   writing that chunk (ThreadSanitizer: 9 races on a probe; a lost or torn value in principle).
   The copy constructor goes through the same drain. The pass now runs on the resized array's
   candidates only, the others set aside for its duration (`internal/own_candidates.h`,
-  `drain_own_candidates()` in the three variants). For zero_one_value the same call also
+  `drain_own_candidates()` in the three variants). For zero_or_value the same call also
   sweeps, on the calling rank, that array's candidates queued under an earlier second value,
   which the in-region drain left pointing into the reallocated chunk list.
   `region_storage_validation`'s whole-team case now grows each thread's array with chunks of
@@ -491,7 +503,7 @@ the tag's checksum to the recipe.
   pass then released the flag, and the chunk stayed constant and materialised in no list until
   its next write: memory not reclaimed, no wrong value -- F6's window, open again for those
   chunks (`formal/queue_handback.c`'s `MUT_HANDBACK_AFTER_UNMARK`). Each candidate's flag is
-  handed back in the scan, before its mark can go down, as `zero` and `zero_one_value` do.
+  handed back in the scan, before its mark can go down, as `zero` and `zero_or_value` do.
   `docs/formal_models.md` section 8.7.
 - A second `ParamChunk::init_indexes()` with the other argument (or `init_indexes(false)` after
   the first array had run `init_indexes(true)`) changed the allocation block size: the
@@ -505,7 +517,7 @@ the tag's checksum to the recipe.
   buffer `a(i)` points into, which the write of the new element could then reuse, filled with the
   constant, before the value was read. Both copy the value before `resize()`, as `assign()`
   already did. `open_types_validation` checks both on a 24-byte struct (`zero` and `zero_any`:
-  `zero_one_value` has no `a(i)` on a non-`bool` element).
+  `zero_or_value` has no `a(i)` on a non-`bool` element).
 - `docs/api.md` section 7 said `set_thread_chunk_size(n)` gives "the chunk size of the arrays the
   calling thread builds next"; a new array still took the process-wide size. It routes the
   calling thread's chunk allocations, and the library sets it before each of them: the table
@@ -546,7 +558,7 @@ the tag's checksum to the recipe.
   constant; a run of one NaN payload now compresses and reads back bit for bit), `==` and the
   sign bit for `long double`, part by part for `std::complex` and `std::array`, `==` for the
   other types. An aggregate of floating-point members keeps comparing them with its `==`
-  unless it specialises `shrink_array::ValueIdentity<T>`. `zero_one_value` orders its second
+  unless it specialises `shrink_array::ValueIdentity<T>`. `zero_or_value` orders its second
   values to match (`ValueLess`): `-0.0` can be a second value. `signed_zero_validation` checks
   every case, bit for bit, in each variant.
 - `ChunkSizeAdvisor` counted a `pattern::Array`'s motif chunks as materialised, at every size:

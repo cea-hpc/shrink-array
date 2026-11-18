@@ -36,15 +36,15 @@
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::pair (the slices), std::as_const
 
-#include "chunk/zero_array.h"           // zero::Array
-#include "chunk/zero_one_value_array.h" // zero_one_value::Array
-#include "chunk/zero_any_array.h"       // zero_any::Array
-#include "chunk/internal/zero_chunk.h"  // release_chunk_pools, Runtime::shutdown
-#include "chunk/config.h"               // chunk_config::use_zero_one_value*, build_config::chunk_dynamic
-#include "chunk/print.h"                // shrink_array::println
-#include "chunk/phases.h"               // parallel_phase
-#include "chunk/mdspan_tile_ops.h"      // md::layout_tiled_dyn, md::tiled_view_dyn, the tile operations
-#include "chunk/runtime.h"              // Runtime::init
+#include "chunk/zero_array.h"          // zero::Array
+#include "chunk/zero_or_value_array.h" // zero_or_value::Array
+#include "chunk/zero_any_array.h"      // zero_any::Array
+#include "chunk/internal/zero_chunk.h" // release_chunk_pools, Runtime::shutdown
+#include "chunk/config.h"              // chunk_config::use_zero_or_value*, build_config::chunk_dynamic
+#include "chunk/print.h"               // shrink_array::println
+#include "chunk/phases.h"              // parallel_phase
+#include "chunk/mdspan_tile_ops.h"     // md::layout_tiled_dyn, md::tiled_view_dyn, the tile operations
+#include "chunk/runtime.h"             // Runtime::init
 
 using namespace shrink_array;
 
@@ -55,7 +55,7 @@ template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 int fails = 0;
 

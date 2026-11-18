@@ -30,7 +30,7 @@
 #include <version>    // __cpp_lib_mdspan
 #include <mdspan>     // std::mdspan, std::dextents
 
-#include "Containers.h" // MultiArray, MatZeroOneValueArray
+#include "Containers.h" // MultiArray, MatZeroOrValueArray
 
 template <typename LoopsVec, typename LoopsChunk>
 class MultiMatAlgo;
@@ -78,7 +78,7 @@ struct Simu
     }
 
     /// @brief The presence fraction of every material.
-    const MultiArray<double, MatZeroOneValueArray<double>>& get_frac() const
+    const MultiArray<double, MatZeroOrValueArray<double>>& get_frac() const
     {
         return frac;
     }
@@ -163,9 +163,9 @@ struct Simu
 
     /// @brief The presence fraction of each material, in [0, 1]: 1 inside
     ///        the material's interval, a ramp of `interface_width` cells at
-    ///        each end, 0 elsewhere. A zero_one_value array for the chunk materials,
+    ///        each end, 0 elsewhere. A zero_or_value array for the chunk materials,
     ///        second value 1.
-    MultiArray<double, MatZeroOneValueArray<double>> frac;
+    MultiArray<double, MatZeroOrValueArray<double>> frac;
 
     /// @brief Cells of the ramp at each end of an interval: well under a
     ///        chunk, so the interior of an interval is chunks of pure 1 and

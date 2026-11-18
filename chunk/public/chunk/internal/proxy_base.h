@@ -17,7 +17,7 @@
 #pragma once
 /**
  * @file proxy_base.h
- * @brief Common base class for zero_one_value::Proxy and zero_any::Proxy using CRTP pattern
+ * @brief Common base class for zero_or_value::Proxy and zero_any::Proxy using CRTP pattern
  *
  * ProxyBase holds all common functionality; derived classes keep only
  * chunk-specific logic.
@@ -74,7 +74,7 @@ class Proxy;
 
 } // namespace zero
 
-/// @brief Whether T is a zero::Proxy\<U\> (zero_one_value::Proxy and zero_any::Proxy are not): false by default.
+/// @brief Whether T is a zero::Proxy\<U\> (zero_or_value::Proxy and zero_any::Proxy are not): false by default.
 template <typename T>
 struct is_simple_proxy : public std::false_type
 {
@@ -120,7 +120,7 @@ template <typename T>
 ///          (SIGFPE on x86, a silent 0 on ARM); an invariant failure says
 ///          where. Integer elements only: for a floating T the division is
 ///          IEEE (inf, NaN) and the result is defined. Compiled out of release
-///          builds. Shared by zero::Proxy and SecondValueProxyBase (zero_one_value, zero_any).
+///          builds. Shared by zero::Proxy and SecondValueProxyBase (zero_or_value, zero_any).
 /// @tparam T Element type.
 /// @param divisor Divisor (a value or a proxy).
 /// @param op "/=" or "%=", for the message.
@@ -286,7 +286,7 @@ class ProxyBaseFastCompPolicy<Derived, T, ChunkT, false>
     ///          Otherwise a cleared array's flags stay at 1 with no list entry
     ///          behind them (one byte per chunk leaked) and the next
     ///          resize_array_is_int() on that array fails its "still queued" check.
-    ///          zero and zero_one_value never fill a row here: the guard makes it free.
+    ///          zero and zero_or_value never fill a row here: the guard makes it free.
     static void release_array_is_int(int array_id) noexcept
     {
         using RowT = std::remove_reference_t<decltype(array_is_inside_chunk_list_to_compress)>::value_type;
@@ -356,9 +356,9 @@ class AcquireValuesRef
 
 /**
  * @brief Base class for proxy types using CRTP pattern
- * @tparam Derived The derived proxy class (zero::Proxy, zero_one_value::Proxy or zero_any::Proxy)
+ * @tparam Derived The derived proxy class (zero::Proxy, zero_or_value::Proxy or zero_any::Proxy)
  * @tparam T The underlying value type
- * @tparam ChunkT The chunk type (zero::Chunk<T>, zero_one_value::Chunk<T> or zero_any::Chunk<T>)
+ * @tparam ChunkT The chunk type (zero::Chunk<T>, zero_or_value::Chunk<T> or zero_any::Chunk<T>)
  *
  * Contains all common operators, compression logic, and thread-safety mechanisms.
  *
@@ -616,7 +616,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @brief Has a thread's candidate list grown past the point where it must be drained?
      *
      * The single definition of the "list became dangerous" threshold, shared by
-     * the trigger_compression_if_needed() of zero::Proxy, zero_one_value::Proxy and zero_any::Proxy. Keep it
+     * the trigger_compression_if_needed() of zero::Proxy, zero_or_value::Proxy and zero_any::Proxy. Keep it
      * that way: three copies of the comparison drift apart.
      *
      * @param sz  Current candidate count for the thread.

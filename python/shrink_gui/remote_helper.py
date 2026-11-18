@@ -18,8 +18,10 @@ import base64, glob, io, json, os, re, shlex, signal, socket, subprocess, sys, t
 # as the new names, so that old and new runs compare. The table of
 # bench_runner/settings.py, copied: this file imports nothing of the repository.
 LEGACY_VARIANTS = {
-    "chunk": "zero", "chunk2": "zero_one_value", "chunk2a": "zero_any",
-    "tbb_chunk": "tbb_zero", "tbb_chunk2": "tbb_zero_one_value", "tbb_chunk2a": "tbb_zero_any",
+    "chunk": "zero", "chunk2": "zero_or_value", "chunk2a": "zero_any",
+    "tbb_chunk": "tbb_zero", "tbb_chunk2": "tbb_zero_or_value", "tbb_chunk2a": "tbb_zero_any",
+    # zero_or_value was zero_one_value until 0.3
+    "zero_one_value": "zero_or_value", "tbb_zero_one_value": "tbb_zero_or_value",
 }
 
 def normalize_variant(label):

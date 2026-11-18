@@ -33,9 +33,9 @@ using shrink_array::println;
 #if defined(CHUNK_VARIANT_ZERO_ANY)
 template <typename T>
 using VariantArray = sa::zero_any::Array<T>;
-#elif defined(CHUNK_VARIANT_ZERO_ONE_VALUE)
+#elif defined(CHUNK_VARIANT_ZERO_OR_VALUE)
 template <typename T>
-using VariantArray = sa::zero_one_value::Array<T>;
+using VariantArray = sa::zero_or_value::Array<T>;
 #else
 template <typename T>
 using VariantArray = sa::zero::Array<T>;

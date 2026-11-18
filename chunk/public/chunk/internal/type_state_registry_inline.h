@@ -98,9 +98,9 @@ void TypeStateRegistry::initialize()
     {
         fill_type_state<zero::Chunk, Types>();
     }
-    if constexpr (chunk_config::use_zero_one_value)
+    if constexpr (chunk_config::use_zero_or_value)
     {
-        fill_type_state<zero_one_value::Chunk, Types>();
+        fill_type_state<zero_or_value::Chunk, Types>();
     }
     if constexpr (chunk_config::use_zero_any)
     {

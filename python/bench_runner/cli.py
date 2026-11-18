@@ -54,7 +54,7 @@ def build_parser():
     parser.add_argument("--skip-stl-test", action="store_true",
                         help="Skip the --test_stl STL-interface self-check (2c).")
     parser.add_argument("--variants", nargs="+", default=DEFAULT_VARIANTS,
-                        help="Variants to test. tbb_zero, tbb_zero_one_value, tbb_zero_any: the TBB "
+                        help="Variants to test. tbb_zero, tbb_zero_or_value, tbb_zero_any: the TBB "
                              "bench (shrink_bench_tbb_<variant>_<size>), looked for in the "
                              "std-backend builds (cmake-build-std-*) only.")
     parser.add_argument("--sizes", nargs="+", default=["256", "1024", "dyn"],
@@ -76,9 +76,9 @@ def build_parser():
                                  f"{k}={v}" for k, v in DEFAULT_STATS_MARK_RATIO_MIN.items()))
     parser.add_argument("--no-stats-guard", action="store_true",
                         help="Disable the mark/create compression-health guard.")
-    parser.add_argument("--mem-zero-any-vs-zero-one-value-max", type=float, default=1.10,
-                        dest="mem_zero_any_vs_zero_one_value_max",
-                        help="FAIL if zero_any peak memory exceeds zero_one_value's by more than "
+    parser.add_argument("--mem-zero-any-vs-zero-or-value-max", type=float, default=1.10,
+                        dest="mem_zero_any_vs_zero_or_value_max",
+                        help="FAIL if zero_any peak memory exceeds zero_or_value's by more than "
                              "this ratio on the same (config, threads, size) "
                              "(default 1.10). Set <= 0 to disable.")
     parser.add_argument("--mem-vs-baseline-max", type=float, default=None,
@@ -186,7 +186,7 @@ def build_parser():
     parser.add_argument("--skip-seq-omp-compare", action="store_true",
                         help="Skip the seed-pinned sequential-vs-OpenMP "
                              "compression-classification comparison (LLVM "
-                             "seq/omp config pairs, zero/zero_one_value/zero_any, "
+                             "seq/omp config pairs, zero/zero_or_value/zero_any, "
                              "256/1024/dyn, several thread counts).")
     parser.add_argument("--seq-omp-threads", nargs="+", type=int, default=None,
                         help="OMP thread counts for the seq-vs-omp compare "
@@ -297,7 +297,7 @@ def build_parser():
 
 def apply_regression_guards(args, parser):
     """Hand --numa-interleave and the stats-guard floors to the run helpers
-    (state), and return the zero_any-vs-zero_one_value memory ceiling (None: off).
+    (state), and return the zero_any-vs-zero_or_value memory ceiling (None: off).
     A variant option given with an old label (chunk2a, tbb_chunk2...) stops the
     run, with the new name."""
     args.variants = [check_variant_label(v, "--variants") for v in args.variants]
@@ -321,9 +321,9 @@ def apply_regression_guards(args, parser):
             except ValueError:
                 parser.error(f"--stats-mark-ratio-min: bad ratio in {item!r}")
         state._STATS_MARK_RATIO_MIN = floors
-    mem_za_vs_zov = (args.mem_zero_any_vs_zero_one_value_max
-                     if args.mem_zero_any_vs_zero_one_value_max
-                     and args.mem_zero_any_vs_zero_one_value_max > 0
+    mem_za_vs_zov = (args.mem_zero_any_vs_zero_or_value_max
+                     if args.mem_zero_any_vs_zero_or_value_max
+                     and args.mem_zero_any_vs_zero_or_value_max > 0
                      else None)
     return mem_za_vs_zov
 
@@ -576,7 +576,7 @@ def main():
         print(share.summary_line())
     flush_summary(results, errors, args.summary_csv, args.errors_log,
                   total_min, interrupted, baseline_variant=args.baseline_variant,
-                  mem_zero_any_vs_zero_one_value_max=mem_za_vs_zov,
+                  mem_zero_any_vs_zero_or_value_max=mem_za_vs_zov,
                   mem_vs_baseline_max=args.mem_vs_baseline_max)
 
     events.emit("end", errors=len(errors), interrupted=interrupted, minutes=round(total_min, 2),

@@ -29,7 +29,7 @@
 
 #include "chunk/internal/chunk_size_scan.h"   // the declarations these bodies belong to
 #include "chunk/bit.h"                        // is_bool_like_v, is_packed_bit_v
-#include "chunk/config.h"                     // chunk_config::use_zero_one_value
+#include "chunk/config.h"                     // chunk_config::use_zero_or_value
 #include "chunk/internal/pmp_chunk.h"         // CHUNK_PMP_NUM_THREADS (the parts per thread), pmp::team
 #include "chunk/internal/bit_words.h"         // bits::scan_range, bits::Uniform, bits::WordT
 #include "chunk/internal/chunk_size_policy.h" // shrink_array::const_buffer_size, is_valid_chunk_size
@@ -54,10 +54,9 @@ ChunkSizeScan<Arr>::ChunkSizeScan(const Arr& arr, const Options& opt)
     , cand_(candidate_sizes(arr.chunk_size(), opt))
     , n_cand_(static_cast<int>(cand_.size()))
 {
-    // zero_one_value and the zero_any family: the array's second value, when
+    // zero_or_value and the zero_any family: the array's second value, when
     // designated (otherwise only first_value: the conservative answer).
-    if constexpr ((chunk_config::use_zero_one_value || is_zero_any_family_v<ChunkT>) &&
-                  requires { arr.second_value(); })
+    if constexpr ((chunk_config::use_zero_or_value || is_zero_any_family_v<ChunkT>) && requires { arr.second_value(); })
     {
         const2_value_ = arr.second_value();
         has_const2_   = !same_value(const2_value_, const1_value_);
@@ -114,13 +113,13 @@ int ChunkSizeScan<Arr>::second_value_index([[maybe_unused]] const Arr& arr)
 {
     // bool / Bit: one second value, `true`, no index -- get_idx_second_value()
     // aborts for them; classify() asks the unindexed is_const_val2().
-    // A zero_any-family array in a zero_one_value build (pattern::Array): no
+    // A zero_any-family array in a zero_or_value build (pattern::Array): no
     // index, the zero_any branches of classify().
-    if constexpr (chunk_config::use_zero_one_value && !is_zero_any_family_v<ChunkT> && !is_bool_like_v<T>)
+    if constexpr (chunk_config::use_zero_or_value && !is_zero_any_family_v<ChunkT> && !is_bool_like_v<T>)
     {
         return arr.get_idx_second_value();
     }
-    else if constexpr (chunk_config::use_zero_one_value && !is_zero_any_family_v<ChunkT>)
+    else if constexpr (chunk_config::use_zero_or_value && !is_zero_any_family_v<ChunkT>)
     {
         return 0;
     }
@@ -137,7 +136,7 @@ bool ChunkSizeScan<Arr>::compressible_value([[maybe_unused]] const T& elem) cons
     // chunk, find_or_set). Do not apply the first_value gate below to it: the
     // finer rows would miss every other uniform sub-block, and a costly
     // coarsening could never look worse than refining back.
-    // The family, not the build: pattern::Array in a zero_one_value build too.
+    // The family, not the build: pattern::Array in a zero_or_value build too.
     if constexpr (is_zero_any_family_v<ChunkT>)
     {
         return true;
@@ -179,7 +178,7 @@ int ChunkSizeScan<Arr>::classify(const ChunkT& chunk, const void*& key) const
             return kind_const2;
         }
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
         bool is_const2 = false;
         if constexpr (is_bool_like_v<T>)

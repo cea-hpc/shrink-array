@@ -17,33 +17,33 @@
 #pragma once
 
 /**
- * @file zero_one_value_array_rechunk_hooks.h
- * @brief zero_one_value::Array's re-chunk hooks — a CHUNK_DYNAMIC-only concern, isolated
+ * @file zero_or_value_array_rechunk_hooks.h
+ * @brief zero_or_value::Array's re-chunk hooks — a CHUNK_DYNAMIC-only concern, isolated
  *        in its own mixin so they vanish from a static-geometry build.
  *
- * @details Like RechunkHooks for zero, but zero_one_value overrides all SIX hooks: it
+ * @details Like RechunkHooks for zero, but zero_or_value overrides all SIX hooks: it
  *          resolves array_id from the registry, carries the array-level second
  *          value across the swap, and re-owns its map_inf_array_ entry. They run
  *          only under RechunkSupport<Derived, true>::rechunk_to(); the static
- *          specialisation keeps the signatures as no-ops so zero_one_value::Array's
+ *          specialisation keeps the signatures as no-ops so zero_or_value::Array's
  *          using-declarations stay valid in both modes.
  *
  * @see array_chunk_rechunk.h for the algorithm that calls these
  * @see array_chunk_rechunk_hooks.h for zero's three
- * @see zero_one_value_array_rechunk_hooks_inline.h for the bodies
+ * @see zero_or_value_array_rechunk_hooks_inline.h for the bodies
  */
 
 #include "chunk/config.h"                // build_config::chunk_dynamic
 #include "chunk/internal/chunk_traits.h" // ArrayChunkTraits
 #include "chunk/internal/in_t.h"         // InT<T>: the captured state
 
-namespace shrink_array::zero_one_value
+namespace shrink_array::zero_or_value
 {
 
 /**
- * @brief zero_one_value::Array's re-chunk hooks, present only when the geometry is a runtime value.
+ * @brief zero_or_value::Array's re-chunk hooks, present only when the geometry is a runtime value.
  *
- * @tparam Derived the concrete array type (only zero_one_value::Array today).
+ * @tparam Derived the concrete array type (only zero_or_value::Array today).
  * @tparam Dynamic defaulted to build_config::chunk_dynamic; never pass it
  *         explicitly outside of tests.
  */
@@ -52,8 +52,8 @@ class RechunkHooks;
 
 // ── CHUNK_DYNAMIC build: the real hooks ──────────────────────────────────────
 /**
- * @brief Dynamic specialisation: the six hooks zero_one_value overrides.
- * @copydetails zero_one_value::RechunkHooks
+ * @brief Dynamic specialisation: the six hooks zero_or_value overrides.
+ * @copydetails zero_or_value::RechunkHooks
  */
 template <typename Derived>
 class RechunkHooks<Derived, true>
@@ -100,7 +100,7 @@ class RechunkHooks<Derived, true>
      * @param state value returned by rechunk_capture_state()
      * @details Re-points the shared entry at the SURVIVOR's inf_array member, so
      *          that tmp's destructor does not erase an entry the survivor still
-     *          needs -- see zero_one_value::Array's destructor, second warning.
+     *          needs -- see zero_or_value::Array's destructor, second warning.
      */
     void rechunk_reown_after_swap(this Derived& self, Derived& tmp, InT<value_type> state);
 };
@@ -109,7 +109,7 @@ class RechunkHooks<Derived, true>
 /**
  * @brief Static specialisation: the same six signatures, inert.
  *
- * @details Never called; kept for zero_one_value::Array's using-declarations.
+ * @details Never called; kept for zero_or_value::Array's using-declarations.
  */
 template <typename Derived>
 class RechunkHooks<Derived, false>
@@ -138,4 +138,4 @@ class RechunkHooks<Derived, false>
     void rechunk_reown_after_swap(Derived& /*tmp*/, InT<value_type> /*state*/) const noexcept {}
 };
 
-} // namespace shrink_array::zero_one_value
+} // namespace shrink_array::zero_or_value

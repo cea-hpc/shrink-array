@@ -38,7 +38,7 @@ HUNKS = [
   (P3394, in GCC 16): `[[=shrink_array::soa::plain]]` stores it in a
   `std::vector` (a member that never repeats, where chunks only cost),
   `[[=shrink_array::soa::column<C>]]` in a `C<M>` (`zero::Array`,
-  `zero_one_value::Array`, `zero_any::Array`, an alias), the other members
+  `zero_or_value::Array`, `zero_any::Array`, an alias), the other members
   keeping the array's `Column`; `a[i].m`, `get`, `set`, `column<^^T::m>()`
   follow. Other libraries' annotations are left alone; two storage
   annotations on one member stop the build. `soa_array.h` and
@@ -110,7 +110,7 @@ HUNKS = [
  *          soa::plain stores a member that never repeats -- noise, a
  *          coordinate of a moving particle -- with no chunk at all;
  *          soa::column<C> takes any one-parameter template of the member
- *          type (zero::Array, zero_one_value::Array, zero_any::Array, an
+ *          type (zero::Array, zero_or_value::Array, zero_any::Array, an
  *          alias). Other
  *          annotations, of other libraries, are left alone.
  *
@@ -186,7 +186,7 @@ struct column_t
 };
 
 /// [[=soa::column<C>]]: this member's column is a C<M> (zero::Array,
-/// zero_one_value::Array, zero_any::Array, any template of the member type
+/// zero_or_value::Array, zero_any::Array, any template of the member type
 /// with the columns' interface), whatever the array's default.
 template <template <typename> class Column>
 inline constexpr column_t<Column> column{};
@@ -380,7 +380,7 @@ using SoaDefaultColumn = zero_any::Array<M>;
  * @brief An array of T stored as one compressed array per member of T.
  * @tparam T      The element: a struct of ArrayChunkElement members (see the file comment).
  * @tparam Column The array of one member, a template of the member type
- *                (default zero_any::Array; zero_one_value::Array, zero::Array
+ *                (default zero_any::Array; zero_or_value::Array, zero::Array
  *                too), for
  *                the members without a storage annotation.
  */

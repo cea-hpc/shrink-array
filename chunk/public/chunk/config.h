@@ -237,12 +237,20 @@ inline constexpr bool use_zero = true;
 inline constexpr bool use_zero = false;
 #endif
 
-/// True with CHUNK_VARIANT_ZERO_ONE_VALUE: zero_one_value::Array is the selected array type.
-#ifdef CHUNK_VARIANT_ZERO_ONE_VALUE
-inline constexpr bool use_zero_one_value = true;
-#else
-inline constexpr bool use_zero_one_value = false;
+// The macro's former name (0.2), for a program that selects the variant itself.
+#if defined(CHUNK_VARIANT_ZERO_ONE_VALUE) && !defined(CHUNK_VARIANT_ZERO_OR_VALUE)
+    #define CHUNK_VARIANT_ZERO_OR_VALUE CHUNK_VARIANT_ZERO_ONE_VALUE
 #endif
+
+/// True with CHUNK_VARIANT_ZERO_OR_VALUE: zero_or_value::Array is the selected array type.
+#ifdef CHUNK_VARIANT_ZERO_OR_VALUE
+inline constexpr bool use_zero_or_value = true;
+#else
+inline constexpr bool use_zero_or_value = false;
+#endif
+
+/// @brief Former name of use_zero_or_value.
+[[deprecated("renamed chunk_config::use_zero_or_value")]] inline constexpr bool use_zero_one_value = use_zero_or_value;
 
 /// True with CHUNK_VARIANT_ZERO_ANY: zero_any::Array is the selected array type.
 #ifdef CHUNK_VARIANT_ZERO_ANY
@@ -252,14 +260,13 @@ inline constexpr bool use_zero_any = false;
 #endif
 
 inline constexpr bool is_shrink_enabled =
-    use_zero || use_zero_one_value || use_zero_any; ///< A chunked variant is selected.
-inline constexpr bool use_second_value =
-    use_zero_one_value || use_zero_any; ///< zero_one_value or zero_any is selected.
+    use_zero || use_zero_or_value || use_zero_any;                          ///< A chunked variant is selected.
+inline constexpr bool use_second_value = use_zero_or_value || use_zero_any; ///< zero_or_value or zero_any is selected.
 
 /**
- * @brief zero_one_value's second-value index for an array that has declared none.
+ * @brief zero_or_value's second-value index for an array that has declared none.
  *
- * @details A zero_one_value::Array registers (T{}, this index) at construction and
+ * @details A zero_or_value::Array registers (T{}, this index) at construction and
  *          keeps it until set_second_value(). Every consumer of the index
  *          answers "no second constant" for it: get_const_val2() is nullptr,
  *          is_const_val2() false, written() reduces to "not const_val1", and the
@@ -333,7 +340,7 @@ inline constexpr bool use_chunk_steal_mark = build_config::threaded;
     #define CHUNK_TUNING_LEVEL 3 // default: level 3
 #endif
 
-/// CHUNK_TUNING_LEVEL (1, 2 or 3, default 3) as a constexpr; selects zero_one_value::ChunkDef's thresholds.
+/// CHUNK_TUNING_LEVEL (1, 2 or 3, default 3) as a constexpr; selects zero_or_value::ChunkDef's thresholds.
 inline constexpr int tuning_level = CHUNK_TUNING_LEVEL;
 // Debug ring log: two independent switches (CMake options).
 //   CHUNK_RING_LOG_DEBUG -> ALL events, hot path included. Heavy: can mask timing bugs.

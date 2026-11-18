@@ -32,7 +32,7 @@
  *            read_span        bulk read of the old chunks into the buffer
  *            release_sources  free the old chunks once fully transcribed
  *            copy_range       fill the new chunk (the public bulk API)
- *            fold_back        zero_any / zero_one_value: compress it at once
+ *            fold_back        zero_any / zero_or_value: compress it at once
  *
  *          run() drives the slices (16 with the fast allocator and threads, 1
  *          otherwise or for BitArray), each a pmp::team region whose closing slice_boundary()
@@ -56,7 +56,7 @@
 #include "chunk/internal/pmp_chunk.h"                 // pmp::Team, ChunkPmpSchedule
 #include "chunk/bit.h"                                // is_packed_bit_v (releases_sources)
 #include "chunk/internal/chunk_traits.h"              // is_zero_any_family_v
-#include "chunk/config.h"                             // chunk_config::use_zero_one_value
+#include "chunk/config.h"                             // chunk_config::use_zero_or_value
 #include "chunk/internal/array_chunk_rechunk.h"       // RechunkSupport, the class Refill is nested in
 #include "chunk/internal/array_chunk_rechunk_trace.h" // SliceProbe
 
@@ -66,7 +66,7 @@ namespace shrink_array::internal
 ///        dynamic,64 on Grace, and large dynamic chunks are much slower on
 ///        small re-chunks; on Milan (64 threads) guided,16, static and
 ///        dynamic,64 are within 1% for zero and zero_any, static is 7.6%
-///        slower for zero_one_value. Fixed: the former CHUNK_RECHUNK_SCHEDULE
+///        slower for zero_or_value. Fixed: the former CHUNK_RECHUNK_SCHEDULE
 ///        is gone. A serial build ignores it (chunk_pmp_set_schedule() is then
 ///        a no-op).
 struct RebuildSchedule
@@ -82,8 +82,8 @@ inline const RebuildSchedule& rebuild_schedule() noexcept
     return schedule;
 }
 
-/// @brief The refill folds through zero_one_value's second-value index: a
-///        zero_one_value build, a chunk outside the zero_any family (not
+/// @brief The refill folds through zero_or_value's second-value index: a
+///        zero_or_value build, a chunk outside the zero_any family (not
 ///        pattern::Array) and a non-bool element (bool registers no second
 ///        value: get_idx_second_value() aborts).
 /// @details The test on Derived::is_not_bool is NESTED in a discarded branch:
@@ -93,7 +93,7 @@ inline const RebuildSchedule& rebuild_schedule() noexcept
 template <typename Derived, typename ChunkType>
 inline constexpr bool rechunk_second_index_v = []
 {
-    if constexpr (chunk_config::use_zero_one_value && !is_zero_any_family_v<ChunkType>)
+    if constexpr (chunk_config::use_zero_or_value && !is_zero_any_family_v<ChunkType>)
     {
         return Derived::is_not_bool;
     }
@@ -120,7 +120,7 @@ template <typename Derived, typename ChunkType>
 
 /// @brief The FRESH array's second-value record (the fold writes it;
 ///        rechunk_seed_fresh() has declared it), or 0 as above. Deduced, not
-///        named: only zero_one_value::Array has InfArrayT, and a discarded
+///        named: only zero_or_value::Array has InfArrayT, and a discarded
 ///        branch is never instantiated.
 template <typename Derived, typename ChunkType>
 [[nodiscard]] auto rechunk_second_info(const Derived& array) noexcept
@@ -151,7 +151,7 @@ namespace shrink_array
  *
  *          Materialisation is tracked with is_const_val1() (values == the const1
  *          sentinel), universal and index-free -- unlike written()/is_const_val()
- *          on zero_one_value, which need the second_value index. While filled,
+ *          on zero_or_value, which need the second_value index. While filled,
  *          a chunk only goes const1 -> real buffer (never const2, a compression
  *          result), so "still const1" == "not yet materialised" for every variant.
  */
@@ -183,17 +183,17 @@ class RechunkSupport<Derived, true>::Refill
     using ManagerT   = Traits::ManagerType;       ///< the manager (its team drain)
     using SliceClock = std::chrono::steady_clock; ///< the slice boundaries' clock
 
-    /// zero_one_value folds through its second-value index; the zero_any
+    /// zero_or_value folds through its second-value index; the zero_any
     /// family carries its constants implicitly.
     static constexpr bool second_index = internal::rechunk_second_index_v<Derived, ChunkType>;
     /// The refill frees each old chunk once transcribed (release_sources()):
     /// threaded builds, every variant and element type but Bit. An
-    /// BitArray (zero_one_value::Array<Bit>) packs 8 elements per byte
+    /// BitArray (zero_or_value::Array<Bit>) packs 8 elements per byte
     /// and has a geometry of its own (packed_bit_birth_factor): its rebuild
     /// stays one pass that frees nothing early. Array<bool> is one byte per
     /// bool, released like any other type.
     static constexpr bool releases_sources = build_config::threaded && !is_packed_bit_v<T>;
-    /// The fresh array's second-value record (zero_one_value), int otherwise.
+    /// The fresh array's second-value record (zero_or_value), int otherwise.
     using SecondInfo = decltype(internal::rechunk_second_info<Derived, ChunkType>(std::declval<const Derived&>()));
 
     /// Per-thread fold counters, merged once per thread and slice after the
@@ -222,7 +222,7 @@ class RechunkSupport<Derived, true>::Refill
         bool all_const1 = true;
         /// Every source is a compressed constant (const1 or const2): the new chunk,
         /// once filled, holds only constants and can be folded back at once.
-        /// Tracked for zero_any and zero_one_value (non-bool); zero has const1
+        /// Tracked for zero_any and zero_or_value (non-bool); zero has const1
         /// only (covered by all_const1).
         bool all_folded = true;
         /// zero_any: some source is const1.
@@ -265,7 +265,7 @@ class RechunkSupport<Derived, true>::Refill
     void release_sources(const Span& span);
 
     /// @brief Fold new chunk @p new_chunk back at once when its sources were
-    ///        all compressed constants (zero_any, zero_one_value).
+    ///        all compressed constants (zero_any, zero_or_value).
     void fold_back(int new_chunk, const Sources& sources, Tally& tally);
 
     /// @brief Add one thread's @p tally to the census totals.
@@ -289,7 +289,7 @@ class RechunkSupport<Derived, true>::Refill
     const bool trace_mem_on_; ///< memory=debug
     const bool slice_trace_;  ///< rechunk=trace
 
-    // zero_one_value's const2 predicate and its compress() both need the array's
+    // zero_or_value's const2 predicate and its compress() both need the array's
     // second-value registry entry; the lookups are hoisted here, once per
     // re-chunk.
     [[maybe_unused]] const int        idx_old2_; ///< src_'s second-value index (the scan)

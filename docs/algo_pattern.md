@@ -5,7 +5,7 @@
 > Status: November 2026. `pattern::Array` is a member of the `zero_any` family: this
 > document describes what it does **differently** from `zero_any`, whose machinery it reuses
 > in full (second-value registry, write engine, compression pass, read sections), described in
-> [algo_zero_any.md](algo_zero_any.md) and [algo_zero_one_value.md](algo_zero_one_value.md). Its
+> [algo_zero_any.md](algo_zero_any.md) and [algo_zero_or_value.md](algo_zero_or_value.md). Its
 > own lock-free handshake is model-checked: [formal_models.md](formal_models.md),
 > section 7. When in doubt, the code is the reference.
 
@@ -178,7 +178,7 @@ at once on this path; its wait loop serves the callers without a flag (`alloc_ch
 replay). The offset stays in the slot (§2).
 
 The course of a write in an OpenMP build: the engine steps are those of §7.2 of
-[algo_zero_one_value.md](algo_zero_one_value.md), the body that of `zero_any` (§6 of
+[algo_zero_or_value.md](algo_zero_or_value.md), the body that of `zero_any` (§6 of
 [algo_zero_any.md](algo_zero_any.md)), both compressed here; the diagram shows where `pattern`
 differs.
 
@@ -235,7 +235,7 @@ pass compresses each candidate at its own size.
 hexahedral cells; each iteration
 gathers one band of rows in 16 and renumbers it (the node order rotated, or put back), so the
 pass compresses a band to another shared motif at every iteration. It is a `pattern::Array<int>`
-in the `zero_one_value` and `zero_any` builds (its machinery is `zero_any`'s, header-only: it
+in the `zero_or_value` and `zero_any` builds (its machinery is `zero_any`'s, header-only: it
 lives in either library), a `zero::Array<int>` in a `zero` build, a vector in the baseline; its
 checksums are checked against the baseline's at every checkpoint, like every other array. On a
 check run (`--divisor 50 --iter_max 40`, 4 threads), 384 of its 385 chunks are compressed in both

@@ -141,7 +141,7 @@ def resolve_exe(build_root, config, var, stage):
     Returns the absolute path of the first hit, or None.
     """
     # A variant may carry a size declination as "base@size" (e.g. "zero_any@dyn",
-    # "zero_one_value@256"). The executable name is then
+    # "zero_or_value@256"). The executable name is then
     # shrink_bench_<backend>_{base}_{size} (shrink_bench_tbb_{variant}_{size}
     # for the TBB bench, its one name).
     #

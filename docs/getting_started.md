@@ -26,10 +26,10 @@ Three variants, chosen when you link:
 | variant | class | a chunk is compressed when all its elements equal… |
 |---|---|---|
 | `zero` | `zero::Array<T>` | `T{}` (zero) only |
-| `zero_one_value` | `zero_one_value::Array<T>` | `T{}`, or **one** second value per array, declared with `set_second_value()` |
+| `zero_or_value` | `zero_or_value::Array<T>` | `T{}`, or **one** second value per array, declared with `set_second_value()` |
 | `zero_any` | `zero_any::Array<T>` | `T{}`, or **any** value, chunk by chunk, with nothing to declare |
 
-`zero_any` compresses the most and is the one to try first. `zero_one_value` has lighter metadata when
+`zero_any` compresses the most and is the one to try first. `zero_or_value` has lighter metadata when
 the data has a single dominant non-zero value, and `zero` is the simplest when only zeros
 matter. [variants.md](variants.md) compares them on a real workload.
 
@@ -110,7 +110,7 @@ as the library did.
 
 | target | variant | chunk size |
 |---|---|---|
-| `shrink_array::zero`, `shrink_array::zero_one_value`, `shrink_array::zero_any` | `zero`, `zero_one_value`, `zero_any` | the first of `CHUNK_STATIC_SIZES` (256) |
+| `shrink_array::zero`, `shrink_array::zero_or_value`, `shrink_array::zero_any` | `zero`, `zero_or_value`, `zero_any` | the first of `CHUNK_STATIC_SIZES` (256) |
 | `shrink_array::zero_any_1024`, … | | that compile-time size |
 | `shrink_array::zero_any_dyn`, … | | chosen at run time, per array (can be changed with `rechunk_to()` or by the adaptive decider) |
 | `shrink_array::vector` | none: the arrays are `std::vector` | — |
@@ -126,14 +126,14 @@ defines (`examples/shrink_bench` and `examples/simple_array` do so):
 #include <type_traits>
 #include <vector>
 #include "chunk/zero_array.h"
-#include "chunk/zero_one_value_array.h"
+#include "chunk/zero_or_value_array.h"
 #include "chunk/zero_any_array.h"
 #include "chunk/config.h"
 
 namespace sa = shrink_array;
 template <typename T>
 using Array = std::conditional_t<sa::chunk_config::use_zero_any, sa::zero_any::Array<T>,
-              std::conditional_t<sa::chunk_config::use_zero_one_value, sa::zero_one_value::Array<T>,
+              std::conditional_t<sa::chunk_config::use_zero_or_value, sa::zero_or_value::Array<T>,
               std::conditional_t<sa::chunk_config::use_zero, sa::zero::Array<T>, std::vector<T>>>>;
 ```
 
@@ -313,7 +313,7 @@ compile against a library without OMPT; its test runs with `CHUNK_REQUIRE_OMPT=1
 **Sequential points.** Everything that rebuilds an array's storage is a sequential point:
 `resize()`, `reserve()`, `push_back()` beyond the capacity, `clear()`, `assign()`, `swap()`,
 copy construction and assignment, `shrink_to_fit()`, `compress()`, `rechunk_to()`, and, for
-`zero_one_value`, `set_second_value()`. One drains the deferred writes and runs a compression
+`zero_or_value`, `set_second_value()`. One drains the deferred writes and runs a compression
 pass over lists that every array of the element type shares. Call it outside any parallel
 region, or inside one from a single thread while the rest of the team leaves the arrays alone:
 under `omp single` or `omp masked`, or behind a lock of the program's that every other thread
@@ -425,7 +425,7 @@ threads: for the others, use the std backend.
   parameter: `zero_any::Array<double, long>`.
 - **Element types**: anything trivially copyable, `==`-comparable and default-constructible
   (arithmetic types, `bool`, `std::complex`, enums, `std::array` and aggregates of those). A
-  type that owns a resource (`std::string`) is refused at compile time. `zero_one_value` also needs an
+  type that owns a resource (`std::string`) is refused at compile time. `zero_or_value` also needs an
   order on the second value: a struct of doubles declares `auto operator<=>(const T&) const =
   default;`. An element reads back the bits written: the library tells `-0.0` from `+0.0`
   (bit comparison for `float`, `double`, `std::complex`, `std::array`), but compares the
@@ -433,8 +433,8 @@ threads: for the others, use the std backend.
   `shrink_array::ValueIdentity<T>` (`chunk/internal/same_value.h`) to keep the sign of a zero
   member. On a `bool` element, `a[i] += 1` and the other arithmetic assignments (`-= *= /=
   %= <<= >>=`) do not compile: write `=`, `&=`, `|=` or `^=`.
-- **`zero_one_value` compresses only to its declared second value.** Without `set_second_value()`, a
-  `zero_one_value` array compresses to zero only.
+- **`zero_or_value` compresses only to its declared second value.** Without `set_second_value()`, a
+  `zero_or_value` array compresses to zero only.
 - **Measure memory with the right tool.** `VmRSS` lags behind on many threads; see
   [performance_measurement.md](performance_measurement.md).
 
@@ -446,5 +446,5 @@ threads: for the others, use the std backend.
 | choosing a variant on your data | [variants.md](variants.md), and `examples/variant_compare` |
 | letting the chunk size adapt at run time | [adaptive_rechunk.md](adaptive_rechunk.md) (`_dyn` libraries) |
 | every tuning variable and build option | [environment_variables.md](environment_variables.md) |
-| how it works inside | [algo_zero_one_value.md](algo_zero_one_value.md), [synchronisation_dekker.md](synchronisation_dekker.md) |
+| how it works inside | [algo_zero_or_value.md](algo_zero_or_value.md), [synchronisation_dekker.md](synchronisation_dekker.md) |
 | a larger example: multi-material fields, loops written once for both containers | `examples/multi_mat` |

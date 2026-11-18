@@ -117,8 +117,8 @@ if ("zero_any" IN_LIST CHUNK_VARIANTS)
     add_subdirectory(getting_started)
 endif()
 
-# The two boolean containers of zero_one_value: Array<bool> and BitArray
-if ("zero_one_value" IN_LIST CHUNK_VARIANTS)
+# The two boolean containers of zero_or_value: Array<bool> and BitArray
+if ("zero_or_value" IN_LIST CHUNK_VARIANTS)
     add_subdirectory(bool_arrays)
 endif()
 
@@ -142,14 +142,14 @@ else()
     message(STATUS "Validation harnesses: not built (Debug, CHUNK_CHECK_OPTIM or a sanitizer only; -DCHUNK_BUILD_VALIDATION=ON forces them)")
 endif()
 
-# zero_one_value against zero_any on one workload (per-operation cost, compression)
+# zero_or_value against zero_any on one workload (per-operation cost, compression)
 add_subdirectory(variant_compare)
 
 # The cost of an element access against a std::vector, in the same binary
 add_subdirectory(access_cost)
 
-# Multi-dimensional array example (zero and zero_one_value in one program)
-if (TARGET chunk_zero_and_zero_one_value_${CHUNK_DEFAULT_SIZE})
+# Multi-dimensional array example (zero and zero_or_value in one program)
+if (TARGET chunk_zero_and_zero_or_value_${CHUNK_DEFAULT_SIZE})
     add_subdirectory(multi_mat)
 endif()
 

@@ -89,7 +89,7 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
         {
             shrink_array::println(
                 "[array_conn] zero build: a connectivity has no all-zero chunk, nothing to compress here; "
-                "pattern::Array compresses its motifs in the zero_one_value / zero_any builds");
+                "pattern::Array compresses its motifs in the zero_or_value / zero_any builds");
         }
     }
     array_conn.clear();
@@ -108,7 +108,7 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
 
     // Entries get_info_second_value() scans per call, per element type. It is a
     // library counter like the ones above, so it prints in perf runs too -- the
-    // mode whose profile put 34% of a 64-thread zero_one_value run in that function,
+    // mode whose profile put 34% of a 64-thread zero_or_value run in that function,
     // against 0.37% under libgomp.
     //
     // Printed AFTER the array_*.clear() calls on purpose: `vec` holds one entry
@@ -119,15 +119,15 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
     //
     // A handful: the scan is short and the cost is the CALL RATE, which caching
     // the per-array-invariant result would fix. Hundreds: the list grew.
-    // zero_one_value only -- zero_any carries its second value in the pointer and has no
+    // zero_or_value only -- zero_any carries its second value in the pointer and has no
     // such map.
-    if constexpr (chunk_config::use_zero_one_value)
+    if constexpr (chunk_config::use_zero_or_value)
     {
         std::println("\n[share_info] entries still mapped after clear():  double {}  Int {}  float {}  short {}",
-                     shrink_array::zero_one_value::Proxy<double>::array_registry->share_info_entries(),
-                     shrink_array::zero_one_value::Proxy<int>::array_registry->share_info_entries(),
-                     shrink_array::zero_one_value::Proxy<float>::array_registry->share_info_entries(),
-                     shrink_array::zero_one_value::Proxy<short>::array_registry->share_info_entries());
+                     shrink_array::zero_or_value::Proxy<double>::array_registry->share_info_entries(),
+                     shrink_array::zero_or_value::Proxy<int>::array_registry->share_info_entries(),
+                     shrink_array::zero_or_value::Proxy<float>::array_registry->share_info_entries(),
+                     shrink_array::zero_or_value::Proxy<short>::array_registry->share_info_entries());
     }
 
     // bench_phase_compress_all() is declared in bench_phases.h and defined in

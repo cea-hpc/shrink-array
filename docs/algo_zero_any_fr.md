@@ -2,9 +2,9 @@
 
 > English version: [algo_zero_any.md](algo_zero_any.md).
 
-> État : fin septembre 2026. Ce document décrit ce que `zero_any` fait **autrement** que `zero_one_value` ;
+> État : fin septembre 2026. Ce document décrit ce que `zero_any` fait **autrement** que `zero_or_value` ;
 > la machinerie commune (proxys, écritures différées, barrière de lecture, compression en vol,
-> opérations sur plages) est décrite dans [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md), et la
+> opérations sur plages) est décrite dans [algo_zero_or_value_fr.md](algo_zero_or_value_fr.md), et la
 > géométrie dynamique dans [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md). En cas de
 > doute, c'est le code qui fait foi.
 
@@ -12,7 +12,7 @@
 
 ## 1. Ce que `zero_any` compresse
 
-`zero_one_value` compresse à zéro ou à **une** seconde valeur, déclarée pour tout le tableau. `zero_any`
+`zero_or_value` compresse à zéro ou à **une** seconde valeur, déclarée pour tout le tableau. `zero_any`
 compresse à zéro ou à **n'importe quelle valeur**, choisie **chunk par chunk** : un chunk
 uniforme à 3,5 et son voisin uniforme à −1 sont tous les deux compressés, sans rien déclarer.
 
@@ -133,7 +133,7 @@ sections de lecture. Le seuil de déclenchement vaut
 `total_chunk_create / (50 × nombre de threads)`, avec un plancher de 500 candidats (constantes de
 `zero_any_chunk_def.h`).
 
-Le déroulé de la passe, dans le style du §8.4 de [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md) :
+Le déroulé de la passe, dans le style du §8.4 de [algo_zero_or_value_fr.md](algo_zero_or_value_fr.md) :
 
 ```mermaid
 flowchart TD
@@ -154,7 +154,7 @@ flowchart TD
     N --> K
 ```
 
-Ce qui diffère de `zero_one_value` : une liste de candidats par rang
+Ce qui diffère de `zero_or_value` : une liste de candidats par rang
 (`get_zero_any_candidates`), et non une par seconde valeur ; la seconde constante est
 l'élément 0 du chunk, enregistré seulement à ce moment ; les métadonnées du chunk (case, type)
 sont écrites **avant** le CAS (`block_clear_common`). Les builds séquentiels exécutent la même
@@ -162,7 +162,7 @@ passe, sans les marques et sans `start` / `finish`.
 
 ## 6. L'écriture
 
-Le chemin d'écriture est celui de `zero_one_value` (§6 de [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md)), à
+Le chemin d'écriture est celui de `zero_or_value` (§6 de [algo_zero_or_value_fr.md](algo_zero_or_value_fr.md)), à
 ces différences près :
 
 - la seconde valeur à comparer est celle **du chunk**, lue dans sa ligne de métadonnées, et non
@@ -183,7 +183,7 @@ a été retirée : son gain (~0,4 % sur `shrink_bench_omp_zero_any_256` à 64 th
 l'invariant de resynchronisation qu'elle imposait à chaque réallocation des lignes.
 
 Le déroulé d'une écriture dans un build OpenMP : les étapes du moteur sont celles du §7.2 de
-[algo_zero_one_value_fr.md](algo_zero_one_value_fr.md), résumées ici ; le reste est ce en quoi
+[algo_zero_or_value_fr.md](algo_zero_or_value_fr.md), résumées ici ; le reste est ce en quoi
 `zero_any` diffère (pour `bool`, `handle_bool_assignment` joue le même rôle, avec `true` comme
 seconde valeur).
 

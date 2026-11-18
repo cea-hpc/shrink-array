@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib import font_manager  # noqa: E402
 
 # (container, GB), top to bottom; the last one is highlighted.
-MEASURES = [("std::vector", 125.9), ("zero", 40.2), ("zero_one_value", 17.3), ("zero_any", 7.26)]
+MEASURES = [("std::vector", 125.9), ("zero", 40.2), ("zero_or_value", 17.3), ("zero_any", 7.26)]
 DYN_GB = 6.0  # zero_any with dynamic chunks (_dyn)
 
 TEXT = {

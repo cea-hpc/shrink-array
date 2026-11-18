@@ -16,7 +16,7 @@
 
 // ============================================================================
 // operator new[] / init_chunks_const_val harness. Variant-agnostic: chunk /
-// zero_one_value / zero_any follow the compile-time macro, like the other harnesses
+// zero_or_value / zero_any follow the compile-time macro, like the other harnesses
 // here -- the three carry the same pair of operators, built on the one
 // chunk_array_new::init_chunks (chunk_array_new.h).
 // ============================================================================
@@ -54,7 +54,7 @@
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
 #include "chunk/zero_array.h"            // zero::Chunk<T> complete (zero_chunk.h): its operator new[]
-#include "chunk/zero_one_value_array.h"  // zero_one_value::Chunk<T> complete: its operator new[]
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Chunk<T> complete: its operator new[]
 #include "chunk/zero_any_array.h"        // zero_any::Chunk<T> complete (zero_any_chunk.h): its operator new[]
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/config.h"                // chunk_config::use_zero*
@@ -81,7 +81,7 @@ namespace
 using Ch = std::conditional_t<
     chunk_config::use_zero_any,
     zero_any::Chunk<double>,
-    std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Chunk<double>, zero::Chunk<double>>>;
+    std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Chunk<double>, zero::Chunk<double>>>;
 
 constexpr const char* variant_name()
 {
@@ -89,9 +89,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -101,7 +101,7 @@ constexpr const char* variant_name()
 
 /// @brief How many of the @p count chunks hold a buffer (none should).
 /// @note A TEMPLATE, so that the branch `if constexpr` discards is not
-///       type-checked: zero_one_value's written() takes the second-value index (0 --
+///       type-checked: zero_or_value's written() takes the second-value index (0 --
 ///       nothing else is registered here), zero's and zero_any's take none, and
 ///       in a plain function both spellings would have to compile.
 template <typename C>

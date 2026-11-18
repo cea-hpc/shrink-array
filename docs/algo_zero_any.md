@@ -2,9 +2,9 @@
 
 > French version: [algo_zero_any_fr.md](algo_zero_any_fr.md).
 
-> Status: end of September 2026. This document describes what `zero_any` does **differently** from `zero_one_value`;
+> Status: end of September 2026. This document describes what `zero_any` does **differently** from `zero_or_value`;
 > the common machinery (proxies, deferred writes, read barrier, in-flight compression,
-> range operations) is described in [algo_zero_one_value.md](algo_zero_one_value.md), and the
+> range operations) is described in [algo_zero_or_value.md](algo_zero_or_value.md), and the
 > dynamic geometry in [adaptive_rechunk.md](adaptive_rechunk.md). When in
 > doubt, the code is the reference.
 
@@ -12,7 +12,7 @@
 
 ## 1. What `zero_any` compresses
 
-`zero_one_value` compresses to zero or to **one** second value, declared for the whole array. `zero_any`
+`zero_or_value` compresses to zero or to **one** second value, declared for the whole array. `zero_any`
 compresses to zero or to **any value**, chosen **chunk by chunk**: a chunk
 uniform at 3.5 and its neighbour uniform at −1 are both compressed, without declaring anything.
 
@@ -130,7 +130,7 @@ trigger threshold is
 `total_chunk_create / (50 × number of threads)`, with a floor of 500 candidates (constants of
 `zero_any_chunk_def.h`).
 
-The course of the pass, in the style of §8.4 of [algo_zero_one_value.md](algo_zero_one_value.md):
+The course of the pass, in the style of §8.4 of [algo_zero_or_value.md](algo_zero_or_value.md):
 
 ```mermaid
 flowchart TD
@@ -151,7 +151,7 @@ flowchart TD
     N --> K
 ```
 
-What differs from `zero_one_value`: one candidate list per rank
+What differs from `zero_or_value`: one candidate list per rank
 (`get_zero_any_candidates`), not one per second value; the second constant is the
 chunk's element 0, registered only now; the chunk's metadata (slot, type) is written **before**
 the CAS (`block_clear_common`). Sequential builds run the same pass, without the marks and
@@ -159,7 +159,7 @@ without `start` / `finish`.
 
 ## 6. The write
 
-The write path is that of `zero_one_value` (§6 of [algo_zero_one_value.md](algo_zero_one_value.md)), with
+The write path is that of `zero_or_value` (§6 of [algo_zero_or_value.md](algo_zero_or_value.md)), with
 these differences:
 
 - the second value to compare against is **the chunk's**, read from its metadata row, and not
@@ -180,7 +180,7 @@ was removed: its gain (~0.4% on `shrink_bench_omp_zero_any_256` at 64 threads) d
 the resynchronisation invariant it imposed on each reallocation of the rows.
 
 The course of a write in an OpenMP build: the engine steps are those of §7.2 of
-[algo_zero_one_value.md](algo_zero_one_value.md), compressed here; the rest is where `zero_any`
+[algo_zero_or_value.md](algo_zero_or_value.md), compressed here; the rest is where `zero_any`
 differs (for `bool`, `handle_bool_assignment` plays the same part, with `true` as the second
 value).
 

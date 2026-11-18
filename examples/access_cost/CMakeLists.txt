@@ -5,7 +5,7 @@
 # and on the variant's array, in the same binary (access_cost.cpp).
 #
 # One executable per variant at the default static size:
-# access_cost_zero_<size>, access_cost_zero_one_value_<size>, access_cost_zero_any_<size>.
+# access_cost_zero_<size>, access_cost_zero_or_value_<size>, access_cost_zero_any_<size>.
 # A perf target -- no CHECK define. python/access_cost.py runs them over
 # rounds and thread counts and prints the medians and the ratios.
 #
@@ -16,8 +16,8 @@
 # measure nothing.
 # ============================================================================
 
-set(_ac_variant_names   zero    zero_one_value   zero_any)
-set(_ac_variant_libbase chunk_zero chunk_zero_one_value chunk_zero_any)
+set(_ac_variant_names   zero    zero_or_value   zero_any)
+set(_ac_variant_libbase chunk_zero chunk_zero_or_value chunk_zero_any)
 
 list(LENGTH _ac_variant_names _ac_nvar)
 math(EXPR _ac_nvar_last "${_ac_nvar} - 1")

@@ -113,7 +113,7 @@ CHUNK_FORCE_INLINE constexpr decltype(auto) unwrap(U&& operand) noexcept
 /**
  * @brief The write proxy @p P of an element of type @p T, usable as a temporary
  *        only (see the file comment).
- * @tparam P the proxy type (zero::Proxy<T>, zero_one_value::Proxy<T>, zero_any::Proxy<T>)
+ * @tparam P the proxy type (zero::Proxy<T>, zero_or_value::Proxy<T>, zero_any::Proxy<T>)
  * @tparam T the element type
  */
 template <typename P, typename T>

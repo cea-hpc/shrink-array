@@ -40,18 +40,18 @@ with open(os.path.join(od, "bench_summary.csv"), "w") as f:
     f.write("Config,Variant,Threads,AvgTime_s,PeakMem_Mo,Speedup_vs_baseline,MemRatio_vs_baseline,"
             "MemSaved_Mo_vs_baseline\n")
     for cfg in ("omp-gnu", "omp-llvm"):
-        for var, base in (("zero", 4.0), ("zero_one_value", 3.0), ("zero_any", 2.5)):
+        for var, base in (("zero", 4.0), ("zero_or_value", 3.0), ("zero_any", 2.5)):
             for th in (1, 4, 16, 64):
                 t = a.speed * base * (0.2 + 4.0 / th)
                 sp = "" if var == "zero" else "%.3f" % (4.0 / base)
                 f.write("%s,%s,%d,%.6f,%.1f,%s,,\n" % (cfg, var, th, t, 100 * base, sp))
 with open(os.path.join(od, "bench_errors.log"), "w") as f:
     f.write("CHECK_FAIL: zero_any t=4 code=-11\n  stderr_tail:\n    Segmentation fault\n"
-            "MEM_GUARD: zero_any/zero_one_value 1.4 > 1.2\n")
+            "MEM_GUARD: zero_any/zero_or_value 1.4 > 1.2\n")
 with open(cases, "w") as f:
     f.write(json.dumps({"kind": "CHECK_FAIL", "summary": "CHECK_FAIL: zero_any t=4 code=-11",
                         "runs": [{"cmd": ["x"], "log": log}]}) + "\n")
-    f.write(json.dumps({"kind": "MEM_GUARD", "summary": "MEM_GUARD: zero_any/zero_one_value 1.4 > 1.2",
+    f.write(json.dumps({"kind": "MEM_GUARD", "summary": "MEM_GUARD: zero_any/zero_or_value 1.4 > 1.2",
                         "runs": []}) + "\n")
 keep = os.environ.get("CHUNK_BENCH_KEEP_DIR")       # as bench_runner/report.py keep_run_outputs
 if keep:

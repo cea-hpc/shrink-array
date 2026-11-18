@@ -83,7 +83,7 @@
  *          soa::plain stores a member that never repeats -- noise, a
  *          coordinate of a moving particle -- with no chunk at all;
  *          soa::column<C> takes any one-parameter template of the member
- *          type (zero::Array, zero_one_value::Array, zero_any::Array, an
+ *          type (zero::Array, zero_or_value::Array, zero_any::Array, an
  *          alias). On a member stored part by part, the annotation goes to
  *          every part, unless a part carries its own. Other annotations, of
  *          other libraries, are left alone.
@@ -144,7 +144,7 @@ struct column_t
 };
 
 /// [[=soa::column<C>]]: this member's column is a C<M> (zero::Array,
-/// zero_one_value::Array, zero_any::Array, any template of the member type
+/// zero_or_value::Array, zero_any::Array, any template of the member type
 /// with the columns' interface), whatever the array's default.
 template <template <typename> class Column>
 inline constexpr column_t<Column> column{};
@@ -462,7 +462,7 @@ ref_type_of(std::meta::info t, bool marked, std::meta::info column, std::meta::i
  * @tparam T      The element: a struct of ArrayChunkElement members, structs
  *                and arrays of them (see the file comment).
  * @tparam Column The array of one column, a template of the value type
- *                (default zero_any::Array; zero_one_value::Array, zero::Array
+ *                (default zero_any::Array; zero_or_value::Array, zero::Array
  *                too), for the members without a storage annotation.
  */
 template <typename T, template <typename> class Column = SoaDefaultColumn>

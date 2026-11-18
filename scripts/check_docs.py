@@ -70,6 +70,30 @@ DESIGN = {
 
 # Real names that are not defined in this tree.
 ALLOWED = {
+    # names of the variant zero_or_value while it was zero_one_value, which the
+    # released sections of CHANGELOG.md cite
+    "CHUNK_LINK_CHECK_ZERO/_ZERO_ONE_VALUE/_ZERO_ANY",
+    "CHUNK_VARIANT_ZERO_ONE_VALUE",
+    "IsZeroOneValue",
+    "VectZeroOneValue",
+    "ZeroOneValueComp",
+    "ZeroOneValueCompByValue",
+    "ZeroOneValueCompMap",
+    "ZeroOneValueCompThr",
+    "ZeroOneValueInfArrayPolicy",
+    "algo_zero_one_value.md",
+    "chunk/zero_one_value_array.h",
+    "chunk_zero_one_value_",
+    "docs/algo_zero_one_value.md",
+    "mem-zero-any-vs-zero-one-value-max",
+    "shrink_bench_serial_zero_one_value_1024",
+    "use_zero_one_value",
+    "zero_one_value",
+    "zero_one_value_array.h",
+    "zero_one_value_array_parallel.h",
+    "zero_one_value_candidates_map_thr",
+    "zero_one_value_candidates_thr",
+    "zero_one_value_chunk.h",
     # internal names before their renaming of November 2026, which CHANGELOG.md
     # cites
     "AllTypeChunk",
@@ -112,7 +136,7 @@ ALLOWED = {
     "chunk/private/manager_chunk.cpp",
     # French names in English (CHANGELOG.md, Unreleased, Changed); the released entries cite them
     "factor_div_somme_chunk_buffer_reuse", "freq_conso_mem", "ind_", "IndType", "IndT",
-    "cst_buffer_size", "CstVal1Type", "cst2_reclaim_validation", "CHUNK_CST_VAL2_MAX_IDS", "free_elt_pow2", "CalcType", "VectZeroOneValue", "VectCom", "VectChunk", "Vect", "num_compress_value",
+    "cst_buffer_size", "CstVal1Type", "cst2_reclaim_validation", "CHUNK_CST_VAL2_MAX_IDS", "free_elt_pow2", "CalcType", "VectZeroOrValue", "VectCom", "VectChunk", "Vect", "num_compress_value",
     "cst2_hash_validation", "examples/cst2_hash/cst2_hash_validation", "examples/cst2_hash",
     # removed with the deducing-this variant of develop (CHANGELOG.md, Unreleased, Removed)
     "CHUNK_CRTP_USE_DEDUCING_THIS", "CHUNK_CRTP_FORCE_DEDUCING_THIS",
@@ -206,12 +230,12 @@ ALLOWED = {
 # per-variant executables (shrink_bench_omp_zero_any_256, validation_zero_dyn, ...). The
 # shrink_bench ones carry the threading backend of their build (omp, std, serial) or the
 # TBB bench's tbb; the unprefixed form stays accepted, a measured run citing an old name.
-GENERATED = re.compile(r"^(chunk::)?chunk_(zero|zero_one_value|zero_any|v1|v2|v2a)(_(\d+|dyn))?$"
-                       r"|^shrink_array::(zero|zero_one_value|zero_any)(_(\d+|dyn))?$"
+GENERATED = re.compile(r"^(chunk::)?chunk_(zero|zero_or_value|zero_one_value|zero_any|v1|v2|v2a)(_(\d+|dyn))?$"
+                       r"|^shrink_array::(zero|zero_or_value|zero_one_value|zero_any)(_(\d+|dyn))?$"
                        r"|^shrink_array::(vector|chunk)$"
                        r"|^(shrink_bench|validation|variant_compare|rechunk_validation|dyn_geometry_validation)"
-                       r"_(zero|zero_one_value|zero_any|chunk|chunk2|chunk2a|vector)(_\w+)?$"
-                       r"|^shrink_bench_(omp|std|serial|tbb)_(zero|zero_one_value|zero_any|vector|std_alloc)"
+                       r"_(zero|zero_or_value|zero_one_value|zero_any|chunk|chunk2|chunk2a|vector)(_\w+)?$"
+                       r"|^shrink_bench_(omp|std|serial|tbb)_(zero|zero_or_value|zero_one_value|zero_any|vector|std_alloc)"
                        r"(_\w+)?$")
 
 CODE_SPAN = re.compile(r"`([^`\n]+)`")

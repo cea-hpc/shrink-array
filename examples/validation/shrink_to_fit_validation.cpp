@@ -34,7 +34,7 @@
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
 #include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/phases.h"                // parallel_phase
@@ -55,7 +55,7 @@ namespace
 using Arr = std::conditional_t<
     chunk_config::use_zero_any,
     zero_any::Array<double>,
-    std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<double>, zero::Array<double>>>;
+    std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<double>, zero::Array<double>>>;
 
 constexpr const char* variant_name()
 {
@@ -63,9 +63,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -75,8 +75,8 @@ constexpr const char* variant_name()
 
 /// The value of chunk @p chunk. zero_any: zero for the even ones (the first
 /// constant), chunk + 1 for the odd ones (one second constant per chunk, the
-/// queued kind). zero and zero_one_value: zero everywhere -- zero compresses
-/// to that constant only, and zero_one_value to a second one only when the
+/// queued kind). zero and zero_or_value: zero everywhere -- zero compresses
+/// to that constant only, and zero_or_value to a second one only when the
 /// array declares it.
 double chunk_value(int chunk)
 {

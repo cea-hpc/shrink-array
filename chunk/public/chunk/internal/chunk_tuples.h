@@ -41,13 +41,13 @@ using VectorTuple4ChunkInt2 = std::vector<std::tuple<ChunkTemplate<T>*, int, int
 ///        (4-element tuples) holding it.
 /// @details Tuples as VectorTuple4ChunkInt2. Ordered by ValueLess (value_less.h).
 template <template <typename> class ChunkTemplate, typename T>
-using ZeroOneValueCompByValue = std::map<T, std::shared_ptr<VectorTuple4ChunkInt2<ChunkTemplate, T>>, ValueLess<T>>;
+using ZeroOrValueCompByValue = std::map<T, std::shared_ptr<VectorTuple4ChunkInt2<ChunkTemplate, T>>, ValueLess<T>>;
 
-/// @brief zero_one_value's candidate lists, one per second value.
-/// @details Copied into zero_one_value_candidates_map_thr's shared_ptr
-///          (zero_one_value::Array::set_second_value): same tuples as ZeroOneValueCompByValue.
+/// @brief zero_or_value's candidate lists, one per second value.
+/// @details Copied into zero_or_value_candidates_map_thr's shared_ptr
+///          (zero_or_value::Array::set_second_value): same tuples as ZeroOrValueCompByValue.
 template <template <typename> class ChunkTemplate, typename T>
-using ZeroOneValueComp = std::vector<VectorTuple4ChunkInt2<ChunkTemplate, T>>;
+using ZeroOrValueComp = std::vector<VectorTuple4ChunkInt2<ChunkTemplate, T>>;
 
 /// @brief zero_any's candidate list.
 template <template <typename> class ChunkTemplate, typename T>
@@ -85,18 +85,18 @@ struct alignas(128) PerThreadSlot : public Container
 template <template <typename> class ChunkTemplate, typename T>
 using ZeroAnyCompThr = std::vector<PerThreadSlot<ZeroAnyComp<ChunkTemplate, T>>>;
 
-/// @brief zero_one_value's candidate lists, one slot per thread.
+/// @brief zero_or_value's candidate lists, one slot per thread.
 template <template <typename> class ChunkTemplate, typename T>
-using ZeroOneValueCompThr = std::vector<PerThreadSlot<ZeroOneValueComp<ChunkTemplate, T>>>;
+using ZeroOrValueCompThr = std::vector<PerThreadSlot<ZeroOrValueComp<ChunkTemplate, T>>>;
 
 /// @brief Chunk's candidate lists, one slot per thread.
 template <template <typename> class ChunkTemplate, typename T>
 using ZeroCompThr = std::vector<PerThreadSlot<VectorTuple4ChunkInt2<ChunkTemplate, T>>>;
 
-/// @brief zero_one_value's candidate store: one map keyed by second value per thread.
+/// @brief zero_or_value's candidate store: one map keyed by second value per thread.
 /// @details Only the OpenMP fast-block code reaches it; a serial build keeps
 ///          it empty.
 template <template <typename> class ChunkTemplate, typename T>
-using ZeroOneValueCompMap = std::vector<PerThreadSlot<ZeroOneValueCompByValue<ChunkTemplate, T>>>;
+using ZeroOrValueCompMap = std::vector<PerThreadSlot<ZeroOrValueCompByValue<ChunkTemplate, T>>>;
 
 } // namespace shrink_array

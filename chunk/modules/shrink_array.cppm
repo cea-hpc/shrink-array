@@ -143,9 +143,9 @@ extern "C++"
 #if defined(CHUNK_VARIANT_ZERO_ANY)
     #include "chunk/zero_any_array.h" // zero_any::Array
     #include "chunk/pattern_array.h"  // pattern::Array, over zero_any's library
-#elif defined(CHUNK_VARIANT_ZERO_ONE_VALUE)
-    #include "chunk/zero_one_value_array.h" // zero_one_value::Array
-    #include "chunk/bit_array.h"     // BitArray: zero_one_value::Array<Bit>
+#elif defined(CHUNK_VARIANT_ZERO_OR_VALUE)
+    #include "chunk/zero_or_value_array.h" // zero_or_value::Array
+    #include "chunk/bit_array.h"     // BitArray: zero_or_value::Array<Bit>
 #else
     // CHUNK_VARIANT_ZERO, or no variant: chunk_vector, the std::vector mode
     // (chunk_config::use_zero false), whose programs still name zero::Array.
@@ -199,11 +199,11 @@ namespace pattern
 {
 using shrink_array::pattern::Array;
 } // namespace pattern
-#elif defined(CHUNK_VARIANT_ZERO_ONE_VALUE)
-namespace zero_one_value
+#elif defined(CHUNK_VARIANT_ZERO_OR_VALUE)
+namespace zero_or_value
 {
-using shrink_array::zero_one_value::Array;
-} // namespace zero_one_value
+using shrink_array::zero_or_value::Array;
+} // namespace zero_or_value
 #else
 namespace zero
 {

@@ -15,7 +15,7 @@
  */
 
 // ============================================================================
-// Open element types harness. Variant-agnostic: zero / zero_one_value / zero_any by
+// Open element types harness. Variant-agnostic: zero / zero_or_value / zero_any by
 // the compile-time macro (CHUNK_VARIANT_ZERO*), like the other harnesses.
 // ============================================================================
 //
@@ -53,7 +53,7 @@
 //
 //   Plus: push_back(a(i)) and resize(n, a(i)) past the capacity on Point3,
 //   a type passed by reference -- the value must be read before resize()
-//   (zero and zero_any: zero_one_value has no a(i) on a non-bool element).
+//   (zero and zero_any: zero_or_value has no a(i) on a non-bool element).
 //
 // WHAT IT DOES NOT COVER
 //
@@ -72,12 +72,12 @@
 
 #include "chunk/internal/chunk_traits.h"      // forward decls + default IntType = int
 #include "chunk/zero_array.h"                 // zero::Array
-#include "chunk/zero_one_value_array.h"       // zero_one_value::Array
+#include "chunk/zero_or_value_array.h"        // zero_or_value::Array
 #include "chunk/zero_any_array.h"             // zero_any::Array
 #include "chunk/runtime.h"                    // Runtime::init, register_chunk_size
 #include "chunk/internal/zero_chunk.h"        // release_chunk_pools, Runtime::shutdown
 #include "chunk/internal/chunk_size_policy.h" // active_chunk_size, set_active_chunk_size, set_thread_chunk_size
-#include "chunk/config.h" // chunk_config::use_zero_one_value*, build_config::chunk_dynamic / needs_explicit_phases
+#include "chunk/config.h" // chunk_config::use_zero_or_value*, build_config::chunk_dynamic / needs_explicit_phases
 #include "chunk/internal/pmp_chunk.h" // CHUNK_PMP_MAX_THREADS
 #include "chunk/phases.h"             // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/print.h"              // shrink_array::println
@@ -92,7 +92,7 @@ using namespace shrink_array;
 // ── The types ───────────────────────────────────────────────────────────────
 
 /// Three doubles, no padding: the mesh-point case. The defaulted <=> is what
-/// zero_one_value asks of a floating-point struct (it orders second values, see
+/// zero_or_value asks of a floating-point struct (it orders second values, see
 /// value_less.h); zero and zero_any need == alone.
 struct Point3
 {
@@ -128,7 +128,7 @@ enum class Color : int
 using Quad = std::array<float, 4>;
 
 /// Two shorts: a 4-byte element, smaller than a double. No operator<: every
-/// bit is value (no padding, no floating point), zero_one_value orders it by bytes.
+/// bit is value (no padding, no floating point), zero_or_value orders it by bytes.
 struct Pair16
 {
     bool operator==(const Pair16&) const = default;
@@ -157,7 +157,7 @@ template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -165,9 +165,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {
@@ -418,9 +418,9 @@ int run(int argc, char** argv)
     // chunk rewritten to the second value, a candidate), and the write of the
     // new element re-use it, filled with the first constant, before the value
     // was read. Under ASan with the standard allocator, a use-after-free.
-    // zero_one_value has no a(i) on a non-bool element (its written() needs the
+    // zero_or_value has no a(i) on a non-bool element (its written() needs the
     // second-value index): nothing to alias there.
-    if constexpr (!chunk_config::use_zero_one_value)
+    if constexpr (!chunk_config::use_zero_or_value)
     {
         int           bad = 0;
         Array<Point3> al;

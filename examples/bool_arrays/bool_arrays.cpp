@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-// The two boolean containers of a zero_one_value build, side by side
+// The two boolean containers of a zero_or_value build, side by side
 // (docs/variants.md, section 2, "Booleans: two containers"):
 //
-//   - zero_one_value::Array<bool>: one byte per element in a materialised chunk;
+//   - zero_or_value::Array<bool>: one byte per element in a materialised chunk;
 //   - BitArray<>: one bit per element, 8 per byte -- the layout of
 //     std::vector<bool> -- whose write is an atomic update of the 64-bit word.
 //
@@ -32,18 +32,18 @@
 
 #ifdef SHRINK_ARRAY_IMPORT
 import std;          // std::as_const, std::println and std::cerr (the catch), std::exception
-import shrink_array; // zero_one_value::Array, BitArray, parallel_phase, Runtime, println, release_chunk_pools, ...
+import shrink_array; // zero_or_value::Array, BitArray, parallel_phase, Runtime, println, release_chunk_pools, ...
 #else
     #include <exception> // std::exception
     #include <iostream>  // std::cerr (the catch)
     #include <print>     // std::println (the catch)
     #include <utility>   // std::as_const
 
-    #include "chunk/zero_one_value_array.h" // shrink_array::zero_one_value::Array (Array<bool>)
-    #include "chunk/bit_array.h"            // shrink_array::BitArray
-    #include "chunk/phases.h"               // parallel_phase
-    #include "chunk/runtime.h"              // Runtime::init, release_chunk_pools, Runtime::shutdown
-    #include "chunk/print.h"                // shrink_array::println
+    #include "chunk/zero_or_value_array.h" // shrink_array::zero_or_value::Array (Array<bool>)
+    #include "chunk/bit_array.h"           // shrink_array::BitArray
+    #include "chunk/phases.h"              // parallel_phase
+    #include "chunk/runtime.h"             // Runtime::init, release_chunk_pools, Runtime::shutdown
+    #include "chunk/print.h"               // shrink_array::println
 #endif
 
 namespace sa = shrink_array;
@@ -97,8 +97,8 @@ try
     {
         const int count = 1 << 22; // 4 M booleans: 4 MiB as bytes, 512 KiB as a std::vector<bool>
 
-        sa::zero_one_value::Array<bool> flags(count); // a byte per element, all false, nothing allocated
-        sa::BitArray<>                  mask(count);  // a bit per element, all false, nothing allocated
+        sa::zero_or_value::Array<bool> flags(count); // a byte per element, all false, nothing allocated
+        sa::BitArray<>                 mask(count);  // a bit per element, all false, nothing allocated
 
         // Write both, neighbouring elements from different threads. No
         // set_second_value(): for booleans the second value is `true`.
@@ -122,7 +122,7 @@ try
         mask.shrink_to_fit();
 
         println("n = {} booleans, {} read back wrong", count, bad);
-        report("zero_one_value::Array<bool>", flags, 1.0);
+        report("zero_or_value::Array<bool>", flags, 1.0);
         report("BitArray<>", mask, 1.0 / 8.0);
         println("  {:<30} {:9.1f} KiB, and a race on neighbouring writes", "std::vector<bool>", count / 8.0 / 1024.0);
     } // the arrays release their chunks here

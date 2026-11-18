@@ -31,7 +31,7 @@ def _pool_job(runs, out, pool, k, nodes, rows, errors=()):
         w = csv.writer(f)
         w.writerow(HEAD)
         for i, b, rc in rows:
-            w.writerow([i, b, "shrink_bench_omp_zero_one_value_dyn", 4, "1.5", rc, "", "", f"n{k}"])
+            w.writerow([i, b, "shrink_bench_omp_zero_or_value_dyn", 4, "1.5", rc, "", "", f"n{k}"])
     for name in errors:
         (od / name).write_text(f"boom in {name}\n")
     return d
@@ -48,7 +48,7 @@ def test_pooled_summary_points_errors(tmp_path, capsys):
     # Two jobs, the run indices interleaved as the claims fell; job 2 failed run 6.
     _pool_job(runs, out, "P", 1, 2, [(1, "a", 0), (3, "a", 0), (4, "b", 0)])
     _pool_job(runs, out, "P", 2, 2, [(2, "b", 0), (5, "a", 0), (6, "b", 3)],
-              errors=["error_6_b_shrink_bench_omp_zero_one_value_dyn.txt"])
+              errors=["error_6_b_shrink_bench_omp_zero_or_value_dyn.txt"])
     s = _call(rh, capsys, "summary", str(runs), "P-n1")
     assert s["rows"][-1][:3] == ["TOTAL", "6", "1"]
     assert {r[0]: r[1] for r in s["rows"]} == {"a": "3", "b": "3", "TOTAL": "6"}
@@ -58,7 +58,7 @@ def test_pooled_summary_points_errors(tmp_path, capsys):
     assert sorted(p["builds"]) == ["a", "b"] and p["rows"][-1][5] == 3
     blob = base64.b64encode(json.dumps({"files": ["error_*.txt"]}).encode()).decode()
     e = _call(rh, capsys, "errors", str(runs), "P-n1", blob)    # job 1's own directory has none
-    assert [f["name"] for f in e["files"]] == ["error_6_b_shrink_bench_omp_zero_one_value_dyn.txt"]
+    assert [f["name"] for f in e["files"]] == ["error_6_b_shrink_bench_omp_zero_or_value_dyn.txt"]
     assert e["count"] == 1
     d1 = runs / "P-n1"
     meta = json.loads((d1 / "meta.json").read_text())
@@ -77,7 +77,7 @@ def test_pooled_summary_points_errors(tmp_path, capsys):
 
 
 def _fake_tree(root, calls, fail_at=0):
-    """Two flat builds whose zero_one_value@dyn binary exits 0 at once --
+    """Two flat builds whose zero_or_value@dyn binary exits 0 at once --
     except the @p fail_at-th call over both builds and both jobs (counted by
     an atomic mkdir), which exits 3 -- and whose vector binary writes a data_array_x."""
     body = ("#!/bin/bash\n"
@@ -88,7 +88,7 @@ def _fake_tree(root, calls, fail_at=0):
     for b in ("omp-a", "omp-b"):
         d = root / f"cmake-build-{b}"
         d.mkdir(parents=True)
-        (d / "shrink_bench_omp_zero_one_value_dyn").write_text(body)
+        (d / "shrink_bench_omp_zero_or_value_dyn").write_text(body)
         (d / "shrink_bench_omp_vector_check").write_text("#!/bin/bash\nsleep 0.3\necho x > data_array_x\n")
         for f in d.iterdir():
             f.chmod(0o755)
@@ -158,7 +158,7 @@ def _draws(tmp_path, *extra):
     """The thread counts of 300 runs of a binary that exits at once."""
     d = tmp_path / "cmake-build-omp-a"
     d.mkdir()
-    exe = d / "shrink_bench_omp_zero_one_value_dyn"
+    exe = d / "shrink_bench_omp_zero_or_value_dyn"
     exe.write_text("#!/bin/bash\n")
     exe.chmod(0o755)
     env = dict(os.environ)

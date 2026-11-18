@@ -29,7 +29,7 @@ HUNKS = [
 ''',
      r'''     */
     template <typename T>
-    static void set_second_value(T second_value) = delete("not implemented: see zero_one_value / zero_any");
+    static void set_second_value(T second_value) = delete("not implemented: see zero_or_value / zero_any");
 
     /**
 '''),
@@ -88,7 +88,7 @@ HUNKS = [
 
     /**
 '''),
-    ('chunk/public/chunk/internal/zero_one_value_proxy.h',
+    ('chunk/public/chunk/internal/zero_or_value_proxy.h',
      r'''    Proxy(const Proxy& other) = default;
 
     T*       operator&()       = delete;

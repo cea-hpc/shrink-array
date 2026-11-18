@@ -265,7 +265,7 @@ VIZ = {
 
 # Colour follows the entity, never its rank: fixed slots per category.
 COLOR_BY = {
-    "Variante": (lambda exe: exe_parts(exe)[0], ["zero", "zero_one_value", "zero_any"]),
+    "Variante": (lambda exe: exe_parts(exe)[0], ["zero", "zero_or_value", "zero_any"]),
     "Taille": (lambda exe: exe_parts(exe)[1], ["256", "1024", "dyn"]),
     "Aucune": (lambda exe: "runs", ["runs"]),
 }
@@ -278,7 +278,7 @@ COLOR_BY = {
 # the variant rename) -- the results of past runs. Longest first: zero would
 # also match zero_any.
 EXE_RE = re.compile(r"shrink_bench_(?:(?:omp|std|serial|tbb)_)?"
-                    r"(zero_any|zero_one_value|zero|chunk2a|chunk2|chunk)(?:_(\w+))?$")
+                    r"(zero_any|zero_or_value|zero|chunk2a|chunk2|chunk)(?:_(\w+))?$")
 
 def exe_parts(exe):
     """shrink_bench_omp_zero_any_dyn -> ("zero_any", "dyn"), shrink_bench_tbb_zero_any_dyn,

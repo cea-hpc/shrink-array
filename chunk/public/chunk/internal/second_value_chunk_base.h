@@ -34,7 +34,7 @@ namespace shrink_array
 // SecondValueChunkBase
 // ============================================================================
 
-/// @brief CRTP base of the two-value chunks (zero_one_value and zero_any), on top of ChunkBase.
+/// @brief CRTP base of the two-value chunks (zero_or_value and zero_any), on top of ChunkBase.
 /// @tparam T       Element type.
 /// @tparam Derived The chunk type.
 template <typename T, typename Derived>
@@ -62,13 +62,13 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
 
   protected:
     // ========================================================================
-    // zero_one_value specific deallocation with block_clear
+    // zero_or_value specific deallocation with block_clear
     // ========================================================================
 
-    /// @brief Common block clear implementation for zero_one_value/zero_any
+    /// @brief Common block clear implementation for zero_or_value/zero_any
     /// @tparam IndexT Type of index parameter (can be std::nullopt_t for zero_any)
     /// @param const_index Which constant value to compress to (0 or 1)
-    /// @param index_opt Optional index parameter (for zero_one_value) or std::nullopt (for zero_any)
+    /// @param index_opt Optional index parameter (for zero_or_value) or std::nullopt (for zero_any)
     /// @param thr_rank Thread rank
     /// @param ptr_type_const Pointer to constant type indicator (zero_any only)
     /// @param ptr_second_value Pointer to second value (zero_any only)
@@ -97,18 +97,18 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
     ///        must not be compressed to either constant (the buffer would be the
     ///        shared const_val1 / const_val2 block).
     /// @param const_index Index reported in the failure message.
-    /// @param idx_opt zero_one_value's second-value slot index; empty for zero_any and
+    /// @param idx_opt zero_or_value's second-value slot index; empty for zero_any and
     ///        bool, whose second value is not table-indexed.
     void
     check_not_constant_before_clear(this const Derived& self, int const_index, std::optional<int> idx_opt) noexcept;
 
   private:
     static constexpr bool is_zero_any_family_derived = is_zero_any_family_v<Derived>;
-    static constexpr bool is_zero_one_value_derived  = std::is_same_v<Derived, zero_one_value::Chunk<T>>;
+    static constexpr bool is_zero_or_value_derived   = std::is_same_v<Derived, zero_or_value::Chunk<T>>;
 
     /// @brief Clear chunk and reset to constant value
     /// @tparam IndexT Type of index parameter
-    /// @param index_opt Optional index (zero_one_value) or std::nullopt (zero_any)
+    /// @param index_opt Optional index (zero_or_value) or std::nullopt (zero_any)
     /// @param thr_rank Thread rank
     /// @param ptr_type_const Constant type pointer (zero_any only)
     /// @param ptr_second_value Second value pointer (zero_any only)

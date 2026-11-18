@@ -24,9 +24,9 @@
 
 #include <vector> // std::vector
 
-#include "chunk/zero_array.h"           // shrink_array::zero::Array
-#include "chunk/zero_one_value_array.h" // shrink_array::zero_one_value::Array
-#include "Dispatch.h"                   // Dispatch (extern dispatch)
+#include "chunk/zero_array.h"          // shrink_array::zero::Array
+#include "chunk/zero_or_value_array.h" // shrink_array::zero_or_value::Array
+#include "Dispatch.h"                  // Dispatch (extern dispatch)
 
 extern Dispatch dispatch;
 
@@ -58,12 +58,12 @@ struct MatZeroArray : public MatArrayBase<T>, public shrink_array::zero::Array<T
  * @brief The presence fraction of a "chunk" material, in [0, 1]: 0 where
  *        the material is absent, 1 where the cell is pure, in between at the
  *        interfaces.
- * @details zero_one_value compresses the chunks that are all 0 (the first constant)
+ * @details zero_or_value compresses the chunks that are all 0 (the first constant)
  *          AND the ones that are all 1 (the array's second value), so only
  *          the interface chunks are ever materialised.
  */
 template <typename T>
-struct MatZeroOneValueArray : public MatArrayBase<T>, public shrink_array::zero_one_value::Array<T>
+struct MatZeroOrValueArray : public MatArrayBase<T>, public shrink_array::zero_or_value::Array<T>
 {
     /// @brief The fraction of a pure cell, the second constant of the array.
     static constexpr T full = 1;
@@ -93,7 +93,7 @@ struct MatVectorArray : public MatArrayBase<T>, public std::vector<T>
  *        dispatch says.
  * @tparam T        Element type.
  * @tparam VecChunkT The chunk array of the chunk materials: MatZeroArray<T> for a
- *                  field, MatZeroOneValueArray<T> for the presence fraction.
+ *                  field, MatZeroOrValueArray<T> for the presence fraction.
  */
 template <typename T, typename VecChunkT = MatZeroArray<T>>
 class MultiArray : public std::vector<MatArrayBase<T>*>

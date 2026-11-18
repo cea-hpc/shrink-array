@@ -5,7 +5,7 @@
 # libraries are those of the chunk package installed beside it (its former and
 # only name until 0.3); each gets its shrink_array:: name here:
 #   shrink_array::zero_any_256  shrink_array::zero_any_dyn  shrink_array::zero_any
-#   (zero and zero_one_value alike), shrink_array::vector, shrink_array::chunk;
+#   (zero and zero_or_value alike), shrink_array::vector, shrink_array::chunk;
 #   with CHUNK_MODULES, shrink_array::zero_any_module, ... shrink_array::vector_module
 @PACKAGE_INIT@
 
@@ -29,6 +29,18 @@ foreach(_shrink_array_target IN ITEMS @_chunk_install_targets@)
   endif()
 endforeach()
 unset(_shrink_array_target)
+
+# zero_or_value was zero_one_value until 0.3: the former names of its targets,
+# each linking the new one, with a message when a project links it.
+foreach(_shrink_array_former IN ITEMS "" "_dyn" _@_chunk_static_suffixes@)
+  if(TARGET shrink_array::zero_or_value${_shrink_array_former} AND NOT TARGET shrink_array::zero_one_value${_shrink_array_former})
+    add_library(shrink_array::zero_one_value${_shrink_array_former} INTERFACE IMPORTED)
+    set_target_properties(shrink_array::zero_one_value${_shrink_array_former} PROPERTIES
+                          INTERFACE_LINK_LIBRARIES shrink_array::zero_or_value${_shrink_array_former}
+                          DEPRECATION "renamed shrink_array::zero_or_value${_shrink_array_former}")
+  endif()
+endforeach()
+unset(_shrink_array_former)
 unset(_shrink_array_name)
 
 # With the modules (CHUNK_MODULES): the program's import std module is built
@@ -50,7 +62,7 @@ endif()
 
 # What this installation holds, for a consumer that wants to choose:
 #   shrink_array_STATIC_SIZES  the compile-time sizes built (shrink_array::zero_any_<size>)
-#   shrink_array_DEFAULT_SIZE  the size of the bare shrink_array::zero / zero_one_value / zero_any
+#   shrink_array_DEFAULT_SIZE  the size of the bare shrink_array::zero / zero_or_value / zero_any
 #   shrink_array_HAS_DYN       shrink_array::<variant>_dyn exist (runtime chunk size)
 #   shrink_array_OPENMP        built with OpenMP (consumers are compiled with it too)
 #   shrink_array_THREADS       the threading backend: openmp, std or serial

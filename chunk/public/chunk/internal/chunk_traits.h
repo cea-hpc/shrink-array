@@ -29,7 +29,7 @@ namespace shrink_array
 
 // The array classes, one namespace each: what the variant compresses.
 //   zero             zeros only
-//   zero_one_value   zero and one value declared for the whole array
+//   zero_or_value   zero and one value declared for the whole array
 //   zero_any         zero and, chunk by chunk, any value
 //   pattern          integers: zero, any value, and (being written) a shared motif
 //                    plus an offset per chunk (docs/algo_pattern.md)
@@ -38,11 +38,11 @@ namespace zero
 template <ArrayChunkElement T, typename IntType = int>
 class Array;
 } // namespace zero
-namespace zero_one_value
+namespace zero_or_value
 {
 template <ArrayChunkElement T, typename IntType = int>
 class Array;
-} // namespace zero_one_value
+} // namespace zero_or_value
 namespace zero_any
 {
 template <ArrayChunkElement T, typename IntType = int>
@@ -64,7 +64,7 @@ class Proxy;
 
 } // namespace zero
 
-namespace zero_one_value
+namespace zero_or_value
 {
 
 template <typename T>
@@ -72,7 +72,7 @@ class Chunk;
 template <typename T>
 class Proxy;
 
-} // namespace zero_one_value
+} // namespace zero_or_value
 
 namespace zero_any
 {
@@ -127,7 +127,7 @@ struct ChunkTraits<zero::Chunk<T>> : VariantChunkTraits<zero::Chunk, zero::Proxy
 };
 
 template <typename T>
-struct ChunkTraits<zero_one_value::Chunk<T>> : VariantChunkTraits<zero_one_value::Chunk, zero_one_value::Proxy, T>
+struct ChunkTraits<zero_or_value::Chunk<T>> : VariantChunkTraits<zero_or_value::Chunk, zero_or_value::Proxy, T>
 {
 };
 
@@ -174,8 +174,8 @@ struct ArrayChunkTraits<zero_any::Array<T, IntType>> : VariantArrayTraits<zero_a
 };
 
 template <ArrayChunkElement T, typename IntType>
-struct ArrayChunkTraits<zero_one_value::Array<T, IntType>>
-    : VariantArrayTraits<zero_one_value::Chunk, zero_one_value::Proxy, T, IntType>
+struct ArrayChunkTraits<zero_or_value::Array<T, IntType>>
+    : VariantArrayTraits<zero_or_value::Chunk, zero_or_value::Proxy, T, IntType>
 {
 };
 

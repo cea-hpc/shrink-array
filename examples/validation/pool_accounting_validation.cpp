@@ -15,7 +15,7 @@
  */
 
 // ============================================================================
-// Pool-accounting harness. Variant-agnostic: tests zero / zero_one_value / zero_any
+// Pool-accounting harness. Variant-agnostic: tests zero / zero_or_value / zero_any
 // depending on the compile-time macro (CHUNK_VARIANT_ZERO*), like the
 // other harnesses here.
 // ============================================================================
@@ -57,21 +57,21 @@
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default IntType = int
 #include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/runtime.h"               // Runtime::init
 #include "chunk/internal/zero_chunk.h"   // release_chunk_pools, Runtime::shutdown, need_load_balance_list_block_free
-#include "chunk/internal/chunk_size_policy.h"        // const_buffer_size
-#include "chunk/config.h"                            // chunk_config::use_zero*
-#include "chunk/internal/pmp_chunk.h"                // CHUNK_PMP_MAX_THREADS, pmp::current_team
-#include "chunk/phases.h"                            // parallel_phase
-#include "chunk/internal/zero_chunk_def.h"           // ChunkDef
-#include "chunk/internal/zero_one_value_chunk_def.h" // zero_one_value::ChunkDef
-#include "chunk/internal/zero_any_chunk_def.h"       // zero_any::ChunkDef
-#include "chunk/internal/env_parse.h"                // env_number / arg_number (checked, not atoi)
-#include "chunk/print.h"                             // shrink_array::println
-#include "chunk/internal/singleton.h"                // SingletonChk
-#include "chunk/internal/type_state_registry.h"      // TypeStateRegistry::ready_block_size
+#include "chunk/internal/chunk_size_policy.h"       // const_buffer_size
+#include "chunk/config.h"                           // chunk_config::use_zero*
+#include "chunk/internal/pmp_chunk.h"               // CHUNK_PMP_MAX_THREADS, pmp::current_team
+#include "chunk/phases.h"                           // parallel_phase
+#include "chunk/internal/zero_chunk_def.h"          // ChunkDef
+#include "chunk/internal/zero_or_value_chunk_def.h" // zero_or_value::ChunkDef
+#include "chunk/internal/zero_any_chunk_def.h"      // zero_any::ChunkDef
+#include "chunk/internal/env_parse.h"               // env_number / arg_number (checked, not atoi)
+#include "chunk/print.h"                            // shrink_array::println
+#include "chunk/internal/singleton.h"               // SingletonChk
+#include "chunk/internal/type_state_registry.h"     // TypeStateRegistry::ready_block_size
 
 // Defined by every executable of the library (the fast allocator reads it).
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
@@ -85,12 +85,12 @@ template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 using VariantDef =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::ChunkDef,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::ChunkDef, zero::ChunkDef>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::ChunkDef, zero::ChunkDef>>;
 
 constexpr const char* variant_name()
 {
@@ -98,9 +98,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {

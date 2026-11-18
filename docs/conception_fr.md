@@ -75,7 +75,7 @@ Quatre conséquences façonnent toute la bibliothèque :
 flowchart TB
     app["code de l'application<br/>a[i], a[i] = v, fill_range_mt, parallel_phase"]
     subgraph per_array["par tableau"]
-        arr["tableau de la variante<br/>zero::Array, zero_one_value::Array,<br/>zero_any::Array, pattern::Array"]
+        arr["tableau de la variante<br/>zero::Array, zero_or_value::Array,<br/>zero_any::Array, pattern::Array"]
         base["ArrayChunkBase / ArrayChunkCore<br/>géométrie, items de chunks, dirty bitset, identité"]
         chk["chunks + proxies<br/>état, lecture, moteur d'écriture"]
     end
@@ -105,9 +105,9 @@ flowchart TB
 
 | partie | classes principales | fichiers | portée |
 |---|---|---|---|
-| les tableaux des variantes | `zero::Array`, `zero_one_value::Array`, `zero_any::Array`, `pattern::Array`, `BitArray` | `chunk/zero_array.h`, `chunk/zero_one_value_array.h`, `chunk/zero_any_array.h`, `chunk/pattern_array.h`, `chunk/bit_array.h` | un objet par tableau |
+| les tableaux des variantes | `zero::Array`, `zero_or_value::Array`, `zero_any::Array`, `pattern::Array`, `BitArray` | `chunk/zero_array.h`, `chunk/zero_or_value_array.h`, `chunk/zero_any_array.h`, `chunk/pattern_array.h`, `chunk/bit_array.h` | un objet par tableau |
 | le tableau commun | `ArrayChunkBase`, `ArrayChunkCore`, `SecondValueArrayBase`, `RechunkSupport` | `internal/array_chunk_base.h`, `internal/array_chunk_core.h`, `internal/second_value_array_base.h`, `internal/array_chunk_rechunk.h` | bases de chaque tableau |
-| chunks | `zero::Chunk`, `zero_one_value::Chunk`, `zero_any::Chunk`, `pattern::Chunk`, `ChunkBase` | `chunk/internal/zero_chunk.h`, `chunk/internal/zero_one_value_chunk.h`, `chunk/internal/zero_any_chunk.h`, `chunk/internal/pattern_chunk.h`, `internal/chunk_base.h` | un élément de la liste de chunks du tableau |
+| chunks | `zero::Chunk`, `zero_or_value::Chunk`, `zero_any::Chunk`, `pattern::Chunk`, `ChunkBase` | `chunk/internal/zero_chunk.h`, `chunk/internal/zero_or_value_chunk.h`, `chunk/internal/zero_any_chunk.h`, `chunk/internal/pattern_chunk.h`, `internal/chunk_base.h` | un élément de la liste de chunks du tableau |
 | proxies, moteur d'écriture | `ProxyBase`, `WriteCompressSyncPolicy`, les `Proxy` des variantes | `internal/proxy_base.h`, `internal/write_compress_sync_policy.h` | un temporaire par écriture |
 | état par type | `TypeState` (façade), `ReusePools`, `CompressCandidates`, `CompressionManager` | `internal/type_state.h`, `internal/reuse_pools.h`, `internal/compress_candidates.h`, `internal/compression_manager.h` | un par (variante, type d'élément), statique |
 | constantes partagées | `ArrayConstVal2Holder`, `GlobalVecHolder`, `MotifRegion` | `internal/array_const_val2_holder.h`, `internal/motif_region.h` | une par type d'élément |
@@ -176,7 +176,7 @@ tourne :
 
 | choix | comment | pourquoi à la compilation |
 |---|---|---|
-| variante | une bibliothèque par variante (`shrink_array::zero`, `shrink_array::zero_one_value`, `shrink_array::zero_any`), qui définit `CHUNK_VARIANT_ZERO`, `CHUNK_VARIANT_ZERO_ONE_VALUE` ou `CHUNK_VARIANT_ZERO_ANY` ; `CHUNK_VARIANTS` | la variante change la disposition du chunk et le chemin d'écriture |
+| variante | une bibliothèque par variante (`shrink_array::zero`, `shrink_array::zero_or_value`, `shrink_array::zero_any`), qui définit `CHUNK_VARIANT_ZERO`, `CHUNK_VARIANT_ZERO_OR_VALUE` ou `CHUNK_VARIANT_ZERO_ANY` ; `CHUNK_VARIANTS` | la variante change la disposition du chunk et le chemin d'écriture |
 | géométrie | tailles statiques (`CHUNK_STATIC_SIZES`, bibliothèques `_256`, `_1024`…) ou dynamique (`CHUNK_BUILD_DYN`, bibliothèques `_dyn`, `CHUNK_DYNAMIC`) | une taille statique fait de `i >> shift` et `i & mask` des immédiats ; une dynamique les lit dans le tableau |
 | backend de threads | `CHUNK_THREADS` : `openmp`, `std` ou `serial` | les structures par rang, les protocoles d'échange et les compteurs n'existent que dans les builds threadés |
 | qui marque les phases | `CHUNK_OPT_OMPT` | avec OMPT le runtime marque les phases ; sans, c'est le programme |
@@ -184,7 +184,7 @@ tourne :
 | vérifications | les builds de vérification (`any_check`, `CHUNK_DO_CHECK`) | les contrôles d'invariants et les assertions de protocole coûtent à chaque accès |
 
 `pattern::Array` et `BitArray` ne sont pas des bibliothèques à part : ils viennent
-respectivement avec les bibliothèques `zero_any` et `zero_one_value`. Les fichiers CMake
+respectivement avec les bibliothèques `zero_any` et `zero_or_value`. Les fichiers CMake
 génèrent les déclinaisons par taille et par variante et gardent les noms par défaut en alias ;
 [variables_environnement_fr.md](variables_environnement_fr.md) liste les options.
 
@@ -226,7 +226,7 @@ flowchart LR
   une décision par chunk, le reste écrit directement dans le buffer, dans la même session annoncée
   qu'une écriture d'élément.
 
-[algo_zero_one_value_fr.md](algo_zero_one_value_fr.md) suit ces étapes dans le code ; [algo_zero_fr.md](algo_zero_fr.md),
+[algo_zero_or_value_fr.md](algo_zero_or_value_fr.md) suit ces étapes dans le code ; [algo_zero_fr.md](algo_zero_fr.md),
 [algo_zero_any_fr.md](algo_zero_any_fr.md) et [algo_pattern_fr.md](algo_pattern_fr.md) disent ce que chaque variante fait
 autrement.
 
@@ -363,12 +363,12 @@ autre). Un buffer libéré par un autre rang que son propriétaire est mis de c�
 du propriétaire. Un tableau au-dessus de `CHUNK_ALLOC_AFFINITY_MIN_BYTES` (16 Mio par défaut) peut
 avoir son propre jeu d'allocateurs (une *clé d'affinité*), pour que sa mémoire parte par dalles
 entières quand il est reconstruit ou détruit -- d'emblée pour `zero`, à la demande (à son premier
-rechunk) pour `zero_one_value` et `zero_any`, dont la mémoire est surtout faite de métadonnées.
+rechunk) pour `zero_or_value` et `zero_any`, dont la mémoire est surtout faite de métadonnées.
 
 ### 8.3 Constantes partagées
 
 - `zero` : un buffer constant de `T{}` par type d'élément.
-- `zero_one_value` : la seconde valeur du tableau, un buffer par valeur déclarée, trouvé par le
+- `zero_or_value` : la seconde valeur du tableau, un buffer par valeur déclarée, trouvé par le
   registre du type et recopié en miroir dans le tableau.
 - `zero_any` : le **registre des secondes valeurs** du type d'élément, des segments chaînés de 64
   emplacements (enregistrer une valeur n'en déplace jamais une autre), une recherche hachée sans
@@ -501,7 +501,7 @@ les étapes et le contrat de phase.
 | utiliser la bibliothèque : installation, CMake, premier programme, règles sur les threads | [getting_started_fr.md](getting_started_fr.md) |
 | chaque appel, par tâche | [api_fr.md](api_fr.md) |
 | choisir une variante, ce que coûte un chunk | [variantes_fr.md](variantes_fr.md) |
-| l'algorithme, chemins de lecture et d'écriture, passes, écritures différées, opérations par plage | [algo_zero_one_value_fr.md](algo_zero_one_value_fr.md) |
+| l'algorithme, chemins de lecture et d'écriture, passes, écritures différées, opérations par plage | [algo_zero_or_value_fr.md](algo_zero_or_value_fr.md) |
 | ce que `zero`, `zero_any` et `pattern` font autrement | [algo_zero_fr.md](algo_zero_fr.md), [algo_zero_any_fr.md](algo_zero_any_fr.md), [algo_pattern_fr.md](algo_pattern_fr.md) |
 | les protocoles d'échange, leurs preuves, les règles pour les modifier | [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md) |
 | la vérification par modèles des protocoles | [formal_models_fr.md](formal_models_fr.md) |

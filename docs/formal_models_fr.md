@@ -458,7 +458,7 @@ chunk qu'il écarte, dans les trois variantes) ; un écrivain dont le marquage t
 en 3, « écrit entre-temps », au lieu de renoncer (`queue_flag::try_queue`, à chaque site
 d'écrivain : `add_to_compression_list()`, sa forme asynchrone, les écritures par plage qui y
 passent) ; la passe remet ensuite 2 -> 0 par CAS et, sur un 3, remet elle-même le chunk dans la
-liste de son rang (`queue_flag::release`). Dans les passes de `zero`, `zero_one_value` et
+liste de son rang (`queue_flag::release`). Dans les passes de `zero`, `zero_or_value` et
 `zero_any` (avec la validation des motifs de `pattern`), builds threadés ; le build série n'a pas
 de passe concurrente. 2 et 3 n'existent qu'à l'intérieur d'une passe : en dehors, le drapeau vaut
 0 ou 1 et « 1 <=> en liste » tient. Coût : sur le chemin d'un écrivain, une comparaison de plus,
@@ -487,7 +487,7 @@ l'ordre de `MUT_HANDBACK_AFTER_UNMARK`, et la fenêtre de F6 rouverte. Il restit
 dans le parcours, comme `zero`. Dans la bibliothèque, le mode `remark` de `read_reclaim_validation`
 (des passes avec un délai dans la fenêtre de restitution, des écrivains sur les mêmes chunks) est
 passé par la nouvelle branche -- une écriture notée sur un drapeau restitué, le chunk remis en
-file par sa passe -- 267 536 fois pour `zero_any` et 1 849 pour `zero_one_value` en 8 s à 4
+file par sa passe -- 267 536 fois pour `zero_any` et 1 849 pour `zero_or_value` en 8 s à 4
 threads, autant de mises en file que l'ancien code perdait.
 
 Mesuré avant le correctif : l'audit des builds check (« never queued for compression ») comptait

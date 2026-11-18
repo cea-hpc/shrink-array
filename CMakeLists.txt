@@ -132,7 +132,7 @@ option(CHUNK_SECOND_VALUE_INDEXED "zero_any: store second values as 4-byte ident
 # CHECK_OPTIM (option above) turns build_config::any_check on in a release
 # build (chunk/build_options.h).
 
-# CHUNK_MM_PROTECT: zero/zero_one_value's shared constant buffers (const_val1, the const_val2
+# CHUNK_MM_PROTECT: zero/zero_or_value's shared constant buffers (const_val1, the const_val2
 # region) are mprotect'ed read-only, so a stray write into a compressed chunk
 # faults at the culprit instead of corrupting a value shared by thousands of
 # chunks. A debugging build: one mprotect per buffer, and page-rounded slots.
@@ -1076,7 +1076,7 @@ endif()
 # GNU). NVHPC is left alone: it links its own optimised math library.
 # SHRINK_ARM_LIBM is OFF by default: measured on Grace (clang 22, 64 threads,
 # same seed, RHEL 9.6 glibc vs armpl 25.07), zero_any_dyn 8.30 -> 8.12 s,
-# zero_any_256 6.20 -> 6.23 s, zero_one_value_256 5.76 -> 5.75 s -- noise; RHEL 9's
+# zero_any_256 6.20 -> 6.23 s, zero_or_value_256 5.76 -> 5.75 s -- noise; RHEL 9's
 # aarch64 libm is on par with ArmPL's for these calls. Kept for re-measuring:
 # -DSHRINK_ARM_LIBM=ON -DCHUNK_ARMPL_LIBM_DIR=<dir of libamath.so>; the executables
 # then carry an rpath and run without the module.

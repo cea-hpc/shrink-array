@@ -96,12 +96,12 @@ void zero::Array<T, IntType>::print_compression_stats(std::ostream& os) const
 
     // Read before the clear() drain mutates state. Not written() = compressed
     // to first_value. A written() chunk is also classified by CONTENT (as in
-    // zero_one_value/zero_any): whether the deferred compression caught it depends on
+    // zero_or_value/zero_any): whether the deferred compression caught it depends on
     // the thread count, so counting by content makes still@exit a function of
     // the data alone.
     //
     // Cross-variant probe: a block constant to another value than first_value
-    // stays materialised here but a zero_one_value/zero_any would have compressed it;
+    // stays materialised here but a zero_or_value/zero_any would have compressed it;
     // the same scan counts those. O(materialised * chunk_size), once, shared
     // over a team (never nested in a caller's region, not for a few chunks).
     const auto csz = static_cast<unsigned int>(this->size_policy_.size());
@@ -129,7 +129,7 @@ void zero::Array<T, IntType>::print_compression_stats(std::ostream& os) const
             }
             else
             {
-                ++acc[1]; // a second constant: zero_one_value/zero_any material
+                ++acc[1]; // a second constant: zero_or_value/zero_any material
             }
         });
     const int n_compressed  = counts[0];
@@ -144,7 +144,7 @@ void zero::Array<T, IntType>::print_compression_stats(std::ostream& os) const
     }
     print_formatted_chunk_stats(os, array_id, this->debug_name(), type_name<T>(), n_compressed, chunk_count_,
                                 /*n_t1=*/0, "zero",
-                                /*n_cross=*/n_would_be_t2, /*cross_name=*/"zero_one_value");
+                                /*n_cross=*/n_would_be_t2, /*cross_name=*/"zero_or_value");
 }
 
 template <ArrayChunkElement T, typename IntType>
@@ -167,7 +167,7 @@ void zero::Array<T, IntType>::clear_core()
     // Pin the ambient size to THIS array's geometry before the sweep:
     // get_chunk_allocator() routes on thread_chunk_size(), not on the buffer, so
     // a size left by another array would send these buffers to the wrong
-    // allocator. See zero_one_value::Array::clear_core().
+    // allocator. See zero_or_value::Array::clear_core().
     if constexpr (build_config::chunk_dynamic)
     {
         set_thread_chunk_size(static_cast<unsigned int>(this->size_policy_.size()));
@@ -202,7 +202,7 @@ void zero::Array<T, IntType>::clear_core()
         return;
     }
 
-    // Give this array's chunks back to the manager's count (as zero_one_value::Array /
+    // Give this array's chunks back to the manager's count (as zero_or_value::Array /
     // zero_any do): the compression threshold (total_chunk_create / (factor_div *
     // threads)) must track the chunks alive, not the program's history --
     // otherwise it climbs by orders of magnitude, compressions become rare and

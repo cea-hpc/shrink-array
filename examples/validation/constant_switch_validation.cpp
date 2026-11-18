@@ -16,7 +16,7 @@
 
 // ============================================================================
 // A compressed chunk switched to another constant by a range op. Variant-
-// agnostic: zero / zero_one_value / zero_any follow the compile-time macro
+// agnostic: zero / zero_or_value / zero_any follow the compile-time macro
 // (CHUNK_VARIANT_ZERO*), like the other harnesses here.
 // ============================================================================
 //
@@ -54,7 +54,7 @@
 
 #include "chunk/internal/chunk_traits.h" // forward decls + default idx_type = int
 #include "chunk/zero_array.h"            // zero::Array
-#include "chunk/zero_one_value_array.h"  // zero_one_value::Array
+#include "chunk/zero_or_value_array.h"   // zero_or_value::Array
 #include "chunk/zero_any_array.h"        // zero_any::Array
 #include "chunk/range_ops.h"             // fill_range, copy_range, fill_range_mt, copy_range_mt
 #include "chunk/runtime.h"               // Runtime::init
@@ -74,7 +74,7 @@ template <typename T>
 using Array =
     std::conditional_t<chunk_config::use_zero_any,
                        zero_any::Array<T>,
-                       std::conditional_t<chunk_config::use_zero_one_value, zero_one_value::Array<T>, zero::Array<T>>>;
+                       std::conditional_t<chunk_config::use_zero_or_value, zero_or_value::Array<T>, zero::Array<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -82,9 +82,9 @@ constexpr const char* variant_name()
     {
         return "zero_any";
     }
-    else if constexpr (chunk_config::use_zero_one_value)
+    else if constexpr (chunk_config::use_zero_or_value)
     {
-        return "zero_one_value";
+        return "zero_or_value";
     }
     else
     {

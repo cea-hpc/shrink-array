@@ -58,7 +58,7 @@ from datetime import datetime, timezone
 
 try:
     # Rows recorded before the rename carry chunk / chunk2 / chunk2a: read as
-    # zero / zero_one_value / zero_any, so that old and new runs compare.
+    # zero / zero_or_value / zero_any, so that old and new runs compare.
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from bench_runner.settings import normalize_variant
 except ImportError:
@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS measurements (
 
     -- what was measured
     config         TEXT    NOT NULL,  -- build flavour, e.g. omp-gnu-std-alloc
-    variant        TEXT    NOT NULL,  -- zero / zero_one_value / zero_any (old rows: chunk...)
+    variant        TEXT    NOT NULL,  -- zero / zero_or_value / zero_any (old rows: chunk...)
     geometry       TEXT    NOT NULL,  -- "256", "1024", "dyn"
     threads        INTEGER NOT NULL,
     divisor        INTEGER,
