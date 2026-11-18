@@ -9,7 +9,7 @@ Two version numbers, both `MAJOR.MINOR.PATCH`:
 
 | component | where it is set | installed as |
 |---|---|---|
-| the chunk library | the top-level `CMakeLists.txt` (`project(shrink_array VERSION X.Y.Z)`) | the `chunk` CMake package (`find_package(chunk X.Y)`) |
+| the chunk library | the top-level `CMakeLists.txt` (`project(shrink_array VERSION X.Y.Z)`) | the `shrink_array` CMake package (`find_package(shrink_array X.Y)`) |
 | fast_allocators | `fast_allocators/CMakeLists.txt` (`ALLOCATORS_*_VERSION`) | the `fast_allocators` package |
 
 The **public interface** that the version describes is:
@@ -19,8 +19,8 @@ The **public interface** that the version describes is:
   when one is added, moved, removed or renamed without the list. The members of the public
   classes that name the library's machinery (`ManagerType`, `Manager`, `ChunkType`,
   `ChunkListType`, `ProxyType`, `get_chunk_list()`) are not part of it;
-- the installed CMake targets (`chunk::chunk_zero_any_256`, `chunk::chunk_zero_any`, ...) and the
-  variables `find_package(chunk)` sets;
+- the installed CMake targets (`shrink_array::zero_any_256`, `shrink_array::zero_any`, ...) and
+  the variables `find_package(shrink_array)` sets;
 - the CMake options and the environment variables of `docs/environment_variables.md` (the user
   settings); those of `docs/developer_settings.md` are development tools, which can change in any
   release;
@@ -39,13 +39,13 @@ under Changed; the behaviour of the arrays behind a view keeps the policy above.
 | **MINOR** | an addition, or a change with a compatibility path (the old name kept, deprecated) | new targets installed; a user option renamed with the old spelling still accepted |
 | **PATCH** | a fix that changes no interface | a race fixed; a wrong value in a trace |
 
-The installed package declares `SameMajorVersion` compatibility: `find_package(chunk 1.2)`
+The installed package declares `SameMajorVersion` compatibility: `find_package(shrink_array 1.2)`
 accepts any 1.x at or above 1.2. A deprecated name stays for at least one MINOR release and is
 removed only by the next MAJOR.
 
 **Before 1.0** (0.x versions), as SemVer allows, a MINOR release plays the role of a MAJOR one
 (it may break) and PATCH covers additions and fixes; the package then declares
-`SameMinorVersion`: `find_package(chunk 0.1)` accepts 0.1.x only.
+`SameMinorVersion`: `find_package(shrink_array 0.3)` accepts 0.3.x only.
 
 **fast_allocators** follows the same rules for its own interface. The chunk library pins the
 exact fast_allocators version it was built with (`CHUNK_FAST_ALLOCATORS_VERSION` in
@@ -156,6 +156,12 @@ the tag's checksum to the recipe.
   `access_cost`, `advisor_demo`, `getting_started` and `bool_arrays` include public headers
   only, and `check_public_api` fails when an example outside the harnesses and the benchmarks
   includes an internal one.
+- `CHUNK_USE_CCACHE` (`AUTO`, `ON`, `OFF`): the build compiles through ccache (>= 4.8) when it
+  finds it, on the `PATH` or with `-DCCACHE_EXECUTABLE=...`. A branch switch or a pull that leaves
+  the library headers alone gets the unity units of `shrink_bench` and the validation back from
+  the cache (a rebuild after `ninja clean`: 93 s to 0 s). The cache is split by host CPU, so
+  `-march=native` objects never go from one kind of node to another; `coverity_submit.sh`
+  configures with it `OFF`.
 
 ### Changed
 
@@ -319,6 +325,17 @@ the tag's checksum to the recipe.
   on this benchmark is the initialisation's, unchanged. `rechunk_validation` gains
   `sliced-val2-grow` and `sliced-val2-uneven`: sliced rebuilds mixing zero, second-value and
   live sources.
+- With gcc 16.2 and later, `shrink_bench.cpp` is compiled inside the unity unit of its
+  executable again: the `-fno-tree-vectorize` that dodged gcc 16's AVX2 ICE stays for gcc 16.0
+  and 16.1 only. Compiled apart, the driver instantiated the whole library a second time: about
+  30 % less compilation per bench executable (113 s to 79 s for `shrink_bench_omp_zero_any_256`).
+- `CHUNK_DEBUG_INFO=auto` gives `lines` (`-g1`) to the address, thread and undefined sanitizer
+  builds too, with `CHUNK_CHECK_OPTIM` or without: their reports need only the function names
+  and the line tables (the same stacks, inlined frames included, with gcc and Clang), and the
+  optimised sanitizer builds are the slowest to compile: the unity unit of
+  `shrink_bench_omp_zero_any_256` under ThreadSanitizer takes 128 s and 3.5 GB instead of 162 s
+  and 5.0 GB (gcc 16.2). `full` stays for `CHUNK_CHECK_OPTIM` without a sanitizer and for the
+  `token` sanitizer; `-DCHUNK_DEBUG_INFO=full` brings the locals back for a debugger.
 
 ### Removed
 
@@ -360,6 +377,10 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- The Spack recipe built the released versions wrong since the CMake options took their
+  `CHUNK_` prefix: 0.1.0 to 0.2.1 know `OMP`, `USE_LIBCXX`, `USE_MOLD` and `CHECK_OPTIM` only,
+  ignored the new names and took their defaults -- serial libraries with `threads=openmp`,
+  libc++ with Clang, no `+checks`. The recipe gives these versions their own names.
 - TBB: the library's own teams run in the program's arena. `use_tbb_for_library_teams()`
   launched them (the flush and compression pass of `finalize_parallel_phase()`, a re-chunk) in
   a `task_arena` of its own, so TBB's workers left the program's arena for that one and came

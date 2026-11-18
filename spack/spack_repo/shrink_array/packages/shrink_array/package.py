@@ -20,7 +20,9 @@ class ShrinkArray(CMakePackage):
     Installs one library per variant and chunk size, found with
     find_package(shrink_array): shrink_array::zero_<S>, shrink_array::zero_or_value_<S>,
     shrink_array::zero_any_<S> (static S), shrink_array::<variant>_dyn (runtime S),
-    shrink_array::<variant> (the first static size)."""
+    shrink_array::<variant> (the first static size). Up to 0.2.1 the package is
+    find_package(chunk) and the targets chunk::chunk_<variant>_<S>; the later
+    versions still provide these names, deprecated."""
 
     homepage = "https://github.com/cea-hpc/shrink-array"
     git = "https://github.com/cea-hpc/shrink-array.git"
@@ -89,7 +91,7 @@ class ShrinkArray(CMakePackage):
     variant(
         "checks",
         default=False,
-        description="Runtime invariant checks in an optimised build (CHECK_OPTIM)",
+        description="Runtime invariant checks in an optimised build (CHUNK_CHECK_OPTIM)",
     )
     variant(
         "examples",
@@ -130,8 +132,9 @@ class ShrinkArray(CMakePackage):
         sizes = sorted(spec.variants["sizes"].value, key=int)
         threads = spec.variants["threads"].value
         args = [
-            # OMP for every version; CHUNK_THREADS (which sets OMP to match)
-            # only where the std backend exists.
+            # CHUNK_OPENMP for every version (see below for the versions up to
+            # 0.2.1); CHUNK_THREADS (which sets it to match) only where the std
+            # backend exists.
             self.define("CHUNK_OPENMP", threads == "openmp"),
             self.define("CHUNK_STATIC_SIZES", ";".join(sizes)),
             self.define("CHUNK_DEFAULT_SIZE", sizes[0]),
@@ -155,6 +158,17 @@ class ShrinkArray(CMakePackage):
             self.define("CHUNK_USE_MOLD", "OFF"),
             self.define("SHRINK_INTEL_LIBM", False),
         ]
+        # Up to 0.2.1 these four options had no CHUNK_ prefix: those versions
+        # ignore the names above and would take their defaults -- serial
+        # libraries (OMP was OFF), libc++ with Clang (USE_LIBCXX was ON), mold
+        # on AUTO, no checks.
+        if spec.satisfies("@:0.2.1"):
+            args += [
+                self.define("OMP", threads == "openmp"),
+                self.define("USE_LIBCXX", False),
+                self.define("USE_MOLD", "OFF"),
+                self.define_from_variant("CHECK_OPTIM", "checks"),
+            ]
         if threads == "std":
             args.append(self.define("CHUNK_THREADS", "std"))
         if spec.satisfies("+tbb"):
