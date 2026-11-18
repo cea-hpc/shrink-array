@@ -311,7 +311,7 @@ class RechunkSupport<Derived, true>::Refill
 
     // Slice boundaries run INSIDE the slice's region (see run_slice()): the
     // team drain's scratch lives across them, and so do the trace timers.
-    typename ManagerT::TeamDrainScratch team_drain_; ///< the team drain's scratch
+    ManagerT::TeamDrainScratch team_drain_; ///< the team drain's scratch
     /// The ranks the team holds at a boundary (each recycles its own slabs,
     /// one thread the others').
     std::vector<unsigned char> recycle_held_;

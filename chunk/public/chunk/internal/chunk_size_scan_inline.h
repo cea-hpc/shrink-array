@@ -758,8 +758,7 @@ bool ChunkSizeScan<Arr>::motif_window_key(int64_t win, uint32_t cand_sz, std::ui
             first = v0;
         }
         h = mix(h, cnt);
-        h = mix(h,
-                static_cast<std::uint64_t>(static_cast<typename ChunkT::UnsignedT>(ChunkT::wrapping_sub(v0, first))));
+        h = mix(h, static_cast<std::uint64_t>(static_cast<ChunkT::UnsignedT>(ChunkT::wrapping_sub(v0, first))));
     }
     key = h;
     return has_motif;
