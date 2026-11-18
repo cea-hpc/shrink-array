@@ -78,7 +78,7 @@ dispense le programme des appels de phase du §5.
 cmake_minimum_required(VERSION 3.20)
 project(mon_appli LANGUAGES CXX)
 
-find_package(shrink_array 0.2 REQUIRED)        # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
+find_package(shrink_array 0.3 REQUIRED)        # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
 
 add_executable(mon_appli main.cpp)
 target_link_libraries(mon_appli PRIVATE shrink_array::zero_any)
@@ -96,7 +96,7 @@ cmake_minimum_required(VERSION 3.20)
 set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "d0edc3af-4c50-42ea-a356-e2862fe7a444")
 project(mon_appli LANGUAGES CXX)
 
-find_package(shrink_array 0.2 REQUIRED)
+find_package(shrink_array 0.3 REQUIRED)
 
 add_executable(mon_appli main.cpp)
 set_target_properties(mon_appli PROPERTIES CXX_SCAN_FOR_MODULES ON CXX_MODULE_STD ON)

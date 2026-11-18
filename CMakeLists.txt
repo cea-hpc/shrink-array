@@ -17,7 +17,7 @@ option(CHUNK_MODULES "Build the shrink_array C++ module, and the examples throug
 if(CHUNK_MODULES)
     set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "d0edc3af-4c50-42ea-a356-e2862fe7a444")
 endif()
-project(shrink_array VERSION 0.2.1 LANGUAGES CXX)
+project(shrink_array VERSION 0.3.0 LANGUAGES CXX)
 
 # Built on its own, or consumed by another project (add_subdirectory,
 # FetchContent)? PROJECT_IS_TOP_LEVEL says it from CMake 3.21; this is the same

@@ -30,7 +30,7 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   # shrink_array::zero_any_<size>, shrink_array::zero_any_dyn, ..., with CHUNK_MODULES the modules
   # over the default-size ones (shrink_array::zero_any_module, ...), and their dependencies
   # (fast_allocators, OpenMP and Threads when the library was built with them).
-  find_package(shrink_array 0.2 REQUIRED)
+  find_package(shrink_array 0.3 REQUIRED)
   set(GETTING_STARTED_LIB shrink_array::zero_any CACHE STRING "The shrink-array library to link")
   set(GETTING_STARTED_MODULE shrink_array::zero_any_module CACHE STRING "The shrink-array module to import (CHUNK_MODULES)")
 else()
