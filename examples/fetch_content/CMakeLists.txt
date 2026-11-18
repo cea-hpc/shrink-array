@@ -3,7 +3,7 @@
 # examples/fetch_content: shrink-array consumed by another project's build.
 #
 # What a user project does when it does not install the library: it brings the
-# sources in with FetchContent and links a chunk:: target, as it would after
+# sources in with FetchContent and links a shrink_array:: target, as it would after
 # find_package(shrink_array). Not part of the shrink-array build (examples/ does not
 # add it): configured on its own, by the CI.
 #
@@ -15,7 +15,7 @@
 #
 #     FetchContent_Declare(shrink_array
 #         GIT_REPOSITORY https://github.com/cea-hpc/shrink-array.git
-#         GIT_TAG        v0.2.1)
+#         GIT_TAG        v0.3.0)
 #
 # It also checks what a consumer is owed: its own build type, flags and
 # targets are left alone (a `doc` target of its own, no test of the library

@@ -58,6 +58,8 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
+## 0.3.0 -- 2026-11-18
+
 ### Added
 
 - `scripts/compile_all.sh --list-targets`, `--list-execs`, `--list`: the configurations
@@ -156,6 +158,8 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- fast_allocators is 2.4.0: it had changed since 0.2.1 (the team launcher of the std backend,
+  among others) with its number left at 2.3.0.
 - The variant `zero_one_value` is `zero_or_value`: the name read "zero-one value", an array
   of 0s and 1s, when the second value is any value. Namespace, header
   (`chunk/zero_or_value_array.h`), `chunk_config::use_zero_or_value`,
