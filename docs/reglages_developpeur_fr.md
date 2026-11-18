@@ -216,7 +216,7 @@ transmettant les options communes. `--help` donne la liste complète.
 | `--with-token-sanitizer` | ajouter `cmake-build-omp-llvm-debug-std-alloc-token-sanitizer` (`CHUNK_SANITIZER=token`), désactivé par défaut ; un `--target` qui le sélectionne le construit aussi ; `--no-sanitizers` l'en retire |
 | `--target=<glob>` | seulement les configurations dont le nom correspond (`omp-llvm`, ou un motif du shell entre apostrophes) ; un motif qui ne correspond à rien est une erreur |
 | `--exec=<glob>` | seulement les cibles Ninja correspondantes dans chaque build (`shrink_bench_omp_zero_256`, ou un motif du shell entre apostrophes : `'shrink_bench_*_zero_256'` la prend quel que soit le backend) |
-| `--jobs=<n>` | nombre de configurations compilées en même temps (4 par défaut) ; le budget de cœurs est partagé entre elles |
+| `--jobs=<n>` | nombre de configurations compilées en même temps (4 par défaut) ; le budget de cœurs est partagé entre elles (par un jobserver avec ninja 1.13 ou plus, voir plus bas) |
 | `--no-hardening` | sans `CHUNK_GLIBCXX_ASSERTIONS` ni `CHUNK_UBSAN` sur les builds Debug et sanitizer |
 | `--llvm-cs=<n>` | ajouter un build LLVM avec `CHUNK_SIZE=n` |
 | `--pool=<id>` | partager les configurations avec les autres runs qui ont le même `<id>` (un job batch par nœud, champ « Nœuds » de `shrink_gui`) : chacun construit celles qu'il réclame le premier ; `<id>` est un nom sous `$CHUNK_BUILD_ROOT/.pools/` ou un dossier partagé par tous les nœuds |
@@ -232,6 +232,16 @@ module llvm n'a pas de runtime OpenMP) ; sur ARM, `CHUNK_ACFL_ROOT=<préfixe>` p
 `compile_all_gnu.sh` accepte en plus `--no-ipa-icf` (`CHUNK_NO_IPA_ICF=ON`). La mémoire de
 compilation par job se règle par `CHUNK_MEM_PER_JOB_MB` (3 072 Mo par défaut, le double pour
 les builds sous sanitizer).
+
+Les jobs de compilation des configurations construites en même temps viennent d'un seul budget,
+les cœurs ou ce que la mémoire permet. Avec ninja 1.13 ou plus récent (le ninja avec lequel le
+répertoire de build est configuré, son `CMAKE_MAKE_PROGRAM`), les scripts le partagent par un
+jobserver GNU make : une configuration qui se termine laisse ses cœurs à celles qui tournent
+encore, et la dernière finit sur tout le nœud. Avec un ninja plus ancien, chaque configuration
+garde la part reçue à son lancement (`cœurs / --jobs`), et les dernières finissent seules sur
+cette part. `CHUNK_NINJA=<ninja 1.13 ou plus>` configure les répertoires de build avec ce ninja
+(chaque répertoire qui change de ninja recompile tout une fois : les deux versions ne relisent
+pas le `.ninja_log` l'une de l'autre) ; `CHUNK_JOBSERVER=off` garde les parts fixes.
 
 Le backend de threads std (`CHUNK_THREADS=std`) a ses propres builds : `std-gnu`,
 `std-gnu-check` et un build ThreadSanitizer pour `compile_all_gnu.sh`, `std-llvm`,

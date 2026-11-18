@@ -149,6 +149,15 @@ __with_hardening() {  # <cmd-string> → echo rewritten command
     esac
 }
 
+# CHUNK_NINJA=<ninja>: the ninja the build dirs are configured with
+# (CMAKE_MAKE_PROGRAM), e.g. a ninja >= 1.13 for the shared jobserver when the
+# one on PATH is older. " -DCMAKE_MAKE_PROGRAM=<it>", or nothing when unset.
+# A dir that changes ninja rebuilds in full once (see the jobserver above).
+__ninja_opt() {
+    [ -n "${CHUNK_NINJA:-}" ] && printf ' -DCMAKE_MAKE_PROGRAM=%s' "$CHUNK_NINJA"
+    return 0
+}
+
 run_cmd() {
     # --target applies HERE, not in launch_build at the end of the block: by
     # then the title and the whole cmake line have already been printed, which
@@ -198,7 +207,7 @@ run_cmd() {
     # nvhpc sections of compile_all.sh) gets the same flags as the gnu builds.
     local _cmd="$*"
     case "$_cmd" in
-        *cmake*" -B "*) _cmd=$(__with_hardening "$_cmd") ;;
+        *cmake*" -B "*) _cmd="$(__with_hardening "$_cmd")$(__ninja_opt)" ;;
     esac
     if [ "$DRYRUN" = true ]; then
         echo "$_cmd"
@@ -847,6 +856,126 @@ if [ "$CMAKE_BUILD_PARALLEL_LEVEL" -le 2 ] && [ "$CHUNK_MAX_JOBS" -gt 1 ]; then
            "$CMAKE_BUILD_PARALLEL_LEVEL"
     printf '[JOBS] fewer, wider builds are usually faster here: try --jobs=1 or --jobs=2.\n'
 fi
+
+# ─── Shared jobserver: the cores of the builds that ended go to the others ──
+# A fixed share per build (above) is set when the build is launched, and ninja
+# cannot widen its -j afterwards: with --jobs=16 on 64 cores each build got 4
+# compile jobs, and the last ones, left running alone, compiled on 4 cores of
+# 64 for half an hour. A GNU make jobserver fixes that: one pool of tokens for
+# the whole run, a FIFO (--jobserver-auth=fifo:, as make 4.4 makes it). Every
+# ninja >= 1.13 started WITHOUT -j joins it (an explicit -j makes ninja ignore
+# it, measured), takes a token per compile job and gives it back when the job
+# ends -- so the cores of a finished build go to the builds still running.
+#
+# Size: the budget above, the cores or what the memory holds at
+# CHUNK_MEM_PER_JOB_MB per job. Each ninja also runs one job of its own
+# without a token (measured: 4 tokens and 2 ninjas run 6 jobs), so the script
+# holds one token for each build it starts on the pool, given back when the
+# build ends (__js_reserve, the slot keeps the count): the total stays the
+# budget, and the last build left gets all of it.
+#
+# A build whose ninja is older (its CMAKE_MAKE_PROGRAM, the one CMake
+# configured it with) keeps its fixed -j and takes as many tokens out of the
+# pool while it runs, so the total still holds. Same for the sanitizer builds
+# when the memory is what limits them: their jobs weigh
+# CHUNK_MEM_PER_JOB_MB_SANITIZER / CHUNK_MEM_PER_JOB_MB tokens each.
+# CHUNK_NINJA=<a ninja >= 1.13> configures the build dirs with that ninja
+# (CMAKE_MAKE_PROGRAM). Each dir it changes rebuilds in full once: ninja 1.13
+# writes its .ninja_log in format v7, and 1.11 and 1.13 each start over on the
+# other's log (measured). Running the same dir with two ninjas alternately
+# rebuilds it each time -- hence the ninja of the cache, never another one.
+#
+# CHUNK_JOBSERVER=off: the fixed shares only, as before. An explicit
+# CMAKE_BUILD_PARALLEL_LEVEL also keeps them (it is respected as-is).
+# The process that creates the pool (compile_all.sh, or compile_all_gnu.sh
+# run alone) keeps it open and removes it on exit; compile_all_gnu.sh under
+# compile_all.sh finds CHUNK_JOBSERVER_FIFO in its environment and joins it.
+# Add <function> to the EXIT handlers (the slot pool's and the jobserver's
+# both run, whichever is installed first).
+__add_exit_trap() {  # <function>
+    local prev
+    prev=$(trap -p EXIT | sed -E "s/^trap -- '(.*)' EXIT$/\1/")
+    trap "${prev:+$prev; }$1" EXIT
+}
+declare -A __JS_NINJA_OK
+if [ -n "${CHUNK_NINJA:-}" ] && ! "$CHUNK_NINJA" --version >/dev/null 2>&1; then
+    echo "ERROR: CHUNK_NINJA=$CHUNK_NINJA does not run here" >&2
+    exit 2
+fi
+# Does this build dir's ninja take part in a jobserver (>= 1.13)?
+__js_client() {  # <build-dir>
+    local prog v major minor
+    prog=$(sed -n 's/^CMAKE_MAKE_PROGRAM:[A-Z]*=//p' "$1/CMakeCache.txt" 2>/dev/null)
+    [ -n "$prog" ] || return 1
+    if [ -z "${__JS_NINJA_OK[$prog]:-}" ]; then
+        __JS_NINJA_OK[$prog]=no
+        v=$("$prog" --version 2>/dev/null)
+        IFS=. read -r major minor _ <<< "$v"
+        case "$major.$minor" in
+            *[!0-9.]*|.*|*.) ;;
+            *) { [ "$major" -gt 1 ] || { [ "$major" -eq 1 ] && [ "$minor" -ge 13 ]; }; } &&
+                   __JS_NINJA_OK[$prog]=yes ;;
+        esac
+    fi
+    [ "${__JS_NINJA_OK[$prog]}" = yes ]
+}
+
+# Put <n> tokens back into the pool. Opened read-write (<>): an open for
+# writing alone would block if no process held the FIFO any more.
+__js_give() {  # <n>
+    [ "${1:-0}" -gt 0 ] 2>/dev/null && [ -p "${CHUNK_JOBSERVER_FIFO:-}" ] || return 0
+    printf "%${1}s" "" | tr ' ' '+' 1<>"$CHUNK_JOBSERVER_FIFO"
+}
+
+# Take <n> tokens out of the pool for a build that does not use it (fixed -j),
+# waiting for them as __wait_for_slot waits for a slot (display kept live, our
+# ended builds reaped). Sets __JS_TAKEN.
+__js_reserve() {  # <n>
+    local want=$1 c
+    __JS_TAKEN=0
+    [ "$want" -gt 0 ] 2>/dev/null && [ -p "${CHUNK_JOBSERVER_FIFO:-}" ] || return 0
+    __wait_tick_begin
+    while [ "$__JS_TAKEN" -lt "$want" ]; do
+        if IFS= read -r -N 1 -t 1 c 0<>"$CHUNK_JOBSERVER_FIFO" && [ -n "$c" ]; then
+            __JS_TAKEN=$(( __JS_TAKEN + 1 ))
+        else
+            __wait_tick
+        fi
+    done
+    __wait_tick_end
+}
+
+if [ -z "${CHUNK_JOBSERVER_FIFO:-}" ] && [ "${CHUNK_JOBSERVER:-on}" != off ] && [ "${DRYRUN:-false}" != true ] &&
+   [ "${CHUNK_PAR_DERIVED:-}" = 1 ] && command -v mkfifo >/dev/null 2>&1; then
+    __js_size=$__ncores
+    if [ -n "$__mem_mb" ] && [ $(( __mem_mb / CHUNK_MEM_PER_JOB_MB )) -lt "$__js_size" ]; then
+        __js_size=$(( __mem_mb / CHUNK_MEM_PER_JOB_MB ))
+    fi
+    __js_fifo="${TMPDIR:-/tmp}/chunk-jobserver.$__HOST.$$"
+    rm -f "$__js_fifo"
+    if [ "$__js_size" -ge 2 ] && mkfifo -m 600 "$__js_fifo" 2>/dev/null && exec {__js_fd}<>"$__js_fifo"; then
+        CHUNK_JOBSERVER_FIFO=$__js_fifo
+        CHUNK_JOBSERVER_SIZE=$__js_size
+        # Tokens per sanitizer job: 1 when the memory holds a sanitizer job per
+        # core, else the ratio of the two budgets (rounded up).
+        CHUNK_JOBSERVER_SAN_WEIGHT=1
+        if [ -n "$__mem_mb" ] && [ $(( __mem_mb / CHUNK_MEM_PER_JOB_MB_SANITIZER )) -lt "$__ncores" ]; then
+            CHUNK_JOBSERVER_SAN_WEIGHT=$(( (CHUNK_MEM_PER_JOB_MB_SANITIZER + CHUNK_MEM_PER_JOB_MB - 1) / CHUNK_MEM_PER_JOB_MB ))
+        fi
+        export CHUNK_JOBSERVER_FIFO CHUNK_JOBSERVER_SIZE CHUNK_JOBSERVER_SAN_WEIGHT
+        __js_give "$__js_size"
+        __js_cleanup() {
+            [ -n "${__js_fd:-}" ] && exec {__js_fd}<&-
+            rm -f "$CHUNK_JOBSERVER_FIFO"
+        }
+        __add_exit_trap __js_cleanup
+        printf '[JOBS] jobserver: %s compile job(s) shared by the builds (ninja >= 1.13), a build that ends leaves its cores to the others\n' \
+               "$__js_size"
+    else
+        rm -f "$__js_fifo"
+    fi
+    unset __js_size __js_fifo
+fi
 unset __ncores __derived __quota __mem_mb __mem_source __narrowed_from
 
 launch_build() {  # <build-dir> [cmake --build extra args…]
@@ -996,10 +1125,32 @@ launch_build() {  # <build-dir> [cmake --build extra args…]
     # Sanitizer builds run fewer compile jobs: each cc1plus needs more memory
     # (CHUNK_MEM_PER_JOB_MB_SANITIZER). Passed through the environment of this
     # one cmake --build, so the other builds keep CMAKE_BUILD_PARALLEL_LEVEL.
-    local _par=$CMAKE_BUILD_PARALLEL_LEVEL
+    local _par=$CMAKE_BUILD_PARALLEL_LEVEL _weight=1
     case "$name" in
-        *sanitizer*) _par=${CHUNK_SAN_PARALLEL_LEVEL:-$CMAKE_BUILD_PARALLEL_LEVEL} ;;
+        *sanitizer*) _par=${CHUNK_SAN_PARALLEL_LEVEL:-$CMAKE_BUILD_PARALLEL_LEVEL}
+                     _weight=${CHUNK_JOBSERVER_SAN_WEIGHT:-1} ;;
     esac
+    # The shared jobserver (see __js_client): no -j, the pool's tokens, and one
+    # token held for the job ninja runs without one. Else the fixed -j, and as
+    # many tokens held while it runs. The slot keeps the count; __slot_release
+    # gives them back.
+    local _par_env=(CMAKE_BUILD_PARALLEL_LEVEL="$_par") _how="$_par compile jobs"
+    if [ -p "${CHUNK_JOBSERVER_FIFO:-}" ]; then
+        local _want
+        if [ "$_weight" -eq 1 ] && __js_client "$dir"; then
+            _want=1
+            _par_env=(-u CMAKE_BUILD_PARALLEL_LEVEL
+                      MAKEFLAGS="-j$CHUNK_JOBSERVER_SIZE --jobserver-auth=fifo:$CHUNK_JOBSERVER_FIFO")
+            _how="jobserver, up to $CHUNK_JOBSERVER_SIZE compile jobs"
+        else
+            _want=$(( _par * _weight ))
+            [ "$_want" -gt "$CHUNK_JOBSERVER_SIZE" ] && _want=$CHUNK_JOBSERVER_SIZE
+            [ "$_weight" -eq 1 ] && _how="$_par compile jobs, its ninja is older than 1.13: no jobserver"
+        fi
+        __js_reserve "$_want"
+        [ -n "$JOB_SLOT_PENDING" ] && [ "$__JS_TAKEN" -gt 0 ] &&
+            printf '%s' "$__JS_TAKEN" > "$JOB_SLOT_PENDING/tokens"
+    fi
     # The wrapper writes the build's exit status to <log>.rc as it exits: what
     # lets a process that is not the build's parent -- compile_all.sh adopting
     # the gnu builds still running (adopt_handoff) -- know when it ended and how.
@@ -1007,9 +1158,9 @@ launch_build() {  # <build-dir> [cmake --build extra args…]
     local _run=(bash -c '__rc_file=$1; shift; "$@"; __rc=$?; printf "%s\n" "$__rc" > "$__rc_file"; exit "$__rc"'
                 chunk-build "$log.rc" cmake --build "$dir" "${_exec_target[@]}" "$@")
     if command -v setsid >/dev/null 2>&1; then
-        CMAKE_BUILD_PARALLEL_LEVEL=$_par setsid "${_run[@]}" >"$log" 2>&1 &
+        env "${_par_env[@]}" setsid "${_run[@]}" >"$log" 2>&1 &
     else
-        CMAKE_BUILD_PARALLEL_LEVEL=$_par "${_run[@]}" >"$log" 2>&1 &
+        env "${_par_env[@]}" "${_run[@]}" >"$log" 2>&1 &
     fi
     local pid=$!
     JOB_NAME[$pid]=$name
@@ -1017,7 +1168,7 @@ launch_build() {  # <build-dir> [cmake --build extra args…]
     JOB_T0[$pid]=$SECONDS
     JOB_SLOT[$pid]="$JOB_SLOT_PENDING"   # released by __report_job
     JOB_SLOT_PENDING=""
-    printf '[LAUNCH] %s (pid %d, %s compile jobs)\n' "$name" "$pid" "$_par"
+    printf '[LAUNCH] %s (pid %d, %s)\n' "$name" "$pid" "$_how"
 }
 
 # ^C: async jobs start with SIGINT ignored (POSIX behavior of non-interactive
@@ -1219,7 +1370,7 @@ if [ -z "${CHUNK_SLOT_DIR:-}" ]; then
         rmdir "$d" 2>/dev/null
         return 0
     }
-    trap __slot_dir_cleanup EXIT
+    __add_exit_trap __slot_dir_cleanup
 fi
 
 # Drop stale tokens whose owning process is gone (a killed run leaves them).
@@ -1231,8 +1382,7 @@ __slots_gc() {
         pid=$(cat "$tok/owner" 2>/dev/null)
         case "$pid" in ''|*[!0-9]*) continue ;; esac
         if ! kill -0 "$pid" 2>/dev/null; then
-            rm -f "$tok/owner" 2>/dev/null
-            rmdir "$tok" 2>/dev/null
+            __slot_release "$tok"
         fi
     done
 }
@@ -1279,44 +1429,62 @@ __slot_try() {
 
 __slot_release() {  # <token path>
     [ -n "${1:-}" ] || return 0
+    # The jobserver tokens a fixed -j build took out of the pool (launch_build).
+    if [ -f "$1/tokens" ]; then
+        __js_give "$(cat "$1/tokens" 2>/dev/null)"
+        rm -f "$1/tokens" 2>/dev/null
+    fi
     rm -f "$1/owner" 2>/dev/null
     rmdir "$1" 2>/dev/null
     return 0
+}
+
+# One turn of a wait for a slot or for jobserver tokens: keep the display live
+# and our own finished builds reaped while we wait -- in THIS shell, so the job
+# table and the [RUN ] block are the real ones (reaping one also gives its slot
+# and its tokens back). __wait_tick_begin before the loop, __wait_tick_end after.
+__wait_tick_begin() {
+    __WT_LAST=$SECONDS
+    __WT_TICKER=""
+}
+__wait_tick() {
+    if __status_enabled; then
+        __clear_status
+        __draw_status
+    elif [ $(( SECONDS - __WT_LAST )) -ge 30 ]; then
+        __draw_status; __STATUS_N=0
+        __WT_LAST=$SECONDS
+    fi
+    if [ "${#JOB_NAME[@]}" -gt 0 ]; then
+        # Same refresh ticker as wait_all: __reap_one calls `wait -n`, which
+        # blocks until SOME child exits. With only long builds running that
+        # is minutes away, and the [RUN ] block would sit frozen the whole
+        # time. An UNtracked `sleep 2 &` is a child too, so its exit wakes
+        # `wait -n` on schedule and the loop redraws. It is not in JOB_NAME,
+        # so __reap_one finds no tracked pid gone and simply returns 1.
+        if [ -z "$__WT_TICKER" ] || ! kill -0 "$__WT_TICKER" 2>/dev/null; then
+            sleep 2 & __WT_TICKER=$!
+        fi
+        __reap_one || :
+    else
+        sleep 2
+    fi
+}
+__wait_tick_end() {
+    if [ -n "$__WT_TICKER" ]; then kill "$__WT_TICKER" 2>/dev/null; wait "$__WT_TICKER" 2>/dev/null; fi
+    __WT_TICKER=""
+    __clear_status
 }
 
 # Block until this process may start another build.
 __wait_for_slot() {
     [ "${CHUNK_MAX_JOBS:-0}" -gt 0 ] || return 0
     JOB_SLOT_PENDING=""
-    local last_snapshot=$SECONDS ticker=""
+    __wait_tick_begin
     until __slot_try; do
-        # Keep the display live and our own finished builds reaped while we wait
-        # -- in THIS shell, so the job table and the [RUN ] block are the real
-        # ones.
-        if __status_enabled; then
-            __clear_status
-            __draw_status
-        elif [ $(( SECONDS - last_snapshot )) -ge 30 ]; then
-            __draw_status; __STATUS_N=0
-            last_snapshot=$SECONDS
-        fi
-        if [ "${#JOB_NAME[@]}" -gt 0 ]; then
-            # Same refresh ticker as wait_all: __reap_one calls `wait -n`, which
-            # blocks until SOME child exits. With only long builds running that
-            # is minutes away, and the [RUN ] block would sit frozen the whole
-            # time. An UNtracked `sleep 2 &` is a child too, so its exit wakes
-            # `wait -n` on schedule and the loop redraws. It is not in JOB_NAME,
-            # so __reap_one finds no tracked pid gone and simply returns 1.
-            if [ -z "$ticker" ] || ! kill -0 "$ticker" 2>/dev/null; then
-                sleep 2 & ticker=$!
-            fi
-            __reap_one || :
-        else
-            sleep 2
-        fi
+        __wait_tick
     done
-    if [ -n "$ticker" ]; then kill "$ticker" 2>/dev/null; wait "$ticker" 2>/dev/null; fi
-    __clear_status
+    __wait_tick_end
 }
 
 # ─── Ended jobs, and handing jobs over between processes ─────────────────────
@@ -1516,6 +1684,7 @@ compile_with_cmake() {
     local _hard
     _hard=$(hardening_opts_for "$cmake_args")
     [ -n "$_hard" ] && cmake_args="$cmake_args $_hard"
+    cmake_args="$cmake_args$(__ninja_opt)"
 
     if [ "$DRYRUN" = true ]; then
         if [ "$BUILD_ONLY" = false ]; then
