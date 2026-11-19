@@ -86,7 +86,9 @@ the default is an all-zero buffer, a candidate for the pass), `BOUNDED_COMPRESSO
 ## 4. The calibration
 
 Every line below is one `run_genmc.sh` case; the verdicts are those of GenMC 0.19 under RC11 and
-under IMM (identical). "Executions" is the number of complete executions the checker explored.
+under IMM (identical), and GenMC 0.20 gives the same verdicts and execution counts (checked
+2026-11-19, against LLVM 21). "Executions" is the number of complete executions the checker
+explored.
 
 | case | expected | verdict | executions |
 |---|---|---|---|
@@ -429,10 +431,21 @@ last 7 to 0 just after A's release, finds the flag free and queues the chunk; pa
 passes start(); A's late unmark erases B's mark; W2 announces, finds no mark and goes on; B finds
 the chunk constant, clears it and frees the buffer; W2 stores into it, and its value is lost. With
 the source's order, A's unmark comes while the flag is still 2 or 3: nothing can queue the chunk
-before it. The GenMC verdicts (`run_genmc.sh`, three lines more) are still to be taken: the native
-runs above force that one interleaving with sleeps (`-DDEMO_SCHEDULE`: the test
-`formal_native_queue_handback_two_passes_schedule`, next to the free two-pass runs); they are an
-oracle for it, not an exhaustive check.
+before it. The native runs above force that one interleaving with sleeps (`-DDEMO_SCHEDULE`: the
+test `formal_native_queue_handback_two_passes_schedule`, next to the free two-pass runs): an oracle
+for it, not an exhaustive check. GenMC explores them all (`run_genmc.sh`, three lines more; GenMC
+0.20):
+
+| case | expected | verdict RC11 | verdict IMM | executions |
+|---|---|---|---|---|
+| source, two passes (liveness checked) | pass | pass | pass | 3161 |
+| `MUT_RELEASE_BEFORE_UNMARK`, one pass | pass | pass | pass | 12 |
+| `MUT_RELEASE_BEFORE_UNMARK`, two passes | fail | fail: **unordered writes** to `mark` | fail: **access to freed memory** | 5; 229 |
+
+Under RC11 the checker stops one step earlier, on the cause: pass B's mark and pass A's late unmark
+are two writes of `mark` that nothing orders -- GenMC 0.20's in-place revisiting treats that
+warning as an error. With `--disable-ipr` it goes on to the same access to the freed buffer as
+under IMM (229 executions).
 
 ### 8.8 F7: two threads filling the two ends of one chunk could both leave it unqueued (fixed)
 
