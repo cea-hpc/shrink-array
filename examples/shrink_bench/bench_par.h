@@ -716,13 +716,53 @@ namespace detail
 /// @brief The bench's TBB threads: CHUNK_PMP_MAX_THREADS of them (the
 ///        backend's team size: CHUNK_NUM_THREADS, else OMP_NUM_THREADS, as the
 ///        scripts set it), the calling thread among them. Immortal.
+/**
+ * @brief BENCH_TBB_PARALLEL_PHASE=1: the bench's arena in one oneTBB parallel
+ *        phase for the whole run (task_arena::start_parallel_phase(), a preview
+ *        of oneTBB 2022.x under TBB_PREVIEW_PARALLEL_PHASE, which CMake sets).
+ * @details Without it a worker done with its rank finds nothing to steal and
+ *          TBB returns it to its scheduler: about 26 of 71 left the arena during
+ *          each region on a 72-thread AArch64 node, the finalize's team woke
+ *          them back, and the next region started with a few missing -- their
+ *          ranks ran after another one on the same thread (rank_timing's
+ *          shared%), the region then lasting about two ranks. Inside a parallel
+ *          phase the workers stay in the arena between its algorithms. The
+ *          phase is never ended: the workers also spin through the bench's
+ *          serial code, on cores that would idle. One line on stderr says
+ *          whether it is on; with a oneTBB without the preview the variable is
+ *          ignored, and said so.
+ */
+inline void start_parallel_phase_if_asked(oneapi::tbb::task_arena& a)
+{
+    const char* v = std::getenv("BENCH_TBB_PARALLEL_PHASE");
+    if (v == nullptr || v[0] == '\0' || v[0] == '0')
+    {
+        return;
+    }
+    #if defined(__TBB_PREVIEW_PARALLEL_PHASE) && __TBB_PREVIEW_PARALLEL_PHASE
+    a.start_parallel_phase();
+    std::fputs("[bench] BENCH_TBB_PARALLEL_PHASE: the TBB workers stay in the bench's arena for the whole run\n",
+               stderr);
+    #else
+    (void)a;
+    std::fputs("[bench] BENCH_TBB_PARALLEL_PHASE ignored: this oneTBB has no task_arena::start_parallel_phase() "
+               "(a oneTBB 2022.x preview, TBB_PREVIEW_PARALLEL_PHASE)\n",
+               stderr);
+    #endif
+}
+
 inline oneapi::tbb::task_arena& arena()
 {
     static const int                    n = CHUNK_PMP_MAX_THREADS;
     static oneapi::tbb::global_control* gc =
         new oneapi::tbb::global_control(oneapi::tbb::global_control::max_allowed_parallelism, // NOLINT: immortal
                                         static_cast<std::size_t>(n));
-    static oneapi::tbb::task_arena* const a = new oneapi::tbb::task_arena(n); // NOLINT: immortal
+    static oneapi::tbb::task_arena* const a = []
+    {
+        auto* const p = new oneapi::tbb::task_arena(n); // NOLINT: immortal
+        start_parallel_phase_if_asked(*p);
+        return p;
+    }();
     (void)gc;
     return *a;
 }
