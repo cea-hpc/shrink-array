@@ -39,14 +39,17 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      # check_format needs clang-format 23 exactly (another version formats
-      # differently): apt.llvm.org's, the runner has an older one.
-      - name: clang-format 23
+      # check_format needs clang-format 23 (another version formats
+      # differently), and one fixed release: apt.llvm.org's llvm-toolchain-23
+      # follows the release branch, a new point release lands there with no
+      # commit here. PyPI's wheel of one version stays; 23.1.2 formats the
+      # tree as the developers' clang-format-23 does (2026-11-19, 0 problem).
+      - name: clang-format 23.1.2
         run: |
-          wget --max-redirect=0 -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null
-          echo "deb https://apt.llvm.org/noble/ llvm-toolchain-noble-23 main" | sudo tee /etc/apt/sources.list.d/llvm-23.list
-          .github/apt_install.sh clang-format-23
-          clang-format-23 --version
+          python3 -m venv "$RUNNER_TEMP/clang-format"
+          "$RUNNER_TEMP/clang-format/bin/pip" install -q clang-format==23.1.2
+          echo "CLANG_FORMAT=$RUNNER_TEMP/clang-format/bin/clang-format" >> "$GITHUB_ENV"
+          "$RUNNER_TEMP/clang-format/bin/clang-format" --version
       - name: check_* scripts
         run: |
           status=0
@@ -319,7 +322,8 @@ jobs:
     if: github.ref_name == 'cpp26'
     name: gcc 16, cpp26, ${{ matrix.name }}
     runs-on: ubuntu-24.04
-    container: gcc:16.2.0-trixie
+    # pinned by digest: a tag can be pushed again (gcc:16.2.0-trixie on 2026-11-19)
+    container: gcc:16.2.0-trixie@sha256:5c2f83335c97e233c80d2bc754bd5c46b2d9c32f236a765a4ac40a59f216c064
     timeout-minutes: 90
     strategy:
       fail-fast: false

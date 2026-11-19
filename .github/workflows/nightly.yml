@@ -452,7 +452,8 @@ jobs:
     name: x86-64, gcc 16, cpp26, OpenMP, ${{ matrix.name }}
     runs-on: ubuntu-24.04
     container:
-      image: gcc:16.2.0-trixie
+      # pinned by digest, as ci.yml's cpp26 job (gcc:16.2.0-trixie on 2026-11-19)
+      image: gcc:16.2.0-trixie@sha256:5c2f83335c97e233c80d2bc754bd5c46b2d9c32f236a765a4ac40a59f216c064
       options: --cap-add=SYS_PTRACE
     timeout-minutes: 180
     strategy:

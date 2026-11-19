@@ -56,6 +56,10 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- `CHUNK_NATIVE_TUNING` defaults to OFF in a project that consumes the library (`add_subdirectory`,
+  FetchContent): the library's objects no longer get `-march=native` / `-mcpu=native` while the
+  project's do not; the project's own target flags apply. It sets `CHUNK_NATIVE_TUNING=ON` before
+  including the library to have the former behaviour. Top level: unchanged (ON).
 - The first and second values have the names the documentation and the statistics give them:
   the `const_val1` / `const_val2` (and `const2`) names of the chunks, proxies and registry
   follow. `is_const_val1()` / `is_const_val2()` are `is_first_value()` / `is_second_value()`,
@@ -78,6 +82,14 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- A relocatable install with the optimised libm: `SHRINK_INTEL_LIBM` (on by default, when oneAPI's
+  `libimf` is found) and `SHRINK_ARM_LIBM` linked it into every target of the directory with an
+  absolute path and rpath, the libraries included: `chunk-targets.cmake` and
+  `fast_allocators-targets.cmake` named `/opt/intel/.../libimf.so`. Only the project's executables
+  (`examples/`) link it now.
+- `fast_allocators-config.cmake` calls `find_dependency(Threads)`: with the std backend its target
+  links `Threads::Threads`, and a project that found fast_allocators alone (without chunk) failed
+  to link.
 - `zero_any`: every `a[i] += x` ran `ensure_writable_storage()`, which re-armed the per-chunk
   pointers the write engine's `set_info_on_chunk()` had just armed and tested both constants,
   on a chunk already materialised as well: about 44 instructions per operation. It runs only on
