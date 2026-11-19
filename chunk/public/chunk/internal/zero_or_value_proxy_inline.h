@@ -146,8 +146,12 @@ zero_or_value::ProxySpec<T, Derived>::load_inf_array(this const Derived& self)
 // cache -- a large share of assign_impl's time on AArch64. Unarmed proxies
 // (replay, *_from_key) keep the registry path: rare, and a registry lookup
 // costs more than the stall anyway.
+// Forced inline, for the same kind of stall on the other side: called out of
+// line (the engine's lbd_info, every write), it stores into the proxy -- on the
+// caller's stack -- with narrow stores that the caller's 16-byte reloads of the
+// proxy span (x86, 1 thread: rmw 13.2 -> 6.0 ns, more than read + write before).
 template <typename T, typename Derived>
-void zero_or_value::ProxySpec<T, Derived>::set_info_on_chunk(this Derived& self)
+CHUNK_FORCE_INLINE void zero_or_value::ProxySpec<T, Derived>::set_info_on_chunk(this Derived& self)
 {
     if (const InfArrayT* src = self.armed_inf_array()) [[likely]]
     {
@@ -195,7 +199,7 @@ void zero_or_value::ProxySpec<T, Derived>::set_info_second_value_idx_from_key(Ar
 
 template <typename T, typename Derived>
     requires is_bool_like_v<T>
-void zero_or_value::ProxySpec<T, Derived>::set_info_on_chunk(this Derived& self)
+CHUNK_FORCE_INLINE void zero_or_value::ProxySpec<T, Derived>::set_info_on_chunk(this Derived& self)
 {
     if (const InfArrayT* src = self.armed_inf_array()) [[likely]]
     {

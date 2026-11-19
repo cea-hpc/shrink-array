@@ -58,6 +58,17 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
+### Fixed
+
+- `zero_or_value` and `zero_any` (and `pattern::Array`): `a[i] += x` cost more than a read plus a
+  write (16.4 ns on Grace), and `zero_any`'s `a[i] = v` paid the same stall. Every write runs
+  `set_info_on_chunk()`, which was called out of line: it stored into the proxy, on the caller's
+  stack, with 8- and 4-byte stores that the caller's 16-byte reloads of the proxy spanned -- a
+  store the core cannot forward, so each write waited for it to reach the cache. It is forced
+  inline. `access_cost`, x86, 1 thread: `rmw` 13.2 -> 6.0 ns (`zero_or_value`), 17.1 -> 9.8 ns
+  (`zero_any`), `zero_any`'s `write-varied` 14.5 -> 8.9 ns; 14 threads, `zero_or_value`'s `rmw`
+  1.60 -> 0.85 ns. Not measured on Grace yet.
+
 ## 0.3.0 -- 2026-11-18
 
 ### Added
