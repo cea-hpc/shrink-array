@@ -41,7 +41,7 @@
 //      A pre-check accepting only the constant-to-constant transition
 //      leaves this chunk materialised for the run.
 //
-//   B  the second constant everywhere (a fresh chunk goes const1 -> const2:
+//   B  the second constant everywhere (a fresh chunk goes first value -> second value:
 //      a constant-to-constant transition), then a plain value,
 //      then the second constant again -- the case A for the second
 //      constant -- then the first.

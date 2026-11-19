@@ -190,7 +190,7 @@ static long in_use()
     return static_cast<long>(Arr::second_value_stats().in_use());
 }
 
-/// @brief --rounds (child, run under a lowered CHUNK_CONST_VAL2_ID_LIMIT):
+/// @brief --rounds (child, run under a lowered CHUNK_SECOND_VALUE_ID_LIMIT):
 ///        @p rounds rounds of @p nch new constants, a reclaim after each.
 ///        Returning means it ran to the end.
 static int run_rounds_child(long nch, long rounds)
@@ -204,7 +204,7 @@ static int run_rounds_child(long nch, long rounds)
     }
     // second_value_stats() reports the lowered bound (read when the registry
     // was first used).
-    expect_eq("child: capacity (CHUNK_CONST_VAL2_ID_LIMIT)", static_cast<long>(Arr::second_value_stats().capacity),
+    expect_eq("child: capacity (CHUNK_SECOND_VALUE_ID_LIMIT)", static_cast<long>(Arr::second_value_stats().capacity),
               3 * nch);
     expect_values("child: last round", arr, nch, chunk_sz, 1.0e6 + 1000. * static_cast<double>(rounds - 1),
                   1.0e6 + 1000. * static_cast<double>(rounds - 1));
@@ -219,7 +219,7 @@ static void check_rounds_under_limit(const char* self, long nch)
 {
     const long        limit  = 3 * nch;
     const std::string log    = validation::temp_path("second_value_reclaim.log");
-    const std::string cmd    = "CHUNK_CONST_VAL2_ID_LIMIT=" + std::to_string(limit) + " " +
+    const std::string cmd    = "CHUNK_SECOND_VALUE_ID_LIMIT=" + std::to_string(limit) + " " +
                                validation::self_command(self) + " --rounds " + std::to_string(nch) + " 12 > \"" + log +
                                "\" 2>&1";
     const int         status = std::system(cmd.c_str());

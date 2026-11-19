@@ -128,7 +128,7 @@ void zero_any::ArrayImpl<Derived>::print_compression_stats(std::ostream& os) con
     // Do not classify from array_type_const_val alone: it is written only at
     // construction and never reset on materialisation, so a MATERIALISED chunk
     // would be counted as compressed. written() tests the LIVE state
-    // (values_load() != const_val1 && is_not_second_value()); array_type_const_val is
+    // (values_load() != first_value && is_not_second_value()); array_type_const_val is
     // trusted only for chunks that are NOT written.
     // A written chunk is then re-tested on its CONTENT (constant_value(), the
     // same scan as the size predictor): written() only says whether the
@@ -216,7 +216,7 @@ void zero_any::ArrayImpl<Derived>::clear()
                                       }
                                       summary[static_cast<std::size_t>(j)] = ck.constant_value(csz);
                                   });
-                const auto& registry      = *ProxyType::array_registry;
+                const auto& registry    = *ProxyType::array_registry;
                 const int   array_index = registry.get_array_id(this->registry_key());
                 report_size_prediction<T>(summary, csz, array_index, "zero_any",
                                           sizeof(std::remove_reference_t<decltype(chunk_list_[0])>));
@@ -343,7 +343,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
         // Check + non-aggressive only. After the terminal pass, walk THIS array's
         // chunks (not the candidate list, so never-enqueued blocks are seen) for
         // every block (a) still materialised (written()), (b) never registered as
-        // a candidate (array_is_inside_chunk_list_to_compress == 0), yet (c)
+        // a candidate (candidate_flags == 0), yet (c)
         // constant. Two different things, told apart by the value:
         //
         //   MISSED  constant at first_value, or at the chunk's own second value
@@ -353,7 +353,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
         //           the marking path has a hole.
         //   STUCK   constant at ANOTHER value: zero_any keeps a chunk's second
         //           value until the chunk passes through first_value (the clear
-        //           to const1 resets it), so a chunk compressed to V once and
+        //           to the first value resets it), so a chunk compressed to V once and
         //           uniformly W later is not compressible as it stands -- not by
         //           the write path, not by compress(). This count is the
         //           memory that design choice costs on this array -- not a
@@ -505,8 +505,8 @@ void zero_any::ArrayImpl<Derived>::clear_core()
                         // Neutralise the chunk NOW that its buffer is parked: a residual
                         // compression candidate (one that slipped the removals above, or
                         // the terminal sweep) would otherwise free_block_to_pool the SAME
-                        // buffer again (double-free). With const_val1 stored, every compress
-                        // path short-circuits (the CAS reads values == const_val1 and
+                        // buffer again (double-free). With first_value stored, every compress
+                        // path short-circuits (the CAS reads values == first_value and
                         // returns nullptr). Mirrors the non-OMP clear_st path.
                         ll_chunk_loc[k]->values_store(ChunkBase<T, ChunkType>::first_value_ptr());
                     }
@@ -776,8 +776,7 @@ void zero_any::ArrayImpl<Derived>::resize(this Derived& self, IntType newsz)
                                           {
                                               const int chunk_index = old_chunk_count + k;
                                               self.construct_chunk(chunk_index).init_after_constructor();
-                                              ProxyType::Base::set_candidate_flag(
-                                                  array_id, chunk_index, 0);
+                                              ProxyType::Base::set_candidate_flag(array_id, chunk_index, 0);
                                               ProxyType::array_type_const_val[array_id][chunk_index] = ConstSlot::first;
                                               // T{}: the struct elements have no conversion from 0
                                               ProxyType::BaseSpec::set(array_id, chunk_index, T{});

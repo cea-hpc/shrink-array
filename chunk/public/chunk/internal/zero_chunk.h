@@ -373,10 +373,10 @@ class ChunkFastCompPolicy : public ChunkThreadPolicy<T, Derived>
      *                  chunk_tuples.h's note on the field it is carried in
      */
     void classify_candidate(this Derived&    self,
-                               CandidateTuples& ll_compt,
-                               int              chunk_index,
-                               int              array_id,
-                               unsigned int     n_elems);
+                            CandidateTuples& ll_compt,
+                            int              chunk_index,
+                            int              array_id,
+                            unsigned int     n_elems);
 
     /**
      * @brief Scan @p thr's queued candidates and collect those now compressible.
@@ -413,10 +413,8 @@ class ChunkFastCompPolicy<T, Derived, false> : public ChunkThreadPolicy<T, Deriv
     /// @brief No candidate list to fill in this mode.
     static void classify_rank_candidates(int /*thr*/, CandidateTuples& /*ll_compt*/) {}
     /// @copydoc classify_rank_candidates
-    static void classify_candidate(CandidateTuples& /*ll_compt*/,
-                                      int /*chunk_index*/,
-                                      int /*array_id*/,
-                                      unsigned int /*n_elems*/)
+    static void
+    classify_candidate(CandidateTuples& /*ll_compt*/, int /*chunk_index*/, int /*array_id*/, unsigned int /*n_elems*/)
     {
     }
 };
@@ -424,9 +422,9 @@ class ChunkFastCompPolicy<T, Derived, false> : public ChunkThreadPolicy<T, Deriv
  * @brief One chunk of a ChunkArray: a block of chunk-size elements that collapses to zero.
  *
  * @details The simplest of the three variants. A chunk holds either a real
- *          buffer or, once every element is zero, the shared const_val1 constant
+ *          buffer or, once every element is zero, the shared first_value constant
  *          -- so `values` doubles as the state flag: written() is just
- *          "values != const_val1". zero_or_value and zero_any extend this with a second
+ *          "values != first_value". zero_or_value and zero_any extend this with a second
  *          constant, shared or per-chunk respectively.
  *
  *          Three policies supply what depends on the build, so this class holds
@@ -463,9 +461,9 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     using Base::allocate_chunk_internal;
     using Base::first_value;
 
+    using Base::first_value_buffer_;
     using Base::init_block;
     using Base::is_first_value;
-    using Base::first_value_buffer_;
     using Base::values_;
     using Base::values_load;
     using Base::values_store;
@@ -498,7 +496,7 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     }
 
     /// @brief Does this chunk hold a real buffer?
-    /// @return false while it is compressed to const_val1
+    /// @return false while it is compressed to first_value
     [[nodiscard]] bool written(this const auto& self) noexcept
     {
         return self.values_ != Base::first_value_ptr();

@@ -91,7 +91,7 @@ void zero::Array<T, IntType>::print_compression_stats(std::ostream& os) const
         return;
     }
 
-    const auto& registry   = *Proxy<T>::array_registry;
+    const auto& registry = *Proxy<T>::array_registry;
     const int   array_id = registry.get_array_id(this->registry_key());
 
     // Read before the clear() drain mutates state. Not written() = compressed

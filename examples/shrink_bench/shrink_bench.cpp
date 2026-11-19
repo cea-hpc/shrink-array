@@ -56,7 +56,7 @@
 #include "chunk/internal/ring_log_debug.h" // ring_init/analyze_ring_sweep decls
 #include "chunk/rechunk_decider.h"         // re-chunk decisions (acts in dyn builds only)
 #include "chunk/internal/env_parse.h"      // env_number / arg_number (checked, not atoi)
-#include "chunk/log.h"                     // CHUNK_LOG, logging::enabled (the const2 report at compress=info)
+#include "chunk/log.h"                     // CHUNK_LOG, logging::enabled (the second-value report at compress=info)
 
 using namespace shrink_array;
 
@@ -857,10 +857,10 @@ try
                 if (shrink_array::logging::enabled(shrink_array::logging::Channel::compress,
                                                    shrink_array::logging::Level::info))
                 {
-                    // STEP B — const2 GC mark report (read-only) : zero_any::Array-only API
-                    // (per-chunk const_val2 pointer registry has no equivalent on zero /
+                    // STEP B — second-value GC mark report (read-only) : zero_any::Array-only API
+                    // (per-chunk second_value pointer registry has no equivalent on zero /
                     // zero_or_value, which have no per-chunk GC-able registry to report on).
-                    CHUNK_LOG(info, compress, "const2-gc @ iter {}", k_iter);
+                    CHUNK_LOG(info, compress, "second-value-gc @ iter {}", k_iter);
                     // Spelled out rather than Array<T>: the enclosing
                     // `if constexpr` is in a plain lambda, so its discarded
                     // branch is still checked, and Array<T> is zero::Array<T> --
@@ -876,12 +876,12 @@ try
             }
         }
     };
-    // CHUNK_CONST2_RECLAIM=N: every N iterations, free the zero_any second values
+    // CHUNK_SECOND_VALUE_RECLAIM=N: every N iterations, free the zero_any second values
     // no chunk uses any more, for every element type of the bench
     // (reclaim_second_values() covers all the arrays of a type, whatever their
     // index type). Static builds too, unlike the advisor. 0 or unset: never.
     const Int second_value_reclaim_period = shrink_array::env_number<Int>(
-        shrink_array::env_name_or_former("CHUNK_CONST2_RECLAIM", "CHUNK_CST2_RECLAIM"), 0);
+        shrink_array::env_name_or_former("CHUNK_SECOND_VALUE_RECLAIM", "CHUNK_CONST2_RECLAIM"), 0);
     // [&], not [second_value_reclaim_period]: clang warns that the explicit capture is
     // not needed (-Wunused-lambda-capture) where the branch below is discarded.
     const auto second_value_reclaim_tick = [&](Int k_iter)
@@ -908,7 +908,7 @@ try
             freed += zero_any::Array<Point3, Int>::reclaim_second_values();
             freed += zero_any::Array<Cell, Int>::reclaim_second_values();
             const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
-            std::fprintf(stderr, "[const2-reclaim @ iter %ld] %zu second value(s) freed in %.3f ms\n",
+            std::fprintf(stderr, "[second-value-reclaim @ iter %ld] %zu second value(s) freed in %.3f ms\n",
                          static_cast<long>(k_iter), freed, ms);
             // Where each type's identifiers stand (second_value_stats()): the
             // trend of "in use" against the capacity is the early warning of the

@@ -24,7 +24,7 @@
 #include <atomic>      // std::atomic, std::memory_order
 #include <array>       // std::array
 #include <cstddef>     // std::size_t
-#include <cerrno>      // errno (use_mm_protect: the const_val1 buffer's mmap)
+#include <cerrno>      // errno (use_mm_protect: the first_value buffer's mmap)
 #include <cstdio>      // stderr
 #include <cstdlib>     // std::abort
 #include <cstring>     // std::memset, std::strerror

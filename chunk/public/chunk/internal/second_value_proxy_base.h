@@ -52,13 +52,13 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     using Base = ProxyBase<Derived, T, ChunkT>;
     friend Base;
 
-    using Base::queue_as_candidate;
     using Base::array_id_;
     using Base::chunk_;
     using Base::chunk_index_;
     using Base::elem_offset_;
     using Base::is_first_value;
     using Base::is_not_first_value;
+    using Base::queue_as_candidate;
     using Base::values_;
 
     using typename Base::AtomicPtrRefT;
@@ -66,8 +66,8 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
 
     // Both members exist on ProxyBase in every mode (the serial specialisation
     // declares them too); only their USE is mode-specific.
-    using Base::array_is_inside_chunk_list_to_compress;
-    using Base::ptr_is_inside_chunk_list_to_compress_;
+    using Base::candidate_flag_;
+    using Base::candidate_flags;
 
     // ========================================================================
     // Constant-state queries. is_second_value() itself is the derived proxy's:
@@ -204,7 +204,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      *          pass, on its first write of a constant over something else.
      *
      *          Not only a chunk ALREADY at one constant being written the
-     *          other: a chunk materialised by a plain value (2.5 over const_val1)
+     *          other: a chunk materialised by a plain value (2.5 over first_value)
      *          and then written back to a constant element by element must be
      *          queued too, or it stays materialised for the run. The cost is
      *          paid only by writes of a constant: an old-value read and a

@@ -18,7 +18,7 @@
 /**
  * @file queue_flag.h
  * @brief The "queued for compression" flag of a chunk
- *        (array_is_inside_chunk_list_to_compress): its protocol between the
+ *        (candidate_flags): its protocol between the
  *        writers that queue the chunk and the compression pass that hands it
  *        back.
  *

@@ -139,13 +139,13 @@ class RechunkDecider
     /// One committed re-chunk, for the end-of-run report.
     struct RechunkEvent
     {
-        int         iter;       ///< iteration at which it happened
-        std::string name;       ///< array name
-        unsigned    old_size;   ///< chunk size before the re-chunk (elements)
-        unsigned    new_size;   ///< chunk size after the re-chunk (elements)
-        double      mem_before; ///< bytes (model) before the re-chunk
-        double      mem_predicted;   ///< bytes (model) predicted at the new size
-        double      mem_after;  ///< bytes (model) after the re-chunk
+        int         iter;          ///< iteration at which it happened
+        std::string name;          ///< array name
+        unsigned    old_size;      ///< chunk size before the re-chunk (elements)
+        unsigned    new_size;      ///< chunk size after the re-chunk (elements)
+        double      mem_before;    ///< bytes (model) before the re-chunk
+        double      mem_predicted; ///< bytes (model) predicted at the new size
+        double      mem_after;     ///< bytes (model) after the re-chunk
         /// Model memory at the OLD size, from the after-tick's analysis (the
         /// advisor evaluates the finer sizes too): old_mem_now - mem_after is
         /// what the move freed at UNCHANGED data. -1 when not available.

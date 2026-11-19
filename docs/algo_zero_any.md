@@ -18,7 +18,7 @@ uniform at 3.5 and its neighbour uniform at −1 are both compressed, without de
 
 | state | type (1 byte per chunk) | `values` points to |
 |---|---|---|
-| compressed to zero | 0 | the shared constant buffer `const_val1` |
+| compressed to zero | 0 | the shared constant buffer `first_value_buffer_` |
 | compressed to a second value | 1 | the shared array of the **registry** filled with this value (§3) |
 | materialised | — | a buffer owned by the chunk |
 
@@ -38,7 +38,7 @@ Each array has, indexed by its number (`array_id`), three rows with one entry pe
 |---|---|---|
 | `array_type_const_val` | 1 byte | the constant type (0 or 1) |
 | `array_second_value` | `sizeof(T)` bytes by default | the chunk's second value |
-| `array_is_inside_chunk_list_to_compress` | 1 byte | "already in compression list" |
+| `candidate_flags` | 1 byte | "already in compression list" |
 
 With the CMake option **`CHUNK_SECOND_VALUE_INDEXED`** (disabled by default), the second-value
 slot of types larger than 4 bytes holds the **identifier** of the registry array
@@ -75,7 +75,7 @@ the old storage behind: 3.5 GB on the benchmark, with 15 rechunked arrays.
   the **value table** (`value_by_id`, one `T` per identifier). The region and the table are
   two `mmap(MAP_NORESERVE)` reservations made at the type's first array: address space only,
   the pages backed as identifiers are handed out, given back at the last clear, and the table
-  sized by `CHUNK_CONST_VAL2_ID_LIMIT` when it is set. Until November 2026 the table was a static
+  sized by `CHUNK_SECOND_VALUE_ID_LIMIT` when it is set. Until November 2026 the table was a static
   array of 4 Mi values per element type (32 MiB of bss for a `double`, 332 MiB in all in the
   benchmark): free while untouched for a trivial type, but a type whose default constructor is
   not `constexpr` touched all of it at startup, and every type counted against `RLIMIT_AS` and,
@@ -88,7 +88,7 @@ the old storage behind: 3.5 GB on the benchmark, with 15 rechunked arrays.
   that produces a very large number of distinct values makes the registry grow until its
   identifiers run out, which stops the run. In the benchmark, `CHUNK_BENCH_ULONG_BANDS`
   limits the number of distinct values of the `unsigned long` array, `CHUNK_LOG=compress=info`
-  prints the state of the registry and `CHUNK_CONST2_RECLAIM=N` reclaims every N iterations.
+  prints the state of the registry and `CHUNK_SECOND_VALUE_RECLAIM=N` reclaims every N iterations.
 
 `find_or_register_second_value(value, slot)` registers the value if needed, writes it into the
 chunk's second-value slot, and returns the shared array to install.
@@ -120,7 +120,7 @@ Same sequence as for the other variants (reservation of the candidates, compress
 re-read), with two lists at the end of the re-read (`classify_candidate`, which compares
 each element with the first element of the chunk):
 
-- chunks **uniform at zero** are compressed to type 0: `values` goes back to `const_val1`;
+- chunks **uniform at zero** are compressed to type 0: `values` goes back to `first_value_buffer_`;
 - chunks **uniform at another value** are compressed to type 1:
   `find_or_register_second_value` registers the value and returns the shared array, which
   `clear_int_st` installs by CAS as the chunk's `values` pointer.
@@ -143,7 +143,7 @@ flowchart TD
     E -->|"all = 0"| F["list ll_compt1"]
     E -->|"all = element 0"| G["list ll_compt2"]
     E -->|"otherwise"| N["steal_unmark at once"]
-    F --> F1["clear_int_st, type 0: slot reset,<br/>type const_val1, CAS values -> const_val1"]
+    F --> F1["clear_int_st, type 0: slot reset,<br/>type first_value_buffer_, CAS values -> first_value_buffer_"]
     G --> G1["find_or_register_second_value: value registered,<br/>written in the slot, then clear_int_st, type 1:<br/>CAS values -> the registry array"]
     F1 --> R["free_block_to_pool after a grace period,<br/>steal_unmark"]
     G1 --> R
@@ -186,7 +186,7 @@ value).
 
 ```mermaid
 flowchart TD
-    A["zero_any::ProxyImpl::assign_impl"] --> B{"0 on a const_val1 chunk,<br/>no deferred operation pending?<br/>(is_first_value_equal_to)"}
+    A["zero_any::ProxyImpl::assign_impl"] --> B{"0 on a first_value_buffer_ chunk,<br/>no deferred operation pending?<br/>(is_first_value_equal_to)"}
     B -->|yes| B1["nothing to do"]
     B -->|no| C["engine of 7.2 (write_with_optional_lock_with_set_ptr):<br/>deferred operations, wait_out_compressor,<br/>announce_write"]
     C --> D{"re-check:<br/>compressor?"}
@@ -199,7 +199,7 @@ flowchart TD
     G -->|no| H
     G1 --> H{"perform_core_assignment:<br/>state of the chunk?"}
     H -->|"element already = value = second value"| K
-    H -->|"const_val1"| H1["create_value: pre-filled with 0,<br/>CAS against const_val1"]
+    H -->|"first_value_buffer_"| H1["create_value: pre-filled with 0,<br/>CAS against first_value_buffer_"]
     H -->|"second value"| H2["create_value: pre-filled with the<br/>chunk's second value, CAS against it"]
     H -->|"materialised"| I
     H1 --> I["store_value_at"]

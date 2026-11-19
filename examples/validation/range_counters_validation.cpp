@@ -301,35 +301,35 @@ int run_fill_constant_case()
 
     // The chunk's own constant: nothing to write, the chunk stays constant.
     fill(0, csz, 0.0);
-    check("first value, whole const1 chunk");
-    expect_constant(0, "first value, whole const1 chunk");
+    check("first value, whole first-value chunk");
+    expect_constant(0, "first value, whole first-value chunk");
     fill(4 * csz + 3, 5 * csz - 5, 0.0);
-    check("first value, part of a const1 chunk");
-    expect_constant(4, "first value, part of a const1 chunk");
+    check("first value, part of a first-value chunk");
+    expect_constant(4, "first value, part of a first-value chunk");
     fill(5 * csz - 7, 6 * csz, 0.0);
-    check("first value, across two const1 chunks");
-    expect_constant(4, "first value, across two const1 chunks");
-    expect_constant(5, "first value, across two const1 chunks");
+    check("first value, across two first-value chunks");
+    expect_constant(4, "first value, across two first-value chunks");
+    expect_constant(5, "first value, across two first-value chunks");
     if (second_applies)
     {
         fill(csz + 5, 2 * csz - 3, second_value);
-        check("second value, part of its const2 chunk");
-        expect_constant(1, "second value, part of its const2 chunk");
+        check("second value, part of its second-value chunk");
+        expect_constant(1, "second value, part of its second-value chunk");
         fill(csz, 2 * csz, second_value);
-        check("second value, its whole const2 chunk");
-        expect_constant(1, "second value, its whole const2 chunk");
+        check("second value, its whole second-value chunk");
+        expect_constant(1, "second value, its whole second-value chunk");
     }
 
     // A value the chunk does not hold: written.
     if (chunk_config::use_zero_any)
     {
         fill(2 * csz + 2, 3 * csz - 9, second_value); // onto the chunk at 3.0
-        check("second value onto another const2 chunk");
+        check("second value onto another second-value chunk");
     }
     fill(csz + 1, csz + 11, 0.0);
-    check("first value onto a const2 chunk");
+    check("first value onto a second-value chunk");
     fill(5 * csz + 4, 5 * csz + 20, second_value);
-    check("second value onto a const1 chunk");
+    check("second value onto a first-value chunk");
     fill(3 * csz + 1, 3 * csz + csz / 2, 0.0);
     check("first value onto a mixed chunk");
 
@@ -347,7 +347,7 @@ int run_fill_constant_case()
 /// AND enters the first. Both counters must move; the second-value count once
 /// did not (zero_or_value::Proxy::apply_compound_operation), so it stayed one too high and the
 /// LAST of the following second-value writes reached chunk_size with the zero
-/// still in the chunk: folded to const2, the zero read back as the second value
+/// still in the chunk: folded to second value, the zero read back as the second value
 /// (shrink_bench_zero_or_value_dyn, one element of a chunk in a check run).
 int run_mul_zero_case()
 {

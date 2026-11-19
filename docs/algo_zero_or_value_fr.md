@@ -96,13 +96,13 @@ le chunk est dans l'un de trois états :
 
 | état | `values` pointe vers | test |
 |---|---|---|
-| compressé à la première valeur | le tampon constant `const_val1` (que des 0) | `is_first_value()` |
-| compressé à la seconde valeur | le tampon constant `const_val2[idx]` | `is_second_value(idx)` |
+| compressé à la première valeur | le tampon constant `first_value_buffer_` (que des 0) | `is_first_value()` |
+| compressé à la seconde valeur | le tampon constant `second_value_buffers[idx]` | `is_second_value(idx)` |
 | matérialisé | un tampon privé, alloué pour ce chunk | `written(idx)` |
 
 Les tampons constants sont **alloués une seule fois** et partagés par tous les chunks
 concernés. Leur taille est `const_buffer_size` (la taille de chunk en géométrie fixe,
-`chunk_dyn_max_size` en géométrie dynamique). Il existe un tampon `const_val2` par seconde
+`chunk_dyn_max_size` en géométrie dynamique). Il existe un tampon `second_value_buffer_` par seconde
 valeur déclarée, repéré par un **indice** `idx`.
 
 > Attention : `zero_or_value::Chunk::written()` **sans argument** est réservé à `bool` et renvoie `false`
@@ -120,7 +120,7 @@ triplet `ArrayInfo` :
 (second_value, idx, array_id)
 ```
 
-- `idx` : l'indice du tampon constant `const_val2` de cette valeur ;
+- `idx` : l'indice du tampon constant `second_value_buffer_` de cette valeur ;
 - `array_id` : le numéro du tableau, qui indexe les tables de métadonnées par tableau
   (par exemple les drapeaux « déjà candidat à la compression »).
 
@@ -197,7 +197,7 @@ if (is_first_value_equal_to(values_loc, v)) return v;
 
 set_info_second_value_idx();   // second_value et idx, depuis le miroir
 
-// 2. second_value sur un chunk à const_val2, ou sur un élément qui la contient déjà :
+// 2. second_value sur un chunk à second_value_buffer_, ou sur un élément qui la contient déjà :
 //    rien à faire -- sauf si des écritures différées sont en attente sur le chunk
 //    (une ancienne opération appliquée plus tard écraserait la valeur laissée en place)
 if (!chunk.pending_any())
@@ -212,7 +212,7 @@ if (deferred) { /* capturer l'opération pour l'appliquer plus tard (7.3) */ }
 
 ### 6.3 Le corps : `perform_core_assignment`
 
-- **seconde valeur écrite dans un chunk à `const_val1`** : on matérialise le chunk
+- **seconde valeur écrite dans un chunk à `first_value_buffer_`** : on matérialise le chunk
   (`create_value()`, pré-rempli de 0), puis on écrit la valeur ;
 - **chunk compressé (l'une ou l'autre constante) et valeur différente** : on matérialise le
   chunk, pré-rempli **avec la constante qu'il quitte**, puis on écrit ;
@@ -331,10 +331,10 @@ for (long i = 0; i < n; ++i)
     arr[i] = second_value;
 ```
 
-À la construction, tous les chunks sont à `const_val1`. La première écriture de chaque chunk
+À la construction, tous les chunks sont à `first_value_buffer_`. La première écriture de chaque chunk
 le **matérialise** (il contient alors `1 0 0 0 …`). Sans compression pendant l'exécution, la
 boucle finirait avec **tout le tableau alloué**, alors que chaque chunk est redevenu uniforme.
-La compression en vol rend ces chunks à `const_val2` au fil de l'eau.
+La compression en vol rend ces chunks à `second_value_buffer_` au fil de l'eau.
 
 ### 8.2 Les listes de candidats
 
@@ -368,7 +368,7 @@ placés avant :
   avant la CAS du drapeau du chunk, car un refus après elle laisserait le drapeau levé et le
   chunk ne serait plus jamais mis en file.
 
-Un drapeau atomique par chunk (« déjà candidat », `array_is_inside_chunk_list_to_compress`,
+Un drapeau atomique par chunk (« déjà candidat », `candidate_flags`,
 indexé par `array_id`) garantit qu'un chunk n'est mis en file **qu'une fois** jusqu'à la
 passe suivante.
 
@@ -397,8 +397,8 @@ flowchart TD
     D -->|"tout = first_value"| E["items ll_compt1"]
     D -->|"tout = second_value"| F["items ll_compt2"]
     D -->|"sinon"| G["rien (drapeau remis à zéro)"]
-    E --> H["clear : rendre le tampon,<br/>values -> const_val1"]
-    F --> I["clear : rendre le tampon,<br/>values -> const_val2[idx]"]
+    E --> H["clear : rendre le tampon,<br/>values -> first_value_buffer_"]
+    F --> I["clear : rendre le tampon,<br/>values -> second_value_buffers[idx]"]
     H --> J["remettre les drapeaux à zéro,<br/>vider la items, finish()"]
     I --> J
     G --> J

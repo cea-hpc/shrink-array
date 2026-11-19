@@ -490,13 +490,13 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
         const bool act = observe(&arr, tick, rep, name);
         if (act && !pol_.dry_run && rep.best >= 0)
         {
-            const int      eff_best = capped_best_index(rep, hist_[&arr].coarsen_banned);
-            const auto&    cur_e    = rep.table[static_cast<std::size_t>(rep.cur)];
-            const auto&    best_e   = rep.table[static_cast<std::size_t>(eff_best)];
-            const double   mem_bef  = cur_e.mem_bytes;  // model mem at OLD geometry
-            const double   mem_prd  = best_e.mem_bytes; // advisor's PREDICTION
-            const unsigned old_sz   = cur_e.size;
-            const unsigned new_sz   = best_e.size;
+            const int      eff_best      = capped_best_index(rep, hist_[&arr].coarsen_banned);
+            const auto&    cur_e         = rep.table[static_cast<std::size_t>(rep.cur)];
+            const auto&    best_e        = rep.table[static_cast<std::size_t>(eff_best)];
+            const double   mem_before    = cur_e.mem_bytes;  // model mem at OLD geometry
+            const double   mem_predicted = best_e.mem_bytes; // advisor's PREDICTION
+            const unsigned old_sz        = cur_e.size;
+            const unsigned new_sz        = best_e.size;
 
             // The advisor proposes geometries only (is_valid_chunk_size), so a
             // refusal is the ceiling (const_buffer_size): said, and no event.
@@ -511,7 +511,8 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
 
             // "after" is measured at the NEXT tick; seed it with the prediction
             // for a run that ends before then.
-            log_.emplace_back(RechunkEvent{iter, std::string(name), old_sz, new_sz, mem_bef, mem_prd, mem_prd});
+            log_.emplace_back(
+                RechunkEvent{iter, std::string(name), old_sz, new_sz, mem_before, mem_predicted, mem_predicted});
             log_.back().seconds  = secs;
             pending_after_[&arr] = log_.size() - 1;
         }

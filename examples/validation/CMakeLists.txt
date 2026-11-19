@@ -240,7 +240,7 @@ endfunction()
 #     validation_zero_any_256 compress_roundtrip_validation [args...]
 #
 # The ctest names are the ones of the one-executable-per-harness layout
-# (compress_roundtrip_zero_any_256_8thr, rechunk_validation_zero_dyn_val2-grow,
+# (compress_roundtrip_zero_any_256_8thr, rechunk_validation_zero_dyn_second-value-grow,
 # ...), so `ctest -R` and python/bench_and_test.py see no difference.
 # CHUNK_VALIDATION_UNITY=OFF goes back to one executable per harness, named as
 # before -- the one to debug a harness alone. CHUNK_VALIDATION_UNITY_BATCH caps
@@ -477,10 +477,10 @@ foreach(_geom IN LISTS _rt_geometries)
         # must match the case table of rechunk_validation.cpp -- an unknown
         # --case fails the test, so a drift shows up at once.
         foreach(_case coexistence range-ops scale-64-to-tgt mostly-constant sin-quantized
-                      shrink-to-smaller all-same all-different val2-grow val2-shrink
+                      shrink-to-smaller all-same all-different second-value-grow second-value-shrink
                       invalid-size-refused active-size-refused multiple-of-64-chain index-split
                       bool-grow bool-shrink bool-uneven bool-sliced sliced-grow sliced-shrink
-                      sliced-val2-grow sliced-val2-uneven)
+                      sliced-second-value-grow sliced-second-value-uneven)
           validation_add_test(${_base}_${_case} ${_exe} ${_h} "" --case ${_case})
         endforeach()
       elseif (_h STREQUAL "dyn_geometry_validation")

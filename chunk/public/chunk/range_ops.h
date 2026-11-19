@@ -356,11 +356,11 @@ template <typename Arr>
  * @brief Does this chunk own a buffer the bulk store may write into?
  *
  * @details NOT `!is_first_value()`. A zero_any chunk parked on its SECOND constant is
- *          not const_val1 either, and its values pointer is a second-value slot,
+ *          not first_value either, and its values pointer is a second-value slot,
  *          not a buffer: stores through it are lost, and the chunk keeps
  *          reading its constant.
  *          written() is each variant's own "materialised" test -- zero: not
- *          const_val1; zero_any: neither constant. zero_or_value's index-less written()
+ *          first_value; zero_any: neither constant. zero_or_value's index-less written()
  *          is bool-only (false for every other T), so it is asked with @p idx2.
  */
 template <typename Arr, typename ChunkClass>
@@ -729,7 +729,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
                     }
                     if constexpr (build_config::threaded)
                     {
-                        ch.clear_st(get_thr_rank_fast(), chunk_sz); // frees the buffer, marks const1
+                        ch.clear_st(get_thr_rank_fast(), chunk_sz); // frees the buffer, marks first value
                     }
                     else
                     {
@@ -807,7 +807,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
             // A chunk that owns a buffer releases it through the pass's own
             // clear (clear_st(elem_offset, idx2)), as zero above: nothing stored, scanned
             // or queued. owns_live_buffer(), not written(idx2): a chunk at the
-            // const2 block of an earlier second value is not a buffer. A pass
+            // second-value block of an earlier second value is not a buffer. A pass
             // that still holds the chunk in its list skips it (compressed).
             if constexpr (internal::is_v2_v<Arr> && requires { arr.second_value(); })
             {

@@ -92,7 +92,9 @@ regard, puis abandon) et `NWRITERS`.
 ## 4. La calibration
 
 Chaque ligne ci-dessous est un cas de `run_genmc.sh` ; les verdicts sont ceux de GenMC 0.19 sous
-RC11 et sous IMM (identiques). « Exécutions » est le nombre d'exécutions complètes explorées.
+RC11 et sous IMM (identiques), et GenMC 0.20 donne les mêmes verdicts et les mêmes nombres
+d'exécutions (vérifié le 2026-11-19, avec LLVM 21). « Exécutions » est le nombre d'exécutions
+complètes explorées.
 
 | cas | attendu | verdict | exécutions |
 |---|---|---|---|
@@ -439,7 +441,7 @@ possède pas tout le chunk sache ce qu'il faut.
 ### 8.8 F6 : un chunk rendu constant pendant la restitution d'une passe n'était jamais mis en file (corrigé)
 
 Le modèle est `formal/queue_handback.c` ; il ne vérifie aucun ordre mémoire, mais un protocole :
-le drapeau « en file » d'un chunk (`array_is_inside_chunk_list_to_compress`) et la marque de la
+le drapeau « en file » d'un chunk (`candidate_flags`) et la marque de la
 passe. Une passe restitue chaque candidat par `steal_unmark()`, puis remet son drapeau (la fin de
 `make_block_compression()` ; l'ordre est gardé exprès : une fois le drapeau baissé, une autre passe
 peut mettre le chunk en file et le marquer, et une levée de marque tardive effacerait sa
@@ -521,10 +523,21 @@ et met le chunk en file ; la passe B le marque et passe start() ; la baisse tard
 marque de B ; W2 s'annonce, ne trouve pas de marque et continue ; B trouve le chunk constant, le
 vide et libère le tampon ; W2 y écrit, et sa valeur est perdue. Dans l'ordre de la source, la baisse
 de A arrive quand le drapeau vaut encore 2 ou 3 : rien ne peut mettre le chunk en file avant elle.
-Les verdicts GenMC (`run_genmc.sh`, trois lignes de plus) restent à prendre : les runs natifs
-ci-dessus forcent cet entrelacement-là avec des pauses (`-DDEMO_SCHEDULE` : le test
-`formal_native_queue_handback_two_passes_schedule`, à côté des runs libres à deux passes) ; ce sont
-un oracle pour lui, pas une vérification exhaustive.
+Les runs natifs ci-dessus forcent cet entrelacement-là avec des pauses (`-DDEMO_SCHEDULE` : le test
+`formal_native_queue_handback_two_passes_schedule`, à côté des runs libres à deux passes) : un
+oracle pour lui, pas une vérification exhaustive. GenMC les explore tous (`run_genmc.sh`, trois
+lignes de plus ; GenMC 0.20) :
+
+| cas | attendu | verdict RC11 | verdict IMM | exécutions |
+|---|---|---|---|---|
+| source, deux passes (vivacité vérifiée) | succès | succès | succès | 3161 |
+| `MUT_RELEASE_BEFORE_UNMARK`, une passe | succès | succès | succès | 12 |
+| `MUT_RELEASE_BEFORE_UNMARK`, deux passes | échec | échec : **écritures non ordonnées** de `mark` | échec : **accès à la mémoire libérée** | 5 ; 229 |
+
+Sous RC11 le vérificateur s'arrête un pas plus tôt, sur la cause : la marque de la passe B et la
+baisse tardive de la passe A sont deux écritures de `mark` que rien n'ordonne -- le revisitage en
+place de GenMC 0.20 traite cet avertissement comme une erreur. Avec `--disable-ipr`, il va jusqu'au
+même accès au tampon libéré que sous IMM (229 exécutions).
 
 ### 8.9 F7 : deux threads remplissant les deux bouts d'un chunk pouvaient le laisser tous deux hors file (corrigé)
 

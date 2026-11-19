@@ -27,7 +27,7 @@
 #include "chunk/config.h"                           // build_config::threaded, chunk_config
 #include "chunk/internal/chunk_traits.h"            // ChunkTraits<Derived>::ManagerType (ChunkImpl, ChunkThreadPolicy)
 #include "chunk/internal/invariant_check.h"         // invariant_failed
-#include "chunk/internal/second_value_registry.h" // SecondValueRegistry, SecondValueRef
+#include "chunk/internal/second_value_registry.h"   // SecondValueRegistry, SecondValueRef
 #include "chunk/internal/pmp_chunk.h"               // CHUNK_PMP_THREAD_RANK
 #include "chunk/internal/ring_log_debug.h"          // ScopedRingLog, ring_log_* (RING_LOG builds)
 #include "chunk/internal/chunk_size_policy.h"       // ChunkElems
@@ -103,7 +103,7 @@ class ChunkConcurrentOps
 
 // Read-side counterpart of zero_any::ChunkConcurrentOps: lock-free classification of `values`. Needed in
 // every build, so mixed into zero_any UNCONDITIONALLY (not gated on threaded).
-/// @brief zero_any's lock-free reads of its constant state (const_val1 / const_val2 / written), every build.
+/// @brief zero_any's lock-free reads of its constant state (first_value / second_value / written), every build.
 template <typename T, typename Derived>
 class ChunkStateQueries
 {
@@ -292,7 +292,7 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>, public ChunkC
      * \brief Release this chunk's buffer to @p thr_rank's pool and point it at the
      *        first constant, WITHOUT counting a compression: the re-chunk rebuild
      *        releasing an old chunk it has transcribed (as zero::Chunk::release_st).
-     * \param ptr_type_const     Slot of the per-chunk type table (set to const1).
+     * \param ptr_type_const     Slot of the per-chunk type table (set to the first value).
      * \param ptr_second_value The chunk's second-value slot (reset).
      * \param thr_rank         Rank whose pool receives the buffer.
      * \pre The chunk is materialised (written()), and the array is quiescent (no
@@ -348,7 +348,7 @@ class ChunkThreadPolicy<T, Derived, false> : public SecondValueChunkBase<T, Deri
 
     /*!
      * \brief The full type-2 clear (find_or_set path), so the sequential
-     *        compression can register a const_val2 exactly like the OpenMP path.
+     *        compression can register a second_value exactly like the OpenMP path.
      *        thr_rank is 0 with OpenMP off.
      */
     void clear_int_st(this Derived&     self,
@@ -457,7 +457,7 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>,
     }
 
     /**
-     * @brief Set constant type to val1
+     * @brief Set the chunk to its first value
      * @param ptr_type_const Pointer to type indicator
      */
     static void set_to_first_value(ConstSlot* ptr_type_const) noexcept
@@ -465,7 +465,7 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>,
         *ptr_type_const = ConstSlot::first;
     }
     /**
-     * @brief Set constant type to val2
+     * @brief Set the chunk to its second value
      * @param ptr_type_const Pointer to type indicator
      */
     static void set_to_second_value(ConstSlot* ptr_type_const) noexcept
@@ -487,9 +487,9 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>,
      * @param ptr_type_const Pointer to constant type indicator
      */
     /// @param ptr_second_value The chunk's second-value slot: the array to
-    ///        point at when the type says const_val2 is found by value in the
+    ///        point at when the type says second_value is found by value in the
     ///        registry (there is no per-chunk copy of it). May be null when
-    ///        the type is const_val1.
+    ///        the type is first_value.
     void init_values_const_val(const ConstSlot* ptr_type_const, SecondValueRef<T> ptr_second_value) noexcept;
 
     /// @brief Get reference to the chunk manager (static access)
@@ -566,17 +566,17 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>,
     // that field. Do not add a `= static_chunk_size` default: it would scan only the first
     // static_chunk_size values of a wider chunk, declare it constant and destroy the rest.
     static void classify_rank_candidates(int                   thr,
-                                                   CandidateTuples&      ll_compt1,
-                                                   CandidateValueTuples& ll_compt2,
-                                                   bool                  claimed = false);
+                                         CandidateTuples&      ll_compt1,
+                                         CandidateValueTuples& ll_compt2,
+                                         bool                  claimed = false);
 
     void classify_candidate(this Derived&         self,
-                               CandidateTuples&      ll_compt1,
-                               CandidateValueTuples& ll_compt2,
-                               int                   chunk_index,
-                               int                   array_id,
-                               ChunkElems            size,
-                               bool                  claimed = false);
+                            CandidateTuples&      ll_compt1,
+                            CandidateValueTuples& ll_compt2,
+                            int                   chunk_index,
+                            int                   array_id,
+                            ChunkElems            size,
+                            bool                  claimed = false);
 
     static inline constinit internal::LazyImmortal<Manager> s_manager_;
 };

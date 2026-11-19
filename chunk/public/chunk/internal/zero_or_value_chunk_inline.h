@@ -49,7 +49,7 @@
  * two directions between them are:
  *  - **materialise**: create_value() / create_value_bool() allocate a buffer,
  *    pre-fill it, and (under OpenMP) publish it with a CAS that refuses a
- *    wrong-side transition after a const_val1/const_val2 race;
+ *    wrong-side transition after a first_value/second_value race;
  *  - **compress**: the clear / block_clear / clear_int_st family releases the
  *    buffer and points `values` back at a shared constant.
  *
@@ -108,7 +108,7 @@ template <typename T, typename Derived, bool Enabled>
  * @brief Scans this chunk and files it into one of the two compression lists.
  *
  * Thin wrapper over classify_candidate_impl(): it unpacks the array-wide
- * second value from @p array_info and supplies the current const_val2 test.
+ * second value from @p array_info and supplies the current second_value test.
  *
  * @param ll_compt1  Output list of chunks compressible to first_value.
  * @param ll_compt2  Output list of chunks compressible to the second value.
@@ -119,12 +119,12 @@ template <typename T, typename Derived, bool Enabled>
  */
 template <typename T, typename Derived, bool Enabled>
 void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::classify_candidate(this Derived&    self,
-                                                                                    CandidateTuples& ll_compt1,
-                                                                                    CandidateTuples& ll_compt2,
-                                                                                    const ArrayInfo& array_info,
-                                                                                    int              chunk_index,
-                                                                                    int              array_id,
-                                                                                    unsigned int     n_elems)
+                                                                                 CandidateTuples& ll_compt1,
+                                                                                 CandidateTuples& ll_compt2,
+                                                                                 const ArrayInfo& array_info,
+                                                                                 int              chunk_index,
+                                                                                 int              array_id,
+                                                                                 unsigned int     n_elems)
 {
     // InT: a reference into the (const, caller-owned) tuple when T is large.
     const InT<T> second_v = array_info.second_value;
@@ -257,8 +257,8 @@ void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress(this Deri
     // Only a MATERIALISED chunk can be compressed. A queued entry can outlive
     // the chunk's materialisation: make_block_compression (or a previous
     // drain) compresses it, and the OMPT end-of-region drain then replays
-    // the stale entry. compress_impl only refuses const_val1; a chunk already at
-    // const_val2 would pass, scan the SHARED second-value block, find it
+    // the stale entry. compress_impl only refuses first_value; a chunk already at
+    // second_value would pass, scan the SHARED second-value block, find it
     // constant and clear it a second time -- freeing that shared block.
     if (!self.written(array_info.idx))
     {
@@ -309,8 +309,7 @@ void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_bool(this
  *       team size); inside a region it sweeps the calling rank only.
  */
 template <typename T, typename Derived, bool Enabled>
-void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_queued(const ArrayInfo& array_info,
-                                                                                         bool             apply)
+void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_queued(const ArrayInfo& array_info, bool apply)
 {
     // Everything the per-rank body touches is rank-local --
     // zero_or_value_candidates_map_thr[thr_rank], the freed buffer goes to
@@ -367,10 +366,9 @@ void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_queued_bo
  */
 template <typename T, typename Derived, bool Enabled>
 template <typename CompressFn>
-void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_rank_queue_impl(
-    int          thr_rank,
-    InT<T>       key,
-    CompressFn&& compress_one)
+void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_rank_queue_impl(int          thr_rank,
+                                                                                       InT<T>       key,
+                                                                                       CompressFn&& compress_one)
 {
     // The store is a per-rank VECTOR of maps, sized by resize_all_list_block_free_thr();
     // until that has run, [thr_rank] is out of bounds (UB). Probing rank 0 is
@@ -435,14 +433,13 @@ void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_rank_queu
  * @param apply          Forwarded to compress().
  */
 template <typename T, typename Derived, bool Enabled>
-void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_rank_queue(
-    int              thr_rank,
-    const ArrayInfo& array_info,
-    bool             apply)
+void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_rank_queue(int              thr_rank,
+                                                                                  const ArrayInfo& array_info,
+                                                                                  bool             apply)
 {
     compress_rank_queue_impl(thr_rank, array_info.second_value,
-                                           [thr_rank, &array_info, apply](auto* chunk_t, unsigned int n_elems)
-                                           { chunk_t->compress(thr_rank, array_info, apply, n_elems); });
+                             [thr_rank, &array_info, apply](auto* chunk_t, unsigned int n_elems)
+                             { chunk_t->compress(thr_rank, array_info, apply, n_elems); });
 }
 
 /**
@@ -451,13 +448,12 @@ void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_rank_queu
  * @param apply          Forwarded to compress_bool().
  */
 template <typename T, typename Derived, bool Enabled>
-void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_rank_queue_bool(int  thr_rank,
-                                                                                                     bool apply)
+void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_rank_queue_bool(int thr_rank, bool apply)
 {
     if constexpr (is_bool)
     {
         compress_rank_queue_impl(thr_rank, true, [thr_rank, apply](auto* chunk_t, unsigned int n_elems)
-                                               { chunk_t->compress_bool(thr_rank, apply, n_elems); });
+                                 { chunk_t->compress_bool(thr_rank, apply, n_elems); });
     }
 }
 
@@ -477,8 +473,8 @@ void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_rank_queu
 template <typename T, typename Derived, bool Enabled>
 template <typename ScanFn>
 void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::classify_rank_candidates_impl(int      thr_rank,
-                                                                                                      InT<T>   key,
-                                                                                                      ScanFn&& scan_one)
+                                                                                            InT<T>   key,
+                                                                                            ScanFn&& scan_one)
 {
     const auto* const vec_tuple_p = Manager::compress_candidates(thr_rank, key);
     assert(vec_tuple_p != nullptr && "key registered for every rank by set_second_value()");
@@ -513,11 +509,10 @@ void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::classify_rank_cand
  * @param array_info (second_value, index, ...) selecting the list.
  */
 template <typename T, typename Derived, bool Enabled>
-void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::classify_rank_candidates(
-    int              thr_rank,
-    CandidateTuples& ll_compt1,
-    CandidateTuples& ll_compt2,
-    const ArrayInfo& array_info)
+void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::classify_rank_candidates(int              thr_rank,
+                                                                                       CandidateTuples& ll_compt1,
+                                                                                       CandidateTuples& ll_compt2,
+                                                                                       const ArrayInfo& array_info)
 {
     classify_rank_candidates_impl(
         thr_rank, array_info.second_value,
@@ -544,10 +539,9 @@ void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::classify_rank_cand
  * @param ll_compt2 Output: chunks compressible to `true`.
  */
 template <typename T, typename Derived, bool Enabled>
-void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::classify_rank_candidates_bool(
-    int              thr_rank,
-    CandidateTuples& ll_compt1,
-    CandidateTuples& ll_compt2)
+void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::classify_rank_candidates_bool(int              thr_rank,
+                                                                                            CandidateTuples& ll_compt1,
+                                                                                            CandidateTuples& ll_compt2)
 {
     classify_rank_candidates_impl(
         thr_rank, static_cast<T>(true),
@@ -707,8 +701,8 @@ void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compres
     }
 
     queue_flag::release_candidates(
-        candidates, sz, [](int array_id, int chunk_index) -> auto&
-        { return Proxy<T>::candidate_flag_row(array_id)[chunk_index]; },
+        candidates, sz,
+        [](int array_id, int chunk_index) -> auto& { return Proxy<T>::candidate_flag_row(array_id)[chunk_index]; },
         [](int array_id, int chunk_index) { Proxy<T>::clear_candidate_flag(array_id, chunk_index); });
 
     if (proxy2)
@@ -737,8 +731,8 @@ void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compres
 // clear callables and hands them to the shared sweep. Instantiating it for bool
 // is a compile error (static_assert).
 template <typename T, typename Derived, bool Enabled>
-void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int                      thr_rank,
-                                                                                     const ArrayInfo&         array_info,
+void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int              thr_rank,
+                                                                                     const ArrayInfo& array_info,
                                                                                      zero_or_value::Proxy<T>* proxy2)
 {
     if constexpr (is_not_bool)
@@ -750,8 +744,7 @@ void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compres
 
         make_block_compression_impl(
             thr_rank, second_value, proxy2, [thr_rank, &array_info](auto& ll_compt1, auto& ll_compt2)
-            { Derived::classify_rank_candidates(thr_rank, ll_compt1, ll_compt2, array_info); },
-            lbd_clear_func);
+            { Derived::classify_rank_candidates(thr_rank, ll_compt1, ll_compt2, array_info); }, lbd_clear_func);
     }
     else
     {
@@ -812,12 +805,12 @@ void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compres
                 // arrays that declared this one may all be gone (clear_core
                 // drops their candidates by array_id, not the slot). No array,
                 // no info tuple, nothing to fold: skip it, do not dereference.
-                const auto* inf = Proxy<T>::array_registry->find_array_info(second_val);
-                if (inf == nullptr)
+                const auto* array_info = Proxy<T>::array_registry->find_array_info(second_val);
+                if (array_info == nullptr)
                 {
                     continue;
                 }
-                make_block_compression(thr_rank, *inf, nullptr);
+                make_block_compression(thr_rank, *array_info, nullptr);
             }
         }
     }
@@ -896,7 +889,7 @@ void zero_or_value::ChunkThreadPolicy<T, Derived, Enabled>::create_value_impl(
                                             else
                                             {
                                                 // Propagate the observed state to the CAS so it refuses a
-                                                // wrong-side transition after a const_val1 <-> const_val2 race.
+                                                // wrong-side transition after a first_value <-> second_value race.
                                                 return self.compare_and_swap(const_ptr, idx, need_set_second_value);
                                             }
                                         });
@@ -915,7 +908,7 @@ void zero_or_value::ChunkThreadPolicy<T, Derived, Enabled>::create_value_impl(
  * is published, and publication is a single CAS. A reader therefore sees the
  * old constant or the finished buffer, never a half-built one. The CAS is told
  * which constant it is replacing, so it refuses a wrong-side transition after a
- * const_val1/const_val2 race; losing it means another thread materialised first,
+ * first_value/second_value race; losing it means another thread materialised first,
  * and apply_cas_or_reclaim() recycles our buffer.
  *
  * @note In a serial build there is no CAS to call — the policy has no such
@@ -1331,7 +1324,7 @@ zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::compare_and_swap(this D
     if constexpr (is_not_bool)
     {
         // One CAS against the precise expected pointer (see zero_any::Chunk::compare_and_swap): two
-        // CAS combined with && could succeed on the wrong side after a const_val1 <-> const_val2
+        // CAS combined with && could succeed on the wrong side after a first_value <-> second_value
         // race, installing a buffer whose init does not match the observed state.
         T* expected = expected_second_value ? BaseSpec::second_value_ptr(idx) : Base::first_value_ptr();
         return self.Base::compare_and_swap_gen(values_loc, expected);
@@ -1363,9 +1356,7 @@ zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::compare_and_swap_bool(t
 
 template <typename T, typename Derived, bool Enabled>
 CandidateList<zero_or_value::Chunk, T>&
-zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::candidates_of_thread(
-    int    thr,
-    InT<T> second_value) noexcept
+zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::candidates_of_thread(int thr, InT<T> second_value) noexcept
 {
     // find(), not operator[]: see zero_or_value::Proxy::candidates_of_thread.
     auto&      lists_by_value = Manager::zero_or_value_candidates_map_thr[thr];
@@ -1655,7 +1646,7 @@ template <typename T>
         {
             if constexpr (build_config::any_check)
             {
-                CHUNK_INVARIANT_FAILED("[chunk] compress to const_val2 on an array with no second value");
+                CHUNK_INVARIANT_FAILED("[chunk] compress to second_value on an array with no second value");
             }
             return nullptr;
         }

@@ -70,8 +70,8 @@ std::expected<void, ChunkSizeError> RechunkSupport<Derived, true>::try_rechunk_t
     }
 
     // A power of two or a multiple of 64 (is_valid_chunk_size; 0 refused),
-    // and at most const_buffer_size: the shared constant buffers (const_val1 /
-    // const_val2) are that wide (the dynamic-mode ceiling), and a wider chunk
+    // and at most const_buffer_size: the shared constant buffers (first_value /
+    // second_value) are that wide (the dynamic-mode ceiling), and a wider chunk
     // would read them out of bounds. Raise CHUNK_DYN_MAX_SIZE if a legitimate
     // geometry needs to be larger.
     if (const auto ok = check_chunk_size(new_size); !ok) [[unlikely]]

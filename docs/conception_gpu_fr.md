@@ -405,7 +405,7 @@ Elle vient **après** la géométrie fixe dans le plan (section 13).
 - **Format commun** : le descripteur device `{buf, constant}` est aussi un format CPU valide, à
   deux différences près : la version CPU pointe sur un tampon constant partagé là où le
   device met `nullptr`, et porte les portes OpenMP dans l'objet chunk. Un **convertisseur**
-  dans les deux sens est simple : par chunk, `nullptr` ↔ `const_val1` / tampon du registre, et
+  dans les deux sens est simple : par chunk, `nullptr` ↔ `first_value_buffer_` / tampon du registre, et
   les tampons matérialisés sont copiés tels quels (même S, même disposition). Il tient en un
   kernel plus une boucle d'hôte, et fait le transfert hôte ↔ device **sans décompresser** :
   on ne transfère que les tampons matérialisés et la table des descripteurs.

@@ -74,7 +74,7 @@
 
 #include "fast_allocators/internal/raw_memory.h" // address_bits
 #include "chunk/internal/chunk_size_policy.h"    // const_buffer_size
-#include "chunk/internal/env_parse.h"            // env_number (CHUNK_CONST_VAL2_ID_LIMIT)
+#include "chunk/internal/env_parse.h"            // env_number (CHUNK_SECOND_VALUE_ID_LIMIT)
 #include "chunk/internal/in_t.h"                 // InT<T>: the value parameters
 #include "chunk/config.h"                        // build_config::use_mm_protect
 #include "chunk/internal/invariant_check.h"      // CHUNK_INVARIANT_FAILED
@@ -274,14 +274,17 @@ class GlobalVecHolder
     // out of the slot, or loads `values` twice around a test, returns something plausible.
     // Re-run rechunk_validation_*, a TSan pass and a --mode check run whenever it is touched.
     //
-    // Capacity: ONE bound, region_usable = min(CHUNK_CONST_VAL2_REGION_BYTES, max_ids x id_stride),
+    // Capacity: ONE bound, region_usable = min(CHUNK_SECOND_VALUE_REGION_BYTES, max_ids x id_stride),
     // used by the reservation, the range test (region_end) and region_alloc()'s abort. Running
     // out aborts: a fallback array outside the region would break the range test.
-#ifndef CHUNK_CONST_VAL2_REGION_BYTES
-    #define CHUNK_CONST_VAL2_REGION_BYTES (2uz << 30U)
+#if !defined(CHUNK_SECOND_VALUE_REGION_BYTES) && defined(CHUNK_CONST_VAL2_REGION_BYTES)
+    #define CHUNK_SECOND_VALUE_REGION_BYTES CHUNK_CONST_VAL2_REGION_BYTES // its former name, still read until 1.0
+#endif
+#ifndef CHUNK_SECOND_VALUE_REGION_BYTES
+    #define CHUNK_SECOND_VALUE_REGION_BYTES (2uz << 30U)
 #endif
 
-    static constexpr std::size_t region_bytes = CHUNK_CONST_VAL2_REGION_BYTES;
+    static constexpr std::size_t region_bytes = CHUNK_SECOND_VALUE_REGION_BYTES;
     static constexpr std::size_t id_stride    = 64; ///< One cache line per identifier (see region_init()).
 
   public:
@@ -316,16 +319,20 @@ class GlobalVecHolder
     /// @brief Largest identifier the region can hand out.
     ///
     /// @details One cache line per identifier (region_init()'s stride), so the region
-    ///          alone would allow 33 M. Capped by CHUNK_CONST_VAL2_MAX_IDS, which
+    ///          alone would allow 33 M. Capped by CHUNK_SECOND_VALUE_MAX_IDS, which
     ///          also sizes the reservations: max_ids x 64 bytes of region and
     ///          (max_ids + 1) x sizeof(T) of value table per type, address space
     ///          only (MAP_NORESERVE, backed as identifiers are handed out). The
     ///          default leaves ample headroom over real workloads.
-#ifndef CHUNK_CONST_VAL2_MAX_IDS
-    #define CHUNK_CONST_VAL2_MAX_IDS (4uz << 20U)
+#if !defined(CHUNK_SECOND_VALUE_MAX_IDS) && defined(CHUNK_CONST_VAL2_MAX_IDS)
+    #define CHUNK_SECOND_VALUE_MAX_IDS CHUNK_CONST_VAL2_MAX_IDS // its former name, still read until 1.0
 #endif
-    static constexpr std::size_t max_ids =
-        (region_bytes / id_stride) < CHUNK_CONST_VAL2_MAX_IDS ? (region_bytes / id_stride) : CHUNK_CONST_VAL2_MAX_IDS;
+#ifndef CHUNK_SECOND_VALUE_MAX_IDS
+    #define CHUNK_SECOND_VALUE_MAX_IDS (4uz << 20U)
+#endif
+    static constexpr std::size_t max_ids = (region_bytes / id_stride) < CHUNK_SECOND_VALUE_MAX_IDS
+                                               ? (region_bytes / id_stride)
+                                               : CHUNK_SECOND_VALUE_MAX_IDS;
     static_assert(max_ids < std::size_t{0xFFFFFFFFu}, "an identifier must fit id_of_ptr()'s uint32_t");
 
     /// @brief The registered users (#ref_count): the live zero_any::Array<T>
@@ -358,7 +365,7 @@ class GlobalVecHolder
     }
 
     /// @brief Identifiers this type can hand out: region_alloc()'s bound
-    ///        (max_ids, the region, or CHUNK_CONST_VAL2_ID_LIMIT once read).
+    ///        (max_ids, the region, or CHUNK_SECOND_VALUE_ID_LIMIT once read).
     [[nodiscard]] static std::size_t id_capacity() noexcept
     {
         const std::size_t region_ids = region_usable / region_stride;
@@ -720,7 +727,7 @@ class GlobalVecHolder
     ///          (id_limit + 1) values made by region_init(), next to the
     ///          region and the same way: only the pages of identifiers handed
     ///          out are ever backed, region_reset() gives them back, and the
-    ///          size follows CHUNK_CONST_VAL2_ID_LIMIT. A static array of
+    ///          size follows CHUNK_SECOND_VALUE_ID_LIMIT. A static array of
     ///          max_ids + 1 values (32 MiB of bss for a double, 96 for a 24-byte
     ///          type, per element type) cost the same RSS for a trivial T, but
     ///          not for a T whose default constructor is not constexpr: its
@@ -749,15 +756,18 @@ class GlobalVecHolder
     static constexpr std::size_t region_usable =
         (max_ids * id_stride) < region_bytes ? (max_ids * id_stride) : region_bytes;
 
-#ifndef CHUNK_CONST_VAL2_INDEX_LOG2
+#if !defined(CHUNK_SECOND_VALUE_LOOKUP_LOG2) && defined(CHUNK_CONST_VAL2_INDEX_LOG2)
+    #define CHUNK_SECOND_VALUE_LOOKUP_LOG2 CHUNK_CONST_VAL2_INDEX_LOG2 // its former name, still read until 1.0
+#endif
+#ifndef CHUNK_SECOND_VALUE_LOOKUP_LOG2
     static constexpr int lookup_slots_log2 = 18;
     // 2^18 = 262144 slots, 2 Mio/type; <11% load at 30k values
 #else
-    static constexpr int lookup_slots_log2 = CHUNK_CONST_VAL2_INDEX_LOG2;
+    static constexpr int lookup_slots_log2 = CHUNK_SECOND_VALUE_LOOKUP_LOG2;
 #endif
 
     static constexpr size_t index_cap       = 1uz << lookup_slots_log2; ///< Initial capacity.
-    static constexpr int    index_max_probe = 64;                                ///< Bounded; giving up means fallback.
+    static constexpr int    index_max_probe = 64;                       ///< Bounded; giving up means fallback.
 
     /// @brief Bytes of the value table: identifiers 0 to id_limit.
     /// @pre region_init() has read id_limit.
@@ -807,7 +817,7 @@ class GlobalVecHolder
     static inline std::atomic<std::size_t> region_used{0};       ///< Bump offset, in bytes.
 
     /// @brief The identifiers region_alloc() hands out: max_ids, or fewer
-    ///        under CHUNK_CONST_VAL2_ID_LIMIT (read once in region_init(); it
+    ///        under CHUNK_SECOND_VALUE_ID_LIMIT (read once in region_init(); it
     ///        can only lower the bound -- the way a test reaches it).
     static inline std::size_t id_limit = max_ids;
 

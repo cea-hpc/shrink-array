@@ -684,8 +684,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      * @param second_value The type-2 constant these chunks are candidates for.
      * @return Reference to the (thr, second_value) candidate list.
      */
-    static CandidateList<Chunk, T>& candidates_of_thread(int    thr,
-                                                                                      InT<T> second_value) noexcept;
+    static CandidateList<Chunk, T>& candidates_of_thread(int thr, InT<T> second_value) noexcept;
 
     /**
      * @brief Core compression sweep: drain the candidate list of one (thread,
@@ -775,9 +774,9 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      * \param array_info (second_value, ...) identifying the candidate list.
      */
     static void classify_rank_candidates(int              thr_rank,
-                                                   CandidateTuples& ll_compt1,
-                                                   CandidateTuples& ll_compt2,
-                                                   const ArrayInfo& array_info);
+                                         CandidateTuples& ll_compt1,
+                                         CandidateTuples& ll_compt2,
+                                         const ArrayInfo& array_info);
 
     /*!
      * \brief Bool specialization of classify_rank_candidates().
@@ -785,8 +784,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      * \param ll_compt1 Output: candidates confirmed uniform on the first constant.
      * \param ll_compt2 Output: candidates confirmed uniform on the second constant.
      */
-    static void
-    classify_rank_candidates_bool(int thr_rank, CandidateTuples& ll_compt1, CandidateTuples& ll_compt2);
+    static void classify_rank_candidates_bool(int thr_rank, CandidateTuples& ll_compt1, CandidateTuples& ll_compt2);
 
     /*!
      * \brief Re-scan THIS chunk's live content and, if now uniform on the first and/or
@@ -804,13 +802,13 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      */
     template <typename SecondValueFunc>
     void classify_candidate_impl(this Derived&     self,
-                                    CandidateTuples&  ll_compt1,
-                                    CandidateTuples&  ll_compt2,
-                                    int               chunk_index,
-                                    int               array_id,
-                                    SecondValueFunc&& get_second_value,
-                                    bool              check_second_value,
-                                    unsigned int      n_elems);
+                                 CandidateTuples&  ll_compt1,
+                                 CandidateTuples&  ll_compt2,
+                                 int               chunk_index,
+                                 int               array_id,
+                                 SecondValueFunc&& get_second_value,
+                                 bool              check_second_value,
+                                 unsigned int      n_elems);
 
     /*!
      * \brief Non-bool wrapper around classify_candidate_impl() that
@@ -823,12 +821,12 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      * \param n_elems Element count of this chunk (the owning array's geometry).
      */
     void classify_candidate(this Derived&    self,
-                               CandidateTuples& ll_compt1,
-                               CandidateTuples& ll_compt2,
-                               const ArrayInfo& array_info,
-                               int              chunk_index,
-                               int              array_id,
-                               unsigned int     n_elems);
+                            CandidateTuples& ll_compt1,
+                            CandidateTuples& ll_compt2,
+                            const ArrayInfo& array_info,
+                            int              chunk_index,
+                            int              array_id,
+                            unsigned int     n_elems);
 
     /*!
      * \brief Bool wrapper around classify_candidate_impl() (the second
@@ -840,11 +838,11 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      * \param n_elems Element count of this chunk (the owning array's geometry).
      */
     void classify_candidate_bool(this Derived&    self,
-                                    CandidateTuples& ll_compt1,
-                                    CandidateTuples& ll_compt2,
-                                    int              chunk_index,
-                                    int              array_id,
-                                    unsigned int     n_elems)
+                                 CandidateTuples& ll_compt1,
+                                 CandidateTuples& ll_compt2,
+                                 int              chunk_index,
+                                 int              array_id,
+                                 unsigned int     n_elems)
     {
         self.classify_candidate_impl(
             ll_compt1, ll_compt2, chunk_index, array_id, [] { return true; }, self.is_not_second_value(), n_elems);
@@ -1000,7 +998,7 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
 
     /*!
      * \brief Point this chunk's values at the shared first-constant buffer
-     *        (compress to const_val1).
+     *        (compress to first_value).
      */
     void init_to_first_value() noexcept
     {
@@ -1035,8 +1033,8 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
 
     /*!
      * \brief Whether this chunk owns a real heap buffer that must be
-     *        parked/freed at teardown, as opposed to pointing at const_val1 or
-     *        ANY const_val2 marker.
+     *        parked/freed at teardown, as opposed to pointing at first_value or
+     *        ANY second_value marker.
      * \note clear_core must key on THIS, not written(idx): a single index misclassifies
      *       chunks compressed at other indices, and their static markers would be
      *       parked/freed as if allocated.
@@ -1117,9 +1115,9 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
     void values_store(T* ptr) noexcept;
 
     /*!
-     * \brief Attempt to atomically compress the chunk to either const_val1 or
-     *        const_val2(idx).
-     * \param const_index 0 to target const_val1, non-zero for the second at `idx`.
+     * \brief Attempt to atomically compress the chunk to either first_value or
+     *        second_value(idx).
+     * \param const_index 0 to target first_value, non-zero for the second at `idx`.
      * \param idx Index of the second constant (unused when const_index == 0).
      * \return nullptr if the chunk was already compressed or another thread
      *         won the race (caller must not free anything); otherwise the
@@ -1129,14 +1127,14 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
 
     /*!
      * \brief Bool-only: whether the chunk is currently compressed to EITHER
-     *        constant (const1 or const2).
+     *        constant (first value or second value).
      * \return true if the chunk is compressed to either constant.
      */
     [[nodiscard]] bool is_const_val() const noexcept;
 
     /*!
      * \brief Whether the chunk is currently compressed to EITHER constant
-     *        (const1 or const2). Valid for bool too: `idx` is then ignored.
+     *        (first value or second value). Valid for bool too: `idx` is then ignored.
      * \param idx Index of the second constant (used only for non-bool chunks).
      * \return true if the chunk is compressed to either constant.
      */

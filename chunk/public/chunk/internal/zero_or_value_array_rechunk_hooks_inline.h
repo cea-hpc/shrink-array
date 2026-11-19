@@ -44,8 +44,8 @@ void zero_or_value::RechunkHooks<Derived, true>::rechunk_drop_candidates(this De
         const int array_id = ProxyType::array_registry->get_array_id(self.registry_key());
         if constexpr (Derived::is_not_bool && build_config::threaded)
         {
-            const auto inf = self.get_info_second_value();
-            const int  thr = get_thr_rank_fast();
+            const auto array_info = self.get_info_second_value();
+            const int  thr        = get_thr_rank_fast();
             shrink_array::set_thread_chunk_size(self.size_policy_.size());
             for (const auto& per_rank : ManagerType::zero_or_value_candidates_map_thr)
             {
@@ -59,7 +59,7 @@ void zero_or_value::RechunkHooks<Derived, true>::rechunk_drop_candidates(this De
                     {
                         if (std::get<2>(tup) == array_id)
                         {
-                            std::get<0>(tup)->compress(thr, inf, /*apply=*/true, std::get<3>(tup).count());
+                            std::get<0>(tup)->compress(thr, array_info, /*apply=*/true, std::get<3>(tup).count());
                         }
                     }
                 }
@@ -88,7 +88,7 @@ template <typename Derived>
 void zero_or_value::RechunkHooks<Derived, true>::rechunk_seed_fresh(this Derived& self, InT<value_type> state)
 {
     // On the FRESH array before refill. Not value_type{}: that is already its
-    // state, and re-declaring it would make a degenerate const_val2 == const_val1 buffer.
+    // state, and re-declaring it would make a degenerate second_value == first_value buffer.
     if constexpr (Derived::is_not_bool)
     {
         if (!same_value(state, value_type{}))
@@ -133,7 +133,7 @@ void zero_or_value::RechunkHooks<Derived, true>::rechunk_reown_after_swap(this D
         {
             if (!same_value(state, value_type{}))
             {
-                self.array_info_      = tmp.array_info_; // tmp's is valid (set_second_value ran)
+                self.array_info_       = tmp.array_info_; // tmp's is valid (set_second_value ran)
                 self.second_value_idx_ = tmp.second_value_idx_;
                 ProxyType::array_registry->insert(state, &self.array_info_);
             }

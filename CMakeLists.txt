@@ -122,7 +122,7 @@ option(CHUNK_SECOND_VALUE_INDEXED "zero_any: store second values as 4-byte ident
 # CHECK_OPTIM (option above) turns build_config::any_check on in a release
 # build (chunk/build_options.h).
 
-# CHUNK_MM_PROTECT: zero/zero_or_value's shared constant buffers (const_val1, the const_val2
+# CHUNK_MM_PROTECT: zero/zero_or_value's shared constant buffers (first_value, the second_value
 # region) are mprotect'ed read-only, so a stray write into a compressed chunk
 # faults at the culprit instead of corrupting a value shared by thousands of
 # chunks. A debugging build: one mprotect per buffer, and page-rounded slots.

@@ -27,7 +27,7 @@
 //
 // A valid values pointer is one of:
 //   - nullptr (transient, tolerated by is_written checks)
-//   - a const_val1 / const_val2(idx) constant block (aligned to alignof(T))
+//   - a first_value / second_value(idx) constant block (aligned to alignof(T))
 //   - a chunk buffer from allocate_chunk_internal (always ≥ 8-byte aligned,
 //     and at an address well above the low pages)
 //
@@ -78,7 +78,7 @@ template <typename T>
         }
 
         // Valid: address above the low pages AND aligned to alignof(T). Do not hard-code 8:
-        // the const_val1/const_val2 sentinels are static std::array<T> whose .data() is only
+        // the first_value/second_value sentinels are static std::array<T> whose .data() is only
         // alignof(T)-aligned; the linker usually over-aligns statics, but not always
         // (e.g. under sanitizer redzones).
         if (constexpr std::uintptr_t align_mask = alignof(T) - 1; addr >= 0x1000 && (addr & align_mask) == 0) [[likely]]

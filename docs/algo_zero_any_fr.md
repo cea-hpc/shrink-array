@@ -18,7 +18,7 @@ uniforme à 3,5 et son voisin uniforme à −1 sont tous les deux compressés, s
 
 | état | type (1 octet par chunk) | `values` pointe vers |
 |---|---|---|
-| compressé à zéro | 0 | le tampon constant partagé `const_val1` |
+| compressé à zéro | 0 | le tampon constant partagé `first_value_buffer_` |
 | compressé à une seconde valeur | 1 | le tableau partagé du **registre** rempli de cette valeur (§3) |
 | matérialisé | — | un tampon propre au chunk |
 
@@ -38,7 +38,7 @@ Chaque tableau a, indexées par son numéro (`array_id`), trois lignes d'une ent
 |---|---|---|
 | `array_type_const_val` | 1 octet | le type de constante (0 ou 1) |
 | `array_second_value` | `sizeof(T)` octets par défaut | la seconde valeur du chunk |
-| `array_is_inside_chunk_list_to_compress` | 1 octet | « déjà en liste de compression » |
+| `candidate_flags` | 1 octet | « déjà en liste de compression » |
 
 Avec l'option CMake **`CHUNK_SECOND_VALUE_INDEXED`** (désactivée par défaut), l'emplacement de
 seconde valeur des types de plus de 4 octets contient l'**identifiant** du tableau du registre
@@ -75,7 +75,7 @@ l'ancien stockage derrière lui : 3,5 Go sur le banc, avec 15 tableaux rechunké
   lit dans la **table des valeurs** (`value_by_id`, un `T` par identifiant). La région et la
   table sont deux réservations `mmap(MAP_NORESERVE)` faites au premier tableau du type : de
   l'espace d'adressage seulement, les pages adossées au fil des identifiants attribués, rendues
-  au dernier `clear`, et la table dimensionnée par `CHUNK_CONST_VAL2_ID_LIMIT` quand il est
+  au dernier `clear`, et la table dimensionnée par `CHUNK_SECOND_VALUE_ID_LIMIT` quand il est
   positionné. Jusqu'en novembre 2026 la table était un tableau statique de 4 Mi valeurs par
   type d'élément (32 Mio de bss pour un `double`, 332 Mio en tout dans le benchmark) : gratuit
   tant qu'on n'y touche pas pour un type trivial, mais un type dont le constructeur par défaut
@@ -90,7 +90,7 @@ l'ancien stockage derrière lui : 3,5 Go sur le banc, avec 15 tableaux rechunké
   fait grossir le registre jusqu'à épuiser ses identifiants, ce qui arrête le run. Dans le
   banc, `CHUNK_BENCH_ULONG_BANDS` limite le nombre de valeurs distinctes du tableau
   `unsigned long`, `CHUNK_LOG=compress=info` affiche l'état du registre et
-  `CHUNK_CONST2_RECLAIM=N` libère toutes les N itérations.
+  `CHUNK_SECOND_VALUE_RECLAIM=N` libère toutes les N itérations.
 
 `find_or_register_second_value(valeur, emplacement)` enregistre la valeur si besoin, l'écrit dans
 l'emplacement de seconde valeur du chunk, et rend le tableau partagé à installer.
@@ -123,7 +123,7 @@ Même déroulé que pour les autres variantes (réservation des candidats, fenê
 relecture), avec deux listes à l'issue de la relecture (`classify_candidate`, qui compare
 chaque élément au premier élément du chunk) :
 
-- les chunks **uniformes à zéro** sont compressés au type 0 : `values` repasse à `const_val1` ;
+- les chunks **uniformes à zéro** sont compressés au type 0 : `values` repasse à `first_value_buffer_` ;
 - les chunks **uniformes à une autre valeur** sont compressés au type 1 :
   `find_or_register_second_value` enregistre la valeur et rend le tableau partagé, que
   `clear_int_st` installe par CAS comme pointeur `values` du chunk.
@@ -146,7 +146,7 @@ flowchart TD
     E -->|"tout = 0"| F["items ll_compt1"]
     E -->|"tout = élément 0"| G["items ll_compt2"]
     E -->|"sinon"| N["steal_unmark tout de suite"]
-    F --> F1["clear_int_st, type 0 : case remise à zéro,<br/>type const_val1, CAS values -> const_val1"]
+    F --> F1["clear_int_st, type 0 : case remise à zéro,<br/>type first_value_buffer_, CAS values -> first_value_buffer_"]
     G --> G1["find_or_register_second_value : valeur enregistrée,<br/>écrite dans la case, puis clear_int_st, type 1 :<br/>CAS values -> le tableau du registre"]
     F1 --> R["free_block_to_pool après une période de grâce,<br/>steal_unmark"]
     G1 --> R
@@ -189,7 +189,7 @@ seconde valeur).
 
 ```mermaid
 flowchart TD
-    A["zero_any::ProxyImpl::assign_impl"] --> B{"0 sur un chunk à const_val1,<br/>aucune opération différée en attente ?<br/>(is_first_value_equal_to)"}
+    A["zero_any::ProxyImpl::assign_impl"] --> B{"0 sur un chunk à first_value_buffer_,<br/>aucune opération différée en attente ?<br/>(is_first_value_equal_to)"}
     B -->|oui| B1["rien à faire"]
     B -->|non| C["moteur du 7.2 (write_with_optional_lock_with_set_ptr) :<br/>opérations différées, wait_out_compressor,<br/>announce_write"]
     C --> D{"revérification :<br/>compresseur ?"}
@@ -202,7 +202,7 @@ flowchart TD
     G -->|non| H
     G1 --> H{"perform_core_assignment :<br/>état du chunk ?"}
     H -->|"élément déjà = valeur = seconde valeur"| K
-    H -->|"const_val1"| H1["create_value : pré-rempli de 0,<br/>CAS contre const_val1"]
+    H -->|"first_value_buffer_"| H1["create_value : pré-rempli de 0,<br/>CAS contre first_value_buffer_"]
     H -->|"seconde valeur"| H2["create_value : pré-rempli avec la seconde<br/>valeur du chunk, CAS contre elle"]
     H -->|"matérialisé"| I
     H1 --> I["store_value_at"]
