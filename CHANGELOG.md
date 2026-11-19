@@ -96,6 +96,23 @@ the tag's checksum to the recipe.
   chunk-size prediction allocates a summary and formats a log line; a `std::bad_alloc` there
   would have called `std::terminate()`. The prediction, a log line only, is skipped on an
   exception (Coverity 661905, 661906).
+- `zero_or_value`: a copy-assignment `a = b`, `b` declaring another second value than `a`,
+  wrote `b`'s elements into the constant block of `a`'s old second value -- a block every array
+  declaring that value shares: their compressed chunks read `b`'s elements afterwards.
+  `operator=` switched the value before copying, so `a`'s chunks still on the old block passed as
+  materialised. It now releases `a`'s chunks first when the second value changes, as the
+  move-assignment does. `zero_or_value_shared_state_validation` checks it.
+- `zero_or_value::Array<bool>` (and the bit arrays): building one installed a fresh, empty `true`
+  candidate list on every rank, dropping the chunks the other live bool arrays had queued -- never
+  queued again, never compressed by the passes -- and freeing the list under a thread of another
+  bool array writing into it, for one built inside a region. The list is installed once.
+  `zero_or_value_shared_state_validation` checks it.
+- Every variant, a parallel region of one thread (`OMP_NUM_THREADS=1`): the teardown of a work
+  array built in the region took the region for a sequential point -- one thread's region is
+  inactive, `omp_in_parallel()` is false there -- and ran the pass over every type's candidate
+  lists that `clear()` runs at one, a walk that empties them without compressing: what every array
+  had queued in the region was never compressed. The own-rank test (`teardown_on_own_rank()`)
+  counts an inactive region as a region. `zero_or_value_shared_state_validation` checks it.
 - Install of a std-alloc build (`CHUNK_STD_ALLOC`, Spack's `~fast_alloc`): the handful of
   fast_allocators headers it installs with chunk missed three that the others include --
   `internal/append_text.h` (from `log_core.h` and `fatal.h`), `internal/pmp_loops_inline.h`

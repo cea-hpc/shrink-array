@@ -392,6 +392,13 @@ foreach(_geom IN LISTS _rt_geometries)
     if (CHUNK_OPENMP AND _vname STREQUAL "zero_or_value" AND NOT _geom STREQUAL "dyn")
       list(APPEND _group zero_or_value_foreign_key_validation)
     endif()
+    # zero_or_value_shared_state_validation: a copy-assign across second values
+    # and a new bool array leave the other arrays' shared state alone (the
+    # harness says why). zero_or_value only, default static size, at 1 and 8
+    # threads.
+    if (_vname STREQUAL "zero_or_value" AND NOT _geom STREQUAL "dyn")
+      list(APPEND _group zero_or_value_shared_state_validation)
+    endif()
     # deferred_path_validation: every write path through the deferred queue,
     # forced by the test hook (test_hooks.h, switched on by the harness), at
     # 1 and 8 threads. Every variant and geometry: its replay path reads the

@@ -397,12 +397,23 @@ void zero_or_value::Array<T, IntType>::set_second_value(T sec_value, bool messag
         }
         if constexpr (build_config::threaded)
         {
+            // Every bool array runs this (create()), and the `true` list of a rank is
+            // shared by all of them: install it once. Replaced by a fresh copy, it
+            // would drop the chunks the other live bool arrays had queued (their
+            // dedup flags still set, they would never be queued again), and free
+            // the list under a writer of another bool array pushing into it.
             for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
             {
-                Manager::zero_or_value_candidates_thr[thr].resize(1);
-                const auto& vec_ref    = Manager::zero_or_value_candidates_thr[thr][0];
-                const auto  shared_vec = std::make_shared<CandidateList<Chunk, T>>(vec_ref);
-                Manager::zero_or_value_candidates_map_thr[thr][sec_value] = shared_vec;
+                auto& slot = Manager::zero_or_value_candidates_map_thr[thr][sec_value];
+                if (slot)
+                {
+                    continue;
+                }
+                if (Manager::zero_or_value_candidates_thr[thr].empty())
+                {
+                    Manager::zero_or_value_candidates_thr[thr].resize(1);
+                }
+                slot = std::make_shared<CandidateList<Chunk, T>>(Manager::zero_or_value_candidates_thr[thr][0]);
             }
         }
 
@@ -1289,6 +1300,16 @@ zero_or_value::Array<T, IntType>& zero_or_value::Array<T, IntType>::operator=(co
 {
     if (this != &from)
     {
+        // A chunk counts as compressed to the second value only on the CURRENT
+        // value's block. Switched with chunks still on the old block, those
+        // would pass as materialised and copy_from() would write into a block
+        // every array declaring the old value shares. Release them first, as
+        // operator=(Array&&) does; with the value unchanged, the copy reuses
+        // this array's chunks.
+        if (takes_second_value_of(from))
+        {
+            clear();
+        }
         copy_second_value_from(from);
         this->copy_from(from);
     }
@@ -1335,15 +1356,25 @@ template <ArrayChunkElement T, typename IntType>
 }
 
 template <ArrayChunkElement T, typename IntType>
-void zero_or_value::Array<T, IntType>::copy_second_value_from(const Array& from)
+bool zero_or_value::Array<T, IntType>::takes_second_value_of(const Array& from) const noexcept
 {
-    if constexpr (!is_bool_like_v<T>)
+    if constexpr (is_bool_like_v<T>)
+    {
+        return false;
+    }
+    else
     {
         const InT<T> sv = from.second_value();
-        if (!same_value(sv, T{}) && !same_value(this->second_value(), sv))
-        {
-            set_second_value(sv, false);
-        }
+        return !same_value(sv, T{}) && !same_value(this->second_value(), sv);
+    }
+}
+
+template <ArrayChunkElement T, typename IntType>
+void zero_or_value::Array<T, IntType>::copy_second_value_from(const Array& from)
+{
+    if (takes_second_value_of(from))
+    {
+        set_second_value(from.second_value(), false);
     }
 }
 
