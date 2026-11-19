@@ -320,10 +320,10 @@ class TypeStateRegistry : public TypeStateRegistryParallelInterface<TypeStateReg
      *        purge its chunks from the lists. false does NOT drain: a
      *        caller counting "misses" after it sees only what it un-queued.
      */
-    void compress_chunk_to_compress_potentially(bool apply) const;
+    void run_compress_pass(bool apply) const;
 
     /// @return True as soon as one type has at least one pending compression candidate.
-    [[nodiscard]] bool have_chunk_to_compress_potentially() const;
+    [[nodiscard]] bool has_candidates() const;
     /// Frees the allocation blocks of every type (no-op in std-alloc builds).
     void destroy_block_chunk() const;
 
@@ -447,7 +447,7 @@ class TypeStateRegistry : public TypeStateRegistryParallelInterface<TypeStateReg
     }
 
     /// Resizes every manager's compression-candidate list to the current thread count.
-    void resize_chunk_to_compress_potentially() const;
+    void resize_candidate_lists() const;
 
     /// The managers, owned; touched only under registry_mutex_.
     std::vector<std::unique_ptr<TypeStateInterface>> owned_;

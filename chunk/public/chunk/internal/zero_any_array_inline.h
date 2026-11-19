@@ -337,9 +337,9 @@ void zero_any::ArrayImpl<Derived>::clear_core()
 
             // Not for a work array torn down in a region: that pass walks every
             // rank's list, of every type.
-            if (!own_rank && type_registry.have_chunk_to_compress_potentially())
+            if (!own_rank && type_registry.has_candidates())
             {
-                type_registry.compress_chunk_to_compress_potentially(false);
+                type_registry.run_compress_pass(false);
             }
         }
 

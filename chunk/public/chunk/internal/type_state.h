@@ -88,12 +88,12 @@ class TypeState final : public virtual TypeStateInterface,
         Candidates::force_compress();
     }
     /// @brief CompressCandidates::have_candidates().
-    [[nodiscard]] bool have_chunk_to_compress_potentially(int n_thr) const override
+    [[nodiscard]] bool has_candidates(int n_thr) const override
     {
         return Candidates::have_candidates(n_thr);
     }
     /// @brief CompressCandidates::compress_pass().
-    void compress_chunk_to_compress_potentially(bool apply) override
+    void run_compress_pass(bool apply) override
     {
         Candidates::compress_pass(apply);
     }
@@ -154,7 +154,7 @@ class TypeState final : public virtual TypeStateInterface,
     TypeState& operator=(TypeState&&)      = delete;
 
     /// @brief CompressCandidates::resize_lists().
-    void resize_chunk_to_compress_potentially() const override
+    void resize_candidate_lists() const override
     {
         Candidates::resize_lists();
     }

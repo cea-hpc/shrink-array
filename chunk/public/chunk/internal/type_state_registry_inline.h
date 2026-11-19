@@ -59,7 +59,7 @@ void TypeStateRegistry::register_manager()
     auto manager = std::make_unique<ManagerT>();
 
     // The whole per-type setup, before the manager is published.
-    manager->resize_chunk_to_compress_potentially();
+    manager->resize_candidate_lists();
     init_manager(*manager, block_size_);
     if constexpr (build_config::chunk_dynamic)
     {

@@ -280,7 +280,7 @@ inline constexpr int no_second_value_index = -1;
  * @brief Aggressive compression mode: a RUN-TIME switch, read once.
  *
  * false (default): the deferred sweep runs at end-of-parallel-phase boundaries via
- * compress_chunk_to_compress_potentially(true): fewer, grouped events, faster.
+ * run_compress_pass(true): fewer, grouped events, faster.
  *
  * true: no sweep between phases; compression happens during the parallel sections,
  * on the in-loop path only. Slower, but stresses the concurrent compression paths

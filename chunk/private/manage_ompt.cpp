@@ -309,7 +309,7 @@ void parallel_end_chunk_work()
 
     const auto& type_registry = shrink_array::Singleton<shrink_array::TypeStateRegistry>::get_ref();
 
-    if (!type_registry.have_chunk_to_compress_potentially())
+    if (!type_registry.has_candidates())
     {
         return;
     }
@@ -318,7 +318,7 @@ void parallel_end_chunk_work()
     // already joined (the region's implicit barrier made its writes visible),
     // so one would bind to a team of one and do nothing; at a nested region's
     // end it would bind to the ENCLOSING team, which only this thread reaches.
-    type_registry.compress_chunk_to_compress_potentially(true);
+    type_registry.run_compress_pass(true);
 }
 
 /**

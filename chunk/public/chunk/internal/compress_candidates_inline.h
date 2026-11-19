@@ -131,13 +131,13 @@ void CompressCandidates<ChunkT, T>::resize_lists()
  * @param n_thr   Number of per-rank lists to examine.
  * @return True as soon as one list holds a candidate.
  *
- * @warning This predicate and compress_chunk_to_compress_potentially() must agree
+ * @warning This predicate and run_compress_pass() must agree
  *          branch for branch — see the @warning in the file header.
  */
 template <template <typename> typename ChunkT, typename T>
 bool CompressCandidates<ChunkT, T>::have_candidates(int n_thr)
 {
-    // Mirror compress_chunk_to_compress_potentially's dispatch exactly (zero_or_value is handled
+    // Mirror run_compress_pass's dispatch exactly (zero_or_value is handled
     // whenever use_fast_block_compression is on, GNU included, not only under OMPT): see the
     // file header's @warning.
     if constexpr (chunk_config::use_fast_block_compression)
@@ -168,7 +168,7 @@ bool CompressCandidates<ChunkT, T>::have_candidates(int n_thr)
 /**
  * @brief Drain this type's compression-candidate backlog.
  *
- * The action whose predicate is have_chunk_to_compress_potentially(). zero_or_value is
+ * The action whose predicate is has_candidates(). zero_or_value is
  * driven once per registered second value; the other variants have a single
  * entry point.
  *

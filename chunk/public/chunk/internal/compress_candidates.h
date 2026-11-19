@@ -66,13 +66,13 @@ class CompressCandidates
     ///        candidate lists (TypeState::force_chunk_to_compress).
     static void force_compress();
     /// @brief Size the per-rank candidate lists to the team
-    ///        (TypeState::resize_chunk_to_compress_potentially).
+    ///        (TypeState::resize_candidate_lists).
     static void resize_lists();
     /// @brief Does any of the @p n_thr per-rank candidate lists hold a chunk?
-    ///        (TypeState::have_chunk_to_compress_potentially)
+    ///        (TypeState::has_candidates)
     [[nodiscard]] static bool have_candidates(int n_thr);
     /// @brief Drain this type's candidate backlog
-    ///        (TypeState::compress_chunk_to_compress_potentially).
+    ///        (TypeState::run_compress_pass).
     static void compress_pass(bool apply);
 
     /// @brief Set the candidate-list length that triggers a compression pass.

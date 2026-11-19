@@ -372,7 +372,7 @@ void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::compress_chunk_to_
     // until that has run, [thr_rank] is out of bounds (UB). Probing rank 0 is
     // enough: zero_or_value::Array::set_second_value registers a key for every rank in
     // one loop, so an empty map at rank 0 means no key at any rank.
-    if (is_vec_tuple_to_compress_potentially_empty_thr())
+    if (no_candidates())
     {
         return;
     }
@@ -588,7 +588,7 @@ void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compres
     // A missing key is normal (no one declared this second value on this
     // rank: nothing to compress, same exit as `sz == 0`); a zero_or_value::Array built
     // without set_second_value reaches it via resize_common ->
-    // make_block_compression. is_vec_tuple_to_compress_potentially_empty_thr()
+    // make_block_compression. no_candidates()
     // is not enough: it only tests "no key anywhere".
     auto&      map_thr = Manager::zero_or_value_candidates_map_thr[thr_rank];
     const auto it      = map_thr.find(second_value);
@@ -819,7 +819,7 @@ void zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compres
     }
     else
     {
-        if (is_vec_tuple_to_compress_potentially_empty_thr())
+        if (no_candidates())
         {
             return;
         }
@@ -1291,7 +1291,7 @@ void zero_or_value::ChunkThreadPolicy<T, Derived, Enabled>::create_value_bool(bo
 template <typename T, typename Derived, bool Enabled>
 bool zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::have_chunk_to_compress(T second_value, int max_thr)
 {
-    if (is_vec_tuple_to_compress_potentially_empty_thr())
+    if (no_candidates())
     {
         return false;
     }
@@ -1347,11 +1347,9 @@ zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::compare_and_swap_bool(T
 
 template <typename T, typename Derived, bool Enabled>
 CandidateList<zero_or_value::Chunk, T>&
-zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::get_vec_tuple_to_compress_potentially_thr(
-    int    thr,
-    InT<T> second_value) noexcept
+zero_or_value::ChunkFastCompPolicy<T, Derived, Enabled>::candidates_of_thread(int thr, InT<T> second_value) noexcept
 {
-    // find(), not operator[]: see zero_or_value::Proxy::get_vec_tuple_to_compress_potentially_thr.
+    // find(), not operator[]: see zero_or_value::Proxy::candidates_of_thread.
     auto&      lists_by_value = Manager::zero_or_value_candidates_map_thr[thr];
     const auto it             = lists_by_value.find(second_value);
     if (it == lists_by_value.end() || it->second == nullptr) [[unlikely]]

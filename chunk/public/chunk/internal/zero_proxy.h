@@ -140,7 +140,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      * @param thr Thread rank whose candidate list to fetch.
      * @return Reference to thread thr's candidate list.
      */
-    auto& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept
+    auto& candidates_of_thread(int thr) const noexcept
     {
         return Manager::zero_candidates_thr[thr];
     }

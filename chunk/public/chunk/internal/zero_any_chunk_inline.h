@@ -524,7 +524,7 @@ void zero_any::ChunkImpl<T, Derived>::compress_chunk_to_compress(bool apply)
 template <typename T, typename Derived>
 bool zero_any::ChunkImpl<T, Derived>::have_chunk_to_compress([[maybe_unused]] int max_thr)
 {
-    const bool is_empty = is_vec_tuple_to_compress_potentially_empty_thr();
+    const bool is_empty = no_candidates();
     if (is_empty)
     {
         return false;
@@ -534,7 +534,7 @@ bool zero_any::ChunkImpl<T, Derived>::have_chunk_to_compress([[maybe_unused]] in
     {
         for (int thr = 0; thr < max_thr; ++thr)
         {
-            const auto& chunk_t      = get_vec_tuple_to_compress_potentially_thr(thr);
+            const auto& chunk_t      = candidates_of_thread(thr);
             const bool  is_empty_thr = chunk_t.empty();
             if (!is_empty_thr)
             {
@@ -1399,7 +1399,7 @@ void zero_any::ChunkImpl<T, Derived>::alloc_chunk(SecondValueRef<T> ptr_second_v
 }
 
 template <typename T, typename Derived>
-[[nodiscard]] bool zero_any::ChunkImpl<T, Derived>::is_vec_tuple_to_compress_potentially_empty_thr() noexcept
+[[nodiscard]] bool zero_any::ChunkImpl<T, Derived>::no_candidates() noexcept
 {
     if constexpr (build_config::threaded)
     {

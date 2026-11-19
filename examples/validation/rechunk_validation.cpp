@@ -33,7 +33,7 @@
 // zero_or_value CONTRACT: the compression-candidate list is indexed by
 // second_value (zero_or_value_candidates_map_thr[thr][second_value]),
 // populated ONLY by set_second_value. A second_value must therefore be
-// declared BEFORE writing, otherwise get_vec_tuple_to_compress_potentially_thr
+// declared BEFORE writing, otherwise candidates_of_thread
 // asserts (vec == nullptr). This is what the bench does via
 // maybe_set_second_value; we reproduce it here for every case. zero_any / zero
 // don't need this (no-op).

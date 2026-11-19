@@ -668,7 +668,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
     /**
      * @brief Checks if the per-thread compression candidate map is empty.
      */
-    [[nodiscard]] static bool is_vec_tuple_to_compress_potentially_empty_thr() noexcept
+    [[nodiscard]] static bool no_candidates() noexcept
     {
         return Manager::zero_or_value_candidates_map_thr.empty() ||
                Manager::zero_or_value_candidates_map_thr[0].empty();
@@ -681,7 +681,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      * @param second_value The type-2 constant these chunks are candidates for.
      * @return Reference to the (thr, second_value) candidate list.
      */
-    static CandidateList<Chunk, T>& get_vec_tuple_to_compress_potentially_thr(int thr, InT<T> second_value) noexcept;
+    static CandidateList<Chunk, T>& candidates_of_thread(int thr, InT<T> second_value) noexcept;
 
     /**
      * @brief Core compression sweep: drain the candidate list of one (thread,
@@ -874,7 +874,7 @@ class ChunkFastCompPolicy<T, Derived, false> : public ChunkThreadPolicy<T, Deriv
   private:
     /// @name Empty candidate lists
     /// @{
-    [[nodiscard]] static bool is_vec_tuple_to_compress_potentially_empty_thr() noexcept
+    [[nodiscard]] static bool no_candidates() noexcept
     {
         return true;
     }

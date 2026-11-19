@@ -490,15 +490,15 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
      *          This allows grouping chunks with the same second_value for batch compression.
      */
 
-    CandidateList<Chunk, T>& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept;
+    CandidateList<Chunk, T>& candidates_of_thread(int thr) const noexcept;
 
     /**
-     * @brief Async-context counterpart of get_vec_tuple_to_compress_potentially_thr().
+     * @brief Async-context counterpart of candidates_of_thread().
      * @param ctx Async write context (supplies the second_value key).
      * @param thr Thread rank [0, MAX_THREADS).
      * @return Reference to vector of (chunk*, chunk_idx, array_idx) tuples.
      */
-    CandidateList<Chunk, T>& get_vec_tuple_to_compress_potentially_async_thr(auto* ctx, int thr) const;
+    CandidateList<Chunk, T>& candidates_of_thread_async(auto* ctx, int thr) const;
 
     /**
      * @brief Mark for compression with explicit old value

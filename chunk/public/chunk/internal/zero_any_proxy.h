@@ -415,9 +415,9 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived, ChunkT>
     void execute_arithmetic_compound_operation_async(auto* ctx, Op op, const U& operand, Body lbd) const;
 
     /// @brief Rank @p thr's zero_any candidate list.
-    ZeroAnyCompOf<ChunkT>& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept
+    ZeroAnyCompOf<ChunkT>& candidates_of_thread(int thr) const noexcept
     {
-        return chunk_.get_vec_tuple_to_compress_potentially_thr(thr);
+        return chunk_.candidates_of_thread(thr);
     }
 
     /// @brief Common initialisation of the fast path: table number, then the
@@ -451,9 +451,9 @@ class ProxyFastCompPolicy<Derived, T, ChunkT, false> : public ProxySpec<T, Deriv
     using BaseSpec::BaseSpec;
 
     /// @brief The single candidate list of a serial build (zero_any::ChunkThreadPolicy<false>).
-    ZeroAnyCompOf<ChunkT>& get_vec_tuple_to_compress_potentially() const noexcept
+    ZeroAnyCompOf<ChunkT>& serial_candidates() const noexcept
     {
-        return chunk_.get_vec_tuple_to_compress_potentially();
+        return chunk_.serial_candidates();
     }
 };
 

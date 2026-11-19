@@ -126,7 +126,7 @@ struct SerialFlushOwnership
 
 // chunk_config::aggressive_compression() (run time: CHUNK_AGGRESSIVE_COMPRESSION):
 //   false (default): the deferred sweep runs at end-of-parallel-phase boundaries,
-//       via compress_chunk_to_compress_potentially(true) below;
+//       via run_compress_pass(true) below;
 //   true: no between-phase sweep; all compression falls on the opportunistic
 //       in-loop path (heavier MT stress, better bug detection).
 
@@ -194,10 +194,10 @@ void finalize_parallel_phase_after_flush()
         type_registry.destroy_after_flush(false);
 
         reset_all();
-        if (!chunk_config::aggressive_compression() && type_registry.have_chunk_to_compress_potentially())
+        if (!chunk_config::aggressive_compression() && type_registry.has_candidates())
         // run-time switch: chunk/config.h
         {
-            type_registry.compress_chunk_to_compress_potentially(true);
+            type_registry.run_compress_pass(true);
         }
 #if !CHUNK_OPT_STD_ALLOC
         fast_alloc::report_all_arenas("after_flush");
@@ -238,13 +238,13 @@ void finalize_parallel_phase()
         // in this phase; their ops were just replayed (deferred_op_pool.h).
         retire_exited_thread_pools();
 
-        if (!chunk_config::aggressive_compression() && type_registry.have_chunk_to_compress_potentially())
+        if (!chunk_config::aggressive_compression() && type_registry.has_candidates())
         // run-time switch: chunk/config.h
         {
             // Drain the deferred-compression backlog here, between parallel
             // phases: parallel, with no concurrent writers (no start() barrier).
 
-            type_registry.compress_chunk_to_compress_potentially(true);
+            type_registry.run_compress_pass(true);
         }
 #if !CHUNK_OPT_STD_ALLOC
         fast_alloc::report_all_arenas("finalize_phase");
@@ -260,8 +260,8 @@ void finalize_parallel_phase()
         // well as pattern's motifs. Drain it here, as the threaded branch does,
         // with the pass that trigger runs (make_block_compression(), through
         // force_chunk_to_compress(); a no-op on an empty list).
-        // Neither have_chunk_to_compress_potentially() as the gate nor
-        // compress_chunk_to_compress_potentially() as the drain: both are
+        // Neither has_candidates() as the gate nor
+        // run_compress_pass() as the drain: both are
         // use_fast_block_compression code, which a serial build compiles out
         // (the gate always says "nothing").
         if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
@@ -289,11 +289,11 @@ bool finalize_barrier_phase()
 // defined in chunk/internal/type_state_registry_inline.h (template definitions belong in a
 // header); registration is driven by the consumer's type tuple.
 
-void TypeStateRegistry::resize_chunk_to_compress_potentially() const
+void TypeStateRegistry::resize_candidate_lists() const
 {
     for (const auto& elm : get_list_type_chunk())
     {
-        elm->resize_chunk_to_compress_potentially();
+        elm->resize_candidate_lists();
     }
 }
 
@@ -305,16 +305,16 @@ void TypeStateRegistry::force_chunk_to_compress() const
     }
 }
 
-void TypeStateRegistry::compress_chunk_to_compress_potentially(bool apply) const
+void TypeStateRegistry::run_compress_pass(bool apply) const
 {
     // Only the types with a candidate. The callers' gate,
-    // have_chunk_to_compress_potentially(), is true as soon as ONE type has
+    // has_candidates(), is true as soon as ONE type has
     // one, and each type's pass costs a fork/join even on empty lists.
     const int                        max_thr = CHUNK_PMP_RANK_BOUND;
     std::vector<TypeStateInterface*> work;
     for (const auto& elm : get_list_type_chunk())
     {
-        if (elm->have_chunk_to_compress_potentially(max_thr))
+        if (elm->has_candidates(max_thr))
         {
             work.push_back(elm);
         }
@@ -330,7 +330,7 @@ void TypeStateRegistry::compress_chunk_to_compress_potentially(bool apply) const
     {
         for (auto* elm : work)
         {
-            elm->compress_chunk_to_compress_potentially(apply);
+            elm->run_compress_pass(apply);
         }
         return;
     }
@@ -375,12 +375,12 @@ void TypeStateRegistry::compress_chunk_to_compress_potentially(bool apply) const
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);
 }
 
-bool TypeStateRegistry::have_chunk_to_compress_potentially() const
+bool TypeStateRegistry::has_candidates() const
 {
     const int max_thr = CHUNK_PMP_RANK_BOUND;
 
     return std::ranges::any_of(get_list_type_chunk(),
-                               [max_thr](const auto* elm) { return elm->have_chunk_to_compress_potentially(max_thr); });
+                               [max_thr](const auto* elm) { return elm->has_candidates(max_thr); });
 }
 
 template <typename Derived>

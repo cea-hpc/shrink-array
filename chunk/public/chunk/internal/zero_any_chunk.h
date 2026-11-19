@@ -364,7 +364,7 @@ class ChunkThreadPolicy<T, Derived, false> : public SecondValueChunkBase<T, Deri
     using Base::values_;
 
     /// @brief The single candidate list of a serial build.
-    static ZeroAnyCompOf<Derived>& get_vec_tuple_to_compress_potentially() noexcept
+    static ZeroAnyCompOf<Derived>& serial_candidates() noexcept
     {
         return Manager::zero_any_candidates;
     }
@@ -535,7 +535,7 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>,
     }
 
     /// @brief Rank @p thr's candidate list.
-    static ZeroAnyCompOf<Derived>& get_vec_tuple_to_compress_potentially_thr(int thr) noexcept
+    static ZeroAnyCompOf<Derived>& candidates_of_thread(int thr) noexcept
     {
         return Manager::get_zero_any_candidates(thr);
     }
@@ -581,7 +581,7 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>,
 
     /// @brief Is every rank's candidate list empty (the calling thread's, in a
     ///        serial build)?
-    [[nodiscard]] static bool is_vec_tuple_to_compress_potentially_empty_thr() noexcept;
+    [[nodiscard]] static bool no_candidates() noexcept;
 
     static void compress_chunk_to_compress_in_par(int thr, bool apply);
 

@@ -102,7 +102,7 @@ class ZeroOrValueArrayInfoPolicy
      *
      * @details Called from zero_or_value::Array::clear_core so a destroyed array's
      *          array_info MEMBER cannot dangle here, where
-     *          compress_chunk_to_compress_potentially() would dereference it via
+     *          run_compress_pass() would dereference it via
      *          all_array_infos(). Only entries this array currently OWNS are
      *          removed: one re-registered by a later array points elsewhere and
      *          stays. O(n), teardown-only.

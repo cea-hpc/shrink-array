@@ -268,7 +268,7 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list() const
                     inc_chunk_mark_ok<ChunkT>();
                 }
                 const int thr = get_thr_rank_fast();
-                auto&     vec = derived().get_vec_tuple_to_compress_potentially_thr(thr);
+                auto&     vec = derived().candidates_of_thread(thr);
 
                 if constexpr (build_config::is_debug)
                 {
@@ -301,7 +301,7 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list() const
             if (!(*ptr_is_inside_chunk_list_to_compress_))
             {
                 *ptr_is_inside_chunk_list_to_compress_ = 1;
-                auto& vec                              = derived().get_vec_tuple_to_compress_potentially();
+                auto& vec                              = derived().serial_candidates();
                 push_to_compress_list(vec, &chunk_, chunk_index_, array_id_, ChunkElems{this->chunk_size()});
             }
         }
@@ -405,11 +405,11 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::add_to_compression_li
         {
             if constexpr (IsZeroOrValue<ChunkTemplateOf<ChunkT>::template type, T>)
             {
-                return derived().get_vec_tuple_to_compress_potentially_async_thr(ctx, thr);
+                return derived().candidates_of_thread_async(ctx, thr);
             }
             else
             {
-                return derived().get_vec_tuple_to_compress_potentially_thr(thr);
+                return derived().candidates_of_thread(thr);
             }
         }();
 

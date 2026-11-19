@@ -268,13 +268,13 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::resize_array_is_int(int array_id, 
 template <typename T, typename Derived, typename ChunkT>
 void zero_any::ProxyImpl<T, Derived, ChunkT>::trigger_compression_if_needed(int thr_rank)
 {
-    const auto& vec_to_compress_potentially = Manager::get_zero_any_candidates(thr_rank);
+    const auto& candidates = Manager::get_zero_any_candidates(thr_rank);
 
     if constexpr (build_config::threaded)
     {
         const int szm = Manager::get_size_max_number_of_chunk_to_check_compress();
 
-        const auto sz = static_cast<int>(vec_to_compress_potentially.size());
+        const auto sz = static_cast<int>(candidates.size());
 
         if (Base::should_trigger_compression(sz, szm))
         {
@@ -306,9 +306,9 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::perform_compression() noexcept
 
     const int thr_rank = get_thr_rank_fast();
 
-    const auto& vec_to_compress_potentially = Manager::get_zero_any_candidates(thr_rank);
+    const auto& candidates = Manager::get_zero_any_candidates(thr_rank);
 
-    const auto sz_before = static_cast<int>(vec_to_compress_potentially.size());
+    const auto sz_before = static_cast<int>(candidates.size());
 
     if (const int sz_threshold = szm / 2; sz_before > sz_threshold)
     {

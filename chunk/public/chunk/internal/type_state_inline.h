@@ -61,7 +61,7 @@ void TypeState<ChunkT, T>::sweep_prepare()
     }
 }
 
-/// @brief Rank @p thr's share of compress_chunk_to_compress_potentially().
+/// @brief Rank @p thr's share of run_compress_pass().
 template <template <typename> typename ChunkT, typename T>
 void TypeState<ChunkT, T>::sweep_rank([[maybe_unused]] int thr, [[maybe_unused]] bool apply)
 {

@@ -218,9 +218,9 @@ std::size_t compress_now_and_trim_pools()
     // in which each rank sweeps its own list): the pass that ends a phase, which
     // CHUNK_AGGRESSIVE_COMPRESSION skips -- force_chunk_to_compress() alone
     // folded the calling rank's list only. A no-op in a serial build.
-    if (type_registry.have_chunk_to_compress_potentially())
+    if (type_registry.has_candidates())
     {
-        type_registry.compress_chunk_to_compress_potentially(true);
+        type_registry.run_compress_pass(true);
     }
     // Then the calling rank's sweep, in every build: a serial zero_any queues
     // its candidates too, and folds them in batches of half the list
