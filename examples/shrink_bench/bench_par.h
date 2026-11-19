@@ -78,6 +78,7 @@
 #include <source_location> // std::source_location (the timed call sites)
 #include <string>          // std::string (a call site's name)
 #include <string_view>     // std::string_view (its file name)
+#include <thread>          // std::this_thread::yield (BENCH_TBB_LINGER_US)
 #include <vector>          // std::vector (a call's rank times, the sites)
 
 #include "bench_int.h"                // Int
@@ -720,17 +721,18 @@ namespace detail
  * @brief BENCH_TBB_PARALLEL_PHASE=1: the bench's arena in one oneTBB parallel
  *        phase for the whole run (task_arena::start_parallel_phase(), a preview
  *        of oneTBB 2022.x under TBB_PREVIEW_PARALLEL_PHASE, which CMake sets).
- * @details Without it a worker done with its rank finds nothing to steal and
- *          TBB returns it to its scheduler: about 26 of 71 left the arena during
- *          each region on a 72-thread AArch64 node, the finalize's team woke
- *          them back, and the next region started with a few missing -- their
- *          ranks ran after another one on the same thread (rank_timing's
- *          shared%), the region then lasting about two ranks. Inside a parallel
- *          phase the workers stay in the arena between its algorithms. The
- *          phase is never ended: the workers also spin through the bench's
- *          serial code, on cores that would idle. One line on stderr says
- *          whether it is on; with a oneTBB without the preview the variable is
- *          ignored, and said so.
+ * @details What the phase changes is oneTBB's leave policy only: a worker out
+ *          of work may stay in the arena, spinning, for at most 1 ms
+ *          (worker_wait_leave_duration in oneTBB's waiters.h, fixed) unless the
+ *          arena is in "fast leave", and fast leave is the default on HYBRID
+ *          CPUs only. There the phase gives the workers that millisecond back
+ *          (Core Ultra 5 235, 8 threads: workers in the arena at a region's
+ *          start 4.04 -> 6.99 of 7, computation -6 %). Elsewhere (a 72-thread
+ *          AArch64 node) they already have it, and the phase changes nothing;
+ *          the wait there is the ranks' imbalance, longer than 1 ms:
+ *          BENCH_TBB_LINGER_US. The phase is never ended. One line on stderr
+ *          says whether it is on; with a oneTBB without the preview the variable
+ *          is ignored, and said so.
  */
 inline void start_parallel_phase_if_asked(oneapi::tbb::task_arena& a)
 {
@@ -741,8 +743,9 @@ inline void start_parallel_phase_if_asked(oneapi::tbb::task_arena& a)
     }
     #if defined(__TBB_PREVIEW_PARALLEL_PHASE) && __TBB_PREVIEW_PARALLEL_PHASE
     a.start_parallel_phase();
-    std::fputs("[bench] BENCH_TBB_PARALLEL_PHASE: the TBB workers stay in the bench's arena for the whole run\n",
-               stderr);
+    std::fputs(
+        "[bench] BENCH_TBB_PARALLEL_PHASE: the bench's arena is in one oneTBB parallel phase for the whole run\n",
+        stderr);
     #else
     (void)a;
     std::fputs("[bench] BENCH_TBB_PARALLEL_PHASE ignored: this oneTBB has no task_arena::start_parallel_phase() "
@@ -840,6 +843,43 @@ inline ArenaWatch* arena_watch()
     return w;
 }
 
+/**
+ * @brief BENCH_TBB_LINGER_US=<us>: how long a region's task, its rank done,
+ *        waits for the other ranks before returning to TBB (0, the default:
+ *        it returns at once).
+ * @details A TBB worker out of work stays in the arena 1 ms at most (oneTBB's
+ *          worker_wait_leave_duration, fixed), then leaves it; a rank that
+ *          ends more than 1 ms before the slowest one loses its worker, which
+ *          the finalize's team then wakes back, and which is sometimes still
+ *          missing at the next region's start (rank_timing's shared%). Waiting
+ *          in the task keeps the worker until every rank is done: it then
+ *          leaves the task as the region ends, and has its 1 ms for the
+ *          finalize's team. A task waits only once every rank has started
+ *          (a task spinning in place steals nothing: a rank still without a
+ *          thread needs the others back in TBB), and never longer than the
+ *          budget, so a task that never starts cannot hold the others. The
+ *          wait spins (yield) on cores that would idle; it is counted in the
+ *          imbalance, the rank's busy time ending with its body. Outermost
+ *          regions only. One line on stderr when it is on.
+ */
+inline rank_timing::Clock::duration tbb_linger()
+{
+    static const rank_timing::Clock::duration d = []
+    {
+        const char* const v  = std::getenv("BENCH_TBB_LINGER_US");
+        const long        us = v != nullptr ? std::strtol(v, nullptr, 10) : 0;
+        if (us <= 0)
+        {
+            return rank_timing::Clock::duration::zero();
+        }
+        std::fprintf(stderr,
+                     "[bench] BENCH_TBB_LINGER_US=%ld: a region's task waits up to %ld us for the other ranks\n", us,
+                     us);
+        return std::chrono::duration_cast<rank_timing::Clock::duration>(std::chrono::microseconds(us));
+    }();
+    return d;
+}
+
 } // namespace detail
 
 /**
@@ -871,10 +911,15 @@ void region(int num_threads, Body&& body, const std::source_location loc = std::
     const rt::ArenaCount      at_start = watch != nullptr ? watch->now() : rt::ArenaCount{};
     rt::Call* const           cp       = call.get();
     detail::RegionCtx         ctx;
+    // BENCH_TBB_LINGER_US (detail::tbb_linger()): the ranks started and done.
+    const rt::Clock::duration linger = rt::depth == 0 ? detail::tbb_linger() : rt::Clock::duration::zero();
+    std::atomic<int>          started{0};
+    std::atomic<int>          done{0};
     const auto                tasks = [&](const oneapi::tbb::blocked_range<int>& r)
     {
         for (int k = r.begin(); k != r.end(); ++k)
         {
+            started.fetch_add(1, std::memory_order_relaxed);
             if (cp != nullptr)
             {
                 const auto s = rt::Clock::now();
@@ -889,6 +934,16 @@ void region(int num_threads, Body&& body, const std::source_location loc = std::
             {
                 Team t(&ctx, k, n);
                 body(t);
+            }
+            done.fetch_add(1, std::memory_order_release);
+        }
+        if (linger > rt::Clock::duration::zero())
+        {
+            const auto until = rt::Clock::now() + linger;
+            while (done.load(std::memory_order_acquire) < n && started.load(std::memory_order_relaxed) == n &&
+                   rt::Clock::now() < until)
+            {
+                std::this_thread::yield();
             }
         }
     };
