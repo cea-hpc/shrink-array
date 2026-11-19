@@ -96,6 +96,12 @@ the tag's checksum to the recipe.
   chunk-size prediction allocates a summary and formats a log line; a `std::bad_alloc` there
   would have called `std::terminate()`. The prediction, a log line only, is skipped on an
   exception (Coverity 661905, 661906).
+- Install of a std-alloc build (`CHUNK_STD_ALLOC`, Spack's `~fast_alloc`): the handful of
+  fast_allocators headers it installs with chunk missed three that the others include --
+  `internal/append_text.h` (from `log_core.h` and `fatal.h`), `internal/pmp_loops_inline.h`
+  and `internal/pmp_std_inline.h` -- so no consumer of such an install compiled. They are
+  installed, and `check_tracked` (rule 6) recomputes the list from chunk's includes and fails
+  when one is missing.
 
 ## 0.3.0 -- 2026-11-18
 
