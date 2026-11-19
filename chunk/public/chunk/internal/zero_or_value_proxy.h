@@ -116,7 +116,7 @@ class ProxySpec : public SecondValueProxyBase<Derived, T, Chunk<T>>
      * @details Retrieves (second_value, idx, array_id) record from array_registry
      *          using ptr_on_array as key. Also initializes compression flag pointer.
      * @pre ptr_on_array must point to valid array
-     * @post second_value, idx, array_id, and ptr_is_inside_chunk_list_to_compress_ are valid
+     * @post second_value, idx, array_id, and candidate_flag_ are valid
      * @note For bool specialization, this is a no-op as metadata is fixed
      */
 
@@ -373,7 +373,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
     using SecondValueBase = SecondValueProxyBase<Derived, T, Chunk<T>>;
     using Base            = ProxyBase<Derived, T, Chunk<T>>;
 
-    using Base::array_is_inside_chunk_list_to_compress;
+    using Base::candidate_flags;
     using Base::chunk_;
     using Base::elem_offset_;
     using Base::read_values;
@@ -543,12 +543,12 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
      * @brief Get the compression tracking array for a array
      * @param array_id Array index
      * @return Reference to the atomic char array
-     * @pre array_id must be < array_is_inside_chunk_list_to_compress.size()
+     * @pre array_id must be < candidate_flags.size()
      */
 
-    static ChunkFlagRowT& get_array_is_inside_list_to_compress(int array_id)
+    static ChunkFlagRowT& candidate_flag_row(int array_id)
     {
-        return array_is_inside_chunk_list_to_compress[array_id];
+        return candidate_flags[array_id];
     }
 
     /**
@@ -559,9 +559,9 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived>
      * @note Thread safety: Memory order release ensures visibility to all threads
      */
 
-    static void reset_array_is_inside_list_to_compress(int array_id, int chunk_index) noexcept
+    static void clear_candidate_flag(int array_id, int chunk_index) noexcept
     {
-        array_is_inside_chunk_list_to_compress[array_id][chunk_index].store(0, std::memory_order_release);
+        candidate_flags[array_id][chunk_index].store(0, std::memory_order_release);
     }
 
     /**
@@ -741,8 +741,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     // Do not add `using Base::read_values_async;`: it exists only in the Enabled=true
     // specialisation (imported in zero_or_value::ProxyFastCompPolicy<..., true>), so it breaks builds
     // without fast block compression.
-    using Base::array_is_inside_chunk_list_to_compress; ///< Global compression tracking array
-    using Base::ptr_is_inside_chunk_list_to_compress_;  ///< Per-chunk compression flag pointer
+    using Base::candidate_flag_; ///< Per-chunk compression flag pointer
+    using Base::candidate_flags; ///< Global compression tracking array
 
     // Declared per zero_or_value::ProxyFastCompPolicy specialisation: the deferred and counter forms are
     // different algorithms (and pass `operation` different arguments).
@@ -758,7 +758,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
      *          Candidate lists are keyed by second value and created only by
      *          zero_or_value::Array::set_second_value(); an array without one is not walked by the
      *          compression pass either. Reject such writes HERE, before
-     *          add_to_compression_list() CASes the chunk's "queued" flag: giving up after the
+     *          queue_as_candidate() CASes the chunk's "queued" flag: giving up after the
      *          CAS would leave the chunk flagged for good.
      * @param new_value The new value to check.
      * @param first_value The first constant value to compare against.
@@ -792,12 +792,12 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
 
     /**
      * @brief create_value() with the compression state already known.
-     * @param is_const2 Whether the chunk is at its second constant (else at the
+     * @param is_second Whether the chunk is at its second constant (else at the
      *        first), from the caller's load of `values`. A stale state is
      *        harmless: the chunk can only have been materialised since, and
      *        the CAS of chunk.create_value() then fails.
      */
-    void create_value(bool is_const2) const noexcept;
+    void create_value(bool is_second) const noexcept;
 
     /**
      * @brief Core assignment logic without compression tracking
@@ -1005,19 +1005,19 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, Chunk<T>, chunk_config::us
     /**
      * @brief Initialize both array number and compression flag pointer
      * @details Convenience method combining set_array_id() and
-     *          set_ptr_is_inside_chunk_list_to_compress()
-     * @post Both array_id and ptr_is_inside_chunk_list_to_compress_ are valid
+     *          bind_candidate_flag()
+     * @post Both array_id and candidate_flag_ are valid
      *
      * @note No build-mode guard: the sole caller
      *       (SecondValueProxyBase::write_with_optional_lock_with_set_ptr) is under
      *       `if constexpr (chunk_config::use_fast_block_compression)`, so the empty
-     *       array_is_inside_chunk_list_to_compress of other modes is never indexed.
+     *       candidate_flags of other modes is never indexed.
      */
     void set_array_id_ptr_is_inside_chunk() noexcept
     {
         set_array_id();
 
-        Base::set_ptr_is_inside_chunk_list_to_compress();
+        Base::bind_candidate_flag();
     }
 
     /**

@@ -155,6 +155,9 @@ ALLOWED = {
     "ArrayConstVal2Holder", "find_or_set_idx_const_val2", "find_or_set_ind_cst_val2",
     "const2_registry_validation", "const2_reclaim_validation", "chunk/internal/array_const_val2_holder.h",
     "ProxySpec::armed_inf_array",  # now armed_array_info() (inf_array -> array_info)
+    # the *_to_compress* names, now the candidate names (candidate_flags, compress_queued...)
+    "array_is_inside_chunk_list_to_compress", "add_to_compression_list_async",
+    "compress_chunk_to_compress_in_par", "Chunk::compress_chunk_to_compress",
     # removed: the names before 0.3.0 (CHANGELOG.md, Unreleased, Removed)
     "CHUNK_CST_VAL2_ID_LIMIT", "CHUNK_CST2_RECLAIM",
     "is_power_of_two",  # pow2.h's, never called: removed (lint lot 4)

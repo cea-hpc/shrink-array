@@ -149,16 +149,16 @@ bool CompressCandidates<ChunkT, T>::have_candidates(int n_thr)
                 const auto& registry         = *zero_or_value::Proxy<T>::array_registry;
                 const auto& v_all_second_val = registry.get_all_second_value();
                 return std::ranges::any_of(v_all_second_val, [n_thr](const auto& second_value)
-                                           { return ChunkT<T>::have_chunk_to_compress(second_value, n_thr); });
+                                           { return ChunkT<T>::has_queued(second_value, n_thr); });
             }
             else
             {
-                return ChunkT<T>::have_chunk_to_compress_bool(n_thr);
+                return ChunkT<T>::has_queued_bool(n_thr);
             }
         }
         else
         {
-            return ChunkT<T>::have_chunk_to_compress(n_thr);
+            return ChunkT<T>::has_queued(n_thr);
         }
     }
 
@@ -188,17 +188,17 @@ void CompressCandidates<ChunkT, T>::compress_pass([[maybe_unused]] bool apply)
                 const auto& all_infos = registry.all_array_infos();
                 for (const auto& array_info : all_infos)
                 {
-                    ChunkT<T>::compress_chunk_to_compress(*array_info, apply);
+                    ChunkT<T>::compress_queued(*array_info, apply);
                 }
             }
             else
             {
-                ChunkT<T>::compress_chunk_to_compress_bool(apply);
+                ChunkT<T>::compress_queued_bool(apply);
             }
         }
         else
         {
-            ChunkT<T>::compress_chunk_to_compress(apply);
+            ChunkT<T>::compress_queued(apply);
         }
     }
 }

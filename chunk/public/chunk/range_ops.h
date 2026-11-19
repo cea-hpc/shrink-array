@@ -455,7 +455,7 @@ void queue_for_compression(Arr& arr, std::size_t index)
         {
             proxy.set_info_on_chunk(); // zero_or_value::Proxy, zero::Proxy
         }
-        proxy.add_to_compression_list();
+        proxy.queue_as_candidate();
     }
 }
 
@@ -589,7 +589,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
         set_thread_chunk_size(chunk_sz);
     }
 
-    const bool value_is_const1 = same_value(static_cast<T>(value), static_cast<T>(ChunkType::first_value));
+    const bool value_is_first = same_value(static_cast<T>(value), static_cast<T>(ChunkType::first_value));
 
     const std::size_t first_chunk = first / chunk_sz;
     const std::size_t last_chunk  = (last - 1) / chunk_sz;
@@ -618,7 +618,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
 
         if constexpr (can_release)
         {
-            if (whole && value_is_const1)
+            if (whole && value_is_first)
             {
                 if (!ch.is_first_value())
                 {
@@ -631,7 +631,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
                     }
                     if constexpr (build_config::threaded)
                     {
-                        ch.clear_st(get_thr_rank_fast(), chunk_sz); // frees the buffer, marks const1
+                        ch.clear_st(get_thr_rank_fast(), chunk_sz); // frees the buffer, marks first value
                     }
                     else
                     {
@@ -646,7 +646,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
         if constexpr (is_packed_bit_v<T>)
         {
             // Whole chunk already at that constant: nothing to write.
-            if (whole && (value_is_const1 ? ch.is_first_value() : ch.is_second_value()))
+            if (whole && (value_is_first ? ch.is_first_value() : ch.is_second_value()))
             {
                 continue;
             }
@@ -661,7 +661,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
         {
             // Already at the fill value: every write below would take the
             // proxy's early-out, so none is made (the raw path's test below).
-            bool at_value = value_is_const1 ? ch.is_first_value() : internal::at_second_constant(arr, ch, idx2, value);
+            bool at_value = value_is_first ? ch.is_first_value() : internal::at_second_constant(arr, ch, idx2, value);
             if constexpr (requires { ch.pending_any(); })
             {
                 at_value = at_value && !ch.pending_any();
@@ -692,7 +692,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
             // pending: an older op would replay over the fill, the proxy's own
             // condition.
             const bool at_value =
-                value_is_const1 ? ch.is_first_value() : internal::at_second_constant(arr, ch, idx2, value);
+                value_is_first ? ch.is_first_value() : internal::at_second_constant(arr, ch, idx2, value);
             if (at_value && !ch.pending_any())
             {
                 continue;
@@ -724,7 +724,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
 
             // The chunk may be constant now: a fill of first_value, or on
             // zero_any of any value (a uniform run is its second constant).
-            bool compressible_value = value_is_const1 || internal::is_v2a_family_v<Arr>;
+            bool compressible_value = value_is_first || internal::is_v2a_family_v<Arr>;
             if constexpr (internal::is_v2_v<Arr> && requires { arr.second_value(); })
             {
                 compressible_value =
@@ -1030,16 +1030,16 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
             // the chunk: an older op would replay over the fill.
             if constexpr (Constant)
             {
-                const InT<T> fill      = static_cast<T>(value_at(lo));
-                const bool   is_const1 = same_value(static_cast<T>(fill), static_cast<T>(ChunkType::first_value));
-                bool         at_value  = false;
+                const InT<T> fill     = static_cast<T>(value_at(lo));
+                const bool   is_first = same_value(static_cast<T>(fill), static_cast<T>(ChunkType::first_value));
+                bool         at_value = false;
                 if constexpr (is_packed_bit_v<T>)
                 {
-                    at_value = is_const1 ? ch.is_first_value() : ch.is_second_value();
+                    at_value = is_first ? ch.is_first_value() : ch.is_second_value();
                 }
                 else
                 {
-                    at_value = is_const1 ? ch.is_first_value() : at_second_constant(arr, ch, idx2, fill);
+                    at_value = is_first ? ch.is_first_value() : at_second_constant(arr, ch, idx2, fill);
                 }
                 if constexpr (requires { ch.pending_any(); })
                 {

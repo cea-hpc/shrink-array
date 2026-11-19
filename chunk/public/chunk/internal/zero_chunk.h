@@ -256,7 +256,7 @@ class ChunkThreadPolicy : public ChunkBase<T, Derived>
      * @param n_elems  THIS chunk's element count, carried by the candidate
      *                 tuple; using the ambient size instead overflows a buffer
      *                 allocated at another geometry
-     * @note The queue consumer's per-chunk step (Chunk::compress_chunk_to_compress).
+     * @note The queue consumer's per-chunk step (Chunk::compress_queued).
      */
     void compress(int thr_rank, unsigned int n_elems);
 
@@ -343,7 +343,7 @@ class ChunkFastCompPolicy : public ChunkThreadPolicy<T, Derived>
 {
   public:
     // 4th element: the chunk's OWN geometry, captured at enqueue by
-    // push_to_compress_list. compress() must scan exactly that many elements,
+    // push_candidate. compress() must scan exactly that many elements,
     // NOT alloc_chunk_count() (the CONSUMING thread's ambient size, may differ).
     using CandidateTuples = std::vector<std::tuple<Chunk<T>*, int, int, ChunkElems>>;
 
@@ -365,7 +365,7 @@ class ChunkFastCompPolicy : public ChunkThreadPolicy<T, Derived>
      * @param max_thr number of threads whose candidate lists are scanned
      * @return true as soon as one non-empty list is found
      */
-    static bool have_chunk_to_compress(int max_thr);
+    static bool has_queued(int max_thr);
 
   private:
     constexpr static T zero{};
@@ -378,14 +378,14 @@ class ChunkFastCompPolicy : public ChunkThreadPolicy<T, Derived>
      * @param n_elems   THIS chunk's element count -- never the ambient size, see
      *                  chunk_tuples.h's note on the field it is carried in
      */
-    void fill_list_to_compress(CandidateTuples& ll_compt, int chunk_index, int array_id, unsigned int n_elems);
+    void classify_candidate(CandidateTuples& ll_compt, int chunk_index, int array_id, unsigned int n_elems);
 
     /**
      * @brief Scan @p thr's queued candidates and collect those now compressible.
      * @param thr      rank whose candidate list is scanned
      * @param ll_compt out: the chunks found compressible, with their geometry
      */
-    static void fill_list_chunk_to_compress_in_par(int thr, CandidateTuples& ll_compt);
+    static void classify_rank_candidates(int thr, CandidateTuples& ll_compt);
 };
 
 /**
@@ -406,19 +406,17 @@ class ChunkFastCompPolicy<T, Derived, false> : public ChunkThreadPolicy<T, Deriv
     static void make_block_compression(int /*thr*/, const Proxy<T>* /*proxy*/) {}
 
     /// No candidate lists exist in this mode, so there is never anything queued.
-    static bool have_chunk_to_compress(int /*max_thr*/)
+    static bool has_queued(int /*max_thr*/)
     {
         return false;
     }
 
   private:
     /// @brief No candidate list to fill in this mode.
-    static void fill_list_chunk_to_compress_in_par(int /*thr*/, CandidateTuples& /*ll_compt*/) {}
-    /// @copydoc fill_list_chunk_to_compress_in_par
-    static void fill_list_to_compress(CandidateTuples& /*ll_compt*/,
-                                      int /*chunk_index*/,
-                                      int /*array_id*/,
-                                      unsigned int /*n_elems*/)
+    static void classify_rank_candidates(int /*thr*/, CandidateTuples& /*ll_compt*/) {}
+    /// @copydoc classify_rank_candidates
+    static void
+    classify_candidate(CandidateTuples& /*ll_compt*/, int /*chunk_index*/, int /*array_id*/, unsigned int /*n_elems*/)
     {
     }
 };
@@ -530,9 +528,9 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
      * @param apply true: compress the candidates found constant; false: walk
      *        the lists only (zero ignores it: its pass always compresses)
      */
-    static void compress_chunk_to_compress(bool apply);
+    static void compress_queued(bool apply);
 
-    /// @brief One rank's share of compress_chunk_to_compress(): the body its
+    /// @brief One rank's share of compress_queued(): the body its
     ///        region runs on each thread. Public for TypeStateRegistry's single
     ///        sweep region (TypeState::sweep_rank).
     /// @param thr rank whose candidate list to drain

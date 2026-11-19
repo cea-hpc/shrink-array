@@ -145,7 +145,7 @@ template <typename T>
 }
 
 template <typename T>
-[[nodiscard]] int zero_or_value::PointerMap<T>::find_idx_array_const2(InT<T> key) const
+[[nodiscard]] int zero_or_value::PointerMap<T>::find_second_value_index(InT<T> key) const
 {
     if constexpr (is_not_bool)
     {
@@ -268,7 +268,7 @@ zero_or_value::PointerMap<T>::get_info_second_value(Key key) const noexcept
         // bool: second_value is always `true`, but array_id is PER-ARRAY, so look
         // the key up. Do not return vec[0]: every bool array (rechunk_to's tmp
         // included) would get the first one's array_id and its compression-flag
-        // write would index the wrong array's array_is_inside_chunk_list_to_compress
+        // write would index the wrong array's candidate_flags
         // (heap overflow). Same hazard as PointerMapLinear::erase().
         const size_t count = vec_.size();
         for (size_t i = 0; i < count; ++i)

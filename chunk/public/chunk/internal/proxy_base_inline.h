@@ -23,7 +23,7 @@
  * Holds the parts of the proxy write engine that are too large to sit in the
  * class body, and the free helpers they use. Three concerns live here:
  *
- *  - **compression bookkeeping**: add_to_compression_list() and its async /
+ *  - **compression bookkeeping**: queue_as_candidate() and its async /
  *    sentinel variants, which flag a chunk as a compression candidate exactly
  *    once and push it onto the per-thread candidate list;
  *  - **the write engine**: write_with_optional_lock_impl(), the Dekker
@@ -87,7 +87,7 @@ namespace shrink_array
  * @param size      Chunk geometry, dropped when the tuple has only 3 fields.
  */
 template <typename Vec, typename ChunkPtr>
-void push_to_compress_list(Vec& vec, ChunkPtr chunk, int chunk_index, int array_id, ChunkElems size)
+void push_candidate(Vec& vec, ChunkPtr chunk, int chunk_index, int array_id, ChunkElems size)
 {
     using Tup = Vec::value_type; // C++20: typename not needed in an alias declaration
     if constexpr (std::tuple_size_v<Tup> == 4)
@@ -138,22 +138,22 @@ constexpr int get_array_id_async_helper(auto* ctx, const ProxyT& proxy, auto ptr
 /**
  * @brief Arms the "already queued" flag pointer from a replay context.
  *
- * Async counterpart of set_ptr_is_inside_chunk_list_to_compress(): the
+ * Async counterpart of bind_candidate_flag(): the
  * (array_id, chunk_index) pair comes from the recorded context instead of the live
  * array, since the replay may run long after the write was issued.
  *
  * @param ctx Deferred-operation context carrying array_id and chunk_index.
  */
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
-void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::set_ptr_is_inside_chunk_list_to_compress_async(auto* ctx)
+void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::bind_candidate_flag_async(auto* ctx)
 {
     const int arr_id      = ctx->array_id;
     const int chunk_index = ctx->chunk_index;
 
-    auto& arr = array_is_inside_chunk_list_to_compress[static_cast<std::size_t>(
-        arr_id)]; // not const: the flags are written through the pointer
+    auto& arr =
+        candidate_flags[static_cast<std::size_t>(arr_id)]; // not const: the flags are written through the pointer
 
-    ptr_is_inside_chunk_list_to_compress_ = &arr[chunk_index];
+    candidate_flag_ = &arr[chunk_index];
 }
 
 /**
@@ -166,40 +166,40 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::set_ptr_is_inside_chu
  * Serial builds do nothing here — the whole body is OpenMP-only.
  *
  * @param vec_tuple Candidate list to push onto.
- * @pre `ptr_is_inside_chunk_list_to_compress_` is armed, i.e. set_info_on_chunk()
+ * @pre `candidate_flag_` is armed, i.e. set_info_on_chunk()
  *      ran on this write path (checked under `build_config::any_check`).
  */
 template <typename Derived, typename T, typename ChunkT>
-void ProxyBase<Derived, T, ChunkT>::add_to_compression_list([[maybe_unused]] auto& vec_tuple) const
+void ProxyBase<Derived, T, ChunkT>::queue_as_candidate([[maybe_unused]] auto& vec_tuple) const
 {
     if constexpr (build_config::threaded)
     {
         if constexpr (build_config::any_check)
         {
-            if (ptr_is_inside_chunk_list_to_compress_ == nullptr) [[unlikely]]
+            if (candidate_flag_ == nullptr) [[unlikely]]
             {
-                CHUNK_INVARIANT_FAILED("add_to_compression_list(vec_tuple): chunk={} elem_offset={} "
+                CHUNK_INVARIANT_FAILED("queue_as_candidate(vec_tuple): chunk={} elem_offset={} "
                                        "chunk_index={} array_id={} "
-                                       "ptr_is_inside_chunk_list_to_compress is null "
+                                       "candidate_flag_ is null "
                                        "(set_info_on_chunk not called on this write path?)",
                                        &chunk_, elem_offset_, chunk_index_, array_id_);
             }
         }
         // The queue flag's protocol (queue_flag.h): free -> queued pushes; a
         // flag being handed back by its pass is noted for that pass instead.
-        if (queue_flag::try_queue(*ptr_is_inside_chunk_list_to_compress_))
+        if (queue_flag::try_queue(*candidate_flag_))
         {
             if constexpr (build_config::is_debug)
             {
                 // array_id is never reused (every array and re-chunk takes the next
                 // one): do not check it against a fixed ceiling. The bounds are the
                 // flag table's: its outer size, and this array's row.
-                const auto& flags = FastCompPolicy::array_is_inside_chunk_list_to_compress;
+                const auto& flags = FastCompPolicy::candidate_flags;
                 if (chunk_index_ < 0 || array_id_ < 0 || static_cast<std::size_t>(array_id_) >= flags.size() ||
                     static_cast<std::size_t>(chunk_index_) >= flags[static_cast<std::size_t>(array_id_)].size())
                     [[unlikely]]
                 {
-                    CHUNK_INVARIANT_FAILED("add_to_compression_list: chunk_index={} array_id={} outside the flag table "
+                    CHUNK_INVARIANT_FAILED("queue_as_candidate: chunk_index={} array_id={} outside the flag table "
                                            "({} tables)",
                                            chunk_index_, array_id_, flags.size());
                 }
@@ -209,7 +209,7 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list([[maybe_unused]] aut
                 inc_chunk_mark_ok<ChunkT>();
             }
             internal::ArrayUsers<ChunkT>::note(array_id_, get_thr_rank_fast());
-            push_to_compress_list(vec_tuple, &chunk_, chunk_index_, array_id_, ChunkElems{this->chunk_size()});
+            push_candidate(vec_tuple, &chunk_, chunk_index_, array_id_, ChunkElems{this->chunk_size()});
         }
         else if constexpr (chunk_config::stats)
         {
@@ -232,28 +232,28 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list([[maybe_unused]] aut
  * Only compiled under `chunk_config::use_fast_block_compression`; the serial
  * fallback below it uses plain accesses instead of atomics.
  *
- * @pre `ptr_is_inside_chunk_list_to_compress_` is armed (checked under
+ * @pre `candidate_flag_` is armed (checked under
  *      `build_config::any_check`).
  */
 template <typename Derived, typename T, typename ChunkT>
-void ProxyBase<Derived, T, ChunkT>::add_to_compression_list() const
+void ProxyBase<Derived, T, ChunkT>::queue_as_candidate() const
 {
     if constexpr (chunk_config::use_fast_block_compression)
     {
         if constexpr (build_config::any_check)
         {
-            if (ptr_is_inside_chunk_list_to_compress_ == nullptr) [[unlikely]]
+            if (candidate_flag_ == nullptr) [[unlikely]]
             {
-                CHUNK_INVARIANT_FAILED("add_to_compression_list (fast-block): chunk={} elem_offset={} "
+                CHUNK_INVARIANT_FAILED("queue_as_candidate (fast-block): chunk={} elem_offset={} "
                                        "chunk_index={} array_id={} "
-                                       "ptr_is_inside_chunk_list_to_compress is null "
+                                       "candidate_flag_ is null "
                                        "(set_info_on_chunk not called on this write path?)",
                                        &chunk_, elem_offset_, chunk_index_, array_id_);
             }
         }
         // CHUNK_STATS: see the vec_tuple overload for reading mark_refused / mark_ok.
         // The queue flag's protocol: queue_flag.h (a relaxed probe, then the CAS).
-        if (!queue_flag::try_queue(*ptr_is_inside_chunk_list_to_compress_))
+        if (!queue_flag::try_queue(*candidate_flag_))
         {
             if constexpr (chunk_config::stats)
             {
@@ -273,20 +273,19 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list() const
                 if constexpr (build_config::is_debug)
                 {
                     // Bounds of the flag table, not a fixed array_id ceiling: see above.
-                    const auto& flags = FastCompPolicy::array_is_inside_chunk_list_to_compress;
+                    const auto& flags = FastCompPolicy::candidate_flags;
                     if (chunk_index_ < 0 || array_id_ < 0 || static_cast<std::size_t>(array_id_) >= flags.size() ||
                         static_cast<std::size_t>(chunk_index_) >= flags[static_cast<std::size_t>(array_id_)].size())
                         [[unlikely]]
                     {
-                        CHUNK_INVARIANT_FAILED(
-                            "add_to_compression_list: chunk_index={} array_id={} outside the flag table "
-                            "({} tables)",
-                            chunk_index_, array_id_, flags.size());
+                        CHUNK_INVARIANT_FAILED("queue_as_candidate: chunk_index={} array_id={} outside the flag table "
+                                               "({} tables)",
+                                               chunk_index_, array_id_, flags.size());
                     }
                 }
 
                 internal::ArrayUsers<ChunkT>::note(array_id_, thr);
-                push_to_compress_list(vec, &chunk_, chunk_index_, array_id_, ChunkElems{this->chunk_size()});
+                push_candidate(vec, &chunk_, chunk_index_, array_id_, ChunkElems{this->chunk_size()});
                 if constexpr (IsZeroOrValue<ChunkTemplateOf<ChunkT>::template type, T>)
                 {
                     Derived::note_candidate_pushed(vec); // the threshold test (zero_or_value::Proxy trigger)
@@ -298,11 +297,11 @@ void ProxyBase<Derived, T, ChunkT>::add_to_compression_list() const
     {
         if constexpr (build_config::not_threaded)
         {
-            if (!(*ptr_is_inside_chunk_list_to_compress_))
+            if (!(*candidate_flag_))
             {
-                *ptr_is_inside_chunk_list_to_compress_ = 1;
-                auto& vec                              = derived().serial_candidates();
-                push_to_compress_list(vec, &chunk_, chunk_index_, array_id_, ChunkElems{this->chunk_size()});
+                *candidate_flag_ = 1;
+                auto& vec        = derived().serial_candidates();
+                push_candidate(vec, &chunk_, chunk_index_, array_id_, ChunkElems{this->chunk_size()});
             }
         }
     }
@@ -363,7 +362,7 @@ ProxyT ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::make_proxy_with_inf
 
     proxy.set_chunk_index(ctx->chunk_index);
 
-    proxy.Base::set_ptr_is_inside_chunk_list_to_compress_async(ctx);
+    proxy.Base::bind_candidate_flag_async(ctx);
 
     return proxy;
 }
@@ -371,7 +370,7 @@ ProxyT ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::make_proxy_with_inf
 /**
  * @brief Flags a chunk as a compression candidate from a replayed deferred op.
  *
- * Async counterpart of add_to_compression_list(): everything it needs — chunk,
+ * Async counterpart of queue_as_candidate(): everything it needs — chunk,
  * offset, chunk index, array pointer — is read from the context rather than
  * from the proxy's own state, because the write is being applied long after it
  * was issued. Same once-only CAS discipline, same relaxed-load fast path.
@@ -382,7 +381,7 @@ ProxyT ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::make_proxy_with_inf
  * @param ctx  Deferred-operation context being replayed.
  */
 template <typename Derived, typename T, typename ChunkT, bool Enabled>
-void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::add_to_compression_list_async(auto* ctx) const
+void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::queue_as_candidate_async(auto* ctx) const
 {
     auto&     chunk       = ctx->chunk;
     const int elem_offset = ctx->elem_offset;
@@ -394,7 +393,7 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::add_to_compression_li
 
     const int array_id = get_array_id_async_helper(ctx, proxy, ctx->ptr_on_array);
 
-    auto& flag = Derived::array_is_inside_chunk_list_to_compress[array_id][ctx->chunk_index];
+    auto& flag = Derived::candidate_flags[array_id][ctx->chunk_index];
 
     // The queue flag's protocol (queue_flag.h): a relaxed probe, then the CAS.
     if (queue_flag::try_queue(flag))
@@ -414,7 +413,7 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::add_to_compression_li
         }();
 
         internal::ArrayUsers<ChunkT>::note(array_id, thr); // a replay queues on the replaying rank
-        push_to_compress_list(vec, &ctx->chunk, ctx->chunk_index, array_id, derived().chunk_size());
+        push_candidate(vec, &ctx->chunk, ctx->chunk_index, array_id, derived().chunk_size());
         if constexpr (IsZeroOrValue<ChunkTemplateOf<ChunkT>::template type, T>)
         {
             Derived::note_candidate_pushed(vec); // the threshold test (zero_or_value::Proxy trigger)
@@ -1144,17 +1143,17 @@ void ProxyBase<Derived, T, ChunkT>::arithmetic_assign(InT<U> operand, Op operati
 
                                 // Race detector: values pointing to const_val here means a
                                 // re-compression since create_value.
-                                T* const const1 = chunk_ref.first_value_ptr();
+                                T* const first_ptr = chunk_ref.first_value_ptr();
 
-                                bool is_const2 = false;
+                                bool is_second = false;
                                 if constexpr (requires {
                                                   chunk_ref.second_value_registry::is_second_value_ptr(values);
                                               })
                                 {
-                                    is_const2 = chunk_ref.second_value_registry::is_second_value_ptr(values);
+                                    is_second = chunk_ref.second_value_registry::is_second_value_ptr(values);
                                 }
 
-                                if (values == const1 || is_const2)
+                                if (values == first_ptr || is_second)
                                 {
                                     ring_log(get_tid(), EventCode::values_load_is_const, info);
                                     return; // skip the write: keep const_val clean
@@ -1303,9 +1302,9 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::resize_array_is_int(i
     // it. Mirrors zero_any::Proxy::resize_array_is_int(array_id, old, n).
     if constexpr (build_config::any_check)
     {
-        if (static_cast<std::size_t>(array_id) < array_is_inside_chunk_list_to_compress.size())
+        if (static_cast<std::size_t>(array_id) < candidate_flags.size())
         {
-            const auto& row = array_is_inside_chunk_list_to_compress[static_cast<std::size_t>(array_id)];
+            const auto& row = candidate_flags[static_cast<std::size_t>(array_id)];
             for (std::size_t j = 0; j < row.size(); ++j)
             {
                 if (row[j].load(std::memory_order_relaxed) != 0) [[unlikely]]
@@ -1319,7 +1318,7 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkT, Enabled>::resize_array_is_int(i
         }
     }
     // Every flag 0, constructed by a team for a large array.
-    array_is_inside_chunk_list_to_compress[static_cast<std::size_t>(array_id)] =
+    candidate_flags[static_cast<std::size_t>(array_id)] =
         parallel_storage_init::make_filled<std::atomic<char>>(static_cast<std::size_t>(chunk_count), char{0});
 }
 

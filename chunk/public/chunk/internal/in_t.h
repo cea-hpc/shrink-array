@@ -88,7 +88,7 @@ namespace shrink_array
 //     SecondValueRegistry::alloc_chunk(T val)            (second_value_registry.h)
 //     zero_or_value::Array::set_second_value(T)                (zero_or_value_array.h and
 //                                                       zero_or_value_array_inline.h)
-//     zero_or_value::ChunkFastCompPolicy::have_chunk_to_compress(T) (zero_or_value_chunk.h)
+//     zero_or_value::ChunkFastCompPolicy::has_queued(T) (zero_or_value_chunk.h)
 //
 // ─── COROLLARY FOR LOCAL VARIABLES ───────────────────────────────────────────
 //

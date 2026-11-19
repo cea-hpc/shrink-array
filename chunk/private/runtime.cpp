@@ -157,7 +157,7 @@ void Runtime::force_compression()
     // Every build: a serial zero_any queues its candidates too (see
     // compress_now_and_trim_pools()).
     const auto& type_registry = Singleton<TypeStateRegistry>::get_ref();
-    type_registry.force_chunk_to_compress();
+    type_registry.force_compress_all();
 }
 
 #if CHUNK_OPT_STATS

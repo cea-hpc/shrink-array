@@ -127,7 +127,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
     // --- fast-block-compression surface: this policy's Enabled is that axis
     // (chunk_config::use_fast_block_compression).
     using Base::array_id_;
-    using Base::array_is_inside_chunk_list_to_compress;
+    using Base::candidate_flags;
     using Base::ptr_on_array_;
     using Base::read_values;
     using Base::read_values_async;
@@ -252,9 +252,9 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      *          stores with memory_order_release, this one seq_cst (plain
      *          assignment). Dropping it would weaken zero's ordering of the flag.
      */
-    static void reset_array_inside_list_to_compress(int array_id, int chunk_index) noexcept
+    static void clear_candidate_flag(int array_id, int chunk_index) noexcept
     {
-        array_is_inside_chunk_list_to_compress[array_id][chunk_index] = 0;
+        candidate_flags[array_id][chunk_index] = 0;
     }
 
   protected:
@@ -267,7 +267,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
     {
         set_array_id(); // this policy's no-arg overload (above); Proxy's `using Base::set_array_id` would hide it
                         // through derived()
-        derived().Base::set_ptr_is_inside_chunk_list_to_compress();
+        derived().Base::bind_candidate_flag();
     }
 
   private:
@@ -397,11 +397,11 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
 
     using FastCompPolicy::set_info_on_chunk;
 
-    using Base::add_to_compression_list;
+    using Base::queue_as_candidate;
     using Base::set_array_id;
 
-    using Base::array_is_inside_chunk_list_to_compress; ///< Global compression tracking array
-    using Base::ptr_is_inside_chunk_list_to_compress_;  ///< Per-chunk compression flag pointer
+    using Base::candidate_flag_; ///< Per-chunk compression flag pointer
+    using Base::candidate_flags; ///< Global compression tracking array
 
     /// @brief Functor wrapping operator% for apply_compound_operation().
     struct modulo
@@ -440,7 +440,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     static constexpr bool is_bool     = std::is_same_v<T, bool>;
     static constexpr bool is_not_bool = !is_bool;
 
-    // reset_array_inside_list_to_compress(), set_array_id() and the
+    // clear_candidate_flag(), set_array_id() and the
     // mark_for_compression_* family live on ProxyFastCompPolicy<..., true>;
     // manage_full_zero() on the <..., false> (counter) specialisation.
 

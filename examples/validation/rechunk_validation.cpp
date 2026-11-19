@@ -975,7 +975,7 @@ static int run_body(int argc, char** argv)
         {"bool-uneven", 512,
          [] { return check_invariance<bool>("bool-uneven-512-to-768", 1000000L, 768, bool_runs, /*sv_value=*/true); }},
         // Array<bool> through the SLICED path (fast-alloc threaded builds): 4M
-        // bools 64 -> 256, 16384 new chunks, 4 slices. Sources at false (const1),
+        // bools 64 -> 256, 16384 new chunks, 4 slices. Sources at false (first value),
         // at true (the second constant: a shared array, never released) and
         // live ones, released during the copy; then rewritten and recompressed.
         {"bool-sliced", 64,

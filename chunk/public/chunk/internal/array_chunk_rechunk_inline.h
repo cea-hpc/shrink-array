@@ -164,7 +164,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         //    std::swap hands to *this unchanged (buffer swap, no move);
         //  - they carry tmp's array_id, and rechunk_swap_identity() makes that
         //    *this's identity (member swap for zero/zero_any, registry swap for
-        //    zero_or_value), so the sweep's reset_array_inside_list_to_compress(array_id,
+        //    zero_or_value), so the sweep's clear_candidate_flag(array_id,
         //    chunk_index) lands on the row allocated for tmp at new_size;
         //  - tmp's own destruction removes candidates by ITS post-swap array_id
         //    (= *this's old identity, already emptied by rechunk_drop_candidates()

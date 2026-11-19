@@ -168,7 +168,7 @@ CHUNK_FORCE_INLINE void zero_or_value::ProxySpec<T, Derived>::set_info_on_chunk(
 
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        derived().set_ptr_is_inside_chunk_list_to_compress();
+        derived().bind_candidate_flag();
     }
 }
 
@@ -229,7 +229,7 @@ CHUNK_FORCE_INLINE void zero_or_value::ProxySpec<T, Derived>::set_info_on_chunk(
 
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        derived().set_ptr_is_inside_chunk_list_to_compress();
+        derived().bind_candidate_flag();
     }
 }
 
@@ -358,12 +358,12 @@ void zero_or_value::Proxy<T>::perform_core_assignment(InT<T> value) const noexce
     // session the chunk cannot be compressed, only materialised by a
     // concurrent writer -- create_value() then loses its CAS, and the reload
     // after it picks the winner's buffer.
-    T*         vals      = chunk_.values_load();
-    const bool is_const1 = Base::is_first_value(vals);
+    T*         vals     = chunk_.values_load();
+    const bool is_first = Base::is_first_value(vals);
 
     if (same_value(value, second_value_))
     {
-        if (is_const1)
+        if (is_first)
         {
             create_value(false);
 
@@ -406,12 +406,12 @@ void zero_or_value::Proxy<T>::perform_core_assignment(InT<T> value) const noexce
         inc_chunk_write<ChunkType>(value);
     }
 
-    if (const bool is_const2 = !is_const1 && is_second_value_at(vals); is_const1 || is_const2)
+    if (const bool is_second = !is_first && is_second_value_at(vals); is_first || is_second)
     {
-        [[maybe_unused]] const bool chunk_was_second_value = is_const2;
-        [[maybe_unused]] const bool chunk_was_first_value  = is_const1;
+        [[maybe_unused]] const bool chunk_was_second_value = is_second;
+        [[maybe_unused]] const bool chunk_was_first_value  = is_first;
 
-        create_value(is_const2);
+        create_value(is_second);
         vals = chunk_.values_load();
 
         if constexpr (chunk_config::use_compression_with_counter)
@@ -559,23 +559,23 @@ T zero_or_value::Proxy<T>::assign_impl(InT<U> value) noexcept
                 // ambient thread_chunk_size(). Restored on scope exit. Dynamic only.
                 [[maybe_unused]] const DynChunkSizeGuard sz_guard{proxy.chunk_size()};
 
-                const bool is_const1 = proxy.is_first_value();
-                if (const bool is_const2 = proxy.is_second_value(); is_const1 || is_const2)
+                const bool is_first = proxy.is_first_value();
+                if (const bool is_second = proxy.is_second_value(); is_first || is_second)
                 {
                     if constexpr (is_not_bool)
                     {
                         const auto array_info = Proxy<T>::get_info_second_value(ctx->ptr_on_array);
-                        chunk.create_value(is_const2, array_info);
+                        chunk.create_value(is_second, array_info);
                     }
                     else
                     {
-                        chunk.create_value_bool(is_const2);
+                        chunk.create_value_bool(is_second);
                     }
                 }
 
                 if constexpr (build_config::any_check)
                 {
-                    if (const bool is_const1_loc = proxy.is_first_value(); is_const1_loc)
+                    if (const bool is_first_loc = proxy.is_first_value(); is_first_loc)
                     {
                         CHUNK_INVARIANT_FAILED("[deferred write_body] chunk still first_value after create_value "
                                                "(chunk={}, elem_offset={})",
@@ -1100,7 +1100,7 @@ void zero_or_value::Proxy<T>::apply_compound_operation([[maybe_unused]] Op op, I
             // transition IN below (as execute_simple_operation does). Do not
             // chain it to the first-value branch: `second_value * 0` (or
             // `/ inf`) would count the new zero and keep the old second value
-            // counted, and a later write would fold the chunk to const2 with one
+            // counted, and a later write would fold the chunk to its second value with one
             // element still different (lost).
             if (was_second_value0 && !same_value(v_new, second_value_))
             {
@@ -1197,7 +1197,7 @@ zero_or_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::candidates_of_t
 {
     const auto second_value = get_second_value();
     // find(), not operator[]: operator[] INSERTS a null entry for a missing
-    // key, which have_chunk_to_compress() would dereference later.
+    // key, which has_queued() would dereference later.
     auto&      candidates = Manager::zero_or_value_candidates_map_thr[thr];
     const auto it         = candidates.find(second_value);
     if (it == candidates.end() || it->second == nullptr) [[unlikely]]
@@ -1213,7 +1213,7 @@ zero_or_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::candidates_of_t
 {
     const auto second_value = get_second_value(ctx);
     // find(), not operator[]: operator[] INSERTS a null entry for a missing
-    // key, which have_chunk_to_compress() would dereference later.
+    // key, which has_queued() would dereference later.
     auto&      candidates = Manager::zero_or_value_candidates_map_thr[thr];
     const auto it         = candidates.find(second_value);
     if (it == candidates.end() || it->second == nullptr) [[unlikely]]
@@ -1286,7 +1286,7 @@ void zero_or_value::ProxyFastCompPolicy<Derived, T, ChunkT, false>::manage_full_
 // ---------------------------------------------------------------------------
 
 template <typename T>
-void zero_or_value::Proxy<T>::create_value(bool is_const2) const noexcept
+void zero_or_value::Proxy<T>::create_value(bool is_second) const noexcept
 {
     if constexpr (build_config::chunk_dynamic)
     {
@@ -1296,11 +1296,11 @@ void zero_or_value::Proxy<T>::create_value(bool is_const2) const noexcept
     }
     if constexpr (is_not_bool)
     {
-        chunk_.create_value(is_const2, array_info_);
+        chunk_.create_value(is_second, array_info_);
     }
     else
     {
-        chunk_.create_value_bool(is_const2);
+        chunk_.create_value_bool(is_second);
     }
 }
 

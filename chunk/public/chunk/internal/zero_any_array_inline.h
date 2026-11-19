@@ -97,7 +97,7 @@ void zero_any::ArrayImpl<Derived>::rebuild_storage(IntType sz)
             // parallel_storage_init::parallel_init_min_chunks.
             const auto init_chunk = [&](int chunk_index)
             {
-                ProxyType::Base::set_array_is_inside_chunk_list_to_compress(array_id_, chunk_index, 0);
+                ProxyType::Base::set_candidate_flag(array_id_, chunk_index, 0);
                 ProxyType::array_type_const_val[array_id_][chunk_index] = ConstSlot::first;
                 ProxyType::BaseSpec::set(array_id_, chunk_index, T{});
                 this->construct_chunk(chunk_index).init_after_constructor();
@@ -347,7 +347,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
         // Check + non-aggressive only. After the terminal pass, walk THIS array's
         // chunks (not the candidate list, so never-enqueued blocks are seen) for
         // every block (a) still materialised (written()), (b) never registered as
-        // a candidate (array_is_inside_chunk_list_to_compress == 0), yet (c)
+        // a candidate (candidate_flags == 0), yet (c)
         // constant. Two different things, told apart by the value:
         //
         //   MISSED  constant at first_value, or at the chunk's own second value
@@ -357,7 +357,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
         //           the marking path has a hole.
         //   STUCK   constant at ANOTHER value: zero_any keeps a chunk's second
         //           value until the chunk passes through first_value (the clear
-        //           to const1 resets it), so a chunk compressed to V once and
+        //           to the first value resets it), so a chunk compressed to V once and
         //           uniformly W later is not compressible as it stands -- not by
         //           the write path, not by compress(). This count is the
         //           memory that design choice costs on this array -- not a
@@ -369,7 +369,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
             if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
             {
                 const auto  csz           = static_cast<unsigned int>(this->size_policy_.size());
-                const auto& inside        = ProxyType::get_array_is_inside_list_to_compress(array_id_);
+                const auto& inside        = ProxyType::candidate_flag_row(array_id_);
                 std::size_t missed_first  = 0;
                 std::size_t missed_second = 0;
                 std::size_t stuck         = 0;
@@ -386,7 +386,7 @@ void zero_any::ArrayImpl<Derived>::clear_core()
                         continue; // legitimately queued (a straggler the pass left) — not "missed"
                     }
 
-                    // Is it actually constant? (same notion fill_list_to_compress uses:
+                    // Is it actually constant? (same notion classify_candidate uses:
                     // every element equal to the block's first element.)
                     const auto constant = ck.constant_value(csz);
                     if (!constant)
@@ -787,8 +787,7 @@ void zero_any::ArrayImpl<Derived>::resize(IntType newsz)
                                           {
                                               const int chunk_index = old_chunk_count + k;
                                               this->construct_chunk(chunk_index).init_after_constructor();
-                                              ProxyType::Base::set_array_is_inside_chunk_list_to_compress(
-                                                  array_id, chunk_index, 0);
+                                              ProxyType::Base::set_candidate_flag(array_id, chunk_index, 0);
                                               ProxyType::array_type_const_val[array_id][chunk_index] = ConstSlot::first;
                                               // T{}: the struct elements have no conversion from 0
                                               ProxyType::BaseSpec::set(array_id, chunk_index, T{});

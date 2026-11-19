@@ -63,7 +63,7 @@ class CompressCandidates
     static constexpr bool is_not_bool = !is_bool;
 
     /// @brief Compress every compressible chunk of this type now, ignoring the
-    ///        candidate lists (TypeState::force_chunk_to_compress).
+    ///        candidate lists (TypeState::force_compress_all).
     static void force_compress();
     /// @brief Size the per-rank candidate lists to the team
     ///        (TypeState::resize_candidate_lists).
@@ -199,7 +199,7 @@ class CompressCandidates
      * @brief Rank @p thr's candidate list for second value @p key, or null
      *        when the key has none (OpenMP builds: the per-rank store).
      * @details A lookup, never operator[]: a miss would insert a null entry, from
-     *          the write path, into a map other ranks read (have_chunk_to_compress,
+     *          the write path, into a map other ranks read (has_queued,
      *          the rank-0 emptiness probe).
      */
     template <typename Key>

@@ -730,7 +730,7 @@ class ChunkBase : public CRTPSupport<Derived>,
      *          as soon as both are disproved; once one is, the rest of the walk
      *          compares against the other only. When the two constants coincide a
      *          constant run satisfies both; it is reported as `first` ONLY --
-     *          which is what every caller wants (fill_list_to_compress files it
+     *          which is what every caller wants (classify_candidate files it
      *          once, compress_int must not clear it twice). Loads the values
      *          pointer once; the reads are counted as scan work, not as
      *          application reads (see read_value_scan).
@@ -944,7 +944,7 @@ class ChunkBase : public CRTPSupport<Derived>,
 
   protected:
     /**
-     * @brief The rank sweep of the compression passes (compress_chunk_to_compress
+     * @brief The rank sweep of the compression passes (compress_queued
      *        of every chunk type): each rank drains ITS OWN candidate list.
      *
      * @details Inside a parallel region: @p in_region(rank) for the calling rank

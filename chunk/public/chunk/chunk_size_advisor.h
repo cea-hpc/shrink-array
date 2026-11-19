@@ -44,13 +44,13 @@
 // ChunkSizeScan does the counting). For zero_any the identity of a
 // second_value constant IS the values_load() pointer (a SecondValueRegistry slot), so
 // a constant run is a pointer comparison:
-//         const1 + const1           -> const1
-//         const2(p) + const2(p)     -> const2
-//         anything else         -> materialized
+//         first + first                   -> first value
+//         second(p) + second(p)           -> second value
+//         anything else                   -> materialized
 // When S divides C the row is EXACT; otherwise partly-overlapped materialised
 // chunks are sampled (capped) and extrapolated. Deliberately CONSERVATIVE for
 // zero_any's mixed dual-value patterns. Constant-at-C windows count as
-// compressed whichever constant (const2 registry growth is ignored).
+// compressed whichever constant (second-value registry growth is ignored).
 //
 // CONCURRENCY CONTRACT: call at a QUIESCENT phase boundary only (same contract
 // as flush_pending_deferred_ops: no concurrent writers/compressors, deferred
@@ -204,7 +204,7 @@ struct ChunkSizeAdvisor
     ///        candidate chunk size would give it. Read-only; call at a
     ///        quiescent point. Variant-generic via @p Arr (zero::Array /
     ///        zero_or_value::Array / zero_any::Array): the only per-variant part is the
-    ///        const2 classification, selected with if constexpr on chunk_config.
+    ///        second-value classification, selected with if constexpr on chunk_config.
     template <typename Arr>
     static ChunkSizeReport analyze(const Arr& arr, const Options& opt = {})
     {

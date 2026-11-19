@@ -38,7 +38,7 @@ Chaque tableau a, indexées par son numéro (`array_id`), trois lignes d'une ent
 |---|---|---|
 | `array_type_const_val` | 1 octet | le type de constante (0 ou 1) |
 | `array_second_value` | `sizeof(T)` octets par défaut | la seconde valeur du chunk |
-| `array_is_inside_chunk_list_to_compress` | 1 octet | « déjà en liste de compression » |
+| `candidate_flags` | 1 octet | « déjà en liste de compression » |
 
 Avec l'option CMake **`CHUNK_SECOND_VALUE_INDEXED`** (désactivée par défaut), l'emplacement de
 seconde valeur des types de plus de 4 octets contient l'**identifiant** du tableau du registre
@@ -117,7 +117,7 @@ suivante : ~3 µs par écriture sur `shrink_bench_omp_zero_any_256` à 64 thread
 ## 5. La passe de compression
 
 Même déroulé que pour les autres variantes (réservation des candidats, fenêtre de compression,
-relecture), avec deux listes à l'issue de la relecture (`fill_list_to_compress`, qui compare
+relecture), avec deux listes à l'issue de la relecture (`classify_candidate`, qui compare
 chaque élément au premier élément du chunk) :
 
 - les chunks **uniformes à zéro** sont compressés au type 0 : `values` repasse à `first_value_buffer_` ;
@@ -139,7 +139,7 @@ flowchart TD
     B -->|non| C["steal_mark de chaque candidat"]
     C --> D{"CompressionManager::start"}
     D -->|refusé| D1["steal_unmark de tous, renoncer"]
-    D -->|accepté| E["fill_list_to_compress à la taille de l'entrée :<br/>scan_constants contre 0 et l'élément 0"]
+    D -->|accepté| E["classify_candidate à la taille de l'entrée :<br/>scan_constants contre 0 et l'élément 0"]
     E -->|"tout = 0"| F["items ll_compt1"]
     E -->|"tout = élément 0"| G["items ll_compt2"]
     E -->|"sinon"| N["steal_unmark tout de suite"]
@@ -195,7 +195,7 @@ flowchart TD
     E --> F{"chunk à sa seconde valeur<br/>et valeur = celle-ci ?"}
     F -->|oui| F1["rien à faire"]
     F -->|non| G{"AVANT l'écriture : une constante écrite<br/>sur autre chose, ou découverte / départ<br/>qui passe may_become_uniform ?"}
-    G -->|oui| G1["add_to_compression_list"]
+    G -->|oui| G1["queue_as_candidate"]
     G -->|non| H
     G1 --> H{"perform_core_assignment :<br/>état du chunk ?"}
     H -->|"élément déjà = valeur = seconde valeur"| K

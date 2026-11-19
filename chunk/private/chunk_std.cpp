@@ -216,7 +216,7 @@ std::size_t compress_now_and_trim_pools()
     const auto& type_registry = Singleton<TypeStateRegistry>::get_ref();
     // Every rank's candidates (the threaded builds; outside a region, one region
     // in which each rank sweeps its own list): the pass that ends a phase, which
-    // CHUNK_AGGRESSIVE_COMPRESSION skips -- force_chunk_to_compress() alone
+    // CHUNK_AGGRESSIVE_COMPRESSION skips -- force_compress_all() alone
     // folded the calling rank's list only. A no-op in a serial build.
     if (type_registry.has_candidates())
     {
@@ -227,7 +227,7 @@ std::size_t compress_now_and_trim_pools()
     // (perform_compression); the last, partial batch waited here for good
     // (nothing for a serial zero or zero_or_value: their counters compress on
     // the write).
-    type_registry.force_chunk_to_compress();
+    type_registry.force_compress_all();
     return type_registry.trim_reuse_pools(0);
 }
 

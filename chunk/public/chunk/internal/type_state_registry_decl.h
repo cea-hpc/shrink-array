@@ -308,7 +308,7 @@ class TypeStateRegistry : public TypeStateRegistryParallelInterface<TypeStateReg
     static void ensure_ready();
 
     /// Compresses every compressible chunk of every type, ignoring the candidate lists.
-    void force_chunk_to_compress() const;
+    void force_compress_all() const;
 
     /**
      * @brief Drains the compression-candidate backlog of every type.

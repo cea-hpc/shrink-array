@@ -70,7 +70,7 @@ flowchart TD
     F -->|non| H
     G --> H["store_value_at"]
     H --> I{"ancienne != 0 et nouvelle == 0, ou élément<br/>changé par un autre écrivain ?<br/>(mark_for_compression_core)"}
-    I -->|oui| J["add_to_compression_list :<br/>queue_flag::try_queue, puis ajout"]
+    I -->|oui| J["queue_as_candidate :<br/>queue_flag::try_queue, puis ajout"]
     I -->|non| K
     J --> K["end_write + entretien du 7.2<br/>(trigger_compression_if_needed)"]
 ```
@@ -105,7 +105,7 @@ Quand la liste d'un thread dépasse le seuil de déclenchement (§6), une passe
    de tours et doublait le temps du run ;
 2. chaque candidat est **réservé** (`steal_mark`), avant l'ouverture de la fenêtre de
    compression (`CompressionManager::start()`), dont la barrière publie les réservations ;
-3. `fill_list_to_compress` relit chaque candidat et ne garde que ceux qui sont **entièrement
+3. `classify_candidate` relit chaque candidat et ne garde que ceux qui sont **entièrement
    à zéro** ; les autres sont démarqués tout de suite, et le drapeau de file de chaque candidat
    parcouru est rendu (`queue_flag::hand_back`) ;
 4. chacun de ceux-là est compressé (`clear_int_st` : `values` repasse à `first_value_buffer_` par CAS, et
@@ -128,7 +128,7 @@ flowchart TD
     B -->|non| C["steal_mark de chaque candidat"]
     C --> D{"CompressionManager::start"}
     D -->|refusé| D1["steal_unmark de tous, renoncer"]
-    D -->|accepté| E["fill_list_to_compress à la taille n_elems de l'entrée :<br/>written et is_constant_to 0 ?<br/>puis queue_flag::hand_back"]
+    D -->|accepté| E["classify_candidate à la taille n_elems de l'entrée :<br/>written et is_constant_to 0 ?<br/>puis queue_flag::hand_back"]
     E -->|oui| F["items ll_compt"]
     E -->|non| G["steal_unmark tout de suite"]
     F --> H["clear_int_st : CAS values -> first_value_buffer_,<br/>free_block_to_pool après une période de grâce,<br/>steal_unmark"]

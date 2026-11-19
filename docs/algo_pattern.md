@@ -117,7 +117,7 @@ The course of the pass; the steps up to the scan are those of `zero_any`
 
 ```mermaid
 flowchart TD
-    A["zero_any's pass up to the scan:<br/>flush check, steal_mark, start"] --> E["fill_list_to_compress at the entry's size:<br/>scan_constants against 0 and element 0"]
+    A["zero_any's pass up to the scan:<br/>flush check, steal_mark, start"] --> E["classify_candidate at the entry's size:<br/>scan_constants against 0 and element 0"]
     E -->|"all = 0"| F["type 0: slot reset_release,<br/>CAS values -> first_value_buffer_"]
     E -->|"all = element 0"| G["type 1: find_or_register_second_value_release,<br/>CAS values -> the registry array"]
     E -->|"neither"| M["classify_motif: read_block,<br/>subtract element 0, hash, find_or_admit"]
@@ -139,8 +139,8 @@ the readers of §6.
 
 **With OMPT** (clang, Intel: `CHUNK_HAVE_OMPT`) the pass between regions is not
 `make_block_compression()`: `ompt_callback_parallel_end` runs
-`compress_chunk_to_compress_in_par()`, which compresses chunk by chunk (`compress()`), with no
-claim and no `fill_list_to_compress()`. There, a chunk `compress()` leaves materialised goes
+`compress_rank_queue()`, which compresses chunk by chunk (`compress()`), with no
+claim and no `classify_candidate()`. There, a chunk `compress()` leaves materialised goes
 through `Chunk::compress_to_motif()`: the same read, admission rule and `block_clear_motif()`
 order as above, at once rather than queued. It runs where `compress()`'s own clear does -- the
 chunk in that rank's list alone (its queue flag), no writer (the team has joined) -- so the CAS
@@ -193,7 +193,7 @@ flowchart TD
     E --> F{"registry constant = value?<br/>(is_second_value_ptr_of: never a motif)"}
     F -->|yes| F1["nothing to do"]
     F -->|no| G{"first or last element<br/>(is_completion_write),<br/>or a zero_any criterion?"}
-    G -->|yes| G1["add_to_compression_list"]
+    G -->|yes| G1["queue_as_candidate"]
     G -->|no| H
     G1 --> H{"values in the motif region?<br/>(is_motif_ptr)"}
     H -->|yes| I["create_value: buffer filled with<br/>motif[j] + offset of the slot,<br/>CAS against the motif pointer"]

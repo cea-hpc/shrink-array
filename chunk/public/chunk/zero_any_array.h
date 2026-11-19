@@ -22,7 +22,7 @@
 #include <iostream>         // for cout, ostream
 #include <utility>          // for move
 #include <vector>           // for vector, swap
-#include <unordered_set>    // for the const2 GC live set
+#include <unordered_set>    // for the second-value GC live set
 #include <initializer_list> // the {a, b, c} constructor
 #include <iterator>         // std::forward_iterator, std::distance -- the (first, last) constructor
 #include <type_traits>      // std::is_same_v (reclaim_second_values: bool has no registry)
@@ -34,7 +34,7 @@
 #include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
 #include "chunk/config.h"                               // for threaded, g_in_rechunk_rebuild
 #include "chunk/internal/pmp_chunk.h"             // CHUNK_PMP_IN_PARALLEL_REGION (reclaim_second_values), pmp::Team
-#include "chunk/internal/second_value_registry.h" // for GlobalVecHolder (const2 GC)
+#include "chunk/internal/second_value_registry.h" // for GlobalVecHolder (second-value GC)
 #include "chunk/internal/write_compress_sync_policy.h" // for WriteCompressSyncPolicy
 #include "chunk/internal/array_chunk_core.h"           // the core the bases share
 #include "chunk/internal/zero_any_proxy.h"             // zero_any::Proxy<T> and its tables
@@ -305,7 +305,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
     }
 
     /**
-     * @brief Report how many const2 buffers a sweep could reclaim.
+     * @brief Report how many second-value buffers a sweep could reclaim.
      * @details Runs gc_collect_live() and compares the live count with
      *          GlobalVecHolder's total; the difference is the reclaimable set.
      *          Diagnostic only -- a report the caller asked for (written in
@@ -317,7 +317,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
         std::unordered_set<const void*> live;
         gc_collect_live(live);
         const std::size_t held = GlobalVecHolder<T>::count_entries();
-        CHUNK_LOG_ALWAYS(compress, "const2-gc: live={} / holder={}  (reclaimable={})", live.size(), held,
+        CHUNK_LOG_ALWAYS(compress, "second-value-gc: live={} / holder={}  (reclaimable={})", live.size(), held,
                          held > live.size() ? held - live.size() : 0);
     }
 
@@ -442,7 +442,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
     void print_compression_stats(std::ostream& os = std::cout) const;
 
     /**
-     * @brief Take this array's reference on the const2 registry, once, as soon
+     * @brief Take this array's reference on the second-value registry, once, as soon
      *        as it has chunks.
      * @details The registry is shared by every array of the zero_any family with element
      *          type T and reference-counted (the last release frees everything). Given back
@@ -454,7 +454,7 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
     void acquire_second_value_registry();
 
     /// @brief The identity step of swap(): array_id and the registry entry (the
-    ///        per-chunk metadata rows follow the chunks), the const2 registry
+    ///        per-chunk metadata rows follow the chunks), the second-value registry
     ///        reference (it goes with the chunks that need it).
     void swap_identity(Derived& other)
     {
@@ -464,21 +464,21 @@ class ArrayImpl : public SecondValueArrayBase<Derived>, public ParallelSupport<D
         ProxyType::array_registry->swap_keys(this->registry_key(), other.registry_key());
     }
 
-    // ── const2 mark-sweep GC: read-only mark + report ──────────────────────────
+    // ── second-value mark-sweep GC: read-only mark + report ──────────────────────────
 
     /**
-     * @brief Mark phase of the const2 garbage collection: collect live buffers.
+     * @brief Mark phase of the second-value garbage collection: collect live buffers.
      *
      * @details Scans every live zero_any::Array<T> through the shared registry and inserts the
-     *          const2 buffer pointer of each chunk compressed to its second value. Read-only:
+     *          second-value buffer pointer of each chunk compressed to its second value. Read-only:
      *          safe at any quiescent point.
      *
-     * @param[out] live set the referenced const2 buffer pointers are inserted into
+     * @param[out] live set the referenced second-value buffer pointers are inserted into
      * @see gc_mark_report for the reporting counterpart
      */
     static void gc_collect_live(std::unordered_set<const void*>& live);
 
-    /// @brief This array holds one reference on the chunk type's const2 registry
+    /// @brief This array holds one reference on the chunk type's second-value registry
     ///        (SecondValueRegistry). See acquire_second_value_registry().
     bool holds_second_value_registry_ = false;
 };

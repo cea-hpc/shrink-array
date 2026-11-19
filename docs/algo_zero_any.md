@@ -38,7 +38,7 @@ Each array has, indexed by its number (`array_id`), three rows with one entry pe
 |---|---|---|
 | `array_type_const_val` | 1 byte | the constant type (0 or 1) |
 | `array_second_value` | `sizeof(T)` bytes by default | the chunk's second value |
-| `array_is_inside_chunk_list_to_compress` | 1 byte | "already in compression list" |
+| `candidate_flags` | 1 byte | "already in compression list" |
 
 With the CMake option **`CHUNK_SECOND_VALUE_INDEXED`** (disabled by default), the second-value
 slot of types larger than 4 bytes holds the **identifier** of the registry array
@@ -115,7 +115,7 @@ write: ~3 µs per write on `shrink_bench_omp_zero_any_256` at 64 threads.
 ## 5. The compression pass
 
 Same sequence as for the other variants (reservation of the candidates, compression window,
-re-read), with two lists at the end of the re-read (`fill_list_to_compress`, which compares
+re-read), with two lists at the end of the re-read (`classify_candidate`, which compares
 each element with the first element of the chunk):
 
 - chunks **uniform at zero** are compressed to type 0: `values` goes back to `first_value_buffer_`;
@@ -137,7 +137,7 @@ flowchart TD
     B -->|no| C["steal_mark every candidate"]
     C --> D{"CompressionManager::start"}
     D -->|declined| D1["steal_unmark all, give up"]
-    D -->|accepted| E["fill_list_to_compress at the entry's size:<br/>scan_constants against 0 and element 0"]
+    D -->|accepted| E["classify_candidate at the entry's size:<br/>scan_constants against 0 and element 0"]
     E -->|"all = 0"| F["list ll_compt1"]
     E -->|"all = element 0"| G["list ll_compt2"]
     E -->|"otherwise"| N["steal_unmark at once"]
@@ -193,7 +193,7 @@ flowchart TD
     E --> F{"chunk at its second value<br/>and value = that value?"}
     F -->|yes| F1["nothing to do"]
     F -->|no| G{"BEFORE the store: a constant written<br/>over something else, or discover / leave<br/>passing may_become_uniform?"}
-    G -->|yes| G1["add_to_compression_list"]
+    G -->|yes| G1["queue_as_candidate"]
     G -->|no| H
     G1 --> H{"perform_core_assignment:<br/>state of the chunk?"}
     H -->|"element already = value = second value"| K

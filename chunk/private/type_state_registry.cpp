@@ -259,14 +259,14 @@ void finalize_parallel_phase()
         // time stay materialised to the end of the run -- the constants as
         // well as pattern's motifs. Drain it here, as the threaded branch does,
         // with the pass that trigger runs (make_block_compression(), through
-        // force_chunk_to_compress(); a no-op on an empty list).
+        // force_compress_all(); a no-op on an empty list).
         // Neither has_candidates() as the gate nor
         // run_compress_pass() as the drain: both are
         // use_fast_block_compression code, which a serial build compiles out
         // (the gate always says "nothing").
         if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
         {
-            Singleton<TypeStateRegistry>::get_ref().force_chunk_to_compress();
+            Singleton<TypeStateRegistry>::get_ref().force_compress_all();
         }
     }
 }
@@ -297,11 +297,11 @@ void TypeStateRegistry::resize_candidate_lists() const
     }
 }
 
-void TypeStateRegistry::force_chunk_to_compress() const
+void TypeStateRegistry::force_compress_all() const
 {
     for (const auto& elm : get_list_type_chunk())
     {
-        elm->force_chunk_to_compress();
+        elm->force_compress_all();
     }
 }
 

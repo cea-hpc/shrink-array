@@ -425,7 +425,7 @@ class ProxyFastCompPolicy : public ProxySpec<T, Derived, ChunkT>
     void set_array_id_ptr_is_inside_chunk() noexcept
     {
         derived().set_array_id(); // zero_any::ProxyImpl's no-arg overload (looks the table up)
-        Base::set_ptr_is_inside_chunk_list_to_compress();
+        Base::bind_candidate_flag();
     }
 
   private:
@@ -689,7 +689,7 @@ class ProxyImpl : public ProxyFastCompPolicy<Derived, T, ChunkT, chunk_config::u
      *          - discover: any non-first value on a chunk with no second value yet;
      *          - leave: old == second, new is neither constant. The chunk may be
      *            turning uniform at a third value W, which the pass compresses
-     *            (fill_list_to_compress scans against values[0]). Without this
+     *            (classify_candidate scans against values[0]). Without this
      *            clause a chunk once compressed to V, later uniformly W, is never
      *            queued again until it passes through first_value.
      *

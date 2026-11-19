@@ -152,7 +152,7 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::mark_for_compression_core(I
     if (should_mark_for_compression(old_value, new_value) || !same_value(read_values(), expected_in_memory))
         [[unlikely]]
     {
-        Base::add_to_compression_list();
+        Base::queue_as_candidate();
     }
 }
 
@@ -166,7 +166,7 @@ void zero::ProxyFastCompPolicy<Derived, T, Enabled>::mark_for_compression_core(I
     if (should_mark_for_compression(old_value, new_value) || !same_value(read_values_at(vals), expected_in_memory))
         [[unlikely]]
     {
-        Base::add_to_compression_list();
+        Base::queue_as_candidate();
     }
 }
 

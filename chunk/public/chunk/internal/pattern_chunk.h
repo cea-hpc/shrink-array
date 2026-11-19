@@ -131,7 +131,7 @@ class Chunk : public zero_any::ChunkImpl<T, Chunk<T>>
 
     /**
      * @brief The pass's third classification, after zero_any's two constants
-     *        (fill_list_to_compress()): is this claimed, materialised chunk a
+     *        (classify_candidate()): is this claimed, materialised chunk a
      *        registered motif plus an offset? If so, it is queued for
      *        compress_motif_candidates(), and keeps its claim.
      * @details Reads the chunk in one block, normalises it (element j minus element
@@ -148,7 +148,7 @@ class Chunk : public zero_any::ChunkImpl<T, Chunk<T>>
     void classify_motif(int chunk_index, int array_id, ChunkElems size);
 
     /**
-     * @brief The OMPT pass's motif step (zero_any::ChunkImpl::compress_chunk_to_compress_in_par()):
+     * @brief The OMPT pass's motif step (zero_any::ChunkImpl::compress_rank_queue()):
      *        this materialised chunk, which compress() left as it is (neither constant),
      *        compressed to its registered motif plus an offset, at once, under the same
      *        admission rule as classify_motif().
@@ -164,7 +164,7 @@ class Chunk : public zero_any::ChunkImpl<T, Chunk<T>>
      */
     void compress_to_motif(int thr, int chunk_index, int array_id, ChunkElems size);
 
-    /// @brief How many motif candidates this thread's pass holds (fill_list_chunk_to_compress_in_par()).
+    /// @brief How many motif candidates this thread's pass holds (classify_rank_candidates()).
     [[nodiscard]] static std::size_t motif_candidate_count() noexcept
     {
         return motif_candidates_.size();

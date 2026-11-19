@@ -126,7 +126,7 @@ Le déroulé de la passe ; les étapes jusqu'au parcours sont celles de `zero_an
 
 ```mermaid
 flowchart TD
-    A["passe de zero_any jusqu'au parcours :<br/>test du vidage, steal_mark, start"] --> E["fill_list_to_compress à la taille de l'entrée :<br/>scan_constants contre 0 et l'élément 0"]
+    A["passe de zero_any jusqu'au parcours :<br/>test du vidage, steal_mark, start"] --> E["classify_candidate à la taille de l'entrée :<br/>scan_constants contre 0 et l'élément 0"]
     E -->|"tout = 0"| F["type 0 : reset_release de la case,<br/>CAS values -> first_value_buffer_"]
     E -->|"tout = élément 0"| G["type 1 : find_or_register_second_value_release,<br/>CAS values -> le tableau du registre"]
     E -->|"ni l'un ni l'autre"| M["classify_motif : read_block,<br/>soustraire l'élément 0, hacher, find_or_admit"]
@@ -148,8 +148,8 @@ constantes utilisent les formes release des écritures de la case (`reset_releas
 
 **Avec OMPT** (clang, Intel : `CHUNK_HAVE_OMPT`), la passe entre régions n'est pas
 `make_block_compression()` : `ompt_callback_parallel_end` lance
-`compress_chunk_to_compress_in_par()`, qui compresse chunk par chunk (`compress()`), sans
-réservation ni `fill_list_to_compress()`. Là, un chunk que `compress()` laisse matérialisé passe
+`compress_rank_queue()`, qui compresse chunk par chunk (`compress()`), sans
+réservation ni `classify_candidate()`. Là, un chunk que `compress()` laisse matérialisé passe
 par `Chunk::compress_to_motif()` : la même lecture, la même règle d'admission et le même ordre
 de `block_clear_motif()` que ci-dessus, tout de suite au lieu d'être mis en file. Elle tourne là
 où tourne la remise à zéro de `compress()` elle-même -- le chunk dans la liste de ce seul rang
@@ -205,7 +205,7 @@ flowchart TD
     E --> F{"constante du registre = valeur ?<br/>(is_second_value_ptr_of : jamais un motif)"}
     F -->|oui| F1["rien à faire"]
     F -->|non| G{"premier ou dernier élément<br/>(is_completion_write),<br/>ou un critère de zero_any ?"}
-    G -->|oui| G1["add_to_compression_list"]
+    G -->|oui| G1["queue_as_candidate"]
     G -->|non| H
     G1 --> H{"values dans la région des motifs ?<br/>(is_motif_ptr)"}
     H -->|oui| I["create_value : tampon rempli de<br/>motif[j] + offset de la case,<br/>CAS contre le pointeur du motif"]

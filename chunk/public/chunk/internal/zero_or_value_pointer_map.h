@@ -260,7 +260,7 @@ class PointerMap
 
     /// @brief Index of second value @p key in the shared value table, or -1
     ///        when it is not registered (0 for bool, which has no table).
-    [[nodiscard]] int find_idx_array_const2(InT<T> key) const;
+    [[nodiscard]] int find_second_value_index(InT<T> key) const;
 
     /// @brief Change the second value and its table index recorded for
     ///        array @p key.

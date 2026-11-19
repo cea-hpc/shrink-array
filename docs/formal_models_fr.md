@@ -70,7 +70,7 @@ tout à zéro. Chaque nom du modèle correspond à un endroit du source, avec le
 | `compressor_start()`, `compressor_finish()`, `heavy_barrier()` | `compression_manager_inline.h` : `start()`, `finish()` ; `dekker::heavy_barrier()` |
 | `mark`, `steal_mark()`, `steal_marked()`, `steal_unmark()` | `chunk_base.h` : `steal_mark_` et ses trois verbes |
 | `values`, `values_load()`, `cas_install()`, `steal()` | `chunk_base.h` : `values`, `values_load()`, `compare_and_swap_gen()` ; `zero_any_chunk.h` : `try_mark_const_and_get_old()` |
-| `materialise()`, le parcours, l'écriture d'élément | `zero_any_chunk_inline.h` : `create_value()`, `wait_before_materialise()`, `fill_list_to_compress()` ; `relaxed_element.h` |
+| `materialise()`, le parcours, l'écriture d'élément | `zero_any_chunk_inline.h` : `create_value()`, `wait_before_materialise()`, `classify_candidate()` ; `relaxed_element.h` |
 | `writer()` | `proxy_base_inline.h` : `write_with_optional_lock_impl()` |
 
 Le modèle vérifie trois propriétés : **P1**, un écrivain n'écrit jamais dans un tampon que la passe a
@@ -272,7 +272,7 @@ compresseur est bornée (`CHUNK_COMPRESS_MAX_YIELDS`, 10 000 yields de 1 000 pau
 interblocage, mais un arrêt des deux threads pendant tout ce budget, après quoi la passe est
 abandonnée (le compteur de porte des abandons sur attente trop longue, dans le rapport
 `CHUNK_STATS`, les compte). Il faut un chunk à une constante tout en étant dans une liste de
-candidats -- le cas contre lequel `fill_list_to_compress()` se prémunit avec `is_not_first_value()` -- donc c'est
+candidats -- le cas contre lequel `classify_candidate()` se prémunit avec `is_not_first_value()` -- donc c'est
 rare, pas impossible.
 
 Le correctif découle du protocole lui-même : un écrivain du chemin rapide tient son drapeau et a
@@ -377,7 +377,7 @@ l'écart du chunk (protocole 1), la case y est donc stable.
 ### 8.7 F6 : un chunk rendu constant pendant la restitution d'une passe n'était jamais mis en file (corrigé)
 
 Le modèle est `formal/queue_handback.c` ; il ne vérifie aucun ordre mémoire, mais un protocole :
-le drapeau « en file » d'un chunk (`array_is_inside_chunk_list_to_compress`) et la marque de la
+le drapeau « en file » d'un chunk (`candidate_flags`) et la marque de la
 passe. Une passe restitue chaque candidat par `steal_unmark()`, puis remet son drapeau (la fin de
 `make_block_compression()` ; l'ordre est gardé exprès : une fois le drapeau baissé, une autre passe
 peut mettre le chunk en file et le marquer, et une levée de marque tardive effacerait sa
@@ -394,7 +394,7 @@ que sa marque tient encore les écrivains à l'écart, le drapeau du candidat pa
 « restitué » (`queue_flag::hand_back`, dans le parcours même, avant que le parcours lève la marque d'un
 chunk qu'il écarte, dans les trois variantes) ; un écrivain dont le marquage trouve 2 le change
 en 3, « écrit entre-temps », au lieu de renoncer (`queue_flag::try_queue`, à chaque site
-d'écrivain : `add_to_compression_list()`, sa forme asynchrone, les écritures par plage qui y
+d'écrivain : `queue_as_candidate()`, sa forme asynchrone, les écritures par plage qui y
 passent) ; la passe remet ensuite 2 -> 0 par CAS et, sur un 3, remet elle-même le chunk dans la
 liste de son rang (`queue_flag::release`). Dans les passes de `zero`, `zero_or_value` et
 `zero_any` (avec la validation des motifs de `pattern`), builds threadés ; le build série n'a pas

@@ -83,7 +83,7 @@ class TypeState final : public virtual TypeStateInterface,
 
     void destroy_block_chunk() override;
     /// @brief CompressCandidates::force_compress().
-    void force_chunk_to_compress() const override
+    void force_compress_all() const override
     {
         Candidates::force_compress();
     }

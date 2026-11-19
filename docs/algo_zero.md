@@ -69,7 +69,7 @@ flowchart TD
     F -->|no| H
     G --> H["store_value_at"]
     H --> I{"old != 0 and new == 0, or element<br/>changed by another writer?<br/>(mark_for_compression_core)"}
-    I -->|yes| J["add_to_compression_list:<br/>queue_flag::try_queue, then push"]
+    I -->|yes| J["queue_as_candidate:<br/>queue_flag::try_queue, then push"]
     I -->|no| K
     J --> K["end_write + housekeeping of 7.2<br/>(trigger_compression_if_needed)"]
 ```
@@ -104,7 +104,7 @@ When a thread's list exceeds the trigger threshold (§6), a
    rounds and doubled the run time;
 2. each candidate is **reserved** (`steal_mark`), before the compression window
    opens (`CompressionManager::start()`), whose barrier publishes the reservations;
-3. `fill_list_to_compress` re-reads each candidate and keeps only those that are **entirely
+3. `classify_candidate` re-reads each candidate and keeps only those that are **entirely
    zero**; the others are unmarked at once, and every scanned candidate's queue flag is handed
    back (`queue_flag::hand_back`);
 4. each of these is compressed (`clear_int_st`: `values` goes back to `first_value_buffer_` by CAS, and
@@ -126,7 +126,7 @@ flowchart TD
     B -->|no| C["steal_mark every candidate"]
     C --> D{"CompressionManager::start"}
     D -->|declined| D1["steal_unmark all, give up"]
-    D -->|accepted| E["fill_list_to_compress at the entry's n_elems:<br/>written and is_constant_to 0?<br/>then queue_flag::hand_back"]
+    D -->|accepted| E["classify_candidate at the entry's n_elems:<br/>written and is_constant_to 0?<br/>then queue_flag::hand_back"]
     E -->|yes| F["list ll_compt"]
     E -->|no| G["steal_unmark at once"]
     F --> H["clear_int_st: CAS values -> first_value_buffer_,<br/>free_block_to_pool after a grace period,<br/>steal_unmark"]

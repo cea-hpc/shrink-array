@@ -157,7 +157,7 @@ int ChunkSizeScan<Arr>::classify(const ChunkT& chunk, const void*& key) const
     key = nullptr;
     if (chunk.is_first_value())
     {
-        return kind_const1;
+        return kind_first_value;
     }
     if constexpr (has_motif_state_v<ChunkT>)
     {
@@ -175,28 +175,28 @@ int ChunkSizeScan<Arr>::classify(const ChunkT& chunk, const void*& key) const
         if (chunk.is_second_value())
         {
             key = static_cast<const void*>(chunk.values_load());
-            return kind_const2;
+            return kind_second_value;
         }
     }
     else if constexpr (chunk_config::use_zero_or_value)
     {
-        bool is_const2 = false;
+        bool is_second = false;
         if constexpr (is_bool_like_v<T>)
         {
-            is_const2 = chunk.is_second_value();
+            is_second = chunk.is_second_value();
         }
         else
         {
-            is_const2 = second_value_idx_ >= 0 && chunk.is_second_value(second_value_idx_);
+            is_second = second_value_idx_ >= 0 && chunk.is_second_value(second_value_idx_);
         }
-        if (is_const2)
+        if (is_second)
         {
-            static constexpr int second_value_sentinel = 0; // one address: array-level, all const2 equal
+            static constexpr int second_value_sentinel = 0; // one address: array-level, all second values equal
             key                                        = &second_value_sentinel;
-            return kind_const2;
+            return kind_second_value;
         }
     }
-    // zero: const1 or mat only.
+    // zero: first value or mat only.
     return kind_mat;
 }
 
@@ -386,7 +386,7 @@ void ChunkSizeScan<Arr>::pick_part(int64_t part)
     for (int64_t j = j0; j < j1; ++j)
     {
         const void* key = nullptr;
-        if (classify(array_.chunk_list_[j], key) != kind_mat) // skip const1 / const2 (only mat has data)
+        if (classify(array_.chunk_list_[j], key) != kind_mat) // skip first value / second value (only mat has data)
         {
             continue;
         }

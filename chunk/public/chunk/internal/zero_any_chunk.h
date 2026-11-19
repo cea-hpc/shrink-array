@@ -324,7 +324,7 @@ class ChunkThreadPolicy : public SecondValueChunkBase<T, Derived>, public ChunkC
      * \brief Release this chunk's buffer to @p thr_rank's pool and point it at the
      *        first constant, WITHOUT counting a compression: the re-chunk rebuild
      *        releasing an old chunk it has transcribed (as zero::Chunk::release_st).
-     * \param ptr_type_const     Slot of the per-chunk type table (set to const1).
+     * \param ptr_type_const     Slot of the per-chunk type table (set to the first value).
      * \param ptr_second_value The chunk's second-value slot (reset).
      * \param thr_rank         Rank whose pool receives the buffer.
      * \pre The chunk is materialised (written()), and the array is quiescent (no
@@ -554,9 +554,9 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>,
 
     void compress(int thr_rank, int chunk_index, int array_id, bool apply, ChunkElems size);
 
-    static void compress_chunk_to_compress(bool apply);
+    static void compress_queued(bool apply);
 
-    /// @brief One rank's share of compress_chunk_to_compress() outside a
+    /// @brief One rank's share of compress_queued() outside a
     ///        region: the body its region runs on each thread. Public for
     ///        TypeStateRegistry's single sweep region (TypeState::sweep_rank).
     static void compress_sweep_rank(int thr, bool apply);
@@ -568,7 +568,7 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>,
     {
         return build_config::threaded && chunk_config::not_use_compression_with_ompt && apply;
     }
-    static bool have_chunk_to_compress(int max_thr);
+    static bool has_queued(int max_thr);
 
     static void make_block_compression(int thr, ProxyType* proxy2a);
 
@@ -583,23 +583,23 @@ class ChunkImpl : public ChunkThreadPolicy<T, Derived>,
     ///        serial build)?
     [[nodiscard]] static bool no_candidates() noexcept;
 
-    static void compress_chunk_to_compress_in_par(int thr, bool apply);
+    static void compress_rank_queue(int thr, bool apply);
 
     // Chunk geometry is PER ENTRY in dynamic builds: every queued tuple carries the owning
-    // array's chunk size (field <3>, from push_to_compress_list). The scan bounds come from
+    // array's chunk size (field <3>, from push_candidate). The scan bounds come from
     // that field. Do not add a `= static_chunk_size` default: it would scan only the first
     // static_chunk_size values of a wider chunk, declare it constant and destroy the rest.
-    static void fill_list_chunk_to_compress_in_par(int                   thr,
-                                                   CandidateTuples&      ll_compt1,
-                                                   CandidateValueTuples& ll_compt2,
-                                                   bool                  claimed = false);
+    static void classify_rank_candidates(int                   thr,
+                                         CandidateTuples&      ll_compt1,
+                                         CandidateValueTuples& ll_compt2,
+                                         bool                  claimed = false);
 
-    void fill_list_to_compress(CandidateTuples&      ll_compt1,
-                               CandidateValueTuples& ll_compt2,
-                               int                   chunk_index,
-                               int                   array_id,
-                               ChunkElems            size,
-                               bool                  claimed = false);
+    void classify_candidate(CandidateTuples&      ll_compt1,
+                            CandidateValueTuples& ll_compt2,
+                            int                   chunk_index,
+                            int                   array_id,
+                            ChunkElems            size,
+                            bool                  claimed = false);
 
     static inline constinit internal::LazyImmortal<Manager> s_manager_;
 };

@@ -66,7 +66,7 @@ name in the model stands for one place in the source, with the same memory order
 | `compressor_start()`, `compressor_finish()`, `heavy_barrier()` | `compression_manager_inline.h`: `start()`, `finish()`; `dekker::heavy_barrier()` |
 | `mark`, `steal_mark()`, `steal_marked()`, `steal_unmark()` | `chunk_base.h`: `steal_mark_` and its three verbs |
 | `values`, `values_load()`, `cas_install()`, `steal()` | `chunk_base.h`: `values`, `values_load()`, `compare_and_swap_gen()`; `zero_any_chunk.h`: `try_mark_const_and_get_old()` |
-| `materialise()`, the scan, the element store | `zero_any_chunk_inline.h`: `create_value()`, `wait_before_materialise()`, `fill_list_to_compress()`; `relaxed_element.h` |
+| `materialise()`, the scan, the element store | `zero_any_chunk_inline.h`: `create_value()`, `wait_before_materialise()`, `classify_candidate()`; `relaxed_element.h` |
 | `writer()` | `proxy_base_inline.h`: `write_with_optional_lock_impl()` |
 
 Three properties are asserted: **P1**, a writer never stores into a buffer the pass has returned
@@ -257,7 +257,7 @@ chunk -- this writer's. The writer spins on the mark, the compressor on the flag
 the compressor's wait is bounded (`CHUNK_COMPRESS_MAX_YIELDS`, 10,000 yields of 1,000 pauses):
 not a deadlock, but a stall of both threads for that whole budget, after which the pass is
 abandoned (the gate counter of aborts on an overly long wait, in the `CHUNK_STATS` report, counts these). It needs a
-chunk that is at a constant while sitting in a candidate list -- the case `fill_list_to_compress()`
+chunk that is at a constant while sitting in a candidate list -- the case `classify_candidate()`
 guards against with `is_not_first_value()` -- so it is rare, not impossible.
 
 The fix follows from the handshake itself: a fast-path writer holds its flag and has passed
@@ -357,7 +357,7 @@ slot is stable there.
 ### 8.7 F6: a chunk made constant during a pass's hand-back was never queued (fixed)
 
 The model is `formal/queue_handback.c`; it checks a protocol, not a memory ordering: the "queued"
-flag of a chunk (`array_is_inside_chunk_list_to_compress`) and the pass's mark. A pass hands each
+flag of a chunk (`candidate_flags`) and the pass's mark. A pass hands each
 candidate back with `steal_unmark()`, then resets its flag (the end of `make_block_compression()`;
 the order is kept on purpose: once the flag is down another pass may queue and mark the chunk,
 and a late unmark would erase its claim). It used to reset the flag to 0. Between the two, a
@@ -372,7 +372,7 @@ The fix (`chunk/internal/queue_flag.h`): as soon as the pass has scanned a candi
 its mark still keeps the writers out, the candidate's flag goes from 1 to 2, "handed back"
 (`queue_flag::hand_back`, in the scan itself, before the scan releases the mark of a chunk it
 drops, in the three variants); a writer whose marking finds 2 turns it into 3, "written meanwhile",
-rather than giving up (`queue_flag::try_queue`, every writer's site: `add_to_compression_list()`,
+rather than giving up (`queue_flag::try_queue`, every writer's site: `queue_as_candidate()`,
 its async form, the range writes through it); the pass then resets 2 -> 0 by CAS and, on a 3,
 queues the chunk again in its own rank's list (`queue_flag::release`). In the passes of `zero`,
 `zero_or_value` and `zero_any` (with `pattern`'s motif commit), threaded builds; the serial

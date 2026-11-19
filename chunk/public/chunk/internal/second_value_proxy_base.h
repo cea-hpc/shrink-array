@@ -52,7 +52,6 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     using Base = ProxyBase<Derived, T, ChunkT>;
     friend Base;
 
-    using Base::add_to_compression_list;
     using Base::array_id_;
     using Base::chunk_;
     using Base::chunk_index_;
@@ -60,6 +59,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     using Base::elem_offset_;
     using Base::is_first_value;
     using Base::is_not_first_value;
+    using Base::queue_as_candidate;
     using Base::values_;
 
     using typename Base::AtomicPtrRefT;
@@ -67,8 +67,8 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
 
     // Both members exist on ProxyBase in every mode (the serial specialisation
     // declares them too); only their USE is mode-specific.
-    using Base::array_is_inside_chunk_list_to_compress;
-    using Base::ptr_is_inside_chunk_list_to_compress_;
+    using Base::candidate_flag_;
+    using Base::candidate_flags;
 
     // ========================================================================
     // CRTP: Access to derived class
@@ -206,7 +206,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     /**
      * @brief Pre-check shared by every variant: the write is of a constant.
      * @details A write is worth the marking path (one read of the old value,
-     *          then add_to_compression_list) when the value written is one of
+     *          then queue_as_candidate) when the value written is one of
      *          the chunk's two constants -- whatever the chunk's state.
      *          should_mark_for_compression() then keeps the writes that change
      *          the element (old != new), so a chunk is queued at most once per

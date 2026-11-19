@@ -59,8 +59,7 @@ template <typename T, typename Derived, bool Enabled>
 }
 
 template <typename T, typename Derived, bool Enabled>
-void zero::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_par(int              thr,
-                                                                                        CandidateTuples& ll_compt)
+void zero::ChunkFastCompPolicy<T, Derived, Enabled>::classify_rank_candidates(int thr, CandidateTuples& ll_compt)
 {
     const auto& vec_tup = Derived::Manager::zero_candidates_thr[thr];
 
@@ -76,10 +75,10 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress
 
         // The chunk's OWN geometry, captured at enqueue -- not the ambient size.
         const auto count = ll_compt.size();
-        chunk_t->fill_list_to_compress(ll_compt, chunk_index, array_id, std::get<3>(tup).count());
+        chunk_t->classify_candidate(ll_compt, chunk_index, array_id, std::get<3>(tup).count());
         // Scanned, still marked: hand its queue flag back before the mark can go down,
         // here for the chunks the scan drops (queue_flag.h, F6).
-        queue_flag::hand_back(Proxy<T>::get_array_is_inside_list_to_compress(array_id)[chunk_index]);
+        queue_flag::hand_back(Proxy<T>::candidate_flag_row(array_id)[chunk_index]);
         // Not selected by the scan: the writers may have it back now.
         if (ll_compt.size() == count)
         {
@@ -89,10 +88,10 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress
 }
 
 template <typename T, typename Derived, bool Enabled>
-void zero::ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(CandidateTuples& ll_compt,
-                                                                           int              chunk_index,
-                                                                           int              array_id,
-                                                                           unsigned int     n_elems)
+void zero::ChunkFastCompPolicy<T, Derived, Enabled>::classify_candidate(CandidateTuples& ll_compt,
+                                                                        int              chunk_index,
+                                                                        int              array_id,
+                                                                        unsigned int     n_elems)
 {
     if (derived().written())
     {
@@ -109,7 +108,7 @@ template <typename T, typename Derived, bool Enabled>
 void zero::ChunkThreadPolicy<T, Derived, Enabled>::compress(int thr_rank, unsigned int n_elems)
 {
     // Already compressed: nothing to do. Required: a chunk can be reached twice (its queued
-    // candidate outlives a compression by another path, e.g. the re-chunk fold). On a const1
+    // candidate outlives a compression by another path, e.g. the re-chunk fold). On a first-value
     // chunk `values` IS the shared zero sentinel: is_constant_to(0) would answer true and
     // clear_st() would park the SENTINEL into a reuse list, to be handed out as a buffer.
     if (!derived().written())
@@ -151,12 +150,12 @@ void zero::Chunk<T>::compress_sweep_rank(int thr)
         }
         chunk_p->compress(thr, std::get<3>(tup).count());
 
-        // Release the dedup gate: add_to_compression_list queues a chunk only when its
+        // Release the dedup gate: queue_as_candidate queues a chunk only when its
         // is_inside flag CASes 0->1, so a flag left at 1 means the chunk is never queued
         // again (compression stalls). Reset it TOGETHER with the list clear below: one
         // without the other lets a write re-append the chunk and make_block_compression
-        // double-clears it (see zero_any::Chunk<T>::compress_chunk_to_compress_in_par).
-        Proxy<T>::reset_array_inside_list_to_compress(std::get<2>(tup), std::get<1>(tup));
+        // double-clears it (see zero_any::Chunk<T>::compress_rank_queue).
+        Proxy<T>::clear_candidate_flag(std::get<2>(tup), std::get<1>(tup));
     }
 
     if constexpr (build_config::chunk_dynamic)
@@ -168,7 +167,7 @@ void zero::Chunk<T>::compress_sweep_rank(int thr)
 }
 
 template <typename T>
-void zero::Chunk<T>::compress_chunk_to_compress(bool /*apply*/)
+void zero::Chunk<T>::compress_queued(bool /*apply*/)
 {
     // Each rank its own list, the ranks beyond the team too: a flag left at 1 is a
     // chunk never queued again (see ChunkBase::sweep_every_rank).
@@ -178,7 +177,7 @@ void zero::Chunk<T>::compress_chunk_to_compress(bool /*apply*/)
 
 
 template <typename T, typename Derived, bool Enabled>
-bool zero::ChunkFastCompPolicy<T, Derived, Enabled>::have_chunk_to_compress(int max_thr)
+bool zero::ChunkFastCompPolicy<T, Derived, Enabled>::has_queued(int max_thr)
 {
     if (Manager::zero_candidates_thr.empty())
     {
@@ -262,9 +261,9 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int 
         return;
     }
 
-    auto& vec_tuple_to_compress = Manager::zero_candidates_thr[thr];
+    auto& candidates = Manager::zero_candidates_thr[thr];
 
-    const auto sz = static_cast<int>(vec_tuple_to_compress.size());
+    const auto sz = static_cast<int>(candidates.size());
 
     if (sz == 0)
     {
@@ -291,7 +290,7 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int 
         // per chunk as the pass goes, and all again at the end.
         for (int k = 0; k < sz; ++k)
         {
-            if (auto* const chunk_t = std::get<0>(vec_tuple_to_compress[k]))
+            if (auto* const chunk_t = std::get<0>(candidates[k]))
             {
                 chunk_t->steal_mark();
             }
@@ -300,7 +299,7 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int 
         {
             for (int k = 0; k < sz; ++k)
             {
-                if (auto* const chunk_t = std::get<0>(vec_tuple_to_compress[k]))
+                if (auto* const chunk_t = std::get<0>(candidates[k]))
                 {
                     chunk_t->steal_unmark();
                 }
@@ -312,7 +311,7 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int 
         {
             for (int k = 0; k < sz; ++k)
             {
-                if (auto* const chunk_t = std::get<0>(vec_tuple_to_compress[k]))
+                if (auto* const chunk_t = std::get<0>(candidates[k]))
                 {
                     chunk_t->steal_commit();
                 }
@@ -325,9 +324,9 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int 
     ll_compt.reserve((sz / 10) + 1);
 
     // The scan hands every candidate's queue flag back as it goes, before any mark goes
-    // down (fill_list_chunk_to_compress_in_par: queue_flag.h, F6); the loop at the end
+    // down (classify_rank_candidates: queue_flag.h, F6); the loop at the end
     // releases them.
-    fill_list_chunk_to_compress_in_par(thr, ll_compt);
+    classify_rank_candidates(thr, ll_compt);
 
     // Geometry: a rank's list mixes chunks of EVERY array, at their own sizes. clear_int_st()
     // frees into the reuse list of the AMBIENT size, so pin each chunk to its own n_elems
@@ -350,15 +349,15 @@ void zero::ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int 
     }
 
     queue_flag::release_candidates(
-        vec_tuple_to_compress, sz, [](int array_id, int chunk_index) -> auto&
-        { return Proxy<T>::get_array_is_inside_list_to_compress(array_id)[chunk_index]; },
-        [](int array_id, int chunk_index) { Proxy<T>::reset_array_inside_list_to_compress(array_id, chunk_index); });
+        candidates, sz,
+        [](int array_id, int chunk_index) -> auto& { return Proxy<T>::candidate_flag_row(array_id)[chunk_index]; },
+        [](int array_id, int chunk_index) { Proxy<T>::clear_candidate_flag(array_id, chunk_index); });
 
     if (guarded)
     {
         if (proxy->is_not_const_val())
         {
-            proxy->add_to_compression_list(vec_tuple_to_compress);
+            proxy->queue_as_candidate(candidates);
         }
 
         proxy->compression_mgr.template finish<Proxy<T>>();

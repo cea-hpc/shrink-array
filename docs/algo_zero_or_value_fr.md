@@ -368,7 +368,7 @@ placés avant :
   avant la CAS du drapeau du chunk, car un refus après elle laisserait le drapeau levé et le
   chunk ne serait plus jamais mis en file.
 
-Un drapeau atomique par chunk (« déjà candidat », `array_is_inside_chunk_list_to_compress`,
+Un drapeau atomique par chunk (« déjà candidat », `candidate_flags`,
 indexé par `array_id`) garantit qu'un chunk n'est mis en file **qu'une fois** jusqu'à la
 passe suivante.
 
@@ -393,7 +393,7 @@ parallèle.
 flowchart TD
     A["items (rang, second_value)"] --> B["protocole du compresseur<br/>(CompressionManager::start)"]
     B --> C["pour chaque entrée : figer la taille<br/>du chunk (n_elems de l'entrée)"]
-    C --> D["fill_list_to_compress : parcourir le chunk"]
+    C --> D["classify_candidate : parcourir le chunk"]
     D -->|"tout = first_value"| E["items ll_compt1"]
     D -->|"tout = second_value"| F["items ll_compt2"]
     D -->|"sinon"| G["rien (drapeau remis à zéro)"]
@@ -404,7 +404,7 @@ flowchart TD
     G --> J
 ```
 
-Le **parcours** (`fill_list_to_compress`) ne concerne que les chunks matérialisés. Il
+Le **parcours** (`classify_candidate`) ne concerne que les chunks matérialisés. Il
 compare chaque élément aux deux constantes et s'arrête dès que les deux hypothèses sont
 réfutées. Un chunk uniforme à 0 va dans `ll_compt1`, un chunk uniforme à la seconde valeur
 dans `ll_compt2`.

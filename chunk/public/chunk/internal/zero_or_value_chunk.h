@@ -568,15 +568,15 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
     /**
      * @brief Scans all threads to see if any chunk is marked for compression with a specific value.
      */
-    static bool have_chunk_to_compress(T second_value, int max_thr);
+    static bool has_queued(T second_value, int max_thr);
 
     /**
      * @brief Boolean specific version of the compression check.
      */
-    static bool have_chunk_to_compress_bool(int max_thr)
+    static bool has_queued_bool(int max_thr)
     {
         // bool's second value is always `true`.
-        return have_chunk_to_compress(static_cast<T>(true), max_thr);
+        return has_queued(static_cast<T>(true), max_thr);
     }
 
 
@@ -629,29 +629,29 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      * \param array_info (second_value, index, ...) identifying the candidate list.
      * \param apply true: compress the constant candidates; false: walk only.
      */
-    static void compress_chunk_to_compress(const ArrayInfo& array_info, bool apply);
+    static void compress_queued(const ArrayInfo& array_info, bool apply);
 
     /*!
-     * \brief Bool specialization of compress_chunk_to_compress().
+     * \brief Bool specialization of compress_queued().
      * \param apply true: compress the constant candidates; false: walk only.
      */
-    static void compress_chunk_to_compress_bool(bool apply);
+    static void compress_queued_bool(bool apply);
 
-    /// @brief One rank's share of compress_chunk_to_compress() for one second
+    /// @brief One rank's share of compress_queued() for one second
     ///        value: the body its region runs on each thread. Public for
     ///        TypeStateRegistry's single sweep region (TypeState::sweep_rank).
     static void compress_sweep_rank(int thr_rank, const ArrayInfo& array_info, bool apply)
     {
-        compress_chunk_to_compress_in_par(thr_rank, array_info, apply);
+        compress_rank_queue(thr_rank, array_info, apply);
     }
     /// @brief Bool twin of compress_sweep_rank().
     static void compress_sweep_rank_bool(int thr_rank, bool apply)
     {
-        compress_chunk_to_compress_bool_in_par(thr_rank, apply);
+        compress_rank_queue_bool(thr_rank, apply);
     }
 
     /*!
-     * \brief Per-candidate step of compress_chunk_to_compress_in_par(): re-scans THIS
+     * \brief Per-candidate step of compress_rank_queue(): re-scans THIS
      *        chunk's live content (the queue entry alone is not trusted) and, when
      *        @p apply, compresses it via clear_int_st() if still uniform.
      * \param thr_rank Calling thread's rank (for clear_int_st()).
@@ -704,23 +704,23 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
                                             ClearFunc&& clear_func);
 
     /*!
-     * \brief Per-thread half of compress_chunk_to_compress(): drain only
+     * \brief Per-thread half of compress_queued(): drain only
      *        thread `thr_rank`'s candidate queue for the given second value.
      * \param thr_rank Thread whose candidate queue to drain.
      * \param array_info (second_value, ...) identifying the candidate list.
      * \param apply true: compress the constant candidates; false: walk only.
      */
-    static void compress_chunk_to_compress_in_par(int thr_rank, const ArrayInfo& array_info, bool apply);
+    static void compress_rank_queue(int thr_rank, const ArrayInfo& array_info, bool apply);
 
     /*!
-     * \brief Bool specialization of compress_chunk_to_compress_in_par().
+     * \brief Bool specialization of compress_rank_queue().
      * \param thr_rank Thread whose candidate queue to drain.
      * \param apply true: compress the constant candidates; false: walk only.
      */
-    static void compress_chunk_to_compress_bool_in_par(int thr_rank, bool apply);
+    static void compress_rank_queue_bool(int thr_rank, bool apply);
 
     /**
-     * \brief Shared body of the two compress_chunk_to_compress_in_par entry
+     * \brief Shared body of the two compress_rank_queue entry
      *        points: they differ only in the map key and the per-chunk compress.
      *
      * The candidate is compressed BEFORE its "already queued" flag is cleared;
@@ -729,7 +729,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      * \tparam CompressFn callable (ChunkType*, ChunkElems count).
      */
     template <typename CompressFn>
-    static void compress_chunk_to_compress_in_par_impl(int thr_rank, InT<T> key, CompressFn&& compress_one);
+    static void compress_rank_queue_impl(int thr_rank, InT<T> key, CompressFn&& compress_one);
 
     /*!
      * \brief Bool specialization of compress().
@@ -750,40 +750,39 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
     void compress_impl(bool apply, unsigned int n_elems, SecondValueFunc get_second_value, ClearFunc&& clear_one);
 
     /**
-     * \brief Shared body of the two fill_list_chunk_to_compress_in_par entry
+     * \brief Shared body of the two classify_rank_candidates entry
      *        points: they differ only in the map key and the per-chunk scan.
      * \tparam ScanFn callable (ChunkType*, chunk_index, array_id, ChunkElems count).
      */
     template <typename ScanFn>
-    static void fill_list_chunk_to_compress_in_par_impl(int thr_rank, InT<T> key, ScanFn&& scan_one);
+    static void classify_rank_candidates_impl(int thr_rank, InT<T> key, ScanFn&& scan_one);
 
     /*!
      * \brief Sort thread `thr_rank`'s queued candidates into the two
      *        make_block_compression_impl() buckets, each chunk re-assessing itself
-     *        (fill_list_to_compress()).
+     *        (classify_candidate()).
      * \param thr_rank Thread whose candidate list to distribute.
      * \param ll_compt1 Output: candidates confirmed uniform on the first constant.
      * \param ll_compt2 Output: candidates confirmed uniform on the second constant.
      * \param array_info (second_value, ...) identifying the candidate list.
      */
-    static void fill_list_chunk_to_compress_in_par(int              thr_rank,
-                                                   CandidateTuples& ll_compt1,
-                                                   CandidateTuples& ll_compt2,
-                                                   const ArrayInfo& array_info);
+    static void classify_rank_candidates(int              thr_rank,
+                                         CandidateTuples& ll_compt1,
+                                         CandidateTuples& ll_compt2,
+                                         const ArrayInfo& array_info);
 
     /*!
-     * \brief Bool specialization of fill_list_chunk_to_compress_in_par().
+     * \brief Bool specialization of classify_rank_candidates().
      * \param thr_rank Thread whose candidate list to distribute.
      * \param ll_compt1 Output: candidates confirmed uniform on the first constant.
      * \param ll_compt2 Output: candidates confirmed uniform on the second constant.
      */
-    static void
-    fill_list_chunk_to_compress_bool_in_par(int thr_rank, CandidateTuples& ll_compt1, CandidateTuples& ll_compt2);
+    static void classify_rank_candidates_bool(int thr_rank, CandidateTuples& ll_compt1, CandidateTuples& ll_compt2);
 
     /*!
      * \brief Re-scan THIS chunk's live content and, if now uniform on the first and/or
      *        second constant, append it to the matching bucket. Called once per
-     *        candidate by fill_list_chunk_to_compress_in_par().
+     *        candidate by classify_rank_candidates().
      * \tparam SecondValueFunc Callable returning the second constant.
      * \param ll_compt1 Output bucket for "uniform on the first constant".
      * \param ll_compt2 Output bucket for "uniform on the second constant".
@@ -795,16 +794,16 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      * \param n_elems Element count of this chunk (the owning array's geometry).
      */
     template <typename SecondValueFunc>
-    void fill_list_to_compress_impl(CandidateTuples&  ll_compt1,
-                                    CandidateTuples&  ll_compt2,
-                                    int               chunk_index,
-                                    int               array_id,
-                                    SecondValueFunc&& get_second_value,
-                                    bool              check_second_value,
-                                    unsigned int      n_elems);
+    void classify_candidate_impl(CandidateTuples&  ll_compt1,
+                                 CandidateTuples&  ll_compt2,
+                                 int               chunk_index,
+                                 int               array_id,
+                                 SecondValueFunc&& get_second_value,
+                                 bool              check_second_value,
+                                 unsigned int      n_elems);
 
     /*!
-     * \brief Non-bool wrapper around fill_list_to_compress_impl() that
+     * \brief Non-bool wrapper around classify_candidate_impl() that
      *        supplies the second constant from `array_info`.
      * \param ll_compt1 Output bucket for "uniform on the first constant".
      * \param ll_compt2 Output bucket for "uniform on the second constant".
@@ -813,15 +812,15 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      * \param array_id Which array this chunk belongs to.
      * \param n_elems Element count of this chunk (the owning array's geometry).
      */
-    void fill_list_to_compress(CandidateTuples& ll_compt1,
-                               CandidateTuples& ll_compt2,
-                               const ArrayInfo& array_info,
-                               int              chunk_index,
-                               int              array_id,
-                               unsigned int     n_elems);
+    void classify_candidate(CandidateTuples& ll_compt1,
+                            CandidateTuples& ll_compt2,
+                            const ArrayInfo& array_info,
+                            int              chunk_index,
+                            int              array_id,
+                            unsigned int     n_elems);
 
     /*!
-     * \brief Bool wrapper around fill_list_to_compress_impl() (the second
+     * \brief Bool wrapper around classify_candidate_impl() (the second
      *        constant is always `true` for bool).
      * \param ll_compt1 Output bucket for "uniform on the first constant".
      * \param ll_compt2 Output bucket for "uniform on the second constant".
@@ -829,13 +828,13 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      * \param array_id Which array this chunk belongs to.
      * \param n_elems Element count of this chunk (the owning array's geometry).
      */
-    void fill_list_to_compress_bool(CandidateTuples& ll_compt1,
-                                    CandidateTuples& ll_compt2,
-                                    int              chunk_index,
-                                    int              array_id,
-                                    unsigned int     n_elems)
+    void classify_candidate_bool(CandidateTuples& ll_compt1,
+                                 CandidateTuples& ll_compt2,
+                                 int              chunk_index,
+                                 int              array_id,
+                                 unsigned int     n_elems)
     {
-        fill_list_to_compress_impl(
+        classify_candidate_impl(
             ll_compt1, ll_compt2, chunk_index, array_id, [] { return true; }, derived().is_not_second_value(), n_elems);
     }
 };
@@ -855,11 +854,11 @@ class ChunkFastCompPolicy<T, Derived, false> : public ChunkThreadPolicy<T, Deriv
     /// @name No-op counterparts of the true specialization's queries and passes
     ///       (same pattern as ChunkFastCompPolicy<T, Derived, false>)
     /// @{
-    static bool have_chunk_to_compress(T /*second_value*/, int /*max_thr*/)
+    static bool has_queued(T /*second_value*/, int /*max_thr*/)
     {
         return false;
     }
-    static bool have_chunk_to_compress_bool(int /*max_thr*/)
+    static bool has_queued_bool(int /*max_thr*/)
     {
         return false;
     }
@@ -1092,7 +1091,7 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
     // --- where the rest of zero_or_value lives ----------------------------------
     // Materialisation and clearing (create_value*, clear*, block_clear) are on
     // zero_or_value::ChunkThreadPolicy, one specialisation per mode; the queue-driven compression
-    // (compress*, fill_list*, compress_chunk_to_compress*) is on
+    // (compress*, fill_list*, compress_queued*) is on
     // zero_or_value::ChunkFastCompPolicy<T, zero_or_value::Chunk, true>, next to make_block_compression.
 
   private:
@@ -1118,14 +1117,14 @@ class Chunk : public ChunkCounterPolicy<chunk_config::use_compression_with_count
 
     /*!
      * \brief Bool-only: whether the chunk is currently compressed to EITHER
-     *        constant (const1 or const2).
+     *        constant (first value or second value).
      * \return true if the chunk is compressed to either constant.
      */
     [[nodiscard]] bool is_const_val() const noexcept;
 
     /*!
      * \brief Whether the chunk is currently compressed to EITHER constant
-     *        (const1 or const2). Valid for bool too: `idx` is then ignored.
+     *        (first value or second value). Valid for bool too: `idx` is then ignored.
      * \param idx Index of the second constant (used only for non-bool chunks).
      * \return true if the chunk is compressed to either constant.
      */

@@ -195,7 +195,7 @@ struct TypeStateInterface : public virtual TypeStateDynInterface<>, public virtu
     virtual void resize_candidate_lists() const = 0;
     /// @brief Compress every compressible chunk of this type now, ignoring the
     ///        candidate lists.
-    virtual void force_chunk_to_compress() const = 0;
+    virtual void force_compress_all() const = 0;
     /// @brief Does any of the @p n_thr per-rank candidate lists hold a chunk?
     [[nodiscard]] virtual bool has_candidates(int n_thr) const = 0;
     /// @brief Drain this type's compression-candidate backlog.

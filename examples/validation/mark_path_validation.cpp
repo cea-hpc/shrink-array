@@ -41,7 +41,7 @@
 //      A pre-check accepting only the constant-to-constant transition
 //      leaves this chunk materialised for the run.
 //
-//   B  the second constant everywhere (a fresh chunk goes const1 -> const2:
+//   B  the second constant everywhere (a fresh chunk goes first value -> second value:
 //      a constant-to-constant transition), then a plain value,
 //      then the second constant again -- the case A for the second
 //      constant -- then the first.
@@ -171,7 +171,7 @@ static int materialised(const Array<double>& arr)
 /// pass itself there: it consumes the candidate lists, so a chunk the write
 /// path failed to queue still shows as materialised, which is the property
 /// here. Every OpenMP build compresses at finalize_parallel_phase(), zero_any
-/// included (zero_any::Chunk::compress_chunk_to_compress runs the writers' pass rank
+/// included (zero_any::Chunk::compress_queued runs the writers' pass rank
 /// by rank when no OMPT callback does it).
 template <typename Fn>
 static void phase(Array<double>& arr, int count, Fn&& body)

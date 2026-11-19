@@ -368,7 +368,7 @@ applied first:
   CAS of the chunk's flag, since a refusal after it would leave the flag set and the chunk
   never queued again.
 
-An atomic flag per chunk ("already a candidate", `array_is_inside_chunk_list_to_compress`,
+An atomic flag per chunk ("already a candidate", `candidate_flags`,
 indexed by `array_id`) guarantees that a chunk is queued **only once** until the
 next pass.
 
@@ -393,7 +393,7 @@ phase.
 flowchart TD
     A["list (rank, second_value)"] --> B["compressor handshake<br/>(CompressionManager::start)"]
     B --> C["for each entry: freeze the size<br/>of the chunk (n_elems of the entry)"]
-    C --> D["fill_list_to_compress : scan the chunk"]
+    C --> D["classify_candidate : scan the chunk"]
     D -->|"all = first_value"| E["list ll_compt1"]
     D -->|"all = second_value"| F["list ll_compt2"]
     D -->|"otherwise"| G["nothing (flag reset to zero)"]
@@ -404,7 +404,7 @@ flowchart TD
     G --> J
 ```
 
-The **scan** (`fill_list_to_compress`) only concerns materialised chunks. It
+The **scan** (`classify_candidate`) only concerns materialised chunks. It
 compares each element with the two constants and stops as soon as both hypotheses are
 refuted. A chunk uniform at 0 goes into `ll_compt1`, a chunk uniform at the second value
 into `ll_compt2`.

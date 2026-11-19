@@ -62,7 +62,7 @@
  *    buffer and point `values` back at a shared constant block.
  *
  * Around those sits the candidate pipeline: a write flags a chunk as a
- * candidate, fill_list_to_compress() scans it and sorts it into the
+ * candidate, classify_candidate() scans it and sorts it into the
  * "all-first_value" or "all-one-other-value" list, and make_block_compression()
  * applies the clears and clears the flags.
  *
@@ -123,12 +123,12 @@ template <typename T, typename Derived, bool Enabled>
  *       because `first_value` is 0 (an all-zero chunk is classified compact1).
  */
 template <typename T, typename Derived>
-void zero_any::ChunkImpl<T, Derived>::fill_list_to_compress(CandidateTuples&      ll_compt1,
-                                                            CandidateValueTuples& ll_compt2,
-                                                            int                   chunk_index,
-                                                            int                   array_id,
-                                                            ChunkElems            size,
-                                                            [[maybe_unused]] bool claimed)
+void zero_any::ChunkImpl<T, Derived>::classify_candidate(CandidateTuples&      ll_compt1,
+                                                         CandidateValueTuples& ll_compt2,
+                                                         int                   chunk_index,
+                                                         int                   array_id,
+                                                         ChunkElems            size,
+                                                         [[maybe_unused]] bool claimed)
 {
     if (Base::is_not_first_value())
     {
@@ -142,7 +142,7 @@ void zero_any::ChunkImpl<T, Derived>::fill_list_to_compress(CandidateTuples&    
             // skips the claim loop by design.
             if (claimed && !Base::steal_marked()) [[unlikely]]
             {
-                CHUNK_INVARIANT_FAILED("fill_list_to_compress on an unclaimed chunk (chunk_index=%d array_id=%d)",
+                CHUNK_INVARIANT_FAILED("classify_candidate on an unclaimed chunk (chunk_index=%d array_id=%d)",
                                        chunk_index, array_id);
             }
         }
@@ -185,7 +185,7 @@ void zero_any::ChunkImpl<T, Derived>::fill_list_to_compress(CandidateTuples&    
 /**
  * @brief Runs a full compression pass over one thread's candidate list.
  *
- * Scans every queued candidate into the two lists (fill_list_chunk_to_compress_in_par),
+ * Scans every queued candidate into the two lists (classify_rank_candidates),
  * applies the clears, resets the per-chunk "already queued" flags and empties the list.
  *
  * A second-list chunk's new second value must be REGISTERED (find_or_register_second_value)
@@ -202,12 +202,12 @@ template <typename T, typename Derived>
 void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType* proxy2a)
 {
     // Geometry is pinned PER CHUNK, never once here (see the @file comment): each entry
-    // carries its array's ChunkElems (from push_to_compress_list()), pinned right before
+    // carries its array's ChunkElems (from push_candidate()), pinned right before
     // clear_int_st() reaches ChunkBase::free_values(), which routes by the ambient
     // thread_chunk_size() (see zero_or_value::Proxy::manage_full_first_value() in zero_or_value_proxy.h).
-    auto& vec_tuple_to_compress = Manager::get_zero_any_candidates(thr);
+    auto& candidates = Manager::get_zero_any_candidates(thr);
 
-    const auto sz = static_cast<int>(vec_tuple_to_compress.size());
+    const auto sz = static_cast<int>(candidates.size());
 
     if (sz == 0)
     {
@@ -232,7 +232,7 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
             }
             for (int k = 0; k < sz; ++k)
             {
-                if (auto* const chunk_t = std::get<0>(vec_tuple_to_compress[k]))
+                if (auto* const chunk_t = std::get<0>(candidates[k]))
                 {
                     chunk_t->steal_mark();
                 }
@@ -241,7 +241,7 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
             {
                 for (int k = 0; k < sz; ++k)
                 {
-                    if (auto* const chunk_t = std::get<0>(vec_tuple_to_compress[k]))
+                    if (auto* const chunk_t = std::get<0>(candidates[k]))
                     {
                         chunk_t->steal_unmark();
                     }
@@ -253,7 +253,7 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
             {
                 for (int k = 0; k < sz; ++k)
                 {
-                    if (auto* const chunk_t = std::get<0>(vec_tuple_to_compress[k]))
+                    if (auto* const chunk_t = std::get<0>(candidates[k]))
                     {
                         chunk_t->steal_commit();
                     }
@@ -271,7 +271,7 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
     // `claimed`: the claim loop runs only with a proxy (without: the resize path).
     // The scan hands each candidate's queue flag back as soon as it is scanned,
     // before its mark can go down (queue_flag.h, F6).
-    fill_list_chunk_to_compress_in_par(thr, ll_compt1, ll_compt2, proxy2a != nullptr);
+    classify_rank_candidates(thr, ll_compt1, ll_compt2, proxy2a != nullptr);
 
     for (auto& tup : ll_compt1)
     {
@@ -352,10 +352,9 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
     }
 
     queue_flag::release_candidates(
-        vec_tuple_to_compress, sz, [](int array_id, int chunk_index) -> auto&
-        { return ProxyType::Base::get_array_is_inside_list_to_compress(array_id)[chunk_index]; },
-        [](int array_id, int chunk_index)
-        { ProxyType::Base::reset_array_inside_list_to_compress(array_id, chunk_index); });
+        candidates, sz, [](int array_id, int chunk_index) -> auto&
+        { return ProxyType::Base::candidate_flag_row(array_id)[chunk_index]; },
+        [](int array_id, int chunk_index) { ProxyType::Base::clear_candidate_flag(array_id, chunk_index); });
 
     if (proxy2a)
     {
@@ -363,8 +362,8 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
         {
             proxy2a->set_info_on_chunk();
             // Only one thread runs this section at a time, but another may be in
-            // add_to_compression_list concurrently.
-            proxy2a->add_to_compression_list(vec_tuple_to_compress);
+            // queue_as_candidate concurrently.
+            proxy2a->queue_as_candidate(candidates);
         }
 
         if constexpr (build_config::threaded)
@@ -388,7 +387,7 @@ void zero_any::ChunkImpl<T, Derived>::make_block_compression(int thr, ProxyType*
  * @param size           Geometry of the owning array.
  *
  * @note In an OpenMP build without OMPT the between-region pass is
- *       make_block_compression() (compress_chunk_to_compress); this is what
+ *       make_block_compression() (compress_queued); this is what
  *       the rechunk fold calls on a chunk of its own, with apply = true.
  */
 template <typename T, typename Derived>
@@ -425,7 +424,7 @@ void zero_any::ChunkImpl<T, Derived>::compress([[maybe_unused]] int  thr_rank,
 
         if constexpr (Base::is_not_bool)
         {
-            // Against values[0], as fill_list_to_compress does, not the registered second
+            // Against values[0], as classify_candidate does, not the registered second
             // value: a chunk uniform at another value is compressed to THAT value.
             const SecondValueRef<T> ptr_second_value =
                 ProxyType::BaseSpec::get_array_second_value(array_id, chunk_index);
@@ -478,7 +477,7 @@ void zero_any::ChunkImpl<T, Derived>::compress([[maybe_unused]] int  thr_rank,
 /**
  * @brief Compresses every thread's candidate chunks, opening a parallel region if needed.
  *
- * Used between parallel phases (by compress_chunk_to_compress(), which disarms the OMPT
+ * Used between parallel phases (by compress_queued(), which disarms the OMPT
  * callbacks so its own region does not re-enter compression). Without OMPT the per-chunk
  * compress() is a no-op and the pass is make_block_compression() over every rank.
  *
@@ -500,16 +499,16 @@ void zero_any::ChunkImpl<T, Derived>::compress_sweep_rank(int thr, bool apply)
             return;
         }
     }
-    compress_chunk_to_compress_in_par(thr, apply);
+    compress_rank_queue(thr, apply);
 }
 
 template <typename T, typename Derived>
-void zero_any::ChunkImpl<T, Derived>::compress_chunk_to_compress(bool apply)
+void zero_any::ChunkImpl<T, Derived>::compress_queued(bool apply)
 {
-    // Inside a region the calling rank runs compress_chunk_to_compress_in_par; outside,
+    // Inside a region the calling rank runs compress_rank_queue; outside,
     // compress_sweep_rank, and the ranks beyond the team only when
     // compress_sweep_mops_up (see ChunkBase::sweep_every_rank).
-    Base::sweep_every_rank([apply](int thr) { compress_chunk_to_compress_in_par(thr, apply); },
+    Base::sweep_every_rank([apply](int thr) { compress_rank_queue(thr, apply); },
                            [apply](int thr) { compress_sweep_rank(thr, apply); }, compress_sweep_mops_up(apply));
 }
 
@@ -522,7 +521,7 @@ void zero_any::ChunkImpl<T, Derived>::compress_chunk_to_compress(bool apply)
  * @return True as soon as one list is non-empty.
  */
 template <typename T, typename Derived>
-bool zero_any::ChunkImpl<T, Derived>::have_chunk_to_compress([[maybe_unused]] int max_thr)
+bool zero_any::ChunkImpl<T, Derived>::has_queued([[maybe_unused]] int max_thr)
 {
     const bool is_empty = no_candidates();
     if (is_empty)
@@ -567,7 +566,7 @@ bool zero_any::ChunkImpl<T, Derived>::have_chunk_to_compress([[maybe_unused]] in
  *          lets a later write queue the chunk twice, and the second clear hits a constant.
  */
 template <typename T, typename Derived>
-void zero_any::ChunkImpl<T, Derived>::compress_chunk_to_compress_in_par([[maybe_unused]] int thr, bool apply)
+void zero_any::ChunkImpl<T, Derived>::compress_rank_queue([[maybe_unused]] int thr, bool apply)
 {
     auto& vec_tup = Manager::get_zero_any_candidates(thr);
 
@@ -605,7 +604,7 @@ void zero_any::ChunkImpl<T, Derived>::compress_chunk_to_compress_in_par([[maybe_
                             chunk_t->compress_to_motif(thr, chunk_index, array_id, csize);
                         }
                     }
-                    ProxyType::set_array_is_inside_chunk_list_to_compress(array_id, chunk_index, 0);
+                    ProxyType::set_candidate_flag(array_id, chunk_index, 0);
                 }
             }
         }
@@ -624,7 +623,7 @@ void zero_any::ChunkImpl<T, Derived>::compress_chunk_to_compress_in_par([[maybe_
 
             // Per-entry geometry, as above: a default size would under-scan dynamic chunks.
             std::get<0>(tup)->compress(0, chunk_index, array_id, apply, std::get<3>(tup));
-            ProxyType::set_array_is_inside_chunk_list_to_compress(array_id, chunk_index, 0);
+            ProxyType::set_candidate_flag(array_id, chunk_index, 0);
         }
     }
 
@@ -638,20 +637,20 @@ void zero_any::ChunkImpl<T, Derived>::compress_chunk_to_compress_in_par([[maybe_
 /**
  * @brief Scans one thread's candidate list into the two compression lists.
  *
- * Forwards each live entry to fill_list_to_compress(), passing the geometry the
+ * Forwards each live entry to classify_candidate(), passing the geometry the
  * entry carries. Null chunk pointers are the batch sentinels and are skipped.
  *
  * @param thr       Rank whose candidate list is scanned.
  * @param ll_compt1 Output: chunks compressible to first_value.
  * @param ll_compt2 Output: chunks compressible to one other value.
  * @param claimed   Whether the caller claimed (steal-marked) the candidates
- *                  first; forwarded to fill_list_to_compress().
+ *                  first; forwarded to classify_candidate().
  */
 template <typename T, typename Derived>
-void zero_any::ChunkImpl<T, Derived>::fill_list_chunk_to_compress_in_par([[maybe_unused]] int  thr,
-                                                                         CandidateTuples&      ll_compt1,
-                                                                         CandidateValueTuples& ll_compt2,
-                                                                         [[maybe_unused]] bool claimed)
+void zero_any::ChunkImpl<T, Derived>::classify_rank_candidates([[maybe_unused]] int  thr,
+                                                               CandidateTuples&      ll_compt1,
+                                                               CandidateValueTuples& ll_compt2,
+                                                               [[maybe_unused]] bool claimed)
 {
     auto& vec_tup = Manager::get_zero_any_candidates(thr);
 
@@ -686,7 +685,7 @@ void zero_any::ChunkImpl<T, Derived>::fill_list_chunk_to_compress_in_par([[maybe
             const auto n2 = ll_compt2.size();
             // A motif candidate is stolen too (compress_motif_candidates()): it keeps its claim.
             [[maybe_unused]] const auto n3 = motif_count();
-            chunk_t->fill_list_to_compress(ll_compt1, ll_compt2, chunk_index, array_id, csize, claimed);
+            chunk_t->classify_candidate(ll_compt1, ll_compt2, chunk_index, array_id, csize, claimed);
             // Scanned, still marked: hand its queue flag back BEFORE the mark can go
             // down, as zero does (queue_flag.h, F6). After it, a writer that finds the
             // mark down and makes the chunk constant notes itself on the flag, and the
@@ -698,7 +697,7 @@ void zero_any::ChunkImpl<T, Derived>::fill_list_chunk_to_compress_in_par([[maybe
             {
                 if (chunk_index >= 0)
                 {
-                    queue_flag::hand_back(ProxyType::Base::get_array_is_inside_list_to_compress(array_id)[chunk_index]);
+                    queue_flag::hand_back(ProxyType::Base::candidate_flag_row(array_id)[chunk_index]);
                 }
             }
             // Not selected: nothing will be stolen, release it to the writers now.
@@ -1007,7 +1006,7 @@ void zero_any::ChunkThreadPolicy<T, Derived, Enabled>::release_st(ConstSlot*    
                                                                   int               thr_rank)
 {
     // CHUNK_STATS: a release, not a compression (block_clear counts those). The
-    // compression's own steps otherwise: type slot to const1 and second-value slot
+    // compression's own steps otherwise: type slot to the first value and second-value slot
     // reset BEFORE the CAS, then the buffer to free_block_to_pool() (ambient
     // geometry: the caller's old one; the slab's owner key).
     if constexpr (chunk_config::stats)
@@ -1159,7 +1158,7 @@ template <typename T, typename Derived>
         {
             invariant_failed(std::source_location::current(),
                              "try_mark_const_and_get_old: post-CAS values={} not in expected set "
-                             "(new_ptr={}, const1={}, a const2 array)",
+                             "(new_ptr={}, first_value={}, a second-value array)",
                              static_cast<const void*>(observed), static_cast<const void*>(new_ptr),
                              static_cast<const void*>(Base::first_value_ptr()));
         }
@@ -1216,7 +1215,7 @@ template <typename T, typename Derived>
             {
                 invariant_failed(std::source_location::current(),
                                  "post-create_value CAS: values={}, expected one of "
-                                 "{{values_loc={}, const1={}, a const2 array}}",
+                                 "{{values_loc={}, first_value={}, a second-value array}}",
                                  static_cast<const void*>(current), static_cast<const void*>(values_loc),
                                  static_cast<const void*>(Base::first_value_ptr()));
             }

@@ -938,7 +938,8 @@ void read_check_binary_file(Int                idx,
 
                         if constexpr (chunk_config::use_zero_any)
                         {
-                            const T* m_ptr_const_values = chunk_t.values_load(); // a const2 chunk reads from its array
+                            const T* m_ptr_const_values =
+                                chunk_t.values_load(); // a second-value chunk reads from its array
                             log_message("\nsecond_value_buffer_ contain : ");
                             log_values_compacted(log_message, format_val, m_ptr_const_values, data_check.chunk_size());
                         }

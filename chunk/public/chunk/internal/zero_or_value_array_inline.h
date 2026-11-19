@@ -246,7 +246,7 @@ void zero_or_value::Array<T, IntType>::set_second_value(T sec_value, bool messag
 
     if constexpr (is_not_bool)
     {
-        int idx = registry.find_idx_array_const2(sec_value);
+        int idx = registry.find_second_value_index(sec_value);
 
         if (idx == -1)
         {
@@ -662,8 +662,8 @@ void zero_or_value::Array<T, IntType>::clear_core()
             {
                 // owns_live_buffer(), not written(idx): written() tests the
                 // CURRENT second value's index only, so a chunk compressed to
-                // the const2 block of an earlier value would pass as written and
-                // clear_st() would free a pointer into the const2 deque.
+                // the second-value block of an earlier value would pass as written and
+                // clear_st() would free a pointer into the second-value deque.
                 if (chunk_list_[j].owns_live_buffer())
                 {
                     if constexpr (chunk_config::stats)
@@ -932,8 +932,7 @@ void zero_or_value::Array<T, IntType>::compress_int(pmp::Team& team)
         [[maybe_unused]] ChunkFlagRowT* flags = nullptr;
         if constexpr (chunk_config::use_fast_block_compression)
         {
-            flags = &Proxy<T>::get_array_is_inside_list_to_compress(
-                Proxy<T>::array_registry->get_array_id(this->registry_key()));
+            flags = &Proxy<T>::candidate_flag_row(Proxy<T>::array_registry->get_array_id(this->registry_key()));
         }
         const auto heal = [&](int jj, auto&& clear)
         {
@@ -1093,10 +1092,9 @@ void zero_or_value::Array<T, IntType>::compress_int(pmp::Team& team)
             int       is_inside   = -1; // the candidate-list flag exists in fast-block builds only
             if constexpr (chunk_config::use_fast_block_compression)
             {
-                is_inside =
-                    static_cast<int>(Proxy<T>::get_array_is_inside_list_to_compress(
-                                         Proxy<T>::array_registry->get_array_id(this->registry_key()))[chunk_index]
-                                         .load(std::memory_order_acquire));
+                is_inside = static_cast<int>(Proxy<T>::candidate_flag_row(Proxy<T>::array_registry->get_array_id(
+                    this->registry_key()))[chunk_index]
+                                                 .load(std::memory_order_acquire));
             }
             int count = -1; // the counters exist in counter builds only
             if constexpr (chunk_config::use_compression_with_counter)

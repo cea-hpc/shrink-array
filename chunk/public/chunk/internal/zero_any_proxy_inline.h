@@ -150,7 +150,7 @@ CHUNK_FORCE_INLINE void zero_any::ProxyImpl<T, Derived, ChunkT>::set_info_on_chu
 {
     set_array_id();
 
-    Base::set_ptr_is_inside_chunk_list_to_compress();
+    Base::bind_candidate_flag();
 
     ptr_type_const_ = &array_type_const_val[array_id_][chunk_index_];
     if constexpr (is_not_bool)
@@ -219,11 +219,11 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::resize_array_is_int(int array_coun
 {
     BaseSpec::resize(array_count);
     array_type_const_val.resize(array_count);
-    Base::array_is_inside_chunk_list_to_compress.resize(array_count);
+    Base::candidate_flags.resize(array_count);
 }
 
 // Grow one array's per-chunk tables. BaseSpec::resize() and array_type_const_val keep
-// existing entries, but array_is_inside_chunk_list_to_compress is REALLOCATED:
+// existing entries, but candidate_flags is REALLOCATED:
 // every "queued for compression" flag goes back to 0. Safe only if no chunk of
 // this array is queued -- a queued chunk with a cleared flag could be queued twice
 // (pointing into the chunk_list_ just reallocated).
@@ -237,7 +237,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::resize_array_is_int(int array_id, 
     // Check builds: no chunk of this array may still be queued (see above).
     if constexpr (build_config::any_check)
     {
-        const auto& row = Base::array_is_inside_chunk_list_to_compress[static_cast<std::size_t>(array_id)];
+        const auto& row = Base::candidate_flags[static_cast<std::size_t>(array_id)];
         for (std::size_t j = 0; j < row.size(); ++j)
         {
             if (row[j].load(std::memory_order_relaxed) != 0) [[unlikely]]
@@ -250,7 +250,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::resize_array_is_int(int array_id, 
     }
     // Every flag 0; the new type-of-constant entries ConstSlot::first. Both
     // constructed by a team for a large array (parallel_storage_init).
-    Base::array_is_inside_chunk_list_to_compress[static_cast<std::size_t>(array_id)] =
+    Base::candidate_flags[static_cast<std::size_t>(array_id)] =
         parallel_storage_init::make_filled<std::atomic<char>>(static_cast<std::size_t>(chunk_count), char{0});
     parallel_storage_init::resize_filled(array_type_const_val[array_id], static_cast<std::size_t>(chunk_count),
                                          ConstSlot::first);
@@ -490,7 +490,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::perform_core_assignment(T* vals, I
         vals = chunk_.values_load();
     };
 
-    const bool is_const2 = chunk_.is_second_value_ptr_of(vals);
+    const bool is_second = chunk_.is_second_value_ptr_of(vals);
 
     if constexpr (has_motif_state_v<ChunkT>)
     {
@@ -514,7 +514,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::perform_core_assignment(T* vals, I
     {
         if (same_value(value, static_cast<T>(BaseSpec::ptr_second_value_.get())))
         {
-            if (is_const2 || same_value(Base::read_values_at(vals), static_cast<T>(BaseSpec::ptr_second_value_.get())))
+            if (is_second || same_value(Base::read_values_at(vals), static_cast<T>(BaseSpec::ptr_second_value_.get())))
             {
                 return;
             }
@@ -530,7 +530,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::perform_core_assignment(T* vals, I
     }
     else if (value)
     {
-        if (is_const2 || Base::read_values_at(vals))
+        if (is_second || Base::read_values_at(vals))
         {
             return;
         }
@@ -549,7 +549,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::perform_core_assignment(T* vals, I
         inc_chunk_write<ChunkType>(value);
     }
 
-    if (is_const2 || Base::is_first_value(vals))
+    if (is_second || Base::is_first_value(vals))
     {
         materialise();
     }
@@ -584,7 +584,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::handle_no_bool_assignment(InT<T> v
         if constexpr (!chunk_config::use_fast_block_compression)
         {
             set_array_id();
-            Base::set_ptr_is_inside_chunk_list_to_compress();
+            Base::bind_candidate_flag();
         }
         set_ptr_second_value();
 
@@ -622,7 +622,7 @@ void zero_any::ProxyImpl<T, Derived, ChunkT>::handle_bool_assignment(InT<T> valu
         if constexpr (!chunk_config::use_fast_block_compression)
         {
             set_array_id();
-            Base::set_ptr_is_inside_chunk_list_to_compress();
+            Base::bind_candidate_flag();
         }
 
         if (chunk_.is_second_value_ptr_of(vals) && value)
@@ -693,16 +693,16 @@ T zero_any::ProxyImpl<T, Derived, ChunkT>::assign_impl(InT<U> value) noexcept
 
                 while (true)
                 {
-                    const bool is_const1 = proxy.is_first_value();
-                    if (const bool is_const2 = proxy.is_second_value(); is_const1 || is_const2)
+                    const bool is_first = proxy.is_first_value();
+                    if (const bool is_second = proxy.is_second_value(); is_first || is_second)
                     {
                         if constexpr (is_not_bool)
                         {
-                            chunk.create_value(is_const2, proxy.ptr_second_value_);
+                            chunk.create_value(is_second, proxy.ptr_second_value_);
                         }
                         else
                         {
-                            chunk.create_value_bool(is_const2);
+                            chunk.create_value_bool(is_second);
                         }
                     }
 
@@ -1680,12 +1680,11 @@ zero_any::ProxyImpl<T, Derived, ChunkT>::should_mark_for_compression(InT<T> old_
     }
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        // Flag up: queued (add_to_compression_list() is then a no-op), or being handed
+        // Flag up: queued (queue_as_candidate() is then a no-op), or being handed
         // back by its pass (it notes the write: queue_flag.h) -- no need for the filter
         // either way. One relaxed load; the filter's reads are only paid once the pass
         // has reset the flag.
-        if (this->ptr_is_inside_chunk_list_to_compress_ != nullptr &&
-            this->ptr_is_inside_chunk_list_to_compress_->load(std::memory_order_relaxed) != 0)
+        if (this->candidate_flag_ != nullptr && this->candidate_flag_->load(std::memory_order_relaxed) != 0)
         {
             return true;
         }
