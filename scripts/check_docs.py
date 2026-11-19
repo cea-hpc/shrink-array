@@ -199,7 +199,7 @@ ALLOWED = {
     "event_name_table", "table_matches", "field_count", "sched_names", "names_match",
     # internal names with an old variant label, renamed 2026-11 (CHANGELOG.md, Unreleased)
     "TChunkComp", "TChunk2Comp", "MapTypeChunk2P", "TChunk2AComp", "IsChunk2", "IsChunk2OrZeroAnyFamily",
-    "Base2",
+    "Base2", "is_v1_v", "is_v2_v", "is_v2a_family_v", "PointerMapChunk", "PointerMapChunk2A",
     # called by the CHUNK_DO_CHECK write paths but defined nowhere, removed by 47d082fe
     "global_check_write_nan",
     # files a shrink_gui run writes in its directory on the cluster (docs/shrink_gui.md)

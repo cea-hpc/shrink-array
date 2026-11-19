@@ -115,15 +115,16 @@ inline constexpr bool raw_fillable_v = !is_bool_like_v<T>;
  *          zero's paths and a zero::Array down zero_or_value's.
  */
 template <typename Arr>
-inline constexpr bool is_v1_v = std::is_same_v<typename Arr::ChunkType, zero::Chunk<typename Arr::value_type>>;
+inline constexpr bool is_zero_array_v = std::is_same_v<typename Arr::ChunkType, zero::Chunk<typename Arr::value_type>>;
 
-/// @brief True when @p Arr holds zero_or_value chunks (see is_v1_v: dispatch on the type).
+/// @brief True when @p Arr holds zero_or_value chunks (see is_zero_array_v: dispatch on the type).
 template <typename Arr>
-inline constexpr bool is_v2_v = std::is_same_v<typename Arr::ChunkType, zero_or_value::Chunk<typename Arr::value_type>>;
+inline constexpr bool is_zero_or_value_array_v =
+    std::is_same_v<typename Arr::ChunkType, zero_or_value::Chunk<typename Arr::value_type>>;
 
 /// @brief True when @p Arr holds chunks of the zero_any family (chunk_traits.h).
 template <typename Arr>
-inline constexpr bool is_v2a_family_v = is_zero_any_family_v<typename Arr::ChunkType>;
+inline constexpr bool is_zero_any_family_array_v = is_zero_any_family_v<typename Arr::ChunkType>;
 
 /// @brief zero_any::Array itself, not another member of its family: the arrays
 ///        zero_any::Chunk::fill_constant_st can serve. It reads zero_any::Proxy's
@@ -131,20 +132,22 @@ inline constexpr bool is_v2a_family_v = is_zero_any_family_v<typename Arr::Chunk
 ///        keeps tables of its own, where array_id means another array -- and a
 ///        motif chunk is no constant to switch.
 template <typename Arr>
-inline constexpr bool fills_constant_by_state_v = is_v2a_family_v<Arr> && !has_motif_state_v<typename Arr::ChunkType>;
+inline constexpr bool fills_constant_by_state_v =
+    is_zero_any_family_array_v<Arr> && !has_motif_state_v<typename Arr::ChunkType>;
 
 /** @brief zero_or_value on a non-bool T: the variant with a second value (and written(idx)). */
 template <typename Arr>
 inline constexpr bool has_second_value_v =
-    is_v2_v<Arr> && !is_bool_like_v<typename Arr::value_type>; // bool, Bit: no index
+    is_zero_or_value_array_v<Arr> && !is_bool_like_v<typename Arr::value_type>; // bool, Bit: no index
 
 /** @brief Only zero in counter mode carries a per-chunk zero count to restore. */
 template <typename Arr>
-inline constexpr bool track_zeros_v = is_v1_v<Arr> && chunk_config::use_compression_with_counter;
+inline constexpr bool track_zeros_v = is_zero_array_v<Arr> && chunk_config::use_compression_with_counter;
 
 /** @brief zero_or_value in counter mode carries two: first-value and second-value counts. */
 template <typename Arr>
-inline constexpr bool track_zero_or_value_counts_v = is_v2_v<Arr> && chunk_config::use_compression_with_counter;
+inline constexpr bool track_zero_or_value_counts_v =
+    is_zero_or_value_array_v<Arr> && chunk_config::use_compression_with_counter;
 
 /**
  * @brief Recount the per-chunk element counters after a raw store into
@@ -399,12 +402,12 @@ template <typename Arr, typename ChunkClass>
     {
         return false;
     }
-    else if constexpr (is_v1_v<Arr>)
+    else if constexpr (is_zero_array_v<Arr>)
     {
         c = static_cast<T>(ChunkClass::first_value);
         return ch.is_first_value();
     }
-    else if constexpr (is_v2_v<Arr> && requires { arr.second_value(); })
+    else if constexpr (is_zero_or_value_array_v<Arr> && requires { arr.second_value(); })
     {
         if (ch.is_first_value())
         {
@@ -448,7 +451,7 @@ template <typename Arr, typename ChunkClass>
 [[nodiscard]] bool at_second_constant(const ChunkClass& ch, InT<typename Arr::value_type> value) noexcept
 {
     using T = typename Arr::value_type;
-    if constexpr (is_v2a_family_v<Arr> && !is_bool_like_v<T>)
+    if constexpr (is_zero_any_family_array_v<Arr> && !is_bool_like_v<T>)
     {
         const T* const vals = ch.values_load();
         if constexpr (has_motif_state_v<ChunkClass>)
@@ -487,7 +490,7 @@ template <typename Arr>
 void queue_for_compression(Arr& arr, std::size_t index)
 {
     // zero_any: a candidate list in serial builds too (no counters there).
-    if constexpr (chunk_config::use_fast_block_compression || is_v2a_family_v<Arr>)
+    if constexpr (chunk_config::use_fast_block_compression || is_zero_any_family_array_v<Arr>)
     {
         // zero_or_value: candidate lists are keyed by second value and exist only for
         // arrays that called set_second_value() -- skip the others, as the
@@ -666,7 +669,8 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
     // the second (index idx2), -1 neither. A whole chunk filled with one of
     // them is compressed at once (below).
     [[maybe_unused]] int chunk2_const = -1;
-    if constexpr (internal::is_v2_v<Arr> && internal::raw_fillable_v<T> && requires { arr.second_value(); })
+    if constexpr (internal::is_zero_or_value_array_v<Arr> && internal::raw_fillable_v<T> &&
+                  requires { arr.second_value(); })
     {
         if (value_is_first)
         {
@@ -693,7 +697,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
 
         // ── Whole chunk set to the compressible constant: no storage needed ──
         //
-        // zero only, named by its chunk type (internal::is_v1_v), not by the
+        // zero only, named by its chunk type (internal::is_zero_array_v), not by the
         // clear_st spellings it offers: zero_or_value::Chunk's clear_st(int const_index,
         // int idx) accepts (thr, n) by conversion and would take a THREAD RANK
         // as the constant to compress to, and zero has one spelling per build
@@ -701,7 +705,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
         // asking for both was false everywhere and the shortcut never ran.
         // zero_any::Chunk takes fill_constant_st below; zero_or_value::Chunk the paths below.
         if constexpr (constexpr bool can_release =
-                          internal::is_v1_v<Arr> && internal::raw_fillable_v<T> && !is_packed_bit_v<T>;
+                          internal::is_zero_array_v<Arr> && internal::raw_fillable_v<T> && !is_packed_bit_v<T>;
                       can_release)
         {
             if constexpr (build_config::threaded)
@@ -809,7 +813,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
             // or queued. owns_live_buffer(), not written(idx2): a chunk at the
             // second-value block of an earlier second value is not a buffer. A pass
             // that still holds the chunk in its list skips it (compressed).
-            if constexpr (internal::is_v2_v<Arr> && requires { arr.second_value(); })
+            if constexpr (internal::is_zero_or_value_array_v<Arr> && requires { arr.second_value(); })
             {
                 if (whole && chunk2_const >= 0 && ch.owns_live_buffer())
                 {
@@ -865,7 +869,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
 
             // zero_or_value::Chunk, a whole chunk the arming took from its other constant to
             // this one: compressed now rather than left to a pass.
-            if constexpr (internal::is_v2_v<Arr> && requires { arr.second_value(); })
+            if constexpr (internal::is_zero_or_value_array_v<Arr> && requires { arr.second_value(); })
             {
                 if (whole && chunk2_const >= 0 && ch.owns_live_buffer())
                 {
@@ -880,8 +884,8 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& fill_val
 
             // The chunk may be constant now: a fill of first_value, or on
             // zero_any of any value (a uniform run is its second constant).
-            bool compressible_value = value_is_first || internal::is_v2a_family_v<Arr>;
-            if constexpr (internal::is_v2_v<Arr> && requires { arr.second_value(); })
+            bool compressible_value = value_is_first || internal::is_zero_any_family_array_v<Arr>;
+            if constexpr (internal::is_zero_or_value_array_v<Arr> && requires { arr.second_value(); })
             {
                 compressible_value =
                     compressible_value || same_value(static_cast<T>(value), static_cast<T>(arr.second_value()));
@@ -1195,8 +1199,9 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
     }
     last = std::min(last, size);
 
-    constexpr bool session = (is_v2a_family_v<Arr> || is_v2_v<Arr> || is_v1_v<Arr>) && build_config::threaded &&
-                             chunk_config::use_fast_block_compression && (raw_fillable_v<T> || is_packed_bit_v<T>);
+    constexpr bool session =
+        (is_zero_any_family_array_v<Arr> || is_zero_or_value_array_v<Arr> || is_zero_array_v<Arr>) &&
+        build_config::threaded && chunk_config::use_fast_block_compression && (raw_fillable_v<T> || is_packed_bit_v<T>);
     if constexpr (!session)
     {
         for (std::size_t i = first; i < last; ++i)
@@ -1423,11 +1428,11 @@ void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& val
                         // would stay materialised for the run (the check builds'
                         // audit counted it: "never queued for compression"). The
                         // pass scans the chunk and drops it if it is not uniform.
-                        if constexpr (is_v1_v<Arr>)
+                        if constexpr (is_zero_array_v<Arr>)
                         {
                             uniform = same && same_value(static_cast<T>(v0), static_cast<T>(ChunkType::first_value));
                         }
-                        else if constexpr (is_v2_v<Arr> && requires { arr.second_value(); })
+                        else if constexpr (is_zero_or_value_array_v<Arr> && requires { arr.second_value(); })
                         {
                             uniform = same && (same_value(static_cast<T>(v0), static_cast<T>(ChunkType::first_value)) ||
                                                same_value(static_cast<T>(v0), static_cast<T>(arr.second_value())));

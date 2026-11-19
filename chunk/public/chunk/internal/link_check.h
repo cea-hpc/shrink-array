@@ -23,7 +23,7 @@
 // mismatch, which would otherwise compile the templates differently in silence,
 // fails to link, and the undefined symbol names the program's settings:
 //
-//     undefined reference to `shrink_array::link_check::variant_v1_0_v2_0_v2a_1_size_256_dyn_0()'
+//     undefined reference to `shrink_array::link_check::variant_zero_0_zero_or_value_0_zero_any_1_size_256_dyn_0()'
 //
 // The options shared by every library of a build are not here: they are in the
 // generated chunk/build_options.h, which the program compiles with.
@@ -54,8 +54,10 @@
 #endif
 // NOLINTEND(modernize-macro-to-enum)
 
-#define CHUNK_LINK_CHECK_NAME_(v1, v2, v2a, size, dyn) variant_v1_##v1##_v2_##v2##_v2a_##v2a##_size_##size##_dyn_##dyn
-#define CHUNK_LINK_CHECK_NAME(v1, v2, v2a, size, dyn) CHUNK_LINK_CHECK_NAME_(v1, v2, v2a, size, dyn)
+#define CHUNK_LINK_CHECK_NAME_(zero, zero_or_value, zero_any, size, dyn) \
+    variant_zero_##zero##_zero_or_value_##zero_or_value##_zero_any_##zero_any##_size_##size##_dyn_##dyn
+#define CHUNK_LINK_CHECK_NAME(zero, zero_or_value, zero_any, size, dyn) \
+    CHUNK_LINK_CHECK_NAME_(zero, zero_or_value, zero_any, size, dyn)
 
 /// The function of this TU's settings (see above).
 #define CHUNK_LINK_CHECK                                                                                    \

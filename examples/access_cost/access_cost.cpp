@@ -58,6 +58,23 @@
  *          and the ratio of the medians. --csv prints one line per case and
  *          repetition instead (python/access_cost.py aggregates them).
  *
+ *          A sample lasts at least --min_time seconds (default 0.05): the first
+ *          pass of the vector and of the array gives the number of passes, the
+ *          same for both (so that rmw's sums still match), and the sample is the
+ *          mean of the passes. At a high thread count a pass lasts a few
+ *          milliseconds, the order of a parallel region's fork and barrier: one
+ *          pass alone gave spreads of several hundred percent. write-fresh gets
+ *          a new array all at 0 and a re-zeroed vector before each pass, outside
+ *          the timing.
+ *
+ *          NUMA placement: the vectors are allocated without initialisation and
+ *          first touched by a parallel fill with the timed loops' static
+ *          schedule, so that each page sits on the node of the thread that
+ *          reads it, as the array's chunks do (allocated by the writing
+ *          thread). A vector initialised by the main thread has every page on
+ *          one node: across several sockets the vector is held to that node's
+ *          bandwidth, and the array then looks faster than the vector.
+ *
  *          Every value is a multiple of 0.5 well under 2^40, so the sums are
  *          exact in double whatever the reduction order: each case's sum must
  *          be the same on the vector and on the array, and is checked (exit 1
@@ -72,21 +89,25 @@
  *          to time at a high thread count: 2^27 (about 4.5 GB) up to 128
  *          threads, about 3.0e8 (11 GB) at 288.
  *
- *          Usage: access_cost [--n n_elems] [--reps R] [--csv] [--verify]
+ *          Usage: access_cost [--n n_elems] [--reps R] [--min_time S] [--csv] [--verify]
  */
 
 #include <algorithm>    // std::sort, std::min_element, std::max, std::min
 #include <chrono>       // std::chrono::steady_clock
+#include <cmath>        // std::ceil (passes_for)
 #include <cstdint>      // std::uint64_t
 #include <charconv>     // std::from_chars (arg_value)
 #include <cstdio>       // std::fprintf, stderr
 #include <cstring>      // std::strlen
 #include <exception>    // std::exception (main's catch)
 #include <iterator>     // std::size
+#include <memory>       // std::allocator (NoInitAllocator)
+#include <new>          // placement new (NoInitAllocator)
+#include <optional>     // std::optional (write-fresh's array, one per pass)
 #include <string>       // std::string
 #include <system_error> // std::errc (arg_value)
-#include <type_traits>  // std::conditional_t
-#include <utility>      // std::as_const
+#include <type_traits>  // std::conditional_t, std::is_nothrow_default_constructible_v
+#include <utility>      // std::as_const, std::forward
 #include <vector>       // std::vector
 
 #include "chunk/zero_array.h"          // zero::Array
@@ -173,6 +194,45 @@ void end_phase(Array<double>& arr)
     }
 }
 
+/// @brief std::allocator that default-initialises instead of value-initialising:
+///        a vector of n doubles leaves its pages untouched, for fill_parallel()
+///        to touch first (see the NUMA placement above).
+template <typename T>
+struct NoInitAllocator : std::allocator<T>
+{
+    NoInitAllocator() = default;
+    template <typename U>
+    explicit NoInitAllocator(const NoInitAllocator<U>& /*other*/) noexcept
+    {
+    }
+    template <typename U>
+    void construct(U* ptr) noexcept(std::is_nothrow_default_constructible_v<U>)
+    {
+        ::new (static_cast<void*>(ptr)) U;
+    }
+    template <typename U, typename... Args>
+    void construct(U* ptr, Args&&... args)
+    {
+        ::new (static_cast<void*>(ptr)) U(std::forward<Args>(args)...);
+    }
+};
+
+using Vec = std::vector<double, NoInitAllocator<double>>;
+using Idx = std::vector<int, NoInitAllocator<int>>;
+
+/// Every element set to @p value, with the timed loops' static schedule: the
+/// first touch of a NoInitAllocator vector's pages.
+template <typename T>
+void fill_parallel(std::vector<T, NoInitAllocator<T>>& vec, T value)
+{
+    const auto count = static_cast<int>(vec.size());
+#pragma omp parallel for schedule(static)
+    for (int i = 0; i < count; ++i)
+    {
+        vec[static_cast<std::size_t>(i)] = value;
+    }
+}
+
 /// Varied within any chunk of 64 elements or more (period 97): nothing to compress.
 double varied(long index)
 {
@@ -186,10 +246,10 @@ double varied2(long index)
 }
 
 /// A fixed pseudo-random index sequence (splitmix64), every index in [0, count).
-std::vector<int> random_indices(long count)
+Idx random_indices(long count)
 {
-    std::vector<int> idx(static_cast<std::size_t>(count));
-    const auto       ni = static_cast<int>(count);
+    Idx        idx(static_cast<std::size_t>(count)); // untouched: the loop below touches it first
+    const auto ni = static_cast<int>(count);
 #pragma omp parallel for schedule(static)
     for (int k = 0; k < ni; ++k)
     {
@@ -227,7 +287,7 @@ struct SamplePair
 };
 
 // ── The cases, on a std::vector ──────────────────────────────────────────────
-Sample vec_read(const std::vector<double>& vec)
+Sample vec_read(const Vec& vec)
 {
     const auto t0    = Clk::now();
     const auto count = static_cast<int>(vec.size());
@@ -240,7 +300,7 @@ Sample vec_read(const std::vector<double>& vec)
     return {secs_since(t0), sum};
 }
 
-Sample vec_read_random(const std::vector<double>& vec, const std::vector<int>& idx)
+Sample vec_read_random(const Vec& vec, const Idx& idx)
 {
     const auto t0    = Clk::now();
     const auto count = static_cast<int>(idx.size());
@@ -254,7 +314,7 @@ Sample vec_read_random(const std::vector<double>& vec, const std::vector<int>& i
 }
 
 template <typename F>
-Sample vec_write(std::vector<double>& vec, F value)
+Sample vec_write(Vec& vec, F value)
 {
     const auto t0    = Clk::now();
     const auto count = static_cast<int>(vec.size());
@@ -266,7 +326,7 @@ Sample vec_write(std::vector<double>& vec, F value)
     return {secs_since(t0), 0.};
 }
 
-Sample vec_rmw(std::vector<double>& vec)
+Sample vec_rmw(Vec& vec)
 {
     const auto t0    = Clk::now();
     const auto count = static_cast<int>(vec.size());
@@ -319,7 +379,7 @@ Sample arr_read_bulk(Array<double>& arr, int count)
     return {secs_since(t0), sum};
 }
 
-Sample arr_read_random(Array<double>& arr, const std::vector<int>& idx)
+Sample arr_read_random(Array<double>& arr, const Idx& idx)
 {
     const auto  t0    = Clk::now();
     const auto  count = static_cast<int>(idx.size());
@@ -382,7 +442,7 @@ double arr_sum(const Array<double>& arr, int count)
     return sum;
 }
 
-double vec_sum(const std::vector<double>& vec)
+double vec_sum(const Vec& vec)
 {
     double sum = 0.;
     for (const double value : vec)
@@ -392,7 +452,7 @@ double vec_sum(const std::vector<double>& vec)
     return sum;
 }
 
-long verify_elements(const char* what, const Array<double>& arr, const std::vector<double>& vec)
+long verify_elements(const char* what, const Array<double>& arr, const Vec& vec)
 {
     long bad = 0;
     for (std::size_t i = 0; i < vec.size(); ++i)
@@ -438,9 +498,10 @@ try
     constexpr long min_elems_per_thread = 1L << 20;
     long           n_elems = std::max(1L << 27, static_cast<long>(shrink_array::max_threads()) * min_elems_per_thread);
     n_elems                = std::min(n_elems, 0x7fffffffL);
-    int  reps              = 5;
-    bool csv               = false;
-    bool verify            = false;
+    int    reps            = 5;
+    double min_time        = 0.05; // seconds per sample, at least (see the header)
+    bool   csv             = false;
+    bool   verify          = false;
     for (int a = 1; a < argc; ++a)
     {
         const std::string opt = argv[a];
@@ -452,6 +513,10 @@ try
         {
             reps = arg_value<int>(argv[++a], reps, "--reps");
         }
+        else if (opt == "--min_time" && a + 1 < argc)
+        {
+            min_time = arg_value<double>(argv[++a], min_time, "--min_time");
+        }
         else if (opt == "--csv")
         {
             csv = true;
@@ -462,13 +527,13 @@ try
         }
         else
         {
-            std::fprintf(stderr, "usage: %s [--n N] [--reps R] [--csv] [--verify]\n", argv[0]);
+            std::fprintf(stderr, "usage: %s [--n N] [--reps R] [--min_time S] [--csv] [--verify]\n", argv[0]);
             return 2;
         }
     }
-    if (reps < 1 || n_elems < 1 || n_elems > 0x7fffffffL)
+    if (reps < 1 || n_elems < 1 || n_elems > 0x7fffffffL || !(min_time >= 0.))
     {
-        std::fprintf(stderr, "access_cost: need reps >= 1, 1 <= n < 2^31\n");
+        std::fprintf(stderr, "access_cost: need reps >= 1, 1 <= n < 2^31, min_time >= 0\n");
         return 2;
     }
     const auto count = static_cast<int>(n_elems);
@@ -477,18 +542,24 @@ try
     const auto chunk_sz = static_cast<long>(Array<double>(0).chunk_size());
     if (csv)
     {
-        println("variant,chunk_size,threads,n,rep,case,container,seconds,ns_per_elem");
+        println("variant,chunk_size,threads,n,rep,case,container,seconds,ns_per_elem,passes");
     }
     else
     {
-        println("=== access_cost [{}]  n={}  chunk_size={}  threads={}  reps={} ===", variant_name(), n_elems, chunk_sz,
-                shrink_array::max_threads(), reps);
+        println("=== access_cost [{}]  n={}  chunk_size={}  threads={}  reps={}  min_time={}s ===", variant_name(),
+                n_elems, chunk_sz, shrink_array::max_threads(), reps, min_time);
     }
 
-    const std::vector<int> idx = random_indices(n_elems);
-    std::vector<double>    vec(static_cast<std::size_t>(n_elems));
-    std::vector            zeros(static_cast<std::size_t>(n_elems), 0.);
-    std::vector            seconds(static_cast<std::size_t>(n_elems), 1.5);
+    // Allocated untouched, first touched in parallel (the NUMA placement above):
+    // every vector here, before any timing.
+    const Idx idx = random_indices(n_elems);
+    Vec       vec(static_cast<std::size_t>(n_elems));
+    Vec       zeros(static_cast<std::size_t>(n_elems));
+    Vec       seconds(static_cast<std::size_t>(n_elems));
+    Vec       fresh_vec(static_cast<std::size_t>(n_elems)); // write-fresh's, re-zeroed before each pass
+    fill_parallel(zeros, 0.);
+    fill_parallel(seconds, 1.5);
+    vec_write(vec, varied);
 
     // [case][container 0 = vector, 1 = array] -> seconds per repetition
     std::vector<double> times[n_cases][2];
@@ -504,15 +575,30 @@ try
             ++sum_mismatch;
         }
     };
-    const auto note = [&](int c, int container, int rep, double seconds)
+    const auto note = [&](int c, int container, int rep, double seconds, int passes)
     {
         times[c][container].push_back(seconds);
         if (csv)
         {
-            println("{},{},{},{},{},{},{},{:.9f},{:.4f}", variant_name(), chunk_sz, shrink_array::max_threads(),
+            println("{},{},{},{},{},{},{},{:.9f},{:.4f},{}", variant_name(), chunk_sz, shrink_array::max_threads(),
                     n_elems, rep, case_names[c], container ? "array" : "vector", seconds,
-                    seconds * 1e9 / static_cast<double>(n_elems));
+                    seconds * 1e9 / static_cast<double>(n_elems), passes);
         }
+    };
+    // The passes of a sample: enough for the shorter first pass to reach
+    // min_time, capped.
+    const auto passes_for = [min_time](double first_pass)
+    {
+        constexpr int max_passes = 1000;
+        if (first_pass >= min_time)
+        {
+            return 1;
+        }
+        if (first_pass <= 0.)
+        {
+            return max_passes;
+        }
+        return static_cast<int>(std::min(static_cast<double>(max_passes), std::ceil(min_time / first_pass)));
     };
 
     for (int rep = 0; rep < reps; ++rep)
@@ -524,25 +610,56 @@ try
         arr_write(arr, count, varied);
         vec_write(vec, varied);
 
-        // A pair of runs of one case, in the alternating order.
-        const auto pair = [&](int c, auto&& run_vec, auto&& run_arr)
+        // One sample of a case for each container: the same number of passes
+        // for both (passes_for() of the shorter first pass), each pass in the
+        // alternating order and after its untimed preparation; the time is the
+        // mean of the passes, the sum the last pass's.
+        const auto pair_prepared = [&](int c, auto&& prep_vec, auto&& run_vec, auto&& prep_arr, auto&& run_arr)
         {
-            Sample sv{};
-            Sample sa{};
-            if (vec_first)
+            Sample     sv{};
+            Sample     sa{};
+            double     tv     = 0.;
+            double     ta     = 0.;
+            const auto go_vec = [&]
             {
+                prep_vec();
                 sv = run_vec();
-                sa = run_arr();
-            }
-            else
+                tv += sv.seconds;
+            };
+            const auto go_arr = [&]
             {
+                prep_arr();
                 sa = run_arr();
-                sv = run_vec();
+                ta += sa.seconds;
+            };
+            const auto one_pass = [&]
+            {
+                if (vec_first)
+                {
+                    go_vec();
+                    go_arr();
+                }
+                else
+                {
+                    go_arr();
+                    go_vec();
+                }
+            };
+            one_pass();
+            const int passes = passes_for(std::min(tv, ta));
+            for (int p = 1; p < passes; ++p)
+            {
+                one_pass();
             }
-            note(c, 0, rep, sv.seconds);
-            note(c, 1, rep, sa.seconds);
+            sv.seconds = tv / passes;
+            sa.seconds = ta / passes;
+            note(c, 0, rep, sv.seconds, passes);
+            note(c, 1, rep, sa.seconds, passes);
             return SamplePair{sv, sa};
         };
+        const auto nothing = [] {};
+        const auto pair    = [&](int c, auto&& run_vec, auto&& run_arr)
+        { return pair_prepared(c, nothing, run_vec, nothing, run_arr); };
 
         // read-varied
         {
@@ -571,15 +688,22 @@ try
             }
         }
         // write-fresh: varied values into an array all at 0 (every chunk
-        // materialised by its first write) and into a zeroed vector.
+        // materialised by its first write) and into a zeroed vector, both
+        // fresh again before each pass.
         {
-            Array<double> filled(count);
-            std::vector   fv(static_cast<std::size_t>(n_elems), 0.);
-            pair(4, [&] { return vec_write(fv, varied); }, [&] { return arr_write(filled, count, varied); });
-            check_sum(4, vec_sum(fv), arr_sum(filled, count));
+            std::optional<Array<double>> filled;
+            pair_prepared(
+                4, [&] { fill_parallel(fresh_vec, 0.); }, [&] { return vec_write(fresh_vec, varied); },
+                [&]
+                {
+                    filled.reset(); // the previous pass's array freed first
+                    filled.emplace(count);
+                },
+                [&] { return arr_write(*filled, count, varied); });
+            check_sum(4, vec_sum(fresh_vec), arr_sum(*filled, count));
             if (verify)
             {
-                bad_elements += verify_elements("write-fresh", filled, fv);
+                bad_elements += verify_elements("write-fresh", *filled, fresh_vec);
             }
         }
         // rmw on the (overwritten) varied array and vector.

@@ -218,35 +218,35 @@ is limited to the rebuilds.
 
 ## 8. Known limitations
 
-- **`zero` slows down after its rechunk.** After switching to 1,024, dynamic `zero` runs 1.5 to
-  2 times slower per iteration than static 1,024 (about 40 busy cores at an IPC of
-  3.65, against 52 cores at 4.24). A dynamic build **started** at 1,024 runs as fast as the
-  static one, and `zero_or_value` does not slow down after its rechunks: the state left by the
-  `zero` rebuild is to blame. Neither the scheduling of the rebuild nor the
-  compression thresholds explain the gap. Cause still unknown.
-  Measured again in October 2026 (inti, aarch64, LLVM, 64 threads, `--mode perf`,
-  2,000 iterations, `diag_zero_rechunk_slowdown.py`): +17% per
-  iteration after the switch to 1,024. Unchanged with a single slice, a static rebuild
-  schedule, no slab recycling, no `chunk_list_` reuse, lazy affinity; the NUMA
-  placement is balanced like the static run's. Most of it was the advisor: its
-  analyses went on at every tick once the geometry had settled, and their serial
-  parts kept the other threads waiting (__kmp_fork_barrier). With
-  `max_backoff_ticks` (same node, `OMP_PROC_BIND=close`, 4,000 iterations, last
-  re-chunk at iteration 1,700): +22% -> **+7%**. What remains is compression
-  churn the static run does not have (~15,000 buffers freed per iteration
-  against none), not yet explained. Still there in November 2026 after the teardown split
-  of `zero`'s rechunk, as an indication only (x86-64, GCC 16, 8 threads, `--mode perf
-  --divisor 16 --iter_max 2000`, best of 3): +11 to +13% per iteration after the last
-  re-chunk (iteration 600), 4% more resident memory than static 1,024. The churn could not be
-  measured at that size: the `churn` line counts per allocation key, and an array draws from
-  the shared pool (key 0, not counted) until its metadata passes
-  `CHUNK_ALLOC_AFFINITY_MIN_BYTES` (16 MiB) and it has been re-chunked -- the line says so
-  now. Measure it at full size (`diag_zero_rechunk_slowdown.py` as it stands).
+- **`zero` after its rechunk: no longer slower than the size it lands on.** Dynamic `zero`
+  used to run 1.5 to 2 times slower per iteration than static 1,024 after switching to 1,024,
+  blamed on the state the rebuild left behind. The advisor's analyses at every tick were most of
+  it (October 2026, inti, aarch64, LLVM, 64 threads: +22% -> +7% with `max_backoff_ticks`).
+  Measured again at full size in November 2026 (inti, 72 threads, GCC, `OMP_PROC_BIND=true`,
+  `--mode perf --iter_max 4000`, best of 3, `diag_zero_rechunk_slowdown.py`), against static
+  1,024 over the same iterations:
+
+  | dynamic `zero` | time / iteration | resident memory |
+  |---|---|---|
+  | no advisor (stays at 64, no rechunk) | 1.03 | 1.10 |
+  | forced to 1,024 at iteration 1,700 (`--force_rechunk 1024 --force_rechunk_at 1700`) | **1.03** | 1.04 |
+  | the advisor's choice (768, last rechunk at iteration 1,700) | 1.05 | 1.03 |
+
+  A rechunk to 1,024 costs nothing beyond the 3% of the dynamic build itself, rechunk or not.
+  No sign of a bad state either: no block freed by a rank that does not own its slab
+  (`parked_foreign` 0), same IPC (4.4) and same share of the samples in the OpenMP barrier
+  (about 14%) as the static run. What is left is the advisor's choice: it picks 768, at which
+  `arr3`, `arr4` and `arr5` churn (99, 72 and 68 materialisations per iteration, about 430
+  buffers freed per iteration against 5 for static), `arr4` and `arr5` keep densifying (+9 to
+  +10% resident materialised chunks after the rechunk), and 768 holds no less memory than
+  1,024 would: see the next item. Not explained: the 4% of resident memory a dynamic build
+  forced to 1,024 holds above static 1,024.
 - **The model is static.** The advisor bases its judgement on the current state of the chunks, not on
-  future writes. On this benchmark, the transient materialisations measured do not matter
-  (the `churn` line of `CHUNK_LOG=rechunk=debug`), but a workload that writes heavily into constant regions
-  could make a coarsening regrettable: this is the role of learning
-  (`coarsen_trust_ratio`) and of the anti-reversal rule.
+  future writes. A workload that writes heavily into constant regions can make a coarsening
+  regrettable: this is the role of learning (`coarsen_trust_ratio`) and of the anti-reversal
+  rule. On this benchmark at full size (see the previous item), the advisor settles `zero` at 768
+  on arrays that keep densifying: about 2% per iteration and no memory gained against 1,024, the
+  materialisations showing in the `churn` line of `CHUNK_LOG=rechunk=debug`.
 - **Boolean arrays in the benchmark**: `array_bool` and `array_bool_bits` stay at their birth
   geometry unless `--advise_bool` hands them to the decider, so that the two bool containers
   are compared as they are. The rechunk of `Array<bool>` is checked by `rechunk_validation`

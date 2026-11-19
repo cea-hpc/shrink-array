@@ -15,6 +15,13 @@
 # oldest compilers supported (gcc 13, clang 18), the serial _dyn build, the
 # Spack recipe installed from the checkout, and the line coverage of the
 # library (gcov + gcovr: a report, not a gate).
+# The C++23 and C++26 branches, which no push of develop builds: the ASan,
+# UBSan and clang 23 jobs run on cpp23 too (a matrix over the branch), and
+# cpp26 -- GCC 16 only (reflection, contracts) -- gets its own ASan and UBSan
+# job in the gcc 16.2 image, as ci.yml's cpp26 job; no clang there.
+# The options no other job turns on (x86-configs): second values indexed and
+# the statistics, a Release without invariant checks at chunk size 1024,
+# shared libraries with libc++ and -Werror.
 # GenMC itself can join here when it is needed.
 
 name: Nightly
@@ -37,6 +44,9 @@ env:
   # A schedule runs on the default branch; the development is on develop.
   # A manual run takes the branch it was started from.
   NIGHTLY_REF: ${{ github.event_name == 'schedule' && 'develop' || github.ref }}
+
+# NB: a schedule runs the workflow file of the default branch (main): a change
+# here reaches the nightly runs once it is merged into main.
 
 jobs:
   # ThreadSanitizer on AArch64. No vm.mmap_rnd_bits sysctl here: the
@@ -111,9 +121,14 @@ jobs:
   # out-of-bounds, use-after-free, double free and leaks at exit. The heavy
   # unity harnesses two at a time, as std-tsan (ci.yml).
   x86-openmp-asan:
-    name: x86-64, OpenMP, AddressSanitizer
+    name: x86-64, OpenMP, AddressSanitizer (${{ matrix.ref }})
     runs-on: ubuntu-24.04
     timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        # The schedule: develop and cpp23; a manual run: its own branch.
+        ref: ${{ fromJSON(github.event_name == 'schedule' && '["develop","cpp23"]' || format('["{0}"]', github.ref_name)) }}
     env:
       CC: gcc-14
       CXX: g++-14
@@ -129,7 +144,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          ref: ${{ env.NIGHTLY_REF }}
+          ref: ${{ matrix.ref }}
       - name: Toolchain
         run: |
           .github/apt_install.sh g++-14 ninja-build libbz2-dev
@@ -169,14 +184,14 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: failure()
         with:
-          name: asan-validation-binaries
+          name: asan-validation-binaries-${{ strategy.job-index }}
           path: build/examples/validation/validation_*_256
           retention-days: 14
       # The cores, for a closer look with the binary above.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: failure()
         with:
-          name: asan-core-dumps
+          name: asan-core-dumps-${{ strategy.job-index }}
           path: ${{ runner.temp }}/cores
           if-no-files-found: ignore
           retention-days: 14
@@ -197,9 +212,14 @@ jobs:
   # diagnostics gcc does not give, and the OMPT tool (CHUNK_HAVE_OMPT), which
   # only a clang build has -- multi_mat's embedded-compression executable.
   x86-clang-openmp:
-    name: x86-64, clang 23, OpenMP + OMPT
+    name: x86-64, clang 23, OpenMP + OMPT (${{ matrix.ref }})
     runs-on: ubuntu-24.04
     timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        # The schedule: develop and cpp23; a manual run: its own branch.
+        ref: ${{ fromJSON(github.event_name == 'schedule' && '["develop","cpp23"]' || format('["{0}"]', github.ref_name)) }}
     env:
       CC: clang-23
       CXX: clang++-23
@@ -207,7 +227,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          ref: ${{ env.NIGHTLY_REF }}
+          ref: ${{ matrix.ref }}
       - name: Toolchain
         run: |
           wget --max-redirect=0 -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null
@@ -322,9 +342,14 @@ jobs:
   # The unity harnesses one at a time (the heavy pool): instrumented, one of
   # them takes more than 7 GB to compile.
   x86-openmp-ubsan:
-    name: x86-64, OpenMP, UndefinedBehaviorSanitizer
+    name: x86-64, OpenMP, UndefinedBehaviorSanitizer (${{ matrix.ref }})
     runs-on: ubuntu-24.04
     timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        # The schedule: develop and cpp23; a manual run: its own branch.
+        ref: ${{ fromJSON(github.event_name == 'schedule' && '["develop","cpp23"]' || format('["{0}"]', github.ref_name)) }}
     env:
       CC: gcc-14
       CXX: g++-14
@@ -333,7 +358,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          ref: ${{ env.NIGHTLY_REF }}
+          ref: ${{ matrix.ref }}
       - name: Toolchain
         run: |
           .github/apt_install.sh g++-14 ninja-build libbz2-dev
@@ -351,6 +376,119 @@ jobs:
           -DCHUNK_X86_MARCH=x86-64-v3
           -DCMAKE_JOB_POOLS=heavy=1
           -DCHUNK_HEAVY_JOB_POOL=heavy
+      - name: Build and run the validation harnesses (check target)
+        run: cmake --build build --target check
+
+  # The build options no other job turns on (develop only), each entry a
+  # build of its own with the check target:
+  #  - zero_any's second values as 4-byte identifiers (CHUNK_SECOND_VALUE_INDEXED)
+  #    and the compression statistics (CHUNK_STATS), check-mode;
+  #  - a Release without the invariant checks (no CHECK_OPTIM: what users
+  #    build), chunk size 1024 -- the harnesses forced in
+  #    (CHUNK_BUILD_VALIDATION, which Release leaves out by default);
+  #  - shared libraries (BUILD_SHARED_LIBS), libc++ and -Werror: clang 23,
+  #    Debug, since CHUNK_WERROR applies to Debug builds only.
+  x86-configs:
+    name: x86-64, ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: OpenMP, second values indexed + stats
+            cc: gcc-14
+            cxx: g++-14
+            packages: g++-14
+            build_type: RelWithDebInfo
+            cmake_args: -DCHUNK_OPENMP=ON -DCHUNK_CHECK_OPTIM=ON -DCHUNK_SECOND_VALUE_INDEXED=ON -DCHUNK_STATS=ON -DCHUNK_STATIC_SIZES=256
+          - name: OpenMP, Release without invariant checks, 1024
+            cc: gcc-14
+            cxx: g++-14
+            packages: g++-14
+            build_type: Release
+            cmake_args: -DCHUNK_OPENMP=ON -DCHUNK_BUILD_VALIDATION=ON -DCHUNK_STATIC_SIZES=1024
+          - name: clang 23, libc++, shared libraries, -Werror (Debug)
+            cc: clang-23
+            cxx: clang++-23
+            packages: clang-23 libc++-23-dev libc++abi-23-dev libomp-23-dev
+            llvm: true
+            build_type: Debug
+            cmake_args: -DCHUNK_OPENMP=ON -DCHUNK_USE_LIBCXX=ON -DBUILD_SHARED_LIBS=ON -DCHUNK_WERROR=ON -DCHUNK_STATIC_SIZES=256
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.NIGHTLY_REF }}
+      - name: apt.llvm.org
+        if: matrix.llvm
+        run: |
+          wget --max-redirect=0 -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null
+          echo "deb https://apt.llvm.org/noble/ llvm-toolchain-noble-23 main" | sudo tee /etc/apt/sources.list.d/llvm-23.list
+      - name: Toolchain
+        run: |
+          .github/apt_install.sh ${{ matrix.packages }} ninja-build libbz2-dev
+          ${{ matrix.cxx }} --version
+          cmake --version
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          ${{ matrix.cmake_args }}
+          -DCHUNK_BUILD_DYN=OFF
+      - name: Build and run the validation harnesses (check target)
+        run: cmake --build build --target check
+
+  # cpp26 under the sanitizers: GCC 16 in the gcc 16.2 image (ci.yml's cpp26
+  # job), OpenMP, the same switches as the x86 ASan and UBSan jobs above.
+  # SYS_PTRACE: LeakSanitizer stops the threads with ptrace, which Docker's
+  # default profile refuses. No core dumps (no sysctl in a container).
+  cpp26-sanitizers:
+    # the schedule, and a manual run from develop (which tests this file) or cpp26
+    if: github.event_name == 'schedule' || github.ref_name == 'develop' || github.ref_name == 'cpp26'
+    name: x86-64, gcc 16, cpp26, OpenMP, ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    container:
+      image: gcc:16.2.0-trixie
+      options: --cap-add=SYS_PTRACE
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: AddressSanitizer
+            cmake_args: -DCHUNK_SANITIZER=address -DCHUNK_BUILD_DYN=OFF
+          # instrumented, a unity harness takes more than 7 GB: one at a time
+          - name: UndefinedBehaviorSanitizer
+            cmake_args: -DCHUNK_SANITIZER=undefined -DCHUNK_BUILD_DYN=ON -DCMAKE_JOB_POOLS=heavy=1 -DCHUNK_HEAVY_JOB_POOL=heavy
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+      DEBIAN_FRONTEND: noninteractive
+      ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:detect_stack_use_after_return=1:print_module_map=1
+      UBSAN_OPTIONS: print_stacktrace=1
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: cpp26
+      - name: Toolchain
+        run: |
+          apt-get update -q
+          apt-get install -y -q cmake ninja-build libbz2-dev
+          g++ --version
+          cmake --version
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCHUNK_OPENMP=ON
+          ${{ matrix.cmake_args }}
+          -DCHUNK_CHECK_OPTIM=ON
+          -DCHUNK_STATIC_SIZES=256
+          -DCHUNK_X86_MARCH=x86-64-v3
       - name: Build and run the validation harnesses (check target)
         run: cmake --build build --target check
 

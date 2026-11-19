@@ -398,6 +398,10 @@ class Array : public SecondValueArrayBase<Array<T, IntType>>,
     ///        not declared it yet.
     void copy_second_value_from(const Array& from);
 
+    /// @brief copy_second_value_from(@p from) would change this array's second
+    ///        value.
+    [[nodiscard]] bool takes_second_value_of(const Array& from) const noexcept;
+
     /// @brief Address of the registry mirror, for ArrayChunkBase to arm write
     ///        proxies with (zero_or_value::ProxySpec::arm_array_info).
     [[nodiscard]] const ArrayInfo* registry_mirror() const noexcept

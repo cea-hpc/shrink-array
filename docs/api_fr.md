@@ -8,7 +8,7 @@
 
 ***
 
-Tous les noms sont dans l'espace de noms `shrink_array`, `build_config` et `chunk_config` compris ; ceux de la bibliothèque d'allocation sont dans `fast_alloc`. Les macros commencent par CHUNK (CHUNK_, CHUNK2A_) ou FAST_ALLOC_.
+Tous les noms sont dans l'espace de noms `shrink_array`, `build_config` et `chunk_config` compris ; ceux de la bibliothèque d'allocation sont dans `fast_alloc`. Les macros commencent par CHUNK_ ou FAST_ALLOC_.
 
 ## 1. Démarrer et arrêter la bibliothèque
 
@@ -114,6 +114,13 @@ dans un `ElementRef` (`internal/element_ref.h`) que seul un temporaire peut util
 `auto x = a[i];` puis tout usage de `x` ne compile pas, avec un message. Un proxy gardé
 volontairement : `std::move(x) = v;`, ou `a.element_proxy(i)`. L'enveloppe ne coûte rien à
 l'exécution (inlinée de force). `-DCHUNK_LOOSE_ELEMENT_REF` désactive la vérification.
+
+Un opérande d'un autre type que l'élément : un `T` nu calcule dans le type commun, et le proxy aussi
+pour les opérandes *propres* -- le même type, un entier dans un `T` flottant ou complexe, le
+scalaire d'un `T` complexe, un `int` dans `short`, `char` ou `unsigned char`. Tout autre opérande
+est d'abord converti en `T`, avec un `HPC WARNING` (`[[deprecated]]`), de la même façon dans toutes
+les variantes et tous les builds, différé ou non : un élément `int` `*= 1.5` est multiplié par 1,
+`/= 0.5` divisé par 0.
 
 ## 5. Opérations sur des plages
 

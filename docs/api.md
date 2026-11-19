@@ -8,7 +8,7 @@
 
 ***
 
-All names are in namespace `shrink_array`, `build_config` and `chunk_config` included; the allocator library's are in `fast_alloc`. The macros start with CHUNK (CHUNK_, CHUNK2A_) or FAST_ALLOC_.
+All names are in namespace `shrink_array`, `build_config` and `chunk_config` included; the allocator library's are in `fast_alloc`. The macros start with CHUNK_ or FAST_ALLOC_.
 
 ## 1. Starting and stopping the library
 
@@ -110,6 +110,12 @@ array's storage: every **(S)** operation invalidates it. In every build,
 does not compile, with a message. A proxy kept on purpose: `std::move(x) = v;`, or
 `a.element_proxy(i)`. The wrapper costs nothing at run time (force-inlined).
 `-DCHUNK_LOOSE_ELEMENT_REF` turns the check off.
+
+An operand of another type than the element: a plain `T` computes in the common type, and so does
+the proxy for the *clean* operands -- the same type, an integer into a floating or complex `T`, the
+scalar of a complex `T`, an `int` into `short`, `char` or `unsigned char`. Any other operand is
+converted to `T` first, with an `HPC WARNING` (`[[deprecated]]`), the same in every variant and
+build, deferred or not: an `int` element `*= 1.5` is multiplied by 1, `/= 0.5` divided by 0.
 
 ## 5. Range operations
 

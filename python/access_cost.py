@@ -63,7 +63,14 @@ def run_one(binary, threads, n, reps):
         sys.stderr.write("%s (threads=%d) failed, code %d:\n%s\n" % (binary.name, threads, res.returncode,
                                                                    res.stderr[-3000:]))
         return []
-    lines = [ln for ln in res.stdout.splitlines() if ln.count(",") == 8]   # the CSV, not the stats lines
+    # The CSV, not the stats lines: the header and the lines of as many fields
+    # (an older binary has no passes column: its header says so).
+    out = res.stdout.splitlines()
+    header = next((ln for ln in out if ln.startswith("variant,chunk_size,")), None)
+    if header is None:
+        sys.stderr.write("%s (threads=%d): no CSV header in its output\n" % (binary.name, threads))
+        return []
+    lines = [ln for ln in out if ln.count(",") == header.count(",")]
     return list(csv.DictReader(io.StringIO("\n".join(lines))))
 
 

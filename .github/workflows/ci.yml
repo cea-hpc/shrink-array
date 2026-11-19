@@ -157,6 +157,13 @@ jobs:
             cmake_args: -DCHUNK_OPENMP=OFF
             formal: true
             install: true
+          # The chunks' buffers from the standard allocator instead of
+          # fast_allocators (CHUNK_STD_ALLOC): other code paths, and an install
+          # that ships a few fast_allocators headers in place of the library.
+          - name: OpenMP, std alloc
+            runner: ubuntu-24.04
+            cmake_args: -DCHUNK_OPENMP=ON -DCHUNK_STD_ALLOC=ON
+            install: true
           # The std backend (the library's own std::jthread team, no OpenMP) and
           # the TBB adaptor: std_thread_validation and tbb_validation.
           - name: std + TBB
@@ -195,6 +202,8 @@ jobs:
           ctest --test-dir build -L examples --output-on-failure
       # What a user project does: the library alone, installed, and
       # examples/getting_started configured on its own with find_package(shrink_array).
+      # The install is moved before it is used: a path of the build tree or of
+      # the first prefix left in an installed file fails here.
       - name: Install, then getting_started against the install
         if: matrix.install
         run: |
@@ -202,7 +211,12 @@ jobs:
             -DCHUNK_STATIC_SIZES=256 -DCHUNK_BUILD_DYN=OFF \
             -DSHRINK_ARRAY_BUILD_EXAMPLES=OFF -DSHRINK_ARRAY_BUILD_TESTS=OFF
           cmake --build build-lib
-          cmake --install build-lib --prefix "$RUNNER_TEMP/prefix"
+          cmake --install build-lib --prefix "$RUNNER_TEMP/first-prefix"
+          mv "$RUNNER_TEMP/first-prefix" "$RUNNER_TEMP/prefix"
+          if grep -rlI -e "$RUNNER_TEMP/first-prefix" -e "$GITHUB_WORKSPACE" "$RUNNER_TEMP/prefix"; then
+            echo "an installed file names the build tree or the first prefix" >&2
+            exit 1
+          fi
           cmake -S examples/getting_started -B build-gs -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/prefix"
           cmake --build build-gs
