@@ -50,30 +50,30 @@ std::array<std::array<ChunkStatsThr, CHUNK_STATS_MAX_THR>, chunk_stats_n_variant
 template <typename AllT>
 bool ChunkPoolParallelInterface<true, AllT>::need_load_balance_list_block_free()
 {
-    const auto& ens_type_chunk = SingletonChk<AllT>::get_ref();
+    const auto& type_registry = SingletonChk<AllT>::get_ref();
 
-    return ens_type_chunk.need_load_balance_list_block_free();
+    return type_registry.need_load_balance_list_block_free();
 }
 
 template <typename AllT>
 void ChunkPoolParallelInterface<true, AllT>::load_balance_list_block_free()
 {
-    const auto& ens_type_chunk = SingletonChk<AllT>::get_ref();
-    ens_type_chunk.load_balance_list_block_free();
+    const auto& type_registry = SingletonChk<AllT>::get_ref();
+    type_registry.load_balance_list_block_free();
 }
 
 template <typename AllT>
 void ChunkPoolParallelInterface<true, AllT>::clear_all_list_block_free_thr()
 {
-    auto& ens_type_chunk = SingletonChk<AllT>::get_ref();
-    ens_type_chunk.clear_list_block_free_thr();
+    auto& type_registry = SingletonChk<AllT>::get_ref();
+    type_registry.clear_list_block_free_thr();
 }
 
 template <typename AllT>
 void ChunkPoolParallelInterface<true, AllT>::delete_list_block_chunk_free_itself()
 {
-    const auto& ens_type_chunk = SingletonChk<AllT>::get_ref();
-    ens_type_chunk.delete_list_block_chunk_free_itself();
+    const auto& type_registry = SingletonChk<AllT>::get_ref();
+    type_registry.delete_list_block_chunk_free_itself();
 }
 
 template <typename AllT>
@@ -92,8 +92,8 @@ void ChunkPoolParallelInterface<false, AllT>::delete_chunk_allocator()
 {
     if constexpr (build_config::use_fast_alloc)
     {
-        const auto& ens_type_chunk = SingletonChk<AllT>::get_ref();
-        ens_type_chunk.delete_chunk_allocator();
+        const auto& type_registry = SingletonChk<AllT>::get_ref();
+        type_registry.delete_chunk_allocator();
     }
 }
 
@@ -213,22 +213,22 @@ std::size_t compress_now_and_trim_pools()
     {
         return 0;
     }
-    const auto& ens_type_chunk = SingletonChk<TypeStateRegistry>::get_ref();
+    const auto& type_registry = SingletonChk<TypeStateRegistry>::get_ref();
     // Every rank's candidates (the threaded builds; outside a region, one region
     // in which each rank sweeps its own list): the pass that ends a phase, which
     // CHUNK_AGGRESSIVE_COMPRESSION skips -- force_chunk_to_compress() alone
     // folded the calling rank's list only. A no-op in a serial build.
-    if (ens_type_chunk.have_chunk_to_compress_potentially())
+    if (type_registry.have_chunk_to_compress_potentially())
     {
-        ens_type_chunk.compress_chunk_to_compress_potentially(true);
+        type_registry.compress_chunk_to_compress_potentially(true);
     }
     // Then the calling rank's sweep, in every build: a serial zero_any queues
     // its candidates too, and folds them in batches of half the list
     // (perform_compression); the last, partial batch waited here for good
     // (nothing for a serial zero or zero_or_value: their counters compress on
     // the write).
-    ens_type_chunk.force_chunk_to_compress();
-    return ens_type_chunk.trim_reuse_pools(0);
+    type_registry.force_chunk_to_compress();
+    return type_registry.trim_reuse_pools(0);
 }
 
 void internal::shutdown_runtime()
@@ -245,8 +245,8 @@ void internal::shutdown_runtime()
         {
             return; // see release_chunk_pools()
         }
-        const auto& ens_type_chunk = SingletonChk<TypeStateRegistry>::get_ref();
-        ens_type_chunk.destroy_block_chunk();
+        const auto& type_registry = SingletonChk<TypeStateRegistry>::get_ref();
+        type_registry.destroy_block_chunk();
     }
 }
 

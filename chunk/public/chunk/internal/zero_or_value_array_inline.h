@@ -634,13 +634,13 @@ void zero_or_value::Array<T, IntType>::clear_core()
     {
         if (!chunk_config::aggressive_compression()) // run-time switch: chunk/config.h
         {
-            const auto& ens_type_chunk = SingletonChk<TypeStateRegistry>::get_ref();
+            const auto& type_registry = SingletonChk<TypeStateRegistry>::get_ref();
 
             // Not for a work array torn down in a region: that pass walks every
             // rank's list, of every type.
-            if (!own_rank && ens_type_chunk.have_chunk_to_compress_potentially())
+            if (!own_rank && type_registry.have_chunk_to_compress_potentially())
             {
-                ens_type_chunk.compress_chunk_to_compress_potentially(false);
+                type_registry.compress_chunk_to_compress_potentially(false);
             }
         }
     }
@@ -827,10 +827,10 @@ void zero_or_value::Array<T, IntType>::compress_int(pmp::Team& team)
         if (!chunk_config::aggressive_compression() && !CHUNK_PMP_IN_PARALLEL_REGION)
         // run-time switch: chunk/config.h
         {
-            if (const auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::TypeStateRegistry>::get_ref();
-                ens_type_chunk.have_chunk_to_compress_potentially())
+            if (const auto& type_registry = shrink_array::SingletonChk<shrink_array::TypeStateRegistry>::get_ref();
+                type_registry.have_chunk_to_compress_potentially())
             {
-                ens_type_chunk.compress_chunk_to_compress_potentially(true);
+                type_registry.compress_chunk_to_compress_potentially(true);
             }
             drained = true;
         }

@@ -82,7 +82,7 @@ template struct RuntimeParallelInterface<build_config::threaded, TypeStateRegist
  */
 void Runtime::init(bool big_chunk_block)
 {
-    auto& ens_type_chunk = SingletonChk<TypeStateRegistry>::get_ref();
+    auto& type_registry = SingletonChk<TypeStateRegistry>::get_ref();
 
     int sz = 1024 * 1024 * 2;
     if (big_chunk_block)
@@ -103,7 +103,7 @@ void Runtime::init(bool big_chunk_block)
     // type the thread's ambient size selects -- one slab size per element type
     // (TCSlab::slab_bytes_for). Refused, the first one kept; the same size is
     // a harmless repeat (each validation harness calls init(true)).
-    if (const int published = ens_type_chunk.ready_block_size(); published != 0 && published != sz) [[unlikely]]
+    if (const int published = type_registry.ready_block_size(); published != 0 && published != sz) [[unlikely]]
     {
         CHUNK_LOG(warn, general,
                   "Runtime::init({}) ignored: the allocation blocks are already {} bytes (one block size "
@@ -136,7 +136,7 @@ void Runtime::init(bool big_chunk_block)
         init_all_stats();
     }
 
-    ens_type_chunk.mark_ready(block_size);
+    type_registry.mark_ready(block_size);
 
     // Register the STARTING geometry, now that the managers exist. It is set
     // statically (chunk_size_policy.h), never through set_active_chunk_size(),
@@ -154,8 +154,8 @@ void Runtime::force_compression()
 {
     // Every build: a serial zero_any queues its candidates too (see
     // compress_now_and_trim_pools()).
-    const auto& ens_type_chunk = SingletonChk<TypeStateRegistry>::get_ref();
-    ens_type_chunk.force_chunk_to_compress();
+    const auto& type_registry = SingletonChk<TypeStateRegistry>::get_ref();
+    type_registry.force_chunk_to_compress();
 }
 
 #if CHUNK_OPT_STATS
@@ -484,8 +484,8 @@ void Runtime::chunk_stats()
     // separate, and can differ widely between builds whose event counters
     // match: here, the buffers parked in the reuse pools.
     {
-        const auto&       etc  = SingletonChk<TypeStateRegistry>::get_ref();
-        const std::size_t pool = etc.reuse_pool_bytes();
+        const auto&       type_registry = SingletonChk<TypeStateRegistry>::get_ref();
+        const std::size_t pool          = type_registry.reuse_pool_bytes();
         std::println("\n----- CHUNK_RETENTION -----");
         std::println("  reuse pools    = {} MB parked at exit", pool / (1024uz * 1024));
     }
@@ -511,8 +511,8 @@ void RuntimeDynInterface<true, AllT>::register_chunk_size([[maybe_unused]] unsig
     // Without it, buffers of DIFFERENT geometries share the legacy list and a
     // smaller buffer is popped for a larger chunk (overflow in init_block), or
     // drain_reuse_list_for_size finds no slot at the first re-chunk.
-    auto& ens_type_chunk = SingletonChk<AllT>::get_ref();
-    ens_type_chunk.register_chunk_size(size, Runtime::block_size);
+    auto& type_registry = SingletonChk<AllT>::get_ref();
+    type_registry.register_chunk_size(size, Runtime::block_size);
 }
 
 // The one instantiation of the pair: in a static build this is the EMPTY

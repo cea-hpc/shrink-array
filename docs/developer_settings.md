@@ -233,10 +233,16 @@ The compile jobs of the configurations built at the same time come from one budg
 or what the memory holds. With ninja 1.13 or later (the ninja a build dir is configured with,
 its `CMAKE_MAKE_PROGRAM`), the scripts share it through a GNU make jobserver: a configuration
 that ends leaves its cores to the ones still running, and the last one finishes on the whole
-node. With an older ninja each configuration keeps the share it was given at its start
-(`cores / --jobs`), and the last ones finish on that share alone. `CHUNK_NINJA=<ninja 1.13 or
-later>` configures the build dirs with that ninja (each dir that changes ninja rebuilds in full
-once: the two versions do not read each other's `.ninja_log`); `CHUNK_JOBSERVER=off` keeps the
+node. The sanitizer builds take part too: when the memory is what limits the run, their compile
+jobs weigh `CHUNK_MEM_PER_JOB_MB_SANITIZER / CHUNK_MEM_PER_JOB_MB` tokens each, and
+`scripts/jobserver_broker.sh` gives their ninja a pool of its own, one token of it for that many
+of the run's. With an older ninja each configuration keeps the share it was given at its start
+(`cores / --jobs`), and the last ones finish on that share alone. The scripts take the newest
+ninja of `PATH` that runs on the node, ahead of the module's (a `~/.local/bin/ninja` 1.13 rather
+than the module's 1.11), and when it is 1.13 or later they set `CHUNK_NINJA` to it.
+`CHUNK_NINJA=<ninja>` configures the build dirs with that ninja (each dir that changes ninja
+rebuilds in full once: the two versions do not read each other's `.ninja_log`); set by hand, it
+wins (`CHUNK_NINJA=<the module's ninja>` keeps the old one). `CHUNK_JOBSERVER=off` keeps the
 fixed shares.
 
 The std threading backend (`CHUNK_THREADS=std`) has its own builds: `std-gnu`, `std-gnu-check`

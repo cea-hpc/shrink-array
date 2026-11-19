@@ -874,9 +874,13 @@ fi
 #
 # A build whose ninja is older (its CMAKE_MAKE_PROGRAM, the one CMake
 # configured it with) keeps its fixed -j and takes as many tokens out of the
-# pool while it runs, so the total still holds. Same for the sanitizer builds
-# when the memory is what limits them: their jobs weigh
-# CHUNK_MEM_PER_JOB_MB_SANITIZER / CHUNK_MEM_PER_JOB_MB tokens each.
+# pool while it runs, so the total still holds. The sanitizer builds, when
+# the memory is what limits them, have jobs that weigh
+# CHUNK_MEM_PER_JOB_MB_SANITIZER / CHUNK_MEM_PER_JOB_MB tokens each, which a
+# ninja cannot take: jobserver_broker.sh runs them on a pool of their own, one
+# token of it per <weight> of the run's, filled and emptied as ninja's job ends
+# show it (they used to keep a fixed -j, and the last ASan build, alone at the
+# end, compiled on its launch share of the node).
 # CHUNK_NINJA=<a ninja >= 1.13> configures the build dirs with that ninja
 # (CMAKE_MAKE_PROGRAM). Each dir it changes rebuilds in full once: ninja 1.13
 # writes its .ninja_log in format v7, and 1.11 and 1.13 each start over on the
@@ -1132,7 +1136,7 @@ launch_build() {  # <build-dir> [cmake --build extra args…]
     # token held for the job ninja runs without one. Else the fixed -j, and as
     # many tokens held while it runs. The slot keeps the count; __slot_release
     # gives them back.
-    local _par_env=(CMAKE_BUILD_PARALLEL_LEVEL="$_par") _how="$_par compile jobs"
+    local _par_env=(CMAKE_BUILD_PARALLEL_LEVEL="$_par") _how="$_par compile jobs" _broker=()
     if [ -p "${CHUNK_JOBSERVER_FIFO:-}" ]; then
         local _want
         if [ "$_weight" -eq 1 ] && __js_client "$dir"; then
@@ -1140,6 +1144,14 @@ launch_build() {  # <build-dir> [cmake --build extra args…]
             _par_env=(-u CMAKE_BUILD_PARALLEL_LEVEL
                       MAKEFLAGS="-j$CHUNK_JOBSERVER_SIZE --jobserver-auth=fifo:$CHUNK_JOBSERVER_FIFO")
             _how="jobserver, up to $CHUNK_JOBSERVER_SIZE compile jobs"
+        elif __js_client "$dir"; then
+            # Jobs that weigh <weight> tokens: jobserver_broker.sh gives ninja
+            # a pool of its own, one token of it per <weight> of the run's,
+            # and <weight> tokens held for the job ninja runs without one.
+            _want=$_weight
+            _broker=("$CHUNK_SCRIPT_DIR/jobserver_broker.sh" "$_weight")
+            _par_env=(-u CMAKE_BUILD_PARALLEL_LEVEL -u MAKEFLAGS)
+            _how="jobserver, $_weight tokens per job, up to $(( CHUNK_JOBSERVER_SIZE / _weight )) compile jobs"
         else
             _want=$(( _par * _weight ))
             [ "$_want" -gt "$CHUNK_JOBSERVER_SIZE" ] && _want=$CHUNK_JOBSERVER_SIZE
@@ -1154,7 +1166,7 @@ launch_build() {  # <build-dir> [cmake --build extra args…]
     # the gnu builds still running (adopt_handoff) -- know when it ended and how.
     rm -f "$log.rc"
     local _run=(bash -c '__rc_file=$1; shift; "$@"; __rc=$?; printf "%s\n" "$__rc" > "$__rc_file"; exit "$__rc"'
-                chunk-build "$log.rc" cmake --build "$dir" "${_exec_target[@]}" "$@")
+                chunk-build "$log.rc" "${_broker[@]}" cmake --build "$dir" "${_exec_target[@]}" "$@")
     if command -v setsid >/dev/null 2>&1; then
         env "${_par_env[@]}" setsid "${_run[@]}" >"$log" 2>&1 &
     else

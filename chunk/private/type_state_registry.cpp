@@ -64,11 +64,11 @@ void TypeStateRegistry::ensure_ready()
     std::call_once(once,
                    []
                    {
-                       auto& reg   = SingletonChk<TypeStateRegistry>::get_ref();
-                       bool  ready = false;
+                       auto& type_registry = SingletonChk<TypeStateRegistry>::get_ref();
+                       bool  ready         = false;
                        {
-                           const std::scoped_lock lock(reg.registry_mutex_);
-                           ready = reg.ready_;
+                           const std::scoped_lock lock(type_registry.registry_mutex_);
+                           ready = type_registry.ready_;
                        }
                        if (!ready)
                        {
@@ -176,8 +176,8 @@ void finalize_parallel_phase_only_flush()
         //    which is stable inside the current parallel region
         pmp::current_team().barrier();
 
-        auto& ens_type_chunk = SingletonChk<TypeStateRegistry>::get_ref();
-        ens_type_chunk.flush_all_deferred(true);
+        auto& type_registry = SingletonChk<TypeStateRegistry>::get_ref();
+        type_registry.flush_all_deferred(true);
     }
 }
 
@@ -191,14 +191,14 @@ void finalize_parallel_phase_after_flush()
     // use_openmp: a shape of the phase contract only OpenMP has (phases.h).
     if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
     {
-        const auto& ens_type_chunk = SingletonChk<TypeStateRegistry>::get_ref();
-        ens_type_chunk.destroy_after_flush(false);
+        const auto& type_registry = SingletonChk<TypeStateRegistry>::get_ref();
+        type_registry.destroy_after_flush(false);
 
         reset_all();
-        if (!chunk_config::aggressive_compression() && ens_type_chunk.have_chunk_to_compress_potentially())
+        if (!chunk_config::aggressive_compression() && type_registry.have_chunk_to_compress_potentially())
         // run-time switch: chunk/config.h
         {
-            ens_type_chunk.compress_chunk_to_compress_potentially(true);
+            type_registry.compress_chunk_to_compress_potentially(true);
         }
 #if !CHUNK_OPT_STD_ALLOC
         fast_alloc::report_all_arenas("after_flush");
@@ -231,21 +231,21 @@ void finalize_parallel_phase()
     }
     if constexpr (build_config::threaded && chunk_config::is_shrink_enabled)
     {
-        auto& ens_type_chunk = SingletonChk<TypeStateRegistry>::get_ref();
-        ens_type_chunk.flush_all_deferred(false);
+        auto& type_registry = SingletonChk<TypeStateRegistry>::get_ref();
+        type_registry.flush_all_deferred(false);
 
         reset_all();
         // Std backend: the op pools of the application threads that exited
         // in this phase; their ops were just replayed (deferred_op_pool.h).
         retire_exited_thread_pools();
 
-        if (!chunk_config::aggressive_compression() && ens_type_chunk.have_chunk_to_compress_potentially())
+        if (!chunk_config::aggressive_compression() && type_registry.have_chunk_to_compress_potentially())
         // run-time switch: chunk/config.h
         {
             // Drain the deferred-compression backlog here, between parallel
             // phases: parallel, with no concurrent writers (no start() barrier).
 
-            ens_type_chunk.compress_chunk_to_compress_potentially(true);
+            type_registry.compress_chunk_to_compress_potentially(true);
         }
 #if !CHUNK_OPT_STD_ALLOC
         fast_alloc::report_all_arenas("finalize_phase");
@@ -278,8 +278,8 @@ bool finalize_barrier_phase()
     if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
     {
         // NOT const: flush_all_deferred() mutates the managers it drains.
-        auto&      ens_type_chunk = SingletonChk<TypeStateRegistry>::get_ref();
-        const bool flushed        = ens_type_chunk.flush_all_deferred(true);
+        auto&      type_registry = SingletonChk<TypeStateRegistry>::get_ref();
+        const bool flushed       = type_registry.flush_all_deferred(true);
 
         return flushed;
     }
