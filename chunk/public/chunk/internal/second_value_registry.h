@@ -330,8 +330,9 @@ class GlobalVecHolder
 #ifndef CHUNK_SECOND_VALUE_MAX_IDS
     #define CHUNK_SECOND_VALUE_MAX_IDS (std::size_t{4} << 20U)
 #endif
-    static constexpr std::size_t max_ids =
-        (region_bytes / id_stride) < CHUNK_SECOND_VALUE_MAX_IDS ? (region_bytes / id_stride) : CHUNK_SECOND_VALUE_MAX_IDS;
+    static constexpr std::size_t max_ids = (region_bytes / id_stride) < CHUNK_SECOND_VALUE_MAX_IDS
+                                               ? (region_bytes / id_stride)
+                                               : CHUNK_SECOND_VALUE_MAX_IDS;
     static_assert(max_ids < std::size_t{0xFFFFFFFFu}, "an identifier must fit id_of_ptr()'s uint32_t");
 
     /// @brief The registered users (#ref_count): the live zero_any::Array<T>
@@ -766,7 +767,7 @@ class GlobalVecHolder
 #endif
 
     static constexpr size_t index_cap       = size_t{1} << lookup_slots_log2; ///< Initial capacity.
-    static constexpr int    index_max_probe = 64; ///< Bounded; giving up means fallback.
+    static constexpr int    index_max_probe = 64;                             ///< Bounded; giving up means fallback.
 
     /// @brief Bytes of the value table: identifiers 0 to id_limit.
     /// @pre region_init() has read id_limit.

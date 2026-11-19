@@ -37,7 +37,7 @@
 #include "chunk/internal/in_t.h"                        // InT<T>
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/proxy_operators.h"             // ProxyOperators
-#include "chunk/internal/second_value_registry.h"     // SecondValueRegistry: second-value identifiers
+#include "chunk/internal/second_value_registry.h"       // SecondValueRegistry: second-value identifiers
 #include "chunk/internal/relaxed_element.h"             // store_value: zero_any's relaxed element stores
 #include "chunk/internal/concept_is_clean_assignment.h" // IsCleanCompoundOp, IsCleanShiftOp, BaseT
 #include "chunk/internal/crtp_support.h"                // CRTPSupport

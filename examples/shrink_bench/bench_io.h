@@ -393,8 +393,8 @@ void read_check_binary_file(Int                idx,
             const Int chunk_index = index / static_cast<Int>(data_check.chunk_size());
             const Int elem_offset = index % static_cast<Int>(data_check.chunk_size());
 
-            bool                  is_values     = false;
-            bool                  is_first_value = false;
+            bool                  is_values       = false;
+            bool                  is_first_value  = false;
             [[maybe_unused]] bool is_second_value = false; // read only by the zero_or_value / zero_any traces
             while (std::getline(trace_file, line))
             {

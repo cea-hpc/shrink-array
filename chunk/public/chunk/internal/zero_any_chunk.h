@@ -27,7 +27,7 @@
 #include "chunk/config.h"                           // build_config::threaded, chunk_config
 #include "chunk/internal/chunk_traits.h"            // ChunkTraits<Derived>::ManagerType (ChunkImpl, ChunkThreadPolicy)
 #include "chunk/internal/invariant_check.h"         // invariant_failed
-#include "chunk/internal/second_value_registry.h" // SecondValueRegistry, SecondValueRef
+#include "chunk/internal/second_value_registry.h"   // SecondValueRegistry, SecondValueRef
 #include "chunk/internal/pmp_chunk.h"               // CHUNK_PMP_THREAD_RANK
 #include "chunk/internal/ring_log_debug.h"          // ScopedRingLog, ring_log_* (RING_LOG builds)
 #include "chunk/internal/chunk_size_policy.h"       // ChunkElems

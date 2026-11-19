@@ -25,7 +25,7 @@
 #include <vector>  // std::vector
 
 #include "chunk/internal/second_value_registry.h" // the class these bodies belong to
-#include "chunk/internal/same_value.h"              // same_value
+#include "chunk/internal/same_value.h"            // same_value
 
 namespace shrink_array
 {
@@ -446,8 +446,8 @@ void GlobalVecHolder<T>::clear_if_last(int& n_second_values)
 
     if (n_segs > 1)
     {
-        std::cout << "[second_value] " << n_second_values << " distinct second values across " << n_segs << " segments (capacity "
-                  << n_segs * Segment<T>::slots_per_segment
+        std::cout << "[second_value] " << n_second_values << " distinct second values across " << n_segs
+                  << " segments (capacity " << n_segs * Segment<T>::slots_per_segment
                   << "), index_degraded=" << index_degraded.load(std::memory_order_relaxed) << "\n";
     }
 
@@ -501,17 +501,17 @@ void GlobalVecHolder<T>::region_init()
     void*     raw  = mmap(nullptr, region_usable, prot, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
     if (raw == MAP_FAILED) [[unlikely]]
     {
-        CHUNK_INVARIANT_FAILED("[second_value] cannot reserve the second-value region ({} MiB): {}", region_usable >> 20U,
-                               std::strerror(errno));
+        CHUNK_INVARIANT_FAILED("[second_value] cannot reserve the second-value region ({} MiB): {}",
+                               region_usable >> 20U, std::strerror(errno));
     }
     // Every slot is carved at a multiple of region_stride (id_stride),
     // which is what turns a slot pointer into a small identifier and back
     // (SecondValueRegistry::id_of_ptr / value_of_id). Nothing is ever stored
     // in the region, so a slot only has to give each identifier a distinct
     // address: one cache line does, and no page is ever backed.
-    region_end = static_cast<std::byte*>(raw) + region_usable;
-    const auto lim =
-        env_number<std::size_t>(env_name_or_former("CHUNK_SECOND_VALUE_ID_LIMIT", "CHUNK_CONST_VAL2_ID_LIMIT"), max_ids);
+    region_end     = static_cast<std::byte*>(raw) + region_usable;
+    const auto lim = env_number<std::size_t>(
+        env_name_or_former("CHUNK_SECOND_VALUE_ID_LIMIT", "CHUNK_CONST_VAL2_ID_LIMIT"), max_ids);
     id_limit = (lim >= 1 && lim < max_ids) ? lim : max_ids; // lowers only
 
     // The value table: one T per identifier this run can hand out, plus [0].
@@ -636,7 +636,7 @@ template <typename T>
 
 template <typename T>
 [[nodiscard]] T* SecondValueRegistry<T>::find_or_register_second_value_release(T                 second_v,
-                                                                             SecondValueRef<T> ptr_second_value)
+                                                                               SecondValueRef<T> ptr_second_value)
 {
     const typename VecHolder::LookupGuard in_flight; // as find_or_register_second_value()
     T*                                    buf = find_or_register(second_v);

@@ -33,7 +33,7 @@
 #include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
 #include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
 #include "chunk/config.h"                               // for threaded, g_in_rechunk_rebuild
-#include "chunk/internal/pmp_chunk.h"               // CHUNK_PMP_IN_PARALLEL_REGION (reclaim_second_values), pmp::Team
+#include "chunk/internal/pmp_chunk.h"             // CHUNK_PMP_IN_PARALLEL_REGION (reclaim_second_values), pmp::Team
 #include "chunk/internal/second_value_registry.h" // for GlobalVecHolder (const2 GC)
 #include "chunk/internal/write_compress_sync_policy.h" // for WriteCompressSyncPolicy
 #include "chunk/internal/array_chunk_core.h"           // the core the bases share

@@ -39,8 +39,8 @@
 #include "chunk/internal/write_compress_sync_policy.h" // WriteCompressSyncPolicy::is_thread_writing_on (wait_before_materialise)
 #include "chunk/internal/chunk_traits.h"               // ChunkTraits<ChunkT>::ProxyType (wait_before_materialise)
 #include "chunk/internal/second_value_registry.h" // SecondValueRef
-#include "chunk/internal/queue_flag.h"              // queue_flag::hand_back / release: the pass's hand-back
-#include "chunk/internal/same_value.h"              // same_value
+#include "chunk/internal/queue_flag.h"            // queue_flag::hand_back / release: the pass's hand-back
+#include "chunk/internal/same_value.h"            // same_value
 
 /**
  * @file zero_any_chunk_inline.h

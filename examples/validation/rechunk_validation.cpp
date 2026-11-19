@@ -935,7 +935,8 @@ static int run_body(int argc, char** argv)
          [&]
          {
              return check_invariance<double>(
-                 "second-value-grow", count, 2048, [](long i) -> double { return double((i / 5000) % 3); }, /*sv_value=*/2.0);
+                 "second-value-grow", count, 2048, [](long i) -> double { return double((i / 5000) % 3); },
+                 /*sv_value=*/2.0);
          }},
         // A size that is neither a power of two nor a multiple of 64: refused, nothing changed.
         {"invalid-size-refused", 512, [] { return check_non_pow2_refused("invalid-size-refused"); }},
@@ -1010,13 +1011,15 @@ static int run_body(int argc, char** argv)
         {"sliced-second-value-grow", 64,
          []
          {
-             return check_invariance<double>("sliced-second-value-grow-64-to-256", 4L << 20, 256, sliced_second_value_mix,
+             return check_invariance<double>("sliced-second-value-grow-64-to-256", 4L << 20, 256,
+                                             sliced_second_value_mix,
                                              /*sv_value=*/0.5, /*post_rounds=*/2);
          }},
         {"sliced-second-value-uneven", 512,
          []
          {
-             return check_invariance<double>("sliced-second-value-uneven-512-to-192", 2L << 20, 192, sliced_second_value_mix,
+             return check_invariance<double>("sliced-second-value-uneven-512-to-192", 2L << 20, 192,
+                                             sliced_second_value_mix,
                                              /*sv_value=*/0.5, /*post_rounds=*/2);
          }},
     };

@@ -58,8 +58,8 @@ ChunkSizeScan<Arr>::ChunkSizeScan(const Arr& arr, const Options& opt)
     // designated (otherwise only first_value: the conservative answer).
     if constexpr ((chunk_config::use_zero_or_value || is_zero_any_family_v<ChunkT>) && requires { arr.second_value(); })
     {
-        second_value_ = arr.second_value();
-        has_second_value_   = !same_value(second_value_, first_value_);
+        second_value_     = arr.second_value();
+        has_second_value_ = !same_value(second_value_, first_value_);
     }
     for (const uint32_t cand_sz : cand_)
     {
@@ -192,7 +192,7 @@ int ChunkSizeScan<Arr>::classify(const ChunkT& chunk, const void*& key) const
         if (is_const2)
         {
             static constexpr int second_value_sentinel = 0; // one address: array-level, all const2 equal
-            key                                  = &second_value_sentinel;
+            key                                        = &second_value_sentinel;
             return kind_const2;
         }
     }

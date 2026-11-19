@@ -409,7 +409,7 @@ void zero_or_value::Proxy<T>::perform_core_assignment(InT<T> value) const noexce
     if (const bool is_const2 = !is_const1 && is_second_value_at(vals); is_const1 || is_const2)
     {
         [[maybe_unused]] const bool chunk_was_second_value = is_const2;
-        [[maybe_unused]] const bool chunk_was_first_value = is_const1;
+        [[maybe_unused]] const bool chunk_was_first_value  = is_const1;
 
         create_value(is_const2);
         vals = chunk_.values_load();
@@ -743,7 +743,7 @@ void zero_or_value::ProxyFastCompPolicy<Derived, T, ChunkT, Enabled>::execute_si
     const Proxy proxy = Base::template make_proxy_with_info<Derived>(ctx);
 
     const bool is_second = proxy.is_second_value();
-    const bool is_first = proxy.is_first_value();
+    const bool is_first  = proxy.is_first_value();
 
     if constexpr (is_not_bool)
     {
@@ -924,7 +924,7 @@ void zero_or_value::Proxy<T>::execute_inplace_operation(Lambda operation)
     }
 
     const bool is_second = SecondValueBase::is_second_value();
-    const bool is_first = Base::is_first_value();
+    const bool is_first  = Base::is_first_value();
 
     [[maybe_unused]] T v_old{};
     if constexpr (chunk_config::use_compression_without_counter)
@@ -1068,7 +1068,7 @@ void zero_or_value::Proxy<T>::apply_compound_operation([[maybe_unused]] Op op, I
     {
         BaseSpec::set_info_second_value_idx(); // Initialize second_value / idx — needed by both branches below
 
-        const InT<T> v_old_snapshot = this->raw_elem();
+        const InT<T> v_old_snapshot     = this->raw_elem();
         const bool   equals_first_value = same_value(v_old_snapshot, static_cast<T>(Chunk<T>::first_value));
 
         if (!equals_first_value) [[likely]]

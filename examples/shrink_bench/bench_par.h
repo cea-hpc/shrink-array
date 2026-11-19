@@ -240,9 +240,10 @@ class Registry
         }
     }
 
-    /// @brief Account one call (@p wall_end: execute() returned, @p fin_end:
+    /// @brief Account one call (@p wall_end: execute() returned, @p finalize_end:
     ///        finalize_parallel_phase() returned).
-    void record(const std::source_location& loc, const Call& c, Clock::time_point wall_end, Clock::time_point fin_end)
+    void
+    record(const std::source_location& loc, const Call& c, Clock::time_point wall_end, Clock::time_point finalize_end)
     {
         const std::size_t n    = c.start.size();
         const double      w    = seconds(wall_end - c.t0);
@@ -311,8 +312,8 @@ class Registry
         s.max_late = std::max(s.max_late, smax);
         s.shared += shared ? 1 : 0;
         s.threads += distinct;
-        finalize_ += seconds(fin_end - wall_end);
-        last_end_  = fin_end;
+        finalize_ += seconds(finalize_end - wall_end);
+        last_end_  = finalize_end;
         have_last_ = true;
     }
 
@@ -330,8 +331,8 @@ class Registry
         arena_in_ += a.in;
         arena_entered_region_ += b.entered - a.entered;
         arena_left_region_ += b.left - a.left;
-        arena_entered_fin_ += c.entered - b.entered;
-        arena_left_fin_ += c.left - b.left;
+        arena_entered_finalize_ += c.entered - b.entered;
+        arena_left_finalize_ += c.left - b.left;
         arena_last_ = c;
     }
 
@@ -444,7 +445,7 @@ class Registry
                      "during it %.2f entered, %.2f left; during its finalize %.2f entered, %.2f left; "
                      "from the finalize to the next region %.2f entered, %.2f left\n",
                      per(arena_in_), CHUNK_PMP_MAX_THREADS - 1, per(arena_entered_region_), per(arena_left_region_),
-                     per(arena_entered_fin_), per(arena_left_fin_), per(arena_entered_between_),
+                     per(arena_entered_finalize_), per(arena_left_finalize_), per(arena_entered_between_),
                      per(arena_left_between_));
     }
 
@@ -496,14 +497,14 @@ class Registry
     std::vector<long long>             doubled_;        ///< TBB: regions each slot ran two ranks or more of
     long long                          slot_calls_ = 0; ///< TBB: regions with the slots recorded
     // TBB: the arena's observer counts, summed over the regions (record_arena()).
-    long long         arena_calls_           = 0;
-    long long         arena_in_              = 0;
-    long long         arena_entered_region_  = 0;
-    long long         arena_left_region_     = 0;
-    long long         arena_entered_fin_     = 0;
-    long long         arena_left_fin_        = 0;
-    long long         arena_entered_between_ = 0;
-    long long         arena_left_between_    = 0;
+    long long         arena_calls_            = 0;
+    long long         arena_in_               = 0;
+    long long         arena_entered_region_   = 0;
+    long long         arena_left_region_      = 0;
+    long long         arena_entered_finalize_ = 0;
+    long long         arena_left_finalize_    = 0;
+    long long         arena_entered_between_  = 0;
+    long long         arena_left_between_     = 0;
     ArenaCount        arena_last_;
     double            serial_    = 0;
     double            finalize_  = 0;

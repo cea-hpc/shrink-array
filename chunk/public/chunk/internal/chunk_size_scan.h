@@ -336,10 +336,10 @@ class ChunkSizeScan
     int64_t        nc_;       ///< its chunks
     int64_t        len_;      ///< nc_ * chunk_sz_: the extent the windows cut
 
-    int    second_value_idx_;   ///< second_value_index()
-    InT<T> first_value_;       ///< the first constant
+    int    second_value_idx_;         ///< second_value_index()
+    InT<T> first_value_;              ///< the first constant
     bool   has_second_value_ = false; ///< a second value is designated, distinct from the first
-    T      second_value_;       ///< ... that value
+    T      second_value_;             ///< ... that value
 
     std::vector<uint32_t> cand_;                ///< candidate_sizes()
     int                   n_cand_      = 0;     ///< their count

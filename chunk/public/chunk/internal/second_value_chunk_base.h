@@ -20,12 +20,12 @@
 #include <source_location> // std::source_location
 #include <type_traits>     // std::is_same_v
 
-#include "chunk/config.h"                           // build_config::any_check, chunk_config::use_fast_block_compression
-#include "chunk/internal/pmp_chunk.h"               // get_thr_rank_fast (the constant-buffer write check)
-#include "chunk/internal/chunk_base.h"              // ChunkBase
-#include "chunk/internal/const_slot.h"              // ConstSlot (clear_impl's type-of-constant slot)
+#include "chunk/config.h"                         // build_config::any_check, chunk_config::use_fast_block_compression
+#include "chunk/internal/pmp_chunk.h"             // get_thr_rank_fast (the constant-buffer write check)
+#include "chunk/internal/chunk_base.h"            // ChunkBase
+#include "chunk/internal/const_slot.h"            // ConstSlot (clear_impl's type-of-constant slot)
 #include "chunk/internal/second_value_registry.h" // SecondValueRef, the zero_any second-value slot handle
-#include "chunk/internal/type_name.h"               // type_name<T>
+#include "chunk/internal/type_name.h"             // type_name<T>
 
 namespace shrink_array
 {
@@ -44,11 +44,11 @@ class SecondValueChunkBase : public ChunkBase<T, Derived>
     using Base = ChunkBase<T, Derived>;
     using Base::derived;
     using Base::first_value;
+    using Base::first_value_buffer_;
     using Base::is_bool;
     using Base::is_first_value;
     using Base::is_not_bool;
     using Base::is_not_first_value;
-    using Base::first_value_buffer_;
     using Base::read_value;
     using Base::values_;
     using Base::values_load;

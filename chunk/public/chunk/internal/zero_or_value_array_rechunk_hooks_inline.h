@@ -133,7 +133,7 @@ void zero_or_value::RechunkHooks<Derived, true>::rechunk_reown_after_swap(Derive
             {
                 Derived& arr = self();
 
-                arr.inf_array_      = tmp.inf_array_; // tmp's is valid (set_second_value ran)
+                arr.inf_array_        = tmp.inf_array_; // tmp's is valid (set_second_value ran)
                 arr.second_value_idx_ = tmp.second_value_idx_;
                 ProxyType::array_registry->insert(state, &arr.inf_array_);
             }

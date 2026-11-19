@@ -1204,8 +1204,8 @@ template <typename T>
     {
         if (static_cast<size_t>(idx) >= second_value_buffers->size()) [[unlikely]]
         {
-            CHUNK_INVARIANT_FAILED("[chunk] suspect second_value_ptr<{}>: index_value={} size={}", typeid(T).name(), idx,
-                                   second_value_buffers->size());
+            CHUNK_INVARIANT_FAILED("[chunk] suspect second_value_ptr<{}>: index_value={} size={}", typeid(T).name(),
+                                   idx, second_value_buffers->size());
             return nullptr;
         }
     }

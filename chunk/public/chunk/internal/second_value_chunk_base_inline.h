@@ -22,8 +22,8 @@
 #include <source_location> // std::source_location
 
 #include "chunk/internal/second_value_chunk_base.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
-#include "chunk/config.h"             // build_config::any_check, chunk_config::use_compression_with_counter
-#include "chunk/internal/pmp_chunk.h" // get_thr_rank_fast
+#include "chunk/config.h"                         // build_config::any_check, chunk_config::use_compression_with_counter
+#include "chunk/internal/pmp_chunk.h"             // get_thr_rank_fast
 #include "chunk/internal/second_value_registry.h" // SecondValueRef
 
 namespace shrink_array

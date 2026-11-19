@@ -465,9 +465,9 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     using Base::allocate_chunk_internal;
     using Base::first_value;
 
+    using Base::first_value_buffer_;
     using Base::init_block;
     using Base::is_first_value;
-    using Base::first_value_buffer_;
     using Base::values_;
     using Base::values_load;
     using Base::values_store;

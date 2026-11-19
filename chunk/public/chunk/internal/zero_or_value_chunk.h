@@ -681,8 +681,7 @@ class ChunkFastCompPolicy : public ChunkSpec<T>, public ChunkThreadPolicy<T, Der
      * @param second_value The type-2 constant these chunks are candidates for.
      * @return Reference to the (thr, second_value) candidate list.
      */
-    static CandidateList<Chunk, T>& get_vec_tuple_to_compress_potentially_thr(int    thr,
-                                                                                      InT<T> second_value) noexcept;
+    static CandidateList<Chunk, T>& get_vec_tuple_to_compress_potentially_thr(int thr, InT<T> second_value) noexcept;
 
     /**
      * @brief Core compression sweep: drain the candidate list of one (thread,

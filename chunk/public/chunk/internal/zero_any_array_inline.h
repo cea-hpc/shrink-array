@@ -115,7 +115,8 @@ template <ArrayChunkElement T>
 void print_type_name(int n_second_values)
 {
     // std::format, not std::left/std::setw: std::cout's flags stay as they were.
-    std::cout << std::format("{:<30} → Number of compression values : {}\n", "Type: " + type_name<T>(), n_second_values);
+    std::cout << std::format("{:<30} → Number of compression values : {}\n", "Type: " + type_name<T>(),
+                             n_second_values);
 }
 
 template <typename Derived>
