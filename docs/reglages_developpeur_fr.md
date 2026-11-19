@@ -237,11 +237,18 @@ Les jobs de compilation des configurations construites en même temps viennent d
 les cœurs ou ce que la mémoire permet. Avec ninja 1.13 ou plus récent (le ninja avec lequel le
 répertoire de build est configuré, son `CMAKE_MAKE_PROGRAM`), les scripts le partagent par un
 jobserver GNU make : une configuration qui se termine laisse ses cœurs à celles qui tournent
-encore, et la dernière finit sur tout le nœud. Avec un ninja plus ancien, chaque configuration
+encore, et la dernière finit sur tout le nœud. Les builds sous sanitizer en font partie aussi :
+quand la mémoire limite le run, chacun de leurs jobs de compilation pèse
+`CHUNK_MEM_PER_JOB_MB_SANITIZER / CHUNK_MEM_PER_JOB_MB` jetons, et `scripts/jobserver_broker.sh`
+donne à leur ninja un pool à lui, dont chaque jeton en coûte autant à celui du run. Avec un
+ninja plus ancien, chaque configuration
 garde la part reçue à son lancement (`cœurs / --jobs`), et les dernières finissent seules sur
-cette part. `CHUNK_NINJA=<ninja 1.13 ou plus>` configure les répertoires de build avec ce ninja
-(chaque répertoire qui change de ninja recompile tout une fois : les deux versions ne relisent
-pas le `.ninja_log` l'une de l'autre) ; `CHUNK_JOBSERVER=off` garde les parts fixes.
+cette part. Les scripts prennent le ninja le plus récent du `PATH` qui tourne sur le nœud, avant
+celui du module (un `~/.local/bin/ninja` 1.13 plutôt que le 1.11 du module), et, s'il est en 1.13
+ou plus, ils y fixent `CHUNK_NINJA`. `CHUNK_NINJA=<ninja>` configure les répertoires de build avec
+ce ninja (chaque répertoire qui change de ninja recompile tout une fois : les deux versions ne
+relisent pas le `.ninja_log` l'une de l'autre) ; donné à la main, il l'emporte
+(`CHUNK_NINJA=<le ninja du module>` garde l'ancien). `CHUNK_JOBSERVER=off` garde les parts fixes.
 
 Le backend de threads std (`CHUNK_THREADS=std`) a ses propres builds : `std-gnu`,
 `std-gnu-check` et un build ThreadSanitizer pour `compile_all_gnu.sh`, `std-llvm`,
