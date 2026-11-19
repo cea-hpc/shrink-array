@@ -704,7 +704,13 @@ the tag's checksum to the recipe.
   (were `Base2`, `ManagerChunk2`, `ManagerChunk2A`), `CandidateTuples`,
   `CandidateValueTuples` (were `VecTupleChunk*pInt2`);
   `ZeroOneValueInfArrayPolicy`, `CHUNK_LINK_CHECK_ZERO/_ZERO_ONE_VALUE/_ZERO_ANY`
-  and the multi-mat example's `VectZeroOneValue`. Generic `chunk` names (the
+  and the multi-mat example's `VectZeroOneValue`; the traits
+  `is_zero_array_v`, `is_zero_or_value_array_v`, `is_zero_any_family_array_v`
+  (were `is_v1_v`, `is_v2_v`, `is_v2a_family_v`), the link-check symbol
+  `variant_zero_*_zero_or_value_*_zero_any_*_size_*_dyn_*` (was
+  `variant_v1_*_v2_*_v2a_*_...`: a library built before it does not link with a
+  program built after) and the `PointerMap` of each variant in messages and
+  docs (was `PointerMapChunk`, `PointerMapChunk2A`). Generic `chunk` names (the
   block of CHUNK_SIZE values, common to the variants: `ChunkBase`,
   `ManagerChunk`, `ParamChunk`...) stay.
 

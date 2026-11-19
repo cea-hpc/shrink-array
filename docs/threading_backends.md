@@ -271,7 +271,7 @@ one, on a team of the backend. `phases.h` states the contract.
      `bulk_write_team_validation` created its in-region arrays under
      `#pragma omp critical` inside `parallel_phase()` -- a real team of the
      std backend, where the pragma is ignored: eight arrays created at once, out of
-     contract (TSan: `PointerMapChunk2A::insert`); a `std::mutex` now.
+     contract (TSan: `zero_any::PointerMap::insert`); a `std::mutex` now.
      `pool_accounting_validation` expected parking only under `use_openmp` (now
      `threaded`, like the library since 7a) and materialised with an
      `omp parallel for`, one thread in the std build, which takes back the parked

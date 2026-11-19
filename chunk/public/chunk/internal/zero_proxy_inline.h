@@ -799,7 +799,7 @@ template <typename T>
         }
     }
 
-    CHUNK_INVARIANT_FAILED("[PointerMapChunk get_array_id] key NOT FOUND: this={} size={} key={}", this, vec_.size(),
+    CHUNK_INVARIANT_FAILED("[zero::PointerMap get_array_id] key NOT FOUND: this={} size={} key={}", this, vec_.size(),
                            key);
 }
 
