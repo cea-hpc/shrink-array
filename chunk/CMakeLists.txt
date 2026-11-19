@@ -846,18 +846,24 @@ install(FILES ${CHUNK_GENERATED_INCLUDE_DIR}/chunk/build_options.h
         COMPONENT chunk-devel)
 
 # A std-alloc build installs no fast_allocators, yet chunk's headers include
-# its svalloc.h, singleton.h, log_core.h, fatal.h, raw_memory.h and the backend's pmp_*.h:
-# install those with chunk then.
+# its svalloc.h, singleton.h, log_core.h, fatal.h, raw_memory.h, the backend's
+# pmp_*.h, and what those include in turn (append_text.h, the *_inline.h
+# bodies): install those with chunk then. The list is the closure of the
+# includes chunk's headers reach outside their CHUNK_OPT_FAST_ALLOC blocks;
+# scripts/check_tracked.py (rule 6) recomputes it and fails when one is missing.
 if (CHUNK_STD_ALLOC)
-  install(FILES ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/svalloc.h
-                ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/singleton.h
-                ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/log_core.h
+  install(FILES ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/append_text.h
                 ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/fatal.h
+                ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/log_core.h
                 ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/pmp_loops.h
+                ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/pmp_loops_inline.h
                 ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/pmp_runtime.h
                 ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/pmp_std.h
+                ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/pmp_std_inline.h
                 ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/pmp_std_state.h
                 ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/raw_memory.h
+                ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/singleton.h
+                ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/svalloc.h
           DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/fast_allocators/internal
           COMPONENT chunk-devel)
 endif()

@@ -16,23 +16,24 @@
 
 #pragma once
 
-#include <concepts>   // std::assignable_from
-#include <functional> // std::plus, std::minus, std::multiplies, std::divides
-#include <ostream>    // std::ostream
-#include <utility>    // std::pair
-#include <vector>     // std::vector
+#include <concepts>    // std::assignable_from
+#include <functional>  // std::plus, std::minus, std::multiplies, std::divides
+#include <ostream>     // std::ostream
+#include <utility>     // std::pair
+#include <type_traits> // std::is_convertible_v
+#include <vector>      // std::vector
 
 #include "chunk/internal/pointer_map_linear.h" // linear scan shared with zero_or_value::PointerMap
 #include "chunk/config.h"                      // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
 #include "chunk/internal/array_chunk_for.h"    // ArrayKey (the registry keys)
 #include "chunk/internal/chunk_size_policy.h"  // set_thread_chunk_size, set_thread_alloc_key
-#include "chunk/internal/concept_is_clean_assignment.h" // IsCleanAssignment, ElementAddable, ElementModulable
+#include "chunk/internal/concept_is_clean_assignment.h" // IsCleanAssignment, IsCleanCompoundOp, ElementAddable, ElementModulable
 #include "chunk/internal/in_t.h"                        // InT<T>
 #include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/conditional_counter.h"         // CounterValueT — resync_n_val_eq_zero
-#include "chunk/internal/def_force_inline.h"            // CHUNK_FORCE_INLINE
-#include "chunk/internal/proxy_base.h"                  // ProxyBase
-#include "chunk/internal/read_reclaim.h"                // read_reclaim::ReadSection
+#include "chunk/internal/conditional_counter.h" // CounterValueT — resync_n_val_eq_zero
+#include "chunk/internal/def_force_inline.h"    // CHUNK_FORCE_INLINE
+#include "chunk/internal/proxy_base.h"          // ProxyBase
+#include "chunk/internal/read_reclaim.h"        // read_reclaim::ReadSection
 #include "chunk/internal/chunk_stats.h" // inc_chunk_read<> (a dependent call the include tools cannot attribute)
 #include "chunk/internal/immortal.h"    // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/same_value.h"  // same_value
@@ -680,11 +681,25 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
-        requires ElementAddable<T>
+        requires IsCleanCompoundOp<T, U> && ElementAddable<T>
     Proxy operator+=(const U& operand) noexcept
     {
         this->template arithmetic_assign<U>(operand, std::plus<>{});
         return *this;
+    }
+
+    /**
+     * @brief Add -- an operand that is not clean (e.g. int += double): converted
+     *        to T first, as ProxyBase::operator+= does, on every path.
+     * @tparam U Type of the operand.
+     * @param operand Operand, converted to T.
+     * @return This proxy (see the clean overload).*/
+    template <typename U>
+        requires(!IsCleanCompoundOp<T, U>) && std::is_convertible_v<U, T> && ElementAddable<T>
+    [[deprecated("HPC WARNING: Type mismatch in +=: the operand is converted to the element type first.")]]
+    Proxy operator+=(const U& operand) noexcept
+    {
+        return this->operator+=(static_cast<T>(operand));
     }
 
     /**
@@ -695,11 +710,25 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
-        requires ElementSubtractable<T>
+        requires IsCleanCompoundOp<T, U> && ElementSubtractable<T>
     Proxy operator-=(const U& operand) noexcept
     {
         this->template arithmetic_assign<U>(operand, std::minus<>{});
         return *this;
+    }
+
+    /**
+     * @brief Subtract -- an operand that is not clean (e.g. int -= double): converted
+     *        to T first, as ProxyBase::operator+= does, on every path.
+     * @tparam U Type of the operand.
+     * @param operand Operand, converted to T.
+     * @return This proxy (see the clean overload).*/
+    template <typename U>
+        requires(!IsCleanCompoundOp<T, U>) && std::is_convertible_v<U, T> && ElementSubtractable<T>
+    [[deprecated("HPC WARNING: Type mismatch in -=: the operand is converted to the element type first.")]]
+    Proxy operator-=(const U& operand) noexcept
+    {
+        return this->operator-=(static_cast<T>(operand));
     }
 
     /**
@@ -711,12 +740,27 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
-        requires ElementDivisible<T>
+        requires IsCleanCompoundOp<T, U> && ElementDivisible<T>
     Proxy operator/=(const U& operand) noexcept
     {
         internal::check_integer_divisor<T>(operand, "/=");
         apply_compound_operation<U>(operand, std::divides<>());
         return *this;
+    }
+
+    /**
+     * @brief Divide -- an operand that is not clean (e.g. int /= double): converted
+     *        to T first, as ProxyBase::operator+= does, on every path.
+     *        An integer element divided by 0.5 is divided by 0 (check builds stop).
+     * @tparam U Type of the operand.
+     * @param operand Operand, converted to T.
+     * @return This proxy (see the clean overload).*/
+    template <typename U>
+        requires(!IsCleanCompoundOp<T, U>) && std::is_convertible_v<U, T> && ElementDivisible<T>
+    [[deprecated("HPC WARNING: Type mismatch in /=: the operand is converted to the element type first.")]]
+    Proxy operator/=(const U& operand) noexcept
+    {
+        return this->operator/=(static_cast<T>(operand));
     }
 
     /**
@@ -727,11 +771,25 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
-        requires ElementMultipliable<T>
+        requires IsCleanCompoundOp<T, U> && ElementMultipliable<T>
     Proxy operator*=(const U& operand) noexcept
     {
         apply_compound_operation<U>(operand, std::multiplies<>());
         return *this;
+    }
+
+    /**
+     * @brief Multiply -- an operand that is not clean (e.g. int *= double): converted
+     *        to T first, as ProxyBase::operator+= does, on every path.
+     * @tparam U Type of the operand.
+     * @param operand Operand, converted to T.
+     * @return This proxy (see the clean overload).*/
+    template <typename U>
+        requires(!IsCleanCompoundOp<T, U>) && std::is_convertible_v<U, T> && ElementMultipliable<T>
+    [[deprecated("HPC WARNING: Type mismatch in *=: the operand is converted to the element type first.")]]
+    Proxy operator*=(const U& operand) noexcept
+    {
+        return this->operator*=(static_cast<T>(operand));
     }
 
     /**
@@ -744,7 +802,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
-        requires ElementModulable<T>
+        requires IsCleanCompoundOp<T, U> && ElementModulable<T>
     Proxy operator%=(const U& operand) noexcept
     {
         if constexpr (std::is_integral_v<T>)
@@ -757,6 +815,20 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
         {
             return *this;
         }
+    }
+
+    /**
+     * @brief Modulo -- an operand that is not clean (e.g. int %= long): converted
+     *        to T first, as ProxyBase::operator+= does, on every path.
+     * @tparam U Type of the operand.
+     * @param operand Operand, converted to T.
+     * @return This proxy (see the clean overload).*/
+    template <typename U>
+        requires(!IsCleanCompoundOp<T, U>) && std::is_convertible_v<U, T> && ElementModulable<T>
+    [[deprecated("HPC WARNING: Type mismatch in %=: the operand is converted to the element type first.")]]
+    Proxy operator%=(const U& operand) noexcept
+    {
+        return this->operator%=(static_cast<T>(operand));
     }
 
     /**

@@ -336,6 +336,12 @@ function(validation_harness_executable tgt libbase vmacro geom)
   endif()
 endfunction()
 set_source_files_properties(validation_driver.cpp PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+# mixed_operand_compound_validation uses the operands that are not clean on
+# purpose: their HPC warnings ([[deprecated]], raised in element_ref.h where a
+# #pragma around the call cannot reach) would fail the -Werror builds. A source
+# option also keeps the file out of the unity batches.
+set_source_files_properties(mixed_operand_compound_validation.cpp PROPERTIES
+                            COMPILE_OPTIONS "$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang,IntelLLVM>:-Wno-deprecated-declarations>")
 
 # test name, executable, harness, thread counts ("" = one test, OMP_NUM_THREADS=8), args...
 function(validation_add_test name exe harness nthreads)
@@ -413,6 +419,20 @@ foreach(_geom IN LISTS _rt_geometries)
     # size, at 8 threads; OpenMP builds only (the passes run in a region).
     if (CHUNK_OPENMP AND _vname STREQUAL "zero_or_value" AND NOT _geom STREQUAL "dyn")
       list(APPEND _group zero_or_value_foreign_key_validation)
+    endif()
+    # mixed_operand_compound_validation: `a[i] op= u` with an operand that is
+    # not clean (a double, a long, on an int array) converts it to int first,
+    # on the direct path and on the deferred one (forced by the test hook).
+    # Every variant, default static size, at 1 and 8 threads.
+    if (NOT _geom STREQUAL "dyn")
+      list(APPEND _group mixed_operand_compound_validation)
+    endif()
+    # zero_or_value_shared_state_validation: a copy-assign across second values
+    # and a new bool array leave the other arrays' shared state alone (the
+    # harness says why). zero_or_value only, default static size, at 1 and 8
+    # threads.
+    if (_vname STREQUAL "zero_or_value" AND NOT _geom STREQUAL "dyn")
+      list(APPEND _group zero_or_value_shared_state_validation)
     endif()
     # deferred_path_validation: every write path through the deferred queue,
     # forced by the test hook (test_hooks.h, switched on by the harness), at

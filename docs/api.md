@@ -111,6 +111,12 @@ does not compile, with a message. A proxy kept on purpose: `std::move(x) = v;`, 
 `a.element_proxy(i)`. The wrapper costs nothing at run time (force-inlined).
 `-DCHUNK_LOOSE_ELEMENT_REF` turns the check off.
 
+An operand of another type than the element: a plain `T` computes in the common type, and so does
+the proxy for the *clean* operands -- the same type, an integer into a floating or complex `T`, the
+scalar of a complex `T`, an `int` into `short`, `char` or `unsigned char`. Any other operand is
+converted to `T` first, with an `HPC WARNING` (`[[deprecated]]`), the same in every variant and
+build, deferred or not: an `int` element `*= 1.5` is multiplied by 1, `/= 0.5` divided by 0.
+
 ## 5. Range operations
 
 `chunk/range_ops.h`. One decision per chunk instead of one per element.

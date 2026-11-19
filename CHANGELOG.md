@@ -100,6 +100,39 @@ the tag's checksum to the recipe.
   chunk-size prediction allocates a summary and formats a log line; a `std::bad_alloc` there
   would have called `std::terminate()`. The prediction, a log line only, is skipped on an
   exception (Coverity 661905, 661906).
+- Compound operations with an operand that is not clean for the element (`int` `*= 1.5`,
+  `int` `%= 4294967299L`; concept_is_clean_assignment.h): the rule -- the operand converted to `T`
+  first, with an `HPC WARNING` -- held for `+=` / `-=` of `zero_or_value` and `zero_any` only.
+  `zero`'s `+=` / `-=` computed in the common type on the direct path and converted on the
+  deferred one (`-1 += 0.5`: 0 or -1); `*=` / `/=` / `%=` of every variant took the operand as it
+  came, without warning, and `zero_or_value` gave 3 for `2 *= 1.5` in a serial build, 2 in an OpenMP
+  one. Every compound operator of every variant now has the two overloads `+=` had: a clean operand
+  computes as a plain `T` does, any other is converted to `T` at the operator, with the warning, so
+  every path below gets a `T`. `docs/api.md` §4 states the rule; `mixed_operand_compound_validation`
+  checks it, direct and deferred, in every variant.
+- `zero_or_value`: a copy-assignment `a = b`, `b` declaring another second value than `a`,
+  wrote `b`'s elements into the constant block of `a`'s old second value -- a block every array
+  declaring that value shares: their compressed chunks read `b`'s elements afterwards.
+  `operator=` switched the value before copying, so `a`'s chunks still on the old block passed as
+  materialised. It now releases `a`'s chunks first when the second value changes, as the
+  move-assignment does. `zero_or_value_shared_state_validation` checks it.
+- `zero_or_value::Array<bool>` (and the bit arrays): building one installed a fresh, empty `true`
+  candidate list on every rank, dropping the chunks the other live bool arrays had queued -- never
+  queued again, never compressed by the passes -- and freeing the list under a thread of another
+  bool array writing into it, for one built inside a region. The list is installed once.
+  `zero_or_value_shared_state_validation` checks it.
+- Every variant, a parallel region of one thread (`OMP_NUM_THREADS=1`): the teardown of a work
+  array built in the region took the region for a sequential point -- one thread's region is
+  inactive, `omp_in_parallel()` is false there -- and ran the pass over every type's candidate
+  lists that `clear()` runs at one, a walk that empties them without compressing: what every array
+  had queued in the region was never compressed. The own-rank test (`teardown_on_own_rank()`)
+  counts an inactive region as a region. `zero_or_value_shared_state_validation` checks it.
+- Install of a std-alloc build (`CHUNK_STD_ALLOC`, Spack's `~fast_alloc`): the handful of
+  fast_allocators headers it installs with chunk missed three that the others include --
+  `internal/append_text.h` (from `log_core.h` and `fatal.h`), `internal/pmp_loops_inline.h`
+  and `internal/pmp_std_inline.h` -- so no consumer of such an install compiled. They are
+  installed, and `check_tracked` (rule 6) recomputes the list from chunk's includes and fails
+  when one is missing.
 
 ## 0.3.0 -- 2026-11-18
 

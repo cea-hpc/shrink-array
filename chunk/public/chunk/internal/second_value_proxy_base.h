@@ -17,12 +17,12 @@
 #pragma once
 
 #include <functional>  // std::divides, std::multiplies
-#include <type_traits> // std::is_integral_v, std::is_same_v
+#include <type_traits> // std::is_integral_v, std::is_same_v, std::is_convertible_v
 #include <utility>     // std::forward
 
 #include "chunk/bit.h"    // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/config.h" // chunk_config::use_fast_block_compression, build_config::do_check
-#include "chunk/internal/concept_is_clean_assignment.h" // BaseT, ElementMultipliable, ElementModulable
+#include "chunk/internal/concept_is_clean_assignment.h" // BaseT, IsCleanCompoundOp, ElementMultipliable, ElementModulable
 #include "chunk/internal/def_force_inline.h"            // CHUNK_FORCE_INLINE
 #include "chunk/internal/in_t.h"                        // InT<T>
 #include "chunk/internal/proxy_base.h"                  // ProxyBase
@@ -93,7 +93,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
-        requires ElementMultipliable<T>
+        requires IsCleanCompoundOp<T, U> && ElementMultipliable<T>
     Derived operator*=(this auto&& self, const U& operand) noexcept
     {
         // Early-out: multiplying by 1 writes nothing. Nothing to read either:
@@ -110,6 +110,20 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     }
 
     /**
+     * @brief Multiply -- an operand that is not clean (e.g. int *= double):
+     *        converted to T first, as operator+= does, on every path.
+     * @tparam U Type of the operand.
+     * @param operand Multiplier, converted to T.
+     * @return This proxy (see the clean overload).*/
+    template <typename U>
+        requires(!IsCleanCompoundOp<T, U>) && std::is_convertible_v<U, T> && ElementMultipliable<T>
+    [[deprecated("HPC WARNING: Type mismatch in *=: the operand is converted to the element type first.")]]
+    Derived operator*=(this auto&& self, const U& operand) noexcept
+    {
+        return self.operator*=(static_cast<T>(operand));
+    }
+
+    /**
      * @brief Divide this element by @p operand in place.
      * @tparam U Type of the operand.
      * @param operand Divisor. Integer element: check builds stop on operand == 0
@@ -118,7 +132,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
-        requires ElementDivisible<T>
+        requires IsCleanCompoundOp<T, U> && ElementDivisible<T>
     Derived operator/=(this auto&& self, const U& operand) noexcept
     {
         internal::check_integer_divisor<T>(operand, "/=");
@@ -135,6 +149,21 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
     }
 
     /**
+     * @brief Divide -- an operand that is not clean (e.g. int /= double):
+     *        converted to T first, as operator+= does, on every path. An
+     *        integer element divided by 0.5 is divided by 0 (check builds stop).
+     * @tparam U Type of the operand.
+     * @param operand Divisor, converted to T.
+     * @return This proxy (see the clean overload).*/
+    template <typename U>
+        requires(!IsCleanCompoundOp<T, U>) && std::is_convertible_v<U, T> && ElementDivisible<T>
+    [[deprecated("HPC WARNING: Type mismatch in /=: the operand is converted to the element type first.")]]
+    Derived operator/=(this auto&& self, const U& operand) noexcept
+    {
+        return self.operator/=(static_cast<T>(operand));
+    }
+
+    /**
      * @brief Compute this element modulo @p operand in place.
      * @tparam U Type of the operand.
      * @param operand Modulus. Check builds stop on operand == 0
@@ -143,7 +172,7 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
-        requires ElementModulable<T>
+        requires IsCleanCompoundOp<T, U> && ElementModulable<T>
     Derived operator%=(this auto&& self, const U& operand) noexcept
     {
         if constexpr (std::is_integral_v<T>)
@@ -162,6 +191,20 @@ class SecondValueProxyBase : public ProxyBase<Derived, T, ChunkT>
                       "left unchanged");
             return self;
         }
+    }
+
+    /**
+     * @brief Modulo -- an operand that is not clean (e.g. int %= long):
+     *        converted to T first, as operator+= does, on every path.
+     * @tparam U Type of the operand.
+     * @param operand Modulus, converted to T.
+     * @return This proxy (see the clean overload).*/
+    template <typename U>
+        requires(!IsCleanCompoundOp<T, U>) && std::is_convertible_v<U, T> && ElementModulable<T>
+    [[deprecated("HPC WARNING: Type mismatch in %=: the operand is converted to the element type first.")]]
+    Derived operator%=(this auto&& self, const U& operand) noexcept
+    {
+        return self.operator%=(static_cast<T>(operand));
     }
 
   protected:

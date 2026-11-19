@@ -194,7 +194,8 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkT>>
     /**
      * @brief Does the teardown of array @p array_id walk the calling thread's
      *        per-rank structures only?
-     * @details True inside a parallel region, for an array no other rank has
+     * @details True inside a parallel region (an inactive one too: a team of
+     *          one thread), for an array no other rank has
      *          queued a chunk of or deferred a write to (internal::ArrayUsers): a
      *          work array of the calling thread. Its teardown then drains this
      *          rank's deferred writes and candidate list, and runs no pass over

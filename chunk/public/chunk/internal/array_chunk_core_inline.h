@@ -19,7 +19,7 @@
 #include <cstddef> // std::size_t
 
 #include "chunk/internal/array_chunk_core.h" // the class these bodies belong to
-#include "chunk/internal/pmp_chunk.h"        // CHUNK_PMP_IN_PARALLEL_REGION, CHUNK_PMP_THREAD_RANK
+#include "chunk/internal/pmp_chunk.h"        // CHUNK_PMP_IN_PARALLEL_REGION, CHUNK_PMP_LEVEL, CHUNK_PMP_THREAD_RANK
 #include "chunk/internal/array_users.h"      // ArrayUsers (teardown_on_own_rank)
 #include "chunk/config.h"                    // build_config::threaded
 #include "chunk/internal/read_reclaim.h"     // wait_for_readers (await_chunk_readers)
@@ -36,7 +36,14 @@ template <typename ChunkT>
 {
     if constexpr (build_config::threaded)
     {
-        return CHUNK_PMP_IN_PARALLEL_REGION && internal::ArrayUsers<ChunkT>::only(array_id, CHUNK_PMP_THREAD_RANK);
+        // CHUNK_PMP_LEVEL as well: a region of one thread is inactive, and
+        // omp_in_parallel() is false inside it. Taken for a sequential point, the
+        // teardown of a work array there would run the pass over every type's
+        // lists that clear() runs at one -- a walk that empties them without
+        // compressing (apply = false), losing what every array had queued in
+        // the region.
+        const bool in_region = CHUNK_PMP_IN_PARALLEL_REGION || CHUNK_PMP_LEVEL > 0;
+        return in_region && internal::ArrayUsers<ChunkT>::only(array_id, CHUNK_PMP_THREAD_RANK);
     }
     else
     {

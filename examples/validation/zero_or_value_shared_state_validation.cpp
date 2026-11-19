@@ -1,0 +1,307 @@
+/*
+ * Copyright 2026 CEA (www.cea.fr)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+// ============================================================================
+// zero_or_value shared-state harness. zero_or_value only, default static size.
+// ============================================================================
+//
+// Two things one array does that must leave the OTHER arrays of its type
+// alone, both through state the arrays of a type share:
+//
+// 1. copy-assign (`a = b`, `b` declaring another second value). The constant
+//    block of a second value is shared by every array that declares it. A
+//    chunk counts as compressed to the second value when its values pointer
+//    is the block of the array's CURRENT index, and operator= switches the
+//    index (copy_second_value_from) before it copies the elements
+//    (copy_from): the chunks of `a` still on the old block would pass as
+//    materialised and the copy would write `b`'s elements INTO the old block,
+//    read by every chunk of every other array compressed to that value.
+//    operator= releases `a`'s chunks first when the value changes.
+//    Checked: `c`, a bystander compressed to the same value, still reads it
+//    everywhere; `a` reads `b`'s elements; no chunk of `a` is left on the old
+//    block.
+//
+// 2. a new zero_or_value::Array<bool>. Each bool array's create() registers
+//    `true` as its second value, and the `true` candidate list of a rank is
+//    shared by all of them: a registration that installed a fresh copy would
+//    drop the chunks the other bool arrays had queued (their dedup flags still
+//    set, they would not be queued again, and the passes would never compress
+//    them). The list is installed once.
+//    Its destruction, in the region, must leave them queued too: at one
+//    thread the region is inactive (omp_in_parallel() is false), and a
+//    teardown that took it for a sequential point ran the pass that walks
+//    every type's lists without compressing, emptying them.
+//    Checked (OpenMP builds, at 1 and 8 threads): the chunks of `x`, rewritten
+//    to `true` in a region, are still queued while another bool array built
+//    in that region lives and once it is destroyed, and the region's end
+//    compresses as many of them as it does without that array (the control
+//    run).
+//
+// EXIT STATUS: 0 when every check holds, 1 otherwise.
+
+#include <cstddef> // std::size_t
+#include <utility> // std::as_const
+
+#include "chunk/zero_or_value_array.h" // zero_or_value::Array
+#include "chunk/runtime.h"             // Runtime::init
+#include "chunk/internal/zero_chunk.h" // release_chunk_pools, Runtime::shutdown
+#include "chunk/config.h"              // build_config::needs_explicit_phases, build_config::use_openmp
+#include "chunk/phases.h"              // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/print.h"               // shrink_array::println
+
+#include "validation_harness.h" // run() is called by validation_driver.cpp
+
+namespace validation::zero_or_value_shared_state_validation
+{
+
+using namespace shrink_array;
+
+namespace
+{
+
+void begin_phase()
+{
+    if constexpr (build_config::needs_explicit_phases)
+    {
+        shrink_array::begin_parallel_phase();
+    }
+}
+
+void end_phase()
+{
+    if constexpr (build_config::needs_explicit_phases)
+    {
+        shrink_array::finalize_parallel_phase();
+    }
+}
+
+constexpr long n_chunks = 16; ///< chunks of every array below
+
+/// @brief Chunks of @p arr whose values pointer is @p block.
+template <typename Arr>
+long chunks_on(const Arr& arr, const void* block)
+{
+    long count = 0;
+    for (long c = 0; c < n_chunks; ++c)
+    {
+        count += (static_cast<const void*>(arr.chunk_ref(static_cast<std::size_t>(c)).values_load()) == block) ? 1 : 0;
+    }
+    return count;
+}
+
+/// @brief Chunks of @p arr not materialised (at the first or the second value).
+template <typename Arr>
+long compressed(const Arr& arr, long chunk_sz)
+{
+    long count = 0;
+    for (long c = 0; c < n_chunks; ++c)
+    {
+        count += arr.written(static_cast<typename Arr::IndexType>(c * chunk_sz)) ? 0 : 1;
+    }
+    return count;
+}
+
+// ── 1. copy-assign across second values ─────────────────────────────────────
+
+int run_copy_assign()
+{
+    using Arr           = zero_or_value::Array<double>;
+    using Index         = Arr::IndexType;
+    constexpr double v1 = 1.0; ///< `a`'s and `c`'s second value
+    constexpr double v2 = 2.0; ///< `b`'s second value
+    constexpr double vb = 7.0; ///< what `b` holds
+
+    Arr        c;
+    Arr        a;
+    Arr        b;
+    const long chunk_sz = static_cast<long>(a.chunk_size());
+    const long count    = n_chunks * chunk_sz;
+    c.resize(static_cast<Index>(count));
+    a.resize(static_cast<Index>(count));
+    b.resize(static_cast<Index>(count));
+    c.set_second_value(v1);
+    a.set_second_value(v1);
+    b.set_second_value(v2);
+    for (long i = 0; i < count; ++i)
+    {
+        c[static_cast<Index>(i)] = v1;
+        a[static_cast<Index>(i)] = v1;
+        b[static_cast<Index>(i)] = vb;
+    }
+    c.shrink_to_fit();
+    a.shrink_to_fit();
+
+    const Arr&  cc      = c;
+    const Arr&  ca      = a;
+    const void* block1  = cc.chunk_ref(0).values_load();
+    const long  c_on_v1 = chunks_on(cc, block1);
+    const long  a_on_v1 = chunks_on(ca, block1);
+    println("[shared-state/copy-assign] before a = b: c has {}/{} chunks on {:g}'s block, a has {}", c_on_v1, n_chunks,
+            v1, a_on_v1);
+    if (c_on_v1 != n_chunks || a_on_v1 != n_chunks)
+    {
+        println("[shared-state/copy-assign] FAIL premise: `a` and `c` are not both compressed to {:g}", v1);
+        return 1;
+    }
+
+    a = b;
+
+    long bad_c = 0;
+    long bad_a = 0;
+    for (long i = 0; i < count; ++i)
+    {
+        bad_c += (cc[static_cast<Index>(i)] != v1) ? 1 : 0;
+        bad_a += (ca[static_cast<Index>(i)] != vb) ? 1 : 0;
+    }
+    const long a_left = chunks_on(ca, block1);
+    println("[shared-state/copy-assign] after a = b: {} element(s) of c not {:g}, {} of a not {:g}, {} chunk(s) of a "
+            "still on {:g}'s block",
+            bad_c, v1, bad_a, vb, a_left, v1);
+    if (bad_c != 0 || bad_a != 0 || a_left != 0)
+    {
+        println("[shared-state/copy-assign] FAIL: the copy wrote into the block {:g} shares with `c`", v1);
+        return 1;
+    }
+    println("[shared-state/copy-assign] OK");
+    return 0;
+}
+
+// ── 2. a new bool array keeps the other bool arrays' queued candidates ──────
+
+using BoolArr = zero_or_value::Array<bool>;
+
+/// @brief Entries queued under key `true`, summed over the ranks.
+long queued_true()
+{
+    long        total = 0;
+    const auto& ranks = BoolArr::ManagerType::zero_or_value_candidates_map_thr;
+    for (const auto& by_value : ranks)
+    {
+        const auto it = by_value.find(true);
+        if (it != by_value.end() && it->second)
+        {
+            total += static_cast<long>(it->second->size());
+        }
+    }
+    return total;
+}
+
+struct BoolRun
+{
+    long queued_before = 0; ///< `true` entries queued once `x` is rewritten
+    long queued_after  = 0; ///< the same, after the other array's construction (or not)
+    long queued_gone   = 0; ///< the same, once that array is destroyed
+    long compressed    = 0; ///< chunks of `x` compressed after the region
+};
+
+/// @brief `x` (all `false`, compressed), every element rewritten to `true` in a
+///        region; after a barrier, one thread counts the queued entries,
+///        optionally builds another bool array, counts again.
+BoolRun bool_run(bool build_other)
+{
+    using Index = BoolArr::IndexType;
+    BoolRun    out;
+    BoolArr    x;
+    const long chunk_sz = static_cast<long>(x.chunk_size());
+    const long count    = n_chunks * chunk_sz;
+    x.resize(static_cast<Index>(count));
+#pragma omp parallel
+    {
+        begin_phase();
+#pragma omp for schedule(static)
+        for (long i = 0; i < count; ++i)
+        {
+            x[static_cast<Index>(i)] = true;
+        }
+#pragma omp single
+        {
+            out.queued_before = queued_true();
+            if (build_other)
+            {
+                const BoolArr other(static_cast<Index>(chunk_sz));
+                out.queued_after = queued_true();
+            }
+            else
+            {
+                out.queued_after = queued_true();
+            }
+            out.queued_gone = queued_true();
+        }
+    }
+    end_phase();
+    out.compressed = compressed(std::as_const(x), chunk_sz);
+    return out;
+}
+
+int run_bool_construct()
+{
+    if constexpr (!build_config::use_openmp)
+    {
+        println("[shared-state/bool-construct] skipped: serial build, no candidate lists");
+        return 0;
+    }
+    const BoolRun control = bool_run(false);
+    const BoolRun tested  = bool_run(true);
+    println("[shared-state/bool-construct] control: {} queued, {} after, {} at the end, {}/{} chunks compressed",
+            control.queued_before, control.queued_after, control.queued_gone, control.compressed, n_chunks);
+    println("[shared-state/bool-construct] another bool array built: {} queued, {} while it lives, {} once destroyed, "
+            "{}/{} chunks compressed",
+            tested.queued_before, tested.queued_after, tested.queued_gone, tested.compressed, n_chunks);
+    int fails = 0;
+    if (tested.queued_after < tested.queued_before)
+    {
+        println("[shared-state/bool-construct] FAIL: building a bool array dropped {} queued `true` candidate(s) of "
+                "another array",
+                tested.queued_before - tested.queued_after);
+        ++fails;
+    }
+    if (tested.queued_gone < tested.queued_before)
+    {
+        println("[shared-state/bool-construct] FAIL: destroying a bool array dropped {} queued `true` candidate(s) of "
+                "another array",
+                tested.queued_before - tested.queued_gone);
+        ++fails;
+    }
+    if (tested.compressed < control.compressed)
+    {
+        println("[shared-state/bool-construct] FAIL: {} chunk(s) of `x` left materialised that the control run "
+                "compresses",
+                control.compressed - tested.compressed);
+        ++fails;
+    }
+    if (fails == 0)
+    {
+        println("[shared-state/bool-construct] OK");
+    }
+    return fails;
+}
+
+} // namespace
+
+int run(int /*argc*/, char** /*argv*/)
+{
+    Runtime::init(true);
+    println("=== zero_or_value_shared_state_validation ===");
+    int fails = 0;
+    fails += run_copy_assign();
+    fails += run_bool_construct();
+    release_chunk_pools();
+    Runtime::shutdown();
+    println("\n[zero_or_value] {}", fails ? "=== SHARED STATE FAILED ===" : "=== SHARED STATE OK ===");
+    return fails ? 1 : 0;
+}
+
+} // namespace validation::zero_or_value_shared_state_validation
