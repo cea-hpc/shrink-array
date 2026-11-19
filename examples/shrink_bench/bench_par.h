@@ -925,55 +925,215 @@ inline ArenaWatch* arena_watch()
 }
 
 /**
- * @brief BENCH_RANK_TIMING: the library's team launcher (pmp::set_team_launcher),
- *        as the TBB adaptor's -- @p count tasks enqueued in the bench's arena --
- *        each task timed from the launch (rank_timing::TeamStats).
+ * @brief BENCH_TBB_FINALIZE_INSIDE=1: region() runs finalize_parallel_phase()
+ *        inside its tasks, once every rank is done, and the other tasks serve
+ *        the library's teams (TeamServe) instead of TBB tasks being enqueued.
+ * @details On TBB a library team enqueues its n - 1 tasks one by one and waits
+ *          for the last to start (Pool::try_run_launched()): on a 72-thread
+ *          AArch64 node, 0.193 ms of enqueueing and 0.326 ms of waiting per
+ *          finalize, for 0.185 ms of work. Inside the region the 71 other
+ *          tasks are still running, on their threads: they take the team's
+ *          join at once. Only when every rank has started and is done within
+ *          the linger budget (BENCH_TBB_LINGER_US, 20 ms when unset); otherwise
+ *          the finalize runs after the tasks, as without it. One line on
+ *          stderr when it is on.
  */
-inline void timed_team_launch(int count, void (*task)(std::uint64_t), std::uint64_t arg)
+[[nodiscard]] inline bool tbb_finalize_inside()
+{
+    static const bool on = []
+    {
+        const char* const v = std::getenv("BENCH_TBB_FINALIZE_INSIDE");
+        const bool        b = v != nullptr && v[0] != '\0' && v[0] != '0';
+        if (b)
+        {
+            std::fputs("[bench] BENCH_TBB_FINALIZE_INSIDE: the finalize runs inside the region's tasks\n", stderr);
+        }
+        return b;
+    }();
+    return on;
+}
+
+/// @brief One task of a library team: timed from its launch under
+///        BENCH_RANK_TIMING (rank_timing::TeamStats), then @p task(@p arg).
+inline void run_team_task(void (*task)(std::uint64_t),
+                          std::uint64_t                  arg,
+                          std::uint64_t                  gen,
+                          rank_timing::Clock::time_point t0,
+                          long long                      budget_ns,
+                          bool                           timed)
+{
+    namespace rt = rank_timing;
+    if (timed)
+    {
+        rt::TeamStats&  ts = rt::team_stats();
+        const long long d  = std::chrono::duration_cast<std::chrono::nanoseconds>(rt::Clock::now() - t0).count();
+        if (d > budget_ns)
+        {
+            ts.late.fetch_add(1, std::memory_order_relaxed);
+        }
+        else if (ts.gen.load(std::memory_order_acquire) == gen)
+        {
+            long long cur = ts.last_ns.load(std::memory_order_relaxed);
+            while (cur < d && !ts.last_ns.compare_exchange_weak(cur, d, std::memory_order_acq_rel))
+            {
+            }
+            ts.came.fetch_add(1, std::memory_order_acq_rel);
+        }
+    }
+    task(arg);
+}
+
+/**
+ * @brief BENCH_TBB_FINALIZE_INSIDE: the mailbox through which the region's
+ *        tasks serve the library's teams during a finalize run inside it.
+ * @details open() by the task that runs the finalize, close() after it. The
+ *          launcher posts each team's task in it with as many tickets as tasks
+ *          serve (every task of the region but the finalize's: the finalize
+ *          runs inside only when none returned to TBB), and enqueues the rest
+ *          as usual -- a region narrower than the team; a serving task takes a
+ *          ticket under the mutex (one per team and task: a few microseconds
+ *          for 71) and runs the team's task. A ticket never taken leaves the
+ *          team to start without it, after the join budget. The post's number
+ *          (seq) tells the servers a new team without the mutex.
+ */
+struct TeamServe
+{
+    std::mutex                 m;
+    std::atomic<std::uint64_t> seq{0};
+    std::atomic<bool>          active{false};
+    int                        servers = 0; ///< the region's tasks that serve (all but the finalize's)
+
+    // The post, under m.
+    std::uint64_t post                       = 0;
+    int           tickets                    = 0;
+    void (*task)(std::uint64_t)              = nullptr;
+    std::uint64_t                  arg       = 0;
+    std::uint64_t                  gen       = 0;
+    rank_timing::Clock::time_point t0        = {};
+    long long                      budget_ns = 0;
+    bool                           timed     = false;
+
+    void open(int region_servers)
+    {
+        const std::scoped_lock lock(m);
+        tickets = 0;
+        servers = region_servers;
+        active.store(true, std::memory_order_release);
+    }
+
+    void close()
+    {
+        active.store(false, std::memory_order_release);
+        const std::scoped_lock lock(m);
+        tickets = 0;
+        servers = 0;
+    }
+
+    /// @brief Serve the teams until @p done (the finalize returned).
+    void serve_until(const std::atomic<bool>& done, std::uint64_t seen)
+    {
+        while (!done.load(std::memory_order_acquire))
+        {
+            const std::uint64_t q = seq.load(std::memory_order_acquire);
+            if (q == seen)
+            {
+                std::this_thread::yield();
+                continue;
+            }
+            seen                              = q;
+            void (*t)(std::uint64_t)          = nullptr;
+            std::uint64_t                  a  = 0;
+            std::uint64_t                  g  = 0;
+            rank_timing::Clock::time_point c0 = {};
+            long long                      b  = 0;
+            bool                           tm = false;
+            {
+                const std::scoped_lock lock(m);
+                if (post != q || tickets <= 0)
+                {
+                    continue;
+                }
+                --tickets;
+                t  = task;
+                a  = arg;
+                g  = gen;
+                c0 = t0;
+                b  = budget_ns;
+                tm = timed;
+            }
+            run_team_task(t, a, g, c0, b, tm);
+        }
+    }
+};
+
+[[nodiscard]] inline TeamServe& team_serve() noexcept
+{
+    static TeamServe* const s = new TeamServe(); // NOLINT: immortal
+    return *s;
+}
+
+/**
+ * @brief The library's team launcher (pmp::set_team_launcher) under
+ *        BENCH_RANK_TIMING or BENCH_TBB_FINALIZE_INSIDE: as the TBB adaptor's
+ *        -- @p count tasks enqueued in the bench's arena -- but each task timed
+ *        from the launch (rank_timing::TeamStats) under BENCH_RANK_TIMING, and
+ *        handed to the region's serving tasks (TeamServe) during a finalize
+ *        run inside the region.
+ */
+inline void bench_team_launch(int count, void (*task)(std::uint64_t), std::uint64_t arg)
 {
     namespace rt              = rank_timing;
-    rt::TeamStats&  t         = rt::team_stats();
+    const bool      timed     = rt::enabled();
     const long long budget_ns = fast_alloc::pmp::std_backend::join_budget_ns();
-    t.fold(budget_ns);
-    const std::uint64_t gen = t.gen.fetch_add(1, std::memory_order_acq_rel) + 1;
-    t.last_ns.store(0, std::memory_order_relaxed);
-    t.came.store(0, std::memory_order_relaxed);
-    t.asked       = count;
-    t.finalize    = t.in_finalize.load(std::memory_order_acquire);
-    t.open        = true;
-    const auto t0 = rt::Clock::now();
-    for (int k = 0; k < count; ++k)
+    std::uint64_t   gen       = 0;
+    bool            finalize  = false;
+    if (timed)
     {
-        arena().enqueue(
-            [task, arg, gen, t0, budget_ns]
-            {
-                rt::TeamStats&  ts = rt::team_stats();
-                const long long d = std::chrono::duration_cast<std::chrono::nanoseconds>(rt::Clock::now() - t0).count();
-                if (d > budget_ns)
-                {
-                    ts.late.fetch_add(1, std::memory_order_relaxed);
-                }
-                else if (ts.gen.load(std::memory_order_acquire) == gen)
-                {
-                    long long cur = ts.last_ns.load(std::memory_order_relaxed);
-                    while (cur < d && !ts.last_ns.compare_exchange_weak(cur, d, std::memory_order_acq_rel))
-                    {
-                    }
-                    ts.came.fetch_add(1, std::memory_order_acq_rel);
-                }
-                task(arg);
-            });
+        rt::TeamStats& t = rt::team_stats();
+        t.fold(budget_ns);
+        gen = t.gen.fetch_add(1, std::memory_order_acq_rel) + 1;
+        t.last_ns.store(0, std::memory_order_relaxed);
+        t.came.store(0, std::memory_order_relaxed);
+        t.asked  = count;
+        finalize = t.finalize = t.in_finalize.load(std::memory_order_acquire);
+        t.open                = true;
     }
-    if (t.finalize)
+    const auto t0     = rt::Clock::now();
+    int        served = 0;
+    TeamServe& sv     = team_serve();
+    if (sv.active.load(std::memory_order_acquire))
     {
-        t.enqueue_s += rt::seconds(rt::Clock::now() - t0);
+        const std::scoped_lock lock(sv.m);
+        if (sv.servers > 0)
+        {
+            served       = std::min(count, sv.servers);
+            sv.tickets   = served;
+            sv.task      = task;
+            sv.arg       = arg;
+            sv.gen       = gen;
+            sv.t0        = t0;
+            sv.budget_ns = budget_ns;
+            sv.timed     = timed;
+            sv.post      = sv.seq.load(std::memory_order_relaxed) + 1;
+            sv.seq.store(sv.post, std::memory_order_release);
+        }
+    }
+    for (int k = served; k < count; ++k)
+    {
+        arena().enqueue([task, arg, gen, t0, budget_ns, timed]
+                        { run_team_task(task, arg, gen, t0, budget_ns, timed); });
+    }
+    if (finalize)
+    {
+        rt::team_stats().enqueue_s += rt::seconds(rt::Clock::now() - t0);
     }
 }
 
-/// @brief BENCH_RANK_TIMING: the library's teams through timed_team_launch(),
-///        after use_tbb_for_library_teams(arena()) (library_teams_on_tbb).
-inline const bool library_teams_timed =
-    library_teams_on_tbb && rank_timing::enabled() && fast_alloc::pmp::set_team_launcher(&timed_team_launch);
+/// @brief The library's teams through bench_team_launch() under
+///        BENCH_RANK_TIMING or BENCH_TBB_FINALIZE_INSIDE, after
+///        use_tbb_for_library_teams(arena()) (library_teams_on_tbb).
+inline const bool library_teams_bench = library_teams_on_tbb && (rank_timing::enabled() || tbb_finalize_inside()) &&
+                                        fast_alloc::pmp::set_team_launcher(&bench_team_launch);
 
 /**
  * @brief BENCH_TBB_LINGER_US=<us>: how long a region's task, its rank done,
@@ -1044,10 +1204,43 @@ void region(int num_threads, Body&& body, const std::source_location loc = std::
     rt::Call* const           cp       = call.get();
     detail::RegionCtx         ctx;
     // BENCH_TBB_LINGER_US (detail::tbb_linger()): the ranks started and done.
-    const rt::Clock::duration linger = rt::depth == 0 ? detail::tbb_linger() : rt::Clock::duration::zero();
-    std::atomic<int>          started{0};
-    std::atomic<int>          done{0};
-    const auto                tasks = [&](const oneapi::tbb::blocked_range<int>& r)
+    // BENCH_TBB_FINALIZE_INSIDE (detail::tbb_finalize_inside()): the finalize
+    // run by the first task to see every rank done (leader), the others
+    // serving its library teams until it returns (fin_done); exited: the tasks
+    // that returned to TBB before, which serve nothing.
+    const bool                inside = rt::depth == 0 && detail::tbb_finalize_inside();
+    const rt::Clock::duration linger =
+        rt::depth != 0 ? rt::Clock::duration::zero()
+        : inside && detail::tbb_linger() == rt::Clock::duration::zero()
+            ? std::chrono::duration_cast<rt::Clock::duration>(std::chrono::milliseconds(20))
+            : detail::tbb_linger();
+    std::atomic<int>      started{0};
+    std::atomic<int>      done{0};
+    std::atomic<int>      exited{0};
+    std::atomic<bool>     leader{false};
+    std::atomic<bool>     fin_done{false};
+    bool                  fin_inside = false; // written by the leader, read after the tasks
+    const std::uint64_t   serve_seq  = inside ? detail::team_serve().seq.load(std::memory_order_acquire) : 0;
+    rt::Clock::time_point wall_end;
+    rt::Clock::time_point fin_end;
+    rt::ArenaCount        at_end;
+    const auto            finalize = [&]
+    {
+        wall_end = timed ? rt::Clock::now() : rt::Clock::time_point{};
+        at_end   = watch != nullptr ? watch->now() : rt::ArenaCount{};
+        if (timed)
+        {
+            rt::team_stats().in_finalize.store(true, std::memory_order_release);
+        }
+        shrink_array::finalize_parallel_phase();
+        if (timed)
+        {
+            rt::team_stats().in_finalize.store(false, std::memory_order_release);
+            rt::team_stats().fold(fast_alloc::pmp::std_backend::join_budget_ns());
+            fin_end = rt::Clock::now();
+        }
+    };
+    const auto tasks = [&](const oneapi::tbb::blocked_range<int>& r)
     {
         for (int k = r.begin(); k != r.end(); ++k)
         {
@@ -1067,7 +1260,7 @@ void region(int num_threads, Body&& body, const std::source_location loc = std::
                 Team t(&ctx, k, n);
                 body(t);
             }
-            done.fetch_add(1, std::memory_order_release);
+            done.fetch_add(1, std::memory_order_seq_cst);
         }
         if (linger > rt::Clock::duration::zero())
         {
@@ -1078,35 +1271,60 @@ void region(int num_threads, Body&& body, const std::source_location loc = std::
                 std::this_thread::yield();
             }
         }
+        if (!inside)
+        {
+            return;
+        }
+        // Counted as gone before reading done (seq_cst both), so that the task
+        // which sees every rank done also sees every task that returned to TBB
+        // before: those threads may have left the arena, and a team waiting
+        // for them would wait its whole join budget. Taken back if every rank
+        // is done: no task returns after that.
+        exited.fetch_add(1, std::memory_order_seq_cst);
+        if (done.load(std::memory_order_seq_cst) != n)
+        {
+            return; // a rank still running, or not started: the finalize after the tasks
+        }
+        exited.fetch_sub(1, std::memory_order_seq_cst);
+        bool expected = false;
+        if (leader.compare_exchange_strong(expected, true, std::memory_order_seq_cst))
+        {
+            if (exited.load(std::memory_order_seq_cst) != 0)
+            {
+                fin_done.store(true, std::memory_order_release); // the servers return
+                return;                                          // the finalize after the tasks
+            }
+            detail::TeamServe& sv = detail::team_serve();
+            sv.open(n - 1);
+            finalize();
+            sv.close();
+            fin_inside = true;
+            fin_done.store(true, std::memory_order_release);
+        }
+        else
+        {
+            detail::team_serve().serve_until(fin_done, serve_seq);
+        }
     };
     ++rt::depth;
-    rt::Clock::time_point wall_end;
-    rt::ArenaCount        at_end;
     // The finalize inside the arena, right after the tasks: the workers that
     // finished their rank still spin in it and join the library's team at
-    // once, rather than leaving and being woken back for it.
+    // once, rather than leaving and being woken back for it. Under
+    // BENCH_TBB_FINALIZE_INSIDE, in the tasks themselves when they could.
     detail::arena().execute(
         [&]
         {
             oneapi::tbb::parallel_for(oneapi::tbb::blocked_range<int>(0, n, 1), shrink_array::tbb::phase_body(tasks),
                                       oneapi::tbb::static_partitioner{});
-            wall_end = timed ? rt::Clock::now() : rt::Clock::time_point{};
-            at_end   = watch != nullptr ? watch->now() : rt::ArenaCount{};
-            if (timed)
+            if (!fin_inside)
             {
-                rt::team_stats().in_finalize.store(true, std::memory_order_release);
-            }
-            shrink_array::finalize_parallel_phase();
-            if (timed)
-            {
-                rt::team_stats().in_finalize.store(false, std::memory_order_release);
-                rt::team_stats().fold(fast_alloc::pmp::std_backend::join_budget_ns());
+                finalize();
             }
         });
     --rt::depth;
     if (timed)
     {
-        rt::Registry::get().record(loc, *call, wall_end, rt::Clock::now());
+        rt::Registry::get().record(loc, *call, wall_end, fin_inside ? fin_end : rt::Clock::now());
         if (watch != nullptr)
         {
             rt::Registry::get().record_arena(at_start, at_end, watch->now());
